@@ -134,14 +134,16 @@ impl QuadPipeline {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         logical_size: (f32, f32),
+        scale: f32,
         quads: impl Iterator<Item = (&'a Rect, &'a Color)>,
     ) {
         self.staging.clear();
         self.staging.extend(quads.map(|(rect, color)| QuadInstance {
             pos: [rect.x, rect.y],
             size: [rect.w, rect.h],
-            // Linear space: the sRGB surface re-encodes on store.
-            color: color.to_linear(),
+            // sRGB-encoded, straight through: the target has no transfer
+            // function, so blending happens in the space CSS blends in.
+            color: color.to_array(),
         }));
         self.count = self.staging.len();
 
@@ -150,7 +152,7 @@ impl QuadPipeline {
             self.instance_buffer = Self::create_instance_buffer(device, self.capacity);
         }
 
-        self.globals.write(queue, logical_size);
+        self.globals.write(queue, logical_size, scale);
         if self.count > 0 {
             queue.write_buffer(
                 &self.instance_buffer,

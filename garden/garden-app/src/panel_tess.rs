@@ -89,28 +89,79 @@ pub fn rect_rounded(
         rect(buf, x, y, w, h, color);
         return;
     }
+    rect_rounded_shaded(buf, x, y, w, h, radius, &|_, _| color);
+}
+
+/// A shape's color as a function of position, in the same absolute logical
+/// pixels the geometry is in — what turns a flat fill into a gradient.
+///
+/// The mesh pipeline interpolates vertex color across a triangle affinely, so
+/// a shade that is itself affine in position (a linear gradient) is reproduced
+/// *exactly*, not approximated: sampling it at the three corners and letting
+/// the rasterizer fill in is the same function. That is the whole reason
+/// gradients are per-vertex color rather than a band stack — 32 stacked
+/// translucent rects both cost more and blend wrong.
+pub type Shade<'a> = &'a dyn Fn(f32, f32) -> Color;
+
+/// [`triangle`] with a per-vertex color.
+fn triangle_shaded(buf: &mut Vec<Vertex>, a: (f32, f32), b: (f32, f32), c: (f32, f32), shade: Shade) {
+    buf.push(Vertex::new(a, shade(a.0, a.1)));
+    buf.push(Vertex::new(b, shade(b.0, b.1)));
+    buf.push(Vertex::new(c, shade(c.0, c.1)));
+}
+
+/// [`rect`] with a per-vertex color.
+fn rect_shaded(buf: &mut Vec<Vertex>, x: f32, y: f32, w: f32, h: f32, shade: Shade) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let (x1, y1) = (x + w, y + h);
+    triangle_shaded(buf, (x, y), (x1, y), (x, y1), shade);
+    triangle_shaded(buf, (x1, y), (x1, y1), (x, y1), shade);
+}
+
+/// [`rect_rounded`] with a per-vertex color — the one definition of the
+/// rounded-rect silhouette, which the flat fill and the gradient both use so
+/// they cannot drift apart.
+pub fn rect_rounded_shaded(
+    buf: &mut Vec<Vertex>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    shade: Shade,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let r = radius.min(w * 0.5).min(h * 0.5);
+    if r <= 0.0 {
+        rect_shaded(buf, x, y, w, h, shade);
+        return;
+    }
     // Straight interior: center column (full height) + left/right side strips.
-    rect(buf, x + r, y, w - 2.0 * r, h, color);
-    rect(buf, x, y + r, r, h - 2.0 * r, color);
-    rect(buf, x + w - r, y + r, r, h - 2.0 * r, color);
+    rect_shaded(buf, x + r, y, w - 2.0 * r, h, shade);
+    rect_shaded(buf, x, y + r, r, h - 2.0 * r, shade);
+    rect_shaded(buf, x + w - r, y + r, r, h - 2.0 * r, shade);
     // Corner fans, each sweeping a quadrant (screen space, y grows downward).
     let pi = std::f32::consts::PI;
-    corner_fan(buf, x + r, y + r, r, pi, color); // top-left
-    corner_fan(buf, x + w - r, y + r, r, 1.5 * pi, color); // top-right
-    corner_fan(buf, x + w - r, y + h - r, r, 0.0, color); // bottom-right
-    corner_fan(buf, x + r, y + h - r, r, 0.5 * pi, color); // bottom-left
+    corner_fan(buf, x + r, y + r, r, pi, shade); // top-left
+    corner_fan(buf, x + w - r, y + r, r, 1.5 * pi, shade); // top-right
+    corner_fan(buf, x + w - r, y + h - r, r, 0.0, shade); // bottom-right
+    corner_fan(buf, x + r, y + h - r, r, 0.5 * pi, shade); // bottom-left
 }
 
 /// Append a quarter-circle triangle fan of radius `r` centered at (`cx`, `cy`),
 /// sweeping `FRAC_PI_2` from `start` radians — one rounded corner.
-fn corner_fan(buf: &mut Vec<Vertex>, cx: f32, cy: f32, r: f32, start: f32, color: Color) {
+fn corner_fan(buf: &mut Vec<Vertex>, cx: f32, cy: f32, r: f32, start: f32, shade: Shade) {
     let segments = (circle_segments(r) / 4).max(2);
     let center = (cx, cy);
     let mut prev = (cx + r * start.cos(), cy + r * start.sin());
     for i in 1..=segments {
         let theta = start + std::f32::consts::FRAC_PI_2 * (i as f32) / (segments as f32);
         let p = (cx + r * theta.cos(), cy + r * theta.sin());
-        triangle(buf, center, prev, p, color);
+        triangle_shaded(buf, center, prev, p, shade);
         prev = p;
     }
 }
@@ -597,9 +648,324 @@ pub fn rect_rounded_outline(
     }
 }
 
+/// Linear interpolation between two colors, component-wise including alpha.
+///
+/// In sRGB space, deliberately: the renderer composites gamma-encoded values
+/// (see [`garden_render::Color`]), and a gradient that interpolated in linear
+/// light would not match the ramp CSS, Figma or Core Graphics draw between the
+/// same two hex codes.
+pub fn mix(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let l = |x: f32, y: f32| x + (y - x) * t;
+    Color::rgba(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b), l(a.a, b.a))
+}
+
+/// Append a rectangle — optionally `radius`-rounded — filled with a two-stop
+/// linear gradient from `c0` to `c1` along `angle` (radians, clockwise from
+/// +x with screen y down, the convention the whole draw protocol uses).
+///
+/// The gradient axis runs through the rect's center and is scaled so `c0`
+/// lands exactly on the first corner the axis reaches and `c1` on the last —
+/// CSS's `linear-gradient` geometry. Because the color is affine in position
+/// and the rasterizer interpolates affinely, the ramp is exact everywhere, not
+/// banded: this is one rounded rect's worth of triangles, not a stack of them.
+///
+/// Multi-stop gradients arrive from the prelude already subdivided into
+/// adjacent bands, each one a call to this, so two stops is the whole
+/// primitive.
+pub fn rect_gradient(
+    buf: &mut Vec<Vertex>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    c0: Color,
+    c1: Color,
+    angle: f32,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let (dx, dy) = (angle.cos(), angle.sin());
+    let (cx, cy) = (x + w * 0.5, y + h * 0.5);
+    // Length of the rect's projection onto the gradient axis: the axis spans
+    // the whole shape, so t is 0 at one extreme corner and 1 at the other.
+    let len = (w * dx).abs() + (h * dy).abs();
+    if len <= f32::EPSILON {
+        rect_rounded_shaded(buf, x, y, w, h, radius, &|_, _| c0);
+        return;
+    }
+    rect_rounded_shaded(buf, x, y, w, h, radius, &|px, py| {
+        mix(c0, c1, 0.5 + ((px - cx) * dx + (py - cy) * dy) / len)
+    });
+}
+
+/// Append a disc filled with a radial gradient: `c0` at the center fading to
+/// `c1` at `radius`. The fan's hub carries `c0` and every rim vertex `c1`, so
+/// the ramp is one non-overlapping layer — a translucent glow composites once
+/// rather than accumulating over itself the way stacked discs would.
+pub fn circle_gradient(buf: &mut Vec<Vertex>, cx: f32, cy: f32, radius: f32, c0: Color, c1: Color) {
+    if radius <= 0.0 {
+        return;
+    }
+    let segments = circle_segments(radius);
+    let center = (cx, cy);
+    let mut prev = (cx + radius, cy);
+    for i in 1..=segments {
+        let theta = std::f32::consts::TAU * (i as f32) / (segments as f32);
+        let p = (cx + radius * theta.cos(), cy + radius * theta.sin());
+        buf.push(Vertex::new(center, c0));
+        buf.push(Vertex::new(prev, c1));
+        buf.push(Vertex::new(p, c1));
+        prev = p;
+    }
+}
+
+/// How many concentric rings the shadow's falloff is sampled at. The alpha
+/// ramp is smooth (below), so it has to be *sampled*: within one ring the
+/// rasterizer interpolates linearly, and 12 chords are enough that the
+/// piecewise-linear stand-in is indistinguishable from the curve at the blur
+/// radii a UI actually uses.
+const SHADOW_RINGS: usize = 12;
+
+/// Append a soft drop shadow as **one** non-overlapping mesh with per-vertex
+/// alpha: a solid core (the rect offset by `dx`/`dy` and grown by `spread`,
+/// with its corner radius grown to match) surrounded by a ring that fades to
+/// fully transparent `blur` px further out.
+///
+/// Non-overlap is what makes this composite correctly. A shadow is translucent
+/// by construction, so the naive implementation — N nested translucent rects —
+/// blends each one over the last and the middle of the falloff comes out far
+/// darker than either end, while the whole thing costs N draws' worth of
+/// overdraw. Here every ring is the region *between* two expansions of the
+/// same silhouette, sampled at corresponding points, so the rings tile the
+/// falloff exactly: each pixel is covered once, and one alpha-blended pass
+/// puts the shadow down.
+///
+/// The falloff is a smoothstep rather than a straight line. A real box-shadow
+/// is a Gaussian blur of the silhouette, whose profile has zero slope at both
+/// ends; a linear ramp has a visible crease where it meets the solid core and
+/// another where it reaches zero. `3u^2 - 2u^3` has neither and costs nothing,
+/// since the ring alphas are computed once on the CPU.
+pub fn shadow(
+    buf: &mut Vec<Vertex>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    blur: f32,
+    spread: f32,
+    dx: f32,
+    dy: f32,
+    color: Color,
+) {
+    // The core: the source rect displaced and grown. A spread that eats the
+    // rect entirely leaves nothing to cast.
+    let (cw, ch) = (w + 2.0 * spread, h + 2.0 * spread);
+    if cw <= 0.0 || ch <= 0.0 {
+        return;
+    }
+    let (cx0, cy0) = (x + dx - spread, y + dy - spread);
+    // Corner radius grows with the spread, the way CSS's does, and is clamped
+    // so it never exceeds half the (grown) box.
+    let r = (radius + spread).max(0.0).min(cw * 0.5).min(ch * 0.5);
+    // The four corner centers stay fixed as the silhouette is expanded, which
+    // is what makes ring i and ring i+1 correspond point for point.
+    let centers = [
+        (cx0 + r, cy0 + r),                // top-left
+        (cx0 + cw - r, cy0 + r),           // top-right
+        (cx0 + cw - r, cy0 + ch - r),      // bottom-right
+        (cx0 + r, cy0 + ch - r),           // bottom-left
+    ];
+    let blur = blur.max(0.0);
+    // Segments per corner, sized from the outermost silhouette so the widest
+    // ring is smooth; every ring uses the same count, since they must pair up.
+    let seg = (circle_segments(r + blur) / 4).max(2);
+
+    // The solid core, as a fan from the box's center out to the silhouette.
+    let hub = (cx0 + cw * 0.5, cy0 + ch * 0.5);
+    let mut inner = silhouette(&centers, r, seg);
+    for i in 0..inner.len() {
+        let (a, b) = (inner[i], inner[(i + 1) % inner.len()]);
+        buf.push(Vertex::new(hub, color));
+        buf.push(Vertex::new(a, color));
+        buf.push(Vertex::new(b, color));
+    }
+    if blur <= 0.0 {
+        return;
+    }
+
+    // …then the falloff, ring by ring.
+    let mut inner_alpha = 1.0;
+    for i in 1..=SHADOW_RINGS {
+        let u = i as f32 / SHADOW_RINGS as f32;
+        let outer = silhouette(&centers, r + u * blur, seg);
+        let outer_alpha = 1.0 - u * u * (3.0 - 2.0 * u);
+        let ci = Color::rgba(color.r, color.g, color.b, color.a * inner_alpha);
+        let co = Color::rgba(color.r, color.g, color.b, color.a * outer_alpha);
+        for j in 0..inner.len() {
+            let k = (j + 1) % inner.len();
+            buf.push(Vertex::new(inner[j], ci));
+            buf.push(Vertex::new(outer[j], co));
+            buf.push(Vertex::new(outer[k], co));
+            buf.push(Vertex::new(inner[j], ci));
+            buf.push(Vertex::new(outer[k], co));
+            buf.push(Vertex::new(inner[k], ci));
+        }
+        inner = outer;
+        inner_alpha = outer_alpha;
+    }
+}
+
+/// The outline of a rounded rect at corner radius `r`, walked clockwise from
+/// the top-left corner, with `seg` samples per corner.
+///
+/// `centers` are the four corner centers in clockwise order starting top-left;
+/// they do **not** move with `r`, so two calls differing only in `r` return
+/// point lists that correspond one-to-one — the property [`shadow`] leans on
+/// to tile its falloff without a gap or an overlap.
+fn silhouette(centers: &[(f32, f32); 4], r: f32, seg: usize) -> Vec<(f32, f32)> {
+    let quarter = std::f32::consts::FRAC_PI_2;
+    let mut out = Vec::with_capacity(4 * seg);
+    for (corner, &(ccx, ccy)) in centers.iter().enumerate() {
+        // Screen space, y down: the top-left corner's arc runs 180°→270°.
+        let start = std::f32::consts::PI + quarter * corner as f32;
+        for i in 0..seg {
+            let theta = start + quarter * (i as f32) / ((seg - 1).max(1) as f32);
+            out.push((ccx + r * theta.cos(), ccy + r * theta.sin()));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The gradient's stops land on the extreme corners of the shape, so a
+    /// caller's `c0` and `c1` are actually reachable rather than being the
+    /// midpoints of the first and last band.
+    #[test]
+    fn a_linear_gradient_reaches_both_stops() {
+        let (a, b) = (Color::rgb(0.0, 0.0, 0.0), Color::rgb(1.0, 1.0, 1.0));
+        let mut buf = Vec::new();
+        rect_gradient(&mut buf, 0.0, 0.0, 100.0, 40.0, 0.0, a, b, 0.0);
+        let left = buf.iter().find(|v| v.pos.0 == 0.0).expect("a left edge vertex");
+        let right = buf.iter().find(|v| v.pos.0 == 100.0).expect("a right edge vertex");
+        assert_eq!(left.color, a);
+        assert_eq!(right.color, b);
+    }
+
+    /// …and the angle actually turns it: at 90° (screen y down) the ramp runs
+    /// top-to-bottom, so the two top corners agree with each other and differ
+    /// from the bottom ones.
+    #[test]
+    fn a_linear_gradient_follows_its_angle() {
+        let (a, b) = (Color::rgb(0.0, 0.0, 0.0), Color::rgb(1.0, 1.0, 1.0));
+        let mut buf = Vec::new();
+        rect_gradient(
+            &mut buf,
+            0.0,
+            0.0,
+            100.0,
+            40.0,
+            0.0,
+            a,
+            b,
+            std::f32::consts::FRAC_PI_2,
+        );
+        let at = |x: f32, y: f32| {
+            buf.iter()
+                .find(|v| v.pos == (x, y))
+                .unwrap_or_else(|| panic!("no vertex at {x},{y}"))
+                .color
+                .r
+        };
+        // `cos(FRAC_PI_2)` is not exactly zero, so the endpoints land a
+        // rounding error short of the stops rather than on them.
+        assert!(at(0.0, 0.0) < 1e-5);
+        assert!(at(100.0, 0.0) < 1e-5);
+        assert!(at(0.0, 40.0) > 1.0 - 1e-5);
+    }
+
+    /// The radial gradient is a fan, so its hub is the only vertex carrying
+    /// `c0` and every rim vertex carries `c1` — one non-overlapping layer, not
+    /// a stack of translucent discs.
+    #[test]
+    fn a_radial_gradient_runs_hub_to_rim() {
+        let (a, b) = (Color::rgba(1.0, 1.0, 1.0, 1.0), Color::rgba(1.0, 1.0, 1.0, 0.0));
+        let mut buf = Vec::new();
+        circle_gradient(&mut buf, 50.0, 50.0, 20.0, a, b);
+        assert!(buf.len() >= 3 && buf.len() % 3 == 0);
+        for tri in buf.chunks_exact(3) {
+            assert_eq!(tri[0].pos, (50.0, 50.0), "the hub leads every triangle");
+            assert_eq!(tri[0].color, a);
+            assert_eq!(tri[1].color, b);
+            assert_eq!(tri[2].color, b);
+        }
+    }
+
+    /// The shadow's falloff must reach fully transparent, or the mesh's outer
+    /// boundary is a visible hard edge — the exact artifact the ring stack
+    /// exists to avoid.
+    #[test]
+    fn the_shadow_fades_to_nothing_at_the_blur_radius() {
+        let mut buf = Vec::new();
+        let c = Color::rgba(0.0, 0.0, 0.0, 0.5);
+        shadow(&mut buf, 20.0, 20.0, 80.0, 40.0, 8.0, 16.0, 0.0, 0.0, 0.0, c);
+        let alphas: Vec<f32> = buf.iter().map(|v| v.color.a).collect();
+        let max = alphas.iter().cloned().fold(0.0f32, f32::max);
+        let min = alphas.iter().cloned().fold(1.0f32, f32::min);
+        assert!((max - 0.5).abs() < 1e-6, "the core keeps the full alpha");
+        assert!(min.abs() < 1e-6, "the outer rim reaches zero");
+    }
+
+    /// The falloff is a smoothstep, which is what makes it read as a blur
+    /// rather than a cone: the ramp's midpoint sits at half alpha and its two
+    /// ends flatten out, so neither the join with the solid core nor the outer
+    /// rim shows a crease.
+    #[test]
+    fn the_shadow_falloff_is_smooth_at_both_ends() {
+        let mut buf = Vec::new();
+        let c = Color::rgba(0.0, 0.0, 0.0, 1.0);
+        shadow(&mut buf, 0.0, 0.0, 60.0, 60.0, 0.0, 20.0, 0.0, 0.0, 0.0, c);
+        // The distinct ring alphas, brightest first.
+        let mut levels: Vec<f32> = buf.iter().map(|v| v.color.a).collect();
+        levels.sort_by(|a, b| b.partial_cmp(a).expect("no NaN alphas"));
+        levels.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        assert_eq!(levels.len(), SHADOW_RINGS + 1, "one alpha per ring boundary");
+        // Halfway out, a smoothstep is at exactly 0.5; a straight line would
+        // be too, so what distinguishes them is the ends — the first step down
+        // from 1.0 must be smaller than the step across the middle.
+        let mid = levels[SHADOW_RINGS / 2];
+        assert!((mid - 0.5).abs() < 1e-6, "midpoint is half alpha, got {mid}");
+        let first_step = levels[0] - levels[1];
+        let middle_step = levels[SHADOW_RINGS / 2] - levels[SHADOW_RINGS / 2 + 1];
+        assert!(
+            first_step < middle_step * 0.5,
+            "the ramp should flatten near the core ({first_step} vs {middle_step})"
+        );
+    }
+
+    /// Ring `i`'s outer boundary is ring `i+1`'s inner boundary, point for
+    /// point. That is the whole reason a translucent shadow composites evenly:
+    /// overlapping rings would double-blend and darken the middle of the
+    /// falloff, gaps would show the background through it.
+    #[test]
+    fn the_shadow_rings_tile_without_gap_or_overlap() {
+        let centers = [(10.0, 10.0), (50.0, 10.0), (50.0, 40.0), (10.0, 40.0)];
+        let inner = silhouette(&centers, 6.0, 5);
+        let outer = silhouette(&centers, 9.0, 5);
+        assert_eq!(inner.len(), outer.len());
+        for (a, b) in inner.iter().zip(&outer) {
+            // Corresponding points differ by exactly the radius step, along
+            // the same ray from the same corner center.
+            let d = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+            assert!((d - 3.0).abs() < 1e-4, "expected a 3px step, got {d}");
+        }
+    }
 
     fn col() -> Color {
         Color::rgb(1.0, 0.0, 0.0)

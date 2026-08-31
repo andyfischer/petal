@@ -360,7 +360,22 @@ impl TextStack {
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let viewport = Viewport::new(device, &cache);
-        let atlas = TextAtlas::new(device, queue, &cache, surface_format);
+        // `ColorMode::Web` is the whole of glyphon's half of the sRGB
+        // compositing contract (see [`crate::Color`]): it keeps a run's color
+        // gamma-encoded through the vertex stage and stores colored glyphs in
+        // a non-sRGB texture, so a glyph blends against the target in exactly
+        // the space the quad and mesh pipelines blend in. Left at the default
+        // (`Accurate`) glyphon linearizes the color while the shapes no longer
+        // do, and translucent text drifts away from a translucent rect of the
+        // same color — the failure that is hardest to see and hardest to
+        // explain once seen.
+        let atlas = TextAtlas::with_color_mode(
+            device,
+            queue,
+            &cache,
+            surface_format,
+            glyphon::ColorMode::Web,
+        );
 
         let cell_size = measure_cell(&mut font_system, db.mono.as_deref());
 

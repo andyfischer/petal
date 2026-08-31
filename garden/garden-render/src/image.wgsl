@@ -1,6 +1,9 @@
 struct Globals {
     screen_size: vec2<f32>,
-    _pad: vec2<f32>,
+    // Physical pixels per logical pixel, for the clip mask's one-device-pixel
+    // antialiasing feather.
+    scale: f32,
+    _pad: f32,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;

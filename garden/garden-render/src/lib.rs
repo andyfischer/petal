@@ -40,9 +40,20 @@ use text::{TextRun, TextStack};
 use winit::window::Window;
 
 /// An RGBA color with components in `0.0..=1.0`, in **sRGB space** (the
-/// values you'd read off a hex color picker). The renderer converts to
-/// linear space before writing to the sRGB surface, so colors appear on
-/// screen exactly as specified.
+/// values you'd read off a hex color picker).
+///
+/// These values reach the render target unchanged: the scene renders into a
+/// target whose format holds sRGB-*encoded* bytes without a transfer function
+/// (`Rgba8Unorm`/`Bgra8Unorm`, not the `…Srgb` pair), so `ALPHA_BLENDING`
+/// composites gamma-encoded values — the same space CSS, Core Graphics and
+/// Figma blend in. Black at 50% over white is `#808080` here, as it is
+/// everywhere a designer would check it.
+///
+/// The renderer used to linearize on the CPU and let the sRGB target re-encode
+/// on store, which is physically correct light-mixing but matches nothing a
+/// panel author compares against: the same 50% black came out `#bbbbbb`, and
+/// every translucent overlay, hairline and shadow in the ecosystem was tuned
+/// against a value that disagreed with the design tool it came from.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: f32,
@@ -62,23 +73,11 @@ impl Color {
         Color { r, g, b, a }
     }
 
-    /// RGB in linear space (alpha unchanged), for writing to an sRGB target.
-    pub(crate) fn to_linear(self) -> [f32; 4] {
-        [
-            srgb_to_linear(self.r),
-            srgb_to_linear(self.g),
-            srgb_to_linear(self.b),
-            self.a,
-        ]
-    }
-}
-
-/// One sRGB channel to linear (the exact piecewise transfer function).
-pub(crate) fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
+    /// The four components as the shaders want them — sRGB-encoded, straight
+    /// through. Named rather than inlined so the (deliberate) absence of a
+    /// transfer function is visible at every call site.
+    pub(crate) fn to_array(self) -> [f32; 4] {
+        [self.r, self.g, self.b, self.a]
     }
 }
 
@@ -104,17 +103,73 @@ impl Rect {
     }
 }
 
-/// One vertex of a [`Primitive::Mesh`]: a position in logical pixels and an
-/// sRGB color (the renderer linearizes before writing, exactly like quads).
+/// A rounded-rectangle mask applied per *fragment*, on top of the rectangular
+/// GPU scissor.
+///
+/// A scissor rect cannot express a rounded corner — it is four integer edges —
+/// so a panel that clips its contents to a rounded card had, until this, no
+/// way to say so. The mask closes that: the fragment shader evaluates the
+/// signed distance to the rounded rect and feathers coverage across one
+/// physical pixel at the boundary, which is why a circular crop comes out with
+/// a clean antialiased edge rather than a staircase.
+///
+/// [`NONE`](ClipMask::NONE) — a zero radius — means "no mask", and costs one
+/// compare in the shader: everything Garden itself draws stays on the cheap
+/// path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClipMask {
+    pub rect: Rect,
+    /// Corner radius in logical pixels, clamped in the shader to half the
+    /// shorter side. Zero (or less) disables the mask.
+    pub radius: f32,
+}
+
+impl ClipMask {
+    /// No mask: the rectangular scissor is the whole of the clipping.
+    pub const NONE: ClipMask = ClipMask {
+        rect: Rect::new(0.0, 0.0, 0.0, 0.0),
+        radius: 0.0,
+    };
+
+    /// Mask to `rect` with `radius`-px corners.
+    pub const fn rounded(rect: Rect, radius: f32) -> ClipMask {
+        ClipMask { rect, radius }
+    }
+
+    /// Whether this mask does nothing.
+    pub fn is_none(self) -> bool {
+        self.radius <= 0.0
+    }
+}
+
+/// One vertex of a [`Primitive::Mesh`]: a position in logical pixels, an sRGB
+/// color, and the rounded-rect mask its fragments are cut against.
+///
+/// The mask rides on the vertex rather than on the primitive because every
+/// vertex of a mesh shares it: the caller flushes a fresh mesh whenever the
+/// clip changes, so stamping it here is free of extra plumbing and cannot get
+/// out of step with the geometry it applies to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
     pub pos: (f32, f32),
     pub color: Color,
+    pub mask: ClipMask,
 }
 
 impl Vertex {
+    /// A vertex with no rounded mask — the rectangular clip on its
+    /// [`Primitive::Mesh`] is the whole of the clipping.
     pub const fn new(pos: (f32, f32), color: Color) -> Vertex {
-        Vertex { pos, color }
+        Vertex {
+            pos,
+            color,
+            mask: ClipMask::NONE,
+        }
+    }
+
+    /// A vertex whose fragments are additionally cut against `mask`.
+    pub const fn masked(pos: (f32, f32), color: Color, mask: ClipMask) -> Vertex {
+        Vertex { pos, color, mask }
     }
 }
 
@@ -173,11 +228,17 @@ pub enum Primitive {
         size: f32,
         style: TextStyle,
     },
-    /// A flat-shaded triangle list (`vertices.len()` is a multiple of 3),
-    /// scissored to `clip`. The general geometry primitive: callers tessellate
+    /// A triangle list (`vertices.len()` is a multiple of 3), scissored to
+    /// `clip`. The general geometry primitive: callers tessellate
     /// lines/circles/polygons into triangles on the CPU. Unlike [`Quad`],
     /// clipping is a real GPU scissor — a triangle can't be CPU-clipped to a
     /// rect — so a caller that needs containment passes the bounding `clip`.
+    ///
+    /// Colour is **per vertex** and interpolated affinely, which is what makes
+    /// a gradient one shape's worth of triangles rather than a stack of bands,
+    /// and a soft shadow one non-overlapping mesh rather than N translucent
+    /// layers. A vertex also carries a [`ClipMask`], for the rounded corners
+    /// the rectangular scissor cannot express.
     Mesh { vertices: Vec<Vertex>, clip: Rect },
     /// A PNG bitmap loaded from `source`, scaled to `rect`, and scissored to
     /// `clip`. Relative sources resolve from Garden's working directory.
@@ -494,6 +555,7 @@ impl GpuCore {
             &self.device,
             &self.queue,
             logical,
+            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Quad { rect, color } => Some((rect, color)),
                 Primitive::Text { .. } | Primitive::Mesh { .. } | Primitive::Image { .. } => None,
@@ -504,6 +566,7 @@ impl GpuCore {
             &self.device,
             &self.queue,
             logical,
+            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Mesh { vertices, clip } => Some((vertices.as_slice(), clip)),
                 Primitive::Quad { .. } | Primitive::Text { .. } | Primitive::Image { .. } => None,
@@ -514,6 +577,7 @@ impl GpuCore {
             &self.device,
             &self.queue,
             logical,
+            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Image {
                     rect,
@@ -593,10 +657,11 @@ impl GpuCore {
                 depth_slice: None,
                 resolve_target,
                 ops: wgpu::Operations {
-                    // Clear colors are written to the sRGB target as
-                    // linear values, so convert like everything else.
+                    // The target holds sRGB-encoded bytes with no transfer
+                    // function, so the clear color goes in as written — the
+                    // same space every pipeline blends in.
                     load: wgpu::LoadOp::Clear({
-                        let [r, g, b, a] = bg.to_linear();
+                        let [r, g, b, a] = bg.to_array();
                         wgpu::Color {
                             r: r as f64,
                             g: g as f64,
@@ -850,13 +915,20 @@ impl Renderer {
         // (possible when the surface didn't pick the adapter, as in
         // `with_context`).
         let caps = surface.get_capabilities(&context.adapter);
+        // Prefer a **non**-sRGB format: the scene composites in the
+        // gamma-encoded space (see [`Color`]), which means the target must
+        // store what the shaders write rather than apply a transfer function
+        // on the way in. A surface that only offers the sRGB variant is still
+        // usable — configure it as sRGB but render through a view in its
+        // non-sRGB twin, which is exactly what `view_formats` is for.
         let format = caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .or_else(|| caps.formats.first().copied())
             .ok_or_else(|| "surface is incompatible with the GPU adapter".to_string())?;
+        let view_format = format.remove_srgb_suffix();
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -864,7 +936,10 @@ impl Renderer {
             height: physical_size.height.max(1),
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Opaque,
-            view_formats: vec![],
+            view_formats: match view_format == format {
+                true => vec![],
+                false => vec![view_format],
+            },
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&context.device, &config);
@@ -872,11 +947,11 @@ impl Renderer {
         let core = GpuCore::new(
             context.device.clone(),
             context.queue.clone(),
-            format,
+            view_format,
             config.width,
             config.height,
             window.scale_factor(),
-            supported_samples(&context.adapter, format),
+            supported_samples(&context.adapter, view_format),
         );
 
         Ok(Renderer {
@@ -960,9 +1035,12 @@ impl Renderer {
             }
         };
 
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        // Through the non-sRGB view (see `configure_for_window`), so the pass
+        // writes sRGB-encoded bytes with no transfer function applied.
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.core.format),
+            ..Default::default()
+        });
         let mut encoder =
             self.core
                 .device
@@ -1044,11 +1122,11 @@ impl HeadlessRenderer {
             core: GpuCore::new(
                 context.device.clone(),
                 context.queue.clone(),
-                wgpu::TextureFormat::Rgba8UnormSrgb,
+                wgpu::TextureFormat::Rgba8Unorm,
                 width.max(1),
                 height.max(1),
                 scale_factor,
-                supported_samples(&context.adapter, wgpu::TextureFormat::Rgba8UnormSrgb),
+                supported_samples(&context.adapter, wgpu::TextureFormat::Rgba8Unorm),
             ),
         })
     }

@@ -11,7 +11,13 @@
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
     screen_size: [f32; 2],
-    _pad: [f32; 2],
+    /// Physical pixels per logical pixel. The vertex stage doesn't need it —
+    /// it works in logical units throughout — but the fragment stage does: a
+    /// [`crate::ClipMask`]'s antialiased edge has to feather across one
+    /// *device* pixel, or a rounded crop is soft on a Retina display and hard
+    /// on a 1x one.
+    scale: f32,
+    _pad: f32,
 }
 
 /// The globals uniform buffer plus the bind group that exposes it — always
@@ -40,7 +46,7 @@ impl Globals {
             label: Some(&format!("{label} bind group layout")),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -71,12 +77,13 @@ impl Globals {
         &self.layout
     }
 
-    /// Upload the logical screen size for this frame (floored to 1×1 so the
-    /// shader never divides by zero).
-    pub fn write(&self, queue: &wgpu::Queue, logical_size: (f32, f32)) {
+    /// Upload the logical screen size and scale factor for this frame (the
+    /// size floored to 1×1 so the shader never divides by zero).
+    pub fn write(&self, queue: &wgpu::Queue, logical_size: (f32, f32), scale: f32) {
         let uniforms = Uniforms {
             screen_size: [logical_size.0.max(1.0), logical_size.1.max(1.0)],
-            _pad: [0.0; 2],
+            scale: scale.max(f32::MIN_POSITIVE),
+            _pad: 0.0,
         };
         queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(&uniforms));
     }

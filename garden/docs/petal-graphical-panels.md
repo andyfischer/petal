@@ -75,8 +75,9 @@ PaneContent::Panel { script }  ──►  Pane { panel: Some(PanelView) }
 A panel draws in **panel-local logical pixels**: `(0,0)` is the pane's top-left,
 and `screen_width()`/`screen_height()` report the pane's current size (rebound
 every frame, so a resize just changes the numbers). Colors are `0–255` integer
-RGB (petal-sdl convention), converted to Garden's sRGB `Color` when translated to
-primitives; the renderer then linearizes as usual (`Color::to_linear`).
+RGB (petal-sdl convention), converted to Garden's sRGB `Color` when translated
+to primitives — and they stay sRGB all the way to the pixel (see "Alpha
+composites in sRGB space" below).
 
 The pane is **not** the window: it is inset by the tab strip, the status bar and
 a small gutter (a `1440x900` window gives a single pane `x:6 y:38 w:1428
@@ -87,26 +88,41 @@ size. In particular `POST /mouse` takes **window** coordinates while
 `mouse_x()`/`mouse_y()` report **pane-local** ones; the difference is that
 origin.
 
-### Alpha composites in linear space
+### Alpha composites in sRGB space, the way CSS does
 
-Colors are converted sRGB → linear before the GPU blends them
-(`BlendState::ALPHA_BLENDING` against an sRGB target), so a low `a` reads far
-brighter than its nominal percentage. Measured on a `#12161e` ground with white:
+`a` means what a design tool says it means. The scene renders into a target
+that holds sRGB-*encoded* bytes with no transfer function (`Rgba8Unorm`, not
+`Rgba8UnormSrgb`), so `BlendState::ALPHA_BLENDING` mixes the gamma-encoded
+values — the same arithmetic CSS, Core Graphics and Figma do. Black over white:
 
 | `a` | nominal | rendered |
 |---|---|---|
-| 5 | 2% | `#2c2e32` |
-| 10 | 4% | `#3c3d40` |
-| 20 | 8% | `#525355` |
-| 51 | 20% | `#7d7d7e` |
-| 128 | 50% | `#bcbdbd` |
+| 26 | 10% | `#e6e6e6` |
+| 64 | 25% | `#bfbfbf` |
+| 128 | 50% | `#808080` |
 
-`draw_rect(cell, #ffffff, 10)` is therefore a plainly visible grey block, not a
-whisper — panel authors have repeatedly read `a: 10` as a subtle hover tint and
-gone looking for a bug elsewhere. For a genuinely subtle tint, either use a
-single-digit `a` or compute an opaque color with the prelude's `mix` /
-`lerp_color`, which is also idempotent where shapes overlap (alpha is not: two
-50% fills over one pixel read 75%).
+i.e. `255 - a` exactly, and a color picked in a design tool at 20% opacity
+lands on the pixel the tool showed. Garden's own tests pin those three numbers
+(`garden-render/tests/srgb_compositing.rs`).
+
+Text is included: glyphon runs in its `ColorMode::Web`, so a translucent label
+lands on the same gray as a translucent rect of the same color. It would not
+if it were left on glyphon's default, and the mismatch is nearly invisible
+per-pixel while being completely wrong in aggregate.
+
+**This changed in 2026-08.** The renderer used to linearize every color on the
+CPU and let an sRGB target re-encode on store, blending in linear light: 50%
+black over white came out `#bcbdbd`, and `draw_rect(cell, #ffffff, 10)` was a
+plainly visible grey block rather than the whisper it names. Panel authors read
+`a: 10` as a subtle hover tint and went looking for a bug elsewhere. **Any
+translucent color that was hand-tuned against the old behavior is now weaker
+than it was** — roughly, an old `a` of *n* is a new `a` of somewhere near
+`255 * ((n/255)^(1/2.2))`, but the honest advice is to re-pick the value
+against the design it came from rather than convert it.
+
+Overlapping alpha still is not idempotent — two 50% fills over one pixel read
+75% — so for a tint that must survive being drawn twice, compute an opaque
+color with the prelude's `mix` / `lerp_color`.
 
 ## Animation: sleep/wake heuristics
 
@@ -264,12 +280,30 @@ Four of these exist because the naive composition of the older calls is
   stack of concentric translucent rounded rects double-composites every ring
   over the ones inside it, so the falloff is wrong and every seam shows — the
   same non-idempotence that makes `draw_polyline` necessary. `draw_shadow` is
-  tessellated by `petal_ui::tess::shadow_mesh` as **one** mesh: a solid core
-  plus a ring whose per-vertex alpha runs from 1 at the shape boundary to 0 at
-  `blur` px out. Both rings are the same rounded rect sampled at radius `r` and
-  `r + blur`, so their vertices correspond one-to-one and the quads between
-  them tile the ring with no gap and no overlap. It is not a blur pass, and it
-  needs no render target.
+  tessellated as **one** mesh: a solid core (the rect displaced by `dx`/`dy`
+  and grown by `spread`) plus a falloff whose per-vertex alpha runs from 1 at
+  the core boundary to 0 at `blur` px out. Every ring is the region *between*
+  two expansions of the same rounded silhouette about fixed corner centers, so
+  corresponding vertices pair up one-to-one and the rings tile the falloff with
+  no gap and no overlap. It is not a blur pass, and it needs no render target.
+
+  Garden's renderer samples that falloff at twelve rings with a **smoothstep**
+  alpha ramp (`3u^2 - 2u^3`) rather than a straight line: a real box-shadow is a
+  Gaussian blur of the silhouette and its profile flattens at both ends, where
+  a linear ramp leaves a visible crease against the solid core and another
+  where it reaches zero. `petal_ui::tess::shadow_mesh` — what petal-sdl and the
+  other hosts rasterize — still uses the single-ring linear ramp, so a shadow
+  is slightly harder there than in Garden. Same geometry, same extent; only the
+  curve differs.
+
+**Gradients** go through the same mesh pipeline as everything else, with
+per-vertex colour. That is not an optimization detail but the reason they are
+exact: the rasterizer interpolates vertex colour affinely, and a two-stop
+linear gradient *is* an affine function of position, so sampling it at the
+corners of one rounded rect's worth of triangles reproduces it everywhere.
+There are no bands to see and no stacked translucent layers to double-blend.
+`linear_gradient`'s three-or-more-stop form subdivides into adjacent two-stop
+bands, each one exact within itself.
 
 plus the input/timing reads `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
@@ -441,11 +475,21 @@ The pane rect is the base of the stack and is never popped, so an unmatched
 left pushed when the frame ends simply ends with it.
 
 Both forms take an optional trailing `radius` to round the clip's corners.
-Garden's GPU scissor is rectangular, so today the radius is carried through the
-command and clipped square — a degradation, never a dropped clip. **It applies to everything drawn under it** —
-fills, lines, images, `draw_text`, and the text inside a `text_view` /
-`edit_view` region declared while it is active (a region carries its own
-interior clip; the two are intersected).
+**It applies to everything drawn under it** — fills, lines, images,
+`draw_text`, and the text inside a `text_view` / `edit_view` region declared
+while it is active (a region carries its own interior clip; the two are
+intersected).
+
+The rounding, though, reaches **shapes only**. A GPU scissor is four integer
+edges and cannot express a corner, so a rounded clip is carried into the mesh
+fragment shader as a rounded-rect SDF and feathered across one physical pixel —
+which is what makes a circular crop come out with a clean antialiased edge
+rather than a staircase. Text (glyphon, whose `TextBounds` is a rectangle) and
+images (`Primitive::Image`, which has no mask field yet) are still cut to the
+clip's **bounding rect**. That is a degradation, never a dropped clip: nothing
+escapes the rect either way. Only one rounded mask is in force at a time — the
+innermost — and nesting a *square* `clip_push` inside a rounded one keeps the
+rounding, since un-rounding the card would be the surprising reading.
 
 Text is cut, not dropped: a run that straddles the clip's bottom edge renders
 its top half, which is exactly what a scrolling list wants at its viewport

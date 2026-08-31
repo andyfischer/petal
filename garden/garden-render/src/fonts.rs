@@ -99,7 +99,51 @@ fn registry() -> &'static Mutex<Registry> {
 /// a script that names a face this machine lacks measures and draws the same
 /// thing rather than disagreeing with itself.
 pub fn resolve(spec: &str) -> FontId {
-    try_resolve(spec).unwrap_or(FontId::MONO)
+    match try_resolve(spec) {
+        Some(id) => id,
+        None => {
+            warn_unresolved(spec);
+            FontId::MONO
+        }
+    }
+}
+
+/// Specs this process was asked for and could not draw, in first-seen order.
+///
+/// The degradation to [`FontId::MONO`] is deliberate — a panel that names a
+/// face this machine lacks should still draw, and still measure the way it
+/// draws — but it is also *silent*, and silence is how `font("serif")` spends
+/// an afternoon looking like a layout bug: the text is there, it is legible,
+/// it is simply not the typeface anyone asked for. So the fallback is recorded
+/// as well as warned about, and the debug server reports the list.
+pub fn unresolved_specs() -> Vec<String> {
+    unresolved()
+        .lock()
+        .expect("unresolved font specs poisoned")
+        .clone()
+}
+
+fn unresolved() -> &'static Mutex<Vec<String>> {
+    static UNRESOLVED: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+    UNRESOLVED.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Warn on stderr the first time `spec` fails to resolve, and remember it.
+///
+/// Once per *name*, not once per draw: a panel asks for its font every frame,
+/// so warning per call would bury the log under sixty lines a second and the
+/// warning would be worse than the silence it replaced.
+fn warn_unresolved(spec: &str) {
+    let mut seen = unresolved().lock().expect("unresolved font specs poisoned");
+    if seen.iter().any(|s| s == spec) {
+        return;
+    }
+    seen.push(spec.to_string());
+    eprintln!(
+        "garden-render: no font matches {spec:?} on this machine — drawing it \
+         in the default monospace face instead. Name an installed family, or \
+         one of the built-in roles ({MONO_NAME:?}, {UI_NAME:?})."
+    );
 }
 
 /// [`resolve`] without the fallback: `None` when this machine can draw no name
@@ -291,6 +335,26 @@ mod tests {
         assert_eq!(resolve("Definitely Not A Font 12345"), FontId::MONO);
         // …but only after the rest of a fallback list has been tried.
         assert_eq!(resolve("Definitely Not A Font 12345, ui"), FontId::UI);
+    }
+
+    /// The degradation is reported, not silent. A spec that resolves to
+    /// nothing lands in the list exactly once however many times it is asked
+    /// for — a panel asks for its font every frame.
+    #[test]
+    fn an_unresolvable_spec_is_recorded_once() {
+        let spec = "Nothing Named This 98765";
+        for _ in 0..3 {
+            assert_eq!(resolve(spec), FontId::MONO);
+        }
+        let reported = unresolved_specs();
+        assert_eq!(
+            reported.iter().filter(|s| *s == spec).count(),
+            1,
+            "expected exactly one entry for {spec:?} in {reported:?}"
+        );
+        // A face that *does* resolve stays out of it.
+        resolve(UI_NAME);
+        assert!(!unresolved_specs().iter().any(|s| s == UI_NAME));
     }
 
     /// The point of the whole module: a family that is not compiled in still

@@ -42,10 +42,13 @@ API surface lives in `garden-script`.
 
 ## Traps that have cost real time
 
-- **Color space.** `Color` is sRGB everywhere in the app; `garden-render`
-  converts to linear internally because the surface is sRGB. Writing raw
-  components into GPU buffers without `Color::to_linear` washes dark colors out
-  ~5x lighter. Details: `../architecture.md` ("Color space").
+- **Color space.** `Color` is sRGB everywhere, including in the GPU buffers:
+  the render target deliberately has **no** transfer function so blending
+  happens in the gamma-encoded space CSS blends in. The trap is now the
+  opposite of what it was — reintroducing a linearization step, or picking an
+  `…Srgb` target format, silently lightens every translucent fill and pulls
+  glyph color away from shape color. Details: `../architecture.md`
+  ("Color space").
 - **Layout is editable state, and the live panes are its source of truth.**
   Runtime rearrangements and out-of-band content changes are persisted by
   rebuilding the tree from the live panes and rewriting the `layout(...)` call.

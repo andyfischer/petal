@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use garden_core::projection::{
     ChromeRole, Decor, LineOrigin, NewLine, Projection, SourceEdit, Span,
 };
-use garden_render::{Color, Primitive, Rect, TextStyle, Vertex, FONT_SIZE};
+use garden_render::{ClipMask, Color, Primitive, Rect, TextStyle, Vertex, FONT_SIZE};
 use garden_script::{
     DrawTrace, InputEvent, Modifiers, NavIntent, PanelCmd, PanelData, PanelHost, PanelInput,
     ProjectionSpec,
@@ -2297,9 +2297,10 @@ impl PanelView {
         // into one mesh per clip region: every clip command flushes the
         // current verts as a mesh scissored to the *previous* clip, then
         // switches.
-        let mut clips: Vec<Rect> = vec![rect];
+        let base = PanelClip::square(rect);
+        let mut clips: Vec<PanelClip> = vec![base];
         for cmd in &self.cmds {
-            let cur_clip = *clips.last().unwrap_or(&rect);
+            let cur_clip = *clips.last().unwrap_or(&base);
             // Panel-local rect → absolute pane pixels, for the clip commands.
             let local = |x: &i32, y: &i32, w: &u32, h: &u32| Rect {
                 x: ox + *x as f32,
@@ -2312,25 +2313,28 @@ impl PanelView {
                 // it — its meaning since the panel vocabulary had one — so it
                 // overwrites the top of the stack. Anything a `ClipPush` saved
                 // beneath is left alone, so a later pop still restores it.
-                PanelCmd::Clip { x, y, w, h, .. } => {
+                PanelCmd::Clip { x, y, w, h, radius } => {
                     flush_mesh(prims, &mut verts, cur_clip);
                     if let Some(top) = clips.last_mut() {
-                        *top = intersect(rect, local(x, y, w, h));
+                        // Replacing, not nesting: `Clip` starts from the pane.
+                        *top = base.narrowed(local(x, y, w, h), *radius as f32);
                     }
                 }
                 PanelCmd::ClipNone => {
                     flush_mesh(prims, &mut verts, cur_clip);
                     if let Some(top) = clips.last_mut() {
-                        *top = rect;
+                        *top = base;
                     }
                 }
-                // TODO(renderer): `radius` is carried through the command but
-                // ignored here — the GPU scissor is rectangular, so a rounded
-                // clip needs the renderer's own path. Clipping square is the
-                // safe degradation (nothing escapes the rect).
-                PanelCmd::ClipPush { x, y, w, h, .. } => {
+                PanelCmd::ClipPush {
+                    x,
+                    y,
+                    w,
+                    h,
+                    radius,
+                } => {
                     flush_mesh(prims, &mut verts, cur_clip);
-                    clips.push(intersect(cur_clip, local(x, y, w, h)));
+                    clips.push(cur_clip.narrowed(local(x, y, w, h), *radius as f32));
                 }
                 PanelCmd::ClipPop => {
                     flush_mesh(prims, &mut verts, cur_clip);
@@ -2372,7 +2376,7 @@ impl PanelView {
                                     // anything else drawn under it: the region
                                     // carries its own clip (its interior), so the
                                     // two are intersected rather than replaced.
-                                    prims.push(clip_to(other, cur_clip));
+                                    prims.push(clip_to(other, cur_clip.rect));
                                 }
                             }
                         }
@@ -2418,7 +2422,7 @@ impl PanelView {
                         },
                         source: source.clone(),
                         alpha: *a as f32 / 255.0,
-                        clip: cur_clip,
+                        clip: cur_clip.rect,
                     });
                 }
                 PanelCmd::Rect {
@@ -2634,12 +2638,6 @@ impl PanelView {
                         col(*r, *g, *b, *a),
                     );
                 }
-                // TODO(renderer): all three of these are correct-but-
-                // unoptimized CPU stand-ins, kept here so a script that uses
-                // the new vocabulary draws *something* right away. A real
-                // implementation belongs in `panel_tess`, where the mesh
-                // vertex format's per-vertex color makes a gradient two
-                // triangles instead of 32 bands.
                 PanelCmd::RectGradient {
                     x,
                     y,
@@ -2656,35 +2654,20 @@ impl PanelView {
                     a1,
                     angle,
                 } => {
-                    let (px, py, pw, ph) = (ox + *x as f32, oy + *y as f32, *w as f32, *h as f32);
-                    let (dx, dy) = (angle.cos(), angle.sin());
-                    let bands = GRADIENT_BANDS as f32;
-                    // Band along whichever axis the gradient leans toward; a
-                    // backwards angle runs the stops the other way.
-                    let along_x = dx.abs() >= dy.abs();
-                    let forward = if along_x { dx >= 0.0 } else { dy >= 0.0 };
-                    for i in 0..GRADIENT_BANDS {
-                        let t = (i as f32 + 0.5) / bands;
-                        let t = if forward { t } else { 1.0 - t };
-                        let c = lerp_col(
-                            col(*r0, *g0, *b0, *a0),
-                            col(*r1, *g1, *b1, *a1),
-                            t,
-                        );
-                        // Bands are laid out in screen order and the color
-                        // lookup above already accounts for the direction, so
-                        // adjacent bands always meet on a shared edge.
-                        let f0 = i as f32 / bands;
-                        let f1 = (i + 1) as f32 / bands;
-                        if along_x {
-                            tess::rect(&mut verts, px + f0 * pw, py, (f1 - f0) * pw, ph, c);
-                        } else {
-                            tess::rect(&mut verts, px, py + f0 * ph, pw, (f1 - f0) * ph, c);
-                        }
-                    }
-                    // TODO(renderer): the corner radius is ignored by the
-                    // banded fallback — a rounded gradient draws square.
-                    let _ = radius;
+                    // One shape's worth of triangles with per-vertex colour,
+                    // corners and all: the mesh pipeline interpolates colour
+                    // affinely, so the ramp is exact rather than banded.
+                    tess::rect_gradient(
+                        &mut verts,
+                        ox + *x as f32,
+                        oy + *y as f32,
+                        *w as f32,
+                        *h as f32,
+                        *radius as f32,
+                        col(*r0, *g0, *b0, *a0),
+                        col(*r1, *g1, *b1, *a1),
+                        *angle,
+                    );
                 }
                 PanelCmd::CircleGradient {
                     cx,
@@ -2699,28 +2682,14 @@ impl PanelView {
                     b1,
                     a1,
                 } => {
-                    // Concentric annuli rather than stacked discs: the rings
-                    // don't overlap, so a translucent glow composites evenly.
-                    let (px, py, rad) = (ox + *cx as f32, oy + *cy as f32, *radius as f32);
-                    let bands = GRADIENT_BANDS as f32;
-                    for i in 0..GRADIENT_BANDS {
-                        let (f0, f1) = (i as f32 / bands, (i + 1) as f32 / bands);
-                        let c = lerp_col(
-                            col(*r0, *g0, *b0, *a0),
-                            col(*r1, *g1, *b1, *a1),
-                            (f0 + f1) * 0.5,
-                        );
-                        tess::arc(
-                            &mut verts,
-                            px,
-                            py,
-                            f0 * rad,
-                            f1 * rad,
-                            0.0,
-                            std::f32::consts::TAU,
-                            c,
-                        );
-                    }
+                    tess::circle_gradient(
+                        &mut verts,
+                        ox + *cx as f32,
+                        oy + *cy as f32,
+                        *radius as f32,
+                        col(*r0, *g0, *b0, *a0),
+                        col(*r1, *g1, *b1, *a1),
+                    );
                 }
                 PanelCmd::Shadow {
                     x,
@@ -2737,11 +2706,11 @@ impl PanelView {
                     b,
                     a,
                 } => {
-                    // The shared CPU tessellator: one non-overlapping mesh
-                    // (solid core + a ring fading to 0 at `blur`), so the
-                    // translucent shadow never doubles up on itself.
-                    let base = col(*r, *g, *b, *a);
-                    for v in petal_ui::tess::shadow_mesh(
+                    // One non-overlapping mesh with a smoothstep alpha ramp —
+                    // never a stack of translucent rects, which would darken
+                    // the middle of the falloff (see `tess::shadow`).
+                    tess::shadow(
+                        &mut verts,
                         ox + *x as f32,
                         oy + *y as f32,
                         *w as f32,
@@ -2751,12 +2720,8 @@ impl PanelView {
                         *spread as f32,
                         *dx as f32,
                         *dy as f32,
-                    ) {
-                        verts.push(Vertex::new(
-                            (v.x, v.y),
-                            Color::rgba(base.r, base.g, base.b, base.a * v.alpha),
-                        ));
-                    }
+                        col(*r, *g, *b, *a),
+                    );
                 }
                 PanelCmd::Text {
                     text,
@@ -2794,7 +2759,7 @@ impl PanelView {
                         (ox + *x as f32, oy + *y as f32),
                         text,
                         col(*r, *g, *b, *a),
-                        cur_clip,
+                        cur_clip.rect,
                         size,
                         TextStyle {
                             weight: *weight,
@@ -2813,7 +2778,7 @@ impl PanelView {
 
         // Flush whatever clip region was active when the commands ended — a
         // clip left pushed at the end of a frame simply ends with it.
-        flush_mesh(prims, &mut verts, *clips.last().unwrap_or(&rect));
+        flush_mesh(prims, &mut verts, *clips.last().unwrap_or(&base));
 
         // Sleep/wake indicator: a tiny dot, top-right, always over the whole pane
         // (never clipped by the script). Filled green awake; dim when asleep.
@@ -2986,20 +2951,10 @@ fn truncate_chars(s: &str, cols: usize) -> String {
     out
 }
 
-/// Color from 0..=255 RGBA (sRGB; the renderer linearizes and alpha-blends).
-/// Panels get real translucency this way — overlapping selection/hover tints
-/// composite instead of being pre-mixed opaque.
-/// Band count for the CPU gradient stand-ins — enough that a 200px ramp steps
-/// by ~1.5 levels per band, which reads as smooth.
-const GRADIENT_BANDS: usize = 32;
-
-/// Linear interpolation between two colors, component-wise including alpha.
-fn lerp_col(a: Color, b: Color, t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    let m = |x: f32, y: f32| x + (y - x) * t;
-    Color::rgba(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b), m(a.a, b.a))
-}
-
+/// Color from 0..=255 RGBA (sRGB, and it stays sRGB: the renderer composites
+/// gamma-encoded values, so `a = 128` black over white is `#808080` here as it
+/// is in CSS). Panels get real translucency this way — overlapping
+/// selection/hover tints composite instead of being pre-mixed opaque.
 fn col(r: u8, g: u8, b: u8, a: u8) -> Color {
     Color::rgba(
         r as f32 / 255.0,
@@ -3021,6 +2976,50 @@ fn abs_points(points: &[(i32, i32)], ox: f32, oy: f32) -> Vec<(f32, f32)> {
 
 /// Intersection of two rects (empty — zero size — when they don't overlap), so a
 /// panel's clip region can never extend past its pane.
+/// One entry of a panel's clip stack: the rectangle the GPU scissors to, plus
+/// the rounded mask (if any) the fragment shader cuts against.
+///
+/// The two are kept side by side rather than folded together because they do
+/// different jobs. The rect is what bounds *everything* — geometry, images and
+/// text alike — and what a `/scene` assertion reads; the mask is a per-fragment
+/// refinement that only the mesh pipeline can honour. A rounded clip therefore
+/// still confines text and images to the bounding rect, and only shapes get the
+/// corners rounded off. (`docs/petal-graphical-panels.md` says so out loud;
+/// carrying a rounded mask through glyphon's rectangular `TextBounds` would take
+/// a second text pipeline.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PanelClip {
+    rect: Rect,
+    mask: ClipMask,
+}
+
+impl PanelClip {
+    /// A square clip: the scissor is the whole of it.
+    fn square(rect: Rect) -> PanelClip {
+        PanelClip {
+            rect,
+            mask: ClipMask::NONE,
+        }
+    }
+
+    /// This clip narrowed to `rect` with `radius`-px corners. A zero radius
+    /// keeps whatever mask was already in force — nesting a square clip inside
+    /// a rounded card must not un-round the card.
+    fn narrowed(self, rect: Rect, radius: f32) -> PanelClip {
+        let rect = intersect(self.rect, rect);
+        PanelClip {
+            rect,
+            // Only one rounded mask can be in force at a time: the shader
+            // evaluates a single rounded rect. The innermost one wins, which
+            // is the one a script just asked for.
+            mask: match radius > 0.0 {
+                true => ClipMask::rounded(rect, radius),
+                false => self.mask,
+            },
+        }
+    }
+}
+
 fn intersect(a: Rect, b: Rect) -> Rect {
     let x = a.x.max(b.x);
     let y = a.y.max(b.y);
@@ -4653,11 +4652,26 @@ fn clip_to(p: Primitive, to: Rect) -> Primitive {
     }
 }
 
-fn flush_mesh(prims: &mut Vec<Primitive>, verts: &mut Vec<Vertex>, clip: Rect) {
-    if !verts.is_empty() {
-        prims.push(Primitive::Mesh {
-            vertices: std::mem::take(verts),
-            clip,
-        });
+/// Close the pending geometry as one [`Primitive::Mesh`] scissored to `clip`.
+///
+/// A rounded `clip` also stamps its mask onto every vertex, which is what
+/// makes the corners round: the GPU scissor is four integer edges and can only
+/// deliver the bounding rect, so the fragment shader cuts the rest. Stamping
+/// here rather than at each `tess::` call is what keeps the shape helpers
+/// ignorant of clipping — a mesh is flushed at every clip change, so all of
+/// its vertices share one mask by construction.
+fn flush_mesh(prims: &mut Vec<Primitive>, verts: &mut Vec<Vertex>, clip: PanelClip) {
+    if verts.is_empty() {
+        return;
     }
+    let mut vertices = std::mem::take(verts);
+    if !clip.mask.is_none() {
+        for v in &mut vertices {
+            v.mask = clip.mask;
+        }
+    }
+    prims.push(Primitive::Mesh {
+        vertices,
+        clip: clip.rect,
+    });
 }

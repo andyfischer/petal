@@ -19,6 +19,11 @@ use crate::{Rect, Vertex};
 struct MeshVertex {
     pos: [f32; 2],
     color: [f32; 4],
+    /// The rounded-clip mask, as `(x, y, w, h)` in logical pixels…
+    mask: [f32; 4],
+    /// …and its corner radius. Zero — what every vertex Garden itself emits
+    /// carries — short-circuits the mask in the fragment shader.
+    mask_radius: f32,
 }
 
 /// One scissored draw: a vertex sub-range of the shared buffer and the clip
@@ -73,6 +78,18 @@ impl MeshPipeline {
                     format: wgpu::VertexFormat::Float32x4,
                     offset: 8,
                     shader_location: 1,
+                },
+                // mask rect
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 24,
+                    shader_location: 2,
+                },
+                // mask corner radius
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: 40,
+                    shader_location: 3,
                 },
             ],
         };
@@ -141,23 +158,31 @@ impl MeshPipeline {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         logical_size: (f32, f32),
+        scale: f32,
         meshes: impl Iterator<Item = (&'a [Vertex], &'a Rect)>,
     ) {
         self.staging.clear();
         self.groups.clear();
         for (vertices, clip) in meshes {
             // Drop a malformed mesh (not whole triangles) rather than render
-            // garbage; callers tessellate, so this should not happen.
+            // garbage; callers tessellate, so this should not happen. It still
+            // gets a group: `render` addresses groups by *scene* index, so
+            // dropping one here would silently shift every later mesh's
+            // scissor onto the wrong geometry.
             let count = vertices.len() - vertices.len() % 3;
-            if count == 0 {
-                continue;
-            }
             let start = self.staging.len() as u32;
             self.staging
                 .extend(vertices[..count].iter().map(|v| MeshVertex {
                     pos: [v.pos.0, v.pos.1],
-                    // Linear space: the sRGB surface re-encodes on store.
-                    color: v.color.to_linear(),
+                    // sRGB-encoded, straight through — see `Color`.
+                    color: v.color.to_array(),
+                    mask: [
+                        v.mask.rect.x,
+                        v.mask.rect.y,
+                        v.mask.rect.w,
+                        v.mask.rect.h,
+                    ],
+                    mask_radius: v.mask.radius,
                 }));
             self.groups.push(DrawGroup {
                 clip: *clip,
@@ -171,7 +196,7 @@ impl MeshPipeline {
             self.vertex_buffer = Self::create_vertex_buffer(device, self.capacity);
         }
 
-        self.globals.write(queue, logical_size);
+        self.globals.write(queue, logical_size, scale);
         if !self.staging.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.staging));
         }

@@ -153,6 +153,7 @@ impl ImagePipeline {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         logical_size: (f32, f32),
+        scale: f32,
         images: impl Iterator<Item = (&'a Rect, &'a str, f32, &'a Rect)>,
     ) {
         self.draws.clear();
@@ -165,17 +166,20 @@ impl ImagePipeline {
                         .ok();
                 self.textures.insert(source.to_string(), loaded);
             }
-            if matches!(self.textures.get(source), Some(Some(_))) {
-                self.draws.push(Draw {
-                    source: source.to_string(),
-                    clip: *clip,
-                });
-                self.staging.push(ImageInstance {
-                    pos: [rect.x, rect.y],
-                    size: [rect.w, rect.h],
-                    alpha: alpha.clamp(0.0, 1.0),
-                });
-            }
+            // An image whose file is missing or unreadable still gets a slot:
+            // `render` addresses draws by *scene* index, so skipping one here
+            // would shift every later image onto another image's instance.
+            // It is dropped at draw time instead, where its absent texture
+            // simply produces no draw call.
+            self.draws.push(Draw {
+                source: source.to_string(),
+                clip: *clip,
+            });
+            self.staging.push(ImageInstance {
+                pos: [rect.x, rect.y],
+                size: [rect.w, rect.h],
+                alpha: alpha.clamp(0.0, 1.0),
+            });
         }
         if self.staging.len() > self.instance_capacity {
             self.instance_capacity = self.staging.len().next_power_of_two();
@@ -193,7 +197,7 @@ impl ImagePipeline {
                 bytemuck::cast_slice(&self.staging),
             );
         }
-        self.globals.write(queue, logical_size);
+        self.globals.write(queue, logical_size, scale);
     }
 
     /// `range` selects a half-open span of staged images, in the order
@@ -265,7 +269,12 @@ fn load_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        // No transfer function: the PNG's bytes are already sRGB-encoded and
+        // the scene composites in that space (see [`crate::Color`]), so the
+        // sampler must hand the shader the bytes as stored. An `…Srgb` texture
+        // would linearize them and the image would land brighter than every
+        // shape drawn beside it.
+        format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });

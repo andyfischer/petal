@@ -9,7 +9,7 @@ identity-cast rule, and the if-chain-to-`match` rule. A corpus property test
 that compiles still compiles after linting, that a file with no cast fixes has
 byte-identical IR, and that linting is idempotent. Remaining: the rest of the
 normalization catalogue below, and running the linter over `integrations/*` /
-`sample-apps/*` and the garden editor scripts.
+`examples/*` and the garden editor scripts.
 
 ### The rebind rule was removed (2026-08-02)
 
@@ -256,4 +256,4 @@ Wired into the CLI (done): `Command::Lint { fix, check }` in `rust/src/cli/mod.r
 with a path argument only; like every mode it goes through `lint_source`, which
 fails on a parse error before anything is written, so an unparseable file is
 never modified. Still to do per `CLAUDE.local.md`: run the linter over
-`integrations/*` / `sample-apps/*` and the garden editor scripts once it's stable.
+`integrations/*` / `examples/*` and the garden editor scripts once it's stable.

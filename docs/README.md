@@ -7,6 +7,7 @@ Start here if you're learning or using the language:
 | Document | Description |
 |----------|-------------|
 | [Getting Started](Getting_Started.md) | Build instructions, running examples, CLI usage |
+| [Writing Petal](writing-petal-guide.md) | Intro guide for programmers new to Petal: program shape, the rules that differ, and how to use the tooling |
 | [Language Guide](language-guide.md) | Complete language reference: types and optional type annotations, syntax, control flow, functions, classes & methods, state |
 | [Syntax Overview](syntax/overview.md) | Compact map of all lexical forms, statements, expressions, and operators |
 | [Builtins Reference](Builtins.md) | All built-in functions with signatures and examples |
@@ -60,3 +61,4 @@ working documents — expect internal shorthand and point-in-time status:
 | [Refactor-Verification Plan](dev/refactor-verification-plan.md) | Proposal for tooling that verifies refactors are behavior-preserving |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | Early, unfinished surface for constructing/transforming a program as IR data |
 | [Unreal FFI Proposal](dev/unreal-ffi-proposal.md) | Game-engine handle FFI (M1 in progress) |
+| [Testbed Challenge Plan](dev/testbed-challenge-plan.md) | The original 50 target apps for the Garden panel-app testbed; 15 built, 35 remaining |

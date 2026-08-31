@@ -4,7 +4,6 @@
   "size": "1280x850",
   "corpus": [
     "examples",
-    "sample-apps",
     "test",
     "garden",
     "~/.garden",

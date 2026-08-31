@@ -17,14 +17,14 @@ the concrete mechanics of each, using the apps in this repo as worked examples.
 Petal is layered so each tier depends only on the tier above it:
 
 ```
-Petal Core  →  Integrations  →  Sample Apps
+Petal Core  →  Integrations  →  Example Apps
 ```
 
 | Tier | What lives here | Crates / packages |
 |------|-----------------|-------------------|
 | **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`rust/`](../rust/) (`petal`), [`petal-ui/`](../petal-ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../integrations/petal-web-html/) (WASM + DOM) |
-| **Apps** | Your programs, built on top of an integration. The [`sample-apps/`](../sample-apps/) directory holds worked examples. | [`sample-apps/`](../sample-apps/) |
+| **Apps** | Your programs, built on top of an integration. The [`examples/`](../examples/README.md) directory holds worked examples. | [`examples/`](../examples/README.md) |
 
 **The rule:** an app depends on an integration (and, through it, on Core). It
 should not re-implement host code an integration already provides, and it
@@ -41,12 +41,12 @@ Your app is only `.ptl` files (plus assets and a launch script). It runs on an
 integration's **existing binary/host unchanged**; all app logic is in Petal.
 This is the ideal — zero host code to maintain.
 
-`sample-apps/side-scroller` is the model. It has no Rust and no TS: `game.ptl`,
+`examples/games/side-scroller` is the model. It has no Rust and no TS: `game.ptl`,
 `editor.ptl`, level files, and a launch script that points the `petal-sdl`
 binary at its script:
 
 ```bash
-# sample-apps/side-scroller/run-game.sh (abridged)
+# examples/games/side-scroller/run-game.sh (abridged)
 SDL_DIR="$REPO/integrations/petal-desktop-sdl"
 BIN="$SDL_DIR/target/debug/petal-sdl"
 [ -x "$BIN" ] || ( cd "$SDL_DIR" && cargo build )   # build the integration if needed
@@ -64,7 +64,7 @@ renderer, extra native functions, an editor/debug shell. It **depends on the
 integration as a library/package** and adds only its delta on top. It never
 copies the integration's shared code.
 
-`sample-apps/diagram-canvas` is the model on the web side: it consumes
+`examples/custom-integrations/diagram-canvas` is the model on the web side: it consumes
 `petal-web-canvas` for the WASM runtime, canvas renderer, and input plumbing,
 and adds only a CodeMirror editor and a pause/step debug protocol.
 
@@ -88,7 +88,7 @@ importable by name:
 // package.json (repo root)
 "workspaces": [
   "integrations/petal-web-canvas",
-  "sample-apps/diagram-canvas"
+  "examples/custom-integrations/diagram-canvas"
 ]
 ```
 
@@ -116,12 +116,12 @@ export { default as initRuntime, PetalRuntime } from "../pkg/petal_web_canvas.js
 tree:
 
 ```jsonc
-// sample-apps/diagram-canvas/package.json
+// examples/custom-integrations/diagram-canvas/package.json
 "dependencies": { "petal-web-canvas": "*" }
 ```
 
 ```ts
-// sample-apps/diagram-canvas/src/main.ts
+// examples/custom-integrations/diagram-canvas/src/main.ts
 import { PetalCanvas } from "petal-web-canvas";
 ```
 
@@ -165,7 +165,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   ```bash
   npm run build:wasm --workspace integrations/petal-web-canvas
   npm run build      --workspace integrations/petal-web-canvas
-  npm run build      --workspace sample-apps/diagram-canvas
+  npm run build      --workspace examples/custom-integrations/diagram-canvas
   ```
 
 ## Mechanism: Desktop (Rust + SDL) — the SDL track

@@ -73,7 +73,7 @@ default font).
   generated, and `bindFontMetrics` (called at runtime init) needs the two new
   exports, so run `integrations/petal-web-canvas/build-wasm.sh` on any
   environment with a stale build.
-- Optionally: sample-apps/diagram-canvas inherits the web-canvas renderer work
+- Optionally: examples/custom-integrations/diagram-canvas inherits the web-canvas renderer work
   (it currently keeps its self-consistent monospace estimate).
 
 ## Phase 1a — what's done

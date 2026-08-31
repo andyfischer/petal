@@ -5,14 +5,16 @@ Runnable Petal programs, grouped by what they are:
 | Directory | What's in it |
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
-| [`games/`](games/) | Games — pong, breakout, snake |
+| [`games/`](games/) | Games — pong, breakout, snake, and the SDL-hosted side-scroller |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
-| [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal, e.g. [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/) |
+| [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |
 
 The `games/`, `productivity/`, and `dashboards/` entries are Garden panel apps:
 pure Petal, each with its own README and a `./launch.sh`. See
-[AUTHORING.md](AUTHORING.md) for how they're built.
+[AUTHORING.md](AUTHORING.md) for how they're built. The exception is
+[`games/side-scroller/`](games/side-scroller/), which is pure Petal but runs on
+the `petal-desktop-sdl` integration via its own `run-game.sh`.
 
 ## Console programs
 

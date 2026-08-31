@@ -577,7 +577,7 @@ emits terms. Key responsibilities:
 State is round-tripped as JSON so the JS host owns it across reloads.
 See `integrations/petal-web-html/src/runtime.ts` and
 `integrations/petal-web-canvas/src/runtime.ts` for the host side
-(sample-apps/diagram-canvas consumes the latter via the `petal-web-canvas`
+(examples/custom-integrations/diagram-canvas consumes the latter via the `petal-web-canvas`
 package).
 
 ---

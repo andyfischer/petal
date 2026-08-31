@@ -268,7 +268,7 @@ Vitest-based. Helpers shell out to the compiled `petal` binary.
   `PETAL_DEBUG=1`. Queryable post-run via `Env::trace().explain(...)` or the
   `petal explain` CLI.
 - petal-diagram-canvas surfaces runtime errors in an on-page error panel
-  (`sample-apps/diagram-canvas/src/main.ts`)
+  (`examples/custom-integrations/diagram-canvas/src/main.ts`)
 
 ### Trace JSON schema (`--record-trace <path>`)
 

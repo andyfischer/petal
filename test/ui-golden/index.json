@@ -46,13 +46,13 @@
     "garden/gpp-apps/sqlite-browser/src/db_view.ptl/monkey-1-s1": "37e912cf3487fe5f64fc31877a9a9281daaf143f2fa98cdf1fd1f7e7140b026c",
     "garden/gpp-python/repo-stats/repo_stats.ptl/monkey-1-s1": "69662cfbcf6206602e379768b0dc1de78dba995af338d6ed48364fdd17593d85",
     "garden/gpp-python/sysmon/sysmon.ptl/monkey-1-s1": "c786ec00db76c3eb1ad77f6816bb76d6b51108dba0eeb73c064d928156929290",
-    "sample-apps/diagram-canvas/examples/flowchart.ptl/monkey-1-s1": "1f1beeeab49e819308d7fd55755a16a3e47474676ad05ff3211e042422ab94ce",
-    "sample-apps/diagram-canvas/examples/interactive.ptl/monkey-1-s1": "109c59771393d334c4b80aa0cf7056945928815b66f48869c4143bbcb2d8e679",
-    "sample-apps/diagram-canvas/examples/org-chart.ptl/monkey-1-s1": "6f272c1357bd02005113592f6e1682a453791b3ae7467831743be1e12623b0e8",
-    "sample-apps/petal-fps/examples/cyberpunk_city.ptl/monkey-1-s1": "62282ece8950bae3f536a3d9510849d876a07ea45f4cee9e0579e402cb699c88",
-    "sample-apps/petal-fps/examples/debug_state.ptl/monkey-1-s1": "6fb6f9a11a9ae01c4487036968ef10467cb8ee44a410702cbcf6aba010e34b68",
-    "sample-apps/petal-fps/examples/debug_state2.ptl/monkey-1-s1": "2a526ec5fa1815eeafadf4d969215d9446a33fbada411f038f15db16a3d3e2d7",
-    "sample-apps/petal-fps/examples/fps_game.ptl/monkey-1-s1": "699783d94d5ef6654b101ffcc1b329c6a24f569e4568ad7fafe50a18218b817e",
-    "sample-apps/petal-fps/examples/test_triangle.ptl/monkey-1-s1": "4c713cc4c9f39d8d19eb98ff364bd3770f593a29c862e347e374287b3ab2b60a"
+    "examples/custom-integrations/diagram-canvas/examples/flowchart.ptl/monkey-1-s1": "1f1beeeab49e819308d7fd55755a16a3e47474676ad05ff3211e042422ab94ce",
+    "examples/custom-integrations/diagram-canvas/examples/interactive.ptl/monkey-1-s1": "109c59771393d334c4b80aa0cf7056945928815b66f48869c4143bbcb2d8e679",
+    "examples/custom-integrations/diagram-canvas/examples/org-chart.ptl/monkey-1-s1": "6f272c1357bd02005113592f6e1682a453791b3ae7467831743be1e12623b0e8",
+    "examples/custom-integrations/petal-fps/examples/cyberpunk_city.ptl/monkey-1-s1": "62282ece8950bae3f536a3d9510849d876a07ea45f4cee9e0579e402cb699c88",
+    "examples/custom-integrations/petal-fps/examples/debug_state.ptl/monkey-1-s1": "6fb6f9a11a9ae01c4487036968ef10467cb8ee44a410702cbcf6aba010e34b68",
+    "examples/custom-integrations/petal-fps/examples/debug_state2.ptl/monkey-1-s1": "2a526ec5fa1815eeafadf4d969215d9446a33fbada411f038f15db16a3d3e2d7",
+    "examples/custom-integrations/petal-fps/examples/fps_game.ptl/monkey-1-s1": "699783d94d5ef6654b101ffcc1b329c6a24f569e4568ad7fafe50a18218b817e",
+    "examples/custom-integrations/petal-fps/examples/test_triangle.ptl/monkey-1-s1": "4c713cc4c9f39d8d19eb98ff364bd3770f593a29c862e347e374287b3ab2b60a"
   }
 }

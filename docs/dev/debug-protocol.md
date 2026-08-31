@@ -8,7 +8,7 @@ transport should work against the other.
 
 Implementations:
 - **petal-sdl:** `integrations/petal-desktop-sdl/src/protocol.rs`, dispatched in `game_loop.rs::handle_command`
-- **petal-diagram-canvas:** `sample-apps/diagram-canvas/src/debug.ts`
+- **petal-diagram-canvas:** `examples/custom-integrations/diagram-canvas/src/debug.ts`
   (`PetalDebugAPI.handleCommand`)
 
 ---

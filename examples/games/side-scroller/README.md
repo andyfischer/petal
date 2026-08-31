@@ -1,7 +1,7 @@
 # Side-Scroller (Petal experiment)
 
 A 2D side-scrolling platformer written almost entirely in Petal, hosted by
-the [`petal-desktop-sdl`](../../integrations/petal-desktop-sdl/README.md) integration
+the [`petal-desktop-sdl`](../../../integrations/petal-desktop-sdl/README.md) integration
 (the `petal-sdl` runtime). Built as an experiment to stress-test
 Petal in a real, non-trivial use case and produce a debrief on what worked
 and what did not — see [`DEBRIEF.md`](./DEBRIEF.md).
@@ -38,16 +38,16 @@ The "hybrid" Rust/Petal split:
 ( cd integrations/petal-desktop-sdl && cargo build )
 
 # play
-./sample-apps/side-scroller/run-game.sh
+./examples/games/side-scroller/run-game.sh
 
 # edit
-./sample-apps/side-scroller/run-editor.sh
+./examples/games/side-scroller/run-editor.sh
 ```
 
 You can also pass the script directly:
 
 ```bash
-./integrations/petal-desktop-sdl/target/debug/petal-sdl sample-apps/side-scroller/game.ptl --width 960 --height 600
+./integrations/petal-desktop-sdl/target/debug/petal-sdl examples/games/side-scroller/game.ptl --width 960 --height 600
 ```
 
 ## Game controls

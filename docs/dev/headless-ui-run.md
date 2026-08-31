@@ -172,7 +172,7 @@ garden integration tests instead.
 
 All 15 checked-in UI apps under `examples/dashboards`, `examples/games`, and
 `examples/productivity` run clean under this driver, as do
-`sample-apps/diagram-canvas/examples/*`, `sample-apps/side-scroller/game.ptl`,
+`examples/custom-integrations/diagram-canvas/examples/*`, `examples/games/side-scroller/game.ptl`,
 and — through the panel-native stubs above — every `garden/examples/panels/*.ptl`
 and the six `garden/gpp-apps/*/src/*.ptl` drawers.
 
@@ -181,9 +181,9 @@ first reaches the missing native, so its record carries the name:
 
 | Corpus | Missing |
 |---|---|
-| `sample-apps/petal-fps/examples/*` | `sky_gradient` and the rest of the petal-fps renderer's natives |
+| `examples/custom-integrations/petal-fps/examples/*` | `sky_gradient` and the rest of the petal-fps renderer's natives |
 | `examples/custom-integrations/petal-fantasy-nes/carts/*` | `set_backdrop` and the cart palette bindings the fantasy-NES host installs |
-| `sample-apps/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
+| `examples/games/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
 
 Those need their own embedder, not this one. An app that calls a native no
 host registered is an `Unknown builtin: <name>` runtime error, not a compile

@@ -258,7 +258,7 @@ the proposal doc.
   registered as an implicit import, and a `Headless` harness that mirrors the
   frame contract exactly for tests.
 - **petal-web-html** (`integrations/petal-web-html/`) **/ diagram-canvas**
-  (`sample-apps/diagram-canvas/`) — wasm-bindgen `PetalRuntime`
+  (`examples/custom-integrations/diagram-canvas/`) — wasm-bindgen `PetalRuntime`
   structs owning an `Env`; the same channels, marshalled as JSON strings
   across the wasm boundary. petal-web-html returns a retained element tree instead
   of draw commands; diagram-canvas reimplements the draw-command loop and

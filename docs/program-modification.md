@@ -238,7 +238,7 @@ for both rules and `rust/tests/class_live_edit.rs` for the pinned behaviour.
   [`game_loop.rs`](../integrations/petal-desktop-sdl/src/game_loop.rs); enabled
   by default, `--no-hot-reload` disables. Same in the `petal-fps` host.
 - **Browser live source editor (diagram-canvas)** — a CodeMirror widget
-  ([`sample-apps/diagram-canvas/src/editor.ts`](../sample-apps/diagram-canvas/src/editor.ts))
+  ([`examples/custom-integrations/diagram-canvas/src/editor.ts`](../examples/custom-integrations/diagram-canvas/src/editor.ts))
   with a 300 ms-debounced recompile. This is a **full reload, NOT
   state-preserving**: the callback calls `petal.load(source)`
   ([`integrations/petal-web-canvas/src/runtime.ts`](../integrations/petal-web-canvas/src/runtime.ts)),
@@ -269,7 +269,7 @@ These modify **runtime state or inputs**, not the program. **There is no
 over-the-wire source-swap / `reload` command** — reload is file-watcher-driven
 only. The command set is exactly `pause, resume, step, state, set_state,
 capture_draw_commands, input, screenshot, pending_report`
-([`sample-apps/diagram-canvas/src/debug.ts`](../sample-apps/diagram-canvas/src/debug.ts)).
+([`examples/custom-integrations/diagram-canvas/src/debug.ts`](../examples/custom-integrations/diagram-canvas/src/debug.ts)).
 
 ### Speculative execution — safe experimental modification
 

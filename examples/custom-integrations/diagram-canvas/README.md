@@ -4,7 +4,7 @@ Canvas-based diagram visualization tool with a live source code editor. Renders
 Petal programs as interactive diagrams on an HTML5 Canvas.
 
 This is a **sample app**: it builds on the
-[`petal-web-canvas`](../../integrations/petal-web-canvas/) integration for the
+[`petal-web-canvas`](../../../integrations/petal-web-canvas/) integration for the
 WASM runtime, canvas renderer, and browser-input plumbing, and adds only the
 diagram-specific shell (the CodeMirror source editor and the pause/step debug
 protocol). It does **not** embed Petal Core directly or ship its own WASM crate.
@@ -27,14 +27,14 @@ npm install          # from the repo root — installs the whole workspace
 ## Development
 
 ```bash
-npm run dev --workspace sample-apps/diagram-canvas   # Vite dev server (http://localhost:4012)
+npm run dev --workspace examples/custom-integrations/diagram-canvas   # Vite dev server (http://localhost:4012)
 ```
 
 ## Production build
 
 ```bash
-npm run build --workspace sample-apps/diagram-canvas     # output to dist/
-npm run preview --workspace sample-apps/diagram-canvas   # preview the build locally
+npm run build --workspace examples/custom-integrations/diagram-canvas     # output to dist/
+npm run preview --workspace examples/custom-integrations/diagram-canvas   # preview the build locally
 ```
 
 ## Examples

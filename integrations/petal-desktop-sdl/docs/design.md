@@ -9,7 +9,7 @@ This page is the high-level overview. For deeper material:
 - [`game-dev-guide.md`](game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
 - [`agent-protocol.md`](agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
 - [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and the diagram-canvas sample app (WebSocket)
-- [`sample-apps/petal-fps/README.md`](../../../sample-apps/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
+- [`examples/custom-integrations/petal-fps/README.md`](../../../examples/custom-integrations/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
 
 ## Prerequisites
 

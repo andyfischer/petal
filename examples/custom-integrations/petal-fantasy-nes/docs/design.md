@@ -9,7 +9,7 @@ rasterizer and an APU-shaped sound chip, both fed from Petal every frame.
 Tier: **integration** (a reusable host for many carts), built *on top of*
 `integrations/petal-desktop-sdl` as a library — Shape B in
 [docs/building-apps.md](../../../../docs/building-apps.md), the same way
-`sample-apps/petal-fps` reuses that crate's window, event pump, timing,
+`examples/custom-integrations/petal-fps` reuses that crate's window, event pump, timing,
 hot reload, and agent/headless/screenshot modes.
 
 ```

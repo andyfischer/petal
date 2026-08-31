@@ -1,8 +1,8 @@
 # petal-fps
 
 A hybrid Rust + Petal first-person-shooter experiment. petal-fps builds on the
-[`petal-sdl`](../../integrations/petal-desktop-sdl/) integration (Shape B — see
-[docs/building-apps.md](../../docs/building-apps.md)): it
+[`petal-sdl`](../../../integrations/petal-desktop-sdl/) integration (Shape B — see
+[docs/building-apps.md](../../../docs/building-apps.md)): it
 reuses that crate's window, event loop, input, agent/headless/screenshot/record
 modes, and hot reload, and adds only its **delta** — a software z-buffered
 triangle rasterizer and the `triangle3d` native family. Everything else —
@@ -29,7 +29,7 @@ From this directory:
 cargo build --release
 ```
 
-The first build is slow (it compiles the Petal compiler in `../rust`); later
+The first build is slow (it compiles the Petal compiler in `../../../rust`); later
 builds are quick.
 
 ## Run — windowed gameplay

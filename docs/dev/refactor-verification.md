@@ -24,7 +24,7 @@ Today the proof is uneven:
 |---|---|---|
 | `examples/console/*.ptl` | `ts/bin/test-examples.ts`: opts vs `--no-opt` differential + frozen golden | Fine for console; only ~28 files |
 | `test/<case>/main.ptl` | `cargo test` script cases with `expects` | Same |
-| UI apps (`examples/games`, `productivity`, `dashboards`, `sample-apps`) | `petal-ui::harness::Headless` exists but no CLI driver; `bench_panel` is the only runner | `petal run` dies at `screen_width()`; nothing exercises them end to end |
+| UI apps (`examples/games`, `productivity`, `dashboards`, `custom-integrations`) | `petal-ui::harness::Headless` exists but no CLI driver; `bench_panel` is the only runner | `petal run` dies at `screen_width()`; nothing exercises them end to end |
 | Garden panels (`layout.ptl` + `app.ptl`) | garden `--headless --debug-port` with `/frame`, `/mouse`, `/key`, `/panel/reset` | Nothing scripts them |
 | fantasy-nes carts | `tests/carts.rs`: 120 frames in `--screenshot` mode, "ran clean + not blank" | Smoke only, no before/after diff |
 
@@ -136,7 +136,7 @@ hand list:
 | nes cart | under `carts/` | fantasy-nes `--screenshot` / frame trace |
 | module | imported by something else, not an entry | skip as entry; covered via its importers |
 
-Corpus roots: this repo (`examples/`, `sample-apps/`, `test/`, `garden/` —
+Corpus roots: this repo (`examples/`, `test/`, `garden/` —
 Garden lives in-tree now), plus the external projects in `CLAUDE.local.md`
 (`~/.garden`, `~/worlds-fair/ui/ptl`). Config file lists roots; the tool globs.
 
@@ -159,7 +159,7 @@ A plan is a list of steps, each a named check with a `stop_on: pass|fail`:
 
 ```json
 { "name": "lint-fix",
-  "corpus": ["examples", "sample-apps", "test", "garden", "~/worlds-fair/ui/ptl"],
+  "corpus": ["examples", "test", "garden", "~/worlds-fair/ui/ptl"],
   "steps": [
     {"check": "compiles"},
     {"check": "ir-equal",      "stop_on": "pass"},

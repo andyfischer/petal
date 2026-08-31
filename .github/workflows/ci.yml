@@ -101,15 +101,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             integrations/petal-desktop-sdl/target
-            sample-apps/petal-fps/target
-          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('integrations/petal-desktop-sdl/Cargo.lock', 'sample-apps/petal-fps/Cargo.lock') }}
+            examples/custom-integrations/petal-fps/target
+          key: cargo-subprojects-${{ runner.os }}-${{ hashFiles('integrations/petal-desktop-sdl/Cargo.lock', 'examples/custom-integrations/petal-fps/Cargo.lock') }}
           restore-keys: cargo-subprojects-${{ runner.os }}-
 
       - name: Build petal-sdl
         run: cargo build --manifest-path integrations/petal-desktop-sdl/Cargo.toml
 
       - name: Build petal-fps
-        run: cargo build --manifest-path sample-apps/petal-fps/Cargo.toml
+        run: cargo build --manifest-path examples/custom-integrations/petal-fps/Cargo.toml
 
   web-builds:
     name: Web builds (wasm + vite)
@@ -175,4 +175,4 @@ jobs:
         run: npm run build --workspace integrations/petal-web-canvas
 
       - name: petal-diagram-canvas — vite build
-        run: npm run build --workspace sample-apps/diagram-canvas
+        run: npm run build --workspace examples/custom-integrations/diagram-canvas

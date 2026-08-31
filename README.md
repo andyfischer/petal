@@ -101,7 +101,6 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 | [`petal-ui/`](petal-ui/) | Interactivity layer for embedders: normalized input events, the shared draw-command vocabulary, and the `ui` prelude module |
 | [`petal-query/`](petal-query/README.md) | React-Query-style async data layer for Petal UI panels: an elegant native provider API (`query(kind, arg)` handlers with per-resource cacheability) and a host-side cache honoring that policy |
 | [`integrations/`](integrations/) | Reusable host integrations that embed Petal for a specific platform (desktop SDL, web HTML, web canvas) |
-| [`sample-apps/`](sample-apps/) | Example applications built on top of an integration |
 
 ## Documentation
 
@@ -120,7 +119,7 @@ For the full list of developer scripts, see [Developer Scripts & Commands](docs/
 Petal apps are built with this dependency chain:
 
 ```
-Petal Core  →  Integrations  →  Sample Apps
+Petal Core  →  Integrations  →  Example Apps
 ```
 
 - **Petal Core** — the core language implementation ([`rust/`](rust/)), the embedder interactivity layer ([`petal-ui/`](petal-ui/)), and the panel data layer ([`petal-query/`](petal-query/README.md)).
@@ -128,7 +127,7 @@ Petal Core  →  Integrations  →  Sample Apps
   [`petal-desktop-sdl`](integrations/petal-desktop-sdl/README.md) - Desktop application using SDL for rendering 
   [`petal-web-html`](integrations/petal-web-html/README.md) - Browser based (WebAssembly) target that emits DOM
   [`petal-web-canvas`](integrations/petal-web-canvas/README.md) - Browser based (WebAssembly) target that renders to a Canvas.
-- **Sample Apps** ([`sample-apps/`](sample-apps/)) — example programs that build on top of an integration rather than talking to Petal Core directly.
+- **Example Apps** ([`examples/`](examples/README.md)) — example programs that build on top of an integration rather than talking to Petal Core directly.
 
 ## Integrations
 
@@ -140,15 +139,15 @@ Reusable hosts that embed Petal Core for a specific platform.
 | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly target that renders DOM updates using JSX-like syntax |
 | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly target that renders to an HTML Canvas |
 
-## Sample Apps
+## Example Apps
 
 Example applications built on top of one of the integrations above.
 
 | App | Built on | Description |
 |-----|----------|-------------|
-| [diagram-canvas](sample-apps/diagram-canvas/README.md) | petal-web-canvas | Canvas-based diagram visualization with live source editor |
-| [petal-fps](sample-apps/petal-fps/README.md) | petal-desktop-sdl | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
-| [side-scroller](sample-apps/side-scroller/README.md) | petal-desktop-sdl | 2D side-scrolling platformer written almost entirely in Petal |
+| [diagram-canvas](examples/custom-integrations/diagram-canvas/README.md) | petal-web-canvas | Canvas-based diagram visualization with live source editor |
+| [petal-fps](examples/custom-integrations/petal-fps/README.md) | petal-desktop-sdl | Hybrid Rust + Petal 3D first-person-shooter experiment with z-buffered rasterizer |
+| [side-scroller](examples/games/side-scroller/README.md) | petal-desktop-sdl | 2D side-scrolling platformer written almost entirely in Petal |
 | [petal-fantasy-nes](examples/custom-integrations/petal-fantasy-nes/README.md) | petal-desktop-sdl | NES-style fantasy console driven entirely by Petal carts |
 
 ## License

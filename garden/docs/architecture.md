@@ -357,6 +357,15 @@ because glyphon releases require specific wgpu versions):
   radius (everything the editor draws) short-circuits it. Per-vertex colour is
   what makes gradients exact rather than banded. The editor uses only `Quad`;
   `Mesh` exists for Petal panels' full draw API.
+- Images (`image.rs`, `image.wgsl`): a cached PNG texture per `source`, drawn
+  as one instanced quad scissored to its `clip`. The instance also carries a
+  [`ClipMask`], evaluated by a copy of the mesh shader's rounded-box SDF — so
+  the circular avatar and the rounded thumbnail come out with the same
+  antialiased edge a masked mesh gets, and a shape and a bitmap under one mask
+  agree along their shared edge. Textures load as `Rgba8Unorm`: the PNG's bytes
+  are already sRGB-encoded and the scene composites in that space, so an
+  `…Srgb` texture would linearize them and land brighter than the shapes beside
+  it.
 - **Draw order**: primitives composite in `Scene::primitives` order, across
   kinds as well as within one. The list is split into maximal same-kind runs
   and each run is drawn by its own pipeline at its own point in the pass (text

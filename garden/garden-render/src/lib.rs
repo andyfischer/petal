@@ -242,11 +242,17 @@ pub enum Primitive {
     Mesh { vertices: Vec<Vertex>, clip: Rect },
     /// A PNG bitmap loaded from `source`, scaled to `rect`, and scissored to
     /// `clip`. Relative sources resolve from Garden's working directory.
+    ///
+    /// `mask` is the rounded-rect cut its fragments survive — the circular
+    /// avatar and the rounded thumbnail, which the rectangular scissor cannot
+    /// express. It rides on the primitive rather than on a vertex because an
+    /// image is one instanced quad with no vertex stream of its own.
     Image {
         rect: Rect,
         source: String,
         alpha: f32,
         clip: Rect,
+        mask: ClipMask,
     },
 }
 
@@ -616,7 +622,8 @@ impl GpuCore {
                     source,
                     alpha,
                     clip,
-                } => Some((rect, source.as_str(), *alpha, clip)),
+                    mask,
+                } => Some((rect, source.as_str(), *alpha, clip, *mask)),
                 Primitive::Quad { .. } | Primitive::Text { .. } | Primitive::Mesh { .. } => None,
             }),
         );

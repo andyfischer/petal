@@ -358,6 +358,12 @@ meant no more than "not provably gone".)
 *(Landed 2026-08-15; feature flag `debug.scene-visible`. The clipping it reports
 on is `panel.text-clip`.)*
 
+An **image** primitive additionally carries **`radius`** — the rounded-rect mask
+its corners were cut against, in logical pixels, `0` for a square bitmap. That
+is the assertion behind "the avatar is a circle": a 140px avatar reports
+`radius: 70`, whether the script asked with `draw_image(…, radius)` or by
+drawing it under a rounded `clip_push`.
+
 #### Text runs: the face, the axes, the width
 
 A text run dumps everything needed to compare a scene against a reference

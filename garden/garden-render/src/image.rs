@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 use crate::globals::Globals;
-use crate::{mesh::scissor, Rect};
+use crate::{mesh::scissor, ClipMask, Rect};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -13,6 +13,11 @@ struct ImageInstance {
     pos: [f32; 2],
     size: [f32; 2],
     alpha: f32,
+    /// The rounded-rect mask, in logical pixels, and its corner radius —
+    /// the same (rect, radius) pair a mesh vertex carries, evaluated by the
+    /// same SDF. A zero radius means "no mask" and costs one compare.
+    mask: [f32; 4],
+    mask_radius: f32,
 }
 
 struct Texture {
@@ -88,6 +93,16 @@ impl ImagePipeline {
                     offset: 16,
                     shader_location: 2,
                 },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 20,
+                    shader_location: 3,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: 36,
+                    shader_location: 4,
+                },
             ],
         };
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -154,11 +169,11 @@ impl ImagePipeline {
         queue: &wgpu::Queue,
         logical_size: (f32, f32),
         scale: f32,
-        images: impl Iterator<Item = (&'a Rect, &'a str, f32, &'a Rect)>,
+        images: impl Iterator<Item = (&'a Rect, &'a str, f32, &'a Rect, ClipMask)>,
     ) {
         self.draws.clear();
         self.staging.clear();
-        for (rect, source, alpha, clip) in images {
+        for (rect, source, alpha, clip, mask) in images {
             if !self.textures.contains_key(source) {
                 let loaded =
                     load_texture(device, queue, &self.texture_layout, &self.sampler, source)
@@ -179,6 +194,11 @@ impl ImagePipeline {
                 pos: [rect.x, rect.y],
                 size: [rect.w, rect.h],
                 alpha: alpha.clamp(0.0, 1.0),
+                mask: [mask.rect.x, mask.rect.y, mask.rect.w, mask.rect.h],
+                mask_radius: match mask.is_none() {
+                    true => 0.0,
+                    false => mask.radius,
+                },
             });
         }
         if self.staging.len() > self.instance_capacity {

@@ -427,7 +427,9 @@ the pointer. `garden_diff.ptl`'s commit rows are the worked example. The `:Git`/
 
 Relative image sources resolve from Garden's working directory. RGB and RGBA
 PNG files are supported; a missing or invalid bitmap is logged and skipped
-without aborting the panel frame. Image commands honor the active panel clip.
+without aborting the panel frame. Image commands honor the active panel clip,
+and the optional trailing `radius` rounds the bitmap's own corners (see
+[Clipping](#clipping) for the circular-avatar case).
 
 ### Draw order
 
@@ -480,16 +482,29 @@ Both forms take an optional trailing `radius` to round the clip's corners.
 while it is active (a region carries its own interior clip; the two are
 intersected).
 
-The rounding, though, reaches **shapes only**. A GPU scissor is four integer
-edges and cannot express a corner, so a rounded clip is carried into the mesh
-fragment shader as a rounded-rect SDF and feathered across one physical pixel —
-which is what makes a circular crop come out with a clean antialiased edge
-rather than a staircase. Text (glyphon, whose `TextBounds` is a rectangle) and
-images (`Primitive::Image`, which has no mask field yet) are still cut to the
-clip's **bounding rect**. That is a degradation, never a dropped clip: nothing
-escapes the rect either way. Only one rounded mask is in force at a time — the
+The rounding reaches **shapes and images**. A GPU scissor is four integer edges
+and cannot express a corner, so a rounded clip is carried into the fragment
+shader as a rounded-rect SDF and feathered across one physical pixel — which is
+what makes a circular crop come out with a clean antialiased edge rather than a
+staircase. The mesh and image pipelines evaluate the *same* SDF, so a shape and
+a bitmap cut against one mask agree pixel for pixel along their shared edge.
+**Text** (glyphon, whose `TextBounds` is a rectangle) is still cut to the clip's
+**bounding rect**. That is a degradation, never a dropped clip: nothing escapes
+the rect either way. Only one rounded mask is in force at a time — the
 innermost — and nesting a *square* `clip_push` inside a rounded one keeps the
 rounding, since un-rounding the card would be the surprising reading.
+
+An image can also round *itself*, with the trailing `radius` on `draw_image`,
+which is the circular avatar in one call:
+
+```petal
+draw_image("avatar.png", rect(50, 210, 140, 140), 255, 70)   -- radius = w/2
+```
+
+An image's own radius wins over a rounded clip it happens to be under, since
+one mask reaches the shader and its own circle is the thing the author asked
+for; the enclosing clip still cuts it squarely through the scissor. `/scene`
+reports the mask that survived as each image primitive's `radius`.
 
 Text is cut, not dropped: a run that straddles the clip's bottom edge renders
 its top half, which is exactly what a scrolling list wants at its viewport

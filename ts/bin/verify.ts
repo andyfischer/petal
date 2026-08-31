@@ -746,7 +746,12 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             const got = await traceHash(kind, ctx.after, t.after, seed, sc, frames, size);
             const g = driverGuard(t.rel, kind, steps, [got]);
             if (g) return g;
-            if (ctx.opts.updateGolden) {
+            // A corpus entry outside the repo (`~/.garden`, `~/worlds-fair`)
+            // is checked but never baselined: its key is an absolute path on
+            // one developer's machine, so writing it would check in a hash
+            // nobody else can reproduce — and would fail the moment that
+            // separate checkout moved on.
+            if (ctx.opts.updateGolden && !t.rel.startsWith('/')) {
                 ctx.golden[key] = got.hash;
                 ctx.goldenDirty = true;
             } else if (ctx.golden[key] && ctx.golden[key] !== got.hash) {

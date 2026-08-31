@@ -52,6 +52,25 @@ export interface DrawCommand {
   italic?: boolean;
   /** Letter-spacing in px; absent = 0. */
   spacing?: number;
+  // Gradients (rect_gradient / circle_gradient) — stop 0 then stop 1; the
+  // alphas are omitted when opaque, like `a`.
+  r0?: number;
+  g0?: number;
+  b0?: number;
+  a0?: number;
+  r1?: number;
+  g1?: number;
+  b1?: number;
+  a1?: number;
+  /** Gradient axis in radians, clockwise from +x with y growing downward. */
+  angle?: number;
+  // Shadow
+  /** Falloff distance outward from the (spread) shape boundary. */
+  blur?: number;
+  /** Grow the casting shape by this many px before blurring; may be negative. */
+  spread?: number;
+  dx?: number;
+  dy?: number;
   // Offscreen canvas (create_canvas / set_target / draw_canvas)
   id?: number;
 }
@@ -60,6 +79,13 @@ function fillStyle(cmd: DrawCommand): string {
   const a = cmd.a ?? 255;
   if (a >= 255) return `rgb(${cmd.r},${cmd.g},${cmd.b})`;
   return `rgba(${cmd.r},${cmd.g},${cmd.b},${a / 255})`;
+}
+
+/** One gradient stop's CSS color, from the `*0` / `*1` field group. */
+function stopColor(r: number, g: number, b: number, a: number | undefined): string {
+  const alpha = a ?? 255;
+  if (alpha >= 255) return `rgb(${r},${g},${b})`;
+  return `rgba(${r},${g},${b},${alpha / 255})`;
 }
 
 /** Trace a rounded-rectangle path (falls back to a plain rect when radius 0). */
@@ -152,6 +178,66 @@ function renderPrimitive(
       break;
     }
 
+    case "rect_gradient": {
+      const x = cmd.x!, y = cmd.y!, w = cmd.w!, h = cmd.h!;
+      // The CSS `linear-gradient` axis: through the box centre, its length the
+      // box's projection onto that direction, so both stops land exactly on
+      // opposite corners at 45°. Same geometry the native hosts tessellate.
+      const angle = cmd.angle ?? 0;
+      const ux = Math.cos(angle), uy = Math.sin(angle);
+      const len = Math.abs(w * ux) + Math.abs(h * uy);
+      const mx = x + w / 2, my = y + h / 2;
+      const grad = ctx.createLinearGradient(
+        mx - (ux * len) / 2, my - (uy * len) / 2,
+        mx + (ux * len) / 2, my + (uy * len) / 2,
+      );
+      grad.addColorStop(0, stopColor(cmd.r0!, cmd.g0!, cmd.b0!, cmd.a0));
+      grad.addColorStop(1, stopColor(cmd.r1!, cmd.g1!, cmd.b1!, cmd.a1));
+      ctx.fillStyle = grad;
+      if (cmd.radius && cmd.radius > 0) {
+        roundRectPath(ctx, x, y, w, h, cmd.radius);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, y, w, h);
+      }
+      break;
+    }
+
+    case "circle_gradient": {
+      const radius = Math.abs(cmd.radius!);
+      const grad = ctx.createRadialGradient(cmd.cx!, cmd.cy!, 0, cmd.cx!, cmd.cy!, radius);
+      grad.addColorStop(0, stopColor(cmd.r0!, cmd.g0!, cmd.b0!, cmd.a0));
+      grad.addColorStop(1, stopColor(cmd.r1!, cmd.g1!, cmd.b1!, cmd.a1));
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cmd.cx!, cmd.cy!, radius, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case "shadow": {
+      // Canvas' own shadow is CSS `box-shadow`'s blur, so the offset and the
+      // spread go into the *path* and the blur into `shadowBlur`. Painting the
+      // (offset, spread) shape itself as well as its halo matches what the
+      // native hosts tessellate — a solid core plus its falloff — and is
+      // invisible under the card that will be drawn over it.
+      const spread = cmd.spread ?? 0;
+      const x = cmd.x! + (cmd.dx ?? 0) - spread;
+      const y = cmd.y! + (cmd.dy ?? 0) - spread;
+      const w = cmd.w! + 2 * spread;
+      const h = cmd.h! + 2 * spread;
+      if (w <= 0 || h <= 0) break;
+      const color = fillStyle(cmd);
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = cmd.blur ?? 0;
+      ctx.fillStyle = color;
+      roundRectPath(ctx, x, y, w, h, Math.max(0, (cmd.radius ?? 0) + spread));
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+
     case "text": {
       ctx.fillStyle = fillStyle(cmd);
       // The same stack, weight and slant the matching advance table was
@@ -222,8 +308,11 @@ export function renderCommands(
   // The active target. `0` is the main canvas; any other value is an offscreen
   // canvas id.
   let target = 0;
-  // Whether the active target currently has a clip pushed (needs a restore).
-  let clipped = false;
+  // How many clips are pushed on the active target — one `save()` each, so a
+  // `clip_pop` is one `restore()` and Canvas' own intersect-with-current clip
+  // semantics give the nesting for free. Per target, because `set_target`
+  // switches contexts and each keeps its own save stack.
+  const clipDepth = new Map<number, number>();
 
   const targetCtx = (): CanvasRenderingContext2D | null => {
     if (target === 0) return ctx;
@@ -234,12 +323,22 @@ export function renderCommands(
     const t = offscreen.get(target);
     return t ? [t.canvas.width, t.canvas.height] : [0, 0];
   };
+  /** Drop every clip on the active target, back to the bare drawable. */
   const clearClip = (): void => {
     const dst = targetCtx();
-    if (clipped && dst) {
-      dst.restore();
-      clipped = false;
+    const depth = clipDepth.get(target) ?? 0;
+    if (dst) {
+      for (let i = 0; i < depth; i++) dst.restore();
     }
+    clipDepth.set(target, 0);
+  };
+  /** Intersect the active target's clip with `cmd`'s (rounded) rect. */
+  const pushClip = (dst: CanvasRenderingContext2D, cmd: DrawCommand): void => {
+    dst.save();
+    dst.beginPath();
+    roundRectPath(dst, cmd.x!, cmd.y!, cmd.w!, cmd.h!, cmd.radius ?? 0);
+    dst.clip();
+    clipDepth.set(target, (clipDepth.get(target) ?? 0) + 1);
   };
 
   for (const cmd of commands) {
@@ -253,15 +352,30 @@ export function renderCommands(
         target = cmd.id!;
         break;
 
+      // `clip` *replaces* whatever is in force; `clip_push` nests inside it.
       case "clip": {
         const dst = targetCtx();
         if (dst) {
           clearClip();
-          dst.save();
-          dst.beginPath();
-          dst.rect(cmd.x!, cmd.y!, cmd.w!, cmd.h!);
-          dst.clip();
-          clipped = true;
+          pushClip(dst, cmd);
+        }
+        break;
+      }
+
+      case "clip_push": {
+        const dst = targetCtx();
+        if (dst) pushClip(dst, cmd);
+        break;
+      }
+
+      case "clip_pop": {
+        const dst = targetCtx();
+        const depth = clipDepth.get(target) ?? 0;
+        // An unmatched pop is a no-op, per the draw protocol — never a
+        // `restore()` that would unwind a save this renderer did not make.
+        if (dst && depth > 0) {
+          dst.restore();
+          clipDepth.set(target, depth - 1);
         }
         break;
       }
@@ -289,5 +403,9 @@ export function renderCommands(
       }
     }
   }
-  clearClip();
+  // Every clip left pushed at the end of the frame simply ends with it.
+  for (const id of clipDepth.keys()) {
+    target = id;
+    clearClip();
+  }
 }

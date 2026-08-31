@@ -984,6 +984,7 @@ fn scene_json_view(scene: &Scene, view: SceneView) -> Value {
                     source,
                     alpha,
                     clip,
+                    mask,
                 } => {
                     if !view.keeps(*rect) {
                         return None;
@@ -992,6 +993,9 @@ fn scene_json_view(scene: &Scene, view: SceneView) -> Value {
                         "type": "image", "rect": rect_json(view.rect(*rect)), "source": source,
                         "alpha": alpha, "clip": rect_json(view.clip(*clip)),
                         "visible": survives_clip(*rect, *clip),
+                        // The rounded cut its corners survive: 0 for a square
+                        // image, so a client can assert an avatar is a circle.
+                        "radius": mask.radius.max(0.0),
                     })
                 }
             };

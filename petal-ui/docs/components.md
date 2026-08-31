@@ -327,6 +327,13 @@ Prefer `clip_push`/`clip_pop` inside anything reusable: `clip` *replaces* the
 active clip, so a widget that clips its own contents would throw away the clip
 its caller set.
 
+A rounded clip is a *mask*, not a scissor, so the circular avatar is either
+`draw_image(src, r, 255, r.w / 2)` or the same image drawn under
+`clip_push(r, r.w / 2)`. How far the rounding reaches is the host's business:
+Garden cuts shapes and images against the mask and falls back to the bounding
+rect for text; a host with no mask of its own draws the square shape rather
+than nothing.
+
 ### Elevation
 
 The widget set never calls `draw_shadow` with ad-hoc numbers; it casts from

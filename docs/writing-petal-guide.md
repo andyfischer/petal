@@ -202,7 +202,7 @@ script that re-runs every frame able to remember anything.
 ```petal
 state hits = 0
 hits += 1
-print(hits)    // 1 on the first run, 2 on the second, …
+print(hits)    // 1 on the first run, 2 on the second, ...
 ```
 
 The rule that surprises people: **which slot you get depends on the call path**
@@ -599,7 +599,7 @@ config let offset = 10
 
 **Split files with `import`; declarations are private until `export`ed.**
 
-```petal
+```petal ignore
 // shapes.ptl
 export class Circle
   radius: num,

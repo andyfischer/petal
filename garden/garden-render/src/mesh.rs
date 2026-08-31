@@ -176,12 +176,7 @@ impl MeshPipeline {
                     pos: [v.pos.0, v.pos.1],
                     // sRGB-encoded, straight through — see `Color`.
                     color: v.color.to_array(),
-                    mask: [
-                        v.mask.rect.x,
-                        v.mask.rect.y,
-                        v.mask.rect.w,
-                        v.mask.rect.h,
-                    ],
+                    mask: [v.mask.rect.x, v.mask.rect.y, v.mask.rect.w, v.mask.rect.h],
                     mask_radius: v.mask.radius,
                 }));
             self.groups.push(DrawGroup {

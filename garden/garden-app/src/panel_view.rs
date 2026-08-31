@@ -2432,9 +2432,6 @@ impl PanelView {
                         col(*r, *g, *b, 255),
                     );
                 }
-                // TODO(renderer): `radius` is dropped — `Primitive::Image`
-                // has no corner radius yet, so a rounded image draws square
-                // rather than not at all.
                 PanelCmd::Image {
                     source,
                     x,
@@ -2442,19 +2439,31 @@ impl PanelView {
                     w,
                     h,
                     a,
-                    ..
+                    radius,
                 } => {
                     flush_mesh(prims, &mut verts, cur_clip);
+                    let dest = Rect {
+                        x: ox + *x as f32,
+                        y: oy + *y as f32,
+                        w: *w as f32,
+                        h: *h as f32,
+                    };
+                    // One mask reaches the shader, so an image that rounds
+                    // *itself* wins over the rounded clip it happens to be
+                    // under: the avatar's own circle is what the author asked
+                    // for, and the enclosing card still cuts it squarely
+                    // through the scissor. Both are the same code path — the
+                    // circular avatar is written either way.
+                    let mask = match *radius > 0 {
+                        true => ClipMask::rounded(dest, *radius as f32),
+                        false => cur_clip.mask,
+                    };
                     prims.push(Primitive::Image {
-                        rect: Rect {
-                            x: ox + *x as f32,
-                            y: oy + *y as f32,
-                            w: *w as f32,
-                            h: *h as f32,
-                        },
+                        rect: dest,
                         source: source.clone(),
                         alpha: *a as f32 / 255.0,
                         clip: cur_clip.rect,
+                        mask,
                     });
                 }
                 PanelCmd::Rect {
@@ -4705,11 +4714,13 @@ fn clip_to(p: Primitive, to: Rect) -> Primitive {
             source,
             alpha,
             clip,
+            mask,
         } => Primitive::Image {
             rect,
             source,
             alpha,
             clip: intersect(clip, to),
+            mask,
         },
         Primitive::Quad { .. } => p,
     }

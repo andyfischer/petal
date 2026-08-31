@@ -1,0 +1,480 @@
+// tetris.ptl — a headless Tetris core.
+//
+// A 10x20 well, the seven tetrominoes, SRS rotation with the standard wall-kick
+// tables, gravity on a tick clock, hard drop, line clears with guideline
+// scoring, levels, and game over. Pieces come from a 7-bag fed by a fixed-seed
+// LCG, and a deterministic placement heuristic plays the game, so two runs are
+// byte-identical.
+//
+//   ./ts/bin/run-petal.ts check --strict examples/challenge/tetris.ptl
+//   ./ts/bin/run-petal.ts run examples/challenge/tetris.ptl
+
+config let WIDTH = 10
+config let HEIGHT = 20
+config let SEED = 20260830
+config let MAX_PIECES = 45
+config let TICK_LIMIT_PER_PIECE = 40
+
+// ---------------------------------------------------------------- randomness
+
+// A small LCG, so the piece order does not depend on the host RNG at all.
+fn lcg_next(s: int) -> int
+  (s * 1103515245 + 12345) % 2147483648
+end
+
+// Fisher-Yates over [1..7]; returns the shuffled bag and the advanced seed.
+fn shuffled_bag(seed: int) -> record
+  let bag = for k in range(1, 8) do k end
+  let s = seed
+  let i = 6
+  while i > 0 do
+    s = lcg_next(s)
+    let j = s % (i + 1)
+    let tmp = bag[i]
+    bag[i] = bag[j]
+    bag[j] = tmp
+    i = i - 1
+  end
+  {bag: bag, seed: s}
+end
+
+// ------------------------------------------------------------------- pieces
+
+// 1=I 2=J 3=L 4=O 5=S 6=T 7=Z
+fn piece_glyph(kind: int) -> string
+  match kind
+    when 1 -> "I"
+    when 2 -> "J"
+    when 3 -> "L"
+    when 4 -> "O"
+    when 5 -> "S"
+    when 6 -> "T"
+    when 7 -> "Z"
+    when _ -> "."
+  end
+end
+
+// Side of the rotation box the piece turns inside of. SRS uses 4x4 for I and
+// 3x3 for everything else; O is written into a 3x3 box but never rotates.
+fn box_size(kind: int) -> int
+  if kind == 1 then 4 else 3 end
+end
+
+// Spawn-orientation cells, as [x, y] inside the rotation box (y grows down).
+fn spawn_cells(kind: int) -> list
+  match kind
+    when 1 -> [[0, 1], [1, 1], [2, 1], [3, 1]]
+    when 2 -> [[0, 0], [0, 1], [1, 1], [2, 1]]
+    when 3 -> [[2, 0], [0, 1], [1, 1], [2, 1]]
+    when 4 -> [[1, 0], [2, 0], [1, 1], [2, 1]]
+    when 5 -> [[1, 0], [2, 0], [0, 1], [1, 1]]
+    when 6 -> [[1, 0], [0, 1], [1, 1], [2, 1]]
+    when _ -> [[0, 0], [1, 0], [1, 1], [2, 1]]
+  end
+end
+
+// Cells of `kind` in rotation state `rot` (0..3), still box-relative.
+// Clockwise rotation inside an n-box sends (x, y) to (n - 1 - y, x).
+fn piece_cells(kind: int, rot: int) -> list
+  let n = box_size(kind)
+  let cells = spawn_cells(kind)
+  if kind == 4 then
+    cells
+  else
+    let turns = rot % 4
+    let t = 0
+    while t < turns do
+      cells = for c in cells do [n - 1 - c[1], c[0]] end
+      t = t + 1
+    end
+    cells
+  end
+end
+
+// ---------------------------------------------------------------- wall kicks
+
+// The SRS kick tables, transcribed with y growing DOWNWARD (the published
+// tables use y up, so every y here is negated). Key is from*4 + to.
+fn kicks_jlstz(key: int) -> list
+  match key
+    when 1 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     // 0 -> R
+    when 4 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       // R -> 0
+    when 6 -> [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]]       // R -> 2
+    when 9 -> [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]]     // 2 -> R
+    when 11 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]       // 2 -> L
+    when 14 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   // L -> 2
+    when 12 -> [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]]   // L -> 0
+    when 3 -> [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]]        // 0 -> L
+    when _ -> [[0, 0]]
+  end
+end
+
+fn kicks_i(key: int) -> list
+  match key
+    when 1 -> [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]]
+    when 4 -> [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]]
+    when 6 -> [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]]
+    when 9 -> [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]]
+    when 11 -> [[0, 0], [2, 0], [-1, 0], [2, -1], [-1, 2]]
+    when 14 -> [[0, 0], [-2, 0], [1, 0], [-2, 1], [1, -2]]
+    when 12 -> [[0, 0], [-1, 0], [2, 0], [-1, -2], [2, 1]]
+    when 3 -> [[0, 0], [1, 0], [-2, 0], [1, 2], [-2, -1]]
+    when _ -> [[0, 0]]
+  end
+end
+
+fn kick_offsets(kind: int, from_rot: int, to_rot: int) -> list
+  let key = from_rot * 4 + to_rot
+  if kind == 4 then
+    [[0, 0]]
+  elsif kind == 1 then
+    kicks_i(key)
+  else
+    kicks_jlstz(key)
+  end
+end
+
+// -------------------------------------------------------------------- board
+
+fn new_board() -> list
+  for y in range(HEIGHT) do
+    for x in range(WIDTH) do 0 end
+  end
+end
+
+// True if `cells`, placed with its box origin at (px, py), overlaps a wall,
+// the floor or a filled cell.
+fn collides(board: list, cells: list, px: int, py: int) -> bool
+  let hit = false
+  for c in cells do
+    let x = px + c[0]
+    let y = py + c[1]
+    if x < 0 || x >= WIDTH || y >= HEIGHT then
+      hit = true
+    elsif y >= 0 && board[y][x] != 0 then
+      hit = true
+    end
+  end
+  hit
+end
+
+fn merge_piece(board: list, cells: list, px: int, py: int, kind: int) -> list
+  let out = board
+  for c in cells do
+    let x = px + c[0]
+    let y = py + c[1]
+    if y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH then
+      out[y][x] = kind
+    end
+  end
+  out
+end
+
+fn row_full(row: list) -> bool
+  let full = true
+  for v in row do
+    if v == 0 then full = false end
+  end
+  full
+end
+
+// Drop every surviving row down and refill the top. Returns the new board and
+// how many rows went away.
+fn clear_lines(board: list) -> record
+  let kept = for row in board do
+    if row_full(row) then continue end
+    row
+  end
+  let cleared = HEIGHT - len(kept)
+  let blank = for x in range(WIDTH) do 0 end
+  let out = for i in range(cleared) do blank end
+  for row in kept do
+    out = append(out, row)
+  end
+  {board: out, cleared: cleared}
+end
+
+// Lowest py at which the piece still fits, starting from py.
+fn drop_to(board: list, cells: list, px: int, py: int) -> int
+  let y = py
+  while !collides(board, cells, px, y + 1) do
+    y = y + 1
+  end
+  y
+end
+
+// -------------------------------------------------------- placement heuristic
+
+// The four board features El-Tetris looks at, gathered in two passes:
+//
+//   row_t  — filled/empty flips along each row, both walls counted as filled
+//   col_t  — flips down each column, ceiling empty and floor filled
+//   holes  — empty cells with something stacked above them
+//   wells  — for every one-wide notch, 1 + 2 + … + depth
+fn board_features(board: list) -> record
+  let row_t = 0
+  for y in range(HEIGHT) do
+    let row = board[y]
+    let prev = 1
+    for x in range(WIDTH) do
+      let cur = if row[x] != 0 then 1 else 0 end
+      if cur != prev then row_t = row_t + 1 end
+      prev = cur
+    end
+    if prev != 1 then row_t = row_t + 1 end
+  end
+
+  let col_t = 0
+  let holes = 0
+  let wells = 0
+  for x in range(WIDTH) do
+    let prev = 0
+    let roof = false
+    let run = 0
+    for y in range(HEIGHT) do
+      let row = board[y]
+      let cur = if row[x] != 0 then 1 else 0 end
+      if cur != prev then col_t = col_t + 1 end
+      prev = cur
+      if cur == 1 then
+        roof = true
+        run = 0
+      else
+        if roof then holes = holes + 1 end
+        let left = if x == 0 then 1 elsif row[x - 1] != 0 then 1 else 0 end
+        let right = if x == WIDTH - 1 then 1 elsif row[x + 1] != 0 then 1 else 0 end
+        if left == 1 && right == 1 then
+          run = run + 1
+        else
+          run = 0
+        end
+        wells = wells + run
+      end
+    end
+    if prev != 1 then col_t = col_t + 1 end
+  end
+
+  {row_t: row_t, col_t: col_t, holes: holes, wells: wells}
+end
+
+// The El-Tetris evaluation function, with its published weights.
+fn score_board(board: list, cleared: int, landing_height: num) -> num
+  let f = board_features(board)
+  // NOTE: every continuation line must END with its operator. A line that
+  // *starts* with `-` parses as a fresh statement instead.
+  -4.500158825082766 * landing_height +
+  3.4181268101392694 * cleared -
+  3.2178882868487753 * f.row_t -
+  9.348695305445199 * f.col_t -
+  7.899265427351652 * f.holes -
+  3.3855972247263626 * f.wells
+end
+
+// Try every rotation at every column; return the best {rot, x} to aim for.
+fn best_placement(board: list, kind: int) -> record
+  let best_rot = 0
+  let best_x = 3
+  let best_score = 0.0
+  let found = false
+  let rot_count = if kind == 4 then 1 elsif kind == 1 || kind == 5 || kind == 7 then 2 else 4 end
+  for rot in range(rot_count) do
+    let cells = piece_cells(kind, rot)
+    for px in range(-2, WIDTH + 1) do
+      if collides(board, cells, px, 0) then continue end
+      let py = drop_to(board, cells, px, 0)
+      // Landing height = midpoint of the piece, measured up from the floor.
+      let lo = HEIGHT
+      let hi = 0
+      for c in cells do
+        let row_from_floor = HEIGHT - (py + c[1])
+        if row_from_floor < lo then lo = row_from_floor end
+        if row_from_floor > hi then hi = row_from_floor end
+      end
+      let landed = merge_piece(board, cells, px, py, kind)
+      let res = clear_lines(landed)
+      let s = score_board(res.board, res.cleared, (lo + hi) / 2.0)
+      if !found || s > best_score then
+        found = true
+        best_score = s
+        best_rot = rot
+        best_x = px
+      end
+    end
+  end
+  {rot: best_rot, x: best_x}
+end
+
+// ------------------------------------------------------------------ printing
+
+fn render(board: list, header: string) -> nil
+  print(header)
+  for y in range(HEIGHT) do
+    let line = "|"
+    for x in range(WIDTH) do
+      let v = board[y][x]
+      line = line ++ (if v == 0 then " ." else " " ++ piece_glyph(v) end)
+    end
+    print(line ++ " |")
+  end
+  let floor_line = "+"
+  for x in range(WIDTH) do
+    floor_line = floor_line ++ "--"
+  end
+  print(floor_line ++ "-+")
+  nil
+end
+
+fn line_score(cleared: int, level: int) -> int
+  let base = match cleared
+    when 1 -> 100
+    when 2 -> 300
+    when 3 -> 500
+    when 4 -> 800
+    when _ -> 0
+  end
+  base * level
+end
+
+fn gravity_period(level: int) -> int
+  let p = 12 - level
+  if p < 2 then 2 else p end
+end
+
+// ---------------------------------------------------------------- game loop
+
+let board = new_board()
+let score = 0
+let lines_total = 0
+let level = 1
+let seed = SEED
+let queue = []
+let pieces_played = 0
+let ticks = 0
+let running = true
+let over_reason = "piece limit reached"
+let tetris_count = 0
+
+print("Tetris — {WIDTH}x{HEIGHT} well, seed {SEED}, at most {MAX_PIECES} pieces.")
+print("")
+
+while running do
+  // 7-bag refill
+  if len(queue) == 0 then
+    let drawn = shuffled_bag(seed)
+    queue = drawn.bag
+    seed = drawn.seed
+  end
+  let kind = queue[0]
+  queue = slice(queue, 1, len(queue))
+
+  let rot = 0
+  let px = 3
+  let py = 0
+  let cells = piece_cells(kind, rot)
+
+  if collides(board, cells, px, py) then
+    running = false
+    over_reason = "game over — the well is blocked at spawn"
+  else
+    let plan = best_placement(board, kind)
+    let locked = false
+    let grav = 0
+    let piece_ticks = 0
+
+    while !locked do
+      ticks = ticks + 1
+      piece_ticks = piece_ticks + 1
+
+      // One input per tick: first turn the piece, then walk it sideways, then
+      // hard drop once it is where the planner wants it.
+      if rot != plan.rot then
+        let to_rot = (rot + 1) % 4
+        let want = piece_cells(kind, to_rot)
+        let placed = false
+        for k in kick_offsets(kind, rot, to_rot) do
+          if placed then continue end
+          if !collides(board, want, px + k[0], py + k[1]) then
+            placed = true
+            px = px + k[0]
+            py = py + k[1]
+            rot = to_rot
+            cells = want
+          end
+        end
+        if !placed then
+          // Every kick was blocked; give up on turning and drop as we are.
+          plan = {rot: rot, x: plan.x}
+        end
+      elsif px != plan.x then
+        let dx = if plan.x > px then 1 else -1 end
+        if collides(board, cells, px + dx, py) then
+          plan = {rot: rot, x: px}
+        else
+          px = px + dx
+        end
+      else
+        let landing = drop_to(board, cells, px, py)
+        score = score + 2 * (landing - py)
+        py = landing
+        locked = true
+      end
+
+      if !locked then
+        grav = grav + 1
+        if grav >= gravity_period(level) then
+          grav = 0
+          if collides(board, cells, px, py + 1) then
+            locked = true
+          else
+            py = py + 1
+          end
+        end
+      end
+
+      if piece_ticks >= TICK_LIMIT_PER_PIECE then
+        py = drop_to(board, cells, px, py)
+        locked = true
+      end
+    end
+
+    board = merge_piece(board, cells, px, py, kind)
+    let res = clear_lines(board)
+    board = res.board
+    pieces_played = pieces_played + 1
+
+    if res.cleared > 0 then
+      let gained = line_score(res.cleared, level)
+      score = score + gained
+      lines_total = lines_total + res.cleared
+      level = min(15, lines_total / 10 + 1)
+      if res.cleared == 4 then tetris_count = tetris_count + 1 end
+      let label = match res.cleared
+        when 1 -> "single"
+        when 2 -> "double"
+        when 3 -> "triple"
+        when _ -> "TETRIS"
+      end
+      render(board,
+        "piece {pieces_played} ({piece_glyph(kind)}) at x={px} rot={rot} — " ++
+        "{label}! +{gained}  score={score}  lines={lines_total}  level={level}")
+      print("")
+    elsif pieces_played % 20 == 0 then
+      render(board, "piece {pieces_played} ({piece_glyph(kind)}) — no clear, score={score}")
+      print("")
+    end
+
+    if pieces_played >= MAX_PIECES then
+      running = false
+    end
+  end
+end
+
+render(board, "final board")
+print("")
+print("{over_reason}")
+print("pieces placed : {pieces_played}")
+print("ticks elapsed : {ticks}")
+print("lines cleared : {lines_total}")
+print("tetrises      : {tetris_count}")
+print("level         : {level}")
+print("score         : {score}")

@@ -28,6 +28,13 @@ pub enum Type {
     Bool,
     Int,
     Float,
+    /// `int` **or** `float` — the numeric contract most arithmetic actually
+    /// has. Unlike the other variants this has no runtime tag: no `Value`
+    /// reports `"num"`, and nothing infers it. It exists to be *written*, for
+    /// the very common case of a slot that legitimately takes either width and
+    /// that "no implicit casting" forbids from picking one (the built-in
+    /// `Rect`'s edges are the motivating case — see `crate::classes`).
+    Num,
     String,
     List,
     /// A `Map` value at runtime (`type_name` == "record").
@@ -69,6 +76,7 @@ impl Type {
             "bool" => Type::Bool,
             "int" => Type::Int,
             "float" => Type::Float,
+            "num" => Type::Num,
             "string" | "str" => Type::String,
             "list" => Type::List,
             "record" => Type::Record,
@@ -102,9 +110,11 @@ impl Type {
         }
     }
 
-    /// The canonical spelling of this type. For every concrete variant this
-    /// equals the corresponding [`Value::type_name`](crate::value::Value::type_name);
-    /// [`Type::Any`] spells `"any"`.
+    /// The canonical spelling of this type. For every variant with a runtime
+    /// tag this equals the corresponding
+    /// [`Value::type_name`](crate::value::Value::type_name); [`Type::Any`]
+    /// spells `"any"` and [`Type::Num`] spells `"num"`, neither of which any
+    /// `Value` reports.
     ///
     /// [`Type::Class`] has no static spelling — its name lives in the
     /// [`ClassTable`](crate::classes::ClassTable) — so it reports `"class"`
@@ -117,6 +127,7 @@ impl Type {
             Type::Bool => "bool",
             Type::Int => "int",
             Type::Float => "float",
+            Type::Num => "num",
             Type::String => "string",
             Type::List => "list",
             Type::Record => "record",
@@ -142,6 +153,15 @@ impl Type {
     /// - `int` is assignable to a `float` slot (documented numeric promotion),
     ///   but `float` is **not** assignable to `int` — that needs an explicit
     ///   `int()` cast (no implicit casting).
+    /// - `int`, `float` and `dual` all satisfy a [`Type::Num`] slot, and `num`
+    ///   satisfies **none** of them: it is a widening only, and narrowing back
+    ///   needs an explicit cast for the same reason `float`→`int` does.
+    ///   `dual` is included deliberately — a dual is a number every arithmetic
+    ///   path accepts, so rejecting one would warn on working autodiff code,
+    ///   which is the outcome this pass exists to avoid. The runtime `number()`
+    ///   guard on the built-in `Rect` is narrower (int/float only), so a rect
+    ///   built from duals is a miss here rather than a false alarm — the
+    ///   direction this checker always errs in.
     /// - A class instance *is* a record at runtime, so `Class(_)` satisfies a
     ///   `record` slot. The reverse is not true: a bare `{x: 1}` carries no
     ///   class tag, so it cannot fill a `Rect` slot.
@@ -151,6 +171,7 @@ impl Type {
         match (self, other) {
             (Type::Any, _) | (_, Type::Any) => true,
             (Type::Int, Type::Float) => true,
+            (Type::Int | Type::Float | Type::Dual, Type::Num) => true,
             (Type::Class(_), Type::Record) => true,
             _ => self == other,
         }
@@ -335,6 +356,61 @@ mod tests {
             .unwrap();
         assert!(!Type::Class(a).is_assignable_to(&Type::Class(b)));
         assert!(Type::Class(a).is_assignable_to(&Type::Class(a)));
+    }
+
+    #[test]
+    fn num_is_spelled_num_and_resolves_from_that_name() {
+        assert_eq!(Type::from_name("num"), Some(Type::Num));
+        assert_eq!(Type::Num.name(), "num");
+        let classes = crate::classes::ClassTable::new();
+        assert_eq!(Type::resolve("num", &classes), Some(Type::Num));
+    }
+
+    #[test]
+    fn int_and_float_satisfy_num() {
+        assert!(Type::Int.is_assignable_to(&Type::Num));
+        assert!(Type::Float.is_assignable_to(&Type::Num));
+        assert!(Type::Num.is_assignable_to(&Type::Num));
+    }
+
+    /// A dual is a number that every arithmetic path accepts, so warning on one
+    /// in a `num` slot would fire on working autodiff code — the outcome this
+    /// pass avoids. See the `is_assignable_to` docs.
+    #[test]
+    fn a_dual_satisfies_num() {
+        assert!(Type::Dual.is_assignable_to(&Type::Num));
+    }
+
+    /// `num` is a *widening* only. Narrowing back to a concrete numeric type
+    /// needs an explicit cast, or `int(x)` would be implicit.
+    #[test]
+    fn num_narrows_to_nothing() {
+        assert!(!Type::Num.is_assignable_to(&Type::Int));
+        assert!(!Type::Num.is_assignable_to(&Type::Float));
+        assert!(!Type::Num.is_assignable_to(&Type::Dual));
+    }
+
+    #[test]
+    fn num_is_not_a_catch_all() {
+        for ty in [
+            Type::String,
+            Type::Bool,
+            Type::List,
+            Type::Record,
+            Type::Nil,
+        ] {
+            assert!(!ty.is_assignable_to(&Type::Num), "{ty:?} -> num");
+            assert!(!Type::Num.is_assignable_to(&ty), "num -> {ty:?}");
+        }
+    }
+
+    /// `num` has no runtime tag — no `Value` reports `"num"` — so it must stay
+    /// out of the `Value::type_name` lockstep set, like `any` and `class`.
+    #[test]
+    fn num_has_no_runtime_type_name() {
+        assert!(!concrete_types().contains(&Type::Num));
+        assert!(Value::Int(1).type_name() != Type::Num.name());
+        assert!(Value::Float(1.0).type_name() != Type::Num.name());
     }
 
     #[test]

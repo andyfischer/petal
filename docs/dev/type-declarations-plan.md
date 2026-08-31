@@ -92,14 +92,15 @@ types later if wanted (would likely need a different token, e.g. `fn(n: int): in
 A type is a single lowercase name from a fixed vocabulary:
 
 ```
-type      := 'any' | 'nil' | 'bool' | 'int' | 'float' | 'string'
+type      := 'any' | 'num' | 'nil' | 'bool' | 'int' | 'float' | 'string'
            | 'list' | 'record' | 'function' | 'enum' | 'vec2'
            | 'f64_array' | 'element' | 'symbol' | 'dual'
            | 'handle' | 'pending'
 ```
 
 These are exactly the strings `Value::type_name()` returns (`value.rs:83-104`),
-plus `any`. Mirroring `type()` output means "the name you see at runtime is the
+plus the two with no runtime tag: `any` and `num` (`int` or `float` — chunk S,
+resolving §12 Q5). Mirroring `type()` output means "the name you see at runtime is the
 name you write in an annotation." Note two naming points to decide in review:
 - Cast builtin is `str()` but the type name is `string`. Annotations use
   `string` (matches `type()`) and **also accept `str` as an alias** in type

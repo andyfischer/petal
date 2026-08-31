@@ -1682,6 +1682,49 @@ mod tests {
         assert!(warns("print(Rect(0, 0, 1, 1))").is_empty());
     }
 
+    /// The motivating case for `num` (plan §12 Q5): `Rect`'s edges take either
+    /// numeric width, so before `num` they were un-annotated and this was
+    /// caught only at runtime.
+    #[test]
+    fn a_non_numeric_rect_field_warns() {
+        let w = warns(r#"let r = Rect("a", 1, 2, 3)"#);
+        assert_eq!(w.len(), 1, "expected exactly one warning, got {w:?}");
+        assert!(w[0].contains("num"), "{}", w[0]);
+        assert!(w[0].contains("string"), "{}", w[0]);
+    }
+
+    /// Both numeric widths are accepted, mixed and matched, with no warning —
+    /// that is the entire point of the type.
+    #[test]
+    fn either_numeric_width_fills_a_num_slot() {
+        assert!(warns("let r = Rect(1, 2, 3, 4)").is_empty());
+        assert!(warns("let r = Rect(1.5, 2.5, 3.5, 4.5)").is_empty());
+        assert!(warns("let r = Rect(1, 2.5, 3, 4.5)").is_empty());
+    }
+
+    #[test]
+    fn a_num_annotation_checks_bindings_params_and_returns() {
+        assert!(warns("let x: num = 1").is_empty());
+        assert!(warns("let x: num = 1.5").is_empty());
+        assert_eq!(warns(r#"let x: num = "hi""#).len(), 1);
+
+        assert!(warns("fn f(a: num) a end\nf(1)\nf(2.5)").is_empty());
+        assert_eq!(warns("fn f(a: num) a end\nf(\"hi\")").len(), 1);
+
+        assert!(warns("fn f() -> num\n1\nend").is_empty());
+        assert_eq!(warns("fn f() -> num\n\"hi\"\nend").len(), 1);
+    }
+
+    /// `num` widens; it never narrows. Passing one to an `int` slot needs the
+    /// explicit cast, or the checker would be sanctioning an implicit one.
+    #[test]
+    fn a_num_does_not_fill_an_int_slot_without_a_cast() {
+        let src = "fn takes_int(a: int) a end\nfn f(n: num)\ntakes_int(n)\nend";
+        assert_eq!(warns(src).len(), 1, "{:?}", warns(src));
+        let cast = "fn takes_int(a: int) a end\nfn f(n: num)\ntakes_int(int(n))\nend";
+        assert!(warns(cast).is_empty(), "{:?}", warns(cast));
+    }
+
     #[test]
     fn method_arity_is_checked() {
         let src =

@@ -298,11 +298,27 @@ replace the value from anywhere. Un-annotated, both read as `any`, and the
 checker stays quiet about them. An annotation is what makes them checkable: it
 types every read *and* constrains every write, wherever the write is.
 
-The type names are exactly the ones `type(value)` reports (plus `any`), written
-lowercase: `any`, `nil`, `bool`, `int`, `float`, `string` (alias `str`), `list`,
-`record`, `function`, `enum`, `vec2`, `f64_array`, `element`, `symbol`, `dual`,
-`handle`, `pending`. They are recognized only in type position, so `int`,
-`float`, and `str` remain callable as the cast builtins everywhere else.
+The type names are the ones `type(value)` reports, written lowercase: `nil`,
+`bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `function`,
+`enum`, `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending` —
+plus two that no value ever reports: `any`, the dynamic escape hatch, and
+`num`, meaning **`int` or `float`**. They are recognized only in type position,
+so `int`, `float`, and `str` remain callable as the cast builtins everywhere
+else.
+
+Write `num` for a slot that genuinely takes either numeric width — the common
+case, since arithmetic accepts both. It is what the built-in `Rect` declares
+for its edges, which are ints in pixel layout and floats in sub-pixel layout:
+
+```petal
+fn scale_by(v: num, factor: num) -> num
+  v * factor
+end
+
+scale_by(3, 2)        // ok
+scale_by(3.5, 2)      // ok
+scale_by("3", 2)      // warning: string is not assignable to num
+```
 
 The name of any [class](#classes--methods) — declared or built in — is a type
 name too, anywhere in the file that declares it (a class declaration is
@@ -322,6 +338,23 @@ implicit casting. Cross types explicitly with `int()`, `float()`, or `str()`:
 let n: int = 3.9          // warning: float is not assignable to int
 let n: int = int(3.9)     // ok — explicit cast, n is 3
 let x: float = 5          // ok — int promotes to float
+```
+
+`num` widens but never narrows: an `int`, a `float` or a `dual` all satisfy a
+`num` slot, and a `num` satisfies neither `int` nor `float` without an explicit
+cast — otherwise accepting one would be the implicit truncation the rule above
+forbids.
+
+```petal
+fn width(r: Rect) -> num
+  r.w                     // ok — a rect edge is a num
+end
+
+fn pixels(n: int) n end
+fn place(x: num)
+  pixels(x)               // warning: num is not assignable to int
+  pixels(int(x))          // ok — explicit cast
+end
 ```
 
 `any` on either side of a check is always compatible, so a value flowing in from

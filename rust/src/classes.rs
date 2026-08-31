@@ -278,12 +278,15 @@ pub const RECT_FIELDS: [&str; 4] = ["x", "y", "w", "h"];
 ///
 /// A rect edge is a *number* — `int` for the pixel geometry most UI code
 /// writes, `float` for the sub-pixel geometry layout and animation produce.
-/// The language has no type naming "int or float" today (see
-/// docs/dev/type-declarations-plan.md), and declaring `int` would be a lie the
-/// constructor could only keep by truncating its argument — an implicit cast,
-/// which Petal does not do. So the fields are un-annotated (`any`) until a
-/// numeric type exists, and the constructor checks numeric-ness at runtime.
-const RECT_FIELD_TYPE: Option<Type> = None;
+/// [`Type::Num`] is the type that says exactly that; declaring `int` would be a
+/// lie the constructor could only keep by truncating its argument — an implicit
+/// cast, which Petal does not do.
+///
+/// The constructor still checks numeric-ness at runtime, and must: this is a
+/// warning-only projection, and it is deliberately the wider of the two checks
+/// (a `dual` satisfies `num` but not the runtime guard — see
+/// [`Type::is_assignable_to`]).
+const RECT_FIELD_TYPE: Option<Type> = Some(Type::Num);
 
 /// The built-in `Rect` methods as `(name, arity-including-receiver)`. The
 /// native implementations are registered under the qualified names
@@ -382,15 +385,15 @@ mod tests {
         assert!(def.builtin);
     }
 
-    /// A rect edge may be an int or a float, and the checker has no type for
-    /// "either" — so the fields carry no annotation rather than one the
-    /// constructor would have to break (see [`RECT_FIELD_TYPE`]).
+    /// A rect edge may be an int or a float, so the fields are declared `num` —
+    /// the type that says "either" — and never `int`, which the constructor
+    /// could only honour by truncating (see [`RECT_FIELD_TYPE`]).
     #[test]
-    fn rect_fields_are_not_declared_int() {
+    fn rect_fields_are_declared_num_never_int() {
         let t = ClassTable::new();
         let def = t.get(t.lookup("Rect").unwrap());
         for f in &def.fields {
-            assert_eq!(f.ty, None, "field `{}`", f.name);
+            assert_eq!(f.ty, Some(Type::Num), "field `{}`", f.name);
         }
     }
 

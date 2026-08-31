@@ -127,6 +127,23 @@ fn nil_and_enum_are_usable_as_type_names_despite_lexing_as_keywords() {
     );
 }
 
+/// `num` is writable in a type position like any other name, and is *only* a
+/// type name — `num` stays available as an ordinary identifier elsewhere, the
+/// same contextual rule that keeps the `int`/`float`/`str` casts callable.
+#[test]
+fn num_is_a_writable_type_name_and_stays_a_usable_identifier() {
+    assert_eq!(
+        resolved(let_ty("let x: num = 1")),
+        ("num".into(), Some(Type::Num))
+    );
+    assert_eq!(
+        resolved(let_ty("let x: num = 1.5")),
+        ("num".into(), Some(Type::Num))
+    );
+    parse("let num = 3");
+    parse("fn f(num) num end");
+}
+
 #[test]
 fn an_unknown_type_name_is_preserved_not_rejected() {
     // Kept verbatim with `resolved: None`; the *checker* warns about it, so a

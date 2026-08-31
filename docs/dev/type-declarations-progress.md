@@ -4,8 +4,9 @@ Living status tracker for implementing optional static type declarations.
 **Design rationale lives in [`type-declarations-plan.md`](type-declarations-plan.md)** — read it first.
 This doc tracks *what is done, what remains, and how to continue*.
 
-Last updated: 2026-08-30 (review pass: recorded chunks O–R, which had shipped
-but were never written down) · Branch: `main`
+Last updated: 2026-08-30 (chunk S: the `num` type; and a review pass that
+recorded chunks O–R, which had shipped but were never written down) ·
+Branch: `main`
 
 ---
 
@@ -46,6 +47,7 @@ but were never written down) · Branch: `main`
 | P — builtin return types | ✅ done | `67b238a` | `typecheck/builtin_types.rs`: the checker learns `len(xs)` is `int`, `sqrt(x)` is `float`, and that `abs`/`min`/`clamp` preserve int-ness |
 | Q — inference gained a *rewriting* consumer | ✅ done | `67b238a` | `lint`'s drop-identity-casts rule detects via `typecheck::find_redundant_casts`, so inference now decides an edit, not just a warning |
 | R — tighter unknown-type carets | ✅ done | `12e97e6` | `TypeAnn` carries its own `SourceSpan`; the unknown-type warning underlines just the type name |
+| S — the `num` type | ✅ done | (this) | `Type::Num` (`int` or `float`), resolving plan §12 Q5; the built-in `Rect`'s edges are declared with it, so a non-numeric field is caught at check time |
 
 Legend: ✅ done · 🚧 in progress · ⬜ todo
 
@@ -97,15 +99,16 @@ above). Two apparent gaps were confirmed as *intended*, not bugs:
 
 ---
 
-## What exists now (A–R shipped)
+## What exists now (A–S shipped)
 
 Annotations parse, type-check (warning-only), and surface through the CLI/MCP.
 The runtime is untouched — annotations are stripped to names for codegen.
 
 ### Type representation — `rust/src/types.rs`
-- `pub enum Type { Any, Nil, Bool, Int, Float, String, List, Record, Function,
-  Enum, Vec2, F64Array, Element, Symbol, Dual, Handle, Pending, Class(ClassId) }`
-  (derives `Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize`).
+- `pub enum Type { Any, Nil, Bool, Int, Float, Num, String, List, Record,
+  Function, Enum, Vec2, F64Array, Element, Symbol, Dual, Handle, Pending,
+  Class(ClassId) }` (derives `Clone, Copy, PartialEq, Eq, Debug, Hash,
+  Serialize`). `Any`, `Num` and `Class` are the three with no runtime tag.
 - `Type::from_name(&str) -> Option<Type>` — lowercase vocab + `str` alias;
   unknown ⇒ `None`. A **class name is `None` here**: resolving one needs the
   compilation's `ClassTable`, so use `Type::resolve(name, classes)` (chunk K),
@@ -115,7 +118,8 @@ The runtime is untouched — annotations are stripped to names for codegen.
   spelling). Diagnostics use `Type::display(&ClassTable) -> Cow<str>`, which
   prints the class's real name.
 - `Type::is_assignable_to(&self, &Type) -> bool` — `Any` both ways; `Int`→`Float`
-  yes, `Float`→`Int` no; `Class(_)`→`Record` yes (an instance *is* a record) but
+  yes, `Float`→`Int` no; `Int`/`Float`/`Dual`→`Num` yes but `Num`→none of them
+  (widens only, chunk S); `Class(_)`→`Record` yes (an instance *is* a record) but
   not the reverse; else equality.
 - `pub struct FnSignature { params: Vec<Option<Type>>, ret: Option<Type> }` —
   a function's declared signature (resolved types only). Compile-time; not in IR.
@@ -250,41 +254,60 @@ binding's initializer describes every later read.
 
 ---
 
+## Chunk S — the `num` type
+
+Resolves plan §12 Q5. `Type::Num` means **`int` or `float`** — the numeric
+contract most arithmetic actually has, and the one the language previously had
+no way to write.
+
+The motivating consumer was already in-tree: `RECT_FIELD_TYPE` in
+`rust/src/classes.rs` was `None` with a comment explaining that a rect edge is
+`int` in pixel layout and `float` in sub-pixel layout, and that declaring `int`
+would be a lie the constructor could only keep by truncating. So the built-in
+class the whole UI corpus is written against had un-annotated fields and gave up
+its static catch. It now reads `Some(Type::Num)`:
+
+```
+$ petal check -e 'let r = Rect("a", 1, 2, 3)'
+warning: argument 1 to `Rect`: field `x` expects `num`, found `string`
+  |              ^^^
+```
+
+Exit stays 0 — warning-only, unchanged.
+
+**What landed**
+
+- `types.rs`: the `Type::Num` variant, `from_name("num")`, `name() == "num"`.
+  Like `Any` and `Class` it has **no runtime tag** — no `Value` reports `"num"`
+  — so it stays out of `concrete_types()`, the `Value::type_name` lockstep set.
+  Pinned by `num_has_no_runtime_type_name`.
+- `is_assignable_to` gained one arm: `Int | Float | Dual → Num`. `num` widens
+  and never narrows — `Num → Int` and `Num → Float` are both false, since
+  accepting either would sanction the implicit truncation `float`→`int` is
+  already refused for.
+- `RECT_FIELD_TYPE = Some(Type::Num)`, and `classes.rs`'s
+  `rect_fields_are_not_declared_int` became
+  `rect_fields_are_declared_num_never_int` — the test was pinning the absence of
+  a type that now exists, but its real intent (never claim `int`) is unchanged.
+- Docs: the Language Guide's Type Annotations section (vocabulary, a worked
+  `num` example, and the widen-but-never-narrow rule), `syntax/overview.md`, and
+  the plan's §2 grammar. The vim `petalType` list gained `num`; **tree-sitter
+  needed no change** — its `type_name` rule is `$.identifier`, so it already
+  covers any bare name.
+
+**Why `dual` satisfies `num`.** A dual is a number every arithmetic path
+accepts, so rejecting one would warn on working autodiff code — the outcome
+this pass exists to avoid. The runtime `number()` guard on `Rect` is narrower
+(int/float only), so a rect built from duals is a *miss* here rather than a
+false alarm, which is the direction this checker always errs in.
+
+**No corpus churn.** All 195 `.ptl` files in the repo were re-checked; none
+gained a warning. The 7 files that warn today warn for pre-existing reasons
+(discarded pure results, capture-lag, an unknown-type fixture).
+
 ## What's next
 
-Recommended: **`Type::Num`** (plan §12 Q5). It is the only follow-up with a
-consumer already blocked on it in-tree, and it is small.
-
-`rust/src/classes.rs:286` reads `const RECT_FIELD_TYPE: Option<Type> = None;`
-with a comment explaining why: a rect edge is a *number* — `int` for pixel
-geometry, `float` for the sub-pixel geometry layout and animation produce — and
-the language has no name for "int or float". Declaring `int` would be a lie the
-constructor could only keep by truncating, which is the implicit cast Petal
-does not do. So the built-in class the whole UI corpus is written against has
-un-annotated fields, and the static catch is given up:
-
-```
-$ petal check -e 'let r = Rect("a", 1, 2, 3)'      # silent, exit 0
-$ petal run   -e 'let r = Rect("a", 1, 2, 3)'
-Error: Rect(): field `x` expects a number, got string
-```
-
-Scope is contained — the same shape as chunk A:
-
-- `types.rs`: a `Type::Num` variant; `from_name("num")`; `name()` returns
-  `"num"`. It has no runtime `type_name` (like `Any` and `Class`), so exclude it
-  from `concrete_types()` in `from_name_round_trips_every_type` and
-  `name_matches_value_type_name_for_concretes`.
-- `is_assignable_to` (`types.rs:150`) gains two arms: `Int`/`Float`/`Dual` →
-  `Num` yes; `Num` → `Int`/`Float` **no** (needs an explicit cast, keeping "no
-  implicit casting"). Extend the existing truth-table test.
-- Flip `RECT_FIELD_TYPE` to `Some(Type::Num)` and pin the new compile-time
-  warning with a test.
-- Docs: the type vocabulary in `plan.md` §2, the Language Guide's Type
-  Annotations section, and the tree-sitter/vim keyword lists (the fifth place —
-  see Gotchas).
-
-Consider alongside it, in rough order of value:
+In rough order of value:
 
 - **Method return types in inference.** `r.center_x()` infers `any` even when
   the receiver's class is pinned and the method declares a return type. The

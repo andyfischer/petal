@@ -39,7 +39,7 @@ syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0
 " Only the known type vocabulary is highlighted, and only in type position, so
 " record keys (`{a: 1}`) and cast calls (`fn(x) -> int(x)`) are left alone.
 " `nil` and `enum` stay Constant/Keyword — syn keyword outranks syn match.
-syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|string\|str\|list\|record\|function\|enum\|vec2\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
+syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|function\|enum\|vec2\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
 
 " ---- Numbers ----
 syn match petalFloat  "\<\d\+\.\d\+\>"

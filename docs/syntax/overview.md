@@ -447,7 +447,8 @@ let double = fn(n: int) -> n * 2   // lambda params, but no lambda return type
 A lambda's `->` already introduces its body, so lambdas take parameter
 annotations only.
 
-Recognised type names: `int`, `float`, `bool`, `string` (alias `str`), `list`,
+Recognised type names: `int`, `float`, `num` (either of the two), `bool`,
+`string` (alias `str`), `list`,
 `record`, `function`, `enum`, `nil`, `any`, plus host/runtime types such as
 `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`, and the
 name of any [class](#class-declaration) in scope — one this file declares or

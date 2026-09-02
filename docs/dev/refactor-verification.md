@@ -204,6 +204,31 @@ The checks:
    (`test/ui-golden/<app>/<scenario>.jsonl`), the UI analogue of
    `test/example-golden/`. Regenerate deliberately.
 
+   **"Deliberately" means naming the field that moved before running
+   `--update-golden`,** because the hashes in `test/ui-golden/index.json` are
+   opaque: a re-baseline that hides a behavior change looks exactly like one
+   that does not. The worked example is `gallery.ptl`, `git_panel.ptl` and
+   `main_menu.ptl`, re-baselined for `886b6d5`. That commit inserted a 147-line
+   `layer` block into `petal-ui/prelude/ui.ptl` ahead of the widget
+   definitions, which shifted the ordinal in the *display label* a host state
+   dump puts on an unnamed callsite — `call_site_labels` in
+   `env/state_json.rs` numbers `<expr>` occurrences program-wide in term order,
+   so `ui::button#1/<expr>#63/_anim/ui::v` became
+   `ui::button#1/<expr>#78/_anim/ui::v`. The argument that this was cosmetic
+   has three parts, and a re-baseline should be able to make all three:
+
+   - **Name the field.** Across all 180 frames of the three traces, `state` is
+     the only field that differs — the `commands` arrays are identical, so
+     nothing was drawn differently.
+   - **Show nothing else moved.** Normalizing `<expr>#\d+` → `<expr>#N` makes
+     the traces byte-equal: same slot set, same values, a pure key rename.
+   - **Say why the field is not behavior.** `<expr>#N` is display-only.
+     Nothing resolves a label back to a slot; the real key comes from
+     `compiler/state_ids.rs`, derived from names and structure (a declaration
+     id plus the call path), which is why the values never moved.
+
+   Absent that argument, the diff is a `changed` verdict, not a re-baseline.
+
 Output: one table row per file (`kind`, `steps run`, `verdict`), non-zero exit
 if any `changed`. Verdicts: `identical-ir`, `identical-trace`,
 `nondeterministic`, `changed`, `compile-error`, `driver-error`.

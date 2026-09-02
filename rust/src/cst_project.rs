@@ -1090,7 +1090,12 @@ impl Projector {
 
     fn lambda_expr(&mut self, node: &SyntaxNode) -> Result<Expr, String> {
         let span = self.node_span(node)?;
-        let params = self.param_list(node)?;
+        // An argless lambda (`fn 42 end`) emits no ParamList node at all.
+        let params = child_nodes(node)
+            .into_iter()
+            .find(|n| n.kind() == SyntaxKind::ParamList)
+            .map(|n| self.projected_params(&n))
+            .unwrap_or_default();
         let has_arrow = direct_tokens(node)
             .iter()
             .any(|t| matches!(t.token(), Some(Token::Arrow)));
@@ -1470,6 +1475,17 @@ mod tests {
         assert_projects("let f = fn(x) -> x * 2\n");
         assert_projects("let f = fn(x, y)\n  let z = x + y\n  z\nend\n");
         assert_projects("let f = fn() -> 1\n");
+    }
+
+    /// Argless lambdas emit no ParamList node, so the projection has to
+    /// tolerate its absence rather than demand the child.
+    #[test]
+    fn projects_argless_lambdas() {
+        assert_projects("let f = fn 42 end\n");
+        assert_projects("let f = fn -> 1\n");
+        assert_projects("let f = fn end\n");
+        assert_projects("let f = fn\n  print(\"x\")\n  1\nend\n");
+        assert_projects("on_click(fn set_count(count + 1) end)\n");
     }
 
     #[test]

@@ -138,7 +138,9 @@ module.exports = grammar({
 
     // `fn name(...)` or the method form `fn Class.name(...)`, whose receiver
     // class is the name before the dot (rust/src/parse.rs `parse_fn_decl`).
-    function_declaration: $ => seq(
+    // Higher precedence than `lambda`: at statement start `fn name(…)` is
+    // always a declaration, never an argless lambda calling `name`.
+    function_declaration: $ => prec(1, seq(
       optional('export'),
       'fn',
       optional(seq(field('class', $.identifier), '.')),
@@ -147,7 +149,7 @@ module.exports = grammar({
       optional(field('return_type', $.return_type)),
       optional(field('body', $.block)),
       'end',
-    ),
+    )),
 
     // Optional static type declarations (docs/syntax/types.md). Type names are
     // *contextual* — `int`/`float`/`str` stay callable builtins elsewhere — so
@@ -164,10 +166,13 @@ module.exports = grammar({
 
     parameter_list: $ => seq('(', commaSep($.parameter), ')'),
 
-    parameter: $ => seq(
+    // Higher precedence than an expression: after `fn`, a leading `(` is always
+    // the parameter list, never a parenthesized body (the documented wart —
+    // `fn (a + b) * 2 end` reads `(a + b)` as parameters).
+    parameter: $ => prec(1, seq(
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
-    ),
+    )),
 
     // `class Name` … `end`, comma-separated `field: type` declarations — the
     // same comma rule as `enum` (docs/syntax/commas.md). `class` is a
@@ -361,10 +366,11 @@ module.exports = grammar({
 
     spread_element: $ => seq('...', $._expression),
 
-    // `fn(params) -> expr` or `fn(params) body end`.
+    // `fn(params) -> expr` or `fn(params) body end`. The parameter list is
+    // optional: `fn 42 end` and `fn -> 42` are argless lambdas.
     lambda: $ => seq(
       'fn',
-      field('parameters', $.parameter_list),
+      optional(field('parameters', $.parameter_list)),
       choice(
         seq('->', field('body', $._expression)),
         seq(optional(field('body', $.block)), 'end'),

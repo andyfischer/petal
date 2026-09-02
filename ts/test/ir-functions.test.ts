@@ -191,3 +191,47 @@ describe("overloaded functions (multi-arity)", () => {
     expect(out.trim()).toBe("55");
   });
 });
+
+describe("argless lambdas", () => {
+  it("runs a block-bodied argless lambda", () => {
+    const out = runPetal(`
+      let f = fn 42 end
+      print(f())
+    `);
+    expect(out.trim()).toBe("42");
+  });
+
+  it("runs an argless arrow lambda", () => {
+    const out = runPetal(`
+      let g = fn -> 6 * 7
+      print(g())
+    `);
+    expect(out.trim()).toBe("42");
+  });
+
+  it("an empty `fn end` returns nil", () => {
+    const out = runPetal(`
+      let h = fn end
+      print(h())
+    `);
+    expect(out.trim()).toBe("nil");
+  });
+
+  it("takes an argless lambda as a callback", () => {
+    const out = runPetal(`
+      fn twice(f)
+        f()
+        f()
+      end
+      twice(fn print("hi") end)
+    `);
+    expect(out.trim()).toBe("hi\nhi");
+  });
+
+  it("wart: a body starting with ( is read as the parameter list", () => {
+    const err = runPetalError(`
+      let w = fn (a + b) * 2 end
+    `);
+    expect(err).toContain("parameters");
+  });
+});

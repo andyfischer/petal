@@ -1965,11 +1965,18 @@ impl Parser {
         let start = self.pos;
         self.ev_open(SyntaxKind::LambdaExpr);
         self.advance(); // consume 'fn'
-        self.ev_open(SyntaxKind::ParamList);
-        self.expect(&Token::LParen)?;
-        let params = self.parse_param_list()?;
-        self.expect(&Token::RParen)?;
-        self.ev_close(); // ParamList
+        // The parameter list is optional: `fn 42 end` is an argless lambda. A
+        // body starting with `(` is read as a parameter list — a documented wart.
+        let params = if matches!(self.peek(), Token::LParen) {
+            self.ev_open(SyntaxKind::ParamList);
+            self.expect(&Token::LParen)?;
+            let params = self.parse_param_list()?;
+            self.expect(&Token::RParen)?;
+            self.ev_close(); // ParamList
+            params
+        } else {
+            Vec::new()
+        };
         if matches!(self.peek(), Token::Arrow) {
             self.advance(); // consume '->'
             self.skip_newlines();

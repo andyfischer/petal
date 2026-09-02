@@ -272,3 +272,24 @@ end
         right: (binary_expression
           left: (field_access object: (identifier) field: (identifier))
           right: (integer))))))
+
+==================
+Argless lambdas
+==================
+
+let f = fn 42 end
+let g = fn -> 1
+let h = fn end
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (lambda body: (block (integer))))
+  (let_declaration
+    name: (identifier)
+    value: (lambda body: (integer)))
+  (let_declaration
+    name: (identifier)
+    value: (lambda)))

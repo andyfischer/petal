@@ -228,15 +228,17 @@ pub fn reindent(source: &str) -> Result<String, String> {
 }
 
 /// Whether the `fn` at token index `k` opens an `end`-terminated block: a
-/// declaration (`fn name(…) … end`) or a block-bodied lambda (`fn(…) … end`).
-/// Only an arrow lambda (`fn(…) -> expr`) doesn't consume an `end`.
+/// declaration (`fn name(…) … end`) or a block-bodied lambda, parenthesized
+/// (`fn(…) … end`) or argless (`fn … end`). Only an arrow lambda
+/// (`fn(…) -> expr` or `fn -> expr`) doesn't consume an `end`.
 fn fn_takes_end(tokens: &[Token], k: usize) -> bool {
     let mut i = k + 1;
     while i < tokens.len() && matches!(tokens[i], Token::Newline) {
         i += 1;
     }
     match tokens.get(i) {
-        Some(Token::Ident(_)) => true, // declaration
+        None => false,
+        Some(Token::Arrow) => false, // argless arrow lambda `fn -> expr`
         Some(Token::LParen) => {
             // Lambda: skip the parameter list to its matching `)`.
             let mut depth = 0usize;
@@ -259,7 +261,8 @@ fn fn_takes_end(tokens: &[Token], k: usize) -> bool {
             }
             !matches!(tokens.get(i), Some(Token::Arrow))
         }
-        _ => false,
+        // A declaration (`fn name(…)`) or an argless lambda (`fn 42 end`).
+        _ => true,
     }
 }
 
@@ -333,6 +336,16 @@ mod tests {
         let src = "let f = fn(x)\nx * 2\nend\n";
         let out = reindent(src).unwrap();
         assert_eq!(out, "let f = fn(x)\n  x * 2\nend\n");
+    }
+
+    #[test]
+    fn argless_block_lambda_opens_and_end_closes() {
+        let src = "let f = fn\nprint(\"x\")\nend\n";
+        let out = reindent(src).unwrap();
+        assert_eq!(out, "let f = fn\n  print(\"x\")\nend\n");
+        // Argless arrow lambdas still open nothing.
+        let arrow = "let g = fn -> 1\nlet z = 2\n";
+        assert_eq!(reindent(arrow).unwrap(), arrow);
     }
 
     #[test]

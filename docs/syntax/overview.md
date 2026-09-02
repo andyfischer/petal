@@ -400,6 +400,21 @@ let double = fn(x) -> x * 2
 let add = fn(a, b) -> a + b
 ```
 
+A lambda that takes no arguments may drop the parameter list entirely, with
+either an `->` body or an `end`-terminated block:
+
+```petal
+let answer = fn -> 42
+let greet = fn print("hi") end
+let nothing = fn end          // returns nil
+on_click(fn set_count(count + 1) end)
+```
+
+**Wart:** after `fn`, a leading `(` is *always* read as the parameter list, so
+an argless lambda's body can't start with a parenthesized expression —
+`fn (a + b) * 2 end` reads `(a + b)` as parameters and fails. Write
+`fn -> (a + b) * 2` or give the body a leading statement instead.
+
 ### Collection and access forms
 
 ```petal

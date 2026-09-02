@@ -778,6 +778,31 @@ let double = fn(x) -> x * 2
 print(double(5))  // 10
 ```
 
+A lambda body can also be an `end`-terminated block, and a lambda that takes
+no arguments may leave the parameter list out altogether:
+
+```petal
+let describe = fn(x)
+    print(x)
+    x * 2
+end
+
+let answer = fn -> 42        // argless arrow lambda
+let greet = fn print("hi") end
+let nothing = fn end         // empty body, returns nil
+```
+
+Argless lambdas are the usual way to pass a callback that needs no arguments:
+
+```petal
+on_click(fn set_count(count + 1) end)
+```
+
+**Wart:** after `fn`, a leading `(` is *always* parsed as the parameter list,
+so an argless lambda's body cannot begin with a parenthesized expression.
+`fn (a + b) * 2 end` reads `(a + b)` as a parameter list and is an error.
+Write `fn -> (a + b) * 2` instead.
+
 ### Closures
 
 Functions capture variables from their enclosing scope:

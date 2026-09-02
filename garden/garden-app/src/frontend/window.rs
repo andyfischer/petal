@@ -393,7 +393,7 @@ impl ApplicationHandler<DebugRequest> for Handler {
             }
             WindowEvent::RedrawRequested => {
                 let scene = state.app.build_scene();
-                state.retry_surface_at = match state.renderer.render(&scene) {
+                state.retry_surface_at = match gpu_pooled(|| state.renderer.render(&scene)) {
                     // Surface unavailable (occluded / display asleep): retry on
                     // the poll cadence instead of re-requesting a redraw now,
                     // which would busy-loop. See `about_to_wait`.
@@ -466,7 +466,7 @@ impl ApplicationHandler<DebugRequest> for Handler {
                     Err(err) => Err(err),
                     Ok(crop) => {
                         let scene = state.app.build_scene();
-                        let cap = state.renderer.capture(&scene);
+                        let cap = gpu_pooled(|| state.renderer.capture(&scene));
                         let scale = state.app.viewport().scale;
                         // `?pane=<n>` crops to that pane's rect — no tab strip,
                         // no status bar, no gutter.
@@ -588,4 +588,30 @@ fn to_vim_key(key: &WinitKey) -> Option<vim::Key> {
         },
         _ => return None,
     })
+}
+
+/// Run one frame's GPU work inside an autorelease pool.
+///
+/// Both of this frontend's GPU entry points — the redraw and the debug
+/// server's screenshot — are dispatched from a CFRunLoop observer (winit's
+/// `control_flow_end_handler`), not from an AppKit event callout, so there is
+/// no pool being drained around them. Every Metal object a frame allocates is
+/// autoreleased into whatever pool is current: the staging buffer behind each
+/// `Queue::write_buffer`, and the `NSString` wgpu builds for its debug label.
+/// With no pool of our own they accumulate for the life of the window — an
+/// idle `garden pr` reached 2 GB and ~250k live `MTLBuffer`s in five minutes,
+/// growing without bound at ~35 buffers per frame. Draining per frame is what
+/// keeps that flat.
+///
+/// Only this frontend needs it: the headless frontend renders from its own
+/// loop rather than AppKit's, and the terminal frontend does no GPU work at
+/// all.
+#[cfg(target_os = "macos")]
+fn gpu_pooled<T>(work: impl FnOnce() -> T) -> T {
+    objc2::rc::autoreleasepool(|_| work())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn gpu_pooled<T>(work: impl FnOnce() -> T) -> T {
+    work()
 }

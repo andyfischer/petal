@@ -86,6 +86,11 @@ pub enum ExprKind {
     Call {
         function: Box<Expr>,
         args: Vec<Expr>,
+        /// The written name of each argument (`f(x, limit: 10)`), parallel to
+        /// `args`. Empty means every argument is positional — the common case;
+        /// when non-empty it has exactly the length of `args`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        arg_names: Vec<Option<String>>,
     },
     If {
         condition: Box<Expr>,
@@ -440,7 +445,7 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
             v.visit_expr(right);
         }
         ExprKind::UnaryOp { operand, .. } => v.visit_expr(operand),
-        ExprKind::Call { function, args } => {
+        ExprKind::Call { function, args, .. } => {
             v.visit_expr(function);
             for a in args {
                 v.visit_expr(a);
@@ -597,7 +602,7 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
             v.visit_expr(right);
         }
         ExprKind::UnaryOp { operand, .. } => v.visit_expr(operand),
-        ExprKind::Call { function, args } => {
+        ExprKind::Call { function, args, .. } => {
             v.visit_expr(function);
             for a in args.iter_mut() {
                 v.visit_expr(a);

@@ -767,7 +767,7 @@ impl<'a> Checker<'a> {
                     },
                 }
             }
-            ExprKind::Call { function, args } => {
+            ExprKind::Call { function, args, .. } => {
                 // `recv.name(...)` is method syntax, not a field read followed
                 // by a call: `name` is looked up among the receiver's methods
                 // (and, failing those, the globals), so walking it as a field

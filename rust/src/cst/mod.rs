@@ -124,6 +124,8 @@ pub enum SyntaxKind {
     Pattern,
     /// One field of a record literal (`key: value` or `...spread`).
     RecordField,
+    /// One `name: value` argument of a [`SyntaxKind::ArgList`].
+    NamedArg,
     /// One `name: type` field of a [`SyntaxKind::ClassDecl`].
     ClassField,
     /// An `elsif …` / `else …` tail of an if-expression.
@@ -486,6 +488,24 @@ mod tests {
         let args = child_nodes(&kids[1]);
         assert_eq!(args.len(), 2);
         assert!(args.iter().all(|a| a.kind() == SyntaxKind::IdentExpr));
+    }
+
+    #[test]
+    fn parse_cst_named_arg_shape() {
+        // `f(1, b: 2)` — the named argument is wrapped in a NamedArg node
+        // holding its name token, the `:` and the value; positional arguments
+        // stay bare expression nodes.
+        let root = parse_root("f(1, b: 2)\n");
+        let arg_list = find_node(&root, SyntaxKind::ArgList).expect("ArgList");
+        let args = child_nodes(&arg_list);
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0].kind(), SyntaxKind::LiteralExpr);
+        assert_eq!(args[1].kind(), SyntaxKind::NamedArg);
+        // Leading trivia may sit just inside the wrapped node's boundary.
+        assert_eq!(args[1].text().trim(), "b: 2");
+        assert_round_trips("f(1, b: 2)\n");
+        // A keyword is a legal argument name, as it is a legal record key.
+        assert_round_trips("f(end: 1)\n");
     }
 
     #[test]

@@ -842,13 +842,25 @@ impl Projector {
                 file: self.file,
             };
             let kind = match rhs.kind {
-                ExprKind::Call { function, mut args } => {
+                ExprKind::Call {
+                    function,
+                    mut args,
+                    mut arg_names,
+                } => {
                     args.insert(0, left);
-                    ExprKind::Call { function, args }
+                    if !arg_names.is_empty() {
+                        arg_names.insert(0, None);
+                    }
+                    ExprKind::Call {
+                        function,
+                        args,
+                        arg_names,
+                    }
                 }
                 _ => ExprKind::Call {
                     function: Box::new(rhs),
                     args: vec![left],
+                    arg_names: Vec::new(),
                 },
             };
             return Ok(Expr { kind, span });
@@ -864,10 +876,22 @@ impl Projector {
             ));
         }
         let function = self.expr(callee_node)?;
-        let args = child_nodes(arg_list)
-            .iter()
-            .map(|n| self.expr(n))
-            .collect::<Result<Vec<_>, _>>()?;
+        // A `name: value` argument arrives wrapped in a NamedArg node; its name
+        // goes to the parallel `arg_names`, which stays empty when every
+        // argument is positional.
+        let arg_nodes = child_nodes(arg_list);
+        let mut args = Vec::with_capacity(arg_nodes.len());
+        let mut arg_names: Vec<Option<String>> = Vec::new();
+        for n in &arg_nodes {
+            if n.kind() == SyntaxKind::NamedArg {
+                let name = self.only_field_name(n)?;
+                arg_names.resize(args.len(), None);
+                arg_names.push(Some(name));
+                args.push(self.only_expr(n)?);
+            } else {
+                args.push(self.expr(n)?);
+            }
+        }
         let span = SourceSpan {
             start: function.span.start,
             end: self.end_of(node)?,
@@ -877,6 +901,7 @@ impl Projector {
             kind: ExprKind::Call {
                 function: Box::new(function),
                 args,
+                arg_names,
             },
             span,
         })
@@ -1279,6 +1304,18 @@ mod tests {
         assert_projects("a?.[0]\n");
         assert_projects("a?.b ?? \"d\"\n");
         assert_projects("f(a?.b, a.b)\n");
+    }
+
+    /// A `name:` argument label lives in a NamedArg wrapper node; the
+    /// projection has to lift it back into the parallel `arg_names`, or a call
+    /// edited through the CST would come back with its arguments positional.
+    #[test]
+    fn projects_named_arguments() {
+        assert_projects("f(1, b: 2)\n");
+        assert_projects("f(a: 1, b: 2)\n");
+        assert_projects("f(end: 1)\n");
+        assert_projects("x |> f(b: 2)\n");
+        assert_projects("f(a: {b: 1})\n");
     }
 
     #[test]

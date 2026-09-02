@@ -230,7 +230,7 @@ impl ExprVisitorMut for LiftAt<'_> {
 /// Count `@`-arguments belonging directly to `call` — those reachable from its
 /// callee and arguments without crossing another call or block boundary.
 fn count_call_atvars(call: &Expr) -> usize {
-    if let ExprKind::Call { function, args } = &call.kind {
+    if let ExprKind::Call { function, args, .. } = &call.kind {
         count_at(function) + args.iter().map(count_at).sum::<usize>()
     } else {
         0
@@ -271,7 +271,7 @@ impl ExprVisitor for AtCounter {
 /// Replace the single `@`-argument belonging to `call` with a plain reference,
 /// returning its name.
 fn replace_one_call_atvar(call: &mut Expr) -> Option<String> {
-    if let ExprKind::Call { function, args } = &mut call.kind {
+    if let ExprKind::Call { function, args, .. } = &mut call.kind {
         if let Some(n) = replace_one_at(function) {
             return Some(n);
         }

@@ -1154,14 +1154,31 @@ impl Parser {
             let rhs = self.parse_or()?;
             self.ev_wrap(cp, SyntaxKind::CallExpr);
             left = match rhs.kind {
-                ExprKind::Call { function, mut args } => {
+                ExprKind::Call {
+                    function,
+                    mut args,
+                    mut arg_names,
+                } => {
+                    // The piped value fills the first slot positionally, so it
+                    // stays ahead of any named argument already written.
                     args.insert(0, left);
-                    self.mk_expr(ExprKind::Call { function, args }, start)
+                    if !arg_names.is_empty() {
+                        arg_names.insert(0, None);
+                    }
+                    self.mk_expr(
+                        ExprKind::Call {
+                            function,
+                            args,
+                            arg_names,
+                        },
+                        start,
+                    )
                 }
                 _ => self.mk_expr(
                     ExprKind::Call {
                         function: Box::new(rhs),
                         args: vec![left],
+                        arg_names: Vec::new(),
                     },
                     start,
                 ),
@@ -1508,7 +1525,7 @@ impl Parser {
                     self.check_callable(&expr)?;
                     self.ev_open(SyntaxKind::ArgList);
                     self.advance();
-                    let args = self.parse_arg_list()?;
+                    let (args, arg_names) = self.parse_arg_list()?;
                     self.expect(&Token::RParen)?;
                     self.ev_close(); // ArgList
                     self.ev_wrap(cp, SyntaxKind::CallExpr);
@@ -1521,6 +1538,7 @@ impl Parser {
                         kind: ExprKind::Call {
                             function: Box::new(expr),
                             args,
+                            arg_names,
                         },
                     };
                 }
@@ -2168,16 +2186,52 @@ impl Parser {
         ))
     }
 
-    fn parse_arg_list(&mut self) -> Result<Vec<Expr>, String> {
+    /// The arguments of a call. An argument written `name: value` is bound by
+    /// name rather than by position; every positional argument must come before
+    /// the first named one.
+    ///
+    /// Returns the values and, parallel to them, the written names. The name
+    /// vector is left *empty* when nothing was named — the common case, which
+    /// every later layer takes as "all positional".
+    fn parse_arg_list(&mut self) -> Result<(Vec<Expr>, Vec<Option<String>>), String> {
         let mut args = Vec::new();
+        let mut arg_names: Vec<Option<String>> = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
             self.expect_element_start("an argument")?;
-            let arg = self.parse_expr()?;
-            args.push(arg);
+            if self.starts_named_arg() {
+                self.ev_open(SyntaxKind::NamedArg);
+                let name = self.expect_field_name()?;
+                self.expect(&Token::Colon)?;
+                let value = self.parse_expr()?;
+                self.ev_close(); // NamedArg
+                arg_names.resize(args.len(), None);
+                arg_names.push(Some(name));
+                args.push(value);
+            } else {
+                if !arg_names.is_empty() {
+                    return Err(self.error_at_current(
+                        "A positional argument after a named argument: once an argument is \
+                         named, every later argument must be named too"
+                            .to_string(),
+                    ));
+                }
+                let arg = self.parse_expr()?;
+                args.push(arg);
+            }
             self.expect_element_separator(&Token::RParen, "arguments")?;
         }
-        Ok(args)
+        Ok((args, arg_names))
+    }
+
+    /// Whether the cursor is on a `name:` argument label. A name here is what a
+    /// record key is — an identifier or any keyword ([`Parser::expect_field_name`])
+    /// — so `f(end: 1)` names a parameter called `end`. One token of lookahead
+    /// separates it from a positional argument that merely starts with a name.
+    fn starts_named_arg(&self) -> bool {
+        let is_name = matches!(self.peek(), Token::Ident(_))
+            || crate::lexer::keyword_text(self.peek()).is_some();
+        is_name && matches!(self.peek_at(1), Token::Colon)
     }
 }
 

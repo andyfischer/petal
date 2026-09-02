@@ -188,7 +188,7 @@ impl Walker {
     /// discarded and the expression is a pure-builtin call, warn.
     fn walk_expr(&mut self, expr: &Expr, used: bool) {
         if !used {
-            if let ExprKind::Call { function, args: _ } = &expr.kind {
+            if let ExprKind::Call { function, .. } = &expr.kind {
                 if let ExprKind::Ident(name) = &function.kind {
                     if self.is_discardable_call(name) {
                         self.warn_discarded(expr, name);

@@ -98,7 +98,19 @@ impl Compiler {
                 self.emit_term(term_op, smallvec![val], None)
             }
 
-            ExprKind::Call { function, args } => {
+            ExprKind::Call {
+                function,
+                args,
+                arg_names,
+            } => {
+                // TEMPORARY: the frontend parses `f(a: 1)` but no layer below
+                // binds it yet. Remove with the IR/VM support.
+                if !arg_names.is_empty() {
+                    let msg_cid = self.constants.intern(ConstantValue::String(
+                        "named arguments are not supported yet".to_string(),
+                    ));
+                    return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
+                }
                 // Detect method syntax: obj.method(args...)
                 if let ExprKind::FieldAccess { object, field } = &function.kind {
                     // `ui.button(...)` where `ui` is an unshadowed module

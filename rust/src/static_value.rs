@@ -582,10 +582,17 @@ fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> 
         }
         // A call is captured unevaluated: in a config file it names a
         // host-interpreted constructor, not a computation to run.
-        ExprKind::Call { function, args } => {
+        ExprKind::Call {
+            function,
+            args,
+            arg_names,
+        } => {
             let ExprKind::Ident(name) = &function.kind else {
                 return Err("a call through an expression rather than a plain name".into());
             };
+            if !arg_names.is_empty() {
+                return Err("a named argument".into());
+            }
             let mut out = Vec::with_capacity(args.len());
             for arg in args {
                 out.push(eval(arg, bindings)?);

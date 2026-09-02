@@ -358,9 +358,19 @@ impl Compiler {
     /// generic ForLoop path). Only the for-loop-iterable position is special-
     /// cased — `range` used anywhere else still goes through the builtin.
     fn try_range_bounds(&mut self, iter: &Expr) -> Option<(TermId, TermId)> {
-        let ExprKind::Call { function, args } = &iter.kind else {
+        let ExprKind::Call {
+            function,
+            args,
+            arg_names,
+        } = &iter.kind
+        else {
             return None;
         };
+        // `range(end: 10)` binds by name; the positional bounds below would
+        // read it as `range(start)`, so leave it to the generic builtin path.
+        if !arg_names.is_empty() {
+            return None;
+        }
         let ExprKind::Ident(name) = &function.kind else {
             return None;
         };

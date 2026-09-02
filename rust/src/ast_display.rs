@@ -201,11 +201,24 @@ impl Printer {
                 self.line(depth, &format!("UnaryOp {op:?}"), span);
                 self.expr(operand, depth + 1);
             }
-            ExprKind::Call { function, args } => {
+            ExprKind::Call {
+                function,
+                args,
+                arg_names,
+            } => {
                 self.line(depth, "Call", span);
                 self.expr(function, depth + 1);
-                for a in args {
-                    self.expr(a, depth + 1);
+                for (i, a) in args.iter().enumerate() {
+                    // A named argument (`f(limit: 10)`) gets a header line
+                    // naming the slot, like a record field; positional ones are
+                    // the bare expression.
+                    match arg_names.get(i).and_then(|n| n.as_deref()) {
+                        Some(name) => {
+                            self.line(depth + 1, &format!("Arg {name}:"), None);
+                            self.expr(a, depth + 2);
+                        }
+                        None => self.expr(a, depth + 1),
+                    }
                 }
             }
             ExprKind::If {

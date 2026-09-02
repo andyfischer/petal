@@ -5,7 +5,7 @@
 //! call stack trace. The VM builds the [`TraceFrame`] list from its `VmFrame`s;
 //! the formatting lives here.
 
-use crate::program::{Program, TermId};
+use crate::program::{Program, TermId, base_fn_name};
 use crate::source_map::SourceSpan;
 
 /// One call frame's contribution to a stack trace: the function name and the
@@ -108,7 +108,14 @@ fn format_provenance(program: &Program, failing: TermId, max: usize) -> Vec<Stri
         if span.start.line == 0 {
             continue;
         }
-        out.push(format!("{} {}", name, format_position(program, span)));
+        // Defensive: `MakeClosure` terms carry no span today, so an overload
+        // variant's internal `box#1` never reaches here — but if one ever does,
+        // the chain names it as the source wrote it.
+        out.push(format!(
+            "{} {}",
+            base_fn_name(name),
+            format_position(program, span)
+        ));
     }
     out
 }

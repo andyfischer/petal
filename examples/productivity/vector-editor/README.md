@@ -18,6 +18,10 @@ restacking and transforming from the first frame.
 
 ## Run it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/vector-editor
 GARDEN_HEADLESS_SIZE=1400x940 \

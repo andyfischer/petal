@@ -578,7 +578,9 @@ fn render_term(
     };
 
     let name_str = match &term.name {
-        Some(name) => format!(" ; {}", name),
+        // Overload variants carry the internal `box#1`; show the source name,
+        // as the function and closure headers above already do.
+        Some(name) => format!(" ; {}", base_fn_name(name)),
         None => String::new(),
     };
 

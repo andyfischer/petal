@@ -3,7 +3,7 @@
 use std::fmt::Write;
 
 use crate::ir_display::is_phantom;
-use crate::program::{Program, TermOp};
+use crate::program::{Program, TermOp, base_fn_name};
 
 /// Generate a DOT-format graph representation of the program's dataflow.
 pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
@@ -23,7 +23,9 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
             continue;
         }
         let label = if let Some(ref name) = term.name {
-            format!("t{}: {} ({:?})", term.id.0, name, term.op)
+            // `base_fn_name`: an overload variant's term is named `box#1`
+            // internally, and the graph labels terms as the source names them.
+            format!("t{}: {} ({:?})", term.id.0, base_fn_name(name), term.op)
         } else {
             format!("t{}: {:?}", term.id.0, term.op)
         };

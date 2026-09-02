@@ -16,6 +16,10 @@ proportions and the 13-row table window were tuned at this size.
 
 ## Run it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/crm-contact-manager
 GARDEN_HEADLESS_SIZE=1280x850 \

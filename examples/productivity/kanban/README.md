@@ -6,6 +6,10 @@ opens a gap under the pointer, and drops the card where the gap is.
 
 ## Run it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/kanban
 GARDEN_HEADLESS_SIZE=1280x850 \

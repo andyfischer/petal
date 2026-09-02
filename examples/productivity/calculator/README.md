@@ -19,6 +19,10 @@ other sizes; below roughly 760 × 560 the keys get cramped.
 
 ## Run
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/calculator
 GARDEN_HEADLESS_SIZE=880x680 \

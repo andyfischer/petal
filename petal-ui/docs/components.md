@@ -1,11 +1,10 @@
-# The `ui` component library (prelude level 3)
+# The `ui` component library
 
 The `ui` prelude module (`petal-ui/prelude/ui.ptl`) is the standard widget
 library for Petal UIs. Embedders register it as an implicit import, so scripts
-call everything here bare. This document is the reference for the level-3
-surface — the component-library expansion — plus the conventions every widget
-follows. The worked example showing all of it is
-`garden/examples/panels/gallery.ptl`:
+call everything here bare. This document is the reference for the widgets,
+the helpers around them, and the conventions they all follow. The worked
+example showing all of it is `garden/examples/panels/gallery.ptl`:
 
 ```
 cd petal-ui && cargo run --bin petal-ui-run -- \
@@ -23,9 +22,10 @@ share internal state).
    a plain record you keep in `state`:
    `state files = list_state()` … `files = list_update(files, …)`.
    Multiple instances coexist because *you* hold the state.
-2. **Update/draw split.** Interactive widgets come in three forms where it
-   pays: `x_update(...)` (logic, no pixels), `draw_x(...)` (pixels, no logic),
-   and `x(...)` (both). Keep the fiddly input half, bring your own paint.
+2. **Update/draw split.** Where it pays, an interactive widget comes in three
+   forms: `x_update(...)` (logic, no pixels), `draw_x(...)` (pixels, no
+   logic), and `x(...)` (both). Use the split forms to keep the input
+   handling and bring your own paint.
 3. **Trailing optional style record.** Every drawing widget takes a final
    `style` record; any key it omits falls back to `ui_theme()`. `{}` (or the
    shorter arity) is the fully themed widget.
@@ -40,9 +40,8 @@ share internal state).
    resolved theme (leave a key out and it keeps its value); wins until
    `theme_reset()`;
 2. the **host palette**, when the embedder published one via
-   `petal_ui::input::bind_host_palette` (Garden binds its full `palette()`
-   every frame, so prelude widgets paint in Garden's colors with zero
-   script-side setup — no `theme_set(theme_from_palette(palette()))` needed);
+   `petal_ui::input::bind_host_palette` (Garden binds its full palette, so
+   widgets paint in Garden's colors with no script-side setup);
 3. the **built-in dark default** below.
 
 `theme_from_palette(p)` projects a host-vocabulary palette record
@@ -74,18 +73,16 @@ Typography and elevation:
 | `font` | the face widget text is set in — **`"ui"`**, the host's proportional interface face |
 | `elevation_1/2/3` | the shadow scale, as `{blur, spread, dy, a}` records: resting / floating / lifted |
 
-`font` is deliberately *not* the host's default face. Every host in this
-ecosystem defaults to monospace, and a whole interface set in monospace is the
-loudest possible tell that a panel was not designed. A drawer that genuinely
-wants monospace chrome — a diff viewer, a data grid — opts back in with one
-line, and every widget follows:
+`font` is deliberately *not* the host's default face, which is monospace in
+every host here. A panel that wants monospace chrome (a diff viewer, a data
+grid) opts back in with one line, and every widget follows:
 
 ```
 theme_set({font: "mono"})
 ```
 
-Text a drawer draws itself with the bare `draw_text(s, pos, size, color)` form
-is untouched: that still means "the host's own face", as it always has.
+Text a panel draws itself with the bare `draw_text(s, pos, size, color)` form
+is unaffected: that still means the host's own face.
 
 A style record and a theme record are interchangeable — `theme_set` carries
 extra keys through, so an app can hang its own names on the theme.
@@ -147,9 +144,9 @@ Click focuses and places the caret at the clicked character; left/right/
 home/end move it; backspace deletes before it (alt/ctrl+backspace to word
 start); delete removes after it; typing inserts at it; Return sets
 `submitted`. Split forms: `text_field_update(fc, id, r, buf, style)` (logic
-only — `style.size`/`inset` must match the draw half) and
+only; `style.size`/`inset` must match the draw half) and
 `draw_text_field(r, text, has, caret, style)` (the 3- and 4-arg forms without
-`caret` draw it at the end, as before level 3). No selection model.
+`caret` draw it at the end). There is no selection model.
 
 ### Spinner + progress
 `spinner(cx, cy, radius, style)` — rotating arc off `time()`;
@@ -201,7 +198,7 @@ let s = splitter(sp, content, {min_a: 180, min_b: 260})
 sp = s.state    // draw into s.a and s.b
 ```
 Draggable divider; `style: {axis ("x"|"y"), min_a, min_b, band, gap, line,
-active}`. Replaces the hand-rolled `left_frac`/`drag_div` pattern.
+active}`.
 
 ### Table
 ```
@@ -220,7 +217,7 @@ by `tb.sort_col`/`tb.sort_asc` before passing them in; it never reorders data.
 wider than the budget hard-breaks.
 
 ### Async load state
-The `X_ready/X_err/X_loading` pattern, blessed:
+One record for the loading / ready / failed lifecycle of a value:
 ```
 state ls = load_state()
 ls = load_poll(ls, key, query("diff", sha))   // any pending or plain value
@@ -233,10 +230,10 @@ pending values via the core `is_ready`/`is_error`/`error_of`. `draw_load`
 paints spinner/error/idle into `r` and returns true when ready.
 
 ### Context menu / drag & drop
-Unchanged from level 2: `menu_state`/`menu_item`/`menu_sep`/
-`menu_open_on_right_click`/`menu_blocking`/`context_menu` (draw late, guard
-early — see the comment in ui.ptl), and `drag_state`/`drag_update`/
-`insertion_index(_x)`.
+`menu_state`/`menu_item`/`menu_sep`/`menu_open_on_right_click`/
+`menu_blocking`/`context_menu` (draw the menu late in the frame and guard
+your own input with `menu_blocking` early; see the comment in ui.ptl), and
+`drag_state`/`drag_update`/`insertion_index(_x)`.
 
 ## Text + color helpers
 
@@ -256,13 +253,11 @@ let x = r.x + (r.w - text_width(label, ts)) / 2      // measured in ts
 draw_text(label, {x: x, y: y}, ts)                   // drawn in ts
 ```
 
-The bare pair — `draw_text(s, pos, size, color)` with `text_width(s, size)` —
-cannot be used for anything positioned, because the two do not mean the same
-thing: the draw goes to the host's default *face* while the measure falls back
-to the default *metric table*. Ask for a proportional face and measure it with
-the monospace ruler and a centred title lands about a fifth of its width off.
-Every alignment helper, every widget, and the ellipsize/wrap family all take a
-style record for this reason.
+The bare pair, `draw_text(s, pos, size, color)` with `text_width(s, size)`,
+cannot be used for anything positioned: the draw uses the host's default face
+while the measure uses the default metric table, and with a proportional face
+a centred title lands noticeably off. Every alignment helper, every widget,
+and the ellipsize/wrap family take a style record for this reason.
 
 ### Compositing flat tints
 
@@ -357,28 +352,23 @@ same light rather than three unrelated greys.
 | `draw_fade(rect[, style])` | the same in the theme background: content dissolving at the end of a scroll region |
 | `draw_area_fill(points, baseline_y, color[, style])` | the fill under a line chart, fading to transparent at the baseline |
 
-`draw_area_fill` cuts each segment into `step`-px columns and gives each its
-own vertical gradient. That is exact rather than approximate: the fill's alpha
-is a function of y alone, so starting each column at its own top with the
-alpha the global ramp has *there* reproduces one ramp across the whole area.
+`draw_area_fill` cuts each segment into `step`-px columns, each with its own
+vertical gradient, so the result is one continuous ramp across the area.
 
 `button` and `badge` take `gradient: [c0, c1]` (plus `gradient_angle`) for a
 ramp-filled face; `button` also takes `radius` and `elevation`.
 
 `draw_shadow` is one command rather than a stack of translucent rounded rects
-on purpose — alpha blending is not idempotent, so nested rings double-composite
-and show every seam. Hosts tessellate it as a single non-overlapping mesh
-(`petal_ui::tess::shadow_mesh`).
+because nested translucent rings double-composite and show every seam. Hosts
+tessellate it as a single non-overlapping mesh (`petal_ui::tess::shadow_mesh`).
 
 ## Layers — offscreen canvases, backdrops and blur
 
 A *layer* is a canvas the size of a rect that a closure draws into, then
-composites back at that rect. It is the one offscreen buffer the vocabulary
-has, and every effect that needs one is an operation on it: draw into it
-(`draw_to`), fill it from what is already on screen (`snapshot_to`), filter it
-(`blur_canvas`), composite it (`draw_canvas`, with opacity and an optional
-destination size). A new effect is a new operation on a canvas id, not a new
-kind of buffer.
+composites back at that rect. Every offscreen effect is an operation on such
+a canvas: draw into it (`draw_to`), fill it from what is already on screen
+(`snapshot_to`), filter it (`blur_canvas`), composite it (`draw_canvas`, with
+opacity and an optional destination size).
 
 | Call | Does |
 |---|---|
@@ -415,23 +405,17 @@ is the tint alone.
 
 ## Compatibility
 
-Level 3 is strictly additive: every pre-existing export keeps its signature,
-and apps that shadow prelude names with their own (`fn spinner`,
-`fn draw_scrollbar`, …) keep working — implicit-import bindings are weak.
-Level 5 adds the gradient/shadow/nested-clip primitives above, and is additive
-in the same way. Check a binary's surface with `garden --version --json`
+Prelude levels are additive: every existing export keeps its signature, and
+apps that shadow prelude names with their own (`fn spinner`,
+`fn draw_scrollbar`, ...) keep working, because implicit-import bindings are
+weak. Check a binary's surface with `garden --version --json`
 (`prelude.exports`) or `petal_ui::PRELUDE_LEVEL`.
 
-Level 7 adds the layer vocabulary above and is additive; it also makes the
-offscreen-canvas natives part of every host's surface (the prelude refers to
-them at load), and gives `draw_canvas` two optional trailing arguments.
-
-Level 6 is additive in signature but **not** in appearance, and deliberately
-so: widget text moved from the host's default face to the theme's `font`
-(`"ui"`), and the three hard-edged offset rectangles that stood in for
-shadows became real `draw_shadow` commands off the elevation scale. A drawer
-that wants the old typography back adds `theme_set({font: "mono"})`; there is
-no way to ask for the old shadows back, because they were not shadows.
+One change was additive in signature but not in appearance: widget text moved
+from the host's default face to the theme's `font` (`"ui"`), and the offset
+rectangles that once stood in for shadows became real `draw_shadow` commands
+off the elevation scale. A panel that wants the old typography back adds
+`theme_set({font: "mono"})`.
 
 ## Testing your UI
 

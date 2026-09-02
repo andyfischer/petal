@@ -22,6 +22,10 @@ widths were tuned at that size.
 
 ## Run
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/todo
 garden/target/debug/garden --headless --debug-port 0 --init layout.ptl

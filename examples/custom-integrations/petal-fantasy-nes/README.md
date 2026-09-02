@@ -15,10 +15,11 @@ are all inherited, and only the console itself is new.
 petal (core) ── petal-ui (input) ── petal-sdl (loop) ── petal-fantasy-nes ── carts/*.ptl
 ```
 
-To write a cart, read [docs/cart-authoring.md](docs/cart-authoring.md) — it is
-the whole authoring surface and assumes no Rust. [docs/design.md](docs/design.md)
-is the host's own design. [LANGUAGE_NOTES.md](LANGUAGE_NOTES.md) is the honest
-report on what Petal was good and bad at while this was built.
+To write a cart, read [docs/cart-authoring.md](docs/cart-authoring.md). It
+covers the whole authoring surface and assumes no Rust.
+[docs/design.md](docs/design.md) describes how the host is built.
+[LANGUAGE_NOTES.md](LANGUAGE_NOTES.md) lists what Petal was good and bad at
+while this was built, and which of those gaps have since been fixed.
 
 ## Hardware model
 
@@ -35,10 +36,10 @@ what make the aesthetic; the accuracy is not the point.
 | Sound | 2 pulse (4 duties), 1 triangle, 1 noise (LFSR), 1 PCM channel synthesized in Petal |
 | Input | two 8-button pads (up/down/left/right/a/b/select/start), keyboard-mapped, gamepad when present |
 
-All of it is per-frame state *pushed from the script*: the cart re-runs top to
-bottom every frame, sprites are cleared each frame, and tile/palette/map writes
-are idempotent — which is why a hot reload mid-game repaints correctly with
-gameplay state preserved.
+All of it is per-frame state pushed from the script. The cart re-runs top to
+bottom every frame, sprites are cleared each frame, and tile, palette and map
+writes are idempotent. That is why a hot reload mid-game repaints correctly
+with gameplay state preserved.
 
 ## Prerequisites
 
@@ -55,10 +56,14 @@ From this directory:
 LIBRARY_PATH=/opt/homebrew/lib cargo build --release
 ```
 
-**The `LIBRARY_PATH=/opt/homebrew/lib` prefix is required on Homebrew macOS**,
-on every cargo invocation for this crate (`build`, `run`, `test`) — it is where
-the linker finds SDL2. On Linux, drop it. The first build is slow (it compiles
-the Petal compiler in `../../../rust`); later builds are quick.
+**The `LIBRARY_PATH=/opt/homebrew/lib` prefix is required on Homebrew macOS**
+for every cargo invocation of this crate (`build`, `run`, `test`); it is where
+the linker finds SDL2. On Linux, drop it. The first build is slow because it
+compiles the Petal interpreter in `../../../rust`; later builds are quick.
+
+A plain `cargo run` (debug) is fine for development: `Cargo.toml` builds the
+`petal` dependency optimized even in debug, so carts stay inside the frame
+budget while the host code stays debuggable.
 
 ## Run
 
@@ -116,14 +121,8 @@ nothing in a cart has to know the difference. Escape returns to the launcher.
 | `launcher.ptl` | The boot menu, and itself an ordinary cart — it is written in exactly the API a game uses. |
 | `petal_quest/game.ptl` | **The showcase game**: a side-scrolling platformer — three worlds, four enemy kinds, a boss, a status-bar split — with its artwork in `petal_quest/art.ptl` and its levels in `petal_quest/levels.ptl`. It lives in a subdirectory, so run it by path: `cargo run --release -- carts/petal_quest/game.ptl`. |
 
-### Known gap
-
-`sfx_play` / `drum` currently raise `Unknown builtin: has_field` from inside
-`prelude/nes_sound.ptl`. The core `std` prelude (where `has_field` lives) is
-merged into the *cart*, but not into a host prelude module, so the sound-effect
-layer cannot call it — carts can. Music, the chip natives, and every PCM path
-are unaffected. Details and the workaround are in
-[cart-authoring.md](docs/cart-authoring.md#sound-effects-and-drums).
+Every cart is also a test: `cargo test` runs each one for 120 headless frames
+and checks that it raised no error and drew something (`tests/carts.rs`).
 
 ## Agent, headless and screenshot modes
 
@@ -170,13 +169,14 @@ variables plus the prelude's, which are namespaced (`nes::_nes_scroll`, …):
 ```
 
 A screenshot never perturbs a running game: the capture frame runs on a forked
-stack and is applied to a clone of the console, and its audio is dropped.
+stack against a clone of the console, and its audio is dropped.
 
 Two things behave differently outside a window, both inherited from
-`petal-sdl`: there is no audio device (the chip and any Petal DSP still run,
-into a discarded buffer), and `launch_cart` — the launcher handing the machine
-to a cart — does nothing, because the loop's cart-switch hook is windowed-only.
-Point the command line straight at the cart you want to drive.
+`petal-sdl`. There is no audio device (the chip and any Petal DSP still run,
+into a discarded buffer). And `launch_cart`, the launcher handing the machine
+to a cart, does nothing, because the loop's cart-switch hook only runs in the
+interactive loop. Point the command line straight at the cart you want to
+drive.
 
 ## A cart, in full
 
@@ -202,7 +202,7 @@ sprite(px(x), 200, 2, 4)
 
 That is a complete, running cart: a green field, a hero you can walk left and
 right, and the word HELLO. Save it as `carts/mine.ptl` and it is in the launcher
-menu.
+menu. [docs/cart-authoring.md](docs/cart-authoring.md) grows it from there.
 
 ## Layout
 
@@ -228,5 +228,5 @@ petal-fantasy-nes/
 ```
 
 Both prelude modules are implicit imports, so a cart calls everything in them
-bare. They are ordinary Petal — worth reading when a helper does not do quite
-what you want, because the answer is usually one native call underneath.
+bare. They are ordinary Petal, and worth reading when a helper does not do
+quite what you want: the answer is usually one native call underneath.

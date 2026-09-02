@@ -38,7 +38,7 @@
 //! code. [`CallSite::resolve`] returns both in one pass.
 
 use crate::constant_table::ConstantValue;
-use crate::program::{Program, TermId, TermOp};
+use crate::program::{Program, TermId, TermOp, base_fn_name};
 use crate::source_map::{FileId, SourceSpan};
 use crate::static_value::StaticValue;
 
@@ -328,9 +328,11 @@ fn callable_name(program: &Program, id: TermId) -> Option<String> {
     for _ in 0..MAX_ALIAS_HOPS {
         let t = program.terms.get(cur.0 as usize)?;
         if let Some(name) = &t.name {
-            // Names arrive module-qualified (`ui::draw_circle`); the tail is
-            // what the user typed and what an editor should show.
-            return Some(name.rsplit("::").next().unwrap_or(name).to_string());
+            // Names arrive module-qualified (`ui::draw_circle`) and overload
+            // variants carry an internal `#arity`; the bare tail is what the
+            // user typed and what an editor should show.
+            let tail = name.rsplit("::").next().unwrap_or(name);
+            return Some(base_fn_name(tail).to_string());
         }
         cur = alias_target(program, cur)?;
     }

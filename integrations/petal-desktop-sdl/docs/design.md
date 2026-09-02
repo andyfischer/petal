@@ -1,309 +1,121 @@
+# How petal-sdl is built
 
-# Game Framework (petal-sdl)
+This page describes the structure of the `petal-sdl` crate: how the game loop,
+the `Host` trait, and the run modes fit together, and what the shipped binary
+adds on top of `petal-ui`.
 
-Petal-SDL is an SDL2-based game framework for writing 2D games in Petal. It provides
-a game loop, rendering primitives, input handling, and hot reload.
+For other material:
 
-This page is the high-level overview. For deeper material:
+- [`../README.md`](../README.md) — building, running, CLI flags, examples
+- [`game-dev-guide.md`](game-dev-guide.md) — the script-side API and common game patterns
+- [`agent-protocol.md`](agent-protocol.md) — the `--agent` / `--headless` command reference
+- [`docs/building-apps.md`](../../../docs/building-apps.md) — how to build your own app on this crate
+- [`examples/custom-integrations/petal-fps/README.md`](../../../examples/custom-integrations/petal-fps/README.md) — a Rust + Petal 3D app that implements its own `Host`
 
-- [`game-dev-guide.md`](game-dev-guide.md) — patterns for writing games (game-loop structure, AABB collision, spawning entities, animation)
-- [`agent-protocol.md`](agent-protocol.md) — full per-command reference for `--agent` / `--headless` modes
-- [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) — canonical JSON schema shared by petal-sdl (stdin/stdout) and the diagram-canvas sample app (WebSocket)
-- [`examples/custom-integrations/petal-fps/README.md`](../../../examples/custom-integrations/petal-fps/README.md) — a hybrid Rust + Petal 3D experiment that uses the same protocol for headless agent control
+## Layers
 
-## Prerequisites
+The crate is a library (`petal_sdl`) plus a thin binary (`petal-sdl`,
+`src/main.rs`) that parses flags and picks a run mode.
 
-- SDL2, SDL2_image, and SDL2_ttf development libraries
-- Rust toolchain
+- **The game loop** (`src/game_loop.rs`) owns platform policy: SDL init, the
+  window and canvas, the event pump, frame timing, hot reload, pointer grab,
+  and the run modes. It knows nothing about how a frame is painted.
+- **The `Host` trait** (also in `game_loop.rs`) is what the loop drives for the
+  per-app parts: registering natives, presenting a frame, rendering a frame to
+  an image, and a few optional hooks.
+- **`DefaultHost`** (`src/default_host.rs`) is the host the shipped binary
+  runs. It paints the `petal-ui` draw vocabulary onto an SDL canvas and adds
+  the example browser and sandboxed file I/O natives.
+- **Building blocks** are public so other hosts can compose them: `input`
+  (SDL event translation and gamepad folding), `audio` (queued sample
+  output), `protocol` (agent JSON), `watcher` (hot reload), `screenshot` (PNG
+  encoding), `font` (size ladder), and `renderer` (SDL canvas primitives).
 
-On macOS with Homebrew:
+The draw functions (`draw_rect`, `draw_text`, offscreen canvases, ...) and
+input functions (`key_down`, `mouse_x`, ...) are not defined here. They come
+from `petal-ui`, which every graphical Petal host shares, so scripts written
+for `petal-sdl` run unchanged under `petal-web-canvas`. See
+[`petal-ui/README.md`](../../../petal-ui/README.md).
 
-```bash
-brew install sdl2 sdl2_image sdl2_ttf
-```
+## Run modes
 
-## Building
+| Function | CLI | What it does |
+|----------|-----|--------------|
+| `run_game` | default | Window, interactive, hot reload |
+| `run_agent` | `--agent` | Window plus JSON commands on stdin |
+| `run_headless` | `--headless` | No window; starts paused; `step` advances frames |
+| `run_screenshot` | `--screenshot` | Headless; runs N frames, writes a PNG, exits |
+| `run_record` | (library only) | Headless; renders a sequence of frames to images |
 
-```bash
-cd integrations/petal-desktop-sdl
-cargo build
-```
+Headless, screenshot, and record never initialize SDL.
 
-## Running a Game
+## The `Host` trait
 
-```bash
-cargo run -- ../petal-sdl/examples/snake.ptl
-```
+Required:
 
-Or after building:
+- `register(&mut env)` — register the host's natives and modules into a fresh `Env`.
+- `present(&mut canvas, &mut env)` — paint the live frame's draw output to the window. Windowed modes only.
+- `render_image(&mut env, stack, w, h)` — rasterize a frame to an RGB image with no window. Used by `--screenshot`, record mode, and the agent `screenshot` command.
 
-```bash
-./target/debug/petal-sdl examples/snake.ptl
-```
+Optional, with defaults:
 
-### Options
+- `default_source()` — the program to run when the CLI got no path. `DefaultHost` returns the example browser.
+- `on_program_loaded(&mut env, path)` — bind host state after each load or reload.
+- `prepare_frame(&mut env)` — reset per-frame bindings before the script runs.
+- `draw_commands_json(&mut env, stack)` — serialize draw output for `capture_draw_commands`.
+- `draw_stats(&mut env, stack)` — per-frame statistics for the agent `draw_stats` command. `DefaultHost` does not implement it.
+- `on_escape(&mut env)` — what Escape does in the window. Default: quit.
+- `after_frame(&mut env)` — request a script switch after an interactive frame. The example browser uses this.
+- `on_sdl_init(&sdl)` and `end_frame(&mut env)` — see below.
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--width <n>` | Window width in pixels | 800 |
-| `--height <n>` | Window height in pixels | 600 |
-| `--title <str>` | Window title | "Petal Game" |
-| `--no-hot-reload` | Disable file watching | enabled |
-| `--agent` | Enable agent protocol (JSON over stdin/stdout) | off |
-| `--headless` | Headless mode, no window (implies `--agent`) | off |
-| `--screenshot <file>` | Run headlessly, save PNG screenshot, then exit | — |
-| `--frames <n>` | Frames to run before screenshot | 120 |
-
-## Game Loop Model
-
-Petal-SDL runs your program once per frame. The program uses `state` variables to persist
-data across frames. A typical game structure looks like:
-
-```petal
-// Persistent state
-state x = 400
-state y = 300
-state speed = 200
-
-// Input
-if key_down("left")  { x -= speed * dt() }
-if key_down("right") { x += speed * dt() }
-if key_down("up")    { y -= speed * dt() }
-if key_down("down")  { y += speed * dt() }
-
-// Rendering
-clear(20, 20, 40)
-draw_rect(x - 10, y - 10, 20, 20, 255, 100, 100)
-draw_text("Use arrow keys", 10, 10, 20, 255, 255, 255)
-```
-
-### Persistent canvas (accumulative drawing)
-
-The framebuffer **persists between frames**: it is only wiped when your program
-calls `clear()`. Game-style sketches call `clear(...)` at the top of every frame
-and so always start from a blank screen — the usual case shown above.
-
-For generative art where the *accumulated trace* is the art — attractors,
-Lissajous figures, particle trails, brush strokes — simply **don't call
-`clear()`**. Every primitive you draw stays on screen, and the image builds up
-over time. Clear once on the first frame (guarded by a `state` flag) to set the
-background, then let it accumulate:
-
-```petal
-state started = false
-if !started then
-  clear(0, 0, 0)   // paint the background once
-  started = true
-end
-
-// Each frame draws a few more dots that persist forever.
-draw_circle(int(x), int(y), 2, 255, 200, 80)
-```
-
-This replaces the old workaround of stashing every past point in `state` and
-redrawing the whole history each frame (which grows O(n) per frame). See
-`examples/cc_lissajous_trails.ptl`.
-
-### Offscreen canvases (PGraphics-style layers)
-
-For layered compositing, masks, and per-layer trails, allocate an **offscreen
-canvas** — a separate render target you draw into and later blit onto the main
-framebuffer. This is the standard creative-coding move (Processing's
-`PGraphics`).
-
-```petal
-// Build a reusable stamp once, in a 24x24 offscreen canvas.
-let stamp = create_canvas(24, 24)   // returns a canvas handle (an int)
-draw_to(stamp)                       // redirect drawing into the canvas
-draw_rect(9, 2, 6, 20, 240, 220, 120)
-draw_rect(2, 9, 20, 6, 240, 220, 120)
-draw_to_screen()                     // redirect back to the main framebuffer
-
-// Composite the stamp wherever you like — transparent pixels show the
-// background through, only the drawn pixels land.
-draw_canvas(stamp, 100, 50)
-draw_canvas(stamp, 200, 80)
-```
-
-An offscreen canvas starts **fully transparent**, so blitting it composites
-only the pixels you painted. Canvases are recreated fresh from the draw stream
-every frame (handles are stable across the per-frame re-run), so call
-`create_canvas` each frame just like any other draw call. See
-`examples/cc_offscreen_layers.ptl`.
-
-## Native Functions
-
-### Drawing
-
-| Function | Description |
-|----------|-------------|
-| `clear(r, g, b)` | Clear the screen with an RGB color. If a frame never calls `clear()`, the previous frame's pixels persist (see [Persistent canvas](#persistent-canvas-accumulative-drawing)) |
-| `draw_rect(x, y, w, h, r, g, b)` | Draw a filled rectangle |
-| `draw_rect_outline(x, y, w, h, r, g, b)` | Draw a rectangle outline |
-| `draw_line(x1, y1, x2, y2, r, g, b)` | Draw a line |
-| `draw_circle(cx, cy, radius, r, g, b)` | Draw a filled circle |
-| `fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)` | Draw a filled triangle |
-| `fill_poly(points, r, g, b)` | Draw a filled polygon; `points` is a list of `vec2` or `[x, y]` pairs (≥ 3) |
-| `draw_text(text, x, y, size, r, g, b)` | Draw text at a position |
-| `create_canvas(w, h)` | Allocate an offscreen canvas (PGraphics-style render target); returns a canvas handle (see [Offscreen canvases](#offscreen-canvases-pgraphics-style-layers)) |
-| `draw_to(canvas)` | Redirect subsequent draw commands into the given offscreen canvas |
-| `draw_to_screen()` | Redirect subsequent draw commands back to the main framebuffer |
-| `draw_canvas(canvas, x, y)` | Blit an offscreen canvas onto the current render target at `(x, y)`; transparent pixels show the destination through |
-
-All color values are integers 0-255.
-
-### Input
-
-| Function | Description |
-|----------|-------------|
-| `key_down(name)` | `true` if a key is currently held down |
-| `key_pressed(name)` | `true` if a key was pressed this frame (edge-triggered) |
-| `mouse_x()` | Current mouse X position |
-| `mouse_y()` | Current mouse Y position |
-| `mouse_down(button)` | `true` if a mouse button is currently held |
-| `mouse_pressed(button)` | `true` if a mouse button was pressed this frame |
-
-Key names are lowercase strings. The supported set is: `a`–`z`, `0`–`9`,
-`up`, `down`, `left`, `right`, `space`, `return`, `escape`, `tab`,
-`backspace`, `shift`, `ctrl`, `alt`. Any other key name returns `false`
-(there's no "unknown key" error).
-
-Mouse `button` is `1` (left), `2` (middle), or `3` (right).
-
-### Timing
-
-| Function | Description |
-|----------|-------------|
-| `dt()` | Seconds elapsed since the last frame (float) |
-| `frame_count()` | Total number of frames elapsed |
-
-### Screen
-
-| Function | Description |
-|----------|-------------|
-| `screen_width()` | Window width in pixels |
-| `screen_height()` | Window height in pixels |
-
-## Hot Reload
-
-By default, petal-sdl watches the source file for changes. When you save the file,
-it automatically recompiles and restarts execution while preserving `state` variables.
-This means you can tweak colors, physics, or game logic and see results instantly
-without restarting.
-
-Disable with `--no-hot-reload`.
-
-## Example Games
-
-The `integrations/petal-desktop-sdl/examples/` directory contains a mix of playable games and
-sketches from *The Nature of Code* (the `noc_*.ptl` set):
-
-| Game / Sketch | Description |
-|---------------|-------------|
-| `snake.ptl` | Classic snake game with gradient rendering |
-| `pong.ptl` | Two-paddle pong |
-| `breakout.ptl` | Brick breaker |
-| `tetris.ptl` | Tetris with piece rotation |
-| `invaders.ptl` | Space invaders |
-| `flappy.ptl` | Flappy bird clone |
-| `asteroids.ptl` | Asteroids with ship rotation |
-| `platformer.ptl` | Side-scrolling platformer |
-| `dodge.ptl` | Dodge falling objects |
-| `particles.ptl` | Particle system demo |
-| `paint.ptl` | Drawing application |
-| `browser.ptl` | UI/browser mockup (uses the example-launcher natives) |
-| `noc_*.ptl` | *Nature of Code* reproductions — random walkers, flocking, flow fields, springs, cloth, fractal trees, elementary CA, etc. |
-
-### Example launcher natives
-
-The `browser.ptl` example uses four host functions for building a menu that
-launches other examples:
-
-| Function | Description |
-|----------|-------------|
-| `example_count()` | Number of bundled examples |
-| `example_name(i)` | Display name of example `i` |
-| `example_path(i)` | Absolute `.ptl` path of example `i` |
-| `launch_script(path)` | Replace the running program with the one at `path` |
-
-These are petal-sdl-specific; they are not part of the core language and
-are only available when running under `petal-sdl`.
-
-## Agent Protocol
-
-The `--agent` flag enables a JSON-based debugging protocol over stdin/stdout, designed
-for AI assistants to interact with running games programmatically. The `--headless` flag
-combines this with no-window mode for automated testing and screenshot capture.
-
-See [`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md) for the command/response
-schema — the same protocol is used by `petal-diagram-canvas` over
-WebSocket, so tooling written against one transport works against the
-other.
-
-## Host extension points (audio, gamepads, end-of-frame)
-
-Three capabilities exist for hosts built on this crate as a library (Shape B in
-[docs/building-apps.md](../../../docs/building-apps.md)). None of them changes
-anything for a plain `.ptl` sketch running under the shipped binary.
-
-### `Host::on_sdl_init(&sdl)`
-
-Called immediately after `sdl2::init()`, in the two run modes that create an SDL
-context (windowed interactive and windowed agent). It hands a host the `Sdl`
-handle so it can open subsystems the loop does not own — an audio device
-above all — without forking the loop to get at it. Headless, screenshot, and
-record never init SDL and never call this, so whatever a host opens here must be
-optional to its operation.
-
-### `Host::end_frame(&mut env)`
-
-Called once after **every committed frame**, in *every* mode — windowed,
-windowed-agent, headless `step`, `--screenshot`, `--record`. The frame order is:
+### Frame order
 
 ```text
 prepare_frame → env.run → drain print output → end_frame → [after_frame → present]
 ```
 
-`present` only exists when there is a window; `end_frame` is the hook that is
-guaranteed everywhere, which is what makes it the right place to flush a host's
-own per-frame output — a block of audio, a network packet, a trace record.
+`present` only runs when there is a window. `end_frame` runs after every
+committed frame in every mode, which makes it the right place to flush a
+host's own per-frame output: a block of audio, a network packet, a trace
+record. It is not called for speculative frames (the forked runs behind the
+agent's `screenshot` and `capture_draw_commands` commands), because those
+frames are read and discarded.
 
-It is deliberately **not** called for speculative frames (the forked runs behind
-the final screenshot capture and the agent's `screenshot` /
-`capture_draw_commands` commands). Those frames exist to be read and discarded;
-their effects die with the fork, so emitting them would duplicate a frame of
-output.
+### `on_sdl_init`
 
-### `audio::AudioOutput`
+Called right after `sdl2::init()` in the two windowed modes. Use it to open
+subsystems the loop does not own, above all an audio device. The headless
+modes never call it, so anything opened here must be optional.
 
-A thin wrapper over SDL's `AudioQueue<i16>`: `open(sdl, sample_rate, channels,
-buffer_frames)`, `queue_samples(&[i16])` (interleaved), `queued_frames()`,
-`resume` / `pause` / `clear`. Transport only — it knows nothing about synthesis.
+### Audio
 
-The queue (rather than a callback) is the deliberate choice: Petal's `Env` is
+`audio::AudioOutput` wraps SDL's `AudioQueue<i16>`: `open(sdl, sample_rate,
+channels, buffer_frames)`, `queue_samples(&[i16])` (interleaved),
+`queued_frames()`, and `resume` / `pause` / `clear`. It is transport only; the
+host owns synthesis.
+
+It is a queue rather than a callback on purpose. Petal's `Env` is
 single-threaded and lives on the main thread, so a callback on SDL's audio
-thread could never call into a script. With a queue the host synthesizes during
-its own frame — normally in `end_frame` — and tops the device up toward a lead
-of a few frames, using `queued_frames()` to decide how much. That is what makes
-script-driven synthesis possible at all.
+thread could never call into a script. With a queue the host synthesizes
+during its own frame (normally in `end_frame`) and tops the device up using
+`queued_frames()` to decide how much. That is what lets a script synthesize
+its own audio.
 
-The device opens paused and reports the rate/channel count actually obtained,
-which may differ from the request; synthesize against those, not the ask.
+The device opens paused and reports the rate and channel count it actually
+got, which may differ from the request.
 
 ### Gamepads
 
-Game controllers do not get their own script vocabulary. They are folded into
-the **same normalized key stream** as the keyboard, so a script that reads
-`key_down("left")` is controller-playable with no extra work and a game's
-keyboard and pad bindings cannot drift apart.
+Controllers have no separate script API. They are folded into the same key
+stream as the keyboard, so `key_down("left")` works from a d-pad or the left
+stick and a game's keyboard and pad bindings cannot drift apart.
 
-`Gamepads::new(&sdl)` opens the controller subsystem (degrading to inert if it
-is unavailable) and is passed to `poll_sdl_events_with_gamepads` each frame,
-which handles hot-plug in both directions. The windowed modes do this already;
-`poll_sdl_events` remains keyboard/mouse only for hosts that want it.
+`Gamepads::new(&sdl)` opens the controller subsystem (inert if unavailable)
+and `poll_sdl_events_with_gamepads` handles hot-plug each frame. The windowed
+modes do this already; `poll_sdl_events` stays keyboard and mouse only.
 
 Pad slots are assigned in connection order and survive a disconnect, so
-unplugging player 2 does not promote them to player 1. The mapping:
+unplugging player 2 does not promote them to player 1.
 
 | Control | Slot 0 | Slot 1 |
 |---|---|---|
@@ -316,8 +128,32 @@ unplugging player 2 does not promote them to player 1. The mapping:
 | back / select | `shift` | — |
 | shoulders | `leftbracket` `rightbracket` | — |
 
-Slot 0 is the NES-style convention (arrows, Z/X, Enter, RShift), so the common
-case needs no per-host configuration. Slots 2+ are ignored rather than mapped
-onto arbitrary keys. The left stick is quantized into the same four direction
-keys as the d-pad with hysteresis, so a stick resting on a boundary does not
-chatter; the right stick and triggers are not mapped.
+Slots 2 and up are ignored. The left stick is quantized to the four direction
+keys with hysteresis, so a stick resting on a boundary does not chatter. The
+right stick and triggers are not mapped.
+
+## Natives specific to this host
+
+Everything in the [game dev guide](game-dev-guide.md) comes from `petal-ui`.
+`DefaultHost` adds these, which are only available under `petal-sdl`:
+
+| Function | Description |
+|----------|-------------|
+| `example_count()` | Number of bundled examples |
+| `example_name(i)` | Display name of example `i` |
+| `example_path(i)` | Absolute `.ptl` path of example `i` |
+| `launch_script(path)` | Replace the running program with the one at `path` |
+| `load_text_file(path)` | Read a text file; returns `""` if missing |
+| `save_text_file(path, text)` | Write a text file; returns `true` on success |
+| `file_exists(path)` | Whether the file exists |
+
+`examples/browser.ptl` is built on the first four. The file functions are
+sandboxed: paths must be relative and may not contain `..`, and they resolve
+against the working directory.
+
+## Hot reload
+
+The source file is watched by default. On save, the program is recompiled and
+restarted with `state` values preserved. Disable with `--no-hot-reload`. How
+`state` inside functions survives an edit is covered in the
+[game dev guide](game-dev-guide.md#hot-reload).

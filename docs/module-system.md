@@ -1,74 +1,79 @@
 # Module system
 
-Petal programs can be split across files with `import`.
+A Petal program can be split across files. Each file is a *module*; `import`
+pulls another module's exported names into the current file. All the
+modules of a program are compiled together into one program — there is no
+separate compilation and no runtime linker.
 
-Modules are resolved and merged into one program at compile
-time (there is no runtime linker and no separate compilation units)
+## Importing
 
-## Syntax
-
-Basic import - importing a module called 'ui':
+A module name is a bare identifier, and it names the file `<name>.ptl`.
+There are three forms:
 
 ```petal ignore
 import ui                       // qualified: ui.button(...), ui.palette
-
-ui.button(...)
+import ui: button, clicked      // selective: button(...), clicked
+import ui as u                  // alias: u.button(...)
 ```
 
-Selective import:
+Import statements must come before every other statement in the file.
+Putting one later is an error:
 
-```petal ignore
-import ui: button, clicked
-
-button(...)
+```
+Error: import statements must appear before any other statement
 ```
 
-Import into an alias:
+A module name is only usable through `.`: writing `ui` on its own
+(`let x = ui`, `print(ui)`) is an error suggesting `ui.<name>` or a
+selective import.
+
+## Exporting
+
+A module's top-level declarations are private unless marked `export`:
 
 ```petal ignore
-import ui as u
-
-u.button(...)
-```
-
-### More details 
-
-Import statements (if any) must come before any other statements in the file.
-
-## Exports
-
-A module's top-level declarations are **private by default**. A `fn`, `class`
-(its constructor), `enum` (its variants), `let`, `var`, or `state` is visible to
-importers only when it is marked with the `export` modifier:
-
-```petal ignore
-export fn button(label)      // importable: m.button, `import m: button`
+// ui.ptl
+export fn button(label)      // importable: ui.button, `import ui: button`
   "[" ++ label ++ "]"
 end
 
-fn helper(x)                 // private: usable inside the module, not exported
+fn helper(x)                 // private to ui.ptl
   x + 1
 end
 ```
 
-`export` goes immediately before the declaration keyword: `export fn`,
-`export let`, `export state`, `export var`, `export enum`, `export class`. An
-`export enum` exports the enum's variants; an `export class` exports its
-constructor. `export` is only meaningful at a module's top level — it has no
-effect in the entry file (nothing imports the entry) or on nested statements.
+`export` goes directly before the declaration keyword: `export fn`,
+`export let`, `export var`, `export state`, `export enum`, `export class`.
+An `export enum` exports its variants; an `export class` exports its
+constructor and its type name. `export` in the entry file is allowed but
+does nothing, since nothing imports the entry file.
 
-### Methods are program-wide; a class name follows `export`
+A leading underscore carries no meaning: `fn _helper` is private because it
+lacks `export`, not because of the name.
 
-Method dispatch spans the whole compilation: a module may declare
-`fn Rect.area(r: Rect)` and every importer's rects gain that method, and an
-importer may extend a class it imported.
+Naming something that is not exported is an error. A selective import
+fails at compile time and lists what the module does export:
 
-A [class](language-guide.md#classes--methods) *name*, though, is an ordinary
-binding governed by `export` — and it is one name, not two. `export` makes both
-halves visible together: the constructor `Circle(…)` **and** the type
-`Circle` in an annotation. An unexported `class Circle` is private to its own
-file in both positions; naming it in an importer's annotation is the same
-`unknown type name` warning as any other name nothing declares.
+```
+Error: module 'ui' has no export 'helper' (exports: button, palette, twice)
+```
+
+A qualified access (`ui.helper()`) fails when it runs:
+
+```
+Error: module 'ui' has no export 'helper' (declarations are private unless marked `export`)
+```
+
+### Classes and methods
+
+Methods are program-wide. A module that declares `fn Rect.area(r: Rect)`
+gives every `Rect` in the program that method, and an importer can add its
+own methods to a class it imported.
+
+The class *name* follows `export`, and it is one name for both uses: the
+constructor `Circle(...)` and the type in an annotation `c: Circle`. An
+unexported class is private in both positions; using it as a type elsewhere
+is the usual `unknown type name` warning.
 
 ```petal ignore
 // shapes.ptl
@@ -85,266 +90,191 @@ fn f(c: Circle) c.radius end   // fine — `Circle` is exported
 fn g(h: Hidden) h.a end        // warning: unknown type name `Hidden`
 ```
 
-The class *namespace*, on the other hand, spans the compilation: a
-[`ClassId`](../rust/src/classes.rs) means the same thing everywhere, so two
-modules may not declare the same class name even if neither exports it. The
-error names both files:
+Class names are unique across the whole program, exported or not. Two files
+may not both declare `class Dup`:
 
 ```
-class `Dup` is already declared in `dup_a.ptl`, so `dup_b.ptl` may not declare it too
+Error: dup_b.ptl: class `Dup` is already declared in `dup_a.ptl`, so `dup_b.ptl` may not declare it too
 ```
 
 ### An exported `var` is read-only to importers
 
-A `var` binds a cell, and the cell belongs to the module that declared it.
-Importers read it like any other export — through an alias (`m.hits`) or a
-selective import (`import m: hits`), both of which yield the cell's *contents*,
-never the cell — but they cannot write it:
+Importers can read an exported `var` but not write it. The cell belongs to
+the module that declared it:
 
 ```petal ignore
 import tally: hits
-set hits = 5     // error: `hits` is a `var` exported by module `tally`;
-                 //        only `tally` can write it
+set hits = 5     // Error: `hits` is a `var` exported by module `tally`;
+                 //        only `tally` can write it — call a function it exports instead
 ```
 
-Export a function that performs the write instead. This keeps every `set` on a
-cell in the file that owns it, which is also the only place a reader would think
-to look for one.
-
-Reading it still says [`get`](language-guide.md#get) when the read is inside a
-function, because it is still a cell read — the importer sees the owner's
-writes as they happen, so the timing is exactly the one `get` marks:
+Export a function that does the write instead. Reading an imported `var`
+inside a function still needs [`get`](language-guide.md#get), because it is
+still a cell read and the importer sees the owner's writes as they happen:
 
 ```petal ignore
-import tally: hits
+import tally: hits, bump
+
+bump()
+bump()
+print(hits)              // 2
 
 fn describe()
   "hits: {get hits}"     // live: reflects whatever `tally` has written
 end
 ```
 
-The qualified form needs no keyword — `tally.hits` is a module member access,
-not a name in scope, and it already reads at the point it is written.
+The qualified form `tally.hits` needs no `get`; it reads the current value
+where it is written.
 
-`export` is the single privacy rule. A leading `_` carries no special privacy
-meaning: `export fn _helper` exports normally, and a plain `fn _helper` (no
-`export`) is private exactly like any other unexported name.
+### Overloaded functions
 
-Overloaded functions (the same top-level name declared with several arities)
-share one name binding, so their export markers must be consistent: mark every
-overload `export`, or none. A mixed group is a compile error.
+The variants of an [overloaded function](function-overloading.md) share one
+name, so either all of them are `export`ed or none. A mixed group is an
+error:
 
-An importer that names a non-exported symbol gets a compile error
-(`import m: helper`) or a deferred error at the access site (`m.helper()`):
-*module 'm' has no export 'helper'*.
-
-## Resolution
-
-Resolution order for `import name`:
-
-1. **Embedder-registered in-memory modules** — `env.register_module("ui",
-   source)`. This is how a host ships a Petal-source prelude
-   (`include_str!`) and how wasm hosts with no filesystem work. Always wins.
-2. **The importing file's directory** — `<dir>/<name>.ptl`. Two sibling
-   scripts can share a `palette.ptl` next to them.
-3. **Registered search paths** — `env.add_module_path(dir)`; the CLI's
-   `-I <dir>` flag lands here.
-4. **`PETAL_PATH`** — colon-separated directories from the environment.
-
-First hit wins. A module name resolves **at most once per program load**, so
-diamond imports (`a` and `b` both import `base`) share one copy. Import
-cycles are a compile error that lists the cycle path.
-
-Custom stores can implement the `ModuleResolver` trait
-(`rust/src/module.rs`); `ModuleRegistry` is the built-in implementation
-behind the `Env` methods.
-
-### Implicit imports
-
-An embedder can declare modules that every loaded program imports
-selectively-by-default:
-
-```rust
-env.register_module("ui", include_str!("ui.ptl"));
-env.set_implicit_imports(&["ui"]);
+```
+Error: overloaded function 'f' has mixed export markers: mark all overloads 'export' or none
 ```
 
-User scripts then call `button(...)` with zero ceremony. Implicit bindings
-are *weak*, like builtins: a script's own declarations shadow them silently,
-and an explicit `import ui` on top is a no-op. This replaces source
-concatenation entirely — same ergonomics, but with per-file error
-attribution and no namespace pollution beyond the exports.
+Overload sets do not merge across files. Importing `f` from two modules is
+a collision like any other.
 
-### The core prelude (`std`)
+## Where modules are found
 
-`Env::new` ships one implicit import of its own: `std`, the standard library
-written in Petal (`rust/prelude/std.ptl` — `sum`, `first`, `count`, `find`,
-`take`, `clamp01`, …) over the native builtins. It is available bare in every
-program with no host and no ceremony. Two properties distinguish it from a
-host prelude:
+`import name` looks for the module in this order. The first hit wins.
 
-- **It survives `set_implicit_imports`.** `std` lives in a separate
-  `base_implicit_imports` list, so a host replacing the implicit-import list
-  for its own prelude (`set_implicit_imports(&["ui"])`) can't drop it. Precedence
-  is lowest of all: a host prelude and user code both shadow `std`.
-- **It is reference-gated — zero-cost when unused.** `std` is merged into a
-  program only when the program (or an always-merged module) names one of its
-  exports. A script that never calls a `std` function compiles byte-for-byte
-  as if `std` didn't exist, so the standard library can grow without bloating
-  every program or cluttering `show-ir`. A bare identifier that merely *shares*
-  a `std` name but is declared at a module's top level (`state count = 0`)
-  does not pull it in — a top-level declaration shadows the whole module.
+1. **Modules registered by the host** in memory (`env.register_module`).
+   This is how an embedding app ships a Petal prelude, and how a browser
+   host with no filesystem works.
+2. **The importing file's directory** — `<dir>/<name>.ptl`. Two scripts
+   side by side can share a `palette.ptl` next to them.
+3. **Search directories** added with `petal run -I <dir>` (repeatable, and
+   accepted by every command that compiles) or `env.add_module_path`.
+4. **`PETAL_PATH`** — colon-separated directories from the environment.
 
-Timing/interaction helpers that need a host (a frame clock, a renderer) — like
-petal-ui's `elapsed` and `button` — stay in the host prelude, not `std`, since
-they only make sense under a frame loop.
+Note that `petal run -e '...'` has no importing file, so step 2 finds
+nothing; add `-I .` to import from the current directory.
 
-## Semantics
+A missing module is an error naming the importer and the places searched:
 
-### Merge-at-compile-time
+```
+Error: cannot find module 'geom' (imported by g.ptl): not registered, and no geom.ptl in the importing file's directory, module paths, or PETAL_PATH
+```
 
-`Env::load_program` parses the entry file, walks its imports depth-first
-(each module lexed/parsed independently, so line/column stay file-local),
-then runs one compiler pass over the modules in **dependency post-order,
-then the entry file**, into a single `Program`:
+Each module is loaded at most once per program. If `a` and `b` both import
+`base`, there is one `base`, and its top-level code runs once. Import cycles
+are an error that shows the path:
 
-- Each module compiles inside its own scope frame; its top-level bindings
-  become its exports. Exports are also bound in the global scope under
-  qualified names (`"ui::button"`), so importer references ride the ordinary
-  scope-lookup and closure-capture machinery — no relocation, no new backend
-  work.
-- **A module's top-level statements execute exactly once**, in dependency
-  order, before its importers' — they compile into the shared root block
-  ahead of the entry file's statements. `let palette = {...}` at module top
-  level works for exactly this reason. Keep top-level side effects minimal
-  by convention; the language doesn't police it in v1.
-- Natives/builtins are global and visible in every module, shadowable per
-  file as always.
-- Overload sets (`fn f(a)` + `fn f(a, b)`) are grouped per module and export
-  as one callable. Overload sets do **not** merge across an import boundary;
-  importing `f` from two modules is a collision.
+```
+Error: import cycle: cyc1 -> cyc2 -> cyc1
+```
 
-### Collisions are loud, shadowing stays quiet
+### The standard prelude
 
-Selective imports are explicit requests and get loud conflicts, at compile
-time:
+Every program implicitly imports `std`, the part of the standard library
+written in Petal (`sum`, `first`, `count`, `find`, `take`, `mean`,
+`clamp01`, ...). Its names are available bare, with no `import`. They are
+weak bindings: a declaration of your own with the same name shadows them
+silently. `std` is only merged into a program that uses one of its names,
+so it costs nothing otherwise.
 
-- `import a: draw` + `import b: draw` — error with both provenances.
-- `import a: draw` + a local top-level declaration of `draw` — error.
-- Two imports aliasing the same name to different modules — error.
-- Importing an unknown or unexported name — error (unknown-name errors list
-  the module's exports).
+An embedding host can add its own implicit imports the same way; see
+[Embedding](#embedding) below.
 
-Ordinary lexical shadowing (`let x = ...` rebinding an implicit import or an
-alias name) stays silent, as everywhere else in Petal.
+## How a multi-file program runs
 
-### `state` keys are module-qualified
+- A module's top-level statements run **exactly once**, before the code of
+  any file that imports it. Modules run in dependency order, then the entry
+  file. So `let palette = {...}` at a module's top level is computed before
+  any importer touches `palette`. Keep top-level side effects small; the
+  language does not forbid them.
+- Builtins are visible in every file.
+- Each file has its own scope. A `let x` in one module never collides with
+  a `let x` in another.
 
-A `state` slot is `(declaration id, call path)` — see
-[State](language-guide.md#one-slot-per-call-path). The module qualifier lives in
-the **declaration id**, which is a hash of the declaration's full name path:
-module qualifier, enclosing function chain, variable name. A module's top-level
-`state scroll = 0` is `hash("ui::scroll")`, a `state row = 0` inside that
-module's `fn draw` is `hash("ui::draw/row")`, and the **entry file keeps
-bare-name hashing** (`hash("scroll")`, `hash("draw/row")`), so every pre-module
-program's hot-reload state survives unchanged. Consequences:
+### Collisions are loud, shadowing is quiet
 
-- Two modules declaring `state scroll` no longer share a slot — and neither do
-  two functions declaring `state row`, in the same module or across modules.
-- Moving a `state` declaration between files, or renaming a module, changes
-  its key and **drops that state on reload** — the same class of event as
-  renaming the variable, or renaming the function it sits in. (`Env::diff_state`
-  remains available to hosts that want a migration affordance.)
-- `transfer_state` needed no changes; it already operates on the key space, and
-  it matches on the declaration id alone — the call path is an opaque tail.
+A selective import is an explicit request, so a conflict is a compile
+error naming both sides:
 
-Callsite ids, the other half of a runtime key, are qualified the same way: the
-enclosing module and function chain plus the callee as written (`f`,
-`obj.method`, `ui.button`). So a call to `ui.button` from the entry file and one
-from inside another module are different callsites, reaching different slots
-inside `button`.
+- `import a: draw` and `import b: draw` —
+  `'draw' is imported from both 'a' and 'b'`.
+- `import a: draw` plus a top-level `fn draw` in the same file —
+  `'draw' is imported from 'a' but is also declared in this file`.
+- `import a as x` and `import b as x` —
+  `'x' is already an alias for module 'a' and cannot also alias 'b'`.
 
-### Host-visible names
+Ordinary shadowing stays silent, as everywhere in Petal: `let m1 = 5` after
+`import m1` just rebinds the name.
 
-Root-frame function harvesting qualifies module functions:
-`env.call_function(stack, "ui::button", args)` invokes a module's function
-directly; entry-file functions keep their bare names. State JSON and
-`--term` lookups likewise see module state under `ui::scroll`-style names —
-top-level declarations, that is, which is what hosts address; a slot reached
-through a call path renders as that path and is not addressable by name.
+### `state` in modules
 
-## Diagnostics
+A [`state`](language-guide.md#state) slot is keyed by where it is declared,
+and the module is part of that key. Two modules declaring `state scroll`
+get two slots, as do two functions declaring `state row`. The entry file's
+keys are unchanged by the module system, so a single-file program's
+hot-reload state is unaffected.
 
-Spans carry a `FileId` (entry file = 0), and the program's `SourceMap` holds
-a file table (`name`, `source`, filesystem `origin` when there is one).
-Entry-file errors keep today's format:
+Moving a `state` declaration to another file, or renaming a module, changes
+its key and drops that state on the next reload — the same as renaming the
+variable.
+
+## Errors name the file
+
+An error in the entry file looks as it always has:
 
 ```
 Cannot add int and nil [line 4, column 3]
 ```
 
-Errors in an imported module name the file:
+An error in an imported module names it:
 
 ```
 Cannot add int and nil [bad.ptl line 2, column 3]
 ```
 
-Caret snippets, provenance ("Caused by:"), and stack traces all render
-against the correct file's source. Parse errors in a module are prefixed
-with the module's display name. Multi-file programs serialize the file table
-into their IR (schema v0.1, see [ir-as-target.md](dev/ir-as-target.md)); the IR
-of single-file programs is unchanged.
+Source snippets, `Caused by:` provenance and stack traces all show the
+right file.
 
-`petal::rewrite` (source splicing) is unaffected: it operates on individual
-source files, which is exactly the granularity modules preserve.
+## Not supported
 
-## Hot reload
+- Nested or dotted module names (`import lib.geom`) and path strings. A
+  module name is one identifier; use `-I` or `PETAL_PATH` to reach other
+  directories.
+- Imports anywhere but the top of a file, including conditional imports.
+- Merging overload sets across modules.
+- Packages, versions and registries.
+- Distributing a module as compiled IR. Programs always compile from
+  source.
 
-`Env::module_manifest(program_id)` returns one entry per source file a
-program was compiled from — display name, filesystem `origin` (None for
-in-memory modules), and a content hash. Hosts use it to answer "does editing
-file X invalidate program P?" and to watch every file a program depends on:
-petal-sdl's watcher watches the manifest's directories, so editing an
-imported `palette.ptl` hot-reloads the script that imports it.
+## Embedding
 
-Reloading is unchanged mechanically: recompile (which re-runs the module
-walk) with `Env::compile_program_at(pid, source, path)` and
-`transfer_state`. State whose (module-qualified) declaration id survives the
-recompile is preserved, call path and all; slots whose path no longer occurs
-are swept after the next run.
-
-## Embedder API summary
+Hosts that embed Petal manage modules through `Env`:
 
 ```rust
-env.register_module("ui", source);          // in-memory module
-env.add_module_path(dir);                   // filesystem search path
-env.set_implicit_imports(&["ui"]);          // host prelude (std survives this)
-env.load_program_at(&source, &path)?;       // entry with importer-relative resolution
-env.compile_program_at(pid, &source, &path)?; // hot-reload recompile
-env.module_manifest(pid);                   // files → origins/hashes
+env.register_module("ui", include_str!("ui.ptl")); // in-memory module; wins over files
+env.add_module_path(dir);                          // filesystem search path
+env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
+env.load_program_at(&source, &path)?;              // entry file, with importer-relative resolution
+env.compile_program_at(pid, &source, &path)?;      // hot-reload recompile
+env.module_manifest(pid);                          // every source file: name, origin, content hash
 ```
 
-CLI: `petal run <file> -I <dir>` (repeatable; accepted by every compiling
-subcommand), plus `PETAL_PATH`. The wasm bindings expose `register_module`
-and `set_implicit_imports`.
+Implicit imports give user scripts a host's prelude with no ceremony:
+they call `button(...)` directly, their own declarations shadow it
+silently, and an explicit `import ui` on top is a no-op. `std` is kept in a
+separate list, so `set_implicit_imports` cannot drop it; both the host
+prelude and user code shadow `std`.
 
-## What v1 explicitly defers
+`module_manifest` lists every file a program was compiled from, so a host
+can watch all of them and hot-reload when an imported file changes.
+Reloading is a recompile plus `transfer_state`; state whose key survives is
+preserved. Module functions are addressable by qualified name
+(`env.call_function(stack, "ui::button", args)`), and module `state`
+appears in state JSON under `ui::scroll`-style names.
 
-- **Separate compilation / IR linking.** Distributing a module as IR
-  requires relocating program-local ids or real cross-program addressing
-  (`GlobalTermId` is the dormant seed). Module scopes and qualified state
-  keys are the shape a linker would need, but v1 always compiles from
-  source.
-- **`pub` / visibility beyond the `_` prefix.**
-- **Packages, versions, registries.**
-- **Overload-set merging across modules.**
-- **Conditional / non-top-of-file imports.**
-
-## Tests
-
-- `rust/tests/modules.rs` — binding forms, execution order, collision/cycle
-  errors, state-key stability, hot reload, implicit imports, resolver
-  ordering, in-memory (wasm-shaped) embedding.
-- `ts/test/modules.test.ts` + `ts/test/fixtures/modules/` — multi-file
-  golden cases through the CLI, IR roundtrip with a file table, `-I`, and
-  file-attributed errors.
+Custom resolvers implement the `ModuleResolver` trait in
+`rust/src/module.rs`. The wasm bindings expose `register_module` and
+`set_implicit_imports`. See the [Embedding guide](embedding-guide.md) for
+the rest of the host API.

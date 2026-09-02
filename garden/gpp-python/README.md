@@ -1,13 +1,13 @@
 # gpp-python — Python GPP apps
 
-`gpp/` is a **stdlib-only** Python client library for the Garden Pane
-Protocol v2 (`../docs/gpp.md`), mirroring the Rust `petal-query` API: a
-`Provider` with `query` / `on_mutation` / `on_emit` / `on_navigate` handlers
-(positional or decorator), a `PanelUi` (pane name + Petal drawer + declared
+`gpp/` is a stdlib-only Python client library for the Garden Pane Protocol v2
+([`../docs/gpp.md`](../docs/gpp.md)). It mirrors the Rust `petal-query` API:
+a `Provider` with `query` / `on_mutation` / `on_emit` / `on_navigate` handlers
+(positional or decorator), a `PanelUi` (pane name, Petal drawer, declared
 screens), `background()` for work that must not stall the pane, `TestHarness`
-for protocol-level tests, and `serve()` running the whole stdio loop. No
-runtime dependencies, ever — Python ≥ 3.9 and `git`/`ps` are all the apps
-need. Import it from the source tree (`sys.path.insert`, what the in-tree
+for protocol-level tests, and `serve()`, which runs the whole stdio loop. It
+needs Python >= 3.9 and nothing else; the sample apps also shell out to `git`
+and `ps`. Import it from the source tree (`sys.path.insert`, as the in-tree
 apps do) or install it (`pip install -e garden/gpp-python`).
 
 ```
@@ -29,16 +29,16 @@ the wire spec is [`../docs/gpp.md`](../docs/gpp.md).
 ## The apps
 
 Each app is a directory holding `app.py` (the provider) and a colocated
-`.ptl` drawer (the UI, built on the `ui` component library —
-`../../petal-ui/docs/components.md`).
+`.ptl` drawer (the UI, built on the petal-ui component library; see
+[`../../petal-ui/docs/components.md`](../../petal-ui/docs/components.md)).
 
-- **`sysmon/`** — live process/CPU/memory monitor from `ps aux`. The
-  sortable table's click-to-sort header re-keys `query("procs",
-  "<field>:<dir>")`, so sorting happens Python-side; a `maxAge 1s` +
-  `staleWhileRevalidate 10s` policy keeps it live with no spinner flicker.
-- **`repo-stats/`** — git dashboard for the launch directory (first arg,
-  else cwd): commits-per-week bars, top authors, recent commits — one
-  `git log` pass behind `query("stats", "")`.
+- **`sysmon/`**: live process/CPU/memory monitor from `ps aux`. Clicking a
+  table header re-keys `query("procs", "<field>:<dir>")`, so sorting happens
+  in Python; a `maxAge 1s` + `staleWhileRevalidate 10s` policy keeps it live
+  with no spinner flicker.
+- **`repo-stats/`**: git dashboard for the launch directory (first arg, else
+  cwd): commits per week, top authors, recent commits, from one `git log` pass
+  behind `query("stats", "")`.
 
 ## Running
 
@@ -71,7 +71,5 @@ cd garden && node tools/python-gpp-integration-test.ts   # boots garden headless
 Copy `sysmon/`, then: register a `query` handler per data kind (return
 `Reply.json(value).max_age(...)` or raise `AppError`; wrap anything slow in
 `background(...)`), point `PanelUi.from_file` at your drawer, and call
-`serve(provider, ui)`. The full
-walkthrough — including cache policy choice, the JSON→Petal data shape, and
-headless verification over the debug server — is
-`../docs/writing-gpp-apps-python.md`.
+`serve(provider, ui)`. The full walkthrough is
+[`../docs/writing-gpp-apps-python.md`](../docs/writing-gpp-apps-python.md).

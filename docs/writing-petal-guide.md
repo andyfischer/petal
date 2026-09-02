@@ -86,8 +86,8 @@ Things to notice, because each is a rule you will meet again:
 - **`end` closes every block.** `if … then … end`, `for … do … end`,
   `fn … end`. No braces, no significant indentation.
 - **The last expression is the return value.** `Task.label` has no `return`.
-  An explicit `return expr` exists for early exit, and `return` on its own line
-  needs a value (`return nil`).
+  An explicit `return expr` exists for early exit; a bare `return` returns
+  `nil`.
 - **`{}` inside a string interpolates**, like a JS template literal but with the
   plain double quote: `"[{mark}] {t.title}"`.
 - **Type annotations are optional and advisory.** `title: string` and
@@ -125,7 +125,8 @@ it is an **error**, not a silent shadow:
 ```
 Error: `n` is bound outside this function; this assignment creates a local
 shadow and does not modify `n`. Use `let` for a new local, return the value,
-or — if it really must be mutable — declare it `var n = ...`
+or — if it really must be mutable — declare it `var n = ...` and write it
+with `set n = ...`
 ```
 
 **A rebind inside a loop or an `if` carries out of it.** This is the rule that
@@ -433,6 +434,7 @@ iteration into a list.
 ```petal
 let squares = for i in range(1, 6) do i * i end   // [1, 4, 9, 16, 25]
 
+let tasks = [{title: "a", done: true}, {title: "b", done: false}]
 let titles = for t in tasks do
   if t.done then continue end                     // `continue` filters
   t.title
@@ -503,11 +505,12 @@ idiom, not a workaround:
 
 ```petal
 fn slide(row)
-  {row: shifted, gained: points}
+  let shifted = filter(row, fn(x) -> x != 0)
+  {row: shifted, gained: len(row) - len(shifted)}
 end
 
-let res = slide(r)
-print(res.row, res.gained)
+let res = slide([2, 0, 0, 4])
+print(res.row, res.gained)    // [2, 4] 2
 ```
 
 **Reading a field a record does not carry is a hard error** — a typo'd field
@@ -561,11 +564,18 @@ end
 **Pipe into the first argument.**
 
 ```petal
+let tasks = [{title: "a", done: true}, {title: "b", done: false}]
 let done_count = tasks |> filter(fn(t) -> t.done) |> len()
+print(done_count)             // 1
 ```
 
 **Lambdas are `fn(args) -> expr`** — the `->` introduces the body, which is why
-a lambda has no return-type annotation.
+a lambda has no return-type annotation. A multi-statement lambda is
+`fn(args) … end`, and the parameter list can be left off when there are no
+parameters: `fn 42 end`.
+
+**Arguments can be passed by name**: `f(x: 1)`, in any order, mixed with
+positional ones. See [Named Arguments](language-guide.md#named-arguments).
 
 **Method syntax reaches builtins, not your own functions.** `value.name(args)`
 falls back to a **builtin** with the receiver as the first argument, which is
@@ -613,9 +623,9 @@ import shapes: Circle          // or: import shapes  /  import shapes as s
 print(Circle(2).area())
 ```
 
-Imports must come before any other statement. Methods are program-wide — declare
-`fn Rect.area(…)` in one module and every file's rects gain it — but the class
-*name* follows `export`.
+`import shapes` finds `shapes.ptl` next to the importing file. The rest —
+search paths, what `export` covers, how modules share state — is in the
+[Module System](module-system.md).
 
 **Wrap long expressions by ending the line with the operator, not starting the
 next one with it.** This is the guide's one genuine footgun, because getting it
@@ -628,8 +638,9 @@ returns the wrong number:
 fn score(a, b, c)
   1.0 * a
   - 2.0 * b
-  - 3.0 * c      // only THIS line is the return value: -30, not -40
+  - 3.0 * c      // only THIS line is the return value
 end
+print(score(1, 2, 3))   // -9.0, not -12.0
 ```
 
 Every earlier line becomes a discarded statement. Put the operator at the end of
@@ -639,8 +650,9 @@ the line and it means what it looks like:
 fn score(a, b, c)
   1.0 * a -
   2.0 * b -
-  3.0 * c        // -40
+  3.0 * c
 end
+print(score(1, 2, 3))   // -12.0
 ```
 
 A weighted sum written down the page is exactly where this bites. When in doubt,

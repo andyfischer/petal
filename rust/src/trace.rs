@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use smallvec::SmallVec;
 
 use crate::heap::{CellId, Heap};
-use crate::program::{Program, TermId, TermOp};
+use crate::program::{Program, TermId, TermOp, base_fn_name};
 use crate::program_analysis::CellFrontier;
 use crate::value::{self, Value};
 
@@ -608,7 +608,9 @@ impl ExplainEntry {
         let (line, column) = span_of(program, term_id);
         Self {
             term_id,
-            name: term.name.clone(),
+            // An overload variant's term is named `box#1` internally; explain
+            // output names it as the source wrote it.
+            name: term.name.as_deref().map(|n| base_fn_name(n).to_string()),
             op: format!("{:?}", term.op),
             line,
             column,
@@ -648,7 +650,7 @@ fn event_to_json(e: &TraceEvent, program: &Program, heap: &Heap) -> serde_json::
     serde_json::json!({
         "seq": e.sequence,
         "term_id": e.term_id.0,
-        "name": term.name,
+        "name": term.name.as_deref().map(base_fn_name),
         "op": format!("{:?}", term.op),
         "line": line,
         "column": column,

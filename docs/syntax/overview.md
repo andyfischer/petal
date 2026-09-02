@@ -1,11 +1,9 @@
 # Petal Syntax Overview
 
 A compact map of Petal's surface syntax: every lexical form, statement, and
-expression the parser accepts. It is a reference, not a tutorial — for prose
+expression the parser accepts. It is a reference, not a tutorial. For
 walkthroughs and worked examples see the
-[Language Guide](../language-guide.md). Two syntactic topics have their own
-deep dives: [Commas](commas.md) and the
-[Module System](../module-system.md).
+[Language Guide](../language-guide.md).
 
 Petal is a hybrid functional/imperative language. **Almost everything is an
 expression** — `if`, `match`, `for`, and blocks all evaluate to a value — and
@@ -25,11 +23,10 @@ let x = 1   // trailing comment
 
 ### Identifiers and keywords
 
-Identifiers are letters/digits/underscore, not starting with a digit. A leading
-`_` has no special meaning — module visibility is governed entirely by `export`
-(see [Module System](../module-system.md)); by convention it marks an
-intentionally-unused or internal name. A lone `_` is the wildcard pattern in
-`match`.
+Identifiers are letters, digits and underscores, not starting with a digit. A
+leading `_` has no special meaning (visibility across files is controlled by
+`export`; see the [Module System](../module-system.md)). By convention it marks
+an unused or internal name. A lone `_` is the wildcard pattern in `match`.
 
 Reserved keywords:
 
@@ -67,26 +64,21 @@ holes: `"2 + 2 = {2 + 2}"`. Triple-quoted **raw** strings capture their contents
 verbatim — `{`/`}` are literal, backslashes are not escapes, and newlines are
 allowed — which makes them ideal for embedding source or brace-heavy text.
 
-To put a *literal* brace in an ordinary string, escape it (`"\{"`, `"\}"`) or
-use a raw string (`"""{"""`). A bare `"{"` is rejected: the brace opens a hole,
-and the quote meant to close the string would open a nested one instead. A
-string opened inside a hole must also close on the same line, so a stray quote
-cannot swallow the rest of the file and blame some innocent character hundreds
-of lines further down.
+To put a literal brace in an ordinary string, escape it (`"\{"`, `"\}"`) or
+use a raw string (`"""{"""`). A bare `"{"` is an error, because the brace
+opens a hole. A string opened inside a hole must close on the same line.
 
-Inside a hole, a nested string may be written bare or backslash-escaped — the
-two spellings lex identically, in string holes and in JSX holes alike:
+Inside a hole, a nested string may be written bare or backslash-escaped; the
+two spellings mean the same thing:
 
 ```
 "{if t then "a" else "b" end}"
 "{if t then \"a\" else \"b\" end}"
 ```
 
-**Commas are required.** In every comma-separated construct (list literals, call
-arguments, function parameters, record literals, enum declarations, and the
-matching patterns) adjacent elements must be separated by a comma. Whitespace and
-newlines are not separators — `[1 2]` is a parse error — while a trailing comma
-before the closing delimiter is always allowed. See [Commas](commas.md).
+**Commas are required** between adjacent elements of every comma-separated
+construct. Whitespace and newlines are not separators (`[1 2]` is a parse
+error); a trailing comma is always allowed. See [Commas](commas.md).
 
 ## Operators
 
@@ -109,21 +101,18 @@ Listed loosest to tightest binding (the parser's precedence ladder):
 `??` binds tighter than comparison but looser than `++`, so `count ?? 0 > 5`
 parses as `(count ?? 0) > 5`.
 
-The left side of `??` reads records *tolerantly*: a field or `[key]` the record
-does not carry is nil there rather than an error, and that holds for the whole
-access chain (`cfg.window.width ?? 800`). `a?.b` (and its index spelling
-`a?.[i]`) asks for that same tolerance without a fallback, and — like
-JavaScript's — short-circuits the rest of its chain, so `cfg?.window.width` is
-nil when `window` is absent. Everywhere else a missing field stays a hard error,
-as do a wrong-typed base (`3.x`) and an out-of-bounds list index, on either side
-of the operator and under `?.`. See
+On the left side of `??`, a missing record field is nil rather than an error,
+for the whole access chain (`cfg.window.width ?? 800`). `a?.b` (and `a?.[i]`)
+gives the same tolerance without a fallback and short-circuits the rest of the
+chain, so `cfg?.window.width` is nil when `window` is absent. Everywhere else
+a missing field is an error. See
 [Ragged records](../language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 **Assignment** is a statement, not an operator: `x = e`, plus the compound forms
 `+=` `-=` `*=` `/=` `%=`. Assignment targets may be a variable, an index
 (`xs[0] = v`), or a field (`p.x = v`, including nested `a.b.c = v`). `set x = e`
 takes the same target and compound forms; which keyword a name accepts is fixed
-by its declaration (see [`var` and `set`](#var-and-set)).
+by its declaration (see [`var`, `set` and `get`](#var-set-and-get)).
 
 ### Sugar that desugars to calls
 
@@ -162,9 +151,9 @@ x += 5                       // compound assignment
 config let offset = 4        // a declared tuning knob (see the Language Guide)
 ```
 
-The contextual `config` modifier marks a binding as the value direct
-manipulation should edit (docs/direct-manipulation.md). It composes with
-`export` (`export config let`) and is rejected on `var`.
+`config` marks a binding as a value that direct manipulation may edit (see
+[direct-manipulation.md](../direct-manipulation.md)). It combines with
+`export` (`export config let`) and is not allowed on `var`.
 
 ### `var`, `set` and `get`
 
@@ -181,13 +170,12 @@ end
 print(count)                  // 6
 ```
 
-A `var` binds a box, so a function or closure that mentions the name writes the
-*same* box — the one thing `=` cannot express, since an `=` inside a function
-only shadows. Reading a `var` yields its contents; no expression evaluates to
-the box itself, so the only way to share one is closure capture.
+A `var` is a box. A function or closure that writes the name writes the same
+box, which plain `=` cannot express (an `=` inside a function only shadows).
+Reading a `var` yields its contents.
 
-Inside a function that read is written `get`, and the keyword is required
-there:
+Inside a function, reading an outer `var` is written `get`, and the keyword is
+required:
 
 ```petal
 var hits = 0
@@ -198,28 +186,27 @@ set hits = 2
 print(describe())         // hits: 2
 ```
 
-An ordinary binding is captured *by value at the point the function is
-written*, while a cell is read *now*; `get` is what tells the two apart at the
-read instead of at a distant declaration. It binds tighter than `.` and `[]`
-(`get cfg.w` is `(get cfg).w`) and is an error on anything that is not a `var`.
-The matching rule for ordinary bindings: a function may not capture a module
-binding that is **rebound below it** — pass it as a parameter instead.
+An ordinary binding is captured by value when the function is written; a cell
+is read now. `get` makes that difference visible at the read. It binds tighter
+than `.` and `[]` (`get cfg.w` is `(get cfg).w`) and is an error on anything
+that is not a `var`. The matching rule for ordinary bindings: a function may
+not capture a module binding that is rebound below it; pass it as a parameter
+instead.
 
 `set` never declares: `set` on an unknown name is an error. Targets may be a
 name, a field, or an index (`set r.a = 1`, `set xs[0] = 1`). `@` is a `let`-only
 rebind and is rejected on a `var`.
 
-Prefer `let` — a `var` read has no dataflow edge behind it, so provenance
-queries stop there. See the [Language Guide](../language-guide.md#var-and-set).
+Prefer `let` where you can. See the
+[Language Guide](../language-guide.md#var-and-set).
 
 ### `state`
 
 Persistent variables that are initialised once and survive across runs (and
-across hot reloads). The slot is keyed by the **call path** that reached the
-declaration — the chain of callsites and loop iterations — so each callsite of a
-helper, each recursion depth, and each iteration of a caller's `for` holds its
-own value, React-`useState`-style. A top-level `state` runs on the empty path:
-one declaration, one slot.
+across hot reloads). Each slot is keyed by the call path that reached the
+declaration, so each callsite of a helper, each recursion depth, and each
+iteration of a caller's `for` holds its own value. A top-level `state` has one
+slot. See [State](../language-guide.md#state) in the Language Guide.
 
 ```petal
 fn counter()
@@ -229,9 +216,8 @@ fn counter()
 end
 ```
 
-`state(key)` opts out of the path entirely and keys by the value instead: same
-key ⇒ same slot, whoever asks. `state var` combines persistence with a cell —
-one cell per path, or per key:
+`state(key)` keys by the value instead: same key, same slot, whoever asks.
+`state var` combines persistence with a mutable cell:
 
 ```petal
 fn hit(id)
@@ -259,16 +245,15 @@ end
 
 ### `class` (declaration)
 
-A named record type: comma-separated fields with optional annotations (the same
-[comma rule](commas.md) as every other list). The class name binds to a positional constructor and
-becomes a usable type name; `fn <Class>.<name>(receiver, …)` declares a method
-on it. `Rect` (fields `x`, `y`, `w`, `h`) is built in. See the
+A named record type: comma-separated fields with optional annotations. The
+class name is a positional constructor and a type name;
+`fn <Class>.<name>(receiver, …)` declares a method on it. `Rect` (fields `x`,
+`y`, `w`, `h`) is built in. See the
 [Language Guide](../language-guide.md#classes--methods).
 
-A `class` is **top-level only** — declaring one inside a function or block is an
-error — and it is **hoisted**, so the constructor and the type name are both
-live throughout the file. Its name may not be a built-in type name (`class int`
-is an error), and it is visible to other files only when `export`ed.
+A `class` is top-level only and hoisted, so the constructor and type name are
+usable anywhere in the file. Its name may not be a built-in type name, and it
+is visible to other files only when `export`ed.
 
 ```petal
 class Point
@@ -362,12 +347,10 @@ end
 
 ### `for` (loop / mapping expression)
 
-Iterates over a list or range with `in … do … end`. A **bare** `for` statement
-runs for side effects only and allocates nothing. Used in **value position**
-(assigned, returned, passed as an argument, a list element, or sitting in a
-**tail position** — the last statement of a function body, of a value-position
-`if` branch, or of a collecting loop's body) the same loop becomes a **mapping**
-that collects the last expression of each iteration into a list:
+Iterates over a list or range with `in … do … end`. A bare `for` statement
+runs for side effects only. In value position (assigned, returned, passed as
+an argument, or the last expression of a function body or branch) the same
+loop collects the last expression of each iteration into a list:
 
 ```petal
 for item in [1, 2, 3] do print(item) end   // statement: side effects only
@@ -376,9 +359,8 @@ let squares = for i in range(1, 6) do i * i end
 // squares == [1, 4, 9, 16, 25]
 ```
 
-Inside a collecting loop, `continue` filters (contributes nothing) and `break`
-ends collection, yielding what was gathered so far. Loops nest directly: an
-inner loop in the outer body's tail position collects, giving a list of lists.
+Inside a collecting loop, `continue` skips the element and `break` ends
+collection with what was gathered so far. Nested loops give a list of lists.
 
 ### `while` (loop)
 
@@ -410,10 +392,9 @@ let nothing = fn end          // returns nil
 on_click(fn set_count(count + 1) end)
 ```
 
-**Wart:** after `fn`, a leading `(` is *always* read as the parameter list, so
-an argless lambda's body can't start with a parenthesized expression —
-`fn (a + b) * 2 end` reads `(a + b)` as parameters and fails. Write
-`fn -> (a + b) * 2` or give the body a leading statement instead.
+After `fn`, a leading `(` is always read as the parameter list, so an argless
+lambda's body cannot start with a parenthesized expression: `fn (a + b) * 2
+end` fails. Write `fn -> (a + b) * 2` instead.
 
 ### Calls and named arguments
 
@@ -429,11 +410,10 @@ print(scale(2, by: 10, offset: 1))          // 21
 print(scale(by: 10, offset: 1, value: 2))   // 21
 ```
 
-Overloads are still selected by the *total* argument count (positional plus
-named); names bind to slots only afterwards, against the chosen variant's
-parameter list. Errors: `has no parameter named 'x'`, `got multiple values for
-parameter 'x'` (which is also what naming a method's receiver produces). A
-builtin has no parameter names at runtime and rejects named arguments outright.
+Overloads are chosen by the total argument count (positional plus named);
+names then bind to the chosen variant's parameters. Naming a parameter that
+does not exist, or giving one twice, is an error. Builtins do not accept named
+arguments. See [Named Arguments](../language-guide.md#named-arguments).
 
 ### Collection and access forms
 
@@ -462,9 +442,9 @@ expression; text between tags is a string child; `<Tag />` self-closes.
 
 ## Types (optional annotations)
 
-Type annotations are **optional** and **advisory** (they drive warnings, not
-runtime casts). A `:` annotates a binding — `let`, `var`, or `state` — or a
-parameter; an `->` annotates a *named* function's return type:
+Type annotations are optional and advisory: they produce warnings, not
+runtime casts. `:` annotates a binding (`let`, `var`, or `state`) or a
+parameter; `->` annotates a named function's return type:
 
 ```petal
 let n: int = 0
@@ -483,16 +463,13 @@ A lambda's `->` already introduces its body, so lambdas take parameter
 annotations only.
 
 Recognised type names: `int`, `float`, `num` (either of the two), `bool`,
-`string` (alias `str`), `list`,
-`record`, `function`, `enum`, `nil`, `any`, plus host/runtime types such as
-`vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending`, and the
-name of any [class](#class-declaration) in scope — one this file declares or
-imports, or a built-in one such as `Rect`. A type is
-a single bare name — there are no parameterized (`list<int>`), arrow, or
-structural forms. An unknown name is kept, not rejected, and reported as an
-`unknown type name` warning. Type names are **contextual**, not reserved, so
-`int` / `float` / `str` remain callable as the cast builtins everywhere else. At
-runtime, `type(value)` returns a value's type name as a string.
+`string` (alias `str`), `list`, `record`, `function`, `enum`, `nil`, `any`,
+host types such as `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`,
+`pending`, and the name of any [class](#class-declaration) in scope. A type is
+a single bare name; there are no parameterized (`list<int>`), arrow, or
+structural forms. An unknown name gives an `unknown type name` warning. Type
+names are not reserved, so `int`, `float` and `str` remain callable as cast
+builtins. At runtime, `type(value)` returns a value's type name as a string.
 
 See the [Language Guide](../language-guide.md#type-annotations) for
 assignability rules and `petal check`.
@@ -502,7 +479,7 @@ assignability rules and `petal check`.
 - [Language Guide](../language-guide.md) — the full tour with worked examples.
 - [Commas](commas.md) — where commas are required, and how `-` is disambiguated.
 - [Line Continuation](line-continuation.md) — breaking a long expression across lines.
-- [Module System](../module-system.md) — `import`, exports, resolution, hot reload.
+- [Module System](../module-system.md) — `import`, exports, resolution.
 - [Function Overloading](../function-overloading.md) — multi-arity dispatch.
-- [Rebind Operator](rebind-operator.md) — the `@` in-out argument operator.
+- [Rebind Operator](rebind-operator.md) — the `@` rebind operator.
 - [Builtins Reference](../Builtins.md) — built-in functions.

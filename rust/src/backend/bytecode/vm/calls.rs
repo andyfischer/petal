@@ -9,7 +9,7 @@ use super::*;
 
 use crate::backend::bytecode::isa::ArgNames;
 use crate::backend::calls;
-use crate::program::ClosureId;
+use crate::program::{ClosureId, base_fn_name};
 
 impl<'a> Vm<'a> {
     /// A frame ran off the end of its code without an explicit `Return`: its
@@ -79,6 +79,15 @@ impl<'a> Vm<'a> {
         for &tid in term_ids {
             let term = self.program.get_term(tid);
             if let Some(name) = term.name.as_ref() {
+                // An overload variant's term is named `box#1` internally; the
+                // set that joins the variants carries the source name, so
+                // skipping the mangled ones keeps `stack.functions` — a public
+                // map hosts enumerate and call through — free of names no one
+                // wrote. (Variant names are also unqualified, so admitting them
+                // would let a module's `box#1` collide with the entry file.)
+                if name.contains('#') {
+                    continue;
+                }
                 let val = frame
                     .regs
                     .get(term.register.0 as usize)
@@ -352,7 +361,11 @@ impl<'a> Vm<'a> {
 
         let bcfn = bc.function(fn_id);
         let func = &program.functions[fn_id.0 as usize];
-        let fn_name = func.name.as_deref().unwrap_or("<anonymous>");
+        // An overload variant is named `box#1` internally; every message below
+        // names the function as the source wrote it, like `resolve_overload`.
+        // (`split_qualified_method_name` still reads the stripped name — the
+        // `Class.method` prefix is untouched by the suffix.)
+        let fn_name = base_fn_name(func.name.as_deref().unwrap_or("<anonymous>"));
         if args.len() != func.params.len() {
             // A method's receiver is a parameter the *call site* supplies:
             // `c.foo()` passes `c` even though the user wrote no arguments.

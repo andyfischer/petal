@@ -2,12 +2,12 @@
 
 `petal run` cannot run a UI app: it dies at `screen_width()`, because the
 input/draw contract is the host's job. `petal-ui-run` is that host, with no
-renderer attached. It drives [`petal_ui::harness::Headless`] for N frames,
+renderer attached. It drives `petal_ui::harness::Headless` for N frames,
 feeds it a scripted input scenario, and writes one JSON line per frame.
 
-It exists so a UI app's behavior is *comparable* across a refactor: everything
+It exists so a UI app's behavior is comparable across a refactor: everything
 that would otherwise differ run-to-run has a knob, and the driver pins all of
-them (see [refactor-verification.md](refactor-verification.md) §1–3).
+them (see [refactor-verification.md](refactor-verification.md)).
 
 ```
 petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
@@ -168,16 +168,17 @@ unaffected. A drawer whose whole UI hides behind a ready `query` shows its
 loading state here — deterministic and intended; drive real data through the
 garden integration tests instead.
 
-## Status
+## What runs under it
 
-All 15 checked-in UI apps under `examples/dashboards`, `examples/games`, and
-`examples/productivity` run clean under this driver, as do
-`examples/custom-integrations/diagram-canvas/examples/*`, `examples/games/side-scroller/game.ptl`,
-and — through the panel-native stubs above — every `garden/examples/panels/*.ptl`
-and the six `garden/gpp-apps/*/src/*.ptl` drawers.
+Every UI app under `examples/dashboards`, `examples/games`, and
+`examples/productivity` runs clean under this driver, as do
+`examples/custom-integrations/diagram-canvas/examples/*` and, through the
+panel-native stubs above, the drawers under `garden/examples/panels/` and
+`garden/gpp-apps/*/src/`.
 
-What does not, and why — each fails as a *runtime* error on the frame that
-first reaches the missing native, so its record carries the name:
+What does not, and why. Each fails as a *runtime* error on the frame that
+first reaches a native no host registered (`Unknown builtin: <name>`), so
+the frame record carries the name; the driver writes that record and exits 1.
 
 | Corpus | Missing |
 |---|---|
@@ -185,6 +186,4 @@ first reaches the missing native, so its record carries the name:
 | `examples/custom-integrations/petal-fantasy-nes/carts/*` | `set_backdrop` and the cart palette bindings the fantasy-NES host installs |
 | `examples/games/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
 
-Those need their own embedder, not this one. An app that calls a native no
-host registered is an `Unknown builtin: <name>` runtime error, not a compile
-error — the driver still writes the frame record, then exits 1.
+Those need their own embedder, not this one.

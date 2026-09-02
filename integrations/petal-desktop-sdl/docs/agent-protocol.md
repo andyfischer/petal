@@ -1,112 +1,124 @@
 # Agent Protocol
 
-petal-sdl includes a JSON-over-stdin/stdout protocol for programmatic control,
-designed for LLM agents, automated testing, and debugging tools.
+`petal-sdl` can be driven by JSON commands on stdin, with one JSON response
+per command on stdout. It is meant for LLM agents, automated tests, and
+debugging tools.
+
+The command and response schema is shared with other Petal hosts (the
+diagram-canvas sample app speaks the same protocol over WebSocket). The
+canonical description, including the shape of `state` keys, is
+[`docs/dev/debug-protocol.md`](../../../docs/dev/debug-protocol.md). This page
+is the `petal-sdl` view of it.
 
 ## Modes
 
-### Normal mode (default)
-```
-petal-sdl examples/pong.ptl
-```
-Standard interactive game. No protocol, no stdin reading.
+**Normal** — `petal-sdl examples/pong.ptl`. Interactive window, no protocol,
+stdin is not read.
 
-### Agent mode (hybrid)
-```
-petal-sdl --agent examples/pong.ptl
-```
-Opens an SDL window that runs interactively **and** accepts commands via stdin.
-The game runs at normal speed until paused. An LLM can observe and intervene
-while a human watches the window.
+**Agent** — `petal-sdl --agent examples/pong.ptl`. Opens the window *and*
+accepts commands on stdin. The game runs at normal speed until you `pause`
+it, so an agent can observe and intervene while a person watches.
 
-### Headless mode
-```
-petal-sdl --headless examples/pong.ptl
-```
-No SDL window. Starts paused. Every frame is driven by `step` commands.
-Ideal for CI, automated testing, and LLM-driven game development.
+**Headless** — `petal-sdl --headless examples/pong.ptl`. No window. Starts
+paused; every frame is driven by `step`. Use this for CI and scripted tests.
 
-## Protocol
+## Framing
 
-One JSON object per line on stdin (commands) and stdout (responses).
-Stderr is used for logs and errors from the game itself.
+One JSON object per line on stdin (commands) and stdout (responses). The
+game's own `print()` output and any logs go to stderr.
 
-### Ready Signal
+On startup the engine sends a ready message:
 
-On startup, the engine sends a ready message:
 ```json
 {"ok": true, "paused": false, "frame": 0}
 ```
-In headless mode, `paused` is `true` (the LLM drives all frames).
+
+In headless mode `paused` is `true`.
+
+Every response has `ok`. On failure it is `false` with an `error` string:
+
+```json
+{"ok": false, "error": "No state variable named 'nonexistent'"}
+```
+
+Invalid JSON on stdin produces an error response without crashing:
+
+```json
+{"ok": false, "error": "Invalid command: missing field `cmd`"}
+```
 
 ## Commands
 
-### pause
+### pause / resume
 
-Stop frame advancement. The SDL window (if open) stays responsive but the game
-freezes.
+`pause` stops frame advancement; the window (if any) stays responsive.
+`resume` restarts it. In headless mode there is nothing to resume; use
+`step`.
 
 ```json
 {"cmd": "pause"}
-```
-```json
 {"ok": true, "paused": true}
-```
 
-### resume
-
-Resume normal frame advancement (agent mode only — in headless, use `step`).
-
-```json
 {"cmd": "resume"}
-```
-```json
 {"ok": true, "paused": false}
 ```
 
 ### step
 
-Advance exactly N frames. In headless mode, `dt()` returns a fixed 1/60s.
-Input state set by `input` commands persists across steps (sticky keys).
+Advance exactly `n` frames (default 1). While stepping, `dt()` returns a
+fixed 1/60 s so runs are deterministic. Input set by `input` stays down
+across steps.
 
 ```json
 {"cmd": "step"}
 {"cmd": "step", "n": 10}
-```
-```json
+
 {"ok": true, "frame": 42}
 {"ok": true, "frame": 52, "output": ["debug: hit wall"]}
 ```
 
-The `output` field is included only if the game called `print()` during the
-stepped frames.
+`output` is present only if the game called `print()` during the stepped
+frames.
 
 ### state
 
-Dump all Petal `state` variables as a JSON object. Variable names are keys,
-values are serialized to JSON (numbers, strings, booleans, null, arrays, objects).
+Dump every `state` variable as a JSON object. Values serialize to JSON
+numbers, strings, booleans, null, arrays, and objects.
 
 ```json
 {"cmd": "state"}
-```
-```json
 {"ok": true, "state": {"ball_x": 403.33, "ball_y": 302.5, "score": 0}}
 ```
 
+Top-level cells appear under their bare name. A `state` declared inside a
+function appears under a pathed key such as `counter#1/count` or
+`[3]/row/hovered`.
+
+### set_state
+
+Set a top-level `state` variable by name. Accepts null, booleans, numbers,
+and strings.
+
+```json
+{"cmd": "set_state", "name": "score", "value": 42}
+{"cmd": "set_state", "name": "ball_x", "value": 400.0}
+{"ok": true}
+```
+
+Pathed keys (state inside functions) cannot be set this way and are rejected
+with `No state variable named '...'`. Anything an agent needs to drive from
+outside belongs in a top-level `state var`.
+
 ### capture_draw_commands
 
-Run one frame **speculatively** — capture what would be drawn without advancing
-game state. It forks the live execution into an isolated `ExecutionContext`
-(heap + registries deep-cloned, fresh output sinks), runs the frame in the fork,
-drains the fork's *own* draw-command buffer + print output, then drops the fork —
-so the live state, heap, and output are left entirely untouched.
-
-This is the primary inspection tool for LLMs: see exactly what's on screen as
-structured data, not pixels.
+Run one frame speculatively and return what it would draw, without advancing
+game state. This is the main way for an agent to see the screen as
+structured data instead of pixels.
 
 ```json
 {"cmd": "capture_draw_commands"}
 ```
+
 ```json
 {
   "ok": true,
@@ -115,129 +127,109 @@ structured data, not pixels.
     {"op": "rect", "x": 20, "y": 250, "w": 10, "h": 80, "r": 255, "g": 255, "b": 255},
     {"op": "circle", "cx": 400, "cy": 300, "radius": 8, "r": 255, "g": 200, "b": 50},
     {"op": "text", "text": "Score: 5", "x": 350, "y": 20, "size": 24, "r": 255, "g": 255, "b": 255}
-  ],
-  "output": []
+  ]
 }
 ```
 
-Draw command types are the petal-ui standard vocabulary: `clear`, `rect`,
-`rect_outline`, `line`, `circle`, `triangle`, `poly`, `text`, `clip`,
-`clip_none`, plus the canvas ops (`create_canvas`, `set_target`,
-`draw_canvas`).
-
-### input
-
-Set input state. Keys are sticky — they stay down until the next `input` command.
-Mouse position and buttons persist similarly.
-
-```json
-{"cmd": "input", "keys_down": ["up", "space"], "mouse": {"x": 400, "y": 300, "buttons": [0]}}
-```
-```json
-{"ok": true}
-```
-
-To drive a text field, include a `text` string. It is delivered to the next
-stepped frame's `text_input()` (the same channel real keyboard typing uses), so
-you can type into a script without simulating individual key scancodes:
-
-```json
-{"cmd": "input", "text": "hello"}
-```
-
-Key names are the petal-ui canonical set: `a`-`z`, `0`-`9`, `up`, `down`,
-`left`, `right`, `pageup`, `pagedown`, `home`, `end`, `space`, `return`,
-`escape`, `tab`, `shift`, `ctrl`, `alt`, `cmd`, `backspace`, `delete`.
-Unrecognized names are silently ignored. Press/release edges (`key_pressed`,
-`mouse_pressed`, …) are derived by diffing consecutive `input` snapshots and
-reach the next stepped frame.
-
-`mouse` accepts two forms:
-
-- Object (preferred): `{"x": int, "y": int, "buttons": [int, ...]}` where
-  `buttons` uses the petal-ui standard ids (0 = left, 1 = right, 2 = middle)
-  and is authoritative — an empty list releases all buttons.
-- Legacy tuple: `[x, y]` — sets position only; held buttons are untouched.
+The ops are the `petal-ui` draw vocabulary: `clear`, `rect`, `rect_outline`,
+`line`, `circle`, `triangle`, `poly`, `text`, `clip`, `clip_none`, the
+offscreen-canvas ops (`create_canvas`, `set_target`, `draw_canvas`), and the
+newer shapes, gradients, and shadows. `output` is included if the frame
+printed anything.
 
 ### screenshot
 
-Render the current frame (speculatively — state is not advanced) into a PNG
-and return it as a base64-encoded data URL. Useful for visual diffs in CI.
+Render the current frame speculatively to a PNG and return it as a base64
+data URL. State is not advanced.
 
 ```json
 {"cmd": "screenshot"}
-```
-```json
-{"ok": true, "screenshot": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA..."}
+{"ok": true, "screenshot": "data:image/png;base64,iVBORw0KGgo..."}
 ```
 
-The same PNG encoder is used by the `--screenshot out.png --frames N` CLI flag.
+The `--screenshot out.png --frames N` CLI flag uses the same encoder.
 
-### set_state
+### input
 
-Directly set a **top-level** Petal state variable by name. Supports null,
-booleans, numbers, and strings.
+Set the input state as an absolute snapshot: these keys and buttons are down
+now. Keys stay down until the next `input` command. Press and release edges
+(`key_pressed`, `mouse_pressed`, ...) are derived by diffing consecutive
+snapshots and reach the next stepped frame.
 
 ```json
-{"cmd": "set_state", "name": "score", "value": 42}
-{"cmd": "set_state", "name": "ball_x", "value": 400.0}
-```
-```json
+{"cmd": "input", "keys_down": ["up", "space"], "mouse": {"x": 400, "y": 300, "buttons": [0]}}
 {"ok": true}
 ```
 
-A `state` declared inside a function is keyed by the call path that reached it,
-so it has no bare name to address: the `state` dump lists it under a pathed key
-(`counter#1/count`, `[3]/row/hovered`), and `set_state` rejects that key with
-`No state variable named '…'`. Anything an agent drives from outside belongs in
-a top-level `state var`. See docs/dev/debug-protocol.md for the key shapes.
+Fields, all optional:
 
-## Error Handling
+- `keys_down` — list of key names. The names are the `petal-ui` canonical
+  set: `a`-`z`, `0`-`9`, `up`, `down`, `left`, `right`, `space`, `return`,
+  `escape`, `tab`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`,
+  `pagedown`, `shift`, `ctrl`, `alt`, `cmd`, `f1`-`f12`, and punctuation
+  names (`minus`, `equals`, `comma`, `period`, `slash`, `backslash`,
+  `semicolon`, `quote`, `backquote`, `leftbracket`, `rightbracket`).
+  Unrecognized names are ignored.
+- `mouse` — either `{"x": int, "y": int, "buttons": [int, ...]}`, where
+  buttons are `0` = left, `1` = right, `2` = middle and the list is
+  authoritative (an empty list releases every button); or the legacy tuple
+  `[x, y]`, which sets position only and leaves held buttons alone.
+- `text` — a string delivered to the next stepped frame's `text_input()`,
+  the same channel real typing uses. Lets you type into a script without
+  simulating key scancodes.
+- `mouse_delta` — `{"dx": int, "dy": int}`, raw relative pointer motion for
+  the next stepped frame, read by `mouse_dx()` / `mouse_dy()`. Drives
+  mouselook while the pointer is grabbed.
 
-If a command fails, the response has `ok: false` with an error message:
 ```json
-{"ok": false, "error": "No state variable named 'nonexistent'"}
+{"cmd": "input", "text": "hello"}
+{"cmd": "input", "mouse_delta": {"dx": 3, "dy": -2}}
 ```
 
-Invalid JSON on stdin produces an error response without crashing:
+### pending_report
+
+Report every live pending resource (state, age, origin, absorption count) in
+the `pending` field. This is the query behind the dev overlay; it reads the
+live resource table and does not run a frame.
+
 ```json
-{"ok": false, "error": "Invalid command: missing field `cmd`"}
+{"cmd": "pending_report"}
+{"ok": true, "pending": [...]}
 ```
 
-## Example: LLM Testing Session
+### draw_stats
+
+Optional per-frame draw statistics in the `stats` field, for hosts built on
+this crate that implement `Host::draw_stats`. The shipped `petal-sdl` binary
+does not, and answers:
+
+```json
+{"ok": false, "error": "draw_stats is not supported by this host"}
+```
+
+## Example session
 
 ```
-→ {"cmd":"step","n":60}                          # Run 1 second of gameplay
+→ {"cmd":"step","n":60}                          # run one second of gameplay
 ← {"ok":true,"frame":60}
-→ {"cmd":"state"}                                # Check game state
+→ {"cmd":"state"}                                # check the game state
 ← {"ok":true,"state":{"ball_x":600.0,"score":3}}
-→ {"cmd":"set_state","name":"ball_x","value":25} # Move ball near paddle
+→ {"cmd":"set_state","name":"ball_x","value":25} # move the ball near the paddle
 ← {"ok":true}
-→ {"cmd":"input","keys_down":[],"mouse":[0,300]} # Position paddle
+→ {"cmd":"input","mouse":{"x":0,"y":300,"buttons":[]}}   # position the paddle
 ← {"ok":true}
-→ {"cmd":"step","n":5}                           # Let physics run
+→ {"cmd":"step","n":5}                           # let physics run
 ← {"ok":true,"frame":65}
-→ {"cmd":"capture_draw_commands"}                 # See what's drawn
+→ {"cmd":"capture_draw_commands"}                 # see what is drawn
 ← {"ok":true,"draw_commands":[...]}
-→ {"cmd":"state"}                                # Verify collision worked
+→ {"cmd":"state"}                                # verify the hit
 ← {"ok":true,"state":{"score":4,...}}
 ```
 
-## Architecture Notes
+## How speculative commands work
 
-**Thread-local command buffer**: Native drawing functions (`draw_rect`, etc.)
-push to a `thread_local!` `Vec<DrawCommand>`. The protocol drains this buffer
-to serialize draw commands. This means `capture_draw_commands` works by running
-the Petal program and collecting side effects, not by querying a scene graph.
-
-**Speculative execution**: `capture_draw_commands` drives a *fork* of the live
-execution (`Env::fork_execution` → `run` → drain via the context-aware
-`take_draw_commands_for`/`take_output_for` against `heap_for` → `drop_fork`).
-The fork owns an isolated heap + registries, so the frame's draw commands,
-prints, and heap allocations live and die in the fork — nothing leaks back into
-the live execution. (It does *not* use `Env::run_speculative()`, which discards
-the fork's output before the host could read it; that drop-on-completion is
-`run_speculative`'s point, which is why capture drives the fork itself.)
-
-**Fixed dt in headless**: When stepping, `dt()` returns 1/60s (0.01667) for
-deterministic behavior. The frame counter increments normally.
+`capture_draw_commands`, `screenshot`, and `draw_stats` run the frame in a
+fork of the live execution: the heap and registries are deep-cloned, the
+frame runs in the fork, the host drains the fork's own draw buffer and print
+output, and the fork is dropped. Nothing leaks back into the live state, and
+`Host::end_frame` is not called for these frames.

@@ -3,21 +3,21 @@
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (edition 2024)
-- Node.js **23 or newer** (for running tests and the TypeScript tooling — the
-  `ts/bin/*.ts` scripts rely on Node's native TypeScript type-stripping)
+- Node.js 23 or newer, for the tests and the TypeScript tooling in `ts/`
+  (the `ts/bin/*.ts` scripts run as plain TypeScript under Node)
 
 ## Building
 
-Build the Petal compiler from the project root:
+From the repo root:
 
 ```bash
-cd rust
-cargo build
+make build
 ```
 
-The binary is output to `rust/target/debug/petal`.
+This runs `cargo build` in `rust/` and puts the binary at
+`rust/target/debug/petal`.
 
-## Running Your First Program
+## Running your first program
 
 Create a file called `hello.ptl`:
 
@@ -25,85 +25,82 @@ Create a file called `hello.ptl`:
 print("hello, world!")
 ```
 
-The recommended way to run Petal locally is the `ts/bin/run-petal.ts` wrapper.
-It rebuilds the binary if any Rust source is newer than it, then forwards all
-arguments to `petal`:
+Run it:
+
+```bash
+rust/target/debug/petal run hello.ptl
+```
+
+`petal hello.ptl` is shorthand for `petal run hello.ptl`, and `-e` runs code
+given on the command line:
+
+```bash
+rust/target/debug/petal run -e 'print(1 + 2)'
+```
+
+### The `run-petal.ts` wrapper
+
+If you are changing the compiler, use `ts/bin/run-petal.ts` instead of the
+binary. It rebuilds the binary when any Rust source is newer than it, then
+forwards all arguments to `petal`:
 
 ```bash
 ./ts/bin/run-petal.ts run hello.ptl
 ./ts/bin/run-petal.ts run -e 'print(1 + 2)'
 ```
 
-Use this script for day-to-day development and testing — it keeps the binary
-in sync with your source changes without paying for a full `cargo build` on
-every invocation. You can also call the binary directly if you prefer:
+## Running the examples
+
+Console programs live in `examples/console/`. Larger apps (games,
+productivity tools, dashboards, custom hosts) live in the other
+`examples/` subdirectories, each with its own README.
 
 ```bash
-rust/target/debug/petal run hello.ptl
-```
-
-## Running the Examples
-
-The `examples/console/` directory contains a set of example programs:
-
-```bash
-# Run a single example
+# Run one console example
 rust/target/debug/petal run examples/console/fizzbuzz.ptl
 
-# Run all examples with pass/fail reporting
+# Run every console example and report pass/fail
 ./ts/bin/test-examples.ts
 ```
 
-See [examples/README.md](../examples/README.md) for a description of each example.
+See [examples/README.md](../examples/README.md) for a list of the examples.
 
-## CLI Commands
+## Looking inside the compiler
 
-The `petal` binary has several commands for inspecting the compilation pipeline.
-Examples below use `./ts/bin/run-petal.ts` (the recommended wrapper); substitute
-`rust/target/debug/petal` if you want to skip the staleness check.
+The `petal` binary can show each stage of compilation:
 
 ```bash
-# Run a program
-./ts/bin/run-petal.ts run examples/console/hello.ptl
-./ts/bin/run-petal.ts run -e 'print("hi")'
-
-# Show lexer tokens
-./ts/bin/run-petal.ts show-tokens -e 'let x = 1'
-./ts/bin/run-petal.ts show-tokens --json -e 'let x = 1'
-
-# Show the parsed AST
-./ts/bin/run-petal.ts show-ast -e 'let x = 1 + 2'
-./ts/bin/run-petal.ts show-ast --json -e 'let x = 1 + 2'
-
-# Show compiled IR (term graph)
-./ts/bin/run-petal.ts show-ir -e 'let x = 1 + 2'
-./ts/bin/run-petal.ts show-ir --json -e 'let x = 1 + 2'
+petal show-tokens -e 'let x = 1'        # lexer tokens
+petal show-ast -e 'let x = 1 + 2'       # parsed AST
+petal show-ir -e 'let x = 1 + 2'        # compiled IR
+petal show-bytecode -e 'let x = 1 + 2'  # bytecode
 ```
 
-All inspection commands support `--json` for machine-readable output. See
-[docs/CLI.md](CLI.md) for the full reference.
+Each of these takes `--json` for machine-readable output. See
+[CLI.md](CLI.md) for the full command reference.
 
-## Running Tests
+## Running the tests
 
-### Integration tests (Vitest)
+```bash
+make test            # build, then run the whole vitest suite
+```
+
+Or directly:
 
 ```bash
 cd ts
-npm install          # First-time install of test dependencies
-npx vitest           # Run all tests
-npx vitest -t "name" # Run tests matching a name
+npm install          # first time only
+npx vitest           # run all tests
+npx vitest -t "name" # run tests matching a name
 ```
 
-### Example tests
+The suite also runs every `examples/console/*.ptl` program and checks its
+output. See [dev/testing.md](dev/testing.md) for details.
 
-```bash
-./ts/bin/test-examples.ts   # Run all examples with timeout
-```
+## Using the MCP tools
 
-## Using the MCP Tools
-
-If you're using an AI assistant that supports MCP (like Claude Code), the project includes
-an MCP server at `ts/tools/petal-mcp.ts` that provides tools — `TestSnippet`,
-`CheckSnippet`, `ExplainTerm`, `PendingReport`, `ShowIR`, `ShowBytecode`, `ShowAST`, `ShowTokens`. These let you compile,
-run, inspect, and debug Petal code directly from your assistant without shelling out
-manually.
+If you use an AI assistant that supports MCP (such as Claude Code), the repo
+includes an MCP server at `ts/tools/petal-mcp.ts`. It exposes tools to
+compile, run and inspect Petal snippets (`TestSnippet`, `CheckSnippet`,
+`ShowIR`, `ExplainTerm`, and others). See
+[dev/mcp-server.md](dev/mcp-server.md).

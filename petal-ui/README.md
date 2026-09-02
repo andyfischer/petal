@@ -1,55 +1,57 @@
 # petal-ui
 
-The standard UI layer for Petal programs: a small Rust crate every graphical
-host embeds, plus the `ui` prelude module — the widget/component library Petal
-scripts draw interfaces with.
+The standard UI layer for Petal programs. It is two things:
 
-Hosts that embed it today: **Garden** panels (`garden/garden-script`),
-**petal-desktop-sdl**, **petal-web-canvas**, the standalone app embedders
-(`~/biz/experiment-*`), and the headless harness/CLI in this crate.
+- a small Rust crate that every graphical host embeds, providing the input and
+  draw natives, and
+- the `ui` prelude module (`prelude/ui.ptl`), the widget library that Petal
+  scripts build interfaces with.
+
+Hosts that embed it: Garden panels (`garden/garden-script`),
+`integrations/petal-desktop-sdl` (crate and binary still named `petal-sdl`),
+`integrations/petal-web-canvas` (which also serves `diagram-canvas`), the
+`petal-fps` and `petal-fantasy-nes` examples under
+`examples/custom-integrations/`, standalone app embedders outside this repo
+(the todo app, worlds-fair), and the headless `petal-ui-run` CLI in this crate.
 
 ## The model
 
-Immediate mode. The script's entire top level re-runs every frame:
+Immediate mode: the script's whole top level re-runs every frame.
 
 ```
-input events → begin_frame(dt) → bind_frame_info / bind_input
-→ clear_draw_commands → env.run(script) → take_draw_commands → rasterize
+input events → bind_frame_info / bind_input → clear_draw_commands
+→ env.run(script) → take_draw_commands → rasterize
 ```
 
-- **Layer 0 — input** (`src/input.rs`): `InputEvent`/`InputState` and the
-  polling natives (`mouse_x`, `key_pressed`, `text_input`, `dt`, `time`, …).
-  Scripts poll each frame; there are no callbacks.
-- **Layer 2 — draw** (`src/draw.rs`): draw natives (`draw_rect`, `draw_text`,
-  `fill_arc`, `draw_rect_gradient`, `draw_shadow`, `clip`/`clip_push`, …)
-  append `DrawCommand`s to a buffer; the host drains the buffer and turns it
-  into pixels. Hosts implement rasterization only.
-  - A host that can't do a thing **degrades** it — a gradient filled with one
-    of its stops, a rounded clip scissored square — rather than dropping the
-    command. Silent omission is the one wrong answer.
-  - `src/tess.rs` holds the CPU tessellation no host should re-derive.
-    `shadow_mesh` turns a `Shadow` command into a single *non-overlapping*
-    triangle list (a solid core plus a ring whose per-vertex alpha falls to 0
-    at `blur`), because a translucent shadow assembled from overlapping pieces
-    double-composites and shows every seam.
-- **The `ui` prelude** (`prelude/ui.ptl`): the widget library, registered as an
-  implicit import so scripts call `button(...)`, `list_update(...)`,
-  `checkbox(...)` bare. Implicit bindings are weak — a script's own
-  `fn button` shadows the prelude's.
-  - Widget text is set in the theme's `font` face (`"ui"` — proportional), and
-    every widget **measures and draws with the same style record**. The bare
-    `text_width(s, size)` / `draw_text(s, pos, size, color)` pair disagrees
-    about which face it means, which is why nothing in the library uses it.
+- **Input** (`src/input.rs`). `InputEvent` and `InputState`, plus the polling
+  natives scripts call each frame: `mouse_x`, `key_pressed`, `text_input`,
+  `dt`, `time`, and so on. There are no callbacks. Relative pointer motion is
+  available as `mouse_dx()` / `mouse_dy()`, and a script can lock the pointer
+  with `grab_mouse()` / `release_mouse()`; a host that supports pointer lock
+  drains the request with `input::take_mouse_grab` after each frame.
+- **Draw** (`src/draw.rs`). Natives such as `draw_rect`, `draw_text`,
+  `fill_arc`, `draw_rect_gradient`, `draw_shadow` and `clip_push` append
+  `DrawCommand`s to a buffer. The host drains the buffer and turns it into
+  pixels; it implements rasterization only. A host that cannot do something
+  should degrade it (fill a gradient with one stop, scissor a rounded clip
+  square) rather than drop the command.
+- **Tessellation** (`src/tess.rs`). CPU geometry hosts should not re-derive.
+  `shadow_mesh` turns a shadow command into one non-overlapping triangle
+  list, because a translucent shadow built from overlapping pieces shows
+  every seam.
+- **The `ui` prelude** (`prelude/ui.ptl`). Registered as an implicit import,
+  so scripts call `button(...)`, `list_update(...)`, `checkbox(...)` bare.
+  Implicit bindings are weak: a script's own `fn button` shadows the
+  prelude's.
 
-**See [docs/components.md](docs/components.md) for the full component
-reference**: theme system, RectCut layout, every widget, motion helpers, and
-the conventions they all follow.
+See [docs/components.md](docs/components.md) for the full reference: theme,
+layout, every widget, motion helpers, draw primitives and layers.
 
 ## Embedding
 
 ```rust
-petal_ui::register_all(&mut env);          // input + draw + canvas + host_data
-petal_ui::register_prelude(&mut env)?;     // the `ui` module, implicit import
+petal_ui::register_all(&mut env);        // input + draw + canvas + host_data natives
+petal_ui::register_prelude(&mut env);    // the `ui` module, as an implicit import
 
 // each frame:
 petal_ui::input::bind_frame_info(&mut env, dt, frame);
@@ -60,19 +62,22 @@ env.run(...)?;
 let commands = petal_ui::draw::take_draw_commands(&mut env);
 ```
 
-To make the prelude paint in the host's own colors, publish a palette once at
-startup (or each frame, if it can change live):
+To make the widgets paint in the host's own colors, publish a palette once at
+startup (or every frame, if it can change live):
 
 ```rust
-petal_ui::input::bind_host_palette(&mut env, &[("window_bg", [13, 17, 23, 255]),
-                                               ("text", [230, 237, 243, 255]),
-                                               ("accent", [88, 166, 255, 255]),
-                                               /* … Garden palette() vocabulary … */]);
+petal_ui::input::bind_host_palette(&mut env, &[
+    ("window_bg", [13, 17, 23, 255]),
+    ("text", [230, 237, 243, 255]),
+    ("accent", [88, 166, 255, 255]),
+    // ... the rest of the host's palette vocabulary
+]);
 ```
 
-`ui_theme()` then resolves: explicit `theme_set` > host palette > built-in
-dark default. Hosts that never bind a palette lose nothing. Garden binds its
-full palette, so prelude widgets look native there with zero script-side setup.
+`ui_theme()` then resolves in this order: an explicit `theme_set` in the
+script, then the host palette, then the built-in dark default. Garden binds
+its full palette, so prelude widgets look native there with no script-side
+setup.
 
 ## Running scripts headlessly
 
@@ -80,33 +85,29 @@ full palette, so prelude widgets look native there with zero script-side setup.
 cargo run --bin petal-ui-run -- app.ptl --frames 60 --scenario monkey:1 --seed 1
 ```
 
-`petal-ui-run` (see `docs/dev/headless-ui-run.md` at the repo root) runs a UI
-script without a window, prints the draw commands/state as JSON, and replays
-deterministic input scenarios — it is what the golden-trace corpus and the
-per-widget tests drive. The showcase script
+`petal-ui-run` runs a UI script without a window, prints the draw commands
+and state as JSON, and replays deterministic input scenarios. See
+`docs/dev/headless-ui-run.md` at the repo root. The showcase script
 `garden/examples/panels/gallery.ptl` exercises every component and runs both
 headlessly and as a Garden panel.
 
 ## Versioning
 
-- `UI_VERSION` — the input/draw native contract (scripts read `ui_version()`).
-- `PRELUDE_LEVEL` — the prelude export surface; level 3 is the component
-  library described in docs/components.md, level 5 the gradient/shadow/clip
-  primitives, level 6 the theme's type face (`font`, defaulting to the
-  proportional `"ui"`), the elevation scale and the `over`/`tint` compositing
-  helpers, level 7 the layer vocabulary (`layer`, `snapshot`,
-  `draw_backdrop_blur`, `draw_material`) over the offscreen-canvas natives,
-  which every host now registers. `garden --version --json` lists the exact
-  exports compiled into a binary.
+- `UI_VERSION` counts incompatible changes to the input/draw native contract.
+  Scripts can read it with `ui_version()`.
+- `PRELUDE_LEVEL` counts additions to the prelude's export surface. Levels
+  are additive, so a script written against an older level keeps working.
+  `garden --version --json` lists the exact exports compiled into a binary
+  under `prelude.exports`.
 
 ## Tests
 
 ```
-cargo test                 # unit + prelude + widget + CLI tests
+cargo test
 ```
 
-`tests/widgets.rs` covers the component library through `harness::Headless`
-(synthetic clicks/keys, then assertions on state and draw commands);
-`tests/prelude.rs` covers the pre-level-3 surface plus compat (shadowing,
-style records); `harness::Headless` is public — use it to test your own
-panels the same way.
+`tests/widgets.rs` covers the component library through `harness::Headless`:
+synthetic clicks and keys, then assertions on state and draw commands.
+`tests/prelude.rs` covers the older prelude surface and compatibility
+(shadowing, style records). `harness::Headless` is public, so you can test
+your own panels the same way.

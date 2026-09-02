@@ -11,7 +11,7 @@ use crate::dot_graph::program_to_dot;
 use crate::env::Env;
 use crate::ir_display::display_program_with;
 use crate::lexer::Lexer;
-use crate::program::{Program, ProgramId, Term, TermId};
+use crate::program::{Program, ProgramId, Term, TermId, base_fn_name};
 use crate::program_analysis::EdgeKind;
 use crate::source_map::ENTRY_FILE;
 use crate::stack::StackKey;
@@ -669,13 +669,20 @@ pub(super) fn handle_explain(
 
     // Pretty header — use the resolved term name if available so an
     // `--term 72` query still shows `(total)` instead of `(72)`.
-    let header_name = program.get_term(target_id).name.clone().unwrap_or_else(|| {
-        if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
-            "unnamed".to_string()
-        } else {
-            term_query.to_string()
-        }
-    });
+    // `base_fn_name` because an overload variant's term is named `box#1`
+    // internally, and this header names the term as the source wrote it.
+    let header_name = program
+        .get_term(target_id)
+        .name
+        .as_deref()
+        .map(|n| base_fn_name(n).to_string())
+        .unwrap_or_else(|| {
+            if term_query.parse::<u32>().is_ok() || term_query.starts_with('t') {
+                "unnamed".to_string()
+            } else {
+                term_query.to_string()
+            }
+        });
 
     if json {
         let entries_json: Vec<_> = entries.entries.iter().map(|e| e.to_json()).collect();
@@ -1174,7 +1181,7 @@ pub(super) fn handle_show_provenance(
         println!(
             "Provenance of t{} ({}):",
             root_id.0,
-            root_term.name.as_deref().unwrap_or("unnamed")
+            root_term.name.as_deref().map(base_fn_name).unwrap_or("unnamed")
         );
         println!("  op: {:?}", root_term.op);
         println!(
@@ -1290,7 +1297,7 @@ pub(super) fn handle_show_dependents(
         println!(
             "Dependents of t{} ({}):",
             root_id.0,
-            root_term.name.as_deref().unwrap_or("unnamed")
+            root_term.name.as_deref().map(base_fn_name).unwrap_or("unnamed")
         );
         println!("  op: {:?}", root_term.op);
         println!();
@@ -1537,7 +1544,7 @@ fn print_term_rows(program: &Program, ids: &[TermId]) {
             "  t{}: {:?} {}",
             t.id.0,
             t.op,
-            t.name.as_deref().unwrap_or("")
+            t.name.as_deref().map(base_fn_name).unwrap_or("")
         );
     }
 }
@@ -1565,7 +1572,7 @@ fn term_to_json(term: &Term) -> serde_json::Value {
     serde_json::json!({
         "id": term.id.0,
         "op": op,
-        "name": term.name,
+        "name": term.name.as_deref().map(base_fn_name),
         "inputs": term.inputs.iter().map(|i| i.0).collect::<Vec<_>>(),
     })
 }

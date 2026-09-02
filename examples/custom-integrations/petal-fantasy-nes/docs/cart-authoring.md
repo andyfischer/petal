@@ -2,13 +2,17 @@
 
 Everything a fantasy-nes game is made of — the artwork, the level, the music,
 the menus, the gameplay — lives in one `.ptl` file. This guide is the whole
-authoring surface, in the order you meet it. No Rust required, and none of it
-assumes you have read any.
+authoring surface, in the order you meet it. No Rust required.
+
+Building and running the console, the controls, and the run modes are in the
+[README](../README.md). Petal itself is documented in the
+[language guide](../../../../docs/language-guide.md) and
+[Builtins](../../../../docs/Builtins.md); this guide only covers what the
+console adds.
 
 Every code block below has been run on the console, and the values in the
-comments are what it printed. The one thing that does not currently work is
-flagged where it appears ([sound effects](#sound-effects-and-drums)).
-If anything else here does not work, the doc is wrong, not you.
+comments are what it printed. If something here does not work, the doc is
+wrong, not you.
 
 - [The frame model](#the-frame-model)
 - [Colors and palettes](#colors-and-palettes)
@@ -49,10 +53,11 @@ Three consequences shape every cart:
    let elapsed = time()       // recomputed every frame, and that is fine
    ```
 
-   A `state` cell is identified by its **name**, and by nothing else, so two
-   functions in one cart that both say `state var t` are writing the same
-   cell. Give per-object state an explicit key instead — `state(key) var` makes
-   one cell per key, created on first use:
+   A top-level `state` is one cell. A `state` inside a function gets one cell
+   per call path, so a helper called from three places holds three
+   independent values. To share one cell across an object's identity instead,
+   key it explicitly: `state(key) var` makes one cell per key, created on
+   first use:
 
    ```petal
    fn timer(who)
@@ -63,6 +68,9 @@ Three consequences shape every cart:
    timer("hero")     // 1, 2, 3, ...   independent of
    timer("enemy")    // 1, 2, 3, ...   this one
    ```
+
+   The rules are in the language guide's
+   [State](../../../../docs/language-guide.md#state) section.
 
 2. **Sprites are cleared every frame; the map and the pattern table are not.**
    A `sprite(...)` call means "draw this now". A `set_tile(...)` or
@@ -75,28 +83,8 @@ Three consequences shape every cart:
    collects everything the cart said and draws once at the end. Sprites are
    composited in the order you pushed them (earlier = in front).
 
-Here is a complete cart. It is the same one in the [README](../README.md):
-
-```petal
-set_backdrop(light_blue)                       // the sky — every palette's color 0
-palette(0, dark_green, green, white)           // background palette 0
-palette(4, maroon, red, peach)                 // sprite palette 4
-
-define_art(1, ["oooooooo", "-o--o-o-", "--------", "---o----",     // grass
-               "--------", "-------o", "--------", "-o------"])
-define_art(2, ["..----..", ".-####-.", "-#-##-#-", "-######-",     // the hero
-               "-#-##-#-", ".-####-.", "..oooo..", ".o.oo.o."])
-
-set_map_size(32, 30)
-map_rect(0, 26, 32, 4, 1, 0)                   // a floor along the bottom four rows
-
-state var x = 120.0
-set x = clamp(x + btn_dx() * 1.5, 0, 248)      // arrows / WASD / a d-pad
-
-text_sprites_center(24, "HELLO", 4)
-sprite(px(x), 200, 2, 4)
-```
-
+The README ends with [a complete cart](../README.md#a-cart-in-full): a
+backdrop, two palettes, two tiles, a floor, and a hero walked with the d-pad.
 Everything after this is that cart, grown.
 
 ## Colors and palettes
@@ -456,7 +444,7 @@ The raw natives are `pad_down(pad, button)`, `pad_pressed(...)`,
 An unknown button name is an error (it is nearly always a typo); an out-of-range
 pad number is too.
 
-Keyboard mapping, and gamepads, are in the [README](../README.md#controls).
+The keyboard mapping and gamepads are in the [README](../README.md#controls).
 `petal-ui`'s own natives (`key_down`, `mouse_x`, `dt`, `time`, `frame_count`)
 are all still available if you want them.
 
@@ -748,17 +736,6 @@ writes all four channels every frame.
 
 ## Sound effects and drums
 
-> **Known bug, as this is written.** `sfx_play` and `drum` raise
-> `Unknown builtin: has_field [nes_sound line 801]`. `has_field` comes from
-> Petal's core `std` prelude, which is merged into the cart but *not* into a
-> host prelude module, so `nes_sound.ptl` cannot see it — the same call works
-> fine from a cart. Everything else in this section is real: the bank, the
-> priority rule and the channel policy are all implemented. The fix is for the
-> prelude to spell the question in true builtins — `contains(keys(rec), key)`,
-> or `rec[key] ?? nil` where nil-valued keys do not occur. Until then, an
-> effect can be fired by writing the chip directly (`apu_noise`, `apu_pulse`),
-> the way `sound_lab.ptl` does.
-
 An effect is a one-shot instrument at a fixed pitch:
 
 ```petal
@@ -869,7 +846,8 @@ thread. It is also the one place a cart can spend its way out of a frame: the
 host measures every call and, if the cost stays over budget for several frames
 running, fades the DSP bus out rather than glitching the picture. It re-measures
 periodically and fades back in if you fixed it. Watch `dsp_cost_ms()` while you
-develop; the budget is a fraction of a 16.7 ms frame.
+develop; the budget is 2 ms per frame, enough for a handful of voices (see
+[design.md](design.md#the-dsp-budget) for the measurements behind it).
 
 The DSP bus is mono, mixed into both channels.
 
@@ -882,7 +860,8 @@ Save the file and the running console picks it up on the next frame. What
 happens then:
 
 - **`state` survives.** Score, player position, enemy list, the music playhead,
-  menu cursors. State is keyed by name, so renaming a state variable resets it.
+  menu cursors. A cell is keyed by its declaration and call path, so renaming
+  a state variable, or moving it into or out of a function, resets it.
 - **Artwork, palettes and the map are re-pushed**, because your cart pushes them
   every frame. Edit a tile and it repaints in place — including the tiles
   already on screen, since the map holds *indices*, not pixels.
@@ -897,10 +876,10 @@ thing you can no longer edit live — see below.
 
 ## Performance
 
-Numbers below are measured, not estimated: release build on an M-series
-laptop, `--screenshot --frames 3300` minus `--frames 300` over 3000 frames, so
-process startup falls out. They cover the cart plus the host's command drain
-plus the sound mixer; rasterizing and presenting is separate and is not your
+Numbers below were measured on a release build on an M-series laptop, as the
+difference between `--screenshot --frames 3300` and `--frames 300`, so process
+startup falls out. They cover the cart plus the host's command drain and the
+sound mixer; rasterizing and presenting is separate and is not your
 bottleneck. One frame's budget is **16.7 ms**.
 
 | Per frame | Cost |
@@ -920,10 +899,9 @@ What that says:
 **The console is cheap. Petal string and list work is what costs.** Native
 calls, map writes, sprite pushes and the rasterizer are all effectively free at
 these scales. Converting string art into tile rows is not: it is per-character
-Petal work, about 0.03 ms per tile per frame. The underlying rate is roughly
-**0.3 µs per character** — 4096 characters (64 tiles) is 1.3 ms of pure
-interpretation before any host call happens, and that rate is the yardstick for
-any other per-cell loop you are thinking of writing.
+Petal work, about 0.03 ms per tile per frame, or roughly **0.3 µs per
+character**. That rate is the yardstick for any other per-cell loop you are
+thinking of writing.
 
 So the one thing worth hoisting is **art normalization** — and only once your
 art has stopped changing, because hoisting it is exactly what stops hot reload
@@ -953,8 +931,8 @@ Two budgets are hard rather than soft:
 
 - **64 sprites per frame.** `text_sprites` returns how many it spent; a 16×16
   metasprite costs 4. Past 64 the extras are dropped.
-- **The DSP slice.** `dsp_cost_ms()` against a 16.7 ms frame, with the host
-  fading the bus out if you overrun persistently.
+- **The DSP slice.** 2 ms per frame, read back with `dsp_cost_ms()`; the host
+  fades the bus out if you overrun persistently.
 
 If a cart does get slow, the profile is almost always a per-pixel or per-cell
 loop in Petal. Move the work to a `state` cache, do it over fewer cells, or push
@@ -1017,12 +995,7 @@ drum_kick drum_snare drum_hat drum_instruments`; `pcm_time pcm_render osc_sine
 osc_saw osc_tri osc_square osc_noise env_decay env_ad env_adsr pcm_scale
 pcm_mix pcm_clip`; `standard_instruments song_title song_gameplay`.
 
-Both preludes are implicit imports — call everything bare. They are ordinary
-Petal, readable at
-[`prelude/nes.ptl`](../prelude/nes.ptl) and
+Both preludes are implicit imports, so call everything bare. They are ordinary
+Petal, readable at [`prelude/nes.ptl`](../prelude/nes.ptl) and
 [`prelude/nes_sound.ptl`](../prelude/nes_sound.ptl); every export carries a
 comment explaining why it exists.
-
-Petal itself — the language, and the builtins every host shares — is documented
-in [the language guide](../../../../docs/language-guide.md) and
-[Builtins](../../../../docs/Builtins.md).

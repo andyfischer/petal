@@ -6,6 +6,10 @@ A1 references and ranges, keyboard-first editing, and a live cell inspector.
 
 ## Running it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/productivity/spreadsheet
 GARDEN_HEADLESS_SIZE=1240x880 \

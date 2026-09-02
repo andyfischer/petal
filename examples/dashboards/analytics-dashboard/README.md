@@ -19,6 +19,10 @@ panes clip the last row.
 
 ## Run it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/dashboards/analytics-dashboard
 GARDEN_HEADLESS_SIZE=1440x900 \

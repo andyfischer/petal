@@ -20,7 +20,7 @@ Buffers open in **Normal** mode; the mode shows in the status bar.
 | Visual | `v` / `V` (charwise / linewise), then motions | select; `o` swaps the selection ends, `v`/`V` toggle the mode |
 | Visual ops | `d` `x` `y` `c`, `>` `<`, `~` `u` `U` | delete / yank / change, indent / dedent, toggle-case / lower / upper (one undo step each) |
 | Search | `/pat` `?pat` `n` `N` `*` `#` | search forward / backward (plain text, smartcase, wraps), repeat / repeat reversed, word under cursor forward / backward (`*`/`#` whole-word) — matches highlighted; `:noh` clears them. Works inside a focused **panel region** too (the `garden diff` / `garden pr` unified stream and after column): the prompt is the same one, and the pattern searches that region's buffer |
-| Command line | `:e <file>` `:E` `:Git` `:Diff [--stat] [base]` `:Review [base]` `:Review2 [base]` `:PR [n]` `:w` `:q` `:wq` `:wa` `:wqa` `:noh` | open file / directory browser (alias `:Explore`; `-` does the same) / git history browser / the diff review — an editable unified diff (edit the diff to edit the change, `^S` writes the files back) plus an editable before/after split and a read-only stat view, all in the `garden-diff` client; `:Review`/`:Review2`/`:ReviewSplit` are aliases of `:Diff`, and `:PR [n]` scopes it to a GitHub PR (description, conversation, inline comments); its **commits** view lists the review's commits — click one to scope the diff to it, right-click for more / write / close (quit from the last, vim-style; `:x` = `:wq`) / write+close / write all / write all+quit / clear highlights |
+| Command line | `:e <file>` `:E` `:Git` `:Diff [--stat] [base]` `:Review [base]` `:PR [n]` `:w` `:q` `:wq` `:wa` `:wqa` `:noh` `:windownew` | open file / directory browser (alias `:Explore`; `-` does the same) / git history browser / the `garden-diff` review (`:Review`, `:Review2`, `:ReviewSplit` are aliases of `:Diff`; `:PR [n]` scopes it to a GitHub PR; see the [README](../README.md#git-diff-and-pr-views)) / write / close (quits from the last pane, vim-style; `:x` = `:wq`) / write+close / write all / write all+quit / clear search highlights / open a second window |
 | Substitute | `:s/pat/rep/[flags]` `:%s/...` `:1,5s/...` | replace on the current line / whole buffer / a line range (`N,M`, `.` = cursor, `$` = last); plain text; flags `g` (all on a line), `i` (ignore case, `I` forces exact); empty pattern reuses the last search; one undo step |
 | Report | `:report <text>` | file a bug / feature report with the last 5 minutes of session events attached (stored in `~/.garden/state`) |
 | Inspect | `:State` | toggle the Petal-IDE live-state inspector overlay on panel panes (every value the last frame bound, by name, + frame count) |
@@ -71,6 +71,8 @@ menus add these accelerators (macOS windowed only):
 
 | Menu item | Keys | Action |
 |-----------|------|--------|
+| File ▸ New / New Window | Cmd+N / Shift+Cmd+N | empty the focused pane / open a second window (`:windownew`) |
+| File ▸ Open… | Cmd+O | pick a file to open in the focused pane |
 | File ▸ Open Folder… | Shift+Cmd+O | pick a folder → directory browser (like `:E` on it) |
 | Edit ▸ Find… | Cmd+F | open the `/` search prompt |
 | Edit ▸ Find Next / Previous | Cmd+G / Shift+Cmd+G | repeat the last search (vim's `n` / `N`, any mode) |

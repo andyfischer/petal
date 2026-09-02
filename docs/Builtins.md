@@ -1,18 +1,16 @@
 # Builtins Reference
 
-All built-in functions available in Petal. Native functions are registered
-in `rust/src/builtins/mod.rs`; see [CLI.md § Builtin Phantom
-Terms](CLI.md#builtin-phantom-terms) for the registration order and the
-phantom term IDs they occupy in compiled IR.
+The built-in functions available in every Petal program. For language syntax
+(variables, control flow, functions, state, pattern matching), see the
+[Language Guide](language-guide.md). The drawing and input builtins used by
+`petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
+[petal-ui README](../petal-ui/README.md).
 
-For language syntax (variables, control flow, functions, state, pattern
-matching), see [language-guide.md](language-guide.md).
-
-Builtins take **positional arguments only**. The parameter names shown in this
-reference are documentation, not call syntax: natives carry no parameter names
-at runtime, so a [named argument](language-guide.md#named-arguments) is
-rejected — `append(xs, x: 1)` is `builtin 'append' does not accept named
-arguments`. Named arguments work on `fn` declarations, methods and lambdas.
+Builtins take **positional arguments only**. The parameter names in this
+reference are for reading, not for calling: a
+[named argument](language-guide.md#named-arguments) such as `append(xs, x: 1)`
+is an error (`builtin 'append' does not accept named arguments`). Named
+arguments work on `fn` declarations, methods and lambdas.
 
 ## I/O
 
@@ -173,8 +171,8 @@ sign(3.2)    //  1.0
 Fractional part of a float (`x - floor(x)`).
 
 ```petal
-fract(3.7)    // 0.7
-fract(-1.2)   // 0.8
+fract(3.5)     // 0.5
+fract(-1.25)   // 0.75
 ```
 
 ### `radians(degrees)` / `degrees(radians)`
@@ -188,16 +186,13 @@ degrees(pi())      // 180.0
 
 ## Creative Coding Math
 
-These are the "Processing-style" utility builtins — the small vocabulary that
-keeps animation, layout, and generative code readable.
+Processing-style helpers for animation, layout, and generative code.
 
 ### `clamp(value, lo, hi)`
 
-Constrain a value to the range `[lo, hi]`.
-
-Int-preserving, like `min`/`max`: three `int` arguments give an `int`, so a
-clamped value is still usable as a list index or a `range` bound. One `float`
-argument makes the result a `float`, the same rule `+` follows.
+Constrain a value to the range `[lo, hi]`. Three `int` arguments give an
+`int` (so the result can still be a list index); one `float` argument makes
+the result a `float`.
 
 ```petal
 clamp(15.0, 0.0, 10.0)   // 10.0
@@ -222,8 +217,8 @@ lerp(10.0, 20.0, 0.5)   // 15.0
 
 ### `map_range(value, in_lo, in_hi, out_lo, out_hi)`
 
-Remap a value from one range to another. The creative-coding workhorse — use it
-to turn "pixel coordinate in `[0, width]`" into "angle in `[0, 2π]`", and similar.
+Remap a value from one range to another — for example a pixel coordinate in
+`[0, width]` to an angle in `[0, 2π]`.
 
 ```petal
 map_range(5.0, 0.0, 10.0, 100.0, 200.0)   // 150.0
@@ -305,9 +300,9 @@ in 0..255 — the same shape produced by the `#rrggbb` color literal.
 
 ### `hsv(h, s, v)`
 
-Create an RGB color from Hue-Saturation-Value. All channels are normalized:
-`h`, `s`, and `v` are in `[0, 1)` (hue wraps). This matches p5.js / three.js /
-Processing and the rest of the color API. For degrees, use `hsv_deg`.
+Create an RGB color from Hue-Saturation-Value. All three arguments are in
+`[0, 1]`; hue wraps, so `1.0` is the same as `0.0`. For hue in degrees, use
+`hsv_deg`.
 
 ```petal
 hsv(0.0, 1.0, 1.0)          // { r: 255, g: 0, b: 0 }   (red)
@@ -316,8 +311,8 @@ hsv(1.0 / 3.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }   (green)
 
 ### `hsl(h, s, l)`
 
-Create an RGB color from Hue-Saturation-Lightness. Same normalized argument
-ranges as `hsv` (`h` in `[0, 1)`). For degrees, use `hsl_deg`.
+Create an RGB color from Hue-Saturation-Lightness. Same argument ranges as
+`hsv`. For hue in degrees, use `hsl_deg`.
 
 ```petal
 hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
@@ -325,21 +320,21 @@ hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
 
 ### `hsv_deg(h, s, v)` / `hsl_deg(h, s, l)`
 
-Like `hsv` / `hsl` but with hue in **degrees** `[0, 360)`. Handy when porting
-code that thinks in degrees (e.g. `120` for green).
+Like `hsv` / `hsl` but with hue in **degrees** `[0, 360)`.
 
 ```petal
 hsv_deg(120.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }
+hsl_deg(120.0, 1.0, 0.5)    // { r: 0, g: 255, b: 0 }
 ```
 
 ### `color_lerp(c1, c2, t)`
 
-Interpolate two RGB color records.
+Interpolate between two RGB color records. `t=0` returns `c1`, `t=1` returns `c2`.
 
 ```petal
-let red = hsv(0.0, 1.0, 1.0)
-let blue = hsv(240.0, 1.0, 1.0)
-color_lerp(red, blue, 0.5)   // a purple
+let red = hsv_deg(0.0, 1.0, 1.0)
+let blue = hsv_deg(240.0, 1.0, 1.0)
+color_lerp(red, blue, 0.5)   // { r: 128, g: 0, b: 128 }
 ```
 
 ## Vectors (2D)
@@ -377,8 +372,7 @@ dot(vec2(2.0, 3.0), vec2(4.0, 5.0))   // 23.0
 ### `limit(v, max_mag)`
 
 Return `v` if its magnitude is at most `max_mag`, otherwise a vector in the same
-direction scaled to that magnitude. Used constantly in physics simulations to
-cap velocities and steering forces.
+direction scaled to that magnitude. Useful for capping velocities.
 
 ```petal
 limit(vec2(6.0, 8.0), 5.0)    // vec2(3.0, 4.0)
@@ -387,11 +381,9 @@ limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
 
 ## Type Conversion
 
-`str`, `int`, and `float` are the sanctioned way to cross between types. Petal
-does no implicit casting, so when a
-[type annotation](language-guide.md#type-annotations) doesn't line up (e.g. a
-`float` value in an `int` slot) the fix is an explicit call to one of these —
-the type checker then sees the conversion and is satisfied.
+Petal does no implicit casting. When a value has the wrong type for a slot
+(a `float` where an `int` is expected, say), convert it explicitly with one of
+these.
 
 ### `str(value)`
 
@@ -415,7 +407,7 @@ int("42")    // 42
 ### `float(value)`
 
 Converts to a float. Accepts numbers and numeric strings (surrounding
-whitespace is ignored). A string that isn't a number aborts the program — use
+whitespace is ignored). A string that isn't a number is an error — use
 [`parse_float`](#parse_floats--parse_ints) when the input might be bad.
 
 ```petal
@@ -426,12 +418,9 @@ float("42")    // 42.0
 
 ### `parse_float(s)` / `parse_int(s)`
 
-The failable conversions: they return `nil` instead of aborting when the text
-isn't a number. This is what a calculator, spreadsheet cell, or form field
-wants — reading bad input should be a value you can test, not a crash.
-
-`parse_int` accepts only whole numbers; `"3.5"` is `nil` rather than a silent
-truncation to 3. Write `int(parse_float(s))` when truncating is the intent.
+Like `float` / `int`, but return `nil` instead of erroring when the text isn't
+a number. `parse_int` accepts only whole numbers: `"3.5"` is `nil`, not `3`.
+Write `int(parse_float(s))` when truncating is what you want.
 
 ```petal
 parse_float("3.5")     // 3.5
@@ -480,7 +469,7 @@ len(f64_array(4))   // 4
 ### `append(list, value)`
 
 Returns a **new** list with `value` added to the end. Lists are immutable
-values, so `append` never changes its input — capture the result to keep it:
+values, so `append` never changes its input — keep the result:
 
 ```petal
 let items = [1, 2]
@@ -490,26 +479,22 @@ items = append(items, 3)      // grow an accumulator by rebinding
 
 ### `push(list, value)`
 
-Deprecated alias for [`append`](#appendlist-value); prefer `append`. It is also
-immutable and returns a new list — `push(items, 3)` on its own does **not**
-change `items`. Use `items = append(items, 3)`.
+Deprecated alias for [`append`](#appendlist-value). Like `append` it returns a
+new list; `push(items, 3)` on its own does nothing.
 
 ### `pop(list)`
 
-Deprecated alias for [`drop_last`](#drop_lastlist); prefer `drop_last`. It is
-immutable and returns a new list with the last element removed — it does
-**not** return the removed element. Use `last(items)` to read the final
-element.
+Deprecated alias for [`drop_last`](#drop_lastlist). Returns a new list without
+the last element — it does **not** return the removed element (use `last` for
+that).
 
 ```petal
-let items = [1, 2, 3]
-let shorter = pop(items)   // shorter = [1, 2]; items is still [1, 2, 3]
+pop([1, 2, 3])   // [1, 2]
 ```
 
 ### `last(list)`
 
-Returns the last element of a list, or `nil` if the list is empty. Pure
-read — the list is never changed.
+Returns the last element of a list, or `nil` if the list is empty.
 
 ```petal
 last([1, 2, 3])   // 3
@@ -518,8 +503,7 @@ last([])          // nil
 
 ### `drop_last(list)`
 
-Returns a **new** list equal to the input without its last element. The input
-list is never mutated; an empty list yields a new empty list.
+Returns a **new** list without the last element.
 
 ```petal
 drop_last([1, 2, 3])   // [1, 2]
@@ -528,9 +512,8 @@ drop_last([])          // []
 
 ### `remove(record, key)`
 
-Returns a **new** record equal to the input without `key`. The input record is
-never mutated; removing an absent key yields an equivalent new record. Errors
-if given a list.
+Returns a **new** record without `key`. Removing an absent key is not an
+error. Only works on records, not lists.
 
 ```petal
 remove({a: 1, b: 2}, "a")   // { b: 2 }
@@ -555,9 +538,8 @@ values({a: 1, b: 2})   // [1, 2]
 
 ### `field(record, key, fallback)`
 
-Reads `record[key]`, or `fallback` when the record does not carry that key (or
-carries it as nil). The named spelling of `record[key] ?? fallback`, for when
-the key is computed. A *bare* `record.missing` is still a hard error — see
+Reads `record[key]`, or `fallback` when the key is absent or nil. Same as
+`record[key] ?? fallback`. A bare `record.missing` is still an error — see
 [Ragged records](language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 ```petal
@@ -567,8 +549,8 @@ field({a: 1}, "zz", 7)   // 7
 
 ### `has_field(record, key)`
 
-Whether the record carries `key` at all — the one question `??` cannot answer,
-since a key present with a nil value coalesces just like an absent one.
+Whether the record has `key` at all, even when its value is nil (which `??`
+cannot tell apart from an absent key).
 
 ```petal
 has_field({a: nil}, "a")   // true
@@ -623,17 +605,17 @@ join([1, 2, 3], "-")          // "1-2-3"
 
 ### `split(string, separator)`
 
-Splits a string into a list by the given separator.
+Splits a string into a list by the given separator. To split into characters,
+use [`chars`](#charss).
 
 ```petal
 split("a,b,c", ",")     // ["a", "b", "c"]
-split("hello", "")       // ["h", "e", "l", "l", "o"]
+split("a  b", " ")      // ["a", "", "b"]
 ```
 
 ### `upper(string)` / `lower(string)`
 
-Case conversion, Unicode-aware — so a small-caps label or a case-insensitive
-compare does not need an ASCII lookup table written in Petal.
+Case conversion, Unicode-aware.
 
 ```petal
 upper("aeronaut belt")    // "AERONAUT BELT"
@@ -679,11 +661,9 @@ flat([[1, [2]], [3]])         // [1, [2], 3]
 
 ### `index_of(collection, needle)`
 
-Position of the first occurrence, or `-1` when absent. On a list that is the
-element index; on a string it is a **character** index, so the result can be
-handed straight to [`char_at`](#char_ats-i) or
-[`char_slice`](#char_slices-start-end). `contains` only answers yes/no, which
-otherwise forces a hand-written scan to find out *where*.
+Position of the first occurrence, or `-1` when absent. On a list this is the
+element index; on a string it is a **character** index, ready to pass to
+[`char_at`](#char_ats-i) or [`char_slice`](#char_slices-start-end).
 
 ```petal
 index_of([10, 20, 30], 20)     // 1
@@ -702,11 +682,9 @@ end
 
 ## Text (character-indexed)
 
-`len` and `slice` count **bytes** — right for buffers, wrong for text: in
-`"Óscar"` the first character is two bytes, so `slice("Óscar", 0, 1)` returns
-`""` and a "first letter" loop silently produces wrong data. The builtins here
-count **characters** instead, so a program that means "the first letter" gets
-the first letter.
+`len` and `slice` count **bytes**. That is wrong for text: in `"Óscar"` the
+first character is two bytes, so `slice("Óscar", 0, 1)` is `""`. The builtins
+here count **characters** instead.
 
 ### `chars(s)`
 
@@ -729,8 +707,7 @@ len("Óscar")        // 6
 ### `char_at(s, i)`
 
 The single character at character index `i`. Negative indices count from the
-end. An out-of-range index yields `""` rather than aborting, so a loop that
-runs one past the end degrades instead of killing the program.
+end. An out-of-range index gives `""` rather than an error.
 
 ```petal
 char_at("Óscar", 0)    // "Ó"
@@ -790,24 +767,23 @@ forEach([1, 2, 3], fn(x) -> print(x))
 
 ## Assertions
 
-Runtime assertions abort the program with a message and source location
-when their condition fails. Useful for defensive programming and tests.
+Assertions stop the program with a message and source location when their
+condition fails.
 
 ### `assert(condition, message?)`
 
-Aborts with `assertion failed: <message>` (or a default message) when
-`condition` is falsy.
+Fails with `assertion failed: <message>` when `condition` is falsy.
 
-```petal
+```petal ignore
 assert(x > 0, "x must be positive")
 assert(len(items) == 3)
 ```
 
 ### `assert_eq(actual, expected)`
 
-Aborts with `assert_eq: left=<actual> right=<expected>` when the two
-values are not equal. Prefer over `assert(a == b)` because the failure
-message shows both operands.
+Fails with `assertion failed: assert_eq: left=<actual> right=<expected>` when
+the two values are not equal. Prefer it over `assert(a == b)` because the
+message shows both values.
 
 ```petal
 assert_eq(2 + 2, 4)
@@ -846,11 +822,18 @@ deriv_of(42)                // 0.0
 
 ## Typed Numeric Arrays
 
-A flat, unboxed array of `f64` values stored in a contiguous buffer (not the
-boxed `Value` list). Use this for numeric inner loops — field evaluations,
-particle sims, reaction-diffusion grids — where the per-element boxing of a
-regular list dominates the actual math. Elements are plain floats, so reads and
-writes touch the buffer directly without re-tagging every element.
+An `f64_array` is a flat array of floats. It is faster than a list for numeric
+inner loops (particle sims, grids, field evaluations) because its elements are
+stored unboxed. Like lists, it is an immutable value: `set_at` and `swap`
+return a new array, so keep the result.
+
+Reading an element is plain indexing, and `a[i] = v` writes:
+
+```petal
+let a = f64_array(2)
+a[0] = 2.5
+a[0]             // 2.5
+```
 
 ### `f64_array(n)`
 
@@ -863,34 +846,24 @@ f64_array(0)   // []
 
 ### `set_at(a, i, v)`
 
-`set_at` stores `v` (an int or float) into slot `i`, mutating the array in
-place. It errors on an out-of-bounds or negative index.
+Returns a new array with slot `i` set to `v` (an int or float). An
+out-of-bounds or negative index is an error.
 
 ```petal
 let a = f64_array(3)
-set_at(a, 1, 5.5)
+a = set_at(a, 1, 5.5)
 a[1]             // 5.5
-```
-
-Reading an element is plain indexing: `a[i]` reads and `a[i] = v` writes.
-(There was once a `get(a, i)` builtin for this; it was removed when `get`
-became the [keyword for reading a `var`](language-guide.md#get-and-set), and
-`a[i]` had always done the same job.)
-
-```petal
-let a = f64_array(2)
-a[0] = 2.5
-a[0]             // 2.5
 ```
 
 ### `swap(a, i, j)`
 
-Exchanges the elements at `i` and `j` in place. Both indices are bounds-checked.
+Returns a new array with the elements at `i` and `j` exchanged. Both indices
+are bounds-checked.
 
 ```petal
 let a = f64_array(3)
-set_at(a, 0, 1.0)
-swap(a, 0, 2)    // a is now [0.0, 0.0, 1.0]
+a = set_at(a, 0, 1.0)
+a = swap(a, 0, 2)    // [0.0, 0.0, 1.0]
 ```
 
 ## Built-in Classes
@@ -901,12 +874,10 @@ own, and for how `value.method(...)` resolves.
 
 ### `Rect(x, y, w, h)`
 
-A rectangle: fields `x`, `y`, `w`, `h`. The constructor takes them positionally.
-An instance is an ordinary record carrying the class tag, so everything that
-takes a `{x, y, w, h}` record takes a `Rect` — including every `petal-ui` draw
-call. `petal-ui`'s `rect(x, y, w, h)` *is* this constructor under the prelude's
-own name, so a bad argument is reported at the app's call, not inside the
-prelude.
+A rectangle with fields `x`, `y`, `w`, `h`. An instance is an ordinary record
+with a class tag, so anything that accepts an `{x, y, w, h}` record — including
+every `petal-ui` draw call — accepts a `Rect`. (`petal-ui`'s `rect(x, y, w, h)`
+is the same constructor.)
 
 ```petal
 let r = Rect(10, 20, 100, 40)
@@ -915,17 +886,13 @@ type(r)        // "Rect"
 keys(r)        // ["x", "y", "w", "h"]
 ```
 
-Each edge is a **number** — an `int` for the pixel geometry most UI code writes,
-a `float` for the sub-pixel geometry that layout and animation produce. A field
-holds exactly what it was given: `Rect(10.5, 20.9, 100.4, 40.6).x` is `10.5`, not
-`10`. Petal has no implicit casting, so nothing is rounded on the way in;
-coordinates become whole pixels at the draw call, which is the only place that
-has to decide. A non-numeric argument is an error naming the field.
+Each field holds exactly the number it was given, `int` or `float`:
+`Rect(10.5, 20.9, 100.4, 40.6).x` is `10.5`. A non-numeric argument is an
+error naming the field.
 
-Its methods are the arithmetic layout code otherwise repeats by hand. Each is
-exactly its equivalent expression, so an int rect gives int answers (`/` on two
-ints truncates) and a float rect gives float ones. The two that return a rect
-return a `Rect`, so calls chain.
+The methods below are each exactly their equivalent expression, so an int rect
+gives int answers (`/` on two ints truncates) and a float rect gives float
+ones. `inset` and `offset` return a `Rect`, so calls chain.
 
 | Method | Result | Equivalent |
 |--------|--------|------------|
@@ -948,9 +915,5 @@ let sub = Rect(0.0, 0.0, 101.0, 40.0)
 sub.center_x()              // 50.5, not 50
 ```
 
-Every method checks its argument count, and the count in the message is the one
-you write — the receiver is implicit. `Rect(0, 0, 10, 10).center_x(1)` reports
-`Rect.center_x() expects no arguments, got 1`.
-
-Declare more with `fn Rect.<name>(r: Rect, …)`; a user declaration wins over a
-built-in method of the same name.
+Add your own methods with `fn Rect.<name>(r: Rect, ...)`; a user declaration
+wins over a built-in method of the same name.

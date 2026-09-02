@@ -1,25 +1,38 @@
 # petal-fps
 
-A hybrid Rust + Petal first-person-shooter experiment. petal-fps builds on the
-[`petal-sdl`](../../../integrations/petal-desktop-sdl/) integration (Shape B — see
-[docs/building-apps.md](../../../docs/building-apps.md)): it
-reuses that crate's window, event loop, input, agent/headless/screenshot/record
-modes, and hot reload, and adds only its **delta** — a software z-buffered
-triangle rasterizer and the `triangle3d` native family. Everything else —
-camera, projection math, level geometry, enemies, shooting, HUD — lives in a
-`.ptl` script that can be hot-reloaded while the game is running.
+A first-person-shooter experiment written in Rust and Petal.
 
-See `examples/fps_game.ptl` for the full cyberpunk-city demo
-(12 neon skyscrapers, 8 patrol bots, raycast shooting, health/ammo/minimap
-HUD) and `LANGUAGE_IDEAS.md` for Petal friction points discovered while
-building it.
+The Rust side is small. It builds on the
+[`petal-sdl`](../../../integrations/petal-desktop-sdl/) integration and adds
+only a software z-buffered triangle rasterizer and the `triangle3d` family of
+native draw functions. The window, event loop, input, agent/headless/screenshot
+/record modes, and hot reload all come from `petal-sdl`; input, timing, and
+mouselook natives (`key_down`, `mouse_dx`, `grab_mouse`, `dt`, `time`,
+`screen_width`, ...) come from `petal-ui`, the same as every other host.
+(This is the "thin host delta" shape described in
+[docs/building-apps.md](../../../docs/building-apps.md).)
+
+Everything else lives in a `.ptl` script: camera, projection math, level
+geometry, enemies, shooting, and HUD. The script can be edited while the game
+is running.
+
+`examples/fps_game.ptl` is the full demo: a neon city with 12 skyscrapers,
+8 patrol bots, raycast shooting, and a health/ammo/minimap HUD.
+`LANGUAGE_IDEAS.md` records language friction found while building it.
 
 ## Prerequisites
 
 - Rust (any recent stable toolchain)
-- SDL2 development libraries (host OS):
+- SDL2 development libraries:
   - Debian/Ubuntu: `sudo apt-get install libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev`
   - macOS: `brew install sdl2 sdl2_ttf sdl2_image`
+
+On macOS the linker also needs Homebrew's lib directory. Either use `./run.sh`
+(which sets it for you) or export it yourself:
+
+```bash
+export LIBRARY_PATH=/opt/homebrew/lib
+```
 
 ## Build
 
@@ -29,77 +42,80 @@ From this directory:
 cargo build --release
 ```
 
-The first build is slow (it compiles the Petal compiler in `../../../rust`); later
-builds are quick.
+The first build compiles the Petal compiler in `../../../rust` and is slow.
+Later builds are quick.
 
-## Run — windowed gameplay
+## Run
 
 ```bash
 cargo run --release -- examples/fps_game.ptl
+# or, on macOS:
+./run.sh                      # defaults to examples/fps_game.ptl
 ```
 
 Controls:
 
-| Input           | Action              |
-|-----------------|---------------------|
-| Mouse           | Look around         |
-| W / A / S / D   | Move               |
-| Left-click / Space | Shoot (raycast)  |
-| R               | Reload              |
-| Esc             | Release mouse grab  |
+| Input              | Action             |
+|--------------------|--------------------|
+| Mouse              | Look around        |
+| W / A / S / D      | Move               |
+| Left-click / Space | Shoot (raycast)    |
+| R                  | Reload             |
+| Esc                | Release mouse grab |
 
-The script is hot-reloaded on save — edit `examples/fps_game.ptl` in another
-window, and changes appear the next frame while player position, score, and
-enemy HP are preserved (state is keyed by name).
+The script hot-reloads on save. Edit `examples/fps_game.ptl` in another window
+and the change appears on the next frame. `state` values such as player
+position, score, and enemy HP survive the reload, because each `state` slot is
+keyed by its declaration and call path rather than by source position.
 
-## Agent / headless modes
+## Agent and headless modes
 
-Every run mode below forwards the same JSON-over-stdio protocol so an agent
-can drive gameplay without a display.
+These modes let a program (or an agent) drive the game through a JSON-over-stdio
+protocol, with or without a display.
 
-### `--screenshot` — one-shot PNG
+### `--screenshot` — one PNG
 
-Runs N frames with fixed `dt = 1/60` and writes a PNG of the final frame.
-Useful to quickly iterate on visuals:
+Runs N frames at a fixed `dt = 1/60` and writes the final frame:
 
 ```bash
 cargo run --release -- --screenshot out.png --frames 60 examples/fps_game.ptl
 ```
 
-### `--record` — flipbook
+### `--record` — one PNG per frame
 
-Writes one PNG per frame into a directory (after an optional warmup):
+Writes a flipbook into a directory, after an optional warmup:
 
 ```bash
 cargo run --release -- --record frames/ --frames 30 --warmup 0 examples/fps_game.ptl
 ```
 
-### `--headless` — stdin-driven JSON protocol
+### `--headless` — JSON commands on stdin
 
 No window. Commands arrive as JSON lines on stdin; responses go to stdout.
-Each command starts paused at frame 0.
+The game starts paused at frame 0.
 
 ```bash
 cargo run --release -- --headless examples/fps_game.ptl
 ```
 
-Supported commands:
+Commands:
 
 | Command | Fields | Effect |
 |---------|--------|--------|
 | `step` | `n` (default 1) | Run N frames. |
 | `state` | – | Dump all `state` variables as JSON. |
 | `set_state` | `name`, `value` | Override a state variable. |
-| `input` | `keys_down[]`, `mouse{x,y,buttons[]}`, `mouse_delta{dx,dy}` | Inject input for the next frame. |
-| `screenshot` | – | Return the current frame as a base64 PNG (+ draw stats). |
-| `capture_draw_commands` | – | Return all draw commands for the next speculative frame. |
-| `draw_stats` | – | Count triangles / lines / rects + depth range. |
-| `pause` / `resume` | – | Toggle the run loop (agent mode only). |
+| `input` | `keys_down[]`, `mouse{x,y,buttons[]}`, `mouse_delta{dx,dy}`, `text` | Inject input for the next frame. |
+| `screenshot` | – | Return the current frame as a base64 PNG, plus draw stats. |
+| `capture_draw_commands` | – | Return all draw commands for the next frame. |
+| `draw_stats` | – | Count triangles, lines, and rects, plus the depth range. |
+| `pending_report` | – | Report every live pending resource. |
+| `pause` / `resume` | – | Stop or start the run loop. |
 
-Example: move the player, shoot, and grab a screenshot:
+Example: move the player, shoot, and take a screenshot:
 
 ```bash
-./target/release/petal-fps --headless examples/fps_game.ptl <<'EOF'
+./target/release/petal-fps --headless examples/fps_game.ptl <<'EOF2'
 {"cmd":"step","n":1}
 {"cmd":"set_state","name":"yaw","value":0.4}
 {"cmd":"set_state","name":"player_x","value":-2.0}
@@ -107,19 +123,18 @@ Example: move the player, shoot, and grab a screenshot:
 {"cmd":"input","mouse":{"x":400,"y":300,"buttons":[1]}}
 {"cmd":"step","n":1}
 {"cmd":"screenshot"}
-EOF
+EOF2
 ```
 
-### `--agent` — windowed + protocol
+### `--agent` — same protocol, with a window
 
-Same protocol as `--headless`, but also opens a window so you can watch the
-agent play.
+Same as `--headless`, but also opens a window so you can watch.
 
 ## Other flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--width <n>` / `--height <n>` | 800 × 600 | Framebuffer size |
+| `--width <n>` / `--height <n>` | 800 x 600 | Framebuffer size |
 | `--title <str>` | "petal-fps" | Window title |
 | `--no-hot-reload` | off | Disable the file watcher |
 | `--frames <n>` | 60 | Frames for `--screenshot` / `--record` |
@@ -127,25 +142,21 @@ agent play.
 
 ## Layout
 
-The Rust source is only the app's delta; the game loop, input translation,
-agent protocol, PNG encoding, and hot reload all come from `petal-sdl`.
-
 ```
 petal-fps/
-├── src/                        Rust host delta (everything else is petal-sdl)
-│   ├── main.rs                 Thin CLI: parse args → petal_sdl::run_*
-│   ├── host.rs                 FpsHost: impl petal_sdl::Host (renderer + natives + stats)
+├── run.sh                      Build and run with LIBRARY_PATH set (macOS)
+├── src/
+│   ├── main.rs                 CLI: parse args, then call petal_sdl::run_*
+│   ├── host.rs                 FpsHost: implements petal_sdl::Host (renderer + natives + stats)
 │   ├── framebuffer.rs          Software z-buffered triangle rasterizer
-│   ├── renderer.rs             SDL2 streaming-texture presenter
-│   ├── commands.rs             DrawCommand enum + decode (Petal → Rust)
-│   ├── native_fns.rs           3D/2D draw natives (triangle3d, …) + log
-│   └── font.rs                 5×7 embedded bitmap font for HUD text
+│   ├── renderer.rs             Uploads the framebuffer to an SDL2 streaming texture
+│   ├── commands.rs             DrawCommand enum and decoding (Petal to Rust)
+│   ├── native_fns.rs           3D/2D draw natives (triangle3d, ...) and log
+│   └── font.rs                 5x7 bitmap font for HUD text
 └── examples/
-    ├── fps_game.ptl            The full cyberpunk-city game
-    ├── cyberpunk_city.ptl      Step-1 scaffold (camera + ground + one cube)
+    ├── fps_game.ptl            The full city demo
+    ├── cyberpunk_city.ptl      Early scaffold: camera, ground, one cube
     ├── test_triangle.ptl       Minimal rasterizer smoke test
-    └── debug_state.ptl         State-persistence repro / sanity check
+    └── debug_state.ptl,        State-persistence checks
+        debug_state2.ptl
 ```
-
-Input, timing, and dimension natives (`key_down`, `mouse_dx`, `grab_mouse`,
-`dt`, `screen_width`, …) come from `petal-ui`, shared with every other host.

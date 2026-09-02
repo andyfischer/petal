@@ -23,6 +23,10 @@ column and a taller one lengthens the table; it is tuned for the size above.
 
 ## Run
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/dashboards/finance-dashboard
 garden --headless --debug-port 0 --init layout.ptl

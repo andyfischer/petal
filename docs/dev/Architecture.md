@@ -18,58 +18,71 @@ it. It is executed by the **bytecode VM** (`rust/src/backend/bytecode/`), a
 register machine that runs a linear *lowering* of the graph, with
 escape-analysis-driven in-place mutation gated by `backend::OptFlags`. The VM
 populates the trace buffer that the graph-level introspection reads. See
-[bytecode-future-ideas.md](bytecode-future-ideas.md) for optional follow-ups.
+[performance.md](performance.md) for what the optimizer does.
 
 ---
 
 ## Source File Map
 
+The main files and directories under `rust/src/`, grouped by pipeline stage.
+
+**Front end**
+
 | File | Purpose |
 |------|---------|
-| `main.rs` | Binary entry point (delegates to `cli::run`) |
-| `lib.rs` | Crate root / public exports |
-| `cli/` | CLI: `args.rs` (arg parsing), `handlers.rs` (command handlers for `run`, `show-ir`, `explain`, ...), `mod.rs` (dispatch) |
+| `main.rs` / `lib.rs` | Binary entry point (delegates to `cli::run`) / crate root |
+| `cli/` | `args.rs` (arg parsing), `handlers.rs` (command handlers), `help.rs` (`petal help`), `mod.rs` (dispatch) |
 | `lexer.rs` | Source text → token stream |
-| `parse.rs` | Tokens → AST |
-| `ast.rs` | AST node types |
-| `cst/` | Concrete syntax tree — lossless green/red tree substrate for source-preserving edits |
-| `cst_project.rs` | Projects the typed AST out of the CST. Note: the AST parser (`parse.rs`) and the CST parser are intentionally kept in lockstep; unifying them is future work |
-| `trivia.rs` | Lossless trivia (whitespace/comments) + byte-for-byte source reconstruction |
+| `parse.rs`, `ast.rs`, `ast_display.rs` | Tokens → AST; AST node types; AST pretty-printer |
+| `cst/`, `cst_project.rs`, `trivia.rs` | Lossless concrete syntax tree for source-preserving edits, and its projection to the typed AST. `parse.rs` and the CST parser are kept in lockstep; unifying them is future work |
 | `desugar.rs` | `@`-argument (in-out call) desugaring |
-| `compiler/` | AST → IR term graph: `expr.rs`, `stmt.rs`, `function.rs`, `phi.rs` (phi insertion), `mod.rs` |
+| `compiler/` | AST → IR term graph: `expr.rs`, `stmt.rs`, `function.rs`, `phi.rs` (phi insertion), `state_ids.rs` (state keys and callsite ids), `capture_lag.rs` |
+| `typecheck/` | The warning-only static type checker |
+| `diagnostic.rs`, `error.rs` | Diagnostics and error types |
+
+**IR**
+
+| File | Purpose |
+|------|---------|
 | `program.rs` | `Program`, `Block`, `Term`, `TermOp` definitions |
 | `constant_table.rs` | Deduplicated literal storage |
 | `source_map.rs` | `TermId` → source span mapping |
-| `module.rs` | Module resolution + import walk (merges imports into one `Program`) |
-| `rewrite.rs` | Formatting-preserving source rewriting (find a top-level call by name, splice its span) |
-| `goal_based_editing.rs` | Goal-based source editing — declarative, formatting-preserving edits |
-| `lint/` | `petal lint`: `reindent.rs` (formatting), `rebind.rs` (normalization) |
-| `backend/mod.rs` | `OptFlags` optimization toggles + shared `StepResult`/`RuntimeClosure` (plus `calls.rs`, `ops.rs`, `pattern.rs`, `errors.rs` shared runtime helpers) |
-| `backend/bytecode/` | Register VM: `isa` (instructions), `lower` (graph→bytecode), `vm/` (`dispatch.rs`, `calls.rs`, `frame.rs`, `intrinsics.rs`, `native.rs`), `disasm` (`show-bytecode`), `escape` (in-place analysis), `lastuse` |
-| `stack.rs` | `Stack` — execution context (VM frames, persistent state) |
-| `value.rs` | `Value` enum (runtime values) |
-| `heap.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, maps, elements. A map slot also carries an optional **class tag** (an interned name), which is what makes a record an instance |
-| `classes.rs` | `ClassTable` — the compile-time registry of `class` declarations (fields, methods) and the built-in classes (`Rect`) |
-| `env/` | `Env` — owns programs, stacks, contexts: `run.rs`, `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `mod.rs` |
-| `execution_context.rs` | `ExecutionContext` — one isolated execution's mutable runtime bundle (heap + closure/output/host registries) |
-| `closure_table.rs` | `ClosureTable` — the collected home for runtime closures and overload sets; swept jointly with the heap |
-| `native_fn.rs` | Native function FFI (`NativeFnTable`, `PetalCxt`) |
-| `builtins/` | Built-in function implementations (io, math, collections, …) |
-| `handle.rs` | Handles — opaque references to host-owned foreign objects |
-| `resource_table.rs` | Resource table — home for pending/unresolved resources (`Value::Pending`) |
-| `symbol.rs` | Interned symbols — binding keys shared with the embedding host |
-| `trace.rs` | Ring-buffered per-term execution trace |
-| `transfer_state.rs` | Transfer a stack's state onto a different program — reconciles state by StateKey (used for hot-reload in petal-sdl) |
-| `program_analysis.rs` | Dataflow-graph analysis: term lookup, backward/forward slicing |
-| `ir_display.rs` | Text pretty-printer for IR (for `show-ir` without `--json`) |
-| `ir_serialize.rs` | Custom serde helpers for IR JSON output |
-| `ir_validate.rs` | Structural-integrity validation when reconstructing a `Program` from JSON IR |
-| `dot_graph.rs` | DOT-format graph rendering of a program's dataflow IR |
-| `extract.rs` | Typed extraction helpers for pulling Rust data out of Petal `Value`s |
-| `stats.rs` | Optional value-duplication / allocation statistics |
-| `wasm.rs` | `wasm-bindgen` FFI used by petal-web and petal-diagram-canvas |
+| `module.rs` | Module resolution and import walk (merges imports into one `Program`) |
+| `ir_display.rs`, `ir_serialize.rs`, `ir_validate.rs` | Text pretty-printer; serde helpers for IR JSON; structural validation when loading JSON IR |
+| `ir_equiv.rs` | "Are these two programs the same?" ignoring positions (`petal ir-equal`) |
+| `program_analysis.rs`, `provenance.rs`, `dot_graph.rs` | Dataflow slicing, provenance walks, DOT rendering |
+| `static_value.rs`, `types.rs`, `classes.rs` | Compile-time values, type representation, and the `ClassTable` of `class` declarations (including the built-in `Rect`) |
 
-Current size: ~86 source files, ~31k lines.
+**Source editing and tooling**
+
+| File | Purpose |
+|------|---------|
+| `rewrite.rs`, `goal_based_editing.rs`, `direct_manipulation.rs` | Formatting-preserving source rewriting, goal-based edits, and emit-trace provenance |
+| `lint/` | `petal lint`: `reindent.rs` (formatting), `casts.rs` (identity casts), `to_match.rs` (if-chain to match) |
+| `lsp/` | `petal lsp`, the language server |
+| `inspect.rs`, `observe.rs`, `profile.rs`, `stats.rs` | Introspection helpers, the observation buffer, the `--profile` counters, `--dup-stats` |
+| `test_corpus.rs` | Enumerates the repo's `.ptl` files for corpus-wide unit tests |
+
+**Runtime**
+
+| File | Purpose |
+|------|---------|
+| `backend/mod.rs` | `OptFlags` optimization toggles plus shared runtime helpers (`calls.rs`, `ops.rs`, `pattern.rs`, `errors.rs`) |
+| `backend/bytecode/` | Register VM: `isa` (instructions), `lower` (graph → bytecode), `copyprop`, `escape`, `lastuse` (optimizer passes), `disasm` (`show-bytecode`), `fuzz`, `vm/` (`dispatch.rs`, `calls.rs`, `frame.rs`, `intrinsics.rs`, `native.rs`) |
+| `stack.rs` | `Stack`: VM frames plus persistent state |
+| `value.rs` | The `Value` enum |
+| `heap.rs` | Mark-and-sweep GC for strings, lists, f64 arrays, maps, elements. A map slot also carries an optional class tag, which is what makes a record an instance |
+| `closure_table.rs` | Runtime closures and overload sets; swept jointly with the heap |
+| `execution_context.rs` | One isolated execution's mutable runtime bundle (heap plus closure/output/host registries) |
+| `env/` | `Env`, which owns programs, stacks, and contexts: `run.rs`, `fork.rs`, `gc.rs`, `host_io.rs`, `state_json.rs`, `observations_json.rs` |
+| `native_fn.rs`, `builtins/` | Native function FFI (`NativeFnTable`, `PetalCxt`) and the built-in functions, one module per topic |
+| `handle.rs`, `symbol.rs`, `resource_table.rs` | Opaque host-object handles; interned symbols shared with the host; pending (unresolved) resources |
+| `trace.rs` | Ring-buffered per-term execution trace |
+| `transfer_state.rs` | Move a stack's state onto a different program, reconciling by `StateKey` (hot reload) |
+| `extract.rs` | Typed accessors for pulling Rust data out of a `Value` |
+| `wasm.rs` | `wasm-bindgen` bindings used by the browser integrations |
+
+The crate is about 120 source files and 60k lines.
 
 ---
 
@@ -86,8 +99,9 @@ call a function, branch, read state, …) and references its inputs by
 
 ```rust
 pub struct Program {
+    pub schema: String,              // IR schema version
     pub id: ProgramId,
-    pub source: String,
+    pub source: String,              // optional for imported IR
     pub terms: Vec<Term>,            // indexed by TermId
     pub blocks: Vec<Block>,          // indexed by BlockId
     pub root_block: BlockId,         // entry point
@@ -100,8 +114,8 @@ pub struct Program {
 }
 ```
 
-`Program` is the unit the CLI prints when you run `show-ir --json`. See
-[CLI Reference](../CLI.md) for the full JSON schema.
+`Program` is what `show-ir --json` prints, and what `run --ir` loads. See
+[CLI.md](../CLI.md#program-json-schema) for the full JSON schema.
 
 ### Term
 
@@ -374,10 +388,10 @@ table is cleared on `transfer_state` and refreshed on the next `run`.
 
 ### Native Functions
 
-Built-ins live in `src/builtins/` (one module per topic: `io`, `math`,
-`collections`, `creative_coding`, `noise`, `color`, `vec2`, `autodiff`,
-`handle`, `pending`, `output`).
-Each registers into the `NativeFnTable` at startup.
+Built-ins live in `src/builtins/`, one module per topic (`io`, `math`,
+`collections`, `format`, `creative_coding`, `noise`, `color`, `vec2`,
+`autodiff`, `classes`, `effects`, `handle`, `pending`, `output`). They are
+registered into the `NativeFnTable` at startup by `register_builtins`.
 
 The compiler allocates a "phantom" `Copy` term in every compiled program's
 root block for each native (the VM seeds native function values into those
@@ -566,19 +580,18 @@ emits terms. Key responsibilities:
 
 ## WebAssembly
 
-`wasm.rs` exposes a small `wasm-bindgen` API used by `petal-web` and
-`petal-diagram-canvas`. The browser embeddings:
+`wasm.rs` exposes a `PetalRuntime` struct through `wasm-bindgen`. It wraps an
+`Env` and adds the element-tree natives petal-web needs. The JS host calls
+`load_program(source)`, `create_stack(program_id)`, then `run(stack_id)` or
+`reset_and_run(stack_id)` once per frame, and reads printed output with
+`take_output()`. `register_module` and `set_implicit_imports` set up module
+resolution before loading. State is round-tripped as JSON so the JS host can
+keep it across reloads.
 
-1. Fetch `.ptl` source over HTTP.
-2. Call `compile(source)` → wasm returns a program handle.
-3. Call `run_frame(program, state_json, input_json)` → wasm returns
-   draw commands / element tree / state snapshot as JSON.
-
-State is round-tripped as JSON so the JS host owns it across reloads.
-See `integrations/petal-web-html/src/runtime.ts` and
-`integrations/petal-web-canvas/src/runtime.ts` for the host side
-(examples/custom-integrations/diagram-canvas consumes the latter via the `petal-web-canvas`
-package).
+The host side lives in `integrations/petal-web-html/src/runtime.ts` and
+`integrations/petal-web-canvas/src/runtime.ts`;
+`examples/custom-integrations/diagram-canvas` consumes the latter through the
+`petal-web-canvas` package.
 
 ---
 

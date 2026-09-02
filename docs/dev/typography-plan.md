@@ -1,243 +1,132 @@
-# petal-typography — Tech Plan
+# Typography — plan and status
 
-Status: **in progress** (Phase 1a done — see [typography-progress.md](typography-progress.md)) · Author: investigation + plan, 2026-07-24
+Status: **partially shipped.** Font selection, per-font measurement and font
+objects are in `petal-ui` and honored by every host. Flow layout (styled
+spans wrapping into paragraphs) is not started. The user-facing contract is
+[text-and-fonts.md](../text-and-fonts.md); this document keeps the design
+rationale and tracks what is left.
 
-A new library for best-in-class text rendering in Petal apps: multiple fonts
-(faces, weights, styles), correct proportional measurement, and a lightweight
-HTML-like *flow layout* (styled spans wrapping into paragraphs, blocks stacking
-into a column). It follows the established ecosystem split: a Petal-source
-module for layout semantics, a small draw-protocol extension, and a host-side
-engine crate that supplies metrics and (optionally) rasterization.
-
----
-
-## 1. Where text rendering stands today
-
-> **Snapshot, 2026-07-24.** This section records the state that motivated the
-> plan and is deliberately *not* rewritten as work lands — the per-host table
-> and the hand-rolling list below both describe the starting point, and several
-> rows have since moved. [typography-progress.md](typography-progress.md) is the
-> living record of what shipped; annotations here point at the big ones.
-
-### The contract (petal-ui, Layer 2)
-
-`DrawCommand::Text { text, x, y, size, r, g, b, a }` (`petal-ui/src/draw.rs:119`)
-carries **no font, weight, or style** — the host picks one font for everything.
-Measurement (`text_width`) has two models:
-
-- **Monospace fallback** (default): `chars × size × 0.6`
-  (`bind_text_metrics`, `SYM_TEXT_ADVANCE`).
-- **Proportional**: per-codepoint advance-ratio table
-  (`bind_text_advance_table`, `SYM_TEXT_ADVANCES`) — sums real glyph advances.
-
-### Per-host reality
-
-| Host | Font | Honors `size` | Proportional `text_width` |
-|---|---|---|---|
-| petal-sdl | System sans (Helvetica), SDL_ttf size ladder | yes | **yes** — measured ASCII advance table |
-| petal-web-canvas (+ diagram-canvas) | `sans-serif` via canvas `fillText` | yes | **no — mismatch**: renders proportional, measures monospace 0.6 |
-| Garden panels | JetBrains Mono via glyphon (cosmic-text + swash GPU atlas) | **no — fixed 14 px** (`panel_view.rs` drops `size`) | no (0.6 mono) |
-| experiment-todo-app | System mono, SDL_ttf ladder | yes | no (0.6 mono, self-consistent by design) |
-| experiment-cube-browser | `ui-monospace` canvas | yes | no (0.6 mono, self-consistent by design) |
-| petal-fps | 5×7 bitmap (own `Text2d` command) | scale | n/a |
-
-So: **monospace-first in practice**. Exactly one host (petal-sdl) renders
-proportional text with correct metrics; web-canvas renders proportional but
-measures monospace (a latent centering/alignment bug); Garden — ironically the
-most capable text stack in the ecosystem — projects Petal panels down to one
-monospace face at one fixed size. No host supports bold, italic, multiple
-faces, or wrapping through the draw protocol.
-
-### Script-side layout today
-
-`ui.ptl` organically grew: `wrap` / `preview` (greedy word-wrap in *character*
-budgets), `truncate_head` / `truncate_tail` (char-budget ellipsis),
-`draw_text_right`, `fit_parts` (segment shedding). On top of that, apps
-hand-roll, over and over:
-
-1. px↔char conversion — `cw = text_width("0000000000", FS) / 10` then
-   `int(avail / cw)` (git_panel, db_view, retro, garden-diff).
-   → **addressed**: `ellipsize` / `ellipsize_tail` take a pixel budget and
-   measure. All four apps migrated; `cw` survives only where the budget really
-   is in characters (`wrap` / `preview`, and text bound for a monospace
-   `text_view` grid).
-2. Centering — `x + (w - text_width(s, size)) / 2` at every call site.
-   → **addressed** for the common case by `draw_text_center`. Call sites
-   wanting more than centering (a minimum-padding clamp, say) still wrap it.
-3. Multi-color lines — draw a run, `x += text_width(run)`, draw the next run
-   (retro.ptl:230, git_panel.ptl:437). No rich-text primitive exists.
-4. Variable-height wrapped rows — parallel `row_lines`/`row_y`/`row_h` arrays
-   built from `wrap()` results (retro.ptl:623-680) — a hand-rolled flow layout.
-5. Line-granular color via the host `text_view` widget + parallel style array
-   (git_panel.ptl:631) — anything finer than per-line is impossible today.
-
-Items 3–5 are exactly the operations petal-typography should own. 1 and 2 turned
-out to be cheap enough to fix in the prelude ahead of the crate, which is worth
-noting for the rest: not every line here needs a new library.
+The goal is best-in-class text for Petal apps: multiple fonts (faces,
+weights, styles), correct proportional measurement, and a lightweight
+HTML-like *flow layout*. Hosts implement only rasterization; layout runs
+script-side and is identical everywhere.
 
 ---
 
-## 2. Goals and non-goals
+## 1. Status
 
-### Goals
+| Phase | Status | What it is |
+|---|---|---|
+| 0 — metrics groundwork | done | Per-font advance tables keyed by face; `text_width(s, size, font)`; web-canvas and Garden measure real metrics; Garden honors `size`. |
+| 1a — protocol + hosts | done | Optional `font` / `weight` / `italic` / `spacing` on `DrawCommand::Text`; style records on `draw_text` / `text_width`; SDL, web-canvas and Garden honor them. |
+| 1b — font discovery | done, in a different shape | The plan called for a separate `petal-typography` crate with `FontBook`. Instead `petal-ui` gained a `FontSource` trait a host attaches, `font(name)` returning a font *object* (a style record), the `font_*` decorators, and `fonts()`. Garden draws panels in any installed family. No separate crate exists. |
+| Pixel-budget helpers | done, early | `ellipsize` / `ellipsize_tail` (pixel budget, measured) and `draw_text_center` in `ui.ptl`. They needed no new protocol, so they landed ahead of the `typo` module. |
+| 2 — the `typo` module | not started | Spans, rich single lines, pixel-measured word-wrap, flow layout with a measure/draw split, layout cache. |
+| 3 — raster + migration | not started | A software glyph cache for SDL-class hosts; porting the apps that hand-roll flow layout. |
 
-- **Font selection** in the draw protocol: family/role, weight, italic — with
-  graceful degradation on hosts that ignore it.
-- **Correct proportional metrics everywhere**: per-font advance tables so
-  `measure`/layout agree with what the host rasterizes.
-- **Flow layout, HTML-lite**: styled spans → wrapped lines → paragraphs →
-  stacked blocks with a width constraint; measure-then-draw so containers
-  (rows, cards, scrollers) can size themselves from content.
-- **Rich text**: one line mixing color/weight/size/face without manual
-  x-advancing.
-- Pixel-based truncation/fitting (ellipsis by *width*, not char count).
-- Keep the ecosystem contract: **hosts implement only rasterization**; layout
-  runs script/engine-side and is identical on every host.
-
-### Non-goals (this phase)
-
-- Full CSS: no floats, no inline-block, no tables, no bidi/RTL, no
-  justification. Blocks stack vertically; inlines wrap left-to-right.
-- No text editing/selection (that stays with the host `text_view` widget).
-- No script-supplied font *files* — hosts own which fonts exist; scripts select
-  from what's offered.
-- Complex shaping correctness (ligatures, kerning pairs, CJK line-breaking
-  rules) is best-effort: advance-sum measurement, per-codepoint. Hosts with
-  real shapers (Garden/glyphon) may rasterize better than the measurement
-  predicts; that error is accepted and bounded (same class of error HTML has
-  with `ch`-based layouts).
+Where each host stands today (faces, weights, spacing, measurement) is the
+"Per-host status" table in [text-and-fonts.md](../text-and-fonts.md#per-host-status).
 
 ---
 
-## 3. Architecture
+## 2. The problem this solves
 
-Mirrors the petal-query precedent — a script-side module paired with host-side
-support, meeting at a small native/protocol boundary:
+Before this work `DrawCommand::Text` carried no font, weight or style: the
+host picked one font for everything. Measurement was `chars × size × 0.6`
+unless a host bound a real advance table. Exactly one host (petal-sdl)
+rendered proportional text with correct metrics; web-canvas rendered
+proportional but measured monospace, so every centered label was off; Garden
+projected panels down to one monospace face at a fixed 14 px.
 
-```
-┌─ script ──────────────────────────────────────────────┐
-│ typography.ptl  (module `typo`)                        │
-│   spans, paragraphs, flow layout, fit/ellipsis, rich   │
-│   lines — pure Petal, uses measure natives             │
-└──────────────┬────────────────────────────────────────┘
-               │ natives: font_list, font_metrics,
-               │ measure(text, style) — and the existing
-               │ draw buffer for output
-┌──────────────┴────────────────────────────────────────┐
-│ petal-typography crate (Rust)                          │
-│   FontBook: enumerate/load fonts, per-font metrics     │
-│   tables, registers natives + extended draw natives    │
-│   optional feature: software rasterizer (swash) hosts  │
-│   can embed                                            │
-└──────────────┬────────────────────────────────────────┘
-               │ draw_commands buffer (extended `text`)
-┌──────────────┴────────────────────────────────────────┐
-│ host rasterizers (SDL / canvas / Garden glyphon)       │
-└───────────────────────────────────────────────────────┘
-```
+On the script side, `ui.ptl` had `wrap` / `preview` (greedy word-wrap in
+*character* budgets) and `truncate_head` / `truncate_tail`. Apps hand-rolled
+the rest, over and over:
 
-Three deliverables:
+1. Pixel-to-character conversion: `cw = text_width("0000000000", FS) / 10`
+   then `int(avail / cw)`. **Fixed** by `ellipsize` / `ellipsize_tail`.
+2. Centering: `x + (w - text_width(s, size)) / 2` at every call site.
+   **Fixed** by `draw_text_center`.
+3. Multi-color lines: draw a run, `x += text_width(run)`, draw the next.
+   No rich-text primitive exists. **Open.**
+4. Variable-height wrapped rows: parallel `row_lines` / `row_y` / `row_h`
+   arrays built from `wrap()` results — a hand-rolled flow layout. **Open.**
+5. Color finer than one line inside a `text_view` widget. **Open.**
 
-**(a) Protocol extension** — extend `DrawCommand::Text` with optional fields,
-using the same `skip_serializing_if` trick that kept alpha/radius
-backward-compatible (`draw.rs:47`): `font` (string), `weight` (u16, default
-400), `italic` (bool), `spacing` (letter-spacing, f32 px, default 0). Absent
-fields serialize to the exact pre-typography JSON, so every existing consumer
-is untouched; hosts that don't understand the new fields fall back to their
-one font — degradation, not breakage. No new command tag needed.
+Items 3–5 are what the `typo` module should own. Items 1 and 2 turned out to
+be cheap prelude helpers, which is worth remembering: not everything on the
+list needs a new library.
 
-**(b) Host engine crate `petal-typography`** (new top-level dir, like
-`petal-query`) — a `FontBook` the host constructs at startup:
-
-- resolves **roles → concrete faces** (see §4.1), from system fonts and/or
-  host-bundled TTFs;
-- measures per-font/per-weight advance tables and binds them into the Env
-  keyed by font id (generalizing today's single `SYM_TEXT_ADVANCES`);
-- registers the script natives: `font_list()`, `font_metrics(style)`
-  (ascent/descent/line-height ratios), `measure(text, style) -> width`;
-- registers the extended `draw_text` native (record-style options bag);
-- optional cargo feature `raster`: a swash/fontdue-based software rasterizer +
-  glyph cache that SDL-class hosts can use instead of hand-rolling per-face ×
-  per-weight ladders. Canvas hosts skip it (the browser rasterizes); Garden
-  skips it (glyphon already does this better).
-
-**(c) Script module `typography.ptl`** (module name `typo`), shipped inside the
-crate via `include_str!` like `ui.ptl` — the flow-layout API (§5). Registered
-as an implicit import by hosts that opt in, exactly like `ui` and `query`.
-
-petal-ui itself stays put: its `Text` command grows the optional fields and
-`text_width` learns to consult per-font tables, but its Layer-1/2 role is
-unchanged. Typography is an opt-in layer above, so minimal hosts (petal-fps,
-snippets) never pay for it.
+Measuring instead of estimating also surfaced three latent bugs in Garden
+when it migrated: an error string sized to the whole window, a focus
+underline measuring a differently truncated copy of its heading, and a caret
+placed at `len(s) * cw` (a byte count times an average width).
 
 ---
 
-## 4. Key design decisions
+## 3. Design decisions
 
-### 4.1 Font naming: roles first, families second
+### Roles first, families second
 
-Hosts vary wildly (system TTFs on desktop, CSS stacks in browsers, embedded
-faces in Garden). Scripts therefore select by **role**, with CSS-style
-fallback:
+Hosts vary wildly (system TTFs, CSS stacks, embedded faces). Scripts select
+by **role** — `ui` (proportional sans), `mono`, `serif` — with CSS-style
+fallback: `{font: "Inter, ui"}`. A host maps roles to faces (its policy);
+the role vocabulary is the standard's. `fonts()` lets a script discover
+host-specific families. An unknown name degrades to the default face for
+both measuring and drawing, so scripts never break on a host with fewer
+fonts.
 
-- Built-in roles every host maps: `ui` (proportional sans), `mono`, `serif`.
-- A style's `font` is a role name or a family name; `font_list()` lets a
-  script discover host-specific families and pick with fallback:
-  `{font: "Inter, ui"}`.
-
-This keeps scripts portable while allowing a Garden theme or an SDL app to
-offer real families. The host's role→face mapping is policy (its call), the
-role vocabulary is semantics (the standard's call) — same split petal-ui
-already uses for input.
-
-### 4.2 Layout lives script-side; hosts provide metrics only
+### Layout lives script-side; hosts provide metrics only
 
 The alternative — a `text_block` draw command the host wraps and lays out —
-was rejected: it moves layout policy into six rasterizers, makes results
+was rejected: it puts layout policy into six rasterizers, makes results
 host-dependent, and breaks the measure-then-draw pattern apps need for
-variable-height rows. Instead the engine binds *data* (advance tables, line
-metrics) and the layout algorithm runs once, in the `typo` module, identically
-everywhere. This is the proven `text_width` model, generalized. Cost: layout
-in interpreted Petal — mitigated by caching (§4.4) and by the measurement
-natives being Rust.
+variable-height rows. Instead the host binds *data* (advance tables) and the
+layout algorithm runs once, in Petal, identically everywhere. This is the
+`text_width` model, generalized. The cost is layout in interpreted Petal,
+mitigated by caching and by measurement being native.
 
-### 4.3 Baseline and vertical metrics
+### Measurement and drawing must agree
+
+Every measurement bug found so far came from measuring one thing and drawing
+another. Two rules follow: the same style record goes to `text_width` and to
+`draw_text`, and a font object carries its size and decorations with it so
+the two cannot drift. `bind_default_font_name` exists because a style with no
+`font` used to measure regular metrics for bold text the host drew bold.
+
+### Protocol compatibility
+
+The new `Text` fields are `skip_serializing_if`-defaulted, so a plain text
+command serializes to the exact pre-typography JSON. Hosts that ignore the
+fields fall back to their one font — degradation, not breakage.
+
+### Baseline and vertical metrics (for flow layout)
 
 Today `y` means "top of the glyph box" and line spacing is by convention
-(`row_h = FS + padding`). Typography styles expose real
-`ascent`/`descent`/`line_height` (as ratios of size, from the font). Flow
-layout positions runs on a shared **baseline** per line — this is what makes
-mixed-size/mixed-face lines look right, and is invisible to non-users: the
-plain `draw_text` path keeps top-anchored semantics.
+(`row_h = FS + padding`). Flow layout will position runs on a shared
+**baseline** per line, which is what makes mixed-size lines look right.
+`ascent` / `descent` / `line_height` ratios will be added to each
+`text_fonts` entry without changing the binding's shape. The plain
+`draw_text` path keeps top-anchored semantics.
 
-### 4.4 Layout caching
+### Layout caching
 
-Flow layout of a long paragraph every frame at 60 fps is wasted work.
-`typo.layout(...)` returns a plain record (lines → positioned runs), so apps
-can hold it in a `state` slot and re-layout only when text/width changes. The
-module provides `typo.layout_cached(key, blocks, width)` doing exactly that —
-same "cache keyed by input" shape petal-query normalized.
+Laying out a long paragraph every frame at 60 fps is wasted work.
+`typo.layout` will return a plain record, so an app can hold it in `state`
+and re-layout only when text or width changes; `typo.layout_cached(key,
+blocks, width)` does exactly that.
 
 ---
 
-## 5. Script API sketch (module `typo`)
+## 4. The `typo` module — API sketch (not built)
 
-Styles are records (the ecosystem's options-bag idiom); everything composes
-with spread: `{...BODY, weight: 700}`.
+Styles are records, composed with spread: `{...BODY, weight: 700}`.
 
 ```petal
-// A style: any subset of {font, size, weight, italic, color, spacing, underline}
 let BODY  = {font: "ui", size: 15, color: #d8d8d8}
 let EM    = {...BODY, italic: true}
 let CODE  = {font: "mono", size: 13, color: #a8d8a8}
 
-// ── Measurement ───────────────────────────────────────────────
-typo.measure("hello", BODY)          // -> width in px (native, per-font table)
-typo.line_height(BODY)               // -> px
-typo.fit("some/long/path.rs", BODY, 240)        // pixel-budget tail-ellipsis
-typo.fit_head("a long subject line", BODY, 240) // head-ellipsis
-
-// ── Rich single line (replaces manual x-advancing) ────────────
+// Rich single line (replaces manual x-advancing)
 typo.draw_line([
   typo.span("+12 ", {...BODY, color: #7ad87a}),
   typo.span("-4 ",  {...BODY, color: #d87a7a}),
@@ -246,7 +135,7 @@ typo.draw_line([
 typo.line_width(spans)               // for centering / right-align
 typo.draw_line_right(spans, right_x, y)
 
-// ── Flow layout (the HTML-lite part) ──────────────────────────
+// Flow layout (the HTML-lite part)
 let doc = [
   typo.p([typo.span("Merge pull request ", BODY),
           typo.span("#482", {...BODY, weight: 700})]),
@@ -254,70 +143,43 @@ let doc = [
   typo.p([typo.span(diffstat, CODE)], {align: "right"}),
 ]
 let layout = typo.layout(doc, avail_w)     // pure; no drawing
-layout.height                              // -> px: size rows/cards by content
+layout.height                              // size rows/cards by content
 typo.draw(layout, x, y)                    // emit draw commands
 // blocks: p (paragraph), h(level, spans), gap(px); paragraph opts:
 // {align: left|center|right, line_height, spacing_before, max_lines, ellipsis}
 ```
 
-`typo.layout` + `layout.height` + `typo.draw` directly replaces the
-`row_lines`/`row_y`/`row_h` bookkeeping in retro.ptl; `max_lines + ellipsis`
-replaces `preview()`; `typo.fit` replaces every `cw`-budget truncation.
+`typo.layout` + `layout.height` + `typo.draw` replaces the
+`row_lines`/`row_y`/`row_h` bookkeeping; `max_lines + ellipsis` replaces
+`preview()`. A pixel-measured word-wrap is the natural first piece: `wrap`
+and `preview` still take character counts, so any app wrapping a paragraph
+still needs a `cw`.
+
+Scope for this phase: blocks stack vertically, inlines wrap left-to-right.
+No floats, tables, bidi, or justification. No text editing (that stays with
+the host `text_view` widget). Shaping is best-effort advance-sum measurement;
+hosts with real shapers may rasterize a few pixels differently, which is
+accepted and bounded.
+
+Tests: layout is pure, so line breaks and heights can be asserted headlessly
+through the petal-ui harness without a renderer.
 
 ---
 
-## 6. Host rollout
+## 5. Open questions
 
-| Host | Work |
-|---|---|
-| **petal-sdl** | Adopt `FontBook` + the `raster` feature (swash glyph cache replaces the per-size SDL_ttf ladder; gains weights/italics/faces). Reference desktop host. |
-| **petal-web-canvas** | Map style → `ctx.font` string (trivial — canvas already does faces/weights/italics). Bind advance tables from `ctx.measureText` at startup, **which also fixes the existing proportional-vs-monospace mismatch**. TS mirror of the role→family mapping. |
-| **diagram-canvas / cube-browser** | Inherit the web-canvas renderer work; cube can stay mono-only (roles all map to mono) with zero script changes. |
-| **Garden panels** | Biggest win, least new tech: glyphon/cosmic-text already shapes and falls back. Stop dropping `size` in `panel_view.rs`, carry font/weight/italic through `PanelCmd::Text` into `Primitive::Text`, map roles onto Garden's font config. Bind cosmic-text-measured advance tables instead of the 0.6 ratio. |
-| **todo-app** | Optional; keeps working unchanged (mono roles). Good second SDL adopter to validate the `raster` feature. |
-| **petal-fps** | No change (own command set; bitmap font is part of its aesthetic). |
-
----
-
-## 7. Phasing
-
-1. **Phase 0 — metrics groundwork (bug-fix value on its own).**
-   Per-font advance-table plumbing in petal-ui (`text_width` consults the
-   table for the *default* font as today; tables become keyed). Bind real
-   tables in web-canvas (fixes the centering mismatch) and Garden (replaces
-   0.6). Garden honors `size`. No new API surface for scripts.
-2. **Phase 1 — protocol + engine.** Split in two on delivery:
-   - *1a (done)* — optional `font/weight/italic/spacing` on `Text`, style
-     records on `draw_text` / `text_width`, and SDL + web-canvas + Garden
-     honoring them. The styled-draw API landed in **petal-ui** rather than the
-     typography crate, so every petal-ui host gets it without adopting a new
-     dependency; the crate is then purely about fonts and metrics.
-   - *1b* — the `petal-typography` crate: `FontBook`, system-font enumeration,
-     `font_list` / `font_metrics` / `measure` natives.
-3. **Phase 2 — the `typo` module.** Spans, rich lines, `fit`, flow layout
-   with measure/draw split, layout cache. Headless tests via the petal-ui
-   harness (layout is pure — assert line breaks/heights without a renderer).
-4. **Phase 3 — `raster` feature + migration.** Swash-based glyph cache for
-   SDL-class hosts; port retro.ptl's wrapped rows and git_panel's rich lines
-   as the proving apps; petal-lang.org snippet showing flow layout.
-   `ui.ptl`'s `wrap`/`preview`/`truncate_*` stay (char-budget tools are still
-   right for mono grids) but docs point layout work at `typo`.
-
----
-
-## 8. Risks / open questions
-
-- **Measurement fidelity**: advance-sum ignores kerning/ligatures; with
-  shaping hosts (Garden) rendered width can differ by a few px from measured.
-  Bounded and acceptable for UI text; revisit only if justified text lands.
-- **Non-ASCII coverage**: advance tables are dense codepoint-indexed lists —
-  fine for ASCII/Latin-1, wrong shape for CJK/emoji. Plan: table covers
-  0–0x2FF, everything above falls back to a per-font uniform ratio (emoji ≈
-  1.0, CJK ≈ 1.0); hosts with shapers may register a native `measure`
-  override, which the module always calls through.
-- **Perf of script-side flow layout** on very long documents — mitigated by
-  `layout_cached` and by `measure` being native; if still hot, the layout
-  inner loop can move into the crate behind the same API.
-- **Style interning**: if per-run optional fields bloat the command stream,
-  add a `text_style(id, {...})` command + id reference later — deferred until
-  measured.
+- **Non-ASCII coverage.** Advance tables are dense codepoint-indexed lists,
+  fine for Latin, wrong shape for CJK and emoji. Plan: cover 0–0x2FF and fall
+  back to a per-font uniform ratio above that.
+- **Perf of script-side flow layout** on very long documents. If
+  `layout_cached` is not enough, the inner loop can move into Rust behind the
+  same API.
+- **Style interning.** If per-run optional fields bloat the command stream,
+  add a `text_style(id, {...})` command and reference it by id. Deferred
+  until measured.
+- **Weight is effectively two-valued today**: SDL synthesizes at `>= 600`,
+  the browser has whatever the family ships, Garden's embedded `mono` has one
+  cut.
+- **Raster feature.** SDL-class hosts still keep a per-size SDL_ttf ladder. A
+  swash/fontdue glyph cache in petal-ui would replace it and give real
+  weights; canvas hosts and Garden do not need it.

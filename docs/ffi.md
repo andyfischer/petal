@@ -1,15 +1,14 @@
 # Petal FFI and embedding
 
-How a host application talks to the Petal runtime today. This documents the
-*existing* surface; ideas for expanding it (opaque foreign handles, mutable
-host objects) live in [dev/unreal-ffi-proposal.md](./dev/unreal-ffi-proposal.md).
+How a host application talks to the Petal runtime: the API on `Env`, native
+functions, the value model, the host channels, and retained state. For
+task-oriented patterns built on these primitives, see
+[embedding-guide.md](embedding-guide.md).
 
-The design is Lua-inspired: native functions are registered by name against a
-stack-style calling convention (`rust/src/native_fn.rs` opens with "Native
-function FFI — Lua-inspired plugin system"). Everything crosses the boundary
-**by value**; there is no userdata / opaque-pointer value type. Host resources
-are referenced from scripts as plain integers, with the host keeping an
-id→resource table on its side.
+The design is Lua-inspired. Native functions are registered by name against a
+stack-style calling convention (`rust/src/native_fn.rs`). Everything crosses
+the boundary **by value**, except for [handles](#handles), which are opaque
+references to host-owned objects.
 
 ## The embedding lifecycle
 
@@ -26,33 +25,35 @@ let stack = env.create_stack(pid)?;
 
 loop {                                                        // per frame / tick
     env.set_binding(dt_sym, Value::Float(dt));                // host → script uniforms
-    env.reset_counter(canvas_id_sym);
+    env.reset_counter(canvas_id_sym, 0);
     env.reset_stack(stack);
     env.run(stack)?;                                          // re-run the whole program
     let cmds = env.take_output_buffer(draw_sym);              // script → host commands
 }
 ```
 
-Key entry points, all on `Env` (`rust/src/env/mod.rs`):
+Entry points, all on `Env` (`rust/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func) -> NativeFnId` |
+| Native functions | `register_native(name, func) -> NativeFnId`, `set_native_class` |
+| Handles | `register_handle_class`, `make_handle` |
 | Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
 | Programs | `load_program`, `load_program_at`, `compile_program_at`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
 | Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines) |
 | Id allocation | `reset_counter`, `next_counter` |
-| State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `diff_state` |
-| Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every *named* term, not just `state` (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
+| State tooling | `get_state_json`, `set_state_from_json`, `snapshot_state`, `restore_state`, `diff_state` |
+| Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
+| Emit tracing | `enable_emit_trace`, `take_output_origins` (see [direct-manipulation.md](direct-manipulation.md)) |
 | Speculation | `fork_execution`, `run_speculative`, `drop_fork` |
 | Hot reload | `module_manifest`, `transfer_state` |
 
-`run_bounded` returns `RunOutcome::Done | Yielded` so a 60fps host can slice
-long computations cooperatively. `call_function(stack, "name", args)` invokes a
+`run_bounded` returns `RunOutcome::Done | Yielded`, so a 60fps host can slice a
+long computation across frames. `call_function(stack, "name", args)` calls a
 top-level Petal function by (possibly module-qualified) name after at least one
-`run` — the host-side call-in direction.
+`run`; this is the host-to-script call direction.
 
 ## Native functions
 
@@ -61,36 +62,37 @@ pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;   // rust/src/native_fn.r
 pub type NativeResult = Result<u32, String>;             // Ok(count of pushed results)
 ```
 
-A native is a **plain non-capturing `fn` pointer** — no closures, no per-fn
-context. `Env::register_native` appends it to the `NativeFnTable` (the id is
-the table index) and **must be called before `load_program`**: at load time
-every native is materialized as a `Value::NativeFunction(id)` in the root
-frame's registers, index == id, so scripts resolve natives through ordinary
-scope lookup (and can shadow them).
+A native is a plain, non-capturing `fn` pointer. `Env::register_native`
+appends it to the native table (the id is the table index) and **must be
+called before `load_program`**: at load time every native becomes a
+`Value::NativeFunction(id)` in the root frame, so scripts resolve natives
+through ordinary scope lookup and can shadow them.
 
-`PetalCxt` is the per-call context handle. Argument readers are 1-indexed like
-Lua (`get_int(1)`, `get_string(2)`, `get_value`, `get_symbol`, …); results are
-pushed (`push_int`, `push_value`, `push_nil`, …). It also exposes the three
-host channels (below), `heap`/`heap_mut`, and an `in_place` flag (see
-Immutability). The bytecode VM dispatches natives in
-`rust/src/backend/bytecode/vm.rs`.
+`PetalCxt` is the per-call context. Argument readers are 1-indexed like Lua
+(`get_int(1)`, `get_string(2)`, `get_value`, `get_symbol`, `get_handle`, …);
+results are pushed (`push_int`, `push_value`, `push_nil`, …). It also exposes
+the host channels (`binding_named`, `push_output`, `emit`, `next_counter`),
+`heap`/`heap_mut`, the call's origin term (`origin()`, used by emit tracing),
+and the `in_place` flag (see [Immutability](#immutability-and-the-in-place-gate)).
 
-**Method-call syntax reaches natives.** `obj.method(args)` compiles to a
-`MethodCall` op, resolved as: a callable field
-on a record receiver first; then, on a handle receiver, the handle class's own
-`call_method` dispatcher — which wins over any same-named native and rejects
-stale handles before dispatch; otherwise **UFCS fallback** — the method name is
-looked up in the native table and called with the receiver prepended
-(`do_method_call` in the bytecode VM). So registering `set_location` makes both
-`set_location(obj, p)` and `obj.set_location(p)` work. The namespace is flat —
+**Method-call syntax reaches natives.** `obj.method(args)` resolves, in order:
+a callable field on a record receiver; a handle class's own `call_method`
+dispatcher for a handle receiver (which also rejects stale handles); otherwise
+**UFCS fallback**, where the method name is looked up in the native table and
+called with the receiver prepended. So registering `set_location` makes both
+`set_location(obj, p)` and `obj.set_location(p)` work. The namespace is flat:
 one native table for all receiver types.
 
-The compiled-in builtins (`rust/src/builtins/`) are registered through the same
-table by `register_builtins`. Registration order numbers the phantom terms in
-compiled IR (append, never reorder, or every IR snapshot renumbers); the
-runtime itself binds phantoms to natives by *name*, not position. `map`/`filter`/`reduce`/`forEach` register placeholder fns but are
-dispatched specially by the evaluators because they call back into closures;
-ordinary natives **cannot invoke Petal closures**.
+**Native classes.** After registration, mark a native with
+`env.set_native_class(id, NativeClass::…)` to say how it treats a
+`Value::Pending` argument: `Strict` (default) absorbs and returns the pending
+value, `Effectful` makes the call a no-op that emits nothing, and
+`AllowPending` runs normally. Emitters should be `Effectful`.
+
+The compiled-in builtins (`rust/src/builtins/`) go through the same table.
+`map`/`filter`/`reduce`/`forEach` register placeholders and are dispatched
+specially by the VM because they call back into closures; ordinary natives
+**cannot call Petal closures**.
 
 ## Values and the heap
 
@@ -98,65 +100,95 @@ ordinary natives **cannot invoke Petal closures**.
 word lives in the `Heap` behind a typed u32 id:
 
 ```
-Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual,
+Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual { value, derivative },
 String(StringId), List(ListId), F64Array(F64ArrayId), Map(MapId),
 Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
 EnumVariant { tag: StringId, data: ListId }, Element(ElementId),
-Symbol(SymbolId)
+Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 ```
 
 Notes for embedders:
 
-- **There is no foreign-handle / userdata variant.** You cannot stash a host
-  pointer behind a `Value`. The closest things are `Value::Symbol` (an interned
-  key shared with the host) and plain `Int` ids.
-- The heap (`rust/src/heap.rs`) is mark-and-sweep (allocation-count triggered,
-  no refcounting). GC roots include stack registers, persistent state, closure
-  captures, **bindings, and output buffers** — so values parked in the host
-  channels stay alive.
-- Heap collection ops are **copy-on-write**: `list_append`, `map_set`, etc.
-  clone the backing store and return a new id. `Heap::fork` deep-clones the
-  whole heap for speculative execution — sound precisely because objects are
-  immutable-by-construction.
+- `Cell` is the box behind a `var`; it never reaches host code, because every
+  read dereferences it (see [var.md](var.md#containment)).
+- `Pending` is an unresolved resource (loading or errored). Ordinary operations
+  absorb it and return it.
+- The heap (`rust/src/heap.rs`) is mark-and-sweep, triggered by allocation
+  count. GC roots include stack registers, persistent state, closure captures,
+  **bindings and output buffers**, so values parked in the host channels stay
+  alive.
+- Heap collection ops are copy-on-write: `list_append`, `map_set`, etc. return
+  a new id. `Heap::fork` deep-clones the whole heap for speculative execution,
+  which is sound because objects are immutable by construction.
 
 ## The three host channels
 
-All host↔script data flows through symbols (`env.intern_symbol(name)` — the
-`SymbolTable` is explicitly "shared with the embedding host"):
+All host↔script data flows through symbols. `env.intern_symbol(name)` returns
+a `SymbolId`; the host and the script share an id by interning the same name.
 
-1. **Bindings** — GLSL-uniform-style host→script values. Host calls
-   `env.set_binding(sym, value)` before a run; scripts (or natives) read them
-   via the `binding` builtin / `PetalCxt::binding_named`. Used for input
+1. **Bindings** — host→script values, like GLSL uniforms. The host calls
+   `env.set_binding(sym, value)` before a run; scripts read them with the
+   `binding` builtin, natives with `PetalCxt::binding_named`. Used for input
    snapshots, `dt`, `frame_count`, screen dimensions.
 2. **Output buffers** — script→host command streams. A native calls
-   `cxt.emit(sym, tag, data)`, which appends an `EnumVariant { tag, data }` to
-   the buffer for `sym`; the host drains it after the run with
-   `env.take_output_buffer(sym)` and decodes tags into typed commands. This is
-   how all rendering works: draw natives don't draw, they emit.
-3. **Counters** — per-run monotonic id allocators (`reset_counter` /
-   `next_counter`), used to hand scripts fresh integer ids (offscreen canvas
-   ids, element ids).
+   `cxt.emit(sym, tag, data)`, which appends `EnumVariant { tag, data }` to the
+   buffer for `sym` (or `cxt.push_output(sym, value)` for an untagged value).
+   The host drains it after the run with `env.take_output_buffer(sym)`. This is
+   how all rendering works: draw natives do not draw, they emit.
+3. **Counters** — per-run monotonic id allocators (`reset_counter(sym, start)`
+   / `next_counter(sym)`), used to hand scripts fresh integer ids (offscreen
+   canvas ids, element ids).
 
-## Referencing host resources today
+## Referencing host resources
 
-The established pattern: **allocate an integer id, pass it as `Value::Int`,
-keep the id→resource table host-side.**
+There are two ways for a script to refer to something the host owns.
+
+### Integer ids
+
+Allocate an id from a counter, pass it as `Value::Int`, and keep the
+id→resource table host-side. This suits frame-scoped resources:
 
 - Offscreen canvases (petal-ui): `create_canvas()` returns an int from a
-  per-frame counter; `draw_to(id)` / `draw_canvas(id, …)` / `snapshot_to(id, …)`
-  / `blur_canvas(id, …)` reference it. The host materializes real render
-  targets from the command stream — the id is an index into command order,
-  never a live host pointer, and it resets every frame. (A host may *cache* a
-  texture by id across frames, as Garden does; the id is still the script's
-  per-frame count, not a handle the script holds.)
-- DOM elements (petal-web): `next_id()` ids round-trip through `data-eid`
+  per-frame counter; `draw_to(id)`, `draw_canvas(id, …)`, `snapshot_to(id, …)`
+  reference it. The host materializes render targets from the command stream;
+  the id is an index into command order and resets every frame.
+- DOM elements (petal-web-html): `next_id()` ids round-trip through `data-eid`
   attributes and come back via a `clicked_id` binding.
-- petal-sdl's example browser and file I/O pass strings through bindings and
-  output buffers.
 
-This works because these resources are frame-scoped or looked up by the host
-on demand. Nothing today holds a *retained* cross-frame reference to a host
-object — that is the main gap for a game-engine embedding.
+Nothing detects a stale integer id; safety is the host table's discipline.
+
+### Handles
+
+For retained, host-owned objects (a game entity, an actor, a file), use a
+**handle**: `Value::Handle(HandleVal { class, slot, serial })`. The host owns
+the object; the handle is an opaque address into the host's own storage,
+typically a slot map with generation counters.
+
+```rust
+use petal::{HandleClass, HandleClassId, HandleVal};
+
+let actor_class: HandleClassId = env.register_handle_class(HandleClass {
+    name: "Actor".into(),
+    is_valid: Box::new(|slot, serial| world.is_live(slot, serial)),
+    describe: Box::new(|slot, serial| format!("Actor {slot}#{serial}")),
+    call_method: Box::new(|cxt, method| { /* dispatch on `method`, receiver is arg 1 */ }),
+});
+
+// Hand one to a script (e.g. push it from a native, or set it as a binding):
+let h: Value = env.make_handle(actor_class, slot, serial);
+
+// Read one back inside a native, checked for class and liveness:
+let h: HandleVal = cxt.get_handle(1, actor_class)?;
+```
+
+- `register_handle_class` may be called at any time; unlike natives, handle
+  classes are not referenced by compiled programs.
+- Handles compare and hash by identity and are GC leaf values.
+- `obj.method(args)` on a handle receiver goes to the class's `call_method`,
+  which wins over any same-named native; stale handles are rejected before
+  dispatch.
+- The `is_valid(v)` builtin lets scripts guard against host-side object churn.
+  It returns false for nil, non-handles and stale handles, never an error.
 
 ## Retained state
 
@@ -167,40 +199,35 @@ state score = 0            // top level: one slot, initialized on first run only
 state(item.id) hp = 100    // explicit key: one slot per entity, wherever it is reached from
 ```
 
-- Storage is `Stack::state: HashMap<RuntimeStateKey, Value>` — on the stack,
-  surviving `reset_stack` + `run`, one map per stack.
-- A runtime key is `RuntimeStateKey { base: StateKey, path }`. The `base` is the
-  **declaration id**: a hash of the declaration's full name path — module
-  qualifier, enclosing function chain, variable name (`"score"`, `"ui::scroll"`,
-  `"ui::draw/row"`). Declaration order doesn't matter.
-- The `path` is the chain of callsites and loop iterations that reached the
-  declaration, so each callsite of a function, each recursion depth and each
-  iteration of a caller's loop gets its own slot
-  ([State](language-guide.md#one-slot-per-call-path)). A top-level declaration
-  runs on the empty path — one declaration, one slot, which is what every host
-  API below addresses. `state(key)` is absolute: it keys by the value and
-  ignores the path.
-- After each run, `sweep_untouched_state` drops keys the run didn't touch — so
+- Storage is `Stack::state`, a map on the stack that survives `reset_stack` +
+  `run`. One map per stack.
+- A runtime key is `RuntimeStateKey { base, path }`. `base` is the
+  **declaration id**: a hash of the declaration's full name path (module
+  qualifier, enclosing function chain, variable name: `"score"`,
+  `"ui::scroll"`, `"ui::draw/row"`). Declaration order does not matter.
+- `path` is the chain of callsites and loop iterations that reached the
+  declaration, so each callsite, recursion depth and caller iteration gets its
+  own slot ([one slot per call path](language-guide.md#one-slot-per-call-path)).
+  A top-level declaration runs on the empty path: one declaration, one slot.
+  `state(key)` keys by the value and ignores the path.
+- After each run, `sweep_untouched_state` drops keys the run did not touch, so
   state for deleted code, removed list items, or paths an edit no longer
-  produces doesn't leak.
-- `get_state_json` / `set_state_from_json` serialize it for tooling, and
-  `fork_execution` + `run_speculative` run what-if frames against a forked
-  copy. `Env::get_state`/`set_state` and the JSON setters are **top-level
-  only** — they synthesize empty-path keys, and a pathed slot has no name to
-  address it by. In `get_state_json` a pathed slot renders as its path
-  (`[3]/row/hovered`), which no bare declaration name can collide with.
+  produces does not leak.
+- `get_state_json` / `set_state_from_json` serialize state for tooling.
+  `Env::get_state`/`set_state` and the JSON setters address **top-level slots
+  only**; a pathed slot has no name to address it by and renders in
+  `get_state_json` under its path (`[3]/row/hovered`).
 
 **Host-invoked functions get a root path of their own.** `Env::call_function`
 runs with no caller frame, so it starts a path derived from the function's
-qualified name: repeated host calls of the same function share slots with each
-other — what an event handler wants — but not with in-program calls of that
-same function. When a value must be shared across both, put it in a top-level
-`state var` and read it with `get`.
+qualified name. Repeated host calls of the same function share slots with each
+other, but not with in-program calls of that function. To share a value across
+both, put it in a top-level `state var` and read it with `get`.
 
 ## Hot reload
 
 `Env::module_manifest(pid)` lists every source file a program was compiled
-from (name, filesystem origin, content hash); petal-sdl's file watcher watches
+from (name, filesystem origin, content hash). petal-sdl's file watcher watches
 those directories, so editing an imported module reloads its importer. On
 change:
 
@@ -210,73 +237,64 @@ let result = env.transfer_state(stack, new_program)?;  // { state_preserved, sta
 ```
 
 `transfer_state` keeps every state value whose declaration id still exists in
-the new program, drops the rest, clears all closures and the cached function
-table (they reference old code; recaptured on next run), and invalidates
-cached bytecode. It matches on the declaration id alone and treats the call path
-as an opaque tail. Because that id is a name hash, reordering declarations
-preserves state; renaming a variable, or moving it between functions or modules,
-drops it. A call-structure edit — renaming a callee, inserting an earlier call to
-the same callee, extracting or inlining a helper — keeps the declaration but
-moves its slots to a new path, so the reader sees a fresh value and the orphan is
-swept after the next run (`diff_state` exists for hosts that want a migration
-affordance).
+the new program and drops the rest. It clears closures and the cached function
+table (they reference old code and are recaptured on the next run) and
+invalidates cached bytecode. Because the id is a name hash, reordering
+declarations preserves state; renaming a variable, or moving it between
+functions or modules, drops it. See
+[program-modification.md](program-modification.md#state-preserving-hot-reload-transfer_state)
+for the call-structure caveats.
 
 ## Immutability and the in-place gate
 
 Petal values are immutable **by construction**, not by runtime check:
 
-- Ordinary bindings are not mutable variables — reassignment emits a new term
-  and rebinds the name (SSA/phi).
-- Collections are value types; `append`/`set_at`/`remove` return new collections
-  (the `@` rebind operator is sugar: `append(@nums, 4)`).
-- The one mutable slot is a `var`, and it is contained: `CellNew`/`CellRead`/
-  `CellWrite` are the only ops that touch it, no expression ever *evaluates* to
-  a cell (reads dereference), and the cell slab lives in the heap, so
-  `Heap::fork` isolates it like any other object. Values reachable from a cell
-  are still immutable — a `set` replaces the cell's contents, it does not edit
-  a value in place.
-- The one exception is an optimization: when the VM's escape analysis proves a
+- Ordinary bindings are not mutable variables. Reassignment emits a new term
+  and rebinds the name.
+- Collections are value types; `append`/`set_at`/`remove` return new
+  collections (the `@` rebind operator is sugar: `append(@nums, 4)`).
+- The one mutable slot is a `var`, and it is contained: no expression ever
+  evaluates to a cell, and the cell slab lives in the heap, so `Heap::fork`
+  isolates it like any other object. A `set` replaces the cell's contents; it
+  does not edit a value in place.
+- The one exception is an optimization. When the VM's escape analysis proves a
   container uniquely owned and non-escaping, it sets `PetalCxt::in_place` and
-  builtins mutate the backing store directly (`list_append_in_place` etc.).
-  With optimizations off (`--no-opt`) the flag is never set.
+  builtins mutate the backing store directly. With `--no-opt` the flag is
+  never set.
 
-Several load-bearing features assume this: `Heap::fork` / speculative runs,
-cheap state snapshots, and the general "re-run the whole program every frame"
-model. Any future mutable foreign objects must not silently break these — see
-the proposal doc.
+`Heap::fork`, speculative runs, cheap state snapshots, and the
+"re-run the whole program every frame" model all depend on this.
 
-## Existing embedders (worked examples)
+## Existing embedders
 
-- **petal-sdl** (`integrations/petal-desktop-sdl/`) — the reference native embedder. Per frame:
-  translate SDL events into `petal_ui::InputState`, bind the input snapshot +
-  frame info as uniforms, `reset_stack` + `run`, drain `draw_commands`, and
-  rasterize. File-watcher hot reload via `module_manifest` + `transfer_state`.
-  Its `protocol.rs` JSON protocol (pause/step/state/screenshot over
+- **petal-sdl** (`integrations/petal-desktop-sdl/`) — the reference native
+  embedder. Per frame: translate SDL events into `petal_ui::InputState`, bind
+  the input snapshot and frame info, `reset_stack` + `run`, drain
+  `draw_commands`, rasterize. Hot reload via `module_manifest` +
+  `transfer_state`. Its JSON protocol (pause/step/state/screenshot over
   stdin/stdout) drives the same contract headlessly for agents and tests.
 - **petal-ui** (`petal-ui/`) — the reusable layer: the input vocabulary
-  (`InputEvent`, `InputState` with level/edge semantics), the `DrawCommand`
-  enum (with a `Host { tag, data }` pass-through so embedder-specific natives
-  keep their place in the command stream), the Petal-source `ui` prelude
-  registered as an implicit import, and a `Headless` harness that mirrors the
-  frame contract exactly for tests.
-- **petal-web-html** (`integrations/petal-web-html/`) **/ diagram-canvas**
-  (`examples/custom-integrations/diagram-canvas/`) — wasm-bindgen `PetalRuntime`
-  structs owning an `Env`; the same channels, marshalled as JSON strings
-  across the wasm boundary. petal-web-html returns a retained element tree instead
-  of draw commands; diagram-canvas reimplements the draw-command loop and
-  exposes `run_speculative` for isolated what-if frames.
+  (`InputEvent`, `InputState`), the `DrawCommand` enum (with a
+  `Host { tag, data }` pass-through so embedder-specific natives keep their
+  place in the command stream), the Petal-source `ui` prelude registered as an
+  implicit import, and a `Headless` harness that mirrors the frame contract
+  for tests.
+- **petal-web-html** (`integrations/petal-web-html/`) and **diagram-canvas**
+  (`examples/custom-integrations/diagram-canvas/`) — wasm-bindgen
+  `PetalRuntime` structs owning an `Env`, with the same channels marshalled as
+  JSON strings across the wasm boundary. petal-web-html returns a retained
+  element tree instead of draw commands; diagram-canvas exposes
+  `run_speculative` for isolated what-if frames.
 
-## Current limitations (the gaps an expanded FFI would fill)
+## Current limitations
 
-1. **No opaque foreign handle.** Host objects can only be referenced as
-   integers with all safety left to the host's table discipline; nothing
-   detects a stale id.
-2. **Natives are bare `fn` pointers** — no captured per-function context, so a
-   binding generator can't close over e.g. a reflection method descriptor;
-   each native must rendezvous with host state through the channels.
-3. **Natives must be registered before `load_program`** (ids become root-frame
-   register indices at load time), so the native set can't grow dynamically.
-4. **Natives can't call Petal closures** (only the blessed intrinsics can), so
-   host-driven callbacks must be inverted into data (command buffers).
-5. **Everything is by value** — fine for commands and snapshots, unbuilt for
-   large or intrinsically mutable host objects.
+1. **Natives are bare `fn` pointers.** No captured per-function context, so a
+   binding generator cannot close over a descriptor; each native reaches host
+   state through the channels or a handle class's boxed callbacks.
+2. **Natives must be registered before `load_program`**, so the native set
+   cannot grow while a program is loaded. Handle classes can.
+3. **Natives cannot call Petal closures.** Host-driven callbacks must be
+   inverted into data (command buffers) or go through `Env::call_function`
+   between runs.
+4. **Everything but handles is by value.** Fine for commands and snapshots;
+   large or intrinsically mutable host objects belong behind a handle.

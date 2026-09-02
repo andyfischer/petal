@@ -5,16 +5,17 @@ Runnable Petal programs, grouped by what they are:
 | Directory | What's in it |
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
+| [`challenge/`](challenge/) | Larger console programs written as language stress tests — 2048, Boids, Minesweeper, terrain generation, Tetris. Deterministic: two runs print the same output |
 | [`games/`](games/) | Games — pong, breakout, snake, and the SDL-hosted side-scroller |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
 | [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |
 
-The `games/`, `productivity/`, and `dashboards/` entries are Garden panel apps:
-pure Petal, each with its own README and a `./launch.sh`. See
-[AUTHORING.md](AUTHORING.md) for how they're built. The exception is
-[`games/side-scroller/`](games/side-scroller/), which is pure Petal but runs on
-the `petal-desktop-sdl` integration via its own `run-game.sh`.
+The apps under `games/`, `productivity/`, and `dashboards/` are Garden panel
+apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launch.sh`
+that starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
+built and tested. The exception is [`games/side-scroller/`](games/side-scroller/),
+which runs on the `petal-desktop-sdl` integration via its own `run-game.sh`.
 
 ## Console programs
 
@@ -25,14 +26,19 @@ Run any one with:
 ```
 
 `run-petal.ts` rebuilds the compiler if any Rust source is newer than the
-binary, then forwards its arguments to `petal`. It's the recommended way to
-test Petal locally.
+binary, then forwards its arguments to `petal`. It is the recommended way to
+run Petal locally. The `challenge/` programs run the same way.
 
-Or run all of them with pass/fail reporting:
+Run the whole corpus with:
 
 ```bash
-./ts/bin/test-examples.ts
+./ts/bin/test-examples.ts          # add --full for complete output
 ```
+
+This runs every `console/*.ptl` at both optimizer levels, checks the two
+outputs match, and checks both against the frozen golden in
+`test/example-golden/`. The vitest suite (`npm test`) also runs every console
+example and asserts it exits cleanly.
 
 | File | Description | Features |
 |------|-------------|----------|
@@ -42,6 +48,8 @@ Or run all of them with pass/fail reporting:
 | `for_expression.ptl` | For loops as mapping expressions | `x = for … do … end`, `continue`/`break`, nested maps |
 | `fizzbuzz.ptl` | Classic FizzBuzz | Loops, conditionals, modulo |
 | `functions.ptl` | Function declarations | Functions, recursion, implicit return |
+| `named_arguments.ptl` | Named call arguments | `f(x, limit: 10)`, binding by parameter name |
+| `argless_lambdas.ptl` | Lambdas with no parameters | `fn … end` without `()` |
 | `typed.ptl` | Optional type annotations | `let x: int`, param/return types, `str` alias, int→float promotion |
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |
 | `records.ptl` | Record manipulation | Record literals, field access, nested records |
@@ -65,5 +73,9 @@ Or run all of them with pass/fail reporting:
 | `imports.ptl` | Module imports | `import`, qualified/selective forms |
 | `text_utils.ptl` | Library module imported by `imports.ptl` | `fn` exports (no standalone output) |
 
-`text_utils.ptl` is not a standalone program — it exists as the import target
-for `imports.ptl`, and lives here because the golden corpus covers it.
+`text_utils.ptl` is not a standalone program. It is the import target for
+`imports.ptl` and lives here so the golden corpus covers it.
+
+Do not add new files to `console/` casually: every file there is
+golden-tested, so a new one needs a matching entry in `test/example-golden/`
+(run `ts/bin/gen-example-golden.ts`).

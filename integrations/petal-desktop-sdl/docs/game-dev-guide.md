@@ -1,26 +1,32 @@
 # Petal Game Development Guide
 
-## Getting Started
+How to write a game or sketch for `petal-sdl`. The drawing and input
+functions here come from `petal-ui`, so the same script also runs under
+`petal-web-canvas` in the browser.
+
+## Getting started
 
 ### Running a game
 
 ```bash
-cd petal-sdl
-cargo run -- examples/pong.ptl
+cd integrations/petal-desktop-sdl
+LIBRARY_PATH=/opt/homebrew/lib cargo run -- examples/pong.ptl   # LIBRARY_PATH on macOS/Homebrew
 ```
 
 Options:
-- `--width <n>` — Window width (default: 800)
-- `--height <n>` — Window height (default: 600)
-- `--title <str>` — Window title
-- `--no-hot-reload` — Disable live code reloading
-- `--agent` — Enable agent debugging protocol (JSON over stdin/stdout)
-- `--headless` — Headless mode, no window (implies --agent)
+
+- `--width <n>` / `--height <n>` — window size (default 800 x 600)
+- `--title <str>` — window title
+- `--no-hot-reload` — disable live reloading
+- `--agent` — accept JSON commands on stdin (see [agent-protocol.md](agent-protocol.md))
+- `--headless` — no window; frames advance on `step` commands (implies `--agent`)
+- `--screenshot <file> --frames <n>` — run N frames headlessly, save a PNG, exit
 
 ### How it works
 
-Your `.ptl` file runs **every frame** (~60fps). The engine calls your entire
-script once per frame. Use `state` variables to persist data between frames.
+Your `.ptl` file runs every frame (about 60 fps). The engine runs the whole
+script top to bottom each time. Use `state` variables to keep data between
+frames.
 
 ```petal
 state x = 100.0          // initialized once, persists across frames
@@ -30,15 +36,15 @@ draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 
 ### Where a `state` cell lives
 
-A `state` slot is identified by its declaration **and by the call path that
-reached it** — the chain of callsites and loop iterations running from the top
-of the file down to the declaration.
+A `state` slot is identified by its declaration and by the call path that
+reached it: the chain of callsites and loop iterations from the top of the
+file down to the declaration.
 
-- **At the top level** — what every example in this guide uses — the path is
-  empty, so a declaration is one cell for the whole game. `state score = 0` is
-  *the* score, readable and writable from anywhere in the file.
-- **Inside a function**, each callsite gets its own cell, and a call made inside
-  a `for`/`while` gets one cell per iteration. So
+- **At the top level**, which is what every example in this guide uses, the
+  path is empty. `state score = 0` is *the* score, readable and writable from
+  anywhere in the file.
+- **Inside a function**, each callsite gets its own cell, and a call made
+  inside a `for` or `while` gets one cell per iteration:
 
   ```petal
   fn enemy(x)
@@ -52,71 +58,133 @@ of the file down to the declaration.
   end
   ```
 
-  needs no manual keying to give each enemy its own health. Two functions that
-  each declare `state t` never share a cell either.
-- **`state(expr) name = …` overrides the path.** An explicit key is *absolute*:
-  every callsite asking for the same key value reaches the same cell, in or out
-  of a loop. Reach for it when a cell belongs to a domain object rather than to
-  a position — `state(e.id) hp = 100` follows the enemy when the list is
-  reordered, where the unkeyed form above stays with the loop index.
-- Cells that are deliberately shared across functions go at the top level as
+  Each enemy gets its own health with no manual keying.
+- **`state(expr) name = ...` overrides the path.** An explicit key is
+  absolute: every callsite that asks for the same key value reaches the same
+  cell. Use it when a cell belongs to a domain object rather than a position.
+  `state(e.id) hp = 100` follows the enemy when the list is reordered; the
+  unkeyed form stays with the loop index.
+- Cells shared across functions on purpose go at the top level as
   `state var`, read and written with `get` / `set`.
+
+See the [language guide](../../../docs/language-guide.md#state) for the full
+rules.
 
 ### Hot reload
 
-Edit your `.ptl` file while the game is running. Changes apply immediately and
-`state` variables are preserved (as long as they have the same name).
+Edit your `.ptl` file while the game is running. Changes apply immediately
+and `state` variables keep their values as long as they keep their names.
 
-For a `state` inside a function the call path has to survive the edit too. The
-callsite id is derived from the callee's spelling and its position among calls
-to that same name in the enclosing function — never from line numbers — so
-editing elsewhere in the file is free, but renaming the called function, or
-inserting an *earlier* call to it in the same function, moves those cells and
-they re-initialize. That is the same accepted loss as renaming a `state`
-variable, and the orphaned cells are swept after the next frame.
+A `state` inside a function also needs its call path to survive the edit.
+The callsite id comes from the callee's name and its position among calls to
+that same name in the enclosing function, never from line numbers. Editing
+elsewhere in the file is free, but renaming the called function, or inserting
+an earlier call to it in the same function, moves those cells and they
+re-initialize. Orphaned cells are swept after the next frame.
 
-## Game API Reference
+## Game API reference
 
 ### Drawing
 
-All coordinates are in pixels. Origin (0, 0) is the top-left corner.
-Colors are RGB integers 0-255.
+Coordinates are in pixels with the origin at the top-left. Colors are RGB
+integers 0-255.
 
 ```petal
-clear(r, g, b)                              // fill background
+clear(r, g, b)                              // fill the background
 draw_rect(x, y, width, height, r, g, b)     // filled rectangle
 draw_rect_outline(x, y, w, h, r, g, b)      // rectangle outline
 draw_line(x1, y1, x2, y2, r, g, b)          // line segment
 draw_circle(cx, cy, radius, r, g, b)        // filled circle
+fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)
+fill_poly(points, r, g, b)                  // points: list of vec2 or [x, y] pairs
 draw_text(text, x, y, font_size, r, g, b)   // text string
 ```
 
-### Input
+`petal-ui` has more: rounded rectangles, ellipses, arcs, gradients, shadows,
+clipping, images, and the `ui` widget prelude. See
+[`petal-ui/README.md`](../../../petal-ui/README.md).
 
-Key names: `a`-`z`, `0`-`9`, `up`, `down`, `left`, `right`, `space`, `return`,
-`escape`, `tab`, `shift`, `ctrl`, `alt`, `backspace`.
+### The canvas persists between frames
+
+The framebuffer is only wiped when you call `clear()`. Games call `clear(...)`
+at the top of every frame and start from a blank screen.
+
+For generative art where the accumulated trace *is* the art (attractors,
+Lissajous figures, particle trails, brush strokes), don't call `clear()`
+every frame. Clear once on the first frame, guarded by a `state` flag, then
+let the image build up:
 
 ```petal
-key_down("left")       // true while key is held
-key_pressed("space")   // true only on the frame the key was first pressed
-mouse_x()              // mouse X position (pixels)
-mouse_y()              // mouse Y position (pixels)
-mouse_down(1)          // mouse button held (1=left, 2=middle, 3=right)
-mouse_pressed(1)       // true only on the frame the button was first pressed
+state started = false
+if !started then
+  clear(0, 0, 0)   // paint the background once
+  started = true
+end
+
+// Each frame draws a few more dots that stay on screen.
+draw_circle(int(x), int(y), 2, 255, 200, 80)
 ```
 
-### Timing
+See `examples/cc_lissajous_trails.ptl`.
+
+### Offscreen canvases
+
+For layered compositing, masks, and per-layer trails, draw into an offscreen
+canvas and blit it onto the screen later (like Processing's `PGraphics`).
 
 ```petal
-dt()              // seconds since last frame (float, ~0.016 at 60fps)
+// Build a stamp in a 24x24 offscreen canvas.
+let stamp = create_canvas(24, 24)   // returns a canvas handle (an int)
+draw_to(stamp)                       // redirect drawing into the canvas
+draw_rect(9, 2, 6, 20, 240, 220, 120)
+draw_rect(2, 9, 20, 6, 240, 220, 120)
+draw_to_screen()                     // back to the main framebuffer
+
+// Composite it wherever you like. Transparent pixels show the background.
+draw_canvas(stamp, 100, 50)
+draw_canvas(stamp, 200, 80)
+```
+
+An offscreen canvas starts fully transparent. Canvases are rebuilt from the
+draw stream every frame, so call `create_canvas` each frame like any other
+draw call. See `examples/cc_offscreen_layers.ptl`.
+
+### Input
+
+```petal
+key_down("left")       // true while the key is held
+key_pressed("space")   // true only on the frame the key went down
+key_released("space")  // true only on the frame the key came up
+mouse_x()              // mouse X position (pixels)
+mouse_y()              // mouse Y position (pixels)
+mouse_down(0)          // button held: 0 = left, 1 = right, 2 = middle
+mouse_pressed(0)       // true only on the frame the button went down
+mouse_released(0)      // true only on the frame the button came up
+text_input()           // text typed this frame
+```
+
+Key names are lowercase strings: `a`-`z`, `0`-`9`, `up`, `down`, `left`,
+`right`, `space`, `return`, `escape`, `tab`, `backspace`, `delete`,
+`insert`, `home`, `end`, `pageup`, `pagedown`, `shift`, `ctrl`, `alt`, `cmd`,
+`f1`-`f12`, and punctuation names such as `minus`, `equals`, `comma`,
+`period`, `slash`, `leftbracket`, `rightbracket`. An unknown name is simply
+never down.
+
+Gamepads feed the same key names, so `key_down("left")` also answers to a
+d-pad. See [design.md](design.md#gamepads) for the mapping.
+
+### Timing and screen
+
+```petal
+dt()              // seconds since last frame (float, about 0.016 at 60 fps)
 frame_count()     // total frames rendered (int)
 screen_width()    // window width in pixels
 screen_height()   // window height in pixels
 ```
 
-### Built-in functions (from Petal core)
+### Built-in functions from Petal core
 
-These are always available:
+Always available:
 
 ```petal
 // Math
@@ -140,109 +208,95 @@ split(str, sep)  join(list, sep)
 keys(record)  values(record)
 
 // I/O
-print(...)    // prints to stderr (visible in terminal)
+print(...)    // goes to stderr, so it shows in the terminal
 ```
 
-## Petal Language Quick Reference
+The full list is in the [language guide](../../../docs/language-guide.md).
 
-### Variables and state
+## Petal quick reference
 
-```petal
-let speed = 200.0         // local, reset every frame
-state score = 0           // persistent across frames
-state player_x = 400.0    // initialized once
-```
-
-At the top level each `state` name is one cell. Inside a function it is one
-cell per callsite (and per loop iteration around the call) — see
-[Where a `state` cell lives](#where-a-state-cell-lives).
-
-### Control flow
+Just enough syntax to read the examples. The
+[language guide](../../../docs/language-guide.md) has the rest.
 
 ```petal
-if condition { ... }
-if condition { ... } else { ... }
-if a { ... } else if b { ... } else { ... }
+// Variables
+let speed = 200.0         // local, recomputed every frame
+state score = 0           // persists across frames
 
-for item in list { ... }
-for i in range(0, 10) { ... }
+// Control flow: blocks end with `end`
+if x > 5 then
+    print("big")
+elsif x > 2 then
+    print("medium")
+else
+    print("small")
+end
 
-while condition { ... }
+for item in list do ... end
+for i in range(0, 10) do ... end
+while running do ... end      // break and continue work in loops
 
-// break and continue work in loops
-```
-
-### Functions
-
-```petal
-fn clamp(val, lo, hi) {
+// Functions: the last expression is the return value
+fn clamp(val, lo, hi)
     max(lo, min(val, hi))
-}
+end
 
-// Lambdas
-let double = fn(x) { x * 2 }
-```
+let double = fn(x) -> x * 2   // lambda
 
-### Collections
-
-```petal
+// Collections
 let items = [1, 2, 3]
-items[0]                  // index access
-
+items[0]
 let player = { x: 100, y: 200, health: 3 }
-player.x                  // field access
-```
+player.x
 
-### String concatenation
+// Strings: ++ concatenates, {} interpolates
+"Score: " ++ str(score)
+"Score: {score}"
 
-```petal
-"Score: " ++ str(score)   // use ++ to concat strings
-```
+// Pattern matching (match is an expression)
+let dy = match direction
+    when "up"   -> -speed
+    when "down" -> speed
+    when _      -> 0.0
+end
+y += dy * dt()
 
-### Pattern matching
-
-```petal
-match direction {
-    "up" -> y -= speed * dt()
-    "down" -> y += speed * dt()
-    _ -> {}
-}
-```
-
-### Enums
-
-```petal
-enum GameState { Playing, Paused, GameOver }
+// Enums
+enum GameState
+    Playing,
+    Paused,
+    GameOver,
+end
 state current = Playing
 
-match current {
-    Playing -> { /* update game */ }
-    Paused -> { draw_text("PAUSED", 350, 300, 32, 255, 255, 255) }
-    GameOver -> { draw_text("GAME OVER", 300, 300, 32, 255, 0, 0) }
-}
+match current
+    when Playing  -> update_game()
+    when Paused   -> draw_text("PAUSED", 350, 300, 32, 255, 255, 255)
+    when GameOver -> draw_text("GAME OVER", 300, 300, 32, 255, 0, 0)
+end
 ```
 
-## Common Patterns
+## Common patterns
 
 ### Game loop structure
 
 ```petal
-// 1. State declarations
+// 1. State
 state x = 400.0
 state y = 300.0
 state vx = 0.0
 state vy = 0.0
 
-// 2. Input handling
+// 2. Input
 let delta = dt()
-if key_down("left") { vx = -200.0 }
-if key_down("right") { vx = 200.0 }
+if key_down("left") then vx = -200.0 end
+if key_down("right") then vx = 200.0 end
 
-// 3. Physics / game logic
+// 3. Physics
 x += vx * delta
 y += vy * delta
 
-// 4. Drawing (order matters — later draws are on top)
+// 4. Drawing (later draws are on top)
 clear(0, 0, 0)
 draw_rect(int(x), int(y), 20, 20, 255, 255, 255)
 ```
@@ -250,16 +304,16 @@ draw_rect(int(x), int(y), 20, 20, 255, 255, 255)
 ### Collision detection (AABB)
 
 ```petal
-fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2) {
+fn rects_collide(x1, y1, w1, h1, x2, y2, w2, h2)
     x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2
-}
+end
 ```
 
 ### Wrapping around screen edges
 
 ```petal
 x = x % float(screen_width())
-if x < 0.0 { x += float(screen_width()) }
+if x < 0.0 then x += float(screen_width()) end
 ```
 
 ### Spawning entities with lists
@@ -269,30 +323,27 @@ state enemies = []
 state spawn_timer = 0.0
 
 spawn_timer += dt()
-if spawn_timer > 1.0 {
+if spawn_timer > 1.0 then
     spawn_timer = 0.0
     enemies = append(enemies, { x: random(0.0, 800.0), y: 0.0 })
-}
+end
 
-// Update all enemies
-enemies = map(enemies, fn(e) {
-    { x: e.x, y: e.y + 100.0 * dt() }
-})
+// Move every enemy down
+enemies = map(enemies, fn(e) -> { x: e.x, y: e.y + 100.0 * dt() })
 
-// Remove off-screen
-enemies = filter(enemies, fn(e) { e.y < 600.0 })
+// Drop the ones that left the screen
+enemies = filter(enemies, fn(e) -> e.y < 600.0)
 ```
 
-### Simple animation
+### Blinking text
 
 ```petal
 state frame = 0
 frame += 1
 
-// Blink every 30 frames
-if frame % 60 < 30 {
+if frame % 60 < 30 then
     draw_text("PRESS START", 300, 400, 24, 255, 255, 255)
-}
+end
 ```
 
 ### Random colors
@@ -303,9 +354,9 @@ let g = int(random(0.0, 256.0))
 let b = int(random(0.0, 256.0))
 ```
 
-## Debugging with Agent Protocol
+## Testing with the agent protocol
 
-Run with `--headless` for automated testing:
+Run with `--headless` to drive frames from a script:
 
 ```bash
 echo '{"cmd":"step","n":60}
@@ -313,19 +364,16 @@ echo '{"cmd":"step","n":60}
 {"cmd":"capture_draw_commands"}' | cargo run -- --headless examples/your_game.ptl
 ```
 
-See [agent-protocol.md](agent-protocol.md) for the full command reference.
+See [agent-protocol.md](agent-protocol.md) for the command reference.
 
 ## Tips
 
-- Use `float()` and `int()` to convert between types — drawing functions need
-  ints, physics calculations need floats.
-- `dt()` makes movement frame-rate independent. Always multiply velocities by
-  `dt()`.
-- Draw order matters: call `clear()` first, draw background elements, then
-  foreground elements last.
-- Use `state` for everything that needs to persist: positions, velocities,
+- Drawing functions take ints; physics wants floats. Convert with `int()`
+  and `float()`.
+- Multiply velocities by `dt()` so movement is frame-rate independent.
+- Draw order matters: `clear()` first, background next, foreground last.
+- Use `state` for everything that must persist: positions, velocities,
   scores, entity lists, timers, game phase.
-- String concatenation uses `++`, not `+`.
-- Lists are immutable: `append(list, val)` (and the deprecated `push`) return a
-  **new** list rather than mutating — write `xs = append(xs, val)`. `map()` /
-  `filter()` also return new lists.
+- Strings concatenate with `++`, not `+`.
+- Lists are immutable. `append`, `map`, and `filter` return new lists, so
+  write `xs = append(xs, val)`.

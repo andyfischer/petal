@@ -32,10 +32,7 @@ node tools/vim-parity/fuzz.ts --port 8091 --count 200 --seed 1 --tier undo
 ```
 
 `--out report.json` writes the full clustered report as JSON. `--seed` makes a
-run reproducible — though only against this fuzzer: the generator was ported
-from Python and its RNG is a different one, so a seed does not reproduce the
-cases the retired `fuzz.py` drew. See `FINDINGS.md` for the bugs a first pass
-turned up.
+run reproducible.
 
 ### Tiers
 
@@ -47,43 +44,35 @@ turned up.
 - **undo**: self-contained `u` / `<C-R>` tests. Each program does *k* edits then
   at most *k* undos, so undo never reaches past the program's own changes.
 
-## Why it is built the way it is
+## How the oracle works
 
-Getting a *trustworthy* oracle was most of the work. The non-obvious decisions:
+Getting a trustworthy oracle was most of the work. The decisions that matter:
 
-- **`feedkeys(keys, 'ntx')`, one process per case.** The keys are processed
-  *as if typed interactively* (`t`), with no remapping (`n`), and the call
-  blocks until the whole typeahead is consumed (`x`). This is the faithful model
-  of a user typing: a motion that beeps (e.g. `b` at column 0) does **not**
-  discard the following keystrokes, and pending operator/count state carries
-  across keys. One process per case also makes cases hermetic — no
-  mode/register/undo bleed between them.
-  - **Why not `nvim -s scriptfile`?** An earlier version of this oracle replayed
-    keystrokes with `-s`. It is faithful for motions/operators/paste, but it
-    **over-joins the undo history**: it does not break an undo block at
-    Insert-mode `<Esc>` the way interactive typing does, so `Ax<Esc>Ay<Esc>u`
-    collapses *both* inserts into one block and a single `u` wrongly undoes both.
-    That produced a flood of false undo-tier divergences (Garden was right, the
-    oracle was wrong). `feedkeys('ntx')` reproduces real vim's per-insert-session
-    undo blocks. The two oracles were cross-checked and **agree on 300 core + 300
-    paste cases**, differing only on the undo tier — run `node
-    tools/vim-parity/oracle-xcheck.ts {core,paste,undo}` to reproduce. (`nvim_feedkeys(...,'x')` — the RPC form
-    without `t` — is a third option that gets the beep/isolation cases wrong; the
-    vimscript `feedkeys` with the `t` flag does not.)
-- **`-u NONE` is too bare — it flips `startofline` OFF.** Real Vim lands
-  `gg`/`G`/`dd`/`C` on the first non-blank; `-u NONE` keeps the column. The
-  oracle sets `startofline` back on (and `whichwrap=` to match Garden's
-  deliberate non-wrapping `h`/`l`/Space/`BS`). Without this fix the oracle
-  disagreed with real Vim and produced a flood of false cursor divergences.
-- **Move-aware delta-debugging.** Each divergence is minimized by dropping whole
-  semantic *moves*, never splitting a move. Splitting at the token level would
-  turn insert-mode payload (a typed Space or `)`) into a normal-mode command and
-  manufacture fake findings.
-- **Cross-test state is fenced off, not ignored.** Garden reuses one pane, so
-  its unnamed register and undo history persist across the buffer reset (a fresh
-  Vim process has neither). `p`/`P`/`u`/`<C-R>` are therefore excluded from the
-  core tier and moved to dedicated tiers whose programs establish their own
-  register / undo state before using it.
+- **`feedkeys(keys, 'ntx')`, one nvim process per case.** Keys are processed
+  as if typed interactively (`t`), with no remapping (`n`), and the call blocks
+  until the typeahead is consumed (`x`). This matches a real user: a motion
+  that beeps (`b` at column 0) does not discard the following keys, and
+  pending operator/count state carries across keys. One process per case keeps
+  cases hermetic.
+  - `nvim -s scriptfile` was tried first. It is faithful for motions,
+    operators, and paste, but it does not break an undo block at Insert-mode
+    `<Esc>`, so `Ax<Esc>Ay<Esc>u` wrongly undoes both inserts. That produced
+    false undo-tier divergences. `node tools/vim-parity/oracle-xcheck.ts
+    {core,paste,undo}` cross-checks the two oracles; they agree on core and
+    paste and differ only on undo.
+- **`-u NONE` turns `startofline` off.** Real Vim lands `gg`/`G`/`dd`/`C` on
+  the first non-blank; `-u NONE` keeps the column. The oracle sets
+  `startofline` back on, and `whichwrap=` to match Garden's non-wrapping
+  `h`/`l`/Space/`BS`.
+- **Move-aware delta-debugging.** Each divergence is minimized by dropping
+  whole semantic moves, never splitting one. Splitting at the token level would
+  turn insert-mode text into normal-mode commands and manufacture fake
+  findings.
+- **Cross-test state is fenced off.** Garden reuses one pane, so its register
+  and undo history persist across the buffer reset, while a fresh Vim process
+  has neither. `p`/`P`/`u`/`<C-R>` are therefore excluded from the core tier
+  and given their own tiers, whose programs set up their own register and undo
+  state first.
 
 ## Known intentional differences (excluded, not bugs)
 

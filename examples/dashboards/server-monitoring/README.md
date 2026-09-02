@@ -44,6 +44,10 @@ at other sizes.
 
 ## Run
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/dashboards/server-monitoring
 GARDEN_HEADLESS_SIZE=1440x900 \

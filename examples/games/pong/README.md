@@ -13,6 +13,10 @@ the footer chip row were tuned at 1040 × 720.
 
 ## Run it
 
+The quickest way is `./launch.sh` in this directory (it finds the `garden`
+binary and sets the viewport; extra arguments are passed through, e.g.
+`./launch.sh --headless --debug-port 0`). By hand:
+
 ```bash
 cd examples/games/pong
 

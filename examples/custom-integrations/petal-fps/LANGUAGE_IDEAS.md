@@ -1,260 +1,170 @@
-# Petal Language Improvement Ideas
+# Petal language ideas from petal-fps
 
-Notes accumulated while building petal-fps, a 3D FPS in Petal. Each entry
-includes the friction it would relieve and a sketch of the proposed fix.
+Friction found while building petal-fps, a 3D shooter in Petal. Each entry
+notes the problem and a possible fix. Entries marked **Shipped** have since
+landed in the language; the rest are still open.
 
 ---
 
 ## 1. Built-in `vec3` (and `mat3`/`mat4`)
 
-**Friction**: `vec2` exists but a 3D game wants 3D vectors *everywhere*.
-Currently every position, velocity, ray, and triangle vertex is a record
-`{x, y, z}` and every operation is hand-inlined: `let dx = a.x - b.x; let dy =
-a.y - b.y; let dz = a.z - b.z;`. That's ~3× the code and obscures intent.
+**Open.** `vec2` exists, but a 3D game wants 3D vectors everywhere. Every
+position, velocity, ray, and vertex is a `{x, y, z}` record, and every
+operation is written out by hand (`let dx = a.x - b.x; let dy = ...`).
 
-**Proposed**:
-```petal
-let p = vec3(1.0, 2.0, 3.0)
-let v = p + other_vec3       // operator overload like vec2 already has
-let n = normalize(v)
-let d = dot(v, n)
-let c = cross(a, b)
-let len = mag(v)
-```
-Plus `mat4` with `mat4_translate`, `mat4_rotate_y`, `mat4_perspective`,
-`mat4_mul`, `mat4_apply(m, vec3)`. With these, the entire camera/projection
-math in petal-fps would shrink from ~40 lines to ~8.
+Proposed: `vec3(x, y, z)` with operators like `vec2`, plus `normalize`, `dot`,
+`cross`, `mag`, and a `mat4` with translate/rotate/perspective/multiply/apply.
+The camera and projection code would shrink from about 40 lines to 8.
 
 ---
 
-## 2. `state` keyword inside functions doesn't work as you'd hope  *(SHIPPED)*
+## 2. `state` inside functions — **Shipped**
 
-**Friction**: I want to define `fn project(p)` that uses `cy_, sy, focal`
-computed once per frame from camera state. Today I have to hoist those
-computations to the top-level scope so the closure captures them. If I put
-them inside a function I'd recompute every call.
+Wanted: a per-frame cache inside `fn project(p)` for values derived from the
+camera, without hoisting them to top level.
 
-**Status**: Both halves of this are answered — the keying one by a language
-change, the caching one by an idiom that change made sound.
-
-The headline complaint was that a `state` inside a function was not really
-*inside* it: the slot was keyed by the variable's name alone, so every callsite
-shared one cell and two functions that happened to pick the same name silently
-shared it too. A slot is now `(declaration, call path)` — the declaration id
-comes from the full name path (module, enclosing functions, variable, shadow
-ordinal) and the path from the callsites and loop iterations that reached it. So
-a `state` in a helper gets one cell per callsite, and per iteration of a loop
-around the call, with nothing hoisted to keep them apart. Top-level `state` is
-unchanged: the path is empty there, so a name is one cell for the program.
-
-The per-frame cache the Friction actually wanted is the third option in the
-original proposal, and it needs no new syntax. An explicit key is **absolute** —
-it ignores the call path entirely — and §18's lazy init only evaluates the
-init expression on a key *miss*, so keying on the frame counter gives a value
-computed once per frame and reused by every call that frame:
+A `state` slot is now keyed by its declaration and the call path that reached
+it, so a `state` in a helper gets one cell per callsite (and per loop
+iteration). An explicit key ignores the call path, and the init expression
+only runs on a key miss, so keying on the frame counter gives a once-per-frame
+cache:
 
 ```petal
 state frame = 0
 frame = frame + 1
 
 fn project(p)
-  state(frame) cam = camera_basis()   // runs once per frame…
-  ...                                 // …every call this frame reuses it
+  state(frame) cam = camera_basis()   // computed once per frame
+  ...
 end
 ```
 
-The run-completion sweep drops the previous frame's key, so the cache does not
-grow: exactly one live slot at a time. (Checked with a printing init and two
-calls per frame — one "compute" line per frame, and one `k…/cam` slot in the
-state dump.)
-
-See `docs/dev/state-call-paths.md` for the model and
-`rust/tests/state_call_paths.rs` for the contract.
-
-**Proposed (original)**: A `cached(expr)` form or a memoization decorator
-`@cached_per_frame fn ...`. Or expose `frame_count()` as a key so per-frame
-caches are first-class. Or just a `let` evaluated lazily once.
+See `docs/dev/state-call-paths.md`.
 
 ---
 
-## 3. Function overloading is invisible without checking the runtime
+## 3. Overloading is invisible in the source
 
-**Friction**: The platformer example does:
-```petal
-let _draw_line = draw_line
-fn draw_line(x1,y1,x2,y2,r,g,b) { _draw_line(x1,y1,x2,y2,r,g,b) }
-fn draw_line(a, b, color) { _draw_line(a.x,a.y,b.x,b.y,color.r,color.g,color.b) }
-```
-This pattern works but is opaque; you can't tell from the source whether the
-"second `fn`" is a redefinition or an arity-overload.
-
-**Proposed**: Explicit overload syntax: `fn draw_line/3(...) { }` and
-`fn draw_line/7(...) { }`. Or: pattern-match on first arg type so a single
-function dispatches.
+**Open.** Petal overloads by arity (see `docs/function-overloading.md`), but
+reading two `fn draw_line(...)` definitions you cannot tell whether the second
+replaces the first or adds an overload. Proposed: explicit syntax such as
+`fn draw_line/3(...)`.
 
 ---
 
-## 4. No tuple destructuring on assignment
+## 4. Destructuring on assignment
 
-**Friction**: Want to swap two values, return a pair, etc. Currently I have to
-return a record or use a temp.
-
-**Proposed**: `let {a, b} = some_record` or `let (x, y, z) = vec3_tuple(v)`.
-
----
-
-## 5. `for i in range(0, n)` re-evaluates `range(0, n)` to allocate a list
-
-**Friction**: For tight inner loops (rasterizing 100s of buildings) we
-allocate temporary lists. A `for i = 0; i < n; i += 1` C-style form would
-avoid that, or `range` could return an iterator, not a list.
+**Open.** `match` can destructure lists (`when [head, ...tail]`), but there is
+no `let {a, b} = record` or `let [x, y, z] = list`. Swapping two values or
+returning a pair needs a temporary or a record.
 
 ---
 
-## 6. Per-iteration state in loops  *(SHIPPED)*
+## 5. `range(0, n)` allocates a list
 
-**Status**: The explicit-key form `state(enemy.id) hp_anim = enemy.hp`
-keys per-iteration state by a domain identifier — survives reordering and
-item removal. Lazy init (§18) means the init RHS only fires on first
-encounter of each key, and the run-completion sweep drops state for
-keys whose item was removed from the list. See
-`docs/dev/Architecture.md` (the "State" section), `ts/test/loop-state.test.ts`
-and `ts/test/state-lazy-init.test.ts` for the contract.
-
-**Update (call-path keying)**: the unkeyed form is now part of the *defined*
-model rather than an accident of the implementation. A slot is
-`(declaration, path)`, and each loop iteration contributes an `Index` part to
-that path — so `for x in items do state n = … end` is one cell per index, and
-so is a `state` declared inside a function *called from* the loop:
-`for e in enemies do draw_enemy(e) end` gives each iteration its own cells
-inside `draw_enemy` without the helper being changed at all. That is the
-per-iteration state this entry wanted, now reaching through calls.
-
-Because an `Index` part is a position by construction, the reorder caveat
-stands, and it is deliberate rather than a wart: an unkeyed cell belongs to the
-*slot* in the list, not to the item that happened to be there. `state(x.id) n =
-…` remains the answer when it should belong to the item — an explicit key is
-absolute, so it ignores the loop index and the call path alike and follows the
-item across a reorder, a removal, or a move into a different helper.
+**Open.** `for i in range(0, n)` builds a list each time. In tight inner loops
+(rasterizing hundreds of buildings) that is wasted work. A lazy range or a
+C-style counted loop would avoid it.
 
 ---
 
-## 7. `match` on records would be lovely
+## 6. Per-iteration state in loops — **Shipped**
 
-**Friction**: Today match works on enums. For a record-based entity system,
-a guard chain like `if e.kind == "bullet" { ... } else if e.kind == "enemy"`
-gets repetitive.
-
-**Proposed**: `match e { {kind: "bullet", ...} -> ...; {kind: "enemy", hp} -> ... }`
-
----
-
-## 8. Named-argument calls
-
-**Friction**: `triangle3d(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)` —
-twelve positional args. Easy to swap z2 and z3 by accident, and the code is
-unreadable.
-
-**Proposed**: Accept a single record literal: `triangle3d({v1: vec3(...),
-v2: vec3(...), v3: vec3(...), color: rgb(255,0,0)})`. Or named keyword args:
-`triangle3d(v1=..., v2=..., v3=..., color=...)`.
+An unkeyed `state` inside a loop body, or inside a function called from the
+loop, gets one cell per iteration index. `state(item.id) hp = item.hp` keys by
+a domain identifier instead, so the cell follows the item across reorders and
+removals. See `docs/dev/state-call-paths.md`.
 
 ---
 
-## 9. Hot reload state preservation for `state x = []` (lists)
+## 7. `match` on records
 
-**Friction**: Open question — when I edit the source file mid-game, does the
-`enemies` list get preserved? Per the docs it should, since name-based keys
-work. Worth verifying with a deliberate reload mid-frame.
-
----
-
-## 10. A `time()` builtin that returns seconds since program start
-
-**Friction**: `frame_count() * dt()` doesn't work because `dt()` varies; today
-you have to accumulate `state t = 0; t += dt()` everywhere.
+**Open.** `match` handles enums, literals, and list patterns, but not record
+patterns. A record-based entity system falls back to `if e.kind == "bullet"
+... else if e.kind == "enemy" ...` chains. Proposed:
+`match e when {kind: "bullet"} -> ... when {kind: "enemy", hp} -> ...`.
 
 ---
 
-## 11. Better error locations for native function arg mismatches
+## 8. Named arguments — **Shipped**
 
-**Friction**: When I called `triangle3d` with the wrong arg count or type, I
-got a generic "Expected float at arg N, got int" which doesn't reference my
-.ptl source line. Adding a stack trace from the Petal call site would be
-huge for live game-dev.
+`triangle3d(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)` was twelve positional
+arguments. Calls can now name their arguments; see "Named Arguments" in
+`docs/language-guide.md`.
 
 ---
 
-## 12. `print` lacks formatting / flush control
+## 9. Hot reload of list-valued `state`
 
-**Friction**: For HUD-style live debugging, I'd want `printf("hp=%d pos=(%.2f,%.2f)", hp, px, pz)`. Today: `print("hp=" ++ str(hp) ++ " pos=(" ++ str(px) ++ "," ++ str(pz) ++ ")")`. The `++` chain is ugly.
+**Open question.** Whether `state enemies = [...]` survives a mid-game source
+edit has not been checked deliberately. It should, since slots are keyed by
+declaration rather than source position.
 
-**Proposed**: String interpolation with format specs: `print($"hp={hp} pos=({px:.2},{pz:.2})")`.
+---
+
+## 10. Seconds since program start — **Shipped**
+
+`time()` (from `petal-ui`) returns an absolute clock in seconds, read from the
+host each frame rather than summed from `dt()`. The prelude's `elapsed()`
+returns seconds since its callsite was first reached.
+
+---
+
+## 11. Better error locations for native argument mismatches
+
+**Open.** Calling `triangle3d` with the wrong argument count or type gives
+"Expected float at arg N, got int" with no reference to the `.ptl` line. A
+stack trace from the Petal call site would help a lot during live editing.
+
+---
+
+## 12. String formatting — **Partly shipped**
+
+String interpolation shipped: `print("hp={hp} pos=({px},{pz})")`. Format
+specs such as `{px:.2}` are still open.
 
 ---
 
 ## 13. Built-in physics primitives
 
-**Friction**: AABB intersection, ray-vs-AABB, ray-vs-sphere are the same in
-every game. Could be standard library: `aabb_overlap(a, b)`, `ray_aabb_hit(origin, dir, box)`.
+**Open.** AABB overlap, ray-vs-AABB, and ray-vs-sphere are the same in every
+game and could live in the standard library.
 
 ---
 
-## 14. `fn` as a value isn't easy to put in a record
+## 14. Functions as record fields
 
-**Friction**: For component-style entity behavior (each enemy has a `.update`
-function), I'd want `{kind: "robot", update: fn(self, dt) { ... }}`. Need to
-verify whether this round-trips through hot reload.
-
----
-
-## 15. Lack of `f32` — everything is `f64`
-
-**Friction**: Native triangle_3d signatures take `f32`s for performance, so
-`get_float` truncates. For a CPU rasterizer this is the right tradeoff but
-worth surfacing.
+**Open question.** Component-style entities (`{kind: "robot", update: fn(self,
+dt) ... end}`) should work since functions are values, but whether such records
+round-trip through hot reload has not been verified.
 
 ---
 
-## 16. Scientific notation numeric literals (`1e9`, `2.5e-3`)
+## 15. No `f32`
 
-**Friction**: Wrote `let best_t = 1e9` as a sentinel "very large" value for a
-closest-hit raycast. Petal parses this as the token `1` followed by an
-identifier `e9`, so it produced `Undefined variable: e9` at runtime. I had
-to write `1000000.0` instead, which is visually harder to parse.
-
-**Proposed**: Lex `1e9`, `2.5e-3`, `6.02e23` as float literals — same rule as
-most languages. Should be a small lexer change.
+**Note.** All floats are `f64`. The native `triangle3d` signatures take `f32`
+for rasterizer speed, so values are narrowed on the way in. This is the right
+tradeoff; it is just worth knowing.
 
 ---
 
-## 17. `now()` / timer that agents can reset
+## 16. Scientific notation literals — **Shipped**
 
-**Friction**: In `--screenshot` mode the scene is frozen at the first frame.
-No wall-clock is advancing so `dt()` yields 1/60 forever, but there's no
-`time_since_start()` that would let animations (muzzle flash, neon pulse)
-be reproducible. Today I keep `state muzzle = 4; if muzzle > 0 { muzzle -= 1 }`
-which works but would be cleaner as `time() mod cycle`.
+`1e9`, `2.5e-3`, and `2E+4` lex as float literals.
 
 ---
 
-## 18. `state` initialization expression is evaluated every frame  *(SHIPPED)*
+## 17. Reproducible time in `--screenshot` mode — **Shipped**
 
-**Friction**: I wrote `state enemies = [{...}, {...}, ...]` (a 8-element
-literal). The RHS is evaluated every frame — the "first time" check only
-decides whether to *use* the result, but allocates records+lists regardless.
-For a large level-geometry literal (the 12 buildings in fps_game.ptl), this
-is wasted work.
+Headless, screenshot, and record runs bind `time()` from a fixed clock
+(`frame_count / 60`) instead of the wall clock, so time-based animations
+(muzzle flash, neon pulse) are reproducible frame for frame. See
+`ClockSource` in `integrations/petal-desktop-sdl/src/protocol.rs`.
 
-**Status**: Fixed. `StateInit` is now a control-flow term whose init
-expression lives in `child_blocks[0]`. The runtime checks the persistent
-store first and only pushes the init block on a cache miss, so the RHS
-never re-evaluates after the first frame. See
-`docs/Architecture.md` (the "State" section) and the regression coverage
-in `ts/test/state-lazy-init.test.ts` and
-`rust/tests/state_lifecycle.rs`.
+---
 
-**Proposed (original)**: Skip RHS evaluation entirely when the state key is already
-set. Would require the compiler to emit a conditional around the init
-expression, guarded by the StateInit presence check — the information is
-already there in the IR.
+## 18. `state` init expression evaluated every frame — **Shipped**
+
+The init expression now runs only when the slot is missing from the persistent
+store, so a large `state enemies = [...]` literal is built once. Covered by
+`rust/tests/state_lifecycle.rs` and `ts/test/state-lazy-init.test.ts`.

@@ -5,7 +5,7 @@
 use serde_json::{Value as Json, json};
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst};
-use crate::program::Program;
+use crate::program::{Program, base_fn_name};
 
 /// Render a lowered program as annotated text, one function per section.
 pub fn render_text(bc: &BytecodeProgram, program: &Program) -> String {
@@ -43,7 +43,9 @@ fn render_fn_text(out: &mut String, f: &BytecodeFn, program: &Program) {
 
 fn name_suffix(name: &Option<String>) -> String {
     match name {
-        Some(n) => format!(" {}", n),
+        // An overload variant is `box#1` internally; the listing names the
+        // function as the source wrote it.
+        Some(n) => format!(" {}", base_fn_name(n)),
         None => String::new(),
     }
 }
@@ -456,7 +458,7 @@ fn fn_json(f: &BytecodeFn, program: &Program) -> Json {
         .collect();
     json!({
         "fn": f.func_id.map(|id| id.0),
-        "name": f.name,
+        "name": f.name.as_deref().map(base_fn_name),
         "reg_count": f.reg_count,
         "loop_slots": f.loop_slots,
         "param_regs": f.param_regs,

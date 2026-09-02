@@ -1,198 +1,210 @@
 # Petal CLI Reference
 
-The `petal` binary provides commands for running programs, validating syntax, inspecting each compiler stage (tokens, AST, IR), and querying the dataflow graph.
+The `petal` binary runs programs, checks them without running, tidies source,
+dumps each compiler stage (tokens, AST, IR, bytecode), and answers questions
+about a program's dataflow.
 
 ## Usage
 
 ```
 petal <command> [options] <file>
-petal <command> [options] -e <code>
+petal <command> [options] -e '<code>'
+petal <file>                      # same as: petal run <file>
+petal help <command>              # the manual page for one command
+petal --version
 ```
 
-### Shorthand
+### Common options
 
-```
-petal <file>           # same as: petal run <file>
-```
+Every command that compiles a program accepts these:
 
-To execute inline code, use the `-e` flag on a subcommand, e.g. `petal run -e <code>`.
+- `-e '<code>'` — read the program from the command line instead of a file.
+- `-I <dir>` — add a module search directory. Repeatable. `import util` also
+  looks in the importing file's directory and in the directories listed in
+  the `PETAL_PATH` environment variable.
 
 ### Commands at a glance
 
 | Command | Purpose |
 |---------|---------|
 | `run` | Execute a program |
-| `check` | Lex + parse + compile + lower only (no execution) |
-| `lint` | Normalize source formatting and idioms (`--fix` / `--check`) |
+| `check` | Compile without executing |
+| `lsp` | Serve the language server over stdio |
+| `lint` | Report or apply source normalization |
 | `lint-fix` | `lint --fix <file>` under its own name |
-| `ir-equal` | Compare two files' compiled IR, ignoring spans and layout |
-| `lsp` | Serve the language server over stdio (editors spawn this) |
-| `explain` | Run with trace, walk back from a term to its ancestors |
-| `pending-report` | Run, then report every live pending resource |
+| `ir-equal` | Compare two files' compiled IR |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
 | `show-ir` | Compiled IR (term graph) |
-| `show-bytecode` | Bytecode lowering of the IR (see [Architecture.md](dev/Architecture.md) for the backend split) |
+| `show-bytecode` | Bytecode lowering of the IR |
+| `show-graph` | Dataflow graph as Graphviz DOT |
+| `explain` | Run, then show the value chain that produced a term |
 | `show-provenance` | Backward dataflow slice from a term |
 | `show-dependents` | Forward dataflow slice from a term |
-| `show-slice` | Dataflow subgraph for one or more targets |
-| `show-graph` | Graphviz DOT-format dataflow graph |
+| `show-slice` | Minimal dataflow subgraph for one or more targets |
+| `pending-report` | Run, then report every live pending resource |
+| `propose-edit` | Propose source edits that change an emitted value |
 
-All inspection commands support `--json` for machine-readable output. `run`
-additionally supports `--trace` and `--record-trace <path>` to capture a
-per-term execution trace.
+Every command except `lsp`, `lint`, `lint-fix` and `show-graph` accepts
+`--json` for machine-readable output.
 
 ## Commands
 
 ### `run` — Execute a program
 
 ```
-petal run [--json] [--trace] [--record-trace <path>] [--observe] [--ir] [--no-opt] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] <file.ptl>
-petal run [--json] [--trace] [--record-trace <path>] [--observe] [--no-opt] [--dup-stats] [--trace-pending] [--seed <n>] [--error-format full|bare] -e '<code>'
+petal run [options] <file.ptl>
+petal run [options] -e '<code>'
+petal <file.ptl>
 ```
 
-Runs the program and prints any output to stdout. Exits with code 1 on error.
+Compiles the program and runs it. Output goes to stdout. Exits 1 on error.
 
-Flags:
+```
+$ petal run -e 'print(1 + 2)'
+3
+```
 
-- `--json` — emit errors as structured JSON instead of a human-readable
-  message. Shape: `{message, line, column, caused_by[], stack[], phase}`, plus
-  an `errors[]` array for front-end failures. See
-  [Error phases](#error-phases) for what `phase` can say.
-- `--trace` — write per-term execution events to stderr (inputs + result
-  + source location) as they happen.
-- `--record-trace <path>` — write the full trace buffer to `<path>` as JSON
-  after the run completes. Useful for offline analysis and for feeding
-  `petal explain`. Environment variable `PETAL_DEBUG=1` enables tracing
-  without the flag.
-- `--observe` — after the run, dump the last value bound to every named
-  variable. Names are function-qualified: a top-level `sel` is `sel`, a `sel`
-  inside `fn list_row` is `list_row.sel`, so the two are separate keys rather
-  than one shadowing the other. Only function bodies qualify — an `if` arm or a
-  loop body does not. One slot per binding, last write wins, so a loop temp
-  reports its **final** iteration; use `--record-trace` / `explain` when you
-  need the history instead. A binding whose term never executed is absent, not
-  null.
+Options:
 
-  The dump goes to stdout after a blank line and an `Observed values (N):`
-  header, one aligned `name = value` line each, sorted by name. With `--json`
-  it is a single object instead. It is printed **even when the program fails**
-  — the values bound before the error are the point — and in `--json` mode it
-  rides on the error object as an `observations` field, keeping stdout a single
-  JSON document. A failing run still exits 1.
-- `--ir` — load `<file>` as JSON IR (the output of `show-ir --json`) instead
-  of source; use `-` to read from stdin, e.g.
-  `petal show-ir --json -e '<code>' | petal run --ir -`.
-- `--no-opt` — disable optimizations and run the clone-and-alloc baseline
-  (no in-place mutation). Environment variable `PETAL_OPT=off` has the same
-  effect.
-- `--dup-stats` — print value-duplication and heap allocation stats to stderr
-  after the run (debug builds / `dup-stats` feature).
-- `--trace-pending` — record pending absorptions and print the frame pending
-  report to stderr after the run. Environment variable `PETAL_TRACE_PENDING=1`
-  also enables it. For the report as the primary output, see
-  [`pending-report`](#pending-report--report-live-pending-resources).
+- `--json` — emit errors as structured JSON:
+  `{message, line, column, caused_by[], stack[], phase}`, plus an `errors[]`
+  array for front-end failures. See [Error phases](#error-phases). With
+  `--observe` or `--trace-emits`, those reports are JSON too.
+- `--error-format full|bare` — how errors print on stderr. `full` (the
+  default) is `Error: <message> [line N, column M]` followed by the source line
+  and a caret. `bare` prints only the message, so two sources that differ only
+  in layout fail identically (see
+  [refactor verification](dev/refactor-verification.md)). `--json` output is
+  unaffected.
+- `--ir` — load `<file>` as JSON IR (the output of `show-ir --json`) instead of
+  source. Use `-` to read from stdin:
+  `petal show-ir --json -e 'print(42)' | petal run --ir -`.
 - `--seed <n>` — seed the random-number generator, so `random`, `random_int`
-  and `choose` replay identically across invocations. Decimal or `0x`-hex; 0 is
-  remapped (xorshift has no zero state). Without it the seed comes from the
-  wall clock and two runs of the same program differ.
+  and `choose` replay identically. Decimal or `0x`-hex. Without it the seed
+  comes from the clock. `PETAL_SEED=<n>` does the same for every command; the
+  flag wins when both are set.
+- `--no-opt` — skip the optimizer. Output must be identical either way, so a
+  difference is a bug in an optimization pass. `PETAL_OPT=off` does the same.
 
-  The environment variable `PETAL_SEED=<n>` does the same for **every** command
-  and every embedder (`petal-ui`'s headless harness, garden) with no code
-  change; the flag wins when both are set. Embedders can also call
-  `Env::set_seed(n)` before the first run — the seed is applied once and the
-  PRNG then advances naturally across runs, frames and forks, so a whole
-  session replays rather than every frame drawing the same numbers.
-- `--error-format <full|bare>` — how errors are printed on stderr. `full`
-  (the default) is `Error: <message> [line N, column M]` followed by the
-  echoed source line and a caret. `bare` prints only the message text: no
-  `Error:` prefix, no position suffix, no snippet — so two sources that differ
-  only in indentation or blank lines fail *identically*. That is what makes
-  before/after diffing of a mechanical refactor meaningful (see
-  [refactor verification](dev/refactor-verification.md)). Position stripping is
-  the same step the `--json` error object uses for its `message` field.
-  `check` accepts the flag too; `--json` output is unaffected.
+Tracing and inspection options:
 
-### `check` — Validate without running
+- `--trace` — write per-term execution events to stderr as they happen.
+  `PETAL_DEBUG=1` does the same.
+- `--record-trace <path>` — write the full execution trace to `<path>` as JSON
+  after the run.
+- `--observe` — after the run, dump the last value bound to every named
+  variable. Names are function-qualified: a `b` inside `fn f` is `f.b`, so it
+  does not collide with a top-level `b`. One slot per binding, last write wins,
+  so a loop variable reports its final value. A binding that never executed is
+  absent.
+
+  ```
+  $ petal run --observe -e 'let a = 1
+  fn f(y)
+    let b = y * 2
+    b
+  end
+  print(f(a))'
+  2
+
+  Observed values (3):
+    a   = 1
+    f   = "<function>"
+    f.b = 2
+  ```
+
+  The dump is printed even when the run fails, since the values bound before
+  the error are the point. With `--json` it is a single object; on a failing
+  run it rides on the error object as an `observations` field. A failing run
+  still exits 1.
+- `--trace-emits` — attribute every buffered emit (`push_output`, draw
+  commands) to the call that produced it, and dump the values with their call
+  sites and per-argument edit info after the run. This is the observing half of
+  [`propose-edit`](#propose-edit--propose-source-edits-that-change-an-emitted-value);
+  see [direct-manipulation.md](direct-manipulation.md).
+- `--trace-pending` — record pending absorptions and print the frame pending
+  report to stderr after the run. `PETAL_TRACE_PENDING=1` does the same. For
+  the report as the main output, see
+  [`pending-report`](#pending-report--report-live-pending-resources).
+- `--profile` — count instructions, builtin calls and collections during the
+  run and print the histogram to stderr.
+- `--dup-stats` — print value-duplication and heap allocation stats to stderr
+  after the run. Debug builds / the `dup-stats` feature only.
+
+### `check` — Compile without running
 
 ```
 petal check [--json] [--strict] [--ir] [--error-format full|bare] <file.ptl>
 petal check [--json] [--strict] [--error-format full|bare] -e '<code>'
 ```
 
-Lex, parse, compile, and lower the program to bytecode but do not execute it.
-Exits 0 if all of that succeeds, 1 otherwise. Lowering is part of the check on
-purpose: a program can compile cleanly and still fail to lower, and `check` is
-what CI and editors call, so stopping at compile would report a green build for
-a program that aborts on first run.
+Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 0
+when all of that succeeds and 1 when it does not. This is the cheap gate for
+editors and CI.
 
-Flags:
+Options:
 
-- `--strict` — see below.
-- `--error-format <full|bare>` — as on
-  [`run`](#run--execute-a-program): `bare` prints just the message, with no
-  position suffix and no caret block.
-- `--ir` — check `<file>` as JSON IR (the output of `show-ir --json`) instead
-  of source; use `-` to read from stdin, exactly as
-  [`run --ir`](#run--execute-a-program) does. The IR is validated
-  structurally, then lowered — so a third-party IR emitter can be
-  CI-validated without running its output:
-  `emit-my-ir | petal check --json --ir -`. A load failure here comes from
-  the IR deserializer rather than the front end and is reported with
-  `"phase": "parse"`, matching `run --ir`; a graph that imports but cannot be
-  lowered is reported with `"phase": "lower"`.
+- `--json` — emit errors and warnings as JSON. On success:
+  `{"ok": true, "warnings": [...]}`, each warning
+  `{message, line, column, file}` (`file` is `null` for the entry file). On a
+  hard failure: `{message, line, column, phase, errors, ...}` — see
+  [Error phases](#error-phases).
+- `--strict` — exit 1 when there are warnings. Plain `check` exits 0 for a
+  program that only has warnings.
+- `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
+  with `run --ir`. The IR is validated, then lowered, so a third-party IR
+  emitter can be checked without running its output:
+  `emit-my-ir | petal check --json --ir -`. A load failure is reported with
+  `"phase": "parse"`; IR that loads but cannot be lowered gets `"phase": "lower"`.
+- `--error-format full|bare` — as on [`run`](#run--execute-a-program).
 
-The compile step runs the optional type checker (see
+#### Warnings
+
+Compiling runs the optional type checker (see
 [Type Annotations](language-guide.md#type-annotations)). Its findings are
-**non-fatal warnings** and do not change the exit code: in text mode they print
-to stderr with a source caret; with `--json` they appear as a `warnings` array
-(`check` still exits 0). Pass `--strict` to make any warning force a non-zero
-exit — useful for CI — while `run` and plain `check` stay 0.
+warnings: they print to stderr with a source caret, or appear in the `warnings`
+array with `--json`, and do not change the exit code unless `--strict` is set.
 
-That includes calls the program could never resolve — `f(1)` where every `f`
-takes two arguments — which `run` reports as a hard error the moment the call
-executes. `check` reports them up front, so `--strict` catches them without
-running the program.
+```
+$ petal check -e 'let x: int = "s"'
+warning: type mismatch: `x` declared `int` but assigned `string`
+ --> [line 1, column 14]
+  |
+1 | let x: int = "s"
+  |              ^^^
+$ echo $?
+0
+```
 
-With `--json`, emits `{"ok": true, "warnings": [...]}` on success (each warning
-is `{message, line, column, file}`, where `file` is `null` for the entry file),
-or `{message, line, column, phase, errors, ...}` on a hard failure — see
-[Error phases](#error-phases).
-
-#### Compile-time lints
-
-The same `warnings` channel carries a handful of checks that are not about
-types: a discarded pure call (`push(xs, x)` whose new list is thrown away), a
-function that captures a module `state` rebound below it (one run behind), and
-a call to a declaration further down the file that could not be hoisted.
-
-Lints follow the same rules as every other warning: non-fatal, on stderr in
-text mode, in the `warnings` array with `--json`, and turned into a non-zero
-exit by `--strict`.
-
-Faster than `run` when you only care about syntactic validity and type
-annotations.
+The same channel carries a few lints that are not about types: a discarded
+pure call (`push(xs, x)` whose result is thrown away), a function that captures
+a module `state` rebound below it, a call to a declaration further down the
+file that could not be hoisted, and a call no overload could accept (`f(1)`
+where every `f` takes two arguments). `run` reports that last one as a hard
+error only when the call executes; `check --strict` catches it up front.
 
 #### Error phases
 
-Every `--json` error object carries a `phase` saying which stage rejected the
-program. It is reported by the stage that raised the error, not inferred from
-the message text, so it is exact:
+Every `--json` error object carries a `phase` naming the stage that rejected
+the program:
 
 | `phase` | Meaning |
 | --- | --- |
 | `lex` | Tokenizing failed — an unterminated string, an unexpected character, a bad color literal. |
-| `parse` | The token stream is not a valid program — a missing `=`, an unclosed construct, an unexpected token. |
-| `module` | An `import` could not be resolved, or the imports form a cycle. Lexing and parsing of the entry file already succeeded. |
-| `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export, inconsistent `export` markers on an overload set. |
-| `lower` | The term graph could not be lowered to bytecode. Only `check` reaches this; it is an internal limitation rather than a user error. |
+| `parse` | The tokens are not a valid program — a missing `=`, an unclosed construct, an unexpected token. |
+| `module` | An `import` could not be resolved, or the imports form a cycle. |
+| `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export. |
+| `lower` | The term graph could not be lowered to bytecode. Only `check` reaches this. |
 | `runtime` | The program compiled and ran, and failed during execution (`run` only). |
 
-The `message`, `line` and `column` fields are unchanged by this: `message` is
-the whole human-readable error and `line`/`column` locate its last diagnostic.
-Front-end failures additionally carry `errors`, one entry per diagnostic:
+`message` is the whole human-readable error and `line`/`column` locate its last
+diagnostic. Front-end failures also carry `errors`, one entry per diagnostic;
+the compiler reports every error it finds, not only the last:
 
-```json
+```
+$ petal check --json -e 'var x = 1
+x = 2'
 {
   "error": true,
   "phase": "compile",
@@ -210,78 +222,73 @@ Front-end failures additionally carry `errors`, one entry per diagnostic:
 }
 ```
 
-Each entry's `message` has no position suffix and no file prefix; `file` is the
-module's display name, or `null` for the entry file. The compiler walks the
-whole program before aborting, so a program with several errors reports all of
-them here rather than only the last.
+Each entry's `message` has no position suffix; `file` is the module's display
+name, or `null` for the entry file.
 
 ### `lint` — Normalize source
 
 ```
-petal lint <file.ptl>            # report; exit 1 if changes needed
-petal lint --fix <file.ptl>      # rewrite the file in place
-petal lint --check <file.ptl>    # CI mode: exit 0/1, no output on success
-petal lint -e '<code>'           # lint inline code, print result to stdout
+petal lint <file.ptl>                  # report; exit 1 if changes are needed
+petal lint --fix <file.ptl>            # rewrite the file in place
+petal lint --check <file.ptl>          # CI mode: exit 0/1, no output on success
+petal lint -e '<code>'                 # lint inline code, print result to stdout
 
-petal lint --fix --verify <f>    # prove the rewrite before writing it
-petal lint --fix --verify=strict <f>   # demand full IR equality
+petal lint --fix --verify <file.ptl>          # prove the rewrite before writing it
+petal lint --fix --verify=strict <file.ptl>   # demand full IR equality
 
-petal lint-fix <file.ptl>        # same as 'lint --fix <file.ptl>'
+petal lint-fix <file.ptl>              # same as: lint --fix <file.ptl>
 ```
 
 `lint-fix` exists because rewriting in place is the common case and `--fix` is
-easy to forget. It takes a path only (there is no file to rewrite for `-e`
-code), and it makes **no change at all** when the file doesn't parse: the lint
-pipeline reports the parse error and exits non-zero with the file untouched.
+easy to forget. It takes a single path and no options. If the file does not
+parse, it reports the parse error, exits non-zero, and leaves the file
+untouched.
 
-Two kinds of normalization (see [dev/linter-plan.md](dev/linter-plan.md)):
+```
+$ petal lint -e 'fn f(x: int)
+let y = int(x)
+    y
+end'
+lint: removed 1 redundant cast(s)
+fn f(x: int)
+  let y = x
+  y
+end
+```
 
-- **Formatting** — 2-space re-indentation driven by the token stream, plus
-  trailing-whitespace trim and a single trailing newline. Only leading/trailing
-  whitespace outside tokens is touched, so comments, string contents, and JSX
-  text are preserved exactly.
+Three passes (see [dev/linter-plan.md](dev/linter-plan.md)):
+
+- **Formatting** — 2-space re-indentation, trailing-whitespace trim, and a
+  single trailing newline. Only whitespace outside tokens is touched, so
+  comments, strings and JSX text are preserved exactly.
 - **Identity casts** — deletes `int(n)` where `n` is already an `int`, and
-  likewise `float()` on a float and `str()` on a string. Petal's `/` on two
-  ints yields an int, so `int(w / 2)` is a no-op; `int(w * 0.6)` is not, and is
-  left alone. Candidates come from the type checker, which infers `any` for
-  anything it cannot prove, so an un-annotated parameter or a `var` cell is
-  never touched.
+  likewise `float()` on a float and `str()` on a string. Candidates come from
+  the type checker, which infers `any` for anything it cannot prove, so an
+  un-annotated parameter or a `var` is never touched. Parentheses follow the
+  slot: `2 * int(a + 1)` becomes `2 * (a + 1)`.
+- **`if`-chain to `match`** — rewrites an `if`/`elsif` chain that tests one
+  subject against string, bool or nil literals into a `match`.
 
-The cast rule removes a call, so there is no IR to hold equal. Its correctness
-rests on the detection rule — `int()` on an `int` is the identity — with a
-compile gate behind it: if the original source compiles here, the rewritten
-source must too, or `lint` refuses to produce any output.
-
-Parentheses follow the slot. `let m = int(a + 1)` becomes `let m = a + 1`;
-`2 * int(a + 1)` becomes `2 * (a + 1)`; and a list or argument element
-(`f(int(a + 1), b)`) becomes `f(a + 1, b)` — commas are required between
-elements, so nothing can bind across the boundary once the parens are gone.
-
-There is deliberately **no** rebind rule: an earlier version rewrote `x = f(x)`
-to `f(@x)`. The `@` operator is still part of the language, but it reads as
-sugar you have to learn, so the linter no longer pushes code into it.
+The last two change tokens, so `lint` checks that the rewritten source still
+compiles whenever the original did, and refuses to produce output otherwise.
 
 #### `--verify` — prove the rewrite
 
-`--verify` compiles the original and the fixed text and compares their IR
-(`petal ir-equal`, below). Nothing is written unless the comparison is
-acceptable, and a rewrite that cannot be accepted exits **3** — distinct from
-the plain "needs changes" exit 1. It works with `--fix` and with `--check`.
+`--verify` compiles the original and the rewritten text and compares their IR
+(the same comparison as [`ir-equal`](#ir-equal--are-two-files-the-same-program)).
+Nothing is written unless the comparison is acceptable; a rewrite that cannot
+be accepted exits **3**, distinct from the plain "needs changes" exit 1. It
+works with `--fix` and with `--check`.
 
-Two modes, because the passes differ in kind:
-
-| Mode | Demands | A semantic pass fired |
+| Mode | Demands | When a semantic pass fired |
 |---|---|---|
 | `--verify` (= `--verify=ir`, the default) | The formatting pass must not change the IR | Allowed: reported as an expected IR change, file still written |
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
-Formatting is the only pass that is supposed to be IR-invisible. The identity-
-cast rule deletes a call and the `if`-chain-to-`match` rule replaces a chain of
-`Branch` terms with a `Match` term, so both *do* change the IR by design —
-that is the point of them. On such a file the default mode proves the part it
-can (re-indentation applied on top of the semantic rewrite is IR-equal), prints
-the first difference, and says plainly that run-diff verification is what would
-prove the rest:
+Formatting is the only pass that is meant to leave the IR unchanged. The cast
+and `match` passes change it by design. On such a file the default mode proves
+the part it can, prints the first difference, and says that a run diff is what
+would prove the rest:
 
 ```
 $ petal lint --fix --verify app.ptl
@@ -294,8 +301,8 @@ function `label` body: statement count differs (at 2:6)
 verify: run-diff verification needed for the semantic passes
 ```
 
-If formatting *alone* ever moves the IR, that is a linter bug: `--verify`
-reports it as one and refuses to write, whatever the mode.
+If formatting alone ever moves the IR, that is a linter bug: `--verify` reports
+it as one and refuses to write, whatever the mode.
 
 ### `ir-equal` — Are two files the same program?
 
@@ -304,93 +311,78 @@ petal ir-equal <a.ptl> <b.ptl>          # exit 0 equal, 1 different, 2 can't tel
 petal ir-equal --json <a.ptl> <b.ptl>   # {"equal": bool, "diff"?: {...}}
 ```
 
-Compiles both files and compares their term graphs, ignoring everything
-positional: source text, spans, file ids, the source map, comments and
-whitespace, and the numeric ids of terms, blocks and constants (constants are
-compared **by value**, since interning order shifts). Compared: functions and
-their parameters and captures, each block's ordered terms and phi carry-outs,
-each term's op, input edges, name, state key, callsite id and flags, and
-match-arm patterns.
+Compiles both files and compares their IR, ignoring everything positional:
+spans, comments, whitespace, and the numeric ids of terms, blocks and constants
+(constants are compared by value). `<a.ptl>` is the original; reported
+differences point at its line and column.
 
-Exit codes are a three-way answer, not a boolean: **0** equivalent, **1**
-different (the first difference is printed, with the *original's* line:column),
-**2** a side failed to compile — "can't tell", which must never be read as
-"not equal". `--json` mirrors this: `{"equal": true}`, `{"equal": false,
-"diff": {location, what, left, right, line, column}}`, or `{"equal": false,
-"error": "..."}` for the exit-2 case.
+The exit code is a three-way answer: **0** equivalent, **1** different (the
+first difference is printed), **2** a side failed to compile. Exit 2 means
+"can't tell" and must not be read as "not equal". `--json` mirrors this:
+`{"equal": true}`, `{"equal": false, "diff": {location, what, left, right,
+line, column}}`, or `{"equal": false, "error": "..."}`.
 
-Two deliberate strictness choices: **variable names are semantic** (Petal keeps
-binding names in the IR and hashes them into `state` keys, so a rename is
-reported as a difference), and a `Copy`-only refactor that changes dataflow
-*sharing* is reported even when each term looks alike. Both err toward saying
-"different": an `ir-equal` pass is meant to be proof.
+Two things are deliberately treated as semantic, so a difference in them is
+reported:
 
-**Call structure is semantic too.** A `state` slot is keyed by the call path
-that reaches it, so each call term carries a `call_site` id — a hash of the
-callee's spelling plus its ordinal among identically-spelled callees in the
-enclosing function — and `ir-equal` compares it. Consequences for anyone
-reading a report:
+- **Variable names.** Petal keeps binding names in the IR and hashes them into
+  `state` keys, so a rename is a difference.
+- **Call structure.** A `state` slot is keyed by the call path that reaches
+  it, so extracting a helper, inlining one, moving a call to another function,
+  or adding an earlier call to the same callee in the same function all change
+  which state slots the callees reach. `ir-equal` reports these as different
+  even in a program with no `state` — it compares the IR, not reachability.
+  Reformatting, renaming a local that is not a callee, and reordering unrelated
+  statements stay IR-equal.
 
-- Extracting a helper, inlining one, or moving a call to a different function
-  changes the path its callees run on, and therefore which `state` slots they
-  reach. `ir-equal` reporting such a rewrite as different is **correct, not
-  noise** — the two programs genuinely differ in what state they share.
-- So does *adding an earlier call to the same callee* in one function: it
-  shifts the later call's ordinal. Adding a call to a *different* callee does
-  not.
-- Everything else is untouched: reformatting, renaming a local that is not a
-  callee, reordering unrelated statements, and edits elsewhere in the file all
-  stay IR-equal, because the id is derived from names and structure rather than
-  from term ids or spans.
-
-A program with no `state` anywhere still reports these differences — `ir-equal`
-compares the IR, not a reachability analysis over it. When a refactor is meant
-to move calls, the tool that proves it is a run diff (`ts/bin/verify.ts`, see
-docs/dev/refactor-verification.md), not `ir-equal`.
-
-This is the `ir-equal` step of the verification plan in
-[dev/refactor-verification.md](dev/refactor-verification.md); the Rust API
-behind it is `petal::ir_equiv::ir_equivalent`.
+When a refactor is meant to move calls, prove it with a run diff
+(`ts/bin/verify.ts`, see [dev/refactor-verification.md](dev/refactor-verification.md))
+rather than `ir-equal`.
 
 ### `lsp` — Serve the language server
 
 ```
-petal lsp                        # speaks LSP on stdin/stdout; takes no file
+petal lsp
 ```
 
-Runs the Petal language server over the standard LSP stdio transport
-(Content-Length-framed JSON-RPC). It takes no source file — documents arrive
-over the protocol via `textDocument/didOpen` / `didChange`. Editors and IDEs
-spawn this as a child process; it is not meant to be run interactively.
+Speaks the Language Server Protocol over stdio (Content-Length-framed
+JSON-RPC). It takes no file and no options: documents arrive over the
+protocol. Editors spawn this as a child process.
 
-Capabilities: full-text document sync, diagnostics (published on open and
-change), hover, go-to-definition, and completion (triggered on `.`, otherwise
-prefix-filtered over the document's definitions plus the keyword list).
+It provides full-text document sync, diagnostics on open and change, hover,
+go-to-definition, and completion. The loop exits on an `exit` notification or
+at EOF.
 
-The server core lives in `rust/src/lsp/` and is transport-agnostic
-(`Server::handle_message` takes a raw JSON-RPC string and returns the outgoing
-messages), so an embedder can drive it in-process without the stdio loop.
-
-The loop exits on an `exit` notification or at EOF; a broken pipe — the usual
-way an editor shuts a server down — exits quietly.
-
-### `explain` — Walk the dataflow graph backward from a term
+### `explain` — Show the value chain that produced a term
 
 ```
 petal explain [--json] --term <name|id> <file.ptl>
 petal explain [--json] --term <name|id> -e '<code>'
 ```
 
-Runs the program with tracing enabled, then walks the dataflow graph
-backward from the target term, reporting every recorded value along the
-chain of ancestors. Answers the question "why does `x` have this value?".
+Runs the program with tracing on, then walks backward from the target term
+and prints every recorded value along the chain of ancestors. It answers "why
+does `x` have this value?".
 
-`--term` accepts:
-- A variable name: `--term total`
-- A bare numeric term id: `--term 72`
-- The `t`-prefixed form: `--term t72`
+```
+$ petal explain --term total -e 'let a = 2
+let b = 3
+let total = a * b'
+Explain t120 (total):
+  Provenance chain:
+    => t120 total [line 3, column 13] = 6
+     . t118 - [line 3, column 13] = 2
+     . t119 - [line 3, column 17] = 3
+     . t116 a [line 1, column 9] = 2
+     . t117 b [line 2, column 9] = 3
+```
 
-With `--json`, returns `{name, term_id, chain: [{term_id, op, name, value, line, column}, ...]}`.
+`--term` accepts a variable name (`--term total`), a bare term id
+(`--term 72`), or the `t`-prefixed form (`--term t72`). A name resolves to the
+last term bound to it.
+
+With `--json`, returns
+`{name, term_id, chain: [{term_id, op, name, value, line, column, boundary}, ...], complete, truncated}`.
 
 ### `pending-report` — Report live pending resources
 
@@ -399,17 +391,76 @@ petal pending-report [--json] <file.ptl>
 petal pending-report [--json] -e '<code>'
 ```
 
-Runs the program (with pending-absorption tracking enabled), then reports
-every resource value that is still pending or loading after the run — its
-state, age in frames, absorption count, and origin call site. Answers the
-question "why is this region blank?".
+Runs the program, then reports every resource value that is still pending or
+loading at the end: its state, age in frames, absorption count, and origin
+call site. It answers "why is this region blank?".
 
-**Text output** (default) — one line per live resource, or
-`No pending resources.` when there are none.
+Text output is one line per live resource, or `No pending resources.` when
+there are none. With `--json`, it emits the raw report array:
+`[{id, key, state, age_frames, origin, absorbed_count}, ...]`.
 
-With `--json`, emits the raw report array:
-`[{id, key, state, age_frames, origin, absorbed_count}, ...]`. This is what
-the MCP `PendingReport` tool wraps.
+### `propose-edit` — Propose source edits that change an emitted value
+
+```
+petal propose-edit --channel <name> --emit <n> (--arg <k> --to <value>)...
+                   [--configurable <var>]... [--static <var>]...
+                   [--apply] [--json] <file.ptl>
+```
+
+Runs the program with emit tracing, then works backwards: given an emitted
+value, it proposes the source edits that would make argument `<k>` of the call
+that produced it evaluate to `<value>`. This is the writing half of direct
+manipulation: the host says where the user dragged something, and gets back
+the edits that mean it. See [direct-manipulation.md](direct-manipulation.md).
+
+Use `run --trace-emits` first to find the emit's address. For this file:
+
+```petal
+let x = 10
+let offset = 5
+push_output(symbol("shapes"), x + offset)
+```
+
+```
+$ petal run --trace-emits sketch.ptl
+
+Channel 'shapes' (1 emits):
+  [0] push_output [line 3] <- 15
+      arg 0: computed
+      arg 1: computed
+
+$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
+2 proposals:
+  1. set `x` to 37.5 (line 1)
+  2. set `offset` to 32.5 (line 2)
+Narrow with --configurable <var> / --static <var>, or apply one by hand.
+
+$ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 --static x --apply sketch.ptl
+1 proposal:
+  1. set `offset` to 32.5 (line 2)
+Applied.
+```
+
+Options:
+
+- `--channel <name>` — the output channel the emit was pushed into. Required.
+- `--emit <n>` — 0-based index of the emit within that channel. Required.
+- `--arg <k> --to <value>` — argument `<k>` (0-based) of the producing call
+  should evaluate to `<value>`, written as source text: `55`, `2.5`, `true`,
+  `hello`. At least one pair is required. Repeat the pair for a multi-goal
+  batch (one gesture changing several arguments); each `--to` binds to the
+  `--arg` before it.
+- `--configurable <var>` — a variable the host prefers to edit. Repeatable.
+- `--static <var>` — a variable that must not be edited. Repeatable.
+- `--apply` — rewrite the file in place, but only when every goal resolves to
+  exactly one proposal.
+- `--json` — emit the proposals as JSON, with exact spans and replacement
+  text: one entry per goal under `goals`, plus the flat `proposals` key when
+  there is exactly one goal.
+
+Declaring knobs in the source with `config let` narrows proposals without
+flags: config bindings are treated as configurable and every other binding as
+static.
 
 ### Dump format conventions
 
@@ -454,8 +505,7 @@ is a runtime value, so no static dump prints one — what the dumps carry is its
 static half: a call term's `call_site` id in `show-ir --json`, and `popN` on a
 `state_read`/`state_write` in the bytecode text (the number of enclosing loop
 steps the access drops to land on its declaration's slot, omitted when zero). A
-live path appears only in host state dumps, where `Env::get_state_json` renders
-it as `counter#1/[3]/count`.
+live path appears only in host state dumps (as `counter#1/[3]/count`).
 
 **Defaults are omitted in JSON.** Every JSON dump skips a field whose value
 is its default — a `null` option, a `false` boolean, an empty
@@ -644,14 +694,8 @@ variant field lists (`EnumVariant.fields`, a `Variant` pattern's `fields`).
 Read a missing field as its default. The tables below write these as
 `Type (omitted when …)`.
 
-**Why externally tagged** (`{"kind": {"BinaryOp": {…}}}` rather than
-ESTree-style `{"type": "BinaryOp", …}`): this is serde's default enum
-encoding, and it is kept deliberately. Internal tagging reads flatter but
-cannot represent the AST's newtype variants (`Ident(String)`,
-`Literal(Literal)`, `List(Vec<Expr>)`, `Return(Option<Expr>)`, …) without
-restructuring every one of them into a struct variant with an invented field
-name; the churn isn't worth it for a debug-oriented dump. Consumers should
-treat the single key of the `kind` object as the node type.
+Consumers should treat the single key of the `kind` object as the node type
+(serde's externally-tagged enum encoding).
 
 **StmtKind** (top-level statements):
 
@@ -694,7 +738,7 @@ treat the single key of the `kind` object as the node type.
 
 **ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
-**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--validate-without-running)) and dropped before codegen, so they never appear in the IR.
+**TypeAnn**: a written type annotation as an object `{"name": string, "resolved": Type (omitted when unrecognized)}` — `name` is the type name exactly as written in the source (`"int"`, `"str"`, `"banana"`), and `resolved` is the recognized static type (omitted for an unrecognized name, e.g. `{"name": "banana"}`). An absent annotation omits the `ty`/`ret` field entirely. Annotations appear on `Let`, `State`, `Param`, `ClassField`, and `FnDecl.ret`; a class name resolves to a static type too, but only against the compilation's class table, so a `TypeAnn` naming one carries no `resolved` in the AST dump; they are type-checked (warnings only — see [`check`](#check--compile-without-running)) and dropped before codegen, so they never appear in the IR.
 
 **Type**: a string naming the recognized static type — one of `"Any"`, `"Nil"`, `"Bool"`, `"Int"`, `"Float"`, `"String"`, `"List"`, `"Record"`, `"Function"`, `"Enum"`, `"Vec2"`, `"F64Array"`, `"Element"`, `"Symbol"`, `"Dual"`, `"Handle"`, `"Pending"`. Appears as the `resolved` field of a **TypeAnn**.
 
@@ -861,8 +905,7 @@ by them. Ids are preserved as-is (nothing is renumbered), which is why
 `source_map.term_spans` and `match_arms` are filtered to the kept terms. The
 param/capture/self binding phantoms of user blocks are kept so no kept term
 references a missing id. This is a debugging **view**, not an interchange
-format — it is **not loadable** by `run --ir`. (The MCP `ShowIR` tool
-returns this view by default.)
+format — it is **not loadable** by `run --ir`.
 
 #### Program JSON Schema
 
@@ -1103,14 +1146,13 @@ The full instruction set is documented in `rust/src/backend/bytecode/isa.rs`.
 
 ## Dataflow query commands
 
-The remaining commands query the compiled dataflow graph without running
-the program (except `explain`, which needs execution for values). They
-all accept `--term <name|id>` with the same resolution rules as `explain`.
+These commands query the compiled dataflow graph without running the program.
+They all take `--term <name|id>` with the same resolution rules as `explain`.
 
 All three stop at every `var` cell. See
-[Cells and the frontier](#cells-and-the-frontier) below — the short version is
-that none of them promises an unqualified "minimal" answer on a program that
-uses `var`, and each one says so in its output.
+[Cells and the frontier](#cells-and-the-frontier): none of them promises an
+unqualified "minimal" answer on a program that uses `var`, and each one says so
+in its output.
 
 ### `show-provenance` — Backward slice
 
@@ -1118,13 +1160,31 @@ uses `var`, and each one says so in its output.
 petal show-provenance [--json] --term <name|id> <file.ptl>
 ```
 
-Returns the set of terms that feed into the target term, along with the
-edges connecting them. "What does this value depend on?"
+Prints the terms that feed into the target, with the edges connecting them.
+"What does this value depend on?"
+
+```
+$ petal show-provenance --term total -e 'let a = 2
+let total = a * 3'
+Provenance of t119 (total):
+  op: Mul
+  inputs: [117, 118]
+
+Ancestors (3):
+  t117: Copy
+  t118: Constant(ConstantId(1))
+  t116: Constant(ConstantId(0)) a
+
+Edges (3):
+  t117 -> t119
+  t118 -> t119
+  t116 -> t117
+```
 
 JSON shape:
 `{root: Term, ancestors: Term[], edges: [{from, to, kind}, ...], frontier: [...], complete: bool}`.
-`kind` is always `"dataflow"` here — a backward walk answers a *must* question,
-so the only edges it will cross are value edges.
+`kind` is always `"dataflow"` here: a backward walk answers a *must* question,
+so it only crosses value edges.
 
 ### `show-dependents` — Forward slice
 
@@ -1132,15 +1192,16 @@ so the only edges it will cross are value edges.
 petal show-dependents [--json] --term <name|id> <file.ptl>
 ```
 
-Symmetric to `show-provenance`, but walks forward through the reverse
-`inputs` index. "What downstream values does this term influence?".
+The mirror of `show-provenance`: everything downstream of the target. "What
+would a change to this value reach?"
+
+JSON shape: `{root: Term, dependents: Term[], edges: [{from, to, kind}, ...]}`.
 
 This direction answers a *may* question, so it also carries `"kind": "may"`
-edges from a `var` declaration and from every `set` to every read of that
-cell (`t96 ~> t97 (cell 'x', may)` in text mode). Which write actually
-supplied a given read is a dynamic fact; over-approximating it is correct,
-while under-approximating it would mean reporting that a `set` affects
-nothing.
+edges from a `var` declaration and from every `set` to every read of that cell
+(`t96 ~> t97 (cell 'x', may)` in text mode). Which write actually supplied a
+given read is a runtime fact; over-approximating it is correct, while
+under-approximating it would report that a `set` affects nothing.
 
 ### `show-slice` — Subgraph for multiple targets
 
@@ -1148,28 +1209,26 @@ nothing.
 petal show-slice [--json] --term <a> [--term <b> ...] <file.ptl>
 ```
 
-Returns a subgraph that connects one or more target terms back to their
-common ancestors. Useful for focused visualizations and for extracting the
-"interesting" part of a larger program.
+Prints the smallest subgraph that still produces every target. Useful for
+focused visualizations and for extracting the interesting part of a larger
+program.
+
+JSON shape: `{targets, slice: Term[], frontier: [...], complete: bool, minimal: bool}`.
 
 On a cell-free program this is the smallest such subgraph. On a program that
 reads a `var` it is deliberately **not** minimal: it also pulls in the
 declaration and every `set` site, transitively, and reports
 `"minimal": false` with a `Not minimal — N cell reads crossed:` block. Too
-small silently computes a *different value*; too big only loses precision.
-Even the conservative answer is sufficient in *terms*, not faithful in
-*order* — a dataflow slice never carried the control flow that selects among
-the writes.
+small would silently compute a different value; too big only loses precision.
 
 ### Cells and the frontier
 
 A `var` binds a mutable heap cell (see
-[`var` and `set`](language-guide.md#var-and-set); the design rationale is in
-`docs/var.md`, Cells). The cell operand of a `CellRead`,
-a `CellWrite` or a closure capture is an *identity* edge — it names which box,
-not which value — so a backward walk never crosses one. Every stop is reported
-as a **frontier** entry naming the var, its declaration, and the complete set
-of writes that could have supplied the value:
+[`var` and `set`](language-guide.md#var-and-set)). The cell operand of a
+`CellRead`, a `CellWrite` or a closure capture is an *identity* edge — it names
+which box, not which value — so a backward walk never crosses one. Every stop
+is reported as a **frontier** entry naming the var, its declaration, and the
+complete set of writes that could have supplied the value:
 
 ```
 Frontier (1):
@@ -1177,20 +1236,18 @@ Frontier (1):
     possible write: t96 [line 2, column 1]
 ```
 
-The write set is complete because no expression evaluates to a cell (§6d), so
-the only way to reach one is a name lexically bound to its declaration. The
+The write set is complete because no expression evaluates to a cell, so the
+only way to reach one is a name lexically bound to its declaration. The
 exception is a `state var`, whose slot the host can also write through
-`set_state`; that is printed rather than glossed.
+`set_state`; that case is printed rather than glossed.
 
-`show-*` commands never run the program, so they always degrade to this
-static answer (`"resolution": "not_traced"`) — never to silence. `explain`
-does run it, and therefore resolves the boundary to the exact write and
-continues the chain through it.
+The `show-*` commands never run the program, so they always give this static
+answer (`"resolution": "not_traced"`). `explain` does run it, and so resolves
+the boundary to the exact write and continues the chain through it.
 
-Note that `--term x` on a `var` resolves to the *last* `CellWrite` on that
-name, since term lookup is last-name-wins. That is no longer worth special
-casing: `explain` from the write shows that write's own chain and the var
-header, and `show-dependents` from it shows every read the write may reach.
+`--term x` on a `var` resolves to the *last* `CellWrite` on that name, since
+name lookup is last-wins. `explain` from the write shows that write's own
+chain, and `show-dependents` from it shows every read the write may reach.
 Pass an explicit `--term tNN` to start somewhere else.
 
 ### `show-graph` — Graphviz DOT export
@@ -1200,20 +1257,19 @@ petal show-graph [--all] <file.ptl>
 petal show-graph [--all] -e '<code>'
 ```
 
-Emits the dataflow graph in DOT format, ready to pipe into `dot -Tpng`.
-By default hides phantom builtin terms; `--all` includes them.
+Prints the dataflow graph in DOT format, ready to pipe into `dot -Tpng`.
+Phantom builtin terms are hidden unless `--all` is given. There is no `--json`
+output; the format is DOT.
 
-Nodes are colored by role (constants = light blue, state = pink, user
-bindings = white) so the output stays readable even on mid-sized programs.
+Nodes are colored by role (constants light blue, state pink, user bindings
+white) so the output stays readable on mid-sized programs.
 
 ## Builtin Phantom Terms
 
 Every **compiled** program starts with one phantom term per registered
 built-in function (`t0`, `t1`, …) in the root block. These are `Copy` terms
 with no inputs; their `name` field holds the builtin name. The IDs follow
-the registration order in `rust/src/builtins/mod.rs`. Registration order is
-load-bearing for compiled snapshots: reordering it would renumber every IR
-snapshot, so built-ins can only be appended.
+the registration order in `rust/src/builtins/mod.rs`.
 
 The phantoms exist for name resolution and for using a builtin as a
 first-class *value*; a direct call like `print(x)` compiles to a
@@ -1222,11 +1278,6 @@ seeds native function values into phantom registers **by name** when the
 root frame is pushed — so an imported IR document (schema 0.2) needs no
 phantoms at all unless it wants a builtin as a value, and never depends on
 registration order. See [docs/dev/ir-as-target.md](dev/ir-as-target.md).
-
-`includes` is a JS-compat alias for `contains`. `map`, `filter`, `reduce`,
-and `forEach` are declared as natives so name resolution finds them, but
-the evaluator dispatches them as intrinsics (they need access to the
-evaluator to call their function argument).
 
 User-defined terms are numbered after the phantom terms (the first user
 term's ID is the number of registered builtins). Phantom terms are **not

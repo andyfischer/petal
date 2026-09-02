@@ -1,303 +1,126 @@
 # Petal, judged by a fantasy console
 
-Notes from building petal-fantasy-nes: a Rust host of about 4 900 lines, a
-Petal prelude of about 2 600, and 5 000 lines of carts. Everything above the two
-chips — artwork, maps, text, menus, scenes, collision, a FamiTracker-shaped
-music driver, and sample synthesis — is written in Petal, so this is a fairly
-severe test of the language away from its home ground of "draw a few shapes".
+Notes from building petal-fantasy-nes: a Rust host of about 4,900 lines, a
+Petal prelude of about 2,600, and 5,000 lines of carts. Everything above the
+two chips (artwork, maps, text, menus, scenes, collision, a tracker-shaped
+music driver, and sample synthesis) is Petal, so this was a fairly severe test
+of the language away from "draw a few shapes".
 
-**The verdict: yes, with two caveats.** The frame model is the right model for
-this kind of app and the ergonomics of it are genuinely good — the console's
-whole authoring surface fell out of the language rather than being imposed on
-it. The caveats are that `state` had a name-scoping bug serious enough to
-corrupt a cart silently (§1 — since fixed), and that per-character string work
-costs more than everything else in a frame put together — which is exactly the
-work an art-from-strings console does most of (§9, and "What was slow").
+**Verdict: yes, with caveats.** The frame model is the right model for this
+kind of app, and the console's whole authoring surface fell out of the language
+rather than being imposed on it. The two problems serious enough to block a
+cart (§1 and §8) have since been fixed in the language. What remains is
+ergonomics, and one real cost: per-character string work, which is exactly
+what an art-from-strings console does most of (§9).
 
-Every snippet below was run on the console (`fantasy-nes --screenshot … --frames
-n`); every number was measured, not estimated.
+Each item below is marked **fixed** or **still open** as of 2026-09-02; the
+open ones were re-checked against the current `petal` CLI.
 
 ---
 
 ## What worked well
 
-### A. Re-run-the-whole-file is the right frame model
+**Re-run-the-whole-file is the right frame model.** The console pushes its
+entire state every frame and Petal makes that free of ceremony: no
+`setup()`/`draw()` split, and hot reload is not a feature anyone implemented,
+it is what happens when the file runs again. Edit a pixel of a tile while the
+game runs and it repaints in place with the player where he was.
 
-The console pushes its entire state every frame — palettes, tiles, map cells,
-sprites, chip registers — and Petal's execution model makes that free of
-ceremony. There is no `setup()`/`draw()` split to keep consistent, so hot
-reload is not a feature anyone implemented: it is what happens when the file
-runs again.
+**Records as the universal shape.** Nothing in the prelude needed a class.
+`move_box` returns `{rect, hit_x, hit_y, grounded}`; `menu` returns `{index,
+chosen, cancelled}`; an instrument is a record of optional envelopes with `??`
+filling the gaps. Records indexed by a computed string key stand in for a map
+(the sound bank, menu cursors, the art character table).
 
-```petal
-set_backdrop(light_blue)
-define_art(1, ["oooooooo", "-o--o-o-", "--------", "---o----",
-               "--------", "-------o", "--------", "-o------"])
-map_rect(0, 26, 32, 4, 1, 0)
-state var x = 120.0
-set x = clamp(x + btn_dx() * 1.5, 0, 248)
-sprite(px(x), 200, 2, 4)
-```
+**Multi-line strings made data look like the thing.** Tile art *is* the picture
+and a tracker pattern *is* a column of notes, both as plain string literals.
+This is the single biggest reason the console has no asset pipeline, and it
+means art and music diff cleanly.
 
-Edit a pixel of that tile while the game runs and it repaints, in place, with
-the player where he was. Every other language would need an asset-reload path.
+**Arity overloading** (`palette(i, c1, c2, c3)` / `palette(i, list)`, `btn(name)`
+/ `btn(pad, name)`, an optional flags argument on `sprite`) keeps the cart-facing
+API to about half the names it would otherwise need.
 
-### B. Records as the universal shape
+**Calling script functions from the host.** Realtime synthesis is a Petal
+function the host calls by name every frame, and the block helpers take a
+closure. That the host can call into a script function mid-frame is what made
+`enable_dsp` possible.
 
-Nothing in the prelude needed a class. `move_box` returns
-`{rect, hit_x, hit_y, grounded}`; `menu` returns `{index, chosen, cancelled}`;
-`music_pos()` returns `{name, order, row, playing, ticks}`; an instrument is
-`{vol, arp, pitch, duty, rel, mode}` with every key optional and `??` filling
-the gaps. Multi-value returns cost one line and read at the call site:
+**`f64_array` earns its keep.** One frame of 44.1 kHz audio synthesized in
+Petal costs 0.32 ms with an `f64_array`, 0.59 ms appending to a list. The typed
+array is the difference between a toy and a channel you can ship. Measurements
+are in [design.md](docs/design.md#the-dsp-budget).
 
-```petal
-let mv = move_box(hero, btn_dx() * 1.5, vy)
-set hero = mv.rect
-if mv.hit_y then set vy = 0.0 end
-```
-
-Records indexed by a computed string key (`bank[name]`) also stand in for a
-map, which is how the sound bank, the menu cursors and the art character table
-are stored.
-
-### C. Multi-line strings made data look like the thing
-
-Tile art *is* the picture and a tracker pattern *is* a column of notes. Both
-are plain string literals, which is why neither needed an external file format
-or a tool:
-
-```petal
-let lead = rows("""
-  C-4 0 v13
-  ...
-  E-4
-  G-4 0 v10 a47
-""")
-```
-
-This is the single biggest reason the console has no asset pipeline. It also
-means art and music diff cleanly, which for a hot-reloadable file matters more
-than it sounds.
-
-### D. Arity overloading, used heavily
-
-`palette(i, c1, c2, c3)` and `palette(i, list)`; `btn(name)` and
-`btn(pad, name)`; `sprite(x, y, tile, pal)` with an optional flags argument;
-`play_sound(name)` and `play_sound(name, volume)`. The prelude leans on this
-constantly and it keeps the cart-facing API to about half the names it would
-otherwise need.
-
-### E. Closures and named functions across the FFI
-
-Realtime synthesis is a Petal function the host calls by name, and the block
-helpers take a closure:
-
-```petal
-fn zap(start, count, rate)
-  pcm_render(start, count, rate, fn(t, i) ->
-    osc_square(t, 900.0 - 700.0 * t / 0.3, 2) * env_decay(t, 0.3))
-end
-register_sound("zap", 0.3, "zap")
-```
-
-That the host can call *into* a script function mid-frame is what made
-`enable_dsp` possible at all.
-
-### F. `f64_array` earns its keep
-
-Realtime audio in an interpreted language sounded implausible and isn't. One
-frame of 44.1 kHz stereo synthesized in Petal, measured over 3 000 frames:
-
-| Block written with | ms/frame |
-|---|---|
-| `f64_array` + indexed writes | 0.32 |
-| `pcm_render` (closure per sample) | 0.33 |
-| appending to a list | 0.59 |
-
-0.32 ms of a 16.7 ms frame. The typed array is not a micro-optimization here;
-it is the difference between "a toy" and "a channel you can ship".
-
-### G. Modules and implicit imports gave a real prelude
-
-`nes.ptl` and `nes_sound.ptl` are 2 600 lines of ordinary Petal registered as
-implicit imports, so carts call `draw_meta`, `music_play` and `move_box` bare
-and can *read the implementation* when a helper does not do what they want. A
-prelude in the host language would have been a wall.
+**Modules and implicit imports gave a real prelude.** `nes.ptl` and
+`nes_sound.ptl` are ordinary Petal registered as implicit imports, so carts call
+`draw_meta` and `music_play` bare and can read the implementation when a helper
+does not do what they want.
 
 ---
 
 ## What was awkward
 
-### 1. `state` cells are keyed by name, and the name is not scoped to the function — **fixed**
+### 1. `state` cells were keyed by name alone — **fixed**
 
-This was a bug, and the most dangerous one found. Two functions in one file that
-each declared a `state` variable of the same name shared one cell:
+Two functions that each declared `state var t` used to share one cell, with the
+second initializer silently ignored. A cell is now keyed by its declaration and
+call path, so each callsite of a helper gets its own cell, and a top-level
+`state var` read with `get`/`set` is the way to share one. `state(key)` remains
+the tool for a cell whose identity outlives its callsite (a menu cursor, a
+button's repeat phase). The prelude's accessor-wrapper idiom was deleted as a
+result. Rules: `docs/dev/state-call-paths.md`; user-facing description in the
+language guide's State section.
 
-```petal
-fn hero_timer()
-  state var t = 0
-  set t = t + 1
-  t
-end
-fn enemy_timer()
-  state var t = 100
-  set t = t + 1
-  t
-end
-log("hero " ++ str(hero_timer()) ++ "  enemy " ++ str(enemy_timer()))
-```
+One cost worth knowing: a `state` used as a memo inside a function called from
+a loop is now rebuilt per iteration, because each iteration is a new path. Hoist
+such caches to top level, or key them absolutely with `state(arg)`.
 
-```
-hero 1  enemy 2          # what it used to print: one cell, two timers,
-hero 3  enemy 4          # and the `= 100` initializer silently ignored
-hero 5  enemy 6
-```
-
-**Status**: Fixed, and the fix is the one this entry guessed at — the scoping
-that already separated modules now runs all the way down to the declaration
-site. A cell is keyed by `(declaration, call path)`. The declaration id is a
-hash of the *whole* name path — module, enclosing function chain, variable name,
-shadow ordinal — so `hero_timer`'s `t` and `enemy_timer`'s `t` are different
-declarations and can no longer be confused; the path adds the callsites and loop
-iterations that reached the declaration, so each callsite of a helper gets its
-own cell too. The same source now prints what it always looked like it should:
-
-```
-hero 1  enemy 101
-hero 2  enemy 102
-hero 3  enemy 103
-```
-
-Consequences for this prelude. The single-writer accessor wrappers
-(`_backdrop_cell`, `_font_cell`, `_map_cell`, `_scroll_cell`, `_scene_cell`,
-`_solid_cell`) existed only to launder the one-declaration-is-one-slot rule, and
-they are gone: each is a top-level `state var` read with `get` and written with
-`set`, which is now *the* way to share a cell across functions. The `_nes_*`
-name prefix stayed, but it no longer defends against anything — it survives
-purely so `nes::_nes_scroll` reads as the console's own bookkeeping next to a
-cart's `scroll` in a host state dump.
-
-`state(id)` is still the right tool, for a different job than this entry
-proposed. An explicit key is *absolute* — it ignores the call path — so it is
-how two entry points deliberately reach one cell: `btn_repeat` (two widgets
-asking about one button share its repeat phase) and `_menu_sel`, where
-`state(id)` is what makes the cursor one slot per menu instead of one per
-callsite.
-
-The wrappers that held **caches** rather than shared writes went the same way,
-for a reason worth stating separately because it costs speed rather than
-correctness. `_art_table()` and `_font_index()` read like memos — `state` runs
-an initializer only on a slot's first touch — but the slot is per path, and both
-are called from inside loops (once per art pixel, once per character drawn), so
-each was rebuilding its whole table every iteration. Both are top-level cells
-now. `_font_rows` is the third shape: its build genuinely varies by argument, so
-it stays in a function and keys itself absolutely with `state(ink)` — one build
-per ink color, shared by every caller.
-
-One placement rule came out of that. `_nes_font_index` sits *below*
-`_build_font_index` in the file, because that builder reads `_FONT_CHARS`, a
-value the file computes at run time: such a function cannot be hoisted, so a
-top-level call above its declaration reads nil. The compiler warns before it
-fails, and the fix is to move the cell down.
-
-See `docs/dev/state-call-paths.md`.
-
-### 2. Shadowing a `state var` with a `let` is an internal error
+### 2. Shadowing a `state var` with a `let` is an internal error — **still open**
 
 ```petal
 state var hero = 1
 let hero = {a: 2}
-log(str(hero.a))
+log(str(hero.a))      // Error: internal error: cell_read on a record
 ```
 
-```
-Error: internal error: cell_read on a record [line 3, column 9]
-Caused by:
-  read of an unresolved cell — no write sites
-```
+Whether the right answer is to shadow or to reject, it should not be an
+internal error naming a compiler concept.
 
-Found by accident, while pasting a doc example under a test harness that
-already had a `hero`. Whatever the right answer is — shadow, or reject — it
-should not be an internal error naming a compiler concept.
+### 3. Two mutation models — **still open**
 
-### 3. Two mutation models to keep straight
+A record held in `state` is mutable through its fields (`s.a = s.a + 1`); the
+same record in a `var` demands a whole-value `set`. Defensible once known, but
+both spellings appear in the same file and the failure is a compile error in the
+middle of writing a helper.
 
-A record held in `state` is mutable through its fields; the same record in a
-`var` is not, and demands a whole-value `set`:
+### 4. Record literals cannot carry punctuation or computed keys — **still open**
 
-```petal
-state s = {a: 1}
-s.a = s.a + 1        // fine
+`{".": 0}` is a parse error, so the art table (`.`, `-`, `o`, `#` to palette
+entries) is assembled one `t["."] = 0` statement at a time, and level legends
+are a list of pairs instead of the record they want to be. A string-literal
+key, and a computed `{[expr]: v}`, would delete both workarounds.
 
-state var t = {}
-t["x"] = 0           // Error: `t` is a `var`; use `set t = ...` to write it
-```
+### 5. No hex literals and no bitwise operators — **still open**
 
-The rule is defensible once you know it, but both spellings appear in the same
-file, and the failure mode is a compile error in the *middle* of writing a
-helper rather than at the declaration you would have to change.
+Palette indices are written in decimal against hardware docs that are entirely
+hex; tracker effect columns had to be redefined as decimal; sprite flags are
+additive constants a cart can set but can only test with `(flags / 4) % 2`. The
+noise channel's LFSR and packed-2bpp tiles are likewise reachable only through
+multiply and modulo.
 
-### 4. Record literals cannot carry punctuation or computed keys
+### 6. `time()` is frozen inside a frame — **still open**
 
-`{".": 0}` is a parse error (`Expected an identifier, got a string literal`).
-The console's art table maps `.`, `-`, `o`, `#` to palette entries — the most
-natural literal in the whole project — and has to be assembled statement by
-statement:
+`time()` and `dt()` are bound once before the cart runs, so a cart cannot time
+a section of itself; every number in these notes was taken with a stopwatch
+outside the process. There is still no monotonic `now()`.
 
-```petal
-fn _build_art_table()
-  let t = {}
-  t["."] = 0
-  t["-"] = 1
-  t["o"] = 2
-  t["#"] = 3
-  t
-end
-```
+### 7. Some error messages leak the implementation — **still open**
 
-Level legends have the same problem and are passed as a list of pairs
-(`[["#", 2], ["=", 1, 1]]`) rather than the record they want to be. Allowing a
-string-literal key — and a computed one, `{[expr]: v}` — would delete both
-workarounds.
-
-### 5. No hex literals, and no bitwise operators
-
-```petal
-1 << 2      // Error: Unexpected token: '<'
-6 & 3       // Error: Unexpected character '&'
-log(0x1F)   // parse error
-```
-
-For a console this bites three times. Palette indices are written in decimal
-against hardware documentation that is entirely hexadecimal (`33` for `$21`).
-Tracker effect columns had to be redefined as decimal, breaking the muscle
-memory of every tracker user. And sprite flags are additive constants
-(`flip_x + behind_bg`) that a cart can *set* but cannot *test* without
-arithmetic — `(flags / 4) % 2` where every other language writes
-`flags & behind_bg`. The packed-2bpp form of `define_tile` is likewise
-constructible only by multiplication.
-
-### 6. `time()` is frozen inside a frame, so a cart cannot profile itself
-
-`time()` and `dt()` are bound once before the cart runs, so two calls in one
-frame return the same value and every in-cart benchmark reads `0.0 ms`. Every
-number in this document had to be taken with a stopwatch outside the process:
-
-```bash
-time ./target/release/fantasy-nes --screenshot /tmp/o.png --frames 3300 cart.ptl
-```
-
-A monotonic `now()` that is *not* the frame clock would have saved a day, and
-is what a cart would want for its own budget display.
-
-### 7. Error messages leak the implementation at exactly the wrong moments
-
-`internal error: cell_read on a record`, `read of an unresolved cell — no write
-sites`, `Expected float at arg 1, got string` with no argument name. These land
-on cart authors who have never seen the compiler. Everything else about the
-error reporting — the source excerpt, the caret, the module-qualified line
-numbers, the stack trace through prelude frames — is excellent, which makes the
-few leaky messages stand out more.
+`internal error: cell_read on a record`, `read of an unresolved cell — no
+write sites`, `Expected float at arg 1, got string` with no argument name.
+Everything else about error reporting (source excerpt, caret, module-qualified
+line numbers, stack traces through prelude frames) is excellent, which makes
+these stand out.
 
 ---
 
@@ -305,126 +128,65 @@ few leaky messages stand out more.
 
 ### 8. The core prelude was invisible inside a host prelude module — **fixed**
 
-`has_field` lives in `rust/prelude/std.ptl`. It is a *gated* implicit import:
-it merges only when something references one of its exports. The reference scan
-already covered every loaded module, but the resulting import list was attached
-to the entry file alone — so this worked in a cart and failed inside
-`nes_sound.ptl`:
+`has_field` lives in `rust/prelude/std.ptl`, which is merged only when
+referenced. The gated declarations used to attach to the entry file alone, so
+`sfx_play` compiled clean and raised `Unknown builtin: has_field` at runtime
+from inside `nes_sound.ptl`. `module.rs` now binds the gated prelude into every
+loaded module (lowest precedence), covered by tests in `rust/tests/modules.rs`.
 
-```
-Error: Unknown builtin: has_field [nes_sound line 801, column 6]
-```
+The lesson that stands: a host prelude authored and tested on the bare `petal`
+CLI can differ from what carts see. `tests/carts.rs` exists partly for that.
 
-That shipped: `sfx_play` and `drum` raised on their first call, and nothing
-flagged it, because the prelude was authored and tested on the bare `petal`
-CLI where `std` *is* in scope. The failure mode is the worst shape available —
-compiles clean, dies at runtime, only on the branch that reaches the call.
+### 9. No string builder, and no cheap character access — **still open**
 
-Fixed in `module.rs`: gated decls are now prepended to every loaded module's
-import list, not just the entry's. They stay lowest-precedence, so a module's
-own declarations still shadow them. Covered by three cases in
-`rust/tests/modules.rs` (host prelude, script-imported module, and the
-shadowing rule).
+The console's hottest loop turns a row of art characters into palette digits,
+and every way of writing it allocates: `chars()` builds a list of one-character
+strings, `char_at` is slower than that, and `++` in a loop is quadratic. 4,096
+characters cost about 1.3 ms of pure interpretation per frame (roughly 0.3 µs
+per character; the full table is in the authoring guide's
+[Performance](docs/cart-authoring.md#performance) section). A non-allocating
+char view and an amortized-constant append are the highest-value additions on
+this list.
 
-The second half of the lesson stands and is not addressed: a host has no way to
-compile its registered prelude in the same environment its carts see, so this
-class of bug is still only findable by running the host. A
-`petal check --as-module` would have caught it in a second.
+### 10. Typed arrays stop at `f64` — **still open**
 
-### 9. No string builder, and no cheap character access
+The video path has the same shape as the audio path (64 tiles × 8 rows × 8
+small integers) and no typed buffer for it, so tile art is a list of strings.
+A `u8_array`, or `f64_array` as the general flat numeric buffer, would let art
+be normalized once and pushed by reference.
 
-The console's hottest Petal loop turns a row of art characters into a row of
-palette digits. Every way of writing it allocates:
+### 11. No destructuring — **still open**
 
-| Row conversion, 64 tiles × 8 rows (4 096 characters) | ms/frame |
-|---|---|
-| `for ch in chars(line)`, `out = out ++ …` | 1.34 |
-| `for i in range(…)`, `char_at(line, i)` | 1.59 |
-| `join(for ch in chars(line) do … end, "")` | 1.21 |
-| the same loop counting characters and nothing else | 0.33 |
+`let {a, b} = r` is a parse error. Every multi-value return in the prelude is
+followed by a line per field. (Lists destructure inside `match`; records do
+not.)
 
-`chars()` allocates a list of 4 096 one-character strings; `char_at` is
-*slower* than that, so the obvious optimization is a pessimization; `++` in a
-loop is quadratic and `join` over a collected list is the fastest of the three.
-None of them is fast. What is wanted is a byte/char view that does not
-allocate, and a builder (or a `String.repeat`-shaped `build` helper) whose
-append is amortized constant.
+### 12. No hot-reload notification for the host — **partly fixed**
 
-### 10. Typed arrays stop at `f64`
-
-`f64_array` transformed the audio path (§F). The video path has exactly the
-same shape — 64 tiles × 8 rows × 8 pixels of small integers — and has no
-equivalent, so tile art is `list` of `string`. A `u8_array`, or just letting
-`f64_array` be the general "flat numeric buffer", would let art normalization
-be hoisted into a buffer once and pushed by reference.
-
-### 11. No destructuring
-
-```petal
-let {a, b} = r     // Error: Expected an identifier, got '{'
-```
-
-Still missing, still noted by petal-fps two apps ago. Every multi-value return
-in the prelude is followed by three lines of `let x = r.x`.
-
-### 12. No way to ask "has the program been reloaded?"
-
-The audio engine has to know when a cart's sound-rendering function changed, so
-it can re-render the bank. There is no revision counter, no reload hook, and
-`transfer_state` deliberately preserves the program id — so the host resorts to
-re-rendering a 32-sample window of one banked sound per frame and comparing it
-against the cached samples (~13 µs/frame) to *infer* an edit. A
-`Env::program_revision()` or an `on_program_loaded` that fires with the new
-program would delete that whole mechanism.
-
----
-
-## What was slow
-
-Measured on a release build, M-series laptop, as the delta between 3 300 and
-300 headless frames. Frame budget: 16.7 ms.
-
-| Per frame | Cost |
-|---|---|
-| Backdrop only | 0.04 ms |
-| Floor + one walking sprite | 0.08 ms |
-| 64 sprites instead of one | +0.03 ms |
-| 960 `set_tile` calls (the whole map) | +0.19 ms |
-| 64 `define_tile` with normalized rows | +0.03 ms |
-| **64 `define_art` from string art** | **+2.0 ms** |
-| One frame of Petal-synthesized audio | +0.32 ms |
-
-The shape of this is the story: **native calls and the host are free; Petal
-string and list work is the entire cost.** 4 096 characters of art costs 1.3 ms
-of pure interpretation — about **0.3 µs per character** — which is 12 % of a
-frame to re-read art that has not changed. It is affordable, and it buys hot
-reload, so the console keeps paying it and the docs tell authors to hoist only
-when their art has settled. But the ratio (one character of Petal ≈ ten native
-calls) is the number that decides what can and cannot be written in this
-language. It is spread evenly rather than concentrated: iterating those 4 096
-characters and only counting them costs 0.33 ms, a quarter of the total, with
-the remaining 1.0 ms in the table lookup, the `str()` and the concatenation.
-There is no single slow builtin to fix — the interpreter is simply doing a few
-million small operations a second, and that is its rate.
+`Host::on_program_loaded` now fires when a cart is loaded or switched, but not
+on a hot reload of the same file. The audio engine still has to *infer* that a
+sound-rendering function changed, by re-rendering a 32-sample window of one
+banked sound per frame and comparing (`src/audio.rs`, about 13 µs/frame). A
+reload hook or a program revision counter would delete that mechanism.
 
 ---
 
 ## Host-side (embedding) friction
 
-Not language issues, but they cost the same time and are worth listing:
+Not language issues, but they cost the same time:
 
-- **`Host::end_frame(&mut self, env)` gives no `StackKey`**, and `Env` exposes
-  no way to enumerate stacks, so calling a script function from the audio
-  engine required probing `env.heap_for(StackKey(n))` over a 64-key window and
-  taking the highest live key. Either signature — `end_frame(env, stack)` or
-  `Env::main_stack()` — makes the probe unnecessary.
+- **`Host::end_frame(&mut self, env)` gives no `StackKey`**, and `Env` has no
+  way to enumerate stacks, so calling a script function from the audio engine
+  probes `env.heap_for(StackKey(n))` over a window and takes the highest live
+  key (`src/audio.rs`, `resolve_stack`). Passing the stack down, or an
+  `Env::main_stack()`, would remove the probe.
 - **`Host::after_frame` is only called from the interactive loop**, so
-  `launch_cart` (the boot menu handing over to a cart) silently does nothing in
-  `--agent`, `--headless`, `--screenshot` and `--record`. `end_frame` was
-  extended to every mode for this project; `after_frame` was not.
-- **The crate has no `[lib]` target**, so nothing in `tests/` can import the
-  PPU or the APU; all 54 unit tests live in `#[cfg(test)]` blocks inside
-  the modules. Fine, but it is a decision each Shape-B app re-makes.
+  `launch_cart` silently does nothing in `--agent`, `--headless`,
+  `--screenshot` and `--record`. `end_frame` runs in every mode; `after_frame`
+  does not.
+- **The crate has no `[lib]` target**, so `tests/` cannot import the PPU or APU
+  and the unit tests live in `#[cfg(test)]` blocks inside the modules. Fine,
+  but a decision each Shape B app re-makes.
 
 ---
 
@@ -433,7 +195,7 @@ Not language issues, but they cost the same time and are worth listing:
 | | |
 |---|---|
 | Would build a console in Petal again | Yes |
-| Blocking for this class of app | §1 (`state` name collisions) and §8 — both now fixed |
-| Highest-value additions | A non-allocating string/char API (§9), bitwise ops + hex literals (§5), string-literal record keys (§4) |
-| Best surprise | Realtime audio synthesis at 0.32 ms/frame (§F) |
-| Best-loved feature | The frame model, and the hot reload that falls out of it (§A) |
+| Was blocking, now fixed | §1 (`state` name collisions), §8 (`std` prelude inside host modules) |
+| Highest-value additions still open | a non-allocating string/char API (§9), bitwise ops and hex literals (§5), string-literal record keys (§4) |
+| Best surprise | Realtime audio synthesis at 0.32 ms/frame |
+| Best-loved feature | The frame model, and the hot reload that falls out of it |

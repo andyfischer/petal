@@ -20,7 +20,7 @@ Status legend:
 - ⚠️ **Needs hardening** — works, but has a known correctness/robustness risk
   under a core promise.
 
-Last reviewed: 2026-08-30.
+Last reviewed: 2026-09-02.
 
 ---
 
@@ -139,13 +139,13 @@ and general cross-language mounting are still aspirational.
 | Capability | Status | Notes |
 |---|---|---|
 | Reverse-mode AD / back-propagation | 🔭 | Still no gradient/adjoint code (`rust/src/builtins/autodiff.rs` is forward-mode duals only). **Its motivating use case has been served another way** — drag-to-edit now works through provenance + goal-based editing, which is sound for literal arguments and needs no differentiability. Reverse-mode AD is now justified only by the cases provenance *can't* reach: an output that depends on a source constant through arithmetic rather than as a direct argument. Worth scoping to a concrete such case before building. |
-| Forward-mode derivatives for `exp` / `log` | 🟡 | Confirmed still open: `native_exp`/`native_log` (`rust/src/builtins/creative_coding.rs:188`) call `get_float` and drop the derivative, unlike the `unary_float_dual` path used by `sin`/`cos`/`tan`/`sqrt`. Small, mechanical, ~10 lines. |
+| Forward-mode derivatives for `exp` / `log` | 🟡 | Still open: `native_exp`/`native_log` (`rust/src/builtins/creative_coding.rs`) drop the derivative, unlike the `unary_float_dual` path used by `sin`/`cos`/`tan`/`sqrt` in `math.rs`. Small and mechanical. |
 
 ### Goal 2 — First-class state
 
 | Capability | Status | Notes |
 |---|---|---|
-| State correctness under repeated reassignment / SSA `Copy` masking | ⚠️ | Partly closed. `rust/src/ir_validate.rs` now enforces state-op invariants — every state op carries a `state_key`, and every `StateRead`/`StateWrite` key has a matching `StateInit`. **Still missing:** the reassignment-count check (`StateWrite` count == top-level reassignment count), which is the invariant that would have caught the original `Copy`-masking bug, and property tests over the Phi/state machinery — the workspace has no `proptest`/`quickcheck` dependency. State trust is existential for the pitch. |
+| State correctness under repeated reassignment / SSA `Copy` masking | ⚠️ | Partly closed. `rust/src/ir_validate.rs` enforces the state-op invariants: every state op carries a `state_key`, and every `StateRead`/`StateWrite` key has a matching `StateInit`. **Still missing:** the reassignment-count check (`StateWrite` count equals top-level reassignment count), which is the invariant that would have caught the original `Copy`-masking bug, and property tests over the Phi/state machinery (the workspace has no `proptest`/`quickcheck` dependency). |
 
 > `state` is per *use* (React-`useState`-style) as of 2026-08-25: a slot is the
 > declaration id plus the call path that reached it, so callsites, loop
@@ -173,7 +173,7 @@ and general cross-language mounting are still aspirational.
 | Area | Status | Notes |
 |---|---|---|
 | AI-legibility as a *named* goal | 🟡 | More pieces have shipped and de-facto differentiate: MCP tools ([mcp-server.md](mcp-server.md)), the GPP v2 protocol with one wire definition, slimmed schema-0.2 IR/AST JSON dumps, `ExplainTerm`, `--observe`, goal-based editing as a programmatic edit API, and deterministic differential verification. Remaining: consolidate them into a coherent, *documented* agent-facing surface rather than a set of separately-documented tools. |
-| Types as a projection | 🟡 | Still dynamically typed at runtime, by design. Since the last review: classes (`class Rect … end` naming a record shape with a constructor, type name and `fn Rect.method` declarations), receiver/field/arity/bound-signature checking, and `set` checked against a var's declared type. The checker still only ever *warns* — but inference is no longer purely advisory: `lint --fix`'s drop-identity-casts rule acts on it, so a wrong inferred type becomes a wrong rewrite. A `num` type ("int or float") and per-method signatures have since landed, so the built-in `Rect` and its methods are typed end to end. Future: richer inference from the dataflow graph, parameterized types. See [type-declarations-plan.md](type-declarations-plan.md) and [type-declarations-progress.md](type-declarations-progress.md#whats-next). |
+| Types as a projection | 🟡 | Still dynamically typed at runtime, by design. Since the last review: classes (`class Rect … end` naming a record shape with a constructor, type name and `fn Rect.method` declarations), receiver/field/arity/bound-signature checking, and `set` checked against a var's declared type. The checker still only ever *warns* — but inference is no longer purely advisory: `lint --fix`'s drop-identity-casts rule acts on it, so a wrong inferred type becomes a wrong rewrite. A `num` type ("int or float") and per-method signatures have since landed, so the built-in `Rect` and its methods are typed end to end. Future: richer inference from the dataflow graph, parameterized types. See [type-declarations-plan.md](type-declarations-plan.md) (its "Still open" section lists what remains). |
 | Performance | 🟡 | Introspection-first interpreter, not a fast VM. Shipped since last review: copy propagation, O(1) builtin dispatch, execution profiling, closure GC, and prelude cache hoisting. The dominant practical factor is now build profile — a script-heavy panel costs ~19 ms/frame debug vs ~2.5 ms release — so the first advice to an embedder is "build release". The structural cost (whole-program re-run per frame, inner-loop boxing) is the incremental-evaluation gap above. See [performance.md](performance.md). |
 
 ---
@@ -256,11 +256,11 @@ filled polygons, `sort_by`, string formatting, `safe_div` — is documented in
 **Closed since the last review:**
 
 - ~~Drawing functions accept float.~~ `PetalCxt::get_int` accepts `Value::Float`
-  and truncates (`rust/src/native_fn.rs:257`), so every native taking pixel
-  coordinates takes floats without an `int()` cast. The lint even removes the
+  and truncates (`rust/src/native_fn.rs`), so every native taking pixel
+  coordinates takes floats without an `int()` cast. The lint removes the
   now-redundant identity casts.
 - ~~Easing functions.~~ `ease_out` / `ease_in_out` are exported from the
-  `petal-ui` prelude (`petal-ui/prelude/ui.ptl:1607`). `ease_in` is still
+  `petal-ui` prelude (`petal-ui/prelude/ui.ptl`). `ease_in` is still
   missing — trivial to add for symmetry.
 - ~~`draw_ellipse`.~~ Shipped in the Garden panel protocol.
 - Per-call alpha shipped on the draw commands (the optional trailing `a`
@@ -268,21 +268,19 @@ filled polygons, `sort_by`, string formatting, `safe_div` — is documented in
 
 **Still open**, ranked roughly by impact-per-effort:
 
-- **Destructuring let** — `let { x, y, vx, vy } = particle`. Confirmed absent
-  (no destructuring in the parser or language guide). Complements record
-  spread; check `ast.rs` first, the pattern-matching infra may already cover
-  most of it.
+- **Destructuring let** — `let { x, y, vx, vy } = particle`. Absent.
+  Complements record spread; the `match` pattern infrastructure in `ast.rs`
+  may already cover most of it.
 - **`random_gaussian(mean, stddev)`** — natural-looking scatter/particle
-  distributions. Confirmed absent. Small.
+  distributions. Absent. Small.
 - **More draw primitives & styling** — `draw_arc`, outlined `draw_polygon`;
   global `set_alpha`; separate fill and stroke (`set_fill`, `set_stroke`,
   `set_stroke_width`). Per-call alpha already covers the common case.
 - **Transformation stack** — `push_matrix`/`pop_matrix`/`translate`/`rotate`/
-  `scale`. Confirmed absent everywhere. Essential for hierarchical animation;
-  touches the renderer.
-- **List comprehensions** — `[ expr for i in range(...) ]`. Confirmed absent.
-  Sugar over the `for` + `push` loop; big readability win for initializers.
-  Medium parser work.
+  `scale`. Absent. Essential for hierarchical animation; touches the renderer.
+- **List comprehensions** — `[ expr for i in range(...) ]`. Absent, though
+  `for` in value position now collects into a list, which covers the common
+  case. Medium parser work if the sugar is still wanted.
 - **`vec3` / `vec4`** — generalize the `vec2` machinery if 3D/4D color math or
   a 3D renderer becomes interesting. Not urgent.
 
@@ -295,15 +293,11 @@ Wishlist (larger / speculative):
   `O(n²)`-style neighbor queries (differential growth, flocking) tractable at
   large `n`.
 
-### Doc nits worth fixing
+### Known limitation
 
-- The headless `--screenshot` renderer has no font (nothing font- or
-  text-related in `integrations/petal-desktop-sdl/src/screenshot.rs`), so
-  `draw_text` is a no-op there — note it so people don't think text drawing is
-  broken.
-
-> The `noise()` arity nit is closed — [Builtins.md](../Builtins.md) documents
-> all three arities.
+- The headless `--screenshot` renderer in petal-sdl has no font
+  (`integrations/petal-desktop-sdl/src/screenshot.rs`), so `draw_text` draws
+  nothing there. Noted in [debugging-visibility.md](debugging-visibility.md).
 
 ### Design philosophy (creative coding)
 

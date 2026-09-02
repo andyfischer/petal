@@ -59,6 +59,32 @@ fn reglist(rs: &[u16]) -> String {
     format!("[{}]", regs(rs))
 }
 
+/// A call's argument list, with each named argument prefixed `name: `. Falls
+/// back to [`reglist`] verbatim for the all-positional case, so the disassembly
+/// of an ordinary call is unchanged.
+fn arglist(
+    program: &Program,
+    rs: &[u16],
+    names: &crate::backend::bytecode::isa::ArgNames,
+) -> String {
+    if names.is_empty() {
+        return reglist(rs);
+    }
+    let parts: Vec<String> = rs
+        .iter()
+        .enumerate()
+        .map(|(i, r)| match names.get(i).and_then(|n| n.as_ref()) {
+            // Bare, not quoted: it reads as the parameter it binds.
+            Some(c) => match program.get_string_constant(*c) {
+                Some(n) => format!("{}: r{}", n, r),
+                None => format!("{}: r{}", kconst(program, *c), r),
+            },
+            None => format!("r{}", r),
+        })
+        .collect();
+    format!("[{}]", parts.join(", "))
+}
+
 /// Resolve a constant to a compact literal for display.
 fn kconst(program: &Program, k: crate::constant_table::ConstantId) -> String {
     program.constants.get(k).display_compact()
@@ -105,13 +131,24 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         LoopPop { slot } => format!("loop_pop slot{}", slot),
         LoopCollect { slot, src } => format!("loop_collect slot{} <- r{}", slot, src),
         LoopCollectEnd { slot, dst } => format!("r{} = loop_collect_end slot{}", dst, slot),
-        Call { dst, callee, args } => format!("r{} = call r{} {}", dst, callee, reglist(args)),
+        Call {
+            dst,
+            callee,
+            args,
+            arg_names,
+        } => format!(
+            "r{} = call r{} {}",
+            dst,
+            callee,
+            arglist(program, args, arg_names)
+        ),
         MethodCall {
             dst,
             recv,
             name,
             args,
             hint,
+            arg_names,
         } => {
             let hint = match hint {
                 Some(h) => format!(" ?{}", kconst(program, *h)),
@@ -122,7 +159,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 dst,
                 recv,
                 kconst(program, *name),
-                reglist(args),
+                arglist(program, args, arg_names),
                 hint
             )
         }
@@ -131,6 +168,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             name,
             args,
             in_place,
+            arg_names,
         } => {
             let tag = if *in_place {
                 "builtin_in_place"
@@ -142,7 +180,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
                 dst,
                 tag,
                 kconst(program, *name),
-                reglist(args)
+                arglist(program, args, arg_names)
             )
         }
         MakeClosure { dst, func, caps } => {
@@ -359,6 +397,7 @@ mod inst_json_tests {
                 name: ConstantId(1),
                 args: smallvec![0, 4],
                 in_place: false,
+                arg_names: smallvec![],
             })
             .unwrap(),
             json!({ "BuiltinCall": { "dst": 5, "name": 1, "args": [0, 4], "in_place": false } })

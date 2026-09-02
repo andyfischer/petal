@@ -18,7 +18,7 @@ mod phi;
 mod state_ids;
 mod stmt;
 
-pub(crate) use state_ids::{append_ordinal, callee_text};
+pub(crate) use state_ids::{append_ordinal, callee_text, shift_arg_names};
 
 use std::collections::{HashMap, HashSet};
 

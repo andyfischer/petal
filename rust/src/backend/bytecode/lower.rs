@@ -493,11 +493,14 @@ impl<'p> FnLowerer<'p> {
 
             // --- calls / closures (M1c) ---
             // A `Call` term is [callable, args...]; a `MethodCall` is
-            // [receiver, args...]; a `BuiltinCall` carries only args.
+            // [receiver, args...]; a `BuiltinCall` carries only args. The
+            // term's `arg_names` is already parallel to each of those argument
+            // slices, so it copies straight across.
             TermOp::Call => Inst::Call {
                 dst,
                 callee: self.flat(ins[0])?,
                 args: self.regs(&ins[1..])?,
+                arg_names: term.arg_names.clone(),
             },
             TermOp::MethodCall { name, hint } => Inst::MethodCall {
                 dst,
@@ -505,12 +508,14 @@ impl<'p> FnLowerer<'p> {
                 name: *name,
                 args: self.regs(&ins[1..])?,
                 hint: *hint,
+                arg_names: term.arg_names.clone(),
             },
             TermOp::BuiltinCall(name) => Inst::BuiltinCall {
                 dst,
                 name: *name,
                 args: self.regs(ins)?,
                 in_place: self.in_place.allows(term.id),
+                arg_names: term.arg_names.clone(),
             },
             TermOp::MakeClosure(fn_id) => Inst::MakeClosure {
                 dst,

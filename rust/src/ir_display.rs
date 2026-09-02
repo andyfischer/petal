@@ -546,7 +546,25 @@ fn render_term(
         }
         format!("t{}", i.0)
     };
-    let inputs: Vec<String> = term.inputs.iter().map(fmt_input).collect();
+    // A named argument of a call prints as `limit: t7`; a positional one, and
+    // every input of every other op, is unchanged.
+    let arg_offset = term.op.arg_offset().unwrap_or(0);
+    let inputs: Vec<String> = term
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let rendered = fmt_input(t);
+            match i
+                .checked_sub(arg_offset)
+                .and_then(|a| term.arg_names.get(a))
+                .and_then(|n| n.as_ref())
+            {
+                Some(cid) => format!("{}: {}", kname(program, *cid), rendered),
+                None => rendered,
+            }
+        })
+        .collect();
     let blocks: Vec<String> = term
         .child_blocks
         .iter()

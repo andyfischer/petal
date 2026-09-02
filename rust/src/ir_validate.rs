@@ -320,6 +320,31 @@ impl Program {
             {
                 return Err(format!("t{}: BuiltinCall name is not a string constant", i));
             }
+            // Named-argument metadata: only calls carry it, it is either empty
+            // or exactly as long as the op's argument slice, and every name
+            // resolves to a String constant.
+            if !term.arg_names.is_empty() {
+                let Some(offset) = term.op.arg_offset() else {
+                    return Err(format!("t{}: arg_names on a non-call op", i));
+                };
+                let n_args = term.inputs.len().saturating_sub(offset);
+                if term.arg_names.len() != n_args {
+                    return Err(format!(
+                        "t{}: arg_names has {} entries for {} arguments",
+                        i,
+                        term.arg_names.len(),
+                        n_args
+                    ));
+                }
+                for c in term.arg_names.iter().flatten() {
+                    if c.0 >= n_consts {
+                        return Err(format!("t{}: constant c{} out of range", i, c.0));
+                    }
+                    if self.get_string_constant(*c).is_none() {
+                        return Err(format!("t{}: argument name is not a string constant", i));
+                    }
+                }
+            }
             // State ops require a state_key. Other ops *may* also carry one:
             // a `Copy` produced by a state-tracking reassignment references its
             // StateInit's key (see compile_assign).

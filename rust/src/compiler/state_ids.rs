@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use smallvec::SmallVec;
 
 use crate::ast::{Expr, ExprKind};
+use crate::constant_table::{ConstantId, ConstantValue};
 use crate::program::{StateKey, TermId, TermOp};
 
 use super::Compiler;
@@ -52,6 +53,19 @@ pub(crate) fn append_ordinal(counts: &mut HashMap<String, u32>, base: &mut Strin
     if ordinal > 0 {
         base.push_str(&format!("#{ordinal}"));
     }
+}
+
+/// Shift an interned name list by one slot, prepending a positional `None`.
+/// Used where a receiver becomes the first entry of the argument slice — the
+/// pinned-static-method call, whose inputs are `[callee, receiver, args…]`.
+/// An empty (all-positional) list stays empty.
+pub(crate) fn shift_arg_names(
+    mut names: SmallVec<[Option<ConstantId>; 4]>,
+) -> SmallVec<[Option<ConstantId>; 4]> {
+    if !names.is_empty() {
+        names.insert(0, None);
+    }
+    names
 }
 
 impl Compiler {
@@ -155,19 +169,41 @@ impl Compiler {
         Self::hash_state_name(&base)
     }
 
+    /// Intern each written argument name into the constant table, preserving
+    /// the parallel-to-`args` shape the frontend produced. An empty input
+    /// (every argument positional) stays empty and allocates nothing.
+    pub(super) fn intern_arg_names(
+        &mut self,
+        arg_names: &[Option<String>],
+    ) -> SmallVec<[Option<ConstantId>; 4]> {
+        arg_names
+            .iter()
+            .map(|n| {
+                n.as_ref()
+                    .map(|s| self.constants.intern(ConstantValue::String(s.clone())))
+            })
+            .collect()
+    }
+
     /// Emit a call term (`Call`/`MethodCall`/`BuiltinCall`) carrying its
     /// callsite id, derived from `callee`'s canonical text. The single place a
     /// call term is created, so no call can silently reach the runtime without
     /// a path part.
+    ///
+    /// `arg_names` is the interned name of each argument, parallel to the op's
+    /// argument slice (see [`crate::program::Term::arg_names`]); empty for the
+    /// all-positional case.
     pub(super) fn emit_call_term(
         &mut self,
         op: TermOp,
         inputs: SmallVec<[TermId; 4]>,
         callee: &str,
+        arg_names: SmallVec<[Option<ConstantId>; 4]>,
     ) -> TermId {
         let site = self.call_site_for(callee);
         let tid = self.emit_term(op, inputs, None);
         self.terms[tid.0 as usize].call_site = Some(site);
+        self.terms[tid.0 as usize].arg_names = arg_names;
         tid
     }
 

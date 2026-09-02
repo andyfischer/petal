@@ -53,11 +53,26 @@ pub fn program_to_dot(program: &Program, hide_phantoms: bool) -> String {
 
         // Dataflow edges (input -> term). Skip edges referencing phantom
         // builtins so the rendered graph matches the visible nodes.
-        for input_id in &term.inputs {
+        let arg_offset = term.op.arg_offset().unwrap_or(0);
+        for (i, input_id) in term.inputs.iter().enumerate() {
             if hide_phantoms && is_phantom(program, program.get_term(*input_id)) {
                 continue;
             }
-            writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap();
+            // A named argument's edge carries the parameter it binds.
+            match i
+                .checked_sub(arg_offset)
+                .and_then(|a| term.arg_names.get(a))
+                .and_then(|n| n.as_ref())
+                .and_then(|c| program.get_string_constant(*c))
+            {
+                Some(name) => writeln!(
+                    dot,
+                    "  t{} -> t{} [label=\"{}:\"];",
+                    input_id.0, term.id.0, name
+                )
+                .unwrap(),
+                None => writeln!(dot, "  t{} -> t{};", input_id.0, term.id.0).unwrap(),
+            }
         }
 
         // Method-dispatch edges (function -> call site). Not an operand — a

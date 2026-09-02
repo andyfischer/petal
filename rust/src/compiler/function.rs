@@ -157,6 +157,7 @@ impl Compiler {
             TermOp::BuiltinCall(name_c),
             smallvec![class_tid, method_tid, func],
             DECLARE_METHOD_BUILTIN,
+            SmallVec::new(),
         );
     }
 

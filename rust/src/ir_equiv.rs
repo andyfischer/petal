@@ -382,7 +382,12 @@ impl<'p> Cmp<'p> {
         if key_a != key_b {
             return Err(IrDiff::new(label, "op", key_a, key_b).at(span));
         }
-        let scalars: [(&str, String, String); 5] = [
+        let scalars: [(&str, String, String); 6] = [
+            (
+                "argument names",
+                arg_names_key(self.a, &term_a.arg_names),
+                arg_names_key(self.b, &term_b.arg_names),
+            ),
             (
                 "name",
                 format!("{:?}", term_a.name),
@@ -581,6 +586,23 @@ fn cval(p: &Program, c: ConstantId) -> String {
 
 fn cvals(p: &Program, ids: &[ConstantId]) -> String {
     let parts: Vec<String> = ids.iter().map(|c| cval(p, *c)).collect();
+    format!("[{}]", parts.join(", "))
+}
+
+/// A program-independent rendering of a call term's named-argument metadata:
+/// two calls that bind the same values to different parameters are not
+/// equivalent, so the names take part in the comparison.
+fn arg_names_key(p: &Program, names: &[Option<ConstantId>]) -> String {
+    if names.is_empty() {
+        return "[]".into();
+    }
+    let parts: Vec<String> = names
+        .iter()
+        .map(|n| match n {
+            Some(c) => cval(p, *c),
+            None => "positional".into(),
+        })
+        .collect();
     format!("[{}]", parts.join(", "))
 }
 

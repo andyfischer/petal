@@ -283,6 +283,18 @@ impl TermOp {
             _ => Vec::new(),
         }
     }
+
+    /// Where a call op's arguments start in `Term.inputs`: after the callee
+    /// (`Call`) or the receiver (`MethodCall`), at 0 for a `BuiltinCall`.
+    /// `None` for everything that is not a call. The single definition of the
+    /// slice [`Term::arg_names`] is parallel to.
+    pub fn arg_offset(&self) -> Option<usize> {
+        match self {
+            TermOp::Call | TermOp::MethodCall { .. } => Some(1),
+            TermOp::BuiltinCall(_) => Some(0),
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +378,16 @@ pub struct Term {
     /// `Compiler::call_site_for` and docs/dev/state-call-paths.md §3.1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_site: Option<u64>,
+    /// For a call term (`Call`/`MethodCall`/`BuiltinCall`): the written name of
+    /// each argument of `f(x, limit: 10)`, interned into the constant table.
+    ///
+    /// Parallel to the op's **argument slice** — `inputs[1..]` for `Call` and
+    /// `MethodCall` (the callee/receiver is never named), all of `inputs` for
+    /// `BuiltinCall` — the same slices `backend::bytecode::lower` cuts. Empty
+    /// means every argument is positional, the overwhelmingly common case;
+    /// when non-empty it has exactly the length of that slice.
+    #[serde(default, skip_serializing_if = "smallvec_empty")]
+    pub arg_names: SmallVec<[Option<ConstantId>; 4]>,
     /// For a loop control term (`ForLoop`/`NumericForLoop`/`WhileLoop`): collect
     /// each iteration's body result into a list and yield it as the term's
     /// value. Set only when the loop is used in value position (`x = for …`);
@@ -381,7 +403,7 @@ pub struct Term {
 
 impl Term {
     /// A term carrying no optional metadata: `state_key`, `child_blocks`,
-    /// `path_pop`, `call_site`, `collect` and `is_config` all at their
+    /// `path_pop`, `call_site`, `arg_names`, `collect` and `is_config` all at their
     /// serialization defaults, and the block links unset. The single place
     /// those defaults are written down, so adding a `Term` field does not mean
     /// hunting down every construction site.
@@ -406,6 +428,7 @@ impl Term {
             child_blocks: SmallVec::new(),
             path_pop: 0,
             call_site: None,
+            arg_names: SmallVec::new(),
             collect: false,
             is_config: false,
         }

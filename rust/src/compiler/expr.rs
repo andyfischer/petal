@@ -103,14 +103,11 @@ impl Compiler {
                 args,
                 arg_names,
             } => {
-                // TEMPORARY: the frontend parses `f(a: 1)` but no layer below
-                // binds it yet. Remove with the IR/VM support.
-                if !arg_names.is_empty() {
-                    let msg_cid = self.constants.intern(ConstantValue::String(
-                        "named arguments are not supported yet".to_string(),
-                    ));
-                    return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
-                }
+                // Each written name, interned, parallel to the op's argument
+                // slice (see `Term::arg_names`). Empty stays empty: the
+                // all-positional path allocates nothing and behaves exactly as
+                // it did before named arguments existed.
+                let names = self.intern_arg_names(arg_names);
                 // Detect method syntax: obj.method(args...)
                 if let ExprKind::FieldAccess { object, field } = &function.kind {
                     // `ui.button(...)` where `ui` is an unshadowed module
@@ -122,7 +119,7 @@ impl Compiler {
                             inputs.push(self.compile_expr(arg));
                         }
                         let callee = super::callee_text(function);
-                        return self.emit_call_term(TermOp::Call, inputs, &callee);
+                        return self.emit_call_term(TermOp::Call, inputs, &callee, names);
                     }
                     // A site the checker pinned to one class calls that class's
                     // method directly, as an ordinary `Call` whose callee is the
@@ -178,7 +175,15 @@ impl Compiler {
                         for arg in args {
                             inputs.push(self.compile_expr(arg));
                         }
-                        return self.emit_call_term(TermOp::Call, inputs, &callee_text);
+                        // `inputs` is [callee, receiver, args…], so the
+                        // argument slice starts at the receiver — which is
+                        // never named, and takes the leading `None`.
+                        return self.emit_call_term(
+                            TermOp::Call,
+                            inputs,
+                            &callee_text,
+                            shift_arg_names(names),
+                        );
                     }
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
@@ -201,6 +206,7 @@ impl Compiler {
                         },
                         inputs,
                         &callee_text,
+                        names,
                     )
                 } else {
                     // A bare identifier that currently resolves in scope to
@@ -223,7 +229,7 @@ impl Compiler {
                             inputs.push(self.compile_expr(arg));
                         }
                         let name_cid = self.constants.intern(ConstantValue::String(name.clone()));
-                        self.emit_call_term(TermOp::BuiltinCall(name_cid), inputs, &name)
+                        self.emit_call_term(TermOp::BuiltinCall(name_cid), inputs, &name, names)
                     } else {
                         let func_tid = self.compile_expr(function);
                         let mut inputs: SmallVec<[TermId; 4]> = smallvec![func_tid];
@@ -231,7 +237,7 @@ impl Compiler {
                             inputs.push(self.compile_expr(arg));
                         }
                         let callee = super::callee_text(function);
-                        self.emit_call_term(TermOp::Call, inputs, &callee)
+                        self.emit_call_term(TermOp::Call, inputs, &callee, names)
                     }
                 }
             }

@@ -39,6 +39,18 @@ pub type LoopSlot = u16;
 /// serializes. Constant-table operands (`ConstantId`) serialize as their index
 /// number. Serialize-only: the bytecode is not an interchange format — the IR
 /// JSON is — so there is no `Deserialize`.
+/// The interned name of each argument of a call instruction, parallel to its
+/// `args`; `None` for a positional argument. Empty for an all-positional call.
+/// Carried straight over from [`crate::program::Term::arg_names`] — the VM
+/// binds against the callee's parameter list, so these are metadata, never
+/// operands: no register accessor touches them.
+pub type ArgNames = SmallVec<[Option<ConstantId>; 4]>;
+
+/// `skip_serializing_if` helper for [`ArgNames`] (the derive needs a path).
+fn arg_names_empty(v: &ArgNames) -> bool {
+    v.is_empty()
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum Inst {
     // --- constants / moves ---
@@ -226,6 +238,12 @@ pub enum Inst {
         dst: Reg,
         callee: Reg,
         args: SmallVec<[Reg; 4]>,
+        /// The written name of each argument (`f(x, limit: 10)`), parallel to
+        /// `args`. Empty means every argument is positional — the common case,
+        /// and the one the VM's fast path takes. Serialization-skipped when
+        /// empty, so a positional call's JSON row is unchanged.
+        #[serde(default, skip_serializing_if = "arg_names_empty")]
+        arg_names: ArgNames,
     },
     MethodCall {
         dst: Reg,
@@ -235,6 +253,12 @@ pub enum Inst {
         /// Class to fall back on when the receiver's own label answers
         /// nothing — see [`crate::program::TermOp::MethodCall`].
         hint: Option<ConstantId>,
+        /// The written name of each argument (`f(x, limit: 10)`), parallel to
+        /// `args`. Empty means every argument is positional — the common case,
+        /// and the one the VM's fast path takes. Serialization-skipped when
+        /// empty, so a positional call's JSON row is unchanged.
+        #[serde(default, skip_serializing_if = "arg_names_empty")]
+        arg_names: ArgNames,
     },
     /// `dst = name(args…)`. `in_place` is set by escape analysis (M4) when the
     /// builtin is a mutation (`append`/`set`/…) whose container argument is
@@ -246,6 +270,12 @@ pub enum Inst {
         name: ConstantId,
         args: SmallVec<[Reg; 4]>,
         in_place: bool,
+        /// The written name of each argument (`f(x, limit: 10)`), parallel to
+        /// `args`. Empty means every argument is positional — the common case,
+        /// and the one the VM's fast path takes. Serialization-skipped when
+        /// empty, so a positional call's JSON row is unchanged.
+        #[serde(default, skip_serializing_if = "arg_names_empty")]
+        arg_names: ArgNames,
     },
     MakeClosure {
         dst: Reg,

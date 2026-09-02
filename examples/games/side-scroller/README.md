@@ -25,9 +25,9 @@ side-scroller/
 The "hybrid" Rust/Petal split:
 
 - **Rust side** (`integrations/petal-desktop-sdl/`) provides the engine: SDL window, input,
-  rendering, frame loop, hot reload, and the host-function bridge. We
-  added three new natives here: `load_text_file`, `save_text_file`,
-  `file_exists` (used by the editor and level loader).
+  rendering, frame loop, hot reload, and the host-function bridge. It also
+  provides the three file natives the editor and level loader use:
+  `load_text_file`, `save_text_file`, `file_exists`.
 - **Petal side** (`game.ptl`, `editor.ptl`) is everything else: physics,
   camera, enemies, HUD, particles, parallax, level format, editor logic.
 
@@ -44,10 +44,12 @@ The "hybrid" Rust/Petal split:
 ./examples/games/side-scroller/run-editor.sh
 ```
 
-You can also pass the script directly:
+The launchers build the host if needed and run from `examples/games/` so the
+level paths in the scripts resolve. To pass the script directly, do the same:
 
 ```bash
-./integrations/petal-desktop-sdl/target/debug/petal-sdl examples/games/side-scroller/game.ptl --width 960 --height 600
+cd examples/games
+../../integrations/petal-desktop-sdl/target/debug/petal-sdl side-scroller/game.ptl --width 960 --height 600
 ```
 
 ## Game controls

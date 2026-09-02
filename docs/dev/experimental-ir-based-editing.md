@@ -29,7 +29,7 @@ execution order** via `block_next`/`block_prev` (an in-memory linked list;
 `Block.entry` is the head; on the wire this is the block's ordered `terms`
 array, from which the links are rebuilt on load). Other fields: `op: TermOp`,
 `block_id`, `name` (binding label), `register`, `state_key`, `child_blocks`,
-`in_loop`.
+`path_pop`, `call_site`.
 
 `TermOp` ([`program.rs`](../../rust/src/program.rs)) is the operation vocabulary:
 arithmetic/comparison, `Copy`, `Phi`, `Branch`, `Return`, `Constant(id)`,

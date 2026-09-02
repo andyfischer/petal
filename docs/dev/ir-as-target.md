@@ -56,7 +56,7 @@ only contract is the schema below — and emits Petal IR JSON straight from its
 own AST:
 
 ```bash
-echo 'print 1 + 2 * 3' | tsx ts/tools/calc-to-ir.ts | petal run --ir -   # => 7
+echo 'print 1 + 2 * 3' | npx tsx ts/tools/calc-to-ir.ts | petal run --ir -   # => 7
 ```
 
 It demonstrates the key conventions a foreign front-end must honour: constants

@@ -47,11 +47,11 @@ lives in `garden-script`.
   in the gamma-encoded space CSS blends in. Reintroducing a linearization step,
   or picking an `…Srgb` target format, silently lightens every translucent fill
   and pulls glyph color away from shape color. Details:
-  [`../architecture.md`](../architecture.md#garden-render--gpu-renderer).
+  [`../architecture.md`](../architecture.md#garden-render-gpu-renderer).
 - **Layout is editable state, and the live panes are its source of truth.**
   Runtime rearrangements and out-of-band content changes are persisted by
   rebuilding the tree from the live panes and rewriting the `layout(...)` call.
-  Details: [`../architecture.md`](../architecture.md#layout-as-editable-state).
+  Details: [`../architecture.md`](../architecture.md#layout-as-editable-state-the-transient-overlay).
 - Paths written as `../<name>` in Garden's Rust comments mean siblings of the
   `garden/` directory: the Petal crates and docs at the repo root.
 

@@ -12,7 +12,7 @@ globals**.
   [goal-based-editing.md](goal-based-editing.md).
 
 This guide is task-oriented: it shows the *patterns* you compose from those
-primitives. The running example is Garden (`~/garden/garden-script`), a text
+primitives. The running example is Garden (`garden/garden-script` in this repo), a text
 editor whose whole layout, theme, and color scheme are declared by a user's
 `init.ptl`.
 
@@ -27,8 +27,8 @@ its [`PetalCxt`], and anything the host needs to hand off should live on the
 
 Why it matters:
 
-- **Forks.** `env.fork_stack` gives a script its own [`ExecutionContext`] (heap +
-  registries). A global would be shared across forks and corrupt them; the
+- **Forks.** `env.fork_execution` gives a script its own [`ExecutionContext`]
+  (heap + registries). A global would be shared across forks and corrupt them; the
   per-`Env` channels are addressed by stack (`take_output_buffer_for`,
   `set_binding_for`), so each fork stays isolated.
 - **Multiple hosts / threads.** Two `ScriptHost`s on two threads each own an
@@ -58,10 +58,8 @@ not compute a result or mutate host state; it just pushes its argument into a
 symbol-keyed buffer. After the run the host drains that buffer and interprets the
 values it finds.
 
-This replaces the older "capture slot" anti-pattern (a `thread_local!
-Option<T>` the native writes and the host takes). The buffer version is a drop-in
-improvement: it survives forks, needs no reset dance beyond a clear, and keeps
-all state on the `Env`.
+Compared with a `thread_local! Option<T>` capture slot, the buffer survives
+forks, needs no reset beyond a clear, and keeps all state on the `Env`.
 
 ### 1. The native fn just emits
 
@@ -136,7 +134,7 @@ fn run_and_extract(&mut self) -> Result<Layout, String> {
 - **Buffer values are GC roots.** While a run is in progress, anything in an
   output buffer is marked live (see `env/gc.rs`), so an emitted value won't be
   collected before you drain it.
-- **Forks emit into their own context.** If you `fork_stack`, drain the fork's
+- **Forks emit into their own context.** If you `fork_execution`, drain the fork's
   buffer with `take_output_buffer_for(fork, sym)` and decode against
   `heap_for(fork)`, not the default heap.
 - **Errors surface host-side.** Because the native emits without validating, a
@@ -150,12 +148,12 @@ fn run_and_extract(&mut self) -> Result<Layout, String> {
 
 Garden's `layout` / `color_theme` / `color_scheme` are exactly this pattern:
 
-- Natives: `~/garden/garden-script/src/native_fns.rs` (push into
+- Natives: `garden/garden-script/src/native_fns.rs` (push into
   `garden.layout` / `garden.color_theme` / `garden.color_scheme`).
 - Host drain + interpret: `ScriptHost::run_and_extract` in
-  `~/garden/garden-script/src/lib.rs`.
+  `garden/garden-script/src/lib.rs`.
 - Interpreters: `convert_layout` / `convert_theme` in
-  `~/garden/garden-script/src/convert.rs`.
+  `garden/garden-script/src/convert.rs`.
 
 The same pattern powers every renderer in the repo: draw natives don't draw,
 they `emit` into the `draw_commands` buffer, and the host decodes it each frame.
@@ -272,12 +270,8 @@ site.args[0].editable_span(program);  // the text a rewrite must replace
   from the ids when something asks. A 60fps host that traces every shape but
   queries one per mouse move pays for exactly that.
 
-Why not the two designs that suggest themselves first? *Re-running with tracing
-bindings* needs the second run to reproduce the first exactly — same `random()`,
-same clock, same input — so it is only as sound as the program is deterministic.
-*Extra callbacks per native in trace mode* is sound, but makes the hot path pay
-dispatch for a feature almost no run uses. Recording an id the VM already
-computed costs a push, and a run with tracing off pays nothing at all.
+Recording an id the VM already computed costs a push, and a run with tracing
+off pays nothing at all.
 
 Garden's Petal IDE is built on this: hover a shape on the canvas and the
 `draw_*` call that drew it highlights in the editor beside it.
@@ -320,11 +314,11 @@ native.
 
 Output buffers observe *data*. When a native must call *back into host logic*
 synchronously mid-run — e.g. an async data provider answering `query(kind, arg)`
-— a buffer can't carry the `Box<dyn Trait>`. Today that still uses a
-scoped-swap `thread_local!` (install the provider around `env.run`, reclaim it
-after), as in `~/garden/garden-script/src/query.rs`. This is the one case the
-buffer pattern does not cover; prefer bindings/buffers whenever the host side is
-plain data rather than a callback.
+— a buffer can't carry the `Box<dyn Trait>`. That case uses a scoped-swap
+`thread_local!` (install the provider around `env.run`, reclaim it after), as
+in `garden/garden-script/src/query.rs`. This is the one case the buffer pattern
+does not cover; prefer bindings/buffers whenever the host side is plain data
+rather than a callback.
 
 ### Persisting an observed call back to source
 

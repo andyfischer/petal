@@ -118,7 +118,7 @@ Garden also rearranges panes at runtime and saves the result back as code.
 the border between two panes resizes the split. Each change rewrites just the
 `layout(...)` call (comments and helpers preserved) into a per-window overlay
 at `~/.garden/state/window-<id>/window.ptl`, so your `init.ptl` is never
-touched. Details: [architecture.md](docs/architecture.md#layout-as-editable-state).
+touched. Details: [architecture.md](docs/architecture.md#layout-as-editable-state-the-transient-overlay).
 
 ### Theming
 

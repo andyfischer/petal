@@ -31,7 +31,6 @@ API reference lives in `petal::provenance`.
 - [Building a hit test](#building-a-hit-test)
 - [Rules that keep it correct](#rules-that-keep-it-correct)
 - [Cost](#cost)
-- [Design notes: two approaches not taken](#design-notes-two-approaches-not-taken)
 - [Worked example](#worked-example)
 
 ## The five-minute version
@@ -72,7 +71,7 @@ for (i, site) in sites.iter().enumerate() {
 
 ## How it works
 
-No new machinery, and nothing re-runs. The pieces were already there:
+Nothing re-runs. The runtime already has the pieces:
 
 1. **The lowerer stamps each instruction with its IR term.** When the bytecode
    lowerer emits instructions for a term it records that term as their origin
@@ -390,16 +389,6 @@ defaults: the host's word beats the source's.
 Each returned `EditProposal` carries `config: bool`, which is also the signal
 a Garden-style host needs to render a slider per declared knob.
 
-### Where this can grow
-
-- **Goals about the emitted value itself**, not an argument — "this row should
-  be 'label'" — resolvable when the emitting call passes the value through
-  (arg-level goal derived automatically), refusable when it's constructed.
-- **Insertion goals.** "There should be a circle here" (paste, palette drop) is
-  `Goal::should_call` territory — `goal_based_editing` already inserts calls
-  with placement control; wiring it into the same channel-addressed protocol
-  makes create and adjust one API.
-
 ## Tracing live code from the CLI and MCP
 
 The protocol is exercisable without writing a host. Both halves ship as CLI
@@ -412,10 +401,12 @@ commands, and the dev MCP server exposes them to agents as `TraceEmits` and
 $ petal run --trace-emits sketch.ptl
 
 Channel 'shapes' (2 emits):
-  [0] push_output [line 4] <- 30
+  [0] push_output [line 3] <- 30
+      arg 0: computed
       arg 1: computed
-  [1] push_output [line 5] <- "label"
-      arg 1: literal = "label" (edit line 5)
+  [1] push_output [line 4] <- "label"
+      arg 0: computed
+      arg 1: literal = "label" (edit line 4)
 ```
 
 `--json` emits the structured report: per channel, each emit's value, the
@@ -428,14 +419,14 @@ the emit address `propose-edit` takes.
 ```
 $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 sketch.ptl
 2 proposals:
-  1. set `x` to 32.5 (line 1)
-  2. set `offset` to 22.5 (line 2)
+  1. set `x` to 32.5 (line 2)
+  2. set `offset` to 22.5 (line 1)
 Narrow with --configurable <var> / --static <var>, or apply one by hand.
 
 $ petal propose-edit --channel shapes --emit 0 --arg 1 --to 42.5 \
     --static x --apply sketch.ptl
 1 proposal:
-  1. set `offset` to 22.5 (line 2)
+  1. set `offset` to 22.5 (line 1)
 Applied.
 ```
 
@@ -533,25 +524,6 @@ Things worth getting right in `contains`, learned from Garden's implementation:
   drawing 500 shapes at 60fps and querying one per mouse move pays for exactly
   that one.
 
-## Design notes: two approaches not taken
-
-Both suggest themselves, and both are worse:
-
-**Run the program twice with different bindings** — once to draw, once with the
-draw natives rebound to a spatial-map collector. Appealing because tracing then
-costs the production path nothing at all. But the second run has to reproduce the
-first *exactly*: same `random()`, same clock, same input, same `state`. It is only
-ever as sound as the program is deterministic, and the failure mode is silent —
-a shape traced to the wrong line, with no signal that anything went wrong.
-
-**Register extra callbacks per native in trace mode** — sound, and it avoids the
-determinism problem. But it puts dispatch on the hot draw path for a feature
-almost no run uses, and every native has to opt in.
-
-Recording an id the VM has already computed avoids both: nothing re-runs, so
-determinism is irrelevant; nothing is added to the call path except one push
-behind a bool check.
-
 ## Worked example
 
 A sketch with a helper and a loop:
@@ -602,6 +574,6 @@ reporting the position as `Computed` at this frame.
 - `petal::provenance` — the API reference for attribution.
 - `petal::direct_manipulation` — the goal-based proposal API.
 - `petal::goal_based_editing` — declarative, formatting-preserving edits for
-  config-shaped files; the insertion machinery the protocol will grow into.
-- Garden's `docs/petal-ide-mode.md` — a complete host implementation: hover a
+  config-shaped files (see [goal-based-editing.md](goal-based-editing.md)).
+- [Garden's petal-ide-mode.md](../garden/docs/petal-ide-mode.md) — a complete host implementation: hover a
   shape on the canvas, see the code highlight in the editor beside it.

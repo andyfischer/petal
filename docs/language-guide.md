@@ -57,10 +57,7 @@ set a = 2      // error: `a` is not a `var`; use `a = ...`
 b = 2          // error: `b` is a `var`; use `set b = ...` to write it
 ```
 
-That is deliberate. In a language where `=` already means "rebind", letting it
-*also* mean "write through to a cell" would put two opposite operations behind
-one glyph, told apart only by a declaration that may be far away. Every `set`
-is a place the dataflow story goes dark, so it is written where it happens.
+Keeping the two apart means every write to a cell is visible where it happens.
 
 `set` also takes field and index targets (`set r.a = 1`, `set xs[0] = 1`) and
 the compound forms (`set count += 1`), and never declares a binding — `set` on
@@ -95,15 +92,9 @@ plain `count`, because there both spellings mean the same thing.
 
 The reason is timing. A function captures the ordinary bindings it mentions
 **by value, at the point the function is written**: a `let` or `state` read
-inside a body answers with the value the name had on that line, and a later
-rebinding produces a new value the function never sees. A cell read answers
-with the box's contents *now*. Those are different questions, and before `get`
-they were spelled the same way — so which one you got depended on a
-declaration that might be hundreds of lines away. In a script that re-runs
-every frame the gap is exactly one frame, every frame, which looks like input
-lag rather than a mistake.
-
-So the escape hatch has one keyword per operation, and none of it is implicit:
+inside a body gives the value the name had on that line. A cell read gives the
+box's contents *now*. Those are different questions, so they are spelled
+differently. Each operation on a cell has its own keyword:
 
 | | |
 |---|---|
@@ -116,20 +107,16 @@ applies to the contents — `get cfg.width` is `(get cfg).width`, which is what 
 cell holding a record wants. It is an error on anything that is not a `var`, so
 `get` appearing in a body always means a cell.
 
-### Capturing a reactive name that moves later
+### Capturing a `state` that is written later
 
-The other half of the same problem, though only for one kind of binding.
+A function reading a `let` that is rebound below it sees the earlier binding.
+That is the defined behaviour: the later `let` is a new binding, and the
+function reads the one in scope where it was written. Nothing is reported.
 
-Because a function captures at its own position, a function reading a `let`
-that is rebound below it sees the earlier binding. That is the **defined
-behaviour**, not a mistake: the later `let` is a new binding, and the function
-above it is meant to read the one that was in scope where it was written.
-Nothing is reported.
-
-A module-level `state` is different. Rebinding it with `=` does not create a
-new binding — it writes the persisted slot (module scope is one path, so there
-is exactly one), and the *next* run of the file initialises the name from that
-slot. So a function above the write reads one run behind, every run:
+A module-level `state` is different. Writing it with `=` does not create a new
+binding — it writes the persisted slot, and the *next* run of the file
+initialises the name from that slot. So a function above the write reads one
+run behind, every run:
 
 ```petal ignore
 state scroll = 0
@@ -151,20 +138,16 @@ fn row_y(r, scroll)
 end
 ```
 
-A `state` that is never written after the function is fine to capture — the
-overwhelmingly common case, and why constants, helpers and `fn`s all keep
-reading exactly as before. Three shapes are deliberately left alone: `let`, as
-above; an inline callback (`map(xs, fn(a) … end)`), which runs inside the
-statement that created it, so nothing can move underneath it; and a binding
-local to an enclosing *function*, since only module-level ones are checked (an
-in-function `state` is a different slot per
-[call path](#one-slot-per-call-path), and the lag rule is about the one
-module-level slot a whole run shares).
-`var`/`state var` are exempt too — a bare outer-cell read is already a hard
-error there, and the `get` it demands is a live read that cannot lag.
+A `state` that is never written after the function is fine to capture, which
+is the common case. The warning does not apply to `let` (above), to an inline
+callback such as `map(xs, fn(a) … end)` (it runs inside the statement that
+created it), to a `state` declared inside a function (that is a slot per
+[call path](#one-slot-per-call-path), not one shared slot), or to `var` /
+`state var` (a bare outer-cell read is already an error there, and `get` is a
+live read that cannot lag).
 
-Between the two rules, a bare name inside a function body is always a value
-that cannot change under you, and anything live says `get`.
+The net effect: a bare name inside a function body is always a value that
+cannot change under you, and anything live says `get`.
 
 ```petal
 var score = 0
@@ -220,7 +203,7 @@ draw_circle(x + offset, 40, 12)
 ```
 
 The binding evaluates exactly as a plain `let`; what changes is how tools
-treat it. Goal-based editing (docs/direct-manipulation.md) prefers rewriting
+treat it. Goal-based editing ([direct-manipulation.md](direct-manipulation.md)) prefers rewriting
 config bindings and leaves the rest of the program alone — dragging the circle
 above edits `offset`, never `x` — and a live-editing host has an honest place
 to render a slider per knob. `config` is contextual (only special immediately
@@ -254,7 +237,7 @@ Petal is dynamically typed, but you can *optionally* annotate every binding form
 return type. Annotations are checked at compile time and are **advisory only**: a
 mismatch is a warning, never an error, and annotations have no effect at runtime.
 Run `petal check <file>` to see the warnings, or `petal check --strict` to make
-them fail the exit code (see [CLI.md](CLI.md#check--validate-without-running)).
+them fail the exit code (see [CLI.md](CLI.md#check--compile-without-running)).
 
 ```petal
 let count: int = 0
@@ -806,8 +789,7 @@ end
 ### Declaration order: top-level `fn`s are hoisted
 
 A top-level `fn` is usable **above** where it is written, so declaration order
-inside a file does not matter and mutual recursion works — the table stakes for
-parsers, tree-walkers and state machines:
+inside a file does not matter and mutual recursion works:
 
 ```petal
 fn is_even(n)
@@ -1315,8 +1297,7 @@ Calling something none of these resolve reports the class by name:
 `No method 'nope' on class Rect`. So does step 5 *failing* on a class
 instance: `P(1).first()` is a call to a method that does not exist, not a call
 to the global `first`, so it reports `No method 'first' on class P` rather than
-the builtin's own complaint. That is what a live edit which deletes
-`fn P.first` now reports.
+the builtin's own complaint.
 
 An arity error counts the arguments you wrote. The receiver is supplied by the
 call site, so a two-parameter `fn C.foo(c: C, n: int)` called as `C(1).foo()`
@@ -1433,18 +1414,17 @@ So the two mechanisms answer different questions. An annotation says *this slot
 is a C*, and the call is bound before it ever runs — predictable, and it gives
 the dataflow tools an exact edge. The fallback says *nothing else could
 answer*, and only rescues a value whose class has been edited out from under
-it. Annotating is still worth doing; it just is not the difference between a
-live edit working and failing any more.
+it. Annotating is still worth doing for the predictability and the exact
+dataflow edge.
 
 **Dataflow.** A pinned call names its callee like any other call, so
 `show-slice`, `show-provenance` and `show-graph` get the exact function. An
 unpinned one is recovered as a *may*-edge to every method of that name, since
 which one runs is not knowable until the receiver arrives.
 
-Declaration order no longer decides this. Top-level declarations are
-[hoisted](#declaration-order-top-level-fns-are-hoisted), methods included and in
-source order, so a `c.bump()` written *above* its `fn C.bump` pins to that
-method just as one written below it does.
+Pinning does not depend on where the method is written: a `c.bump()` above
+its `fn C.bump` pins to that method too. The declaration still has to have run
+by the time the call executes.
 
 ### The built-in `Rect`
 
@@ -1482,7 +1462,7 @@ name covering both positions — exporting a class exports the constructor
 `Point(…)` **and** the type `Point` in an annotation. A class its module does
 not export is private in both. Two modules still may not declare the same class
 name; the error names both files. See the
-[Module System](module-system.md#methods-are-program-wide-a-class-name-follows-export).
+[Module System](module-system.md#classes-and-methods).
 
 ### Errors
 

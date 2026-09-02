@@ -13,7 +13,8 @@ GPU-accelerated IDE in Rust, with Petal as the scripting layer.
   TypeScript run directly by Node, no build step
 - `docs/debug-server.md` — live inspection + input injection protocol
 - `docs/gpp.md` + `docs/writing-gpp-apps.md` — Garden Pane Protocol
-  (subprocess-backed panes) and how to write a client
+  (subprocess-backed panes) and how to write a client in Rust;
+  `docs/writing-gpp-apps-python.md` + `gpp-python/README.md` for Python
 - `docs/petal-graphical-panels.md` — Petal-drawn `panel(...)` panes (draw/input API)
 - `docs/petal-ide-mode.md` — `garden petal-ide` live editor + editor↔panel binding
 - `docs/keybindings.md` — key routing

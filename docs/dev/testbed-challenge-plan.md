@@ -1,17 +1,18 @@
 # Testbed challenge plan
 
 The original list of 50 target apps for the Garden panel-app testbed, drawn up
-when the testbed was started (Aug 2026). Each app exercises a different slice of
-the language and host — see the "What it tests" column.
+when the testbed was started (Aug 2026). Each app exercises a different slice
+of the language and host; see the "What it tests" column.
 
-15 of the 50 were built: the first three of each category, done as batches 1-3
-over Aug 8-9 2026. They were originally authored under `examples/testbed/<NN>-<slug>/`;
-that numbering is gone — the apps now live under the category directories
-described in [examples/README.md](../../examples/README.md), and the Status
-column below gives each one's current path. See
+20 of the 50 exist. Fifteen are panel apps under the category directories
+described in [examples/README.md](../../examples/README.md) (the first three
+of each category), and five more were written as headless console programs
+under `examples/challenge/`, which stress the language rather than the host.
+The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-The remaining 35 have not been attempted.
+`examples/games/side-scroller` is a sixteenth panel app that was not on this
+list. The remaining 30 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -19,11 +20,11 @@ The remaining 35 have not been attempted.
 | 1 | **Pong** | Game loop, keyboard input, collision, animation | built — `examples/games/pong/` |
 | 2 | **Breakout** | Many objects, collision, spawning/destruction | built — `examples/games/breakout/` |
 | 3 | **Snake** | Grid rendering, timers, keyboard input, state | built — `examples/games/snake/` |
-| 4 | **Tetris** | Complex state transitions, grids, timing |  |
+| 4 | **Tetris** | Complex state transitions, grids, timing | console — `examples/challenge/tetris.ptl` |
 | 5 | **Asteroids** | Vector movement, rotation, particles, collision |  |
 | 6 | **Flappy Bird clone** | Physics, procedural obstacles, scoring |  |
-| 7 | **2048** | Grid layout, gestures/keys, transitions |  |
-| 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click |  |
+| 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/challenge/2048.ptl` |
+| 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/challenge/minesweeper.ptl` |
 | 9 | **Memory matching game** | Card components, animation, delayed state changes |  |
 | 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation |  |
 | 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance |  |
@@ -67,7 +68,7 @@ The remaining 35 have not been attempted.
 | 45 | **Network graph explorer** | Force-directed layout, zoom/pan, selection |  |
 | 46 | **Timeline explorer** | Zooming time axis, events, filtering |  |
 | **Creative / graphical experiments** | | | |
-| 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities |  |
+| 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/challenge/boids.ptl` |
 | 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation |  |
-| 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates |  |
+| 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates | console — `examples/challenge/terrain.ptl` |
 | 50 | **Interactive solar system** | Hierarchical transforms, animation, zoom, labels |  |

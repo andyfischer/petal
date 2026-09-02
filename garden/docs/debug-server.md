@@ -106,7 +106,7 @@ after the response.
 - `command_line`: an open `:` / `/` / `?` prompt with its text, if any.
 - `file_finder`: the open fuzzy finder's query, selection, and top matches.
 - `trace`: the traced draw call under the pointer on a Petal IDE canvas, or
-  `null`. See [petal-ide-mode.md](petal-ide-mode.md#automation--headless-1).
+  `null`. See [petal-ide-mode.md](petal-ide-mode.md#automation-1).
 - `panes[]`: per pane, `kind` (`editor` / `panel`), file, title, `mode` (vim
   mode), `pending` (mid-command vim state, below), dirty flag, cursor,
   selection (text capped at 10k chars), `scroll_top` / `scroll_sub` /

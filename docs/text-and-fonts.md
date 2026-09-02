@@ -52,10 +52,10 @@ text_width("#482", {...BODY, weight: 700})      // measures the bold face
 | `italic` | Slant | `false` |
 | `spacing` | Letter-spacing in px, added after every glyph | 0 |
 
-Every field is optional, and an omitted one means *plain text*: a style is a
-diff against what `draw_text` always did. A style that names none of the
-typographic fields emits exactly the pre-typography command, byte for byte —
-which is also why adding styles to an app costs nothing until it uses one.
+Every field is optional, and an omitted one means *plain text*. A style that
+names none of the typographic fields emits the same plain `text` command as a
+bare `draw_text` call, so adding styles to an app costs nothing until it uses
+one.
 
 Degradation is per axis, not all-or-nothing: a host with one weight draws (and
 measures) bold as regular; a host with one face resolves every role to it. The
@@ -159,7 +159,7 @@ large probe size and divide. Control codes should measure 0.
 
 A table is codepoint-indexed and dense, so it's sized for ASCII/Latin; anything
 past its end uses the uniform fallback ratio. That's a known approximation for
-CJK and emoji (see the plan's §8).
+CJK and emoji (see the [typography plan](dev/typography-plan.md)).
 
 A host with a real shaper may register its own `text_width` native instead —
 the binding path is the default, not a requirement.

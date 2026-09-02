@@ -1,8 +1,8 @@
 # Building Apps
 
-Tech outline to build a full application on Petal.
+There are three ways to build an application on Petal:
 
-1. **Write a pure Petal app** — just writing `.ptl` scripts. Uses an existing app or integration.
+1. **Write a pure Petal app** — only `.ptl` scripts, run by an existing integration.
 2. **Extend an integration** — depend on an existing host as a library and add
    your app's delta (a custom renderer, extra native functions, an editor shell).
 3. **Embed Petal in a new host** — write a new integration for your platform,
@@ -183,12 +183,11 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   and an APU-shaped sound chip), the natives that feed them, and a Petal-source
   prelude registered as an implicit import; the window, loop, timing, input,
   hot reload and agent/headless/screenshot modes are all inherited. It is a
-  *reusable host for many scripts* rather than one app, which is why it lives
-  under `integrations/` — and it is the example to read for two things
-  `petal-fps` does not exercise: a host that owns **audio** (`on_sdl_init` to
-  open the device, `end_frame` to fill it, and Petal functions called *by* the
-  host to synthesize samples), and a host that ships a **prelude written in
-  Petal** rather than in Rust. See its
+  *reusable host for many scripts* rather than one app, and it is the example
+  to read for two things `petal-fps` does not exercise: a host that owns
+  **audio** (`on_sdl_init` to open the device, `end_frame` to fill it, and
+  Petal functions called *by* the host to synthesize samples), and a host that
+  ships a **prelude written in Petal** rather than in Rust. See its
   [design](../examples/custom-integrations/petal-fantasy-nes/docs/design.md) and
   [LANGUAGE_NOTES](../examples/custom-integrations/petal-fantasy-nes/LANGUAGE_NOTES.md).
 
@@ -212,8 +211,7 @@ The library owns everything reusable: `GameConfig`, the run entry points
 → `petal_ui` input translation, the agent JSON protocol, PNG encoding, the
 hot-reload watcher, and the font ladder + SDL-canvas renderer.
 
-**2. The `Host` trait is the app seam.** Rather than two narrow traits, one
-`Host` bundles the axes apps actually vary — the natives a script can call, how
+**2. The `Host` trait is the app seam** (`src/game_loop.rs`). One `Host` bundles the axes apps actually vary — the natives a script can call, how
 a live frame is painted, and how a frame is captured to pixels/JSON — with inert
 defaults for the rest (browser hooks, per-frame prep, draw stats):
 
@@ -228,18 +226,19 @@ pub trait Host {
 }
 ```
 
-The generic loop drives it: poll events → `input.begin_frame(dt)` → bind
-`frame_info`/`input` → `env.run` → `host.present`. `DefaultHost` (the binary)
+The generic loop drives it:
+
+```text
+poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
+```
+
+`DefaultHost` (the binary)
 renders `petal-ui` draw commands to an SDL canvas and adds the example browser +
 file I/O; `FpsHost` renders its framebuffer through a streaming texture and
 registers its 3D natives. Both leave the loop untouched.
 
 **3. The frame contract is identical to the web hosts'**, so behavior is
-portable:
-
-```text
-poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
-```
+portable.
 
 ### Extend the shared layer, don't special-case the app
 
@@ -252,12 +251,11 @@ via SDL relative-mouse mode. Every host — web included — now gets them for f
 The general rule: a capability an app needs belongs in the layer below it
 (§"Extension hooks, not forks").
 
-`petal-fantasy-nes` did the same three more times, and the shape of each is the
-test to apply: `Host::on_sdl_init(&sdl)` so a host can open the audio device,
-`Host::end_frame(&mut env)` called in *every* run mode so a host can drain its
-own buffers with no window, and SDL `GameController` events folded into the
-existing normalized key stream. All three default to inert, none changed
-`DefaultHost` or `petal-fps`, and gamepad support now arrives for free in every
+`petal-fantasy-nes` added three more hooks the same way: `Host::on_sdl_init(&sdl)`
+so a host can open the audio device, `Host::end_frame(&mut env)`, called in
+*every* run mode so a host can drain its own buffers with no window, and SDL
+`GameController` events folded into the existing normalized key stream. All
+three default to inert, and gamepad support arrives for free in every
 `petal-sdl` app.
 
 ### What is shared vs. custom in petal-fps (scope guide)
@@ -278,8 +276,8 @@ existing normalized key stream. All three default to inert, none changed
 - The crates are standalone (`cargo build --manifest-path <crate>/Cargo.toml`),
   not a Cargo workspace. A Shape B app carries a path (or git) dependency on
   the integration — e.g. `petal-fps` declares
-  `petal-sdl = { path = "../../integrations/petal-desktop-sdl" }` and
-  `petal-ui = { path = "../../petal-ui" }` — and building the app builds the
+  `petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }` and
+  `petal-ui = { path = "../../../petal-ui" }` — and building the app builds the
   library transitively.
 - Building either crate needs SDL2; on Homebrew macOS, set
   `LIBRARY_PATH=/opt/homebrew/lib` for the linker (see the petal-sdl notes).

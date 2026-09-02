@@ -41,7 +41,7 @@ dispatch. So the first-order model is **runtime ≈ instructions retired ÷ ~50 
 it execute fewer instructions — either by lowering it to fewer, or by writing
 less work into the script.
 
-Two consequences worth internalizing:
+Two consequences:
 
 - **An unoptimized build is ~10× slower.** `cargo build` (dev profile) runs a
   script-heavy panel at ~19 ms a frame where a release build runs it at ~2.5 ms.
@@ -94,10 +94,10 @@ strictly more instructions. Toggle them between runs, never inside one.
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
 `examples/productivity/spreadsheet` recomputing its whole grid:
 
-- **Interpreter dispatch is now the dominant cost** (~55% of samples across
+- **Interpreter dispatch is the dominant cost** (~55% of samples across
   `step_in` / `exec_inst` / `run_batch`). Cutting it further means retiring
   fewer instructions, not making dispatch cheaper.
-- **`Move` is still ~30% of instructions.** What is left are live phi copies
+- **`Move` is ~30% of instructions.** What is left are live phi copies
   around loops — the copy in and the carry out. Register coalescing (giving a
   phi and its sources one register when their live ranges do not interfere)
   is the pass that would remove them.

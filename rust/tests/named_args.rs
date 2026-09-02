@@ -229,22 +229,168 @@ fn validation_accepts_names_and_rejects_a_bad_length() {
     assert!(program.validate().is_err(), "short arg_names accepted");
 }
 
-/// The disassembly prefixes a named argument register; the temporary guard
-/// still stops the call before the VM would have to bind it.
+/// The disassembly prefixes a named argument register.
 #[test]
-fn bytecode_carries_the_names_and_the_vm_still_refuses() {
+fn bytecode_carries_the_names() {
     let src = format!("{F}f(1, b: 2)\n");
     let text = petal::inspect::render(&src, petal::inspect::Stage::Bytecode).expect("lowers");
     assert!(text.contains("b: r"), "no argument name in:\n{text}");
+}
 
+// ---------------------------------------------------------------------------
+// Runtime binding
+// ---------------------------------------------------------------------------
+
+/// Run a program and return its printed output.
+fn run(src: &str) -> Result<String, String> {
     let mut env = Env::new();
-    let pid = env.load_program(&src).expect("compiles");
-    let sid = env.create_stack(pid).expect("stack");
-    let err = env
-        .run(sid)
-        .expect_err("named arguments are still refused at runtime");
+    let pid = env.load_program(src)?;
+    let sid = env.create_stack(pid)?;
+    env.run(sid)?;
+    Ok(env.take_output().join("\n").trim().to_string())
+}
+
+fn out(src: &str) -> String {
+    run(src).unwrap_or_else(|e| panic!("run failed for {src:?}: {e}"))
+}
+
+fn err(src: &str) -> String {
+    match run(src) {
+        Ok(o) => panic!("expected an error for {src:?}, got output {o:?}"),
+        Err(e) => e,
+    }
+}
+
+/// A subtracting `f` so a swapped binding is visible in the answer.
+const SUB: &str = "fn sub(a, b)\n  a - b\nend\n";
+
+#[test]
+fn named_arguments_bind_by_name() {
+    assert_eq!(out(&format!("{SUB}print(sub(b: 2, a: 10))")), "8");
+    assert_eq!(out(&format!("{SUB}print(sub(a: 10, b: 2))")), "8");
+}
+
+#[test]
+fn positional_and_named_can_mix() {
+    assert_eq!(out(&format!("{SUB}print(sub(10, b: 2))")), "8");
+}
+
+#[test]
+fn an_unnamed_call_is_unchanged() {
+    assert_eq!(out(&format!("{SUB}print(sub(10, 2))")), "8");
+}
+
+#[test]
+fn overloads_select_by_total_count_then_bind_by_name() {
+    let src = "fn g(a)
+  a
+end
+fn g(a, b)
+  a - b
+end
+";
+    assert_eq!(out(&format!("{src}print(g(a: 5))")), "5");
+    assert_eq!(out(&format!("{src}print(g(b: 2, a: 5))")), "3");
+}
+
+#[test]
+fn a_method_binds_named_arguments_after_the_receiver() {
+    let src = "class Point
+  x,
+  y,
+end
+fn Point.shift(p, dx)
+  p.x - dx
+end
+let p = Point(10, 0)
+";
+    assert_eq!(out(&format!("{src}print(p.shift(dx: 2))")), "8");
+    // A class constructor is a function like any other.
+    assert_eq!(out(&format!("{src}print(Point(y: 1, x: 7).x)")), "7");
+}
+
+#[test]
+fn a_named_argument_cannot_rebind_the_receiver() {
+    let src = "class Point
+  x,
+  y,
+end
+fn Point.shift(p, dx)
+  p.x - dx
+end
+let p = Point(10, 0)
+print(p.shift(p: 1))
+";
     assert!(
-        format!("{err:?}").contains("named arguments are not supported yet"),
-        "unexpected error: {err:?}"
+        err(src).contains("Point.shift() got multiple values for parameter 'p'"),
+        "unexpected error: {}",
+        err(src)
+    );
+}
+
+#[test]
+fn a_lambda_binds_named_arguments_too() {
+    let src = "let k = 3
+let f = fn(a, b)
+  (a - b) * k
+end
+print(f(b: 1, a: 5))
+";
+    assert_eq!(out(src), "12");
+}
+
+#[test]
+fn recursion_through_named_arguments_still_terminates() {
+    let src = "fn fact(n, acc)
+  if n <= 1 then acc else fact(acc: acc * n, n: n - 1) end
+end
+print(fact(n: 5, acc: 1))
+";
+    assert_eq!(out(src), "120");
+}
+
+#[test]
+fn an_unknown_parameter_name_is_reported() {
+    let e = err(&format!("{SUB}print(sub(c: 1, a: 2))"));
+    assert!(
+        e.contains("sub() has no parameter named 'c'"),
+        "unexpected error: {e}"
+    );
+}
+
+#[test]
+fn a_slot_filled_twice_is_reported() {
+    let e = err(&format!("{SUB}print(sub(1, a: 2))"));
+    assert!(
+        e.contains("sub() got multiple values for parameter 'a'"),
+        "unexpected error: {e}"
+    );
+    let e = err(&format!("{SUB}print(sub(b: 1, b: 2))"));
+    assert!(
+        e.contains("sub() got multiple values for parameter 'b'"),
+        "unexpected error: {e}"
+    );
+}
+
+/// An unfilled slot cannot be reached from source: the arity check runs first,
+/// so an over-filled slot always errors before any slot is left empty. The
+/// binder still answers for it, since hand-written bytecode skips that check.
+#[test]
+fn an_unfilled_slot_is_reported() {
+    use petal::backend::calls::bind_named_args;
+    use petal::value::Value;
+
+    let params = vec!["a".to_string(), "b".to_string()];
+    let e =
+        bind_named_args("sub", &params, &[Value::Int(1)], &[Some("b")]).expect_err("a is unfilled");
+    assert_eq!(e, "sub() is missing a value for parameter 'a'");
+}
+
+#[test]
+fn a_builtin_refuses_named_arguments() {
+    let e = err("print(append([1], x: 2))");
+    assert!(
+        e.contains("builtin 'append' does not accept named arguments"),
+        "unexpected error: {e}"
     );
 }

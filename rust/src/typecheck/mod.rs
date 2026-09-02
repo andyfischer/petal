@@ -767,7 +767,12 @@ impl<'a> Checker<'a> {
                     },
                 }
             }
-            ExprKind::Call { function, args, .. } => {
+            ExprKind::Call {
+                function,
+                args,
+                arg_names,
+                ..
+            } => {
                 // `recv.name(...)` is method syntax, not a field read followed
                 // by a call: `name` is looked up among the receiver's methods
                 // (and, failing those, the globals), so walking it as a field
@@ -802,13 +807,21 @@ impl<'a> Checker<'a> {
                 } else {
                     CastSlot::ListElement
                 };
-                let arg_types: Vec<Type> = args
+                let mut arg_types: Vec<Type> = args
                     .iter()
                     .map(|a| {
                         self.slot = arg_slot;
                         self.check_expr(a)
                     })
                     .collect();
+                // Every check below pairs argument *i* with parameter *i*, a
+                // pairing named arguments break. Arity and the result type are
+                // still right (selection is by total count), so only the
+                // per-argument types are dropped — each argument's own
+                // expression has already been walked above.
+                if !arg_names.is_empty() {
+                    arg_types.iter_mut().for_each(|t| *t = Type::Any);
+                }
                 self.note_redundant_cast(expr, function, args, &arg_types, slot);
                 // A pinned method call is already fully resolved — its
                 // signature answers both the argument check and the result

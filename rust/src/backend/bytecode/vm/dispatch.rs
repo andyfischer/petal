@@ -11,17 +11,6 @@ use crate::backend::{calls, ops};
 use crate::closure_table::ClosureTable;
 use crate::program::TermOp;
 
-/// TEMPORARY: every layer from the parser down to the ISA now carries named
-/// arguments, but nothing yet permutes `argv` against the callee's parameter
-/// list. This is the last stop before that binding happens — remove it with
-/// the VM support (see `calls::push_closure_frame`).
-fn reject_named_args(arg_names: &super::super::isa::ArgNames) -> Result<(), String> {
-    if arg_names.is_empty() {
-        return Ok(());
-    }
-    Err("named arguments are not supported yet".to_string())
-}
-
 impl<'a> Vm<'a> {
     pub(super) fn exec_inst(
         &mut self,
@@ -353,10 +342,9 @@ impl<'a> Vm<'a> {
                 args,
                 arg_names,
             } => {
-                reject_named_args(arg_names)?;
                 let callable = self.reg(fi, *callee);
                 let argv = self.regs(fi, args);
-                self.do_call(fi, *dst, callable, &argv, origin)?;
+                self.do_call(fi, *dst, callable, &argv, arg_names, origin)?;
             }
             Inst::MethodCall {
                 dst,
@@ -366,10 +354,9 @@ impl<'a> Vm<'a> {
                 hint,
                 arg_names,
             } => {
-                reject_named_args(arg_names)?;
                 let receiver = self.reg(fi, *recv);
                 let argv = self.regs(fi, args);
-                self.do_method_call(fi, *dst, receiver, *name, &argv, *hint, origin)?;
+                self.do_method_call(fi, *dst, receiver, *name, &argv, arg_names, *hint, origin)?;
             }
             Inst::BuiltinCall {
                 dst,
@@ -378,9 +365,8 @@ impl<'a> Vm<'a> {
                 in_place,
                 arg_names,
             } => {
-                reject_named_args(arg_names)?;
                 let argv = self.regs(fi, args);
-                self.do_builtin_call(fi, *dst, *name, &argv, *in_place, origin)?;
+                self.do_builtin_call(fi, *dst, *name, &argv, arg_names, *in_place, origin)?;
             }
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);

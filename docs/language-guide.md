@@ -727,6 +727,36 @@ fn abs(x)
 end
 ```
 
+### Named Arguments
+
+An argument may be written `name: value`, binding it to the parameter of that
+name rather than to its position:
+
+```petal
+fn scale(value, by, offset)
+    value * by + offset
+end
+
+print(scale(2, by: 10, offset: 1))    // 21
+print(scale(by: 10, offset: 1, value: 2))  // 21
+```
+
+Every positional argument must come before every named one — `f(a: 1, 2)` is a
+syntax error. Overloads are still chosen by the *total* number of arguments
+(positional plus named); only once a function is chosen do the names pick out
+its parameter slots. Passing a name the function has no parameter for, filling
+one slot twice, or leaving one empty is an error:
+
+```petal
+scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
+scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
+```
+
+A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
+parameters after it — and naming the receiver's own parameter is the
+double-bind error above. Builtins carry no parameter names at runtime, so
+`append(list, x: 1)` is rejected rather than guessed at.
+
 ### Recursion
 
 ```petal

@@ -49,6 +49,7 @@ impl<'a> Vm<'a> {
         dst: Reg,
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
+        arg_names: &crate::backend::bytecode::isa::ArgNames,
         in_place: bool,
         origin: Option<TermId>,
     ) -> Result<(), String> {
@@ -73,6 +74,7 @@ impl<'a> Vm<'a> {
                 }
             }
         };
+        super::calls::reject_named_args(arg_names, self.native_fns.get_name(nid))?;
         // `__declare_method` publishes a method into the running stack, which
         // is state no native can reach through `PetalCxt` — so it is handled
         // here rather than dispatched. The compiler is its only caller.

@@ -7,6 +7,7 @@
 
 use super::*;
 
+use crate::backend::bytecode::isa::ArgNames;
 use crate::backend::calls;
 use crate::program::ClosureId;
 
@@ -102,16 +103,21 @@ impl<'a> Vm<'a> {
         dst: Reg,
         callable: Value,
         args: &[Value],
+        arg_names: &ArgNames,
         call_site: Option<TermId>,
     ) -> Result<(), String> {
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
+                // Overload selection is by *total* argument count, named or
+                // not; the names only matter once a callee — and so a parameter
+                // list — has been picked.
                 let cid =
                     calls::resolve_callable(self.program, self.closures, callable, args.len())?;
                 let site = self.site_of(call_site);
-                self.push_closure_frame(cid, args, Some(dst), call_site, site)?;
+                self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site)?;
             }
             Value::NativeFunction(nid) => {
+                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v = self.call_native_or_intrinsic(nid, args, call_site)?;
                 self.set(fi, dst, v);
             }
@@ -185,6 +191,7 @@ impl<'a> Vm<'a> {
         recv: Value,
         name_cid: crate::constant_table::ConstantId,
         args: &[Value],
+        arg_names: &ArgNames,
         hint_cid: Option<crate::constant_table::ConstantId>,
         call_site: Option<TermId>,
     ) -> Result<(), String> {
@@ -200,9 +207,10 @@ impl<'a> Vm<'a> {
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
-                        return self.do_call(fi, dst, field_val, args, call_site);
+                        return self.do_call(fi, dst, field_val, args, arg_names, call_site);
                     }
                     Value::NativeFunction(nid) => {
+                        reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                         let v = self.call_native_fn(nid, args, false, call_site)?;
                         self.set(fi, dst, v);
                         return Ok(());
@@ -226,9 +234,17 @@ impl<'a> Vm<'a> {
                 .and_then(|m| m.get(method_name))
                 .copied()
             {
-                return self.do_call(fi, dst, func, &with_receiver(recv, args), call_site);
+                return self.do_call(
+                    fi,
+                    dst,
+                    func,
+                    &with_receiver(recv, args),
+                    &with_receiver_names(arg_names),
+                    call_site,
+                );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
+                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v =
                     self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
                 self.set(fi, dst, v);
@@ -251,9 +267,17 @@ impl<'a> Vm<'a> {
                 .and_then(|m| m.get(method_name))
                 .copied()
             {
-                return self.do_call(fi, dst, func, &with_receiver(recv, args), call_site);
+                return self.do_call(
+                    fi,
+                    dst,
+                    func,
+                    &with_receiver(recv, args),
+                    &with_receiver_names(arg_names),
+                    call_site,
+                );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(hint, method_name) {
+                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v =
                     self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
                 self.set(fi, dst, v);
@@ -265,6 +289,7 @@ impl<'a> Vm<'a> {
         //    table. This runs before the native-table lookup so class methods
         //    win over same-named globals (e.g. the builtin `get`).
         if let Value::Handle(h) = recv {
+            reject_named_args(arg_names, method_name)?;
             let v = self.call_handle_method(h, method_name, args, call_site)?;
             self.set(fi, dst, v);
             return Ok(());
@@ -316,6 +341,7 @@ impl<'a> Vm<'a> {
         &mut self,
         cid: ClosureId,
         args: &[Value],
+        arg_names: &ArgNames,
         dst: Option<Reg>,
         call_site: Option<TermId>,
         site: u64,
@@ -326,25 +352,48 @@ impl<'a> Vm<'a> {
 
         let bcfn = bc.function(fn_id);
         let func = &program.functions[fn_id.0 as usize];
+        let fn_name = func.name.as_deref().unwrap_or("<anonymous>");
         if args.len() != func.params.len() {
-            let name = func.name.as_deref().unwrap_or("<anonymous>");
             // A method's receiver is a parameter the *call site* supplies:
             // `c.foo()` passes `c` even though the user wrote no arguments.
             // Counting it would report `C.foo() expects 2 arguments, got 1` at
             // a call that wrote none of either. Saturating because the count is
             // only a message: the prescan rejects a receiverless method, but
             // hand-written IR reaches here without passing through it.
-            let hidden = usize::from(crate::classes::split_qualified_method_name(name).is_some());
+            let hidden =
+                usize::from(crate::classes::split_qualified_method_name(fn_name).is_some());
             let want = func.params.len().saturating_sub(hidden);
             let got = args.len().saturating_sub(hidden);
             return Err(format!(
                 "{}() expects {} argument{}, got {}",
-                name,
+                fn_name,
                 want,
                 if want == 1 { "" } else { "s" },
                 got
             ));
         }
+
+        // Named arguments are permuted into parameter order here: the one
+        // place the callee's `params` sits next to the caller's `args`. An
+        // empty `arg_names` — every call that writes no name — reuses `args`
+        // untouched, so the common path allocates nothing.
+        let bound;
+        let args = if arg_names.is_empty() {
+            args
+        } else {
+            let mut names: SmallVec<[Option<&str>; 4]> = SmallVec::with_capacity(arg_names.len());
+            for cid in arg_names {
+                names.push(match cid {
+                    Some(cid) => match program.get_string_constant(*cid) {
+                        Some(s) => Some(s),
+                        None => return Err("Invalid argument name".into()),
+                    },
+                    None => None,
+                });
+            }
+            bound = calls::bind_named_args(fn_name, &func.params, args, &names)?;
+            &bound[..]
+        };
 
         self.profile.record_call();
         let mut frame =
@@ -386,6 +435,28 @@ fn no_method(method_name: &str, what: &str) -> String {
         Some(hint) => format!("No method '{method_name}' on {what} — {hint}"),
         None => format!("No method '{method_name}' on {what}"),
     }
+}
+
+/// The argument names for a method's real argument list: a leading `None` for
+/// the receiver, then the written names. Kept aligned with [`with_receiver`].
+/// An unnamed call stays empty so the callee takes the fast path.
+fn with_receiver_names(arg_names: &ArgNames) -> ArgNames {
+    if arg_names.is_empty() {
+        return ArgNames::new();
+    }
+    let mut full = ArgNames::with_capacity(arg_names.len() + 1);
+    full.push(None);
+    full.extend_from_slice(arg_names);
+    full
+}
+
+/// Phase one: the native registry carries no parameter names at runtime, so a
+/// named argument to a builtin is refused rather than guessed at.
+pub(super) fn reject_named_args(arg_names: &ArgNames, name: &str) -> Result<(), String> {
+    if arg_names.is_empty() {
+        return Ok(());
+    }
+    Err(format!("builtin '{name}' does not accept named arguments"))
 }
 
 /// A method's real argument list: the receiver, then the written arguments.

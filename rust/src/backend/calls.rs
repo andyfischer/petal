@@ -9,6 +9,7 @@
 use crate::closure_table::ClosureTable;
 use crate::program::{ClosureId, OverloadEntry, Program, base_fn_name};
 use crate::value::Value;
+use smallvec::SmallVec;
 
 /// Resolve a callable to a `ClosureId`, selecting an overload by `arg_count`.
 pub fn resolve_callable(
@@ -104,4 +105,73 @@ pub fn make_overload_set(
     }
 
     overload_val
+}
+
+/// Permute `args` into the callee's parameter order, given the written name of
+/// each argument (`None` = positional).
+///
+/// `names` is parallel to `args`; the parser guarantees every positional
+/// argument precedes every named one, so the positional prefix fills slots
+/// `0..k` in order and each named argument then claims the slot its name picks
+/// out. A method's receiver arrives as a leading positional argument, so it
+/// owns `params[0]` and a named argument that repeats it is reported as a
+/// double-bind rather than silently overwriting it.
+///
+/// Only called when at least one argument is named — the all-positional path
+/// never builds this vector. `args.len() == params.len()` is already checked by
+/// the caller's arity error, which is why an unfilled slot here can only mean a
+/// name landed on a slot some other argument already took.
+pub fn bind_named_args(
+    fn_name: &str,
+    params: &[String],
+    args: &[Value],
+    names: &[Option<&str>],
+) -> Result<SmallVec<[Value; 8]>, String> {
+    let mut slots: SmallVec<[Option<Value>; 8]> = smallvec::smallvec![None; params.len()];
+    let mut next_positional = 0usize;
+    for (i, &arg) in args.iter().enumerate() {
+        let slot = match names.get(i).copied().flatten() {
+            None => {
+                let slot = next_positional;
+                next_positional += 1;
+                slot
+            }
+            Some(name) => match params.iter().position(|p| p == name) {
+                Some(slot) => slot,
+                None => return Err(format!("{fn_name}() has no parameter named '{name}'")),
+            },
+        };
+        match slots.get_mut(slot) {
+            Some(cell) if cell.is_none() => *cell = Some(arg),
+            Some(_) => {
+                return Err(format!(
+                    "{}() got multiple values for parameter '{}'",
+                    fn_name, params[slot]
+                ));
+            }
+            // Unreachable while the arity check runs first, but hand-written
+            // bytecode reaches here without it.
+            None => {
+                return Err(format!(
+                    "{}() expects {} arguments, got {}",
+                    fn_name,
+                    params.len(),
+                    args.len()
+                ));
+            }
+        }
+    }
+    let mut bound: SmallVec<[Value; 8]> = SmallVec::with_capacity(params.len());
+    for (slot, cell) in slots.into_iter().enumerate() {
+        match cell {
+            Some(v) => bound.push(v),
+            None => {
+                return Err(format!(
+                    "{}() is missing a value for parameter '{}'",
+                    fn_name, params[slot]
+                ));
+            }
+        }
+    }
+    Ok(bound)
 }

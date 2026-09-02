@@ -703,7 +703,6 @@ mod tests {
     use crate::constant_table::{ConstantId, ConstantTable, ConstantValue};
     use crate::program::*;
     use crate::source_map::SourceMap;
-    use smallvec::SmallVec;
     use std::collections::HashMap;
 
     /// Build a minimal program with the given terms for testing.

@@ -48,11 +48,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
-          restore-keys: cargo-core-${{ runner.os }}-
+            petal-ui/target
+          key: cargo-ts-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'petal-ui/Cargo.lock') }}
+          restore-keys: cargo-ts-${{ runner.os }}-
 
       - name: Build petal binary (used by vitest)
         run: cargo build --manifest-path rust/Cargo.toml
+
+      # verify.ts aborts its whole run (exit 2) when the corpus has UI apps and
+      # this driver is missing, which fails test/verify.test.ts.
+      - name: Build petal-ui-run driver (used by ts/bin/verify.ts)
+        run: cargo build --manifest-path petal-ui/Cargo.toml --bin petal-ui-run
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

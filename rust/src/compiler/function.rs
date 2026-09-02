@@ -20,7 +20,20 @@ impl Compiler {
         body: &[Stmt],
         def_end: u32,
     ) -> Option<TermId> {
-        let Some(&expected_count) = self.overloaded_fns.get(name) else {
+        // `overloaded_fns` is collected from a module's *top-level* statements
+        // only, but every `fn` declaration reaches this point. A nested
+        // declaration that happens to share a name with a top-level overload set
+        // is not one of its variants, so it must not be counted as one: doing so
+        // both discarded the nested function (its variant never completed the
+        // set, so nothing was bound) and, when the nested one compiled first,
+        // built a `MakeOverloadSet` over a term from the enclosing function's
+        // block. `fn_name_chain` is empty only at module scope, which is exactly
+        // where the prescan looked.
+        let overloaded = self
+            .overloaded_fns
+            .get(name)
+            .filter(|_| self.fn_name_chain.is_empty());
+        let Some(&expected_count) = overloaded else {
             let closure_tid =
                 self.compile_function(Some(name.to_string()), params, body, Some(def_end));
             // Module functions carry a qualified display name ("ui::button")
@@ -61,7 +74,13 @@ impl Compiler {
     /// the ones compiled before this point — resolves through that cell, so the
     /// declaration *writes* it rather than rebinding the name.
     fn bind_fn_result(&mut self, name: &str, value: TermId) {
-        if self.binding_is_fn_cell(name) {
+        // Only a *hoisted* declaration writes a cell, and hoisting happens at
+        // module scope only — a nested `fn` binds where it is written. Without
+        // the scope test, `binding_is_fn_cell` walks outward past the function
+        // boundary, so a nested declaration sharing a name with a top-level one
+        // overwrote the enclosing cell (capturing a root-block term into this
+        // function) instead of shadowing it.
+        if self.fn_name_chain.is_empty() && self.binding_is_fn_cell(name) {
             let cell = self
                 .scope_lookup(name)
                 .expect("a fn-cell binding resolves in the scope that declares it");

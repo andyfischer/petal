@@ -24,6 +24,23 @@ greet("a", "b")   // hi a b
 - **Top level only.** Overloading works for `fn` declarations at the top of a
   file. Inside a function body, a second `fn g(...)` with a different count
   replaces the first rather than joining it. Lambdas never overload.
+  A nested `fn` that reuses a top-level name *shadows* the whole set for the
+  rest of its enclosing function, and never becomes a variant of it — the set
+  keeps its own arities everywhere else:
+
+  ```petal
+  fn box(w) w * w end
+  fn box(w, h) w * h end
+
+  fn outer()
+      fn box(x) 10 end   // shadows both variants, only inside outer()
+      box(3)             // 10
+  end
+
+  print(outer())    // 10
+  print(box(3))     // 9
+  print(box(3, 4))  // 12
+  ```
 - **Declaration order does not matter.** Top-level `fn`s are hoisted, so a
   call can appear above every variant.
 - **The set is one value.** `let k = greet` binds all variants; `k("x")` and

@@ -9,6 +9,13 @@
 //! Every recorded path is absolute and canonicalized, so the same file reached
 //! through a relative path, a symlinked checkout, or a different working
 //! directory upserts one row rather than sprouting near-duplicates.
+//!
+//! Garden itself only *writes* these lists: the reader is the `main-menu` GPP
+//! app, which queries the same tables over its own connection. The read helpers
+//! below ([`Recents::recent_files`] and friends) therefore have no in-process
+//! caller — they exist as the oracle the tests in this module check the writers
+//! against, and as the shape a future in-process reader would use, so they carry
+//! `#[allow(dead_code)]`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,6 +26,7 @@ use serde::Serialize;
 
 /// A file the user opened, newest-first in [`Recents::recent_files`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[allow(dead_code)]
 pub struct RecentFile {
     pub path: String,
     /// Repo root the file lives under, absent for files outside any repo.
@@ -29,6 +37,7 @@ pub struct RecentFile {
 
 /// A project (git repo root) the user opened a file from, or opened directly.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[allow(dead_code)]
 pub struct RecentProject {
     pub path: String,
     /// Final path component of `path` — what the UI shows as the project name.
@@ -39,6 +48,7 @@ pub struct RecentProject {
 
 /// A GitHub pull request the user reviewed, keyed by `(repo, number)`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[allow(dead_code)]
 pub struct RecentPr {
     pub repo: String,
     pub number: i64,
@@ -234,6 +244,7 @@ impl Recents {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn recent_files(&self, limit: usize) -> Result<Vec<RecentFile>, String> {
         let mut stmt = self
             .conn
@@ -256,6 +267,7 @@ impl Recents {
         Ok(rows)
     }
 
+    #[allow(dead_code)]
     pub fn recent_projects(&self, limit: usize) -> Result<Vec<RecentProject>, String> {
         let mut stmt = self
             .conn
@@ -278,6 +290,7 @@ impl Recents {
         Ok(rows)
     }
 
+    #[allow(dead_code)]
     pub fn recent_prs(&self, limit: usize) -> Result<Vec<RecentPr>, String> {
         let mut stmt = self
             .conn

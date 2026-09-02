@@ -9,12 +9,13 @@
 //! frames and exit automatically (used for smoke testing).
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use garden_render::{Color, Primitive, Rect, Renderer, Scene, TextStyle, FONT_SIZE};
+use garden_render::{Color, FrameOutcome, Primitive, Rect, Renderer, Scene, TextStyle, FONT_SIZE};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState};
 use winit::window::{Window, WindowId};
 
@@ -25,11 +26,18 @@ const GUTTER_FG: Color = Color::rgba(0.6, 0.65, 0.75, 0.5);
 const TEXT_FG: Color = Color::rgb(0.85, 0.87, 0.91);
 const CURSOR: Color = Color::rgba(0.95, 0.75, 0.30, 0.9);
 
+/// How long to wait before retrying after the surface was unavailable. The
+/// renderer never re-requests its own redraw, so retrying on a timer keeps an
+/// occluded window from spinning an unthrottled redraw loop.
+const SURFACE_RETRY: Duration = Duration::from_millis(100);
+
 struct Demo {
     state: Option<DemoState>,
     modifiers: ModifiersState,
     frames_rendered: u64,
     exit_after_frames: Option<u64>,
+    /// When the surface was unavailable, when to ask for the next redraw.
+    retry_surface_at: Option<Instant>,
 }
 
 struct DemoState {
@@ -177,7 +185,15 @@ impl ApplicationHandler for Demo {
             }
             WindowEvent::RedrawRequested => {
                 let scene = build_scene(state);
-                state.renderer.render(&scene);
+                if state.renderer.render(&scene) == FrameOutcome::Skipped {
+                    // Surface unavailable (occluded / display asleep): nothing
+                    // was presented, so retry on a timer rather than counting
+                    // the frame or re-requesting a redraw now, which would
+                    // busy-loop. See `about_to_wait`.
+                    self.retry_surface_at = Some(Instant::now() + SURFACE_RETRY);
+                    return;
+                }
+                self.retry_surface_at = None;
                 self.frames_rendered += 1;
                 if let Some(limit) = self.exit_after_frames {
                     if self.frames_rendered >= limit {
@@ -189,6 +205,22 @@ impl ApplicationHandler for Demo {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(at) = self.retry_surface_at else {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+        if Instant::now() >= at {
+            self.retry_surface_at = None;
+            event_loop.set_control_flow(ControlFlow::Wait);
+            if let Some(state) = &self.state {
+                state.window.request_redraw();
+            }
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(at));
         }
     }
 }
@@ -203,6 +235,7 @@ fn main() {
         modifiers: ModifiersState::default(),
         frames_rendered: 0,
         exit_after_frames,
+        retry_surface_at: None,
     };
     event_loop.run_app(&mut demo).expect("event loop error");
 }

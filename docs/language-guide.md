@@ -763,6 +763,21 @@ scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
 scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
 ```
 
+Wherever the callee is known before the program runs — a function or a
+constructor named at the call site, or a binding that holds one — `petal check`
+reports both of these as warnings too, whether or not the line ever executes,
+and lists the detail the runtime error has no room for:
+
+```
+warning: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offset')
+warning: scale() got multiple values for parameter 'value' (argument 1 already fills it)
+```
+
+`petal check --strict` exits non-zero on them, so a bad name fails CI without
+the branch ever being taken. The runtime error is still the only report for a
+method call, for a callee this pass cannot see (a function passed in as a
+parameter), and for a builtin.
+
 Lambdas take named arguments too, since they have parameter names like any
 other function:
 

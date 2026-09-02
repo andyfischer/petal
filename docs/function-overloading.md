@@ -102,7 +102,14 @@ print(box(h: 2, w: 5))    // [5, 2]
 
 So a name the chosen variant does not declare is caught only after
 selection: `box(depth: 1)` picks the one-parameter `box`, then fails with
-`box() has no parameter named 'depth'`.
+`box() has no parameter named 'depth'`. `petal check` reports it ahead of the
+run in the same words, plus the parameters the chosen variant does have
+(`box() has no parameter named 'depth' (parameters: 'w')`).
+
+Note that the message names `box`, not the `box#1` the compiler calls the
+one-argument variant internally. That internal name never appears in output —
+not in an error, not in `show-ir`, `show-bytecode`, `show-graph`, `explain`, a
+recorded trace, or the function table a host calls through.
 
 ## Wrong argument count
 

@@ -1181,7 +1181,11 @@ pub(super) fn handle_show_provenance(
         println!(
             "Provenance of t{} ({}):",
             root_id.0,
-            root_term.name.as_deref().map(base_fn_name).unwrap_or("unnamed")
+            root_term
+                .name
+                .as_deref()
+                .map(base_fn_name)
+                .unwrap_or("unnamed")
         );
         println!("  op: {:?}", root_term.op);
         println!(
@@ -1297,7 +1301,11 @@ pub(super) fn handle_show_dependents(
         println!(
             "Dependents of t{} ({}):",
             root_id.0,
-            root_term.name.as_deref().map(base_fn_name).unwrap_or("unnamed")
+            root_term
+                .name
+                .as_deref()
+                .map(base_fn_name)
+                .unwrap_or("unnamed")
         );
         println!("  op: {:?}", root_term.op);
         println!();

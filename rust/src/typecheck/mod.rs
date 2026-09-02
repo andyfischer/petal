@@ -372,12 +372,31 @@ impl<'a> Checker<'a> {
     /// twice. Runs only where the callee is statically known; the VM's own
     /// binding (`backend/calls.rs`) stays the backstop for everywhere else.
     ///
-    /// `what` is the already-quoted callee for the message. Positional
-    /// arguments always precede named ones (the parser enforces it), so
-    /// argument `i` fills slot `i` until the first name appears.
+    /// # Why the VM reports this too
+    ///
+    /// Both layers report a bad name, deliberately, because neither subsumes
+    /// the other. This check answers *"does this file contain a call that can
+    /// never work?"* — it fires whether or not the line ever runs, which is
+    /// what `petal check`, `--strict`, the LSP and the MCP server consume, and
+    /// it is the only report a call inside an untaken branch ever gets. The
+    /// VM's check answers *"this call just failed"* — only when reached, but
+    /// for the shapes this pass cannot see at all: method calls, opaque
+    /// callees (`fn apply(f) f(nope: 1) end`), and builtins.
+    ///
+    /// So the two are diagnosis and failure, not one complaint typed twice.
+    /// To keep them reading that way they share the VM's wording *exactly* —
+    /// `name()` and `'single quotes'` (see `diagnostic.rs`), against the
+    /// backticked house style of every other message in this pass — and this
+    /// one adds the detail the VM has no room for: the parameters that do
+    /// exist, and which argument already claimed a doubly-filled slot.
+    ///
+    /// `callee` is the subject of the message, already rendered (`sub()`, or
+    /// `this lambda`). Positional arguments always precede named ones (the
+    /// parser enforces it), so argument `i` fills slot `i` until the first name
+    /// appears.
     fn check_named_args(
         &mut self,
-        what: &str,
+        callee: &str,
         params: &[String],
         args: &[Expr],
         arg_names: &[Option<String>],
@@ -385,27 +404,35 @@ impl<'a> Checker<'a> {
         if arg_names.len() != args.len() || params.len() != args.len() {
             return;
         }
-        let mut filled = vec![false; params.len()];
+        // `Some(i)`: argument `i` (0-based) already claimed this slot.
+        let mut filled: Vec<Option<usize>> = vec![None; params.len()];
         for (i, name) in arg_names.iter().enumerate() {
             let Some(name) = name else {
-                filled[i] = true;
+                filled[i] = Some(i);
                 continue;
             };
             let Some(slot) = params.iter().position(|p| p == name) else {
+                let known: Vec<String> = params.iter().map(|p| format!("'{p}'")).collect();
                 self.warn(
                     args[i].span,
-                    format!("{what} has no parameter named `{name}`"),
+                    format!(
+                        "{callee} has no parameter named '{name}' (parameters: {})",
+                        known.join(", ")
+                    ),
                 );
                 continue;
             };
-            if filled[slot] {
+            if let Some(first) = filled[slot] {
                 self.warn(
                     args[i].span,
-                    format!("{what} got multiple values for parameter `{name}`"),
+                    format!(
+                        "{callee} got multiple values for parameter '{name}' (argument {} already fills it)",
+                        first + 1
+                    ),
                 );
                 continue;
             }
-            filled[slot] = true;
+            filled[slot] = Some(i);
         }
     }
 
@@ -1294,8 +1321,7 @@ impl<'a> Checker<'a> {
                     // which is exactly how the VM binds `Point(y: 2, x: 1)`.
                     let field_names: Vec<String> =
                         fields.iter().map(|fd| fd.name.clone()).collect();
-                    let what = format!("`{f}`");
-                    self.check_named_args(&what, &field_names, args, arg_names);
+                    self.check_named_args(&format!("{f}()"), &field_names, args, arg_names);
                 }
                 for (i, fd) in fields.iter().enumerate() {
                     let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
@@ -1357,11 +1383,14 @@ impl<'a> Checker<'a> {
         if !arg_names.is_empty()
             && let Some(params) = self.callee_param_names(function, args.len())
         {
-            let what = match &function.kind {
-                ExprKind::Ident(f) => format!("`{f}`"),
+            // Named as the VM names it — except for a lambda invoked in place,
+            // which the VM can only call `<anonymous>()` and this pass can at
+            // least point at.
+            let callee = match &function.kind {
+                ExprKind::Ident(f) => format!("{f}()"),
                 _ => "this lambda".to_string(),
             };
-            self.check_named_args(&what, &params, args, arg_names);
+            self.check_named_args(&callee, &params, args, arg_names);
         }
         for (i, pt) in sig.params.iter().enumerate() {
             let Some(pt) = pt else { continue };
@@ -2067,7 +2096,10 @@ mod tests {
     fn an_unknown_parameter_name_warns() {
         let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(a: 1, c: 2))");
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("`sub` has no parameter named `c`"), "{w:?}");
+        assert!(
+            w[0].contains("sub() has no parameter named 'c' (parameters: 'a', 'b')"),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -2076,13 +2108,20 @@ mod tests {
         let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(1, a: 2))");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(
-            w[0].contains("`sub` got multiple values for parameter `a`"),
+            w[0].contains(
+                "sub() got multiple values for parameter 'a' (argument 1 already fills it)"
+            ),
             "{w:?}"
         );
         // …and twice by name.
         let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(b: 1, b: 2))");
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("parameter `b`"), "{w:?}");
+        assert!(
+            w[0].contains(
+                "sub() got multiple values for parameter 'b' (argument 1 already fills it)"
+            ),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -2094,7 +2133,10 @@ mod tests {
         // one the count selects here.
         let w = warns(&format!("{src}print(g(limit: 1))"));
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("no parameter named `limit`"), "{w:?}");
+        assert!(
+            w[0].contains("g() has no parameter named 'limit' (parameters: 'x')"),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -2103,17 +2145,28 @@ mod tests {
         assert!(warns(&format!("{cls}print(P(y: 2, x: 1))")).is_empty());
         let w = warns(&format!("{cls}print(P(x: 1, z: 2))"));
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("`P` has no parameter named `z`"), "{w:?}");
+        assert!(
+            w[0].contains("P() has no parameter named 'z' (parameters: 'x', 'y')"),
+            "{w:?}"
+        );
         let w = warns(&format!("{cls}print(P(1, x: 2))"));
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("multiple values for parameter `x`"), "{w:?}");
+        assert!(
+            w[0].contains(
+                "P() got multiple values for parameter 'x' (argument 1 already fills it)"
+            ),
+            "{w:?}"
+        );
     }
 
     #[test]
     fn lambdas_and_nested_fns_are_checked_too() {
         let w = warns("let f = fn(a, b) -> a + b\nprint(f(a: 1, c: 2))");
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("`f` has no parameter named `c`"), "{w:?}");
+        assert!(
+            w[0].contains("f() has no parameter named 'c' (parameters: 'a', 'b')"),
+            "{w:?}"
+        );
         assert!(warns("let f = fn(a, b) -> a + b\nprint(f(b: 1, a: 2))").is_empty());
 
         // A lambda invoked in place has no name to blame.
@@ -2127,7 +2180,10 @@ mod tests {
         let bad = "fn outer()\n  fn inner(q)\n    q\n  end\n  inner(r: 1)\nend\nprint(outer())";
         let w = warns(bad);
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("no parameter named `r`"), "{w:?}");
+        assert!(
+            w[0].contains("inner() has no parameter named 'r' (parameters: 'q')"),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -2142,7 +2198,10 @@ mod tests {
             "{src}var f = a_fn\nset f = b_fn\nprint(f(alpha: 1))"
         ));
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("no parameter named `alpha`"), "{w:?}");
+        assert!(
+            w[0].contains("f() has no parameter named 'alpha' (parameters: 'beta')"),
+            "{w:?}"
+        );
     }
 
     #[test]

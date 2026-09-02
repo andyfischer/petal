@@ -453,6 +453,29 @@ pub enum PanelCmd {
     /// Restore the clip in force before the matching
     /// [`ClipPush`](PanelCmd::ClipPush). Unmatched, it resets to the pane.
     ClipPop,
+    /// Create offscreen canvas `id`, `w`×`h` panel-local px, transparent.
+    /// Ids are per frame (the script's `create_canvas` counts from 1 every
+    /// frame); the host namespaces them per pane.
+    CreateCanvas { id: u32, w: u32, h: u32 },
+    /// Aim the following commands at canvas `id` (0 = the pane itself). Inside
+    /// a canvas, coordinates are canvas-local and the clip stack starts fresh
+    /// at the canvas bounds; switching back restores the pane's clip.
+    SetTarget { id: u32 },
+    /// Composite canvas `id` into the current target with its top-left at
+    /// (`x`, `y`), scaled to `w`×`h` (0 = its own size), at opacity `a`.
+    DrawCanvas {
+        id: u32,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        a: u8,
+    },
+    /// Copy the current target's pixels under the canvas-sized rect at
+    /// (`x`, `y`) — as painted so far, cut to the clip — into canvas `id`.
+    Snapshot { id: u32, x: i32, y: i32 },
+    /// Gaussian-blur canvas `id` in place, `radius` px standard deviation.
+    BlurCanvas { id: u32, radius: u32 },
     /// Declare a read-only, natively-selectable text region: the host renders a
     /// real [`EditorView`](../../garden_app/editor_view/struct.EditorView.html)
     /// (buffer-backed, with selection + system-clipboard copy) inside this
@@ -536,31 +559,11 @@ impl PanelCmd {
     }
 }
 
-/// Complain — once per process — that a panel used the offscreen-canvas ops.
-///
-/// Garden registers [`petal_ui::draw::register_draw`] but not
-/// `register_canvas`, so a script can only reach these by emitting the tags by
-/// hand; either way the commands are dropped. Dropping them *silently* is the
-/// bad outcome: a drawer that renders everything through a canvas draws
-/// nothing at all and gives no clue why. Once is enough — a panel reruns every
-/// frame, so a per-command warning would be a firehose.
-fn warn_canvas_unsupported() {
-    static WARNED: std::sync::Once = std::sync::Once::new();
-    WARNED.call_once(|| {
-        eprintln!(
-            "[garden panel] offscreen-canvas draw commands (create_canvas / \
-             draw_to / draw_canvas) are not supported by Garden panels and were \
-             dropped; draw directly into the pane instead."
-        );
-    });
-}
-
 impl PanelCmd {
     /// Project a `petal-ui` draw command onto Garden's render vocabulary,
     /// carrying the full field set (alpha, corner `radius`, stroke `width`).
-    /// Returns `None` for commands Garden doesn't rasterize (the offscreen
-    /// canvas ops and host-extension tags — none of which this host emits,
-    /// since it doesn't register the canvas natives).
+    /// Returns `None` only for host-extension tags, which this host never
+    /// emits.
     fn from_draw(cmd: DrawCommand) -> Option<PanelCmd> {
         Some(match cmd {
             DrawCommand::Image {
@@ -901,12 +904,13 @@ impl PanelCmd {
                 PanelCmd::ClipPush { x, y, w, h, radius }
             }
             DrawCommand::ClipPop => PanelCmd::ClipPop,
-            DrawCommand::CreateCanvas { .. }
-            | DrawCommand::SetTarget { .. }
-            | DrawCommand::DrawCanvas { .. } => {
-                warn_canvas_unsupported();
-                return None;
+            DrawCommand::CreateCanvas { id, w, h } => PanelCmd::CreateCanvas { id, w, h },
+            DrawCommand::SetTarget { id } => PanelCmd::SetTarget { id },
+            DrawCommand::DrawCanvas { id, x, y, a, w, h } => {
+                PanelCmd::DrawCanvas { id, x, y, w, h, a }
             }
+            DrawCommand::Snapshot { id, x, y } => PanelCmd::Snapshot { id, x, y },
+            DrawCommand::BlurCanvas { id, radius } => PanelCmd::BlurCanvas { id, radius },
             DrawCommand::Host { .. } => return None,
         })
     }
@@ -1563,6 +1567,10 @@ impl PanelHost {
         // (The observation buffer needs no clearing here: `env.run` clears it
         // itself, so it always holds exactly this frame's bindings.)
         petal_ui::draw::clear_draw_commands(&mut self.env);
+        // Canvas ids restart at 1 each frame (and the target at the pane), so
+        // a layer drawn every frame keeps the same id and the renderer keeps
+        // its texture.
+        petal_ui::draw::reset_canvas_ids(&mut self.env);
         // The per-term trace answers questions about *this* frame only (what
         // was `bh` when that bar was drawn?), so it starts each frame empty
         // rather than accumulating a 60-per-second history nobody reads.
@@ -2504,9 +2512,9 @@ fn new_panel_env() -> Env {
 // implicit import. Garden adds only its own host channels (theme/palette,
 // `emit`/`mutate`/`navigate`, the text-view regions) and binds its monospace
 // text metric; introspection needs no native at all, since the host reads the
-// script's bindings straight out of the observation buffer. Garden does not
-// register the offscreen canvas natives — it has no render targets — so those
-// commands never appear.
+// script's bindings straight out of the observation buffer. The offscreen
+// canvas ops come with the draw vocabulary; the GPU renderer gives them real
+// render targets, and the terminal frontend ignores them.
 
 fn register_panel_natives(env: &mut Env) {
     petal_ui::input::register_input(env);
@@ -4045,6 +4053,67 @@ mod tests {
                 PanelCmd::ClipNone,
             ]
         );
+    }
+
+    /// The layer vocabulary reaches the host: a `layer` block draws into a
+    /// fresh canvas and composites it, `draw_material` snapshots + blurs the
+    /// backdrop, and nested layers restore the enclosing target.
+    #[test]
+    fn frame_emits_layer_commands() {
+        let f = write_script(
+            "layer(rect(10, 10, 20, 20), {a: 128}, fn()\n\
+                 draw_rect(0, 0, 5, 5, 1, 2, 3)\n\
+             end)\n\
+             draw_backdrop_blur(rect(0, 0, 40, 8), 6)\n",
+        );
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(100, 80);
+        let cmds = host.frame(0.016, 0).unwrap();
+        assert_eq!(
+            cmds,
+            vec![
+                PanelCmd::CreateCanvas {
+                    id: 1,
+                    w: 20,
+                    h: 20
+                },
+                PanelCmd::SetTarget { id: 1 },
+                PanelCmd::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 5,
+                    h: 5,
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 255,
+                    radius: 0
+                },
+                PanelCmd::SetTarget { id: 0 },
+                PanelCmd::DrawCanvas {
+                    id: 1,
+                    x: 10,
+                    y: 10,
+                    w: 0,
+                    h: 0,
+                    a: 128
+                },
+                PanelCmd::CreateCanvas { id: 2, w: 40, h: 8 },
+                PanelCmd::Snapshot { id: 2, x: 0, y: 0 },
+                PanelCmd::BlurCanvas { id: 2, radius: 6 },
+                PanelCmd::DrawCanvas {
+                    id: 2,
+                    x: 0,
+                    y: 0,
+                    w: 0,
+                    h: 0,
+                    a: 255
+                },
+            ]
+        );
+        // Ids restart each frame, so the renderer can keep the textures.
+        let again = host.frame(0.016, 1).unwrap();
+        assert_eq!(again, cmds);
     }
 
     #[test]

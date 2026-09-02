@@ -77,3 +77,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let cover = mask_coverage(in.local, in.mask, in.mask_radius);
     return vec4<f32>(color.rgb, color.a * in.alpha * cover);
 }
+
+// The premultiplied variant, for offscreen canvases: opacity and mask
+// coverage scale all four channels, and the pipeline blends with
+// (One, OneMinusSrcAlpha), so a canvas composites exactly as if its contents
+// had been drawn in place — and a group drawn into it at 50% reads as one
+// object at 50%, not as overlapping shapes each at 50%.
+@fragment
+fn fs_premul(in: VsOut) -> @location(0) vec4<f32> {
+    let color = textureSample(bitmap, bitmap_sampler, in.uv);
+    let cover = mask_coverage(in.local, in.mask, in.mask_radius);
+    return color * (in.alpha * cover);
+}

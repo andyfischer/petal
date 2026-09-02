@@ -493,6 +493,19 @@ impl<'a> PetalCxt<'a> {
         v
     }
 
+    /// Read the counter for `sym` without advancing it (0 if unset). With
+    /// [`set_counter`](Self::set_counter) this makes a counter usable as a
+    /// per-run scalar cell — petal-ui keeps the active offscreen render
+    /// target in one, so `draw_to` can hand back the target it replaced.
+    pub fn peek_counter(&self, sym: SymbolId) -> u64 {
+        self.counters.get(&sym).copied().unwrap_or(0)
+    }
+
+    /// Overwrite the counter for `sym`.
+    pub fn set_counter(&mut self, sym: SymbolId, value: u64) {
+        self.counters.insert(sym, value);
+    }
+
     // --- Heap access ---
 
     pub fn heap(&self) -> &Heap {

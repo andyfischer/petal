@@ -1,7 +1,9 @@
 //! # garden-render — GPU renderer for Garden
 //!
-//! Draws a [`Scene`] of primitives — solid quads and monospace text runs —
-//! using `wgpu` (quads) and `glyphon` (text shaping + glyph atlas). The
+//! Draws a [`Scene`] of primitives — quads, meshes, images and text runs, plus
+//! offscreen canvases that can be drawn into, snapshotted from the frame,
+//! blurred and composited back — using `wgpu` and `glyphon` (text shaping +
+//! glyph atlas). The
 //! renderer knows nothing about editors or layout; callers build a fresh
 //! `Scene` whenever state changes and call [`Renderer::render`]. There is no
 //! animation loop.
@@ -22,6 +24,7 @@
 //! logical sizes); the renderer multiplies by the scale factor internally.
 //! See `docs/architecture.md` in the workspace root for the crate contract.
 
+mod blur;
 pub mod fonts;
 mod globals;
 mod image;
@@ -31,9 +34,11 @@ mod text;
 
 pub use text::{last_atlas_stats, AtlasStats, FONT_SIZE, LINE_HEIGHT_RATIO};
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use image::ImagePipeline;
+use blur::Filters;
+use image::{ImageDraw, ImagePipeline, ImageSource};
 use mesh::MeshPipeline;
 use quad::QuadPipeline;
 use text::{TextRun, TextStack};
@@ -254,6 +259,49 @@ pub enum Primitive {
         clip: Rect,
         mask: ClipMask,
     },
+    /// Create (or re-create, cleared) offscreen canvas `id` of logical
+    /// `size`, transparent. Canvas ids are per scene: the same id in the next
+    /// scene reuses the texture when the size matches.
+    ///
+    /// A canvas is the renderer's one offscreen buffer, and every effect that
+    /// needs one is an operation on a canvas id — [`Target`](Self::Target)
+    /// to draw into it, [`Snapshot`](Self::Snapshot) to fill it from what is
+    /// already drawn, [`Blur`](Self::Blur) to filter it, and
+    /// [`CanvasDraw`](Self::CanvasDraw) to composite it. A new effect is a
+    /// new operation, not a new kind of buffer.
+    ///
+    /// Canvases hold **premultiplied** color: drawing straight-alpha
+    /// primitives over transparent black with the normal over-blend leaves
+    /// premultiplied pixels behind, and that is also the space a blur has to
+    /// run in for translucent edges not to darken. `CanvasDraw` composites
+    /// them accordingly.
+    Canvas { id: u32, size: (f32, f32) },
+    /// Aim every following draw at canvas `id` (or the frame for `0`), with
+    /// coordinates relative to the canvas's top-left. A target that was
+    /// never created drops the draws aimed at it.
+    Target { id: u32 },
+    /// Copy into canvas `id` the pixels of the current target under the
+    /// canvas rect placed at `from`, cut to `clip` — what a backdrop effect
+    /// samples. Reading the frame is allowed at any point: the frame is
+    /// whatever has been drawn so far.
+    Snapshot {
+        id: u32,
+        from: (f32, f32),
+        clip: Rect,
+    },
+    /// Gaussian-blur canvas `id` in place; `radius` is the standard
+    /// deviation in logical pixels (CSS `blur()` semantics), edges clamp.
+    Blur { id: u32, radius: f32 },
+    /// Composite canvas `id` (scaled to `rect`, at `alpha`) into the current
+    /// target, scissored to `clip` and cut to `mask` — the canvas analogue of
+    /// [`Image`](Self::Image).
+    CanvasDraw {
+        id: u32,
+        rect: Rect,
+        alpha: f32,
+        clip: Rect,
+        mask: ClipMask,
+    },
 }
 
 /// Everything needed to draw one frame: a background clear color plus an
@@ -270,6 +318,11 @@ pub enum Primitive {
 /// Interleaving costs one pipeline switch per run, and scenes alternate only a
 /// handful of times (a panel's shapes tessellate into a few meshes), so this is
 /// a few extra draw calls, not one per primitive.
+///
+/// The canvas primitives ([`Primitive::Canvas`] and friends) split the list
+/// further, into one render pass per stretch of draws into one target, with
+/// the copies and filters between them recorded in the same order. A scene
+/// without them is the single pass it always was.
 pub struct Scene {
     pub bg: Color,
     pub primitives: Vec<Primitive>,
@@ -434,8 +487,9 @@ fn supported_samples(adapter: &wgpu::Adapter, format: wgpu::TextureFormat) -> u3
 }
 
 /// Per-renderer GPU state: device/queue handles (shared via [`GpuContext`]),
-/// the quad and text pipelines, and the current render-target geometry
-/// (physical pixels + scale factor).
+/// the quad/mesh/image/text pipelines and the filters, the current
+/// render-target geometry (physical pixels + scale factor), and the offscreen
+/// canvases the last scene created.
 struct GpuCore {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -447,23 +501,74 @@ struct GpuCore {
     meshes: MeshPipeline,
     images: ImagePipeline,
     text: TextStack,
-    /// The multisampled color target the scene pass draws into, resolved into
-    /// the surface (or the capture texture) at the end of the pass. `None` when
-    /// `samples == 1`, in which case the pass draws to the target directly.
+    filters: Filters,
+    /// The multisampled color target the frame's passes draw into, resolved
+    /// into the surface (or the capture texture) at the end of each. `None`
+    /// when `samples == 1`, in which case passes draw to the target directly.
     /// Built on demand and rebuilt when the target size changes.
     samples: u32,
     msaa: Option<wgpu::TextureView>,
     msaa_size: (u32, u32),
-    /// The current scene split into consecutive same-kind runs, in scene
-    /// order. Recording walks this so painter's order holds across primitive
-    /// kinds — see [`Scene`].
-    batches: Vec<Batch>,
-    /// Index ranges of the text batches, positionally matching the
-    /// `BatchKind::Text` entries in `batches`.
-    text_batches: Vec<std::ops::Range<usize>>,
+    /// The current scene as a sequence of steps — draw runs, canvas
+    /// creation, target switches, snapshots and filters — in scene order.
+    /// Recording walks this so painter's order holds across primitive kinds
+    /// and across targets — see [`Scene`].
+    steps: Vec<Step>,
+    /// Physical size of every target this frame draws into, by slot: slot 0
+    /// is the frame, then one per canvas in creation order.
+    targets: Vec<(u32, u32)>,
+    /// The text batches (`Step::Draw` of kind `Text`) in order, each with
+    /// the slot it draws into — what [`TextStack::prepare`] stages against.
+    text_batches: Vec<(std::ops::Range<usize>, usize)>,
+    /// Offscreen canvases, by id. Kept across frames so a panel that creates
+    /// the same canvas every frame (they all do — the scene is rebuilt each
+    /// frame) reuses its texture; a canvas the last scene did not create is
+    /// dropped.
+    canvases: HashMap<u32, CanvasTex>,
+    /// Whether the scene reads the frame back (a [`Primitive::Snapshot`]
+    /// taken while the frame is the target). The windowed renderer then
+    /// draws into an intermediate texture — a surface texture cannot be
+    /// copied from — and presents by copying that to the surface.
+    frame_snapshot: bool,
+    /// Whether the scene has any canvas step at all. With none, the frame is
+    /// one pass and its MSAA attachment can be discarded after the resolve;
+    /// with some, the frame's passes are interleaved with canvas work and the
+    /// attachment has to survive between them.
+    multipass: bool,
+    /// The intermediate frame texture used when `frame_snapshot` — see
+    /// [`Renderer::render`].
+    frame: Option<FrameTex>,
 }
 
-/// Which pipeline draws a [`Batch`].
+/// An offscreen render target created by a [`Primitive::Canvas`].
+struct CanvasTex {
+    size_px: (u32, u32),
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    /// Its own multisampled attachment, resolved into `texture` at the end
+    /// of every pass that draws into it. `None` when not multisampling.
+    msaa: Option<wgpu::TextureView>,
+    /// Sampling bind group for the filters (`images` keeps its own).
+    sample: wgpu::BindGroup,
+    /// Globals/viewport slot — 1-based; slot 0 is the frame.
+    slot: usize,
+    /// The MSAA attachment no longer matches `texture` (a snapshot or a
+    /// filter wrote the resolved texture directly), so the next pass into
+    /// this canvas has to re-seed the attachment before drawing.
+    msaa_stale: bool,
+    /// Created by the scene being prepared; the rest are dropped.
+    used: bool,
+}
+
+/// The intermediate frame texture of a scene that snapshots the frame.
+struct FrameTex {
+    size: (u32, u32),
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    sample: wgpu::BindGroup,
+}
+
+/// Which pipeline draws a `Step::Draw`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum BatchKind {
     Quad,
@@ -472,42 +577,32 @@ enum BatchKind {
     Text,
 }
 
-/// One maximal run of consecutive same-kind primitives, as a half-open range
-/// of indices *within that kind's* staged list. Each pipeline stages in scene
-/// order, so these ranges address it directly.
+/// One unit of the recording walk, in scene order.
 #[derive(Clone, Copy, Debug)]
-struct Batch {
-    kind: BatchKind,
-    start: usize,
-    end: usize,
-}
-
-/// Split `primitives` into maximal runs of the same kind, numbering each run
-/// against a per-kind running count.
-fn batch_primitives(primitives: &[Primitive]) -> Vec<Batch> {
-    let mut batches: Vec<Batch> = Vec::new();
-    // Next unused index for each kind, in `BatchKind` order.
-    let mut next = [0usize; 4];
-    for p in primitives {
-        let kind = match p {
-            Primitive::Quad { .. } => BatchKind::Quad,
-            Primitive::Mesh { .. } => BatchKind::Mesh,
-            Primitive::Image { .. } => BatchKind::Image,
-            Primitive::Text { .. } => BatchKind::Text,
-        };
-        let slot = &mut next[kind as usize];
-        let index = *slot;
-        *slot += 1;
-        match batches.last_mut() {
-            Some(last) if last.kind == kind => last.end = index + 1,
-            _ => batches.push(Batch {
-                kind,
-                start: index,
-                end: index + 1,
-            }),
-        }
-    }
-    batches
+enum Step {
+    /// One maximal run of consecutive same-kind primitives into one target,
+    /// as a half-open range of indices *within that kind's* staged list
+    /// (each pipeline stages in scene order, so these address it directly).
+    /// `slot` is `None` when the run was aimed at a target that does not
+    /// exist — it is staged (so the indices stay aligned) but never drawn.
+    Draw {
+        kind: BatchKind,
+        start: usize,
+        end: usize,
+        slot: Option<usize>,
+    },
+    /// Clear canvas `id` to transparent.
+    Canvas { id: u32 },
+    /// Copy a region of the current target into canvas `id`.
+    Snapshot {
+        id: u32,
+        from: (f32, f32),
+        clip: Rect,
+        /// The target being read: `None` for the frame, else a canvas.
+        source: Option<u32>,
+    },
+    /// Blur canvas `id` in place.
+    Blur { id: u32, radius: f32 },
 }
 
 impl GpuCore {
@@ -524,6 +619,7 @@ impl GpuCore {
         let meshes = MeshPipeline::new(&device, format, samples);
         let images = ImagePipeline::new(&device, format, samples);
         let text = TextStack::new(&device, &queue, format, samples);
+        let filters = Filters::new(&device, format, samples);
         GpuCore {
             device,
             queue,
@@ -535,11 +631,17 @@ impl GpuCore {
             meshes,
             images,
             text,
+            filters,
             samples,
             msaa: None,
             msaa_size: (0, 0),
-            batches: Vec::new(),
+            steps: Vec::new(),
+            targets: Vec::new(),
             text_batches: Vec::new(),
+            canvases: HashMap::new(),
+            frame_snapshot: false,
+            multipass: false,
+            frame: None,
         }
     }
 
@@ -548,23 +650,38 @@ impl GpuCore {
         self.height = height.max(1);
     }
 
-    /// Make sure the multisampled target matches the current size. Called from
-    /// [`prepare_scene`](Self::prepare_scene), which both the present and the
-    /// capture path run before recording, so neither can reach the pass with a
-    /// stale attachment after a resize.
-    fn ensure_msaa(&mut self) {
+    /// A single-sampled color texture of `size` in the target format, usable
+    /// as a pass attachment, a sampled texture, and both ends of a copy.
+    fn create_color_texture(&self, label: &str, size: (u32, u32)) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width: size.0.max(1),
+                height: size.1.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+    }
+
+    /// A multisampled attachment of `size`, or `None` when not multisampling.
+    fn create_msaa(&self, label: &str, size: (u32, u32)) -> Option<wgpu::TextureView> {
         if self.samples == 1 {
-            return;
-        }
-        let size = (self.width.max(1), self.height.max(1));
-        if self.msaa.is_some() && self.msaa_size == size {
-            return;
+            return None;
         }
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("garden msaa target"),
+            label: Some(label),
             size: wgpu::Extent3d {
-                width: size.0,
-                height: size.1,
+                width: size.0.max(1),
+                height: size.1.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -574,48 +691,226 @@ impl GpuCore {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        self.msaa = Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        Some(texture.create_view(&wgpu::TextureViewDescriptor::default()))
+    }
+
+    /// Make sure the frame's multisampled target matches the current size.
+    /// Called from [`prepare_scene`](Self::prepare_scene), which both the
+    /// present and the capture path run before recording, so neither can
+    /// reach a pass with a stale attachment after a resize.
+    fn ensure_msaa(&mut self) {
+        if self.samples == 1 {
+            return;
+        }
+        let size = (self.width.max(1), self.height.max(1));
+        if self.msaa.is_some() && self.msaa_size == size {
+            return;
+        }
+        self.msaa = self.create_msaa("garden msaa target", size);
         self.msaa_size = size;
     }
 
-    /// Stage `scene` for drawing at the current target size: upload quad
-    /// instances and shape/upload text runs. Shared by present and capture.
+    /// The intermediate frame texture at the current size — see
+    /// [`GpuCore::frame_snapshot`].
+    fn ensure_frame_texture(&mut self) {
+        let size = (self.width.max(1), self.height.max(1));
+        if self.frame.as_ref().is_some_and(|f| f.size == size) {
+            return;
+        }
+        let texture = self.create_color_texture("garden frame texture", size);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sample = self.filters.sample_bind_group(&self.device, &view);
+        self.frame = Some(FrameTex {
+            size,
+            texture,
+            view,
+            sample,
+        });
+    }
+
+    /// Physical size of a canvas of logical `size` at the current scale,
+    /// clamped to what the device can allocate.
+    fn canvas_physical_size(&self, size: (f32, f32)) -> (u32, u32) {
+        let max = self.device.limits().max_texture_dimension_2d.max(1);
+        let scale = self.scale_factor;
+        let px = |v: f32| ((v.max(0.0) as f64 * scale).ceil() as u32).clamp(1, max);
+        (px(size.0), px(size.1))
+    }
+
+    /// Stage `scene` for drawing at the current target size: upload quad,
+    /// mesh and image instances, shape/upload text runs, allocate the
+    /// canvases it creates, and build the step list recording follows.
+    /// Shared by present and capture.
     fn prepare_scene(&mut self, scene: &Scene) {
         self.ensure_msaa();
+        self.filters.begin_frame();
+        self.filters.reserve_copy_params(&self.device, &self.queue);
         let scale_factor = self.scale_factor as f32;
         let physical = (self.width, self.height);
-        let logical = (
-            physical.0 as f32 / scale_factor,
-            physical.1 as f32 / scale_factor,
-        );
 
+        // ── The walk: steps, targets, canvases ────────────────────────────
+        for canvas in self.canvases.values_mut() {
+            canvas.used = false;
+        }
+        self.steps.clear();
+        self.targets.clear();
+        self.targets.push(physical);
+        self.frame_snapshot = false;
+        self.multipass = false;
+
+        // Next unused index for each kind, in `BatchKind` order.
+        let mut next = [0usize; 4];
+        // Current target: `Some(None)` is the frame, `Some(Some(id))` a
+        // canvas, `None` an id that was never created (draws are dropped).
+        let mut target: Option<Option<u32>> = Some(None);
+        let mut target_slot: Option<usize> = Some(0);
+        let mut new_canvases: Vec<(u32, (u32, u32), usize)> = Vec::new();
+        for p in &scene.primitives {
+            let kind = match p {
+                Primitive::Quad { .. } => BatchKind::Quad,
+                Primitive::Mesh { .. } => BatchKind::Mesh,
+                Primitive::Image { .. } | Primitive::CanvasDraw { .. } => BatchKind::Image,
+                Primitive::Text { .. } => BatchKind::Text,
+                Primitive::Canvas { id, size } => {
+                    self.multipass = true;
+                    let slot = self.targets.len();
+                    let size_px = self.canvas_physical_size(*size);
+                    self.targets.push(size_px);
+                    // A re-created id replaces the earlier canvas of that id
+                    // for the rest of the walk, as the draw protocol says.
+                    new_canvases.retain(|(other, _, _)| other != id);
+                    new_canvases.push((*id, size_px, slot));
+                    self.steps.push(Step::Canvas { id: *id });
+                    continue;
+                }
+                Primitive::Target { id } => {
+                    self.multipass = true;
+                    if *id == 0 {
+                        target = Some(None);
+                        target_slot = Some(0);
+                    } else {
+                        match new_canvases.iter().find(|(other, _, _)| other == id) {
+                            Some((_, _, slot)) => {
+                                target = Some(Some(*id));
+                                target_slot = Some(*slot);
+                            }
+                            None => {
+                                target = None;
+                                target_slot = None;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                Primitive::Snapshot { id, from, clip } => {
+                    self.multipass = true;
+                    let Some(source) = target else { continue };
+                    if source.is_none() {
+                        self.frame_snapshot = true;
+                    }
+                    self.steps.push(Step::Snapshot {
+                        id: *id,
+                        from: *from,
+                        clip: *clip,
+                        source,
+                    });
+                    continue;
+                }
+                Primitive::Blur { id, radius } => {
+                    self.multipass = true;
+                    self.steps.push(Step::Blur {
+                        id: *id,
+                        radius: *radius,
+                    });
+                    continue;
+                }
+            };
+            let counter = &mut next[kind as usize];
+            let index = *counter;
+            *counter += 1;
+            match self.steps.last_mut() {
+                Some(Step::Draw {
+                    kind: last_kind,
+                    end,
+                    slot,
+                    ..
+                }) if *last_kind == kind && *slot == target_slot => *end = index + 1,
+                _ => self.steps.push(Step::Draw {
+                    kind,
+                    start: index,
+                    end: index + 1,
+                    slot: target_slot,
+                }),
+            }
+        }
+
+        // ── Canvas textures ──────────────────────────────────────────────
+        self.images.clear_canvases();
+        for (id, size_px, slot) in new_canvases {
+            let reuse = self
+                .canvases
+                .get(&id)
+                .is_some_and(|c| c.size_px == size_px && !c.used);
+            if !reuse {
+                let texture = self.create_color_texture("garden canvas", size_px);
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let msaa = self.create_msaa("garden canvas msaa", size_px);
+                let sample = self.filters.sample_bind_group(&self.device, &view);
+                self.canvases.insert(
+                    id,
+                    CanvasTex {
+                        size_px,
+                        texture,
+                        view,
+                        msaa,
+                        sample,
+                        slot,
+                        msaa_stale: false,
+                        used: true,
+                    },
+                );
+            }
+            let canvas = self.canvases.get_mut(&id).expect("canvas just inserted");
+            canvas.used = true;
+            canvas.slot = slot;
+            canvas.msaa_stale = false;
+            self.images.set_canvas(&self.device, id, &canvas.view);
+        }
+        self.canvases.retain(|_, c| c.used);
+
+        // ── Per-target globals ───────────────────────────────────────────
+        for (slot, size) in self.targets.iter().enumerate() {
+            let logical = (size.0 as f32 / scale_factor, size.1 as f32 / scale_factor);
+            self.quads
+                .set_target(&self.device, &self.queue, slot, logical, scale_factor);
+            self.meshes
+                .set_target(&self.device, &self.queue, slot, logical, scale_factor);
+            self.images
+                .set_target(&self.device, &self.queue, slot, logical, scale_factor);
+        }
+
+        // ── Per-kind staging ─────────────────────────────────────────────
         self.quads.prepare(
             &self.device,
             &self.queue,
-            logical,
-            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Quad { rect, color } => Some((rect, color)),
-                Primitive::Text { .. } | Primitive::Mesh { .. } | Primitive::Image { .. } => None,
+                _ => None,
             }),
         );
 
         self.meshes.prepare(
             &self.device,
             &self.queue,
-            logical,
-            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Mesh { vertices, clip } => Some((vertices.as_slice(), clip)),
-                Primitive::Quad { .. } | Primitive::Text { .. } | Primitive::Image { .. } => None,
+                _ => None,
             }),
         );
 
         self.images.prepare(
             &self.device,
             &self.queue,
-            logical,
-            scale_factor,
             scene.primitives.iter().filter_map(|p| match p {
                 Primitive::Image {
                     rect,
@@ -623,8 +918,27 @@ impl GpuCore {
                     alpha,
                     clip,
                     mask,
-                } => Some((rect, source.as_str(), *alpha, clip, *mask)),
-                Primitive::Quad { .. } | Primitive::Text { .. } | Primitive::Mesh { .. } => None,
+                } => Some(ImageDraw {
+                    rect,
+                    source: ImageSource::File(source.clone()),
+                    alpha: *alpha,
+                    clip,
+                    mask: *mask,
+                }),
+                Primitive::CanvasDraw {
+                    id,
+                    rect,
+                    alpha,
+                    clip,
+                    mask,
+                } => Some(ImageDraw {
+                    rect,
+                    source: ImageSource::Canvas(*id),
+                    alpha: *alpha,
+                    clip,
+                    mask: *mask,
+                }),
+                _ => None,
             }),
         );
 
@@ -647,99 +961,416 @@ impl GpuCore {
                     size: *size,
                     style: *style,
                 }),
-                Primitive::Quad { .. } | Primitive::Mesh { .. } | Primitive::Image { .. } => None,
+                _ => None,
             })
             .collect();
-        self.batches = batch_primitives(&scene.primitives);
         self.text_batches = self
-            .batches
+            .steps
             .iter()
-            .filter(|b| b.kind == BatchKind::Text)
-            .map(|b| b.start..b.end)
+            .filter_map(|s| match s {
+                Step::Draw {
+                    kind: BatchKind::Text,
+                    start,
+                    end,
+                    slot,
+                } => Some((*start..*end, slot.unwrap_or(0))),
+                _ => None,
+            })
             .collect();
         self.text.prepare(
             &self.device,
             &self.queue,
-            physical,
+            &self.targets,
             scale_factor,
             &texts,
             &self.text_batches,
         );
     }
 
-    /// Record the scene pass (clear + quads + text) staged by
-    /// [`prepare_scene`](Self::prepare_scene) into `view`.
-    fn record_scene_pass(
-        &self,
+    /// Record the scene staged by [`prepare_scene`](Self::prepare_scene):
+    /// every pass into the frame (`frame_view`) and into the canvases, plus
+    /// the snapshots and filters between them, in scene order.
+    ///
+    /// `frame_texture` is the texture behind `frame_view` when it can be
+    /// copied from — what a snapshot of the frame reads. The windowed path
+    /// passes its intermediate texture (a surface texture cannot be read);
+    /// the capture path passes the capture texture.
+    fn record_scene(
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        frame_view: &wgpu::TextureView,
+        frame_texture: Option<&wgpu::Texture>,
         bg: Color,
     ) {
-        // With MSAA the pass draws into the multisampled texture and resolves
-        // into `target` on the way out; without it, straight into `target`. The
-        // multisampled surface itself is never read afterwards, so it is
-        // discarded rather than stored — the resolve already happened.
-        let (view, resolve_target) = match &self.msaa {
-            Some(msaa) => (msaa, Some(target)),
-            None => (target, None),
+        let GpuCore {
+            device,
+            queue,
+            width,
+            height,
+            scale_factor,
+            quads,
+            meshes,
+            images,
+            text,
+            filters,
+            msaa,
+            steps,
+            canvases,
+            multipass,
+            ..
+        } = self;
+        let msaa: Option<&wgpu::TextureView> = msaa.as_ref();
+        let frame_size = (*width, *height);
+        let scale = *scale_factor as f32;
+        let clear = {
+            let [r, g, b, a] = bg.to_array();
+            wgpu::Color {
+                r: r as f64,
+                g: g as f64,
+                b: b as f64,
+                a: a as f64,
+            }
         };
-        let store = if resolve_target.is_some() {
-            wgpu::StoreOp::Discard
-        } else {
+        // With MSAA a pass draws into the multisampled texture and resolves
+        // into the target on the way out. A single-pass frame never reads the
+        // multisampled texture again, so it is discarded rather than stored;
+        // a multipass frame comes back to it, so it has to survive.
+        let msaa_store = if *multipass {
             wgpu::StoreOp::Store
+        } else {
+            wgpu::StoreOp::Discard
         };
-
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("garden scene pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                depth_slice: None,
-                resolve_target,
-                ops: wgpu::Operations {
-                    // The target holds sRGB-encoded bytes with no transfer
-                    // function, so the clear color goes in as written — the
-                    // same space every pipeline blends in.
-                    load: wgpu::LoadOp::Clear({
-                        let [r, g, b, a] = bg.to_array();
-                        wgpu::Color {
-                            r: r as f64,
-                            g: g as f64,
-                            b: b as f64,
-                            a: a as f64,
-                        }
-                    }),
-                    store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-
-        // Walk the scene's batches in order so a quad drawn after a text run
-        // covers it, the way the primitive list says it should.
-        let physical = (self.width, self.height);
-        let scale = self.scale_factor as f32;
+        let mut frame_started = false;
         let mut text_batch = 0usize;
-        for batch in &self.batches {
-            match batch.kind {
-                BatchKind::Quad => self
-                    .quads
-                    .render(&mut pass, batch.start as u32..batch.end as u32),
-                BatchKind::Mesh => {
-                    self.meshes
-                        .render(&mut pass, physical, scale, batch.start..batch.end)
+
+        let mut i = 0;
+        while i < steps.len() {
+            match steps[i] {
+                Step::Draw { slot, .. } => {
+                    // Gather the run of draws into this same target.
+                    let mut j = i;
+                    while j < steps.len()
+                        && matches!(steps[j], Step::Draw { slot: s, .. } if s == slot)
+                    {
+                        j += 1;
+                    }
+                    let run = &steps[i..j];
+                    i = j;
+                    let Some(slot) = slot else {
+                        // Aimed at a target that does not exist: skip, but
+                        // keep the text batch counter aligned.
+                        text_batch += run
+                            .iter()
+                            .filter(|s| {
+                                matches!(
+                                    s,
+                                    Step::Draw {
+                                        kind: BatchKind::Text,
+                                        ..
+                                    }
+                                )
+                            })
+                            .count();
+                        continue;
+                    };
+
+                    // Resolve the target: attachment, resolve target, size,
+                    // and how to start the pass.
+                    let (view, resolve, size, load, store, reseed) = if slot == 0 {
+                        let load = if frame_started {
+                            wgpu::LoadOp::Load
+                        } else {
+                            wgpu::LoadOp::Clear(clear)
+                        };
+                        frame_started = true;
+                        match msaa {
+                            Some(m) => (m, Some(frame_view), frame_size, load, msaa_store, None),
+                            None => (
+                                frame_view,
+                                None,
+                                frame_size,
+                                load,
+                                wgpu::StoreOp::Store,
+                                None,
+                            ),
+                        }
+                    } else {
+                        let Some(canvas) = canvases.values_mut().find(|c| c.slot == slot) else {
+                            text_batch += run
+                                .iter()
+                                .filter(|s| {
+                                    matches!(
+                                        s,
+                                        Step::Draw {
+                                            kind: BatchKind::Text,
+                                            ..
+                                        }
+                                    )
+                                })
+                                .count();
+                            continue;
+                        };
+                        match &canvas.msaa {
+                            Some(m) => {
+                                // The attachment is re-seeded from the
+                                // resolved texture when a snapshot or filter
+                                // has changed it. The canvas cannot be both
+                                // the resolve target and a sampled texture
+                                // of the same pass, so the copy goes through
+                                // a scratch.
+                                let reseed = if canvas.msaa_stale {
+                                    canvas.msaa_stale = false;
+                                    let scratch = filters.acquire_scratch(device, canvas.size_px);
+                                    encoder.copy_texture_to_texture(
+                                        canvas.texture.as_image_copy(),
+                                        filters.scratch(scratch).texture().as_image_copy(),
+                                        wgpu::Extent3d {
+                                            width: canvas.size_px.0,
+                                            height: canvas.size_px.1,
+                                            depth_or_array_layers: 1,
+                                        },
+                                    );
+                                    Some(scratch)
+                                } else {
+                                    None
+                                };
+                                let load = if reseed.is_some() {
+                                    wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+                                } else {
+                                    wgpu::LoadOp::Load
+                                };
+                                (
+                                    m,
+                                    Some(&canvas.view),
+                                    canvas.size_px,
+                                    load,
+                                    wgpu::StoreOp::Store,
+                                    reseed,
+                                )
+                            }
+                            None => (
+                                &canvas.view,
+                                None,
+                                canvas.size_px,
+                                wgpu::LoadOp::Load,
+                                wgpu::StoreOp::Store,
+                                None,
+                            ),
+                        }
+                    };
+
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("garden scene pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            depth_slice: None,
+                            resolve_target: resolve,
+                            // The target holds sRGB-encoded bytes with no
+                            // transfer function, so the clear color goes in
+                            // as written — the space every pipeline blends in.
+                            ops: wgpu::Operations { load, store },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    if let Some(scratch) = reseed {
+                        filters.copy_into_pass(&mut pass, filters.scratch(scratch).bind_group());
+                    }
+                    // Walk the run in order so a quad drawn after a text run
+                    // covers it, the way the primitive list says it should.
+                    for step in run {
+                        let Step::Draw {
+                            kind, start, end, ..
+                        } = *step
+                        else {
+                            unreachable!("run holds only draws");
+                        };
+                        match kind {
+                            BatchKind::Quad => {
+                                quads.render(&mut pass, slot, start as u32..end as u32)
+                            }
+                            BatchKind::Mesh => {
+                                meshes.render(&mut pass, slot, size, scale, start..end)
+                            }
+                            BatchKind::Image => {
+                                images.render(&mut pass, slot, size, scale, start..end)
+                            }
+                            BatchKind::Text => {
+                                text.render_batch(text_batch, &mut pass);
+                                text_batch += 1;
+                            }
+                        }
+                    }
                 }
-                BatchKind::Image => {
-                    self.images
-                        .render(&mut pass, physical, scale, batch.start..batch.end)
+                Step::Canvas { id } => {
+                    i += 1;
+                    let Some(canvas) = canvases.get_mut(&id) else {
+                        continue;
+                    };
+                    canvas.msaa_stale = false;
+                    let (view, resolve) = match &canvas.msaa {
+                        Some(m) => (m, Some(&canvas.view)),
+                        None => (&canvas.view, None),
+                    };
+                    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("garden canvas clear"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            depth_slice: None,
+                            resolve_target: resolve,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
                 }
-                BatchKind::Text => {
-                    self.text.render_batch(text_batch, &mut pass);
-                    text_batch += 1;
+                Step::Snapshot {
+                    id,
+                    from,
+                    clip,
+                    source,
+                } => {
+                    i += 1;
+                    if source == Some(id) {
+                        continue; // a canvas cannot snapshot itself
+                    }
+                    let (src_texture, src_size) = match source {
+                        None => {
+                            let Some(texture) = frame_texture else {
+                                continue;
+                            };
+                            if !frame_started {
+                                // Nothing has been drawn into the frame yet:
+                                // what the snapshot sees is the cleared
+                                // background.
+                                frame_started = true;
+                                let (view, resolve) = match msaa {
+                                    Some(m) => (m, Some(frame_view)),
+                                    None => (frame_view, None),
+                                };
+                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                    label: Some("garden frame clear"),
+                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                        view,
+                                        depth_slice: None,
+                                        resolve_target: resolve,
+                                        ops: wgpu::Operations {
+                                            load: wgpu::LoadOp::Clear(clear),
+                                            store: msaa_store,
+                                        },
+                                    })],
+                                    depth_stencil_attachment: None,
+                                    timestamp_writes: None,
+                                    occlusion_query_set: None,
+                                    multiview_mask: None,
+                                });
+                            }
+                            (texture, frame_size)
+                        }
+                        Some(src) => match canvases.get(&src) {
+                            Some(c) => (&c.texture, c.size_px),
+                            None => continue,
+                        },
+                    };
+                    let Some(dest) = canvases.get(&id) else {
+                        continue;
+                    };
+                    let dest_size = dest.size_px;
+                    // The copied region, in physical pixels of the source:
+                    // the canvas rect placed at `from`, cut to the clip and
+                    // to the source's bounds.
+                    let px = |v: f32| (v * scale).round() as i64;
+                    let fx = px(from.0);
+                    let fy = px(from.1);
+                    let x0 = fx.max(px(clip.x)).max(0);
+                    let y0 = fy.max(px(clip.y)).max(0);
+                    let x1 = (fx + dest_size.0 as i64)
+                        .min(px(clip.x + clip.w))
+                        .min(src_size.0 as i64);
+                    let y1 = (fy + dest_size.1 as i64)
+                        .min(px(clip.y + clip.h))
+                        .min(src_size.1 as i64);
+                    if x1 <= x0 || y1 <= y0 {
+                        continue;
+                    }
+                    encoder.copy_texture_to_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: src_texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d {
+                                x: x0 as u32,
+                                y: y0 as u32,
+                                z: 0,
+                            },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &dest.texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d {
+                                x: (x0 - fx) as u32,
+                                y: (y0 - fy) as u32,
+                                z: 0,
+                            },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::Extent3d {
+                            width: (x1 - x0) as u32,
+                            height: (y1 - y0) as u32,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                    let dest = canvases.get_mut(&id).expect("dest canvas present");
+                    dest.msaa_stale = dest.msaa.is_some();
+                }
+                Step::Blur { id, radius } => {
+                    i += 1;
+                    let Some(canvas) = canvases.get_mut(&id) else {
+                        continue;
+                    };
+                    filters.blur(
+                        device,
+                        queue,
+                        encoder,
+                        &canvas.sample,
+                        &canvas.view,
+                        canvas.size_px,
+                        radius * scale,
+                    );
+                    canvas.msaa_stale = canvas.msaa.is_some();
                 }
             }
+        }
+
+        // A scene with no frame draws at all still has to clear the frame.
+        if !frame_started {
+            let (view, resolve) = match msaa {
+                Some(m) => (m, Some(frame_view)),
+                None => (frame_view, None),
+            };
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("garden frame clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: resolve,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear),
+                        store: wgpu::StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
         }
     }
 
@@ -750,20 +1381,7 @@ impl GpuCore {
         let (width, height) = (self.width.max(1), self.height.max(1));
         self.prepare_scene(scene);
 
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("garden capture target"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
+        let texture = self.create_color_texture("garden capture target", (width, height));
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Rows in the readback buffer must be 256-byte aligned.
@@ -781,7 +1399,7 @@ impl GpuCore {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("garden capture"),
             });
-        self.record_scene_pass(&mut encoder, &view, scene.bg);
+        self.record_scene(&mut encoder, &view, Some(&texture), scene.bg);
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -1086,7 +1704,30 @@ impl Renderer {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("garden frame"),
                 });
-        self.core.record_scene_pass(&mut encoder, &view, scene.bg);
+        if self.core.frame_snapshot {
+            // A surface texture cannot be copied from, and the scene wants to
+            // read the frame back (a backdrop snapshot). Draw into an
+            // intermediate texture instead and present by copying it over —
+            // one full-screen quad, only on frames that ask for it.
+            self.core.ensure_frame_texture();
+            let frame_tex = self.core.frame.take().expect("frame texture just ensured");
+            self.core.record_scene(
+                &mut encoder,
+                &frame_tex.view,
+                Some(&frame_tex.texture),
+                scene.bg,
+            );
+            self.core.filters.copy(
+                &self.core.device,
+                &self.core.queue,
+                &mut encoder,
+                &frame_tex.sample,
+                &view,
+            );
+            self.core.frame = Some(frame_tex);
+        } else {
+            self.core.record_scene(&mut encoder, &view, None, scene.bg);
+        }
 
         self.core.queue.submit(Some(encoder.finish()));
         frame.present();

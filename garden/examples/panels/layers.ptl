@@ -1,0 +1,64 @@
+// Layers: the offscreen-canvas vocabulary on one screen — a translucent
+// material bar the content scrolls under, a group drawn at one opacity, and a
+// blurred glow. The visual reference for "Layers and blur" in
+// docs/petal-graphical-panels.md.
+//
+// Use it from a layout script:   panel("examples/panels/layers.ptl")
+
+let w = screen_width()
+let h = screen_height()
+let t = time()
+
+clear(18, 20, 26)
+
+fn label(text, x, y)
+  draw_text(text, x, y, 12, 150, 160, 180)
+end
+
+// ── The content: stripes that scroll under the bar ────────────────────────
+// Drawn first, because the material *samples* what is already there.
+let offset = (t * 40) % 48
+for i in range(0, 14) do
+  let y = i * 48 - offset
+  let shade = if i % 2 == 0 then 1 else 0 end
+  draw_rect(0, y, w, 48, 40 + shade * 30, 90 + shade * 40, 160 + shade * 60)
+  draw_text("row " ++ str(i), 16, y + 16, 14, 230, 235, 245)
+end
+
+// ── The material bar ──────────────────────────────────────────────────────
+// What is behind it, blurred, under a tint — the iOS navigation bar. The
+// hairline sits on the content-facing edge.
+draw_material(rect(0, 0, w, 56), {kind: "regular", tint: #1c1f28, hairline: "bottom"})
+draw_text("Layers", 16, 20, 18, 240, 242, 248)
+draw_material(rect(w - 150, 12, 136, 32), {kind: "thin", radius: 16, tint: #ffffff, a: 60})
+label("search", w - 130, 22)
+
+// ── Group opacity ─────────────────────────────────────────────────────────
+// Two overlapping discs as one object at 45%: the overlap is no darker than
+// the rest, which drawing each disc at 45% cannot achieve.
+let card = rect(24, 90, 180, 110)
+label("layer at a = 115", card.x, card.y - 18)
+layer(card, {a: 115}, fn()
+  draw_circle(50, 55, 45, 255, 120, 80)
+  draw_circle(120, 55, 45, 90, 200, 255)
+end)
+
+label("same shapes at a=115 each", 230, 72)
+draw_circle(280, 145, 45, 255, 120, 80, 115)
+draw_circle(350, 145, 45, 90, 200, 255, 115)
+
+// ── A glow ────────────────────────────────────────────────────────────────
+// The shape drawn into a layer and the layer blurred; then the crisp shape
+// on top.
+let halo = rect(440, 80, 140, 140)
+label("layer with blur 14", halo.x, halo.y - 18)
+layer(halo, {blur: 14}, fn()
+  draw_circle(70, 70, 36, 120, 255, 170)
+end)
+draw_circle(halo.x + 70, halo.y + 70, 28, 120, 255, 170)
+
+// ── A frosted sheet over everything drawn so far ──────────────────────────
+let sheet = rect(24, h - 120, w - 48, 96)
+draw_material(sheet, {kind: "thick", radius: 16, tint: #ffffff, a: 200})
+draw_text("thick material, radius 16", sheet.x + 16, sheet.y + 16, 14, 30, 34, 44)
+label("snapshot → blur → tint, clipped to the rounded rect", sheet.x + 16, sheet.y + 44)

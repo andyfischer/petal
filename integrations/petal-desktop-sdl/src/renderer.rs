@@ -25,10 +25,19 @@ pub trait TextTarget: RenderTarget + Sized {
         y: i32,
         color: Color,
     );
-    /// Blit `src` onto this canvas at (`x`, `y`). Used to composite an offscreen
-    /// canvas onto a render target. Defined per-target because the
-    /// `TextureCreator` context type is target-specific.
-    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32);
+    /// Blit `src` onto this canvas at (`x`, `y`), scaled to `w`×`h` (0 = its
+    /// own size) at opacity `a`. Used to composite an offscreen canvas onto a
+    /// render target. Defined per-target because the `TextureCreator` context
+    /// type is target-specific.
+    fn blit_surface(
+        canvas: &mut Canvas<Self>,
+        src: &Surface,
+        x: i32,
+        y: i32,
+        a: u8,
+        w: u32,
+        h: u32,
+    );
 }
 
 impl TextTarget for Window {
@@ -44,9 +53,17 @@ impl TextTarget for Window {
         render_text_impl(canvas, &creator, font, text, x, y, color);
     }
 
-    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32) {
+    fn blit_surface(
+        canvas: &mut Canvas<Self>,
+        src: &Surface,
+        x: i32,
+        y: i32,
+        a: u8,
+        w: u32,
+        h: u32,
+    ) {
         let creator = canvas.texture_creator();
-        blit_surface_impl(canvas, &creator, src, x, y);
+        blit_surface_impl(canvas, &creator, src, x, y, a, w, h);
     }
 }
 
@@ -66,9 +83,17 @@ impl TextTarget for Surface<'_> {
         render_text_impl(canvas, &creator, font, text, x, y, color);
     }
 
-    fn blit_surface(canvas: &mut Canvas<Self>, src: &Surface, x: i32, y: i32) {
+    fn blit_surface(
+        canvas: &mut Canvas<Self>,
+        src: &Surface,
+        x: i32,
+        y: i32,
+        a: u8,
+        w: u32,
+        h: u32,
+    ) {
         let creator = canvas.texture_creator();
-        blit_surface_impl(canvas, &creator, src, x, y);
+        blit_surface_impl(canvas, &creator, src, x, y, a, w, h);
     }
 }
 
@@ -143,20 +168,52 @@ pub fn render<T: TextTarget>(
             DrawCommand::SetTarget { id } => {
                 target = id;
             }
-            DrawCommand::DrawCanvas { id, x, y } => {
+            DrawCommand::DrawCanvas { id, x, y, a, w, h } => {
                 // Pull the source canvas out so we can borrow the destination
                 // (which may itself be another offscreen canvas) at the same time.
                 if let Some(src_canvas) = offscreen.remove(&id) {
                     let src_surface = src_canvas.into_surface();
                     if target == 0 {
-                        T::blit_surface(canvas, &src_surface, x, y);
+                        T::blit_surface(canvas, &src_surface, x, y, a, w, h);
                     } else if let Some(dst) = offscreen.get_mut(&target) {
                         // The destination is itself an offscreen canvas
                         // (`Canvas<Surface>`), which also implements `TextTarget`.
-                        <Surface as TextTarget>::blit_surface(dst, &src_surface, x, y);
+                        <Surface as TextTarget>::blit_surface(dst, &src_surface, x, y, a, w, h);
                     }
                     // Restore the source canvas so it can be reused/blitted again.
                     if let Ok(sc) = src_surface.into_canvas() {
+                        offscreen.insert(id, sc);
+                    }
+                }
+            }
+            DrawCommand::Snapshot { id, x, y } => {
+                // Read the current target's pixels under the canvas rect into
+                // the canvas — the backdrop a material blurs.
+                let Some(dst_canvas) = offscreen.remove(&id) else {
+                    continue;
+                };
+                let (w, h) = dst_canvas.output_size().unwrap_or((1, 1));
+                let shot = if target == 0 {
+                    snapshot_surface(canvas, x, y, w, h)
+                } else if let Some(src) = offscreen.get_mut(&target) {
+                    snapshot_surface(src, x, y, w, h)
+                } else {
+                    None
+                };
+                let mut dst_surface = dst_canvas.into_surface();
+                if let Some(mut shot) = shot {
+                    let _ = shot.set_blend_mode(BlendMode::None);
+                    let _ = shot.blit(None, &mut dst_surface, None);
+                }
+                if let Ok(sc) = dst_surface.into_canvas() {
+                    offscreen.insert(id, sc);
+                }
+            }
+            DrawCommand::BlurCanvas { id, radius } => {
+                if let Some(c) = offscreen.remove(&id) {
+                    let mut surface = c.into_surface();
+                    blur_surface(&mut surface, radius as f32);
+                    if let Ok(sc) = surface.into_canvas() {
                         offscreen.insert(id, sc);
                     }
                 }
@@ -173,8 +230,9 @@ pub fn render<T: TextTarget>(
     }
 }
 
-/// Render a single primitive draw command onto a target canvas. `CreateCanvas`,
-/// `SetTarget`, and `DrawCanvas` are handled by `render` and never reach here.
+/// Render a single primitive draw command onto a target canvas. The canvas ops
+/// (`CreateCanvas`, `SetTarget`, `DrawCanvas`, `Snapshot`, `BlurCanvas`) are
+/// handled by `render` and never reach here.
 fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &mut FontBook) {
     match cmd {
         DrawCommand::Clear { r, g, b } => {
@@ -537,7 +595,9 @@ fn render_one<T: TextTarget>(canvas: &mut Canvas<T>, cmd: DrawCommand, fonts: &m
         // Handled in `render`; unreachable here.
         DrawCommand::CreateCanvas { .. }
         | DrawCommand::SetTarget { .. }
-        | DrawCommand::DrawCanvas { .. } => {}
+        | DrawCommand::DrawCanvas { .. }
+        | DrawCommand::Snapshot { .. }
+        | DrawCommand::BlurCanvas { .. } => {}
     }
 }
 
@@ -1159,12 +1219,16 @@ fn render_text_impl<T, C>(
 /// Shared offscreen-canvas blit body. Uploads `src` as an alpha-blended texture
 /// and copies it onto `canvas` at (`x`, `y`). Generic over the canvas target and
 /// the texture-creator context so it serves both the window and software paths.
+#[allow(clippy::too_many_arguments)]
 fn blit_surface_impl<T, C>(
     canvas: &mut Canvas<T>,
     texture_creator: &sdl2::render::TextureCreator<C>,
     src: &Surface,
     x: i32,
     y: i32,
+    a: u8,
+    w: u32,
+    h: u32,
 ) where
     T: RenderTarget,
 {
@@ -1173,11 +1237,172 @@ fn blit_surface_impl<T, C>(
         Err(_) => return,
     };
     // Composite: transparent regions of the offscreen canvas let the destination
-    // show through, only the painted pixels land.
+    // show through, only the painted pixels land. The alpha mod scales the
+    // whole layer's opacity at once — a group of overlapping shapes reads as
+    // one object at `a`, which is what `draw_canvas(c, x, y, a)` promises.
     texture.set_blend_mode(BlendMode::Blend);
-    let (w, h) = src.size();
-    let target = Rect::new(x, y, w, h);
+    texture.set_alpha_mod(a);
+    let (sw, sh) = src.size();
+    let w = if w == 0 { sw } else { w };
+    let h = if h == 0 { sh } else { h };
+    let target = Rect::new(x, y, w.max(1), h.max(1));
     let _ = canvas.copy(&texture, None, Some(target));
+}
+
+/// Copy the pixels of `canvas` under the `w`×`h` rect at (`x`, `y`) into a
+/// fresh ARGB surface of that size — the `snapshot` primitive. Pixels outside
+/// the target are left transparent.
+fn snapshot_surface<T: RenderTarget>(
+    canvas: &mut Canvas<T>,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+) -> Option<Surface<'static>> {
+    let (tw, th) = canvas.output_size().ok()?;
+    let mut out = Surface::new(w.max(1), h.max(1), PixelFormatEnum::ARGB8888).ok()?;
+    let _ = out.fill_rect(None, Color::RGBA(0, 0, 0, 0));
+    let x0 = x.max(0);
+    let y0 = y.max(0);
+    let x1 = (x + w as i32).min(tw as i32);
+    let y1 = (y + h as i32).min(th as i32);
+    if x1 <= x0 || y1 <= y0 {
+        return Some(out);
+    }
+    let region = Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32);
+    let mut pixels = canvas
+        .read_pixels(Some(region), PixelFormatEnum::ARGB8888)
+        .ok()?;
+    let pitch = region.width() * 4;
+    let src = Surface::from_data(
+        &mut pixels,
+        region.width(),
+        region.height(),
+        pitch,
+        PixelFormatEnum::ARGB8888,
+    )
+    .ok()?;
+    // A straight copy (no blending): the snapshot *is* the backdrop, opaque
+    // where the target was.
+    let dest = Rect::new(x0 - x, y0 - y, region.width(), region.height());
+    let mut src = src;
+    src.set_blend_mode(BlendMode::None).ok()?;
+    src.blit(None, &mut out, Some(dest)).ok()?;
+    Some(out)
+}
+
+/// Gaussian-blur an ARGB surface in place with standard deviation `sigma`
+/// px, approximated by three box blurs (the classic approximation, within a
+/// few percent of the true kernel). Runs in premultiplied space so translucent
+/// edges do not darken, and clamps at the borders so a backdrop at the edge of
+/// the window smears its edge pixels outward rather than fading to nothing.
+fn blur_surface(surface: &mut Surface, sigma: f32) {
+    if sigma < 0.25 {
+        return;
+    }
+    let (w, h) = surface.size();
+    let (w, h) = (w as usize, h as usize);
+    if w == 0 || h == 0 {
+        return;
+    }
+    // Box widths for three passes approximating a Gaussian of `sigma`
+    // (Kovesi's method, the common integer form).
+    let ideal = ((12.0 * sigma * sigma / 3.0 + 1.0).sqrt()).floor() as usize;
+    let radius = (ideal.max(1) - 1) / 2;
+    if radius == 0 {
+        return;
+    }
+    let pitch = surface.pitch() as usize;
+    surface.with_lock_mut(|bytes| {
+        // Premultiply into a float working buffer.
+        let mut buf: Vec<[f32; 4]> = Vec::with_capacity(w * h);
+        for y in 0..h {
+            for x in 0..w {
+                let i = y * pitch + x * 4;
+                let (b, g, r, a) = (bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]);
+                let a = a as f32 / 255.0;
+                buf.push([r as f32 * a, g as f32 * a, b as f32 * a, a * 255.0]);
+            }
+        }
+        let mut tmp = vec![[0.0f32; 4]; w * h];
+        for _ in 0..3 {
+            box_blur_h(&buf, &mut tmp, w, h, radius);
+            box_blur_v(&tmp, &mut buf, w, h, radius);
+        }
+        // Un-premultiply back into the surface.
+        for y in 0..h {
+            for x in 0..w {
+                let p = buf[y * w + x];
+                let a = p[3] / 255.0;
+                let i = y * pitch + x * 4;
+                let un = |v: f32| {
+                    if a > 0.0001 {
+                        (v / a).round().clamp(0.0, 255.0) as u8
+                    } else {
+                        0
+                    }
+                };
+                bytes[i] = un(p[2]);
+                bytes[i + 1] = un(p[1]);
+                bytes[i + 2] = un(p[0]);
+                bytes[i + 3] = p[3].round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    });
+}
+
+/// One horizontal box-blur pass (`radius` each side, edges clamped) from
+/// `src` into `dst`.
+fn box_blur_h(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, radius: usize) {
+    let norm = 1.0 / (2 * radius + 1) as f32;
+    for y in 0..h {
+        let row = &src[y * w..(y + 1) * w];
+        let at = |x: isize| row[x.clamp(0, w as isize - 1) as usize];
+        let mut acc = [0.0f32; 4];
+        for x in -(radius as isize)..=(radius as isize) {
+            let p = at(x);
+            for c in 0..4 {
+                acc[c] += p[c];
+            }
+        }
+        for x in 0..w {
+            let out = &mut dst[y * w + x];
+            for c in 0..4 {
+                out[c] = acc[c] * norm;
+            }
+            let leaving = at(x as isize - radius as isize);
+            let entering = at(x as isize + radius as isize + 1);
+            for c in 0..4 {
+                acc[c] += entering[c] - leaving[c];
+            }
+        }
+    }
+}
+
+/// One vertical box-blur pass, the transpose of [`box_blur_h`].
+fn box_blur_v(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, radius: usize) {
+    let norm = 1.0 / (2 * radius + 1) as f32;
+    for x in 0..w {
+        let at = |y: isize| src[y.clamp(0, h as isize - 1) as usize * w + x];
+        let mut acc = [0.0f32; 4];
+        for y in -(radius as isize)..=(radius as isize) {
+            let p = at(y);
+            for c in 0..4 {
+                acc[c] += p[c];
+            }
+        }
+        for y in 0..h {
+            let out = &mut dst[y * w + x];
+            for c in 0..4 {
+                out[c] = acc[c] * norm;
+            }
+            let leaving = at(y as isize - radius as isize);
+            let entering = at(y as isize + radius as isize + 1);
+            for c in 0..4 {
+                acc[c] += entering[c] - leaving[c];
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1239,6 +1464,108 @@ mod tests {
 
     fn is_black(px: (u8, u8, u8)) -> bool {
         px.0 < 50 && px.1 < 50 && px.2 < 50
+    }
+
+    fn white_rect(x: i32, y: i32, w: u32, h: u32) -> DrawCommand {
+        DrawCommand::Rect {
+            x,
+            y,
+            w,
+            h,
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+            radius: 0,
+        }
+    }
+
+    /// `snapshot` copies the target as painted so far; `blur_canvas` turns a
+    /// hard edge in the copy into a ramp; `draw_canvas` puts it back.
+    #[test]
+    fn a_snapshot_blurred_and_redrawn_is_a_ramp() {
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let surface = render_frame(
+            new_black_surface(),
+            vec![
+                // Left half white.
+                white_rect(0, 0, 32, 64),
+                DrawCommand::CreateCanvas {
+                    id: 1,
+                    w: 64,
+                    h: 16,
+                },
+                DrawCommand::Snapshot { id: 1, x: 0, y: 0 },
+                DrawCommand::BlurCanvas { id: 1, radius: 4 },
+                // Cover everything, then draw the blurred strip at the bottom.
+                DrawCommand::Rect {
+                    x: 0,
+                    y: 0,
+                    w: 64,
+                    h: 64,
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                    radius: 0,
+                },
+                DrawCommand::DrawCanvas {
+                    id: 1,
+                    x: 0,
+                    y: 48,
+                    a: 255,
+                    w: 0,
+                    h: 0,
+                },
+            ],
+            &mut fonts,
+        );
+        let at = |x: u32| pixel_rgb(&surface, x, 56).0 as i32;
+        assert!(at(2) > 247, "far left stays white: {}", at(2));
+        assert!(at(61) < 8, "far right stays black: {}", at(61));
+        assert!(at(30) > 20 && at(30) < 235, "ramp at 30: {}", at(30));
+        assert!(at(34) > 20 && at(34) < 235, "ramp at 34: {}", at(34));
+        assert!(at(28) > at(32) && at(32) > at(36), "monotone ramp");
+        // Above the strip the covering rect stands.
+        assert!(is_black(pixel_rgb(&surface, 10, 10)));
+    }
+
+    /// A layer composited at half opacity scales the whole layer once.
+    #[test]
+    fn draw_canvas_alpha_applies_to_the_layer() {
+        let ttf = sdl2::ttf::init().unwrap();
+        let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
+        let surface = render_frame(
+            new_black_surface(),
+            vec![
+                DrawCommand::CreateCanvas {
+                    id: 1,
+                    w: 16,
+                    h: 16,
+                },
+                DrawCommand::SetTarget { id: 1 },
+                white_rect(0, 0, 16, 16),
+                white_rect(0, 0, 16, 16),
+                DrawCommand::SetTarget { id: 0 },
+                DrawCommand::DrawCanvas {
+                    id: 1,
+                    x: 0,
+                    y: 0,
+                    a: 128,
+                    w: 32,
+                    h: 32,
+                },
+            ],
+            &mut fonts,
+        );
+        // Scaled to 32×32, so (24, 24) is inside; grey, not white.
+        let p = pixel_rgb(&surface, 24, 24);
+        assert!(
+            p.0 > 100 && p.0 < 160,
+            "half-opacity white over black: {p:?}"
+        );
+        assert!(is_black(pixel_rgb(&surface, 40, 40)));
     }
 
     #[test]
@@ -1627,6 +1954,9 @@ mod tests {
                     id: 1,
                     x: 20,
                     y: 20,
+                    a: 255,
+                    w: 0,
+                    h: 0,
                 },
             ],
             &mut fonts,

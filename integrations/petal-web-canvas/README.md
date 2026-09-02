@@ -27,10 +27,22 @@ draw_text(text, x, y, size, r, g, b)
 
 # Offscreen canvases (PGraphics-style layers / compositing)
 let c = create_canvas(w, h)   # returns a canvas handle
-draw_to(c)                    # redirect drawing into the canvas
+draw_to(c)                    # redirect drawing into the canvas (returns the previous target)
 draw_to_screen()              # redirect back to the main canvas
 draw_canvas(c, x, y)          # blit the offscreen canvas onto the current target
+draw_canvas(c, x, y, a)       # …at opacity a (0–255): group opacity for the whole layer
+snapshot_to(c, x, y)          # copy the current target's pixels under the canvas rect into c
+blur_canvas(c, radius)        # Gaussian-blur c in place (CSS blur() semantics)
+
+# …and the prelude's layer helpers built on them:
+layer(rect, fn() ... end)                 # draw the body into a canvas, composite it at rect
+layer(rect, {a: 128, blur: 4}, fn() ... end)
+draw_backdrop_blur(rect, radius)          # blur what is already under rect
+draw_material(rect, {kind: "regular", radius: 12, tint: #ffffff})  # iOS-style translucent bar
 ```
+
+Snapshot and blur use the 2D context's own `drawImage` and `filter: blur()`,
+so the backdrop material looks the same here as on the GPU host.
 
 ## Input
 

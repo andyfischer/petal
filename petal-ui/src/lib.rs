@@ -107,7 +107,15 @@ pub const UI_VERSION: i64 = 1;
 ///   `alpha_pct` composite flat tints to opaque colours; `draw_elevation`,
 ///   `draw_focus_ring`, `draw_scroll_shadow`, `draw_scrim`, `draw_fade`,
 ///   `draw_area_fill`, `draw_text_along` and the axis-label helpers.
-pub const PRELUDE_LEVEL: u32 = 6;
+/// - 7 — layers, backdrops and blur (2026-09-01): the offscreen-canvas ops
+///   joined the standard draw set and grew `snapshot_to` (copy what is
+///   already painted into a canvas), `blur_canvas` (an in-place Gaussian) and
+///   opacity/scaling on `draw_canvas`; `draw_to` returns the target it
+///   replaced. The prelude builds `layer(rect, opts, body)` (a closure drawn
+///   into a canvas and composited back — group opacity, a blurred glow),
+///   `snapshot(rect)`, `draw_backdrop_blur` and `draw_material` (the
+///   translucent background-sampling surface behind an iOS bar) on those.
+pub const PRELUDE_LEVEL: u32 = 7;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";
@@ -132,8 +140,8 @@ pub fn register_prelude(env: &mut petal::env::Env) {
 }
 
 /// Register everything a typical host wants in one call: the input natives,
-/// the draw natives (without the optional canvas ops), and the `ui` module
-/// as an implicit import.
+/// the draw natives (canvas ops included), and the `ui` module as an implicit
+/// import.
 pub fn register_all(env: &mut petal::env::Env) {
     input::register_input(env);
     draw::register_draw(env);

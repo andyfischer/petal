@@ -284,6 +284,16 @@ pub enum Primitive {
     /// `clip`. Lines/circles/polygons tessellate into this; panels are the
     /// first consumer (see `docs/petal-graphical-panels.md`).
     Mesh { vertices: Vec<Vertex>, clip: Rect },
+    /// A PNG scaled into `rect`, scissored to `clip`, cut to a rounded `mask`.
+    Image { rect: Rect, source: String, alpha: f32, clip: Rect, mask: ClipMask },
+    /// Offscreen canvases: create one, aim draws at it (0 = the frame), copy the
+    /// current target under it, blur it, composite it. Every effect that needs
+    /// an offscreen buffer is an operation on a canvas id.
+    Canvas { id: u32, size: (f32, f32) },
+    Target { id: u32 },
+    Snapshot { id: u32, from: (f32, f32), clip: Rect },
+    Blur { id: u32, radius: f32 },
+    CanvasDraw { id: u32, rect: Rect, alpha: f32, clip: Rect, mask: ClipMask },
 }
 
 pub struct Scene { pub bg: Color, pub primitives: Vec<Primitive> }
@@ -375,6 +385,27 @@ because glyphon releases require specific wgpu versions):
   draw an overlay over its own labels. Interleaving costs one pipeline switch
   per run, and a frame alternates on the order of a hundred times, so this is a
   few extra draw calls rather than one per primitive.
+- **Canvases and filters** (`blur.rs`, `blur.wgsl`): the scene walk turns
+  the canvas primitives into a step list — runs of draws per target, canvas
+  clears, snapshots, blurs — and records one render pass per run, so painter's
+  order holds across target switches too. Each target has its own slot in
+  every pipeline's `Globals` pool and its own glyphon `Viewport` (a uniform
+  written with `write_buffer` lands before the command buffer runs, so passes
+  cannot share one). A canvas is a single-sampled texture plus, with MSAA, its
+  own multisampled attachment, re-seeded from the resolved texture after a
+  snapshot or filter writes it (a texture cannot be both a pass's resolve
+  target and sampled in it, so the re-seed goes through a scratch). Canvases
+  hold **premultiplied** colour — drawing straight-alpha primitives over
+  transparent black leaves that behind — and `CanvasDraw` composites them
+  with premultiplied blending, all four channels scaled by opacity × coverage,
+  which is also what keeps a blurred translucent edge free of dark fringes.
+  The blur is a separable Gaussian; past a 4-texel sigma the source is halved
+  (bilinear copy) up to three times first, so a 40 px wash is a handful of
+  taps. A snapshot of the frame is a texture copy, which a surface texture
+  does not allow: on frames that take one, the window renders into an
+  intermediate texture and presents by copying it. Canvas textures persist
+  across frames by id and size, since a panel recreates its layers every
+  frame; garden-app namespaces ids per pane.
 - **Color space**: `Color` values are sRGB (what you read off a hex picker),
   and they reach the target unchanged. The scene renders into a **non**-sRGB
   format (`Rgba8Unorm`/`Bgra8Unorm`, reaching a window's sRGB surface through a

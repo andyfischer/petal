@@ -998,6 +998,42 @@ fn scene_json_view(scene: &Scene, view: SceneView) -> Value {
                         "radius": mask.radius.max(0.0),
                     })
                 }
+                // The layer ops. A canvas's contents are drawn in *canvas*
+                // coordinates between a `target` entry naming it and the one
+                // that switches back, so a pane-relative view reports those
+                // primitives where they sit on the canvas, not on the pane.
+                Primitive::Canvas { id, size } => json!({
+                    "type": "canvas", "canvas": id, "size": [size.0, size.1],
+                }),
+                Primitive::Target { id } => json!({ "type": "target", "canvas": id }),
+                Primitive::Snapshot { id, from, clip } => {
+                    let at = view.pos(*from);
+                    json!({
+                        "type": "snapshot", "canvas": id, "from": [at.0, at.1],
+                        "clip": rect_json(view.clip(*clip)),
+                    })
+                }
+                Primitive::Blur { id, radius } => json!({
+                    "type": "blur", "canvas": id, "radius": radius,
+                }),
+                Primitive::CanvasDraw {
+                    id,
+                    rect,
+                    alpha,
+                    clip,
+                    mask,
+                } => {
+                    if !view.keeps(*rect) {
+                        return None;
+                    }
+                    json!({
+                        "type": "canvas_draw", "canvas": id,
+                        "rect": rect_json(view.rect(*rect)),
+                        "alpha": alpha, "clip": rect_json(view.clip(*clip)),
+                        "visible": survives_clip(*rect, *clip),
+                        "radius": mask.radius.max(0.0),
+                    })
+                }
             };
             // The primitive's index in the draw-command stream — stable for a
             // given scene, and the handle a client diffs two scenes by. It is

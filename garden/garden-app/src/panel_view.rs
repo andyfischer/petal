@@ -2310,8 +2310,28 @@ impl PanelView {
     /// `draw_text` really does cover it — which is what makes an overlay (a
     /// context menu, a modal) possible (see
     /// `docs/petal-graphical-panels.md`).
+    ///
+    /// The single-pane form: canvas ids are used as the script numbered
+    /// them. The app renders through [`build_scene_in`](Self::build_scene_in).
+    #[cfg(test)]
     pub fn build_scene(
         &self,
+        rect: Rect,
+        cell: (f32, f32),
+        theme: &Theme,
+        awake: bool,
+        prims: &mut Vec<Primitive>,
+    ) {
+        self.build_scene_in(0, rect, cell, theme, awake, prims);
+    }
+
+    /// [`build_scene`](Self::build_scene) for a pane among several: the
+    /// script's per-frame canvas ids (1, 2, …) are offset by `canvas_base` so
+    /// two panels' layers cannot collide in the one [`Scene`] the window
+    /// renders. The app passes a distinct base per pane.
+    pub fn build_scene_in(
+        &self,
+        canvas_base: u32,
         rect: Rect,
         cell: (f32, f32),
         theme: &Theme,
@@ -2323,9 +2343,18 @@ impl PanelView {
         // Base fill, so a script that never calls clear() doesn't show garbage.
         tess::rect(&mut verts, rect.x, rect.y, rect.w, rect.h, theme.pane_bg);
 
-        // Panel-local (x, y) → absolute pane pixels.
-        let ox = rect.x;
-        let oy = rect.y;
+        // Panel-local (x, y) → absolute pane pixels. Inside an offscreen
+        // canvas the origin is the canvas's own top-left (0, 0), and the pane
+        // origin is restored when the target switches back.
+        let mut ox = rect.x;
+        let mut oy = rect.y;
+        // The canvases this frame created, by script id, with their logical
+        // size — what a `draw_canvas` without a size falls back to, and what
+        // an unknown target is told apart by.
+        let mut canvases: Vec<(u32, (f32, f32))> = Vec::new();
+        // The pane's origin and clip stack, saved while drawing into a canvas.
+        let mut pane_state: Option<(f32, f32, PanelClip, Vec<PanelClip>)> = None;
+        let global = |id: u32| canvas_base.wrapping_add(id);
         // Active clip for subsequent geometry/text, as a *stack*: the top is
         // the clip in force and the entries beneath it are the ones a
         // `ClipPush` displaced, so a widget can clip its own contents and
@@ -2335,7 +2364,7 @@ impl PanelView {
         // into one mesh per clip region: every clip command flushes the
         // current verts as a mesh scissored to the *previous* clip, then
         // switches.
-        let base = PanelClip::square(rect);
+        let mut base = PanelClip::square(rect);
         let mut clips: Vec<PanelClip> = vec![base];
         for cmd in &self.cmds {
             let cur_clip = *clips.last().unwrap_or(&base);
@@ -2423,14 +2452,94 @@ impl PanelView {
                 | PanelCmd::TextViewScrollTo { .. }
                 | PanelCmd::TextViewWrap { .. } => {}
                 PanelCmd::Clear { r, g, b } => {
-                    tess::rect(
-                        &mut verts,
-                        rect.x,
-                        rect.y,
-                        rect.w,
-                        rect.h,
-                        col(*r, *g, *b, 255),
-                    );
+                    // The whole of the current target — the pane, or the
+                    // canvas being drawn into.
+                    let t = base.rect;
+                    tess::rect(&mut verts, t.x, t.y, t.w, t.h, col(*r, *g, *b, 255));
+                }
+                // ── Layers ─────────────────────────────────────────────────
+                // Each canvas op is one renderer primitive; the only state
+                // kept here is the coordinate origin and clip stack, which
+                // swap to the canvas's own while it is the target.
+                PanelCmd::CreateCanvas { id, w, h } => {
+                    flush_mesh(prims, &mut verts, cur_clip);
+                    let size = (*w as f32, *h as f32);
+                    canvases.retain(|(other, _)| other != id);
+                    canvases.push((*id, size));
+                    prims.push(Primitive::Canvas {
+                        id: global(*id),
+                        size,
+                    });
+                }
+                PanelCmd::SetTarget { id } => {
+                    flush_mesh(prims, &mut verts, cur_clip);
+                    if *id == 0 {
+                        if let Some((px, py, pbase, pclips)) = pane_state.take() {
+                            ox = px;
+                            oy = py;
+                            base = pbase;
+                            clips = pclips;
+                        }
+                        prims.push(Primitive::Target { id: 0 });
+                    } else {
+                        if pane_state.is_none() {
+                            pane_state = Some((ox, oy, base, std::mem::take(&mut clips)));
+                        }
+                        ox = 0.0;
+                        oy = 0.0;
+                        // An unknown target clips everything away here as
+                        // well as being dropped by the renderer, so nothing
+                        // aimed at it can leak into the pane's mesh.
+                        let size = canvases
+                            .iter()
+                            .find(|(other, _)| other == id)
+                            .map(|(_, size)| *size)
+                            .unwrap_or((0.0, 0.0));
+                        base = PanelClip::square(Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            w: size.0,
+                            h: size.1,
+                        });
+                        clips = vec![base];
+                        prims.push(Primitive::Target { id: global(*id) });
+                    }
+                }
+                PanelCmd::DrawCanvas { id, x, y, w, h, a } => {
+                    flush_mesh(prims, &mut verts, cur_clip);
+                    let natural = canvases
+                        .iter()
+                        .find(|(other, _)| other == id)
+                        .map(|(_, size)| *size)
+                        .unwrap_or((0.0, 0.0));
+                    let dest = Rect {
+                        x: ox + *x as f32,
+                        y: oy + *y as f32,
+                        w: if *w == 0 { natural.0 } else { *w as f32 },
+                        h: if *h == 0 { natural.1 } else { *h as f32 },
+                    };
+                    prims.push(Primitive::CanvasDraw {
+                        id: global(*id),
+                        rect: dest,
+                        alpha: *a as f32 / 255.0,
+                        clip: cur_clip.rect,
+                        mask: cur_clip.mask,
+                    });
+                }
+                PanelCmd::Snapshot { id, x, y } => {
+                    flush_mesh(prims, &mut verts, cur_clip);
+                    prims.push(Primitive::Snapshot {
+                        id: global(*id),
+                        from: (ox + *x as f32, oy + *y as f32),
+                        clip: cur_clip.rect,
+                    });
+                }
+                PanelCmd::BlurCanvas { id, radius } => {
+                    flush_mesh(prims, &mut verts, cur_clip);
+                    prims.push(Primitive::Blur {
+                        id: global(*id),
+                        radius: *radius as f32,
+                    });
                 }
                 PanelCmd::Image {
                     source,
@@ -2820,6 +2929,12 @@ impl PanelView {
         // Flush whatever clip region was active when the commands ended — a
         // clip left pushed at the end of a frame simply ends with it.
         flush_mesh(prims, &mut verts, *clips.last().unwrap_or(&base));
+        // A frame that ended inside a layer (a script error mid-`layer`)
+        // still has to hand the target back, or the indicator dot — and the
+        // next pane — would land in the canvas.
+        if pane_state.is_some() {
+            prims.push(Primitive::Target { id: 0 });
+        }
 
         // Sleep/wake indicator: a tiny dot, top-right, always over the whole pane
         // (never clipped by the script). Filled green awake; dim when asleep.
@@ -3562,6 +3677,168 @@ edit_view_projection(1, {{
                 _ => None,
             })
             .collect()
+    }
+
+    /// A `layer` swaps the origin and clip to the canvas's own and hands both
+    /// back afterwards: the shape inside is at canvas coordinates, the
+    /// composite is at pane coordinates under the pane's clip, and the mesh
+    /// after the layer is scissored to the pane again.
+    #[test]
+    fn a_layer_draws_at_canvas_coordinates_and_composites_at_pane_coordinates() {
+        let (prims, _f) = scene_of(
+            "clip_push(10, 10, 200, 200)\n\
+             layer(rect(30, 40, 50, 60), fn()\n\
+                 draw_rect(0, 0, 50, 60, 1, 1, 1)\n\
+             end)\n\
+             draw_rect(0, 0, 5, 5, 2, 2, 2)\n",
+        );
+        let canvas = prims
+            .iter()
+            .find_map(|p| match p {
+                Primitive::Canvas { id, size } => Some((*id, *size)),
+                _ => None,
+            })
+            .expect("a canvas primitive");
+        assert_eq!(canvas, (1, (50.0, 60.0)));
+        let targets: Vec<u32> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Target { id } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(targets, vec![1, 0]);
+        // The mesh drawn inside the layer is scissored to the canvas, at the
+        // canvas origin — not offset by the pane rect or the pushed clip.
+        let clips = mesh_clips(&prims);
+        assert!(
+            clips.contains(&Rect::new(0.0, 0.0, 50.0, 60.0)),
+            "canvas-local clip in {clips:?}"
+        );
+        let draw = prims
+            .iter()
+            .find_map(|p| match p {
+                Primitive::CanvasDraw { id, rect, clip, .. } => Some((*id, *rect, *clip)),
+                _ => None,
+            })
+            .expect("a canvas draw");
+        assert_eq!(draw.0, 1);
+        assert_eq!(
+            draw.1,
+            Rect::new(RECT.x + 30.0, RECT.y + 40.0, 50.0, 60.0),
+            "natural size, pane-relative"
+        );
+        // (The pushed clip, cut to the 200-px-tall pane.)
+        let pushed = Rect::new(RECT.x + 10.0, RECT.y + 10.0, 200.0, 190.0);
+        assert_eq!(draw.2, pushed, "under the pane's pushed clip");
+        // The mesh after the layer is back under the pane's clip (the very
+        // last mesh is the indicator dot, over the whole pane).
+        assert_eq!(clips.iter().rev().nth(1).copied(), Some(pushed));
+    }
+
+    /// The material helper snapshots the pane under the pane's clip and blurs
+    /// the canvas — the backdrop sequence, in order.
+    #[test]
+    fn a_material_snapshots_then_blurs_then_composites() {
+        let (prims, _f) = scene_of("draw_material(rect(0, 0, 100, 40), {kind: \"thin\"})\n");
+        let kinds: Vec<&str> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Canvas { .. } => Some("canvas"),
+                Primitive::Snapshot { .. } => Some("snapshot"),
+                Primitive::Blur { .. } => Some("blur"),
+                Primitive::CanvasDraw { .. } => Some("draw"),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kinds, vec!["canvas", "snapshot", "blur", "draw"]);
+        let from = prims
+            .iter()
+            .find_map(|p| match p {
+                Primitive::Snapshot { from, .. } => Some(*from),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(from, (RECT.x, RECT.y), "snapshot is pane-relative");
+    }
+
+    /// Per-pane namespacing: the same script id lands in a different renderer
+    /// id for each base, so two panes' layers never share a texture.
+    #[test]
+    fn canvas_ids_are_offset_by_the_pane_base() {
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        write!(f, "layer(rect(0, 0, 10, 10), fn() end)\n").unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        let mut prims = Vec::new();
+        pv.build_scene_in(1 << 16, RECT, CELL, &Theme::default(), true, &mut prims);
+        let ids: Vec<u32> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Canvas { id, .. } | Primitive::CanvasDraw { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ids, vec![(1 << 16) + 1, (1 << 16) + 1]);
+    }
+
+    /// The layers example end to end: through the panel host, the scene
+    /// builder and the real GPU renderer (skipped without an adapter). The
+    /// material bar must read as a blend of the stripes under it — neither
+    /// the bare content nor the flat tint — which is only true if snapshot,
+    /// blur and premultiplied compositing all did their part. Set
+    /// `GARDEN_LAYERS_OUT=/path.png` to dump the frame.
+    #[test]
+    fn the_layers_example_renders_a_material_over_its_content() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/panels/layers.ptl");
+        let host = PanelHost::load(&path).unwrap();
+        let mut pv = PanelView::new(host, "layers.ptl".into(), Instant::now());
+        let rect = Rect::new(0.0, 0.0, 640.0, 400.0);
+        pv.tick(Instant::now(), rect, CELL);
+        assert!(pv.frame_error.is_none(), "{:?}", pv.frame_error);
+        let mut prims = Vec::new();
+        pv.build_scene_in(1 << 16, rect, CELL, &Theme::default(), true, &mut prims);
+        assert!(
+            prims.iter().any(|p| matches!(p, Primitive::Blur { .. })),
+            "the example blurs"
+        );
+
+        let Ok(mut renderer) = garden_render::HeadlessRenderer::new((rect.w, rect.h), 1.0) else {
+            eprintln!("skipping raster check: no GPU adapter");
+            return;
+        };
+        let scene = garden_render::Scene {
+            bg: Color::rgb(0.0, 0.0, 0.0),
+            primitives: prims,
+        };
+        let cap = renderer.capture(&scene);
+        if let Ok(out) = std::env::var("GARDEN_LAYERS_OUT") {
+            let file = std::fs::File::create(out).unwrap();
+            let mut enc = png::Encoder::new(file, cap.width, cap.height);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header()
+                .unwrap()
+                .write_image_data(&cap.rgba)
+                .unwrap();
+        }
+        let px = |x: u32, y: u32| {
+            let i = ((y * cap.width + x) * 4) as usize;
+            [cap.rgba[i], cap.rgba[i + 1], cap.rgba[i + 2]]
+        };
+        // Inside the bar (y = 40), away from its text: the tint is
+        // #1c1f28 at ~65%, over blurred blue stripes. Neither the stripe's
+        // own blue (b ≈ 220) nor the pure tint (b = 40).
+        let bar = px(400, 40);
+        assert!(
+            bar[2] > 50 && bar[2] < 200,
+            "bar samples a tinted backdrop: {bar:?}"
+        );
+        // The stripe below the bar is untouched content.
+        let content = px(400, 70);
+        assert!(content[2] > 150, "content stays vivid: {content:?}");
     }
 
     #[test]
@@ -4722,7 +4999,28 @@ fn clip_to(p: Primitive, to: Rect) -> Primitive {
             clip: intersect(clip, to),
             mask,
         },
-        Primitive::Quad { .. } => p,
+        Primitive::Snapshot { id, from, clip } => Primitive::Snapshot {
+            id,
+            from,
+            clip: intersect(clip, to),
+        },
+        Primitive::CanvasDraw {
+            id,
+            rect,
+            alpha,
+            clip,
+            mask,
+        } => Primitive::CanvasDraw {
+            id,
+            rect,
+            alpha,
+            clip: intersect(clip, to),
+            mask,
+        },
+        Primitive::Quad { .. }
+        | Primitive::Canvas { .. }
+        | Primitive::Target { .. }
+        | Primitive::Blur { .. } => p,
     }
 }
 

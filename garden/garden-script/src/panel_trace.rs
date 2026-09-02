@@ -323,6 +323,12 @@ pub enum DragOutcome {
 /// query would make every miss look like a hit on the line that cleared.
 pub fn hit_test(cmds: &[PanelCmd], x: i32, y: i32) -> Option<usize> {
     let mut clip: Option<(i32, i32, i32, i32)> = None;
+    // Commands aimed at an offscreen canvas are not on the pane — the canvas
+    // is, wherever `DrawCanvas` places it — so they are skipped and the
+    // composite is picked as one rectangle instead. Its natural size comes
+    // from the `CreateCanvas` that made it.
+    let mut target = 0u32;
+    let mut canvas_sizes: Vec<(u32, (u32, u32))> = Vec::new();
     // The `ClipPush`/`ClipPop` stack, tracked here for the same reason the
     // renderer tracks it: a push intersects with the clip already in force, so
     // reading the stream without it would hit-test against the wrong rect.
@@ -360,7 +366,45 @@ pub fn hit_test(cmds: &[PanelCmd], x: i32, y: i32) -> Option<usize> {
                 clip = saved.pop().flatten();
                 continue;
             }
+            PanelCmd::CreateCanvas { id, w, h } => {
+                canvas_sizes.retain(|(other, _)| other != id);
+                canvas_sizes.push((*id, (*w, *h)));
+                continue;
+            }
+            PanelCmd::SetTarget { id } => {
+                target = *id;
+                continue;
+            }
+            PanelCmd::Snapshot { .. } | PanelCmd::BlurCanvas { .. } => continue,
+            PanelCmd::DrawCanvas {
+                id,
+                x: cx,
+                y: cy,
+                w,
+                h,
+                ..
+            } if target == 0 => {
+                if let Some((x0, y0, x1, y1)) = clip {
+                    if x < x0 || x >= x1 || y < y0 || y >= y1 {
+                        continue;
+                    }
+                }
+                let natural = canvas_sizes
+                    .iter()
+                    .find(|(other, _)| other == id)
+                    .map(|(_, size)| *size)
+                    .unwrap_or((0, 0));
+                let w = if *w == 0 { natural.0 } else { *w };
+                let h = if *h == 0 { natural.1 } else { *h };
+                if in_rect(*cx, *cy, w, h, x, y) {
+                    hit = Some(i);
+                }
+                continue;
+            }
             _ => {}
+        }
+        if target != 0 {
+            continue;
         }
         if let Some((x0, y0, x1, y1)) = clip {
             if x < x0 || x >= x1 || y < y0 || y >= y1 {
@@ -671,6 +715,39 @@ mod tests {
         assert_eq!(hit_test(&cmds, 10, 10), Some(1), "inside the clip");
         assert_eq!(hit_test(&cmds, 50, 50), None, "clipped away");
         assert_eq!(hit_test(&cmds, 205, 5), Some(3), "after ClipNone");
+    }
+
+    /// Shapes drawn into an offscreen canvas are not on the pane; the
+    /// composited canvas is, as one rectangle where `DrawCanvas` puts it, at
+    /// the size `CreateCanvas` gave it.
+    #[test]
+    fn a_layer_is_hit_where_it_is_composited_not_where_it_was_drawn() {
+        let cmds = vec![
+            PanelCmd::CreateCanvas {
+                id: 1,
+                w: 20,
+                h: 20,
+            },
+            PanelCmd::SetTarget { id: 1 },
+            rect(0, 0, 20, 20),
+            PanelCmd::SetTarget { id: 0 },
+            PanelCmd::BlurCanvas { id: 1, radius: 4 },
+            PanelCmd::DrawCanvas {
+                id: 1,
+                x: 100,
+                y: 100,
+                w: 0,
+                h: 0,
+                a: 255,
+            },
+        ];
+        assert_eq!(
+            hit_test(&cmds, 5, 5),
+            None,
+            "canvas-local rect is not on the pane"
+        );
+        assert_eq!(hit_test(&cmds, 105, 105), Some(5), "the composite is");
+        assert_eq!(hit_test(&cmds, 125, 105), None, "natural size bounds it");
     }
 
     /// A rect outline is picked on its stroke; its hollow middle belongs to

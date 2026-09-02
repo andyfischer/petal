@@ -7,7 +7,16 @@
 //!
 //! - Hosts may ignore commands they don't support (e.g. a host without
 //!   offscreen render targets skips the canvas ops — which is why
-//!   [`register_canvas`] is separate from [`register_draw`]).
+//!   [`register_canvas`] is separate from [`register_draw`]). A host that
+//!   *does* have render targets gets the whole layer model: canvases are
+//!   drawn into ([`DrawCommand::SetTarget`]), read back from what is already
+//!   painted ([`DrawCommand::Snapshot`]), filtered in place
+//!   ([`DrawCommand::BlurCanvas`]), and composited with opacity and scaling
+//!   ([`DrawCommand::DrawCanvas`]). Every effect that needs an offscreen
+//!   buffer — a backdrop material, group opacity, a glow — is a short
+//!   sequence of those four rather than a command of its own, so a new effect
+//!   is one more *operation on a canvas id* and not a new pass every host has
+//!   to learn.
 //! - Hosts may register extra natives that `emit` their own tags into the
 //!   same buffer; those decode as [`DrawCommand::Host`] and keep their place
 //!   in the command order.
@@ -30,6 +39,12 @@ pub const DRAW_COMMANDS_SYMBOL: &str = "draw_commands";
 
 /// Per-frame offscreen-canvas id counter (ids 1-based; 0 is the framebuffer).
 pub const CANVAS_ID_COUNTER: &str = "canvas_id";
+
+/// The render target the script is currently drawing into (0 = the
+/// framebuffer), kept host-side so `draw_to` can return the target it
+/// replaced. That return value is what lets a prelude helper nest layers with
+/// plain closures and no shared stack: `let prev = draw_to(c); body(); draw_to(prev)`.
+pub const CANVAS_TARGET: &str = "canvas_target";
 
 /// The font metrics and text measurement subsystem lives in [`crate::text`];
 /// it is re-exported here so a host reaches the whole draw contract — the
@@ -425,11 +440,56 @@ pub enum DrawCommand {
     SetTarget {
         id: u32,
     },
-    /// Blit an offscreen canvas onto the current render target at (`x`, `y`).
+    /// Composite an offscreen canvas onto the current render target with its
+    /// top-left at (`x`, `y`), at opacity `a`, scaled into `w`×`h` (0 = the
+    /// canvas's own size).
+    ///
+    /// A canvas is drawn as one premultiplied image, so a group of
+    /// overlapping translucent shapes drawn into it and composited at `a`
+    /// reads as one object at that opacity — the thing that drawing each
+    /// shape at `a` directly gets wrong, since alpha blending is not
+    /// idempotent. A host without render targets draws nothing here (the
+    /// canvas never existed), which is why a prelude helper built on layers
+    /// always paints its flat fallback *outside* the canvas.
     DrawCanvas {
         id: u32,
         x: i32,
         y: i32,
+        #[serde(skip_serializing_if = "is_opaque")]
+        a: u8,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        w: u32,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        h: u32,
+    },
+    /// Copy what the **current target** already holds — the pixels under the
+    /// canvas-sized rect whose top-left is (`x`, `y`) — into canvas `id`. The
+    /// backdrop primitive: everything that samples what is *behind* a surface
+    /// (a translucent blurred bar, a frosted sheet, a refraction) starts by
+    /// snapshotting the region and then operates on the canvas. Pixels
+    /// outside the target (or the host's clip) are left transparent.
+    ///
+    /// Reads the target as painted *so far*: order matters, the way it does
+    /// for every other command. A host without render targets ignores it.
+    Snapshot {
+        id: u32,
+        x: i32,
+        y: i32,
+    },
+    /// Gaussian-blur canvas `id` in place; `radius` is the standard deviation
+    /// in px (CSS `filter: blur(radius)` semantics), so a 20 px blur is the
+    /// soft wash behind an iOS bar and a 2 px blur only takes the edge off.
+    /// Edges clamp — the blur near the canvas border smears the border pixels
+    /// outward rather than fading to transparent — because that is what a
+    /// backdrop wants: a bar at the pane edge must not show a dark fringe.
+    ///
+    /// The first of the in-place canvas *filters*; a host that has one
+    /// render-to-texture pass has them all, and a host without approximates
+    /// or ignores (a blurred snapshot degrades to an un-blurred one, which is
+    /// still the right colours in aggregate).
+    BlurCanvas {
+        id: u32,
+        radius: u32,
     },
     /// A host-registered extension command: an unrecognized tag passes
     /// through in order with its raw args (heap-backed; decode them before
@@ -846,6 +906,18 @@ impl DrawCommand {
                 id: u32_at(0)?,
                 x: i32_at(1)?,
                 y: i32_at(2)?,
+                a: opt_u8(3, 255),
+                w: opt_u32(4, 0),
+                h: opt_u32(5, 0),
+            },
+            "snapshot" => DrawCommand::Snapshot {
+                id: u32_at(0)?,
+                x: i32_at(1)?,
+                y: i32_at(2)?,
+            },
+            "blur_canvas" => DrawCommand::BlurCanvas {
+                id: u32_at(0)?,
+                radius: u32_at(1)?,
             },
             _ => DrawCommand::Host { tag, data },
         };
@@ -939,12 +1011,17 @@ pub fn take_draw_commands_for(env: &mut Env, stack_id: StackKey) -> Vec<DrawComm
 pub fn reset_canvas_ids(env: &mut Env) {
     let c = env.intern_symbol(CANVAS_ID_COUNTER);
     env.reset_counter(c, 1);
+    // A frame starts on the framebuffer whatever the last one ended on — a
+    // script that errored mid-layer must not leave the next frame drawing
+    // into a canvas that no longer exists.
+    let t = env.intern_symbol(CANVAS_TARGET);
+    env.reset_counter(t, 0);
 }
 
 // ── Script-side: the standard draw natives ───────────────────────────────
 
-/// Register the core draw natives (everything except the optional offscreen
-/// canvas ops — see [`register_canvas`]).
+/// Register the standard draw natives, the offscreen-canvas ops included
+/// (see [`register_canvas`]).
 pub fn register_draw(env: &mut Env) {
     env.register_native("draw_image", native_draw_image);
     env.register_native("clear", native_clear);
@@ -981,16 +1058,27 @@ pub fn register_draw(env: &mut Env) {
     env.register_native("text_width", native_text_width);
     env.register_native("font", native_font);
     env.register_native("fonts", native_fonts);
+    // The layer natives are part of the standard set: the `ui` prelude's
+    // `layer` / `snapshot` / `draw_material` helpers name them at module load,
+    // so a host that left them out would fail to load the prelude at all. A
+    // host with no render targets simply ignores the commands (a canvas it
+    // never made draws nothing), which is the degradation the prelude is
+    // written against — see `draw_material`.
+    register_canvas(env);
 }
 
-/// Register the optional offscreen-canvas natives (`create_canvas`,
-/// `draw_to`, `draw_to_screen`, `draw_canvas`). Hosts that register these
-/// must handle the canvas commands and call [`reset_canvas_ids`] per frame.
+/// Register the offscreen-canvas natives (`create_canvas`, `draw_to`,
+/// `draw_to_screen`, `draw_canvas`, `snapshot_to`, `blur_canvas`). Included
+/// in [`register_draw`]; kept public for a host that composes its own set.
+/// A host that handles the canvas commands must call [`reset_canvas_ids`]
+/// before each frame so ids stay stable.
 pub fn register_canvas(env: &mut Env) {
     env.register_native("create_canvas", native_create_canvas);
     env.register_native("draw_to", native_draw_to);
     env.register_native("draw_to_screen", native_draw_to_screen);
     env.register_native("draw_canvas", native_draw_canvas);
+    env.register_native("snapshot_to", native_snapshot_to);
+    env.register_native("blur_canvas", native_blur_canvas);
 }
 
 /// Emit a draw command into the `draw_commands` output buffer.
@@ -1633,22 +1721,61 @@ fn native_create_canvas(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+/// Switch the active target to `id` and return the target it replaced: the
+/// value a caller hands back to `draw_to` when it is done, so layers nest
+/// without a stack anyone has to keep.
+fn switch_target(state: &mut PetalCxt, id: i64) -> NativeResult {
+    let sym = state.intern_symbol(CANVAS_TARGET);
+    let prev = state.peek_counter(sym) as i64;
+    state.set_counter(sym, id.max(0) as u64);
+    emit_draw(state, "set_target", vec![Value::Int(id)]);
+    state.push_int(prev);
+    Ok(1)
+}
+
+/// `draw_to(id)` — redirect drawing into canvas `id` (0 = the screen).
+/// Returns the previously active target.
 fn native_draw_to(state: &mut PetalCxt) -> NativeResult {
     let id = state.get_int(1)?;
-    emit_draw(state, "set_target", vec![Value::Int(id)]);
-    state.push_nil();
-    Ok(1)
+    switch_target(state, id)
 }
 
+/// `draw_to_screen()` — `draw_to(0)`; returns the previously active target.
 fn native_draw_to_screen(state: &mut PetalCxt) -> NativeResult {
-    emit_draw(state, "set_target", vec![Value::Int(0)]);
+    switch_target(state, 0)
+}
+
+/// `draw_canvas(id, x, y, [a, [w, h]])` — composite a canvas onto the
+/// current target at opacity `a` (0–255), scaled into `w`×`h` when both are
+/// given (0 = natural size).
+fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
+    let mut args = int_args(state, 3)?;
+    args.push(Value::Int(opt_int(state, 4, 255)?));
+    args.push(Value::Int(opt_int(state, 5, 0)?));
+    args.push(Value::Int(opt_int(state, 6, 0)?));
+    emit_draw(state, "draw_canvas", args);
     state.push_nil();
     Ok(1)
 }
 
-fn native_draw_canvas(state: &mut PetalCxt) -> NativeResult {
+/// `snapshot_to(id, x, y)` — copy the current target's pixels under the
+/// canvas-sized rect at (`x`, `y`) into canvas `id`.
+fn native_snapshot_to(state: &mut PetalCxt) -> NativeResult {
     let args = int_args(state, 3)?;
-    emit_draw(state, "draw_canvas", args);
+    emit_draw(state, "snapshot", args);
+    state.push_nil();
+    Ok(1)
+}
+
+/// `blur_canvas(id, radius)` — Gaussian-blur canvas `id` in place.
+fn native_blur_canvas(state: &mut PetalCxt) -> NativeResult {
+    let id = state.get_int(1)?;
+    let radius = get_num(state, 2, "blur_canvas")?.max(0.0).round() as i64;
+    emit_draw(
+        state,
+        "blur_canvas",
+        vec![Value::Int(id), Value::Int(radius)],
+    );
     state.push_nil();
     Ok(1)
 }

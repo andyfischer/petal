@@ -71,7 +71,9 @@ export interface DrawCommand {
   spread?: number;
   dx?: number;
   dy?: number;
-  // Offscreen canvas (create_canvas / set_target / draw_canvas)
+  // Offscreen canvas (create_canvas / set_target / draw_canvas / snapshot /
+  // blur_canvas). `draw_canvas` also carries `a` (opacity) and `w`/`h` (a
+  // destination size, 0 = the canvas's own); `blur_canvas` carries `radius`.
   id?: number;
 }
 
@@ -388,7 +390,67 @@ export function renderCommands(
         const src = offscreen.get(cmd.id!);
         const dst = targetCtx();
         if (src && dst) {
-          dst.drawImage(src.canvas, cmd.x!, cmd.y!);
+          // Group opacity: the layer composites once at `a`, so overlapping
+          // shapes inside it read as one object. `w`/`h` of 0 mean the
+          // canvas's own size.
+          const w = cmd.w || src.canvas.width;
+          const h = cmd.h || src.canvas.height;
+          const a = cmd.a === undefined ? 1 : cmd.a / 255;
+          const saved = dst.globalAlpha;
+          dst.globalAlpha = saved * a;
+          dst.drawImage(src.canvas, cmd.x!, cmd.y!, w, h);
+          dst.globalAlpha = saved;
+        }
+        break;
+      }
+
+      case "snapshot": {
+        // Copy the current target's pixels under the canvas rect into the
+        // canvas: the backdrop a material blurs. Replace, don't blend — the
+        // snapshot *is* what was there.
+        const dstCanvas = offscreen.get(cmd.id!);
+        const src = targetCtx();
+        if (dstCanvas && src && src !== dstCanvas) {
+          const w = dstCanvas.canvas.width;
+          const h = dstCanvas.canvas.height;
+          const op = dstCanvas.globalCompositeOperation;
+          dstCanvas.globalCompositeOperation = "copy";
+          dstCanvas.drawImage(src.canvas, cmd.x!, cmd.y!, w, h, 0, 0, w, h);
+          dstCanvas.globalCompositeOperation = op;
+        }
+        break;
+      }
+
+      case "blur_canvas": {
+        // In place, through the 2D context's own Gaussian: draw the canvas
+        // onto itself with a blur filter. Edge clamping comes from padding
+        // the source draw by the blur extent, so a backdrop at the edge does
+        // not fade to transparent.
+        const c = offscreen.get(cmd.id!);
+        const radius = cmd.radius ?? 0;
+        if (c && radius > 0) {
+          const w = c.canvas.width;
+          const h = c.canvas.height;
+          const copy = createOffscreen(w, h);
+          copy.drawImage(c.canvas, 0, 0);
+          c.save();
+          c.setTransform(1, 0, 0, 1, 0, 0);
+          c.globalCompositeOperation = "copy";
+          c.filter = `blur(${radius}px)`;
+          const pad = Math.ceil(radius * 3);
+          // Edge pixels stretched outward by `pad` on every side, so the blur
+          // samples clamped colour rather than transparent black.
+          c.drawImage(copy.canvas, 0, 0, 1, 1, -pad, -pad, pad, pad);
+          c.drawImage(copy.canvas, 0, 0, w, 1, 0, -pad, w, pad);
+          c.drawImage(copy.canvas, w - 1, 0, 1, 1, w, -pad, pad, pad);
+          c.globalCompositeOperation = "source-over";
+          c.drawImage(copy.canvas, 0, 0, 1, h, -pad, 0, pad, h);
+          c.drawImage(copy.canvas, w - 1, 0, 1, h, w, 0, pad, h);
+          c.drawImage(copy.canvas, 0, h - 1, 1, 1, -pad, h, pad, pad);
+          c.drawImage(copy.canvas, 0, h - 1, w, 1, 0, h, w, pad);
+          c.drawImage(copy.canvas, w - 1, h - 1, 1, 1, w, h, pad, pad);
+          c.drawImage(copy.canvas, 0, 0);
+          c.restore();
         }
         break;
       }

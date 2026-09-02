@@ -370,6 +370,49 @@ on purpose — alpha blending is not idempotent, so nested rings double-composit
 and show every seam. Hosts tessellate it as a single non-overlapping mesh
 (`petal_ui::tess::shadow_mesh`).
 
+## Layers — offscreen canvases, backdrops and blur
+
+A *layer* is a canvas the size of a rect that a closure draws into, then
+composites back at that rect. It is the one offscreen buffer the vocabulary
+has, and every effect that needs one is an operation on it: draw into it
+(`draw_to`), fill it from what is already on screen (`snapshot_to`), filter it
+(`blur_canvas`), composite it (`draw_canvas`, with opacity and an optional
+destination size). A new effect is a new operation on a canvas id, not a new
+kind of buffer.
+
+| Call | Does |
+|---|---|
+| `layer(rect, body)` / `layer(rect, {a, blur}, body)` | draw `body()` into a canvas at (0, 0) = `rect`'s top-left, optionally blur it, composite at `rect` at opacity `a` |
+| `snapshot(rect)` | a canvas holding what is under `rect` right now |
+| `draw_backdrop_blur(rect, radius)` | blur what is under `rect`, in place |
+| `draw_material(rect[, {kind, radius, tint, a, blur, hairline}])` | the iOS-style translucent material: the backdrop blurred under a tint, clipped to `radius`; `kind` is `"thin"` / `"regular"` / `"thick"` |
+| `canvas(w, h)` / `canvas(rect)` | a bare canvas id, for hand-rolled effects |
+| `draw_canvas(id, x, y[, a[, w, h]])` / `draw_canvas(id, rect[, {a}])` | composite a canvas, at opacity `a`, scaled to `w`×`h` |
+
+The body of a `layer` draws in canvas-local coordinates, and `draw_to` returns
+the target it replaced, so layers nest without a stack anyone has to keep:
+
+```petal
+// Overlapping translucent shapes as one object at 50% — drawing each at 50%
+// would darken every overlap, since blending is not idempotent.
+layer(card, {a: 128}, fn()
+  draw_circle(rect(0, 0, 80, 80), c1)
+  draw_circle(rect(40, 0, 80, 80), c2)
+end)
+
+// A glow: the shape, blurred.
+layer(halo, {blur: 12}, fn() draw_circle(rect(0, 0, halo.w, halo.h), accent) end)
+
+// A tab bar the content scrolls under. Draw the content first — the
+// snapshot reads what is already there.
+draw_material(bar, {kind: "regular", hairline: "top"})
+```
+
+A host without render targets draws nothing for a canvas, so a helper that has
+to stay legible everywhere paints its flat fallback outside the layer:
+`draw_material` draws its tint after the blurred snapshot, which on such a host
+is the tint alone.
+
 ## Compatibility
 
 Level 3 is strictly additive: every pre-existing export keeps its signature,
@@ -378,6 +421,10 @@ and apps that shadow prelude names with their own (`fn spinner`,
 Level 5 adds the gradient/shadow/nested-clip primitives above, and is additive
 in the same way. Check a binary's surface with `garden --version --json`
 (`prelude.exports`) or `petal_ui::PRELUDE_LEVEL`.
+
+Level 7 adds the layer vocabulary above and is additive; it also makes the
+offscreen-canvas natives part of every host's surface (the prelude refers to
+them at load), and gives `draw_canvas` two optional trailing arguments.
 
 Level 6 is additive in signature but **not** in appearance, and deliberately
 so: widget text moved from the host's default face to the theme's `font`

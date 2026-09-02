@@ -147,18 +147,29 @@ impl MeshPipeline {
         })
     }
 
-    /// Upload this frame's meshes and the logical screen size.
+    /// Upload this frame's meshes.
     ///
     /// `meshes` yields `(vertices, clip)` per `Mesh` primitive in submission
     /// order; all vertices are concatenated into one buffer and each mesh is
     /// recorded as a scissored draw group. The buffer is reallocated only when
     /// the total vertex count exceeds its capacity.
+    /// Publish target `slot`'s logical size and scale factor for this frame
+    /// (slot 0 is the frame; each offscreen canvas has its own).
+    pub fn set_target(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        slot: usize,
+        logical_size: (f32, f32),
+        scale: f32,
+    ) {
+        self.globals.write(device, queue, slot, logical_size, scale);
+    }
+
     pub fn prepare<'a>(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        logical_size: (f32, f32),
-        scale: f32,
         meshes: impl Iterator<Item = (&'a [Vertex], &'a Rect)>,
     ) {
         self.staging.clear();
@@ -191,7 +202,6 @@ impl MeshPipeline {
             self.vertex_buffer = Self::create_vertex_buffer(device, self.capacity);
         }
 
-        self.globals.write(queue, logical_size, scale);
         if !self.staging.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.staging));
         }
@@ -206,6 +216,7 @@ impl MeshPipeline {
     pub fn render(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
+        slot: usize,
         physical_size: (u32, u32),
         scale_factor: f32,
         range: std::ops::Range<usize>,
@@ -215,7 +226,7 @@ impl MeshPipeline {
             return;
         }
         pass.set_pipeline(&self.pipeline);
-        self.globals.bind(pass);
+        self.globals.bind(pass, slot);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         for g in &self.groups[range.start..end] {

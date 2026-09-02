@@ -619,6 +619,153 @@ export fn draw_scroll_shadow(header_rect, frac, style)
   end
 end
 
+// ── Layers — offscreen canvases, backdrops and blur ───────────────────────
+// A *layer* is a canvas the size of a rect that a closure draws into, then
+// composited back at that rect. It is what every effect that needs an
+// offscreen buffer is made of, and the closure is what keeps it composable:
+// `draw_to` hands back the target it replaced, so layers nest without a
+// stack anyone has to keep, and the body draws in canvas-local coordinates
+// ((0, 0) is the rect's top-left) the same way it would on screen.
+//
+//   // A group of overlapping translucent shapes at 50%, as one object — the
+//   // thing drawing each shape at 50% gets wrong, since alpha blending is not
+//   // idempotent and every overlap would read darker.
+//   layer(card, {a: 128}, fn()
+//     draw_circle(rect(0, 0, 80, 80), c1)
+//     draw_circle(rect(40, 0, 80, 80), c2)
+//   end)
+//
+//   // A glow: the shape drawn into a layer and the layer blurred.
+//   layer(halo, {blur: 12}, fn() draw_circle(rect(0, 0, halo.w, halo.h), accent) end)
+//
+//   // The translucent bar content scrolls under — see draw_material.
+//   draw_material(bar, {kind: "regular", hairline: true})
+//
+// Hosts without render targets draw nothing for a canvas (it never existed),
+// so a helper that must stay legible everywhere paints its flat fallback
+// *outside* the layer — `draw_material` draws its tint after the blurred
+// snapshot, which on such a host is the tint alone: right in aggregate.
+let _native_draw_canvas = draw_canvas
+
+fn _is_num(v)
+  let t = type(v)
+  t == "int" || t == "float"
+end
+
+// An offscreen canvas, transparent until drawn into, recreated each frame.
+export fn canvas(w, h)
+  create_canvas(int(w), int(h))
+end
+export fn canvas(r)
+  create_canvas(int(r.w), int(r.h))
+end
+
+// The flat forms, forwarded so they stay reachable under the record ones.
+export fn draw_canvas(id, x, y, a)
+  _native_draw_canvas(id, x, y, a)
+end
+export fn draw_canvas(id, x, y, a, w, h)
+  _native_draw_canvas(id, x, y, a, w, h)
+end
+
+// draw_canvas(id, at[, opts]) — `at` is a point {x, y} (natural size) or a
+// rect (the canvas scaled into it); `opts` is {a}. The arity-3 form doubles as
+// the flat `draw_canvas(id, x, y)`, told apart by whether `x` is a number.
+export fn draw_canvas(id, at)
+  _draw_canvas_at(id, at, {})
+end
+export fn draw_canvas(id, x, y)
+  if _is_num(x) then
+    _native_draw_canvas(id, x, y)
+  else
+    _draw_canvas_at(id, x, y)
+  end
+end
+
+fn _draw_canvas_at(id, at, opts)
+  _native_draw_canvas(id, int(at.x), int(at.y), _get(opts, "a", 255),
+                      int(_get(at, "w", 0)), int(_get(at, "h", 0)))
+end
+
+// Draw `body()` into a fresh canvas the size of `r` — canvas-local
+// coordinates — then composite it at `r`. `opts` is {a, blur}: the group's
+// opacity, and a Gaussian blur (px) applied to the whole layer before it is
+// drawn. Returns the canvas id, so the caller can draw it again (a repeated
+// stamp) or filter it further.
+export fn layer(r, body)
+  layer(r, {}, body)
+end
+export fn layer(r, opts, body)
+  let c = create_canvas(int(r.w), int(r.h))
+  let prev = draw_to(c)
+  body()
+  draw_to(prev)
+  let blur = _get(opts, "blur", 0)
+  if blur > 0 then
+    blur_canvas(c, blur)
+  end
+  _native_draw_canvas(c, int(r.x), int(r.y), _get(opts, "a", 255), 0, 0)
+  c
+end
+
+// A canvas holding what is currently painted under `r` — the backdrop
+// primitive. Order matters: it copies the target as drawn *so far*.
+export fn snapshot(r)
+  let c = create_canvas(int(r.w), int(r.h))
+  snapshot_to(c, int(r.x), int(r.y))
+  c
+end
+
+// Replace what is under `r` with a `radius`-px Gaussian blur of itself.
+export fn draw_backdrop_blur(r, radius)
+  let c = snapshot(r)
+  blur_canvas(c, radius)
+  _native_draw_canvas(c, int(r.x), int(r.y), 255, 0, 0)
+end
+
+// The translucent, background-sampling surface Apple's chrome is made of —
+// navigation and tab bars, sheets, the floating search pill: what is behind
+// it, blurred, under a tint. `opts`:
+//   kind      "thin" | "regular" | "thick" — how much the backdrop shows
+//             through (sets the default blur and tint strength)
+//   radius    corner radius (a bar is 0, a pill is r.h / 2)
+//   blur      Gaussian radius in px (default by kind: 12 / 20 / 32)
+//   tint      the material's colour (default: the theme surface)
+//   a         tint opacity 0–255 (default by kind: 110 / 165 / 215)
+//   hairline  true draws the 1-px separator a bar carries on the edge facing
+//             the content ("top" / "bottom" choose the edge; true = bottom)
+//
+// Content that scrolls under the material must be drawn *before* it — the
+// snapshot reads what is already there.
+export fn draw_material(r)
+  draw_material(r, {})
+end
+export fn draw_material(r, opts)
+  let t = _palette()
+  let kind = _get(opts, "kind", "regular")
+  let a_default = if kind == "thin" then 110 elsif kind == "thick" then 215 else 165 end
+  let blur_default = if kind == "thin" then 12 elsif kind == "thick" then 32 else 20 end
+  let radius = _get(opts, "radius", 0)
+  let tint = _get(opts, "tint", t.surface)
+  let a = _get(opts, "a", a_default)
+  let blur = _get(opts, "blur", blur_default)
+  clip_push(r, radius)
+  // Backdrop first, tint over it: on a host without render targets the
+  // backdrop is nothing and the tint alone is the flat approximation.
+  draw_backdrop_blur(r, blur)
+  draw_rect(r, tint, a)
+  // The hairline stays inside the clip so a rounded material's corners cut
+  // it the way they cut the tint.
+  let hairline = _get(opts, "hairline", false)
+  if hairline == true || hairline == "bottom" then
+    draw_rect(rect(r.x, r.y + r.h - 1, r.w, 1), t.border, 140)
+  elsif hairline == "top" then
+    draw_rect(rect(r.x, r.y, r.w, 1), t.border, 140)
+  end
+  clip_pop()
+  nil
+end
+
 // ── Fonts ─────────────────────────────────────────────────────────────────
 
 // `font(name)` names a face as an *object* rather than a string, so the size

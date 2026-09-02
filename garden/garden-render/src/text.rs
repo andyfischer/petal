@@ -109,7 +109,13 @@ fn load_fallback_fonts(db: &mut fontdb::Database) -> usize {
 pub(crate) struct TextStack {
     font_system: FontSystem,
     swash_cache: SwashCache,
-    viewport: Viewport,
+    cache: Cache,
+    /// One viewport per render *target* (slot 0 the frame, then one per
+    /// offscreen canvas), holding that target's resolution. glyphon converts
+    /// a run's physical-pixel position to clip space through the viewport,
+    /// so a run drawn into a 200×40 canvas must be staged against a 200×40
+    /// viewport, not the window's.
+    viewports: Vec<Viewport>,
     atlas: TextAtlas,
     /// One renderer per *text batch* in the current frame, all sharing `atlas`
     /// and `viewport`. A scene interleaves shapes and text to preserve
@@ -119,6 +125,9 @@ pub(crate) struct TextStack {
     renderers: Vec<TextRenderer>,
     /// Batches staged by the current frame — `renderers[..batches]` are live.
     batches: usize,
+    /// The target slot each staged batch draws into, positionally matching
+    /// `renderers`.
+    batch_slots: Vec<usize>,
     /// Multisample state the pool's renderers are built with.
     samples: u32,
     /// Pool of shaping buffers, one per text run, reused across frames.
@@ -389,7 +398,7 @@ impl TextStack {
 
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
-        let viewport = Viewport::new(device, &cache);
+        let viewports = vec![Viewport::new(device, &cache)];
         // `ColorMode::Web` is the whole of glyphon's half of the sRGB
         // compositing contract (see [`crate::Color`]): it keeps a run's color
         // gamma-encoded through the vertex stage and stores colored glyphs in
@@ -412,10 +421,12 @@ impl TextStack {
         Self {
             font_system,
             swash_cache,
-            viewport,
+            cache,
+            viewports,
             atlas,
             renderers: Vec::new(),
             batches: 0,
+            batch_slots: Vec::new(),
             samples,
             buffers: Vec::new(),
             cell_size,
@@ -479,25 +490,31 @@ impl TextStack {
     /// pixels glyphon renders in.
     ///
     /// `batches` partitions `texts` into the contiguous stretches that are
-    /// drawn at distinct points in the pass (see [`render_batch`]). It must
-    /// cover `texts` in order; passing a single full-width range reproduces
-    /// the old "all text last" behavior.
+    /// drawn at distinct points in the pass (see [`render_batch`]), each
+    /// tagged with the target slot it draws into. It must cover `texts` in
+    /// order; passing a single full-width range reproduces the old "all text
+    /// last" behavior. `targets[slot]` is that target's physical size.
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        physical_size: (u32, u32),
+        targets: &[(u32, u32)],
         scale_factor: f32,
         texts: &[TextRun<'_>],
-        batches: &[std::ops::Range<usize>],
+        batches: &[(std::ops::Range<usize>, usize)],
     ) {
-        self.viewport.update(
-            queue,
-            Resolution {
-                width: physical_size.0,
-                height: physical_size.1,
-            },
-        );
+        while self.viewports.len() < targets.len() {
+            self.viewports.push(Viewport::new(device, &self.cache));
+        }
+        for (viewport, size) in self.viewports.iter_mut().zip(targets) {
+            viewport.update(
+                queue,
+                Resolution {
+                    width: size.0.max(1),
+                    height: size.1.max(1),
+                },
+            );
+        }
 
         let metrics = Metrics::new(FONT_SIZE, LINE_HEIGHT);
         while self.buffers.len() < texts.len() {
@@ -527,6 +544,12 @@ impl TextStack {
 
         self.ensure_renderers(device, batches.len());
         self.batches = batches.len();
+        self.batch_slots.clear();
+        self.batch_slots.extend(
+            batches
+                .iter()
+                .map(|(_, slot)| (*slot).min(targets.len().saturating_sub(1))),
+        );
         self.failed.clear();
         self.failed.resize(batches.len(), false);
 
@@ -542,7 +565,9 @@ impl TextStack {
         // because `TextAtlas::grow` preserves existing glyph coordinates, the
         // vertices an earlier `prepare` already emitted stay valid even if a
         // later batch grows the atlas.
-        for (index, (renderer, batch)) in self.renderers.iter_mut().zip(batches).enumerate() {
+        for (index, (renderer, (batch, slot))) in self.renderers.iter_mut().zip(batches).enumerate()
+        {
+            let viewport = &self.viewports[(*slot).min(self.viewports.len() - 1)];
             let end = batch.end.min(texts.len());
             let start = batch.start.min(end);
             let mut areas: Vec<TextArea<'_>> = Vec::with_capacity(end - start);
@@ -583,7 +608,7 @@ impl TextStack {
                 queue,
                 &mut self.font_system,
                 &mut self.atlas,
-                &self.viewport,
+                viewport,
                 areas,
                 &mut self.swash_cache,
             );
@@ -623,8 +648,10 @@ impl TextStack {
         let Some(renderer) = self.renderers.get(index).filter(|_| index < self.batches) else {
             return;
         };
+        let slot = self.batch_slots.get(index).copied().unwrap_or(0);
+        let viewport = &self.viewports[slot.min(self.viewports.len() - 1)];
         renderer
-            .render(&self.atlas, &self.viewport, pass)
+            .render(&self.atlas, viewport, pass)
             .expect("glyphon text render failed");
     }
 

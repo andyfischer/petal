@@ -125,16 +125,27 @@ impl QuadPipeline {
         })
     }
 
-    /// Upload this frame's quads and the logical screen size.
+    /// Upload this frame's quads.
     ///
     /// `quads` yields `(rect, color)` in logical pixels; the instance buffer
     /// is reallocated only when the number of quads exceeds its capacity.
+    /// Publish target `slot`'s logical size and scale factor for this frame
+    /// (slot 0 is the frame; each offscreen canvas has its own).
+    pub fn set_target(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        slot: usize,
+        logical_size: (f32, f32),
+        scale: f32,
+    ) {
+        self.globals.write(device, queue, slot, logical_size, scale);
+    }
+
     pub fn prepare<'a>(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        logical_size: (f32, f32),
-        scale: f32,
         quads: impl Iterator<Item = (&'a Rect, &'a Color)>,
     ) {
         self.staging.clear();
@@ -152,7 +163,6 @@ impl QuadPipeline {
             self.instance_buffer = Self::create_instance_buffer(device, self.capacity);
         }
 
-        self.globals.write(queue, logical_size, scale);
         if self.count > 0 {
             queue.write_buffer(
                 &self.instance_buffer,
@@ -169,13 +179,18 @@ impl QuadPipeline {
     /// interleaved sequence of per-kind batches so that painter's order holds
     /// across primitive kinds, which is why this is a sub-range rather than
     /// "everything staged".
-    pub fn render(&self, pass: &mut wgpu::RenderPass<'_>, range: std::ops::Range<u32>) {
+    pub fn render(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        slot: usize,
+        range: std::ops::Range<u32>,
+    ) {
         let end = range.end.min(self.count as u32);
         if range.start >= end {
             return;
         }
         pass.set_pipeline(&self.pipeline);
-        self.globals.bind(pass);
+        self.globals.bind(pass, slot);
         pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         pass.draw(0..4, range.start..end);
     }

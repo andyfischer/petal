@@ -26,7 +26,10 @@ impl App {
         for (i, pane) in self.panes.iter().enumerate() {
             if let Some(panel) = &pane.panel {
                 let awake = panel.is_awake(std::time::Instant::now());
-                panel.build_scene(pane.rect, cell, &self.theme, awake, &mut prims);
+                // Each pane's layers live in their own canvas-id range, so
+                // two panels drawing "canvas 1" in the same frame stay apart.
+                let canvas_base = (i as u32 + 1) << 16;
+                panel.build_scene_in(canvas_base, pane.rect, cell, &self.theme, awake, &mut prims);
             } else {
                 pane.view
                     .build_scene(pane.rect, cell, i == self.focus, &self.theme, &mut prims);

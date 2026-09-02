@@ -209,7 +209,10 @@ mod tests {
                 DrawCommand::DrawCanvas {
                     id: 1,
                     x: 10,
-                    y: 10
+                    y: 10,
+                    a: 255,
+                    w: 0,
+                    h: 0,
                 },
             ]
         );

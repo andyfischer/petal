@@ -143,10 +143,12 @@ The established pattern: **allocate an integer id, pass it as `Value::Int`,
 keep the id→resource table host-side.**
 
 - Offscreen canvases (petal-ui): `create_canvas()` returns an int from a
-  per-frame counter; `draw_to(id)` / `draw_canvas(id, …)` reference it. The
-  host materializes real render targets from the command stream — the id is an
-  index into command order, never a live host pointer, and it resets every
-  frame.
+  per-frame counter; `draw_to(id)` / `draw_canvas(id, …)` / `snapshot_to(id, …)`
+  / `blur_canvas(id, …)` reference it. The host materializes real render
+  targets from the command stream — the id is an index into command order,
+  never a live host pointer, and it resets every frame. (A host may *cache* a
+  texture by id across frames, as Garden does; the id is still the script's
+  per-frame count, not a handle the script holds.)
 - DOM elements (petal-web): `next_id()` ids round-trip through `data-eid`
   attributes and come back via a `clicked_id` binding.
 - petal-sdl's example browser and file I/O pass strings through bindings and

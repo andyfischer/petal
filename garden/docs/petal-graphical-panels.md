@@ -58,8 +58,9 @@ PaneContent::Panel { script }  ──►  Pane { panel: Some(PanelView) }
   scroll one programmatically and `text_view_wrap` to soft-wrap it), the
   `panel_theme()` host-theme
   read (injected per frame via `PanelHost::set_theme`, like `bind_input`), and
-  its monospace metric (`bind_text_metrics`, ratio 0.6), and does not register
-  the optional offscreen-canvas natives. `PanelCmd`, `PanelInput`, and
+  its monospace metric (`bind_text_metrics`, ratio 0.6). The offscreen-canvas
+  ops come with the draw vocabulary and become the renderer's canvas
+  primitives (see *Layers and blur*). `PanelCmd`, `PanelInput`, and
   `PanelTheme` are plain data types (no `garden-render` dependency — the same
   cross-crate rule the `Theme` capture follows): the host speaks `u8` RGB and
   `i32`/`u32` panel-local pixels. See `../docs/embedding-guide.md`.
@@ -247,6 +248,10 @@ alpha-blend, so overlapping translucent tints composite:
 | `draw_circle_gradient(cx,cy,radius,r0,g0,b0,a0,r1,g1,b1,a1)` | a disc shading center → rim (glow, vignette) |
 | `draw_shadow(x,y,w,h,radius,blur,spread,dx,dy,r,g,b[,a])` | a CSS box-shadow — **non-overlapping**, see below |
 | `clip_push(x,y,w,h[,radius])` / `clip_pop()` | a clip that nests inside the enclosing one, and its restore |
+| `create_canvas(w,h)` / `draw_to(id)` / `draw_to_screen()` | an offscreen canvas, and the target switch into and out of it |
+| `draw_canvas(id,x,y[,a[,w,h]])` | the canvas composited (premultiplied) at opacity `a`, scaled to `w`×`h` |
+| `snapshot_to(id,x,y)` | the current target's pixels under the canvas rect copied into the canvas |
+| `blur_canvas(id,radius)` | the canvas Gaussian-blurred in place (separable, downsampled for large radii) |
 
 `examples/panels/shapes.ptl` draws every one of them on one screen.
 
@@ -520,6 +525,64 @@ row from a clipped-away one.
 *(Text clipping landed 2026-08-15; feature flag `panel.text-clip`. Before it, a
 `clip(...)` narrowed fills but text drew straight through, which is why older
 drawers cull their own straddling rows — that workaround is no longer needed.)*
+
+### Layers and blur
+
+Everything above draws straight into the pane. The canvas ops give a script
+an **offscreen buffer** — the one thing a group opacity, a glow, a frosted
+bar or any other effect that has to look at pixels rather than shapes needs —
+and the prelude wraps them so the common cases are one call:
+
+```petal
+// Content first: the snapshot reads what is already there.
+draw_list(...)
+// The translucent bar it scrolls under — what is behind it, blurred, under
+// a tint, with the hairline a bar carries on the content-facing edge.
+draw_material(rect(0, 0, w, 52), {kind: "regular", hairline: "bottom"})
+
+// A group at 50%: overlapping shapes as one object.
+layer(card, {a: 128}, fn()
+  draw_circle(rect(0, 0, 80, 80), c1)      // canvas-local: (0, 0) is card's top-left
+  draw_circle(rect(40, 0, 80, 80), c2)
+end)
+
+// A glow: the shape, blurred.
+layer(halo, {blur: 12}, fn() draw_circle(rect(0, 0, halo.w, halo.h), accent) end)
+```
+
+`layer(rect, body)` creates a canvas the size of `rect`, runs `body()` with
+drawing redirected into it — coordinates are canvas-local, and the clip stack
+starts fresh at the canvas bounds — then composites it at `rect`. `draw_to`
+returns the target it replaced, so a `layer` inside a `layer` hands drawing
+back to the *outer canvas*, not the pane; nesting needs no stack. Canvas ids
+restart at 1 every frame and the target starts at the pane, so a script that
+errors mid-layer cannot strand the next frame in a canvas.
+
+The model is deliberately small: a canvas is the only buffer, and each effect
+is an *operation on a canvas id* — draw into it, `snapshot_to` it from what is
+already drawn, `blur_canvas` it, `draw_canvas` it. A future effect (a
+tint-with-vibrancy, a drop shadow computed from a shape's alpha, a refraction)
+is one more operation, not a new kind of buffer; the prelude helpers show the
+compositions the primitives are meant to support.
+
+What the renderer does with them: a canvas is a texture (kept across frames
+when its size does not change, since a panel recreates its layers every
+frame); drawing into it is a render pass of its own, interleaved in painter's
+order with the pane's; a snapshot is a texture copy of the frame so far (the
+window draws through an intermediate texture on frames that ask for one); a
+blur is a separable Gaussian, run at reduced resolution for large radii;
+`draw_canvas` composites the premultiplied texture through the image pipeline,
+under the clip and mask in force. A canvas holds premultiplied colour, which
+is what lets a blurred translucent edge stay clean. Per pane, canvas ids are
+namespaced so two panels' layers never share a texture.
+
+`/scene` reports the ops as `canvas`, `target`, `snapshot`, `blur` and
+`canvas_draw` entries; primitives between a `target` naming a canvas and the
+one switching back are in *canvas* coordinates. Hit-testing (`/hit`) skips
+what is drawn into a canvas and picks the composite as one rectangle. The
+terminal frontend ignores the ops and draws nothing for a layer; the flat
+fallback the prelude's helpers paint outside the layer is what shows there.
+`examples/panels/layers.ptl` draws the material bar, group opacity and glow.
 
 ### Text size and measurement
 

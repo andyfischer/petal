@@ -94,8 +94,10 @@ headlessly and as a Garden panel.
   library described in docs/components.md, level 5 the gradient/shadow/clip
   primitives, level 6 the theme's type face (`font`, defaulting to the
   proportional `"ui"`), the elevation scale and the `over`/`tint` compositing
-  helpers. `garden --version --json` lists the exact exports compiled into a
-  binary.
+  helpers, level 7 the layer vocabulary (`layer`, `snapshot`,
+  `draw_backdrop_blur`, `draw_material`) over the offscreen-canvas natives,
+  which every host now registers. `garden --version --json` lists the exact
+  exports compiled into a binary.
 
 ## Tests
 

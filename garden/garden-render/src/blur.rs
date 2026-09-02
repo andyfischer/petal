@@ -359,10 +359,16 @@ impl Filters {
 
     /// Make sure a params slot exists for [`copy_into_pass`](Self::copy_into_pass),
     /// which runs inside a pass and cannot allocate one.
+    ///
+    /// The reservation must not *claim* the slot: `fs_copy` reads no
+    /// parameters, so slot 0 stays free for a real pass to write. Restoring
+    /// the mark rather than zeroing it keeps that true wherever this is
+    /// called from.
     pub fn reserve_copy_params(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         if self.params.is_empty() {
+            let used = self.params_used;
             self.params_slot(device, queue, Params::zeroed());
-            self.params_used = 0;
+            self.params_used = used;
         }
     }
 

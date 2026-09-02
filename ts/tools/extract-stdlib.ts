@@ -33,6 +33,11 @@
 //                  which give both the argument's name and its type, in order
 //   • source     — file + line, so docs can point back at the implementation
 //
+// The recovered parameter names are *documentation*, not call syntax: a native
+// carries no parameter names at runtime, so the VM rejects a named argument to
+// a builtin (`builtin 'append' does not accept named arguments`). Named
+// arguments — `f(a: 1)` — bind only against a Petal `fn`'s parameter list.
+//
 // Functions that dispatch on `arg_count()` (overloaded arities like `noise`,
 // `distance`, `mag`, `range`, `slice`) can't be summarised by a single
 // signature; they're flagged `variadic` and their human-facing signature is

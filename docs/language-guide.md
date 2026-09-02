@@ -741,21 +741,42 @@ print(scale(2, by: 10, offset: 1))    // 21
 print(scale(by: 10, offset: 1, value: 2))  // 21
 ```
 
-Every positional argument must come before every named one — `f(a: 1, 2)` is a
-syntax error. Overloads are still chosen by the *total* number of arguments
-(positional plus named); only once a function is chosen do the names pick out
-its parameter slots. Passing a name the function has no parameter for, filling
-one slot twice, or leaving one empty is an error:
+Every positional argument must come before every named one; going back to
+positional is a parse error:
+
+```petal ignore
+scale(value: 2, 10, 1)
+// Error: A positional argument after a named argument: once an argument is
+// named, every later argument must be named too
+```
+
+Overloads are still chosen by the *total* number of arguments (positional plus
+named) — see [Function Overloading](function-overloading.md). Only once a
+variant is chosen do the names pick out its parameter slots, so the count still
+has to match a declared arity before any name is looked at, and a slot left
+unfilled shows up as the ordinary arity error (`scale() expects 3 arguments,
+got 2`). The two failures that are specific to names are an unknown parameter
+and a slot filled twice:
 
 ```petal
-scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
 scale(2, 10, nudge: 1)     // error: scale() has no parameter named 'nudge'
+scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter 'value'
+```
+
+Lambdas take named arguments too, since they have parameter names like any
+other function:
+
+```petal
+let sub = fn(a, b) -> a - b
+print(sub(b: 1, a: 10))  // 9
 ```
 
 A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
 parameters after it — and naming the receiver's own parameter is the
-double-bind error above. Builtins carry no parameter names at runtime, so
-`append(list, x: 1)` is rejected rather than guessed at.
+double-bind error above (`Point.shift() got multiple values for parameter
+'p'`). Builtins carry no parameter names at runtime, so they reject names
+outright rather than guessing: `append(list, x: 1)` is
+`builtin 'append' does not accept named arguments`.
 
 ### Recursion
 

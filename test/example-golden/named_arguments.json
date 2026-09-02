@@ -1,0 +1,6 @@
+{
+  "example": "named_arguments.ptl",
+  "status": 0,
+  "stdout": "rect at (0, 0) sized 10x4\nrect at (0, 0) sized 10x4\nrect at (1, 2) sized 6x8\n{ title: \"Editor\", width: 800, height: 600, resizable: true }\n{ title: \"Editor\", width: 800, height: 600, resizable: true }\nscaled: { x: 6, y: 8 }\narea/1: 25\narea/2: 15\n",
+  "stderr": ""
+}

@@ -33,6 +33,12 @@ struct VarType {
     /// be checked by carrying the signature alongside the type — see
     /// [`Checker::fn_candidates`].
     fns: Vec<FnSignature>,
+    /// The parameter *names* of the same callables, one entry per arity —
+    /// parallel to [`VarType::fns`] in what it describes, but matched by
+    /// length rather than by index (see [`Checker::callee_param_names`]).
+    /// Empty whenever the names are unknown, which suppresses the
+    /// named-argument check.
+    param_names: Vec<Vec<String>>,
     /// The class this binding's *declaration* implies, when the type system
     /// deliberately refuses to say so. A `state`/`var` binds `any` because the
     /// initializer describes at most the first read — the next frame re-runs
@@ -91,6 +97,10 @@ pub enum CastSlot {
 
 struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
+    /// The parameter names of those same module functions, for checking a
+    /// call's named arguments against the declaration. See
+    /// [`crate::compiler::collect_fn_param_names`].
+    fn_param_names: &'a HashMap<(String, usize), Vec<String>>,
     /// Classes in scope for this module — the built-ins plus every `class`
     /// the compiler's prescan found. Resolves class names in type position,
     /// types field reads, and answers "does this class have that method?".
@@ -124,10 +134,12 @@ struct Checker<'a> {
 fn run(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
+    fn_param_names: &HashMap<(String, usize), Vec<String>>,
     classes: &ClassTable,
 ) -> Outcome {
     let mut checker = Checker {
         fn_signatures,
+        fn_param_names,
         classes,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
@@ -191,9 +203,10 @@ impl MethodDispatch {
 pub fn check_module(
     stmts: &[Stmt],
     fn_signatures: &HashMap<(String, usize), FnSignature>,
+    fn_param_names: &HashMap<(String, usize), Vec<String>>,
     classes: &ClassTable,
 ) -> (Vec<Diagnostic>, MethodDispatch) {
-    let out = run(stmts, fn_signatures, classes);
+    let out = run(stmts, fn_signatures, fn_param_names, classes);
     (out.diags, out.dispatch)
 }
 
@@ -205,7 +218,9 @@ pub fn find_redundant_casts(
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     classes: &ClassTable,
 ) -> Vec<RedundantCast> {
-    run(stmts, fn_signatures, classes).casts
+    // Casts are a type question; no call site's *names* are checked on this
+    // path, so the pass runs with no parameter names at all.
+    run(stmts, fn_signatures, &HashMap::new(), classes).casts
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -229,7 +244,7 @@ impl<'a> Checker<'a> {
     }
 
     fn bind(&mut self, name: String, declared: Option<Type>, inferred: Type) {
-        self.bind_callable(name, declared, inferred, Vec::new());
+        self.bind_callable(name, declared, inferred, Vec::new(), Vec::new());
     }
 
     /// Bind a name that is known to hold a function, carrying the signatures it
@@ -240,6 +255,7 @@ impl<'a> Checker<'a> {
         declared: Option<Type>,
         inferred: Type,
         fns: Vec<FnSignature>,
+        param_names: Vec<Vec<String>>,
     ) {
         self.scopes.last_mut().expect("at least one scope").insert(
             name,
@@ -247,6 +263,7 @@ impl<'a> Checker<'a> {
                 declared,
                 inferred,
                 fns,
+                param_names,
                 class_hint: None,
             },
         );
@@ -270,10 +287,11 @@ impl<'a> Checker<'a> {
     /// Replace the callable signatures recorded for an already-bound name, in
     /// the innermost scope that binds it. A re-assignment puts a *different*
     /// function in the slot, so the old signature must not outlive it.
-    fn rebind_fns(&mut self, name: &str, fns: Vec<FnSignature>) {
+    fn rebind_fns(&mut self, name: &str, fns: Vec<FnSignature>, param_names: Vec<Vec<String>>) {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(vt) = scope.get_mut(name) {
                 vt.fns = fns;
+                vt.param_names = param_names;
                 return;
             }
         }
@@ -315,6 +333,80 @@ impl<'a> Checker<'a> {
             .collect();
         sigs.sort_by_key(|s| s.params.len());
         sigs
+    }
+
+    /// The parameter names a callee expression may be invoked with, one entry
+    /// per arity — the naming half of [`Self::fn_candidates`], kept beside it
+    /// because a [`FnSignature`] carries types only. Empty when the names are
+    /// not statically known, which is what leaves the runtime check as the
+    /// only one.
+    fn param_name_candidates(&self, expr: &Expr) -> Vec<Vec<String>> {
+        match &expr.kind {
+            ExprKind::Lambda { params, .. } => {
+                vec![params.iter().map(|p| p.name.clone()).collect()]
+            }
+            ExprKind::Ident(name) => match self.lookup(name) {
+                Some(vt) => vt.param_names.clone(),
+                None => self
+                    .fn_param_names
+                    .iter()
+                    .filter(|((n, _), _)| n == name)
+                    .map(|(_, names)| names.clone())
+                    .collect(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// The parameter names of the overload this call selects, or `None` when
+    /// nothing declares them. Overloads differ by arity, so the argument count
+    /// picks the entry out — the same rule the runtime resolves by.
+    fn callee_param_names(&self, expr: &Expr, arity: usize) -> Option<Vec<String>> {
+        self.param_name_candidates(expr)
+            .into_iter()
+            .find(|names| names.len() == arity)
+    }
+
+    /// Check a call's named arguments against the parameter names its callee
+    /// declares: every name must name a parameter, and no slot may be filled
+    /// twice. Runs only where the callee is statically known; the VM's own
+    /// binding (`backend/calls.rs`) stays the backstop for everywhere else.
+    ///
+    /// `what` is the already-quoted callee for the message. Positional
+    /// arguments always precede named ones (the parser enforces it), so
+    /// argument `i` fills slot `i` until the first name appears.
+    fn check_named_args(
+        &mut self,
+        what: &str,
+        params: &[String],
+        args: &[Expr],
+        arg_names: &[Option<String>],
+    ) {
+        if arg_names.len() != args.len() || params.len() != args.len() {
+            return;
+        }
+        let mut filled = vec![false; params.len()];
+        for (i, name) in arg_names.iter().enumerate() {
+            let Some(name) = name else {
+                filled[i] = true;
+                continue;
+            };
+            let Some(slot) = params.iter().position(|p| p == name) else {
+                self.warn(
+                    args[i].span,
+                    format!("{what} has no parameter named `{name}`"),
+                );
+                continue;
+            };
+            if filled[slot] {
+                self.warn(
+                    args[i].span,
+                    format!("{what} got multiple values for parameter `{name}`"),
+                );
+                continue;
+            }
+            filled[slot] = true;
+        }
     }
 
     /// Warn that no candidate accepts `got` arguments. `expected` is every
@@ -482,16 +574,17 @@ impl<'a> Checker<'a> {
                 // it produces warnings on correct code — the one outcome this
                 // pass is built to avoid. Only a written annotation constrains a
                 // cell, and it earns that by constraining every `set` too.
-                let fns = if *is_var {
-                    Vec::new()
+                let (fns, param_names) = if *is_var {
+                    (Vec::new(), Vec::new())
                 } else {
-                    self.fn_candidates(value)
+                    (self.fn_candidates(value), self.param_name_candidates(value))
                 };
                 self.bind_callable(
                     name.clone(),
                     declared,
                     if *is_var { Type::Any } else { inferred },
                     fns,
+                    param_names,
                 );
                 // The cell's type stays `any`, but the declaration still names a
                 // class, and that is worth keeping for dispatch alone.
@@ -510,7 +603,8 @@ impl<'a> Checker<'a> {
                     // The slot holds a different value now: whatever signature
                     // the old one had says nothing about the new one.
                     let fns = self.fn_candidates(value);
-                    self.rebind_fns(n, fns);
+                    let param_names = self.param_name_candidates(value);
+                    self.rebind_fns(n, fns, param_names);
                 }
                 // Field and index writes are walked for nested diagnostics but
                 // the written value itself is unchecked, `var` or not: `Type` is
@@ -659,6 +753,9 @@ impl<'a> Checker<'a> {
     fn bind_nested_fns(&mut self, stmts: &[Stmt]) {
         self.bind_enum_variants(stmts);
         let mut sigs: HashMap<&str, Vec<FnSignature>> = HashMap::new();
+        // The parameter names of the same declarations, matched by arity where
+        // they are read back (see `callee_param_names`).
+        let mut names: HashMap<&str, Vec<Vec<String>>> = HashMap::new();
         for stmt in stmts {
             let StmtKind::FnDecl {
                 name,
@@ -682,10 +779,14 @@ impl<'a> Checker<'a> {
             // `collect_fn_signatures`.
             entry.retain(|s| s.params.len() != sig.params.len());
             entry.push(sig);
+            let entry = names.entry(name.as_str()).or_default();
+            entry.retain(|n| n.len() != params.len());
+            entry.push(params.iter().map(|p| p.name.clone()).collect());
         }
         for (name, mut fns) in sigs {
             fns.sort_by_key(|s| s.params.len());
-            self.bind_callable(name.to_string(), None, Type::Function, fns);
+            let param_names = names.remove(name).unwrap_or_default();
+            self.bind_callable(name.to_string(), None, Type::Function, fns, param_names);
         }
     }
 
@@ -833,7 +934,7 @@ impl<'a> Checker<'a> {
                     };
                     return self.check_method_args(&sig, &name, args, &arg_types);
                 }
-                self.check_call(function, args, &arg_types, expr.span)
+                self.check_call(function, args, arg_names, &arg_types, expr.span)
             }
             ExprKind::If {
                 condition,
@@ -1146,12 +1247,15 @@ impl<'a> Checker<'a> {
     /// callee's signature is known to be: each argument against its declared
     /// parameter type (site 5), and the argument *count* against every declared
     /// arity (site 6 — Petal overloads by arity, so a call is wrong only when it
-    /// matches none of them). Assumes the args were already visited;
+    /// matches none of them). Named arguments are checked against the callee's
+    /// declared parameter *names* wherever those are known
+    /// ([`Self::check_named_args`]). Assumes the args were already visited;
     /// `arg_types` are their inferred types.
     fn check_call(
         &mut self,
         function: &Expr,
         args: &[Expr],
+        arg_names: &[Option<String>],
         arg_types: &[Type],
         call_span: SourceSpan,
     ) -> Type {
@@ -1184,6 +1288,14 @@ impl<'a> Checker<'a> {
                     let what = format!("`{f}`");
                     self.warn_arity(call_span, &what, &[fields.len()], args.len());
                     return Type::Class(id);
+                }
+                if !arg_names.is_empty() {
+                    // A constructor's parameters *are* its fields, in order —
+                    // which is exactly how the VM binds `Point(y: 2, x: 1)`.
+                    let field_names: Vec<String> =
+                        fields.iter().map(|fd| fd.name.clone()).collect();
+                    let what = format!("`{f}`");
+                    self.check_named_args(&what, &field_names, args, arg_names);
                 }
                 for (i, fd) in fields.iter().enumerate() {
                     let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
@@ -1242,6 +1354,15 @@ impl<'a> Checker<'a> {
             ExprKind::Ident(f) => format!(" to `{f}`"),
             _ => String::new(),
         };
+        if !arg_names.is_empty()
+            && let Some(params) = self.callee_param_names(function, args.len())
+        {
+            let what = match &function.kind {
+                ExprKind::Ident(f) => format!("`{f}`"),
+                _ => "this lambda".to_string(),
+            };
+            self.check_named_args(&what, &params, args, arg_names);
+        }
         for (i, pt) in sig.params.iter().enumerate() {
             let Some(pt) = pt else { continue };
             if *pt == Type::Any {
@@ -1325,7 +1446,8 @@ mod tests {
         let mut classes = crate::classes::ClassTable::new();
         crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
-        check_module(&stmts, &sigs, &classes)
+        let names = crate::compiler::collect_fn_param_names(&stmts);
+        check_module(&stmts, &sigs, &names, &classes)
             .0
             .into_iter()
             .map(|d| d.message)
@@ -1929,5 +2051,113 @@ mod tests {
         let w = warns("fn Rect(a, b)\n  a + b\nend\nprint(Rect(1))");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("expects 2 arguments"), "{w:?}");
+    }
+
+    // ── named arguments ─────────────────────────────────────────────────
+
+    #[test]
+    fn a_named_argument_matching_a_parameter_is_silent() {
+        let f = "fn sub(a, b)\n  a - b\nend\n";
+        assert!(warns(&format!("{f}print(sub(b: 1, a: 2))")).is_empty());
+        assert!(warns(&format!("{f}print(sub(1, b: 2))")).is_empty());
+        assert!(warns(&format!("{f}print(sub(1, 2))")).is_empty());
+    }
+
+    #[test]
+    fn an_unknown_parameter_name_warns() {
+        let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(a: 1, c: 2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`sub` has no parameter named `c`"), "{w:?}");
+    }
+
+    #[test]
+    fn a_slot_filled_twice_warns() {
+        // Positionally and then by name…
+        let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(1, a: 2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("`sub` got multiple values for parameter `a`"),
+            "{w:?}"
+        );
+        // …and twice by name.
+        let w = warns("fn sub(a, b)\n  a - b\nend\nprint(sub(b: 1, b: 2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("parameter `b`"), "{w:?}");
+    }
+
+    #[test]
+    fn the_overload_the_count_selects_is_the_one_checked() {
+        let src = "fn g(x)\n  x\nend\nfn g(x, limit)\n  x + limit\nend\n";
+        assert!(warns(&format!("{src}print(g(x: 1))")).is_empty());
+        assert!(warns(&format!("{src}print(g(1, limit: 2))")).is_empty());
+        // `limit` belongs to the two-argument overload, not the one-argument
+        // one the count selects here.
+        let w = warns(&format!("{src}print(g(limit: 1))"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("no parameter named `limit`"), "{w:?}");
+    }
+
+    #[test]
+    fn a_constructors_parameters_are_its_fields() {
+        let cls = "class P\n  x: int, y: int\nend\n";
+        assert!(warns(&format!("{cls}print(P(y: 2, x: 1))")).is_empty());
+        let w = warns(&format!("{cls}print(P(x: 1, z: 2))"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`P` has no parameter named `z`"), "{w:?}");
+        let w = warns(&format!("{cls}print(P(1, x: 2))"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("multiple values for parameter `x`"), "{w:?}");
+    }
+
+    #[test]
+    fn lambdas_and_nested_fns_are_checked_too() {
+        let w = warns("let f = fn(a, b) -> a + b\nprint(f(a: 1, c: 2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`f` has no parameter named `c`"), "{w:?}");
+        assert!(warns("let f = fn(a, b) -> a + b\nprint(f(b: 1, a: 2))").is_empty());
+
+        // A lambda invoked in place has no name to blame.
+        let w = warns("print((fn(a) -> a)(nope: 1))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("this lambda has no parameter named"), "{w:?}");
+
+        // A nested declaration shadows the module function, names and all.
+        let src = "fn outer()\n  fn inner(q)\n    q\n  end\n  inner(q: 1)\nend\nprint(outer())";
+        assert!(warns(src).is_empty());
+        let bad = "fn outer()\n  fn inner(q)\n    q\n  end\n  inner(r: 1)\nend\nprint(outer())";
+        let w = warns(bad);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("no parameter named `r`"), "{w:?}");
+    }
+
+    #[test]
+    fn a_rebound_name_is_checked_against_the_function_it_now_holds() {
+        let src = "fn a_fn(alpha)\n  alpha\nend\nfn b_fn(beta)\n  beta\nend\n";
+        // The binding carries the names forward through an alias…
+        assert!(warns(&format!("{src}let f = a_fn\nprint(f(alpha: 1))")).is_empty());
+        let w = warns(&format!("{src}let f = a_fn\nprint(f(beta: 1))"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        // …and a re-assignment replaces them.
+        let w = warns(&format!(
+            "{src}var f = a_fn\nset f = b_fn\nprint(f(alpha: 1))"
+        ));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("no parameter named `alpha`"), "{w:?}");
+    }
+
+    #[test]
+    fn unknown_callees_keep_the_runtime_check_as_their_only_one() {
+        // A builtin declares no parameter names; the VM refuses the call.
+        assert!(warns("print(append(a: 1, b: 2))").is_empty());
+        // Nor does a name this module never declares.
+        assert!(warns("mystery(whatever: 1)").is_empty());
+        // A method's parameter names are not in the class table, so a named
+        // argument to one is left to the VM as well.
+        let cls = "class P\n  x: int\nend\nfn P.shift(p, dx)\n  p.x + dx\nend\n";
+        assert!(warns(&format!("{cls}print(P(1).shift(dx: 2))")).is_empty());
+        // A parameter holding a function says nothing about its parameters.
+        assert!(
+            warns("fn call_it(g)\n  g(anything: 1)\nend\nprint(call_it(fn(a) -> a))").is_empty()
+        );
     }
 }

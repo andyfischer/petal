@@ -81,6 +81,29 @@ Point(1, 2).shifted(1, 2, 3)
 // Error: Point.shifted() expects 2 or 3 arguments, got 4
 ```
 
+## Named Arguments Don't Change Selection
+
+[Named arguments](language-guide.md#named-arguments) — `f(a: 1)` — are bound
+*after* a variant has been chosen, not before. Selection counts arguments and
+nothing else: a call's arity is `positional + named`, and the names play no
+part in picking the variant.
+
+```petal
+fn box(w) box(w, w) end
+fn box(w, h) [w, h] end
+
+print(box(w: 3))          // [3, 3]
+print(box(h: 2, w: 5))    // [5, 2]
+```
+
+So the two rules compose in one direction only: the count picks the function,
+then that function's `params` list turns each name into a slot. Two variants
+can't be told apart by their parameter names — `fn at(x)` and `fn at(y)` are
+the same arity, so the second simply replaces the first rather than overloading
+with it. A name the *selected* variant doesn't declare is only caught after
+selection: `box(depth: 1)` picks the one-argument `box` and then fails with
+`box() has no parameter named 'depth'`.
+
 ## Error on Wrong Arity
 
 Calling an overloaded function with an argument count that doesn't match any variant

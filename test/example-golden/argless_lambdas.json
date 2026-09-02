@@ -1,0 +1,6 @@
+{
+  "example": "argless_lambdas.ptl",
+  "status": 0,
+  "stdout": "hello from an argless lambda\nanswer() = 42\nnothing() = nil\nsame result: true\ncount = 3\nscaled() = 9\n",
+  "stderr": ""
+}

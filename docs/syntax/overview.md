@@ -415,6 +415,26 @@ an argless lambda's body can't start with a parenthesized expression —
 `fn (a + b) * 2 end` reads `(a + b)` as parameters and fails. Write
 `fn -> (a + b) * 2` or give the body a leading statement instead.
 
+### Calls and named arguments
+
+An argument may be written `name: value`, binding it to the parameter of that
+name instead of to its position. Every positional argument comes first; once an
+argument is named, every later one must be named too (going back is a parse
+error):
+
+```petal
+fn scale(value, by, offset) value * by + offset end
+
+print(scale(2, by: 10, offset: 1))          // 21
+print(scale(by: 10, offset: 1, value: 2))   // 21
+```
+
+Overloads are still selected by the *total* argument count (positional plus
+named); names bind to slots only afterwards, against the chosen variant's
+parameter list. Errors: `has no parameter named 'x'`, `got multiple values for
+parameter 'x'` (which is also what naming a method's receiver produces). A
+builtin has no parameter names at runtime and rejects named arguments outright.
+
 ### Collection and access forms
 
 ```petal

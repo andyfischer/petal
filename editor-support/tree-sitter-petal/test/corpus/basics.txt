@@ -293,3 +293,26 @@ let h = fn end
   (let_declaration
     name: (identifier)
     value: (lambda)))
+
+==================
+Named arguments
+==================
+
+draw(x, y: 10, size: 2 + 3)
+mk(a: 1)
+
+---
+
+(source_file
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (identifier)
+      (named_argument name: (identifier) value: (integer))
+      (named_argument
+        name: (identifier)
+        value: (binary_expression left: (integer) right: (integer)))))
+  (call
+    function: (identifier)
+    arguments: (argument_list
+      (named_argument name: (identifier) value: (integer)))))

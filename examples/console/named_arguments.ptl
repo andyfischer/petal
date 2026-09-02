@@ -1,0 +1,50 @@
+// Named Arguments
+// An argument may be written `name: value`, binding it to the parameter of
+// that name instead of to its position.
+
+fn rect(x, y, width, height)
+  "rect at ({x}, {y}) sized {width}x{height}"
+end
+
+// All positional — the familiar form.
+print(rect(0, 0, 10, 4))
+
+// All named. The written order doesn't matter; each value goes to its slot.
+print(rect(height: 4, width: 10, y: 0, x: 0))
+
+// Mixed: positional arguments first, then named ones. The reverse (a
+// positional argument after a named one) is a compile error.
+print(rect(1, 2, height: 8, width: 6))
+
+// Names are worth most where the call site is otherwise a row of literals.
+fn make_window(title, width, height, resizable)
+  { title: title, width: width, height: height, resizable: resizable }
+end
+
+print(make_window("Editor", 800, 600, true))
+print(make_window(title: "Editor", width: 800, height: 600, resizable: true))
+
+// Methods work the same way — the receiver is just the first parameter, so it
+// is the one argument that stays positional in practice.
+class Vec2
+  x: float,
+  y: float,
+end
+
+fn Vec2.scaled(v, by)
+  Vec2(v.x * by, v.y * by)
+end
+
+let v = Vec2(3, 4)
+print("scaled:", v.scaled(by: 2))
+
+// Overload selection still happens on the total number of arguments —
+// positional plus named — before any name is matched to a slot.
+fn area(size)
+  size * size
+end
+fn area(width, height)
+  width * height
+end
+print("area/1:", area(size: 5))
+print("area/2:", area(width: 5, height: 3))

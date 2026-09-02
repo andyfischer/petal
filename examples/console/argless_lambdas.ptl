@@ -1,0 +1,40 @@
+// Argless Lambdas
+// A lambda that takes no arguments may be written without an empty `()`.
+
+// `fn ... end` — a block body.
+let greet = fn
+  print("hello from an argless lambda")
+end
+greet()
+
+// `fn -> expr` — a single-expression body.
+let answer = fn -> 6 * 7
+print("answer() =", answer())
+
+// `fn end` — an empty body, returning nil.
+let nothing = fn end
+print("nothing() =", nothing())
+
+// The classic form still works, and both spellings are the same value.
+let old_style = fn() -> 1
+let new_style = fn -> 1
+print("same result:", old_style() == new_style())
+
+// Argless lambdas are handy as callbacks: a thunk passed to a function that
+// decides whether (and how often) to run it.
+fn repeat(times, action)
+  for i in range(0, times) do
+    action()
+  end
+end
+
+var count = 0
+repeat(3, fn set count = get count + 1 end)
+print("count =", get count)
+
+// One wart to know about: in the block form, a body starting with `(` is read
+// as the parameter list instead — `fn (1 + 2) * 3 end` will not do what it
+// looks like. The arrow form has no such problem, since the parameter list can
+// only appear before the `->`.
+let scaled = fn -> (1 + 2) * 3
+print("scaled() =", scaled())

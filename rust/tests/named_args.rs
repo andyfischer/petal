@@ -358,6 +358,24 @@ fn an_unknown_parameter_name_is_reported() {
     );
 }
 
+/// An overload variant is `box#1` internally; the message names it as written.
+#[test]
+fn an_overloads_error_names_the_source_function() {
+    let src = "fn box(w)
+  box(w, w)
+end
+fn box(w, h)
+  [w, h]
+end
+print(box(depth: 1))
+";
+    let e = err(src);
+    assert!(
+        e.contains("box() has no parameter named 'depth'") && !e.contains("box#"),
+        "unexpected error: {e}"
+    );
+}
+
 #[test]
 fn a_slot_filled_twice_is_reported() {
     let e = err(&format!("{SUB}print(sub(1, a: 2))"));

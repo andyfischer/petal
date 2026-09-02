@@ -8,6 +8,12 @@ phantom term IDs they occupy in compiled IR.
 For language syntax (variables, control flow, functions, state, pattern
 matching), see [language-guide.md](language-guide.md).
 
+Builtins take **positional arguments only**. The parameter names shown in this
+reference are documentation, not call syntax: natives carry no parameter names
+at runtime, so a [named argument](language-guide.md#named-arguments) is
+rejected — `append(xs, x: 1)` is `builtin 'append' does not accept named
+arguments`. Named arguments work on `fn` declarations, methods and lambdas.
+
 ## I/O
 
 ### `print(args...)`

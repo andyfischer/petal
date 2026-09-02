@@ -108,6 +108,12 @@ pub struct Compiler {
     // and consulted by the type checker at call sites. Compile-time only.
     fn_signatures: HashMap<(String, usize), FnSignature>,
 
+    // The parameter *names* of those same functions, keyed the same way and
+    // kept beside `fn_signatures` rather than inside it: a signature is about
+    // types, and only the named-argument check needs the names. Empty for a
+    // name nothing declares, which is what keeps that check conservative.
+    fn_param_names: HashMap<(String, usize), Vec<String>>,
+
     // Classes visible to this compilation: the built-ins, plus every `class`
     // declaration found by `prescan_declarations` (so a `fn f(p: Point)` above
     // `class Point` still resolves). Also the checker's source of truth for
@@ -308,6 +314,7 @@ impl Compiler {
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
+            fn_param_names: HashMap::new(),
             classes: crate::classes::ClassTable::new(),
             method_dispatch: crate::typecheck::MethodDispatch::new(),
             declared_methods: HashSet::new(),
@@ -522,8 +529,12 @@ impl Compiler {
             e
         })?;
         self.prescan_declarations(module, &stmts);
-        let (diags, dispatch) =
-            crate::typecheck::check_module(&stmts, &self.fn_signatures, &self.classes);
+        let (diags, dispatch) = crate::typecheck::check_module(
+            &stmts,
+            &self.fn_signatures,
+            &self.fn_param_names,
+            &self.classes,
+        );
         self.warnings.extend(diags);
         // Spans are file-local, so this must be *replaced* per module rather
         // than accumulated — two modules' spans collide freely.
@@ -1155,6 +1166,7 @@ impl Compiler {
         // across forward references. Accumulates across modules.
         self.fn_signatures
             .extend(collect_fn_signatures(stmts, &self.classes));
+        self.fn_param_names.extend(collect_fn_param_names(stmts));
 
         // Detect overloaded function names (same name, different arities)
         let mut fn_arities: HashMap<String, std::collections::HashSet<usize>> = HashMap::new();
@@ -1810,6 +1822,23 @@ pub(crate) fn collect_fn_signatures(
     sigs
 }
 
+/// Collect declared parameter *names*, keyed by `(name, arity)` exactly like
+/// [`collect_fn_signatures`], so a call site can be checked against the names
+/// the declaration wrote (`f(limit: 10)`). Later declarations of the same
+/// `(name, arity)` win, as there too.
+pub(crate) fn collect_fn_param_names(stmts: &[Stmt]) -> HashMap<(String, usize), Vec<String>> {
+    let mut names = HashMap::new();
+    for stmt in stmts {
+        if let StmtKind::FnDecl { name, params, .. } = &stmt.kind {
+            names.insert(
+                (name.clone(), params.len()),
+                params.iter().map(|p| p.name.clone()).collect(),
+            );
+        }
+    }
+    names
+}
+
 /// Resolve a written annotation, falling back to the class table for a name the
 /// parser could not resolve on its own (class names need context — see
 /// [`crate::types::Type::resolve`]). `None` means "no annotation, or a name
@@ -1887,5 +1916,34 @@ mod prescan_tests {
     #[test]
     fn no_functions_yields_empty_table() {
         assert!(sigs("let x: int = 5\nprint(x)").is_empty());
+    }
+
+    fn param_names(src: &str) -> std::collections::HashMap<(String, usize), Vec<String>> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        super::collect_fn_param_names(&stmts)
+    }
+
+    #[test]
+    fn collects_param_names_by_arity() {
+        let table = param_names("fn g(x)\n  x\nend\nfn g(x, limit: int)\n  x\nend");
+        assert_eq!(table[&("g".to_string(), 1)], vec!["x".to_string()]);
+        assert_eq!(
+            table[&("g".to_string(), 2)],
+            vec!["x".to_string(), "limit".to_string()]
+        );
+    }
+
+    #[test]
+    fn collects_method_names_under_the_qualified_name() {
+        let table = param_names("class R\n  w: int\nend\nfn R.grow(r, by)\n  r\nend");
+        assert_eq!(
+            table[&("R.grow".to_string(), 2)],
+            vec!["r".to_string(), "by".to_string()]
+        );
+    }
+
+    #[test]
+    fn no_functions_yields_no_param_names() {
+        assert!(param_names("let x = 5\nprint(x)").is_empty());
     }
 }

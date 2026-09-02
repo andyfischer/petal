@@ -38,6 +38,9 @@ syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0
 " `: type` on a let/var/state binding or a parameter, `-> type` on a named fn.
 " Only the known type vocabulary is highlighted, and only in type position, so
 " record keys (`{a: 1}`) and cast calls (`fn(x) -> int(x)`) are left alone.
+" A named call argument (`f(kind: list)`) reads like an annotation here and can
+" still light up its value if that value happens to be a type name — the same
+" harmless overlap a record key has, and not separable with a `syn match`.
 " `nil` and `enum` stay Constant/Keyword — syn keyword outranks syn match.
 syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|function\|enum\|vec2\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
 

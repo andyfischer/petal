@@ -64,6 +64,9 @@ regenerated `src/`.
   so an unrecognized name still parses — matching the real parser, where the
   *checker* warns about it. Lambdas take parameter annotations but no return
   annotation, since their `->` introduces the body.
+- **Named arguments** (`f(x, limit: 10)`) parse as a `named_argument` inside
+  the `argument_list`. As with `record_field`, only an identifier is modelled
+  as the name, though the real parser also accepts a keyword there (`f(end: 1)`).
 - **Commas are required** between the elements of every delimited list, matching
   the real parser (see `docs/syntax/commas.md`); a trailing comma before the
   closing delimiter is allowed. Because a comma always ends an element, `-` is

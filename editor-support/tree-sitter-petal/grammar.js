@@ -325,7 +325,17 @@ module.exports = grammar({
       field('arguments', $.argument_list),
     )),
 
-    argument_list: $ => seq('(', commaSep($._expression), ')'),
+    argument_list: $ => seq('(', commaSep(choice($.named_argument, $._expression)), ')'),
+
+    // `f(x, limit: 10)` — a named argument binds to the parameter of that
+    // name. The real parser accepts any keyword as the name (`f(end: 1)`),
+    // just as it does for a record key; this rule takes the same (lossy)
+    // shortcut as `record_field` and models only an identifier.
+    named_argument: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('value', $._expression),
+    ),
 
     // `?.` is the tolerant spelling: `rec?.missing` is nil rather than an
     // error, and one `?.` makes the rest of its chain tolerant too. It is a

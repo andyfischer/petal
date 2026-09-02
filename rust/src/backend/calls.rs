@@ -127,6 +127,9 @@ pub fn bind_named_args(
     args: &[Value],
     names: &[Option<&str>],
 ) -> Result<SmallVec<[Value; 8]>, String> {
+    // An overload variant is named `box#1` internally; every message below
+    // names the function as the source wrote it, like `resolve_overload`.
+    let fn_name = base_fn_name(fn_name);
     let mut slots: SmallVec<[Option<Value>; 8]> = smallvec::smallvec![None; params.len()];
     let mut next_positional = 0usize;
     for (i, &arg) in args.iter().enumerate() {

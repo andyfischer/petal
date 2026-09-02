@@ -14,8 +14,10 @@
 //! iteration count keeps `cargo test` fast; scale up with
 //! `PETAL_FUZZ_ITERS=20000 cargo test fuzz -- --nocapture` for a soak run.
 
+use super::{disasm, lower_with_flags};
 use crate::backend::OptFlags;
 use crate::env::Env;
+use crate::program::{Program, ProgramId};
 use crate::value;
 
 // ── Deterministic RNG (xorshift64*) ─────────────────────────────
@@ -233,14 +235,32 @@ impl Gen {
         base
     }
 
-    /// A call to an already-defined function, if one exists.
+    /// A call to an already-defined function, if one exists. Some calls name a
+    /// suffix of their arguments (`f(1, p2: 3, p1: 2)`) — every generated
+    /// function's parameters are `p0..pN`, so a name is always available. The
+    /// named tail is rotated, so a call only produces the same value as the
+    /// all-positional spelling if the arguments really are bound by name.
     fn call_expr(&mut self, depth: u64) -> Option<String> {
         if self.funcs.is_empty() {
             return None;
         }
         let i = self.rng.below(self.funcs.len() as u64) as usize;
         let (name, arity) = (self.funcs[i].0.clone(), self.funcs[i].1);
-        let args: Vec<String> = (0..arity).map(|_| self.int_expr(depth - 1)).collect();
+        let values: Vec<String> = (0..arity).map(|_| self.int_expr(depth - 1)).collect();
+        // How many leading arguments stay positional; `arity` means all of them.
+        let positional = if self.rng.chance(25) {
+            self.rng.below(arity as u64 + 1) as usize
+        } else {
+            arity
+        };
+        let named = arity - positional;
+        let mut args: Vec<String> = values[..positional].to_vec();
+        for k in 0..named {
+            // Rotate the tail by one so the written order differs from the
+            // parameter order whenever there is more than one named argument.
+            let slot = positional + (k + 1) % named;
+            args.push(format!("p{slot}: {}", values[slot]));
+        }
         Some(format!("{name}({})", args.join(", ")))
     }
 
@@ -629,6 +649,63 @@ fn assert_exact_parity(seed: u64, code: &str) {
          vs bytecode(all opts) disagree — reproduce with \
          Gen::new({seed}).program()\n--- program ---\n{code}"
     );
+}
+
+/// Compile `code`, write its IR out as JSON, read it back, and require the
+/// reloaded program to be `ir_equivalent` to the original and to lower to
+/// byte-identical bytecode. This is the serialization guard for everything the
+/// generator can emit — named call arguments included, whose `arg_names` ride
+/// the IR wire form as an optional parallel field and are compared by
+/// `ir_equiv` (see `arg_names_key`).
+fn assert_ir_round_trip(seed: u64, code: &str) {
+    let program = Env::new()
+        .compile_program(ProgramId(0), code)
+        .unwrap_or_else(|e| panic!("seed {seed} failed to compile: {e}\n--- program ---\n{code}"));
+    let json = serde_json::to_string(&program).expect("IR serializes");
+    let reloaded = Program::from_json(&json)
+        .unwrap_or_else(|e| panic!("seed {seed} IR did not reload: {e}\n--- program ---\n{code}"));
+    if let Err(diff) = crate::ir_equiv::ir_equivalent(&program, &reloaded) {
+        panic!(
+            "seed {seed} IR changed across a JSON round-trip: {diff:?}\
+             \n--- program ---\n{code}"
+        );
+    }
+    let render = |p: &Program| {
+        let bc = lower_with_flags(p, OptFlags::all()).expect("lowers");
+        disasm::render_text(&bc, p)
+    };
+    assert_eq!(
+        render(&program),
+        render(&reloaded),
+        "seed {seed} disassembles differently after a JSON round-trip\
+         \n--- program ---\n{code}"
+    );
+}
+
+/// The generator must actually reach named call arguments, or the soak below
+/// proves nothing about them. Guards the case against going dead if the call
+/// generator is reshuffled later.
+#[test]
+fn the_generator_emits_named_arguments() {
+    let with_named = (0..200)
+        .filter(|&seed| Gen::new(seed).program().contains("p0:"))
+        .count();
+    assert!(
+        with_named > 10,
+        "only {with_named}/200 generated programs pass an argument by name"
+    );
+}
+
+#[test]
+fn ir_round_trip_fuzz() {
+    let iters: u64 = std::env::var("PETAL_FUZZ_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(200);
+    for seed in 0..iters {
+        let code = Gen::new(seed).program();
+        assert_ir_round_trip(seed, &code);
+    }
 }
 
 /// The generator must actually reach `var`/`set`, or the soak above proves

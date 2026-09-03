@@ -1374,6 +1374,68 @@ impl EditorView {
         self.clamp_scroll(visible_lines, cols);
     }
 
+    /// Roll the viewport `n` visual rows down (`down`) or up, leaving the
+    /// cursor where it is — vim's `Ctrl+E` / `Ctrl+Y`. The cursor moves only
+    /// when the roll would carry it off screen, where it is dragged along the
+    /// leading edge, keeping its column. That drag is not cosmetic: the caller
+    /// runs `ensure_cursor_visible` after every key, so a cursor left outside
+    /// the rolled viewport would scroll it straight back and the roll would
+    /// read as a no-op.
+    pub fn scroll_view_lines(
+        &mut self,
+        down: bool,
+        n: usize,
+        visible_lines: usize,
+        visible_cols: usize,
+    ) {
+        let vis = visible_lines.max(1);
+        let cols = visible_cols.max(1);
+        let rows = n as f32;
+        self.scroll_by(if down { rows } else { -rows }, vis, cols);
+        let top = self.scroll.vpos();
+        let bottom = self.vpos_add(top.0, top.1, vis - 1, cols);
+        let cur = self.cursor_vpos(cols);
+        let edge = if cur < top {
+            Some(top)
+        } else if cur > bottom {
+            Some(bottom)
+        } else {
+            None
+        };
+        if let Some(v) = edge {
+            self.cursor = self.vpos_point_at_col(v, self.cursor.col, cols);
+            self.anchor_or_clamp();
+        }
+    }
+
+    /// Normal mode never rests past a line's last character; Visual mode is
+    /// mid-selection and must keep its anchor. Shared by the cursor drags that
+    /// place the caret directly rather than through [`move_cursor`](Self::move_cursor).
+    fn anchor_or_clamp(&mut self) {
+        self.desired_col = None;
+        self.display_desired_col = None;
+        if self.vim.mode == crate::vim::Mode::Normal {
+            self.clamp_cursor_normal();
+        }
+    }
+
+    /// The buffer point on visual row `(line, sub)` nearest display column
+    /// `col` — where a cursor dragged onto that row lands. With wrap off every
+    /// line is one row and this is just the clamped column.
+    fn vpos_point_at_col(&self, (line, sub): (usize, usize), col: usize, cols: usize) -> Point {
+        let text = self.buffer.line(line);
+        let starts = self.seg_starts(&text, cols);
+        let start = starts.get(sub).copied().unwrap_or(0);
+        // A continuation row ends one column before the next row begins;
+        // landing *on* that column would put the caret on the next row and
+        // leave it off screen again.
+        let end = match starts.get(sub + 1) {
+            Some(&next) => next.saturating_sub(1),
+            None => text.chars().count(),
+        };
+        self.buffer.clamp(Point::new(line, col.clamp(start, end)))
+    }
+
     /// Scroll horizontally by `cols` display columns, fractional like
     /// [`scroll_by`](Self::scroll_by). A no-op while wrapping is on, which pins
     /// the horizontal offset to 0.

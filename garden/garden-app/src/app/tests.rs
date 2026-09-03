@@ -4157,6 +4157,141 @@ fn slash_searches_the_focused_panel_region() {
     assert_eq!(cursor(&app).line, 3, "`n` repeats the region's own search");
 }
 
+// ── vim's Ctrl chords inside a panel region ────────────────────────────────
+
+/// Focus region 1 of a freshly built panel and hand back the app plus its pane
+/// index. The region's buffer is `lines` numbered lines, tall enough that a
+/// half-page scroll has somewhere to go.
+fn app_with_focused_region(name: &str, lines: usize) -> (App, usize) {
+    let dir = temp_dir(name);
+    let text: String = (0..lines)
+        .map(|i| format!("line {i}\\n"))
+        .collect::<Vec<_>>()
+        .concat();
+    let script = file_with(
+        &dir,
+        "probe.ptl",
+        &format!("edit_view(1, 0, 0, 600, 400, \"{text}\")\n"),
+    );
+    let mut app = app_with_panel(&script);
+    let idx = panel_idx(&app);
+    let r = app.panes[idx].rect;
+    app.mouse_down(r.x + 10.0, r.y + 10.0, Mods::default(), 1);
+    app.mouse_up();
+    assert_eq!(
+        app.panes[idx].panel.as_ref().unwrap().focused_region(),
+        Some(1),
+        "the click should hand the keyboard to the region"
+    );
+    (app, idx)
+}
+
+fn region_view_state(app: &App, idx: usize) -> (usize, String) {
+    let v = app.panes[idx]
+        .panel
+        .as_ref()
+        .unwrap()
+        .region_view(1)
+        .unwrap();
+    (v.cursor.line, v.buffer.text())
+}
+
+fn ctrl(c: char) -> (Key, Mods) {
+    (
+        Key::Char(c),
+        Mods {
+            ctrl: true,
+            ..Default::default()
+        },
+    )
+}
+
+/// The half-page scrolls work inside a focused `edit_view` — the gesture a
+/// reviewer reaches for first in `garden pr`. Every Ctrl chord used to be sent
+/// past the region to the host globals, where `Ctrl+D` meant nothing at all, so
+/// the one editor in Garden you cannot scroll with vim was the diff.
+#[test]
+fn ctrl_d_and_ctrl_u_scroll_a_focused_panel_region() {
+    let (mut app, idx) = app_with_focused_region("region-ctrl-d", 200);
+    let (_, before) = region_view_state(&app, idx);
+
+    let (k, m) = ctrl('d');
+    app.apply_key(k, m);
+    let (line, text) = region_view_state(&app, idx);
+    assert!(
+        line > 1,
+        "Ctrl+D should move down a half page, not one line"
+    );
+    assert_eq!(text, before, "a scroll must not touch the buffer");
+    let down = line;
+
+    let (k, m) = ctrl('u');
+    app.apply_key(k, m);
+    let (line, _) = region_view_state(&app, idx);
+    assert_eq!(line, 0, "Ctrl+U undoes the half page (from {down})");
+}
+
+/// `Ctrl+F`/`Ctrl+B` page a whole viewport — twice as far as `Ctrl+D`.
+#[test]
+fn ctrl_f_pages_further_than_ctrl_d_in_a_region() {
+    let (mut app, idx) = app_with_focused_region("region-ctrl-f", 200);
+    let (k, m) = ctrl('d');
+    app.apply_key(k, m);
+    let (half, _) = region_view_state(&app, idx);
+
+    let (mut app, idx) = app_with_focused_region("region-ctrl-f2", 200);
+    let (k, m) = ctrl('f');
+    app.apply_key(k, m);
+    let (full, _) = region_view_state(&app, idx);
+    assert!(full > half, "Ctrl+F ({full}) pages past Ctrl+D ({half})");
+}
+
+/// `Ctrl+E` rolls the viewport without moving the cursor off its line.
+#[test]
+fn ctrl_e_rolls_a_region_without_moving_the_cursor() {
+    let (mut app, idx) = app_with_focused_region("region-ctrl-e", 200);
+    // Put the cursor mid-screen first, so the roll has no reason to drag it.
+    let (k, m) = ctrl('d');
+    app.apply_key(k, m);
+    let (line, _) = region_view_state(&app, idx);
+
+    let (k, m) = ctrl('e');
+    app.apply_key(k, m);
+    let (after, _) = region_view_state(&app, idx);
+    assert_eq!(after, line, "Ctrl+E scrolls the view, not the cursor");
+    let scroll = app.panes[idx]
+        .panel
+        .as_ref()
+        .unwrap()
+        .region_view(1)
+        .unwrap()
+        .scroll
+        .top;
+    assert_eq!(scroll, 1, "the viewport rolled down one line");
+}
+
+/// The chords the host keeps are still the host's while a region is focused:
+/// `Ctrl+S` reaches the drawer as the save gesture (the whole point of an
+/// editable region is being able to save it), and `Ctrl+P` opens the finder.
+#[test]
+fn a_focused_region_does_not_swallow_the_reserved_chords() {
+    let (mut app, idx) = app_with_focused_region("region-reserved", 40);
+    let (k, m) = ctrl('s');
+    app.apply_key(k, m);
+    let (_, text) = region_view_state(&app, idx);
+    assert!(
+        text.starts_with("line 0"),
+        "Ctrl+S must not be typed into the buffer"
+    );
+
+    let (k, m) = ctrl('p');
+    app.apply_key(k, m);
+    assert!(
+        app.file_finder.is_some(),
+        "Ctrl+P still opens the finder over a focused region"
+    );
+}
+
 /// A pattern that is not in the region is reported, and does not silently
 /// search the pane behind it instead.
 #[test]

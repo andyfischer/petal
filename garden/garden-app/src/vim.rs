@@ -273,6 +273,28 @@ fn handle_insert(
     Action::None
 }
 
+/// One of vim's page motions (`Ctrl+D`/`U`/`F`/`B`): move the cursor, extending
+/// the selection in Visual mode, and drop any pending count.
+fn page_key(view: &mut EditorView, m: Move, visible_lines: usize) -> Action {
+    let extend = view.vim.mode.is_visual();
+    view.vim.count = None;
+    view.move_cursor(m, visible_lines, extend);
+    Action::None
+}
+
+/// `Ctrl+E` / `Ctrl+Y`: roll the viewport `count` lines without moving the
+/// cursor off its line, unless the roll would carry it off screen.
+fn scroll_key(
+    view: &mut EditorView,
+    down: bool,
+    visible_lines: usize,
+    visible_cols: usize,
+) -> Action {
+    let n = view.vim.count.take().unwrap_or(1);
+    view.scroll_view_lines(down, n, visible_lines, visible_cols);
+    Action::None
+}
+
 fn handle_normal(
     view: &mut EditorView,
     key: Key,
@@ -298,19 +320,22 @@ fn handle_normal(
             undo_redo(view, true);
             return Action::None;
         }
-        // Ctrl+D / Ctrl+U scroll the file down / up half a viewport (vim's
-        // half-page motions). In Visual mode they extend the selection like any
-        // other motion; the enclosing `ensure_cursor_visible` does the scroll.
-        Key::Ctrl('d') => {
-            let extend = view.vim.mode.is_visual();
-            view.move_cursor(Move::HalfPageDown, visible_lines, extend);
-            return Action::None;
-        }
-        Key::Ctrl('u') => {
-            let extend = view.vim.mode.is_visual();
-            view.move_cursor(Move::HalfPageUp, visible_lines, extend);
-            return Action::None;
-        }
+        // Ctrl+D / Ctrl+U scroll the file down / up half a viewport, Ctrl+F /
+        // Ctrl+B a whole one (vim's page motions). In Visual mode they extend
+        // the selection like any other motion; the enclosing
+        // `ensure_cursor_visible` does the scroll. A count is dropped rather
+        // than applied — vim reads it as a new `scroll` setting, which garden
+        // has no equivalent of — but it must not be left pending, or the next
+        // command resolves against it (`3<C-d>x` would delete three).
+        Key::Ctrl('d') => return page_key(view, Move::HalfPageDown, visible_lines),
+        Key::Ctrl('u') => return page_key(view, Move::HalfPageUp, visible_lines),
+        Key::Ctrl('f') => return page_key(view, Move::PageDown, visible_lines),
+        Key::Ctrl('b') => return page_key(view, Move::PageUp, visible_lines),
+        // Ctrl+E / Ctrl+Y roll the view down / up `count` lines *without*
+        // moving the cursor — the one pair of vim scrolls that is a viewport
+        // move rather than a motion.
+        Key::Ctrl('e') => return scroll_key(view, true, visible_lines, visible_cols),
+        Key::Ctrl('y') => return scroll_key(view, false, visible_lines, visible_cols),
         Key::Ctrl(_) => {
             view.vim.clear_pending();
             return Action::None;
@@ -3014,6 +3039,118 @@ mod tests {
         let (start, end) = sel.ordered();
         assert_eq!(start.line, 0);
         assert_eq!(end.line, 5);
+    }
+
+    #[test]
+    fn ctrl_f_and_ctrl_b_move_cursor_a_whole_viewport() {
+        let text = numbered(40);
+        let vis = 10;
+        let mut v = view(&text);
+        ctrl_vis(&mut v, 'f', vis); // line 0 -> 10
+        assert_eq!(v.cursor.line, 10);
+        ctrl_vis(&mut v, 'f', vis); // 10 -> 20
+        assert_eq!(v.cursor.line, 20);
+        ctrl_vis(&mut v, 'b', vis); // 20 -> 10
+        assert_eq!(v.cursor.line, 10);
+        ctrl_vis(&mut v, 'b', vis);
+        ctrl_vis(&mut v, 'b', vis); // would be -10, clamps to 0
+        assert_eq!(v.cursor.line, 0);
+    }
+
+    #[test]
+    fn ctrl_f_extends_a_visual_selection() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        keys_vis(&mut v, "v", vis);
+        ctrl_vis(&mut v, 'f', vis);
+        let (start, end) = v.selection().expect("visual selection").ordered();
+        assert_eq!((start.line, end.line), (0, 10));
+    }
+
+    /// A count before a page scroll is dropped, not left pending: vim reads it
+    /// as a new `scroll` setting, and a leftover count would be picked up by
+    /// the *next* command (`3<C-d>x` deleting three characters).
+    #[test]
+    fn a_count_before_a_page_scroll_does_not_survive_it() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        keys_vis(&mut v, "3", vis);
+        ctrl_vis(&mut v, 'd', vis);
+        assert!(v.vim.pending().is_clean());
+        assert_eq!(v.cursor.line, 5); // half a viewport, not three of them
+    }
+
+    /// Feed one Ctrl chord and then do what every real caller does — pull the
+    /// cursor back into view. `Ctrl+E`/`Ctrl+Y` only work because they drag the
+    /// cursor along the edge; without that this would scroll straight back.
+    fn ctrl_visible(v: &mut EditorView, c: char, visible_lines: usize) {
+        ctrl_vis(v, c, visible_lines);
+        v.ensure_cursor_visible(visible_lines, WIDE);
+    }
+
+    #[test]
+    fn ctrl_e_and_ctrl_y_roll_the_view_leaving_the_cursor_put() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        keys_vis(&mut v, "5G", vis); // cursor -> line 4, well inside the viewport
+        ctrl_visible(&mut v, 'e', vis);
+        assert_eq!(v.scroll.top, 1);
+        assert_eq!(v.cursor.line, 4); // still on screen, so it did not move
+        ctrl_visible(&mut v, 'y', vis);
+        assert_eq!(v.scroll.top, 0);
+        assert_eq!(v.cursor.line, 4);
+    }
+
+    #[test]
+    fn ctrl_e_drags_a_cursor_that_would_scroll_off_the_top() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        // Cursor on the top row: one roll down would strand it above the view.
+        ctrl_visible(&mut v, 'e', vis);
+        assert_eq!(v.scroll.top, 1);
+        assert_eq!(v.cursor.line, 1);
+    }
+
+    #[test]
+    fn ctrl_y_drags_a_cursor_that_would_scroll_off_the_bottom() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        keys_vis(&mut v, "20G", vis); // cursor -> line 19
+        v.ensure_cursor_visible(vis, WIDE);
+        assert_eq!(v.scroll.top, 10); // line 19 is the bottom row
+        ctrl_visible(&mut v, 'y', vis);
+        assert_eq!(v.scroll.top, 9);
+        assert_eq!(v.cursor.line, 18); // dragged up onto the new bottom row
+    }
+
+    #[test]
+    fn a_count_scrolls_that_many_lines() {
+        let text = numbered(30);
+        let vis = 10;
+        let mut v = view(&text);
+        keys_vis(&mut v, "5G3", vis);
+        ctrl_visible(&mut v, 'e', vis);
+        assert_eq!(v.scroll.top, 3);
+        assert!(v.vim.pending().is_clean());
+    }
+
+    #[test]
+    fn ctrl_e_and_ctrl_y_clamp_at_the_buffer_ends() {
+        let text = numbered(12);
+        let vis = 10;
+        let mut v = view(&text);
+        ctrl_visible(&mut v, 'y', vis); // already at the top
+        assert_eq!(v.scroll.top, 0);
+        assert_eq!(v.cursor.line, 0);
+        for _ in 0..6 {
+            ctrl_visible(&mut v, 'e', vis);
+        }
+        assert_eq!(v.scroll.top, 2); // the last screenful, and no further
     }
 
     #[test]

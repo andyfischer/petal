@@ -326,8 +326,8 @@ impl App {
             // and Escape-to-Normal) is fed to `vim::handle`. Escape only *leaves*
             // the region once it is already back in Normal mode, so the first
             // Escape exits Insert/Visual and a second hands focus to the script —
-            // the familiar two-step. Cmd/Ctrl chords still fall through to the
-            // globals below (so the command bar / quit keep working).
+            // the familiar two-step. Ctrl chords are handled separately just
+            // below, so the reserved ones still reach the host.
             if editable && !mods.cmd && !mods.ctrl {
                 if matches!(key, Key::Escape)
                     && self
@@ -343,29 +343,24 @@ impl App {
                     self.needs_redraw = true;
                     return KeyOutcome::Handled;
                 }
-                let pane_rect = self.panes.get(self.focus).map(|p| p.rect);
-                let cell = self.viewport.cell;
-                if let Some(rect) = pane_rect {
-                    // Disjoint field borrows: the panel (in `self.panes`) and the
-                    // clipboard are separate fields, so both can be borrowed at once.
-                    let clip = self.clipboard.as_mut();
-                    if let Some(panel) = self
-                        .panes
-                        .get_mut(self.focus)
-                        .and_then(|p| p.panel.as_mut())
+                if self.region_vim_key(id, key) {
+                    return KeyOutcome::Handled;
+                }
+            }
+            // Vim's own Ctrl chords reach the region too, as `Key::Ctrl` — the
+            // page scrolls (`Ctrl+D`/`U`/`F`/`B`), the line scrolls
+            // (`Ctrl+E`/`Y`) and `Ctrl+R` redo. They are whitelisted rather
+            // than forwarded wholesale because the chords Garden reserves are
+            // exactly the ones a reviewer still needs mid-edit: `Ctrl+S` saves,
+            // `Ctrl+W` is the window prefix, `Ctrl+[`/`]` walk the pane's
+            // history, `Ctrl+P` opens the finder and `Ctrl+Q` quits. A region
+            // that swallowed those would strand them inside the buffer.
+            if editable && mods.ctrl && !mods.cmd {
+                if let Key::Char(c) = key {
+                    let c = c.to_ascii_lowercase();
+                    if matches!(c, 'd' | 'u' | 'f' | 'b' | 'e' | 'y' | 'r')
+                        && self.region_vim_key(id, Key::Ctrl(c))
                     {
-                        let action = panel.region_key(id, rect, cell, key, clip);
-                        let refused = panel.take_edit_refusal(id);
-                        self.status_error = refused;
-                        // A region's vim can ask for host chrome it cannot draw
-                        // itself. `/` and `?` are the ones that matter: they
-                        // open the same search prompt a normal pane gets, and
-                        // `accept_search` sends the pattern back to the region.
-                        // Everything else stays the pane's business.
-                        if let Some(crate::vim::Action::OpenSearch { forward }) = action {
-                            self.command_line = Some(CommandLine::new_search(forward));
-                        }
-                        self.needs_redraw = true;
                         return KeyOutcome::Handled;
                     }
                 }
@@ -428,6 +423,39 @@ impl App {
             PanelKey::NavForward => self.nav_focused_panel(NavIntent::Forward),
             PanelKey::Ignore => KeyOutcome::Ignored,
         }
+    }
+
+    /// Feed one key into editable region `id` of the focused panel, running its
+    /// vim state machine, and act on whatever host chrome the region asks for in
+    /// return. `false` when the region could not be reached (no focused panel),
+    /// which leaves the key to the caller's fallbacks.
+    fn region_vim_key(&mut self, id: i64, key: Key) -> bool {
+        let Some(rect) = self.panes.get(self.focus).map(|p| p.rect) else {
+            return false;
+        };
+        let cell = self.viewport.cell;
+        // Disjoint field borrows: the panel (in `self.panes`) and the
+        // clipboard are separate fields, so both can be borrowed at once.
+        let clip = self.clipboard.as_mut();
+        let Some(panel) = self
+            .panes
+            .get_mut(self.focus)
+            .and_then(|p| p.panel.as_mut())
+        else {
+            return false;
+        };
+        let action = panel.region_key(id, rect, cell, key, clip);
+        let refused = panel.take_edit_refusal(id);
+        self.status_error = refused;
+        // A region's vim can ask for host chrome it cannot draw itself. `/` and
+        // `?` are the ones that matter: they open the same search prompt a
+        // normal pane gets, and `accept_search` sends the pattern back to the
+        // region. Everything else stays the pane's business.
+        if let Some(crate::vim::Action::OpenSearch { forward }) = action {
+            self.command_line = Some(CommandLine::new_search(forward));
+        }
+        self.needs_redraw = true;
+        true
     }
 
     /// Route a key to the open `:` / `/` / `?` line: edit the text, accept on
@@ -924,8 +952,8 @@ fn classify_panel_key(key: Key, mods: Mods, claimed: bool) -> PanelKey {
     // counterpart of `:w`): a drawer with an `edit_view` reads it as
     // `key_down("ctrl") && key_pressed("s")` and issues its `mutate("save", …)`.
     // Forwarded even while an editable region is focused (the region-key routing
-    // above skips Ctrl chords), so save works mid-edit. Other Ctrl/Cmd chords stay
-    // host-global.
+    // above claims only vim's own Ctrl chords, and `s` is not one), so save works
+    // mid-edit. Other Ctrl/Cmd chords stay host-global.
     if mods.ctrl && !mods.cmd && matches!(key, Key::Char('s' | 'S')) {
         if let Some(name) = panel_key_name(key) {
             return PanelKey::Forward(name);

@@ -106,6 +106,8 @@ fn main() {
         hot_reload,
         agent,
         headless,
+        timeline: false,
+        history: 0,
     };
     let mut host = FpsHost::new(width, height);
     let sp = Some(source.as_str());

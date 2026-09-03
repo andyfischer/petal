@@ -59,6 +59,44 @@ impl Env {
         Ok(new_key)
     }
 
+    /// Restore a live execution from a fork taken earlier: the inverse of
+    /// [`fork_execution`](Self::fork_execution). `dst`'s context (heap,
+    /// registries, bindings, RNG, resources) becomes a fresh copy of `src`'s,
+    /// and `dst`'s stack takes `src`'s state and frames — under `dst`'s own
+    /// keys, so everything a host holds (`stack_id`, the default context)
+    /// stays valid. `src` is untouched and can be restored from again.
+    ///
+    /// This is what a rewind is: a host that forks after every frame keeps a
+    /// history of executions, and restoring one puts the program back at that
+    /// moment. The restored stack is reshaped onto the program that is loaded
+    /// *now* — state whose declaration no longer exists is dropped, captured
+    /// closures are recaptured on the next run — so a snapshot taken before a
+    /// hot reload restores cleanly into the edited program.
+    pub fn restore_execution(&mut self, dst: StackKey, src: StackKey) -> Result<(), String> {
+        let dst_ck = self.stacks.get(&dst).ok_or("Stack not found")?.context;
+        let src_ck = self.stacks.get(&src).ok_or("Source stack not found")?.context;
+        let program_id = self.stacks.get(&dst).ok_or("Stack not found")?.program_id;
+
+        let mut ctx = self.contexts.get(&src_ck).ok_or("Source context not found")?.fork();
+        // Closures point into the program that captured them; the program
+        // running now may be a different one, so recapture on the next run
+        // (exactly what `transfer_state` does on a reload).
+        ctx.closures.clear();
+        self.contexts.insert(dst_ck, ctx);
+
+        let mut stack = self.stacks.get(&src).ok_or("Source stack not found")?.clone();
+        stack.id = dst;
+        stack.context = dst_ck;
+        stack.program_id = program_id;
+        let keys: std::collections::HashSet<crate::program::StateKey> = self
+            .get_program(program_id)
+            .map(|p| p.state_terms().map(|(k, _)| k).collect())
+            .unwrap_or_default();
+        crate::transfer_state::transfer_stack_state(&mut stack, &keys);
+        self.stacks.insert(dst, stack);
+        Ok(())
+    }
+
     /// Diff two executions' committed state by *value* (never by heap id — see
     /// hazard 4: ids are not comparable across contexts). Each stack's state is
     /// rendered to JSON against its own context heap, then compared key-by-key;

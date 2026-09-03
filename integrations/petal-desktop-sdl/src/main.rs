@@ -22,6 +22,8 @@ fn main() {
     let mut screenshot_path: Option<String> = None;
     let mut screenshot_frames: u32 = 120;
     let mut source_path: Option<String> = None;
+    let mut timeline = true;
+    let mut history: usize = petal_sdl::game_loop::DEFAULT_HISTORY;
 
     let mut i = 1;
     while i < args.len() {
@@ -43,6 +45,11 @@ fn main() {
                 title = args[i].clone();
             }
             "--no-hot-reload" => hot_reload = false,
+            "--no-timeline" => timeline = false,
+            "--history" => {
+                i += 1;
+                history = args[i].parse().expect("Invalid history length");
+            }
             "--agent" => agent = true,
             "--headless" => {
                 headless = true;
@@ -89,6 +96,8 @@ fn main() {
         hot_reload,
         agent,
         headless,
+        timeline,
+        history,
     };
     let mut host = DefaultHost::new(examples_dir);
     let sp = source_path.as_deref();
@@ -117,6 +126,8 @@ fn print_usage() {
     eprintln!("  --height <n>      Window height (default: 600)");
     eprintln!("  --title <str>     Window title (default: \"Petal Game\")");
     eprintln!("  --no-hot-reload   Disable file watching");
+    eprintln!("  --no-timeline     Disable frame history (F5 freeze, , . scrub, F6 trail, F7 track)");
+    eprintln!("  --history <n>     Frames of history to keep (default: 600)");
     eprintln!("  --agent           Enable agent protocol (JSON over stdin/stdout)");
     eprintln!("  --headless        Headless agent mode (no window, implies --agent)");
     eprintln!("  --screenshot <f>  Run headlessly, save PNG screenshot to file, then exit");

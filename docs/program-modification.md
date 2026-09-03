@@ -229,6 +229,21 @@ diagram-canvas command set is `pause, resume, step, state, set_state,
 capture_draw_commands, input, screenshot, pending_report`
 ([`debug.ts`](../examples/custom-integrations/diagram-canvas/src/debug.ts)).
 
+### Rewind, and replaying history through an edit
+
+The fork is also a **checkpoint**. `Env::restore_execution(live, fork)` is
+its inverse: the live stack's context becomes a fresh copy of the fork's and
+its state and frames come back, reshaped onto whatever program is loaded now
+(the same rules as `transfer_state`, so a checkpoint taken before a hot
+reload restores into the edited program). `petal-sdl` forks after every
+frame and keeps ten seconds of them (`integrations/petal-desktop-sdl/src/timeline.rs`):
+freeze, scrub, and resume from an earlier frame; and when the source is
+edited while frozen, re-run every recorded frame after the cursor through
+the new program with the input that was recorded for it. Together with the
+emit trace — which finds one `draw_*` call in every recorded frame — that is
+the "change the code and watch the trajectory move" gesture, over the agent
+protocol (`rewind`, `replay`, `track`, `trail`) or the keyboard.
+
 ### Speculative execution
 
 Petal can **fork a running execution**, run the fork with different inputs, and
@@ -264,6 +279,7 @@ Code: [`execution_context.rs`](../rust/src/execution_context.rs) and
 | Mutate one live state var | — | yes | `set_state` / `DiagramSetState` |
 | Inject input / bindings | — | yes | `input`, `set_binding_for` |
 | Speculative variant run | yes | (forked) | `fork_execution`, `run_speculative`, `diff_state` |
+| Rewind to a checkpoint; replay recorded input through an edit | yes | yes | `restore_execution`; `petal-sdl` timeline (`rewind`, `replay`, `trail`) |
 | Forward-mode sensitivity | yes | — | `dual`/`deriv_of` |
 | Construct/transform IR as data | — | experimental | [dev/experimental-ir-based-editing.md](dev/experimental-ir-based-editing.md) |
 

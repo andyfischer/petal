@@ -627,6 +627,78 @@ mod fork_tests {
         );
     }
 
+    /// The inverse of a fork. Restoring a snapshot puts the live execution back
+    /// at that moment — heap objects the state points at included — and leaves
+    /// the snapshot reusable, which is what lets a host rewind to it twice.
+    #[test]
+    fn restore_execution_rewinds_the_live_stack_to_a_fork() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state var n = 0\nstate var xs = []\nset n = n + 1\nset xs = append(xs, n)\n")
+            .unwrap();
+        let live = env.create_stack(pid).unwrap();
+        for _ in 0..3 {
+            env.reset_stack(live).unwrap();
+            env.run(live).unwrap();
+        }
+        let snap = env.fork_execution(live).unwrap();
+        for _ in 0..2 {
+            env.reset_stack(live).unwrap();
+            env.run(live).unwrap();
+        }
+        assert_eq!(env.get_state_json(pid, live)["n"], 5);
+
+        env.restore_execution(live, snap).unwrap();
+        let s = env.get_state_json(pid, live);
+        assert_eq!(s["n"], 3, "the live stack is back at the snapshot");
+        assert_eq!(s["xs"], serde_json::json!([1, 2, 3]), "heap objects came back with it");
+
+        // It runs on from there, under the same stack key…
+        env.reset_stack(live).unwrap();
+        env.run(live).unwrap();
+        assert_eq!(env.get_state_json(pid, live)["n"], 4);
+        // …and the snapshot is untouched, so it can be restored again.
+        env.restore_execution(live, snap).unwrap();
+        assert_eq!(env.get_state_json(pid, live)["n"], 3);
+    }
+
+    /// A snapshot taken before a hot reload restores onto the program loaded
+    /// *now*: state the new program no longer declares is dropped, state it
+    /// added initializes on the next run, and the new code is what runs.
+    #[test]
+    fn restore_execution_reshapes_a_snapshot_onto_the_program_loaded_now() {
+        let mut env = Env::new();
+        let pid = env
+            .load_program("state var n = 0\nstate var gone = 1\nset n = n + 1\n")
+            .unwrap();
+        let live = env.create_stack(pid).unwrap();
+        env.run(live).unwrap();
+        let snap = env.fork_execution(live).unwrap();
+
+        let edited = env
+            .compile_program_at(
+                pid,
+                "state var n = 0\nstate var fresh = 7\nset n = n + 10\n",
+                std::path::Path::new("edited.ptl"),
+            )
+            .unwrap();
+        env.transfer_state(live, edited).unwrap();
+        env.reset_stack(live).unwrap();
+        env.run(live).unwrap();
+        assert_eq!(env.get_state_json(pid, live)["n"], 11);
+
+        env.restore_execution(live, snap).unwrap();
+        let s = env.get_state_json(pid, live);
+        assert_eq!(s["n"], 1, "restored to the pre-edit value");
+        assert!(s.get("gone").is_none(), "a declaration the edit removed is dropped");
+
+        env.reset_stack(live).unwrap();
+        env.run(live).unwrap();
+        let s = env.get_state_json(pid, live);
+        assert_eq!(s["n"], 11, "the edited program is what runs from the restored state");
+        assert_eq!(s["fresh"], 7, "a declaration the edit added initializes");
+    }
+
     /// Each context owns its own heap (the fork deep-clones it), so a GC cycle
     /// scoped to one context can never free an object that is live only in
     /// another. Make a list unreachable in the source context, collect *that*

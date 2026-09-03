@@ -28,6 +28,7 @@ pub mod native_fns;
 pub mod protocol;
 pub mod renderer;
 pub mod screenshot;
+pub mod timeline;
 pub mod watcher;
 
 pub use audio::AudioOutput;
@@ -37,3 +38,4 @@ pub use game_loop::{
     run_screenshot,
 };
 pub use input::Gamepads;
+pub use timeline::Timeline;

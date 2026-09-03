@@ -107,6 +107,8 @@ fn main() {
         hot_reload,
         agent,
         headless,
+        timeline: false,
+        history: 0,
     };
     let cart = cart_path.as_deref();
 

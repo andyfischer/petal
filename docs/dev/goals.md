@@ -209,9 +209,16 @@ The gesture is built. What's left is making it a *demo* rather than an API:
 - Wire the provenance → goal-based-edit loop into a live host end-to-end
   (Garden is the natural home) so drag-on-canvas → source rewrite → hot reload
   with state preserved is one continuous experience.
-- **Scrubbable provenance** (still unbuilt): record input/frame history; scrub
-  past frames and ask "why is this pixel this color"; on hot-reload, re-run
-  recorded history through the edited graph to show a change retroactively.
+- **Scrubbable provenance** — *built in `petal-sdl` (2026-09-02)*. The host
+  forks the execution after every frame (`Env::fork_execution`) and restores
+  one to rewind (`Env::restore_execution`, the new inverse); a hot reload
+  while frozen re-runs the recorded input history through the edited program,
+  and the emit trace follows one `draw_*` call across every recorded frame as
+  a trail (`integrations/petal-desktop-sdl/src/timeline.rs`,
+  `examples/games/hopper/`). Still open: "why is this pixel this color" on a
+  *past* frame — the per-term trace buffer is not snapshotted with the fork,
+  so `explain` only reaches the frame that just ran; and the same loop in
+  Garden's petal-ide, where the editor is beside the canvas.
 - **Reverse-mode AD** is now *optional and unscheduled*, not the gate. Build it
   when a concrete manipulation is blocked by needing it — i.e. when the target
   constant reaches the output through arithmetic rather than as a literal

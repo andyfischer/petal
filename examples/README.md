@@ -6,7 +6,7 @@ Runnable Petal programs, grouped by what they are:
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
 | [`challenge/`](challenge/) | Larger console programs written as language stress tests — 2048, Boids, Minesweeper, terrain generation, Tetris. Deterministic: two runs print the same output |
-| [`games/`](games/) | Games — pong, breakout, snake, and the SDL-hosted side-scroller |
+| [`games/`](games/) | Games — pong, breakout, snake, and two SDL-hosted side-scrollers: the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |
@@ -15,8 +15,9 @@ Runnable Petal programs, grouped by what they are:
 The apps under `games/`, `productivity/`, `dashboards/`, and `ui/` are Garden
 panel apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launch.sh`
 that starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
-built and tested. The exception is [`games/side-scroller/`](games/side-scroller/),
-which runs on the `petal-desktop-sdl` integration via its own `run-game.sh`.
+built and tested. The exceptions are [`games/side-scroller/`](games/side-scroller/)
+and [`games/hopper/`](games/hopper/), which run on the `petal-desktop-sdl`
+integration via their own launch scripts.
 
 ## Console programs
 

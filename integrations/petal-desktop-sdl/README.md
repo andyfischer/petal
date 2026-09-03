@@ -49,6 +49,8 @@ With no file argument, `petal-sdl` opens a browser over the bundled examples.
 | `--height <n>` | Window height (default: 600) |
 | `--title <str>` | Window title (default: "Petal Game") |
 | `--no-hot-reload` | Disable file watching |
+| `--no-timeline` | Disable frame history (see [Time travel](#time-travel)) |
+| `--history <n>` | Frames of history to keep (default: 600, ten seconds) |
 | `--agent` | Accept JSON commands on stdin (see [agent protocol](docs/agent-protocol.md)) |
 | `--headless` | No window; frames advance only on `step` commands (implies `--agent`) |
 | `--screenshot <file>` | Run headlessly, save a PNG, then exit |
@@ -87,6 +89,34 @@ draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 
 See [`docs/game-dev-guide.md`](docs/game-dev-guide.md) for the API and common
 patterns, and [`docs/design.md`](docs/design.md) for how the host is built.
+
+## Time travel
+
+The host forks the running execution after every frame and keeps the last
+ten seconds of forks, so any script can be frozen, scrubbed, rewound, and
+re-simulated through an edit. Nothing in the script opts in.
+
+| Key | Action |
+|-----|--------|
+| `F5` | Freeze / resume. Resuming from an earlier frame **rewinds** the game to it and forgets the frames after |
+| `,` / `.` | While frozen: scrub one frame back / forward. Hold for real time, `shift` for 5× |
+| `F6` | Toggle the trail overlay |
+| `F7` | Track the shape under the pointer: its `draw_*` call is followed through every recorded frame and drawn as a path |
+
+The part worth trying: freeze, scrub back to just before a jump, press `F7`
+on the player, then **edit a constant in the script and save**. The frames
+after the cursor are replayed through the new code with the input that was
+recorded for them, and the orange future trail shows the new trajectory next
+to the blue past. Change the number again; the future moves again. The rest
+of the game's state — score, level, everything — is exactly what it was.
+
+The same operations are agent-protocol commands (`freeze`, `scrub`,
+`rewind`, `replay`, `track`, `trail`, `timeline`; see
+[docs/agent-protocol.md](docs/agent-protocol.md#timeline)), and a
+`screenshot` taken while frozen renders the frame on screen with its
+overlay. Recording costs one heap copy per frame (about 2 ms on a small
+game in a release build); `--no-timeline` turns it off, `--history` sets the
+length. `examples/games/hopper/` in the repo root is a game written for it.
 
 ## Use as a library
 

@@ -227,7 +227,7 @@ pub enum InputEvent {
 /// Time is advanced only by [`begin_frame`](Self::begin_frame)'s `dt`, so
 /// multi-click detection is deterministic and testable — there is no wall
 /// clock inside.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InputState {
     // Level state (persists).
     pub mouse_x: i32,
@@ -430,6 +430,13 @@ impl InputState {
     /// [`InputEvent::Text`] arrived before the last `begin_frame`.
     pub fn frame_text(&self) -> &str {
         &self.frame_text
+    }
+
+    /// Whether `key` was pressed during the current frame (an edge promoted
+    /// by the last [`begin_frame`](Self::begin_frame)). A host reads this for
+    /// its own chords — a debugger's freeze key — before the script runs.
+    pub fn was_key_pressed(&self, key: &str) -> bool {
+        self.frame_keys_pressed.contains(key)
     }
 
     pub fn is_key_down(&self, key: &str) -> bool {

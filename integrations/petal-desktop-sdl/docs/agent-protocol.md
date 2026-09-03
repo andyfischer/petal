@@ -149,6 +149,14 @@ data URL. State is not advanced.
 
 The `--screenshot out.png --frames N` CLI flag uses the same encoder.
 
+While the [timeline](#timeline) is frozen — or with `"overlay": true` — the
+picture is instead what the window shows: the recorded frame on screen plus
+the trail and scrub bar. No speculative frame runs.
+
+```json
+{"cmd": "screenshot", "overlay": true}
+```
+
 ### input
 
 Set the input state as an absolute snapshot: these keys and buttons are down
@@ -196,6 +204,96 @@ live resource table and does not run a frame.
 {"cmd": "pending_report"}
 {"ok": true, "pending": [...]}
 ```
+
+## Timeline
+
+The host keeps a history of forked executions, one per committed frame (see
+`src/timeline.rs`; `--history N` sets the length, `--no-timeline` turns it
+off). Every command below answers with the same `timeline` status object,
+plus its own field:
+
+```json
+{"ok": true, "frame": 120,
+ "timeline": {"frames": 120, "capacity": 600, "cursor": 89, "frozen": true,
+              "first_frame": 1, "last_frame": 120, "generation": 1,
+              "tracking": "draw_rect (line 238)", "last_replayed": 31}}
+```
+
+`cursor` is the index into the recorded frames while frozen (`null` when
+live), `generation` counts hot reloads, and `last_replayed` is how many
+frames the last replay re-simulated.
+
+### timeline
+
+Report the status above without changing anything.
+
+### freeze / unfreeze
+
+`freeze` stops the game at the latest recorded frame (and pauses the live
+loop in windowed-agent mode). `unfreeze` resumes **from the cursor**: the
+live execution becomes that frame's snapshot and the frames after it are
+discarded, so unfreezing at an earlier frame is a rewind. `step` while frozen
+does the same before stepping.
+
+### scrub
+
+Move the cursor, freezing first if needed. Negative indexes count from the
+end (`-1` is the latest frame). Scrubbing re-presents recorded draw
+commands; nothing re-runs.
+
+```json
+{"cmd": "scrub", "to": -31}
+```
+
+### rewind
+
+Restore the execution from `frames` frames ago and continue from there —
+`freeze` + `scrub` + `unfreeze` in one step. `state` afterwards reports the
+earlier values exactly.
+
+```json
+{"cmd": "rewind", "frames": 60}
+{"ok": true, "frame": 60, "timeline": {"frames": 60, "cursor": null, ...}}
+```
+
+### replay
+
+Re-simulate every recorded frame after the cursor (all of history when not
+frozen) through the program loaded **now**, feeding each frame the input
+that was recorded for it. Their snapshots and draw output are replaced. A
+hot reload while frozen does this automatically, which is how an edit shows
+its effect on the recorded future; call it by hand after `set_state` on a
+rewound game, or after a reload that landed while unfrozen.
+
+```json
+{"cmd": "replay"}
+{"ok": true, "replayed": 31, "timeline": {...}}
+```
+
+### track / trail
+
+`track` picks the shape under `(x, y)` on the frame on screen — the last
+command painted there, honoring clips — and follows the `draw_*` call that
+produced it, via the emit trace. It answers with the resolved call:
+
+```json
+{"cmd": "track", "x": 235, "y": 491}
+{"ok": true, "site": {"callee": "draw_rect", "line": 238, "column": 3, "term": 12689},
+ "timeline": {...}}
+```
+
+`trail` then reports where that call drew on every recorded frame (the
+centre of each shape), oldest first — an agent can read a jump arc as
+numbers rather than pixels:
+
+```json
+{"cmd": "trail"}
+{"ok": true, "trail": [{"index": 0, "frame": 1, "x": 91, "y": 415}, ...]}
+```
+
+The tracked call is re-found by source position after a hot reload, so a
+trail survives an edit. A point on a frame drawn by an older program is
+attributed against that program's ids; `track` on such a frame is refused.
 
 ### draw_stats
 

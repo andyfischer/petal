@@ -55,7 +55,13 @@ pub enum Command {
         name: String,
         value: JsonValue,
     },
-    Screenshot,
+    /// Render the current frame to a PNG. With `overlay` (or while the timeline
+    /// is frozen) the picture is what the window shows: the recorded frame
+    /// on screen plus the timeline's trail and scrub bar.
+    Screenshot {
+        #[serde(default)]
+        overlay: bool,
+    },
     /// Optional per-frame draw statistics; hosts that don't implement it
     /// respond with an "unsupported" error.
     DrawStats,
@@ -63,6 +69,30 @@ pub enum Command {
     /// origin, absorption count) — the observability query behind the dev
     /// overlay and agent debugging. Replies in the `pending` response field.
     PendingReport,
+
+    // ── Timeline (see `crate::timeline`) ──
+    /// Report the recorded history: frame count, cursor, tracked call.
+    Timeline,
+    /// Stop the game at the latest recorded frame (and pause the live loop).
+    Freeze,
+    /// Resume from the cursor: the live execution becomes that frame's
+    /// snapshot and later frames are discarded.
+    Unfreeze,
+    /// Move the cursor to a recorded frame (freezing first). Negative
+    /// indexes count from the end: `-1` is the latest frame.
+    Scrub { to: i64 },
+    /// Restore the execution from `frames` frames ago and continue from
+    /// there — a rewind without freezing.
+    Rewind { frames: u32 },
+    /// Re-simulate every recorded frame after the cursor (all of history when
+    /// not frozen) through the program loaded now, with the recorded input.
+    /// A hot reload while frozen does this automatically.
+    Replay,
+    /// Follow the `draw_*` call that painted the shape at `(x, y)` on the
+    /// frame on screen. Answers with the resolved call in `site`.
+    Track { x: i32, y: i32 },
+    /// Where the tracked call drew on every recorded frame, in `trail`.
+    Trail,
 }
 
 fn default_step_count() -> u32 {
@@ -135,6 +165,18 @@ pub struct Response {
     /// command.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending: Option<JsonValue>,
+    /// Timeline status (see `Timeline::status_json`); on every timeline command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeline: Option<JsonValue>,
+    /// The call a `track` command resolved to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site: Option<JsonValue>,
+    /// The tracked call's positions across history, from `trail`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trail: Option<JsonValue>,
+    /// How many frames a `replay` re-simulated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replayed: Option<usize>,
 }
 
 impl Response {
@@ -150,6 +192,10 @@ impl Response {
             screenshot: None,
             stats: None,
             pending: None,
+            timeline: None,
+            site: None,
+            trail: None,
+            replayed: None,
         }
     }
 
@@ -218,7 +264,7 @@ pub enum ClockSource {
 
 impl ClockSource {
     /// The `time()` value for the frame just about to run.
-    fn now(&self, frame_count: i64) -> f64 {
+    pub fn now(&self, frame_count: i64) -> f64 {
         match self {
             ClockSource::Wall(start) => start.elapsed().as_secs_f64(),
             ClockSource::Fixed => frame_count as f64 / 60.0,
@@ -381,7 +427,7 @@ pub fn handle_command<H: Host>(
                 Err(e) => send_response(&Response::err(e)),
             }
         }
-        Command::Screenshot => {
+        Command::Screenshot { .. } => {
             let (w, h) = dimensions(env);
             host.prepare_frame(env);
             bind_input(env, input);
@@ -412,6 +458,18 @@ pub fn handle_command<H: Host>(
                 )),
                 Err(e) => send_response(&Response::err(e)),
             }
+        }
+        Command::Timeline
+        | Command::Freeze
+        | Command::Unfreeze
+        | Command::Scrub { .. }
+        | Command::Rewind { .. }
+        | Command::Replay
+        | Command::Track { .. }
+        | Command::Trail => {
+            // Owned by the game loop, which holds the timeline; a host that
+            // dispatches here directly has none.
+            send_response(&Response::err("timeline commands need the game loop".to_string()));
         }
         Command::PendingReport => {
             // The report is core-lib (the resource table lives on the

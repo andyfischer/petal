@@ -1,0 +1,263 @@
+// =====================================================================
+// HOPPER — a tiny side-scroller built to be manipulated while it runs.
+// =====================================================================
+//
+//   ./examples/games/hopper/run.sh
+//
+// Everything that tunes the feel is a `config let` knob: the direct-
+// manipulation tools prefer to rewrite those, and hot reload keeps the
+// player exactly where they were when you change one. The level is plain
+// data in this file, so moving a platform is editing a number.
+//
+// Controls: arrows / A D to run, space / up / W to jump (hold for height),
+// R to restart. The host adds time travel: F5 freeze, , and . scrub,
+// F6 trail overlay, F7 track the shape under the mouse.
+// =====================================================================
+
+// ------------------------------ KNOBS --------------------------------
+
+config let GRAVITY    = 1800.0
+config let JUMP_VY    = -620.0
+config let JUMP_CUT   = 0.45      // vy multiplier when jump is released early
+config let RUN_SPEED  = 260.0
+config let ACCEL      = 2400.0
+config let FRICTION   = 2600.0
+config let AIR_DRAG   = 900.0
+config let MAX_FALL   = 950.0
+config let COYOTE     = 0.08
+config let CAM_LAG    = 5.0
+config let PW         = 22
+config let PH         = 30
+
+let W = screen_width()
+let H = screen_height()
+
+// ------------------------------ LEVEL --------------------------------
+
+let plats = [
+  {x: 0,    y: 520, w: 620,  h: 80},
+  {x: 720,  y: 470, w: 160,  h: 130},
+  {x: 980,  y: 520, w: 420,  h: 80},
+  {x: 1200, y: 400, w: 120,  h: 20},
+  {x: 1500, y: 440, w: 140,  h: 160},
+  {x: 1740, y: 380, w: 120,  h: 20},
+  {x: 1960, y: 320, w: 120,  h: 20},
+  {x: 2180, y: 460, w: 520,  h: 140},
+  {x: 2800, y: 520, w: 400,  h: 80},
+]
+
+let coin_spots = [
+  {x: 300,  y: 470},
+  {x: 800,  y: 420},
+  {x: 1260, y: 350},
+  {x: 1570, y: 390},
+  {x: 1800, y: 330},
+  {x: 2020, y: 270},
+  {x: 2400, y: 410},
+  {x: 2900, y: 470},
+]
+
+let goal = {x: 3120, y: 520}
+let level_w = 3200
+
+// ------------------------------ STATE --------------------------------
+
+state var px        = 80.0
+state var py        = 400.0
+state var vx        = 0.0
+state var vy        = 0.0
+state var grounded  = false
+state var coyote    = 0.0
+state var cam       = 0.0
+state var got       = []       // indexes of collected coins
+state var won       = false
+state var clock     = 0.0
+state var falls     = 0
+
+fn respawn()
+  set px = 80.0
+  set py = 400.0
+  set vx = 0.0
+  set vy = 0.0
+  set grounded = false
+  set won = false
+  set got = []
+  set clock = 0.0
+end
+
+fn approach(cur, target, step)
+  if cur < target then min(cur + step, target) else max(cur - step, target) end
+end
+
+fn overlaps(ax, ay, aw, ah, b)
+  ax < float(b.x + b.w) && ax + aw > float(b.x) &&
+  ay < float(b.y + b.h) && ay + ah > float(b.y)
+end
+
+// ------------------------------ UPDATE -------------------------------
+
+let dts = min(dt(), 1.0 / 30.0)
+if key_pressed("r") then respawn() end
+
+if !won then
+  set clock = clock + dts
+  let left  = key_down("left") || key_down("a")
+  let right = key_down("right") || key_down("d")
+  let jump_now  = key_pressed("space") || key_pressed("up") || key_pressed("w")
+  let jump_held = key_down("space") || key_down("up") || key_down("w")
+
+  // run
+  let target = 0.0
+  if left  then target = target - RUN_SPEED end
+  if right then target = target + RUN_SPEED end
+  if target == 0.0 then
+    let drag = if grounded then FRICTION else AIR_DRAG end
+    set vx = approach(vx, 0.0, drag * dts)
+  else
+    set vx = approach(vx, target, ACCEL * dts)
+  end
+
+  // jump, with a little coyote time
+  if grounded then set coyote = COYOTE else set coyote = max(0.0, coyote - dts) end
+  if jump_now && coyote > 0.0 then
+    set vy = JUMP_VY
+    set coyote = 0.0
+    set grounded = false
+  end
+  if !jump_held && vy < 0.0 then set vy = vy * JUMP_CUT end
+  set vy = min(MAX_FALL, vy + GRAVITY * dts)
+
+  // move x, then y, resolving against platforms
+  let pw = float(PW)
+  let ph = float(PH)
+  let nx = px + vx * dts
+  for p in plats do
+    if overlaps(nx, py, pw, ph, p) then
+      if vx > 0.0 then nx = float(p.x) - pw else nx = float(p.x + p.w) end
+      set vx = 0.0
+    end
+  end
+  set px = nx
+
+  let ny = py + vy * dts
+  set grounded = false
+  for p in plats do
+    if overlaps(px, ny, pw, ph, p) then
+      if vy > 0.0 then
+        ny = float(p.y) - ph
+        set grounded = true
+      else
+        ny = float(p.y + p.h)
+      end
+      set vy = 0.0
+    end
+  end
+  set py = ny
+
+  // coins
+  let i = 0
+  for c in coin_spots do
+    if !contains(got, i) then
+      if abs(px + pw / 2.0 - float(c.x)) < 20.0 && abs(py + ph / 2.0 - float(c.y)) < 24.0 then
+        set got = append(got, i)
+      end
+    end
+    i = i + 1
+  end
+
+  // goal
+  if px + pw > float(goal.x) && py + ph > float(goal.y) - 60.0 then
+    set won = true
+  end
+
+  // fell off the world
+  if py > float(H) + 60.0 then
+    set falls = falls + 1
+    respawn()
+  end
+end
+
+// camera eases toward the player
+let want = clamp(px + float(PW) / 2.0 - float(W) / 2.0, 0.0, float(level_w - W))
+set cam = cam + (want - cam) * min(1.0, CAM_LAG * dts)
+
+// ------------------------------ DRAW ---------------------------------
+
+fn sx(x)  int(x - get cam) end     // world -> screen x
+
+fn draw_backdrop()
+  clear(118, 186, 240)
+  draw_rect(0, 360, W, 200, 150, 205, 245)
+  // far hills, slow parallax
+  let off = int(get cam * 0.25)
+  let k = 0
+  while k < 8 do
+    let hx = k * 260 - (off % 260) - 80
+    draw_circle(hx + 130, 560, 150, 96, 150, 120)
+    k = k + 1
+  end
+  // near hills
+  let off2 = int(get cam * 0.5)
+  let j = 0
+  while j < 9 do
+    let hx = j * 220 - (off2 % 220) - 40
+    draw_circle(hx + 110, 600, 130, 76, 130, 96)
+    j = j + 1
+  end
+end
+
+fn draw_platforms()
+  for p in plats do
+    draw_rect(sx(p.x), p.y + 6, p.w, p.h - 6, 112, 76, 48)
+    draw_rect(sx(p.x), p.y, p.w, 7, 70, 176, 64)
+  end
+end
+
+fn draw_coins()
+  let bob = sin(get clock * 5.0) * 3.0
+  let i = 0
+  for c in coin_spots do
+    if !contains(get got, i) then
+      draw_circle(sx(c.x), c.y + int(bob), 9, 255, 205, 40)
+      draw_circle(sx(c.x) - 2, c.y + int(bob) - 2, 4, 255, 240, 150)
+    end
+    i = i + 1
+  end
+end
+
+fn draw_goal()
+  let gx = sx(goal.x)
+  draw_rect(gx, goal.y - 90, 4, 90, 240, 240, 240)
+  let wave = int(sin(get clock * 6.0) * 3.0)
+  draw_rect(gx + 4, goal.y - 88 + wave, 30, 20, 230, 60, 70)
+end
+
+fn draw_player()
+  let x = sx(get px)
+  let y = int(get py)
+  draw_rect(x, y, PW, PH, 60, 120, 230)
+  draw_rect(x + 2, y + 4, PW - 4, 10, 245, 200, 165)
+  let eye = if get vx < 0.0 then 4 else PW - 8 end
+  draw_rect(x + eye, y + 7, 4, 4, 20, 20, 50)
+end
+
+fn draw_hud()
+  draw_rect(0, 0, W, 30, 20, 25, 45)
+  draw_text("coins {len(get got)}/{len(coin_spots)}", 12, 6, 18, 255, 230, 120)
+  draw_text("time {round(get clock, 1)}", 180, 6, 18, 220, 220, 240)
+  if get falls > 0 then
+    draw_text("falls {get falls}", 330, 6, 18, 255, 150, 150)
+  end
+  if get won then
+    draw_rect(W / 2 - 150, 200, 300, 90, 20, 25, 45)
+    draw_text("YOU MADE IT", W / 2 - 90, 220, 28, 120, 240, 140)
+    draw_text("R to run it again", W / 2 - 70, 256, 16, 220, 220, 240)
+  end
+end
+
+draw_backdrop()
+draw_platforms()
+draw_coins()
+draw_goal()
+draw_player()
+draw_hud()

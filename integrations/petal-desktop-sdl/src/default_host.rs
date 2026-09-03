@@ -126,7 +126,18 @@ impl Host for DefaultHost {
 
     fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String> {
         let commands = take_draw_commands(env);
+        self.present_commands(canvas, commands)
+    }
 
+    fn supports_timeline(&self) -> bool {
+        true
+    }
+
+    fn present_commands(
+        &mut self,
+        canvas: &mut Canvas<Window>,
+        commands: Vec<DrawCommand>,
+    ) -> Result<(), String> {
         // Lazily create the persistent framebuffer at the drawable size.
         let surface = match self.framebuffer.take() {
             Some(s) => s,
@@ -171,6 +182,19 @@ impl Host for DefaultHost {
             .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
         let commands = take_draw_commands_for(env, stack);
         Ok(render_commands(&commands, width, height, fonts))
+    }
+
+    fn render_commands_image(
+        &mut self,
+        commands: &[DrawCommand],
+        width: u32,
+        height: u32,
+    ) -> Result<RgbImage, String> {
+        let fonts = self
+            .fonts
+            .as_mut()
+            .ok_or_else(|| "screenshot unavailable: no system font could be loaded".to_string())?;
+        Ok(render_commands(commands, width, height, fonts))
     }
 
     fn draw_commands_json(&mut self, env: &mut Env, stack: StackKey) -> serde_json::Value {

@@ -1,0 +1,177 @@
+// bloom_icon — the icon set, drawn as vectors.
+//
+// No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
+// a unit box, scaled into whatever rect it is given. That is what keeps bloom
+// droppable — a host that can draw a line can draw the whole icon set, and an
+// icon inherits its color, weight and size from the control around it instead
+// of from a font file that has to ship beside the script.
+//
+// Coordinates are unit coordinates: (-0.5, -0.5) is the top-left of the glyph
+// box and (0.5, 0.5) the bottom-right, y down.
+
+import ui: draw_line, draw_circle, draw_rect_rounded
+
+// A point in the glyph box `(cx, cy, s)`.
+fn _p(box, ux, uy)
+  {x: box.cx + ux * box.s, y: box.cy + uy * box.s}
+end
+
+// Stroke a polyline through unit points, given flat as [x0, y0, x1, y1, ...].
+fn _path(box, pts, color, w)
+  let i = 0
+  while i + 3 < len(pts) do
+    draw_line(_p(box, pts[i], pts[i + 1]), _p(box, pts[i + 2], pts[i + 3]), color, 255, w)
+    i = i + 2
+  end
+end
+
+// The glyph box inscribed in `r`: a centered square, inset so strokes stay
+// inside the rect at any weight.
+fn _box(r)
+  let s = min(r.w, r.h) * 0.62
+  {cx: r.x + r.w / 2.0, cy: r.y + r.h / 2.0, s: s}
+end
+
+// The stroke weight an icon of this size wants, when the caller does not say.
+fn _w(r)
+  max(1.0, min(r.w, r.h) / 11.0)
+end
+
+export fn icon(name, r, color)
+  icon(name, r, color, _w(r))
+end
+
+// `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
+// visible in place rather than an invisible hole in a toolbar.
+export fn icon(name, r, color, w)
+  let b = _box(r)
+  match name
+    when "check" -> _path(b, [-0.42, 0.02, -0.12, 0.34, 0.44, -0.32], color, w)
+    when "close" -> _cross(b, color, w)
+    when "plus" -> _plus(b, color, w)
+    when "minus" -> _path(b, [-0.4, 0.0, 0.4, 0.0], color, w)
+    when "chevron_down" -> _path(b, [-0.34, -0.16, 0.0, 0.2, 0.34, -0.16], color, w)
+    when "chevron_up" -> _path(b, [-0.34, 0.16, 0.0, -0.2, 0.34, 0.16], color, w)
+    when "chevron_right" -> _path(b, [-0.16, -0.34, 0.2, 0.0, -0.16, 0.34], color, w)
+    when "chevron_left" -> _path(b, [0.16, -0.34, -0.2, 0.0, 0.16, 0.34], color, w)
+    when "arrow_right" -> _arrow_right(b, color, w)
+    when "search" -> _search(b, color, w)
+    when "menu" -> _menu(b, color, w)
+    when "more" -> _more(b, color, w)
+    when "dot" -> draw_circle({x: b.cx, y: b.cy}, b.s * 0.22, color)
+    when "circle" -> _ring(b, color, w)
+    when "play" -> _play(b, color, w)
+    when "pause" -> _pause(b, color, w)
+    when "folder" -> _folder(b, color, w)
+    when "file" -> _file(b, color, w)
+    when "warning" -> _warning(b, color, w)
+    when "info" -> _info(b, color, w)
+    when "star" -> _star(b, color, w)
+    when "trash" -> _trash(b, color, w)
+    when _ -> draw_circle({x: b.cx, y: b.cy}, b.s * 0.18, color)
+  end
+end
+
+// Every glyph the set answers to, in a stable order — the gallery draws this
+// rather than a list it keeps in sync by hand.
+export let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_up",
+  "chevron_right", "chevron_left", "arrow_right", "search", "menu",
+  "more", "dot", "circle", "play", "pause", "folder", "file",
+  "warning", "info", "star", "trash"]
+
+fn _cross(b, color, w)
+  _path(b, [-0.32, -0.32, 0.32, 0.32], color, w)
+  _path(b, [0.32, -0.32, -0.32, 0.32], color, w)
+end
+
+fn _plus(b, color, w)
+  _path(b, [-0.4, 0.0, 0.4, 0.0], color, w)
+  _path(b, [0.0, -0.4, 0.0, 0.4], color, w)
+end
+
+fn _arrow_right(b, color, w)
+  _path(b, [-0.4, 0.0, 0.36, 0.0], color, w)
+  _path(b, [0.1, -0.26, 0.36, 0.0, 0.1, 0.26], color, w)
+end
+
+fn _search(b, color, w)
+  _ring({cx: b.cx - b.s * 0.08, cy: b.cy - b.s * 0.08, s: b.s * 0.56}, color, w)
+  _path(b, [0.16, 0.16, 0.4, 0.4], color, w)
+end
+
+fn _ring(b, color, w)
+  // No circle-outline overload takes a record, so the ring is a filled disc
+  // with the face punched back out — the caller's own background shows through
+  // only where a component drew one, so components pass a solid `color` and
+  // keep rings small.
+  let steps = 20
+  let prev = {x: b.cx + b.s * 0.5, y: b.cy}
+  for i in range(1, steps + 1) do
+    let a = float(i) / float(steps) * 2.0 * pi()
+    let p = {x: b.cx + cos(a) * b.s * 0.5, y: b.cy + sin(a) * b.s * 0.5}
+    draw_line(prev, p, color, 255, w)
+    prev = p
+  end
+end
+
+fn _menu(b, color, w)
+  _path(b, [-0.4, -0.26, 0.4, -0.26], color, w)
+  _path(b, [-0.4, 0.0, 0.4, 0.0], color, w)
+  _path(b, [-0.4, 0.26, 0.4, 0.26], color, w)
+end
+
+fn _more(b, color, w)
+  for i in range(-1, 2) do
+    draw_circle({x: b.cx + float(i) * b.s * 0.3, y: b.cy}, max(1.0, w * 0.8), color)
+  end
+end
+
+fn _play(b, color, w)
+  fill_triangle(b.cx - b.s * 0.24, b.cy - b.s * 0.34,
+    b.cx - b.s * 0.24, b.cy + b.s * 0.34,
+    b.cx + b.s * 0.36, b.cy, color.r, color.g, color.b)
+end
+
+fn _pause(b, color, w)
+  _path(b, [-0.18, -0.32, -0.18, 0.32], color, max(w, b.s * 0.16))
+  _path(b, [0.18, -0.32, 0.18, 0.32], color, max(w, b.s * 0.16))
+end
+
+fn _folder(b, color, w)
+  _path(b, [-0.4, 0.3, -0.4, -0.26, -0.06, -0.26, 0.04, -0.12, 0.4, -0.12, 0.4, 0.3, -0.4, 0.3], color, w)
+end
+
+fn _file(b, color, w)
+  _path(b, [-0.28, -0.38, 0.12, -0.38, 0.3, -0.16, 0.3, 0.38, -0.28, 0.38, -0.28, -0.38], color, w)
+  _path(b, [0.12, -0.38, 0.12, -0.16, 0.3, -0.16], color, w)
+end
+
+fn _warning(b, color, w)
+  _path(b, [0.0, -0.38, 0.4, 0.32, -0.4, 0.32, 0.0, -0.38], color, w)
+  _path(b, [0.0, -0.1, 0.0, 0.1], color, w)
+  draw_circle({x: b.cx, y: b.cy + b.s * 0.22}, max(1.0, w * 0.6), color)
+end
+
+fn _info(b, color, w)
+  _ring(b, color, w)
+  _path(b, [0.0, -0.02, 0.0, 0.22], color, w)
+  draw_circle({x: b.cx, y: b.cy - b.s * 0.2}, max(1.0, w * 0.6), color)
+end
+
+fn _star(b, color, w)
+  let pts = []
+  for i in range(0, 10) do
+    let a = -pi() / 2.0 + float(i) * pi() / 5.0
+    let rad = if i % 2 == 0 then b.s * 0.5 else b.s * 0.22 end
+    pts = append(pts, [b.cx + cos(a) * rad, b.cy + sin(a) * rad])
+  end
+  // `fill_polygon`, not `fill_poly`: a star is concave, and the fan fill would
+  // paint over its own notches.
+  fill_polygon(pts, color.r, color.g, color.b)
+end
+
+fn _trash(b, color, w)
+  _path(b, [-0.34, -0.22, 0.34, -0.22], color, w)
+  _path(b, [-0.14, -0.22, -0.14, -0.36, 0.14, -0.36, 0.14, -0.22], color, w)
+  _path(b, [-0.26, -0.22, -0.2, 0.36, 0.2, 0.36, 0.26, -0.22], color, w)
+end

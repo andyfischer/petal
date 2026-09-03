@@ -1,0 +1,336 @@
+// bloom_overlay — the things that float above a panel: tooltips, toasts,
+// dialogs, popovers, banners and loading skeletons.
+//
+// Overlays are the part of a UI where immediate mode usually goes wrong: the
+// dialog is drawn last but has to eat the input first, and the toast has to
+// outlive the frame that raised it. Both are handled here — dialogs claim
+// input through `bloom_interact.capture`, and toasts live in a module-level
+// queue with their own clocks, so `toast("Saved")` from anywhere is a complete
+// interaction.
+
+import ui: rect, pad, mix, over, draw_rect, draw_rect_rounded, draw_text, draw_shadow, draw_line
+import ui: clip_push, clip_pop, wrap_px
+import bloom_theme: theme, ts, ts_a, tone, hair, stroke, wash, dur, rate, text_in, divider
+import bloom_theme: defer_paint
+import bloom_motion: ease_to, ease_flag, enter, ease_out, ease_back, age, scale_rect, impulse
+import bloom_interact: probe, probe_over, capture, capture_release, is_captured, hovering
+import bloom_icon: icon
+import bloom_button: icon_button
+
+// ── Tooltip ───────────────────────────────────────────────────────────────
+
+// Rests over `anchor` for `delay` seconds, then fades in above it. Call it
+// late in the frame so it lands on top of what it describes.
+export fn tooltip(anchor, text)
+  tooltip(anchor, text, {})
+end
+
+export fn tooltip(anchor, text, opts)
+  let t = theme()
+  let over_it = hovering(anchor)
+  // The dwell timer is dt-based rather than a clock difference, so it behaves
+  // the same in a headless trace as on screen.
+  state dwell = 0.0
+  if over_it then
+    dwell = dwell + min(dt(), 0.05)
+  else
+    dwell = 0.0
+  end
+  let ready = dwell > field(opts, "delay", 0.4)
+  let k = ease_out(enter(ready, dur(t, 0.12)))
+  if k > 0.005 then
+    let size = field(opts, "size", t.font_sm)
+    let ink = over(t.overlay, t.text, 240)
+    let style = ts(t, size, ink)
+    let w = text_width(text, style) + t.pad_x * 2.0
+    let h = size + t.pad_y * 2.0
+    let x = clamp(anchor.x + anchor.w / 2.0 - w / 2.0, 4.0, float(screen_width()) - w - 4.0)
+    let above = anchor.y - h - 8.0 > 4.0
+    let y = if above then anchor.y - h - 8.0 + 4.0 * (1.0 - k) else anchor.y + anchor.h + 8.0 - 4.0 * (1.0 - k) end
+    let r = Rect(x, y, w, h)
+    // Through the late layer, so a tooltip on a control drawn early still
+    // lands on top of the panel drawn after it.
+    defer_paint(fn()
+      draw_shadow(r, {radius: t.radius_sm, blur: 14, spread: 0, dx: 0, dy: 4, color: #000000, a: int(60.0 * k)})
+      draw_rect_rounded(r, t.radius_sm, tone(t, t.overlay, 0.05), int(245.0 * k))
+      draw_text(text, {x: x + t.pad_x, y: y + t.pad_y}, ts_a(t, size, ink, 255.0 * k))
+    end)
+  end
+end
+
+// ── Toasts ────────────────────────────────────────────────────────────────
+// A queue anyone can push to, drawn wherever the app calls `toasts`. Each one
+// carries its own age, so they slide up as their neighbours expire.
+
+state var _toasts = []
+state var _toast_seq = 0
+
+// Raise a toast. `kind` is "info" | "success" | "warn" | "danger".
+export fn toast(text, kind)
+  set _toast_seq = (get _toast_seq) + 1
+  set _toasts = append(get _toasts, {id: get _toast_seq, text: text, kind: kind, age: 0.0})
+end
+
+export fn toast(text)
+  toast(text, "info")
+end
+
+export fn toast_count()
+  len(get _toasts)
+end
+
+export fn toasts_clear()
+  set _toasts = []
+end
+
+// Draw the stack in the bottom-right of `r` and expire finished toasts.
+// `opts`: {life (seconds), width, corner ("br" | "bl" | "tr" | "tl")}.
+export fn toasts(r)
+  toasts(r, {})
+end
+
+export fn toasts(r, opts)
+  let t = theme()
+  let life = field(opts, "life", 3.2)
+  let w = field(opts, "width", 280)
+  let h = field(opts, "height", 44)
+  let corner = field(opts, "corner", "br")
+  let step = min(dt(), 0.05)
+  var kept = []
+  var i = 0
+  for item in get _toasts do
+    let a = item.age + step
+    // in: 0→1 over 0.22s. out: the last 0.3s of its life.
+    let ein = ease_out(clamp(a / dur(t, 0.22), 0.0, 1.0))
+    let eout = 1.0 - ease_out(clamp((a - (life - 0.3)) / 0.3, 0.0, 1.0))
+    let k = ein * eout
+    let slot = float(i)
+    let ty = if corner == "tr" || corner == "tl" then
+      r.y + t.space + slot * (h + t.gap)
+    else
+      r.y + r.h - t.space - (slot + 1.0) * (h + t.gap)
+    end
+    let tx = if corner == "bl" || corner == "tl" then
+      r.x + t.space - 24.0 * (1.0 - ein)
+    else
+      r.x + r.w - w - t.space + 24.0 * (1.0 - ein)
+    end
+    let br = Rect(tx, ty, w, h)
+    let accent = _kind_color(t, item.kind)
+    draw_shadow(br, {radius: t.radius, blur: 20, spread: 0, dx: 0, dy: 6, color: #000000, a: int(60.0 * k)})
+    draw_rect_rounded(br, t.radius, tone(t, t.panel, 0.10), int(250.0 * k))
+    draw_rect_rounded(Rect(br.x, br.y, 3.0, br.h), 2, accent, int(255.0 * k))
+    icon(_kind_icon(item.kind), Rect(br.x + t.gap + 4.0, br.y + (h - 16.0) / 2.0, 16, 16), accent)
+    draw_text(item.text, {x: br.x + t.gap + 28.0, y: br.y + (h - t.font_md) / 2.0},
+      ts_a(t, t.font_md, t.text, 255.0 * k))
+    // The progress hairline draining along the bottom edge.
+    let left = clamp(1.0 - a / life, 0.0, 1.0)
+    draw_line({x: br.x, y: br.y + br.h - 1.0}, {x: br.x + br.w * left, y: br.y + br.h - 1.0},
+      accent, int(120.0 * k), 1)
+    let close = icon_button(Rect(br.x + br.w - 28.0, br.y + (h - 22.0) / 2.0, 22, 22), "close",
+      {ripple: false})
+    if a < life && !close then
+      set kept = append(kept, {id: item.id, text: item.text, kind: item.kind, age: a})
+    end
+    set i = i + 1
+  end
+  set _toasts = kept
+end
+
+fn _kind_color(t, kind)
+  match kind
+    when "success" -> t.success
+    when "warn" -> t.warn
+    when "danger" -> t.danger
+    when _ -> t.accent
+  end
+end
+
+fn _kind_icon(kind)
+  match kind
+    when "success" -> "check"
+    when "warn" -> "warning"
+    when "danger" -> "warning"
+    when _ -> "info"
+  end
+end
+
+// ── Dialog ────────────────────────────────────────────────────────────────
+
+state var _dialog = ""
+
+export fn dialog_open(id)
+  set _dialog = id
+end
+
+export fn dialog_close()
+  set _dialog = ""
+  capture_release()
+end
+
+export fn dialog_is_open(id)
+  (get _dialog) == id
+end
+
+// Draw the modal `id` centered on the screen and return
+// `{open, content, closed}`: draw your own controls into `content` while
+// `open`. Escape, the close button, or a click on the backdrop dismisses it.
+//
+//   let d = dialog("confirm", 380, 170, "Delete branch?")
+//   if d.open then
+//     text_in("This cannot be undone.", d.content, …)
+//     if button(…, "Delete", {variant: "danger"}) then dialog_close() end
+//   end
+export fn dialog(id, w, h, title)
+  dialog(id, w, h, title, {})
+end
+
+export fn dialog(id, w, h, title, opts)
+  let t = theme()
+  let open = dialog_is_open(id)
+  let k = enter(open, dur(t, 0.16))
+  if !open && k <= 0.0 then
+    {open: false, content: Rect(0, 0, 0, 0), closed: false}
+  else
+    if open then
+      capture(id)
+    end
+    let e = ease_out(k)
+    // The backdrop is genuinely translucent (there is content under it that
+    // this code did not paint), which is the one case where compositing a tint
+    // is not an option.
+    draw_rect(Rect(0, 0, screen_width(), screen_height()), #000000, int(120.0 * e))
+    let sw = float(screen_width())
+    let sh = float(screen_height())
+    // Pops in with a slight overshoot; leaves without one, because a dialog
+    // that bounces on its way out reads as a bug.
+    let scale = if open then 0.94 + 0.06 * ease_back(k) else 0.96 + 0.04 * e end
+    let box = scale_rect(Rect((sw - w) / 2.0, (sh - h) / 2.0 + 10.0 * (1.0 - e), w, h), scale)
+    draw_shadow(box, {radius: t.radius_lg, blur: 40, spread: 0, dx: 0, dy: 18, color: #000000, a: int(90.0 * e)})
+    draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
+    stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
+    let head_h = if title == "" then 0.0 else float(t.row_h) + 8.0 end
+    var closed = false
+    if title != "" then
+      let head = Rect(box.x + t.pad_x, box.y, box.w - t.pad_x * 2.0, head_h)
+      text_in(title, head, ts_a(t, t.font_lg, t.text, 255.0 * e))
+      if icon_button(Rect(box.x + box.w - 34.0, box.y + 9.0, 24, 24), "close") then
+        set closed = true
+      end
+      divider(t, Rect(box.x, box.y + head_h - 4.0, box.w, 8), "x")
+    end
+    if open then
+      if key_pressed("escape") then
+        set closed = true
+      end
+      // A press on the backdrop, outside the box.
+      if mouse_pressed(0) && !(mouse_x() >= box.x && mouse_x() < box.x + box.w &&
+        mouse_y() >= box.y && mouse_y() < box.y + box.h) then
+        set closed = true
+      end
+    end
+    if closed then
+      dialog_close()
+    end
+    {open: open, closed: closed,
+      content: Rect(box.x + t.pad_x, box.y + head_h + t.space,
+        box.w - t.pad_x * 2.0, box.h - head_h - t.space * 2.0)}
+  end
+end
+
+// ── Popover ───────────────────────────────────────────────────────────────
+
+// A floating card anchored under `anchor`, for a filter panel or a color
+// picker: same entrance as a menu, but you draw the contents. Returns
+// `{open, content}`. Toggle it with `popover_open` / `popover_close`.
+
+state var _popover = ""
+
+export fn popover_open(id)
+  set _popover = id
+end
+
+export fn popover_close()
+  set _popover = ""
+  capture_release()
+end
+
+export fn popover_is_open(id)
+  (get _popover) == id
+end
+
+export fn popover(id, anchor, w, h)
+  let t = theme()
+  let open = popover_is_open(id)
+  let k = enter(open, dur(t, 0.14))
+  if !open && k <= 0.0 then
+    {open: false, content: Rect(0, 0, 0, 0)}
+  else
+    if open then
+      capture(id)
+    end
+    let e = ease_out(k)
+    let x = clamp(anchor.x, 4.0, max(4.0, float(screen_width()) - w - 4.0))
+    let y = anchor.y + anchor.h + 6.0 - 5.0 * (1.0 - e)
+    let box = Rect(x, y, w, h * (0.96 + 0.04 * e))
+    draw_shadow(box, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10, color: #000000, a: int(70.0 * e)})
+    draw_rect_rounded(box, t.radius_lg, tone(t, t.panel, 0.06), int(255.0 * e))
+    stroke(t, box, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
+    if open && key_pressed("escape") then
+      popover_close()
+    end
+    if open && mouse_pressed(0) && !(mouse_x() >= box.x && mouse_x() < box.x + box.w &&
+      mouse_y() >= box.y && mouse_y() < box.y + box.h) then
+      popover_close()
+    end
+    {open: open, content: pad(box, t.pad_x, t.pad_y)}
+  end
+end
+
+// ── Banner ────────────────────────────────────────────────────────────────
+
+// An inline status strip that slides down into `r` when `show` turns true.
+// Returns true while it is visible (so the caller can leave room for it).
+export fn banner(r, text, kind, show)
+  let t = theme()
+  let k = ease_out(enter(show, dur(t, 0.2)))
+  if k > 0.005 then
+    let c = _kind_color(t, kind)
+    let box = Rect(r.x, r.y - (1.0 - k) * r.h, r.w, r.h)
+    clip_push(r, 0)
+    draw_rect_rounded(box, t.radius, over(t.panel, c, 40), int(255.0 * k))
+    draw_rect_rounded(Rect(box.x, box.y, 3.0, box.h), 2, c, int(255.0 * k))
+    icon(_kind_icon(kind), Rect(box.x + t.gap + 4.0, box.y + (box.h - 16.0) / 2.0, 16, 16), c)
+    draw_text(text, {x: box.x + t.gap + 28.0, y: box.y + (box.h - t.font_md) / 2.0},
+      ts_a(t, t.font_md, t.text, 255.0 * k))
+    clip_pop()
+  end
+  k > 0.005
+end
+
+// ── Skeleton ──────────────────────────────────────────────────────────────
+
+// The shimmering placeholder a row shows while its data is in flight. The
+// sweep is dt-driven, so it also shimmers under the headless harness.
+export fn skeleton(r)
+  skeleton(r, {})
+end
+
+export fn skeleton(r, opts)
+  let t = theme()
+  let radius = field(opts, "radius", t.radius_sm)
+  let base = tone(t, t.panel, 0.06)
+  draw_rect_rounded(r, radius, base)
+  let ph = fract(age() * 0.7 + field(opts, "phase", 0.0))
+  let bw = max(24.0, r.w * 0.32)
+  let x = r.x - bw + (r.w + bw * 2.0) * ph
+  clip_push(r, radius)
+  // Three bands of decreasing alpha stand in for a gradient sweep, so a host
+  // with no gradient primitive still shows movement.
+  for i in range(0, 3) do
+    let f = 1.0 - float(i) / 3.0
+    draw_rect_rounded(Rect(x + float(i) * bw / 6.0, r.y, bw * (1.0 - float(i) * 0.2), r.h),
+      radius, mix(base, t.text, 0.10), int(90.0 * f))
+  end
+  clip_pop()
+end

@@ -12,7 +12,7 @@ them (see [refactor-verification.md](refactor-verification.md)).
 ```
 petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
-             [--out trace.jsonl] [--error-format full|bare]
+             [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
 ```
 
 Build it with `cd petal-ui && cargo build`; the binary lands at
@@ -27,10 +27,16 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
 | `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
+| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I petal-libs/bloom/src`). |
 
 Imports resolve relative to the app's own directory, so an app that imports a
 sibling module (`examples/games/snake/`-style layouts) runs from any working
-directory.
+directory. A library that lives elsewhere — one of the
+[`petal-libs/`](../../petal-libs/README.md) — comes in through `-I`:
+
+```
+petal-ui-run examples/ui/bloom-gallery/app.ptl -I petal-libs/bloom/src --frames 120
+```
 
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is
 written first, with `error` set, and the run stops there), **2** a compile or

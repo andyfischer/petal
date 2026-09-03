@@ -1163,6 +1163,10 @@ pub struct PanelHost {
     /// (the same swap as the providers) and flushed to disk after it, so a
     /// write costs a rewrite only on the frames that actually change something.
     store: Option<crate::panel_store::PanelStore>,
+    /// (path, signature) of every *imported* module file the program compiled
+    /// from, so editing a module a panel imports hot-reloads the panel too. A
+    /// single-file panel leaves this empty and costs nothing.
+    import_sigs: Vec<(PathBuf, Option<FileSig>)>,
     /// The call site of each command the last [`frame`](Self::frame) returned,
     /// index-aligned with that command list. Empty while tracing is off.
     ///
@@ -1189,10 +1193,15 @@ impl PanelHost {
             .map_err(|e| format!("failed to read {}: {}", path.display(), e))?;
 
         let mut env = new_panel_env();
-        let program_id = env.load_program(&source)?;
+        // `load_program_at`, not `load_program`: a panel script may `import` a
+        // module sitting next to it, which is how a multi-file panel app (and a
+        // vendored copy of a Petal library) is laid out. Without the path there
+        // is no importing directory to resolve against and every such import
+        // fails.
+        let program_id = env.load_program_at(&source, path)?;
         let stack_id = env.create_stack(program_id)?;
 
-        Ok(PanelHost {
+        let mut host = PanelHost {
             env,
             program_id,
             stack_id,
@@ -1216,8 +1225,11 @@ impl PanelHost {
             role_metrics: None,
             trace_origins: false,
             store: Some(crate::panel_store::PanelStore::for_script(path)),
+            import_sigs: Vec::new(),
             frame_origins: Vec::new(),
-        })
+        };
+        host.import_sigs = host.collect_import_sigs();
+        Ok(host)
     }
 
     /// A **placeholder** host for a script that does not compile: an empty
@@ -1281,6 +1293,7 @@ impl PanelHost {
             // exactly the scoping key the store wants — so a GPP app's drawer
             // persists under its own name like any other panel.
             store: Some(crate::panel_store::PanelStore::for_script(Path::new(name))),
+            import_sigs: Vec::new(),
             frame_origins: Vec::new(),
         })
     }
@@ -1704,16 +1717,45 @@ impl PanelHost {
                 return Ok(false);
             }
         };
-        if self.last_sig == Some(sig) {
+        let imports_changed = self.imports_changed();
+        if self.last_sig == Some(sig) && !imports_changed {
             return Ok(false);
         }
         self.last_sig = Some(sig);
 
         let source = fs::read_to_string(&self.path)
             .map_err(|e| format!("failed to read {}: {}", self.path.display(), e))?;
-        let new_program = self.env.compile_program(self.program_id, &source)?;
+        // Recompile the same way it was loaded, so a panel that imports a
+        // sibling module still resolves it after a hot reload.
+        let new_program = self
+            .env
+            .compile_program_at(self.program_id, &source, &self.path)?;
         self.env.transfer_state(self.stack_id, new_program)?;
+        self.import_sigs = self.collect_import_sigs();
         Ok(true)
+    }
+
+    /// The disk files this program's *imported* modules came from, with their
+    /// current signatures. Modules a host registered in memory (the `ui`
+    /// prelude, the bloom library) have no origin and are skipped: nothing on
+    /// disk backs them, and they change only when Garden itself is rebuilt.
+    fn collect_import_sigs(&self) -> Vec<(PathBuf, Option<FileSig>)> {
+        self.env
+            .module_manifest(self.program_id)
+            .into_iter()
+            .filter_map(|entry| entry.origin)
+            .filter(|origin| origin != &self.path)
+            .map(|origin| {
+                let sig = stat_sig(&origin);
+                (origin, sig)
+            })
+            .collect()
+    }
+
+    fn imports_changed(&self) -> bool {
+        self.import_sigs
+            .iter()
+            .any(|(path, sig)| stat_sig(path) != *sig)
     }
 
     /// Recompile the panel from an **in-memory** source string, preserving Petal
@@ -2501,6 +2543,10 @@ fn is_callable_json(v: &serde_json::Value) -> bool {
 fn new_panel_env() -> Env {
     let mut env = Env::new();
     register_panel_natives(&mut env);
+    // The bloom component library, as in-memory modules a panel can `import`.
+    // Registered rather than put on the module path because a panel-mode GPP
+    // drawer arrives as pushed source with no directory of its own.
+    crate::bloom::register(&mut env);
     env.observations_mut().enable();
     env
 }

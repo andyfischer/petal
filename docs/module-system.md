@@ -248,6 +248,18 @@ right file.
 - Distributing a module as compiled IR. Programs always compile from
   source.
 
+## Shipping a library
+
+A library written in Petal is a directory of modules plus, usually, a facade
+module that re-exports them (`export let button = bloom_button.button` carries
+a function and its whole overload set). Users reach it through `-I`,
+`PETAL_PATH`, a copy beside their script, or a host's `register_module`.
+[`petal-libs/`](../petal-libs/README.md) is where this repo's own live, and
+[Sharing Petal libraries](dev/sharing-petal-libraries.md) covers what works
+and what a library author has to work around today — starting with the fact
+that a host's implicit imports reach the entry file only, so a library module
+must `import` the host prelude explicitly.
+
 ## Embedding
 
 Hosts that embed Petal manage modules through `Env`:

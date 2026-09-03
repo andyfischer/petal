@@ -59,7 +59,7 @@ impl Headless {
     }
 
     pub fn with_size(source: &str, width: i32, height: i32) -> Result<Self, String> {
-        Self::build(source, None, width, height)
+        Self::build(source, None, width, height, &[])
     }
 
     /// Load a script from a file at an explicit drawable size. Imports resolve
@@ -71,9 +71,22 @@ impl Headless {
         width: i32,
         height: i32,
     ) -> Result<Self, String> {
+        Self::from_file_with_paths(path, width, height, &[])
+    }
+
+    /// The same, plus extra module search directories — the `-I` of the CLI.
+    /// A shared Petal library (a component set, a math module) lives outside
+    /// the app's own directory, and without this the only way to run such an
+    /// app headlessly is to copy the library next to it.
+    pub fn from_file_with_paths(
+        path: &std::path::Path,
+        width: i32,
+        height: i32,
+        module_paths: &[std::path::PathBuf],
+    ) -> Result<Self, String> {
         let source =
             std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Self::build(&source, Some(path), width, height)
+        Self::build(&source, Some(path), width, height, module_paths)
     }
 
     fn build(
@@ -81,6 +94,7 @@ impl Headless {
         origin: Option<&std::path::Path>,
         width: i32,
         height: i32,
+        module_paths: &[std::path::PathBuf],
     ) -> Result<Self, String> {
         let mut env = Env::new();
         crate::register_all(&mut env);
@@ -90,6 +104,9 @@ impl Headless {
             && !dir.as_os_str().is_empty()
         {
             env.add_module_path(dir.to_path_buf());
+        }
+        for dir in module_paths {
+            env.add_module_path(dir.clone());
         }
         let program_id = match origin {
             Some(path) => env.load_program_at(source, path)?,

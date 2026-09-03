@@ -2,8 +2,10 @@
 // `b` calls navigate_back() (the in-script history API); the host's Ctrl+[ /
 // Ctrl+] and :back / :forward drive the same stack.
 //
-// Like home.ptl this paints with `ui_theme()` only, so it also runs under a
-// bare `petal-ui-run`.
+// Like home.ptl this paints with `ui_theme()` and bloom, so it also runs under
+// a bare `petal-ui-run -I petal-libs/bloom/src`.
+import bloom
+
 let T = ui_theme()
 let w = screen_width()
 let h = screen_height()
@@ -18,13 +20,15 @@ draw_text("DETAIL", {x: c.x, y: c.y}, {size: T.font_xl, color: T.text, weight: 7
 let tag = "screen 2 of 2"
 pill(c.x + c.w - text_width(tag, T.font_sm) - 14, c.y + 4, tag, T.warn)
 
-draw_text("Press b to go back to HOME.", {x: c.x, y: c.y + 44}, T.font_md, T.text)
 draw_text("The host owns the history stack; :forward returns here.",
-          {x: c.x, y: c.y + 68}, T.font_sm, T.dim)
+          {x: c.x, y: c.y + 44}, T.font_sm, T.dim)
+
+let back = bloom.button(rect(c.x, c.y + 74, 130, 30), "Back to HOME",
+                        {icon: "chevron_left", id: "back"})
 
 hint_bar(rect(0, h - 26, w, 26),
          [hint("b", "back to HOME"), hint("ctrl+[", ":back"), hint("ctrl+]", ":forward")])
 
-if key_pressed("b") then
+if back || key_pressed("b") then
   navigate_back()
 end

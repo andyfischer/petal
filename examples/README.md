@@ -9,10 +9,11 @@ Runnable Petal programs, grouped by what they are:
 | [`games/`](games/) | Games — pong, breakout, snake, and the SDL-hosted side-scroller |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
+| [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |
 | [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |
 
-The apps under `games/`, `productivity/`, and `dashboards/` are Garden panel
-apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launch.sh`
+The apps under `games/`, `productivity/`, `dashboards/`, and `ui/` are Garden
+panel apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launch.sh`
 that starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
 built and tested. The exception is [`games/side-scroller/`](games/side-scroller/),
 which runs on the `petal-desktop-sdl` integration via its own `run-game.sh`.

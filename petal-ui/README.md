@@ -47,6 +47,11 @@ input events → bind_frame_info / bind_input → clear_draw_commands
 See [docs/components.md](docs/components.md) for the full reference: theme,
 layout, every widget, motion helpers, draw primitives and layers.
 
+For a component layer *above* this one, written in Petal rather than Rust, see
+[`petal-libs/bloom`](../petal-libs/bloom/README.md): buttons, menus, controls
+and overlays that animate by default, built on these same primitives. The two
+compose in one script.
+
 ## Embedding
 
 ```rust

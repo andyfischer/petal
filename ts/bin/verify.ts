@@ -61,6 +61,13 @@ interface Plan {
     /** Which A/B axis the plan is written for; the CLI flags must match. */
     mode: 'source' | 'binary';
     corpus: string[];
+    /**
+     * Extra module search directories for UI apps, relative to each side's
+     * root (passed to `petal-ui-run -I`). An app that imports a shared Petal
+     * library — `petal-libs/bloom/src`, say — cannot compile without them, and
+     * they are per-side so a source A/B resolves each side's own copy.
+     */
+    include?: string[];
     size?: string;
     steps: PlanStep[];
 }
@@ -71,6 +78,8 @@ interface Side {
     root: string;
     petal: string;
     uiRun: string;
+    /** `-I` arguments for the UI driver: this side's copy of `plan.include`. */
+    includeArgs: string[];
 }
 
 interface Target {
@@ -437,7 +446,8 @@ function driverArgs(kind: Kind, side: Side, path: string, seed: number, sc: Scen
         return {
             bin: side.uiRun,
             args: [path, '--seed', String(seed), '--frames', String(frames),
-                   '--size', size, '--error-format', 'bare', ...sc.args],
+                   '--size', size, '--error-format', 'bare',
+                   ...side.includeArgs, ...sc.args],
         };
     }
     return {
@@ -627,7 +637,8 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
     // discovered by running it rather than by a hard-coded list.
     const probe = kind === 'ui'
         ? await exec(ctx.after.uiRun, [t.after, '--frames', '1', '--seed', '1',
-                                       '--error-format', 'bare', '--out', '/dev/null'])
+                                       '--error-format', 'bare', '--out', '/dev/null',
+                                       ...ctx.after.includeArgs])
         : await exec(ctx.after.petal, ['run', '--seed', '1', '--error-format', 'bare', t.after]);
     const probeBin = kind === 'ui' ? ctx.after.uiRun : ctx.after.petal;
     const probeFailed = driverGuard(t.rel, kind, steps, [{ ...probe, bin: probeBin }]);
@@ -779,21 +790,25 @@ async function main() {
     const defaultPetal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
     const defaultUi = join(repoRoot, 'petal-ui', 'target', 'debug', 'petal-ui-run');
 
+    /** `-I <dir>` pairs for one side, from the plan's `include` list. */
+    const includeFor = (root: string): string[] =>
+        (plan.include ?? []).flatMap(dir => ['-I', join(root, dir)]);
+
     let before: Side, after: Side;
     if (opts.beforeBin || opts.afterBin) {
         if (plan.mode === 'source') fail(`plan "${plan.name}" is a source A/B plan; use --before/--after`);
         before = { label: 'before', root: opts.after, petal: opts.beforeBin ?? defaultPetal,
-                   uiRun: opts.beforeUiBin ?? defaultUi };
+                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
         after = { label: 'after', root: opts.after, petal: opts.afterBin ?? defaultPetal,
-                  uiRun: opts.afterUiBin ?? defaultUi };
+                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
     } else {
         if (!opts.before) fail('source A/B needs --before <git-ref|dir> (or use --before-bin/--after-bin)');
         if (plan.mode === 'binary') fail(`plan "${plan.name}" is a binary A/B plan; use --before-bin/--after-bin`);
         const beforeRoot = materialize(opts.before, outDir);
         before = { label: 'before', root: beforeRoot, petal: opts.beforeBin ?? defaultPetal,
-                   uiRun: opts.beforeUiBin ?? defaultUi };
+                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(beforeRoot) };
         after = { label: 'after', root: opts.after, petal: opts.afterBin ?? defaultPetal,
-                  uiRun: opts.afterUiBin ?? defaultUi };
+                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
     }
     for (const s of [before, after]) {
         if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd rust && cargo build)`);

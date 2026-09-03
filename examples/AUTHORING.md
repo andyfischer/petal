@@ -14,6 +14,11 @@ reference material lives elsewhere; link to it rather than guessing:
 - The `ui` prelude (widgets, theme, layout, text and color helpers):
   [petal-ui/docs/components.md](../petal-ui/docs/components.md), with
   [petal-ui/prelude/ui.ptl](../petal-ui/prelude/ui.ptl) as the source of truth.
+- The `bloom` component library (buttons, menus, controls and overlays that
+  animate by default, in pure Petal):
+  [petal-libs/bloom/docs/components.md](../petal-libs/bloom/docs/components.md).
+  Garden registers its modules, so a panel app can `import bloom` with no
+  setup; outside Garden, add `-I petal-libs/bloom/src`.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):
   [garden/docs/petal-graphical-panels.md](../garden/docs/petal-graphical-panels.md).
 - The debug server (every endpoint):

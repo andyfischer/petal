@@ -35,10 +35,16 @@
 // `open_button`, `ROW_H` and `last_action` are the handles the integration
 // test drives this screen by — the script publishes nothing.
 //
-// Visually this is built on the petal-ui component library (prelude level 3,
-// petal-ui/docs/components.md): `ui_theme()` mirrors Garden's palette
-// automatically, buttons/hint bar come from the prelude, and hierarchy uses
-// the theme's type scale (Garden honors per-draw text sizes).
+// Visually this is built on two layers. The host layer is petal-ui (prelude
+// level 3, petal-ui/docs/components.md): `ui_theme()` mirrors Garden's palette
+// automatically, the hint bar and the text helpers come from the prelude, and
+// hierarchy uses the theme's type scale. On top of it sits **bloom**
+// (petal-libs/bloom), the pure-Petal component library Garden registers as
+// importable modules — the two buttons, the section count chips, the loading
+// skeletons and the row highlight's fade all come from there, and every one of
+// them animates without this file holding any animation state.
+
+import bloom
 
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state selected = 0
@@ -115,9 +121,12 @@ let folder_label = "Open Folder…"
 // Written as plain `{x, y, w, h}` records rather than `rect(…)`: every rect-taking
 // native accepts either, but only a record survives into /state → panel.values,
 // and a test that clicks Open by reading its geometry beats one that hardcodes it.
-let open_button = {x: col_x, y: btn_y, w: text_width(open_label, FS) + 32, h: BTN_H}
+// The icon each button carries costs about one label-height of width, so the
+// two are measured with it rather than being sized for text and then cropping
+// the glyph.
+let open_button = {x: col_x, y: btn_y, w: text_width(open_label, FS) + 52, h: BTN_H}
 let folder_button = {x: open_button.x + open_button.w + 10, y: btn_y,
-  w: text_width(folder_label, FS) + 32, h: BTN_H}
+  w: text_width(folder_label, FS) + 52, h: BTN_H}
 
 let content_top = btn_y + BTN_H + 26
 let content_rect = {x: col_x, y: content_top, w: col_w, h: h - content_top - HB_H - 6}
@@ -205,16 +214,17 @@ clear(T.bg.r, T.bg.g, T.bg.b)
 draw_text("Garden", {x: col_x, y: title_y}, {size: T.font_xl, color: T.accent, weight: 700})
 draw_text("a place to start", {x: col_x, y: title_y + 32}, T.font_md, T.dim)
 
-// Two prelude buttons (hover/press eased by the library): the primary Open is
-// the filled accent button, the folder one the plain themed pill — same shape,
-// so the pair reads as one control group.
-if button(open_button, open_label,
-          {bg: T.accent, hover: mix(T.accent, T.text, 0.2),
-           fg: contrast_text(T.accent), outline: T.accent, size: FS}) then
+// Two bloom buttons: the primary Open is the filled accent one, the folder its
+// plain twin — same shape and size, so the pair reads as one control group.
+// Both ripple from the point that was clicked and take Tab focus (`id`), which
+// is what makes the start screen reachable without a mouse.
+if bloom.button(open_button, open_label,
+                {variant: "primary", icon: "file", size: FS, id: "open_file"}) then
   last_action = "open_file_dialog"
   mutate("open_file_dialog", { mode: "file" })
 end
-if button(folder_button, folder_label, {size: FS}) then
+if bloom.button(folder_button, folder_label,
+                {icon: "folder", size: FS, id: "open_folder"}) then
   last_action = "open_file_dialog"
   mutate("open_file_dialog", { mode: "folder" })
 end
@@ -231,7 +241,10 @@ clip(content_rect.x, content_rect.y, content_rect.w, content_rect.h)
 fn draw_heading(label, count, y)
   draw_text(label, {x: col_x, y: y}, {size: T.font_sm, color: T.muted, weight: 600, spacing: 0.8})
   if count > 0 then
-    draw_text_right("{count}", col_x + col_w, y + 1, T.font_sm, T.dim)
+    // A bloom chip rather than a bare number, right-aligned by asking the
+    // library how wide it will be before drawing it.
+    let cw = bloom.chip_width("{count}", {size: T.font_sm})
+    bloom.chip(col_x + col_w - cw, y - 3, "{count}", {size: T.font_sm, color: T.muted})
   end
   draw_line({x: col_x, y: y + 20}, {x: col_x + col_w, y: y + 20}, T.outline)
 end
@@ -240,16 +253,26 @@ draw_heading("RECENT PROJECTS", project_count, content_top + proj_head - scroll_
 draw_heading("RECENT FILES", file_count, content_top + file_head - scroll_px)
 draw_heading("RECENT PULL REQUESTS", pr_count, content_top + pr_head - scroll_px)
 
+// While the recents query is still in flight there is nothing to say yet, so
+// the sections show bloom's shimmering skeleton rows rather than the "nothing
+// here" copy they would otherwise flash for a frame or two.
+if !recents_ready then
+  for i in range(0, 3) do
+    bloom.skeleton(rect(col_x, content_top + proj_head + HEAD_H + i * 28 - scroll_px,
+                        col_w * 0.6, 16), {phase: i * 0.18})
+  end
+end
+
 // An empty section says so rather than collapsing — on a first launch all three
 // are empty, and three headings over blank space would read as a failure.
 let hint_fg = mix(T.dim, T.bg, 0.35)
-if project_count == 0 then
+if project_count == 0 && recents_ready then
   draw_text("No recent projects yet", {x: col_x, y: content_top + proj_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
-if file_count == 0 then
+if file_count == 0 && recents_ready then
   draw_text("No recent files yet", {x: col_x, y: content_top + file_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
-if pr_count == 0 then
+if pr_count == 0 && recents_ready then
   draw_text("No recent pull requests yet", {x: col_x, y: content_top + pr_head + HEAD_H - scroll_px}, FS, hint_fg)
 end
 
@@ -259,12 +282,19 @@ for i in range(0, row_count) do
   let row_r = rect(content_rect.x, ry, content_rect.w, ROW_H)
   // Cull rows scrolled out of the viewport: nothing below draws for them.
   if ry + ROW_H > content_rect.y && ry < content_rect.y + content_rect.h then
-    if i == selected then
-      draw_rect_rounded(row_r, T.radius_sm, T.selection)
+    // The selection and the hover wash both fade, through bloom's per-callsite
+    // animators — one per row, because the call is inside this loop. A jump
+    // from the first row to the last is then a movement you can follow instead
+    // of a highlight teleporting.
+    let sel_k = bloom.ease_flag(i == selected, 22.0)
+    let hov_k = bloom.ease_flag(hovered(row_r) && i != selected, 16.0)
+    if sel_k > 0.01 then
+      draw_rect_rounded(row_r, T.radius_sm, mix(T.bg, T.selection, sel_k))
       // The keyboard focus ring: the selection is where Enter lands.
-      draw_rect_outline(row_r, T.accent, 90)
-    elsif hovered(row_r) then
-      draw_rect_rounded(row_r, T.radius_sm, T.hover)
+      draw_rect_outline(row_r, T.accent, int(90 * sel_k))
+    end
+    if hov_k > 0.01 then
+      draw_rect_rounded(row_r, T.radius_sm, mix(T.bg, T.hover, hov_k))
     end
     let name_c = if i == selected then T.text else T.muted end
     let tx = row_r.x + 16
@@ -303,3 +333,12 @@ if row_count > 0 then
   hint_bar(rect(0, h - HB_H, w, HB_H),
            [hint("↑↓/jk", "move"), hint("return", "open")])
 end
+
+// Last, so they land on top of everything: bloom tooltips, which appear only
+// after the pointer has rested on a button for a moment.
+bloom.tooltip(open_button, "Open a file in this pane")
+bloom.tooltip(folder_button, "Open a folder as the project")
+
+// bloom defers its overlay painting so a component can be written where it
+// belongs and still land on top; this is where that painting happens.
+bloom.overlays()

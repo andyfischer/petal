@@ -3,7 +3,7 @@
 //! ```text
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
-//!              [--out trace.jsonl] [--error-format full|bare]
+//!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -31,7 +31,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] [--out trace.jsonl] \
-[--error-format full|bare]";
+[--error-format full|bare] [-I <dir>]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -55,6 +55,9 @@ struct Args {
     host_data: Option<PathBuf>,
     out: Option<PathBuf>,
     bare_errors: bool,
+    /// Extra module search directories (`-I`), for an app that imports a
+    /// shared Petal library from outside its own directory.
+    module_paths: Vec<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -66,6 +69,7 @@ fn parse_args() -> Result<Args, String> {
     let mut host_data = None;
     let mut out = None;
     let mut bare_errors = false;
+    let mut module_paths: Vec<PathBuf> = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -93,6 +97,7 @@ fn parse_args() -> Result<Args, String> {
                 )
             }
             "--scenario" => scenario = Some(value("--scenario")?),
+            "-I" | "--include" => module_paths.push(PathBuf::from(value("-I")?)),
             "--host-data" => host_data = Some(PathBuf::from(value("--host-data")?)),
             "--out" => out = Some(PathBuf::from(value("--out")?)),
             "--error-format" => {
@@ -122,6 +127,7 @@ fn parse_args() -> Result<Args, String> {
         host_data,
         out,
         bare_errors,
+        module_paths,
     })
 }
 
@@ -141,7 +147,7 @@ fn run() -> Result<i32, String> {
         .or_else(|| scenario.as_ref().and_then(|s| s.frames))
         .unwrap_or(DEFAULT_FRAMES);
 
-    let mut ui = Headless::from_file_with_size(&args.app, size.0, size.1)?;
+    let mut ui = Headless::from_file_with_paths(&args.app, size.0, size.1, &args.module_paths)?;
     // Garden-panel host natives (`palette`, `query`, `text_view`, …) answer
     // as inert, deterministic stubs, so panel drawers run headlessly instead
     // of dying at `Unknown builtin` (see [`petal_ui::panel_stubs`]).

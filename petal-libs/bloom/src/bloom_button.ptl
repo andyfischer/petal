@@ -1,0 +1,263 @@
+// bloom_button — buttons and the controls shaped like them.
+//
+// The API is a value, not a callback: `if button(r, "Save") then …` is the
+// whole event model. Everything animates without being asked — hover wash,
+// press squash, a ripple from the point you actually clicked, a focus ring
+// that blooms outside the control — because the animators are per-callsite
+// `state` inside these functions and cost the caller nothing.
+//
+// `opts` (all optional):
+//   variant   "default" | "primary" | "danger" | "success" | "warn" | "ghost" | "quiet"
+//   icon      an icon name drawn before the label (see bloom_icon)
+//   icon_end  an icon name drawn after it — a chevron for a menu button
+//   size      label size in px           radius    corner radius
+//   pill      true for a fully round end  align    "center" | "left"
+//   disabled  inert and dimmed            loading  spinner instead of the label
+//   id        makes it focusable: Tab reaches it, Return/Space fires it
+//   ripple    false to switch the click ripple off
+
+import ui: rect, pad, mix, over, draw_rect_rounded, draw_text, draw_circle, clip_push, clip_pop
+import ui: draw_line
+import bloom_theme: theme, ts, tone, hair, stroke, wash, focus_ring, variant_fill, variant_ink, variant_solid, rate, dur
+import bloom_motion: ease_flag, ease_to, spring, impulse, scale_rect, ease_out, age
+import bloom_interact: probe, focusable, focused, focus_set, is_captured
+import bloom_icon: icon
+
+export fn button(r, label)
+  button(r, label, {})
+end
+
+export fn button(r, label, opts)
+  let t = theme()
+  let enabled = !field(opts, "disabled", false) && !field(opts, "loading", false)
+  let id = field(opts, "id", "")
+  let has_focus = if id == "" then false else focusable(id) end
+  let p = probe(r, enabled)
+  // Keyboard activation, for the focused button only. Space and Return both
+  // fire, as they do everywhere else.
+  let by_key = has_focus && enabled && !is_captured() &&
+  (key_pressed("return") || key_pressed("space"))
+  if p.press && id != "" then
+    focus_set(id)
+  end
+  let fired = p.click || by_key
+
+  let variant = field(opts, "variant", "default")
+  let radius = if field(opts, "pill", false) then int(r.h / 2) else field(opts, "radius", t.radius) end
+  let solid = variant_solid(variant)
+  let base = variant_fill(t, variant)
+  let ink = variant_ink(t, variant)
+
+  // The press squash: the face shrinks about its own center, the label does
+  // not. A whole-control scale reads as a wobble; a face-only one reads as
+  // something being pushed.
+  let squash = 1.0 - (1.0 - float(t.press_scale)) * p.active
+  let face = scale_rect(r, squash)
+
+  let dim = ease_flag(!enabled, rate(t, 14.0))
+  let fill = if variant == "ghost" || variant == "quiet" then
+    // A ghost has no face at rest: it is the hover wash alone.
+    mix(t.panel, t.text, (float(t.hover_pct) / 100.0) * (p.hot + p.active))
+  else
+    wash(t, base, p.hot, p.active)
+  end
+
+  if !solid && variant != "ghost" && variant != "quiet" then
+    stroke(t, face, radius, mix(hair(t), t.accent, p.hot * 0.35), 1, fill)
+  elsif solid || p.hot + p.active > 0.01 then
+    // A ghost at rest paints *nothing*: it is the hover wash alone, and an
+    // opaque panel-colored face would hide whatever it sits on (a selection
+    // marker under a rail item, a card's own tint).
+    draw_rect_rounded(face, radius, fill)
+  end
+  // A key-fired button has no pointer under it, so it flashes instead.
+  let flash = impulse(by_key, dur(t, 0.25))
+  if flash > 0.01 then
+    draw_rect_rounded(face, radius, mix(fill, t.text, 0.25 * flash))
+  end
+
+  if field(opts, "ripple", true) && enabled then
+    _ripple(face, radius, p, ink, dur(t, 0.5))
+  end
+  focus_ring(t, r, radius, if has_focus then ease_flag(true, rate(t, 22.0)) else ease_flag(false, rate(t, 22.0)) end)
+
+  let size = field(opts, "size", t.font_md)
+  let fg = mix(ink, t.bg, 0.55 * dim)
+  let style = ts(t, size, fg)
+  let icon_name = field(opts, "icon", "")
+  let icon_end = field(opts, "icon_end", "")
+  let loading = field(opts, "loading", false)
+
+  if loading then
+    _spinner(face.x + face.w / 2.0, face.y + face.h / 2.0, size * 0.45, fg)
+  else
+    // Icons and label are laid out as one run so the pair stays centered.
+    let gap = size * 0.45
+    let iw = if icon_name == "" then 0.0 else size * 1.05 + gap end
+    let ew = if icon_end == "" then 0.0 else size * 1.05 + gap end
+    let lw = text_width(label, style)
+    let total = iw + lw + ew
+    let x = if field(opts, "align", "center") == "left" then
+      face.x + t.pad_x
+    else
+      face.x + (face.w - total) / 2.0
+    end
+    let cy = face.y + face.h / 2.0
+    if icon_name != "" then
+      icon(icon_name, Rect(x, cy - size * 0.55, size * 1.05, size * 1.1), fg)
+    end
+    draw_text(label, {x: x + iw, y: cy - size / 2.0}, style)
+    if icon_end != "" then
+      icon(icon_end, Rect(x + iw + lw + gap, cy - size * 0.55, size * 1.05, size * 1.1), fg)
+    end
+  end
+  fired
+end
+
+// A circular icon-only button: toolbars, close buttons, steppers.
+export fn icon_button(r, name)
+  icon_button(r, name, {})
+end
+
+export fn icon_button(r, name, opts)
+  let t = theme()
+  let enabled = !field(opts, "disabled", false)
+  let p = probe(r, enabled)
+  let radius = field(opts, "radius", int(min(r.w, r.h) / 2))
+  let tint_c = field(opts, "color", t.muted)
+  let fill = mix(t.panel, t.text, (float(t.hover_pct) / 100.0) * (p.hot + p.active))
+  let face = scale_rect(r, 1.0 - (1.0 - float(t.press_scale)) * p.active)
+  draw_rect_rounded(face, radius, fill)
+  if field(opts, "ripple", true) && enabled then
+    _ripple(face, radius, p, tint_c, dur(t, 0.45))
+  end
+  let fg = mix(tint_c, t.text, p.hot * 0.6)
+  icon(name, pad(face, max(2.0, min(r.w, r.h) * 0.24)), if enabled then fg else t.dim end)
+  p.click
+end
+
+// A row of mutually exclusive options with a thumb that slides — and springs —
+// between them. Returns the new index.
+export fn segmented(r, labels, index)
+  segmented(r, labels, index, {})
+end
+
+export fn segmented(r, labels, index, opts)
+  let t = theme()
+  let n = max(1, len(labels))
+  let radius = field(opts, "radius", t.radius)
+  let size = field(opts, "size", t.font_sm)
+  draw_rect_rounded(r, radius, tone(t, t.panel, -0.35))
+  let inset = 3.0
+  let cell = (r.w - inset * 2.0) / float(n)
+  var chosen = index
+
+  // The thumb is a spring on the *index*, so a jump of three cells overshoots
+  // once and settles rather than sliding at a constant speed.
+  let pos = spring(float(index), {stiffness: 260.0, damping: 26.0})
+  let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
+  draw_rect_rounded(thumb, max(0, radius - 2), tone(t, t.panel, 0.10))
+
+  for i in range(0, n) do
+    let cr = Rect(r.x + inset + float(i) * cell, r.y + inset, cell, r.h - inset * 2.0)
+    let p = probe(cr)
+    if p.click then
+      set chosen = i
+    end
+    let on = if i == index then 1.0 else 0.0 end
+    let fg = mix(mix(t.muted, t.text, p.hot * 0.5), t.text, ease_to(on, rate(t, 20.0)))
+    let style = ts(t, size, fg)
+    let w = text_width(labels[i], style)
+    draw_text(labels[i], {x: cr.x + (cr.w - w) / 2.0, y: cr.y + (cr.h - size) / 2.0}, style)
+  end
+  chosen
+end
+
+// The width a chip will take, for a caller that has to place it before it
+// draws it (right-aligning one against an edge, flowing a row backwards).
+export fn chip_width(label, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_sm)
+  text_width(label, ts(t, size, t.text)) + size * 1.4
+end
+
+// A small status chip. Returns its rect so a row of them can flow.
+export fn chip(x, y, label)
+  chip(x, y, label, {})
+end
+
+export fn chip(x, y, label, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_sm)
+  let color = field(opts, "color", t.accent)
+  let style = ts(t, size, color)
+  let w = text_width(label, style) + size * 1.4
+  let h = size + 10
+  let r = Rect(x, y, w, h)
+  draw_rect_rounded(r, int(h / 2), over(t.panel, color, 38))
+  draw_text(label, {x: x + size * 0.7, y: y + (h - size) / 2.0}, style)
+  r
+end
+
+// A text link: underline grows from the left on hover.
+export fn link(x, y, label)
+  link(x, y, label, {})
+end
+
+export fn link(x, y, label, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_md)
+  let color = field(opts, "color", t.accent)
+  let style = ts(t, size, color)
+  let w = text_width(label, style)
+  let r = Rect(x, y, w, size + 4)
+  let p = probe(r)
+  draw_text(label, {x: x, y: y}, style)
+  let grow = ease_to(p.hot, rate(t, 20.0))
+  if grow > 0.01 then
+    let uy = y + size + 1
+    draw_line({x: x, y: uy}, {x: x + w * grow, y: uy}, color, 200, 1)
+  end
+  p.click
+end
+
+// ── Shared paint ──────────────────────────────────────────────────────────
+
+// The click ripple: a disc growing from where the pointer went down, clipped
+// to the control. It reads the press point out of `state` because the pointer
+// has usually moved by the time the animation is halfway through.
+fn _ripple(face, radius, p, ink, secs)
+  state ox = 0.0
+  state oy = 0.0
+  if p.press then
+    ox = float(mouse_x())
+    oy = float(mouse_y())
+  end
+  let e = impulse(p.press, secs)
+  if e > 0.005 then
+    let grow = ease_out(1.0 - e)
+    clip_push(face, radius)
+    draw_circle({x: ox, y: oy}, grow * max(face.w, face.h) * 0.9, ink, int(70.0 * e * e))
+    clip_pop()
+  end
+end
+
+// A spinning arc, drawn from short segments. It turns on `age()` rather than
+// the wall clock so it also spins in a headless trace.
+fn _spinner(cx, cy, radius, color)
+  let phase = age() * 2.4
+  let segs = 9
+  for i in range(0, segs) do
+    let a0 = phase + float(i) * 0.34
+    let a1 = a0 + 0.26
+    let fade = int(40 + 200 * float(i) / float(segs))
+    draw_line({x: cx + cos(a0) * radius, y: cy + sin(a0) * radius},
+      {x: cx + cos(a1) * radius, y: cy + sin(a1) * radius}, color, fade, 2)
+  end
+end
+
+// Exposed because a panel that rolls its own control still wants bloom's
+// spinner in it.
+export fn spinner(cx, cy, radius, color)
+  _spinner(cx, cy, radius, color)
+end

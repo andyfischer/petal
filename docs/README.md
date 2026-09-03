@@ -58,6 +58,7 @@ working documents and may contain point-in-time status.
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to compile, run, and inspect snippets |
 | [Performance](dev/performance.md) | Profiling tools, what the optimizer does, where the headroom is |
 | [Headless UI Runner](dev/headless-ui-run.md) | `petal-ui-run`: driving a UI app without a window and recording a frame trace |
+| [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library (`petal-libs/bloom`) needs from the language and from hosts |
 | [Refactor Verification](dev/refactor-verification.md) | Proving a large mechanical change was behavior-preserving |
 | [Releasing](dev/releasing.md) | How prebuilt `petal` binaries are built, published, and installed |
 | [Releasing Garden](dev/releasing-garden.md) | How the Garden Homebrew formula is updated |

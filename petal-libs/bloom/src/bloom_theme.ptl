@@ -1,0 +1,277 @@
+// bloom_theme — tokens and the painting primitives every bloom component
+// shares.
+//
+// bloom does not own a palette. It *derives* one: `theme()` starts from
+// whatever the host published through the `ui` prelude (Garden binds its
+// editor palette, the SDL and canvas hosts bind theirs, and a bare host falls
+// back to the built-in dark theme), then layers bloom's own tokens — motion
+// speed, the tone ramp, the focus ring — over it, then any override the app
+// set with `theme_set`. So a bloom panel looks native in its host on the first
+// frame with no setup, and an app that wants a look of its own overrides one
+// key rather than a palette.
+
+// A selective import list has to fit on one line, so the surface bloom takes
+// from `ui` is spelled out in a few of them rather than one paragraph.
+import ui: mix, over, contrast_text, ui_theme, pad
+import ui: draw_rect_rounded, draw_rect_outline, draw_line, draw_text, draw_shadow
+
+// bloom's own layer over the host palette. Numbers only — every color comes
+// from the host, so these stay right in a light theme and a dark one.
+let TOKENS = {
+  // Motion. Multiply every duration by `speed` to slow a whole UI down for a
+  // demo (`theme_set({speed: 3})`) or switch it off for a screenshot.
+  speed: 1.0,
+  hover_rate: 18.0,
+  press_rate: 34.0,
+  open_dur: 0.16,
+  press_scale: 0.97,
+  // Shape.
+  radius: 7,
+  radius_sm: 4,
+  radius_lg: 12,
+  radius_pill: 999,
+  // Rhythm.
+  pad_x: 12,
+  pad_y: 7,
+  gap: 8,
+  row_h: 30,
+  // Ink strengths, as percentages of the tint that produces them.
+  hover_pct: 8,
+  press_pct: 14,
+  ring_pct: 55,
+  border_pct: 14,
+}
+
+// The app's override layer, kept per program (and across a hot reload).
+state var _over = {}
+
+// The live token set: host palette → bloom tokens → app overrides.
+export fn theme()
+  let base = ui_theme()
+  let t = {}
+  for k in keys(base) do
+    t[k] = base[k]
+  end
+  for k in keys(TOKENS) do
+    t[k] = TOKENS[k]
+  end
+  for k in keys(get _over) do
+    t[k] = (get _over)[k]
+  end
+  t
+end
+
+// Override tokens for the whole program. Merges, so an app usually sets one or
+// two keys: `theme_set({accent: #7c5cff, radius: 10})`.
+export fn theme_set(rec)
+  let next = {}
+  for k in keys(get _over) do
+    next[k] = (get _over)[k]
+  end
+  for k in keys(rec) do
+    next[k] = rec[k]
+  end
+  set _over = next
+end
+
+export fn theme_reset()
+  set _over = {}
+end
+
+// A duration scaled by the theme's `speed`, and its rate counterpart. Every
+// component asks for its timings through these two, which is what makes
+// `theme_set({speed: 0})` freeze an entire UI for a pixel diff.
+export fn dur(t, seconds)
+  float(seconds) * float(field(t, "speed", 1.0))
+end
+
+export fn rate(t, r)
+  let s = float(field(t, "speed", 1.0))
+  if s <= 0.0 then 100000.0 else float(r) / s end
+end
+
+// ── The late layer ────────────────────────────────────────────────────────
+// A menu's popup belongs *above* everything, but the call that opens it sits
+// where its button is — usually early in the frame. Immediate mode has no
+// z-order to fix that with, so bloom keeps one: a component hands its painting
+// to `defer_paint` as a closure, and the closure runs later.
+//
+// An app that calls `overlays()` as its last line gets exactly correct
+// layering. An app that never calls it still gets its overlays painted — at
+// the first bloom overlay call of the *next* frame, which is where an
+// immediate-mode library would have drawn them anyway. So the ordering rule is
+// an improvement to opt into, never a way to lose a menu.
+
+state var _late = []
+state var _late_frame = -1
+
+export fn defer_paint(f)
+  if (get _late_frame) != frame_count() then
+    overlays()
+    set _late_frame = frame_count()
+  end
+  set _late = append(get _late, f)
+end
+
+// Paint everything deferred this frame. Call it last; calling it twice, or
+// when nothing is pending, does nothing.
+export fn overlays()
+  let queued = get _late
+  set _late = []
+  for f in queued do
+    f()
+  end
+end
+
+// ── Color ─────────────────────────────────────────────────────────────────
+
+// Lighten (`amt` > 0) or darken (`amt` < 0) toward the theme's own extremes,
+// so one call reads correctly in a dark theme and a light one: "toward the
+// text color" is lighter on dark and darker on light.
+export fn tone(t, c, amt)
+  let a = float(amt)
+  if a >= 0.0 then
+    mix(c, t.text, clamp(a, 0.0, 1.0))
+  else
+    mix(c, t.bg, clamp(-a, 0.0, 1.0))
+  end
+end
+
+// The readable ink for text sitting on `c`.
+export fn on(t, c)
+  contrast_text(c)
+end
+
+// The fill for a named variant. Components take `variant` rather than a color
+// so a whole UI restyles from the theme.
+export fn variant_fill(t, name)
+  match name
+    when "primary" -> t.accent
+    when "danger" -> t.danger
+    when "success" -> t.success
+    when "warn" -> t.warn
+    when _ -> t.panel
+  end
+end
+
+export fn variant_ink(t, name)
+  match name
+    when "primary" -> contrast_text(t.accent)
+    when "danger" -> contrast_text(t.danger)
+    when "success" -> contrast_text(t.success)
+    when "warn" -> contrast_text(t.warn)
+    when "quiet" -> t.muted
+    when _ -> t.text
+  end
+end
+
+// Whether a variant paints a filled face (and so must not also draw a border).
+export fn variant_solid(name)
+  name == "primary" || name == "danger" || name == "success" || name == "warn"
+end
+
+// ── Text ──────────────────────────────────────────────────────────────────
+
+// The one record a component measures *and* draws with. Mixing a bare
+// `draw_text(s, pos, size, color)` with `text_width(s, size)` measures a
+// different face than it paints, and every centered label lands off.
+export fn ts(t, size, color)
+  {size: size, font: field(t, "font", "ui"), color: color}
+end
+
+// The same, translucent. Alpha rides on the *color* record for styled text —
+// there is no `draw_text(s, pos, style, a)` overload, because the style is
+// where the host looks for it.
+export fn ts_a(t, size, color, a)
+  {size: size, font: field(t, "font", "ui"), color: {r: color.r, g: color.g, b: color.b, a: int(clamp(float(a), 0.0, 255.0))}}
+end
+
+export fn ts_bold(t, size, color)
+  {size: size, font: field(t, "font", "ui"), color: color, weight: 700}
+end
+
+// Draw `s` inside `r`, aligned. `align` is "left" | "center" | "right"; the
+// text is always vertically centered, which is what every control wants.
+export fn text_in(s, r, style, align)
+  let size = field(style, "size", 14)
+  let y = r.y + (r.h - size) / 2
+  let w = text_width(s, style)
+  let x = match align
+    when "center" -> r.x + (r.w - w) / 2
+    when "right" -> r.x + r.w - w
+    when _ -> r.x
+  end
+  draw_text(s, {x: x, y: y}, style)
+  w
+end
+
+export fn text_in(s, r, style)
+  text_in(s, r, style, "left")
+end
+
+// ── Surfaces ──────────────────────────────────────────────────────────────
+
+// A raised panel: shadow, face, hairline border. `level` 0 draws no shadow.
+export fn surface(t, r, radius, level)
+  if level > 0 then
+    let e = field(t, "elevation_" ++ str(min(level, 3)), {blur: 8, spread: 0, dy: 2, a: 48})
+    draw_shadow(r, {radius: radius, blur: field(e, "blur", 8), spread: field(e, "spread", 0),
+      dx: 0, dy: field(e, "dy", 2), color: #000000, a: field(e, "a", 48)})
+  end
+  draw_rect_rounded(r, radius, t.panel)
+  stroke(t, r, radius, hair(t))
+end
+
+// The border color a surface draws against its own background.
+export fn hair(t)
+  over(t.panel, t.text, field(t, "border_pct", 14) * 255 / 100)
+end
+
+// A rounded outline. There is no rounded-outline primitive, so this paints the
+// ring as a rounded rect with the face punched back out of it — the same trick
+// the `ui` prelude's rounded button uses, and the reason `width` is whole
+// pixels.
+export fn stroke(t, r, radius, color)
+  stroke(t, r, radius, color, 1, t.panel)
+end
+
+export fn stroke(t, r, radius, color, width, inner)
+  if radius <= 0 then
+    draw_rect_outline(r, color, 255, width)
+  else
+    draw_rect_rounded(r, radius, color)
+    draw_rect_rounded(pad(r, width), max(0, radius - width), inner)
+  end
+end
+
+// The interaction wash over a surface, composited (never translucent): two
+// translucent fills over one pixel do not add up to the color the design says.
+export fn wash(t, base, hot, active)
+  let h = float(field(t, "hover_pct", 8)) / 100.0
+  let p = float(field(t, "press_pct", 14)) / 100.0
+  mix(base, t.text, h * float(hot) + p * float(active))
+end
+
+// The focus ring: the accent bloomed *outside* the control, so focus never
+// changes a control's size or doubles its border.
+export fn focus_ring(t, r, radius, amount)
+  let a = clamp(float(amount), 0.0, 1.0)
+  if a > 0.005 then
+    let grow = 3.0 * a
+    let ring = Rect(r.x - grow, r.y - grow, r.w + grow * 2.0, r.h + grow * 2.0)
+    draw_rect_rounded(ring, radius + grow, t.accent, int(field(t, "ring_pct", 55) * 255 / 100 * a))
+    draw_rect_rounded(r, radius, t.panel)
+  end
+end
+
+// A hairline divider across the middle of `r`, horizontal or vertical.
+export fn divider(t, r, axis)
+  let c = hair(t)
+  if axis == "y" then
+    let x = r.x + r.w / 2
+    draw_line({x: x, y: r.y}, {x: x, y: r.y + r.h}, c)
+  else
+    let y = r.y + r.h / 2
+    draw_line({x: r.x, y: y}, {x: r.x + r.w, y: y}, c)
+  end
+end

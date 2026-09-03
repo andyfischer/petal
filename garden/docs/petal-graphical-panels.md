@@ -194,6 +194,35 @@ layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
 [petal-ui/docs/components.md](../../petal-ui/docs/components.md); the
 showcase panel is `examples/panels/gallery.ptl`.
 
+### `import bloom`
+
+Garden also registers [bloom](../../petal-libs/bloom/README.md), the component
+library written in Petal itself, as importable modules — buttons, menus,
+controls and overlays that animate by default and that hold their own
+animation state per callsite:
+
+```petal
+import bloom
+
+if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
+  bloom.toast("Saved", "success")
+end
+```
+
+Unlike `ui` it is *not* an implicit import — a library that silently occupied a
+hundred names would collide with panels that define their own `button` or
+`switch` — so a drawer says `import bloom` (or `import bloom: button, dropdown`)
+and pays nothing otherwise. The modules are registered in memory rather than
+looked up on disk, so a panel-mode GPP drawer pushed as source can import them
+too. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
+app use it; the full reference is
+[petal-libs/bloom/docs/components.md](../../petal-libs/bloom/docs/components.md)
+and the showcase is `examples/ui/bloom-gallery`.
+
+A panel script on disk can also `import` a module sitting next to it: imports
+resolve relative to the script's own directory, and editing an imported module
+hot-reloads the panel exactly as editing the script does.
+
 The whole Petal builtin table is available too. A panel is an ordinary Petal
 program with extra natives, not a sandboxed subset: everything in
 [docs/Builtins.md](../../docs/Builtins.md) is callable. Worth naming because

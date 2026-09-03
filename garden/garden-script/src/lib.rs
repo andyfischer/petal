@@ -51,6 +51,7 @@
 //! runtime; the same lines (plus garden-script warnings) are also collected per
 //! run and retrievable via [`ScriptHost::take_output`].
 
+pub mod bloom;
 mod convert;
 pub mod inspect;
 mod native_fns;

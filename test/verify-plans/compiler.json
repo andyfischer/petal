@@ -9,6 +9,9 @@
     "~/.garden",
     "~/worlds-fair/ui/ptl"
   ],
+  "include": [
+    "petal-libs/bloom/src"
+  ],
   "steps": [
     {
       "check": "compiles"

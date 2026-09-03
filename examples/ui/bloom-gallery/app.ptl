@@ -1,0 +1,285 @@
+// bloom gallery — every component in the bloom library, live.
+//
+// bloom (petal-libs/bloom) is a component library written entirely in Petal.
+// This app is its showcase and its usage reference: each section below is the
+// shortest honest example of the components it names, so a panel author can
+// copy a block and have a working control.
+//
+// Two things to notice while clicking around:
+//
+//  1. Nothing here holds animation state. Every hover fade, press squash,
+//     ripple, sliding thumb, springing knob, staggered menu row and entering
+//     dialog is `state` *inside* the component, keyed by the call path — so a
+//     component is as cheap to use as a `draw_rect`.
+//  2. Overlays capture input. Open the menu or the dialog and the controls
+//     underneath go inert, with no `if !blocked` guard anywhere in this file.
+
+import bloom
+import bloom_icon
+
+let T = ui_theme()
+let w = screen_width()
+let h = screen_height()
+
+state section = 0
+state pressed = 0
+state toggle_on = true
+state check_wrap = true
+state check_mini = false
+state radio = 1
+state seg = 1
+state volume = 0.6
+state zoom = 2
+state name = "petunia"
+state pick = 0
+state progress_v = 0.35
+state loading = false
+state last_menu = "—"
+
+let SECTIONS = ["Buttons", "Controls", "Menus", "Overlays", "Motion", "Icons"]
+
+clear(T.bg.r, T.bg.g, T.bg.b)
+
+// ── chrome: a menu bar across the top ─────────────────────────────────────
+let bar = rect(0, 0, w, 30)
+draw_rect(bar, mix(T.bg, T.panel, 0.7))
+draw_line({x: 0, y: 30}, {x: w, y: 30}, bloom.hair(T))
+let chosen = bloom.menu_bar(bar, [
+  {label: "File", items: [{label: "New panel", icon: "plus", hint: "⌘N"},
+    {label: "Open…", icon: "folder"},
+    {sep: true},
+    {label: "Close", icon: "close", danger: true, hint: "⌘W"}]},
+  {label: "View", items: [{label: "Zoom in", hint: "⌘+"}, {label: "Zoom out", hint: "⌘-"},
+    {sep: true}, {label: "Reset", disabled: true}]},
+  {label: "Help", items: [{label: "Components", icon: "info"}, {label: "Report a bug", icon: "warning"}]},
+])
+if chosen.item >= 0 then
+  last_menu = "menu {chosen.menu} · item {chosen.item}"
+  bloom.toast("Chose {last_menu}", "info")
+end
+
+// ── the section rail ──────────────────────────────────────────────────────
+let RAIL_W = 148
+let rail = rect(0, 31, RAIL_W, h - 31)
+draw_rect(rail, mix(T.bg, T.panel, 0.45))
+draw_line({x: RAIL_W, y: 31}, {x: RAIL_W, y: h}, bloom.hair(T))
+
+// The selection marker slides between rows on a spring rather than jumping —
+// one `spring` call, no state in this file.
+let marker_y = bloom.spring(float(section), {stiffness: 260.0, damping: 24.0})
+draw_rect_rounded(rect(6, 42 + marker_y * 34, RAIL_W - 12, 30), 6, mix(T.bg, T.accent, 0.22))
+for i in range(0, len(SECTIONS)) do
+  let r = rect(6, 42 + i * 34, RAIL_W - 12, 30)
+  if bloom.button(r, SECTIONS[i], {variant: "ghost", align: "left", ripple: false,
+    size: T.font_md, id: "rail:{i}"}) then
+    section = i
+  end
+end
+
+let body = pad(rect(RAIL_W, 31, w - RAIL_W, h - 31), 20)
+draw_text(SECTIONS[section], {x: body.x, y: body.y},
+  {size: T.font_xl, color: T.text, weight: 700})
+let content = rect(body.x, body.y + 40, body.w, body.h - 40)
+
+// ── Buttons ───────────────────────────────────────────────────────────────
+if section == 0 then
+  let row1 = rect(content.x, content.y, content.w, 32)
+  if bloom.button(rect(row1.x, row1.y, 110, 32), "Primary", {variant: "primary", icon: "check"}) then
+    pressed += 1
+    bloom.toast("Primary pressed", "success")
+  end
+  bloom.button(rect(row1.x + 120, row1.y, 110, 32), "Default")
+  bloom.button(rect(row1.x + 240, row1.y, 110, 32), "Danger", {variant: "danger", icon: "trash"})
+  bloom.button(rect(row1.x + 360, row1.y, 100, 32), "Ghost", {variant: "ghost"})
+
+  let row2 = row1.y + 44
+  bloom.button(rect(row1.x, row2, 130, 32), "Pill", {pill: true, icon_end: "chevron_right"})
+  bloom.button(rect(row1.x + 140, row2, 110, 32), "Disabled", {disabled: true})
+  if bloom.button(rect(row1.x + 260, row2, 110, 32), "Load", {loading: loading}) then
+    loading = true
+  end
+  if loading && bloom.button(rect(row1.x + 380, row2, 90, 32), "Stop", {variant: "quiet"}) then
+    loading = false
+  end
+
+  let row3 = row2 + 44
+  for i in range(0, len(bloom.ICONS)) do
+    // A whole toolbar of icon buttons, on one line of code per row.
+    if i < 8 then
+      bloom.icon_button(rect(row1.x + i * 36, row3, 30, 30), bloom.ICONS[i])
+    end
+  end
+  seg = bloom.segmented(rect(row1.x, row3 + 44, 260, 30), ["Code", "Blame", "Log"], seg)
+  bloom.chip(row1.x + 280, row3 + 47, "{pressed} presses")
+  if bloom.link(row1.x, row3 + 92, "A link, underlined on hover") then
+    bloom.toast("Links return true on click too")
+  end
+  bloom.tooltip(rect(row1.x, row1.y, 110, 32), "Buttons fire on release, not press")
+end
+
+// ── Controls ──────────────────────────────────────────────────────────────
+if section == 1 then
+  let x = content.x
+  var y = content.y
+  toggle_on = bloom.switch(rect(x, y, 48, 26), toggle_on)
+  bloom.text_in(if toggle_on then "Live reload on" else "Live reload off" end,
+    rect(x + 62, y, 260, 26), bloom.ts(T, T.font_md, T.text))
+  set y = y + 40
+  check_wrap = bloom.checkbox(rect(x, y, 220, 24), "Wrap long lines", check_wrap)
+  check_mini = bloom.checkbox(rect(x + 240, y, 220, 24), "Minimap", check_mini)
+  set y = y + 38
+  radio = bloom.radio_group(rect(x, y, 220, 90), ["Spaces", "Tabs", "Whatever the file uses"], radio)
+  set y = y + 100
+  volume = bloom.slider(rect(x, y, 260, 26), volume, 0.0, 1.0)
+  zoom = bloom.stepper(rect(x + 290, y, 120, 26), zoom, 1, 8, 1)
+  bloom.text_in("zoom", rect(x + 420, y, 60, 26), bloom.ts(T, T.font_sm, T.muted))
+  set y = y + 42
+  bloom.progress(rect(x, y, 260, 8), volume)
+  bloom.progress(rect(x + 290, y, 120, 8), -1.0)
+  set y = y + 28
+  let f = bloom.text_field(rect(x, y, 300, 32), name, {id: "name", placeholder: "Panel name"})
+  name = f.text
+  if f.submitted then
+    bloom.toast("Renamed to {name}", "success")
+  end
+  bloom.text_in("Tab reaches every control with an id.",
+    rect(x + 320, y, 320, 32), bloom.ts(T, T.font_sm, T.dim))
+end
+
+// ── Menus ─────────────────────────────────────────────────────────────────
+if section == 2 then
+  let x = content.x
+  let y = content.y
+  let picked = bloom.dropdown(rect(x, y, 150, 32), "Actions",
+    [{label: "Rename", icon: "file", hint: "F2"},
+      {label: "Duplicate", icon: "plus"},
+      {sep: true},
+      {label: "Delete", icon: "trash", danger: true, hint: "⌫"}])
+  if picked >= 0 then
+    bloom.toast("Action {picked}", "info")
+  end
+  pick = bloom.select(rect(x + 170, y, 170, 32), ["Rust", "Petal", "TypeScript"], pick)
+  bloom.text_in("selected: {["Rust", "Petal", "TypeScript"][pick]}",
+    rect(x + 360, y, 240, 32), bloom.ts(T, T.font_md, T.muted))
+
+  let area = rect(x, y + 56, content.w - 20, 150)
+  bloom.stroke(T, area, T.radius, bloom.hair(T), 1, mix(T.bg, T.panel, 0.35))
+  bloom.text_in("Right-click anywhere in this box", pad(area, 14),
+    bloom.ts(T, T.font_md, T.muted))
+  let ctx = bloom.context_menu(area, [{label: "Copy", icon: "file", hint: "⌘C"},
+    {label: "Paste", hint: "⌘V"},
+    {sep: true},
+    {label: "Select all"}])
+  if ctx >= 0 then
+    bloom.toast("Context item {ctx}")
+  end
+  bloom.text_in("Last menu-bar choice: {last_menu}", rect(x, y + 220, content.w, 20),
+    bloom.ts(T, T.font_sm, T.dim))
+end
+
+// ── Overlays ──────────────────────────────────────────────────────────────
+if section == 3 then
+  let x = content.x
+  let y = content.y
+  if bloom.button(rect(x, y, 130, 32), "Open dialog", {variant: "primary"}) then
+    bloom.dialog_open("confirm")
+  end
+  if bloom.button(rect(x + 150, y, 130, 32), "Toast", {icon: "info"}) then
+    bloom.toast("Something happened", "success")
+  end
+  if bloom.button(rect(x + 300, y, 130, 32), "Warn", {variant: "warn"}) then
+    bloom.toast("Disk is nearly full", "warn")
+  end
+  if bloom.button(rect(x + 450, y, 130, 32), "Popover", {icon_end: "chevron_down"}) then
+    bloom.popover_open("filters")
+  end
+  let po = bloom.popover("filters", rect(x + 450, y, 130, 32), 220, 120)
+  if po.open then
+    bloom.text_in("Filters", po.content, bloom.ts_bold(T, T.font_md, T.text))
+    check_mini = bloom.checkbox(rect(po.content.x, po.content.y + 30, 190, 24), "Only mine", check_mini)
+    check_wrap = bloom.checkbox(rect(po.content.x, po.content.y + 58, 190, 24), "Open only", check_wrap)
+  end
+
+  bloom.banner(rect(x, y + 50, content.w - 20, 34), "Hover a control for its tooltip.", "info", true)
+  bloom.text_in("A skeleton row, while data is in flight:",
+    rect(x, y + 100, 300, 20), bloom.ts(T, T.font_sm, T.dim))
+  for i in range(0, 3) do
+    bloom.skeleton(rect(x, y + 126 + i * 24, 260 - i * 40, 14), {phase: float(i) * 0.2})
+  end
+end
+
+// ── Motion ────────────────────────────────────────────────────────────────
+if section == 4 then
+  let x = content.x
+  let y = content.y
+  bloom.text_in("The animators, drawn raw. Everything above is built from these.",
+    rect(x, y - 6, content.w, 20), bloom.ts(T, T.font_sm, T.dim))
+  // A spring and an eased value chasing the same target: the pointer's x.
+  let target = clamp(float(mouse_x() - x), 0.0, 360.0)
+  let sp = bloom.spring(target, {stiffness: 120.0, damping: 14.0})
+  let ez = bloom.ease_to(target, 9.0)
+  draw_rect_rounded(rect(x, y + 30, 360, 4), 2, mix(T.bg, T.panel, 0.8))
+  draw_circle({x: x + sp, y: y + 32}, 9, T.accent)
+  draw_circle({x: x + ez, y: y + 32}, 6, T.success)
+  bloom.text_in("spring (accent) vs ease_to (green) — move the pointer",
+    rect(x, y + 46, 400, 18), bloom.ts(T, T.font_sm, T.muted))
+
+  // A staggered entrance: the bars cascade in when this section first appears.
+  for i in range(0, 12) do
+    let k = bloom.ease_out(bloom.stagger(i, 0.04, 0.4))
+    let bh = 60.0 * k
+    draw_rect_rounded(rect(x + i * 26, y + 160 - bh, 18, bh), 3,
+      mix(T.accent, T.success, float(i) / 12.0))
+  end
+  bloom.text_in("stagger(i, …): one animator per loop iteration",
+    rect(x, y + 168, 400, 18), bloom.ts(T, T.font_sm, T.muted))
+
+  // A pulse and a shake, on demand.
+  let p = bloom.pulse(1.4)
+  draw_circle({x: x + 20, y: y + 220}, 8 + 6 * p, T.danger, int(90 + 120 * p))
+  let angry = bloom.button(rect(x + 60, y + 206 + bloom.shake(pressed % 7 == 3, 6.0), 120, 30),
+    "Shake me", {variant: "danger"})
+  if angry then
+    pressed += 1
+  end
+end
+
+// ── Icons ─────────────────────────────────────────────────────────────────
+if section == 5 then
+  bloom.text_in("Every glyph is a few strokes in a unit box — no font, no atlas.",
+    rect(content.x, content.y - 6, content.w, 20), bloom.ts(T, T.font_sm, T.dim))
+  for i in range(0, len(bloom_icon.NAMES)) do
+    let col = i % 6
+    let row = int(i / 6)
+    let cell = rect(content.x + col * 110, content.y + 26 + row * 62, 100, 56)
+    let p = bloom.probe(cell)
+    draw_rect_rounded(cell, T.radius, bloom.wash(T, mix(T.bg, T.panel, 0.5), p.hot, p.active))
+    bloom_icon.icon(bloom_icon.NAMES[i], rect(cell.x + 38, cell.y + 8, 24, 24),
+      mix(T.muted, T.accent, p.hot))
+    bloom.text_in(bloom_icon.NAMES[i], rect(cell.x, cell.y + 34, cell.w, 16),
+      bloom.ts(T, T.font_sm, T.dim), "center")
+  end
+end
+
+// ── overlays, drawn last so they land on top ──────────────────────────────
+let d = bloom.dialog("confirm", 380, 190, "Delete this panel?")
+if d.open then
+  bloom.text_in("The panel and its saved state go with it. This cannot be undone.",
+    rect(d.content.x, d.content.y, d.content.w, 40),
+    bloom.ts(T, T.font_md, T.muted))
+  let br = rect(d.content.x + d.content.w - 210, d.content.y + d.content.h - 34, 100, 30)
+  if bloom.button(br, "Cancel", {variant: "quiet"}) then
+    bloom.dialog_close()
+  end
+  if bloom.button(rect(br.x + 110, br.y, 100, 30), "Delete", {variant: "danger", icon: "trash"}) then
+    bloom.dialog_close()
+    bloom.toast("Panel deleted", "danger")
+  end
+end
+
+bloom.toasts(rect(0, 0, w, h))
+
+// Last line of the frame: paint everything the components deferred — the open
+// menu's popup, the tooltips. Without it they would still be painted, just at
+// the top of the next frame, and a panel drawn afterwards could cover them.
+bloom.overlays()

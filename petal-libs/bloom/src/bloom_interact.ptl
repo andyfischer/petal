@@ -1,0 +1,211 @@
+// bloom_interact — the interaction layer: pointer probes, focus, hotkeys, and
+// the input capture that lets an overlay drawn *last* still swallow the click.
+//
+// A probe is the unit every bloom component is built on. It answers the
+// pointer questions for one rect (hovering? held? clicked?) and, in the same
+// record, the *animated* versions of those answers (`hot`, `active`), because
+// a component that has to ask twice — once for the logic, once for the fade —
+// is where hand-rolled UIs start to drift.
+//
+// Click means press-and-release inside, not press. Pressing a button and
+// sliding off it cancels, which is what every real toolkit does and what
+// makes a drag out of a menu item work.
+
+import ui: rect, point_in
+import bloom_motion: ease_flag, ease_to
+
+// ── Input capture ─────────────────────────────────────────────────────────
+// Immediate mode draws overlays last, so an open menu's rect is not known
+// until after the controls beneath it have already run their probes. The fix
+// is a one-frame claim: an overlay calls `capture` every frame it is open, and
+// probes go inert while a claim is live. The one-frame lag is invisible (the
+// menu opened on the frame before) and it costs no ordering discipline in the
+// app.
+
+state var _owner = ""
+state var _owner_frame = -2
+
+// Claim the pointer for `owner` (any stable string). Call it every frame the
+// overlay is open.
+export fn capture(owner)
+  set _owner = owner
+  set _owner_frame = frame_count()
+end
+
+// Whether some overlay is holding input right now.
+export fn is_captured()
+  (get _owner) != "" && frame_count() - (get _owner_frame) <= 1
+end
+
+export fn capture_owner()
+  if is_captured() then get _owner else "" end
+end
+
+// Drop a claim early (a menu closing mid-frame).
+export fn capture_release()
+  set _owner = ""
+  set _owner_frame = -2
+end
+
+// ── Probes ────────────────────────────────────────────────────────────────
+
+// The full interaction record for `r`:
+//
+//   rect     the rect probed
+//   hover    pointer inside, and not blocked by an overlay
+//   down     pressed inside and still held (even if the pointer left)
+//   press    went down inside on this frame
+//   click    released inside after pressing inside — the one to act on
+//   hot      0→1 eased hover, for a fade
+//   active   0→1 eased press, for a squash
+//   enabled  what was passed in
+//
+// `enabled: false` returns a record that is inert *and* still animates its way
+// back to rest, so disabling a hovered button fades it out rather than
+// snapping.
+export fn probe(r, enabled)
+  probe_at(r, enabled, !is_captured())
+end
+
+export fn probe(r)
+  probe(r, true)
+end
+
+// The overlay's own probe: identical, but it ignores the capture claim (an
+// open menu is the thing holding the pointer, so its items must still see it).
+export fn probe_over(r)
+  probe_at(r, true, true)
+end
+
+fn probe_at(r, enabled, allowed)
+  state armed = false
+  let live = enabled && allowed
+  let over = live && point_in(mouse_x(), mouse_y(), r)
+  let press = over && mouse_pressed(0)
+  if press then
+    armed = true
+  end
+  let click = armed && mouse_released(0) && over
+  let down = armed && mouse_down(0)
+  if mouse_down(0) == false then
+    armed = false
+  end
+  {rect: r, enabled: enabled, hover: over, down: down, press: press, click: click,
+    hot: ease_flag(over && !down, 18.0), active: ease_flag(down, 34.0)}
+end
+
+// The two shorthands, for the many places that want one bool.
+export fn hovering(r)
+  !is_captured() && point_in(mouse_x(), mouse_y(), r)
+end
+
+export fn clicked(r)
+  probe(r).click
+end
+
+// ── Dragging ──────────────────────────────────────────────────────────────
+
+// A drag that starts inside `r` and keeps tracking once the pointer leaves it
+// (the slider that keeps following your hand off the end of its track).
+// Returns {active, x, y, dx, dy, start_x, start_y}.
+export fn drag(r)
+  state on = false
+  state sx = 0
+  state sy = 0
+  if !is_captured() && point_in(mouse_x(), mouse_y(), r) && mouse_pressed(0) then
+    on = true
+    sx = mouse_x()
+    sy = mouse_y()
+  end
+  if !mouse_down(0) then
+    on = false
+  end
+  {active: on, x: mouse_x(), y: mouse_y(), dx: mouse_x() - sx, dy: mouse_y() - sy,
+    start_x: sx, start_y: sy}
+end
+
+// ── Focus ─────────────────────────────────────────────────────────────────
+// Focusable components announce themselves each frame in draw order, which is
+// exactly the tab order. The ring is therefore rebuilt every frame and needs
+// no registration, no ids list held by the app, and no stale entries when a
+// control disappears.
+
+state var _focus = ""
+state var _ring = []
+state var _ring_frame = -1
+state var _pending = 0
+
+// Announce `id` as focusable this frame and report whether it has focus.
+// Every focusable bloom component calls this; an app only calls it when it
+// builds a focusable control of its own.
+export fn focusable(id)
+  if frame_count() != get _ring_frame then
+    _begin_frame()
+  end
+  set _ring = append(get _ring, id)
+  (get _focus) == id
+end
+
+// Tab / Shift+Tab are applied at the top of the next frame, against the ring
+// the *last* frame built — the only complete ring that exists at that moment.
+fn _begin_frame()
+  set _ring_frame = frame_count()
+  let ring = get _ring
+  let step = get _pending
+  if step != 0 && len(ring) > 0 then
+    let at = index_of(ring, get _focus)
+    let n = len(ring)
+    let next = if at < 0 then
+      if step > 0 then 0 else n - 1 end
+    else
+      ((at + step) % n + n) % n
+    end
+    set _focus = ring[next]
+  end
+  set _pending = 0
+  set _ring = []
+  if key_pressed("tab") then
+    set _pending = if mod_shift() then -1 else 1 end
+  end
+end
+
+export fn focused(id)
+  (get _focus) == id
+end
+
+export fn focus_set(id)
+  set _focus = id
+end
+
+export fn focus_clear()
+  set _focus = ""
+end
+
+export fn focus_id()
+  get _focus
+end
+
+// ── Keys ──────────────────────────────────────────────────────────────────
+
+// A plain key press, ignored while an overlay holds input.
+export fn key(k)
+  !is_captured() && key_pressed(k)
+end
+
+// A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
+// of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
+// Cmd on macOS and Ctrl elsewhere — which is what an app almost always means.
+export fn chord(k, mods)
+  if !key_pressed(k) then
+    false
+  else
+    match mods
+      when "cmd" -> mod_cmd()
+      when "ctrl" -> mod_ctrl()
+      when "alt" -> mod_alt()
+      when "shift" -> mod_shift()
+      when "cmdctrl" -> mod_cmd() || mod_ctrl()
+      when _ -> false
+    end
+  end
+end

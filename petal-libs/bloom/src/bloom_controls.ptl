@@ -1,0 +1,348 @@
+// bloom_controls — the value-editing controls: switch, checkbox, radio, slider,
+// stepper, progress and the text field.
+//
+// Same contract as the buttons: you hand in the current value and get the new
+// one back. Nothing here holds your data — only its own animation — so two of
+// the same control never fight over state and an undo stack stays honest.
+
+import ui: rect, pad, mix, over, draw_rect, draw_rect_rounded, draw_text, draw_circle, draw_line
+import ui: clip_push, clip_pop, ellipsize_tail
+import bloom_theme: theme, ts, tone, hair, stroke, wash, focus_ring, dur, rate, text_in
+import bloom_motion: ease_flag, ease_to, spring, impulse, ease_out, age, scale_rect
+import bloom_interact: probe, drag, focusable, focused, focus_set, is_captured
+import bloom_icon: icon
+
+// ── Switch ────────────────────────────────────────────────────────────────
+
+// The on/off switch. The knob is a spring, so it lands with a small overshoot
+// that makes the control feel mechanical rather than interpolated.
+export fn switch(r, on)
+  switch(r, on, {})
+end
+
+export fn switch(r, on, opts)
+  let t = theme()
+  let enabled = !field(opts, "disabled", false)
+  let p = probe(r, enabled)
+  let v = if p.click then !on else on end
+  let track_h = min(r.h, r.w * 0.58)
+  let track = Rect(r.x, r.y + (r.h - track_h) / 2.0, r.w, track_h)
+  let k = spring(if v then 1.0 else 0.0 end, {stiffness: 300.0, damping: 24.0})
+  let off_c = tone(t, t.panel, -0.4)
+  let on_c = field(opts, "color", t.accent)
+  draw_rect_rounded(track, int(track_h / 2), mix(off_c, on_c, clamp(k, 0.0, 1.0)))
+  let pad_px = track_h * 0.14
+  let kd = track_h - pad_px * 2.0
+  let kx = track.x + pad_px + k * (track.w - kd - pad_px * 2.0)
+  // A pressed knob stretches toward the direction of travel — the one place a
+  // squash reads better than a scale.
+  let stretch = 1.0 + 0.22 * p.active
+  draw_rect_rounded(Rect(kx, track.y + pad_px, kd * stretch, kd), int(kd / 2),
+    mix(#ffffff, t.text, 0.06), if enabled then 255 else 120 end)
+  if p.hot > 0.01 then
+    draw_circle({x: kx + kd / 2.0, y: track.y + track_h / 2.0}, kd * 0.95, on_c, int(30.0 * p.hot))
+  end
+  v
+end
+
+// ── Checkbox ──────────────────────────────────────────────────────────────
+
+// The tick is *drawn in*: the check's two strokes grow from the corner as the
+// box fills, rather than appearing whole.
+export fn checkbox(r, label, on)
+  checkbox(r, label, on, {})
+end
+
+export fn checkbox(r, label, on, opts)
+  let t = theme()
+  let enabled = !field(opts, "disabled", false)
+  let p = probe(r, enabled)
+  let v = if p.click then !on else on end
+  let size = field(opts, "size", t.font_md)
+  let bs = min(r.h - 2.0, size + 4.0)
+  let box = Rect(r.x, r.y + (r.h - bs) / 2.0, bs, bs)
+  let k = ease_to(if v then 1.0 else 0.0 end, rate(t, 22.0))
+  let face = mix(wash(t, t.panel, p.hot, p.active), t.accent, k)
+  let sq = scale_rect(box, 1.0 - 0.08 * p.active)
+  stroke(t, sq, t.radius_sm, mix(hair(t), t.accent, k), 1, face)
+  if k > 0.02 then
+    let c = over(t.accent, #ffffff, 235)
+    let w = max(1.5, bs * 0.13)
+    let a = {x: sq.x + bs * 0.24, y: sq.y + bs * 0.52}
+    let b = {x: sq.x + bs * 0.43, y: sq.y + bs * 0.70}
+    let e = {x: sq.x + bs * 0.76, y: sq.y + bs * 0.30}
+    let g1 = clamp(k / 0.45, 0.0, 1.0)
+    let g2 = clamp((k - 0.45) / 0.55, 0.0, 1.0)
+    draw_line(a, {x: a.x + (b.x - a.x) * g1, y: a.y + (b.y - a.y) * g1}, c, 255, w)
+    if g2 > 0.0 then
+      draw_line(b, {x: b.x + (e.x - b.x) * g2, y: b.y + (e.y - b.y) * g2}, c, 255, w)
+    end
+  end
+  if label != "" then
+    let fg = if enabled then mix(t.text, t.accent, p.hot * 0.25) else t.dim end
+    text_in(label, Rect(box.x + bs + t.gap, r.y, r.w - bs - t.gap, r.h), ts(t, size, fg))
+  end
+  v
+end
+
+// ── Radio group ───────────────────────────────────────────────────────────
+
+// One row per label; returns the new index. The dot scales in, and the ring of
+// the row you are hovering warms toward the accent.
+export fn radio_group(r, labels, index)
+  radio_group(r, labels, index, {})
+end
+
+export fn radio_group(r, labels, index, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_md)
+  let row_h = field(opts, "row_h", t.row_h)
+  var chosen = index
+  for i in range(0, len(labels)) do
+    let row = Rect(r.x, r.y + float(i) * row_h, r.w, row_h)
+    let p = probe(row)
+    if p.click then
+      set chosen = i
+    end
+    let on = i == index
+    let cx = row.x + size * 0.6
+    let cy = row.y + row_h / 2.0
+    let ring = mix(hair(t), t.accent, (if on then 1.0 else 0.0 end) * 0.9 + p.hot * 0.4)
+    draw_circle({x: cx, y: cy}, size * 0.55, ring)
+    draw_circle({x: cx, y: cy}, size * 0.55 - max(1.0, size * 0.09), wash(t, t.panel, p.hot, p.active))
+    let k = spring(if on then 1.0 else 0.0 end, {stiffness: 320.0, damping: 22.0})
+    if k > 0.01 then
+      draw_circle({x: cx, y: cy}, size * 0.3 * clamp(k, 0.0, 1.2), t.accent)
+    end
+    text_in(labels[i], Rect(cx + size * 0.95, row.y, row.w, row_h), ts(t, size, t.text))
+  end
+  chosen
+end
+
+// ── Slider ────────────────────────────────────────────────────────────────
+
+// Press anywhere on the track to jump there, then keep dragging — the drag
+// tracks outside the control, so running off the end does not drop the grab.
+// While dragging, the value floats above the knob.
+export fn slider(r, value, lo, hi)
+  slider(r, value, lo, hi, {})
+end
+
+export fn slider(r, value, lo, hi, opts)
+  let t = theme()
+  let p = probe(r)
+  let d = drag(r)
+  var v = float(value)
+  let track_h = max(4.0, r.h * 0.22)
+  let track = Rect(r.x, r.y + (r.h - track_h) / 2.0, r.w, track_h)
+  if d.active then
+    let f = clamp((float(mouse_x()) - r.x) / max(1.0, r.w), 0.0, 1.0)
+    set v = float(lo) + f * (float(hi) - float(lo))
+    let stepping = field(opts, "step", 0)
+    if stepping > 0 then
+      set v = float(lo) + round((v - float(lo)) / float(stepping)) * float(stepping)
+    end
+  end
+  let frac = clamp((v - float(lo)) / max(0.0001, float(hi) - float(lo)), 0.0, 1.0)
+  draw_rect_rounded(track, int(track_h / 2), tone(t, t.panel, -0.4))
+  draw_rect_rounded(Rect(track.x, track.y, track.w * frac, track.h), int(track_h / 2),
+    field(opts, "color", t.accent))
+  let grow = ease_to(if d.active then 1.0 else p.hot * 0.5 end, rate(t, 24.0))
+  let kr = r.h * (0.28 + 0.08 * grow)
+  let kx = track.x + track.w * frac
+  let cy = track.y + track_h / 2.0
+  draw_circle({x: kx, y: cy}, kr + 5.0, t.accent, int(45.0 * grow))
+  draw_circle({x: kx, y: cy}, kr, mix(#ffffff, t.text, 0.05))
+  if field(opts, "readout", true) && grow > 0.02 then
+    let s = field(opts, "format", "") ++ str(round(v, field(opts, "places", 2)))
+    let style = ts(t, t.font_sm, t.text)
+    let w = text_width(s, style) + 12
+    let bub = Rect(kx - w / 2.0, r.y - 22.0 - 6.0 * grow, w, 20)
+    draw_rect_rounded(bub, 5, tone(t, t.panel, 0.18), int(235.0 * grow))
+    text_in(s, bub, ts(t, t.font_sm, t.text), "center")
+  end
+  v
+end
+
+// ── Stepper ───────────────────────────────────────────────────────────────
+
+// − value + . The value rolls: it springs between the old and new number's
+// vertical position, so a change is visible even when you are not watching.
+export fn stepper(r, value, lo, hi, step)
+  let t = theme()
+  let bw = min(r.h, r.w / 3.0)
+  var v = value
+  if _step_btn(Rect(r.x, r.y, bw, r.h), "minus", t) then
+    set v = max(lo, value - step)
+  end
+  if _step_btn(Rect(r.x + r.w - bw, r.y, bw, r.h), "plus", t) then
+    set v = min(hi, value + step)
+  end
+  let mid = Rect(r.x + bw, r.y, r.w - bw * 2.0, r.h)
+  let roll = spring(float(v), {stiffness: 240.0, damping: 22.0})
+  let slide = clamp((roll - float(v)) * 2.0, -8.0, 8.0)
+  clip_push(mid, 0)
+  text_in(str(v), Rect(mid.x, mid.y - slide, mid.w, mid.h), ts(t, t.font_md, t.text), "center")
+  clip_pop()
+  v
+end
+
+fn _step_btn(r, name, t)
+  let p = probe(r)
+  draw_rect_rounded(scale_rect(r, 1.0 - 0.06 * p.active), t.radius_sm,
+    wash(t, t.panel, p.hot, p.active))
+  icon(name, pad(r, r.h * 0.3), mix(t.muted, t.text, p.hot))
+  p.click
+end
+
+// ── Progress ──────────────────────────────────────────────────────────────
+
+// `frac` in [0, 1]; negative runs the indeterminate sweep. The bar eases toward
+// its target, so a jump from 10% to 90% is a movement rather than a cut.
+export fn progress(r, frac)
+  progress(r, frac, {})
+end
+
+export fn progress(r, frac, opts)
+  let t = theme()
+  let color = field(opts, "color", t.accent)
+  let radius = int(min(r.h, 8) / 2)
+  draw_rect_rounded(r, radius, tone(t, t.panel, -0.4))
+  if float(frac) < 0.0 then
+    // Indeterminate: a bar of a third the width, easing across and back.
+    let ph = fract(age() * 0.55)
+    let e = if ph < 0.5 then ease_out(ph * 2.0) else 1.0 - ease_out((ph - 0.5) * 2.0) end
+    let w = r.w * 0.34
+    draw_rect_rounded(Rect(r.x + (r.w - w) * e, r.y, w, r.h), radius, color)
+  else
+    let f = ease_to(clamp(float(frac), 0.0, 1.0), rate(t, 12.0))
+    if f > 0.001 then
+      draw_rect_rounded(Rect(r.x, r.y, r.w * f, r.h), radius, color)
+    end
+  end
+end
+
+// ── Text field ────────────────────────────────────────────────────────────
+
+// A single-line editor. `opts.id` is its focus id (Tab reaches it); the
+// placeholder doubles as the id when none is given, which is enough for the
+// common case of one search box.
+//
+// Returns {text, focused, submitted, changed}. There is no selection model —
+// caret, insert, delete, word-delete and Return, which is what a panel's
+// filter box and rename field need.
+export fn text_field(r, buf)
+  text_field(r, buf, {})
+end
+
+export fn text_field(r, buf, opts)
+  let t = theme()
+  let id = field(opts, "id", field(opts, "placeholder", "field"))
+  let has = focusable(id)
+  let p = probe(r)
+  let size = field(opts, "size", t.font_md)
+  let style = ts(t, size, t.text)
+  let inset = field(opts, "inset", t.pad_x)
+  var text = buf
+  state caret = 0
+  var submitted = false
+  var changed = false
+
+  if caret > char_len(text) then
+    caret = char_len(text)
+  end
+  if p.press then
+    focus_set(id)
+    caret = _caret_at(text, style, float(mouse_x()) - (r.x + inset))
+  end
+
+  if has && !is_captured() then
+    let typed = text_input()
+    if typed != "" then
+      set text = char_slice(text, 0, caret) ++ typed ++ char_slice(text, caret, char_len(text))
+      caret = caret + char_len(typed)
+      set changed = true
+    end
+    if key_pressed("backspace") && caret > 0 then
+      let cut = if mod_alt() || mod_cmd() then _word_start(text, caret) else caret - 1 end
+      set text = char_slice(text, 0, cut) ++ char_slice(text, caret, char_len(text))
+      caret = cut
+      set changed = true
+    end
+    if key_pressed("delete") && caret < char_len(text) then
+      set text = char_slice(text, 0, caret) ++ char_slice(text, caret + 1, char_len(text))
+      set changed = true
+    end
+    if key_pressed("left") then
+      caret = max(0, caret - 1)
+    end
+    if key_pressed("right") then
+      caret = min(char_len(text), caret + 1)
+    end
+    if key_pressed("home") then
+      caret = 0
+    end
+    if key_pressed("end") then
+      caret = char_len(text)
+    end
+    if key_pressed("return") then
+      set submitted = true
+    end
+  end
+
+  // Paint. The focus underline grows from the center out, which is the one
+  // motion that reads as "this is now the field taking your keys".
+  let k = ease_to(if has then 1.0 else 0.0 end, rate(t, 20.0))
+  let radius = field(opts, "radius", t.radius)
+  stroke(t, r, radius, mix(hair(t), t.accent, k), 1, wash(t, t.panel, p.hot * 0.6, 0.0))
+  let bar_w = r.w * ease_out(k)
+  if bar_w > 1.0 then
+    let by = r.y + r.h - 1.0
+    draw_line({x: r.x + (r.w - bar_w) / 2.0, y: by}, {x: r.x + (r.w + bar_w) / 2.0, y: by},
+      t.accent, 255, 2)
+  end
+
+  clip_push(pad(r, 2), radius)
+  let tx = r.x + inset
+  let ty = r.y + (r.h - size) / 2.0
+  if text == "" && !has then
+    draw_text(field(opts, "placeholder", ""), {x: tx, y: ty}, ts(t, size, t.dim))
+  else
+    draw_text(text, {x: tx, y: ty}, style)
+  end
+  if has then
+    // A dt-driven blink: it also blinks in a headless trace, where the wall
+    // clock stands still.
+    let phase = fract(age() * 1.1)
+    let cx = tx + text_width(char_slice(text, 0, caret), style)
+    let on = if changed then 1.0 else (if phase < 0.55 then 1.0 else 0.0 end) end
+    if on > 0.0 then
+      draw_line({x: cx, y: ty - 2.0}, {x: cx, y: ty + size + 2.0}, t.accent, 255, 2)
+    end
+  end
+  clip_pop()
+  {text: text, focused: has, submitted: submitted, changed: changed, caret: caret}
+end
+
+// The caret index nearest `dx` pixels into the text, measured in the same
+// style it is drawn in.
+fn _caret_at(text, style, dx)
+  var best = 0
+  for i in range(0, char_len(text) + 1) do
+    if text_width(char_slice(text, 0, i), style) <= dx + 2.0 then
+      set best = i
+    end
+  end
+  best
+end
+
+fn _word_start(text, caret)
+  var i = caret
+  while i > 0 && char_at(text, i - 1) == " " do
+    set i = i - 1
+  end
+  while i > 0 && char_at(text, i - 1) != " " do
+    set i = i - 1
+  end
+  i
+end

@@ -1,0 +1,379 @@
+// bloom_menu — dropdowns, menu bars, context menus and the command palette.
+//
+// One menu is open at a time, program-wide, and the library holds that fact,
+// not the app: `menu(id, anchor, items)` returns the index of the item chosen
+// on the frame it is chosen and -1 otherwise. There is no menu state record to
+// thread, and a second menu opening closes the first because they are asking
+// the same cell.
+//
+// While a menu is open it *captures* input (see bloom_interact), so the panel
+// underneath goes inert for exactly as long as the menu is up — no ordering
+// discipline, no `if !menu_blocking()` around every other control.
+//
+// An item is a string, or a record:
+//   {label, hint, icon, disabled, sep, danger}
+// `sep: true` draws a divider and cannot be chosen.
+
+import ui: rect, pad, mix, over, draw_rect_rounded, draw_text, draw_line, draw_shadow
+import ui: clip_push, clip_pop, ellipsize_tail
+import bloom_theme: theme, ts, ts_a, tone, hair, stroke, surface, wash, dur, rate, text_in, divider
+import bloom_theme: defer_paint
+import bloom_motion: ease_to, ease_flag, enter, ease_out, ease_back, scale_rect, age, stagger
+import bloom_interact: probe, probe_over, capture, capture_release, is_captured, capture_owner
+import bloom_icon: icon
+import bloom_button: button, chip
+
+// ── Which menu is open ────────────────────────────────────────────────────
+
+state var _open = ""
+state var _open_frame = -1
+state var _origin = {x: 0, y: 0}
+state var _hl = 0
+
+export fn menu_open(id)
+  set _open = id
+  set _open_frame = frame_count()
+  set _hl = 0
+end
+
+// Open at an explicit point rather than under an anchor (a context menu).
+export fn menu_open_at(id, x, y)
+  menu_open(id)
+  set _origin = {x: x, y: y}
+end
+
+export fn menu_close()
+  set _open = ""
+  capture_release()
+end
+
+export fn menu_is_open(id)
+  (get _open) == id
+end
+
+export fn menu_any_open()
+  (get _open) != ""
+end
+
+// ── The popup ─────────────────────────────────────────────────────────────
+
+// Normalize an item to a record.
+fn _item(it)
+  if type(it) == "string" then
+    {label: it, hint: "", icon: "", disabled: false, sep: false, danger: false}
+  else
+    {label: field(it, "label", ""), hint: field(it, "hint", ""), icon: field(it, "icon", ""),
+      disabled: field(it, "disabled", false), sep: field(it, "sep", false),
+      danger: field(it, "danger", false)}
+  end
+end
+
+fn _row_h(t)
+  t.row_h
+end
+
+fn _sep_h(t)
+  9
+end
+
+// The popup's own size, measured from its items.
+export fn menu_size(items, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_md)
+  let style = ts(t, size, t.text)
+  var w = float(field(opts, "min_width", 150))
+  var h = float(t.space)
+  for it in items do
+    let m = _item(it)
+    if m.sep then
+      set h = h + _sep_h(t)
+    else
+      set h = h + _row_h(t)
+      var need = text_width(m.label, style) + t.pad_x * 3.0
+      if m.icon != "" then
+        set need = need + size * 1.6
+      end
+      if m.hint != "" then
+        set need = need + text_width(m.hint, ts(t, t.font_sm, t.dim)) + t.gap * 2.0
+      end
+      if need > w then
+        set w = need
+      end
+    end
+  end
+  {w: w, h: h + t.space}
+end
+
+// Draw the open menu `id` anchored under `anchor` and report the chosen index
+// (-1 for none). Safe to call every frame: it does nothing while closed.
+export fn menu(id, anchor, items)
+  menu(id, anchor, items, {})
+end
+
+export fn menu(id, anchor, items, opts)
+  let t = theme()
+  // `enter` runs in both directions, so the popup is still drawn for the two
+  // frames it takes to fade out after being closed.
+  let open = menu_is_open(id)
+  let k = enter(open, dur(t, t.open_dur))
+  if !open && k <= 0.0 then
+    -1
+  else
+    _draw_menu(t, id, anchor, items, opts, open, k)
+  end
+end
+
+fn _draw_menu(t, id, anchor, items, opts, open, k)
+  if open then
+    capture(id)
+  end
+  let size = field(opts, "size", t.font_md)
+  let box = menu_size(items, opts)
+  let place = field(opts, "at", "below")
+  let ox = if place == "point" then float((get _origin).x) else anchor.x end
+  let oy = if place == "point" then float((get _origin).y) else anchor.y + anchor.h + 4.0 end
+  // Flip up / pull left rather than draw off the edge.
+  let x = min(ox, max(0.0, float(screen_width()) - box.w - 6.0))
+  let y = if oy + box.h > float(screen_height()) - 6.0 then
+    max(6.0, anchor.y - box.h - 4.0)
+  else
+    oy
+  end
+  let e = ease_out(k)
+  let r = Rect(x, y - 6.0 * (1.0 - e), box.w, box.h)
+
+  // Scale-in about the top edge: a menu grows out of its anchor, so the pop
+  // has to keep its top still.
+  let s = 0.97 + 0.03 * e
+  let grown = Rect(r.x + r.w * (1.0 - s) / 2.0, r.y, r.w * s, r.h * s)
+
+  // The rows are *measured and probed* here and *painted* later: this pass
+  // decides what the menu does, the deferred closure draws what it looks like.
+  // Splitting the two is what lets a dropdown be written inline with its
+  // button and still land on top of everything drawn after it.
+  var chosen = -1
+  var rows = []
+  var yy = grown.y + t.space
+  var index = 0
+  for it in items do
+    let m = _item(it)
+    if m.sep then
+      set rows = append(rows, {sep: true, r: Rect(grown.x + t.gap, yy, grown.w - t.gap * 2.0, _sep_h(t))})
+      set yy = yy + _sep_h(t)
+    else
+      let row = Rect(grown.x + 4.0, yy, grown.w - 8.0, _row_h(t))
+      let p = probe_over(row)
+      let hot = open && (p.hover || (get _hl) == index)
+      if p.hover && open then
+        set _hl = index
+      end
+      // The highlight fades rather than snapping, and every row's entrance is
+      // staggered off the menu's own age.
+      let sel = ease_to(if hot && !m.disabled then 1.0 else 0.0 end, rate(t, 26.0))
+      let stag = ease_out(stagger(index, 0.012, dur(t, 0.12)))
+      set rows = append(rows, {sep: false, r: row, item: m, sel: sel,
+        a: 255.0 * e * (0.35 + 0.65 * stag)})
+      if p.click && !m.disabled && open then
+        set chosen = index
+      end
+      set yy = yy + _row_h(t)
+    end
+    set index = index + 1
+  end
+
+  // Captured as a `let`: a closure over the `var` would have to read the cell
+  // with `get` at paint time, and the cell is this call's, not this frame's.
+  let painted = get rows
+  defer_paint(fn()
+    _paint_menu(t, grown, painted, e, size)
+  end)
+
+  if open then
+    let n = len(items)
+    if key_pressed("down") then
+      set _hl = _next_enabled(items, (get _hl) + 1, 1)
+    end
+    if key_pressed("up") then
+      set _hl = _next_enabled(items, (get _hl) - 1, -1)
+    end
+    if key_pressed("return") && (get _hl) >= 0 && (get _hl) < n then
+      let m = _item(items[get _hl])
+      if !m.sep && !m.disabled then
+        set chosen = get _hl
+      end
+    end
+    if key_pressed("escape") then
+      menu_close()
+    end
+    // A click anywhere else closes — but never the click that opened it, which
+    // is still on this frame's edge.
+    if mouse_pressed(0) && frame_count() != (get _open_frame) &&
+      !(mouse_x() >= grown.x && mouse_x() < grown.x + grown.w &&
+        mouse_y() >= grown.y && mouse_y() < grown.y + grown.h) then
+      menu_close()
+    end
+  end
+  if chosen >= 0 then
+    menu_close()
+  end
+  chosen
+end
+
+// The paint half: pure drawing from values the input pass already decided.
+fn _paint_menu(t, grown, rows, e, size)
+  let a = int(255.0 * e)
+  draw_shadow(grown, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10,
+    color: #000000, a: int(70.0 * e)})
+  draw_rect_rounded(grown, t.radius_lg, tone(t, t.panel, 0.06), a)
+  stroke(t, grown, t.radius_lg, hair(t), 1, tone(t, t.panel, 0.06))
+  clip_push(grown, t.radius_lg)
+  for row in rows do
+    if row.sep then
+      divider(t, row.r, "x")
+    else
+      let m = row.item
+      if row.sel > 0.01 then
+        draw_rect_rounded(row.r, t.radius_sm, mix(t.panel, t.accent, 0.9 * row.sel),
+          int(230.0 * e * row.sel))
+      end
+      let ink = if m.disabled then t.dim else
+        if m.danger then t.danger else mix(t.text, over(t.accent, #ffffff, 255), row.sel * 0.9) end
+      end
+      var tx = row.r.x + t.pad_x
+      if m.icon != "" then
+        icon(m.icon, Rect(tx, row.r.y + (row.r.h - size) / 2.0, size, size), ink)
+        set tx = tx + size * 1.6
+      end
+      draw_text(m.label, {x: tx, y: row.r.y + (row.r.h - size) / 2.0}, ts_a(t, size, ink, row.a))
+      if m.hint != "" then
+        let hc = if m.disabled then t.dim else mix(t.muted, ink, row.sel * 0.5) end
+        let hs = ts_a(t, t.font_sm, hc, row.a)
+        let hw = text_width(m.hint, hs)
+        draw_text(m.hint, {x: row.r.x + row.r.w - t.pad_x - hw,
+          y: row.r.y + (row.r.h - t.font_sm) / 2.0}, hs)
+      end
+    end
+  end
+  clip_pop()
+end
+
+fn _next_enabled(items, from, dir)
+  let n = len(items)
+  var i = ((from % n) + n) % n
+  var guard = 0
+  while guard < n do
+    let m = _item(items[i])
+    if !m.sep && !m.disabled then
+      set guard = n
+    else
+      set i = ((i + dir) % n + n) % n
+      set guard = guard + 1
+    end
+  end
+  i
+end
+
+// ── Dropdown button ───────────────────────────────────────────────────────
+
+// A button that opens a menu under itself. Returns the chosen index, or -1.
+export fn dropdown(r, label, items)
+  dropdown(r, label, items, {})
+end
+
+export fn dropdown(r, label, items, opts)
+  let id = field(opts, "id", label)
+  let open = menu_is_open(id)
+  let bopts = {variant: field(opts, "variant", "default"), icon_end: "chevron_down",
+    icon: field(opts, "icon", ""), size: field(opts, "size", theme().font_md),
+    radius: field(opts, "radius", theme().radius)}
+  if button(r, label, bopts) then
+    if open then menu_close() else menu_open(id) end
+  end
+  menu(id, r, items, opts)
+end
+
+// A dropdown bound to a value: shows the current option, returns the new index.
+export fn select(r, options, index)
+  select(r, options, index, {})
+end
+
+export fn select(r, options, index, opts)
+  let cur = if index >= 0 && index < len(options) then options[index] else field(opts, "placeholder", "Select…") end
+  let picked = dropdown(r, cur, options, {id: field(opts, "id", "select:" ++ str(r.x) ++ "," ++ str(r.y)),
+    align: "left", size: field(opts, "size", theme().font_md)})
+  if picked >= 0 then picked else index end
+end
+
+// ── Menu bar ──────────────────────────────────────────────────────────────
+
+// `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
+// nothing was chosen. Once one menu is open, hovering along the bar opens the
+// next — the behavior every desktop menu bar has and nobody implements twice.
+export fn menu_bar(r, menus)
+  menu_bar(r, menus, {})
+end
+
+export fn menu_bar(r, menus, opts)
+  let t = theme()
+  let size = field(opts, "size", t.font_md)
+  var x = r.x + field(opts, "inset", t.gap)
+  var out = {menu: -1, item: -1}
+  var i = 0
+  for m in menus do
+    let label = field(m, "label", "")
+    let w = text_width(label, ts(t, size, t.text)) + t.pad_x * 2.0
+    let br = Rect(x, r.y, w, r.h)
+    let id = "menubar:" ++ label
+    let open = menu_is_open(id)
+    // The bar's own probe must ignore the capture its menu holds, or the bar
+    // would go inert the moment one of its menus opened.
+    let p = probe_over(br)
+    if p.click then
+      if open then menu_close() else menu_open(id) end
+    end
+    if menu_any_open() && p.hover && !open && _bar_owns(menus, capture_owner()) then
+      menu_open(id)
+    end
+    let k = ease_to(if open then 1.0 else p.hot * 0.55 end, rate(t, 22.0))
+    if k > 0.01 then
+      draw_rect_rounded(br, t.radius_sm, mix(t.panel, t.accent, 0.85 * k), int(210.0 * k))
+    end
+    text_in(label, br, ts(t, size, if k > 0.5 then over(t.accent, #ffffff, 255) else t.text end), "center")
+    let picked = menu(id, br, field(m, "items", []), opts)
+    if picked >= 0 then
+      set out = {menu: i, item: picked}
+    end
+    set x = x + w
+    set i = i + 1
+  end
+  out
+end
+
+fn _bar_owns(menus, owner)
+  var yes = false
+  for m in menus do
+    if owner == "menubar:" ++ field(m, "label", "") then
+      set yes = true
+    end
+  end
+  yes
+end
+
+// ── Context menu ──────────────────────────────────────────────────────────
+
+// Right-click anywhere in `area` to open `items` at the pointer. Returns the
+// chosen index, or -1.
+export fn context_menu(area, items)
+  context_menu(area, items, {})
+end
+
+export fn context_menu(area, items, opts)
+  let id = field(opts, "id", "context")
+  if !is_captured() && mouse_pressed(1) &&
+    mouse_x() >= area.x && mouse_x() < area.x + area.w &&
+    mouse_y() >= area.y && mouse_y() < area.y + area.h then
+    menu_open_at(id, mouse_x(), mouse_y())
+  end
+  menu(id, area, items, {at: "point", size: field(opts, "size", theme().font_md),
+    min_width: field(opts, "min_width", 170)})
+end

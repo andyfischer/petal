@@ -126,7 +126,10 @@ checked in (the traces total ~72 MB), so a golden mismatch is a signal to
 re-run the app and diff locally. Re-baseline it deliberately with
 `--update-golden`.
 
-Plans live in `test/verify-plans/`. The design is in
+Plans live in `test/verify-plans/`. A plan's `include` list names module search
+directories (relative to each side's root) handed to the UI driver as `-I`, so
+corpus apps that import a shared Petal library — `petal-libs/bloom/src` — still
+compile. The design is in
 [refactor-verification.md](refactor-verification.md).
 
 ## IR equivalence

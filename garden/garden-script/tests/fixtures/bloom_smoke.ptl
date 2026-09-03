@@ -1,0 +1,51 @@
+// Every bloom component in one frame. The test asserts only that it runs and
+// draws; the gallery in examples/ui/bloom-gallery is the readable version.
+import bloom
+import bloom_icon
+
+state on = true
+state chk = false
+state radio = 0
+state seg = 1
+state vol = 0.6
+state count = 2
+state name = "smoke"
+state sel = 0
+
+bloom.button(rect(10, 10, 90, 28), "Default")
+bloom.button(rect(110, 10, 90, 28), "Primary", {variant: "primary", icon: "check"})
+bloom.button(rect(210, 10, 90, 28), "Danger", {variant: "danger", icon_end: "chevron_down"})
+bloom.button(rect(310, 10, 90, 28), "Busy", {loading: true})
+bloom.button(rect(10, 44, 90, 28), "Off", {disabled: true})
+bloom.icon_button(rect(110, 44, 28, 28), "close")
+seg = bloom.segmented(rect(150, 44, 180, 28), ["One", "Two", "Three"], seg)
+bloom.chip(340, 48, "beta")
+bloom.link(10, 80, "A link")
+
+on = bloom.switch(rect(10, 100, 46, 24), on)
+chk = bloom.checkbox(rect(70, 100, 140, 24), "Checkbox", chk)
+radio = bloom.radio_group(rect(220, 96, 160, 60), ["A", "B"], radio)
+vol = bloom.slider(rect(10, 140, 180, 24), vol, 0.0, 1.0)
+count = bloom.stepper(rect(200, 140, 110, 26), count, 0, 9, 1)
+bloom.progress(rect(10, 176, 180, 6), vol)
+bloom.progress(rect(200, 176, 110, 6), -1)
+let f = bloom.text_field(rect(10, 192, 200, 28), name, {id: "smoke", placeholder: "Name"})
+name = f.text
+
+sel = bloom.select(rect(220, 192, 130, 28), ["Alpha", "Beta"], sel)
+bloom.dropdown(rect(10, 228, 110, 28), "Actions", ["Rename", {sep: true}, {label: "Delete", danger: true}])
+bloom.menu_bar(rect(0, 260, 300, 26), [{label: "File", items: ["New", "Quit"]}])
+bloom.context_menu(rect(0, 0, 400, 300), ["Copy", "Paste"])
+
+bloom.skeleton(rect(320, 228, 70, 14))
+bloom.banner(rect(10, 290, 240, 30), "A banner", "warn", true)
+bloom.tooltip(rect(10, 10, 90, 28), "The default button")
+bloom.toasts(rect(0, 0, screen_width(), screen_height()))
+let d = bloom.dialog("smoke", 200, 120, "Title")
+
+bloom.overlays()
+
+// The icon set, drawn once each.
+for i in range(0, len(bloom_icon.NAMES)) do
+  bloom_icon.icon(bloom_icon.NAMES[i], rect(10 + i * 16, 330, 14, 14), bloom.theme().muted)
+end

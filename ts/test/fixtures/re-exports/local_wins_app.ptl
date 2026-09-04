@@ -1,0 +1,2 @@
+import local_wins: button
+print(button("a"))

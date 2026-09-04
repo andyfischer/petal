@@ -1,0 +1,6 @@
+export import widgets/button: *
+
+// A declaration of this file's own beats the star, silently.
+export fn button(label)
+  "<" ++ label ++ ">"
+end

@@ -1,0 +1,10 @@
+// The declarative facade: one import surface over three modules, with no
+// hand-maintained `export let x = mod.x` list.
+export import widgets/button: *
+export import widgets/theme: accent
+export import widgets/menu
+
+// A facade may use what it re-exports.
+export fn labelled(label)
+  button(label) ++ accent
+end

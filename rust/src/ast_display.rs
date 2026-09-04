@@ -412,9 +412,16 @@ fn fmt_pattern(pattern: &Pattern) -> String {
 }
 
 fn fmt_import(decl: &ImportDecl) -> String {
-    let mut head = format!("Import {}", decl.module);
+    let mut head = String::new();
+    if decl.exported {
+        head.push_str("Export ");
+    }
+    let _ = write!(head, "Import {}", decl.module);
     if let Some(alias) = &decl.alias {
         let _ = write!(head, " as {alias}");
+    }
+    if decl.star {
+        head.push_str(": *");
     }
     if let Some(names) = &decl.names {
         let _ = write!(head, ": {}", names.join(", "));

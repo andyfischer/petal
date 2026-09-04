@@ -94,13 +94,23 @@ convention; a flat `import palette` is unchanged. See
 Still missing above that: a manifest (gap 5) that would let a library declare
 its own name rather than inheriting whatever directory a user dropped it in.
 
-### 3. There is no re-export form
+### 3. There is no re-export form — fixed
 
-The facade is 130 lines of `export let x = mod.x`. It works, and it even carries
-overload sets, but it is a list that has to be kept in sync by hand and gives no
-error when an export is forgotten. `export import bloom_button: *`, or
-`export import bloom_button: button, segmented`, would make the facade
-declarative.
+The facade *was* 130 lines of `export let x = mod.x`: correct, and it did carry
+overload sets, but it was a list to keep in sync by hand that said nothing when
+an export was forgotten. `export import` makes it declarative:
+
+```petal ignore
+export import bloom/button: *        // every export, whole overload sets
+export import bloom/theme: accent    // a selection — a missing name is an error
+export import bloom/menu             // the module binding itself
+```
+
+A star also binds the names locally (the facade can use them), is the weakest
+explicit binding in the file (a local declaration wins silently, and it merges
+with an overload set rather than replacing it), and errors when two stars offer
+the same non-function name. Chains work, cycles are the ordinary cycle error.
+See [module-system.md](../module-system.md#re-exporting).
 
 ### 4. A selective import list must fit on one line
 

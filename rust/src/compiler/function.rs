@@ -45,7 +45,7 @@ impl Compiler {
     /// built: the declaring module, plus one `(arity, closure term)` pair per
     /// variant. `None` for anything else — a native, a lambda, a record, a
     /// `var`, a name bound to a call's result.
-    fn overload_view(&self, tid: TermId) -> Option<(Option<String>, Vec<(usize, TermId)>)> {
+    pub(super) fn overload_view(&self, tid: TermId) -> Option<(Option<String>, Vec<(usize, TermId)>)> {
         // A hoisted `fn` binds its cell; the function value is what the
         // declaration wrote into it.
         let tid = self

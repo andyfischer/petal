@@ -526,7 +526,7 @@ impl Parser {
                 }
                 self.parse_let(start, false, false, true)
             }
-            Token::Import => self.parse_import(start),
+            Token::Import => self.parse_import(start, false),
             Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
         }
@@ -552,8 +552,12 @@ impl Parser {
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
             Some(Token::Ident(w)) if w == CLASS_KEYWORD => self.parse_class_decl(start, true),
+            // `export import m: *` — a re-export: the names this file imports
+            // become its own exports (docs/module-system.md#re-exporting).
+            Some(Token::Import) => self.parse_import(start, true),
             _ => Err(self.error_at_current(
-                "`export` must be followed by a fn, let, var, state, enum, or class declaration"
+                "`export` must be followed by a fn, let, var, state, enum, class, or import \
+                 declaration"
                     .to_string(),
             )),
         }
@@ -728,8 +732,18 @@ impl Parser {
     /// A selective name list may wrap: a line break is allowed after the `:`
     /// and after each `,`, and a trailing comma is allowed. Every other import
     /// form still ends at the newline; `as` is contextual (not a keyword).
-    fn parse_import(&mut self, start: usize) -> Result<Stmt, String> {
+    ///
+    /// `import m: *` names the module's whole exported surface instead of a
+    /// list, and `export import …` (any of the forms, `exported = true` here)
+    /// makes what this file imports part of what it exports — the declarative
+    /// facade described in docs/module-system.md#re-exporting.
+    fn parse_import(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
+        if exported {
+            // The `export` token stays a direct child of the ImportStmt node so
+            // the CST projection can recover the flag, as it does for `let`.
+            self.advance(); // consume 'export'
+        }
         self.advance(); // consume 'import'
         let mut module = self.expect_path_segment()?;
         while matches!(self.peek(), Token::Slash) {
@@ -741,6 +755,7 @@ impl Parser {
 
         let mut alias = None;
         let mut names = None;
+        let mut star = false;
         match self.peek().clone() {
             Token::Ident(kw) if kw == "as" => {
                 self.advance(); // consume 'as'
@@ -750,6 +765,13 @@ impl Parser {
                 self.advance(); // consume ':'
                 if matches!(self.peek(), Token::Newline) && self.import_list_continues() {
                     self.skip_newlines();
+                }
+                // `: *` stands in for the whole exported surface, and is the
+                // only thing in its list.
+                if matches!(self.peek(), Token::Star) {
+                    self.advance(); // consume '*'
+                    star = true;
+                    return self.finish_import(start, module, alias, None, star, exported);
                 }
                 let mut list = Vec::new();
                 loop {
@@ -771,22 +793,44 @@ impl Parser {
             _ => {}
         }
 
+        self.finish_import(start, module, alias, names, star, exported)
+    }
+
+    /// Close the `ImportStmt` node and build the statement. Shared by the two
+    /// exits from [`parse_import`] (`: *` returns early, since nothing may
+    /// follow the star).
+    fn finish_import(
+        &mut self,
+        start: usize,
+        module: String,
+        alias: Option<String>,
+        names: Option<Vec<String>>,
+        star: bool,
+        exported: bool,
+    ) -> Result<Stmt, String> {
         // A nested path binds its last segment by default, so `bloom/menu`
         // reads as `menu.open`. A flat name keeps `alias: None` and binds under
         // the module name itself, exactly as before.
-        if alias.is_none() && module.contains('/') {
-            alias = Some(crate::ast::module_local_name(&module).to_string());
-        }
+        let alias = match alias {
+            None if module.contains('/') => {
+                Some(crate::ast::module_local_name(&module).to_string())
+            }
+            other => other,
+        };
 
         self.ev_close();
-        Ok(self.mk_stmt(
+        let mut stmt = self.mk_stmt(
             StmtKind::Import(ImportDecl {
                 module,
                 alias,
                 names,
+                star,
+                exported,
             }),
             start,
-        ))
+        );
+        stmt.exported = exported;
+        Ok(stmt)
     }
 
     fn parse_fn_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {

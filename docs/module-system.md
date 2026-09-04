@@ -9,12 +9,13 @@ separate compilation and no runtime linker.
 
 A module name is a *path* of one or more identifier segments joined by `/`,
 and it names the file `<path>.ptl` — each leading segment a directory.
-There are three forms:
+There are four forms:
 
 ```petal ignore
 import ui                       // qualified: ui.button(...), ui.palette
 import ui: button, clicked      // selective: button(...), clicked
 import ui as u                  // alias: u.button(...)
+import ui: *                    // every export, bound weakly (see Re-exporting)
 ```
 
 Import statements must come before every other statement in the file.
@@ -102,6 +103,69 @@ A qualified access (`ui.helper()`) fails when it runs:
 Error: module 'ui' has no export 'helper' (declarations are private unless marked `export`)
 ```
 
+### Re-exporting
+
+A **facade** module presents one import surface over a library's several
+implementation modules. `export import` builds it declaratively — the
+facade names the modules, not each of their exports, so a name added to an
+implementation module needs no edit here:
+
+```petal ignore
+// bloom.ptl — the whole facade
+export import bloom/button: *        // every export of bloom/button
+export import bloom/theme: accent    // just these
+export import bloom/menu             // the module binding itself
+```
+
+An importer of `bloom` sees those names as if `bloom` had declared them:
+
+```petal ignore
+import bloom: button, accent, menu
+button("ok")        // bloom/button's, whole overload set and all
+menu.open()         // a module alias, passed on by the bare form
+```
+
+The three forms:
+
+- **`export import m: *`** re-exports every export of `m` under its own
+  name, *and* binds it locally, so the facade can use what it passes on.
+  Whole overload sets travel: a `button` with two arities arrives with both.
+- **`export import m: a, b`** re-exports exactly those names. Naming
+  something `m` does not export is the usual compile error —
+  `module 'bloom/menu' has no export 'nope' (exports: close, open)` — which
+  is the check a hand-written facade could not give you.
+- **`export import m`** re-exports the module *binding*. A module name is
+  not a value, so what travels is the alias: an importer that names it
+  (`import bloom: menu`) gets a module alias of its own and writes
+  `menu.open()`. `bloom.menu.open()` does **not** work — there is no
+  value to reach through.
+
+`*` and `export` are independent. A plain `import m: *` binds the whole
+surface locally without re-exporting it, and a nested path works in every
+form (`export import bloom/button: *`).
+
+**A star is the weakest explicit binding in the file.** It never fights:
+
+- a top-level declaration in the facade wins over a star, silently, and so
+  does a name the file imports by hand — whichever order the statements
+  appear in;
+- a star composes with [overload
+  merging](function-overloading.md#sets-merge-across-modules): a star over a
+  name a host prelude already provides merges by arity rather than replacing
+  the set;
+- but **two stars offering the same name** is a genuine ambiguity. They
+  merge when both are function sets (the later star wins each arity it
+  defines); otherwise it is an error naming both modules:
+
+```
+Error: bloom.ptl: 'shared' is re-exported by both 'a' and 'b' — name one of them explicitly, or drop it from one side
+```
+
+Chains work — a facade over a facade re-exports what it received — and a
+re-export cycle is caught by the ordinary cycle check
+(`import cycle: a -> b -> a`) rather than hanging. Re-exporting does not
+widen privacy: a star only ever carries names the target marked `export`.
+
 ### Classes and methods
 
 Methods are program-wide. A module that declares `fn Rect.area(r: Rect)`
@@ -175,8 +239,10 @@ error:
 Error: overloaded function 'f' has mixed export markers: mark all overloads 'export' or none
 ```
 
-Overload sets do not merge across files. Importing `f` from two modules is
-a collision like any other.
+Importing `f` from two modules by hand is a collision like any other. Sets
+declared in different modules do merge by arity where one binding lands on
+another — see [Sets merge across
+modules](function-overloading.md#sets-merge-across-modules).
 
 ## Where modules are found
 
@@ -282,7 +348,8 @@ right file.
 - Dotted module names (`import lib.geom`) and path strings. Nesting is
   spelled with `/`; use `-I` or `PETAL_PATH` to reach other directories.
 - Imports anywhere but the top of a file, including conditional imports.
-- Merging overload sets across modules.
+- Reaching a re-exported module through the facade as a value
+  (`bloom.menu.open()`); module names are not values.
 - Packages, versions and registries.
 - Distributing a module as compiled IR. Programs always compile from
   source.
@@ -290,8 +357,9 @@ right file.
 ## Shipping a library
 
 A library written in Petal is a directory of modules plus, usually, a facade
-module that re-exports them (`export let button = bloom_button.button` carries
-a function and its whole overload set). Users reach it through `-I`,
+module that re-exports them — `export import bloom/button: *` per
+implementation module, which carries whole overload sets and errors on a name
+that is not there (see [Re-exporting](#re-exporting)). Users reach it through `-I`,
 `PETAL_PATH`, a copy beside their script, or a host's `register_module`.
 Put the directory under a namespace and its modules import as
 `bloom/menu`, `bloom/motion` — no filename prefixes, and no collision with

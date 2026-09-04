@@ -1,0 +1,5 @@
+export let accent = "cyan"
+
+fn private_helper()
+  "hidden"
+end

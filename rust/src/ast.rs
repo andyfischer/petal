@@ -409,9 +409,22 @@ pub struct ImportDecl {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
     /// `import ui: button, clicked` → Some(["button", "clicked"]).
-    /// `None` means qualified-only (`ui.button(...)`).
+    /// `None` means qualified-only (`ui.button(...)`) or, with `star` set, the
+    /// whole exported surface.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>,
+    /// `import ui: *` — bind *every* export of the module under its own name,
+    /// weakly: the file's own declarations win silently, and two stars that
+    /// provide the same name merge their overload sets or collide loudly.
+    /// Mutually exclusive with `names`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub star: bool,
+    /// `export import ui: …` — the imported names (or, for `star`, the whole
+    /// surface; for a bare `export import m`, the module binding itself)
+    /// become exports of the importing module too. This is the declarative
+    /// facade: one module re-presents another's surface.
+    #[serde(skip_serializing_if = "is_false")]
+    pub exported: bool,
 }
 
 /// The local name a module path binds by default: its last segment

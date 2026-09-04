@@ -530,6 +530,11 @@ impl Projector {
         // `/ identifier` pairs. Everything after it is the `as` alias or the
         // selective list — for which only the identifier leaves matter, so the
         // newlines a wrapped list swallowed need no handling here.
+        // `export import …`: the `export` token is a direct child of this node,
+        // ahead of `import`, exactly as it is for a `let`.
+        let exported = tokens
+            .iter()
+            .any(|t| matches!(t.token(), Some(Token::Export)));
         let mut i = tokens
             .iter()
             .position(|t| ident_value(t).is_some())
@@ -552,8 +557,12 @@ impl Projector {
         let mut alias = None;
         let mut names = None;
         let has_colon = rest.iter().any(|t| matches!(t.token(), Some(Token::Colon)));
+        // `: *` — the whole exported surface, and the only thing in its list.
+        let star = rest.iter().any(|t| matches!(t.token(), Some(Token::Star)));
         let mut idents = rest.iter().filter_map(ident_value);
-        if has_colon {
+        if star {
+            // nothing to collect: the star stands for every export.
+        } else if has_colon {
             names = Some(idents.collect());
         } else if let Some(kw) = idents.next() {
             debug_assert_eq!(kw, "as", "only `as` can follow the module path");
@@ -567,6 +576,8 @@ impl Projector {
             module,
             alias,
             names,
+            star,
+            exported,
         }))
     }
 
@@ -1559,6 +1570,38 @@ mod tests {
 
         // Round-trips byte-for-byte, slashes included.
         let src = "import bloom/menu: open,\n  close,\n";
+        assert_eq!(parse_cst(src).expect("parse_cst").text(), src);
+    }
+
+    #[test]
+    fn projects_re_export_forms() {
+        assert_projects("export import bloom/button: *\n");
+        assert_projects("export import impl: a, b\n");
+        assert_projects("export import bloom/menu\n");
+        assert_projects("import impl: *\n");
+
+        let ast = projected_ast("export import bloom/button: *\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.module, "bloom/button");
+        assert_eq!(decl.alias.as_deref(), Some("button"));
+        assert_eq!(decl.names, None);
+        assert!(decl.star);
+        assert!(decl.exported);
+        assert!(ast[0].exported);
+
+        let ast = projected_ast("export import impl: a, b\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert!(!decl.star);
+        assert!(decl.exported);
+        assert_eq!(decl.names.as_deref(), Some(["a", "b"].map(String::from).as_slice()));
+
+        // The `export` and the `*` live inside the ImportStmt node, so the
+        // tree still round-trips byte-for-byte.
+        let src = "export import bloom/button: *\n";
         assert_eq!(parse_cst(src).expect("parse_cst").text(), src);
     }
 

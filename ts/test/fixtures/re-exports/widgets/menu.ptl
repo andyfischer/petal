@@ -1,0 +1,7 @@
+export fn open()
+  "menu open"
+end
+
+export fn close()
+  "menu close"
+end

@@ -306,6 +306,18 @@ pub struct Compiler {
     // ("ui::button"), so references to them ride the ordinary scope-lookup /
     // closure-capture machinery.
     module_exports: HashMap<String, Vec<String>>,
+    // Module *aliases* a module re-exports (`export import bloom/menu`):
+    // module name -> [(local alias, target module path)]. An importer that
+    // pulls one of these names in gets a module alias, not a value binding —
+    // module names are not values, so this is the only way a facade can pass
+    // a submodule on. Keyed like `module_exports`, and read the same way.
+    module_alias_exports: HashMap<String, Vec<(String, String)>>,
+    // Names the module being compiled re-exports (`export import m: *` /
+    // `export import m: a, b`), filled by `bind_imports` and consumed by
+    // `capture_exports`. Cleared at every module boundary.
+    reexported_names: HashSet<String>,
+    // Module aliases the module being compiled re-exports, same lifetime.
+    reexported_aliases: Vec<(String, String)>,
 }
 
 impl Default for Compiler {
@@ -368,6 +380,9 @@ impl Compiler {
             error_file: None,
             module_aliases: HashMap::new(),
             module_exports: HashMap::new(),
+            module_alias_exports: HashMap::new(),
+            reexported_names: HashSet::new(),
+            reexported_aliases: Vec::new(),
         }
     }
 
@@ -530,6 +545,8 @@ impl Compiler {
         self.overloaded_fns.clear();
         self.overload_variants.clear();
         self.own_fn_cells.clear();
+        self.reexported_names.clear();
+        self.reexported_aliases.clear();
 
         if !is_entry {
             self.push_scope(false); // module scope frame
@@ -593,6 +610,19 @@ impl Compiler {
         // Selectively-imported name → module it came from, for collision
         // provenance within this one file.
         let mut selective: HashMap<String, String> = HashMap::new();
+        // Every name this file names in a selective list, in any statement: a
+        // `*` import never binds over one of them, whichever order the two
+        // statements happen to appear in.
+        let named_by_hand: HashSet<String> = module
+            .imports
+            .iter()
+            .filter(|i| !i.implicit)
+            .flat_map(|i| i.decl.names.iter().flatten())
+            .cloned()
+            .collect();
+        // Star-bound name → the module that provided it, for the collision
+        // error when two stars disagree.
+        let mut starred: HashMap<String, String> = HashMap::new();
 
         for import in &module.imports {
             let m = &import.decl.module;
@@ -614,6 +644,9 @@ impl Compiler {
                     self.bind_imported_name(m, name, tid);
                 }
                 self.module_aliases.insert(m.clone(), m.clone());
+                for (alias, target) in self.alias_exports_of(m) {
+                    self.module_aliases.entry(alias).or_insert(target);
+                }
                 continue;
             }
 
@@ -631,14 +664,49 @@ impl Compiler {
                     ),
                 ));
             }
-            self.module_aliases.insert(alias, m.clone());
+            self.module_aliases.insert(alias.clone(), m.clone());
+
+            // `import m: *` — every export of `m`, bound weakly.
+            if import.decl.star {
+                self.bind_star_import(
+                    module,
+                    m,
+                    &exports,
+                    &declared,
+                    &named_by_hand,
+                    &mut starred,
+                    import.decl.exported,
+                )?;
+                continue;
+            }
 
             // Selective bindings (`import ui: button, clicked`).
             let Some(names) = &import.decl.names else {
+                // `export import m` re-exports the module *binding*: an
+                // importer of this file that names `alias` gets a module alias
+                // pointing at `m`, since a module name is not a value and so
+                // cannot be re-exported as one.
+                if import.decl.exported {
+                    self.reexported_aliases.push((alias, m.clone()));
+                }
                 continue;
             };
             for name in names {
                 if !exports.contains(name) {
+                    // A name the target re-exported as a *module* (`export
+                    // import bloom/menu` over there) binds here as a module
+                    // alias, not as a value.
+                    if let Some((_, target)) = self
+                        .alias_exports_of(m)
+                        .into_iter()
+                        .find(|(alias, _)| alias == name)
+                    {
+                        self.bind_module_alias(module, name.clone(), target.clone())?;
+                        if import.decl.exported {
+                            self.reexported_aliases.push((name.clone(), target));
+                        }
+                        continue;
+                    }
                     return Err(LoadError::message(
                         Phase::Compile,
                         format!(
@@ -678,9 +746,115 @@ impl Compiler {
                     .expect("export is bound under its qualified name");
                 self.bind_imported_name(m, name, tid);
                 selective.insert(name.clone(), m.clone());
+                if import.decl.exported {
+                    self.reexported_names.insert(name.clone());
+                }
             }
         }
         Ok(())
+    }
+
+    /// The module aliases `m` re-exports (`export import bloom/menu` in `m`).
+    fn alias_exports_of(&self, m: &str) -> Vec<(String, String)> {
+        self.module_alias_exports.get(m).cloned().unwrap_or_default()
+    }
+
+    /// Bind one module alias, loud when the name already aliases another
+    /// module — the same rule (and message) `import m as x` twice gets.
+    fn bind_module_alias(
+        &mut self,
+        module: &LoadedModule,
+        alias: String,
+        target: String,
+    ) -> Result<(), LoadError> {
+        if let Some(existing) = self.module_aliases.get(&alias)
+            && *existing != target
+        {
+            return Err(LoadError::message(
+                Phase::Compile,
+                format!(
+                    "{}: '{}' is already an alias for module '{}' and cannot also alias '{}'",
+                    module.display_name, alias, existing, target
+                ),
+            ));
+        }
+        self.module_aliases.insert(alias, target);
+        Ok(())
+    }
+
+    /// `import m: *` — bind every export of `m` under its own name, weakly.
+    ///
+    /// A star is the declarative facade's engine: it takes whatever `m`
+    /// exports *now*, so a name added over there needs no edit here. It is
+    /// deliberately the weakest explicit binding in the file:
+    /// - a top-level declaration in this file, or a name it selectively
+    ///   imports by hand, wins silently (order of statements does not matter);
+    /// - two stars that offer the same name merge their overload sets when
+    ///   both are function sets — the second star wins each arity it defines,
+    ///   the first keeps the rest — and collide loudly otherwise, since
+    ///   silently picking one of two values would be a facade that lies.
+    ///
+    /// `exported` (`export import m: *`) additionally makes each bound name an
+    /// export of *this* module, which is what makes re-export chains work.
+    #[allow(clippy::too_many_arguments)]
+    fn bind_star_import(
+        &mut self,
+        module: &LoadedModule,
+        m: &str,
+        exports: &[String],
+        declared: &HashSet<String>,
+        named_by_hand: &HashSet<String>,
+        starred: &mut HashMap<String, String>,
+        exported: bool,
+    ) -> Result<(), LoadError> {
+        for name in exports {
+            if declared.contains(name) || named_by_hand.contains(name) {
+                continue;
+            }
+            let tid = self
+                .scope_lookup(&format!("{m}::{name}"))
+                .expect("export is bound under its qualified name");
+            if let Some(other) = starred.get(name).cloned()
+                && other != m
+                && !self.both_are_function_sets(name, tid)
+            {
+                return Err(LoadError::message(
+                    Phase::Compile,
+                    format!(
+                        "{}: '{}' is re-exported by both '{}' and '{}' — name one of them                          explicitly, or drop it from one side",
+                        module.display_name, name, other, m
+                    ),
+                ));
+            }
+            // Merging (a set that another module already put in scope) rides
+            // the ordinary import path, so a star composes with it for free.
+            self.bind_imported_name(m, name, tid);
+            starred.insert(name.clone(), m.to_string());
+            if exported {
+                self.reexported_names.insert(name.clone());
+            }
+        }
+        // A star carries the module aliases `m` itself re-exports, so a facade
+        // over a facade passes submodules along too.
+        for (alias, target) in self.alias_exports_of(m) {
+            if declared.contains(&alias) || named_by_hand.contains(&alias) {
+                continue;
+            }
+            self.bind_module_alias(module, alias.clone(), target.clone())?;
+            if exported {
+                self.reexported_aliases.push((alias, target));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether the name's current binding and the incoming term are *both*
+    /// function sets this compiler built — the condition under which two
+    /// stars offering one name merge instead of colliding.
+    fn both_are_function_sets(&self, name: &str, incoming: TermId) -> bool {
+        self.scope_lookup(name)
+            .is_some_and(|existing| self.overload_view(existing).is_some())
+            && self.overload_view(incoming).is_some()
     }
 
     /// Bind an import under its bare name, carrying the binding kind over from
@@ -729,18 +903,25 @@ impl Compiler {
         fn_cells: HashSet<String>,
     ) {
         let module_name = module.name.as_deref().expect("not the entry file");
+        // A name this file merely imports is not part of its surface — unless
+        // the import said `export import`, which is exactly the point of one.
         let imported: std::collections::HashSet<&str> = module
             .imports
             .iter()
+            .filter(|i| !i.decl.exported)
             .flat_map(|i| i.decl.names.iter().flatten())
             .map(String::as_str)
             .collect();
 
         let exported = Self::exported_top_level_names(&module.stmts);
+        let reexported = &self.reexported_names;
 
         let mut names: Vec<String> = scope
             .keys()
-            .filter(|n| exported.contains(n.as_str()) && !imported.contains(n.as_str()))
+            .filter(|n| {
+                (exported.contains(n.as_str()) || reexported.contains(n.as_str()))
+                    && !imported.contains(n.as_str())
+            })
             .cloned()
             .collect();
         names.sort_unstable(); // deterministic export order for messages
@@ -770,6 +951,13 @@ impl Compiler {
             }
         }
         self.module_exports.insert(module_name.to_string(), names);
+        if !self.reexported_aliases.is_empty() {
+            let mut aliases = std::mem::take(&mut self.reexported_aliases);
+            aliases.sort();
+            aliases.dedup();
+            self.module_alias_exports
+                .insert(module_name.to_string(), aliases);
+        }
     }
 
     /// Top-level names a module declares (fn, enum variants, let, state, and a

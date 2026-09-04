@@ -1,0 +1,2 @@
+import cycle_a: thing
+print(thing)

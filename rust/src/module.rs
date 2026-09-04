@@ -394,6 +394,8 @@ fn import_all(name: &str) -> ImportDecl {
         module: name.to_string(),
         alias: None,
         names: None,
+        star: false,
+        exported: false,
     }
 }
 
@@ -613,6 +615,16 @@ mod tests {
         env.take_output()
     }
 
+    /// Like [`run`], but for a program expected to fail to load: returns the
+    /// error text.
+    fn load_err(modules: &[(&str, &str)], entry: &str) -> String {
+        let mut env = Env::new();
+        for (name, source) in modules {
+            env.register_module(name, source);
+        }
+        env.load_program(entry).expect_err("expected a load error").to_string()
+    }
+
     const UI: &str = "export fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
                       export let theme = { fg: 15 }";
 
@@ -818,6 +830,269 @@ mod tests {
                 "import lib\nprint(lib.go())",
             ),
             vec!["host sum"]
+        );
+    }
+
+    // ---- re-exports (`export import`) -------------------------------------
+
+    /// The overload set is the property the hand-written facade
+    /// (`export let f = m.f`) already had, and the one a declarative re-export
+    /// must not lose.
+    const BUTTON: &str = "export fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
+                          export fn button(l, w)\n  \"[\" ++ l ++ str(w) ++ \"]\"\nend";
+
+    #[test]
+    fn a_star_re_export_carries_a_whole_overload_set() {
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/button", BUTTON),
+                    ("bloom", "export import bloom/button: *"),
+                ],
+                &[],
+                "import bloom: button\nprint(button(\"a\"))\nprint(button(\"a\", 2))",
+            ),
+            vec!["[a]", "[a2]"]
+        );
+    }
+
+    #[test]
+    fn a_star_re_export_also_binds_the_names_locally() {
+        // The facade can use what it re-exports.
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/button", BUTTON),
+                    (
+                        "bloom",
+                        "export import bloom/button: *\nexport fn twice(l)\n  button(l) ++ button(l)\nend",
+                    ),
+                ],
+                &[],
+                "import bloom: twice\nprint(twice(\"a\"))",
+            ),
+            vec!["[a][a]"]
+        );
+    }
+
+    #[test]
+    fn a_selective_re_export_names_exactly_what_it_passes_on() {
+        assert_eq!(
+            run(
+                &[
+                    (
+                        "impl",
+                        "export fn a()\n  \"a\"\nend\nexport fn b()\n  \"b\"\nend",
+                    ),
+                    ("facade", "export import impl: a"),
+                ],
+                &[],
+                "import facade\nprint(facade.a())",
+            ),
+            vec!["a"]
+        );
+        let err = load_err(
+            &[
+                (
+                    "impl",
+                    "export fn a()\n  \"a\"\nend\nexport fn b()\n  \"b\"\nend",
+                ),
+                ("facade", "export import impl: a"),
+            ],
+            "import facade: b\nprint(b())",
+        );
+        assert!(err.contains("module 'facade' has no export 'b'"), "{err}");
+    }
+
+    #[test]
+    fn re_exporting_a_name_the_module_does_not_have_is_an_error() {
+        let err = load_err(
+            &[
+                ("impl", "export fn a()\n  1\nend"),
+                ("facade", "export import impl: a, nope"),
+            ],
+            "import facade\nprint(facade.a())",
+        );
+        assert!(
+            err.contains("module 'impl' has no export 'nope'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_local_declaration_wins_over_a_star_re_export() {
+        assert_eq!(
+            run(
+                &[
+                    ("impl", "export fn tag(l)\n  \"impl\" ++ l\nend"),
+                    (
+                        "facade",
+                        "export import impl: *\nexport fn tag(l)\n  \"facade\" ++ l\nend",
+                    ),
+                ],
+                &[],
+                "import facade: tag\nprint(tag(\"!\"))",
+            ),
+            vec!["facade!"]
+        );
+    }
+
+    #[test]
+    fn two_star_re_exports_of_one_function_name_merge_by_arity() {
+        assert_eq!(
+            run(
+                &[
+                    ("one", "export fn f(a)\n  \"one\" ++ a\nend"),
+                    ("two", "export fn f(a, b)\n  \"two\" ++ a ++ b\nend"),
+                    ("facade", "export import one: *\nexport import two: *"),
+                ],
+                &[],
+                "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
+            ),
+            vec!["onex", "twoxy"]
+        );
+    }
+
+    #[test]
+    fn two_star_re_exports_of_one_value_name_collide() {
+        let err = load_err(
+            &[
+                ("one", "export let v = 1"),
+                ("two", "export let v = 2"),
+                ("facade", "export import one: *\nexport import two: *"),
+            ],
+            "import facade: v\nprint(v)",
+        );
+        assert!(
+            err.contains("'v' is re-exported by both 'one' and 'two'"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_re_export_chain_passes_a_name_along() {
+        assert_eq!(
+            run(
+                &[
+                    ("deep", "export fn go()\n  \"deep\"\nend"),
+                    ("mid", "export import deep: *"),
+                    ("top", "export import mid: *"),
+                ],
+                &[],
+                "import top: go\nprint(go())",
+            ),
+            vec!["deep"]
+        );
+    }
+
+    #[test]
+    fn a_re_export_cycle_is_an_error_not_a_hang() {
+        let err = load_err(
+            &[
+                ("a", "export import b: *"),
+                ("b", "export import a: *"),
+            ],
+            "import a\nprint(1)",
+        );
+        assert!(err.contains("import cycle"), "{err}");
+    }
+
+    #[test]
+    fn export_import_re_exports_the_module_binding_itself() {
+        // A module name is not a value, so a bare `export import` passes the
+        // *alias* on: an importer that names it gets a module alias.
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/menu", "export fn open()\n  \"open\"\nend"),
+                    ("bloom", "export import bloom/menu"),
+                ],
+                &[],
+                "import bloom: menu\nprint(menu.open())",
+            ),
+            vec!["open"]
+        );
+    }
+
+    #[test]
+    fn a_star_import_without_export_binds_locally_only() {
+        let err = load_err(
+            &[
+                ("impl", "export fn a()\n  \"a\"\nend"),
+                ("plain", "import impl: *\nexport fn use_a()\n  a()\nend"),
+            ],
+            "import plain: a\nprint(a())",
+        );
+        assert!(err.contains("module 'plain' has no export 'a'"), "{err}");
+        assert_eq!(
+            run(
+                &[
+                    ("impl", "export fn a()\n  \"a\"\nend"),
+                    ("plain", "import impl: *\nexport fn use_a()\n  a()\nend"),
+                ],
+                &[],
+                "import plain: use_a\nprint(use_a())",
+            ),
+            vec!["a"]
+        );
+    }
+
+    #[test]
+    fn a_re_exported_name_reaches_a_nested_path_facade() {
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/button", BUTTON),
+                    ("bloom/menu", "export fn open()\n  \"m\"\nend"),
+                    (
+                        "bloom/all",
+                        "export import bloom/button: *\nexport import bloom/menu: *",
+                    ),
+                ],
+                &[],
+                "import bloom/all: button, open\nprint(button(\"a\"))\nprint(open())",
+            ),
+            vec!["[a]", "m"]
+        );
+    }
+
+    #[test]
+    fn a_star_re_export_composes_with_cross_module_overload_merging() {
+        // The host prelude has `f(a)`; a library adds `f(a, b)`; the facade
+        // star-re-exports the library. Both arities have to survive the two
+        // hops — the merge inside the facade, and the merge at the importer.
+        assert_eq!(
+            run(
+                &[
+                    ("ui", "export fn f(a)\n  \"ui\" ++ a\nend"),
+                    ("ext", "export fn f(a, b)\n  \"ext\" ++ a ++ b\nend"),
+                    ("facade", "export import ext: *"),
+                ],
+                &["ui"],
+                "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
+            ),
+            vec!["uix", "extxy"]
+        );
+    }
+
+    #[test]
+    fn a_star_re_export_carries_classes_and_vars() {
+        assert_eq!(
+            run(
+                &[
+                    (
+                        "impl",
+                        "export class Point\n  x: int\nend\n\
+                         export var hits = 0\n\
+                         export fn bump()\n  set hits = get hits + 1\nend",
+                    ),
+                    ("facade", "export import impl: *"),
+                ],
+                &[],
+                "import facade: Point, hits, bump\n\
+                 bump()\nlet p = Point(3)\nprint(str(p.x) ++ \"/\" ++ str(hits))",
+            ),
+            vec!["3/1"]
         );
     }
 }

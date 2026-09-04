@@ -1,0 +1,10 @@
+// Two arities of one name: the overload set a facade must carry whole.
+export fn button(label)
+  "[" ++ label ++ "]"
+end
+
+export fn button(label, width)
+  "[" ++ label ++ "|" ++ str(width) ++ "]"
+end
+
+export let button_pad = 2

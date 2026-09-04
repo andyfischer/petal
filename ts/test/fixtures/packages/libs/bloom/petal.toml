@@ -1,0 +1,5 @@
+# The library manifest: name, version, and where the modules live.
+[package]
+name = "bloom"
+version = "0.1.0"
+modules = "src"

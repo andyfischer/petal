@@ -1,0 +1,6 @@
+// A nested module reaches across the package by its full path.
+import bloom/motion
+
+export fn label()
+  motion.ease("button")
+end

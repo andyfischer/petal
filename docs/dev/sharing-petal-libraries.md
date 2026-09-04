@@ -91,8 +91,8 @@ its qualified export names. A library is a directory now, not a naming
 convention; a flat `import palette` is unchanged. See
 [module-system.md](../module-system.md#namespaced-paths).
 
-Still missing above that: a manifest (gap 5) that would let a library declare
-its own name rather than inheriting whatever directory a user dropped it in.
+Above that sits a manifest (gap 5), which lets a library declare its own name
+rather than inheriting whatever directory a user dropped it in.
 
 ### 3. There is no re-export form — fixed
 
@@ -122,13 +122,33 @@ import ui: mix, over, contrast_text, ui_theme, pad,   // ← parse error at the
 Repeating the statement (`import ui: …` twice) is allowed and is what bloom
 does, but a wrapped list is the obvious thing to write.
 
-### 5. There is no package or manifest concept
+### 5. There is no package or manifest concept — fixed
 
-Distribution is "copy a directory, then make it reachable" (`-I`, `PETAL_PATH`,
-beside the script, or `register_module` per file). Nothing records a library's
-name, version, module list, or that its modules belong together. A
-`bloom.toml`-shaped manifest that `import` and the CLI understood would replace
-both the prefix convention and the per-host registration loop.
+Distribution *was* "copy a directory, then make it reachable" (`-I`,
+`PETAL_PATH`, beside the script, or `register_module` per file), with nothing
+recording a library's name, version, module list, or that its modules belong
+together. A `petal.toml` at a library's root now does:
+
+```toml
+[package]
+name = "bloom"
+version = "0.1.0"
+modules = "src"      # optional; defaults to src/, else the manifest's dir
+```
+
+Its modules are then importable as `bloom/menu`, wherever the directory sits —
+the *manifest* name is the package name, so a library keeps its identity
+rather than inheriting whatever directory a user dropped it in. `-I` and
+`PETAL_PATH` pick up packages (a directory with a manifest, or one directory
+of them), `petal packages` lists what that made available, and a host
+registers a whole library in one call — `env.add_package(root)` from disk,
+`env.register_package(name, sources)` from `include_str!` — which is what
+bloom's nine-`include_str!` Garden integration was waiting for. Manifest
+errors name the file and the line.
+
+Deliberately absent: registry, fetching, dependency resolution, lockfile,
+version constraints. `version` is metadata. See
+[module-system.md](../module-system.md#packages).
 
 ### 6. Overload sets do not merge across modules
 
@@ -165,9 +185,11 @@ headlessly without copying the library next to it. Fixed:
 `petal-ui-run … -I <dir>` (and `Headless::from_file_with_paths`), plus an
 `include` list in a verify plan so the refactor verifier can drive such apps.
 
-**Two things a host still cannot do conveniently:** register a whole directory
-of modules in one call (bloom's Garden integration is nine `include_str!`s), and
-tell a script which libraries are available.
+**Registering a whole directory of modules in one call** — bloom's Garden
+integration is nine `include_str!`s — and **telling a script which libraries
+are available** are both covered by packages now: `env.add_package(root)` /
+`env.register_package(name, sources)` register a library in one call, and
+`env.packages()` (or `petal packages`) lists what is there. See gap 5.
 
 ## Testing notes
 

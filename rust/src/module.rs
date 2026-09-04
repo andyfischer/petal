@@ -13,9 +13,12 @@
 //! 1. embedder-registered in-memory modules (`Env::register_module`, keyed by
 //!    the full path) — how a prelude ships and how wasm hosts with no
 //!    filesystem work,
-//! 2. the importing file's directory, with each leading segment a directory
+//! 2. registered packages — a `petal.toml` library, whose modules answer to
+//!    `<package name>/<module>` wherever the library sits (see
+//!    [`crate::package`]),
+//! 3. the importing file's directory, with each leading segment a directory
 //!    under it (`<dir>/bloom/menu.ptl`),
-//! 3. registered search paths (`Env::add_module_path`, CLI `-I`), then the
+//! 4. registered search paths (`Env::add_module_path`, CLI `-I`), then the
 //!    directories in the `PETAL_PATH` environment variable.
 
 use std::collections::HashSet;
@@ -63,6 +66,10 @@ pub struct ModuleRegistry {
     /// so a host that replaces its own implicit imports can't drop it. Lowest
     /// precedence of all, so both host preludes and user code shadow it.
     pub base_implicit_imports: Vec<String>,
+    /// Registered packages (`petal.toml` libraries). Consulted after the
+    /// in-memory registrations and before the filesystem search paths; the
+    /// rules live in [`crate::package`].
+    packages: Vec<crate::package::Package>,
 }
 
 impl ModuleRegistry {
@@ -74,6 +81,24 @@ impl ModuleRegistry {
     /// Append a directory to the module search path.
     pub fn add_path(&mut self, dir: PathBuf) {
         self.paths.push(dir);
+    }
+
+    /// Register a package. A package with the same name is replaced — the
+    /// most recent registration of a name wins.
+    pub fn add_package(&mut self, package: crate::package::Package) {
+        let name = package.info.name.clone();
+        self.packages.retain(|p| p.info.name != name);
+        self.packages.push(package);
+    }
+
+    /// Is a package with this name already registered?
+    pub fn has_package(&self, name: &str) -> bool {
+        self.packages.iter().any(|p| p.info.name == name)
+    }
+
+    /// Every registered package, in registration order.
+    pub fn packages(&self) -> &[crate::package::Package] {
+        &self.packages
     }
 }
 
@@ -92,6 +117,13 @@ impl ModuleResolver for ModuleRegistry {
                 source: source.clone(),
                 origin: ModuleOrigin::Memory,
             });
+        }
+
+        // 1b. Registered packages: `bloom/menu` names a module of the package
+        // `bloom`, wherever that package's directory sits (see
+        // `crate::package`).
+        if let Some(found) = crate::package::resolve_in_packages(&self.packages, name, importer) {
+            return Some(found);
         }
 
         // 2. The importing file's directory, 3. search paths, 4. PETAL_PATH.

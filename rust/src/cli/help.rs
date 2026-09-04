@@ -19,6 +19,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("run", "Execute a program"),
             ("check", "Compile a program without executing it"),
             ("lsp", "Serve the language server over stdio"),
+            (
+                "packages",
+                "List the libraries the search path makes available",
+            ),
         ],
     ),
     (
@@ -125,6 +129,7 @@ fn page(name: &str) -> Option<&'static str> {
         "pending-report" => PENDING_REPORT,
         "propose-edit" => PROPOSE_EDIT,
         "lsp" => LSP,
+        "packages" => PACKAGES,
         _ => return None,
     })
 }
@@ -623,6 +628,41 @@ SEE ALSO
        petal help check
 ";
 
+const PACKAGES: &str = "\
+NAME
+       petal-packages - List the libraries the search path makes available
+
+SYNOPSIS
+       petal packages [--json] [-I <dir>]...
+
+DESCRIPTION
+       A Petal library is a directory holding a petal.toml manifest:
+
+           [package]
+           name = \"bloom\"
+           version = \"0.1.0\"
+           modules = \"src\"      # optional; defaults to src/
+
+       Every -I directory is searched for such libraries: the directory
+       itself, and each directory directly under it. A library named N makes
+       its modules importable as `import N/<module>`, and this command prints
+       what was found, one library per line with its modules under it.
+
+       A petal.toml that will not parse is an error here, and in every
+       command that takes -I — a library the user pointed at and that failed
+       to load should say so, not go quietly missing.
+
+OPTIONS
+       --json
+              Emit the list as structured JSON.
+
+       -I <dir>
+              A directory to search for libraries. Repeatable.
+
+SEE ALSO
+       petal help run
+";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -675,5 +715,6 @@ mod tests {
         "pending-report",
         "propose-edit",
         "lsp",
+        "packages",
     ];
 }

@@ -255,9 +255,12 @@ modules](function-overloading.md#sets-merge-across-modules).
 2. **The importing file's directory** — `<dir>/<path>.ptl`, each leading
    segment a directory (`<dir>/bloom/menu.ptl`). Two scripts side by side
    can share a `palette.ptl` next to them.
-3. **Search directories** added with `petal run -I <dir>` (repeatable, and
+3. **A registered package** — a library with a `petal.toml`, whose modules
+   answer to `<package name>/<module>` wherever the library sits. See
+   [Packages](#packages).
+4. **Search directories** added with `petal run -I <dir>` (repeatable, and
    accepted by every command that compiles) or `env.add_module_path`.
-4. **`PETAL_PATH`** — colon-separated directories from the environment.
+5. **`PETAL_PATH`** — colon-separated directories from the environment.
 
 Note that `petal run -e '...'` has no importing file, so step 2 finds
 nothing; add `-I .` to import from the current directory.
@@ -350,17 +353,83 @@ right file.
 - Imports anywhere but the top of a file, including conditional imports.
 - Reaching a re-exported module through the facade as a value
   (`bloom.menu.open()`); module names are not values.
-- Packages, versions and registries.
+- Registries, fetching, version constraints and lockfiles. A `petal.toml`
+  names a *local* library and lists nothing but itself (see
+  [Packages](#packages)); its `version` is metadata that nothing resolves on.
 - Distributing a module as compiled IR. Programs always compile from
   source.
+
+## Packages
+
+A `petal.toml` at the root of a directory turns it from "some `.ptl` files"
+into a library with a name:
+
+```toml
+[package]
+name = "bloom"
+version = "0.1.0"
+modules = "src"      # optional: where the modules are.
+                     # Defaults to src/ when it exists, else the manifest's
+                     # own directory.
+```
+
+Every `.ptl` file under the module directory is then importable as
+`<name>/<module>`, nested directories included:
+
+```petal ignore
+import bloom/menu
+import bloom/widgets/button
+import bloom/menu: open, close
+```
+
+The **manifest name is the package name**, not the directory name — a library
+keeps its name wherever a user drops it, and two copies cannot be told apart
+by where they were unpacked. A module whose name matches the package
+(`src/bloom.ptl`) is reachable as a bare `import bloom`, which is where a
+facade goes.
+
+Inside the library, modules reach each other by their plain flat names —
+`bloom/menu.ptl` says `import motion` — or by the package-qualified path,
+`import bloom/motion`. Pick one spelling per library and keep to it: a module
+imported both ways in one program is two modules, because a module's identity
+is the path the importing file wrote (see [How a multi-file program
+runs](#how-a-multi-file-program-runs)).
+
+**Making a package reachable.** From the command line, `-I` finds packages:
+a directory holding a `petal.toml`, and every directory directly under one,
+is registered as a package. `PETAL_PATH` directories are searched the same
+way.
+
+```bash
+petal run app.ptl -I ~/petal-libs      # ~/petal-libs/bloom/petal.toml → `bloom`
+petal packages -I ~/petal-libs         # what that made available
+```
+
+`petal packages` lists each library with its version, its directory, and its
+modules. A `petal.toml` that will not parse is an error naming the file and
+the line — a library the user pointed at never goes quietly missing.
+
+From a host, a package is one call (see [Embedding](#embedding)):
+
+```rust
+env.add_package("petal-libs/bloom")?;                 // from disk
+env.register_package("bloom", [("menu", MENU_SRC)])?; // from memory
+env.packages();                                       // what is available
+```
+
+There is no registry, no fetching, no dependency resolution and no version
+solving. A manifest records a library's identity; making it reachable is
+still a matter of `-I`, `PETAL_PATH`, or a host call.
 
 ## Shipping a library
 
 A library written in Petal is a directory of modules plus, usually, a facade
 module that re-exports them — `export import bloom/button: *` per
 implementation module, which carries whole overload sets and errors on a name
-that is not there (see [Re-exporting](#re-exporting)). Users reach it through `-I`,
-`PETAL_PATH`, a copy beside their script, or a host's `register_module`.
+that is not there (see [Re-exporting](#re-exporting)). Give it a
+[`petal.toml`](#packages) and the directory becomes a named package: users
+reach it through `-I`, `PETAL_PATH`, `env.add_package`, or (with no manifest)
+a copy beside their script or a host's `register_module`.
 Put the directory under a namespace and its modules import as
 `bloom/menu`, `bloom/motion` — no filename prefixes, and no collision with
 another library's `menu`. [`petal-libs/`](../petal-libs/README.md) is where
@@ -374,7 +443,10 @@ Hosts that embed Petal manage modules through `Env`:
 
 ```rust
 env.register_module("ui", include_str!("ui.ptl")); // in-memory module; wins over files
-env.add_module_path(dir);                          // filesystem search path
+env.add_module_path(dir);                          // filesystem search path (+ packages under it)
+env.add_package("petal-libs/bloom")?;              // a whole petal.toml library, one call
+env.register_package("bloom", modules)?;           // the same, from in-memory sources
+env.packages();                                    // every registered package
 env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
 env.load_program_at(&source, &path)?;              // entry file, with importer-relative resolution
 env.compile_program_at(pid, &source, &path)?;      // hot-reload recompile

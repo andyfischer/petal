@@ -21,7 +21,10 @@ Every command that compiles a program accepts these:
 - `-e '<code>'` — read the program from the command line instead of a file.
 - `-I <dir>` — add a module search directory. Repeatable. `import util` also
   looks in the importing file's directory and in the directories listed in
-  the `PETAL_PATH` environment variable.
+  the `PETAL_PATH` environment variable. `-I` also picks up *packages*: a
+  directory holding a `petal.toml`, and each directory directly under one,
+  becomes importable by its manifest name (`import bloom/menu`). See
+  [`packages`](#packages--list-available-libraries).
 
 ### Commands at a glance
 
@@ -30,6 +33,7 @@ Every command that compiles a program accepts these:
 | `run` | Execute a program |
 | `check` | Compile without executing |
 | `lsp` | Serve the language server over stdio |
+| `packages` | List the libraries the search path makes available |
 | `lint` | Report or apply source normalization |
 | `lint-fix` | `lint --fix <file>` under its own name |
 | `ir-equal` | Compare two files' compiled IR |
@@ -352,6 +356,48 @@ protocol. Editors spawn this as a child process.
 It provides full-text document sync, diagnostics on open and change, hover,
 go-to-definition, and completion. The loop exits on an `exit` notification or
 at EOF.
+
+### `packages` — List available libraries
+
+```
+petal packages [--json] [-I <dir>]...
+```
+
+A Petal library is a directory with a `petal.toml` manifest:
+
+```toml
+[package]
+name = "bloom"
+version = "0.1.0"
+modules = "src"      # optional; defaults to src/, else the manifest's dir
+```
+
+Every `-I` directory is searched for such libraries — the directory itself,
+and each directory directly under it — as are the `PETAL_PATH` directories.
+A library named `bloom` makes its modules importable as `import bloom/menu`;
+see [module-system.md](module-system.md#packages). This command prints what
+was found, so a user can check what a script can reach:
+
+```
+$ petal packages -I petal-libs
+bloom 0.1.0  /Users/me/petal/petal-libs/bloom
+    bloom/button
+    bloom/menu
+    bloom/motion
+```
+
+`--json` emits the same thing as `{ "packages": [ … ] }`, each entry with
+`name`, `version`, `root`, `module_dir` and `modules`.
+
+A `petal.toml` that will not parse is an error naming the file and the line —
+here and in every command that takes `-I`, because a library the user pointed
+at should say why it failed rather than go quietly missing:
+
+```
+Error: petal-libs/bloom/petal.toml: line 2: the value of 'name' must be a quoted string, found 'bloom'
+```
+
+This command takes no source file.
 
 ### `explain` — Show the value chain that produced a term
 

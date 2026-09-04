@@ -1,0 +1,4 @@
+// The facade module, reachable as a bare `import bloom`.
+import bloom/menu
+
+export let open = menu.open

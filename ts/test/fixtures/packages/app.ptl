@@ -1,0 +1,7 @@
+import bloom/menu
+import bloom/widgets/button
+import widgets/panel
+
+print(menu.open())
+print(button.label())
+print(panel.draw())

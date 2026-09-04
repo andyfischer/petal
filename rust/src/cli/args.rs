@@ -111,6 +111,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         }
         "run" => parse_run_args(&args[1..]),
         "lsp" => parse_lsp_args(&args[1..]),
+        "packages" => parse_packages_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "lint-fix" => parse_lint_fix_args(&args[1..]),
@@ -277,6 +278,28 @@ fn parse_lsp_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Lsp,
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+fn parse_packages_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--json" => json = true,
+            other => {
+                eprintln!(
+                    "Unexpected argument '{}'. Usage: petal packages [--json] [-I <dir>]...",
+                    other
+                );
+                process::exit(1);
+            }
+        }
+    }
+
+    CliArgs {
+        command: Command::Packages { json },
         source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }

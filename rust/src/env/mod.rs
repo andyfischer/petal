@@ -65,6 +65,11 @@ pub struct Env {
     modules: ModuleRegistry,
     /// Host-registered foreign-object classes, indexed by `HandleClassId`.
     handle_classes: Vec<HandleClass>,
+    /// Manifests that looked like packages and would not load, collected by
+    /// the best-effort discovery [`Env::add_module_path`] does. Read with
+    /// [`Env::package_errors`] — the CLI reports them, an embedder may not
+    /// care that some directory on a search path has a broken `petal.toml`.
+    package_errors: Vec<crate::error::LoadError>,
 }
 
 /// Name of the core prelude module: `import std`.
@@ -91,6 +96,23 @@ impl Env {
         // accidentally drop it.
         modules.register(STD_MODULE, STD_PRELUDE);
         modules.base_implicit_imports = vec![STD_MODULE.to_string()];
+        // Libraries sitting on PETAL_PATH are available by package name, the
+        // same as the ones a host adds with `add_module_path`. Discovery here
+        // is silent: PETAL_PATH is the machine's ambient setting, not this
+        // program's argument, so a broken manifest somewhere on it must not
+        // fail every Env in the process.
+        for dir in std::env::var("PETAL_PATH")
+            .unwrap_or_default()
+            .split(':')
+            .filter(|s| !s.is_empty())
+        {
+            let (packages, _ignored) = crate::package::discover_packages(std::path::Path::new(dir));
+            for package in packages {
+                if !modules.has_package(&package.info.name) {
+                    modules.add_package(package);
+                }
+            }
+        }
         Self {
             programs: HashMap::new(),
             stacks: HashMap::new(),
@@ -108,6 +130,7 @@ impl Env {
             bytecode: HashMap::new(),
             modules,
             handle_classes: Vec::new(),
+            package_errors: Vec::new(),
         }
     }
 
@@ -233,8 +256,86 @@ impl Env {
     /// Append a directory to the module search path (searched after the
     /// importing file's own directory). The CLI's `-I <dir>` lands here;
     /// `PETAL_PATH` directories are searched after these.
+    ///
+    /// Also picks up packages: `dir` itself, and each directory directly
+    /// under it, is registered as a package when it holds a `petal.toml`
+    /// (see [`crate::package`]), so dropping a library beside a search path
+    /// makes it importable as `<package>/<module>`. That half is best-effort
+    /// — a manifest that will not load is collected into
+    /// [`package_errors`](Self::package_errors) rather than thrown, because a
+    /// search directory is allowed to contain things that are not packages.
+    /// Use [`add_package`](Self::add_package) when the caller knows the
+    /// directory *is* a library and wants the error.
     pub fn add_module_path(&mut self, dir: std::path::PathBuf) {
+        let (packages, errors) = crate::package::discover_packages(&dir);
+        for package in packages {
+            // First search directory wins, matching search-path precedence.
+            if !self.modules.has_package(&package.info.name) {
+                self.modules.add_package(package);
+            }
+        }
+        self.package_errors.extend(errors);
         self.modules.add_path(dir);
+    }
+
+    /// Register a whole library from its root directory — the one call that
+    /// replaces a loop of [`register_module`](Self::register_module)s.
+    ///
+    /// `root` must hold a `petal.toml`; every `.ptl` file under the package's
+    /// module directory becomes importable as `<name>/<module>`, where `name`
+    /// is the manifest's `[package] name`. Returns what was registered.
+    /// Errors (missing/malformed manifest, bad name, missing module
+    /// directory) are [`LoadError`](crate::error::LoadError)s naming the file.
+    pub fn add_package(
+        &mut self,
+        root: impl AsRef<std::path::Path>,
+    ) -> Result<crate::package::PackageInfo, crate::error::LoadError> {
+        let package = crate::package::Package::from_dir(root.as_ref())?;
+        let info = package.info.clone();
+        self.modules.add_package(package);
+        Ok(info)
+    }
+
+    /// The in-memory twin of [`add_package`](Self::add_package): register a
+    /// whole library from sources the host already holds — `include_str!`,
+    /// `include_dir!`, or anything a wasm host carries with no filesystem.
+    ///
+    /// ```no_run
+    /// # let mut env = petal::env::Env::new();
+    /// env.register_package("bloom", [
+    ///     ("menu", include_str!("../../prelude/std.ptl")),
+    ///     ("motion", include_str!("../../prelude/std.ptl")),
+    /// ]).unwrap();
+    /// ```
+    ///
+    /// Module names are package-relative (`menu`, `ui/menu`); a `.ptl` suffix
+    /// is stripped if present. The modules are then importable as
+    /// `bloom/menu`, and reach each other with a flat `import motion`.
+    pub fn register_package<'a, N: AsRef<str>, S: AsRef<str>>(
+        &mut self,
+        name: &str,
+        modules: impl IntoIterator<Item = (N, S)>,
+    ) -> Result<crate::package::PackageInfo, crate::error::LoadError> {
+        let package = crate::package::Package::in_memory(name, modules)?;
+        let info = package.info.clone();
+        self.modules.add_package(package);
+        Ok(info)
+    }
+
+    /// Every registered package — what a host prints, or tells a script, when
+    /// asked which libraries are available.
+    pub fn packages(&self) -> Vec<crate::package::PackageInfo> {
+        self.modules
+            .packages()
+            .iter()
+            .map(|p| p.info.clone())
+            .collect()
+    }
+
+    /// Manifests that failed to load during the best-effort package discovery
+    /// of [`add_module_path`](Self::add_module_path).
+    pub fn package_errors(&self) -> &[crate::error::LoadError] {
+        &self.package_errors
     }
 
     /// Declare modules that every loaded program imports implicitly, as if by

@@ -1431,12 +1431,54 @@ fn source_origin(input: &SourceInput) -> Option<PathBuf> {
 }
 
 /// Build an Env configured with the CLI's `-I` module search paths.
+///
+/// `-I` also picks up packages: a directory holding a `petal.toml`, and any
+/// directly under it, becomes importable as `<package>/<module>` (see
+/// docs/module-system.md). A manifest that claims to be a package and then
+/// will not load is a hard error here — the user pointed at it, so a silent
+/// "no such module" later would be the wrong answer.
 fn make_env(include_dirs: &[PathBuf]) -> Env {
     let mut env = Env::new();
     for dir in include_dirs {
         env.add_module_path(dir.clone());
     }
+    if let Some(err) = env.package_errors().first() {
+        die_plain(&err.to_string());
+    }
     env
+}
+
+/// `petal packages [--json]`: what the `-I` directories make available.
+pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
+    let env = make_env(include_dirs);
+    let packages = env.packages();
+    if json {
+        let rows: Vec<serde_json::Value> = packages
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "version": p.version,
+                    "root": p.root.display().to_string(),
+                    "module_dir": p.module_dir.display().to_string(),
+                    "modules": p.modules,
+                })
+            })
+            .collect();
+        print_json(&serde_json::json!({ "packages": rows }));
+        return;
+    }
+    if packages.is_empty() {
+        println!("No packages found. Point -I at a directory holding a petal.toml, or at a");
+        println!("directory of such libraries.");
+        return;
+    }
+    for package in &packages {
+        println!("{}  {}", package.label(), package.root.display());
+        for module in &package.modules {
+            println!("    {}/{}", package.name, module);
+        }
+    }
 }
 
 /// Run the full front end (module resolution included). Returns the compiled

@@ -177,6 +177,11 @@ pub enum Command {
     /// Serve the language server over stdio. Takes no source file — documents
     /// arrive over the protocol.
     Lsp,
+    /// List the packages the `-I` directories and `PETAL_PATH` make available
+    /// (see `crate::package`). Takes no source file.
+    Packages {
+        json: bool,
+    },
 }
 
 pub enum SourceInput {
@@ -395,6 +400,11 @@ pub fn execute(cli: CliArgs) {
         handlers::handle_lsp();
         return;
     }
+    // `packages` reports on the search path itself; there is no program.
+    if let Command::Packages { json } = command {
+        handlers::handle_packages(json, &include_dirs);
+        return;
+    }
 
     let source = read_source(&source_input);
 
@@ -456,7 +466,7 @@ pub fn execute(cli: CliArgs) {
             handlers::handle_show_graph(all, &source, &source_input, &include_dirs);
         }
         // Handled above, before the source read.
-        Command::Lsp => unreachable!(),
+        Command::Lsp | Command::Packages { .. } => unreachable!(),
     }
 }
 

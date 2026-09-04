@@ -303,6 +303,36 @@ sum of `dt`. Scripts read it as `time()`, and the `ui` prelude's `elapsed()`
 captures it once into `state` to report seconds since its first call without the
 rounding drift of accumulating `dt` every frame.
 
+### Shipping a Petal library with the host
+
+A host that ships a library of Petal modules — a component set, a prelude
+split across files — registers the whole thing in **one call** rather than a
+loop of `register_module`s. From disk:
+
+```rust
+let info = env.add_package("petal-libs/bloom")?;   // reads petal-libs/bloom/petal.toml
+// info.name == "bloom", info.modules == ["button", "menu", "motion", ...]
+```
+
+From sources the binary already carries (`include_str!`, `include_dir!`, or a
+wasm host with no filesystem):
+
+```rust
+env.register_package("bloom", [
+    ("menu",   include_str!("../petal-libs/bloom/src/menu.ptl")),
+    ("motion", include_str!("../petal-libs/bloom/src/motion.ptl")),
+])?;
+```
+
+Either way the library's modules answer to `import bloom/menu`, its internal
+imports keep working, and `env.packages()` lists what a host can tell the user
+is available. `env.add_module_path(dir)` also registers any package it finds
+in `dir` or one level under it; that discovery is best-effort, and a manifest
+that would not load is collected into `env.package_errors()` rather than
+returned. Every failure is a `LoadError` naming the `petal.toml`. See
+[module-system.md](module-system.md#packages) for the manifest format and the
+rules.
+
 ### Allocating stable per-run ids
 
 Use a **counter** when the host needs to hand out sequential ids that are stable

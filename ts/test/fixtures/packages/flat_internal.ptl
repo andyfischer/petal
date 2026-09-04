@@ -1,0 +1,4 @@
+import bloom/menu: open, close
+
+print(open())
+print(close())

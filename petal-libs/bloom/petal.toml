@@ -1,0 +1,9 @@
+# bloom — a UI component library written entirely in Petal.
+#
+# The manifest is what gives the library its name: wherever this directory
+# lands, its modules answer to `bloom/…`, and `src/bloom.ptl` — the module
+# named like the package — answers to a bare `import bloom`.
+[package]
+name = "bloom"
+version = "0.1.0"
+modules = "src"

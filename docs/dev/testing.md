@@ -128,7 +128,7 @@ re-run the app and diff locally. Re-baseline it deliberately with
 
 Plans live in `test/verify-plans/`. A plan's `include` list names module search
 directories (relative to each side's root) handed to the UI driver as `-I`, so
-corpus apps that import a shared Petal library — `petal-libs/bloom/src` — still
+corpus apps that import a shared Petal library — `petal-libs` — still
 compile. The design is in
 [refactor-verification.md](refactor-verification.md).
 

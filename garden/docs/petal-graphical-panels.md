@@ -197,7 +197,7 @@ showcase panel is `examples/panels/gallery.ptl`.
 ### `import bloom`
 
 Garden also registers [bloom](../../petal-libs/bloom/README.md), the component
-library written in Petal itself, as importable modules — buttons, menus,
+library written in Petal itself, as an importable *package* — buttons, menus,
 controls and overlays that animate by default and that hold their own
 animation state per callsite:
 
@@ -209,11 +209,15 @@ if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check
 end
 ```
 
+`bloom` is the facade module; the implementation modules are reachable by their
+package paths when a drawer wants a slice rather than the whole surface
+(`import bloom/motion: spring`, `import bloom/icon as icons`).
+
 Unlike `ui` it is *not* an implicit import — a library that silently occupied a
 hundred names would collide with panels that define their own `button` or
 `switch` — so a drawer says `import bloom` (or `import bloom: button, dropdown`)
-and pays nothing otherwise. The modules are registered in memory rather than
-looked up on disk, so a panel-mode GPP drawer pushed as source can import them
+and pays nothing otherwise. The package is registered in memory rather than
+looked up on disk, so a panel-mode GPP drawer pushed as source can import it
 too. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
 app use it; the full reference is
 [petal-libs/bloom/docs/components.md](../../petal-libs/bloom/docs/components.md)

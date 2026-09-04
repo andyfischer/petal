@@ -5,7 +5,7 @@
 // (petal-libs/bloom), the pure-Petal component set Garden registers as
 // importable modules: `ui_theme()` mirrors the host palette in Garden and
 // falls back to the built-in theme under a bare `petal-ui-run`, so this screen
-// runs headlessly too — with `-I petal-libs/bloom/src` so that the bloom
+// runs headlessly too — with `-I petal-libs` so that the bloom
 // modules resolve outside Garden.
 import bloom
 

@@ -1,4 +1,4 @@
-// bloom_theme — tokens and the painting primitives every bloom component
+// bloom/theme — tokens and the painting primitives every bloom component
 // shares.
 //
 // bloom does not own a palette. It *derives* one: `theme()` starts from
@@ -10,10 +10,9 @@
 // frame with no setup, and an app that wants a look of its own overrides one
 // key rather than a palette.
 
-// A selective import list has to fit on one line, so the surface bloom takes
-// from `ui` is spelled out in a few of them rather than one paragraph.
-import ui: mix, over, contrast_text, ui_theme, pad
-import ui: draw_rect_rounded, draw_rect_outline, draw_line, draw_text, draw_shadow
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect`,
+// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
 
 // bloom's own layer over the host palette. Numbers only — every color comes
 // from the host, so these stay right in a light theme and a dark one.

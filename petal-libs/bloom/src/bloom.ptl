@@ -5,143 +5,46 @@
 //     import bloom                      // bloom.button(r, "Save")
 //     import bloom: button, dropdown    // button(r, "Save")
 //
-// Everything below is a re-export of the module that implements it, so the
-// implementation stays in small files and an app never has to know which one a
-// component lives in. Import the individual modules instead when you want only
-// a slice of it (`import bloom_motion: spring` in a game's HUD, say).
+// It is a facade: every line below re-exports a whole implementation module,
+// so the implementation stays in small files and an app never has to know
+// which one a component lives in. Import an individual module instead when you
+// want only a slice of it (`import bloom/motion: spring` in a game's HUD).
 //
 // bloom sits on top of `petal-ui`'s host layer — the input and draw natives
 // and the `ui` prelude's primitives — and adds a component layer with its own
 // theme, its own interaction model (press-and-release clicks, one open menu,
 // input capture for overlays), and animation in every component by default.
-// It is pure Petal: no Rust, no assets. Drop `src/*.ptl` beside your script,
-// or register the files as modules, and it works in any host that embeds
-// petal-ui.
+// It is pure Petal: no Rust, no assets. Put the library on the module path
+// (`-I petal-libs`, `PETAL_PATH`) or register it with `env.add_package` /
+// `env.register_package`, and it works in any host that embeds petal-ui.
+//
+// `petal.toml` at the library root is what makes the paths below work: the
+// package is named `bloom`, so its modules answer to `bloom/<name>` wherever
+// the directory sits, and this file — named like its package — is what a bare
+// `import bloom` finds.
 
-import bloom_motion
-import bloom_theme
-import bloom_icon
-import bloom_interact
-import bloom_button
-import bloom_controls
-import bloom_menu
-import bloom_overlay
+// `export import m: *` re-exports every export of `m` under its own name, and
+// carries whole overload sets across, so `bloom.button` has both of
+// bloom/button's arities. This replaced 130 hand-written `export let x = m.x`
+// lines; adding an export to a module now publishes it here with no edit.
+export import bloom/motion: *
+export import bloom/theme: *
+export import bloom/icon: *
+export import bloom/interact: *
+export import bloom/button: *
+export import bloom/controls: *
+export import bloom/menu: *
+export import bloom/overlay: *
+
+// Two names the facade spells differently from the module that defines them:
+// `on` and `NAMES` are clear inside `bloom/theme` and `bloom/icon`, and much
+// too generic out here. A star binds locally as well as re-exporting, so the
+// aliases are ordinary declarations over what the stars just brought in.
+export let ink_on = on
+export let ICONS = NAMES
 
 // Bumped when the export surface grows. Additive: a script written against an
-// older level keeps working.
-export let VERSION = 1
-
-// ── Theme ─────────────────────────────────────────────────────────────────
-export let theme = bloom_theme.theme
-export let theme_set = bloom_theme.theme_set
-export let theme_reset = bloom_theme.theme_reset
-export let dur = bloom_theme.dur
-export let rate = bloom_theme.rate
-export let tone = bloom_theme.tone
-export let ink_on = bloom_theme.on
-export let variant_fill = bloom_theme.variant_fill
-export let variant_ink = bloom_theme.variant_ink
-export let variant_solid = bloom_theme.variant_solid
-
-// ── Painting ──────────────────────────────────────────────────────────────
-export let ts = bloom_theme.ts
-export let ts_a = bloom_theme.ts_a
-export let ts_bold = bloom_theme.ts_bold
-export let text_in = bloom_theme.text_in
-export let surface = bloom_theme.surface
-export let hair = bloom_theme.hair
-export let stroke = bloom_theme.stroke
-export let wash = bloom_theme.wash
-export let focus_ring = bloom_theme.focus_ring
-export let divider = bloom_theme.divider
-// Call `overlays()` as the last line of a frame for exact overlay layering;
-// see the note in bloom_theme.
-export let overlays = bloom_theme.overlays
-export let defer_paint = bloom_theme.defer_paint
-export let icon = bloom_icon.icon
-export let ICONS = bloom_icon.NAMES
-
-// ── Motion ────────────────────────────────────────────────────────────────
-export let ease_to = bloom_motion.ease_to
-export let ease_flag = bloom_motion.ease_flag
-export let spring = bloom_motion.spring
-export let enter = bloom_motion.enter
-export let impulse = bloom_motion.impulse
-export let shake = bloom_motion.shake
-export let wave = bloom_motion.wave
-export let pulse = bloom_motion.pulse
-export let age = bloom_motion.age
-export let stagger = bloom_motion.stagger
-export let ease_in = bloom_motion.ease_in
-export let ease_out = bloom_motion.ease_out
-export let ease_in_out = bloom_motion.ease_in_out
-export let ease_back = bloom_motion.ease_back
-export let ease_elastic = bloom_motion.ease_elastic
-export let lerp_rect = bloom_motion.lerp_rect
-export let scale_rect = bloom_motion.scale_rect
-export let offset_rect = bloom_motion.offset_rect
-
-// ── Interaction ───────────────────────────────────────────────────────────
-export let probe = bloom_interact.probe
-export let probe_over = bloom_interact.probe_over
-export let hovering = bloom_interact.hovering
-export let clicked = bloom_interact.clicked
-export let drag = bloom_interact.drag
-export let focusable = bloom_interact.focusable
-export let focused = bloom_interact.focused
-export let focus_set = bloom_interact.focus_set
-export let focus_clear = bloom_interact.focus_clear
-export let focus_id = bloom_interact.focus_id
-export let key = bloom_interact.key
-export let chord = bloom_interact.chord
-export let capture = bloom_interact.capture
-export let capture_release = bloom_interact.capture_release
-export let is_captured = bloom_interact.is_captured
-
-// ── Buttons ───────────────────────────────────────────────────────────────
-export let button = bloom_button.button
-export let icon_button = bloom_button.icon_button
-export let segmented = bloom_button.segmented
-export let chip = bloom_button.chip
-export let chip_width = bloom_button.chip_width
-export let link = bloom_button.link
-export let spinner = bloom_button.spinner
-
-// ── Controls ──────────────────────────────────────────────────────────────
-export let switch = bloom_controls.switch
-export let checkbox = bloom_controls.checkbox
-export let radio_group = bloom_controls.radio_group
-export let slider = bloom_controls.slider
-export let stepper = bloom_controls.stepper
-export let progress = bloom_controls.progress
-export let text_field = bloom_controls.text_field
-
-// ── Menus ─────────────────────────────────────────────────────────────────
-export let menu = bloom_menu.menu
-export let menu_open = bloom_menu.menu_open
-export let menu_open_at = bloom_menu.menu_open_at
-export let menu_close = bloom_menu.menu_close
-export let menu_is_open = bloom_menu.menu_is_open
-export let menu_any_open = bloom_menu.menu_any_open
-export let menu_size = bloom_menu.menu_size
-export let dropdown = bloom_menu.dropdown
-export let select = bloom_menu.select
-export let menu_bar = bloom_menu.menu_bar
-export let context_menu = bloom_menu.context_menu
-
-// ── Overlays ──────────────────────────────────────────────────────────────
-export let tooltip = bloom_overlay.tooltip
-export let toast = bloom_overlay.toast
-export let toasts = bloom_overlay.toasts
-export let toast_count = bloom_overlay.toast_count
-export let toasts_clear = bloom_overlay.toasts_clear
-export let dialog = bloom_overlay.dialog
-export let dialog_open = bloom_overlay.dialog_open
-export let dialog_close = bloom_overlay.dialog_close
-export let dialog_is_open = bloom_overlay.dialog_is_open
-export let popover = bloom_overlay.popover
-export let popover_open = bloom_overlay.popover_open
-export let popover_close = bloom_overlay.popover_close
-export let popover_is_open = bloom_overlay.popover_is_open
-export let banner = bloom_overlay.banner
-export let skeleton = bloom_overlay.skeleton
+// older level keeps working. Level 2 is what the star re-exports published on
+// their own: `step` and `capture_owner`, two exports the hand-written facade
+// had been missing.
+export let VERSION = 2

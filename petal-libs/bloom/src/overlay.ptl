@@ -1,31 +1,43 @@
-// bloom_overlay — the things that float above a panel: tooltips, toasts,
+// bloom/overlay — the things that float above a panel: tooltips, toasts,
 // dialogs, popovers, banners and loading skeletons.
 //
 // Overlays are the part of a UI where immediate mode usually goes wrong: the
 // dialog is drawn last but has to eat the input first, and the toast has to
 // outlive the frame that raised it. Both are handled here — dialogs claim
-// input through `bloom_interact.capture`, and toasts live in a module-level
+// input through `bloom/interact`’s `capture`, and toasts live in a module-level
 // queue with their own clocks, so `toast("Saved")` from anywhere is a complete
 // interaction.
 
-import ui: rect, pad, mix, over, draw_rect, draw_rect_rounded, draw_text, draw_shadow, draw_line
-import ui: clip_push, clip_pop, wrap_px
-import bloom_theme: theme, ts, ts_a, tone, hair, stroke, wash, dur, rate, text_in, divider
-import bloom_theme: defer_paint
-import bloom_motion: ease_to, ease_flag, enter, ease_out, ease_back, age, scale_rect, impulse
-import bloom_interact: probe, probe_over, capture, capture_release, is_captured, hovering
-import bloom_icon: icon
-import bloom_button: icon_button
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect`,
+// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+import bloom/theme: theme, ts, ts_a, tone, hair, stroke, wash, dur, rate,
+                    text_in, divider, defer_paint
+import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back, age,
+                     scale_rect, impulse
+import bloom/interact: probe, probe_over, capture, capture_release,
+                       is_captured, hovering
+import bloom/icon: icon
+import bloom/button: icon_button
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
 
 // Rests over `anchor` for `delay` seconds, then fades in above it. Call it
 // late in the frame so it lands on top of what it describes.
 export fn tooltip(anchor, text)
-  tooltip(anchor, text, {})
+  tooltip_impl(anchor, text, {})
 end
 
 export fn tooltip(anchor, text, opts)
+  tooltip_impl(anchor, text, opts)
+end
+
+// `tooltip` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn tooltip_impl(anchor, text, opts)
   let t = theme()
   let over_it = hovering(anchor)
   // The dwell timer is dt-based rather than a clock difference, so it behaves

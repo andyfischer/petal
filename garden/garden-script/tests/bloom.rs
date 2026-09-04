@@ -110,8 +110,12 @@ impl Ui {
 #[test]
 fn bloom_is_importable_from_a_pushed_drawer() {
     // `from_source` has no file to resolve imports against: this passes only
-    // because Garden registers the library's modules in memory.
+    // because Garden registers the library as a package in memory. `bloom` is
+    // the module named like the package — the facade — and `bloom/motion` &c.
+    // are its siblings.
     let ui = Ui::new("import bloom\nlet v = bloom.VERSION\n");
+    assert_eq!(ui.value("v"), Some(2));
+    let ui = Ui::new("import bloom/motion: ease_to\nlet v = int(ease_to(1.0, 1.0))\n");
     assert_eq!(ui.value("v"), Some(1));
 }
 
@@ -148,9 +152,9 @@ fn a_switch_toggles_and_its_knob_settles_exactly() {
     // The knob is a spring: still travelling right after the toggle, and
     // parked exactly on 1.0 half a second later — animation that never quite
     // arrives would make every still frame differ.
-    assert!(ui.anim("bloom_motion::x") < 1.0);
+    assert!(ui.anim("bloom/motion::x") < 1.0);
     ui.tick(40);
-    assert_eq!(ui.anim("bloom_motion::x"), 1.0);
+    assert_eq!(ui.anim("bloom/motion::x"), 1.0);
 }
 
 #[test]

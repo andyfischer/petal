@@ -10,7 +10,7 @@
     "~/worlds-fair/ui/ptl"
   ],
   "include": [
-    "petal-libs/bloom/src"
+    "petal-libs"
   ],
   "steps": [
     {

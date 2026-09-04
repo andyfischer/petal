@@ -15,7 +15,7 @@
 //     underneath go inert, with no `if !blocked` guard anywhere in this file.
 
 import bloom
-import bloom_icon
+import bloom/icon as icons
 
 let T = ui_theme()
 let w = screen_width()
@@ -248,15 +248,15 @@ end
 if section == 5 then
   bloom.text_in("Every glyph is a few strokes in a unit box — no font, no atlas.",
     rect(content.x, content.y - 6, content.w, 20), bloom.ts(T, T.font_sm, T.dim))
-  for i in range(0, len(bloom_icon.NAMES)) do
+  for i in range(0, len(icons.NAMES)) do
     let col = i % 6
     let row = int(i / 6)
     let cell = rect(content.x + col * 110, content.y + 26 + row * 62, 100, 56)
     let p = bloom.probe(cell)
     draw_rect_rounded(cell, T.radius, bloom.wash(T, mix(T.bg, T.panel, 0.5), p.hot, p.active))
-    bloom_icon.icon(bloom_icon.NAMES[i], rect(cell.x + 38, cell.y + 8, 24, 24),
+    icons.icon(icons.NAMES[i], rect(cell.x + 38, cell.y + 8, 24, 24),
       mix(T.muted, T.accent, p.hot))
-    bloom.text_in(bloom_icon.NAMES[i], rect(cell.x, cell.y + 34, cell.w, 16),
+    bloom.text_in(icons.NAMES[i], rect(cell.x, cell.y + 34, cell.w, 16),
       bloom.ts(T, T.font_sm, T.dim), "center")
   end
 end

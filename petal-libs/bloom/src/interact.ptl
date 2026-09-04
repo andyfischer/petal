@@ -1,4 +1,4 @@
-// bloom_interact — the interaction layer: pointer probes, focus, hotkeys, and
+// bloom/interact — the interaction layer: pointer probes, focus, hotkeys, and
 // the input capture that lets an overlay drawn *last* still swallow the click.
 //
 // A probe is the unit every bloom component is built on. It answers the
@@ -11,8 +11,10 @@
 // sliding off it cancels, which is what every real toolkit does and what
 // makes a drag out of a menu item work.
 
-import ui: rect, point_in
-import bloom_motion: ease_flag, ease_to
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect` and
+// `point_in` bare — no `import ui` needed.
+import bloom/motion: ease_flag, ease_to
 
 // ── Input capture ─────────────────────────────────────────────────────────
 // Immediate mode draws overlays last, so an open menu's rect is not known

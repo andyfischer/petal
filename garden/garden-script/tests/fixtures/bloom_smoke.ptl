@@ -1,7 +1,7 @@
 // Every bloom component in one frame. The test asserts only that it runs and
 // draws; the gallery in examples/ui/bloom-gallery is the readable version.
 import bloom
-import bloom_icon
+import bloom/icon as icons
 
 state on = true
 state chk = false
@@ -46,6 +46,6 @@ let d = bloom.dialog("smoke", 200, 120, "Title")
 bloom.overlays()
 
 // The icon set, drawn once each.
-for i in range(0, len(bloom_icon.NAMES)) do
-  bloom_icon.icon(bloom_icon.NAMES[i], rect(10 + i * 16, 330, 14, 14), bloom.theme().muted)
+for i in range(0, len(icons.NAMES)) do
+  icons.icon(icons.NAMES[i], rect(10 + i * 16, 330, 14, 14), bloom.theme().muted)
 end

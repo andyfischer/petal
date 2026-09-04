@@ -28,7 +28,7 @@ library is found on the module path, which is what `-I` is for:
 ```bash
 cd petal-ui
 cargo run --bin petal-ui-run -- ../examples/ui/bloom-gallery/app.ptl \
-    --frames 120 --size 1100x760 -I ../petal-libs/bloom/src
+    --frames 120 --size 1100x760 -I ../petal-libs
 ```
 
 ## What to look for

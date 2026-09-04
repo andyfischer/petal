@@ -3,7 +3,7 @@
 // Ctrl+] and :back / :forward drive the same stack.
 //
 // Like home.ptl this paints with `ui_theme()` and bloom, so it also runs under
-// a bare `petal-ui-run -I petal-libs/bloom/src`.
+// a bare `petal-ui-run -I petal-libs`.
 import bloom
 
 let T = ui_theme()

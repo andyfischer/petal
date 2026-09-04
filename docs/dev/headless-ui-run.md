@@ -27,7 +27,7 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
 | `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
-| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I petal-libs/bloom/src`). |
+| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I petal-libs`). |
 
 Imports resolve relative to the app's own directory, so an app that imports a
 sibling module (`examples/games/snake/`-style layouts) runs from any working
@@ -35,7 +35,7 @@ directory. A library that lives elsewhere — one of the
 [`petal-libs/`](../../petal-libs/README.md) — comes in through `-I`:
 
 ```
-petal-ui-run examples/ui/bloom-gallery/app.ptl -I petal-libs/bloom/src --frames 120
+petal-ui-run examples/ui/bloom-gallery/app.ptl -I petal-libs --frames 120
 ```
 
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is

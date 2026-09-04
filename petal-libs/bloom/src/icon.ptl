@@ -1,4 +1,4 @@
-// bloom_icon — the icon set, drawn as vectors.
+// bloom/icon — the icon set, drawn as vectors.
 //
 // No font, no atlas, no asset pipeline: every glyph is a handful of strokes in
 // a unit box, scaled into whatever rect it is given. That is what keeps bloom
@@ -9,7 +9,9 @@
 // Coordinates are unit coordinates: (-0.5, -0.5) is the top-left of the glyph
 // box and (0.5, 0.5) the bottom-right, y down.
 
-import ui: draw_line, draw_circle, draw_rect_rounded
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `draw_line`,
+// `draw_circle` and `draw_rect_rounded` bare — no `import ui` needed.
 
 // A point in the glyph box `(cx, cy, s)`.
 fn _p(box, ux, uy)

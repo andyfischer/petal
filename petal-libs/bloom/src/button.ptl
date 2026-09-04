@@ -1,4 +1,4 @@
-// bloom_button — buttons and the controls shaped like them.
+// bloom/button — buttons and the controls shaped like them.
 //
 // The API is a value, not a callback: `if button(r, "Save") then …` is the
 // whole event model. Everything animates without being asked — hover wash,
@@ -8,7 +8,7 @@
 //
 // `opts` (all optional):
 //   variant   "default" | "primary" | "danger" | "success" | "warn" | "ghost" | "quiet"
-//   icon      an icon name drawn before the label (see bloom_icon)
+//   icon      an icon name drawn before the label (see bloom/icon)
 //   icon_end  an icon name drawn after it — a chevron for a menu button
 //   size      label size in px           radius    corner radius
 //   pill      true for a fully round end  align    "center" | "left"
@@ -16,18 +16,30 @@
 //   id        makes it focusable: Tab reaches it, Return/Space fires it
 //   ripple    false to switch the click ripple off
 
-import ui: rect, pad, mix, over, draw_rect_rounded, draw_text, draw_circle, clip_push, clip_pop
-import ui: draw_line
-import bloom_theme: theme, ts, tone, hair, stroke, wash, focus_ring, variant_fill, variant_ink, variant_solid, rate, dur
-import bloom_motion: ease_flag, ease_to, spring, impulse, scale_rect, ease_out, age
-import bloom_interact: probe, focusable, focused, focus_set, is_captured
-import bloom_icon: icon
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect`,
+// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring,
+                    variant_fill, variant_ink, variant_solid, rate, dur
+import bloom/motion: ease_flag, ease_to, spring, impulse, scale_rect,
+                     ease_out, age
+import bloom/interact: probe, focusable, focused, focus_set, is_captured
+import bloom/icon: icon
 
 export fn button(r, label)
-  button(r, label, {})
+  button_impl(r, label, {})
 end
 
 export fn button(r, label, opts)
+  button_impl(r, label, opts)
+end
+
+// `button` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn button_impl(r, label, opts)
   let t = theme()
   let enabled = !field(opts, "disabled", false) && !field(opts, "loading", false)
   let id = field(opts, "id", "")

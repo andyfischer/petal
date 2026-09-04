@@ -1,16 +1,20 @@
-// bloom_controls — the value-editing controls: switch, checkbox, radio, slider,
+// bloom/controls — the value-editing controls: switch, checkbox, radio, slider,
 // stepper, progress and the text field.
 //
 // Same contract as the buttons: you hand in the current value and get the new
 // one back. Nothing here holds your data — only its own animation — so two of
 // the same control never fight over state and an undo stack stays honest.
 
-import ui: rect, pad, mix, over, draw_rect, draw_rect_rounded, draw_text, draw_circle, draw_line
-import ui: clip_push, clip_pop, ellipsize_tail
-import bloom_theme: theme, ts, tone, hair, stroke, wash, focus_ring, dur, rate, text_in
-import bloom_motion: ease_flag, ease_to, spring, impulse, ease_out, age, scale_rect
-import bloom_interact: probe, drag, focusable, focused, focus_set, is_captured
-import bloom_icon: icon
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect`,
+// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring,
+                    dur, rate, text_in
+import bloom/motion: ease_flag, ease_to, spring, impulse, ease_out, age,
+                     scale_rect
+import bloom/interact: probe, drag, focusable, focused, focus_set,
+                       is_captured
+import bloom/icon: icon
 
 // ── Switch ────────────────────────────────────────────────────────────────
 
@@ -50,10 +54,19 @@ end
 // The tick is *drawn in*: the check's two strokes grow from the corner as the
 // box fills, rather than appearing whole.
 export fn checkbox(r, label, on)
-  checkbox(r, label, on, {})
+  checkbox_impl(r, label, on, {})
 end
 
 export fn checkbox(r, label, on, opts)
+  checkbox_impl(r, label, on, opts)
+end
+
+// `checkbox` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn checkbox_impl(r, label, on, opts)
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -90,10 +103,19 @@ end
 // One row per label; returns the new index. The dot scales in, and the ring of
 // the row you are hovering warms toward the accent.
 export fn radio_group(r, labels, index)
-  radio_group(r, labels, index, {})
+  radio_group_impl(r, labels, index, {})
 end
 
 export fn radio_group(r, labels, index, opts)
+  radio_group_impl(r, labels, index, opts)
+end
+
+// `radio_group` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn radio_group_impl(r, labels, index, opts)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let row_h = field(opts, "row_h", t.row_h)
@@ -125,10 +147,19 @@ end
 // tracks outside the control, so running off the end does not drop the grab.
 // While dragging, the value floats above the knob.
 export fn slider(r, value, lo, hi)
-  slider(r, value, lo, hi, {})
+  slider_impl(r, value, lo, hi, {})
 end
 
 export fn slider(r, value, lo, hi, opts)
+  slider_impl(r, value, lo, hi, opts)
+end
+
+// `slider` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn slider_impl(r, value, lo, hi, opts)
   let t = theme()
   let p = probe(r)
   let d = drag(r)
@@ -232,10 +263,19 @@ end
 // caret, insert, delete, word-delete and Return, which is what a panel's
 // filter box and rename field need.
 export fn text_field(r, buf)
-  text_field(r, buf, {})
+  text_field_impl(r, buf, {})
 end
 
 export fn text_field(r, buf, opts)
+  text_field_impl(r, buf, opts)
+end
+
+// `text_field` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn text_field_impl(r, buf, opts)
   let t = theme()
   let id = field(opts, "id", field(opts, "placeholder", "field"))
   let has = focusable(id)

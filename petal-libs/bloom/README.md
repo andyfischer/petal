@@ -57,42 +57,46 @@ no fonts, and no files at runtime.
 
 ## Installing it in a project
 
-Copy `src/*.ptl` into your project and make them reachable one of three ways:
+bloom is a *package*: `petal.toml` at this directory's root names it, so its
+modules answer to `bloom/…` wherever the directory lands. Copy the whole
+directory (manifest included) into your project and make it reachable one of
+two ways:
 
 ```bash
-# 1. beside the script — the importing file's directory is searched first
-cp petal-libs/bloom/src/*.ptl myapp/
-
-# 2. on the module path
-petal-ui-run myapp/app.ptl -I petal-libs/bloom/src
-petal run -I petal-libs/bloom/src myapp/app.ptl
+# 1. on the module path — point -I at the library root, or at a directory of
+#    libraries; either finds the manifest
+petal-ui-run myapp/app.ptl -I petal-libs
+petal run -I petal-libs/bloom myapp/app.ptl
+petal packages -I petal-libs            # check what that made importable
 ```
 
 ```rust
-// 3. registered by the host, which also covers scripts pushed as source
-for (name, src) in MODULES { env.register_module(name, src); }
+// 2. registered by the host, which also covers scripts pushed as source
+env.add_package("petal-libs/bloom")?;             // from disk
+env.register_package("bloom", MODULES)?;          // from include_str!
 ```
 
-Garden ships (3) in
+Garden ships (2) in
 [`garden/garden-script/src/bloom.rs`](../../garden/garden-script/src/bloom.rs) —
-nine `include_str!`s and a loop — so every Garden panel can `import bloom`.
+one `register_package` call over nine `include_str!`s — so every Garden panel
+can `import bloom`.
 
 ## The modules
 
 | Module | Contents |
 |--------|----------|
-| `bloom.ptl` | The facade. Re-exports everything below; `import bloom` is all most apps need |
-| `bloom_motion.ptl` | The animation core: `ease_to`, `ease_flag`, `spring`, `enter`, `impulse`, `stagger`, `shake`, easings, rect interpolation |
-| `bloom_theme.ptl` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `ts` |
-| `bloom_icon.ptl` | 22 vector glyphs, drawn as strokes in a unit box |
-| `bloom_interact.ptl` | `probe` (hover/press/click + their animated twins), input capture, focus ring, drag, hotkeys |
-| `bloom_button.ptl` | `button`, `icon_button`, `segmented`, `chip`, `link`, `spinner` |
-| `bloom_controls.ptl` | `switch`, `checkbox`, `radio_group`, `slider`, `stepper`, `progress`, `text_field` |
-| `bloom_menu.ptl` | `menu`, `dropdown`, `select`, `menu_bar`, `context_menu` |
-| `bloom_overlay.ptl` | `tooltip`, `toast`, `dialog`, `popover`, `banner`, `skeleton` |
+| `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `export import bloom/…: *` |
+| `bloom/motion` | The animation core: `ease_to`, `ease_flag`, `spring`, `enter`, `impulse`, `stagger`, `shake`, easings, rect interpolation |
+| `bloom/theme` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `ts` |
+| `bloom/icon` | 22 vector glyphs, drawn as strokes in a unit box |
+| `bloom/interact` | `probe` (hover/press/click + their animated twins), input capture, focus ring, drag, hotkeys |
+| `bloom/button` | `button`, `icon_button`, `segmented`, `chip`, `link`, `spinner` |
+| `bloom/controls` | `switch`, `checkbox`, `radio_group`, `slider`, `stepper`, `progress`, `text_field` |
+| `bloom/menu` | `menu`, `dropdown`, `select`, `menu_bar`, `context_menu` |
+| `bloom/overlay` | `tooltip`, `toast`, `dialog`, `popover`, `banner`, `skeleton` |
 
 Import the facade, or a single module when you want a slice of it
-(`import bloom_motion: spring` in a game's HUD).
+(`import bloom/motion: spring` in a game's HUD).
 
 ## Tests
 
@@ -112,7 +116,7 @@ Headlessly, without Garden:
 ```bash
 cd petal-ui && cargo run --bin petal-ui-run -- \
     ../examples/ui/bloom-gallery/app.ptl --frames 120 --scenario monkey:7 \
-    -I ../petal-libs/bloom/src
+    -I ../petal-libs
 ```
 
 ## Versioning

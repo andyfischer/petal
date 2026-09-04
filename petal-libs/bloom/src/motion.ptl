@@ -1,4 +1,4 @@
-// bloom_motion — the animation core of the bloom component library.
+// bloom/motion — the animation core of the bloom component library.
 //
 // Every value here is *per callsite*: the `state` inside these functions is
 // keyed by the call path, so a component that calls `ease_flag(hover, 18)`

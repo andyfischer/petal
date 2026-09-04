@@ -18,7 +18,7 @@ reference material lives elsewhere; link to it rather than guessing:
   animate by default, in pure Petal):
   [petal-libs/bloom/docs/components.md](../petal-libs/bloom/docs/components.md).
   Garden registers its modules, so a panel app can `import bloom` with no
-  setup; outside Garden, add `-I petal-libs/bloom/src`.
+  setup; outside Garden, add `-I petal-libs`.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):
   [garden/docs/petal-graphical-panels.md](../garden/docs/petal-graphical-panels.md).
 - The debug server (every endpoint):

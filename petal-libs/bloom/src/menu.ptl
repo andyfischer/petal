@@ -1,4 +1,4 @@
-// bloom_menu — dropdowns, menu bars, context menus and the command palette.
+// bloom/menu — dropdowns, menu bars, context menus and the command palette.
 //
 // One menu is open at a time, program-wide, and the library holds that fact,
 // not the app: `menu(id, anchor, items)` returns the index of the item chosen
@@ -6,7 +6,7 @@
 // thread, and a second menu opening closes the first because they are asking
 // the same cell.
 //
-// While a menu is open it *captures* input (see bloom_interact), so the panel
+// While a menu is open it *captures* input (see bloom/interact), so the panel
 // underneath goes inert for exactly as long as the menu is up — no ordering
 // discipline, no `if !menu_blocking()` around every other control.
 //
@@ -14,14 +14,17 @@
 //   {label, hint, icon, disabled, sep, danger}
 // `sep: true` draws a divider and cannot be chosen.
 
-import ui: rect, pad, mix, over, draw_rect_rounded, draw_text, draw_line, draw_shadow
-import ui: clip_push, clip_pop, ellipsize_tail
-import bloom_theme: theme, ts, ts_a, tone, hair, stroke, surface, wash, dur, rate, text_in, divider
-import bloom_theme: defer_paint
-import bloom_motion: ease_to, ease_flag, enter, ease_out, ease_back, scale_rect, age, stagger
-import bloom_interact: probe, probe_over, capture, capture_release, is_captured, capture_owner
-import bloom_icon: icon
-import bloom_button: button, chip
+// The `ui` prelude is the host's implicit import and now reaches every
+// module of a program, not just the entry file, so bloom names `rect`,
+// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+import bloom/theme: theme, ts, ts_a, tone, hair, stroke, surface, wash,
+                    dur, rate, text_in, divider, defer_paint
+import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back,
+                     scale_rect, age, stagger
+import bloom/interact: probe, probe_over, capture, capture_release,
+                       is_captured, capture_owner
+import bloom/icon: icon
+import bloom/button: button, chip
 
 // ── Which menu is open ────────────────────────────────────────────────────
 
@@ -364,10 +367,19 @@ end
 // Right-click anywhere in `area` to open `items` at the pointer. Returns the
 // chosen index, or -1.
 export fn context_menu(area, items)
-  context_menu(area, items, {})
+  context_menu_impl(area, items, {})
 end
 
 export fn context_menu(area, items, opts)
+  context_menu_impl(area, items, opts)
+end
+
+// `context_menu` is also a name in the `ui` prelude, which the host implicitly imports
+// into every module. Inside one variant's own body the name means only that
+// variant, so the short form cannot reach the long one directly — it would
+// escape outward to `ui`'s set. Both forms go through this private
+// implementation instead, which no other module can shadow.
+fn context_menu_impl(area, items, opts)
   let id = field(opts, "id", "context")
   if !is_captured() && mouse_pressed(1) &&
     mouse_x() >= area.x && mouse_x() < area.x + area.w &&

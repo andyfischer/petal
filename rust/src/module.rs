@@ -996,8 +996,26 @@ mod tests {
             "import facade: v\nprint(v)",
         );
         assert!(
-            err.contains("'v' is re-exported by both 'one' and 'two'"),
+            err.contains(
+                "'v' is re-exported by both 'one' and 'two' — name one of them explicitly, \
+                 or drop it from one side"
+            ),
             "{err}"
+        );
+    }
+
+    #[test]
+    fn a_nested_path_prelude_binds_its_alias_by_its_last_segment() {
+        // An implicit import binds the module alias the way an explicit
+        // `import bloom/menu` would: `menu`, not the whole path (which no
+        // expression can spell).
+        assert_eq!(
+            run(
+                &[("bloom/menu", "export fn open()\n  \"opened\"\nend")],
+                &["bloom/menu"],
+                "print(open())\nprint(menu.open())",
+            ),
+            vec!["opened", "opened"]
         );
     }
 

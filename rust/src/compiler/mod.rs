@@ -643,7 +643,12 @@ impl Compiler {
                         .expect("export is bound under its qualified name");
                     self.bind_imported_name(m, name, tid);
                 }
-                self.module_aliases.insert(m.clone(), m.clone());
+                // The alias is the module's *local* name, exactly as an
+                // explicit `import bloom/menu` would bind it — a host prelude
+                // registered under a nested path is reached as `menu.open()`,
+                // not by a path no expression can spell.
+                self.module_aliases
+                    .insert(crate::ast::module_local_name(m).to_string(), m.clone());
                 for (alias, target) in self.alias_exports_of(m) {
                     self.module_aliases.entry(alias).or_insert(target);
                 }
@@ -821,7 +826,8 @@ impl Compiler {
                 return Err(LoadError::message(
                     Phase::Compile,
                     format!(
-                        "{}: '{}' is re-exported by both '{}' and '{}' — name one of them                          explicitly, or drop it from one side",
+                        "{}: '{}' is re-exported by both '{}' and '{}' — name one of them \
+                         explicitly, or drop it from one side",
                         module.display_name, name, other, m
                     ),
                 ));

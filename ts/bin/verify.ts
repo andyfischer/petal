@@ -452,7 +452,8 @@ function driverArgs(kind: Kind, side: Side, path: string, seed: number, sc: Scen
     }
     return {
         bin: side.petal,
-        args: ['run', '--seed', String(seed), '--error-format', 'bare', path],
+        args: ['run', '--seed', String(seed), '--error-format', 'bare',
+               ...side.includeArgs, path],
     };
 }
 
@@ -551,7 +552,11 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
  * itself is the real evidence.
  */
 async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
-    const one = (s: Side, p: string) => exec(s.petal, ['check', '--error-format', 'bare', p]);
+    // The plan's `include` dirs reach `check` too, not just the UI driver: a
+    // corpus app that imports a shared library (petal-libs) must not be
+    // written off as `unsupported` merely because this step forgot its -I.
+    const one = (s: Side, p: string) =>
+        exec(s.petal, ['check', '--error-format', 'bare', ...s.includeArgs, p]);
     const [b, a] = await Promise.all([one(ctx.before, t.before), one(ctx.after, t.after)]);
     const split = (r: Run) => {
         const lines = `${r.stdout}${r.stderr}`.split('\n');
@@ -639,7 +644,8 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
         ? await exec(ctx.after.uiRun, [t.after, '--frames', '1', '--seed', '1',
                                        '--error-format', 'bare', '--out', '/dev/null',
                                        ...ctx.after.includeArgs])
-        : await exec(ctx.after.petal, ['run', '--seed', '1', '--error-format', 'bare', t.after]);
+        : await exec(ctx.after.petal, ['run', '--seed', '1', '--error-format', 'bare',
+                                       ...ctx.after.includeArgs, t.after]);
     const probeBin = kind === 'ui' ? ctx.after.uiRun : ctx.after.petal;
     const probeFailed = driverGuard(t.rel, kind, steps, [{ ...probe, bin: probeBin }]);
     if (probeFailed) return probeFailed;

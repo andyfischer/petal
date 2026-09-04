@@ -1597,7 +1597,10 @@ mod tests {
         };
         assert!(!decl.star);
         assert!(decl.exported);
-        assert_eq!(decl.names.as_deref(), Some(["a", "b"].map(String::from).as_slice()));
+        assert_eq!(
+            decl.names.as_deref(),
+            Some(["a", "b"].map(String::from).as_slice())
+        );
 
         // The `export` and the `*` live inside the ImportStmt node, so the
         // tree still round-trips byte-for-byte.

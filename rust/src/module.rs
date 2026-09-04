@@ -654,7 +654,9 @@ mod tests {
         for (name, source) in modules {
             env.register_module(name, source);
         }
-        env.load_program(entry).expect_err("expected a load error").to_string()
+        env.load_program(entry)
+            .expect_err("expected a load error")
+            .to_string()
     }
 
     const UI: &str = "export fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
@@ -945,10 +947,7 @@ mod tests {
             ],
             "import facade\nprint(facade.a())",
         );
-        assert!(
-            err.contains("module 'impl' has no export 'nope'"),
-            "{err}"
-        );
+        assert!(err.contains("module 'impl' has no export 'nope'"), "{err}");
     }
 
     #[test]
@@ -1038,10 +1037,7 @@ mod tests {
     #[test]
     fn a_re_export_cycle_is_an_error_not_a_hang() {
         let err = load_err(
-            &[
-                ("a", "export import b: *"),
-                ("b", "export import a: *"),
-            ],
+            &[("a", "export import b: *"), ("b", "export import a: *")],
             "import a\nprint(1)",
         );
         assert!(err.contains("import cycle"), "{err}");

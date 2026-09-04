@@ -761,7 +761,10 @@ impl Compiler {
 
     /// The module aliases `m` re-exports (`export import bloom/menu` in `m`).
     fn alias_exports_of(&self, m: &str) -> Vec<(String, String)> {
-        self.module_alias_exports.get(m).cloned().unwrap_or_default()
+        self.module_alias_exports
+            .get(m)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Bind one module alias, loud when the name already aliases another

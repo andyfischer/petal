@@ -1,0 +1,6 @@
+// Two declarations of one arity in one file: the later wins, and merging does
+// not resurrect the earlier one. `sum` keeps `std` in the program.
+fn label(x) "first" end
+fn label(x) "second" end
+print(label(1))
+print(sum([1, 1]))

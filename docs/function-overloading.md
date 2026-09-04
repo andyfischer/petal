@@ -148,6 +148,51 @@ receiver.
 ## Across files
 
 An overloaded name is one binding, so either every variant is `export`ed or
-none is; a mixed group is a compile error. Overload sets do not merge across
-files: importing `f` from two modules is a collision. See
+none is; a mixed group is a compile error. Importing `f` from two modules by
+name is still a collision — a selective import is an explicit request, and two
+of them for one name are ambiguous. See
 [Module system](module-system.md#exporting).
+
+### Sets merge across modules
+
+A binding that lands on a name **another module** already put in scope *joins*
+its overload set instead of replacing it. So a library can add an arity to a
+name it does not own — the thing a component library wants when the host
+prelude's `draw_rect` takes a record and a color and the library wants a
+one-argument default-colored form:
+
+```petal ignore
+// lib.ptl — no `import ui` needed; `ui` is the host's implicit import
+export fn draw_rect(r)
+  ui.draw_rect(r, { r: 9, g: 9, b: 9 })
+end
+
+// every arity is callable here: the one this file added, and the
+// prelude's 2, 3, 7 and 8-argument forms
+export fn paint()
+  draw_rect({ x: 0, y: 0, w: 10, h: 10 })
+  draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
+end
+```
+
+The rules:
+
+- **Both sides must be function sets.** A binding that is not one — a `let`, a
+  `var`, a record, a builtin native — shadows the whole set as it always did.
+- **An arity both sides define goes to the higher-precedence binding**, and the
+  lower one is simply unreachable at that arity. It is not an error. The
+  precedence order is unchanged: the core prelude (`std`) < a host's implicit
+  imports < the file's own `import`s < the file's own declarations.
+- **Only across module boundaries.** Two declarations of the same arity in one
+  file still replace each other, and a nested `fn` still shadows the whole set
+  inside its enclosing function.
+- **A variant's own name still means that variant inside its own body**, the
+  self-recursion binding. To reach another arity from inside an added variant,
+  call it through the module (`ui.draw_rect(r, c)`), as above.
+
+Merging reaches the weak bindings too — that is the point of it — so a module
+that declares `fn count(xs)` keeps `std`'s `count(xs, pred)` callable. One
+wrinkle there: `std` is only merged into a program that *references* one of its
+exports, and the gate ignores a name the file itself declares. A file whose only
+mention of `count` is its own declaration does not pull `std` in, so there is
+nothing to merge with; naming any other `std` export brings it back.

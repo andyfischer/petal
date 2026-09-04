@@ -1,0 +1,9 @@
+// A library module that adds an arity to a name the core prelude owns, and
+// calls both from inside its own file. `std` is reference-gated, so the module
+// names one of its exports outright to pull it in — `count` alone would not,
+// since the gate ignores a name the file itself declares.
+let _keep_std = sum([1])
+
+export fn count(xs) 999 end
+
+export fn both() [count([1, 2, 3]), count([1, 2, 3], fn(x) x > 1 end)] end

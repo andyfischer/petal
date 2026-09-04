@@ -1,0 +1,3 @@
+// A library that owns `count` at one arity only. The core prelude (`std`)
+// exports `count(xs, pred)`, so an importer sees both.
+export fn count(xs) 999 end

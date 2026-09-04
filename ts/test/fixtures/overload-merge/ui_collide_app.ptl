@@ -1,0 +1,3 @@
+import ui_collide_lib
+
+ui_collide_lib.paint()

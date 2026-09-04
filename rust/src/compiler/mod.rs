@@ -138,6 +138,22 @@ pub struct Compiler {
     // Compiled overload variants: name → vec of closure term IDs (one per arity)
     overload_variants: HashMap<String, Vec<TermId>>,
 
+    // What the compiler knows about the *shape* of every function value it has
+    // built: which arity a closure term takes, which variants an overload-set
+    // term joins, and which module each was declared in. Unlike
+    // `overloaded_fns`/`overload_variants` it is **not** cleared per module —
+    // it is what lets a module merge its own arity into a set another module
+    // owns (see `merge_overload_binding`).
+    overload_index: function::OverloadIndex,
+
+    // The function cells *this* module's prescan created, so a declaration
+    // writes only a box its own file hoisted. A name that arrives as an
+    // imported hoisted `fn` is also a cell binding, and writing that one would
+    // reach into the exporting module's own recursion; such a declaration
+    // shadows (or merges) instead, like any other redeclaration. Cleared per
+    // module.
+    own_fn_cells: HashSet<TermId>,
+
     // Per-block rebinding log: block → (name → latest rebind term in that
     // block). Populated by `compile_assign` when a name bound in an outer
     // block is reassigned inside a child block. Consumed by `wire_phi_outs`
@@ -328,6 +344,8 @@ impl Compiler {
             value_used: true,
             overloaded_fns: HashMap::new(),
             overload_variants: HashMap::new(),
+            overload_index: function::OverloadIndex::default(),
+            own_fn_cells: HashSet::new(),
             block_rebinds: HashMap::new(),
             carry_slots: Vec::new(),
             block_shadowed: HashMap::new(),
@@ -511,6 +529,7 @@ impl Compiler {
         self.imported_vars.clear();
         self.overloaded_fns.clear();
         self.overload_variants.clear();
+        self.own_fn_cells.clear();
 
         if !is_entry {
             self.push_scope(false); // module scope frame
@@ -670,6 +689,19 @@ impl Compiler {
     /// forward the raw cell id to every read and break the containment
     /// invariant (no expression ever evaluates to a cell — §6d).
     fn bind_imported_name(&mut self, module: &str, name: &str, tid: TermId) {
+        // An import over a name some *other* module already put in this scope
+        // joins the two overload sets: the higher-precedence import (this one)
+        // wins every arity it defines, and the arities only the outgoing
+        // binding had stay reachable. Non-functions, and two bindings from the
+        // same module, shadow exactly as before.
+        if let Some(existing) = self.scope_lookup(name)
+            && let Some(merged) = self.merge_overload_binding(name, existing, tid)
+        {
+            // The merged value is an ordinary function value, not a cell — the
+            // exporting module has already run and filled any cell of its own.
+            self.scope_bind(name.to_string(), merged);
+            return;
+        }
         if self.binding_is_var(&format!("{module}::{name}")) {
             self.scope_bind_var(name.to_string(), tid);
             self.imported_vars
@@ -1253,6 +1285,7 @@ impl Compiler {
                         let nil_tid = self.emit_term(TermOp::Constant(nil), smallvec![], None);
                         let cell = self.emit_term(TermOp::CellNew, smallvec![nil_tid], None);
                         self.source_map.add(cell, stmt.span);
+                        self.own_fn_cells.insert(cell);
                         self.scope_bind_fn_cell(name.clone(), cell);
                     } else if self.scope_lookup(name).is_none() {
                         let tid = self.emit_phantom_term(name.clone());

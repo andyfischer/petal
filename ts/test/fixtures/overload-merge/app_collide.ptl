@@ -1,0 +1,5 @@
+// Same arity as the prelude's `count`: the higher-precedence declaration wins
+// for that arity, and the prelude's other arities are untouched.
+fn count(xs, pred) "mine" end
+print(count([1, 2, 3], fn(x) x > 1 end))
+print(sum([1, 2, 3]))

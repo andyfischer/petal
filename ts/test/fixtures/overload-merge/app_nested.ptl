@@ -1,0 +1,14 @@
+// A nested `fn` shadows the whole merged set inside its enclosing function,
+// and the set keeps every arity everywhere else.
+fn count(xs) 999 end
+
+let _keep_std = sum([1])   // pulls the reference-gated `std` into the program
+
+fn outer()
+  fn count(xs) "nested" end
+  count([1, 2, 3])
+end
+
+print(outer())
+print(count([1, 2, 3]))
+print(count([1, 2, 3], fn(x) x > 1 end))

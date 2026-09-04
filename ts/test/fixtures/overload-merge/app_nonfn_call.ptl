@@ -1,0 +1,5 @@
+// The same shadow, called: a non-function binding replaces the set outright,
+// so there is nothing left to dispatch to.
+let count = 7
+print(sum([1, 2, 3]))
+print(count([1, 2, 3], fn(x) x > 1 end))

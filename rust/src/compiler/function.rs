@@ -3,7 +3,107 @@
 
 use super::*;
 
+/// What the compiler knows about the function values it has emitted, kept
+/// across module boundaries so a later module can merge its own arity into an
+/// overload set an earlier one built.
+///
+/// Only `fn` declarations are recorded. A native, a lambda, a `let` bound to
+/// something else — anything not in here — is unknown, and an unknown binding
+/// shadows wholesale exactly as it always did.
+#[derive(Default)]
+pub(super) struct OverloadIndex {
+    /// Closure term → its parameter count.
+    arity: HashMap<TermId, usize>,
+    /// `MakeOverloadSet` term → the variant closure terms it joins.
+    members: HashMap<TermId, Vec<TermId>>,
+    /// Function value term (closure or set) → the module that declared it
+    /// (`None` = the entry file).
+    module: HashMap<TermId, Option<String>>,
+    /// Hoisted-`fn` cell term → the function value the declaration writes into
+    /// it, so a binding that holds the cell can still be read as a function.
+    cell_value: HashMap<TermId, TermId>,
+}
+
 impl Compiler {
+    /// Note a compiled `fn` closure and the module it belongs to.
+    fn record_fn_closure(&mut self, tid: TermId, arity: usize) {
+        self.overload_index.arity.insert(tid, arity);
+        self.overload_index
+            .module
+            .insert(tid, self.current_module.clone());
+    }
+
+    /// Note an emitted overload set and the variants it joins.
+    fn record_fn_set(&mut self, tid: TermId, members: Vec<TermId>) {
+        self.overload_index.members.insert(tid, members);
+        self.overload_index
+            .module
+            .insert(tid, self.current_module.clone());
+    }
+
+    /// The arity structure of a binding, when it is a function this compiler
+    /// built: the declaring module, plus one `(arity, closure term)` pair per
+    /// variant. `None` for anything else — a native, a lambda, a record, a
+    /// `var`, a name bound to a call's result.
+    fn overload_view(&self, tid: TermId) -> Option<(Option<String>, Vec<(usize, TermId)>)> {
+        // A hoisted `fn` binds its cell; the function value is what the
+        // declaration wrote into it.
+        let tid = self
+            .overload_index
+            .cell_value
+            .get(&tid)
+            .copied()
+            .unwrap_or(tid);
+        let module = self.overload_index.module.get(&tid)?.clone();
+        let variants = match self.overload_index.members.get(&tid) {
+            Some(members) => members
+                .iter()
+                .filter_map(|m| self.overload_index.arity.get(m).map(|a| (*a, *m)))
+                .collect(),
+            None => vec![(*self.overload_index.arity.get(&tid)?, tid)],
+        };
+        Some((module, variants))
+    }
+
+    /// Merge the overload set a name already has in scope with the one about to
+    /// take it over, when both are function sets **from different modules**.
+    /// The incoming (higher-precedence) binding wins every arity it defines;
+    /// the arities only the outgoing one defines stay reachable instead of
+    /// vanishing with it. Returns the merged set's term, or `None` when there
+    /// is nothing to merge and the caller should bind as it always did:
+    ///
+    /// - either side is not a known function set (a non-function binding
+    ///   shadows wholesale),
+    /// - both come from the same module (a second declaration of the same
+    ///   arity replaces the first — docs/function-overloading.md), or
+    /// - the incoming set already covers every arity the outgoing one had.
+    pub(super) fn merge_overload_binding(
+        &mut self,
+        name: &str,
+        existing: TermId,
+        incoming: TermId,
+    ) -> Option<TermId> {
+        let (outgoing_module, outgoing) = self.overload_view(existing)?;
+        let (incoming_module, incoming_vars) = self.overload_view(incoming)?;
+        if outgoing_module == incoming_module {
+            return None;
+        }
+        let mut by_arity: std::collections::BTreeMap<usize, TermId> =
+            outgoing.into_iter().collect();
+        for (arity, tid) in &incoming_vars {
+            by_arity.insert(*arity, *tid);
+        }
+        if by_arity.len() == incoming_vars.len() {
+            // Nothing survived from the outgoing set: an ordinary shadow.
+            return None;
+        }
+        let members: Vec<TermId> = by_arity.values().copied().collect();
+        let inputs: SmallVec<[TermId; 4]> = members.iter().copied().collect();
+        let display = self.qualified_name(name);
+        let set_tid = self.emit_term(TermOp::MakeOverloadSet, inputs, Some(display));
+        self.record_fn_set(set_tid, members);
+        Some(set_tid)
+    }
     /// `fn name(params) { body }`. Overloaded functions (same name declared
     /// with several arities) compile each variant under an internal
     /// "name#arity" and are joined into an overload set once all variants
@@ -41,13 +141,14 @@ impl Compiler {
             // without colliding with the entry file's names. The scope
             // binding stays bare — in-module references are unqualified.
             self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
-            self.bind_fn_result(name, closure_tid);
-            return Some(closure_tid);
+            self.record_fn_closure(closure_tid, params.len());
+            return Some(self.bind_fn_result(name, closure_tid));
         };
 
         // Overloaded function: compile with internal name "name#arity"
         let internal_name = format!("{}#{}", name, params.len());
         let closure_tid = self.compile_function(Some(internal_name), params, body, Some(def_end));
+        self.record_fn_closure(closure_tid, params.len());
         self.overload_variants
             .entry(name.to_string())
             .or_default()
@@ -56,15 +157,15 @@ impl Compiler {
         // Once all variants are compiled, emit the overload set
         let compiled_count = self.overload_variants[name].len();
         if compiled_count == expected_count {
-            let inputs: SmallVec<[TermId; 4]> =
-                self.overload_variants[name].clone().into_iter().collect();
+            let members: Vec<TermId> = self.overload_variants[name].clone();
+            let inputs: SmallVec<[TermId; 4]> = members.iter().copied().collect();
             let set_tid = self.emit_term(
                 TermOp::MakeOverloadSet,
                 inputs,
                 Some(self.qualified_name(name)),
             );
-            self.bind_fn_result(name, set_tid);
-            return Some(set_tid);
+            self.record_fn_set(set_tid, members);
+            return Some(self.bind_fn_result(name, set_tid));
         }
         None
     }
@@ -73,25 +174,41 @@ impl Compiler {
     /// already bound to a cell by the prescan, and every reference — including
     /// the ones compiled before this point — resolves through that cell, so the
     /// declaration *writes* it rather than rebinding the name.
-    fn bind_fn_result(&mut self, name: &str, value: TermId) {
+    /// Returns the term the name now means — the merged set when this
+    /// declaration joined one another module owns, otherwise `value`.
+    fn bind_fn_result(&mut self, name: &str, value: TermId) -> TermId {
         // Only a *hoisted* declaration writes a cell, and hoisting happens at
         // module scope only — a nested `fn` binds where it is written. Without
         // the scope test, `binding_is_fn_cell` walks outward past the function
         // boundary, so a nested declaration sharing a name with a top-level one
         // overwrote the enclosing cell (capturing a root-block term into this
         // function) instead of shadowing it.
-        if self.fn_name_chain.is_empty() && self.binding_is_fn_cell(name) {
-            let cell = self
-                .scope_lookup(name)
-                .expect("a fn-cell binding resolves in the scope that declares it");
-            self.emit_term(
-                TermOp::CellWrite,
-                smallvec![cell, value],
-                Some(self.qualified_name(name)),
-            );
-        } else {
-            self.scope_bind(name.to_string(), value);
+        let cell = self
+            .scope_lookup(name)
+            .filter(|tid| self.own_fn_cells.contains(tid));
+        if self.fn_name_chain.is_empty()
+            && self.binding_is_fn_cell(name)
+            && let Some(cell) = cell
+        {
+            let display = self.qualified_name(name);
+            self.emit_term(TermOp::CellWrite, smallvec![cell, value], Some(display));
+            self.overload_index.cell_value.insert(cell, value);
+            return value;
         }
+        // A top-level declaration over a name another module put in scope
+        // *joins* that overload set rather than replacing it, so a library can
+        // add an arity to a name the host prelude owns. Same-module and nested
+        // declarations, and anything that is not a function set, are unchanged.
+        let existing = if self.fn_name_chain.is_empty() {
+            self.scope_lookup(name)
+        } else {
+            None
+        };
+        let bound = existing
+            .and_then(|existing| self.merge_overload_binding(name, existing, value))
+            .unwrap_or(value);
+        self.scope_bind(name.to_string(), bound);
+        bound
     }
 
     /// `class Name` compiles to a constructor function taking one parameter per

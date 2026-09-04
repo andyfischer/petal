@@ -1,0 +1,17 @@
+// A library module that adds an arity to a name the *host* prelude owns.
+// petal-ui registers `ui` as an implicit import and its `draw_rect` overload
+// set takes 2, 3, 7 or 8 arguments; this file adds a 1-argument variant — the
+// gap bloom hit (docs/dev/sharing-petal-libraries.md §6) — with no `import ui`
+// of its own, and every arity stays callable.
+//
+// Inside a variant's own body its name still means *that variant* (the
+// self-recursion binding), so the delegation below goes through the module
+// alias rather than the bare name.
+export fn draw_rect(r)
+  ui.draw_rect(r, { r: 9, g: 9, b: 9 })
+end
+
+export fn paint()
+  draw_rect({ x: 0, y: 0, w: 10, h: 10 })
+  draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
+end

@@ -684,8 +684,30 @@ impl Parser {
         Ok(stmt)
     }
 
+    /// After the `:` or a `,` of a selective import list, with a newline at the
+    /// cursor: does the list continue on a later line?
+    ///
+    /// Only a name that is itself followed by another `,` or the end of its
+    /// line continues the list, so a trailing comma in front of an ordinary
+    /// statement (`import a: b,` then `print(x)`) still ends the import rather
+    /// than swallowing the next line.
+    fn import_list_continues(&self) -> bool {
+        let mut n = 0;
+        while matches!(self.peek_at(n), Token::Newline) {
+            n += 1;
+        }
+        matches!(self.peek_at(n), Token::Ident(_))
+            && matches!(
+                self.peek_at(n + 1),
+                Token::Comma | Token::Newline | Token::Eof
+            )
+    }
+
     /// `import m` / `import m as u` / `import m: a, b`.
-    /// The name list ends at the newline; `as` is contextual (not a keyword).
+    ///
+    /// A selective name list may wrap: a line break is allowed after the `:`
+    /// and after each `,`, and a trailing comma is allowed. Every other import
+    /// form still ends at the newline; `as` is contextual (not a keyword).
     fn parse_import(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
         self.advance(); // consume 'import'
@@ -700,13 +722,22 @@ impl Parser {
             }
             Token::Colon => {
                 self.advance(); // consume ':'
+                if matches!(self.peek(), Token::Newline) && self.import_list_continues() {
+                    self.skip_newlines();
+                }
                 let mut list = Vec::new();
                 loop {
                     list.push(self.expect_ident()?);
-                    if matches!(self.peek(), Token::Comma) {
-                        self.advance();
-                    } else {
+                    if !matches!(self.peek(), Token::Comma) {
                         break;
+                    }
+                    self.advance(); // consume ','
+                    if matches!(self.peek(), Token::Newline) {
+                        // A trailing comma: the newline ends the statement.
+                        if !self.import_list_continues() {
+                            break;
+                        }
+                        self.skip_newlines();
                     }
                 }
                 names = Some(list);

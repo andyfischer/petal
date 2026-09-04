@@ -520,6 +520,10 @@ impl Projector {
         })
     }
 
+    /// `import m` / `import m as u` / `import m: a, b`. A selective list may
+    /// wrap across lines and may end with a trailing comma, so the separators
+    /// the parser kept inside the node — `,` and `Newline` — are skipped here
+    /// and only the identifier leaves are read.
     fn import_stmt(&mut self, node: &SyntaxNode) -> Result<StmtKind, String> {
         let tokens = direct_tokens(node);
         let mut idents = tokens.iter().filter_map(|t| ident_value(t).map(|v| (t, v)));
@@ -1465,6 +1469,48 @@ mod tests {
         assert_projects("import ui\n");
         assert_projects("import ui as u\n");
         assert_projects("import ui: button, clicked\n");
+        // Wrapped selective lists: after the `:`, after each `,`, and with a
+        // trailing comma. The projection must see the same names the parser did.
+        assert_projects("import ui: button,\n           clicked, pad\n");
+        assert_projects("import ui:\n  button,\n  clicked,\n");
+        assert_projects("import ui: button, clicked,\n");
+        // A plain `import m` is not continued by the next line.
+        assert_projects("import ui\nprint(1)\n");
+    }
+
+    #[test]
+    fn projects_wrapped_import_names() {
+        let ast =
+            projected_ast("import ui: mix, over,\n           pad, draw_text,\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.module, "ui");
+        assert_eq!(decl.alias, None);
+        assert_eq!(
+            decl.names.as_deref(),
+            Some(
+                ["mix", "over", "pad", "draw_text"]
+                    .map(String::from)
+                    .as_slice()
+            )
+        );
+
+        // A wrapped import is still one statement, and the CST round-trips it
+        // byte-for-byte (the newlines it swallowed live inside the node).
+        let src = "import ui: mix, over,\n           pad, draw_text,\n";
+        assert_eq!(parse_cst(src).expect("parse_cst").text(), src);
+        assert_eq!(ast.len(), 1);
+
+        // `import m` with no `:` still ends at its newline: the next line is a
+        // statement of its own, not a continuation.
+        let plain = projected_ast("import ui\nprint(1)\n").expect("parse");
+        assert_eq!(plain.len(), 2);
+        let StmtKind::Import(decl) = &plain[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.names, None);
+        assert!(matches!(plain[1].kind, StmtKind::Expr(_)));
     }
 
     #[test]

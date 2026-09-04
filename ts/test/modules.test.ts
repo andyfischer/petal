@@ -97,3 +97,62 @@ describe("module imports across files", () => {
     expect(err).toContain("palette.ptl");
   });
 });
+
+describe("a selective import list may wrap across lines", () => {
+  /** Run `petal run -e <code> -I fixtures/modules`, returning trimmed stdout. */
+  function runSnippet(code: string): string {
+    const r = petalCapture(["run", "-e", code, "-I", FIXTURES]);
+    if (r.code !== 0) throw new Error(r.stderr);
+    return r.stdout.trim();
+  }
+
+  it("breaks after a comma", () => {
+    const out = runSnippet(
+      "import palette: colors,\n                brighten\nprint(brighten(colors.fg))"
+    );
+    expect(out).toBe("25");
+  });
+
+  it("breaks after the colon", () => {
+    const out = runSnippet("import palette:\n  colors,\n  brighten\nprint(brighten(colors.bg))");
+    expect(out).toBe("12");
+  });
+
+  it("allows a trailing comma", () => {
+    const out = runSnippet("import palette: colors, brighten,\nprint(colors.accent)");
+    expect(out).toBe("9");
+  });
+
+  it("a trailing comma does not swallow the next statement", () => {
+    // `print` is an identifier, but what follows it is a `(` rather than a
+    // comma or a line end, so the list ended at the trailing comma.
+    const out = runSnippet("import palette: colors,\nprint(colors.fg)");
+    expect(out).toBe("15");
+  });
+
+  it("`import m` is still not continued by the next line", () => {
+    const out = runSnippet("import palette\nbrighten = 1\nprint(brighten)");
+    expect(out).toBe("1");
+  });
+
+  it("imports-come-first still applies to a wrapped import", () => {
+    const err = runFileError([
+      "run",
+      "-e",
+      "import palette: colors,\n                brighten\nlet x = 1\nimport tally",
+      "-I",
+      FIXTURES,
+    ]);
+    expect(err).toContain("import statements must appear before any other statement");
+  });
+
+  it("a wrapped import survives a format round-trip", () => {
+    const src = "import palette: colors,\n                brighten\nprint(brighten(colors.fg))\n";
+    const r = petalCapture(["lint", "-e", src]);
+    if (r.code !== 0) throw new Error(r.stderr);
+    const formatted = r.stdout;
+    const again = petalCapture(["run", "-e", formatted, "-I", FIXTURES]);
+    if (again.code !== 0) throw new Error(again.stderr);
+    expect(again.stdout.trim()).toBe("25");
+  });
+});

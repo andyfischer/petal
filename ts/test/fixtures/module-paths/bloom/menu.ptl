@@ -1,0 +1,9 @@
+import motion
+
+export fn open()
+  "bloom open " ++ motion.ease()
+end
+
+export fn close()
+  "bloom close"
+end

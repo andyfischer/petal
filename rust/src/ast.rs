@@ -397,15 +397,28 @@ pub enum StmtKind {
 /// One parsed `import` statement.
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportDecl {
-    /// The module name as written (`import ui` → "ui").
+    /// The module *path* as written, segments joined by `/`
+    /// (`import ui` → "ui", `import bloom/menu` → "bloom/menu"). The whole
+    /// path is the module's identity: `bloom/menu` and `petal/menu` are two
+    /// different modules that can coexist in one program.
     pub module: String,
-    /// `import ui as u` → Some("u"). Defaults to the module name.
+    /// `import ui as u` → Some("u"). A nested path defaults its local name to
+    /// the last segment (`import bloom/menu` → Some("menu")), which the parser
+    /// fills in; a single-segment path leaves this `None` and binds under the
+    /// module name itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
     /// `import ui: button, clicked` → Some(["button", "clicked"]).
     /// `None` means qualified-only (`ui.button(...)`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>,
+}
+
+/// The local name a module path binds by default: its last segment
+/// (`"bloom/menu"` → `"menu"`, `"ui"` → `"ui"`). Qualified access always goes
+/// through this name (`menu.open`), never the path.
+pub fn module_local_name(module: &str) -> &str {
+    module.rsplit('/').next().unwrap_or(module)
 }
 
 // ---------------------------------------------------------------------------

@@ -703,7 +703,27 @@ impl Parser {
             )
     }
 
-    /// `import m` / `import m as u` / `import m: a, b`.
+    /// One segment of a module path. Only an identifier is a segment: `.` and
+    /// `..` are rejected here rather than at resolution time, so a path can
+    /// never climb out of the directory it is resolved against.
+    fn expect_path_segment(&mut self) -> Result<String, String> {
+        if matches!(
+            self.peek(),
+            Token::Dot | Token::DotDot | Token::DotDotDot | Token::Slash
+        ) {
+            return Err(self.error_at_current(
+                "a module path segment must be an identifier ('.' and '..' are not allowed \
+                 in an import path)"
+                    .to_string(),
+            ));
+        }
+        self.expect_ident()
+    }
+
+    /// `import m` / `import m as u` / `import m: a, b`, where `m` is a module
+    /// path of one or more identifier segments joined by `/`
+    /// (`import bloom/menu`). The path is the module's identity; the local
+    /// name it binds is its last segment, which `as` overrides.
     ///
     /// A selective name list may wrap: a line break is allowed after the `:`
     /// and after each `,`, and a trailing comma is allowed. Every other import
@@ -711,7 +731,13 @@ impl Parser {
     fn parse_import(&mut self, start: usize) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
         self.advance(); // consume 'import'
-        let module = self.expect_ident()?;
+        let mut module = self.expect_path_segment()?;
+        while matches!(self.peek(), Token::Slash) {
+            self.advance(); // consume '/'
+            let segment = self.expect_path_segment()?;
+            module.push('/');
+            module.push_str(&segment);
+        }
 
         let mut alias = None;
         let mut names = None;
@@ -743,6 +769,13 @@ impl Parser {
                 names = Some(list);
             }
             _ => {}
+        }
+
+        // A nested path binds its last segment by default, so `bloom/menu`
+        // reads as `menu.open`. A flat name keeps `alias: None` and binds under
+        // the module name itself, exactly as before.
+        if alias.is_none() && module.contains('/') {
+            alias = Some(crate::ast::module_local_name(&module).to_string());
         }
 
         self.ev_close();

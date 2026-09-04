@@ -526,19 +526,42 @@ impl Projector {
     /// and only the identifier leaves are read.
     fn import_stmt(&mut self, node: &SyntaxNode) -> Result<StmtKind, String> {
         let tokens = direct_tokens(node);
-        let mut idents = tokens.iter().filter_map(|t| ident_value(t).map(|v| (t, v)));
-        let module = idents.next().ok_or("import missing module name")?.1;
+        // The module path comes first: an identifier, then any number of
+        // `/ identifier` pairs. Everything after it is the `as` alias or the
+        // selective list — for which only the identifier leaves matter, so the
+        // newlines a wrapped list swallowed need no handling here.
+        let mut i = tokens
+            .iter()
+            .position(|t| ident_value(t).is_some())
+            .ok_or("import missing module name")?;
+        let mut module = ident_value(&tokens[i]).expect("just matched an identifier");
+        while matches!(
+            tokens.get(i + 1).and_then(|t| t.token()),
+            Some(Token::Slash)
+        ) {
+            let segment = tokens
+                .get(i + 2)
+                .and_then(ident_value)
+                .ok_or("import path missing a segment after '/'")?;
+            module.push('/');
+            module.push_str(&segment);
+            i += 2;
+        }
+        let rest = &tokens[i + 1..];
 
         let mut alias = None;
         let mut names = None;
-        let has_colon = tokens
-            .iter()
-            .any(|t| matches!(t.token(), Some(Token::Colon)));
+        let has_colon = rest.iter().any(|t| matches!(t.token(), Some(Token::Colon)));
+        let mut idents = rest.iter().filter_map(ident_value);
         if has_colon {
-            names = Some(idents.map(|(_, v)| v).collect());
-        } else if let Some((_, kw)) = idents.next() {
-            debug_assert_eq!(kw, "as", "only `as` can follow the module name");
-            alias = Some(idents.next().ok_or("import `as` missing alias")?.1);
+            names = Some(idents.collect());
+        } else if let Some(kw) = idents.next() {
+            debug_assert_eq!(kw, "as", "only `as` can follow the module path");
+            alias = Some(idents.next().ok_or("import `as` missing alias")?);
+        }
+        // Mirror the parser's default: a nested path binds its last segment.
+        if alias.is_none() && module.contains('/') {
+            alias = Some(crate::ast::module_local_name(&module).to_string());
         }
         Ok(StmtKind::Import(ImportDecl {
             module,
@@ -1511,6 +1534,32 @@ mod tests {
         };
         assert_eq!(decl.names, None);
         assert!(matches!(plain[1].kind, StmtKind::Expr(_)));
+    }
+
+    #[test]
+    fn projects_nested_module_paths() {
+        assert_projects("import bloom/menu\n");
+        assert_projects("import a/b/c as abc\n");
+        assert_projects("import bloom/menu: open,\n  close,\n");
+
+        let ast = projected_ast("import bloom/menu\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        // The path is the identity; the last segment is the local binding.
+        assert_eq!(decl.module, "bloom/menu");
+        assert_eq!(decl.alias.as_deref(), Some("menu"));
+
+        let ast = projected_ast("import a/b/c as abc\n").expect("parse");
+        let StmtKind::Import(decl) = &ast[0].kind else {
+            panic!("expected import");
+        };
+        assert_eq!(decl.module, "a/b/c");
+        assert_eq!(decl.alias.as_deref(), Some("abc"));
+
+        // Round-trips byte-for-byte, slashes included.
+        let src = "import bloom/menu: open,\n  close,\n";
+        assert_eq!(parse_cst(src).expect("parse_cst").text(), src);
     }
 
     #[test]

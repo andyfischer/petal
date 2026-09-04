@@ -5,12 +5,16 @@
 //! of that pipeline: turning an entry source plus a resolver into the flat,
 //! dependency-ordered list of parsed modules the compiler consumes.
 //!
-//! The language does not know about files — a module name is an identifier,
-//! and what it resolves *to* is the resolver's business. The built-in
-//! [`ModuleRegistry`] resolves, in order:
-//! 1. embedder-registered in-memory modules (`Env::register_module`) — how a
-//!    prelude ships and how wasm hosts with no filesystem work,
-//! 2. the importing file's directory (`<dir>/<name>.ptl`),
+//! The language does not know about files — a module name is a path of one or
+//! more identifier segments joined by `/` (`ui`, `bloom/menu`), and what it
+//! resolves *to* is the resolver's business. The whole path is the module's
+//! identity, so `bloom/menu` and `petal/menu` are distinct modules. The
+//! built-in [`ModuleRegistry`] resolves, in order:
+//! 1. embedder-registered in-memory modules (`Env::register_module`, keyed by
+//!    the full path) — how a prelude ships and how wasm hosts with no
+//!    filesystem work,
+//! 2. the importing file's directory, with each leading segment a directory
+//!    under it (`<dir>/bloom/menu.ptl`),
 //! 3. registered search paths (`Env::add_module_path`, CLI `-I`), then the
 //!    directories in the `PETAL_PATH` environment variable.
 
@@ -75,7 +79,13 @@ impl ModuleRegistry {
 
 impl ModuleResolver for ModuleRegistry {
     fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource> {
-        // 1. In-memory registrations.
+        // A path that could escape its root resolves to nothing, whatever it
+        // was registered as. The walker turns the same verdict into an error.
+        if module_path_error(name).is_some() {
+            return None;
+        }
+
+        // 1. In-memory registrations, keyed by the full path.
         if let Some(source) = self.memory.get(name) {
             return Some(ModuleSource {
                 name: name.to_string(),
@@ -100,7 +110,7 @@ impl ModuleResolver for ModuleRegistry {
                     .map(PathBuf::from),
             );
         for dir in candidates {
-            let path = dir.join(format!("{name}.ptl"));
+            let path = module_file_path(&dir, name);
             if let Ok(source) = std::fs::read_to_string(&path) {
                 return Some(ModuleSource {
                     name: name.to_string(),
@@ -111,6 +121,66 @@ impl ModuleResolver for ModuleRegistry {
         }
         None
     }
+}
+
+/// The file a module path names under `dir`: each segment is a directory, the
+/// last one the `.ptl` file (`bloom/menu` → `<dir>/bloom/menu.ptl`). Pushing
+/// segment by segment keeps the separator platform-correct and, together with
+/// [`module_path_error`], keeps the result inside `dir`.
+fn module_file_path(dir: &Path, name: &str) -> PathBuf {
+    let mut path = dir.to_path_buf();
+    let mut segments = name.split('/').peekable();
+    while let Some(segment) = segments.next() {
+        if segments.peek().is_some() {
+            path.push(segment);
+        } else {
+            path.push(format!("{segment}.ptl"));
+        }
+    }
+    path
+}
+
+/// How a module is named in diagnostics. A flat module keeps today's bare file
+/// name (`ui.ptl`); a nested one keeps its path (`bloom/menu.ptl`), because two
+/// namespaces may well ship the same file name and an error has to say which
+/// one it means.
+fn display_name_for(name: &str, origin: &ModuleOrigin) -> String {
+    match origin {
+        ModuleOrigin::File(path) if !name.contains('/') => path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("{name}.ptl")),
+        ModuleOrigin::File(_) => format!("{name}.ptl"),
+        ModuleOrigin::Memory => name.to_string(),
+    }
+}
+
+/// Why a module path is unusable, or `None` when it is fine. A path is one or
+/// more identifier-shaped segments joined by `/`; `.` and `..` are rejected so
+/// an import can never climb out of the root it is resolved against, and the
+/// separator characters are rejected so a path cannot smuggle in an absolute
+/// or Windows-style location. The parser rejects most of this at the syntax
+/// level; this is the backstop for paths that arrive another way (a host's
+/// `register_module` name, an implicit-import list, a hand-built AST).
+fn module_path_error(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return Some("a module path may not be empty".to_string());
+    }
+    for segment in name.split('/') {
+        if segment.is_empty() {
+            return Some(format!("module path '{name}' has an empty segment"));
+        }
+        if segment == "." || segment == ".." {
+            return Some(format!(
+                "module path '{name}' may not contain '.' or '..' — a path segment names a \
+                 directory under the module root"
+            ));
+        }
+        if segment.contains(['\\', ':']) {
+            return Some(format!("module path '{name}' may not contain '\\' or ':'"));
+        }
+    }
+    None
 }
 
 /// One import binding the compiler must materialize in the importing file's
@@ -355,13 +425,7 @@ fn scan_gated_module(
             ),
         )
     })?;
-    let display = match &resolved.origin {
-        ModuleOrigin::File(path) => path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| format!("{name}.ptl")),
-        ModuleOrigin::Memory => name.to_string(),
-    };
+    let display = display_name_for(name, &resolved.origin);
     let stmts = parse_module(&resolved.source, ENTRY_FILE, Some(&display))?;
     let (_imports, stmts) = split_imports(stmts);
     let exports = stmts
@@ -427,6 +491,12 @@ impl Walker<'_> {
         if self.loaded.contains(name) {
             return Ok(());
         }
+        if let Some(problem) = module_path_error(name) {
+            return Err(LoadError::message(
+                Phase::Module,
+                format!("{problem} (imported by {importer_display})"),
+            ));
+        }
         if let Some(pos) = self.in_progress.iter().position(|n| n == name) {
             let mut cycle: Vec<&str> = self.in_progress[pos..].iter().map(String::as_str).collect();
             cycle.push(name);
@@ -450,13 +520,7 @@ impl Walker<'_> {
                 )
             })?;
 
-        let display_name = match &resolved.origin {
-            ModuleOrigin::File(path) => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| format!("{name}.ptl")),
-            ModuleOrigin::Memory => name.to_string(),
-        };
+        let display_name = display_name_for(name, &resolved.origin);
         let file_id = FileId(self.next_file);
         self.next_file = self.next_file.checked_add(1).ok_or_else(|| {
             LoadError::message(
@@ -532,6 +596,7 @@ fn split_imports(stmts: Vec<Stmt>) -> (Vec<ResolvedImport>, Vec<Stmt>) {
 
 #[cfg(test)]
 mod tests {
+    use super::module_path_error;
     use crate::env::Env;
 
     /// Run `entry` against a set of in-memory modules with `implicit` registered
@@ -676,6 +741,65 @@ mod tests {
                 "print(button(wrap(\"z\")))",
             ),
             vec!["[[z]]"]
+        );
+    }
+
+    #[test]
+    fn a_memory_module_registers_under_its_full_path() {
+        // The path is the module's identity, so two namespaces may ship the
+        // same last segment; each binds under that segment locally.
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/menu", "export fn open()\n  \"bloom\"\nend"),
+                    ("petal/menu", "export fn open()\n  \"petal\"\nend"),
+                ],
+                &[],
+                "import bloom/menu\nimport petal/menu as pm\nprint(menu.open())\nprint(pm.open())",
+            ),
+            vec!["bloom", "petal"]
+        );
+    }
+
+    #[test]
+    fn a_nested_module_may_import_another_nested_module() {
+        assert_eq!(
+            run(
+                &[
+                    (
+                        "bloom/menu",
+                        "import bloom/motion\nexport fn open()\n  motion.ease()\nend",
+                    ),
+                    ("bloom/motion", "export fn ease()\n  \"eased\"\nend"),
+                ],
+                &[],
+                "import bloom/menu\nprint(menu.open())",
+            ),
+            vec!["eased"]
+        );
+    }
+
+    #[test]
+    fn a_traversing_path_is_rejected_before_the_filesystem_is_touched() {
+        // The parser rejects a written `a/../b`; this is the backstop for a
+        // path that arrives some other way (here, a hand-built import).
+        assert!(module_path_error("bloom/../etc").is_some());
+        assert!(module_path_error("bloom/./menu").is_some());
+        assert!(module_path_error("/bloom/menu").is_some());
+        assert!(module_path_error("").is_some());
+        assert!(module_path_error("bloom/menu").is_none());
+        assert!(module_path_error("ui").is_none());
+    }
+
+    #[test]
+    fn a_module_path_becomes_directories_under_the_root() {
+        assert_eq!(
+            super::module_file_path(std::path::Path::new("/root"), "bloom/menu"),
+            std::path::Path::new("/root/bloom/menu.ptl")
+        );
+        assert_eq!(
+            super::module_file_path(std::path::Path::new("/root"), "ui"),
+            std::path::Path::new("/root/ui.ptl")
         );
     }
 

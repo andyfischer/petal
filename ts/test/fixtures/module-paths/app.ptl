@@ -1,0 +1,5 @@
+import bloom/menu
+import petal/menu as pmenu
+
+print(menu.open())
+print(pmenu.open())

@@ -7,7 +7,8 @@ separate compilation and no runtime linker.
 
 ## Importing
 
-A module name is a bare identifier, and it names the file `<name>.ptl`.
+A module name is a *path* of one or more identifier segments joined by `/`,
+and it names the file `<path>.ptl` — each leading segment a directory.
 There are three forms:
 
 ```petal ignore
@@ -26,6 +27,43 @@ Error: import statements must appear before any other statement
 A module name is only usable through `.`: writing `ui` on its own
 (`let x = ui`, `print(ui)`) is an error suggesting `ui.<name>` or a
 selective import.
+
+### Namespaced paths
+
+A path groups a library's modules under a directory, so two libraries that
+both ship a `menu.ptl` can be used in one program:
+
+```petal ignore
+import bloom/menu                // binds `menu`: menu.open(...)
+import petal/menu as pmenu       // binds `pmenu`: pmenu.open(...)
+import bloom/menu: open, close   // selective, as usual
+```
+
+The **local name is the last segment** — qualified access always goes
+through it (`menu.open`), never through the path. `as` overrides it, and
+two paths ending in the same segment need one: importing both `bloom/menu`
+and `petal/menu` bare is the ordinary alias collision.
+
+```
+Error: 'menu' is already an alias for module 'bloom/menu' and cannot also alias 'petal/menu'
+```
+
+The **full path is the module's identity** — for deduplication, cycle
+detection, `state` keys, qualified export names (`bloom/menu::open`), and
+`module_manifest`. `bloom/menu` and `petal/menu` are two modules with two
+sets of top-level state, and each loads once. A nested module's own imports
+resolve against *its* directory, so `bloom/menu.ptl` reaches its sibling
+with a flat `import motion`.
+
+A segment is an identifier, which leaves no way to write a path that climbs
+out of the directory it resolves against:
+
+```
+Error: a module path segment must be an identifier ('.' and '..' are not allowed in an import path)
+```
+
+Errors from a nested module name it by path (`bloom/menu.ptl line 2`),
+since two namespaces may well ship the same file name.
 
 ## Exporting
 
@@ -144,11 +182,13 @@ a collision like any other.
 
 `import name` looks for the module in this order. The first hit wins.
 
-1. **Modules registered by the host** in memory (`env.register_module`).
-   This is how an embedding app ships a Petal prelude, and how a browser
-   host with no filesystem works.
-2. **The importing file's directory** — `<dir>/<name>.ptl`. Two scripts
-   side by side can share a `palette.ptl` next to them.
+1. **Modules registered by the host** in memory (`env.register_module`),
+   keyed by the full path — `register_module("bloom/menu", …)` is what
+   `import bloom/menu` finds. This is how an embedding app ships a Petal
+   prelude, and how a browser host with no filesystem works.
+2. **The importing file's directory** — `<dir>/<path>.ptl`, each leading
+   segment a directory (`<dir>/bloom/menu.ptl`). Two scripts side by side
+   can share a `palette.ptl` next to them.
 3. **Search directories** added with `petal run -I <dir>` (repeatable, and
    accepted by every command that compiles) or `env.add_module_path`.
 4. **`PETAL_PATH`** — colon-separated directories from the environment.
@@ -239,9 +279,8 @@ right file.
 
 ## Not supported
 
-- Nested or dotted module names (`import lib.geom`) and path strings. A
-  module name is one identifier; use `-I` or `PETAL_PATH` to reach other
-  directories.
+- Dotted module names (`import lib.geom`) and path strings. Nesting is
+  spelled with `/`; use `-I` or `PETAL_PATH` to reach other directories.
 - Imports anywhere but the top of a file, including conditional imports.
 - Merging overload sets across modules.
 - Packages, versions and registries.
@@ -254,11 +293,12 @@ A library written in Petal is a directory of modules plus, usually, a facade
 module that re-exports them (`export let button = bloom_button.button` carries
 a function and its whole overload set). Users reach it through `-I`,
 `PETAL_PATH`, a copy beside their script, or a host's `register_module`.
-[`petal-libs/`](../petal-libs/README.md) is where this repo's own live, and
-[Sharing Petal libraries](dev/sharing-petal-libraries.md) covers what works
-and what a library author has to work around today — starting with the fact
-that a host's implicit imports reach the entry file only, so a library module
-must `import` the host prelude explicitly.
+Put the directory under a namespace and its modules import as
+`bloom/menu`, `bloom/motion` — no filename prefixes, and no collision with
+another library's `menu`. [`petal-libs/`](../petal-libs/README.md) is where
+this repo's own live, and [Sharing Petal
+libraries](dev/sharing-petal-libraries.md) covers what works and what a
+library author still has to work around.
 
 ## Embedding
 

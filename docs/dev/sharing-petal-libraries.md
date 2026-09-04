@@ -71,16 +71,28 @@ The fix is either to apply implicit imports to every module in the program, or
 to make it explicit that they are entry-file sugar and give a library a way to
 ask for the same set.
 
-### 2. Module names are flat and global
+### 2. Module names are flat and global — fixed
 
-`import name` names one identifier; there are no nested or dotted names
-(`import bloom.menu`) and no path strings. Every module in a program shares one
-namespace, so a library must prefix its files by hand — `bloom_menu.ptl`,
-`bloom_motion.ptl` — and two libraries that both ship a `menu.ptl` cannot be
-used together at all.
+Module names *were* one identifier in one global namespace, so a library had to
+prefix its files by hand — `bloom_menu.ptl`, `bloom_motion.ptl` — and two
+libraries that both shipped a `menu.ptl` could not be used together at all.
 
-A namespace, even a shallow one (`import bloom/menu`, or a library manifest that
-scopes its own modules), would remove the prefixing convention and the collision.
+A module name is now a path of identifier segments joined by `/`:
+
+```petal ignore
+import bloom/menu                // binds `menu`
+import petal/menu as pmenu       // the two coexist; `as` names the second
+import bloom/menu: open, close   // selective, and it may wrap across lines
+```
+
+The last segment is the local name (`menu.open`), `as` overrides it, and the
+whole path is the module's identity — its dedupe key, its `state` key prefix,
+its qualified export names. A library is a directory now, not a naming
+convention; a flat `import palette` is unchanged. See
+[module-system.md](../module-system.md#namespaced-paths).
+
+Still missing above that: a manifest (gap 5) that would let a library declare
+its own name rather than inheriting whatever directory a user dropped it in.
 
 ### 3. There is no re-export form
 

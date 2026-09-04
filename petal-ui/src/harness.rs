@@ -37,13 +37,23 @@ pub struct Headless {
     frame_count: i64,
     /// Absolute clock (seconds) published to the script as `time()` each frame.
     ///
-    /// It starts at `t0 = 0.0` and [`frame`](Self::frame) advances it by
-    /// [`FRAME_DT`] after every frame, so the clock is a pure function of the
-    /// frame count (`time == frames_run * FRAME_DT`) and never reads the
-    /// system clock — a script that sums `dt()` sees exactly `time()`.
+    /// It starts at `t0 = 0.0` and [`frame`](Self::frame) recomputes it from
+    /// the frame count after every frame, so the clock is a pure function of
+    /// that count (`time == frames_run * FRAME_DT`) and never reads the system
+    /// clock — a script that sums `dt()` sees exactly `time()`. It is
+    /// *computed*, not accumulated: repeatedly adding `FRAME_DT` drifts (it
+    /// reaches 1.0000000000000013 after 60 frames), which would make the
+    /// identity above false and a long trace depend on how it was reached.
     /// Assigning to it still works: the value assigned is what the *next*
-    /// frame publishes, and the automatic advance resumes from there.
+    /// frame publishes, and the automatic advance resumes from there — the
+    /// assignment simply becomes the new origin the multiplication counts
+    /// from.
     pub time: f64,
+    /// The clock's origin: `time` was last set to `time_origin` when
+    /// `frame_count` was `origin_frame`. Both move only when the embedder
+    /// assigns [`time`](Self::time) (see [`frame`](Self::frame)).
+    time_origin: f64,
+    origin_frame: i64,
     /// Draw commands produced by the most recent [`frame`](Self::frame).
     pub commands: Vec<DrawCommand>,
     /// Value returned by the most recent run.
@@ -126,6 +136,8 @@ impl Headless {
             stack_id,
             frame_count: 0,
             time: 0.0,
+            time_origin: 0.0,
+            origin_frame: 0,
             commands: Vec::new(),
             result: Value::Nil,
             provider: None,
@@ -206,9 +218,24 @@ impl Headless {
         Ok(&self.commands)
     }
 
+    /// The clock reading after `frames` frames have run, counted from the
+    /// current origin. One multiplication rather than `frames` additions, so
+    /// the reading carries no accumulated rounding error.
+    fn clock_at(&self, frames: i64) -> f64 {
+        self.time_origin + (frames - self.origin_frame) as f64 * FRAME_DT
+    }
+
     /// Run one script frame under the standard contract and return its draw
     /// commands (also kept in [`commands`](Self::commands)).
     pub fn frame(&mut self) -> Result<&[DrawCommand], String> {
+        // An embedder that assigned `time` since the last frame (tests that
+        // jump the clock past a tooltip delay or a fade) re-anchors it: the
+        // value it wrote is published now and becomes the origin the frames
+        // after it count from.
+        if self.time != self.clock_at(self.frame_count) {
+            self.time_origin = self.time;
+            self.origin_frame = self.frame_count;
+        }
         self.frame_count += 1;
         self.input.begin_frame(FRAME_DT);
         input::bind_frame_info(&mut self.env, FRAME_DT, self.frame_count);
@@ -229,7 +256,7 @@ impl Headless {
         // `spinner`, `elapsed`) actually runs in a headless trace. It advances
         // even if the frame failed: a run's clock stays a function of how many
         // frames were attempted, never of the wall clock.
-        self.time += FRAME_DT;
+        self.time = self.clock_at(self.frame_count);
         self.result = run?;
         self.commands = draw::take_draw_commands(&mut self.env);
         Ok(&self.commands)

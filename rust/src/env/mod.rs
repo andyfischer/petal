@@ -70,6 +70,13 @@ pub struct Env {
     /// [`Env::package_errors`] — the CLI reports them, an embedder may not
     /// care that some directory on a search path has a broken `petal.toml`.
     package_errors: Vec<crate::error::LoadError>,
+    /// The same, for the ambient `PETAL_PATH` directories scanned by
+    /// [`Env::new`]. Kept apart from `package_errors` because the CLI treats
+    /// the two differently: a `-I` the user typed that will not load is fatal,
+    /// while a broken manifest somewhere on the machine's `PETAL_PATH` must
+    /// not fail every command — `petal packages` reports it instead of
+    /// swallowing it.
+    ambient_package_errors: Vec<crate::error::LoadError>,
 }
 
 /// Name of the core prelude module: `import std`.
@@ -98,15 +105,19 @@ impl Env {
         modules.base_implicit_imports = vec![STD_MODULE.to_string()];
         // Libraries sitting on PETAL_PATH are available by package name, the
         // same as the ones a host adds with `add_module_path`. Discovery here
-        // is silent: PETAL_PATH is the machine's ambient setting, not this
+        // is non-fatal: PETAL_PATH is the machine's ambient setting, not this
         // program's argument, so a broken manifest somewhere on it must not
-        // fail every Env in the process.
+        // fail every Env in the process. The failures are still kept, so
+        // `petal packages` can say why a library it was expected to find is
+        // missing (see `ambient_package_errors`).
+        let mut ambient_package_errors = Vec::new();
         for dir in std::env::var("PETAL_PATH")
             .unwrap_or_default()
             .split(':')
             .filter(|s| !s.is_empty())
         {
-            let (packages, _ignored) = crate::package::discover_packages(std::path::Path::new(dir));
+            let (packages, errors) = crate::package::discover_packages(std::path::Path::new(dir));
+            ambient_package_errors.extend(errors);
             for package in packages {
                 if !modules.has_package(&package.info.name) {
                     modules.add_package(package);
@@ -131,6 +142,7 @@ impl Env {
             modules,
             handle_classes: Vec::new(),
             package_errors: Vec::new(),
+            ambient_package_errors,
         }
     }
 
@@ -336,6 +348,13 @@ impl Env {
     /// of [`add_module_path`](Self::add_module_path).
     pub fn package_errors(&self) -> &[crate::error::LoadError] {
         &self.package_errors
+    }
+
+    /// Manifests on `PETAL_PATH` that looked like packages and would not load.
+    /// Non-fatal by design (see [`Env::new`]) — `petal packages` prints them
+    /// so a library that silently failed to register is still accounted for.
+    pub fn ambient_package_errors(&self) -> &[crate::error::LoadError] {
+        &self.ambient_package_errors
     }
 
     /// Declare modules that every loaded program imports implicitly, as if by

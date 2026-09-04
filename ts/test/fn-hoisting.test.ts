@@ -180,6 +180,27 @@ print([old_max(1, 2), max(1, 2)])
     ).toBe(`[2, "shadowed"]`);
   });
 
+  it("...but only when something actually reads the old meaning", () => {
+    // The counterpart to the test above. Nothing here captures the builtin
+    // `max`, so the declaration hoists and `widget`, written above it, binds
+    // to this file's `max` rather than to the 2-argument builtin. That is the
+    // library-module case: a host prelude puts hundreds of names in scope in
+    // every file, and a collision alone must not un-hoist a declaration.
+    expect(
+      runPetal(`
+fn widget()
+  max({a: 1, b: 2})
+end
+
+fn max(r)
+  r.a + r.b
+end
+
+print(widget())
+`)
+    ).toBe("3");
+  });
+
   it("a caller of a shadowing overload is held back with it", () => {
     // The prelude shape: a file grabs the native (`let _native = max`),
     // redeclares the name with a different arity, and a widget below calls the
@@ -240,6 +261,15 @@ print(outer())
     expect(JSON.stringify(report)).toContain(
       "call to `h` before its declaration"
     );
+  });
+
+  it("a call above a shadowed, not-hoistable declaration is warned about", () => {
+    // `max` is a builtin, so this used to be filtered out of the warnings and
+    // silently bound to the builtin. The declaration below owns the name now,
+    // which makes the early call a plain too-early call — and it says so.
+    const code = `let base = 10\nprint(max(1))\nfn max(n) n + base end`;
+    const { stdout, stderr } = checkText(code);
+    expect(stdout + stderr).toContain("call to `max` before its declaration");
   });
 
   it("a reference from inside a body is never reported as too early", () => {

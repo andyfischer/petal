@@ -1,0 +1,6 @@
+import late_lib
+
+late_lib.banner({ r: 4, g: 5, b: 6 })
+// The entry file still sees the prelude's `spinner` — the module shadows it
+// only for itself.
+spinner(300, 300, 10)

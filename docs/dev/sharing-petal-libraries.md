@@ -82,6 +82,15 @@ does not receive the host implicit imports (it is emitted before everything
 else, so that would be a self-import). A prelude that spans two modules still
 imports its sibling explicitly.
 
+Reaching every module also armed a trap in hoisting, since fixed: a top-level
+`fn` used to be left where it stands whenever its name was already in scope, so
+that `let _draw_line = draw_line` above `fn draw_line` still read the native.
+With a ~261-name prelude bound in every module, that rule fired on any library
+function whose name merely *collided* with a prelude export — a call written
+above the declaration silently reached the prelude's function, at its arity.
+The rule now needs the read, not just the collision (see the language guide,
+"Declaration order").
+
 What it did to bloom: every implementation module lost its `import ui: …`
 header — twelve statements across seven files, a list that had to name every
 primitive the file used and be kept in sync by hand. The library no longer

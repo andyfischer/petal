@@ -51,6 +51,22 @@ fn elapsed_measures_real_progress_without_the_driver_touching_the_clock() {
 }
 
 #[test]
+fn the_clock_is_exactly_the_frame_count_times_dt() {
+    // Not approximately: computed, not accumulated. Adding `FRAME_DT` 60 times
+    // lands on 1.0000000000000013, and 3600 times on 59.999999999997875, which
+    // would make the documented identity false.
+    let mut ui = Headless::new("state t = 0.0\nt = time()").unwrap();
+    for frames in 1..=3600 {
+        ui.frame().unwrap();
+        assert_eq!(
+            ui.time,
+            frames as f64 * FRAME_DT,
+            "the clock after {frames} frames"
+        );
+    }
+}
+
+#[test]
 fn assigning_the_clock_still_wins_for_the_next_frame() {
     // Tests that jump the clock (tooltip delays, long fades) keep working: the
     // assignment is what the next frame publishes, and the automatic advance

@@ -1428,24 +1428,39 @@ impl Compiler {
         // Both are decided before anything is emitted, because the cells have
         // to exist before the first hoisted body is compiled.
         // A `fn` that *shadows* a name already in scope — a builtin, or an
-        // import — is left exactly where it is. Reading the old meaning before
-        // the shadow lands is a deliberate idiom (`let _draw_line = draw_line`
-        // above `fn draw_line`), and both hoisting the declaration and binding
-        // the name to a cell would silently turn that read into nil. That is
-        // handed to `hoistable_fn_names` rather than filtered out afterwards,
-        // so a caller of such a `fn` is held back with it — a hoisted caller
-        // would bind to the shadowed meaning.
-        let hoistable = hoistable_fn_names(stmts, |n| self.scope_lookup(n).is_some());
+        // import — is left exactly where it is *when the file actually reads
+        // the old meaning above the declaration*. That read is a deliberate
+        // idiom (`let _draw_line = draw_line` above `fn draw_line`), and both
+        // hoisting the declaration and binding the name to a cell would
+        // silently turn it into nil or into unbounded recursion.
+        //
+        // Merely being in scope is not enough to hold a declaration back. Host
+        // preludes are implicit imports that bind hundreds of bare names in
+        // *every* module, so "in scope" alone would silently un-hoist any
+        // library function whose name happens to collide with one of them —
+        // making a call written above the declaration reach the prelude's
+        // function instead of the module's own. See
+        // `shadow_read_fn_names` for the exact reads that count.
+        //
+        // The predicate is handed to `hoistable_fn_names` rather than filtered
+        // out afterwards, so a caller of such a `fn` is held back with it — a
+        // hoisted caller would bind to the shadowed meaning.
+        let shadow_read = shadow_read_fn_names(stmts);
+        let protected = |n: &str| shadow_read.contains(n) && self.scope_lookup(n).is_some();
+        let hoistable = hoistable_fn_names(stmts, protected);
         let mut forward = forward_referenced_fns(stmts);
         forward.extend(late_bound_fn_refs(stmts, &hoistable));
-        // Same two exclusions as hoisting: a name already in scope keeps its
-        // meaning until the declaration shadows it, and a name a `let`/`state`
-        // also declares is rebound in source order, which a cell would fight.
+        // Same two exclusions as hoisting: a name whose old meaning the file
+        // reads above the declaration keeps that meaning until the declaration
+        // shadows it, and a name a `let`/`state` also declares is rebound in
+        // source order, which a cell would fight.
         let shadowed = top_level_value_names(stmts);
-        forward.retain(|n| self.scope_lookup(n).is_none() && !shadowed.contains(n));
+        forward.retain(|n| !protected(n) && !shadowed.contains(n));
+        // Filtered by the same predicate, so a declaration that is still held
+        // back warns about the calls above it instead of failing silently.
         let late: Vec<crate::diagnostic::Diagnostic> = late_declaration_warnings(stmts, &hoistable)
             .into_iter()
-            .filter(|(name, _)| self.scope_lookup(name).is_none())
+            .filter(|(name, _)| !protected(name))
             .map(|(_, d)| d)
             .collect();
         self.warnings.extend(late);
@@ -1565,6 +1580,101 @@ fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
     names
 }
 
+/// Top-level `fn` names the file *reads outside call position* in a statement
+/// that runs before the declaration — the `let _draw_line = draw_line` idiom,
+/// where the point of the read is to capture the meaning the declaration below
+/// is about to shadow. Hoisting such a `fn` (or routing the name through a
+/// cell) would make that read see the new meaning instead: nil at that point,
+/// or, once the declaration lands, a function that calls itself forever.
+///
+/// Only statements that actually execute at that point are inspected. A `fn`
+/// or lambda body written above the declaration runs later, by which time the
+/// declaration has been made, so it must see the module's own function — that
+/// is the ordinary forward reference, and holding a declaration back for it is
+/// what silently rebound a library's own `fn spinner` to a host prelude's
+/// `spinner` of a different arity.
+///
+/// Call position does not count either, for the same reason
+/// `late_declaration_warnings` reports only calls: `f()` above `fn f` is a use
+/// of the function, not a capture of the old meaning, and a hoistable `f` is
+/// exactly what such a call wants. A call that cannot be hoisted is warned
+/// about rather than silently rebound.
+fn shadow_read_fn_names(stmts: &[Stmt]) -> HashSet<String> {
+    let mut decl_at: HashMap<&str, usize> = HashMap::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        if let StmtKind::FnDecl {
+            name, class: None, ..
+        } = &stmt.kind
+        {
+            decl_at.entry(name.as_str()).or_insert(i);
+        }
+    }
+    if decl_at.is_empty() {
+        return HashSet::new();
+    }
+
+    struct Reads<'a> {
+        decl_at: &'a HashMap<&'a str, usize>,
+        here: usize,
+        out: &'a mut HashSet<String>,
+    }
+    impl Reads<'_> {
+        fn note(&mut self, name: &str) {
+            if let Some(&d) = self.decl_at.get(name)
+                && d > self.here
+            {
+                self.out.insert(name.to_string());
+            }
+        }
+    }
+    impl crate::ast::ExprVisitor for Reads<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            // A lambda body runs later, like a `fn` body.
+            if matches!(e.kind, ExprKind::Lambda { .. }) {
+                return;
+            }
+            // `f(...)` uses `f`, it does not capture it — but the arguments
+            // are ordinary reads and are still walked.
+            if let ExprKind::Call { function, args, .. } = &e.kind
+                && matches!(function.kind, ExprKind::Ident(_))
+            {
+                for arg in args {
+                    self.visit_expr(arg);
+                }
+                return;
+            }
+            match &e.kind {
+                ExprKind::Ident(name) | ExprKind::AtVar(name) | ExprKind::CellGet(name) => {
+                    let name = name.clone();
+                    self.note(&name);
+                }
+                _ => {}
+            }
+            crate::ast::walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if matches!(s.kind, StmtKind::FnDecl { .. }) {
+                return;
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+
+    let mut out = HashSet::new();
+    for (i, stmt) in stmts.iter().enumerate() {
+        if matches!(stmt.kind, StmtKind::FnDecl { .. }) {
+            continue;
+        }
+        let mut v = Reads {
+            decl_at: &decl_at,
+            here: i,
+            out: &mut out,
+        };
+        crate::ast::ExprVisitor::visit_stmt(&mut v, stmt);
+    }
+    out
+}
+
 /// Top-level `fn` names whose declarations can be emitted ahead of the file's
 /// statements — those whose bodies mention nothing the file *computes*: no
 /// top-level `let`/`var`/`state`, and no enum variant (its constructor is built
@@ -1589,11 +1699,12 @@ fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
 /// record-form call dies at run time. So a function that references a
 /// non-hoistable top-level function is itself non-hoistable, to a fixpoint.
 ///
-/// `shadows_existing` reports the names already bound where the file starts —
-/// a builtin or an import the file redeclares. Those declarations are left
-/// where they are for the same reason (see `prescan_emit`), which makes them
-/// blocked seeds here so their callers are held back too.
-fn hoistable_fn_names(stmts: &[Stmt], shadows_existing: impl Fn(&str) -> bool) -> HashSet<String> {
+/// `protected` reports the names whose pre-declaration meaning the file still
+/// reads — a builtin or an import that a top-level statement above the `fn`
+/// captures (see `shadow_read_fn_names`). Those declarations are left where
+/// they are for the same reason (see `prescan_emit`), which makes them blocked
+/// seeds here so their callers are held back too.
+fn hoistable_fn_names(stmts: &[Stmt], protected: impl Fn(&str) -> bool) -> HashSet<String> {
     let computed = top_level_value_names(stmts);
 
     // Every top-level `fn`, with the names its body mentions. Kept so the
@@ -1612,7 +1723,7 @@ fn hoistable_fn_names(stmts: &[Stmt], shadows_existing: impl Fn(&str) -> bool) -
             continue;
         };
         let refs = idents_in_stmts(body);
-        if refs.iter().any(|id| computed.contains(id.as_str())) || shadows_existing(name) {
+        if refs.iter().any(|id| computed.contains(id.as_str())) || protected(name) {
             blocked.insert(name.clone());
         }
         fn_refs.push((name.as_str(), refs));
@@ -2175,5 +2286,151 @@ mod prescan_tests {
     #[test]
     fn no_functions_yields_no_param_names() {
         assert!(param_names("let x = 5\nprint(x)").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hoisting_tests {
+    use super::{hoistable_fn_names, shadow_read_fn_names};
+    use crate::rewrite::parse_ast;
+    use std::collections::HashSet;
+
+    fn shadow_reads(src: &str) -> Vec<String> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        let mut v: Vec<String> = shadow_read_fn_names(&stmts).into_iter().collect();
+        v.sort();
+        v
+    }
+
+    /// `hoistable_fn_names` with the rule `prescan_emit` uses: a name is
+    /// protected only when it is already in scope *and* read above its own
+    /// declaration. `in_scope` lists the names a host prelude or builtin set
+    /// would have bound before the file starts.
+    fn hoistable(src: &str, in_scope: &[&str]) -> Vec<String> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        let scope: HashSet<&str> = in_scope.iter().copied().collect();
+        let reads = shadow_read_fn_names(&stmts);
+        let mut v: Vec<String> =
+            hoistable_fn_names(&stmts, |n| reads.contains(n) && scope.contains(n))
+                .into_iter()
+                .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn a_bare_read_above_the_declaration_is_a_shadow_read() {
+        assert_eq!(
+            shadow_reads(
+                "let old = spinner
+fn spinner(n)
+  n
+end"
+            ),
+            vec!["spinner"]
+        );
+    }
+
+    #[test]
+    fn a_call_above_the_declaration_is_not() {
+        // `spinner(1)` wants the function, it does not capture the old
+        // meaning — so it must not hold the declaration back.
+        assert_eq!(
+            shadow_reads(
+                "print(spinner(1))
+fn spinner(n)
+  n
+end"
+            ),
+            Vec::<String>::new()
+        );
+        // ...but a bare mention in an argument still counts.
+        assert_eq!(
+            shadow_reads(
+                "print(apply(spinner))
+fn spinner(n)
+  n
+end"
+            ),
+            vec!["spinner"]
+        );
+    }
+
+    #[test]
+    fn a_read_from_a_deferred_body_is_not() {
+        // The library-module regression: `go` runs after the whole file has,
+        // so its `spinner` must be the module's own, not a prelude's.
+        assert_eq!(
+            shadow_reads(
+                "fn go()
+  spinner(1)
+end
+fn spinner(n)
+  n
+end"
+            ),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            shadow_reads(
+                "let f = fn() spinner end
+fn spinner(n)
+  n
+end"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_read_below_the_declaration_is_not() {
+        assert_eq!(
+            shadow_reads(
+                "fn spinner(n)
+  n
+end
+let also = spinner"
+            ),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_colliding_library_fn_is_hoisted_when_nothing_reads_the_old_meaning() {
+        // The regression from applying host implicit imports to every module:
+        // `spinner` collides with a prelude export, but no statement in this
+        // file reads the prelude's meaning, so both functions hoist and `go`
+        // binds to this file's `spinner`.
+        let src = "export fn go()
+  spinner(1)
+end
+fn spinner(n)
+  n
+end";
+        assert_eq!(hoistable(src, &["spinner"]), vec!["go", "spinner"]);
+    }
+
+    #[test]
+    fn the_shadow_read_idiom_still_blocks_hoisting() {
+        // `let _native = spinner` above `fn spinner` is the prelude idiom;
+        // blocking is transitive, so `widget` is held back with it.
+        let src = "let _native = spinner
+fn spinner(r)
+  _native(r.a)
+end
+                   fn widget()
+  spinner({a: 1})
+end";
+        assert_eq!(hoistable(src, &["spinner"]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_shadow_read_of_a_name_that_is_not_in_scope_blocks_nothing() {
+        // Nothing to preserve: the read is of this file's own function.
+        let src = "let alias = helper
+fn helper()
+  1
+end";
+        assert_eq!(hoistable(src, &[]), vec!["helper"]);
     }
 }

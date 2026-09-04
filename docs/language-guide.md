@@ -808,8 +808,14 @@ change what it captures. A top-level `fn` stays exactly where it is written when
 
 - its body mentions something the file computes at run time (a top-level `let`,
   `var`, `state`, or an enum variant), or
-- it shadows a name already in scope — so `let old_max = max` above `fn max`
-  still reads the builtin.
+- a statement above it *reads* a name it shadows — so `let old_max = max` above
+  `fn max` still reads the builtin.
+
+The second rule needs the read. A name simply being in scope is not enough: a
+host prelude (petal-ui's `ui`) binds hundreds of bare names in every module, and
+a library's own `fn spinner` must still win for the calls in that module even
+though `spinner` is also a prelude export. Only a read that captures the older
+meaning holds a declaration back.
 
 For the one case that leaves — a top-level *call* to a declaration below it that
 was not hoistable — the compiler reports it as "call to `h` before its

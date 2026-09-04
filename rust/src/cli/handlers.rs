@@ -1452,6 +1452,17 @@ fn make_env(include_dirs: &[PathBuf]) -> Env {
 pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
     let env = make_env(include_dirs);
     let packages = env.packages();
+    // Manifests that looked like packages and would not load. A `-I` one is
+    // already fatal in `make_env`; these are the ambient `PETAL_PATH` ones,
+    // which are deliberately non-fatal — but this is the command whose whole
+    // job is to say what is available, so a library missing because its
+    // manifest is malformed has to be reported rather than simply absent.
+    let problems: Vec<String> = env
+        .package_errors()
+        .iter()
+        .chain(env.ambient_package_errors())
+        .map(|e| e.to_string())
+        .collect();
     if json {
         let rows: Vec<serde_json::Value> = packages
             .iter()
@@ -1465,8 +1476,11 @@ pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
                 })
             })
             .collect();
-        print_json(&serde_json::json!({ "packages": rows }));
+        print_json(&serde_json::json!({ "packages": rows, "errors": problems }));
         return;
+    }
+    for problem in &problems {
+        eprintln!("warning: {problem}");
     }
     if packages.is_empty() {
         println!("No packages found. Point -I at a directory holding a petal.toml, or at a");

@@ -67,4 +67,31 @@ maybe("host implicit imports in imported modules", () => {
       { op: "rect", x: 0, y: 0, w: 42, h: 10, r: 1, g: 2, b: 3 },
     ]);
   });
+
+  it("a module's own declaration wins even when it is written below its use", () => {
+    // The trap that reaching every module armed: a top-level `fn` whose name
+    // was already in scope used to be left where it stands, so that a read of
+    // the pre-shadow meaning above it still worked. With a ~261-name host
+    // prelude bound in every module, that rule fired on any library function
+    // whose name happened to collide — here `spinner`, which `ui` exports with
+    // 3 or 4 parameters. `banner` called it with 1 and died on arity, with no
+    // warning. Only a read that actually captures the old meaning holds a
+    // declaration back now, and this module has none.
+    const frame = runUiApp("late_app.ptl");
+    expect(frame.error).toBe(null);
+    expect(frame.prints).toEqual(["label own"]);
+    // The module's own 1-argument `spinner` ran (h: 4 + 6); the entry file,
+    // which shadows nothing, still reaches the prelude's arc-drawing one.
+    expect(frame.commands[0]).toEqual({
+      op: "rect",
+      x: 0,
+      y: 0,
+      w: 20,
+      h: 10,
+      r: 4,
+      g: 5,
+      b: 6,
+    });
+    expect(frame.commands[1].op).toBe("arc");
+  });
 });

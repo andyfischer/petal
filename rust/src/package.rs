@@ -337,6 +337,10 @@ struct Manifest {
 /// naming the line — better a clear complaint than a silently ignored key.
 /// (Petal has no TOML dependency and this is not the place to grow one.)
 fn parse_manifest(text: &str, path: &Path) -> Result<Manifest, LoadError> {
+    // A Windows editor may have written a UTF-8 BOM. It is invisible, so
+    // leaving it in makes the first line fail with an error the author cannot
+    // see the cause of ("found '\u{feff}[package]'").
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut section = String::new();
     let mut name: Option<String> = None;
     let mut version: Option<String> = None;
@@ -554,6 +558,15 @@ mod tests {
         std::fs::write(lib.join(MANIFEST_FILE), manifest_text).unwrap();
         std::fs::write(lib.join("src/menu.ptl"), "export fn open() 1 end\n").unwrap();
         root
+    }
+
+    #[test]
+    fn a_leading_utf8_bom_is_not_part_of_the_first_line() {
+        // Written by a Windows editor. The BOM is invisible, so before this
+        // the only symptom was `line 1: expected 'key = "value"', found
+        // '\u{feff}[package]'`.
+        let m = manifest("\u{feff}[package]\nname = \"bloom\"\n").unwrap();
+        assert_eq!(m.name, "bloom");
     }
 
     #[test]

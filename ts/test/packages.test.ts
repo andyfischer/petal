@@ -150,4 +150,32 @@ describe("petal packages", () => {
   it("says so when there is nothing to list", () => {
     expect(run(["packages"])).toContain("No packages found");
   });
+
+  it("reports a manifest on PETAL_PATH that would not load", () => {
+    // A broken manifest on PETAL_PATH is deliberately not fatal — it is the
+    // machine's ambient setting, not this command's argument — but it used to
+    // be swallowed whole, so the library was simply absent with no reason
+    // given. `packages` is the command whose job is to explain that.
+    const r = spawnSync(PETAL, ["packages"], {
+      encoding: "utf-8",
+      timeout: 10000,
+      env: { ...process.env, PETAL_PATH: resolve(FIXTURES, "broken") },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("petal.toml");
+    expect(r.stderr).toContain("must be a quoted string");
+    expect(r.stdout).toContain("No packages found");
+  });
+
+  it("--json carries those errors too", () => {
+    const r = spawnSync(PETAL, ["packages", "--json"], {
+      encoding: "utf-8",
+      timeout: 10000,
+      env: { ...process.env, PETAL_PATH: resolve(FIXTURES, "broken") },
+    });
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.packages).toEqual([]);
+    expect(parsed.errors.length).toBe(1);
+    expect(parsed.errors[0]).toContain("must be a quoted string");
+  });
 });

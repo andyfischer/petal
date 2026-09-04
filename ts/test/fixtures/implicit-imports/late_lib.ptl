@@ -1,0 +1,18 @@
+// The trap the implicit-import change armed: `spinner` is also a `ui` export
+// (3 or 4 arguments), and this module declares its own *below* the function
+// that calls it. A declaration held back merely because the name is in scope
+// would bind this call to the prelude's `spinner` and fail on arity — with no
+// warning, since the module's own function is right there.
+
+export fn banner(c)
+  draw_rect({ x: 0, y: 0, w: 20, h: spinner(4), b: 0 }, c)
+  print("label " ++ label())
+end
+
+fn spinner(n)
+  n + 6
+end
+
+fn label()
+  "own"
+end

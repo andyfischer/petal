@@ -1,0 +1,5 @@
+// Entry file for the implicit-import fixture: it draws nothing itself, it just
+// calls into a library module that relies on the host prelude being in scope.
+import shapes_lib
+
+shapes_lib.banner({ r: 10, g: 20, b: 30 })

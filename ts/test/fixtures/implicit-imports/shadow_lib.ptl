@@ -1,0 +1,13 @@
+// The precedence check: implicit imports are *weak*. This module declares its
+// own `screen_width`, which must silently shadow the host prelude's — no
+// collision error — while an unshadowed prelude name (`draw_rect`'s record
+// overload) still resolves here.
+
+fn screen_width()
+  42
+end
+
+export fn banner(c)
+  draw_rect({ x: 0, y: 0, w: screen_width(), h: 10 }, c)
+  print("width " ++ str(screen_width()))
+end

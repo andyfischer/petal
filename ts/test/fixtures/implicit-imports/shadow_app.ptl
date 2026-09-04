@@ -1,0 +1,4 @@
+import shadow_lib
+
+shadow_lib.banner({ r: 1, g: 2, b: 3 })
+print("entry width " ++ str(screen_width()))

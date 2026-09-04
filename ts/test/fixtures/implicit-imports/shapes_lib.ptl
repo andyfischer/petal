@@ -1,0 +1,16 @@
+// A library module with no `import ui` of its own. Every name it calls —
+// `draw_rect`'s record overload, `screen_width`, `print` — has to arrive
+// through the host's implicit imports for this to compile and run correctly.
+// Before implicit imports reached imported modules, `draw_rect(r, c)` here
+// resolved to the raw native's int-arity overload and died at runtime with
+// "Expected int at arg 1, got record".
+
+fn margin()
+  8
+end
+
+export fn banner(c)
+  let m = margin()
+  draw_rect({ x: m, y: m, w: screen_width() - m * 2, h: 24 }, c)
+  print("banner " ++ str(m))
+end

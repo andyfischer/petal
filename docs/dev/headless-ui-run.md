@@ -135,6 +135,27 @@ question a fixture does not cover). `--error-format bare` removes the last
 position-dependent text from the trace, so a re-indenting refactor cannot
 change an error message.
 
+### The clock
+
+The harness clock is deterministic but not frozen. It starts at `t0 = 0.0`
+and advances by the fixed `dt` after every frame, so frame *N* is published to
+`time()` as `N / 60` seconds and the clock is exactly what a script summing
+`dt()` would hold — a pure function of the frame count, never the system
+clock. Two runs of the same script therefore still compare byte-for-byte,
+while animation written against the clock (the `ui` prelude's `spinner` and
+`elapsed`, a blinking caret spelled `int(time() * 2) % 2`) actually *runs* in
+a trace instead of holding one value for 60 frames.
+
+A frame that failed still advances the clock, so a run's timeline depends only
+on how many frames were attempted. Embedders driving `Headless` directly can
+still assign `ui.time` to jump the clock (a tooltip delay, a long fade); the
+assignment is what the next frame publishes, and the automatic advance resumes
+from there.
+
+Because the clock moves, a clock-driven app's trace hash is different from what
+a frozen clock produced: `test/ui-golden/index.json` was re-baselined for the
+nine apps that read `time()`.
+
 ## host_data fixtures
 
 A JSON array of answers; a `(kind, arg)` with no entry answers nil.

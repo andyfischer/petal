@@ -36,7 +36,13 @@ pub struct Headless {
     stack_id: StackKey,
     frame_count: i64,
     /// Absolute clock (seconds) published to the script as `time()` each frame.
-    /// Tests advance it explicitly to exercise `elapsed()`.
+    ///
+    /// It starts at `t0 = 0.0` and [`frame`](Self::frame) advances it by
+    /// [`FRAME_DT`] after every frame, so the clock is a pure function of the
+    /// frame count (`time == frames_run * FRAME_DT`) and never reads the
+    /// system clock — a script that sums `dt()` sees exactly `time()`.
+    /// Assigning to it still works: the value assigned is what the *next*
+    /// frame publishes, and the automatic advance resumes from there.
     pub time: f64,
     /// Draw commands produced by the most recent [`frame`](Self::frame).
     pub commands: Vec<DrawCommand>,
@@ -218,6 +224,12 @@ impl Headless {
         let run = self.env.run(self.stack_id);
         self.fonts = draw::swap_font_provider(saved_fonts);
         self.provider = host_data::swap_data_provider(saved);
+        // The harness clock moves in lockstep with the fixed `dt` it just
+        // published, so animation written against `time()` (the prelude's
+        // `spinner`, `elapsed`) actually runs in a headless trace. It advances
+        // even if the frame failed: a run's clock stays a function of how many
+        // frames were attempted, never of the wall clock.
+        self.time += FRAME_DT;
         self.result = run?;
         self.commands = draw::take_draw_commands(&mut self.env);
         Ok(&self.commands)

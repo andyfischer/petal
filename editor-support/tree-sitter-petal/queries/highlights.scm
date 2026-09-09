@@ -2,8 +2,26 @@
 ;
 ; Capture names follow the tree-sitter highlight convention so editors using
 ; the standard theme map light up out of the box.
-; More-specific patterns come first; the generic `(identifier) @variable`
-; fallback is last.
+;
+; ORDERING: when several patterns capture the *same node*, the LAST one wins.
+; That is the `tree-sitter-highlight` rule (see its `HighlightIter::next`:
+; "keep iterating over any later highlighting patterns that also match this
+; node and set the match to it"), and Garden, Helix and the `tree-sitter
+; highlight` CLI all run on that crate. So the generic `(identifier)
+; @variable` fallback goes FIRST and every more-specific pattern after it —
+; the reverse of what reads naturally. With the fallback last, it overrode
+; every specific pattern and *every* identifier in a Petal file rendered as a
+; plain variable: function names, type names, properties and parameters all
+; lost their color.
+;
+; When patterns capture *different* nodes that nest (a parent and its child),
+; the innermost wins regardless of order. So a rule that wants to color an
+; identifier must capture the `(identifier)` leaf itself, not its parent —
+; which is why `type_name` is written `(type_name (identifier) @type)`.
+
+; ---- Identifiers (fallback; see ORDERING above) ----
+
+(identifier) @variable
 
 ; ---- Comments ----
 
@@ -15,6 +33,7 @@
   "import"
   "export"
   "as"
+  "config"
   "let"
   "var"
   "set"
@@ -42,6 +61,12 @@
 (break_statement) @keyword
 (continue_statement) @keyword
 
+; ---- Modules ----
+; Every segment of an import path is a module name, not an ordinary variable:
+; `import bloom/menu` names one module, spelled in two segments.
+
+(module_path segment: (identifier) @module)
+
 ; ---- Functions ----
 
 (function_declaration name: (identifier) @function)
@@ -60,7 +85,7 @@
 ; ---- Parameters & record keys ----
 
 (parameter name: (identifier) @variable.parameter)
-(type_name) @type
+(type_name (identifier) @type)
 (named_argument name: (identifier) @variable.parameter)
 (record_field key: (identifier) @property)
 (record_pattern_field key: (identifier) @property)
@@ -109,7 +134,3 @@
 
 [ "(" ")" "[" "]" "{" "}" ] @punctuation.bracket
 [ "," "." ":" "..." ] @punctuation.delimiter
-
-; ---- Identifiers (fallback) ----
-
-(identifier) @variable

@@ -84,38 +84,60 @@ module.exports = grammar({
       $._expression,
     ),
 
-    // Three module-import forms (see docs/module-system.md):
+    // The module-import forms (see docs/module-system.md):
     //   import ui                    (qualified)
     //   import ui: button, clicked   (selective, comma-separated names)
     //   import ui as u               (aliased)
+    //   import bloom/menu            (a package path: `/`-joined segments)
+    //   import bloom/menu: *         (the module's whole exported surface)
+    //   export import bloom/menu: *  (a re-export)
     // `as` is contextual in the real parser; here it is a keyword literal,
     // which is safe because a syntax-highlighting grammar never needs `as`
     // as an ordinary identifier. The selective list requires commas between
     // names, matching the parser and stopping the list at the next statement.
     import_statement: $ => seq(
+      optional('export'),
       'import',
-      field('module', $.identifier),
+      field('module', $.module_path),
       optional(choice(
         seq('as', field('alias', $.identifier)),
         seq(
           ':',
-          field('name', $.identifier),
-          repeat(seq(',', field('name', $.identifier))),
+          choice(
+            field('wildcard', '*'),
+            seq(
+              field('name', $.identifier),
+              repeat(seq(',', field('name', $.identifier))),
+            ),
+          ),
         ),
       )),
+    ),
+
+    // A module's identity: one or more identifier segments joined by `/`
+    // (rust/src/parse.rs `expect_path_segment`). A flat name is the one-segment
+    // case, so this node covers `import ui` too.
+    module_path: $ => seq(
+      field('segment', $.identifier),
+      repeat(seq('/', field('segment', $.identifier))),
     ),
 
     // `export` is a prefix on a declaration, not a wrapper node: the real
     // parser (rust/src/parse.rs `parse_export`) dispatches straight into
     // `parse_fn_decl` / `parse_let` / `parse_state` / `parse_enum_decl` with an
     // `exported` flag, producing the same node with one extra leading token.
-    // Mirroring that keeps the tree shapes identical. Those five forms — fn,
-    // let, var, state, enum — are exactly what `export` may precede.
+    // Mirroring that keeps the tree shapes identical. Those forms — fn, let,
+    // var, `config let`, state, enum, class and import — are exactly what
+    // `export` may precede.
 
     // `let x = v` and its mutable twin `var x = v`, each with an optional
     // `: type` annotation.
     let_declaration: $ => seq(
       optional('export'),
+      // `config let x = …` marks an edit knob for propose-edit (docs/CLI.md).
+      // `config` is a contextual identifier in the real lexer, recognized only
+      // in this slot, so it is a literal here and stays usable as a name.
+      optional('config'),
       choice('let', 'var'),
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
@@ -180,6 +202,7 @@ module.exports = grammar({
     // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
     // can treat it as a literal.
     class_declaration: $ => seq(
+      optional('export'),
       'class',
       field('name', $.identifier),
       commaSep($.class_field),

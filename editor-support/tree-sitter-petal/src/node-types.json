@@ -1730,7 +1730,7 @@
         "required": true,
         "types": [
           {
-            "type": "identifier",
+            "type": "module_path",
             "named": true
           }
         ]
@@ -1742,6 +1742,16 @@
           {
             "type": "identifier",
             "named": true
+          }
+        ]
+      },
+      "wildcard": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "*",
+            "named": false
           }
         ]
       }
@@ -2929,6 +2939,22 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "module_path",
+    "named": true,
+    "fields": {
+      "segment": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -4865,6 +4891,10 @@
     "type": "comment",
     "named": true,
     "extra": true
+  },
+  {
+    "type": "config",
+    "named": false
   },
   {
     "type": "continue_statement",

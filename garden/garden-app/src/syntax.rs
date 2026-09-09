@@ -338,6 +338,8 @@ const RECOGNIZED: &[&str] = &[
     "function.macro",
     "type",
     "type.builtin",
+    "module",
+    "namespace",
     "constructor",
     "string",
     "string.special",
@@ -384,6 +386,9 @@ fn kind_for_capture(name: &str) -> Option<TokenKind> {
         "function" => TokenKind::Function,
         "constructor" => TokenKind::Function,
         "type" => TokenKind::Type,
+        // A module/namespace name (`import bloom/menu`) is a name for a thing,
+        // not a value, so it reads as a type rather than a variable.
+        "module" | "namespace" => TokenKind::Type,
         "string" => TokenKind::String,
         "number" => TokenKind::Number,
         "comment" => TokenKind::Comment,
@@ -751,6 +756,45 @@ mod tests {
         // The string body on line 1 highlights as a string.
         let s = span_at(&lines, 1, 3).expect("span inside the string");
         assert_eq!(s.kind, TokenKind::String);
+    }
+
+    /// `export` is a prefix on a declaration, including on `import`. A
+    /// re-export line (`export import bloom/motion: *`) used to parse as an
+    /// ERROR node, so `export` lost its keyword color and the module path read
+    /// as ordinary variables.
+    #[test]
+    fn petal_export_import_highlights() {
+        let mut h = Highlighter::new();
+        let lines = h.highlight_lines(lang("init.ptl"), "export import bloom/motion: *");
+        let export = span_at(&lines, 0, 0).expect("span on `export`");
+        assert_eq!((export.start_col, export.end_col), (0, 6));
+        assert_eq!(export.kind, TokenKind::Keyword);
+        let import = span_at(&lines, 0, 7).expect("span on `import`");
+        assert_eq!(import.kind, TokenKind::Keyword);
+        // Both path segments are module names, not variables.
+        assert_eq!(span_at(&lines, 0, 14).unwrap().kind, TokenKind::Type);
+        assert_eq!(span_at(&lines, 0, 20).unwrap().kind, TokenKind::Type);
+    }
+
+    /// `tree-sitter-highlight` lets the LAST pattern matching a node win, so a
+    /// generic `(identifier) @variable` fallback written at the end of
+    /// highlights.scm overrode every specific pattern and rendered a whole
+    /// Petal file as plain variables. Each of these is a distinct pattern that
+    /// has to beat that fallback.
+    #[test]
+    fn petal_specific_captures_beat_the_identifier_fallback() {
+        let mut h = Highlighter::new();
+        let src = "fn area(r: float) -> float\n  scale(r.w)\nend";
+        let lines = h.highlight_lines(lang("init.ptl"), src);
+        // `area` — a function declaration's name.
+        assert_eq!(span_at(&lines, 0, 3).unwrap().kind, TokenKind::Function);
+        // `r` — a parameter (Variable, but via the parameter pattern).
+        assert_eq!(span_at(&lines, 0, 8).unwrap().kind, TokenKind::Variable);
+        // `float` — the parameter's type, and the return type.
+        assert_eq!(span_at(&lines, 0, 11).unwrap().kind, TokenKind::Type);
+        assert_eq!(span_at(&lines, 0, 21).unwrap().kind, TokenKind::Type);
+        // `scale` — a call's callee.
+        assert_eq!(span_at(&lines, 1, 2).unwrap().kind, TokenKind::Function);
     }
 
     /// Every registry grammar must build and compile its highlights query — a

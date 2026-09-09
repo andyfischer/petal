@@ -62,11 +62,41 @@ mod tests {
     fn test_parses_import_forms() {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&super::LANGUAGE.into()).unwrap();
-        let code = "import ui\nimport ui: button, clicked\nimport ui as u\n";
+        let code = concat!(
+            "import ui\n",
+            "import ui: button, clicked\n",
+            "import ui as u\n",
+            // Package paths and the re-export form (docs/module-system.md).
+            "import bloom/menu\n",
+            "import bloom/menu: open, close\n",
+            "export import bloom/motion: *\n",
+        );
         let tree = parser.parse(code, None).unwrap();
         assert!(
             !tree.root_node().has_error(),
-            "all three import forms must parse without error"
+            "every import form must parse without error"
         );
+    }
+
+    /// `export` prefixes a declaration. Every form the real parser accepts
+    /// after it (rust/src/parse.rs `parse_export`) must parse here too, or the
+    /// keyword loses its highlight along with the rest of the line.
+    #[test]
+    fn test_parses_every_export_form() {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&super::LANGUAGE.into()).unwrap();
+        for code in [
+            "export fn f() 1 end",
+            "export let a = 1",
+            "export var b = 2",
+            "export config let c = 3",
+            "export state d = 4",
+            "export enum E A, B end",
+            "export class R x: num end",
+            "export import bloom/menu: *",
+        ] {
+            let tree = parser.parse(code, None).unwrap();
+            assert!(!tree.root_node().has_error(), "failed to parse: {code}");
+        }
     }
 }

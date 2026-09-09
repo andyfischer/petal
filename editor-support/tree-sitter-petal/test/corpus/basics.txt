@@ -107,18 +107,30 @@ Import statements
 import ui
 import ui: button, clicked
 import ui as u
+import bloom/menu
+import bloom/menu: open, close
 
 ---
 
 (source_file
-  (import_statement module: (identifier))
+  (import_statement module: (module_path segment: (identifier)))
   (import_statement
-    module: (identifier)
+    module: (module_path segment: (identifier))
     name: (identifier)
     name: (identifier))
   (import_statement
-    module: (identifier)
-    alias: (identifier)))
+    module: (module_path segment: (identifier))
+    alias: (identifier))
+  (import_statement
+    module: (module_path
+      segment: (identifier)
+      segment: (identifier)))
+  (import_statement
+    module: (module_path
+      segment: (identifier)
+      segment: (identifier))
+    name: (identifier)
+    name: (identifier)))
 
 ==================
 Var and set
@@ -162,6 +174,15 @@ export enum Color
   Green,
 end
 
+export class Rect
+  x: num,
+  y: num,
+end
+
+export config let knob = 3
+
+export import bloom/menu: *
+
 ---
 
 (source_file
@@ -175,7 +196,20 @@ end
   (enum_declaration
     name: (identifier)
     (enum_variant name: (identifier))
-    (enum_variant name: (identifier))))
+    (enum_variant name: (identifier)))
+  (class_declaration
+    name: (identifier)
+    (class_field
+      name: (identifier)
+      type: (type_annotation type: (type_name (identifier))))
+    (class_field
+      name: (identifier)
+      type: (type_annotation type: (type_name (identifier)))))
+  (let_declaration name: (identifier) value: (integer))
+  (import_statement
+    module: (module_path
+      segment: (identifier)
+      segment: (identifier))))
 
 ================================================================================
 Type annotations

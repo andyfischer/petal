@@ -565,11 +565,13 @@ impl Compiler {
             e
         })?;
         self.prescan_declarations(module, &stmts);
+        let namespaces = self.visible_namespaces();
         let (diags, dispatch) = crate::typecheck::check_module(
             &stmts,
             &self.fn_signatures,
             &self.fn_param_names,
             &self.classes,
+            &namespaces,
         );
         self.warnings.extend(diags);
         // Spans are file-local, so this must be *replaced* per module rather
@@ -1377,6 +1379,26 @@ impl Compiler {
             }
         }
         names
+    }
+
+    /// Each module namespace this file can spell, with the names that module
+    /// exports. `bind_imports` has already filled `module_aliases` by the time
+    /// this runs, and dependencies compile before their importers, so
+    /// `module_exports` is complete for everything reachable — including the
+    /// re-exports a facade like `bloom` collects with `export import m: *`.
+    ///
+    /// This is what lets the checker treat `bloom.button(r, label)` as a call
+    /// to `button` rather than as a method on an opaque value. Without it an
+    /// annotation on a library is checked only where a caller wrote
+    /// `import bloom: button`, which is the rarer of the two call styles.
+    fn visible_namespaces(&self) -> HashMap<String, HashSet<String>> {
+        self.module_aliases
+            .iter()
+            .filter_map(|(alias, m)| {
+                let exports = self.module_exports.get(m)?;
+                Some((alias.clone(), exports.iter().cloned().collect()))
+            })
+            .collect()
     }
 
     fn prescan_declarations(&mut self, module: &LoadedModule, stmts: &[Stmt]) {

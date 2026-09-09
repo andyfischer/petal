@@ -217,9 +217,11 @@ pub const KEYWORDS: &[&str] = &[
 /// stays usable as an ordinary identifier everywhere else. `class` opens a
 /// declaration only when a name follows it, which keeps it usable as an
 /// ordinary identifier and — the sharper constraint — as the JSX attribute
-/// `<div class="…">`. Downstream tooling (highlighting, completion) should
-/// still treat these as keywords.
-pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class"];
+/// `<div class="…">`. `config` is a modifier the parser reads only in the one
+/// slot immediately before a binding keyword (`config let x = …`), so it too
+/// stays an ordinary name everywhere else. Downstream tooling (highlighting,
+/// completion) should still treat these as keywords.
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config"];
 
 /// Map an identifier-shaped word to its keyword token, or `None` if it is an
 /// ordinary identifier.

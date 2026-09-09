@@ -729,3 +729,60 @@ fn a_module_declaration_still_shadows_the_core_prelude() {
         &["mine"],
     );
 }
+
+/// A call through a module namespace (`m.f(x)`) is checked against `m`'s
+/// declared signature, the same as the bare-name call a selective import
+/// gives. Most callers of a library reach it through its namespace, so
+/// without this an annotation on a library is checked almost nowhere.
+///
+/// The unit tests in `src/typecheck` cover the rule's guards against a
+/// hand-built namespace map; this one proves the map the compiler actually
+/// builds from real `import` statements reaches the checker.
+#[test]
+fn a_qualified_call_into_a_module_is_type_checked() {
+    let motion = "export fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
+
+    let warn_messages = |modules: &[(&str, &str)], entry: &str| -> Vec<String> {
+        let mut env = Env::new();
+        for (name, source) in modules {
+            env.register_module(name, source);
+        }
+        let pid = env.load_program(entry).unwrap();
+        env.get_program(pid)
+            .expect("program")
+            .warnings
+            .iter()
+            .map(|d| d.message.clone())
+            .collect()
+    };
+
+    // Through an alias.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion as m\nprint(m.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].contains("expected `Rect`, found `string`"), "{w:?}");
+
+    // Through the module's own name.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion\nprint(motion.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+
+    // Through a facade that re-exports it — the shape `petal-libs/bloom`
+    // uses, and the one a caller writing `bloom.button(...)` depends on.
+    let w = warn_messages(
+        &[("motion", motion), ("bloom", "export import motion: *\n")],
+        "import bloom\nprint(bloom.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+
+    // A correct call stays silent.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion as m\nprint(m.scaled(Rect(0, 0, 1, 1), 2))",
+    );
+    assert!(w.is_empty(), "{w:?}");
+}

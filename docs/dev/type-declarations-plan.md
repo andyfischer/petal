@@ -145,6 +145,16 @@ keeps a scoped environment, infers bottom-up, and warns at these sites:
 - a function body's tail expression and every explicit `return` against the
   declared return type;
 - a field read that the value's class does not declare;
+- a **qualified call** into an imported module (`m.f(x)`, `bloom.button(r, l)`)
+  against that module's declared signature. The compiler hands the checker a
+  map of module namespace → exported names (`Compiler::visible_namespaces`),
+  built from the same `module_aliases`/`module_exports` tables `bind_imports`
+  fills, so re-exports through a facade resolve too. Three guards keep it off
+  an ordinary field access: the object must be a bare name, nothing in scope
+  may shadow it, and the module must actually export the name being called.
+  This matters more than it looks: most callers reach a library through its
+  namespace, so before it an annotation on a library was checked only at the
+  rarer `import m: f` call sites;
 - a discarded result of a known-pure builtin (`push(xs, x)` as a statement;
   `typecheck/unused.rs`).
 
@@ -163,6 +173,13 @@ to a false positive. Notes that follow from that:
   entry becomes a wrong source rewrite, not just a spurious warning.
 - Field and index writes (`set r.a = …`) are unchecked, because `record` and
   `list` are opaque.
+- A qualified call's *signature* still comes from the compilation-wide
+  `(name, arity)` table, so two modules exporting the same name at the same
+  arity share one entry. That is the pre-existing looseness of the
+  selective-import path, and it is warning-only either way. `lint`'s
+  redundant-cast pass deliberately runs with *no* namespaces, so knowing a
+  qualified call's return type can never make it delete a cast it would have
+  left alone.
 
 The whole un-annotated corpus must stay silent: `petal check` over every
 `.ptl` in the repo must not gain a warning from a checker change.

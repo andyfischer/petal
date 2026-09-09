@@ -12,6 +12,8 @@ pub const CLASS_KEYWORD: &str = "class";
 
 /// The contextual `config` modifier (`config let x = …`), only recognized
 /// immediately before a binding keyword so it stays usable as an identifier.
+/// Listed in [`crate::lexer::CONTEXTUAL_KEYWORDS`] so editor tooling still
+/// highlights it.
 pub const CONFIG_KEYWORD: &str = "config";
 
 /// How a token is spelled in a diagnostic: the source text a reader would

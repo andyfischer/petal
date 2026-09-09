@@ -6,7 +6,7 @@
 //! which suppresses every check. The checker NEVER errors and NEVER blocks
 //! compilation — it only accumulates [`Diagnostic`]s.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub mod builtin_types;
 pub mod unused;
@@ -105,6 +105,12 @@ struct Checker<'a> {
     /// the compiler's prescan found. Resolves class names in type position,
     /// types field reads, and answers "does this class have that method?".
     classes: &'a ClassTable,
+    /// The module namespaces this file can spell, and what each exports:
+    /// `import bloom/icon as icons` puts `icons` here with `bloom/icon`'s
+    /// export names. A call through one (`icons.icon(...)`) is a call to that
+    /// module's function, not a method on a value — see
+    /// [`Checker::namespace_call`].
+    namespaces: &'a HashMap<String, HashSet<String>>,
     scopes: Vec<HashMap<String, VarType>>,
     /// The declared return type of each enclosing function-like scope, innermost
     /// last. `Some((ty, name))` when the nearest `fn` declared a resolved return
@@ -136,11 +142,13 @@ fn run(
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     fn_param_names: &HashMap<(String, usize), Vec<String>>,
     classes: &ClassTable,
+    namespaces: &HashMap<String, HashSet<String>>,
 ) -> Outcome {
     let mut checker = Checker {
         fn_signatures,
         fn_param_names,
         classes,
+        namespaces,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
         diags: Vec::new(),
@@ -205,8 +213,9 @@ pub fn check_module(
     fn_signatures: &HashMap<(String, usize), FnSignature>,
     fn_param_names: &HashMap<(String, usize), Vec<String>>,
     classes: &ClassTable,
+    namespaces: &HashMap<String, HashSet<String>>,
 ) -> (Vec<Diagnostic>, MethodDispatch) {
-    let out = run(stmts, fn_signatures, fn_param_names, classes);
+    let out = run(stmts, fn_signatures, fn_param_names, classes, namespaces);
     (out.diags, out.dispatch)
 }
 
@@ -219,8 +228,12 @@ pub fn find_redundant_casts(
     classes: &ClassTable,
 ) -> Vec<RedundantCast> {
     // Casts are a type question; no call site's *names* are checked on this
-    // path, so the pass runs with no parameter names at all.
-    run(stmts, fn_signatures, &HashMap::new(), classes).casts
+    // path, so the pass runs with no parameter names at all — and with no
+    // module namespaces either, which deliberately keeps `lint --fix` blind to
+    // the return type of a qualified call (`m.len(xs)`). Knowing it would let
+    // the rule delete *more* casts, and this rule rewrites source: it stays as
+    // conservative as it was before namespaces were resolved at all.
+    run(stmts, fn_signatures, &HashMap::new(), classes, &HashMap::new()).casts
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -906,7 +919,15 @@ impl<'a> Checker<'a> {
                 // (and, failing those, the globals), so walking it as a field
                 // would report every method as a missing field.
                 let mut method_sig = None;
+                // `m.f(...)` where `m` is an imported module is a call to that
+                // module's `f`, not a method on a value. Standing in a bare
+                // `f` for the callee sends it down the ordinary free-call path
+                // — the one that checks arguments against declared parameter
+                // types — which is what makes an annotation on a library worth
+                // writing: most callers reach a library through its namespace.
+                let namespace_callee = self.namespace_call(function);
                 match &function.kind {
+                    ExprKind::FieldAccess { .. } if namespace_callee.is_some() => {}
                     ExprKind::FieldAccess { object, field } => {
                         let recv = self.check_expr(object);
                         method_sig = self.check_method_call(recv, field, args.len(), expr.span);
@@ -950,6 +971,10 @@ impl<'a> Checker<'a> {
                 if !arg_names.is_empty() {
                     arg_types.iter_mut().for_each(|t| *t = Type::Any);
                 }
+                // Deliberately the *written* callee, not the namespace
+                // stand-in: `m.int(x)` is a module's own `int`, and deleting it
+                // as an identity cast (which `lint --fix` would) would be a
+                // wrong rewrite. A `FieldAccess` callee returns early here.
                 self.note_redundant_cast(expr, function, args, &arg_types, slot);
                 // A pinned method call is already fully resolved — its
                 // signature answers both the argument check and the result
@@ -961,7 +986,8 @@ impl<'a> Checker<'a> {
                     };
                     return self.check_method_args(&sig, &name, args, &arg_types);
                 }
-                self.check_call(function, args, arg_names, &arg_types, expr.span)
+                let callee = namespace_callee.as_ref().unwrap_or(function);
+                self.check_call(callee, args, arg_names, &arg_types, expr.span)
             }
             ExprKind::If {
                 condition,
@@ -1130,6 +1156,42 @@ impl<'a> Checker<'a> {
             arg_is_atomic: is_atomic(&arg.kind),
             slot,
         });
+    }
+
+    /// A callee that is really a qualified module function — `icons.icon` for
+    /// `import bloom/icon as icons` — rewritten as the bare name the free-call
+    /// path knows how to check. `None` for everything else, which leaves the
+    /// callee to be treated as a method on a value, exactly as before.
+    ///
+    /// Three guards keep this from firing on an ordinary field access:
+    ///
+    /// - the object is a bare name (a namespace has no other spelling);
+    /// - nothing in scope binds that name, so a local variable or parameter
+    ///   shadowing the alias wins, as it does at runtime;
+    /// - the module actually exports the name being called, so a same-named
+    ///   function in some *other* module cannot answer for this one.
+    ///
+    /// The signature itself still comes from the compilation-wide table, which
+    /// is keyed by bare name: two modules exporting the same name at the same
+    /// arity share one entry. That is the pre-existing looseness of the
+    /// selective-import path, and it is warning-only either way.
+    fn namespace_call(&self, function: &Expr) -> Option<Expr> {
+        let ExprKind::FieldAccess { object, field } = &function.kind else {
+            return None;
+        };
+        let ExprKind::Ident(ns) = &object.kind else {
+            return None;
+        };
+        if self.lookup(ns).is_some() {
+            return None;
+        }
+        if !self.namespaces.get(ns)?.contains(field) {
+            return None;
+        }
+        Some(Expr {
+            kind: ExprKind::Ident(field.clone()),
+            span: function.span,
+        })
     }
 
     /// The class a receiver *expression*'s declaration implied, for a receiver
@@ -1468,15 +1530,28 @@ fn binary_type(op: BinOp, l: Type, r: Type) -> Type {
 #[cfg(test)]
 mod tests {
     use super::check_module;
+    use std::collections::{HashMap, HashSet};
 
     fn warns(src: &str) -> Vec<String> {
+        warns_with_namespaces(src, &HashMap::new())
+    }
+
+    /// [`warns`] for a file that imports: `namespaces` stands in for what
+    /// `Compiler::visible_namespaces` would build, mapping a local alias to the
+    /// names its module exports. Everything the source declares is in scope
+    /// here whatever the map says, so a test writes the alias and the export
+    /// names and calls the function it declared above.
+    fn warns_with_namespaces(
+        src: &str,
+        namespaces: &HashMap<String, HashSet<String>>,
+    ) -> Vec<String> {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
         let mut classes = crate::classes::ClassTable::new();
         crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         let names = crate::compiler::collect_fn_param_names(&stmts);
-        check_module(&stmts, &sigs, &names, &classes)
+        check_module(&stmts, &sigs, &names, &classes, namespaces)
             .0
             .into_iter()
             .map(|d| d.message)
@@ -2218,5 +2293,79 @@ mod tests {
         assert!(
             warns("fn call_it(g)\n  g(anything: 1)\nend\nprint(call_it(fn(a) -> a))").is_empty()
         );
+    }
+
+    /// A qualified call through a module namespace is checked against that
+    /// module's declared signature, exactly as the bare-name call is. Most
+    /// callers of a library reach it this way (`bloom.button(r, label)`), so
+    /// without this an annotation on a library buys nothing where it is used.
+    #[test]
+    fn a_qualified_call_is_checked_like_a_bare_one() {
+        let src = "fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
+        let ns = |alias: &str, names: &[&str]| {
+            HashMap::from([(
+                alias.to_string(),
+                names.iter().map(|n| n.to_string()).collect::<HashSet<_>>(),
+            )])
+        };
+        let m = ns("m", &["scaled"]);
+
+        assert!(warns_with_namespaces(&format!("{src}m.scaled(Rect(0,0,1,1), 2)"), &m).is_empty());
+
+        let w = warns_with_namespaces(&format!("{src}m.scaled(\"no\", 2)"), &m);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("expected `Rect`, found `string`"), "{w:?}");
+
+        // Arity, too.
+        let w = warns_with_namespaces(&format!("{src}m.scaled(Rect(0,0,1,1))"), &m);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("expects 2 arguments, got 1"), "{w:?}");
+
+        // And the declared return type flows out of the call.
+        let w = warns_with_namespaces(
+            &format!("{src}let n: int = m.scaled(Rect(0,0,1,1), 2)"),
+            &m,
+        );
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("declared `int` but assigned `Rect`"), "{w:?}");
+    }
+
+    /// The three guards that keep the namespace rule off an ordinary field
+    /// access. Each one, alone, must send the call back down the method path.
+    #[test]
+    fn a_namespace_call_needs_an_unshadowed_alias_that_exports_the_name() {
+        let src = "fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
+        let ns = |alias: &str, names: &[&str]| {
+            HashMap::from([(
+                alias.to_string(),
+                names.iter().map(|n| n.to_string()).collect::<HashSet<_>>(),
+            )])
+        };
+
+        // The module does not export that name: some *other* module's `scaled`
+        // must not answer for it.
+        let w = warns_with_namespaces(
+            &format!("{src}m.scaled(\"no\", 2)"),
+            &ns("m", &["something_else"]),
+        );
+        assert!(w.is_empty(), "{w:?}");
+
+        // A local binding shadows the alias, as it does at runtime.
+        let w = warns_with_namespaces(
+            &format!("{src}let m = {{scaled: fn(a, b) -> a}}\nm.scaled(\"no\", 2)"),
+            &ns("m", &["scaled"]),
+        );
+        assert!(w.is_empty(), "{w:?}");
+
+        // The object is an expression, not a bare name.
+        let w = warns_with_namespaces(
+            &format!("{src}f().scaled(\"no\", 2)"),
+            &ns("m", &["scaled"]),
+        );
+        assert!(w.is_empty(), "{w:?}");
+
+        // A file with no imports at all is unaffected.
+        let w = warns(&format!("{src}m.scaled(\"no\", 2)"));
+        assert!(w.is_empty(), "{w:?}");
     }
 }

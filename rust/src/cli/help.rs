@@ -29,6 +29,7 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         "tidy and compare source",
         &[
             ("lint", "Report the source normalization a file needs"),
+            ("suggest", "Propose type annotations the program already implies"),
             ("lint-fix", "Apply the lint rewrite to a file in place"),
             ("ir-equal", "Compare two files' compiled IR for equivalence"),
         ],
@@ -115,6 +116,7 @@ fn page(name: &str) -> Option<&'static str> {
         "run" => RUN,
         "check" => CHECK,
         "lint" => LINT,
+        "suggest" => SUGGEST,
         "lint-fix" => LINT_FIX,
         "ir-equal" => IR_EQUAL,
         "explain" => EXPLAIN,
@@ -282,6 +284,61 @@ OPTIONS
 {COMMON}
 SEE ALSO
        petal help lint-fix, petal help ir-equal
+";
+
+const SUGGEST: &str = "\
+NAME
+       petal-suggest - Propose type annotations the program already implies
+
+SYNOPSIS
+       petal suggest [--json] [--apply] [--from <file>]... <file>
+       petal suggest [<options>] -e <code>
+
+DESCRIPTION
+       Reads what a program's own call sites and function bodies already say
+       about types nobody wrote down, and proposes the annotations. Each
+       proposal comes with the evidence behind it, so it can be judged
+       without re-deriving it.
+
+       This is a suggestion channel, not a check. Nothing here runs during an
+       ordinary compile, nothing here can fail a build, and no annotation is
+       written unless --apply is given. 'petal check' remains the tool that
+       warns; this is the tool that proposes.
+
+       What counts as evidence, for a parameter: the types callers actually
+       pass; the declared type of a slot the parameter is forwarded into; and
+       a field read, which proves the value is record-shaped (a plain record
+       has the same fields a class does, so the class itself is reported as a
+       hint rather than written). For a return type: the body's tail
+       expression and every explicit return.
+
+       Numbers are treated differently in the two slots. A parameter is a
+       precondition, so numeric evidence always proposes 'num' — the callers
+       this compile can see are not the callers there are. A return type is a
+       promise the body actually keeps, so it stays precise.
+
+       Suggestions compound: an applied annotation is evidence for the next
+       pass. Re-running until it reports nothing is the intended workflow.
+
+OPTIONS
+       --apply
+              Write the annotations into the file. Refused, with exit 3 and
+              no write, unless the annotated source still compiles and gains
+              no type-checker warning the original did not already have — an
+              annotation the checker then disagrees with was a wrong guess.
+
+       --from <file>
+              Also compile <file> for its call sites. A library module
+              compiled on its own has no callers, so its parameters have no
+              call-site evidence; point this at an app that uses the library.
+              Repeatable.
+
+       --json Emit the suggestions as JSON, each with its insertion offset,
+              the exact text to insert, and its evidence.
+
+{COMMON}
+SEE ALSO
+       petal help check, petal help lint
 ";
 
 const LINT_FIX: &str = "\

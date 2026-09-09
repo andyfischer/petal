@@ -385,6 +385,37 @@ impl Env {
         Compiler::new().compile_modules(&modules, program_id, &self.native_fns)
     }
 
+    /// Compile for `petal suggest`: the evidence every module's type checker
+    /// observed, plus the class table the suggestions are spelled against.
+    ///
+    /// Separate from the ordinary compile because collecting is pure overhead
+    /// for a program that is going to run — see
+    /// [`Compiler::collecting_inferences`]. The `Program` is dropped: this
+    /// path only ever reads what the front end learned on the way.
+    pub fn compile_collecting(
+        &self,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<
+        (
+            crate::typecheck::infer::Inferences,
+            crate::classes::ClassTable,
+        ),
+        crate::error::LoadError,
+    > {
+        let modules = crate::module::load_modules(
+            source,
+            origin,
+            &self.modules,
+            &self.modules.implicit_imports,
+            &self.modules.base_implicit_imports,
+        )?;
+        let (_program, inferences, classes) = Compiler::new()
+            .collecting_inferences()
+            .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)?;
+        Ok((inferences, classes))
+    }
+
     /// Compile source code into a Program without loading it.
     /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(&self, program_id: ProgramId, source: &str) -> Result<Program, String> {

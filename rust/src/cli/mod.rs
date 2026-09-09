@@ -111,6 +111,17 @@ pub enum Command {
         /// How errors are printed (`--error-format full|bare`).
         error_format: ErrorFormat,
     },
+    /// `suggest` — propose type annotations the program already implies.
+    /// Report-only unless `--apply`; nothing here ever warns or fails a build.
+    Suggest {
+        json: bool,
+        /// Write the suggestions into the file. Refused unless the result
+        /// still compiles and still type-checks clean.
+        apply: bool,
+        /// Extra entry points to compile purely for their call sites — a
+        /// library module compiled alone has no callers.
+        from: Vec<PathBuf>,
+    },
     Lint {
         fix: bool,
         check: bool,
@@ -433,6 +444,16 @@ pub fn execute(cli: CliArgs) {
         }
         Command::Lint { fix, check, verify } => {
             handlers::handle_lint(fix, check, verify, &source, &source_input, &include_dirs);
+        }
+        Command::Suggest { json, apply, from } => {
+            handlers::handle_suggest(
+                json,
+                apply,
+                &from,
+                &source,
+                &source_input,
+                &include_dirs,
+            );
         }
         Command::IrEqual { json, other } => {
             handlers::handle_ir_equal(json, &other, &source, &source_input, &include_dirs);

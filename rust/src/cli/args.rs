@@ -114,6 +114,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "packages" => parse_packages_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
+        "suggest" => parse_suggest_args(&args[1..]),
         "lint-fix" => parse_lint_fix_args(&args[1..]),
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
@@ -301,6 +302,42 @@ fn parse_packages_args(args: &[String]) -> CliArgs {
     CliArgs {
         command: Command::Packages { json },
         source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `suggest [--json] [--apply] [--from <file>]... <file>` — propose type
+/// annotations. `--from` is repeatable: each names another entry point to
+/// compile for its call sites, which is how a library module (whose own
+/// compile has no callers) learns what its parameters are passed.
+fn parse_suggest_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut apply = false;
+    let mut from: Vec<std::path::PathBuf> = Vec::new();
+    let source = parse_source_args(
+        args,
+        "Usage: petal suggest [--json] [--apply] [--from <file>]... <file>  |  \
+         petal suggest -e <code>",
+        |args, i| {
+            match args[*i].as_str() {
+                "--json" => json = true,
+                "--apply" => apply = true,
+                "--from" => {
+                    from.push(std::path::PathBuf::from(take(
+                        args,
+                        i,
+                        "--from needs a file path",
+                    )));
+                }
+                _ => return false,
+            }
+            true
+        },
+    );
+
+    CliArgs {
+        command: Command::Suggest { json, apply, from },
+        source,
         include_dirs: Vec::new(),
     }
 }

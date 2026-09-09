@@ -1640,3 +1640,186 @@ fn term_to_json(term: &Term) -> serde_json::Value {
         "inputs": term.inputs.iter().map(|i| i.0).collect::<Vec<_>>(),
     })
 }
+
+/// `petal suggest` — propose type annotations the program already implies.
+///
+/// Report-only by default. `--apply` writes, but only behind two gates that
+/// together make an accepted suggestion safe:
+///
+/// 1. the rewritten source must still compile;
+/// 2. it must not have gained a type-checker warning.
+///
+/// The second is the one that matters. Every suggestion is a *claim* about a
+/// type, and the checker is the thing that verifies claims — so writing an
+/// annotation and then finding the checker unhappy with it means the inference
+/// was wrong, and the file is left alone. Nothing is written on either failure.
+pub(super) fn handle_suggest(
+    json: bool,
+    apply: bool,
+    from: &[PathBuf],
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    let origin = source_origin(source_input);
+    let opts = crate::suggest::SuggestOptions {
+        include_dirs: include_dirs.to_vec(),
+        from: from.to_vec(),
+    };
+    let outcome = match crate::suggest::suggest_source(source, origin.as_deref(), &opts) {
+        Ok(o) => o,
+        Err(e) => die_plain(&e),
+    };
+
+    if json {
+        print_suggest_json(&outcome);
+        return;
+    }
+    for note in &outcome.notes {
+        eprintln!("suggest: {note}");
+    }
+    if outcome.suggestions.is_empty() {
+        println!(
+            "no suggestions ({} function{} examined)",
+            outcome.functions,
+            if outcome.functions == 1 { "" } else { "s" }
+        );
+        return;
+    }
+
+    let name = match source_input {
+        SourceInput::File(p) => p.as_str(),
+        _ => "<inline>",
+    };
+    let mut last: Option<&(String, usize)> = None;
+    for s in &outcome.suggestions {
+        if last != Some(&s.function) {
+            println!("\n{}:{}  fn {}", name, s.line, s.function.0);
+            last = Some(&s.function);
+        }
+        let what = match s.slot {
+            crate::typecheck::infer::Slot::Return => "-> ".to_string() + &s.ty,
+            crate::typecheck::infer::Slot::Param(_) => format!("{}: {}", s.param, s.ty),
+        };
+        println!("  suggest: {what}");
+        println!("  because: {}", s.because);
+    }
+    println!(
+        "\n{} suggestion{} across {} function{}.",
+        outcome.suggestions.len(),
+        if outcome.suggestions.len() == 1 { "" } else { "s" },
+        outcome.functions,
+        if outcome.functions == 1 { "" } else { "s" }
+    );
+
+    if !apply {
+        println!("Re-run with --apply to write them.");
+        return;
+    }
+    let SourceInput::File(path) = source_input else {
+        // Inline code has nowhere to be written; print the result instead.
+        print!("{}", crate::suggest::apply(source, &outcome.suggestions));
+        return;
+    };
+    let rewritten = crate::suggest::apply(source, &outcome.suggestions);
+    if let Err(e) = verify_suggestions(source, &rewritten, origin.as_deref(), include_dirs) {
+        eprintln!("suggest: refusing to write {path}: {e}");
+        process::exit(3);
+    }
+    if let Err(e) = fs::write(path, &rewritten) {
+        eprintln!("Error writing '{path}': {e}");
+        process::exit(1);
+    }
+    println!("Applied to {path}.");
+}
+
+/// The `--apply` gate: the rewritten source must compile, and must not have
+/// gained a warning *the original did not already have*. A suggestion the
+/// checker then disagrees with was a wrong inference, and a wrong inference
+/// must cost a refusal rather than a file.
+///
+/// Baselining against the original matters: plenty of working files carry a
+/// warning already (a capture-lag note, a discarded result), and counting
+/// those would refuse every suggestion in them for a reason that has nothing
+/// to do with the suggestion.
+fn verify_suggestions(
+    original: &str,
+    rewritten: &str,
+    origin: Option<&std::path::Path>,
+    include_dirs: &[PathBuf],
+) -> Result<(), String> {
+    let warnings_of = |src: &str| -> Result<Vec<String>, String> {
+        let mut env = make_env(include_dirs);
+        let pid = match origin {
+            Some(path) => env.load_program_at(src, path),
+            None => env.load_program(src),
+        }?;
+        Ok(env
+            .get_program(pid)
+            .map(|p| p.warnings.iter().map(|d| d.message.clone()).collect())
+            .unwrap_or_default())
+    };
+
+    let before = warnings_of(original).unwrap_or_default();
+    let after = warnings_of(rewritten)
+        .map_err(|e| format!("the annotated source does not compile ({e})"))?;
+
+    // By message, not by count: an annotation can legitimately *remove* a
+    // warning while adding a different one, and that is still a regression.
+    let mut gained: Vec<&String> = Vec::new();
+    let mut remaining = before.clone();
+    for w in &after {
+        match remaining.iter().position(|b| b == w) {
+            Some(i) => {
+                remaining.remove(i);
+            }
+            None => gained.push(w),
+        }
+    }
+    if !gained.is_empty() {
+        return Err(format!(
+            "the annotated source gains {} type warning(s) — the inference was wrong: {}",
+            gained.len(),
+            gained[0]
+        ));
+    }
+    Ok(())
+}
+
+fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
+    let items: Vec<serde_json::Value> = outcome
+        .suggestions
+        .iter()
+        .map(|s| {
+            let slot = match s.slot {
+                crate::typecheck::infer::Slot::Return => serde_json::json!("return"),
+                crate::typecheck::infer::Slot::Param(i) => serde_json::json!(i),
+            };
+            serde_json::json!({
+                "function": s.function.0,
+                "arity": s.function.1,
+                "slot": slot,
+                "param": s.param,
+                "type": s.ty,
+                "line": s.line,
+                "insert_at": s.at,
+                "insert_text": s.text,
+                "because": s.because,
+                "evidence": s.evidence.iter().map(|e| serde_json::json!({
+                    "kind": e.kind,
+                    "detail": e.detail,
+                    "line": e.line,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({
+            "ok": true,
+            "functions": outcome.functions,
+            "notes": outcome.notes,
+            "suggestions": items,
+        })
+    );
+}

@@ -107,6 +107,13 @@ pub struct Compiler {
     // arity overloads keep distinct entries. Populated by `prescan_declarations`
     // and consulted by the type checker at call sites. Compile-time only.
     fn_signatures: HashMap<(String, usize), FnSignature>,
+    /// Collect the evidence `petal suggest` reads (see
+    /// [`Compiler::collecting_inferences`]). Off by default: an ordinary
+    /// compile does none of that work.
+    collect_inferences: bool,
+    /// What every module's checker observed, accumulated. Empty unless
+    /// `collect_inferences` is set.
+    inferences: crate::typecheck::infer::Inferences,
 
     // The parameter *names* of those same functions, keyed the same way and
     // kept beside `fn_signatures` rather than inside it: a signature is about
@@ -342,6 +349,8 @@ impl Compiler {
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
+            collect_inferences: false,
+            inferences: crate::typecheck::infer::Inferences::default(),
             fn_param_names: HashMap::new(),
             classes: crate::classes::ClassTable::new(),
             method_dispatch: crate::typecheck::MethodDispatch::new(),
@@ -422,11 +431,29 @@ impl Compiler {
     /// its importers. Errors are import-binding problems (unknown export,
     /// selective-import collisions, private names).
     pub fn compile_modules(
-        mut self,
+        self,
         modules: &[LoadedModule],
         program_id: ProgramId,
         native_fns: &NativeFnTable,
     ) -> Result<Program, LoadError> {
+        self.compile_modules_collecting(modules, program_id, native_fns)
+            .map(|(program, _, _)| program)
+    }
+
+    /// Also hand back the evidence `petal suggest` reads, and the class table
+    /// it must be spelled against — the field declarations a suggestion needs
+    /// are in the table, not in the `Program`'s bare list of class names.
+    ///
+    /// Collection is the caller's choice because it is pure overhead for a
+    /// compile that only wants to run the program. The evidence is empty
+    /// unless [`Compiler::collecting_inferences`] was called; the class table
+    /// is always real.
+    pub fn compile_modules_collecting(
+        mut self,
+        modules: &[LoadedModule],
+        program_id: ProgramId,
+        native_fns: &NativeFnTable,
+    ) -> Result<(Program, crate::typecheck::infer::Inferences, crate::classes::ClassTable), LoadError> {
         // Create root block
         let root_block = self.new_block(None);
         self.current_block = root_block;
@@ -499,7 +526,9 @@ impl Compiler {
             self.source_map.files = files;
         }
 
-        Ok(Program {
+        let inferences = std::mem::take(&mut self.inferences);
+        let classes = std::mem::replace(&mut self.classes, crate::classes::ClassTable::new());
+        Ok((Program {
             schema: crate::program::IR_SCHEMA_VERSION.to_string(),
             id: program_id,
             source: entry.source.clone(),
@@ -518,7 +547,13 @@ impl Compiler {
                 .iter()
                 .map(|(_, def)| def.name.clone())
                 .collect(),
-        })
+        }, inferences, classes))
+    }
+
+    /// Opt this compile into collecting `petal suggest` evidence.
+    pub fn collecting_inferences(mut self) -> Self {
+        self.collect_inferences = true;
+        self
     }
 
     /// Compile one module's statements into the root block. For the entry
@@ -566,14 +601,22 @@ impl Compiler {
         })?;
         self.prescan_declarations(module, &stmts);
         let namespaces = self.visible_namespaces();
-        let (diags, dispatch) = crate::typecheck::check_module(
+        let (diags, dispatch, inferences) = crate::typecheck::check_module(
             &stmts,
-            &self.fn_signatures,
-            &self.fn_param_names,
-            &self.classes,
-            &namespaces,
+            &crate::typecheck::CheckContext {
+                fn_signatures: &self.fn_signatures,
+                fn_param_names: &self.fn_param_names,
+                classes: &self.classes,
+                namespaces: &namespaces,
+                module: &module.display_name,
+                collect_inferences: self.collect_inferences,
+            },
         );
         self.warnings.extend(diags);
+        // Spans are file-local, but the evidence is keyed by `(name, arity)`
+        // rather than by span, and a caller in one module is evidence about a
+        // declaration in another — so unlike `dispatch` this accumulates.
+        self.inferences.merge(inferences);
         // Spans are file-local, so this must be *replaced* per module rather
         // than accumulated — two modules' spans collide freely.
         self.method_dispatch = dispatch;

@@ -3,7 +3,7 @@
 Status: **shipped.** `rust/src/lint/` holds the re-indenter (`reindent.rs`),
 the identity-cast rule (`casts.rs`) and the if-chain-to-`match` rule
 (`to_match.rs`). Every `.ptl` in the repo has been run through `lint --fix`.
-What remains is the catalogue of further rules in §5, none of which is
+What remains is the catalogue of further rules in §7, none of which is
 scheduled. The command reference is in [CLI.md](../CLI.md#lint--normalize-source).
 
 ## 1. Goal
@@ -153,7 +153,17 @@ plain assignment. Two findings from it still describe the desugarer:
 statement-level `f(@x)` desugars to exactly `x = f(x)`, and the desugarer
 does not lift `@` out of match arms or `while` conditions.
 
-## 6. Catalogue of further rules (not scheduled)
+## 6. What belongs here, and what belongs on the suggestion channel
+
+`petal suggest` ([suggestions-plan.md](suggestions-plan.md)) shipped after
+this document, and it takes the rules that are *judgement calls* rather than
+normalizations. The test is who decides: a lint rule claims there is one right
+spelling and applies itself with `--fix`; a suggestion claims there might be a
+better one and waits to be asked. "Hoist a repeated pure subexpression to a
+`let`" is naming, not spelling, and belongs there. Identity casts and
+indentation belong here.
+
+## 7. Catalogue of further rules (not scheduled)
 
 Formatting, always safe:
 

@@ -44,7 +44,7 @@ print(card.offset(10, 10).right())
 
 // Methods are found on the receiver's class, so a user declaration extends a
 // built-in class exactly like a class of your own.
-fn Rect.area(r: Rect) -> int
+fn Rect.area(r: Rect) -> num
   r.w * r.h
 end
 

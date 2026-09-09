@@ -42,6 +42,7 @@ pub mod program;
 pub mod program_analysis;
 pub mod provenance;
 pub mod resource_table;
+pub mod suggest;
 pub mod rewrite;
 pub mod source_map;
 pub mod stack;

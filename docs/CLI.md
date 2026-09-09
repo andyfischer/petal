@@ -36,6 +36,7 @@ Every command that compiles a program accepts these:
 | `packages` | List the libraries the search path makes available |
 | `lint` | Report or apply source normalization |
 | `lint-fix` | `lint --fix <file>` under its own name |
+| `suggest` | Propose type annotations the program already implies |
 | `ir-equal` | Compare two files' compiled IR |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
@@ -307,6 +308,64 @@ verify: run-diff verification needed for the semantic passes
 
 If formatting alone ever moves the IR, that is a linter bug: `--verify` reports
 it as one and refuses to write, whatever the mode.
+
+### `suggest` — Propose type annotations
+
+```
+petal suggest [--json] [--apply] [--from <file>]... <file>
+petal suggest [<options>] -e <code>
+```
+
+Reads what a program's own call sites and function bodies already say about
+types nobody wrote down, and proposes the annotations with the evidence behind
+each one. A **suggestion channel**, not a check: nothing here runs during an
+ordinary compile, nothing can fail a build, and no annotation is written
+without `--apply`. See [suggestions-plan.md](dev/suggestions-plan.md).
+
+```
+$ petal suggest -I petal-libs petal-libs/bloom/src/motion.ptl
+
+petal-libs/bloom/src/motion.ptl:22  fn step
+  suggest: -> float
+  because: the body's tail expression is `float`
+
+petal-libs/bloom/src/motion.ptl:241  fn scale_rect
+  suggest: r: record
+  because: read with .h, .w, .x, .y (all fields of `Rect` — narrow it by hand
+           if a plain record is never passed)
+  suggest: -> Rect
+  because: the body's tail expression is `Rect`
+
+16 suggestions across 24 functions.
+Re-run with --apply to write them.
+```
+
+Evidence, for a parameter: the types callers actually pass, the declared type
+of a slot the parameter is forwarded into, and a field read (which proves
+record-shaped — a plain record has the same fields a class does, so the
+matching class is named as a hint rather than written). For a return type: the
+body's tail expression and every explicit `return`.
+
+Numbers are treated differently in the two slots. A parameter is a
+precondition, so numeric evidence always proposes `num`: the callers this
+compile can see are not the callers there are. A return type is a promise the
+body keeps, so it stays precise.
+
+Suggestions **compound** — an applied annotation is evidence for the next pass
+— so re-running until it reports nothing is the intended workflow.
+
+Options:
+
+- `--apply` — write the annotations into the file. Refused, with exit 3 and no
+  write, unless the annotated source still compiles and gains no type-checker
+  warning the original did not already have. An annotation the checker then
+  disagrees with was a wrong guess, and a wrong guess must cost a refusal
+  rather than a file.
+- `--from <file>` — also compile `<file>` for its call sites. A library module
+  compiled on its own has no callers, so its parameters have no call-site
+  evidence; point this at an app that uses the library. Repeatable.
+- `--json` — the suggestions as JSON, each with its insertion offset, the exact
+  text to insert, and its evidence.
 
 ### `ir-equal` — Are two files the same program?
 

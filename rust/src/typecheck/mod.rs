@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub mod builtin_types;
+pub mod infer;
 pub mod unused;
 
 use crate::ast::{
@@ -50,6 +51,12 @@ struct VarType {
     /// the code that declared the slot have in mind? See
     /// [`MethodDispatch::hints`].
     class_hint: Option<Type>,
+    /// The parameter slot this name *is*, when it is a named function's
+    /// parameter: `(that function's key, its index)`. `petal suggest` reads
+    /// it to attribute a use back to the slot that would be annotated, and
+    /// scope lookup gives shadowing for free — an inner `let x = …` replaces
+    /// the entry, so a use below it is attributed to nothing.
+    param_of: Option<(infer::FnKey, usize)>,
 }
 
 impl VarType {
@@ -127,6 +134,17 @@ struct Checker<'a> {
     /// [`CastSlot::Operand`] default) on entry, so it describes that one
     /// expression and never leaks into its subexpressions.
     slot: CastSlot,
+    /// Evidence for `petal suggest`, collected only when `collect_inferences`
+    /// is set — an ordinary compile leaves this empty and does no extra work.
+    inferences: infer::Inferences,
+    collect_inferences: bool,
+    /// The enclosing named `fn`s, innermost last. A lambda pushes `None`, so a
+    /// `return` inside one is attributed to the lambda (where it belongs at
+    /// runtime) rather than leaking into the function around it — the same
+    /// discipline [`Checker::ret_stack`] keeps.
+    fn_stack: Vec<Option<infer::FnKey>>,
+    /// The module being checked, for [`infer::Inferences::note_declaration`].
+    module: String,
     /// True while walking the *access spine* on the left of a `??`. That spine
     /// compiles to the absence-tolerant field/index reads, so a field the class
     /// does not declare is the whole point of the expression, not a mistake to
@@ -135,26 +153,68 @@ struct Checker<'a> {
     tolerant_access: bool,
 }
 
-/// Walk a module once, returning both products of the pass: the warnings and
-/// the identity casts found along the way.
-fn run(
-    stmts: &[Stmt],
-    fn_signatures: &HashMap<(String, usize), FnSignature>,
-    fn_param_names: &HashMap<(String, usize), Vec<String>>,
-    classes: &ClassTable,
-    namespaces: &HashMap<String, HashSet<String>>,
-) -> Outcome {
+/// Everything one walk of a module needs to know about the compilation around
+/// it. Bundled rather than passed positionally: the list had grown to five and
+/// two of the maps have the same shape, which is exactly the argument order a
+/// caller gets wrong silently.
+pub struct CheckContext<'a> {
+    /// Every module function's declared signature, by `(name, arity)`.
+    pub fn_signatures: &'a HashMap<(String, usize), FnSignature>,
+    /// Their parameter *names*, keyed the same way, for named arguments.
+    pub fn_param_names: &'a HashMap<(String, usize), Vec<String>>,
+    /// The classes this module may name.
+    pub classes: &'a ClassTable,
+    /// Module namespace → the names that module exports. See
+    /// [`Checker::namespace_call`].
+    pub namespaces: &'a HashMap<String, HashSet<String>>,
+    /// The module being checked, recorded with each declaration so
+    /// `petal suggest` can tell whether a `(name, arity)` is claimed by more
+    /// than one module.
+    pub module: &'a str,
+    /// Collect the evidence `petal suggest` reads. Off for an ordinary
+    /// compile, which then does no extra work at all.
+    pub collect_inferences: bool,
+}
+
+impl<'a> CheckContext<'a> {
+    /// A context for a single anonymous module with no imports — the shape
+    /// every caller that only wants type *checking* needs.
+    pub fn new(
+        fn_signatures: &'a HashMap<(String, usize), FnSignature>,
+        fn_param_names: &'a HashMap<(String, usize), Vec<String>>,
+        classes: &'a ClassTable,
+        namespaces: &'a HashMap<String, HashSet<String>>,
+    ) -> Self {
+        CheckContext {
+            fn_signatures,
+            fn_param_names,
+            classes,
+            namespaces,
+            module: "",
+            collect_inferences: false,
+        }
+    }
+}
+
+/// Walk a module once, returning every product of the pass: the warnings, the
+/// identity casts found along the way, the pinned method calls, and (when
+/// asked) the evidence `petal suggest` reads.
+fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
     let mut checker = Checker {
-        fn_signatures,
-        fn_param_names,
-        classes,
-        namespaces,
+        fn_signatures: opts.fn_signatures,
+        fn_param_names: opts.fn_param_names,
+        classes: opts.classes,
+        namespaces: opts.namespaces,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
         diags: Vec::new(),
         casts: Vec::new(),
         dispatch: MethodDispatch::new(),
         slot: CastSlot::Operand,
+        inferences: infer::Inferences::default(),
+        collect_inferences: opts.collect_inferences,
+        fn_stack: Vec::new(),
+        module: opts.module.to_string(),
         tolerant_access: false,
     };
     checker.bind_enum_variants(stmts);
@@ -165,6 +225,7 @@ fn run(
         diags: checker.diags,
         casts: checker.casts,
         dispatch: checker.dispatch,
+        inferences: checker.inferences,
     }
 }
 
@@ -173,6 +234,7 @@ struct Outcome {
     diags: Vec<Diagnostic>,
     casts: Vec<RedundantCast>,
     dispatch: MethodDispatch,
+    inferences: infer::Inferences,
 }
 
 /// What this pass learned about each `recv.name(...)` site, keyed by the span
@@ -210,13 +272,10 @@ impl MethodDispatch {
 /// dispatch it always had.
 pub fn check_module(
     stmts: &[Stmt],
-    fn_signatures: &HashMap<(String, usize), FnSignature>,
-    fn_param_names: &HashMap<(String, usize), Vec<String>>,
-    classes: &ClassTable,
-    namespaces: &HashMap<String, HashSet<String>>,
-) -> (Vec<Diagnostic>, MethodDispatch) {
-    let out = run(stmts, fn_signatures, fn_param_names, classes, namespaces);
-    (out.diags, out.dispatch)
+    ctx: &CheckContext,
+) -> (Vec<Diagnostic>, MethodDispatch, infer::Inferences) {
+    let out = run(stmts, ctx);
+    (out.diags, out.dispatch, out.inferences)
 }
 
 /// Every `int`/`float`/`str` call whose argument the checker already proved to
@@ -233,7 +292,13 @@ pub fn find_redundant_casts(
     // the return type of a qualified call (`m.len(xs)`). Knowing it would let
     // the rule delete *more* casts, and this rule rewrites source: it stays as
     // conservative as it was before namespaces were resolved at all.
-    run(stmts, fn_signatures, &HashMap::new(), classes, &HashMap::new()).casts
+    let names = HashMap::new();
+    let namespaces = HashMap::new();
+    run(
+        stmts,
+        &CheckContext::new(fn_signatures, &names, classes, &namespaces),
+    )
+    .casts
 }
 
 /// Least-upper-bound used to type a branching expression: identical types keep
@@ -278,8 +343,27 @@ impl<'a> Checker<'a> {
                 fns,
                 param_names,
                 class_hint: None,
+                param_of: None,
             },
         );
+    }
+
+    /// Mark a just-bound name as parameter `index` of `key`. Only named `fn`
+    /// declarations do this; a lambda's parameters have no annotatable
+    /// signature to suggest for.
+    fn mark_param(&mut self, name: &str, key: infer::FnKey, index: usize) {
+        if let Some(vt) = self.scopes.last_mut().expect("a scope").get_mut(name) {
+            vt.param_of = Some((key, index));
+        }
+    }
+
+    /// The parameter slot `expr` names, if it is a bare, unshadowed parameter
+    /// of an enclosing named `fn`.
+    fn param_slot(&self, expr: &Expr) -> Option<(infer::FnKey, usize)> {
+        let ExprKind::Ident(name) = &expr.kind else {
+            return None;
+        };
+        self.lookup(name)?.param_of.clone()
     }
 
     /// Record the class a just-bound name's declaration implies, for the
@@ -676,6 +760,20 @@ impl<'a> Checker<'a> {
                 self.push_scope();
                 // Site 1 for params + return.
                 self.check_and_bind_params(params, stmt.span);
+                let key = (name.clone(), params.len());
+                if self.collect_inferences {
+                    let annotated: Vec<bool> = params.iter().map(|p| p.ty.is_some()).collect();
+                    self.inferences.note_declaration(
+                        key.clone(),
+                        &self.module,
+                        &annotated,
+                        ret.is_some(),
+                    );
+                    for (i, p) in params.iter().enumerate() {
+                        self.mark_param(&p.name, key.clone(), i);
+                    }
+                }
+                self.fn_stack.push(Some(key.clone()));
                 if let Some(ann) = ret {
                     self.check_type_ann(ann, stmt.span);
                 }
@@ -688,6 +786,16 @@ impl<'a> Checker<'a> {
                 self.ret_stack.push(ctx);
                 let (tail_ty, tail_span) = self.check_block_body(body);
                 self.check_return_type(tail_ty, tail_span.unwrap_or(stmt.span));
+                if self.collect_inferences && ret.is_none() {
+                    self.inferences.note_return(
+                        key,
+                        infer::Evidence::Tail {
+                            span: tail_span.unwrap_or(stmt.span),
+                            ty: tail_ty,
+                        },
+                    );
+                }
+                self.fn_stack.pop();
                 self.ret_stack.pop();
                 self.pop_scope();
             }
@@ -724,6 +832,12 @@ impl<'a> Checker<'a> {
                     // declared return type (bare `return` → nil is left
                     // unchecked, to avoid warning on early-exit patterns).
                     self.check_return_type(ty, e.span);
+                    if self.collect_inferences
+                        && let Some(Some(key)) = self.fn_stack.last().cloned()
+                    {
+                        self.inferences
+                            .note_return(key, infer::Evidence::Return { span: e.span, ty });
+                    }
                 }
             }
             StmtKind::Break | StmtKind::Continue => {}
@@ -1053,6 +1167,18 @@ impl<'a> Checker<'a> {
                 Type::Record
             }
             ExprKind::FieldAccess { object, field } => {
+                if self.collect_inferences
+                    && let Some((key, index)) = self.param_slot(object)
+                {
+                    self.inferences.note_param(
+                        key,
+                        index,
+                        infer::Evidence::FieldRead {
+                            span: expr.span,
+                            field: field.clone(),
+                        },
+                    );
+                }
                 self.tolerant_access = tolerant;
                 let obj = self.check_expr(object);
                 // A class instance has declared field types; a plain record
@@ -1094,9 +1220,12 @@ impl<'a> Checker<'a> {
                 self.check_and_bind_params(params, expr.span);
                 // Lambdas have no declared return type, and `return` is
                 // lambda-local at runtime — push a `None` frame so any `return`
-                // in the body is not checked against an outer fn's return type.
+                // in the body is not checked against an outer fn's return type,
+                // and is not collected as evidence for one either.
                 self.ret_stack.push(None);
+                self.fn_stack.push(None);
                 self.check_block_body(body);
+                self.fn_stack.pop();
                 self.ret_stack.pop();
                 self.pop_scope();
                 Type::Function
@@ -1454,6 +1583,9 @@ impl<'a> Checker<'a> {
             };
             self.check_named_args(&callee, &params, args, arg_names);
         }
+        if self.collect_inferences {
+            self.note_call_evidence(function, args, arg_types, &sig);
+        }
         for (i, pt) in sig.params.iter().enumerate() {
             let Some(pt) = pt else { continue };
             if *pt == Type::Any {
@@ -1474,6 +1606,65 @@ impl<'a> Checker<'a> {
             }
         }
         sig.ret.unwrap_or(Type::Any)
+    }
+
+    /// Record what one resolved call says about types nobody wrote down. Two
+    /// separate things, in opposite directions:
+    ///
+    /// - what this call *passes*, as evidence about the callee's parameters
+    ///   (`ease_flag(true, 18.0)` says `bool` and `float`);
+    /// - an enclosing function's parameter handed straight to a slot the
+    ///   callee already declares, as evidence about *that* parameter. This is
+    ///   the direction that compounds: annotating one library function turns
+    ///   every function that forwards to it into a suggestion.
+    ///
+    /// Only for a callee that is a bare, unshadowed name — which includes the
+    /// stand-in [`Checker::namespace_call`] builds for `m.f(x)`, so a call
+    /// through a module namespace is evidence just like a bare one.
+    fn note_call_evidence(
+        &mut self,
+        function: &Expr,
+        args: &[Expr],
+        arg_types: &[Type],
+        sig: &FnSignature,
+    ) {
+        let ExprKind::Ident(callee) = &function.kind else {
+            return;
+        };
+        if self.lookup(callee).is_some() {
+            return;
+        }
+        let callee = callee.clone();
+        let key = (callee.clone(), args.len());
+        for (i, arg) in args.iter().enumerate() {
+            if let Some(&ty) = arg_types.get(i) {
+                self.inferences.note_param(
+                    key.clone(),
+                    i,
+                    infer::Evidence::CallSite {
+                        span: arg.span,
+                        ty,
+                    },
+                );
+            }
+            let Some(Some(pt)) = sig.params.get(i).copied() else {
+                continue;
+            };
+            if pt == Type::Any {
+                continue;
+            }
+            if let Some((k, index)) = self.param_slot(arg) {
+                self.inferences.note_param(
+                    k,
+                    index,
+                    infer::Evidence::FlowsInto {
+                        span: arg.span,
+                        callee: callee.clone(),
+                        ty: pt,
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -1500,11 +1691,20 @@ fn is_atomic(kind: &ExprKind) -> bool {
 fn binary_type(op: BinOp, l: Type, r: Type) -> Type {
     match op {
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
+            let num_like = |t| matches!(t, Type::Int | Type::Float | Type::Num);
             if l == Type::Int && r == Type::Int {
                 Type::Int
             } else if is_numeric(l) && is_numeric(r) {
                 // At least one is Float here (both-Int handled above).
                 Type::Float
+            } else if num_like(l) && num_like(r) {
+                // A `num` operand: the result is an `int` or a `float`
+                // depending on a value this pass cannot see, which is exactly
+                // what `num` means. Inferring `Any` here instead would make a
+                // `num` annotation *erase* every type downstream of it — and
+                // `num` is the honest annotation for most parameters, so that
+                // would punish writing the right one.
+                Type::Num
             } else {
                 Type::Any
             }
@@ -1529,7 +1729,7 @@ fn binary_type(op: BinOp, l: Type, r: Type) -> Type {
 
 #[cfg(test)]
 mod tests {
-    use super::check_module;
+    use super::{CheckContext, check_module};
     use std::collections::{HashMap, HashSet};
 
     fn warns(src: &str) -> Vec<String> {
@@ -1551,8 +1751,11 @@ mod tests {
         crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         let names = crate::compiler::collect_fn_param_names(&stmts);
-        check_module(&stmts, &sigs, &names, &classes, namespaces)
-            .0
+        check_module(
+            &stmts,
+            &CheckContext::new(&sigs, &names, &classes, namespaces),
+        )
+        .0
             .into_iter()
             .map(|d| d.message)
             .collect()

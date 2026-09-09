@@ -15,6 +15,10 @@ Conventions used throughout:
 - **Animation is internal.** Every component holds its own animators in
   call-path-keyed `state`. Two callsites never share them; a component inside a
   `for` loop gets one animator per iteration.
+- **Every export is type-annotated**, so `petal check` catches a wrong argument
+  at the callsite rather than at the draw call. Note that a rect parameter is
+  `record`, not `Rect`, precisely because of the first convention above: both
+  spellings are accepted, and `Rect` would reject the plain-record one.
 
 ## Theme
 
@@ -46,12 +50,22 @@ Helpers: `tone(t, c, amt)` (lighten toward `text` / darken toward `bg`),
 `ink_on(t, c)`, `variant_fill/ink/solid(t, name)`, `dur(t, secs)`,
 `rate(t, r)`.
 
+Every label bloom draws is placed by [text-layout](../../text-layout/), which
+asks the host where a run's ink actually lands rather than assuming it is
+`size` px tall starting at `y`. That is why a bloom label is centered on the
+line it claims to be on, and why a component's own text needs no arithmetic
+from the caller. Reach past bloom for it (`import text_layout`) when a panel
+draws text of its own.
+
 ## Painting
 
 | Call | Draws |
 |---|---|
 | `ts(t, size, color)` / `ts_bold` / `ts_a(t, size, color, a)` | the text style record you **measure and draw with** — one record for `text_width` and `draw_text`, or centered labels land off |
-| `text_in(s, r, style[, align])` | text inside a rect, vertically centered; `align` is `"left"`/`"center"`/`"right"` |
+| `text_in(s, r, style[, align])` | one line inside a rect, its **cap height** centered vertically; `align` is `"left"`/`"center"`/`"right"`. Returns the run's width |
+| `text_block_in(s, r, style[, opts])` | text that may be several lines: wrapped to `r`, elided if it still does not fit. `opts` is [text-layout](../../text-layout/)'s (`lines`, `lead`, `align`, `valign`). Returns the layout record, whose `h` sizes a panel to its text |
+| `text_cut(s, style, w)` | `s` shortened to `w` px with a trailing "…" |
+| `text_extent(s, style, w)` | `{w, h}` — the size `s` takes in a box `w` px wide |
 | `surface(t, r, radius, level)` | a raised panel: shadow at `level` 1–3, face, hairline |
 | `stroke(t, r, radius, color[, width, inner])` | a rounded outline (there is no rounded-outline primitive) |
 | `wash(t, base, hot, active)` | the composited hover/press tint over a known surface |

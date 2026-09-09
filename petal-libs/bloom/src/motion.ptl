@@ -19,7 +19,7 @@
 // The frame delta, clamped. A pause, a breakpoint or a slow first frame
 // otherwise arrives as one enormous `dt` that flings every spring across the
 // screen; capping it at ~3 frames turns a hitch into a slightly slow frame.
-export fn step()
+export fn step() -> float
   min(dt(), 0.05)
 end
 
@@ -27,21 +27,21 @@ end
 // `t` is clamped to [0, 1] in every one of these, so a caller may hand over a
 // raw progress value that has overshot without checking it first.
 
-fn _t(t)
+fn _t(t: num) -> float
   clamp(float(t), 0.0, 1.0)
 end
 
-export fn ease_out(t)
+export fn ease_out(t: num) -> float
   let c = _t(t)
   1.0 - pow(1.0 - c, 3.0)
 end
 
-export fn ease_in(t)
+export fn ease_in(t: num) -> float
   let c = _t(t)
   c * c * c
 end
 
-export fn ease_in_out(t)
+export fn ease_in_out(t: num) -> float
   let c = _t(t)
   if c < 0.5 then
     4.0 * c * c * c
@@ -51,7 +51,7 @@ export fn ease_in_out(t)
 end
 
 // Overshoots past 1 and settles back: the "pop" a menu or a dialog opens with.
-export fn ease_back(t)
+export fn ease_back(t: num) -> float
   let c = _t(t)
   let s = 1.70158
   let u = c - 1.0
@@ -60,7 +60,7 @@ end
 
 // A decaying wobble. Louder than `ease_back` — for a control that wants to be
 // noticed once (a toast landing), not for anything that fires on every hover.
-export fn ease_elastic(t)
+export fn ease_elastic(t: num) -> float
   let c = _t(t)
   if c <= 0.0 then
     0.0
@@ -80,7 +80,7 @@ end
 // about 110 ms). The first frame *snaps*, so a component does not fade in from
 // zero when it first appears, and a hot reload does not replay every
 // transition.
-export fn ease_to(target, rate)
+export fn ease_to(target: num, rate: num) -> float
   state v = 0.0
   state seen = 0
   if seen == 0 then
@@ -96,16 +96,16 @@ export fn ease_to(target, rate)
   v
 end
 
-export fn ease_to(target)
+export fn ease_to(target: num) -> float
   ease_to(target, 18.0)
 end
 
 // 0 → 1 as `on` flips. The hover/press/open primitive every component uses.
-export fn ease_flag(on, rate)
+export fn ease_flag(on: bool, rate: num) -> float
   ease_to(if on then 1.0 else 0.0 end, rate)
 end
 
-export fn ease_flag(on)
+export fn ease_flag(on: bool) -> float
   ease_flag(on, 18.0)
 end
 
@@ -115,7 +115,7 @@ end
 //
 // `cfg` overrides {stiffness, damping, velocity}. The defaults are a snappy,
 // barely-overshooting spring.
-export fn spring(target, cfg)
+export fn spring(target: num, cfg: record) -> float
   let k = float(field(cfg, "stiffness", 170.0))
   let d = float(field(cfg, "damping", 20.0))
   state x = 0.0
@@ -142,7 +142,7 @@ export fn spring(target, cfg)
   x
 end
 
-export fn spring(target)
+export fn spring(target: num) -> float
   spring(target, {})
 end
 
@@ -150,7 +150,7 @@ end
 // `dur` seconds. Unlike `ease_flag` this reaches its ends exactly and takes a
 // known time, which is what a staged entrance (fade, then slide, then content)
 // needs. Apply a curve to the result: `ease_out(enter(open, 0.18))`.
-export fn enter(on, dur)
+export fn enter(on: bool, dur: num) -> float
   state p = 0.0
   state seen = 0
   if seen == 0 then
@@ -166,7 +166,7 @@ end
 // An impulse that decays: 1.0 on the frame `trigger` goes true, then falls to
 // 0 over `dur`. The building block for one-shot feedback — a ripple, a shake,
 // a flash — where the trigger is an event and the animation outlives it.
-export fn impulse(trigger, dur)
+export fn impulse(trigger: bool, dur: num) -> float
   state v = 0.0
   state was = false
   if trigger && !was then
@@ -178,13 +178,13 @@ export fn impulse(trigger, dur)
   v
 end
 
-export fn impulse(trigger)
+export fn impulse(trigger: bool) -> float
   impulse(trigger, 0.45)
 end
 
 // A damped horizontal shake in pixels, for rejecting input. Feed it the frame
 // an error happens on.
-export fn shake(trigger, amount)
+export fn shake(trigger: bool, amount: num) -> float
   let e = impulse(trigger, 0.4)
   sin(time() * 46.0) * float(amount) * e * e
 end
@@ -194,12 +194,12 @@ end
 // callsite with the same period stays in phase (a row of pulsing dots reads as
 // one object).
 
-export fn wave(period)
+export fn wave(period: num) -> float
   sin(time() * 2.0 * pi() / max(float(period), 0.001))
 end
 
 // 0 → 1 → 0, smoothly. The breathing highlight on a recording indicator.
-export fn pulse(period)
+export fn pulse(period: num) -> float
   (wave(period) + 1.0) / 2.0
 end
 
@@ -211,7 +211,7 @@ end
 // headless run pins the clock while still advancing `dt` — a `time()`-based
 // age would sit at zero for the whole trace and no entrance animation would
 // ever be testable.
-export fn age()
+export fn age() -> float
   state t = 0.0
   state seen = 0
   if seen == 0 then
@@ -224,26 +224,26 @@ end
 
 // Progress through a `dur`-second entrance that begins `i * step_s` seconds
 // after this callsite appeared: the stagger a list uses to cascade in.
-export fn stagger(i, step_s, dur)
+export fn stagger(i: num, step_s: num, dur: num) -> float
   let a = age() - float(i) * float(step_s)
   clamp(a / max(float(dur), 0.001), 0.0, 1.0)
 end
 
 // ── Interpolation ─────────────────────────────────────────────────────────
 
-export fn lerp_rect(a, b, t)
+export fn lerp_rect(a: record, b: record, t: num) -> Rect
   let c = _t(t)
   Rect(a.x + (b.x - a.x) * c, a.y + (b.y - a.y) * c,
     a.w + (b.w - a.w) * c, a.h + (b.h - a.h) * c)
 end
 
 // A rect scaled about its own center — the press squash and the dialog pop.
-export fn scale_rect(r, s)
+export fn scale_rect(r: record, s: num) -> Rect
   let w = r.w * float(s)
   let h = r.h * float(s)
   Rect(r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h)
 end
 
-export fn offset_rect(r, dx, dy)
+export fn offset_rect(r: record, dx: num, dy: num) -> Rect
   Rect(r.x + dx, r.y + dy, r.w, r.h)
 end

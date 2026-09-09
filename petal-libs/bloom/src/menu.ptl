@@ -24,6 +24,7 @@ import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back,
 import bloom/interact: probe, probe_over, capture, capture_release,
                        is_captured, capture_owner
 import bloom/icon: icon
+import text_layout: draw_text_line
 import bloom/button: button, chip
 
 // ── Which menu is open ────────────────────────────────────────────────────
@@ -33,14 +34,14 @@ state var _open_frame = -1
 state var _origin = {x: 0, y: 0}
 state var _hl = 0
 
-export fn menu_open(id)
+export fn menu_open(id: string)
   set _open = id
   set _open_frame = frame_count()
   set _hl = 0
 end
 
 // Open at an explicit point rather than under an anchor (a context menu).
-export fn menu_open_at(id, x, y)
+export fn menu_open_at(id: string, x: num, y: num)
   menu_open(id)
   set _origin = {x: x, y: y}
 end
@@ -50,18 +51,20 @@ export fn menu_close()
   capture_release()
 end
 
-export fn menu_is_open(id)
+export fn menu_is_open(id: string) -> bool
   (get _open) == id
 end
 
-export fn menu_any_open()
+export fn menu_any_open() -> bool
   (get _open) != ""
 end
 
 // ── The popup ─────────────────────────────────────────────────────────────
 
-// Normalize an item to a record.
-fn _item(it)
+// Normalize an item to a record. `it` is deliberately un-annotated: a menu
+// item is a bare string *or* an options record, which is the whole point of
+// this function, and the type vocabulary has no union to say so.
+fn _item(it) -> record
   if type(it) == "string" then
     {label: it, hint: "", icon: "", disabled: false, sep: false, danger: false}
   else
@@ -71,16 +74,16 @@ fn _item(it)
   end
 end
 
-fn _row_h(t)
+fn _row_h(t: record)
   t.row_h
 end
 
-fn _sep_h(t)
+fn _sep_h(t: record) -> int
   9
 end
 
 // The popup's own size, measured from its items.
-export fn menu_size(items, opts)
+export fn menu_size(items: list, opts: record) -> record
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let style = ts(t, size, t.text)
@@ -109,11 +112,11 @@ end
 
 // Draw the open menu `id` anchored under `anchor` and report the chosen index
 // (-1 for none). Safe to call every frame: it does nothing while closed.
-export fn menu(id, anchor, items)
+export fn menu(id: string, anchor: record, items: list)
   menu(id, anchor, items, {})
 end
 
-export fn menu(id, anchor, items, opts)
+export fn menu(id: string, anchor: record, items: list, opts: record)
   let t = theme()
   // `enter` runs in both directions, so the popup is still drawn for the two
   // frames it takes to fade out after being closed.
@@ -126,7 +129,7 @@ export fn menu(id, anchor, items, opts)
   end
 end
 
-fn _draw_menu(t, id, anchor, items, opts, open, k)
+fn _draw_menu(t: record, id: string, anchor: record, items: list, opts: record, open: bool, k: num)
   if open then
     capture(id)
   end
@@ -223,7 +226,7 @@ fn _draw_menu(t, id, anchor, items, opts, open, k)
 end
 
 // The paint half: pure drawing from values the input pass already decided.
-fn _paint_menu(t, grown, rows, e, size)
+fn _paint_menu(t: record, grown: record, rows: list, e: num, size: num)
   let a = int(255.0 * e)
   draw_shadow(grown, {radius: t.radius_lg, blur: 26, spread: 0, dx: 0, dy: 10,
     color: #000000, a: int(70.0 * e)})
@@ -247,20 +250,18 @@ fn _paint_menu(t, grown, rows, e, size)
         icon(m.icon, Rect(tx, row.r.y + (row.r.h - size) / 2.0, size, size), ink)
         set tx = tx + size * 1.6
       end
-      draw_text(m.label, {x: tx, y: row.r.y + (row.r.h - size) / 2.0}, ts_a(t, size, ink, row.a))
+      draw_text_line(m.label, Rect(tx, row.r.y, row.r.w, row.r.h), ts_a(t, size, ink, row.a), "left")
       if m.hint != "" then
         let hc = if m.disabled then t.dim else mix(t.muted, ink, row.sel * 0.5) end
         let hs = ts_a(t, t.font_sm, hc, row.a)
-        let hw = text_width(m.hint, hs)
-        draw_text(m.hint, {x: row.r.x + row.r.w - t.pad_x - hw,
-          y: row.r.y + (row.r.h - t.font_sm) / 2.0}, hs)
+        draw_text_line(m.hint, Rect(row.r.x, row.r.y, row.r.w - t.pad_x, row.r.h), hs, "right")
       end
     end
   end
   clip_pop()
 end
 
-fn _next_enabled(items, from, dir)
+fn _next_enabled(items: list, from: num, dir: num)
   let n = len(items)
   var i = ((from % n) + n) % n
   var guard = 0
@@ -279,11 +280,11 @@ end
 // ── Dropdown button ───────────────────────────────────────────────────────
 
 // A button that opens a menu under itself. Returns the chosen index, or -1.
-export fn dropdown(r, label, items)
+export fn dropdown(r: record, label: string, items: list)
   dropdown(r, label, items, {})
 end
 
-export fn dropdown(r, label, items, opts)
+export fn dropdown(r: record, label: string, items: list, opts: record)
   let id = field(opts, "id", label)
   let open = menu_is_open(id)
   let bopts = {variant: field(opts, "variant", "default"), icon_end: "chevron_down",
@@ -296,11 +297,11 @@ export fn dropdown(r, label, items, opts)
 end
 
 // A dropdown bound to a value: shows the current option, returns the new index.
-export fn select(r, options, index)
+export fn select(r: record, options: list, index: num)
   select(r, options, index, {})
 end
 
-export fn select(r, options, index, opts)
+export fn select(r: record, options: list, index: num, opts: record)
   let cur = if index >= 0 && index < len(options) then options[index] else field(opts, "placeholder", "Select…") end
   let picked = dropdown(r, cur, options, {id: field(opts, "id", "select:" ++ str(r.x) ++ "," ++ str(r.y)),
     align: "left", size: field(opts, "size", theme().font_md)})
@@ -312,11 +313,11 @@ end
 // `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
 // nothing was chosen. Once one menu is open, hovering along the bar opens the
 // next — the behavior every desktop menu bar has and nobody implements twice.
-export fn menu_bar(r, menus)
+export fn menu_bar(r: record, menus: list)
   menu_bar(r, menus, {})
 end
 
-export fn menu_bar(r, menus, opts)
+export fn menu_bar(r: record, menus: list, opts: record)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   var x = r.x + field(opts, "inset", t.gap)
@@ -352,7 +353,7 @@ export fn menu_bar(r, menus, opts)
   out
 end
 
-fn _bar_owns(menus, owner)
+fn _bar_owns(menus: list, owner: string) -> bool
   var yes = false
   for m in menus do
     if owner == "menubar:" ++ field(m, "label", "") then
@@ -366,11 +367,11 @@ end
 
 // Right-click anywhere in `area` to open `items` at the pointer. Returns the
 // chosen index, or -1.
-export fn context_menu(area, items)
+export fn context_menu(area: record, items: list)
   context_menu_impl(area, items, {})
 end
 
-export fn context_menu(area, items, opts)
+export fn context_menu(area: record, items: list, opts: record)
   context_menu_impl(area, items, opts)
 end
 
@@ -379,7 +380,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn context_menu_impl(area, items, opts)
+fn context_menu_impl(area: record, items: list, opts: record)
   let id = field(opts, "id", "context")
   if !is_captured() && mouse_pressed(1) &&
     mouse_x() >= area.x && mouse_x() < area.x + area.w &&

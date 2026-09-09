@@ -1721,16 +1721,59 @@ pub(super) fn handle_suggest(
         print!("{}", crate::suggest::apply(source, &outcome.suggestions));
         return;
     };
-    let rewritten = crate::suggest::apply(source, &outcome.suggestions);
-    if let Err(e) = verify_suggestions(source, &rewritten, origin.as_deref(), include_dirs) {
-        eprintln!("suggest: refusing to write {path}: {e}");
-        process::exit(3);
+    let verify = |candidate: &[crate::suggest::Suggestion]| {
+        verify_suggestions(
+            source,
+            &crate::suggest::apply(source, candidate),
+            origin.as_deref(),
+            include_dirs,
+        )
+    };
+
+    // The fast path: the whole batch verifies, which is what happens almost
+    // always. Only when it does not is it worth paying for the search below.
+    let mut accepted = outcome.suggestions.clone();
+    let mut rejected: Vec<(&crate::suggest::Suggestion, String)> = Vec::new();
+    if let Err(batch_err) = verify(&accepted) {
+        // One wrong inference must not cost the other thirty. Re-admit the
+        // suggestions one at a time, keeping each that still verifies, so the
+        // offender is isolated and named instead of sinking the file.
+        accepted = Vec::new();
+        for s in &outcome.suggestions {
+            let mut candidate = accepted.clone();
+            candidate.push(s.clone());
+            match verify(&candidate) {
+                Ok(()) => accepted = candidate,
+                Err(e) => rejected.push((s, e)),
+            }
+        }
+        if accepted.is_empty() {
+            eprintln!("suggest: refusing to write {path}: {batch_err}");
+            process::exit(3);
+        }
     }
+
+    for (s, why) in &rejected {
+        let what = match s.slot {
+            crate::typecheck::infer::Slot::Return => format!("-> {}", s.ty),
+            crate::typecheck::infer::Slot::Param(_) => format!("{}: {}", s.param, s.ty),
+        };
+        eprintln!(
+            "suggest: dropped `{what}` on `{}` (line {}) — {why}",
+            s.function.0, s.line
+        );
+    }
+
+    let rewritten = crate::suggest::apply(source, &accepted);
     if let Err(e) = fs::write(path, &rewritten) {
         eprintln!("Error writing '{path}': {e}");
         process::exit(1);
     }
-    println!("Applied to {path}.");
+    println!(
+        "Applied {} of {} to {path}.",
+        accepted.len(),
+        outcome.suggestions.len()
+    );
 }
 
 /// The `--apply` gate: the rewritten source must compile, and must not have

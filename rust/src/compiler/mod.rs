@@ -608,7 +608,7 @@ impl Compiler {
                 fn_param_names: &self.fn_param_names,
                 classes: &self.classes,
                 namespaces: &namespaces,
-                module: &module.display_name,
+                module: &module_identity(module),
                 collect_inferences: self.collect_inferences,
             },
         );
@@ -2204,6 +2204,25 @@ fn nested_class_decls(stmts: &[Stmt]) -> Vec<(SourceSpan, String)> {
 /// unrecognized-name parameter/return becomes `None` (checked as `any`). Later
 /// declarations of the same `(name, arity)` win. Pure so it is unit-testable
 /// without a live [`Compiler`]; `prescan_declarations` folds the result into
+/// A module's *stable* identity, for deciding whether two declarations of the
+/// same `(name, arity)` are the same declaration seen twice.
+///
+/// Not the display name: the same file is `button.ptl` when it is the entry
+/// and `bloom/button` when something imports it, so comparing display names
+/// would make one declaration look like two — and `petal suggest --from`,
+/// which deliberately compiles a library both ways, would then discard every
+/// suggestion as ambiguous. The canonical path is the same either way; an
+/// in-memory module has no path and falls back to its registered name.
+fn module_identity(module: &LoadedModule) -> String {
+    match &module.origin {
+        Some(path) => std::fs::canonicalize(path)
+            .unwrap_or_else(|_| path.clone())
+            .to_string_lossy()
+            .into_owned(),
+        None => module.display_name.clone(),
+    }
+}
+
 /// [`Compiler::fn_signatures`].
 pub(crate) fn collect_fn_signatures(
     stmts: &[Stmt],

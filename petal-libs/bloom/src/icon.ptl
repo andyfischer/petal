@@ -14,12 +14,12 @@
 // `draw_circle` and `draw_rect_rounded` bare — no `import ui` needed.
 
 // A point in the glyph box `(cx, cy, s)`.
-fn _p(box, ux, uy)
+fn _p(box: record, ux: num, uy: num) -> record
   {x: box.cx + ux * box.s, y: box.cy + uy * box.s}
 end
 
 // Stroke a polyline through unit points, given flat as [x0, y0, x1, y1, ...].
-fn _path(box, pts, color, w)
+fn _path(box: record, pts: list, color: record, w: num)
   let i = 0
   while i + 3 < len(pts) do
     draw_line(_p(box, pts[i], pts[i + 1]), _p(box, pts[i + 2], pts[i + 3]), color, 255, w)
@@ -29,23 +29,23 @@ end
 
 // The glyph box inscribed in `r`: a centered square, inset so strokes stay
 // inside the rect at any weight.
-fn _box(r)
+fn _box(r: record) -> record
   let s = min(r.w, r.h) * 0.62
   {cx: r.x + r.w / 2.0, cy: r.y + r.h / 2.0, s: s}
 end
 
 // The stroke weight an icon of this size wants, when the caller does not say.
-fn _w(r)
+fn _w(r: record) -> float
   max(1.0, min(r.w, r.h) / 11.0)
 end
 
-export fn icon(name, r, color)
+export fn icon(name: string, r: record, color: record)
   icon(name, r, color, _w(r))
 end
 
 // `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
 // visible in place rather than an invisible hole in a toolbar.
-export fn icon(name, r, color, w)
+export fn icon(name: string, r: record, color: record, w: num)
   let b = _box(r)
   match name
     when "check" -> _path(b, [-0.42, 0.02, -0.12, 0.34, 0.44, -0.32], color, w)
@@ -81,27 +81,27 @@ export let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_
   "more", "dot", "circle", "play", "pause", "folder", "file",
   "warning", "info", "star", "trash"]
 
-fn _cross(b, color, w)
+fn _cross(b: record, color: record, w: num)
   _path(b, [-0.32, -0.32, 0.32, 0.32], color, w)
   _path(b, [0.32, -0.32, -0.32, 0.32], color, w)
 end
 
-fn _plus(b, color, w)
+fn _plus(b: record, color: record, w: num)
   _path(b, [-0.4, 0.0, 0.4, 0.0], color, w)
   _path(b, [0.0, -0.4, 0.0, 0.4], color, w)
 end
 
-fn _arrow_right(b, color, w)
+fn _arrow_right(b: record, color: record, w: num)
   _path(b, [-0.4, 0.0, 0.36, 0.0], color, w)
   _path(b, [0.1, -0.26, 0.36, 0.0, 0.1, 0.26], color, w)
 end
 
-fn _search(b, color, w)
+fn _search(b: record, color: record, w: num)
   _ring({cx: b.cx - b.s * 0.08, cy: b.cy - b.s * 0.08, s: b.s * 0.56}, color, w)
   _path(b, [0.16, 0.16, 0.4, 0.4], color, w)
 end
 
-fn _ring(b, color, w)
+fn _ring(b: record, color: record, w: num)
   // No circle-outline overload takes a record, so the ring is a filled disc
   // with the face punched back out — the caller's own background shows through
   // only where a component drew one, so components pass a solid `color` and
@@ -116,51 +116,51 @@ fn _ring(b, color, w)
   end
 end
 
-fn _menu(b, color, w)
+fn _menu(b: record, color: record, w: num)
   _path(b, [-0.4, -0.26, 0.4, -0.26], color, w)
   _path(b, [-0.4, 0.0, 0.4, 0.0], color, w)
   _path(b, [-0.4, 0.26, 0.4, 0.26], color, w)
 end
 
-fn _more(b, color, w)
+fn _more(b: record, color: record, w: num)
   for i in range(-1, 2) do
     draw_circle({x: b.cx + float(i) * b.s * 0.3, y: b.cy}, max(1.0, w * 0.8), color)
   end
 end
 
-fn _play(b, color, w)
+fn _play(b: record, color: record, w: num)
   fill_triangle(b.cx - b.s * 0.24, b.cy - b.s * 0.34,
     b.cx - b.s * 0.24, b.cy + b.s * 0.34,
     b.cx + b.s * 0.36, b.cy, color.r, color.g, color.b)
 end
 
-fn _pause(b, color, w)
+fn _pause(b: record, color: record, w: num)
   _path(b, [-0.18, -0.32, -0.18, 0.32], color, max(w, b.s * 0.16))
   _path(b, [0.18, -0.32, 0.18, 0.32], color, max(w, b.s * 0.16))
 end
 
-fn _folder(b, color, w)
+fn _folder(b: record, color: record, w: num)
   _path(b, [-0.4, 0.3, -0.4, -0.26, -0.06, -0.26, 0.04, -0.12, 0.4, -0.12, 0.4, 0.3, -0.4, 0.3], color, w)
 end
 
-fn _file(b, color, w)
+fn _file(b: record, color: record, w: num)
   _path(b, [-0.28, -0.38, 0.12, -0.38, 0.3, -0.16, 0.3, 0.38, -0.28, 0.38, -0.28, -0.38], color, w)
   _path(b, [0.12, -0.38, 0.12, -0.16, 0.3, -0.16], color, w)
 end
 
-fn _warning(b, color, w)
+fn _warning(b: record, color: record, w: num)
   _path(b, [0.0, -0.38, 0.4, 0.32, -0.4, 0.32, 0.0, -0.38], color, w)
   _path(b, [0.0, -0.1, 0.0, 0.1], color, w)
   draw_circle({x: b.cx, y: b.cy + b.s * 0.22}, max(1.0, w * 0.6), color)
 end
 
-fn _info(b, color, w)
+fn _info(b: record, color: record, w: num)
   _ring(b, color, w)
   _path(b, [0.0, -0.02, 0.0, 0.22], color, w)
   draw_circle({x: b.cx, y: b.cy - b.s * 0.2}, max(1.0, w * 0.6), color)
 end
 
-fn _star(b, color, w)
+fn _star(b: record, color: record, w: num)
   let pts = []
   for i in range(0, 10) do
     let a = -pi() / 2.0 + float(i) * pi() / 5.0
@@ -172,7 +172,7 @@ fn _star(b, color, w)
   fill_polygon(pts, color.r, color.g, color.b)
 end
 
-fn _trash(b, color, w)
+fn _trash(b: record, color: record, w: num)
   _path(b, [-0.34, -0.22, 0.34, -0.22], color, w)
   _path(b, [-0.14, -0.22, -0.14, -0.36, 0.14, -0.36, 0.14, -0.22], color, w)
   _path(b, [-0.26, -0.22, -0.2, 0.36, 0.2, 0.36, 0.26, -0.22], color, w)

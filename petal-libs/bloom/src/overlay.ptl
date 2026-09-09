@@ -18,17 +18,18 @@ import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back, age,
 import bloom/interact: probe, probe_over, capture, capture_release,
                        is_captured, hovering
 import bloom/icon: icon
+import text_layout: draw_text_line, draw_text_block, text_size
 import bloom/button: icon_button
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
 
 // Rests over `anchor` for `delay` seconds, then fades in above it. Call it
 // late in the frame so it lands on top of what it describes.
-export fn tooltip(anchor, text)
+export fn tooltip(anchor: record, text: string)
   tooltip_impl(anchor, text, {})
 end
 
-export fn tooltip(anchor, text, opts)
+export fn tooltip(anchor: record, text: string, opts: record)
   tooltip_impl(anchor, text, opts)
 end
 
@@ -37,7 +38,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn tooltip_impl(anchor, text, opts)
+fn tooltip_impl(anchor: record, text: string, opts: record)
   let t = theme()
   let over_it = hovering(anchor)
   // The dwell timer is dt-based rather than a clock difference, so it behaves
@@ -54,8 +55,12 @@ fn tooltip_impl(anchor, text, opts)
     let size = field(opts, "size", t.font_sm)
     let ink = over(t.overlay, t.text, 240)
     let style = ts(t, size, ink)
-    let w = text_width(text, style) + t.pad_x * 2.0
-    let h = size + t.pad_y * 2.0
+    // A tooltip is a sentence, not a word: it wraps rather than growing past
+    // the edge of the screen, and the bubble is sized to the wrapped block.
+    let max_w = min(field(opts, "max_width", 260.0), float(screen_width()) - 16.0)
+    let inner = text_size(text, style, max_w - t.pad_x * 2.0)
+    let w = inner.w + t.pad_x * 2.0
+    let h = inner.h + t.pad_y * 2.0
     let x = clamp(anchor.x + anchor.w / 2.0 - w / 2.0, 4.0, float(screen_width()) - w - 4.0)
     let above = anchor.y - h - 8.0 > 4.0
     let y = if above then anchor.y - h - 8.0 + 4.0 * (1.0 - k) else anchor.y + anchor.h + 8.0 - 4.0 * (1.0 - k) end
@@ -65,7 +70,8 @@ fn tooltip_impl(anchor, text, opts)
     defer_paint(fn()
       draw_shadow(r, {radius: t.radius_sm, blur: 14, spread: 0, dx: 0, dy: 4, color: #000000, a: int(60.0 * k)})
       draw_rect_rounded(r, t.radius_sm, tone(t, t.overlay, 0.05), int(245.0 * k))
-      draw_text(text, {x: x + t.pad_x, y: y + t.pad_y}, ts_a(t, size, ink, 255.0 * k))
+      draw_text_block(text, pad(r, t.pad_x, t.pad_y), ts_a(t, size, ink, 255.0 * k),
+        {align: "center", valign: "middle"})
     end)
   end
 end
@@ -78,16 +84,16 @@ state var _toasts = []
 state var _toast_seq = 0
 
 // Raise a toast. `kind` is "info" | "success" | "warn" | "danger".
-export fn toast(text, kind)
+export fn toast(text: string, kind: string)
   set _toast_seq = (get _toast_seq) + 1
   set _toasts = append(get _toasts, {id: get _toast_seq, text: text, kind: kind, age: 0.0})
 end
 
-export fn toast(text)
+export fn toast(text: string)
   toast(text, "info")
 end
 
-export fn toast_count()
+export fn toast_count() -> int
   len(get _toasts)
 end
 
@@ -97,11 +103,11 @@ end
 
 // Draw the stack in the bottom-right of `r` and expire finished toasts.
 // `opts`: {life (seconds), width, corner ("br" | "bl" | "tr" | "tl")}.
-export fn toasts(r)
+export fn toasts(r: record)
   toasts(r, {})
 end
 
-export fn toasts(r, opts)
+export fn toasts(r: record, opts: record)
   let t = theme()
   let life = field(opts, "life", 3.2)
   let w = field(opts, "width", 280)
@@ -133,8 +139,8 @@ export fn toasts(r, opts)
     draw_rect_rounded(br, t.radius, tone(t, t.panel, 0.10), int(250.0 * k))
     draw_rect_rounded(Rect(br.x, br.y, 3.0, br.h), 2, accent, int(255.0 * k))
     icon(_kind_icon(item.kind), Rect(br.x + t.gap + 4.0, br.y + (h - 16.0) / 2.0, 16, 16), accent)
-    draw_text(item.text, {x: br.x + t.gap + 28.0, y: br.y + (h - t.font_md) / 2.0},
-      ts_a(t, t.font_md, t.text, 255.0 * k))
+    draw_text_line(item.text, Rect(br.x + t.gap + 28.0, br.y, br.w - t.gap - 58.0, h),
+      ts_a(t, t.font_md, t.text, 255.0 * k), "left")
     // The progress hairline draining along the bottom edge.
     let left = clamp(1.0 - a / life, 0.0, 1.0)
     draw_line({x: br.x, y: br.y + br.h - 1.0}, {x: br.x + br.w * left, y: br.y + br.h - 1.0},
@@ -149,7 +155,7 @@ export fn toasts(r, opts)
   set _toasts = kept
 end
 
-fn _kind_color(t, kind)
+fn _kind_color(t: record, kind: string)
   match kind
     when "success" -> t.success
     when "warn" -> t.warn
@@ -158,7 +164,7 @@ fn _kind_color(t, kind)
   end
 end
 
-fn _kind_icon(kind)
+fn _kind_icon(kind: string) -> string
   match kind
     when "success" -> "check"
     when "warn" -> "warning"
@@ -171,7 +177,7 @@ end
 
 state var _dialog = ""
 
-export fn dialog_open(id)
+export fn dialog_open(id: string)
   set _dialog = id
 end
 
@@ -180,7 +186,7 @@ export fn dialog_close()
   capture_release()
 end
 
-export fn dialog_is_open(id)
+export fn dialog_is_open(id: string) -> bool
   (get _dialog) == id
 end
 
@@ -193,11 +199,11 @@ end
 //     text_in("This cannot be undone.", d.content, …)
 //     if button(…, "Delete", {variant: "danger"}) then dialog_close() end
 //   end
-export fn dialog(id, w, h, title)
+export fn dialog(id: string, w: num, h: num, title: string) -> record
   dialog(id, w, h, title, {})
 end
 
-export fn dialog(id, w, h, title, opts)
+export fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
   let t = theme()
   let open = dialog_is_open(id)
   let k = enter(open, dur(t, 0.16))
@@ -258,7 +264,7 @@ end
 
 state var _popover = ""
 
-export fn popover_open(id)
+export fn popover_open(id: string)
   set _popover = id
 end
 
@@ -267,11 +273,11 @@ export fn popover_close()
   capture_release()
 end
 
-export fn popover_is_open(id)
+export fn popover_is_open(id: string) -> bool
   (get _popover) == id
 end
 
-export fn popover(id, anchor, w, h)
+export fn popover(id: string, anchor: record, w: num, h: num) -> record
   let t = theme()
   let open = popover_is_open(id)
   let k = enter(open, dur(t, 0.14))
@@ -303,7 +309,7 @@ end
 
 // An inline status strip that slides down into `r` when `show` turns true.
 // Returns true while it is visible (so the caller can leave room for it).
-export fn banner(r, text, kind, show)
+export fn banner(r: record, text: string, kind: string, show: bool) -> bool
   let t = theme()
   let k = ease_out(enter(show, dur(t, 0.2)))
   if k > 0.005 then
@@ -313,8 +319,8 @@ export fn banner(r, text, kind, show)
     draw_rect_rounded(box, t.radius, over(t.panel, c, 40), int(255.0 * k))
     draw_rect_rounded(Rect(box.x, box.y, 3.0, box.h), 2, c, int(255.0 * k))
     icon(_kind_icon(kind), Rect(box.x + t.gap + 4.0, box.y + (box.h - 16.0) / 2.0, 16, 16), c)
-    draw_text(text, {x: box.x + t.gap + 28.0, y: box.y + (box.h - t.font_md) / 2.0},
-      ts_a(t, t.font_md, t.text, 255.0 * k))
+    draw_text_line(text, Rect(box.x + t.gap + 28.0, box.y, box.w - t.gap - 32.0, box.h),
+      ts_a(t, t.font_md, t.text, 255.0 * k), "left")
     clip_pop()
   end
   k > 0.005
@@ -324,11 +330,11 @@ end
 
 // The shimmering placeholder a row shows while its data is in flight. The
 // sweep is dt-driven, so it also shimmers under the headless harness.
-export fn skeleton(r)
+export fn skeleton(r: record)
   skeleton(r, {})
 end
 
-export fn skeleton(r, opts)
+export fn skeleton(r: record, opts: record)
   let t = theme()
   let radius = field(opts, "radius", t.radius_sm)
   let base = tone(t, t.panel, 0.06)

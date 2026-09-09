@@ -15,16 +15,17 @@ import bloom/motion: ease_flag, ease_to, spring, impulse, ease_out, age,
 import bloom/interact: probe, drag, focusable, focused, focus_set,
                        is_captured
 import bloom/icon: icon
+import text_layout: text_baseline, text_top, draw_text_line, caret_index, caret_x
 
 // ── Switch ────────────────────────────────────────────────────────────────
 
 // The on/off switch. The knob is a spring, so it lands with a small overshoot
 // that makes the control feel mechanical rather than interpolated.
-export fn switch(r, on)
+export fn switch(r: record, on: bool) -> bool
   switch(r, on, {})
 end
 
-export fn switch(r, on, opts)
+export fn switch(r: record, on: bool, opts: record) -> bool
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -53,11 +54,11 @@ end
 
 // The tick is *drawn in*: the check's two strokes grow from the corner as the
 // box fills, rather than appearing whole.
-export fn checkbox(r, label, on)
+export fn checkbox(r: record, label: string, on: bool) -> bool
   checkbox_impl(r, label, on, {})
 end
 
-export fn checkbox(r, label, on, opts)
+export fn checkbox(r: record, label: string, on: bool, opts: record) -> bool
   checkbox_impl(r, label, on, opts)
 end
 
@@ -66,7 +67,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn checkbox_impl(r, label, on, opts)
+fn checkbox_impl(r: record, label: string, on: bool, opts: record) -> bool
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -102,11 +103,11 @@ end
 
 // One row per label; returns the new index. The dot scales in, and the ring of
 // the row you are hovering warms toward the accent.
-export fn radio_group(r, labels, index)
+export fn radio_group(r: record, labels: list, index: num)
   radio_group_impl(r, labels, index, {})
 end
 
-export fn radio_group(r, labels, index, opts)
+export fn radio_group(r: record, labels: list, index: num, opts: record)
   radio_group_impl(r, labels, index, opts)
 end
 
@@ -115,7 +116,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn radio_group_impl(r, labels, index, opts)
+fn radio_group_impl(r: record, labels: list, index: num, opts: record)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let row_h = field(opts, "row_h", t.row_h)
@@ -146,11 +147,11 @@ end
 // Press anywhere on the track to jump there, then keep dragging — the drag
 // tracks outside the control, so running off the end does not drop the grab.
 // While dragging, the value floats above the knob.
-export fn slider(r, value, lo, hi)
+export fn slider(r: record, value: num, lo: num, hi: num)
   slider_impl(r, value, lo, hi, {})
 end
 
-export fn slider(r, value, lo, hi, opts)
+export fn slider(r: record, value: num, lo: num, hi: num, opts: record)
   slider_impl(r, value, lo, hi, opts)
 end
 
@@ -159,7 +160,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn slider_impl(r, value, lo, hi, opts)
+fn slider_impl(r: record, value: num, lo: num, hi: num, opts: record)
   let t = theme()
   let p = probe(r)
   let d = drag(r)
@@ -199,7 +200,7 @@ end
 
 // − value + . The value rolls: it springs between the old and new number's
 // vertical position, so a change is visible even when you are not watching.
-export fn stepper(r, value, lo, hi, step)
+export fn stepper(r: record, value: num, lo: num, hi: num, step: num)
   let t = theme()
   let bw = min(r.h, r.w / 3.0)
   var v = value
@@ -218,7 +219,7 @@ export fn stepper(r, value, lo, hi, step)
   v
 end
 
-fn _step_btn(r, name, t)
+fn _step_btn(r: record, name: string, t: record)
   let p = probe(r)
   draw_rect_rounded(scale_rect(r, 1.0 - 0.06 * p.active), t.radius_sm,
     wash(t, t.panel, p.hot, p.active))
@@ -230,11 +231,11 @@ end
 
 // `frac` in [0, 1]; negative runs the indeterminate sweep. The bar eases toward
 // its target, so a jump from 10% to 90% is a movement rather than a cut.
-export fn progress(r, frac)
+export fn progress(r: record, frac: num)
   progress(r, frac, {})
 end
 
-export fn progress(r, frac, opts)
+export fn progress(r: record, frac: num, opts: record)
   let t = theme()
   let color = field(opts, "color", t.accent)
   let radius = int(min(r.h, 8) / 2)
@@ -262,11 +263,11 @@ end
 // Returns {text, focused, submitted, changed}. There is no selection model —
 // caret, insert, delete, word-delete and Return, which is what a panel's
 // filter box and rename field need.
-export fn text_field(r, buf)
+export fn text_field(r: record, buf: string) -> record
   text_field_impl(r, buf, {})
 end
 
-export fn text_field(r, buf, opts)
+export fn text_field(r: record, buf: string, opts: record) -> record
   text_field_impl(r, buf, opts)
 end
 
@@ -275,7 +276,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn text_field_impl(r, buf, opts)
+fn text_field_impl(r: record, buf: string, opts: record) -> record
   let t = theme()
   let id = field(opts, "id", field(opts, "placeholder", "field"))
   let has = focusable(id)
@@ -344,7 +345,12 @@ fn text_field_impl(r, buf, opts)
 
   clip_push(pad(r, 2), radius)
   let tx = r.x + inset
-  let ty = r.y + (r.h - size) / 2.0
+  // The run sits on the baseline that centers its cap height in the field, and
+  // the caret spans the line's real ink — ascent to descent — rather than a
+  // guessed `size` px around a guessed top.
+  let m = text_metrics(style)
+  let base = text_baseline(r, style)
+  let ty = base - m.baseline
   if text == "" && !has then
     draw_text(field(opts, "placeholder", ""), {x: tx, y: ty}, ts(t, size, t.dim))
   else
@@ -354,10 +360,11 @@ fn text_field_impl(r, buf, opts)
     // A dt-driven blink: it also blinks in a headless trace, where the wall
     // clock stands still.
     let phase = fract(age() * 1.1)
-    let cx = tx + text_width(char_slice(text, 0, caret), style)
+    let cx = tx + caret_x(text, style, caret)
     let on = if changed then 1.0 else (if phase < 0.55 then 1.0 else 0.0 end) end
     if on > 0.0 then
-      draw_line({x: cx, y: ty - 2.0}, {x: cx, y: ty + size + 2.0}, t.accent, 255, 2)
+      draw_line({x: cx, y: base - m.cap_height - 2.0}, {x: cx, y: base + m.descent + 1.0},
+        t.accent, 255, 2)
     end
   end
   clip_pop()
@@ -366,17 +373,17 @@ end
 
 // The caret index nearest `dx` pixels into the text, measured in the same
 // style it is drawn in.
-fn _caret_at(text, style, dx)
-  var best = 0
-  for i in range(0, char_len(text) + 1) do
-    if text_width(char_slice(text, 0, i), style) <= dx + 2.0 then
-      set best = i
-    end
-  end
-  best
+//
+// This used to be a `text_width` call per character of the field, every time
+// the field was clicked, over a string that grows as the user types. It is now
+// one walk of the host's advance table — and it snaps to the *nearer*
+// boundary, so clicking the right half of a glyph puts the caret after it
+// rather than before.
+fn _caret_at(text: string, style: record, dx: num)
+  caret_index(text, style, dx)
 end
 
-fn _word_start(text, caret)
+fn _word_start(text: string, caret: num) -> num
   var i = caret
   while i > 0 && char_at(text, i - 1) == " " do
     set i = i - 1

@@ -29,7 +29,7 @@ state var _owner_frame = -2
 
 // Claim the pointer for `owner` (any stable string). Call it every frame the
 // overlay is open.
-export fn capture(owner)
+export fn capture(owner: string)
   set _owner = owner
   set _owner_frame = frame_count()
 end
@@ -65,21 +65,21 @@ end
 // `enabled: false` returns a record that is inert *and* still animates its way
 // back to rest, so disabling a hovered button fades it out rather than
 // snapping.
-export fn probe(r, enabled)
+export fn probe(r: record, enabled: bool) -> record
   probe_at(r, enabled, !is_captured())
 end
 
-export fn probe(r)
+export fn probe(r: record) -> record
   probe(r, true)
 end
 
 // The overlay's own probe: identical, but it ignores the capture claim (an
 // open menu is the thing holding the pointer, so its items must still see it).
-export fn probe_over(r)
+export fn probe_over(r: record) -> record
   probe_at(r, true, true)
 end
 
-fn probe_at(r, enabled, allowed)
+fn probe_at(r: record, enabled: bool, allowed: bool) -> record
   state armed = false
   let live = enabled && allowed
   let over = live && point_in(mouse_x(), mouse_y(), r)
@@ -97,11 +97,11 @@ fn probe_at(r, enabled, allowed)
 end
 
 // The two shorthands, for the many places that want one bool.
-export fn hovering(r)
+export fn hovering(r: record)
   !is_captured() && point_in(mouse_x(), mouse_y(), r)
 end
 
-export fn clicked(r)
+export fn clicked(r: record)
   probe(r).click
 end
 
@@ -110,7 +110,7 @@ end
 // A drag that starts inside `r` and keeps tracking once the pointer leaves it
 // (the slider that keeps following your hand off the end of its track).
 // Returns {active, x, y, dx, dy, start_x, start_y}.
-export fn drag(r)
+export fn drag(r: record) -> record
   state on = false
   state sx = 0
   state sy = 0
@@ -140,7 +140,7 @@ state var _pending = 0
 // Announce `id` as focusable this frame and report whether it has focus.
 // Every focusable bloom component calls this; an app only calls it when it
 // builds a focusable control of its own.
-export fn focusable(id)
+export fn focusable(id: string) -> bool
   if frame_count() != get _ring_frame then
     _begin_frame()
   end
@@ -171,11 +171,11 @@ fn _begin_frame()
   end
 end
 
-export fn focused(id)
+export fn focused(id: string) -> bool
   (get _focus) == id
 end
 
-export fn focus_set(id)
+export fn focus_set(id: string)
   set _focus = id
 end
 
@@ -190,14 +190,14 @@ end
 // ── Keys ──────────────────────────────────────────────────────────────────
 
 // A plain key press, ignored while an overlay holds input.
-export fn key(k)
+export fn key(k: string) -> bool
   !is_captured() && key_pressed(k)
 end
 
 // A modified chord: `chord("k", "cmd")`, `chord("p", "ctrl")`. `mods` is one
 // of "cmd", "ctrl", "alt", "shift", or "cmdctrl" for the accelerator that is
 // Cmd on macOS and Ctrl elsewhere — which is what an app almost always means.
-export fn chord(k, mods)
+export fn chord(k: string, mods: string) -> bool
   if !key_pressed(k) then
     false
   else

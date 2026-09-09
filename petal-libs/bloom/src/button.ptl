@@ -25,12 +25,13 @@ import bloom/motion: ease_flag, ease_to, spring, impulse, scale_rect,
                      ease_out, age
 import bloom/interact: probe, focusable, focused, focus_set, is_captured
 import bloom/icon: icon
+import text_layout: text_baseline, text_top, draw_text_line, draw_text_baseline
 
-export fn button(r, label)
+export fn button(r: record, label: string) -> bool
   button_impl(r, label, {})
 end
 
-export fn button(r, label, opts)
+export fn button(r: record, label: string, opts: record) -> bool
   button_impl(r, label, opts)
 end
 
@@ -39,7 +40,7 @@ end
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
-fn button_impl(r, label, opts)
+fn button_impl(r: record, label: string, opts: record) -> bool
   let t = theme()
   let enabled = !field(opts, "disabled", false) && !field(opts, "loading", false)
   let id = field(opts, "id", "")
@@ -118,7 +119,11 @@ fn button_impl(r, label, opts)
     if icon_name != "" then
       icon(icon_name, Rect(x, cy - size * 0.55, size * 1.05, size * 1.1), fg)
     end
-    draw_text(label, {x: x + iw, y: cy - size / 2.0}, style)
+    // The label sits on the baseline that centers its *cap height* on `cy` —
+    // the same line the icons are centered on. Placing it by `cy - size / 2`
+    // instead (the run is `size` px tall, starting at its `y`) is wrong on
+    // every host, and wrong the same way every time: a pixel or two high.
+    draw_text(label, {x: x + iw, y: text_top(text_baseline(face, style), style)}, style)
     if icon_end != "" then
       icon(icon_end, Rect(x + iw + lw + gap, cy - size * 0.55, size * 1.05, size * 1.1), fg)
     end
@@ -127,11 +132,11 @@ fn button_impl(r, label, opts)
 end
 
 // A circular icon-only button: toolbars, close buttons, steppers.
-export fn icon_button(r, name)
+export fn icon_button(r: record, name: string)
   icon_button(r, name, {})
 end
 
-export fn icon_button(r, name, opts)
+export fn icon_button(r: record, name: string, opts: record)
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -150,11 +155,11 @@ end
 
 // A row of mutually exclusive options with a thumb that slides — and springs —
 // between them. Returns the new index.
-export fn segmented(r, labels, index)
+export fn segmented(r: record, labels: list, index: num)
   segmented(r, labels, index, {})
 end
 
-export fn segmented(r, labels, index, opts)
+export fn segmented(r: record, labels: list, index: num, opts: record)
   let t = theme()
   let n = max(1, len(labels))
   let radius = field(opts, "radius", t.radius)
@@ -178,27 +183,25 @@ export fn segmented(r, labels, index, opts)
     end
     let on = if i == index then 1.0 else 0.0 end
     let fg = mix(mix(t.muted, t.text, p.hot * 0.5), t.text, ease_to(on, rate(t, 20.0)))
-    let style = ts(t, size, fg)
-    let w = text_width(labels[i], style)
-    draw_text(labels[i], {x: cr.x + (cr.w - w) / 2.0, y: cr.y + (cr.h - size) / 2.0}, style)
+    draw_text_line(labels[i], cr, ts(t, size, fg), "center")
   end
   chosen
 end
 
 // The width a chip will take, for a caller that has to place it before it
 // draws it (right-aligning one against an edge, flowing a row backwards).
-export fn chip_width(label, opts)
+export fn chip_width(label: string, opts: record) -> num
   let t = theme()
   let size = field(opts, "size", t.font_sm)
   text_width(label, ts(t, size, t.text)) + size * 1.4
 end
 
 // A small status chip. Returns its rect so a row of them can flow.
-export fn chip(x, y, label)
+export fn chip(x: num, y: num, label: string) -> Rect
   chip(x, y, label, {})
 end
 
-export fn chip(x, y, label, opts)
+export fn chip(x: num, y: num, label: string, opts: record) -> Rect
   let t = theme()
   let size = field(opts, "size", t.font_sm)
   let color = field(opts, "color", t.accent)
@@ -207,27 +210,31 @@ export fn chip(x, y, label, opts)
   let h = size + 10
   let r = Rect(x, y, w, h)
   draw_rect_rounded(r, int(h / 2), over(t.panel, color, 38))
-  draw_text(label, {x: x + size * 0.7, y: y + (h - size) / 2.0}, style)
+  draw_text_line(label, Rect(x + size * 0.7, y, w - size * 1.4, h), style, "left")
   r
 end
 
 // A text link: underline grows from the left on hover.
-export fn link(x, y, label)
+export fn link(x: num, y: num, label: string)
   link(x, y, label, {})
 end
 
-export fn link(x, y, label, opts)
+export fn link(x: num, y: num, label: string, opts: record)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let color = field(opts, "color", t.accent)
   let style = ts(t, size, color)
   let w = text_width(label, style)
-  let r = Rect(x, y, w, size + 4)
+  let m = text_metrics(style)
+  // `y` names the top of the link's own box; the run is centered in it and the
+  // underline sits under the baseline, where the descenders are, rather than
+  // at a guessed `y + size`.
+  let r = Rect(x, y, w, m.baseline + m.descent)
   let p = probe(r)
-  draw_text(label, {x: x, y: y}, style)
+  draw_text_baseline(label, x, y + m.baseline, style)
   let grow = ease_to(p.hot, rate(t, 20.0))
   if grow > 0.01 then
-    let uy = y + size + 1
+    let uy = y + m.baseline + max(1.0, m.descent * 0.4)
     draw_line({x: x, y: uy}, {x: x + w * grow, y: uy}, color, 200, 1)
   end
   p.click
@@ -238,7 +245,7 @@ end
 // The click ripple: a disc growing from where the pointer went down, clipped
 // to the control. It reads the press point out of `state` because the pointer
 // has usually moved by the time the animation is halfway through.
-fn _ripple(face, radius, p, ink, secs)
+fn _ripple(face: record, radius: num, p: record, ink: record, secs: num)
   state ox = 0.0
   state oy = 0.0
   if p.press then
@@ -256,7 +263,7 @@ end
 
 // A spinning arc, drawn from short segments. It turns on `age()` rather than
 // the wall clock so it also spins in a headless trace.
-fn _spinner(cx, cy, radius, color)
+fn _spinner(cx: num, cy: num, radius: num, color: record)
   let phase = age() * 2.4
   let segs = 9
   for i in range(0, segs) do
@@ -270,6 +277,6 @@ end
 
 // Exposed because a panel that rolls its own control still wants bloom's
 // spinner in it.
-export fn spinner(cx, cy, radius, color)
+export fn spinner(cx: num, cy: num, radius: num, color: record)
   _spinner(cx, cy, radius, color)
 end

@@ -1,7 +1,9 @@
-// Org Chart — hierarchical tree layout
-// Demonstrates nested data and tree rendering
+// Org Chart — a hierarchy drawn as boxes and elbow connectors.
+//
+// Demonstrates nested data (each person names its children by index) and
+// rendering a tree from it.
 
-fn mouseOver(rect)
+fn mouse_over(rect: record) -> bool
   let mx = mouse_x()
   let my = mouse_y()
   mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
@@ -58,13 +60,13 @@ let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
 end
-fn draw_line(a, b, color)
+fn draw_line(a: record, b: record, color: record)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
 end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
-fn draw_text(text, pos, size, color)
+fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
 end
 
@@ -100,18 +102,16 @@ for i in range(0, len(people)) do
   let y = pos.y
 
   let node_rect = { x: x, y: y, w: node_w, h: node_h }
-  let hover = mouseOver(node_rect)
+  let hover = mouse_over(node_rect)
 
   // Color by level
   let node_color = default_bg
   let border_color = default_border
 
   if y < 100 then
-    // CEO level — accent color
     node_color = ceo_bg
     border_color = ceo_border
   elsif y < 200 then
-    // VP level
     node_color = vp_bg
     border_color = vp_border
   end
@@ -132,14 +132,12 @@ for i in range(0, len(people)) do
     border_b = 255
   end
 
-  // Shadow
+  // Drop shadow: the same box, offset two pixels.
   draw_rect(x + 2, y + 2, node_w, node_h, shadow_color.r, shadow_color.g, shadow_color.b)
-  // Background
   draw_rect(x, y, node_w, node_h, bg_r, bg_g, bg_b)
   draw_rect_outline(x, y, node_w, node_h, border_r, border_g, border_b)
 
-  // Name (bold-ish: slightly larger)
+  // No bold in this host, so the name is simply drawn a size larger.
   draw_text(person.name, {x: x + 10, y: y + 10}, 15, name_color)
-  // Title
   draw_text(person.title, {x: x + 10, y: y + 30}, 13, role_color)
 end

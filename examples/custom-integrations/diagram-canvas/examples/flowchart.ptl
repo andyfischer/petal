@@ -1,14 +1,12 @@
-// Flowchart Diagram
-// Boxes connected by lines with hover highlighting
+// Flowchart — boxes connected by labelled edges, with hover highlighting.
+//
+// Nodes and edges are plain records; the whole diagram is redrawn each frame.
 
-fn mouseOver(rect)
+fn mouse_over(rect: record) -> bool
   let mx = mouse_x()
   let my = mouse_y()
   mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h
 end
-
-let sw = screen_width()
-let sh = screen_height()
 
 // Color palette
 let bg = #1e1e2d
@@ -27,17 +25,17 @@ let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
 end
-fn draw_line(a, b, color)
+fn draw_line(a: record, b: record, color: record)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
 end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
-fn draw_text(text, pos, size, color)
+fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
 end
 
-// Define nodes: {label, x, y, w, h}
+// Nodes: {label, x, y, w, h}
 let nodes = [
   {label: "Start",        x: 350, y: 40,  w: 120, h: 40},
   {label: "Input Data",   x: 350, y: 130, w: 120, h: 40},
@@ -48,7 +46,7 @@ let nodes = [
   {label: "End",          x: 350, y: 490, w: 120, h: 40}
 ]
 
-// Define edges: {from, to, label}
+// Edges: indices into `nodes`, plus a label
 let edges = [
   {from: 0, to: 1, label: ""},
   {from: 1, to: 2, label: ""},
@@ -59,15 +57,13 @@ let edges = [
   {from: 5, to: 6, label: ""}
 ]
 
-// Background
 clear(bg.r, bg.g, bg.b)
 
-// Title
 draw_text("Flowchart — hover over nodes", {x: 20, y: 10}, 18, title_color)
 
-// Helper: compute edge endpoints (center-bottom of source, center-top of target)
-// For upward edges, use side ports instead
-fn edgePoints(a, b)
+// Edge endpoints: centre-bottom of the source to centre-top of the target.
+// An upward edge would run backwards through both boxes, so it uses side ports.
+fn edge_points(a: record, b: record) -> record
   if b.y < a.y then
     // Upward edge — use right side of source, right side of target
     {ax: a.x + a.w, ay: a.y + a.h / 2, bx: b.x + b.w, by: b.y + b.h / 2}
@@ -80,11 +76,10 @@ end
 for e in edges do
   let a = nodes[e.from]
   let b = nodes[e.to]
-  let pts = edgePoints(a, b)
+  let pts = edge_points(a, b)
 
   draw_line({x: pts.ax, y: pts.ay}, {x: pts.bx, y: pts.by}, line_color)
 
-  // Edge label
   if len(e.label) > 0 then
     let lx = (pts.ax + pts.bx) / 2 + 6
     let ly = (pts.ay + pts.by) / 2 - 8
@@ -95,8 +90,7 @@ end
 // Draw nodes
 for n in nodes do
   let node_rect = { x: n.x, y: n.y, w: n.w, h: n.h }
-  if mouseOver(node_rect) then
-    // Highlight
+  if mouse_over(node_rect) then
     draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, highlight_border.r, highlight_border.g, highlight_border.b)
     draw_rect(n.x, n.y, n.w, n.h, highlight_bg.r, highlight_bg.g, highlight_bg.b)
     draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, #ffffff)
@@ -111,7 +105,7 @@ end
 let arrow_len = 10.0
 let arrow_spread = pi() / 7.0
 for e in edges do
-  let pts = edgePoints(nodes[e.from], nodes[e.to])
+  let pts = edge_points(nodes[e.from], nodes[e.to])
   let fax = float(pts.ax)
   let fay = float(pts.ay)
   let fbx = float(pts.bx)

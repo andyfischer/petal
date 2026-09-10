@@ -1,5 +1,6 @@
-// Interactive Nodes — click to toggle, drag with mouse
-// Demonstrates state, mouse input, and dynamic drawing
+// Interactive Nodes — drag a node to move it, click it to toggle it.
+//
+// Demonstrates state, mouse input, and drawing that follows the data.
 
 state nodes = [
   {x: 150, y: 150, label: "Alpha",   active: true},
@@ -34,14 +35,14 @@ let connections = [
   [0, 1], [1, 2], [0, 3], [3, 4], [2, 4], [1, 4]
 ]
 
-// Handle mouse press: start drag or toggle
+// Press: pick up whichever node is under the cursor.
 if pressed then
   for i in range(0, len(nodes)) do
     let n = nodes[i]
     let dx = float(mx - n.x)
     let dy = float(my - n.y)
-    let dist = dx * dx + dy * dy
-    if dist < float(node_r * node_r) then
+    let dist2 = dx * dx + dy * dy
+    if dist2 < float(node_r * node_r) then
       dragging = i
       drag_offset_x = n.x - mx
       drag_offset_y = n.y - my
@@ -49,7 +50,6 @@ if pressed then
   end
 end
 
-// Handle drag
 if down && dragging >= 0 then
   let n = nodes[dragging]
   nodes[dragging] = {
@@ -59,13 +59,13 @@ if down && dragging >= 0 then
     active: n.active
   }
 else
-  // Release: if we were dragging and didn't move much, toggle
+  // Release. A pick-up that barely moved was a click, not a drag, so it toggles.
   if !down && dragging >= 0 then
     let n = nodes[dragging]
     let dx = float(mx - n.x + drag_offset_x)
     let dy = float(my - n.y + drag_offset_y)
-    let moved = dx * dx + dy * dy
-    if moved < 25.0 then
+    let moved2 = dx * dx + dy * dy
+    if moved2 < 25.0 then         // 5 px, squared
       nodes[dragging] = {
         x: n.x, y: n.y,
         label: n.label,
@@ -82,13 +82,13 @@ let _draw_text = draw_text
 fn draw_line(x1, y1, x2, y2, r, g, b)
   _draw_line(x1, y1, x2, y2, r, g, b)
 end
-fn draw_line(a, b, color)
+fn draw_line(a: record, b: record, color: record)
   _draw_line(a.x, a.y, b.x, b.y, color.r, color.g, color.b)
 end
 fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
-fn draw_text(text, pos, size, color)
+fn draw_text(text: string, pos: record, size: num, color: record)
   _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
 end
 
@@ -131,7 +131,6 @@ for i in range(0, len(nodes)) do
     draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
   end
 
-  // Label
   let tw = len(n.label) * 7
   draw_text(n.label, {x: n.x - tw / 2, y: n.y - 7}, 14, label_color)
 end

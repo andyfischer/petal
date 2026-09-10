@@ -5,10 +5,13 @@
 // and a few native helpers.
 //
 // Scene:
-//   - city grid with neon ground strips
-//   - procedurally placed skyscrapers (fixed seed for determinism)
+//   - a neon-striped street plane that follows the camera
+//   - twelve skyscrapers from a fixed table below
 //   - patrolling robot enemies; shoot them with the crosshair
-//   - HUD: crosshair, health, ammo, enemy counter, FPS
+//   - HUD: crosshair, health, ammo, enemy counter, minimap, FPS
+//
+// Controls: mouse looks, WASD moves, left-click / Space shoots, R reloads,
+// Esc releases the mouse grab.
 
 // =========================================================================
 // Persistent state (survives hot reload thanks to name-based state keys)
@@ -26,8 +29,8 @@ state score = 0
 state want_grab = false
 state muzzle = 0      // frames remaining of muzzle flash
 
-// Enemy bots — seeded once; HP ticked per-frame.
-// Each bot: {x, z, phase, hp, alive}
+// Enemy bots: {x, z, phase, hp, alive}. `phase` is where each one sits on its
+// patrol circle.
 state enemies = [
   {x:   6.0, z:   6.0, phase: 0.0, hp: 3, alive: true},
   {x:  -5.0, z:   8.0, phase: 1.0, hp: 3, alive: true},
@@ -39,8 +42,8 @@ state enemies = [
   {x:   0.0, z:  26.0, phase: 2.5, hp: 3, alive: true}
 ]
 
-// Buildings — placed once; purely geometric (no per-frame state).
-// Each: {x, z, w, d, h, r, g, b}
+// Buildings: {x, z, w, d, h, r, g, b}. Never written after this, but `state`
+// so that editing the script mid-game leaves the city standing.
 state buildings = [
   {x:  -8.0, z:   4.0, w: 4.0, d: 4.0, h: 10.0, r: 60,  g: 10,  b: 90},
   {x:   8.0, z:   4.0, w: 4.0, d: 4.0, h:  7.0, r: 20,  g: 60,  b: 120},
@@ -121,7 +124,7 @@ if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 then
   let rx = sin(yaw) * cos(pitch)
   let ry = 0.0 - sin(pitch)
   let rz = cos(yaw) * cos(pitch)
-  // Test against every alive enemy (spherical, r=1.1). Closest hit wins.
+  // Test against every alive enemy as a sphere of radius ~1.2 m. Closest wins.
   let best_t = 1000000.0
   let best_i = -1
   let i = 0
@@ -158,7 +161,6 @@ end
 
 if muzzle > 0 then muzzle = muzzle - 1 end
 
-// Reload
 if key_pressed("r") then ammo = 30 end
 
 // =========================================================================
@@ -191,7 +193,7 @@ let sin_y = sin(0.0 - yaw)
 let cos_p = cos(0.0 - pitch)
 let sin_p = sin(0.0 - pitch)
 
-fn project(x, y, z)
+fn project(x: num, y: num, z: num) -> record
   let dx = x - player_x
   let dy = y - player_y
   let dz = z - player_z
@@ -206,7 +208,10 @@ fn project(x, y, z)
   end
 end
 
-fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
+fn tri(x1: num, y1: num, z1: num,
+  x2: num, y2: num, z2: num,
+  x3: num, y3: num, z3: num,
+  r: num, g: num, b: num)
   let p1 = project(x1, y1, z1)
   let p2 = project(x2, y2, z2)
   let p3 = project(x3, y3, z3)
@@ -215,12 +220,16 @@ fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
   end
 end
 
-fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b)
+fn quad(ax: num, ay: num, az: num,
+  bx: num, by: num, bz: num,
+  cx_: num, cy_: num, cz: num,
+  dx: num, dy_: num, dz: num,
+  r: num, g: num, b: num)
   tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
   tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
 end
 
-fn neon_line(x1, y1, z1, x2, y2, z2, r, g, b)
+fn neon_line(x1: num, y1: num, z1: num, x2: num, y2: num, z2: num, r: num, g: num, b: num)
   let p1 = project(x1, y1, z1)
   let p2 = project(x2, y2, z2)
   if p1.ok && p2.ok then
@@ -228,7 +237,7 @@ fn neon_line(x1, y1, z1, x2, y2, z2, r, g, b)
   end
 end
 
-fn box_(x, y, z, w, h, d, r, g, b)
+fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
   let hw = w / 2.0
   let hh = h / 2.0
   let hd = d / 2.0
@@ -256,21 +265,19 @@ end
 // =========================================================================
 sky_gradient(40, 8, 90, 240, 70, 150)
 
-// Ground — a view-aligned patch under the camera so there's always floor
-// right up to the near plane. Each frame we build a rectangle that sits
-// directly below the player, rotated to follow yaw, with its near edge
-// safely past near-plane. This eliminates the "sky leaks through the
-// floor" artifact caused by any vertex with rz2 < near being clipped.
+// Ground — a patch that follows the camera, rebuilt each frame directly below
+// the player and rotated to face yaw. A world-fixed floor grid would have
+// vertices behind the near plane, and `tri` drops any triangle with one, so
+// sky would leak through the floor at your feet.
 let ground_half = 50.0
 let gp_near = 0.4       // meters ahead of the camera to start the quad
 let gp_far  = 60.0      // meters ahead to extend
 let gp_left  = 0.0 - ground_half
 let gp_right = ground_half
 
-// Four corners in world space: two strips, one in front of camera, one behind.
-// Each strip is safe (all 4 corners have rz2 >= gp_near after projection).
-// Forward strip:
-fn gstrip(near_d, far_d, shade)
+// One strip, in world space, from `near_d` to `far_d` ahead of the player —
+// all four corners are past the near plane by construction.
+fn gstrip(near_d: num, far_d: num, shade: num)
   let ax = player_x + fwd_x * near_d + right_x * gp_left
   let az = player_z + fwd_z * near_d + right_z * gp_left
   let bx = player_x + fwd_x * near_d + right_x * gp_right
@@ -349,7 +356,7 @@ end
 let cxh = int(cx)
 let cyh = int(cy)
 
-// Crosshair (slightly wider when firing)
+// Crosshair — amber while the muzzle flash is up.
 let ch_col_r = 200
 let ch_col_g = 255
 let ch_col_b = 220
@@ -402,7 +409,7 @@ rect2d(mm_x, mm_y, mm_size, mm_size, 10, 10, 25)
 let mpx = mm_x + mm_size / 2
 let mpy = mm_y + mm_size / 2
 rect2d(mpx - 2, mpy - 2, 4, 4, 60, 255, 230)
-// Direction ticker
+// Facing tick
 let tx = mpx + int(sin(yaw) * 6.0)
 let ty = mpy - int(cos(yaw) * 6.0)
 line2d(mpx, mpy, tx, ty, 60, 255, 230)

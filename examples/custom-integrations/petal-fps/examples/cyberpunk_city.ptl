@@ -1,11 +1,13 @@
-// === Petal FPS — Step 1: camera, projection, one cube on a floor. ===
+// === Petal FPS — camera, projection, one cube on a floor. ===
 //
-// Verifies the core pipeline end-to-end:
+// The core pipeline with nothing else in the way:
 //  - Input (mouse look, WASD) updates camera state
 //  - Petal does world → camera → screen projection
 //  - Rust rasterizes z-buffered triangles
 //
-// Next steps will add the cyberpunk city, enemies, shooting, HUD.
+// `fps_game.ptl` is the same pipeline with a city, enemies and a HUD on top.
+//
+// Controls: mouse looks, WASD moves, Esc releases the mouse grab.
 
 // ---------- persistent state ----------
 state player_x = 0.0
@@ -67,7 +69,7 @@ let sin_p = sin(0.0 - pitch)
 
 // Transform a world-space point to screen space. Returns a record:
 //   {sx, sy, z, ok}  — ok=false means behind the near plane.
-fn project(x, y, z)
+fn project(x: num, y: num, z: num) -> record
   let dx = x - player_x
   let dy = y - player_y
   let dz = z - player_z
@@ -90,7 +92,10 @@ fn project(x, y, z)
 end
 
 // Submit a world-space triangle. If any vertex is behind near, skip.
-fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
+fn tri(x1: num, y1: num, z1: num,
+  x2: num, y2: num, z2: num,
+  x3: num, y3: num, z3: num,
+  r: num, g: num, b: num)
   let p1 = project(x1, y1, z1)
   let p2 = project(x2, y2, z2)
   let p3 = project(x3, y3, z3)
@@ -104,20 +109,24 @@ fn tri(x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b)
 end
 
 // Submit a world-space axis-aligned quad (4 corners, 2 triangles).
-fn quad(ax, ay, az, bx, by, bz, cx_, cy_, cz, dx, dy_, dz, r, g, b)
+fn quad(ax: num, ay: num, az: num,
+  bx: num, by: num, bz: num,
+  cx_: num, cy_: num, cz: num,
+  dx: num, dy_: num, dz: num,
+  r: num, g: num, b: num)
   tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
   tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
 end
 
 // Submit an axis-aligned box (cube). x,y,z is the center; w,h,d are extents.
-fn box_(x, y, z, w, h, d, r, g, b)
+fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
   let hw = w / 2.0
   let hh = h / 2.0
   let hd = d / 2.0
   let x0 = x - hw; let x1 = x + hw
   let y0 = y - hh; let y1 = y + hh
   let z0 = z - hd; let z1 = z + hd
-  // Faces (lit differently for fake shading)
+  // Each face gets a fixed tint, which fakes directional light.
   // +Z face (front)
   quad(x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,  r, g, b)
   // -Z face (back)

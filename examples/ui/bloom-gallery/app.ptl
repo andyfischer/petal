@@ -105,7 +105,6 @@ if section == 0 then
 
   let row3 = row2 + 44
   for i in range(0, len(bloom.ICONS)) do
-    // A whole toolbar of icon buttons, on one line of code per row.
     if i < 8 then
       bloom.icon_button(rect(row1.x + i * 36, row3, 30, 30), bloom.ICONS[i])
     end
@@ -213,8 +212,8 @@ end
 // Everything here is text_layout (petal-libs/text-layout), the placement
 // library bloom draws every one of its own labels through. The point of the
 // section is the red centre line: a label is centred when the line splits its
-// capitals, and the arithmetic every UI used to do — "the run is `size` px
-// tall and starts at `y`" — never put it there.
+// capitals — which is not where "the run is `size` px tall and starts at `y`"
+// would put it.
 if section == 4 then
   let x = content.x
   let y = content.y
@@ -259,8 +258,8 @@ if section == 4 then
   // The three ends an ellipsis can eat.
   var ey = base + 34.0
   for pair in [["head", "a label longer than the box it is in"],
-               ["tail", "petal-libs/text-layout/src/place.ptl"],
-               ["both", "commit 9f2a1c3 payload identifier"]] do
+    ["tail", "petal-libs/text-layout/src/place.ptl"],
+    ["both", "commit 9f2a1c3 payload identifier"]] do
     let row = rect(x, ey, 170, 24)
     draw_rect_rounded(row, 4, mix(T.bg, T.panel, 0.7))
     tl.draw_text_line(tl.elide(pair[1], bs, row.w - 12, pair[0]), pad(row, 6, 0), bs, "left")

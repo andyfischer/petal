@@ -93,21 +93,21 @@ state var pulse      = 0.0
 
 // ── Small pure helpers ───────────────────────────────────────────────────
 
-fn tx(s, x, y, style)
+fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, {x: int(x), y: int(y)}, style)
 end
 
-fn tx_right(s, right_x, y, style)
+fn tx_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
 end
 
-fn tx_center(s, cx, y, style)
+fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
 end
 
 // Where a ball travelling (vx, vy) from (x, y) crosses the vertical line
 // `target_x`, reflected between `top` and `bot`.
-fn predict_y(x, y, dx, dy, target_x, top, bot)
+fn predict_y(x: num, y: num, dx: num, dy: num, target_x: num, top: num, bot: num) -> num
   if dx == 0.0 then return (top + bot) / 2.0 end
   let tt = (target_x - x) / dx
   if tt < 0.0 then return (top + bot) / 2.0 end
@@ -125,7 +125,7 @@ fn predict_y(x, y, dx, dy, target_x, top, bot)
 end
 
 // Append `n` sparks at (x, y) flying mostly along `dirx`.
-fn burst(list, x, y, n, col, dirx, spread)
+fn burst(list, x: num, y: num, n: num, col: record, dirx: num, spread: num)
   var out = list
   for i in range(0, n) do
     let ang = random(-spread, spread)
@@ -144,19 +144,19 @@ fn burst(list, x, y, n, col, dirx, spread)
   out
 end
 
-fn draw_paddle(r, col, glow)
+fn draw_paddle(r: record, col: record, glow: num)
   draw_rect_rounded(rect(r.x - 7, r.y - 7, r.w + 14, r.h + 14), 13, col, int(18.0 + glow * 60.0))
   draw_rect_rounded(rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6), 9, col, int(26.0 + glow * 80.0))
   draw_rect_rounded(r, 6, col)
   draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), 3, #ffffff, 60)
 end
 
-fn stat_cell(right_x, y, label, value, style)
+fn stat_cell(right_x: num, y: num, label: string, value: string, style: record)
   tx_right(label, right_x, y, S_LABEL)
   tx_right(value, right_x, y + 15, style)
 end
 
-fn chip(x, y, cap, desc)
+fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
   let box = rect(int(x), int(y), cw, 24)
   draw_rect_rounded(box, 7, C_CHIP)

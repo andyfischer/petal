@@ -1,16 +1,13 @@
 // =====================================================================
 // SIDE-SCROLLER  -  written in Petal, hosted by petal-sdl
 // =====================================================================
-// Run from the repo root:
-//     ./petal-sdl/target/debug/petal-sdl side-scroller/game.ptl --width 960 --height 600
-// or after `cargo build` in petal-sdl/, just point it at this file.
+//     ./examples/games/side-scroller/run-game.sh
 //
-// File layout:
-//   side-scroller/game.ptl       <- this file (gameplay)
-//   side-scroller/editor.ptl     <- level editor (separate script)
-//   side-scroller/levels/*.lvl   <- text-format level data
+// A whole platformer in one script: physics, collision, enemies, camera
+// and every pixel of the render. Levels are plain text (levels/*.lvl),
+// authored by the editor next door (run-editor.sh).
 //
-// Press ENTER on the title to start, R to restart a level, ESC to quit.
+// Press ENTER on the title to start, R to restart a level, ESC to pause.
 // =====================================================================
 
 // ----------------------------- TUNING ---------------------------------
@@ -45,11 +42,10 @@ end
 
 // ----------------------------- STATE ----------------------------------
 //
-// The names respawn_player() / restart_level() / say() write are `state var`
-// and are written with `set`: a function cannot rebind a name from an
-// enclosing scope, so plain `=` in there only ever built a local shadow and
-// the reset never reached the player. The rest stay plain `state`, rebound
-// with `=` by the frame body below, where the rebind is a real dataflow edge.
+// Anything a function writes is a `state var`, written with `set`: a function
+// cannot rebind a name from an enclosing scope, so `=` inside one would build
+// a local shadow instead. The rest are plain `state`, rebound with `=` by the
+// frame body below, where the rebind is a real dataflow edge.
 
 state phase            = Title
 state level_idx        = 0
@@ -74,8 +70,8 @@ state var facing       = 1
 state var coyote       = 0.0
 state var jump_buf     = 0.0
 state var invul        = 0.0
-state var squash       = 1.0          // height scale, < 1 = squashed
-state var stretch      = 1.0          // width scale, < 1 = stretched (tall)
+state var squash       = 1.0          // height scale: < 1 is squat
+state var stretch      = 1.0          // width scale:  > 1 is wide
 state lives            = 3
 state var coins_got    = 0
 state var level_timer  = 0.0
@@ -99,35 +95,32 @@ state var toast_t      = 0.0
 
 // ----------------------------- HELPERS --------------------------------
 
-fn clamp(v, lo, hi)
+fn clamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
-fn sign(v)
-  if v > 0.0 then 1.0 elsif v < 0.0 then -1.0 else 0.0 end
-end
-fn approach(cur, target, step)
+fn approach(cur: num, target: num, step: num) -> num
   if cur < target then
     min(cur + step, target)
   else
     max(cur - step, target)
   end
 end
-fn aabb(ax, ay, aw, ah, bx, by, bw, bh)
+fn aabb(ax: num, ay: num, aw: num, ah: num, bx: num, by: num, bw: num, bh: num) -> bool
   ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 end
 
 // String -> float / int parse helpers used by the level loader.
 // Petal's int()/float() work on numeric strings, so we just delegate.
-fn parse_int(s)
+fn parse_int(s: string) -> int
   int(s)
 end
-fn parse_float(s)
+fn parse_float(s: string) -> float
   float(s)
 end
 
 // ----------------------------- LEVEL I/O ------------------------------
 
-fn empty_level()
+fn empty_level() -> record
   {
     name: "Untitled",
     width: 2400,
@@ -143,7 +136,7 @@ fn empty_level()
   }
 end
 
-fn parse_level(src)
+fn parse_level(src: string) -> record
   let L = empty_level()
   let lines = split(src, "\n")
   for raw in lines do
@@ -206,13 +199,13 @@ fn parse_level(src)
     elsif tag == "check" then
       L.checks = append(L.checks, {x: parse_int(toks[1]), y: parse_int(toks[2])})
     else
-      // unknown tag, ignore
+      // unknown tag: ignore the line
     end
   end
   L
 end
 
-fn load_level(idx)
+fn load_level(idx) -> record
   let path = level_files[idx]
   let src = load_text_file(path)
   if len(src) == 0 then
@@ -256,7 +249,7 @@ fn restart_level()
   respawn_player()
 end
 
-fn say(msg)
+fn say(msg: string)
   set toast = msg
   set toast_t = 1.6
 end
@@ -268,7 +261,7 @@ phase_t += dts
 title_t += dts
 set toast_t = max(0.0, toast_t - dts)
 
-// Lazy-load level when entering Playing if needed.
+// Lazy-load the level on the way into Playing.
 if phase == Playing && level_loaded != level_idx then
   restart_level()
 end
@@ -304,7 +297,6 @@ if phase == Playing then
   if want_left  then target_vx = target_vx - MOVE_SPEED; set facing = -1 end
   if want_right then target_vx = target_vx + MOVE_SPEED; set facing = 1 end
 
-  // accelerate towards target velocity
   let accel = if on_ground then GROUND_ACCEL else AIR_ACCEL end
   if target_vx == 0.0 then
     // friction
@@ -453,7 +445,6 @@ if phase == Playing then
           e.alive = false
           e.squash = 1.0
           set vy = JUMP_VY * 0.6
-          set coins_got = coins_got + 0   // no coin reward, just defeat
           set floats = append(floats, {x: e.x + 12.0, y: e.y, vy: -30.0, life: 0.7, text: "POW"})
           let i = 0
           while i < 8 do
@@ -669,24 +660,24 @@ end
 //                              DRAWING
 // =====================================================================
 
-fn cam_offset_x()
+fn cam_offset_x() -> int
   int(get cam_x - shake_dx)
 end
-fn cam_offset_y()
+fn cam_offset_y() -> int
   int(0.0 - shake_dy)
 end
 
-fn draw_at(x, y, w, h, r, g, b)
+fn draw_at(x: num, y: num, w: num, h: num, r: num, g: num, b: num)
   draw_rect(x - cam_offset_x(), y - cam_offset_y(), w, h, r, g, b)
 end
-fn circ_at(x, y, rad, r, g, b)
+fn circ_at(x: num, y: num, rad: num, r: num, g: num, b: num)
   draw_circle(x - cam_offset_x(), y - cam_offset_y(), rad, r, g, b)
 end
-fn line_at(x1, y1, x2, y2, r, g, b)
+fn line_at(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num)
   draw_line(x1 - cam_offset_x(), y1 - cam_offset_y(),
     x2 - cam_offset_x(), y2 - cam_offset_y(), r, g, b)
 end
-fn text_at(t, x, y, sz, r, g, b)
+fn text_at(t: string, x: num, y: num, sz: num, r: num, g: num, b: num)
   draw_text(t, x - cam_offset_x(), y - cam_offset_y(), sz, r, g, b)
 end
 
@@ -705,14 +696,13 @@ fn draw_sky()
 end
 
 fn draw_parallax_mountains()
-  // 2 layers at different parallax speeds
+  // two layers, different parallax speeds
   let off1 = int(get cam_x * 0.2)
   let m = 0
   while m < 10 do
     let mx = m * 220 - (off1 % 220) - 60
     let mh = 90 + (m % 4) * 25
     let my = 480 - mh
-    // dark mountain
     let r = 60; let g = 80; let b = 110
     draw_circle(mx + 110, my + mh + 30, mh + 30, r, g, b)
     m = m + 1
@@ -837,7 +827,7 @@ fn draw_enemies()
       draw_at(int(e.x) + 2, int(e.y) + 22 - foot_off, 8, 4, 60, 30, 10)
       draw_at(int(e.x) + 14, int(e.y) + 22 + foot_off, 8, 4, 60, 30, 10)
     elsif e.kind == "jumper" then
-      // e.y is already bouncing via the update loop
+      // e.y already carries the bounce from the update loop
       let by = int(e.y)
       // small squash when near apex
       let bphase = (e.anim * 4.0) % 3.14159
@@ -1069,7 +1059,6 @@ if phase == Title then
 elsif phase == AllDone then
   draw_alldone_overlay()
 else
-  // gameplay layered render
   clear(level.bg_r, level.bg_g, level.bg_b)
   draw_sky()
   draw_clouds()

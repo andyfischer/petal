@@ -41,34 +41,33 @@ let S3 = 18
 let S4 = 24
 let S5 = 32
 
-// The type scale. Five sizes, and that is not only a design choice: the host
-// rasterizes one glyph per (character, size) into a fixed atlas, and a dense
-// page spread across many sizes overflows it — after which whole runs silently
-// fall back to a proportional face at the wrong size. Fewer sizes, fewer
-// rasters, and the numbers stay in the grid they were drawn for.
+// The type scale. Five sizes, and not only for design: the host rasterizes one
+// glyph per (character, size) into a fixed atlas, and a page spread across many
+// sizes overflows it — after which whole runs silently fall back to a
+// proportional face at the wrong size.
 let TYPE_SIZES = [10, 12, 15, 21, 28]
 
 // ── Small text helpers ───────────────────────────────────────────────────────
 
-fn text_w(s, style)
+fn text_w(s: string, style: record) -> int
   text_width(s, style)
 end
 
-fn text_at(s, x, y, style)
+fn text_at(s: string, x: num, y: num, style: record)
   draw_text(s, {x: x, y: y}, style)
 end
 
-fn text_right(s, right_x, y, style)
+fn text_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, {x: right_x - text_w(s, style), y: y}, style)
 end
 
-fn text_center(s, cx, y, style)
+fn text_center(s: string, cx: num, y: num, style: record)
   draw_text(s, {x: cx - text_w(s, style) / 2.0, y: y}, style)
 end
 
 // ── Number formatting ────────────────────────────────────────────────────────
 
-fn commas(n)
+fn commas(n: num) -> string
   let s = str(n)
   let out = ""
   let c = 0
@@ -86,7 +85,7 @@ end
 
 // Fixed-point decimal without a printf: scale, round, then split the integer
 // back apart. `str(float)` would give us 12.300000000000001.
-fn dec(x, places)
+fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
     mul = mul * 10
@@ -107,7 +106,7 @@ fn dec(x, places)
 end
 
 // Compact axis/label form: 18,204 -> 18.2k
-fn compact(x)
+fn compact(x: num) -> string
   let a = abs(x)
   if a >= 1000000.0 then
     dec(x / 1000000.0, 1) ++ "M"
@@ -124,20 +123,20 @@ end
 // Seeded so the dashboard shows the same "real" numbers on every launch and
 // every reload — a chart that reshuffles on hot reload is unreadable.
 
-fn hashi(n)
+fn hashi(n: num) -> num
   let x = (n * 374761393 + 668265263) % 2147483647
   x = (x + 2147483647) % 2147483647
   (x * 1103515245 + 12345) % 2147483647
 end
 
-fn rand01(n)
+fn rand01(n: num) -> float
   float(hashi(n) % 100000) / 100000.0
 end
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
 // Day 1..90 of a 2025 that starts on a Wednesday: Jan(31) Feb(28) Mar(31).
 
-fn day_label(d)
+fn day_label(d: num) -> string
   if d <= 31 then
     "Jan {d}"
   elsif d <= 59 then
@@ -147,17 +146,7 @@ fn day_label(d)
   end
 end
 
-fn day_short(d)
-  if d <= 31 then
-    "Jan {d}"
-  elsif d <= 59 then
-    "Feb {d - 31}"
-  else
-    "Mar {d - 59}"
-  end
-end
-
-fn weekday(i)
+fn weekday(i: num) -> num
   (i + 2) % 7
 end
 
@@ -165,7 +154,7 @@ end
 
 let SPAN = 90
 
-fn make_series(seed, base, growth, wobble, weekend_dip)
+fn make_series(seed: num, base: num, growth: num, wobble: num, weekend_dip: num) -> list
   let out = for i in range(0, SPAN) do
     let t = float(i) / float(SPAN - 1)
     let trend = base * (1.0 + growth * t)
@@ -178,7 +167,7 @@ fn make_series(seed, base, growth, wobble, weekend_dip)
   out
 end
 
-fn build_metrics()
+fn build_metrics() -> list
   [
     {key: "rev", label: "REVENUE", unit: "usd", color: C_REV,
       note: "gross, net of refunds",
@@ -201,11 +190,11 @@ let RANGES = [
   {label: "90D", days: 90, tick: 15},
 ]
 
-fn tail(xs, n)
+fn tail(xs: list, n: num) -> list
   slice(xs, len(xs) - n, len(xs))
 end
 
-fn series_min(xs)
+fn series_min(xs: list)
   let m = xs[0]
   for v in xs do
     if v < m then m = v end
@@ -213,7 +202,7 @@ fn series_min(xs)
   m
 end
 
-fn series_max(xs)
+fn series_max(xs: list)
   let m = xs[0]
   for v in xs do
     if v > m then m = v end
@@ -221,7 +210,7 @@ fn series_max(xs)
   m
 end
 
-fn series_sum(xs)
+fn series_sum(xs: list) -> float
   let s = 0.0
   for v in xs do
     s = s + v
@@ -229,7 +218,7 @@ fn series_sum(xs)
   s
 end
 
-fn resample(xs, n)
+fn resample(xs: list, n: num) -> list
   let m = len(xs)
   if m == n then
     return xs
@@ -244,7 +233,7 @@ fn resample(xs, n)
   out
 end
 
-fn fmt_value(v, unit)
+fn fmt_value(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ commas(int(round(v)))
   elsif unit == "pct" then
@@ -254,7 +243,7 @@ fn fmt_value(v, unit)
   end
 end
 
-fn fmt_axis(v, unit)
+fn fmt_axis(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ compact(v)
   elsif unit == "pct" then
@@ -264,7 +253,7 @@ fn fmt_axis(v, unit)
   end
 end
 
-fn fmt_headline(v, unit)
+fn fmt_headline(v: num, unit: string) -> string
   if unit == "usd" then
     "$" ++ compact(v)
   elsif unit == "pct" then
@@ -303,7 +292,7 @@ let PAGES = [
 
 let WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-fn channel_matrix()
+fn channel_matrix() -> list
   let out = for d in range(0, 7) do
     let weekend = if d >= 5 then 0.52 else 1.0 end
     let a = (3100.0 + rand01(700 + d) * 900.0) * weekend
@@ -316,15 +305,15 @@ end
 
 // ── Card chrome ──────────────────────────────────────────────────────────────
 
-fn card_bg(r, raised)
+fn card_bg(r: record, raised: bool)
   let fill = if raised then RAISED else SURFACE end
   draw_rect_rounded(r.x, r.y + 2, r.w, r.h, 12, 0, 0, 0, 60)
   draw_rect_rounded(r, 12, fill)
   draw_rect_outline(r, HAIRLINE, 255, 1)
 end
 
-// Title row inside a card; returns the content rect below it.
-fn card_head(r, title, right_note)
+// Draws the card's title row; the rect returned is the content area below it.
+fn card_head(r: record, title: string, right_note: string) -> Rect
   let pad = S3
   let ts = {size: 10, color: DIM, spacing: 1.4}
   text_at(title, r.x + pad, r.y + pad, ts)
@@ -334,7 +323,7 @@ fn card_head(r, title, right_note)
   rect(r.x + pad, r.y + pad + 26, r.w - pad * 2, r.h - pad * 2 - 26)
 end
 
-fn delta_chip(x, y, d, invert)
+fn delta_chip(x: num, y: num, d: num, invert: bool) -> int
   let good = if invert then d < 0.0 else d > 0.0 end
   let col = if good then POS else NEG end
   let arrow = if d > 0.0 then "▲" else "▼" end
@@ -348,7 +337,7 @@ end
 
 // ── Chart geometry ───────────────────────────────────────────────────────────
 
-fn nice_step(span, target)
+fn nice_step(span: num, target: num) -> float
   let raw = span / float(target)
   let mag = pow(10.0, floor(log(max(raw, 0.000001)) / log(10.0)))
   let norm = raw / mag
@@ -361,11 +350,11 @@ fn nice_step(span, target)
   mult * mag
 end
 
-fn y_of(v, lo, hi, plot)
+fn y_of(v: num, lo: num, hi: num, plot: record)
   plot.y + plot.h * (1.0 - (v - lo) / max(hi - lo, 0.000001))
 end
 
-fn x_of(i, n, plot)
+fn x_of(i: num, n: num, plot: record)
   if n <= 1 then
     plot.x + plot.w / 2.0
   else
@@ -376,7 +365,7 @@ end
 // A filled area under a polyline. fill_poly is convex-only, so the region is
 // emitted one vertical trapezoid per segment; the vertical gradient comes from
 // re-drawing the whole band inside a series of clip strips with falling alpha.
-fn area_band(ys, plot, color, a_top, a_bot, bands)
+fn area_band(ys: list, plot: record, color: record, a_top: num, a_bot: num, bands: num)
   let n = len(ys)
   // Band boundaries are snapped to whole pixels and shared between neighbours:
   // overlapping clips would double-composite the seam and draw a bright rule
@@ -401,7 +390,7 @@ fn area_band(ys, plot, color, a_top, a_bot, bands)
   clip_none()
 end
 
-fn polyline(ys, plot, color, width)
+fn polyline(ys: list, plot: record, color: record, width: num)
   for i in range(0, len(ys) - 1) do
     draw_line(x_of(i, len(ys), plot), ys[i],
       x_of(i + 1, len(ys), plot), ys[i + 1],
@@ -411,7 +400,7 @@ end
 
 // ── Sparkline (KPI cards) ────────────────────────────────────────────────────
 
-fn sparkline(r, xs, color, alpha)
+fn sparkline(r: record, xs: list, color: record, alpha: num)
   let lo = series_min(xs)
   let hi = series_max(xs)
   let pad = (hi - lo) * 0.25 + 0.0001
@@ -442,25 +431,25 @@ end
 
 // NB: the `clamp` builtin returns a float, which silently turns `i / cols` into
 // float division and staircases the whole grid. Column counts have to stay int.
-fn iclamp(v, lo, hi)
+fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
 
-fn grid_cols(avail_w, count, min_w, gap)
+fn grid_cols(avail_w: num, count: num, min_w: num, gap: num) -> num
   let fit = int((avail_w + gap) / (min_w + gap))
   iclamp(fit, 1, count)
 end
 
-fn grid_cols_even4(avail_w, min_w, gap)
+fn grid_cols_even4(avail_w: num, min_w: num, gap: num) -> num
   let c = grid_cols(avail_w, 4, min_w, gap)
   if c == 3 then 2 else c end
 end
 
-fn grid_rows(count, cols)
+fn grid_rows(count: num, cols: num) -> num
   (count + cols - 1) / cols
 end
 
-fn grid_cells(x, y, w, count, cols, gap, row_h)
+fn grid_cells(x: num, y: num, w: num, count: num, cols: num, gap: num, row_h: num) -> list
   let cw = (w - gap * (cols - 1)) / cols
   let cells = for i in range(0, count) do
     let c = i % cols
@@ -492,7 +481,6 @@ state shown_head = 0.0
 
 let w = screen_width()
 let h = screen_height()
-let narrow = w < 1180
 
 clear(BG.r, BG.g, BG.b)
 
@@ -585,8 +573,6 @@ if abs(shown_head - head_val) < abs(head_val) * 0.004 then
   shown_head = head_val
 end
 
-// ── KPI card row ─────────────────────────────────────────────────────────────
-
 // ── Layout solve ─────────────────────────────────────────────────────────────
 // Everything under the header divides the height that is actually left, so the
 // dashboard fills the pane exactly instead of running off the bottom of it. The
@@ -629,6 +615,8 @@ let donut_r = if two_up then
 else
   r3_cells[3]
 end
+
+// ── KPI card row ─────────────────────────────────────────────────────────────
 
 for i in range(0, 4) do
   let m = metrics[i]
@@ -743,7 +731,7 @@ let day0 = SPAN - rng.days + 1
 let xt = 0
 while xt < nsamp do
   let d = day0 + int(float(xt) * float(rng.days) / float(nsamp))
-  text_center(day_short(d), x_of(xt, nsamp, plot), plot.y + plot.h + 9,
+  text_center(day_label(d), x_of(xt, nsamp, plot), plot.y + plot.h + 9,
     {size: 10, color: FAINT})
   xt = xt + max(1, int(float(nsamp) / 6.0))
 end

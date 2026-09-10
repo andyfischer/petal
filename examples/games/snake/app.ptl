@@ -21,7 +21,6 @@ let HEAD      = #b9f8cf
 let BODY_HI   = #48d97e
 let BODY_LO   = #17754a
 let APPLE     = #ff6b81
-let APPLE_DK  = #b3324a
 let GOLD      = #ffc247
 let DANGER    = #ff7a7a
 let ACCENT    = #6aa8ff
@@ -55,7 +54,7 @@ state runs = [92, 148, 61, 118, 34]   // recent finished runs, newest last
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
-fn mix(a, b, t)
+fn mix(a: record, b: record, t: num) -> record
   let u = max(0.0, min(1.0, t))
   {
     r: int(float(a.r) + (float(b.r) - float(a.r)) * u),
@@ -89,7 +88,7 @@ fn level_of(n)
   min(9, n / 3)
 end
 
-fn interval_of(lvl)
+fn interval_of(lvl: num) -> float
   0.155 - float(lvl) * 0.011
 end
 
@@ -99,7 +98,6 @@ end
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 let W = screen_width()
-let H = screen_height()
 let PAD = 28
 let board_w = COLS * CELL
 let board_h = ROWS * CELL
@@ -344,7 +342,7 @@ end
 let wall_c = if wrap then mix(BOARD, ACCENT, 0.35) else EDGE end
 draw_rect_outline(rect(bx, by, board_w, board_h), wall_c, 255, 2)
 
-fn cell_rect(ox, oy, c, inset)
+fn cell_rect(ox, oy, c, inset: num)
   rect(ox + cell_x(c) * CELL + inset, oy + cell_y(c) * CELL + inset,
     CELL - inset * 2, CELL - inset * 2)
 end
@@ -365,7 +363,7 @@ if bonus >= 0 then
   draw_circle({x: gx, y: gy}, 14, GOLD, int(float(ga) * 0.35 * fade))
   draw_circle({x: gx, y: gy}, 9, GOLD, int(255.0 * fade))
   draw_circle({x: gx - 2, y: gy - 3}, 2, #fff3d0, int(255.0 * fade))
-  // A thin countdown ring drawn as four shrinking ticks.
+  // A countdown bar under the apple, shrinking as its time runs out.
   let tw = int(float(CELL - 6) * (bonus_left / 7.0))
   draw_rect(rect(gr.x + 3, gr.y + CELL - 3, tw, 2), GOLD, 200)
 end
@@ -374,7 +372,7 @@ end
 // segment is a rounded cell plus a connector to its predecessor, so the body
 // reads as one continuous ribbon instead of a string of beads. Connectors are
 // skipped across a wrap seam (the two cells are not adjacent on screen).
-fn seg_color(i, n)
+fn seg_color(i: num, n: num) -> record
   let t = if n > 1 then float(i) / float(n - 1) else 0.0 end
   mix(BODY_HI, BODY_LO, t * 0.92)
 end
@@ -422,7 +420,7 @@ if flash > 0.0 then
 end
 
 // ── Overlays ─────────────────────────────────────────────────────────────────
-fn overlay(r, kicker, title, line1, line2, accent)
+fn overlay(r: record, kicker: string, title: string, line1: string, line2: string, accent: record)
   draw_rect_rounded(r, 11, #06080c, 205)
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
@@ -452,12 +450,12 @@ elsif phase == "over" then
 end
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
-fn card(r)
+fn card(r: record)
   draw_rect_rounded(r, 10, CARD)
   draw_rect_outline(r, EDGE, 90)
 end
 
-fn label(s, x, y)
+fn label(s: string, x, y)
   draw_text(s, {x: x, y: y}, {size: 11, color: FAINT, spacing: 2})
 end
 
@@ -480,7 +478,7 @@ draw_text("SPEED LEVEL {lvl}", {x: meter.x, y: sc.y + 110}, {size: 11, color: DI
 draw_text_right("{int(1.0 / step_time)} steps/s", meter.x + meter.w, sc.y + 110, 11, FAINT)
 
 // Stat tiles
-fn tile(r, key, value, color)
+fn tile(r: record, key: string, value: string, color: record)
   draw_rect_rounded(r, 8, CARD_HI)
   draw_text(key, {x: r.x + 12, y: r.y + 10}, {size: 11, color: FAINT, spacing: 2})
   draw_text(value, {x: r.x + 12, y: r.y + 28}, {size: 22, color: color})
@@ -506,7 +504,7 @@ else
 end
 
 // Buttons
-fn chip(r, text, on, accent)
+fn chip(r: record, text: string, on: bool, accent: record)
   let hot = hovered(r)
   let bg = if on then mix(CARD, accent, 0.16) elsif hot then CARD_HI else CARD end
   draw_rect_rounded(r, 8, bg)

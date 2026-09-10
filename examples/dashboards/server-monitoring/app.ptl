@@ -41,7 +41,7 @@ let C_MEM    = #a78bfa
 let C_NET    = #46d39a
 let C_LAT    = #f0b344
 
-// Spacing scale — every gap in the layout is one of these.
+// Spacing scale.
 let S1 = 6
 let S2 = 12
 let S3 = 18
@@ -59,31 +59,31 @@ let T_HERO  = 28
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
 
-fn tx(s, x, y, size, c)
+fn tx(s: string, x: num, y: num, size: num, c: record)
   draw_text(s, {x: x, y: y}, {size: size, color: c})
 end
 
-fn tx(s, x, y, size, c, spacing)
+fn tx(s: string, x: num, y: num, size: num, c: record, spacing: num)
   draw_text(s, {x: x, y: y}, {size: size, color: c, spacing: spacing})
 end
 
-fn tx_right(s, right_x, y, size, c)
+fn tx_right(s: string, right_x: num, y: num, size: num, c: record)
   draw_text(s, {x: right_x - text_width(s, size), y: y}, {size: size, color: c})
 end
 
-fn tx_center(s, cx, y, size, c)
+fn tx_center(s: string, cx: num, y: num, size: num, c: record)
   draw_text(s, {x: cx - text_width(s, size) / 2.0, y: y}, {size: size, color: c})
 end
 
 // Small-caps section label: the one place letter-spacing earns its keep.
-fn label_caps(s, x, y, c)
+fn label_caps(s: string, x: num, y: num, c: record)
   draw_text(upper(s), {x: x, y: y}, {size: T_MICRO, color: c, spacing: 1.4})
 end
 
 // ── Number formatting ────────────────────────────────────────────────────────
 
 // Fixed-point without a printf. `str(12.3)` gives 12.300000000000001.
-fn dec(x, places)
+fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
     mul = mul * 10
@@ -103,7 +103,7 @@ fn dec(x, places)
   if neg then "-" ++ s else s end
 end
 
-fn commas(n)
+fn commas(n: num) -> string
   let s = str(n)
   let out = ""
   let c = 0
@@ -119,18 +119,18 @@ fn commas(n)
   out
 end
 
-fn pad2(n)
+fn pad2(n: num) -> string
   if n < 10 then "0" ++ str(n) else str(n) end
 end
 
-fn clock(secs)
+fn clock(secs: num) -> string
   let h = secs / 3600
   let m = (secs % 3600) / 60
   let s = secs % 60
   pad2(h) ++ ":" ++ pad2(m) ++ ":" ++ pad2(s)
 end
 
-fn ago(secs)
+fn ago(secs: num) -> string
   if secs < 60 then
     str(secs) ++ "s ago"
   elsif secs < 3600 then
@@ -152,27 +152,27 @@ let M_CRIT  = [92.0, 94.0, 860.0, 300.0]
 let M_DEC   = [1, 1, 0, 0]
 let M_COLOR = [C_CPU, C_MEM, C_NET, C_LAT]
 
-fn fmt_metric(m, v)
+fn fmt_metric(m: num, v: num) -> string
   dec(v, M_DEC[m]) ++ M_UNIT[m]
 end
 
-fn fmt_bare(m, v)
+fn fmt_bare(m: num, v: num) -> string
   dec(v, M_DEC[m])
 end
 
 // 0 nominal · 1 warning · 2 critical
-fn level_of(m, v)
+fn level_of(m: num, v: num) -> int
   if v >= M_CRIT[m] then 2
   elsif v >= M_WARN[m] then 1
   else 0
   end
 end
 
-fn level_color(lv)
+fn level_color(lv: num)
   if lv == 2 then CRIT elsif lv == 1 then WARN else OK end
 end
 
-fn level_word(lv)
+fn level_word(lv: num) -> string
   if lv == 2 then "critical" elsif lv == 1 then "warning" else "nominal" end
 end
 
@@ -180,7 +180,7 @@ end
 // crosses, but has to fall a few percent below the line to leave it again.
 // Without this a series sitting on a threshold flaps, and the feed fills with
 // alternating "crossed" / "recovered" rows saying nothing.
-fn level_hyst(m, v, prev)
+fn level_hyst(m: num, v: num, prev: num)
   let raw = level_of(m, v)
   if raw >= prev then
     raw
@@ -195,7 +195,7 @@ end
 
 // The same three levels read differently in a log: level 0 arrived there by
 // coming back down, so it is "resolved" rather than "nominal".
-fn sev_word(lv)
+fn sev_word(lv: num) -> string
   if lv == 2 then "critical" elsif lv == 1 then "warning" else "resolved" end
 end
 
@@ -245,7 +245,7 @@ let NHOST = len(HOSTS)
 
 noise_seed(20260808)
 
-fn sample(h, m, i)
+fn sample(h: record, m: num, i: num)
   let ph = h.seed * 7.3 + float(m) * 31.7
   let x = float(i)
   let slow = noise(x * 0.011 + ph) + 0.5
@@ -260,14 +260,14 @@ fn sample(h, m, i)
   clamp(v, 0.0, M_MAX[m])
 end
 
-fn core_load(h, core, i)
+fn core_load(h: record, core: num, i: num)
   let cpu = sample(h, 0, i)
   let n = noise(float(i) * 0.085 + h.seed * 3.1 + float(core) * 17.3) + 0.5
   clamp(cpu + (n - 0.5) * 52.0, 0.0, 100.0)
 end
 
 // Worst level across all four metrics — the fleet row's status dot.
-fn host_level(h, i)
+fn host_level(h: record, i: num) -> int
   let worst = 0
   for m in range(0, 4) do
     let lv = level_of(m, sample(h, m, i))
@@ -428,12 +428,12 @@ clear(BG.r, BG.g, BG.b)
 
 // ── Chrome helpers ───────────────────────────────────────────────────────────
 
-fn card(r)
+fn card(r: record)
   draw_rect_rounded(r, 10, SURFACE)
   draw_rect_outline(r, HAIR, 255, 1)
 end
 
-fn dashed_h(x0, x1, y, c, a)
+fn dashed_h(x0: num, x1: num, y: num, c: record, a: num)
   let x = x0
   while x < x1 do
     let xe = min(x + 5.0, x1)
@@ -444,7 +444,7 @@ end
 
 // A tiny sparkline: `n` samples ending at `end_i`, autoscaled to its own range
 // so a flat-but-high series still shows its shape.
-fn sparkline(r, hst, m, end_i, n, c, fill_a)
+fn sparkline(r: record, hst: record, m: num, end_i: num, n: num, c: record, fill_a: num)
   let lo = 1000000000.0
   let hi = -1000000000.0
   let vals = for k in range(0, n) do
@@ -505,7 +505,7 @@ tx("prod-eu-us", mark_x + 192.0, 22.0, T_BODY, TEXT)
 label_caps("cluster", mark_x + 192.0, 45.0, FAINT)
 
 let stat_x = mark_x + 320.0
-fn head_stat(label, value, c, x, y)
+fn head_stat(label: string, value: string, c: record, x: num, y: num)
   tx(value, x, y - 16.0, T_BODY, c)
   label_caps(label, x, y + 7.0, FAINT)
 end
@@ -691,7 +691,7 @@ let series = for k in range(0, WINDOW) do
 end
 let avg = sum / float(WINDOW)
 
-fn stat_cell(label, value, c, x, y)
+fn stat_cell(label: string, value: string, c: record, x: num, y: num)
   label_caps(label, x, y, FAINT)
   tx_right(value, x + 72.0, y - 3.0, T_SMALL, c)
 end
@@ -731,7 +731,7 @@ else
 end
 let vmin = max(0.0, lo - (vmax - lo) * 0.14)
 
-fn plot_y(p, v, vmin, vmax)
+fn plot_y(p: record, v: num, vmin: num, vmax: num)
   p.y + p.h - (v - vmin) / (vmax - vmin) * p.h
 end
 
@@ -831,7 +831,7 @@ let cell_h = min(19.0, (cores_r.h - 48.0 - 34.0) / float(NCORE) - 3.0)
 label_caps("core utilization  ·  " ++ host.name, cores_r.x + S4, cores_r.y + 18, DIM)
 tx_right(str(NCORE) ++ " cores  ·  " ++ str(COLS) ++ "s", cores_r.x + cores_r.w - S4, cores_r.y + 16, T_MICRO, FAINT)
 
-fn heat(v)
+fn heat(v: num)
   let t = clamp(v / 100.0, 0.0, 1.0)
   if t < 0.30 then
     color_lerp(#121822, #1b4a6b, t / 0.30)

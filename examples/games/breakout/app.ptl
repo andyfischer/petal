@@ -29,7 +29,7 @@ let C_WARN   = #e0576b
 let BRICK_STOPS = [#e0576b, #e5854e, #d4bd5c, #5fbf9b, #4f8fd6]
 
 // ── Type scale ───────────────────────────────────────────────────────────
-// Six sizes in the whole app: 10 / 12 / 15 / 20 / 30 / 44.
+// Five sizes in the whole app: 10 / 12 / 20 / 30 / 44.
 
 let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
 let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
@@ -111,26 +111,26 @@ state var broken    = 0         // bricks broken this run
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
 
-fn tx(s, x, y, style)
+fn tx(s: string, x: num, y: num, style: record)
   draw_text(s, {x: int(x), y: int(y)}, style)
 end
 
-fn tx_right(s, right_x, y, style)
+fn tx_right(s: string, right_x: num, y: num, style: record)
   draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
 end
 
-fn tx_center(s, cx, y, style)
+fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
 end
 
-fn mix(a, b, t)
+fn mix(a: record, b: record, t: num) -> record
   {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
     g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
     b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
 end
 
 // Sample the brick ramp at row `row` of `rows`.
-fn row_color(row, rows)
+fn row_color(row: num, rows: num) -> record
   let f = if rows <= 1 then 0.0 else float(row) / float(rows - 1) end
   let n = len(BRICK_STOPS) - 1
   let s = f * float(n)
@@ -154,7 +154,7 @@ fn brick_value(row)
 end
 
 // `n` sparks at (x, y), thrown along `dirx`/`diry`.
-fn burst(lst, x, y, n, col, dirx, diry, power)
+fn burst(lst, x: num, y: num, n: num, col: record, dirx: num, diry: num, power: num)
   var out = lst
   for i in range(0, n) do
     let ang = random(0.0, 6.2832)
@@ -173,7 +173,7 @@ fn burst(lst, x, y, n, col, dirx, diry, power)
   out
 end
 
-fn power_by_key(k)
+fn power_by_key(k: string)
   var found = POWERS[0]
   for p in POWERS do
     if p.key == k then set found = p end
@@ -222,7 +222,7 @@ fn build_level(lvl)
   set left = n
 end
 
-fn pad_w()
+fn pad_w() -> int
   if get wide_t > 0.0 then PADW_WIDE else PADW end
 end
 
@@ -231,7 +231,7 @@ fn park_ball()
   set trail = []
 end
 
-fn say(msg, col)
+fn say(msg: string, col: record)
   set toast = msg
   set toast_t = 1.9
   set toast_c = col
@@ -443,7 +443,7 @@ if phase == "play" then
       set balls[i].vy = vy
     end
 
-    // Balls that fell past the floor are dropped from the list.
+    // Balls that fell past the floor are dropped.
     set balls = for b in balls do
       if b.y - float(BR) > fb then continue end
       b
@@ -703,8 +703,8 @@ for b in balls do
   draw_circle({x: bx - 2, y: by - 2}, 2, #ffffff, 230)
 end
 
-// Aim guide while the ball is parked between balls (the title card carries
-// its own legend in that space, so it is not drawn there).
+// Aim guide while the ball is parked for a serve. Not drawn on the title
+// card, which carries its own legend in that space.
 if phase == "serve" then
   let ax = padx + float(pad_w()) / 2.0
   let ay = float(pad_y) - float(BR) - 2.0
@@ -799,7 +799,7 @@ end
 
 // ── Draw: footer ─────────────────────────────────────────────────────────
 
-fn chip(x, y, cap, desc)
+fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
   let box = rect(int(x), int(y), cw, 24)
   draw_rect_rounded(box, 7, C_CHIP)

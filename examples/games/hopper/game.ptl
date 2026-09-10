@@ -85,11 +85,11 @@ fn respawn()
   set clock = 0.0
 end
 
-fn approach(cur, target, step)
+fn approach(cur: num, target: num, step: num) -> num
   if cur < target then min(cur + step, target) else max(cur - step, target) end
 end
 
-fn overlaps(ax, ay, aw, ah, b)
+fn overlaps(ax: num, ay: num, aw: num, ah: num, b: record) -> bool
   ax < float(b.x + b.w) && ax + aw > float(b.x) &&
   ay < float(b.y + b.h) && ay + ah > float(b.y)
 end
@@ -183,7 +183,7 @@ set cam = cam + (want - cam) * min(1.0, CAM_LAG * dts)
 
 // ------------------------------ DRAW ---------------------------------
 
-fn sx(x)  int(x - get cam) end     // world -> screen x
+fn sx(x: num) -> int  int(x - get cam) end     // world -> screen x
 
 fn draw_backdrop()
   clear(118, 186, 240)

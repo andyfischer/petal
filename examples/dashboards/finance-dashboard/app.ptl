@@ -31,7 +31,7 @@ let AMBER    = #f2b661
 let STEEL    = #7e93b8
 let WHITE    = #ffffff
 
-// Spacing scale — every gap in the layout is one of these.
+// Spacing scale.
 let S1 = 6
 let S2 = 12
 let S3 = 18
@@ -48,21 +48,21 @@ let T_HERO  = 26
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
 
-fn text_w(s, st)
+fn text_w(s: string, st: record) -> int
   text_width(s, st)
 end
 
-fn text_at(s, x, y, st)
+fn text_at(s: string, x: num, y: num, st: record)
   draw_text(s, {x: x, y: y}, st)
 end
 
-fn text_right(s, right_x, y, st)
+fn text_right(s: string, right_x: num, y: num, st: record)
   draw_text(s, {x: right_x - text_w(s, st), y: y}, st)
 end
 
 // The prelude's `ellipsize` measures with a bare font size, which under-counts
 // a style carrying `spacing` — this one measures the exact record it draws.
-fn fit_style(s, avail, st)
+fn fit_style(s: string, avail: num, st: record) -> string
   if text_width(s, st) <= avail then
     return s
   end
@@ -73,13 +73,13 @@ fn fit_style(s, avail, st)
   out ++ "..."
 end
 
-fn text_mid(s, cx, y, st)
+fn text_mid(s: string, cx: num, y: num, st: record)
   draw_text(s, {x: cx - text_w(s, st) / 2.0, y: y}, st)
 end
 
 // ── Numbers ──────────────────────────────────────────────────────────────────
 
-fn commas(n)
+fn commas(n: num) -> string
   let s = str(n)
   let out = ""
   let c = 0
@@ -97,7 +97,7 @@ end
 
 // Fixed-point without a printf: scale, round, split the integer back apart.
 // str(float) would hand us 12.300000000000001.
-fn dec(x, places)
+fn dec(x: num, places: num) -> string
   let mul = 1
   for i in range(0, places) do
     mul = mul * 10
@@ -117,7 +117,7 @@ fn dec(x, places)
   if neg then "-" ++ s else s end
 end
 
-fn money(v)
+fn money(v: num) -> string
   if v < 0.0 then
     "-$" ++ commas(int(round(abs(v))))
   else
@@ -125,13 +125,13 @@ fn money(v)
   end
 end
 
-fn money_cents(v)
+fn money_cents(v: num) -> string
   "$" ++ dec(v, 2)
 end
 
 // One format per axis: a $250 step stays in dollars, a $10,000 step goes to k.
 // Mixing them inside a single axis ("$750" above "$1.0k") reads as a mistake.
-fn axis_label(v, step)
+fn axis_label(v: num, step: num) -> string
   if abs(v) < 0.5 then
     "$0"
   elsif step >= 1000.0 then
@@ -141,7 +141,7 @@ fn axis_label(v, step)
   end
 end
 
-fn pct(v)
+fn pct(v: num) -> string
   dec(v, 1) ++ "%"
 end
 
@@ -149,7 +149,7 @@ end
 // Seeded, so the ledger holds the same numbers across every launch and every
 // hot reload. A dashboard that reshuffles on reload cannot be read.
 
-fn hashi(n)
+fn hashi(n: num) -> num
   let x = (n * 374761393 + 668265263) % 2147483647
   x = (x + 2147483647) % 2147483647
   (x * 1103515245 + 12345) % 2147483647
@@ -158,7 +158,7 @@ end
 // Hashed twice: a single LCG pass over an arithmetic seed walk (which is what
 // the generator below produces) comes back as an arithmetic sequence mod 1, and
 // every "does this merchant bill this month?" coin flip lands the same way.
-fn rand01(n)
+fn rand01(n: num) -> float
   float(hashi(hashi(n) % 65521) % 100000) / 100000.0
 end
 
@@ -226,7 +226,7 @@ let CATS = [
 
 // Seasonality: heating peaks in winter, gifts in December, patios in summer.
 // Keeps the column chart from being twelve identical bars.
-fn season(ci, m)
+fn season(ci: num, m: num) -> float
   let ph = float(m) / 12.0 * 2.0 * pi()
   if ci == 2 then
     1.0 + 0.20 * sin(ph - 1.6)
@@ -241,7 +241,7 @@ fn season(ci, m)
   end
 end
 
-fn build_txns()
+fn build_txns() -> list
   let out = []
   let seed = 7
   for m in range(0, 12) do
@@ -268,7 +268,7 @@ fn build_txns()
   out
 end
 
-fn build_income()
+fn build_income() -> list
   let out = for m in range(0, 12) do
     let base = if m < 6 then 5240.0 else 5615.0 end
     let bonus = if rand01(9000 + m) > 0.58 then 420.0 + rand01(9100 + m) * 1380.0 else 0.0 end
@@ -279,7 +279,7 @@ end
 
 // ── Aggregation ──────────────────────────────────────────────────────────────
 
-fn shade(c, i, n)
+fn shade(c: record, i: num, n: num) -> record
   if n <= 1 then
     c
   else
@@ -289,7 +289,7 @@ fn shade(c, i, n)
   end
 end
 
-fn sum_of(xs)
+fn sum_of(xs: list) -> float
   let s = 0.0
   for v in xs do
     s = s + v
@@ -297,7 +297,7 @@ fn sum_of(xs)
   s
 end
 
-fn max_of(xs)
+fn max_of(xs: list)
   let m = xs[0]
   for v in xs do
     if v > m then m = v end
@@ -305,7 +305,7 @@ fn max_of(xs)
   m
 end
 
-fn min_of(xs)
+fn min_of(xs: list)
   let m = xs[0]
   for v in xs do
     if v < m then m = v end
@@ -313,7 +313,7 @@ fn min_of(xs)
   m
 end
 
-fn argmax_of(xs)
+fn argmax_of(xs: list) -> int
   let m = xs[0]
   let k = 0
   for i in range(0, len(xs)) do
@@ -330,7 +330,7 @@ end
 // quadratic list-copying an insertion sort written in Petal would cost.
 let SORT_SLOTS = 4096
 
-fn sorted_by_rank(items, ranks)
+fn sorted_by_rank(items: list, ranks: list) -> list
   let packed = for i in range(0, len(items)) do
     ranks[i] * SORT_SLOTS + i
   end
@@ -341,7 +341,7 @@ fn sorted_by_rank(items, ranks)
   out
 end
 
-fn in_scope(t, ci, mi, mo)
+fn in_scope(t: record, ci: num, mi: num, mo: num)
   (ci < 0 || t.cat == ci) && (mi < 0 || t.mer == mi) && (mo < 0 || t.m == mo)
 end
 
@@ -349,17 +349,17 @@ end
 // name, or passed as an argument. As a function's final expression, or as the
 // last expression of an `if` branch, it evaluates to nil — so every list built
 // by a loop in this file is bound to a local first.
-fn zeros(n)
+fn zeros(n: num) -> list
   let out = for i in range(0, n) do 0.0 end
   out
 end
 
-fn zeros12()
+fn zeros12() -> list
   zeros(12)
 end
 
 // Everything one drill scope needs, computed once and cached against its key.
-fn build_view(txns, income, ci, mi, mo, sort_mode)
+fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: num) -> record
   // The monthly series always spans the full year: the month filter
   // highlights a column rather than collapsing the chart to one.
   let months = zeros12()
@@ -430,18 +430,18 @@ end
 
 // ── Card chrome ──────────────────────────────────────────────────────────────
 
-fn card(r)
+fn card(r: record)
   draw_rect_rounded(r.x, r.y + 2, r.w, r.h, 14, 0, 0, 0, 70)
   draw_rect_rounded(r, 14, SURFACE)
   draw_rect_outline(r, HAIRLINE, 255, 1)
 end
 
 // The content rect under a card's title row.
-fn card_body(r)
+fn card_body(r: record) -> Rect
   rect(r.x + S3, r.y + S3 + 24, r.w - S3 * 2, r.h - S3 * 2 - 24)
 end
 
-fn card_head(r, title, note)
+fn card_head(r: record, title: string, note: string) -> Rect
   text_at(title, r.x + S3, r.y + S3, {size: T_MICRO, color: DIM, spacing: 1.5})
   if len(note) > 0 then
     text_right(note, r.x + r.w - S3, r.y + S3, {size: T_MICRO, color: FAINT})
@@ -451,11 +451,11 @@ end
 
 // ── Donut ────────────────────────────────────────────────────────────────────
 
-fn ring_pt(cx, cy, a, r)
+fn ring_pt(cx: num, cy: num, a: num, r: num) -> list
   [cx + sin(a) * r, cy - cos(a) * r]
 end
 
-fn ring_arc(cx, cy, r_in, r_out, a0, a1, c, alpha)
+fn ring_arc(cx: num, cy: num, r_in: num, r_out: num, a0: num, a1: num, c: record, alpha: num)
   let steps = max(2, int((a1 - a0) / 0.10) + 1)
   for i in range(0, steps) do
     let b0 = a0 + (a1 - a0) * float(i) / float(steps)
@@ -470,7 +470,7 @@ fn ring_arc(cx, cy, r_in, r_out, a0, a1, c, alpha)
 end
 
 // Index of the slice under the pointer, or -1.
-fn donut_hit(cx, cy, r_in, r_out, slices, total)
+fn donut_hit(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num) -> int
   let dx = float(mouse_x()) - cx
   let dy = float(mouse_y()) - cy
   let d = sqrt(dx * dx + dy * dy)
@@ -491,7 +491,7 @@ fn donut_hit(cx, cy, r_in, r_out, slices, total)
   hit
 end
 
-fn draw_donut(cx, cy, r_in, r_out, slices, total, hot, sel, t)
+fn draw_donut(cx: num, cy: num, r_in: num, r_out: num, slices: list, total: num, hot: num, sel: num, t: num)
   draw_circle({x: cx, y: cy}, r_out + 2.0, GRID)
   let acc = 0.0
   for i in range(0, len(slices)) do
@@ -509,30 +509,9 @@ end
 
 // ── Column chart ─────────────────────────────────────────────────────────────
 
-fn nice_top(v)
-  if v <= 0.0 then
-    1.0
-  else
-    let mag = pow(10.0, floor(log(v) / log(10.0)))
-    let n = v / mag
-    let mult = if n <= 1.0 then 1.0
-    elsif n <= 1.5 then 1.5
-    elsif n <= 2.0 then 2.0
-    elsif n <= 2.5 then 2.5
-    elsif n <= 3.0 then 3.0
-    elsif n <= 4.0 then 4.0
-    elsif n <= 5.0 then 5.0
-    elsif n <= 6.0 then 6.0
-    elsif n <= 8.0 then 8.0
-    else 10.0
-    end
-    mult * mag
-  end
-end
-
 // A round gridline step, so the axis reads $1.0k / $2.0k rather than the
 // quarters of whatever the maximum happens to be.
-fn axis_scale(maxv, target)
+fn axis_scale(maxv: num, target: num) -> record
   let raw = max(maxv, 0.000001) / float(target)
   let mag = pow(10.0, floor(log(raw) / log(10.0)))
   let n = raw / mag
@@ -547,13 +526,13 @@ fn axis_scale(maxv, target)
   {step: step, ndiv: ndiv, top: step * float(ndiv)}
 end
 
-fn col_rect(plot, i, n)
+fn col_rect(plot: record, i: num, n: num) -> Rect
   let slot = plot.w / float(n)
   let bw = slot * 0.54
   rect(plot.x + slot * float(i) + (slot - bw) / 2.0, plot.y, bw, plot.h)
 end
 
-fn col_hit(plot, n)
+fn col_hit(plot: record, n: num) -> int
   let hit = -1
   if mouse_y() >= plot.y - 8.0 && mouse_y() <= plot.y + plot.h + 18.0 then
     for i in range(0, n) do
@@ -566,7 +545,7 @@ fn col_hit(plot, n)
   hit
 end
 
-fn draw_columns(plot, vals, base_c, hot, marked, t)
+fn draw_columns(plot: record, vals: list, base_c: record, hot: num, marked: num, t: num)
   let sc = axis_scale(max_of(vals) * 1.06, 5)
   let top = sc.top
   for g in range(0, sc.ndiv + 1) do
@@ -612,7 +591,7 @@ end
 
 // ── Line chart ───────────────────────────────────────────────────────────────
 
-fn cum(vals)
+fn cum(vals: list) -> list
   let out = []
   let acc = 0.0
   for v in vals do
@@ -622,18 +601,18 @@ fn cum(vals)
   out
 end
 
-fn lx(plot, i, n)
+fn lx(plot: record, i: num, n: num)
   if n <= 1 then plot.x + plot.w / 2.0 else plot.x + plot.w * float(i) / float(n - 1) end
 end
 
-fn ly(plot, v, lo, hi)
+fn ly(plot: record, v: num, lo: num, hi: num)
   plot.y + plot.h * (1.0 - (v - lo) / max(hi - lo, 0.0001))
 end
 
 // fill_poly is convex-only, so the band under a polyline is emitted one
 // vertical trapezoid per segment; the gradient comes from redrawing the whole
 // band inside clip strips of falling alpha.
-fn area_under(plot, pts, c, a_top)
+fn area_under(plot: record, pts: list, c: record, a_top: num)
   let bands = 12
   for b in range(0, bands) do
     let y0 = int(plot.y + plot.h * float(b) / float(bands))
@@ -652,13 +631,13 @@ fn area_under(plot, pts, c, a_top)
   clip_none()
 end
 
-fn polyline(pts, c, w, a)
+fn polyline(pts: list, c: record, w: num, a: num)
   for i in range(0, len(pts) - 1) do
     draw_line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], c.r, c.g, c.b, a, w)
   end
 end
 
-fn dashed(x0, y0, x1, y1, c, a)
+fn dashed(x0: num, y0: num, x1: num, y1: num, c: record, a: num)
   let steps = 36
   for i in range(0, steps) do
     if i % 2 == 0 then
@@ -674,7 +653,7 @@ end
 
 let CRUMB = {size: T_SMALL, color: DIM}
 
-fn crumb_parts(lv, ci, mi)
+fn crumb_parts(lv: num, ci: num, mi: num) -> list
   if lv == 0 then
     ["All spending"]
   elsif lv == 1 then
@@ -684,7 +663,7 @@ fn crumb_parts(lv, ci, mi)
   end
 end
 
-fn crumb_rects(x, y, parts)
+fn crumb_rects(x: num, y: num, parts: list) -> list
   let out = []
   let cx = x
   let sepw = text_w("  >  ", CRUMB)
@@ -696,7 +675,7 @@ fn crumb_rects(x, y, parts)
   out
 end
 
-fn hit_list(rs)
+fn hit_list(rs: list) -> int
   let hit = -1
   for i in range(0, len(rs)) do
     if hovered(rs[i]) then hit = i end
@@ -708,11 +687,11 @@ end
 
 let LEG_H = 26
 
-fn leg_rect(x, y0, w, i)
+fn leg_rect(x: num, y0: num, w: num, i: num) -> Rect
   rect(x, y0 + i * LEG_H, w, LEG_H)
 end
 
-fn leg_hit(x, y0, w, n)
+fn leg_hit(x: num, y0: num, w: num, n: num) -> int
   let hit = -1
   for i in range(0, n) do
     if hovered(leg_rect(x, y0, w, i)) then hit = i end
@@ -722,7 +701,7 @@ end
 
 // ── KPI tiles ────────────────────────────────────────────────────────────────
 
-fn kpi_tile(r, label, value, sub, sub_c, series, c, t)
+fn kpi_tile(r: record, label: string, value: string, sub: string, sub_c: record, series: list, c: record, t: num)
   card(r)
   // The histogram owns the right side of the tile, so a long scope name is
   // clipped rather than allowed to run under it.
@@ -743,7 +722,7 @@ fn kpi_tile(r, label, value, sub, sub_c, series, c, t)
   end
 end
 
-fn kpi_rect(r, i, kw)
+fn kpi_rect(r: record, i: num, kw: num) -> Rect
   rect(r.x + i * (kw + 16), r.y, kw, r.h)
 end
 
@@ -751,7 +730,7 @@ end
 
 let TROW = 24
 
-fn table_hit(view, scroll, count, visible)
+fn table_hit(view: record, scroll: num, count: num, visible: num) -> int
   let hit = -1
   for i in range(0, visible) do
     let idx = scroll + i
@@ -798,7 +777,7 @@ state table_scroll = 0
 state anim = 0.0
 state drills = 0       // counted, so a drill is observable in /state
 
-fn scope_key(ci, mi, mo, sm)
+fn scope_key(ci: num, mi: num, mo: num, sm: num) -> string
   "{ci}|{mi}|{mo}|{sm}"
 end
 

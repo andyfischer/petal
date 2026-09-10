@@ -19,9 +19,8 @@
 //   T            test play - launches game (close window to come back)
 //   ESC          quit
 //
-// The editor reuses the same level format and parse/serialize routines
-// as the game; this script is intentionally self-contained because Petal
-// has no module system.
+// The editor carries its own copy of the level format so it runs as a single
+// self-contained script, exactly as game.ptl does.
 // =====================================================================
 
 let SCREEN_W = 960
@@ -38,9 +37,9 @@ state slot_files  = [
   "side-scroller/levels/03_sky_ruins.lvl"
 ]
 state slot_titles = ["First Steps", "Cavern Dive", "Sky Ruins"]
-// `level` is the document being edited, and `delete_at` edits it from inside a
-// function; `say` is nothing but a write to the HUD banner. Both need a cell —
-// with plain `=` they wrote function-local shadows and neither ever took effect.
+// `level` and the HUD banner are written from inside functions (`delete_at`,
+// `say`), so they need a cell: a plain `=` in a function builds a local shadow
+// rather than writing the state.
 state var level   = nil
 state loaded_slot = -1
 state var msg     = ""
@@ -50,11 +49,11 @@ state hover_world = {x: 0, y: 0}
 
 // ----------------------------- HELPERS --------------------------------
 
-fn clamp(v, lo, hi)
+fn clamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
 
-fn snap(n)
+fn snap(n: num) -> num
   if grid_snap then
     (n / grid_size) * grid_size
   else
@@ -62,19 +61,15 @@ fn snap(n)
   end
 end
 
-fn say(s)
+fn say(s: string)
   set msg = s; set msg_t = 2.0
 end
 
-fn aabb(ax, ay, aw, ah, bx, by, bw, bh)
-  ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
-end
-
 // ----------------------------- LEVEL FORMAT ---------------------------
-// Same parse and serialize logic as game.ptl; duplicated because Petal
-// has no imports.
+// The same .lvl grammar game.ptl parses, plus the serializer that writes it
+// back out.
 
-fn empty_level()
+fn empty_level() -> record
   {
     name: "Untitled",
     width: 2400,
@@ -90,7 +85,7 @@ fn empty_level()
   }
 end
 
-fn parse_level(src)
+fn parse_level(src: string) -> record
   let L = empty_level()
   let lines = split(src, "\n")
   for raw in lines do
@@ -140,7 +135,7 @@ fn parse_level(src)
   L
 end
 
-fn serialize_level(L)
+fn serialize_level(L: record) -> string
   let lines = []
   lines = append(lines, "name {L.name}")
   lines = append(lines, "width {L.width}")
@@ -174,7 +169,7 @@ end
 
 // ----------------------------- LOAD / SAVE ----------------------------
 
-fn load_slot(idx)
+fn load_slot(idx) -> record
   let path = slot_files[idx]
   let src  = load_text_file(path)
   if len(src) == 0 then
@@ -195,7 +190,7 @@ fn save_slot(idx)
   if ok then say("Saved {path}") else say("Save failed!") end
 end
 
-if level == nil then set level = load_slot(slot); loaded_slot = slot end
+// loaded_slot starts at -1, so this also covers the first frame's load.
 if loaded_slot != slot then set level = load_slot(slot); loaded_slot = slot end
 
 // ----------------------------- INPUT ----------------------------------
@@ -241,10 +236,9 @@ hover_world = {x: snap(mwx), y: snap(mwy)}
 
 // ----------------------------- TOOL ACTIONS ---------------------------
 
-fn delete_at(wx, wy)
-  // attempt to delete topmost item at (wx,wy)
-  // search from "front" (last list pushed first): try plats, oneways, coins,
-  // spikes, enemies, checks.
+fn delete_at(wx: num, wy: num) -> bool
+  // Delete the topmost item at (wx, wy): each list is scanned back to front,
+  // so the most recently placed object wins.
   let i = len(get level.plats) - 1
   while i >= 0 do
     let p = get level.plats[i]
@@ -302,7 +296,7 @@ fn delete_at(wx, wy)
   false
 end
 
-fn filter_index(list, idx)
+fn filter_index(list: list, idx: num) -> list
   let out = []
   let i = 0
   while i < len(list) do
@@ -365,7 +359,7 @@ if mouse_pressed(3) then delete_at(mwx, mwy) end
 
 // ----------------------------- DRAW -----------------------------------
 
-fn world_x(wx)
+fn world_x(wx: num) -> num
   wx - int(cam_x)
 end
 

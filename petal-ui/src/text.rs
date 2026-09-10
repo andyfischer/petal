@@ -46,6 +46,12 @@ pub const SYM_TEXT_DEFAULT_FONT: &str = "text_default_font";
 /// [`SYM_TEXT_ADVANCES`] bindings. See [`bind_font_metrics`].
 pub const SYM_TEXT_FONTS: &str = "text_fonts";
 
+/// Per-font *vertical* metrics for the host's default face:
+/// `{baseline, descent, line_height, cap_height, x_height}`, each a fraction
+/// of the font size. See [`bind_text_vertical_metrics`] and
+/// [`VerticalMetrics`].
+pub const SYM_TEXT_VERTICAL: &str = "text_vertical";
+
 /// CSS regular weight — the weight every pre-typography `text` command means.
 pub const REGULAR_WEIGHT: u16 = 400;
 
@@ -85,6 +91,99 @@ pub struct FontMetrics {
     /// `advances[codepoint]` = that glyph's advance ÷ font size. May be empty
     /// (a monospace font is fully described by `advance` alone).
     pub advances: Vec<f64>,
+    /// Where this face's ink sits relative to a run's `y`. See
+    /// [`VerticalMetrics`]; a host that publishes nothing gets the default
+    /// UI-sans proportions.
+    pub vertical: VerticalMetrics,
+}
+
+/// Where the ink of a text run sits relative to the `y` a script hands
+/// `draw_text` — the half of measurement that has been missing, and the reason
+/// every vertically centred label in every Petal UI lands a pixel or two high.
+///
+/// Every field is a **fraction of the font size**, so one record serves every
+/// size, and every field is measured from the run's own `y` or from its
+/// baseline — never from an em box the host may not use:
+///
+/// ```text
+///   y ──────────────────────────── the point draw_text was given
+///     │  ▲ baseline
+///     │  │            ┌───┐   ▲ cap_height
+///     │  │      ┌──┐  │   │   │        ▲ x_height
+///     │  ▼      │  │  │   │   │        │
+///   baseline ───┴──┴──┴───┴───▼────────▼
+///     │  ▲ descent      │
+///     │  ▼              g
+///   ───────────────────────────── y + line_height (the next line's y)
+/// ```
+///
+/// `baseline` is the one a host must get right: it is the *rendered* distance
+/// from `y` down to the baseline, whatever the host's own convention is (SDL
+/// blits a surface whose top is the ascent line; a canvas with
+/// `textBaseline = "top"` uses its font bounding box; Garden lays a run out in
+/// a line box with leading above it). A script never has to know which — it
+/// asks for `baseline` and gets the truth about this host.
+///
+/// `cap_height` is what UI centring actually wants: a label like "Save" has no
+/// descender, so centring its *line box* leaves it looking high. Centring the
+/// cap height is what a designer means by "centred in the button".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VerticalMetrics {
+    /// `y` → baseline, as this host renders a run. ÷ font size.
+    pub baseline: f64,
+    /// Baseline → the bottom of the line box (positive, going down). ÷ size.
+    pub descent: f64,
+    /// One line's `y` → the next line's `y` for comfortable setting,
+    /// including any line gap the face asks for. ÷ size.
+    pub line_height: f64,
+    /// Baseline → the top of a flat capital ("H"). ÷ size.
+    pub cap_height: f64,
+    /// Baseline → the top of a lowercase "x". ÷ size.
+    pub x_height: f64,
+}
+
+impl Default for VerticalMetrics {
+    /// A typical UI sans at its usual proportions. These are the numbers a
+    /// script measures on a host that has published nothing — close enough
+    /// that centring with them beats the "the run is `size` px tall"
+    /// assumption they replace, and wrong enough that a host should publish
+    /// its own.
+    fn default() -> Self {
+        VerticalMetrics {
+            baseline: 0.8,
+            descent: 0.2,
+            line_height: 1.2,
+            cap_height: 0.7,
+            x_height: 0.52,
+        }
+    }
+}
+
+impl VerticalMetrics {
+    /// The metrics of a face described the way a font file describes itself:
+    /// ascent and descent above and below the baseline, plus the line gap
+    /// between one line's descent and the next line's ascent. Cap and x
+    /// heights are estimated from the ascent when the host cannot measure
+    /// them; a host that can should set them.
+    pub fn from_ascent_descent(ascent: f64, descent: f64, line_gap: f64) -> Self {
+        VerticalMetrics {
+            baseline: ascent,
+            descent,
+            line_height: ascent + descent + line_gap,
+            cap_height: ascent * 0.92,
+            x_height: ascent * 0.68,
+        }
+    }
+
+    /// The same with a measured cap and x height — what a host that can ask
+    /// its rasterizer for the extents of "H" and "x" should publish.
+    pub fn with_heights(self, cap_height: f64, x_height: f64) -> Self {
+        VerticalMetrics {
+            cap_height,
+            x_height,
+            ..self
+        }
+    }
 }
 
 impl Default for FontMetrics {
@@ -93,6 +192,7 @@ impl Default for FontMetrics {
         FontMetrics {
             advance: DEFAULT_TEXT_ADVANCE,
             advances: Vec::new(),
+            vertical: VerticalMetrics::default(),
         }
     }
 }
@@ -101,7 +201,11 @@ impl FontMetrics {
     /// A proportional font described by a codepoint-indexed advance table,
     /// with `advance` covering codepoints past the table's end.
     pub fn proportional(advances: Vec<f64>, advance: f64) -> Self {
-        FontMetrics { advance, advances }
+        FontMetrics {
+            advance,
+            advances,
+            vertical: VerticalMetrics::default(),
+        }
     }
 
     /// A monospace font: one advance ratio for every glyph.
@@ -109,7 +213,16 @@ impl FontMetrics {
         FontMetrics {
             advance,
             advances: Vec::new(),
+            vertical: VerticalMetrics::default(),
         }
+    }
+
+    /// The same metrics with this face's real vertical proportions attached.
+    /// Every constructor here starts from [`VerticalMetrics::default`], so a
+    /// host that measures its face calls this and a host that cannot is
+    /// unchanged.
+    pub fn with_vertical(self, vertical: VerticalMetrics) -> Self {
+        FontMetrics { vertical, ..self }
     }
 
     fn width_of(&self, text: &str, size: f64) -> f64 {
@@ -138,6 +251,9 @@ pub fn bind_font_metrics(env: &mut Env, font: &str, metrics: &FontMetrics) {
     let mut entry = indexmap::IndexMap::new();
     entry.insert("advance".to_string(), Value::Float(metrics.advance));
     entry.insert("advances".to_string(), Value::List(advances_id));
+    for (key, value) in vertical_fields(&metrics.vertical) {
+        entry.insert(key.to_string(), Value::Float(value));
+    }
     let entry_id = env.heap_mut().alloc_map(entry);
 
     let sym = env.intern_symbol(SYM_TEXT_FONTS);
@@ -194,6 +310,56 @@ pub fn font_variant_key(font: &str, weight: u16, italic: bool) -> String {
 /// Drawing already behaves this way (a font-less bold command renders in the
 /// default face, bold), so without this the two sides disagree exactly where
 /// it is least visible: a bold label with no explicit face.
+/// Bind the *vertical* metrics of the host's default face, so a script can
+/// place a run rather than guessing that its ink is `size` px tall starting at
+/// `y`. The counterpart to [`bind_text_metrics`] on the other axis, and read
+/// by the `text_metrics` native.
+///
+/// A host that never calls this publishes nothing and scripts measure
+/// [`VerticalMetrics::default`] — typical UI-sans proportions, which are much
+/// closer than the assumption they replace but are still a guess about someone
+/// else's font. Any host that can ask its rasterizer where the baseline lands
+/// should call this.
+pub fn bind_text_vertical_metrics(env: &mut Env, vertical: &VerticalMetrics) {
+    let mut fields = indexmap::IndexMap::new();
+    for (key, value) in vertical_fields(vertical) {
+        fields.insert(key.to_string(), Value::Float(value));
+    }
+    let id = env.heap_mut().alloc_map(fields);
+    let sym = env.intern_symbol(SYM_TEXT_VERTICAL);
+    env.set_binding(sym, Value::Map(id));
+}
+
+/// One vertical record as name/value pairs — the single spelling of these
+/// field names, shared by the default-face binding and the per-face registry
+/// so the two can never drift apart.
+fn vertical_fields(v: &VerticalMetrics) -> [(&'static str, f64); 5] {
+    [
+        ("baseline", v.baseline),
+        ("descent", v.descent),
+        ("line_height", v.line_height),
+        ("cap_height", v.cap_height),
+        ("x_height", v.x_height),
+    ]
+}
+
+/// Read a vertical record back out of a script-side map, filling any field the
+/// host left out from `fallback`. A host that publishes only a baseline gets
+/// sensible proportions around it rather than zeros.
+fn vertical_from_map(
+    map: &indexmap::IndexMap<String, Value>,
+    fallback: VerticalMetrics,
+) -> VerticalMetrics {
+    let get = |key: &str, default: f64| map.get(key).map_or(default, |v| num_or(v, default));
+    VerticalMetrics {
+        baseline: get("baseline", fallback.baseline),
+        descent: get("descent", fallback.descent),
+        line_height: get("line_height", fallback.line_height),
+        cap_height: get("cap_height", fallback.cap_height),
+        x_height: get("x_height", fallback.x_height),
+    }
+}
+
 pub fn bind_default_font_name(env: &mut Env, font: &str) {
     let sym = env.intern_symbol(SYM_TEXT_DEFAULT_FONT);
     let id = env.heap_mut().alloc_string(font.to_string());
@@ -250,9 +416,29 @@ fn default_font_metrics(state: &mut PetalCxt) -> FontMetrics {
     let uniform = num_or(&state.binding_named(SYM_TEXT_ADVANCE), DEFAULT_TEXT_ADVANCE);
     let table = state.binding_named(SYM_TEXT_ADVANCES);
     let advances = advance_list(state, &table, uniform);
+    let vertical = match state.binding_named(SYM_TEXT_VERTICAL) {
+        Value::Map(id) => {
+            let map = state.heap().get_map(id).clone();
+            vertical_from_map(&map, VerticalMetrics::default())
+        }
+        _ => VerticalMetrics::default(),
+    };
     FontMetrics {
         advance: uniform,
         advances: advances.unwrap_or_default(),
+        vertical,
+    }
+}
+
+/// The default face's vertical metrics, or the built-in proportions when the
+/// host published none.
+fn default_vertical(state: &mut PetalCxt) -> VerticalMetrics {
+    match state.binding_named(SYM_TEXT_VERTICAL) {
+        Value::Map(id) => {
+            let map = state.heap().get_map(id).clone();
+            vertical_from_map(&map, VerticalMetrics::default())
+        }
+        _ => VerticalMetrics::default(),
     }
 }
 
@@ -285,9 +471,14 @@ fn named_font_metrics(
                 .get("advances")
                 .cloned()
                 .and_then(|v| advance_list(state, &v, advance));
+            // A face registered before vertical metrics existed carries none,
+            // so its entry falls back field by field to the default face's —
+            // the same direction every other lookup here degrades in.
+            let vertical = vertical_from_map(&entry, default_vertical(state));
             return Some(FontMetrics {
                 advance,
                 advances: advances.unwrap_or_default(),
+                vertical,
             });
         }
     }
@@ -592,22 +783,52 @@ impl TextStyle {
 /// face *and* weight/italic variant, plus its letter-spacing.
 pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
-    let style = match state.get_value(2)? {
-        Value::Map(_) => TextStyle::from_value(state, &state.get_value(2)?)?,
+    let (style, metrics) = style_and_metrics(state, 2)?;
+    state.push_int(run_width(&metrics, &style, &text).round() as i64);
+    Ok(1)
+}
+
+/// The style argument at `index` (a style record, or a bare size optionally
+/// followed by a face name at `index + 1`) together with the metrics it
+/// resolves to. Every text native takes its style this way, so one call
+/// measures, wraps and places against the same face.
+fn style_and_metrics(
+    state: &mut PetalCxt,
+    index: usize,
+) -> Result<(TextStyle, FontMetrics), String> {
+    let style = match state.get_value(index)? {
+        Value::Map(_) => TextStyle::from_value(state, &state.get_value(index)?)?,
+        // A bare size, optionally followed by a face name. The face is
+        // recognized by *being a string* rather than by position, because the
+        // natives that take a width or an alignment after the style would
+        // otherwise read one of those as a font name.
         _ => TextStyle {
-            size: state.get_int(2)?,
-            font: match state.arg_count() >= 3 {
-                true => Some(state.get_string(3)?),
+            size: state.get_int(index)?,
+            font: match state.arg_count() > index
+                && matches!(state.get_value(index + 1)?, Value::String(_))
+            {
+                true => Some(state.get_string(index + 1)?),
                 false => None,
             },
             ..TextStyle::default()
         },
     };
+    let metrics = resolve_metrics(state, &style);
+    Ok((style, metrics))
+}
 
-    // A style with no face still has a weight and a slant, and the host draws
-    // those in its default face — so resolve that face's variants by the name
-    // the host published (see `bind_default_font_name`) rather than measuring
-    // regular metrics for bold text.
+/// The metrics `style` will actually be drawn with on this host.
+///
+/// A style with no face still has a weight and a slant, and the host draws
+/// those in its default face — so resolve that face's variants by the name the
+/// host published (see [`bind_default_font_name`]) rather than measuring
+/// regular metrics for bold text.
+///
+/// Registry first (what the host published up front), then its font source
+/// (measured on demand), then the default font. A host that publishes a face
+/// eagerly and also attaches a source gets the eager answer, so the two can
+/// never disagree about the same name.
+fn resolve_metrics(state: &mut PetalCxt, style: &TextStyle) -> FontMetrics {
     let spec = match &style.font {
         Some(spec) => Some(spec.clone()),
         None if style.weight != REGULAR_WEIGHT || style.italic => {
@@ -618,20 +839,413 @@ pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
         }
         None => None,
     };
-    // Registry first (what the host published up front), then its font source
-    // (measured on demand), then the default font. A host that publishes a
-    // face eagerly and also attaches a source gets the eager answer, so the
-    // two can never disagree about the same name.
-    let metrics = match &spec {
+    match &spec {
         Some(spec) => named_font_metrics(state, spec, style.weight, style.italic)
             .or_else(|| source_font_metrics(spec, style.weight, style.italic))
             .unwrap_or_else(|| default_font_metrics(state)),
         None => default_font_metrics(state),
-    };
+    }
+}
 
-    let width =
-        metrics.width_of(&text, style.size as f64) + style.spacing * text.chars().count() as f64;
-    state.push_int(width.round() as i64);
+/// The advance width of one run: the summed glyph advances plus the style's
+/// letter-spacing after every glyph, exactly as the run will be drawn.
+fn run_width(metrics: &FontMetrics, style: &TextStyle, text: &str) -> f64 {
+    metrics.width_of(text, style.size as f64) + style.spacing * text.chars().count() as f64
+}
+
+/// `text_metrics(style) -> {size, baseline, descent, line_height, cap_height,
+/// x_height}`: where the ink of a run in this style lands relative to the `y`
+/// `draw_text` is given, in **pixels** at that style's size.
+///
+/// This is the measurement that makes vertical placement possible at all.
+/// `text_width` has always answered "how wide", and every script has had to
+/// guess the other axis — almost always as "the run is `size` px tall,
+/// starting at `y`", which is wrong on every host: the run starts at its
+/// ascent line, is taller than `size`, and its ink sits high inside that box.
+/// A label centred on that guess lands a pixel or two high at 14 px and
+/// visibly high at 32.
+///
+/// Centre a UI label on `cap_height` (a label with no descender looks high
+/// when its *line box* is centred), set body text on `line_height`, and
+/// convert between a baseline and a `draw_text` `y` with `baseline`. See
+/// [`VerticalMetrics`] for the diagram.
+///
+/// `style` is the same argument `text_width` takes: a style record, or a bare
+/// size with an optional face name.
+pub(crate) fn native_text_metrics(state: &mut PetalCxt) -> NativeResult {
+    let (style, metrics) = style_and_metrics(state, 1)?;
+    let size = style.size as f64;
+    let v = metrics.vertical;
+    let mut fields = indexmap::IndexMap::new();
+    fields.insert("size".to_string(), Value::Float(size));
+    for (key, ratio) in vertical_fields(&v) {
+        fields.insert(key.to_string(), Value::Float(ratio * size));
+    }
+    let id = state.heap_mut().alloc_map(fields);
+    state.push_value(Value::Map(id));
+    Ok(1)
+}
+
+// ── Fitting text into a box ───────────────────────────────────────────────
+//
+// Wrapping, ellipsizing and caret hit-testing are all the same loop: walk the
+// glyphs, accumulate advances, stop at a width. A script *can* write that loop
+// — the `ui` prelude's `ellipsize` does, one `text_width` call per character —
+// but it pays a native call and a fresh string per step, which is the wrong
+// shape for something a UI does on every label of every frame. These natives
+// walk the advance table once and return the answer.
+
+/// One glyph's advance in this style, letter-spacing included.
+fn char_width(metrics: &FontMetrics, style: &TextStyle, c: char) -> f64 {
+    metrics
+        .advances
+        .get(c as usize)
+        .copied()
+        .unwrap_or(metrics.advance)
+        * style.size as f64
+        + style.spacing
+}
+
+/// Greedy word wrap: the lines `text` breaks into so that none is wider than
+/// `max_width`.
+///
+/// Existing newlines are hard breaks and are always honoured, so a wrapped
+/// paragraph keeps the shape its author gave it. Within a paragraph the break
+/// goes at the last space that fits; the trailing spaces of a broken line are
+/// not counted in its width (a line that ends at a space is not "too wide"
+/// because of that space), and they are trimmed off the returned line.
+///
+/// A single word wider than the whole box is broken at a character boundary
+/// rather than allowed to overflow — the choice a text field wants, and the
+/// only one that terminates.
+fn wrap_lines(metrics: &FontMetrics, style: &TextStyle, text: &str, max_width: f64) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for paragraph in text.split('\n') {
+        let paragraph = paragraph.strip_suffix('\r').unwrap_or(paragraph);
+        // A non-positive box cannot fit anything; wrapping into it would loop
+        // forever breaking one character at a time, so the paragraph passes
+        // through whole and the caller's clip deals with it.
+        if max_width <= 0.0 {
+            out.push(paragraph.to_string());
+            continue;
+        }
+        let mut line = Line::new(max_width);
+        // A word, and the run of spaces that preceded it. They travel together
+        // because a break *at* the spaces discards them: a wrapped line does
+        // not begin with the gap that pushed it over.
+        let mut word = String::new();
+        let mut word_w = 0.0f64;
+        let mut gap = String::new();
+        let mut gap_w = 0.0f64;
+        for c in paragraph.chars() {
+            if c == ' ' || c == '\t' {
+                line.take(&mut word, &mut word_w, &mut gap, &mut gap_w, metrics, style, &mut out);
+                gap.push(c);
+                gap_w += char_width(metrics, style, c);
+            } else {
+                word.push(c);
+                word_w += char_width(metrics, style, c);
+            }
+        }
+        line.take(&mut word, &mut word_w, &mut gap, &mut gap_w, metrics, style, &mut out);
+        out.push(line.finish());
+    }
+    out
+}
+
+/// The line being filled, and the width of it that counts.
+///
+/// Two widths, because trailing spaces are not "too wide": a line ending at a
+/// space is as wide as its last non-space character, and those spaces are
+/// trimmed off when the line is emitted. `trimmed` is that prefix.
+struct Line {
+    text: String,
+    max_width: f64,
+    /// Byte length and width of `text` up to its last non-space character.
+    trimmed_len: usize,
+    trimmed_w: f64,
+    /// Width of the whole of `text`, trailing spaces included.
+    width: f64,
+}
+
+impl Line {
+    fn new(max_width: f64) -> Line {
+        Line {
+            text: String::new(),
+            max_width,
+            trimmed_len: 0,
+            trimmed_w: 0.0,
+            width: 0.0,
+        }
+    }
+
+    /// Add `word` (preceded by `gap`) to this line, breaking to a new one first
+    /// if it does not fit. Both are left empty.
+    #[allow(clippy::too_many_arguments)]
+    fn take(
+        &mut self,
+        word: &mut String,
+        word_w: &mut f64,
+        gap: &mut String,
+        gap_w: &mut f64,
+        metrics: &FontMetrics,
+        style: &TextStyle,
+        out: &mut Vec<String>,
+    ) {
+        if word.is_empty() {
+            gap.clear();
+            *gap_w = 0.0;
+            return;
+        }
+        if !self.text.is_empty() && self.trimmed_w + *gap_w + *word_w > self.max_width {
+            self.wrap(out);
+        } else {
+            self.text.push_str(gap);
+            self.width += *gap_w;
+        }
+        if *word_w > self.max_width && self.text.is_empty() {
+            // A word wider than the whole box: break it at a character
+            // boundary rather than let it overflow. This is also the only
+            // branch that makes the wrap terminate on unbroken text.
+            let mut acc = 0.0f64;
+            for c in word.chars() {
+                let cw = char_width(metrics, style, c);
+                if acc + cw > self.max_width && !self.text.is_empty() {
+                    out.push(std::mem::take(&mut self.text));
+                    acc = 0.0;
+                }
+                self.text.push(c);
+                acc += cw;
+            }
+            self.width = acc;
+        } else {
+            self.text.push_str(word);
+            self.width += *word_w;
+        }
+        self.trimmed_len = self.text.len();
+        self.trimmed_w = self.width;
+        word.clear();
+        *word_w = 0.0;
+        gap.clear();
+        *gap_w = 0.0;
+    }
+
+    /// Emit what is on the line, trailing spaces trimmed, and start a new one.
+    fn wrap(&mut self, out: &mut Vec<String>) {
+        self.text.truncate(self.trimmed_len);
+        out.push(std::mem::take(&mut self.text));
+        self.width = 0.0;
+        self.trimmed_w = 0.0;
+        self.trimmed_len = 0;
+    }
+
+    /// The last line, trailing spaces trimmed.
+    fn finish(mut self) -> String {
+        self.text.truncate(self.trimmed_len);
+        self.text
+    }
+}
+
+/// `text_wrap(s, style, max_width) -> [string]`: the lines `s` breaks into to
+/// fit `max_width` px in `style`.
+///
+/// Existing newlines are always honoured; a word wider than the box is broken
+/// rather than allowed to overflow. Always returns at least one line, so a
+/// caller can lay the result out without a special case for empty text.
+///
+/// `style` is the argument `text_width` takes — a style record, or a bare size
+/// (a face name may follow it, before `max_width`). Measure and draw with the
+/// same one and the wrap is the one you see.
+pub(crate) fn native_text_wrap(state: &mut PetalCxt) -> NativeResult {
+    let text = state.get_string(1)?;
+    let (style, metrics) = style_and_metrics(state, 2)?;
+    let max_width = state.get_float(state.arg_count())?;
+    let lines = wrap_lines(&metrics, &style, &text, max_width);
+    let items: Vec<Value> = lines
+        .into_iter()
+        .map(|line| Value::String(state.heap_mut().alloc_string(line)))
+        .collect();
+    state.push_list(items);
+    Ok(1)
+}
+
+/// Which end of an over-long string an ellipsis eats.
+#[derive(Clone, Copy, PartialEq)]
+enum Elide {
+    /// Keep the head, "a long lab…" — a label.
+    Tail,
+    /// Keep the tail, "…/src/app.ptl" — a path.
+    Head,
+    /// Keep both ends, "chapter…final" — an identifier.
+    Middle,
+}
+
+/// The one-character ellipsis. Three bytes, one glyph: the reason the trimming
+/// below counts characters and never bytes.
+const ELLIPSIS: char = '…';
+
+fn elide(
+    metrics: &FontMetrics,
+    style: &TextStyle,
+    text: &str,
+    max_width: f64,
+    mode: Elide,
+) -> String {
+    if run_width(metrics, style, text) <= max_width {
+        return text.to_string();
+    }
+    let ell = char_width(metrics, style, ELLIPSIS);
+    let budget = max_width - ell;
+    if budget <= 0.0 {
+        // Not even the ellipsis fits. It is still what gets returned: the
+        // marker is the one thing worth keeping when there is no room, because
+        // an empty cell reads as "nothing here" and "…" reads as "something
+        // here that did not fit". A caller with a box this small is going to
+        // clip whatever it is given anyway.
+        return String::from(ELLIPSIS);
+    }
+    let chars: Vec<char> = text.chars().collect();
+    match mode {
+        Elide::Tail => {
+            let mut acc = 0.0;
+            let mut end = 0;
+            for (i, c) in chars.iter().enumerate() {
+                let cw = char_width(metrics, style, *c);
+                if acc + cw > budget {
+                    break;
+                }
+                acc += cw;
+                end = i + 1;
+            }
+            let mut out: String = chars[..end].iter().collect();
+            out.push(ELLIPSIS);
+            out
+        }
+        Elide::Head => {
+            let mut acc = 0.0;
+            let mut start = chars.len();
+            for (i, c) in chars.iter().enumerate().rev() {
+                let cw = char_width(metrics, style, *c);
+                if acc + cw > budget {
+                    break;
+                }
+                acc += cw;
+                start = i;
+            }
+            let mut out = String::from(ELLIPSIS);
+            out.extend(chars[start..].iter());
+            out
+        }
+        Elide::Middle => {
+            // The head gets the larger half of an odd budget, because the
+            // start of a string is the part a reader identifies it by — so the
+            // glyph that straddles the midpoint is kept rather than dropped.
+            let head_budget = budget / 2.0;
+            let mut head_w = 0.0;
+            let mut head = 0;
+            for (i, c) in chars.iter().enumerate() {
+                let cw = char_width(metrics, style, *c);
+                if head_w + cw / 2.0 > head_budget {
+                    break;
+                }
+                head_w += cw;
+                head = i + 1;
+            }
+            let mut tail_w = 0.0;
+            let mut tail = chars.len();
+            for (i, c) in chars.iter().enumerate().rev() {
+                if i < head {
+                    break;
+                }
+                let cw = char_width(metrics, style, *c);
+                if head_w + tail_w + cw > budget {
+                    break;
+                }
+                tail_w += cw;
+                tail = i;
+            }
+            let mut out: String = chars[..head].iter().collect();
+            out.push(ELLIPSIS);
+            out.extend(chars[tail..].iter());
+            out
+        }
+    }
+}
+
+/// `text_ellipsize(s, style, max_width, [where]) -> string`: `s` shortened to
+/// fit `max_width` px, with a "…" marking what was cut. Returns `s` untouched
+/// when it already fits.
+///
+/// `where` is `"tail"` (the default — keep the head, for a label), `"head"`
+/// (keep the tail, for a path, where the directories are the part every row
+/// shares) or `"middle"` (keep both ends). A box with no room even for the
+/// ellipsis returns the bare "…": the marker is what says there is text here.
+///
+/// The prelude's `ellipsize` does this with a `text_width` call per character
+/// and is careful about byte-vs-character trimming because it re-measures a
+/// string that already carries its ellipsis. Here the ellipsis is never
+/// measured back in: the budget is `max_width` minus its width, once, and the
+/// walk is over characters.
+pub(crate) fn native_text_ellipsize(state: &mut PetalCxt) -> NativeResult {
+    let text = state.get_string(1)?;
+    let (style, metrics) = style_and_metrics(state, 2)?;
+    // The style may have eaten an optional face-name argument, so the width is
+    // found by counting back from the end rather than by a fixed index.
+    let has_mode = matches!(state.get_value(state.arg_count())?, Value::String(_))
+        && state.arg_count() >= 4;
+    let width_index = if has_mode {
+        state.arg_count() - 1
+    } else {
+        state.arg_count()
+    };
+    let max_width = state.get_float(width_index)?;
+    let mode = if has_mode {
+        match state.get_string(state.arg_count())?.as_str() {
+            "head" => Elide::Head,
+            "middle" => Elide::Middle,
+            "tail" => Elide::Tail,
+            other => {
+                return Err(format!(
+                    "text_ellipsize: unknown end '{other}' — expected \"tail\", \"head\" or \"middle\""
+                ));
+            }
+        }
+    } else {
+        Elide::Tail
+    };
+    let out = elide(&metrics, &style, &text, max_width, mode);
+    state.push_string(out);
+    Ok(1)
+}
+
+/// `text_index_at(s, style, dx) -> int`: the character index a click `dx` px
+/// from the run's left edge falls on — the caret position, snapped to whichever
+/// character boundary is nearer.
+///
+/// The caret hit-test every text field needs. Done in a script it is a
+/// `text_width` call per character *per frame*, over a string the user is
+/// typing into; here it is one walk of the advance table. The result is a
+/// **character** index, which is what `char_slice` takes.
+pub(crate) fn native_text_index_at(state: &mut PetalCxt) -> NativeResult {
+    let text = state.get_string(1)?;
+    let (style, metrics) = style_and_metrics(state, 2)?;
+    let dx = state.get_float(state.arg_count())?;
+    let mut acc = 0.0f64;
+    let mut best = 0usize;
+    let mut best_d = dx.abs();
+    for (i, c) in text.chars().enumerate() {
+        acc += char_width(&metrics, &style, c);
+        let d = (dx - acc).abs();
+        if d <= best_d {
+            best_d = d;
+            best = i + 1;
+        } else {
+            // Advances are non-negative, so once the boundaries start moving
+            // away from `dx` they never come back.
+            break;
+        }
+    }
+    state.push_int(best as i64);
     Ok(1)
 }
 
@@ -652,6 +1266,198 @@ mod tests {
             font_variant_candidates("ui", 700, true),
             vec!["ui@700i", "ui@700", "ui@i", "ui"]
         );
+    }
+
+    /// The string a run produced, for the fitting tests below.
+    fn as_string(env: &Env, v: &Value) -> String {
+        match v {
+            Value::String(id) => env.heap().get_string(*id).to_string(),
+            other => panic!("expected a string, got {other:?}"),
+        }
+    }
+
+    /// A fixed-width face makes every expectation below arithmetic: at size
+    /// 10 every glyph is 5 px, so "abc" is 15 and a 30 px box holds six.
+    fn half_width_env() -> Env {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_metrics(&mut env, 0.5);
+        env
+    }
+
+    /// The float a metrics field holds, for comparisons that must tolerate the
+    /// last bit (0.72 × 10 is not exactly 7.2 in binary).
+    fn as_float(v: &Value) -> f64 {
+        match v {
+            Value::Float(f) => *f,
+            Value::Int(n) => *n as f64,
+            other => panic!("expected a number, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn text_metrics_defaults_are_the_ui_sans_proportions() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        // A host that published nothing still answers, with typical UI-sans
+        // proportions rather than the "the run is `size` px tall" guess every
+        // script used to make.
+        for (field, want) in [
+            ("baseline", 16.0),
+            ("descent", 4.0),
+            ("line_height", 24.0),
+            ("cap_height", 14.0),
+        ] {
+            let v = env
+                .run_source(&format!("text_metrics(20).{field}"))
+                .expect("run");
+            assert!(
+                (as_float(&v) - want).abs() < 1e-9,
+                "{field}: {v:?} != {want}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_metrics_reports_the_bound_face_in_pixels() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_vertical_metrics(
+            &mut env,
+            &VerticalMetrics {
+                baseline: 0.9,
+                descent: 0.25,
+                line_height: 1.4,
+                cap_height: 0.72,
+                x_height: 0.5,
+            },
+        );
+        let v = env.run_source("text_metrics(10).baseline").expect("run");
+        assert_eq!(v, Value::Float(9.0));
+        let v = env.run_source("text_metrics(10).line_height").expect("run");
+        assert_eq!(v, Value::Float(14.0));
+        // A style record measures the same as a bare size.
+        let v = env
+            .run_source("text_metrics({size: 10, color: {r: 1, g: 2, b: 3}}).cap_height")
+            .expect("run");
+        assert!((as_float(&v) - 7.2).abs() < 1e-9, "{v:?}");
+    }
+
+    #[test]
+    fn a_named_face_inherits_vertical_metrics_it_did_not_publish() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_vertical_metrics(&mut env, &VerticalMetrics::default());
+        // Registered with advances only, the way every host did before
+        // vertical metrics existed.
+        bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
+        let v = env.run_source("text_metrics({size: 10, font: \"mono\"}).baseline").expect("run");
+        assert_eq!(v, Value::Float(8.0));
+        // And a face that publishes its own is measured with those.
+        bind_font_metrics(
+            &mut env,
+            "tall",
+            &FontMetrics::monospace(0.5).with_vertical(
+                VerticalMetrics::default().with_heights(0.75, 0.55),
+            ),
+        );
+        let v = env.run_source("text_metrics({size: 10, font: \"tall\"}).cap_height").expect("run");
+        assert_eq!(v, Value::Float(7.5));
+    }
+
+    #[test]
+    fn text_wrap_breaks_at_spaces_and_keeps_hard_newlines() {
+        let mut env = half_width_env();
+        // 30 px = six glyphs. "aaa bbb ccc" breaks after each 3-letter word
+        // (3 + 1 + 3 = 7 glyphs would be 35 px).
+        let v = env
+            .run_source("text_wrap(\"aaa bbb ccc\", 10, 30.0) |> join(\"|\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "aaa|bbb|ccc");
+        // 40 px = eight glyphs: "aaa bbb" is seven and fits.
+        let v = env
+            .run_source("text_wrap(\"aaa bbb ccc\", 10, 40.0) |> join(\"|\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "aaa bbb|ccc");
+        // An author's own newline is a break wherever it falls.
+        let v = env
+            .run_source("text_wrap(\"a\\nb\", 10, 500.0) |> join(\"|\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "a|b");
+    }
+
+    #[test]
+    fn text_wrap_breaks_a_word_wider_than_the_box() {
+        let mut env = half_width_env();
+        // No space to break at, so the word itself breaks rather than
+        // overflowing — and the loop terminates, which the naive version
+        // ("find a space; there is none") does not.
+        let v = env
+            .run_source("text_wrap(\"aaaaaaaaa\", 10, 20.0) |> join(\"|\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "aaaa|aaaa|a");
+    }
+
+    #[test]
+    fn text_wrap_always_returns_a_line() {
+        let mut env = half_width_env();
+        let v = env.run_source("len(text_wrap(\"\", 10, 100.0))").expect("run");
+        assert_eq!(v, Value::Int(1));
+        // A zero-width box passes text through rather than looping forever.
+        let v = env
+            .run_source("text_wrap(\"abc\", 10, 0.0) |> join(\"|\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "abc");
+    }
+
+    #[test]
+    fn text_ellipsize_fits_the_box_including_its_ellipsis() {
+        let mut env = half_width_env();
+        // Fits already: untouched.
+        let v = env.run_source("text_ellipsize(\"abc\", 10, 100.0)").expect("run");
+        assert_eq!(as_string(&env, &v), "abc");
+        // 30 px = six glyphs, one of which the ellipsis takes.
+        let v = env
+            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0)")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "abcde…");
+        // The result really fits: this is the property the prelude's
+        // byte-trimming version had to be careful to keep.
+        let v = env
+            .run_source("text_width(text_ellipsize(\"abcdefghij\", 10, 30.0), 10) <= 30")
+            .expect("run");
+        assert_eq!(v, Value::Bool(true));
+    }
+
+    #[test]
+    fn text_ellipsize_can_keep_the_tail_or_both_ends() {
+        let mut env = half_width_env();
+        let v = env
+            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0, \"head\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "…fghij");
+        let v = env
+            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0, \"middle\")")
+            .expect("run");
+        assert_eq!(as_string(&env, &v), "abc…ij");
+        // A box with no room even for the ellipsis keeps the marker: "…" says
+        // there is text here, where "" would say there is not.
+        let v = env.run_source("text_ellipsize(\"abcdef\", 10, 3.0)").expect("run");
+        assert_eq!(as_string(&env, &v), "…");
+        let v = env.run_source("text_ellipsize(\"abcdef\", 10, 0.0)").expect("run");
+        assert_eq!(as_string(&env, &v), "…");
+    }
+
+    #[test]
+    fn text_index_at_snaps_to_the_nearer_boundary() {
+        let mut env = half_width_env();
+        // Glyphs are 5 px: boundaries at 0, 5, 10, 15.
+        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 0.0)").expect("run"), Value::Int(0));
+        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 2.0)").expect("run"), Value::Int(0));
+        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 3.0)").expect("run"), Value::Int(1));
+        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 7.0)").expect("run"), Value::Int(1));
+        // Past the end clamps to the end, not past it.
+        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 900.0)").expect("run"), Value::Int(3));
     }
 
     #[test]

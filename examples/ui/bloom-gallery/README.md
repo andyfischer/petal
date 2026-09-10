@@ -31,6 +31,9 @@ cargo run --bin petal-ui-run -- ../examples/ui/bloom-gallery/app.ptl \
     --frames 120 --size 1100x760 -I ../petal-libs
 ```
 
+`-I` points at `petal-libs`, not at `petal-libs/bloom`: the app imports bloom
+*and* `text_layout`, and one directory of libraries makes both reachable.
+
 ## What to look for
 
 - **Nothing in `app.ptl` holds animation state.** Every hover fade, press
@@ -47,6 +50,14 @@ cargo run --bin petal-ui-run -- ../examples/ui/bloom-gallery/app.ptl \
 - **The last line is `bloom.overlays()`.** Menus and tooltips defer their
   painting to that call, so a dropdown can be written inline with its button
   and still land on top of everything drawn after it.
+- **Text** section draws a red line through the exact middle of each box. A
+  label is centered when the line splits its capitals — which the arithmetic
+  every UI used to do (`y = r.y + (r.h - size) / 2`, "the run is `size` px tall
+  and starts at `y`") never managed. The section is
+  [text-layout](../../../petal-libs/text-layout/), the placement library bloom
+  draws all of its own labels through: alignment on both axes, one baseline
+  across three sizes, wrapping, a two-line clamp, and the three ends an
+  ellipsis can eat.
 - **Motion** section draws the animators raw: a spring and an eased value
   chasing the pointer, a staggered entrance, a pulse, and a shake.
 

@@ -37,6 +37,7 @@ Petal, with opinions `ui` deliberately does not take:
 
 | | `ui` prelude | bloom |
 |---|---|---|
+| Label placement | you compute a `y` | cap-height centred, through [text-layout](../text-layout/) |
 | Lives in | a Rust crate, registered by the host | `.ptl` files you drop in |
 | Cross-frame state | explicit records you keep (`list_state()`) | per-callsite `state` inside the component |
 | Click | on press | on **release inside**, so sliding off cancels |
@@ -52,8 +53,9 @@ script freely.
 
 A host that embeds `petal-ui` (Garden panels, `petal-desktop-sdl`,
 `petal-web-canvas`, the `petal-ui-run` driver, or your own embedder calling
-`petal_ui::register_all`). That is all — bloom asks for no natives of its own,
-no fonts, and no files at runtime.
+`petal_ui::register_all`), and one other library from this directory:
+[`text-layout`](../text-layout/), which bloom places every label with. That is
+all — bloom asks for no natives of its own, no fonts, and no files at runtime.
 
 ## Installing it in a project
 
@@ -63,23 +65,29 @@ directory (manifest included) into your project and make it reachable one of
 two ways:
 
 ```bash
-# 1. on the module path — point -I at the library root, or at a directory of
-#    libraries; either finds the manifest
+# 1. on the module path — point -I at a directory of libraries, so bloom and
+#    the text-layout it imports are both found
 petal-ui-run myapp/app.ptl -I petal-libs
-petal run -I petal-libs/bloom myapp/app.ptl
 petal packages -I petal-libs            # check what that made importable
 ```
 
 ```rust
 // 2. registered by the host, which also covers scripts pushed as source
-env.add_package("petal-libs/bloom")?;             // from disk
-env.register_package("bloom", MODULES)?;          // from include_str!
+env.add_package("petal-libs/text-layout")?;       // from disk
+env.add_package("petal-libs/bloom")?;
+env.register_package("text_layout", TL_MODULES)?; // from include_str!
+env.register_package("bloom", MODULES)?;
 ```
 
+Either way, **register text-layout too**: bloom imports it, and a host that
+registers bloom alone fails to load it. Pointing `-I` at `petal-libs` (rather
+than at `petal-libs/bloom`) covers both in one flag.
+
 Garden ships (2) in
-[`garden/garden-script/src/bloom.rs`](../../garden/garden-script/src/bloom.rs) —
-one `register_package` call over nine `include_str!`s — so every Garden panel
-can `import bloom`.
+[`garden/garden-script/src/bloom.rs`](../../garden/garden-script/src/bloom.rs)
+and [`text_layout.rs`](../../garden/garden-script/src/text_layout.rs) beside it —
+two `register_package` calls over `include_str!`s — so every Garden panel can
+`import bloom`.
 
 ## The modules
 
@@ -87,7 +95,7 @@ can `import bloom`.
 |--------|----------|
 | `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `export import bloom/…: *` |
 | `bloom/motion` | The animation core: `ease_to`, `ease_flag`, `spring`, `enter`, `impulse`, `stagger`, `shake`, easings, rect interpolation |
-| `bloom/theme` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `ts` |
+| `bloom/theme` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `text_block_in`, `text_cut`, `ts` |
 | `bloom/icon` | 22 vector glyphs, drawn as strokes in a unit box |
 | `bloom/interact` | `probe` (hover/press/click + their animated twins), input capture, focus ring, drag, hotkeys |
 | `bloom/button` | `button`, `icon_button`, `segmented`, `chip`, `link`, `spinner` |

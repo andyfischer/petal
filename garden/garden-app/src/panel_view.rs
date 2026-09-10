@@ -57,6 +57,32 @@ fn measured_ui_advance_ratios() -> &'static [f64] {
 /// …and for Inter **Bold**, which a `font: "ui"` run at `weight >= 600` is
 /// really shaped with. It is a separate table because it is a separate face:
 /// bold Inter is wider than regular Inter at every glyph.
+/// Where a run's ink sits relative to the `y` it is drawn at, for the
+/// monospace face — measured once, then reused, like the advance tables. It is
+/// what lets a panel script centre a label on the line it claims to be on
+/// instead of assuming the run is `size` px tall.
+fn measured_vertical() -> petal_ui::draw::VerticalMetrics {
+    static V: std::sync::OnceLock<petal_ui::draw::VerticalMetrics> = std::sync::OnceLock::new();
+    *V.get_or_init(|| vertical_of(garden_render::vertical_ratios()))
+}
+
+/// [`measured_vertical`] for the proportional UI face.
+fn measured_ui_vertical() -> petal_ui::draw::VerticalMetrics {
+    static V: std::sync::OnceLock<petal_ui::draw::VerticalMetrics> = std::sync::OnceLock::new();
+    *V.get_or_init(|| vertical_of(garden_render::ui_vertical_ratios()))
+}
+
+/// The renderer's measurement in the shape petal-ui publishes it in.
+fn vertical_of(r: garden_render::VerticalRatios) -> petal_ui::draw::VerticalMetrics {
+    petal_ui::draw::VerticalMetrics {
+        baseline: r.baseline,
+        descent: r.descent,
+        line_height: r.line_height,
+        cap_height: r.cap_height,
+        x_height: r.x_height,
+    }
+}
+
 fn measured_ui_bold_advance_ratios() -> &'static [f64] {
     static RATIOS: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
     RATIOS.get_or_init(garden_render::ui_bold_ascii_advance_ratios)
@@ -181,9 +207,11 @@ const FALLBACK_ADVANCE_RATIO: f64 = 0.6;
 /// because the ratios live in the host's env and a rebuilt host starts over
 /// with the estimate.
 fn adopt_font(host: &mut PanelHost) {
-    host.set_font_advance_ratios_with_ui(
+    host.set_font_metrics_with_ui(
         measured_advance_ratios().to_vec(),
+        measured_vertical(),
         measured_ui_advance_ratios().to_vec(),
+        measured_ui_vertical(),
     );
     // Inter Bold is a real, wider cut, so `{font: "ui", weight: 700}` has to
     // measure it rather than the regular table.

@@ -7,6 +7,7 @@ Petal can use, and that you can copy into a project wholesale.
 | Library | What it is |
 |---------|------------|
 | [`bloom/`](bloom/) | A UI component library: buttons, menus, controls, overlays, an animation core, and a vector icon set. Built on the `petal-ui` host layer |
+| [`text-layout/`](text-layout/) | Placing text: cap-height centring, alignment on both axes, wrapping, elision, caret hit-testing. What bloom draws every one of its labels through |
 
 This is deliberately separate from [`petal-ui/`](../petal-ui/), which is a Rust
 crate that gives a host its input and draw natives (plus the `ui` prelude that
@@ -24,6 +25,11 @@ name = "bloom"
 version = "0.1.0"
 modules = "src"
 ```
+
+A package name is the first segment of an import path, so it has to be
+spellable as an identifier. Where a directory name is not (`text-layout`), the
+manifest names the package (`text_layout`) and that is what `import` answers
+to; the directory can be called whatever reads best.
 
 There are two ways to make a package reachable, and which one you want depends
 on where your script's source comes from.
@@ -43,7 +49,12 @@ or `PETAL_PATH=petal-libs`. Then:
 ```petal ignore
 import bloom              // the facade module, named like its package
 import bloom/menu         // one implementation module
+import text_layout        // another package, by its manifest name
 ```
+
+**One library may import another.** bloom imports `text_layout`, so a host that
+registers bloom in memory has to register text_layout too — the module path
+form needs nothing extra, since one `-I petal-libs` finds both.
 
 **Registered in memory** — for a host, and the only option for a script whose
 source did not come from a file it sits beside (a pushed panel drawer, a

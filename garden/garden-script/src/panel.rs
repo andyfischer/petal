@@ -1333,6 +1333,28 @@ impl PanelHost {
         self.publish_role_metrics(mono, ui);
     }
 
+    /// The same, with each role's *vertical* metrics — where a run's ink sits
+    /// relative to the `y` the panel draws it at.
+    ///
+    /// A host that publishes only advances leaves a script guessing on the
+    /// other axis, and the guess every script makes ("the run is `size` px
+    /// tall, starting at `y`") is wrong here by the leading Garden lays a run
+    /// out with. That is the difference between a button label centred and a
+    /// button label two pixels high, in a way nothing about the drawing shows.
+    pub fn set_font_metrics_with_ui(
+        &mut self,
+        mono: Vec<f64>,
+        mono_vertical: petal_ui::draw::VerticalMetrics,
+        ui: Vec<f64>,
+        ui_vertical: petal_ui::draw::VerticalMetrics,
+    ) {
+        let mono = petal_ui::draw::FontMetrics::proportional(mono, TEXT_ADVANCE_RATIO)
+            .with_vertical(mono_vertical);
+        let ui = petal_ui::draw::FontMetrics::proportional(ui, TEXT_ADVANCE_RATIO)
+            .with_vertical(ui_vertical);
+        self.publish_role_metrics(mono, ui);
+    }
+
     /// Bind both roles' tables, remembering them so a later
     /// [`set_default_font`](Self::set_default_font) can promote either to be
     /// the unnamed default metric.
@@ -2511,6 +2533,9 @@ fn bind_font_advances(
     if !default.advances.is_empty() {
         petal_ui::draw::bind_text_advance_table(env, &default.advances);
     }
+    // …and the same face's vertical metrics, for the same reason: a bare
+    // `text_metrics()` must describe the face a bare `draw_text` renders in.
+    petal_ui::draw::bind_text_vertical_metrics(env, &default.vertical);
     petal_ui::draw::bind_font_metrics(env, "mono", mono);
     // `ui` is a genuinely different face (proportional Inter) whenever the host
     // has measured one. A host that hasn't passes the mono table for both, which
@@ -2546,6 +2571,11 @@ fn new_panel_env() -> Env {
     // The bloom component library, as in-memory modules a panel can `import`.
     // Registered rather than put on the module path because a panel-mode GPP
     // drawer arrives as pushed source with no directory of its own.
+    //
+    // text_layout goes in first because bloom imports it: every bloom label is
+    // placed through it. Registration order does not decide resolution (that
+    // is by name), but the pairing is not optional.
+    crate::text_layout::register(&mut env);
     crate::bloom::register(&mut env);
     env.observations_mut().enable();
     env

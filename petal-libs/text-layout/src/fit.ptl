@@ -1,0 +1,137 @@
+// text_layout/fit — making text fit a width it does not fit.
+//
+// Three answers to "this string is wider than the box", and the caret
+// hit-testing that a text field needs from the same measurements:
+//
+//   wrap_text    break it into lines
+//   elide        cut it and mark the cut with "…"
+//   clamp_lines  wrap, but stop after N lines and elide the last one
+//
+// Each is one native call over the host's advance table. The versions a script
+// would otherwise write — a `text_width` call per character, per frame, over a
+// string the user is typing — are the reason `text_wrap`, `text_ellipsize` and
+// `text_index_at` exist at all.
+
+import text_layout/place: text_baseline
+
+// The lines `s` breaks into to fit `max_w` px. Existing newlines are honoured;
+// a word wider than the box is broken rather than allowed to overflow. Always
+// at least one line, so a caller can lay the result out with no empty case.
+export fn wrap_text(s: string, style: record, max_w: num) -> list
+  text_wrap(s, style, float(max_w))
+end
+
+// `s` cut to fit `max_w` px, with "…" marking the cut. Returns `s` untouched
+// when it already fits.
+//
+// `keep` says which end survives: "head" (the default — a label reads from its
+// start), "tail" (a path, where every row shares the directories), or "both"
+// (an identifier recognizable by its ends).
+export fn elide(s: string, style: record, max_w: num, keep: string) -> string
+  let mode = match keep
+    when "tail" -> "head"
+    when "both" -> "middle"
+    when _ -> "tail"
+  end
+  text_ellipsize(s, style, float(max_w), mode)
+end
+
+export fn elide(s: string, style: record, max_w: num) -> string
+  text_ellipsize(s, style, float(max_w), "tail")
+end
+
+// Wrap `s` into at most `max_lines` lines, ellipsizing the last one if the
+// text ran past it. The shape a card summary, a toast body or a two-line list
+// subtitle wants: it fills the room it has and says, in the usual way, that
+// there was more.
+//
+// `max_lines` of 0 or less means no limit, so a caller can pass an option
+// through without branching.
+export fn clamp_lines(s: string, style: record, max_w: num, max_lines: num) -> list
+  let lines = text_wrap(s, style, float(max_w))
+  if max_lines <= 0 || len(lines) <= max_lines then
+    lines
+  else
+    var out = []
+    for i in range(0, max_lines - 1) do
+      set out = append(out, lines[i])
+    end
+    // Everything that did not fit is rejoined before being cut, so the
+    // ellipsis lands after as much of the overflow as the last line can hold
+    // rather than after the last *whole line* the wrap happened to produce.
+    var rest = lines[max_lines - 1]
+    for i in range(max_lines, len(lines)) do
+      set rest = rest ++ " " ++ lines[i]
+    end
+    append(out, text_ellipsize(rest, style, float(max_w), "tail"))
+  end
+end
+
+// ── Measuring a block ─────────────────────────────────────────────────────
+
+// The distance between one line's baseline and the next, for `style`. `lead`
+// scales the face's own recommendation: 1.0 is the face's comfortable setting,
+// 1.4 opens it up, and a value of 4 or more is read as an explicit pixel
+// distance instead — a caller matching a grid says `{lead: 20}` and means 20px.
+export fn line_step(style: record, lead: num) -> float
+  let l = float(lead)
+  if l >= 4.0 then l else text_metrics(style).line_height * l end
+end
+
+export fn line_step(style: record) -> float
+  line_step(style, 1.0)
+end
+
+// The widest of `lines`, in px.
+export fn lines_width(lines: list, style: record) -> float
+  var w = 0.0
+  for line in lines do
+    let lw = float(text_width(line, style))
+    if lw > w then
+      set w = lw
+    end
+  end
+  w
+end
+
+// The size `lines` occupy: `{w, h}`. The height is the ink-to-ink extent of
+// the block — the cap height of the first line down to the descenders of the
+// last — not `count × line_step`, which counts a leading above the first line
+// that nothing is drawn in and makes a "fitted" box look bottom-heavy.
+export fn lines_size(lines: list, style: record, lead: num) -> record
+  let m = text_metrics(style)
+  let n = max(1, len(lines))
+  {w: lines_width(lines, style),
+   h: m.cap_height + m.descent + float(n - 1) * line_step(style, lead)}
+end
+
+export fn lines_size(lines: list, style: record) -> record
+  lines_size(lines, style, 1.0)
+end
+
+// ── Carets ────────────────────────────────────────────────────────────────
+
+// The character index a click `dx` px into the run falls on, snapped to the
+// nearer character boundary. A character index, which is what `char_slice`
+// takes — not a byte offset.
+export fn caret_index(s: string, style: record, dx: num) -> int
+  text_index_at(s, style, float(dx))
+end
+
+// The x offset of the caret sitting before character `i`.
+export fn caret_x(s: string, style: record, i: num) -> float
+  float(text_width(char_slice(s, 0, max(0, i)), style))
+end
+
+// The rect of the caret before character `i`, for text set in `r` — a
+// 1px-wide bar spanning the line's ink, so it matches the text's height rather
+// than the control's.
+export fn caret_rect(s: string, r: record, style: record, i: num, valign: string) -> record
+  let m = text_metrics(style)
+  let base = text_baseline(r, style, valign)
+  Rect(float(r.x) + caret_x(s, style, i), base - m.baseline, 1.0, m.baseline + m.descent)
+end
+
+export fn caret_rect(s: string, r: record, style: record, i: num) -> record
+  caret_rect(s, r, style, i, "middle")
+end

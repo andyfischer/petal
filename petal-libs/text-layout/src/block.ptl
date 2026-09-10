@@ -1,0 +1,129 @@
+// text_layout/block — a paragraph placed in a box.
+//
+// One call takes a string, a rect and an options record and returns every line
+// with the exact `{x, y}` to draw it at, or draws them itself. Wrapping,
+// alignment on both axes, a line limit with an ellipsis, and a leading — the
+// things a label needs once it is more than one word.
+//
+// The layout is a *value*: `text_block` measures and places without drawing, so
+// a caller can size a panel to its text, decide whether it overflowed, or hand
+// the same layout to a hit-test and to the paint. `draw_text_block` is that
+// call plus the loop that draws it.
+
+import text_layout/place: text_baseline, text_align_x
+import text_layout/fit: wrap_text, elide, clamp_lines, line_step, lines_width
+
+// Lay `s` out in `r`. Returns
+//
+//   {lines: [{text, x, y, baseline, w}], w, h, overflow}
+//
+// where each line's `y` is ready for `draw_text` and `baseline` is the same
+// line's baseline, for a caller drawing its own decorations. `w`/`h` are the
+// block's own extent (which may be smaller than `r`), and `overflow` says the
+// text needed more room than `r` gave it.
+//
+// `opts`, all optional:
+//   align     "left" | "center" | "right"                       (default left)
+//   valign    "top" | "middle" | "bottom"                      (default top)
+//   wrap      false to keep one line whatever its width         (default true)
+//   lines     a maximum line count; 0 for no limit                (default 0)
+//   elide     true to mark a cut with "…"; "tail"/"both" to
+//             choose which end survives                        (default true)
+//   lead      line spacing, ×the face's own recommendation, or
+//             a pixel distance when 4 or more                   (default 1.0)
+//
+// A single-line, unwrapped, elided label is the common case and is what the
+// defaults produce for text that does not fit: it is cut with an ellipsis
+// rather than allowed to run out of its box.
+export fn text_block(s: string, r: record, style: record, opts: record) -> record
+  let wrapping = field(opts, "wrap", true)
+  let limit = field(opts, "lines", 0)
+  let eliding = field(opts, "elide", true)
+  let lead = field(opts, "lead", 1.0)
+  let align = field(opts, "align", "left")
+
+  let raw = if wrapping then
+    text_wrap(s, style, float(r.w))
+  else
+    // Not wrapping still means honouring the author's own newlines: a
+    // two-line label is two lines, it just does not gain any more.
+    text_wrap(s, style, 0.0)
+  end
+  let capped = if limit > 0 && len(raw) > limit then
+    clamp_lines(s, style, float(r.w), limit)
+  else
+    raw
+  end
+  // A line that is still too wide — an unwrapped label, or a wrapped one whose
+  // longest word beat the box — is cut here rather than left to overflow.
+  let keep = if eliding == true then "head" else eliding end
+  let fitted = if eliding == false then
+    capped
+  else
+    var out = []
+    for line in capped do
+      set out = append(out, elide(line, style, float(r.w), keep))
+    end
+    out
+  end
+
+  let m = text_metrics(style)
+  let step = line_step(style, lead)
+  let n = max(1, len(fitted))
+  // The block's height is ink to ink: the first line's cap height down to the
+  // last line's descenders. Counting a whole line box per line would add a
+  // leading above the first line that nothing is drawn in, and a box "fitted"
+  // to that looks bottom-heavy.
+  let h = m.cap_height + m.descent + float(n - 1) * step
+  let first = match field(opts, "valign", "top")
+    when "middle" -> float(r.y) + (float(r.h) - h) / 2.0 + m.cap_height
+    when "center" -> float(r.y) + (float(r.h) - h) / 2.0 + m.cap_height
+    when "bottom" -> float(r.y) + float(r.h) - h + m.cap_height
+    when _ -> float(r.y) + m.cap_height
+  end
+
+  var placed = []
+  var widest = 0.0
+  for i in range(0, len(fitted)) do
+    let text = fitted[i]
+    let lw = float(text_width(text, style))
+    if lw > widest then
+      set widest = lw
+    end
+    let base = first + float(i) * step
+    set placed = append(placed, {text: text, x: text_align_x(lw, r, align),
+      y: base - m.baseline, baseline: base, w: lw})
+  end
+  {lines: placed, w: widest, h: h, overflow: len(raw) > len(fitted) || widest > float(r.w) + 0.5}
+end
+
+export fn text_block(s: string, r: record, style: record) -> record
+  text_block(s, r, style, {})
+end
+
+// Lay `s` out in `r` and draw it. Returns the same record `text_block` does,
+// so the caller that needs the block's height for the next row gets it without
+// laying the text out twice.
+export fn draw_text_block(s: string, r: record, style: record, opts: record) -> record
+  let b = text_block(s, r, style, opts)
+  for line in b.lines do
+    draw_text(line.text, {x: line.x, y: line.y}, style)
+  end
+  b
+end
+
+export fn draw_text_block(s: string, r: record, style: record) -> record
+  draw_text_block(s, r, style, {})
+end
+
+// The size `s` would take in a box `max_w` wide: `{w, h}`. For a caller that
+// sizes a panel, a tooltip or a table row to its content before it has
+// anywhere to put it.
+export fn text_size(s: string, style: record, max_w: num, opts: record) -> record
+  let b = text_block(s, Rect(0, 0, float(max_w), 0), style, opts)
+  {w: b.w, h: b.h}
+end
+
+export fn text_size(s: string, style: record, max_w: num) -> record
+  text_size(s, style, max_w, {})
+end

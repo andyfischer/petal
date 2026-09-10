@@ -1,0 +1,25 @@
+// text_layout — the facade.
+//
+// Named like its package, so a bare `import text_layout` finds this module and
+// gets the whole surface. Import one module instead when you want a slice of
+// it (`import text_layout/fit: elide` in a list row that only truncates).
+//
+//     import text_layout
+//
+//     // one line, centred the way a designer means centred
+//     text_layout.draw_text_line("Save", r, style, "center")
+//
+//     // a paragraph, wrapped, two lines maximum, the second one elided
+//     text_layout.draw_text_block(body, r, style, {lines: 2, lead: 1.15})
+//
+// Everything here is placement: what to hand `draw_text`. Nothing holds state
+// and nothing draws anything but the text it was given.
+
+export import text_layout/place: *
+export import text_layout/fit: *
+export import text_layout/block: *
+
+// Counts additions to the export surface. Levels are additive: every existing
+// export keeps its signature, so a script written against an older one keeps
+// working.
+export let VERSION = 1

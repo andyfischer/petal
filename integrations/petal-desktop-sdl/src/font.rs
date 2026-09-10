@@ -132,6 +132,40 @@ impl<'ttf> FontLadder<'ttf> {
         measure_ascii(font, *size)
     }
 
+    /// Where this face's ink sits relative to the `y` a text command names —
+    /// the vertical half of what a script needs to place a run, and the reason
+    /// centred labels used to land high.
+    ///
+    /// This host blits SDL_ttf's rendered surface with its **top-left** at
+    /// `(x, y)`, and that surface is `Font::height()` tall with the baseline
+    /// `Font::ascent()` down from its top. So `y → baseline` is the ascent,
+    /// full stop — no guessing about em boxes. Cap and x heights come from the
+    /// rasterizer's own extents for "H" and "x", which is what a UI label
+    /// wants to be centred on.
+    ///
+    /// Measured at a representative rung and normalized by that rung's size,
+    /// exactly as the advance table is, so one record serves every size.
+    pub fn vertical_ratios(&self) -> petal_ui::draw::VerticalMetrics {
+        let (size, font) = self.rung_nearest(32);
+        measure_vertical(font, *size)
+    }
+
+    /// [`vertical_ratios`](Self::vertical_ratios) for one synthetic variant.
+    /// Emboldening does not move the baseline, but it does change the extents
+    /// slightly, and italic shears them — measuring the variant keeps a bold
+    /// label centred on the same line as its regular neighbour.
+    pub fn vertical_ratios_styled(
+        &mut self,
+        weight: u16,
+        italic: bool,
+    ) -> petal_ui::draw::VerticalMetrics {
+        let index = self.index_nearest(32);
+        let (size, font) = &mut self.rungs[index];
+        let size = *size;
+        font.set_style(synthetic_style(weight, italic));
+        measure_vertical(font, size)
+    }
+
     /// [`ascii_advance_ratios`](Self::ascii_advance_ratios) for one synthetic
     /// variant. Emboldening widens glyphs, so bold text measured with the
     /// regular table would come out short — this is the table a script's
@@ -174,6 +208,33 @@ fn measure_ascii(font: &Font, size: u16) -> Vec<f64> {
             _ => 0.0,
         })
         .collect()
+}
+
+/// The vertical metrics of `font`, baked at `size`, as ratios of the size.
+///
+/// `descent()` is negative in SDL_ttf (it measures downward from the baseline
+/// as a signed offset), so it is negated here into the positive "how far below
+/// the baseline" every other part of this contract means.
+fn measure_vertical(font: &Font, size: u16) -> petal_ui::draw::VerticalMetrics {
+    let size = size as f64;
+    // The extent of a flat capital and of a lowercase x above the baseline.
+    // A face missing either glyph falls back to a proportion of the ascent
+    // rather than to zero, which would collapse every centred label onto the
+    // baseline.
+    let ascent = font.ascent() as f64 / size;
+    let extent = |c: char, fallback: f64| {
+        font.find_glyph_metrics(c)
+            .map(|m| m.maxy as f64 / size)
+            .filter(|h| *h > 0.0)
+            .unwrap_or(ascent * fallback)
+    };
+    petal_ui::draw::VerticalMetrics {
+        baseline: ascent,
+        descent: -(font.descent() as f64) / size,
+        line_height: font.recommended_line_spacing() as f64 / size,
+        cap_height: extent('H', 0.92),
+        x_height: extent('x', 0.68),
+    }
 }
 
 /// The faces this host offers a script, by role name. `ui` always exists (it is

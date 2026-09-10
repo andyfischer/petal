@@ -79,6 +79,60 @@ export interface FontTable {
   advances: Float64Array;
   /** Ratio for codepoints the table doesn't cover. */
   fallback: number;
+  /** Where the ink of a run sits relative to the `y` it is drawn at, each a
+   * ratio of the font size. The vertical half of the same problem the advance
+   * table solves: without it a script has to assume a run is `size` px tall
+   * starting at `y`, and every vertically centred label lands high. */
+  vertical: VerticalMetrics;
+}
+
+/** @see FontTable.vertical */
+export interface VerticalMetrics {
+  /** `y` -> baseline. This renderer draws with `textBaseline = "top"`, so it
+   * is the font bounding box's ascent. */
+  baseline: number;
+  /** Baseline -> the bottom of the line box. */
+  descent: number;
+  /** One line's `y` -> the next line's. */
+  lineHeight: number;
+  /** Baseline -> the top of a flat capital. */
+  capHeight: number;
+  /** Baseline -> the top of a lowercase "x". */
+  xHeight: number;
+}
+
+/** Measure a face's vertical proportions with the same context and font
+ * shorthand the advance table was measured with.
+ *
+ * `fontBoundingBox*` describes the *face* and is what `textBaseline = "top"`
+ * positions against; `actualBoundingBoxAscent` of "H" and "x" gives the cap
+ * and x heights, which is what a UI label wants to be centred on. A browser
+ * missing either falls back to the usual proportions rather than to zero,
+ * which would collapse every centred label onto the baseline. */
+export function measureVertical(
+  ctx: CanvasRenderingContext2D,
+  fontStack: string,
+  weight: number = REGULAR_WEIGHT,
+  italic: boolean = false,
+): VerticalMetrics {
+  ctx.font = cssFont(fontStack, PROBE_SIZE, weight, italic);
+  const m = ctx.measureText("Hxdp");
+  const baseline = (m.fontBoundingBoxAscent || PROBE_SIZE * 0.8) / PROBE_SIZE;
+  const descent = (m.fontBoundingBoxDescent || PROBE_SIZE * 0.2) / PROBE_SIZE;
+  const ascentOf = (s: string, fallback: number) => {
+    const a = ctx.measureText(s).actualBoundingBoxAscent;
+    return a > 0 ? a / PROBE_SIZE : baseline * fallback;
+  };
+  return {
+    baseline,
+    descent,
+    // The face's own bounding box is its recommended line spacing; browsers
+    // expose no separate line gap, and CSS `normal` line-height is this plus
+    // a little, which reads as loose for a UI.
+    lineHeight: baseline + descent,
+    capHeight: ascentOf("H", 0.92),
+    xHeight: ascentOf("x", 0.68),
+  };
 }
 
 /** A detached 2D context to measure in — measurement must not touch the
@@ -106,14 +160,34 @@ export function measureFontTable(
     if (cp >= 0x7f && cp <= 0x9f) continue;
     advances[cp] = ctx.measureText(String.fromCodePoint(cp)).width / PROBE_SIZE;
   }
-  return { advances, fallback: FALLBACK_RATIO };
+  return {
+    advances,
+    fallback: FALLBACK_RATIO,
+    vertical: measureVertical(ctx, fontStack, weight, italic),
+  };
 }
 
 /** The subset of the WASM runtime this module drives (kept structural so the
  * measurement code is testable without instantiating WASM). */
 export interface MetricsSink {
   set_default_font_metrics(advances: Float64Array, fallback: number): void;
-  set_font_metrics(name: string, advances: Float64Array, fallback: number): void;
+  set_default_font_vertical(
+    baseline: number,
+    descent: number,
+    lineHeight: number,
+    capHeight: number,
+    xHeight: number,
+  ): void;
+  set_font_metrics(
+    name: string,
+    advances: Float64Array,
+    fallback: number,
+    baseline: number,
+    descent: number,
+    lineHeight: number,
+    capHeight: number,
+    xHeight: number,
+  ): void;
   set_default_font_name(name: string): void;
 }
 
@@ -136,10 +210,26 @@ export function bindFontMetrics(runtime: MetricsSink): void {
   runtime.set_default_font_name(DEFAULT_ROLE);
   for (const [role, stack] of Object.entries(FONT_STACKS)) {
     for (const [weight, italic] of VARIANTS) {
-      const { advances, fallback } = measureFontTable(ctx, stack, weight, italic);
-      runtime.set_font_metrics(fontVariantKey(role, weight, italic), advances, fallback);
+      const { advances, fallback, vertical: v } = measureFontTable(ctx, stack, weight, italic);
+      runtime.set_font_metrics(
+        fontVariantKey(role, weight, italic),
+        advances,
+        fallback,
+        v.baseline,
+        v.descent,
+        v.lineHeight,
+        v.capHeight,
+        v.xHeight,
+      );
       if (role === DEFAULT_ROLE && weight === REGULAR_WEIGHT && !italic) {
         runtime.set_default_font_metrics(advances, fallback);
+        runtime.set_default_font_vertical(
+          v.baseline,
+          v.descent,
+          v.lineHeight,
+          v.capHeight,
+          v.xHeight,
+        );
       }
     }
   }

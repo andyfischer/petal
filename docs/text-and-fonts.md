@@ -9,13 +9,14 @@ where this is heading.
 Drawing text is a two-party arrangement:
 
 - The **script** decides *what* to draw and *where* — including anything that
-  needs a width (centering, right-alignment, wrapping, ellipsis).
+  needs a width (centering, right-alignment, wrapping, ellipsis) *or a height*
+  (vertical centering, setting two lines apart).
 - The **host** owns *how* it rasterizes: which font file, which shaper, which
   glyph cache. Petal never ships fonts.
 
-That only works if both sides agree on how wide a string is. So a host binds
+That only works if both sides agree on the shape of a string. So a host binds
 its measurements into the environment, and the script reads them back through
-`text_width`.
+`text_width` and `text_metrics`.
 
 ## Script side
 
@@ -23,12 +24,61 @@ its measurements into the environment, and the script reads them back through
 draw_text("hello", x, y, size, r, g, b, [a])   // emits a `text` draw command
 text_width("hello", size)                       // px width, default font
 text_width("hello", size, "mono")               // px width, a named face
+text_metrics(size)                              // px: where the ink sits (below)
+text_wrap(s, style, 200.0)                      // -> [line], greedy word wrap
+text_ellipsize(s, style, 200.0, "tail")         // -> "a long lab…"
+text_index_at(s, style, dx)                     // the character a click lands on
 font("Helvetica Neue")                          // a font object (see below)
 fonts()                                         // families this host can draw
 ```
 
 `text_width` is exact for the host's font when the host bound real metrics,
-and an estimate otherwise (monospace, 0.6 × size per character).
+and an estimate otherwise (monospace, 0.6 × size per character). The last three
+above measure with the same table in one walk, rather than a `text_width` call
+per character — which is what a script otherwise writes, on every frame.
+
+### The other axis
+
+`text_width` answers "how wide". `text_metrics(style)` answers where the ink
+lands, in **pixels** at that style's size:
+
+```petal
+let m = text_metrics(style)
+// m.baseline    the y draw_text was given -> the baseline
+// m.descent     the baseline -> the bottom of the line box
+// m.line_height one line's y -> the next line's y
+// m.cap_height  the baseline -> the top of a flat capital
+// m.x_height    the baseline -> the top of a lowercase "x"
+```
+
+Without this a script has to guess, and the guess every script made was
+
+```petal ignore
+draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)   // wrong
+```
+
+— *the run is `size` px tall and starts at `y`*. Neither half is true: `y` is
+the top of the line box, the baseline sits some way down inside it, and a
+capital's ink reaches neither edge. The label lands a pixel or two high at
+14 px and visibly high at 32.
+
+Centre a UI label on its **cap height** — a label with no descender looks high
+when its line box is centred:
+
+```petal ignore
+let m = text_metrics(style)
+let baseline = r.y + r.h / 2 + m.cap_height / 2
+draw_text(label, {x: x, y: baseline - m.baseline}, style)
+```
+
+In practice, don't write that either: use
+[`petal-libs/text-layout`](../petal-libs/text-layout/), which is this
+arithmetic plus alignment, wrapping and caret hit-testing.
+
+A host that binds no vertical metrics still answers, with typical UI-sans
+proportions (`baseline` 0.8, `descent` 0.2, `line_height` 1.2, `cap_height`
+0.7, `x_height` 0.52 × size) — much closer than the assumption they replace,
+but still a guess about someone else's font.
 
 ### Styles
 
@@ -147,7 +197,31 @@ bind_font_variant_metrics(env, "ui", 700, false, &FontMetrics::proportional(bold
 // Which role your default font *is*, so a style that names no face still
 // finds that face's variants (`{weight: 700}` → `ui@700`).
 bind_default_font_name(env, "ui");
+
+// …and the vertical half, for the default face. Every field is a ratio of the
+// font size, and `baseline` is measured against **your own** convention: how
+// far below the `y` of a `text` command your renderer puts the baseline.
+bind_text_vertical_metrics(env, &VerticalMetrics {
+    baseline: 0.78, descent: 0.22, line_height: 1.2,
+    cap_height: 0.72, x_height: 0.52,
+});
+// A named face carries its own, attached to the same record:
+bind_font_metrics(env, "ui", &FontMetrics::proportional(ratios, 0.5)
+    .with_vertical(VerticalMetrics::from_ascent_descent(0.78, 0.22, 0.2)
+        .with_heights(0.72, 0.52)));
 ```
+
+`baseline` is the field only the host can answer, and the one worth getting
+exactly right: SDL blits a run's surface with its top at `y` (so the baseline
+is the face's ascent), a canvas with `textBaseline = "top"` uses its font
+bounding box, and Garden lays a run out in a line box with leading above it. A
+script never has to know which — it asks for `baseline` and gets the truth
+about this host. Measure it rather than deriving it: the SDL host reads
+`Font::ascent()`, the canvas host `fontBoundingBoxAscent`, and Garden reads
+`line_y` back off a shaped run.
+
+Publishing nothing is not an error, only an approximation — see
+[The other axis](#the-other-axis).
 
 Variants are stored under a canonical key — `ui`, `ui@700`, `ui@i`, `ui@700i`
 — so the registry stays one flat record. Bind only the variants you have: an
@@ -205,10 +279,16 @@ default font.
 
 | Host | Faces | `weight` / `italic` | `spacing` | Measurement |
 |---|---|---|---|---|
-| petal-sdl | System sans (`ui`) + system mono (`mono`), SDL_ttf size ladder | yes — SDL_ttf synthetic bold/oblique | yes — per-glyph placement | measured per face × variant |
-| petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText` |
+| petal-sdl | System sans (`ui`) + system mono (`mono`), SDL_ttf size ladder | yes — SDL_ttf synthetic bold/oblique | yes — per-glyph placement | measured per face × variant, both axes |
+| petal-web-canvas | `ui` / `mono` / `serif` CSS stacks | yes — the browser's own faces | yes — `ctx.letterSpacing` where supported | measured per face × variant with `ctx.measureText`, both axes |
 | diagram-canvas / cube-browser | inherits web-canvas | yes | yes | inherits web-canvas |
-| Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string; plus two embedded faces reachable as `mono` (JetBrains Mono) and `ui` (Inter) | real cuts on a system family and on `ui` (Inter Bold is embedded); **synthetic on `mono`**, which has one cut — `weight >= 600` is emboldened by a second offset draw and measures regular | yes — the host places each glyph | measured through cosmic-text, on demand per family × cut |
+| Garden panels | **any family installed on the machine**, via `font(name)` / a `font:` string; plus two embedded faces reachable as `mono` (JetBrains Mono) and `ui` (Inter) | real cuts on a system family and on `ui` (Inter Bold is embedded); **synthetic on `mono`**, which has one cut — `weight >= 600` is emboldened by a second offset draw and measures regular | yes — the host places each glyph | measured through cosmic-text, on demand per family × cut; vertical metrics for the two embedded roles |
 | petal-fps | 5×7 bitmap font (own command set) | no | no | n/a |
+| `petal-ui-run` (headless) | none — no renderer | n/a | n/a | the built-in defaults, on both axes, so a trace is stable across machines |
 
 `size` is honored everywhere (per run, including Garden panels).
+
+Every host in the table above publishes vertical metrics except `petal-fps`,
+which has its own command set, and `petal-ui-run`, which has no renderer to
+measure and so stays on the defaults deliberately: a headless trace must not
+depend on the fonts installed on the machine running it.

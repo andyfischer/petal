@@ -226,12 +226,55 @@ impl PetalRuntime {
         petal_ui::draw::bind_text_advance_table(&mut self.env, advances);
     }
 
+    /// Bind the *vertical* metrics of the default font — where a run's ink
+    /// sits relative to the `y` a script draws it at, so `text_metrics()` can
+    /// answer and a centred label can land on the line it claims to.
+    ///
+    /// Every value is a ratio of the font size. `baseline` is measured against
+    /// this renderer's own convention: it draws with `textBaseline = "top"`,
+    /// so `y` → baseline is the font bounding box's ascent.
+    pub fn set_default_font_vertical(
+        &mut self,
+        baseline: f64,
+        descent: f64,
+        line_height: f64,
+        cap_height: f64,
+        x_height: f64,
+    ) {
+        let vertical = petal_ui::draw::VerticalMetrics {
+            baseline,
+            descent,
+            line_height,
+            cap_height,
+            x_height,
+        };
+        petal_ui::draw::bind_text_vertical_metrics(&mut self.env, &vertical);
+    }
+
     /// Bind advance ratios for a *named* face (a role like `ui` / `mono` /
     /// `serif`, or a family name) — what `text_width(s, size, font)` uses.
     /// The name may be a variant key (`ui@700`, `ui@i`, `ui@700i`), which is
     /// how a style's weight/italic finds the right table.
-    pub fn set_font_metrics(&mut self, name: &str, advances: &[f64], fallback: f64) {
-        let metrics = petal_ui::draw::FontMetrics::proportional(advances.to_vec(), fallback);
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_font_metrics(
+        &mut self,
+        name: &str,
+        advances: &[f64],
+        fallback: f64,
+        baseline: f64,
+        descent: f64,
+        line_height: f64,
+        cap_height: f64,
+        x_height: f64,
+    ) {
+        let metrics = petal_ui::draw::FontMetrics::proportional(advances.to_vec(), fallback)
+            .with_vertical(petal_ui::draw::VerticalMetrics {
+                baseline,
+                descent,
+                line_height,
+                cap_height,
+                x_height,
+            });
         petal_ui::draw::bind_font_metrics(&mut self.env, name, &metrics);
     }
 

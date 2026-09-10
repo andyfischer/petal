@@ -1,0 +1,11 @@
+# text-layout — placing text, written entirely in Petal.
+#
+# The manifest is what gives the library its name. A package name is the first
+# segment of an import path, so it has to be spellable as an identifier: the
+# directory is `text-layout` and the package is `text_layout`, which is what
+# `import text_layout` (and `import text_layout/fit`) answer to wherever this
+# directory lands.
+[package]
+name = "text_layout"
+version = "0.1.0"
+modules = "src"

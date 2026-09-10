@@ -376,6 +376,26 @@ pub fn ui_bold_ascii_advance_ratios() -> Vec<f64> {
     text::measure_embedded_advances(fonts::FontId::UI, 700)
 }
 
+/// Where a run's ink sits relative to the `(x, y)` a text command names, as
+/// fractions of the font size — the vertical counterpart to the advance
+/// tables above, and the numbers a panel script's `text_metrics()` reports.
+///
+/// A host that publishes only advances leaves scripts assuming a run is `size`
+/// px tall starting at `y`. It is not: this renderer lays a run out in a line
+/// box 1.4× its size and draws that box's top at `y`, so the ink starts well
+/// below it and every vertically centred label lands high.
+pub use text::VerticalRatios;
+
+/// [`VerticalRatios`] for the embedded monospace face.
+pub fn vertical_ratios() -> VerticalRatios {
+    text::measure_embedded_vertical(fonts::FontId::MONO, REGULAR_WEIGHT)
+}
+
+/// [`VerticalRatios`] for the embedded proportional UI face.
+pub fn ui_vertical_ratios() -> VerticalRatios {
+    text::measure_embedded_vertical(fonts::FontId::UI, REGULAR_WEIGHT)
+}
+
 /// Advance ratio for a codepoint outside a face's measured table — the same
 /// monospace estimate `garden-script` falls back to, so a measurement here and
 /// a script's `text_width` stay in step off the table too.

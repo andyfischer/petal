@@ -89,6 +89,13 @@ impl Host for DefaultHost {
         if let Some(fonts) = &mut self.fonts {
             let ratios = fonts.default_face().ascii_advance_ratios();
             petal_ui::draw::bind_text_advance_table(env, &ratios);
+            // …and the other axis. This host blits a run's rendered surface
+            // with its top-left at the command's `(x, y)`, so "where is the
+            // baseline relative to y" has an exact answer here — publish it,
+            // and a script can centre a label on its cap height instead of
+            // assuming the run is `size` px tall.
+            let vertical = fonts.default_face().vertical_ratios();
+            petal_ui::draw::bind_text_vertical_metrics(env, &vertical);
             // The default font *is* the `ui` role here, so a style that names
             // no face still resolves that face's bold/italic variants.
             petal_ui::draw::bind_default_font_name(env, font::DEFAULT_ROLE);
@@ -100,10 +107,12 @@ impl Host for DefaultHost {
             for (role, face) in fonts.roles() {
                 for (weight, italic) in VARIANTS {
                     let ratios = face.ascii_advance_ratios_styled(*weight, *italic);
+                    let vertical = face.vertical_ratios_styled(*weight, *italic);
                     let metrics = petal_ui::draw::FontMetrics::proportional(
                         ratios,
                         petal_ui::draw::DEFAULT_TEXT_ADVANCE,
-                    );
+                    )
+                    .with_vertical(vertical);
                     petal_ui::draw::bind_font_variant_metrics(
                         env, role, *weight, *italic, &metrics,
                     );

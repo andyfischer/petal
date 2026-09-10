@@ -16,6 +16,7 @@
 
 import bloom
 import bloom/icon as icons
+import text_layout as tl
 
 let T = ui_theme()
 let w = screen_width()
@@ -36,7 +37,7 @@ state progress_v = 0.35
 state loading = false
 state last_menu = "—"
 
-let SECTIONS = ["Buttons", "Controls", "Menus", "Overlays", "Motion", "Icons"]
+let SECTIONS = ["Buttons", "Controls", "Menus", "Overlays", "Text", "Motion", "Icons"]
 
 clear(T.bg.r, T.bg.g, T.bg.b)
 
@@ -208,8 +209,68 @@ if section == 3 then
   end
 end
 
-// ── Motion ────────────────────────────────────────────────────────────────
+// ── Text ──────────────────────────────────────────────────────────────────
+// Everything here is text_layout (petal-libs/text-layout), the placement
+// library bloom draws every one of its own labels through. The point of the
+// section is the red centre line: a label is centred when the line splits its
+// capitals, and the arithmetic every UI used to do — "the run is `size` px
+// tall and starts at `y`" — never put it there.
 if section == 4 then
+  let x = content.x
+  let y = content.y
+  bloom.text_in("The red line is each box's exact middle. A centred label is split by it.",
+    rect(x, y - 6, content.w, 20), bloom.ts(T, T.font_sm, T.dim))
+
+  var ty = y + 22
+  for size in [12, 16, 26] do
+    let bh = size + 20
+    for pair in [[0, "left"], [190, "center"], [380, "right"]] do
+      let box = rect(x + pair[0], ty, 170, bh)
+      draw_rect_rounded(box, 6, mix(T.bg, T.panel, 0.9))
+      tl.draw_text_line("Hxjy {size}", box, bloom.ts(T, size, T.text), pair[1])
+      let mid = box.y + box.h / 2.0
+      draw_line({x: box.x, y: mid}, {x: box.x + box.w, y: mid}, T.danger, 120, 1)
+    end
+    set ty = ty + bh + 8
+  end
+
+  // One baseline, three sizes: what `draw_text_baseline` is for.
+  let base = ty + 26.0
+  draw_line({x: x, y: base}, {x: x + 550, y: base}, T.danger, 120, 1)
+  var bx = float(x)
+  for s in [26, 16, 12] do
+    set bx = bx + tl.draw_text_baseline("Aq{s}", bx, base, bloom.ts(T, s, T.text)) + 16.0
+  end
+  bloom.text_in("one baseline, three sizes", rect(x, base + 8, 300, 16),
+    bloom.ts(T, T.font_sm, T.muted))
+
+  // Wrapping, and the two-line clamp a card summary wants.
+  let body = "Wrapping, elision and caret hit-testing are each one native call over the host's advance table, so a paragraph costs about what a label costs."
+  let bs = bloom.ts(T, T.font_sm, T.muted)
+  let col = rect(x + 580, y + 22, 150, 120)
+  draw_rect_rounded(col, 6, mix(T.bg, T.panel, 0.9))
+  tl.draw_text_block(body, pad(col, 8), bs, {lead: 1.15})
+  let col2 = rect(x + 580, y + 152, 150, 46)
+  draw_rect_rounded(col2, 6, mix(T.bg, T.panel, 0.9))
+  tl.draw_text_block(body, pad(col2, 8), bs, {lines: 2, lead: 1.15})
+  bloom.text_in("wrapped, then clamped to 2 lines", rect(x + 580, y + 202, 220, 16),
+    bloom.ts(T, T.font_sm, T.dim))
+
+  // The three ends an ellipsis can eat.
+  var ey = base + 34.0
+  for pair in [["head", "a label longer than the box it is in"],
+               ["tail", "petal-libs/text-layout/src/place.ptl"],
+               ["both", "commit 9f2a1c3 payload identifier"]] do
+    let row = rect(x, ey, 170, 24)
+    draw_rect_rounded(row, 4, mix(T.bg, T.panel, 0.7))
+    tl.draw_text_line(tl.elide(pair[1], bs, row.w - 12, pair[0]), pad(row, 6, 0), bs, "left")
+    bloom.text_in("keep {pair[0]}", rect(x + 182, ey, 120, 24), bloom.ts(T, T.font_sm, T.dim))
+    set ey = ey + 30.0
+  end
+end
+
+// ── Motion ────────────────────────────────────────────────────────────────
+if section == 5 then
   let x = content.x
   let y = content.y
   bloom.text_in("The animators, drawn raw. Everything above is built from these.",
@@ -245,7 +306,7 @@ if section == 4 then
 end
 
 // ── Icons ─────────────────────────────────────────────────────────────────
-if section == 5 then
+if section == 6 then
   bloom.text_in("Every glyph is a few strokes in a unit box — no font, no atlas.",
     rect(content.x, content.y - 6, content.w, 20), bloom.ts(T, T.font_sm, T.dim))
   for i in range(0, len(icons.NAMES)) do
@@ -264,9 +325,9 @@ end
 // ── overlays, drawn last so they land on top ──────────────────────────────
 let d = bloom.dialog("confirm", 380, 190, "Delete this panel?")
 if d.open then
-  bloom.text_in("The panel and its saved state go with it. This cannot be undone.",
-    rect(d.content.x, d.content.y, d.content.w, 40),
-    bloom.ts(T, T.font_md, T.muted))
+  bloom.text_block_in("The panel and its saved state go with it. This cannot be undone.",
+    rect(d.content.x, d.content.y, d.content.w, 46),
+    bloom.ts(T, T.font_md, T.muted), {lead: 1.2})
   let br = rect(d.content.x + d.content.w - 210, d.content.y + d.content.h - 34, 100, 30)
   if bloom.button(br, "Cancel", {variant: "quiet"}) then
     bloom.dialog_close()

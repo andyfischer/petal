@@ -51,14 +51,18 @@ pub const CANVAS_TARGET: &str = "canvas_target";
 /// commands and the measurements that feed them — through one path.
 pub use crate::text::{
     DEFAULT_TEXT_ADVANCE, DEFAULT_TEXT_SIZE, FontMetrics, FontProvider, FontSource, REGULAR_WEIGHT,
-    SYM_TEXT_ADVANCE, SYM_TEXT_ADVANCES, SYM_TEXT_DEFAULT_FONT, SYM_TEXT_FONTS, TextStyle,
-    bind_default_font_name, bind_font_metrics, bind_font_variant_metrics, bind_text_advance_table,
-    bind_text_metrics, clear_font_cache, font_variant_key, swap_font_provider,
+    SYM_TEXT_ADVANCE, SYM_TEXT_ADVANCES, SYM_TEXT_DEFAULT_FONT, SYM_TEXT_FONTS, SYM_TEXT_VERTICAL,
+    TextStyle, VerticalMetrics, bind_default_font_name, bind_font_metrics,
+    bind_font_variant_metrics, bind_text_advance_table, bind_text_metrics,
+    bind_text_vertical_metrics, clear_font_cache, font_variant_key, swap_font_provider,
 };
 
-// The two natives `register_draw` installs from that module; not re-exported,
+// The natives `register_draw` installs from that module; not re-exported,
 // since a host registers them through `register_draw` rather than by hand.
-use crate::text::{native_font, native_fonts};
+use crate::text::{
+    native_font, native_fonts, native_text_ellipsize, native_text_index_at, native_text_metrics,
+    native_text_wrap,
+};
 
 /// `skip_serializing_if` predicates that keep the JSON identical to the
 /// pre-alpha shape when a primitive is opaque / square-cornered / hairline, so
@@ -1056,6 +1060,16 @@ pub fn register_draw(env: &mut Env) {
     env.register_native("clip_push", native_clip_push);
     env.register_native("clip_pop", native_clip_pop);
     env.register_native("text_width", native_text_width);
+    // The other axis, and the fitting that needs both. `text_width` answers
+    // how wide a run is; `text_metrics` answers where its ink sits relative to
+    // the `y` a script hands `draw_text`, which is what vertical centring has
+    // always had to guess. `text_wrap` / `text_ellipsize` / `text_index_at`
+    // are the walks over the advance table a script would otherwise write as a
+    // `text_width` call per character, per frame.
+    env.register_native("text_metrics", native_text_metrics);
+    env.register_native("text_wrap", native_text_wrap);
+    env.register_native("text_ellipsize", native_text_ellipsize);
+    env.register_native("text_index_at", native_text_index_at);
     env.register_native("font", native_font);
     env.register_native("fonts", native_fonts);
     // The layer natives are part of the standard set: the `ui` prelude's

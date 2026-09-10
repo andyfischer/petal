@@ -752,6 +752,110 @@ fn measure_ascii_advances(
     ratios
 }
 
+/// Where a run's ink sits relative to the `(x, y)` a
+/// [`crate::Primitive::Text`] names, as fractions of the font size.
+///
+/// The mirror of [`measure_ascii_advances`] on the other axis, and the numbers
+/// petal-ui's `text_metrics` native reports to a panel script. Without them a
+/// script has to assume a run is `size` px tall starting at `y`, and every
+/// vertically centred label lands high.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VerticalRatios {
+    pub baseline: f64,
+    pub descent: f64,
+    pub line_height: f64,
+    pub cap_height: f64,
+    pub x_height: f64,
+}
+
+/// Measure one face's vertical proportions.
+///
+/// `baseline` is the part only this renderer can answer: a run is laid out in
+/// a line box `LINE_HEIGHT_RATIO ×` its size and drawn with that box's **top**
+/// at the command's `y`, so the baseline sits some way inside it — cosmic-text
+/// centres the face's own ascent+descent in the box and puts the baseline
+/// under the ascent. Rather than reproduce that arithmetic here (and drift
+/// from it at the next upgrade), it is read back from a shaped run: `line_y`
+/// *is* the offset, measured.
+///
+/// The rest come from the face itself: `cap_height` and `x_height` are what a
+/// UI label wants to be centred on, and a face that declares neither falls
+/// back to a proportion of its ascent rather than to zero, which would
+/// collapse every centred label onto the baseline.
+pub(crate) fn measure_vertical(
+    font_system: &mut FontSystem,
+    family_name: Option<&str>,
+    style: TextStyle,
+) -> VerticalRatios {
+    let size = FONT_SIZE as f64;
+    let mut buffer = glyphon::Buffer::new(font_system, Metrics::new(FONT_SIZE, LINE_HEIGHT));
+    buffer.set_text(
+        font_system,
+        // Ascenders, descenders and an x, so the shaper picks the face that
+        // will actually draw ordinary text.
+        "Hxdp",
+        &TextStack::styled_attrs(family_name, style),
+        Shaping::Advanced,
+        None,
+    );
+    buffer.shape_until_scroll(font_system, false);
+
+    let mut baseline = LINE_HEIGHT_RATIO as f64 * 0.8;
+    let mut face: Option<(fontdb::ID, Weight)> = None;
+    if let Some(run) = buffer.layout_runs().next() {
+        baseline = run.line_y as f64 / size;
+        face = run
+            .glyphs
+            .first()
+            .map(|g| (g.font_id, Weight(style.weight)));
+    }
+
+    // Ratios of the em, straight out of the font's own tables.
+    let mut ascent = 0.8f64;
+    let mut descent = 0.2f64;
+    let mut cap = None;
+    let mut ex = None;
+    if let Some(font) = face.and_then(|(id, w)| font_system.get_font(id, w)) {
+        let m = font.metrics();
+        let upem = m.units_per_em as f64;
+        if upem > 0.0 {
+            ascent = m.ascent as f64 / upem;
+            descent = (m.descent as f64 / upem).abs();
+            cap = m.cap_height.map(|v| v as f64 / upem).filter(|v| *v > 0.0);
+            ex = m.x_height.map(|v| v as f64 / upem).filter(|v| *v > 0.0);
+        }
+    }
+    VerticalRatios {
+        baseline,
+        // The box below the baseline is whatever the line box has left over
+        // once the baseline is placed, which is what a caller aligning to the
+        // bottom of a run means by "descent" here.
+        descent: (LINE_HEIGHT_RATIO as f64 - baseline).max(descent),
+        line_height: LINE_HEIGHT_RATIO as f64,
+        cap_height: cap.unwrap_or(ascent * 0.92),
+        x_height: ex.unwrap_or(ascent * 0.68),
+    }
+}
+
+/// [`measure_vertical`] for one of the embedded faces, over the base database.
+pub(crate) fn measure_embedded_vertical(font: FontId, weight: u16) -> VerticalRatios {
+    let db = base_db();
+    let family = match font {
+        FontId::UI => db.ui.as_deref().or(db.mono.as_deref()),
+        _ => db.mono.as_deref(),
+    };
+    let mut font_system = font_system(db);
+    measure_vertical(
+        &mut font_system,
+        family,
+        TextStyle {
+            font,
+            weight,
+            ..TextStyle::default()
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

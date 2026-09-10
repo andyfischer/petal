@@ -181,7 +181,8 @@ Input and timing reads: `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
 `mouse_released`, `click_count`, `drag_active`, `key_down`, `key_pressed`,
 `key_released`, `mod_shift`, `mod_ctrl`, `mod_alt`, `mod_cmd`, `scroll_x`,
-`scroll_y`, `text_input`, `text_width`.
+`scroll_y`, `text_input`, `text_width`, `text_metrics`, `text_wrap`,
+`text_ellipsize`, `text_index_at`.
 
 The `ui` prelude is an implicit import, so scripts call its widgets bare:
 `rect` / `point_in` / `hovered`, `button`, `list_update`, `scroll_update`,
@@ -212,6 +213,11 @@ end
 `bloom` is the facade module; the implementation modules are reachable by their
 package paths when a drawer wants a slice rather than the whole surface
 (`import bloom/motion: spring`, `import bloom/icon as icons`).
+
+[text_layout](../../petal-libs/text-layout/README.md) is registered the same
+way and on the same terms. bloom places every one of its labels through it, so
+it is not optional here — and a panel that draws text of its own should reach
+for it directly rather than computing a `y`.
 
 Unlike `ui` it is *not* an implicit import — a library that silently occupied a
 hundred names would collide with panels that define their own `button` or
@@ -388,6 +394,23 @@ follows the size at 1.4×.
 rasterizes with, so a rule drawn `text_width(s, size)` wide ends flush with
 its text at every size; centering and right-alignment are exact. A face can
 be named: `text_width(s, size, "mono")`.
+
+`text_metrics(size)` answers the other axis — where a run's ink sits relative
+to the `y` you draw it at, in px: `baseline`, `descent`, `line_height`,
+`cap_height`, `x_height`. It matters here because a panel draws a run at the
+top of a 1.4× line box, so `y + (h - size) / 2` puts a label visibly high.
+Rather than doing that arithmetic, `import text_layout` — the placement
+library Garden registers for every panel:
+
+```petal ignore
+import text_layout
+text_layout.draw_text_line("Save", r, style, "center")   // cap-height centred
+text_layout.draw_text_block(body, r, style, {lines: 2})  // wrapped, clamped
+```
+
+`text_wrap`, `text_ellipsize` and `text_index_at` are natives underneath it, so
+wrapping a paragraph or hit-testing a caret is one call rather than a
+`text_width` per character.
 
 ### Any font on the machine
 

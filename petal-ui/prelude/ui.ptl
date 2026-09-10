@@ -973,21 +973,16 @@ end
 // of unknown length into a fixed box. Returns `s` untouched when it already
 // fits.
 //
-// The ellipsis is appended once, at the end, and never measured back into the
-// string being trimmed. That is not tidiness: **len and slice are byte-indexed**
-// while text_width counts characters, and "…" is three bytes. A loop that
-// trimmed bytes off a string *already ending* in an ellipsis got them snapped
-// back to the character boundary, dropping the whole ellipsis and re-adding it —
-// a fixed point, and a frame that never returned.
+// One walk of the host's advance table, in `text_ellipsize`. This was a
+// `text_width` call per character — a native call and a fresh string per step,
+// for something a list redraws on every row of every frame — and it had to be
+// careful about a hazard the native does not have: **len and slice are
+// byte-indexed** while text_width counts characters, and "…" is three bytes,
+// so a loop that trimmed bytes off a string *already ending* in an ellipsis
+// got them snapped back to the character boundary, dropping the whole ellipsis
+// and re-adding it. A fixed point, and a frame that never returned.
 export fn ellipsize(s, avail_px, size)
-  if text_width(s, size) <= avail_px then return s end
-  let out = s
-  // slice snaps down to a character boundary, so each pass drops one whole
-  // character and the loop is bounded by the length of the string.
-  while len(out) > 0 && text_width(out ++ "…", size) > avail_px do
-    out = slice(out, 0, len(out) - 1)
-  end
-  out ++ "…"
+  text_ellipsize(s, size, float(avail_px), "tail")
 end
 
 // Shorten `s` until it fits `avail_px` at font `size`, with a *leading* "…":
@@ -1000,19 +995,10 @@ end
 // ellipsize would spend the whole box on the directories it shares with every
 // other row. Returns `s` untouched when it already fits.
 //
-// The ellipsis is prepended once, at the end, and never measured back into the
-// string being trimmed — the same discipline ellipsize documents above, for the
-// same reason. Trimming from the front is safe where trimming a string that
-// already carries its ellipsis is not: slice snaps a *start* index **up** to a
-// character boundary (an end index down), so `slice(out, 1, len(out))` always
-// drops one whole character and the loop strictly shrinks toward "".
+// `text_ellipsize`'s "head" end, for the same reason ellipsize above uses it:
+// one walk of the advance table rather than a measurement per character.
 export fn ellipsize_tail(s, avail_px, size)
-  if text_width(s, size) <= avail_px then return s end
-  let out = s
-  while len(out) > 0 && text_width("…" ++ out, size) > avail_px do
-    out = slice(out, 1, len(out))
-  end
-  "…" ++ out
+  text_ellipsize(s, size, float(avail_px), "head")
 end
 
 // Join `parts` left to right with "   ·   " separators, keeping only the leading

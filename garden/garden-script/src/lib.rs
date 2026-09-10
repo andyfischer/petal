@@ -60,6 +60,7 @@ mod panel_store;
 mod panel_trace;
 mod query;
 mod theme;
+pub mod text_layout;
 
 pub use panel::{
     buttons, mutation_reply, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd,

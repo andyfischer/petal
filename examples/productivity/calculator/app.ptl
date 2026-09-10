@@ -27,15 +27,14 @@ let AMBER     = #f2a65a
 let AMBER_HI  = #ffc98a
 let TEAL      = #6fb7c9
 let RED       = #e0776b
-let GREEN     = #7ec894
 let INK       = #14161b
 let SCROLL    = #3b4351
 
 // ── Type scale ───────────────────────────────────────────────────────────────
 // Four sizes, and only four. Bold degrades to regular in a Garden panel, so the
-// hierarchy is carried by size, color and spacing — and a tight scale is also a
-// workaround for a host glyph-atlas bug (see README / debrief) that mis-renders
-// newly-seen glyphs once a frame mixes many distinct font sizes.
+// hierarchy is carried by size, color and spacing — and a tight scale also dodges
+// a host glyph-atlas bug (see README) that mis-renders newly-seen glyphs once one
+// frame mixes many distinct font sizes.
 let T_MICRO = 11
 let T_SMALL = 15
 let T_BODY  = 22
@@ -45,7 +44,7 @@ let T_HERO  = 40
 // `float("3.5")` rejects strings (only `int()` parses one), so decimals are
 // assembled by hand from the two sides of the dot.
 
-fn parse_num(s)
+fn parse_num(s: string) -> float
   let parts = split(s, ".")
   let ip = parts[0]
   let v = 0.0
@@ -68,7 +67,7 @@ end
 
 // ── Number formatting ────────────────────────────────────────────────────────
 
-fn fmt(v)
+fn fmt(v: num) -> string
   let a = abs(v)
   if v == floor(v) && a < 1000000000000000.0 then
     return str(int(v))
@@ -89,7 +88,7 @@ fn fmt(v)
 end
 
 // Thousands separators, for display only — the grouped form is never parsed back.
-fn group(s)
+fn group(s: string) -> string
   let neg = false
   let t = s
   if len(t) > 0 && slice(t, 0, 1) == "-" then
@@ -123,7 +122,7 @@ end
 let DIGITS = "0123456789."
 let OPS = "+-*/%"
 
-fn tokenize(src)
+fn tokenize(src: string) -> record
   let toks = []
   let err = ""
   let i = 0
@@ -176,14 +175,14 @@ end
 
 // ── Shunting yard ────────────────────────────────────────────────────────────
 
-fn prec(op)
+fn prec(op: string) -> int
   if op == "u-" then 3
   elsif op == "*" || op == "/" || op == "%" then 2
   else 1
   end
 end
 
-fn to_rpn(toks)
+fn to_rpn(toks: list) -> record
   let out = []
   let ops = []
   let err = ""
@@ -234,7 +233,7 @@ fn to_rpn(toks)
   {rpn: out, err: err}
 end
 
-fn eval_rpn(rpn)
+fn eval_rpn(rpn: list) -> record
   let st = []
   let err = ""
   for tok in rpn do
@@ -291,7 +290,7 @@ fn eval_rpn(rpn)
   {ok: err == "", v: v, err: err}
 end
 
-fn eval_str(src)
+fn eval_str(src: string) -> record
   if len(src) == 0 then
     return {ok: true, v: 0.0, err: ""}
   end
@@ -307,7 +306,7 @@ fn eval_str(src)
 end
 
 // Drop trailing operators so a half-typed "12 * " can still preview 12.
-fn trim_ops(src)
+fn trim_ops(src: string) -> string
   let out = src
   while len(out) > 0 && contains(OPS, slice(out, len(out) - 1, len(out))) do
     out = slice(out, 0, len(out) - 1)
@@ -317,12 +316,12 @@ end
 
 // ── Expression editing helpers ───────────────────────────────────────────────
 
-fn last_char(s)
+fn last_char(s: string) -> string
   if len(s) == 0 then "" else slice(s, len(s) - 1, len(s)) end
 end
 
 // Toggle the sign of the number literal the caret is sitting on.
-fn toggle_sign(src)
+fn toggle_sign(src: string) -> string
   if len(src) == 0 then
     return "-"
   end
@@ -426,7 +425,7 @@ let KH = (PAD_H - KGAP * 4) / 5
 let disp_r = rect(PAD, TOP, COL_W, DISP_H)
 let tape_r = rect(PAD + COL_W + GAP, TOP, TAPE_W, FOOT - TOP - 8)
 
-fn key_rect(i)
+fn key_rect(i: num) -> Rect
   let col = i % 5
   let row = i / 5
   rect(PAD + col * (KW + KGAP), PADY + row * (KH + KGAP), KW, KH)
@@ -559,7 +558,8 @@ if act != "" then
   elsif len(act) > 6 && slice(act, 0, 6) == "paste:" then
     expr = expr ++ slice(act, 6, len(act))
   else
-    // A digit, a dot, an operator or a paren: plain append, with two guards.
+    // A digit, a dot, an operator or a paren: plain append, except that an
+    // operator typed straight after another replaces it (`-` stays, as a sign).
     let c = act
     if contains(OPS, c) && contains(OPS, last_char(expr)) && c != "-" then
       expr = slice(expr, 0, len(expr) - 1) ++ c

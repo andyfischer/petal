@@ -16,11 +16,11 @@
 let DIGITS = "0123456789"
 let LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-fn is_digit(c)
+fn is_digit(c: string) -> bool
   len(c) == 1 && contains(DIGITS, c)
 end
 
-fn digit_val(c)
+fn digit_val(c: string) -> int
   let d = -1
   for i in range(0, 10) do
     if slice(DIGITS, i, i + 1) == c then
@@ -30,7 +30,7 @@ fn digit_val(c)
   d
 end
 
-fn letter_val(c)
+fn letter_val(c: string) -> int
   let d = -1
   for i in range(0, 26) do
     if slice(LETTERS, i, i + 1) == c then
@@ -40,7 +40,7 @@ fn letter_val(c)
   d
 end
 
-fn is_alpha(c)
+fn is_alpha(c: string) -> bool
   letter_val(upper(c)) >= 0
 end
 
@@ -48,22 +48,22 @@ end
 // One record shape for every result a cell can hold, so nothing downstream
 // has to ask what kind of thing it is holding before it can pass it on.
 
-fn vnum(x)
+fn vnum(x: num) -> record
   {k: "num", n: float(x), s: ""}
 end
-fn vtext(s)
+fn vtext(s: string) -> record
   {k: "text", n: 0.0, s: s}
 end
-fn vempty()
+fn vempty() -> record
   {k: "empty", n: 0.0, s: ""}
 end
-fn verr(s)
+fn verr(s: string) -> record
   {k: "err", n: 0.0, s: s}
 end
 
 // Numeric coercion for arithmetic: a blank cell reads as 0 (so =SUM over a
 // half-filled column works), text does not read as anything.
-fn as_num(v)
+fn as_num(v: record) -> record
   match v.k
     when "num" -> v
     when "empty" -> vnum(0.0)
@@ -78,7 +78,7 @@ end
 // digits, an optional fraction, and nothing else — a trailing character makes
 // the whole thing text, which is what tells "41200" from "Q1".
 
-fn str_num(s)
+fn str_num(s: string) -> record
   let n = len(s)
   let i = 0
   let neg = false
@@ -113,7 +113,7 @@ end
 // ── tokenizer ─────────────────────────────────────────────────────────────
 // Tokens are {t, s, n}, where t is "num" | "name" | "str" | "op".
 
-fn tokenize(src)
+fn tokenize(src: string) -> list
   let s = src
   let n = len(s)
   let toks = []
@@ -161,11 +161,11 @@ fn tokenize(src)
   toks
 end
 
-fn tok_at(toks, i)
+fn tok_at(toks: list, i: num) -> record
   if i >= 0 && i < len(toks) then toks[i] else {t: "eof", s: "", n: 0.0} end
 end
 
-fn is_op(toks, i, s)
+fn is_op(toks: list, i: num, s: string) -> bool
   let t = tok_at(toks, i)
   t.t == "op" && t.s == s
 end
@@ -173,7 +173,7 @@ end
 // ── cell references ───────────────────────────────────────────────────────
 // "B12" -> {ok, r, c}, zero-based; one or more column letters.
 
-fn parse_ref(name)
+fn parse_ref(name: string) -> record
   let n = len(name)
   let i = 0
   let col = 0
@@ -193,7 +193,7 @@ fn parse_ref(name)
   end
 end
 
-fn ref_name(r, c)
+fn ref_name(r: num, c: num) -> string
   let col = ""
   let n = c + 1
   while n > 0 do
@@ -215,7 +215,7 @@ end
 var _expr = nil
 var _eval_at = nil
 
-fn agg(vals, kind)
+fn agg(vals: list, kind: string) -> record
   let total = 0.0
   let count = 0
   let best = 0.0
@@ -246,7 +246,7 @@ fn agg(vals, kind)
   end
 end
 
-fn call_fn(name, vals)
+fn call_fn(name: string, vals: list) -> record
   if name == "SUM" then agg(vals, "sum")
   elsif name == "AVG" || name == "AVERAGE" then agg(vals, "avg")
   elsif name == "MIN" then agg(vals, "min")
@@ -278,7 +278,7 @@ end
 // Every argument of a call, with `B2:E4` expanded in place into one value per
 // cell. Ranges are legal only here, which is why the argument list resolves
 // them rather than the expression grammar.
-fn parse_args(cx, toks, i0)
+fn parse_args(cx: record, toks: list, i0: num) -> record
   let i = i0
   let vals = []
   let err = ""
@@ -317,7 +317,7 @@ fn parse_args(cx, toks, i0)
   end
 end
 
-fn parse_primary(cx, toks, i)
+fn parse_primary(cx: record, toks: list, i: num) -> record
   let t = tok_at(toks, i)
   if t.t == "num" then
     {v: vnum(t.n), i: i + 1}
@@ -351,7 +351,7 @@ fn parse_primary(cx, toks, i)
   end
 end
 
-fn parse_unary(cx, toks, i)
+fn parse_unary(cx: record, toks: list, i: num) -> record
   if is_op(toks, i, "-") then
     let inner = parse_unary(cx, toks, i + 1)
     let a = as_num(inner.v)
@@ -363,7 +363,7 @@ fn parse_unary(cx, toks, i)
   end
 end
 
-fn parse_pow(cx, toks, i)
+fn parse_pow(cx: record, toks: list, i: num) -> record
   let a = parse_unary(cx, toks, i)
   if is_op(toks, a.i, "^") then
     let b = parse_pow(cx, toks, a.i + 1)
@@ -376,7 +376,7 @@ fn parse_pow(cx, toks, i)
   end
 end
 
-fn parse_mul(cx, toks, i0)
+fn parse_mul(cx: record, toks: list, i0: num) -> record
   let acc = parse_pow(cx, toks, i0)
   let i = acc.i
   let v = acc.v
@@ -396,7 +396,7 @@ fn parse_mul(cx, toks, i0)
   {v: v, i: i}
 end
 
-fn parse_add(cx, toks, i0)
+fn parse_add(cx: record, toks: list, i0: num) -> record
   let acc = parse_mul(cx, toks, i0)
   let i = acc.i
   let v = acc.v
@@ -415,7 +415,7 @@ fn parse_add(cx, toks, i0)
   {v: v, i: i}
 end
 
-fn cmp_apply(op, x, y)
+fn cmp_apply(op: string, x: record, y: record) -> bool
   match op
     when ">" -> x.n > y.n
     when "<" -> x.n < y.n
@@ -426,7 +426,7 @@ fn cmp_apply(op, x, y)
   end
 end
 
-fn parse_cmp(cx, toks, i0)
+fn parse_cmp(cx: record, toks: list, i0: num) -> record
   let a = parse_add(cx, toks, i0)
   let t = tok_at(toks, a.i)
   if t.t == "op" && (t.s == ">" || t.s == "<" || t.s == ">=" || t.s == "<=" || t.s == "<>" || t.s == "=") then
@@ -445,7 +445,7 @@ end
 
 set _expr = parse_cmp
 
-fn raw_at(cells, r, c)
+fn raw_at(cells: list, r: num, c: num) -> string
   if r < 0 || r >= len(cells) then ""
   elsif c < 0 || c >= len(cells[r]) then ""
   else cells[r][c]
@@ -456,7 +456,7 @@ end
 // sheet is 208 cells and a reference simply re-evaluates its target, with the
 // depth budget standing in for cycle detection (=A1 in A1 bottoms out at
 // #CYCLE rather than hanging the frame).
-fn eval_at(cx, r, c)
+fn eval_at(cx: record, r: num, c: num) -> record
   if r < 0 || r >= len(cx.cells) || c < 0 || c >= len(cx.cells[0]) then
     verr("#REF!")
   elsif cx.depth > 24 then
@@ -486,7 +486,7 @@ end
 
 set _eval_at = eval_at
 
-fn evaluate(cells)
+fn evaluate(cells: list) -> list
   let grid = for r in range(0, len(cells)) do
     let row = for c in range(0, len(cells[r])) do
       eval_at({cells: cells, depth: 0}, r, c)
@@ -499,7 +499,7 @@ end
 // ── display formatting ────────────────────────────────────────────────────
 
 // Group an integer's digits in threes: "1234567" -> "1,234,567".
-fn group3(digits)
+fn group3(digits: string) -> string
   let n = len(digits)
   let out = ""
   for i in range(0, n) do
@@ -512,7 +512,7 @@ fn group3(digits)
 end
 
 // At most two decimals, trailing zeros dropped, thousands grouped.
-fn fmt_num(x)
+fn fmt_num(x: num) -> string
   let neg = x < 0.0
   let scaled = round(abs(x) * 100.0)
   let whole = int(scaled / 100.0)
@@ -528,7 +528,7 @@ fn fmt_num(x)
   if neg && (whole > 0 || cents > 0) then "-" ++ body else body end
 end
 
-fn display(v)
+fn display(v: record) -> string
   match v.k
     when "num" -> fmt_num(v.n)
     when "text" -> v.s
@@ -537,7 +537,7 @@ fn display(v)
   end
 end
 
-fn kind_label(raw, v)
+fn kind_label(raw: string, v: record) -> string
   if len(raw) > 0 && slice(raw, 0, 1) == "=" then
     if v.k == "err" then "formula · error" else "formula" end
   elsif v.k == "num" then "number"
@@ -551,12 +551,12 @@ end
 let COLS = 8
 let ROWS = 26
 
-fn blank_row()
+fn blank_row() -> list
   let r = for c in range(0, COLS) do "" end
   r
 end
 
-fn seed()
+fn seed() -> list
   let g = []
   g = append(g, ["Line item", "Q1", "Q2", "Q3", "Q4", "FY total", "Avg / qtr", "Q4 vs Q1"])
   g = append(g, ["New MRR", "41200", "46800", "52300", "61400", "=SUM(B2:E2)", "=ROUND(AVG(B2:E2),0)", "=ROUND((E2-B2)/B2*100,1)"])
@@ -627,11 +627,11 @@ let SBW = 12             // the scrollbar's own lane, so no column runs under it
 let ROW_H = 30
 let HEAD_H = 32
 
-fn col_w(c)
+fn col_w(c: num) -> int
   if c >= 0 && c < len(COLW) then COLW[c] else 96 end
 end
 
-fn sheet_w()
+fn sheet_w() -> int
   let t = RHW + SBW
   for c in range(0, COLS) do
     t = t + col_w(c)
@@ -639,7 +639,7 @@ fn sheet_w()
   t
 end
 
-fn col_x(c)
+fn col_x(c: num) -> int
   let x = PAD + RHW
   for i in range(0, c) do
     x = x + col_w(i)
@@ -671,12 +671,12 @@ let undo_r = rect(chip_r.x - 10 - 86, 34, 86, 22)
 let grid_rect = rect(PAD, GRID_Y, SW, GRID_H)
 let body_rect = rect(PAD, GRID_Y + HEAD_H, SW, VIS * ROW_H)
 
-fn cell_rect(r, c)
+fn cell_rect(r: num, c: num) -> Rect
   rect(col_x(c), GRID_Y + HEAD_H + (r - scroll) * ROW_H, col_w(c), ROW_H)
 end
 
 // The cell under a pane-local point, or {ok: false}.
-fn cell_at(px, py)
+fn cell_at(px: num, py: num) -> record
   if !point_in(px, py, body_rect) || px < PAD + RHW || px >= PAD + SW - SBW then
     {ok: false, r: 0, c: 0}
   else
@@ -700,7 +700,7 @@ if vrev != rev then
   vrev = rev
 end
 
-fn val_at(r, c)
+fn val_at(r: num, c: num) -> record
   if r >= 0 && r < len(values) && c >= 0 && c < len(values[r]) then
     values[r][c]
   else
@@ -708,7 +708,7 @@ fn val_at(r, c)
   end
 end
 
-fn is_formula(r, c)
+fn is_formula(r: num, c: num) -> bool
   let raw = raw_at(cells, r, c)
   len(raw) > 0 && slice(raw, 0, 1) == "="
 end
@@ -716,7 +716,7 @@ end
 // ══ 6. input ══════════════════════════════════════════════════════════════
 // Handled before anything is drawn, so the frame paints the post-input state.
 
-fn clamp_i(v, lo, hi)
+fn clamp_i(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
 
@@ -907,8 +907,7 @@ if moved then
   scroll = clamp_i(ensure_visible(scroll, sel_r, VIS), 0, ROWS - VIS)
 end
 
-// Snapshot for undo at the moment an edit is committed by ⏎/⇥ from an edit
-// that began on Return (the typing path already snapshotted).
+// The selection rectangle, normalised; `multi` is true for more than one cell.
 let selr0 = min(sel_r, anch_r)
 let selr1 = max(sel_r, anch_r)
 let selc0 = min(sel_c, anch_c)
@@ -925,7 +924,7 @@ draw_text("fy26-plan", {x: PAD, y: 44}, {size: 24, color: TEXT})
 let sub = "quarterly model  ·  " ++ str(ROWS) ++ " x " ++ str(COLS) ++ " cells"
 draw_text(sub, {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, {size: 12, color: FAINT})
 
-// A small chip on the right of the masthead: the live mode.
+// The mode chip.
 let mode_label = if armed then "UNDO?" elsif editing then "EDIT" else "READY" end
 let mode_col = if armed then #8ab4ff elsif editing then AMBER else ACCENT end
 draw_rect_rounded(chip_r, 11, PANEL)
@@ -1084,7 +1083,7 @@ draw_scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), ROWS
 
 // ══ 8. the inspector rail ═════════════════════════════════════════════════
 
-fn rail_label(text, y)
+fn rail_label(text: string, y: num) -> num
   draw_text(text, {x: RAIL_X + 16, y: y}, {size: 10, color: FAINT, spacing: 2.4})
   y + 16
 end

@@ -42,24 +42,24 @@ let THUMB_C  = 5
 
 // ── Small numeric helpers ────────────────────────────────────────────────
 
-fn fract(x)
+fn fract(x: num)
   x - floor(x)
 end
 
-fn iclamp(v, lo, hi)
+fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
 
-fn smoothstep(e0, e1, x)
+fn smoothstep(e0: num, e1: num, x: num)
   let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0)
   t * t * (3.0 - 2.0 * t)
 end
 
-fn hash2(x, y)
+fn hash2(x: num, y: num)
   fract(sin(x * 127.1 + y * 311.7) * 43758.5453)
 end
 
-fn vnoise(x, y)
+fn vnoise(x: num, y: num)
   let xi = floor(x)
   let yi = floor(y)
   let xf = x - xi
@@ -73,38 +73,38 @@ fn vnoise(x, y)
   a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
 end
 
-fn fbm(x, y)
+fn fbm(x: num, y: num)
   vnoise(x, y) * 0.6 + vnoise(x * 2.3 + 5.2, y * 2.3 + 1.3) * 0.3 +
   vnoise(x * 4.7 + 9.1, y * 4.7 + 7.7) * 0.1
 end
 
 // ── Float colour (0..1) ──────────────────────────────────────────────────
 
-fn fc(r, g, b)
+fn fc(r: num, g: num, b: num) -> record
   {r: r, g: g, b: b}
 end
 
-fn cadd(a, b)
+fn cadd(a: record, b: record) -> record
   fc(a.r + b.r, a.g + b.g, a.b + b.b)
 end
 
-fn cglow(a, c, s)
+fn cglow(a: record, c: record, s: num) -> record
   fc(a.r + c.r * s, a.g + c.g * s, a.b + c.b * s)
 end
 
-fn cmix(a, b, t)
+fn cmix(a: record, b: record, t: num) -> record
   fc(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t)
 end
 
-fn cscale(a, s)
+fn cscale(a: record, s: num) -> record
   fc(a.r * s, a.g * s, a.b * s)
 end
 
-fn lum(c)
+fn lum(c: record)
   c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722
 end
 
-fn pack(c)
+fn pack(c: record) -> int
   let r = int(clamp(c.r, 0.0, 1.0) * 255.0)
   let g = int(clamp(c.g, 0.0, 1.0) * 255.0)
   let b = int(clamp(c.b, 0.0, 1.0) * 255.0)
@@ -122,7 +122,7 @@ let PHOTOS = [
   {name: "Orchard Morning",  place: "Hood River, OR", meta: "f/4 · 1/320 · ISO 125"},
 ]
 
-fn scene_harbour(u, v)
+fn scene_harbour(u: num, v: num) -> record
   let horizon = 0.60
   let land = horizon - 0.055 - 0.040 * sin(u * 4.1 + 0.6) - 0.030 * fbm(u * 3.0, 4.0)
   if v < horizon then
@@ -152,7 +152,7 @@ fn scene_harbour(u, v)
 end
 
 
-fn scene_alpine(u, v)
+fn scene_alpine(u: num, v: num) -> record
   let horizon = 0.70
   if v < horizon then
     let t = v / horizon
@@ -200,7 +200,7 @@ end
 
 // The reflection below needs the sky/building half only — recursing into
 // scene_neon would bounce between the two branches forever.
-fn scene_neon_upper(u, v)
+fn scene_neon_upper(u: num, v: num) -> record
   let ground = 0.70
   var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(clamp(v / ground, 0.0, 1.0), 0.5))
   let bi = floor(u * 7.0)
@@ -224,7 +224,7 @@ fn scene_neon_upper(u, v)
   out
 end
 
-fn scene_neon(u, v)
+fn scene_neon(u: num, v: num) -> record
   let ground = 0.70
   if v < ground then
     var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(v / ground, 0.5))
@@ -274,7 +274,7 @@ fn scene_neon(u, v)
   end
 end
 
-fn scene_desert(u, v)
+fn scene_desert(u: num, v: num) -> record
   let horizon = 0.44
   let mesa = horizon - 0.014 - 0.055 * max(0.0, sin(u * 2.7 + 0.5)) *
   (0.45 + 0.75 * fbm(u * 1.9, 7.0)) - 0.016 * fbm(u * 6.0, 3.0)
@@ -314,7 +314,7 @@ fn scene_desert(u, v)
   end
 end
 
-fn scene_orchard(u, v)
+fn scene_orchard(u: num, v: num) -> record
   let horizon = 0.38
   if v < horizon then
     let t = v / horizon
@@ -358,7 +358,7 @@ fn scene_orchard(u, v)
   end
 end
 
-fn sample(id, u, v)
+fn sample(id: num, u: num, v: num) -> record
   if id == 0 then scene_harbour(u, v)
   elsif id == 1 then scene_alpine(u, v)
   elsif id == 2 then scene_neon(u, v)
@@ -393,7 +393,7 @@ let PRESETS = [
   {name: "Cold Steel",  vals: [-4, 24, -6, 10, -32, -40, 4, 8, 6, 28]},
 ]
 
-fn adj_of(vals)
+fn adj_of(vals: list) -> record
   {ev: float(vals[0]) / 100.0,
     co: float(vals[1]) / 100.0,
     hi: float(vals[2]) / 100.0,
@@ -406,7 +406,7 @@ fn adj_of(vals)
     vg: float(vals[9]) / 100.0}
 end
 
-fn develop(c0, a, u, v, gain)
+fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
   var c = cscale(c0, gain)
 
   // tone: shadows lift and highlight rolloff, weighted by local luminance
@@ -468,7 +468,7 @@ end
 
 // ── Image builders (cached in state, keyed by a signature string) ────────
 
-fn build_base(id, gw, gh)
+fn build_base(id: num, gw: num, gh: num) -> list
   let img = for j in range(0, gh) do
     let row = for i in range(0, gw) do
       pack(sample(id, (float(i) + 0.5) / float(gw), (float(j) + 0.5) / float(gh)))
@@ -478,13 +478,13 @@ fn build_base(id, gw, gh)
   img
 end
 
-fn unpack(p)
+fn unpack(p: num) -> record
   fc(float(p / 65536) / 255.0, float((p / 256) % 256) / 255.0, float(p % 256) / 255.0)
 end
 
 // Every other sample in each direction: the draft grid a live drag develops,
 // four times cheaper and drawn at double cell size.
-fn halve(img, gw, gh)
+fn halve(img: list, gw: num, gh: num) -> list
   let out = for j in range(0, gh / 2) do
     let src = img[j * 2]
     let row = for i in range(0, gw / 2) do
@@ -496,9 +496,8 @@ fn halve(img, gw, gh)
 end
 
 // Develops the *cached* negative rather than re-synthesising the scene: the
-// scene functions are by far the expensive half, and the whole point of a
-// slider is that only the grade changes.
-fn build_dev(base, vals, gw, gh)
+// scene functions are the expensive half, and a slider only changes the grade.
+fn build_dev(base: list, vals: list, gw: num, gh: num) -> list
   let a = adj_of(vals)
   let gain = pow(2.0, a.ev * 1.45)
   let img = for j in range(0, gh) do
@@ -514,7 +513,7 @@ end
 
 // One pass over a developed frame: the 40-bin luminance histogram, the mean
 // level, and how many samples are pinned at either end of the scale.
-fn analyse(img)
+fn analyse(img: list) -> record
   var bins = []
   for i in range(0, 40) do
     set bins = append(bins, 0)
@@ -540,7 +539,7 @@ fn analyse(img)
   {bins: bins, mean: total / max(1, n), low: low, high: high, n: n}
 end
 
-fn sig_of(id, vals)
+fn sig_of(id: num, vals: list) -> string
   var s = "{id}"
   for v in vals do
     set s = s ++ ":{v}"
@@ -574,19 +573,19 @@ state recomputes = 0
 
 // ── Drawing helpers ──────────────────────────────────────────────────────
 
-fn cap(s, x, y, size, c, sp)
+fn cap(s: string, x: num, y: num, size: num, c: record, sp: num)
   draw_text(s, {x: x, y: y}, {size: size, color: c, spacing: sp})
 end
 
-fn body(s, x, y, size, c)
+fn body(s: string, x: num, y: num, size: num, c: record)
   draw_text(s, {x: x, y: y}, size, c)
 end
 
-fn hline(x, y, w, c)
+fn hline(x: num, y: num, w: num, c: record)
   draw_rect(x, y, w, 1, c.r, c.g, c.b)
 end
 
-fn draw_img(img, x, y, cw, ch, cs, from_col, to_col)
+fn draw_img(img: list, x: num, y: num, cw: num, ch: num, cs: num, from_col: num, to_col: num)
   for j in range(0, ch) do
     let row = img[j]
     let ry = y + j * cs
@@ -597,7 +596,7 @@ fn draw_img(img, x, y, cw, ch, cs, from_col, to_col)
   end
 end
 
-fn signed(n)
+fn signed(n: num) -> string
   if n > 0 then "+{n}" else "{n}" end
 end
 
@@ -819,7 +818,7 @@ end
 let ROW_H = 40
 let ROW_Y = TOP_H + 48
 
-fn slider_rect(i, px, pw, row_y, row_h)
+fn slider_rect(i: num, px: num, pw: num, row_y: num, row_h: num) -> Rect
   rect(px, row_y + i * row_h, pw, row_h)
 end
 

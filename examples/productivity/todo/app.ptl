@@ -144,7 +144,7 @@ state completed_today = 2
 
 let PROJECTS = ["Product", "Home", "Errands", "Reading"]
 
-fn list_color(name)
+fn list_color(name: string) -> record
   match name
     when "Product" -> BLUE
     when "Home" -> GREEN
@@ -155,7 +155,7 @@ fn list_color(name)
 end
 
 // ── small helpers ───────────────────────────────────────────────────────────
-fn prio_color(p)
+fn prio_color(p: num) -> record
   if p == 3 then RED
   elsif p == 2 then AMBER
   elsif p == 1 then BLUE
@@ -163,7 +163,7 @@ fn prio_color(p)
   end
 end
 
-fn prio_name(p)
+fn prio_name(p: num) -> string
   if p == 3 then "High"
   elsif p == 2 then "Medium"
   elsif p == 1 then "Low"
@@ -171,7 +171,7 @@ fn prio_name(p)
   end
 end
 
-fn due_label(d)
+fn due_label(d: num) -> string
   if d >= SOMEDAY then "someday"
   elsif d < -1 then "{-d} days late"
   elsif d == -1 then "yesterday"
@@ -184,7 +184,7 @@ fn due_label(d)
   end
 end
 
-fn due_color(d, done)
+fn due_color(d: num, done: bool) -> record
   if done then FAINT
   elsif d >= SOMEDAY then GHOST
   elsif d < 0 then RED
@@ -194,7 +194,7 @@ fn due_color(d, done)
   end
 end
 
-fn ago(d)
+fn ago(d: num) -> string
   if d == 0 then "today"
   elsif d == 1 then "yesterday"
   elsif d < 7 then "{d}d ago"
@@ -203,7 +203,7 @@ fn ago(d)
   end
 end
 
-fn group_key(t)
+fn group_key(t: record) -> string
   if t.done then "done"
   elsif t.due < 0 then "over"
   elsif t.due == 0 then "today"
@@ -213,7 +213,7 @@ fn group_key(t)
   end
 end
 
-fn group_label(k)
+fn group_label(k: string) -> string
   match k
     when "over" -> "OVERDUE"
     when "today" -> "TODAY"
@@ -224,7 +224,7 @@ fn group_label(k)
   end
 end
 
-fn group_color(k)
+fn group_color(k: string) -> record
   match k
     when "over" -> RED
     when "today" -> AMBER
@@ -234,7 +234,7 @@ fn group_color(k)
   end
 end
 
-fn subs_done(t)
+fn subs_done(t: record) -> int
   var n = 0
   for s in t.subs do
     if s.done then set n = n + 1 end
@@ -242,17 +242,17 @@ fn subs_done(t)
   n
 end
 
-fn stroke(a, b, c, alpha, width)
+fn stroke(a: record, b: record, c: record, alpha: num, width: num)
   draw_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha, width)
 end
 
 // A rounded panel with a hairline border (draw_rect_outline is square-cornered).
-fn rr(r, radius, fill, border)
+fn rr(r: record, radius: num, fill: record, border: record)
   draw_rect_rounded(r, radius, border)
   draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius - 1, fill)
 end
 
-fn chip(x, y, label, c, strong)
+fn chip(x: num, y: num, label: string, c: record, strong: bool)
   let tw = text_width(label, FS_MICRO)
   let r = rect(x, y, tw + 16, 19)
   draw_rect_rounded(r, 9, c, if strong then 46 else 26 end)
@@ -260,7 +260,7 @@ fn chip(x, y, label, c, strong)
   r.w
 end
 
-fn checkbox(cx, cy, done, hot)
+fn checkbox(cx: num, cy: num, done: bool, hot: bool)
   if done then
     draw_circle({x: cx, y: cy}, 10, GREEN)
     stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, INK, 255, 2)
@@ -277,7 +277,7 @@ fn checkbox(cx, cy, done, hot)
 end
 
 // A capsule button. kind 0 = quiet, 1 = primary, 2 = danger-quiet.
-fn btn(r, label, kind, enabled)
+fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   let hov = hovered(r) && enabled
   if kind == 1 then
     let bg = if hov then #ffb765 else AMBER end
@@ -294,7 +294,7 @@ end
 
 // ── composer parsing ────────────────────────────────────────────────────────
 // "!! Ring the vet @tomorrow" -> {title: "Ring the vet", prio: 3, due: 1}
-fn parse_line(s, dflt_list)
+fn parse_line(s: string, dflt_list: string) -> record
   var prio = 1
   var due = 0
   var kept = []
@@ -331,7 +331,7 @@ fn parse_line(s, dflt_list)
 end
 
 // ── sorting ─────────────────────────────────────────────────────────────────
-fn task_less(a, b)
+fn task_less(a: record, b: record) -> bool
   if a.prio != b.prio then
     a.prio > b.prio
   elsif a.due != b.due then
@@ -341,7 +341,7 @@ fn task_less(a, b)
   end
 end
 
-fn sort_tasks(ts)
+fn sort_tasks(ts: list) -> list
   var out = []
   for t in ts do
     var placed = false
@@ -359,11 +359,11 @@ fn sort_tasks(ts)
   out
 end
 
-fn matches(t, needle)
+fn matches(t: record, needle: string) -> bool
   contains(lower("{t.title} {t.list} {t.notes}"), needle)
 end
 
-fn count_open(ts, name)
+fn count_open(ts: list, name: string) -> int
   var n = 0
   for t in ts do
     if !t.done && (name == "All" || t.list == name) then set n = n + 1 end
@@ -371,7 +371,7 @@ fn count_open(ts, name)
   n
 end
 
-fn find_by_id(ts, id)
+fn find_by_id(ts: list, id: num) -> int
   var found = -1
   for i in range(0, len(ts)) do
     if ts[i].id == id then set found = i end
@@ -432,12 +432,12 @@ let feed_x    = MX + 22
 let feed_w    = MAIN_W - 44 - 6
 
 let SEGS = ["Active", "Done", "All"]
-fn seg_rect(i)
+fn seg_rect(i: num) -> Rect
   rect(MX + 22 + i * 76, seg_y, 70, 28)
 end
 
 let rail_top = 108
-fn rail_rect(i)
+fn rail_rect(i: num) -> Rect
   rect(12, rail_top + i * 36, RAIL_W - 24, 32)
 end
 
@@ -449,12 +449,12 @@ let act_w = int((dw - 10) / 2)
 let act1 = rect(dx, act_y, act_w, 36)
 let act2 = rect(dx + act_w + 10, act_y, dw - act_w - 10, 36)
 
-fn prio_pick_rect(i, x, y, w)
+fn prio_pick_rect(i: num, x: num, y: num, w: num) -> Rect
   let cw = int((w - 18) / 4)
   rect(x + i * (cw + 6), y, cw, 26)
 end
 
-fn sub_rect(i, x, y, w)
+fn sub_rect(i: num, x: num, y: num, w: num) -> Rect
   rect(x, y + i * 26, w, 24)
 end
 
@@ -669,7 +669,7 @@ let typed = if grabbed then "" else text_input() end
 let backsp = key_pressed("backspace")
 let submitted = key_pressed("return")
 
-fn edited(cur, t, bs)
+fn edited(cur: string, t: string, bs: bool) -> string
   var s = cur
   if bs && len(s) > 0 then set s = slice(s, 0, len(s) - 1) end
   if len(t) > 0 then set s = s ++ t end
@@ -727,7 +727,7 @@ if do_delete then
   end
   // Hand the selection to the neighbour that took the deleted row's place.
   if len(tasks) > 0 then
-    sel_id = tasks[int(clamp(gone_ix, 0, len(tasks) - 1))].id
+    sel_id = tasks[clamp(gone_ix, 0, len(tasks) - 1)].id
   end
   rev = rev + 1
 end
@@ -769,7 +769,7 @@ clear(BG.r, BG.g, BG.b)
 draw_rect(rect(0, 0, RAIL_W, H), RAIL)
 draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
-// brand mark: three stacked leaves
+// brand mark
 draw_rect_rounded(rect(24, 20, 24, 24), 7, AMBER)
 draw_circle({x: 36, y: 29}, 4.5, INK)
 stroke({x: 36, y: 29}, {x: 36, y: 38}, INK, 255, 2)

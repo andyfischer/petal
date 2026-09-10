@@ -68,7 +68,7 @@ let MAXC   = BODY_W / CW         // wrap width, in characters
 // ── the store ───────────────────────────────────────────────────────────────
 // `saved` is the persisted document; `notes` is the working copy. Values are
 // immutable, so `saved = notes` really is a snapshot — nothing later written
-// through `notes` can reach into it. Save commits, Revert restores.
+// through `notes` can reach into it.
 state notes = [
   {id: 1, book: "Journal", pinned: true, mins: 14,
     title: "Morning, the long table",
@@ -200,7 +200,7 @@ state notes = [
       "is the point; the flesh goes in the bin without ceremony.",
   ]},
 ]
-state saved   = notes                 // the persisted document
+state saved   = notes
 state history = []                    // undo snapshots, oldest first
 state next_id = 10
 
@@ -229,7 +229,7 @@ state click_y = 0
 
 let BOOKS = ["Journal", "Work", "Ideas", "Recipes", "Reading"]
 
-fn book_color(b)
+fn book_color(b: string) -> record
   match b
     when "Journal" -> SAGE
     when "Work" -> BLUE
@@ -241,30 +241,30 @@ fn book_color(b)
 end
 
 // ── small drawing helpers ───────────────────────────────────────────────────
-// The `clamp` builtin yields a float; indices and pixel geometry need to stay
-// integral, so this is the one used everywhere below.
-fn iclamp(v, lo, hi)
+// The `clamp` builtin yields a float; indices and pixel geometry stay integral,
+// so this is the one used below.
+fn iclamp(v: num, lo: num, hi: num) -> num
   max(lo, min(v, hi))
 end
 
-fn stroke(x1, y1, x2, y2, c, a, w)
+fn stroke(x1: num, y1: num, x2: num, y2: num, c: record, a: num, w: num)
   draw_line(x1, y1, x2, y2, c.r, c.g, c.b, a, w)
 end
 
-fn hairline(x1, y1, x2, y2, c)
+fn hairline(x1: num, y1: num, x2: num, y2: num, c: record)
   draw_line(x1, y1, x2, y2, c.r, c.g, c.b, 255, 1)
 end
 
-fn label(text, x, y, c)
+fn label(text: string, x: num, y: num, c: record)
   draw_text(text, {x: x, y: y}, {size: FS_MICRO, color: c, spacing: 1.3})
 end
 
-fn dot(cx, cy, r, c)
+fn dot(cx: num, cy: num, r: num, c: record)
   draw_circle({x: cx, y: cy}, r, c)
 end
 
 // ── text utilities ──────────────────────────────────────────────────────────
-fn words_in(lines)
+fn words_in(lines: list) -> int
   let n = 0
   for ln in lines do
     for w in split(ln, " ") do
@@ -276,7 +276,7 @@ fn words_in(lines)
   n
 end
 
-fn chars_in(lines)
+fn chars_in(lines: list) -> int
   let n = 0
   for ln in lines do
     n = n + len(ln) + 1
@@ -285,7 +285,7 @@ fn chars_in(lines)
 end
 
 // Byte offsets of every case-insensitive occurrence of `needle` in `hay`.
-fn find_all(hay, needle)
+fn find_all(hay: string, needle: string) -> list
   let out = []
   if len(needle) > 0 && len(needle) <= len(hay) then
     let h = lower(hay)
@@ -303,7 +303,7 @@ fn find_all(hay, needle)
   out
 end
 
-fn matches_query(note, query)
+fn matches_query(note: record, query: string) -> bool
   if len(query) == 0 then
     true
   else
@@ -318,7 +318,7 @@ fn matches_query(note, query)
   end
 end
 
-fn ago(m)
+fn ago(m: num) -> string
   if m < 1 then "just now"
   elsif m < 60 then "{m}m ago"
   elsif m < 1440 then "{int(m / 60)}h ago"
@@ -333,7 +333,7 @@ end
 // byte offset each row begins at; rows are contiguous, so the space a break
 // consumes stays at the tail of the row above it (invisible, and it keeps the
 // column arithmetic a straight subtraction).
-fn wrap_starts(s, maxc)
+fn wrap_starts(s: string, maxc: num) -> list
   let starts = [0]
   let n = len(s)
   let start = 0
@@ -355,7 +355,7 @@ fn wrap_starts(s, maxc)
   starts
 end
 
-fn build_rows(lines, maxc)
+fn build_rows(lines: list, maxc: num) -> list
   let rows = []
   for i in range(0, len(lines)) do
     let s = lines[i]
@@ -371,7 +371,7 @@ end
 
 // Display row holding `p`; the row that *ends* at a wrap point wins, so the
 // caret sits at the end of the visual line rather than jumping to the next.
-fn row_of(rows, p)
+fn row_of(rows: list, p: record) -> int
   let found = -1
   for i in range(0, len(rows)) do
     let r = rows[i]
@@ -383,29 +383,29 @@ fn row_of(rows, p)
 end
 
 // ── positions and selection ─────────────────────────────────────────────────
-fn pos_before(a, b)
+fn pos_before(a: record, b: record) -> bool
   a.line < b.line || (a.line == b.line && a.col < b.col)
 end
 
-fn pos_eq(a, b)
+fn pos_eq(a: record, b: record) -> bool
   a.line == b.line && a.col == b.col
 end
 
-fn sel_lo(a, c)
+fn sel_lo(a: record, c: record) -> record
   if pos_before(c, a) then c else a end
 end
 
-fn sel_hi(a, c)
+fn sel_hi(a: record, c: record) -> record
   if pos_before(c, a) then a else c end
 end
 
-fn clamp_pos(lines, p)
+fn clamp_pos(lines: list, p: record) -> record
   let l = iclamp(p.line, 0, len(lines) - 1)
   {line: l, col: iclamp(p.col, 0, len(lines[l]))}
 end
 
 // ── edit primitives (pure: they return new documents) ───────────────────────
-fn delete_range(lines, s, e)
+fn delete_range(lines: list, s: record, e: record) -> list
   let out = []
   for i in range(0, len(lines)) do
     if i < s.line || i > e.line then
@@ -419,7 +419,7 @@ fn delete_range(lines, s, e)
   out
 end
 
-fn insert_text(lines, p, txt)
+fn insert_text(lines: list, p: record, txt: string) -> record
   let parts = split(txt, "\n")
   let src = lines[p.line]
   let head = slice(src, 0, p.col)
@@ -450,11 +450,11 @@ end
 // Tab produces no text, but Ctrl+S *does* arrive with its character attached
 // (the host forwards the chord and its text together), so a save would type an
 // "s" into the document without this guard.
-fn typing_ok()
+fn typing_ok() -> bool
   !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
 end
 
-fn sel_len(lines, lo, hi)
+fn sel_len(lines: list, lo: record, hi: record) -> num
   if lo.line == hi.line then
     hi.col - lo.col
   else
@@ -466,11 +466,11 @@ fn sel_len(lines, lo, hi)
   end
 end
 
-fn is_word_char(ch)
+fn is_word_char(ch: string) -> bool
   ch != " " && ch != "\t" && ch != "," && ch != "." && ch != "-" && ch != "(" && ch != ")" && ch != "\"" && ch != ";" && ch != ":"
 end
 
-fn word_start(s, col)
+fn word_start(s: string, col: num) -> num
   let i = col
   while i > 0 && is_word_char(slice(s, i - 1, i)) do
     i = i - 1
@@ -478,7 +478,7 @@ fn word_start(s, col)
   i
 end
 
-fn word_end(s, col)
+fn word_end(s: string, col: num) -> num
   let i = col
   while i < len(s) && is_word_char(slice(s, i, i + 1)) do
     i = i + 1
@@ -487,7 +487,7 @@ fn word_end(s, col)
 end
 
 // ── store helpers ───────────────────────────────────────────────────────────
-fn note_by_id(list, id)
+fn note_by_id(list: list, id: num)
   let found = nil
   for n in list do
     if n.id == id then
@@ -497,7 +497,7 @@ fn note_by_id(list, id)
   found
 end
 
-fn put_note(list, id, updated)
+fn put_note(list: list, id: num, updated: record) -> list
   let out = []
   for n in list do
     if n.id == id then
@@ -509,7 +509,7 @@ fn put_note(list, id, updated)
   out
 end
 
-fn index_of_note(list, id)
+fn index_of_note(list: list, id: num) -> int
   let at = 0
   for i in range(0, len(list)) do
     if list[i].id == id then
@@ -519,7 +519,7 @@ fn index_of_note(list, id)
   at
 end
 
-fn insert_note(list, at, item)
+fn insert_note(list: list, at: num, item: record) -> list
   let out = []
   for i in range(0, len(list)) do
     if i == at then
@@ -533,7 +533,7 @@ fn insert_note(list, at, item)
   out
 end
 
-fn drop_note(list, id)
+fn drop_note(list: list, id: num) -> list
   let out = []
   for n in list do
     if n.id != id then
@@ -544,7 +544,7 @@ fn drop_note(list, id)
 end
 
 // Notebook filter + query filter, pinned first, then most-recent first.
-fn visible_notes(list, bk, query)
+fn visible_notes(list: list, bk: string, query: string) -> list
   let hits = []
   for n in list do
     if (bk == "All" || n.book == bk) && matches_query(n, query) then
@@ -565,7 +565,7 @@ fn visible_notes(list, bk, query)
   out
 end
 
-fn book_count(list, bk)
+fn book_count(list: list, bk: string) -> int
   let n = 0
   for x in list do
     if bk == "All" || x.book == bk then
@@ -575,7 +575,7 @@ fn book_count(list, bk)
   n
 end
 
-fn preview_text(lines)
+fn preview_text(lines: list) -> string
   let out = ""
   for ln in lines do
     let t = ln
@@ -761,8 +761,7 @@ draw_rect_rounded(newr, 8, if new_hot then ACCENT else PAPER end)
 if !new_hot then
   draw_rect_outline(newr, RULE)
 end
-let plus_c = if new_hot then WHITE else INK_SOFT
-end
+let plus_c = if new_hot then WHITE else INK_SOFT end
 stroke(newr.x + 8, newr.y + 16, newr.x + 18, newr.y + 16, plus_c, 255, 1.6)
 stroke(newr.x + 13, newr.y + 11, newr.x + 13, newr.y + 21, plus_c, 255, 1.6)
 
@@ -925,11 +924,9 @@ if tfocus then
   stroke(tc, tr.y + 6, tc, tr.y + 30, ACCENT, 255, 2)
 end
 
-let meta_parts = []
 if note != nil then
-  meta_parts = [note.book, "edited " ++ ago(note.mins), "{words_in(doc)} words", "{chars_in(doc)} characters"]
-end
-if note != nil then
+  let meta_parts = [note.book, "edited " ++ ago(note.mins),
+    "{words_in(doc)} words", "{chars_in(doc)} characters"]
   dot(EDX + EPAD + 3, 90, 3.5, book_color(note.book))
   draw_text(fit_parts(meta_parts, EDW - EPAD * 2, FS_SM), {x: EDX + EPAD + 14, y: 84},
     {size: FS_SM, color: FAINT})
@@ -943,7 +940,7 @@ let body_r = rect(EDX, BODY_Y - 8, EDW, BODY_H + 16)
 let bfocus = focus == "body"
 
 // -- input: pointer ---------------------------------------------------------
-fn hit_pos(rows, doc, px, py, scroll)
+fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
   let ri = iclamp(int((py - BODY_Y + scroll) / LH), 0, max(0, len(rows) - 1))
   let r = rows[ri]
   let off = int((px - BODY_X + CW / 2) / CW)
@@ -951,7 +948,7 @@ fn hit_pos(rows, doc, px, py, scroll)
 end
 
 if mouse_pressed(0) && point_in(mx, my, body_r) && note != nil then
-  let p = hit_pos(rows, doc, mx, my, bscroll)
+  let p = hit_pos(rows, mx, my, bscroll)
   focus = "body"
   let dbl = click_count() >= 2 ||
   (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
@@ -973,7 +970,7 @@ if mouse_pressed(0) && point_in(mx, my, body_r) && note != nil then
   end
 end
 if dragging && mouse_down(0) && note != nil then
-  cur = hit_pos(rows, doc, mx, my, bscroll)
+  cur = hit_pos(rows, mx, my, bscroll)
 end
 if !mouse_down(0) then
   dragging = false

@@ -78,7 +78,7 @@ let heads = ["PULSE1", "PULSE2", "TRI", "NOISE"]
 // ── Reading the song at the playhead ──────────────────────────────────────
 
 // The pattern a channel is playing in the current order frame, or -1.
-fn pattern_of(tune, order_index, ch)
+fn pattern_of(tune: record, order_index: num, ch: string)
   if order_index < 0 || order_index >= len(tune.order) then
     -1
   else
@@ -90,7 +90,7 @@ end
 // pattern under a long one simply holds, which is how a 4-row drum loop rides
 // beneath a 16-row melody — and why the grid below can run past the end of a
 // column and must draw blanks rather than fall over.
-fn frame_rows(tune, order_index)
+fn frame_rows(tune: record, order_index: num) -> int
   let n = 0
   for ch in chans do
     let pi = pattern_of(tune, order_index, ch)
@@ -101,7 +101,7 @@ fn frame_rows(tune, order_index)
   n
 end
 
-fn row_at(tune, order_index, ch, r)
+fn row_at(tune: record, order_index: num, ch: string, r: num)
   let pi = pattern_of(tune, order_index, ch)
   if pi < 0 || pi >= len(tune.patterns) then
     nil
@@ -113,7 +113,7 @@ end
 
 // One tracker cell: "C-4 12", "--- ..", "... .." — the note and the volume
 // column, in the notation the pattern was written in.
-fn cell_text(tune, order_index, ch, r)
+fn cell_text(tune: record, order_index: num, ch: string, r: num) -> string
   let x = row_at(tune, order_index, ch, r)
   if x == nil then
     "       "
@@ -129,7 +129,7 @@ end
 // What a channel should be sounding right now: scan the frame from row 0 to
 // the playhead, keeping the last note and the last volume column, exactly as
 // the driver's own voice state does.
-fn sounding(tune, pos, ch)
+fn sounding(tune: record, pos: record, ch: string) -> record
   let note = -1
   let vol = 15
   for r in range(0, pos.row + 1) do

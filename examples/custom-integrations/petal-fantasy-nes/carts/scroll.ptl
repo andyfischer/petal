@@ -119,7 +119,7 @@ fill_map(0, 0)
 
 // The ridge line: rows 4..8, two full periods across the map's 64 columns, so
 // the column that meets column 0 after a wrap has the same height.
-fn ridge(x)
+fn ridge(x: num) -> int
   4 + int(round(2 + 2 * sin(x * 2 * pi() * 2 / cols)))
 end
 

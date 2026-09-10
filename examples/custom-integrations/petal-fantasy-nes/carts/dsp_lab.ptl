@@ -68,7 +68,7 @@ let block_samples = sample_rate / 60
 // array skips the per-element boxing — which is a good part of the difference
 // between realtime being viable and not.
 
-fn render_block(start, count, rate, f)
+fn render_block(start: num, count: num, rate: num, f: function) -> f64_array
   let out = f64_array(count)
   for k in range(0, count) do
     let i = start + k
@@ -82,12 +82,12 @@ end
 // functions because `register_sound` takes the name of one — the host calls
 // back into the script by name, so a closure would have nothing to look up.
 
-fn snd_laser(start, count, rate)
+fn snd_laser(start: num, count: num, rate: num) -> f64_array
   render_block(start, count, rate, fn(t, i) ->
     osc_square(t, 1400.0 - 1150.0 * t / 0.28, 1) * env_decay(t, 0.28) * 0.7)
 end
 
-fn snd_coin(start, count, rate)
+fn snd_coin(start: num, count: num, rate: num) -> f64_array
   // Two pitches, the second a fifth up after 60 ms — an arpeggio short enough
   // to read as one sound.
   render_block(start, count, rate, fn(t, i) ->
@@ -95,14 +95,14 @@ fn snd_coin(start, count, rate)
     * env_ad(t, 0.005, 0.30) * 0.6)
 end
 
-fn snd_thud(start, count, rate)
+fn snd_thud(start: num, count: num, rate: num) -> f64_array
   // Noise plus a falling sine: the shape of every kick drum ever sampled.
   render_block(start, count, rate, fn(t, i) ->
     (osc_noise(i) * 0.35 * env_decay(t, 0.09)
       + osc_sine(t, 160.0 - 110.0 * t / 0.22) * env_decay(t, 0.22)) * 0.8)
 end
 
-fn snd_chord(start, count, rate)
+fn snd_chord(start: num, count: num, rate: num) -> f64_array
   // Four detuned saws, a minor triad. Additive synthesis is trivial here and
   // impossible on the chip, which is most of the reason this path exists.
   render_block(start, count, rate, fn(t, i) ->
@@ -141,7 +141,7 @@ state var pick = 0
 // nothing audible. Divide by the block size, multiply by the sound's length,
 // and you have an honest estimate of what banking it costs — measured, not
 // guessed, and gathered from the same machine and the same build.
-fn probe_block(start, count, rate)
+fn probe_block(start: num, count: num, rate: num) -> f64_array
   let s = bank[get pick]
   let n = max(1, int(s[2] * float(rate)))
   s[3](pmod(start, n), count, rate)
@@ -164,7 +164,7 @@ state var dsp_on = true
 
 let wave_names = ["PULSE 50%", "PULSE 12%", "SAW", "TRIANGLE", "SINE"]
 
-fn wave_at(kind, t, hz)
+fn wave_at(kind: num, t: num, hz: num) -> float
   if kind == 0 then osc_square(t, hz, 2)
   elsif kind == 1 then osc_square(t, hz, 0)
   elsif kind == 2 then osc_saw(t, hz)
@@ -176,7 +176,7 @@ end
 // a slow vibrato on both. The detune is what makes it sound like something the
 // chip cannot do; it is also two oscillator evaluations per sample, which is
 // what the cost meter is measuring.
-fn dsp_voice(t)
+fn dsp_voice(t: num) -> float
   if !(get dsp_on) then
     0.0
   else
@@ -195,7 +195,7 @@ end
 // samples a frame the per-sample cost is the only cost there is, and the host
 // fades the bus out if it overruns its slice. `dsp_voice` above stays as the
 // readable definition of one sample, and is what the on-screen plot draws.
-fn dsp_block(start, count, rate)
+fn dsp_block(start: num, count: num, rate: num) -> f64_array
   let out = f64_array(count)
   if get dsp_on then
     let k = get dsp_wave
@@ -300,7 +300,7 @@ map_text_right(31, 2, "SEL SWAP", 0)
 // level — at half a dozen cells of vertical room a quiet sound would otherwise
 // flatten into a straight line. The level has its own meter.
 
-fn plot_wave(x_cell, y_cell, w, half, span, f)
+fn plot_wave(x_cell: num, y_cell: num, w: num, half: num, span: num, f: function)
   let vs = []
   let peak = 0.0001
   for c in range(0, w) do
@@ -319,7 +319,7 @@ fn plot_wave(x_cell, y_cell, w, half, span, f)
   end
 end
 
-fn plot_envelope(x_cell, y_cell, w, half, span, f)
+fn plot_envelope(x_cell: num, y_cell: num, w: num, half: num, span: num, f: function)
   let probes = 12
   let vs = []
   let peak = 0.0001
@@ -340,7 +340,7 @@ end
 
 // ── The banked screen ─────────────────────────────────────────────────────
 
-fn screen_banked(pick, probe, block_samples)
+fn screen_banked(pick: num, probe: bool, block_samples: num)
   map_text(1, 4, "SOUND", 0)
   map_text(10, 4, "SECS", 0)
   map_text(15, 4, "SAMPLES", 0)
@@ -379,7 +379,7 @@ end
 
 // ── The realtime screen ───────────────────────────────────────────────────
 
-fn screen_realtime(pick, knobs, vals, on)
+fn screen_realtime(pick: num, knobs: list, vals: list, on: bool)
   let shown = [note_name(vals[0]), wave_names[vals[1]],
     str(vals[2]), str(vals[3]), str(vals[4])]
 

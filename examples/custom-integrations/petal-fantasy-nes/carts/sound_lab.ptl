@@ -148,7 +148,7 @@ end
 // numbers that were just written to it. Enough to connect "duty 0" with "thin,
 // nasal" without having to imagine it.
 
-fn sketch_pulse(duty)
+fn sketch_pulse(duty: num)
   let high = [1, 2, 4, 6][duty]
   let prev = -1
   for x in range(0, 32) do
@@ -169,7 +169,7 @@ fn sketch_triangle()
   end
 end
 
-fn sketch_noise(per)
+fn sketch_noise(per: num)
   // A stable hash, not `random`: the picture has to hold still between frames
   // or it reads as an animation rather than as the shape of the sound.
   for x in range(0, 32) do

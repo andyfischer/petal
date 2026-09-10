@@ -14,10 +14,6 @@
 // twice the size of everything else without a second font. Both run every
 // frame — tile writes are idempotent by design — so editing this file live
 // repaints immediately.
-//
-// Prelude note: `nes.ptl` does not export text/menu helpers yet, so
-// `text_at` / `big_text` / the menu logic are local to this cart. They should
-// move to the prelude once it grows them.
 
 // ── Tile budget ───────────────────────────────────────────────────────────
 // 0-7 are chrome, the font lands at 16, and the title's per-character tiles
@@ -87,21 +83,21 @@ let BLANK_ROW = "00000000"
 // Index of `ch` in the font, falling back to the space glyph. Cart names come
 // from filenames, so anything the font lacks (an underscore, say) reads as a
 // word break rather than as a missing tile.
-fn glyph_index(ch)
+fn glyph_index(ch: string) -> int
   let i = index_of(FONT_CHARS, upper(ch))
   if i < 0 then index_of(FONT_CHARS, " ") else i end
 end
 
 // A glyph padded into an 8x8 cell: one column of left bearing, one blank row
 // of leading under the baseline.
-fn small_tile(pattern)
+fn small_tile(pattern: string) -> list
   let rows = for r in split(pattern, " ") do "0" ++ r ++ "00" end
   append(rows, BLANK_ROW)
 end
 
 // The same glyph at 2x, centered in a 16x16 block and cut into the four tiles
 // the map needs (top-left, top-right, bottom-left, bottom-right).
-fn big_glyph(ch)
+fn big_glyph(ch: string) -> list
   let pattern = FONT_GLYPHS[glyph_index(ch)]
   let wide = for r in split(pattern, " ") do
     "000" ++ join(for i in range(0, 5) do char_at(r, i) ++ char_at(r, i) end, "") ++ "000"
@@ -119,25 +115,25 @@ end
 
 // ── Drawing helpers ───────────────────────────────────────────────────────
 
-fn text_at(cx, cy, text, pal)
+fn text_at(cx: num, cy: num, text: string, pal: num)
   for i in range(0, len(text)) do
     set_tile(cx + i, cy, FONT_BASE + glyph_index(char_at(text, i)), pal)
   end
 end
 
-fn centered(text)
+fn centered(text: string) -> int
   int((32 - len(text)) / 2)
 end
 
 // Double-size text is two cells per character, so it centers differently.
-fn centered_big(text)
+fn centered_big(text: string) -> int
   int((32 - len(text) * 2) / 2)
 end
 
 // Two rows of double-size text. Each character owns four tiles of its own, so
 // the same letter twice costs two definitions — at eleven characters that is
 // cheaper than tracking which glyphs are already resident.
-fn big_text(cx, cy, text, top_pal, bottom_pal)
+fn big_text(cx: num, cy: num, text: string, top_pal: num, bottom_pal: num)
   for i in range(0, len(text)) do
     let base = TITLE_BASE + i * 4
     define_tiles(base, big_glyph(char_at(text, i)))
@@ -149,7 +145,7 @@ fn big_text(cx, cy, text, top_pal, bottom_pal)
   end
 end
 
-fn rule_at(cy, pal)
+fn rule_at(cy: num, pal: num)
   for x in range(2, 30) do
     set_tile(x, cy, TILE_RULE, pal)
   end

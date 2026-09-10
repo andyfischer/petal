@@ -3,9 +3,9 @@
 //   cargo run -- carts/sprites.ptl
 //   A          toggle the 8-per-scanline drop-out
 //
-// Five bands, each proving one thing: metasprites, a walk cycle, the two flip
-// bits, behind-background priority, and what happens when a cart asks for more
-// than 64 sprites. Every label is written into the background *map* rather than
+// Four bands: metasprites and a walk cycle, the two flip bits,
+// behind-background priority, and what happens when a cart asks for more than
+// 64 sprites. Every label is written into the background *map* rather than
 // drawn with `text_sprites`, because the whole point of the bottom band is to
 // spend the sprite budget deliberately — a HUD made of sprites would eat into
 // the number under test and make the demo lie.
@@ -38,7 +38,7 @@ let body = [
   "..###oooooo###.."
 ]
 
-fn walker(legs)
+fn walker(legs: list) -> list
   flat([body, legs])
 end
 

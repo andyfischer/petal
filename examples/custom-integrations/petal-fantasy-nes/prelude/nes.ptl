@@ -27,8 +27,7 @@
 // `Rect` (fields x, y, w, h), so a hand-written `{x: .., y: .., w: .., h: ..}`
 // works anywhere a rect is taken.
 //
-// One implementation note, because it looks like paranoia otherwise: every
-// `state` variable in this file is named `_nes_something`. A module's state is
+// Every `state` variable here is named `_nes_something`: a module's state is
 // reported to the host under its module-qualified name, so the prefix is what
 // makes `nes::_nes_scroll` read as the console's own bookkeeping next to a
 // cart's `scroll` in a state dump.
@@ -116,26 +115,26 @@ state var _nes_backdrop = 15
 // entry of every palette. Remembered so `palette(i, c1, c2, c3)` can fill it
 // in, so call this *before* the palettes that rely on it (or just call it at
 // the top of the cart, which is where it belongs anyway).
-export fn set_backdrop(c)
+export fn set_backdrop(c: num)
   set _nes_backdrop = c
   _native_set_backdrop(c)
 end
 
 // The current backdrop index.
-export fn backdrop()
+export fn backdrop() -> num
   get _nes_backdrop
 end
 
 // `palette(i, c1, c2, c3)` — the three colors that are actually this
 // palette's, with color 0 taken from the backdrop. The common form.
-export fn palette(index, c1, c2, c3)
+export fn palette(index: num, c1: num, c2: num, c3: num)
   set_palette(index, backdrop(), c1, c2, c3)
 end
 
 // `palette(i, [c0, c1, c2, c3])` / `palette(i, [c1, c2, c3])` — the list form,
 // so a cart can keep its palettes as data (a table of levels, a fade sequence)
 // and splat one in without unpacking it by hand.
-export fn palette(index, colors)
+export fn palette(index: num, colors: list)
   if len(colors) >= 4 then
     set_palette(index, colors[0], colors[1], colors[2], colors[3])
   elsif len(colors) == 3 then
@@ -176,7 +175,7 @@ end
 // exactly where `_art_color` is called from.
 state var _nes_art_table = _build_art_table()
 
-fn _build_art_table()
+fn _build_art_table() -> record
   let t = {}
   t["."] = 0
   t[" "] = 0
@@ -191,12 +190,12 @@ fn _build_art_table()
   t
 end
 
-fn _art_color(ch, remap)
+fn _art_color(ch: string, remap: record)
   remap[ch] ?? ((get _nes_art_table)[ch] ?? 0)
 end
 
 // One authored line -> a string of color digits, unpadded.
-fn _art_digits(line, remap)
+fn _art_digits(line: string, remap: record) -> string
   let out = ""
   for ch in chars(line) do
     out = out ++ str(_art_color(ch, remap))
@@ -204,7 +203,7 @@ fn _art_digits(line, remap)
   out
 end
 
-fn _pad_to(s, n)
+fn _pad_to(s: string, n: num) -> string
   let out = s
   while len(out) < n do
     out = out ++ "0"
@@ -215,11 +214,11 @@ end
 // Normalize authored art into the 8 rows of 8 digits `define_tile` wants,
 // without defining anything. Useful for building a tile programmatically, or
 // for feeding the same art to `define_tile` yourself.
-export fn art(rows)
+export fn art(rows: list) -> list
   art(rows, {})
 end
 
-export fn art(rows, remap)
+export fn art(rows: list, remap: record) -> list
   let out = []
   for line in rows do
     out = append(out, _pad_to(_art_digits(line, remap), 8))
@@ -233,11 +232,11 @@ end
 // Define one tile from readable string art. Idempotent — the host hashes the
 // pattern table and skips unchanged writes — so this belongs at the top of the
 // cart, run every frame, and a hot reload repaints the artwork for free.
-export fn define_art(index, rows)
+export fn define_art(index: num, rows: list)
   define_tile(index, art(rows, {}))
 end
 
-export fn define_art(index, rows, remap)
+export fn define_art(index: num, rows: list, remap: record)
   define_tile(index, art(rows, remap))
 end
 
@@ -249,11 +248,11 @@ end
 //   let next = define_art_run(hero, [walk_a, walk_b, walk_c])
 //   let coin = next
 //
-export fn define_art_run(base, arts)
+export fn define_art_run(base: num, arts: list) -> num
   define_art_run(base, arts, {})
 end
 
-export fn define_art_run(base, arts, remap)
+export fn define_art_run(base: num, arts: list, remap: record) -> num
   for i in range(0, len(arts)) do
     define_tile(base + i, art(arts[i], remap))
   end
@@ -269,7 +268,7 @@ export let behind_bg = 4
 
 // Flags from two booleans, for the usual "face the way you are walking" line:
 //   sprite(x, y, tile, 4, flip(facing_left, false))
-export fn flip(fx, fy)
+export fn flip(fx: bool, fy: bool) -> int
   (if fx then 1 else 0 end) + (if fy then 2 else 0 end)
 end
 
@@ -294,27 +293,27 @@ end
 
 // A metasprite over `w_tiles` x `h_tiles` of already-defined tiles starting at
 // `tile_base`, in pattern-table order.
-export fn meta(tile_base, w_tiles, h_tiles, pal)
+export fn meta(tile_base: num, w_tiles: num, h_tiles: num, pal: num) -> record
   {base: tile_base, w: w_tiles, h: h_tiles, pal: pal, parts: []}
 end
 
 // One piece of an irregular metasprite: `dx`/`dy` are pixel offsets from the
 // object's top-left corner.
-export fn meta_part(dx, dy, tile)
+export fn meta_part(dx: num, dy: num, tile: num) -> record
   meta_part(dx, dy, tile, 4, 0)
 end
 
-export fn meta_part(dx, dy, tile, pal)
+export fn meta_part(dx: num, dy: num, tile: num, pal: num) -> record
   meta_part(dx, dy, tile, pal, 0)
 end
 
-export fn meta_part(dx, dy, tile, pal, flags)
+export fn meta_part(dx: num, dy: num, tile: num, pal: num, flags: num) -> record
   {dx: dx, dy: dy, tile: tile, pal: pal, flags: flags}
 end
 
 // A metasprite from explicit parts. Its w/h are derived from the parts' extent
 // so `meta_rect` and the collision helpers still describe it correctly.
-export fn meta_of(parts)
+export fn meta_of(parts: list) -> record
   let w = 0
   let h = 0
   for p in parts do
@@ -328,11 +327,11 @@ end
 // width and height are rounded up to whole tiles (short rows are padded), and
 // the same `remap` rules as `define_art` apply. Idempotent, like every other
 // artwork call. Returns the metasprite.
-export fn define_meta(base, rows, pal)
+export fn define_meta(base: num, rows: list, pal: num) -> record
   define_meta(base, rows, pal, {})
 end
 
-export fn define_meta(base, rows, pal, remap)
+export fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
   let norm = []
   let wide = 0
   for line in rows do
@@ -358,25 +357,25 @@ end
 
 // Pixel size of a metasprite, and the rect it occupies at (x, y) — the box the
 // collision helpers want.
-export fn meta_w(m)
+export fn meta_w(m: record)
   m.w * 8
 end
 
-export fn meta_h(m)
+export fn meta_h(m: record)
   m.h * 8
 end
 
-export fn meta_rect(x, y, m)
+export fn meta_rect(x: num, y: num, m: record) -> Rect
   rect(x, y, meta_w(m), meta_h(m))
 end
 
 // Draw a metasprite with its top-left corner at (x, y). Costs one sprite per
 // tile out of the 64-per-frame budget.
-export fn draw_meta(x, y, m)
+export fn draw_meta(x: num, y: num, m: record)
   draw_meta(x, y, m, 0)
 end
 
-export fn draw_meta(x, y, m, flags)
+export fn draw_meta(x: num, y: num, m: record, flags: num)
   if len(m.parts) == 0 then
     sprite_meta(px(x), px(y), m.base, m.pal, m.w, m.h, flags)
   else
@@ -483,14 +482,13 @@ let _FONT_GLYPHS = [
 let _FONT_DEFAULT_BASE = 448
 
 // Where the font lives, what color index its ink uses, and the last frame it
-// was written to the pattern table. One module cell, read with `get` and
-// written with `set` — the petal-ui theme pattern.
+// was written to the pattern table.
 state var _nes_font = {base: _FONT_DEFAULT_BASE, ink: 1, at: -1}
 
 // `pattern` -> the 8 rows of 8 digits `define_tile` takes, with `#` painted in
 // color `ink` and the glyph left-aligned in the cell (so text advances 8px and
 // row 8 stays clear for descender-free line spacing).
-fn _glyph_rows(pattern, ink)
+fn _glyph_rows(pattern: string, ink: num) -> list
   let ink_ch = str(ink)
   let rows = []
   for line in split(pattern, "/") do
@@ -506,12 +504,12 @@ end
 // The decoded font, cached per ink color: 64 glyphs is enough string work that
 // rebuilding it every frame would be visible in a profile, and the result
 // never changes.
-fn _font_rows(ink)
+fn _font_rows(ink: num) -> list
   state(ink) var _nes_font_rows = _build_font_rows(ink)
   _nes_font_rows
 end
 
-fn _build_font_rows(ink)
+fn _build_font_rows(ink: num) -> list
   let out = []
   for g in _FONT_GLYPHS do
     out = append(out, _glyph_rows(g, ink))
@@ -519,7 +517,7 @@ fn _build_font_rows(ink)
   out
 end
 
-fn _build_font_index()
+fn _build_font_index() -> record
   let m = {}
   let cs = chars(_FONT_CHARS)
   for i in range(0, len(cs)) do
@@ -536,7 +534,7 @@ end
 // time — which makes it un-hoistable, so a call above it would read nil.
 state var _nes_font_index = _build_font_index()
 
-fn _install_font(base, ink)
+fn _install_font(base: num, ink: num)
   let rows = _font_rows(ink)
   for i in range(0, len(rows)) do
     define_tile(base + i, rows[i])
@@ -547,18 +545,18 @@ end
 // use. `ink` is which palette entry the glyphs are drawn in — 1 by default, so
 // the text color is the palette's first real color. Idempotent; returns the
 // next free tile index.
-export fn font_tiles(base)
+export fn font_tiles(base: num) -> num
   font_tiles(base, 1)
 end
 
-export fn font_tiles(base, ink)
+export fn font_tiles(base: num, ink: num) -> num
   _install_font(base, ink)
   set _nes_font = {base: base, ink: ink, at: frame_count()}
   base + len(_FONT_GLYPHS)
 end
 
 // The tile index the font currently starts at.
-export fn font_base()
+export fn font_base() -> num
   (get _nes_font).base
 end
 
@@ -566,7 +564,7 @@ end
 // them, at most once per frame. This is what lets a cart use `map_text` with
 // no setup call at all — and re-running it each frame also heals the font if
 // the cart's own artwork happened to overwrite those tiles.
-fn _ensure_font()
+fn _ensure_font() -> num
   let f = get _nes_font
   if f.at != frame_count() then
     _install_font(f.base, f.ink)
@@ -578,7 +576,7 @@ end
 // The tile index for one character. Unknown characters (and lowercase, which
 // is folded) resolve through the same table; anything the font does not carry
 // draws as a space.
-export fn glyph(ch)
+export fn glyph(ch: string)
   _ensure_font() + ((get _nes_font_index)[upper(ch)] ?? 0)
 end
 
@@ -598,11 +596,11 @@ end
 // Spaces are written as the blank glyph, so re-writing a shorter string over a
 // longer one erases the tail — which is what makes this safe to call every
 // frame with a changing score.
-export fn map_text(x_cell, y_cell, s)
+export fn map_text(x_cell: num, y_cell: num, s: string)
   map_text(x_cell, y_cell, s, 0)
 end
 
-export fn map_text(x_cell, y_cell, s, pal)
+export fn map_text(x_cell: num, y_cell: num, s: string, pal: num)
   let cs = chars(upper(s))
   for i in range(0, len(cs)) do
     set_tile(x_cell + i, y_cell, glyph(cs[i]), pal)
@@ -611,22 +609,22 @@ end
 
 // Centered in the 32-cell width. Odd-length strings land half a cell left,
 // which is what a tile grid can do.
-export fn map_text_center(y_cell, s, pal)
+export fn map_text_center(y_cell: num, s: string, pal: num)
   map_text(int((screen_cols - len(s)) / 2), y_cell, s, pal)
 end
 
 // Draw `s` as sprites with its top-left corner at pixel (x, y). Blank
 // characters cost nothing. Returns the number of sprites used, so a HUD can
 // stay inside the 64-sprite budget deliberately instead of by luck.
-export fn text_sprites(x, y, s)
+export fn text_sprites(x: num, y: num, s: string) -> int
   text_sprites(x, y, s, 4, 0)
 end
 
-export fn text_sprites(x, y, s, pal)
+export fn text_sprites(x: num, y: num, s: string, pal: num) -> int
   text_sprites(x, y, s, pal, 0)
 end
 
-export fn text_sprites(x, y, s, pal, flags)
+export fn text_sprites(x: num, y: num, s: string, pal: num, flags: num) -> int
   let cs = chars(upper(s))
   let used = 0
   for i in range(0, len(cs)) do
@@ -639,32 +637,32 @@ export fn text_sprites(x, y, s, pal, flags)
 end
 
 // Centered on the 256-pixel screen.
-export fn text_sprites_center(y, s, pal)
+export fn text_sprites_center(y: num, s: string, pal: num) -> int
   text_sprites(int((screen_w - len(s) * 8) / 2), y, s, pal, 0)
 end
 
 // Width of `s` if drawn, in cells and in pixels. The font is fixed-width, so
 // these are exact — lay a box out with them rather than guessing.
-export fn text_cells(s)
+export fn text_cells(s: string) -> int
   len(s)
 end
 
-export fn text_px(s)
+export fn text_px(s: string) -> int
   len(s) * 8
 end
 
 // Right-align helpers, for scores and timers that grow leftward.
-export fn map_text_right(right_cell, y_cell, s, pal)
+export fn map_text_right(right_cell: num, y_cell: num, s: string, pal: num)
   map_text(right_cell - len(s), y_cell, s, pal)
 end
 
-export fn text_sprites_right(right_x, y, s, pal)
+export fn text_sprites_right(right_x: num, y: num, s: string, pal: num) -> int
   text_sprites(right_x - text_px(s), y, s, pal, 0)
 end
 
 // Zero-padded number, the other thing every HUD needs: `pad_num(7, 3)` is
 // "007". Negative numbers keep their sign and lose one digit of padding.
-export fn pad_num(n, digits)
+export fn pad_num(n: num, digits: num) -> string
   let s = str(int(n))
   while len(s) < digits do
     s = "0" ++ s
@@ -684,29 +682,29 @@ let _native_set_scroll = set_scroll
 state var _nes_map = {w: 32, h: 30}
 state var _nes_scroll = {x: 0, y: 0}
 
-export fn set_map_size(w_cells, h_cells)
+export fn set_map_size(w_cells: num, h_cells: num)
   set _nes_map = {w: w_cells, h: h_cells}
   _native_set_map_size(w_cells, h_cells)
 end
 
 // The map's size in cells and in pixels.
-export fn map_cols()
+export fn map_cols() -> num
   (get _nes_map).w
 end
 
-export fn map_rows()
+export fn map_rows() -> num
   (get _nes_map).h
 end
 
-export fn map_w()
+export fn map_w() -> num
   map_cols() * 8
 end
 
-export fn map_h()
+export fn map_h() -> num
   map_rows() * 8
 end
 
-export fn set_scroll(x, y)
+export fn set_scroll(x: num, y: num)
   set _nes_scroll = {x: x, y: y}
   _native_set_scroll(px(x), px(y))
 end
@@ -714,17 +712,17 @@ end
 // The current scroll position — the world coordinate at the top-left of the
 // screen. Named `cam_*` and not `scroll_*` because petal-ui already publishes
 // `scroll_x()`/`scroll_y()` for the mouse wheel.
-export fn cam_x()
+export fn cam_x() -> num
   (get _nes_scroll).x
 end
 
-export fn cam_y()
+export fn cam_y() -> num
   (get _nes_scroll).y
 end
 
 // Point the camera at a world position, clamped so the view never runs past
 // the edge of the map. Returns the position actually used.
-export fn camera(x, y)
+export fn camera(x: num, y: num) -> record
   let cx = clamp(x, 0, max(0, map_w() - screen_w))
   let cy = clamp(y, 0, max(0, map_h() - screen_h))
   set_scroll(cx, cy)
@@ -733,50 +731,50 @@ end
 
 // Center the camera on a point — the usual "follow the player" call, already
 // clamped to the map.
-export fn camera_follow(x, y)
+export fn camera_follow(x: num, y: num) -> record
   camera(x - screen_w / 2, y - screen_h / 2)
 end
 
 // World -> screen, for drawing an object that lives in map coordinates.
-export fn world_to_screen(x, y)
+export fn world_to_screen(x: num, y: num) -> record
   {x: x - cam_x(), y: y - cam_y()}
 end
 
 // A sprite placed in *world* coordinates: the camera offset is applied for
 // you. Most gameplay code never wants screen space, and hand-subtracting the
 // camera at every sprite call is where off-by-one jitter comes from.
-export fn sprite_world(x, y, tile, pal)
+export fn sprite_world(x: num, y: num, tile: num, pal: num)
   sprite_world(x, y, tile, pal, 0)
 end
 
-export fn sprite_world(x, y, tile, pal, flags)
+export fn sprite_world(x: num, y: num, tile: num, pal: num, flags: num)
   sprite(px(x - cam_x()), px(y - cam_y()), tile, pal, flags)
 end
 
-export fn draw_meta_world(x, y, m)
+export fn draw_meta_world(x: num, y: num, m: record)
   draw_meta_world(x, y, m, 0)
 end
 
-export fn draw_meta_world(x, y, m, flags)
+export fn draw_meta_world(x: num, y: num, m: record, flags: num)
   draw_meta(x - cam_x(), y - cam_y(), m, flags)
 end
 
 // Is this world-space rect anywhere near the visible screen? The cheap cull
 // every scrolling game needs before it spends a sprite on an off-screen enemy.
-export fn on_screen(r)
+export fn on_screen(r: record)
   overlaps(r, rect(cam_x(), cam_y(), screen_w, screen_h))
 end
 
 // Freeze the top `height_px` scanlines at scroll x = 0 while the rest of the
 // screen scrolls: the status-bar split. Call it every frame, after the camera.
-export fn lock_top(height_px)
+export fn lock_top(height_px: num)
   for y in range(0, height_px) do
     set_scroll_at(y, 0)
   end
 end
 
 // Fill a rectangular region of cells with one tile.
-export fn map_rect(x_cell, y_cell, w_cells, h_cells, tile, pal)
+export fn map_rect(x_cell: num, y_cell: num, w_cells: num, h_cells: num, tile: num, pal: num)
   for y in range(0, h_cells) do
     for x in range(0, w_cells) do
       set_tile(x_cell + x, y_cell + y, tile, pal)
@@ -785,7 +783,7 @@ export fn map_rect(x_cell, y_cell, w_cells, h_cells, tile, pal)
 end
 
 // Write a row of tile indices from a list.
-export fn map_row(x_cell, y_cell, tiles, pal)
+export fn map_row(x_cell: num, y_cell: num, tiles: list, pal: num)
   for i in range(0, len(tiles)) do
     set_tile(x_cell + i, y_cell, tiles[i], pal)
   end
@@ -806,7 +804,7 @@ end
 // A character the legend does not mention is left *untouched*, so "." means
 // "not mine" and several `map_art` calls can be layered — terrain, then
 // decoration, then a doorway — without the later ones erasing the earlier.
-export fn map_art(x_cell, y_cell, rows, legend)
+export fn map_art(x_cell: num, y_cell: num, rows: list, legend: list)
   let m = _legend_rec(legend)
   for y in range(0, len(rows)) do
     let cs = chars(rows[y])
@@ -819,7 +817,7 @@ export fn map_art(x_cell, y_cell, rows, legend)
   end
 end
 
-fn _legend_rec(legend)
+fn _legend_rec(legend: list) -> record
   let m = {}
   for e in legend do
     m[e[0]] = e
@@ -834,45 +832,45 @@ end
 //
 // Button names: "up" "down" "left" "right" "a" "b" "select" "start".
 
-export fn btn(name)
+export fn btn(name: string)
   pad_down(0, name)
 end
 
-export fn btn(pad, name)
+export fn btn(pad: num, name: string)
   pad_down(pad, name)
 end
 
-export fn btnp(name)
+export fn btnp(name: string)
   pad_pressed(0, name)
 end
 
-export fn btnp(pad, name)
+export fn btnp(pad: num, name: string)
   pad_pressed(pad, name)
 end
 
-export fn btnr(name)
+export fn btnr(name: string)
   pad_released(0, name)
 end
 
-export fn btnr(pad, name)
+export fn btnr(pad: num, name: string)
   pad_released(pad, name)
 end
 
 // The d-pad as -1 / 0 / +1. Opposite directions cancel, which is what a real
 // pad does mechanically and what stops diagonal-input jitter.
-export fn btn_dx()
+export fn btn_dx() -> int
   btn_dx(0)
 end
 
-export fn btn_dx(pad)
+export fn btn_dx(pad: num) -> int
   (if pad_down(pad, "right") then 1 else 0 end) - (if pad_down(pad, "left") then 1 else 0 end)
 end
 
-export fn btn_dy()
+export fn btn_dy() -> int
   btn_dy(0)
 end
 
-export fn btn_dy(pad)
+export fn btn_dy(pad: num) -> int
   (if pad_down(pad, "down") then 1 else 0 end) - (if pad_down(pad, "up") then 1 else 0 end)
 end
 
@@ -883,11 +881,11 @@ end
 // The timer lives in keyed module state, one slot per (pad, button), so this
 // is correct called unconditionally every frame and two widgets asking about
 // the same button share one repeat phase (as they should — it is one button).
-export fn btn_repeat(name, delay, rate)
+export fn btn_repeat(name: string, delay: num, rate: num) -> bool
   btn_repeat(0, name, delay, rate)
 end
 
-export fn btn_repeat(pad, name, delay, rate)
+export fn btn_repeat(pad: num, name: string, delay: num, rate: num) -> bool
   let key = "{pad}:{name}"
   state(key) var _nes_repeat_at = -1
   let fire = false
@@ -933,7 +931,7 @@ state var _nes_scene = {name: "", pending: "", req: -1, at: -1, at_time: 0}
 // Read the live scene, applying a pending switch once the frame that
 // requested it is over. Every accessor goes through this, so the switch lands
 // on the first read of the new frame no matter which one it is.
-fn _scene_now()
+fn _scene_now() -> record
   let s = get _nes_scene
   if s.pending != "" && frame_count() != s.req then
     let n = {name: s.pending, pending: "", req: -1, at: frame_count(), at_time: time()}
@@ -945,13 +943,13 @@ fn _scene_now()
 end
 
 // The current scene name; "" before anything has started one.
-export fn scene()
+export fn scene() -> string
   _scene_now().name
 end
 
 // Request a switch, effective next frame. "" is not a scene name — it is the
 // "nothing pending" sentinel — so switching to it does nothing.
-export fn set_scene(name)
+export fn set_scene(name: string)
   let s = _scene_now()
   set _nes_scene = {name: s.name, pending: name, req: frame_count(), at: s.at, at_time: s.at_time}
 end
@@ -959,7 +957,7 @@ end
 // Set the scene *only if the cart has not started one yet*, immediately. The
 // first line of a cart: safe to run every frame, and it does not fight a
 // switch that has already happened.
-export fn start_scene(name)
+export fn start_scene(name: string)
   if _scene_now().name == "" then
     set _nes_scene = {name: name, pending: "", req: -1, at: frame_count(), at_time: time()}
   end
@@ -967,7 +965,7 @@ end
 
 // True for exactly the first frame a scene is current — where per-scene setup
 // belongs (reset the score, repaint the map, reposition the player).
-export fn scene_entered()
+export fn scene_entered() -> bool
   _scene_now().at == frame_count()
 end
 
@@ -995,7 +993,7 @@ end
 
 // The input half, with no pixels of its own — for a cart that wants the
 // keyboard behaviour but draws its own rows.
-export fn menu_update(id, count)
+export fn menu_update(id: string, count: num) -> record
   if count <= 0 then
     {index: 0, chosen: -1, cancelled: false}
   else
@@ -1018,21 +1016,21 @@ end
 // explicit `state(id)` key is what makes it one slot per menu rather than one
 // module cell, and it is the only way `menu_update` and `menu_index` can be
 // looking at the same cursor.
-fn _menu_sel(id, write, v)
+fn _menu_sel(id: string, write: bool, v: num) -> num
   state(id) var _nes_menu_sel = 0
   if write then set _nes_menu_sel = v end
   _nes_menu_sel
 end
 
 // Where a menu's cursor currently sits, without touching it.
-export fn menu_index(id)
+export fn menu_index(id: string) -> num
   _menu_sel(id, false, 0)
 end
 
 // The sprite-drawn menu: floats over anything, costs one sprite per visible
 // character. Rows are 16px apart (one blank line between them) and the cursor
 // takes the two cells to the left of the text.
-export fn menu(id, x, y, items, pal)
+export fn menu(id: string, x: num, y: num, items: list, pal: num) -> record
   let m = menu_update(id, len(items))
   for i in range(0, len(items)) do
     let row_y = y + i * 16
@@ -1047,7 +1045,7 @@ end
 // The map-drawn menu: costs no sprites, but scrolls with the background — use
 // it on a static title screen. Every row rewrites its cursor cell, blank
 // included, so the old cursor is erased without any bookkeeping.
-export fn map_menu(id, x_cell, y_cell, items, pal)
+export fn map_menu(id: string, x_cell: num, y_cell: num, items: list, pal: num) -> record
   let m = menu_update(id, len(items))
   for i in range(0, len(items)) do
     let row = y_cell + i * 2
@@ -1059,32 +1057,32 @@ end
 
 // ── Geometry ──────────────────────────────────────────────────────────────
 
-export fn point_in(px_, py_, r)
+export fn point_in(px_: num, py_: num, r: record)
   px_ >= r.x && px_ < r.x + r.w && py_ >= r.y && py_ < r.y + r.h
 end
 
 // Axis-aligned overlap, in both the record and the flat form — gameplay code
 // has boxes as rects, but a quick "do these two 8x8 sprites touch" is often
 // eight loose numbers.
-export fn overlaps(a, b)
+export fn overlaps(a: record, b: record)
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 end
 
-export fn overlaps(ax, ay, aw, ah, bx, by, bw, bh)
+export fn overlaps(ax: num, ay: num, aw: num, ah: num, bx: num, by: num, bw: num, bh: num)
   ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
 end
 
 // Grow (or, with a negative amount, shrink) a rect on all sides. A forgiving
 // hitbox is `inflate(hero, -2)`; a generous pickup radius is `inflate(coin, 4)`.
-export fn inflate(r, amount)
+export fn inflate(r: record, amount: num) -> Rect
   rect(r.x - amount, r.y - amount, r.w + amount * 2, r.h + amount * 2)
 end
 
-export fn center_x(r)
+export fn center_x(r: record)
   r.x + r.w / 2
 end
 
-export fn center_y(r)
+export fn center_y(r: record)
   r.y + r.h / 2
 end
 
@@ -1102,19 +1100,19 @@ end
 state var _nes_solid = []
 
 // Declare the solid tile range, replacing whatever was declared before.
-export fn set_solid(first, last)
+export fn set_solid(first: num, last: num)
   set _nes_solid = [[first, last]]
 end
 
 // Add another solid range on top of the current set. Because `set_solid`
 // resets, the idiomatic order is one `set_solid` followed by any number of
 // `add_solid`s, re-run every frame.
-export fn add_solid(first, last)
+export fn add_solid(first: num, last: num)
   set _nes_solid = append(get _nes_solid, [first, last])
 end
 
 // Is this tile index solid?
-export fn solid_tile(t)
+export fn solid_tile(t: num) -> bool
   let hit = false
   for r in get _nes_solid do
     if t >= r[0] && t <= r[1] then
@@ -1126,7 +1124,7 @@ end
 
 // Is the map solid at world pixel (x, y)? Outside the map counts as solid, so
 // a level does not need a wall of tiles around its edge to be enclosed.
-export fn solid_at(x, y)
+export fn solid_at(x: num, y: num) -> bool
   let cx = cell_of(x)
   let cy = cell_of(y)
   if cx < 0 || cy < 0 || cx >= map_cols() || cy >= map_rows() then
@@ -1138,7 +1136,7 @@ end
 
 // Does any solid tile touch this world-space rect? Checks every cell the box
 // overlaps, so it is correct for boxes larger than one tile.
-export fn solid_box(r)
+export fn solid_box(r: record) -> bool
   let x0 = cell_of(r.x)
   let x1 = cell_of(r.x + r.w - 1)
   let y0 = cell_of(r.y)
@@ -1167,7 +1165,7 @@ end
 // along a wall instead of sticking to it: a blocked X does not cancel the fall,
 // and a blocked Y does not cancel the run. A box that starts *inside* a wall
 // cannot move at all — spawn clear of the terrain.
-export fn move_box(r, dx, dy)
+export fn move_box(r: record, dx: num, dy: num) -> record
   let cur = r
   let hit_x = false
   let hit_y = false
@@ -1203,7 +1201,7 @@ end
 
 // Is there solid ground directly under this box? Cheaper than a move when all
 // you want is the coyote-time / jump-allowed test.
-export fn on_ground(r)
+export fn on_ground(r: record) -> bool
   solid_box(rect(r.x, r.y + 1, r.w, r.h))
 end
 
@@ -1215,56 +1213,56 @@ end
 //
 // The clock is absolute, not accumulated, so animations do not drift and two
 // objects sharing a cycle stay in step.
-export fn anim(frames, fps)
+export fn anim(frames: list, fps: num)
   anim(frames, fps, time())
 end
 
 // The same, driven by a clock you own — `scene_time()`, a per-entity timer —
 // which is what you want when an animation must start at frame 0 on a
 // particular event rather than wherever the global clock happens to be.
-export fn anim(frames, fps, t)
+export fn anim(frames: list, fps: num, t: num)
   frames[pmod(int(floor(t * fps)), len(frames))]
 end
 
 // A one-shot animation: plays once from `t` = 0 and holds on the last frame.
 // Explosions, door opens, a death sprite that must not loop.
-export fn anim_once(frames, fps, t)
+export fn anim_once(frames: list, fps: num, t: num)
   frames[clamp(int(floor(t * fps)), 0, len(frames) - 1)]
 end
 
 // True for the first half of each 1/hz cycle: the flashing "PRESS START", the
 // invulnerability blink after a hit.
-export fn blink(hz)
+export fn blink(hz: num) -> bool
   fract(time() * hz) < 0.5
 end
 
 // ── Numbers ───────────────────────────────────────────────────────────────
 // Movement is written in floats — subpixel speeds, gravity, friction — and
-// becomes whole pixels only where it meets the hardware. These are the few
-// conversions that keeps that from being fiddly.
+// becomes whole pixels only where it meets the hardware. These are the
+// conversions that keep that from being fiddly.
 
 // A world coordinate as the whole pixel a sprite is drawn at. Floors rather
 // than rounds, so a slowly moving object never jitters back and forth across a
 // pixel boundary. Every sprite helper here applies it for you; use it directly
 // when calling the raw `sprite` native with float positions.
-export fn px(v)
+export fn px(v: num) -> int
   int(floor(v))
 end
 
 // Pixel -> cell index, correct for negative coordinates (plain integer
 // division truncates toward zero, which would put -1 and +1 in the same cell).
-export fn cell_of(pixel)
+export fn cell_of(pixel: num) -> int
   int(floor(pixel / 8.0))
 end
 
 // Cell index -> the pixel coordinate of its top-left corner.
-export fn cell_to_px(cell)
+export fn cell_to_px(cell: num) -> num
   cell * 8
 end
 
 // Positive modulo: `pmod(-1, 4)` is 3, where `-1 % 4` is -1. Wrapping a menu
 // cursor, an animation frame or a scroll position past zero.
-export fn pmod(v, n)
+export fn pmod(v: num, n: num) -> num
   if n == 0 then
     0
   else
@@ -1276,7 +1274,7 @@ end
 // Move `v` toward `target` by at most `step`, landing exactly on it. Friction,
 // acceleration ramps, a camera easing onto its mark — all the places a naive
 // `v = v + step` overshoots and oscillates.
-export fn approach(v, target, step)
+export fn approach(v: num, target: num, step: num) -> num
   if v < target then
     min(target, v + abs(step))
   else

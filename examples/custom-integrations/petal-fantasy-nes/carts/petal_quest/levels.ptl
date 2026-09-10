@@ -16,7 +16,7 @@
 //   .  air          #  ground top    =  ground fill   B  brick
 //   X  hard block   [  ledge left    -  ledge mid     ]  ledge right
 //   *  deco A       %  deco B        ,  tuft          (  cloud/wall left
-//   )  cloud/wall right               |  pole         ^  spikes (hurts)
+//   )  cloud/wall right              |  pole          ^  spikes (hurts)
 //   F  banner (the level's goal)
 //
 // Legend — objects, which leave their cell empty and become entities:
@@ -84,7 +84,7 @@ let L1_2 = [
 
 let L1_3 = [
   SKY, SKY, SKY, SKY, SKY, SKY,
-  ".........()....",
+  ".........().....",
   SKY, SKY, SKY, SKY, SKY, SKY, SKY,
   SKY,
   "............BBB.",
@@ -457,7 +457,7 @@ let L3_8 = [
 // `boss` is the world pixel past which the Rift Warden wakes, or -1 for a
 // level that ends at a banner instead.
 
-export fn level(n)
+export fn level(n: num) -> record
   if n == 1 then
     {
       name: "THE DEEP",

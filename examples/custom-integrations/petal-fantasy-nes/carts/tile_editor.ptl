@@ -109,12 +109,12 @@ fill_map(0, 0)
 
 let ink_chars = [".", "1", "2", "3"]
 
-fn pixel_at(rows, x, y)
+fn pixel_at(rows: list, x: num, y: num) -> int
   let c = char_at(rows[y], x)
   index_of(ink_chars, c)
 end
 
-fn painted(rows, x, y, value)
+fn painted(rows: list, x: num, y: num, value: num) -> list
   let out = []
   for j in range(0, len(rows)) do
     if j == y then
@@ -164,7 +164,7 @@ end
 // launched from, so this lands next to your editor rather than on a screen you
 // would have to transcribe from.
 
-fn source_text(slot, rows, inks)
+fn source_text(slot: num, rows: list, inks: list) -> string
   let q = "\""
   let out = "define_art({slot}, [\n"
   for j in range(0, len(rows)) do

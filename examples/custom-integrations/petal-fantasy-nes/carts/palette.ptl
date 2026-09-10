@@ -60,7 +60,7 @@ define_art(3, ["33333333", "33333333", "33333333", "33333333",
 let fade_black = 15         // $0F, the master palette's true black
 let fade_white = 48         // $30, its true white
 
-fn fade(c, level)
+fn fade(c: num, level: num) -> num
   let out = c
   for i in range(0, abs(level)) do
     if level < 0 then
@@ -73,7 +73,7 @@ fn fade(c, level)
 end
 
 // A whole palette faded at once — the form a cart actually calls.
-fn faded(cs, level)
+fn faded(cs: list, level: num) -> list
   let out = []
   for c in cs do
     out = append(out, fade(c, level))

@@ -369,7 +369,7 @@ let STARS = [
 // The 16 background tiles for world `n` (0, 1 or 2). Any index outside that
 // range falls back to world 0, so a mis-typed level number draws something
 // rather than crashing mid-frame.
-export fn tileset(n)
+export fn tileset(n: num) -> list
   if n == 1 then
     [EMPTY, CAVE_TOP, CAVE_FILL, CAVE_BRICK, HARD, LEDGE_L, LEDGE_M, LEDGE_R,
       CRYSTAL, SKULL, STALAGMITE, WALL_L, WALL_R, POLE, SPIKES, BANNER]
@@ -541,7 +541,7 @@ let HERO_HURT = [
 
 // The hero's eight poses, in the order `game.ptl` assigns tile slots:
 // idle x2, run x3, jump, fall, hurt.
-export fn hero_grids()
+export fn hero_grids() -> list
   [HERO_IDLE_A, HERO_IDLE_B, HERO_RUN_A, HERO_RUN_B, HERO_RUN_C,
     HERO_JUMP, HERO_FALL, HERO_HURT]
 end
@@ -664,15 +664,15 @@ let BAT_B = [
   "................"
 ]
 
-export fn slime_grids()
+export fn slime_grids() -> list
   [SLIME_A, SLIME_B]
 end
 
-export fn hopper_grids()
+export fn hopper_grids() -> list
   [HOPPER_A, HOPPER_B]
 end
 
-export fn bat_grids()
+export fn bat_grids() -> list
   [BAT_A, BAT_B]
 end
 
@@ -751,7 +751,7 @@ let BOSS_SHUT = [
   "................................"
 ]
 
-export fn boss_grids()
+export fn boss_grids() -> list
   [BOSS_OPEN, BOSS_SHUT]
 end
 
@@ -826,11 +826,11 @@ let STAR_B = [
 ]
 
 // The coin's four beats out of three drawings — full, edge-on, thin, edge-on.
-export fn coin_grids()
+export fn coin_grids() -> list
   [COIN_0, COIN_1, COIN_2]
 end
 
-export fn pickup_grids()
+export fn pickup_grids() -> list
   [HEART, STAR_A, STAR_B]
 end
 
@@ -893,7 +893,7 @@ let POOF_C = [
 
 // A one-shot burst: filled, ring, sparks. Used for enemy deaths, boss hits and
 // the powerup flash.
-export fn poof_grids()
+export fn poof_grids() -> list
   [POOF_A, POOF_B, POOF_C]
 end
 
@@ -946,6 +946,6 @@ let SUN = [
 ]
 
 // Four extra title tiles: hill left / mid / right, and the sun.
-export fn title_grids()
+export fn title_grids() -> list
   [HILL_L, HILL_M, HILL_R, SUN]
 end

@@ -42,7 +42,7 @@ enum Result
   Error(message),
 end
 
-fn safe_divide(a, b)
+fn safe_divide(a: num, b: num)
   if b == 0 then
     Error("division by zero")
   else

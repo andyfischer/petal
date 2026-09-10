@@ -33,7 +33,7 @@ print("")
 print("Closures share the box")
 print("======================")
 
-fn make_counter()
+fn make_counter() -> function
   var count = 0
   let bump = fn()
     set count = get count + 1
@@ -60,7 +60,7 @@ print("snapshot:", snapshot, "level:", level)
 
 // `set` also takes field and index targets.
 var player = { hp: 100, pos: [0, 0] }
-fn take_damage(amount)
+fn take_damage(amount: num)
   set player.hp = get player.hp - amount
 end
 take_damage(30)

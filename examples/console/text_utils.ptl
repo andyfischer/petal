@@ -4,11 +4,11 @@
 
 export let ellipsis = "..."
 
-fn _cut(s, n)
+fn _cut(s: string, n: num) -> string
   slice(s, 0, n)
 end
 
-export fn truncate(s, max)
+export fn truncate(s: string, max: num) -> string
   if len(s) > max then
     _cut(s, max) ++ ellipsis
   else
@@ -16,6 +16,6 @@ export fn truncate(s, max)
   end
 end
 
-export fn shout(s)
+export fn shout(s: string) -> string
   s ++ "!"
 end

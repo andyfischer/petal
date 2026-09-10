@@ -2,7 +2,7 @@
 // An argument may be written `name: value`, binding it to the parameter of
 // that name instead of to its position.
 
-fn rect(x, y, width, height)
+fn rect(x: num, y: num, width: num, height: num) -> string
   "rect at ({x}, {y}) sized {width}x{height}"
 end
 
@@ -17,7 +17,7 @@ print(rect(height: 4, width: 10, y: 0, x: 0))
 print(rect(1, 2, height: 8, width: 6))
 
 // Names are worth most where the call site is otherwise a row of literals.
-fn make_window(title, width, height, resizable)
+fn make_window(title: string, width: num, height: num, resizable: bool) -> record
   { title: title, width: width, height: height, resizable: resizable }
 end
 
@@ -31,7 +31,7 @@ class Vec2
   y: float,
 end
 
-fn Vec2.scaled(v, by)
+fn Vec2.scaled(v: record, by) -> Vec2
   Vec2(v.x * by, v.y * by)
 end
 

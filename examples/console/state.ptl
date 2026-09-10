@@ -69,13 +69,13 @@ end
 // only once, so an in-function counter like `renders` counts runs (frames),
 // not calls; to count calls, key the cell or share a top-level one, as above.
 
-fn header(title)
+fn header(title: string) -> string
   state renders = 0
   renders = renders + 1
   "{title} (render {renders})"
 end
 
-fn footer(note)
+fn footer(note: string) -> string
   state renders = 0
   renders = renders + 1
   "{note} (render {renders})"

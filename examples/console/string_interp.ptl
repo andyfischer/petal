@@ -18,7 +18,7 @@ let point = {x: 3, y: 4}
 print("point = {point}, distance = {mag(float(point.x), float(point.y))}")
 
 // Nested calls
-fn greet(who) "Hi {who}" end
+fn greet(who: string) -> string "Hi {who}" end
 print("{greet(name)} — welcome back")
 
 // Literal braces

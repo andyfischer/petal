@@ -10,13 +10,12 @@
 // Without the key, all four particles would share one set of cells and the
 // "simulation" would be a single particle updated four times per frame.
 
-fn update_particle(id)
+fn update_particle(id: num)
   state(id) x = 0.0
   state(id) y = 0.0
   state(id) vx = float(id + 1) * 1.5
   state(id) vy = float(id + 1) * 0.8
 
-  // Update position
   x = x + vx
   y = y + vy
 

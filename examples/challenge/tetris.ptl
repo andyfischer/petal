@@ -149,10 +149,9 @@ fn collides(board: list, cells: list, px: int, py: int) -> bool
   for c in cells do
     let x = px + c[0]
     let y = py + c[1]
-    // `y < 0` counts as a collision, not as free space: `merge_piece` only
-    // writes cells inside the well, so a lock above the ceiling would silently
-    // drop those minoes. Rejecting the position here keeps the two in step —
-    // a wall kick that would lift the piece out of the well is refused.
+    // `y < 0` counts as a collision, not as free space: `merge_piece` writes
+    // only cells inside the well, so a lock above the ceiling would silently
+    // drop those minoes. A kick that lifts the piece out of the well is refused.
     if x < 0 || x >= WIDTH || y >= HEIGHT || y < 0 then
       hit = true
     elsif board[y][x] != 0 then
@@ -264,8 +263,8 @@ end
 // The El-Tetris evaluation function, with its published weights.
 fn score_board(board: list, cleared: int, landing_height: num) -> num
   let f = board_features(board)
-  // NOTE: every continuation line must END with its operator. A line that
-  // *starts* with `-` parses as a fresh statement instead.
+  // Every continuation line must END with its operator: a line that *starts*
+  // with `-` parses as a fresh statement instead.
   -4.500158825082766 * landing_height +
   3.4181268101392694 * cleared -
   3.2178882868487753 * f.row_t -

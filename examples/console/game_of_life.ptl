@@ -1,7 +1,7 @@
 // Conway's Game of Life
-// Demonstrates nested loops, 2D lists, and complex logic.
+// Demonstrates nested loops, 2D lists, and building lists with append.
 
-fn count_neighbors(grid, x, y, width, height)
+fn count_neighbors(grid: list, x: num, y: num, width: num, height: num) -> int
   let count = 0
   for dy in range(-1, 2) do
     for dx in range(-1, 2) do
@@ -21,7 +21,7 @@ fn count_neighbors(grid, x, y, width, height)
   count
 end
 
-fn print_grid(grid, width, height)
+fn print_grid(grid: list, width: num, height: num)
   for y in range(0, height) do
     let row = ""
     for x in range(0, width) do
@@ -31,7 +31,7 @@ fn print_grid(grid, width, height)
   end
 end
 
-fn step(grid, width, height)
+fn step(grid: list, width: num, height: num) -> list
   let next = []
   for y in range(0, height) do
     let row = []

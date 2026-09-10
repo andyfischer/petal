@@ -40,7 +40,7 @@ fn traffic_light()
   get current
 end
 
-fn light_symbol(light)
+fn light_symbol(light) -> string
   match light
     when Red -> "[R] .  . "
     when Yellow -> " . [Y] . "

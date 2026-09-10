@@ -53,9 +53,9 @@ end
 
 // -------------------------------------------------------------- slide + merge
 
-// Slide one row toward index 0. Returns {row, gained}. Each tile takes part in
-// at most one merge, and pairs are resolved starting from the leading edge.
-fn slide_row(row: list)
+// Slide one row toward index 0, returning `{row, gained}`. Each tile merges at
+// most once, and pairs resolve from the leading edge.
+fn slide_row(row: list) -> record
   let vals = for v in row do
     if v == 0 then continue end
     v
@@ -80,7 +80,7 @@ fn slide_row(row: list)
   {row: out, gained: gained}
 end
 
-fn slide_left(g: list)
+fn slide_left(g: list) -> record
   var total = 0
   let rows = for row in g do
     let res = slide_row(row)
@@ -91,7 +91,7 @@ fn slide_left(g: list)
 end
 
 // dir is one of "left", "right", "up", "down".
-fn move_board(g: list, dir: string)
+fn move_board(g: list, dir: string) -> record
   match dir
     when "left" -> slide_left(g)
     when "right" do
@@ -170,7 +170,7 @@ fn cell_text(v: num) -> string
   pad_start(s, 5)
 end
 
-fn print_board(g: list, score: num)
+fn print_board(g: list, score: num) -> nil
   print("+--------------------+")
   for row in g do
     let cells = for v in row do cell_text(v) end

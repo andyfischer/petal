@@ -25,7 +25,7 @@ state var items = ["Buy groceries", "Write code", "Read a book"]
 
 // A widget. `id` names this button instance; the `click_count` cell belongs to
 // that name, not to the `button` function as a whole.
-fn button(id, label, clicked)
+fn button(id: string, label: string, clicked: bool) -> record
   state(id) click_count = 0
   if clicked then
     click_count = click_count + 1

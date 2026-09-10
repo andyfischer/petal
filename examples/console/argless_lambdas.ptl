@@ -15,14 +15,14 @@ print("answer() =", answer())
 let nothing = fn end
 print("nothing() =", nothing())
 
-// The classic form still works, and both spellings are the same value.
+// Both spellings are the same value.
 let old_style = fn() -> 1
 let new_style = fn -> 1
 print("same result:", old_style() == new_style())
 
 // Argless lambdas are handy as callbacks: a thunk passed to a function that
 // decides whether (and how often) to run it.
-fn repeat(times, action)
+fn repeat(times: num, action: function)
   for i in range(0, times) do
     action()
   end

@@ -33,6 +33,8 @@ config let GRID_H = 22
 
 let RAMP = [" ", ".", ":", "-", "=", "+", "*", "#", "%", "@"]
 
+let TAU = 6.283185307179586
+
 // ------------------------------------------------------------------ data ---
 
 class Boid
@@ -73,7 +75,7 @@ end
 
 fn make_boids(n: num) -> list
   for i in range(0, n) do
-    let angle = hash01(i, 7) * 6.283185307179586
+    let angle = hash01(i, 7) * TAU
     let speed = MIN_SPEED + hash01(i, 13) * (MAX_SPEED - MIN_SPEED)
     Boid(
       hash01(i, 1) * FIELD_W,
@@ -177,8 +179,8 @@ fn cohesion(flock: list) -> num
   var sy = 0.0
   var cx = 0.0
   var cy = 0.0
-  let kx = 6.283185307179586 / FIELD_W
-  let ky = 6.283185307179586 / FIELD_H
+  let kx = TAU / FIELD_W
+  let ky = TAU / FIELD_H
   for b in flock do
     set sx = sx + sin(b.x * kx)
     set cx = cx + cos(b.x * kx)

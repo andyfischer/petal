@@ -2,7 +2,7 @@
 // Steps HSV hue and interpolates between color stops.
 // hsv()/hsl() take hue in [0, 1); hsv_deg()/hsl_deg() take degrees [0, 360).
 
-fn format_color(c)
+fn format_color(c: record) -> string
   "rgb({c.r},{c.g},{c.b})"
 end
 

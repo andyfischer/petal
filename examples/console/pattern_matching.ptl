@@ -2,7 +2,7 @@
 // Match expressions with destructuring, guards, and nested patterns.
 
 // Basic matching
-fn classify(n)
+fn classify(n: num) -> string
   match n
     when 0 -> "zero"
     when 1 -> "one"
@@ -12,7 +12,7 @@ end
 print(classify(0), classify(1), classify(42))
 
 // Guards
-fn temperature_label(temp)
+fn temperature_label(temp: num) -> string
   match temp
     when t if t < 0 -> "freezing"
     when t if t < 15 -> "cold"
@@ -25,7 +25,7 @@ print("20 degrees is {temperature_label(20)}")
 print("-5 degrees is {temperature_label(-5)}")
 
 // List destructuring
-fn describe_list(list)
+fn describe_list(list: list) -> string
   match list
     when [] -> "empty list"
     when [x] -> "single element: {x}"

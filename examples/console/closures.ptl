@@ -1,8 +1,8 @@
 // Closures and Higher-Order Functions
 // Functions that capture their environment and accept functions as arguments.
 
-// A function that returns a function (closure)
-fn make_adder(n)
+// A closure: `adder` captures `n` from the call that made it.
+fn make_adder(n: num) -> function
   fn adder(x)
     x + n
   end
@@ -18,8 +18,8 @@ print("add10(3) =", add10(3))
 let double = fn(x) -> x * 2
 print("double(7) =", double(7))
 
-// Higher-order function: apply a function to each element
-fn map(list, f)
+// Apply a function to each element
+fn map(list: list, f: function) -> list
   let result = []
   for item in list do
     result = append(result, f(item))
@@ -35,7 +35,7 @@ print("doubled:", doubled)
 print("squared:", squared)
 
 // Filter
-fn filter(list, pred)
+fn filter(list: list, pred: function) -> list
   let result = []
   for item in list do
     if pred(item) then
@@ -49,7 +49,7 @@ let evens = filter(numbers, fn(x) -> x % 2 == 0)
 print("evens:", evens)
 
 // Reduce
-fn reduce(list, init, f)
+fn reduce(list: list, init, f: function)
   let acc = init
   for item in list do
     acc = f(acc, item)

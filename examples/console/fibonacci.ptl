@@ -2,7 +2,7 @@
 // Two approaches to computing Fibonacci numbers.
 
 // Recursive (simple but slow for large n)
-fn fib_recursive(n)
+fn fib_recursive(n: num) -> int
   if n <= 0 then 0
   elsif n == 1 then 1
   else fib_recursive(n - 1) + fib_recursive(n - 2)
@@ -10,7 +10,7 @@ fn fib_recursive(n)
 end
 
 // Iterative (fast)
-fn fib_iterative(n)
+fn fib_iterative(n: num) -> int
   if n <= 0 then return 0 end
   if n == 1 then return 1 end
   let a = 0

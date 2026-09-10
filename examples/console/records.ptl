@@ -38,7 +38,7 @@ let account = {
 print(account.user.name, "is an", account.role)
 
 // Pattern matching on records
-fn describe(person)
+fn describe(person: record)
   match person
     when { name: n, age: a } if a >= 18 -> print(n, "is an adult")
     when { name: n } -> print(n, "is a minor")

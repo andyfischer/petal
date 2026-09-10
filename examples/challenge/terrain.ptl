@@ -156,8 +156,7 @@ fn band_glyph(h: num, bands: list) -> string
   bands[band_index(h, bands)].glyph
 end
 
-// A one-word summary of a cell, used by the legend line. `match` on the band
-// index keeps the mapping in one readable place.
+// A one-word summary of a cell, used by the legend line.
 fn slope_hint(idx: int) -> string
   match idx
     when 0 -> "abyssal"

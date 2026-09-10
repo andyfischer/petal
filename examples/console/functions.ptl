@@ -1,31 +1,30 @@
 // Functions
 // Declaration, implicit return, recursion, and composition.
 
-// Simple function (last expression is the return value)
-fn square(n)
+// The last expression is the return value.
+fn square(n: num) -> num
   n * n
 end
 
-fn greet(name)
+fn greet(name: string)
   print("Hello,", name)
 end
 
 greet("World")
 print("5 squared =", square(5))
 
-// Multiple parameters
-fn add(a, b)
+fn add(a: num, b: num) -> num
   a + b
 end
 print("3 + 4 =", add(3, 4))
 
-// Recursive functions
-fn factorial(n)
+// Recursion
+fn factorial(n: num) -> num
   if n <= 1 then 1 else n * factorial(n - 1) end
 end
 print("5! =", factorial(5))
 
-fn fibonacci(n)
+fn fibonacci(n: num) -> num
   if n <= 0 then 0
   elsif n == 1 then 1
   else fibonacci(n - 1) + fibonacci(n - 2)
@@ -33,16 +32,16 @@ fn fibonacci(n)
 end
 print("fib(10) =", fibonacci(10))
 
-// Boolean-named functions (? is allowed in identifiers)
-fn even?(n)
+// `?` is allowed in identifiers.
+fn even?(n: num) -> bool
   n % 2 == 0
 end
 print("4 is even?", even?(4))
 print("7 is even?", even?(7))
 
 // Function composition
-fn double(n) n * 2 end
-fn increment(n) n + 1 end
+fn double(n: num) -> num n * 2 end
+fn increment(n: num) -> num n + 1 end
 
 // double then increment: (5 * 2) + 1 = 11
 print("double then increment 5:", increment(double(5)))

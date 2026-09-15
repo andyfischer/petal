@@ -167,12 +167,22 @@ use crate::program::{BlockId, Program, StateKey, Term, TermId, TermOp};
 #[derive(Debug, Default, Clone)]
 pub struct InPlaceSet {
     terms: HashSet<TermId>,
+    /// User `Call` terms whose result roots an in-place web. Such a call must
+    /// not be a memoized scope (`crate::memo`): its record would keep the
+    /// returned container as the cached result while the caller rewrites it.
+    fresh_root_calls: HashSet<TermId>,
 }
 
 impl InPlaceSet {
     /// Whether the mutation term `t` may be lowered in place.
     pub fn allows(&self, t: TermId) -> bool {
         self.terms.contains(&t)
+    }
+
+    /// Whether the call term `t` may be memoized: false when the caller
+    /// mutates its result in place.
+    pub fn memoizes_call(&self, t: TermId) -> bool {
+        !self.fresh_root_calls.contains(&t)
     }
 
     /// Number of terms proven in-place-safe (diagnostics / tests).
@@ -186,24 +196,23 @@ impl InPlaceSet {
     }
 }
 
-/// Analyze a program and return the set of in-place-eligible mutation terms.
+/// Analyze a program and return the set of in-place-eligible mutation terms,
+/// along with the user calls whose results those mutations rewrite (which the
+/// lowering then keeps out of memoized scopes).
 pub fn analyze(program: &Program) -> InPlaceSet {
-    analyze_with(program, false)
-}
-
-/// [`analyze`] under memoized scopes (`OptFlags::memo_scopes`): a user call's
-/// result may then be shared with the call's memo record, so it is never a
-/// fresh root the caller may mutate in place. Builtin results are unaffected.
-pub fn analyze_with(program: &Program, memo_scopes: bool) -> InPlaceSet {
-    let mut ctx = Analysis::build(program);
-    ctx.memo_scopes = memo_scopes;
-    let mut terms = HashSet::new();
+    let ctx = Analysis::build(program);
+    let mut set = InPlaceSet::default();
     for term in &program.terms {
         if ctx.is_mutation(term) && ctx.route_b_ok(term.id) {
-            terms.insert(term.id);
+            set.terms.insert(term.id);
+            if let Some(root) = ctx.web_root(term.id)
+                && matches!(ctx.program.get_term(root).op, TermOp::Call)
+            {
+                set.fresh_root_calls.insert(root);
+            }
         }
     }
-    InPlaceSet { terms }
+    set
 }
 
 /// Whether a state term addresses the **empty state path** — the one slot a
@@ -278,8 +287,6 @@ struct Backbone {
 /// Precomputed dataflow relations for the analysis, built once per program.
 struct Analysis<'p> {
     program: &'p Program,
-    /// Whether user calls are memoized (see [`analyze_with`]).
-    memo_scopes: bool,
     /// For each phi term, the `phi_out` back-edge source terms (dest == phi).
     phi_srcs: HashMap<TermId, Vec<TermId>>,
     /// Every term that is the source of some `phi_out` — the terms whose value
@@ -379,7 +386,6 @@ impl<'p> Analysis<'p> {
 
         let mut ctx = Analysis {
             program,
-            memo_scopes: false,
             phi_srcs,
             phi_carry_srcs,
             phi_outs_by_src,
@@ -1013,11 +1019,6 @@ impl<'p> Analysis<'p> {
         match &term.op {
             TermOp::BuiltinCall(_) => self.call_returns_fresh_builtin(term),
             TermOp::Call => {
-                // A memoized call replays a cached result that the record
-                // still holds: not the caller's to mutate.
-                if self.memo_scopes {
-                    return false;
-                }
                 let Some(&callee) = term.inputs.first() else {
                     return false;
                 };
@@ -1169,6 +1170,12 @@ impl<'p> Analysis<'p> {
             },
             None => false,
         }
+    }
+
+    /// The root of the accumulator web behind mutation `seed`.
+    fn web_root(&self, seed: TermId) -> Option<TermId> {
+        let cone = self.backward_carrier_closure(&[seed]);
+        self.build_backbone(&cone).map(|b| b.root)
     }
 
     /// Route B: is `seed` (a mutation term) a safe loop-carried accumulator?

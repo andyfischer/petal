@@ -914,6 +914,26 @@ total"
     }
 
     #[test]
+    fn a_call_whose_result_is_mutated_in_place_is_not_replayed() {
+        // `build`'s result roots an in-place web in the caller, so the call
+        // is kept out of memoized scopes: a record would hold the array the
+        // loop then rewrites, and the next run would replay it already bumped.
+        let (mut env, sid) = env("fn build(n)
+  let s = 0
+  for k in range(0, 40) do s = s + k end
+  f64_array(n)
+end
+let a = build(4)
+for i in range(0, 4) do a[i] = a[i] + 1.0 end
+a[0]");
+        for _ in 0..3 {
+            env.reset_stack(sid).unwrap();
+            assert_eq!(env.run(sid).unwrap(), Value::Float(1.0));
+        }
+        assert_eq!(env.memo_stats(sid).unwrap().hits, 0);
+    }
+
+    #[test]
     fn a_counter_in_a_called_function_keeps_counting() {
         let (mut env, sid) = env("fn tick()
   state n = 0

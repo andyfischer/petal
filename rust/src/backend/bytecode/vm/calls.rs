@@ -116,7 +116,9 @@ impl<'a> Vm<'a> {
 
     /// Dispatch `callable(args...)`, writing the result into `dst` of frame `fi`
     /// (closures push a frame that writes `dst` on return; native/enum results
-    /// are written immediately).
+    /// are written immediately). `memoize` is false for a call the lowering
+    /// kept out of memoized scopes (see `Inst::Call::no_memo`).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn do_call(
         &mut self,
         fi: usize,
@@ -125,6 +127,7 @@ impl<'a> Vm<'a> {
         args: &[Value],
         arg_names: &ArgNames,
         call_site: Option<TermId>,
+        memoize: bool,
     ) -> Result<(), String> {
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
@@ -134,7 +137,7 @@ impl<'a> Vm<'a> {
                 let cid =
                     calls::resolve_callable(self.program, self.closures, callable, args.len())?;
                 let site = self.site_of(call_site);
-                self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site)?;
+                self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site, memoize)?;
             }
             Value::NativeFunction(nid) => {
                 reject_named_args(arg_names, self.native_fns.get_name(nid))?;
@@ -227,7 +230,7 @@ impl<'a> Vm<'a> {
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
-                        return self.do_call(fi, dst, field_val, args, arg_names, call_site);
+                        return self.do_call(fi, dst, field_val, args, arg_names, call_site, true);
                     }
                     Value::NativeFunction(nid) => {
                         reject_named_args(arg_names, self.native_fns.get_name(nid))?;
@@ -261,6 +264,7 @@ impl<'a> Vm<'a> {
                     &with_receiver(recv, args),
                     &with_receiver_names(arg_names),
                     call_site,
+                    true,
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
@@ -294,6 +298,7 @@ impl<'a> Vm<'a> {
                     &with_receiver(recv, args),
                     &with_receiver_names(arg_names),
                     call_site,
+                    true,
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(hint, method_name) {
@@ -357,6 +362,7 @@ impl<'a> Vm<'a> {
     /// `site` is the callsite id pushed onto the new frame's state path — the
     /// compile-time hash of the callee's canonical text at this call site, which
     /// is what gives each callsite of a function its own `state` slots.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_closure_frame(
         &mut self,
         cid: ClosureId,
@@ -365,6 +371,7 @@ impl<'a> Vm<'a> {
         dst: Option<Reg>,
         call_site: Option<TermId>,
         site: u64,
+        memoize: bool,
     ) -> Result<(), String> {
         let bc = self.bc;
         let program = self.program;
@@ -423,9 +430,10 @@ impl<'a> Vm<'a> {
             self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
         // A call with a destination register is a memo scope: replay it if
         // its record is still good, else run it and record it. Calls driven
-        // synchronously (intrinsics, the host) are not scopes; their reads
-        // land in whatever scope encloses them.
-        let scope = self.memo && dst.is_some() && !self.stack.memo.poisoned;
+        // synchronously (intrinsics, the host), and calls whose result the
+        // caller mutates in place (`memoize` false), are not scopes; their
+        // reads land in whatever scope encloses them.
+        let scope = self.memo && memoize && dst.is_some() && !self.stack.memo.poisoned;
         if scope {
             let caller = self.stack.vm_frames.len() - 1;
             if let Some(value) = self.memo_try(&frame.path, fn_id, cid, args) {

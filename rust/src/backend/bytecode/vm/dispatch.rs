@@ -341,10 +341,11 @@ impl<'a> Vm<'a> {
                 callee,
                 args,
                 arg_names,
+                no_memo,
             } => {
                 let callable = self.reg(fi, *callee);
                 let argv = self.regs(fi, args);
-                self.do_call(fi, *dst, callable, &argv, arg_names, origin)?;
+                self.do_call(fi, *dst, callable, &argv, arg_names, origin, !*no_memo)?;
             }
             Inst::MethodCall {
                 dst,

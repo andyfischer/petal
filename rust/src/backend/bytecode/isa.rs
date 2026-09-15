@@ -244,6 +244,11 @@ pub enum Inst {
         /// empty, so a positional call's JSON row is unchanged.
         #[serde(default, skip_serializing_if = "arg_names_empty")]
         arg_names: ArgNames,
+        /// The call is never a memoized scope: the caller mutates its result
+        /// in place (escape analysis, `InPlaceSet::memoizes_call`), so no
+        /// record may hold that result. Serialization-skipped when false.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        no_memo: bool,
     },
     MethodCall {
         dst: Reg,

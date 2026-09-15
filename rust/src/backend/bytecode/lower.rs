@@ -502,6 +502,7 @@ impl<'p> FnLowerer<'p> {
                 callee: self.flat(ins[0])?,
                 args: self.regs(&ins[1..])?,
                 arg_names: term.arg_names.clone(),
+                no_memo: !self.in_place.memoizes_call(term.id),
             },
             TermOp::MethodCall { name, hint } => Inst::MethodCall {
                 dst,

@@ -138,9 +138,11 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             callee,
             args,
             arg_names,
+            no_memo,
         } => format!(
-            "r{} = call r{} {}",
+            "r{} = {} r{} {}",
             dst,
+            if *no_memo { "call_no_memo" } else { "call" },
             callee,
             arglist(program, args, arg_names)
         ),

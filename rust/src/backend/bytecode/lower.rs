@@ -329,6 +329,7 @@ impl<'p> FnLowerer<'p> {
                 // A plain reassignment commits whatever value it is given,
                 // including a Pending (see the StateInit no-commit rule).
                 init: false,
+                mutated: self.in_place.allows(ins[0]),
             },
 
             TermOp::CellNew => Inst::CellNew {
@@ -864,6 +865,7 @@ impl<'p> FnLowerer<'p> {
                     init: true,
                     // The commit write sits at the declaration: same path.
                     path_pop: 0,
+                    mutated: false,
                 });
             }
             None => {
@@ -876,6 +878,7 @@ impl<'p> FnLowerer<'p> {
                     key,
                     init: true,
                     path_pop: 0,
+                    mutated: false,
                 });
             }
         }

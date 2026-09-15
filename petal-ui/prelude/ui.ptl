@@ -1387,10 +1387,11 @@ state var _live_theme = theme
 // palette until `theme_reset`.
 state var _theme_explicit = false
 
-// Per-frame cache of the host-defaulted theme, so the palette projection runs
-// once a frame instead of once per widget.
+// Cache of the host-defaulted theme, so the palette projection runs once per
+// palette rather than once per widget. `_hp_src` is the palette record it was
+// projected from.
 state var _hp_cache = theme
-state var _hp_frame = -1
+state var _hp_src = nil
 
 // The palette record the host published via petal_ui's `bind_host_palette`
 // (Garden's `palette()` vocabulary: window_bg / panel / text / text_dim /
@@ -1431,19 +1432,42 @@ end
 
 // The theme when nothing was set explicitly: the host palette projected onto
 // the theme keys when the host bound one, the built-in default otherwise.
+//
+// Cached against the palette record itself rather than the frame number: the
+// projection is a pure function of the palette, and reading `frame_count()`
+// here would make every widget depend on the frame number, which is exactly
+// the input the frame gate must not see changing on a quiet frame.
 fn _host_theme()
-  if get _hp_frame == frame_count() then
+  let hp = _host_palette()
+  if _same_palette(get _hp_src, hp) then
     get _hp_cache
   else
-    let hp = _host_palette()
     let resolved = theme
     if len(keys(hp)) > 0 then
       resolved = _project_palette(hp, theme)
     end
     set _hp_cache = resolved
-    set _hp_frame = frame_count()
+    set _hp_src = hp
     resolved
   end
+end
+
+// Two palette records with the same colours, key for key. Records compare by
+// identity in Petal, and a host may re-allocate the same palette every frame,
+// so compare the colour components.
+fn _same_palette(a, b)
+  if a == nil || b == nil then return false end
+  let ka = keys(a)
+  if len(ka) != len(keys(b)) then return false end
+  for k in ka do
+    let ca = a[k]
+    let cb = b[k] ?? nil
+    if cb == nil then return false end
+    if ca.r != cb.r || ca.g != cb.g || ca.b != cb.b || ca.a != cb.a then
+      return false
+    end
+  end
+  true
 end
 
 // The live palette a widget paints with: `ui_theme()`, with the module default
@@ -2538,6 +2562,9 @@ end
 // higher is snappier; ~16 lands in ~120ms). Snaps exactly onto the target when
 // within a thousandth, so settled values stop generating churn.
 export fn approach(cur, target, rate)
+  // Already there: answer without reading the clock, so a settled motion no
+  // longer makes the frame depend on `dt()` (and keep ticking) for nothing.
+  if abs(target - cur) < 0.001 then return target end
   let next = cur + (target - cur) * (1.0 - exp(-rate * dt()))
   if abs(target - next) < 0.001 then target else next end
 end

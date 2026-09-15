@@ -170,6 +170,9 @@ pub fn register_host_data(env: &mut Env) {
 fn native_host_data(cxt: &mut PetalCxt) -> NativeResult {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_string(2)?;
+    // The answer comes from outside the binding table, so the frame gate
+    // must be told (the host reports changes with `note_host_data_changed`).
+    cxt.note_host_read();
     let data = DATA_PROVIDER.with(|p| {
         p.borrow_mut()
             .as_mut()

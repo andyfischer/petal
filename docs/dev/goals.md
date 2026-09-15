@@ -165,7 +165,7 @@ and general cross-language mounting are still aspirational.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Incremental dataflow update (recompute only affected nodes) | 🟡 | Unchanged and now the most load-bearing gap. Every integration re-runs the whole program per frame; a Garden panel re-runs its entire script every frame with no incremental evaluation ([performance.md](performance.md)). The workaround is discipline (hoist anything expensive behind state). This is the ceiling on how large a Petal-scripted app can get. |
+| Incremental dataflow update (recompute only affected nodes) | 🟡 | The first layer shipped: every host gates frames on what the last run actually read ([frame-gate.md](frame-gate.md)), so a quiet frame costs nothing and the decision is exact rather than a sleep heuristic. A frame that does run still re-runs the whole program; recomputing only the affected scopes (memoized function calls and loop bodies over the same read-set record, then keyed collections) is the remaining gap, and still the ceiling on how large a Petal-scripted app can get. |
 | Live editing flowing through back-prop paths | 🟡 | Reframed. The *user-visible* goal — edit source live from a manipulated output, state preserved — is served by the provenance + goal-based path today. Only the back-prop-specific variant (edit a constant that reaches the output through arithmetic) still depends on Goal 1. |
 
 ### Cross-cutting

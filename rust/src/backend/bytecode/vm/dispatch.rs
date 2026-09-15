@@ -426,6 +426,7 @@ impl<'a> Vm<'a> {
                 key,
                 init,
                 path_pop,
+                mutated,
             } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
@@ -436,7 +437,37 @@ impl<'a> Vm<'a> {
                 // resolves. Reads this frame still see the Pending (via `dst`).
                 // Ordinary reassignments (`init = false`) commit any value.
                 if !(*init && matches!(val_v, Value::Pending(_))) {
-                    self.stack.state.insert(k, val_v);
+                    // A `state var` being created: snapshot its initial
+                    // contents so a `set` later this run counts as a change
+                    // (see `Stack::finish_run_deps`).
+                    if *init && let Value::Cell(cell) = val_v {
+                        let contents = self.heap.cell_read(cell);
+                        self.stack.note_cell_created(cell, contents);
+                    }
+                    let old = self.stack.state.insert(k, val_v);
+                    // A reassignment that leaves the slot different from how
+                    // the run found it means the next run starts from other
+                    // state: the frame has not settled (see `run_deps`). An
+                    // in-place producer already edited the slot's object, so
+                    // its write counts as a change without comparing.
+                    if !*init && !self.stack.run_deps.state_unsettled() {
+                        let changed = *mutated
+                            || match old {
+                                None => true,
+                                Some(old) => {
+                                    let mut budget = crate::run_deps::STATE_COMPARE_BUDGET;
+                                    !crate::run_deps::values_equal_bounded(
+                                        &old,
+                                        &val_v,
+                                        self.heap,
+                                        &mut budget,
+                                    )
+                                }
+                            };
+                        if changed {
+                            self.stack.run_deps.note_state_unsettled();
+                        }
+                    }
                 }
                 self.set(fi, *dst, val_v);
             }

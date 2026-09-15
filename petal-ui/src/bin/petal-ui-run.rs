@@ -4,6 +4,7 @@
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
+//!              [--no-gate] [--gate-stats]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -19,6 +20,13 @@
 //! byte-identical output — that is the property the refactor verifier builds
 //! on (see `docs/dev/refactor-verification.md`).
 //!
+//! Frames run under the runtime's frame gate, as in every real host: a frame
+//! whose inputs are what the last run read is skipped and its record carries
+//! the retained commands and state (with no prints, since nothing printed).
+//! `--no-gate` runs the script on every frame — the reference the gated trace
+//! must match command-for-command, which is what `tests/gating.rs` checks.
+//! `--gate-stats` reports frames run vs skipped on stderr.
+//!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
 //! first, with `error` set), 2 a compile/usage error (message on stderr).
 
@@ -31,7 +39,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] [--out trace.jsonl] \
-[--error-format full|bare] [-I <dir>]";
+[--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -58,6 +66,10 @@ struct Args {
     /// Extra module search directories (`-I`), for an app that imports a
     /// shared Petal library from outside its own directory.
     module_paths: Vec<PathBuf>,
+    /// Run the script every frame instead of letting the frame gate skip.
+    no_gate: bool,
+    /// Report frames run vs skipped on stderr at the end.
+    gate_stats: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -70,6 +82,8 @@ fn parse_args() -> Result<Args, String> {
     let mut out = None;
     let mut bare_errors = false;
     let mut module_paths: Vec<PathBuf> = Vec::new();
+    let mut no_gate = false;
+    let mut gate_stats = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -100,6 +114,8 @@ fn parse_args() -> Result<Args, String> {
             "-I" | "--include" => module_paths.push(PathBuf::from(value("-I")?)),
             "--host-data" => host_data = Some(PathBuf::from(value("--host-data")?)),
             "--out" => out = Some(PathBuf::from(value("--out")?)),
+            "--no-gate" => no_gate = true,
+            "--gate-stats" => gate_stats = true,
             "--error-format" => {
                 bare_errors = match value("--error-format")?.as_str() {
                     "bare" => true,
@@ -128,6 +144,8 @@ fn parse_args() -> Result<Args, String> {
         out,
         bare_errors,
         module_paths,
+        no_gate,
+        gate_stats,
     })
 }
 
@@ -155,6 +173,7 @@ fn run() -> Result<i32, String> {
     // Prints belong in the trace's `prints` field and nowhere else: echoing
     // them to stdout as well would interleave them with the JSONL.
     ui.env.set_echo(false);
+    ui.gate = !args.no_gate;
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
     }
@@ -171,11 +190,23 @@ fn run() -> Result<i32, String> {
     };
 
     let mut failed = false;
+    let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
     for frame in 0..frames {
         if let Some(s) = &scenario {
             s.apply(&mut ui, frame);
         }
         let outcome = ui.frame().map(|_| ());
+        if args.gate_stats
+            && let Some(reason) = &ui.last_run_reason
+        {
+            let label = match reason {
+                petal::run_deps::RunReason::BindingChanged(sym) => {
+                    format!("binding {}", ui.env.symbol_name(*sym).unwrap_or("?"))
+                }
+                other => format!("{other:?}"),
+            };
+            *reasons.entry(label).or_default() += 1;
+        }
         // `print` output is drained per frame, so each record holds only what
         // that frame printed — including the frame that failed.
         let prints = ui.env.take_output();
@@ -206,6 +237,15 @@ fn run() -> Result<i32, String> {
         }
     }
     out.flush().map_err(|e| format!("writing trace: {e}"))?;
+    if args.gate_stats {
+        eprintln!(
+            "petal-ui-run: frames run {} skipped {}",
+            ui.frames_run, ui.frames_skipped
+        );
+        for (reason, n) in &reasons {
+            eprintln!("  {n:>5}  {reason}");
+        }
+    }
     Ok(if failed { 1 } else { 0 })
 }
 

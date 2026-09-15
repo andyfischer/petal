@@ -80,6 +80,14 @@ interface Side {
     uiRun: string;
     /** `-I` arguments for the UI driver: this side's copy of `plan.include`. */
     includeArgs: string[];
+    /**
+     * `--no-gate` when this side's driver knows the flag, else nothing. The
+     * verifier wants the script's behavior on *every* frame, not the frame
+     * gate's decision to skip one (which is checked on its own, see
+     * docs/dev/frame-gate.md); a driver from before the gate existed runs
+     * every frame anyway and rejects the flag.
+     */
+    gateArgs: string[];
 }
 
 interface Target {
@@ -447,7 +455,7 @@ function driverArgs(kind: Kind, side: Side, path: string, seed: number, sc: Scen
             bin: side.uiRun,
             args: [path, '--seed', String(seed), '--frames', String(frames),
                    '--size', size, '--error-format', 'bare',
-                   ...side.includeArgs, ...sc.args],
+                   ...side.gateArgs, ...side.includeArgs, ...sc.args],
         };
     }
     return {
@@ -643,7 +651,7 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
     const probe = kind === 'ui'
         ? await exec(ctx.after.uiRun, [t.after, '--frames', '1', '--seed', '1',
                                        '--error-format', 'bare', '--out', '/dev/null',
-                                       ...ctx.after.includeArgs])
+                                       ...ctx.after.gateArgs, ...ctx.after.includeArgs])
         : await exec(ctx.after.petal, ['run', '--seed', '1', '--error-format', 'bare',
                                        ...ctx.after.includeArgs, t.after]);
     const probeBin = kind === 'ui' ? ctx.after.uiRun : ctx.after.petal;
@@ -804,17 +812,17 @@ async function main() {
     if (opts.beforeBin || opts.afterBin) {
         if (plan.mode === 'source') fail(`plan "${plan.name}" is a source A/B plan; use --before/--after`);
         before = { label: 'before', root: opts.after, petal: opts.beforeBin ?? defaultPetal,
-                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
+                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(opts.after), gateArgs: [] };
         after = { label: 'after', root: opts.after, petal: opts.afterBin ?? defaultPetal,
-                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
+                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after), gateArgs: [] };
     } else {
         if (!opts.before) fail('source A/B needs --before <git-ref|dir> (or use --before-bin/--after-bin)');
         if (plan.mode === 'binary') fail(`plan "${plan.name}" is a binary A/B plan; use --before-bin/--after-bin`);
         const beforeRoot = materialize(opts.before, outDir);
         before = { label: 'before', root: beforeRoot, petal: opts.beforeBin ?? defaultPetal,
-                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(beforeRoot) };
+                   uiRun: opts.beforeUiBin ?? defaultUi, includeArgs: includeFor(beforeRoot), gateArgs: [] };
         after = { label: 'after', root: opts.after, petal: opts.afterBin ?? defaultPetal,
-                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after) };
+                  uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after), gateArgs: [] };
     }
     for (const s of [before, after]) {
         if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd rust && cargo build)`);
@@ -843,6 +851,10 @@ async function main() {
                 fail(`no petal-ui-run binary at ${s.uiRun}, and the corpus has UI apps `
                     + `(cd petal-ui && cargo build --bin petal-ui-run)`);
             }
+            // Ask the driver whether it knows `--no-gate` (its usage line lists
+            // every flag) rather than assume: an older driver rejects the flag.
+            const help = await exec(s.uiRun, ['--help']);
+            s.gateArgs = help.stdout.includes('--no-gate') ? ['--no-gate'] : [];
         }
     }
 

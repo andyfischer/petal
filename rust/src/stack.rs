@@ -4,6 +4,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::heap::Heap;
+use crate::run_deps::RunDeps;
+use crate::symbol::SymbolId;
+
 use smallvec::SmallVec;
 
 use crate::execution_context::ContextKey;
@@ -124,6 +128,17 @@ pub struct Stack {
     /// instead of hitting the allocator per call. Cleared frames hold no
     /// values, so this is deliberately *not* a GC root — keep it that way.
     pub vm_frame_pool: Vec<crate::backend::bytecode::VmFrame>,
+    /// What the most recent run depended on — the record behind
+    /// [`Env::run_needed`](crate::env::Env::run_needed). See [`crate::run_deps`].
+    pub run_deps: RunDeps,
+    /// The contents of every `state var` cell as the run began, so the end of
+    /// the run can tell whether a `set` changed one. Cells are written through
+    /// `CellWrite`, which cannot know whether the cell it writes is persistent,
+    /// so the check is made once per run over the slots instead of once per
+    /// write. Cell contents are never mutated in place (a container that enters
+    /// a `var` is kept out of the in-place rewrite), so an id-and-contents
+    /// snapshot is exact.
+    cells_at_run_start: Vec<(crate::heap::CellId, Value)>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,7 +166,58 @@ impl Stack {
             vm_frames: Vec::new(),
             vm_started: false,
             vm_frame_pool: Vec::new(),
+            run_deps: RunDeps::default(),
+            cells_at_run_start: Vec::new(),
         }
+    }
+
+    /// Begin the dependency record of a run: reset the read-set and snapshot
+    /// the `state var` cells. Called by `Env::run` right after
+    /// [`start_run_tracking`](Self::start_run_tracking), with the heap the
+    /// cells live in and the context's RNG state.
+    pub fn begin_run_deps(&mut self, heap: &Heap, rng_state: u64) {
+        self.run_deps.begin_run(rng_state);
+        self.cells_at_run_start.clear();
+        for v in self.state.values() {
+            if let Value::Cell(id) = v {
+                self.cells_at_run_start.push((*id, heap.cell_read(*id)));
+            }
+        }
+    }
+
+    /// A `state var` cell was created by this run (its `state` declaration
+    /// initialized), holding `contents`. Added to the run-start snapshot so a
+    /// `set` later in the same run is seen as a change at run end.
+    pub fn note_cell_created(&mut self, id: crate::heap::CellId, contents: Value) {
+        self.cells_at_run_start.push((id, contents));
+    }
+
+    /// Complete the dependency record of a run that finished (or stopped on an
+    /// error). Compares the `state var` cells against the snapshot taken at
+    /// the start, then fingerprints the bindings the run read.
+    pub fn finish_run_deps(
+        &mut self,
+        bindings: &HashMap<SymbolId, Value>,
+        heap: &Heap,
+        rng_state: u64,
+        resources_revision: u64,
+    ) {
+        if !self.run_deps.state_unsettled() {
+            for (id, before) in &self.cells_at_run_start {
+                if !heap.is_live(Value::Cell(*id)) {
+                    continue;
+                }
+                let now = heap.cell_read(*id);
+                let mut budget = crate::run_deps::STATE_COMPARE_BUDGET;
+                if !crate::run_deps::values_equal_bounded(before, &now, heap, &mut budget) {
+                    self.run_deps.note_state_unsettled();
+                    break;
+                }
+            }
+        }
+        self.cells_at_run_start.clear();
+        self.run_deps
+            .finish_run(bindings, heap, rng_state, resources_revision);
     }
 
     /// Clear all per-run execution state, leaving the stack `Ready` with no
@@ -284,6 +350,12 @@ impl Stack {
         for val in self.state.values() {
             mark(*val);
         }
+        // The `state var` contents snapshotted at run start are compared at
+        // run end; a cell overwritten mid-run would otherwise leave the
+        // snapshot pointing at a collected object.
+        for (_, val) in &self.cells_at_run_start {
+            mark(*val);
+        }
         // Last pop result (used by synchronous closure calls)
         if let Some(val) = self.last_pop_result {
             mark(val);
@@ -321,7 +393,10 @@ mod tests {
         s.touch_state(&b);
         s.touch_state(&a);
         let touches = s.end_touch_capture(cap);
-        assert_eq!(touches.iter().cloned().collect::<Vec<_>>(), vec![a.clone(), b.clone()]);
+        assert_eq!(
+            touches.iter().cloned().collect::<Vec<_>>(),
+            vec![a.clone(), b.clone()]
+        );
         assert_eq!(s.sweep_untouched_state(), 0);
 
         // Run 2: the section is skipped and retains what it touched.
@@ -349,7 +424,10 @@ mod tests {
         s.retain_touches(&StateTouches(vec![skipped.clone()]));
         let parent_touches = s.end_touch_capture(parent);
 
-        assert_eq!(child_touches.iter().cloned().collect::<Vec<_>>(), vec![inner.clone()]);
+        assert_eq!(
+            child_touches.iter().cloned().collect::<Vec<_>>(),
+            vec![inner.clone()]
+        );
         assert_eq!(
             parent_touches.iter().cloned().collect::<Vec<_>>(),
             vec![outer, inner, skipped]
@@ -368,7 +446,10 @@ mod tests {
         let cap = s.begin_touch_capture();
         s.touch_state(&key(1, &[]));
         let _ = s.end_touch_capture(cap);
-        assert!(s.touch_journal.is_empty(), "the outermost capture clears it");
+        assert!(
+            s.touch_journal.is_empty(),
+            "the outermost capture clears it"
+        );
 
         // A capture abandoned by an aborted run does not leak into the next.
         let _abandoned = s.begin_touch_capture();
@@ -388,7 +469,10 @@ mod tests {
     ) -> StateTouches {
         env.reset_stack(sid).unwrap();
         let first = env.run_bounded(sid, 1).unwrap();
-        assert!(matches!(first, RunOutcome::Yielded { .. }), "frame finished in one step");
+        assert!(
+            matches!(first, RunOutcome::Yielded { .. }),
+            "frame finished in one step"
+        );
         let cap = mid(env.stack_mut(sid).unwrap());
         let rest = env.run_bounded(sid, u64::MAX).unwrap();
         assert!(matches!(rest, RunOutcome::Done(_)));

@@ -185,6 +185,10 @@ pub struct PetalCxt<'a> {
     /// emits. Empty otherwise.
     pub(crate) emit_chain: &'a [crate::program::TermId],
     pub(crate) bindings: &'a mut HashMap<SymbolId, Value>,
+    /// The running stack's dependency record (see [`crate::run_deps`]),
+    /// borrowed so a binding read is noted and a host-data native can declare
+    /// itself ([`note_host_read`](Self::note_host_read)).
+    pub(crate) run_deps: &'a mut crate::run_deps::RunDeps,
     pub(crate) counters: &'a mut HashMap<SymbolId, u64>,
     /// Per-run xorshift64* PRNG state, borrowed from the owning
     /// `ExecutionContext` so the RNG builtins advance that context's stream.
@@ -472,9 +476,21 @@ impl<'a> PetalCxt<'a> {
     }
 
     /// Read the host→script value bound to `sym` (a GLSL-uniform-style input),
-    /// or `Nil` if nothing is bound.
-    pub fn binding(&self, sym: SymbolId) -> Value {
+    /// or `Nil` if nothing is bound. The read is recorded in the run's
+    /// dependency record, so the host can skip the next frame if nothing the
+    /// script read has changed (see [`crate::run_deps`]).
+    pub fn binding(&mut self, sym: SymbolId) -> Value {
+        self.run_deps.note_binding_read(sym);
         self.bindings.get(&sym).copied().unwrap_or(Value::Nil)
+    }
+
+    /// Declare that this native answered from host-owned data the binding
+    /// table does not cover (a data provider, a query cache, an editor
+    /// buffer). The run is then re-run when the host reports that data changed
+    /// ([`crate::env::Env::note_host_data_changed`]); a native that reads such
+    /// data and does not call this can leave a skipped frame stale.
+    pub fn note_host_read(&mut self) {
+        self.run_deps.note_host_read();
     }
 
     /// Read the value bound to the symbol named `name`. Convenience for native

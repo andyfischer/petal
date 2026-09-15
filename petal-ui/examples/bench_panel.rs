@@ -1,6 +1,12 @@
 //! Time a panel script's per-frame cost under the headless harness.
 //!
 //!   cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]
+//!       [--observe] [--profile] [--no-gate] [--wiggle]
+//!
+//! Frames run under the frame gate unless `--no-gate`: with no input change a
+//! script that reads no clock is skipped after its first frame, so a quiet
+//! bench measures the gate rather than the script. `--wiggle` moves the
+//! pointer one pixel each frame, the typical interactive frame.
 use std::time::Instant;
 
 fn main() {
@@ -20,12 +26,15 @@ fn main() {
     // the real embedding rather than the harness default.
     let observe = args.iter().any(|a| a == "--observe");
     let profile = args.iter().any(|a| a == "--profile");
+    let no_gate = args.iter().any(|a| a == "--no-gate");
+    let wiggle = args.iter().any(|a| a == "--wiggle");
 
     let src = std::fs::read_to_string(path).expect("read script");
     let compile_start = Instant::now();
     let mut ui = petal_ui::harness::Headless::with_size(&src, w, h).expect("compile");
     let compile_ms = compile_start.elapsed().as_secs_f64() * 1e3;
 
+    ui.gate = !no_gate;
     if observe {
         ui.env.observations_mut().enable();
     }
@@ -37,7 +46,10 @@ fn main() {
     let n_cmds = ui.frame().expect("first frame").len();
 
     let mut times = Vec::with_capacity(frames);
-    for _ in 0..frames {
+    for i in 0..frames {
+        if wiggle {
+            ui.mouse_move(100 + (i % 2) as i32, 100);
+        }
         let t = Instant::now();
         ui.frame().expect("frame");
         times.push(t.elapsed().as_secs_f64() * 1e3);
@@ -47,6 +59,11 @@ fn main() {
     let total: f64 = times.iter().sum();
     println!("compile: {compile_ms:.1} ms");
     println!("draw commands: {n_cmds}");
+    println!(
+        "frames run: {}  skipped: {}",
+        ui.frames_run.saturating_sub(1),
+        ui.frames_skipped
+    );
     println!(
         "frame ms: min {:.2}  p50 {:.2}  p90 {:.2}  max {:.2}  mean {:.2}",
         times[0],

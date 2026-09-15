@@ -224,6 +224,7 @@ impl<'a> Vm<'a> {
             emit_origins: self.emit_origins,
             emit_chain: chain,
             bindings: self.bindings,
+            run_deps: &mut self.stack.run_deps,
             counters: self.counters,
             rng_state: self.rng_state,
             noise_seed: self.noise_seed,

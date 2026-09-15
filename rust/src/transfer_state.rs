@@ -43,6 +43,9 @@ pub fn transfer_stack_state(
 
     stack.state.retain(|k, _| new_state_keys.contains(&k.base));
     stack.reset_execution();
+    // A different program (or restored state) invalidates whatever the last
+    // run recorded about its inputs.
+    stack.run_deps.force();
     // The old captured closures point into the caller's now-cleared closures
     // vec; they get recaptured on the next run.
     stack.functions.clear();

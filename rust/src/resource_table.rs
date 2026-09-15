@@ -55,11 +55,20 @@ impl ResourceEntry {
 pub struct ResourceTable {
     entries: Vec<ResourceEntry>,
     by_key: HashMap<u64, PendingId>,
+    /// Bumped whenever an entry is created, resolved or rejected — the signal
+    /// [`crate::run_deps`] uses to re-run a frame whose pending values moved.
+    revision: u64,
 }
 
 impl ResourceTable {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A counter that moves on every creation, resolution or rejection. Two
+    /// equal readings mean no resource changed state in between.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// The [`PendingId`] currently mapped to `key`, if any.
@@ -82,6 +91,7 @@ impl ResourceTable {
             return *id;
         }
         let id = PendingId(self.entries.len() as u32);
+        self.revision += 1;
         self.entries.push(ResourceEntry {
             key,
             state: ResourceState::Loading,
@@ -97,6 +107,7 @@ impl ResourceTable {
     /// origin) if absent.
     pub fn resolve(&mut self, key: u64, value: Value, frame: u64) {
         let id = self.get_or_create_loading(key, None, frame);
+        self.revision += 1;
         self.entries[id.0 as usize].state = ResourceState::Ready(value);
     }
 
@@ -104,6 +115,7 @@ impl ResourceTable {
     /// origin) if absent.
     pub fn reject(&mut self, key: u64, error: Value, frame: u64) {
         let id = self.get_or_create_loading(key, None, frame);
+        self.revision += 1;
         self.entries[id.0 as usize].state = ResourceState::Errored(error);
     }
 

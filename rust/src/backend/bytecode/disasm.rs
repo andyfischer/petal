@@ -316,10 +316,12 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             key,
             init,
             path_pop,
+            mutated,
         } => format!(
-            "r{} = state_write{} k{}{} = r{}{}",
+            "r{} = state_write{}{} k{}{} = r{}{}",
             dst,
             if *init { " init" } else { "" },
+            if *mutated { " mutated" } else { "" },
             base.0,
             pop(path_pop),
             val,

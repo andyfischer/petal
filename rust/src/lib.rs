@@ -44,6 +44,7 @@ pub mod provenance;
 pub mod resource_table;
 pub mod suggest;
 pub mod rewrite;
+pub mod run_deps;
 pub mod source_map;
 pub mod stack;
 pub mod static_value;

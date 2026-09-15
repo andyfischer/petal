@@ -84,6 +84,7 @@ impl Env {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.start_run_tracking();
         }
+        self.begin_run_deps(stack_id, ck);
         // Each run reports its own bindings: clear at the start, so a name the
         // program no longer reaches can't report a value from a previous run.
         self.observations.start_run(ck);
@@ -98,11 +99,96 @@ impl Env {
                     if let Some(stack) = self.stacks.get_mut(&stack_id) {
                         stack.sweep_untouched_state();
                     }
+                    self.finish_run_deps(stack_id, ck);
                     return Ok(val);
                 }
-                StepResult::Error(e) => return Err(e),
+                StepResult::Error(e) => {
+                    // A failed run still has a read-set: re-running it with
+                    // the same inputs would fail the same way, so the host
+                    // may skip until something it read moves.
+                    self.finish_run_deps(stack_id, ck);
+                    return Err(e);
+                }
             }
         }
+    }
+
+    /// Start the dependency record of a run (see [`crate::run_deps`]).
+    fn begin_run_deps(&mut self, stack_id: StackKey, ck: ContextKey) {
+        let rng = self.ctx(ck).rng_state;
+        if let (Some(stack), Some(ctx)) = (self.stacks.get_mut(&stack_id), self.contexts.get(&ck)) {
+            stack.begin_run_deps(&ctx.heap, rng);
+        }
+    }
+
+    /// Complete the dependency record of a run that ended.
+    fn finish_run_deps(&mut self, stack_id: StackKey, ck: ContextKey) {
+        if let (Some(stack), Some(ctx)) = (self.stacks.get_mut(&stack_id), self.contexts.get(&ck)) {
+            stack.finish_run_deps(
+                &ctx.bindings,
+                &ctx.heap,
+                ctx.rng_state,
+                ctx.resources.revision(),
+            );
+        }
+    }
+
+    /// Whether running `stack_id` now could produce a different result from
+    /// its last run — and if so, why. `None` means every binding the last run
+    /// read still holds the value it read, the run consumed no randomness,
+    /// consulted no host data the host has since reported changed, left every
+    /// `state` slot as it found it, and no pending resource has moved: running
+    /// again would reproduce the last run's output exactly, so a host may skip
+    /// the frame and keep what it drew.
+    ///
+    /// Ask *after* binding the frame's inputs and *before* `reset_stack`/`run`.
+    /// A stack that has never completed a run always needs one. See
+    /// [`crate::run_deps`] for what is tracked and
+    /// [`RunReason`](crate::run_deps::RunReason) for the answers.
+    pub fn run_needed_reason(&self, stack_id: StackKey) -> Option<crate::run_deps::RunReason> {
+        let Some(stack) = self.stacks.get(&stack_id) else {
+            return Some(crate::run_deps::RunReason::NoRecord);
+        };
+        let Some(ctx) = self.contexts.get(&stack.context) else {
+            return Some(crate::run_deps::RunReason::NoRecord);
+        };
+        stack
+            .run_deps
+            .run_needed(&ctx.bindings, &ctx.heap, ctx.resources.revision())
+    }
+
+    /// [`run_needed_reason`](Self::run_needed_reason) as a plain yes/no.
+    pub fn run_needed(&self, stack_id: StackKey) -> bool {
+        self.run_needed_reason(stack_id).is_some()
+    }
+
+    /// Ask that the next [`run_needed`](Self::run_needed) answer yes, whatever
+    /// the recorded dependencies say. For a host that changed something the
+    /// record cannot see: replaced a data provider, edited a document a native
+    /// reads, or wants a frame for its own reasons (a debug step). Cleared by
+    /// the next run.
+    pub fn invalidate_run(&mut self, stack_id: StackKey) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.run_deps.force();
+        }
+    }
+
+    /// Tell the gate that host-owned data behind a `host_data`-style native
+    /// changed. Cheaper than [`invalidate_run`](Self::invalidate_run) when the
+    /// host does not know whether the script reads such data: a run that never
+    /// called a native that [`note_host_read`](crate::native_fn::PetalCxt::note_host_read)
+    /// is unaffected.
+    pub fn note_host_data_changed(&mut self, stack_id: StackKey) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.run_deps.note_host_data_changed();
+        }
+    }
+
+    /// The dependency record of `stack_id`'s most recent run, for hosts and
+    /// tools that want more than the yes/no (which bindings were read, whether
+    /// host data was consulted).
+    pub fn run_deps(&self, stack_id: StackKey) -> Option<&crate::run_deps::RunDeps> {
+        self.stacks.get(&stack_id).map(|s| &s.run_deps)
     }
 
     /// Run a program for at most `max_steps` evaluation steps.
@@ -143,6 +229,9 @@ impl Env {
                 fresh_entry = true;
             }
         }
+        if fresh_entry {
+            self.begin_run_deps(stack_id, ck);
+        }
         // Observations follow the same fresh-entry rule, and for the same
         // reason: a resume is the *middle* of one run, so clearing here would
         // discard everything observed before the yield. A host driving a frame
@@ -168,12 +257,14 @@ impl Env {
                         stack.sweep_untouched_state();
                         stack.status = StackStatus::Complete(val);
                     }
+                    self.finish_run_deps(stack_id, ck);
                     return Ok(RunOutcome::Done(val));
                 }
                 StepResult::Error(e) => {
                     if let Some(stack) = self.stacks.get_mut(&stack_id) {
                         stack.status = StackStatus::Error(e.clone());
                     }
+                    self.finish_run_deps(stack_id, ck);
                     return Err(e);
                 }
             }
@@ -233,7 +324,7 @@ impl Env {
         let stack = self.stacks.get_mut(&stack_id).unwrap();
         let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
 
-        make_vm(
+        let result = make_vm(
             program,
             bc,
             stack,
@@ -245,7 +336,11 @@ impl Env {
             &mut self.observations,
             &mut self.profile,
         )
-        .call_closure_sync(callable, args, host_call_site(name))
+        .call_closure_sync(callable, args, host_call_site(name));
+        // The call may have written state the next run reads; the run's
+        // dependency record cannot tell, so the next frame must run.
+        self.invalidate_run(stack_id);
+        result
     }
 
     /// Run one frame without disturbing the source execution at all.

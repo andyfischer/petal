@@ -531,6 +531,11 @@ that is deliberately skipped but still in use (a memoized scope) keeps its
 state with `Stack::begin_touch_capture` / `retain_touches`; see
 [state-call-paths.md §3.3a](state-call-paths.md).
 
+`Env::run` also records what the run depended on — the bindings it read,
+whether it consulted host data or randomness, whether it left `state`
+changed — so a host can ask `Env::run_needed` whether running again could
+differ, and skip the frame if not. See [frame-gate.md](frame-gate.md).
+
 `reset_stack` preserves the state store while rewinding execution — that's
 what makes `petal-sdl`'s hot reload work. `snapshot_state` /
 `restore_state` give host code explicit access to the persistent store

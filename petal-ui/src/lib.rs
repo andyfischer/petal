@@ -39,10 +39,21 @@
 //! input.event(...)                 // as host events arrive
 //! input.begin_frame(dt)            // promote edges for this frame
 //! bind_frame_info / bind_input     // uniforms into the Env
+//! if !env.run_needed(stack)        // the frame gate: nothing the last run
+//!     { keep last frame's output } //   read has changed → skip the run
 //! clear_draw_commands              // defensive
 //! env.reset_stack + env.run        // the script draws the whole frame
 //! take_draw_commands               // rasterize
 //! ```
+//!
+//! The gate ([`petal::env::Env::run_needed`]) is exact rather than heuristic:
+//! the runtime records which bindings a run read and whether it settled, so a
+//! host that never reads `time()` stops running while the pointer is still,
+//! and one mid-animation keeps ticking. A host that feeds a native from data
+//! outside the binding table reports changes with
+//! [`petal::env::Env::note_host_data_changed`] (or forces a frame with
+//! [`petal::env::Env::invalidate_run`]). [`harness::Headless`] shows the
+//! sequence.
 
 pub mod draw;
 pub mod harness;

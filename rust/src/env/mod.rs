@@ -218,6 +218,12 @@ impl Env {
         for ctx in self.contexts.values_mut() {
             ctx.rng_state = state;
         }
+        // A reseeded stream draws different numbers: any run that drew from
+        // it is stale (and one that did not is unaffected, but the record
+        // cannot say which draws would come next, so force).
+        for stack in self.stacks.values_mut() {
+            stack.run_deps.force();
+        }
     }
 
     /// Turn stdout echoing of `print` on or off for every execution context in
@@ -825,6 +831,9 @@ impl Env {
             .stacks
             .get(&stack_id)
             .and_then(|s| s.state.get(&runtime_key).copied());
+        // State edited from outside is a change the run's dependency record
+        // cannot see: the next frame must run.
+        self.invalidate_run(stack_id);
         if let Some(Value::Cell(cell)) = existing {
             let ck = self.ctx_for(stack_id).unwrap_or(self.default_context);
             self.ctx_mut(ck).heap.cell_write(cell, value);
@@ -862,6 +871,7 @@ impl Env {
     pub fn restore_state(&mut self, stack_id: StackKey, snapshot: HashMap<RuntimeStateKey, Value>) {
         if let Some(stack) = self.stacks.get_mut(&stack_id) {
             stack.state = snapshot;
+            stack.run_deps.force();
         }
     }
 

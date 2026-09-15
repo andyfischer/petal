@@ -1,9 +1,16 @@
 //! A headless driver for testing widget logic with no renderer attached.
 //!
-//! Mirrors the standard host frame contract exactly (bind input → reset →
-//! run → drain), so behavior verified here matches what a real embedder
-//! sees. Time advances only through [`Headless::frame`]'s fixed `dt`, making
-//! multi-click and animation tests deterministic.
+//! Mirrors the standard host frame contract exactly (bind input → gate →
+//! reset → run → drain), so behavior verified here matches what a real
+//! embedder sees. Time advances only through [`Headless::frame`]'s fixed `dt`,
+//! making multi-click and animation tests deterministic.
+//!
+//! The *gate* is the runtime's frame gate ([`petal::env::Env::run_needed`]):
+//! a frame whose inputs are exactly what the last run read, and whose last run
+//! reached a fixed point, is skipped and its output retained. Skipping is
+//! invisible to a correct script — the retained commands are what a run would
+//! have produced — and [`Headless::gate`] turns it off for tests that want
+//! every frame to execute regardless.
 //!
 //! ```no_run
 //! use petal_ui::harness::Headless;
@@ -19,6 +26,7 @@
 
 use petal::env::Env;
 use petal::program::ProgramId;
+use petal::run_deps::RunReason;
 use petal::stack::StackKey;
 use petal::value::Value;
 
@@ -65,6 +73,19 @@ pub struct Headless {
     /// around each run the same way (see
     /// [`set_font_source`](Self::set_font_source)).
     fonts: Option<draw::FontProvider>,
+    /// Whether [`frame`](Self::frame) skips a run the runtime's frame gate
+    /// says would reproduce the last one (on by default, as in a real host).
+    /// Off, every frame runs the script — the reference behavior the gated
+    /// path is checked against.
+    pub gate: bool,
+    /// Whether the most recent [`frame`](Self::frame) skipped its run and
+    /// served the retained output.
+    pub last_frame_skipped: bool,
+    /// Why the most recent frame ran, when it ran (`None` after a skip).
+    pub last_run_reason: Option<RunReason>,
+    /// Frames that ran the script / frames the gate skipped, since creation.
+    pub frames_run: u64,
+    pub frames_skipped: u64,
 }
 
 impl Headless {
@@ -142,7 +163,29 @@ impl Headless {
             result: Value::Nil,
             provider: None,
             fonts: None,
+            gate: true,
+            last_frame_skipped: false,
+            last_run_reason: None,
+            frames_run: 0,
+            frames_skipped: 0,
         })
+    }
+
+    /// The compiled app's program id (module programs have their own).
+    pub fn program_id(&self) -> ProgramId {
+        self.program_id
+    }
+
+    /// The stack the app runs on.
+    pub fn stack_id(&self) -> StackKey {
+        self.stack_id
+    }
+
+    /// Ask the gate to run the next frame regardless of what changed — what a
+    /// host does after replacing the data provider or editing state from
+    /// outside (see [`petal::env::Env::invalidate_run`]).
+    pub fn invalidate(&mut self) {
+        self.env.invalidate_run(self.stack_id);
     }
 
     /// Attach a host data source for the `host_data(kind, arg)` native. It is
@@ -151,6 +194,9 @@ impl Headless {
     /// provider around `env.run`.
     pub fn set_data_provider(&mut self, provider: DataProvider) {
         self.provider = Some(provider);
+        // Answers may differ from the previous provider's, which the gate
+        // cannot see: run the next frame.
+        self.env.note_host_data_changed(self.stack_id);
     }
 
     /// Attach a font source for the `font(name)` / `fonts()` natives and the
@@ -241,6 +287,20 @@ impl Headless {
         input::bind_frame_info(&mut self.env, FRAME_DT, self.frame_count);
         input::bind_time(&mut self.env, self.time);
         input::bind_input(&mut self.env, &self.input);
+        // The gate: with every input bound, ask whether a run could differ
+        // from the last one. If not, the retained commands *are* this frame.
+        // The clock still advances, exactly as it would around a run.
+        let reason = self.env.run_needed_reason(self.stack_id);
+        if self.gate && reason.is_none() {
+            self.time = self.clock_at(self.frame_count);
+            self.last_frame_skipped = true;
+            self.last_run_reason = None;
+            self.frames_skipped += 1;
+            return Ok(&self.commands);
+        }
+        self.last_frame_skipped = false;
+        self.last_run_reason = reason;
+        self.frames_run += 1;
         draw::clear_draw_commands(&mut self.env);
         draw::reset_canvas_ids(&mut self.env);
         self.env.reset_stack(self.stack_id)?;

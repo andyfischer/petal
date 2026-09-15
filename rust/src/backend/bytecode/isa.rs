@@ -418,6 +418,13 @@ pub enum Inst {
         /// loops than its `state` declaration, which is what makes the
         /// top-level accumulator idiom persist to one slot.
         path_pop: u32,
+        /// The committed value was produced by an in-place mutation (escape
+        /// analysis rewrote its producer, see `escape.rs`), so the slot may
+        /// already hold the same heap id with different contents. The VM then
+        /// treats the write as a change without comparing — the comparison
+        /// that decides whether the run reached a fixed point
+        /// ([`crate::run_deps`]) cannot see through an in-place edit.
+        mutated: bool,
     },
 
     // --- match (fat op; reuses the graph engine's match_pattern) ---

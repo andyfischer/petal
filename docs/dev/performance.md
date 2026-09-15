@@ -27,7 +27,10 @@ The "Sort by top of stack" section of the output is self time per function.
 **3. Time the change.** `./ts/bin/bench-opts.ts` for whole programs;
 `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl>` for
 per-frame cost of a panel script. Take the **minimum** of several runs, not the
-mean: on a loaded machine the minimum is much the more stable estimator.
+mean: on a loaded machine the minimum is much the more stable estimator. The
+bench runs under the frame gate: a quiet script is skipped after its first
+frame, so pass `--wiggle` (move the pointer every frame) to measure an
+interactive frame, or `--no-gate` to measure the script itself.
 
 For the specific question "did the optimizer help", `PETAL_OPT_STATS=1` reports
 what it did to the program, and `PETAL_OPT=off` (or `--no-opt`) gives the
@@ -48,10 +51,17 @@ Two consequences:
   A host that embeds Petal and cares about frame rate should build the `petal`
   dependency optimized even in its own debug builds; Garden's workspace does
   this with a `[profile.dev.package.petal] opt-level = 3` override.
-- **A panel re-runs its whole script every frame.** There is no incremental
-  evaluation. Anything expensive that does not change per frame belongs behind
-  a `state` variable with a revision check — which is what
+- **A frame that runs re-runs the whole script.** There is no incremental
+  evaluation *within* a run. Anything expensive that does not change per frame
+  belongs behind a `state` variable with a revision check — which is what
   `examples/productivity/spreadsheet` does for its formula recompute.
+- **A frame whose inputs have not changed does not run at all.** Every host
+  consults the runtime's frame gate (`Env::run_needed`) before a run: if
+  nothing the last run read has moved and the run settled, the last frame's
+  output is kept. A quiet panel costs a few microseconds a frame; one that
+  reads `time()` or animates costs a full run. See
+  [frame-gate.md](frame-gate.md), and `petal-ui-run --gate-stats` for why a
+  panel keeps running.
 
 ## What the optimizer does
 

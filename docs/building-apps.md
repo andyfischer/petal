@@ -229,8 +229,14 @@ pub trait Host {
 The generic loop drives it:
 
 ```text
-poll events → input.begin_frame(dt) → bind frame_info/input → env.run → host.present
+poll events → input.begin_frame(dt) → bind frame_info/input → [frame gate] → env.run → host.present
 ```
+
+The frame gate is the runtime's `Env::run_needed`: with every input bound, a
+frame whose inputs are what the last run read (and whose last run settled) is
+skipped and the last frame is presented again. Every host does this the same
+way; see [dev/frame-gate.md](dev/frame-gate.md) for what is recorded and what
+a host that feeds a native from its own data must report.
 
 `DefaultHost` (the binary)
 renders `petal-ui` draw commands to an SDL canvas and adds the example browser +

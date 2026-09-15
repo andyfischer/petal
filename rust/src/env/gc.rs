@@ -80,6 +80,11 @@ impl Env {
             }
         }
 
+        // Not a root: the execution trace buffer (`crate::trace`). It holds
+        // its values weakly and checks `Heap::is_live` before rendering one,
+        // so a 20 MB diagnostic ring never pins a frame's garbage. Any new
+        // holder of `Value`s must be listed above or be weak the same way.
+
         // Joint fixpoint: follow every closure/overload set marking ran into,
         // marking their captures back into the heap (which may turn up more of
         // them), until a round comes back empty. `mark_closure`/`mark_set`

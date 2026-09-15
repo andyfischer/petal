@@ -139,6 +139,17 @@ impl ExecutionContext {
     /// fork is not inherently speculative or silent; a caller that wants that
     /// (see [`Env::run_speculative`](crate::env::Env::run_speculative)) applies
     /// the policy itself via [`set_echo`](Self::set_echo).
+    /// Whether every object `v` references directly is still live in this
+    /// context: [`Heap::is_live`] extended to closures and overload sets. The
+    /// check a weak holder makes before dereferencing.
+    pub fn is_live(&self, v: Value) -> bool {
+        match v {
+            Value::Closure(id) => self.closures.is_closure_live(id),
+            Value::OverloadSet(id) => self.closures.is_set_live(id),
+            other => self.heap.is_live(other),
+        }
+    }
+
     pub fn fork(&self) -> ExecutionContext {
         ExecutionContext {
             heap: self.heap.fork(),

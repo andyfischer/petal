@@ -78,6 +78,12 @@ impl Env {
         let program_id = self.stacks.get(&dst).ok_or("Stack not found")?.program_id;
 
         let mut ctx = self.contexts.get(&src_ck).ok_or("Source context not found")?.fork();
+        // `dst` keeps its context key, so ids a host read from it before the
+        // restore are still in circulation. Carry its generation history into
+        // the restored stores so no future allocation reissues one of them.
+        let previous = self.contexts.get(&dst_ck).ok_or("Context not found")?;
+        ctx.heap.inherit_generations(&previous.heap);
+        ctx.closures.inherit_generations(&previous.closures);
         // Closures point into the program that captured them; the program
         // running now may be a different one, so recapture on the next run
         // (exactly what `transfer_state` does on a reload).

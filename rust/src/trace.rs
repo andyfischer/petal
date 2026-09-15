@@ -22,6 +22,11 @@ use crate::value::{self, Value};
 /// don't OOM.
 pub const DEFAULT_CAPACITY: usize = 200_000;
 
+/// Events hold their `Value`s **weakly**: the buffer is not a GC root, because
+/// a 20 MB diagnostic ring must not pin a frame's garbage. An event can
+/// therefore outlive the objects it recorded, and every rendering goes through
+/// [`display_weak`], which reports a collected value as `<collected>` instead of
+/// dereferencing a slot that may since hold something else.
 #[derive(Debug, Clone)]
 pub struct TraceEvent {
     pub sequence: u64,
@@ -180,7 +185,7 @@ impl TraceBuffer {
                     line,
                     column,
                     seq: e.sequence,
-                    value: value::value_to_display_string(&e.result, heap),
+                    value: display_weak(&e.result, heap),
                 }
             })
             .collect()
@@ -349,7 +354,7 @@ impl TraceBuffer {
                     value: e
                         .inputs
                         .first()
-                        .map(|v| value::value_to_display_string(v, heap))
+                        .map(|v| display_weak(v, heap))
                         .unwrap_or_else(|| "?".to_string()),
                 };
             }
@@ -360,7 +365,7 @@ impl TraceBuffer {
                     line,
                     column,
                     seq: e.sequence,
-                    value: value::value_to_display_string(&e.result, heap),
+                    value: display_weak(&e.result, heap),
                 };
             }
             None => {
@@ -614,7 +619,7 @@ impl ExplainEntry {
             op: format!("{:?}", term.op),
             line,
             column,
-            value: event.map(|e| value::value_to_display_string(&e.result, heap)),
+            value: event.map(|e| display_weak(&e.result, heap)),
             boundary: None,
         }
     }
@@ -640,6 +645,16 @@ fn span_of(program: &Program, term_id: TermId) -> (Option<u32>, Option<u32>) {
     }
 }
 
+/// Render a value the trace recorded, or `<collected>` if the heap has since
+/// reclaimed it. See [`TraceEvent`].
+fn display_weak(v: &Value, heap: &Heap) -> String {
+    if heap.is_live(*v) {
+        value::value_to_display_string(v, heap)
+    } else {
+        "<collected>".to_string()
+    }
+}
+
 fn event_to_json(e: &TraceEvent, program: &Program, heap: &Heap) -> serde_json::Value {
     let term = program.get_term(e.term_id);
     let span = program.source_map.get(e.term_id);
@@ -654,8 +669,8 @@ fn event_to_json(e: &TraceEvent, program: &Program, heap: &Heap) -> serde_json::
         "op": format!("{:?}", term.op),
         "line": line,
         "column": column,
-        "inputs": e.inputs.iter().map(|v| value::value_to_display_string(v, heap)).collect::<Vec<_>>(),
-        "result": value::value_to_display_string(&e.result, heap),
+        "inputs": e.inputs.iter().map(|v| display_weak(v, heap)).collect::<Vec<_>>(),
+        "result": display_weak(&e.result, heap),
     })
 }
 

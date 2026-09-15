@@ -15,6 +15,20 @@
 //! no expression evaluates to a `Value::Cell`, so a cell id never enters a
 //! collection payload — and `fork` deep-copies the cell slab like every other,
 //! so speculative execution stays isolated.
+//!
+//! ## Ids are generational
+//!
+//! Every id ([`ListId`], [`StringId`], ..., and the closure table's
+//! `ClosureId`/`OverloadSetId`) is a `(slot index, generation)` pair naming one
+//! *allocation*. Reusing a reclaimed slot bumps its generation, so an id that
+//! outlives its object never compares equal to the slot's new occupant, and
+//! [`Heap::is_live`] can tell that it is stale.
+//!
+//! The rule for anything that keeps an id past the instruction that produced
+//! it: **an id held across a collection must either be a GC root (strong; list
+//! it in `Env::collect_garbage`) or be checked with [`Heap::is_live`] before
+//! every dereference (weak).** The execution trace buffer is the model weak
+//! holder. Dereferencing a stale id is checked only in debug builds.
 
 use std::collections::HashMap;
 
@@ -38,39 +52,108 @@ fn map_entries_bytes(entries: &IndexMap<String, Value>) -> u64 {
     keys + value_slice_bytes(entries.len())
 }
 
-/// Opaque handle to a heap-allocated string.
+/// The raw `(slot index, generation)` pair a [`Slab`] hands out. Wrapped by
+/// every typed id ([`ListId`], [`ClosureId`], ...) through
+/// [`generational_id!`]; only a slab builds one, so no code outside the stores
+/// can conjure an id from bare numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StringId(pub u32);
+pub(crate) struct RawId {
+    index: u32,
+    generation: u32,
+}
 
-/// Opaque handle to a heap-allocated list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ListId(pub u32);
-
-/// Opaque handle to a heap-allocated flat f64 array.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct F64ArrayId(pub u32);
-
-/// Opaque handle to a heap-allocated map.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MapId(pub u32);
-
-/// Opaque handle to a heap-allocated element.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ElementId(pub u32);
-
-/// Opaque handle to a heap-allocated **cell** — the one-value mutable box
-/// behind a `var` binding.
+/// Define a typed generational id: a `(index, generation)` pair naming *one
+/// allocation*, not one slot. A slot that is reclaimed and reused gets a new
+/// generation, so a stale id never compares equal to (or passes
+/// [`Slab::is_live`] for) whatever lives in the slot now. See the module docs.
 ///
-/// Cells are the sole exception to this module's immutable-by-construction
-/// rule: [`cell_write`](Heap::cell_write) overwrites the slot in place and
-/// keeps the id, which is the whole point (every holder of the id, including a
-/// closure that captured it, observes the write). What keeps that sound is the
-/// *containment invariant*: no expression evaluates to a `Value::Cell`, so a
-/// cell id never reaches a collection payload, a host, or user code. Reads
-/// dereference; only closure capture shares one. See
-/// docs/var.md (Containment).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CellId(pub u32);
+/// `Debug` prints `ListId(7#2)` (index `#` generation).
+macro_rules! generational_id {
+    ($(#[$meta:meta])* pub struct $name:ident;) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $name($crate::heap::RawId);
+
+        impl $name {
+            /// The slot index, for display and debugging only. Two ids with
+            /// the same index are not the same object unless their
+            /// generations match too.
+            pub fn index(self) -> u32 {
+                self.0.index()
+            }
+
+            /// The slot generation this id was minted with.
+            pub fn generation(self) -> u32 {
+                self.0.generation()
+            }
+
+            pub(crate) fn from_raw(raw: $crate::heap::RawId) -> Self {
+                Self(raw)
+            }
+
+            pub(crate) fn raw(self) -> $crate::heap::RawId {
+                self.0
+            }
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}({}#{})", stringify!($name), self.index(), self.generation())
+            }
+        }
+    };
+}
+pub(crate) use generational_id;
+
+impl RawId {
+    pub(crate) fn index(self) -> u32 {
+        self.index
+    }
+
+    pub(crate) fn generation(self) -> u32 {
+        self.generation
+    }
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated string.
+    pub struct StringId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated list.
+    pub struct ListId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated flat f64 array.
+    pub struct F64ArrayId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated map.
+    pub struct MapId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated element.
+    pub struct ElementId;
+}
+
+generational_id! {
+    /// Opaque handle to a heap-allocated **cell** — the one-value mutable box
+    /// behind a `var` binding.
+    ///
+    /// Cells are the sole exception to this module's immutable-by-construction
+    /// rule: [`cell_write`](Heap::cell_write) overwrites the slot in place and
+    /// keeps the id, which is the whole point (every holder of the id, including a
+    /// closure that captured it, observes the write). What keeps that sound is the
+    /// *containment invariant*: no expression evaluates to a `Value::Cell`, so a
+    /// cell id never reaches a collection payload, a host, or user code. Reads
+    /// dereference; only closure capture shares one. See
+    /// docs/var.md (Containment).
+    pub struct CellId;
+}
 
 /// Payload of a single heap map: its entry table plus an optional **class
 /// tag**.
@@ -104,19 +187,34 @@ struct ElementPayload {
     children: ListId,
 }
 
-/// One slab slot: a payload plus its GC bits. `gc_mark` is the mark-and-sweep
-/// reachability flag (cleared each sweep); `alive` is false for a reclaimed slot
-/// sitting on the free list.
+/// One slab slot: a payload plus its GC bits and generation. `gc_mark` is the
+/// mark-and-sweep reachability flag (cleared each sweep); `alive` is false for a
+/// reclaimed slot sitting on the free list.
 #[derive(Clone)]
 pub(crate) struct Slot<T> {
     data: T,
+    /// Generation of the object currently (or most recently) in this slot. An
+    /// id is live iff `alive` and its generation equals this.
+    generation: u32,
+    /// Highest generation ever issued for this slot. Usually equal to
+    /// `generation`; it runs ahead when [`Slab::inherit_generations`] merges in
+    /// another timeline's history, so the next reuse still issues a generation
+    /// neither timeline has handed out.
+    high_water: u32,
     gc_mark: bool,
     alive: bool,
 }
 
 /// A generic slot store with an index free list. Backs each of the heap's object
-/// kinds. Ids are bare indices (no generation counter): a reclaimed slot is
-/// reused and hands back the same index value.
+/// kinds, and the closure table's.
+///
+/// Ids are generational ([`RawId`]): a reclaimed slot is reused, but reuse bumps
+/// its generation, so an id minted before the reuse no longer matches. That
+/// makes stale ids detectable ([`is_live`](Self::is_live)) and never equal to a
+/// live one. It does *not* make dereferencing them safe for free: in release
+/// builds [`get`](Self::get) does not check. An id held across a collection
+/// must either be a GC root (strong) or be checked with `is_live` before every
+/// dereference (weak).
 #[derive(Clone)]
 pub(crate) struct Slab<T> {
     slots: Vec<Slot<T>>,
@@ -131,22 +229,41 @@ impl<T> Slab<T> {
         }
     }
 
-    /// Allocate `data` into a reused free slot or a fresh one; return its index.
-    pub(crate) fn alloc(&mut self, data: T) -> u32 {
+    /// Allocate `data` into a reused free slot or a fresh one; return its id.
+    ///
+    /// A reused slot's generation advances past its high-water mark. A slot
+    /// whose high-water mark has reached `u32::MAX` is *retired*: it is kept
+    /// off the free list for good rather than wrapped, so the no-aliasing
+    /// guarantee is unconditional.
+    #[inline]
+    pub(crate) fn alloc(&mut self, data: T) -> RawId {
         if let Some(idx) = self.free.pop() {
             let slot = &mut self.slots[idx as usize];
+            // Exhausted slots never reach the free list (`sweep_with` and
+            // `inherit_generations` keep them off it), so this cannot wrap.
+            debug_assert!(slot.high_water < u32::MAX, "retired slot on the free list");
+            let generation = slot.high_water + 1;
             slot.data = data;
+            slot.generation = generation;
+            slot.high_water = generation;
             slot.gc_mark = false;
             slot.alive = true;
-            idx
-        } else {
-            let idx = self.slots.len() as u32;
-            self.slots.push(Slot {
-                data,
-                gc_mark: false,
-                alive: true,
-            });
-            idx
+            return RawId {
+                index: idx,
+                generation,
+            };
+        }
+        let idx = self.slots.len() as u32;
+        self.slots.push(Slot {
+            data,
+            generation: 0,
+            high_water: 0,
+            gc_mark: false,
+            alive: true,
+        });
+        RawId {
+            index: idx,
+            generation: 0,
         }
     }
 
@@ -162,19 +279,55 @@ impl<T> Slab<T> {
         self.slots.iter().filter(|s| s.alive).count()
     }
 
-    pub(crate) fn get(&self, idx: u32) -> &T {
-        &self.slots[idx as usize].data
+    /// Whether `id` still names the object in its slot: the slot is allocated
+    /// and has not been reclaimed-and-reused since `id` was minted.
+    #[inline]
+    pub(crate) fn is_live(&self, id: RawId) -> bool {
+        self.slots
+            .get(id.index as usize)
+            .is_some_and(|slot| slot.alive && slot.generation == id.generation)
     }
 
-    pub(crate) fn get_mut(&mut self, idx: u32) -> &mut T {
-        &mut self.slots[idx as usize].data
+    /// The payload `id` names, or `None` if it has been collected. For holders
+    /// of weak ids.
+    pub(crate) fn try_get(&self, id: RawId) -> Option<&T> {
+        let slot = self.slots.get(id.index as usize)?;
+        (slot.alive && slot.generation == id.generation).then_some(&slot.data)
     }
 
-    /// Mark slot `idx` live. Returns true iff it was newly marked (alive and not
+    /// The payload `id` names. `id` must be live — a strong (rooted) id, or a
+    /// weak one already checked with [`is_live`](Self::is_live). Checked in
+    /// debug builds only; the release hot path is a bounds check.
+    #[inline]
+    pub(crate) fn get(&self, id: RawId) -> &T {
+        let slot = &self.slots[id.index as usize];
+        debug_assert!(
+            slot.alive && slot.generation == id.generation,
+            "stale heap id {id:?} (slot alive: {}, generation {})",
+            slot.alive,
+            slot.generation
+        );
+        &slot.data
+    }
+
+    #[inline]
+    pub(crate) fn get_mut(&mut self, id: RawId) -> &mut T {
+        let slot = &mut self.slots[id.index as usize];
+        debug_assert!(
+            slot.alive && slot.generation == id.generation,
+            "stale heap id {id:?} (slot alive: {}, generation {})",
+            slot.alive,
+            slot.generation
+        );
+        &mut slot.data
+    }
+
+    /// Mark `id` live. Returns true iff it was newly marked (live and not
     /// already marked) — the caller then recurses into the payload's children.
-    pub(crate) fn mark(&mut self, idx: u32) -> bool {
-        let slot = &mut self.slots[idx as usize];
-        if slot.alive && !slot.gc_mark {
+    /// A stale id marks nothing: it must not resurrect the slot's new occupant.
+    pub(crate) fn mark(&mut self, id: RawId) -> bool {
+        let slot = &mut self.slots[id.index as usize];
+        if slot.alive && slot.generation == id.generation && !slot.gc_mark {
             slot.gc_mark = true;
             true
         } else {
@@ -183,12 +336,16 @@ impl<T> Slab<T> {
     }
 
     /// Sweep: reclaim every unmarked-live slot (flip alive off, run `on_reclaim`
-    /// on its payload to release backing memory / side-table entries, push to the
-    /// free list); clear the mark on every surviving slot. Rebuilds `free` from
-    /// *every* dead slot, not just this cycle's — a slot reclaimed by an earlier
-    /// sweep and not yet reused is still free, and dropping it from the list
-    /// would orphan it for the rest of the run (the slot vector would then grow
-    /// monotonically no matter how much was collected).
+    /// on its id and payload to release backing memory / side-table entries,
+    /// push to the free list); clear the mark on every surviving slot. Rebuilds
+    /// `free` from *every* dead slot, not just this cycle's — a slot reclaimed
+    /// by an earlier sweep and not yet reused is still free, and dropping it
+    /// from the list would orphan it for the rest of the run (the slot vector
+    /// would then grow monotonically no matter how much was collected). Retired
+    /// slots (see [`alloc`](Self::alloc)) stay off the list.
+    ///
+    /// Generations do not change here: bumping happens at reuse, and a
+    /// swept-but-unreused slot already fails `is_live` through `alive`.
     ///
     /// `on_reclaim` must *release* the payload's heap allocation, not merely
     /// empty it: `Vec::clear()` keeps the buffer, so a swept 160 KB array would
@@ -196,23 +353,74 @@ impl<T> Slab<T> {
     /// reused for anything either, because [`alloc`](Self::alloc) overwrites
     /// `slot.data` wholesale (dropping whatever buffer was there). Assign a
     /// fresh empty value (`*v = Vec::new()`) instead.
-    pub(crate) fn sweep_with(&mut self, mut on_reclaim: impl FnMut(&mut T)) {
+    pub(crate) fn sweep_with(&mut self, mut on_reclaim: impl FnMut(RawId, &mut T)) {
         self.free.clear();
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.alive {
                 if slot.gc_mark {
                     slot.gc_mark = false;
-                } else {
-                    slot.alive = false;
-                    on_reclaim(&mut slot.data);
-                    self.free.push(i as u32);
+                    continue;
                 }
-            } else {
-                // Already dead from an earlier sweep and never reused: still
-                // free, so it belongs on the rebuilt list.
+                slot.alive = false;
+                let id = RawId {
+                    index: i as u32,
+                    generation: slot.generation,
+                };
+                on_reclaim(id, &mut slot.data);
+            }
+            // Dead now or from an earlier sweep and never reused: free, unless
+            // its generations are exhausted.
+            if slot.high_water != u32::MAX {
                 self.free.push(i as u32);
             }
         }
+    }
+
+    /// Reclaim every slot, keeping the generation history — the difference
+    /// from replacing the slab with [`Slab::new`], which would let a fresh
+    /// allocation reissue an id some holder still has.
+    pub(crate) fn clear_with(&mut self, on_reclaim: impl FnMut(RawId, &mut T)) {
+        for slot in &mut self.slots {
+            slot.gc_mark = false;
+        }
+        self.sweep_with(on_reclaim);
+    }
+
+    /// Raise every slot's high-water mark to at least `other`'s, extending with
+    /// dead slots (payload from `filler`) where `other` has more. Live objects
+    /// keep their current generations, but no future reuse will issue a
+    /// generation either slab has already handed out.
+    ///
+    /// Used when this slab *replaces* `other` under the same owner (restoring a
+    /// snapshot over a live execution): ids a host kept from `other` must not
+    /// come back to life when the restored slab reuses their slots.
+    pub(crate) fn inherit_generations(&mut self, other: &Slab<T>, mut filler: impl FnMut() -> T) {
+        let mut extra = Vec::new();
+        for (i, theirs) in other.slots.iter().enumerate() {
+            match self.slots.get_mut(i) {
+                Some(slot) => slot.high_water = slot.high_water.max(theirs.high_water),
+                None => {
+                    self.slots.push(Slot {
+                        data: filler(),
+                        generation: theirs.high_water,
+                        high_water: theirs.high_water,
+                        gc_mark: false,
+                        alive: false,
+                    });
+                    if theirs.high_water != u32::MAX {
+                        extra.push(i as u32);
+                    }
+                }
+            }
+        }
+        // Put the new dead slots at the bottom of the free list, so the
+        // restored slab keeps reusing slots in the order the snapshot would.
+        if !extra.is_empty() {
+            extra.reverse();
+            extra.extend(self.free.iter().copied());
+            self.free = extra;
+        }
+        self.free.retain(|&i| self.slots[i as usize].high_water != u32::MAX);
     }
 }
 
@@ -503,6 +711,93 @@ impl Heap {
         child
     }
 
+    /// Make this heap safe to install in place of `previous` under the same
+    /// execution context: every slab's generation history becomes at least
+    /// `previous`'s (see [`Slab::inherit_generations`]).
+    ///
+    /// `restore_execution` swaps a snapshot's heap in for a live one but keeps
+    /// the context key, so ids a host read from the live heap stay in its
+    /// hands. Without this, the snapshot could reuse one of their slots at a
+    /// generation the live heap already issued, and the old id would alias the
+    /// new object.
+    pub fn inherit_generations(&mut self, previous: &Heap) {
+        // Filler payloads for slots that exist only in `previous`. They are
+        // dead, never read, and overwritten on reuse.
+        let placeholder_id = RawId {
+            index: 0,
+            generation: 0,
+        };
+        self.strings.inherit_generations(&previous.strings, String::new);
+        self.lists.inherit_generations(&previous.lists, Vec::new);
+        self.f64_arrays
+            .inherit_generations(&previous.f64_arrays, Vec::new);
+        self.maps.inherit_generations(&previous.maps, || MapObj {
+            entries: IndexMap::new(),
+            class: None,
+        });
+        self.elements
+            .inherit_generations(&previous.elements, || ElementPayload {
+                tag: StringId::from_raw(placeholder_id),
+                props: MapId::from_raw(placeholder_id),
+                children: ListId::from_raw(placeholder_id),
+            });
+        self.cells.inherit_generations(&previous.cells, || Value::Nil);
+    }
+
+    /// Whether every heap object `v` references directly is still live — the
+    /// check a *weak* holder (one that is not a GC root) makes before
+    /// dereferencing. True for non-heap values. An `EnumVariant` checks both
+    /// its tag and its payload list.
+    ///
+    /// Closures and overload sets live in the context's
+    /// [`ClosureTable`](crate::closure_table::ClosureTable), which this heap
+    /// cannot see, so they read as live here; ask
+    /// [`ExecutionContext::is_live`](crate::execution_context::ExecutionContext::is_live)
+    /// for an answer that covers them too.
+    ///
+    /// Shallow on purpose: the collector marks everything a live object
+    /// references, so a live list's elements are live too.
+    pub fn is_live(&self, v: Value) -> bool {
+        match v {
+            Value::String(id) => self.strings.is_live(id.raw()),
+            Value::List(id) => self.lists.is_live(id.raw()),
+            Value::F64Array(id) => self.f64_arrays.is_live(id.raw()),
+            Value::Map(id) => self.maps.is_live(id.raw()),
+            Value::Element(id) => self.elements.is_live(id.raw()),
+            Value::Cell(id) => self.cells.is_live(id.raw()),
+            Value::EnumVariant { tag, data } => {
+                self.strings.is_live(tag.raw()) && self.lists.is_live(data.raw())
+            }
+            Value::Closure(_)
+            | Value::OverloadSet(_)
+            | Value::Nil
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::NativeFunction(_)
+            | Value::Dual { .. }
+            | Value::Vec2(_, _)
+            | Value::Symbol(_)
+            | Value::Handle(_)
+            | Value::Pending(_) => true,
+        }
+    }
+
+    /// [`get_string`](Self::get_string) for a weak id: `None` once collected.
+    pub fn try_get_string(&self, id: StringId) -> Option<&str> {
+        self.strings.try_get(id.raw()).map(String::as_str)
+    }
+
+    /// [`get_list`](Self::get_list) for a weak id: `None` once collected.
+    pub fn try_get_list(&self, id: ListId) -> Option<&[Value]> {
+        self.lists.try_get(id.raw()).map(Vec::as_slice)
+    }
+
+    /// [`get_map`](Self::get_map) for a weak id: `None` once collected.
+    pub fn try_get_map(&self, id: MapId) -> Option<&IndexMap<String, Value>> {
+        self.maps.try_get(id.raw()).map(|m| &m.entries)
+    }
+
     /// Account for one new heap object: charge the collector budget for the
     /// work this object will cost to trace and reclaim (`payload_bytes` of
     /// backing store plus one slot visit), and record it in the stats. The
@@ -520,14 +815,14 @@ impl Heap {
     /// the next [`insert_interned`](Self::insert_interned).
     fn interned(&self, s: &str) -> Option<StringId> {
         let id = *self.intern_table.get(s)?;
-        self.strings.slots[id.0 as usize].alive.then_some(id)
+        self.strings.is_live(id.raw()).then_some(id)
     }
 
     /// Allocate `s` and index it in the intern table. The caller must have
     /// missed [`interned`](Self::interned) first — this always allocates.
     fn insert_interned(&mut self, s: String) -> StringId {
         self.tick_alloc(AllocKind::String, s.len() as u64);
-        let id = StringId(self.strings.alloc(s.clone()));
+        let id = StringId::from_raw(self.strings.alloc(s.clone()));
         self.intern_table.insert(s, id);
         id
     }
@@ -565,7 +860,7 @@ impl Heap {
     /// The caller must pass char-boundary offsets (as `slice()` does); an
     /// interior byte offset panics exactly as `&str` indexing would.
     pub fn intern_substring(&mut self, id: StringId, start: usize, end: usize) -> StringId {
-        let sub = &self.strings.get(id.0)[start..end];
+        let sub = &self.strings.get(id.raw())[start..end];
         match self.interned(sub) {
             Some(existing) => existing,
             // Miss: take ownership, which ends the borrow of `strings`.
@@ -577,22 +872,22 @@ impl Heap {
     }
 
     pub fn get_string(&self, id: StringId) -> &str {
-        self.strings.get(id.0)
+        self.strings.get(id.raw())
     }
 
     // --- List allocation ---
 
     pub fn alloc_list(&mut self, elements: Vec<Value>) -> ListId {
         self.tick_alloc(AllocKind::List, value_slice_bytes(elements.len()));
-        ListId(self.lists.alloc(elements))
+        ListId::from_raw(self.lists.alloc(elements))
     }
 
     pub fn get_list(&self, id: ListId) -> &[Value] {
-        self.lists.get(id.0)
+        self.lists.get(id.raw())
     }
 
     pub fn list_len(&self, id: ListId) -> usize {
-        self.lists.get(id.0).len()
+        self.lists.get(id.raw()).len()
     }
 
     // --- Immutable list operations (value semantics) ---
@@ -604,7 +899,7 @@ impl Heap {
 
     /// Return a new list equal to `id` with `val` appended. `id` is unchanged.
     pub fn list_append(&mut self, id: ListId, val: Value) -> ListId {
-        let mut elements = self.lists.get(id.0).clone();
+        let mut elements = self.lists.get(id.raw()).clone();
         self.dup_stats
             .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.push(val);
@@ -615,7 +910,7 @@ impl Heap {
     /// unchanged. The caller must ensure `index` is in bounds (eval already
     /// bounds-checks before calling).
     pub fn list_set(&mut self, id: ListId, index: usize, val: Value) -> ListId {
-        let mut elements = self.lists.get(id.0).clone();
+        let mut elements = self.lists.get(id.raw()).clone();
         self.dup_stats
             .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements[index] = val;
@@ -625,7 +920,7 @@ impl Heap {
     /// Return a new list equal to `id` with its last element removed. `id` is
     /// unchanged. On an empty list, returns a new empty list.
     pub fn list_drop_last(&mut self, id: ListId) -> ListId {
-        let mut elements = self.lists.get(id.0).clone();
+        let mut elements = self.lists.get(id.raw()).clone();
         self.dup_stats
             .record(DupKind::List, || value_slice_bytes(elements.len()));
         elements.pop();
@@ -647,10 +942,10 @@ impl Heap {
     /// backing store and return `id` unchanged. Amortized O(1), no copy.
     pub fn list_append_in_place(&mut self, id: ListId, val: Value) -> ListId {
         debug_assert!(
-            self.lists.slots[id.0 as usize].alive,
+            self.lists.is_live(id.raw()),
             "in-place append on a dead list"
         );
-        self.lists.get_mut(id.0).push(val);
+        self.lists.get_mut(id.raw()).push(val);
         id
     }
 
@@ -658,10 +953,10 @@ impl Heap {
     /// return `id`. The caller must ensure `index` is in bounds.
     pub fn list_set_in_place(&mut self, id: ListId, index: usize, val: Value) -> ListId {
         debug_assert!(
-            self.lists.slots[id.0 as usize].alive,
+            self.lists.is_live(id.raw()),
             "in-place set on a dead list"
         );
-        self.lists.get_mut(id.0)[index] = val;
+        self.lists.get_mut(id.raw())[index] = val;
         id
     }
 
@@ -669,10 +964,10 @@ impl Heap {
     /// element and return `id`. A no-op on an empty list.
     pub fn list_drop_last_in_place(&mut self, id: ListId) -> ListId {
         debug_assert!(
-            self.lists.slots[id.0 as usize].alive,
+            self.lists.is_live(id.raw()),
             "in-place drop_last on a dead list"
         );
-        self.lists.get_mut(id.0).pop();
+        self.lists.get_mut(id.raw()).pop();
         id
     }
 
@@ -683,21 +978,21 @@ impl Heap {
             AllocKind::F64Array,
             (data.len() * std::mem::size_of::<f64>()) as u64,
         );
-        F64ArrayId(self.f64_arrays.alloc(data))
+        F64ArrayId::from_raw(self.f64_arrays.alloc(data))
     }
 
     pub fn get_f64_array(&self, id: F64ArrayId) -> &[f64] {
-        self.f64_arrays.get(id.0)
+        self.f64_arrays.get(id.raw())
     }
 
     pub fn f64_array_len(&self, id: F64ArrayId) -> usize {
-        self.f64_arrays.get(id.0).len()
+        self.f64_arrays.get(id.raw()).len()
     }
 
     /// Return a new f64 array equal to `id` with `data[index] = val`. `id` is
     /// unchanged. The caller must ensure `index` is in bounds.
     pub fn f64_array_set(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
-        let mut data = self.f64_arrays.get(id.0).clone();
+        let mut data = self.f64_arrays.get(id.raw()).clone();
         self.dup_stats.record(DupKind::F64Array, || {
             (data.len() * std::mem::size_of::<f64>()) as u64
         });
@@ -708,7 +1003,7 @@ impl Heap {
     /// Return a new f64 array equal to `id` with elements `i` and `j` swapped.
     /// `id` is unchanged. The caller must ensure `i` and `j` are in bounds.
     pub fn f64_array_swap(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
-        let mut data = self.f64_arrays.get(id.0).clone();
+        let mut data = self.f64_arrays.get(id.raw()).clone();
         self.dup_stats.record(DupKind::F64Array, || {
             (data.len() * std::mem::size_of::<f64>()) as u64
         });
@@ -721,10 +1016,10 @@ impl Heap {
     /// in-place list methods for the soundness contract.
     pub fn f64_array_set_in_place(&mut self, id: F64ArrayId, index: usize, val: f64) -> F64ArrayId {
         debug_assert!(
-            self.f64_arrays.slots[id.0 as usize].alive,
+            self.f64_arrays.is_live(id.raw()),
             "in-place set on a dead f64 array"
         );
-        self.f64_arrays.get_mut(id.0)[index] = val;
+        self.f64_arrays.get_mut(id.raw())[index] = val;
         id
     }
 
@@ -732,10 +1027,10 @@ impl Heap {
     /// `j` and return `id`. Caller must ensure both are in bounds.
     pub fn f64_array_swap_in_place(&mut self, id: F64ArrayId, i: usize, j: usize) -> F64ArrayId {
         debug_assert!(
-            self.f64_arrays.slots[id.0 as usize].alive,
+            self.f64_arrays.is_live(id.raw()),
             "in-place swap on a dead f64 array"
         );
-        self.f64_arrays.get_mut(id.0).swap(i, j);
+        self.f64_arrays.get_mut(id.raw()).swap(i, j);
         id
     }
 
@@ -762,16 +1057,16 @@ impl Heap {
         class: Option<StringId>,
     ) -> MapId {
         self.tick_alloc(AllocKind::Map, map_entries_bytes(&entries));
-        MapId(self.maps.alloc(MapObj { entries, class }))
+        MapId::from_raw(self.maps.alloc(MapObj { entries, class }))
     }
 
     pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
-        &self.maps.get(id.0).entries
+        &self.maps.get(id.raw()).entries
     }
 
     /// The interned class name tagging `id`, or `None` for a plain record.
     pub fn map_class(&self, id: MapId) -> Option<StringId> {
-        self.maps.get(id.0).class
+        self.maps.get(id.raw()).class
     }
 
     /// The class name tagging `id` as a string, or `None` for a plain record.
@@ -783,8 +1078,8 @@ impl Heap {
     /// Return a new map equal to `id` with `key` set to `val`. `id` is
     /// unchanged (value semantics).
     pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
-        let class = self.maps.get(id.0).class;
-        let mut entries = self.maps.get(id.0).entries.clone();
+        let class = self.maps.get(id.raw()).class;
+        let mut entries = self.maps.get(id.raw()).entries.clone();
         self.dup_stats
             .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.insert(key, val);
@@ -795,8 +1090,8 @@ impl Heap {
     /// (value semantics). Insertion order of the remaining keys is preserved.
     /// Removing an absent key returns an equivalent new map.
     pub fn map_remove(&mut self, id: MapId, key: &str) -> MapId {
-        let class = self.maps.get(id.0).class;
-        let mut entries = self.maps.get(id.0).entries.clone();
+        let class = self.maps.get(id.raw()).class;
+        let mut entries = self.maps.get(id.raw()).entries.clone();
         self.dup_stats
             .record(DupKind::Map, || map_entries_bytes(&entries));
         entries.shift_remove(key);
@@ -808,10 +1103,10 @@ impl Heap {
     /// soundness contract.
     pub fn map_set_in_place(&mut self, id: MapId, key: String, val: Value) -> MapId {
         debug_assert!(
-            self.maps.slots[id.0 as usize].alive,
+            self.maps.is_live(id.raw()),
             "in-place set on a dead map"
         );
-        self.maps.get_mut(id.0).entries.insert(key, val);
+        self.maps.get_mut(id.raw()).entries.insert(key, val);
         id
     }
 
@@ -819,10 +1114,10 @@ impl Heap {
     /// (preserving order of the rest) and return `id`. A no-op for an absent key.
     pub fn map_remove_in_place(&mut self, id: MapId, key: &str) -> MapId {
         debug_assert!(
-            self.maps.slots[id.0 as usize].alive,
+            self.maps.is_live(id.raw()),
             "in-place remove on a dead map"
         );
-        self.maps.get_mut(id.0).entries.shift_remove(key);
+        self.maps.get_mut(id.raw()).entries.shift_remove(key);
         id
     }
 
@@ -831,7 +1126,7 @@ impl Heap {
     pub fn alloc_element(&mut self, tag: StringId, props: MapId, children: ListId) -> ElementId {
         // Three `Copy` ids: no backing store of its own beyond the slot.
         self.tick_alloc(AllocKind::Element, 0);
-        ElementId(self.elements.alloc(ElementPayload {
+        ElementId::from_raw(self.elements.alloc(ElementPayload {
             tag,
             props,
             children,
@@ -839,15 +1134,15 @@ impl Heap {
     }
 
     pub fn get_element_tag(&self, id: ElementId) -> StringId {
-        self.elements.get(id.0).tag
+        self.elements.get(id.raw()).tag
     }
 
     pub fn get_element_props(&self, id: ElementId) -> MapId {
-        self.elements.get(id.0).props
+        self.elements.get(id.raw()).props
     }
 
     pub fn get_element_children(&self, id: ElementId) -> ListId {
-        self.elements.get(id.0).children
+        self.elements.get(id.raw()).children
     }
 
     // --- Cell allocation (`var` bindings) ---
@@ -858,22 +1153,22 @@ impl Heap {
     pub fn alloc_cell(&mut self, init: Value) -> CellId {
         // One `Copy` Value: no backing store of its own beyond the slot.
         self.tick_alloc(AllocKind::Cell, 0);
-        CellId(self.cells.alloc(init))
+        CellId::from_raw(self.cells.alloc(init))
     }
 
     /// Read a cell's current contents.
     pub fn cell_read(&self, id: CellId) -> Value {
-        *self.cells.get(id.0)
+        *self.cells.get(id.raw())
     }
 
     /// Overwrite a cell's contents in place, keeping its id. The one mutating
     /// operation in this module — see [`CellId`] for why it is sound.
     pub fn cell_write(&mut self, id: CellId, val: Value) {
         debug_assert!(
-            self.cells.slots[id.0 as usize].alive,
+            self.cells.is_live(id.raw()),
             "write to a collected cell"
         );
-        *self.cells.get_mut(id.0) = val;
+        *self.cells.get_mut(id.raw()) = val;
     }
 
     // -----------------------------------------------------------------------
@@ -881,7 +1176,29 @@ impl Heap {
     // -----------------------------------------------------------------------
 
     /// Mark a single value as reachable, recursively marking any heap objects it references.
+    ///
+    /// The scalar check is split out and inlined so marking a list of numbers
+    /// does not pay a call (and the id-carrying arms' stack frame) per element.
+    #[inline]
     pub fn mark_value(&mut self, val: Value) {
+        if !matches!(
+            val,
+            Value::Nil
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::NativeFunction(_)
+                | Value::Dual { .. }
+                | Value::Vec2(_, _)
+                | Value::Symbol(_)
+                | Value::Handle(_)
+                | Value::Pending(_)
+        ) {
+            self.mark_referenced(val);
+        }
+    }
+
+    fn mark_referenced(&mut self, val: Value) {
         match val {
             Value::String(id) => self.mark_string(id),
             Value::List(id) => self.mark_list(id),
@@ -915,42 +1232,47 @@ impl Heap {
 
     fn mark_string(&mut self, id: StringId) {
         // Leaf: no children to recurse into.
-        self.strings.mark(id.0);
+        self.strings.mark(id.raw());
     }
 
     fn mark_list(&mut self, id: ListId) {
-        if self.lists.mark(id.0) {
-            // Clone the elements before recursive marking to release the arena borrow.
-            let elements: Vec<Value> = self.lists.get(id.0).clone();
-            for val in elements {
+        if self.lists.mark(id.raw()) {
+            // Move the elements out to release the slab borrow during the
+            // recursion, and put them back after. Nothing reads this payload
+            // meanwhile: the slot is already marked, so reaching it again (a
+            // cycle) returns before looking inside. Cheaper than cloning,
+            // which copied every list on every collection.
+            let elements = std::mem::take(self.lists.get_mut(id.raw()));
+            for &val in &elements {
                 self.mark_value(val);
             }
+            *self.lists.get_mut(id.raw()) = elements;
         }
     }
 
     fn mark_f64_array(&mut self, id: F64ArrayId) {
         // Leaf: f64s are primitives — nothing recursive to mark.
-        self.f64_arrays.mark(id.0);
+        self.f64_arrays.mark(id.raw());
     }
 
     fn mark_map(&mut self, id: MapId) {
-        if self.maps.mark(id.0) {
+        if self.maps.mark(id.raw()) {
             // Copy values to avoid borrow conflict
-            let values: Vec<Value> = self.maps.get(id.0).entries.values().copied().collect();
+            let values: Vec<Value> = self.maps.get(id.raw()).entries.values().copied().collect();
             for val in values {
                 self.mark_value(val);
             }
             // The class tag names a heap string. Marking it here is what keeps
             // the name alive for exactly as long as some instance carries it.
-            if let Some(class) = self.maps.get(id.0).class {
+            if let Some(class) = self.maps.get(id.raw()).class {
                 self.mark_string(class);
             }
         }
     }
 
     fn mark_element(&mut self, id: ElementId) {
-        if self.elements.mark(id.0) {
-            let e = *self.elements.get(id.0);
+        if self.elements.mark(id.raw()) {
+            let e = *self.elements.get(id.raw());
             self.mark_string(e.tag);
             self.mark_map(e.props);
             self.mark_list(e.children);
@@ -958,11 +1280,11 @@ impl Heap {
     }
 
     fn mark_cell(&mut self, id: CellId) {
-        if self.cells.mark(id.0) {
+        if self.cells.mark(id.raw()) {
             // A cell's contents are an ordinary value and may themselves be
             // heap-backed (a `var` holding a list). The `mark` guard makes the
             // recursion terminate even if a cell ever reached itself.
-            let contents = *self.cells.get(id.0);
+            let contents = *self.cells.get(id.raw());
             self.mark_value(contents);
         }
     }
@@ -984,19 +1306,24 @@ impl Heap {
         // a swept 160 KB array squatting on 160 KB while it sits on the free
         // list — and `Slab::alloc` drops that buffer unread when it reuses the
         // slot, so nothing is gained by keeping it. See `Slab::sweep_with`.
-        strings.sweep_with(|s| {
-            intern_table.remove(s.as_str());
+        strings.sweep_with(|id, s| {
+            // Remove only this id's entry. The table maps content to the one
+            // live id with that content, so it should always be this one; the
+            // check keeps a reclaim from ever evicting a different, live id.
+            if intern_table.get(s.as_str()) == Some(&StringId::from_raw(id)) {
+                intern_table.remove(s.as_str());
+            }
             *s = String::new();
         });
 
-        self.lists.sweep_with(|v| *v = Vec::new());
-        self.f64_arrays.sweep_with(|v| *v = Vec::new());
-        self.maps.sweep_with(|v| {
+        self.lists.sweep_with(|_, v| *v = Vec::new());
+        self.f64_arrays.sweep_with(|_, v| *v = Vec::new());
+        self.maps.sweep_with(|_, v| {
             v.entries = IndexMap::new();
             v.class = None;
         });
-        self.elements.sweep_with(|_| {});
-        self.cells.sweep_with(|v| *v = Value::Nil);
+        self.elements.sweep_with(|_, _| {});
+        self.cells.sweep_with(|_, v| *v = Value::Nil);
 
         // Size the next collection's budget against what this collection would
         // cost to repeat (see `should_collect`). Computed here, once per cycle,
@@ -1022,6 +1349,109 @@ impl Default for Heap {
 mod tests {
     use super::*;
 
+    /// A reclaimed slot is reused, but the reuse mints a new id: the stale id
+    /// is neither equal to the new one nor live. (Before generational ids the
+    /// two compared equal and the stale id dereferenced to the new list.)
+    #[test]
+    fn a_reused_slot_does_not_alias_a_stale_id() {
+        let mut heap = Heap::new();
+        let old = heap.alloc_list(vec![Value::Int(1)]);
+        heap.sweep();
+        let new = heap.alloc_list(vec![Value::Int(2)]);
+
+        assert_eq!(new.index(), old.index(), "the slot is reused");
+        assert_ne!(new, old);
+        assert_ne!(Value::List(new), Value::List(old));
+        assert!(!heap.is_live(Value::List(old)));
+        assert!(heap.is_live(Value::List(new)));
+        assert_eq!(heap.try_get_list(old), None);
+        assert_eq!(heap.try_get_list(new), Some(&[Value::Int(2)][..]));
+    }
+
+    #[test]
+    fn a_swept_but_unreused_id_is_not_live() {
+        let mut heap = Heap::new();
+        let s = heap.alloc_string("gone".to_string());
+        let kept = heap.alloc_string("kept".to_string());
+        heap.mark_value(Value::String(kept));
+        heap.sweep();
+
+        assert!(!heap.is_live(Value::String(s)));
+        assert_eq!(heap.try_get_string(s), None);
+        assert_eq!(heap.try_get_string(kept), Some("kept"));
+        // An enum variant is live only if both of its ids are.
+        let data = heap.alloc_list(vec![]);
+        assert!(!heap.is_live(Value::EnumVariant { tag: s, data }));
+        assert!(heap.is_live(Value::EnumVariant { tag: kept, data }));
+    }
+
+    /// Marking a stale id must not resurrect the slot's new occupant.
+    #[test]
+    fn marking_a_stale_id_marks_nothing() {
+        let mut heap = Heap::new();
+        let old = heap.alloc_list(vec![]);
+        heap.sweep();
+        let new = heap.alloc_list(vec![]);
+        assert_eq!(new.index(), old.index());
+
+        heap.mark_value(Value::List(old));
+        heap.sweep();
+        assert!(!heap.is_live(Value::List(new)));
+    }
+
+    /// Re-interning content after its string was collected hands out a fresh
+    /// id, and the intern table never returns the stale one.
+    #[test]
+    fn interning_after_collection_mints_a_fresh_id() {
+        let mut heap = Heap::new();
+        let old = heap.intern_str("hello");
+        heap.sweep();
+        let new = heap.intern_str("hello");
+        assert_ne!(new, old);
+        assert_eq!(heap.intern_str("hello"), new);
+        assert_eq!(heap.get_string(new), "hello");
+    }
+
+    /// A slot whose generations are exhausted is retired, not wrapped: it is
+    /// never handed out again.
+    #[test]
+    fn an_exhausted_slot_is_retired() {
+        let mut slab: Slab<u8> = Slab::new();
+        let a = slab.alloc(1);
+        slab.slots[a.index() as usize].high_water = u32::MAX;
+        slab.slots[a.index() as usize].generation = u32::MAX;
+        slab.sweep_with(|_, _| {});
+
+        let b = slab.alloc(2);
+        assert_ne!(b.index(), a.index());
+        assert_eq!(slab.slot_count(), 2);
+        slab.sweep_with(|_, _| {});
+        assert_ne!(slab.alloc(3).index(), a.index());
+    }
+
+    /// `inherit_generations` raises high-water marks and extends with dead
+    /// slots, so a replacement slab never reissues an id the replaced one had.
+    #[test]
+    fn inherit_generations_never_reissues_a_replaced_slab_s_ids() {
+        let mut live: Slab<u8> = Slab::new();
+        let snapshot = live.clone();
+        // The live slab moves on: two slots, the first reused once.
+        let first = live.alloc(1);
+        live.sweep_with(|_, _| {});
+        let reused = live.alloc(2);
+        let second = live.alloc(3);
+        assert_eq!(reused.index(), first.index());
+        let held = [first, reused, second];
+
+        let mut restored = snapshot.clone();
+        restored.inherit_generations(&live, || 0);
+        assert_eq!(restored.slot_count(), 2);
+        for _ in 0..4 {
+            let id = restored.alloc(9);
+            assert!(!held.contains(&id), "reissued {id:?}");
+        }
+    }
+
     #[test]
     fn list_append_does_not_mutate_the_input() {
         let mut heap = Heap::new();
@@ -1030,7 +1460,7 @@ mod tests {
         let grown = heap.list_append(original, Value::Int(3));
 
         // A new, distinct list is returned with the extra element…
-        assert_ne!(original.0, grown.0);
+        assert_ne!(original, grown);
         assert_eq!(
             heap.get_list(grown),
             &[Value::Int(1), Value::Int(2), Value::Int(3)]
@@ -1056,7 +1486,7 @@ mod tests {
         let updated = heap.list_set(original, 0, Value::Int(99));
 
         // A new, distinct list is returned with the element replaced…
-        assert_ne!(original.0, updated.0);
+        assert_ne!(original, updated);
         assert_eq!(
             heap.get_list(updated),
             &[Value::Int(99), Value::Int(2), Value::Int(3)]
@@ -1097,7 +1527,7 @@ mod tests {
         let r = heap.alloc_class_instance(entries, tag);
 
         let moved = heap.map_set(r, "x".to_string(), Value::Int(5));
-        assert_ne!(moved.0, r.0, "value semantics: a new map");
+        assert_ne!(moved, r, "value semantics: a new map");
         assert_eq!(heap.map_class_name(moved), Some("Rect"));
         assert_eq!(heap.get_map(moved).get("x"), Some(&Value::Int(5)));
 
@@ -1106,7 +1536,7 @@ mod tests {
 
         // The in-place forms keep the id, so they keep the tag by construction.
         let same = heap.map_set_in_place(r, "x".to_string(), Value::Int(9));
-        assert_eq!(same.0, r.0);
+        assert_eq!(same, r);
         assert_eq!(heap.map_class_name(r), Some("Rect"));
     }
 
@@ -1140,7 +1570,7 @@ mod tests {
         let updated = heap.map_set(original, "a".to_string(), Value::Int(99));
 
         // A new, distinct map is returned with the key updated…
-        assert_ne!(original.0, updated.0);
+        assert_ne!(original, updated);
         assert_eq!(heap.get_map(updated).get("a"), Some(&Value::Int(99)));
         assert_eq!(heap.get_map(updated).get("b"), Some(&Value::Int(2)));
         // …and the original map is untouched (value semantics).
@@ -1170,7 +1600,7 @@ mod tests {
         let updated = heap.f64_array_set(original, 1, 9.5);
 
         // A new, distinct array is returned with the element replaced…
-        assert_ne!(original.0, updated.0);
+        assert_ne!(original, updated);
         assert_eq!(heap.get_f64_array(updated), &[1.0, 9.5, 3.0]);
         // …and the original array is untouched (value semantics).
         assert_eq!(heap.get_f64_array(original), &[1.0, 2.0, 3.0]);
@@ -1184,7 +1614,7 @@ mod tests {
         let shorter = heap.list_drop_last(original);
 
         // A new, distinct list is returned without the last element…
-        assert_ne!(original.0, shorter.0);
+        assert_ne!(original, shorter);
         assert_eq!(heap.get_list(shorter), &[Value::Int(1), Value::Int(2)]);
         // …and the original list is untouched (value semantics).
         assert_eq!(
@@ -1209,7 +1639,7 @@ mod tests {
         let swapped = heap.f64_array_swap(original, 0, 2);
 
         // A new, distinct array is returned with the two elements swapped…
-        assert_ne!(original.0, swapped.0);
+        assert_ne!(original, swapped);
         assert_eq!(heap.get_f64_array(swapped), &[3.0, 2.0, 1.0]);
         // …and the original array is untouched (value semantics).
         assert_eq!(heap.get_f64_array(original), &[1.0, 2.0, 3.0]);
@@ -1226,7 +1656,7 @@ mod tests {
         let removed = heap.map_remove(original, "a");
 
         // A new, distinct map is returned without the key…
-        assert_ne!(original.0, removed.0);
+        assert_ne!(original, removed);
         assert_eq!(heap.get_map(removed).get("a"), None);
         assert_eq!(heap.get_map(removed).get("b"), Some(&Value::Int(2)));
         // …and the original map is untouched (value semantics).
@@ -1270,8 +1700,8 @@ mod tests {
         // Nothing marked: both the cell and the list it holds are garbage.
         heap.sweep();
 
-        assert!(!heap.cells.slots[cell.0 as usize].alive);
-        assert!(!heap.lists.slots[list.0 as usize].alive);
+        assert!(!heap.cells.is_live(cell.raw()));
+        assert!(!heap.lists.is_live(list.raw()));
     }
 
     #[test]

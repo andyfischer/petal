@@ -3305,3 +3305,94 @@ mod echo_tests {
         assert!(ctx_echo(&env).iter().all(|&e| e), "and it turns back on");
     }
 }
+
+/// The execution trace buffer holds `Value`s across runs *weakly*: it is not a
+/// GC root (a 20 MB diagnostic ring must not pin a frame's garbage), so an
+/// event can outlive the object it recorded. See docs/tasks/id-system-improvement.md.
+mod trace_liveness_tests {
+    use super::super::*;
+
+    #[test]
+    fn explain_does_not_show_a_recycled_slot_s_new_contents() {
+        let mut env = Env::new();
+        env.trace_mut().enable();
+        let pid = env.load_program("let a = [1, 2, 3]\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        env.trace_mut().enabled = false;
+
+        let term = env.get_program(pid).unwrap().find_term("a").unwrap();
+        let old = match env.trace().last_for_term(term).unwrap().result {
+            Value::List(id) => id,
+            other => panic!("expected a list, got {other:?}"),
+        };
+        let explain_value = |env: &Env| {
+            let p = env.get_program(pid).unwrap();
+            env.trace().explain(p, env.heap(), term, 1).entries[0]
+                .value
+                .clone()
+        };
+        assert_eq!(explain_value(&env).as_deref(), Some("[1, 2, 3]"));
+
+        // Drop the only root and collect, then allocate until the list's slot
+        // is handed out again.
+        env.drop_fork(sid);
+        let ck = env.default_context;
+        env.collect_garbage(ck);
+        let mut keep = Vec::new();
+        loop {
+            let new = env.heap_mut().alloc_list(vec![Value::Int(99)]);
+            keep.push(new);
+            if new.index() == old.index() {
+                assert_ne!(new, old, "a reused slot must mint a distinct id");
+                break;
+            }
+            assert!(keep.len() < 100_000, "slot was never reused");
+        }
+
+        assert_eq!(explain_value(&env).as_deref(), Some("<collected>"));
+    }
+}
+
+/// `restore_execution` swaps a snapshot's heap in under the live context's
+/// key, so ids a host read before the restore must never alias an object
+/// allocated after it.
+mod restore_generation_tests {
+    use super::super::*;
+    use crate::heap::ListId;
+
+    #[test]
+    fn an_id_from_before_a_restore_never_matches_one_allocated_after() {
+        let mut env = Env::new();
+        let pid = env.load_program("let a = [1, 2, 3]\n").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        let snapshot = env.fork_execution(sid).unwrap();
+        let ck = env.default_context;
+
+        // Grow the live heap past the snapshot and reuse its slots once, so
+        // the held ids carry generations the snapshot never issued.
+        // A host holds both generations: the first batch was collected (a
+        // stale id a weak holder still has), the second is live.
+        let mut held: Vec<ListId> = (0..16)
+            .map(|_| env.heap_mut().alloc_list(vec![]))
+            .collect();
+        env.collect_garbage(ck);
+        held.extend((0..16).map(|_| env.heap_mut().alloc_list(vec![Value::Int(7)])));
+        assert!(held.iter().any(|id| id.generation() > 0));
+
+        env.restore_execution(sid, snapshot).unwrap();
+        env.collect_garbage(ck);
+        let max_index = held.iter().map(|id| id.index()).max().unwrap();
+        for _ in 0..1_000 {
+            let id = env.heap_mut().alloc_list(vec![]);
+            assert!(!held.contains(&id), "restore reissued {id:?}");
+            if id.index() > max_index {
+                break;
+            }
+        }
+        for id in &held {
+            assert!(!env.heap().is_live(Value::List(*id)));
+        }
+    }
+}

@@ -47,13 +47,18 @@ pub struct StateKey(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FunctionId(pub u32);
 
-/// Identifier for a runtime closure instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ClosureId(pub u32);
+crate::heap::generational_id! {
+    /// Identifier for a runtime closure instance: a generational id into the
+    /// context's [`ClosureTable`](crate::closure_table::ClosureTable).
+    pub struct ClosureId;
+}
 
-/// Identifier for a runtime overload set (multi-arity function dispatch).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct OverloadSetId(pub u32);
+crate::heap::generational_id! {
+    /// Identifier for a runtime overload set (multi-arity function dispatch):
+    /// a generational id into the context's
+    /// [`ClosureTable`](crate::closure_table::ClosureTable).
+    pub struct OverloadSetId;
+}
 
 /// Entry in a map-with-spread allocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]

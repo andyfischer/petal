@@ -14,6 +14,8 @@ use crate::symbol::SymbolId;
 /// Opaque index into an [`ExecutionContext`](crate::execution_context)'s resource
 /// table. Kept a thin `Copy` id (like the heap ids) so [`Value`] stays `Copy`;
 /// the resolution state and provenance live in the table entry it points at.
+/// Unlike heap ids it needs no generation: table entries are never removed, so
+/// an index is never reused. Resolved payloads are GC roots.
 /// See docs/dev/pending-values-plan.md.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PendingId(pub u32);
@@ -64,6 +66,10 @@ pub enum Value {
     /// inspects it. See docs/dev/pending-values-plan.md.
     Pending(PendingId),
 }
+
+// Heap ids are 8 bytes (index + generation); the widest payloads are
+// `Dual`/`Vec2` and `EnumVariant`'s two ids, all 16 bytes. Keep it that way.
+const _: () = assert!(std::mem::size_of::<Value>() == 24);
 
 impl Value {
     pub fn is_truthy(&self) -> bool {
@@ -145,7 +151,7 @@ impl fmt::Debug for Value {
             Value::Float(v) => write!(f, "Float({v})"),
             Value::String(id) => write!(f, "String({:?})", id),
             Value::List(id) => write!(f, "List({:?})", id),
-            Value::F64Array(id) => write!(f, "F64Array({})", id.0),
+            Value::F64Array(id) => write!(f, "F64Array({})", id.index()),
             Value::Map(id) => write!(f, "Map({:?})", id),
             Value::Closure(id) => write!(f, "Closure({:?})", id),
             Value::OverloadSet(id) => write!(f, "OverloadSet({:?})", id),
@@ -210,7 +216,7 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         // dereferences, so no cell reaches a display path. Printed rather than
         // panicked so a hypothetical leak shows up as a visible wart in output
         // instead of taking down the run.
-        Value::Cell(id) => format!("<cell {}>", id.0),
+        Value::Cell(id) => format!("<cell {}#{}>", id.index(), id.generation()),
         Value::Closure(_) => "<function>".to_string(),
         Value::OverloadSet(_) => "<function>".to_string(),
         Value::NativeFunction(_) => "<native>".to_string(),

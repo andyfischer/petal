@@ -45,7 +45,7 @@ impl ClosureTable {
 
     /// Store a closure, reusing a reclaimed slot when there is one.
     pub fn alloc_closure(&mut self, closure: RuntimeClosure) -> ClosureId {
-        ClosureId(self.closures.alloc(closure))
+        ClosureId::from_raw(self.closures.alloc(closure))
     }
 
     /// The payload cost the caller should charge the heap's collector budget
@@ -55,32 +55,32 @@ impl ClosureTable {
     }
 
     pub fn closure(&self, id: ClosureId) -> &RuntimeClosure {
-        self.closures.get(id.0)
+        self.closures.get(id.raw())
     }
 
     pub fn closure_mut(&mut self, id: ClosureId) -> &mut RuntimeClosure {
-        self.closures.get_mut(id.0)
+        self.closures.get_mut(id.raw())
     }
 
     /// Store an overload set, reusing a reclaimed slot when there is one.
     pub fn alloc_set(&mut self, entries: Vec<OverloadEntry>) -> OverloadSetId {
-        OverloadSetId(self.sets.alloc(entries))
+        OverloadSetId::from_raw(self.sets.alloc(entries))
     }
 
     pub fn set(&self, id: OverloadSetId) -> &[OverloadEntry] {
-        self.sets.get(id.0)
+        self.sets.get(id.raw())
     }
 
     /// Mark one closure reachable. Returns true iff it was newly marked — the
     /// collector then traces its captures.
     pub fn mark_closure(&mut self, id: ClosureId) -> bool {
-        self.closures.mark(id.0)
+        self.closures.mark(id.raw())
     }
 
     /// Mark one overload set reachable. Returns true iff it was newly marked —
     /// the collector then traces the closures it names.
     pub fn mark_set(&mut self, id: OverloadSetId) -> bool {
-        self.sets.mark(id.0)
+        self.sets.mark(id.raw())
     }
 
     /// Reclaim every entry this cycle did not mark. Call only after the joint
@@ -88,15 +88,39 @@ impl ClosureTable {
     /// entry that is still gray has not been traced yet, and sweeping it would
     /// free a live closure.
     pub fn sweep(&mut self) {
-        self.closures.sweep_with(|c| c.captures = Vec::new());
-        self.sets.sweep_with(|s| *s = Vec::new());
+        self.closures.sweep_with(|_, c| c.captures = Vec::new());
+        self.sets.sweep_with(|_, s| *s = Vec::new());
     }
 
     /// Drop everything. Used by `transfer_state`, which re-runs the program
-    /// from scratch and rebuilds every closure it needs.
+    /// from scratch and rebuilds every closure it needs. Slots are reclaimed
+    /// rather than discarded so their generations carry on: a closure id a
+    /// host kept from before the clear never matches one allocated after it.
     pub fn clear(&mut self) {
-        self.closures = Slab::new();
-        self.sets = Slab::new();
+        self.closures.clear_with(|_, c| c.captures = Vec::new());
+        self.sets.clear_with(|_, s| *s = Vec::new());
+    }
+
+    /// Whether `id` still names a closure in this table (not yet collected).
+    pub fn is_closure_live(&self, id: ClosureId) -> bool {
+        self.closures.is_live(id.raw())
+    }
+
+    /// Whether `id` still names an overload set in this table.
+    pub fn is_set_live(&self, id: OverloadSetId) -> bool {
+        self.sets.is_live(id.raw())
+    }
+
+    /// The table-side half of
+    /// [`Heap::inherit_generations`](crate::heap::Heap::inherit_generations):
+    /// this table is replacing `previous` under the same context.
+    pub fn inherit_generations(&mut self, previous: &ClosureTable) {
+        // Filler for slots only `previous` had: dead, never read.
+        self.closures.inherit_generations(&previous.closures, || RuntimeClosure {
+            function_id: crate::program::FunctionId(0),
+            captures: Vec::new(),
+        });
+        self.sets.inherit_generations(&previous.sets, Vec::new);
     }
 
     /// Live closures — a diagnostic (`Debug for Env`, tests asserting that a
@@ -120,5 +144,37 @@ impl ClosureTable {
 impl Default for ClosureTable {
     fn default() -> Self {
         ClosureTable::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::program::FunctionId;
+
+    fn closure() -> RuntimeClosure {
+        RuntimeClosure {
+            function_id: FunctionId(0),
+            captures: Vec::new(),
+        }
+    }
+
+    /// `clear` (hot reload, restore) reclaims rather than discards, so a
+    /// closure id a host kept from before never matches one allocated after.
+    #[test]
+    fn clear_keeps_generations() {
+        let mut table = ClosureTable::new();
+        let old = table.alloc_closure(closure());
+        let old_set = table.alloc_set(Vec::new());
+        table.clear();
+        assert!(!table.is_closure_live(old));
+        assert!(!table.is_set_live(old_set));
+
+        let new = table.alloc_closure(closure());
+        let new_set = table.alloc_set(Vec::new());
+        assert_eq!(new.index(), old.index());
+        assert_ne!(new, old);
+        assert_ne!(new_set, old_set);
+        assert!(table.is_closure_live(new));
     }
 }

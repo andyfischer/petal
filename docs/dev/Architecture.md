@@ -259,7 +259,22 @@ bundles them. Dispatch at runtime selects the variant by argument count.
 `Value` is a `Copy` 24-byte enum. Heap-allocated values (strings, lists,
 f64 arrays, maps, elements) are stored by ID into the `Heap` — `Value`
 just carries the ID. `Vec2` and `Dual` are stored inline (unboxed), no
-heap allocation.
+heap allocation. A static assertion in `value.rs` keeps it at 24 bytes.
+
+Every heap id (and `ClosureId`/`OverloadSetId`) is a `(slot index,
+generation)` pair naming one *allocation*, not one slot. Reusing a reclaimed
+slot bumps its generation, so an id that outlives its object never compares
+equal to the slot's new occupant, and `Heap::is_live(value)` (or
+`ExecutionContext::is_live`, which also covers closures) can tell it is stale.
+The rule for anything that keeps a `Value` past the instruction that produced
+it: **an id held across a collection must either be a GC root (strong: listed
+in `Env::collect_garbage`) or be checked with `is_live` before every
+dereference (weak).** The execution trace buffer is weak (it renders a
+collected value as `<collected>`); stacks, host bindings, output buffers, the
+resource table and observations are strong. Dereferencing a stale id is caught
+only by a `debug_assert!`. `restore_execution` carries the replaced context's
+generation history into the restored heap and closure table, so ids a host read
+before a restore are never reissued after it.
 
 ```rust
 pub enum Value {
@@ -296,7 +311,8 @@ plus a per-slot term, and a sweep runs once that reaches a budget the previous
 sweep sized from the live set (`should_collect`). Live values are found by
 walking all live stacks' registers plus the other roots — closure captures,
 host bindings, output buffers, the resource table, observations. Reclaimed
-slots go onto a free list.
+slots go onto a free list, and reuse advances the slot's generation (see
+[Value](#value)).
 
 Closures and overload sets live *beside* the heap, in the context's
 `ClosureTable` (`closure_table.rs`), because the VM borrows the two disjointly

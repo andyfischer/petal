@@ -2,7 +2,7 @@
 
 How a host skips a frame that would draw exactly what the last one drew, and
 what the runtime records to know that. This is the first step of the
-incremental-rendering plan (P0 of *Reactive Rendering for Petal*, 2026-09-14):
+incremental-rendering plan (P0 of [reactive-rendering-plan.md](reactive-rendering-plan.md)):
 the frame is the unit, the decision is exact, and no script changes.
 
 ## The problem

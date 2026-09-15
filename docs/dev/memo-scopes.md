@@ -2,7 +2,7 @@
 
 How a frame that runs skips the calls inside it whose inputs have not changed,
 replaying what they did last time. The second layer of the incremental
-rendering plan (P1 of *Reactive Rendering for Petal*, 2026-09-14), on top of
+rendering plan (P1 of [reactive-rendering-plan.md](reactive-rendering-plan.md)), on top of
 the [frame gate](frame-gate.md): the unit is a user-function call, the
 decision is exact, and no script changes.
 
@@ -75,10 +75,12 @@ output range and record already cover it (`_get(style, "radius", 0)`,
 scope is recorded regardless: it is the unit a top-level loop would
 otherwise re-run.
 
-**Aliasing.** A replayed result is the record's own value, so the escape
-analysis, under `OptFlags::memo_scopes`, no longer treats a user call's
-result as a fresh container the caller may mutate in place
-(`escape::analyze_with`). Builtin results are unaffected. In-place mutation
+**Aliasing.** A replayed result is the record's own value, so a caller must
+not mutate it in place. The escape analysis reports the user calls whose
+result roots an in-place web in the caller (`InPlaceSet::memoizes_call`), and
+lowering marks those `Inst::Call { no_memo: true }`: such a call is never a
+scope, and its reads land in the enclosing one. Every other call's result is
+still a fresh container the caller may mutate. In-place mutation
 of a `state` slot inside a scope (`StateWrite.mutated`) makes the scope
 effectful, since the slot already holds the edited object and no comparison
 could tell.
@@ -137,4 +139,6 @@ loop that calls the rows (it is not a scope: the root frame has no record)
 and 5,000 validations of about 0.4 µs each, most of it the `hovered` probe
 re-evaluated per row. Both are the subject of the next steps — dependency
 classes to guard whole blocks, keyed collections and a hit-test index so a
-pointer move touches only the rows whose edge it crossed.
+pointer move touches only the rows whose edge it crossed. What is left of
+this layer and the ones after it is tracked in
+[reactive-rendering-plan.md](reactive-rendering-plan.md).

@@ -85,7 +85,7 @@ isolate a bug:
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
-| `memo_scopes` | Not a lowering pass but a runtime switch in the same flag set: memoized user-function calls ([memo-scopes.md](memo-scopes.md)). It also tells the escape analysis that a user call's result may be shared with a record, so the caller never mutates one in place. |
+| `memo_scopes` | Not a lowering pass but a runtime switch in the same flag set: memoized user-function calls ([memo-scopes.md](memo-scopes.md)). A user call whose result the caller mutates in place is kept out of memoization (`Inst::Call::no_memo`), so a record never holds a container the caller rewrites. |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what
 something is reading".

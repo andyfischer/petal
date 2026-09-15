@@ -83,6 +83,14 @@ Open:
   table today. The plan: invalidate only the records of functions whose body
   hash changed, so editing one widget re-runs only that widget's scopes —
   incremental evaluation as a live-coding feature.
+- **Recording cost on one-shot work.** A call that misses is recorded even if
+  its record will never be replayed. The spreadsheet's formula recompute (a
+  top-level `if vrev != rev` block calling the tokenizer and evaluator) creates
+  ~30k records on the commit frame, all evicted unreplayed on the next run, and
+  that frame costs 76 ms with memoization against 50 ms without (2026-09-15,
+  `bench_panel --scenario`, see Measurements). Candidates: stop recording at a
+  call site whose records keep being evicted without a hit, or let P2's static
+  classes keep such calls out.
 - **Per-row validation cost.** ~0.4 µs per row on the 5,000-row list, most of
   it re-evaluating `hovered`. P2 and P3 address this rather than P1.
 - **Optional hints, only if needed:** `@nomemo` on a function; `key` on `for`
@@ -221,6 +229,25 @@ photo-adjust 3.3 → 0.68 ms, notes 0.88 → 0.26 ms, kanban 0.61 → 0.22 ms,
 todo 0.49 → 0.38 ms, spreadsheet 1.32 → 1.15 ms. The proposal estimated
 ~2 ms for the list's hover frame; the gap is the un-scoped top-level loop and
 the ~0.4 µs validation per row (estimated 250–350 ns).
+
+**A realistic session: the spreadsheet** (2026-09-15, `bench_panel
+--scenario`, 600 frames = 10 s at 60 fps, total script ms, best of 3; "pre-P0"
+is the same bench built at da0fb18, and lands within 1–4% of both layers off):
+
+| Scenario | pre-P0 | both off | gate only | memo only | both on |
+|---|---|---|---|---|---|
+| idle (no input) | 1,119 | 1,156 | 3 | 1,061 | 7 |
+| hover (pointer drifting over the grid) | 1,150 | 1,168 | 1,166 | 1,004 | 1,116 |
+| navigate (an arrow key every 8 frames) | 1,123 | 1,174 | 288 | 1,001 | 257 |
+| edit (type `=SUM(B1:E1)` and commit, repeated) | 2,208 | 2,242 | 1,780 | 3,574 | 3,047 |
+| mixed session (hover, navigate, edit, pause) | 1,231 | 1,236 | 550 | 1,162 | 539 |
+
+The gate does the work here: it cuts idle to nothing and navigation and the
+mixed session by ~55–75%. Memoization gains only ~5–10% on a frame that runs
+(p50 1.87 → ~1.65 ms), because the app is one long top-level script with few
+calls worth replaying, and it makes editing worse through the recording cost
+above (worst frame 306 → 654 ms). Pointer-driven frames all run: the gate has
+no probe cutoff yet.
 
 **Targets for the rest** (5,000-row list, script time, estimates):
 

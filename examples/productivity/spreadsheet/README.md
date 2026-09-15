@@ -97,3 +97,21 @@ readable from `GET /state`.
 
 Nothing animates, so the 10-second panel sleep is invisible here: the sheet
 redraws on input and then holds its last frame.
+
+## Benchmark scenarios
+
+`bench/` holds five scripted sessions for `bench_panel`, each 600 frames (10 s
+at 60 fps): `idle` (no input), `hover` (the pointer drifting over the grid),
+`navigate` (an arrow key every 8 frames), `edit` (typing `=SUM(B1:E1)` into a
+cell and committing, repeated) and `session` (a mix, then a pause). They are
+what [the reactive-rendering plan](../../../docs/dev/reactive-rendering-plan.md)
+measures this app with:
+
+```bash
+cd petal-ui && cargo run --release --example bench_panel -- \
+  ../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../examples/productivity/spreadsheet/bench/session.json
+```
+
+Add `--no-gate` / `--no-memo` for the same session without the incremental
+layers. The coordinates assume the default 1200 × 800 size in each file.

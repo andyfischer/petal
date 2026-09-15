@@ -2,6 +2,7 @@
 //!
 //!   cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]
 //!       [--observe] [--profile] [--no-gate] [--no-memo] [--wiggle]
+//!       [--scenario s.json|monkey:<seed>]
 //!
 //! Frames run under the frame gate unless `--no-gate`: with no input change a
 //! script that reads no clock is skipped after its first frame, so a quiet
@@ -9,15 +10,34 @@
 //! pointer one pixel each frame, the typical interactive frame. Calls are
 //! memoized unless `--no-memo` (see docs/dev/memo-scopes.md); the memo's
 //! counters are reported either way.
+//!
+//! `--scenario` drives the frames with a `petal-ui-run` scenario (see
+//! docs/dev/headless-ui-run.md) instead of a still or wiggling pointer, so a
+//! realistic session can be timed. Frames the gate skipped cost microseconds
+//! and would drown the percentiles, so the ones that ran are also reported
+//! on their own, along with the session's total script time.
 use std::time::Instant;
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let path = args
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let mut scenario_spec: Option<String> = None;
+    let mut flags: Vec<String> = Vec::new();
+    let mut positional: Vec<String> = Vec::new();
+    let mut it = raw.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--scenario" {
+            scenario_spec = Some(it.next().expect("--scenario wants a file or monkey:<seed>"));
+        } else if a.starts_with("--") {
+            flags.push(a);
+        } else {
+            positional.push(a);
+        }
+    }
+    let path = positional
         .first()
         .expect("usage: bench_panel <file.ptl> [frames] [WxH]");
-    let frames: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(60);
-    let (w, h) = args
+    let frames: usize = positional.get(1).and_then(|s| s.parse().ok()).unwrap_or(60);
+    let (w, h) = positional
         .get(2)
         .and_then(|s| s.split_once('x'))
         .and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
@@ -26,11 +46,22 @@ fn main() {
     // Garden panels run with observation on (that is how `panel.values` and
     // the debug server's /state read a frame's bindings), so the flag mirrors
     // the real embedding rather than the harness default.
-    let observe = args.iter().any(|a| a == "--observe");
-    let profile = args.iter().any(|a| a == "--profile");
-    let no_gate = args.iter().any(|a| a == "--no-gate");
-    let no_memo = args.iter().any(|a| a == "--no-memo");
-    let wiggle = args.iter().any(|a| a == "--wiggle");
+    let observe = flags.iter().any(|a| a == "--observe");
+    let profile = flags.iter().any(|a| a == "--profile");
+    let no_gate = flags.iter().any(|a| a == "--no-gate");
+    let no_memo = flags.iter().any(|a| a == "--no-memo");
+    let wiggle = flags.iter().any(|a| a == "--wiggle");
+    let scenario = scenario_spec.map(|spec| match spec.strip_prefix("monkey:") {
+        Some(seed) => petal_ui::scenario::Scenario::monkey(
+            seed.parse().expect("monkey seed"),
+            frames,
+            (w, h),
+        ),
+        None => petal_ui::scenario::Scenario::from_json_str(
+            &std::fs::read_to_string(&spec).expect("read scenario"),
+        )
+        .expect("parse scenario"),
+    });
 
     let src = std::fs::read_to_string(path).expect("read script");
     let compile_start = Instant::now();
@@ -50,13 +81,23 @@ fn main() {
     let n_cmds = ui.frame().expect("first frame").len();
 
     let mut times = Vec::with_capacity(frames);
+    let mut run_times = Vec::with_capacity(frames);
     for i in 0..frames {
+        if let Some(s) = &scenario {
+            // Frame 0 of the scenario is the first timed frame.
+            s.apply(&mut ui, i);
+        }
         if wiggle {
             ui.mouse_move(100 + (i % 2) as i32, 100);
         }
+        let skipped_before = ui.frames_skipped;
         let t = Instant::now();
         ui.frame().expect("frame");
-        times.push(t.elapsed().as_secs_f64() * 1e3);
+        let ms = t.elapsed().as_secs_f64() * 1e3;
+        times.push(ms);
+        if ui.frames_skipped == skipped_before {
+            run_times.push(ms);
+        }
     }
     let wall: f64 = times.iter().sum();
     times.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -88,6 +129,18 @@ fn main() {
         times[times.len() - 1],
         total / times.len() as f64,
     );
+    if !run_times.is_empty() {
+        run_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        println!(
+            "run-frame ms: min {:.2}  p50 {:.2}  p90 {:.2}  max {:.2}  ({} frames)",
+            run_times[0],
+            run_times[run_times.len() / 2],
+            run_times[run_times.len() * 9 / 10],
+            run_times[run_times.len() - 1],
+            run_times.len(),
+        );
+    }
+    println!("total script ms: {total:.1}");
     if profile {
         let elapsed = std::time::Duration::from_secs_f64(wall / 1e3);
         print!(

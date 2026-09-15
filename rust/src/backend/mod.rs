@@ -73,10 +73,9 @@ pub struct OptFlags {
     pub preserve_trace: bool,
     /// Memoize user-function calls: a call whose arguments, captures and
     /// recorded reads are what they were last time is replayed from its
-    /// record instead of run (`crate::memo`). A runtime switch, but it is
-    /// also an aliasing assumption the escape analysis must honor — a
-    /// replayed result is shared with the record, so a user call's result is
-    /// never treated as a fresh container the caller may mutate in place.
+    /// record instead of run (`crate::memo`). A runtime switch; a call whose
+    /// result the caller mutates in place is never memoized
+    /// (`Inst::Call::no_memo`), since a record would share that result.
     pub memo_scopes: bool,
 }
 

@@ -30,7 +30,12 @@ per-frame cost of a panel script. Take the **minimum** of several runs, not the
 mean: on a loaded machine the minimum is much the more stable estimator. The
 bench runs under the frame gate: a quiet script is skipped after its first
 frame, so pass `--wiggle` (move the pointer every frame) to measure an
-interactive frame, or `--no-gate` to measure the script itself.
+interactive frame, `--scenario s.json|monkey:<seed>` to time a realistic
+session (the [petal-ui-run scenario format](headless-ui-run.md#scenario-files)),
+or `--no-gate` to measure the script itself. `--no-memo` turns off memoized
+scopes; with both off, a frame costs what it did before either layer existed.
+Under a scenario the bench also reports the frames that ran on their own and
+the session's total script time, which is the number to compare.
 
 For the specific question "did the optimizer help", `PETAL_OPT_STATS=1` reports
 what it did to the program, and `PETAL_OPT=off` (or `--no-opt`) gives the

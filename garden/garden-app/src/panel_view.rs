@@ -545,6 +545,9 @@ pub struct PanelView {
     /// `docs/gpp.md`.
     client: Option<ProcessPane>,
     client_shared: Option<Shared>,
+    /// The shared query cache's revision as of the last frame, so a landed
+    /// answer (or an invalidation) reaches the panel's frame gate.
+    query_revision_seen: u64,
     /// The name to rebuild the host under when the client re-pushes its script.
     client_name: String,
     /// Browser-style history: the screens this pane has visited, in order. Seeded
@@ -684,6 +687,7 @@ impl PanelView {
             live_source_hash: None,
             client: None,
             client_shared: None,
+            query_revision_seen: 0,
             client_name: String::new(),
             history: vec![seed],
             cursor: 0,
@@ -1550,7 +1554,29 @@ impl PanelView {
         // …and what those edits currently fold back to, for `edit_view_edits(id)`.
         let ev_edits = self.edit_view_edits();
         self.host.set_edit_view_edits(ev_edits);
+        // The query cache is read inside the frame, outside the runtime's
+        // view: tell the gate when an answer has landed since the last frame,
+        // or when a cached answer's freshness is up (a skipped frame makes no
+        // lookup, so nothing else would start the refetch).
+        if let Some(shared) = self.client_shared.as_ref() {
+            let now = Instant::now();
+            let s = shared.borrow();
+            let revalidate = s.next_revalidation(now).is_some_and(|at| at <= now);
+            if s.revision() != self.query_revision_seen || revalidate {
+                self.query_revision_seen = s.revision();
+                drop(s);
+                self.host.note_host_data_changed();
+            }
+        }
         match self.host.frame(dt, self.frame_count) {
+            Ok(cmds) if self.host.last_frame_skipped() => {
+                // Nothing ran: the commands, observations, key claims and
+                // text views of the last frame all stand. A frame that failed
+                // is not skipped (its read-set gate re-runs it on a change),
+                // so no error state needs clearing here.
+                debug_assert!(cmds == self.cmds || self.frame_error.is_some());
+                self.last_tick_changed = false;
+            }
             Ok(cmds) => {
                 self.last_tick_changed = cmds != self.cmds || self.frame_error.is_some();
                 self.cmds = cmds;

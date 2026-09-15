@@ -219,6 +219,13 @@ impl Host for NesHost {
         self.ppu.begin_frame();
     }
 
+    /// A cart feeds the PPU and APU from every frame's output; `end_frame`
+    /// applies that output and pumps audio, so a skipped frame would show a
+    /// cleared PPU and starve the audio queue. Every frame runs.
+    fn frame_gating(&self) -> bool {
+        false
+    }
+
     fn end_frame(&mut self, env: &mut Env) {
         video_natives::apply(env, &mut self.ppu);
         audio_natives::apply(env, &mut self.apu, &mut self.audio);

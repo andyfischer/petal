@@ -187,6 +187,32 @@ impl<V: Clone> Cache<V> {
         std::mem::take(&mut self.outbox)
     }
 
+    /// When the next cached entry stops being fresh, if any will: the earliest
+    /// `resolved_at + max_age` among fresh entries, or `now` itself when a
+    /// `no_store` entry (always revalidated) is held. A host that skips frames
+    /// while nothing changes uses this to know when a `lookup` would start a
+    /// refetch, since a skipped frame makes no lookups.
+    pub fn next_revalidation(&self, now: Instant) -> Option<Instant> {
+        let mut next: Option<Instant> = None;
+        for entry in self.entries.values() {
+            let at = if entry.policy.no_store {
+                now
+            } else if let Some(ms) = entry.policy.max_age_ms {
+                let due = entry.resolved_at + std::time::Duration::from_millis(ms);
+                if due <= now {
+                    // Already stale/expired: the next lookup will act.
+                    now
+                } else {
+                    due
+                }
+            } else {
+                continue;
+            };
+            next = Some(next.map_or(at, |n: Instant| n.min(at)));
+        }
+        next
+    }
+
     /// Whether a request for `(kind, arg)` is currently in flight. Mostly for
     /// tests and diagnostics.
     pub fn is_in_flight(&self, kind: &str, arg: &serde_json::Value) -> bool {

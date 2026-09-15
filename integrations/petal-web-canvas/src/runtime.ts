@@ -48,6 +48,11 @@ export class PetalCanvas {
 
   /** Optional callback invoked after each frame renders (debug panels use it). */
   onFrameComplete: (() => void) | null = null;
+  /** The most recent frame's draw commands (JSON); served again by a gated frame. */
+  private lastCommandsJson = "[]";
+  /** Frames that ran the script / frames the gate skipped. */
+  framesRun = 0;
+  framesSkipped = 0;
 
   async init(): Promise<void> {
     await init();
@@ -174,6 +179,9 @@ export class PetalCanvas {
 
   private resizeCanvas(): void {
     if (!this.canvas) return;
+    // Assigning a canvas size clears it, so a frame the gate would otherwise
+    // skip (a script that never reads the dimensions) must repaint.
+    if (this.runtime && this.stackId !== null) this.runtime.invalidate_frame(this.stackId);
     const wrap = this.canvas.parentElement;
     if (wrap) {
       this.canvas.width = wrap.clientWidth;
@@ -238,10 +246,21 @@ export class PetalCanvas {
       // Push host-owned props into committed state, then run. reset_and_run's
       // reset preserves state, so the values reach this frame's run.
       this.flushProps();
+      // The frame gate: if nothing the last run read has changed, the last
+      // frame's commands are this frame's — skip the run and the repaint
+      // (the canvas keeps what it shows).
+      if (!this.runtime.frame_needed(this.stackId)) {
+        this.frameCount++;
+        this.framesSkipped++;
+        this.onFrameComplete?.();
+        return this.lastCommandsJson;
+      }
       this.runtime.reset_and_run(this.stackId);
       this.frameCount++;
+      this.framesRun++;
 
       const cmdsJson = this.runtime.take_draw_commands();
+      this.lastCommandsJson = cmdsJson;
       const commands = JSON.parse(cmdsJson);
       renderCommands(this.ctx, commands, this.canvas.width, this.canvas.height);
 

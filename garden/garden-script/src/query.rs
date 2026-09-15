@@ -132,6 +132,9 @@ fn resource_key(kind: &str, arg: &str) -> u64 {
 fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_string(2)?;
+    // The answer lives in the host's cache: tell the frame gate, so the frame
+    // re-runs when the pane reports the cache moved (and not otherwise).
+    cxt.note_host_read();
     let state = QUERY_PROVIDER
         .with(|p| {
             p.borrow_mut()

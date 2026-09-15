@@ -13,8 +13,8 @@
 //! portable:
 //!
 //! ```text
-//! poll events → input.begin_frame(dt) → bind frame_info/input → env.run
-//!   → host.end_frame → host.present
+//! poll events → input.begin_frame(dt) → bind frame_info/input → [gate]
+//!   → env.run → host.end_frame → host.present
 //! ```
 
 use std::path::Path;
@@ -167,6 +167,18 @@ pub trait Host {
     /// Reset per-frame host bindings right before the script runs (both live
     /// and speculative frames) — e.g. the offscreen-canvas id counter.
     fn prepare_frame(&mut self, _env: &mut Env) {}
+
+    /// Whether the loop may skip a frame the runtime's frame gate says would
+    /// reproduce the last one (`Env::run_needed`). On a skipped frame nothing
+    /// between `prepare_frame` and `end_frame` runs; `present` is still called
+    /// so a vsync'd window keeps its pacing, with an empty draw buffer — the
+    /// default host's persistent framebuffer re-blits the last frame. A host
+    /// whose `prepare_frame`/`end_frame` pair does per-frame work the script
+    /// must feed every frame (a fantasy console pumping audio from the
+    /// frame's output) answers `false`.
+    fn frame_gating(&self) -> bool {
+        true
+    }
 
     /// Serialize `stack`'s pending draw output as JSON for the agent
     /// `capture_draw_commands` response. Default: JSON `null`.
@@ -374,17 +386,22 @@ pub fn run_game<H: Host>(
         env.advance_frame(current.stack_id);
         bind_frame_info(&mut env, dt, frame_count);
         bind_time(&mut env, sim_time);
-
-        clear_draw_commands(&mut env);
-        host.prepare_frame(&mut env);
         bind_input(&mut env, &input);
 
-        env.reset_stack(current.stack_id)?;
-        if let Err(e) = env.run(current.stack_id) {
-            eprintln!("[petal error] {}", e);
+        // The frame gate: with every input bound, skip the run if nothing the
+        // last run read has changed (the timeline records every frame's
+        // commands, so it runs ungated).
+        let skip = host.frame_gating() && !timeline_on && !env.run_needed(current.stack_id);
+        if !skip {
+            clear_draw_commands(&mut env);
+            host.prepare_frame(&mut env);
+            env.reset_stack(current.stack_id)?;
+            if let Err(e) = env.run(current.stack_id) {
+                eprintln!("[petal error] {}", e);
+            }
+            drain_output(&mut env);
+            host.end_frame(&mut env);
         }
-        drain_output(&mut env);
-        host.end_frame(&mut env);
 
         // Honor the script's pointer grab/release requests (pointer lock for
         // mouselook). Set once when it changes, so we don't thrash SDL.

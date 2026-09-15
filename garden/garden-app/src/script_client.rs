@@ -41,6 +41,10 @@ use petal_query::{Cache, CachePolicy, Lookup};
 #[derive(Default)]
 pub struct SharedQueryState {
     cache: Cache<HostData>,
+    /// Bumped whenever an answer lands or a key is invalidated: the signal the
+    /// owning pane forwards to the panel's frame gate, so a frame that read a
+    /// query re-runs when its answer changes and not otherwise.
+    revision: u64,
 }
 
 /// A shared handle to a [`SharedQueryState`]. Cloned once for the provider (moved
@@ -84,18 +88,34 @@ impl SharedQueryState {
             (Some(v), _) => {
                 self.cache
                     .resolve(kind, arg, Ok(json_to_host_data(&v)), policy, now);
+                self.revision += 1;
             }
             (None, Some(e)) => {
                 self.cache.resolve(kind, arg, Err(e), policy, now);
+                self.revision += 1;
             }
             (None, None) => { /* still loading; the key stays in flight */ }
         }
+    }
+
+    /// A counter that moves whenever the cache's answers change (an answer
+    /// landing, a key invalidated). See [`revision`](Self::revision).
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// When a cached answer next stops being fresh — the moment a `query` in
+    /// a running frame would start a refetch. A frame the gate skips makes no
+    /// such lookup, so the pane forces one at this time.
+    pub fn next_revalidation(&self, now: Instant) -> Option<Instant> {
+        self.cache.next_revalidation(now)
     }
 
     /// Drop a cached/requested key so the next `query` re-requests it — the
     /// client-pushed `invalidate` and the script's own `invalidate` both land here.
     pub fn invalidate(&mut self, kind: &str, arg: &serde_json::Value) {
         self.cache.invalidate(kind, arg);
+        self.revision += 1;
     }
 
     /// Take the queued `(kind, arg)` requests to send to the client this tick.

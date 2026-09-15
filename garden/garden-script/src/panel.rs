@@ -1175,6 +1175,17 @@ pub struct PanelHost {
     /// hundreds of shapes and a mouse asks about one. [`trace_origin`](Self::trace_origin)
     /// does that work on demand.
     frame_origins: Vec<crate::panel_trace::DrawOrigin>,
+    /// The commands of the last frame that ran, served again by a frame the
+    /// gate skips (see [`frame`](Self::frame)).
+    last_cmds: Vec<PanelCmd>,
+    /// Whether the most recent [`frame`](Self::frame) skipped its run.
+    last_frame_skipped: bool,
+    /// Frames that ran the script / frames the gate skipped.
+    frames_run: u64,
+    frames_skipped: u64,
+    /// Whether [`frame`](Self::frame) consults the gate at all. On by default;
+    /// off makes every frame run, for tests and tools that want that.
+    gate: bool,
 }
 
 impl std::fmt::Debug for PanelHost {
@@ -1227,6 +1238,11 @@ impl PanelHost {
             store: Some(crate::panel_store::PanelStore::for_script(path)),
             import_sigs: Vec::new(),
             frame_origins: Vec::new(),
+            last_cmds: Vec::new(),
+            last_frame_skipped: false,
+            frames_run: 0,
+            frames_skipped: 0,
+            gate: true,
         };
         host.import_sigs = host.collect_import_sigs();
         Ok(host)
@@ -1295,6 +1311,11 @@ impl PanelHost {
             store: Some(crate::panel_store::PanelStore::for_script(Path::new(name))),
             import_sigs: Vec::new(),
             frame_origins: Vec::new(),
+            last_cmds: Vec::new(),
+            last_frame_skipped: false,
+            frames_run: 0,
+            frames_skipped: 0,
+            gate: true,
         })
     }
 
@@ -1499,6 +1520,39 @@ impl PanelHost {
     /// `host_data(kind, arg)`. A panel without one (the common case) sees nil.
     pub fn set_data_provider(&mut self, provider: DataProvider) {
         self.provider = Some(provider);
+        // A new source may answer differently: a frame that read host data
+        // must run again.
+        self.env.note_host_data_changed(self.stack_id);
+    }
+
+    /// Tell the frame gate that data behind a host-read native (`host_data`,
+    /// `query`, `edit_view_text`, …) changed, so a frame that read such data
+    /// runs again. A frame that read none is unaffected.
+    pub fn note_host_data_changed(&mut self) {
+        self.env.note_host_data_changed(self.stack_id);
+    }
+
+    /// Force the next frame to run whatever the gate would say.
+    pub fn invalidate_frame(&mut self) {
+        self.env.invalidate_run(self.stack_id);
+    }
+
+    /// Turn the frame gate on or off (on by default). Off, every
+    /// [`frame`](Self::frame) runs the script.
+    pub fn set_frame_gating(&mut self, on: bool) {
+        self.gate = on;
+    }
+
+    /// Whether the most recent [`frame`](Self::frame) skipped its run and
+    /// returned the retained commands. A caller that keeps per-frame
+    /// bookkeeping (key claims, text-view sync) leaves it as it was then.
+    pub fn last_frame_skipped(&self) -> bool {
+        self.last_frame_skipped
+    }
+
+    /// Frames that ran the script and frames the gate skipped, since load.
+    pub fn frame_gate_stats(&self) -> (u64, u64) {
+        (self.frames_run, self.frames_skipped)
     }
 
     /// Publish the current text of each `edit_view` region (id → buffer text) so
@@ -1507,6 +1561,9 @@ impl PanelHost {
     /// [`frame`](Self::frame) with the live contents. Cheap (stores the map;
     /// bound into the thread-local for the run in `frame`).
     pub fn set_edit_view_texts(&mut self, texts: HashMap<i64, String>) {
+        if texts != self.edit_view_texts {
+            self.env.note_host_data_changed(self.stack_id);
+        }
         self.edit_view_texts = texts;
     }
 
@@ -1516,6 +1573,9 @@ impl PanelHost {
     /// computes these from the region's projection; regions without one are
     /// absent.
     pub fn set_edit_view_edits(&mut self, edits: HashMap<i64, PanelData>) {
+        if edits != self.edit_view_edits {
+            self.env.note_host_data_changed(self.stack_id);
+        }
         self.edit_view_edits = edits;
     }
 
@@ -1529,6 +1589,7 @@ impl PanelHost {
     /// perpetual loading `Pending` from every `query`.
     pub fn set_query_provider(&mut self, provider: Box<dyn QueryProvider>) {
         self.query_provider = Some(provider);
+        self.env.note_host_data_changed(self.stack_id);
     }
 
     /// Whether a query provider is attached (host introspection).
@@ -1583,6 +1644,14 @@ impl PanelHost {
     /// emitted. On a script runtime error the previous frame's commands are *not*
     /// returned — the caller keeps its last good frame and surfaces the error.
     ///
+    /// Frames run under the runtime's frame gate (`Env::run_needed`): once
+    /// every input is bound, a frame whose inputs are exactly what the last run
+    /// read, and whose last run settled, is not run at all — the last run's
+    /// commands are returned again and [`last_frame_skipped`](Self::last_frame_skipped)
+    /// says so. Data the script reaches outside the binding table (`query`,
+    /// `host_data`, `edit_view_text`) is covered by the host reporting changes
+    /// through [`note_host_data_changed`](Self::note_host_data_changed).
+    ///
     /// [`InputState::begin_frame`] promotes the events fed since the last frame
     /// into this frame's edge snapshot; `dt` also advances the multi-click clock,
     /// so double/triple clicks are derived here rather than at the host boundary.
@@ -1597,6 +1666,16 @@ impl PanelHost {
         bind_nav_arg(&mut self.env, &self.nav_arg);
         bind_mutation_results(&mut self.env, &self.mutation_results);
         self.last_input = self.snapshot_input();
+
+        // The gate: every input is bound, so ask whether a run could differ
+        // from the last one. If not, the last commands are this frame's.
+        if self.gate && !self.env.run_needed(self.stack_id) {
+            self.last_frame_skipped = true;
+            self.frames_skipped += 1;
+            return Ok(self.last_cmds.clone());
+        }
+        self.last_frame_skipped = false;
+        self.frames_run += 1;
 
         // Discard any stale buffered commands + emitted events, then re-run.
         // (The observation buffer needs no clearing here: `env.run` clears it
@@ -1716,6 +1795,7 @@ impl PanelHost {
             }
         }
         self.frame_origins = origins;
+        self.last_cmds = cmds.clone();
         Ok(cmds)
     }
 
@@ -3146,6 +3226,7 @@ fn native_edit_view(cxt: &mut PetalCxt) -> NativeResult {
 /// save.
 fn native_edit_view_text(cxt: &mut PetalCxt) -> NativeResult {
     let id = cxt.get_int(1)?;
+    cxt.note_host_read();
     let text = EDIT_VIEW_TEXTS.with(|t| t.borrow().get(&id).cloned().unwrap_or_default());
     cxt.push_string(text);
     Ok(1)
@@ -3186,6 +3267,7 @@ fn native_edit_view_projection(cxt: &mut PetalCxt) -> NativeResult {
 /// list for a region with no projection.
 fn native_edit_view_edits(cxt: &mut PetalCxt) -> NativeResult {
     let id = cxt.get_int(1)?;
+    cxt.note_host_read();
     let data = EDIT_VIEW_EDITS.with(|t| t.borrow().get(&id).cloned());
     let value = match data {
         Some(data) => crate::query::data_to_value(cxt, &data),
@@ -4815,6 +4897,9 @@ mod tests {
         );
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(10, 10);
+        // Every frame must run here: the test checks that a frame republishes
+        // rather than accumulates, and the frame gate would skip an unchanged one.
+        host.set_frame_gating(false);
         let cmds = host.frame(0.0, 0).unwrap();
         assert!(cmds.is_empty()); // emit produces no draw command
         assert_eq!(
@@ -4917,6 +5002,9 @@ mod tests {
         );
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(10, 10);
+        // Every frame must run here: the test checks that a frame republishes
+        // rather than accumulates, and the frame gate would skip an unchanged one.
+        host.set_frame_gating(false);
         let cmds = host.frame(0.0, 0).unwrap();
         assert!(cmds.is_empty(), "a claim draws nothing");
         assert_eq!(
@@ -4959,6 +5047,9 @@ mod tests {
         );
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(10, 10);
+        // Every frame must run here: the test checks that a frame republishes
+        // rather than accumulates, and the frame gate would skip an unchanged one.
+        host.set_frame_gating(false);
         let cmds = host.frame(0.0, 0).unwrap();
         assert!(cmds.is_empty()); // navigation produces no draw command
         assert_eq!(

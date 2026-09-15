@@ -132,6 +132,26 @@ impl PetalRuntime {
         self.run(stack_id)
     }
 
+    /// The frame gate (`Env::run_needed`): whether running now could differ
+    /// from the last run. Call after `set_frame_info` + `begin_frame` and any
+    /// prop flush, before `reset_and_run`; `false` means the last frame's
+    /// commands are this frame's, and the caller may skip both the run and
+    /// the repaint. Binds this frame's inputs as a side effect, exactly as
+    /// `reset_and_run` would.
+    pub fn frame_needed(&mut self, stack_id: u32) -> bool {
+        bind_frame_info(&mut self.env, self.dt, self.frame_count);
+        bind_time(&mut self.env, self.time);
+        bind_dimensions(&mut self.env, self.width, self.height);
+        bind_input(&mut self.env, &self.input);
+        self.env.run_needed(StackKey(stack_id))
+    }
+
+    /// Force the next `frame_needed` to answer true (something outside the
+    /// runtime's view changed: a font table, host-owned data).
+    pub fn invalidate_frame(&mut self, stack_id: u32) {
+        self.env.invalidate_run(StackKey(stack_id));
+    }
+
     pub fn take_output(&mut self) -> String {
         let output = self.env.take_output();
         serde_json::to_string(&output).unwrap_or_else(|_| "[]".to_string())

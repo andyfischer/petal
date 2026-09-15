@@ -1,12 +1,14 @@
 //! Time a panel script's per-frame cost under the headless harness.
 //!
 //!   cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]
-//!       [--observe] [--profile] [--no-gate] [--wiggle]
+//!       [--observe] [--profile] [--no-gate] [--no-memo] [--wiggle]
 //!
 //! Frames run under the frame gate unless `--no-gate`: with no input change a
 //! script that reads no clock is skipped after its first frame, so a quiet
 //! bench measures the gate rather than the script. `--wiggle` moves the
-//! pointer one pixel each frame, the typical interactive frame.
+//! pointer one pixel each frame, the typical interactive frame. Calls are
+//! memoized unless `--no-memo` (see docs/dev/memo-scopes.md); the memo's
+//! counters are reported either way.
 use std::time::Instant;
 
 fn main() {
@@ -27,6 +29,7 @@ fn main() {
     let observe = args.iter().any(|a| a == "--observe");
     let profile = args.iter().any(|a| a == "--profile");
     let no_gate = args.iter().any(|a| a == "--no-gate");
+    let no_memo = args.iter().any(|a| a == "--no-memo");
     let wiggle = args.iter().any(|a| a == "--wiggle");
 
     let src = std::fs::read_to_string(path).expect("read script");
@@ -35,6 +38,7 @@ fn main() {
     let compile_ms = compile_start.elapsed().as_secs_f64() * 1e3;
 
     ui.gate = !no_gate;
+    ui.memo = !no_memo;
     if observe {
         ui.env.observations_mut().enable();
     }
@@ -63,6 +67,18 @@ fn main() {
         "frames run: {}  skipped: {}",
         ui.frames_run.saturating_sub(1),
         ui.frames_skipped
+    );
+    let m = ui.memo_stats();
+    println!(
+        "memo: hits {}  misses {}  records {}  inlined {}  effectful {}  reexecs {}  cutoffs {}  slots {}",
+        m.hits,
+        m.misses,
+        m.records,
+        m.inlined,
+        m.effectful,
+        m.reexecs,
+        m.cutoffs,
+        ui.env.memo_slots(ui.stack_id()),
     );
     println!(
         "frame ms: min {:.2}  p50 {:.2}  p90 {:.2}  max {:.2}  mean {:.2}",

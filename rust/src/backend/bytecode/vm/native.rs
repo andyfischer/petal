@@ -80,6 +80,8 @@ impl<'a> Vm<'a> {
         // here rather than dispatched. The compiler is its only caller.
         if self.native_fns.intrinsic_declare_method == Some(nid) {
             let v = self.declare_method(args)?;
+            // Publishing a method is a run-scoped effect no replay redoes.
+            self.memo_note_effect();
             self.set(fi, dst, v);
             return Ok(());
         }
@@ -265,9 +267,14 @@ impl<'a> Vm<'a> {
         self.profile.record_native(nid.0);
         let func = self.native_fns.get_func(nid);
         let chain = self.emit_call_chain(origin);
+        let before = self.stack.run_deps.activity();
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = func(&mut cxt)?;
-        Ok(cxt.take_result(count))
+        let result = cxt.take_result(count);
+        if self.memo && self.stack.memo.recording() {
+            self.memo_note_native(nid, args, result, before);
+        }
+        Ok(result)
     }
 
     /// Dispatch `h.method(args...)` through the handle class registered for
@@ -303,6 +310,9 @@ impl<'a> Vm<'a> {
         full_args.push(Value::Handle(h));
         full_args.extend_from_slice(args);
         let chain = self.emit_call_chain(origin);
+        // A handle method reaches host-owned state the runtime cannot see
+        // into: never replayed.
+        self.memo_note_effect();
         let mut cxt = self.native_cxt(&full_args, &chain, origin, false);
         let count = (class.call_method)(&mut cxt, method_name)?;
         Ok(cxt.take_result(count))

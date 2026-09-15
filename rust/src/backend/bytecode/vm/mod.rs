@@ -37,6 +37,7 @@ mod calls;
 mod dispatch;
 mod frame;
 mod intrinsics;
+mod memo;
 mod native;
 
 pub use frame::{FramePath, LoopCursor, VmFrame};
@@ -125,6 +126,10 @@ pub struct Vm<'a> {
     /// Computed when the `Vm` is built, which is once per batch dispatch, so a
     /// host toggling one of the three takes effect on the next batch.
     pub hooks: bool,
+    /// Whether user-function calls are memoized this run (see
+    /// [`crate::memo`] and the `memo` submodule). Copied from
+    /// `Env::memo_enabled` when the `Vm` is built.
+    pub memo: bool,
 }
 
 impl<'a> Vm<'a> {
@@ -190,6 +195,7 @@ impl<'a> Vm<'a> {
         // Advance past this instruction before executing; call/jump handlers
         // overwrite `ip` when they need to.
         self.stack.vm_frames[frame_idx].ip = ip + 1;
+        self.stack.insts += 1;
         let inst = &func.code[ip];
         // The common case is that nothing is watching: one test, then straight
         // into dispatch. Every hook's own gate is still checked below, so this
@@ -258,6 +264,7 @@ impl<'a> Vm<'a> {
                     if self.stack.vm_frames.len() == frame_idx + 1 {
                         let result = self.reg(frame_idx, dst);
                         self.observations.record(term, result);
+                        self.memo_note_observation(term, result);
                     }
                 }
                 sr

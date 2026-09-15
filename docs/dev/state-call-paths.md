@@ -161,8 +161,8 @@ copy; it is designed but not built (§4).
 `Env::run` sweeps every slot the run did not touch
 (`Stack::sweep_untouched_state`). Anything that makes a run *not execute* a
 section whose results it still uses would therefore delete that section's
-state. The memoized scopes planned for incremental rendering are one example:
-a scope that replays last frame's output instead of running.
+state. Memoized scopes ([memo-scopes.md](memo-scopes.md)) are the case: a
+scope that replays last frame's output instead of running.
 
 `Stack` provides the bracket that such a section uses:
 

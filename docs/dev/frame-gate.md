@@ -83,7 +83,7 @@ should idle keeps running.
 
 Measured with `bench_panel` (release, 1200×800), a quiet frame of any example
 app is now the gate check itself, a few microseconds, against 0.7–3.6 ms
-before; a frame with the pointer moving costs what it did. The remaining
-per-interaction cost is the subject of the next steps (memoized scopes,
-dependency classes, keyed collections), which build on the same read-set
-record.
+before. A frame that does run is the subject of the next layer,
+[memoized scopes](memo-scopes.md): the calls inside it whose inputs did not
+move are replayed rather than run, so a pointer move costs the rows it
+crossed.

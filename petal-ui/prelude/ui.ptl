@@ -30,9 +30,10 @@ export fn point_in(px, py, r)
   px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h
 end
 
-export fn hovered(r)
-  point_in(mouse_x(), mouse_y(), r)
-end
+// `hovered(r)` — `point_in(mouse_x(), mouse_y(), r)` — is a native
+// (petal-ui/src/input.rs), so that memoized scopes can record it as a single
+// probe with its answer rather than as two pointer reads; see
+// docs/dev/memo-scopes.md.
 
 export fn clicked(r)
   hovered(r) && mouse_pressed(0)

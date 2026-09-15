@@ -50,6 +50,9 @@ pub fn transfer_stack_state(
     // vec; they get recaptured on the next run.
     stack.functions.clear();
     stack.methods.clear();
+    // Memo records name functions of the old program and closures that were
+    // just cleared; nothing in them survives a different program.
+    stack.memo.clear();
     // `reset_execution` cleared `vm_started`, so the VM re-pushes its root frame
     // (against the new program's lowering) on the next run.
 

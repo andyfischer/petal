@@ -609,6 +609,7 @@ fn bind_int_list(env: &mut Env, name: &str, items: impl Iterator<Item = i64>) {
 pub fn register_input(env: &mut Env) {
     env.register_native("mouse_x", native_mouse_x);
     env.register_native("mouse_y", native_mouse_y);
+    env.register_native("hovered", native_hovered);
     env.register_native("mouse_dx", native_mouse_dx);
     env.register_native("mouse_dy", native_mouse_dy);
     env.register_native("mouse_down", native_mouse_down);
@@ -698,6 +699,50 @@ fn push_mod(state: &mut PetalCxt, bit: i64) -> NativeResult {
 
 fn native_mouse_x(state: &mut PetalCxt) -> NativeResult {
     push_binding_int(state, SYM_MOUSE_X)
+}
+
+/// `hovered(r)` — whether the pointer is inside rect `r` (`{x, y, w, h}`):
+/// `mouse_x() >= r.x && mouse_x() < r.x + r.w`, and likewise for y, exactly as
+/// the prelude's `point_in` spells it.
+///
+/// A native rather than a prelude function for the memo's sake
+/// (`petal::memo`): a native that reads a binding is recorded as a *probe*
+/// with its arguments and its answer, and a scope stays valid while the
+/// answer holds. Written in Petal, the probes would be `mouse_x()` and
+/// `mouse_y()` themselves, and every widget that asks about the pointer would
+/// re-run on every pointer move; as a native, a row re-runs only when the
+/// pointer crosses its edge.
+fn native_hovered(state: &mut PetalCxt) -> NativeResult {
+    let r = state.get_value(1)?;
+    let Value::Map(id) = r else {
+        return Err(format!(
+            "hovered() expects a rect record, got {}",
+            r.type_name()
+        ));
+    };
+    let field = |state: &PetalCxt, name: &str| -> Result<f64, String> {
+        match state.heap().get_map(id).get(name) {
+            Some(Value::Int(n)) => Ok(*n as f64),
+            Some(Value::Float(f)) => Ok(*f),
+            Some(Value::Dual { value, .. }) => Ok(*value),
+            Some(other) => Err(format!(
+                "hovered() expects a number for rect field '{name}', got {}",
+                other.type_name()
+            )),
+            None => Err(format!("hovered() expects a rect with field '{name}'")),
+        }
+    };
+    let (x, y, w, h) = (
+        field(state, "x")?,
+        field(state, "y")?,
+        field(state, "w")?,
+        field(state, "h")?,
+    );
+    let px = binding_int(state, SYM_MOUSE_X) as f64;
+    let py = binding_int(state, SYM_MOUSE_Y) as f64;
+    let inside = px >= x && px < x + w && py >= y && py < y + h;
+    state.push_bool(inside);
+    Ok(1)
 }
 
 fn native_mouse_y(state: &mut PetalCxt) -> NativeResult {

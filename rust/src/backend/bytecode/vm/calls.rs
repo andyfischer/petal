@@ -27,6 +27,11 @@ impl<'a> Vm<'a> {
     /// Pop the current frame and deliver `value`: to the caller's `dst`
     /// register, or up as `StepResult::Complete` when the root frame finishes.
     pub(super) fn deliver_value(&mut self, value: Value) -> StepResult {
+        // A frame that opened a memo scope closes it as it pops, with the
+        // value it is about to deliver.
+        if self.stack.vm_frames.last().is_some_and(|f| f.memo_scope) {
+            self.memo_close(value);
+        }
         let mut frame = self.stack.vm_frames.pop().unwrap();
         self.stack.last_pop_result = Some(value);
         let result = if self.stack.vm_frames.is_empty() {
@@ -56,6 +61,7 @@ impl<'a> Vm<'a> {
                 if let Some(call_site) = frame.call_site {
                     if self.is_observable(call_site) {
                         self.observations.record(call_site, value);
+                        self.memo_note_observation(call_site, value);
                     }
                 }
             }
@@ -408,9 +414,34 @@ impl<'a> Vm<'a> {
             &bound[..]
         };
 
-        self.profile.record_call();
         let mut frame =
             self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
+        // A call with a destination register is a memo scope: replay it if
+        // its record is still good, else run it and record it. Calls driven
+        // synchronously (intrinsics, the host) are not scopes; their reads
+        // land in whatever scope encloses them.
+        let scope = self.memo && dst.is_some() && !self.stack.memo.poisoned;
+        if scope {
+            let caller = self.stack.vm_frames.len() - 1;
+            if let Some(value) = self.memo_try(&frame.path, fn_id, cid, args) {
+                if let Some(dst) = dst {
+                    self.set(caller, dst, value);
+                }
+                if self.observations.enabled
+                    && let Some(call_site) = call_site
+                    && self.is_observable(call_site)
+                {
+                    self.observations.record(call_site, value);
+                    self.memo_note_observation(call_site, value);
+                }
+                frame.recycle();
+                if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {
+                    self.stack.vm_frame_pool.push(frame);
+                }
+                return Ok(());
+            }
+        }
+        self.profile.record_call();
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];
@@ -428,7 +459,11 @@ impl<'a> Vm<'a> {
                 *slot = Value::Closure(cid);
             }
         }
+        frame.memo_scope = scope;
         self.stack.vm_frames.push(frame);
+        if scope {
+            self.memo_open(fn_id, cid, args, None);
+        }
         Ok(())
     }
 }

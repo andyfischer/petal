@@ -71,6 +71,13 @@ pub struct OptFlags {
     /// `x0 + i * spacing` for `spacing` needs the value the anonymous `i` read
     /// took, which is exactly the kind of dead `Move` copy propagation deletes.
     pub preserve_trace: bool,
+    /// Memoize user-function calls: a call whose arguments, captures and
+    /// recorded reads are what they were last time is replayed from its
+    /// record instead of run (`crate::memo`). A runtime switch, but it is
+    /// also an aliasing assumption the escape analysis must honor — a
+    /// replayed result is shared with the record, so a user call's result is
+    /// never treated as a fresh container the caller may mutate in place.
+    pub memo_scopes: bool,
 }
 
 impl OptFlags {
@@ -82,6 +89,7 @@ impl OptFlags {
             copy_propagation: false,
             preserve_observations: false,
             preserve_trace: false,
+            memo_scopes: false,
         }
     }
 
@@ -93,6 +101,7 @@ impl OptFlags {
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,
+            memo_scopes: true,
         }
     }
 }
@@ -115,6 +124,7 @@ impl Default for OptFlags {
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,
+            memo_scopes: true,
         }
     }
 }

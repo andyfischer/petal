@@ -78,6 +78,10 @@ pub struct Headless {
     /// Off, every frame runs the script — the reference behavior the gated
     /// path is checked against.
     pub gate: bool,
+    /// Whether runs memoize user-function calls (`petal::memo`; on by
+    /// default, as in a real host). Off, every call runs — the reference the
+    /// memoized path is checked against. Applied to the env on each frame.
+    pub memo: bool,
     /// Whether the most recent [`frame`](Self::frame) skipped its run and
     /// served the retained output.
     pub last_frame_skipped: bool,
@@ -150,6 +154,7 @@ impl Headless {
             None => env.load_program(source)?,
         };
         let stack_id = env.create_stack(program_id)?;
+        let env_memo = env.opt_flags().memo_scopes;
         Ok(Self {
             env,
             input: InputState::new(),
@@ -164,6 +169,7 @@ impl Headless {
             provider: None,
             fonts: None,
             gate: true,
+            memo: env_memo,
             last_frame_skipped: false,
             last_run_reason: None,
             frames_run: 0,
@@ -301,6 +307,7 @@ impl Headless {
         self.last_frame_skipped = false;
         self.last_run_reason = reason;
         self.frames_run += 1;
+        self.env.set_memo_scopes(self.memo);
         draw::clear_draw_commands(&mut self.env);
         draw::reset_canvas_ids(&mut self.env);
         self.env.reset_stack(self.stack_id)?;
@@ -328,6 +335,12 @@ impl Headless {
             self.frame()?;
         }
         Ok(())
+    }
+
+    /// The memo counters of the app's stack (hits, misses, records, …), see
+    /// [`petal::memo::MemoStats`].
+    pub fn memo_stats(&self) -> petal::memo::MemoStats {
+        self.env.memo_stats(self.stack_id).unwrap_or_default()
     }
 
     /// All `state` variables as a JSON map keyed by (module-qualified) name.

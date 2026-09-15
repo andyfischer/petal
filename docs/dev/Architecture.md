@@ -531,6 +531,11 @@ that is deliberately skipped but still in use (a memoized scope) keeps its
 state with `Stack::begin_touch_capture` / `retain_touches`; see
 [state-call-paths.md §3.3a](state-call-paths.md).
 
+Within a run, every user-function call is a memoized scope: the VM records
+what the call read and did, and on a later run with equal arguments and
+captures replays the record (output, writes, observations, touched keys)
+instead of pushing a frame. See [memo-scopes.md](memo-scopes.md).
+
 `Env::run` also records what the run depended on — the bindings it read,
 whether it consulted host data or randomness, whether it left `state`
 changed — so a host can ask `Env::run_needed` whether running again could

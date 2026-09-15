@@ -38,7 +38,7 @@ use crate::program::Program;
 /// rewriting runs on the lowered code, after route B's opcode selection.
 pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
     let in_place = if flags.in_place_mutation {
-        analyze_escapes(program)
+        escape::analyze_with(program, flags.memo_scopes)
     } else {
         InPlaceSet::default()
     };

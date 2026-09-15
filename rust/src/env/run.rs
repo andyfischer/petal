@@ -50,6 +50,7 @@ impl Env {
         // `Option<ContextKey>` compare per batch dispatch.
         self.observations.enter_context(ck);
 
+        let memo = self.memo_enabled();
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
@@ -66,6 +67,7 @@ impl Env {
             &mut self.trace,
             &mut self.observations,
             &mut self.profile,
+            memo,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -98,6 +100,7 @@ impl Env {
                 StepResult::Complete(val) => {
                     if let Some(stack) = self.stacks.get_mut(&stack_id) {
                         stack.sweep_untouched_state();
+                        stack.memo.sweep();
                     }
                     self.finish_run_deps(stack_id, ck);
                     return Ok(val);
@@ -191,6 +194,32 @@ impl Env {
         self.stacks.get(&stack_id).map(|s| &s.run_deps)
     }
 
+    /// Whether runs memoize user-function calls right now: the
+    /// [`OptFlags::memo_scopes`](crate::backend::OptFlags::memo_scopes) flag,
+    /// unless the `explain` trace is on — a trace of a replayed scope would
+    /// have no instructions in it, and the tools reading it want every one.
+    pub fn memo_enabled(&self) -> bool {
+        self.opt_flags.memo_scopes && !self.trace.enabled
+    }
+
+    /// Turn memoized scopes on or off for subsequent runs (see
+    /// [`crate::memo`]). Off, every call runs; the records already made are
+    /// left alone and resume validating when it is turned back on.
+    pub fn set_memo_scopes(&mut self, on: bool) {
+        self.opt_flags.memo_scopes = on;
+    }
+
+    /// The memo counters of `stack_id`'s table (hits, misses, records, …),
+    /// cumulative since the stack was created.
+    pub fn memo_stats(&self, stack_id: StackKey) -> Option<crate::memo::MemoStats> {
+        self.stacks.get(&stack_id).map(|s| s.memo.stats)
+    }
+
+    /// How many scope records `stack_id`'s table holds.
+    pub fn memo_slots(&self, stack_id: StackKey) -> usize {
+        self.stacks.get(&stack_id).map_or(0, |s| s.memo.len())
+    }
+
     /// Run a program for at most `max_steps` evaluation steps.
     ///
     /// The bounded counterpart to [`run`](Self::run), for in-process hosts that
@@ -255,6 +284,7 @@ impl Env {
                 StepResult::Complete(val) => {
                     if let Some(stack) = self.stacks.get_mut(&stack_id) {
                         stack.sweep_untouched_state();
+                        stack.memo.sweep();
                         stack.status = StackStatus::Complete(val);
                     }
                     self.finish_run_deps(stack_id, ck);
@@ -324,6 +354,8 @@ impl Env {
         let stack = self.stacks.get_mut(&stack_id).unwrap();
         let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
 
+        // A host call runs outside any frame's run: nothing it does is
+        // recorded into a scope, and nothing is replayed for it.
         let result = make_vm(
             program,
             bc,
@@ -335,6 +367,7 @@ impl Env {
             &mut self.trace,
             &mut self.observations,
             &mut self.profile,
+            false,
         )
         .call_closure_sync(callable, args, host_call_site(name));
         // The call may have written state the next run reads; the run's
@@ -393,6 +426,7 @@ fn make_vm<'a>(
     trace: &'a mut TraceBuffer,
     observations: &'a mut Observations,
     profile: &'a mut crate::profile::VmProfile,
+    memo: bool,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
@@ -427,5 +461,6 @@ fn make_vm<'a>(
         profile,
         hooks,
         error_already_annotated: false,
+        memo,
     }
 }

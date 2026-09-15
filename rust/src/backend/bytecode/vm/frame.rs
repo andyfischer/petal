@@ -41,6 +41,9 @@ pub struct VmFrame {
     /// The `Call` term that created this frame (for stack-trace annotation).
     /// `None` for the root frame and synchronous-intrinsic frames.
     pub call_site: Option<TermId>,
+    /// This frame opened a memo scope, which `deliver_value` closes when the
+    /// frame pops (see the `memo` submodule).
+    pub memo_scope: bool,
 }
 
 impl VmFrame {
@@ -59,6 +62,7 @@ impl VmFrame {
             loops: Vec::new(),
             path: FramePath::new(),
             call_site,
+            memo_scope: false,
         }
     }
 
@@ -77,6 +81,7 @@ impl VmFrame {
         self.regs.resize(reg_count as usize, Value::Nil);
         self.dst_in_caller = dst_in_caller;
         self.call_site = call_site;
+        self.memo_scope = false;
     }
 
     /// Empty the frame for the pool: registers, cursors, and the state path are

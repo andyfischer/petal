@@ -58,6 +58,7 @@ working documents and may contain point-in-time status.
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to compile, run, and inspect snippets |
 | [Performance](dev/performance.md) | Profiling tools, what the optimizer does, where the headroom is |
 | [The frame gate](dev/frame-gate.md) | How a host skips a frame whose inputs have not changed, and what the runtime records to know that |
+| [Memoized scopes](dev/memo-scopes.md) | How a frame that runs replays the calls whose inputs have not changed, and what makes a call replayable |
 | [Headless UI Runner](dev/headless-ui-run.md) | `petal-ui-run`: driving a UI app without a window and recording a frame trace |
 | [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library (`petal-libs/bloom`) needs from the language and from hosts |
 | [Refactor Verification](dev/refactor-verification.md) | Proving a large mechanical change was behavior-preserving |

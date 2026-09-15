@@ -377,11 +377,16 @@ impl<'a> Vm<'a> {
             Inst::CellNew { dst, init } => {
                 let init_v = self.reg(fi, *init);
                 let cell = self.heap.alloc_cell(init_v);
+                self.memo_note_cell_new(cell);
                 self.set(fi, *dst, Value::Cell(cell));
             }
             Inst::CellRead { dst, cell } => {
                 let v = match self.reg(fi, *cell) {
-                    Value::Cell(id) => self.heap.cell_read(id),
+                    Value::Cell(id) => {
+                        let v = self.heap.cell_read(id);
+                        self.memo_note_cell_read(id, v);
+                        v
+                    }
                     // Only the compiler emits `CellRead`, and only against a
                     // binding it declared `var` — a non-cell here means
                     // hand-written or corrupted IR, not a user error.
@@ -397,7 +402,10 @@ impl<'a> Vm<'a> {
             Inst::CellWrite { dst, cell, val } => {
                 let val_v = self.reg(fi, *val);
                 match self.reg(fi, *cell) {
-                    Value::Cell(id) => self.heap.cell_write(id, val_v),
+                    Value::Cell(id) => {
+                        self.heap.cell_write(id, val_v);
+                        self.memo_note_cell_write(id, val_v);
+                    }
                     other => {
                         return Err(format!(
                             "internal error: cell_write on a {}",
@@ -416,8 +424,9 @@ impl<'a> Vm<'a> {
             } => {
                 let key = self.state_key(fi, *base, None, *path_pop);
                 self.stack.touch_state(&key);
-                let v = self.stack.state.get(&key).copied().unwrap_or(Value::Nil);
-                self.set(fi, *dst, v);
+                let slot = self.stack.state.get(&key).copied();
+                self.memo_note_state_read(&key, slot);
+                self.set(fi, *dst, slot.unwrap_or(Value::Nil));
             }
             Inst::StateWrite {
                 dst,
@@ -436,13 +445,24 @@ impl<'a> Vm<'a> {
                 // uninitialized so the init block re-runs next frame until it
                 // resolves. Reads this frame still see the Pending (via `dst`).
                 // Ordinary reassignments (`init = false`) commit any value.
-                if !(*init && matches!(val_v, Value::Pending(_))) {
+                if *init && matches!(val_v, Value::Pending(_)) {
+                    // Until it resolves, the scope cannot know what a re-run
+                    // would initialize it to.
+                    self.memo_note_effect();
+                } else {
                     // A `state var` being created: snapshot its initial
                     // contents so a `set` later this run counts as a change
                     // (see `Stack::finish_run_deps`).
                     if *init && let Value::Cell(cell) = val_v {
                         let contents = self.heap.cell_read(cell);
                         self.stack.note_cell_created(cell, contents);
+                        self.memo_note_cell_escaped(cell);
+                    }
+                    if *init {
+                        // What a later run's `StateInit` would read.
+                        self.memo_note_state_read(&k, Some(val_v));
+                    } else {
+                        self.memo_note_state_write(&k, val_v, *mutated);
                     }
                     let old = self.stack.state.insert(k, val_v);
                     // A reassignment that leaves the slot different from how
@@ -485,6 +505,7 @@ impl<'a> Vm<'a> {
                 // Cache hit: load the slot and skip the inline init block; miss:
                 // fall through to compute and commit the init value.
                 if let Some(existing) = self.stack.state.get(&k).copied() {
+                    self.memo_note_state_read(&k, Some(existing));
                     self.set(fi, *dst, existing);
                     self.stack.vm_frames[fi].ip = *after as usize;
                 }

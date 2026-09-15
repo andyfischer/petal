@@ -4,7 +4,7 @@
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
-//!              [--no-gate] [--gate-stats]
+//!              [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -27,6 +27,11 @@
 //! must match command-for-command, which is what `tests/gating.rs` checks.
 //! `--gate-stats` reports frames run vs skipped on stderr.
 //!
+//! Within a frame that runs, user-function calls are memoized (see
+//! docs/dev/memo-scopes.md); `--no-memo` runs every call, the reference the
+//! memoized trace must match, and `--memo-stats` reports the memo's counters
+//! on stderr.
+//!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
 //! first, with `error` set), 2 a compile/usage error (message on stderr).
 
@@ -39,7 +44,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] [--out trace.jsonl] \
-[--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats]";
+[--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -68,6 +73,10 @@ struct Args {
     module_paths: Vec<PathBuf>,
     /// Run the script every frame instead of letting the frame gate skip.
     no_gate: bool,
+    /// Run every user-function call instead of replaying memoized ones.
+    no_memo: bool,
+    /// Report the memo's counters on stderr.
+    memo_stats: bool,
     /// Report frames run vs skipped on stderr at the end.
     gate_stats: bool,
 }
@@ -84,6 +93,8 @@ fn parse_args() -> Result<Args, String> {
     let mut module_paths: Vec<PathBuf> = Vec::new();
     let mut no_gate = false;
     let mut gate_stats = false;
+    let mut no_memo = false;
+    let mut memo_stats = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -116,6 +127,8 @@ fn parse_args() -> Result<Args, String> {
             "--out" => out = Some(PathBuf::from(value("--out")?)),
             "--no-gate" => no_gate = true,
             "--gate-stats" => gate_stats = true,
+            "--no-memo" => no_memo = true,
+            "--memo-stats" => memo_stats = true,
             "--error-format" => {
                 bare_errors = match value("--error-format")?.as_str() {
                     "bare" => true,
@@ -146,6 +159,8 @@ fn parse_args() -> Result<Args, String> {
         module_paths,
         no_gate,
         gate_stats,
+        no_memo,
+        memo_stats,
     })
 }
 
@@ -174,6 +189,7 @@ fn run() -> Result<i32, String> {
     // them to stdout as well would interleave them with the JSONL.
     ui.env.set_echo(false);
     ui.gate = !args.no_gate;
+    ui.memo = !args.no_memo;
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
     }
@@ -245,6 +261,21 @@ fn run() -> Result<i32, String> {
         for (reason, n) in &reasons {
             eprintln!("  {n:>5}  {reason}");
         }
+    }
+    if args.memo_stats {
+        let m = ui.memo_stats();
+        eprintln!(
+            "petal-ui-run: memo hits {} misses {} records {} inlined {} effectful {} reexecs {} cutoffs {} evicted {} slots {}",
+            m.hits,
+            m.misses,
+            m.records,
+            m.inlined,
+            m.effectful,
+            m.reexecs,
+            m.cutoffs,
+            m.evicted,
+            ui.env.memo_slots(ui.stack_id()),
+        );
     }
     Ok(if failed { 1 } else { 0 })
 }

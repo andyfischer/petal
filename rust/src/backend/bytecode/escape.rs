@@ -188,7 +188,15 @@ impl InPlaceSet {
 
 /// Analyze a program and return the set of in-place-eligible mutation terms.
 pub fn analyze(program: &Program) -> InPlaceSet {
-    let ctx = Analysis::build(program);
+    analyze_with(program, false)
+}
+
+/// [`analyze`] under memoized scopes (`OptFlags::memo_scopes`): a user call's
+/// result may then be shared with the call's memo record, so it is never a
+/// fresh root the caller may mutate in place. Builtin results are unaffected.
+pub fn analyze_with(program: &Program, memo_scopes: bool) -> InPlaceSet {
+    let mut ctx = Analysis::build(program);
+    ctx.memo_scopes = memo_scopes;
     let mut terms = HashSet::new();
     for term in &program.terms {
         if ctx.is_mutation(term) && ctx.route_b_ok(term.id) {
@@ -270,6 +278,8 @@ struct Backbone {
 /// Precomputed dataflow relations for the analysis, built once per program.
 struct Analysis<'p> {
     program: &'p Program,
+    /// Whether user calls are memoized (see [`analyze_with`]).
+    memo_scopes: bool,
     /// For each phi term, the `phi_out` back-edge source terms (dest == phi).
     phi_srcs: HashMap<TermId, Vec<TermId>>,
     /// Every term that is the source of some `phi_out` — the terms whose value
@@ -369,6 +379,7 @@ impl<'p> Analysis<'p> {
 
         let mut ctx = Analysis {
             program,
+            memo_scopes: false,
             phi_srcs,
             phi_carry_srcs,
             phi_outs_by_src,
@@ -1002,6 +1013,11 @@ impl<'p> Analysis<'p> {
         match &term.op {
             TermOp::BuiltinCall(_) => self.call_returns_fresh_builtin(term),
             TermOp::Call => {
+                // A memoized call replays a cached result that the record
+                // still holds: not the caller's to mutate.
+                if self.memo_scopes {
+                    return false;
+                }
                 let Some(&callee) = term.inputs.first() else {
                     return false;
                 };

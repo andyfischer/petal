@@ -51,10 +51,19 @@ Two consequences:
   A host that embeds Petal and cares about frame rate should build the `petal`
   dependency optimized even in its own debug builds; Garden's workspace does
   this with a `[profile.dev.package.petal] opt-level = 3` override.
-- **A frame that runs re-runs the whole script.** There is no incremental
-  evaluation *within* a run. Anything expensive that does not change per frame
-  belongs behind a `state` variable with a revision check — which is what
-  `examples/productivity/spreadsheet` does for its formula recompute.
+- **A frame that runs replays the calls whose inputs did not change.** Every
+  user-function call is a memoized scope: a call whose arguments, captures and
+  recorded reads (`hovered(r)`, a `state` slot, a `var`) are what they were
+  last frame is replayed from its record — output spliced back, writes
+  re-applied — instead of run. A pointer move re-runs the rows it crossed and
+  the top-level code that calls them, not the whole list. See
+  [memo-scopes.md](memo-scopes.md), and `petal-ui-run --memo-stats` for why a
+  widget keeps running (something in it prints, draws randomness, or hands out
+  a closure over its own `var`). The top-level script body is not a scope, so
+  anything expensive there that does not change per frame still belongs
+  behind a `state` variable with a revision check — which is what
+  `examples/productivity/spreadsheet` does for its formula recompute — or in a
+  function.
 - **A frame whose inputs have not changed does not run at all.** Every host
   consults the runtime's frame gate (`Env::run_needed`) before a run: if
   nothing the last run read has moved and the run settled, the last frame's
@@ -76,6 +85,7 @@ isolate a bug:
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
+| `memo_scopes` | Not a lowering pass but a runtime switch in the same flag set: memoized user-function calls ([memo-scopes.md](memo-scopes.md)). It also tells the escape analysis that a user call's result may be shared with a record, so the caller never mutates one in place. |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what
 something is reading".

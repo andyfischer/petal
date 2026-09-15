@@ -139,6 +139,12 @@ pub struct Stack {
     /// a `var` is kept out of the in-place rewrite), so an id-and-contents
     /// snapshot is exact.
     cells_at_run_start: Vec<(crate::heap::CellId, Value)>,
+    /// Memoized-scope records and the scopes open right now. See
+    /// [`crate::memo`].
+    pub memo: crate::memo::MemoTable,
+    /// Instructions retired on this stack since it was created. The memo
+    /// decides whether a scope is worth a record by how much it ran.
+    pub insts: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +174,8 @@ impl Stack {
             vm_frame_pool: Vec::new(),
             run_deps: RunDeps::default(),
             cells_at_run_start: Vec::new(),
+            memo: crate::memo::MemoTable::default(),
+            insts: 0,
         }
     }
 
@@ -243,6 +251,8 @@ impl Stack {
         // Captures do not span runs: one left open by an aborted run is dropped.
         self.touch_journal.clear();
         self.open_touch_captures = 0;
+        // Nor do memo scopes.
+        self.memo.begin_run();
     }
 
     /// Record that `key` was read or written this run, so the end-of-run sweep
@@ -360,6 +370,9 @@ impl Stack {
         if let Some(val) = self.last_pop_result {
             mark(val);
         }
+        // Memo records replay their values and compare against them across
+        // runs; open scopes hold what they have recorded so far.
+        self.memo.gc_roots(&mut mark);
     }
 }
 

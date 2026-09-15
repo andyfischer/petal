@@ -398,6 +398,7 @@ impl<'a> PetalCxt<'a> {
     // --- Output ---
 
     pub fn print(&mut self, line: String) {
+        self.run_deps.note_effect();
         if self.echo {
             println!("{}", line);
         }
@@ -419,6 +420,7 @@ impl<'a> PetalCxt<'a> {
 
     /// Set the owning context's Perlin-noise seed (the `noise_seed()` builtin).
     pub fn set_noise_seed(&mut self, seed: u64) {
+        self.run_deps.note_effect();
         *self.noise_seed = seed;
     }
 
@@ -450,6 +452,7 @@ impl<'a> PetalCxt<'a> {
     /// (`Env::take_output_origins`). Off — the default — it is the same single
     /// push it always was.
     pub fn push_output(&mut self, sym: SymbolId, value: Value) {
+        self.run_deps.note_emit();
         self.output_buffers.entry(sym).or_default().push(value);
         if self.trace_emit {
             // Pad rather than assume alignment: tracing can be switched on
@@ -493,6 +496,16 @@ impl<'a> PetalCxt<'a> {
         self.run_deps.note_host_read();
     }
 
+    /// Declare that this native did something a replay could not reproduce
+    /// — wrote host state, advanced a counter, printed. A memoized scope
+    /// (see [`crate::memo`]) that calls it is never skipped. The `PetalCxt`
+    /// operations with an effect of their own (`print`, the counters, the
+    /// mutable resource table, the noise seed) declare it themselves; a
+    /// native that reaches host state some other way must call this.
+    pub fn note_effect(&mut self) {
+        self.run_deps.note_effect();
+    }
+
     /// Read the value bound to the symbol named `name`. Convenience for native
     /// fns that address a well-known uniform by name.
     pub fn binding_named(&mut self, name: &str) -> Value {
@@ -503,6 +516,7 @@ impl<'a> PetalCxt<'a> {
     /// Return the current value of the counter for `sym`, then increment it.
     /// Used for per-run id allocation (offscreen canvases, element ids).
     pub fn next_counter(&mut self, sym: SymbolId) -> u64 {
+        self.run_deps.note_effect();
         let c = self.counters.entry(sym).or_insert(0);
         let v = *c;
         *c += 1;
@@ -519,6 +533,7 @@ impl<'a> PetalCxt<'a> {
 
     /// Overwrite the counter for `sym`.
     pub fn set_counter(&mut self, sym: SymbolId, value: u64) {
+        self.run_deps.note_effect();
         self.counters.insert(sym, value);
     }
 
@@ -536,13 +551,15 @@ impl<'a> PetalCxt<'a> {
 
     /// The owning context's resource table (read-only). See
     /// [`crate::resource_table`].
-    pub fn resources(&self) -> &crate::resource_table::ResourceTable {
+    pub fn resources(&mut self) -> &crate::resource_table::ResourceTable {
+        self.run_deps.note_resource_read();
         self.resources
     }
 
     /// The owning context's resource table (mutable) — for creating/resolving
     /// pending resource entries.
     pub fn resources_mut(&mut self) -> &mut crate::resource_table::ResourceTable {
+        self.run_deps.note_effect();
         self.resources
     }
 

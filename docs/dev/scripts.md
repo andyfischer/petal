@@ -41,6 +41,7 @@ See [testing.md](testing.md) for the full guide.
 | `cd petal-ui && cargo run --bin petal-ui-run -- <app.ptl> [flags]` | Run a **UI** app headlessly for N frames and write a JSONL trace of draw commands, `state`, prints, and errors. Deterministic given `--seed` and `--scenario`. See [headless-ui-run.md](headless-ui-run.md). |
 | `petal-ui-run <app.ptl> --scenario monkey:7 --frames 120 --out trace.jsonl` | The same, driven by a generated pseudo-random input scenario. |
 | `petal-ui-run <app.ptl> --gate-stats` | Frames run vs skipped by the frame gate, with a histogram of why frames ran — the first thing to check when a panel that should idle keeps running. `--no-gate` runs every frame. See [frame-gate.md](frame-gate.md). |
+| `petal-ui-run <app.ptl> --memo-stats` | The memo's counters (scopes replayed, re-run, recorded, folded, effectful) — the first thing to check when a widget that should replay keeps running. `--no-memo` runs every call. See [memo-scopes.md](memo-scopes.md). |
 | `./ts/bin/verify.ts --plan <plan> --before <ref\|dir> --after <dir>` | Prove a refactor was behavior-preserving by running a plan of checks over a corpus. Use `--before-bin`/`--after-bin` to compare two binaries instead. Plans live in `test/verify-plans/`. See [testing.md](testing.md#verifying-a-refactor). |
 | `./ts/bin/verify.ts --plan compiler ... --update-golden` | Re-baseline `test/ui-golden/index.json` (a sha256 per UI app trace) from the after side. Run deliberately. |
 
@@ -50,7 +51,7 @@ See [testing.md](testing.md) for the full guide.
 |---------|-------------|
 | `./ts/bin/bench-opts.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` with the optimizer on and off (release build) and report per-file medians plus the speedup. |
 | `./ts/bin/bench-opts.ts --runs=10` | Use more repetitions per file (default 5). |
-| `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]` | Per-frame cost of a **panel** script under the headless harness, which is the shape of work a Garden pane does. Add `--observe` to mirror a real panel (Garden leaves observation on) and `--profile` for the counters below. Frames run under the frame gate, so add `--wiggle` (pointer moves every frame) for an interactive frame or `--no-gate` for the script alone. |
+| `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]` | Per-frame cost of a **panel** script under the headless harness, which is the shape of work a Garden pane does. Add `--observe` to mirror a real panel (Garden leaves observation on) and `--profile` for the counters below. Frames run under the frame gate, so add `--wiggle` (pointer moves every frame) for an interactive frame or `--no-gate` for the script alone. Calls are memoized unless `--no-memo`; the memo's counters are printed either way. |
 
 See [performance.md](performance.md) for how to read these numbers.
 

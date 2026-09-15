@@ -57,6 +57,16 @@ pub enum RunReason {
     ResourcesChanged,
 }
 
+/// A snapshot of [`RunDeps::activity`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Activity {
+    pub binding_reads: u32,
+    pub host_reads: u32,
+    pub resource_reads: u32,
+    pub emits: u32,
+    pub effects: u32,
+}
+
 /// The dependency record of one stack's most recent run. Lives on the
 /// [`crate::stack::Stack`]; see the module docs.
 #[derive(Debug, Clone, Default)]
@@ -89,6 +99,16 @@ pub struct RunDeps {
     valid: bool,
     /// A host-side request for a run, cleared when the next run begins.
     forced: bool,
+    /// Activity counters for the run in progress, read by the VM around each
+    /// native call to classify it for memoized scopes (`crate::memo`): how
+    /// many binding reads, host-data reads, resource-table reads, output
+    /// pushes and irreproducible effects natives have reported so far.
+    /// Wrapping counters compared before and after a call; never reset.
+    binding_reads: u32,
+    host_reads: u32,
+    resource_reads: u32,
+    emits: u32,
+    effects: u32,
 }
 
 impl RunDeps {
@@ -96,6 +116,7 @@ impl RunDeps {
     /// the hot path; the symbol is listed once no matter how often it is read.
     #[inline]
     pub fn note_binding_read(&mut self, sym: SymbolId) {
+        self.binding_reads = self.binding_reads.wrapping_add(1);
         let i = sym.0 as usize;
         if i >= self.read_flags.len() {
             self.read_flags.resize(i + 1, false);
@@ -113,6 +134,46 @@ impl RunDeps {
     #[inline]
     pub fn note_host_read(&mut self) {
         self.host_read = true;
+        self.host_reads = self.host_reads.wrapping_add(1);
+    }
+
+    /// Record that a native consulted the resource table (a `Pending` it may
+    /// answer differently once the resource resolves).
+    #[inline]
+    pub fn note_resource_read(&mut self) {
+        self.resource_reads = self.resource_reads.wrapping_add(1);
+    }
+
+    /// Record that a native pushed a value into an output buffer.
+    #[inline]
+    pub fn note_emit(&mut self) {
+        self.emits = self.emits.wrapping_add(1);
+    }
+
+    /// Record that a native did something a replay could not reproduce:
+    /// printed, advanced a counter, created a resource, reseeded noise.
+    #[inline]
+    pub fn note_effect(&mut self) {
+        self.effects = self.effects.wrapping_add(1);
+    }
+
+    /// The activity counters as a snapshot: `(binding reads, host reads,
+    /// resource reads, emits, effects)`. Two snapshots around a native call
+    /// say what the call did.
+    #[inline]
+    pub fn activity(&self) -> Activity {
+        Activity {
+            binding_reads: self.binding_reads,
+            host_reads: self.host_reads,
+            resource_reads: self.resource_reads,
+            emits: self.emits,
+            effects: self.effects,
+        }
+    }
+
+    /// The host-data revision now.
+    pub fn host_data_now(&self) -> u64 {
+        self.host_data_now
     }
 
     /// Record that a `state` slot changed value during the run in progress.

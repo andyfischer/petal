@@ -526,7 +526,10 @@ records the `RuntimeStateKey` it touched; on completion, entries that
 weren't touched this run are dropped. This is what reclaims state for
 removed list items, for `state` declarations deleted on hot reload, and for
 call paths a run stopped taking (a branch not entered, a callsite an edit
-removed) — without it, the persistent store would grow unboundedly.
+removed) — without it, the persistent store would grow unboundedly. A section
+that is deliberately skipped but still in use (a memoized scope) keeps its
+state with `Stack::begin_touch_capture` / `retain_touches`; see
+[state-call-paths.md §3.3a](state-call-paths.md).
 
 `reset_stack` preserves the state store while rewinding execution — that's
 what makes `petal-sdl`'s hot reload work. `snapshot_state` /

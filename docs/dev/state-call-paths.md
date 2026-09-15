@@ -156,6 +156,36 @@ copy; it is designed but not built (§4).
   `state` one slot per `map` callsite, shared across elements. `Index` parts
   come from `for`/`while` only.
 
+### 3.3a Sweep and skipped sections
+
+`Env::run` sweeps every slot the run did not touch
+(`Stack::sweep_untouched_state`). Anything that makes a run *not execute* a
+section whose results it still uses would therefore delete that section's
+state. The memoized scopes planned for incremental rendering are one example:
+a scope that replays last frame's output instead of running.
+
+`Stack` provides the bracket that such a section uses:
+
+- `begin_touch_capture` / `end_touch_capture` record the distinct
+  `RuntimeStateKey`s touched in between. Captures nest, so an enclosing capture
+  also sees its children's touches, and they must end in LIFO order within one
+  run. `start_run_tracking` drops any capture left open.
+- `retain_touches(&StateTouches)` re-marks those keys on a run that skips the
+  section. It also feeds any open capture, so a parent that is executing records
+  the state of a child it skipped.
+
+Every state instruction goes through `Stack::touch_state`. It journals only
+while a capture is open (an ordinary run pays nothing), and clones a key only
+the first time the key is touched in a run.
+
+What a caller must still get right:
+
+- A retained set is what the section touched **the last time it executed**. It
+  is correct only while the section's body is not running. It is refreshed
+  whenever the section runs again under a capture.
+- Explicit `state(key)` slots are included like any other key, because the
+  journal records whole keys rather than path prefixes.
+
 ### 3.4 Compiler / IR / bytecode
 
 - `Term::call_site: Option<u64>` holds the callsite hash. It is a `Term` field

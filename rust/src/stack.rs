@@ -36,6 +36,34 @@ pub struct RuntimeStateKey {
     pub path: SmallVec<[PathPart; 4]>,
 }
 
+/// An open touch capture: a position in the stack's touch journal. Returned by
+/// [`Stack::begin_touch_capture`] and consumed by [`Stack::end_touch_capture`].
+#[derive(Debug)]
+#[must_use = "a touch capture must be ended with Stack::end_touch_capture"]
+pub struct TouchCapture {
+    start: usize,
+}
+
+/// The distinct state keys a section of the program touched while it ran, in
+/// first-touch order. Hand them to [`Stack::retain_touches`] on a run where
+/// that section is skipped, so the sweep keeps its state.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StateTouches(Vec<RuntimeStateKey>);
+
+impl StateTouches {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RuntimeStateKey> {
+        self.0.iter()
+    }
+}
+
 /// Unique identifier for a stack within an Env.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StackKey(pub u32);
@@ -57,8 +85,16 @@ pub struct Stack {
     /// whose source-level declaration was not visited this run — for example
     /// per-iteration state for an item that was removed from the iterated
     /// list, or a top-level `state` declaration that was deleted on hot
-    /// reload. Cleared at the start of each top-level `run`.
+    /// reload. Cleared at the start of each top-level `run`. Write through
+    /// [`touch_state`](Self::touch_state), which also feeds open captures.
     pub touched_state_keys: HashSet<RuntimeStateKey>,
+    /// Every touch made while at least one [`TouchCapture`] is open, in order.
+    /// Empty whenever no capture is open, so an ordinary run pays nothing for
+    /// it. See [`begin_touch_capture`](Self::begin_touch_capture).
+    touch_journal: Vec<RuntimeStateKey>,
+    /// How many captures are open. Captures nest; the journal is kept until the
+    /// outermost one ends, so an enclosing capture sees its children's touches.
+    open_touch_captures: usize,
     /// Top-level named functions (and lambdas bound to a name) captured from
     /// the root block when the program runs. Lets the host invoke a named
     /// Petal function via `Env::call_function` without re-running the whole
@@ -108,6 +144,8 @@ impl Stack {
             status: StackStatus::Ready,
             last_pop_result: None,
             touched_state_keys: HashSet::new(),
+            touch_journal: Vec::new(),
+            open_touch_captures: 0,
             functions: HashMap::new(),
             methods: HashMap::new(),
             vm_frames: Vec::new(),
@@ -136,6 +174,74 @@ impl Stack {
     /// from current source.
     pub fn start_run_tracking(&mut self) {
         self.touched_state_keys.clear();
+        // Captures do not span runs: one left open by an aborted run is dropped.
+        self.touch_journal.clear();
+        self.open_touch_captures = 0;
+    }
+
+    /// Record that `key` was read or written this run, so the end-of-run sweep
+    /// keeps its slot. Every state instruction goes through here.
+    pub fn touch_state(&mut self, key: &RuntimeStateKey) {
+        if self.open_touch_captures > 0 {
+            self.touch_journal.push(key.clone());
+        }
+        // Check before inserting: a slot touched many times in one run (a
+        // widget's state read, then written) clones its key only once.
+        if !self.touched_state_keys.contains(key) {
+            self.touched_state_keys.insert(key.clone());
+        }
+    }
+
+    /// Start recording which state keys are touched from here on.
+    ///
+    /// This is how a section of the program that is *skipped* on a later run
+    /// keeps its state alive. The end-of-run sweep deletes every slot the run
+    /// did not touch, so a memoized scope that reuses last frame's result
+    /// instead of executing would otherwise lose the state inside it. The
+    /// scope brackets a real execution with `begin_touch_capture` /
+    /// [`end_touch_capture`](Self::end_touch_capture), keeps the returned
+    /// [`StateTouches`], and on a run where it skips, hands them to
+    /// [`retain_touches`](Self::retain_touches) in place of executing.
+    ///
+    /// Captures nest and must end in LIFO order, all within one run.
+    pub fn begin_touch_capture(&mut self) -> TouchCapture {
+        self.open_touch_captures += 1;
+        TouchCapture {
+            start: self.touch_journal.len(),
+        }
+    }
+
+    /// End a capture and return the distinct keys touched since it began,
+    /// including those touched by nested captures and by
+    /// [`retain_touches`](Self::retain_touches) calls inside it.
+    pub fn end_touch_capture(&mut self, capture: TouchCapture) -> StateTouches {
+        debug_assert!(self.open_touch_captures > 0, "no touch capture is open");
+        debug_assert!(
+            capture.start <= self.touch_journal.len(),
+            "touch captures must end in LIFO order within one run"
+        );
+        let start = capture.start.min(self.touch_journal.len());
+        let mut seen = HashSet::new();
+        let keys = self.touch_journal[start..]
+            .iter()
+            .filter(|k| seen.insert(*k))
+            .cloned()
+            .collect();
+        self.open_touch_captures = self.open_touch_captures.saturating_sub(1);
+        if self.open_touch_captures == 0 {
+            self.touch_journal.clear();
+        }
+        StateTouches(keys)
+    }
+
+    /// Mark every key in `touches` as touched this run, as if the section that
+    /// produced them had executed again. Keys whose slot no longer exists are
+    /// harmless: touching never creates a slot. Also feeds any open capture, so
+    /// an enclosing scope that is executing records its skipped child's state.
+    pub fn retain_touches(&mut self, touches: &StateTouches) {
+        for key in &touches.0 {
+            self.touch_state(key);
+        }
     }
 
     /// Drop persistent state entries that were not touched (read or written)
@@ -182,5 +288,161 @@ impl Stack {
         if let Some(val) = self.last_pop_result {
             mark(val);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::{Env, RunOutcome};
+
+    fn key(base: u64, path: &[PathPart]) -> RuntimeStateKey {
+        RuntimeStateKey {
+            base: StateKey(base),
+            path: path.iter().copied().collect(),
+        }
+    }
+
+    fn stack() -> Stack {
+        Stack::new(StackKey(0), ProgramId(0), ContextKey(0))
+    }
+
+    #[test]
+    fn retained_touches_survive_the_sweep() {
+        let (a, b) = (key(1, &[PathPart::Call(7)]), key(2, &[PathPart::Key(9)]));
+        let mut s = stack();
+        s.state.insert(a.clone(), Value::Int(1));
+        s.state.insert(b.clone(), Value::Int(2));
+
+        // Run 1: the section executes and touches both slots.
+        s.start_run_tracking();
+        let cap = s.begin_touch_capture();
+        s.touch_state(&a);
+        s.touch_state(&b);
+        s.touch_state(&a);
+        let touches = s.end_touch_capture(cap);
+        assert_eq!(touches.iter().cloned().collect::<Vec<_>>(), vec![a.clone(), b.clone()]);
+        assert_eq!(s.sweep_untouched_state(), 0);
+
+        // Run 2: the section is skipped and retains what it touched.
+        s.start_run_tracking();
+        s.retain_touches(&touches);
+        assert_eq!(s.sweep_untouched_state(), 0);
+        assert_eq!(s.state.len(), 2);
+
+        // Run 3: skipped without retaining, so both slots go.
+        s.start_run_tracking();
+        assert_eq!(s.sweep_untouched_state(), 2);
+    }
+
+    #[test]
+    fn an_enclosing_capture_sees_nested_and_retained_touches() {
+        let (outer, inner, skipped) = (key(1, &[]), key(2, &[]), key(3, &[]));
+        let mut s = stack();
+        s.start_run_tracking();
+
+        let parent = s.begin_touch_capture();
+        s.touch_state(&outer);
+        let child = s.begin_touch_capture();
+        s.touch_state(&inner);
+        let child_touches = s.end_touch_capture(child);
+        s.retain_touches(&StateTouches(vec![skipped.clone()]));
+        let parent_touches = s.end_touch_capture(parent);
+
+        assert_eq!(child_touches.iter().cloned().collect::<Vec<_>>(), vec![inner.clone()]);
+        assert_eq!(
+            parent_touches.iter().cloned().collect::<Vec<_>>(),
+            vec![outer, inner, skipped]
+        );
+    }
+
+    #[test]
+    fn the_journal_is_empty_outside_captures() {
+        let mut s = stack();
+        s.start_run_tracking();
+        for i in 0..100 {
+            s.touch_state(&key(i, &[]));
+        }
+        assert!(s.touch_journal.is_empty());
+
+        let cap = s.begin_touch_capture();
+        s.touch_state(&key(1, &[]));
+        let _ = s.end_touch_capture(cap);
+        assert!(s.touch_journal.is_empty(), "the outermost capture clears it");
+
+        // A capture abandoned by an aborted run does not leak into the next.
+        let _abandoned = s.begin_touch_capture();
+        s.touch_state(&key(1, &[]));
+        s.start_run_tracking();
+        assert_eq!(s.open_touch_captures, 0);
+        assert!(s.touch_journal.is_empty());
+    }
+
+    /// Drive one frame, calling `mid` after its first instruction: the point a
+    /// host (or, later, a memoized scope in the VM) acts mid-run. A capture
+    /// `mid` opens is ended once the frame completes and its touches returned.
+    fn frame(
+        env: &mut Env,
+        sid: StackKey,
+        mid: impl FnOnce(&mut Stack) -> Option<TouchCapture>,
+    ) -> StateTouches {
+        env.reset_stack(sid).unwrap();
+        let first = env.run_bounded(sid, 1).unwrap();
+        assert!(matches!(first, RunOutcome::Yielded { .. }), "frame finished in one step");
+        let cap = mid(env.stack_mut(sid).unwrap());
+        let rest = env.run_bounded(sid, u64::MAX).unwrap();
+        assert!(matches!(rest, RunOutcome::Done(_)));
+        match cap {
+            Some(cap) => env.stack_mut(sid).unwrap().end_touch_capture(cap),
+            None => StateTouches::default(),
+        }
+    }
+
+    #[test]
+    fn a_section_that_stops_running_keeps_its_state_when_retained() {
+        let src = "\
+fn widget()
+  state clicks = 0
+  clicks += 1
+  clicks
+end
+state var frame = 0
+set frame = get frame + 1
+if get frame == 1 || get frame == 3 then
+  widget()
+end
+";
+        let mut env = Env::new();
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let widget_base = StateKey(crate::compiler::Compiler::hash_state_name("widget/clicks"));
+        let clicks = |env: &Env| {
+            env.get_all_state(sid)
+                .unwrap()
+                .iter()
+                .find(|(k, _)| k.base == widget_base)
+                .map(|(_, v)| *v)
+        };
+
+        // Frame 1: the widget runs. Capture what the frame touches.
+        let touches = frame(&mut env, sid, |s| Some(s.begin_touch_capture()));
+        assert!(touches.iter().any(|k| k.base == widget_base));
+        assert_eq!(clicks(&env), Some(Value::Int(1)));
+
+        // Frame 2: the widget's branch does not run, but the frame retains
+        // the widget's touches, as a skipped memoized scope would.
+        frame(&mut env, sid, |s| {
+            s.retain_touches(&touches);
+            None
+        });
+        assert_eq!(clicks(&env), Some(Value::Int(1)), "retained state survives");
+
+        // Frame 3: the widget runs again and continues from its kept state.
+        frame(&mut env, sid, |_| None);
+        assert_eq!(clicks(&env), Some(Value::Int(2)));
+
+        // Frame 4: skipped and not retained, so it is swept as before.
+        frame(&mut env, sid, |_| None);
+        assert_eq!(clicks(&env), None);
     }
 }

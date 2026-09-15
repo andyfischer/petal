@@ -130,6 +130,7 @@ impl Env {
             stack.finish_run_deps(
                 &ctx.bindings,
                 &ctx.heap,
+                &ctx.closures,
                 ctx.rng_state,
                 ctx.resources.revision(),
             );

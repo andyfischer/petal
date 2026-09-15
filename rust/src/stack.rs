@@ -4,8 +4,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::closure_table::ClosureTable;
 use crate::heap::Heap;
-use crate::run_deps::RunDeps;
+use crate::run_deps::{RunDeps, state_changed};
 use crate::symbol::SymbolId;
 
 use smallvec::SmallVec;
@@ -207,21 +208,17 @@ impl Stack {
         &mut self,
         bindings: &HashMap<SymbolId, Value>,
         heap: &Heap,
+        closures: &ClosureTable,
         rng_state: u64,
         resources_revision: u64,
     ) {
-        if !self.run_deps.state_unsettled() {
-            for (id, before) in &self.cells_at_run_start {
-                if !heap.is_live(Value::Cell(*id)) {
-                    continue;
-                }
-                let now = heap.cell_read(*id);
-                let mut budget = crate::run_deps::STATE_COMPARE_BUDGET;
-                if !crate::run_deps::values_equal_bounded(before, &now, heap, &mut budget) {
-                    self.run_deps.note_state_unsettled();
-                    break;
-                }
-            }
+        if !self.run_deps.state_unsettled()
+            && self.cells_at_run_start.iter().any(|(id, before)| {
+                heap.is_live(Value::Cell(*id))
+                    && state_changed(Some(*before), heap.cell_read(*id), heap, closures)
+            })
+        {
+            self.run_deps.note_state_unsettled();
         }
         self.cells_at_run_start.clear();
         self.run_deps

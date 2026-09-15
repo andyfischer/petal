@@ -28,7 +28,9 @@
 
 use std::collections::HashMap;
 
+use crate::closure_table::ClosureTable;
 use crate::heap::Heap;
+use crate::memo::content_equal;
 use crate::symbol::SymbolId;
 use crate::value::Value;
 
@@ -157,9 +159,8 @@ impl RunDeps {
         self.effects = self.effects.wrapping_add(1);
     }
 
-    /// The activity counters as a snapshot: `(binding reads, host reads,
-    /// resource reads, emits, effects)`. Two snapshots around a native call
-    /// say what the call did.
+    /// The activity counters as a snapshot. Two snapshots around a native
+    /// call say what the call did.
     #[inline]
     pub fn activity(&self) -> Activity {
         Activity {
@@ -180,6 +181,23 @@ impl RunDeps {
     #[inline]
     pub fn note_state_unsettled(&mut self) {
         self.state_unsettled = true;
+    }
+
+    /// Record a write that replaced `old` with `new` in a `state` slot, and
+    /// mark the run unsettled if that changed the slot (see
+    /// [`state_changed`]). `mutated` means an in-place producer already
+    /// edited the slot's object, which counts as a change without comparing.
+    pub fn note_state_write(
+        &mut self,
+        old: Option<Value>,
+        new: Value,
+        mutated: bool,
+        heap: &Heap,
+        closures: &ClosureTable,
+    ) {
+        if !self.state_unsettled && (mutated || state_changed(old, new, heap, closures)) {
+            self.state_unsettled = true;
+        }
     }
 
     /// Whether the run in progress (or, after completion, the last run) has
@@ -441,104 +459,26 @@ fn hash_content(
     true
 }
 
-/// Structural equality with a node budget, for deciding whether a `state`
-/// write changed its slot. Unlike the language's `==` it compares records by
-/// content, and it gives up (answers "different") past `budget` nodes rather
-/// than walk a large structure on every write. "Different" is always the safe
-/// answer here: it only costs one more run.
-pub fn values_equal_bounded(a: &Value, b: &Value, heap: &Heap, budget: &mut usize) -> bool {
-    if *budget == 0 {
-        return false;
-    }
-    *budget -= 1;
-    match (a, b) {
-        (Value::Nil, Value::Nil) => true,
-        (Value::Bool(a), Value::Bool(b)) => a == b,
-        (Value::Int(a), Value::Int(b)) => a == b,
-        (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
-        (Value::String(a), Value::String(b)) => {
-            a == b || heap.get_string(*a) == heap.get_string(*b)
-        }
-        (Value::Symbol(a), Value::Symbol(b)) => a == b,
-        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
-            ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
-        }
-        (Value::List(a), Value::List(b)) => {
-            if a == b {
-                return true;
-            }
-            let (xs, ys) = (heap.get_list(*a), heap.get_list(*b));
-            xs.len() == ys.len()
-                && xs
-                    .iter()
-                    .zip(ys)
-                    .all(|(x, y)| values_equal_bounded(x, y, heap, budget))
-        }
-        (Value::Map(a), Value::Map(b)) => {
-            if a == b {
-                return true;
-            }
-            let (xs, ys) = (heap.get_map(*a), heap.get_map(*b));
-            xs.len() == ys.len()
-                && xs.iter().all(|(k, x)| match ys.get(k) {
-                    Some(y) => values_equal_bounded(x, y, heap, budget),
-                    None => false,
-                })
-        }
-        (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
-            (at == bt || heap.get_string(*at) == heap.get_string(*bt))
-                && values_equal_bounded(&Value::List(*ad), &Value::List(*bd), heap, budget)
-        }
-        (Value::F64Array(a), Value::F64Array(b)) => {
-            a == b || heap.get_f64_array(*a) == heap.get_f64_array(*b)
-        }
-        (Value::Cell(a), Value::Cell(b)) => a == b,
-        (Value::Closure(a), Value::Closure(b)) => a == b,
-        (Value::OverloadSet(a), Value::OverloadSet(b)) => a == b,
-        (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
-        (Value::Handle(a), Value::Handle(b)) => a == b,
-        (Value::Pending(a), Value::Pending(b)) => a == b,
-        (
-            Value::Dual {
-                value: av,
-                derivative: ad,
-            },
-            Value::Dual {
-                value: bv,
-                derivative: bd,
-            },
-        ) => av.to_bits() == bv.to_bits() && ad.to_bits() == bd.to_bits(),
-        (Value::Element(a), Value::Element(b)) => {
-            a == b
-                || (heap.get_string(heap.get_element_tag(*a))
-                    == heap.get_string(heap.get_element_tag(*b))
-                    && values_equal_bounded(
-                        &Value::Map(heap.get_element_props(*a)),
-                        &Value::Map(heap.get_element_props(*b)),
-                        heap,
-                        budget,
-                    )
-                    && values_equal_bounded(
-                        &Value::List(heap.get_element_children(*a)),
-                        &Value::List(heap.get_element_children(*b)),
-                        heap,
-                        budget,
-                    ))
-        }
-        _ => false,
-    }
-}
-
 /// Node budget for one state-write comparison. Small records and short lists
 /// compare in full; a large collection is deemed changed.
-pub const STATE_COMPARE_BUDGET: usize = 256;
+const STATE_COMPARE_BUDGET: usize = 256;
+
+/// Whether a `state` slot (or a `state var` cell) that held `old` — `None` for
+/// a slot being created — is changed by now holding `new`. Compares by content
+/// ([`crate::memo::content_equal`]) and gives up past a small node budget:
+/// "changed" is always the safe answer here, it only costs one more run.
+pub fn state_changed(old: Option<Value>, new: Value, heap: &Heap, closures: &ClosureTable) -> bool {
+    match old {
+        None => true,
+        Some(old) => !content_equal(&old, &new, heap, closures, STATE_COMPARE_BUDGET),
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn bindings(heap: &mut Heap, entries: &[(u32, Value)]) -> HashMap<SymbolId, Value> {
-        let _ = heap;
+    fn bindings(entries: &[(u32, Value)]) -> HashMap<SymbolId, Value> {
         entries.iter().map(|(s, v)| (SymbolId(*s), *v)).collect()
     }
 
@@ -555,7 +495,7 @@ mod tests {
     #[test]
     fn unchanged_read_bindings_need_no_run() {
         let mut heap = Heap::new();
-        let b = bindings(&mut heap, &[(1, Value::Int(5)), (2, Value::Int(9))]);
+        let b = bindings(&[(1, Value::Int(5)), (2, Value::Int(9))]);
         let mut deps = RunDeps::default();
         deps.begin_run(7);
         deps.note_binding_read(SymbolId(1));
@@ -563,11 +503,11 @@ mod tests {
         assert_eq!(deps.run_needed(&b, &heap, 0), None);
 
         // An unread binding may change freely.
-        let b2 = bindings(&mut heap, &[(1, Value::Int(5)), (2, Value::Int(10))]);
+        let b2 = bindings(&[(1, Value::Int(5)), (2, Value::Int(10))]);
         assert_eq!(deps.run_needed(&b2, &heap, 0), None);
 
         // A read one may not.
-        let b3 = bindings(&mut heap, &[(1, Value::Int(6)), (2, Value::Int(9))]);
+        let b3 = bindings(&[(1, Value::Int(6)), (2, Value::Int(9))]);
         assert_eq!(
             deps.run_needed(&b3, &heap, 0),
             Some(RunReason::BindingChanged(SymbolId(1)))
@@ -579,7 +519,7 @@ mod tests {
         let mut heap = Heap::new();
         let s1 = heap.alloc_string("a".into());
         let l1 = heap.alloc_list(vec![Value::String(s1), Value::Int(1)]);
-        let b1 = bindings(&mut heap, &[(1, Value::List(l1))]);
+        let b1 = bindings(&[(1, Value::List(l1))]);
         let mut deps = RunDeps::default();
         deps.begin_run(0);
         deps.note_binding_read(SymbolId(1));
@@ -587,11 +527,11 @@ mod tests {
 
         let s2 = heap.alloc_string("a".into());
         let l2 = heap.alloc_list(vec![Value::String(s2), Value::Int(1)]);
-        let b2 = bindings(&mut heap, &[(1, Value::List(l2))]);
+        let b2 = bindings(&[(1, Value::List(l2))]);
         assert_eq!(deps.run_needed(&b2, &heap, 0), None);
 
         let l3 = heap.alloc_list(vec![Value::String(s2), Value::Int(2)]);
-        let b3 = bindings(&mut heap, &[(1, Value::List(l3))]);
+        let b3 = bindings(&[(1, Value::List(l3))]);
         assert!(deps.run_needed(&b3, &heap, 0).is_some());
     }
 
@@ -603,7 +543,7 @@ mod tests {
         deps.note_binding_read(SymbolId(3));
         deps.finish_run(&HashMap::new(), &heap, 0, 0);
         assert_eq!(deps.run_needed(&HashMap::new(), &heap, 0), None);
-        let b = bindings(&mut heap, &[(3, Value::Nil)]);
+        let b = bindings(&[(3, Value::Nil)]);
         assert_eq!(
             deps.run_needed(&b, &heap, 0),
             Some(RunReason::BindingChanged(SymbolId(3)))
@@ -670,34 +610,5 @@ mod tests {
             deps.run_needed(&b, &heap, 0),
             Some(RunReason::HostDataChanged)
         );
-    }
-
-    #[test]
-    fn bounded_equality_compares_records_by_content() {
-        let mut heap = Heap::new();
-        let mut m1 = indexmap::IndexMap::new();
-        m1.insert("x".to_string(), Value::Int(1));
-        let mut m2 = m1.clone();
-        let a = Value::Map(heap.alloc_map(m1));
-        let b = Value::Map(heap.alloc_map(m2.clone()));
-        let mut budget = STATE_COMPARE_BUDGET;
-        assert!(values_equal_bounded(&a, &b, &heap, &mut budget));
-        m2.insert("x".to_string(), Value::Int(2));
-        let c = Value::Map(heap.alloc_map(m2));
-        let mut budget = STATE_COMPARE_BUDGET;
-        assert!(!values_equal_bounded(&a, &c, &heap, &mut budget));
-    }
-
-    #[test]
-    fn bounded_equality_gives_up_past_the_budget() {
-        let mut heap = Heap::new();
-        let big: Vec<Value> = (0..300).map(Value::Int).collect();
-        let a = Value::List(heap.alloc_list(big.clone()));
-        let b = Value::List(heap.alloc_list(big));
-        let mut budget = STATE_COMPARE_BUDGET;
-        assert!(!values_equal_bounded(&a, &b, &heap, &mut budget));
-        // Same id short-circuits regardless of size.
-        let mut budget = STATE_COMPARE_BUDGET;
-        assert!(values_equal_bounded(&a, &a, &heap, &mut budget));
     }
 }

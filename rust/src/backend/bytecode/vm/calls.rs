@@ -32,7 +32,7 @@ impl<'a> Vm<'a> {
         if self.stack.vm_frames.last().is_some_and(|f| f.memo_scope) {
             self.memo_close(value);
         }
-        let mut frame = self.stack.vm_frames.pop().unwrap();
+        let frame = self.stack.vm_frames.pop().unwrap();
         self.stack.last_pop_result = Some(value);
         let result = if self.stack.vm_frames.is_empty() {
             // The root frame just completed — capture top-level named functions
@@ -67,11 +67,16 @@ impl<'a> Vm<'a> {
             }
             StepResult::Continue
         };
+        self.recycle_frame(frame);
+        result
+    }
+
+    /// Return a finished frame to the pool, unless the pool is full.
+    pub(super) fn recycle_frame(&mut self, mut frame: VmFrame) {
         if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {
             frame.recycle();
             self.stack.vm_frame_pool.push(frame);
         }
-        result
     }
 
     /// Record top-level named `Closure`/`OverloadSet` bindings from the root
@@ -434,10 +439,7 @@ impl<'a> Vm<'a> {
                     self.observations.record(call_site, value);
                     self.memo_note_observation(call_site, value);
                 }
-                frame.recycle();
-                if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {
-                    self.stack.vm_frame_pool.push(frame);
-                }
+                self.recycle_frame(frame);
                 return Ok(());
             }
         }

@@ -26,26 +26,32 @@ impl<'a> Vm<'a> {
     // Each is one flag test when memoization is off or no scope is open,
     // which is every instruction of a top-level script body.
 
+    /// The innermost open scope, when the VM is recording into one.
+    #[inline]
+    fn memo_recording_scope(&mut self) -> Option<&mut OpenScope> {
+        if self.memo && self.stack.memo.recording() {
+            self.stack.memo.innermost()
+        } else {
+            None
+        }
+    }
+
     /// A named term was observed with `value`.
     #[inline]
     pub(super) fn memo_note_observation(&mut self, term: TermId, value: Value) {
-        if self.memo && self.stack.memo.recording() {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::Observed { term, value });
-            }
+        if let Some(s) = self.memo_recording_scope() {
+            s.deps.push(Dep::Observed { term, value });
         }
     }
 
     /// A `state` slot was read (or initialized) and held `value`.
     #[inline]
     pub(super) fn memo_note_state_read(&mut self, key: &RuntimeStateKey, value: Option<Value>) {
-        if self.memo && self.stack.memo.recording() {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::StateRead {
-                    key: key.clone(),
-                    value,
-                });
-            }
+        if let Some(s) = self.memo_recording_scope() {
+            s.deps.push(Dep::StateRead {
+                key: key.clone(),
+                value,
+            });
         }
     }
 
@@ -58,35 +64,32 @@ impl<'a> Vm<'a> {
         value: Value,
         mutated: bool,
     ) {
-        if self.memo && self.stack.memo.recording() {
-            if mutated || self.memo_value_escapes_local_cell(value) {
-                self.stack.memo.note_effect();
-                return;
-            }
-            if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::StateWrite {
-                    key: key.clone(),
-                    value,
-                });
-            }
+        if self.memo_recording_scope().is_none() {
+            return;
+        }
+        if mutated || self.memo_value_escapes_local_cell(value) {
+            self.stack.memo.note_effect();
+        } else if let Some(s) = self.stack.memo.innermost() {
+            s.deps.push(Dep::StateWrite {
+                key: key.clone(),
+                value,
+            });
         }
     }
 
     /// Something happened a replay could not reproduce.
     #[inline]
     pub(super) fn memo_note_effect(&mut self) {
-        if self.memo && self.stack.memo.recording() {
-            self.stack.memo.note_effect();
+        if let Some(s) = self.memo_recording_scope() {
+            s.effectful = true;
         }
     }
 
     /// A `var` cell was created here.
     #[inline]
     pub(super) fn memo_note_cell_new(&mut self, cell: CellId) {
-        if self.memo && self.stack.memo.recording() {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.local_cells.insert(cell);
-            }
+        if let Some(s) = self.memo_recording_scope() {
+            s.local_cells.insert(cell);
         }
     }
 
@@ -94,7 +97,7 @@ impl<'a> Vm<'a> {
     /// the scope, so reads of it from here on are dependencies.
     #[inline]
     pub(super) fn memo_note_cell_escaped(&mut self, cell: CellId) {
-        if self.memo && self.stack.memo.recording() {
+        if self.memo_recording_scope().is_some() {
             for s in &mut self.stack.memo.open {
                 s.local_cells.remove(&cell);
             }
@@ -104,57 +107,36 @@ impl<'a> Vm<'a> {
     /// A `var` cell was read and held `value`.
     #[inline]
     pub(super) fn memo_note_cell_read(&mut self, cell: CellId, value: Value) {
-        if self.memo && self.stack.memo.recording() {
-            if let Some(s) = self.stack.memo.innermost()
-                && !s.local_cells.contains(&cell)
-            {
-                s.deps.push(Dep::CellRead { cell, value });
-            }
+        if let Some(s) = self.memo_recording_scope()
+            && !s.local_cells.contains(&cell)
+        {
+            s.deps.push(Dep::CellRead { cell, value });
         }
     }
 
     /// A `var` cell was written.
     #[inline]
     pub(super) fn memo_note_cell_write(&mut self, cell: CellId, value: Value) {
-        if self.memo && self.stack.memo.recording() {
-            if self.memo_value_escapes_local_cell(value) {
-                self.stack.memo.note_effect();
-                return;
-            }
-            if let Some(s) = self.stack.memo.innermost()
-                && !s.local_cells.contains(&cell)
-            {
-                s.deps.push(Dep::CellWrite { cell, value });
-            }
+        if self.memo_recording_scope().is_none() {
+            return;
+        }
+        if self.memo_value_escapes_local_cell(value) {
+            self.stack.memo.note_effect();
+        } else if let Some(s) = self.stack.memo.innermost()
+            && !s.local_cells.contains(&cell)
+        {
+            s.deps.push(Dep::CellWrite { cell, value });
         }
     }
 
     /// Whether `value`, stored somewhere that outlives the scope, would carry
     /// one of the scope's own cells out with it.
-    fn memo_value_escapes_local_cell(&mut self, value: Value) -> bool {
-        if !matches!(
-            value,
-            Value::List(_)
-                | Value::Map(_)
-                | Value::Closure(_)
-                | Value::OverloadSet(_)
-                | Value::EnumVariant { .. }
-                | Value::Element(_)
-                | Value::Cell(_)
-        ) {
-            return false;
-        }
-        let Some(s) = self.stack.memo.open.last() else {
-            return false;
-        };
-        let mut budget = 256;
-        holds_local_cell(
-            &value,
-            self.heap,
-            self.closures,
-            &s.local_cells,
-            &mut budget,
-        )
+    fn memo_value_escapes_local_cell(&self, value: Value) -> bool {
+        self.stack
+            .memo
+            .open
+            .last()
+            .is_some_and(|s| holds_local_cell(&value, self.heap, self.closures, &s.local_cells))
     }
 
     /// A native call finished. Classify it from what it reported doing
@@ -229,11 +211,7 @@ impl<'a> Vm<'a> {
             .last()
             .map(|f| f.path.clone())
             .unwrap_or_default();
-        let out_start = self
-            .output_buffers
-            .iter()
-            .map(|(s, v)| (*s, v.len()))
-            .collect();
+        let out_start = self.memo_output_lens();
         let captures: ScopeValues = self
             .closures
             .closure(cid)
@@ -305,21 +283,12 @@ impl<'a> Vm<'a> {
             }
         }
 
-        let mut effectful = sc.effectful
+        let effectful = sc.effectful
             || self.stack.memo.poisoned
             || *self.rng_state != sc.rng_at_entry
             || matches!(result, Value::Pending(_))
-            || sc.deps.len() > MAX_SCOPE_DEPS;
-        if !effectful && !sc.local_cells.is_empty() {
-            let mut budget = 256;
-            effectful = holds_local_cell(
-                &result,
-                self.heap,
-                self.closures,
-                &sc.local_cells,
-                &mut budget,
-            );
-        }
+            || sc.deps.len() > MAX_SCOPE_DEPS
+            || holds_local_cell(&result, self.heap, self.closures, &sc.local_cells);
         if effectful {
             self.stack.memo.stats.effectful += 1;
             if detached {
@@ -409,46 +378,40 @@ impl<'a> Vm<'a> {
                 }
             }
         }
-        let effects = |deps: &[Dep]| -> Vec<Dep> {
-            deps.iter()
-                .filter(|d| {
-                    matches!(
-                        d,
-                        Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Child { .. }
-                    )
-                })
-                .cloned()
-                .collect()
-        };
-        let (a, b) = (effects(&prev.deps), effects(&now.deps));
-        if a.len() != b.len() {
-            return false;
+        fn is_effect(d: &&Dep) -> bool {
+            matches!(
+                d,
+                Dep::StateWrite { .. } | Dep::CellWrite { .. } | Dep::Child { .. }
+            )
         }
-        for (x, y) in a.iter().zip(&b) {
-            let same = match (x, y) {
+        let mut a = prev.deps.iter().filter(is_effect);
+        let mut b = now.deps.iter().filter(is_effect);
+        loop {
+            let same = match (a.next(), b.next()) {
+                (None, None) => return true,
                 (
-                    Dep::StateWrite { key: ka, value: va },
-                    Dep::StateWrite { key: kb, value: vb },
+                    Some(Dep::StateWrite { key: ka, value: va }),
+                    Some(Dep::StateWrite { key: kb, value: vb }),
                 ) => ka == kb && self.memo_eq(*va, *vb, ARG_COMPARE_BUDGET),
                 (
-                    Dep::CellWrite {
+                    Some(Dep::CellWrite {
                         cell: ca,
                         value: va,
-                    },
-                    Dep::CellWrite {
+                    }),
+                    Some(Dep::CellWrite {
                         cell: cb,
                         value: vb,
-                    },
+                    }),
                 ) => ca == cb && self.memo_eq(*va, *vb, ARG_COMPARE_BUDGET),
                 (
-                    Dep::Child {
+                    Some(Dep::Child {
                         path: pa,
                         serial: sa,
-                    },
-                    Dep::Child {
+                    }),
+                    Some(Dep::Child {
                         path: pb,
                         serial: sb,
-                    },
+                    }),
                 ) => pa == pb && sa == sb,
                 _ => false,
             };
@@ -456,7 +419,14 @@ impl<'a> Vm<'a> {
                 return false;
             }
         }
-        true
+    }
+
+    /// Every output buffer's length now, to find what a scope appends.
+    fn memo_output_lens(&self) -> SmallVec<[(SymbolId, usize); 2]> {
+        self.output_buffers
+            .iter()
+            .map(|(s, v)| (*s, v.len()))
+            .collect()
     }
 
     fn memo_eq(&mut self, a: Value, b: Value, budget: usize) -> bool {
@@ -475,36 +445,35 @@ impl<'a> Vm<'a> {
         cid: ClosureId,
         args: &[Value],
     ) -> Option<Value> {
-        let (recorded_args, recorded_caps) = {
-            let slot = self.stack.memo.get(path)?;
-            if slot.fn_id != fn_id
-                || slot.args.len() != args.len()
-                || slot.captures.len() != self.closures.closure(cid).captures.len()
-            {
-                self.stack.memo.stats.misses += 1;
-                return None;
-            }
-            (slot.args.clone(), slot.captures.clone())
-        };
-        for (recorded, now) in recorded_args.iter().zip(args) {
-            if !self.memo_eq(*recorded, *now, ARG_COMPARE_BUDGET) {
-                self.stack.memo.stats.misses += 1;
-                return None;
-            }
-        }
-        for i in 0..recorded_caps.len() {
-            let now = self.closures.closure(cid).captures[i];
-            if !self.memo_eq(recorded_caps[i], now, ARG_COMPARE_BUDGET) {
-                self.stack.memo.stats.misses += 1;
-                return None;
-            }
-        }
-        if !self.memo_validate(path) {
+        let slot = self.stack.memo.get(path)?;
+        let same_fn = slot.fn_id == fn_id;
+        let (recorded_args, recorded_caps) = (slot.args.clone(), slot.captures.clone());
+        let captures: ScopeValues = self
+            .closures
+            .closure(cid)
+            .captures
+            .iter()
+            .copied()
+            .collect();
+        let same_call = same_fn
+            && self.memo_all_eq(&recorded_args, args)
+            && self.memo_all_eq(&recorded_caps, &captures);
+        if !same_call || !self.memo_validate(path) {
             self.stack.memo.stats.misses += 1;
             return None;
         }
         self.stack.memo.stats.hits += 1;
         self.memo_replay(path, true)
+    }
+
+    /// Whether two value lists have the same length and pairwise-equal
+    /// elements, by [`memo_eq`](Self::memo_eq).
+    fn memo_all_eq(&mut self, recorded: &[Value], now: &[Value]) -> bool {
+        recorded.len() == now.len()
+            && recorded
+                .iter()
+                .zip(now)
+                .all(|(a, b)| self.memo_eq(*a, *b, ARG_COMPARE_BUDGET))
     }
 
     /// Walk a record's dependencies in order against the present. Writes
@@ -535,9 +504,8 @@ impl<'a> Vm<'a> {
                     if *args_fp != container_args_fingerprint(args, self.heap) {
                         false
                     } else {
-                        let args: SmallVec<[Value; 4]> = args.clone();
                         self.stack.memo.suppress = true;
-                        let answer = self.call_native_fn(*native, &args, false, None);
+                        let answer = self.call_native_fn(*native, args, false, None);
                         self.stack.memo.suppress = false;
                         match answer {
                             Ok(v) => self.memo_eq(v, *result, ARG_COMPARE_BUDGET),
@@ -648,11 +616,7 @@ impl<'a> Vm<'a> {
             return None;
         }
         let target = self.stack.vm_frames.len();
-        let out_lens: SmallVec<[(SymbolId, usize); 2]> = self
-            .output_buffers
-            .iter()
-            .map(|(s, v)| (*s, v.len()))
-            .collect();
+        let out_lens = self.memo_output_lens();
 
         // The frame is built by hand: there is no live closure for this call.
         // A function that refers to itself gets one minted for its
@@ -715,11 +679,8 @@ impl<'a> Vm<'a> {
             // rest of this run: the parent will re-run and hit the same
             // error in the ordinary way.
             while self.stack.vm_frames.len() > target {
-                let mut f = self.stack.vm_frames.pop().unwrap();
-                f.recycle();
-                if self.stack.vm_frame_pool.len() < FRAME_POOL_MAX {
-                    self.stack.vm_frame_pool.push(f);
-                }
+                let f = self.stack.vm_frames.pop().unwrap();
+                self.recycle_frame(f);
             }
             while self
                 .stack
@@ -770,23 +731,13 @@ impl<'a> Vm<'a> {
                 Dep::StateWrite { key, value } => {
                     self.stack.touch_state(key);
                     let old = self.stack.state.insert(key.clone(), *value);
-                    if !self.stack.run_deps.state_unsettled() {
-                        let changed = match old {
-                            None => true,
-                            Some(old) => {
-                                let mut budget = crate::run_deps::STATE_COMPARE_BUDGET;
-                                !crate::run_deps::values_equal_bounded(
-                                    &old,
-                                    value,
-                                    self.heap,
-                                    &mut budget,
-                                )
-                            }
-                        };
-                        if changed {
-                            self.stack.run_deps.note_state_unsettled();
-                        }
-                    }
+                    self.stack.run_deps.note_state_write(
+                        old,
+                        *value,
+                        false,
+                        self.heap,
+                        self.closures,
+                    );
                 }
                 Dep::CellWrite { cell, value } => {
                     if self.heap.is_live(Value::Cell(*cell)) {

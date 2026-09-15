@@ -410,53 +410,19 @@ impl MemoTable {
     /// values they compare against and replay; open scopes pin their
     /// arguments and what they have recorded so far.
     pub fn gc_roots(&self, mut mark: impl FnMut(Value)) {
-        fn deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
-            for d in deps {
-                match d {
-                    Dep::Probe { args, result, .. } => {
-                        for v in args {
-                            mark(*v);
-                        }
-                        mark(*result);
-                    }
-                    Dep::StateRead { value, .. } => {
-                        if let Some(v) = value {
-                            mark(*v);
-                        }
-                    }
-                    Dep::StateWrite { value, .. }
-                    | Dep::CellRead { value, .. }
-                    | Dep::CellWrite { value, .. }
-                    | Dep::Observed { value, .. } => mark(*value),
-                    Dep::HostRead | Dep::ResourcesRead | Dep::Child { .. } => {}
-                }
-            }
-        }
         for s in self.slots.values() {
-            for v in s.captures.iter().chain(&s.args) {
-                mark(*v);
-            }
+            s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
             mark(s.result);
-            deps(&s.deps, &mut mark);
-            for seg in &s.outputs {
-                for v in &seg.values {
-                    mark(*v);
-                }
-            }
+            mark_deps(&s.deps, &mut mark);
+            mark_outputs(&s.outputs, &mut mark);
         }
         for s in &self.open {
-            for v in s.captures.iter().chain(&s.args) {
-                mark(*v);
-            }
-            deps(&s.deps, &mut mark);
+            s.captures.iter().chain(&s.args).for_each(|v| mark(*v));
+            mark_deps(&s.deps, &mut mark);
             if let Some(p) = &s.previous {
                 mark(p.result);
-                deps(&p.deps, &mut mark);
-                for seg in &p.outputs {
-                    for v in &seg.values {
-                        mark(*v);
-                    }
-                }
+                mark_deps(&p.deps, &mut mark);
+                mark_outputs(&p.outputs, &mut mark);
             }
         }
     }
@@ -471,15 +437,48 @@ impl MemoTable {
         closures: &ClosureTable,
         budget: usize,
     ) -> bool {
-        let mut eq = ValueEq {
-            heap,
-            closures,
-            cache: &mut self.eq_cache,
-            budget,
-            visiting: Vec::new(),
-        };
-        eq.eq(a, b)
+        ValueEq::new(heap, closures, &mut self.eq_cache, budget).eq(a, b)
     }
+}
+
+/// [`ValueEq`] for a one-off comparison, outside a memo table and its
+/// closure-pair cache (the frame gate's "did this `state` write change the
+/// slot").
+pub fn content_equal(
+    a: &Value,
+    b: &Value,
+    heap: &Heap,
+    closures: &ClosureTable,
+    budget: usize,
+) -> bool {
+    let mut cache = FastMap::default();
+    ValueEq::new(heap, closures, &mut cache, budget).eq(a, b)
+}
+
+/// Mark every heap value a record's dependencies hold (see
+/// [`MemoTable::gc_roots`]).
+fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
+    for d in deps {
+        match d {
+            Dep::Probe { args, result, .. } => {
+                args.iter().for_each(|v| mark(*v));
+                mark(*result);
+            }
+            Dep::StateRead { value, .. } => value.iter().for_each(|v| mark(*v)),
+            Dep::StateWrite { value, .. }
+            | Dep::CellRead { value, .. }
+            | Dep::CellWrite { value, .. }
+            | Dep::Observed { value, .. } => mark(*value),
+            Dep::HostRead | Dep::ResourcesRead | Dep::Child { .. } => {}
+        }
+    }
+}
+
+fn mark_outputs(outputs: &[OutputSegment], mark: &mut impl FnMut(Value)) {
+    outputs
+        .iter()
+        .flat_map(|seg| &seg.values)
+        .for_each(|v| mark(*v));
 }
 
 /// Structural equality as the memo needs it. Unlike the language's `==` it
@@ -501,6 +500,21 @@ pub struct ValueEq<'a> {
 }
 
 impl<'a> ValueEq<'a> {
+    fn new(
+        heap: &'a Heap,
+        closures: &'a ClosureTable,
+        cache: &'a mut FastMap<(ClosureId, ClosureId), bool>,
+        budget: usize,
+    ) -> Self {
+        ValueEq {
+            heap,
+            closures,
+            cache,
+            budget,
+            visiting: Vec::new(),
+        }
+    }
+
     pub fn eq(&mut self, a: &Value, b: &Value) -> bool {
         if self.budget == 0 {
             return false;
@@ -638,11 +652,22 @@ pub fn holds_local_cell(
     heap: &Heap,
     closures: &ClosureTable,
     locals: &HashSet<CellId>,
+) -> bool {
+    let mut budget = LOCAL_CELL_SCAN_BUDGET;
+    !locals.is_empty() && scan_for_local_cell(v, heap, closures, locals, &mut budget)
+}
+
+/// Node budget for one [`holds_local_cell`] scan; past it the scan assumes
+/// the worst.
+const LOCAL_CELL_SCAN_BUDGET: usize = 256;
+
+fn scan_for_local_cell(
+    v: &Value,
+    heap: &Heap,
+    closures: &ClosureTable,
+    locals: &HashSet<CellId>,
     budget: &mut usize,
 ) -> bool {
-    if locals.is_empty() {
-        return false;
-    }
     if *budget == 0 {
         // Out of budget: assume the worst.
         return true;
@@ -653,22 +678,22 @@ pub fn holds_local_cell(
         Value::List(id) => heap
             .get_list(*id)
             .iter()
-            .any(|e| holds_local_cell(e, heap, closures, locals, budget)),
+            .any(|e| scan_for_local_cell(e, heap, closures, locals, budget)),
         Value::Map(id) => heap
             .get_map(*id)
             .values()
-            .any(|e| holds_local_cell(e, heap, closures, locals, budget)),
+            .any(|e| scan_for_local_cell(e, heap, closures, locals, budget)),
         Value::EnumVariant { data, .. } => {
-            holds_local_cell(&Value::List(*data), heap, closures, locals, budget)
+            scan_for_local_cell(&Value::List(*data), heap, closures, locals, budget)
         }
         Value::Element(id) => {
-            holds_local_cell(
+            scan_for_local_cell(
                 &Value::Map(heap.get_element_props(*id)),
                 heap,
                 closures,
                 locals,
                 budget,
-            ) || holds_local_cell(
+            ) || scan_for_local_cell(
                 &Value::List(heap.get_element_children(*id)),
                 heap,
                 closures,
@@ -682,12 +707,12 @@ pub fn holds_local_cell(
                     .closure(*id)
                     .captures
                     .iter()
-                    .any(|c| holds_local_cell(c, heap, closures, locals, budget))
+                    .any(|c| scan_for_local_cell(c, heap, closures, locals, budget))
         }
         Value::OverloadSet(id) => {
             closures.is_set_live(*id)
                 && closures.set(*id).iter().any(|e| {
-                    holds_local_cell(
+                    scan_for_local_cell(
                         &Value::Closure(e.closure_id),
                         heap,
                         closures,
@@ -763,6 +788,18 @@ mod tests {
     }
 
     #[test]
+    fn comparison_gives_up_past_the_budget() {
+        let mut heap = Heap::new();
+        let closures = ClosureTable::new();
+        let big: Vec<Value> = (0..300).map(Value::Int).collect();
+        let a = Value::List(heap.alloc_list(big.clone()));
+        let b = Value::List(heap.alloc_list(big));
+        assert!(!content_equal(&a, &b, &heap, &closures, 256));
+        // Same id short-circuits regardless of size.
+        assert!(content_equal(&a, &a, &heap, &closures, 256));
+    }
+
+    #[test]
     fn mutually_capturing_closures_compare_without_looping() {
         let heap = Heap::new();
         let mut closures = ClosureTable::new();
@@ -799,23 +836,9 @@ mod tests {
         m.insert("on_click".to_string(), Value::Closure(c));
         let rec = Value::Map(heap.alloc_map(m));
         let mut locals = HashSet::new();
-        let mut budget = 64;
-        assert!(!holds_local_cell(
-            &rec,
-            &heap,
-            &closures,
-            &locals,
-            &mut budget
-        ));
+        assert!(!holds_local_cell(&rec, &heap, &closures, &locals));
         locals.insert(cell);
-        let mut budget = 64;
-        assert!(holds_local_cell(
-            &rec,
-            &heap,
-            &closures,
-            &locals,
-            &mut budget
-        ));
+        assert!(holds_local_cell(&rec, &heap, &closures, &locals));
     }
 
     #[test]

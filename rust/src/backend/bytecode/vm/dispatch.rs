@@ -467,26 +467,15 @@ impl<'a> Vm<'a> {
                     let old = self.stack.state.insert(k, val_v);
                     // A reassignment that leaves the slot different from how
                     // the run found it means the next run starts from other
-                    // state: the frame has not settled (see `run_deps`). An
-                    // in-place producer already edited the slot's object, so
-                    // its write counts as a change without comparing.
-                    if !*init && !self.stack.run_deps.state_unsettled() {
-                        let changed = *mutated
-                            || match old {
-                                None => true,
-                                Some(old) => {
-                                    let mut budget = crate::run_deps::STATE_COMPARE_BUDGET;
-                                    !crate::run_deps::values_equal_bounded(
-                                        &old,
-                                        &val_v,
-                                        self.heap,
-                                        &mut budget,
-                                    )
-                                }
-                            };
-                        if changed {
-                            self.stack.run_deps.note_state_unsettled();
-                        }
+                    // state: the frame has not settled (see `run_deps`).
+                    if !*init {
+                        self.stack.run_deps.note_state_write(
+                            old,
+                            val_v,
+                            *mutated,
+                            self.heap,
+                            self.closures,
+                        );
                     }
                 }
                 self.set(fi, *dst, val_v);

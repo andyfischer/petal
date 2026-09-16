@@ -336,6 +336,26 @@ export class DebugClient {
     ).length;
   }
 
+  /** `GET /capture?format=…` — the one capture `/scene` and `/screenshot` alias.
+   *  `json` is the scene dump (parsed); `png` / `text` come back as the raw
+   *  response, whose `x-garden-frame` header carries the captured frame. A
+   *  frontend that cannot make a format (png under `--term`, text on a pixel
+   *  frontend) answers 400, which throws here. Needs `debug.capture`. */
+  async capture(format: "png" | "text", opts?: { pane?: number }): Promise<Response>;
+  async capture(format: "json", opts?: { pane?: number }): Promise<{ primitives: ScenePrimitive[]; frame: number }>;
+  async capture(
+    format: "png" | "json" | "text",
+    opts: { pane?: number } = {},
+  ): Promise<Response | { primitives: ScenePrimitive[]; frame: number }> {
+    const params = new URLSearchParams({ format });
+    if (opts.pane !== undefined) params.set("pane", String(opts.pane));
+    const path = `/capture?${params.toString()}`;
+    if (format === "json") return this.getJson(path);
+    const res = await fetch(this.base + path);
+    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}: ${await res.text()}`);
+    return res;
+  }
+
   /** GET /screenshot: writes the PNG to `path`, returns the X-Garden-Frame
    *  header the capture carries (or undefined when the header is missing). */
   async screenshot(path: string): Promise<number | undefined> {

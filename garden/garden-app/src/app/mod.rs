@@ -49,7 +49,7 @@ mod recents;
 mod scene;
 mod types;
 
-pub use debug_server::{Capture, Raster};
+pub use debug_server::{Capture, Raster, RasterKind};
 pub use types::{
     ClickCounter, KeyPhase, MenuAction, Mods, Pane, ToolbarAction, Viewport, MENU_ACTIONS,
 };

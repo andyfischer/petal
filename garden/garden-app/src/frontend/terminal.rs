@@ -22,7 +22,7 @@ use crossterm::event::{
 use crossterm::{cursor, execute, queue, style, terminal};
 use garden_render::{Color, Scene};
 
-use crate::app::{App, Capture, ClickCounter, Mods, Raster, Viewport};
+use crate::app::{App, Capture, ClickCounter, Mods, Raster, RasterKind, Viewport};
 use crate::clipboard::SystemClipboard;
 use crate::debug;
 use crate::frontend::grid::{self, Grid, CELL};
@@ -127,6 +127,10 @@ impl Capture for TerminalCapture {
         Ok(Raster::Text(
             grid::rasterize(scene, cols as usize, rows as usize).to_text(),
         ))
+    }
+
+    fn raster_kind(&self) -> RasterKind {
+        RasterKind::Text
     }
 }
 

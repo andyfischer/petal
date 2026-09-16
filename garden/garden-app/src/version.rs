@@ -121,6 +121,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // (substring): only the matching text runs, each with `rect` and `center`
     // — a text locator, so a test clicks a label rather than a coordinate.
     "debug.scene-find",
+    // `GET /capture?format=png|json|text`: one capture of the settled frame,
+    // with `/scene` (= json) and `/screenshot` (= the native raster) as its
+    // aliases. A frontend declines a format it cannot make with a 400.
+    "debug.capture",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

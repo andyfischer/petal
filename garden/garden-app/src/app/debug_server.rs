@@ -25,6 +25,13 @@ pub enum Raster {
     Text(String),
 }
 
+/// Which variant of [`Raster`] a frontend's `rasterize` produces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RasterKind {
+    Rgba,
+    Text,
+}
+
 /// What the frontend supplies so [`App::handle_debug_with`] can answer every
 /// debug command: a renderer and a window registry are the two things only the
 /// frontend owns.
@@ -33,8 +40,16 @@ pub enum Raster {
 /// settle-then-capture contract), builds the scene, crops, and stamps the
 /// frame — once, so no frontend can drift from it.
 pub trait Capture {
-    /// Rasterize the already-settled `scene` built at `viewport`.
+    /// Rasterize the already-settled `scene` built at `viewport`. Must return
+    /// the [`raster_kind`](Self::raster_kind) this frontend declares.
     fn rasterize(&mut self, scene: &Scene, viewport: Viewport) -> Result<Raster, String>;
+
+    /// Which raster `rasterize` produces, so `/capture?format=` can decline a
+    /// format this frontend cannot make *before* doing the work. Pixels by
+    /// default; the terminal frontend's is text.
+    fn raster_kind(&self) -> RasterKind {
+        RasterKind::Rgba
+    }
 
     /// The window registry, as `GET /windows` reports it. The default is the
     /// single-window answer (ordinal 1, focused) every frontend but the
@@ -186,20 +201,7 @@ impl App {
                     json!({"ok": true, "seed": seed, "panels": count}),
                 ))
             }
-            DebugCmd::Scene { pane, find } => {
-                // Same consistency contract as /screenshot: settle panel frames
-                // first, so the dumped primitives reflect all injected input.
-                self.settle_panels();
-                let view = self.scene_view(pane)?;
-                let scene = self.build_scene();
-                let mut json = match &find {
-                    Some(find) => scene_find_json(&scene, view, find),
-                    None => scene_json_view(&scene, view),
-                };
-                json["frame"] = json!(self.frame());
-                Ok(Reply::Json(json))
-            }
-            DebugCmd::Screenshot { pane } => self.screenshot(pane, capture),
+            DebugCmd::Capture { pane, format, find } => self.capture(pane, format, find, capture),
             DebugCmd::Windows => Ok(Reply::Json(capture.windows(self))),
             DebugCmd::Frame { min } => {
                 let frame = self.frame();
@@ -308,18 +310,48 @@ impl App {
         }
     }
 
-    /// `GET /screenshot`: resolve the crop (a bad `?pane=` is a 400 before any
-    /// GPU work), settle panel frames so the capture reflects all previously
-    /// injected input — a frontend may answer several requests back-to-back
-    /// with no tick between them — then rasterize, crop, and stamp the frame.
-    fn screenshot(
+    /// `GET /capture` (and `/scene`, `/screenshot`): resolve the pane (a bad
+    /// `?pane=` is a 400 before any GPU work), decline a format this frontend
+    /// cannot produce, settle panel frames so the capture reflects all
+    /// previously injected input — a frontend may answer several requests
+    /// back-to-back with no tick between them — build the scene once, then
+    /// serialize it and stamp the frame.
+    fn capture(
         &mut self,
         pane: Option<usize>,
+        format: Option<debug::CaptureFormat>,
+        find: Option<debug::SceneFind>,
         capture: &mut dyn Capture,
     ) -> Result<Reply, String> {
+        use debug::CaptureFormat;
         let crop = self.pane_capture_rect(pane)?;
+        let kind = capture.raster_kind();
+        match (format, kind) {
+            (Some(CaptureFormat::Png), RasterKind::Text) => {
+                return Err(
+                    "format=png is not available: this frontend has no pixels (use format=text or format=json)"
+                        .to_string(),
+                )
+            }
+            (Some(CaptureFormat::Text), RasterKind::Rgba) => {
+                return Err(
+                    "format=text is not available: this frontend renders pixels (use format=png or format=json)"
+                        .to_string(),
+                )
+            }
+            _ => {}
+        }
         self.settle_panels();
         let scene = self.build_scene();
+        if format == Some(CaptureFormat::Json) {
+            let view = self.scene_view(pane)?;
+            let mut json = match &find {
+                Some(find) => scene_find_json(&scene, view, find),
+                None => scene_json_view(&scene, view),
+            };
+            json["frame"] = json!(self.frame());
+            return Ok(Reply::Json(json));
+        }
         let viewport = self.viewport();
         match capture.rasterize(&scene, viewport)? {
             Raster::Text(text) => Ok(Reply::Text(text)),
@@ -1577,6 +1609,15 @@ mod tests {
     /// The capture seam: the core resolves `?pane=`, settles, crops the
     /// frontend's pixels to the pane, and stamps the frame; `/windows` is the
     /// frontend's listing (single-window by default).
+    /// `GET /screenshot?pane=…`, as the router builds it.
+    fn shot(pane: Option<usize>) -> DebugCmd {
+        DebugCmd::Capture {
+            pane,
+            format: None,
+            find: None,
+        }
+    }
+
     #[test]
     fn screenshot_goes_through_the_capture_seam() {
         struct Solid;
@@ -1594,23 +1635,23 @@ mod tests {
         let (mut app, _f) = panel_app("draw_text(\"hi\", 4, 4, 16, 1, 1, 1)\n");
 
         let err = app
-            .handle_debug_with(DebugCmd::Screenshot { pane: Some(99) }, &mut Solid)
+            .handle_debug_with(shot(Some(99)), &mut Solid)
             .err()
             .expect("a bad pane is an error");
         assert!(err.contains("no pane 99"), "{err}");
 
-        let full = app.handle_debug_with(DebugCmd::Screenshot { pane: None }, &mut Solid);
+        let full = app.handle_debug_with(shot(None), &mut Solid);
         let Ok(Reply::Png { png: full, frame }) = full else {
             panic!("expected a PNG");
         };
         assert_eq!(frame, app.frame());
-        let cropped = app.handle_debug_with(DebugCmd::Screenshot { pane: Some(0) }, &mut Solid);
+        let cropped = app.handle_debug_with(shot(Some(0)), &mut Solid);
         let Ok(Reply::Png { png: cropped, .. }) = cropped else {
             panic!("expected a PNG");
         };
         assert!(!cropped.is_empty() && !full.is_empty());
 
-        match app.handle_debug(DebugCmd::Screenshot { pane: None }) {
+        match app.handle_debug(shot(None)) {
             Err(err) => assert!(err.contains("not supported"), "{err}"),
             Ok(_) => panic!("NoCapture has no pixels"),
         }
@@ -1621,6 +1662,93 @@ mod tests {
             }
             _ => panic!("expected the single-window listing"),
         }
+    }
+
+    /// `/capture?format=` is the one capture: `/scene` and `/screenshot` route
+    /// to it, every format shares the pane check and frame stamp, and a
+    /// frontend declines the format it cannot make.
+    #[test]
+    fn capture_formats_share_one_path() {
+        use crate::debug::{route_for_test, CaptureFormat};
+        struct Grid;
+        impl Capture for Grid {
+            fn rasterize(&mut self, _: &Scene, _: Viewport) -> Result<Raster, String> {
+                Ok(Raster::Text("grid".to_string()))
+            }
+            fn raster_kind(&self) -> RasterKind {
+                RasterKind::Text
+            }
+        }
+        let format_of = |path: &str| match route_for_test("GET", path, b"") {
+            Ok(DebugCmd::Capture { format, .. }) => format,
+            Ok(_) => panic!("{path} is not a capture"),
+            Err((_, err)) => panic!("{path}: {err}"),
+        };
+        assert_eq!(format_of("/scene"), Some(CaptureFormat::Json));
+        assert_eq!(format_of("/screenshot?pane=0"), None);
+        assert_eq!(format_of("/capture"), None);
+        assert_eq!(format_of("/capture?format=png"), Some(CaptureFormat::Png));
+        assert_eq!(format_of("/capture?format=text"), Some(CaptureFormat::Text));
+        assert_eq!(
+            format_of("/capture?find=text:Save"),
+            Some(CaptureFormat::Json)
+        );
+        assert_eq!(format_of("/scene?format=json"), Some(CaptureFormat::Json));
+        for bad in [
+            "/capture?format=gif",
+            "/scene?format=png",
+            "/capture?format=png&find=text:Save",
+            "/capture?pane=x",
+        ] {
+            assert!(
+                route_for_test("GET", bad, b"").is_err(),
+                "{bad} should be a 400"
+            );
+        }
+
+        let (mut app, _f) = panel_app("draw_text(\"hi\", 4, 4, 16, 1, 1, 1)\n");
+        let json = |format| DebugCmd::Capture {
+            pane: Some(0),
+            format,
+            find: None,
+        };
+        // JSON needs no raster at all, on any frontend.
+        match app.handle_debug(json(Some(CaptureFormat::Json))) {
+            Ok(Reply::Json(v)) => {
+                assert_eq!(v["pane"]["index"], 0);
+                assert_eq!(v["frame"], app.frame());
+            }
+            _ => panic!("format=json answers the scene"),
+        }
+        // The text frontend: native and text are its grid, png is declined.
+        assert!(matches!(
+            app.handle_debug_with(json(None), &mut Grid),
+            Ok(Reply::Text(t)) if t == "grid"
+        ));
+        assert!(matches!(
+            app.handle_debug_with(json(Some(CaptureFormat::Text)), &mut Grid),
+            Ok(Reply::Text(_))
+        ));
+        let err = app
+            .handle_debug_with(json(Some(CaptureFormat::Png)), &mut Grid)
+            .err()
+            .expect("no pixels");
+        assert!(err.contains("format=png"), "{err}");
+        // A pixel frontend declines text; a bad pane is still checked first.
+        let err = app
+            .handle_debug(json(Some(CaptureFormat::Text)))
+            .err()
+            .expect("no grid");
+        assert!(err.contains("format=text"), "{err}");
+        let err = app
+            .handle_debug(DebugCmd::Capture {
+                pane: Some(99),
+                format: Some(CaptureFormat::Json),
+                find: None,
+            })
+            .err()
+            .expect("bad pane");
+        assert!(err.contains("no pane 99"), "{err}");
     }
 
     /// `?find=text:…` narrows the dump to the matching text runs and gives each
@@ -1670,8 +1798,9 @@ mod tests {
         );
 
         let full = match app
-            .handle_debug(DebugCmd::Scene {
+            .handle_debug(DebugCmd::Capture {
                 pane: None,
+                format: Some(debug::CaptureFormat::Json),
                 find: None,
             })
             .unwrap()
@@ -1680,8 +1809,9 @@ mod tests {
             _ => panic!("/scene answers JSON"),
         };
         let scoped = match app
-            .handle_debug(DebugCmd::Scene {
+            .handle_debug(DebugCmd::Capture {
                 pane: Some(0),
+                format: Some(debug::CaptureFormat::Json),
                 find: None,
             })
             .unwrap()

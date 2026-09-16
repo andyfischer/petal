@@ -77,6 +77,11 @@ rendered into an offscreen wgpu texture, read back, and PNG-encoded. The
 terminal frontend's `rasterize` returns its character grid, so `/screenshot`
 there is plain text (a `?pane=` is validated but does not crop).
 
+`/scene` and `/screenshot` are aliases of one endpoint, `GET /capture`, which
+differs only in how the settled frame is serialized (`?format=png|json|text`).
+A frontend declares which raster it makes (`Capture::raster_kind`), and asks
+for the other are declined with a 400 before any work is done.
+
 ## Endpoints
 
 All request bodies and responses are JSON. Errors are `{"ok": false, "error":
@@ -97,6 +102,7 @@ after the response.
 | `GET /scene?find=text:<s>` | Only the text runs reading exactly `<s>` (`text~:<s>` for a substring), each with its `rect` and `center`. Combines with `pane=`. See [Locating text](#locating-text) |
 | `GET /screenshot` | PNG of a complete, settled frame at physical-pixel size. The captured frame number is in the `X-Garden-Frame` header |
 | `GET /screenshot?pane=<n>` | The same, cropped to pane *n*: no tab strip, status bar, or gutter. This is the supported way to get chrome-free pixels |
+| `GET /capture?format=png\|json\|text` | One capture of the settled frame; `/scene` is `format=json` and `/screenshot` is the default (the frontend's native raster: PNG, or the character grid under `--term`). `png` carries `X-Garden-Frame` and `json` a top-level `frame` (`text` carries neither). Takes `pane=` for every format and `find=` for JSON (which `find=` alone implies). A format the frontend cannot make (`text` on a pixel frontend, `png` under `--term`) is a 400. `/scene?format=png` is a 400: use `/capture`. Feature `debug.capture` |
 | `GET /frame` | `{"ok": true, "frame": n}`, the global frame counter, answered instantly. `?min=N` adds `"reached": true/false` |
 | `GET /windows` | The open OS windows by ordinal, which is focused, and each one's pane count. See [Multiple windows](#multiple-windows) |
 | `GET /menu` | The catalog of menu actions `POST /menu` accepts |
@@ -393,7 +399,7 @@ only).
 
 ## Frame consistency
 
-`/screenshot` and `/scene` follow a settle-then-capture contract, the same in
+`/screenshot` and `/scene` (both `/capture`) follow a settle-then-capture contract, the same in
 every run mode: before the scene is built, panel frames are run in a bounded
 loop until no panel's drawn output changes, or until 10 passes. Settle passes
 run back to back with `dt ≈ 0`, so animations are not fast-forwarded, and

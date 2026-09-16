@@ -37,15 +37,20 @@
 //!                    without touching the event loop. Ask this *before*
 //!                    calling a newer endpoint or flag rather than reading a
 //!                    404 as "unsupported" — see `docs/debug-server.md`
-//! GET  /scene        the primitives of the current frame (quads + text runs),
-//!                    panels settled first (see /screenshot). ?find=text:Save
+//! GET  /capture      one capture of the settled frame (see /screenshot for the
+//!                    settle contract). ?format=png|json|text (default: the
+//!                    frontend's native raster, PNG or the --term grid);
+//!                    ?pane=<n> crops/rebases. /scene and /screenshot are its
+//!                    aliases
+//! GET  /scene        = /capture?format=json: the primitives of the current
+//!                    frame (quads + text runs). ?find=text:Save
 //!                    (exact) or ?find=text~:Sav (substring) keeps only the
 //!                    matching text runs, each with its `rect` and `center`
 //! GET  /frame        {"ok": true, "frame": n} — the global frame counter,
 //!                    answered instantly (never blocks); optional ?min=N adds
 //!                    "reached": frame >= N for easy client-side polling
 //! GET  /buffer/<n>   full text of pane n's buffer (text/plain)
-//! GET  /screenshot   PNG of a complete, settled frame rendered offscreen:
+//! GET  /screenshot   = /capture: PNG of a complete, settled frame rendered offscreen:
 //!                    panel frames are run until their output is steady, so
 //!                    the capture reflects all previously injected input; the
 //!                    captured frame number is in the X-Garden-Frame header
@@ -213,14 +218,22 @@ pub enum DebugCmd {
         values: ValueFilter,
         output: OutputRead,
     },
-    /// The current frame's primitives. `pane` restricts the dump to one pane
-    /// and rebases every coordinate onto that pane's origin, so it lines up
-    /// with `GET /screenshot?pane=<n>` without the client doing the arithmetic.
-    Scene {
+    /// One capture of the settled frame (`GET /capture`, and its aliases
+    /// `/scene` = `format=json`, `/screenshot` = the frontend's native raster).
+    /// The pane check, the settle, and the frame stamp are shared by every
+    /// format; only the serialization differs.
+    Capture {
+        /// `?pane=<n>`: crop a raster to that pane's rect, or restrict a JSON
+        /// dump to it and rebase every coordinate onto the pane's origin, so
+        /// the two line up without the client doing the arithmetic.
         pane: Option<usize>,
-        /// `?find=text:Save`: reply with only the matching primitives, each
-        /// with its measured `rect` and `center` — a locator, so a test can
-        /// click a label instead of hard-coding where it was last drawn.
+        /// `?format=png|json|text`. `None` is the frontend's native raster:
+        /// PNG, or the character grid under `--term`.
+        format: Option<CaptureFormat>,
+        /// `?find=text:Save` (JSON only): reply with only the matching
+        /// primitives, each with its measured `rect` and `center` — a locator,
+        /// so a test can click a label instead of hard-coding where it was
+        /// last drawn.
         find: Option<SceneFind>,
     },
     /// Advance every panel by `n` frames of `dt` seconds each, ignoring the
@@ -240,12 +253,6 @@ pub enum DebugCmd {
     },
     /// Restart every file-backed panel from source, discarding Petal `state`.
     PanelReset,
-    /// A PNG of the settled frame. `pane` crops it to that pane's rect — no
-    /// tab strip, no status bar, no gutter — which every harness reimplements
-    /// today, and can get wrong silently.
-    Screenshot {
-        pane: Option<usize>,
-    },
     /// The global frame counter, answered instantly (the client polls it —
     /// blocking here would tie up the event-loop thread that must keep
     /// ticking to advance the very frame being waited on). `min` is echoed
@@ -594,7 +601,88 @@ impl SceneFind {
     }
 }
 
-/// The `?pane=<n>` selector shared by `/screenshot` and `/scene`.
+/// What `GET /capture?format=` serializes the settled frame as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureFormat {
+    /// PNG bytes at physical-pixel size (`X-Garden-Frame` header).
+    Png,
+    /// The scene's primitives as JSON — what `/scene` has always answered.
+    Json,
+    /// A character grid (`text/plain`) — the terminal frontend's raster.
+    Text,
+}
+
+impl CaptureFormat {
+    /// The `?format=` spelling.
+    pub fn name(self) -> &'static str {
+        match self {
+            CaptureFormat::Png => "png",
+            CaptureFormat::Json => "json",
+            CaptureFormat::Text => "text",
+        }
+    }
+
+    fn parse(name: &str) -> Option<CaptureFormat> {
+        match name {
+            "png" => Some(CaptureFormat::Png),
+            "json" => Some(CaptureFormat::Json),
+            "text" => Some(CaptureFormat::Text),
+            _ => None,
+        }
+    }
+}
+
+/// `GET /capture` and its aliases. `alias_format` is the format the alias
+/// implies (`/scene` is JSON); an explicit `?format=` must agree with it.
+fn route_capture(
+    query: &[(String, String)],
+    path: &str,
+    alias_format: Option<CaptureFormat>,
+) -> Result<DebugCmd, (u16, String)> {
+    let explicit = query
+        .iter()
+        .find(|(k, _)| k == "format")
+        .map(|(_, v)| {
+            CaptureFormat::parse(v).ok_or_else(|| {
+                (
+                    400,
+                    format!("bad format={v:?} in {path} (expected png, json, or text)"),
+                )
+            })
+        })
+        .transpose()?;
+    let find =
+        SceneFind::from_query(query).map_err(|err| (400, format!("bad find= in {path}: {err}")))?;
+    let format = match (alias_format, explicit) {
+        (Some(a), Some(e)) if a != e => {
+            return Err((
+                400,
+                format!(
+                    "{path} is always format={}; use /capture for format={}",
+                    a.name(),
+                    e.name()
+                ),
+            ))
+        }
+        (a, e) => e.or(a),
+    };
+    // A locator narrows primitives, so it only means something for JSON; asking
+    // for it alone implies JSON rather than being silently ignored by a raster.
+    let format = match (&find, format) {
+        (Some(_), None) => Some(CaptureFormat::Json),
+        (Some(_), Some(f)) if f != CaptureFormat::Json => {
+            return Err((400, format!("find= needs format=json in {path}")));
+        }
+        (_, f) => f,
+    };
+    Ok(DebugCmd::Capture {
+        pane: pane_selector(query, path)?,
+        format,
+        find,
+    })
+}
+
+/// The `?pane=<n>` selector of `/capture` (and `/screenshot`, `/scene`).
 fn pane_selector(query: &[(String, String)], path: &str) -> Result<Option<usize>, (u16, String)> {
     query
         .iter()
@@ -615,11 +703,9 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
             output: OutputRead::from_query(&query)
                 .map_err(|err| (400, format!("bad output= in {path}: {err}")))?,
         }),
-        ("GET", "/scene") => Ok(DebugCmd::Scene {
-            pane: pane_selector(&query, path)?,
-            find: SceneFind::from_query(&query)
-                .map_err(|err| (400, format!("bad find= in {path}: {err}")))?,
-        }),
+        ("GET", "/capture") => route_capture(&query, path, None),
+        ("GET", "/scene") => route_capture(&query, path, Some(CaptureFormat::Json)),
+        ("GET", "/screenshot") => route_capture(&query, path, None),
         ("POST", "/tick") => {
             let v = if body.is_empty() {
                 Value::Null
@@ -658,9 +744,6 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
             Ok(DebugCmd::Seed { seed })
         }
         ("POST", "/panel/reset") => Ok(DebugCmd::PanelReset),
-        ("GET", "/screenshot") => Ok(DebugCmd::Screenshot {
-            pane: pane_selector(&query, path)?,
-        }),
         ("GET", "/frame") => {
             // Optional ?min=N: never blocks, just echoed back as `reached` so a
             // client poll loop is a one-liner. See the DebugCmd::Frame docs.

@@ -71,6 +71,7 @@ console.log("launching headless garden with counter panel...");
 const app = await launchGarden({
   args: ["--headless", "--init", init],
   logPath,
+  requireFeatures: ["debug.capture"],
 });
 const g = app.client;
 
@@ -136,6 +137,31 @@ for (let i = 1; i <= 10; i++) {
 
   // /frame reports the current counter instantly (the poll target for clients).
   checks.checkGe(`shot ${i}: /frame >= capture frame`, await g.frame(), frame ?? 0);
+}
+
+// --- /capture: the one capture /scene and /screenshot alias -----------------------
+// Same settle, same frame stamp, one pane check, whichever format is asked for.
+{
+  const png = await g.capture("png", { pane: 0 });
+  checks.check("capture png: image/png", png.headers.get("content-type"), "image/png");
+  checks.checkGe("capture png: X-Garden-Frame stamped", Number(png.headers.get("x-garden-frame")), lastFrame);
+  const pngPath = join(work, "capture.png");
+  await writeFile(pngPath, Buffer.from(await png.arrayBuffer()));
+  checks.check("capture png: body is a PNG", fileMagic(pngPath), "89504e47");
+
+  const json = await g.capture("json", { pane: 0 });
+  checks.check(
+    "capture json: the scene shows shown: 10",
+    json.primitives.filter((p) => p.text === "shown: 10").length,
+    1,
+  );
+  checks.checkGe("capture json: frame stamped", json.frame, lastFrame);
+
+  // A pixel frontend declines text rather than special-casing an endpoint.
+  const text = await fetch(`${g.base}/capture?format=text`);
+  checks.check("capture text on headless: declined with 400", text.status, 400);
+  const badPane = await fetch(`${g.base}/capture?format=json&pane=9`);
+  checks.check("capture with a bad pane: 400", badPane.status, 400);
 }
 
 // --- report -----------------------------------------------------------------------

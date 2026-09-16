@@ -32,7 +32,7 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--no-gate` | gated | Run the script on every frame. By default frames run under the [frame gate](frame-gate.md), as in every real host: a frame whose inputs are what the last run read is skipped, and its record carries the retained `commands` and `state` with empty `prints`. |
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
 | `--no-memo` | memoized | Run every user-function call. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
-| `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs) on stderr. |
+| `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
 
 Imports resolve relative to the app's own directory, so an app that imports a
 sibling module (`examples/games/snake/`-style layouts) runs from any working

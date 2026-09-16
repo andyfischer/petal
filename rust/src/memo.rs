@@ -130,6 +130,15 @@ pub const ARG_COMPARE_BUDGET: usize = 512;
 /// ones, per emitted value, on top of a fixed allowance.
 pub const OUTPUT_COMPARE_PER_VALUE: usize = 24;
 
+/// How many of a call site's records may be thrown away — evicted by a
+/// sweep, or replaced after a failed validation — without any of them ever
+/// being replayed, before the site stops being recorded at all. A recompute
+/// that runs once per edit (a formula tokenizer behind a revision check)
+/// records thousands of scopes that the next run evicts unused, and a scope
+/// whose arguments differ every run re-records every run; both pay for
+/// records that never come back as a replay.
+pub const COLD_AFTER_UNHIT_EVICTIONS: u32 = 3;
+
 /// A scope with more dependency entries than this is not recorded:
 /// validating it would cost about what running it does, and its record
 /// would be most of the memory the run touched.
@@ -196,6 +205,12 @@ pub struct MemoSlot {
     /// not visited by a run are evicted when it completes.
     pub visited: u64,
     pub fn_id: FunctionId,
+    /// The callsite hash this scope was entered through, with `fn_id` the key
+    /// of the cold-site table (see [`MemoTable::site_records`]).
+    pub site: u64,
+    /// Whether this record was ever replayed. A record evicted without a
+    /// single hit is what makes its site cold.
+    pub hit: bool,
     pub captures: ScopeValues,
     pub args: ScopeValues,
     pub result: Value,
@@ -220,6 +235,8 @@ pub struct OpenScope {
     /// `vm_frames.len()` with the scope's frame on top.
     pub depth: usize,
     pub fn_id: FunctionId,
+    /// The callsite the scope was entered through (see [`MemoSlot::site`]).
+    pub site: u64,
     pub captures: ScopeValues,
     pub args: ScopeValues,
     pub deps: Vec<Dep>,
@@ -272,6 +289,20 @@ pub struct MemoStats {
     pub cutoffs: u64,
     /// Records evicted for not being visited by a run.
     pub evicted: u64,
+    /// Scopes not recorded because their call site went cold — its records
+    /// kept being evicted without ever being replayed.
+    pub cold: u64,
+}
+
+/// What a call site's records have been worth, for [`MemoTable::site_records`].
+#[derive(Debug, Default, Clone)]
+struct ColdSite {
+    /// Records from this site thrown away without a replay, evicted or
+    /// replaced, since its last hit.
+    unhit_evictions: u32,
+    /// The run a cold site was last allowed one record, so a site that
+    /// becomes productive again can be noticed.
+    probed_run: u64,
 }
 
 /// One stack's memo table: the records, the scopes open right now, and the
@@ -291,6 +322,8 @@ pub struct MemoTable {
     /// The verdict of the most recent re-execution: `Some(true)` if it
     /// produced something different from its previous record.
     pub last_reexec_changed: Option<bool>,
+    /// Per-callsite record of what memoizing there has been worth.
+    cold: FastMap<(FunctionId, u64), ColdSite>,
     /// Structural-equality answers for pairs of closures compared this run.
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
@@ -328,10 +361,56 @@ impl MemoTable {
     pub fn sweep(&mut self) -> usize {
         let run = self.run;
         let before = self.slots.len();
-        self.slots.retain(|_, s| s.visited == run);
+        let mut unhit: Vec<(FunctionId, u64)> = Vec::new();
+        self.slots.retain(|_, s| {
+            let keep = s.visited == run;
+            if !keep && !s.hit {
+                unhit.push((s.fn_id, s.site));
+            }
+            keep
+        });
+        // A site whose records die unused is charged once per record: a
+        // recompute that makes thousands of them goes cold on its first run,
+        // while a widget that misses one frame in three does not.
+        for key in unhit {
+            self.cold.entry(key).or_default().unhit_evictions += 1;
+        }
         let evicted = before - self.slots.len();
         self.stats.evicted += evicted as u64;
         evicted
+    }
+
+    /// Whether a call of `fn_id` through callsite `site` should be opened as
+    /// a recording scope. False for a **cold** site: one whose records have
+    /// been evicted unreplayed often enough that recording them is a cost
+    /// with no return. Such a call still runs normally — its reads land in
+    /// the enclosing scope, exactly as a scope folded into its parent does.
+    ///
+    /// A cold site is let through once per run, so a site that becomes
+    /// productive (the recompute that now happens every frame, a branch that
+    /// started being taken) records again and clears its coldness on the
+    /// first replay.
+    pub fn site_records(&mut self, fn_id: FunctionId, site: u64) -> bool {
+        let run = self.run;
+        match self.cold.get_mut(&(fn_id, site)) {
+            None => true,
+            Some(c) if c.unhit_evictions < COLD_AFTER_UNHIT_EVICTIONS => true,
+            Some(c) if c.probed_run != run => {
+                c.probed_run = run;
+                true
+            }
+            Some(_) => false,
+        }
+    }
+
+    /// Note that the record at `path` was replayed: the site is productive,
+    /// so it is no longer cold.
+    pub fn note_hit(&mut self, path: &ScopePath) {
+        if let Some(s) = self.slots.get_mut(path) {
+            s.hit = true;
+            let key = (s.fn_id, s.site);
+            self.cold.remove(&key);
+        }
     }
 
     /// Forget everything: the program changed under the records.
@@ -339,6 +418,7 @@ impl MemoTable {
         self.slots.clear();
         self.open.clear();
         self.eq_cache.clear();
+        self.cold.clear();
     }
 
     pub fn get(&self, path: &ScopePath) -> Option<&MemoSlot> {
@@ -368,9 +448,17 @@ impl MemoTable {
         self.slots.len() < MAX_SLOTS
     }
 
-    /// Store a record, replacing any at the same path.
+    /// Store a record, replacing any at the same path. A record replaced
+    /// without ever having been replayed charges its site the same way an
+    /// eviction does: a scope that misses validation every run is paying for
+    /// records it never gets anything back from.
     pub fn insert(&mut self, path: ScopePath, slot: MemoSlot) {
-        self.slots.insert(path, slot);
+        let key = (slot.fn_id, slot.site);
+        if let Some(old) = self.slots.insert(path, slot)
+            && !old.hit
+        {
+            self.cold.entry(key).or_default().unhit_evictions += 1;
+        }
     }
 
     /// Remove and return a record.
@@ -848,6 +936,8 @@ mod tests {
             serial: 1,
             visited,
             fn_id: FunctionId(0),
+            site: 0,
+            hit: false,
             captures: ScopeValues::new(),
             args: ScopeValues::new(),
             result: Value::Nil,
@@ -911,6 +1001,60 @@ total"
         let stats = env.memo_stats(sid).unwrap();
         assert!(recorded > 0, "the calls were recorded");
         assert_eq!(stats.hits, recorded, "and every one replayed");
+    }
+
+    #[test]
+    fn a_site_whose_records_are_never_replayed_goes_cold() {
+        // Every call gets an argument it has never been called with, so no
+        // record can ever be replayed and each run throws the last run's
+        // away. After COLD_AFTER_UNHIT_EVICTIONS such rounds the site stops
+        // being recorded (one probe per run aside) instead of paying for 20
+        // records a run forever.
+        let src = format!(
+            "{SQUARE}\nstate n = 0\nn = n + 1\nlet t = 0\nfor i in range(0, 20) do t = t + square(n * 100 + i) end\nt"
+        );
+        let (mut env, sid) = env(&src);
+        let mut per_run = Vec::new();
+        for _ in 0..8 {
+            let before = env.memo_stats(sid).unwrap().records;
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+            per_run.push(env.memo_stats(sid).unwrap().records - before);
+        }
+        let stats = env.memo_stats(sid).unwrap();
+        assert_eq!(
+            stats.hits, 0,
+            "a fresh argument every call can never replay"
+        );
+        assert!(stats.cold > 0, "the site went cold: {stats:?}");
+        assert_eq!(
+            per_run[0], 20,
+            "it records everything at first: {per_run:?}"
+        );
+        assert!(
+            per_run[7] <= 1,
+            "and only probes once a run when cold: {per_run:?}"
+        );
+    }
+
+    #[test]
+    fn a_cold_site_records_again_once_it_starts_replaying() {
+        // The same shape, but the arguments settle after the site has gone
+        // cold. The once-per-run probe notices, and replays resume.
+        let src = format!(
+            "{SQUARE}\nstate n = 0\nif n < 4 then n = n + 1 end\nlet t = 0\nfor i in range(0, 20) do t = t + square(n * 100 + i) end\nt"
+        );
+        let (mut env, sid) = env(&src);
+        for _ in 0..40 {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+        }
+        let stats = env.memo_stats(sid).unwrap();
+        assert!(stats.cold > 0, "it went cold while `n` moved: {stats:?}");
+        assert!(
+            stats.hits > 0,
+            "and replays again once it settled: {stats:?}"
+        );
     }
 
     #[test]

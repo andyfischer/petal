@@ -111,7 +111,7 @@ fn main() {
     );
     let m = ui.memo_stats();
     println!(
-        "memo: hits {}  misses {}  records {}  inlined {}  effectful {}  reexecs {}  cutoffs {}  slots {}",
+        "memo: hits {}  misses {}  records {}  inlined {}  effectful {}  reexecs {}  cutoffs {}  cold {}  slots {}",
         m.hits,
         m.misses,
         m.records,
@@ -119,6 +119,7 @@ fn main() {
         m.effectful,
         m.reexecs,
         m.cutoffs,
+        m.cold,
         ui.env.memo_slots(ui.stack_id()),
     );
     println!(

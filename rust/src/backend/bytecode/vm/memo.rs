@@ -202,6 +202,7 @@ impl<'a> Vm<'a> {
         &mut self,
         fn_id: FunctionId,
         cid: ClosureId,
+        site: u64,
         args: &[Value],
         previous: Option<Box<PreviousRecord>>,
     ) {
@@ -224,6 +225,7 @@ impl<'a> Vm<'a> {
             path,
             depth: self.stack.vm_frames.len(),
             fn_id,
+            site,
             captures,
             args: args.iter().copied().collect(),
             deps: Vec::new(),
@@ -331,6 +333,8 @@ impl<'a> Vm<'a> {
             serial,
             visited: self.stack.memo.run(),
             fn_id: sc.fn_id,
+            site: sc.site,
+            hit: false,
             captures: sc.captures,
             args: sc.args,
             result,
@@ -463,6 +467,7 @@ impl<'a> Vm<'a> {
             return None;
         }
         self.stack.memo.stats.hits += 1;
+        self.stack.memo.note_hit(path);
         self.memo_replay(path, true)
     }
 
@@ -603,7 +608,7 @@ impl<'a> Vm<'a> {
         // The record is consumed: the re-execution writes a fresh one at the
         // same path, and the old one is only needed for the comparison.
         let slot = self.stack.memo.take(path)?;
-        let (fn_id, captures, args) = (slot.fn_id, slot.captures, slot.args);
+        let (fn_id, site, captures, args) = (slot.fn_id, slot.site, slot.captures, slot.args);
         let previous = PreviousRecord {
             result: slot.result,
             deps: slot.deps,
@@ -647,7 +652,7 @@ impl<'a> Vm<'a> {
         }
         frame.memo_scope = true;
         self.stack.vm_frames.push(frame);
-        self.memo_open(fn_id, cid, &args, Some(Box::new(previous)));
+        self.memo_open(fn_id, cid, site, &args, Some(Box::new(previous)));
         self.stack.memo.last_reexec_changed = None;
 
         let mut failed = false;

@@ -64,11 +64,12 @@ Open:
 
 ### P1 — what is left
 
-Shipped (2d57269, 93da89b, a327d8c): every user-function call is a scope keyed
+Shipped (2d57269, 93da89b, a327d8c, and the cold-site guard below): every
+user-function call is a scope keyed
 by call path, with probes, state/cell/host-data reads, child scopes, output,
 observations and touched keys recorded; early cutoff for write-free children;
-eviction of unvisited records; the on/off differential oracle over the
-examples corpus. Design in [memo-scopes.md](memo-scopes.md).
+eviction of unvisited records; cold sites, which stop recording where records
+are never replayed; the on/off differential oracle over the examples corpus. Design in [memo-scopes.md](memo-scopes.md).
 
 Open:
 
@@ -83,14 +84,6 @@ Open:
   table today. The plan: invalidate only the records of functions whose body
   hash changed, so editing one widget re-runs only that widget's scopes —
   incremental evaluation as a live-coding feature.
-- **Recording cost on one-shot work.** A call that misses is recorded even if
-  its record will never be replayed. The spreadsheet's formula recompute (a
-  top-level `if vrev != rev` block calling the tokenizer and evaluator) creates
-  ~30k records on the commit frame, all evicted unreplayed on the next run, and
-  that frame costs 76 ms with memoization against 50 ms without (2026-09-15,
-  `bench_panel --scenario`, see Measurements). Candidates: stop recording at a
-  call site whose records keep being evicted without a hit, or let P2's static
-  classes keep such calls out.
 - **Per-row validation cost.** ~0.4 µs per row on the 5,000-row list, most of
   it re-evaluating `hovered`. P2 and P3 address this rather than P1.
 - **Optional hints, only if needed:** `@nomemo` on a function; `key` on `for`
@@ -237,17 +230,28 @@ is the same bench built at da0fb18, and lands within 1–4% of both layers off):
 | Scenario | pre-P0 | both off | gate only | memo only | both on |
 |---|---|---|---|---|---|
 | idle (no input) | 1,119 | 1,156 | 3 | 1,061 | 7 |
-| hover (pointer drifting over the grid) | 1,150 | 1,168 | 1,166 | 1,004 | 1,116 |
-| navigate (an arrow key every 8 frames) | 1,123 | 1,174 | 288 | 1,001 | 257 |
-| edit (type `=SUM(B1:E1)` and commit, repeated) | 2,208 | 2,242 | 1,780 | 3,574 | 3,047 |
-| mixed session (hover, navigate, edit, pause) | 1,231 | 1,236 | 550 | 1,162 | 539 |
+| hover (pointer drifting over the grid) | 1,150 | 1,168 | 1,166 | 1,004 | 1,059 |
+| navigate (an arrow key every 8 frames) | 1,123 | 1,174 | 288 | 1,001 | 269 |
+| edit (type `=SUM(B1:E1)` and commit, repeated) | 2,208 | 2,242 | 1,728 | 3,574 | 1,855 |
+| mixed session (hover, navigate, edit, pause) | 1,231 | 1,236 | 550 | 1,162 | 495 |
 
-The gate does the work here: it cuts idle to nothing and navigation and the
-mixed session by ~55–75%. Memoization gains only ~5–10% on a frame that runs
-(p50 1.87 → ~1.65 ms), because the app is one long top-level script with few
-calls worth replaying, and it makes editing worse through the recording cost
-above (worst frame 306 → 654 ms). Pointer-driven frames all run: the gate has
-no probe cutoff yet.
+The scenarios are checked in at `examples/productivity/spreadsheet/bench/`.
+The gate does the work here: it cuts idle to nothing, and navigation and the
+mixed session by ~55–75%. Memoization gains ~10–15% on a frame that runs
+(p50 1.84 → 1.63 ms), well under what it gives the other examples (a 2–2.5×
+cut on the analytics dashboard, notes and kanban under `monkey:7`), because
+this app is one long top-level script with few calls worth replaying.
+Pointer-driven frames all run: the gate has no probe cutoff yet.
+
+The `edit` column is what the cold-site guard fixed. Before it, memoization
+made editing *worse* than no memoization at all — 3,047 ms against 1,780, and
+a worst frame of 654 ms against 306 — because the formula recompute records
+~30k scopes per commit that the next run evicts unreplayed. Memoized editing
+now costs 1,855 ms against 1,728, and the worst frame 358 ms against 299: the
+recompute pays the recording cost on its first commit or two and then its
+sites go cold. Closing the rest of that gap means not paying it the first
+time either, which is P2's job (a class-based decision made at compile time
+rather than learned at runtime).
 
 **Targets for the rest** (5,000-row list, script time, estimates):
 

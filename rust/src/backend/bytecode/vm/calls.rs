@@ -433,7 +433,16 @@ impl<'a> Vm<'a> {
         // synchronously (intrinsics, the host), and calls whose result the
         // caller mutates in place (`memoize` false), are not scopes; their
         // reads land in whatever scope encloses them.
+        // A site whose records keep dying unreplayed stops being recorded:
+        // the recording is all cost there (`MemoTable::site_records`).
         let scope = self.memo && memoize && dst.is_some() && !self.stack.memo.poisoned;
+        let scope = scope && {
+            let records = self.stack.memo.site_records(fn_id, site);
+            if !records {
+                self.stack.memo.stats.cold += 1;
+            }
+            records
+        };
         if scope {
             let caller = self.stack.vm_frames.len() - 1;
             if let Some(value) = self.memo_try(&frame.path, fn_id, cid, args) {
@@ -472,7 +481,7 @@ impl<'a> Vm<'a> {
         frame.memo_scope = scope;
         self.stack.vm_frames.push(frame);
         if scope {
-            self.memo_open(fn_id, cid, args, None);
+            self.memo_open(fn_id, cid, site, args, None);
         }
         Ok(())
     }

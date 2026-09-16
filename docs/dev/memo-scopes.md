@@ -85,6 +85,20 @@ of a `state` slot inside a scope (`StateWrite.mutated`) makes the scope
 effectful, since the slot already holds the edited object and no comparison
 could tell.
 
+**Cold sites.** Recording is not free, and a record only pays for itself when
+it is replayed. A site whose records keep being thrown away unreplayed —
+evicted by a sweep, or replaced after a failed validation —
+`COLD_AFTER_UNHIT_EVICTIONS` times since its last hit stops being recorded at
+all (`MemoTable::site_records`, keyed by function and callsite). Such a call
+runs normally and its reads land in the enclosing scope, exactly as a folded
+scope's do. A cold site is let through once per run, so one that becomes
+productive again — the recompute that now happens every frame, a branch that
+started being taken — records again and clears its coldness on the first
+replay. Without this a one-shot recompute pays the recording cost every time
+it runs: the spreadsheet's formula evaluator records ~30k scopes on the frame
+that commits an edit and the next run evicts all of them, which cost more than
+memoization saved on the rest of that app.
+
 **Lifecycle.** Records are evicted when a run completes without visiting
 them, the rule the state sweep applies. A program transfer (hot reload)
 clears the table, since records name the old program's functions. Forcing a
@@ -114,7 +128,8 @@ scenario with the frame gate off, must produce identical commands, state and
 observations frame for frame with memoization on and off. `rust/src/memo.rs`
 has the model's unit tests and end-to-end checks through `Env::run`.
 `petal-ui-run --memo-stats` prints hits, misses, records, inlined, effectful,
-re-executions and cutoffs — the first thing to look at when a widget that
+re-executions, cutoffs, cold-site skips and evictions — the first thing to
+look at when a widget that
 should replay keeps running (an `effectful` count that grows every frame
 means something in it prints or draws randomness).
 

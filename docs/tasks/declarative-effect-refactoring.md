@@ -1,6 +1,9 @@
 # Declare what a native does, instead of inferring it at runtime
 
-Status: **proposed**, 2026-09-16. Not started.
+Status: **in progress**, 2026-09-16. Sequencing step 1 (the oracle over Garden
+and worlds-fair) is done — see [What the oracle found](#what-the-oracle-found).
+The task itself (steps 1–5 of [Migration](#migration-in-five-steps-that-each-stand-alone))
+is not started.
 
 Prerequisite for P2 of [the reactive rendering plan](../dev/reactive-rendering-plan.md).
 See [Sequencing](#sequencing) for how it interleaves with the rest of that plan.
@@ -33,6 +36,11 @@ What exists instead is three partial mechanisms, none of them authoritative:
    (`query.rs`, `panel.rs`) and one in `petal-ui/src/host_data.rs` — against
    roughly **365 registered natives**: 111 core, 94 in petal-ui, 114 in
    worlds-fair, 33 in Garden, 13 in the integrations.
+
+   (Counted since: the real total is **253**, and worlds-fair registers 8 rather
+   than 114 — see [A count in this document was wrong](#a-count-in-this-document-was-wrong).
+   There are now nine `note_*` call sites, the five added by sequencing step 1
+   included.)
 
 The plan's hazard table states the contract plainly — *"Any new native that
 reaches host state must do one or the other"* — and nothing enforces it. A
@@ -111,9 +119,9 @@ heuristic); this row is about correctness and class, not economics.
 
 ### Migration, in five steps that each stand alone
 
-The ~365 registration sites span five repositories, two of which
-(`~/worlds-fair`, `~/garden`) are not in this tree. So the row cannot be made
-mandatory in one commit, and it does not need to be.
+The 253 registration sites span five repositories, one of which
+(`~/worlds-fair`) is not in this tree — Garden is, at `garden/`. So the row
+cannot be made mandatory in one commit, and it does not need to be.
 
 1. **Add the row without requiring it.** `NativeEffects::UNDECLARED` is the
    default; `register_with(name, func, effects)` sits beside the existing
@@ -134,7 +142,9 @@ mandatory in one commit, and it does not need to be.
    `UNDECLARED` natives that were seen doing something. This is the tool a
    host uses to migrate, and it is what turns "did we remember?" into a
    question with an answer. Point it at Garden and worlds-fair first: those
-   114 + 33 natives are where the four-call-site gap actually lives.
+   8 + 33 natives are where the gap actually lives — sequencing step 1 found
+   five undeclared among them statically, and a runtime audit should find at
+   least those.
 5. **Declare the ecosystem, then drop the fallback.** petal-ui, then Garden,
    then the integrations and worlds-fair. Once every registration site is
    declared, `UNDECLARED` becomes a hard error at registration and the
@@ -164,11 +174,18 @@ cargo test -p petal-ui --test memo
 cargo test -p petal --lib memo::
 ```
 
-Plus, per the reactive plan's outstanding hazard: the same differential run
-over the scripts in `~/garden`, `~/.garden` and `~/worlds-fair/ui/ptl`, which
-**no layer has yet been checked against** (see
-[reactive-rendering-plan.md](../dev/reactive-rendering-plan.md) hazard table,
-"Correctness: a missed dependency is a stale pixel").
+The corpus those two run over now includes Garden's example panels and GPP
+apps (`petal-ui/tests/common/mod.rs`), so the reactive plan's outstanding
+hazard — "no layer has yet been checked against the real codebases" — is
+closed for the in-tree half. worlds-fair is out of tree and needs a generated
+bundle and fixture models, so it runs on demand:
+
+```bash
+cd petal-ui && cargo build --release
+cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
+./ts/bin/oracle-external.ts
+./ts/bin/native-effect-audit.ts
+```
 
 Performance is a secondary check — this is a correctness and structure change
 first — but step 5 should show up as a small win on native-heavy frames, where
@@ -181,6 +198,89 @@ cd petal-ui && cargo run --release --example bench_panel -- \
 
 The real payoff is not measured here; it is that P2 becomes buildable.
 
+## What the oracle found
+
+Sequencing step 1, done 2026-09-16. The gate and memo differentials now cover
+Garden (in-tree, in CI) and worlds-fair (out of tree, on demand). **Every
+differential passes**: across 36 in-tree apps and 12 worlds-fair fragments,
+gate-on, memo-on and both reproduce the ungated unmemoized frames exactly. No
+staleness bug was found in either shipped layer.
+
+Four other things were, and three of them are the reason this task exists.
+
+### Five natives reached host state without declaring it
+
+The full list, from `./ts/bin/native-effect-audit.ts` — a static approximation
+of step 4's runtime `--effect-audit`, checked in so the question has an answer
+before the real tool exists:
+
+| Native | Reaches | Owed | Consequence |
+|---|---|---|---|
+| `panel_store_get` | the host's panel store | `note_host_read` | a replayed scope serves a stale value |
+| `panel_store_set` | the host's panel store | `note_effect` | **a replayed scope silently stops persisting** |
+| `invalidate` | the query cache | `note_effect` | a replayed scope never invalidates, so the pane is served the stale entry forever |
+| `load_text_file` | the filesystem | `note_host_read` | a replayed scope serves stale file contents |
+| `save_text_file` | the filesystem | `note_effect` | a replayed scope silently stops writing |
+
+All five are declared now. `panel_store_set` is the one worth reading twice: it
+was already marked `NativeClass::Effectful`, with a comment explaining why —
+and that did nothing for the memo, because `NativeClass` is the
+Pending-argument policy and not an effect classification. It is the first
+claim of this document, found in the wild by looking. A native that *looks*
+declared and is not is worse than one that plainly is not.
+
+The mechanism, for the record: `memo_note_native` classifies by diffing the
+activity counters around the call. A native that moves none of them records
+nothing, so its enclosing scope memoizes as a pure function of its arguments
+and captures, and on the next frame the scope is replayed — the native is not
+called at all.
+
+### Reading `frame_count()` costs an app the frame gate, and the ecosystem does it
+
+`frame_count` is a binding that changes every frame by definition, so a script
+that reads it can never satisfy the gate. Four Garden GPP apps
+(`garden_diff`, `git_panel`, `ok`, `db_view`) and **every** worlds-fair screen
+do, usually as a once-per-frame cache key — worlds-fair's Garden host shim
+stores `frame_count()` into a `state` cell to compute the fixture once per
+frame, which also leaves the frame permanently `StateUnsettled`.
+
+The measured effect: across 45-frame monkey runs, every worlds-fair fragment
+skips **zero** frames. The gate is not wrong; it is bypassed. Nothing in the
+in-tree `examples/` tree uses this idiom, which is why shipping the gate
+against that corpus alone did not reveal it.
+
+This is a live input to **P2**: a dependency-class pass that does not give the
+frame counter a class of its own will conclude that these scripts depend on
+everything.
+
+### The corpus was passing vacuously in three ways
+
+Each of these read as green while testing nothing, and each is now an
+assertion rather than a hope:
+
+- Three Garden GPP apps failed to resolve `bloom` and produced *empty* traces.
+  Two empty traces compare equal. `common::assert_corpus_is_live` now requires
+  every corpus app to draw on some frame.
+- Every worlds-fair fragment drew two commands a frame — the "waiting for the
+  game…" path — because `panel_stubs`' `query` answers a loading `Pending`
+  forever and nothing supplied a model. `petal-ui-run --query-fixtures` (and
+  `wf-ui --print-fixtures` upstream) now supply the real fixture models; the
+  same fragments draw 53–363 commands a frame. `oracle-external.ts` fails a
+  fragment that falls back under 10.
+- The stub `query` did not call `note_host_read()`, though the Garden native it
+  stands in for does. A stub that under-declares relative to its native hides
+  exactly the staleness this corpus exists to find.
+
+### A count in this document was wrong
+
+worlds-fair registers **8** natives, not 114 — the four host-seam functions
+(`wf_model`, `wf_fragments`, `wf_action`, `wf_goto`) plus the Garden stub's
+four. The `wf_*` names that look like natives are Petal functions in
+`lib/*.ptl`. The ecosystem total is **253** registered natives, not ~365:
+112 core, 93 petal-ui, 33 Garden, 8 worlds-fair, 7 integrations. That makes
+step 5 materially smaller than planned, and it moves where the work is: 95 of
+the 112 undeclared natives are in the core, where step 2 already puts them.
+
 ## Sequencing
 
 This lands *between* P1 and P2, not after them, because P2 consumes its
@@ -189,7 +289,7 @@ layer (**B**) and a named run policy (**C**) — identified in the same review.
 
 | # | Work | Why here |
 |---|---|---|
-| 1 | **Run the gate/memo oracle over Garden and worlds-fair** | Outstanding correctness debt on *shipped* layers. Do it before adding a third. It also produces the list of undeclared host natives that step 4 above needs. |
+| 1 | ~~**Run the gate/memo oracle over Garden and worlds-fair**~~ **done** | Outstanding correctness debt on *shipped* layers. Do it before adding a third. It also produces the list of undeclared host natives that step 4 above needs. Both differentials pass; five undeclared natives found and fixed; see [What the oracle found](#what-the-oracle-found). |
 | 2 | **C — a named `RunPolicy` in place of `OptFlags`** | Small, and it is a tool for everything after it: `fast` / `explain` / `baseline` / `replay` as named modes makes the differential oracle a one-word argument instead of an env var plus a comment. Worth having *before* the work that leans on it, not after. |
 | 3 | **A — this task, steps 1–3** ∥ **P1's top-level body and loop bodies** | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
 | 4 | **A steps 4–5** ∥ **E — a shared host frame driver** | The ecosystem migration is mostly other repos and can proceed at its own pace. E consolidates the gate → run → retain → invalidate loop that five hosts hand-wire, so P0's remaining work lands once instead of five times. |
@@ -203,7 +303,8 @@ Two ordering constraints are hard rather than preferential:
   counters. Building P2 on inference means building it twice.
 - **The oracle (1) before anything new lands.** Three layers will shortly be
   validating each other's assumptions; the corpus they are validated against
-  should first include the two largest real Petal codebases, which it does not.
+  should first include the two largest real Petal codebases. It now does, and
+  nothing new should land against the old corpus.
 
 `D` — formalizing the passive observers (`explain` trace, observations,
 profiler, absorption log, emit origins) behind the existing single

@@ -180,6 +180,12 @@ fn native_query(cxt: &mut PetalCxt) -> Result<u32, String> {
 fn native_invalidate(cxt: &mut PetalCxt) -> Result<u32, String> {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_string(2)?;
+    // Dropping a cache entry is an effect no replay reproduces. Without this
+    // the call leaves the activity counters untouched, so a scope containing
+    // it memoizes as a pure function of its arguments and is replayed — and a
+    // replayed `invalidate` never runs, which means the pane that asked for
+    // fresh data keeps being served the stale entry, forever.
+    cxt.note_effect();
     QUERY_PROVIDER.with(|p| {
         if let Some(provider) = p.borrow_mut().as_mut() {
             provider.invalidate(&kind, &arg);

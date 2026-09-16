@@ -233,6 +233,10 @@ pub(crate) fn register_store(env: &mut Env) {
 /// stored that key.
 fn native_store_get(cxt: &mut PetalCxt) -> NativeResult {
     let key = cxt.get_string(1)?;
+    // The answer comes from the host's store, which the binding table does not
+    // cover: the gate and the memo must know this run depends on something
+    // only the host can see change.
+    cxt.note_host_read();
     let found = ACTIVE.with(|s| {
         s.borrow()
             .as_ref()
@@ -251,6 +255,11 @@ fn native_store_get(cxt: &mut PetalCxt) -> NativeResult {
 /// `panel_store_set(key, value)` — persist a string under `key` for this
 /// script. `nil` deletes the key. Returns nil.
 fn native_store_set(cxt: &mut PetalCxt) -> NativeResult {
+    // A write to the host's store is an effect. `NativeClass::Effectful` below
+    // does *not* say so — it is the Pending-argument policy, consulted only
+    // when an argument is actually Pending — so without this the write is
+    // invisible to the memo and a replayed scope silently stops persisting.
+    cxt.note_effect();
     let key = cxt.get_string(1)?;
     let value = match cxt.get_value(2)? {
         Value::Nil => None,

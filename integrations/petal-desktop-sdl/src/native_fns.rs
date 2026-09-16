@@ -129,6 +129,8 @@ fn safe_path(path: &str) -> Option<std::path::PathBuf> {
 }
 
 fn native_load_text_file(state: &mut PetalCxt) -> NativeResult {
+    // The file is host state the runtime cannot see change.
+    state.note_host_read();
     let path = state.get_string(1)?;
     let text = match safe_path(&path) {
         Some(p) => std::fs::read_to_string(&p).unwrap_or_default(),
@@ -139,6 +141,8 @@ fn native_load_text_file(state: &mut PetalCxt) -> NativeResult {
 }
 
 fn native_save_text_file(state: &mut PetalCxt) -> NativeResult {
+    // Writing a file is an effect; a replayed scope must not skip it.
+    state.note_effect();
     let path = state.get_string(1)?;
     let content = state.get_string(2)?;
     let ok = match safe_path(&path) {

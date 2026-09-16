@@ -140,6 +140,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // one event-loop visit, replying `{ok, results}`; a step's own `select=`
     // projects the settled snapshot right after it.
     "debug.batch",
+    // `/state`'s `panes[].panel.frame_stats`: the frame gate's run/skip counts
+    // and last run reason, and the memo table's counters, read from the
+    // panel-frame core Garden shares with petal-ui's harness.
+    "state.panel-frame-stats",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

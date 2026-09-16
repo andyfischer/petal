@@ -19,6 +19,30 @@ export interface Cursor {
   col: number;
 }
 
+/** A panel's frame-gate and memo counters, cumulative since its host was
+ *  created (a hot reload starts them over). */
+export interface PanelFrameStats {
+  gate: boolean;
+  frames_run: number;
+  frames_skipped: number;
+  last_frame_skipped: boolean;
+  /** `no_record`, `forced`, `binding_changed:<name>`, `host_data_changed`,
+   *  `state_unsettled`, `rng_consumed`, `resources_changed`; null after a skip. */
+  last_run_reason: string | null;
+  memo: {
+    enabled: boolean;
+    hits: number;
+    misses: number;
+    records: number;
+    inlined: number;
+    effectful: number;
+    reexecs: number;
+    cutoffs: number;
+    evicted: number;
+    cold: number;
+  };
+}
+
 export interface PaneState {
   kind: string;
   rect: Rect;
@@ -42,6 +66,8 @@ export interface PaneState {
     frame?: number;
     awake?: boolean;
     error?: string | null;
+    /** Frame-gate and memo counters (feature `state.panel-frame-stats`). */
+    frame_stats?: PanelFrameStats;
   } | null;
 }
 

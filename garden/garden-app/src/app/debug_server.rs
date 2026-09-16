@@ -625,6 +625,11 @@ impl App {
                         })),
                         "error": pv.error(),
                         "input": panel_input_json(pv.input_snapshot()),
+                        // The frame gate's and memo table's counters, from the
+                        // panel-frame core petal-ui's harness shares: how many
+                        // frames ran versus were skipped, why the last one
+                        // ran, and memoized-scope hits and misses.
+                        "frame_stats": pv.frame_stats_json(),
                     })),
                     "file": pane.file,
                     "title": pane.view.title(),
@@ -1625,6 +1630,35 @@ mod tests {
             before + 30,
             "the script's own counter advanced once per ticked frame"
         );
+    }
+
+    /// `/state` reports each panel's frame-gate and memo counters, read from
+    /// the panel-frame core: a still panel is skipped by the gate, a counting
+    /// one runs every frame and says why.
+    #[test]
+    fn state_reports_panel_frame_stats() {
+        let stats = |app: &mut App| {
+            let state = state_with(app, "/state");
+            panel_of(&state)["frame_stats"].clone()
+        };
+
+        let (mut still, _f) = panel_app("let shown = 1\n");
+        still.advance_panels(10, 0.016, true);
+        let s = stats(&mut still);
+        assert!(s["frames_run"].as_u64().unwrap() >= 1, "{s}");
+        assert!(
+            s["frames_skipped"].as_u64().unwrap() >= 1,
+            "an unchanging panel is skipped by the gate: {s}"
+        );
+        assert_eq!(s["gate"], true);
+        assert!(s["memo"]["hits"].is_u64() && s["memo"]["records"].is_u64(), "{s}");
+
+        let (mut counting, _g) = panel_app("state n = 0\nn = n + 1\nlet seen = n\n");
+        counting.advance_panels(10, 0.016, true);
+        let s = stats(&mut counting);
+        assert_eq!(s["frames_skipped"], 0, "{s}");
+        assert_eq!(s["last_frame_skipped"], false);
+        assert_eq!(s["last_run_reason"], "state_unsettled", "{s}");
     }
 
     /// A ticked panel keeps ticking past the wake window: `/tick` ignores it

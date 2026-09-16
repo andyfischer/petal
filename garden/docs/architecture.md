@@ -221,7 +221,10 @@ color_theme({                    // override any subset of the scheme's colors
   Color Scheme menu persists.
 
 The panel runtime (`panel.rs`: `PanelHost`, `PanelCmd`, `PanelInput`) runs
-one Petal VM per panel on petal-ui's input and draw natives, with Garden's
+one Petal VM per panel on petal-ui's input and draw natives. `PanelHost` is
+built on `petal_ui::frame_core::FrameCore` — the env and stack, input, clock,
+seed, frame gate and memo counters that petal-ui's `harness::Headless` also
+wraps — and plugs Garden's channels into its frame through `FrameHooks`, with Garden's
 additions (`emit`, `mutate`, `navigate`, `text_view`, `edit_view`, `palette`,
 `claim_key`, `request_frame`, the panel store). `query.rs` is the async
 `query` / `invalidate` channel over Petal's pending values; `panel_trace.rs`

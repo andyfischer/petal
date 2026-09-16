@@ -1,8 +1,8 @@
 //! A headless driver for testing widget logic with no renderer attached.
 //!
-//! Mirrors the standard host frame contract exactly (bind input → gate →
-//! reset → run → drain), so behavior verified here matches what a real
-//! embedder sees. Time advances only through [`Headless::frame`]'s fixed `dt`,
+//! A thin wrapper over [`crate::frame_core::FrameCore`], the same frame core
+//! Garden's panels run on (bind input → gate → reset → run → drain), so
+//! behavior verified here matches what a real embedder sees. Time advances only through [`Headless::frame`]'s fixed `dt`,
 //! making multi-click and animation tests deterministic.
 //!
 //! The *gate* is the runtime's frame gate ([`petal::env::Env::run_needed`]):
@@ -24,24 +24,25 @@
 //! assert_eq!(ui.state()["hits"], 1);
 //! ```
 
+use std::ops::{Deref, DerefMut};
+
 use petal::env::Env;
-use petal::program::ProgramId;
-use petal::run_deps::RunReason;
-use petal::stack::StackKey;
-use petal::value::Value;
 
 use crate::draw::{self, DrawCommand};
-use crate::host_data::{self, DataProvider};
-use crate::input::{self, InputEvent, InputState};
+use crate::frame_core::FrameCore;
+use crate::input::{self, InputEvent};
 
 /// Fixed per-frame dt (60 fps) so tests are deterministic.
 pub const FRAME_DT: f64 = 1.0 / 60.0;
 
+/// A test driver over the shared [`FrameCore`]: the core owns the env, the
+/// stack, input, the gate and memo counters, providers, and the seed; this
+/// wrapper adds a deterministic fixed-`dt` clock and keeps each frame's draw
+/// commands. It dereferences to the core, so `ui.env`, `ui.gate`,
+/// `ui.frames_run`, `ui.set_seed(…)` and the rest read as fields of the
+/// harness.
 pub struct Headless {
-    pub env: Env,
-    pub input: InputState,
-    program_id: ProgramId,
-    stack_id: StackKey,
+    core: FrameCore,
     frame_count: i64,
     /// Absolute clock (seconds) published to the script as `time()` each frame.
     ///
@@ -64,32 +65,19 @@ pub struct Headless {
     origin_frame: i64,
     /// Draw commands produced by the most recent [`frame`](Self::frame).
     pub commands: Vec<DrawCommand>,
-    /// Value returned by the most recent run.
-    pub result: Value,
-    /// Host data source for the `host_data` native, swapped into the
-    /// thread-local channel around each run (see [`set_data_provider`](Self::set_data_provider)).
-    provider: Option<DataProvider>,
-    /// Font source for the `font` / `fonts` / `text_width` natives, swapped in
-    /// around each run the same way (see
-    /// [`set_font_source`](Self::set_font_source)).
-    fonts: Option<draw::FontProvider>,
-    /// Whether [`frame`](Self::frame) skips a run the runtime's frame gate
-    /// says would reproduce the last one (on by default, as in a real host).
-    /// Off, every frame runs the script — the reference behavior the gated
-    /// path is checked against.
-    pub gate: bool,
-    /// Whether runs memoize user-function calls (`petal::memo`; on by
-    /// default, as in a real host). Off, every call runs — the reference the
-    /// memoized path is checked against. Applied to the env on each frame.
-    pub memo: bool,
-    /// Whether the most recent [`frame`](Self::frame) skipped its run and
-    /// served the retained output.
-    pub last_frame_skipped: bool,
-    /// Why the most recent frame ran, when it ran (`None` after a skip).
-    pub last_run_reason: Option<RunReason>,
-    /// Frames that ran the script / frames the gate skipped, since creation.
-    pub frames_run: u64,
-    pub frames_skipped: u64,
+}
+
+impl Deref for Headless {
+    type Target = FrameCore;
+    fn deref(&self) -> &FrameCore {
+        &self.core
+    }
+}
+
+impl DerefMut for Headless {
+    fn deref_mut(&mut self) -> &mut FrameCore {
+        &mut self.core
+    }
 }
 
 impl Headless {
@@ -154,55 +142,21 @@ impl Headless {
             None => env.load_program(source)?,
         };
         let stack_id = env.create_stack(program_id)?;
-        let env_memo = env.opt_flags().memo_scopes;
+        let mut core = FrameCore::new(env, program_id, stack_id);
+        core.set_clock(0.0);
         Ok(Self {
-            env,
-            input: InputState::new(),
-            program_id,
-            stack_id,
+            core,
             frame_count: 0,
             time: 0.0,
             time_origin: 0.0,
             origin_frame: 0,
             commands: Vec::new(),
-            result: Value::Nil,
-            provider: None,
-            fonts: None,
-            gate: true,
-            memo: env_memo,
-            last_frame_skipped: false,
-            last_run_reason: None,
-            frames_run: 0,
-            frames_skipped: 0,
         })
     }
 
-    /// The compiled app's program id (module programs have their own).
-    pub fn program_id(&self) -> ProgramId {
-        self.program_id
-    }
-
-    /// The stack the app runs on.
-    pub fn stack_id(&self) -> StackKey {
-        self.stack_id
-    }
-
-    /// Ask the gate to run the next frame regardless of what changed — what a
-    /// host does after replacing the data provider or editing state from
-    /// outside (see [`petal::env::Env::invalidate_run`]).
-    pub fn invalidate(&mut self) {
-        self.env.invalidate_run(self.stack_id);
-    }
-
-    /// Attach a host data source for the `host_data(kind, arg)` native. It is
-    /// swapped into the thread-local channel for the duration of each
-    /// [`frame`](Self::frame), mirroring how a real embedder wires its
-    /// provider around `env.run`.
-    pub fn set_data_provider(&mut self, provider: DataProvider) {
-        self.provider = Some(provider);
-        // Answers may differ from the previous provider's, which the gate
-        // cannot see: run the next frame.
-        self.env.note_host_data_changed(self.stack_id);
+    /// The shared frame core this harness wraps.
+    pub fn core(&self) -> &FrameCore {
+        &self.core
     }
 
     /// Attach a font source for the `font(name)` / `fonts()` natives and the
@@ -214,12 +168,7 @@ impl Headless {
     /// see the first one's answers; this clears that cache.
     pub fn set_font_source(&mut self, fonts: draw::FontProvider) {
         draw::clear_font_cache();
-        self.fonts = Some(fonts);
-    }
-
-    /// Feed one input event (applied to the *next* frame's snapshot).
-    pub fn event(&mut self, ev: InputEvent) {
-        self.input.event(ev);
+        self.core.set_font_source(fonts);
     }
 
     pub fn mouse_move(&mut self, x: i32, y: i32) {
@@ -289,43 +238,18 @@ impl Headless {
             self.origin_frame = self.frame_count;
         }
         self.frame_count += 1;
-        self.input.begin_frame(FRAME_DT);
-        input::bind_frame_info(&mut self.env, FRAME_DT, self.frame_count);
-        input::bind_time(&mut self.env, self.time);
-        input::bind_input(&mut self.env, &self.input);
-        // The gate: with every input bound, ask whether a run could differ
-        // from the last one. If not, the retained commands *are* this frame.
-        // The clock still advances, exactly as it would around a run.
-        let reason = self.env.run_needed_reason(self.stack_id);
-        if self.gate && reason.is_none() {
-            self.time = self.clock_at(self.frame_count);
-            self.last_frame_skipped = true;
-            self.last_run_reason = None;
-            self.frames_skipped += 1;
-            return Ok(&self.commands);
-        }
-        self.last_frame_skipped = false;
-        self.last_run_reason = reason;
-        self.frames_run += 1;
-        self.env.set_memo_scopes(self.memo);
-        draw::clear_draw_commands(&mut self.env);
-        draw::reset_canvas_ids(&mut self.env);
-        self.env.reset_stack(self.stack_id)?;
-        // Make the data provider reachable from the `host_data` native for this
-        // run, then take it back (with any cache it updated) afterwards.
-        let saved = host_data::swap_data_provider(self.provider.take());
-        let saved_fonts = draw::swap_font_provider(self.fonts.take());
-        let run = self.env.run(self.stack_id);
-        self.fonts = draw::swap_font_provider(saved_fonts);
-        self.provider = host_data::swap_data_provider(saved);
+        self.core.set_clock(self.time);
+        let run = self.core.frame(FRAME_DT, self.frame_count, &mut ());
         // The harness clock moves in lockstep with the fixed `dt` it just
         // published, so animation written against `time()` (the prelude's
         // `spinner`, `elapsed`) actually runs in a headless trace. It advances
-        // even if the frame failed: a run's clock stays a function of how many
-        // frames were attempted, never of the wall clock.
+        // on a skipped frame and even if the frame failed: a run's clock stays
+        // a function of how many frames were attempted, never of the wall
+        // clock.
         self.time = self.clock_at(self.frame_count);
-        self.result = run?;
-        self.commands = draw::take_draw_commands(&mut self.env);
+        if run? == crate::frame_core::FrameRun::Ran {
+            self.commands = draw::take_draw_commands(&mut self.core.env);
+        }
         Ok(&self.commands)
     }
 
@@ -335,17 +259,6 @@ impl Headless {
             self.frame()?;
         }
         Ok(())
-    }
-
-    /// The memo counters of the app's stack (hits, misses, records, …), see
-    /// [`petal::memo::MemoStats`].
-    pub fn memo_stats(&self) -> petal::memo::MemoStats {
-        self.env.memo_stats(self.stack_id).unwrap_or_default()
-    }
-
-    /// All `state` variables as a JSON map keyed by (module-qualified) name.
-    pub fn state(&self) -> serde_json::Map<String, serde_json::Value> {
-        self.env.get_state_json(self.program_id, self.stack_id)
     }
 
     /// Convenience: an integer `state` variable by name.

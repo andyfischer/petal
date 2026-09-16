@@ -29,24 +29,22 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
 
 use indexmap::IndexMap;
 use petal::direct_manipulation::{self, ManipulationGoal};
 use petal::env::Env;
 use petal::heap::Heap;
 use petal::native_fn::{NativeResult, PetalCxt};
-use petal::program::ProgramId;
-use petal::stack::StackKey;
 use petal::static_value::StaticValue;
 use petal::value::Value;
 use petal_ui::draw::DrawCommand;
+use petal_ui::frame_core::{FrameCore, FrameHooks, FrameRun, FrameStats};
 use petal_ui::host_data;
 use petal_ui::input::{
-    self, InputState, SYM_BUTTONS_DOWN, SYM_BUTTONS_PRESSED, SYM_BUTTONS_RELEASED, SYM_CLICK_COUNT,
-    SYM_DRAG_ACTIVE, SYM_DRAG_START_X, SYM_DRAG_START_Y, SYM_KEYS_DOWN, SYM_KEYS_PRESSED,
-    SYM_KEYS_RELEASED, SYM_MODIFIERS, SYM_MOUSE_X, SYM_MOUSE_Y, SYM_SCROLL_X, SYM_SCROLL_Y,
-    SYM_TEXT_INPUT,
+    SYM_BUTTONS_DOWN, SYM_BUTTONS_PRESSED, SYM_BUTTONS_RELEASED, SYM_CLICK_COUNT, SYM_DRAG_ACTIVE,
+    SYM_DRAG_START_X, SYM_DRAG_START_Y, SYM_KEYS_DOWN, SYM_KEYS_PRESSED, SYM_KEYS_RELEASED,
+    SYM_MODIFIERS, SYM_MOUSE_X, SYM_MOUSE_Y, SYM_SCROLL_X, SYM_SCROLL_Y, SYM_TEXT_INPUT,
 };
 
 /// Re-exported from [`petal_ui`] so the host (`garden-app`) can translate its
@@ -1050,9 +1048,11 @@ type FileSig = (SystemTime, u64);
 /// (preserving Petal `state` vars via `env.transfer_state`, like the layout
 /// host). Not `Send`.
 pub struct PanelHost {
-    env: Env,
-    program_id: ProgramId,
-    stack_id: StackKey,
+    /// The shared per-frame core — env, stack, input accumulator, clock, seed,
+    /// the frame gate and memo counters, and the data/font providers — the same
+    /// one `petal_ui::harness::Headless` wraps. Everything below it is Garden's
+    /// extension layer, plugged into the core's frame through [`FrameHooks`].
+    core: FrameCore,
     path: PathBuf,
     /// Whether [`path`](Self::path) is a real script file to hot-reload from.
     /// False for a [`from_source`](Self::from_source) host, whose `path` is a
@@ -1061,11 +1061,6 @@ pub struct PanelHost {
     disk_backed: bool,
     last_sig: Option<FileSig>,
     output: Vec<String>,
-    /// The standard input contract's accumulator: the host feeds it normalized
-    /// [`InputEvent`]s as they arrive ([`input_event`](Self::input_event)) and
-    /// [`frame`](Self::frame) promotes them to the per-frame edge/level snapshot
-    /// scripts read through the `mouse_*`/`key_*`/`drag_*`/`text_input` natives.
-    input: InputState,
     /// The last frame's bound input, for host introspection ([`input_snapshot`](Self::input_snapshot)).
     last_input: PanelInput,
     /// The host UI theme injected into each frame (read by `panel_theme()`).
@@ -1093,22 +1088,12 @@ pub struct PanelHost {
     /// belongs to the history entry, not to the screen identity, which is what
     /// makes returning to a detail screen show the same subject it did before.
     nav_arg: serde_json::Value,
-    /// Host-side data source behind the `host_data(kind, arg)` native; without
-    /// one the native answers nil. Installed into [`DATA_PROVIDER`] for the
-    /// duration of each [`frame`](Self::frame).
-    provider: Option<DataProvider>,
     /// Host-side async data source behind the `query(kind, arg)` /
     /// `invalidate(kind, arg)` natives (Garden's React-Query prototype on Petal's
     /// pending values); without one, `query` answers a loading `Pending`.
     /// Installed into the query channel for the duration of each
     /// [`frame`](Self::frame), the same way `provider` is.
     query_provider: Option<Box<dyn QueryProvider>>,
-    /// Font source behind `font(name)` / `fonts()` and the on-demand half of
-    /// `text_width`, swapped into petal-ui's thread-local channel for the
-    /// duration of each [`frame`](Self::frame). A host that attaches one lets a
-    /// panel name any face the machine has; without one, only the faces the
-    /// host published eagerly are measurable.
-    font_source: Option<petal_ui::draw::FontProvider>,
     /// Live text of each `edit_view` region, keyed by region id — the host
     /// publishes the current buffer contents here each tick
     /// ([`set_edit_view_texts`](Self::set_edit_view_texts)) so `edit_view_text(id)`
@@ -1120,26 +1105,6 @@ pub struct PanelHost {
     /// and read by `edit_view_edits(id)`. Swapped into [`EDIT_VIEW_EDITS`] for
     /// the duration of each [`frame`](Self::frame), like the texts.
     edit_view_edits: HashMap<i64, PanelData>,
-    /// Monotonic origin for the `time()`/`elapsed()` clock published each frame.
-    /// Read fresh (`start.elapsed()`) rather than accumulated from `dt`, so
-    /// `elapsed()` does not drift — *while the clock is the wall clock*. See
-    /// [`virtual_clock`](Self::virtual_clock) for the other mode.
-    start: Instant,
-    /// Seconds published as `time()` when the clock is virtual, or `None` while
-    /// it is the wall clock (the interactive default).
-    ///
-    /// A frame driven by a harness (`POST /tick`) is not happening in real
-    /// time: sixty frames at `dt = 0.016` are meant to *be* 0.96 seconds of
-    /// script time, however long the batch actually took to run, and a pause
-    /// between two batches must advance nothing. Reading `start.elapsed()`
-    /// there made every `time()`-driven animation both unsteppable and
-    /// irreproducible — the same script, ticked identically, drew a different
-    /// frame each run. So a ticking host accumulates the `dt` it drives each
-    /// frame with ([`advance_clock`](Self::advance_clock)), and an interactive
-    /// one keeps the wall clock, where `dt` accumulation would drift against
-    /// `Instant::now`. Nothing but an explicit advance moves it: frames the
-    /// host runs on its own schedule are, to a virtual clock, no time at all.
-    virtual_clock: Option<f64>,
     /// The face this panel's text is drawn and measured in when a run names
     /// none — [`PanelTheme::font`], or `None` for the host default (`mono`).
     /// Kept here because it has to survive a frame: the metrics are rebound
@@ -1178,14 +1143,6 @@ pub struct PanelHost {
     /// The commands of the last frame that ran, served again by a frame the
     /// gate skips (see [`frame`](Self::frame)).
     last_cmds: Vec<PanelCmd>,
-    /// Whether the most recent [`frame`](Self::frame) skipped its run.
-    last_frame_skipped: bool,
-    /// Frames that ran the script / frames the gate skipped.
-    frames_run: u64,
-    frames_skipped: u64,
-    /// Whether [`frame`](Self::frame) consults the gate at all. On by default;
-    /// off makes every frame run, for tests and tools that want that.
-    gate: bool,
 }
 
 impl std::fmt::Debug for PanelHost {
@@ -1213,25 +1170,18 @@ impl PanelHost {
         let stack_id = env.create_stack(program_id)?;
 
         let mut host = PanelHost {
-            env,
-            program_id,
-            stack_id,
+            core: FrameCore::new(env, program_id, stack_id),
             path: path.to_path_buf(),
             disk_backed: true,
             last_sig: stat_sig(path),
             output: Vec::new(),
-            input: InputState::new(),
             last_input: PanelInput::default(),
             theme: PanelTheme::default(),
             nav_arg: serde_json::Value::Null,
             mutation_results: HashMap::new(),
-            provider: None,
             query_provider: None,
-            font_source: None,
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
-            start: Instant::now(),
-            virtual_clock: None,
             default_font: None,
             role_metrics: None,
             trace_origins: false,
@@ -1239,10 +1189,6 @@ impl PanelHost {
             import_sigs: Vec::new(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
-            last_frame_skipped: false,
-            frames_run: 0,
-            frames_skipped: 0,
-            gate: true,
         };
         host.import_sigs = host.collect_import_sigs();
         Ok(host)
@@ -1282,25 +1228,18 @@ impl PanelHost {
         let stack_id = env.create_stack(program_id)?;
 
         Ok(PanelHost {
-            env,
-            program_id,
-            stack_id,
+            core: FrameCore::new(env, program_id, stack_id),
             path: PathBuf::from(name),
             disk_backed: false,
             last_sig: None,
             output: Vec::new(),
-            input: InputState::new(),
             last_input: PanelInput::default(),
             theme: PanelTheme::default(),
             nav_arg: serde_json::Value::Null,
             mutation_results: HashMap::new(),
-            provider: None,
             query_provider: None,
-            font_source: None,
             edit_view_texts: HashMap::new(),
             edit_view_edits: HashMap::new(),
-            start: Instant::now(),
-            virtual_clock: None,
             default_font: None,
             role_metrics: None,
             trace_origins: false,
@@ -1312,10 +1251,6 @@ impl PanelHost {
             import_sigs: Vec::new(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
-            last_frame_skipped: false,
-            frames_run: 0,
-            frames_skipped: 0,
-            gate: true,
         })
     }
 
@@ -1385,7 +1320,7 @@ impl PanelHost {
         ui: petal_ui::draw::FontMetrics,
     ) {
         let default_font = self.default_font.clone();
-        bind_font_advances(&mut self.env, &mono, &ui, default_font.as_deref());
+        bind_font_advances(&mut self.core.env, &mono, &ui, default_font.as_deref());
         self.role_metrics = Some((mono, ui));
     }
 
@@ -1414,7 +1349,7 @@ impl PanelHost {
         } else {
             let font = self.default_font.clone();
             petal_ui::draw::bind_default_font_name(
-                &mut self.env,
+                &mut self.core.env,
                 font.as_deref().unwrap_or(DEFAULT_FONT_NAME),
             );
         }
@@ -1436,9 +1371,7 @@ impl PanelHost {
     /// draw identical frames. Interactive ticking keeps the wall clock, where
     /// `dt` is a measurement rather than an instruction.
     pub fn use_virtual_clock(&mut self) {
-        if self.virtual_clock.is_none() {
-            self.virtual_clock = Some(self.start.elapsed().as_secs_f64());
-        }
+        self.core.use_virtual_clock();
     }
 
     /// Advance the virtual clock by `dt` seconds; a no-op while the clock is
@@ -1451,20 +1384,17 @@ impl PanelHost {
     /// it, so two identical tick sequences produce the same `time()` however
     /// much wall clock passed in between.
     pub fn advance_clock(&mut self, dt: f64) {
-        if let Some(clock) = self.virtual_clock.as_mut() {
-            *clock += dt;
-        }
+        self.core.advance_clock(dt);
     }
 
     /// Whether `time()` is currently the accumulated virtual clock.
     pub fn is_virtual_clock(&self) -> bool {
-        self.virtual_clock.is_some()
+        self.core.is_virtual_clock()
     }
 
     /// The value the next frame will publish as `time()`, in seconds.
     pub fn clock(&self) -> f64 {
-        self.virtual_clock
-            .unwrap_or_else(|| self.start.elapsed().as_secs_f64())
+        self.core.clock()
     }
 
     /// Reseed this panel's `random()` stream, so a script that generates
@@ -1472,7 +1402,7 @@ impl PanelHost {
     /// from the next frame on (the engine's seed is a property of the env, not
     /// of a run), and survives hot reload like any other env state.
     pub fn set_seed(&mut self, seed: u64) {
-        self.env.set_seed(seed);
+        self.core.set_seed(seed);
     }
 
     /// Publish the advance table for one *variant* of a face the host already
@@ -1492,7 +1422,13 @@ impl PanelHost {
         ratios: Vec<f64>,
     ) {
         let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
-        petal_ui::draw::bind_font_variant_metrics(&mut self.env, font, weight, italic, &metrics);
+        petal_ui::draw::bind_font_variant_metrics(
+            &mut self.core.env,
+            font,
+            weight,
+            italic,
+            &metrics,
+        );
     }
 
     /// Attach the font source behind a script's `font(name)` and `fonts()`,
@@ -1513,46 +1449,57 @@ impl PanelHost {
     /// where that matters, and must call
     /// [`petal_ui::draw::clear_font_cache`] first.
     pub fn set_font_source(&mut self, source: petal_ui::draw::FontProvider) {
-        self.font_source = Some(source);
+        self.core.set_font_source(source);
     }
 
     /// Attach the host-side data source the script reaches through
     /// `host_data(kind, arg)`. A panel without one (the common case) sees nil.
     pub fn set_data_provider(&mut self, provider: DataProvider) {
-        self.provider = Some(provider);
-        // A new source may answer differently: a frame that read host data
-        // must run again.
-        self.env.note_host_data_changed(self.stack_id);
+        // A new source may answer differently: the core notes host data
+        // changed, so a frame that read host data runs again.
+        self.core.set_data_provider(provider);
     }
 
     /// Tell the frame gate that data behind a host-read native (`host_data`,
     /// `query`, `edit_view_text`, …) changed, so a frame that read such data
     /// runs again. A frame that read none is unaffected.
     pub fn note_host_data_changed(&mut self) {
-        self.env.note_host_data_changed(self.stack_id);
+        self.core.note_host_data_changed();
     }
 
     /// Force the next frame to run whatever the gate would say.
     pub fn invalidate_frame(&mut self) {
-        self.env.invalidate_run(self.stack_id);
+        self.core.invalidate();
     }
 
     /// Turn the frame gate on or off (on by default). Off, every
     /// [`frame`](Self::frame) runs the script.
     pub fn set_frame_gating(&mut self, on: bool) {
-        self.gate = on;
+        self.core.gate = on;
     }
 
     /// Whether the most recent [`frame`](Self::frame) skipped its run and
     /// returned the retained commands. A caller that keeps per-frame
     /// bookkeeping (key claims, text-view sync) leaves it as it was then.
     pub fn last_frame_skipped(&self) -> bool {
-        self.last_frame_skipped
+        self.core.last_frame_skipped
     }
 
     /// Frames that ran the script and frames the gate skipped, since load.
     pub fn frame_gate_stats(&self) -> (u64, u64) {
-        (self.frames_run, self.frames_skipped)
+        (self.core.frames_run, self.core.frames_skipped)
+    }
+
+    /// The frame gate and memo counters of this panel — frames run and
+    /// skipped, why the last one ran, and the memo table's hits and misses —
+    /// as the shared core keeps them. Garden's `/state` reports this per panel.
+    pub fn frame_stats(&self) -> FrameStats {
+        self.core.frame_stats()
+    }
+
+    /// The shared frame core this host is built on (read-only).
+    pub fn core(&self) -> &FrameCore {
+        &self.core
     }
 
     /// Publish the current text of each `edit_view` region (id → buffer text) so
@@ -1562,7 +1509,7 @@ impl PanelHost {
     /// bound into the thread-local for the run in `frame`).
     pub fn set_edit_view_texts(&mut self, texts: HashMap<i64, String>) {
         if texts != self.edit_view_texts {
-            self.env.note_host_data_changed(self.stack_id);
+            self.core.env.note_host_data_changed(self.core.stack_id());
         }
         self.edit_view_texts = texts;
     }
@@ -1574,14 +1521,14 @@ impl PanelHost {
     /// absent.
     pub fn set_edit_view_edits(&mut self, edits: HashMap<i64, PanelData>) {
         if edits != self.edit_view_edits {
-            self.env.note_host_data_changed(self.stack_id);
+            self.core.env.note_host_data_changed(self.core.stack_id());
         }
         self.edit_view_edits = edits;
     }
 
     /// Whether a data provider is attached (host introspection).
     pub fn has_data_provider(&self) -> bool {
-        self.provider.is_some()
+        self.core.has_data_provider()
     }
 
     /// Attach the host-side async data source the script reaches through
@@ -1589,7 +1536,7 @@ impl PanelHost {
     /// perpetual loading `Pending` from every `query`.
     pub fn set_query_provider(&mut self, provider: Box<dyn QueryProvider>) {
         self.query_provider = Some(provider);
-        self.env.note_host_data_changed(self.stack_id);
+        self.core.env.note_host_data_changed(self.core.stack_id());
     }
 
     /// Whether a query provider is attached (host introspection).
@@ -1603,7 +1550,7 @@ impl PanelHost {
     /// count) accumulate until the next [`frame`](Self::frame). Cheap; the host
     /// calls it as events arrive between ticks.
     pub fn input_event(&mut self, ev: InputEvent) {
-        self.input.event(ev);
+        self.core.event(ev);
     }
 
     /// Path of the watched panel script.
@@ -1614,7 +1561,7 @@ impl PanelHost {
     /// Bind the pane's current size (panel-local pixel space). Cheap; the host
     /// calls it each tick so a resize just changes the bound numbers.
     pub fn set_dimensions(&mut self, width: i32, height: i32) {
-        petal_ui::input::bind_dimensions(&mut self.env, width, height);
+        petal_ui::input::bind_dimensions(&mut self.core.env, width, height);
     }
 
     /// Set the host UI theme injected into each frame — read by the script
@@ -1656,78 +1603,26 @@ impl PanelHost {
     /// into this frame's edge snapshot; `dt` also advances the multi-click clock,
     /// so double/triple clicks are derived here rather than at the host boundary.
     pub fn frame(&mut self, dt: f64, frame_count: i64) -> Result<Vec<PanelCmd>, String> {
-        self.input.begin_frame(dt);
-        input::bind_frame_info(&mut self.env, dt, frame_count);
-        let now = self.clock();
-        input::bind_time(&mut self.env, now);
-        input::bind_input(&mut self.env, &self.input);
-        bind_panel_theme(&mut self.env, &self.theme);
-        bind_host_palette(&mut self.env, &self.theme);
-        bind_nav_arg(&mut self.env, &self.nav_arg);
-        bind_mutation_results(&mut self.env, &self.mutation_results);
-        self.last_input = self.snapshot_input();
-
-        // The gate: every input is bound, so ask whether a run could differ
-        // from the last one. If not, the last commands are this frame's.
-        if self.gate && !self.env.run_needed(self.stack_id) {
-            self.last_frame_skipped = true;
-            self.frames_skipped += 1;
+        // The shared core does the standard half (input edges, frame info,
+        // clock, input binding, the gate, reset, provider swaps, run); Garden's
+        // channels ride along through the hooks.
+        let mut hooks = PanelFrameHooks {
+            theme: &self.theme,
+            nav_arg: &self.nav_arg,
+            mutation_results: &self.mutation_results,
+            last_input: &mut self.last_input,
+            trace_origins: self.trace_origins,
+            query_provider: &mut self.query_provider,
+            edit_view_texts: &mut self.edit_view_texts,
+            edit_view_edits: &mut self.edit_view_edits,
+            store: &mut self.store,
+            output: &mut self.output,
+            saved: None,
+        };
+        if self.core.frame(dt, frame_count, &mut hooks)? == FrameRun::Skipped {
+            // The gate: the last run's commands are this frame's.
             return Ok(self.last_cmds.clone());
         }
-        self.last_frame_skipped = false;
-        self.frames_run += 1;
-
-        // Discard any stale buffered commands + emitted events, then re-run.
-        // (The observation buffer needs no clearing here: `env.run` clears it
-        // itself, so it always holds exactly this frame's bindings.)
-        petal_ui::draw::clear_draw_commands(&mut self.env);
-        // Canvas ids restart at 1 each frame (and the target at the pane), so
-        // a layer drawn every frame keeps the same id and the renderer keeps
-        // its texture.
-        petal_ui::draw::reset_canvas_ids(&mut self.env);
-        // The per-term trace answers questions about *this* frame only (what
-        // was `bh` when that bar was drawn?), so it starts each frame empty
-        // rather than accumulating a 60-per-second history nobody reads.
-        if self.trace_origins {
-            self.env.trace_mut().clear();
-        }
-        let sym = self.env.intern_symbol(EMIT_EVENTS);
-        self.env.clear_output_buffer(sym);
-        let sym = self.env.intern_symbol(NAV_EVENTS);
-        self.env.clear_output_buffer(sym);
-        let sym = self.env.intern_symbol(MUTATE_EVENTS);
-        self.env.clear_output_buffer(sym);
-        let sym = self.env.intern_symbol(KEY_CLAIMS);
-        self.env.clear_output_buffer(sym);
-        let sym = self.env.intern_symbol(ANIMATING);
-        self.env.clear_output_buffer(sym);
-        self.env.reset_stack(self.stack_id)?;
-        // Make the data + query providers reachable from their natives for the
-        // duration of the run, then reclaim them (with any cache they updated,
-        // even on a script error) by swapping the saved values back in.
-        let saved = host_data::swap_data_provider(self.provider.take());
-        let saved_q = query::swap_query_provider(self.query_provider.take());
-        let saved_f = petal_ui::draw::swap_font_provider(self.font_source.take());
-        let saved_e = swap_edit_view_texts(std::mem::take(&mut self.edit_view_texts));
-        let saved_ee = swap_edit_view_edits(std::mem::take(&mut self.edit_view_edits));
-        // The persistent store is reachable only while this panel's own frame
-        // runs, so `panel_store_get`/`_set` can never touch another script's.
-        let saved_store = crate::panel_store::swap_store(self.store.take());
-        let run_result = self.env.run(self.stack_id);
-        self.store = crate::panel_store::swap_store(saved_store);
-        // Persist whatever the frame changed. A failure (read-only home, full
-        // disk) is reported to the script's output rather than failing the
-        // frame: the panel keeps drawing, with its in-memory store intact.
-        if let Some(Err(err)) = self.store.as_mut().map(|s| s.flush()) {
-            self.output.push(format!("[panel store] {err}"));
-        }
-        self.edit_view_edits = swap_edit_view_edits(saved_ee);
-        self.edit_view_texts = swap_edit_view_texts(saved_e);
-        self.font_source = petal_ui::draw::swap_font_provider(saved_f);
-        self.query_provider = query::swap_query_provider(saved_q);
-        self.provider = host_data::swap_data_provider(saved);
-        self.output.append(&mut self.env.take_output());
-        run_result?;
 
         // Decode the frame's draw commands. Most map straight onto Garden's
         // render vocabulary via `from_draw`; the `text_view` host-extension
@@ -1737,8 +1632,8 @@ impl PanelHost {
         // While tracing is on, each raw command also carries the call site that
         // drew it; the two are pushed together so `frame_origins[i]` describes
         // `cmds[i]` even though several raw commands decode to nothing.
-        let raw = petal_ui::draw::take_draw_commands_traced(&mut self.env);
-        let heap = self.env.heap();
+        let raw = petal_ui::draw::take_draw_commands_traced(&mut self.core.env);
+        let heap = self.core.env.heap();
         let mut cmds = Vec::with_capacity(raw.len());
         let mut origins = Vec::new();
         if self.trace_origins {
@@ -1829,10 +1724,13 @@ impl PanelHost {
             .map_err(|e| format!("failed to read {}: {}", self.path.display(), e))?;
         // Recompile the same way it was loaded, so a panel that imports a
         // sibling module still resolves it after a hot reload.
-        let new_program = self
+        let new_program =
+            self.core
+                .env
+                .compile_program_at(self.core.program_id(), &source, &self.path)?;
+        self.core
             .env
-            .compile_program_at(self.program_id, &source, &self.path)?;
-        self.env.transfer_state(self.stack_id, new_program)?;
+            .transfer_state(self.core.stack_id(), new_program)?;
         self.import_sigs = self.collect_import_sigs();
         Ok(true)
     }
@@ -1842,8 +1740,9 @@ impl PanelHost {
     /// prelude, the bloom library) have no origin and are skipped: nothing on
     /// disk backs them, and they change only when Garden itself is rebuilt.
     fn collect_import_sigs(&self) -> Vec<(PathBuf, Option<FileSig>)> {
-        self.env
-            .module_manifest(self.program_id)
+        self.core
+            .env
+            .module_manifest(self.core.program_id())
             .into_iter()
             .filter_map(|entry| entry.origin)
             .filter(|origin| origin != &self.path)
@@ -1870,8 +1769,13 @@ impl PanelHost {
     /// later disk [`poll_reload`](Self::poll_reload) of an identical save is a
     /// harmless re-transfer, and a divergent on-disk edit still reloads.
     pub fn reload_source(&mut self, source: &str) -> Result<(), String> {
-        let new_program = self.env.compile_program(self.program_id, source)?;
-        self.env.transfer_state(self.stack_id, new_program)?;
+        let new_program = self
+            .core
+            .env
+            .compile_program(self.core.program_id(), source)?;
+        self.core
+            .env
+            .transfer_state(self.core.stack_id(), new_program)?;
         Ok(())
     }
 
@@ -1937,8 +1841,9 @@ impl PanelHost {
     /// This is Garden policy, not Petal's; the unfiltered map is a call to
     /// `Env::get_observations_json` away.
     pub fn observed_json(&self) -> serde_json::Map<String, serde_json::Value> {
-        self.env
-            .get_observations_json(self.program_id, self.stack_id)
+        self.core
+            .env
+            .get_observations_json(self.core.program_id(), self.core.stack_id())
             .into_iter()
             .filter(|(k, v)| !k.contains("::") && !k.starts_with('_') && !is_callable_json(v))
             .collect()
@@ -1950,7 +1855,9 @@ impl PanelHost {
     /// reports every named binding the last frame evaluated: this is only the
     /// declared `state`, and it survives a frame that never ran at all.
     pub fn state_json(&self) -> serde_json::Map<String, serde_json::Value> {
-        self.env.get_state_json(self.program_id, self.stack_id)
+        self.core
+            .env
+            .get_state_json(self.core.program_id(), self.core.stack_id())
     }
 
     /// Drain the `(event, arg)` events the last frame published through
@@ -1960,9 +1867,9 @@ impl PanelHost {
     /// Call after [`frame`](Self::frame); the buffer is cleared at the start of
     /// the next frame, so untaken events never leak across frames.
     pub fn take_emitted(&mut self) -> Vec<(String, serde_json::Value)> {
-        let sym = self.env.intern_symbol(EMIT_EVENTS);
-        let values = self.env.take_output_buffer(sym);
-        let heap = self.env.heap();
+        let sym = self.core.env.intern_symbol(EMIT_EVENTS);
+        let values = self.core.env.take_output_buffer(sym);
+        let heap = self.core.env.heap();
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
@@ -1985,9 +1892,9 @@ impl PanelHost {
     /// The host relays each to the subprocess and surfaces the reply as status.
     /// Call after [`frame`](Self::frame).
     pub fn take_mutations(&mut self) -> Vec<(String, serde_json::Value, i64)> {
-        let sym = self.env.intern_symbol(MUTATE_EVENTS);
-        let values = self.env.take_output_buffer(sym);
-        let heap = self.env.heap();
+        let sym = self.core.env.intern_symbol(MUTATE_EVENTS);
+        let values = self.core.env.take_output_buffer(sym);
+        let heap = self.core.env.heap();
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
@@ -2045,9 +1952,9 @@ impl PanelHost {
     /// because every Cmd/Ctrl chord belongs to the editor around it.
     /// Call after [`frame`](Self::frame).
     pub fn take_key_claims(&mut self) -> Vec<(String, Option<u8>)> {
-        let sym = self.env.intern_symbol(KEY_CLAIMS);
-        let values = self.env.take_output_buffer(sym);
-        let heap = self.env.heap();
+        let sym = self.core.env.intern_symbol(KEY_CLAIMS);
+        let values = self.core.env.take_output_buffer(sym);
+        let heap = self.core.env.heap();
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
@@ -2073,8 +1980,8 @@ impl PanelHost {
     /// heuristic cannot see, and the script already knows.
     /// Call after [`frame`](Self::frame).
     pub fn take_animating(&mut self) -> bool {
-        let sym = self.env.intern_symbol(ANIMATING);
-        !self.env.take_output_buffer(sym).is_empty()
+        let sym = self.core.env.intern_symbol(ANIMATING);
+        !self.core.env.take_output_buffer(sym).is_empty()
     }
 
     /// Drain the browser-history navigation intents the last frame published
@@ -2085,9 +1992,9 @@ impl PanelHost {
     /// Call after [`frame`](Self::frame); the buffer is cleared at the start of
     /// the next frame, so untaken intents never leak across frames.
     pub fn take_nav(&mut self) -> Vec<NavIntent> {
-        let sym = self.env.intern_symbol(NAV_EVENTS);
-        let values = self.env.take_output_buffer(sym);
-        let heap = self.env.heap();
+        let sym = self.core.env.intern_symbol(NAV_EVENTS);
+        let values = self.core.env.take_output_buffer(sym);
+        let heap = self.core.env.heap();
         let mut out = Vec::with_capacity(values.len());
         for v in &values {
             if let Value::EnumVariant { tag, data } = v {
@@ -2132,8 +2039,9 @@ impl PanelHost {
     /// the first frame observes the restored value. Running a frame first would let
     /// the init clobber it.
     pub fn restore_state(&mut self, map: &serde_json::Map<String, serde_json::Value>) -> usize {
-        self.env
-            .set_state_map_from_json(self.program_id, self.stack_id, map)
+        self.core
+            .env
+            .set_state_map_from_json(self.core.program_id(), self.core.stack_id(), map)
     }
 
     /// The input snapshot delivered to the last [`frame`](Self::frame) — exactly
@@ -2153,17 +2061,17 @@ impl PanelHost {
     /// the canvas it pairs with an editor.
     pub fn set_trace_origins(&mut self, on: bool) {
         self.trace_origins = on;
-        self.env.enable_emit_trace(on);
+        self.core.env.enable_emit_trace(on);
         // The per-term trace is the other half of direct manipulation: solving a
         // *computed* argument (`base_y - bh`) for one of its leaves needs the
         // value the other leaf actually had, and only the run knows that. It is
         // bounded to one frame's worth of events (cleared at the top of every
         // frame), so this costs a fixed-size ring, not a growing log.
-        self.env.trace_mut().enabled = on;
-        self.env.trace_mut().set_capacity(TRACE_CAPACITY);
+        self.core.env.trace_mut().enabled = on;
+        self.core.env.trace_mut().set_capacity(TRACE_CAPACITY);
         if !on {
             self.frame_origins.clear();
-            self.env.trace_mut().clear();
+            self.core.env.trace_mut().clear();
         }
     }
 
@@ -2185,7 +2093,7 @@ impl PanelHost {
         &self,
         origin: &crate::panel_trace::DrawOrigin,
     ) -> Option<crate::panel_trace::DrawTrace> {
-        let program = self.env.get_program(self.program_id)?;
+        let program = self.core.env.get_program(self.core.program_id())?;
         crate::panel_trace::DrawTrace::resolve(program, origin)
     }
 
@@ -2219,7 +2127,7 @@ impl PanelHost {
     ) -> crate::panel_trace::DragOutcome {
         use crate::panel_trace::{ArgSource, DragOutcome};
 
-        let Some(program) = self.env.get_program(self.program_id) else {
+        let Some(program) = self.core.env.get_program(self.core.program_id()) else {
             return DragOutcome::Stale;
         };
         let Some(origin) = self.origin_at(cmd_index) else {
@@ -2267,7 +2175,7 @@ impl PanelHost {
         let per_goal = match direct_manipulation::propose_edits_batch(
             program,
             &goals,
-            Some(self.env.trace()),
+            Some(self.core.env.trace()),
             &HashMap::new(),
         ) {
             Ok(p) => p,
@@ -2302,30 +2210,120 @@ impl PanelHost {
         }
         DragOutcome::Edits(out)
     }
+}
 
-    /// Read the input uniforms `petal-ui` just bound back out of the [`Env`] into
-    /// a plain [`PanelInput`]. Reading the bound values (rather than the
-    /// [`InputState`]'s private fields) keeps the snapshot faithful to what the
-    /// script actually saw and needs no accessors upstream.
-    fn snapshot_input(&mut self) -> PanelInput {
-        PanelInput {
-            mouse_x: read_int(&mut self.env, SYM_MOUSE_X) as i32,
-            mouse_y: read_int(&mut self.env, SYM_MOUSE_Y) as i32,
-            keys_down: read_str_list(&mut self.env, SYM_KEYS_DOWN),
-            keys_pressed: read_str_list(&mut self.env, SYM_KEYS_PRESSED),
-            keys_released: read_str_list(&mut self.env, SYM_KEYS_RELEASED),
-            mouse_buttons_down: read_int_list(&mut self.env, SYM_BUTTONS_DOWN),
-            mouse_buttons_pressed: read_int_list(&mut self.env, SYM_BUTTONS_PRESSED),
-            mouse_buttons_released: read_int_list(&mut self.env, SYM_BUTTONS_RELEASED),
-            scroll_x: read_int(&mut self.env, SYM_SCROLL_X) as i32,
-            scroll_y: read_int(&mut self.env, SYM_SCROLL_Y) as i32,
-            modifiers: read_int(&mut self.env, SYM_MODIFIERS),
-            drag_active: read_int(&mut self.env, SYM_DRAG_ACTIVE) != 0,
-            drag_start_x: read_int(&mut self.env, SYM_DRAG_START_X) as i32,
-            drag_start_y: read_int(&mut self.env, SYM_DRAG_START_Y) as i32,
-            click_count: read_int(&mut self.env, SYM_CLICK_COUNT),
-            text: read_str(&mut self.env, SYM_TEXT_INPUT),
+/// Read the input uniforms `petal-ui` just bound back out of the [`Env`] into
+/// a plain [`PanelInput`]. Reading the bound values (rather than the
+/// [`InputState`]'s private fields) keeps the snapshot faithful to what the
+/// script actually saw and needs no accessors upstream.
+fn snapshot_input(env: &mut Env) -> PanelInput {
+    PanelInput {
+        mouse_x: read_int(env, SYM_MOUSE_X) as i32,
+        mouse_y: read_int(env, SYM_MOUSE_Y) as i32,
+        keys_down: read_str_list(env, SYM_KEYS_DOWN),
+        keys_pressed: read_str_list(env, SYM_KEYS_PRESSED),
+        keys_released: read_str_list(env, SYM_KEYS_RELEASED),
+        mouse_buttons_down: read_int_list(env, SYM_BUTTONS_DOWN),
+        mouse_buttons_pressed: read_int_list(env, SYM_BUTTONS_PRESSED),
+        mouse_buttons_released: read_int_list(env, SYM_BUTTONS_RELEASED),
+        scroll_x: read_int(env, SYM_SCROLL_X) as i32,
+        scroll_y: read_int(env, SYM_SCROLL_Y) as i32,
+        modifiers: read_int(env, SYM_MODIFIERS),
+        drag_active: read_int(env, SYM_DRAG_ACTIVE) != 0,
+        drag_start_x: read_int(env, SYM_DRAG_START_X) as i32,
+        drag_start_y: read_int(env, SYM_DRAG_START_Y) as i32,
+        click_count: read_int(env, SYM_CLICK_COUNT),
+        text: read_str(env, SYM_TEXT_INPUT),
+    }
+}
+
+/// Garden's extension layer, plugged into [`FrameCore::frame`]: the panel's
+/// own per-frame bindings (theme, palette, nav argument, mutation replies),
+/// its output buffers, and the channels swapped in around the run (query
+/// provider, edit-view texts and write-backs, the persistent store).
+struct PanelFrameHooks<'a> {
+    theme: &'a PanelTheme,
+    nav_arg: &'a serde_json::Value,
+    mutation_results: &'a HashMap<i64, serde_json::Value>,
+    last_input: &'a mut PanelInput,
+    trace_origins: bool,
+    query_provider: &'a mut Option<Box<dyn QueryProvider>>,
+    edit_view_texts: &'a mut HashMap<i64, String>,
+    edit_view_edits: &'a mut HashMap<i64, PanelData>,
+    store: &'a mut Option<crate::panel_store::PanelStore>,
+    output: &'a mut Vec<String>,
+    /// What [`enter`](FrameHooks::enter) swapped out, restored by `exit`.
+    saved: Option<SavedChannels>,
+}
+
+/// The thread-local channel values a panel frame displaced.
+struct SavedChannels {
+    query: Option<Box<dyn QueryProvider>>,
+    texts: HashMap<i64, String>,
+    edits: HashMap<i64, PanelData>,
+    store: Option<crate::panel_store::PanelStore>,
+}
+
+impl FrameHooks for PanelFrameHooks<'_> {
+    fn bind(&mut self, env: &mut Env) {
+        bind_panel_theme(env, self.theme);
+        bind_host_palette(env, self.theme);
+        bind_nav_arg(env, self.nav_arg);
+        bind_mutation_results(env, self.mutation_results);
+        *self.last_input = snapshot_input(env);
+    }
+
+    fn prepare(&mut self, env: &mut Env) {
+        // The per-term trace answers questions about *this* frame only (what
+        // was `bh` when that bar was drawn?), so it starts each frame empty
+        // rather than accumulating a 60-per-second history nobody reads.
+        if self.trace_origins {
+            env.trace_mut().clear();
         }
+        // Discard stale buffered events. (The observation buffer needs no
+        // clearing here: `env.run` clears it itself, so it always holds
+        // exactly this frame's bindings.)
+        for name in [
+            EMIT_EVENTS,
+            NAV_EVENTS,
+            MUTATE_EVENTS,
+            KEY_CLAIMS,
+            ANIMATING,
+        ] {
+            let sym = env.intern_symbol(name);
+            env.clear_output_buffer(sym);
+        }
+    }
+
+    fn enter(&mut self) {
+        // Make the query provider, edit-view maps and store reachable from
+        // their natives for the duration of the run. The persistent store is
+        // reachable only while this panel's own frame runs, so
+        // `panel_store_get`/`_set` can never touch another script's.
+        self.saved = Some(SavedChannels {
+            query: query::swap_query_provider(self.query_provider.take()),
+            texts: swap_edit_view_texts(std::mem::take(self.edit_view_texts)),
+            edits: swap_edit_view_edits(std::mem::take(self.edit_view_edits)),
+            store: crate::panel_store::swap_store(self.store.take()),
+        });
+    }
+
+    fn exit(&mut self, env: &mut Env) {
+        // Reclaim them (with any cache they updated, even on a script error)
+        // by swapping the saved values back in.
+        if let Some(saved) = self.saved.take() {
+            *self.store = crate::panel_store::swap_store(saved.store);
+            *self.edit_view_edits = swap_edit_view_edits(saved.edits);
+            *self.edit_view_texts = swap_edit_view_texts(saved.texts);
+            *self.query_provider = query::swap_query_provider(saved.query);
+        }
+        // Persist whatever the frame changed. A failure (read-only home, full
+        // disk) is reported to the script's output rather than failing the
+        // frame: the panel keeps drawing, with its in-memory store intact.
+        if let Some(Err(err)) = self.store.as_mut().map(|s| s.flush()) {
+            self.output.push(format!("[panel store] {err}"));
+        }
+        self.output.append(&mut env.take_output());
     }
 }
 
@@ -4802,9 +4800,7 @@ mod tests {
         host.set_dimensions(10, 10);
         host.frame(0.0, 0).unwrap();
 
-        let raw = host
-            .env
-            .get_observations_json(host.program_id, host.stack_id);
+        let raw = host.core().observations();
         let obs = host.observed_json();
         assert!(
             raw.len() > 50,
@@ -5557,11 +5553,11 @@ mod tests {
         let mut host = PanelHost::load(f.path()).unwrap();
         host.set_dimensions(200, 120);
         host.frame(0.016, 0).unwrap();
-        let after_first = host.env.closures().closure_count();
+        let after_first = host.core().env.closures().closure_count();
         for i in 1..1000 {
             host.frame(0.016, i).unwrap();
         }
-        let after_many = host.env.closures().closure_count();
+        let after_many = host.core().env.closures().closure_count();
         assert!(
             after_many < after_first * 100,
             "closures grew from {after_first} to {after_many} over 1000 frames"

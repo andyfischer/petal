@@ -1436,6 +1436,14 @@ impl PanelView {
         self.partial_observed.as_ref().map(|(f, m)| (*f, m))
     }
 
+    /// The panel host's frame-gate and memo counters (frames run / skipped,
+    /// why the last one ran, memo hits and misses) as `/state` reports them
+    /// under `panel.frame_stats`. Cumulative since this host was created, so a
+    /// hot reload (which builds a new host) starts them over.
+    pub fn frame_stats_json(&self) -> serde_json::Value {
+        self.host.frame_stats().to_json()
+    }
+
     /// The script's live `state` variables as a JSON map keyed by name — the
     /// data the Petal-IDE state inspector renders.
     pub fn state_json(&self) -> serde_json::Map<String, serde_json::Value> {

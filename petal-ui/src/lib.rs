@@ -26,8 +26,10 @@
 //! - [`tess`]: shared CPU tessellation for the commands a host can't fill in
 //!   one go — currently the soft shadow, whose non-overlapping mesh every
 //!   host needs and none should re-derive.
-//! - [`harness`]: a headless test driver so widget logic is unit-testable
-//!   with no renderer attached.
+//! - [`frame_core`]: the shared per-frame core (env + stack, input, clock,
+//!   seed, frame gate, memo counters) every per-frame embedding runs on.
+//! - [`harness`]: a headless test driver, a thin wrapper over that core, so
+//!   widget logic is unit-testable with no renderer attached.
 //! - [`scenario`]: declarative, replayable input scripts for that driver
 //!   (hand-written or generated from a seed), used by the `petal-ui-run` CLI.
 //!
@@ -56,6 +58,7 @@
 //! sequence.
 
 pub mod draw;
+pub mod frame_core;
 pub mod harness;
 pub mod host_data;
 pub mod input;

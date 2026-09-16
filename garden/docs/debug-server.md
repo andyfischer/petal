@@ -163,9 +163,29 @@ A panel pane (a Petal graphical panel, including every GPP app) reports a
     "modifiers": 0,         // bitmask: 1=shift 2=ctrl 4=alt 8=cmd
     "drag_active": false, "drag_start": [0, 0],
     "click_count": 0, "text": ""
+  },
+  "frame_stats": {          // the frame gate and memo table, since load
+    "gate": true,
+    "frames_run": 12, "frames_skipped": 222,
+    "last_frame_skipped": true,
+    "last_run_reason": null, // e.g. "binding_changed:mouse_x" when it ran
+    "memo": {"enabled": true, "hits": 40, "misses": 3, "records": 9,
+             "inlined": 0, "effectful": 0, "reexecs": 0, "cutoffs": 0,
+             "evicted": 0, "cold": 0}
   }
 }
 ```
+
+`panel.frame_stats` (feature `state.panel-frame-stats`) is what
+`petal-ui-run --gate-stats --memo-stats` and `bench_panel` report, read from
+the same panel-frame core (`petal_ui::frame_core::FrameCore`) Garden's panel
+host is built on. The counters are cumulative since the panel's host was
+created, so a hot reload starts them over. Select just them with
+`?select=panes.*.panel.frame_stats`. `last_run_reason` names why the most
+recent frame ran (`no_record`, `forced`, `binding_changed:<name>`,
+`host_data_changed`, `state_unsettled`, `rng_consumed`, `resources_changed`)
+and is null when it was skipped — a panel that keeps running while nothing
+moves says which binding keeps changing.
 
 `panel.values` is the hook for testing interactive panels: the last value
 bound to every named term the frame evaluated, so a panel's logical state

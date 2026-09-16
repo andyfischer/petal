@@ -1,0 +1,298 @@
+{
+  "cell": {
+    "height": 16.0,
+    "width": 8.0
+  },
+  "command_line": null,
+  "cursor": {
+    "col": 0,
+    "line": 0
+  },
+  "file_finder": null,
+  "focus": 0,
+  "frame": 0,
+  "identity": {
+    "build": {
+      "build_date": "2026-09-16",
+      "commit": "0d61a27",
+      "commit_date": "2026-09-16",
+      "dirty": true,
+      "prelude_level": 7,
+      "version": "0.1.0"
+    },
+    "cwd": "<cwd>",
+    "layout": null,
+    "panels": [
+      {
+        "pane": 1,
+        "path": "<tmp>/.tmpTHxUn1.ptl",
+        "script": "<tmp>/.tmpTHxUn1.ptl"
+      }
+    ],
+    "pid": 5049,
+    "port": null
+  },
+  "lsp": {
+    "documents": [],
+    "failures": [],
+    "pending_completions": 0,
+    "servers": []
+  },
+  "ok": true,
+  "panel_error": null,
+  "panes": [
+    {
+      "cursor": {
+        "col": 0,
+        "line": 0
+      },
+      "dirty": false,
+      "file": "<tmp>/.tmpfw7GDj.txt",
+      "index": 0,
+      "kind": "editor",
+      "line_count": 3,
+      "mode": "NORMAL",
+      "panel": null,
+      "pending": null,
+      "rect": {
+        "h": 564.0,
+        "w": 393.0,
+        "x": 6.0,
+        "y": 6.0
+      },
+      "scroll_frac": 0.0,
+      "scroll_left": 0.0,
+      "scroll_sub": 0,
+      "scroll_top": 0,
+      "selection": null,
+      "title": "<tmp>/.tmpfw7GDj.txt",
+      "trace_highlight": null,
+      "visible_lines": 34,
+      "wrap": true
+    },
+    {
+      "cursor": {
+        "col": 0,
+        "line": 0
+      },
+      "dirty": false,
+      "file": null,
+      "index": 1,
+      "kind": "panel",
+      "line_count": 1,
+      "mode": "NORMAL",
+      "panel": {
+        "awake": true,
+        "client": null,
+        "error": null,
+        "frame": 2,
+        "frame_stats": {
+          "frames_run": 1,
+          "frames_skipped": 1,
+          "gate": true,
+          "last_frame_skipped": true,
+          "last_run_reason": null,
+          "memo": {
+            "cold": 0,
+            "cutoffs": 0,
+            "effectful": 0,
+            "enabled": true,
+            "evicted": 0,
+            "hits": 0,
+            "inlined": 0,
+            "misses": 0,
+            "records": 2,
+            "reexecs": 0
+          }
+        },
+        "input": {
+          "click_count": 0,
+          "drag_active": false,
+          "drag_start": [
+            -401,
+            -6
+          ],
+          "keys_down": [],
+          "keys_pressed": [],
+          "keys_released": [],
+          "modifiers": 0,
+          "mouse": [
+            -401,
+            -6
+          ],
+          "mouse_buttons_down": [],
+          "mouse_buttons_pressed": [],
+          "mouse_buttons_released": [],
+          "scroll": [
+            0,
+            0
+          ],
+          "text": ""
+        },
+        "script": "<tmp>/.tmpTHxUn1.ptl",
+        "values": {
+          "GRAD_DOWN": 1.5707963267948966,
+          "GRAD_LEFT": 3.141592653589793,
+          "GRAD_RIGHT": 0.0,
+          "GRAD_UP": 4.71238898038469,
+          "hits": 0,
+          "label": "Save",
+          "seen": 0,
+          "theme": {
+            "accent": {
+              "b": 255,
+              "g": 140,
+              "r": 60
+            },
+            "bg": {
+              "b": 28,
+              "g": 22,
+              "r": 20
+            },
+            "border": {
+              "b": 76,
+              "g": 64,
+              "r": 58
+            },
+            "border_strong": {
+              "b": 102,
+              "g": 85,
+              "r": 77
+            },
+            "danger": {
+              "b": 73,
+              "g": 81,
+              "r": 248
+            },
+            "dim": {
+              "b": 162,
+              "g": 147,
+              "r": 138
+            },
+            "elevation_1": {
+              "a": 40,
+              "blur": 6,
+              "dy": 1,
+              "spread": 0
+            },
+            "elevation_2": {
+              "a": 56,
+              "blur": 16,
+              "dy": 4,
+              "spread": 0
+            },
+            "elevation_3": {
+              "a": 72,
+              "blur": 32,
+              "dy": 10,
+              "spread": 0
+            },
+            "font": "ui",
+            "font_lg": 18,
+            "font_md": 14,
+            "font_sm": 12,
+            "font_xl": 24,
+            "hover": {
+              "b": 52,
+              "g": 43,
+              "r": 38
+            },
+            "muted": {
+              "b": 194,
+              "g": 180,
+              "r": 170
+            },
+            "outline": {
+              "b": 76,
+              "g": 64,
+              "r": 58
+            },
+            "overlay": {
+              "b": 52,
+              "g": 43,
+              "r": 38
+            },
+            "panel": {
+              "b": 39,
+              "g": 32,
+              "r": 29
+            },
+            "radius": 6,
+            "radius_lg": 10,
+            "radius_sm": 3,
+            "selection": {
+              "b": 122,
+              "g": 74,
+              "r": 44
+            },
+            "space": 8,
+            "space_lg": 16,
+            "space_sm": 4,
+            "success": {
+              "b": 80,
+              "g": 185,
+              "r": 63
+            },
+            "surface": {
+              "b": 39,
+              "g": 32,
+              "r": 29
+            },
+            "text": {
+              "b": 233,
+              "g": 222,
+              "r": 216
+            },
+            "warn": {
+              "b": 34,
+              "g": 153,
+              "r": 210
+            }
+          }
+        },
+        "values_frame": 0,
+        "values_partial": null,
+        "values_stale": true
+      },
+      "pending": null,
+      "rect": {
+        "h": 564.0,
+        "w": 393.0,
+        "x": 401.0,
+        "y": 6.0
+      },
+      "scroll_frac": 0.0,
+      "scroll_left": 0.0,
+      "scroll_sub": 0,
+      "scroll_top": 0,
+      "selection": null,
+      "title": ".tmpTHxUn1.ptl",
+      "trace_highlight": null,
+      "visible_lines": 34,
+      "wrap": true
+    }
+  ],
+  "script": {
+    "output": [],
+    "output_first": 0,
+    "output_next": 0,
+    "path": null
+  },
+  "script_error": null,
+  "selection": null,
+  "status_error": null,
+  "status_note": null,
+  "text_atlas": null,
+  "theme": {
+    "key": "dark",
+    "label": "Midnight"
+  },
+  "trace": null,
+  "unresolved_fonts": [],
+  "window": {
+    "height": 600.0,
+    "scale": 1.0,
+    "width": 800.0
+  },
+  "window_cmd_pending": false
+}

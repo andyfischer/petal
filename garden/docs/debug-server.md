@@ -88,6 +88,18 @@ All request bodies and responses are JSON. Errors are `{"ok": false, "error":
 "..."}` with a 4xx/5xx status. One command per request; the connection closes
 after the response.
 
+The reply shapes are pinned: `tools/lib/debug-replies/*.json` holds one
+sample of each JSON reply (`/state`, `/version`, `/scene`, `/scene?find=`,
+the input acknowledgments, `/tick`, `/batch`, a `select=` projection, ...),
+and the types in `tools/lib/debug-client.ts` are written from them. The
+garden-app test `app::reply_samples` drives each request through the real
+routing and `App::answer`, and fails when a reply's field names or JSON types
+drift from its sample (values are not compared, and a panel's open-ended
+`values` map is pinned only as an object). After an intended change, rewrite
+the samples with
+`UPDATE_REPLY_SAMPLES=1 cargo test -p garden-app --lib reply_samples`, then
+update the client types from the sample diff.
+
 ### Inspection
 
 | Endpoint | Returns |

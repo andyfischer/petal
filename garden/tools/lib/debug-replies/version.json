@@ -1,0 +1,26 @@
+{
+  "build": {
+    "build_date": "2026-09-16",
+    "commit": "0d61a27",
+    "commit_date": "2026-09-16",
+    "dirty": true,
+    "prelude_level": 7,
+    "version": "0.1.0"
+  },
+  "features": [
+    "cli.headless",
+    "cli.no-menu",
+    "cli.panel-wake"
+  ],
+  "ok": true,
+  "prelude": {
+    "exports": [
+      "GRAD_DOWN",
+      "GRAD_LEFT",
+      "GRAD_RIGHT"
+    ],
+    "level": 7,
+    "ui_version": 1
+  },
+  "version": "0.1.0"
+}

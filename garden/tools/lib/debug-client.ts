@@ -7,6 +7,14 @@
 
 import { writeFile } from "node:fs/promises";
 
+// The reply types below are written from the checked-in samples in
+// `tools/lib/debug-replies/*.json`. A Rust test
+// (`garden-app/src/app/reply_samples.rs`) drives one of each reply and fails
+// when its shape (field names and JSON types) drifts from its sample — so when
+// that test is updated with `UPDATE_REPLY_SAMPLES=1`, update the types here
+// from the sample diff. Fields marked optional are ones a client may not see
+// (an older build, a `select=` projection, a pane kind that lacks them).
+
 export interface Rect {
   x: number;
   y: number;
@@ -43,15 +51,38 @@ export interface PanelFrameStats {
   };
 }
 
+/** A text selection as `/state` and the input acknowledgments report it. */
+export interface Selection {
+  anchor?: Cursor;
+  head?: Cursor;
+  /** The selected text, cut at 10 000 characters (`truncated` says so). */
+  text?: string;
+  truncated?: boolean;
+}
+
 export interface PaneState {
+  index?: number;
   kind: string;
   rect: Rect;
+  title?: string;
   mode?: string;
-  file?: string;
+  file?: string | null;
   dirty?: boolean;
   cursor?: Cursor;
+  selection?: Selection | null;
   line_count?: number;
+  visible_lines?: number;
+  wrap?: boolean;
+  scroll_top?: number;
+  scroll_sub?: number;
+  scroll_frac?: number;
+  scroll_left?: number;
+  /** Mid-command vim state (count/operator/prefix), null at a clean boundary. */
+  pending?: unknown | null;
+  trace_highlight?: unknown | null;
   panel?: {
+    /** The panel's script path. */
+    script?: string;
     /** The GPP client app driving this pane (its spawn command), or null for
      *  an in-process panel. */
     client?: string | null;
@@ -68,19 +99,56 @@ export interface PaneState {
     error?: string | null;
     /** Frame-gate and memo counters (feature `state.panel-frame-stats`). */
     frame_stats?: PanelFrameStats;
+    /** The input snapshot the panel's last frame saw. */
+    input?: {
+      mouse: [number, number];
+      scroll: [number, number];
+      drag_active: boolean;
+      drag_start: [number, number];
+      click_count: number;
+      modifiers: number;
+      text: string;
+      keys_down: string[];
+      keys_pressed: string[];
+      keys_released: string[];
+      mouse_buttons_down: number[];
+      mouse_buttons_pressed: number[];
+      mouse_buttons_released: number[];
+    };
   } | null;
 }
 
 export interface AppState {
+  ok?: boolean;
   panes: PaneState[];
   cell: { width: number; height: number };
-  window: { scale: number };
+  window: { scale: number; width?: number; height?: number };
   frame?: number;
+  /** Which Garden this is: pid, debug port, cwd, layout and panel scripts. */
+  identity?: {
+    pid: number;
+    port: number | null;
+    cwd: string;
+    layout: string | null;
+    panels: { pane: number; path: string; script: string }[];
+    build: VersionReport["build"];
+  };
+  theme?: { key: string; label: string };
+  /** Script `print(...)` output (see `?output=`) and the cursor to resume from. */
+  script?: { output: unknown[]; output_first: number; output_next: number; path: string | null };
+  script_error?: string | null;
+  panel_error?: string | null;
+  file_finder?: unknown | null;
+  lsp?: { documents: unknown[]; failures: unknown[]; pending_completions: number; servers: unknown[] };
+  text_atlas?: unknown | null;
+  trace?: unknown | null;
+  unresolved_fonts?: unknown[];
+  window_cmd_pending?: boolean;
   /** The focused pane (index), and its cursor and selection repeated at the top
    *  level — the default input acknowledgment is exactly these three. */
   focus?: number;
   cursor?: { line: number; col: number } | null;
-  selection?: { text?: string } | null;
+  selection?: Selection | null;
   command_line?: string | null;
   status_note?: string | null;
   status_error?: string | null;
@@ -88,6 +156,7 @@ export interface AppState {
 
 /** `GET /version` — what the binary on the other end of the socket is. */
 export interface VersionReport {
+  ok?: boolean;
   version: string;
   build: {
     version: string;
@@ -119,6 +188,17 @@ export interface ScenePrimitive {
    *  own `rect` — is what a layout assertion searches. */
   shapes?: { rect: Rect; color: [number, number, number, number]; triangles: number }[];
   clip?: Rect;
+  /** Draw-order id, stable within one scene. */
+  id?: number;
+  /** A text run's font and metrics. */
+  size?: number;
+  weight?: number;
+  italic?: boolean;
+  spacing?: number;
+  advance?: number;
+  font?: { family: string; weight: number; italic: boolean; synthetic_bold: boolean };
+  /** A mesh's triangle count. */
+  triangles?: number;
   /** False when the primitive is provably clipped away — a row of a scrolling
    *  list scrolled past its viewport, say. The scene carries those primitives
    *  with the clip that removes them, so counting runs without this counts
@@ -136,13 +216,21 @@ export interface SceneMatch extends ScenePrimitive {
   center: [number, number];
 }
 
-/** The `GET /scene?find=` reply. */
-export interface SceneFindReply {
-  primitives: SceneMatch[];
-  matches: number;
+/** The `GET /scene` (`/capture?format=json`) reply. */
+export interface SceneReply {
+  ok?: boolean;
+  primitives: ScenePrimitive[];
+  /** The clear colour, RGBA. */
+  bg?: [number, number, number, number];
   frame?: number;
   /** Present under `pane=`: which pane, and its rect in window coordinates. */
   pane?: { index: number; rect: Rect };
+}
+
+/** The `GET /scene?find=` reply. */
+export interface SceneFindReply extends SceneReply {
+  primitives: SceneMatch[];
+  matches: number;
 }
 
 /** A located text run, in window coordinates — what `click` takes. */
@@ -162,8 +250,61 @@ export interface LocateOptions {
   nth?: number;
 }
 
-export interface MouseReply {
-  selection?: { text?: string } | null;
+/** The default acknowledgment of `/key`, `/text` and `/mouse`: the focused
+ *  pane and its cursor and selection. */
+export interface InputAck {
+  ok?: boolean;
+  focus?: number;
+  cursor?: Cursor | null;
+  selection?: Selection | null;
+}
+
+export type MouseReply = InputAck;
+
+/** `POST /tick`. */
+export interface TickReply {
+  ok: boolean;
+  n: number;
+  dt: number;
+  frame: number;
+  advance_clock: boolean;
+  panel_frames: number;
+  panels: { pane: number; script: string; frame: number }[];
+  clocks: { pane: number; time: number; virtual: boolean }[];
+}
+
+/** `POST /seed`. */
+export interface SeedReply {
+  ok: boolean;
+  seed: number;
+  panels: number;
+}
+
+/** `POST /panel/reset`. */
+export interface PanelResetReply {
+  ok: boolean;
+  panels_reset: number;
+}
+
+/** `POST /theme`. */
+export interface ThemeReply {
+  ok: boolean;
+  theme: { key: string; label: string };
+}
+
+/** `GET /frame[?min=N]`. */
+export interface FrameReply {
+  ok: boolean;
+  frame: number;
+  /** Present with `?min=`. */
+  reached?: boolean;
+}
+
+/** `GET /menu`: the actions `POST /menu` accepts; `arg` names the argument
+ *  one takes, or is null. */
+export interface MenuListReply {
+  ok: boolean;
+  actions: { action: string; arg: string | null }[];
 }
 
 /** One step of `POST /batch` (feature `debug.batch`): an endpoint's own body
@@ -198,6 +339,7 @@ export interface PaneMouseStep {
 export interface WindowInfo {
   window: number;
   focused: boolean;
+  panes?: number;
 }
 
 /** A pointer button in the debug protocol's numbering (`petal-ui`'s): 0 is the
@@ -275,17 +417,17 @@ export class DebugClient {
   /** Advance every panel by `n` frames of `dt` seconds, ignoring the sleep/wake
    *  window and without fabricating any input — how to drive an animation or a
    *  game deterministically. */
-  tick(n = 1, dt = 1 / 60): Promise<{ panel_frames?: number } | null> {
-    return this.post<{ panel_frames?: number }>("/tick", { n, dt });
+  tick(n = 1, dt = 1 / 60): Promise<TickReply | null> {
+    return this.post<TickReply>("/tick", { n, dt });
   }
 
   /** Restart every file-backed panel from source, discarding Petal `state` —
    *  the way to re-run a seeded-data generator without killing the process. */
-  resetPanels(): Promise<{ panels_reset?: number } | null> {
-    return this.post<{ panels_reset?: number }>("/panel/reset", {});
+  resetPanels(): Promise<PanelResetReply | null> {
+    return this.post<PanelResetReply>("/panel/reset", {});
   }
 
-  scene(): Promise<{ primitives: ScenePrimitive[] }> {
+  scene(): Promise<SceneReply> {
     return this.getJson("/scene");
   }
 
@@ -332,7 +474,7 @@ export class DebugClient {
     return await this.click(at.x, at.y, { clicks, button });
   }
 
-  windows(): Promise<{ windows: WindowInfo[] }> {
+  windows(): Promise<{ ok?: boolean; windows: WindowInfo[] }> {
     return this.getJson("/windows");
   }
 

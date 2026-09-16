@@ -44,7 +44,9 @@ The shared pieces the tests are written in terms of:
 - `debug-client.ts`: a typed client for the
   [debug server](../docs/debug-server.md): reading `/state`, `/scene`,
   `/buffer`, `/screenshot`, and injecting keys, text, and mouse gestures
-  (including pane-local coordinates).
+  (including pane-local coordinates). Its reply types are written from the
+  samples in `debug-replies/`, which a garden-app Rust test
+  (`app::reply_samples`) keeps in step with what the server really sends.
 - `app.ts`: `cargoBuild` and `launchGarden`, which start the app on an
   OS-chosen port, discover the port from the startup line, and set the
   headless idle timeout.

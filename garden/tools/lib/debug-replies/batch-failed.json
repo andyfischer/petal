@@ -1,0 +1,29 @@
+{
+  "error": "step 1: unknown theme scheme \"no-such-scheme\"",
+  "failed": 1,
+  "ok": false,
+  "results": [
+    {
+      "advance_clock": true,
+      "clocks": [
+        {
+          "pane": 1,
+          "time": 0.059575125333333326,
+          "virtual": true
+        }
+      ],
+      "dt": 0.016666666666666666,
+      "frame": 2,
+      "n": 1,
+      "ok": true,
+      "panel_frames": 1,
+      "panels": [
+        {
+          "frame": 3,
+          "pane": 1,
+          "script": "<tmp>/.tmpTHxUn1.ptl"
+        }
+      ]
+    }
+  ]
+}

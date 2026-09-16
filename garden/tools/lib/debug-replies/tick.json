@@ -1,0 +1,22 @@
+{
+  "advance_clock": true,
+  "clocks": [
+    {
+      "pane": 1,
+      "time": 0.14156591733333335,
+      "virtual": true
+    }
+  ],
+  "dt": 0.016666666666666666,
+  "frame": 2,
+  "n": 2,
+  "ok": true,
+  "panel_frames": 2,
+  "panels": [
+    {
+      "frame": 7,
+      "pane": 1,
+      "script": "<tmp>/.tmpTHxUn1.ptl"
+    }
+  ]
+}

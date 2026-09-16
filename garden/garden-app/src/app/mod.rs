@@ -56,6 +56,8 @@ pub use types::{
 pub(crate) use types::{KeyOutcome, ToolbarButton};
 
 #[cfg(test)]
+mod reply_samples;
+#[cfg(test)]
 mod tests;
 
 /// Outer margin around the pane area, logical pixels.

@@ -1,0 +1,30 @@
+{
+  "cursor": {
+    "col": 1,
+    "line": 0
+  },
+  "focus": 0,
+  "ok": true,
+  "panes": [
+    null,
+    {
+      "panel": {
+        "values": {
+          "seen": 0
+        }
+      }
+    }
+  ],
+  "selection": {
+    "anchor": {
+      "col": 0,
+      "line": 0
+    },
+    "head": {
+      "col": 1,
+      "line": 0
+    },
+    "text": "h",
+    "truncated": false
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "actions": [
+    {
+      "action": "NewFile",
+      "arg": null
+    },
+    {
+      "action": "NewWindow",
+      "arg": null
+    },
+    {
+      "action": "OpenFile",
+      "arg": "path"
+    },
+    {
+      "action": "OpenFolder",
+      "arg": "path"
+    },
+    {
+      "action": "Save",
+      "arg": null
+    },
+    {
+      "action": "SaveAll",
+      "arg": null
+    },
+    {
+      "action": "CloseWindow",
+      "arg": null
+    },
+    {
+      "action": "Quit",
+      "arg": null
+    },
+    {
+      "action": "Undo",
+      "arg": null
+    },
+    {
+      "action": "Redo",
+      "arg": null
+    },
+    {
+      "action": "Cut",
+      "arg": null
+    },
+    {
+      "action": "Copy",
+      "arg": null
+    },
+    {
+      "action": "Paste",
+      "arg": null
+    },
+    {
+      "action": "SelectAll",
+      "arg": null
+    },
+    {
+      "action": "Find",
+      "arg": null
+    },
+    {
+      "action": "FindNext",
+      "arg": null
+    },
+    {
+      "action": "FindPrev",
+      "arg": null
+    },
+    {
+      "action": "SetTheme",
+      "arg": "scheme"
+    },
+    {
+      "action": "ToggleWrap",
+      "arg": null
+    },
+    {
+      "action": "ToggleLineNumbers",
+      "arg": null
+    },
+    {
+      "action": "ToggleStateInspector",
+      "arg": null
+    },
+    {
+      "action": "TogglePlay",
+      "arg": null
+    },
+    {
+      "action": "ToggleIr",
+      "arg": null
+    },
+    {
+      "action": "GoToFile",
+      "arg": null
+    },
+    {
+      "action": "Back",
+      "arg": null
+    },
+    {
+      "action": "Forward",
+      "arg": null
+    },
+    {
+      "action": "ExploreDirectory",
+      "arg": null
+    },
+    {
+      "action": "GitLog",
+      "arg": null
+    },
+    {
+      "action": "GitDiff",
+      "arg": null
+    },
+    {
+      "action": "GitDiffStat",
+      "arg": null
+    },
+    {
+      "action": "ReviewChanges",
+      "arg": null
+    },
+    {
+      "action": "SplitDown",
+      "arg": null
+    },
+    {
+      "action": "SplitRight",
+      "arg": null
+    },
+    {
+      "action": "CloseOtherPanes",
+      "arg": null
+    },
+    {
+      "action": "ClosePane",
+      "arg": null
+    },
+    {
+      "action": "NextPane",
+      "arg": null
+    }
+  ],
+  "ok": true
+}

@@ -620,6 +620,7 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
         ("POST", "/key") => {
             let v = parse_body()?;
             let key = str_field(&v, "key").ok_or((400, "missing \"key\"".to_string()))?;
+            route_key(&key)?;
             let mods = v["mods"]
                 .as_array()
                 .map(|a| {
@@ -843,32 +844,42 @@ fn respond_with(
 }
 
 /// Map a debug key name to the toolkit-independent [`Key`] the app core
-/// consumes. Single characters map to `Key::Char`; everything else must be a
-/// named key.
+/// consumes. Named keys come from [`crate::vim::NAMED_KEYS`] (case-insensitive,
+/// plus the `enter` and `esc` aliases); any other single character maps to
+/// `Key::Char`.
 pub fn parse_key(name: &str) -> Option<Key> {
-    let named = match name.to_ascii_lowercase().as_str() {
-        "enter" | "return" => Key::Enter,
-        "tab" => Key::Tab,
-        "space" => Key::Char(' '),
-        "backspace" => Key::Backspace,
-        "delete" => Key::Delete,
-        "escape" | "esc" => Key::Escape,
-        "left" => Key::Left,
-        "right" => Key::Right,
-        "up" => Key::Up,
-        "down" => Key::Down,
-        "home" => Key::Home,
-        "end" => Key::End,
-        "pageup" => Key::PageUp,
-        "pagedown" => Key::PageDown,
-        _ => {
-            if name.chars().count() == 1 {
-                return Some(Key::Char(name.chars().next()?));
-            }
-            return None;
-        }
+    let lower = name.to_ascii_lowercase();
+    let canonical = match lower.as_str() {
+        "enter" => "return",
+        "esc" => "escape",
+        other => other,
     };
-    Some(named)
+    if let Some((_, key)) = crate::vim::NAMED_KEYS.iter().find(|(n, _)| *n == canonical) {
+        return Some(*key);
+    }
+    let mut chars = name.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => Some(Key::Char(c)),
+        _ => None,
+    }
+}
+
+/// Parse a `/key` name at the route boundary: an unknown name is a 400 carrying
+/// petal-ui's canonical vocabulary, not a press that silently drives nothing.
+/// A canonical name Garden has no [`Key`] for (`f1`, `insert`, …) says so
+/// rather than claiming the name is misspelled.
+fn route_key(name: &str) -> Result<Key, (u16, String)> {
+    parse_key(name).ok_or_else(|| {
+        let msg = if petal_ui::input::is_canonical_key(name) {
+            format!(
+                "`{name}` is a canonical key name Garden cannot deliver; named keys it accepts: {}, or any single character",
+                crate::vim::NAMED_KEYS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
+            )
+        } else {
+            petal_ui::input::non_canonical_key_error(name)
+        };
+        (400, msg)
+    })
 }
 
 #[cfg(test)]
@@ -1081,6 +1092,28 @@ mod tests {
         assert_eq!(op_of(r#"{"key":"w","op":"down"}"#), KeyOp::Down);
         assert_eq!(op_of(r#"{"key":"w","op":"up"}"#), KeyOp::Up);
         assert!(route("POST", "/key", br#"{"key":"w","op":"hold"}"#).is_err());
+    }
+
+    /// `/key` names are checked where the request is parsed: canonical names,
+    /// their aliases and single characters route; anything else is a 400 that
+    /// lists the vocabulary instead of a press that does nothing.
+    #[test]
+    fn key_route_rejects_unknown_names() {
+        for ok in ["pagedown", "PageDown", "enter", "return", "esc", "space", "K", "-"] {
+            let body = format!(r#"{{"key":"{ok}"}}"#);
+            assert!(route("POST", "/key", body.as_bytes()).is_ok(), "{ok} should route");
+        }
+        match route("POST", "/key", br#"{"key":"ArrowLeft"}"#) {
+            Err((400, msg)) => {
+                assert!(msg.contains("not a canonical key name"), "{msg}");
+                assert!(msg.contains("pagedown"), "lists the vocabulary: {msg}");
+            }
+            other => panic!("ArrowLeft should be a 400, got ok={}", other.is_ok()),
+        }
+        match route("POST", "/key", br#"{"key":"f1"}"#) {
+            Err((400, msg)) => assert!(msg.contains("cannot deliver"), "{msg}"),
+            other => panic!("f1 should be a 400, got ok={}", other.is_ok()),
+        }
     }
 
     /// Both input endpoints understand the same modifier spellings — `/mouse`

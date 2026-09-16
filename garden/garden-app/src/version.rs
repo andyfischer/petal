@@ -113,6 +113,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // A panel script's `request_frame()` / `animating()` opt-out of the idle
     // sleep window.
     "panel.request-frame",
+    // `POST /key` checks its key name where the request is parsed: an unknown
+    // name is a 400 listing petal-ui's canonical `KEY_NAMES`, and the names a
+    // panel reads are derived from the same table `/key` parses.
+    "debug.key-validate",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

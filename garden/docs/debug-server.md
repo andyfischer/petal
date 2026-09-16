@@ -393,7 +393,7 @@ answered on the event-loop thread. In headless mode you rarely need this:
 
 | Endpoint | Body | Effect |
 |----------|------|--------|
-| `POST /key` | `{"key": "s", "mods": ["cmd"]}` | One key press through the normal dispatch. Named keys: `enter`/`return`, `tab`, `space`, `backspace`, `delete`, `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. Mods: `cmd`/`super`/`meta`, `ctrl`/`control`, `shift`, `alt`/`option`. Single characters map to character keys. Add `"op": "down"` / `"op": "up"` to hold a key (below) |
+| `POST /key` | `{"key": "s", "mods": ["cmd"]}` | One key press through the normal dispatch. Named keys: `enter`/`return`, `tab`, `space`, `backspace`, `delete`, `escape`, `left`, `right`, `up`, `down`, `home`, `end`, `pageup`, `pagedown`. Mods: `cmd`/`super`/`meta`, `ctrl`/`control`, `shift`, `alt`/`option`. Single characters map to character keys. Any other name is a 400 whose error lists petal-ui's canonical `KEY_NAMES` (`debug.key-validate`); a panel reads the named keys under exactly the spellings above (Return as `return`). Add `"op": "down"` / `"op": "up"` to hold a key (below) |
 | `POST /text` | `{"text": "hello\nworld"}` | Insert a string into the focused pane, replacing any selection. A newline is delivered as `enter`, a tab as `tab` |
 | `POST /command` | `{"command": "Diff main"}` | Run an ex command as typed, without the leading `:`. Faster and less error-prone than typing it through `/key` |
 | `POST /theme` | `{"scheme": "light"}` | Switch the color scheme (a key or label: `dark`, `light`, `brown`, `amiga`). Panels repaint from `palette()` next frame |

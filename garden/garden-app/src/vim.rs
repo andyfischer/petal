@@ -44,7 +44,7 @@ impl Mode {
 }
 
 /// Keys the vim layer understands, decoupled from the windowing toolkit.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Char(char),
     /// A character pressed with Ctrl held (`Ctrl('r')` = redo). Modeled here
@@ -65,6 +65,33 @@ pub enum Key {
     PageUp,
     PageDown,
 }
+
+/// Every named [`Key`] and its canonical spelling from petal-ui's cross-host
+/// vocabulary ([`garden_script::KEY_NAMES`]). The one table both directions
+/// read: the debug server's `/key` parses names through it and a panel script
+/// is handed the same names back, so the two cannot disagree. Character keys
+/// other than space are spelled by the character itself and aren't listed.
+///
+/// `return`, not `enter`: every other embedder (SDL, the test prelude) spells
+/// Return this way, and a panel script — including petal-ui's own
+/// `text_field`, which Garden vendors and can't patch — reads
+/// `key_pressed("return")`.
+pub const NAMED_KEYS: &[(&str, Key)] = &[
+    ("return", Key::Enter),
+    ("tab", Key::Tab),
+    ("space", Key::Char(' ')),
+    ("backspace", Key::Backspace),
+    ("delete", Key::Delete),
+    ("escape", Key::Escape),
+    ("left", Key::Left),
+    ("right", Key::Right),
+    ("up", Key::Up),
+    ("down", Key::Down),
+    ("home", Key::Home),
+    ("end", Key::End),
+    ("pageup", Key::PageUp),
+    ("pagedown", Key::PageDown),
+];
 
 /// Pending normal-mode parser state plus the yank register.
 #[derive(Default)]

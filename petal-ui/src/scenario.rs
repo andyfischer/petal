@@ -369,9 +369,7 @@ fn parse_key(v: &Json) -> Result<String, String> {
         .as_str()
         .ok_or_else(|| "key name must be a string".to_string())?;
     if !input::is_canonical_key(name) {
-        return Err(format!(
-            "`{name}` is not a canonical key name (see petal_ui::input::KEY_NAMES)"
-        ));
+        return Err(input::non_canonical_key_error(name));
     }
     Ok(name.to_string())
 }

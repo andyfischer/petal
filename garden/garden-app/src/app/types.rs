@@ -25,33 +25,14 @@ pub struct Viewport {
     pub scale: f64,
 }
 
-/// Modifier state accompanying one key press.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Mods {
-    pub cmd: bool,
-    pub ctrl: bool,
-    pub shift: bool,
-    /// `Alt`/`Option`. Carried all the way into a panel script's `mod_alt()`,
-    /// which is why it exists: a panel whose bare letters are content needs a
-    /// modifier the host doesn't already own.
-    pub alt: bool,
-}
-
-impl Mods {
-    /// The chord as petal-ui's modifier bitmask — `1=shift 2=ctrl 4=alt 8=cmd`,
-    /// the same encoding a script reads through `modifiers` and the debug
-    /// server reports as `panel.input.modifiers`. Used to match a panel's
-    /// [key claims](crate::panel_view::PanelView::claims_key).
-    pub fn bits(self) -> u8 {
-        (self.shift as u8) | (self.ctrl as u8) << 1 | (self.alt as u8) << 2 | (self.cmd as u8) << 3
-    }
-
-    /// Whether a **command** modifier is held (`Cmd`/`Ctrl`/`Alt`). Shift is
-    /// excluded: it only shifts the character.
-    pub fn any_command(self) -> bool {
-        self.cmd || self.ctrl || self.alt
-    }
-}
+/// Modifier state accompanying one key press — petal-ui's own
+/// [`Modifiers`](garden_script::Modifiers), so the chord a frontend builds is
+/// the one a panel script reads, with no conversion between them. `alt` is
+/// carried all the way into a panel script's `mod_alt()`: a panel whose bare
+/// letters are content needs a modifier the host doesn't already own.
+/// [`bits`](garden_script::Modifiers::bits) is the mask used to match a
+/// panel's [key claims](crate::panel_view::PanelView::claims_key).
+pub type Mods = garden_script::Modifiers;
 
 /// A native-menu command (the macOS menu bar). Built by the windowed
 /// frontend and routed into the core via [`App::dispatch_menu`](super::App::dispatch_menu),

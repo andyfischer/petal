@@ -158,6 +158,17 @@ pub fn is_canonical_key(name: &str) -> bool {
     KEY_NAMES.contains(&name)
 }
 
+/// The error for a key name outside [`KEY_NAMES`], listing the vocabulary. Every
+/// host boundary that accepts key names from outside (scenario files, Garden's
+/// debug server) rejects with this message rather than silently driving
+/// nothing.
+pub fn non_canonical_key_error(name: &str) -> String {
+    format!(
+        "`{name}` is not a canonical key name (see petal_ui::input::KEY_NAMES): expected one of {}",
+        KEY_NAMES.join(", ")
+    )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Modifiers {
     pub shift: bool,
@@ -167,11 +178,23 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
+    /// The chord as a bitmask — `1=shift 2=ctrl 4=alt 8=cmd`, the encoding a
+    /// script reads through `modifiers`.
+    pub fn bits(self) -> u8 {
+        (self.shift as u8) * MOD_SHIFT as u8
+            | (self.ctrl as u8) * MOD_CTRL as u8
+            | (self.alt as u8) * MOD_ALT as u8
+            | (self.cmd as u8) * MOD_CMD as u8
+    }
+
+    /// Whether a **command** modifier is held (`Cmd`/`Ctrl`/`Alt`). Shift is
+    /// excluded: it only shifts the character.
+    pub fn any_command(self) -> bool {
+        self.cmd || self.ctrl || self.alt
+    }
+
     fn to_bits(self) -> i64 {
-        (self.shift as i64) * MOD_SHIFT
-            + (self.ctrl as i64) * MOD_CTRL
-            + (self.alt as i64) * MOD_ALT
-            + (self.cmd as i64) * MOD_CMD
+        self.bits() as i64
     }
 }
 

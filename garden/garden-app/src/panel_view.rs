@@ -22,7 +22,7 @@ use garden_core::projection::{
 };
 use garden_render::{ClipMask, Color, Primitive, Rect, TextStyle, Vertex, FONT_SIZE};
 use garden_script::{
-    DrawTrace, InputEvent, Modifiers, NavIntent, PanelCmd, PanelData, PanelHost, PanelInput,
+    DrawTrace, InputEvent, NavIntent, PanelCmd, PanelData, PanelHost, PanelInput,
     ProjectionSpec,
 };
 
@@ -1384,12 +1384,7 @@ impl PanelView {
     /// used to return false forever — a keybinding written that way simply did
     /// nothing, with no error to notice.
     pub fn set_modifiers(&mut self, mods: Mods) {
-        self.host.input_event(InputEvent::Modifiers(Modifiers {
-            shift: mods.shift,
-            ctrl: mods.ctrl,
-            alt: mods.alt,
-            cmd: mods.cmd,
-        }));
+        self.host.input_event(InputEvent::Modifiers(mods));
         let was = self.mods;
         self.mods = mods;
         for (name, now, before) in [

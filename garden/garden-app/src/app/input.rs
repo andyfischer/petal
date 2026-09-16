@@ -988,32 +988,20 @@ fn panel_key_text(key: Key, mods: Mods) -> Option<String> {
 }
 
 /// The canonical name a panel script reads a key as (e.g. `key_pressed("down")`).
-/// Named keys use lowercase words; a character key uses the character itself,
-/// with the space bar as `"space"`. `Ctrl`-chords never reach here.
+/// Named keys (and the space bar) take their spelling from
+/// [`vim::NAMED_KEYS`], the same table `/key` parses; any other character key
+/// uses the character itself. `Ctrl`-chords never reach here.
 fn panel_key_name(key: Key) -> Option<String> {
-    Some(match key {
-        Key::Char(' ') => "space".to_string(),
-        Key::Char(c) => c.to_string(),
-        // `return`, not `enter`: petal-ui's `KEY_NAMES` is the cross-host
-        // vocabulary and every other embedder (SDL, the test prelude) spells
-        // Return this way. A panel script — including petal-ui's own
-        // `text_field`, which we vendor and can't patch — reads
-        // `key_pressed("return")`, so Garden has to emit it too.
-        Key::Enter => "return".to_string(),
-        Key::Tab => "tab".to_string(),
-        Key::Backspace => "backspace".to_string(),
-        Key::Delete => "delete".to_string(),
-        Key::Escape => "escape".to_string(),
-        Key::Left => "left".to_string(),
-        Key::Right => "right".to_string(),
-        Key::Up => "up".to_string(),
-        Key::Down => "down".to_string(),
-        Key::Home => "home".to_string(),
-        Key::End => "end".to_string(),
-        Key::PageUp => "pageup".to_string(),
-        Key::PageDown => "pagedown".to_string(),
-        Key::Ctrl(_) => return None,
-    })
+    if let Key::Ctrl(_) = key {
+        return None;
+    }
+    if let Some((name, _)) = vim::NAMED_KEYS.iter().find(|(_, k)| *k == key) {
+        return Some((*name).to_string());
+    }
+    match key {
+        Key::Char(c) => Some(c.to_string()),
+        _ => None,
+    }
 }
 
 /// Copy the selection to the clipboard (a no-op without one; the selection
@@ -1221,32 +1209,19 @@ mod tests {
         assert_eq!(panel_key_name(Key::Enter), Some("return".into()));
     }
 
-    /// Every named key Garden forwards has to be in petal-ui's cross-host
-    /// vocabulary; only character keys are Garden's to spell.
+    /// The shared key table is spelled in petal-ui's cross-host vocabulary, and
+    /// parsing a name then naming the key gives the name back — both
+    /// directions read the one table, so this pins the table, not a copy.
     #[test]
-    fn named_panel_keys_are_in_the_petal_ui_vocabulary() {
-        let named = [
-            Key::Enter,
-            Key::Tab,
-            Key::Backspace,
-            Key::Delete,
-            Key::Escape,
-            Key::Left,
-            Key::Right,
-            Key::Up,
-            Key::Down,
-            Key::Home,
-            Key::End,
-            Key::PageUp,
-            Key::PageDown,
-            Key::Char(' '),
-        ];
-        for key in named {
-            let name = panel_key_name(key).expect("named key has a panel name");
+    fn named_keys_are_canonical_and_round_trip() {
+        for (name, key) in vim::NAMED_KEYS {
             assert!(
-                garden_script::KEY_NAMES.contains(&name.as_str()),
+                garden_script::KEY_NAMES.contains(name),
                 "{name:?} is not a petal-ui canonical key name"
             );
+            assert_eq!(crate::debug::parse_key(name), Some(*key));
+            assert_eq!(panel_key_name(*key).as_deref(), Some(*name));
         }
     }
+
 }

@@ -140,6 +140,35 @@ export interface MouseReply {
   selection?: { text?: string } | null;
 }
 
+/** One step of `POST /batch` (feature `debug.batch`): an endpoint's own body
+ *  plus its `path` (query and a per-step `select=` allowed) and `method`
+ *  (default POST). */
+export interface BatchStep {
+  path: string;
+  method?: "GET" | "POST";
+  [field: string]: unknown;
+}
+
+export interface BatchReply {
+  ok: boolean;
+  /** One entry per step that ran, in order. A text reply is `{ok, text}`. */
+  results: unknown[];
+  /** On a failed step: its index and error; `results` holds the steps before it. */
+  failed?: number;
+  error?: string;
+}
+
+/** A `/mouse` body at pane-local coordinates, for [`DebugClient.gesturePaneLocal`]. */
+export interface PaneMouseStep {
+  op: string;
+  x?: number;
+  y?: number;
+  to?: { x: number; y: number };
+  /** Project the settled snapshot right after this step (e.g. a mid-drag value). */
+  select?: string[];
+  [field: string]: unknown;
+}
+
 export interface WindowInfo {
   window: number;
   focused: boolean;
@@ -496,13 +525,40 @@ export class DebugClient {
   }
 
   async scrollPaneLocal(x: number, y: number, lines: number, pane = 0): Promise<void> {
-    const r = (await this.pane(pane)).rect;
-    await this.scroll(r.x + x, r.y + y, lines);
+    await this.gesturePaneLocal([{ op: "scroll", x, y, lines }], pane);
   }
 
   async mousePaneLocal(op: string, x: number, y: number, pane = 0): Promise<void> {
+    await this.gesturePaneLocal([{ op, x, y }], pane);
+  }
+
+  /** Several commands in one event-loop visit (feature `debug.batch`): no frame
+   *  and no other request runs between the steps. Throws when a step fails,
+   *  after the steps before it have run. */
+  async batch(steps: BatchStep[]): Promise<unknown[]> {
+    const reply = await this.post<BatchReply>("/batch", steps);
+    if (reply === null) throw new Error("POST /batch: no JSON reply");
+    if (!reply.ok) throw new Error(`POST /batch: ${reply.error ?? JSON.stringify(reply)}`);
+    return reply.results;
+  }
+
+  /** A whole mouse gesture at pane-local coordinates as one atomic batch — e.g.
+   *  `[{op: "down", ...}, {op: "move", ..., select: ["panes.0.panel.values.w"]},
+   *  {op: "up"}]`. The pane origin is read once, not once per step. Returns
+   *  each step's reply; a step with `select` answers with that projection of
+   *  the settled snapshot taken right after it. */
+  async gesturePaneLocal(steps: PaneMouseStep[], pane = 0): Promise<unknown[]> {
     const r = (await this.pane(pane)).rect;
-    await this.mouse(op, r.x + x, r.y + y);
+    const round = (v: number | undefined, o: number) => (v === undefined ? undefined : Math.round(o + v));
+    return await this.batch(
+      steps.map(({ select, to, x, y, ...rest }) => ({
+        path: select?.length ? `/mouse?select=${encodeURIComponent(select.join(","))}` : "/mouse",
+        ...rest,
+        x: round(x, r.x),
+        y: round(y, r.y),
+        ...(to ? { to: { x: Math.round(r.x + to.x), y: Math.round(r.y + to.y) } } : {}),
+      })),
+    );
   }
 }
 

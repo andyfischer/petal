@@ -79,6 +79,14 @@
 //! POST /menu         {"action": "Save"}               fire a native-menu item;
 //!                    {"action": "OpenFile", "arg": "path"} / {"action":
 //!                    "SetTheme", "arg": "dark"} for the items that take one
+//! POST /batch        [{"path": "/mouse", "op": "down", "x": 10, "y": 20},
+//!                     {"path": "/mouse?select=panes.0.panel.values.w",
+//!                      "op": "move", "x": 90, "y": 20},
+//!                     {"path": "/mouse", "op": "up"}]
+//!                    run the steps in order in one event-loop visit (no frame
+//!                    runs between them); reply {"ok", "results": [...]}. A
+//!                    step failing stops the batch: 400 with "failed" (its
+//!                    index), "error", and the results before it
 //! ```
 
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -100,6 +108,10 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 /// [`REPLY_TIMEOUT`]; a few seconds of panel time per call is plenty, and a
 /// harness that wants more can call again.
 const MAX_TICK_FRAMES: u64 = 600;
+
+/// Upper bound on steps in one `POST /batch`, for the same reason: the event
+/// loop is blocked until the last one has run.
+const MAX_BATCH_STEPS: usize = 1000;
 
 /// The port this process's debug server is listening on, for `/state`'s
 /// identity block. `0` until [`spawn`] binds.
@@ -486,6 +498,22 @@ pub enum DebugCmd {
         /// routes. `drag`/`scroll` ignore it: neither has a right-button form.
         button: u8,
     },
+    /// `POST /batch`: several commands run back to back in one event-loop
+    /// visit, so a gesture (`down`, `move`, `up`) is atomic — no frame and no
+    /// other request runs between its steps. Every step targets the batch's
+    /// window. Steps are routed (and rejected) up front, so a malformed batch
+    /// changes nothing.
+    Batch {
+        steps: Vec<BatchStep>,
+    },
+}
+
+/// One step of a [`DebugCmd::Batch`]: the routed command plus the step's own
+/// `?select=`, which projects that step's result — for a state-changing step,
+/// the settled snapshot right after it (see [`DebugCmd::changes_state`]).
+pub struct BatchStep {
+    pub cmd: DebugCmd,
+    pub select: Option<Select>,
 }
 
 /// The input endpoints' default acknowledgment, as a `?select=` over the
@@ -512,6 +540,7 @@ impl DebugCmd {
             | DebugCmd::Tick { .. }
             | DebugCmd::Seed { .. }
             | DebugCmd::PanelReset => true,
+            DebugCmd::Batch { steps } => steps.iter().any(|step| step.cmd.changes_state()),
             DebugCmd::State { .. }
             | DebugCmd::Capture { .. }
             | DebugCmd::Frame { .. }
@@ -669,6 +698,9 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
 
     let (tx, rx) = mpsc::channel();
     let snapshot = select.is_some() && cmd.changes_state();
+    // A batch whose step failed still replies JSON (the results before the
+    // failure), but as a 400, so a client that only checks the status sees it.
+    let is_batch = matches!(cmd, DebugCmd::Batch { .. });
     if !sink.send(DebugRequest {
         cmd,
         window,
@@ -682,7 +714,14 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
         );
     }
     match rx.recv_timeout(REPLY_TIMEOUT) {
-        Ok(Ok(Reply::Json(value))) => respond_json(&mut writer, 200, &project(value)),
+        Ok(Ok(Reply::Json(value))) => {
+            let status = if is_batch && value["ok"] == false {
+                400
+            } else {
+                200
+            };
+            respond_json(&mut writer, status, &project(value))
+        }
         Ok(Ok(_)) if select.is_some() => respond_json(
             &mut writer,
             400,
@@ -1047,8 +1086,84 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
                 button: v["button"].as_u64().unwrap_or(0) as u8,
             })
         }
+        ("POST", "/batch") => route_batch(parse_body()?),
         _ => Err((404, format!("no endpoint {method} {path}"))),
     }
+}
+
+/// `POST /batch`: a JSON array of steps, each an endpoint's own body plus
+/// `"path"` (which may carry that endpoint's query, and a per-step `select=`)
+/// and an optional `"method"` (default `POST`; `GET` for a read). Every step is
+/// routed here, before anything runs, and any bad step rejects the whole batch
+/// with its index. A step may not name a window (the batch's `?window=` targets
+/// all of them), nest another batch, or ask for a non-JSON capture.
+fn route_batch(body: Value) -> Result<DebugCmd, (u16, String)> {
+    let Value::Array(items) = body else {
+        return Err((400, "a batch body is a JSON array of steps".to_string()));
+    };
+    if items.is_empty() {
+        return Err((400, "empty batch".to_string()));
+    }
+    if items.len() > MAX_BATCH_STEPS {
+        return Err((
+            400,
+            format!(
+                "{} steps is more than the {MAX_BATCH_STEPS}-step limit per /batch",
+                items.len()
+            ),
+        ));
+    }
+    let steps = items
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| {
+            route_batch_step(item).map_err(|(_, msg)| (400, format!("step {i}: {msg}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DebugCmd::Batch { steps })
+}
+
+fn route_batch_step(item: Value) -> Result<BatchStep, (u16, String)> {
+    let Value::Object(mut fields) = item else {
+        return Err((400, "a step is a JSON object with a \"path\"".to_string()));
+    };
+    let path = match fields.remove("path") {
+        Some(Value::String(path)) => path,
+        _ => return Err((400, "missing \"path\"".to_string())),
+    };
+    let method = match fields.remove("method") {
+        None => "POST".to_string(),
+        Some(Value::String(method)) => method.to_ascii_uppercase(),
+        Some(_) => return Err((400, "\"method\" must be a string".to_string())),
+    };
+    let (path, window) = parse_target(&path)?;
+    if window.is_some() {
+        return Err((
+            400,
+            "window= applies to the whole batch, not one step".to_string(),
+        ));
+    }
+    let (path, select) = parse_select(&path)?;
+    if is_static_endpoint(&method, &path) {
+        return Err((400, format!("{method} {path} cannot be batched")));
+    }
+    let body = if method == "GET" {
+        Vec::new()
+    } else {
+        serde_json::to_vec(&Value::Object(fields)).expect("a JSON object serializes")
+    };
+    let cmd = route(&method, &path, &body)?;
+    match &cmd {
+        DebugCmd::Batch { .. } => return Err((400, "a batch cannot contain a batch".to_string())),
+        DebugCmd::Capture { format, .. } if *format != Some(CaptureFormat::Json) => {
+            return Err((
+                400,
+                format!("only JSON captures can be batched ({path}: use /scene or format=json)"),
+            ))
+        }
+        _ => {}
+    }
+    Ok(BatchStep { cmd, select })
 }
 
 /// Modifiers for a `/mouse` body: the `"mods": ["cmd", "shift", …]` array plus

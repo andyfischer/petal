@@ -136,6 +136,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // `cursor` / `selection` (the focused pane's), so the default input
     // acknowledgment is the projection `focus,cursor,selection`.
     "debug.command-select",
+    // `POST /batch`: an array of command bodies (each with its `path`) run in
+    // one event-loop visit, replying `{ok, results}`; a step's own `select=`
+    // projects the settled snapshot right after it.
+    "debug.batch",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

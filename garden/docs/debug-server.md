@@ -272,6 +272,48 @@ curl -s -X POST "127.0.0.1:$PORT/tick?select=panel_frames,panes.0.panel.values.s
 
 Feature `debug.command-select`.
 
+### Batching commands
+
+`POST /batch` takes a JSON array of steps and runs them in order in **one**
+event-loop visit: no frame and no other request runs between them, so a
+gesture is atomic. Each step is an endpoint's own body plus its `path` (which
+may carry that endpoint's query), and an optional `method` (default `POST`;
+`GET` for a read such as `/state` or `/scene`):
+
+```bash
+curl -s -X POST "127.0.0.1:$PORT/batch" -d '[
+  {"path": "/mouse", "op": "down", "x": 212, "y": 300},
+  {"path": "/mouse?select=panes.0.panel.values.left_w", "op": "move", "x": 352, "y": 300},
+  {"path": "/mouse", "op": "up", "x": 352, "y": 300},
+  {"path": "/state?values=left_w", "method": "GET"}
+]'
+# {"ok": true, "results": [{…ack…}, {"ok": true, "panes": [{"panel": {"values": {"left_w": 340}}}]}, {…}, {…}]}
+```
+
+- `results` has one entry per step: the reply that request would have got on
+  its own. A step's `select=` projects its result, so on a state-changing step
+  it is the settled snapshot right after that step, here the width mid-drag,
+  before the release. A text reply (`/buffer/<n>`) becomes `{"ok": true, "text": …}`.
+- Every step is routed before anything runs. A malformed step (unknown path,
+  bad body, unknown key name) rejects the whole batch with a 400 naming the
+  step (`"step 2: …"`), and nothing happens.
+- A step that fails while running stops the batch. The reply is a 400 with
+  `ok: false`, `failed` (the step's index), `error`, and the `results` of the
+  steps before it. Those steps did run: a batch is atomic against the event
+  loop, not a transaction.
+- `?window=` and `?select=` on `/batch` itself apply to the whole batch. The
+  window targets every step; a step may not name its own. With `select=`, the
+  reply is one final settled snapshot with `results` laid on top, so add
+  `results` to the selection to keep them.
+- A step cannot be another `/batch`, `GET /version`, or a PNG/text capture
+  (use `/scene` or `/capture?format=json`). At most 1000 steps.
+
+`DebugClient.batch(steps)` sends one and throws on a failed step;
+`DebugClient.gesturePaneLocal(steps, pane)` sends a whole mouse gesture at
+pane-local coordinates, reading the pane origin once
+(`tools/git-panel-integration-test.ts` drags its dividers this way).
+Feature `debug.batch`.
+
 ### Reading script output
 
 `script.output` is every `print(...)` line from the layout script and every
@@ -509,6 +551,7 @@ answered on the event-loop thread. In headless mode you rarely need this:
 | `POST /theme` | `{"scheme": "light"}` | Switch the color scheme (a key or label: `dark`, `light`, `brown`, `amiga`). Panels repaint from `palette()` next frame |
 | `POST /mouse` | see below | Mouse press, move, release, or scroll |
 | `POST /menu` | `{"action": "Save"}` | Fire a native menu item by name. See [Native menu](#native-menu) |
+| `POST /batch` | `[{"path": "/mouse", "op": "down", …}, …]` | Several commands in one event-loop visit, replying `{ok, results}`. See [Batching commands](#batching-commands). Feature `debug.batch` |
 
 `POST /mouse` ops (`x`/`y` in logical pixels, window-relative, the same units
 as the rects in `/state`):

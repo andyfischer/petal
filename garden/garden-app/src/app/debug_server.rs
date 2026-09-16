@@ -232,6 +232,7 @@ impl App {
                 ))
             }
             DebugCmd::Capture { pane, format, find } => self.capture(pane, format, find, capture),
+            DebugCmd::Batch { steps } => Ok(Reply::Json(self.run_batch(steps, capture))),
             DebugCmd::Windows => Ok(Reply::Json(capture.windows(self))),
             DebugCmd::Frame { min } => {
                 let frame = self.frame();
@@ -398,6 +399,44 @@ impl App {
                 })
             }
         }
+    }
+
+    /// `POST /batch`: answer each step in order, as its own request would be
+    /// answered but with no frame and no other request in between. A step's
+    /// `select=` projects its result (for a state-changing step, the settled
+    /// snapshot right after it); a text reply (`/buffer`) becomes
+    /// `{"ok": true, "text": …}`. The first failing step stops the batch: the
+    /// reply is then `ok: false` with its index, its error, and the results of
+    /// the steps before it (which did run — a batch is atomic against the
+    /// event loop, not transactional).
+    fn run_batch(&mut self, steps: Vec<debug::BatchStep>, capture: &mut dyn Capture) -> Value {
+        let mut results = Vec::with_capacity(steps.len());
+        for (i, debug::BatchStep { cmd, select }) in steps.into_iter().enumerate() {
+            let result = match self.answer(cmd, select.is_some(), capture) {
+                Ok(Reply::Json(value)) => Ok(match &select {
+                    Some(select) => select.apply(&value),
+                    None => value,
+                }),
+                Ok(Reply::Text(_)) if select.is_some() => {
+                    Err("select= applies only to JSON replies".to_string())
+                }
+                Ok(Reply::Text(text)) => Ok(json!({"ok": true, "text": text})),
+                Ok(Reply::Png { .. }) => Err("a PNG capture cannot be batched".to_string()),
+                Err(err) => Err(err),
+            };
+            match result {
+                Ok(value) => results.push(value),
+                Err(err) => {
+                    return json!({
+                        "ok": false,
+                        "failed": i,
+                        "error": format!("step {i}: {err}"),
+                        "results": results,
+                    })
+                }
+            }
+        }
+        json!({"ok": true, "results": results})
     }
 
     /// Small acknowledgment for input injection: where the focused cursor and
@@ -1440,6 +1479,96 @@ mod tests {
             _ => panic!("/frame answers JSON"),
         };
         assert!(frame.get("panes").is_none());
+    }
+
+    /// `POST /batch` runs its steps in order in one visit: per-step `select=`
+    /// reads the settled snapshot mid-sequence, a failing step stops the batch
+    /// with the results before it, and a malformed step rejects the whole batch
+    /// at routing, before anything runs.
+    #[test]
+    fn batch_runs_steps_in_order_in_one_visit() {
+        let (mut app, _f) = panel_app(
+            "state hits = 0\nif key_pressed(\"space\") then hits = hits + 1 end\nlet seen = hits\n",
+        );
+        let run = |app: &mut App, body: &str| {
+            let cmd = debug::route_for_test("POST", "/batch", body.as_bytes()).expect("routes");
+            match app.answer(cmd, false, &mut NoCapture).expect("answers") {
+                Reply::Json(v) => v,
+                _ => panic!("/batch answers JSON"),
+            }
+        };
+
+        let reply = run(
+            &mut app,
+            r#"[{"path": "/key", "key": "space"},
+                {"path": "/key?select=panes.0.panel.values.seen", "key": "space"},
+                {"path": "/state?values=seen", "method": "GET"},
+                {"path": "/buffer/0", "method": "GET"},
+                {"path": "/tick", "n": 2}]"#,
+        );
+        assert_eq!(reply["ok"], true, "{reply}");
+        let results = reply["results"].as_array().expect("results");
+        assert_eq!(results.len(), 5);
+        assert!(
+            results[0].get("panes").is_none(),
+            "no select: the plain ack"
+        );
+        assert_eq!(results[1]["panes"][0]["panel"]["values"]["seen"], 2);
+        assert!(
+            results[1].get("identity").is_none(),
+            "the step's select projects it"
+        );
+        assert_eq!(results[2]["panes"][0]["panel"]["values"]["seen"], 2);
+        assert_eq!(results[3]["ok"], true);
+        assert!(results[3]["text"].is_string());
+        assert_eq!(results[4]["panel_frames"], 2);
+
+        // A step that fails at run time stops the batch; earlier steps ran.
+        let reply = run(
+            &mut app,
+            r#"[{"path": "/key", "key": "space"},
+                {"path": "/theme", "scheme": "no-such-scheme"},
+                {"path": "/key", "key": "space"}]"#,
+        );
+        assert_eq!(reply["ok"], false);
+        assert_eq!(reply["failed"], 1);
+        assert_eq!(reply["results"].as_array().map(Vec::len), Some(1));
+        assert!(reply["error"].as_str().unwrap().starts_with("step 1:"));
+
+        // The snapshot flag on the batch as a whole: one final settled snapshot
+        // with the results laid on top.
+        let cmd = debug::route_for_test("POST", "/batch", br#"[{"path": "/key", "key": "space"}]"#)
+            .expect("routes");
+        let Reply::Json(reply) = app.answer(cmd, true, &mut NoCapture).expect("answers") else {
+            panic!("/batch answers JSON");
+        };
+        assert_eq!(reply["panes"][0]["panel"]["values"]["seen"], 4);
+        assert_eq!(reply["results"].as_array().map(Vec::len), Some(1));
+
+        // Malformed batches are rejected before anything runs.
+        for bad in [
+            r#"{"path": "/key"}"#,
+            "[]",
+            r#"[{"key": "space"}]"#,
+            r#"[{"path": "/key", "key": "space"}, {"path": "/nope"}]"#,
+            r#"[{"path": "/key?window=2", "key": "space"}]"#,
+            r#"[{"path": "/batch"}]"#,
+            r#"[{"path": "/screenshot", "method": "GET"}]"#,
+            r#"[{"path": "/version", "method": "GET"}]"#,
+        ] {
+            let err = debug::route_for_test("POST", "/batch", bad.as_bytes())
+                .err()
+                .unwrap_or_else(|| panic!("{bad} must be rejected"));
+            assert_eq!(err.0, 400, "{bad}: {}", err.1);
+        }
+        let err = debug::route_for_test(
+            "POST",
+            "/batch",
+            br#"[{"path": "/key", "key": "space"}, {"path": "/key", "key": "nope"}]"#,
+        )
+        .err()
+        .expect("an unknown key rejects the batch");
+        assert!(err.1.starts_with("step 1:"), "{}", err.1);
     }
 
     /// A snapshot peeks at script output rather than draining it, so a

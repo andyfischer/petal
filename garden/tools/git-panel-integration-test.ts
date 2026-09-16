@@ -65,7 +65,7 @@ console.log("launching git history browser with debug server...");
 const app = await launchGarden({
   args: ["git", "log", ...mode],
   cwd: repo,
-  requireFeatures: ["debug.scene-find"],
+  requireFeatures: ["debug.scene-find", "debug.batch"],
   logPath,
 });
 const g = app.client;
@@ -193,21 +193,29 @@ checks.check("hunk click collapses again", await pstate("diff_expanded"), false)
 // column; the new width holds after the button is released.
 const lw0 = await pnum("left_w");
 const divX = 12 + lw0;
-await g.mousePaneLocal("down", divX, 300);
-await g.mousePaneLocal("move", divX + 140, 300);
-const lw1 = await pnum("left_w");
+// One atomic batch: the mid-drag width is read from the snapshot taken right
+// after the move, before the release in the same request.
+const midDrag = (step: unknown, name: string) =>
+  Number((step as { panes: { panel: { values: Record<string, unknown> } }[] }).panes[0].panel.values[name]);
+let gesture = await g.gesturePaneLocal([
+  { op: "down", x: divX, y: 300 },
+  { op: "move", x: divX + 140, y: 300, select: ["panes.0.panel.values.left_w"] },
+  { op: "up", x: divX + 140, y: 300 },
+]);
+const lw1 = midDrag(gesture[1], "left_w");
 checks.checkGt("divider drag widens left column", lw1, lw0);
-await g.mousePaneLocal("up", divX + 140, 300);
 checks.check("widened column holds after drag", await pnum("left_w"), lw1);
 
 // Dragging the horizontal divider (at panel y = header 50 + commits_area + 2)
 // resizes the commit list vs the file list.
 const ca0 = await pnum("commits_area");
 const hy = 50 + ca0 + 2;
-await g.mousePaneLocal("down", 100, hy);
-await g.mousePaneLocal("move", 100, hy - 90);
-const ca1 = await pnum("commits_area");
-await g.mousePaneLocal("up", 100, hy - 90);
+gesture = await g.gesturePaneLocal([
+  { op: "down", x: 100, y: hy },
+  { op: "move", x: 100, y: hy - 90, select: ["panes.0.panel.values.commits_area"] },
+  { op: "up", x: 100, y: hy - 90 },
+]);
+const ca1 = midDrag(gesture[1], "commits_area");
 checks.checkLt("horizontal drag shrinks commit list", ca1, ca0);
 
 // The ⟳ Refresh button (top-right) re-runs git: after a new tracked change lands

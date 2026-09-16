@@ -1,0 +1,786 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  ASTEROIDS — a Garden panel app written in Petal.
+//
+//  Exercises: vector movement with rotation and inertia, procedurally
+//  generated polygon rocks that split when shot, a bullet pool, a particle
+//  system (sparks, exhaust, and the ship's own lines flying apart), circle
+//  collision against a wrapping toroidal field, and a four-phase UI
+//  (title → play → respawn / level clear → game over).
+//
+//  Designed for a 1100x780 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG     = #05070d
+let C_FIELD  = #090c16
+let C_LINE   = #1c2233
+let C_EDGE   = #2a3248
+let C_TEXT   = #e9edf7
+let C_DIM    = #7a869c
+let C_MUTE   = #4a5266
+let C_CHIP   = #12161f
+let C_SHIP   = #9fe8ff
+let C_FLAME  = #ffb04d
+let C_SHOT   = #fff3c4
+let C_ROCK   = #c9d3e8
+let C_WARN   = #e8607a
+let C_GOLD   = #ffd166
+let C_VIOLET = #a58cf0
+
+// ── Type scale ───────────────────────────────────────────────────────────
+// Five sizes in the whole app: 10 / 12 / 20 / 30 / 44.
+
+let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
+let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
+let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
+let S_STAT  = {size: 20, color: C_TEXT}
+let S_STATD = {size: 20, color: C_MUTE}
+let S_SCORE = {size: 44, color: C_TEXT}
+let S_CAP   = {size: 12, color: C_TEXT}
+let S_HINT  = {size: 12, color: C_DIM}
+let S_BIG   = {size: 30, color: C_TEXT, spacing: 7}
+let S_SUB   = {size: 12, color: C_DIM}
+let S_BADGE = {size: 10, color: C_TEXT, spacing: 2}
+
+// ── Tunables ─────────────────────────────────────────────────────────────
+
+config let start_lives   = 3
+config let turn_rate     = 4.4      // rad/s
+config let thrust_accel  = 330.0    // px/s^2
+config let max_speed     = 430.0
+config let drag          = 0.55     // fraction of velocity lost per second
+config let shot_speed    = 560.0
+config let shot_life     = 1.05     // seconds
+config let shot_cooldown = 0.16
+config let max_shots     = 5
+config let safe_secs     = 2.6      // invulnerability after a respawn
+config let warp_cooldown = 2.2
+config let tap_hold      = 0.12     // how long an injected keypress "holds"
+
+let PAD  = 30
+let HEAD = 112
+let FOOT = 60
+let SHIP_R = 13.0                   // ship hull radius for collision
+
+// Rock tiers: radius, vertex count, score, and how many it splits into.
+let TIERS = [
+  {r: 16.0, n: 7,  score: 100, kids: 0},
+  {r: 30.0, n: 9,  score: 50,  kids: 2},
+  {r: 54.0, n: 12, score: 20,  kids: 2},
+]
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state var ready     = false
+state var phase     = "title"   // title | play | paused | dead | cleared | over
+state var level     = 1
+state var score     = 0
+state var lives     = start_lives
+state var best      = 0
+state var rocks     = []        // {x, y, vx, vy, ang, spin, tier, shape}
+state var shots     = []        // {x, y, vx, vy, life}
+state var bits      = []        // sparks {x, y, vx, vy, life, max, c, sz}
+state var wreck     = []        // ship fragments {x, y, vx, vy, ang, spin, len, life}
+state var stars     = []        // {x, y, sz, ph}
+state var sx        = 0.0       // ship
+state var sy        = 0.0
+state var svx       = 0.0
+state var svy       = 0.0
+state var sang      = 0.0
+state var thrusting = false
+state var safe_t    = 0.0
+state var cool_t    = 0.0
+state var warp_t    = 0.0
+state var dead_t    = 0.0
+state var hold_l    = 0.0
+state var hold_r    = 0.0
+state var hold_up   = 0.0
+state var shake     = 0.0
+state var banner    = ""
+state var subbanner = ""
+state var toast     = ""
+state var toast_t   = 0.0
+state var toast_c   = C_TEXT
+state var pulse     = 0.0
+state var shot_count = 0
+state var hit_count = 0
+state var broken    = 0
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record)
+  draw_text(s, {x: int(x), y: int(y)}, style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record)
+  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record)
+  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+end
+
+// The prelude has record-colour overloads for rects, circles, lines and text,
+// but not for polylines, polygon fills, triangles or rings. These wrap the
+// flat natives so the whole app can talk in palette records.
+fn poly(pts, c: record, a: int, w: int)
+  draw_polyline(pts, c.r, c.g, c.b, a, w)
+end
+
+fn fill_p(pts, c: record, a: int)
+  fill_polygon(pts, c.r, c.g, c.b, a)
+end
+
+fn tri(x1, y1, x2, y2, x3, y3, c: record, a: int)
+  fill_triangle(x1, y1, x2, y2, x3, y3, c.r, c.g, c.b, a)
+end
+
+fn ring(x, y, r, c: record, a: int, w: int)
+  draw_circle_outline(x, y, r, c.r, c.g, c.b, a, w)
+end
+
+fn seg(x1, y1, x2, y2, c: record, a: int, w: int)
+  draw_line(x1, y1, x2, y2, c.r, c.g, c.b, a, w)
+end
+
+fn mix(a: record, b: record, t: num) -> record
+  {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
+    g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+    b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+end
+
+fn wrap_x(x: num, lo: num, hi: num, margin: num) -> num
+  if x < lo - margin then hi + margin
+  elsif x > hi + margin then lo - margin
+  else x end
+end
+
+// A rock's silhouette: `n` radius multipliers, so the same shape rotates
+// rigidly frame to frame instead of being re-rolled.
+fn make_shape(n: int)
+  for i in range(0, n) do random(0.70, 1.14) end
+end
+
+fn make_rock(x: num, y: num, tier: int, speed: num)
+  let t = TIERS[tier]
+  let a = random(0.0, 6.2832)
+  {x: x, y: y, vx: cos(a) * speed, vy: sin(a) * speed,
+    ang: random(0.0, 6.2832), spin: random(-1.1, 1.1),
+    tier: tier, shape: make_shape(t.n)}
+end
+
+// World-space vertex list for a rock, closed for polylines when `close`.
+fn rock_points(rk: record, ox: num, oy: num, close: bool)
+  let t = TIERS[rk.tier]
+  let n = len(rk.shape)
+  let pts = for i in range(0, n) do
+    let a = rk.ang + 6.2832 * float(i) / float(n)
+    let r = t.r * rk.shape[i]
+    [int(rk.x + cos(a) * r) + int(ox), int(rk.y + sin(a) * r) + int(oy)]
+  end
+  if close then append(pts, pts[0]) else pts end
+end
+
+// `n` sparks at (x, y).
+fn burst(lst, x: num, y: num, n: num, col: record, power: num)
+  var out = lst
+  for i in range(0, n) do
+    let ang = random(0.0, 6.2832)
+    let sp = random(40.0, 240.0) * power
+    set out = append(out, {
+      x: x, y: y,
+      vx: cos(ang) * sp, vy: sin(ang) * sp,
+      life: random(0.28, 0.75), max: 0.75,
+      c: col, sz: random(1.4, 3.2),
+    })
+  end
+  out
+end
+
+fn say(msg: string, col: record)
+  set toast = msg
+  set toast_t = 1.9
+  set toast_c = col
+end
+
+// ── Geometry ─────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let court = rect(PAD, HEAD, W - PAD * 2, H - HEAD - FOOT - PAD)
+let cx = court.x + court.w / 2
+let cy = court.y + court.h / 2
+
+let fl = float(court.x + 2)
+let fr = float(court.x + court.w - 2)
+let ft = float(court.y + 2)
+let fb = float(court.y + court.h - 2)
+
+// ── Level / life plumbing ────────────────────────────────────────────────
+
+fn rock_speed(lvl: int, tier: int) -> num
+  let base = 38.0 + float(lvl - 1) * 9.0
+  base * (if tier == 2 then 1.0 elsif tier == 1 then 1.55 else 2.2 end) * random(0.8, 1.25)
+end
+
+fn build_level(lvl: int)
+  var out = []
+  let n = 3 + lvl
+  for i in range(0, n) do
+    // Spawn on the rim of the field, never near the ship in the centre.
+    var x = 0.0
+    var y = 0.0
+    if random(0.0, 1.0) < 0.5 then
+      set x = if random(0.0, 1.0) < 0.5 then fl + 40.0 else fr - 40.0 end
+      set y = random(ft, fb)
+    else
+      set x = random(fl, fr)
+      set y = if random(0.0, 1.0) < 0.5 then ft + 40.0 else fb - 40.0 end
+    end
+    set out = append(out, make_rock(x, y, 2, rock_speed(lvl, 2)))
+  end
+  set rocks = out
+  set shots = []
+end
+
+fn park_ship()
+  set sx = float(cx)
+  set sy = float(cy)
+  set svx = 0.0
+  set svy = 0.0
+  set sang = -1.5708
+  set thrusting = false
+end
+
+fn new_game()
+  set level = 1
+  set score = 0
+  set lives = start_lives
+  set bits = []
+  set wreck = []
+  set safe_t = 0.0
+  set warp_t = 0.0
+  set shot_count = 0
+  set hit_count = 0
+  set broken = 0
+  build_level(get level)
+  park_ship()
+  set phase = "title"
+  set banner = "ASTEROIDS"
+  set subbanner = "press SPACE or click to launch"
+end
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+
+if !ready then
+  set ready = true
+  var st = []
+  for i in range(0, 140) do
+    set st = append(st, {x: random(fl, fr), y: random(ft, fb),
+      sz: if random(0.0, 1.0) < 0.15 then 2 else 1 end, ph: random(0.0, 6.2832)})
+  end
+  set stars = st
+  new_game()
+end
+
+let raw_dt = dt()
+let sdt = min(raw_dt, 0.06)
+set pulse = pulse + sdt
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+if key_pressed("left") || key_pressed("a") then set hold_l = tap_hold end
+if key_pressed("right") || key_pressed("d") then set hold_r = tap_hold end
+if key_pressed("up") || key_pressed("w") then set hold_up = tap_hold end
+
+if key_pressed("r") then
+  new_game()
+end
+
+// SPACE fires during play and is the one-button verb everywhere else; a left
+// click in the court does the same, so the mouse alone can drive the menus.
+let clicked_court = mouse_pressed(0) && point_in(mouse_x(), mouse_y(), court)
+let advance = key_pressed("space") || key_pressed("enter") || clicked_court
+if advance && phase != "play" then
+  if phase == "title" then
+    set phase = "play"
+    set safe_t = safe_secs
+  elsif phase == "paused" then
+    set phase = "play"
+  elsif phase == "cleared" then
+    set level = level + 1
+    build_level(level)
+    set safe_t = safe_secs
+    set phase = "play"
+    say("LEVEL {level}", C_GOLD)
+  elsif phase == "over" then
+    new_game()
+  end
+end
+
+if key_pressed("p") || key_pressed("escape") then
+  if phase == "play" then
+    set phase = "paused"
+    set banner = "PAUSED"
+    set subbanner = "press P, SPACE or click to resume"
+  elsif phase == "paused" then
+    set phase = "play"
+  end
+end
+
+let k_l  = key_down("left") || key_down("a") || hold_l > 0.0
+let k_r  = key_down("right") || key_down("d") || hold_r > 0.0
+let k_up = key_down("up") || key_down("w") || hold_up > 0.0
+set hold_l = max(0.0, hold_l - sdt)
+set hold_r = max(0.0, hold_r - sdt)
+set hold_up = max(0.0, hold_up - sdt)
+
+// ── Simulation: ship ─────────────────────────────────────────────────────
+
+if phase == "play" then
+  let turn = (if k_l then -1.0 else 0.0 end) + (if k_r then 1.0 else 0.0 end)
+  set sang = sang + turn * turn_rate * sdt
+  set thrusting = k_up
+  if k_up then
+    set svx = svx + cos(sang) * thrust_accel * sdt
+    set svy = svy + sin(sang) * thrust_accel * sdt
+    // Exhaust: a spark or two from the tail, thrown backwards.
+    if random(0.0, 1.0) < 0.85 then
+      let tail_x = sx - cos(sang) * 11.0
+      let tail_y = sy - sin(sang) * 11.0
+      let spread = random(-0.5, 0.5)
+      let sp = random(120.0, 220.0)
+      set bits = append(bits, {x: tail_x, y: tail_y,
+        vx: svx - cos(sang + spread) * sp, vy: svy - sin(sang + spread) * sp,
+        life: random(0.18, 0.34), max: 0.34, c: C_FLAME, sz: random(1.2, 2.4)})
+    end
+  end
+  let sp = sqrt(svx * svx + svy * svy)
+  if sp > max_speed then
+    set svx = svx / sp * max_speed
+    set svy = svy / sp * max_speed
+  end
+  let keep = max(0.0, 1.0 - drag * sdt)
+  set svx = svx * keep
+  set svy = svy * keep
+  set sx = wrap_x(sx + svx * sdt, fl, fr, 14.0)
+  set sy = wrap_x(sy + svy * sdt, ft, fb, 14.0)
+
+  // Fire
+  set cool_t = max(0.0, cool_t - sdt)
+  if key_pressed("space") && cool_t <= 0.0 && len(shots) < max_shots then
+    set cool_t = shot_cooldown
+    set shot_count = shot_count + 1
+    let nx = sx + cos(sang) * 15.0
+    let ny = sy + sin(sang) * 15.0
+    set shots = append(shots, {x: nx, y: ny,
+      vx: svx + cos(sang) * shot_speed, vy: svy + sin(sang) * shot_speed,
+      life: shot_life})
+    set bits = burst(bits, nx, ny, 2, C_SHOT, 0.35)
+  end
+
+  // Hyperspace: vanish, reappear somewhere else, briefly safe.
+  set warp_t = max(0.0, warp_t - sdt)
+  if (key_pressed("shift") || key_pressed("h")) && warp_t <= 0.0 then
+    set bits = burst(bits, sx, sy, 22, C_VIOLET, 1.0)
+    set sx = random(fl + 60.0, fr - 60.0)
+    set sy = random(ft + 60.0, fb - 60.0)
+    set svx = svx * 0.2
+    set svy = svy * 0.2
+    set warp_t = warp_cooldown
+    set safe_t = max(safe_t, 0.9)
+    set bits = burst(bits, sx, sy, 22, C_VIOLET, 1.0)
+    say("HYPERSPACE", C_VIOLET)
+  end
+  set safe_t = max(0.0, safe_t - sdt)
+else
+  set thrusting = false
+end
+
+// ── Simulation: rocks and shots ──────────────────────────────────────────
+
+let field_live = phase == "play" || phase == "dead" || phase == "title"
+
+if field_live then
+  var t_left = sdt
+  while t_left > 0.0 do
+    let h = min(t_left, 0.012)
+    set t_left = t_left - h
+
+    set rocks = for rk in rocks do
+      {...rk,
+        x: wrap_x(rk.x + rk.vx * h, fl, fr, TIERS[rk.tier].r),
+        y: wrap_x(rk.y + rk.vy * h, ft, fb, TIERS[rk.tier].r),
+        ang: rk.ang + rk.spin * h}
+    end
+
+    set shots = for s in shots do
+      let nl = s.life - h
+      if nl <= 0.0 then continue end
+      {...s, x: wrap_x(s.x + s.vx * h, fl, fr, 2.0), y: wrap_x(s.y + s.vy * h, ft, fb, 2.0), life: nl}
+    end
+
+    // Shots vs rocks. A hit removes the shot, splits the rock, scores.
+    var spawned = []
+    var survivors = []
+    for rk in rocks do
+      let t = TIERS[rk.tier]
+      var hit = false
+      set shots = for s in shots do
+        if hit then s
+        else
+          let dx = s.x - rk.x
+          let dy = s.y - rk.y
+          if dx * dx + dy * dy < t.r * t.r * 0.86 then
+            set hit = true
+            continue
+          end
+          s
+        end
+      end
+      if hit then
+        set score = score + t.score
+        set best = max(best, score)
+        set hit_count = hit_count + 1
+        set broken = broken + 1
+        set shake = min(1.0, shake + (if rk.tier == 2 then 0.45 else 0.2 end))
+        set bits = burst(bits, rk.x, rk.y, 8 + rk.tier * 8, C_ROCK, 0.6 + float(rk.tier) * 0.4)
+        for k in range(0, t.kids) do
+          let child = make_rock(rk.x, rk.y, rk.tier - 1, rock_speed(level, rk.tier - 1))
+          set spawned = append(spawned, {...child,
+            vx: child.vx + rk.vx * 0.4, vy: child.vy + rk.vy * 0.4})
+        end
+      else
+        set survivors = append(survivors, rk)
+      end
+    end
+    set rocks = survivors
+    for r in spawned do set rocks = append(rocks, r) end
+
+    // Rocks vs ship.
+    if phase == "play" && safe_t <= 0.0 then
+      var struck = false
+      for rk in rocks do
+        let dx = sx - rk.x
+        let dy = sy - rk.y
+        let rr = TIERS[rk.tier].r * 0.9 + SHIP_R
+        if dx * dx + dy * dy < rr * rr then set struck = true end
+      end
+      if struck then
+        set phase = "dead"
+        set dead_t = 1.7
+        set lives = lives - 1
+        set shake = 1.0
+        set thrusting = false
+        set bits = burst(bits, sx, sy, 30, C_SHIP, 1.3)
+        // The hull comes apart into its own three edges.
+        var w = []
+        for k in range(0, 3) do
+          let a = sang + float(k) * 2.094 + 1.047
+          set w = append(w, {x: sx + cos(a) * 6.0, y: sy + sin(a) * 6.0,
+            vx: svx * 0.3 + cos(a) * random(30.0, 90.0), vy: svy * 0.3 + sin(a) * random(30.0, 90.0),
+            ang: a + 1.5708, spin: random(-3.0, 3.0), len: 16.0, life: 1.7})
+        end
+        set wreck = w
+        if lives > 0 then say("SHIP LOST", C_WARN) end
+        set t_left = 0.0
+      end
+    end
+  end
+end
+
+// Level cleared / respawn / game over
+if phase == "play" && len(rocks) == 0 then
+  set phase = "cleared"
+  set banner = "SECTOR {level} CLEAR"
+  set subbanner = "press SPACE or click for sector {level + 1}"
+  set score = score + 250 + lives * 100
+  set best = max(best, score)
+  set bits = burst(bits, float(cx), float(cy), 60, C_GOLD, 2.0)
+end
+
+if phase == "dead" then
+  set dead_t = dead_t - sdt
+  if dead_t <= 0.0 then
+    if lives <= 0 then
+      set lives = 0
+      set phase = "over"
+      set banner = "GAME OVER"
+      set subbanner = "press SPACE or click to play again"
+      park_ship()
+    else
+      park_ship()
+      set safe_t = safe_secs
+      set phase = "play"
+    end
+  end
+end
+
+// ── Particles and decay ──────────────────────────────────────────────────
+
+set toast_t = max(0.0, toast_t - sdt)
+
+set bits = for p in bits do
+  let nl = p.life - sdt
+  if nl <= 0.0 then continue end
+  {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt,
+    vx: p.vx * 0.94, vy: p.vy * 0.94, life: nl}
+end
+if len(bits) > 600 then
+  set bits = slice(bits, len(bits) - 600, len(bits))
+end
+
+set wreck = for f in wreck do
+  let nl = f.life - sdt
+  if nl <= 0.0 then continue end
+  {...f, x: f.x + f.vx * sdt, y: f.y + f.vy * sdt, ang: f.ang + f.spin * sdt, life: nl}
+end
+
+set shake = max(0.0, shake - sdt * 3.4)
+
+// ── Draw: chrome ─────────────────────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+tx("ASTEROIDS", PAD, 24, S_TITLE)
+tx("PETAL / GARDEN TESTBED 05", PAD + 3, 62, S_KICK)
+
+// Score, centred, with the remaining ships beneath it.
+tx_center(str(score), cx, 16, S_SCORE)
+tx_center("SCORE", cx, 72, S_LABEL)
+for i in range(0, 5) do
+  let px = cx - 30 + i * 15
+  let col = if i < lives then C_SHIP else C_LINE end
+  poly([[px, 91], [px + 5, 101], [px, 98], [px - 5, 101], [px, 91]], col, 255, 1)
+end
+
+let cell3 = W - PAD
+let cell2 = cell3 - 116
+let cell1 = cell2 - 116
+tx_right("SECTOR", cell1, 30, S_LABEL)
+tx_right(str(level), cell1, 46, S_STAT)
+tx_right("ROCKS", cell2, 30, S_LABEL)
+tx_right(str(len(rocks)), cell2, 46, if len(rocks) > 0 then S_STAT else S_STATD end)
+tx_right("BEST", cell3, 30, S_LABEL)
+tx_right(str(best), cell3, 46, if best > 0 then {...S_STAT, color: C_GOLD} else S_STATD end)
+let acc = if shot_count == 0 then 0 else hit_count * 100 / shot_count end
+tx_right("{broken} ROCKS BROKEN   ·   {acc}% ACCURACY", cell3, 76, S_HINT)
+
+// ── Draw: field ──────────────────────────────────────────────────────────
+
+let shx = if shake > 0.0 then int(sin(pulse * 84.0) * shake * 3.0) else 0 end
+let shy = if shake > 0.0 then int(cos(pulse * 71.0) * shake * 3.0) else 0 end
+
+draw_rect_rounded(court, 16, C_FIELD)
+draw_rect_outline(court, C_EDGE, 255, 1)
+
+clip(court.x + 2, court.y + 2, court.w - 4, court.h - 4)
+
+// Starfield, with a slow twinkle.
+for s in stars do
+  let tw = 0.55 + 0.45 * sin(pulse * 1.3 + s.ph)
+  draw_rect(rect(int(s.x), int(s.y), s.sz, s.sz), C_TEXT, int(30.0 + 110.0 * tw))
+end
+
+// Rocks: a dark fill so overlaps read as solid, a soft glow, then the edge.
+// A rock straddling an edge is drawn again on the opposite side, so the
+// field reads as the torus it is.
+let fw = fr - fl
+let fh = fb - ft
+fn draw_rock(rk: record, ox: num, oy: num)
+  let closed = rock_points(rk, ox, oy, true)
+  let open = rock_points(rk, ox, oy, false)
+  fill_p(open, C_BG, 255)
+  poly(closed, C_ROCK, 26, 5)
+  poly(closed, C_ROCK, 235, 1)
+end
+for rk in rocks do
+  let r = TIERS[rk.tier].r * 1.15
+  draw_rock(rk, shx, shy)
+  if rk.x - r < fl then draw_rock(rk, shx + int(fw), shy) end
+  if rk.x + r > fr then draw_rock(rk, shx - int(fw), shy) end
+  if rk.y - r < ft then draw_rock(rk, shx, shy + int(fh)) end
+  if rk.y + r > fb then draw_rock(rk, shx, shy - int(fh)) end
+end
+
+// Sparks
+for p in bits do
+  let f = p.life / p.max
+  draw_circle({x: int(p.x) + shx, y: int(p.y) + shy}, max(1, int(p.sz * f + 0.5)),
+    p.c, int(225.0 * f))
+end
+
+// Ship wreckage: three spinning line segments fading out.
+for f in wreck do
+  let a = f.life / 1.7
+  let hx = cos(f.ang) * f.len / 2.0
+  let hy = sin(f.ang) * f.len / 2.0
+  seg(int(f.x - hx) + shx, int(f.y - hy) + shy, int(f.x + hx) + shx, int(f.y + hy) + shy,
+    C_SHIP, int(240.0 * a), 1)
+end
+
+// Shots
+for s in shots do
+  let a = min(1.0, s.life / 0.3)
+  draw_circle({x: int(s.x) + shx, y: int(s.y) + shy}, 4, C_SHOT, int(50.0 * a))
+  draw_circle({x: int(s.x) + shx, y: int(s.y) + shy}, 2, C_SHOT, int(255.0 * a))
+end
+
+// Ship
+let show_ship = phase == "play" || phase == "paused" || phase == "cleared" || phase == "title"
+let blink = safe_t <= 0.0 || int(safe_t * 9.0) % 2 == 0
+if show_ship && blink then
+  let nx = sx + cos(sang) * 16.0
+  let ny = sy + sin(sang) * 16.0
+  let lx = sx + cos(sang + 2.55) * 13.0
+  let ly = sy + sin(sang + 2.55) * 13.0
+  let rx = sx + cos(sang - 2.55) * 13.0
+  let ry = sy + sin(sang - 2.55) * 13.0
+  let bx = sx - cos(sang) * 5.0
+  let by = sy - sin(sang) * 5.0
+  let hull = [[int(nx) + shx, int(ny) + shy], [int(lx) + shx, int(ly) + shy],
+    [int(bx) + shx, int(by) + shy], [int(rx) + shx, int(ry) + shy], [int(nx) + shx, int(ny) + shy]]
+  if thrusting then
+    // Flame: flickers in length every frame.
+    let fl_len = 12.0 + random(0.0, 9.0)
+    let tx1 = sx - cos(sang) * fl_len
+    let ty1 = sy - sin(sang) * fl_len
+    let flx = sx + cos(sang + 2.85) * 8.0
+    let fly = sy + sin(sang + 2.85) * 8.0
+    let frx = sx + cos(sang - 2.85) * 8.0
+    let fry = sy + sin(sang - 2.85) * 8.0
+    tri(int(flx) + shx, int(fly) + shy, int(tx1) + shx, int(ty1) + shy,
+      int(frx) + shx, int(fry) + shy, C_FLAME, 210)
+  end
+  if safe_t > 0.0 then
+    ring(int(sx) + shx, int(sy) + shy, 22, C_SHIP, 70, 1)
+  end
+  fill_p(hull, C_FIELD, 255)
+  poly(hull, C_SHIP, 30, 6)
+  poly(hull, C_SHIP, 255, 1)
+end
+
+// Sector label, top-left inside the field.
+tx("SECTOR {level}", int(fl) + 12, int(ft) + 10, {...S_BADGE, color: C_MUTE})
+
+// Status badges along the top-right rail.
+var badges = []
+if safe_t > 0.0 && phase == "play" then
+  set badges = append(badges, {t: "SHIELD", s: "{int(safe_t) + 1}s", c: C_SHIP})
+end
+if warp_t > 0.0 then
+  set badges = append(badges, {t: "WARP", s: "{int(warp_t) + 1}s", c: C_VIOLET})
+elsif phase == "play" then
+  set badges = append(badges, {t: "WARP READY", s: "", c: C_VIOLET})
+end
+var brail = int(fr) - 10
+for bg in badges do
+  let sw = if len(bg.s) > 0 then text_width(bg.s, S_BADGE) + 8 else 0 end
+  let bw = text_width(bg.t, S_BADGE) + sw + 18
+  let box = rect(brail - bw, int(ft) + 8, bw, 19)
+  draw_rect_rounded(box, 6, bg.c, 30)
+  draw_rect_outline(box, bg.c, 90, 1)
+  tx(bg.t, box.x + 9, box.y + 5, {...S_BADGE, color: bg.c})
+  if len(bg.s) > 0 then
+    tx_right(bg.s, box.x + bw - 9, box.y + 5, {...S_BADGE, color: C_DIM})
+  end
+  set brail = brail - bw - 7
+end
+
+// Toast — the last thing that happened.
+if toast_t > 0.0 then
+  let a = min(1.0, toast_t / 0.7)
+  let tw = text_width(toast, S_CAP) + 34
+  let tr = rect(cx - tw / 2, int(fb) - 52, tw, 26)
+  draw_rect_rounded(tr, 8, C_CHIP, int(a * 235.0))
+  draw_rect_outline(tr, toast_c, int(a * 190.0), 1)
+  tx_center(toast, cx, tr.y + 7, {...S_CAP, color: toast_c})
+end
+
+clip_none()
+
+// ── Draw: overlay card ───────────────────────────────────────────────────
+
+if phase != "play" && phase != "dead" then
+  draw_rect_rounded(court.inset(1), 15, C_BG, 150)
+  let bw = max(text_width(banner, S_BIG), text_width(subbanner, S_SUB)) + 76
+  let card = rect(cx - bw / 2, cy - 62, bw, 124)
+  draw_rect_rounded(card, 14, C_CHIP)
+  draw_rect_outline(card, C_EDGE, 255, 1)
+  let accent = match phase
+    when "over" -> C_WARN
+    when "cleared" -> C_GOLD
+    when "paused" -> C_DIM
+    when _ -> C_SHIP end
+  draw_rect_rounded(rect(card.x + 22, cy - 28, 3, 56), 2, accent, 200)
+  tx_center(banner, cx + 9, cy - 36, {...S_BIG, color: accent})
+  tx_center(subbanner, cx + 9, cy + 14, S_SUB)
+
+  if phase == "title" then
+    tx_center("turn  ·  thrust  ·  shoot the rocks  ·  big ones split",
+      cx, cy + 84, {size: 12, color: C_MUTE})
+    // Tier legend: the three rock sizes and what each is worth.
+    var lx = cx - 160
+    for i in [2, 1, 0] do
+      let t = TIERS[i]
+      let rr = 9.0 + float(i) * 8.0
+      let sample = {x: float(lx) + 26.0, y: float(cy) + 134.0, ang: 0.4, tier: i,
+        shape: [0.9, 1.05, 0.85, 1.1, 0.95, 0.8, 1.0, 1.08, 0.88, 0.97, 1.02, 0.92]}
+      let scaled = {...sample, shape: for k in range(0, t.n) do sample.shape[k] * rr / t.r end}
+      poly(rock_points(scaled, 0, 0, true), C_ROCK, 200, 1)
+      tx(str(t.score), lx + 60, cy + 128, {...S_BADGE, color: C_GOLD})
+      set lx = lx + 120
+    end
+  end
+  if phase == "over" then
+    tx_center("FINAL {score}   ·   SECTOR {level}   ·   {broken} ROCKS   ·   {acc}% ACCURACY",
+      cx, cy + 82, {size: 12, color: C_MUTE})
+  end
+end
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn chip(x: num, y: num, cap: string, desc: string) -> int
+  let cw = text_width(cap, S_CAP) + 20
+  let box = rect(int(x), int(y), cw, 24)
+  draw_rect_rounded(box, 7, C_CHIP)
+  draw_rect_outline(box, C_LINE, 255, 1)
+  tx(cap, x + 10, y + 6, S_CAP)
+  tx(desc, x + cw + 10, y + 6, S_HINT)
+  cw + 10 + text_width(desc, S_HINT) + 24
+end
+
+let fy = court.y + court.h + 18
+var fx = PAD
+set fx = fx + chip(fx, fy, "← →", "turn")
+set fx = fx + chip(fx, fy, "↑", "thrust")
+set fx = fx + chip(fx, fy, "SPACE", "fire")
+set fx = fx + chip(fx, fy, "SHIFT", "warp")
+set fx = fx + chip(fx, fy, "P", "pause")
+set fx = fx + chip(fx, fy, "R", "restart")
+
+let status = match phase
+  when "play" -> "IN PLAY"
+  when "paused" -> "PAUSED"
+  when "dead" -> "RESPAWNING"
+  when "over" -> "GAME OVER"
+  when "cleared" -> "SECTOR CLEAR"
+  when _ -> "READY TO LAUNCH"
+end
+let ship_speed = int(sqrt(svx * svx + svy * svy))
+tx_right("{ship_speed} px/s   ·   {status}", W - PAD, fy + 7, S_HINT)
+
+// ── Observation mirrors (readable in /state → panel.values) ──────────────
+
+let obs_phase = phase
+let obs_level = level
+let obs_score = score
+let obs_lives = lives
+let obs_rocks = len(rocks)
+let obs_shots = len(shots)
+let obs_bits = len(bits)
+let obs_ship = [int(sx), int(sy)]
+let obs_ang = round(sang, 2)
+let obs_speed = ship_speed
+let obs_safe = round(safe_t, 1)

@@ -4,15 +4,15 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-20 of the 50 exist. Fifteen are panel apps under the category directories
+21 of the 50 exist. Sixteen are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category), and five more were written as headless console programs
+of each category, plus Asteroids), and five more were written as headless console programs
 under `examples/challenge/`, which stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
 `examples/games/side-scroller` is a sixteenth panel app that was not on this
-list. The remaining 30 have not been attempted.
+list. The remaining 29 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -21,7 +21,7 @@ list. The remaining 30 have not been attempted.
 | 2 | **Breakout** | Many objects, collision, spawning/destruction | built — `examples/games/breakout/` |
 | 3 | **Snake** | Grid rendering, timers, keyboard input, state | built — `examples/games/snake/` |
 | 4 | **Tetris** | Complex state transitions, grids, timing | console — `examples/challenge/tetris.ptl` |
-| 5 | **Asteroids** | Vector movement, rotation, particles, collision |  |
+| 5 | **Asteroids** | Vector movement, rotation, particles, collision | built — `examples/games/asteroids/` |
 | 6 | **Flappy Bird clone** | Physics, procedural obstacles, scoring |  |
 | 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/challenge/2048.ptl` |
 | 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/challenge/minesweeper.ptl` |

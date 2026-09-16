@@ -7,7 +7,8 @@
 //! walk, autodiff-as-graph) still reason about the term graph directly; the VM
 //! populates the trace buffer those analyses read at runtime.
 //!
-//! [`OptFlags`] chooses which optimizations a run enables.
+//! [`OptFlags`] chooses which optimizer passes a program is lowered with; the
+//! run's full configuration is [`crate::policy::RunPolicy`].
 
 pub mod bytecode;
 pub mod calls;
@@ -35,9 +36,14 @@ pub struct RuntimeClosure {
     pub captures: Vec<Value>,
 }
 
-/// Per-run optimization toggles. Every optimization is individually switchable
-/// so it can be disabled to isolate a bug: "bytecode with all opts off" is a
-/// differential-testing oracle alongside the graph backend.
+/// The optimizer passes bytecode is lowered with. Every pass is individually
+/// switchable so it can be disabled to isolate a bug: "bytecode with all opts
+/// off" is a differential-testing oracle.
+///
+/// This is the lowering half of a run's configuration, and the bytecode
+/// cache's key. The rest — memoization and frame gating, which change what a
+/// run does but not what it was compiled to — lives beside it in
+/// [`crate::policy::RunPolicy`], which is what hosts and tools set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OptFlags {
     /// Lower a provably-unique, non-escaping collection mutation
@@ -71,12 +77,6 @@ pub struct OptFlags {
     /// `x0 + i * spacing` for `spacing` needs the value the anonymous `i` read
     /// took, which is exactly the kind of dead `Move` copy propagation deletes.
     pub preserve_trace: bool,
-    /// Memoize user-function calls: a call whose arguments, captures and
-    /// recorded reads are what they were last time is replayed from its
-    /// record instead of run (`crate::memo`). A runtime switch; a call whose
-    /// result the caller mutates in place is never memoized
-    /// (`Inst::Call::no_memo`), since a record would share that result.
-    pub memo_scopes: bool,
 }
 
 impl OptFlags {
@@ -88,7 +88,6 @@ impl OptFlags {
             copy_propagation: false,
             preserve_observations: false,
             preserve_trace: false,
-            memo_scopes: false,
         }
     }
 
@@ -100,30 +99,41 @@ impl OptFlags {
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,
-            memo_scopes: true,
         }
     }
-}
 
-impl Default for OptFlags {
-    /// In-place mutation is **on by default** for both M4 routes: route B
-    /// (loop accumulators, default-on since the M4 flip) and route A
-    /// (straight-line last-use, default-on after earning the same 300k-seed
-    /// four-oracle fuzz soak). Both are at full differential parity with
-    /// clone-and-alloc (graph / BC-noopt / BC-route-A-only / BC-all), so
-    /// sketches get the zero-copy wins without opting in. Disable per-run
-    /// with `--no-opt` / `PETAL_OPT=off` (which map to [`OptFlags::none`])
-    /// to recover the clone-and-alloc oracle. This is spelled out
-    /// field-by-field rather than delegating to [`OptFlags::all`] so a
-    /// future, not-yet-proven opt added to `all()` does not auto-default-on.
-    fn default() -> OptFlags {
+    /// The passes on by default. In-place mutation is **on** for both M4
+    /// routes: route B (loop accumulators, default-on since the M4 flip) and
+    /// route A (straight-line last-use, default-on after earning the same
+    /// 300k-seed four-oracle fuzz soak). Both are at full differential parity
+    /// with clone-and-alloc, so sketches get the zero-copy wins without opting
+    /// in; the `baseline` run policy recovers the clone-and-alloc oracle. This
+    /// is spelled out field-by-field rather than delegating to
+    /// [`OptFlags::all`] so a future, not-yet-proven pass added to `all()`
+    /// does not auto-default-on.
+    pub const fn default_on() -> OptFlags {
         OptFlags {
             in_place_mutation: true,
             in_place_straight_line: true,
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,
-            memo_scopes: true,
         }
+    }
+
+    /// These passes, with `other`'s preservation guards: switching the
+    /// optimizer on or off does not change what a tool asked to keep.
+    pub const fn preserving(self, other: OptFlags) -> OptFlags {
+        OptFlags {
+            preserve_observations: other.preserve_observations,
+            preserve_trace: other.preserve_trace,
+            ..self
+        }
+    }
+}
+
+impl Default for OptFlags {
+    fn default() -> OptFlags {
+        OptFlags::default_on()
     }
 }

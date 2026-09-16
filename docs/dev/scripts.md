@@ -62,7 +62,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | `petal run --profile <file>` | Count what the run executed (instructions per opcode, builtin calls by name, user calls, collections) and print the histogram to stderr. Works in any build, including a shipped release binary. |
 | `petal run --dup-stats <file>` | Value-duplication and heap-allocation counters (debug builds, or release with the `dup-stats` cargo feature). |
 | `PETAL_OPT_STATS=1 petal run <file>` | Report what the bytecode optimizer did: instructions before/after, moves removed, reads rewritten, jumps threaded. |
-| `PETAL_OPT=off petal run <file>` | Same as `--no-opt`, but works for every command and embedder. |
+| `PETAL_POLICY=<name> petal run <file>` | Run under a named [run policy](../../rust/src/policy.rs) — `fast` (default), `baseline`, `explain`, `replay`, with modifiers like `fast-memo` — for every command and embedder. Same as `--policy <name>`; `PETAL_OPT=off` and `--no-opt` still mean `baseline`. |
 | `cd rust && cargo build --profile profiling` | Release codegen with symbols kept, at `rust/target/profiling/petal`, for a sampling profiler (`sample <pid>`, `perf`, `samply`). |
 
 ## Other tooling

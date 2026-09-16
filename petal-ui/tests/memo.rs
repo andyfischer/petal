@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 mod common;
 use common::{assert_corpus_is_live, corpus};
 
+use petal::policy::RunPolicy;
 use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 use petal_ui::scenario::Scenario;
@@ -25,7 +26,7 @@ fn ui(src: &str) -> Headless {
     let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.env.set_echo(false);
     // Every frame runs: the memo is what is under test, not the gate.
-    ui.gate = false;
+    ui.set_policy(RunPolicy::REPLAY);
     ui
 }
 
@@ -57,7 +58,7 @@ fn a_widget_whose_inputs_did_not_change_is_replayed() {
 #[test]
 fn memoization_can_be_turned_off() {
     let mut ui = ui(&rows(3));
-    ui.memo = false;
+    ui.set_policy(RunPolicy::REPLAY.with_memo(false));
     ui.frame().unwrap();
     ui.frame().unwrap();
     let stats = ui.memo_stats();
@@ -222,11 +223,10 @@ fn a_replayed_scope_reports_its_observations() {
 }
 
 #[test]
-fn the_escape_hatch_disables_memoization_with_the_other_optimizations() {
+fn the_baseline_policy_disables_memoization_with_the_other_optimizations() {
     let mut ui = ui(&rows(3));
-    ui.env.set_opt_flags(petal::backend::OptFlags::none());
-    ui.memo = ui.env.opt_flags().memo_scopes;
-    assert!(!ui.memo);
+    ui.set_policy(RunPolicy::parse("baseline").unwrap());
+    assert!(!ui.frame_stats().memo);
     ui.frame().unwrap();
     ui.frame().unwrap();
     assert_eq!(ui.memo_stats().hits, 0);
@@ -245,8 +245,8 @@ fn drive(app: &Path, includes: &[PathBuf], memo: bool, seed: u64, frames: usize)
     // Garden panels observe every frame; a replayed scope must report the
     // same bindings a run would.
     ui.env.observations_mut().enable();
-    ui.gate = false;
-    ui.memo = memo;
+    // `replay` against `replay-memo`: the same run with and without the memo.
+    ui.set_policy(RunPolicy::REPLAY.with_memo(memo));
     let scenario = Scenario::monkey(seed, frames, size);
     let mut records = Vec::with_capacity(frames);
     for frame in 0..frames {

@@ -27,6 +27,7 @@ use std::time::Instant;
 
 use petal::env::Env;
 use petal::memo::MemoStats;
+use petal::policy::RunPolicy;
 use petal::program::ProgramId;
 use petal::run_deps::RunReason;
 use petal::stack::StackKey;
@@ -133,12 +134,6 @@ pub struct FrameCore {
     /// Font source for `font` / `fonts` / on-demand `text_width`, swapped in
     /// around each run the same way.
     fonts: Option<draw::FontProvider>,
-    /// Whether [`frame`](Self::frame) skips a run the runtime's frame gate
-    /// says would reproduce the last one (on by default, as in a real host).
-    pub gate: bool,
-    /// Whether runs memoize user-function calls (`petal::memo`). Starts at the
-    /// env's own setting; applied to the env before each run.
-    pub memo: bool,
     /// Whether the most recent frame skipped its run.
     pub last_frame_skipped: bool,
     /// Why the most recent frame ran, when it ran (`None` after a skip).
@@ -152,7 +147,6 @@ impl FrameCore {
     /// Wrap an env that already has `program_id` loaded on `stack_id`. The
     /// clock starts as the wall clock.
     pub fn new(env: Env, program_id: ProgramId, stack_id: StackKey) -> FrameCore {
-        let memo = env.opt_flags().memo_scopes;
         FrameCore {
             env,
             input: InputState::new(),
@@ -162,8 +156,6 @@ impl FrameCore {
             result: Value::Nil,
             provider: None,
             fonts: None,
-            gate: true,
-            memo,
             last_frame_skipped: false,
             last_run_reason: None,
             frames_run: 0,
@@ -259,6 +251,18 @@ impl FrameCore {
         self.env.invalidate_run(self.stack_id);
     }
 
+    /// How frames run: whether [`frame`](Self::frame) skips a run the gate
+    /// says would reproduce the last one, whether calls are memoized, and the
+    /// optimizer passes. The env's own policy — there is no second copy here.
+    pub fn policy(&self) -> RunPolicy {
+        self.env.policy()
+    }
+
+    /// Set how subsequent frames run (see [`RunPolicy`]).
+    pub fn set_policy(&mut self, policy: RunPolicy) {
+        self.env.set_policy(policy);
+    }
+
     // ── The frame ────────────────────────────────────────────────────────
 
     /// Run one frame under the standard contract: promote input edges, bind
@@ -286,7 +290,7 @@ impl FrameCore {
         // from the last one. If not, the host's retained output *is* this
         // frame.
         let reason = self.env.run_needed_reason(self.stack_id);
-        if self.gate && reason.is_none() {
+        if self.env.policy().gate && reason.is_none() {
             self.last_frame_skipped = true;
             self.last_run_reason = None;
             self.frames_skipped += 1;
@@ -296,7 +300,6 @@ impl FrameCore {
         self.last_run_reason = reason;
         self.frames_run += 1;
 
-        self.env.set_memo_scopes(self.memo);
         draw::clear_draw_commands(&mut self.env);
         // Canvas ids restart at 1 each frame, so a layer drawn every frame
         // keeps the same id and a renderer keeps its texture.
@@ -333,8 +336,8 @@ impl FrameCore {
                 .last_run_reason
                 .as_ref()
                 .map(|r| run_reason_name(&self.env, r)),
-            gate: self.gate,
-            memo: self.memo,
+            gate: self.env.policy().gate,
+            memo: self.env.policy().memo,
             memo_stats: self.memo_stats(),
         }
     }

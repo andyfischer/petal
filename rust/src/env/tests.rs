@@ -2827,7 +2827,7 @@ mod pending_report_chunk_n_tests {
 /// `collections`), never wall-clock timing, so they are stable in CI.
 mod gc_pressure_tests {
     use super::super::*;
-    use crate::backend::OptFlags;
+    use crate::policy::RunPolicy;
 
     /// Frames of a simulation that writes into a large array. `n` frames, each
     /// doing `writes` copy-on-write element writes into a `len`-element array —
@@ -2846,7 +2846,7 @@ mod gc_pressure_tests {
         // The point of this workload is the garbage that copy-on-write produces,
         // so disable the in-place optimizations that would elide the copies —
         // otherwise the test measures the escape analysis, not the collector.
-        env.set_opt_flags(OptFlags::none());
+        env.set_policy(RunPolicy::BASELINE);
         let pid = env.load_program(&source).unwrap();
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();

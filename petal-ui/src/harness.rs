@@ -9,8 +9,9 @@
 //! a frame whose inputs are exactly what the last run read, and whose last run
 //! reached a fixed point, is skipped and its output retained. Skipping is
 //! invisible to a correct script — the retained commands are what a run would
-//! have produced — and [`Headless::gate`] turns it off for tests that want
-//! every frame to execute regardless.
+//! have produced — and the `replay` or `baseline` run policy
+//! ([`petal::policy::RunPolicy`], set with `ui.set_policy`) turns it off for
+//! tests that want every frame to execute regardless.
 //!
 //! ```no_run
 //! use petal_ui::harness::Headless;
@@ -38,7 +39,7 @@ pub const FRAME_DT: f64 = 1.0 / 60.0;
 /// A test driver over the shared [`FrameCore`]: the core owns the env, the
 /// stack, input, the gate and memo counters, providers, and the seed; this
 /// wrapper adds a deterministic fixed-`dt` clock and keeps each frame's draw
-/// commands. It dereferences to the core, so `ui.env`, `ui.gate`,
+/// commands. It dereferences to the core, so `ui.env`, `ui.set_policy(…)`,
 /// `ui.frames_run`, `ui.set_seed(…)` and the rest read as fields of the
 /// harness.
 pub struct Headless {

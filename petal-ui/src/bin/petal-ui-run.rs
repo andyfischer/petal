@@ -4,7 +4,7 @@
 //! petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
-//!              [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
+//!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -20,17 +20,18 @@
 //! byte-identical output — that is the property the refactor verifier builds
 //! on (see `docs/dev/refactor-verification.md`).
 //!
-//! Frames run under the runtime's frame gate, as in every real host: a frame
-//! whose inputs are what the last run read is skipped and its record carries
-//! the retained commands and state (with no prints, since nothing printed).
-//! `--no-gate` runs the script on every frame — the reference the gated trace
-//! must match command-for-command, which is what `tests/gating.rs` checks.
-//! `--gate-stats` reports frames run vs skipped on stderr.
-//!
-//! Within a frame that runs, user-function calls are memoized (see
-//! docs/dev/memo-scopes.md); `--no-memo` runs every call, the reference the
-//! memoized trace must match, and `--memo-stats` reports the memo's counters
-//! on stderr.
+//! Frames run under a run policy (`petal::policy`), `fast` unless `--policy`
+//! or `PETAL_POLICY` names another. Under `fast`, as in every real host, a
+//! frame whose inputs are what the last run read is skipped by the frame gate
+//! and its record carries the retained commands and state (with no prints,
+//! since nothing printed); and within a frame that runs, user-function calls
+//! are memoized (see docs/dev/memo-scopes.md). Every policy must produce the
+//! same trace, so a differential is two runs with two names:
+//! `--policy baseline` (nothing skipped, replayed or optimized) against
+//! `--policy fast`, or `fast-memo` / `replay` to isolate the gate / the memo.
+//! `--no-gate` and `--no-memo` switch one layer off in whichever policy is in
+//! effect. `--gate-stats` reports frames run vs skipped on stderr, and
+//! `--memo-stats` the memo's counters.
 //!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
 //! first, with `error` set), 2 a compile/usage error (message on stderr).
@@ -44,7 +45,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -72,6 +73,8 @@ struct Args {
     /// Extra module search directories (`-I`), for an app that imports a
     /// shared Petal library from outside its own directory.
     module_paths: Vec<PathBuf>,
+    /// `--policy`; `None` keeps the env's (from `PETAL_POLICY`, else `fast`).
+    policy: Option<petal::policy::RunPolicy>,
     /// Run the script every frame instead of letting the frame gate skip.
     no_gate: bool,
     /// Run every user-function call instead of replaying memoized ones.
@@ -93,6 +96,7 @@ fn parse_args() -> Result<Args, String> {
     let mut out = None;
     let mut bare_errors = false;
     let mut module_paths: Vec<PathBuf> = Vec::new();
+    let mut policy = None;
     let mut no_gate = false;
     let mut gate_stats = false;
     let mut no_memo = false;
@@ -130,6 +134,7 @@ fn parse_args() -> Result<Args, String> {
                 query_fixtures = Some(PathBuf::from(value("--query-fixtures")?))
             }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
+            "--policy" => policy = Some(petal::policy::RunPolicy::parse(&value("--policy")?)?),
             "--no-gate" => no_gate = true,
             "--gate-stats" => gate_stats = true,
             "--no-memo" => no_memo = true,
@@ -163,6 +168,7 @@ fn parse_args() -> Result<Args, String> {
         out,
         bare_errors,
         module_paths,
+        policy,
         no_gate,
         gate_stats,
         no_memo,
@@ -194,8 +200,14 @@ fn run() -> Result<i32, String> {
     // Prints belong in the trace's `prints` field and nowhere else: echoing
     // them to stdout as well would interleave them with the JSONL.
     ui.env.set_echo(false);
-    ui.gate = !args.no_gate;
-    ui.memo = !args.no_memo;
+    let mut policy = args.policy.unwrap_or_else(|| ui.policy());
+    if args.no_gate {
+        policy.gate = false;
+    }
+    if args.no_memo {
+        policy.memo = false;
+    }
+    ui.set_policy(policy);
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
     }

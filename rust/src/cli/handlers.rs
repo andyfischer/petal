@@ -6,7 +6,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::process;
 
-use crate::backend::OptFlags;
 use crate::dot_graph::program_to_dot;
 use crate::env::Env;
 use crate::ir_display::display_program_with;
@@ -44,7 +43,6 @@ pub(super) fn handle_run(
         ir,
         dup_stats,
         profile,
-        no_opt,
         trace_pending,
         observe,
         trace_emits,
@@ -66,8 +64,8 @@ pub(super) fn handle_run(
     if let Some(seed) = seed {
         env.set_seed(seed);
     }
-    if no_opt {
-        env.set_opt_flags(OptFlags::none());
+    if let Some(policy) = opts.policy {
+        env.set_policy(policy);
     }
     if record_trace.is_some() {
         env.trace_mut().enable();
@@ -833,7 +831,7 @@ pub(super) fn handle_check(
     if let Some(program) = program
         && let Err(e) = crate::backend::bytecode::lower_with_flags(
             program,
-            crate::env::Env::opt_flags_from_env(),
+            crate::policy::RunPolicy::from_env().opts,
         )
     {
         // Warnings are about the source, not the lowering, so report
@@ -1124,9 +1122,9 @@ pub(super) fn handle_show_bytecode(
     use crate::backend::bytecode::{disasm, lower_with_flags};
     let program = compile_source(source, source_input, include_dirs);
     // Lowered with the flags a run would use, so the disassembly shows the
-    // in-place opcodes it would actually execute: `PETAL_OPT=off`/`none` shows
-    // the clone-and-alloc lowering, `PETAL_OPT=all` enables every opt.
-    let flags = crate::env::Env::opt_flags_from_env();
+    // in-place opcodes it would actually execute: `PETAL_POLICY=baseline`
+    // shows the clone-and-alloc lowering.
+    let flags = crate::policy::RunPolicy::from_env().opts;
     match lower_with_flags(&program, flags) {
         Ok(bc) => {
             if json {

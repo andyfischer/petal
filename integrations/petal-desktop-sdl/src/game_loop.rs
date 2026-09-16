@@ -169,7 +169,8 @@ pub trait Host {
     fn prepare_frame(&mut self, _env: &mut Env) {}
 
     /// Whether the loop may skip a frame the runtime's frame gate says would
-    /// reproduce the last one (`Env::run_needed`). On a skipped frame nothing
+    /// reproduce the last one (`Env::run_needed`), when the env's run policy
+    /// gates at all (`PETAL_POLICY=replay` or `baseline` turns it off). On a skipped frame nothing
     /// between `prepare_frame` and `end_frame` runs; `present` is still called
     /// so a vsync'd window keeps its pacing, with an empty draw buffer — the
     /// default host's persistent framebuffer re-blits the last frame. A host
@@ -391,7 +392,10 @@ pub fn run_game<H: Host>(
         // The frame gate: with every input bound, skip the run if nothing the
         // last run read has changed (the timeline records every frame's
         // commands, so it runs ungated).
-        let skip = host.frame_gating() && !timeline_on && !env.run_needed(current.stack_id);
+        let skip = env.policy().gate
+            && host.frame_gating()
+            && !timeline_on
+            && !env.run_needed(current.stack_id);
         if !skip {
             clear_draw_commands(&mut env);
             host.prepare_frame(&mut env);

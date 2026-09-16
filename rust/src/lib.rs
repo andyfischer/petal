@@ -37,6 +37,7 @@ pub mod module;
 pub mod native_fn;
 pub mod observe;
 pub mod package;
+pub mod policy;
 pub mod parse;
 pub mod profile;
 pub mod program;

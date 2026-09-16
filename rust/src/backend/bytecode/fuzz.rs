@@ -16,6 +16,7 @@
 
 use super::{disasm, lower_with_flags};
 use crate::backend::OptFlags;
+use crate::policy::RunPolicy;
 use crate::env::Env;
 use crate::program::{Program, ProgramId};
 use crate::value;
@@ -603,9 +604,9 @@ impl Gen {
 
 /// Run `code` with `opts`: rendered result value + print output, or the full
 /// annotated error text.
-fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
+fn run(code: &str, opts: RunPolicy) -> Result<(String, Vec<String>), String> {
     let mut env = Env::new();
-    env.set_opt_flags(opts);
+    env.set_policy(opts);
     let v = env.run_source(code)?;
     let rendered = value::value_to_display_string(&v, env.heap());
     Ok((rendered, env.take_output()))
@@ -627,17 +628,13 @@ fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
 /// (`test/example-golden`) and the `test/<case>/expects` harness; this fuzzer's
 /// job is to prove the in-place optimizations never diverge from clone-and-alloc.
 fn assert_exact_parity(seed: u64, code: &str) {
-    const ROUTE_A_ONLY: OptFlags = OptFlags {
-        in_place_mutation: false,
+    const ROUTE_A_ONLY: RunPolicy = RunPolicy::BASELINE.with_opts(OptFlags {
         in_place_straight_line: true,
-        copy_propagation: false,
-        preserve_observations: false,
-        preserve_trace: false,
-        memo_scopes: false,
-    };
-    let bc_noopt = run(code, OptFlags::none());
+        ..OptFlags::none()
+    });
+    let bc_noopt = run(code, RunPolicy::BASELINE);
     let bc_route_a = run(code, ROUTE_A_ONLY);
-    let bc_opt = run(code, OptFlags::all());
+    let bc_opt = run(code, RunPolicy::FAST);
     assert_eq!(
         bc_noopt, bc_route_a,
         "route-A in-place mutation (M4) divergence at seed {seed}; \

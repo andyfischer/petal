@@ -198,9 +198,16 @@ OPTIONS
               Count instructions, builtin calls and collections during the
               run and print the histogram to stderr.
 
+       --policy <name>
+              Run under a named run policy: fast (the default), baseline
+              (no optimizer, no memoization), explain, or replay, optionally
+              followed by modifiers such as -memo or +gate. Output must be
+              identical under every policy, so a difference is a bug in the
+              layer the two policies differ by. PETAL_POLICY=<name> does the
+              same for every command and embedder; the flag wins.
+
        --no-opt
-              Skip the optimizer. Output must be identical either way, so a
-              difference is a bug in an optimization pass.
+              Same as --policy baseline.
 
        --seed <n>
               Seed the PRNG so random() replays. Decimal or 0x-hex.

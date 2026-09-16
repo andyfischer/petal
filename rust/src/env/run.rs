@@ -196,18 +196,11 @@ impl Env {
     }
 
     /// Whether runs memoize user-function calls right now: the
-    /// [`OptFlags::memo_scopes`](crate::backend::OptFlags::memo_scopes) flag,
+    /// [`RunPolicy::memo`](crate::policy::RunPolicy::memo) switch,
     /// unless the `explain` trace is on — a trace of a replayed scope would
     /// have no instructions in it, and the tools reading it want every one.
     pub fn memo_enabled(&self) -> bool {
-        self.opt_flags.memo_scopes && !self.trace.enabled
-    }
-
-    /// Turn memoized scopes on or off for subsequent runs (see
-    /// [`crate::memo`]). Off, every call runs; the records already made are
-    /// left alone and resume validating when it is turned back on.
-    pub fn set_memo_scopes(&mut self, on: bool) {
-        self.opt_flags.memo_scopes = on;
+        self.policy.memo && !self.trace.enabled
     }
 
     /// The memo counters of `stack_id`'s table (hits, misses, records, …),

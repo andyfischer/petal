@@ -1,21 +1,23 @@
 //! Differential tests: every snippet is run under the bytecode VM twice — once
-//! with optimizations off (`OptFlags::none`, the clone-and-alloc baseline) and
-//! once with everything on (`OptFlags::all`) — and their results must agree.
+//! under the `baseline` run policy (optimizer and memo off, the clone-and-alloc
+//! baseline) and once under `fast` (everything on) — and their results must
+//! agree.
 //! BC-noopt is the correctness oracle; the in-place optimizations must match it
 //! exactly (see docs/dev/bytecode-future-ideas.md for the parity invariants).
 //! Absolute correctness for fixed programs is anchored by the golden corpus and
 //! the `test/<case>/expects` harness.
 
 use crate::backend::OptFlags;
+use crate::policy::RunPolicy;
 use crate::env::Env;
 use crate::value;
 
 /// Run `code` on the bytecode VM with the given `opts`, returning the rendered
 /// result value plus the print output buffer. Values are compared by display
 /// string because heap ids are not comparable across two independent runs.
-fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
+fn run(code: &str, opts: RunPolicy) -> Result<(String, Vec<String>), String> {
     let mut env = Env::new();
-    env.set_opt_flags(opts);
+    env.set_policy(opts);
     let v = env.run_source(code)?;
     let rendered = value::value_to_display_string(&v, env.heap());
     Ok((rendered, env.take_output()))
@@ -28,11 +30,11 @@ fn run(code: &str, opts: OptFlags) -> Result<(String, Vec<String>), String> {
 /// untouched-key sweep.
 fn run_stateful(
     code: &str,
-    opts: OptFlags,
+    opts: RunPolicy,
     runs: usize,
 ) -> Result<(String, Vec<String>, String), String> {
     let mut env = Env::new();
-    env.set_opt_flags(opts);
+    env.set_policy(opts);
     let pid = env.load_program(code)?;
     let sid = env.create_stack(pid)?;
     let mut last = value::Value::Nil;
@@ -56,8 +58,8 @@ fn run_stateful(
 /// including the final persistent state map.
 #[track_caller]
 fn assert_stateful_parity(code: &str, runs: usize) {
-    let noopt = run_stateful(code, OptFlags::none(), runs);
-    let allopt = run_stateful(code, OptFlags::all(), runs);
+    let noopt = run_stateful(code, RunPolicy::BASELINE, runs);
+    let allopt = run_stateful(code, RunPolicy::FAST, runs);
     match (noopt, allopt) {
         (Ok((gv, go, gs)), Ok((bv, bo, bs))) => {
             assert_eq!(gv, bv, "value mismatch for:\n{code}");
@@ -73,8 +75,8 @@ fn assert_stateful_parity(code: &str, runs: usize) {
 /// with an equal rendered value and equal print output.
 #[track_caller]
 fn assert_parity(code: &str) {
-    let noopt = run(code, OptFlags::none());
-    let allopt = run(code, OptFlags::all());
+    let noopt = run(code, RunPolicy::BASELINE);
+    let allopt = run(code, RunPolicy::FAST);
     match (noopt, allopt) {
         (Ok((gv, go)), Ok((bv, bo))) => {
             assert_eq!(gv, bv, "value mismatch for:\n{code}");
@@ -97,7 +99,7 @@ fn arithmetic() {
 
 #[test]
 fn list_scalar_broadcast() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     // list op scalar, element-wise
     assert_eq!(run("[1, 2, 3] + 10", all).unwrap().0, "[11, 12, 13]");
     assert_eq!(run("[1, 2, 3] - 1", all).unwrap().0, "[0, 1, 2]");
@@ -215,11 +217,11 @@ fn slice_string_snaps_to_char_boundaries() {
     // '─' (U+2500) is 3 bytes. slice()/len() are byte-indexed; a byte index
     // that lands mid-char must snap to a char boundary rather than panic.
     // Snap the start up and the end down so only whole chars are returned.
-    let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, OptFlags::none()).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, RunPolicy::BASELINE).unwrap();
     assert_eq!(out, vec!["a"], "end mid-char snaps down to a boundary");
-    let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, OptFlags::none()).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, RunPolicy::BASELINE).unwrap();
     assert_eq!(out, vec!["b"], "start mid-char snaps up to a boundary");
-    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, OptFlags::none()).unwrap();
+    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, RunPolicy::BASELINE).unwrap();
     assert_eq!(out, vec!["a─"], "index on a boundary is unchanged");
     // Parity + no-panic across both backends, including out-of-range indices.
     assert_parity(r#"print(slice("a─b", 0, 2))"#);
@@ -390,7 +392,7 @@ fn break_continue_transfer_control_immediately() {
     // would change the value / raise an error if trailing code ran.
     let (_, out) = run(
         "let m = 1\nfor i in range(0, 2) do\n  continue\n  m = 10\nend\nprint(m)",
-        OptFlags::none(),
+        RunPolicy::BASELINE,
     )
     .unwrap();
     assert_eq!(out, vec!["1"], "dead rebind after continue must not run");
@@ -411,7 +413,7 @@ fn arm_carry_slots_survive_mid_block_exits() {
     // for that dead rebind must deliver `m`'s live value (via the arm's
     // seeded carry slot), not the dead rebind's uninitialized register.
     let code = "let m = 1\nfor a in range(0, 3) do\n  for b in range(0, 2) do\n    m = 7\n  end\n  for c in range(0, 4) do\n    print(\"read:\", m)\n    if 1 == 1 then\n      if 1 == 1 then\n        continue\n      end\n      m = 10\n      break\n    end\n  end\nend\nprint(\"end\", m)";
-    let (_, out) = run(code, OptFlags::none()).unwrap();
+    let (_, out) = run(code, RunPolicy::BASELINE).unwrap();
     assert_eq!(out.last().map(String::as_str), Some("end 7"));
     assert!(out.iter().all(|l| l != "read: nil"), "nil leak: {out:?}");
     assert_parity(code);
@@ -420,7 +422,7 @@ fn arm_carry_slots_survive_mid_block_exits() {
     // the dead second rebind's register or the pre-iteration value.
     let (_, out) = run(
         "let total = 0\nfor x in range(1, 4) do\n  total = total + x\n  if x == 2 then break end\n  total = total + 100\nend\nprint(total)",
-        OptFlags::none(),
+        RunPolicy::BASELINE,
     )
     .unwrap();
     assert_eq!(out, vec!["103"]);
@@ -504,11 +506,11 @@ fn run_bounded_resumes_identically() {
     };
     let rendered = value::value_to_display_string(&value, env.heap());
 
-    let single = run(code, OptFlags::all()).unwrap().0;
+    let single = run(code, RunPolicy::FAST).unwrap().0;
     assert_eq!(rendered, single, "bounded run diverged from single run");
     assert_eq!(
         rendered,
-        run(code, OptFlags::none()).unwrap().0,
+        run(code, RunPolicy::BASELINE).unwrap().0,
         "diverged from clone-and-alloc baseline"
     );
 }
@@ -878,9 +880,9 @@ fn forking_a_stack_isolates_its_state_container() {
     // rather than assumed: both stacks run again after the fork and each must
     // accumulate only its own writes, identically under both engines.
     let code = "state xs = []\nfor i in range(0, 2) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
-    let run_forked = |opts: OptFlags| {
+    let run_forked = |opts: RunPolicy| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         let pid = env.load_program(code).expect("load");
         let src = env.create_stack(pid).expect("stack");
         env.run(src).expect("run");
@@ -898,8 +900,8 @@ fn forking_a_stack_isolates_its_state_container() {
         out
     };
     assert_eq!(
-        run_forked(OptFlags::none()),
-        run_forked(OptFlags::all()),
+        run_forked(RunPolicy::BASELINE),
+        run_forked(RunPolicy::FAST),
         "a fork's in-place writes must not reach the source stack's slots"
     );
 }
@@ -910,9 +912,9 @@ fn state_container_accumulates_the_same_across_a_resumed_run() {
     // stream, but the untouched-state sweep only fires on completion — so pin
     // that a chopped-up run leaves the same slot contents as a whole one.
     let code = "state xs = []\nfor i in range(0, 6) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
-    let stepped = |opts: OptFlags| {
+    let stepped = |opts: RunPolicy| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         let pid = env.load_program(code).expect("load");
         let sid = env.create_stack(pid).expect("stack");
         let mut out = Vec::new();
@@ -929,8 +931,8 @@ fn state_container_accumulates_the_same_across_a_resumed_run() {
         (out, pairs.join(","))
     };
     assert_eq!(
-        stepped(OptFlags::none()),
-        stepped(OptFlags::all()),
+        stepped(RunPolicy::BASELINE),
+        stepped(RunPolicy::FAST),
         "a resumed run must leave the same state as an unbroken one"
     );
 }
@@ -944,9 +946,9 @@ fn state_container_survives_a_hot_reload() {
     let v1 = "state xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\nend\nprint(len(xs))";
     let v2 =
         "state xs = []\nfor i in range(0, 2) do\n  xs = append(xs, 9)\nend\nprint(len(xs), xs[0])";
-    let reload = |opts: OptFlags| {
+    let reload = |opts: RunPolicy| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         let pid = env.load_program(v1).expect("load");
         let sid = env.create_stack(pid).expect("stack");
         let mut out = Vec::new();
@@ -962,8 +964,8 @@ fn state_container_survives_a_hot_reload() {
         out
     };
     assert_eq!(
-        reload(OptFlags::none()),
-        reload(OptFlags::all()),
+        reload(RunPolicy::BASELINE),
+        reload(RunPolicy::FAST),
         "a hot-reloaded state container must carry the same values either way"
     );
 }
@@ -976,9 +978,9 @@ fn state_slot_survives_a_run_that_errors_partway() {
     // `assert_stateful_parity` cannot check this: it compares nothing when both
     // engines error, so the state map is compared explicitly here.
     let code = "state a = [0, 0, 0]\nfor i in range(0, 3) do\n  a[i] = a[i] + 1\n  if i == 1 then\n    let boom = a[99]\n  end\nend\nprint(a[0])";
-    let state_after = |opts: OptFlags| {
+    let state_after = |opts: RunPolicy| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         let pid = env.load_program(code).expect("load");
         let sid = env.create_stack(pid).expect("stack");
         for _ in 0..3 {
@@ -992,8 +994,8 @@ fn state_slot_survives_a_run_that_errors_partway() {
         pairs.join(",")
     };
     assert_eq!(
-        state_after(OptFlags::none()),
-        state_after(OptFlags::all()),
+        state_after(RunPolicy::BASELINE),
+        state_after(RunPolicy::FAST),
         "a partially-completed run must leave the same state either way"
     );
 }
@@ -1552,7 +1554,7 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
         // A snippet that fails to parse would pass parity vacuously (both
         // engines error), so pin that each one actually runs.
         assert!(
-            run(code, OptFlags::none()).is_ok(),
+            run(code, RunPolicy::BASELINE).is_ok(),
             "sweep case failed:\n{code}"
         );
         assert_inplace_parity(code);
@@ -1574,7 +1576,7 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
     ];
     for code in stateful {
         assert!(
-            run(code, OptFlags::none()).is_ok(),
+            run(code, RunPolicy::BASELINE).is_ok(),
             "sweep case failed:\n{code}"
         );
         assert_stateful_parity(code, 4);
@@ -1589,20 +1591,16 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
 // route-A bug (and vice versa).
 
 /// Route A alone — isolates the last-use pass from route B.
-const ROUTE_A_ONLY: OptFlags = OptFlags {
-    in_place_mutation: false,
+const ROUTE_A_ONLY: RunPolicy = RunPolicy::BASELINE.with_opts(OptFlags {
     in_place_straight_line: true,
-    copy_propagation: false,
-    preserve_observations: false,
-    preserve_trace: false,
-    memo_scopes: false,
-};
+    ..OptFlags::none()
+});
 
 /// bytecode(no-opt) == bytecode(route A only) == bytecode(all).
 #[track_caller]
 fn assert_route_a_parity(code: &str) {
     assert_inplace_parity(code); // no-opt vs all
-    let noopt = run(code, OptFlags::none());
+    let noopt = run(code, RunPolicy::BASELINE);
     let ra = run(code, ROUTE_A_ONLY);
     match (noopt, ra) {
         (Ok((nv, no)), Ok((rv, ro))) => {
@@ -1739,11 +1737,11 @@ fn route_a_dup_bytes_drop_on_builder() {
     let code = "let grid = []\nfor y in range(0, 50) do\n  let t = [0, 0, 0, 0]\n  t[0] = y\n  t[1] = y\n  grid = append(grid, t)\nend\nprint(len(grid))";
     let bytes = |opts| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         env.run_source(code).expect("run");
         env.heap().dup_stats().total_bytes()
     };
-    let off = bytes(OptFlags::none());
+    let off = bytes(RunPolicy::BASELINE);
     let on = bytes(ROUTE_A_ONLY);
     assert!(off > 0, "baseline should copy something");
     assert!(
@@ -1762,12 +1760,12 @@ fn inplace_dup_bytes_drop_on_accumulator() {
     let code = "let xs = []\nfor i in range(0, 200) do\n  xs = append(xs, i)\nend\nlet n = len(xs)";
     let bytes = |opts| {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
         env.run_source(code).expect("run");
         env.heap().dup_stats().total_bytes()
     };
-    let off = bytes(OptFlags::none());
-    let on = bytes(OptFlags::all());
+    let off = bytes(RunPolicy::BASELINE);
+    let on = bytes(RunPolicy::FAST);
     assert!(off > 0, "baseline should copy something");
     assert!(
         on < off,
@@ -1897,7 +1895,7 @@ fn lowering_reports_cross_function_term_reference_as_error() {
 
 #[test]
 fn coalesce_tolerates_a_missing_field() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     // The reported shape: ragged JSON where the key is simply not there.
     assert_eq!(run(r#"{a: 1}.fragment ?? "none""#, all).unwrap().0, "none");
     assert_eq!(
@@ -1928,7 +1926,7 @@ fn coalesce_tolerates_a_missing_field() {
 
 #[test]
 fn optional_access_reads_a_missing_link_as_nil() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     // `?.` is the same tolerance the left of a `??` gets, asked for outright —
     // so it stands on its own, with no fallback to write.
     assert_eq!(run("{a: 1}?.fragment", all).unwrap().0, "nil");
@@ -1951,7 +1949,7 @@ fn optional_access_reads_a_missing_link_as_nil() {
 
 #[test]
 fn optional_access_does_not_soften_a_real_bug() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     // Absence is a property of ragged data, not of wrong types or bad indices.
     // `?.` says "this link may be missing", never "ignore what goes wrong here".
     assert!(run("3?.field", all).unwrap_err().contains("Cannot access"));
@@ -1971,7 +1969,7 @@ fn optional_access_does_not_soften_a_real_bug() {
 
 #[test]
 fn a_bare_missing_field_is_still_an_error() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     // Absence is tolerated only where the program asked for it. A typo in a
     // plain read must still be loud.
     assert!(
@@ -2000,7 +1998,7 @@ x.field ?? "d""#,
 
 #[test]
 fn prelude_field_helpers_read_ragged_records() {
-    let all = OptFlags::all();
+    let all = RunPolicy::FAST;
     assert_eq!(run(r#"field({a: 1}, "zz", 7)"#, all).unwrap().0, "7");
     assert_eq!(run(r#"field({a: 1}, "a", 7)"#, all).unwrap().0, "1");
     assert_eq!(run(r#"has_field({a: 1}, "a")"#, all).unwrap().0, "true");

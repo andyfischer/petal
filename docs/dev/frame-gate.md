@@ -61,9 +61,9 @@ failing, so the error card stays until one of those inputs moves.
 
 | Host | Gate | Retained output |
 |---|---|---|
-| `petal-ui` `Headless` (and `petal-ui-run`, `bench_panel`) | `FrameCore::gate`, reached as `Headless::gate` (on by default); `--no-gate` on the CLI and the bench | `Headless::commands` |
+| `petal-ui` `Headless` (and `petal-ui-run`, `bench_panel`) | the env's `RunPolicy::gate` (on under `fast`, the default), set with `FrameCore::set_policy` / `Headless::set_policy`; `--policy replay` or `--no-gate` on the CLI and the bench | `Headless::commands` |
 | Garden panels (`PanelHost::frame`) | on, through the same `petal_ui::frame_core::FrameCore` `Headless` wraps (its counters are `/state`'s `panes[].panel.frame_stats`); query-cache revision and freshness expiry, edit-view texts, and data-provider swaps feed `note_host_data_changed` | `PanelHost` returns the last commands; `PanelView` leaves its bookkeeping alone |
-| petal-desktop-sdl (`game_loop`) | `Host::frame_gating()` (default on; the fantasy console opts out because `end_frame` pumps audio from every frame's output); off while the timeline records | the default host's persistent framebuffer re-blits; `present` still runs for vsync pacing |
+| petal-desktop-sdl (`game_loop`) | the env's `RunPolicy::gate` and `Host::frame_gating()` (default on; the fantasy console opts out because `end_frame` pumps audio from every frame's output); off while the timeline records | the default host's persistent framebuffer re-blits; `present` still runs for vsync pacing |
 | petal-web-canvas | `PetalRuntime::frame_needed` from `runFrame`; a canvas resize invalidates | the canvas keeps its pixels; `lastCommandsJson` is served |
 | petal-web-html | event-driven (a run per click), so no gate | the renderer now patches the DOM keyed by `key` instead of `innerHTML` |
 

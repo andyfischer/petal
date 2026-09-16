@@ -58,7 +58,9 @@ pub struct RunOpts {
     /// Count instructions, builtin calls and collections during the run and
     /// print the histogram to stderr afterwards (see `crate::profile`).
     pub profile: bool,
-    pub no_opt: bool,
+    /// `--policy <name>` (or `--no-opt`, which is `baseline`); `None` keeps
+    /// the env's own, from `PETAL_POLICY`.
+    pub policy: Option<crate::policy::RunPolicy>,
     /// Turn on the pending absorption trace and print the frame pending
     /// report to stderr after the run (also enabled by `PETAL_TRACE_PENDING`).
     pub trace_pending: bool,

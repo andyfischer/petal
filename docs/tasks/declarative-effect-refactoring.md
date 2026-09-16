@@ -1,9 +1,10 @@
 # Declare what a native does, instead of inferring it at runtime
 
-Status: **in progress**, 2026-09-16. Sequencing step 1 (the oracle over Garden
-and worlds-fair) is done — see [What the oracle found](#what-the-oracle-found).
-The task itself (steps 1–5 of [Migration](#migration-in-five-steps-that-each-stand-alone))
-is not started.
+Status: **in progress**, 2026-09-16. Sequencing steps 1 (the oracle over Garden
+and worlds-fair) and 2 (a named `RunPolicy`) are done — see
+[What the oracle found](#what-the-oracle-found) and
+[RunPolicy](#runpolicy-sequencing-step-2). The task itself (steps 1–5 of
+[Migration](#migration-in-five-steps-that-each-stand-alone)) is next.
 
 Prerequisite for P2 of [the reactive rendering plan](../dev/reactive-rendering-plan.md).
 See [Sequencing](#sequencing) for how it interleaves with the rest of that plan.
@@ -166,7 +167,8 @@ mechanism, verified continuously against an expensive exact one.
 ## How to check it
 
 Steps 1–3 must produce byte-identical behavior. The existing oracles are the
-test, run with declarations on and off:
+test, run with declarations on and off — and under each run policy, which is
+what [`RunPolicy`](#runpolicy-sequencing-step-2) is for:
 
 ```bash
 cargo test -p petal-ui --test gating
@@ -281,6 +283,48 @@ four. The `wf_*` names that look like natives are Petal functions in
 step 5 materially smaller than planned, and it moves where the work is: 95 of
 the 112 undeclared natives are in the core, where step 2 already puts them.
 
+## RunPolicy (sequencing step 2)
+
+Done 2026-09-16. [`rust/src/policy.rs`](../../rust/src/policy.rs) holds one
+`RunPolicy { opts, memo, gate }` per `Env`, and the combinations anyone asks
+for have names:
+
+| Policy | Optimizer | Memo | Gate |
+|---|---|---|---|
+| `fast` (default) | on | on | on |
+| `baseline` | off | off | off |
+| `explain` | on, preserving every traced instruction | off | off |
+| `replay` | on | on | off |
+
+Modifiers switch one layer: `fast-memo` is the gate alone, `replay-memo` is
+neither over optimized code, `baseline+gate` the gate over unoptimized code.
+`petal run --policy`, `petal-ui-run --policy`, `bench_panel --policy` and
+`PETAL_POLICY` all take the same spelling; `--no-opt` / `PETAL_OPT=off` remain
+as `baseline`, and `--no-gate` / `--no-memo` as modifiers on whatever policy is
+in effect.
+
+What moved:
+
+- **`OptFlags` is lowering-only.** `memo_scopes` left it. It had been part of
+  the bytecode cache key, so toggling memoization re-lowered every program
+  for no reason.
+- **The gate lives on the env.** `FrameCore` had its own `gate` and `memo`
+  fields and wrote `memo` into the env before every run, so the env's setting
+  and the host's could disagree — which is why the old escape-hatch test had
+  to copy one into the other by hand. Both fields are gone; `FrameCore`,
+  Garden's `set_frame_gating` and the SDL game loop read `env.policy().gate`,
+  so `PETAL_POLICY=replay` turns the gate off in every host at once.
+- **The oracles say what they compare.** `tests/gating.rs` is `fast` against
+  `replay`, `tests/memo.rs` is `replay` against `replay-memo`, the bytecode
+  differentials are `baseline` against `fast`, and `oracle-external.ts` runs
+  `baseline` against `fast-memo`, `replay` and `fast` — a stronger baseline
+  than before, which kept the optimizer on.
+
+  Not yet run in that form: worlds-fair's `wf-ui` at HEAD (`9a8cc25`) has no
+  `--print-fixtures` — the flag is silently ignored, the fixtures file comes
+  out empty and `petal-ui-run` rejects it. The upstream half of step 1 needs
+  landing in worlds-fair before `oracle-external.ts` runs again.
+
 ## Sequencing
 
 This lands *between* P1 and P2, not after them, because P2 consumes its
@@ -290,8 +334,8 @@ layer (**B**) and a named run policy (**C**) — identified in the same review.
 | # | Work | Why here |
 |---|---|---|
 | 1 | ~~**Run the gate/memo oracle over Garden and worlds-fair**~~ **done** | Outstanding correctness debt on *shipped* layers. Do it before adding a third. It also produces the list of undeclared host natives that step 4 above needs. Both differentials pass; five undeclared natives found and fixed; see [What the oracle found](#what-the-oracle-found). |
-| 2 | **C — a named `RunPolicy` in place of `OptFlags`** | Small, and it is a tool for everything after it: `fast` / `explain` / `baseline` / `replay` as named modes makes the differential oracle a one-word argument instead of an env var plus a comment. Worth having *before* the work that leans on it, not after. |
-| 3 | **A — this task, steps 1–3** ∥ **P1's top-level body and loop bodies** | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
+| 2 | ~~**C — a named `RunPolicy` in place of `OptFlags`**~~ **done** | Small, and it is a tool for everything after it: `fast` / `explain` / `baseline` / `replay` as named modes makes the differential oracle a one-word argument instead of an env var plus a comment. Worth having *before* the work that leans on it, not after. |
+| 3 | **A — this task, steps 1–3** (next) ∥ **P1's top-level body and loop bodies** | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
 | 4 | **A steps 4–5** ∥ **E — a shared host frame driver** | The ecosystem migration is mostly other repos and can proceed at its own pace. E consolidates the gate → run → retain → invalidate loop that five hosts hand-wire, so P0's remaining work lands once instead of five times. |
 | 5 | **P2 — dependency classes, landing B with it** | P2 is the first consumer of the declared `reads` classes. Land the shared validity layer *as part of* P2 rather than as a standalone refactor first: with the gate and the memo it has two clients and the abstraction is speculative; with P2's block granularity it has three and pays for itself. |
 | 6 | **P0's segmented output and damage rectangles** | Sits on E. Also benefits from P2's block guards, which is what gives a segment a stable identity. |

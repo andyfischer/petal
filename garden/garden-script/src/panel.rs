@@ -1475,7 +1475,8 @@ impl PanelHost {
     /// Turn the frame gate on or off (on by default). Off, every
     /// [`frame`](Self::frame) runs the script.
     pub fn set_frame_gating(&mut self, on: bool) {
-        self.core.gate = on;
+        let policy = self.core.policy().with_gate(on);
+        self.core.set_policy(policy);
     }
 
     /// Whether the most recent [`frame`](Self::frame) skipped its run and

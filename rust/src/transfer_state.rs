@@ -230,7 +230,7 @@ mod stack_state_tests {
 
 #[cfg(test)]
 mod tests {
-    use crate::backend::OptFlags;
+    use crate::policy::RunPolicy;
     use crate::env::Env;
 
     /// Run a transfer scenario under one optimization level: run `source_v1`,
@@ -241,7 +241,7 @@ mod tests {
     /// VM run-state reset), and in-place mutation reaches heap state that
     /// survives the reload, so both paths must be exercised.
     fn check_transfer(
-        opts: OptFlags,
+        opts: RunPolicy,
         source_v1: &str,
         expect_v1: &[&str],
         source_v2: &str,
@@ -250,7 +250,7 @@ mod tests {
         expect_v2: &[&str],
     ) {
         let mut env = Env::new();
-        env.set_opt_flags(opts);
+        env.set_policy(opts);
 
         let pid = env.load_program(source_v1).unwrap();
         let sid = env.create_stack(pid).unwrap();
@@ -277,7 +277,7 @@ mod tests {
         expect_dropped: usize,
         expect_v2: &[&str],
     ) {
-        for opts in [OptFlags::none(), OptFlags::all()] {
+        for opts in [RunPolicy::BASELINE, RunPolicy::FAST] {
             check_transfer(
                 opts,
                 source_v1,

@@ -537,17 +537,17 @@ mod tests {
     /// matters — an absolute expectation would only restate the language's
     /// semantics, which are tested elsewhere.
     fn run_both(src: &str) -> String {
-        let go = |flags: crate::backend::OptFlags| {
+        let go = |flags: crate::policy::RunPolicy| {
             let mut env = Env::new();
-            env.set_opt_flags(flags);
+            env.set_policy(flags);
             let pid = env.load_program(src).expect("loads");
             let sid = env.create_stack(pid).expect("stack");
             let value = env.run(sid).expect("runs");
             let rendered = crate::value::value_to_display_string(&value, env.heap());
             (rendered, env.take_output().join("\n"))
         };
-        let plain = go(crate::backend::OptFlags::none());
-        let opt = go(crate::backend::OptFlags::all());
+        let plain = go(crate::policy::RunPolicy::BASELINE);
+        let opt = go(crate::policy::RunPolicy::FAST);
         assert_eq!(
             plain, opt,
             "copy propagation changed the program's behavior"

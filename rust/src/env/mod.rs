@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use crate::backend::OptFlags;
+use crate::policy::RunPolicy;
 use crate::backend::bytecode::BytecodeProgram;
 use crate::compiler::Compiler;
 use crate::execution_context::{ContextKey, ExecutionContext};
@@ -52,12 +53,12 @@ pub struct Env {
     profile: VmProfile,
     next_program_id: u32,
     next_stack_id: u32,
-    /// Per-run optimization toggles for the bytecode VM.
-    opt_flags: OptFlags,
+    /// How runs execute: optimizer passes, memoization, frame gating.
+    policy: RunPolicy,
     /// Lazily-lowered bytecode, cached next to each `Program`. Populated on the
     /// first bytecode run of a program; an entry's presence means lowering
     /// succeeded. The stored `OptFlags` is the flag set the lowering was built
-    /// with — when the active flags change (e.g. `--no-opt`), the cache is
+    /// with — when the active flags change (e.g. `--policy baseline`), the cache is
     /// re-lowered so in-place opcodes match the current optimization gate.
     bytecode: HashMap<ProgramId, (OptFlags, BytecodeProgram)>,
     /// Module resolution: in-memory registrations, search paths, and implicit
@@ -137,7 +138,7 @@ impl Env {
             profile: VmProfile::new(),
             next_program_id: 1,
             next_stack_id: 1,
-            opt_flags: Self::opt_flags_from_env(),
+            policy: RunPolicy::from_env(),
             bytecode: HashMap::new(),
             modules,
             handle_classes: Vec::new(),
@@ -146,25 +147,19 @@ impl Env {
         }
     }
 
-    /// Default opt flags from the `PETAL_OPT` env var: `none`/`0`/`off` disables
-    /// all opts, `all`/`1` enables all; anything else uses the compiled default.
-    /// Public so `show-bytecode` can mirror exactly what a run would execute.
-    pub fn opt_flags_from_env() -> OptFlags {
-        match std::env::var("PETAL_OPT").ok().as_deref() {
-            Some("none") | Some("0") | Some("off") => OptFlags::none(),
-            Some("all") | Some("1") | Some("on") => OptFlags::all(),
-            _ => OptFlags::default(),
-        }
+    /// Set how subsequent runs execute (see [`RunPolicy`]). Changing the
+    /// optimizer passes re-lowers each program on its next run; changing
+    /// memoization or gating does not.
+    ///
+    /// Set it between runs, not inside one: a re-lowering mid-run would leave
+    /// live frames pointing into code that no longer exists.
+    pub fn set_policy(&mut self, policy: RunPolicy) {
+        self.policy = policy;
     }
 
-    /// Set the bytecode VM's optimization flags for subsequent runs.
-    pub fn set_opt_flags(&mut self, flags: OptFlags) {
-        self.opt_flags = flags;
-    }
-
-    /// The active optimization flags.
-    pub fn opt_flags(&self) -> OptFlags {
-        self.opt_flags
+    /// The active run policy. Starts as [`RunPolicy::from_env`].
+    pub fn policy(&self) -> RunPolicy {
+        self.policy
     }
 
     /// Ensure `pid`'s program is lowered to bytecode and cached. Returns the
@@ -196,7 +191,7 @@ impl Env {
     /// Toggle between runs, not inside one: a re-lowering mid-run would leave
     /// live frames pointing into code that no longer exists.
     fn effective_opt_flags(&self) -> OptFlags {
-        let mut flags = self.opt_flags;
+        let mut flags = self.policy.opts;
         flags.preserve_observations |= self.observations.enabled || self.trace.enabled;
         flags.preserve_trace |= self.trace.enabled;
         flags

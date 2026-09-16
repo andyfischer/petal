@@ -73,7 +73,7 @@ fn render_ir(source: &str) -> Result<String, String> {
 
 fn render_bytecode(source: &str) -> Result<String, String> {
     let program = Env::new().compile_program(ProgramId(0), source)?;
-    let bc = lower_with_flags(&program, Env::opt_flags_from_env())?;
+    let bc = lower_with_flags(&program, crate::policy::RunPolicy::from_env().opts)?;
     Ok(disasm::render_text(&bc, &program))
 }
 

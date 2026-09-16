@@ -17,8 +17,10 @@
 //     passes while testing nothing. `wf-ui --print-fixtures` dumps the real
 //     fixture models in the shape `petal-ui-run --query-fixtures` takes.
 //
-// For each fragment it runs a monkey scenario twice and compares the frames:
-// once with gate and memo off (the baseline), once with the variant on.
+// For each fragment it runs a monkey scenario under the `baseline` run policy
+// (no optimizer, memo or gate) and under each shipped policy — `fast-memo` (the
+// gate alone), `replay` (the memo alone) and `fast` (both) — and compares the
+// frames.
 // `prints` is excluded deliberately — a gated frame documents empty prints.
 //
 // Usage:
@@ -104,16 +106,11 @@ const normalize = (trace: string) =>
       return JSON.stringify({ c: f.commands, s: f.state, e: f.error });
     });
 
-function drive(app: string, variant: 'base' | 'gate' | 'memo' | 'both'): string[] {
+/** Run policies (see rust/src/policy.rs), each compared against `baseline`. */
+const VARIANTS = ['fast-memo', 'replay', 'fast'] as const;
+
+function drive(app: string, policy: 'baseline' | (typeof VARIANTS)[number]): string[] {
   const out = join(work, `${app}.jsonl`);
-  const flags =
-    variant === 'base'
-      ? ['--no-gate', '--no-memo']
-      : variant === 'gate'
-        ? ['--no-memo']
-        : variant === 'memo'
-          ? ['--no-gate']
-          : [];
   execFileSync(runner, [
     join(work, `${app}.ptl`),
     '--frames', String(frames),
@@ -122,7 +119,7 @@ function drive(app: string, variant: 'base' | 'gate' | 'memo' | 'both'): string[
     '--query-fixtures', join(work, 'fixtures.json'),
     '--error-format', 'bare',
     '--out', out,
-    ...flags,
+    '--policy', policy,
   ]);
   return normalize(readFileSync(out, 'utf8'));
 }
@@ -134,7 +131,7 @@ for (const [name, entry] of FRAGMENTS) {
     .join('');
   writeFileSync(join(work, `${name}.ptl`), source);
 
-  const base = drive(name, 'base');
+  const base = drive(name, 'baseline');
   // A fragment stuck on its "waiting for the game…" path draws two commands a
   // frame and proves nothing. That is what this corpus looked like before the
   // fixtures existed, and it read as a pass.
@@ -146,7 +143,7 @@ for (const [name, entry] of FRAGMENTS) {
   }
 
   const bad: string[] = [];
-  for (const variant of ['gate', 'memo', 'both'] as const) {
+  for (const variant of VARIANTS) {
     const got = drive(name, variant);
     const i = base.findIndex((f, j) => f !== got[j]);
     if (i >= 0) bad.push(`${variant} differs at frame ${i}`);

@@ -90,8 +90,13 @@ Options:
   and `choose` replay identically. Decimal or `0x`-hex. Without it the seed
   comes from the clock. `PETAL_SEED=<n>` does the same for every command; the
   flag wins when both are set.
-- `--no-opt` — skip the optimizer. Output must be identical either way, so a
-  difference is a bug in an optimization pass. `PETAL_OPT=off` does the same.
+- `--policy <name>` — run under a named run policy: `fast` (the default),
+  `baseline` (no optimizer, no memoization), `explain` (keeps every traced
+  instruction, no memoization) or `replay`, optionally followed by modifiers
+  such as `-memo` or `+gate`. Output must be identical under every policy, so
+  a difference is a bug in the layer the two differ by. `PETAL_POLICY=<name>`
+  does the same for every command and embedder; the flag wins.
+- `--no-opt` — same as `--policy baseline`. `PETAL_OPT=off` does the same.
 
 Tracing and inspection options:
 

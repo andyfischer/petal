@@ -109,11 +109,11 @@ special: the validation reads the live slots.
 
 | | |
 |---|---|
-| Switch | `OptFlags::memo_scopes` (on by default; off under `PETAL_OPT=off` / `--no-opt` with the other optimizations), `Env::set_memo_scopes`, `Headless::memo` |
+| Switch | `RunPolicy::memo` (on under `fast` and `replay`, the default being `fast`; off under `baseline` and `explain`), set with `Env::set_policy`, `Headless::set_policy`, `PETAL_POLICY` or `--policy`. |
 | Off regardless | while the `explain` trace is on (`Env::memo_enabled`): a trace of a replayed scope would have no instructions in it |
 | Host calls | `Env::call_function` runs outside any frame's run and is never a scope |
 | Counters | `Env::memo_stats` / `memo_slots`; `petal-ui-run --memo-stats`; `bench_panel` prints them |
-| Reference | `petal-ui-run --no-memo`, `bench_panel --no-memo`: every call runs |
+| Reference | `--policy replay-memo` or `--no-memo` on `petal-ui-run` and `bench_panel`: every call runs |
 
 Observation (`panel.values`, the debug server) works with memoization on: a
 replayed scope re-records the bindings its run recorded, so a host reading

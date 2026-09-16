@@ -1,15 +1,17 @@
 //! Time a panel script's per-frame cost under the headless harness.
 //!
 //!   cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]
-//!       [--observe] [--profile] [--no-gate] [--no-memo] [--wiggle]
+//!       [--observe] [--profile] [--policy <name>] [--no-gate] [--no-memo] [--wiggle]
 //!       [--scenario s.json|monkey:<seed>]
 //!
-//! Frames run under the frame gate unless `--no-gate`: with no input change a
+//! Frames run under the `fast` run policy unless `--policy` names another
+//! (see `petal::policy`); `--no-gate` / `--no-memo` switch one layer off.
+//! Under the frame gate, with no input change a
 //! script that reads no clock is skipped after its first frame, so a quiet
 //! bench measures the gate rather than the script. `--wiggle` moves the
 //! pointer one pixel each frame, the typical interactive frame. Calls are
-//! memoized unless `--no-memo` (see docs/dev/memo-scopes.md); the memo's
-//! counters are reported either way.
+//! memoized (see docs/dev/memo-scopes.md) unless the policy says not; the
+//! memo's counters are reported either way.
 //!
 //! `--scenario` drives the frames with a `petal-ui-run` scenario (see
 //! docs/dev/headless-ui-run.md) instead of a still or wiggling pointer, so a
@@ -21,12 +23,16 @@ use std::time::Instant;
 fn main() {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let mut scenario_spec: Option<String> = None;
+    let mut policy = None;
     let mut flags: Vec<String> = Vec::new();
     let mut positional: Vec<String> = Vec::new();
     let mut it = raw.into_iter();
     while let Some(a) = it.next() {
         if a == "--scenario" {
             scenario_spec = Some(it.next().expect("--scenario wants a file or monkey:<seed>"));
+        } else if a == "--policy" {
+            let spec = it.next().expect("--policy wants a run policy name");
+            policy = Some(petal::policy::RunPolicy::parse(&spec).unwrap_or_else(|e| panic!("{e}")));
         } else if a.starts_with("--") {
             flags.push(a);
         } else {
@@ -68,8 +74,10 @@ fn main() {
     let mut ui = petal_ui::harness::Headless::with_size(&src, w, h).expect("compile");
     let compile_ms = compile_start.elapsed().as_secs_f64() * 1e3;
 
-    ui.gate = !no_gate;
-    ui.memo = !no_memo;
+    let mut policy = policy.unwrap_or_else(|| ui.policy());
+    policy.gate &= !no_gate;
+    policy.memo &= !no_memo;
+    ui.set_policy(policy);
     if observe {
         ui.env.observations_mut().enable();
     }

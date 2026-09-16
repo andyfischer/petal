@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 mod common;
 use common::{assert_corpus_is_live, corpus};
 
+use petal::policy::RunPolicy;
 use petal::run_deps::RunReason;
 use petal_ui::harness::Headless;
 use petal_ui::host_data::fixture_provider;
@@ -51,7 +52,7 @@ fn a_script_that_reads_nothing_runs_once_and_is_then_skipped() {
 #[test]
 fn the_gate_can_be_turned_off() {
     let mut ui = ui("draw_rect({x: 0, y: 0, w: 10, h: 10}, {r: 1, g: 2, b: 3, a: 255})");
-    ui.gate = false;
+    ui.set_policy(RunPolicy::REPLAY);
     ui.frame().unwrap();
     assert_eq!(quiet_runs(&mut ui, 5), 5);
     assert_eq!(ui.frames_skipped, 0);
@@ -293,7 +294,8 @@ fn drive(app: &Path, includes: &[PathBuf], gate: bool, seed: u64, frames: usize)
     petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
     ui.env.set_echo(false);
     ui.env.set_seed(seed);
-    ui.gate = gate;
+    // `fast` against `replay`: the same run with and without the gate.
+    ui.set_policy(if gate { RunPolicy::FAST } else { RunPolicy::REPLAY });
     let scenario = Scenario::monkey(seed, frames, size);
     let mut records = Vec::with_capacity(frames);
     for frame in 0..frames {

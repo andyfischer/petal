@@ -32,14 +32,15 @@ bench runs under the frame gate: a quiet script is skipped after its first
 frame, so pass `--wiggle` (move the pointer every frame) to measure an
 interactive frame, `--scenario s.json|monkey:<seed>` to time a realistic
 session (the [petal-ui-run scenario format](headless-ui-run.md#scenario-files)),
-or `--no-gate` to measure the script itself. `--no-memo` turns off memoized
-scopes; with both off, a frame costs what it did before either layer existed.
+or `--policy replay` (or `--no-gate`) to measure the script itself.
+`--no-memo` turns off memoized scopes; with both off, a frame costs what it did
+before either layer existed. `--policy baseline` also turns off the optimizer.
 Under a scenario the bench also reports the frames that ran on their own and
 the session's total script time, which is the number to compare.
 
 For the specific question "did the optimizer help", `PETAL_OPT_STATS=1` reports
-what it did to the program, and `PETAL_OPT=off` (or `--no-opt`) gives the
-unoptimized baseline for a same-binary A/B.
+what it did to the program, and `PETAL_POLICY=baseline` (or `--policy
+baseline`, or `--no-opt`) gives the unoptimized baseline for a same-binary A/B.
 
 ## What a program costs
 
@@ -83,14 +84,15 @@ Lowering (`backend::bytecode::lower`) gives every IR term its own register, so
 the raw instruction stream is roughly half register-to-register copies. Three
 passes then run over it, each individually switchable through
 [`OptFlags`](../../rust/src/backend/mod.rs) so any one can be turned off to
-isolate a bug:
+isolate a bug. `OptFlags` is the lowering half of a run's
+[`RunPolicy`](../../rust/src/policy.rs), which also carries memoization and
+frame gating:
 
 | Pass | What it does |
 |---|---|
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
-| `memo_scopes` | Not a lowering pass but a runtime switch in the same flag set: memoized user-function calls ([memo-scopes.md](memo-scopes.md)). A user call whose result the caller mutates in place is kept out of memoization (`Inst::Call::no_memo`), so a record never holds a container the caller rewrites. |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what
 something is reading".

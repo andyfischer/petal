@@ -27,9 +27,7 @@
       "Bash(gh *)",
       "Bash(cc-session-history *)",
       "mcp__petal-tools__TestSnippet",
-      "mcp__petal-tools__ShowAST",
-      "mcp__petal-tools__ShowIR",
-      "mcp__petal-tools__ShowTokens"
+      "mcp__petal-tools__ShowStage"
     ]
   },
   "enableAllProjectMcpServers": true

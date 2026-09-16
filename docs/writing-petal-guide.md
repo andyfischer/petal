@@ -836,8 +836,8 @@ a tree-sitter grammar (Neovim, Helix, Zed, Emacs) and a classic-Vim syntax file.
 ### MCP tools, if you use an AI assistant
 
 `ts/tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
-`CheckSnippet`, `ExplainTerm`, `ShowIR`, `ShowBytecode`, `ShowAST`,
-`ShowTokens`, `PendingReport`, `TraceEmits`, `ProposeEdit`. They build the
+`CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
+`PendingReport`, `TraceEmits`, `ProposeEdit`. They build the
 binary automatically. See [dev/mcp-server.md](dev/mcp-server.md).
 
 ---

@@ -102,5 +102,5 @@ output. See [dev/testing.md](dev/testing.md) for details.
 If you use an AI assistant that supports MCP (such as Claude Code), the repo
 includes an MCP server at `ts/tools/petal-mcp.ts`. It exposes tools to
 compile, run and inspect Petal snippets (`TestSnippet`, `CheckSnippet`,
-`ShowIR`, `ExplainTerm`, and others). See
+`ShowStage`, `ExplainTerm`, and others). See
 [dev/mcp-server.md](dev/mcp-server.md).

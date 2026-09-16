@@ -32,15 +32,30 @@ async function ensureBuild(): Promise<ToolResult | null> {
   return null;
 }
 
-async function runPetalCommand(args: string[]): Promise<ToolResult> {
+type PetalRun = { stdout: string; stderr: string; exitCode: number };
+
+// Build the binary, write `code` to a temp .ptl file, run `petal <args...> <file>`,
+// and clean up. Returns the build failure as a ToolResult, or the raw run.
+async function runPetalCommand(args: string[], code: string): Promise<ToolResult | PetalRun> {
   const buildErr = await ensureBuild();
   if (buildErr) return buildErr;
-
-  const result = await runCommand(petalBin, args);
-  if (result.exitCode !== 0) {
-    return { content: [{ type: "text", text: `Error:\n${result.stderr}` }], isError: true };
+  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
+  await writeFile(tmpFile, code);
+  try {
+    return await runCommand(petalBin, [...args, tmpFile]);
+  } finally {
+    await unlink(tmpFile).catch(() => {});
   }
-  return { content: [{ type: "text", text: result.stdout }] };
+}
+
+// The common tool shape: stdout (or stderr, or `fallback`) as text, error on non-zero exit.
+async function petalTool(args: string[], code: string, fallback = ""): Promise<ToolResult> {
+  const result = await runPetalCommand(args, code);
+  if ("content" in result) return result;
+  return {
+    content: [{ type: "text", text: result.stdout || result.stderr || fallback }],
+    isError: result.exitCode !== 0,
+  };
 }
 
 const server = new McpServer({
@@ -68,49 +83,39 @@ server.registerTool("TestSnippet", {
       ),
   },
 }, async ({ code, trace }) => {
-  const buildErr = await ensureBuild();
-  if (buildErr) return buildErr;
-
-  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
   const traceFile = trace
     ? join(tmpdir(), `petal-${randomBytes(8).toString("hex")}-trace.json`)
     : null;
-  await writeFile(tmpFile, code);
+  const args = ["run"];
+  if (traceFile) args.push("--record-trace", traceFile);
 
-  try {
-    const args = ["run"];
-    if (traceFile) args.push("--record-trace", traceFile);
-    args.push(tmpFile);
+  const result = await runPetalCommand(args, code);
+  if ("content" in result) return result;
 
-    const result = await runCommand(petalBin, args);
-
-    let traceJson: string | null = null;
-    if (traceFile) {
-      try {
-        traceJson = await readFile(traceFile, "utf8");
-      } catch {
-        // trace file may not exist if the program failed before any term ran
-      } finally {
-        await unlink(traceFile).catch(() => {});
-      }
+  let traceJson: string | null = null;
+  if (traceFile) {
+    try {
+      traceJson = await readFile(traceFile, "utf8");
+    } catch {
+      // trace file may not exist if the program failed before any term ran
+    } finally {
+      await unlink(traceFile).catch(() => {});
     }
-
-    const sections = [
-      result.stdout ? `stdout:\n${result.stdout}` : "stdout: (empty)",
-      result.stderr ? `stderr:\n${result.stderr}` : "",
-      `Exit code: ${result.exitCode}`,
-    ].filter(Boolean);
-    if (traceJson) {
-      sections.push(`trace:\n${traceJson}`);
-    }
-
-    return {
-      content: [{ type: "text", text: sections.join("\n\n") }],
-      isError: result.exitCode !== 0,
-    };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
   }
+
+  const sections = [
+    result.stdout ? `stdout:\n${result.stdout}` : "stdout: (empty)",
+    result.stderr ? `stderr:\n${result.stderr}` : "",
+    `Exit code: ${result.exitCode}`,
+  ].filter(Boolean);
+  if (traceJson) {
+    sections.push(`trace:\n${traceJson}`);
+  }
+
+  return {
+    content: [{ type: "text", text: sections.join("\n\n") }],
+    isError: result.exitCode !== 0,
+  };
 });
 
 server.registerTool("ExplainTerm", {
@@ -128,21 +133,7 @@ server.registerTool("ExplainTerm", {
       .string()
       .describe("Variable name (e.g. 'total'), term id (e.g. '72' or 't72')"),
   },
-}, async ({ code, term }) => {
-  const buildErr = await ensureBuild();
-  if (buildErr) return buildErr;
-  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
-  await writeFile(tmpFile, code);
-  try {
-    const result = await runCommand(petalBin, ["explain", "--json", "--term", term, tmpFile]);
-    return {
-      content: [{ type: "text", text: result.stdout || result.stderr }],
-      isError: result.exitCode !== 0,
-    };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
-  }
-});
+}, ({ code, term }) => petalTool(["explain", "--json", "--term", term], code));
 
 server.registerTool("CheckSnippet", {
   title: "Check Petal Snippet",
@@ -156,67 +147,46 @@ server.registerTool("CheckSnippet", {
   inputSchema: {
     code: z.string().describe("The Petal source code to validate"),
   },
-}, async ({ code }) => {
-  const buildErr = await ensureBuild();
-  if (buildErr) return buildErr;
-  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
-  await writeFile(tmpFile, code);
-  try {
-    const result = await runCommand(petalBin, ["check", "--json", tmpFile]);
-    return {
-      content: [{ type: "text", text: result.stdout || result.stderr || '{"ok": true, "warnings": []}' }],
-      isError: result.exitCode !== 0,
-    };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
-  }
-});
+}, ({ code }) => petalTool(["check", "--json"], code, '{"ok": true, "warnings": []}'));
 
-server.registerTool("ShowIR", {
-  title: "Show Petal IR",
+const stageCommands = {
+  tokens: "show-tokens",
+  ast: "show-ast",
+  ir: "show-ir",
+  bytecode: "show-bytecode",
+} as const;
+
+server.registerTool("ShowStage", {
+  title: "Show a Petal compilation stage",
   description:
-    "Compiles Petal code and returns the intermediate representation (IR) as JSON. " +
-    "By default this is the user-only view (`show-ir --json --user-only`): builtin " +
-    "phantom terms, the auto-loaded std prelude, and imported-module internals are " +
-    "filtered out, and `constants.values` is an id-keyed object. Ids are preserved, " +
-    "but the view is not loadable by `run --ir`. Pass `all: true` for the complete " +
-    "Program object (the `run --ir` interchange format).",
+    "Runs Petal code through the compiler up to one stage and returns that stage's " +
+    "dump — the same output as the CLI's `show-tokens` / `show-ast` / `show-ir` / " +
+    "`show-bytecode`. `stage: \"tokens\"` is the lexer's token list; `\"ast\"` the " +
+    "parsed syntax tree; `\"ir\"` the intermediate representation; `\"bytecode\"` the " +
+    "bytecode lowering (one function per entry, with disassembled instructions and " +
+    "register metadata). JSON by default; `json: false` returns the human-readable " +
+    "text form. For `ir`, the default is the user-only view (`show-ir --user-only`): " +
+    "builtin phantom terms, the auto-loaded std prelude, and imported-module internals " +
+    "are filtered out, and in JSON `constants.values` is an id-keyed object. Ids are " +
+    "preserved, but the view is not loadable by `run --ir`. Pass `all: true` for the " +
+    "complete Program object (the `run --ir` interchange format).",
   inputSchema: {
     code: z.string().describe("The Petal source code to compile"),
+    stage: z.enum(["tokens", "ast", "ir", "bytecode"]).describe("Which compilation stage to dump"),
+    json: z.boolean().optional().describe("Return JSON (default true); false returns the text dump"),
     all: z.boolean().optional().describe(
-      "Return the complete program, including builtin phantom terms and prelude/module internals"
+      "ir only: return the complete program, including builtin phantom terms and prelude/module internals"
     ),
   },
-}, ({ code, all }) =>
-  runPetalCommand(
-    all
-      ? ["show-ir", "--json", "-e", code]
-      : ["show-ir", "--json", "--user-only", "-e", code]
-  ));
-
-server.registerTool("ShowBytecode", {
-  title: "Show Petal Bytecode",
-  description: "Compiles Petal code and returns the bytecode lowering of the IR as JSON (one object per function with disassembled instructions and register metadata).",
-  inputSchema: {
-    code: z.string().describe("The Petal source code to compile"),
-  },
-}, ({ code }) => runPetalCommand(["show-bytecode", "--json", "-e", code]));
-
-server.registerTool("ShowAST", {
-  title: "Show Petal AST",
-  description: "Parses Petal code and returns the abstract syntax tree (AST) as JSON.",
-  inputSchema: {
-    code: z.string().describe("The Petal source code to parse"),
-  },
-}, ({ code }) => runPetalCommand(["show-ast", "--json", "-e", code]));
-
-server.registerTool("ShowTokens", {
-  title: "Show Petal Tokens",
-  description: "Lexes Petal code and returns the token list as JSON.",
-  inputSchema: {
-    code: z.string().describe("The Petal source code to tokenize"),
-  },
-}, ({ code }) => runPetalCommand(["show-tokens", "--json", "-e", code]));
+}, ({ code, stage, json, all }) => {
+  const args: string[] = [stageCommands[stage]];
+  const asJson = json !== false;
+  if (asJson) args.push("--json");
+  // show-ir's text form is already user-only; its JSON form needs the flag.
+  if (stage === "ir" && all) args.push("--all");
+  else if (stage === "ir" && asJson) args.push("--user-only");
+  return petalTool(args, code);
+});
 
 server.registerTool("TraceEmits", {
   title: "Trace Emitted Values",
@@ -232,21 +202,7 @@ server.registerTool("TraceEmits", {
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
   },
-}, async ({ code }) => {
-  const buildErr = await ensureBuild();
-  if (buildErr) return buildErr;
-  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
-  await writeFile(tmpFile, code);
-  try {
-    const result = await runCommand(petalBin, ["run", "--trace-emits", "--json", tmpFile]);
-    return {
-      content: [{ type: "text", text: result.stdout || result.stderr }],
-      isError: result.exitCode !== 0,
-    };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
-  }
-});
+}, ({ code }) => petalTool(["run", "--trace-emits", "--json"], code));
 
 server.registerTool("ProposeEdit", {
   title: "Propose Goal-Based Source Edit",
@@ -293,28 +249,15 @@ server.registerTool("ProposeEdit", {
       isError: true,
     };
   }
-  const buildErr = await ensureBuild();
-  if (buildErr) return buildErr;
-  const tmpFile = join(tmpdir(), `petal-${randomBytes(8).toString("hex")}.ptl`);
-  await writeFile(tmpFile, code);
-  try {
-    const args = [
-      "propose-edit", "--json",
-      "--channel", channel,
-      "--emit", String(emit),
-    ];
-    for (const g of pairs) args.push("--arg", String(g.arg), "--to", g.to);
-    for (const name of configurable ?? []) args.push("--configurable", name);
-    for (const name of pinned ?? []) args.push("--static", name);
-    args.push(tmpFile);
-    const result = await runCommand(petalBin, args);
-    return {
-      content: [{ type: "text", text: result.stdout || result.stderr }],
-      isError: result.exitCode !== 0,
-    };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
-  }
+  const args = [
+    "propose-edit", "--json",
+    "--channel", channel,
+    "--emit", String(emit),
+  ];
+  for (const g of pairs) args.push("--arg", String(g.arg), "--to", g.to);
+  for (const name of configurable ?? []) args.push("--configurable", name);
+  for (const name of pinned ?? []) args.push("--static", name);
+  return petalTool(args, code);
 });
 
 server.registerTool("PendingReport", {
@@ -328,7 +271,7 @@ server.registerTool("PendingReport", {
   inputSchema: {
     code: z.string().describe("The Petal source code to run"),
   },
-}, ({ code }) => runPetalCommand(["pending-report", "--json", "-e", code]));
+}, ({ code }) => petalTool(["pending-report", "--json"], code));
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

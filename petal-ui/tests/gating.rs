@@ -11,6 +11,9 @@
 
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::{assert_corpus_is_live, corpus};
+
 use petal::run_deps::RunReason;
 use petal_ui::harness::Headless;
 use petal_ui::host_data::fixture_provider;
@@ -282,34 +285,6 @@ fn prelude_widgets_settle_on_a_quiet_frame() {
 
 // ── Differential oracle over the example corpus ──────────────────────────
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
-}
-
-/// Every panel app in the examples tree, with the module search paths it needs.
-fn corpus() -> Vec<(PathBuf, Vec<PathBuf>)> {
-    let root = repo_root();
-    let mut apps = Vec::new();
-    for group in ["productivity", "dashboards", "games", "ui"] {
-        let dir = root.join("examples").join(group);
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for e in entries.flatten() {
-            let app = e.path().join("app.ptl");
-            if app.exists() {
-                apps.push((app, vec![root.join("petal-libs")]));
-            }
-        }
-    }
-    for p in ["garden/examples/panels/plant.ptl", "garden/examples/panels/gallery.ptl"] {
-        let path = root.join(p);
-        if path.exists() {
-            apps.push((path, vec![]));
-        }
-    }
-    apps.sort();
-    assert!(apps.len() >= 10, "corpus looks wrong: {apps:?}");
-    apps
-}
 
 fn drive(app: &Path, includes: &[PathBuf], gate: bool, seed: u64, frames: usize) -> (Vec<String>, u64) {
     let size = (800, 600);
@@ -344,6 +319,7 @@ fn gated_frames_reproduce_ungated_frames_across_the_corpus() {
         for seed in [1u64] {
             let (full, _) = drive(&app, &includes, false, seed, frames);
             let (gated, skipped) = drive(&app, &includes, true, seed, frames);
+            assert_corpus_is_live(&app, &full);
             skipped_total += skipped;
             for (i, (a, b)) in full.iter().zip(&gated).enumerate() {
                 assert!(
@@ -361,10 +337,23 @@ fn gated_frames_reproduce_ungated_frames_across_the_corpus() {
 
 #[test]
 fn a_quiet_corpus_mostly_idles() {
-    // With no input at all, every app that is not animating should settle
-    // within a few dozen frames and then skip.
+    // With no input at all, an app that is not driven by the clock should
+    // settle within a few dozen frames and then skip.
+    //
+    // The ratio is taken over the apps that *can* idle. An app that reads
+    // `time()` or `frame_count()` cannot: those bindings move on their own
+    // every frame, so the gate is obliged to re-run and correctly reports
+    // `BindingChanged`. Counting them as failures-to-idle would measure how
+    // much of the corpus animates, not whether the gate settles.
+    //
+    // That exclusion is not a technicality — it is the finding. Four Garden
+    // GPP apps and every worlds-fair screen read `frame_count()`, usually as
+    // a once-per-frame cache key, and it costs them the frame gate entirely.
+    // The in-tree `examples/` tree contains none of that idiom, which is why
+    // it took running this corpus over Garden to see it.
     let mut settled = 0;
     let mut total = 0;
+    let mut clock_driven = Vec::new();
     for (app, includes) in corpus() {
         let mut ui = Headless::from_file_with_paths(&app, 800, 600, &includes)
             .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
@@ -378,19 +367,31 @@ fn a_quiet_corpus_mostly_idles() {
         for _ in 0..30 {
             let _ = ui.frame();
         }
-        total += 1;
         if ui.frames_run == before {
             settled += 1;
-        } else {
-            eprintln!(
-                "{} keeps running: {:?}",
-                app.display(),
-                ui.last_run_reason
-            );
+            total += 1;
+            continue;
         }
+        // Name the binding: `BindingChanged(SymbolId(4))` says nothing, and
+        // which binding it is — the clock, or real input — is the whole
+        // difference between an app that animates and a bug.
+        let sym = match ui.last_run_reason {
+            Some(RunReason::BindingChanged(sym)) => ui.env.symbol_name(sym).unwrap_or("?"),
+            _ => "",
+        };
+        if matches!(sym, "time" | "frame_count" | "dt") {
+            clock_driven.push(format!("{} ({sym})", app.display()));
+            continue;
+        }
+        total += 1;
+        eprintln!("{} keeps running: {:?}", app.display(), ui.last_run_reason);
+    }
+    eprintln!("clock-driven, cannot idle by construction:");
+    for app in &clock_driven {
+        eprintln!("  {app}");
     }
     assert!(
         settled * 2 >= total,
-        "only {settled} of {total} apps idle after 90 quiet frames"
+        "only {settled} of {total} non-clock-driven apps idle after 90 quiet frames"
     );
 }

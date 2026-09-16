@@ -43,8 +43,8 @@ use petal_ui::harness::Headless;
 use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
-[--scenario s.json|monkey:<seed>] [--host-data fixtures.json] [--out trace.jsonl] \
-[--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
+[--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -66,6 +66,7 @@ struct Args {
     seed: Option<u64>,
     scenario: Option<String>,
     host_data: Option<PathBuf>,
+    query_fixtures: Option<PathBuf>,
     out: Option<PathBuf>,
     bare_errors: bool,
     /// Extra module search directories (`-I`), for an app that imports a
@@ -88,6 +89,7 @@ fn parse_args() -> Result<Args, String> {
     let mut seed = None;
     let mut scenario = None;
     let mut host_data = None;
+    let mut query_fixtures = None;
     let mut out = None;
     let mut bare_errors = false;
     let mut module_paths: Vec<PathBuf> = Vec::new();
@@ -124,6 +126,9 @@ fn parse_args() -> Result<Args, String> {
             "--scenario" => scenario = Some(value("--scenario")?),
             "-I" | "--include" => module_paths.push(PathBuf::from(value("-I")?)),
             "--host-data" => host_data = Some(PathBuf::from(value("--host-data")?)),
+            "--query-fixtures" => {
+                query_fixtures = Some(PathBuf::from(value("--query-fixtures")?))
+            }
             "--out" => out = Some(PathBuf::from(value("--out")?)),
             "--no-gate" => no_gate = true,
             "--gate-stats" => gate_stats = true,
@@ -154,6 +159,7 @@ fn parse_args() -> Result<Args, String> {
         seed,
         scenario,
         host_data,
+        query_fixtures,
         out,
         bare_errors,
         module_paths,
@@ -195,6 +201,9 @@ fn run() -> Result<i32, String> {
     }
     if let Some(path) = &args.host_data {
         ui.set_data_provider(fixture_provider(path)?);
+    }
+    if let Some(path) = &args.query_fixtures {
+        petal_ui::panel_stubs::set_query_fixtures(query_fixtures(path)?);
     }
 
     let mut out: Box<dyn Write> = match &args.out {
@@ -348,6 +357,17 @@ fn strip_position(line: &str) -> &str {
     } else {
         line
     }
+}
+
+/// Read the `--query-fixtures` file (see
+/// [`petal_ui::panel_stubs::parse_query_fixtures`] for the format). This
+/// wrapper only reads the file and prefixes errors with its path.
+fn query_fixtures(path: &Path) -> Result<Vec<((String, String), Json)>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let json: Json = serde_json::from_str(&text)
+        .map_err(|e| format!("{}: invalid JSON: {e}", path.display()))?;
+    petal_ui::panel_stubs::parse_query_fixtures(&json)
+        .map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Build a `host_data` provider from a fixture file (see

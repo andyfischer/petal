@@ -70,6 +70,8 @@ See [performance.md](performance.md) for how to read these numbers.
 | Command | Description |
 |---------|-------------|
 | `npm run scan-secrets` | Scan the full git history for leaked credentials with gitleaks (mirrors the CI "Secret scan" job). Run before a push or public release. |
+| `./ts/bin/oracle-external.ts` | Run the frame-gate/memo differential oracle over worlds-fair's UI, which lives outside this repo and needs a generated bundle and fixture models. Garden's half runs in CI as part of the cargo corpus. See [declarative-effect-refactoring.md](../tasks/declarative-effect-refactoring.md). |
+| `./ts/bin/native-effect-audit.ts` | Report which registered natives declare what they do, and which reach host state without declaring. Exits non-zero if any does. `--all` lists every native, `--json` for machine-readable output. See [declarative-effect-refactoring.md](../tasks/declarative-effect-refactoring.md). |
 | `cd ts && npm run stdlib:json` | Extract the standard library into JSON (`ts/tools/extract-stdlib.ts`). |
 | `cd ts && npm run tsc` | Type-check the TypeScript tooling (`tsc --noEmit`). |
 

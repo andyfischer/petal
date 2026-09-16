@@ -12,6 +12,9 @@
 
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::{assert_corpus_is_live, corpus};
+
 use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 use petal_ui::scenario::Scenario;
@@ -231,34 +234,6 @@ fn the_escape_hatch_disables_memoization_with_the_other_optimizations() {
 
 // ── Differential oracle over the example corpus ──────────────────────────
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
-}
-
-/// Every panel app in the examples tree, with the module search paths it needs.
-fn corpus() -> Vec<(PathBuf, Vec<PathBuf>)> {
-    let root = repo_root();
-    let mut apps = Vec::new();
-    for group in ["productivity", "dashboards", "games", "ui"] {
-        let dir = root.join("examples").join(group);
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for e in entries.flatten() {
-            let app = e.path().join("app.ptl");
-            if app.exists() {
-                apps.push((app, vec![root.join("petal-libs")]));
-            }
-        }
-    }
-    for p in ["garden/examples/panels/plant.ptl", "garden/examples/panels/gallery.ptl"] {
-        let path = root.join(p);
-        if path.exists() {
-            apps.push((path, vec![]));
-        }
-    }
-    apps.sort();
-    assert!(apps.len() >= 10, "corpus looks wrong: {apps:?}");
-    apps
-}
 
 fn drive(app: &Path, includes: &[PathBuf], memo: bool, seed: u64, frames: usize) -> (Vec<String>, u64) {
     let size = (800, 600);
@@ -333,6 +308,7 @@ fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
         for seed in [1u64] {
             let (full, _) = drive(&app, &includes, false, seed, frames);
             let (memoized, hits) = drive(&app, &includes, true, seed, frames);
+            assert_corpus_is_live(&app, &full);
             hits_total += hits;
             for (i, (a, b)) in full.iter().zip(&memoized).enumerate() {
                 assert!(

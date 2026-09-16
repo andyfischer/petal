@@ -32,6 +32,7 @@
 //! registering the stubs cannot perturb a script that never uses them — the
 //! byte-identical-trace property `petal-ui-run` is built on survives.
 
+use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 
 use indexmap::IndexMap;
@@ -130,13 +131,90 @@ fn native_panel_theme(cxt: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
-/// `query(kind, arg)` with no host: a loading `Value::Pending`, forever —
-/// Garden's own provider-less answer. The resource key hashes the arg's JSON
-/// form so any arg shape (string, record, list) keys stably.
+/// Ready answers for `query(kind, arg)`, keyed by `(kind, arg-as-JSON)`.
+///
+/// Empty by default, which is the provider-less Garden behavior every existing
+/// caller gets: a loading `Pending`, forever. A host that wants a drawer to
+/// render its *loaded* path — the differential oracle over the Garden and
+/// worlds-fair corpora, chiefly — installs a table with
+/// [`set_query_fixtures`].
+type QueryFixtures = Vec<((String, String), serde_json::Value)>;
+
+thread_local! {
+    static QUERY_FIXTURES: RefCell<QueryFixtures> = const { RefCell::new(Vec::new()) };
+}
+
+/// Install ready `query` answers for this thread, returning the previous table.
+///
+/// The answers are fixed for the life of the table: a fixture is a constant
+/// function of `(kind, arg)`, so a drawer sees the same model on every frame
+/// and the run stays deterministic. A `(kind, arg)` with no fixture keeps the
+/// loading `Pending`, so a table is additive — it can only move a drawer from
+/// its spinner onto its content path, never the other way.
+pub fn set_query_fixtures(fixtures: QueryFixtures) -> QueryFixtures {
+    QUERY_FIXTURES.with(|f| std::mem::replace(&mut *f.borrow_mut(), fixtures))
+}
+
+/// Parse the `--query-fixtures` file: a JSON array of
+/// `{"kind": ..., "arg": ..., "value": ...}`, the same shape
+/// [`crate::host_data::fixture_provider`] takes.
+///
+/// `arg` is matched against the argument's JSON spelling, so a string arg is
+/// written as a string (`"flight"`) and a record arg as that record.
+pub fn parse_query_fixtures(json: &serde_json::Value) -> Result<QueryFixtures, String> {
+    let entries = json
+        .as_array()
+        .ok_or_else(|| "query fixtures must be a JSON array".to_string())?;
+    let mut table = QueryFixtures::with_capacity(entries.len());
+    for (i, e) in entries.iter().enumerate() {
+        let obj = e
+            .as_object()
+            .ok_or_else(|| format!("query fixture {i} must be an object"))?;
+        let kind = match obj.get("kind") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            _ => return Err(format!("query fixture {i} needs a string \"kind\"")),
+        };
+        let arg = obj
+            .get("arg")
+            .unwrap_or(&serde_json::Value::Null)
+            .to_string();
+        let value = obj.get("value").cloned().unwrap_or(serde_json::Value::Null);
+        table.push(((kind, arg), value));
+    }
+    Ok(table)
+}
+
+/// `query(kind, arg)` — a fixture answer if one is installed for this
+/// `(kind, arg)`, else a loading `Value::Pending`, forever, which is Garden's
+/// own provider-less answer. The resource key hashes the arg's JSON form so any
+/// arg shape (string, record, list) keys stably.
+///
+/// `note_host_read()` is what Garden's real `query`
+/// (`garden-script/src/query.rs`) does for the same reason: the answer comes
+/// from a host-owned cache the binding table does not cover, so the frame gate
+/// must not treat a run that consulted it as a pure function of its bindings.
+/// The stub owes the gate the same declaration — its answers are constant, so
+/// today it only costs a re-run, but a stub that under-declares relative to the
+/// native it stands in for would hide exactly the staleness this corpus exists
+/// to find.
 fn native_query(cxt: &mut PetalCxt) -> NativeResult {
     let kind = cxt.get_string(1)?;
     let arg = cxt.get_value(2)?;
     let arg_json = petal::value::value_to_json(&arg, cxt.heap()).to_string();
+    cxt.note_host_read();
+
+    let fixture = QUERY_FIXTURES.with(|f| {
+        f.borrow()
+            .iter()
+            .find(|((k, a), _)| *k == kind && *a == arg_json)
+            .map(|(_, v)| v.clone())
+    });
+    if let Some(value) = fixture {
+        let v = petal::value::json_to_value(&value, cxt.heap_mut())?;
+        cxt.push_value(v);
+        return Ok(1);
+    }
+
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     kind.hash(&mut hasher);
     0u8.hash(&mut hasher);

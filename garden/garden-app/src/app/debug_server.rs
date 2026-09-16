@@ -112,13 +112,16 @@ impl App {
                     json!({"ok": true, "seed": seed, "panels": count}),
                 ))
             }
-            DebugCmd::Scene { pane } => {
+            DebugCmd::Scene { pane, find } => {
                 // Same consistency contract as /screenshot: settle panel frames
                 // first, so the dumped primitives reflect all injected input.
                 self.settle_panels();
                 let view = self.scene_view(pane)?;
                 let scene = self.build_scene();
-                let mut json = scene_json_view(&scene, view);
+                let mut json = match &find {
+                    Some(find) => scene_find_json(&scene, view, find),
+                    None => scene_json_view(&scene, view),
+                };
                 json["frame"] = json!(self.frame());
                 Ok(Reply::Json(json))
             }
@@ -1053,6 +1056,44 @@ fn scene_json_view(scene: &Scene, view: SceneView) -> Value {
     out
 }
 
+/// `GET /scene?find=…`: the dump narrowed to the text runs a locator matches,
+/// each carrying the rect it occupies and the center a click should land on,
+/// in the same coordinates as the rest of the view. The rect is the one
+/// `visible` is computed from, so a match reported visible is on screen.
+/// Matches come in draw order; the unfiltered `id` still names each one.
+fn scene_find_json(scene: &Scene, view: SceneView, find: &debug::SceneFind) -> Value {
+    let mut out = scene_json_view(scene, view);
+    let matches: Vec<Value> = out["primitives"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let id = p["id"].as_u64()? as usize;
+            let Some(Primitive::Text {
+                pos,
+                text,
+                size,
+                style,
+                ..
+            }) = scene.primitives.get(id)
+            else {
+                return None;
+            };
+            if !find.matches_text(text) {
+                return None;
+            }
+            let rect = view.rect(text_run_rect(*pos, text, *size, *style));
+            let mut p = p.clone();
+            p["rect"] = rect_json(rect);
+            p["center"] = json!([rect.x + rect.w / 2.0, rect.y + rect.h / 2.0]);
+            Some(p)
+        })
+        .collect();
+    out["matches"] = json!(matches.len());
+    out["primitives"] = Value::Array(matches);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1431,6 +1472,40 @@ mod tests {
         assert!(ui_w > 5.0 * 2.0);
     }
 
+    /// `?find=text:…` narrows the dump to the matching text runs and gives each
+    /// the rect and center a click needs, in the view's coordinates.
+    #[test]
+    fn scene_find_locates_text_runs() {
+        let (mut app, _f) = panel_app(
+            "draw_text(\"Save\", 40, 60, 16, 1, 1, 1)\ndraw_text(\"Save all\", 40, 90, 16, 1, 1, 1)\n",
+        );
+        let exact = state_with(&mut app, "/scene?find=text:Save&pane=0");
+        assert_eq!(exact["matches"], 1);
+        let hit = &exact["primitives"][0];
+        assert_eq!(hit["type"], "text");
+        assert_eq!(hit["text"], "Save");
+        assert_eq!(hit["rect"]["x"], 40.0);
+        assert_eq!(hit["rect"]["y"], 60.0);
+        let w = hit["rect"]["w"].as_f64().unwrap();
+        assert!(w > 0.0, "the rect is measured");
+        let cx = hit["center"][0].as_f64().unwrap();
+        assert!((cx - (40.0 + w / 2.0)).abs() < 0.01);
+
+        let loose = state_with(&mut app, "/scene?find=text~:Save&pane=0");
+        assert_eq!(loose["matches"], 2);
+
+        // Window coordinates without `pane=`: offset by the pane's origin.
+        let pane = app.pane_capture_rect(Some(0)).unwrap().unwrap();
+        let window = state_with(&mut app, "/scene?find=text:Save");
+        let wx = window["primitives"][0]["rect"]["x"].as_f64().unwrap();
+        assert!((wx - 40.0 - pane.x as f64).abs() < 0.01);
+
+        let none = state_with(&mut app, "/scene?find=text:Nope");
+        assert_eq!(none["matches"], 0);
+        assert!(crate::debug::route_for_test("GET", "/scene?find=quad:x", b"").is_err());
+        assert!(crate::debug::route_for_test("GET", "/scene?find=text:", b"").is_err());
+    }
+
     /// Every harness that screenshots one pane also crops the scene to it and
     /// subtracts its origin. The host does both now, the same way, so the two
     /// cannot drift apart.
@@ -1443,11 +1518,23 @@ mod tests {
             "the pane is inset by the chrome"
         );
 
-        let full = match app.handle_debug(DebugCmd::Scene { pane: None }).unwrap() {
+        let full = match app
+            .handle_debug(DebugCmd::Scene {
+                pane: None,
+                find: None,
+            })
+            .unwrap()
+        {
             Reply::Json(v) => v,
             _ => panic!("/scene answers JSON"),
         };
-        let scoped = match app.handle_debug(DebugCmd::Scene { pane: Some(0) }).unwrap() {
+        let scoped = match app
+            .handle_debug(DebugCmd::Scene {
+                pane: Some(0),
+                find: None,
+            })
+            .unwrap()
+        {
             Reply::Json(v) => v,
             _ => panic!("/scene answers JSON"),
         };

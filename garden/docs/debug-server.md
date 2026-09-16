@@ -85,6 +85,7 @@ after the response.
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
 | `GET /scene` | The primitives of the current frame: quads, text runs, meshes, images, and canvas ops. See [Asserting on the scene](#asserting-on-the-scene) |
 | `GET /scene?pane=<n>` | The same, restricted to pane *n* and rebased onto that pane's origin, so it lines up with `GET /screenshot?pane=<n>` |
+| `GET /scene?find=text:<s>` | Only the text runs reading exactly `<s>` (`text~:<s>` for a substring), each with its `rect` and `center`. Combines with `pane=`. See [Locating text](#locating-text) |
 | `GET /screenshot` | PNG of a complete, settled frame at physical-pixel size. The captured frame number is in the `X-Garden-Frame` header |
 | `GET /screenshot?pane=<n>` | The same, cropped to pane *n*: no tab strip, status bar, or gutter. This is the supported way to get chrome-free pixels |
 | `GET /frame` | `{"ok": true, "frame": n}`, the global frame counter, answered instantly. `?min=N` adds `"reached": true/false` |
@@ -335,6 +336,29 @@ An unknown index is a 400.
 curl -s -o pane.png '127.0.0.1:8080/screenshot?pane=1'
 curl -s '127.0.0.1:8080/scene?pane=1' | jq '.pane, .primitives[0]'
 ```
+
+### Locating text
+
+`?find=` turns `/scene` into a locator, so a test can click a label instead
+of a coordinate that breaks when the layout moves. `find=text:Save` keeps the
+text runs whose text, trimmed of surrounding whitespace, is exactly `Save`;
+`find=text~:Sav` keeps runs that contain `Sav`. Every other primitive is
+dropped. Each match is the ordinary text-run entry plus `rect` (the measured
+box that `visible` is computed from) and `center` (the point to click), and
+the reply's `matches` counts them. With `pane=<n>` both are pane-relative, as
+with the rest of the scene; the reply's `pane.rect` maps them back. An unknown
+locator kind or an empty needle is a 400. (`debug.scene-find`, landed
+2026-09-16.)
+
+```bash
+curl -s '127.0.0.1:8080/scene?find=text:Refresh&pane=0' | jq '.primitives[0].center'
+```
+
+Matches come in draw order and include clipped-away runs (`visible: false`).
+In TypeScript, `DebugClient.locate(text, {pane, contains, nth})` returns the
+window-space center of the *n*th visible match (or `null`), and
+`clickText(text, opts)` clicks it. A letter-spaced run is one entry per glyph,
+so it cannot be found by its whole text.
 
 ### Multiple windows
 

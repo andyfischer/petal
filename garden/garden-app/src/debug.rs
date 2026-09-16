@@ -38,7 +38,9 @@
 //!                    calling a newer endpoint or flag rather than reading a
 //!                    404 as "unsupported" — see `docs/debug-server.md`
 //! GET  /scene        the primitives of the current frame (quads + text runs),
-//!                    panels settled first (see /screenshot)
+//!                    panels settled first (see /screenshot). ?find=text:Save
+//!                    (exact) or ?find=text~:Sav (substring) keeps only the
+//!                    matching text runs, each with its `rect` and `center`
 //! GET  /frame        {"ok": true, "frame": n} — the global frame counter,
 //!                    answered instantly (never blocks); optional ?min=N adds
 //!                    "reached": frame >= N for easy client-side polling
@@ -216,6 +218,10 @@ pub enum DebugCmd {
     /// with `GET /screenshot?pane=<n>` without the client doing the arithmetic.
     Scene {
         pane: Option<usize>,
+        /// `?find=text:Save`: reply with only the matching primitives, each
+        /// with its measured `rect` and `center` — a locator, so a test can
+        /// click a label instead of hard-coding where it was last drawn.
+        find: Option<SceneFind>,
     },
     /// Advance every panel by `n` frames of `dt` seconds each, ignoring the
     /// sleep/wake window — deterministic panel time for animation and game
@@ -535,6 +541,59 @@ impl OutputRead {
     }
 }
 
+/// A `/scene?find=` locator. Two forms, both over text runs:
+///
+/// - `text:<s>` — runs whose text, trimmed of surrounding whitespace, is
+///   exactly `<s>`;
+/// - `text~:<s>` — runs whose text contains `<s>`.
+///
+/// Only text is locatable today; the `kind:` prefix leaves room for more.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SceneFind {
+    Text { needle: String, exact: bool },
+}
+
+impl SceneFind {
+    fn from_query(query: &[(String, String)]) -> Result<Option<SceneFind>, String> {
+        let Some((_, v)) = query.iter().find(|(k, _)| k == "find") else {
+            return Ok(None);
+        };
+        let (kind, needle) = v
+            .split_once(':')
+            .ok_or_else(|| format!("{v:?} is not <kind>:<value> (e.g. text:Save)"))?;
+        let exact = match kind {
+            "text" => true,
+            "text~" => false,
+            other => {
+                return Err(format!(
+                    "unknown locator kind {other:?} (expected \"text\" or \"text~\")"
+                ))
+            }
+        };
+        if needle.trim().is_empty() {
+            return Err("empty text to find".to_string());
+        }
+        Ok(Some(SceneFind::Text {
+            needle: needle.to_string(),
+            exact,
+        }))
+    }
+
+    /// Does a text run's text match?
+    pub fn matches_text(&self, text: &str) -> bool {
+        match self {
+            SceneFind::Text {
+                needle,
+                exact: true,
+            } => text.trim() == needle.trim(),
+            SceneFind::Text {
+                needle,
+                exact: false,
+            } => text.contains(needle.as_str()),
+        }
+    }
+}
+
 /// The `?pane=<n>` selector shared by `/screenshot` and `/scene`.
 fn pane_selector(query: &[(String, String)], path: &str) -> Result<Option<usize>, (u16, String)> {
     query
@@ -558,6 +617,8 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
         }),
         ("GET", "/scene") => Ok(DebugCmd::Scene {
             pane: pane_selector(&query, path)?,
+            find: SceneFind::from_query(&query)
+                .map_err(|err| (400, format!("bad find= in {path}: {err}")))?,
         }),
         ("POST", "/tick") => {
             let v = if body.is_empty() {
@@ -1099,9 +1160,14 @@ mod tests {
     /// lists the vocabulary instead of a press that does nothing.
     #[test]
     fn key_route_rejects_unknown_names() {
-        for ok in ["pagedown", "PageDown", "enter", "return", "esc", "space", "K", "-"] {
+        for ok in [
+            "pagedown", "PageDown", "enter", "return", "esc", "space", "K", "-",
+        ] {
             let body = format!(r#"{{"key":"{ok}"}}"#);
-            assert!(route("POST", "/key", body.as_bytes()).is_ok(), "{ok} should route");
+            assert!(
+                route("POST", "/key", body.as_bytes()).is_ok(),
+                "{ok} should route"
+            );
         }
         match route("POST", "/key", br#"{"key":"ArrowLeft"}"#) {
             Err((400, msg)) => {

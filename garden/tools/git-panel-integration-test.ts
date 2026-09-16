@@ -65,6 +65,7 @@ console.log("launching git history browser with debug server...");
 const app = await launchGarden({
   args: ["git", "log", ...mode],
   cwd: repo,
+  requireFeatures: ["debug.scene-find"],
   logPath,
 });
 const g = app.client;
@@ -168,9 +169,9 @@ checks.check("PageUp scrolls the focused diff", await pstate("diff_scroll"), 0);
 await g.key("tab");
 checks.check("Tab wraps back to commits", await pstate("focus"), 0);
 
-// Clicking a commit row selects it (row 0 = worktree, rows are 40px from y=74)
-// and resets the diff scroll for the new selection.
-await g.clickPaneLocal(100, 74 + 20);
+// Clicking a commit row selects it (row 0 = the worktree row, found by its
+// label through `/scene?find=`) and resets the diff scroll for the new selection.
+await g.clickText("working tree", { pane: 0 });
 checks.check("click selects the worktree row", await pstate("commit_selected"), 0);
 checks.check("selection change resets scroll", await pstate("diff_scroll"), 0);
 await checkEventually("worktree file list is back", "file_count", 1);
@@ -212,12 +213,11 @@ checks.checkLt("horizontal drag shrinks commit list", ca1, ca0);
 // The ⟳ Refresh button (top-right) re-runs git: after a new tracked change lands
 // in the repo, clicking it reloads the working-tree diff and the new file appears.
 // This proves Refresh calls git again rather than serving the cached diff.
-await g.clickPaneLocal(100, 74 + 20); // select the worktree row
+await g.clickText("working tree", { pane: 0 }); // select the worktree row
 await checkEventually("back on the worktree row", "file_count", 1);
 await writeFile(join(repo, "d.txt"), "brand new\n"); // a new staged file vs HEAD
 await git(repo, "add", "d.txt");
-const paneW = Math.trunc((await g.pane()).rect.w);
-await g.clickPaneLocal(paneW - 61, 22); // click ⟳ Refresh
+await g.clickText("Refresh", { pane: 0 }); // click ⟳ Refresh
 await checkEventually("Refresh re-runs git: new file", "file_count", 2);
 
 // --- report -----------------------------------------------------------------

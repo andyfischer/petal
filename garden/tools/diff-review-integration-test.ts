@@ -28,6 +28,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { cargoBuild, launchGarden } from "./lib/app.ts";
+import { Button } from "./lib/debug-client.ts";
 import { Checks } from "./lib/check.ts";
 import { git, makeWorkDir, removeOnExit, sleep, waitUntil } from "./lib/util.ts";
 
@@ -57,6 +58,7 @@ console.log("launching garden diff with debug server...");
 const app = await launchGarden({
   args: ["diff", "main", ...mode],
   cwd: repo,
+  requireFeatures: ["debug.scene-find"],
   logPath,
 });
 const g = app.client;
@@ -131,15 +133,17 @@ checks.check("opens in the unified view", await dstate("mode"), "unified");
 checks.check("a local diff has no PR block", await dstate("has_pr"), false);
 
 // --- the header pills switch views -------------------------------------------
+// Tabs are clicked by their label (`/scene?find=`), not by the drawer's bound
+// `*_x` centres, which have drifted from where the tab strip really draws them.
 const pillY = await num("pill_y");
 
-await clickAt(await num("stat_x"), pillY);
+await g.clickText("stat", { pane: 0 });
 await sleep(300);
 checks.check("the stat pill switches view", await dstate("mode"), "stat");
-await clickAt(await num("split_x"), pillY);
+await g.clickText("split", { pane: 0 });
 await sleep(300);
 checks.check("the split pill switches view", await dstate("mode"), "split");
-await clickAt(await num("unified_x"), pillY);
+await g.clickText("unified", { pane: 0 });
 await sleep(300);
 checks.check("the unified pill switches back", await dstate("mode"), "unified");
 
@@ -155,7 +159,7 @@ await sleep(300);
 checks.check("the wrap pill turns it back on", await dstate("uni_wrap"), true);
 
 // --- editing the after column and saving with ^S -----------------------------
-await clickAt(await num("split_x"), pillY);
+await g.clickText("split", { pane: 0 });
 await sleep(500);
 checks.check("back in the split view", await dstate("mode"), "split");
 // The after column's projected lines are:
@@ -195,7 +199,7 @@ checks.check("the refusal left the file alone", await fileText(), "one\nWO\nfour
 //   5 "-three" / 6 "+WO" / 7 " four" / 8 "+five"
 // Deleting line 5 (`dd` on "-three") reverts that deletion, so `three` returns to
 // the file at the point the diff showed it — the gesture the split view can't do.
-await clickAt(await num("unified_x"), pillY);
+await g.clickText("unified", { pane: 0 });
 await sleep(500);
 checks.check("back in the unified view", await dstate("mode"), "unified");
 await clickAt(await num("unified_body_x"), await bodyRowY(5));
@@ -269,14 +273,15 @@ await git(repo, "commit", "-qm", "add b.txt");
 await g.command("Diff main");
 await waitReady();
 
-await clickAt(await num("commits_x"), pillY);
+await g.clickText("commits", { pane: 0 });
 await sleep(1000);
 checks.check("the commits pill switches view", await dstate("mode"), "commits");
 checks.check("the review's two commits are listed", await dstate("commit_rows"), 2);
 
 // Row 0 is the newest commit ("add b.txt"). A left click scopes the diff to it.
-const crow0Y = (await num("body_top")) + 20;
-await clickAt(300, crow0Y);
+// Rows and menu items are found by their text (`/scene?find=`), not by where
+// the drawer last put them.
+await g.clickText("add b.txt", { pane: 0 });
 await sleep(500);
 await waitReady();
 checks.check("clicking a commit scopes the diff", await scopeKind(), "commit");
@@ -284,29 +289,27 @@ checks.check("the scoped diff is read-only", await dstate("editable"), false);
 checks.check("it shows only that commit's file", await dstate("files"), 1);
 checks.check("the scoped load carried no error", await dstate("has_error"), false);
 
-// Right-click opens the context menu on that row. Its rows are 24px tall from
-// 6px below the menu's top edge, which is the pointer: item 0 spans +6..+30,
-// item 1 +30..+54, the separator +54..+63, and item 3 ("Whole review") +63..+87.
-await clickAt(await num("commits_x"), pillY);
+// Right-click opens the context menu on that row.
+await g.clickText("commits", { pane: 0 });
 await sleep(500);
-await g.rightClickPaneLocal(300, crow0Y);
+await g.clickText("add b.txt", { pane: 0, button: Button.right });
 await sleep(500);
 checks.check("right-click opens the context menu", await dstate("menu_open"), true);
 
 // "Everything since this commit" still ends at the working tree, so unlike
 // "only this commit" it stays editable.
-await clickAt(330, crow0Y + 42);
+await g.clickText("Everything since this commit", { pane: 0 });
 await sleep(500);
 await waitReady();
 checks.check("the menu scopes to 'since this commit'", await scopeKind(), "since");
 checks.check("a 'since' scope stays editable", await dstate("editable"), true);
 
 // And back to the whole review, which the menu offers only while scoped.
-await clickAt(await num("commits_x"), pillY);
+await g.clickText("commits", { pane: 0 });
 await sleep(500);
-await g.rightClickPaneLocal(300, crow0Y);
+await g.clickText("add b.txt", { pane: 0, button: Button.right });
 await sleep(500);
-await clickAt(330, crow0Y + 72);
+await g.clickText("Whole review", { pane: 0 });
 await sleep(500);
 await waitReady();
 checks.check("the menu returns to the whole review", await scopeKind(), "whole");
@@ -315,7 +318,7 @@ checks.check("the whole review is editable again", await dstate("editable"), tru
 // --- `/` searches the unified diff -------------------------------------------
 // The prompt is the host's, opened from inside the region; the pattern searches
 // that region's buffer and the cursor lands on the match.
-await clickAt(await num("unified_x"), pillY);
+await g.clickText("unified", { pane: 0 });
 await sleep(500);
 await clickAt(await num("unified_body_x"), await bodyRowY(3));
 await sleep(300);

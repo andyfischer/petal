@@ -95,6 +95,42 @@ export interface ScenePrimitive {
   visible?: boolean;
 }
 
+/** A text run `GET /scene?find=` matched: the primitive plus the rect it
+ *  occupies and the point a click should land on, in the reply's coordinates
+ *  (window, or pane-relative under `pane=`). */
+export interface SceneMatch extends ScenePrimitive {
+  id: number;
+  text: string;
+  rect: Rect;
+  center: [number, number];
+}
+
+/** The `GET /scene?find=` reply. */
+export interface SceneFindReply {
+  primitives: SceneMatch[];
+  matches: number;
+  frame?: number;
+  /** Present under `pane=`: which pane, and its rect in window coordinates. */
+  pane?: { index: number; rect: Rect };
+}
+
+/** A located text run, in window coordinates — what `click` takes. */
+export interface Located {
+  x: number;
+  y: number;
+  rect: Rect;
+  text: string;
+}
+
+export interface LocateOptions {
+  /** Search only this pane (the result is still in window coordinates). */
+  pane?: number;
+  /** Match runs containing `text`, rather than runs that are exactly it. */
+  contains?: boolean;
+  /** Which match, in draw order, when several are visible (default 0). */
+  nth?: number;
+}
+
 export interface MouseReply {
   selection?: { text?: string } | null;
 }
@@ -182,6 +218,49 @@ export class DebugClient {
 
   scene(): Promise<{ primitives: ScenePrimitive[] }> {
     return this.getJson("/scene");
+  }
+
+  /** `GET /scene?find=text:…`: the text runs matching `text` exactly (trimmed),
+   *  or containing it with `contains`, each with its rect and center. */
+  findText(text: string, opts: { pane?: number; contains?: boolean } = {}): Promise<SceneFindReply> {
+    const params = new URLSearchParams();
+    params.set("find", `${opts.contains ? "text~" : "text"}:${text}`);
+    if (opts.pane !== undefined) params.set("pane", String(opts.pane));
+    return this.getJson<SceneFindReply>(`/scene?${params.toString()}`);
+  }
+
+  /** Where a visible text run is drawn, as a clickable window-space point (the
+   *  run's center), or null when no visible run matches. The locator a test
+   *  uses instead of hard-coding where a label was last laid out. */
+  async locate(text: string, opts: LocateOptions = {}): Promise<Located | null> {
+    const reply = await this.findText(text, opts);
+    const hit = (reply.primitives ?? []).filter((p) => p.visible !== false)[opts.nth ?? 0];
+    if (!hit) return null;
+    const dx = reply.pane?.rect.x ?? 0;
+    const dy = reply.pane?.rect.y ?? 0;
+    return {
+      x: hit.center[0] + dx,
+      y: hit.center[1] + dy,
+      rect: { ...hit.rect, x: hit.rect.x + dx, y: hit.rect.y + dy },
+      text: hit.text,
+    };
+  }
+
+  /** `locate`, but a missing label is an error naming it. */
+  async mustLocate(text: string, opts: LocateOptions = {}): Promise<Located> {
+    const at = await this.locate(text, opts);
+    if (!at) throw new Error(`no visible text run ${opts.contains ? "containing" : "reading"} ${JSON.stringify(text)}`);
+    return at;
+  }
+
+  /** Click the center of a visible text run. */
+  async clickText(
+    text: string,
+    opts: LocateOptions & { clicks?: number; button?: number } = {},
+  ): Promise<MouseReply | null> {
+    const { clicks, button, ...where } = opts;
+    const at = await this.mustLocate(text, where);
+    return await this.click(at.x, at.y, { clicks, button });
   }
 
   windows(): Promise<{ windows: WindowInfo[] }> {

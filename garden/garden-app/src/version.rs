@@ -117,6 +117,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // name is a 400 listing petal-ui's canonical `KEY_NAMES`, and the names a
     // panel reads are derived from the same table `/key` parses.
     "debug.key-validate",
+    // `GET /scene?find=text:<s>` (exact, trimmed) / `?find=text~:<s>`
+    // (substring): only the matching text runs, each with `rect` and `center`
+    // — a text locator, so a test clicks a label rather than a coordinate.
+    "debug.scene-find",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

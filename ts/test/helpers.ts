@@ -117,6 +117,21 @@ export function showSliceJson(code: string, terms: string[]): any {
   return JSON.parse(run(["show-slice", "--json", ...termArgs, "-e", code]));
 }
 
+/**
+ * `petal graph --json [--direction <dir>] --term <t>...`, parsed. The one
+ * result shape the three `show-*` aliases share:
+ * `{direction, targets, terms, edges, frontier, complete, minimal}`.
+ */
+export function graphJson(
+  code: string,
+  terms: string[],
+  direction?: "back" | "forward"
+): any {
+  const termArgs = terms.flatMap((t) => ["--term", t]);
+  const dirArgs = direction ? ["--direction", direction] : [];
+  return JSON.parse(run(["graph", "--json", ...dirArgs, ...termArgs, "-e", code]));
+}
+
 /** `petal explain --json --term <term>`, parsed. Runs the program. */
 export function explainJson(code: string, term: string): any {
   return JSON.parse(run(["explain", "--json", "--term", term, "-e", code]));

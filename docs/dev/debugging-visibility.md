@@ -35,6 +35,7 @@ options.
 | `check [--json] [--strict]` | Lex+parse+compile only. Exit 0/1; `--strict` also fails on type warnings. |
 | `explain --term <name\|id>` | Run with tracing, then show the value chain that produced the term. Accepts a variable name (`total`), a numeric term id (`72`), or `t72`. |
 | `show-tokens` / `show-ast` / `show-ir` / `show-bytecode` | Each compilation stage, as text or `--json`. |
+| `graph --term <t> [--direction back\|forward] [--term <t2>...]` | The one dataflow query behind the three below; one result shape `{direction, targets, terms, edges, frontier, complete, minimal}`. |
 | `show-provenance --term <t>` | Backward dataflow slice: what does this term depend on? |
 | `show-dependents --term <t>` | Forward dataflow slice: what depends on this term? |
 | `show-slice --term <a> [--term <b>...]` | Dataflow subgraph for several targets (minimal only when no `var` is read; see §1a). |
@@ -67,7 +68,8 @@ Incompleteness is a field on the result, not a convention:
   *different value*; too big only loses precision.
 - `show-dependents`: gains `"kind": "may"` edges from the declaration and from
   every `set` to every read. This direction was always a "may" question, so
-  over-approximating is the correct answer.
+  over-approximating is the correct answer — but each read reached that way
+  is still listed in `frontier`, with `"complete": false`.
 - `explain`: runs the program, so it resolves the boundary to the exact write
   (matched on `CellId`, so one declaration that mints several cells, such as a
   `var` in a loop body, does not confuse two of them) and continues the chain

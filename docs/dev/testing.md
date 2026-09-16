@@ -39,8 +39,9 @@ on. The ones most tests use:
 - `checkJson(code)` / `checkStrict(code)` — `petal check --json` / `--strict`.
 - `showIrJson(code)`, `showAstJson(code)`, `showTokensJson(code)`,
   `showBytecodeJson(code)` — parsed `--json` dumps.
-- `showProvenanceJson`, `showDependentsJson`, `showSliceJson`, `explainJson` —
-  the dataflow query commands.
+- `graphJson(code, terms, direction?)`, and the alias helpers
+  `showProvenanceJson`, `showDependentsJson`, `showSliceJson`, plus
+  `explainJson` — the dataflow query commands.
 - `runIr(irJson)` / `runIrFile(path)` — run JSON IR through `run --ir`.
 - `userTerms(ir)` — the IR's terms minus builtin phantoms.
 - `termByName(ir, name)`, `termById(ir, id)`, `termsByOp(ir, op)` — term

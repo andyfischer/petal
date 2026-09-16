@@ -98,6 +98,18 @@ pub struct ProposeEditOpts {
     pub apply: bool,
 }
 
+/// Which dataflow walk `petal graph` runs. Chosen at parse time from
+/// `--direction` and the number of `--term`s (or fixed by an alias).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphQuery {
+    /// Backward from one term: its ancestors (`show-provenance`).
+    Provenance,
+    /// Forward from one or more terms: their dependents (`show-dependents`).
+    Dependents,
+    /// Backward from several terms: the conservative slice (`show-slice`).
+    Slice,
+}
+
 pub enum Command {
     Run(RunOpts),
     Check {
@@ -159,17 +171,16 @@ pub enum Command {
     ShowTokens {
         json: bool,
     },
-    ShowProvenance {
-        json: bool,
-        term: String,
-    },
-    ShowDependents {
-        json: bool,
-        term: String,
-    },
-    ShowSlice {
+    /// `petal graph`, and the `show-provenance` / `show-dependents` /
+    /// `show-slice` aliases that share its handler and result shape.
+    Graph {
         json: bool,
         terms: Vec<String>,
+        query: GraphQuery,
+        /// Set when invoked through one of the old names: the JSON then also
+        /// carries that command's legacy keys (`root`, and `ancestors` /
+        /// `dependents` / `slice`) so existing clients keep working.
+        alias: bool,
     },
     ShowGraph {
         all: bool,
@@ -474,14 +485,21 @@ pub fn execute(cli: CliArgs) {
         Command::ShowBytecode { json } => {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);
         }
-        Command::ShowProvenance { json, term } => {
-            handlers::handle_show_provenance(json, &term, &source, &source_input, &include_dirs);
-        }
-        Command::ShowDependents { json, term } => {
-            handlers::handle_show_dependents(json, &term, &source, &source_input, &include_dirs);
-        }
-        Command::ShowSlice { json, terms } => {
-            handlers::handle_show_slice(json, terms, &source, &source_input, &include_dirs);
+        Command::Graph {
+            json,
+            terms,
+            query,
+            alias,
+        } => {
+            handlers::handle_graph(
+                json,
+                &terms,
+                query,
+                alias,
+                &source,
+                &source_input,
+                &include_dirs,
+            );
         }
         Command::ShowGraph { all } => {
             handlers::handle_show_graph(all, &source, &source_input, &include_dirs);

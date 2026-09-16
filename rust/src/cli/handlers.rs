@@ -17,8 +17,8 @@ use crate::source_map::ENTRY_FILE;
 use crate::stack::StackKey;
 
 use super::{
-    ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain, die_with, error_json_value,
-    print_json,
+    GraphQuery, ProposeEditOpts, RunOpts, SourceInput, die, die_error, die_plain, die_with,
+    error_json_value, print_json,
 };
 
 /// `petal lsp` — serve the language server on stdin/stdout until the client
@@ -1139,70 +1139,220 @@ pub(super) fn handle_show_bytecode(
     }
 }
 
-pub(super) fn handle_show_provenance(
+/// `petal graph` — one dataflow query, one result shape. The three old
+/// commands (`show-provenance`, `show-dependents`, `show-slice`) are aliases
+/// that pick `query` and set `alias`, which adds their legacy JSON keys.
+///
+/// JSON: `{direction, targets, terms, edges, frontier, complete, minimal}`.
+/// `complete`/`minimal` are false exactly when the walk met a cell: backward
+/// it stopped there (the answer may be missing a writer's chain), forward it
+/// crossed a may-edge (the answer over-approximates).
+pub(super) fn handle_graph(
     json: bool,
-    term_query: &str,
+    term_queries: &[String],
+    query: GraphQuery,
+    alias: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
+    use crate::program_analysis::CellFrontier;
+
     let program = compile_source(source, source_input, include_dirs);
+    let target_ids = resolve_terms(&program, term_queries);
 
-    let root_id = resolve_term(&program, term_query);
-
-    let root_term = program.get_term(root_id);
-    let prov = program.trace_provenance(root_id);
-    let ancestor_ids = &prov.ancestors;
-    let edges = &prov.edges;
+    let (term_ids, edges, frontier): (
+        Vec<TermId>,
+        Vec<(TermId, TermId, EdgeKind)>,
+        Vec<CellFrontier>,
+    ) = match query {
+        GraphQuery::Provenance => {
+            let prov = program.trace_provenance(target_ids[0]);
+            // Every edge a backward walk emits is a value edge by
+            // construction — identity edges are exactly the ones it
+            // refuses to cross.
+            let edges = prov
+                .edges
+                .iter()
+                .map(|&(a, b)| (a, b, EdgeKind::Dataflow))
+                .collect();
+            (prov.ancestors, edges, prov.frontier)
+        }
+        GraphQuery::Dependents => {
+            // Several roots: the union of their forward walks, in first-seen
+            // order, each term and edge once.
+            let mut terms = Vec::new();
+            let mut edges = Vec::new();
+            let mut frontier: Vec<CellFrontier> = Vec::new();
+            let mut seen_terms = std::collections::HashSet::new();
+            let mut seen_edges = std::collections::HashSet::new();
+            for &root in &target_ids {
+                let deps = program.trace_dependents(root);
+                for t in deps.dependents {
+                    if seen_terms.insert(t) {
+                        terms.push(t);
+                    }
+                }
+                for e in deps.edges {
+                    if seen_edges.insert(e) {
+                        edges.push(e);
+                    }
+                }
+                frontier.extend(deps.frontier);
+            }
+            (terms, edges, frontier)
+        }
+        GraphQuery::Slice => {
+            // Conservative, not minimal: a slice that is too small silently
+            // computes a *different value*, while one that is too big only
+            // loses precision. The incompleteness is reported in-band
+            // rather than through the exit code — the type-level gate is
+            // `SliceResult`, not the process status.
+            let (ids, frontier) = program.slice(&target_ids).conservative();
+            let edges = program.induced_edges(&program.cell_index(), &ids);
+            (ids, edges, frontier)
+        }
+    };
+    // A cell reached along two paths is still one frontier entry.
+    let mut frontier = frontier;
+    let mut seen_reads = std::collections::HashSet::new();
+    frontier.retain(|f| seen_reads.insert((f.read_term, f.cell_decl)));
+    let complete = frontier.is_empty();
 
     if json {
-        let root_json = term_to_json(root_term);
-        let ancestors_json: Vec<_> = ancestor_ids
+        let terms_json: Vec<_> = term_ids
             .iter()
             .map(|&id| term_to_json(program.get_term(id)))
             .collect();
-        // Every edge a backward walk emits is a value edge by construction —
-        // identity edges are exactly the ones it refuses to cross.
-        let edges_json = edges_to_json(
-            &edges
-                .iter()
-                .map(|&(a, b)| (a, b, EdgeKind::Dataflow))
-                .collect::<Vec<_>>(),
-        );
-        let output = serde_json::json!({
-            "root": root_json,
-            "ancestors": ancestors_json,
-            "edges": edges_json,
-            "frontier": frontier_to_json(&program, &prov.frontier),
-            "complete": prov.is_complete(),
+        let mut output = serde_json::json!({
+            "direction": if query == GraphQuery::Dependents { "forward" } else { "back" },
+            "targets": target_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+            "terms": terms_json,
+            "edges": edges_to_json(&edges),
+            "frontier": frontier_to_json(&program, &frontier),
+            "complete": complete,
+            "minimal": complete,
         });
+        if alias {
+            let obj = output.as_object_mut().expect("graph output is an object");
+            let legacy = match query {
+                GraphQuery::Provenance => "ancestors",
+                GraphQuery::Dependents => "dependents",
+                GraphQuery::Slice => "slice",
+            };
+            obj.insert(legacy.to_string(), obj["terms"].clone());
+            if query != GraphQuery::Slice {
+                obj.insert(
+                    "root".to_string(),
+                    term_to_json(program.get_term(target_ids[0])),
+                );
+            }
+        }
         print_json(&output);
-    } else {
-        println!(
-            "Provenance of t{} ({}):",
-            root_id.0,
-            root_term
+        return;
+    }
+
+    let describe = |id: TermId| {
+        format!(
+            "t{} ({})",
+            id.0,
+            program
+                .get_term(id)
                 .name
                 .as_deref()
                 .map(base_fn_name)
                 .unwrap_or("unnamed")
-        );
-        println!("  op: {:?}", root_term.op);
-        println!(
-            "  inputs: {:?}",
-            root_term.inputs.iter().map(|i| i.0).collect::<Vec<_>>()
-        );
-        println!();
-        println!("Ancestors ({}):", ancestor_ids.len());
-        print_term_rows(&program, ancestor_ids);
-        println!();
-        println!("Edges ({}):", edges.len());
-        for (from, to) in edges {
-            println!("  t{} -> t{}", from.0, to.0);
-        }
-        if !prov.frontier.is_empty() {
+        )
+    };
+    let targets_list = target_ids
+        .iter()
+        .map(|&id| describe(id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    match query {
+        GraphQuery::Provenance => {
+            let root_term = program.get_term(target_ids[0]);
+            println!("Provenance of {}:", targets_list);
+            println!("  op: {:?}", root_term.op);
+            println!(
+                "  inputs: {:?}",
+                root_term.inputs.iter().map(|i| i.0).collect::<Vec<_>>()
+            );
             println!();
-            print_frontier(&program, &prov.frontier);
+            println!("Ancestors ({}):", term_ids.len());
+        }
+        GraphQuery::Dependents => {
+            println!("Dependents of {}:", targets_list);
+            if let [only] = target_ids.as_slice() {
+                println!("  op: {:?}", program.get_term(*only).op);
+            }
+            println!();
+            println!("Downstream ({}):", term_ids.len());
+        }
+        GraphQuery::Slice => {
+            println!(
+                "Slice for targets: {}",
+                target_ids
+                    .iter()
+                    .map(|id| format!("t{}", id.0))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            println!();
+            println!("Terms ({}):", term_ids.len());
+        }
+    }
+    print_term_rows(&program, &term_ids);
+    println!();
+    println!("Edges ({}):", edges.len());
+    print_edges(&program, &edges);
+
+    if frontier.is_empty() {
+        return;
+    }
+    println!();
+    match query {
+        GraphQuery::Slice => {
+            println!(
+                "Not minimal — {} cell read{} crossed:",
+                frontier.len(),
+                if frontier.len() == 1 { "" } else { "s" }
+            );
+            print_frontier(&program, &frontier);
+            println!(
+                "  Every possible write is included, so the slice is sufficient in\n  \
+                 terms — but not faithful in order: it does not carry the control\n  \
+                 flow that selected among those writes."
+            );
+        }
+        GraphQuery::Dependents => {
+            print_frontier(&program, &frontier);
+            println!(
+                "  Reached through a cell may-edge: any of these writes may supply\n  \
+                 the read, so the downstream set over-approximates."
+            );
+        }
+        GraphQuery::Provenance => print_frontier(&program, &frontier),
+    }
+}
+
+/// Edge rows for the text form. A may-edge is a possibility, not a fact, so it
+/// is drawn `~>` and labelled rather than printed like a value edge.
+fn print_edges(program: &Program, edges: &[(TermId, TermId, EdgeKind)]) {
+    let mut index = None;
+    for (from, to, kind) in edges {
+        match kind {
+            EdgeKind::Dataflow => println!("  t{} -> t{}", from.0, to.0),
+            EdgeKind::CellMay => {
+                let index = index.get_or_insert_with(|| program.cell_index());
+                let var = cell_var_for_edge(index, *from, *to)
+                    .map(|v| format!(" (cell '{}', may)", v))
+                    .unwrap_or_else(|| " (cell, may)".to_string());
+                println!("  t{} ~> t{}{}", from.0, to.0, var);
+            }
+            // Method dispatch finds the function by name at runtime, so this
+            // is a possibility, not an operand.
+            EdgeKind::DispatchMay => println!("  t{} ~> t{} (dispatch, may)", from.0, to.0),
         }
     }
 }
@@ -1267,73 +1417,6 @@ fn frontier_to_json(
         .collect()
 }
 
-pub(super) fn handle_show_dependents(
-    json: bool,
-    term_query: &str,
-    source: &str,
-    source_input: &SourceInput,
-    include_dirs: &[PathBuf],
-) {
-    let program = compile_source(source, source_input, include_dirs);
-
-    let root_id = resolve_term(&program, term_query);
-
-    let root_term = program.get_term(root_id);
-    let deps = program.trace_dependents(root_id);
-    let dependent_ids = &deps.dependents;
-    let edges = &deps.edges;
-    let index = program.cell_index();
-
-    if json {
-        let root_json = term_to_json(root_term);
-        let dependents_json: Vec<_> = dependent_ids
-            .iter()
-            .map(|&id| term_to_json(program.get_term(id)))
-            .collect();
-        let edges_json = edges_to_json(edges);
-        let output = serde_json::json!({
-            "root": root_json,
-            "dependents": dependents_json,
-            "edges": edges_json,
-        });
-        print_json(&output);
-    } else {
-        println!(
-            "Dependents of t{} ({}):",
-            root_id.0,
-            root_term
-                .name
-                .as_deref()
-                .map(base_fn_name)
-                .unwrap_or("unnamed")
-        );
-        println!("  op: {:?}", root_term.op);
-        println!();
-        println!("Downstream ({}):", dependent_ids.len());
-        print_term_rows(&program, dependent_ids);
-        println!();
-        println!("Edges ({}):", edges.len());
-        for (from, to, kind) in edges {
-            match kind {
-                EdgeKind::Dataflow => println!("  t{} -> t{}", from.0, to.0),
-                // A may-edge is a possibility, not a fact; printing it the
-                // same way as a value edge would present one as the other.
-                EdgeKind::CellMay => {
-                    let var = cell_var_for_edge(&index, *from, *to)
-                        .map(|v| format!(" (cell '{}', may)", v))
-                        .unwrap_or_else(|| " (cell, may)".to_string());
-                    println!("  t{} ~> t{}{}", from.0, to.0, var);
-                }
-                // Likewise for method dispatch: the call finds the function by
-                // name at runtime, so this is a possibility, not an operand.
-                EdgeKind::DispatchMay => {
-                    println!("  t{} ~> t{} (dispatch, may)", from.0, to.0)
-                }
-            }
-        }
-    }
-}
-
 /// The var name behind a `CellMay` edge, for display.
 fn cell_var_for_edge(
     index: &crate::program_analysis::CellIndex,
@@ -1348,65 +1431,6 @@ fn cell_var_for_edge(
         }
     }
     None
-}
-
-pub(super) fn handle_show_slice(
-    json: bool,
-    term_queries: Vec<String>,
-    source: &str,
-    source_input: &SourceInput,
-    include_dirs: &[PathBuf],
-) {
-    let program = compile_source(source, source_input, include_dirs);
-
-    let target_ids = resolve_terms(&program, &term_queries);
-
-    // Conservative, not minimal: a slice that is too small silently computes a
-    // *different value*, while one that is too big only loses precision. The
-    // incompleteness is reported in-band rather than through the exit code —
-    // the type-level gate is `SliceResult`, not the process status.
-    let (slice_ids, frontier) = program.slice(&target_ids).conservative();
-
-    if json {
-        let terms_json: Vec<_> = slice_ids
-            .iter()
-            .map(|&id| term_to_json(program.get_term(id)))
-            .collect();
-        let output = serde_json::json!({
-            "targets": target_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
-            "slice": terms_json,
-            "minimal": frontier.is_empty(),
-            "complete": frontier.is_empty(),
-            "frontier": frontier_to_json(&program, &frontier),
-        });
-        print_json(&output);
-    } else {
-        println!(
-            "Slice for targets: {}",
-            target_ids
-                .iter()
-                .map(|id| format!("t{}", id.0))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        println!();
-        println!("Terms ({}):", slice_ids.len());
-        print_term_rows(&program, &slice_ids);
-        if !frontier.is_empty() {
-            println!();
-            println!(
-                "Not minimal — {} cell read{} crossed:",
-                frontier.len(),
-                if frontier.len() == 1 { "" } else { "s" }
-            );
-            print_frontier(&program, &frontier);
-            println!(
-                "  Every possible write is included, so the slice is sufficient in\n  \
-                 terms — but not faithful in order: it does not carry the control\n  \
-                 flow that selected among those writes."
-            );
-        }
-    }
 }
 
 pub(super) fn handle_show_graph(

@@ -48,6 +48,7 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         "trace values and dataflow",
         &[
             ("explain", "Show the value chain that produced a term"),
+            ("graph", "Walk the dataflow graph back or forward from terms"),
             ("show-provenance", "Trace the backward slice of a term"),
             ("show-dependents", "Trace the forward slice of a term"),
             ("show-slice", "Compute the minimal slice for some targets"),
@@ -124,6 +125,7 @@ fn page(name: &str) -> Option<&'static str> {
         "show-bytecode" => SHOW_BYTECODE,
         "show-ast" => SHOW_AST,
         "show-tokens" => SHOW_TOKENS,
+        "graph" => GRAPH,
         "show-provenance" => SHOW_PROVENANCE,
         "show-dependents" => SHOW_DEPENDENTS,
         "show-slice" => SHOW_SLICE,
@@ -504,6 +506,51 @@ SEE ALSO
        petal help show-ast
 ";
 
+const GRAPH: &str = "\
+NAME
+       petal-graph - Walk the dataflow graph back or forward from terms
+
+SYNOPSIS
+       petal graph --term <name_or_id> [--term <name2>]...
+                   [--direction back|forward] [--json] <file>
+
+DESCRIPTION
+       One dataflow query with one result shape. The program is compiled,
+       never run.
+
+       --direction back with one --term: everything the term was computed
+       from (its ancestors). Same as show-provenance.
+
+       --direction back with several --terms: the slice of the program the
+       targets need, closed over every write to any var they read. Same as
+       show-slice.
+
+       --direction forward: everything that depends on the terms, including
+       may-edges through var cells and method dispatch. Same as
+       show-dependents.
+
+       The JSON result always has the fields direction, targets, terms,
+       edges, frontier, complete and minimal.
+       complete and minimal are false when the walk met a var cell: backward
+       it stopped there, forward it crossed a may-edge. frontier lists each
+       such cell with every write that could supply it.
+
+OPTIONS
+       --term <name_or_id>
+              A target term, by name or by IR id. Repeatable; at least one
+              is required.
+
+       --direction back|forward
+              Which way to walk. Defaults to back.
+
+       --json
+              Emit the result as structured JSON.
+
+{COMMON}
+SEE ALSO
+       petal help explain, petal help show-graph
+";
+
 const SHOW_PROVENANCE: &str = "\
 NAME
        petal-show-provenance - Trace the backward slice of a term
@@ -513,7 +560,8 @@ SYNOPSIS
 
 DESCRIPTION
        Prints everything <term> was computed from: its backward slice
-       through the dataflow graph.
+       through the dataflow graph. An alias for
+       `petal graph --direction back --term <term>`.
 
 OPTIONS
        --term <name_or_id>
@@ -536,7 +584,8 @@ SYNOPSIS
 
 DESCRIPTION
        Prints everything that depends on <term>: its forward slice through
-       the dataflow graph, and so what a change to it would reach.
+       the dataflow graph, and so what a change to it would reach. An alias
+       for `petal graph --direction forward --term <term>`.
 
 OPTIONS
        --term <name_or_id>
@@ -559,7 +608,8 @@ SYNOPSIS
 
 DESCRIPTION
        Computes the minimal dataflow slice that the given targets need: the
-       smallest part of the program that still produces them.
+       smallest part of the program that still produces them. An alias for
+       `petal graph` with several --terms (always the slice, even for one).
 
 OPTIONS
        --term <name_or_id>
@@ -765,6 +815,7 @@ mod tests {
         "show-bytecode",
         "show-ast",
         "show-tokens",
+        "graph",
         "show-provenance",
         "show-dependents",
         "show-slice",

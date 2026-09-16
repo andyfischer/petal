@@ -18,7 +18,7 @@ use crate::program::{FunctionId, Program, Term, TermId, TermOp};
 /// untyped; the forward walk distinguishes the must-edges from the two *may*
 /// kinds, because "what could this affect" answered with only the must-edges
 /// would under-report every `set` (§6e) and every method call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EdgeKind {
     /// A real value edge: `from` is an input whose value `to` consumed.
     Dataflow,
@@ -104,10 +104,23 @@ impl Provenance {
 
 /// Result of a forward walk. Edges carry their kind so a consumer can tell a
 /// value edge from a may-edge through a cell.
+///
+/// `frontier` records every cell read (or closure capture) the walk reached
+/// through a `CellMay` edge. Forward, crossing a cell is an *over*-approximation
+/// rather than a gap — the read is listed because some write *may* reach it —
+/// but it is the same loss of exactness the backward walk reports, so it is
+/// reported the same way. Empty iff the answer used no cell may-edge.
 #[derive(Debug, Clone)]
 pub struct Dependents {
     pub dependents: Vec<TermId>,
     pub edges: Vec<(TermId, TermId, EdgeKind)>,
+    pub frontier: Vec<CellFrontier>,
+}
+
+impl Dependents {
+    pub fn is_complete(&self) -> bool {
+        self.frontier.is_empty()
+    }
 }
 
 /// A backward slice that crossed a cell, and therefore is not minimal.
@@ -601,6 +614,26 @@ impl Program {
         let mut queue = VecDeque::new();
         let mut dependents = Vec::new();
         let mut edges = Vec::new();
+        let mut frontier: Vec<CellFrontier> = Vec::new();
+        let mut crossed: HashSet<(TermId, TermId)> = HashSet::new();
+
+        // A may-edge into a read (not a write: nothing arrives *from* the cell
+        // at a `set`) is a place the answer stopped being exact. Record it once.
+        let mut note_crossing = |to: TermId, kind: EdgeKind, frontier: &mut Vec<CellFrontier>| {
+            if kind != EdgeKind::CellMay {
+                return;
+            }
+            let term = self.get_term(to);
+            if matches!(term.op, TermOp::CellWrite) {
+                return;
+            }
+            let captured = matches!(term.op, TermOp::MakeClosure(_));
+            for operand in index.cell_operands(term) {
+                if crossed.insert((to, operand)) {
+                    frontier.push(index.frontier_for(to, operand, captured));
+                }
+            }
+        };
 
         // Seed with the root's direct users
         if let Some(direct_users) = users.get(&root_id) {
@@ -609,6 +642,7 @@ impl Program {
                     queue.push_back(user_id);
                 }
                 edges.push((root_id, user_id, kind));
+                note_crossing(user_id, kind, &mut frontier);
             }
         }
 
@@ -618,6 +652,7 @@ impl Program {
             if let Some(term_users) = users.get(&term_id) {
                 for &(user_id, kind) in term_users {
                     edges.push((term_id, user_id, kind));
+                    note_crossing(user_id, kind, &mut frontier);
                     if visited.insert(user_id) {
                         queue.push_back(user_id);
                     }
@@ -625,7 +660,60 @@ impl Program {
             }
         }
 
-        Dependents { dependents, edges }
+        Dependents {
+            dependents,
+            edges,
+            frontier,
+        }
+    }
+
+    /// The edges of the subgraph induced on `ids`: every value edge, dispatch
+    /// may-edge, phi rebind, and cell may-edge (declaration or write to a read
+    /// or write of the same cell) whose two ends are both in the set. Lets a
+    /// slice — a term *set* — report edges in the same shape as the walks.
+    pub fn induced_edges(
+        &self,
+        index: &CellIndex,
+        ids: &[TermId],
+    ) -> Vec<(TermId, TermId, EdgeKind)> {
+        let set: HashSet<TermId> = ids.iter().copied().collect();
+        let mut edges = Vec::new();
+        for &id in ids {
+            let term = self.get_term(id);
+            let dispatch = index.dispatch_inputs(term);
+            for input in index.value_inputs(term) {
+                if set.contains(&input) {
+                    let kind = if dispatch.contains(&input) {
+                        EdgeKind::DispatchMay
+                    } else {
+                        EdgeKind::Dataflow
+                    };
+                    edges.push((input, id, kind));
+                }
+            }
+            if !index.cell_operands(term).is_empty()
+                && let Some(decl) = index.decl_for_site(id)
+            {
+                if set.contains(&decl) {
+                    edges.push((decl, id, EdgeKind::CellMay));
+                }
+                if !matches!(term.op, TermOp::CellWrite) {
+                    for &w in index.writes_of(decl) {
+                        if set.contains(&w) {
+                            edges.push((w, id, EdgeKind::CellMay));
+                        }
+                    }
+                }
+            }
+        }
+        for block in &self.blocks {
+            for po in &block.phi_outs {
+                if set.contains(&po.src_term) && set.contains(&po.dest_term) {
+                    edges.push((po.src_term, po.dest_term, EdgeKind::Dataflow));
+                }
+            }
+        }
+        edges
     }
 
     /// Compute a dataflow slice: the subgraph needed to compute the given

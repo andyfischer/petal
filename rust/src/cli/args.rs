@@ -4,7 +4,7 @@
 use std::process;
 
 use super::help;
-use super::{CliArgs, Command, ErrorFormat, ProposeEditOpts, RunOpts, SourceInput};
+use super::{CliArgs, Command, ErrorFormat, GraphQuery, ProposeEditOpts, RunOpts, SourceInput};
 
 /// The "no source given" message shared by the show/query commands.
 const MISSING_SOURCE: &str = "Expected a file path or -e <code>";
@@ -124,14 +124,11 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
-        "show-provenance" => parse_term_query_args(&args[1..], |json, term| {
-            Command::ShowProvenance { json, term }
-        }),
+        "graph" => parse_graph_args(&args[1..], None),
+        "show-provenance" => parse_graph_args(&args[1..], Some(GraphQuery::Provenance)),
         "propose-edit" => parse_propose_edit_args(&args[1..]),
-        "show-dependents" => parse_term_query_args(&args[1..], |json, term| {
-            Command::ShowDependents { json, term }
-        }),
-        "show-slice" => parse_slice_args(&args[1..]),
+        "show-dependents" => parse_graph_args(&args[1..], Some(GraphQuery::Dependents)),
+        "show-slice" => parse_graph_args(&args[1..], Some(GraphQuery::Slice)),
         "show-graph" => parse_show_graph_args(&args[1..]),
         "pending-report" => parse_show_args(&args[1..], |json| Command::PendingReport { json }),
         _ => {
@@ -588,14 +585,29 @@ fn parse_term_query_args(args: &[String], make_cmd: impl Fn(bool, String) -> Com
     }
 }
 
-fn parse_slice_args(args: &[String]) -> CliArgs {
+/// `petal graph` and its three aliases. `alias` is the query an old command
+/// name fixes; for `graph` itself the query follows from `--direction` and
+/// how many `--term`s were given.
+fn parse_graph_args(args: &[String], alias: Option<GraphQuery>) -> CliArgs {
     let mut json = false;
     let mut terms: Vec<String> = Vec::new();
+    let mut forward: Option<bool> = None;
     let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
         match args[*i].as_str() {
             "--json" => json = true,
             "--term" => {
                 terms.push(take(args, i, "Expected term name or id after --term").to_string());
+            }
+            "--direction" if alias.is_none() => {
+                let dir = take(args, i, "Expected back or forward after --direction");
+                forward = Some(match dir {
+                    "back" | "backward" => false,
+                    "forward" => true,
+                    other => {
+                        eprintln!("Unknown --direction '{other}' (expected back or forward)");
+                        process::exit(1);
+                    }
+                });
             }
             _ => return false,
         }
@@ -606,9 +618,25 @@ fn parse_slice_args(args: &[String]) -> CliArgs {
         eprintln!("Expected at least one --term <name_or_id>");
         process::exit(1);
     }
+    // The single-term aliases have always let a repeated `--term` override the
+    // earlier one; keep that rather than start rejecting old invocations.
+    if matches!(alias, Some(GraphQuery::Provenance | GraphQuery::Dependents)) && terms.len() > 1 {
+        terms.drain(..terms.len() - 1);
+    }
+
+    let query = alias.unwrap_or(match (forward.unwrap_or(false), terms.len()) {
+        (true, _) => GraphQuery::Dependents,
+        (false, 1) => GraphQuery::Provenance,
+        (false, _) => GraphQuery::Slice,
+    });
 
     CliArgs {
-        command: Command::ShowSlice { json, terms },
+        command: Command::Graph {
+            json,
+            terms,
+            query,
+            alias: alias.is_some(),
+        },
         source,
         include_dirs: Vec::new(),
     }

@@ -3,6 +3,8 @@ import {
   showIrJson,
   showDependentsJson,
   showSliceJson,
+  showProvenanceJson,
+  graphJson,
   dataflowText,
 } from "./helpers";
 
@@ -161,6 +163,30 @@ describe("cells and dataflow slicing", () => {
       expect(text).toMatch(/~> t\d+ \(cell 'x', may\)/);
     });
 
+    it("carries a frontier for a var read it reaches through a may-edge", () => {
+      // Before `petal graph` unified the result shape, this command reported
+      // neither `frontier` nor `complete` — though it is the one query that
+      // over-approximates most.
+      const result = showDependentsJson(REPRO, "x");
+      expect(result.complete).toBe(false);
+      expect(result.minimal).toBe(false);
+      expect(result.frontier.length).toBeGreaterThan(0);
+      expect(result.frontier.every((f: any) => f.var === "x")).toBe(true);
+      expect(result.frontier[0].writes.length).toBeGreaterThan(0);
+    });
+
+    it("says so in text mode", () => {
+      const text = dataflowText("show-dependents", REPRO, ["x"]);
+      expect(text).toContain("Frontier (");
+      expect(text).toContain("read of var 'x'");
+    });
+
+    it("is complete on a cell-free program", () => {
+      const result = showDependentsJson("let a = 1\nlet b = a + 1\n", "a");
+      expect(result.complete).toBe(true);
+      expect(result.frontier).toEqual([]);
+    });
+
     it("tags every edge dataflow on a cell-free program", () => {
       const result = showDependentsJson("let a = 1\nlet b = a + 1\n", "a");
       expect(result.edges.length).toBeGreaterThan(0);
@@ -266,5 +292,59 @@ describe("method dispatch is a dataflow edge", () => {
     // …and the class constructor, which reported no location at all.
     expect(text).toMatch(/t\d+ Point \[line 1, column 1\]/);
     expect(text).not.toContain("[no location]");
+  });
+});
+
+// `petal graph` is the one handler behind all three `show-*` queries.
+describe("petal graph", () => {
+  const REPRO = "var x = 0\nset x = x + 1\nlet y = x * 2\n";
+  const SHAPE = ["complete", "direction", "edges", "frontier", "minimal", "targets", "terms"];
+  const ids = (terms: any[]) => terms.map((t: any) => t.id);
+
+  it("has one result shape in every direction", () => {
+    for (const r of [
+      graphJson(REPRO, ["y"]),
+      graphJson(REPRO, ["x"], "forward"),
+      graphJson(REPRO, ["y", "x"]),
+    ]) {
+      expect(Object.keys(r).sort()).toEqual(SHAPE);
+    }
+  });
+
+  it("back with one term is show-provenance", () => {
+    const g = graphJson(REPRO, ["y"], "back");
+    const p = showProvenanceJson(REPRO, "y");
+    expect(g.direction).toBe("back");
+    expect(ids(g.terms)).toEqual(ids(p.ancestors));
+    expect(p.terms).toEqual(p.ancestors);
+    expect(g.frontier).toEqual(p.frontier);
+    expect(g.complete).toBe(p.complete);
+  });
+
+  it("forward is show-dependents", () => {
+    const g = graphJson(REPRO, ["x"], "forward");
+    const d = showDependentsJson(REPRO, "x");
+    expect(g.direction).toBe("forward");
+    expect(ids(g.terms)).toEqual(ids(d.dependents));
+    expect(g.edges).toEqual(d.edges);
+  });
+
+  it("several terms is show-slice, with edges inside the slice", () => {
+    const g = graphJson(REPRO, ["y", "x"]);
+    const s = showSliceJson(REPRO, ["y", "x"]);
+    expect(ids(g.terms)).toEqual(ids(s.slice));
+    expect(g.minimal).toBe(false);
+    const inSlice = new Set(ids(g.terms));
+    expect(g.edges.length).toBeGreaterThan(0);
+    for (const e of g.edges) {
+      expect(inSlice.has(e.from) && inSlice.has(e.to)).toBe(true);
+    }
+  });
+
+  it("forward from several terms is the union of their walks", () => {
+    const code = "let a = 1\nlet b = a + 1\nlet c = 2\nlet d = c + 1\n";
+    const names = graphJson(code, ["a", "c"], "forward").terms.map((t: any) => t.name);
+    expect(names).toContain("b");
+    expect(names).toContain("d");
   });
 });

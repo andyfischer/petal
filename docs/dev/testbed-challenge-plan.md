@@ -4,15 +4,15 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-21 of the 50 exist. Sixteen are panel apps under the category directories
+22 of the 50 exist. Seventeen are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category, plus Asteroids), and five more were written as headless console programs
+of each category, plus Asteroids and the node-based editor), and five more were written as headless console programs
 under `examples/challenge/`, which stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a sixteenth panel app that was not on this
-list. The remaining 29 have not been attempted.
+`examples/games/side-scroller` is an eighteenth panel app that was not on this
+list. The remaining 28 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -57,7 +57,7 @@ list. The remaining 29 have not been attempted.
 | 35 | **Photo adjustment UI** | Sliders, image effects, before/after | built — `examples/productivity/photo-adjust/` |
 | 36 | **Music sequencer** | Timeline/grid interaction, playback state |  |
 | 37 | **Video timeline editor** | Scrubbing, tracks, resizing, drag/drop |  |
-| 38 | **Node-based editor** | Arbitrary positioning, ports, connections |  |
+| 38 | **Node-based editor** | Arbitrary positioning, ports, connections | built — `examples/productivity/node-editor/` |
 | 39 | **Markdown editor + preview** | Text input, parsing, split panes |  |
 | 40 | **Presentation editor** | Direct manipulation, layers, editable text |  |
 | **Data visualization / dashboards** | | | |

@@ -1,0 +1,1593 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  PATCHWORK — a node-based dataflow editor as a Garden Petal panel.
+//
+//  A patch is a list of node records living in world coordinates plus a list
+//  of links, each wiring one node's output into one input port of another.
+//  Every frame the whole patch is evaluated (memoized, cycle-safe), the
+//  links carry animated flow dots, and the sink nodes — Display, Scope,
+//  Gauge, Color — render what arrives at them.
+//
+//  Designed for a 1280x850 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+let TAU = 6.28318530718
+
+// ── Chrome palette ───────────────────────────────────────────────────────
+let BG       = #0b0d12
+let CANVAS   = #0d1017
+let GRID     = #1a1f2b
+let PANEL    = #12151d
+let ELEV     = #1a1f2a
+let HOVER    = #232937
+let OUTLINE  = #262d3b
+let TEXT     = #e9edf4
+let DIM      = #8892a4
+let FAINT    = #59627a
+let ACCENT   = #7aa2ff
+let DANGER   = #e0655f
+let NODE_BG  = #161a24
+let NODE_HOV = #1b2030
+
+let C_SOURCE = #4de0c0
+let C_GEN    = #b18cff
+let C_MATH   = #5b9dff
+let C_SINK   = #f0a83c
+
+fn cat_color(cat: string) -> record
+  match cat
+    when "source" -> C_SOURCE
+    when "gen" -> C_GEN
+    when "math" -> C_MATH
+    when _ -> C_SINK
+  end
+end
+
+fn cat_label(cat: string) -> string
+  match cat
+    when "source" -> "SOURCES"
+    when "gen" -> "GENERATORS"
+    when "math" -> "MATH"
+    when _ -> "SINKS"
+  end
+end
+
+// ── Node catalogue ───────────────────────────────────────────────────────
+//  ins    — connectable input ports, each with a default used when unwired
+//  params — knobs that are never wired, edited in the inspector
+
+fn port(name: string, lo: num, hi: num, def: num) -> record
+  {name: name, lo: float(lo), hi: float(hi), def: float(def)}
+end
+
+let KINDS = [
+  {id: "number", label: "Number", cat: "source", desc: "A constant you set by hand.",
+    ins: [], params: [port("value", -10, 10, 1)]},
+  {id: "time", label: "Time", cat: "source", desc: "Seconds since the patch started, times speed.",
+    ins: [], params: [port("speed", 0, 4, 1)]},
+  {id: "sine", label: "Sine", cat: "gen", desc: "amp · sin(2π · freq · t + phase)",
+    ins: [port("t", 0, 10, 0)],
+    params: [port("freq", 0.05, 4, 0.5), port("amp", 0, 10, 1), port("phase", 0, 6.283, 0)]},
+  {id: "noise", label: "Noise", cat: "gen", desc: "Smooth noise sampled at x · scale, in -1..1.",
+    ins: [port("x", 0, 10, 0)], params: [port("scale", 0.05, 4, 1)]},
+  {id: "add", label: "Add", cat: "math", desc: "a + b",
+    ins: [port("a", -10, 10, 0), port("b", -10, 10, 0)], params: []},
+  {id: "sub", label: "Subtract", cat: "math", desc: "a − b",
+    ins: [port("a", -10, 10, 0), port("b", -10, 10, 0)], params: []},
+  {id: "mul", label: "Multiply", cat: "math", desc: "a × b",
+    ins: [port("a", -10, 10, 1), port("b", -10, 10, 1)], params: []},
+  {id: "div", label: "Divide", cat: "math", desc: "a ÷ b — 0 when b is 0",
+    ins: [port("a", -10, 10, 1), port("b", -10, 10, 1)], params: []},
+  {id: "clamp", label: "Clamp", cat: "math", desc: "v held inside [lo, hi]",
+    ins: [port("v", -10, 10, 0)], params: [port("lo", -10, 10, 0), port("hi", -10, 10, 1)]},
+  {id: "lerp", label: "Lerp", cat: "math", desc: "a + (b − a) · t",
+    ins: [port("a", -10, 10, 0), port("b", -10, 10, 1), port("t", 0, 1, 0.5)], params: []},
+  {id: "map", label: "Map range", cat: "math", desc: "v remapped from [in lo, in hi] to [out lo, out hi]",
+    ins: [port("v", -10, 10, 0)],
+    params: [port("in lo", -10, 10, -1), port("in hi", -10, 10, 1), port("out lo", -10, 10, 0), port("out hi", -10, 10, 1)]},
+  {id: "display", label: "Display", cat: "sink", desc: "Shows the value arriving at it, large.",
+    ins: [port("v", -10, 10, 0)], params: []},
+  {id: "scope", label: "Scope", cat: "sink", desc: "Plots the last four seconds of its input.",
+    ins: [port("v", -10, 10, 0)], params: []},
+  {id: "gauge", label: "Gauge", cat: "sink", desc: "A dial from min to max.",
+    ins: [port("v", -10, 10, 0)], params: [port("min", -10, 10, -1), port("max", -10, 10, 1)]},
+  {id: "color", label: "Color", cat: "sink", desc: "Mixes r, g, b (0..1) into a swatch.",
+    ins: [port("r", 0, 1, 0.5), port("g", 0, 1, 0.5), port("b", 0, 1, 0.5)], params: []},
+]
+
+fn kind_of(id: string) -> record
+  let out = KINDS[0]
+  for k in KINDS do
+    if k.id == id then out = k end
+  end
+  out
+end
+
+// ── Node geometry (world units) ──────────────────────────────────────────
+
+let NODE_W = 172.0
+let HDR_H = 30.0
+let ROW_H = 22.0
+let PORT_R = 5.0
+
+fn preview_h(kind: string) -> num
+  match kind
+    when "scope" -> 66.0
+    when "display" -> 40.0
+    when "gauge" -> 62.0
+    when "color" -> 44.0
+    when "number" -> 34.0
+    when "time" -> 34.0
+    when _ -> 0.0
+  end
+end
+
+fn node_h(n: record) -> num
+  let k = kind_of(n.kind)
+  let rows = float(len(k.ins))
+  HDR_H + rows * ROW_H + preview_h(n.kind) + (if rows > 0.0 then 8.0 else 4.0 end)
+end
+
+fn node_rect(n: record) -> Rect
+  rect(n.x, n.y, NODE_W, node_h(n))
+end
+
+fn in_port(n: record, i: num) -> record
+  {x: n.x, y: n.y + HDR_H + float(i) * ROW_H + ROW_H / 2.0}
+end
+
+fn out_port(n: record) -> record
+  {x: n.x + NODE_W, y: n.y + HDR_H / 2.0}
+end
+
+// ── Graph helpers (pure: every one returns a new value) ──────────────────
+
+fn idx_of(nodes: list, id: num) -> int
+  let found = -1
+  for i in range(0, len(nodes)) do
+    if found < 0 && nodes[i].id == id then found = i end
+  end
+  found
+end
+
+fn link_into(links: list, id: num, port_i: num) -> int
+  let found = -1
+  for i in range(0, len(links)) do
+    if found < 0 && links[i].to == id && links[i].port == port_i then found = i end
+  end
+  found
+end
+
+fn make_node(id: num, kind: string, x: num, y: num) -> record
+  let k = kind_of(kind)
+  {id: id, kind: kind, x: float(x), y: float(y),
+    ins: for p in k.ins do p.def end,
+    params: for p in k.params do p.def end}
+end
+
+fn put(nodes: list, i: num, n: record) -> list
+  for j in range(0, len(nodes)) do
+    if j == i then n else nodes[j] end
+  end
+end
+
+fn without(nodes: list, ids: list) -> list
+  let out = []
+  for n in nodes do
+    if !contains(ids, n.id) then out = append(out, n) end
+  end
+  out
+end
+
+fn links_without_nodes(links: list, ids: list) -> list
+  let out = []
+  for l in links do
+    if !contains(ids, l.from) && !contains(ids, l.to) then out = append(out, l) end
+  end
+  out
+end
+
+fn links_without_node(links: list, id: num) -> list
+  let out = []
+  for l in links do
+    if l.from != id && l.to != id then out = append(out, l) end
+  end
+  out
+end
+
+fn links_without_into(links: list, id: num, port_i: num) -> list
+  let out = []
+  for l in links do
+    if !(l.to == id && l.port == port_i) then out = append(out, l) end
+  end
+  out
+end
+
+fn add_link(links: list, from: num, to: num, port_i: num) -> list
+  append(links_without_into(links, to, port_i), {from: from, to: to, port: port_i})
+end
+
+// Move the given ids to the end of the list so they draw on top.
+fn raise(nodes: list, ids: list) -> list
+  let rest = []
+  let top = []
+  for n in nodes do
+    if contains(ids, n.id) then top = append(top, n) else rest = append(rest, n) end
+  end
+  for n in top do rest = append(rest, n) end
+  rest
+end
+
+// Does wiring `from` into `to` close a loop? Walk upstream from `from`.
+fn reaches(links: list, from: num, target: num, depth: num) -> bool
+  if from == target then return true end
+  if depth > 64 then return false end
+  let hit = false
+  for l in links do
+    if l.to == from && !hit then
+      hit = reaches(links, l.from, target, depth + 1)
+    end
+  end
+  hit
+end
+
+// ── Evaluation ───────────────────────────────────────────────────────────
+//  Recursive, memoized per frame, and a cycle guard so a loop yields 0.
+
+var EV_NODES = []
+var EV_LINKS = []
+var EV_MEMO = []
+var EV_T = 0.0
+
+fn ev_input(idx: int, i: int) -> num
+  let n = get EV_NODES[idx]
+  let li = link_into(get EV_LINKS, n.id, i)
+  if li < 0 then
+    n.ins[i]
+  else
+    let src = idx_of(get EV_NODES, (get EV_LINKS)[li].from)
+    if src < 0 then 0.0 else ev_node(src) end
+  end
+end
+
+fn ev_node(idx: int) -> num
+  let m = get EV_MEMO[idx]
+  if m.done then return m.val end
+  if m.busy then return 0.0 end
+  set EV_MEMO[idx] = {done: false, busy: true, val: 0.0}
+  let n = get EV_NODES[idx]
+  let p = n.params
+  let v = match n.kind
+    when "number" -> p[0]
+    when "time" -> get EV_T * p[0]
+    when "sine" -> sin(ev_input(idx, 0) * p[0] * TAU + p[2]) * p[1]
+    when "noise" -> noise(ev_input(idx, 0) * p[0])
+    when "add" -> ev_input(idx, 0) + ev_input(idx, 1)
+    when "sub" -> ev_input(idx, 0) - ev_input(idx, 1)
+    when "mul" -> ev_input(idx, 0) * ev_input(idx, 1)
+    when "div" do
+      let b = ev_input(idx, 1)
+      if abs(b) < 0.000001 then 0.0 else ev_input(idx, 0) / b end
+    end
+    when "clamp" -> clamp(ev_input(idx, 0), min(p[0], p[1]), max(p[0], p[1]))
+    when "lerp" -> lerp(ev_input(idx, 0), ev_input(idx, 1), ev_input(idx, 2))
+    when "map" do
+      if abs(p[1] - p[0]) < 0.000001 then p[2]
+      else map_range(ev_input(idx, 0), p[0], p[1], p[2], p[3]) end
+    end
+    when "color" -> ev_input(idx, 0) * 0.299 + ev_input(idx, 1) * 0.587 + ev_input(idx, 2) * 0.114
+    when _ -> ev_input(idx, 0)
+  end
+  set EV_MEMO[idx] = {done: true, busy: false, val: v}
+  v
+end
+
+// Output value of every node, aligned with `nodes`.
+fn eval_all(nodes: list, links: list, t: num) -> list
+  set EV_NODES = nodes
+  set EV_LINKS = links
+  set EV_T = t
+  set EV_MEMO = for n in nodes do {done: false, busy: false, val: 0.0} end
+  for i in range(0, len(nodes)) do ev_node(i) end
+end
+
+// Every input value of one node (wired or default), for the inspector.
+fn input_values(nodes: list, links: list, vals: list, n: record) -> list
+  let k = kind_of(n.kind)
+  for i in range(0, len(k.ins)) do
+    let li = link_into(links, n.id, i)
+    if li < 0 then
+      n.ins[i]
+    else
+      let src = idx_of(nodes, links[li].from)
+      if src < 0 then 0.0 else vals[src] end
+    end
+  end
+end
+
+// ── Scope history: one slot per node id ──────────────────────────────────
+
+fn scope_push(id: num, v: num, playing: bool) -> list
+  state(id) samples = []
+  if playing then
+    samples = append(samples, v)
+    if len(samples) > 160 then samples = slice(samples, len(samples) - 160, len(samples)) end
+  end
+  samples
+end
+
+// ── Formatting & small draw helpers ──────────────────────────────────────
+
+fn fmt(v: num) -> string
+  if abs(v) >= 1000.0 then
+    str(int(round(v)))
+  elsif abs(v) >= 100.0 then
+    str(round(v, 1))
+  else
+    str(round(v, 2))
+  end
+end
+
+fn ts(size: num, c: record) -> record
+  {size: int(size), font: "ui", color: c}
+end
+
+fn mono(size: num, c: record) -> record
+  {size: int(size), font: "mono", color: c}
+end
+
+fn caps(s: string, x: num, y: num, c: record)
+  draw_text(s, {x: x, y: y}, {size: 10, font: "ui", color: c, spacing: 2})
+end
+
+fn clamp01(v: num) -> num
+  clamp(v, 0.0, 1.0)
+end
+
+// The prelude has no record overloads for these two outlines.
+fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
+  draw_rect_rounded_outline(int(r.x), int(r.y), int(r.w), int(r.h), int(radius), c.r, c.g, c.b, int(a), max(1, int(wd)))
+end
+
+fn circ_outline(cx: num, cy: num, rad: num, c: record, a: num, wd: num)
+  draw_circle_outline(int(cx), int(cy), max(1, int(rad)), c.r, c.g, c.b, int(a), max(1, int(wd)))
+end
+
+fn to_rgb(v: num) -> int
+  int(round(clamp01(v) * 255.0))
+end
+
+// Cubic bezier between two ports, sampled into a polyline.
+fn bezier_pts(x0: num, y0: num, x1: num, y1: num, n: int) -> list
+  let d = max(48.0, abs(x1 - x0) * 0.5)
+  let cx0 = x0 + d
+  let cx1 = x1 - d
+  for i in range(0, n + 1) do
+    let t = float(i) / float(n)
+    let u = 1.0 - t
+    let x = u * u * u * x0 + 3.0 * u * u * t * cx0 + 3.0 * u * t * t * cx1 + t * t * t * x1
+    let y = u * u * u * y0 + 3.0 * u * u * t * y0 + 3.0 * u * t * t * y1 + t * t * t * y1
+    [x, y]
+  end
+end
+
+fn bezier_at(x0: num, y0: num, x1: num, y1: num, t: num) -> record
+  let d = max(48.0, abs(x1 - x0) * 0.5)
+  let cx0 = x0 + d
+  let cx1 = x1 - d
+  let u = 1.0 - t
+  {x: u * u * u * x0 + 3.0 * u * u * t * cx0 + 3.0 * u * t * t * cx1 + t * t * t * x1,
+    y: u * u * u * y0 + 3.0 * u * u * t * y0 + 3.0 * u * t * t * y1 + t * t * t * y1}
+end
+
+// A small pill button drawn in the app's own chrome. True on click.
+fn pill_btn(r: Rect, label: string, active: bool) -> bool
+  let hov = hovered(r)
+  let fill = if active then over(PANEL, ACCENT, 0.22) elsif hov then HOVER else ELEV end
+  draw_rect_rounded(r, 7, fill)
+  rr_outline(r, 7, if active then ACCENT else OUTLINE end, 255, 1)
+  let st = ts(12, if active then TEXT else DIM end)
+  draw_text(label, {x: r.x + (r.w - text_width(label, st)) / 2, y: r.y + (r.h - 12) / 2 - 1}, st)
+  clicked(r)
+end
+
+// ── The seeded patch ─────────────────────────────────────────────────────
+
+fn seed_nodes() -> list
+  let n1 = make_node(1, "time", 40, 40)
+  let n2 = make_node(2, "sine", 280, 40)
+  n2.params = [0.4, 1.0, 0.0]
+  let n3 = make_node(3, "number", 280, 190)
+  n3.params = [3.0]
+  let n4 = make_node(4, "mul", 520, 60)
+  let n5 = make_node(5, "scope", 760, 150)
+  let n6 = make_node(6, "noise", 280, 330)
+  n6.params = [0.6]
+  let n7 = make_node(7, "map", 520, 290)
+  n7.params = [-1.0, 1.0, 0.0, 1.0]
+  let n8 = make_node(8, "gauge", 760, 340)
+  n8.params = [-3.0, 3.0]
+  let n9 = make_node(9, "color", 760, 510)
+  n9.ins = [0.9, 0.55, 0.2]
+  let n10 = make_node(10, "display", 760, 20)
+  let n11 = make_node(11, "sine", 280, 440)
+  n11.params = [0.15, 0.35, 1.57]
+  let n12 = make_node(12, "add", 520, 470)
+  n12.ins = [0.0, 0.3]
+  [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12]
+end
+
+fn seed_links() -> list
+  [
+    {from: 1, to: 2, port: 0},
+    {from: 2, to: 4, port: 0},
+    {from: 3, to: 4, port: 1},
+    {from: 4, to: 5, port: 0},
+    {from: 4, to: 8, port: 0},
+    {from: 4, to: 10, port: 0},
+    {from: 1, to: 6, port: 0},
+    {from: 6, to: 7, port: 0},
+    {from: 7, to: 9, port: 1},
+    {from: 1, to: 11, port: 0},
+    {from: 11, to: 12, port: 0},
+    {from: 12, to: 9, port: 2},
+  ]
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let mx = mouse_x()
+let my = mouse_y()
+
+let HEADER_H = 56
+let STATUS_H = 30
+let PAL_W = 176
+let INSP_W = 288
+
+let canvas = rect(PAL_W, HEADER_H, W - PAL_W - INSP_W, H - HEADER_H - STATUS_H)
+let palette = rect(0, HEADER_H, PAL_W, H - HEADER_H - STATUS_H)
+let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
+
+// ── Camera helpers ───────────────────────────────────────────────────────
+
+fn zoom_about(cam: record, canvas: Rect, sx: num, sy: num, factor: num) -> record
+  let nz = clamp(cam.zoom * factor, 0.35, 2.5)
+  let wx = to_wx(cam, canvas, sx)
+  let wy = to_wy(cam, canvas, sy)
+  {x: wx - (float(sx) - float(canvas.x)) / nz,
+    y: wy - (float(sy) - float(canvas.y)) / nz, zoom: nz}
+end
+
+fn fit_all(nodes: list, canvas: Rect) -> record
+  if len(nodes) == 0 then
+    {x: 0.0, y: 0.0, zoom: 1.0}
+  else
+    let x0 = nodes[0].x
+    let y0 = nodes[0].y
+    let x1 = x0
+    let y1 = y0
+    for n in nodes do
+      x0 = min(x0, n.x)
+      y0 = min(y0, n.y)
+      x1 = max(x1, n.x + NODE_W)
+      y1 = max(y1, n.y + node_h(n))
+    end
+    let pad_w = 28.0
+    let zx = (float(canvas.w) - pad_w * 2.0) / max(1.0, x1 - x0)
+    let zy = (float(canvas.h) - pad_w * 2.0) / max(1.0, y1 - y0)
+    let nz = clamp(min(zx, zy), 0.35, 1.5)
+    {x: (x0 + x1) / 2.0 - float(canvas.w) / 2.0 / nz,
+      y: (y0 + y1) / 2.0 - float(canvas.h) / 2.0 / nz, zoom: nz}
+  end
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+// The patch survives a restart through the panel store; anything else here
+// (selection, camera, clock, history) starts fresh. Garden has no JSON
+// builtins, so the patch is a small line-based text format: one `N` line per
+// node, one `L` line per wire, a `V1` header carrying the next id.
+
+fn nums_to_str(xs: list) -> string
+  if len(xs) == 0 then "-" else join(map(xs, fn(v) -> str(v)), ",") end
+end
+
+fn str_to_nums(s: string) -> list
+  if s == "-" then [] else map(split(s, ","), fn(t) -> parse_float(t) ?? 0.0) end
+end
+
+fn save_patch(nodes: list, links: list, next_id: num) -> string
+  let lines = ["V1 " ++ str(next_id)]
+  for n in nodes do
+    lines = append(lines, "N " ++ str(n.id) ++ " " ++ n.kind ++ " " ++ str(n.x) ++ " " ++ str(n.y) ++
+      " " ++ nums_to_str(n.ins) ++ " " ++ nums_to_str(n.params))
+  end
+  for l in links do
+    lines = append(lines, "L " ++ str(l.from) ++ " " ++ str(l.to) ++ " " ++ str(l.port))
+  end
+  join(lines, "\n")
+end
+
+fn parse_patch(raw: string) -> record
+  let nodes = []
+  let links = []
+  let next_id = 1
+  for line in split(raw, "\n") do
+    let f = split(line, " ")
+    if len(f) >= 2 && f[0] == "V1" then
+      next_id = parse_int(f[1]) ?? 1
+    elsif len(f) == 7 && f[0] == "N" then
+      nodes = append(nodes, {id: parse_int(f[1]) ?? 0, kind: f[2],
+        x: parse_float(f[3]) ?? 0.0, y: parse_float(f[4]) ?? 0.0,
+        ins: str_to_nums(f[5]), params: str_to_nums(f[6])})
+    elsif len(f) == 4 && f[0] == "L" then
+      links = append(links, {from: parse_int(f[1]) ?? 0, to: parse_int(f[2]) ?? 0, port: parse_int(f[3]) ?? 0})
+    end
+  end
+  {nodes: nodes, links: links, next_id: next_id}
+end
+
+fn load_patch() -> record
+  let raw = panel_store_get("patch")
+  if raw == nil then
+    {nodes: seed_nodes(), links: seed_links(), next_id: 13, fresh: true}
+  else
+    let p = parse_patch(raw)
+    {nodes: p.nodes, links: p.links, next_id: p.next_id, fresh: false}
+  end
+end
+
+state saved = load_patch()
+state nodes = saved.nodes
+state links = saved.links
+state sel = if saved.fresh then [4] else [] end
+state next_id = saved.next_id
+state cam = fit_all(saved.nodes, canvas)
+state clock = 0.0
+state playing = true
+state hist = []
+state fut = []
+state drag = {mode: "none", x0: 0.0, y0: 0.0, cx: 0.0, cy: 0.0, node: -1, port: -1,
+  dir: "out", starts: [], kind: "", moved: false}
+state menu = menu_state()
+state ops = 0
+state param_dirty = false
+state flash = {text: "", until: 0.0}
+
+// ── Frame setup ──────────────────────────────────────────────────────────
+
+claim_key("z", "cmd")
+claim_key("z", "cmd+shift")
+claim_key("d", "cmd")
+claim_key("a", "cmd")
+
+
+let z = cam.zoom
+let over_canvas = point_in(mx, my, canvas)
+let blocked = menu_blocking(menu)
+
+let raw_dt = dt()
+let step = min(raw_dt, 0.1)
+if playing then
+  clock = clock + step
+  request_frame()
+end
+
+fn to_sx(cam: record, canvas: Rect, wx: num) -> num
+  float(canvas.x) + (wx - cam.x) * cam.zoom
+end
+fn to_sy(cam: record, canvas: Rect, wy: num) -> num
+  float(canvas.y) + (wy - cam.y) * cam.zoom
+end
+fn to_wx(cam: record, canvas: Rect, sx: num) -> num
+  cam.x + (float(sx) - float(canvas.x)) / cam.zoom
+end
+fn to_wy(cam: record, canvas: Rect, sy: num) -> num
+  cam.y + (float(sy) - float(canvas.y)) / cam.zoom
+end
+
+let wmx = to_wx(cam, canvas, mx)
+let wmy = to_wy(cam, canvas, my)
+
+// ── Hit testing (world space) ────────────────────────────────────────────
+//  {kind: "none"|"node"|"in"|"out", node: id, port: i}
+
+fn hit_test(nodes: list, wx: num, wy: num, z: num) -> record
+  let out = {kind: "none", node: -1, port: -1}
+  let reach = 9.0 / z
+  let i = len(nodes) - 1
+  while i >= 0 && out.kind == "none" do
+    let n = nodes[i]
+    let k = kind_of(n.kind)
+    let o = out_port(n)
+    if abs(wx - o.x) <= reach && abs(wy - o.y) <= reach then
+      out = {kind: "out", node: n.id, port: 0}
+    end
+    for j in range(0, len(k.ins)) do
+      let p = in_port(n, j)
+      if out.kind == "none" && abs(wx - p.x) <= reach && abs(wy - p.y) <= reach then
+        out = {kind: "in", node: n.id, port: j}
+      end
+    end
+    if out.kind == "none" && point_in(wx, wy, node_rect(n)) then
+      out = {kind: "node", node: n.id, port: -1}
+    end
+    i = i - 1
+  end
+  out
+end
+
+let hit = if over_canvas then hit_test(nodes, wmx, wmy, z) else {kind: "none", node: -1, port: -1} end
+
+// ── Undo bookkeeping ─────────────────────────────────────────────────────
+
+fn push_hist(hist: list, nodes: list, links: list) -> list
+  let h = append(hist, {nodes: nodes, links: links})
+  if len(h) > 60 then h = slice(h, len(h) - 60, len(h)) end
+  h
+end
+
+fn note(flash: record, text: string, now: num) -> record
+  {text: text, until: now + 2.2}
+end
+
+// ── Keyboard ─────────────────────────────────────────────────────────────
+
+let want_undo = key_pressed("z") && mod_cmd() && !mod_shift()
+let want_redo = key_pressed("z") && mod_cmd() && mod_shift()
+let want_dup = key_pressed("d") && mod_cmd()
+let want_delete = (key_pressed("delete") || key_pressed("backspace")) && !blocked
+let want_fit = key_pressed("f") && !mod_cmd()
+
+if key_pressed("a") && mod_cmd() then
+  sel = for n in nodes do n.id end
+end
+if key_pressed("escape") && !blocked then
+  if drag.mode != "none" then
+    drag = {...drag, mode: "none"}
+  else
+    sel = []
+  end
+end
+if key_pressed("p") && !mod_cmd() then playing = !playing end
+if key_pressed("=") || key_pressed("+") then
+  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.2)
+end
+if key_pressed("-") then
+  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.0 / 1.2)
+end
+if key_pressed("0") then cam = {...cam, zoom: 1.0} end
+if want_fit then cam = fit_all(nodes, canvas) end
+
+// Arrow nudge
+let nudge_x = 0.0
+let nudge_y = 0.0
+let nstep = if mod_shift() then 24.0 else 4.0 end
+if key_pressed("left") then nudge_x = 0.0 - nstep end
+if key_pressed("right") then nudge_x = nstep end
+if key_pressed("up") then nudge_y = 0.0 - nstep end
+if key_pressed("down") then nudge_y = nstep end
+if (nudge_x != 0.0 || nudge_y != 0.0) && len(sel) > 0 && !blocked then
+  hist = push_hist(hist, nodes, links)
+  fut = []
+  nodes = for n in nodes do
+    if contains(sel, n.id) then {...n, x: n.x + nudge_x, y: n.y + nudge_y} else n end
+  end
+  ops = ops + 1
+end
+
+// ── Editing operations (shared by keys, buttons and the menu) ────────────
+
+fn dup_sel(nodes: list, links: list, sel: list, start_id: num) -> record
+  let out = nodes
+  let ids = []
+  let remap = []          // [old, new] pairs
+  let nid = start_id
+  for n in nodes do
+    if contains(sel, n.id) then
+      out = append(out, {...n, id: nid, x: n.x + 28.0, y: n.y + 28.0})
+      ids = append(ids, nid)
+      remap = append(remap, [n.id, nid])
+      nid = nid + 1
+    end
+  end
+  let nl = links
+  for l in links do
+    if contains(sel, l.from) && contains(sel, l.to) then
+      let nf = l.from
+      let nt = l.to
+      for pr in remap do
+        if pr[0] == l.from then nf = pr[1] end
+        if pr[0] == l.to then nt = pr[1] end
+      end
+      nl = append(nl, {from: nf, to: nt, port: l.port})
+    end
+  end
+  {nodes: out, links: nl, sel: ids, next: nid}
+end
+
+if want_delete && len(sel) > 0 then
+  hist = push_hist(hist, nodes, links)
+  fut = []
+  links = links_without_nodes(links, sel)
+  nodes = without(nodes, sel)
+  flash = note(flash, "Deleted {len(sel)} node" ++ (if len(sel) == 1 then "" else "s" end), time())
+  sel = []
+  ops = ops + 1
+end
+
+if want_dup && len(sel) > 0 then
+  hist = push_hist(hist, nodes, links)
+  fut = []
+  let d = dup_sel(nodes, links, sel, next_id)
+  nodes = d.nodes
+  links = d.links
+  sel = d.sel
+  next_id = d.next
+  ops = ops + 1
+end
+
+if want_undo && len(hist) > 0 then
+  fut = append(fut, {nodes: nodes, links: links})
+  let h = last(hist)
+  hist = drop_last(hist)
+  nodes = h.nodes
+  links = h.links
+  sel = filter(sel, fn(id) -> idx_of(h.nodes, id) >= 0)
+  ops = ops + 1
+end
+if want_redo && len(fut) > 0 then
+  hist = append(hist, {nodes: nodes, links: links})
+  let f = last(fut)
+  fut = drop_last(fut)
+  nodes = f.nodes
+  links = f.links
+  sel = filter(sel, fn(id) -> idx_of(f.nodes, id) >= 0)
+  ops = ops + 1
+end
+
+// ── Mouse: wheel ─────────────────────────────────────────────────────────
+
+if over_canvas && !blocked then
+  let sy = scroll_y()
+  let sx = scroll_x()
+  if sy != 0.0 || sx != 0.0 then
+    if mod_cmd() || mod_ctrl() then
+      cam = zoom_about(cam, canvas, mx, my, if sy > 0.0 then 1.1 else 1.0 / 1.1 end)
+    else
+      cam = {...cam, x: cam.x - sx * 18.0 / z, y: cam.y - sy * 18.0 / z}
+    end
+  end
+end
+
+// ── Mouse: press ─────────────────────────────────────────────────────────
+
+let space_held = key_down("space")
+
+// A gesture whose release never reached us (focus lost mid-drag) must not
+// wedge the canvas: with no button held there is nothing to be dragging.
+if drag.mode != "none" && drag.mode != "place" && !mouse_down(0) && !mouse_down(2) && !mouse_released(0) && !mouse_released(2) then
+  drag = {...drag, mode: "none"}
+end
+
+if over_canvas && !blocked && drag.mode == "none" then
+  if mouse_pressed(2) || (mouse_pressed(0) && (space_held || mod_alt())) then
+    drag = {...drag, mode: "pan", x0: float(mx), y0: float(my), cx: cam.x, cy: cam.y, moved: false}
+  elsif mouse_pressed(0) then
+    if hit.kind == "out" then
+      drag = {...drag, mode: "link", node: hit.node, port: 0, dir: "out", moved: false}
+    elsif hit.kind == "in" then
+      let li = link_into(links, hit.node, hit.port)
+      if li >= 0 then
+        // Pick the wire back up from its source and drop it elsewhere.
+        hist = push_hist(hist, nodes, links)
+        fut = []
+        let src = links[li].from
+        links = links_without_into(links, hit.node, hit.port)
+        drag = {...drag, mode: "link", node: src, port: 0, dir: "out", moved: true}
+        ops = ops + 1
+      else
+        drag = {...drag, mode: "link", node: hit.node, port: hit.port, dir: "in", moved: false}
+      end
+    elsif hit.kind == "node" then
+      if mod_shift() then
+        if contains(sel, hit.node) then
+          sel = filter(sel, fn(id) -> id != hit.node)
+        else
+          sel = append(sel, hit.node)
+        end
+      elsif !contains(sel, hit.node) then
+        sel = [hit.node]
+      end
+      nodes = raise(nodes, sel)
+      let starts = for n in nodes do
+        if contains(sel, n.id) then {id: n.id, x: n.x, y: n.y} else continue end
+      end
+      drag = {...drag, mode: "node", x0: wmx, y0: wmy, starts: starts, moved: false}
+    else
+      drag = {...drag, mode: "marquee", x0: wmx, y0: wmy, moved: false}
+    end
+  elsif mouse_pressed(1) then
+    if hit.kind == "node" && !contains(sel, hit.node) then
+      sel = [hit.node]
+    end
+    let tag = if hit.kind == "node" then {what: "node", id: hit.node} else {what: "canvas", id: -1} end
+    menu = menu_show(menu, mx, my, tag)
+  end
+end
+
+// ── Mouse: drag ──────────────────────────────────────────────────────────
+
+if drag.mode == "pan" && mouse_down(0) || drag.mode == "pan" && mouse_down(2) then
+  cam = {...cam, x: drag.cx - (float(mx) - drag.x0) / z, y: drag.cy - (float(my) - drag.y0) / z}
+  drag = {...drag, moved: true}
+end
+
+if drag.mode == "node" && mouse_down(0) then
+  let dx = wmx - drag.x0
+  let dy = wmy - drag.y0
+  if !drag.moved && (abs(dx) > 1.0 || abs(dy) > 1.0) then
+    hist = push_hist(hist, nodes, links)
+    fut = []
+    drag = {...drag, moved: true}
+  end
+  if drag.moved then
+    let snap = mod_shift()
+    nodes = for n in nodes do
+      let s = filter(drag.starts, fn(st) -> st.id == n.id)
+      if len(s) == 0 then
+        n
+      else
+        let nx = s[0].x + dx
+        let ny = s[0].y + dy
+        if snap then
+          nx = float(int(round(nx / 16.0))) * 16.0
+          ny = float(int(round(ny / 16.0))) * 16.0
+        end
+        {...n, x: nx, y: ny}
+      end
+    end
+  end
+end
+
+if drag.mode == "place" && !mouse_down(0) && over_canvas then
+  hist = push_hist(hist, nodes, links)
+  fut = []
+  let n = make_node(next_id, drag.kind, wmx - NODE_W / 2.0, wmy - HDR_H / 2.0)
+  nodes = append(nodes, n)
+  sel = [n.id]
+  next_id = next_id + 1
+  ops = ops + 1
+  drag = {...drag, mode: "none"}
+end
+
+// ── Mouse: release ───────────────────────────────────────────────────────
+
+if mouse_released(0) || mouse_released(2) then
+  if drag.mode == "link" then
+    let ok = false
+    if drag.dir == "out" && hit.kind == "in" && hit.node != drag.node then
+      if !reaches(links, drag.node, hit.node, 0) then
+        hist = push_hist(hist, nodes, links)
+        fut = []
+        links = add_link(links, drag.node, hit.node, hit.port)
+        ok = true
+      else
+        flash = note(flash, "That wire would make a loop", time())
+      end
+    elsif drag.dir == "in" && hit.kind == "out" && hit.node != drag.node then
+      if !reaches(links, hit.node, drag.node, 0) then
+        hist = push_hist(hist, nodes, links)
+        fut = []
+        links = add_link(links, hit.node, drag.node, drag.port)
+        ok = true
+      else
+        flash = note(flash, "That wire would make a loop", time())
+      end
+    end
+    if ok then ops = ops + 1 end
+  elsif drag.mode == "marquee" then
+    let x0 = min(drag.x0, wmx)
+    let y0 = min(drag.y0, wmy)
+    let x1 = max(drag.x0, wmx)
+    let y1 = max(drag.y0, wmy)
+    if x1 - x0 > 2.0 || y1 - y0 > 2.0 then
+      let inside = for n in nodes do
+        let r = node_rect(n)
+        if r.x < x1 && x0 < r.x + r.w && r.y < y1 && y0 < r.y + r.h then n.id else continue end
+      end
+      if mod_shift() then
+        for id in inside do
+          if !contains(sel, id) then sel = append(sel, id) end
+        end
+      else
+        sel = inside
+      end
+    elsif !mod_shift() then
+      sel = []
+    end
+  end
+  if drag.mode == "node" && drag.moved then ops = ops + 1 end
+  if drag.mode != "place" then
+    drag = {...drag, mode: "none"}
+  end
+end
+
+// ── Evaluate ─────────────────────────────────────────────────────────────
+
+let vals = eval_all(nodes, links, clock)
+
+// ── Draw: canvas ─────────────────────────────────────────────────────────
+
+clear(BG.r, BG.g, BG.b)
+draw_rect(canvas, CANVAS)
+clip(canvas.x, canvas.y, canvas.w, canvas.h)
+
+// dotted grid
+let gstep = if z < 0.7 then 64.0 else 32.0 end
+let gx0 = float(int(floor(cam.x / gstep))) * gstep
+let gy0 = float(int(floor(cam.y / gstep))) * gstep
+let gwx = gx0
+while to_sx(cam, canvas, gwx) < float(canvas.x + canvas.w) do
+  let sx = to_sx(cam, canvas, gwx)
+  let gwy = gy0
+  while to_sy(cam, canvas, gwy) < float(canvas.y + canvas.h) do
+    let sy = to_sy(cam, canvas, gwy)
+    let major = (int(round(gwx / gstep)) % 4 == 0) && (int(round(gwy / gstep)) % 4 == 0)
+    draw_rect(int(sx), int(sy), 2, 2, GRID.r, GRID.g, GRID.b, if major then 255 else 150 end)
+    gwy = gwy + gstep
+  end
+  gwx = gwx + gstep
+end
+
+// links
+let flow_t = clock * 0.35
+for l in links do
+  let a = idx_of(nodes, l.from)
+  let b = idx_of(nodes, l.to)
+  if a >= 0 && b >= 0 then
+    let o = out_port(nodes[a])
+    let p = in_port(nodes[b], l.port)
+    let x0 = to_sx(cam, canvas, o.x)
+    let y0 = to_sy(cam, canvas, o.y)
+    let x1 = to_sx(cam, canvas, p.x)
+    let y1 = to_sy(cam, canvas, p.y)
+    let c = cat_color(kind_of(nodes[a].kind).cat)
+    let lit = contains(sel, l.from) || contains(sel, l.to)
+    let pts = bezier_pts(x0, y0, x1, y1, 28)
+    draw_polyline(pts, c.r, c.g, c.b, if lit then 230 else 120 end, max(1.0, 2.0 * z))
+    if playing then
+      for k in range(0, 2) do
+        let t = (flow_t + float(k) * 0.5) % 1.0
+        let q = bezier_at(x0, y0, x1, y1, t)
+        draw_circle(q, max(1.5, 3.0 * z), c, if lit then 255 else 170 end)
+      end
+    end
+  end
+end
+
+// the wire being dragged
+if drag.mode == "link" then
+  let ni = idx_of(nodes, drag.node)
+  if ni >= 0 then
+    let n = nodes[ni]
+    let c = cat_color(kind_of(n.kind).cat)
+    if drag.dir == "out" then
+      let o = out_port(n)
+      let tx = if hit.kind == "in" then to_sx(cam, canvas, in_port(nodes[idx_of(nodes, hit.node)], hit.port).x) else float(mx) end
+      let ty = if hit.kind == "in" then to_sy(cam, canvas, in_port(nodes[idx_of(nodes, hit.node)], hit.port).y) else float(my) end
+      draw_polyline(bezier_pts(to_sx(cam, canvas, o.x), to_sy(cam, canvas, o.y), tx, ty, 28), c.r, c.g, c.b, 220, max(1.0, 2.0 * z))
+    else
+      let p = in_port(n, drag.port)
+      let fx = if hit.kind == "out" then to_sx(cam, canvas, out_port(nodes[idx_of(nodes, hit.node)]).x) else float(mx) end
+      let fy = if hit.kind == "out" then to_sy(cam, canvas, out_port(nodes[idx_of(nodes, hit.node)]).y) else float(my) end
+      draw_polyline(bezier_pts(fx, fy, to_sx(cam, canvas, p.x), to_sy(cam, canvas, p.y), 28), ACCENT.r, ACCENT.g, ACCENT.b, 220, max(1.0, 2.0 * z))
+    end
+  end
+end
+
+// nodes
+fn draw_scope(r: Rect, samples: list, c: record)
+  draw_rect_rounded(r, 4, BG)
+  if len(samples) >= 2 then
+    let lo = samples[0]
+    let hi = samples[0]
+    for s in samples do
+      lo = min(lo, s)
+      hi = max(hi, s)
+    end
+    if hi - lo < 0.001 then
+      lo = lo - 0.5
+      hi = hi + 0.5
+    end
+    let pad_y = 6.0
+    let n = len(samples)
+    let pts = for i in range(0, n) do
+      let t = float(i) / 159.0
+      let x = float(r.x) + 4.0 + t * (float(r.w) - 8.0)
+      let y = float(r.y) + float(r.h) - pad_y - (samples[i] - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
+      [x, y]
+    end
+    // zero line when it is inside the window
+    if lo < 0.0 && hi > 0.0 then
+      let zy = float(r.y) + float(r.h) - pad_y - (0.0 - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
+      draw_line(r.x + 4, int(zy), r.x + r.w - 4, int(zy), FAINT.r, FAINT.g, FAINT.b, 120, 1)
+    end
+    draw_polyline(pts, c.r, c.g, c.b, 230, 1.5)
+    let last_p = pts[n - 1]
+    draw_circle({x: last_p[0], y: last_p[1]}, 2.5, c)
+  end
+  nil
+end
+
+fn draw_gauge(r: Rect, v: num, lo: num, hi: num, c: record)
+  let cx = float(r.x) + float(r.w) / 2.0
+  let cy = float(r.y) + float(r.h) - 4.0
+  let rad = min(float(r.w) / 2.0 - 8.0, float(r.h) - 10.0)
+  let a0 = 3.14159
+  let frac = if abs(hi - lo) < 0.000001 then 0.0 else clamp01((v - lo) / (hi - lo)) end
+  fill_arc(cx, cy, rad - 7.0, rad, a0, a0 * 2.0, ELEV.r, ELEV.g, ELEV.b, 255)
+  if frac > 0.002 then
+    fill_arc(cx, cy, rad - 7.0, rad, a0, a0 + frac * a0, c.r, c.g, c.b, 255)
+  end
+  nil
+end
+
+for n in nodes do
+  let k = kind_of(n.kind)
+  let c = cat_color(k.cat)
+  let r = node_rect(n)
+  let sx = to_sx(cam, canvas, r.x)
+  let sy = to_sy(cam, canvas, r.y)
+  let sw = r.w * z
+  let sh = r.h * z
+  let sr = rect(sx, sy, sw, sh)
+  let selected = contains(sel, n.id)
+  let hov = hit.kind == "node" && hit.node == n.id && drag.mode == "none"
+  let rad = 8.0 * z
+  let ni = idx_of(nodes, n.id)
+  let v = vals[ni]
+
+  if selected then
+    draw_shadow(sr, {radius: rad, blur: 22, spread: 2, dx: 0, dy: 8, color: BG, a: 200})
+  else
+    draw_shadow(sr, {radius: rad, blur: 12, spread: 0, dx: 0, dy: 4, color: BG, a: 140})
+  end
+  draw_rect_rounded(sr, rad, if hov then NODE_HOV else NODE_BG end)
+  // header band
+  let hdr = rect(sx, sy, sw, HDR_H * z)
+  draw_rect_rounded(hdr, rad, over(NODE_BG, c, 0.16))
+  draw_rect(sx, sy + HDR_H * z - rad, sw, rad, over(NODE_BG, c, 0.16).r, over(NODE_BG, c, 0.16).g, over(NODE_BG, c, 0.16).b)
+  draw_rect(sx, sy + HDR_H * z - 1.0, sw, 1.0, c.r, c.g, c.b, 90)
+  // title
+  let tsz = max(7, int(13.0 * z))
+  let title_s = ts(tsz, TEXT)
+  draw_text(k.label, {x: sx + 12.0 * z, y: sy + (HDR_H * z - float(tsz)) / 2.0 - 1.0}, title_s)
+  let vsz = max(6, int(11.0 * z))
+  let vs = mono(vsz, over(NODE_BG, c, 0.85))
+  let vtxt = fmt(v)
+  draw_text(vtxt, {x: sx + sw - 14.0 * z - text_width(vtxt, vs), y: sy + (HDR_H * z - float(vsz)) / 2.0}, vs)
+
+  // input rows
+  let ivals = input_values(nodes, links, vals, n)
+  for i in range(0, len(k.ins)) do
+    let p = in_port(n, i)
+    let py = to_sy(cam, canvas, p.y)
+    let rsz = max(6, int(11.0 * z))
+    let wired = link_into(links, n.id, i) >= 0
+    draw_text(k.ins[i].name, {x: sx + 14.0 * z, y: py - float(rsz) / 2.0 - 1.0}, ts(rsz, if wired then TEXT else DIM end))
+    let val_s = mono(rsz, if wired then over(NODE_BG, c, 0.75) else FAINT end)
+    let vt = fmt(ivals[i])
+    draw_text(vt, {x: sx + sw - 12.0 * z - text_width(vt, val_s), y: py - float(rsz) / 2.0 - 1.0}, val_s)
+    // port
+    let px = to_sx(cam, canvas, p.x)
+    let port_hot = (hit.kind == "in" && hit.node == n.id && hit.port == i) ||
+    (drag.mode == "link" && drag.dir == "out" && drag.node != n.id)
+    let pr = PORT_R * z
+    if port_hot then
+      draw_circle({x: px, y: py}, pr + 4.0 * z, c, 60)
+    end
+    draw_circle({x: px, y: py}, pr, if wired then c else NODE_BG end)
+    circ_outline(px, py, pr, c, 255, max(1.0, 1.5 * z))
+  end
+
+  // output port
+  let o = out_port(n)
+  let ox = to_sx(cam, canvas, o.x)
+  let oy = to_sy(cam, canvas, o.y)
+  let out_hot = (hit.kind == "out" && hit.node == n.id) ||
+  (drag.mode == "link" && drag.dir == "in" && drag.node != n.id)
+  if out_hot then
+    draw_circle({x: ox, y: oy}, PORT_R * z + 4.0 * z, c, 60)
+  end
+  draw_circle({x: ox, y: oy}, PORT_R * z, c)
+
+  // preview area
+  let ph = preview_h(n.kind)
+  if ph > 0.0 then
+    let py0 = sy + (HDR_H + float(len(k.ins)) * ROW_H + 4.0) * z
+    let pr = rect(sx + 10.0 * z, py0, sw - 20.0 * z, (ph - 4.0) * z)
+    if n.kind == "scope" then
+      draw_scope(pr, scope_push(n.id, v, playing), c)
+    elsif n.kind == "gauge" then
+      draw_gauge(pr, v, n.params[0], n.params[1], c)
+      let gs = mono(max(6, int(10.0 * z)), DIM)
+      draw_text(fmt(n.params[0]), {x: pr.x, y: pr.y + pr.h - 12.0 * z}, gs)
+      let hi_t = fmt(n.params[1])
+      draw_text(hi_t, {x: pr.x + pr.w - text_width(hi_t, gs), y: pr.y + pr.h - 12.0 * z}, gs)
+    elsif n.kind == "color" then
+      let col = {r: to_rgb(ivals[0]), g: to_rgb(ivals[1]), b: to_rgb(ivals[2])}
+      draw_rect_rounded(pr, 5.0 * z, col)
+      rr_outline(pr, 5.0 * z, TEXT, 40, 1)
+    else
+      let big = max(8, int(22.0 * z))
+      let bs = mono(big, if n.kind == "display" then c else TEXT end)
+      let bt = fmt(v)
+      draw_text(bt, {x: pr.x + (pr.w - text_width(bt, bs)) / 2.0, y: pr.y + (pr.h - float(big)) / 2.0 - 1.0}, bs)
+    end
+  end
+
+  if selected then
+    rr_outline(sr.inset(-1), rad + 1.0, ACCENT, 255, max(1.0, 1.5 * z))
+  else
+    rr_outline(sr, rad, OUTLINE, 255, 1)
+  end
+end
+
+// marquee
+if drag.mode == "marquee" then
+  let x0 = to_sx(cam, canvas, min(drag.x0, wmx))
+  let y0 = to_sy(cam, canvas, min(drag.y0, wmy))
+  let x1 = to_sx(cam, canvas, max(drag.x0, wmx))
+  let y1 = to_sy(cam, canvas, max(drag.y0, wmy))
+  let mr = rect(x0, y0, x1 - x0, y1 - y0)
+  draw_rect(mr, ACCENT, 28)
+  draw_rect_outline(mr, ACCENT, 200, 1)
+end
+
+// ghost of a node being placed from the palette
+if drag.mode == "place" && over_canvas then
+  let k = kind_of(drag.kind)
+  let gr = rect(float(mx) - NODE_W * z / 2.0, float(my) - HDR_H * z / 2.0, NODE_W * z, HDR_H * z)
+  draw_rect_rounded(gr, 8.0 * z, cat_color(k.cat), 40)
+  rr_outline(gr, 8.0 * z, cat_color(k.cat), 160, 1)
+end
+
+// empty-canvas hint
+if len(nodes) == 0 then
+  let es = ts(14, FAINT)
+  let et = "Drag a node in from the palette, or right-click to add one."
+  draw_text(et, {x: canvas.x + (canvas.w - text_width(et, es)) / 2, y: canvas.y + canvas.h / 2 - 8}, es)
+end
+
+clip_none()
+
+// ── Draw: palette ────────────────────────────────────────────────────────
+
+draw_rect(palette, PANEL)
+draw_rect(palette.x + palette.w - 1, palette.y, 1, palette.h, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+
+let py = palette.y + 18
+let last_cat = ""
+let pal_rows = []
+for k in KINDS do
+  if k.cat != last_cat then
+    if last_cat != "" then py = py + 8 end
+    caps(cat_label(k.cat), palette.x + 18, py, FAINT)
+    py = py + 20
+    last_cat = k.cat
+  end
+  let rr = rect(palette.x + 10, py, palette.w - 20, 28)
+  pal_rows = append(pal_rows, {kind: k.id, r: rr})
+  py = py + 30
+end
+
+for pr in pal_rows do
+  let k = kind_of(pr.kind)
+  let c = cat_color(k.cat)
+  let hov = hovered(pr.r) && drag.mode == "none"
+  if hov then draw_rect_rounded(pr.r, 6, HOVER) end
+  draw_circle({x: pr.r.x + 14, y: pr.r.y + 14}, 4, c)
+  draw_text(k.label, {x: pr.r.x + 28, y: pr.r.y + 7}, ts(13, if hov then TEXT else DIM end))
+  if hov then
+    let plus = ts(13, FAINT)
+    draw_text("+", {x: pr.r.x + pr.r.w - 10 - text_width("+", plus), y: pr.r.y + 6}, plus)
+  end
+  if mouse_pressed(0) && hovered(pr.r) && !blocked && drag.mode == "none" then
+    drag = {...drag, mode: "place", kind: pr.kind, x0: float(mx), y0: float(my), moved: false}
+  end
+end
+
+// A press-and-release inside the palette without leaving it drops the node
+// at the centre of the view; dragging onto the canvas drops it there.
+if drag.mode == "place" && !mouse_down(0) && !over_canvas then
+  hist = push_hist(hist, nodes, links)
+  fut = []
+  let cxw = to_wx(cam, canvas, canvas.x + canvas.w / 2) - NODE_W / 2.0
+  let cyw = to_wy(cam, canvas, canvas.y + canvas.h / 2) - 60.0
+  let n = make_node(next_id, drag.kind, cxw + float(ops % 5) * 24.0, cyw + float(ops % 5) * 24.0)
+  nodes = append(nodes, n)
+  sel = [n.id]
+  next_id = next_id + 1
+  ops = ops + 1
+  drag = {...drag, mode: "none"}
+end
+
+// palette footer: legend
+let leg_y = palette.y + palette.h - 96
+draw_rect(palette.x + 14, leg_y - 12, palette.w - 28, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+caps("TIPS", palette.x + 18, leg_y, FAINT)
+let tips = ["drag a row onto the canvas", "wire output → input", "shift-drag snaps to grid", "scroll pans · ⌘-scroll zooms"]
+for i in range(0, len(tips)) do
+  draw_text(tips[i], {x: palette.x + 18, y: leg_y + 20 + i * 17}, ts(11, FAINT))
+end
+
+// ── Draw: inspector ──────────────────────────────────────────────────────
+
+draw_rect(insp, PANEL)
+draw_rect(insp.x, insp.y, 1, insp.h, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+
+let ix = insp.x + 22
+let iw = insp.w - 44
+let iy = insp.y + 18
+
+let one = if len(sel) == 1 then idx_of(nodes, sel[0]) else -1 end
+
+if one >= 0 then
+  let n = nodes[one]
+  let k = kind_of(n.kind)
+  let c = cat_color(k.cat)
+  caps("NODE", ix, iy, FAINT)
+  iy = iy + 20
+  draw_circle({x: ix + 6, y: iy + 10}, 5, c)
+  draw_text(k.label, {x: ix + 20, y: iy}, ts(18, TEXT))
+  let idt = "#" ++ str(n.id)
+  draw_text(idt, {x: ix + iw - text_width(idt, mono(11, FAINT)), y: iy + 5}, mono(11, FAINT))
+  iy = iy + 28
+  let desc_lines = wrap_px(k.desc, iw, ts(12, DIM))
+  for line in desc_lines do
+    draw_text(line, {x: ix, y: iy}, ts(12, DIM))
+    iy = iy + 17
+  end
+  iy = iy + 10
+  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  iy = iy + 16
+
+  // parameters
+  let changed = false
+  let np = n.params
+  if len(k.params) > 0 then
+    caps("PARAMETERS", ix, iy, FAINT)
+    iy = iy + 22
+    for i in range(0, len(k.params)) do
+      let p = k.params[i]
+      draw_text(p.name, {x: ix, y: iy}, ts(12, TEXT))
+      let vt = fmt(np[i])
+      draw_text(vt, {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, mono(12, c))
+      let sr = rect(ix, iy + 20, iw, 18)
+      let nv = if blocked then np[i] else slider(sr, np[i], p.lo, p.hi, {fill: c, track: ELEV, knob: TEXT}) end
+      if nv != np[i] then
+        np[i] = nv
+        changed = true
+      end
+      iy = iy + 46
+    end
+  end
+
+  // inputs
+  let ni = n.ins
+  if len(k.ins) > 0 then
+    iy = iy + 4
+    caps("INPUTS", ix, iy, FAINT)
+    iy = iy + 22
+    let ivals = input_values(nodes, links, vals, n)
+    for i in range(0, len(k.ins)) do
+      let p = k.ins[i]
+      let li = link_into(links, n.id, i)
+      draw_text(p.name, {x: ix, y: iy}, ts(12, TEXT))
+      let vt = fmt(ivals[i])
+      draw_text(vt, {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, mono(12, c))
+      if li >= 0 then
+        let src = idx_of(nodes, links[li].from)
+        let from_label = if src >= 0 then kind_of(nodes[src].kind).label ++ " #" ++ str(nodes[src].id) else "?" end
+        let wire_r = rect(ix, iy + 20, iw, 18)
+        draw_rect_rounded(wire_r, 4, ELEV)
+        draw_text("← " ++ from_label, {x: ix + 8, y: iy + 22}, ts(11, DIM))
+        let xb = rect(wire_r.x + wire_r.w - 22, wire_r.y, 22, 18)
+        if hovered(xb) then draw_rect_rounded(xb, 4, HOVER) end
+        draw_text("×", {x: xb.x + 7, y: xb.y + 2}, ts(12, if hovered(xb) then DANGER else FAINT end))
+        if clicked(xb) && !blocked then
+          hist = push_hist(hist, nodes, links)
+          fut = []
+          links = links_without_into(links, n.id, i)
+          ops = ops + 1
+        end
+      else
+        let sr = rect(ix, iy + 20, iw, 18)
+        let nv = if blocked then ni[i] else slider(sr, ni[i], p.lo, p.hi, {fill: DIM, track: ELEV, knob: TEXT}) end
+        if nv != ni[i] then
+          ni[i] = nv
+          changed = true
+        end
+      end
+      iy = iy + 46
+    end
+  end
+
+  if changed then
+    if !param_dirty then
+      hist = push_hist(hist, nodes, links)
+      fut = []
+      param_dirty = true
+    end
+    nodes = put(nodes, one, {...n, params: np, ins: ni})
+  end
+  if !mouse_down(0) && param_dirty then
+    param_dirty = false
+    ops = ops + 1
+  end
+
+  // output
+  iy = iy + 6
+  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  iy = iy + 16
+  caps("OUTPUT", ix, iy, FAINT)
+  iy = iy + 20
+  draw_text(fmt(vals[one]), {x: ix, y: iy}, mono(26, c))
+  iy = iy + 40
+  let fanout = filter(links, fn(l) -> l.from == n.id)
+  let fo = "feeds " ++ str(len(fanout)) ++ (if len(fanout) == 1 then " input" else " inputs" end)
+  draw_text(fo, {x: ix, y: iy}, ts(11, FAINT))
+  iy = iy + 26
+
+  // actions
+  let bw = (iw - 8) / 2
+  if pill_btn(rect(ix, iy, bw, 28), "Duplicate", false) && !blocked then
+    hist = push_hist(hist, nodes, links)
+    fut = []
+    let d = dup_sel(nodes, links, sel, next_id)
+    nodes = d.nodes
+    links = d.links
+    sel = d.sel
+    next_id = d.next
+    ops = ops + 1
+  end
+  if pill_btn(rect(ix + bw + 8, iy, bw, 28), "Delete", false) && !blocked then
+    hist = push_hist(hist, nodes, links)
+    fut = []
+    links = links_without_node(links, n.id)
+    nodes = without(nodes, [n.id])
+    sel = []
+    ops = ops + 1
+  end
+elsif len(sel) > 1 then
+  caps("SELECTION", ix, iy, FAINT)
+  iy = iy + 20
+  draw_text("{len(sel)} nodes", {x: ix, y: iy}, ts(18, TEXT))
+  iy = iy + 34
+  let lines = ["Drag to move them together.", "⌘D duplicates the group with", "its internal wires intact.", "Delete removes them all."]
+  for line in lines do
+    draw_text(line, {x: ix, y: iy}, ts(12, DIM))
+    iy = iy + 17
+  end
+  iy = iy + 16
+  let bw = (iw - 8) / 2
+  if pill_btn(rect(ix, iy, bw, 28), "Duplicate", false) && !blocked then
+    hist = push_hist(hist, nodes, links)
+    fut = []
+    let d = dup_sel(nodes, links, sel, next_id)
+    nodes = d.nodes
+    links = d.links
+    sel = d.sel
+    next_id = d.next
+    ops = ops + 1
+  end
+  if pill_btn(rect(ix + bw + 8, iy, bw, 28), "Delete", false) && !blocked then
+    hist = push_hist(hist, nodes, links)
+    fut = []
+    links = links_without_nodes(links, sel)
+    nodes = without(nodes, sel)
+    sel = []
+    ops = ops + 1
+  end
+else
+  caps("PATCH", ix, iy, FAINT)
+  iy = iy + 20
+  draw_text("Nothing selected", {x: ix, y: iy}, ts(18, TEXT))
+  iy = iy + 34
+  let stats = [
+    {k: "nodes", v: str(len(nodes))},
+    {k: "wires", v: str(len(links))},
+    {k: "clock", v: fmt(clock) ++ " s"},
+    {k: "zoom", v: str(int(round(z * 100.0))) ++ "%"},
+  ]
+  for s in stats do
+    draw_text(s.k, {x: ix, y: iy}, ts(12, DIM))
+    draw_text(s.v, {x: ix + iw - text_width(s.v, mono(12, TEXT)), y: iy}, mono(12, TEXT))
+    iy = iy + 22
+  end
+  iy = iy + 10
+  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  iy = iy + 16
+  caps("KEYS", ix, iy, FAINT)
+  iy = iy + 20
+  let keys = [
+    ["click · shift-click", "select"],
+    ["drag empty space", "marquee"],
+    ["space / alt · drag", "pan"],
+    ["⌘Z · ⇧⌘Z", "undo · redo"],
+    ["⌘D", "duplicate"],
+    ["⌘A", "select all"],
+    ["⌫", "delete"],
+    ["arrows · ⇧", "nudge 4 · 24"],
+    ["F · 0 · + · −", "fit · 100% · zoom"],
+    ["P", "play · pause"],
+  ]
+  for kv in keys do
+    draw_text(kv[0], {x: ix, y: iy}, ts(11, DIM))
+    draw_text(kv[1], {x: ix + iw - text_width(kv[1], ts(11, FAINT)), y: iy}, ts(11, FAINT))
+    iy = iy + 19
+  end
+end
+
+// ── Draw: header ─────────────────────────────────────────────────────────
+
+draw_rect(0, 0, W, HEADER_H, PANEL.r, PANEL.g, PANEL.b)
+draw_rect(0, HEADER_H - 1, W, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+draw_text("PATCHWORK", {x: 22, y: 17}, {size: 16, font: "ui", color: TEXT, spacing: 3})
+let sub_x = 22 + text_width("PATCHWORK", {size: 16, font: "ui", color: TEXT, spacing: 3}) + 14
+draw_text("node-based dataflow", {x: sub_x, y: 21}, ts(12, FAINT))
+
+let bh = 30
+let by = (HEADER_H - bh) / 2
+let b_zoom = rect(W - 22 - 74, by, 74, bh)
+let b_fit = rect(b_zoom.x - 8 - 56, by, 56, bh)
+let b_redo = rect(b_fit.x - 8 - 62, by, 62, bh)
+let b_undo = rect(b_redo.x - 8 - 62, by, 62, bh)
+let b_play = rect(b_undo.x - 20 - 84, by, 84, bh)
+let b_reset = rect(b_play.x - 8 - 62, by, 62, bh)
+
+if pill_btn(b_play, if playing then "❚❚ Pause" else "▶ Play" end, playing) && !blocked then playing = !playing end
+if pill_btn(b_reset, "Rewind", false) && !blocked then clock = 0.0 end
+if pill_btn(b_undo, "Undo", false) && !blocked && len(hist) > 0 then
+  fut = append(fut, {nodes: nodes, links: links})
+  let h = last(hist)
+  hist = drop_last(hist)
+  nodes = h.nodes
+  links = h.links
+  sel = filter(sel, fn(id) -> idx_of(h.nodes, id) >= 0)
+  ops = ops + 1
+end
+if pill_btn(b_redo, "Redo", false) && !blocked && len(fut) > 0 then
+  hist = append(hist, {nodes: nodes, links: links})
+  let f = last(fut)
+  fut = drop_last(fut)
+  nodes = f.nodes
+  links = f.links
+  sel = filter(sel, fn(id) -> idx_of(f.nodes, id) >= 0)
+  ops = ops + 1
+end
+if pill_btn(b_fit, "Fit", false) && !blocked then cam = fit_all(nodes, canvas) end
+if pill_btn(b_zoom, str(int(round(z * 100.0))) ++ "%", false) && !blocked then cam = {...cam, zoom: 1.0} end
+
+// clock readout beside the transport
+let ck = "t = " ++ fmt(clock) ++ " s"
+draw_text(ck, {x: b_reset.x - 14 - text_width(ck, mono(12, DIM)), y: by + 8}, mono(12, DIM))
+
+// ── Draw: status bar ─────────────────────────────────────────────────────
+
+let sb = rect(0, H - STATUS_H, W, STATUS_H)
+draw_rect(sb, PANEL)
+draw_rect(0, sb.y, W, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+let left_t = "{len(nodes)} nodes · {len(links)} wires"
+draw_text(left_t, {x: 22, y: sb.y + 8}, ts(12, DIM))
+
+let hint = if drag.mode == "link" then
+  "release on a port to wire it · anywhere else to cancel"
+elsif drag.mode == "place" then
+  "drop it on the canvas"
+elsif drag.mode == "marquee" then
+  "release to select everything inside"
+elsif hit.kind == "out" then
+  "drag from the output to wire it into an input"
+elsif hit.kind == "in" then
+  if link_into(links, hit.node, hit.port) >= 0 then "drag to move this wire · drop away to remove it" else "drag to an output to wire it" end
+elsif hit.kind == "node" then
+  "drag to move · shift-click to add to the selection · right-click for actions"
+elsif over_canvas then
+  "right-click to add a node here"
+else
+  ""
+end
+let hint_s = ts(12, FAINT)
+draw_text(hint, {x: (W - text_width(hint, hint_s)) / 2, y: sb.y + 8}, hint_s)
+
+if flash.until > time() then
+  let fs = ts(12, C_SINK)
+  draw_text(flash.text, {x: W - 22 - text_width(flash.text, fs), y: sb.y + 8}, fs)
+else
+  let ps = ts(12, if playing then C_SOURCE else FAINT end)
+  let pt = if playing then "● live" else "○ paused" end
+  draw_text(pt, {x: W - 22 - text_width(pt, ps), y: sb.y + 8}, ps)
+end
+
+// ── Context menu: the last draw call ─────────────────────────────────────
+
+let m_tag = menu.tag
+let is_node_menu = menu.open && m_tag.what == "node"
+let items = if is_node_menu then
+  [menu_item("Duplicate"), menu_item("Disconnect all"), menu_item("Bring to front"), menu_sep(), menu_item("Delete")]
+else
+  let out = []
+  for k in KINDS do out = append(out, menu_item("Add " ++ k.label)) end
+  out = append(out, menu_sep())
+  out = append(out, menu_item("Fit to view"))
+  out = append(out, menu_item("Reset demo patch"))
+  out
+end
+let picked = context_menu(menu, items)
+menu = picked.menu
+if picked.index >= 0 then
+  if is_node_menu then
+    let id = m_tag.id
+    if picked.label == "Duplicate" then
+      hist = push_hist(hist, nodes, links)
+      fut = []
+      let d = dup_sel(nodes, links, sel, next_id)
+      nodes = d.nodes
+      links = d.links
+      sel = d.sel
+      next_id = d.next
+    elsif picked.label == "Disconnect all" then
+      hist = push_hist(hist, nodes, links)
+      fut = []
+      links = links_without_nodes(links, sel)
+    elsif picked.label == "Bring to front" then
+      nodes = raise(nodes, sel)
+    elsif picked.label == "Delete" then
+      hist = push_hist(hist, nodes, links)
+      fut = []
+      links = links_without_nodes(links, sel)
+      nodes = without(nodes, sel)
+      sel = []
+    end
+    ops = ops + 1
+  else
+    if picked.label == "Fit to view" then
+      cam = fit_all(nodes, canvas)
+    elsif picked.label == "Reset demo patch" then
+      hist = push_hist(hist, nodes, links)
+      fut = []
+      nodes = seed_nodes()
+      links = seed_links()
+      sel = []
+      next_id = 13
+      clock = 0.0
+      cam = fit_all(nodes, canvas)
+      ops = ops + 1
+    else
+      // "Add <kind>" — drop it where the menu was opened
+      for k in KINDS do
+        if picked.label == "Add " ++ k.label then
+          hist = push_hist(hist, nodes, links)
+          fut = []
+          let n = make_node(next_id, k.id,
+            to_wx(cam, canvas, menu.x) - 8.0, to_wy(cam, canvas, menu.y) - 8.0)
+          nodes = append(nodes, n)
+          sel = [n.id]
+          next_id = next_id + 1
+          ops = ops + 1
+        end
+      end
+    end
+  end
+end
+
+// ── Persist ──────────────────────────────────────────────────────────────
+
+state saved_ops = -1
+if ops != saved_ops then
+  panel_store_set("patch", save_patch(nodes, links, next_id))
+  saved_ops = ops
+end

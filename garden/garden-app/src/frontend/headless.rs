@@ -8,7 +8,7 @@
 //! [`garden_render::cell_metrics`] (CPU-only font shaping), so all layout
 //! math matches the windowed frontend exactly. `/screenshot` works too: a
 //! surface-less [`HeadlessRenderer`] is created lazily on the first request
-//! and renders the scene offscreen.
+//! and renders the scene offscreen (see [`HeadlessCapture`]).
 //!
 //! A headless run also stops on its own when it is **orphaned**
 //! ([`orphaned`]), because it has no window to close and no terminal to be
@@ -25,15 +25,14 @@
 
 use std::sync::mpsc;
 
-use garden_render::HeadlessRenderer;
+use garden_render::{HeadlessRenderer, Scene};
 
 use std::time::{Duration, Instant};
 
-use crate::app::{App, Viewport};
+use crate::app::{App, Capture, Raster, Viewport};
 use crate::clipboard::SystemClipboard;
-use serde_json::json;
 
-use crate::debug::{self, DebugCmd, Reply};
+use crate::debug;
 use crate::frontend::{AppConfig, Frontend, RELOAD_POLL};
 
 /// Logical size of the virtual viewport, matching the default window size.
@@ -166,7 +165,7 @@ impl Frontend for HeadlessFrontend {
 
         // Created on the first /screenshot; a missing GPU only disables
         // screenshots, not the whole session.
-        let mut renderer: Option<Result<HeadlessRenderer, String>> = None;
+        let mut capture = HeadlessCapture { renderer: None };
 
         let orphan_watch = orphan_watch();
         let idle_timeout = idle_timeout();
@@ -176,26 +175,7 @@ impl Frontend for HeadlessFrontend {
             match rx.recv_timeout(RELOAD_POLL) {
                 Ok(request) => {
                     last_request = Instant::now();
-                    // Headless is a single window with the fixed ordinal 1; a
-                    // `?window=<n>` selector for anything else has no target.
-                    let result = match request.window {
-                        Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
-                        _ => match request.cmd {
-                            DebugCmd::Screenshot { pane } => {
-                                screenshot(&mut app, &mut renderer, pane)
-                            }
-                            DebugCmd::Windows => Ok(Reply::Json(json!({
-                                "ok": true,
-                                "windows": [{
-                                    "window": 1,
-                                    "focused": true,
-                                    "panes": app.pane_count(),
-                                }],
-                            }))),
-                            cmd => app.handle_debug(cmd),
-                        },
-                    };
-                    let _ = request.reply.send(result);
+                    app.answer_single_window(request, &mut capture);
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 // The accept thread holds its sink for the process lifetime,
@@ -237,33 +217,20 @@ impl Frontend for HeadlessFrontend {
     }
 }
 
-fn screenshot(
-    app: &mut App,
-    renderer: &mut Option<Result<HeadlessRenderer, String>>,
-    pane: Option<usize>,
-) -> Result<Reply, String> {
-    // Resolved before the GPU work so a bad `?pane=` is a 400, not a wasted
-    // capture.
-    let crop = app.pane_capture_rect(pane)?;
-    let renderer = renderer
-        .get_or_insert_with(|| HeadlessRenderer::new(app.viewport().size, app.viewport().scale))
-        .as_mut()
-        .map_err(|err| format!("screenshot unavailable: {err}"))?;
-    // The consistency contract (same as the windowed frontend): settle panel
-    // frames first so the capture reflects all previously injected input —
-    // the loop below answers requests *before* its tick_panels call, so a
-    // panel's cached commands may otherwise lag queued input by a frame.
-    app.settle_panels();
-    let scene = app.build_scene();
-    let cap = renderer.capture(&scene);
-    let (w, h, rgba) = match crop {
-        Some(rect) => {
-            debug::crop_rgba(cap.width, cap.height, &cap.rgba, rect, app.viewport().scale)
-        }
-        None => (cap.width, cap.height, cap.rgba),
-    };
-    Ok(Reply::Png {
-        png: debug::encode_png(w, h, &rgba),
-        frame: app.frame(),
-    })
+/// Offscreen rasterization for `/screenshot`: a surface-less renderer created
+/// lazily on the first request, so a session that never captures never touches
+/// the GPU.
+struct HeadlessCapture {
+    renderer: Option<Result<HeadlessRenderer, String>>,
+}
+
+impl Capture for HeadlessCapture {
+    fn rasterize(&mut self, scene: &Scene, viewport: Viewport) -> Result<Raster, String> {
+        let renderer = self
+            .renderer
+            .get_or_insert_with(|| HeadlessRenderer::new(viewport.size, viewport.scale))
+            .as_mut()
+            .map_err(|err| format!("screenshot unavailable: {err}"))?;
+        Ok(Raster::Rgba(renderer.capture(scene)))
+    }
 }

@@ -20,12 +20,11 @@ use crossterm::event::{
     MouseEventKind,
 };
 use crossterm::{cursor, execute, queue, style, terminal};
-use garden_render::Color;
-use serde_json::json;
+use garden_render::{Color, Scene};
 
-use crate::app::{App, ClickCounter, Mods, Viewport};
+use crate::app::{App, Capture, ClickCounter, Mods, Raster, Viewport};
 use crate::clipboard::SystemClipboard;
-use crate::debug::{self, DebugCmd, Reply};
+use crate::debug;
 use crate::frontend::grid::{self, Grid, CELL};
 use crate::frontend::{AppConfig, Frontend, RELOAD_POLL};
 use crate::vim;
@@ -94,32 +93,7 @@ fn run_loop(config: AppConfig) -> io::Result<()> {
         }
 
         while let Ok(request) = rx.try_recv() {
-            // The TUI is a single window with the fixed ordinal 1; a
-            // `?window=<n>` selector for anything else has no target.
-            let result = match request.window {
-                Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
-                _ => match request.cmd {
-                    // The TUI has no pixels to crop, so `?pane=` has no
-                    // meaning here; the grid is the whole window either way.
-                    DebugCmd::Screenshot { .. } => {
-                        // The same settle-then-capture contract as the windowed
-                        // and headless frontends, so the text grid reflects all
-                        // previously injected input (see App::settle_panels).
-                        app.settle_panels();
-                        Ok(Reply::Text(current_grid(&app)?.to_text()))
-                    }
-                    DebugCmd::Windows => Ok(Reply::Json(json!({
-                        "ok": true,
-                        "windows": [{
-                            "window": 1,
-                            "focused": true,
-                            "panes": app.pane_count(),
-                        }],
-                    }))),
-                    cmd => app.handle_debug(cmd),
-                },
-            };
-            let _ = request.reply.send(result);
+            app.answer_single_window(request, &mut TerminalCapture);
         }
 
         // The TUI can't create OS windows; drain the intent into an error.
@@ -141,6 +115,19 @@ fn run_loop(config: AppConfig) -> io::Result<()> {
 
 fn logical_size(cols: u16, rows: u16) -> (f32, f32) {
     (cols as f32 * CELL.0, rows as f32 * CELL.1)
+}
+
+/// `/screenshot` for the TUI: the character grid at the terminal's present
+/// size, as text. There are no pixels, so a `?pane=` crop does not apply.
+struct TerminalCapture;
+
+impl Capture for TerminalCapture {
+    fn rasterize(&mut self, scene: &Scene, _viewport: Viewport) -> Result<Raster, String> {
+        let (cols, rows) = terminal::size().map_err(|err| err.to_string())?;
+        Ok(Raster::Text(
+            grid::rasterize(scene, cols as usize, rows as usize).to_text(),
+        ))
+    }
 }
 
 /// The current frame rasterized at the terminal's present size.

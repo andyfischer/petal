@@ -278,8 +278,8 @@ pub enum DebugCmd {
     /// List the native-menu actions `Menu` accepts (`GET /menu`).
     MenuList,
     /// List the open OS windows and which one is focused (`GET /windows`).
-    /// Answered by the frontend (only it knows the window registry), like
-    /// `Screenshot`.
+    /// The core answers it from the frontend's listing (only the frontend
+    /// knows the window registry) via [`crate::app::Capture::windows`].
     Windows,
     /// Fire a native menu-bar item by name — the one input the menu bar
     /// produces that keystroke injection can't reach (muda accelerators and

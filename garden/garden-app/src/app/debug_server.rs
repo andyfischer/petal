@@ -1,7 +1,8 @@
 //! Answering debug-server requests against live state: each [`DebugCmd`] maps
 //! to a JSON or text [`Reply`], reusing the same input paths as the frontends
-//! so injected input behaves identically. `Screenshot` is the one command the
-//! core cannot answer (it needs a renderer); each frontend intercepts it first.
+//! so injected input behaves identically. The one thing the core cannot do is
+//! turn a scene into pixels or list the OS windows; a frontend supplies both
+//! through [`Capture`], and the core handles every command itself.
 
 use garden_render::{Primitive, Rect, Scene, TextStyle};
 use garden_script::ArgSource;
@@ -12,7 +13,55 @@ use crate::editor_view::EditorView;
 use crate::theme::ThemeScheme;
 use crate::vim;
 
-use super::{App, KeyPhase, MenuAction, MENU_ACTIONS};
+use super::{App, KeyPhase, MenuAction, Viewport, MENU_ACTIONS};
+
+/// A rasterized frame, as a frontend hands it back to the core.
+pub enum Raster {
+    /// Physical-pixel RGBA8 at the viewport's scale. The core crops it to a
+    /// `?pane=` rect and encodes the PNG.
+    Rgba(garden_render::Capture),
+    /// A character grid (the terminal frontend). It has no pixels to crop, so
+    /// `?pane=` is validated but the whole window is returned.
+    Text(String),
+}
+
+/// What the frontend supplies so [`App::handle_debug_with`] can answer every
+/// debug command: a renderer and a window registry are the two things only the
+/// frontend owns.
+///
+/// The core does the rest — resolves `?pane=`, settles panels (the
+/// settle-then-capture contract), builds the scene, crops, and stamps the
+/// frame — once, so no frontend can drift from it.
+pub trait Capture {
+    /// Rasterize the already-settled `scene` built at `viewport`.
+    fn rasterize(&mut self, scene: &Scene, viewport: Viewport) -> Result<Raster, String>;
+
+    /// The window registry, as `GET /windows` reports it. The default is the
+    /// single-window answer (ordinal 1, focused) every frontend but the
+    /// windowed one gives.
+    fn windows(&self, app: &App) -> Value {
+        json!({
+            "ok": true,
+            "windows": [{
+                "window": 1,
+                "focused": true,
+                "panes": app.pane_count(),
+            }],
+        })
+    }
+}
+
+/// A frontend with no renderer: `/screenshot` is an error, `/windows` is the
+/// single-window default. Used by the in-memory tests.
+#[cfg(test)]
+pub struct NoCapture;
+
+#[cfg(test)]
+impl Capture for NoCapture {
+    fn rasterize(&mut self, _scene: &Scene, _viewport: Viewport) -> Result<Raster, String> {
+        Err("screenshot is not supported by this frontend".to_string())
+    }
+}
 
 /// Every script `print(...)` line this session has produced, with the cursor a
 /// draining read has reached.
@@ -72,10 +121,35 @@ impl OutputLog {
 }
 
 impl App {
-    /// Handle one debug command against live state. `Screenshot` is the one
-    /// command the core cannot answer — capturing needs a renderer, so each
-    /// frontend intercepts it before delegating here.
+    /// [`handle_debug_with`](Self::handle_debug_with) with no renderer — the
+    /// form the in-memory tests use.
+    #[cfg(test)]
     pub fn handle_debug(&mut self, cmd: DebugCmd) -> Result<Reply, String> {
+        self.handle_debug_with(cmd, &mut NoCapture)
+    }
+
+    /// Answer one request for a single-window frontend (headless, terminal):
+    /// that window has the fixed ordinal 1, so a `?window=<n>` selector for
+    /// anything else has no target.
+    pub fn answer_single_window(
+        &mut self,
+        request: debug::DebugRequest,
+        capture: &mut dyn Capture,
+    ) {
+        let result = match request.window {
+            Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
+            _ => self.handle_debug_with(request.cmd, capture),
+        };
+        let _ = request.reply.send(result);
+    }
+
+    /// Handle one debug command against live state, with `capture` supplying
+    /// the frontend's renderer and window registry.
+    pub fn handle_debug_with(
+        &mut self,
+        cmd: DebugCmd,
+        capture: &mut dyn Capture,
+    ) -> Result<Reply, String> {
         match cmd {
             DebugCmd::State { values, output } => {
                 Ok(Reply::Json(self.state_json_filtered(&values, output)))
@@ -125,10 +199,8 @@ impl App {
                 json["frame"] = json!(self.frame());
                 Ok(Reply::Json(json))
             }
-            DebugCmd::Screenshot { .. } => {
-                Err("screenshot is not supported by this frontend".to_string())
-            }
-            DebugCmd::Windows => Err("window listing is answered by the frontend".to_string()),
+            DebugCmd::Screenshot { pane } => self.screenshot(pane, capture),
+            DebugCmd::Windows => Ok(Reply::Json(capture.windows(self))),
             DebugCmd::Frame { min } => {
                 let frame = self.frame();
                 let mut json = json!({"ok": true, "frame": frame});
@@ -232,6 +304,36 @@ impl App {
                     other => return Err(format!("unknown mouse op {other:?}")),
                 }
                 Ok(Reply::Json(self.input_ack()))
+            }
+        }
+    }
+
+    /// `GET /screenshot`: resolve the crop (a bad `?pane=` is a 400 before any
+    /// GPU work), settle panel frames so the capture reflects all previously
+    /// injected input — a frontend may answer several requests back-to-back
+    /// with no tick between them — then rasterize, crop, and stamp the frame.
+    fn screenshot(
+        &mut self,
+        pane: Option<usize>,
+        capture: &mut dyn Capture,
+    ) -> Result<Reply, String> {
+        let crop = self.pane_capture_rect(pane)?;
+        self.settle_panels();
+        let scene = self.build_scene();
+        let viewport = self.viewport();
+        match capture.rasterize(&scene, viewport)? {
+            Raster::Text(text) => Ok(Reply::Text(text)),
+            Raster::Rgba(cap) => {
+                let (w, h, rgba) = match crop {
+                    Some(rect) => {
+                        debug::crop_rgba(cap.width, cap.height, &cap.rgba, rect, viewport.scale)
+                    }
+                    None => (cap.width, cap.height, cap.rgba),
+                };
+                Ok(Reply::Png {
+                    png: debug::encode_png(w, h, &rgba),
+                    frame: self.frame(),
+                })
             }
         }
     }
@@ -1470,6 +1572,55 @@ mod tests {
         );
         // Letter-spacing is part of the advance, since it is part of the pen.
         assert!(ui_w > 5.0 * 2.0);
+    }
+
+    /// The capture seam: the core resolves `?pane=`, settles, crops the
+    /// frontend's pixels to the pane, and stamps the frame; `/windows` is the
+    /// frontend's listing (single-window by default).
+    #[test]
+    fn screenshot_goes_through_the_capture_seam() {
+        struct Solid;
+        impl Capture for Solid {
+            fn rasterize(&mut self, _: &Scene, viewport: Viewport) -> Result<Raster, String> {
+                let px = |v: f32| (v as f64 * viewport.scale).round() as u32;
+                let (width, height) = (px(viewport.size.0), px(viewport.size.1));
+                Ok(Raster::Rgba(garden_render::Capture {
+                    width,
+                    height,
+                    rgba: vec![255; (width * height * 4) as usize],
+                }))
+            }
+        }
+        let (mut app, _f) = panel_app("draw_text(\"hi\", 4, 4, 16, 1, 1, 1)\n");
+
+        let err = app
+            .handle_debug_with(DebugCmd::Screenshot { pane: Some(99) }, &mut Solid)
+            .err()
+            .expect("a bad pane is an error");
+        assert!(err.contains("no pane 99"), "{err}");
+
+        let full = app.handle_debug_with(DebugCmd::Screenshot { pane: None }, &mut Solid);
+        let Ok(Reply::Png { png: full, frame }) = full else {
+            panic!("expected a PNG");
+        };
+        assert_eq!(frame, app.frame());
+        let cropped = app.handle_debug_with(DebugCmd::Screenshot { pane: Some(0) }, &mut Solid);
+        let Ok(Reply::Png { png: cropped, .. }) = cropped else {
+            panic!("expected a PNG");
+        };
+        assert!(!cropped.is_empty() && !full.is_empty());
+
+        match app.handle_debug(DebugCmd::Screenshot { pane: None }) {
+            Err(err) => assert!(err.contains("not supported"), "{err}"),
+            Ok(_) => panic!("NoCapture has no pixels"),
+        }
+        match app.handle_debug(DebugCmd::Windows) {
+            Ok(Reply::Json(json)) => {
+                assert_eq!(json["windows"][0]["window"], 1);
+                assert_eq!(json["windows"][0]["panes"], app.pane_count());
+            }
+            _ => panic!("expected the single-window listing"),
+        }
     }
 
     /// `?find=text:…` narrows the dump to the matching text runs and gives each

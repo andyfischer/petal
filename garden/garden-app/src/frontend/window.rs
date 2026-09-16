@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use garden_render::{FrameOutcome, Renderer};
+use garden_render::{FrameOutcome, Renderer, Scene};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
@@ -16,9 +16,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::{Window, WindowId};
 
-use crate::app::{App, ClickCounter, Mods, Viewport};
+use crate::app::{App, Capture, ClickCounter, Mods, Raster, Viewport};
 use crate::clipboard::{SharedClipboard, SystemClipboard};
-use crate::debug::{self, DebugCmd, DebugRequest, Reply, RequestSink};
+use crate::debug::{self, DebugRequest, RequestSink};
 use crate::frontend::menu::MenuBar;
 use crate::frontend::registry::WindowRegistry;
 use crate::frontend::{AppConfig, Frontend, RELOAD_POLL};
@@ -418,14 +418,11 @@ impl ApplicationHandler<DebugRequest> for Handler {
             }
         }
 
-        // `/windows` lists the whole registry, so it is answered before a
-        // single target window is resolved.
-        if let DebugCmd::Windows = request.cmd {
-            let _ = request.reply.send(Ok(Reply::Json(self.windows_json())));
-            return;
-        }
+        // `/windows` lists the whole registry, which the target window's core
+        // cannot see, so the capture seam carries the listing in.
+        let windows = self.windows_json();
 
-        // Every other command targets one window: the `?window=<ordinal>`
+        // Every command targets one window: the `?window=<ordinal>`
         // selector when given, else the focused window (single-window default).
         let id = match request.window {
             Some(ordinal) => {
@@ -453,38 +450,11 @@ impl ApplicationHandler<DebugRequest> for Handler {
             },
         };
         let state = self.windows.get_mut(id).expect("resolved window present");
-        let result = match request.cmd {
-            DebugCmd::Screenshot { pane } => {
-                // The consistency contract (same as the headless frontend):
-                // settle panel frames first so the capture reflects all
-                // previously injected input — two user events (a /key then
-                // this) can arrive back-to-back with no about_to_wait tick
-                // between them. `capture` then renders the scene into its own
-                // offscreen texture, so it never races the live surface.
-                state.app.settle_panels();
-                match state.app.pane_capture_rect(pane) {
-                    Err(err) => Err(err),
-                    Ok(crop) => {
-                        let scene = state.app.build_scene();
-                        let cap = gpu_pooled(|| state.renderer.capture(&scene));
-                        let scale = state.app.viewport().scale;
-                        // `?pane=<n>` crops to that pane's rect — no tab strip,
-                        // no status bar, no gutter.
-                        let (w, h, rgba) = match crop {
-                            Some(rect) => {
-                                debug::crop_rgba(cap.width, cap.height, &cap.rgba, rect, scale)
-                            }
-                            None => (cap.width, cap.height, cap.rgba),
-                        };
-                        Ok(Reply::Png {
-                            png: debug::encode_png(w, h, &rgba),
-                            frame: state.app.frame(),
-                        })
-                    }
-                }
-            }
-            cmd => state.app.handle_debug(cmd),
+        let mut capture = WindowCapture {
+            renderer: &mut state.renderer,
+            windows,
         };
+        let result = state.app.handle_debug_with(request.cmd, &mut capture);
         let _ = request.reply.send(result);
         state.sync();
         self.reap(event_loop, id);
@@ -588,6 +558,24 @@ fn to_vim_key(key: &WinitKey) -> Option<vim::Key> {
         },
         _ => return None,
     })
+}
+
+/// `/screenshot` and `/windows` for one window: its live renderer captures
+/// into its own offscreen texture (so it never races the surface), and the
+/// registry listing is taken before the target window's core is borrowed.
+struct WindowCapture<'a> {
+    renderer: &'a mut Renderer,
+    windows: serde_json::Value,
+}
+
+impl Capture for WindowCapture<'_> {
+    fn rasterize(&mut self, scene: &Scene, _viewport: Viewport) -> Result<Raster, String> {
+        Ok(Raster::Rgba(gpu_pooled(|| self.renderer.capture(scene))))
+    }
+
+    fn windows(&self, _app: &App) -> serde_json::Value {
+        self.windows.clone()
+    }
 }
 
 /// Run one frame's GPU work inside an autorelease pool.

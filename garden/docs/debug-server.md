@@ -64,9 +64,18 @@ terminal), is handled against the live `App`, and the reply comes back the
 same way. So every command sees a consistent snapshot, and injected input runs
 through the same code paths as real input.
 
+`App::handle_debug_with` answers every command, `/screenshot` and `/windows`
+included. The two things only a frontend owns come in through the small
+`Capture` trait (`garden-app/src/app/debug_server.rs`): `rasterize` turns the
+already-settled scene into pixels (or text), and `windows` lists the window
+registry (single-window by default). The `?pane=` check, the settle, the crop,
+and the `X-Garden-Frame` stamp are written once in the core, so a frontend
+cannot drift from the consistency contract.
+
 Screenshots never touch the OS screen-capture APIs: the current scene is
 rendered into an offscreen wgpu texture, read back, and PNG-encoded. The
-terminal frontend answers `/screenshot` with its character grid as plain text.
+terminal frontend's `rasterize` returns its character grid, so `/screenshot`
+there is plain text (a `?pane=` is validated but does not crop).
 
 ## Endpoints
 

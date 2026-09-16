@@ -22,7 +22,7 @@ describe("stdlib extractor", () => {
       "utf8",
     );
     const block = modRs.slice(modRs.indexOf("pub fn register_builtins"));
-    const registered = [...block.matchAll(/table\.register\(\s*"([^"]+)"/g)].map(
+    const registered = [...block.matchAll(/table\.register(?:_with)?\(\s*"([^"]+)"/g)].map(
       (m) => m[1],
     );
     // De-dupe: a name can't be registered twice, but be defensive.

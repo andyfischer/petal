@@ -235,7 +235,7 @@ fn the_baseline_policy_disables_memoization_with_the_other_optimizations() {
 // ── Differential oracle over the example corpus ──────────────────────────
 
 
-fn drive(app: &Path, includes: &[PathBuf], memo: bool, seed: u64, frames: usize) -> (Vec<String>, u64) {
+fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> (Vec<String>, u64) {
     let size = (800, 600);
     let mut ui = Headless::from_file_with_paths(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
@@ -245,8 +245,7 @@ fn drive(app: &Path, includes: &[PathBuf], memo: bool, seed: u64, frames: usize)
     // Garden panels observe every frame; a replayed scope must report the
     // same bindings a run would.
     ui.env.observations_mut().enable();
-    // `replay` against `replay-memo`: the same run with and without the memo.
-    ui.set_policy(RunPolicy::REPLAY.with_memo(memo));
+    ui.set_policy(policy);
     let scenario = Scenario::monkey(seed, frames, size);
     let mut records = Vec::with_capacity(frames);
     for frame in 0..frames {
@@ -300,24 +299,41 @@ fn first_difference(a: &str, b: &str) -> String {
     "no field differs".to_string()
 }
 
+/// `replay-memo` against `replay` and `replay-declared`: the same run with
+/// no memo, with the memo classifying natives from their declared effect
+/// rows, and with the memo classifying every native by inference around the
+/// call. Both memoized runs must reproduce the unmemoized frames, and they
+/// must replay the same number of scopes — a declaration that says less than
+/// the native does would show up as a stale frame, one that says more as a
+/// lost replay.
 #[test]
 fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
     let frames = 45;
     let mut hits_total = 0;
     for (app, includes) in corpus() {
         for seed in [1u64] {
-            let (full, _) = drive(&app, &includes, false, seed, frames);
-            let (memoized, hits) = drive(&app, &includes, true, seed, frames);
+            let (full, _) = drive(&app, &includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
+            let (declared, hits) = drive(&app, &includes, RunPolicy::REPLAY, seed, frames);
+            let (inferred, inferred_hits) =
+                drive(&app, &includes, RunPolicy::REPLAY.with_declared(false), seed, frames);
             assert_corpus_is_live(&app, &full);
             hits_total += hits;
-            for (i, (a, b)) in full.iter().zip(&memoized).enumerate() {
-                assert!(
-                    a == b,
-                    "{} seed {seed}: frame {i} differs under memoization: {}",
-                    app.display(),
-                    first_difference(a, b),
-                );
+            for (policy, memoized) in [("replay", &declared), ("replay-declared", &inferred)] {
+                for (i, (a, b)) in full.iter().zip(memoized).enumerate() {
+                    assert!(
+                        a == b,
+                        "{} seed {seed}: frame {i} differs under {policy}: {}",
+                        app.display(),
+                        first_difference(a, b),
+                    );
+                }
             }
+            assert_eq!(
+                hits,
+                inferred_hits,
+                "{}: declared rows and inference replayed different scope counts",
+                app.display()
+            );
         }
     }
     assert!(hits_total > 0, "no scope was ever replayed across the corpus");

@@ -38,11 +38,159 @@ pub enum NativeClass {
     AllowPending,
 }
 
+/// The external inputs a native can read, as a bitmask — one bit per class
+/// of host state that changes independently of the others. Declared at the
+/// leaf where the knowledge lives ([`NativeEffects::reads`]) and propagated
+/// interprocedurally by the reactive layers, so a scope, a block or a frame
+/// can be re-run only when the class it depends on actually moved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize)]
+pub struct InputClasses(pub u16);
+
+impl InputClasses {
+    /// Reads nothing outside the program's own state.
+    pub const NONE: InputClasses = InputClasses(0);
+    /// Pointer position and buttons.
+    pub const POINTER: InputClasses = InputClasses(1 << 0);
+    /// Key state and typed text.
+    pub const KEYBOARD: InputClasses = InputClasses(1 << 1);
+    /// Wall-clock or frame time.
+    pub const CLOCK: InputClasses = InputClasses(1 << 2);
+    /// Window or pane geometry.
+    pub const VIEWPORT: InputClasses = InputClasses(1 << 3);
+    /// Host-owned data the binding table does not cover (a data provider, a
+    /// query cache, an editor buffer) — the same thing `note_host_read` says
+    /// at runtime ([`PetalCxt::note_host_read`]).
+    pub const HOST_DATA: InputClasses = InputClasses(1 << 4);
+    /// The resource table: a `Pending` this native may answer differently
+    /// once the resource resolves.
+    pub const RESOURCES: InputClasses = InputClasses(1 << 5);
+    /// The per-run random stream (which the native also advances).
+    pub const RNG: InputClasses = InputClasses(1 << 6);
+    /// A host→script binding chosen by *argument* (`binding(sym)`), so the
+    /// class is not known at the leaf: whichever binding the symbol names.
+    pub const BINDINGS: InputClasses = InputClasses(1 << 7);
+
+    pub const fn union(self, other: InputClasses) -> InputClasses {
+        InputClasses(self.0 | other.0)
+    }
+
+    pub const fn contains(self, other: InputClasses) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl std::ops::BitOr for InputClasses {
+    type Output = InputClasses;
+    fn bitor(self, rhs: InputClasses) -> InputClasses {
+        self.union(rhs)
+    }
+}
+
+/// What a native does, declared once at registration
+/// ([`NativeFnTable::register_with`]) so the reactive layers — the frame
+/// gate, memoized scopes, dependency classes — can ask instead of inferring
+/// it from activity counters after the call.
+///
+/// A declaration is the *union over every path* through the native: a native
+/// that consults the resource table only when handed a `Pending` still
+/// declares [`RESOURCES`](InputClasses::RESOURCES). Under-declaring is the
+/// bug this row exists to prevent (a memoized scope that called the native
+/// would replay stale); over-declaring only costs a validation.
+///
+/// Nothing here says how much a native *costs*; scope-worthiness is a
+/// separate decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeEffects {
+    /// What this native reads, by input class. Empty = nothing external.
+    pub reads: InputClasses,
+    /// The result is a pure function of the arguments and `reads`, and the
+    /// call may be re-evaluated at validation time without observable
+    /// consequence (`hovered`, `mouse_x`, `time`). A probe is what gives a
+    /// memoized scope its early cutoff: an unchanged answer keeps the scope
+    /// valid even though the input moved.
+    pub probe: bool,
+    /// Pushes into an output buffer (a draw command, an event).
+    pub emits: bool,
+    /// Does something no replay can reproduce: prints, reseeds noise,
+    /// creates or resolves a resource, advances a counter, reaches through a
+    /// handle into host state, publishes a method.
+    pub effect: bool,
+    /// What to do with a `Pending` argument. The same policy
+    /// [`NativeFnTable::set_class`] sets on an undeclared native.
+    pub pending: NativeClass,
+}
+
+impl NativeEffects {
+    /// Reads nothing, emits nothing, does nothing a replay could not
+    /// reproduce: a pure function of its arguments. The row most natives
+    /// want; the rest start from it.
+    pub const PURE: NativeEffects = NativeEffects {
+        reads: InputClasses::NONE,
+        probe: false,
+        emits: false,
+        effect: false,
+        pending: NativeClass::Strict,
+    };
+
+    /// Something a replay cannot reproduce (`print`, `noise_seed`).
+    pub const EFFECT: NativeEffects = NativeEffects {
+        effect: true,
+        ..NativeEffects::PURE
+    };
+
+    /// Pushes into an output buffer, and no-ops on a `Pending` argument.
+    pub const EMITS: NativeEffects = NativeEffects {
+        emits: true,
+        pending: NativeClass::Effectful,
+        ..NativeEffects::PURE
+    };
+
+    /// A pure function of its arguments and the given input classes, safe to
+    /// re-evaluate at validation.
+    pub const fn probe(reads: InputClasses) -> NativeEffects {
+        NativeEffects {
+            reads,
+            probe: true,
+            ..NativeEffects::PURE
+        }
+    }
+
+    /// Reads the given classes but is not re-evaluable as a probe (its
+    /// answer is not a pure function of them, or re-running it would show).
+    pub const fn reads(reads: InputClasses) -> NativeEffects {
+        NativeEffects {
+            reads,
+            ..NativeEffects::PURE
+        }
+    }
+
+    /// This row with an effect.
+    pub const fn with_effect(self) -> NativeEffects {
+        NativeEffects {
+            effect: true,
+            ..self
+        }
+    }
+
+    /// This row with the given `Pending`-argument policy.
+    pub const fn with_pending(self, pending: NativeClass) -> NativeEffects {
+        NativeEffects { pending, ..self }
+    }
+}
+
 /// Entry in the native function table.
 struct NativeFnEntry {
     name: String,
     func: NativeFn,
     class: NativeClass,
+    /// The declared effect row, or `None` for a native registered through
+    /// [`NativeFnTable::register`], which the runtime classifies by
+    /// inference around each call instead.
+    effects: Option<NativeEffects>,
 }
 
 /// Registry of native functions, mapping IDs to names and function pointers.
@@ -114,6 +262,7 @@ impl NativeFnTable {
             name: name.to_string(),
             func,
             class: NativeClass::Strict,
+            effects: None,
         });
         // Last registration of a name wins, matching the scan this replaced:
         // it returned the *first* match, so a re-registration under an existing
@@ -124,11 +273,48 @@ impl NativeFnTable {
         id
     }
 
+    /// Register a native function together with its declared
+    /// [`NativeEffects`], returning its ID. The declaration is what the
+    /// reactive layers consult; a native registered through
+    /// [`register`](Self::register) instead is classified by inference around
+    /// each call (see [`effects`](Self::effects)).
+    pub fn register_with(
+        &mut self,
+        name: &str,
+        func: NativeFn,
+        effects: NativeEffects,
+    ) -> NativeFnId {
+        let id = self.register(name, func);
+        let entry = &mut self.entries[id.0 as usize];
+        entry.class = effects.pending;
+        entry.effects = Some(effects);
+        id
+    }
+
     /// Override the Pending-handling class of an already-registered native.
     /// Registration stays append-only (indices are stable); classification is
-    /// applied afterward by id.
+    /// applied afterward by id. On a declared native this also updates the
+    /// declaration's `pending` field, so the two never disagree.
     pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
-        self.entries[id.0 as usize].class = class;
+        let entry = &mut self.entries[id.0 as usize];
+        entry.class = class;
+        if let Some(e) = entry.effects.as_mut() {
+            e.pending = class;
+        }
+    }
+
+    /// The declared effect row of a native, or `None` if it was registered
+    /// without one and is classified by runtime inference.
+    pub fn effects(&self, id: NativeFnId) -> Option<NativeEffects> {
+        self.entries[id.0 as usize].effects
+    }
+
+    /// The registered natives, by id, that have no declared effect row.
+    pub fn undeclared(&self) -> Vec<NativeFnId> {
+        (0..self.entries.len())
+            .map(|i| NativeFnId(i as u32))
+            .filter(|id| self.effects(*id).is_none())
+            .collect()
     }
 
     /// The Pending-handling class of a native (defaults to `Strict`).

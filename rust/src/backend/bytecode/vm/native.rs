@@ -267,12 +267,28 @@ impl<'a> Vm<'a> {
         self.profile.record_native(nid.0);
         let func = self.native_fns.get_func(nid);
         let chain = self.emit_call_chain(origin);
-        let before = self.stack.run_deps.activity();
+        // A declared native says up front what it does, so the counters
+        // around the call are not consulted; an undeclared one is classified
+        // from what it reported doing between two snapshots.
+        let declared = if self.declared {
+            self.native_fns.effects(nid)
+        } else {
+            None
+        };
+        let before = if declared.is_none() {
+            Some(self.stack.run_deps.activity())
+        } else {
+            None
+        };
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = func(&mut cxt)?;
         let result = cxt.take_result(count);
         if self.memo && self.stack.memo.recording() {
-            self.memo_note_native(nid, args, result, before);
+            match (declared, before) {
+                (Some(effects), _) => self.memo_note_declared_native(nid, args, result, effects),
+                (None, Some(before)) => self.memo_note_native(nid, args, result, before),
+                (None, None) => unreachable!("an undeclared native is always snapshotted"),
+            }
         }
         Ok(result)
     }

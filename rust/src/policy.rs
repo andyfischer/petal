@@ -9,7 +9,14 @@
 //! - whether a host skips a frame the frame gate says would reproduce the last
 //!   one ([`Env::run_needed`](crate::env::Env::run_needed)).
 //!
-//! [`RunPolicy`] carries all three, and the combinations anyone actually asks
+//! A fourth switch, `declared`, picks how the memo classifies a native call:
+//! from the effect row the native declared at registration
+//! ([`NativeEffects`](crate::native_fn::NativeEffects)), or — with `-declared`
+//! — by inference from the activity counters around every call, the way an
+//! undeclared native is always classified. The two must agree, which is what
+//! `replay-declared` against `replay` checks.
+//!
+//! [`RunPolicy`] carries all of them, and the combinations anyone actually asks
 //! for have names:
 //!
 //! | Name       | Optimizer | Memo | Gate | For |
@@ -47,6 +54,11 @@ pub struct RunPolicy {
     /// Let a host frame driver skip a frame the frame gate says would
     /// reproduce the last one.
     pub gate: bool,
+    /// Classify a native call from its declared
+    /// [`NativeEffects`](crate::native_fn::NativeEffects) where it has one.
+    /// Off, every native is classified by inference from the activity
+    /// counters around the call — the oracle the declarations must match.
+    pub declared: bool,
 }
 
 /// The names [`RunPolicy::parse`] accepts, in the order `name()` prefers them.
@@ -59,25 +71,43 @@ const NAMED: [(&str, RunPolicy); 4] = [
 
 impl RunPolicy {
     /// Everything on: what a shipped host runs, and the default.
-    pub const FAST: RunPolicy = RunPolicy { opts: OptFlags::default_on(), memo: true, gate: true };
+    pub const FAST: RunPolicy = RunPolicy {
+        opts: OptFlags::default_on(),
+        memo: true,
+        gate: true,
+        declared: true,
+    };
 
     /// Everything off: every frame runs, every call runs, and the bytecode is
     /// the clone-and-alloc lowering. The oracle the others must reproduce.
-    pub const BASELINE: RunPolicy = RunPolicy { opts: OptFlags::none(), memo: false, gate: false };
+    pub const BASELINE: RunPolicy = RunPolicy {
+        opts: OptFlags::none(),
+        memo: false,
+        gate: false,
+        declared: true,
+    };
 
     /// For tools that read what every instruction computed (`explain`,
     /// provenance, direct manipulation, observation): the optimizer stays on
     /// but keeps every instruction the trace would record, and nothing is
     /// skipped or replayed.
     pub const EXPLAIN: RunPolicy = RunPolicy {
-        opts: OptFlags { preserve_observations: true, preserve_trace: true, ..OptFlags::default_on() },
+        opts: OptFlags {
+            preserve_observations: true,
+            preserve_trace: true,
+            ..OptFlags::default_on()
+        },
         memo: false,
         gate: false,
+        declared: true,
     };
 
     /// Every frame runs, and memoized scopes replay: the memo exercised on
     /// every frame rather than only on the frames the gate lets through.
-    pub const REPLAY: RunPolicy = RunPolicy { gate: false, ..RunPolicy::FAST };
+    pub const REPLAY: RunPolicy = RunPolicy {
+        gate: false,
+        ..RunPolicy::FAST
+    };
 
     /// This policy with the optimizer set to `opts`.
     pub const fn with_opts(self, opts: OptFlags) -> RunPolicy {
@@ -94,9 +124,16 @@ impl RunPolicy {
         RunPolicy { gate, ..self }
     }
 
+    /// This policy classifying natives from their declarations (`true`) or
+    /// by runtime inference for every native (`false`).
+    pub const fn with_declared(self, declared: bool) -> RunPolicy {
+        RunPolicy { declared, ..self }
+    }
+
     /// Parse a policy name with optional modifiers: `fast`, `baseline`,
     /// `explain`, `replay`, each optionally followed by any number of
-    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt`.
+    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt` /
+    /// `+declared` / `-declared`.
     pub fn parse(spec: &str) -> Result<RunPolicy, String> {
         let spec = spec.trim();
         let split = spec.find(['+', '-']).unwrap_or(spec.len());
@@ -113,13 +150,18 @@ impl RunPolicy {
             match &tail[..end] {
                 "gate" => policy.gate = on,
                 "memo" => policy.memo = on,
+                "declared" => policy.declared = on,
                 "opt" => {
-                    policy.opts = if on { OptFlags::default_on() } else { OptFlags::none() }
-                        .preserving(policy.opts)
+                    policy.opts = if on {
+                        OptFlags::default_on()
+                    } else {
+                        OptFlags::none()
+                    }
+                    .preserving(policy.opts)
                 }
                 other => {
                     return Err(format!(
-                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo or opt)"
+                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt or declared)"
                     ));
                 }
             }
@@ -139,9 +181,17 @@ impl RunPolicy {
         let (base, from) = NAMED
             .iter()
             .filter(|(_, p)| p.opts == self.opts)
-            .min_by_key(|(_, p)| (p.memo != self.memo) as u8 + (p.gate != self.gate) as u8)?;
+            .min_by_key(|(_, p)| {
+                (p.memo != self.memo) as u8
+                    + (p.gate != self.gate) as u8
+                    + (p.declared != self.declared) as u8
+            })?;
         let mut name = (*base).to_string();
-        for (what, want, have) in [("memo", self.memo, from.memo), ("gate", self.gate, from.gate)] {
+        for (what, want, have) in [
+            ("memo", self.memo, from.memo),
+            ("gate", self.gate, from.gate),
+            ("declared", self.declared, from.declared),
+        ] {
             if want != have {
                 name.push(if want { '+' } else { '-' });
                 name.push_str(what);
@@ -202,7 +252,10 @@ mod tests {
             RunPolicy::BASELINE.with_gate(true).with_memo(true)
         );
         assert_eq!(RunPolicy::parse("fast-opt").unwrap().opts, OptFlags::none());
-        assert_eq!(RunPolicy::parse("baseline+opt").unwrap().opts, OptFlags::default_on());
+        assert_eq!(
+            RunPolicy::parse("baseline+opt").unwrap().opts,
+            OptFlags::default_on()
+        );
     }
 
     #[test]
@@ -214,15 +267,40 @@ mod tests {
 
     #[test]
     fn a_modified_policy_names_itself_by_its_nearest_name() {
-        assert_eq!(RunPolicy::FAST.with_memo(false).name().as_deref(), Some("fast-memo"));
-        assert_eq!(RunPolicy::BASELINE.with_gate(true).name().as_deref(), Some("baseline+gate"));
-        let route_a = OptFlags { in_place_straight_line: true, ..OptFlags::none() };
+        assert_eq!(
+            RunPolicy::FAST.with_memo(false).name().as_deref(),
+            Some("fast-memo")
+        );
+        assert_eq!(
+            RunPolicy::BASELINE.with_gate(true).name().as_deref(),
+            Some("baseline+gate")
+        );
+        let route_a = OptFlags {
+            in_place_straight_line: true,
+            ..OptFlags::none()
+        };
         assert_eq!(RunPolicy::BASELINE.with_opts(route_a).name(), None);
     }
 
     #[test]
     fn bad_specs_say_what_was_expected() {
-        assert!(RunPolicy::parse("quick").unwrap_err().contains("fast, baseline"));
-        assert!(RunPolicy::parse("fast+speed").unwrap_err().contains("gate, memo or opt"));
+        assert!(
+            RunPolicy::parse("quick")
+                .unwrap_err()
+                .contains("fast, baseline")
+        );
+        assert!(
+            RunPolicy::parse("fast+speed")
+                .unwrap_err()
+                .contains("gate, memo, opt or declared")
+        );
+    }
+
+    #[test]
+    fn the_declared_modifier_switches_native_classification() {
+        let inferred = RunPolicy::parse("replay-declared").unwrap();
+        assert_eq!(inferred, RunPolicy::REPLAY.with_declared(false));
+        assert_eq!(inferred.name().as_deref(), Some("replay-declared"));
+        assert!(RunPolicy::FAST.declared && RunPolicy::BASELINE.declared);
     }
 }

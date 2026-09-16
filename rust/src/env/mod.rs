@@ -6,15 +6,15 @@
 use std::collections::HashMap;
 
 use crate::backend::OptFlags;
-use crate::policy::RunPolicy;
 use crate::backend::bytecode::BytecodeProgram;
 use crate::compiler::Compiler;
 use crate::execution_context::{ContextKey, ExecutionContext};
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
 use crate::module::ModuleRegistry;
-use crate::native_fn::{NativeClass, NativeFn, NativeFnId, NativeFnTable};
+use crate::native_fn::{NativeClass, NativeEffects, NativeFn, NativeFnId, NativeFnTable};
 use crate::observe::Observations;
+use crate::policy::RunPolicy;
 use crate::profile::VmProfile;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{RuntimeStateKey, Stack, StackKey};
@@ -672,6 +672,39 @@ impl Env {
     /// Must be called before `load_program`.
     pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
         self.native_fns.register(name, func)
+    }
+
+    /// Register a native function together with its declared
+    /// [`NativeEffects`]: what it reads, whether it emits, whether it does
+    /// something a replay could not reproduce, and its `Pending` policy. The
+    /// reactive layers take the declaration at its word and skip the per-call
+    /// activity snapshot; a native registered with
+    /// [`register_native`](Self::register_native) is classified by inference
+    /// around each call instead. Prefer this: an undeclared native that reaches
+    /// host state without calling `note_host_read`/`note_effect` looks pure,
+    /// and every memoized scope that calls it replays stale.
+    pub fn register_native_with(
+        &mut self,
+        name: &str,
+        func: NativeFn,
+        effects: NativeEffects,
+    ) -> NativeFnId {
+        self.native_fns.register_with(name, func, effects)
+    }
+
+    /// The declared effect row of a native, or `None` if it was registered
+    /// without one.
+    pub fn native_effects(&self, id: NativeFnId) -> Option<NativeEffects> {
+        self.native_fns.effects(id)
+    }
+
+    /// The names of every registered native without a declared effect row.
+    pub fn undeclared_natives(&self) -> Vec<String> {
+        self.native_fns
+            .undeclared()
+            .into_iter()
+            .map(|id| self.native_fns.get_name(id).to_string())
+            .collect()
     }
 
     /// Override the [`NativeClass`] of an already-registered native (by the id

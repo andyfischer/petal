@@ -12,7 +12,7 @@
 // Three registration sources are parsed:
 //
 //   1. Core builtins — `rust/src/builtins/mod.rs`'s `register_builtins()`,
-//      which is the canonical, append-only list of `table.register("name", …)`
+//      which is the canonical, append-only list of `table.register_with("name", …)`
 //      calls. Each entry points at a `native_*` fn in a topic submodule
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
@@ -263,12 +263,17 @@ interface Registration {
   aliasComment: string | null;
 }
 
-/** Parse `table.register("name", module::native_fn);` lines, in order. */
+/**
+ * Parse `table.register_with("name", module::native_fn, <effects>);` lines, in
+ * order (the older `table.register("name", fn);` form is accepted too). The
+ * effect row is skipped: it says what the native does at runtime, not what it
+ * is for.
+ */
 function parseCoreRegistrations(modSource: string): Registration[] {
   const block = extractBlock(modSource, /pub fn register_builtins\s*\(/);
   const out: Registration[] = [];
   const re =
-    /(?:let\s+\w+\s*=\s*)?table\.register\(\s*"([^"]+)"\s*,\s*(?:(\w+)::)?(\w+)\s*\)\s*;?\s*(?:\/\/\s*(.*))?/g;
+    /(?:let\s+\w+\s*=\s*)?table\.register(?:_with)?\(\s*"([^"]+)"\s*,\s*(?:(\w+)::)?(\w+)\s*(?:,[^;]*)?\)\s*;?\s*(?:\/\/\s*(.*))?/g;
   for (let m; (m = re.exec(block)); ) {
     const [, name, module, fnName, comment] = m;
     out.push({
@@ -301,7 +306,7 @@ function parseClassRegistrations(): Registration[] {
   const src = moduleSource("classes");
   const block = extractBlock(src, /pub\(super\) fn register\s*\(/);
   const out: Registration[] = [];
-  const re = /table\.register\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/g;
+  const re = /table\.register(?:_with)?\(\s*"([^"]+)"\s*,\s*(\w+)\s*(?:,[^;]*)?\)/g;
   for (let m; (m = re.exec(block)); ) {
     out.push({ name: m[1], module: "classes", fnName: m[2], aliasComment: null });
   }

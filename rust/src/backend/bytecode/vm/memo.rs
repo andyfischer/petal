@@ -16,6 +16,7 @@ use crate::memo::{
     OpenScope, OutputSegment, PreviousRecord, ScopePath, ScopeValues, container_args_fingerprint,
     holds_local_cell,
 };
+use crate::native_fn::{InputClasses, NativeEffects};
 use crate::program::ClosureId;
 use crate::run_deps::Activity;
 use crate::stack::RuntimeStateKey;
@@ -167,29 +168,81 @@ impl<'a> Vm<'a> {
             }
         }
         if after.binding_reads != before.binding_reads {
-            if after.emits != before.emits
-                || args.iter().any(|a| {
-                    matches!(
-                        a,
-                        Value::Closure(_)
-                            | Value::OverloadSet(_)
-                            | Value::Pending(_)
-                            | Value::Cell(_)
-                    )
-                })
-            {
-                self.stack.memo.note_effect();
-                return;
-            }
-            let args_fp = container_args_fingerprint(args, self.heap);
+            self.memo_note_probe(nid, args, result, after.emits != before.emits);
+        }
+    }
+
+    /// A declared native call finished: the same classification as
+    /// [`memo_note_native`](Self::memo_note_native), taken from the row the
+    /// native registered with instead of from the counters. The two must
+    /// agree for every native — `replay-declared` against `replay` in the
+    /// memo oracle is what checks it.
+    ///
+    /// The mapping, class by class: an `effect` (or a `Pending` result) makes
+    /// the scope unrecordable; `HOST_DATA` and `RESOURCES` reads become the
+    /// deps a `note_host_read` / resource-table read would have recorded; any
+    /// other read is a probe if the row says so and the call is re-evaluable,
+    /// else an effect. `RNG` records nothing here — the scope compares the
+    /// RNG state at entry and exit itself.
+    pub(super) fn memo_note_declared_native(
+        &mut self,
+        nid: NativeFnId,
+        args: &[Value],
+        result: Value,
+        effects: NativeEffects,
+    ) {
+        if effects.effect || matches!(result, Value::Pending(_)) {
+            self.stack.memo.note_effect();
+            return;
+        }
+        if effects.reads.contains(InputClasses::HOST_DATA) {
             if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::Probe {
-                    native: nid,
-                    args: args.into(),
-                    args_fp,
-                    result,
-                });
+                s.deps.push(Dep::HostRead);
             }
+        }
+        if effects.reads.contains(InputClasses::RESOURCES) {
+            if let Some(s) = self.stack.memo.innermost() {
+                s.deps.push(Dep::ResourcesRead);
+            }
+        }
+        let probed = InputClasses(
+            effects.reads.0
+                & !(InputClasses::HOST_DATA.0 | InputClasses::RESOURCES.0 | InputClasses::RNG.0),
+        );
+        if !probed.is_empty() {
+            if effects.probe {
+                self.memo_note_probe(nid, args, result, effects.emits);
+            } else {
+                self.stack.memo.note_effect();
+            }
+        }
+    }
+
+    /// A native read an input: record the call as a probe — the native, its
+    /// arguments and its answer — unless it also emitted or took an argument
+    /// a fingerprint cannot stand for (a closure, a cell, a Pending), in
+    /// which case it cannot be re-evaluated at validation and the scope is
+    /// given up as effectful.
+    fn memo_note_probe(&mut self, nid: NativeFnId, args: &[Value], result: Value, emitted: bool) {
+        if emitted
+            || args.iter().any(|a| {
+                matches!(
+                    a,
+                    Value::Closure(_) | Value::OverloadSet(_) | Value::Pending(_) | Value::Cell(_)
+                )
+            })
+        {
+            self.stack.memo.note_effect();
+            return;
+        }
+        let args_fp = container_args_fingerprint(args, self.heap);
+        if let Some(s) = self.stack.memo.innermost() {
+            s.deps.push(Dep::Probe {
+                native: nid,
+                args: args.into(),
+                args_fp,
+                result,
+            });
         }
     }
 

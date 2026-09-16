@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 
 use crate::backend::ops::arithmetic;
 use crate::classes::{RECT_FIELDS, qualified_method_name};
-use crate::native_fn::{NativeFnTable, PetalCxt};
+use crate::native_fn::{NativeEffects, NativeFnTable, PetalCxt};
 use crate::program::TermOp;
 use crate::value::Value;
 
@@ -220,7 +220,7 @@ fn native_rect_offset(state: &mut PetalCxt) -> Result<u32, String> {
 /// [`super::register_builtins`]; append-only, like every other registration
 /// there (phantom term indices are positional).
 pub(super) fn register(table: &mut NativeFnTable) {
-    table.register("Rect", native_rect);
+    table.register_with("Rect", native_rect, NativeEffects::PURE);
     for (name, func) in [
         (
             "center_x",
@@ -232,7 +232,11 @@ pub(super) fn register(table: &mut NativeFnTable) {
         ("inset", native_rect_inset),
         ("offset", native_rect_offset),
     ] {
-        let id = table.register(&qualified_method_name("Rect", name), func);
+        let id = table.register_with(
+            &qualified_method_name("Rect", name),
+            func,
+            NativeEffects::PURE,
+        );
         table.register_class_method("Rect", name, id);
     }
 }

@@ -130,6 +130,11 @@ pub struct Vm<'a> {
     /// [`crate::memo`] and the `memo` submodule). Copied from
     /// `Env::memo_enabled` when the `Vm` is built.
     pub memo: bool,
+    /// Whether a native call is classified for the memo from its declared
+    /// [`NativeEffects`](crate::native_fn::NativeEffects) where it has one
+    /// (`RunPolicy::declared`). Off, every native goes through the activity
+    /// snapshot around the call.
+    pub declared: bool,
 }
 
 impl<'a> Vm<'a> {

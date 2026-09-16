@@ -62,11 +62,26 @@ reproduce is *effectful*, and so is every scope enclosing it: it printed
 reseeded noise, consumed randomness, called a handle method, returned or
 stored a `Pending`, or let a `var` cell it created escape through its result
 or a write (a closure over a local `var`, handed out, would be replayed with
-the same box still holding last frame's increments). A native that reaches
-host state some other way declares itself with `PetalCxt::note_effect`, the
-way one that reads host data declares itself with `note_host_read`. A scope
-with more than `MAX_SCOPE_DEPS` entries is treated the same way: validating
-it would cost about what running it does.
+the same box still holding last frame's increments). A scope with more than
+`MAX_SCOPE_DEPS` entries is treated the same way: validating it would cost
+about what running it does.
+
+**How a native is classified.** A native registered with an effect row
+(`Env::register_native_with`, `NativeEffects` in `rust/src/native_fn.rs`)
+is classified from the row: `effect` makes the scope effectful, `HOST_DATA`
+and `RESOURCES` reads become the host-data / resource flags, any other read
+is a probe when the row says the call is re-evaluable. Every core native is
+declared, and a test keeps it so. A native registered without a row
+(`Env::register_native`) is classified by inference instead: the VM snapshots
+the run's activity counters around the call and reads off what it reported
+doing — `PetalCxt::print`, `push_output`, `binding`, `note_host_read`,
+`note_effect`. That is the path every host native still takes, and it is
+only as good as the `note_*` calls the native remembers to make. The two
+must agree, and the corpus oracle in `petal-ui/tests/memo.rs` checks it:
+`replay` (rows where declared) against `replay-declared` (inference for
+every native) must reproduce the same frames with the same replay counts.
+See [the declarative-effect task](../tasks/declarative-effect-refactoring.md)
+for the migration of the host natives.
 
 **What is not worth recording.** A scope that recorded nothing and retired
 fewer than `MIN_SCOPE_INSTS` instructions is folded into its parent, whose

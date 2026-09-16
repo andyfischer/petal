@@ -28,7 +28,9 @@
 //! are memoized (see docs/dev/memo-scopes.md). Every policy must produce the
 //! same trace, so a differential is two runs with two names:
 //! `--policy baseline` (nothing skipped, replayed or optimized) against
-//! `--policy fast`, or `fast-memo` / `replay` to isolate the gate / the memo.
+//! `--policy fast`, or `fast-memo` / `replay` to isolate the gate / the memo;
+//! `replay-declared` makes the memo classify every native by inference rather
+//! than its declared effect row, which checks the declarations themselves.
 //! `--no-gate` and `--no-memo` switch one layer off in whichever policy is in
 //! effect. `--gate-stats` reports frames run vs skipped on stderr, and
 //! `--memo-stats` the memo's counters.

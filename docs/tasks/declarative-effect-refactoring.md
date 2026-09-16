@@ -3,8 +3,10 @@
 Status: **in progress**, 2026-09-16. Sequencing steps 1 (the oracle over Garden
 and worlds-fair) and 2 (a named `RunPolicy`) are done — see
 [What the oracle found](#what-the-oracle-found) and
-[RunPolicy](#runpolicy-sequencing-step-2). The task itself (steps 1–5 of
-[Migration](#migration-in-five-steps-that-each-stand-alone)) is next.
+[RunPolicy](#runpolicy-sequencing-step-2). Steps 1–3 of
+[Migration](#migration-in-five-steps-that-each-stand-alone) are done — see
+[Steps 1–3 as landed](#steps-13-as-landed). Steps 4 (`--effect-audit`) and
+5 (declare the ecosystem, drop the fallback) are next.
 
 Prerequisite for P2 of [the reactive rendering plan](../dev/reactive-rendering-plan.md).
 See [Sequencing](#sequencing) for how it interleaves with the rest of that plan.
@@ -200,6 +202,55 @@ cd petal-ui && cargo run --release --example bench_panel -- \
 
 The real payoff is not measured here; it is that P2 becomes buildable.
 
+## Steps 1–3 as landed
+
+Done 2026-09-16, against the whole in-tree corpus.
+
+- **The row** is `NativeEffects { reads: InputClasses, probe, emits, effect,
+  pending }` in `rust/src/native_fn.rs`, as sketched above with two
+  additions. `pending` is the existing `NativeClass`, unchanged — the
+  Pending-argument policy is now one field of the row rather than a separate
+  classification that looked like one. `InputClasses` gained `BINDINGS`
+  beside the seven planned classes: the core `binding(sym)` reads whichever
+  binding its argument names, so the class is not knowable at the leaf. P2
+  will have to resolve it per call site from the symbol.
+- **Registration.** `NativeFnTable::register_with` /
+  `Env::register_native_with` take the row; `register` / `register_native`
+  still exist and leave the native undeclared (`effects(id)` is `None`),
+  which is what every host native is today. `set_class` on a declared native
+  updates the row's `pending`, so the two cannot disagree.
+- **The core is declared** — all 112 natives, in `register_builtins`, and
+  `every_core_native_is_declared` fails the build of any future `register`
+  there. The rows are the union over every path: the seven pending
+  inspectors (`is_loading`, `or_else`, …) read the resource table only when
+  handed a `Pending` and declare `RESOURCES` regardless. `noise` is pure (the
+  seed is program state, set through `noise_seed`'s effect); the RNG builtins
+  declare `RNG` and no effect, since the scope compares RNG state at entry
+  and exit itself. The higher-order placeholders (`map`, `sort_by`, …) are
+  pure rows the VM never consults — it intercepts them and records what the
+  closure does.
+- **The memo consumes the row.** `call_native_fn` snapshots the activity
+  counters only for an undeclared native; a declared one goes through
+  `memo_note_declared_native`, which maps the row onto exactly the deps the
+  inferred path would have recorded (`effect` → unrecordable, `HOST_DATA` →
+  `Dep::HostRead`, `RESOURCES` → `Dep::ResourcesRead`, any other read → a
+  probe, or an effect if the row is not a probe or the call also emitted).
+  A `Pending` *result* still makes the scope effectful on both paths — that
+  is a fact about the answer, not the native.
+- **Both paths are in the oracle.** `RunPolicy` has a fourth switch,
+  `declared` (on in every named policy; `-declared` turns it off), which
+  makes the memo classify every native by inference. The corpus test in
+  `petal-ui/tests/memo.rs` now drives `replay-memo`, `replay` and
+  `replay-declared` and requires the same frames *and the same replay
+  counts* from the two memoized runs — so a row that says less than the
+  native does shows as a stale frame, and one that says more as a lost
+  replay. Across the 36 in-tree apps both hold. `oracle-external.ts` runs
+  the same variant against worlds-fair when that half of step 1 lands.
+
+What did not change: `NativeClass` is still the type hosts set through
+`set_native_class`, and the per-call `activity()` snapshot is still paid for
+every undeclared native — which is every host native until step 5.
+
 ## What the oracle found
 
 Sequencing step 1, done 2026-09-16. The gate and memo differentials now cover
@@ -335,7 +386,7 @@ layer (**B**) and a named run policy (**C**) — identified in the same review.
 |---|---|---|
 | 1 | ~~**Run the gate/memo oracle over Garden and worlds-fair**~~ **done** | Outstanding correctness debt on *shipped* layers. Do it before adding a third. It also produces the list of undeclared host natives that step 4 above needs. Both differentials pass; five undeclared natives found and fixed; see [What the oracle found](#what-the-oracle-found). |
 | 2 | ~~**C — a named `RunPolicy` in place of `OptFlags`**~~ **done** | Small, and it is a tool for everything after it: `fast` / `explain` / `baseline` / `replay` as named modes makes the differential oracle a one-word argument instead of an env var plus a comment. Worth having *before* the work that leans on it, not after. |
-| 3 | **A — this task, steps 1–3** (next) ∥ **P1's top-level body and loop bodies** | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
+| 3 | ~~**A — this task, steps 1–3**~~ **done** ∥ **P1's top-level body and loop bodies** (next) | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
 | 4 | **A steps 4–5** ∥ **E — a shared host frame driver** | The ecosystem migration is mostly other repos and can proceed at its own pace. E consolidates the gate → run → retain → invalidate loop that five hosts hand-wire, so P0's remaining work lands once instead of five times. |
 | 5 | **P2 — dependency classes, landing B with it** | P2 is the first consumer of the declared `reads` classes. Land the shared validity layer *as part of* P2 rather than as a standalone refactor first: with the gate and the memo it has two clients and the abstraction is speculative; with P2's block granularity it has three and pays for itself. |
 | 6 | **P0's segmented output and damage rectangles** | Sits on E. Also benefits from P2's block guards, which is what gives a segment a stable identity. |

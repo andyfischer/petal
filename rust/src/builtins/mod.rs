@@ -8,7 +8,7 @@
 //! serialized programs would drift if this list were reordered. Don't
 //! reorder, only append.
 
-use crate::native_fn::{NativeClass, NativeFnTable, PetalCxt};
+use crate::native_fn::{InputClasses, NativeClass, NativeEffects, NativeFnTable, PetalCxt};
 
 mod autodiff;
 mod classes;
@@ -123,153 +123,239 @@ pub(super) fn require_args(state: &PetalCxt, n: usize, name: &str) -> Result<(),
     Ok(())
 }
 
+/// The row of the pending-inspection builtins (`is_loading`, `or_else`, …):
+/// they read the resource table to answer, and they must see a `Pending`
+/// argument rather than absorb it.
+const INSPECTS_PENDING: NativeEffects =
+    NativeEffects::reads(InputClasses::RESOURCES).with_pending(NativeClass::AllowPending);
+
 /// Register all built-in functions into the native function table.
 /// Must be called once at startup before any programs are loaded.
+///
+/// Every core native is registered with its [`NativeEffects`] row — what it
+/// reads, whether it emits, whether it does something a replay could not
+/// reproduce — and `every_core_native_is_declared` below keeps it that way.
+/// The row is the union over every path through the native: the pending
+/// inspectors read the resource table only when handed a `Pending`, and
+/// declare `RESOURCES` regardless. `noise` reads the per-run noise seed,
+/// which is program state set through `noise_seed`'s effect, not an external
+/// input, so it is pure; the RNG builtins read (and advance) the random
+/// stream, which a memoized scope compares at entry and exit itself. The
+/// higher-order builtins (`map`, `sort_by`, …) are placeholders the VM
+/// intercepts — what they do is whatever the closure they run does, and the
+/// VM records that directly.
 pub fn register_builtins(table: &mut NativeFnTable) {
     // Order matters — these must be registered in the same order as the old
     // BuiltinTable so that phantom term indices stay consistent.
-    let print_id = table.register("print", io::native_print);
-    table.register("range", collections::native_range);
-    table.register("len", collections::native_len);
-    table.register("push", collections::native_push);
-    table.register("str", io::native_str);
-    table.register("abs", math::native_abs);
-    table.register("sqrt", math::native_sqrt);
-    table.register("floor", math::native_floor);
-    table.register("ceil", math::native_ceil);
-    table.register("float", math::native_float);
-    table.register("int", math::native_int);
-    table.register("random", math::native_random);
-    table.register("type", io::native_type);
-    table.register("append", collections::native_append);
-    table.register("pop", collections::native_pop);
-    table.register("keys", collections::native_keys);
-    table.register("values", collections::native_values);
-    table.register("contains", collections::native_contains);
-    table.register("min", math::native_min);
-    table.register("max", math::native_max);
-    table.register("round", math::native_round);
-    table.register("dual", autodiff::native_dual);
-    table.register("value_of", autodiff::native_value_of);
-    table.register("deriv_of", autodiff::native_deriv_of);
-    table.register("sort", collections::native_sort);
-    table.register("reverse", collections::native_reverse);
-    table.register("join", collections::native_join);
-    table.register("split", collections::native_split);
-    table.register("upper", collections::native_upper);
-    table.register("lower", collections::native_lower);
-    table.register("enumerate", collections::native_enumerate);
-    table.register("zip", collections::native_zip);
-    table.register("slice", collections::native_slice);
-    table.register("flat", collections::native_flat);
-    table.register("includes", collections::native_contains); // JS-style alias for contains
-    table.register("sin", math::native_sin);
-    table.register("cos", math::native_cos);
-    table.register("tan", math::native_tan);
-    table.register("atan2", math::native_atan2);
-    table.register("pi", math::native_pi);
+    table.register_with(
+        "print",
+        io::native_print,
+        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+    );
+    table.register_with("range", collections::native_range, NativeEffects::PURE);
+    table.register_with("len", collections::native_len, NativeEffects::PURE);
+    table.register_with("push", collections::native_push, NativeEffects::PURE);
+    table.register_with("str", io::native_str, NativeEffects::PURE);
+    table.register_with("abs", math::native_abs, NativeEffects::PURE);
+    table.register_with("sqrt", math::native_sqrt, NativeEffects::PURE);
+    table.register_with("floor", math::native_floor, NativeEffects::PURE);
+    table.register_with("ceil", math::native_ceil, NativeEffects::PURE);
+    table.register_with("float", math::native_float, NativeEffects::PURE);
+    table.register_with("int", math::native_int, NativeEffects::PURE);
+    table.register_with(
+        "random",
+        math::native_random,
+        NativeEffects::reads(InputClasses::RNG),
+    );
+    table.register_with("type", io::native_type, NativeEffects::PURE);
+    table.register_with("append", collections::native_append, NativeEffects::PURE);
+    table.register_with("pop", collections::native_pop, NativeEffects::PURE);
+    table.register_with("keys", collections::native_keys, NativeEffects::PURE);
+    table.register_with("values", collections::native_values, NativeEffects::PURE);
+    table.register_with(
+        "contains",
+        collections::native_contains,
+        NativeEffects::PURE,
+    );
+    table.register_with("min", math::native_min, NativeEffects::PURE);
+    table.register_with("max", math::native_max, NativeEffects::PURE);
+    table.register_with("round", math::native_round, NativeEffects::PURE);
+    table.register_with("dual", autodiff::native_dual, NativeEffects::PURE);
+    table.register_with("value_of", autodiff::native_value_of, NativeEffects::PURE);
+    table.register_with("deriv_of", autodiff::native_deriv_of, NativeEffects::PURE);
+    table.register_with("sort", collections::native_sort, NativeEffects::PURE);
+    table.register_with("reverse", collections::native_reverse, NativeEffects::PURE);
+    table.register_with("join", collections::native_join, NativeEffects::PURE);
+    table.register_with("split", collections::native_split, NativeEffects::PURE);
+    table.register_with("upper", collections::native_upper, NativeEffects::PURE);
+    table.register_with("lower", collections::native_lower, NativeEffects::PURE);
+    table.register_with(
+        "enumerate",
+        collections::native_enumerate,
+        NativeEffects::PURE,
+    );
+    table.register_with("zip", collections::native_zip, NativeEffects::PURE);
+    table.register_with("slice", collections::native_slice, NativeEffects::PURE);
+    table.register_with("flat", collections::native_flat, NativeEffects::PURE);
+    table.register_with(
+        "includes",
+        collections::native_contains,
+        NativeEffects::PURE,
+    ); // JS-style alias for contains
+    table.register_with("sin", math::native_sin, NativeEffects::PURE);
+    table.register_with("cos", math::native_cos, NativeEffects::PURE);
+    table.register_with("tan", math::native_tan, NativeEffects::PURE);
+    table.register_with("atan2", math::native_atan2, NativeEffects::PURE);
+    table.register_with("pi", math::native_pi, NativeEffects::PURE);
 
     // --- Creative coding math builtins ---
-    table.register("clamp", creative_coding::native_clamp);
-    table.register("lerp", creative_coding::native_lerp);
-    table.register("map_range", creative_coding::native_map_range);
-    table.register("distance", creative_coding::native_distance);
-    table.register("mag", creative_coding::native_mag);
-    table.register("pow", creative_coding::native_pow);
-    table.register("sign", creative_coding::native_sign);
-    table.register("fract", creative_coding::native_fract);
-    table.register("smoothstep", creative_coding::native_smoothstep);
-    table.register("radians", creative_coding::native_radians);
-    table.register("degrees", creative_coding::native_degrees);
-    table.register("exp", creative_coding::native_exp);
-    table.register("log", creative_coding::native_log);
+    table.register_with("clamp", creative_coding::native_clamp, NativeEffects::PURE);
+    table.register_with("lerp", creative_coding::native_lerp, NativeEffects::PURE);
+    table.register_with(
+        "map_range",
+        creative_coding::native_map_range,
+        NativeEffects::PURE,
+    );
+    table.register_with(
+        "distance",
+        creative_coding::native_distance,
+        NativeEffects::PURE,
+    );
+    table.register_with("mag", creative_coding::native_mag, NativeEffects::PURE);
+    table.register_with("pow", creative_coding::native_pow, NativeEffects::PURE);
+    table.register_with("sign", creative_coding::native_sign, NativeEffects::PURE);
+    table.register_with("fract", creative_coding::native_fract, NativeEffects::PURE);
+    table.register_with(
+        "smoothstep",
+        creative_coding::native_smoothstep,
+        NativeEffects::PURE,
+    );
+    table.register_with(
+        "radians",
+        creative_coding::native_radians,
+        NativeEffects::PURE,
+    );
+    table.register_with(
+        "degrees",
+        creative_coding::native_degrees,
+        NativeEffects::PURE,
+    );
+    table.register_with("exp", creative_coding::native_exp, NativeEffects::PURE);
+    table.register_with("log", creative_coding::native_log, NativeEffects::PURE);
 
     // --- Noise ---
-    table.register("noise", noise::native_noise);
-    table.register("noise_seed", noise::native_noise_seed);
+    table.register_with("noise", noise::native_noise, NativeEffects::PURE);
+    table.register_with(
+        "noise_seed",
+        noise::native_noise_seed,
+        NativeEffects::EFFECT,
+    );
 
     // --- Randomness ---
-    table.register("random_int", creative_coding::native_random_int);
-    table.register("choose", creative_coding::native_choose);
+    table.register_with(
+        "random_int",
+        creative_coding::native_random_int,
+        NativeEffects::reads(InputClasses::RNG),
+    );
+    table.register_with(
+        "choose",
+        creative_coding::native_choose,
+        NativeEffects::reads(InputClasses::RNG),
+    );
 
     // --- Color ---
-    table.register("hsv", color::native_hsv);
-    table.register("hsl", color::native_hsl);
-    table.register("color_lerp", color::native_color_lerp);
+    table.register_with("hsv", color::native_hsv, NativeEffects::PURE);
+    table.register_with("hsl", color::native_hsl, NativeEffects::PURE);
+    table.register_with("color_lerp", color::native_color_lerp, NativeEffects::PURE);
 
     // --- Vec2 ---
-    table.register("vec2", vec2::native_vec2);
-    table.register("normalize", vec2::native_normalize);
-    table.register("dot", vec2::native_dot);
-    table.register("limit", vec2::native_limit);
+    table.register_with("vec2", vec2::native_vec2, NativeEffects::PURE);
+    table.register_with("normalize", vec2::native_normalize, NativeEffects::PURE);
+    table.register_with("dot", vec2::native_dot, NativeEffects::PURE);
+    table.register_with("limit", vec2::native_limit, NativeEffects::PURE);
 
     // Higher-order builtins: registered so the compiler sees them, but
     // dispatched as evaluator intrinsics at runtime.
-    let map_id = table.register("map", native_intrinsic_placeholder);
-    let filter_id = table.register("filter", native_intrinsic_placeholder);
-    let reduce_id = table.register("reduce", native_intrinsic_placeholder);
-    let for_each_id = table.register("forEach", native_intrinsic_placeholder);
+    let map_id = table.register_with("map", native_intrinsic_placeholder, NativeEffects::PURE);
+    let filter_id =
+        table.register_with("filter", native_intrinsic_placeholder, NativeEffects::PURE);
+    let reduce_id =
+        table.register_with("reduce", native_intrinsic_placeholder, NativeEffects::PURE);
+    let for_each_id =
+        table.register_with("forEach", native_intrinsic_placeholder, NativeEffects::PURE);
 
     // --- Assertions (append-only to preserve phantom term indices) ---
-    table.register("assert", io::native_assert);
-    table.register("assert_eq", io::native_assert_eq);
+    table.register_with("assert", io::native_assert, NativeEffects::PURE);
+    table.register_with("assert_eq", io::native_assert_eq, NativeEffects::PURE);
 
     // --- Flat unboxed f64 arrays (append-only to preserve phantom term indices) ---
-    table.register("f64_array", collections::native_f64_array);
-    table.register("set_at", collections::native_set_at);
-    table.register("swap", collections::native_swap);
-    table.register("hsv_deg", color::native_hsv_deg);
-    table.register("hsl_deg", color::native_hsl_deg);
+    table.register_with(
+        "f64_array",
+        collections::native_f64_array,
+        NativeEffects::PURE,
+    );
+    table.register_with("set_at", collections::native_set_at, NativeEffects::PURE);
+    table.register_with("swap", collections::native_swap, NativeEffects::PURE);
+    table.register_with("hsv_deg", color::native_hsv_deg, NativeEffects::PURE);
+    table.register_with("hsl_deg", color::native_hsl_deg, NativeEffects::PURE);
 
     // --- Symbols & buffered output (append-only to preserve phantom term indices) ---
-    table.register("symbol", output::native_symbol);
-    let push_output_id = table.register("push_output", output::native_push_output);
-    table.register("binding", output::native_binding);
+    table.register_with("symbol", output::native_symbol, NativeEffects::PURE);
+    table.register_with(
+        "push_output",
+        output::native_push_output,
+        NativeEffects::EMITS,
+    );
+    table.register_with(
+        "binding",
+        output::native_binding,
+        NativeEffects::probe(InputClasses::BINDINGS),
+    );
 
     // --- Immutable collection ops (append-only to preserve phantom term indices) ---
-    table.register("last", collections::native_last);
-    table.register("drop_last", collections::native_drop_last);
-    table.register("remove", collections::native_remove);
+    table.register_with("last", collections::native_last, NativeEffects::PURE);
+    table.register_with(
+        "drop_last",
+        collections::native_drop_last,
+        NativeEffects::PURE,
+    );
+    table.register_with("remove", collections::native_remove, NativeEffects::PURE);
 
     // --- Handles (append-only to preserve phantom term indices) ---
-    table.register("is_valid", handle::native_is_valid);
+    table.register_with("is_valid", handle::native_is_valid, NativeEffects::PURE);
 
     // --- Test-only pending-resource builtins (append-only) ---
-    let pending_id = table.register("__pending", pending::native_pending);
-    let resolve_id = table.register("__resolve", pending::native_resolve);
-    let reject_id = table.register("__reject", pending::native_reject);
+    table.register_with(
+        "__pending",
+        pending::native_pending,
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+    );
+    table.register_with(
+        "__resolve",
+        pending::native_resolve,
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+    );
+    table.register_with(
+        "__reject",
+        pending::native_reject,
+        NativeEffects::EFFECT.with_pending(NativeClass::AllowPending),
+    );
 
     // --- Pending meta builtins (Chunk D, append-only) ---
-    // The sanctioned way to inspect pending-ness. Each is tagged AllowPending
-    // below so it sees the Pending arg instead of absorbing it.
-    let is_loading_id = table.register("is_loading", pending::native_is_loading);
-    let is_error_id = table.register("is_error", pending::native_is_error);
-    let is_pending_id = table.register("is_pending", pending::native_is_pending);
-    let is_ready_id = table.register("is_ready", pending::native_is_ready);
-    let error_of_id = table.register("error_of", pending::native_error_of);
-    let or_else_id = table.register("or_else", pending::native_or_else);
-    let resource_key_id = table.register("resource_key", pending::native_resource_key);
-
-    // --- Pending classification (Chunk C) ---
-    // Effectful emitters no-op on a Pending argument (emit nothing); the three
-    // test-only pending builtins inspect Pendings themselves and must always
-    // run. Everything else stays Strict (absorbs a Pending arg) by default.
-    table.set_class(print_id, NativeClass::Effectful);
-    table.set_class(push_output_id, NativeClass::Effectful);
-    table.set_class(pending_id, NativeClass::AllowPending);
-    table.set_class(resolve_id, NativeClass::AllowPending);
-    table.set_class(reject_id, NativeClass::AllowPending);
-
-    // Chunk D meta builtins inspect Pendings themselves — all AllowPending so a
-    // Pending arg reaches the native instead of being absorbed. Strict here
-    // would be a bug (inspection would collapse to absorption).
-    table.set_class(is_loading_id, NativeClass::AllowPending);
-    table.set_class(is_error_id, NativeClass::AllowPending);
-    table.set_class(is_pending_id, NativeClass::AllowPending);
-    table.set_class(is_ready_id, NativeClass::AllowPending);
-    table.set_class(error_of_id, NativeClass::AllowPending);
-    table.set_class(or_else_id, NativeClass::AllowPending);
-    table.set_class(resource_key_id, NativeClass::AllowPending);
+    // The sanctioned way to inspect pending-ness. Each is `AllowPending` so it
+    // sees the Pending arg instead of absorbing it (Strict here would collapse
+    // inspection into absorption), and reads the resource table to answer.
+    table.register_with("is_loading", pending::native_is_loading, INSPECTS_PENDING);
+    table.register_with("is_error", pending::native_is_error, INSPECTS_PENDING);
+    table.register_with("is_pending", pending::native_is_pending, INSPECTS_PENDING);
+    table.register_with("is_ready", pending::native_is_ready, INSPECTS_PENDING);
+    table.register_with("error_of", pending::native_error_of, INSPECTS_PENDING);
+    table.register_with("or_else", pending::native_or_else, INSPECTS_PENDING);
+    table.register_with(
+        "resource_key",
+        pending::native_resource_key,
+        INSPECTS_PENDING,
+    );
 
     // --- Classes (append-only to preserve phantom term indices) ---
     // Built-in class constructors and methods; see `builtins::classes`.
@@ -279,9 +365,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // emit an ordinary `BuiltinCall` for it, but never actually called: the VM
     // intercepts the id below, because publishing a method touches runtime
     // state that `PetalCxt` deliberately does not expose.
-    let declare_method_id = table.register(
+    let declare_method_id = table.register_with(
         crate::classes::DECLARE_METHOD_BUILTIN,
         native_intrinsic_placeholder,
+        NativeEffects::EFFECT,
     );
     table.intrinsic_declare_method = Some(declare_method_id);
 
@@ -289,27 +376,40 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // `parse_*` return nil instead of aborting, so a program reading user input
     // can validate it. The `char_*` family indexes text by character where
     // `len`/`slice` index by byte.
-    table.register("parse_float", math::native_parse_float);
-    table.register("parse_int", math::native_parse_int);
-    table.register("chars", collections::native_chars);
-    table.register("char_len", collections::native_char_len);
-    table.register("char_at", collections::native_char_at);
-    table.register("char_slice", collections::native_char_slice);
-    table.register("index_of", collections::native_index_of);
+    table.register_with("parse_float", math::native_parse_float, NativeEffects::PURE);
+    table.register_with("parse_int", math::native_parse_int, NativeEffects::PURE);
+    table.register_with("chars", collections::native_chars, NativeEffects::PURE);
+    table.register_with(
+        "char_len",
+        collections::native_char_len,
+        NativeEffects::PURE,
+    );
+    table.register_with("char_at", collections::native_char_at, NativeEffects::PURE);
+    table.register_with(
+        "char_slice",
+        collections::native_char_slice,
+        NativeEffects::PURE,
+    );
+    table.register_with(
+        "index_of",
+        collections::native_index_of,
+        NativeEffects::PURE,
+    );
 
     // --- Collections, formatting, and safe arithmetic (append-only) ---
     // `sort_by` and the two-argument `sort` call user code, so they are
     // dispatched as VM intrinsics (see `vm::native::call_native_or_intrinsic`);
     // the placeholder below only exists so the compiler resolves the name.
-    let sort_by_id = table.register("sort_by", native_intrinsic_placeholder);
-    table.register("prepend", collections::native_prepend);
-    table.register("concat", collections::native_concat);
-    table.register("fixed", format::native_fixed);
-    table.register("commas", format::native_commas);
-    table.register("pad_start", format::native_pad_start);
-    table.register("pad_end", format::native_pad_end);
-    table.register("format", format::native_format);
-    table.register("safe_div", math::native_safe_div);
+    let sort_by_id =
+        table.register_with("sort_by", native_intrinsic_placeholder, NativeEffects::PURE);
+    table.register_with("prepend", collections::native_prepend, NativeEffects::PURE);
+    table.register_with("concat", collections::native_concat, NativeEffects::PURE);
+    table.register_with("fixed", format::native_fixed, NativeEffects::PURE);
+    table.register_with("commas", format::native_commas, NativeEffects::PURE);
+    table.register_with("pad_start", format::native_pad_start, NativeEffects::PURE);
+    table.register_with("pad_end", format::native_pad_end, NativeEffects::PURE);
+    table.register_with("format", format::native_format, NativeEffects::PURE);
+    table.register_with("safe_div", math::native_safe_div, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");
@@ -321,4 +421,69 @@ pub fn register_builtins(table: &mut NativeFnTable) {
 
 fn native_intrinsic_placeholder(_state: &mut PetalCxt) -> Result<u32, String> {
     Err("This function requires evaluator context and should be dispatched as an intrinsic".into())
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::*;
+
+    /// Every core native declares its effect row at registration, so the core
+    /// can never regress to inference — the mechanism that let `panel_store_set`
+    /// look pure to the memo (see docs/tasks/declarative-effect-refactoring.md).
+    #[test]
+    fn every_core_native_is_declared() {
+        let mut table = NativeFnTable::new();
+        register_builtins(&mut table);
+        let undeclared: Vec<&str> = table
+            .undeclared()
+            .into_iter()
+            .map(|id| table.get_name(id))
+            .collect();
+        assert!(
+            undeclared.is_empty(),
+            "core natives without an effect row: {undeclared:?}"
+        );
+        assert!(
+            table.count() > 100,
+            "expected the full core table, got {}",
+            table.count()
+        );
+    }
+
+    /// The `Pending` policy the row carries is the one the call boundary
+    /// consults — `get_class` never disagrees with the declaration.
+    #[test]
+    fn pending_policy_comes_from_the_row() {
+        let mut table = NativeFnTable::new();
+        register_builtins(&mut table);
+        for (name, class) in [
+            ("print", NativeClass::Effectful),
+            ("push_output", NativeClass::Effectful),
+            ("is_loading", NativeClass::AllowPending),
+            ("__resolve", NativeClass::AllowPending),
+            ("sqrt", NativeClass::Strict),
+        ] {
+            let id = table.lookup_name(name).unwrap();
+            assert_eq!(table.get_class(id), class, "{name}");
+            assert_eq!(table.effects(id).unwrap().pending, class, "{name}");
+        }
+    }
+
+    /// Spot-check the rows against what the natives' bodies actually call on
+    /// `PetalCxt`, so a row cannot quietly say less than the code does.
+    #[test]
+    fn rows_match_what_the_bodies_do() {
+        let mut table = NativeFnTable::new();
+        register_builtins(&mut table);
+        let row = |n: &str| table.effects(table.lookup_name(n).unwrap()).unwrap();
+        assert!(row("print").effect && !row("print").emits);
+        assert!(row("push_output").emits && !row("push_output").effect);
+        assert!(row("binding").probe && row("binding").reads.contains(InputClasses::BINDINGS));
+        assert!(row("random").reads.contains(InputClasses::RNG) && !row("random").effect);
+        assert!(row("noise_seed").effect);
+        assert!(row("or_else").reads.contains(InputClasses::RESOURCES));
+        assert!(row("__pending").effect);
+        assert_eq!(row("sqrt"), NativeEffects::PURE);
+        assert_eq!(row("Rect"), NativeEffects::PURE);
+    }
 }

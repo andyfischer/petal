@@ -19,8 +19,9 @@
 //
 // For each fragment it runs a monkey scenario under the `baseline` run policy
 // (no optimizer, memo or gate) and under each shipped policy — `fast-memo` (the
-// gate alone), `replay` (the memo alone) and `fast` (both) — and compares the
-// frames.
+// gate alone), `replay` (the memo alone), `replay-declared` (the memo
+// classifying every native by inference instead of its declared effect row)
+// and `fast` (both) — and compares the frames.
 // `prints` is excluded deliberately — a gated frame documents empty prints.
 //
 // Usage:
@@ -107,7 +108,7 @@ const normalize = (trace: string) =>
     });
 
 /** Run policies (see rust/src/policy.rs), each compared against `baseline`. */
-const VARIANTS = ['fast-memo', 'replay', 'fast'] as const;
+const VARIANTS = ['fast-memo', 'replay', 'replay-declared', 'fast'] as const;
 
 function drive(app: string, policy: 'baseline' | (typeof VARIANTS)[number]): string[] {
   const out = join(work, `${app}.jsonl`);

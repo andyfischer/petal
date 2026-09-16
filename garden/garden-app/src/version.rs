@@ -129,6 +129,13 @@ pub const HOST_FEATURES: &[&str] = &[
     // (`*` wildcards, `name*` prefixes, tail-matched qualified keys) that keeps
     // each field where it was. `?window=` may also sit anywhere in the query.
     "state.select",
+    // `?select=` on a state-changing command (`/key`, `/text`, `/command`,
+    // `/menu`, `/mouse`, `/theme`, `/tick`, `/seed`, `/panel/reset`) replies
+    // with that projection of the settled post-command `/state` snapshot, the
+    // command's own receipt fields laid on top. `/state` gains top-level
+    // `cursor` / `selection` (the focused pane's), so the default input
+    // acknowledgment is the projection `focus,cursor,selection`.
+    "debug.command-select",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

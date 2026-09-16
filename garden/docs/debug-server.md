@@ -95,6 +95,7 @@ after the response.
 | `GET /state` | Editor state (below) |
 | `GET /state?values=…` | The same, with each panel's `values` map narrowed. See [Filtering `panel.values`](#filtering-panelvalues) |
 | `GET /state?select=…` | Only the named fields, e.g. `select=panes.0.cursor,focus`. `select=` works on every JSON endpoint. See [Selecting fields](#selecting-fields). Feature `state.select` |
+| `POST <command>?select=…` | Any state-changing command replies with that projection of the settled post-command `/state`, e.g. `POST /key?select=panes.0.cursor`. See [Commands reply with the snapshot](#commands-reply-with-the-snapshot). Feature `debug.command-select` |
 | `GET /state?output=…` | The same, choosing how script `print` output is read. See [Reading script output](#reading-script-output) |
 | `GET /version` | Which build is answering: version, git commit, build date, feature flags, and the petal-ui prelude exports. Answered without touching the event loop. See [Which build am I talking to?](#which-build-am-i-talking-to) |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
@@ -113,7 +114,8 @@ after the response.
 - `identity`: pid, port, layout script path, cwd, the build stamp, and the
   panel scripts running. Check it first when more than one Garden is running.
 - `frame`: the global frame counter (see [Frame consistency](#frame-consistency)).
-- window size and scale, cell metrics, `focus` (the focused pane index).
+- window size and scale, cell metrics, `focus` (the focused pane index), and
+  that pane's `cursor` and `selection` repeated at the top level.
 - `status_error`, `status_note`, `script_error`, `panel_error`: what the status
   bar shows. Panel script errors (a compile failure or a frame that raised)
   land in `panel_error`, and `status_error` falls back to it, so one field
@@ -238,6 +240,37 @@ of a segment, an empty list) gets a 400. So does `select=` on a non-JSON reply
 `values=` and `values_prefix=` still work. They narrow the `values` map and
 leave the rest of `/state` as it is. Feature `state.select` (landed
 2026-09-16).
+
+### Commands reply with the snapshot
+
+A command that changes something (`/key`, `/text`, `/command`, `/menu`,
+`/mouse`, `/theme`, `/tick`, `/seed`, `/panel/reset`) also takes `?select=`.
+Its reply is then that projection of the `/state` snapshot taken **after** the
+command ran, so "do something, then read what it did" is one request:
+
+```bash
+curl -s -X POST "127.0.0.1:$PORT/key?select=panes.0.cursor,panes.0.mode" -d '{"key":"j"}'
+curl -s -X POST "127.0.0.1:$PORT/mouse?select=panes.0.panel.values.sel" \
+     -d '{"op":"click","x":80,"y":30}'
+curl -s -X POST "127.0.0.1:$PORT/tick?select=panel_frames,panes.0.panel.values.score" -d '{"n":60}'
+```
+
+- Panels settle before the snapshot is taken, the same way they do before a
+  capture, so a panel's `values` already reflect the input. No sleep and no
+  `/frame` polling is needed.
+- The command's own reply fields (`panel_frames`, `action`, `seed`,
+  `panels_reset`, …) are laid over the snapshot's top level, so they can be
+  selected too.
+- The snapshot reads script output without draining it: `script.output` shows
+  the lines the next `GET /state` will still return.
+- Without `select=`, a command replies as it always has. For the input
+  endpoints that default is exactly the projection `focus,cursor,selection`:
+  `/state` carries the focused pane's `cursor` and `selection` at the top level
+  for this reason.
+- Reads (`/state`, `/capture` and its aliases, `/windows`, `GET /menu`,
+  `/frame`, `/version`) project their own reply, as described above.
+
+Feature `debug.command-select`.
 
 ### Reading script output
 
@@ -548,7 +581,10 @@ curl -s -X POST $BASE/key -d '{"key":"w","op":"up"}'     # stop
 Holding is a panel capability: over an editor pane a `down` acts like a tap
 and an `up` is dropped. `Cmd`/`Ctrl`+`Q` still quits rather than being held.
 
-Input endpoints reply with a small acknowledgment of where things landed:
+Input endpoints reply with a small acknowledgment of where things landed (the
+`focus,cursor,selection` projection of `/state`; add `?select=` to get any other
+part of the post-command state instead, see
+[Commands reply with the snapshot](#commands-reply-with-the-snapshot)):
 
 ```json
 {"ok": true, "focus": 0, "cursor": {"line": 9, "col": 7},

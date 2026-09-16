@@ -50,6 +50,11 @@ export interface AppState {
   cell: { width: number; height: number };
   window: { scale: number };
   frame?: number;
+  /** The focused pane (index), and its cursor and selection repeated at the top
+   *  level — the default input acknowledgment is exactly these three. */
+  focus?: number;
+  cursor?: { line: number; col: number } | null;
+  selection?: { text?: string } | null;
   command_line?: string | null;
   status_note?: string | null;
   status_error?: string | null;
@@ -451,6 +456,39 @@ export class DebugClient {
     const { pane = 0, ...rest } = opts;
     const r = (await this.pane(pane)).rect;
     return await this.click(r.x + x, r.y + y, rest);
+  }
+
+  /** A command with `?select=` (feature `debug.command-select`): the reply is
+   *  that projection of the `/state` snapshot taken after the command ran and
+   *  panels settled, with the command's own receipt fields (`panel_frames`,
+   *  `action`, …) on top — one round trip instead of a POST then a GET. */
+  async postSelect<T = Partial<AppState>>(
+    path: string,
+    body: unknown,
+    fields: string[],
+  ): Promise<T> {
+    const sep = path.includes("?") ? "&" : "?";
+    const reply = await this.post<T>(`${path}${sep}select=${encodeURIComponent(fields.join(","))}`, body);
+    if (reply === null) throw new Error(`POST ${path}: no JSON reply`);
+    return reply;
+  }
+
+  /** A pane-local click that answers with the named observed values of that
+   *  pane's panel as they stand after the click settled (feature
+   *  `debug.command-select`). A name the frame did not bind is absent. */
+  async clickPaneLocalValues(
+    x: number,
+    y: number,
+    names: string[],
+    pane = 0,
+  ): Promise<Record<string, unknown>> {
+    const r = (await this.pane(pane)).rect;
+    const reply = await this.postSelect<{ panes?: ({ panel?: { values?: Record<string, unknown> } } | null)[] }>(
+      "/mouse",
+      { op: "click", x: Math.round(r.x + x), y: Math.round(r.y + y) },
+      names.map((n) => `panes.${pane}.panel.values.${n}`),
+    );
+    return reply.panes?.[pane]?.panel?.values ?? {};
   }
 
   async rightClickPaneLocal(x: number, y: number, pane = 0): Promise<void> {

@@ -125,6 +125,7 @@ impl OutputLog {
                 let next = self.next();
                 std::mem::replace(&mut self.cursor, next)
             }
+            debug::OutputRead::Peek => self.cursor,
             debug::OutputRead::All => self.first,
             // A cursor from before the retained window reads from the oldest
             // line still held rather than silently returning nothing.
@@ -153,9 +154,38 @@ impl App {
     ) {
         let result = match request.window {
             Some(n) if n != 1 => Err(format!("no window with ordinal {n}")),
-            _ => self.handle_debug_with(request.cmd, capture),
+            _ => self.answer(request.cmd, request.snapshot, capture),
         };
         let _ = request.reply.send(result);
+    }
+
+    /// Answer one request: the command's own reply, or — when `snapshot` is set
+    /// (a state-changing command carrying `?select=`) — the `/state` snapshot
+    /// taken after it, with the command's receipt laid over the snapshot's top
+    /// level. Panels settle first, as a capture's do, so the snapshot reflects
+    /// the input just applied rather than the frame before it. The connection
+    /// thread does the projection.
+    pub fn answer(
+        &mut self,
+        cmd: DebugCmd,
+        snapshot: bool,
+        capture: &mut dyn Capture,
+    ) -> Result<Reply, String> {
+        let snapshot = snapshot && cmd.changes_state();
+        let reply = self.handle_debug_with(cmd, capture)?;
+        if !snapshot {
+            return Ok(reply);
+        }
+        let Reply::Json(receipt) = reply else {
+            return Ok(reply);
+        };
+        self.settle_panels();
+        let mut state =
+            self.state_json_filtered(&debug::ValueFilter::default(), debug::OutputRead::Peek);
+        if let (Some(state), Value::Object(receipt)) = (state.as_object_mut(), receipt) {
+            state.extend(receipt);
+        }
+        Ok(Reply::Json(state))
     }
 
     /// Handle one debug command against live state, with `capture` supplying
@@ -371,7 +401,9 @@ impl App {
     }
 
     /// Small acknowledgment for input injection: where the focused cursor and
-    /// selection ended up.
+    /// selection ended up. This is [`debug::INPUT_ACK_SELECT`] over the `/state`
+    /// snapshot, built directly so a plain `/key` stays cheap; the test
+    /// `input_ack_is_a_projection_of_the_snapshot` pins the two together.
     fn input_ack(&self) -> Value {
         let pane = self.panes.get(self.focus);
         json!({
@@ -599,6 +631,11 @@ impl App {
             "window": {"width": w, "height": h, "scale": self.viewport.scale},
             "cell": {"width": cell.0, "height": cell.1},
             "focus": self.focus,
+            // The focused pane's cursor and selection, repeated at the top
+            // level: the fields the input endpoints acknowledge with, so that
+            // acknowledgment is a projection of this document.
+            "cursor": self.panes.get(self.focus).map(|p| point_json(p.view.cursor)),
+            "selection": self.panes.get(self.focus).and_then(|p| selection_json(&p.view)),
             "theme": {
                 "key": self.theme_scheme().key(),
                 "label": self.theme_scheme().label(),
@@ -1341,6 +1378,91 @@ mod tests {
         assert_eq!(
             broken["values_partial"]["values"]["alive"], 20,
             "how far the failing frame got, kept beside the good values"
+        );
+    }
+
+    /// The input endpoints' default acknowledgment is a projection of the
+    /// `/state` snapshot, not a shape of its own.
+    #[test]
+    fn input_ack_is_a_projection_of_the_snapshot() {
+        let (mut app, _f) = panel_app("draw_text(\"hi\", 4, 4, 16, 1, 1, 1)\n");
+        let ack = app.input_ack();
+        let state = app.state_json();
+        let select = debug::Select::parse(debug::INPUT_ACK_SELECT).unwrap();
+        assert_eq!(ack, select.apply(&state));
+    }
+
+    /// With `snapshot` (a command carrying `?select=`), a state-changing
+    /// command replies with the settled post-command `/state`, its own receipt
+    /// laid over the top level; reads keep their own reply.
+    #[test]
+    fn commands_reply_with_the_settled_snapshot() {
+        let (mut app, _f) = panel_app(
+            "state hits = 0\nif key_pressed(\"space\") then hits = hits + 1 end\nlet seen = hits\n",
+        );
+        let answer = |app: &mut App, path: &str, body: &str, snapshot| {
+            let cmd = debug::route_for_test("POST", path, body.as_bytes()).expect("routes");
+            match app.answer(cmd, snapshot, &mut NoCapture).expect("answers") {
+                Reply::Json(v) => v,
+                _ => panic!("{path} must answer JSON"),
+            }
+        };
+
+        // No select: the small acknowledgment, as before.
+        let ack = answer(&mut app, "/key", r#"{"key":"space"}"#, false);
+        assert!(ack.get("panes").is_none(), "the default reply stays small");
+        assert_eq!(ack["focus"], app.focus);
+
+        // With select: the snapshot, settled, so the key is already visible in
+        // the panel's values — one round trip instead of /key then /state.
+        let reply = answer(&mut app, "/key", r#"{"key":"space"}"#, true);
+        let seen = debug::Select::parse("panes.0.panel.values.seen")
+            .unwrap()
+            .apply(&reply);
+        assert_eq!(seen["ok"], true);
+        assert_eq!(seen["panes"][0]["panel"]["values"]["seen"], 2);
+        assert!(
+            reply["identity"].is_object(),
+            "the whole snapshot came back"
+        );
+
+        // The receipt rides on top: /tick's own fields sit beside the state.
+        let reply = answer(&mut app, "/tick", r#"{"n":3}"#, true);
+        assert_eq!(reply["panel_frames"], 3);
+        assert!(reply["panes"][0]["panel"]["values"].is_object());
+
+        // A read ignores the flag and projects its own document.
+        let frame = match app
+            .answer(DebugCmd::Frame { min: None }, true, &mut NoCapture)
+            .expect("frame")
+        {
+            Reply::Json(v) => v,
+            _ => panic!("/frame answers JSON"),
+        };
+        assert!(frame.get("panes").is_none());
+    }
+
+    /// A snapshot peeks at script output rather than draining it, so a
+    /// `?select=` on a command never steals lines from the next `/state` poll.
+    #[test]
+    fn command_snapshot_does_not_drain_output() {
+        let (mut app, _f) = panel_app("print(\"hello\")\n");
+        match app
+            .answer(DebugCmd::PanelReset, true, &mut NoCapture)
+            .expect("reset")
+        {
+            Reply::Json(v) => assert!(!v["script"]["output"].as_array().unwrap().is_empty()),
+            _ => panic!("reset answers JSON"),
+        }
+        let state = state_with(&mut app, "/state");
+        assert!(
+            state["script"]["output"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l == "hello"),
+            "the draining read still sees the output: {}",
+            state["script"]["output"]
         );
     }
 

@@ -26,7 +26,10 @@
 //!                    tail) and/or `?values_prefix=obs_`, or drop it entirely
 //!                    with `?values=none`. Any JSON endpoint also takes
 //!                    `?select=panes.0.cursor,focus` to project the reply onto
-//!                    dotted paths (see [`Select`])
+//!                    dotted paths (see [`Select`]). On a state-changing
+//!                    command (`POST /key?select=…` etc.) it projects the
+//!                    settled post-command `/state` instead of the receipt
+//!                    (see [`DebugCmd::changes_state`])
 //! POST /tick         {"n": 60, "dt": 0.016} — advance every panel by n frames
 //!                    of exactly dt seconds, ignoring the sleep/wake window. The
 //!                    way to drive an animation or a game without faking input
@@ -363,6 +366,14 @@ pub enum KeyOp {
 }
 
 /// One parsed debug command, handled on the event-loop thread.
+///
+/// A command that changes state ([`DebugCmd::changes_state`]) replies with a
+/// small receipt by default — for the input endpoints that is
+/// [`INPUT_ACK_SELECT`], a projection of the `/state` snapshot. Given
+/// `?select=`, it instead replies with that projection of the whole snapshot
+/// taken after the command ran (and after panels settled), with its own
+/// receipt fields laid over the snapshot's top level: one round trip for
+/// "press a key, then read what it did".
 pub enum DebugCmd {
     /// Editor + panel state. `values` narrows each panel's observed-value map
     /// (see [`ValueFilter`]); the default reports all of it. `output` says how
@@ -477,6 +488,40 @@ pub enum DebugCmd {
     },
 }
 
+/// The input endpoints' default acknowledgment, as a `?select=` over the
+/// `/state` snapshot: `POST /key` with no `select=` replies exactly what
+/// `POST /key?select=focus,cursor,selection` would (bar the settle), where the
+/// top-level `cursor` / `selection` are the focused pane's.
+// Read only by the test pinning `input_ack` to it; it names the contract.
+#[cfg_attr(not(test), allow(dead_code))]
+pub const INPUT_ACK_SELECT: &str = "focus,cursor,selection";
+
+impl DebugCmd {
+    /// Whether this command acts rather than reads — the commands whose
+    /// `?select=` projects the post-command `/state` snapshot. Reads (`/state`,
+    /// `/capture`, `/windows`, `/menu` listing, `/frame`, `/buffer`) project
+    /// their own reply instead.
+    pub fn changes_state(&self) -> bool {
+        match self {
+            DebugCmd::Key { .. }
+            | DebugCmd::Text { .. }
+            | DebugCmd::Command { .. }
+            | DebugCmd::Menu { .. }
+            | DebugCmd::Mouse { .. }
+            | DebugCmd::Theme { .. }
+            | DebugCmd::Tick { .. }
+            | DebugCmd::Seed { .. }
+            | DebugCmd::PanelReset => true,
+            DebugCmd::State { .. }
+            | DebugCmd::Capture { .. }
+            | DebugCmd::Frame { .. }
+            | DebugCmd::BufferText { .. }
+            | DebugCmd::MenuList
+            | DebugCmd::Windows => false,
+        }
+    }
+}
+
 /// A successful reply body.
 pub enum Reply {
     Json(Value),
@@ -495,6 +540,11 @@ pub struct DebugRequest {
     /// Target window by 1-based session ordinal (`?window=<n>`), or `None` for
     /// the focused window. Single-window frontends ignore anything but `1`.
     pub window: Option<u64>,
+    /// Reply with the post-command `/state` snapshot (with the command's
+    /// receipt laid over it) rather than the receipt alone. Set for a
+    /// state-changing command that carries `?select=`; the connection then
+    /// projects the snapshot. See [`DebugCmd::changes_state`].
+    pub snapshot: bool,
     pub reply: mpsc::Sender<Result<Reply, String>>,
 }
 
@@ -618,9 +668,11 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
     };
 
     let (tx, rx) = mpsc::channel();
+    let snapshot = select.is_some() && cmd.changes_state();
     if !sink.send(DebugRequest {
         cmd,
         window,
+        snapshot,
         reply: tx,
     }) {
         return respond_json(
@@ -696,6 +748,10 @@ pub enum OutputRead {
     /// alone — how a second reader resumes from where it got to. The cursor to
     /// pass next time comes back as `script.output_next`.
     From(u64),
+    /// Everything a draining read would return, *without* moving the cursor —
+    /// how a command's `?select=` snapshot reports output without stealing it
+    /// from the next `/state` poll. Not reachable from `?output=`.
+    Peek,
 }
 
 impl OutputRead {

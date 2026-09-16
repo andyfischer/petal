@@ -454,7 +454,9 @@ impl ApplicationHandler<DebugRequest> for Handler {
             renderer: &mut state.renderer,
             windows,
         };
-        let result = state.app.handle_debug_with(request.cmd, &mut capture);
+        let result = state
+            .app
+            .answer(request.cmd, request.snapshot, &mut capture);
         let _ = request.reply.send(result);
         state.sync();
         self.reap(event_loop, id);

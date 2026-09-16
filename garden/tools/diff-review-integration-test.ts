@@ -58,7 +58,7 @@ console.log("launching garden diff with debug server...");
 const app = await launchGarden({
   args: ["diff", "main", ...mode],
   cwd: repo,
-  requireFeatures: ["debug.scene-find", "state.select"],
+  requireFeatures: ["debug.scene-find", "state.select", "debug.command-select"],
   logPath,
 });
 const g = app.client;
@@ -159,13 +159,14 @@ checks.check("the unified pill switches back", await dstate("mode"), "unified");
 // --- the wrap toggle (unified only) ------------------------------------------
 // Long diff lines soft-wrap to the column by default; the pill turns that off
 // for the frames where the exact columns matter.
+// Each click answers with the settled `uni_wrap` itself (`/mouse?select=`), so
+// there is no sleep and no second /state read.
 checks.check("the unified view wraps by default", await dstate("uni_wrap"), true);
-await clickAt(await num("wrap_x"), pillY);
-await sleep(300);
-checks.check("the wrap pill turns wrapping off", await dstate("uni_wrap"), false);
-await clickAt(await num("wrap_x"), pillY);
-await sleep(300);
-checks.check("the wrap pill turns it back on", await dstate("uni_wrap"), true);
+const wrapX = await num("wrap_x");
+let wrapped = await g.clickPaneLocalValues(wrapX, pillY, ["uni_wrap"]);
+checks.check("the wrap pill turns wrapping off", wrapped.uni_wrap, false);
+wrapped = await g.clickPaneLocalValues(wrapX, pillY, ["uni_wrap"]);
+checks.check("the wrap pill turns it back on", wrapped.uni_wrap, true);
 
 // --- editing the after column and saving with ^S -----------------------------
 await g.clickText("split", { pane: 0 });

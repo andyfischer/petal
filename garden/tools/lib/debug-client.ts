@@ -196,6 +196,15 @@ export class DebugClient {
     return this.getJson<AppState>(`/state?${params.toString()}`);
   }
 
+  /** Any JSON endpoint projected by `?select=` (feature `state.select`): only
+   *  the given dotted paths (`panes.0.cursor`, `panes.*.panel.values.sel`,
+   *  `values.obs_*`), each kept where it was, so `reply.panes[0].cursor` reads
+   *  the same as on the full reply. Unmatched paths are absent. */
+  select<T = Partial<AppState>>(path: string, fields: string[]): Promise<T> {
+    const sep = path.includes("?") ? "&" : "?";
+    return this.getJson<T>(`${path}${sep}select=${encodeURIComponent(fields.join(","))}`);
+  }
+
   /** What build is answering: version, git stamp, feature flags, prelude
    *  exports. Ask this before using a newer endpoint or flag rather than
    *  reading its error — see `docs/debug-server.md`. */

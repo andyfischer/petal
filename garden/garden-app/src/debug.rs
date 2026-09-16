@@ -24,7 +24,9 @@
 //!                    app is hundreds of keys: narrow it with
 //!                    `?values=a,b,c` (exact names, or a `.`-qualified key's
 //!                    tail) and/or `?values_prefix=obs_`, or drop it entirely
-//!                    with `?values=none`
+//!                    with `?values=none`. Any JSON endpoint also takes
+//!                    `?select=panes.0.cursor,focus` to project the reply onto
+//!                    dotted paths (see [`Select`])
 //! POST /tick         {"n": 60, "dt": 0.016} — advance every panel by n frames
 //!                    of exactly dt seconds, ignoring the sleep/wake window. The
 //!                    way to drive an animation or a game without faking input
@@ -111,6 +113,168 @@ pub fn server_port() -> Option<u16> {
     }
 }
 
+/// One step of a `?select=` path, and the matching rule [`ValueFilter`] has
+/// always used for observed-value names — the two share this one vocabulary.
+///
+/// - `*` matches every key (or every array element).
+/// - `name*` matches a key that starts with `name`, whole or by its
+///   `.`-qualified tail.
+/// - `name` matches a key exactly, or by its `.`-qualified tail (`sel` matches
+///   `list_row.sel`), since that qualification is an artifact of where a
+///   binding sits, not something a caller should have to know. On an array it
+///   is an index (`panes.0`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Segment {
+    Any,
+    Name(String),
+    Prefix(String),
+}
+
+impl Segment {
+    fn parse(text: &str) -> Result<Segment, String> {
+        match text {
+            "" => Err("empty path segment".to_string()),
+            "*" => Ok(Segment::Any),
+            _ => match text.strip_suffix('*') {
+                Some(stem) if !stem.contains('*') => Ok(Segment::Prefix(stem.to_string())),
+                None if !text.contains('*') => Ok(Segment::Name(text.to_string())),
+                _ => Err(format!(
+                    "{text:?}: `*` is only allowed at the end of a segment"
+                )),
+            },
+        }
+    }
+
+    /// Whether an object key matches this segment.
+    pub fn matches_key(&self, key: &str) -> bool {
+        let tail = key.rsplit('.').next().unwrap_or(key);
+        match self {
+            Segment::Any => true,
+            Segment::Name(n) => n == key || n == tail,
+            Segment::Prefix(p) => key.starts_with(p.as_str()) || tail.starts_with(p.as_str()),
+        }
+    }
+
+    /// Whether array element `index` matches this segment.
+    fn matches_index(&self, index: usize) -> bool {
+        match self {
+            Segment::Any => true,
+            Segment::Name(n) => n.parse::<usize>() == Ok(index),
+            Segment::Prefix(_) => false,
+        }
+    }
+}
+
+/// A `?select=` field projection, accepted by every JSON endpoint: a
+/// comma-separated list of dotted paths (`panes.0.cursor,focus`,
+/// `panes.*.panel.values.sel`), each step a [`Segment`]. The reply keeps only
+/// the selected fields *in their original positions* — objects keep the
+/// selected keys, arrays keep their indices (unselected elements before a
+/// selected one read as `null`) — so `reply.panes[0].cursor` reads the same
+/// value projected as unprojected. A path that matches nothing is simply
+/// absent. A top-level `ok` is always kept.
+///
+/// Observed-value keys may themselves contain dots (`list_row.sel`); a path
+/// matches such a key either by its tail or by spelling it out
+/// (`values.list_row.sel`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Select {
+    paths: Vec<Vec<Segment>>,
+}
+
+impl Select {
+    /// Parse one `select=` value. An empty list, an empty segment (`a..b`), or
+    /// a `*` anywhere but a segment's end is an error.
+    pub fn parse(text: &str) -> Result<Select, String> {
+        let mut paths = Vec::new();
+        for path in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+            let segments = path
+                .split('.')
+                .map(Segment::parse)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("bad select path {path:?}: {e}"))?;
+            paths.push(segments);
+        }
+        if paths.is_empty() {
+            return Err("select= needs at least one path".to_string());
+        }
+        Ok(Select { paths })
+    }
+
+    /// Project a reply onto the selected paths.
+    pub fn apply(&self, value: &Value) -> Value {
+        let paths: Vec<&[Segment]> = self.paths.iter().map(Vec::as_slice).collect();
+        let mut out = project(value, &paths).unwrap_or_else(|| json!({}));
+        if let (Some(ok), Some(obj)) = (value.get("ok"), out.as_object_mut()) {
+            obj.entry("ok").or_insert_with(|| ok.clone());
+        }
+        out
+    }
+}
+
+/// The part of `value` any of `paths` reaches, or `None` if none reaches
+/// anything. An exhausted path takes the whole subtree.
+fn project(value: &Value, paths: &[&[Segment]]) -> Option<Value> {
+    if paths.iter().any(|p| p.is_empty()) {
+        return Some(value.clone());
+    }
+    match value {
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (key, child) in map {
+                let rests: Vec<&[Segment]> =
+                    paths.iter().filter_map(|p| object_step(key, p)).collect();
+                if rests.is_empty() {
+                    continue;
+                }
+                if let Some(v) = project(child, &rests) {
+                    out.insert(key.clone(), v);
+                }
+            }
+            (!out.is_empty()).then_some(Value::Object(out))
+        }
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for (i, child) in items.iter().enumerate() {
+                let rests: Vec<&[Segment]> = paths
+                    .iter()
+                    .filter(|p| p[0].matches_index(i))
+                    .map(|p| &p[1..])
+                    .collect();
+                if rests.is_empty() {
+                    continue;
+                }
+                if let Some(v) = project(child, &rests) {
+                    out.resize(i, Value::Null);
+                    out.push(v);
+                }
+            }
+            (!out.is_empty()).then_some(Value::Array(out))
+        }
+        _ => None,
+    }
+}
+
+/// Where a path goes after stepping into object key `key`, if it matches: the
+/// first segment against the key (exact, tail, prefix, `*`), or several
+/// segments spelling out a dotted key (`list_row.sel`).
+fn object_step<'a>(key: &str, path: &'a [Segment]) -> Option<&'a [Segment]> {
+    if path[0].matches_key(key) {
+        return Some(&path[1..]);
+    }
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.len() > 1 && parts.len() <= path.len() {
+        let spelled = parts
+            .iter()
+            .zip(path)
+            .all(|(part, seg)| matches!(seg, Segment::Name(n) if n == part));
+        if spelled {
+            return Some(&path[parts.len()..]);
+        }
+    }
+    None
+}
+
 /// Which of a panel's observed values `GET /state` should report.
 ///
 /// The unfiltered map is every binding the script's last good frame made —
@@ -119,15 +283,14 @@ pub fn server_port() -> Option<u16> {
 /// response unreadable. `?values=a,b,c` and `?values_prefix=obs_` narrow it;
 /// `?values=none` drops it. Both selectors may be given, and both accept a
 /// comma-separated list; a key matches if *any* selector matches it.
+///
+/// These are aliases in the [`Select`] vocabulary: `values=sel` is the
+/// [`Segment::Name`] rule and `values_prefix=obs_` the [`Segment::Prefix`]
+/// rule, applied to the `values` map in place (the rest of `/state` is kept).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ValueFilter {
-    /// Exact names. A key is matched either whole (`sel`) or by its
-    /// function-qualified tail (`sel` matches `list_row.sel`), since the
-    /// qualification is an artifact of where the binding sits, not something a
-    /// caller wants to have to know.
-    names: Vec<String>,
-    /// Name prefixes, tested against the whole key and its qualified tail.
-    prefixes: Vec<String>,
+    /// Names and prefixes; a key survives if any matches it.
+    selectors: Vec<Segment>,
     /// `?values=none`: report an empty map.
     drop_all: bool,
 }
@@ -135,7 +298,7 @@ pub struct ValueFilter {
 impl ValueFilter {
     /// No selector given: report everything, as `/state` always has.
     pub fn is_all(&self) -> bool {
-        !self.drop_all && self.names.is_empty() && self.prefixes.is_empty()
+        !self.drop_all && self.selectors.is_empty()
     }
 
     /// Whether an observed key survives the filter.
@@ -143,17 +306,7 @@ impl ValueFilter {
         if self.is_all() {
             return true;
         }
-        if self.drop_all {
-            return false;
-        }
-        // `fn list_row`'s `let sel` is observed as `list_row.sel`; match on the
-        // bare name too so a caller need not know the enclosing function.
-        let tail = key.rsplit('.').next().unwrap_or(key);
-        self.names.iter().any(|n| n == key || n == tail)
-            || self
-                .prefixes
-                .iter()
-                .any(|p| key.starts_with(p.as_str()) || tail.starts_with(p.as_str()))
+        !self.drop_all && self.selectors.iter().any(|s| s.matches_key(key))
     }
 
     /// Build a filter from `(key, value)` query pairs — the parsing under test
@@ -181,8 +334,8 @@ impl ValueFilter {
             match key.as_str() {
                 "values" if value == "none" => filter.drop_all = true,
                 "values" if value == "all" => {}
-                "values" => filter.names.extend(items()),
-                "values_prefix" => filter.prefixes.extend(items()),
+                "values" => filter.selectors.extend(items().map(Segment::Name)),
+                "values_prefix" => filter.selectors.extend(items().map(Segment::Prefix)),
                 _ => {}
             }
         }
@@ -436,20 +589,28 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
     // Peel an optional `?window=<n>` selector off the path before routing, so
     // every endpoint can target a specific window; the rest of the path routes
     // exactly as it did single-window.
-    let (route_path, window) = match parse_target(&path) {
+    // `?select=` is peeled off the same way: it projects whatever JSON the
+    // endpoint replies with, so no route has to know about it.
+    let target = parse_target(&path)
+        .and_then(|(p, window)| parse_select(&p).map(|(p, select)| (p, window, select)));
+    let (route_path, window, select) = match target {
         Ok(target) => target,
         Err((status, msg)) => {
             return respond_json(&mut writer, status, &json!({"ok": false, "error": msg}));
         }
     };
+    let project = |value: Value| match &select {
+        Some(select) => select.apply(&value),
+        None => value,
+    };
     // `/version` is a pure constant — answer it here rather than through the
     // event loop, so a client can still ask what this build is while the app is
     // busy (or wedged), which is exactly when it wants to know.
-    if is_static_endpoint(&method, route_path) {
-        return respond_json(&mut writer, 200, &crate::version::report_json());
+    if is_static_endpoint(&method, &route_path) {
+        return respond_json(&mut writer, 200, &project(crate::version::report_json()));
     }
 
-    let cmd = match route(&method, route_path, &body) {
+    let cmd = match route(&method, &route_path, &body) {
         Ok(cmd) => cmd,
         Err((status, msg)) => {
             return respond_json(&mut writer, status, &json!({"ok": false, "error": msg}));
@@ -469,7 +630,12 @@ fn handle_connection<S: RequestSink>(stream: TcpStream, sink: S) -> io::Result<(
         );
     }
     match rx.recv_timeout(REPLY_TIMEOUT) {
-        Ok(Ok(Reply::Json(value))) => respond_json(&mut writer, 200, &value),
+        Ok(Ok(Reply::Json(value))) => respond_json(&mut writer, 200, &project(value)),
+        Ok(Ok(_)) if select.is_some() => respond_json(
+            &mut writer,
+            400,
+            &json!({"ok": false, "error": "select= applies only to JSON replies"}),
+        ),
         Ok(Ok(Reply::Png { png, frame })) => respond_with(
             &mut writer,
             200,
@@ -867,37 +1033,67 @@ fn apply_mod_name(mods: &mut crate::app::Mods, name: &str) {
 }
 
 /// Split an optional `?window=<n>` selector off a debug path, returning the
-/// stripped path (a borrowed subslice) plus the target window's 1-based
-/// ordinal — `None` means the focused window (the single-window default). The
-/// selector must be the sole query parameter or the last one
-/// (`/frame?min=5&window=2`), so what remains is always a clean prefix. The
-/// ordinal is 1-based, so `0`, negatives, and non-numbers are rejected 400.
-pub(crate) fn parse_target(path: &str) -> Result<(&str, Option<u64>), (u16, String)> {
-    // Prefer `?window=` (sole parameter), then `&window=` (trailing one);
-    // either way the cut point lets us hand back a subslice of `path`.
-    for sep in ['?', '&'] {
-        let needle = format!("{sep}window=");
-        let Some(cut) = path.rfind(&needle) else {
-            continue;
-        };
-        let value = &path[cut + needle.len()..];
-        // Only the final parameter is strippable to a contiguous prefix.
-        if value.contains('&') {
-            continue;
-        }
-        let ordinal = value
-            .parse::<u64>()
-            .ok()
-            .filter(|&n| n >= 1)
-            .ok_or((400, format!("bad window ordinal in {path:?}: {value:?}")))?;
-        return Ok((&path[..cut], Some(ordinal)));
+/// path with that parameter removed plus the target window's 1-based ordinal —
+/// `None` means the focused window (the single-window default). The parameter
+/// may sit anywhere in the query (`/frame?window=2&min=5`); the other
+/// parameters are handed on untouched. The ordinal is 1-based, so `0`,
+/// negatives, non-numbers, and a repeated `window=` are rejected 400.
+pub(crate) fn parse_target(path: &str) -> Result<(String, Option<u64>), (u16, String)> {
+    let (rest, values) = take_param(path, "window");
+    let window = match values.as_slice() {
+        [] => None,
+        [value] => Some(
+            value
+                .parse::<u64>()
+                .ok()
+                .filter(|&n| n >= 1)
+                .ok_or((400, format!("bad window ordinal in {path:?}: {value:?}")))?,
+        ),
+        _ => return Err((400, format!("more than one window= in {path:?}"))),
+    };
+    Ok((rest, window))
+}
+
+/// Split an optional `?select=` projection off a debug path (see [`Select`]).
+/// Like `window=`, it applies to every endpoint, so it is taken off before
+/// routing; repeated `select=` parameters combine.
+pub(crate) fn parse_select(path: &str) -> Result<(String, Option<Select>), (u16, String)> {
+    let (rest, values) = take_param(path, "select");
+    if values.is_empty() {
+        return Ok((rest, None));
     }
-    Ok((path, None))
+    Select::parse(&values.join(","))
+        .map(|select| (rest, Some(select)))
+        .map_err(|err| (400, format!("bad select= in {path:?}: {err}")))
+}
+
+/// Remove every `name=` parameter from a path's query, wherever it sits,
+/// returning the remaining path (other parameters kept verbatim, still
+/// encoded) and the removed values, decoded.
+fn take_param(path: &str, name: &str) -> (String, Vec<String>) {
+    let Some((bare, query)) = path.split_once('?') else {
+        return (path.to_string(), Vec::new());
+    };
+    let mut kept = Vec::new();
+    let mut taken = Vec::new();
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        if percent_decode(k) == name {
+            taken.push(percent_decode(v));
+        } else {
+            kept.push(pair);
+        }
+    }
+    if kept.is_empty() {
+        (bare.to_string(), taken)
+    } else {
+        (format!("{bare}?{}", kept.join("&")), taken)
+    }
 }
 
 /// Split a debug path into its bare route and its decoded query parameters.
-/// Runs after [`parse_target`] has taken any `window=` selector off, so what
-/// remains is the endpoint's own parameters. Percent escapes are decoded (`%2C`
+/// Runs after [`parse_target`] and [`parse_select`] have taken the `window=`
+/// and `select=` parameters off, so what remains is the endpoint's own. Percent escapes are decoded (`%2C`
 /// for a comma in a `values=` list) and `+` is a space, as in a form-encoded
 /// query.
 fn split_query(path: &str) -> (&str, Vec<(String, String)>) {
@@ -1167,6 +1363,87 @@ mod tests {
         assert_eq!(window, Some(2));
     }
 
+    /// `window=` used to have to be the sole or last parameter, because it was
+    /// string-scanned off before the query was parsed. It may now sit anywhere.
+    #[test]
+    fn window_param_may_sit_anywhere_in_the_query() {
+        let (path, window) = parse_target("/frame?window=2&min=5").expect("window first");
+        assert_eq!((path.as_str(), window), ("/frame?min=5", Some(2)));
+        match route("GET", &path, b"") {
+            Ok(DebugCmd::Frame { min }) => assert_eq!(min, Some(5)),
+            _ => panic!("{path} must still route to Frame"),
+        }
+        let (path, window) =
+            parse_target("/state?values=a&window=3&output=all").expect("window mid-query");
+        assert_eq!(
+            (path.as_str(), window),
+            ("/state?values=a&output=all", Some(3))
+        );
+        // The old trailing form still works, and a repeat is ambiguous.
+        let (path, window) = parse_target("/frame?min=5&window=2").expect("window last");
+        assert_eq!((path.as_str(), window), ("/frame?min=5", Some(2)));
+        assert!(parse_target("/state?window=1&window=2").is_err());
+    }
+
+    /// `?select=` projects any JSON reply onto dotted paths, keeping each field
+    /// where it was so the projected reply reads like the full one.
+    #[test]
+    fn select_projects_json_by_path() {
+        let state = json!({
+            "ok": true,
+            "focus": 1,
+            "cell": {"width": 8, "height": 17},
+            "panes": [
+                {"index": 0, "cursor": {"line": 2, "col": 4}, "panel": null},
+                {"index": 1, "cursor": {"line": 9, "col": 0},
+                 "panel": {"values": {"list_row.sel": 3, "obs_a": 1, "obs_b": 2, "palette": [1]}}},
+            ],
+        });
+        let sel = |text: &str| Select::parse(text).expect(text).apply(&state);
+
+        assert_eq!(
+            sel("panes.0.cursor,focus"),
+            json!({"ok": true, "focus": 1, "panes": [{"cursor": {"line": 2, "col": 4}}]})
+        );
+        // Array indices are preserved: element 1 stays at index 1.
+        let second = sel("panes.1.cursor.line");
+        assert_eq!(second["panes"][1]["cursor"]["line"], 9);
+        assert_eq!(second["panes"][0], Value::Null);
+        // Wildcard over elements; tail-matching and spelled-out dotted keys.
+        let values = sel("panes.*.panel.values.sel");
+        assert_eq!(
+            values,
+            json!({"ok": true, "panes": [null, {"panel": {"values": {"list_row.sel": 3}}}]})
+        );
+        assert_eq!(sel("panes.1.panel.values.list_row.sel"), values);
+        // Prefix match, the `values_prefix=` rule.
+        assert_eq!(
+            sel("panes.1.panel.values.obs_*")["panes"][1]["panel"]["values"],
+            json!({"obs_a": 1, "obs_b": 2})
+        );
+        // Unknown paths are absent, not errors; a whole subtree comes through.
+        assert_eq!(
+            sel("nope,cell"),
+            json!({"ok": true, "cell": {"width": 8, "height": 17}})
+        );
+
+        for bad in ["", "a..b", "pa*nes", "*x"] {
+            assert!(Select::parse(bad).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn select_param_is_taken_off_before_routing() {
+        let (path, select) =
+            parse_select("/state?select=focus%2Ccell.height&output=all").expect("valid select");
+        assert_eq!(path, "/state?output=all");
+        assert_eq!(select, Some(Select::parse("focus,cell.height").unwrap()));
+        let (path, select) = parse_select("/state").expect("no select");
+        assert_eq!((path.as_str(), select), ("/state", None));
+        assert!(parse_select("/state?select=a..b").is_err());
+        assert!(parse_select("/state?select=").is_err());
+    }
+
     #[test]
     fn ex_commands_route_to_command() {
         match route("POST", "/command", br#"{"command":"Diff main"}"#) {
@@ -1190,7 +1467,7 @@ mod tests {
     fn window_param_composes_with_existing_routes() {
         let (path, window) = parse_target("/buffer/3?window=1").expect("valid window param");
         assert_eq!(window, Some(1));
-        match route("GET", path, b"") {
+        match route("GET", &path, b"") {
             Ok(DebugCmd::BufferText { pane }) => assert_eq!(pane, 3),
             _ => panic!("stripped path {path:?} no longer routes to BufferText"),
         }
@@ -1213,7 +1490,7 @@ mod tests {
     fn post_endpoints_accept_window_param() {
         let (path, window) = parse_target("/key?window=2").expect("valid window param");
         assert_eq!(window, Some(2));
-        match route("POST", path, br#"{"key":"s","mods":["cmd"]}"#) {
+        match route("POST", &path, br#"{"key":"s","mods":["cmd"]}"#) {
             Ok(DebugCmd::Key { key, mods, op }) => {
                 assert_eq!(key, "s");
                 assert_eq!(mods, vec!["cmd".to_string()]);

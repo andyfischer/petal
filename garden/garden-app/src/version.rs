@@ -125,6 +125,10 @@ pub const HOST_FEATURES: &[&str] = &[
     // with `/scene` (= json) and `/screenshot` (= the native raster) as its
     // aliases. A frontend declines a format it cannot make with a 400.
     "debug.capture",
+    // `?select=panes.0.cursor,focus` on any JSON endpoint: a field projection
+    // (`*` wildcards, `name*` prefixes, tail-matched qualified keys) that keeps
+    // each field where it was. `?window=` may also sit anywhere in the query.
+    "state.select",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

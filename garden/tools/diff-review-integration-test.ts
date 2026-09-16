@@ -58,13 +58,14 @@ console.log("launching garden diff with debug server...");
 const app = await launchGarden({
   args: ["diff", "main", ...mode],
   cwd: repo,
-  requireFeatures: ["debug.scene-find"],
+  requireFeatures: ["debug.scene-find", "state.select"],
   logPath,
 });
 const g = app.client;
 // Body rows are laid out in cells; the drawer's own geometry values are
 // panel-local, so every hit target below is (value, row) → a pane-local click.
-const cellH = (await g.state()).cell.height;
+const cellH = (await g.select<{ cell: { height: number } }>("/state", ["cell.height"])).cell
+  .height;
 
 // --- helpers ----------------------------------------------------------------
 
@@ -125,12 +126,20 @@ await waitReady();
 // --- assertions -------------------------------------------------------------
 console.log("running assertions...");
 
-checks.check("the pane is the garden-diff panel", (await g.pane()).kind, "panel");
-checks.check("the diff loaded", await dstate("ready"), true);
-checks.check("no load error", await dstate("has_error"), false);
-checks.check("one changed file", await dstate("files"), 1);
-checks.check("opens in the unified view", await dstate("mode"), "unified");
-checks.check("a local diff has no PR block", await dstate("has_pr"), false);
+// One projected read for the opening checks, instead of a whole /state each.
+const opening = await g.select<{
+  panes: { kind: string; panel: { values: Record<string, unknown> } }[];
+}>("/state", [
+  "panes.0.kind",
+  ...["ready", "has_error", "files", "mode", "has_pr"].map((n) => `panes.0.panel.values.${n}`),
+]);
+const openingValue = (name: string): unknown => opening.panes[0]?.panel?.values?.[name] ?? "";
+checks.check("the pane is the garden-diff panel", opening.panes[0].kind, "panel");
+checks.check("the diff loaded", openingValue("ready"), true);
+checks.check("no load error", openingValue("has_error"), false);
+checks.check("one changed file", openingValue("files"), 1);
+checks.check("opens in the unified view", openingValue("mode"), "unified");
+checks.check("a local diff has no PR block", openingValue("has_pr"), false);
 
 // --- the header pills switch views -------------------------------------------
 // Tabs are clicked by their label (`/scene?find=`), not by the drawer's bound

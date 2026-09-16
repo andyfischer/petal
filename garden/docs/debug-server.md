@@ -94,6 +94,7 @@ after the response.
 |----------|---------|
 | `GET /state` | Editor state (below) |
 | `GET /state?values=…` | The same, with each panel's `values` map narrowed. See [Filtering `panel.values`](#filtering-panelvalues) |
+| `GET /state?select=…` | Only the named fields, e.g. `select=panes.0.cursor,focus`. `select=` works on every JSON endpoint. See [Selecting fields](#selecting-fields). Feature `state.select` |
 | `GET /state?output=…` | The same, choosing how script `print` output is read. See [Reading script output](#reading-script-output) |
 | `GET /version` | Which build is answering: version, git commit, build date, feature flags, and the petal-ui prelude exports. Answered without touching the event loop. See [Which build am I talking to?](#which-build-am-i-talking-to) |
 | `GET /buffer/<n>` | Full text of pane *n*'s buffer (`text/plain`) |
@@ -202,6 +203,41 @@ Both selectors take a comma-separated list, may be combined, and match a
 function-qualified key by its tail too (`values=y` finds `list_row.y`).
 `values=all` is the explicit default. Filtering applies to `values_partial`
 as well.
+
+### Selecting fields
+
+`?select=` works on every endpoint that replies with JSON. It cuts the reply
+down to a comma-separated list of dotted paths. It is the general form of the
+`values=` filter: the same name-matching rules, applied to any field.
+
+```bash
+curl -s "127.0.0.1:$PORT/state?select=panes.0.cursor,focus"
+curl -s "127.0.0.1:$PORT/state?select=panes.*.panel.values.sel"
+curl -s "127.0.0.1:$PORT/state?select=panes.0.panel.values.obs_*,cell.height"
+```
+
+Each step of a path is one of these:
+
+- `*` matches every key or array element.
+- `name*` matches keys that start with `name`.
+- `name` matches a key exactly. On an array, `name` is an index (`panes.0`).
+
+A function-qualified observed key such as `list_row.sel` matches by its tail
+(`values.sel`) or by writing it out in full (`values.list_row.sel`).
+
+The reply keeps each selected field **where it was**. Objects keep only the
+selected keys. Arrays keep their indices, and unselected elements before a
+selected one read as `null`. So `reply.panes[1].cursor` gives the same value
+with or without `select=`.
+
+A path that matches nothing is simply left out; it is not an error. A
+top-level `ok` is always kept. A malformed path (`a..b`, a `*` in the middle
+of a segment, an empty list) gets a 400. So does `select=` on a non-JSON reply
+(PNG, text), but only after the command has run.
+
+`values=` and `values_prefix=` still work. They narrow the `values` map and
+leave the rest of `/state` as it is. Feature `state.select` (landed
+2026-09-16).
 
 ### Reading script output
 
@@ -381,7 +417,9 @@ The windowed frontend can host several OS windows in one process (File ▸ New
 Window, `:windownew`). One debug server serves them all: every endpoint
 targets one window, defaulting to the focused one. Add `?window=<ordinal>` to
 any path to target a specific window (`GET /state?window=2`, `POST
-/key?window=2`). The selector must be the sole or last query parameter.
+/key?window=2`). The selector may sit anywhere in the query
+(`/frame?window=2&min=5`); before `state.select` it had to be the last
+parameter.
 
 Ordinals are 1-based, assigned in creation order, and never reused. `GET
 /windows` lists the live ordinals. A `?window=<n>` for a window that does not

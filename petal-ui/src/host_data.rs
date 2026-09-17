@@ -41,7 +41,7 @@ use std::cell::RefCell;
 
 use indexmap::IndexMap;
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Plain-data value tree a host's data provider returns — the host→script
@@ -161,7 +161,13 @@ pub fn swap_data_provider(provider: Option<DataProvider>) -> Option<DataProvider
 /// this directly. Safe to register even with no provider attached — the native
 /// simply answers nil.
 pub fn register_host_data(env: &mut Env) {
-    env.register_native("host_data", native_host_data);
+    // Answers from the host's provider, which the binding table does not
+    // cover: a host-data read, invalidated by `note_host_data_changed`.
+    env.register_native(
+        "host_data",
+        native_host_data,
+        NativeEffects::reads(InputClasses::HOST_DATA),
+    );
 }
 
 /// `host_data(kind, arg)` — ask the host's attached [`DataProvider`] for a

@@ -5,9 +5,9 @@
 //!
 //! An under-declared native is a staleness bug the memo cannot see (the row
 //! says less than the native does, so a memoized scope replays without
-//! calling it), and fails the test. Undeclared natives are the ones still to
-//! migrate; they are printed, with what they were seen doing, so the list is
-//! one `--nocapture` away.
+//! calling it), and fails the test. Over-declared facets are printed under
+//! `--nocapture`: not bugs (a row is the union over every path), but the
+//! list of rows the corpus never fully exercised.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -40,11 +40,11 @@ fn audit(app: &Path, includes: &[PathBuf], seed: u64, frames: usize) -> Report {
 }
 
 #[test]
-fn no_declared_native_does_more_than_it_declares_across_the_corpus() {
+fn no_native_does_more_than_it_declares_across_the_corpus() {
     let frames = 45;
     let mut under: Vec<String> = Vec::new();
     // name → (facets, apps that called it)
-    let mut undeclared: BTreeMap<String, (Vec<String>, usize)> = BTreeMap::new();
+    let mut over: BTreeMap<String, (Vec<String>, usize)> = BTreeMap::new();
     let mut called_total = 0;
     for (app, includes) in corpus() {
         let report = audit(&app, &includes, 1, frames);
@@ -57,23 +57,15 @@ fn no_declared_native_does_more_than_it_declares_across_the_corpus() {
                     f.name,
                     f.facets.join(", "),
                 )),
-                FindingKind::Undeclared => {
-                    let e = undeclared.entry(f.name.clone()).or_default();
+                FindingKind::OverDeclared => {
+                    let e = over.entry(f.name.clone()).or_default();
                     for facet in &f.facets {
-                        // `binding a,b` merges with another app's `binding b,c`.
-                        let names = facet.strip_prefix("binding ").map_or_else(
-                            || vec![facet.clone()],
-                            |list| list.split(',').map(|n| format!("binding {n}")).collect(),
-                        );
-                        for name in names {
-                            if !e.0.contains(&name) {
-                                e.0.push(name);
-                            }
+                        if !e.0.contains(facet) {
+                            e.0.push(facet.clone());
                         }
                     }
                     e.1 += 1;
                 }
-                FindingKind::OverDeclared => {}
             }
         }
     }
@@ -82,16 +74,11 @@ fn no_declared_native_does_more_than_it_declares_across_the_corpus() {
         "no native was ever called across the corpus"
     );
     eprintln!(
-        "{} natives still undeclared across the corpus:",
-        undeclared.len()
+        "{} natives declare a facet the corpus never exercised:",
+        over.len()
     );
-    for (name, (facets, apps)) in &undeclared {
-        let facets = if facets.is_empty() {
-            "(silent)".to_string()
-        } else {
-            facets.join(" ")
-        };
-        eprintln!("  {name:<28} {apps:>3} apps  {facets}");
+    for (name, (facets, apps)) in &over {
+        eprintln!("  {name:<28} {apps:>3} apps  {}", facets.join(" "));
     }
     assert!(
         under.is_empty(),

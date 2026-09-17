@@ -35,7 +35,7 @@ use indexmap::IndexMap;
 use petal::direct_manipulation::{self, ManipulationGoal};
 use petal::env::Env;
 use petal::heap::Heap;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::static_value::StaticValue;
 use petal::value::Value;
 use petal_ui::draw::DrawCommand;
@@ -2679,64 +2679,71 @@ fn register_panel_natives(env: &mut Env) {
     // [`PanelHost::set_font_advance_ratios`], which rebinds these same symbols.
     let floor = petal_ui::draw::FontMetrics::monospace(TEXT_ADVANCE_RATIO);
     bind_font_advances(env, &floor, &floor, None);
+    // The rows: a reader of a host-injected binding (the theme, a navigation
+    // argument, the mutation replies) is a probe on `BINDINGS`; a push channel
+    // emits; the `edit_view_*` readers answer from the editor, a host read;
+    // `mutate` also mints a handle from a counter, an effect.
+    const BINDING: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS);
+    const EMITS: NativeEffects = NativeEffects::PURE.with_emits();
+    const HOST_READ: NativeEffects = NativeEffects::reads(InputClasses::HOST_DATA);
     // Garden-only: the host UI theme, injected read-only each frame (see
     // [`bind_panel_theme`]) so a drawer paints in the app's colors instead of a
     // hardcoded palette. Its record is bound before the run; the native returns
     // it (or an empty record when no theme was injected).
-    env.register_native("panel_theme", native_panel_theme);
+    env.register_native("panel_theme", native_panel_theme, BINDING);
     // The always-complete companion: the full active palette (host theme overlaid
     // on a built-in fallback), the shared pattern every panel-mode GPP app reads.
-    env.register_native("palette", native_palette);
+    env.register_native("palette", native_palette, BINDING);
     // The fire-and-forget script→client push channel of panel-mode GPP: the
     // host drains each frame's events ([`PanelHost::take_emitted`]) and
     // forwards them to the pane's subprocess as `emit` notifications.
-    env.register_native("emit", native_emit);
+    env.register_native("emit", native_emit, EMITS);
     // Garden-only: request an effectful action from the pane's subprocess
     // (`on_mutation`), with the reply host-surfaced as status. See [`native_mutate`].
-    env.register_native("mutate", native_mutate);
+    env.register_native("mutate", native_mutate, NativeEffects::EFFECT.with_emits());
     // The reading half: what the mutation identified by a handle resolved to.
-    env.register_native("mutate_result", native_mutate_result);
+    env.register_native("mutate_result", native_mutate_result, BINDING);
     // The browser-history navigation API: each raises a typed `NavIntent` into
     // the `nav_events` side channel that the host drains ([`PanelHost::take_nav`])
     // to drive its per-pane history stack.
     // `claim_key(key, mods)` — the panel's own command keyspace: chords the host
     // must forward instead of consuming (drained by `take_key_claims`).
-    env.register_native("claim_key", native_claim_key);
+    env.register_native("claim_key", native_claim_key, EMITS);
     // `request_frame()` / `animating()` — the panel's opt-out of the host's
     // idle-sleep heuristic, for a frame that is mid-animation (drained by
     // `take_animating`).
-    env.register_native("request_frame", native_request_frame);
-    env.register_native("animating", native_request_frame);
+    env.register_native("request_frame", native_request_frame, EMITS);
+    env.register_native("animating", native_request_frame, EMITS);
     // The panel's own persistent key/value store, scoped to its script path —
     // the answer to "a todo app remembers your todos" without handing a sketch
     // a file API. See [`crate::panel_store`].
     crate::panel_store::register_store(env);
-    env.register_native("navigate", native_navigate);
+    env.register_native("navigate", native_navigate, EMITS);
     // Read back the argument the navigation that opened this screen carried.
-    env.register_native("nav_arg", native_nav_arg);
-    env.register_native("navigate_replace", native_navigate_replace);
-    env.register_native("navigate_back", native_navigate_back);
-    env.register_native("navigate_forward", native_navigate_forward);
+    env.register_native("nav_arg", native_nav_arg, BINDING);
+    env.register_native("navigate_replace", native_navigate_replace, EMITS);
+    env.register_native("navigate_back", native_navigate_back, EMITS);
+    env.register_native("navigate_forward", native_navigate_forward, EMITS);
     // Garden-only: declare a natively-selectable read-only text region. Emitted
     // as a `Host` extension command; the host (`garden-app`) renders a real
     // `EditorView` there. See [`PanelCmd::TextView`].
-    env.register_native("text_view", native_text_view);
+    env.register_native("text_view", native_text_view, EMITS);
     // Garden-only: the editable sibling of `text_view` — the host routes vim
     // keystrokes into its `EditorView`. See [`PanelCmd::TextView`] (`editable`).
-    env.register_native("edit_view", native_edit_view);
+    env.register_native("edit_view", native_edit_view, EMITS);
     // Read an `edit_view` region's live (post-edit) buffer text back into the
     // script, so a drawer can assemble a save payload. Host-bound each frame.
-    env.register_native("edit_view_text", native_edit_view_text);
+    env.register_native("edit_view_text", native_edit_view_text, HOST_READ);
     // Declare an `edit_view` region's projection — where each of its lines came
     // from — so the host can fold the user's edits back into the sources.
-    env.register_native("edit_view_projection", native_edit_view_projection);
+    env.register_native("edit_view_projection", native_edit_view_projection, EMITS);
     // Read back what those edits currently resolve to, ready to hand a subprocess.
-    env.register_native("edit_view_edits", native_edit_view_edits);
+    env.register_native("edit_view_edits", native_edit_view_edits, HOST_READ);
     // The line-styling side channel for a `text_view` region.
-    env.register_native("text_view_line_styles", native_text_view_line_styles);
-    env.register_native("text_view_scroll_to", native_text_view_scroll_to);
+    env.register_native("text_view_line_styles", native_text_view_line_styles, EMITS);
+    env.register_native("text_view_scroll_to", native_text_view_scroll_to, EMITS);
     // Per-region soft-wrap opt-in. See [`PanelCmd::TextViewWrap`].
-    env.register_native("text_view_wrap", native_text_view_wrap);
+    env.register_native("text_view_wrap", native_text_view_wrap, EMITS);
     // The `host_data(kind, arg)` pull channel is petal-ui's blessed contract
     // (Garden's prototype, generalized upstream) — register it, don't fork it.
     host_data::register_host_data(env);

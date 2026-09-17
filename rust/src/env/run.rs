@@ -51,7 +51,6 @@ impl Env {
         self.observations.enter_context(ck);
 
         let memo = self.memo_enabled();
-        let declared = self.policy.declared;
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
@@ -69,7 +68,6 @@ impl Env {
             &mut self.observations,
             &mut self.profile,
             memo,
-            declared,
             &mut self.effect_audit,
         );
         if !vm.stack.vm_started {
@@ -365,7 +363,6 @@ impl Env {
             &mut self.observations,
             &mut self.profile,
             false,
-            true,
             &mut self.effect_audit,
         )
         .call_closure_sync(callable, args, host_call_site(name));
@@ -426,7 +423,6 @@ fn make_vm<'a>(
     observations: &'a mut Observations,
     profile: &'a mut crate::profile::VmProfile,
     memo: bool,
-    declared: bool,
     audit: &'a mut crate::effect_audit::EffectAudit,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
@@ -463,7 +459,6 @@ fn make_vm<'a>(
         hooks,
         error_already_annotated: false,
         memo,
-        declared,
         audit,
     }
 }

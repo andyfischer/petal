@@ -17,7 +17,7 @@ follows the same shape:
 
 ```rust
 let mut env = Env::new();
-env.register_native("spawn_particle", native_spawn_particle); // host functions
+env.register_native("spawn_particle", native_spawn_particle, NativeEffects::EMITS); // host functions
 env.register_module("ui", include_str!("ui.ptl"));            // Petal-source prelude
 env.set_implicit_imports(&["ui"]);
 let pid = env.load_program_at(&source, &path)?;               // compile (walks imports)
@@ -36,7 +36,7 @@ Entry points, all on `Env` (`rust/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func) -> NativeFnId`, `set_native_class` |
+| Native functions | `register_native(name, func, effects) -> NativeFnId`, `native_effects`, `set_native_class` |
 | Handles | `register_handle_class`, `make_handle` |
 | Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
 | Programs | `load_program`, `load_program_at`, `compile_program_at`, `load_program_ir` |
@@ -68,6 +68,34 @@ called before `load_program`**: at load time every native becomes a
 `Value::NativeFunction(id)` in the root frame, so scripts resolve natives
 through ordinary scope lookup and can shadow them.
 
+**Every native declares what it does.** The third argument is its
+`NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,
+`CLOCK`, `VIEWPORT`, `HOST_DATA`, `RESOURCES`, `RNG`, `BINDINGS`), whether the
+call is a `probe` (a pure function of its arguments and those reads, safe to
+re-evaluate), whether it `emits` into an output buffer, whether it has an
+`effect` no replay could reproduce, and its `Pending` policy. The reactive
+layers — the frame gate, memoized scopes — take the row at its word, so a
+native that reaches host state without saying so looks pure and every
+memoized scope that calls it replays stale. The row is the union over every
+path through the native. Start from `NativeEffects::PURE`, `EMITS` or
+`EFFECT`, or `NativeEffects::probe(class)` / `reads(class)`, and add
+`.with_effect()` / `.with_emits()` / `.with_pending(..)`:
+
+```rust
+env.register_native("mouse_x", native_mouse_x, NativeEffects::probe(InputClasses::POINTER));
+env.register_native("draw_rect", native_draw_rect, NativeEffects::PURE.with_emits());
+env.register_native("query", native_query, NativeEffects::reads(InputClasses::HOST_DATA));
+env.register_native("save_file", native_save_file, NativeEffects::EFFECT);
+```
+
+A native that answers from host state outside the binding table
+(`HOST_DATA`) must also call `PetalCxt::note_host_read()` — the row is what
+the memo consults, the call is what the frame gate records — and one with an
+effect the `PetalCxt` methods do not already report (`print`, the counters,
+the mutable resource table do) calls `note_effect()`. `petal run
+--effect-audit` and `petal-ui-run --effect-audit` hold what every native was
+observed doing against its row and name any facet the row lacks.
+
 `PetalCxt` is the per-call context. Argument readers are 1-indexed like Lua
 (`get_int(1)`, `get_string(2)`, `get_value`, `get_symbol`, `get_handle`, …);
 results are pushed (`push_int`, `push_value`, `push_nil`, …). It also exposes
@@ -83,11 +111,12 @@ called with the receiver prepended. So registering `set_location` makes both
 `set_location(obj, p)` and `obj.set_location(p)` work. The namespace is flat:
 one native table for all receiver types.
 
-**Native classes.** After registration, mark a native with
-`env.set_native_class(id, NativeClass::…)` to say how it treats a
-`Value::Pending` argument: `Strict` (default) absorbs and returns the pending
-value, `Effectful` makes the call a no-op that emits nothing, and
-`AllowPending` runs normally. Emitters should be `Effectful`.
+**Native classes.** The row's `pending` field (`NativeClass`) says how the
+native treats a `Value::Pending` argument: `Strict` (the default) absorbs and
+returns the pending value, `Effectful` makes the call a no-op that emits
+nothing, and `AllowPending` runs normally. Emitters should be `Effectful`
+(`NativeEffects::EMITS` is). `env.set_native_class(id, ..)` changes it after
+registration.
 
 The compiled-in builtins (`rust/src/builtins/`) go through the same table.
 `map`/`filter`/`reduce`/`forEach` register placeholders and are dispatched

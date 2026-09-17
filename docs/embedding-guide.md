@@ -85,21 +85,24 @@ e.g. draw commands), use `cxt.emit(sym, tag, data)` instead — it builds a
 `Value::EnumVariant { tag, data }` for you. For a single observed call like
 `layout`, a plain `push_output` of the argument is enough.
 
-### 2. Classify emitters as `Effectful`
+### 2. Declare what the native does
 
-A native that only emits should be a no-op when handed a `Value::Pending`
-(loading/errored) argument — it should emit *nothing* rather than have the
-pending value absorbed as its result. Mark it after registration:
+Registration takes the native's `NativeEffects` row — what it reads, whether
+it emits, whether it has an effect no replay reproduces, and how it treats a
+`Value::Pending` argument. An emitter is `NativeEffects::EMITS`: it pushes
+into an output buffer and is a no-op when handed a `Pending` (loading /
+errored) argument — it emits *nothing* rather than have the pending value
+absorbed as its result:
 
 ```rust
-let id = env.register_native("layout", native_layout);
-env.set_native_class(id, NativeClass::Effectful);
+env.register_native("layout", native_layout, NativeEffects::EMITS);
 ```
 
-`NativeClass::Strict` (the default) is for pure natives (`sqrt(pending)` →
-`pending`). `Effectful` is for emitters (`print`, `push_output`, and your
-observed calls). `AllowPending` is for natives that inspect pendings themselves.
-See [`NativeClass`] in [ffi.md](ffi.md).
+`NativeClass::Strict` (the default `pending` policy) is for pure natives
+(`sqrt(pending)` → `pending`). `Effectful` is for emitters (`print`,
+`push_output`, and your observed calls). `AllowPending` is for natives that
+inspect pendings themselves. See [`NativeEffects`] and [`NativeClass`] in
+[ffi.md](ffi.md).
 
 ### 3. The host drains and interprets after the run
 

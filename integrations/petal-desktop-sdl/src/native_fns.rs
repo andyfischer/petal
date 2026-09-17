@@ -4,7 +4,7 @@
 //! particular to this app: the example browser and sandboxed file I/O.
 
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Host→script browser state: the example list, as `[name, path]` pairs.
@@ -25,13 +25,27 @@ pub fn register_all(env: &mut Env) {
     petal_ui::draw::register_draw(env);
     petal_ui::draw::register_canvas(env);
     petal_ui::register_prelude(env);
-    env.register_native("example_count", native_example_count);
-    env.register_native("example_name", native_example_name);
-    env.register_native("example_path", native_example_path);
-    env.register_native("launch_script", native_launch_script);
-    env.register_native("load_text_file", native_load_text_file);
-    env.register_native("save_text_file", native_save_text_file);
-    env.register_native("file_exists", native_file_exists);
+    // The browser natives read the bound example list; `launch_script`
+    // pushes a request the host drains; the file natives reach the
+    // filesystem, which the runtime cannot see change — a host read for the
+    // two readers, an effect for the writer.
+    const EXAMPLES: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS);
+    const FILE_READ: NativeEffects = NativeEffects::reads(InputClasses::HOST_DATA);
+    env.register_native("example_count", native_example_count, EXAMPLES);
+    env.register_native("example_name", native_example_name, EXAMPLES);
+    env.register_native("example_path", native_example_path, EXAMPLES);
+    env.register_native(
+        "launch_script",
+        native_launch_script,
+        NativeEffects::PURE.with_emits(),
+    );
+    env.register_native("load_text_file", native_load_text_file, FILE_READ);
+    env.register_native(
+        "save_text_file",
+        native_save_text_file,
+        NativeEffects::EFFECT,
+    );
+    env.register_native("file_exists", native_file_exists, FILE_READ);
 }
 
 // ── Host-side helpers ─────────────────────────────────────────────────────
@@ -159,6 +173,8 @@ fn native_save_text_file(state: &mut PetalCxt) -> NativeResult {
 }
 
 fn native_file_exists(state: &mut PetalCxt) -> NativeResult {
+    // Whether the file exists is host state the runtime cannot see change.
+    state.note_host_read();
     let path = state.get_string(1)?;
     let exists = match safe_path(&path) {
         Some(p) => p.exists(),

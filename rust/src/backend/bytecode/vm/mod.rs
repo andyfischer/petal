@@ -130,14 +130,9 @@ pub struct Vm<'a> {
     /// [`crate::memo`] and the `memo` submodule). Copied from
     /// `Env::memo_enabled` when the `Vm` is built.
     pub memo: bool,
-    /// Whether a native call is classified for the memo from its declared
-    /// [`NativeEffects`](crate::native_fn::NativeEffects) where it has one
-    /// (`RunPolicy::declared`). Off, every native goes through the activity
-    /// snapshot around the call.
-    pub declared: bool,
     /// The opt-in effect audit (off by default): with it on, every native
-    /// call is bracketed by activity snapshots whatever `declared` says, and
-    /// the delta is accumulated per native — see [`crate::effect_audit`].
+    /// call is bracketed by activity snapshots and the delta is accumulated
+    /// per native — see [`crate::effect_audit`].
     pub audit: &'a mut crate::effect_audit::EffectAudit,
 }
 

@@ -691,43 +691,29 @@ impl Env {
         }
     }
 
-    /// Register a native function that can be called from Petal code.
-    /// Must be called before `load_program`.
-    pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId {
-        self.native_fns.register(name, func)
-    }
-
-    /// Register a native function together with its declared
-    /// [`NativeEffects`]: what it reads, whether it emits, whether it does
-    /// something a replay could not reproduce, and its `Pending` policy. The
-    /// reactive layers take the declaration at its word and skip the per-call
-    /// activity snapshot; a native registered with
-    /// [`register_native`](Self::register_native) is classified by inference
-    /// around each call instead. Prefer this: an undeclared native that reaches
-    /// host state without calling `note_host_read`/`note_effect` looks pure,
-    /// and every memoized scope that calls it replays stale.
-    pub fn register_native_with(
+    /// Register a native function that can be called from Petal code,
+    /// together with its declared [`NativeEffects`]: what it reads, whether it
+    /// emits, whether it does something a replay could not reproduce, and its
+    /// `Pending` policy. Must be called before `load_program`.
+    ///
+    /// The reactive layers take the row at its word — the memo classifies
+    /// every call from it and never looks at the activity counters — so the
+    /// row is required, not advisory. A native that reaches host state
+    /// without saying so looks pure, and every memoized scope that calls it
+    /// replays stale. `petal run --effect-audit` / `petal-ui-run
+    /// --effect-audit` hold what a native was observed doing against its row.
+    pub fn register_native(
         &mut self,
         name: &str,
         func: NativeFn,
         effects: NativeEffects,
     ) -> NativeFnId {
-        self.native_fns.register_with(name, func, effects)
+        self.native_fns.register(name, func, effects)
     }
 
-    /// The declared effect row of a native, or `None` if it was registered
-    /// without one.
-    pub fn native_effects(&self, id: NativeFnId) -> Option<NativeEffects> {
+    /// The declared effect row of a native.
+    pub fn native_effects(&self, id: NativeFnId) -> NativeEffects {
         self.native_fns.effects(id)
-    }
-
-    /// The names of every registered native without a declared effect row.
-    pub fn undeclared_natives(&self) -> Vec<String> {
-        self.native_fns
-            .undeclared()
-            .into_iter()
-            .map(|id| self.native_fns.get_name(id).to_string())
-            .collect()
     }
 
     /// Override the [`NativeClass`] of an already-registered native (by the id

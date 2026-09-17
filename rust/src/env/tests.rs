@@ -761,7 +761,7 @@ mod host_surface_tests {
     #[test]
     fn host_drains_a_forks_output_and_draw_buffer_then_drops_it() {
         let mut env = Env::new();
-        env.register_native("emit_rect", emit_rect);
+        env.register_native("emit_rect", emit_rect, NativeEffects::EMITS);
         let pid = env.load_program(FRAME).unwrap();
         let src = env.create_stack(pid).unwrap();
         env.run(src).unwrap();

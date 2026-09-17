@@ -19,16 +19,15 @@
 //
 // For each fragment it runs a monkey scenario under the `baseline` run policy
 // (no optimizer, memo or gate) and under each shipped policy — `fast-memo` (the
-// gate alone), `replay` (the memo alone), `replay-declared` (the memo
-// classifying every native by inference instead of its declared effect row)
-// and `fast` (both) — and compares the frames.
+// gate alone), `replay` (the memo alone) and `fast` (both) — and compares the
+// frames.
 // `prints` is excluded deliberately — a gated frame documents empty prints.
 //
 // It then runs each fragment once more under `replay --effect-audit`, which
 // holds what every native was seen doing against the effect row it declared
 // (petal::effect_audit). An under-declared native fails the fragment; the
-// undeclared ones — worlds-fair's own host natives, until step 5 of the
-// declarative-effect task declares them — are summarized at the end.
+// over-declared facets — rows no fragment fully exercised — are summarized
+// at the end.
 //
 // Usage:
 //   ./ts/bin/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
@@ -115,7 +114,7 @@ const normalize = (trace: string) =>
     });
 
 /** Run policies (see rust/src/policy.rs), each compared against `baseline`. */
-const VARIANTS = ['fast-memo', 'replay', 'replay-declared', 'fast'] as const;
+const VARIANTS = ['fast-memo', 'replay', 'fast'] as const;
 
 function runnerArgs(app: string, policy: string, extra: string[] = []): string[] {
   return [
@@ -154,15 +153,15 @@ function audit(app: string): AuditLine[] {
   }
   const lines: AuditLine[] = [];
   for (const line of stderr.split('\n')) {
-    const m = /^\s+(under-declared|undeclared|over-declared)\s+(\S+)\s+\d+ calls\s+(.*)$/.exec(line);
+    const m = /^\s+(under-declared|over-declared)\s+(\S+)\s+\d+ calls\s+(.*)$/.exec(line);
     if (m) lines.push({ kind: m[1], name: m[2], facets: m[3] });
   }
   return lines;
 }
 
 let failures = 0;
-/** Undeclared natives seen across every fragment, with what they did. */
-const undeclared = new Map<string, Set<string>>();
+/** Over-declared facets seen across every fragment: rows the corpus never fully exercised. */
+const over = new Map<string, Set<string>>();
 for (const [name, entry] of FRAGMENTS) {
   const source = [...LIBS, entry]
     .map((f) => `// ==== ${f} ====\n${readFileSync(join(ptl, f), 'utf8')}\n`)
@@ -195,10 +194,10 @@ for (const [name, entry] of FRAGMENTS) {
   const under: string[] = [];
   for (const line of audit(name)) {
     if (line.kind === 'under-declared') under.push(`${line.name} was seen doing ${line.facets}`);
-    if (line.kind === 'undeclared') {
-      const seen = undeclared.get(line.name) ?? new Set<string>();
+    if (line.kind === 'over-declared') {
+      const seen = over.get(line.name) ?? new Set<string>();
       for (const facet of line.facets.split(/\s+/).filter(Boolean)) seen.add(facet);
-      undeclared.set(line.name, seen);
+      over.set(line.name, seen);
     }
   }
   if (under.length) {
@@ -209,10 +208,10 @@ for (const [name, entry] of FRAGMENTS) {
   }
 }
 
-if (undeclared.size) {
-  console.log(`\n${undeclared.size} natives still undeclared across the fragments:`);
-  for (const [name, facets] of [...undeclared].sort()) {
-    console.log(`  ${name.padEnd(28)} ${[...facets].join(' ') || '(silent)'}`);
+if (over.size) {
+  console.log(`\n${over.size} natives declare a facet no fragment exercised:`);
+  for (const [name, facets] of [...over].sort()) {
+    console.log(`  ${name.padEnd(28)} ${[...facets].join(' ')}`);
   }
 }
 

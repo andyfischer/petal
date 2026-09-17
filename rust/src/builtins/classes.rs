@@ -220,7 +220,7 @@ fn native_rect_offset(state: &mut PetalCxt) -> Result<u32, String> {
 /// [`super::register_builtins`]; append-only, like every other registration
 /// there (phantom term indices are positional).
 pub(super) fn register(table: &mut NativeFnTable) {
-    table.register_with("Rect", native_rect, NativeEffects::PURE);
+    table.register("Rect", native_rect, NativeEffects::PURE);
     for (name, func) in [
         (
             "center_x",
@@ -232,7 +232,7 @@ pub(super) fn register(table: &mut NativeFnTable) {
         ("inset", native_rect_inset),
         ("offset", native_rect_offset),
     ] {
-        let id = table.register_with(
+        let id = table.register(
             &qualified_method_name("Rect", name),
             func,
             NativeEffects::PURE,

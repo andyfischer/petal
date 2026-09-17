@@ -1,20 +1,20 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
-// Which registered natives declare what they do, and which reach host state
-// without declaring anything.
+// Which registered natives report what they do through `PetalCxt`, and which
+// reach outside their arguments without reporting anything.
 //
-// Three layers — the frame gate, memoized scopes, and P2's dependency classes
-// — need to know what a native does, and there is no place where a native says
-// so. See docs/tasks/declarative-effect-refactoring.md. Until that row exists,
-// a native is classified by what it happens to call: the instrumented
-// `PetalCxt` methods below move the activity counters by construction, and
-// `note_host_read()` / `note_effect()` are the manual escape hatch for a native
-// that reaches host state by some other route.
+// Every native registers with an effect row (docs/tasks/declarative-effect-
+// refactoring.md), and the reactive layers take the row at its word. What
+// checks a row is the activity counters: the instrumented `PetalCxt` methods
+// below move them by construction, and `note_host_read()` / `note_effect()`
+// are the manual escape hatch for a native that reaches host state by some
+// other route — the frame gate reads those counters directly, and the runtime
+// effect audit holds them against the row.
 //
-// A native that calls none of them is SILENT. That is correct for a pure
-// function of its arguments (`sqrt`, `len`) and a live bug for anything else:
-// with no activity delta the memo records nothing, so the enclosing scope is
-// replayed as a pure function of its arguments and the native is never called
-// again. A `panel_store_set` in a replayed scope silently stops persisting.
+// A native whose body calls none of them is SILENT. That is correct for a pure
+// function of its arguments (`sqrt`, `len`) and suspect for anything else: the
+// gate cannot see what it read, and the audit cannot tell whether its row is
+// right. A SILENT body that reaches the filesystem, a thread-local or the
+// clock is the list this script prints.
 //
 // This is a *static* approximation. The real tool is the runtime audit —
 // `petal-ui-run --effect-audit`, `petal run --effect-audit`, and the corpus

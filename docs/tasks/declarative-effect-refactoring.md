@@ -1,13 +1,16 @@
 # Declare what a native does, instead of inferring it at runtime
 
-Status: **in progress**, 2026-09-16. Sequencing steps 1 (the oracle over Garden
+Status: **done**, 2026-09-16. Sequencing steps 1 (the oracle over Garden
 and worlds-fair) and 2 (a named `RunPolicy`) are done — see
 [What the oracle found](#what-the-oracle-found) and
-[RunPolicy](#runpolicy-sequencing-step-2). Steps 1–4 of
+[RunPolicy](#runpolicy-sequencing-step-2). All five steps of
 [Migration](#migration-in-five-steps-that-each-stand-alone) are done — see
-[Steps 1–3 as landed](#steps-13-as-landed) and
-[Step 4 as landed](#step-4-as-landed). Step 5 (declare the ecosystem, drop
-the fallback) is next; the audit has already listed the 64 natives it covers.
+[Steps 1–3 as landed](#steps-13-as-landed),
+[Step 4 as landed](#step-4-as-landed) and
+[Step 5 as landed](#step-5-as-landed). Every native in the ecosystem now
+registers with its row; registration takes one, so there is no undeclared
+native and no inference fallback. What is left of this document is the
+record of how it got there.
 
 Prerequisite for P2 of [the reactive rendering plan](../dev/reactive-rendering-plan.md).
 See [Sequencing](#sequencing) for how it interleaves with the rest of that plan.
@@ -163,6 +166,10 @@ That inverts the current relationship — today inference is load-bearing and
 nothing checks the declarations, because there are none; afterward the
 declarations are load-bearing and inference is what checks them.
 
+(As landed, the oracle is the effect audit of step 4 — a runtime switch
+rather than a debug-build mode — and the memo's own counter-diffing
+classifier is gone; see [Step 5 as landed](#step-5-as-landed).)
+
 This is the same discipline every reactive layer has shipped under
 (`petal-ui/tests/gating.rs`, `petal-ui/tests/memo.rs`): a cheap exact
 mechanism, verified continuously against an expensive exact one.
@@ -314,6 +321,69 @@ What it found, across the 37 in-tree apps at 45 monkey frames:
 The static script `./ts/bin/native-effect-audit.ts` stays: it covers the
 natives no corpus app calls, which the runtime audit by construction cannot.
 
+## Step 5 as landed
+
+Done 2026-09-16. Every registration site in the ecosystem declares its row,
+and the fallback is gone.
+
+- **Registration takes the row.** `NativeFnTable::register(name, func,
+  effects)` and `Env::register_native(name, func, effects)`; the two-argument
+  forms and `register_with` / `register_native_with` are gone, so an
+  undeclared native is a compile error rather than a runtime state.
+  `effects(id)` answers a row, not an `Option`; `undeclared()` and
+  `every_core_native_is_declared` had nothing left to say and were removed.
+  `set_native_class` stays (it updates the row's `pending`).
+- **The per-call snapshot is gone from the hot path.** `call_native_fn`
+  snapshots the activity counters only while the effect audit is on;
+  `memo_note_native` classifies from the row alone (it is the former
+  `memo_note_declared_native`; the counter-diffing classifier and
+  `RunPolicy::declared` / `replay-declared` went with it). The memo corpus
+  oracle is `replay-memo` against `replay` again; the rows are checked facet
+  by facet by `tests/effect_audit.rs`, which is where the inference now lives.
+- **One audit rule was added.** An effect observed on a call that answered a
+  `Pending` is not held against the row (`Observed::effects_pending`). The
+  memo makes a scope effectful on a `Pending` result whatever the row says,
+  so the facet is redundant there — and Garden's `query`, which creates a
+  loading resource on that path and answers from its cache otherwise, can
+  declare `reads(HOST_DATA)` alone and leave a scope that queries *ready*
+  data memoizable. Declaring the effect would have made every such scope
+  unrecordable, a regression on exactly the panels the memo is for.
+- **`InputClasses::BINDINGS` widened** from "chosen by argument" to any
+  host→script binding outside the named classes: the font metric tables the
+  text measurers read, Garden's injected theme and navigation argument, the
+  worlds-fair model record, the SDL example list. P2 resolves the class per
+  binding symbol either way; naming a class per host binding would have been
+  a guess.
+- **The rows, by host.** petal-ui: the draw family and the canvas ops emit
+  (`create_canvas` / `draw_to` / `draw_to_screen` also advance a counter, an
+  effect); every input reader is a probe on its class (`hovered`, the
+  buttons, scroll and drag on `POINTER`; keys, modifiers and `text_input` on
+  `KEYBOARD`; `dt` / `time` / `frame_count` on `CLOCK`; the screen size on
+  `VIEWPORT`); the text measurers probe `BINDINGS`; `fonts()` and
+  `host_data()` read `HOST_DATA`; `font()` and `ui_version()` are pure. The
+  draw natives keep `NativeClass::Strict`, as they always had (a host that
+  wants the no-op-on-`Pending` behavior sets it by id). Garden: the push
+  channels emit, `mutate` also mints a handle (an effect), the theme and
+  navigation readers probe `BINDINGS`, `query` / `panel_store_get` / the
+  `edit_view_*` readers read `HOST_DATA`, `invalidate` / `panel_store_set`
+  are effects, `row` / `column` are effects for the warning they can print,
+  `layout` / `color_theme` / `color_scheme` are `EMITS`. The panel stubs
+  declare what each stub does — pure where it validates and drops — and
+  `invalidate` / `edit_view_text` / `edit_view_edits` now also report the
+  read or effect Garden's do, the same parity fix step 4 made to the store
+  stubs. petal-desktop-sdl: the example browser probes `BINDINGS`,
+  `launch_script` emits, the file natives read `HOST_DATA` (`file_exists`
+  now says so) or are effects. The WASM host, the two experiment embedders
+  under `~/biz`, and worlds-fair (`wf_action` / `wf_goto` emit, `wf_model` /
+  `wf_fragments` probe `BINDINGS`, the Garden stub's `query` is a
+  binding probe that emits) are declared and worlds-fair re-vendored.
+- **What the audit says now.** Across the in-tree corpus no native
+  under-declares; the corpus test prints the over-declared facets instead of
+  an undeclared list. `./ts/bin/native-effect-audit.ts` (the static sweep)
+  finds no silent native reaching outside its arguments. The stdlib extractor
+  learned the three-argument form and, as a side effect, now recovers the two
+  multi-line draw registrations it had been skipping.
+
 ## What the oracle found
 
 Sequencing step 1, done 2026-09-16. The gate and memo differentials now cover
@@ -450,7 +520,7 @@ layer (**B**) and a named run policy (**C**) — identified in the same review.
 | 1 | ~~**Run the gate/memo oracle over Garden and worlds-fair**~~ **done** | Outstanding correctness debt on *shipped* layers. Do it before adding a third. It also produces the list of undeclared host natives that step 4 above needs. Both differentials pass; five undeclared natives found and fixed; see [What the oracle found](#what-the-oracle-found). |
 | 2 | ~~**C — a named `RunPolicy` in place of `OptFlags`**~~ **done** | Small, and it is a tool for everything after it: `fast` / `explain` / `baseline` / `replay` as named modes makes the differential oracle a one-word argument instead of an env var plus a comment. Worth having *before* the work that leans on it, not after. |
 | 3 | ~~**A — this task, steps 1–3**~~ **done** ∥ **P1's top-level body and loop bodies** (next) | Independent of each other: A is the native boundary, P1's remainder is the lowering. The top-level body is the largest measured P1 gap (the spreadsheet moved only 1.32 → 1.15 ms because it is one long script with few calls worth replaying), so it should not wait. |
-| 4 | ~~**A step 4**~~ **done**, **A step 5** ∥ **E — a shared host frame driver** | The ecosystem migration is mostly other repos and can proceed at its own pace. E consolidates the gate → run → retain → invalidate loop that five hosts hand-wire, so P0's remaining work lands once instead of five times. |
+| 4 | ~~**A steps 4–5**~~ **done** ∥ **E — a shared host frame driver** | The ecosystem migration was mostly other repos; done, worlds-fair included. E consolidates the gate → run → retain → invalidate loop that five hosts hand-wire, so P0's remaining work lands once instead of five times. |
 | 5 | **P2 — dependency classes, landing B with it** | P2 is the first consumer of the declared `reads` classes. Land the shared validity layer *as part of* P2 rather than as a standalone refactor first: with the gate and the memo it has two clients and the abstraction is speculative; with P2's block granularity it has three and pays for itself. |
 | 6 | **P0's segmented output and damage rectangles** | Sits on E. Also benefits from P2's block guards, which is what gives a segment a stable identity. |
 | 7 | **P3 — keyed collections and the hit-test index** | Last, as planned. It changes the representation of lists and maps, so it should not overlap a refactor of the native boundary; and its hit-test index is the thing that finally retires the per-row `hovered` validation that dominates P1's remaining list cost. |

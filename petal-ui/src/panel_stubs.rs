@@ -23,7 +23,8 @@
 //!   Garden's string-or-nil type check but stores nothing, so every run starts
 //!   from the same blank slate. Both still report what Garden's do — a host
 //!   read, an effect — so a memoized scope is classified the same way here as
-//!   in Garden (the effect audit is what caught them not doing so).
+//!   in Garden (the effect audit is what caught them not doing so); so do
+//!   `invalidate` and the `edit_view_*` readers, for the same reason.
 //! - The `text_view`/`edit_view` region natives emit the same `Host` draw
 //!   commands Garden's do (tags `text_view`, `edit_view`,
 //!   `edit_view_projection`, `text_view_styles`, `text_view_scroll_to`,
@@ -40,7 +41,7 @@ use std::hash::{Hash, Hasher};
 
 use indexmap::IndexMap;
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 use crate::draw;
@@ -87,31 +88,44 @@ const STUB_MUTATE_HANDLES: &str = "__stub_mutate_handles";
 /// the env (natives resolve by name at call time, so order relative to
 /// program loading does not matter).
 pub fn register_panel_stubs(env: &mut Env) {
-    env.register_native("palette", native_palette);
-    env.register_native("panel_theme", native_panel_theme);
-    env.register_native("query", native_query);
-    env.register_native("invalidate", native_invalidate);
-    env.register_native("emit", native_emit);
-    env.register_native("mutate", native_mutate);
-    env.register_native("mutate_result", native_mutate_result);
-    env.register_native("claim_key", native_claim_key);
-    env.register_native("request_frame", native_request_frame);
-    env.register_native("animating", native_request_frame);
-    env.register_native("navigate", native_navigate);
-    env.register_native("navigate_replace", native_navigate);
-    env.register_native("navigate_back", native_nop_nil);
-    env.register_native("navigate_forward", native_nop_nil);
-    env.register_native("nav_arg", native_nop_nil);
-    env.register_native("panel_store_get", native_store_get);
-    env.register_native("panel_store_set", native_store_set);
-    env.register_native("text_view", native_text_view);
-    env.register_native("edit_view", native_edit_view);
-    env.register_native("edit_view_text", native_edit_view_text);
-    env.register_native("edit_view_edits", native_edit_view_edits);
-    env.register_native("edit_view_projection", native_edit_view_projection);
-    env.register_native("text_view_line_styles", native_text_view_line_styles);
-    env.register_native("text_view_scroll_to", native_text_view_scroll_to);
-    env.register_native("text_view_wrap", native_text_view_wrap);
+    // Each stub declares what *it* does, which is at most what Garden's
+    // native does. Where Garden's reaches host state (the query cache, the
+    // panel store, an editor buffer) the stub reports the same read or effect,
+    // so a panel is classified the same way here as in Garden; a stub that
+    // only validates its arguments and drops them is pure.
+    const HOST_READ: NativeEffects = NativeEffects::reads(InputClasses::HOST_DATA);
+    const EMITS: NativeEffects = NativeEffects::PURE.with_emits();
+    env.register_native("palette", native_palette, NativeEffects::PURE);
+    env.register_native("panel_theme", native_panel_theme, NativeEffects::PURE);
+    // The loading path creates a resource, an effect the audit sets aside
+    // because the call answers `Pending` (see `petal::effect_audit`).
+    env.register_native("query", native_query, HOST_READ);
+    env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
+    env.register_native("emit", native_emit, NativeEffects::PURE);
+    env.register_native("mutate", native_mutate, NativeEffects::EFFECT);
+    env.register_native("mutate_result", native_mutate_result, NativeEffects::PURE);
+    env.register_native("claim_key", native_claim_key, NativeEffects::PURE);
+    env.register_native("request_frame", native_request_frame, EMITS);
+    env.register_native("animating", native_request_frame, EMITS);
+    env.register_native("navigate", native_navigate, NativeEffects::PURE);
+    env.register_native("navigate_replace", native_navigate, NativeEffects::PURE);
+    env.register_native("navigate_back", native_nop_nil, NativeEffects::PURE);
+    env.register_native("navigate_forward", native_nop_nil, NativeEffects::PURE);
+    env.register_native("nav_arg", native_nop_nil, NativeEffects::PURE);
+    env.register_native("panel_store_get", native_store_get, HOST_READ);
+    env.register_native(
+        "panel_store_set",
+        native_store_set,
+        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+    );
+    env.register_native("text_view", native_text_view, EMITS);
+    env.register_native("edit_view", native_edit_view, EMITS);
+    env.register_native("edit_view_text", native_edit_view_text, HOST_READ);
+    env.register_native("edit_view_edits", native_edit_view_edits, HOST_READ);
+    env.register_native("edit_view_projection", native_edit_view_projection, EMITS);
+    env.register_native("text_view_line_styles", native_text_view_line_styles, EMITS);
+    env.register_native("text_view_scroll_to", native_text_view_scroll_to, EMITS);
+    env.register_native("text_view_wrap", native_text_view_wrap, EMITS);
 }
 
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
@@ -247,6 +261,8 @@ fn native_request_frame(cxt: &mut PetalCxt) -> NativeResult {
 fn native_invalidate(cxt: &mut PetalCxt) -> NativeResult {
     let _kind = cxt.get_string(1)?;
     let _arg = cxt.get_value(2)?;
+    // Garden's drops a cache entry, which no replay reproduces.
+    cxt.note_effect();
     cxt.push_nil();
     Ok(1)
 }
@@ -353,12 +369,15 @@ fn emit_region(cxt: &mut PetalCxt, tag: &str) -> NativeResult {
 
 fn native_edit_view_text(cxt: &mut PetalCxt) -> NativeResult {
     let _id = cxt.get_int(1)?;
+    // Garden's answers from the editor buffer: a host read.
+    cxt.note_host_read();
     cxt.push_string(String::new());
     Ok(1)
 }
 
 fn native_edit_view_edits(cxt: &mut PetalCxt) -> NativeResult {
     let _id = cxt.get_int(1)?;
+    cxt.note_host_read();
     cxt.push_list(Vec::new());
     Ok(1)
 }

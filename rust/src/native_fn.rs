@@ -66,8 +66,11 @@ impl InputClasses {
     pub const RESOURCES: InputClasses = InputClasses(1 << 5);
     /// The per-run random stream (which the native also advances).
     pub const RNG: InputClasses = InputClasses(1 << 6);
-    /// A host→script binding chosen by *argument* (`binding(sym)`), so the
-    /// class is not known at the leaf: whichever binding the symbol names.
+    /// A host→script binding outside the named classes: one chosen by
+    /// *argument* (`binding(sym)`, whichever binding the symbol names), or a
+    /// host-specific one — a font metric table, an injected theme, a model
+    /// record. The class is resolved per binding symbol rather than at the
+    /// leaf.
     pub const BINDINGS: InputClasses = InputClasses(1 << 7);
 
     pub const fn union(self, other: InputClasses) -> InputClasses {
@@ -91,9 +94,10 @@ impl std::ops::BitOr for InputClasses {
 }
 
 /// What a native does, declared once at registration
-/// ([`NativeFnTable::register_with`]) so the reactive layers — the frame
-/// gate, memoized scopes, dependency classes — can ask instead of inferring
-/// it from activity counters after the call.
+/// ([`NativeFnTable::register`]) so the reactive layers — the frame gate,
+/// memoized scopes, dependency classes — can ask instead of inferring it
+/// from activity counters after the call. Every native has one: registration
+/// takes the row, so there is no such thing as an undeclared native.
 ///
 /// A declaration is the *union over every path* through the native: a native
 /// that consults the resource table only when handed a `Pending` still
@@ -119,8 +123,8 @@ pub struct NativeEffects {
     /// creates or resolves a resource, advances a counter, reaches through a
     /// handle into host state, publishes a method.
     pub effect: bool,
-    /// What to do with a `Pending` argument. The same policy
-    /// [`NativeFnTable::set_class`] sets on an undeclared native.
+    /// What to do with a `Pending` argument ([`NativeFnTable::set_class`]
+    /// can still change it after registration).
     pub pending: NativeClass,
 }
 
@@ -168,6 +172,16 @@ impl NativeEffects {
         }
     }
 
+    /// This row pushing into an output buffer, with the `Pending` policy
+    /// left as it is (unlike [`EMITS`](Self::EMITS), which also no-ops on a
+    /// `Pending` argument).
+    pub const fn with_emits(self) -> NativeEffects {
+        NativeEffects {
+            emits: true,
+            ..self
+        }
+    }
+
     /// This row with an effect.
     pub const fn with_effect(self) -> NativeEffects {
         NativeEffects {
@@ -186,11 +200,11 @@ impl NativeEffects {
 struct NativeFnEntry {
     name: String,
     func: NativeFn,
+    /// The Pending-argument policy: `effects.pending`, kept as its own field
+    /// so the hot `intercept_pending` check is one load.
     class: NativeClass,
-    /// The declared effect row, or `None` for a native registered through
-    /// [`NativeFnTable::register`], which the runtime classifies by
-    /// inference around each call instead.
-    effects: Option<NativeEffects>,
+    /// The declared effect row.
+    effects: NativeEffects,
 }
 
 /// Registry of native functions, mapping IDs to names and function pointers.
@@ -255,14 +269,18 @@ impl NativeFnTable {
         self.class_methods.get(class)?.get(method).copied()
     }
 
-    /// Register a native function, returning its ID.
-    pub fn register(&mut self, name: &str, func: NativeFn) -> NativeFnId {
+    /// Register a native function together with its declared
+    /// [`NativeEffects`], returning its ID. The row is what the reactive
+    /// layers consult on every call, so it is not optional: a native that
+    /// reaches host state without saying so would look pure, and every
+    /// memoized scope that called it would replay stale.
+    pub fn register(&mut self, name: &str, func: NativeFn, effects: NativeEffects) -> NativeFnId {
         let id = NativeFnId(self.entries.len() as u32);
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
             func,
-            class: NativeClass::Strict,
-            effects: None,
+            class: effects.pending,
+            effects,
         });
         // Last registration of a name wins, matching the scan this replaced:
         // it returned the *first* match, so a re-registration under an existing
@@ -273,48 +291,19 @@ impl NativeFnTable {
         id
     }
 
-    /// Register a native function together with its declared
-    /// [`NativeEffects`], returning its ID. The declaration is what the
-    /// reactive layers consult; a native registered through
-    /// [`register`](Self::register) instead is classified by inference around
-    /// each call (see [`effects`](Self::effects)).
-    pub fn register_with(
-        &mut self,
-        name: &str,
-        func: NativeFn,
-        effects: NativeEffects,
-    ) -> NativeFnId {
-        let id = self.register(name, func);
-        let entry = &mut self.entries[id.0 as usize];
-        entry.class = effects.pending;
-        entry.effects = Some(effects);
-        id
-    }
-
     /// Override the Pending-handling class of an already-registered native.
     /// Registration stays append-only (indices are stable); classification is
-    /// applied afterward by id. On a declared native this also updates the
-    /// declaration's `pending` field, so the two never disagree.
+    /// applied afterward by id. The row's `pending` field is updated too, so
+    /// the two never disagree.
     pub fn set_class(&mut self, id: NativeFnId, class: NativeClass) {
         let entry = &mut self.entries[id.0 as usize];
         entry.class = class;
-        if let Some(e) = entry.effects.as_mut() {
-            e.pending = class;
-        }
+        entry.effects.pending = class;
     }
 
-    /// The declared effect row of a native, or `None` if it was registered
-    /// without one and is classified by runtime inference.
-    pub fn effects(&self, id: NativeFnId) -> Option<NativeEffects> {
+    /// The declared effect row of a native.
+    pub fn effects(&self, id: NativeFnId) -> NativeEffects {
         self.entries[id.0 as usize].effects
-    }
-
-    /// The registered natives, by id, that have no declared effect row.
-    pub fn undeclared(&self) -> Vec<NativeFnId> {
-        (0..self.entries.len())
-            .map(|i| NativeFnId(i as u32))
-            .filter(|id| self.effects(*id).is_none())
-            .collect()
     }
 
     /// The Pending-handling class of a native (defaults to `Strict`).

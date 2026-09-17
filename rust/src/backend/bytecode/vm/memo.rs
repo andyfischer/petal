@@ -18,7 +18,6 @@ use crate::memo::{
 };
 use crate::native_fn::{InputClasses, NativeEffects};
 use crate::program::ClosureId;
-use crate::run_deps::Activity;
 use crate::stack::RuntimeStateKey;
 
 impl<'a> Vm<'a> {
@@ -140,51 +139,20 @@ impl<'a> Vm<'a> {
             .is_some_and(|s| holds_local_cell(&value, self.heap, self.closures, &s.local_cells))
     }
 
-    /// A native call finished. Classify it from what it reported doing
-    /// between the two activity snapshots: an effect makes the scope
-    /// unrecordable; a binding read makes the call a probe, unless it also
-    /// emitted (a native that both reads input and draws cannot be
-    /// re-evaluated at validation without drawing again).
-    pub(super) fn memo_note_native(
-        &mut self,
-        nid: NativeFnId,
-        args: &[Value],
-        result: Value,
-        before: Activity,
-    ) {
-        let after = self.stack.run_deps.activity();
-        if after.effects != before.effects || matches!(result, Value::Pending(_)) {
-            self.stack.memo.note_effect();
-            return;
-        }
-        if after.host_reads != before.host_reads {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::HostRead);
-            }
-        }
-        if after.resource_reads != before.resource_reads {
-            if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::ResourcesRead);
-            }
-        }
-        if after.binding_reads != before.binding_reads {
-            self.memo_note_probe(nid, args, result, after.emits != before.emits);
-        }
-    }
-
-    /// A declared native call finished: the same classification as
-    /// [`memo_note_native`](Self::memo_note_native), taken from the row the
-    /// native registered with instead of from the counters. The two must
-    /// agree for every native — `replay-declared` against `replay` in the
-    /// memo oracle is what checks it.
+    /// A native call finished: classify it from the row it registered with.
     ///
-    /// The mapping, class by class: an `effect` (or a `Pending` result) makes
-    /// the scope unrecordable; `HOST_DATA` and `RESOURCES` reads become the
-    /// deps a `note_host_read` / resource-table read would have recorded; any
-    /// other read is a probe if the row says so and the call is re-evaluable,
-    /// else an effect. `RNG` records nothing here — the scope compares the
-    /// RNG state at entry and exit itself.
-    pub(super) fn memo_note_declared_native(
+    /// The mapping, class by class: an `effect` (or a `Pending` result — a
+    /// fact about the answer, not the native) makes the scope unrecordable;
+    /// `HOST_DATA` and `RESOURCES` reads become the deps a `note_host_read` /
+    /// resource-table read records for the frame gate; any other read is a
+    /// probe if the row says the call is re-evaluable, else an effect. `RNG`
+    /// records nothing here — the scope compares the RNG state at entry and
+    /// exit itself.
+    ///
+    /// The row is taken at its word. What checks it is the effect audit
+    /// (`crate::effect_audit`), which brackets every call with activity
+    /// snapshots and reports a native seen doing a facet its row lacks.
+    pub(super) fn memo_note_native(
         &mut self,
         nid: NativeFnId,
         args: &[Value],

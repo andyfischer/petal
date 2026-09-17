@@ -14,7 +14,7 @@
 
 use indexmap::IndexMap;
 use petal::env::Env;
-use petal::native_fn::{NativeClass, NativeResult, PetalCxt};
+use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Output-buffer symbol names shared by the native fns (which `push_output`
@@ -26,20 +26,19 @@ pub(crate) const SCHEME_SYM: &str = "garden.color_scheme";
 
 /// Register all Garden native fns. Must run before `env.load_program`.
 pub(crate) fn register_all(env: &mut Env) {
-    env.register_native("editor", native_editor);
-    env.register_native("process", native_process);
-    env.register_native("panel", native_panel);
-    env.register_native("row", native_row);
-    env.register_native("column", native_column);
-    // The three observable calls only emit into an output buffer, so classify
-    // them `Effectful`: a `Pending` argument makes the call a no-op (emitting
+    env.register_native("editor", native_editor, NativeEffects::PURE);
+    env.register_native("process", native_process, NativeEffects::PURE);
+    env.register_native("panel", native_panel, NativeEffects::PURE);
+    // `row` / `column` build a record; the one thing a replay could not
+    // reproduce is the warning they print for a mismatched ratios list.
+    env.register_native("row", native_row, NativeEffects::EFFECT);
+    env.register_native("column", native_column, NativeEffects::EFFECT);
+    // The three observable calls only emit into an output buffer, and are
+    // `Effectful`: a `Pending` argument makes the call a no-op (emitting
     // nothing) instead of being absorbed as its result.
-    let layout = env.register_native("layout", native_layout);
-    let theme = env.register_native("color_theme", native_color_theme);
-    let scheme = env.register_native("color_scheme", native_color_scheme);
-    env.set_native_class(layout, NativeClass::Effectful);
-    env.set_native_class(theme, NativeClass::Effectful);
-    env.set_native_class(scheme, NativeClass::Effectful);
+    env.register_native("layout", native_layout, NativeEffects::EMITS);
+    env.register_native("color_theme", native_color_theme, NativeEffects::EMITS);
+    env.register_native("color_scheme", native_color_scheme, NativeEffects::EMITS);
 }
 
 /// `editor()` / `editor(path)` / `editor(path, { line_numbers: true, wrap: false })`

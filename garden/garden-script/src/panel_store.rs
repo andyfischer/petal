@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use petal::env::Env;
-use petal::native_fn::{NativeClass, NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Largest value a script may store, in bytes. Generous for the settings and
@@ -221,12 +221,20 @@ pub(crate) fn swap_store(store: Option<PanelStore>) -> Option<PanelStore> {
 
 /// Register the two store natives.
 pub(crate) fn register_store(env: &mut Env) {
-    env.register_native("panel_store_get", native_store_get);
-    let set = env.register_native("panel_store_set", native_store_set);
-    // A write is an effect: with a `Pending` argument the call must be a no-op
-    // rather than being absorbed as its result (a half-loaded value must never
-    // be what gets persisted).
-    env.set_native_class(set, NativeClass::Effectful);
+    // A read answers from the host's store, which the binding table does not
+    // cover; a write is an effect, and with a `Pending` argument the call
+    // must be a no-op rather than being absorbed as its result (a half-loaded
+    // value must never be what gets persisted).
+    env.register_native(
+        "panel_store_get",
+        native_store_get,
+        NativeEffects::reads(InputClasses::HOST_DATA),
+    );
+    env.register_native(
+        "panel_store_set",
+        native_store_set,
+        NativeEffects::EFFECT.with_pending(NativeClass::Effectful),
+    );
 }
 
 /// `panel_store_get(key)` → the stored string, or nil if this panel never
@@ -255,10 +263,8 @@ fn native_store_get(cxt: &mut PetalCxt) -> NativeResult {
 /// `panel_store_set(key, value)` — persist a string under `key` for this
 /// script. `nil` deletes the key. Returns nil.
 fn native_store_set(cxt: &mut PetalCxt) -> NativeResult {
-    // A write to the host's store is an effect. `NativeClass::Effectful` below
-    // does *not* say so — it is the Pending-argument policy, consulted only
-    // when an argument is actually Pending — so without this the write is
-    // invisible to the memo and a replayed scope silently stops persisting.
+    // A write to the host's store is an effect (the row says so; this is the
+    // frame gate's copy of the same fact).
     cxt.note_effect();
     let key = cxt.get_string(1)?;
     let value = match cxt.get_value(2)? {

@@ -27,7 +27,7 @@
 use petal::env::Env;
 use petal::execution_context::EmitSite;
 use petal::heap::Heap;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::stack::StackKey;
 use petal::value::Value;
 use serde::Serialize;
@@ -1024,54 +1024,76 @@ pub fn reset_canvas_ids(env: &mut Env) {
 
 // ── Script-side: the standard draw natives ───────────────────────────────
 
+/// The row of a draw native: it pushes one command into the `draw_commands`
+/// buffer and nothing else. The `Pending` policy stays `Strict` (a `Pending`
+/// argument is absorbed as the result), which is what every draw native has
+/// always done; a host that wants the no-op behavior sets
+/// `NativeClass::Effectful` on the ids it cares about.
+pub const DRAW: NativeEffects = NativeEffects::PURE.with_emits();
+
+/// The row of a text measurer: a pure function of its arguments and the
+/// host's font tables (`text_advance`, `text_advances`, `text_vertical`,
+/// `text_fonts`, `text_default_font`), which are bindings outside the named
+/// input classes — so a probe on `BINDINGS`, re-evaluable at validation.
+const MEASURES_TEXT: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS);
+
 /// Register the standard draw natives, the offscreen-canvas ops included
 /// (see [`register_canvas`]).
 pub fn register_draw(env: &mut Env) {
-    env.register_native("draw_image", native_draw_image);
-    env.register_native("clear", native_clear);
-    env.register_native("draw_rect", native_draw_rect);
-    env.register_native("draw_rect_rounded", native_draw_rect_rounded);
-    env.register_native("draw_rect_outline", native_draw_rect_outline);
+    env.register_native("draw_image", native_draw_image, DRAW);
+    env.register_native("clear", native_clear, DRAW);
+    env.register_native("draw_rect", native_draw_rect, DRAW);
+    env.register_native("draw_rect_rounded", native_draw_rect_rounded, DRAW);
+    env.register_native("draw_rect_outline", native_draw_rect_outline, DRAW);
     env.register_native(
         "draw_rect_rounded_outline",
         native_draw_rect_rounded_outline,
+        DRAW,
     );
-    env.register_native("draw_rect_gradient", native_draw_rect_gradient);
+    env.register_native("draw_rect_gradient", native_draw_rect_gradient, DRAW);
     env.register_native(
         "draw_rect_gradient_rounded",
         native_draw_rect_gradient_rounded,
+        DRAW,
     );
-    env.register_native("draw_circle_gradient", native_draw_circle_gradient);
-    env.register_native("draw_shadow", native_draw_shadow);
-    env.register_native("draw_line", native_draw_line);
-    env.register_native("draw_polyline", native_draw_polyline);
-    env.register_native("draw_circle", native_draw_circle);
-    env.register_native("draw_circle_outline", native_draw_circle_outline);
-    env.register_native("draw_ellipse", native_draw_ellipse);
-    env.register_native("draw_ellipse_outline", native_draw_ellipse_outline);
-    env.register_native("fill_arc", native_fill_arc);
-    env.register_native("fill_triangle", native_fill_triangle);
-    env.register_native("fill_poly", native_fill_poly);
-    env.register_native("fill_polygon", native_fill_polygon);
-    env.register_native("fill_fan", native_fill_fan);
-    env.register_native("draw_text", native_draw_text);
-    env.register_native("clip", native_clip);
-    env.register_native("clip_none", native_clip_none);
-    env.register_native("clip_push", native_clip_push);
-    env.register_native("clip_pop", native_clip_pop);
-    env.register_native("text_width", native_text_width);
+    env.register_native("draw_circle_gradient", native_draw_circle_gradient, DRAW);
+    env.register_native("draw_shadow", native_draw_shadow, DRAW);
+    env.register_native("draw_line", native_draw_line, DRAW);
+    env.register_native("draw_polyline", native_draw_polyline, DRAW);
+    env.register_native("draw_circle", native_draw_circle, DRAW);
+    env.register_native("draw_circle_outline", native_draw_circle_outline, DRAW);
+    env.register_native("draw_ellipse", native_draw_ellipse, DRAW);
+    env.register_native("draw_ellipse_outline", native_draw_ellipse_outline, DRAW);
+    env.register_native("fill_arc", native_fill_arc, DRAW);
+    env.register_native("fill_triangle", native_fill_triangle, DRAW);
+    env.register_native("fill_poly", native_fill_poly, DRAW);
+    env.register_native("fill_polygon", native_fill_polygon, DRAW);
+    env.register_native("fill_fan", native_fill_fan, DRAW);
+    env.register_native("draw_text", native_draw_text, DRAW);
+    env.register_native("clip", native_clip, DRAW);
+    env.register_native("clip_none", native_clip_none, DRAW);
+    env.register_native("clip_push", native_clip_push, DRAW);
+    env.register_native("clip_pop", native_clip_pop, DRAW);
+    env.register_native("text_width", native_text_width, MEASURES_TEXT);
     // The other axis, and the fitting that needs both. `text_width` answers
     // how wide a run is; `text_metrics` answers where its ink sits relative to
     // the `y` a script hands `draw_text`, which is what vertical centring has
     // always had to guess. `text_wrap` / `text_ellipsize` / `text_index_at`
     // are the walks over the advance table a script would otherwise write as a
     // `text_width` call per character, per frame.
-    env.register_native("text_metrics", native_text_metrics);
-    env.register_native("text_wrap", native_text_wrap);
-    env.register_native("text_ellipsize", native_text_ellipsize);
-    env.register_native("text_index_at", native_text_index_at);
-    env.register_native("font", native_font);
-    env.register_native("fonts", native_fonts);
+    env.register_native("text_metrics", native_text_metrics, MEASURES_TEXT);
+    env.register_native("text_wrap", native_text_wrap, MEASURES_TEXT);
+    env.register_native("text_ellipsize", native_text_ellipsize, MEASURES_TEXT);
+    env.register_native("text_index_at", native_text_index_at, MEASURES_TEXT);
+    // `font(name)` resolves the name against the host's font source, which is
+    // attached once at startup: a pure function of its argument for the life
+    // of the process. `fonts()` lists that source, and says so as a host read.
+    env.register_native("font", native_font, NativeEffects::PURE);
+    env.register_native(
+        "fonts",
+        native_fonts,
+        NativeEffects::reads(InputClasses::HOST_DATA),
+    );
     // The layer natives are part of the standard set: the `ui` prelude's
     // `layer` / `snapshot` / `draw_material` helpers name them at module load,
     // so a host that left them out would fail to load the prelude at all. A
@@ -1086,13 +1108,17 @@ pub fn register_draw(env: &mut Env) {
 /// in [`register_draw`]; kept public for a host that composes its own set.
 /// A host that handles the canvas commands must call [`reset_canvas_ids`]
 /// before each frame so ids stay stable.
+///
+/// `create_canvas` and the two `draw_to`s advance the canvas counters as
+/// well as emitting, which no replay reproduces: a scope that opens a layer
+/// is never memoized.
 pub fn register_canvas(env: &mut Env) {
-    env.register_native("create_canvas", native_create_canvas);
-    env.register_native("draw_to", native_draw_to);
-    env.register_native("draw_to_screen", native_draw_to_screen);
-    env.register_native("draw_canvas", native_draw_canvas);
-    env.register_native("snapshot_to", native_snapshot_to);
-    env.register_native("blur_canvas", native_blur_canvas);
+    env.register_native("create_canvas", native_create_canvas, DRAW.with_effect());
+    env.register_native("draw_to", native_draw_to, DRAW.with_effect());
+    env.register_native("draw_to_screen", native_draw_to_screen, DRAW.with_effect());
+    env.register_native("draw_canvas", native_draw_canvas, DRAW);
+    env.register_native("snapshot_to", native_snapshot_to, DRAW);
+    env.register_native("blur_canvas", native_blur_canvas, DRAW);
 }
 
 /// Emit a draw command into the `draw_commands` output buffer.
@@ -1802,11 +1828,15 @@ mod tests {
     fn clip_and_unknown_tags_decode() {
         let mut env = Env::new();
         register_draw(&mut env);
-        env.register_native("host_marker", |state| {
-            emit_draw(state, "marker", vec![Value::Int(7)]);
-            state.push_nil();
-            Ok(1)
-        });
+        env.register_native(
+            "host_marker",
+            |state| {
+                emit_draw(state, "marker", vec![Value::Int(7)]);
+                state.push_nil();
+                Ok(1)
+            },
+            DRAW,
+        );
         env.run_source("clip(1, 2, 30, 40)\nhost_marker()\nclip_none()")
             .expect("run_source");
         let cmds = take_draw_commands(&mut env);

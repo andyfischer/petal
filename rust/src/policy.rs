@@ -9,13 +9,6 @@
 //! - whether a host skips a frame the frame gate says would reproduce the last
 //!   one ([`Env::run_needed`](crate::env::Env::run_needed)).
 //!
-//! A fourth switch, `declared`, picks how the memo classifies a native call:
-//! from the effect row the native declared at registration
-//! ([`NativeEffects`](crate::native_fn::NativeEffects)), or — with `-declared`
-//! — by inference from the activity counters around every call, the way an
-//! undeclared native is always classified. The two must agree, which is what
-//! `replay-declared` against `replay` checks.
-//!
 //! [`RunPolicy`] carries all of them, and the combinations anyone actually asks
 //! for have names:
 //!
@@ -54,11 +47,6 @@ pub struct RunPolicy {
     /// Let a host frame driver skip a frame the frame gate says would
     /// reproduce the last one.
     pub gate: bool,
-    /// Classify a native call from its declared
-    /// [`NativeEffects`](crate::native_fn::NativeEffects) where it has one.
-    /// Off, every native is classified by inference from the activity
-    /// counters around the call — the oracle the declarations must match.
-    pub declared: bool,
 }
 
 /// The names [`RunPolicy::parse`] accepts, in the order `name()` prefers them.
@@ -75,7 +63,6 @@ impl RunPolicy {
         opts: OptFlags::default_on(),
         memo: true,
         gate: true,
-        declared: true,
     };
 
     /// Everything off: every frame runs, every call runs, and the bytecode is
@@ -84,7 +71,6 @@ impl RunPolicy {
         opts: OptFlags::none(),
         memo: false,
         gate: false,
-        declared: true,
     };
 
     /// For tools that read what every instruction computed (`explain`,
@@ -99,7 +85,6 @@ impl RunPolicy {
         },
         memo: false,
         gate: false,
-        declared: true,
     };
 
     /// Every frame runs, and memoized scopes replay: the memo exercised on
@@ -124,16 +109,9 @@ impl RunPolicy {
         RunPolicy { gate, ..self }
     }
 
-    /// This policy classifying natives from their declarations (`true`) or
-    /// by runtime inference for every native (`false`).
-    pub const fn with_declared(self, declared: bool) -> RunPolicy {
-        RunPolicy { declared, ..self }
-    }
-
     /// Parse a policy name with optional modifiers: `fast`, `baseline`,
     /// `explain`, `replay`, each optionally followed by any number of
-    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt` /
-    /// `+declared` / `-declared`.
+    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt`.
     pub fn parse(spec: &str) -> Result<RunPolicy, String> {
         let spec = spec.trim();
         let split = spec.find(['+', '-']).unwrap_or(spec.len());
@@ -150,7 +128,6 @@ impl RunPolicy {
             match &tail[..end] {
                 "gate" => policy.gate = on,
                 "memo" => policy.memo = on,
-                "declared" => policy.declared = on,
                 "opt" => {
                     policy.opts = if on {
                         OptFlags::default_on()
@@ -161,7 +138,7 @@ impl RunPolicy {
                 }
                 other => {
                     return Err(format!(
-                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt or declared)"
+                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo or opt)"
                     ));
                 }
             }
@@ -182,15 +159,12 @@ impl RunPolicy {
             .iter()
             .filter(|(_, p)| p.opts == self.opts)
             .min_by_key(|(_, p)| {
-                (p.memo != self.memo) as u8
-                    + (p.gate != self.gate) as u8
-                    + (p.declared != self.declared) as u8
+                (p.memo != self.memo) as u8 + (p.gate != self.gate) as u8
             })?;
         let mut name = (*base).to_string();
         for (what, want, have) in [
             ("memo", self.memo, from.memo),
             ("gate", self.gate, from.gate),
-            ("declared", self.declared, from.declared),
         ] {
             if want != have {
                 name.push(if want { '+' } else { '-' });
@@ -292,15 +266,7 @@ mod tests {
         assert!(
             RunPolicy::parse("fast+speed")
                 .unwrap_err()
-                .contains("gate, memo, opt or declared")
+                .contains("gate, memo or opt")
         );
-    }
-
-    #[test]
-    fn the_declared_modifier_switches_native_classification() {
-        let inferred = RunPolicy::parse("replay-declared").unwrap();
-        assert_eq!(inferred, RunPolicy::REPLAY.with_declared(false));
-        assert_eq!(inferred.name().as_deref(), Some("replay-declared"));
-        assert!(RunPolicy::FAST.declared && RunPolicy::BASELINE.declared);
     }
 }

@@ -1,27 +1,31 @@
 //! Opt-in runtime audit of native effect declarations: what each native was
 //! *observed* doing, held against what it *declared*.
 //!
-//! A native registered with a [`NativeEffects`] row is taken at its word by
-//! the reactive layers (the memo classifies the call from the row and never
-//! looks at the activity counters). That makes an under-declared row a silent
-//! staleness bug: a native that reaches host state without saying so looks
-//! pure, and every memoized scope that calls it replays without calling it.
-//! One registered without a row is classified by inference around each call,
-//! which is correct but is the fallback step 5 of the declarative-effect task
-//! removes (`docs/tasks/declarative-effect-refactoring.md`).
+//! Every native registers with a [`NativeEffects`] row, and the reactive
+//! layers take it at its word: the memo classifies the call from the row and
+//! never looks at the activity counters. That makes an under-declared row a
+//! silent staleness bug — a native that reaches host state without saying so
+//! looks pure, and every memoized scope that calls it replays without calling
+//! it. The counters are still kept (`PetalCxt::binding`, `note_host_read`,
+//! `push_output`, `print`, … each move one), and this audit is where they are
+//! read: the inference the memo used to run on, demoted to the oracle that
+//! checks the rows (`docs/tasks/declarative-effect-refactoring.md`).
 //!
 //! With the audit on, the VM snapshots the activity counters around *every*
-//! native call — declared or not — and accumulates the deltas here, per
-//! native. [`EffectAudit::findings`] then reports:
+//! native call and accumulates the deltas here, per native.
+//! [`EffectAudit::findings`] then reports:
 //!
-//! - **under-declared**: a declared native was seen doing something its row
-//!   does not cover. A bug; the row must grow.
-//! - **undeclared**: a native with no row, and what it was seen doing. Some
-//!   of these are pure and want `NativeEffects::PURE`; the rest want the
-//!   observed facets. Either way the row must be written before step 5.
+//! - **under-declared**: a native was seen doing something its row does not
+//!   cover. A bug; the row must grow.
 //! - **over-declared**: a declared facet the corpus never exercised. Not a
 //!   bug — a row is the union over every path, and the corpus may not have
 //!   taken the path — but worth a look when the row was a guess.
+//!
+//! One observed facet is not held against the row: an effect on a call that
+//! returned a `Pending`. The memo makes a scope effectful on a `Pending`
+//! result whatever the row says, so a native that creates a loading resource
+//! on that path and answers from a cache otherwise (Garden's `query`) can
+//! declare the cache read alone and stay memoizable when the data is ready.
 //!
 //! `petal run --effect-audit` and `petal-ui-run --effect-audit` print the
 //! report to stderr; `petal-ui/tests/effect_audit.rs` runs it over the whole
@@ -58,8 +62,11 @@ pub struct Observed {
     pub resource_reads: u64,
     /// Calls that pushed into an output buffer.
     pub emits: u64,
-    /// Calls that reported an effect no replay could reproduce.
+    /// Calls that reported an effect no replay could reproduce, and did not
+    /// return a `Pending` (see the module docs for why those are set aside).
     pub effects: u64,
+    /// Calls that reported an effect *and* returned a `Pending`.
+    pub effects_pending: u64,
     /// The bindings read, in first-seen order, capped at [`MAX_BINDINGS`].
     pub bindings: Vec<SymbolId>,
     /// Whether the cap on `bindings` was hit.
@@ -74,6 +81,7 @@ impl Observed {
             && self.resource_reads == 0
             && self.emits == 0
             && self.effects == 0
+            && self.effects_pending == 0
     }
 }
 
@@ -92,11 +100,8 @@ pub struct Finding {
 /// What kind of gap a [`Finding`] reports. Ordered by severity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FindingKind {
-    /// A declared native was seen doing something its row does not cover.
+    /// A native was seen doing something its row does not cover.
     UnderDeclared,
-    /// A native with no row; `facets` is what it was seen doing (empty if it
-    /// looked pure).
-    Undeclared,
     /// A declared facet the audited runs never exercised.
     OverDeclared,
 }
@@ -105,7 +110,6 @@ impl fmt::Display for FindingKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             FindingKind::UnderDeclared => "under-declared",
-            FindingKind::Undeclared => "undeclared",
             FindingKind::OverDeclared => "over-declared",
         })
     }
@@ -142,7 +146,8 @@ impl EffectAudit {
     }
 
     /// One native call finished. `before` and `after` bracket the call;
-    /// `bindings` is every binding the call read, in read order.
+    /// `bindings` is every binding the call read, in read order;
+    /// `pending_result` says whether the call answered with a `Pending`.
     #[inline]
     pub fn record(
         &mut self,
@@ -150,6 +155,7 @@ impl EffectAudit {
         before: Activity,
         after: Activity,
         bindings: &[SymbolId],
+        pending_result: bool,
     ) {
         let i = nid.0 as usize;
         if i >= self.by_native.len() {
@@ -180,7 +186,11 @@ impl EffectAudit {
             o.emits += 1;
         }
         if after.effects != before.effects {
-            o.effects += 1;
+            if pending_result {
+                o.effects_pending += 1;
+            } else {
+                o.effects += 1;
+            }
         }
     }
 
@@ -204,37 +214,26 @@ impl EffectAudit {
         let mut out = Vec::new();
         for (nid, observed) in self.all() {
             let name = natives.get_name(nid).to_string();
-            let seen = observed_facets(observed, symbols);
-            match natives.effects(nid) {
-                None => out.push(Finding {
+            let row = natives.effects(nid);
+            let missing = under_declared(observed, row, symbols);
+            if !missing.is_empty() {
+                out.push(Finding {
+                    native: nid,
+                    name: name.clone(),
+                    kind: FindingKind::UnderDeclared,
+                    facets: missing,
+                    observed: observed.clone(),
+                });
+            }
+            let unused = over_declared(observed, row);
+            if !unused.is_empty() {
+                out.push(Finding {
                     native: nid,
                     name,
-                    kind: FindingKind::Undeclared,
-                    facets: seen,
+                    kind: FindingKind::OverDeclared,
+                    facets: unused,
                     observed: observed.clone(),
-                }),
-                Some(row) => {
-                    let missing = under_declared(observed, row, symbols);
-                    if !missing.is_empty() {
-                        out.push(Finding {
-                            native: nid,
-                            name: name.clone(),
-                            kind: FindingKind::UnderDeclared,
-                            facets: missing,
-                            observed: observed.clone(),
-                        });
-                    }
-                    let unused = over_declared(observed, row);
-                    if !unused.is_empty() {
-                        out.push(Finding {
-                            native: nid,
-                            name,
-                            kind: FindingKind::OverDeclared,
-                            facets: unused,
-                            observed: observed.clone(),
-                        });
-                    }
-                }
+                });
             }
         }
         out.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.name.cmp(&b.name)));
@@ -277,31 +276,9 @@ fn binding_facet(observed: &Observed, symbols: &SymbolTable) -> String {
     }
 }
 
-/// Every facet the native was seen exercising, as report words.
-fn observed_facets(observed: &Observed, symbols: &SymbolTable) -> Vec<String> {
-    let mut v = Vec::new();
-    if observed.effects > 0 {
-        v.push("effect".to_string());
-    }
-    if observed.host_reads > 0 {
-        v.push("host_read".to_string());
-    }
-    if observed.resource_reads > 0 {
-        v.push("resource_read".to_string());
-    }
-    if observed.emits > 0 {
-        v.push("emit".to_string());
-    }
-    if observed.binding_reads > 0 {
-        v.push(binding_facet(observed, symbols));
-    }
-    v
-}
-
 /// The facets `observed` shows that `row` does not cover. Mirrors the
-/// memo's two classifiers (`memo_note_native` against
-/// `memo_note_declared_native`): each observed counter maps to the field of
-/// the row that would have produced the same dep.
+/// memo's classifier (`memo_note_native`): each observed counter maps to the
+/// field of the row that would have produced the same dep.
 fn under_declared(observed: &Observed, row: NativeEffects, symbols: &SymbolTable) -> Vec<String> {
     let mut v = Vec::new();
     if observed.effects > 0 && !row.effect {
@@ -323,11 +300,13 @@ fn under_declared(observed: &Observed, row: NativeEffects, symbols: &SymbolTable
 }
 
 /// The facets `row` declares that `observed` never showed. Only the facets
-/// inference can see: a declared probe class the corpus never read is
+/// the counters can see: a declared probe class the corpus never read is
 /// reported as `binding`, since the counters do not say which class moved.
+/// An effect seen only on calls that returned a `Pending` counts as
+/// exercised here, so a row that declares it is not reported.
 fn over_declared(observed: &Observed, row: NativeEffects) -> Vec<String> {
     let mut v = Vec::new();
-    if row.effect && observed.effects == 0 {
+    if row.effect && observed.effects == 0 && observed.effects_pending == 0 {
         v.push("effect".to_string());
     }
     if row.reads.contains(InputClasses::HOST_DATA) && observed.host_reads == 0 {
@@ -371,10 +350,9 @@ impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "effect audit: {} natives called, {} under-declared, {} undeclared, {} over-declared",
+            "effect audit: {} natives called, {} under-declared, {} over-declared",
             self.called,
             self.count(FindingKind::UnderDeclared),
-            self.count(FindingKind::Undeclared),
             self.count(FindingKind::OverDeclared),
         )?;
         for finding in &self.findings {
@@ -413,13 +391,13 @@ mod tests {
     }
 
     #[test]
-    fn a_declared_native_seen_doing_more_is_under_declared() {
+    fn a_native_seen_doing_more_than_its_row_is_under_declared() {
         let mut natives = NativeFnTable::new();
         let symbols = SymbolTable::new();
-        let pure = natives.register_with("looks_pure", noop, NativeEffects::PURE);
+        let pure = natives.register("looks_pure", noop, NativeEffects::PURE);
         let mut audit = EffectAudit::new();
         audit.set_enabled(true);
-        audit.record(pure, act(0, 0, 0, 0, 0), act(0, 1, 0, 0, 1), &[]);
+        audit.record(pure, act(0, 0, 0, 0, 0), act(0, 1, 0, 0, 1), &[], false);
         let findings = audit.findings(&natives, &symbols);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FindingKind::UnderDeclared);
@@ -428,24 +406,21 @@ mod tests {
     }
 
     #[test]
-    fn an_undeclared_native_is_listed_with_what_it_did_or_as_silent() {
+    fn a_binding_read_names_the_binding_and_a_silent_call_is_nothing() {
         let mut natives = NativeFnTable::new();
         let mut symbols = SymbolTable::new();
         let mouse_x = symbols.intern("mouse_x");
-        let silent = natives.register("silent", noop);
-        let reader = natives.register("reader", noop);
+        let silent = natives.register("silent", noop, NativeEffects::PURE);
+        let reader = natives.register("reader", noop, NativeEffects::PURE);
         let mut audit = EffectAudit::new();
         audit.set_enabled(true);
-        audit.record(silent, act(0, 0, 0, 0, 0), act(0, 0, 0, 0, 0), &[]);
-        audit.record(reader, act(0, 0, 0, 0, 0), act(1, 0, 0, 0, 0), &[mouse_x]);
+        audit.record(silent, act(0, 0, 0, 0, 0), act(0, 0, 0, 0, 0), &[], false);
+        audit.record(reader, act(0, 0, 0, 0, 0), act(1, 0, 0, 0, 0), &[mouse_x], false);
         let findings = audit.findings(&natives, &symbols);
-        assert_eq!(findings.len(), 2);
-        assert!(findings.iter().all(|f| f.kind == FindingKind::Undeclared));
-        let reader = findings.iter().find(|f| f.name == "reader").unwrap();
-        assert_eq!(reader.facets, ["binding mouse_x"]);
-        let silent = findings.iter().find(|f| f.name == "silent").unwrap();
-        assert!(silent.facets.is_empty());
-        assert!(!audit.report(&natives, &symbols).has_under_declared());
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].name, "reader");
+        assert_eq!(findings[0].kind, FindingKind::UnderDeclared);
+        assert_eq!(findings[0].facets, ["binding mouse_x"]);
     }
 
     #[test]
@@ -455,29 +430,61 @@ mod tests {
         let row = NativeEffects::probe(InputClasses::POINTER)
             .with_effect()
             .with_pending(NativeClass::Effectful);
-        let id = natives.register_with("probe_and_effect", noop, row);
-        let never_called = natives.register_with("never_called", noop, NativeEffects::EFFECT);
+        let id = natives.register("probe_and_effect", noop, row);
+        let never_called = natives.register("never_called", noop, NativeEffects::EFFECT);
         let mut audit = EffectAudit::new();
         audit.set_enabled(true);
-        audit.record(id, act(0, 0, 0, 0, 0), act(1, 0, 0, 0, 0), &[]);
+        audit.record(id, act(0, 0, 0, 0, 0), act(1, 0, 0, 0, 0), &[], false);
         let findings = audit.findings(&natives, &symbols);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, FindingKind::OverDeclared);
         assert_eq!(findings[0].facets, ["effect"]);
         assert!(audit.observed(never_called).is_none());
         // Once the effect path is exercised too, the row matches exactly.
-        audit.record(id, act(1, 0, 0, 0, 0), act(2, 0, 0, 0, 1), &[]);
+        audit.record(id, act(1, 0, 0, 0, 0), act(2, 0, 0, 0, 1), &[], false);
         assert!(audit.findings(&natives, &symbols).is_empty());
+    }
+
+    #[test]
+    fn an_effect_on_a_call_that_answered_pending_is_not_held_against_the_row() {
+        let mut natives = NativeFnTable::new();
+        let symbols = SymbolTable::new();
+        let query = natives.register(
+            "query",
+            noop,
+            NativeEffects::reads(InputClasses::HOST_DATA),
+        );
+        let mut audit = EffectAudit::new();
+        audit.set_enabled(true);
+        // Loading: created a resource (an effect) and answered Pending.
+        audit.record(query, act(0, 0, 0, 0, 0), act(0, 1, 0, 0, 1), &[], true);
+        assert!(audit.findings(&natives, &symbols).is_empty());
+        // Ready: a cache read alone.
+        audit.record(query, act(0, 1, 0, 0, 1), act(0, 2, 0, 0, 1), &[], false);
+        assert!(audit.findings(&natives, &symbols).is_empty());
+        // The same effect on a call that answered a value is a real gap.
+        audit.record(query, act(0, 2, 0, 0, 1), act(0, 3, 0, 0, 2), &[], false);
+        let findings = audit.findings(&natives, &symbols);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].facets, ["effect"]);
+        // And a row that declares the effect is not over-declared by the
+        // pending-only exercise of it.
+        let creates = natives.register("creates", noop, NativeEffects::EFFECT);
+        audit.record(creates, act(0, 0, 0, 0, 0), act(0, 0, 0, 0, 1), &[], true);
+        assert!(!audit
+            .findings(&natives, &symbols)
+            .iter()
+            .any(|f| f.name == "creates"));
     }
 
     #[test]
     fn enabling_clears_the_previous_audit() {
         let mut natives = NativeFnTable::new();
         let symbols = SymbolTable::new();
-        let id = natives.register("n", noop);
+        let id = natives.register("n", noop, NativeEffects::PURE);
         let mut audit = EffectAudit::new();
         audit.set_enabled(true);
-        audit.record(id, act(0, 0, 0, 0, 0), act(0, 0, 0, 0, 1), &[]);
+        audit.record(id, act(0, 0, 0, 0, 0), act(0, 0, 0, 0, 1), &[], false);
         assert_eq!(audit.findings(&natives, &symbols).len(), 1);
         audit.set_enabled(true);
         assert!(audit.findings(&natives, &symbols).is_empty());

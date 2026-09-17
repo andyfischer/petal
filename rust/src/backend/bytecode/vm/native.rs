@@ -267,40 +267,34 @@ impl<'a> Vm<'a> {
         self.profile.record_native(nid.0);
         let func = self.native_fns.get_func(nid);
         let chain = self.emit_call_chain(origin);
-        // A declared native says up front what it does, so the counters
-        // around the call are not consulted; an undeclared one is classified
-        // from what it reported doing between two snapshots.
-        let declared = if self.declared {
-            self.native_fns.effects(nid)
-        } else {
-            None
-        };
-        // The audit wants the snapshot for every native, so it can hold what
-        // a declared native did against what its row says.
+        // The row says up front what the native does, so nothing around the
+        // call is consulted — unless the effect audit is on, which brackets
+        // every call with activity snapshots to hold what the native did
+        // against its row (`crate::effect_audit`).
         let audit = self.audit.enabled;
-        let before = if declared.is_none() || audit {
+        let before = if audit {
+            self.stack.run_deps.log_bindings(true);
             Some(self.stack.run_deps.activity())
         } else {
             None
         };
-        if audit {
-            self.stack.run_deps.log_bindings(true);
-        }
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = func(&mut cxt)?;
         let result = cxt.take_result(count);
-        if audit && let Some(before) = before {
+        if let Some(before) = before {
             let deps = &self.stack.run_deps;
-            self.audit
-                .record(nid, before, deps.activity(), deps.binding_log());
+            self.audit.record(
+                nid,
+                before,
+                deps.activity(),
+                deps.binding_log(),
+                matches!(result, Value::Pending(_)),
+            );
             self.stack.run_deps.log_bindings(false);
         }
         if self.memo && self.stack.memo.recording() {
-            match (declared, before) {
-                (Some(effects), _) => self.memo_note_declared_native(nid, args, result, effects),
-                (None, Some(before)) => self.memo_note_native(nid, args, result, before),
-                (None, None) => unreachable!("an undeclared native is always snapshotted"),
-            }
+            let effects = self.native_fns.effects(nid);
+            self.memo_note_native(nid, args, result, effects);
         }
         Ok(result)
     }

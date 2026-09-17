@@ -299,13 +299,10 @@ fn first_difference(a: &str, b: &str) -> String {
     "no field differs".to_string()
 }
 
-/// `replay-memo` against `replay` and `replay-declared`: the same run with
-/// no memo, with the memo classifying natives from their declared effect
-/// rows, and with the memo classifying every native by inference around the
-/// call. Both memoized runs must reproduce the unmemoized frames, and they
-/// must replay the same number of scopes — a declaration that says less than
-/// the native does would show up as a stale frame, one that says more as a
-/// lost replay.
+/// `replay-memo` against `replay`: the same run with no memo and with
+/// memoized scopes replaying. The memoized run must reproduce the unmemoized
+/// frames exactly. (The rows the memo classifies natives by are checked
+/// separately, facet by facet, in `tests/effect_audit.rs`.)
 #[test]
 fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
     let frames = 45;
@@ -313,27 +310,17 @@ fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
     for (app, includes) in corpus() {
         for seed in [1u64] {
             let (full, _) = drive(&app, &includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
-            let (declared, hits) = drive(&app, &includes, RunPolicy::REPLAY, seed, frames);
-            let (inferred, inferred_hits) =
-                drive(&app, &includes, RunPolicy::REPLAY.with_declared(false), seed, frames);
+            let (memoized, hits) = drive(&app, &includes, RunPolicy::REPLAY, seed, frames);
             assert_corpus_is_live(&app, &full);
             hits_total += hits;
-            for (policy, memoized) in [("replay", &declared), ("replay-declared", &inferred)] {
-                for (i, (a, b)) in full.iter().zip(memoized).enumerate() {
-                    assert!(
-                        a == b,
-                        "{} seed {seed}: frame {i} differs under {policy}: {}",
-                        app.display(),
-                        first_difference(a, b),
-                    );
-                }
+            for (i, (a, b)) in full.iter().zip(&memoized).enumerate() {
+                assert!(
+                    a == b,
+                    "{} seed {seed}: frame {i} differs under replay: {}",
+                    app.display(),
+                    first_difference(a, b),
+                );
             }
-            assert_eq!(
-                hits,
-                inferred_hits,
-                "{}: declared rows and inference replayed different scope counts",
-                app.display()
-            );
         }
     }
     assert!(hits_total > 0, "no scope was ever replayed across the corpus");

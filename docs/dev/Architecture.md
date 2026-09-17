@@ -374,7 +374,7 @@ impl Env {
     pub fn call_function(&mut self, stack: StackKey, name: &str, args: &[Value]) -> Result<Value, String>;
     pub fn step(&mut self, stack: StackKey) -> Result<StepResult, String>;
     pub fn reset_stack(&mut self, stack: StackKey) -> Result<(), String>;
-    pub fn register_native(&mut self, name: &str, func: NativeFn) -> NativeFnId;
+    pub fn register_native(&mut self, name: &str, func: NativeFn, effects: NativeEffects) -> NativeFnId;
     pub fn run_speculative(&mut self, stack: StackKey) -> Result<Value, String>;
     pub fn snapshot_state(...);  // hot-reload support
     pub fn restore_state(...);
@@ -417,9 +417,10 @@ phantom terms of compiled programs, so reordering would renumber every IR
 snapshot: don't reorder registrations; append only. See `builtins/mod.rs`.
 
 Host embeddings (petal-sdl, petal-web, petal-diagram-canvas) add their
-own natives via `Env::register_native` before loading any program. Those
-registrations also produce phantom terms, shifting the starting ID of
-user terms accordingly.
+own natives via `Env::register_native` before loading any program, each
+with its `NativeEffects` row (what it reads, emits or does; see
+`docs/ffi.md`). Those registrations also produce phantom terms, shifting the
+starting ID of user terms accordingly.
 
 The trace buffer (`trace.rs`) records every term execution (inputs,
 result, source line/column) into a ring buffer. Default capacity is

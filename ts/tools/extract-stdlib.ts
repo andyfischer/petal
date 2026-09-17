@@ -12,7 +12,7 @@
 // Three registration sources are parsed:
 //
 //   1. Core builtins — `rust/src/builtins/mod.rs`'s `register_builtins()`,
-//      which is the canonical, append-only list of `table.register_with("name", …)`
+//      which is the canonical, append-only list of `table.register("name", …)`
 //      calls. Each entry points at a `native_*` fn in a topic submodule
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
@@ -264,8 +264,8 @@ interface Registration {
 }
 
 /**
- * Parse `table.register_with("name", module::native_fn, <effects>);` lines, in
- * order (the older `table.register("name", fn);` form is accepted too). The
+ * Parse `table.register("name", module::native_fn, <effects>);` lines, in
+ * order (the older two-argument `register_with` spelling is accepted too). The
  * effect row is skipped: it says what the native does at runtime, not what it
  * is for.
  */
@@ -517,9 +517,9 @@ function bufferedDrawSignature(
   };
 }
 
-/** Parse `env.register_native("name", native_fn)` lines from a register block. */
+/** Parse `env.register_native("name", native_fn, <effects>)` lines from a register block. */
 function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
-  const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/g;
+  const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*(?:,[^;]*)?\)/g;
   const out: Array<{ name: string; fnName: string }> = [];
   for (let m; (m = re.exec(block)); ) out.push({ name: m[1], fnName: m[2] });
   return out;

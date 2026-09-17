@@ -1,5 +1,5 @@
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
 
 fn petal_string_repeat(state: &mut PetalCxt) -> NativeResult {
     let s = state.get_string(1)?;
@@ -34,7 +34,7 @@ fn petal_multi_type(state: &mut PetalCxt) -> NativeResult {
 #[test]
 fn native_string_repeat() {
     let mut env = Env::new();
-    env.register_native("string_repeat", petal_string_repeat);
+    env.register_native("string_repeat", petal_string_repeat, NativeEffects::PURE);
     let result = env.run_source(r#"print(string_repeat("abc", 3))"#);
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -42,7 +42,7 @@ fn native_string_repeat() {
 #[test]
 fn native_add_ints() {
     let mut env = Env::new();
-    env.register_native("add_ints", petal_add_ints);
+    env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
     let result = env.run_source("print(add_ints(10, 20))");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -50,7 +50,7 @@ fn native_add_ints() {
 #[test]
 fn native_greet_with_output() {
     let mut env = Env::new();
-    env.register_native("greet", petal_greet);
+    env.register_native("greet", petal_greet, NativeEffects::EFFECT);
     let result = env.run_source(r#"greet("World")"#);
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -58,7 +58,7 @@ fn native_greet_with_output() {
 #[test]
 fn native_no_args_returns_nil() {
     let mut env = Env::new();
-    env.register_native("noop", petal_no_args);
+    env.register_native("noop", petal_no_args, NativeEffects::PURE);
     let result = env.run_source("let x = noop()\nprint(x)");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -66,7 +66,7 @@ fn native_no_args_returns_nil() {
 #[test]
 fn native_arg_count() {
     let mut env = Env::new();
-    env.register_native("count_args", petal_multi_type);
+    env.register_native("count_args", petal_multi_type, NativeEffects::PURE);
     let result = env.run_source(r#"print(count_args(1, "two", true))"#);
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -74,7 +74,7 @@ fn native_arg_count() {
 #[test]
 fn native_used_in_expression() {
     let mut env = Env::new();
-    env.register_native("add_ints", petal_add_ints);
+    env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
     let result = env.run_source("let x = add_ints(3, 4) + 1\nprint(x)");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
@@ -82,7 +82,7 @@ fn native_used_in_expression() {
 #[test]
 fn native_error_on_wrong_type() {
     let mut env = Env::new();
-    env.register_native("add_ints", petal_add_ints);
+    env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
     let result = env.run_source(r#"add_ints("not", "ints")"#);
     assert!(result.is_err());
 }
@@ -90,8 +90,8 @@ fn native_error_on_wrong_type() {
 #[test]
 fn native_multiple_registrations() {
     let mut env = Env::new();
-    env.register_native("string_repeat", petal_string_repeat);
-    env.register_native("add_ints", petal_add_ints);
+    env.register_native("string_repeat", petal_string_repeat, NativeEffects::PURE);
+    env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
     let result = env.run_source(
         r#"
         let s = string_repeat("x", add_ints(2, 3))

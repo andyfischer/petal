@@ -622,6 +622,8 @@ pub(crate) fn native_font(state: &mut PetalCxt) -> NativeResult {
 /// should treat that as "this host offers only its own faces", not as an
 /// error.
 pub(crate) fn native_fonts(state: &mut PetalCxt) -> NativeResult {
+    // The list comes from the host's font source, not the binding table.
+    state.note_host_read();
     let names = with_font_provider(|p| p.families()).unwrap_or_default();
     let items: Vec<Value> = names
         .into_iter()

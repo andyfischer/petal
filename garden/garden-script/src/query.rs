@@ -52,7 +52,7 @@ use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 
 use indexmap::IndexMap;
-use petal::native_fn::PetalCxt;
+use petal::native_fn::{InputClasses, NativeEffects, PetalCxt};
 use petal::value::Value;
 
 pub use petal_ui::host_data::HostData;
@@ -109,8 +109,17 @@ pub fn swap_query_provider(
 /// Register the `query(kind, arg)` and `invalidate(kind, arg)` natives. Called
 /// from [`register_panel_natives`](crate::panel) alongside the petal-ui set.
 pub fn register_query(env: &mut petal::env::Env) {
-    env.register_native("query", native_query);
-    env.register_native("invalidate", native_invalidate);
+    // `query` answers from the host's cache, a host-data read. Its loading
+    // path also creates a resource — an effect, but one on a call that
+    // answers `Pending`, which the memo treats as effectful whatever the row
+    // says; so the row leaves it out and a scope that queries ready data
+    // stays memoizable (see `petal::effect_audit`).
+    env.register_native(
+        "query",
+        native_query,
+        NativeEffects::reads(InputClasses::HOST_DATA),
+    );
+    env.register_native("invalidate", native_invalidate, NativeEffects::EFFECT);
 }
 
 /// Cache/resource key for a `(kind, arg)` pair — a `u64` hash the resource table

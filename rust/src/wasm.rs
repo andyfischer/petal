@@ -6,7 +6,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::env::Env;
-use crate::native_fn::{NativeResult, PetalCxt};
+use crate::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use crate::program::ProgramId;
 use crate::stack::StackKey;
 use crate::value::{Value, value_to_json};
@@ -59,8 +59,12 @@ impl PetalRuntime {
         let mut env = Env::new();
 
         // Element-tree functions for petal-web
-        env.register_native("next_id", native_next_id);
-        env.register_native("clicked", native_clicked);
+        env.register_native("next_id", native_next_id, NativeEffects::EFFECT);
+        env.register_native(
+            "clicked",
+            native_clicked,
+            NativeEffects::probe(InputClasses::POINTER),
+        );
 
         PetalRuntime {
             env,

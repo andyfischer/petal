@@ -29,17 +29,15 @@
 //! are memoized (see docs/dev/memo-scopes.md). Every policy must produce the
 //! same trace, so a differential is two runs with two names:
 //! `--policy baseline` (nothing skipped, replayed or optimized) against
-//! `--policy fast`, or `fast-memo` / `replay` to isolate the gate / the memo;
-//! `replay-declared` makes the memo classify every native by inference rather
-//! than its declared effect row, which checks the declarations themselves.
+//! `--policy fast`, or `fast-memo` / `replay` to isolate the gate / the memo.
 //! `--no-gate` and `--no-memo` switch one layer off in whichever policy is in
 //! effect. `--gate-stats` reports frames run vs skipped on stderr, and
 //! `--memo-stats` the memo's counters.
 //!
 //! `--effect-audit` watches what every native does over the run and reports,
 //! on stderr, each one whose behavior differs from its declared effect row
-//! (see `petal::effect_audit`): under-declared rows are the staleness bugs
-//! the memo cannot see, undeclared natives are the ones still to migrate.
+//! (see `petal::effect_audit`): an under-declared row is a staleness bug
+//! the memo cannot see; an over-declared facet is one this run never took.
 //!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
 //! first, with `error` set), 2 a compile/usage error (message on stderr), 3 a

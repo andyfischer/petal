@@ -201,8 +201,8 @@ OPTIONS
        --effect-audit
               Watch what every native does during the run and report, on
               stderr, each one whose behavior differs from the effect row it
-              declared at registration: under-declared (a bug), undeclared,
-              or over-declared. See docs/tasks/declarative-effect-refactoring.md.
+              declared at registration: under-declared (a bug) or
+              over-declared. See docs/tasks/declarative-effect-refactoring.md.
 
        --policy <name>
               Run under a named run policy: fast (the default), baseline

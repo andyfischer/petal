@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use petal::env::Env;
-use petal::native_fn::{NativeFn, NativeResult, PetalCxt};
+use petal::native_fn::{NativeEffects, NativeFn, NativeResult, PetalCxt};
 use petal::value::Value;
 use petal::{HandleClass, HandleClassId, HandleVal};
 
@@ -298,7 +298,7 @@ fn run_with_class(
 ) -> Result<Value, String> {
     let mut env = Env::new();
     for (name, func) in natives {
-        env.register_native(name, *func);
+        env.register_native(name, *func, NativeEffects::PURE);
     }
     let class_id = env.register_handle_class(class);
     let pid = env.load_program(source)?;
@@ -490,7 +490,7 @@ fn native_double(cxt: &mut PetalCxt) -> NativeResult {
 #[test]
 fn ufcs_on_non_handle_receiver_still_works() {
     let mut env = Env::new();
-    env.register_native("double", native_double);
+    env.register_native("double", native_double, NativeEffects::PURE);
     let pid = env.load_program("let x = 4\nx.double()").unwrap();
     let sid = env.create_stack(pid).unwrap();
     let result = env.run(sid);

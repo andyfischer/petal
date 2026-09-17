@@ -15,6 +15,7 @@ pub mod cst;
 pub mod cst_project;
 pub mod desugar;
 pub mod diagnostic;
+pub mod effect_audit;
 pub mod direct_manipulation;
 pub mod dot_graph;
 pub mod env;

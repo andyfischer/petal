@@ -24,6 +24,12 @@
 // and `fast` (both) — and compares the frames.
 // `prints` is excluded deliberately — a gated frame documents empty prints.
 //
+// It then runs each fragment once more under `replay --effect-audit`, which
+// holds what every native was seen doing against the effect row it declared
+// (petal::effect_audit). An under-declared native fails the fragment; the
+// undeclared ones — worlds-fair's own host natives, until step 5 of the
+// declarative-effect task declares them — are summarized at the end.
+//
 // Usage:
 //   ./ts/bin/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
 //
@@ -31,7 +37,8 @@
 //   cd petal-ui && cargo build --release
 //   cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
 //
-// Exits non-zero if any fragment's frames differ, or if any ran vacuously.
+// Exits non-zero if any fragment's frames differ, if any ran vacuously, or if
+// the audit found a native doing more than it declared.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -110,22 +117,52 @@ const normalize = (trace: string) =>
 /** Run policies (see rust/src/policy.rs), each compared against `baseline`. */
 const VARIANTS = ['fast-memo', 'replay', 'replay-declared', 'fast'] as const;
 
-function drive(app: string, policy: 'baseline' | (typeof VARIANTS)[number]): string[] {
-  const out = join(work, `${app}.jsonl`);
-  execFileSync(runner, [
+function runnerArgs(app: string, policy: string, extra: string[] = []): string[] {
+  return [
     join(work, `${app}.ptl`),
     '--frames', String(frames),
     '--seed', seed,
     '--scenario', `monkey:${seed}`,
     '--query-fixtures', join(work, 'fixtures.json'),
     '--error-format', 'bare',
-    '--out', out,
+    '--out', join(work, `${app}.jsonl`),
     '--policy', policy,
-  ]);
-  return normalize(readFileSync(out, 'utf8'));
+    ...extra,
+  ];
+}
+
+function drive(app: string, policy: 'baseline' | (typeof VARIANTS)[number]): string[] {
+  execFileSync(runner, runnerArgs(app, policy));
+  return normalize(readFileSync(join(work, `${app}.jsonl`), 'utf8'));
+}
+
+/** One audit line: `  <kind> <name> <n> calls  <facets>` (see petal::effect_audit). */
+type AuditLine = { kind: string; name: string; facets: string };
+
+/**
+ * The effect audit's report for `app` under `replay`. Exit 3 means an
+ * under-declared native and is not an error here — the lines say which.
+ */
+function audit(app: string): AuditLine[] {
+  let stderr = '';
+  try {
+    execFileSync(runner, runnerArgs(app, 'replay', ['--effect-audit']), { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (e) {
+    const err = e as { status?: number; stderr?: Buffer };
+    if (err.status !== 3) throw e;
+    stderr = err.stderr?.toString() ?? '';
+  }
+  const lines: AuditLine[] = [];
+  for (const line of stderr.split('\n')) {
+    const m = /^\s+(under-declared|undeclared|over-declared)\s+(\S+)\s+\d+ calls\s+(.*)$/.exec(line);
+    if (m) lines.push({ kind: m[1], name: m[2], facets: m[3] });
+  }
+  return lines;
 }
 
 let failures = 0;
+/** Undeclared natives seen across every fragment, with what they did. */
+const undeclared = new Map<string, Set<string>>();
 for (const [name, entry] of FRAGMENTS) {
   const source = [...LIBS, entry]
     .map((f) => `// ==== ${f} ====\n${readFileSync(join(ptl, f), 'utf8')}\n`)
@@ -152,8 +189,30 @@ for (const [name, entry] of FRAGMENTS) {
   if (bad.length) {
     console.error(`DIFF ${name}: ${bad.join('; ')}`);
     failures++;
+    continue;
+  }
+
+  const under: string[] = [];
+  for (const line of audit(name)) {
+    if (line.kind === 'under-declared') under.push(`${line.name} was seen doing ${line.facets}`);
+    if (line.kind === 'undeclared') {
+      const seen = undeclared.get(line.name) ?? new Set<string>();
+      for (const facet of line.facets.split(/\s+/).filter(Boolean)) seen.add(facet);
+      undeclared.set(line.name, seen);
+    }
+  }
+  if (under.length) {
+    console.error(`AUDIT ${name}: ${under.join('; ')}`);
+    failures++;
   } else {
     console.log(`ok   ${name}  (${drawn.toFixed(0)} commands/frame)`);
+  }
+}
+
+if (undeclared.size) {
+  console.log(`\n${undeclared.size} natives still undeclared across the fragments:`);
+  for (const [name, facets] of [...undeclared].sort()) {
+    console.log(`  ${name.padEnd(28)} ${[...facets].join(' ') || '(silent)'}`);
   }
 }
 

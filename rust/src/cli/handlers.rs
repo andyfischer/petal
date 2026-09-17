@@ -43,6 +43,7 @@ pub(super) fn handle_run(
         ir,
         dup_stats,
         profile,
+        effect_audit,
         trace_pending,
         observe,
         trace_emits,
@@ -82,6 +83,9 @@ pub(super) fn handle_run(
     if profile {
         env.profile_mut().set_enabled(true);
     }
+    if effect_audit {
+        env.set_effect_audit(true);
+    }
     let pid = load_or_die(&mut env, json, ir, source, source_input);
     // Surface type-checker warnings on stderr before running. Warnings go to
     // stderr even in --json mode, so JSON consumers of stdout are unaffected.
@@ -112,6 +116,10 @@ pub(super) fn handle_run(
             .profile()
             .report(Some(run_elapsed), |nid| env.native_fn_name(nid), 15);
         eprint!("{report}");
+    }
+
+    if effect_audit {
+        eprint!("{}", env.effect_audit_report());
     }
 
     if dup_stats {

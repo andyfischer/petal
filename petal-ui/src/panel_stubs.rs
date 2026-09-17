@@ -14,13 +14,16 @@
 //!   same graceful degradation Garden's native performs when no provider is
 //!   attached — so a drawer renders its spinner/loading path forever, which is
 //!   deterministic. `invalidate` is a no-op.
-//! - The push channels (`emit`, `mutate`, `claim_key`, the `navigate` family)
-//!   validate their arguments like Garden's natives and then go nowhere.
+//! - The push channels (`emit`, `mutate`, `claim_key`, `request_frame` /
+//!   `animating`, the `navigate` family) validate their arguments like
+//!   Garden's natives and then go nowhere.
 //!   `mutate` still returns a unique handle; `mutate_result(handle)` and
 //!   `nav_arg()` answer nil.
 //! - `panel_store_get` answers nil (an empty store); `panel_store_set` keeps
 //!   Garden's string-or-nil type check but stores nothing, so every run starts
-//!   from the same blank slate.
+//!   from the same blank slate. Both still report what Garden's do — a host
+//!   read, an effect — so a memoized scope is classified the same way here as
+//!   in Garden (the effect audit is what caught them not doing so).
 //! - The `text_view`/`edit_view` region natives emit the same `Host` draw
 //!   commands Garden's do (tags `text_view`, `edit_view`,
 //!   `edit_view_projection`, `text_view_styles`, `text_view_scroll_to`,
@@ -92,6 +95,8 @@ pub fn register_panel_stubs(env: &mut Env) {
     env.register_native("mutate", native_mutate);
     env.register_native("mutate_result", native_mutate_result);
     env.register_native("claim_key", native_claim_key);
+    env.register_native("request_frame", native_request_frame);
+    env.register_native("animating", native_request_frame);
     env.register_native("navigate", native_navigate);
     env.register_native("navigate_replace", native_navigate);
     env.register_native("navigate_back", native_nop_nil);
@@ -229,6 +234,16 @@ fn native_query(cxt: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+/// `request_frame()` / `animating()`: push the same `animating` marker
+/// Garden's do (an emit, so the memo classifies the call the same way); no
+/// host drains it here.
+fn native_request_frame(cxt: &mut PetalCxt) -> NativeResult {
+    let sym = cxt.intern_symbol("animating");
+    cxt.push_output(sym, Value::Int(1));
+    cxt.push_nil();
+    Ok(1)
+}
+
 fn native_invalidate(cxt: &mut PetalCxt) -> NativeResult {
     let _kind = cxt.get_string(1)?;
     let _arg = cxt.get_value(2)?;
@@ -281,6 +296,7 @@ fn native_nop_nil(cxt: &mut PetalCxt) -> NativeResult {
 
 fn native_store_get(cxt: &mut PetalCxt) -> NativeResult {
     let _key = cxt.get_string(1)?;
+    cxt.note_host_read();
     cxt.push_nil();
     Ok(1)
 }
@@ -296,6 +312,7 @@ fn native_store_set(cxt: &mut PetalCxt) -> NativeResult {
             ));
         }
     }
+    cxt.note_effect();
     cxt.push_nil();
     Ok(1)
 }

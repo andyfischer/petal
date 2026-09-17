@@ -5,6 +5,7 @@
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
 //!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
+//!              [--effect-audit]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -35,8 +36,14 @@
 //! effect. `--gate-stats` reports frames run vs skipped on stderr, and
 //! `--memo-stats` the memo's counters.
 //!
+//! `--effect-audit` watches what every native does over the run and reports,
+//! on stderr, each one whose behavior differs from its declared effect row
+//! (see `petal::effect_audit`): under-declared rows are the staleness bugs
+//! the memo cannot see, undeclared natives are the ones still to migrate.
+//!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
-//! first, with `error` set), 2 a compile/usage error (message on stderr).
+//! first, with `error` set), 2 a compile/usage error (message on stderr), 3 a
+//! clean run in which `--effect-audit` found an under-declared native.
 
 use serde_json::Value as Json;
 use std::io::Write;
@@ -47,7 +54,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]";
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--effect-audit]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -85,6 +92,9 @@ struct Args {
     memo_stats: bool,
     /// Report frames run vs skipped on stderr at the end.
     gate_stats: bool,
+    /// Audit every native's observed behavior against its declared row and
+    /// report the differences on stderr at the end.
+    effect_audit: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -103,6 +113,7 @@ fn parse_args() -> Result<Args, String> {
     let mut gate_stats = false;
     let mut no_memo = false;
     let mut memo_stats = false;
+    let mut effect_audit = false;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -141,6 +152,7 @@ fn parse_args() -> Result<Args, String> {
             "--gate-stats" => gate_stats = true,
             "--no-memo" => no_memo = true,
             "--memo-stats" => memo_stats = true,
+            "--effect-audit" => effect_audit = true,
             "--error-format" => {
                 bare_errors = match value("--error-format")?.as_str() {
                     "bare" => true,
@@ -175,6 +187,7 @@ fn parse_args() -> Result<Args, String> {
         gate_stats,
         no_memo,
         memo_stats,
+        effect_audit,
     })
 }
 
@@ -210,6 +223,9 @@ fn run() -> Result<i32, String> {
         policy.memo = false;
     }
     ui.set_policy(policy);
+    if args.effect_audit {
+        ui.env.set_effect_audit(true);
+    }
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
     }
@@ -301,7 +317,19 @@ fn run() -> Result<i32, String> {
             ui.env.memo_slots(ui.stack_id()),
         );
     }
-    Ok(if failed { 1 } else { 0 })
+    let mut under_declared = false;
+    if args.effect_audit {
+        let report = ui.env.effect_audit_report();
+        eprint!("petal-ui-run: {report}");
+        under_declared = report.has_under_declared();
+    }
+    Ok(if failed {
+        1
+    } else if under_declared {
+        3
+    } else {
+        0
+    })
 }
 
 fn parse_size(s: &str) -> Result<(i32, i32), String> {

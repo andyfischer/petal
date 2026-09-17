@@ -111,6 +111,12 @@ pub struct RunDeps {
     resource_reads: u32,
     emits: u32,
     effects: u32,
+    /// While set, every binding read is also appended to `binding_log`: the
+    /// effect audit ([`crate::effect_audit`]) turns it on around a native
+    /// call to learn which bindings that call reached. One branch per read
+    /// when off.
+    logging: bool,
+    binding_log: Vec<SymbolId>,
 }
 
 impl RunDeps {
@@ -119,6 +125,9 @@ impl RunDeps {
     #[inline]
     pub fn note_binding_read(&mut self, sym: SymbolId) {
         self.binding_reads = self.binding_reads.wrapping_add(1);
+        if self.logging {
+            self.binding_log.push(sym);
+        }
         let i = sym.0 as usize;
         if i >= self.read_flags.len() {
             self.read_flags.resize(i + 1, false);
@@ -170,6 +179,21 @@ impl RunDeps {
             emits: self.emits,
             effects: self.effects,
         }
+    }
+
+    /// Start (or, with `false`, stop and clear) logging every binding read
+    /// into [`binding_log`](Self::binding_log).
+    #[inline]
+    pub fn log_bindings(&mut self, on: bool) {
+        self.logging = on;
+        self.binding_log.clear();
+    }
+
+    /// The bindings read since [`log_bindings`](Self::log_bindings) was
+    /// turned on, in read order.
+    #[inline]
+    pub fn binding_log(&self) -> &[SymbolId] {
+        &self.binding_log
     }
 
     /// The host-data revision now.

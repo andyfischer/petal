@@ -135,6 +135,10 @@ pub struct Vm<'a> {
     /// (`RunPolicy::declared`). Off, every native goes through the activity
     /// snapshot around the call.
     pub declared: bool,
+    /// The opt-in effect audit (off by default): with it on, every native
+    /// call is bracketed by activity snapshots whatever `declared` says, and
+    /// the delta is accumulated per native — see [`crate::effect_audit`].
+    pub audit: &'a mut crate::effect_audit::EffectAudit,
 }
 
 impl<'a> Vm<'a> {

@@ -14,6 +14,7 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
+             [--effect-audit]
 ```
 
 Build it with `cd petal-ui && cargo build`; the binary lands at
@@ -34,6 +35,7 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
 | `--no-memo` | memoized | Run every user-function call. Like `--no-gate`, it switches one layer off in whichever policy is in effect. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
 | `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
+| `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
 
 Imports resolve relative to the app's own directory, so an app that imports a
 sibling module (`examples/games/snake/`-style layouts) runs from any working
@@ -46,7 +48,8 @@ petal-ui-run examples/ui/bloom-gallery/app.ptl -I petal-libs --frames 120
 
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is
 written first, with `error` set, and the run stops there), **2** a compile or
-usage error (message on stderr, no trace).
+usage error (message on stderr, no trace), **3** a clean run in which
+`--effect-audit` found a declared native doing more than it declared.
 
 ## The JSONL record
 

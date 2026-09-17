@@ -16,10 +16,12 @@
 // replayed as a pure function of its arguments and the native is never called
 // again. A `panel_store_set` in a replayed scope silently stops persisting.
 //
-// This is a *static* approximation — the real tool is step 4 of that plan, a
-// runtime `--effect-audit` that reports what each native was observed doing.
-// This script is what you run in the meantime, and what found the five
-// undeclared natives fixed in the same commit.
+// This is a *static* approximation. The real tool is the runtime audit —
+// `petal-ui-run --effect-audit`, `petal run --effect-audit`, and the corpus
+// test petal-ui/tests/effect_audit.rs — which reports what each native was
+// *observed* doing against the effect row it declared. This script still has a
+// use the runtime one does not: it covers natives no corpus app calls, and it
+// found the five undeclared natives fixed before the runtime tool existed.
 //
 // Usage:
 //   ./ts/bin/native-effect-audit.ts             # summary + suspect list
@@ -51,7 +53,6 @@ const INSTRUMENTED: Record<string, string> = {
   note_host_read: 'host_read',
   note_effect: 'effect',
   print: 'effect',
-  rng_next_f64: 'effect',
   set_noise_seed: 'effect',
   next_counter: 'effect',
   set_counter: 'effect',

@@ -275,14 +275,26 @@ impl<'a> Vm<'a> {
         } else {
             None
         };
-        let before = if declared.is_none() {
+        // The audit wants the snapshot for every native, so it can hold what
+        // a declared native did against what its row says.
+        let audit = self.audit.enabled;
+        let before = if declared.is_none() || audit {
             Some(self.stack.run_deps.activity())
         } else {
             None
         };
+        if audit {
+            self.stack.run_deps.log_bindings(true);
+        }
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = func(&mut cxt)?;
         let result = cxt.take_result(count);
+        if audit && let Some(before) = before {
+            let deps = &self.stack.run_deps;
+            self.audit
+                .record(nid, before, deps.activity(), deps.binding_log());
+            self.stack.run_deps.log_bindings(false);
+        }
         if self.memo && self.stack.memo.recording() {
             match (declared, before) {
                 (Some(effects), _) => self.memo_note_declared_native(nid, args, result, effects),

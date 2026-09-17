@@ -94,6 +94,7 @@ pub fn corpus() -> Vec<(PathBuf, Vec<PathBuf>)> {
 /// errors on frame 0 — a module it cannot resolve, a native with no stub —
 /// produces an empty trace, and two empty traces compare equal: the oracle
 /// reports a pass while testing nothing at all.
+#[allow(dead_code)] // not every test binary drives the corpus by frames
 pub fn assert_corpus_is_live(app: &Path, frames: &[String]) {
     let drew = frames.iter().any(|f| {
         serde_json::from_str::<serde_json::Value>(f)

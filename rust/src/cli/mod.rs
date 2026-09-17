@@ -58,6 +58,10 @@ pub struct RunOpts {
     /// Count instructions, builtin calls and collections during the run and
     /// print the histogram to stderr afterwards (see `crate::profile`).
     pub profile: bool,
+    /// Bracket every native call with activity snapshots and print, after
+    /// the run, each native whose observed behavior differs from its declared
+    /// effect row (see `crate::effect_audit`).
+    pub effect_audit: bool,
     /// `--policy <name>` (or `--no-opt`, which is `baseline`); `None` keeps
     /// the env's own, from `PETAL_POLICY`.
     pub policy: Option<crate::policy::RunPolicy>,

@@ -70,6 +70,7 @@ impl Env {
             &mut self.profile,
             memo,
             declared,
+            &mut self.effect_audit,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -365,6 +366,7 @@ impl Env {
             &mut self.profile,
             false,
             true,
+            &mut self.effect_audit,
         )
         .call_closure_sync(callable, args, host_call_site(name));
         // The call may have written state the next run reads; the run's
@@ -425,6 +427,7 @@ fn make_vm<'a>(
     profile: &'a mut crate::profile::VmProfile,
     memo: bool,
     declared: bool,
+    audit: &'a mut crate::effect_audit::EffectAudit,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
@@ -461,5 +464,6 @@ fn make_vm<'a>(
         error_already_annotated: false,
         memo,
         declared,
+        audit,
     }
 }

@@ -80,6 +80,10 @@ only as good as the `note_*` calls the native remembers to make. The two
 must agree, and the corpus oracle in `petal-ui/tests/memo.rs` checks it:
 `replay` (rows where declared) against `replay-declared` (inference for
 every native) must reproduce the same frames with the same replay counts.
+`petal-ui-run --effect-audit` (and `petal-ui/tests/effect_audit.rs` over the
+corpus) says *which* native disagrees and on which facet: every call is
+bracketed by both classifiers and the observed behavior is held against the
+row (`rust/src/effect_audit.rs`).
 See [the declarative-effect task](../tasks/declarative-effect-refactoring.md)
 for the migration of the host natives.
 

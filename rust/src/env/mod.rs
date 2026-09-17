@@ -15,6 +15,7 @@ use crate::module::ModuleRegistry;
 use crate::native_fn::{NativeClass, NativeEffects, NativeFn, NativeFnId, NativeFnTable};
 use crate::observe::Observations;
 use crate::policy::RunPolicy;
+use crate::effect_audit::EffectAudit;
 use crate::profile::VmProfile;
 use crate::program::{Program, ProgramId, StateKey};
 use crate::stack::{RuntimeStateKey, Stack, StackKey};
@@ -51,6 +52,9 @@ pub struct Env {
     /// Opt-in execution counters (opcodes, builtins, calls, GC). Off by
     /// default; see [`crate::profile`].
     profile: VmProfile,
+    /// Opt-in audit of native effect declarations against observed behavior.
+    /// Off by default; see [`crate::effect_audit`].
+    effect_audit: EffectAudit,
     next_program_id: u32,
     next_stack_id: u32,
     /// How runs execute: optimizer passes, memoization, frame gating.
@@ -136,6 +140,7 @@ impl Env {
             trace: TraceBuffer::new(),
             observations: Observations::new(),
             profile: VmProfile::new(),
+            effect_audit: EffectAudit::new(),
             next_program_id: 1,
             next_stack_id: 1,
             policy: RunPolicy::from_env(),
@@ -570,6 +575,24 @@ impl Env {
     /// (and clears whatever was already counted).
     pub fn profile_mut(&mut self) -> &mut VmProfile {
         &mut self.profile
+    }
+
+    /// Turn the native effect audit on (or off) for subsequent runs: every
+    /// native call is then classified by inference as well as by its row, and
+    /// the two are compared in [`effect_audit_report`](Self::effect_audit_report).
+    /// Turning it on clears whatever was already observed.
+    pub fn set_effect_audit(&mut self, on: bool) {
+        self.effect_audit.set_enabled(on);
+    }
+
+    /// What the audit has observed so far; see [`crate::effect_audit`].
+    pub fn effect_audit(&self) -> &EffectAudit {
+        &self.effect_audit
+    }
+
+    /// The audit's findings against the registered natives' declared rows.
+    pub fn effect_audit_report(&self) -> crate::effect_audit::Report {
+        self.effect_audit.report(&self.native_fns, &self.symbols)
     }
 
     /// The registered name of a native function by table index — how a

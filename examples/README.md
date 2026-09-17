@@ -7,7 +7,7 @@ Runnable Petal programs, grouped by what they are:
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
 | [`challenge/`](challenge/) | Larger console programs written as language stress tests — 2048, Boids, Minesweeper, terrain generation, Tetris. Deterministic: two runs print the same output |
 | [`games/`](games/) | Games — pong, breakout, snake, asteroids, and two SDL-hosted side-scrollers: the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation |
-| [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust, node editor |
+| [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust, node editor, markdown editor |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |
 | [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |

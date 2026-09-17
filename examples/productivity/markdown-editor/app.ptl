@@ -1,0 +1,1712 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  INKWELL — a Markdown editor with a live preview, as a Garden Petal panel.
+//
+//  A dark source editor on the left (soft wrap, caret, selection, undo/redo,
+//  syntax colouring, list continuation), a rendered preview on the right
+//  (headings, paragraphs with bold/italic/code/links, bullet and numbered
+//  lists, task lists you can tick from the preview, quotes, fenced code,
+//  tables, rules), a draggable splitter between them, and a rail with the
+//  documents and a live outline. The preview follows the editor's scroll,
+//  and clicking a heading in the preview puts the caret on its source line.
+//  Documents persist through the panel store.
+//
+//  Designed for a 1280x850 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────
+// Editor side: ink on slate. Preview side: type on paper.
+let SLATE      = #171a23
+let SLATE_HI   = #1d2130
+let GUTTER     = #141720
+let RAIL_BG    = #12141c
+let RAIL_ROW   = #1c2030
+let OUTLINE    = #262b3a
+let TEXT       = #e6e9f0
+let DIM        = #8b93a7
+let FAINT      = #5b6379
+let ACCENT     = #8ab4ff
+let ACCENT_INK = #4c6fd6
+let SELBG      = #2b3d6a
+let CARET      = #ffd479
+
+let SYN_HEAD   = #ffb86b
+let SYN_MARK   = #6d7891
+let SYN_BOLD   = #f2f4f8
+let SYN_ITAL   = #c9b6ff
+let SYN_CODE   = #9be7a5
+let SYN_LINK   = #8ab4ff
+let SYN_QUOTE  = #9aa6bf
+let SYN_LIST   = #ffd479
+let SYN_FENCE  = #6d7891
+
+let PAPER      = #fbfaf6
+let PAPER_LOW  = #f1efe8
+let INK        = #23272f
+let INK_SOFT   = #4f5563
+let INK_FAINT  = #8a8f9b
+let RULE       = #e2dfd5
+let CODE_BG    = #eeece5
+let CODE_INK   = #3b4252
+let QUOTE_BAR  = #c9b8e8
+let LINK       = #3358c4
+let CHECK      = #4c9a6a
+let TABLE_HEAD = #f2f0ea
+
+// ── Metrics ──────────────────────────────────────────────────────────────
+let W = screen_width()
+let H = screen_height()
+
+let TOP_H    = 46
+let STATUS_H = 26
+let RAIL_W   = 210
+
+let FS_ED    = 13
+let LH       = 21                 // editor line height
+let GUT_W    = 46                 // line-number gutter
+let ED_PAD   = 16
+let ED_TS    = {size: FS_ED, font: "mono", color: TEXT}
+// Measured over a long run so the per-character advance keeps its fraction;
+// a rounded single-glyph width drifts a full column by the end of a line.
+let CW       = text_width("mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm", ED_TS) / 50.0
+
+let PV_FONT  = "ui"
+let PV_FS    = 15
+let PV_LH    = 24
+let PV_PAD   = 36
+let PV_TS    = {size: PV_FS, font: PV_FONT, color: INK}
+
+let FS_MICRO = 10
+let FS_TINY  = 11
+let FS_SM    = 12
+let FS       = 13
+
+let MAIN = rect(RAIL_W, TOP_H, W - RAIL_W, H - TOP_H - STATUS_H)
+
+// The chords the editor needs back from Garden.
+claim_key("z", "cmd")
+claim_key("z", "cmd+shift")
+claim_key("b", "cmd")
+claim_key("i", "cmd")
+claim_key("k", "cmd")
+claim_key("a", "cmd")
+claim_key("s", "cmd")
+claim_key("e", "cmd")
+
+// ── Seed documents ───────────────────────────────────────────────────────
+fn seed_docs() -> list
+  [
+    {id: 1, name: "Tour of Inkwell", lines: [
+      "# Inkwell",
+      "",
+      "A Markdown editor with a **live preview**, written as one Petal script.",
+      "Type on the left; the page on the right follows every keystroke.",
+      "",
+      "## What renders",
+      "",
+      "Inline styling: **bold**, *italic*, `code`, and [links](https://petal-lang.org).",
+      "Combine them as you like: ***both***, **`bold code`**, or a [*styled* link](https://example.com).",
+      "",
+      "> Blockquotes for the parts worth setting apart. They wrap like",
+      "> any other paragraph and keep their bar down the left.",
+      "",
+      "### Lists",
+      "",
+      "- Bullets, with nesting by indent",
+      "  - two spaces deeper",
+      "    - and deeper still",
+      "- Back out again",
+      "",
+      "1. Numbered lists",
+      "2. keep their numbers",
+      "3. from the source",
+      "",
+      "### Tasks",
+      "",
+      "Tick these in the preview: the source updates.",
+      "",
+      "- [x] Write the block parser",
+      "- [x] Wrap inline runs by pixel width",
+      "- [ ] Ship the table renderer",
+      "- [ ] Take the afternoon off",
+      "",
+      "### Code",
+      "",
+      "```petal",
+      "fn greet(name: string) -> string",
+      "  \"hello, \" ++ name",
+      "end",
+      "",
+      "print(greet(\"world\"))",
+      "```",
+      "",
+      "### Tables",
+      "",
+      "| Key | Action | Where |",
+      "|---|---|---|",
+      "| Cmd+B | bold the selection | editor |",
+      "| Cmd+I | italic | editor |",
+      "| Cmd+K | wrap as a link | editor |",
+      "| Cmd+Z / Shift+Cmd+Z | undo / redo | editor |",
+      "| Cmd+E | cycle editor, split, preview | anywhere |",
+      "",
+      "---",
+      "",
+      "The rail on the left lists your documents and an outline of this one.",
+      "Click a heading there, or in the preview, to jump to its line.",
+    ]},
+    {id: 2, name: "Release notes", lines: [
+      "# Panel runtime 0.9, release notes",
+      "",
+      "Shipping Thursday. Everything below is user-visible; internals are in the",
+      "changelog.",
+      "",
+      "## Highlights",
+      "",
+      "- **Frame gate.** A panel that draws the same frame twice now draws it once.",
+      "- **Memoized scopes.** `memo` blocks skip their body when inputs are unchanged.",
+      "- **Declared effects.** Every native carries a row saying what it touches.",
+      "",
+      "## Breaking",
+      "",
+      "1. `state` is keyed per call path. A helper called from two places gets two slots.",
+      "2. Assigning to a captured `let` from a nested `fn` is an error; use `var` + `set`.",
+      "",
+      "## Known issues",
+      "",
+      "- [ ] Cmd-wheel zoom drops its modifier under the headless server",
+      "- [ ] the `mono` face has no italic cut, so *emphasis* there is upright",
+      "- [x] `draw_rect_rounded_outline` gained its record overload",
+      "",
+      "> If a script raises mid-frame, `panel.values` keeps the last good frame",
+      "> and `values_partial` says how far the failing one got.",
+      "",
+      "See the [frame gate design](https://example.com/frame-gate) for the model.",
+    ]},
+    {id: 3, name: "Bread, third attempt", lines: [
+      "# Country loaf, third attempt",
+      "",
+      "The second one was dense. Longer bulk this time and a hotter oven.",
+      "",
+      "## Ratio",
+      "",
+      "| Ingredient | Grams | Baker's % |",
+      "|---|---|---|",
+      "| Bread flour | 450 | 90 |",
+      "| Whole wheat | 50 | 10 |",
+      "| Water | 375 | 75 |",
+      "| Levain | 100 | 20 |",
+      "| Salt | 10 | 2 |",
+      "",
+      "## Method",
+      "",
+      "1. Autolyse flour and water for **an hour**, not thirty minutes.",
+      "2. Mix in levain and salt. Four sets of folds, half an hour apart.",
+      "3. Bulk until it has grown by *half*, jiggles, and smells sweet.",
+      "4. Shape tight. Cold retard overnight.",
+      "5. Bake covered at 250 for 20 minutes, uncovered at 230 for 25.",
+      "",
+      "- [x] buy a second banneton",
+      "- [ ] score deeper than feels right",
+      "",
+      "> The crumb tells you what the bulk did. Read it before blaming the oven.",
+    ]},
+  ]
+end
+
+// ── Small helpers ────────────────────────────────────────────────────────
+fn iclamp(v: num, lo: num, hi: num) -> num
+  max(lo, min(v, hi))
+end
+
+fn ch(s: string, i: num) -> string
+  if i < 0 || i >= len(s) then "" else slice(s, i, i + 1) end
+end
+
+fn starts(s: string, p: string) -> bool
+  len(s) >= len(p) && slice(s, 0, len(p)) == p
+end
+
+fn ltrim(s: string) -> string
+  let i = 0
+  while i < len(s) && (ch(s, i) == " " || ch(s, i) == "\t") do
+    i = i + 1
+  end
+  slice(s, i, len(s))
+end
+
+fn rtrim(s: string) -> string
+  let i = len(s)
+  while i > 0 && ch(s, i - 1) == " " do
+    i = i - 1
+  end
+  slice(s, 0, i)
+end
+
+fn trim(s: string) -> string
+  rtrim(ltrim(s))
+end
+
+fn indent_of(s: string) -> int
+  let i = 0
+  while i < len(s) && ch(s, i) == " " do
+    i = i + 1
+  end
+  i
+end
+
+fn is_digit(c: string) -> bool
+  c == "0" || c == "1" || c == "2" || c == "3" || c == "4" ||
+  c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
+end
+
+fn find_from(s: string, needle: string, from: num) -> int
+  let i = from
+  let found = -1
+  while found < 0 && i + len(needle) <= len(s) do
+    if slice(s, i, i + len(needle)) == needle then
+      found = i
+    end
+    i = i + 1
+  end
+  found
+end
+
+fn count_words(s: string) -> int
+  let n = 0
+  for w in split(s, " ") do
+    if len(w) > 0 then n = n + 1 end
+  end
+  n
+end
+
+// ── Line classification (block level) ───────────────────────────────────
+// Shared by the editor's colouring and the preview's parser.
+
+fn heading_level(s: string) -> int
+  let n = 0
+  while n < 6 && ch(s, n) == "#" do
+    n = n + 1
+  end
+  if n > 0 && ch(s, n) == " " then n else 0 end
+end
+
+fn is_rule(s: string) -> bool
+  let t = trim(s)
+  if len(t) < 3 then
+    false
+  else
+    let c = ch(t, 0)
+    let ok = c == "-" || c == "*" || c == "_"
+    for i in range(1, len(t)) do
+      if ch(t, i) != c then ok = false end
+    end
+    ok
+  end
+end
+
+fn is_fence(s: string) -> bool
+  starts(ltrim(s), "```")
+end
+
+// {kind, indent, marker_len, num, task} or nil for a plain line
+fn list_marker(s: string) -> record
+  let ind = indent_of(s)
+  let t = slice(s, ind, len(s))
+  let m = ch(t, 0)
+  if (m == "-" || m == "*" || m == "+") && ch(t, 1) == " " then
+    let rest = slice(t, 2, len(t))
+    let task = if starts(rest, "[ ] ") then 0 elsif starts(rest, "[x] ") || starts(rest, "[X] ") then 1 else -1 end
+    {kind: "bullet", indent: ind, mlen: 2 + if task >= 0 then 4 else 0 end, num: 0, task: task}
+  else
+    let d = 0
+    while is_digit(ch(t, d)) do
+      d = d + 1
+    end
+    if d > 0 && d <= 3 && ch(t, d) == "." && ch(t, d + 1) == " " then
+      {kind: "ordered", indent: ind, mlen: d + 2, num: parse_int(slice(t, 0, d)) ?? 1, task: -1}
+    else
+      {kind: "none", indent: ind, mlen: 0, num: 0, task: -1}
+    end
+  end
+end
+
+fn is_table_row(s: string) -> bool
+  let t = trim(s)
+  len(t) >= 2 && ch(t, 0) == "|" && ch(t, len(t) - 1) == "|"
+end
+
+fn is_table_sep(s: string) -> bool
+  let t = trim(s)
+  if !is_table_row(t) then
+    false
+  else
+    let ok = true
+    for i in range(0, len(t)) do
+      let c = ch(t, i)
+      if c != "|" && c != "-" && c != ":" && c != " " then ok = false end
+    end
+    ok && contains(t, "-")
+  end
+end
+
+fn split_cells(s: string) -> list
+  let t = trim(s)
+  let inner = slice(t, 1, len(t) - 1)
+  let out = []
+  for c in split(inner, "|") do
+    out = append(out, trim(c))
+  end
+  out
+end
+
+// ── Inline markup ────────────────────────────────────────────────────────
+// `match_at` looks at position i and reports a matched span starting there:
+// {kind, ml (marker length), close (index of the closing marker), url}.
+// kind is "none" when nothing opens here. The editor colours the span with
+// its markers; the preview recurses into the inner text.
+
+fn match_at(s: string, i: num) -> record
+  let c = ch(s, i)
+  let none = {kind: "none", ml: 0, close: -1, url: ""}
+  if c == "`" then
+    let j = find_from(s, "`", i + 1)
+    if j > i + 1 then {kind: "code", ml: 1, close: j, url: ""} else none end
+  elsif c == "*" && ch(s, i + 1) == "*" && ch(s, i + 2) == "*" then
+    let j = find_from(s, "***", i + 3)
+    if j > i + 3 then {kind: "bolditalic", ml: 3, close: j, url: ""} else none end
+  elsif c == "*" && ch(s, i + 1) == "*" then
+    let j = find_from(s, "**", i + 2)
+    if j > i + 2 then {kind: "bold", ml: 2, close: j, url: ""} else none end
+  elsif c == "~" && ch(s, i + 1) == "~" then
+    let j = find_from(s, "~~", i + 2)
+    if j > i + 2 then {kind: "strike", ml: 2, close: j, url: ""} else none end
+  elsif (c == "*" || c == "_") && ch(s, i + 1) != " " && ch(s, i + 1) != "" then
+    // Emphasis opens only at a word boundary so snake_case stays plain.
+    let prev = ch(s, i - 1)
+    if c == "_" && prev != "" && prev != " " && prev != "(" then
+      none
+    else
+      let j = find_from(s, c, i + 1)
+      if j > i + 1 && ch(s, j - 1) != " " then {kind: "italic", ml: 1, close: j, url: ""} else none end
+    end
+  elsif c == "[" then
+    let mid = find_from(s, "](", i + 1)
+    if mid < 0 then
+      none
+    else
+      let e = find_from(s, ")", mid + 2)
+      if e < 0 then none else {kind: "link", ml: 1, close: mid, url: slice(s, mid + 2, e), end_: e} end
+    end
+  else
+    none
+  end
+end
+
+// Editor colouring: byte ranges {a, b, kind} covering the whole span,
+// markers included.
+fn inline_ranges(s: string) -> list
+  let out = []
+  let i = 0
+  while i < len(s) do
+    let m = match_at(s, i)
+    if m.kind == "none" then
+      i = i + 1
+    elsif m.kind == "link" then
+      out = append(out, {a: i, b: m.end_ + 1, kind: "link"})
+      i = m.end_ + 1
+    else
+      out = append(out, {a: i, b: m.close + m.ml, kind: m.kind})
+      i = m.close + m.ml
+    end
+  end
+  out
+end
+
+// Preview tokens: {text, bold, italic, code, strike, url}.
+fn parse_inline(s: string, st: record) -> list
+  let out = []
+  let buf = ""
+  let i = 0
+  while i < len(s) do
+    let m = if st.code then {kind: "none", ml: 0, close: -1, url: ""} else match_at(s, i) end
+    if m.kind == "none" then
+      buf = buf ++ ch(s, i)
+      i = i + 1
+    else
+      if len(buf) > 0 then
+        out = append(out, {...st, text: buf})
+        buf = ""
+      end
+      let inner = slice(s, i + m.ml, m.close)
+      if m.kind == "code" then
+        out = append(out, {...st, text: inner, code: true})
+        i = m.close + 1
+      elsif m.kind == "link" then
+        for t in parse_inline(inner, {...st, url: m.url}) do
+          out = append(out, t)
+        end
+        i = m.end_ + 1
+      else
+        let st2 = match m.kind
+          when "bold" -> {...st, bold: true}
+          when "bolditalic" -> {...st, bold: true, italic: true}
+          when "italic" -> {...st, italic: true}
+          when _ -> {...st, strike: true} end
+        for t in parse_inline(inner, st2) do
+          out = append(out, t)
+        end
+        i = m.close + m.ml
+      end
+    end
+  end
+  if len(buf) > 0 then
+    out = append(out, {...st, text: buf})
+  end
+  out
+end
+
+let PLAIN = {text: "", bold: false, italic: false, code: false, strike: false, url: ""}
+
+fn inline(s: string) -> list
+  parse_inline(s, PLAIN)
+end
+
+fn plain_text(s: string) -> string
+  let out = ""
+  for t in inline(s) do
+    out = out ++ t.text
+  end
+  out
+end
+
+// ── Block parser ─────────────────────────────────────────────────────────
+// Blocks: {kind, line, ...}. kinds: heading{level, inl}, para{inl},
+// quote{inl}, item{depth, ordered, num, task, inl}, code{lang, lines},
+// rule, table{head, rows}.
+
+fn parse_blocks(lines: list) -> list
+  let blocks = []
+  let i = 0
+  let n = len(lines)
+  while i < n do
+    let s = lines[i]
+    let t = trim(s)
+    if is_fence(s) then
+      let lang = trim(slice(ltrim(s), 3, len(ltrim(s))))
+      let body = []
+      let j = i + 1
+      while j < n && !is_fence(lines[j]) do
+        body = append(body, lines[j])
+        j = j + 1
+      end
+      blocks = append(blocks, {kind: "code", line: i, lang: lang, lines: body})
+      i = j + 1
+    elsif len(t) == 0 then
+      i = i + 1
+    elsif heading_level(s) > 0 then
+      let lv = heading_level(s)
+      blocks = append(blocks, {kind: "heading", line: i, level: lv, inl: inline(trim(slice(s, lv + 1, len(s))))})
+      i = i + 1
+    elsif is_rule(s) then
+      blocks = append(blocks, {kind: "rule", line: i})
+      i = i + 1
+    elsif starts(t, ">") then
+      let text = ""
+      let j = i
+      while j < n && starts(trim(lines[j]), ">") do
+        let q = trim(slice(trim(lines[j]), 1, len(trim(lines[j]))))
+        text = if len(text) == 0 then q else text ++ " " ++ q end
+        j = j + 1
+      end
+      blocks = append(blocks, {kind: "quote", line: i, inl: inline(text)})
+      i = j
+    elsif is_table_row(s) then
+      let rows = []
+      let j = i
+      let has_head = false
+      while j < n && is_table_row(lines[j]) do
+        if is_table_sep(lines[j]) then
+          has_head = j == i + 1
+        else
+          let cells = []
+          for c in split_cells(lines[j]) do
+            cells = append(cells, inline(c))
+          end
+          rows = append(rows, cells)
+        end
+        j = j + 1
+      end
+      blocks = append(blocks, {kind: "table", line: i, head: has_head, rows: rows})
+      i = j
+    elsif list_marker(s).kind != "none" then
+      let m = list_marker(s)
+      let text = slice(s, m.indent + m.mlen, len(s))
+      // Lazy continuation: following indented plain lines belong to the item.
+      let j = i + 1
+      while j < n && len(trim(lines[j])) > 0 && list_marker(lines[j]).kind == "none" &&
+        indent_of(lines[j]) > m.indent && !is_fence(lines[j]) && heading_level(lines[j]) == 0 do
+        text = text ++ " " ++ trim(lines[j])
+        j = j + 1
+      end
+      blocks = append(blocks, {kind: "item", line: i, depth: m.indent / 2, ordered: m.kind == "ordered",
+        num: m.num, task: m.task, inl: inline(text)})
+      i = j
+    else
+      let text = t
+      let j = i + 1
+      while j < n && len(trim(lines[j])) > 0 && heading_level(lines[j]) == 0 && !is_fence(lines[j]) &&
+        !is_rule(lines[j]) && !starts(trim(lines[j]), ">") && list_marker(lines[j]).kind == "none" &&
+        !is_table_row(lines[j]) do
+        text = text ++ " " ++ trim(lines[j])
+        j = j + 1
+      end
+      blocks = append(blocks, {kind: "para", line: i, inl: inline(text)})
+      i = j
+    end
+  end
+  blocks
+end
+
+// ── Preview layout ───────────────────────────────────────────────────────
+// Turns blocks into flat draw items with absolute y (before scrolling):
+//   {kind: "text", x, y, text, ts, url}     a run of one style
+//   {kind: "rect", r, c, a, rad}            fills (code backgrounds, bars)
+//   {kind: "line", x1, y1, x2, y2, c, w}    rules, underlines
+//   {kind: "check", r, on, line}            a task box (clickable)
+//   {kind: "jump", r, line}                 a heading's hit area
+// plus `anchors`: [{line, y}] per block for scroll sync.
+
+fn tok_style(t: record, base: record) -> record
+  let s = base
+  if t.bold then s = {...s, weight: 700} end
+  if t.italic then s = {...s, italic: true, color: if t.url != "" then LINK else INK_SOFT end} end
+  if t.url != "" then s = {...s, color: LINK} end
+  if t.code then s = {...s, font: "mono", size: max(11, base.size - 2), color: CODE_INK} end
+  s
+end
+
+fn space_w(ts: record) -> num
+  text_width("a a", ts) - text_width("aa", ts)
+end
+
+// Flow one inline run into wrapped lines. Returns {items, y} with y at the
+// bottom of the last line.
+fn flow(tokens: list, x0: num, y0: num, width: num, base: record, lh: num) -> record
+  let items = []
+  let x = x0
+  let y = y0
+  for t in tokens do
+    let ts = tok_style(t, base)
+    let sw = space_w(ts)
+    let ws = split(t.text, " ")
+    let ty = y + (lh - ts.size) / 2 - 1
+    for wi in range(0, len(ws)) do
+      let w = ws[wi]
+      // A leading/trailing space in the token is an empty word: keep the gap.
+      if wi > 0 then
+        x = x + sw
+      end
+      if len(w) > 0 then
+        let ww = text_width(w, ts) + if t.code then 8 else 0 end
+        if x + ww > x0 + width && x > x0 then
+          x = x0
+          y = y + lh
+          ty = y + (lh - ts.size) / 2 - 1
+        end
+        let tx = x + if t.code then 4 else 0 end
+        if t.code then
+          items = append(items, {kind: "rect", r: rect(x, ty - 2, ww, ts.size + 6), c: CODE_BG, a: 255, rad: 4})
+        end
+        items = append(items, {kind: "text", x: tx, y: ty, text: w, ts: ts, url: t.url})
+        if t.url != "" then
+          // The underline runs under the following space too, so a multi-word
+          // link reads as one link rather than a row of words.
+          let more = wi + 1 < len(ws) && len(ws[wi + 1]) > 0 && x + ww + sw + text_width(ws[wi + 1], ts) <= x0 + width
+          items = append(items, {kind: "line", x1: tx, y1: ty + ts.size + 3,
+            x2: tx + text_width(w, ts) + if more then sw else 0 end, y2: ty + ts.size + 3, c: LINK, w: 1})
+        end
+        if t.strike then
+          items = append(items, {kind: "line", x1: tx, y1: ty + ts.size / 2 + 1, x2: tx + text_width(w, ts), y2: ty + ts.size / 2 + 1, c: INK_SOFT, w: 1})
+        end
+        x = x + ww
+      end
+    end
+  end
+  {items: items, y: y + lh}
+end
+
+fn heading_ts(level: num) -> record
+  match level
+    when 1 -> {size: 30, font: PV_FONT, color: INK, weight: 700, spacing: -0.4}
+    when 2 -> {size: 22, font: PV_FONT, color: INK, weight: 700, spacing: -0.2}
+    when 3 -> {size: 17, font: PV_FONT, color: INK, weight: 700}
+    when _ -> {size: 15, font: PV_FONT, color: INK_SOFT, weight: 700}
+  end
+end
+
+fn layout_preview(blocks: list, x0: num, width: num) -> record
+  let items = []
+  let anchors = []
+  let y = 0
+  let prev = "none"
+  for bi in range(0, len(blocks)) do
+    let b = blocks[bi]
+    // Spacing before a block depends on the pair: items pack, headings breathe.
+    let gap = if prev == "none" then 0
+    elsif b.kind == "item" && prev == "item" then 4
+    elsif b.kind == "heading" then if b.level <= 2 then 26 else 20 end
+    else 14 end
+    y = y + gap
+    anchors = append(anchors, {line: b.line, y: y})
+    if b.kind == "heading" then
+      let ts = heading_ts(b.level)
+      let lh = ts.size + 10
+      let f = flow(b.inl, x0, y, width, ts, lh)
+      for it in f.items do items = append(items, it) end
+      items = append(items, {kind: "jump", r: rect(x0, y, width, f.y - y), line: b.line})
+      y = f.y
+      if b.level == 1 then
+        y = y + 6
+        items = append(items, {kind: "line", x1: x0, y1: y, x2: x0 + width, y2: y, c: RULE, w: 1})
+        y = y + 4
+      end
+    elsif b.kind == "para" then
+      let f = flow(b.inl, x0, y, width, PV_TS, PV_LH)
+      for it in f.items do items = append(items, it) end
+      y = f.y
+    elsif b.kind == "quote" then
+      let f = flow(b.inl, x0 + 22, y + 4, width - 22, {...PV_TS, color: INK_SOFT, italic: true}, PV_LH)
+      items = append(items, {kind: "rect", r: rect(x0 + 2, y, 4, f.y + 4 - y), c: QUOTE_BAR, a: 255, rad: 2})
+      for it in f.items do items = append(items, it) end
+      y = f.y + 4
+    elsif b.kind == "item" then
+      let ind = x0 + 8 + b.depth * 22
+      let tx = ind + 22
+      let ty = y + (PV_LH - PV_FS) / 2 - 1
+      if b.task >= 0 then
+        let box = rect(ind + 1, y + 5, 14, 14)
+        items = append(items, {kind: "check", r: box, on: b.task == 1, line: b.line})
+        let ts = if b.task == 1 then {...PV_TS, color: INK_FAINT} else PV_TS end
+        let f = flow(b.inl, tx + 2, y, width - (tx + 2 - x0), ts, PV_LH)
+        for it in f.items do items = append(items, it) end
+        y = f.y
+      elsif b.ordered then
+        let num_ts = {...PV_TS, color: INK_SOFT, weight: 600}
+        items = append(items, {kind: "text", x: ind + 2, y: ty, text: "{b.num}.", ts: num_ts, url: ""})
+        let f = flow(b.inl, tx, y, width - (tx - x0), PV_TS, PV_LH)
+        for it in f.items do items = append(items, it) end
+        y = f.y
+      else
+        let dot_c = if b.depth == 0 then INK_SOFT elsif b.depth == 1 then INK_FAINT else RULE end
+        items = append(items, {kind: "rect", r: rect(ind + 5, y + PV_LH / 2 - 3, 6, 6), c: dot_c, a: 255, rad: 3})
+        let f = flow(b.inl, tx, y, width - (tx - x0), PV_TS, PV_LH)
+        for it in f.items do items = append(items, it) end
+        y = f.y
+      end
+    elsif b.kind == "code" then
+      let code_ts = {size: 13, font: "mono", color: CODE_INK}
+      let clh = 20
+      let hgt = len(b.lines) * clh + 24
+      items = append(items, {kind: "rect", r: rect(x0, y, width, hgt), c: CODE_BG, a: 255, rad: 6})
+      if len(b.lang) > 0 then
+        items = append(items, {kind: "text", x: x0 + width - text_width(b.lang, {size: FS_TINY, font: "mono"}) - 10, y: y + 6,
+          text: b.lang, ts: {size: FS_TINY, font: "mono", color: INK_FAINT}, url: ""})
+      end
+      for li in range(0, len(b.lines)) do
+        items = append(items, {kind: "text", x: x0 + 14, y: y + 12 + li * clh + 2, text: b.lines[li], ts: code_ts, url: ""})
+      end
+      y = y + hgt
+    elsif b.kind == "rule" then
+      items = append(items, {kind: "line", x1: x0 + width * 0.3, y1: y + 8, x2: x0 + width * 0.7, y2: y + 8, c: RULE, w: 1})
+      y = y + 16
+    elsif b.kind == "table" then
+      let ncol = 0
+      for r in b.rows do
+        ncol = max(ncol, len(r))
+      end
+      if ncol > 0 then
+        // Column widths: the widest cell, then scaled down to fit.
+        let cell_ts = {...PV_TS, size: 14}
+        let head_ts = {...cell_ts, weight: 700}
+        let widths = []
+        for c in range(0, ncol) do
+          let wmax = 40
+          for ri in range(0, len(b.rows)) do
+            let r = b.rows[ri]
+            if c < len(r) then
+              let cts = if b.head && ri == 0 then head_ts else cell_ts end
+              let txt = ""
+              for t in r[c] do txt = txt ++ t.text end
+              wmax = max(wmax, text_width(txt, cts) + 24)
+            end
+          end
+          widths = append(widths, wmax)
+        end
+        let total = 0
+        for wv in widths do total = total + wv end
+        let scale = if total > width then float(width) / total else 1.0 end
+        let rh = 30
+        let ty = y
+        for ri in range(0, len(b.rows)) do
+          let r = b.rows[ri]
+          let is_head = b.head && ri == 0
+          if is_head then
+            items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: TABLE_HEAD, a: 255, rad: 4})
+          elsif ri % 2 == (if b.head then 0 else 1 end) then
+            items = append(items, {kind: "rect", r: rect(x0, ty, min(width, total), rh), c: PAPER_LOW, a: 120, rad: 0})
+          end
+          let cx = x0
+          for c in range(0, ncol) do
+            let cw = widths[c] * scale
+            if c < len(r) then
+              let cts = if is_head then head_ts else cell_ts end
+              let txt = ""
+              for t in r[c] do txt = txt ++ t.text end
+              items = append(items, {kind: "text", x: cx + 10, y: ty + (rh - cts.size) / 2 - 1,
+                text: ellipsize(txt, cw - 16, cts), ts: cts, url: ""})
+            end
+            cx = cx + cw
+          end
+          ty = ty + rh
+          items = append(items, {kind: "line", x1: x0, y1: ty, x2: x0 + min(width, total), y2: ty, c: RULE, w: 1})
+        end
+        y = ty
+      end
+    end
+    prev = b.kind
+  end
+  {items: items, anchors: anchors, h: y}
+end
+
+// ── Editor: wrap model, positions, edit primitives ───────────────────────
+fn wrap_starts(s: string, maxc: num) -> list
+  let starts_ = [0]
+  let n = len(s)
+  let start = 0
+  while n - start > maxc do
+    let brk = -1
+    let j = start + maxc
+    while j > start && brk < 0 do
+      if ch(s, j - 1) == " " then brk = j end
+      j = j - 1
+    end
+    if brk < 0 then brk = start + maxc end
+    starts_ = append(starts_, brk)
+    start = brk
+  end
+  starts_
+end
+
+fn build_rows(lines: list, maxc: num) -> list
+  let rows = []
+  for i in range(0, len(lines)) do
+    let s = lines[i]
+    let st = wrap_starts(s, maxc)
+    for k in range(0, len(st)) do
+      let a = st[k]
+      let b = if k + 1 < len(st) then st[k + 1] else len(s) end
+      rows = append(rows, {li: i, a: a, b: b, first: k == 0})
+    end
+  end
+  rows
+end
+
+fn row_of(rows: list, p: record) -> int
+  let found = -1
+  for i in range(0, len(rows)) do
+    let r = rows[i]
+    if found < 0 && r.li == p.line && p.col <= r.b then found = i end
+  end
+  if found < 0 then max(0, len(rows) - 1) else found end
+end
+
+fn first_row_of_line(rows: list, line: num) -> int
+  let found = -1
+  for i in range(0, len(rows)) do
+    if found < 0 && rows[i].li == line then found = i end
+  end
+  max(0, found)
+end
+
+fn pos_before(a: record, b: record) -> bool
+  a.line < b.line || (a.line == b.line && a.col < b.col)
+end
+
+fn pos_eq(a: record, b: record) -> bool
+  a.line == b.line && a.col == b.col
+end
+
+fn sel_lo(a: record, c: record) -> record
+  if pos_before(c, a) then c else a end
+end
+
+fn sel_hi(a: record, c: record) -> record
+  if pos_before(c, a) then a else c end
+end
+
+fn clamp_pos(lines: list, p: record) -> record
+  let l = iclamp(p.line, 0, len(lines) - 1)
+  {line: l, col: iclamp(p.col, 0, len(lines[l]))}
+end
+
+fn delete_range(lines: list, s: record, e: record) -> list
+  let out = []
+  for i in range(0, len(lines)) do
+    if i < s.line || i > e.line then
+      out = append(out, lines[i])
+    elsif i == s.line then
+      out = append(out, slice(lines[s.line], 0, s.col) ++ slice(lines[e.line], e.col, len(lines[e.line])))
+    end
+  end
+  out
+end
+
+fn insert_text(lines: list, p: record, txt: string) -> record
+  let parts = split(txt, "\n")
+  let src = lines[p.line]
+  let head = slice(src, 0, p.col)
+  let tail = slice(src, p.col, len(src))
+  let last_ = parts[len(parts) - 1]
+  let out = []
+  for i in range(0, len(lines)) do
+    if i != p.line then
+      out = append(out, lines[i])
+    elsif len(parts) == 1 then
+      out = append(out, head ++ parts[0] ++ tail)
+    else
+      out = append(out, head ++ parts[0])
+      for j in range(1, len(parts) - 1) do
+        out = append(out, parts[j])
+      end
+      out = append(out, last_ ++ tail)
+    end
+  end
+  let np = if len(parts) == 1 then {line: p.line, col: p.col + len(last_)}
+  else {line: p.line + len(parts) - 1, col: len(last_)} end
+  {lines: out, cur: np}
+end
+
+fn selected_text(lines: list, lo: record, hi: record) -> string
+  if lo.line == hi.line then
+    slice(lines[lo.line], lo.col, hi.col)
+  else
+    let out = slice(lines[lo.line], lo.col, len(lines[lo.line]))
+    for i in range(lo.line + 1, hi.line) do
+      out = out ++ "\n" ++ lines[i]
+    end
+    out ++ "\n" ++ slice(lines[hi.line], 0, hi.col)
+  end
+end
+
+fn sel_len(lines: list, lo: record, hi: record) -> num
+  len(selected_text(lines, lo, hi))
+end
+
+fn is_word_char(c: string) -> bool
+  c != " " && c != "" && c != "," && c != "." && c != "-" && c != "(" && c != ")" &&
+  c != "\"" && c != ";" && c != ":" && c != "*" && c != "`" && c != "[" && c != "]" && c != "#"
+end
+
+fn word_start(s: string, col: num) -> num
+  let i = col
+  while i > 0 && is_word_char(ch(s, i - 1)) do
+    i = i - 1
+  end
+  i
+end
+
+fn word_end(s: string, col: num) -> num
+  let i = col
+  while i < len(s) && is_word_char(ch(s, i)) do
+    i = i + 1
+  end
+  i
+end
+
+// What Return should prefix the new line with, continuing a list.
+fn continuation(s: string) -> string
+  let m = list_marker(s)
+  if m.kind == "none" then
+    ""
+  elsif len(trim(slice(s, m.indent + m.mlen, len(s)))) == 0 then
+    ""
+  else
+    let pad = slice(s, 0, m.indent)
+    if m.kind == "ordered" then
+      pad ++ "{m.num + 1}. "
+    else
+      pad ++ ch(slice(s, m.indent, len(s)), 0) ++ " " ++ if m.task >= 0 then "[ ] " else "" end
+    end
+  end
+end
+
+fn typing_ok() -> bool
+  !key_pressed("tab") && !mod_ctrl() && !mod_cmd()
+end
+
+// Editor colouring for one logical line: {a, b, color, weight} runs.
+fn line_runs(s: string, in_fence: bool) -> list
+  let n = len(s)
+  if in_fence || is_fence(s) then
+    [{a: 0, b: n, c: if is_fence(s) then SYN_FENCE else SYN_CODE end}]
+  elsif heading_level(s) > 0 then
+    let lv = heading_level(s)
+    [{a: 0, b: lv, c: SYN_MARK}, {a: lv, b: n, c: SYN_HEAD}]
+  elsif is_rule(s) then
+    [{a: 0, b: n, c: SYN_MARK}]
+  elsif is_table_row(s) then
+    let runs = []
+    for i in range(0, n) do
+      runs = append(runs, {a: i, b: i + 1, c: if ch(s, i) == "|" || is_table_sep(s) then SYN_MARK else TEXT end})
+    end
+    runs
+  else
+    let runs = []
+    let body0 = 0
+    let t = trim(s)
+    if starts(t, ">") then
+      body0 = indent_of(s) + 1
+      runs = append(runs, {a: 0, b: body0, c: SYN_MARK})
+    else
+      let m = list_marker(s)
+      if m.kind != "none" then
+        body0 = m.indent + m.mlen
+        runs = append(runs, {a: 0, b: body0, c: SYN_LIST})
+      end
+    end
+    let base_c = if starts(t, ">") then SYN_QUOTE else TEXT end
+    let i = body0
+    for r in inline_ranges(s) do
+      if r.a >= i then
+        if r.a > i then runs = append(runs, {a: i, b: r.a, c: base_c}) end
+        let c = match r.kind
+          when "bold" -> SYN_BOLD
+          when "bolditalic" -> SYN_BOLD
+          when "italic" -> SYN_ITAL
+          when "code" -> SYN_CODE
+          when "link" -> SYN_LINK
+          when _ -> DIM end
+        runs = append(runs, {a: r.a, b: r.b, c: c})
+        i = r.b
+      end
+    end
+    if i < n then runs = append(runs, {a: i, b: n, c: base_c}) end
+    runs
+  end
+end
+
+// Which lines sit inside a code fence (so their colouring is flat).
+fn fence_map(lines: list) -> list
+  let out = []
+  let inf = false
+  for s in lines do
+    if is_fence(s) then
+      out = append(out, false)
+      inf = !inf
+    else
+      out = append(out, inf)
+    end
+  end
+  out
+end
+
+// ── Documents and persistence ────────────────────────────────────────────
+fn doc_by_id(ds: list, id: num)
+  let found = nil
+  for d in ds do
+    if d.id == id then found = d end
+  end
+  found
+end
+
+fn put_doc(ds: list, id: num, nd: record) -> list
+  for d in ds do
+    if d.id == id then nd else d end
+  end
+end
+
+fn store_key(id: num) -> string
+  "doc:{id}"
+end
+
+fn load_docs() -> list
+  for d in seed_docs() do
+    let s = panel_store_get(store_key(d.id))
+    if s == nil then d else {...d, lines: split(s, "\n")} end
+  end
+end
+
+fn doc_title(d: record) -> string
+  let t = d.name
+  for s in d.lines do
+    if heading_level(s) == 1 && t == d.name then
+      t = trim(slice(s, 2, len(s)))
+    end
+  end
+  t
+end
+
+fn doc_words(d: record) -> int
+  let n = 0
+  for s in d.lines do
+    n = n + count_words(plain_text(s))
+  end
+  n
+end
+
+// ════════════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════════════
+state docs    = load_docs()
+state sel_doc = 1
+state mode    = "split"          // "editor" | "split" | "preview"
+state sync    = true
+state cur     = {line: 0, col: 0}
+state anchor  = {line: 0, col: 0}
+state goal    = 0
+state escroll = 0                // editor scroll, px
+state pscroll = 0                // preview scroll, px
+state last_escroll = -1
+state dragging = false
+state sp      = splitter_state(0.5)
+state undo    = []
+state redo    = []
+state last_edit = -9.0
+state last_kind = ""
+state dirty   = false
+state saves   = 0
+state edits   = 0
+state flash   = -99.0
+state click_t = -9.0
+state click_x = 0
+state click_y = 0
+state jump_to = -1               // a line the rail/preview asked the editor to show
+
+let now = time()
+let mx = mouse_x()
+let my = mouse_y()
+let click = mouse_pressed(0)
+
+let doc = doc_by_id(docs, sel_doc)
+let lines = doc.lines
+
+// ── Layout of the two panes ──────────────────────────────────────────────
+let s = splitter(sp, MAIN, {min_a: 300, min_b: 300, line: OUTLINE, active: ACCENT, band: 9, gap: 0})
+sp = s.state
+let ed_r = if mode == "editor" then MAIN elsif mode == "preview" then rect(0, 0, 0, 0) else s.a end
+let pv_r = if mode == "preview" then MAIN elsif mode == "editor" then rect(0, 0, 0, 0) else s.b end
+let show_ed = mode != "preview"
+let show_pv = mode != "editor"
+
+let TEXT_X = ed_r.x + GUT_W + ED_PAD
+let TEXT_Y = ed_r.y + 14
+let TEXT_W = ed_r.w - GUT_W - ED_PAD * 2 - 10
+let TEXT_H = ed_r.h - 28
+let MAXC = max(20, int(TEXT_W / CW))
+
+let rows = build_rows(lines, MAXC)
+cur = clamp_pos(lines, cur)
+anchor = clamp_pos(lines, anchor)
+
+// ── Editor input: pointer ────────────────────────────────────────────────
+fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
+  let ri = iclamp(int((py - TEXT_Y + scroll) / LH), 0, max(0, len(rows) - 1))
+  let r = rows[ri]
+  let off = int((px - TEXT_X + CW / 2) / CW)
+  {line: r.li, col: iclamp(r.a + off, r.a, r.b)}
+end
+
+let text_r = rect(ed_r.x + GUT_W, ed_r.y, ed_r.w - GUT_W, ed_r.h)
+if show_ed && click && point_in(mx, my, text_r) && !sp.drag then
+  let p = hit_pos(rows, mx, my, escroll)
+  let dbl = click_count() >= 2 || (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
+  click_t = now
+  click_x = mx
+  click_y = my
+  if dbl then
+    let ln = lines[p.line]
+    anchor = {line: p.line, col: word_start(ln, p.col)}
+    cur = {line: p.line, col: word_end(ln, p.col)}
+    dragging = false
+  elsif mod_shift() then
+    cur = p
+    dragging = true
+  else
+    anchor = p
+    cur = p
+    dragging = true
+  end
+end
+// Clicking the gutter selects the whole logical line.
+if show_ed && click && point_in(mx, my, rect(ed_r.x, ed_r.y, GUT_W, ed_r.h)) then
+  let p = hit_pos(rows, mx + GUT_W, my, escroll)
+  anchor = {line: p.line, col: 0}
+  cur = if p.line + 1 < len(lines) then {line: p.line + 1, col: 0} else {line: p.line, col: len(lines[p.line])} end
+  dragging = false
+end
+if dragging && mouse_down(0) then
+  cur = hit_pos(rows, mx, my, escroll)
+end
+if !mouse_down(0) then
+  dragging = false
+end
+if show_ed && hovered(ed_r) then
+  escroll = escroll - scroll_y() * 3 * LH
+end
+
+// ── Editor input: keyboard ───────────────────────────────────────────────
+let new_lines = lines
+let did_edit = false
+let edit_kind = ""
+let moved = false
+let keep_goal = false
+let sh = mod_shift()
+let cmd = mod_cmd() || mod_ctrl()
+let lo = sel_lo(anchor, cur)
+let hi = sel_hi(anchor, cur)
+let hassel = !pos_eq(anchor, cur)
+let ri = row_of(rows, cur)
+
+// Wrap the selection (or the word at the caret) in `mark`.
+fn wrap_sel(lines: list, lo: record, hi: record, hassel: bool, cur: record, mark: string, suffix: string) -> record
+  let a = lo
+  let b = hi
+  if !hassel then
+    a = {line: cur.line, col: word_start(lines[cur.line], cur.col)}
+    b = {line: cur.line, col: word_end(lines[cur.line], cur.col)}
+  end
+  let inner = selected_text(lines, a, b)
+  let base = delete_range(lines, a, b)
+  let res = insert_text(base, a, mark ++ inner ++ suffix)
+  {lines: res.lines, anchor: {line: a.line, col: a.col + len(mark)},
+    cur: if a.line == b.line then {line: a.line, col: a.col + len(mark) + len(inner)} else res.cur end}
+end
+
+if cmd && key_pressed("z") then
+  if sh then
+    if len(redo) > 0 then
+      let snap = redo[len(redo) - 1]
+      redo = drop_last(redo)
+      undo = append(undo, {lines: lines, cur: cur, anchor: anchor})
+      new_lines = snap.lines
+      cur = snap.cur
+      anchor = snap.anchor
+      did_edit = true
+      edit_kind = "history"
+    end
+  elsif len(undo) > 0 then
+    let snap = undo[len(undo) - 1]
+    undo = drop_last(undo)
+    redo = append(redo, {lines: lines, cur: cur, anchor: anchor})
+    new_lines = snap.lines
+    cur = snap.cur
+    anchor = snap.anchor
+    did_edit = true
+    edit_kind = "history"
+  end
+elsif cmd && key_pressed("a") then
+  anchor = {line: 0, col: 0}
+  cur = {line: len(lines) - 1, col: len(lines[len(lines) - 1])}
+elsif cmd && key_pressed("e") then
+  mode = if mode == "editor" then "split" elsif mode == "split" then "preview" else "editor" end
+elsif cmd && (key_pressed("b") || key_pressed("i") || key_pressed("k")) then
+  let mark = if key_pressed("b") then "**" elsif key_pressed("i") then "*" else "[" end
+  let suffix = if key_pressed("k") then "](https://)" else mark end
+  let w = wrap_sel(lines, lo, hi, hassel, cur, mark, suffix)
+  new_lines = w.lines
+  anchor = w.anchor
+  cur = w.cur
+  did_edit = true
+  edit_kind = "wrap"
+elsif key_pressed("left") then
+  moved = true
+  if hassel && !sh then
+    cur = lo
+  elsif cur.col > 0 then
+    cur = {line: cur.line, col: cur.col - 1}
+  elsif cur.line > 0 then
+    cur = {line: cur.line - 1, col: len(lines[cur.line - 1])}
+  end
+elsif key_pressed("right") then
+  moved = true
+  if hassel && !sh then
+    cur = hi
+  elsif cur.col < len(lines[cur.line]) then
+    cur = {line: cur.line, col: cur.col + 1}
+  elsif cur.line < len(lines) - 1 then
+    cur = {line: cur.line + 1, col: 0}
+  end
+elsif key_pressed("up") || key_pressed("down") || key_pressed("pageup") || key_pressed("pagedown") then
+  moved = true
+  keep_goal = true
+  let step = if key_pressed("up") then -1
+  elsif key_pressed("down") then 1
+  elsif key_pressed("pageup") then -(TEXT_H / LH) + 1
+  else (TEXT_H / LH) - 1 end
+  let nr = iclamp(ri + step, 0, len(rows) - 1)
+  let row = rows[nr]
+  cur = {line: row.li, col: iclamp(row.a + goal, row.a, row.b)}
+elsif key_pressed("home") then
+  moved = true
+  cur = {line: cur.line, col: if cmd then 0 else rows[ri].a end}
+elsif key_pressed("end") then
+  moved = true
+  cur = {line: cur.line, col: if cmd then len(lines[cur.line]) else rows[ri].b end}
+elsif key_pressed("backspace") then
+  did_edit = true
+  edit_kind = "delete"
+  if hassel then
+    new_lines = delete_range(lines, lo, hi)
+    cur = lo
+  elsif cur.col > 0 then
+    let p0 = {line: cur.line, col: cur.col - 1}
+    new_lines = delete_range(lines, p0, cur)
+    cur = p0
+  elsif cur.line > 0 then
+    let p0 = {line: cur.line - 1, col: len(lines[cur.line - 1])}
+    new_lines = delete_range(lines, p0, cur)
+    cur = p0
+  else
+    did_edit = false
+  end
+  anchor = cur
+elsif key_pressed("delete") then
+  did_edit = true
+  edit_kind = "delete"
+  if hassel then
+    new_lines = delete_range(lines, lo, hi)
+    cur = lo
+  elsif cur.col < len(lines[cur.line]) then
+    new_lines = delete_range(lines, cur, {line: cur.line, col: cur.col + 1})
+  elsif cur.line < len(lines) - 1 then
+    new_lines = delete_range(lines, cur, {line: cur.line + 1, col: 0})
+  else
+    did_edit = false
+  end
+  anchor = cur
+elsif key_pressed("return") then
+  did_edit = true
+  edit_kind = "newline"
+  let base = if hassel then delete_range(lines, lo, hi) else lines end
+  let at = if hassel then lo else cur end
+  let cont = continuation(base[at.line])
+  let m = list_marker(base[at.line])
+  if m.kind != "none" && len(cont) == 0 && at.col == len(base[at.line]) then
+    // Return on an empty list item ends the list: clear the marker.
+    new_lines = delete_range(base, {line: at.line, col: 0}, at)
+    cur = {line: at.line, col: 0}
+  else
+    let res = insert_text(base, at, "\n" ++ cont)
+    new_lines = res.lines
+    cur = res.cur
+  end
+  anchor = cur
+elsif key_pressed("tab") then
+  did_edit = true
+  edit_kind = "type"
+  let base = if hassel then delete_range(lines, lo, hi) else lines end
+  let at = if hassel then lo else cur end
+  let res = insert_text(base, at, "  ")
+  new_lines = res.lines
+  cur = res.cur
+  anchor = cur
+elsif key_pressed("escape") then
+  anchor = cur
+end
+
+let typed = text_input()
+if len(typed) > 0 && typing_ok() then
+  did_edit = true
+  edit_kind = "type"
+  let base2 = if hassel then delete_range(lines, lo, hi) else lines end
+  let at2 = if hassel then lo else cur end
+  let res2 = insert_text(base2, at2, typed)
+  new_lines = res2.lines
+  cur = res2.cur
+  anchor = cur
+end
+
+if moved && !sh then
+  anchor = cur
+end
+
+// ── Commit edits ─────────────────────────────────────────────────────────
+if did_edit then
+  if edit_kind != "history" then
+    // One undo step per burst of the same kind of edit.
+    if edit_kind != last_kind || now - last_edit > 0.8 || edit_kind == "wrap" then
+      undo = append(undo, {lines: lines, cur: anchor, anchor: anchor})
+      if len(undo) > 100 then undo = slice(undo, 1, len(undo)) end
+    end
+    redo = []
+  end
+  docs = put_doc(docs, sel_doc, {...doc, lines: new_lines})
+  lines = new_lines
+  dirty = true
+  last_edit = now
+  last_kind = edit_kind
+  edits = edits + 1
+end
+
+// Save: ⌘S, or 1.5 s after the last edit.
+if dirty && (now - last_edit > 1.5 || cmd && key_pressed("s")) then
+  panel_store_set(store_key(sel_doc), join(lines, "\n"))
+  dirty = false
+  saves = saves + 1
+  flash = now
+end
+
+// ── Recompute after edits ────────────────────────────────────────────────
+let rows2 = build_rows(lines, MAXC)
+cur = clamp_pos(lines, cur)
+anchor = clamp_pos(lines, anchor)
+let cri = row_of(rows2, cur)
+if !keep_goal then
+  goal = cur.col - rows2[cri].a
+end
+if jump_to >= 0 then
+  let jr = first_row_of_line(rows2, jump_to)
+  escroll = jr * LH - 24
+  jump_to = -1
+end
+if moved || did_edit then
+  escroll = min(escroll, cri * LH)
+  escroll = max(escroll, (cri + 1) * LH - TEXT_H)
+end
+let doc_h = len(rows2) * LH
+escroll = iclamp(escroll, 0, max(0, doc_h - TEXT_H + LH))
+
+let blocks = parse_blocks(lines)
+let blocks_n = len(blocks)
+let lo2 = sel_lo(anchor, cur)
+let hi2 = sel_hi(anchor, cur)
+let hassel2 = !pos_eq(anchor, cur)
+let fences = fence_map(lines)
+
+// ════════════════════════════════════════════════════════════════════════
+//  Draw: backgrounds
+// ════════════════════════════════════════════════════════════════════════
+clear(SLATE.r, SLATE.g, SLATE.b)
+draw_rect(rect(0, 0, RAIL_W, H), RAIL_BG)
+draw_rect(rect(0, 0, W, TOP_H), RAIL_BG)
+draw_rect(rect(0, TOP_H - 1, W, 1), OUTLINE)
+draw_rect(rect(RAIL_W - 1, TOP_H, 1, H - TOP_H), OUTLINE)
+
+// ── Editor pane ──────────────────────────────────────────────────────────
+if show_ed then
+  draw_rect(ed_r, SLATE)
+  draw_rect(rect(ed_r.x, ed_r.y, GUT_W, ed_r.h), GUTTER)
+  clip(ed_r.x, ed_r.y, ed_r.w, ed_r.h)
+  let first_row = max(0, int(escroll / LH) - 1)
+  let last_row = min(len(rows2), first_row + TEXT_H / LH + 3)
+  for i in range(first_row, last_row) do
+    let r = rows2[i]
+    let ln = lines[r.li]
+    let ry = TEXT_Y + i * LH - escroll
+    let on_caret_line = r.li == cur.line
+    if on_caret_line then
+      draw_rect(rect(ed_r.x + GUT_W, ry - 3, ed_r.w - GUT_W, LH), SLATE_HI)
+    end
+    if r.first then
+      draw_text_right("{r.li + 1}", ed_r.x + GUT_W - 10, ry + 1,
+        {size: FS_TINY, font: "mono", color: if on_caret_line then DIM else FAINT end})
+    end
+    // selection band
+    if hassel2 && lo2.line <= r.li && hi2.line >= r.li then
+      let s0 = if lo2.line < r.li then r.a elsif lo2.line == r.li then max(r.a, lo2.col) else r.b + 1 end
+      let s1 = if hi2.line > r.li then r.b elsif hi2.line == r.li then min(r.b, hi2.col) else r.a - 1 end
+      if s1 >= s0 then
+        let sw = if s1 == s0 && hi2.line > r.li then CW * 0.6 else (s1 - s0) * CW end
+        draw_rect_rounded(rect(TEXT_X + (s0 - r.a) * CW, ry - 3, max(3, sw), LH), 3, SELBG)
+      end
+    end
+    // coloured runs, clipped to this display row
+    for run in line_runs(ln, fences[r.li]) do
+      let a = max(run.a, r.a)
+      let b = min(run.b, r.b)
+      if b > a then
+        draw_text(slice(ln, a, b), {x: TEXT_X + (a - r.a) * CW, y: ry}, {...ED_TS, color: run.c})
+      end
+    end
+  end
+  // caret
+  if !hassel2 then
+    let ry = TEXT_Y + cri * LH - escroll
+    let cx = TEXT_X + (cur.col - rows2[cri].a) * CW
+    draw_rect(rect(cx, ry - 3, 2, LH), CARET)
+  end
+  clip_none()
+  if doc_h > TEXT_H then
+    let bh = max(36, TEXT_H * TEXT_H / doc_h)
+    let by = TEXT_Y + (TEXT_H - bh) * escroll / max(1, doc_h - TEXT_H + LH)
+    draw_rect_rounded(rect(ed_r.x + ed_r.w - 7, by, 3, bh), 1.5, DIM, 120)
+  end
+end
+
+// ════════════════════════════════════════════════════════════════════════
+//  Preview pane
+// ════════════════════════════════════════════════════════════════════════
+let hover_link = ""
+let pv_x0 = pv_r.x + PV_PAD
+let pv_w = min(720, pv_r.w - PV_PAD * 2)
+let lay = if show_pv then layout_preview(blocks, pv_x0, pv_w) else {items: [], anchors: [], h: 0} end
+let pv_top = pv_r.y + 28
+let pv_h = pv_r.h - 28
+let pv_content_h = lay.h + 40
+
+// Scroll sync: the first visible editor line picks the preview position.
+if show_pv && show_ed && sync && escroll != last_escroll then
+  let top_row = rows2[iclamp(int(escroll / LH), 0, len(rows2) - 1)]
+  let target = -1
+  for an in lay.anchors do
+    if target < 0 && an.line >= top_row.li then target = an.y end
+  end
+  if escroll == 0 then target = 0 end
+  if target >= 0 then pscroll = target end
+end
+last_escroll = escroll
+if show_pv && hovered(pv_r) then
+  pscroll = pscroll - scroll_y() * 3 * PV_LH
+end
+pscroll = iclamp(pscroll, 0, max(0, pv_content_h - pv_h))
+
+let toggle_line = -1
+if show_pv then
+  draw_rect(pv_r, PAPER)
+  clip(pv_r.x, pv_r.y, pv_r.w, pv_r.h)
+  let oy = pv_top - pscroll
+  for it in lay.items do
+    if it.kind == "text" then
+      if it.y + oy > pv_r.y - 40 && it.y + oy < pv_r.y + pv_r.h + 10 then
+        draw_text(it.text, {x: it.x, y: it.y + oy}, it.ts)
+        if it.url != "" && point_in(mx, my, rect(it.x, it.y + oy, text_width(it.text, it.ts), it.ts.size + 4)) then
+          hover_link = it.url
+        end
+      end
+    elsif it.kind == "rect" then
+      let rr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
+      if it.rad > 0 then draw_rect_rounded(rr, it.rad, it.c, it.a) else draw_rect(rr, it.c, it.a) end
+    elsif it.kind == "line" then
+      draw_line({x: it.x1, y: it.y1 + oy}, {x: it.x2, y: it.y2 + oy}, it.c, 255, it.w)
+    elsif it.kind == "check" then
+      let br = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
+      let hot = point_in(mx, my, rect(br.x - 4, br.y - 4, br.w + 8, br.h + 8))
+      if it.on then
+        draw_rect_rounded(br, 3, CHECK)
+        draw_line({x: br.x + 3, y: br.y + 7}, {x: br.x + 6, y: br.y + 10.5}, PAPER, 255, 2)
+        draw_line({x: br.x + 6, y: br.y + 10.5}, {x: br.x + 11, y: br.y + 3.5}, PAPER, 255, 2)
+      else
+        draw_rect_rounded(br, 3, if hot then ACCENT_INK else INK_FAINT end, if hot then 40 else 0 end)
+        draw_rect_rounded_outline(br.x, br.y, br.w, br.h, 3, if hot then ACCENT_INK.r else INK_FAINT.r end,
+          if hot then ACCENT_INK.g else INK_FAINT.g end, if hot then ACCENT_INK.b else INK_FAINT.b end, 255, 1.5)
+      end
+      if hot && click then toggle_line = it.line end
+    elsif it.kind == "jump" then
+      let jr = rect(it.r.x, it.r.y + oy, it.r.w, it.r.h)
+      if point_in(mx, my, jr) && click then
+        jump_to = it.line
+        cur = {line: it.line, col: 0}
+        anchor = cur
+      end
+    end
+  end
+  clip_none()
+  // top fade + scrollbar
+  draw_rect_gradient(rect(pv_r.x, pv_r.y, pv_r.w, 28), PAPER, PAPER, pi() / 2, 255, 0)
+  if pv_content_h > pv_h then
+    let bh = max(36, pv_h * pv_h / pv_content_h)
+    let by = pv_top + (pv_h - bh) * pscroll / max(1, pv_content_h - pv_h)
+    draw_rect_rounded(rect(pv_r.x + pv_r.w - 7, by, 3, bh), 1.5, INK_FAINT, 120)
+  end
+end
+
+// A task ticked in the preview edits the source line.
+if toggle_line >= 0 then
+  let s0 = lines[toggle_line]
+  let m = list_marker(s0)
+  let at = m.indent + 2
+  let was = slice(s0, at, at + 3)
+  let s1 = slice(s0, 0, at) ++ (if was == "[ ]" then "[x]" else "[ ]" end) ++ slice(s0, at + 3, len(s0))
+  undo = append(undo, {lines: lines, cur: cur, anchor: anchor})
+  redo = []
+  let nl = for i in range(0, len(lines)) do
+    if i == toggle_line then s1 else lines[i] end
+  end
+  docs = put_doc(docs, sel_doc, {...doc, lines: nl})
+  lines = nl
+  dirty = true
+  last_edit = now
+  last_kind = "toggle"
+  edits = edits + 1
+end
+
+// ════════════════════════════════════════════════════════════════════════
+//  Rail: documents + outline
+// ════════════════════════════════════════════════════════════════════════
+fn label(text: string, x: num, y: num, c: record)
+  draw_text(text, {x: x, y: y}, {size: FS_MICRO, color: c, spacing: 1.3})
+end
+
+let rail_pad = 14
+label("DOCUMENTS", rail_pad, TOP_H + 16, FAINT)
+let ry = TOP_H + 36
+let want_doc = sel_doc
+for d in docs do
+  let r = rect(6, ry, RAIL_W - 12, 40)
+  let on = d.id == sel_doc
+  let hot = hovered(r)
+  if on then
+    draw_rect_rounded(r, 7, RAIL_ROW)
+    draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), 1.5, ACCENT)
+  elsif hot then
+    draw_rect_rounded(r, 7, RAIL_ROW, 140)
+  end
+  draw_text(ellipsize(doc_title(d), r.w - 24, FS), {x: r.x + 12, y: r.y + 6},
+    {size: FS, color: if on then TEXT else DIM end, weight: if on then 600 else 400 end})
+  let sub = "{doc_words(d)} words · {len(d.lines)} lines"
+  draw_text(sub, {x: r.x + 12, y: r.y + 23}, {size: FS_MICRO, color: FAINT})
+  if on && dirty then
+    draw_circle({x: r.x + r.w - 12, y: r.y + 13}, 3, CARET)
+  end
+  if hot && click then want_doc = d.id end
+  ry = ry + 44
+end
+if want_doc != sel_doc then
+  sel_doc = want_doc
+  cur = {line: 0, col: 0}
+  anchor = cur
+  escroll = 0
+  pscroll = 0
+  undo = []
+  redo = []
+  dirty = false
+end
+
+ry = ry + 12
+draw_rect(rect(rail_pad, ry, RAIL_W - rail_pad * 2, 1), OUTLINE)
+ry = ry + 14
+label("OUTLINE", rail_pad, ry, FAINT)
+ry = ry + 22
+let heads = filter(blocks, fn(b) -> b.kind == "heading")
+let outline_n = len(heads)
+// The heading the caret currently sits under.
+let cur_head = -1
+for h in heads do
+  if h.line <= cur.line then cur_head = h.line end
+end
+let outline_h = H - STATUS_H - ry - 60
+clip(0, ry, RAIL_W, outline_h)
+for h in heads do
+  if ry < H - STATUS_H - 60 then
+    let r = rect(6, ry, RAIL_W - 12, 24)
+    let on = h.line == cur_head
+    let hot = hovered(r)
+    if on || hot then
+      draw_rect_rounded(r, 6, RAIL_ROW, if on then 255 else 140 end)
+    end
+    let txt = ""
+    for t in h.inl do txt = txt ++ t.text end
+    let ind = 12 + (h.level - 1) * 12
+    draw_text(ellipsize(txt, r.w - ind - 8, FS_SM), {x: r.x + ind, y: r.y + 5},
+      {size: if h.level == 1 then FS else FS_SM end, color: if on then TEXT elsif h.level <= 2 then DIM else FAINT end,
+        weight: if h.level == 1 then 600 else 400 end})
+    if hot && click then
+      jump_to = h.line
+      cur = {line: h.line, col: 0}
+      anchor = cur
+    end
+    ry = ry + 24
+  end
+end
+clip_none()
+if outline_n == 0 then
+  draw_text("No headings yet", {x: rail_pad + 4, y: ry + 2}, {size: FS_SM, color: FAINT})
+end
+
+// rail footer: reset the demo text
+let reset_r = rect(10, H - STATUS_H - 40, RAIL_W - 20, 26)
+let reset_hot = hovered(reset_r)
+draw_rect_rounded(reset_r, 6, RAIL_ROW, if reset_hot then 255 else 120 end)
+draw_text_center("reset demo text", reset_r.x + reset_r.w / 2, reset_r.y + 7, FS_TINY, if reset_hot then TEXT else DIM end)
+if reset_hot && click then
+  for d in seed_docs() do
+    panel_store_set(store_key(d.id), nil)
+  end
+  docs = seed_docs()
+  cur = {line: 0, col: 0}
+  anchor = cur
+  escroll = 0
+  pscroll = 0
+  undo = []
+  redo = []
+  dirty = false
+  flash = now
+end
+
+// ════════════════════════════════════════════════════════════════════════
+//  Top bar
+// ════════════════════════════════════════════════════════════════════════
+draw_circle({x: 24, y: TOP_H / 2}, 7, ACCENT)
+draw_circle({x: 24, y: TOP_H / 2}, 3, RAIL_BG)
+draw_text("Inkwell", {x: 40, y: TOP_H / 2 - 9}, {size: 16, color: TEXT, weight: 700, spacing: 0.2})
+draw_text(ellipsize(doc.name, 380, FS), {x: RAIL_W + 16, y: TOP_H / 2 - 8}, {size: FS, color: DIM})
+
+// view-mode segmented control
+let seg_labels = ["Editor", "Split", "Preview"]
+let seg_ids = ["editor", "split", "preview"]
+let seg_w = 78
+let seg_x = W - 16 - seg_w * 3 - 120
+let seg_r = rect(seg_x, 9, seg_w * 3, 28)
+draw_rect_rounded(seg_r, 7, SLATE_HI)
+draw_rect_outline(seg_r, OUTLINE)
+for i in range(0, 3) do
+  let r = rect(seg_x + i * seg_w, 9, seg_w, 28)
+  let on = mode == seg_ids[i]
+  let hot = hovered(r)
+  if on then
+    draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), 6, ACCENT_INK)
+  elsif hot then
+    draw_rect_rounded(rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), 6, RAIL_ROW)
+  end
+  draw_text_center(seg_labels[i], r.x + r.w / 2, r.y + 7, {size: FS_SM, color: if on then TEXT else DIM end, weight: if on then 600 else 400 end})
+  if hot && click then mode = seg_ids[i] end
+end
+
+// sync toggle
+let sync_r = rect(W - 16 - 108, 9, 108, 28)
+let sync_hot = hovered(sync_r)
+draw_rect_rounded(sync_r, 7, if sync then ACCENT_INK else SLATE_HI end, if sync then 60 else 255 end)
+draw_rect_outline(sync_r, if sync then ACCENT_INK else OUTLINE end)
+draw_circle({x: sync_r.x + 14, y: sync_r.y + 14}, 4, if sync then ACCENT else FAINT end)
+draw_text("sync scroll", {x: sync_r.x + 26, y: sync_r.y + 7}, {size: FS_SM, color: if sync then TEXT elsif sync_hot then TEXT else DIM end})
+if sync_hot && click then
+  sync = !sync
+  last_escroll = -1
+end
+
+// ════════════════════════════════════════════════════════════════════════
+//  Status bar
+// ════════════════════════════════════════════════════════════════════════
+let sy = H - STATUS_H
+draw_rect(rect(0, sy, W, STATUS_H), RAIL_BG)
+draw_rect(rect(0, sy, W, 1), OUTLINE)
+let words = doc_words(doc)
+let sel_n = if hassel2 then sel_len(lines, lo2, hi2) else 0 end
+let pos_txt = if hassel2 then "{sel_n} selected" else "Ln {cur.line + 1}, Col {cur.col + 1}" end
+let read_min = max(1, int(ceil(float(words) / 200.0)))
+let left_parts = [pos_txt, "{words} words", "{len(lines)} lines", "{read_min} min read"]
+let lx = 16
+for p in left_parts do
+  draw_text(p, {x: lx, y: sy + 7}, {size: FS_TINY, color: DIM})
+  lx = lx + text_width(p, FS_TINY) + 22
+end
+let save_c = if dirty then CARET elsif now - flash < 2.0 then #7fd39a else FAINT end
+draw_circle({x: lx + 4, y: sy + 13}, 3, save_c)
+draw_text(if dirty then "unsaved" elsif now - flash < 2.0 then "saved" else "up to date" end,
+  {x: lx + 14, y: sy + 7}, {size: FS_TINY, color: save_c})
+let undo_n = len(undo)
+let redo_n = len(redo)
+let right_txt = if hover_link != "" then hover_link
+elsif sp.drag then "{int(sp.frac * 100)}% editor"
+else "⌘B bold · ⌘I italic · ⌘K link · ⌘Z undo · ⌘E view · {undo_n} undo · {redo_n} redo" end
+draw_text_right(right_txt, W - 16, sy + 7, {size: FS_TINY, color: if hover_link != "" then ACCENT else FAINT end})

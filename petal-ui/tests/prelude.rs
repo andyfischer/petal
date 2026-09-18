@@ -2200,3 +2200,128 @@ fn axis_labels_thin_and_stagger_instead_of_rotating() {
         );
     });
 }
+
+/// The rest of the draw surface — rounded outlines, circle/ellipse outlines,
+/// arcs, triangles, polygons, fans and polylines — had no record overloads, so
+/// `draw_polyline(pts, C_ROCK, 235, 1)` passed `check --strict` and died at
+/// runtime with "Expected int at arg 2, got record". Four testbed apps wrote
+/// the same wrappers; the prelude now carries them, shaped like the flat forms.
+#[test]
+fn remaining_primitives_take_record_overloads() {
+    let src = "let pts = [{x: 1, y: 1}, {x: 5, y: 1}, {x: 5, y: 5}]\n\
+               draw_rect_rounded_outline({x: 1, y: 2, w: 30, h: 40}, 6, #ff0000, 128, 2)\n\
+               draw_circle_outline({x: 10, y: 20}, 5, #00ff00, 64, 3)\n\
+               draw_ellipse({x: 10, y: 20}, 6, 3, #0000ff, 200)\n\
+               draw_ellipse_outline({x: 10, y: 20}, 6, 3, #0000ff, 100, 2)\n\
+               fill_arc({x: 7, y: 8}, 2.0, 4.0, 0.0, 1.0, #112233, 99)\n\
+               fill_triangle({x: 0, y: 0}, {x: 4, y: 0}, {x: 0, y: 4}, #445566, 50)\n\
+               fill_poly(pts, #778899, 40)\n\
+               fill_polygon(pts, #aabbcc, 30)\n\
+               fill_fan({x: 3, y: 3}, pts, #ddeeff, 20)\n\
+               draw_polyline(pts, #010203, 235, 4)\n\
+               draw_polyline(pts, #040506)\n\
+               draw_polyline(pts, 7, 8, 9)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let expect_pts = vec![(1, 1), (5, 1), (5, 5)];
+        assert_eq!(
+            cmds[0],
+            DrawCommand::RectOutline {
+                x: 1, y: 2, w: 30, h: 40, r: 0xff, g: 0, b: 0, a: 128, width: 2, radius: 6
+            }
+        );
+        assert_eq!(
+            cmds[1],
+            DrawCommand::EllipseOutline {
+                cx: 10, cy: 20, rx: 5, ry: 5, r: 0, g: 0xff, b: 0, a: 64, width: 3
+            }
+        );
+        assert_eq!(
+            cmds[2],
+            DrawCommand::Ellipse { cx: 10, cy: 20, rx: 6, ry: 3, r: 0, g: 0, b: 0xff, a: 200 }
+        );
+        assert_eq!(
+            cmds[3],
+            DrawCommand::EllipseOutline {
+                cx: 10, cy: 20, rx: 6, ry: 3, r: 0, g: 0, b: 0xff, a: 100, width: 2
+            }
+        );
+        assert_eq!(
+            cmds[4],
+            DrawCommand::Arc {
+                cx: 7, cy: 8, r_in: 2.0, r_out: 4.0, a0: 0.0, a1: 1.0,
+                r: 0x11, g: 0x22, b: 0x33, a: 99
+            }
+        );
+        assert_eq!(
+            cmds[5],
+            DrawCommand::Triangle {
+                x1: 0, y1: 0, x2: 4, y2: 0, x3: 0, y3: 4, r: 0x44, g: 0x55, b: 0x66, a: 50
+            }
+        );
+        assert_eq!(
+            cmds[6],
+            DrawCommand::Poly { points: expect_pts.clone(), r: 0x77, g: 0x88, b: 0x99, a: 40 }
+        );
+        assert_eq!(
+            cmds[7],
+            DrawCommand::Polygon { points: expect_pts.clone(), r: 0xaa, g: 0xbb, b: 0xcc, a: 30 }
+        );
+        assert_eq!(
+            cmds[8],
+            DrawCommand::Fan {
+                cx: 3, cy: 3, points: expect_pts.clone(), r: 0xdd, g: 0xee, b: 0xff, a: 20
+            }
+        );
+        // The four-argument polyline is the one arity the flat and record
+        // forms share; it tells them apart by the type of its second argument.
+        assert_eq!(
+            cmds[9],
+            DrawCommand::Polyline { points: expect_pts.clone(), r: 1, g: 2, b: 3, a: 235, width: 4 }
+        );
+        assert_eq!(
+            cmds[10],
+            DrawCommand::Polyline { points: expect_pts.clone(), r: 4, g: 5, b: 6, a: 255, width: 1 }
+        );
+        assert_eq!(
+            cmds[11],
+            DrawCommand::Polyline { points: expect_pts, r: 7, g: 8, b: 9, a: 255, width: 1 }
+        );
+    });
+}
+
+/// A context menu opens under the pointer, so the pointer rests on row 0 —
+/// and "hover wins" used to mean Down, Down, Return still chose row 0. Now the
+/// pointer only takes the highlight when it moves; the keyboard owns it while
+/// the pointer rests.
+#[test]
+fn menu_keyboard_wins_while_the_pointer_rests() {
+    let src = "state menu = menu_state()\n\
+               state picked = \"\"\n\
+               let items = [menu_item(\"One\"), menu_item(\"Two\"), menu_item(\"Three\")]\n\
+               menu = menu_open_on_right_click(menu, {x: 0, y: 0, w: 800, h: 600}, \"row\")\n\
+               let res = context_menu(menu, items)\n\
+               menu = res.menu\n\
+               if res.index >= 0 then picked = res.label end\n";
+    run_headless(src, |ui| {
+        ui.mouse_move(100, 100);
+        ui.mouse_down(1);
+        ui.frame().unwrap();
+        ui.mouse_up(1);
+        ui.frame().unwrap();
+        // One nudge onto row 0: the pointer takes the highlight because it
+        // moved. From here on it rests there.
+        ui.mouse_move(112, 110);
+        ui.frame().unwrap();
+        assert_eq!(ui.state().get("menu").unwrap()["hover"], 0, "pointer moved onto row 0");
+        ui.key("down").unwrap();
+        ui.key("down").unwrap();
+        assert_eq!(
+            ui.state().get("menu").unwrap()["hover"],
+            2,
+            "two Downs step from row 0 although the pointer still rests on it"
+        );
+        ui.key("return").unwrap();
+        assert_eq!(ui.state_string("picked").as_deref(), Some("Three"));
+    });
+}

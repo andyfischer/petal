@@ -122,7 +122,7 @@ impl App {
         })
     }
 
-    fn pane_at(&self, x: f32, y: f32) -> Option<usize> {
+    pub(super) fn pane_at(&self, x: f32, y: f32) -> Option<usize> {
         self.panes.iter().position(|p| {
             x >= p.rect.x && x < p.rect.x + p.rect.w && y >= p.rect.y && y < p.rect.y + p.rect.h
         })

@@ -606,7 +606,15 @@ as the rects in `/state`):
 ```
 
 `mods` takes the same names as `/key`, and every modifier named is delivered,
-to the editor and to a panel script's `mod_alt()` / `mod_cmd()` alike.
+to the editor and to a panel script's `mod_alt()` / `mod_cmd()` alike — on
+`scroll` too, so `{"op":"scroll","mods":["cmd"]}` drives a ⌘-wheel zoom.
+
+Two things to know when driving a panel by keys. A context menu opens under
+the pointer, and pointer hover wins over the keyboard highlight while the
+pointer rests on a row — so `move` the pointer off the menu before stepping
+it with `down`/`return`. And in a text-editing app, computing a row from a
+y-coordinate breaks as soon as an earlier edit wraps a line; `click` on the
+first row and then `down` is the robust way to place the caret.
 `button` (0 = left, 1 = right) applies to `click`, `down`, and `up`. A right
 press routes only to panel panes, where the script sees `mouse_pressed(1)`; it
 places no cursor and starts no drag. `clicks` (default 1) applies to `click`,

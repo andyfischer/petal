@@ -19,6 +19,7 @@ mod effects;
 mod format;
 mod handle;
 mod io;
+mod json;
 mod math;
 mod noise;
 mod output;
@@ -410,6 +411,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("pad_end", format::native_pad_end, NativeEffects::PURE);
     table.register("format", format::native_format, NativeEffects::PURE);
     table.register("safe_div", math::native_safe_div, NativeEffects::PURE);
+    // The string codec the panel store (and any string-only channel) needs;
+    // `json_parse` is failable like `parse_*`.
+    table.register("json_stringify", json::native_json_stringify, NativeEffects::PURE);
+    table.register("json_parse", json::native_json_parse, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

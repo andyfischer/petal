@@ -65,6 +65,16 @@ let _native_rect_rounded = draw_rect_rounded
 let _native_rect_outline = draw_rect_outline
 let _native_line = draw_line
 let _native_circle = draw_circle
+let _native_rect_rounded_outline = draw_rect_rounded_outline
+let _native_circle_outline = draw_circle_outline
+let _native_ellipse = draw_ellipse
+let _native_ellipse_outline = draw_ellipse_outline
+let _native_arc = fill_arc
+let _native_triangle = fill_triangle
+let _native_poly = fill_poly
+let _native_polygon = fill_polygon
+let _native_fan = fill_fan
+let _native_polyline = draw_polyline
 let _native_text = draw_text
 let _native_font = font
 
@@ -173,6 +183,178 @@ export fn draw_circle(center, radius, c)
 end
 export fn draw_circle(center, radius, c, a)
   _native_circle(center.x, center.y, radius, c.r, c.g, c.b, a)
+end
+
+// Record overloads for the rest of the draw surface. Every one of these was
+// hand-rolled by at least one testbed app: a call like
+// `draw_polyline(pts, C_ROCK, 235, 1)` passes `check --strict` and then dies
+// at *runtime* with "Expected int at arg 2, got record", which is the expensive
+// round-trip the prelude exists to save. The shapes mirror the flat natives
+// exactly — the same optional alpha and stroke width, in the same order — so
+// switching a call from packed ints to a colour record changes nothing else.
+export fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b)
+  _native_rect_rounded_outline(x, y, w, h, radius, r, g, b)
+end
+export fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, a)
+  _native_rect_rounded_outline(x, y, w, h, radius, r, g, b, a)
+end
+export fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, a, width)
+  _native_rect_rounded_outline(x, y, w, h, radius, r, g, b, a, width)
+end
+export fn draw_rect_rounded_outline(rect, radius, c)
+  _native_rect_rounded_outline(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b)
+end
+export fn draw_rect_rounded_outline(rect, radius, c, a)
+  _native_rect_rounded_outline(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a)
+end
+export fn draw_rect_rounded_outline(rect, radius, c, a, width)
+  _native_rect_rounded_outline(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a, width)
+end
+
+export fn draw_circle_outline(cx, cy, radius, r, g, b)
+  _native_circle_outline(cx, cy, radius, r, g, b)
+end
+export fn draw_circle_outline(cx, cy, radius, r, g, b, a)
+  _native_circle_outline(cx, cy, radius, r, g, b, a)
+end
+export fn draw_circle_outline(cx, cy, radius, r, g, b, a, width)
+  _native_circle_outline(cx, cy, radius, r, g, b, a, width)
+end
+export fn draw_circle_outline(center, radius, c)
+  _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b)
+end
+export fn draw_circle_outline(center, radius, c, a)
+  _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b, a)
+end
+export fn draw_circle_outline(center, radius, c, a, width)
+  _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b, a, width)
+end
+
+export fn draw_ellipse(cx, cy, rx, ry, r, g, b)
+  _native_ellipse(cx, cy, rx, ry, r, g, b)
+end
+export fn draw_ellipse(cx, cy, rx, ry, r, g, b, a)
+  _native_ellipse(cx, cy, rx, ry, r, g, b, a)
+end
+export fn draw_ellipse(center, rx, ry, c)
+  _native_ellipse(center.x, center.y, rx, ry, c.r, c.g, c.b)
+end
+export fn draw_ellipse(center, rx, ry, c, a)
+  _native_ellipse(center.x, center.y, rx, ry, c.r, c.g, c.b, a)
+end
+
+export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b)
+  _native_ellipse_outline(cx, cy, rx, ry, r, g, b)
+end
+export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b, a)
+  _native_ellipse_outline(cx, cy, rx, ry, r, g, b, a)
+end
+export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b, a, width)
+  _native_ellipse_outline(cx, cy, rx, ry, r, g, b, a, width)
+end
+export fn draw_ellipse_outline(center, rx, ry, c)
+  _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b)
+end
+export fn draw_ellipse_outline(center, rx, ry, c, a)
+  _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b, a)
+end
+export fn draw_ellipse_outline(center, rx, ry, c, a, width)
+  _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b, a, width)
+end
+
+// `fill_arc(center, r_in, r_out, a0, a1, c[, a])` — angles in radians,
+// clockwise from +x, as the flat form takes them.
+export fn fill_arc(cx, cy, r_in, r_out, a0, a1, r, g, b)
+  _native_arc(cx, cy, r_in, r_out, a0, a1, r, g, b)
+end
+export fn fill_arc(cx, cy, r_in, r_out, a0, a1, r, g, b, a)
+  _native_arc(cx, cy, r_in, r_out, a0, a1, r, g, b, a)
+end
+export fn fill_arc(center, r_in, r_out, a0, a1, c)
+  _native_arc(center.x, center.y, r_in, r_out, a0, a1, c.r, c.g, c.b)
+end
+export fn fill_arc(center, r_in, r_out, a0, a1, c, a)
+  _native_arc(center.x, center.y, r_in, r_out, a0, a1, c.r, c.g, c.b, a)
+end
+
+// `fill_triangle(p1, p2, p3, c[, a])` with `{x, y}` (or `vec2`) corners, next
+// to the nine-int form.
+export fn fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b)
+  _native_triangle(x1, y1, x2, y2, x3, y3, r, g, b)
+end
+export fn fill_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a)
+  _native_triangle(x1, y1, x2, y2, x3, y3, r, g, b, a)
+end
+export fn fill_triangle(p1, p2, p3, c)
+  _native_triangle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, c.r, c.g, c.b)
+end
+export fn fill_triangle(p1, p2, p3, c, a)
+  _native_triangle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, c.r, c.g, c.b, a)
+end
+
+// The point-list primitives take their points as a list already, so the
+// record form only swaps the packed r, g, b for a colour.
+export fn fill_poly(points, r, g, b)
+  _native_poly(points, r, g, b)
+end
+export fn fill_poly(points, r, g, b, a)
+  _native_poly(points, r, g, b, a)
+end
+export fn fill_poly(points, c)
+  _native_poly(points, c.r, c.g, c.b)
+end
+export fn fill_poly(points, c, a)
+  _native_poly(points, c.r, c.g, c.b, a)
+end
+
+export fn fill_polygon(points, r, g, b)
+  _native_polygon(points, r, g, b)
+end
+export fn fill_polygon(points, r, g, b, a)
+  _native_polygon(points, r, g, b, a)
+end
+export fn fill_polygon(points, c)
+  _native_polygon(points, c.r, c.g, c.b)
+end
+export fn fill_polygon(points, c, a)
+  _native_polygon(points, c.r, c.g, c.b, a)
+end
+
+export fn fill_fan(cx, cy, points, r, g, b)
+  _native_fan(cx, cy, points, r, g, b)
+end
+export fn fill_fan(cx, cy, points, r, g, b, a)
+  _native_fan(cx, cy, points, r, g, b, a)
+end
+export fn fill_fan(center, points, c)
+  _native_fan(center.x, center.y, points, c.r, c.g, c.b)
+end
+export fn fill_fan(center, points, c, a)
+  _native_fan(center.x, center.y, points, c.r, c.g, c.b, a)
+end
+
+// Overloads dispatch on argument count alone, and `(points, c, a, width)` has
+// the same count as the flat `(points, r, g, b)` — so the four-argument form
+// looks at its second argument: a colour record means alpha and width follow,
+// an int means packed r, g, b.
+export fn draw_polyline(points, c_or_r, a_or_g, width_or_b)
+  if type(c_or_r) == "record" then
+    _native_polyline(points, c_or_r.r, c_or_r.g, c_or_r.b, a_or_g, width_or_b)
+  else
+    _native_polyline(points, c_or_r, a_or_g, width_or_b)
+  end
+end
+export fn draw_polyline(points, r, g, b, a)
+  _native_polyline(points, r, g, b, a)
+end
+export fn draw_polyline(points, r, g, b, a, width)
+  _native_polyline(points, r, g, b, a, width)
+end
+export fn draw_polyline(points, c)
+  _native_polyline(points, c.r, c.g, c.b)
+end
+export fn draw_polyline(points, c, a)
+  _native_polyline(points, c.r, c.g, c.b, a)
 end
 
 export fn draw_text(text, x, y, size, r, g, b)
@@ -2237,11 +2419,16 @@ export fn context_menu(m, items, style)
     // The opening press is not the menu's to act on — see `menu_state`.
     let live = m.at != frame_count()
 
-    // Pointer hover wins over the keyboard highlight the moment it is over a
-    // row — the two share one `hover`, so the menu never shows two of them.
+    // Pointer hover wins over the keyboard highlight the moment the pointer
+    // *moves* over a row — the two share one `hover`, so the menu never shows
+    // two of them. A resting pointer does not win: the menu opens under it,
+    // so without this rule Down, Down, Return picked row 0 every time, both
+    // for a person who reached for the arrow keys and for a headless test
+    // driving the menu by keys.
     let hover = m.hover
     let over = _menu_hit(r, items, mx, my, mm)
-    if inside && over >= 0 then
+    let moved = mx != (m.px ?? -1) || my != (m.py ?? -1)
+    if inside && over >= 0 && (moved || hover < 0) then
       hover = over
     end
     if key_pressed("down") then
@@ -2307,7 +2494,7 @@ export fn context_menu(m, items, style)
       y = y + rh
     end
 
-    let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at} end
+    let next = if close then menu_close(m) else {open: true, x: m.x, y: m.y, tag: m.tag, hover: hover, at: m.at, px: mx, py: my} end
     let label = if chosen >= 0 then items[chosen].label else "" end
     {menu: next, index: chosen, label: label, tag: m.tag, rect: r}
   end

@@ -46,13 +46,24 @@ silently leaves you with an empty editor pane.
 
 ```bash
 cd examples/<category>/<slug>
-./launch.sh --headless --debug-port 0 > log.txt 2>&1 &
-GPID=$!
+(nohup ./launch.sh --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
+GPID=$(pgrep -f "garden --init $(pwd)/layout.ptl" | head -1)
 ```
 
 Use `--headless --debug-port 0` while developing. A windowed launch steals
 focus, and a fixed port collides with any other Garden already running.
+
+Launch it with `nohup … < /dev/null` inside a subshell, as above. A plain
+`… &` dies with the shell that started it — in an agent harness every tool
+call is its own shell, so the second `curl` finds the process gone and the log
+ending in `headless launcher exited; shutting down`. macOS has no `setsid`;
+the subshell form is what survives.
+
+If the app persists through `panel_store_*`, launch with
+`GARDEN_PANEL_STORE_DIR=<scratch dir>` set, and say so in the README.
+Otherwise every test run starts from whatever the last run saved, and
+`POST /panel/reset` reloads the saved document rather than the seed data.
 
 `GARDEN_HEADLESS_SIZE=WxH` sets the virtual viewport (default 1280x850). Pick a
 size that suits the app and record it in the README.
@@ -94,6 +105,12 @@ that never ran.
 followed by a capture needs no sleep.
 
 ### Driving it
+
+`petal check --strict app.ptl` resolves the `ui` prelude without Garden (no
+`-I` needed; `-I petal-libs` only when the app imports `bloom`). It catches
+arity and type slips on known functions, captured-`state` reads and hoisting
+order, but not a misspelled global: `totally_bogus_fn(1)` passes `check` and
+fails in Garden.
 
 ```bash
 curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"left"}'
@@ -185,7 +202,8 @@ you change a seed-data generator, or a function whose result is cached in
 recomputed. It looks like the edit did not take.
 
 Do not restart the process. `POST /panel/reset` rebuilds the panel from source
-and drops `state`.
+and drops `state`. It is also the way back from a frame that raised: the error
+card stays up until a reset, even after the file is fixed and saved.
 
 The same rule is why `state` is right for what genuinely persists (selection,
 scroll offset, the document) and wrong for anything you are still iterating on.
@@ -228,6 +246,13 @@ Cmd+C, an editor's Cmd+Z — ask for it back with `claim_key("z", "cmd")`, state
 unconditionally near the top of every frame. A claimed chord arrives as
 `key_pressed("z")` with `mod_cmd()` true, and produces no `text_input()`.
 
+Every draw primitive has a **record form** next to its packed-int form —
+`draw_rect(rect, color[, a])`, `draw_polyline(points, color[, a[, width]])`,
+`fill_arc(center, r_in, r_out, a0, a1, color[, a])` and so on, where `color`
+is a `{r, g, b}` record or a `#rrggbb` literal. Both forms accept floats
+(they are truncated to whole pixels), so world-space coordinates after a zoom
+multiply need no `int(...)`.
+
 Persistence across a restart is `panel_store_get(key)` /
 `panel_store_set(key, string)`: a string-to-string map scoped to your script's
 path, capped at 256 KiB per value. There is no file API; pair it with
@@ -247,9 +272,18 @@ weight, italic, spacing}` — or a `font(name, size)` object. Build the style
 once and pass the same value to both, so what you measure is what you draw.
 `font` is any family installed on the machine, or the embedded roles `mono`
 (JetBrains Mono) and `ui` (Inter). `weight` is real on `ui` and on system
-families; on `mono` only Regular is embedded, so bold there is synthetic. Text
-cannot be rotated; `draw_text_along` and `draw_axis_labels` are the
-workarounds. See
+families; on `mono` only Regular is embedded, so bold there is synthetic.
+`italic` is upright on both embedded faces (no italic cut is embedded), so an
+italic run needs a system family or a colour cue instead. The embedded faces
+also have no glyph fallback: a character the face lacks (`⌘`, `⇧`, and on `ui`
+even `—` and `·`) advances but draws nothing — check a Markdown preview's
+first em dash against `mono` or ASCII. Text cannot be rotated;
+`draw_text_along` and `draw_axis_labels` are the workarounds.
+
+`text_width` returns a rounded whole pixel. For monospace column math do not
+measure one glyph and multiply — the advance is fractional and the error is a
+full column by column 30. Measure a long run and divide:
+`let CW = float(text_width(rep("m", 50), style)) / 50.0`. See
 [Text size and measurement](../garden/docs/petal-graphical-panels.md#text-size-and-measurement)
 and [docs/text-and-fonts.md](../docs/text-and-fonts.md).
 

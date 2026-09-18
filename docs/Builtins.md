@@ -439,6 +439,38 @@ else
 end
 ```
 
+### `json_stringify(value)` / `json_stringify(value, indent)`
+
+Encodes a value as JSON text: `nil` → `null`, bools, numbers, strings, lists
+→ arrays, records → objects (field order kept). The one-argument form is
+compact; `indent` pretty-prints with that many spaces per level. A class
+instance encodes as its fields; a value with no JSON form (a function)
+encodes as its display string. This is the codec for `panel_store_set` and
+any other string-only channel.
+
+```petal
+json_stringify({a: 1, b: [true, nil]})   // {"a":1,"b":[true,null]}
+json_stringify("q\"uote")                // "q\"uote"
+```
+
+### `json_parse(text)`
+
+Decodes JSON text into the matching value — objects become plain records —
+or returns `nil` when the text is not JSON, so a corrupt store entry is a
+`?? default` rather than an aborted frame. (The text `null` also parses to
+`nil`.)
+
+```petal
+json_parse("[1, 2.5, \"x\"]")        // [1, 2.5, "x"]
+json_parse("\{\"a\": \{\"b\": 2}}").a.b   // 2  (`\{` — a bare `{` interpolates)
+json_parse("not json")             // nil
+```
+
+```petal ignore
+state todos = json_parse(panel_store_get("todos") ?? "[]") ?? []
+panel_store_set("todos", json_stringify(todos))
+```
+
 ### `type(value)`
 
 Returns the type name as a string.

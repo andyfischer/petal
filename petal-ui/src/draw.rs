@@ -537,10 +537,13 @@ fn as_i64(v: &Value) -> Result<i64, String> {
     }
 }
 
-/// Decode a heap list of points — each a `vec2` or a two-element `[x, y]`
-/// list — into integer pixel coordinates. Shared by every point-list command
-/// (`poly`, `polygon`, `fan`, `polyline`), so they all accept the same two
-/// spellings a script may have written.
+/// Decode a heap list of points — each a `vec2`, a two-element `[x, y]` list
+/// or an `{x, y}` record — into integer pixel coordinates. Shared by every
+/// point-list command (`poly`, `polygon`, `fan`, `polyline`), so they all
+/// accept the same three spellings a script may have written. The record
+/// spelling is the one the prelude's own overloads use for a point
+/// (`draw_line({x, y}, {x, y}, c)`), so a script that builds its points that
+/// way can hand the same list to a polyline.
 fn decode_points(tag: &str, points: &Value, heap: &Heap) -> Result<Vec<(i32, i32)>, String> {
     let list_id = match points {
         Value::List(id) => *id,
@@ -562,9 +565,13 @@ fn decode_points(tag: &str, points: &Value, heap: &Heap) -> Result<Vec<(i32, i32
                 }
                 out.push((as_i64(&coords[0])? as i32, as_i64(&coords[1])? as i32));
             }
+            Value::Map(mid) => {
+                let (x, y) = record_point(tag, *mid, heap)?;
+                out.push((as_i64(&x)? as i32, as_i64(&y)? as i32));
+            }
             other => {
                 return Err(format!(
-                    "{tag} point must be vec2 or [x, y], got {}",
+                    "{tag} point must be vec2, [x, y] or {{x, y}}, got {}",
                     other.type_name()
                 ));
             }
@@ -1526,6 +1533,15 @@ fn native_fill_triangle(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+/// The `x` and `y` fields of an `{x, y}` point record, or why it is not one.
+fn record_point(tag: &str, id: petal::heap::MapId, heap: &Heap) -> Result<(Value, Value), String> {
+    let map = heap.get_map(id);
+    match (map.get("x"), map.get("y")) {
+        (Some(x), Some(y)) => Ok((*x, *y)),
+        _ => Err(format!("{tag} record points must have x and y fields")),
+    }
+}
+
 fn coord_to_i32(v: &Value) -> Result<i32, String> {
     match v {
         Value::Int(n) => Ok(*n as i32),
@@ -1564,9 +1580,14 @@ fn point_list_arg(state: &PetalCxt, index: usize, name: &str, min: usize) -> Res
                 coord_to_i32(&coords[0])?;
                 coord_to_i32(&coords[1])?;
             }
+            Value::Map(mid) => {
+                let (x, y) = record_point(&format!("{name}()"), *mid, state.heap())?;
+                coord_to_i32(&x)?;
+                coord_to_i32(&y)?;
+            }
             other => {
                 return Err(format!(
-                    "{name}() points must be vec2 or [x, y] lists, got {}",
+                    "{name}() points must be vec2, [x, y] lists or {{x, y}} records, got {}",
                     other.type_name()
                 ));
             }

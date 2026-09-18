@@ -327,6 +327,16 @@ impl App {
                     }
                     "scroll" => {
                         self.mouse = (x, y);
+                        // A wheel under a chord (⌘-wheel zoom, shift-wheel for
+                        // horizontal) is read by the script as `mod_cmd()` /
+                        // `mod_shift()` on the frame the ticks arrive, so the
+                        // named modifiers go to the panel under the pointer
+                        // before the scroll, exactly as a press delivers them.
+                        if let Some(idx) = self.pane_at(x, y) {
+                            if let Some(panel) = self.panes[idx].panel.as_mut() {
+                                panel.set_modifiers(mods);
+                            }
+                        }
                         if lines != 0.0 {
                             self.handle_scroll(lines);
                         }
@@ -1427,6 +1437,34 @@ mod tests {
 
     /// The input endpoints' default acknowledgment is a projection of the
     /// `/state` snapshot, not a shape of its own.
+    /// A `scroll` op used to drop its `mods`: `{"op":"scroll","mods":["cmd"]}`
+    /// arrived with `panel.input.modifiers` 0, so a ⌘-wheel zoom could not be
+    /// driven headless although the doc promised every named modifier.
+    #[test]
+    fn scroll_delivers_its_modifiers_to_the_panel() {
+        let (mut app, _f) = panel_app(
+            "state zoomed = false\n\
+             if scroll_y() != 0 && mod_cmd() then zoomed = true end\n\
+             let obs_zoomed = zoomed\n\
+             let obs_cmd = mod_cmd()\n",
+        );
+        let post = |app: &mut App, body: &str| {
+            let cmd = debug::route_for_test("POST", "/mouse", body.as_bytes()).expect("routes");
+            app.handle_debug(cmd).expect("scrolls");
+            app.settle_panels();
+        };
+        post(&mut app, r#"{"op":"scroll","x":100,"y":100,"lines":1}"#);
+        let plain = state_with(&mut app, "/state?values_prefix=obs_");
+        assert_eq!(panel_of(&plain)["values"]["obs_zoomed"], false);
+
+        post(&mut app, r#"{"op":"scroll","x":100,"y":100,"lines":1,"mods":["cmd"]}"#);
+        let chord = state_with(&mut app, "/state?values_prefix=obs_");
+        assert_eq!(
+            panel_of(&chord)["values"]["obs_zoomed"], true,
+            "the script saw mod_cmd() on the frame the wheel ticks arrived"
+        );
+    }
+
     #[test]
     fn input_ack_is_a_projection_of_the_snapshot() {
         let (mut app, _f) = panel_app("draw_text(\"hi\", 4, 4, 16, 1, 1, 1)\n");

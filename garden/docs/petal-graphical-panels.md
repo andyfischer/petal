@@ -150,9 +150,16 @@ Rectangles and text are native primitives; the rest tessellate into meshes.
 
 `examples/panels/shapes.ptl` draws every one of them on one screen.
 
-The prelude adds record overloads over all of these (`draw_rect(rect, color)`
-and so on), plus `linear_gradient(rect, stops, angle[, radius])` for three or
-more stops and `draw_shadow(rect, {radius, blur, spread, dx, dy, color, a})`.
+The prelude adds record overloads over all of these — `draw_rect(rect,
+color[, a])`, `draw_rect_rounded_outline(rect, radius, color[, a[, width]])`,
+`draw_circle_outline(center, radius, color[, a[, width]])`,
+`fill_arc(center, r_in, r_out, a0, a1, color[, a])`,
+`fill_triangle(p1, p2, p3, color[, a])`, `draw_polyline(points, color[, a[,
+width]])`, `fill_polygon(points, color[, a])` and so on, where `color` is an
+`{r, g, b}` record or `#rrggbb` literal and every optional argument sits where
+the flat form has it — plus `linear_gradient(rect, stops, angle[, radius])`
+for three or more stops and `draw_shadow(rect, {radius, blur, spread, dx, dy,
+color, a})`. Point lists take `vec2`, `[x, y]` or `{x, y}` points.
 
 Three of these exist because composing the older calls gives the wrong
 picture, not merely a slower one:
@@ -466,6 +473,7 @@ subset.
 | `size` | honored per run |
 | `font` | any installed family, plus `mono` (JetBrains Mono) and `ui` (Inter); fallback lists work; an unresolvable name degrades to JetBrains Mono |
 | `italic` | resolves when a matching face is available; no italic cut is embedded, so on `mono` and `ui` it is upright |
+| glyph coverage | the embedded faces have no fallback chain: a character the face lacks (`⌘`, `⇧`; on `ui` also `—` and `·`) advances but draws nothing. Prefer `mono` or a system family for symbol-heavy text |
 | `weight` | real on a system family and on `ui` (Inter Bold is embedded, so `weight >= 600` shapes the Bold cut); synthetic on `mono` (drawn twice at a sub-pixel offset, so it measures regular) |
 | `spacing` | honored; the pen matches `text_width` exactly |
 

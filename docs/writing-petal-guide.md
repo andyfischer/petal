@@ -97,7 +97,13 @@ Things to notice, because each is a rule you will meet again:
   parameter is the receiver. There is no `self`.
 - **Commas are required** between list elements, and a trailing comma is fine.
 - **Recursion works, including mutual recursion**, because top-level `fn`s are
-  hoisted — a flood fill or a tree walk needs no forward declaration.
+  hoisted — a flood fill or a tree walk needs no forward declaration. The one
+  exception: a `fn` whose body reads a top-level `let` that is computed at run
+  time (a layout rect, `let NODE_W = screen_width() / 4`) cannot be hoisted
+  above that `let`, and calling it earlier fails at run time with
+  `Cannot call nil`. `petal check` warns (`call to fit_all before its
+  declaration … cannot be hoisted`); the fix is to keep helpers that read
+  layout constants below the constants and above their first use.
 
 ---
 
@@ -239,6 +245,15 @@ fn accumulate(v)
   set total = get total + v
   get total
 end
+```
+
+*Every* function reads a module-level `var` with `get` — plain helpers called
+from the top level (`new_game()`, `build_level(get level)`) as much as
+callbacks. Only module scope itself reads the cell bare. `petal check` reports
+a bare read inside a function, so this is a compile-time slip, not a silent
+one.
+
+```petal
 
 fn health(id, damage)
   state(id) hp = 100                         // one cell per entity id
@@ -371,6 +386,21 @@ print("n=" ++ 5)          // n=5
 print("n={5}")            // n=5   — prefer this
 print(str(5) ++ "!")      // 5!    — `str` converts explicitly
 ```
+
+**Every `{` in a string literal opens an interpolation hole**, so hand-written
+JSON or a brace-bearing format string fails with
+`Expected string part in interpolation, got Colon`. Escape the brace: `"\{"`.
+
+```petal
+print("\{\"a\": 1}")     // {"a": 1}
+```
+
+(For real JSON, `json_stringify` / `json_parse` exist — see §9.)
+
+**`nil` compares with `==` and `!=`**, and every other value is `!= nil`. So
+`panel_store_get(k) == nil` and `if x != nil then … end` both work; `??` is the
+shorthand for the common "or a default" case, and `?.` for reading a field of
+something that may be nil.
 
 There is **no string-repeat builtin** (no `repeat`, no `"-" * 20`), which every
 ASCII-rendering program wants. Build one:
@@ -561,6 +591,18 @@ end
 
 ## 8. Idioms that make Petal code read like Petal
 
+**A collecting `for` is your `map`.** `for` in value position builds a list
+(§6), and with `if … then new else old end` in the body it is the whole
+"replace one element" idiom — three lines, no index bookkeeping:
+
+```petal
+fn put_doc(ds, id, nd)
+  for d in ds do
+    if d.id == id then nd else d end
+  end
+end
+```
+
 **Pipe into the first argument.**
 
 ```petal
@@ -569,10 +611,13 @@ let done_count = tasks |> filter(fn(t) -> t.done) |> len()
 print(done_count)             // 1
 ```
 
-**Lambdas are `fn(args) -> expr`** — the `->` introduces the body, which is why
-a lambda has no return-type annotation. A multi-statement lambda is
-`fn(args) … end`, and the parameter list can be left off when there are no
-parameters: `fn 42 end`.
+**Lambdas are `fn(args) -> expr`, with no `end`.** The `->` introduces a
+single expression body, which is why a lambda has no return-type annotation —
+and why `filter(xs, fn(b) -> b.kind == "h" end)` fails with
+`Expected ',' between arguments`: every named `fn … end` primes the habit, but
+the arrow form takes no terminator. A multi-statement lambda is the block form
+`fn(args) … end` (no arrow), and the parameter list can be left off when there
+are no parameters: `fn 42 end`.
 
 **Arguments can be passed by name**: `f(x: 1)`, in any order, mixed with
 positional ones. See [Named Arguments](language-guide.md#named-arguments).

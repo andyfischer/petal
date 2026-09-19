@@ -4672,6 +4672,41 @@ fn a_tapped_key_does_not_stay_held() {
     assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
 }
 
+/// The window delivers a physical press as `Press` and reports the release
+/// later: the key stays held through the gap before OS auto-repeat starts (it
+/// used to be a one-frame tap, so holding a key flickered off for ~0.5s), and
+/// auto-repeats do not release it.
+#[test]
+fn a_physically_held_key_stays_down_until_released() {
+    let mut app = app_with_input_probe("panel-press-key", "");
+    app.apply_key_phase(Key::Char('w'), Mods::default(), KeyPhase::Press);
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(true)));
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(true)));
+
+    // An auto-repeat is another press; the key is still held after it.
+    app.apply_key_phase(Key::Char('w'), Mods::default(), KeyPhase::Press);
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(true)));
+
+    app.release_key(Key::Char('w'));
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
+}
+
+/// Losing window focus releases every held key — no release would ever come.
+#[test]
+fn losing_focus_releases_held_keys() {
+    let mut app = app_with_input_probe("panel-press-unfocus", "");
+    app.apply_key_phase(Key::Char('w'), Mods::default(), KeyPhase::Press);
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(true)));
+    app.release_all_keys();
+    app.settle_panels();
+    assert_eq!(panel_value(&app, "held_w"), Some(json!(false)));
+}
+
 // --- Recording what the user opened ------------------------------------
 
 /// An `App` with one empty pane whose recents lists live in `dir`, plus a

@@ -421,15 +421,20 @@ fn panel_title(script: &str) -> String {
 
 /// Which half of a key press is being delivered.
 ///
-/// Every frontend delivers [`Tap`](KeyPhase::Tap) — a press and its release in
-/// the same frame — because none of them report key-up. `Down`/`Up` come from
-/// the debug server's `POST /key {"op": "down"}` so a driver can *hold* a key
-/// against a panel script, which is the only way `key_down(k)` is observable
-/// from a later `GET /state`.
+/// The terminal frontend delivers [`Tap`](KeyPhase::Tap) — a press and its
+/// release in the same frame — because it cannot see key-up. The window
+/// delivers [`Press`](KeyPhase::Press) and later reports the release through
+/// [`App::release_key`](crate::app::App::release_key), so a held key stays in a
+/// panel's `key_down(k)` for as long as it is physically held. `Down`/`Up` come
+/// from the debug server's `POST /key {"op": "down"}` so a driver can *hold* a
+/// key against a panel script, observable from a later `GET /state`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum KeyPhase {
     #[default]
     Tap,
+    /// A press (or auto-repeat) whose release the frontend will report later.
+    /// Dispatched exactly like a tap, except that a panel keeps the key held.
+    Press,
     Down,
     Up,
 }

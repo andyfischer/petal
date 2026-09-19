@@ -11,7 +11,7 @@
 //! `docs/petal-graphical-panels.md`.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -525,6 +525,9 @@ pub struct PanelView {
     /// keys to the host mid-debugging. Read by
     /// [`App::panel_key`](crate::app::App) before it applies any host shortcut.
     key_claims: Vec<(String, Option<u8>)>,
+    /// Keys delivered by [`press`](Self::press) whose physical release has not
+    /// arrived yet — they stay in `key_down(...)` until [`release`](Self::release).
+    held_keys: HashSet<String>,
     /// The modifier chord last pushed with [`set_modifiers`](Self::set_modifiers),
     /// so a change can be republished as `keys_down` entries — `key_down("shift")`
     /// used to return false forever, which failed silently.
@@ -682,6 +685,7 @@ impl PanelView {
             output: VecDeque::new(),
             text_views: HashMap::new(),
             key_claims: Vec::new(),
+            held_keys: HashSet::new(),
             mods: Mods::default(),
             focused_region: None,
             live_source_hash: None,
@@ -1312,9 +1316,11 @@ impl PanelView {
     }
 
     /// Forward a key (canonical name, e.g. `"j"`, `"down"`, `"space"`) plus its
-    /// typed text if any. Garden's frontends don't deliver key-up, so a key is
-    /// fed as a paired down+up: scripts see the `key_pressed`/`key_released`
-    /// edges but `key_down` stays a within-frame pulse (no phantom held keys).
+    /// typed text if any, as a tap: for callers that never see key-up (the
+    /// terminal, the debug server's tap), a key is fed as a paired down+up, so
+    /// scripts see the `key_pressed`/`key_released` edges but `key_down` stays
+    /// a within-frame pulse (no phantom held keys). The window uses
+    /// [`press`](Self::press)/[`release`](Self::release) instead.
     /// A printable character is also fed as `text_input`.
     pub fn key(&mut self, name: String, text: Option<String>) {
         if let Some(text) = text {
@@ -1335,6 +1341,34 @@ impl PanelView {
             self.host.input_event(InputEvent::Text { text });
         }
         self.host.input_event(InputEvent::KeyDown { key: name });
+    }
+
+    /// A physical key press from a frontend that also reports the release
+    /// (the window). Like [`key`](Self::key) it fires `key_pressed` and feeds
+    /// typed text, but the key stays in `key_down(...)` until
+    /// [`release`](Self::release) — so holding a key holds it for the script,
+    /// instead of flickering between the first press and the OS auto-repeat.
+    /// Auto-repeats arrive here too and re-fire `key_pressed` only.
+    pub fn press(&mut self, name: String, text: Option<String>) {
+        self.held_keys.insert(name.clone());
+        self.key_down(name, text);
+    }
+
+    /// The physical release of a key delivered by [`press`](Self::press). A
+    /// no-op for a key this panel never saw pressed, so a frontend can offer
+    /// every release to every panel.
+    pub fn release(&mut self, name: &str) {
+        if self.held_keys.remove(name) {
+            self.key_up(name.to_string());
+        }
+    }
+
+    /// Release every key held by [`press`](Self::press) — the window lost focus,
+    /// so no release events will arrive for them.
+    pub fn release_all(&mut self) {
+        for name in std::mem::take(&mut self.held_keys) {
+            self.key_up(name);
+        }
     }
 
     /// Release a key held by [`key_down`](Self::key_down) — the `key_released`

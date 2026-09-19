@@ -5,6 +5,7 @@
 //! user events (`EventLoopProxy<DebugRequest>` implements
 //! [`debug::RequestSink`]) and are answered against the live [`App`].
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -13,10 +14,10 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, KeyEvent, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::keyboard::{Key as WinitKey, NamedKey};
+use winit::keyboard::{Key as WinitKey, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-use crate::app::{App, Capture, ClickCounter, Mods, Raster, Viewport};
+use crate::app::{App, Capture, ClickCounter, KeyPhase, Mods, Raster, Viewport};
 use crate::clipboard::{SharedClipboard, SystemClipboard};
 use crate::debug::{self, DebugRequest, RequestSink};
 use crate::frontend::menu::MenuBar;
@@ -93,6 +94,10 @@ struct WindowState {
     modifiers: Modifiers,
     /// Double/triple-click detection for left presses.
     clicks: ClickCounter,
+    /// The key each physically held key was pressed as, so its release is
+    /// reported under the same name even if a modifier changed meanwhile
+    /// (`a` pressed, Shift pressed, released as `A`).
+    held_keys: HashMap<PhysicalKey, vim::Key>,
     /// When the last `render` skipped its frame because the surface was
     /// unavailable (occluded, asleep), the time at which to retry — throttled to
     /// the poll cadence so an occluded window never spins the redraw loop (the
@@ -116,12 +121,25 @@ impl WindowState {
         }
     }
 
+    /// A key press or release. Presses (and auto-repeats) go in as
+    /// [`KeyPhase::Press`] and the release is reported separately, so a panel
+    /// script sees `key_down(k)` for exactly as long as the key is held.
     fn handle_key(&mut self, event: KeyEvent) {
-        let Some(key) = to_vim_key(&event.logical_key) else {
-            return;
-        };
-        let mods = self.mods();
-        self.app.apply_key(key, mods);
+        match event.state {
+            ElementState::Pressed => {
+                let Some(key) = to_vim_key(&event.logical_key) else {
+                    return;
+                };
+                self.held_keys.insert(event.physical_key, key);
+                let mods = self.mods();
+                self.app.apply_key_phase(key, mods, KeyPhase::Press);
+            }
+            ElementState::Released => {
+                if let Some(key) = self.held_keys.remove(&event.physical_key) {
+                    self.app.release_key(key);
+                }
+            }
+        }
     }
 
     /// Push the core's redraw flag out to the window. Called after every
@@ -228,6 +246,7 @@ impl Handler {
                 ordinal,
                 modifiers: Modifiers::default(),
                 clicks: ClickCounter::new(),
+                held_keys: HashMap::new(),
                 retry_surface_at: None,
             },
         );
@@ -333,8 +352,11 @@ impl ApplicationHandler<DebugRequest> for Handler {
                 state.app.set_viewport_size(w, h);
             }
             WindowEvent::ModifiersChanged(m) => state.modifiers = m,
-            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                state.handle_key(event);
+            WindowEvent::KeyboardInput { event, .. } => state.handle_key(event),
+            // No releases arrive for keys still held when focus leaves.
+            WindowEvent::Focused(false) => {
+                state.held_keys.clear();
+                state.app.release_all_keys();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = position.to_logical::<f32>(state.window.scale_factor());

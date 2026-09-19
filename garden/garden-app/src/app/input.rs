@@ -25,6 +25,31 @@ impl App {
         self.apply_key_phase(key, mods, KeyPhase::Tap);
     }
 
+    /// The physical release of a key the frontend delivered as
+    /// [`KeyPhase::Press`]. Offered to every panel, not just the focused one, so
+    /// a key held across a focus change is still released where it was pressed.
+    pub fn release_key(&mut self, key: Key) {
+        let Some(name) = panel_key_name(key) else {
+            return;
+        };
+        self.log_event("key-up", describe_key(key, Mods::default()));
+        for panel in self.panes.iter_mut().filter_map(|p| p.panel.as_mut()) {
+            panel.release(&name);
+        }
+        self.wake_panels();
+        self.needs_redraw = true;
+    }
+
+    /// Release every held key in every panel — the window lost focus, so the
+    /// releases for keys still down will never arrive.
+    pub fn release_all_keys(&mut self) {
+        for panel in self.panes.iter_mut().filter_map(|p| p.panel.as_mut()) {
+            panel.release_all();
+        }
+        self.wake_panels();
+        self.needs_redraw = true;
+    }
+
     /// Apply one key in a given press [phase](KeyPhase). [`KeyPhase::Tap`] — a
     /// press and its release in one frame — is what every frontend delivers and
     /// what [`apply_key`](Self::apply_key) means.
@@ -55,9 +80,9 @@ impl App {
         let panel_focused = self.panes.get(self.focus).is_some_and(Pane::is_panel);
         let modal = self.command_line.is_some() || self.file_finder.is_some();
         let outcome = match phase {
-            KeyPhase::Tap => self.key_outcome(key, mods),
+            KeyPhase::Tap | KeyPhase::Press => self.key_outcome(key, mods, phase),
             _ if panel_focused && !modal => self.panel_key(key, mods, phase),
-            KeyPhase::Down => self.key_outcome(key, mods),
+            KeyPhase::Down => self.key_outcome(key, mods, KeyPhase::Tap),
             KeyPhase::Up => KeyOutcome::Ignored,
         };
         match outcome {
@@ -73,7 +98,9 @@ impl App {
         }
     }
 
-    fn key_outcome(&mut self, key: Key, mods: Mods) -> KeyOutcome {
+    /// `phase` is [`KeyPhase::Tap`] or [`KeyPhase::Press`]; only a focused
+    /// panel distinguishes them (a `Press` stays held until its release).
+    fn key_outcome(&mut self, key: Key, mods: Mods, phase: KeyPhase) -> KeyOutcome {
         // An open `:` command line captures all input until it closes.
         if self.command_line.is_some() {
             return self.command_line_key(key);
@@ -109,7 +136,7 @@ impl App {
         // A focused panel pane consumes plain keys (forwarded to its script);
         // the command bar and quit chords stay reserved, like a process pane.
         if self.panes.get(self.focus).is_some_and(Pane::is_panel) {
-            return self.panel_key(key, mods, KeyPhase::Tap);
+            return self.panel_key(key, mods, phase);
         }
 
         // Whether the focused pane rejects edits (the read-only "before" side of
@@ -294,7 +321,7 @@ impl App {
         // has no way to represent — both go straight to the classification below.
         if let Some(id) = self
             .focused_panel_region()
-            .filter(|_| !claimed && phase == KeyPhase::Tap)
+            .filter(|_| !claimed && matches!(phase, KeyPhase::Tap | KeyPhase::Press))
         {
             let editable = self
                 .panes
@@ -411,6 +438,7 @@ impl App {
                     let text = panel_key_text(key, mods);
                     match phase {
                         KeyPhase::Tap => panel.key(name, text),
+                        KeyPhase::Press => panel.press(name, text),
                         KeyPhase::Down => panel.key_down(name, text),
                         KeyPhase::Up => panel.key_up(name),
                     }

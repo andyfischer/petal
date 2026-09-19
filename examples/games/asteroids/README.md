@@ -90,16 +90,13 @@ low alpha under a 1 px stroke), `fill_polygon` for the concave-correct rock
 fills, `fill_triangle` for the flickering exhaust flame, `draw_circle_outline`
 for the shield ring, `draw_line` for the wreckage. Rocks straddling an edge
 are drawn a second time on the opposite side so the torus reads as one.
-`key_down` + `key_pressed` together, so the app is playable both by a held key
-in a real window and by a single injected `POST /key` headlessly;
+`key_down` for the held controls (turn, thrust) and `key_pressed` for the
+one-shot verbs (fire, warp, pause); headlessly, hold a key with
+`POST /key {"key": "left", "op": "down"}` and release it with `"op": "up"`;
 `mouse_pressed(0)` as a second launch verb; `clip`/`clip_none` to keep sparks
 inside the field; styled `draw_text` records plus `text_width` for centring,
-right-alignment and self-sizing badges.
-
-The prelude has record-colour overloads for rects, circles, lines and text but
-not for polylines, polygon fills, triangles or rings, so the app wraps those
-four natives (`poly`, `fill_p`, `tri`, `ring`, `seg`) to keep talking in
-palette records.
+right-alignment and self-sizing badges. Every draw call uses the prelude's
+colour-record overloads, so the whole app talks in palette records.
 
 **Debug server.** Every piece of logical state is mirrored into plain `let`
 bindings (`obs_phase`, `obs_level`, `obs_score`, `obs_lives`, `obs_rocks`,

@@ -4,8 +4,8 @@
 //  Exercises: vector movement with rotation and inertia, procedurally
 //  generated polygon rocks that split when shot, a bullet pool, a particle
 //  system (sparks, exhaust, and the ship's own lines flying apart), circle
-//  collision against a wrapping toroidal field, and a four-phase UI
-//  (title → play → respawn / level clear → game over).
+//  collision against a wrapping toroidal field, and a six-phase UI
+//  (title → play → paused / dead → sector clear / game over).
 //
 //  Designed for a 1100x780 viewport.  See README.md.
 // ─────────────────────────────────────────────────────────────────────────
@@ -56,7 +56,6 @@ config let shot_cooldown = 0.16
 config let max_shots     = 5
 config let safe_secs     = 2.6      // invulnerability after a respawn
 config let warp_cooldown = 2.2
-config let tap_hold      = 0.12     // how long an injected keypress "holds"
 
 let PAD  = 30
 let HEAD = 112
@@ -93,9 +92,6 @@ state var safe_t    = 0.0
 state var cool_t    = 0.0
 state var warp_t    = 0.0
 state var dead_t    = 0.0
-state var hold_l    = 0.0
-state var hold_r    = 0.0
-state var hold_up   = 0.0
 state var shake     = 0.0
 state var banner    = ""
 state var subbanner = ""
@@ -119,29 +115,6 @@ end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
-end
-
-// The prelude has record-colour overloads for rects, circles, lines and text,
-// but not for polylines, polygon fills, triangles or rings. These wrap the
-// flat natives so the whole app can talk in palette records.
-fn poly(pts, c: record, a: int, w: int)
-  draw_polyline(pts, c.r, c.g, c.b, a, w)
-end
-
-fn fill_p(pts, c: record, a: int)
-  fill_polygon(pts, c.r, c.g, c.b, a)
-end
-
-fn tri(x1, y1, x2, y2, x3, y3, c: record, a: int)
-  fill_triangle(x1, y1, x2, y2, x3, y3, c.r, c.g, c.b, a)
-end
-
-fn ring(x, y, r, c: record, a: int, w: int)
-  draw_circle_outline(x, y, r, c.r, c.g, c.b, a, w)
-end
-
-fn seg(x1, y1, x2, y2, c: record, a: int, w: int)
-  draw_line(x1, y1, x2, y2, c.r, c.g, c.b, a, w)
 end
 
 fn mix(a: record, b: record, t: num) -> record
@@ -290,10 +263,6 @@ set pulse = pulse + sdt
 
 // ── Input ────────────────────────────────────────────────────────────────
 
-if key_pressed("left") || key_pressed("a") then set hold_l = tap_hold end
-if key_pressed("right") || key_pressed("d") then set hold_r = tap_hold end
-if key_pressed("up") || key_pressed("w") then set hold_up = tap_hold end
-
 if key_pressed("r") then
   new_game()
 end
@@ -329,12 +298,9 @@ if key_pressed("p") || key_pressed("escape") then
   end
 end
 
-let k_l  = key_down("left") || key_down("a") || hold_l > 0.0
-let k_r  = key_down("right") || key_down("d") || hold_r > 0.0
-let k_up = key_down("up") || key_down("w") || hold_up > 0.0
-set hold_l = max(0.0, hold_l - sdt)
-set hold_r = max(0.0, hold_r - sdt)
-set hold_up = max(0.0, hold_up - sdt)
+let k_l  = key_down("left") || key_down("a")
+let k_r  = key_down("right") || key_down("d")
+let k_up = key_down("up") || key_down("w")
 
 // ── Simulation: ship ─────────────────────────────────────────────────────
 
@@ -552,7 +518,7 @@ tx_center("SCORE", cx, 72, S_LABEL)
 for i in range(0, 5) do
   let px = cx - 30 + i * 15
   let col = if i < lives then C_SHIP else C_LINE end
-  poly([[px, 91], [px + 5, 101], [px, 98], [px - 5, 101], [px, 91]], col, 255, 1)
+  draw_polyline([[px, 91], [px + 5, 101], [px, 98], [px - 5, 101], [px, 91]], col, 255, 1)
 end
 
 let cell3 = W - PAD
@@ -591,9 +557,9 @@ let fh = fb - ft
 fn draw_rock(rk: record, ox: num, oy: num)
   let closed = rock_points(rk, ox, oy, true)
   let open = rock_points(rk, ox, oy, false)
-  fill_p(open, C_BG, 255)
-  poly(closed, C_ROCK, 26, 5)
-  poly(closed, C_ROCK, 235, 1)
+  fill_polygon(open, C_BG)
+  draw_polyline(closed, C_ROCK, 26, 5)
+  draw_polyline(closed, C_ROCK, 235, 1)
 end
 for rk in rocks do
   let r = TIERS[rk.tier].r * 1.15
@@ -616,8 +582,8 @@ for f in wreck do
   let a = f.life / 1.7
   let hx = cos(f.ang) * f.len / 2.0
   let hy = sin(f.ang) * f.len / 2.0
-  seg(int(f.x - hx) + shx, int(f.y - hy) + shy, int(f.x + hx) + shx, int(f.y + hy) + shy,
-    C_SHIP, int(240.0 * a), 1)
+  draw_line({x: int(f.x - hx) + shx, y: int(f.y - hy) + shy},
+    {x: int(f.x + hx) + shx, y: int(f.y + hy) + shy}, C_SHIP, int(240.0 * a), 1)
 end
 
 // Shots
@@ -650,15 +616,15 @@ if show_ship && blink then
     let fly = sy + sin(sang + 2.85) * 8.0
     let frx = sx + cos(sang - 2.85) * 8.0
     let fry = sy + sin(sang - 2.85) * 8.0
-    tri(int(flx) + shx, int(fly) + shy, int(tx1) + shx, int(ty1) + shy,
-      int(frx) + shx, int(fry) + shy, C_FLAME, 210)
+    fill_triangle({x: int(flx) + shx, y: int(fly) + shy}, {x: int(tx1) + shx, y: int(ty1) + shy},
+      {x: int(frx) + shx, y: int(fry) + shy}, C_FLAME, 210)
   end
   if safe_t > 0.0 then
-    ring(int(sx) + shx, int(sy) + shy, 22, C_SHIP, 70, 1)
+    draw_circle_outline({x: int(sx) + shx, y: int(sy) + shy}, 22, C_SHIP, 70, 1)
   end
-  fill_p(hull, C_FIELD, 255)
-  poly(hull, C_SHIP, 30, 6)
-  poly(hull, C_SHIP, 255, 1)
+  fill_polygon(hull, C_FIELD)
+  draw_polyline(hull, C_SHIP, 30, 6)
+  draw_polyline(hull, C_SHIP, 255, 1)
 end
 
 // Sector label, top-left inside the field.
@@ -728,7 +694,7 @@ if phase != "play" && phase != "dead" then
       let sample = {x: float(lx) + 26.0, y: float(cy) + 134.0, ang: 0.4, tier: i,
         shape: [0.9, 1.05, 0.85, 1.1, 0.95, 0.8, 1.0, 1.08, 0.88, 0.97, 1.02, 0.92]}
       let scaled = {...sample, shape: for k in range(0, t.n) do sample.shape[k] * rr / t.r end}
-      poly(rock_points(scaled, 0, 0, true), C_ROCK, 200, 1)
+      draw_polyline(rock_points(scaled, 0, 0, true), C_ROCK, 200, 1)
       tx(str(t.score), lx + 60, cy + 128, {...S_BADGE, color: C_GOLD})
       set lx = lx + 120
     end

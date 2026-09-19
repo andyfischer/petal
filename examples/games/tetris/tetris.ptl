@@ -6,8 +6,8 @@
 // LCG, and a deterministic placement heuristic plays the game, so two runs are
 // byte-identical.
 //
-//   ./ts/bin/run-petal.ts check --strict examples/challenge/tetris.ptl
-//   ./ts/bin/run-petal.ts run examples/challenge/tetris.ptl
+//   ./ts/bin/run-petal.ts check --strict examples/games/tetris/tetris.ptl
+//   ./ts/bin/run-petal.ts run examples/games/tetris/tetris.ptl
 
 config let WIDTH = 10
 config let HEIGHT = 20

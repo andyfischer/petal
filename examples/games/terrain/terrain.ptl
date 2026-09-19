@@ -8,8 +8,8 @@
 // numerically. Fully deterministic — the noise is a pure integer hash of the
 // lattice coordinates, so no PRNG and no --seed flag are involved.
 //
-// Run:   ./ts/bin/run-petal.ts run examples/challenge/terrain.ptl
-// Check: ./ts/bin/run-petal.ts check --strict examples/challenge/terrain.ptl
+// Run:   ./ts/bin/run-petal.ts run examples/games/terrain/terrain.ptl
+// Check: ./ts/bin/run-petal.ts check --strict examples/games/terrain/terrain.ptl
 
 // ---------------------------------------------------------------- knobs ----
 

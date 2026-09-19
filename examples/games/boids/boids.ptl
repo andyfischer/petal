@@ -7,7 +7,7 @@
 // an ASCII occupancy grid and the mean distance to the flock centroid is
 // printed, so the flock's convergence is both visible and measurable.
 //
-// Run:  ./ts/bin/run-petal.ts run examples/challenge/boids.ptl
+// Run:  ./ts/bin/run-petal.ts run examples/games/boids/boids.ptl
 
 // ---------------------------------------------------------------- tuning ---
 

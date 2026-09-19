@@ -8,7 +8,7 @@ of the language and host; see the "What it tests" column.
 described in [examples/README.md](../../examples/README.md) (the first three
 of each category, plus Asteroids, the node-based editor and the Markdown
 editor), and five more were written as headless console programs
-under `examples/challenge/`, which stress the language rather than the host.
+under `examples/games/`, which stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
@@ -21,11 +21,11 @@ list. The remaining 27 have not been attempted.
 | 1 | **Pong** | Game loop, keyboard input, collision, animation | built — `examples/games/pong/` |
 | 2 | **Breakout** | Many objects, collision, spawning/destruction | built — `examples/games/breakout/` |
 | 3 | **Snake** | Grid rendering, timers, keyboard input, state | built — `examples/games/snake/` |
-| 4 | **Tetris** | Complex state transitions, grids, timing | console — `examples/challenge/tetris.ptl` |
+| 4 | **Tetris** | Complex state transitions, grids, timing | console — `examples/games/tetris/tetris.ptl` |
 | 5 | **Asteroids** | Vector movement, rotation, particles, collision | built — `examples/games/asteroids/` |
 | 6 | **Flappy Bird clone** | Physics, procedural obstacles, scoring |  |
-| 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/challenge/2048.ptl` |
-| 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/challenge/minesweeper.ptl` |
+| 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/games/2048/2048.ptl` |
+| 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/games/minesweeper/minesweeper.ptl` |
 | 9 | **Memory matching game** | Card components, animation, delayed state changes |  |
 | 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation |  |
 | 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance |  |
@@ -69,7 +69,7 @@ list. The remaining 27 have not been attempted.
 | 45 | **Network graph explorer** | Force-directed layout, zoom/pan, selection |  |
 | 46 | **Timeline explorer** | Zooming time axis, events, filtering |  |
 | **Creative / graphical experiments** | | | |
-| 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/challenge/boids.ptl` |
+| 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/games/boids/boids.ptl` |
 | 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation |  |
-| 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates | console — `examples/challenge/terrain.ptl` |
+| 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates | console — `examples/games/terrain/terrain.ptl` |
 | 50 | **Interactive solar system** | Hierarchical transforms, animation, zoom, labels |  |

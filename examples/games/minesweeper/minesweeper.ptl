@@ -6,7 +6,7 @@
 // numbered border. A scripted sequence of moves drives it to a mine hit.
 //
 // Run:
-//   ./ts/bin/run-petal.ts run examples/challenge/minesweeper.ptl
+//   ./ts/bin/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
 
 config let width = 9
 config let height = 9

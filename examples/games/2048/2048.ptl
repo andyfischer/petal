@@ -5,7 +5,7 @@
 // moves that actually changed the board. Spawns come from a small built-in LCG
 // with a fixed seed, so the run is byte-identical every time.
 //
-// Run:  ./ts/bin/run-petal.ts run examples/challenge/2048.ptl
+// Run:  ./ts/bin/run-petal.ts run examples/games/2048/2048.ptl
 
 config let seed = 20482048
 config let target = 2048

@@ -5,8 +5,7 @@ Runnable Petal programs, grouped by what they are:
 | Directory | What's in it |
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
-| [`challenge/`](challenge/) | Larger console programs written as language stress tests — 2048, Boids, Minesweeper, terrain generation, Tetris. Deterministic: two runs print the same output |
-| [`games/`](games/) | Games — pong, breakout, snake, asteroids, and two SDL-hosted side-scrollers: the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation |
+| [`games/`](games/) | Games — pong, breakout, snake, asteroids, two SDL-hosted side-scrollers (the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation), and five headless console programs written as language stress tests: [`2048`](games/2048/), [`boids`](games/boids/), [`minesweeper`](games/minesweeper/), [`terrain`](games/terrain/), [`tetris`](games/tetris/) |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, kanban, CRM, spreadsheet, paint, vector editor, photo adjust, node editor, markdown editor |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |
@@ -17,7 +16,9 @@ panel apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launc
 that starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
 built and tested. The exceptions are [`games/side-scroller/`](games/side-scroller/)
 and [`games/hopper/`](games/hopper/), which run on the `petal-desktop-sdl`
-integration via their own launch scripts.
+integration via their own launch scripts, and the five console programs
+(`2048`, `boids`, `minesweeper`, `terrain`, `tetris`), which print to stdout
+and are deterministic: two runs print the same output.
 
 ## Console programs
 
@@ -29,7 +30,8 @@ Run any one with:
 
 `run-petal.ts` rebuilds the compiler if any Rust source is newer than the
 binary, then forwards its arguments to `petal`. It is the recommended way to
-run Petal locally. The `challenge/` programs run the same way.
+run Petal locally. The console games run the same way, e.g.
+`./ts/bin/run-petal.ts run examples/games/tetris/tetris.ptl`.
 
 Run the whole corpus with:
 

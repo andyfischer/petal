@@ -109,7 +109,7 @@ a missing field is an error. See
 [Ragged records](../language-guide.md#ragged-records--reading-a-field-that-may-not-be-there).
 
 **Assignment** is a statement, not an operator: `x = e`, plus the compound forms
-`+=` `-=` `*=` `/=` `%=`. Assignment targets may be a variable, an index
+`+=` `-=` `*=` `/=` `%=` `++=` `??=`. Assignment targets may be a variable, an index
 (`xs[0] = v`), or a field (`p.x = v`, including nested `a.b.c = v`). `set x = e`
 takes the same target and compound forms; which keyword a name accepts is fixed
 by its declaration (see [`var`, `set` and `get`](#var-set-and-get)).

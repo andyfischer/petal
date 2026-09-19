@@ -199,6 +199,19 @@ cell's current value.
 
 Prefer `let`. Every `var` is a place the dataflow story goes dark, and
 `show-provenance` / `show-slice` lose precision there.
+A `var` only earns its keep when a nested `fn` or lambda reads or writes it.
+An accumulator that stays in one function is a `let` rebind, even across
+loops and branches:
+
+```petal
+let fx = 30
+fx += 40
+fx += 40
+print(fx)   // 110
+```
+
+`petal lint` makes this rewrite for you (`var` → `let`, dropping `set`/`get`)
+wherever it is safe.
 
 ### `state` — persistence across runs
 
@@ -425,10 +438,10 @@ board rendering is a one-liner.
 | | |
 |---|---|
 | arithmetic | `+  -  *  /  %` (and `+=  -=  *=  /=  %=`) |
-| string | `++` (concatenate), `"{expr}"` (interpolate) |
+| string | `++` (concatenate, and `++=`), `"{expr}"` (interpolate) |
 | comparison | `==  !=  <  <=  >  >=` |
 | boolean | `&&  \|\|  !` — short-circuiting |
-| absent fields | `??` (fallback), `?.` (optional read) |
+| absent fields | `??` (fallback, and `??=`), `?.` (optional read) |
 | other | `\|>` (pipe into first argument), `@` (rebind) |
 
 **Put spaces around `<`.** Petal has a JSX-like element syntax, so a `<` with no

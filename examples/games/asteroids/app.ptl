@@ -157,11 +157,11 @@ end
 
 // `n` sparks at (x, y).
 fn burst(lst, x: num, y: num, n: num, col: record, power: num)
-  var out = lst
+  let out = lst
   for i in range(0, n) do
     let ang = random(0.0, 6.2832)
     let sp = random(40.0, 240.0) * power
-    set out = append(out, {
+    out = append(out, {
       x: x, y: y,
       vx: cos(ang) * sp, vy: sin(ang) * sp,
       life: random(0.28, 0.75), max: 0.75,
@@ -198,20 +198,20 @@ fn rock_speed(lvl: int, tier: int) -> num
 end
 
 fn build_level(lvl: int)
-  var out = []
+  let out = []
   let n = 3 + lvl
   for i in range(0, n) do
     // Spawn on the rim of the field, never near the ship in the centre.
-    var x = 0.0
-    var y = 0.0
+    let x = 0.0
+    let y = 0.0
     if random(0.0, 1.0) < 0.5 then
-      set x = if random(0.0, 1.0) < 0.5 then fl + 40.0 else fr - 40.0 end
-      set y = random(ft, fb)
+      x = if random(0.0, 1.0) < 0.5 then fl + 40.0 else fr - 40.0 end
+      y = random(ft, fb)
     else
-      set x = random(fl, fr)
-      set y = if random(0.0, 1.0) < 0.5 then ft + 40.0 else fb - 40.0 end
+      x = random(fl, fr)
+      y = if random(0.0, 1.0) < 0.5 then ft + 40.0 else fb - 40.0 end
     end
-    set out = append(out, make_rock(x, y, 2, rock_speed(lvl, 2)))
+    out = append(out, make_rock(x, y, 2, rock_speed(lvl, 2)))
   end
   set rocks = out
   set shots = []
@@ -248,9 +248,9 @@ end
 
 if !ready then
   set ready = true
-  var st = []
+  let st = []
   for i in range(0, 140) do
-    set st = append(st, {x: random(fl, fr), y: random(ft, fb),
+    st = append(st, {x: random(fl, fr), y: random(ft, fb),
       sz: if random(0.0, 1.0) < 0.15 then 2 else 1 end, ph: random(0.0, 6.2832)})
   end
   set stars = st
@@ -259,7 +259,7 @@ end
 
 let raw_dt = dt()
 let sdt = min(raw_dt, 0.06)
-set pulse = pulse + sdt
+set pulse += sdt
 
 // ── Input ────────────────────────────────────────────────────────────────
 
@@ -278,7 +278,7 @@ if advance && phase != "play" then
   elsif phase == "paused" then
     set phase = "play"
   elsif phase == "cleared" then
-    set level = level + 1
+    set level += 1
     build_level(level)
     set safe_t = safe_secs
     set phase = "play"
@@ -306,11 +306,11 @@ let k_up = key_down("up") || key_down("w")
 
 if phase == "play" then
   let turn = (if k_l then -1.0 else 0.0 end) + (if k_r then 1.0 else 0.0 end)
-  set sang = sang + turn * turn_rate * sdt
+  set sang += turn * turn_rate * sdt
   set thrusting = k_up
   if k_up then
-    set svx = svx + cos(sang) * thrust_accel * sdt
-    set svy = svy + sin(sang) * thrust_accel * sdt
+    set svx += cos(sang) * thrust_accel * sdt
+    set svy += sin(sang) * thrust_accel * sdt
     // Exhaust: a spark or two from the tail, thrown backwards.
     if random(0.0, 1.0) < 0.85 then
       let tail_x = sx - cos(sang) * 11.0
@@ -328,8 +328,8 @@ if phase == "play" then
     set svy = svy / sp * max_speed
   end
   let keep = max(0.0, 1.0 - drag * sdt)
-  set svx = svx * keep
-  set svy = svy * keep
+  set svx *= keep
+  set svy *= keep
   set sx = wrap_x(sx + svx * sdt, fl, fr, 14.0)
   set sy = wrap_x(sy + svy * sdt, ft, fb, 14.0)
 
@@ -337,7 +337,7 @@ if phase == "play" then
   set cool_t = max(0.0, cool_t - sdt)
   if key_pressed("space") && cool_t <= 0.0 && len(shots) < max_shots then
     set cool_t = shot_cooldown
-    set shot_count = shot_count + 1
+    set shot_count += 1
     let nx = sx + cos(sang) * 15.0
     let ny = sy + sin(sang) * 15.0
     set shots = append(shots, {x: nx, y: ny,
@@ -352,8 +352,8 @@ if phase == "play" then
     set bits = burst(bits, sx, sy, 22, C_VIOLET, 1.0)
     set sx = random(fl + 60.0, fr - 60.0)
     set sy = random(ft + 60.0, fb - 60.0)
-    set svx = svx * 0.2
-    set svy = svy * 0.2
+    set svx *= 0.2
+    set svy *= 0.2
     set warp_t = warp_cooldown
     set safe_t = max(safe_t, 0.9)
     set bits = burst(bits, sx, sy, 22, C_VIOLET, 1.0)
@@ -369,10 +369,10 @@ end
 let field_live = phase == "play" || phase == "dead" || phase == "title"
 
 if field_live then
-  var t_left = sdt
+  let t_left = sdt
   while t_left > 0.0 do
     let h = min(t_left, 0.012)
-    set t_left = t_left - h
+    t_left -= h
 
     set rocks = for rk in rocks do
       {...rk,
@@ -388,37 +388,37 @@ if field_live then
     end
 
     // Shots vs rocks. A hit removes the shot, splits the rock, scores.
-    var spawned = []
-    var survivors = []
+    let spawned = []
+    let survivors = []
     for rk in rocks do
       let t = TIERS[rk.tier]
-      var hit = false
+      let hit = false
       set shots = for s in shots do
         if hit then s
         else
           let dx = s.x - rk.x
           let dy = s.y - rk.y
           if dx * dx + dy * dy < t.r * t.r * 0.86 then
-            set hit = true
+            hit = true
             continue
           end
           s
         end
       end
       if hit then
-        set score = score + t.score
+        set score += t.score
         set best = max(best, score)
-        set hit_count = hit_count + 1
-        set broken = broken + 1
+        set hit_count += 1
+        set broken += 1
         set shake = min(1.0, shake + (if rk.tier == 2 then 0.45 else 0.2 end))
         set bits = burst(bits, rk.x, rk.y, 8 + rk.tier * 8, C_ROCK, 0.6 + float(rk.tier) * 0.4)
         for k in range(0, t.kids) do
           let child = make_rock(rk.x, rk.y, rk.tier - 1, rock_speed(level, rk.tier - 1))
-          set spawned = append(spawned, {...child,
+          spawned = append(spawned, {...child,
             vx: child.vx + rk.vx * 0.4, vy: child.vy + rk.vy * 0.4})
         end
       else
-        set survivors = append(survivors, rk)
+        survivors = append(survivors, rk)
       end
     end
     set rocks = survivors
@@ -426,31 +426,31 @@ if field_live then
 
     // Rocks vs ship.
     if phase == "play" && safe_t <= 0.0 then
-      var struck = false
+      let struck = false
       for rk in rocks do
         let dx = sx - rk.x
         let dy = sy - rk.y
         let rr = TIERS[rk.tier].r * 0.9 + SHIP_R
-        if dx * dx + dy * dy < rr * rr then set struck = true end
+        if dx * dx + dy * dy < rr * rr then struck = true end
       end
       if struck then
         set phase = "dead"
         set dead_t = 1.7
-        set lives = lives - 1
+        set lives -= 1
         set shake = 1.0
         set thrusting = false
         set bits = burst(bits, sx, sy, 30, C_SHIP, 1.3)
         // The hull comes apart into its own three edges.
-        var w = []
+        let w = []
         for k in range(0, 3) do
           let a = sang + float(k) * 2.094 + 1.047
-          set w = append(w, {x: sx + cos(a) * 6.0, y: sy + sin(a) * 6.0,
+          w = append(w, {x: sx + cos(a) * 6.0, y: sy + sin(a) * 6.0,
             vx: svx * 0.3 + cos(a) * random(30.0, 90.0), vy: svy * 0.3 + sin(a) * random(30.0, 90.0),
             ang: a + 1.5708, spin: random(-3.0, 3.0), len: 16.0, life: 1.7})
         end
         set wreck = w
         if lives > 0 then say("SHIP LOST", C_WARN) end
-        set t_left = 0.0
+        t_left = 0.0
       end
     end
   end
@@ -467,7 +467,7 @@ if phase == "play" && len(rocks) == 0 then
 end
 
 if phase == "dead" then
-  set dead_t = dead_t - sdt
+  set dead_t -= sdt
   if dead_t <= 0.0 then
     if lives <= 0 then
       set lives = 0
@@ -631,16 +631,16 @@ end
 tx("SECTOR {level}", int(fl) + 12, int(ft) + 10, {...S_BADGE, color: C_MUTE})
 
 // Status badges along the top-right rail.
-var badges = []
+let badges = []
 if safe_t > 0.0 && phase == "play" then
-  set badges = append(badges, {t: "SHIELD", s: "{int(safe_t) + 1}s", c: C_SHIP})
+  badges = append(badges, {t: "SHIELD", s: "{int(safe_t) + 1}s", c: C_SHIP})
 end
 if warp_t > 0.0 then
-  set badges = append(badges, {t: "WARP", s: "{int(warp_t) + 1}s", c: C_VIOLET})
+  badges = append(badges, {t: "WARP", s: "{int(warp_t) + 1}s", c: C_VIOLET})
 elsif phase == "play" then
-  set badges = append(badges, {t: "WARP READY", s: "", c: C_VIOLET})
+  badges = append(badges, {t: "WARP READY", s: "", c: C_VIOLET})
 end
-var brail = int(fr) - 10
+let brail = int(fr) - 10
 for bg in badges do
   let sw = if len(bg.s) > 0 then text_width(bg.s, S_BADGE) + 8 else 0 end
   let bw = text_width(bg.t, S_BADGE) + sw + 18
@@ -651,7 +651,7 @@ for bg in badges do
   if len(bg.s) > 0 then
     tx_right(bg.s, box.x + bw - 9, box.y + 5, {...S_BADGE, color: C_DIM})
   end
-  set brail = brail - bw - 7
+  brail = brail - bw - 7
 end
 
 // Toast — the last thing that happened.
@@ -687,7 +687,7 @@ if phase != "play" && phase != "dead" then
     tx_center("turn  ·  thrust  ·  shoot the rocks  ·  big ones split",
       cx, cy + 84, {size: 12, color: C_MUTE})
     // Tier legend: the three rock sizes and what each is worth.
-    var lx = cx - 160
+    let lx = cx - 160
     for i in [2, 1, 0] do
       let t = TIERS[i]
       let rr = 9.0 + float(i) * 8.0
@@ -696,7 +696,7 @@ if phase != "play" && phase != "dead" then
       let scaled = {...sample, shape: for k in range(0, t.n) do sample.shape[k] * rr / t.r end}
       draw_polyline(rock_points(scaled, 0, 0, true), C_ROCK, 200, 1)
       tx(str(t.score), lx + 60, cy + 128, {...S_BADGE, color: C_GOLD})
-      set lx = lx + 120
+      lx += 120
     end
   end
   if phase == "over" then
@@ -718,13 +718,13 @@ fn chip(x: num, y: num, cap: string, desc: string) -> int
 end
 
 let fy = court.y + court.h + 18
-var fx = PAD
-set fx = fx + chip(fx, fy, "← →", "turn")
-set fx = fx + chip(fx, fy, "↑", "thrust")
-set fx = fx + chip(fx, fy, "SPACE", "fire")
-set fx = fx + chip(fx, fy, "SHIFT", "warp")
-set fx = fx + chip(fx, fy, "P", "pause")
-set fx = fx + chip(fx, fy, "R", "restart")
+let fx = PAD
+fx += chip(fx, fy, "← →", "turn")
+fx += chip(fx, fy, "↑", "thrust")
+fx += chip(fx, fy, "SPACE", "fire")
+fx += chip(fx, fy, "SHIFT", "warp")
+fx += chip(fx, fy, "P", "pause")
+fx += chip(fx, fy, "R", "restart")
 
 let status = match phase
   when "play" -> "IN PLAY"

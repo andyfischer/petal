@@ -267,7 +267,7 @@ fn f(x: int)
 end
 ```
 
-Three passes (see [dev/linter-plan.md](dev/linter-plan.md)):
+Five passes (see [dev/linter-plan.md](dev/linter-plan.md)):
 
 - **Formatting** — 2-space re-indentation, trailing-whitespace trim, and a
   single trailing newline. Only whitespace outside tokens is touched, so
@@ -279,8 +279,20 @@ Three passes (see [dev/linter-plan.md](dev/linter-plan.md)):
   slot: `2 * int(a + 1)` becomes `2 * (a + 1)`.
 - **`if`-chain to `match`** — rewrites an `if`/`elsif` chain that tests one
   subject against string, bool or nil literals into a `match`.
+- **`var` to `let`** — a `var` whose every read and write stays in the function
+  that declares it becomes a `let`: `var` → `let`, `set x = …` → `x = …`,
+  `get x` → `x`. A `let` rebind carries through `if`, `match`, `for` and
+  `while` just as a `set` does, so the program's shape is unchanged. The `var`
+  stays when a nested `fn` or lambda mentions it (that is what a cell is for),
+  when the name is re-bound in its scope, and for `export var` and
+  `state var`.
+- **Compound assignment** — `x = x + e` becomes `x += e` (and `set x = x + e`
+  becomes `set x += e`) for every operator with a compound form. It fires only
+  when the text between the operand and `e` is just the operator, so `e` is
+  kept exactly as written; `x = x - a - b` is left alone. This one is a pure
+  respelling: the IR is identical.
 
-The last two change tokens, so `lint` checks that the rewritten source still
+The passes after formatting change tokens, so `lint` checks that the rewritten source still
 compiles whenever the original did, and refuses to produce output otherwise.
 
 #### `--verify` — prove the rewrite
@@ -296,8 +308,8 @@ works with `--fix` and with `--check`.
 | `--verify` (= `--verify=ir`, the default) | The formatting pass must not change the IR | Allowed: reported as an expected IR change, file still written |
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
-Formatting is the only pass that is meant to leave the IR unchanged. The cast
-and `match` passes change it by design. On such a file the default mode proves
+Formatting and the compound-assignment fold are the passes that are meant to
+leave the IR unchanged. The cast, `match` and `var` passes change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 

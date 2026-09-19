@@ -28,6 +28,21 @@ describe("compound assignment operators", () => {
     expect(out).toBe("2");
   });
 
+  it("handles ++= on strings and lists", () => {
+    const out = runPetal('let s = "a"\ns ++= "b"\nlet xs = [1]\nxs ++= [2, 3]\nprint(s, xs)');
+    expect(out).toBe("ab [1, 2, 3]");
+  });
+
+  it("handles ??= as a default that keeps an existing value", () => {
+    const out = runPetal("let m = nil\nm ??= 5\nm ??= 9\nprint(m)");
+    expect(out).toBe("5");
+  });
+
+  it("handles ++= and ??= through set", () => {
+    const out = runPetal('var c = "x"\nset c ++= "y"\nvar d = nil\nset d ??= 1\nprint(get c, get d)');
+    expect(out).toBe("xy 1");
+  });
+
   it("handles += with expressions", () => {
     const out = runPetal("let x = 1\nx += 2 + 3\nprint(x)");
     expect(out).toBe("6");

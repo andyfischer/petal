@@ -950,15 +950,17 @@ fn run_lint_verify(
             diff,
             casts_removed,
             chains_to_match,
+            vars_to_let,
         }) => {
             // Expected, not a failure: these passes exist to change the IR.
             // Say so plainly rather than dressing it up as a proof.
             eprintln!(
                 "verify: rewrite changed IR ({} cast(s) removed, {} if-chain(s) rewritten as \
-                 match); formatting alone was proven IR-equal. First difference:\n{}\n\
+                 match, {} var(s) turned into let); formatting alone was proven IR-equal. \
+                 First difference:\n{}\n\
                  verify: run-diff verification needed for the semantic passes \
                  (docs/dev/refactor-verification.md §5); use --verify=strict to refuse this file.",
-                casts_removed, chains_to_match, diff
+                casts_removed, chains_to_match, vars_to_let, diff
             );
         }
         Err(failure) => {
@@ -1008,8 +1010,13 @@ pub(super) fn handle_lint(
     };
     let summary = format!(
         "{}: {} line(s) reformatted, {} redundant cast(s) removed, {} if-chain(s) \
-         rewritten as match",
-        path, outcome.reindented_lines, outcome.casts_removed, outcome.chains_to_match
+         rewritten as match, {} var(s) turned into let, {} assignment(s) made compound",
+        path,
+        outcome.reindented_lines,
+        outcome.casts_removed,
+        outcome.chains_to_match,
+        outcome.vars_to_let,
+        outcome.compound_assigns
     );
     if check {
         // CI mode: no output on success, one stderr line on failure.

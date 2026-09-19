@@ -415,7 +415,15 @@ x -= 3   // x is now 12
 x *= 2   // x is now 24
 x /= 4   // x is now 6
 x %= 4   // x is now 2
+
+let s = "pe"
+s ++= "tal"       // "petal" — also works on lists: xs ++= [4]
+let port = nil
+port ??= 8080     // 8080 — assigns only when the value is nil
 ```
+
+Each `x op= e` is exactly `x = x op e`: a rebind of a `let`, or with `set`, a
+write to a `var` (`set count += 1`).
 
 ## String Operations
 

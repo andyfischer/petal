@@ -60,7 +60,7 @@ syn region petalString       start=+"+ skip=+\\"+ end=+"+ contains=petalEscape,p
 syn region petalRawString    start=+"""+ end=+"""+ keepend contains=@Spell
 
 " ---- Operators ----
-syn match petalOperator "|>\|->\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|[-+*/%<>=!]"
+syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|[-+*/%<>=!]"
 syn match petalPipe     "\.\.\."
 
 " Expression cluster used inside string interpolation.

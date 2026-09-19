@@ -58,6 +58,8 @@ pub enum Token {
     StarAssign,     // *=
     SlashAssign,    // /=
     PercentAssign,  // %=
+    ConcatAssign,   // ++=
+    CoalesceAssign, // ??=
 
     // Delimiters
     LParen,
@@ -154,6 +156,8 @@ impl Token {
             Token::StarAssign => "StarAssign",
             Token::SlashAssign => "SlashAssign",
             Token::PercentAssign => "PercentAssign",
+            Token::ConcatAssign => "ConcatAssign",
+            Token::CoalesceAssign => "CoalesceAssign",
             Token::LParen => "LParen",
             Token::RParen => "RParen",
             Token::LBrace => "LBrace",
@@ -598,7 +602,10 @@ impl Lexer {
                 }
             }
             '+' => {
-                if self.peek_next() == Some('+') {
+                if self.peek_next() == Some('+') && self.peek_at(2) == Some('=') {
+                    self.advance_n(3);
+                    self.push_token(Token::ConcatAssign, start);
+                } else if self.peek_next() == Some('+') {
                     self.advance_n(2);
                     self.push_token(Token::PlusPlus, start);
                 } else if self.peek_next() == Some('=') {
@@ -740,7 +747,10 @@ impl Lexer {
                 }
             }
             '?' => {
-                if self.peek_next() == Some('?') {
+                if self.peek_next() == Some('?') && self.peek_at(2) == Some('=') {
+                    self.advance_n(3);
+                    self.push_token(Token::CoalesceAssign, start);
+                } else if self.peek_next() == Some('?') {
                     self.advance_n(2);
                     self.push_token(Token::DoubleQuestion, start);
                 } else if self.peek_next() == Some('.') {
@@ -776,6 +786,11 @@ impl Lexer {
             }
         }
         Ok(())
+    }
+
+    /// The character `n` positions ahead of the current one.
+    fn peek_at(&self, n: usize) -> Option<char> {
+        self.input.get(self.pos + n).copied()
     }
 
     fn peek_next(&self) -> Option<char> {
@@ -1489,7 +1504,7 @@ mod tests {
 
     #[test]
     fn lex_compound_assignment() {
-        let tokens = tokenize("+= -= *= /= %=");
+        let tokens = tokenize("+= -= *= /= %= ++= ??=");
         assert_eq!(
             tokens,
             vec![
@@ -1498,6 +1513,8 @@ mod tests {
                 Token::StarAssign,
                 Token::SlashAssign,
                 Token::PercentAssign,
+                Token::ConcatAssign,
+                Token::CoalesceAssign,
             ]
         );
     }

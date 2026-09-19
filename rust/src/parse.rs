@@ -86,6 +86,8 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::StarAssign => op("*="),
         Token::SlashAssign => op("/="),
         Token::PercentAssign => op("%="),
+        Token::ConcatAssign => op("++="),
+        Token::CoalesceAssign => op("??="),
         Token::LParen => op("("),
         Token::RParen => op(")"),
         Token::LBrace => op("{"),
@@ -1073,6 +1075,8 @@ impl Parser {
             Token::StarAssign => Some(BinOp::Mul),
             Token::SlashAssign => Some(BinOp::Div),
             Token::PercentAssign => Some(BinOp::Mod),
+            Token::ConcatAssign => Some(BinOp::Concat),
+            Token::CoalesceAssign => Some(BinOp::Coalesce),
             _ => None,
         }
     }

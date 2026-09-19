@@ -58,9 +58,9 @@ const MIN_ARMS: usize = 3;
 /// is an insertion.
 #[derive(Debug, Clone)]
 pub(super) struct Splice {
-    start: usize,
-    end: usize,
-    text: String,
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) text: String,
 }
 
 /// Plan every chain rewrite in `stmts`. Returns the splices in source order.

@@ -751,8 +751,9 @@ fn casts_are_left_alone_when_the_type_is_unknown() {
     // A parameter with no annotation infers `any`: nothing is provable.
     assert_fixed_point("fn f(x)\n  int(x)\nend\nprint(f(1))\n");
     // A `var` cell may be re-`set` from anywhere, so its initializer says
-    // nothing about what a read observes.
-    assert_fixed_point("var n = 5\nprint(int(n))\n");
+    // nothing about what a read observes. (It has to be written from a
+    // function, or the `var` rule would make it a `let`.)
+    assert_fixed_point("var n = 5\nfn bump()\n  set n = 2.5\nend\nbump()\nprint(int(n))\n");
     // A user function of the same name shadows the builtin.
     assert_fixed_point("fn int(v)\n  v * 2\nend\nlet n = 5\nprint(int(n))\n");
     // So does a local binding.
@@ -1227,6 +1228,70 @@ fn f(c, n: int)
     when _ -> 0
   end
 end
+",
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// `var` to `let`, and compound assignment
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The motivating case, from examples/games/asteroids: a `var` that is only
+/// ever written in the scope that declares it is a `let` in disguise, and the
+/// `x = x + e` writes that result fold into `x += e`.
+#[test]
+fn local_var_accumulator_becomes_let_with_compound_writes() {
+    let src = "\
+fn chip(x, y, cap, desc)
+  40
+end
+let fy = 18
+var fx = 30
+set fx = fx + chip(fx, fy, \"← →\", \"turn\")
+set fx = fx + chip(fx, fy, \"SPACE\", \"fire\")
+print(get fx)
+";
+    let outcome = lint_outcome(src);
+    assert_eq!(outcome.vars_to_let, 1);
+    assert_eq!(outcome.compound_assigns, 2);
+    assert_lints_to(
+        src,
+        "\
+fn chip(x, y, cap, desc)
+  40
+end
+let fy = 18
+let fx = 30
+fx += chip(fx, fy, \"← →\", \"turn\")
+fx += chip(fx, fy, \"SPACE\", \"fire\")
+print(fx)
+",
+    );
+}
+
+/// A `var` a function writes is the reason `var` exists; it stays, though its
+/// write still folds to the compound form.
+#[test]
+fn var_written_by_a_function_stays_a_var() {
+    let src = "\
+var hits = 0
+fn hit()
+  set hits = get hits + 1
+end
+hit()
+print(hits)
+";
+    let outcome = lint_outcome(src);
+    assert_eq!(outcome.vars_to_let, 0);
+    assert_lints_to(
+        src,
+        "\
+var hits = 0
+fn hit()
+  set hits += 1
+end
+hit()
+print(hits)
 ",
     );
 }

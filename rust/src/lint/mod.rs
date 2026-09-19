@@ -1,6 +1,6 @@
 //! `petal lint` — source normalization (see docs/dev/linter-plan.md).
 //!
-//! Two passes, split by mechanism so neither ever reprints from the AST:
+//! Several passes, split by mechanism so none ever reprints from the AST:
 //!
 //! 1. **Formatting** ([`reindent`]) — token-driven 2-space re-indentation.
 //!    Nesting depth is computed from block-opening/-closing tokens and
@@ -25,6 +25,15 @@
 //!    and body survives verbatim. It runs after the cast rule on the cast
 //!    rule's output, which means a re-parse: the casts moved the spans.
 //!
+//! 4. **`var` to `let`** ([`var_to_let`]) — a `var` that no nested function
+//!    mentions is a `let` in disguise: `var` → `let`, `set x` → `x`, `get x`
+//!    → `x`. Keyword splices only, so the program keeps its shape. This one
+//!    actually runs *first*, because it gives the cast rule types to prove.
+//!
+//! 5. **Compound assignment** ([`compound`]) — `x = x + e` → `x += e`. The
+//!    parser desugars the compound form back to the long one, so this pass is
+//!    IR-invisible, like formatting.
+//!
 //! Because the cast rule changes tokens (not just whitespace), [`lint_source`]
 //! gates it: if the original source compiles, the rewritten source must compile
 //! too, or lint refuses to produce output. That is a weaker gate than
@@ -48,10 +57,14 @@
 use std::path::PathBuf;
 
 mod casts;
+mod compound;
 mod reindent;
 mod to_match;
+mod var_to_let;
 
 use casts::{apply_cast_edits, plan_cast_edits};
+use compound::plan_compound_edits;
+use var_to_let::plan_var_edits;
 pub use reindent::reindent;
 use to_match::{apply_match_edits, plan_match_edits};
 
@@ -74,6 +87,10 @@ pub struct LintOutcome {
     pub casts_removed: usize,
     /// `if`/`elsif` chains rewritten as a `match`.
     pub chains_to_match: usize,
+    /// `var`s that never left their function, rewritten as `let`.
+    pub vars_to_let: usize,
+    /// `x = x op e` statements folded into `x op= e`.
+    pub compound_assigns: usize,
     /// The text after the semantic passes but *before* re-indentation — the
     /// input the formatting pass was handed. `--verify` compares this against
     /// [`LintOutcome::output`] to prove the formatting pass on its own, which
@@ -90,7 +107,7 @@ impl LintOutcome {
 
     /// Did a pass that is *expected* to change the IR run on this file?
     pub fn has_semantic_rewrite(&self) -> bool {
-        self.casts_removed > 0 || self.chains_to_match > 0
+        self.casts_removed > 0 || self.chains_to_match > 0 || self.vars_to_let > 0
     }
 }
 
@@ -99,10 +116,25 @@ impl LintOutcome {
 /// (which indicates a lint bug and refuses all output).
 pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, String> {
     // Lint operates on valid programs only.
-    let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
-
+    let (var_chars, var_stmts) = reparse(source)?;
     let mut notes = Vec::new();
-    let chars: Vec<char> = source.chars().collect();
+
+    // `var` to `let` runs first: a `var` reads as `any` to the type checker,
+    // so a cast on one only becomes provably redundant once it is a `let`.
+    // Running it after the cast rule would leave those casts for a second
+    // `lint` to find, and lint has to be a fixed point.
+    let (var_edits, vars_to_let) = plan_var_edits(&var_stmts, &var_chars);
+    let after_vars = if var_edits.is_empty() {
+        source.to_string()
+    } else {
+        apply_match_edits(&var_chars, &var_edits)
+    };
+    if vars_to_let > 0 {
+        notes.push(format!(
+            "turned {vars_to_let} function-local var(s) into let"
+        ));
+    }
+    let (chars, stmts) = reparse(&after_vars)?;
 
     // Lint sees no `class` declarations of its own: identity-cast detection
     // never consults one, and the built-in table is what resolves `Rect`.
@@ -112,7 +144,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let edits = plan_cast_edits(&found, &chars);
     let casts_removed = edits.len();
     let rewritten = if edits.is_empty() {
-        source.to_string()
+        after_vars
     } else {
         apply_cast_edits(&chars, &edits)
     };
@@ -142,7 +174,22 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         ));
     }
 
-    if casts_removed > 0 || chains_to_match > 0 {
+    // Pass 5 — `x = x + e` to `x += e`, on a re-parse of the output so far.
+    let (compound_chars, compound_stmts) = reparse(&rewritten)?;
+    let compound_edits = plan_compound_edits(&compound_stmts, &compound_chars);
+    let compound_assigns = compound_edits.len();
+    let rewritten = if compound_edits.is_empty() {
+        rewritten
+    } else {
+        apply_match_edits(&compound_chars, &compound_edits)
+    };
+    if compound_assigns > 0 {
+        notes.push(format!(
+            "folded {compound_assigns} assignment(s) into compound form (`x += e`)"
+        ));
+    }
+
+    if casts_removed > 0 || chains_to_match > 0 || vars_to_let > 0 || compound_assigns > 0 {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
         if compile_ir(source, opts).is_ok()
@@ -159,6 +206,17 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         // every other `if` alone.
         verify_chain_counts(&stmts, &rewritten, chains_to_match)?;
     }
+    if vars_to_let > 0 {
+        // Same idea for the `var` rule: exactly the counted `var`s are gone.
+        let before = count_vars(&crate::rewrite::parse_ast(source)?.1);
+        let after = count_vars(&reparse(&rewritten)?.1);
+        if before != after + vars_to_let {
+            return Err(format!(
+                "lint bug: converting {vars_to_let} var(s) to let left {after} of {before} — \
+                 refusing to produce output"
+            ));
+        }
+    }
 
     let output = reindent(&rewritten)?;
     let reindented_lines = count_changed_lines(&rewritten, &output);
@@ -167,6 +225,8 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         reindented_lines,
         casts_removed,
         chains_to_match,
+        vars_to_let,
+        compound_assigns,
         pre_format: rewritten,
         notes,
     })
@@ -202,6 +262,30 @@ fn verify_chain_counts(
         ));
     }
     Ok(())
+}
+
+fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
+    let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
+    Ok((source.chars().collect(), stmts))
+}
+
+/// The number of `var` declarations (not `state var`) anywhere in `stmts`.
+fn count_vars(stmts: &[crate::ast::Stmt]) -> usize {
+    use crate::ast::{ExprVisitor, Stmt, StmtKind, walk_stmt};
+    struct Counter(usize);
+    impl ExprVisitor for Counter {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::Let { is_var: true, .. } = s.kind {
+                self.0 += 1;
+            }
+            walk_stmt(self, s);
+        }
+    }
+    let mut c = Counter(0);
+    for s in stmts {
+        c.visit_stmt(s);
+    }
+    c.0
 }
 
 fn count_nodes(stmts: &[crate::ast::Stmt]) -> (usize, usize) {
@@ -244,8 +328,9 @@ fn count_changed_lines(before: &str, after: &str) -> usize {
 /// How hard `--verify` insists on IR equality.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyMode {
-    /// The default. The formatting pass must leave the IR untouched; the two
-    /// semantic passes (identity casts, `if`-chain to `match`) are *allowed*
+    /// The default. The formatting pass must leave the IR untouched; the
+    /// semantic passes (identity casts, `if`-chain to `match`, `var` to
+    /// `let`) are *allowed*
     /// to change it, and the report says so, because "the IR differs" is the
     /// intended outcome of deleting a call or replacing a branch chain.
     Ir,
@@ -269,6 +354,7 @@ pub enum VerifyVerdict {
         diff: crate::ir_equiv::IrDiff,
         casts_removed: usize,
         chains_to_match: usize,
+        vars_to_let: usize,
     },
 }
 
@@ -346,6 +432,7 @@ pub fn verify_rewrite(
         diff,
         casts_removed: outcome.casts_removed,
         chains_to_match: outcome.chains_to_match,
+        vars_to_let: outcome.vars_to_let,
     })
 }
 
@@ -397,11 +484,13 @@ mod tests {
                 Err(e) => panic!("lint broke compilation for {}: {}", path.display(), e),
             };
             // A file the rules leave alone must be byte-identical in IR too,
-            // which pins the formatting pass as semantics-free. Both semantic
-            // rules change the IR on purpose — one deletes a call, the other
-            // replaces an `if` chain with a `match` — so a file either of them
-            // touched is exempt here and gated by compilation above instead.
-            if outcome.casts_removed == 0 && outcome.chains_to_match == 0 {
+            // which pins the formatting pass (and the compound-assignment
+            // fold, which is only a respelling) as semantics-free. The
+            // semantic rules change the IR on purpose — deleting a call,
+            // replacing an `if` chain with a `match`, a cell with a rebind —
+            // so a file one of them touched is exempt here and gated by
+            // compilation above instead.
+            if !outcome.has_semantic_rewrite() {
                 assert_eq!(
                     src_ir,
                     out_ir,

@@ -253,7 +253,7 @@ module.exports = grammar({
 
     assignment: $ => prec.right(PREC.assign, seq(
       field('left', $._expression),
-      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=')),
+      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=', '++=', '??=')),
       field('right', $._expression),
     )),
 
@@ -262,7 +262,7 @@ module.exports = grammar({
     set_statement: $ => prec.right(PREC.assign, seq(
       'set',
       field('left', $._expression),
-      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=')),
+      field('operator', choice('=', '+=', '-=', '*=', '/=', '%=', '++=', '??=')),
       field('right', $._expression),
     )),
 

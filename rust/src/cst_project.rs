@@ -442,6 +442,8 @@ impl Projector {
             Some(Token::StarAssign) => Some(BinOp::Mul),
             Some(Token::SlashAssign) => Some(BinOp::Div),
             Some(Token::PercentAssign) => Some(BinOp::Mod),
+            Some(Token::ConcatAssign) => Some(BinOp::Concat),
+            Some(Token::CoalesceAssign) => Some(BinOp::Coalesce),
             _ => None,
         });
         let (target, value) = match compound_op {

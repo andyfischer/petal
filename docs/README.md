@@ -55,6 +55,7 @@ working documents and may contain point-in-time status.
 |----------|-------------|
 | [Developer Scripts & Commands](dev/scripts.md) | Build, run, test, and benchmark commands |
 | [Testing](dev/testing.md) | How to write and run the test suites |
+| [Write an example app](skills/write-example-app.md) | Skill: build, verify, document and commit one testbed app as a Garden panel app or console program |
 | [MCP Server](dev/mcp-server.md) | Using the MCP tools to compile, run, and inspect snippets |
 | [Performance](dev/performance.md) | Profiling tools, what the optimizer does, where the headroom is |
 | [The frame gate](dev/frame-gate.md) | How a host skips a frame whose inputs have not changed, and what the runtime records to know that |

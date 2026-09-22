@@ -1137,3 +1137,50 @@ fn over_flattens_a_tint_and_is_idempotent() {
         assert_eq!(ui.state_int("pct"), Some(102), "40% of 255");
     });
 }
+
+/// In a loop, a slider's drag is keyed by position: reorder the list mid-drag
+/// and the drag moves to whichever item now sits in the dragged slot.
+/// `style.key` keys it by identity instead, so the drag stays with its item.
+#[test]
+fn slider_key_keeps_the_drag_with_its_item_across_a_reorder() {
+    let script = |style: &str| {
+        format!(
+            "state vals = [0.0, 0.0]\n\
+             state va = 0.0\n\
+             state vb = 0.0\n\
+             let order = if mouse_x() > 100 then [1, 0] else [0, 1] end\n\
+             for i in range(0, 2) do\n\
+               let id = order[i]\n\
+               let r = {{x: 0, y: i * 30, w: 120, h: 20}}\n\
+               vals[id] = slider(r, vals[id], 0.0, 1.0, {style})\n\
+             end\n\
+             va = vals[0]\n\
+             vb = vals[1]"
+        )
+    };
+    let drag_then_reorder = |ui: &mut Headless| {
+        ui.frame().unwrap();
+        // Press item 0, in row 0, at the middle of its track.
+        ui.mouse_move(60, 10);
+        ui.mouse_down(0);
+        ui.frame().unwrap();
+        assert_eq!(ui.state_float("va"), Some(0.5));
+        // Drag right past x = 100, which swaps the rows: item 0 is now row 1.
+        ui.mouse_move(110, 10);
+        ui.frame().unwrap();
+    };
+
+    run_headless(&script("{key: id}"), |ui| {
+        drag_then_reorder(ui);
+        assert_eq!(ui.state_float("va"), Some(1.0), "the keyed drag follows item 0");
+        assert_eq!(ui.state_float("vb"), Some(0.0), "item 1 was never pressed");
+    });
+    run_headless(&script("{}"), |ui| {
+        drag_then_reorder(ui);
+        assert_eq!(
+            ui.state_float("vb"),
+            Some(1.0),
+            "unkeyed, the drag stays with row 0, which is now item 1"
+        );
+    });
+}

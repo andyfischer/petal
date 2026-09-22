@@ -172,7 +172,9 @@ picture, not merely a slower one:
 - **`draw_polyline`.** A stroke drawn as N `draw_line`s double-blends every
   join, and a translucent brush drawn as a circle per mouse sample comes out
   mottled. `draw_polyline` tessellates a stroke whose pieces do not overlap. A
-  path that crosses its own stroke still overlaps itself.
+  path that crosses its own stroke still overlaps itself. The prelude's
+  `draw_polygon_outline` takes the same arguments and closes the path back to
+  its first point.
 - **`fill_polygon` vs `fill_poly`.** `fill_poly` fans from the first vertex,
   which fills a convex outline and spills across reflex corners.
   `fill_polygon` ear-clips, so a star is one call.

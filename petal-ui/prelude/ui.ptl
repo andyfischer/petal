@@ -498,6 +498,28 @@ export fn draw_polyline(points, c, a)
   _native_polyline(points, c.r, c.g, c.b, a)
 end
 
+// A closed outline: `draw_polyline` with the first point repeated at the end,
+// so a ship, a hex or a rotated box needs no `append(pts, pts[0])` at every
+// call. Takes exactly `draw_polyline`'s argument shapes.
+fn _closed(points)
+  if len(points) > 1 then append(points, points[0]) else points end
+end
+export fn draw_polygon_outline(points, c_or_r, a_or_g, width_or_b)
+  draw_polyline(_closed(points), c_or_r, a_or_g, width_or_b)
+end
+export fn draw_polygon_outline(points, r, g, b, a)
+  _native_polyline(_closed(points), r, g, b, a)
+end
+export fn draw_polygon_outline(points, r, g, b, a, width)
+  _native_polyline(_closed(points), r, g, b, a, width)
+end
+export fn draw_polygon_outline(points, c)
+  _native_polyline(_closed(points), c.r, c.g, c.b)
+end
+export fn draw_polygon_outline(points, c, a)
+  _native_polyline(_closed(points), c.r, c.g, c.b, a)
+end
+
 export fn draw_text(text, x, y, size, r, g, b)
   _native_text(text, x, y, size, r, g, b)
 end
@@ -3090,15 +3112,52 @@ end
 // A horizontal slider over [lo, hi]. Returns the new value (a float). Press
 // anywhere in `r` to jump-and-drag; the drag keeps tracking outside the rect
 // until release. `style` overrides {track_h, track, fill, knob}.
+//
+// The drag lives in widget `state`, keyed per callsite — so in a loop it is
+// keyed by *position*, and a slider whose list reorders mid-drag hands its drag
+// to whichever row now sits in that slot. `style.key` keys it by identity
+// instead: `slider(r, n.gain, 0, 1, {key: n.id})` keeps each node's drag with
+// that node. A key names one slider, so two sliders on the same node want two
+// keys (`{key: [n.id, "gain"]}`).
 export fn slider(r, value, lo, hi)
-  slider(r, value, lo, hi, {})
+  _slider_positional(r, value, lo, hi, {})
 end
 
 export fn slider(r, value, lo, hi, style)
-  let t = _palette()
+  let key = style["key"] ?? nil
+  if key == nil then
+    _slider_positional(r, value, lo, hi, style)
+  else
+    _slider_keyed(r, value, lo, hi, style, key)
+  end
+end
+
+fn _slider_positional(r, value, lo, hi, style)
   state dragging = false
-  if mouse_pressed(0) && hovered(r) then dragging = true end
-  if !mouse_down(0) then dragging = false end
+  dragging = _slider_drag(r, dragging)
+  _slider_draw(r, value, lo, hi, style, dragging, _anim_flag(dragging || hovered(r), 16.0))
+end
+
+fn _slider_keyed(r, value, lo, hi, style, key)
+  state(key) dragging = false
+  // The hover/drag ease is state too, so it follows the key the same way.
+  state(key) act = -1.0
+  dragging = _slider_drag(r, dragging)
+  let target = if dragging || hovered(r) then 1.0 else 0.0 end
+  act = if act < 0.0 then target else approach(act, target, 16.0) end
+  _slider_draw(r, value, lo, hi, style, dragging, act)
+end
+
+// Whether the slider in `r` is being dragged this frame, given last frame's.
+fn _slider_drag(r, dragging)
+  let d = dragging
+  if mouse_pressed(0) && hovered(r) then d = true end
+  if !mouse_down(0) then d = false end
+  d
+end
+
+fn _slider_draw(r, value, lo, hi, style, dragging, act)
+  let t = _palette()
   let knob = clamp(r.h / 2 - 2, 5, 9)
   let pad_x = knob + 2
   let usable = max(1, r.w - pad_x * 2)
@@ -3117,7 +3176,6 @@ export fn slider(r, value, lo, hi, style)
   if fw > 0 then
     draw_rect_rounded(rect(tr.x, tr.y, fw, track_h), track_h / 2, _get(style, "fill", t.accent))
   end
-  let act = _anim_flag(dragging || hovered(r), 16.0)
   let kx = tr.x + fw
   draw_circle({x: kx, y: cy}, float(knob) + act * 1.5, _get(style, "knob", t.text))
   v

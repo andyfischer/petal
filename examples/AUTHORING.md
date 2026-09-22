@@ -224,7 +224,8 @@ in [Supported draw surface](../garden/docs/petal-graphical-panels.md#supported-d
 
 Reach for the right primitive. A translucent brush stroke is one
 `draw_polyline`, not N `draw_line`s (overlapping pieces double-blend and the
-stroke comes out mottled). A star is `fill_polygon`, not ten `fill_triangle`s
+stroke comes out mottled); a closed outline is `draw_polygon_outline`, the
+same call with the first point repeated for you. A star is `fill_polygon`, not ten `fill_triangle`s
 (`fill_poly` fans from vertex 0 and spills across reflex corners). A donut
 segment is one `fill_arc`. A rounded border is `draw_rect_rounded_outline`, not
 a rounded fill with a smaller one on top.

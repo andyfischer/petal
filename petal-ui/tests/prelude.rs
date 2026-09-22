@@ -2427,3 +2427,43 @@ fn prelude_has_no_two_overloads_with_the_same_argument_count() {
         }
     }
 }
+
+/// `draw_polygon_outline` is `draw_polyline` closed: the first point is
+/// repeated at the end, in every argument shape `draw_polyline` takes.
+#[test]
+fn draw_polygon_outline_closes_the_polyline() {
+    let src = "let P = [{x: 0, y: 0}, {x: 10, y: 0}, {x: 5, y: 8}]\n\
+               let C = {r: 10, g: 20, b: 30}\n\
+               draw_polygon_outline(P, C)\n\
+               draw_polygon_outline(P, C, 99)\n\
+               draw_polygon_outline(P, C, 99, 3)\n\
+               draw_polygon_outline(P, 10, 20, 30)\n\
+               draw_polygon_outline(P, 10, 20, 30, 99)\n\
+               draw_polygon_outline(P, 10, 20, 30, 99, 3)\n\
+               draw_polygon_outline([vec2(1, 2), vec2(3, 4)], C)";
+    run_headless(src, |ui| {
+        let cmds = ui.frame().unwrap().to_vec();
+        let lines: Vec<(Vec<(i32, i32)>, u8, u32)> = cmds
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Polyline {
+                    points, a, width, ..
+                } => Some((points.clone(), *a, *width)),
+                _ => None,
+            })
+            .collect();
+        let closed = vec![(0, 0), (10, 0), (5, 8), (0, 0)];
+        assert_eq!(
+            lines,
+            vec![
+                (closed.clone(), 255, 1),
+                (closed.clone(), 99, 1),
+                (closed.clone(), 99, 3),
+                (closed.clone(), 255, 1),
+                (closed.clone(), 99, 1),
+                (closed.clone(), 99, 3),
+                (vec![(1, 2), (3, 4), (1, 2)], 255, 1),
+            ]
+        );
+    });
+}

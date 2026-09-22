@@ -354,6 +354,15 @@ fn literal_brace_error(brace: SourcePosition) -> String {
     )
 }
 
+/// An interpolation hole with nothing in it (`"{}"`, the placeholder spelling
+/// of other languages' `format`). Reported at the brace.
+fn empty_hole_error(brace: SourcePosition) -> String {
+    format!(
+        "Empty interpolation hole `{{}}`: put an expression inside (`\"{{count}} items\"`), or {} [line {}, column {}]",
+        LITERAL_BRACE_HELP, brace.line, brace.column
+    )
+}
+
 /// A string opened inside an interpolation hole that ran off the end of its
 /// line. Reported at that string's opening quote.
 fn unclosed_hole_string_error(open_quote: SourcePosition) -> String {
@@ -952,6 +961,13 @@ impl Lexer {
                     }
                 }
                 braced?;
+                // `"{}"` — a hole with nothing in it. It used to lex to no
+                // tokens at all, so the parser took the *next* literal part as
+                // the hole's expression: `"{} items"` printed " items" with no
+                // diagnostic. It is never meaningful; say what was meant.
+                if self.tokens.len() == mark {
+                    return Err(empty_hole_error(brace));
+                }
                 // The next literal part absorbs the closing `}` just consumed,
                 // so no delimiter is left in an inter-token gap.
                 part_start = self.prev_char_pos();

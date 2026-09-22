@@ -462,6 +462,9 @@ impl Compiler {
                     "math functions are top-level in Petal: abs(), sqrt(), floor(), ceil(), round()",
                 ),
                 "require" => Some("use 'import <module>' at the top of the file"),
+                "and" => Some("Petal spells logical and as `&&`"),
+                "or" => Some("Petal spells logical or as `||`"),
+                "not" => Some("Petal spells logical not as `!`"),
                 _ => None,
             };
             let msg = match hint {

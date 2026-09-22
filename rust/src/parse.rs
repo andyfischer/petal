@@ -122,6 +122,10 @@ pub struct Parser {
     /// index spelling. The bracket arm of `parse_postfix` takes it back and
     /// wraps the access it just built.
     pending_optional: bool,
+    /// Token position just past the most recent arrow lambda
+    /// (`fn(x) -> expr`). An `end` found there is the arrow lambda's
+    /// block-form habit, and the error says so (see [`Parser::error_hint`]).
+    arrow_lambda_end: Option<usize>,
 }
 
 impl Parser {
@@ -132,6 +136,7 @@ impl Parser {
             pos: 0,
             events: EventBuilder::new(),
             pending_optional: false,
+            arrow_lambda_end: None,
         }
     }
 
@@ -1160,6 +1165,7 @@ impl Parser {
 
     /// Format an error message with the current token's source position.
     fn error_at_current(&self, msg: String) -> String {
+        let msg = self.with_hint(self.pos, msg);
         let span = self.current_span();
         if span.start.line > 0 {
             format!(
@@ -1171,8 +1177,57 @@ impl Parser {
         }
     }
 
+    /// A fix for the habits from other languages that surface as a parse error
+    /// somewhere near, but not naming, the actual mistake: `a and b`, `not a`,
+    /// and an `end` after an arrow lambda's expression body. `pos` is the
+    /// token the error is reported at.
+    fn error_hint(&self, pos: usize) -> Option<&'static str> {
+        let tok = |i: usize| self.tokens.get(i);
+        match tok(pos) {
+            Some(Token::Ident(w)) if w == "and" => {
+                return Some("Petal spells logical and as `&&`");
+            }
+            Some(Token::Ident(w)) if w == "or" => {
+                return Some("Petal spells logical or as `||`");
+            }
+            Some(Token::Ident(w)) if w == "not" => {
+                return Some("Petal spells logical not as `!`");
+            }
+            _ => {}
+        }
+        if let Some(prev) = pos.checked_sub(1)
+            && let Some(Token::Ident(w)) = tok(prev)
+        {
+            match w.as_str() {
+                "not" => return Some("Petal spells logical not as `!`"),
+                "and" => return Some("Petal spells logical and as `&&`"),
+                "or" => return Some("Petal spells logical or as `||`"),
+                _ => {}
+            }
+        }
+        if matches!(tok(pos), Some(Token::End))
+            && let Some(end) = self.arrow_lambda_end
+            && end <= pos
+            && (end..pos).all(|i| matches!(tok(i), Some(Token::Newline)))
+        {
+            return Some(
+                "an arrow lambda (`fn(x) -> expr`) takes no `end`; \
+                 drop the `end`, or write the block form `fn(x) expr end`",
+            );
+        }
+        None
+    }
+
+    fn with_hint(&self, pos: usize, msg: String) -> String {
+        match self.error_hint(pos) {
+            Some(hint) => format!("{msg} — {hint}"),
+            None => msg,
+        }
+    }
+
     /// Format an error at a specific token position.
     fn error_at(&self, pos: usize, msg: String) -> String {
+        let msg = self.with_hint(pos, msg);
         if pos < self.token_spans.len() {
             let span = self.token_spans[pos];
             if span.start.line > 0 {
@@ -2113,6 +2168,7 @@ impl Parser {
             self.advance(); // consume '->'
             self.skip_newlines();
             let expr = self.parse_expr()?;
+            self.arrow_lambda_end = Some(self.pos);
             let body = vec![self.mk_stmt(StmtKind::Expr(expr), start)];
             self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
@@ -2143,8 +2199,13 @@ impl Parser {
                     parts.push(String::new());
                 }
                 other => {
+                    // The hole closed after one expression and something
+                    // else followed — almost always a literal brace
+                    // (`"{\"a\": 1}"`, JSON in a string) read as a hole.
                     return Err(self.error_at_current(format!(
-                        "Expected string part in interpolation, got {:?}",
+                        "Expected string part in interpolation, got {:?} — a `{{` in a \
+                         double-quoted string opens an interpolation hole; write `\\{{` \
+                         for a literal brace",
                         other
                     )));
                 }

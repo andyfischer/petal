@@ -1,7 +1,44 @@
 # What the testbed apps still trip on
 
-Status: **proposed**, 2026-09-21. Collated from every testbed debrief and
-checked item by item against HEAD `773a73e`.
+Status: **mostly done**, 2026-09-21. Tiers 1–2 landed apart from item 10
+(needs a language decision), plus #14, the docs batch and the stale-binary
+check. Tier 3 items 12 and 13 are still open. See [Resolution](#resolution).
+Collated from every testbed debrief and checked item by item against HEAD
+`773a73e`.
+
+## Resolution
+
+Integration-tested at `7a67dbb`: `cargo test` in `rust/`, `petal-ui/` and
+`garden/`, the full vitest suite, the golden corpus (30/30), each repro
+below, a headless Garden `/state` check, and a `check --strict` sweep over
+`examples/`, `garden/`, `petal-libs/`, `integrations/`, `~/.garden` and
+`~/worlds-fair/ui/ptl` compared with `feb65a6`.
+
+| Item | State | Commits |
+|---|---|---|
+| 1 `values_stale` | done: stale means the last frame that *ran* raised | `73978a8` |
+| 2 `check` holes | done: unknown globals (`--host core\|ui\|garden\|garden-config\|sdl`, `--native`), native argument types, prelude overload arity | `cb2300a`, `af01cb2`, `7a67dbb` |
+| 3 flat + colour-record draw forms | done, for every colour-taking primitive | `52560b7` |
+| 4 hoisting | done: constant top-level `let`s are emitted before hoisted fns; `--strict` already exits 1 on the warning | `61f71ac` |
+| 5 letter-spaced non-ASCII advance | done for drawing and `/scene`. **Open:** a script's `text_width`/`text_advance` still counts off-table glyphs at 0.6 em | `c374356` |
+| 6 `text_advance` | done | `4b32012` |
+| 7 prelude exports in `values` | done (also drops top-level values of modules the panel imports) | `8bec42a` |
+| 8 parse-error hints | done; an empty hole `"{}"` is now an **error**, not a warning | `be42606` |
+| 9 ⌘-wheel in a window | done (not tried in a real window) | `7ccbc58` |
+| 10 byte-indexed `slice`/`len` | **open**: needs a language decision | — |
+| 11 small API gaps | done: slider `{key}`, `draw_polygon_outline`, `range` step, `rotate` | `ed8e071`, `540c809`, `09249c9` |
+| 12 `text_field` editing | **open** | — |
+| 13 `i32` draw coordinates | **open** | — |
+| 14 `hover_first` | done | `66fd46f` |
+| Docs batch | done (glyph-coverage list not needed; the fallback row was rewritten) | `a259047` |
+| Stale binaries | done in Garden: startup warning plus `/state.identity.freshness` | `d5652ca` |
+
+Follow-ups outside this repo: once worlds-fair re-copies Petal, its
+`tools/check_petal_ui.ts` must pass `--host garden` for Garden bundles and
+`--native wf_action,wf_goto,wf_model,wf_fragments` for engine bundles, or
+`check --strict` fails. Scripts for custom hosts (petal-fps, fantasy-nes,
+petal-web-html) need `--native` for their own natives, and Garden config
+scripts (`init.ptl`, `layout.ptl`) are checked with `--host garden-config`.
 
 ## Where this comes from
 

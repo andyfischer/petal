@@ -121,6 +121,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   color: "Color",
   vec2: "Vectors (2D)",
   collections: "Collections",
+  json: "JSON",
   classes: "Built-in Classes",
   "higher-order": "Higher-Order Functions",
   std: "Core Prelude",

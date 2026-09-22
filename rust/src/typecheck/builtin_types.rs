@@ -114,7 +114,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         | "sort_by" | "prepend" | "chars" => Type::List,
         // ── core: record / vec2 results ─────────────────────────────────────
         "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
-        "vec2" | "normalize" | "limit" => Type::Vec2,
+        "vec2" | "normalize" | "limit" | "rotate" => Type::Vec2,
         "f64_array" => Type::F64Array,
         "symbol" => Type::Symbol,
 
@@ -285,6 +285,10 @@ mod tests {
         // text_width rounds; text_advance is the same measurement unrounded.
         assert_eq!(builtin_return_type("text_width", &[]), Some(Type::Int));
         assert_eq!(builtin_return_type("text_advance", &[]), Some(Type::Float));
+        assert_eq!(
+            builtin_return_type("rotate", &[Type::Vec2, Type::Float]),
+            Some(Type::Vec2)
+        );
     }
 
     /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is

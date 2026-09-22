@@ -9,12 +9,6 @@
   ],
   "categories": [
     {
-      "id": "json",
-      "title": "json",
-      "group": "core",
-      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame."
-    },
-    {
       "id": "io",
       "title": "I/O & Types",
       "group": "core",
@@ -61,6 +55,12 @@
       "title": "Collections",
       "group": "core",
       "doc": "List and record manipulation: range, len, push, append, pop, keys, values, contains, sort, reverse, join, split, enumerate, zip, slice, flat, plus the character-indexed string ops (chars, char_len, char_at, char_slice, index_of)."
+    },
+    {
+      "id": "json",
+      "title": "JSON",
+      "group": "core",
+      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame."
     },
     {
       "id": "classes",

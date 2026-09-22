@@ -1836,6 +1836,7 @@ fn debug_mouse_click_carries_the_click_count() {
             mods: Mods::default(),
             clicks: 2,
             button: 0,
+            hover_first: false,
         })
         .unwrap();
     let Reply::Json(ack) = reply else {

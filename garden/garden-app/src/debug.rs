@@ -497,6 +497,12 @@ pub enum DebugCmd {
         /// other value is treated as left, since there is nothing else the host
         /// routes. `drag`/`scroll` ignore it: neither has a right-button form.
         button: u8,
+        /// `"hover_first": true` on `click`/`down`/`drag`: move the pointer to
+        /// the press point and run that hover frame *before* pressing, as a
+        /// real pointer does. Without it the press's frame is the first to see
+        /// the pointer there, so a script that arms its hit target on hover
+        /// would miss the press.
+        hover_first: bool,
     },
     /// `POST /batch`: several commands run back to back in one event-loop
     /// visit, so a gesture (`down`, `move`, `up`) is atomic — no frame and no
@@ -1084,6 +1090,7 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
                 mods: mouse_mods(&v),
                 clicks: v["clicks"].as_u64().unwrap_or(1) as u32,
                 button: v["button"].as_u64().unwrap_or(0) as u8,
+                hover_first: v["hover_first"].as_bool().unwrap_or(false),
             })
         }
         ("POST", "/batch") => route_batch(parse_body()?),

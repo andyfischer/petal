@@ -602,6 +602,7 @@ as the rects in `/state`):
 {"op": "scroll", "x": 80, "y": 30, "lines": 3}         // vertical scroll of the pane under (x,y); negative = up
 {"op": "scroll", "x": 80, "y": 30, "lines": 0.25}      // fractional, as a trackpad sends
 {"op": "scroll", "x": 80, "y": 30, "cols": 3}          // horizontal scroll; negative = left
+{"op": "click", "x": 80, "y": 30, "hover_first": true} // hover frame at (80,30), then press + release
 {"op": "click", "x": 80, "y": 30, "button": 1}         // right click: the context-menu gesture
 {"op": "down",  "x": 80, "y": 30, "button": 1}         // its phases, for menu-open-then-choose
 {"op": "up", "button": 1}
@@ -617,6 +618,14 @@ pointer rests on a row — so `move` the pointer off the menu before stepping
 it with `down`/`return`. And in a text-editing app, computing a row from a
 y-coordinate breaks as soon as an earlier edit wraps a line; `click` on the
 first row and then `down` is the robust way to place the caret.
+`"hover_first": true` on `click`, `down`, or `drag` moves the pointer to the
+press point and runs that hover frame before pressing. Without it, the press
+frame is the first frame to see the pointer there (a `down` sets the position
+and presses in one frame), so a script that arms a hit target on hover, or
+reads the hovered item from the previous frame, misses the press. Real
+pointers always hover first, so set it when a script behaves differently
+under a mouse than under the debug server. `DebugClient.click` and
+`clickPaneLocal` take it as an option. Feature `debug.mouse-hover-first`.
 `button` (0 = left, 1 = right) applies to `click`, `down`, and `up`. A right
 press routes only to panel panes, where the script sees `mouse_pressed(1)`; it
 places no cursor and starts no drag. `clicks` (default 1) applies to `click`,

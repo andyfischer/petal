@@ -300,11 +300,18 @@ impl App {
                 mods,
                 clicks,
                 button,
+                hover_first,
             } => {
                 // Button 1 is the right button — the context gesture, which has
                 // its own (much smaller) routing: panels only, no drag, no
                 // cursor placement. See `App::mouse_down_right`.
                 let right = button == 1;
+                // A real pointer arrives before it presses: with `hover_first`
+                // the move (which ticks the panel under it) runs as a frame of
+                // its own, so the press frame is not the first to see it.
+                if hover_first && matches!(op.as_str(), "click" | "down" | "drag") {
+                    self.mouse_moved(x, y);
+                }
                 match op.as_str() {
                     "click" if right => {
                         self.mouse_down_right(x, y);
@@ -1500,6 +1507,45 @@ mod tests {
         assert_eq!(
             panel_of(&chord)["values"]["obs_zoomed"], true,
             "a user's ⌘-wheel must reach the script as mod_cmd()"
+        );
+    }
+
+    /// A scripted click used to reach a panel with no frame between the
+    /// pointer arriving and the press, so a script that arms a target on hover
+    /// never saw it armed. `hover_first` runs that hover frame first.
+    #[test]
+    fn hover_first_runs_a_hover_frame_before_the_press() {
+        let (mut app, _f) = panel_app(
+            "state armed = false\n\
+             state hit = \"none\"\n\
+             let over = mouse_x() > 50 && mouse_y() > 50\n\
+             if mouse_pressed(0) && armed then hit = \"armed\" end\n\
+             if mouse_pressed(0) && !armed then hit = \"cold\" end\n\
+             armed = over && !mouse_down(0)\n\
+             let obs_hit = hit\n",
+        );
+        let click = |app: &mut App, body: &str| {
+            let cmd = debug::route_for_test("POST", "/mouse", body.as_bytes()).expect("routes");
+            app.handle_debug(cmd).expect("clicks");
+            app.settle_panels();
+            let s = state_with(app, "/state");
+            assert!(panel_of(&s)["error"].is_null(), "{}", panel_of(&s)["error"]);
+            panel_of(&s)["values"]["obs_hit"].clone()
+        };
+        assert_eq!(
+            click(&mut app, r#"{"op":"click","x":100,"y":100}"#),
+            "cold",
+            "a plain click presses on the first frame that sees the pointer"
+        );
+        // Move away so the next click arrives from off-target again.
+        let away = debug::route_for_test("POST", "/mouse", br#"{"op":"move","x":10,"y":10}"#)
+            .expect("routes");
+        app.handle_debug(away).unwrap();
+        app.settle_panels();
+        assert_eq!(
+            click(&mut app, r#"{"op":"click","x":100,"y":100,"hover_first":true}"#),
+            "armed",
+            "hover_first delivered a hover frame before the press"
         );
     }
 

@@ -615,11 +615,12 @@ export class DebugClient {
   }
 
   /** A click; the reply carries the resulting selection, which the multi-click
-   *  checks read. */
+   *  checks read. `hover_first` runs a hover frame at (x, y) before the press,
+   *  as a real pointer would (see debug-server.md, `POST /mouse`). */
   click(
     x: number,
     y: number,
-    opts: { clicks?: number; button?: number } = {},
+    opts: { clicks?: number; button?: number; hover_first?: boolean } = {},
   ): Promise<MouseReply | null> {
     return this.post<MouseReply>("/mouse", {
       op: "click",
@@ -648,7 +649,7 @@ export class DebugClient {
   async clickPaneLocal(
     x: number,
     y: number,
-    opts: { clicks?: number; button?: number; pane?: number } = {},
+    opts: { clicks?: number; button?: number; hover_first?: boolean; pane?: number } = {},
   ): Promise<MouseReply | null> {
     const { pane = 0, ...rest } = opts;
     const r = (await this.pane(pane)).rect;

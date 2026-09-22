@@ -144,6 +144,9 @@ pub const HOST_FEATURES: &[&str] = &[
     // and last run reason, and the memo table's counters, read from the
     // panel-frame core Garden shares with petal-ui's harness.
     "state.panel-frame-stats",
+    // `POST /mouse` `"hover_first": true` on `click`/`down`/`drag`: a hover
+    // frame at the press point runs before the press, as with a real pointer.
+    "debug.mouse-hover-first",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

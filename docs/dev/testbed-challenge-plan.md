@@ -4,16 +4,16 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-23 of the 50 exist. Eighteen are panel apps under the category directories
+24 of the 50 exist. Nineteen are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category, plus Asteroids, the node-based editor and the Markdown
-editor), and five more were written as headless console programs
+of each category, plus Asteroids, Flappy Bird, the node-based editor and the
+Markdown editor), and five more were written as headless console programs
 under `examples/games/`, which stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a nineteenth panel app that was not on this
-list. The remaining 27 have not been attempted.
+`examples/games/side-scroller` is a twentieth panel app that was not on this
+list. The remaining 26 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -23,7 +23,7 @@ list. The remaining 27 have not been attempted.
 | 3 | **Snake** | Grid rendering, timers, keyboard input, state | built — `examples/games/snake/` |
 | 4 | **Tetris** | Complex state transitions, grids, timing | console — `examples/games/tetris/tetris.ptl` |
 | 5 | **Asteroids** | Vector movement, rotation, particles, collision | built — `examples/games/asteroids/` |
-| 6 | **Flappy Bird clone** | Physics, procedural obstacles, scoring |  |
+| 6 | **Flappy Bird clone** | Physics, procedural obstacles, scoring | built — `examples/games/flappy/` |
 | 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/games/2048/2048.ptl` |
 | 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/games/minesweeper/minesweeper.ptl` |
 | 9 | **Memory matching game** | Card components, animation, delayed state changes |  |

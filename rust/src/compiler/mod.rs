@@ -202,11 +202,12 @@ pub struct Compiler {
     // nothing.
     fn_cell_scopes: Vec<HashSet<String>>,
 
-    // Spans of the `fn` declarations this module's prescan already compiled
-    // (see `hoistable_fn_names`). `compile_stmt` skips them so a hoisted
-    // declaration is not compiled twice. Reset per module — spans are
+    // Spans of the `fn` declarations (see `hoistable_fn_names`) and constant
+    // `let`s (see `hoistable_const_lets`) this module's prescan already
+    // compiled. `compile_stmt` skips them so a hoisted declaration is not
+    // compiled twice. Reset per module — spans are
     // file-local, so two files' spans collide freely.
-    hoisted_fn_decls: HashSet<SourceSpan>,
+    hoisted_decls: HashSet<SourceSpan>,
 
     // Imported `var`s visible in the file being compiled, bare name → (owning
     // module, the term that holds the cell). Populated by `bind_imports` for
@@ -373,7 +374,7 @@ impl Compiler {
             cross_fn_terms: HashSet::new(),
             var_scopes: Vec::new(),
             fn_cell_scopes: Vec::new(),
-            hoisted_fn_decls: HashSet::new(),
+            hoisted_decls: HashSet::new(),
             imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
@@ -1512,7 +1513,8 @@ impl Compiler {
         // hoisted caller would bind to the shadowed meaning.
         let shadow_read = shadow_read_fn_names(stmts);
         let protected = |n: &str| shadow_read.contains(n) && self.scope_lookup(n).is_some();
-        let hoistable = hoistable_fn_names(stmts, protected);
+        let consts = hoistable_const_lets(stmts);
+        let hoistable = hoistable_fn_names(stmts, &consts, protected);
         let mut forward = forward_referenced_fns(stmts);
         forward.extend(late_bound_fn_refs(stmts, &hoistable));
         // Same two exclusions as hoisting: a name whose old meaning the file
@@ -1529,7 +1531,7 @@ impl Compiler {
             .map(|(_, d)| d)
             .collect();
         self.warnings.extend(late);
-        self.hoisted_fn_decls.clear();
+        self.hoisted_decls.clear();
 
         for stmt in stmts {
             match &stmt.kind {
@@ -1581,6 +1583,18 @@ impl Compiler {
             }
         }
 
+        // Constant `let`s first, in source order, so every hoisted body below
+        // can capture them (see `hoistable_const_lets`). Each is compiled by
+        // the ordinary `let` path and then skipped where it is written.
+        for stmt in stmts {
+            if let StmtKind::Let { name, .. } = &stmt.kind
+                && consts.contains(name)
+            {
+                self.compile_stmt(stmt);
+                self.hoisted_decls.insert(stmt.span);
+            }
+        }
+
         // Emit the hoisted declarations, in source order, ahead of the file's
         // first statement. A hoisted `fn` closes over nothing this file
         // computes at run time (see `hoistable_fn_names`), so moving *when* its
@@ -1618,7 +1632,7 @@ impl Compiler {
                 let method = crate::compiler::method_base_name(&stmt.kind).to_string();
                 self.emit_declare_method(class, &method, tid);
             }
-            self.hoisted_fn_decls.insert(stmt.span);
+            self.hoisted_decls.insert(stmt.span);
         }
     }
 }
@@ -1742,7 +1756,8 @@ fn shadow_read_fn_names(stmts: &[Stmt]) -> HashSet<String> {
 
 /// Top-level `fn` names whose declarations can be emitted ahead of the file's
 /// statements — those whose bodies mention nothing the file *computes*: no
-/// top-level `let`/`var`/`state`, and no enum variant (its constructor is built
+/// top-level `let`/`var`/`state` other than a hoisted constant `let` (`consts`,
+/// from `hoistable_const_lets`), and no enum variant (its constructor is built
 /// where the `enum` statement stands).
 ///
 /// Such a function captures nothing from the file's run-time work, so creating
@@ -1769,8 +1784,16 @@ fn shadow_read_fn_names(stmts: &[Stmt]) -> HashSet<String> {
 /// captures (see `shadow_read_fn_names`). Those declarations are left where
 /// they are for the same reason (see `prescan_emit`), which makes them blocked
 /// seeds here so their callers are held back too.
-fn hoistable_fn_names(stmts: &[Stmt], protected: impl Fn(&str) -> bool) -> HashSet<String> {
-    let computed = top_level_value_names(stmts);
+fn hoistable_fn_names(
+    stmts: &[Stmt],
+    consts: &HashSet<String>,
+    protected: impl Fn(&str) -> bool,
+) -> HashSet<String> {
+    // A constant `let` is emitted ahead of the hoisted bodies (see
+    // `hoistable_const_lets`), so reading one does not tie a body to the
+    // file's run order.
+    let mut computed = top_level_value_names(stmts);
+    computed.retain(|n| !consts.contains(n));
 
     // Every top-level `fn`, with the names its body mentions. Kept so the
     // fixpoint below can re-ask "does this one reach anything blocked?"
@@ -1817,6 +1840,145 @@ fn hoistable_fn_names(stmts: &[Stmt], protected: impl Fn(&str) -> bool) -> HashS
         .map(|(name, _)| (*name).to_string())
         .filter(|n| !blocked.contains(n))
         .collect()
+}
+
+/// Top-level `let` names whose declarations can be emitted ahead of the file's
+/// statements, alongside the hoisted `fn`s: a plain (non-`var`) `let` whose
+/// initializer is a compile-time constant (`let NODE_W = 140`,
+/// `let GAP = NODE_W / 2`, `let BG = {r: 20, g: 20, b: 24}`).
+///
+/// This is what lets a `fn` that reads such a constant be hoisted at all
+/// (see `hoistable_fn_names`): the constant's value cannot depend on when it is
+/// evaluated, so emitting it early changes nothing but the order — and the
+/// common "layout constants at the top, helpers below, a `state` initialized by
+/// a call to one of those helpers" file stops dying with `Cannot call nil`.
+///
+/// A candidate is disqualified — conservatively, since the cost of a false
+/// negative is only "this one is not hoisted" — when:
+/// - the name is declared more than once at the top level (another `let`, a
+///   `var`/`state`, a `fn`, a class or an enum variant), or is the root of an
+///   assignment or `@` anywhere in the file: a rebind would be reordered past;
+/// - a statement *above* the `let` mentions the name, in any position: that
+///   statement runs (or creates a closure) while the name still means
+///   something else, and hoisting would change what it sees;
+/// - the initializer is anything but literals, arithmetic/comparison/string
+///   operators, lists, records with named fields, and other hoisted constants
+///   declared above it. Division and modulo count only by a non-zero literal,
+///   so no run-time error can move ahead of the file's earlier output.
+fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
+    use crate::ast::{AssignTarget, Literal, RecordField};
+
+    // Declaration counts over every top-level binding form.
+    let mut decls: HashMap<&str, usize> = HashMap::new();
+    for stmt in stmts {
+        match &stmt.kind {
+            StmtKind::Let { name, .. }
+            | StmtKind::State { name, .. }
+            | StmtKind::ClassDecl { name, .. } => *decls.entry(name.as_str()).or_default() += 1,
+            StmtKind::FnDecl {
+                name, class: None, ..
+            } => *decls.entry(name.as_str()).or_default() += 1,
+            StmtKind::EnumDecl { variants, .. } => {
+                for v in variants {
+                    *decls.entry(v.name.as_str()).or_default() += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Every name that is rebound or mutated anywhere, nesting included.
+    struct Writes<'a>(&'a mut HashSet<String>);
+    fn target_root(t: &AssignTarget) -> Option<&str> {
+        let mut e = match t {
+            AssignTarget::Name(n) => return Some(n),
+            AssignTarget::Field(obj, _) | AssignTarget::Index(obj, _) => obj.as_ref(),
+        };
+        loop {
+            match &e.kind {
+                ExprKind::Ident(n) => return Some(n),
+                ExprKind::FieldAccess { object, .. } | ExprKind::IndexAccess { object, .. } => {
+                    e = object
+                }
+                _ => return None,
+            }
+        }
+    }
+    impl crate::ast::ExprVisitor for Writes<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            if let ExprKind::AtVar(n) = &e.kind {
+                self.0.insert(n.clone());
+            }
+            crate::ast::walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::Assign { target, .. } | StmtKind::Set { target, .. } = &s.kind
+                && let Some(root) = target_root(target)
+            {
+                self.0.insert(root.to_string());
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+    let mut written = HashSet::new();
+    {
+        let mut w = Writes(&mut written);
+        for stmt in stmts {
+            crate::ast::ExprVisitor::visit_stmt(&mut w, stmt);
+        }
+    }
+
+    fn is_const(e: &Expr, consts: &HashSet<String>) -> bool {
+        match &e.kind {
+            ExprKind::Literal(_) => true,
+            ExprKind::Ident(n) => consts.contains(n),
+            ExprKind::UnaryOp { operand, .. } => is_const(operand, consts),
+            ExprKind::BinaryOp { op, left, right } => {
+                let safe_op = match op {
+                    BinOp::Div | BinOp::Mod => {
+                        matches!(
+                            &right.kind,
+                            ExprKind::Literal(Literal::Int(n)) if *n != 0
+                        ) || matches!(
+                            &right.kind,
+                            ExprKind::Literal(Literal::Float(f)) if *f != 0.0
+                        )
+                    }
+                    _ => true,
+                };
+                safe_op && is_const(left, consts) && is_const(right, consts)
+            }
+            ExprKind::List(items) => items.iter().all(|i| is_const(i, consts)),
+            ExprKind::Record(fields) => fields.iter().all(|f| match f {
+                RecordField::Named(_, v) => is_const(v, consts),
+                RecordField::Spread(_) => false,
+            }),
+            _ => false,
+        }
+    }
+
+    let mut consts: HashSet<String> = HashSet::new();
+    // Names mentioned by the statements seen so far (fn bodies included: a
+    // `fn` above the `let` may itself be left in place and create its closure
+    // there).
+    let mut mentioned_above: HashSet<String> = HashSet::new();
+    for stmt in stmts {
+        if let StmtKind::Let {
+            name,
+            value,
+            is_var: false,
+            ..
+        } = &stmt.kind
+            && decls.get(name.as_str()) == Some(&1)
+            && !written.contains(name)
+            && !mentioned_above.contains(name)
+            && is_const(value, &consts)
+        {
+            consts.insert(name.clone());
+        }
+        mentioned_above.extend(idents_in_stmts(std::slice::from_ref(stmt)));
+    }
+    consts
 }
 
 /// Warn about the one forward reference hoisting cannot fix: a top-level
@@ -2375,7 +2537,7 @@ mod prescan_tests {
 
 #[cfg(test)]
 mod hoisting_tests {
-    use super::{hoistable_fn_names, shadow_read_fn_names};
+    use super::{hoistable_const_lets, hoistable_fn_names, shadow_read_fn_names};
     use crate::rewrite::parse_ast;
     use std::collections::HashSet;
 
@@ -2394,10 +2556,11 @@ mod hoisting_tests {
         let (_, stmts) = parse_ast(src).expect("parse");
         let scope: HashSet<&str> = in_scope.iter().copied().collect();
         let reads = shadow_read_fn_names(&stmts);
-        let mut v: Vec<String> =
-            hoistable_fn_names(&stmts, |n| reads.contains(n) && scope.contains(n))
-                .into_iter()
-                .collect();
+        let mut v: Vec<String> = hoistable_fn_names(&stmts, &hoistable_const_lets(&stmts), |n| {
+            reads.contains(n) && scope.contains(n)
+        })
+        .into_iter()
+        .collect();
         v.sort();
         v
     }
@@ -2506,6 +2669,59 @@ end
   spinner({a: 1})
 end";
         assert_eq!(hoistable(src, &["spinner"]), Vec::<String>::new());
+    }
+
+    fn const_lets(src: &str) -> Vec<String> {
+        let (_, stmts) = parse_ast(src).expect("parse");
+        let mut v: Vec<String> = hoistable_const_lets(&stmts).into_iter().collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn literal_and_derived_lets_are_constants() {
+        assert_eq!(
+            const_lets(
+                "let W = 140
+let HALF = W / 2
+let NEG = -W
+let BG = {r: 1, g: 2, b: 3}
+let XS = [1, 2.5, \"a\", nil, true]
+let S = \"a\" ++ \"b\""
+            ),
+            vec!["BG", "HALF", "NEG", "S", "W", "XS"]
+        );
+    }
+
+    #[test]
+    fn computed_rebound_or_early_read_lets_are_not() {
+        // A call is not constant; nor is anything built from it.
+        assert_eq!(
+            const_lets("let a = len([1])\nlet b = a + 1"),
+            Vec::<String>::new()
+        );
+        // Division by a non-literal could fail at run time.
+        assert_eq!(const_lets("let a = 1\nlet b = 10 / a"), vec!["a"]);
+        // `var`, rebinds, field writes and duplicate declarations.
+        assert_eq!(const_lets("var a = 1"), Vec::<String>::new());
+        assert_eq!(const_lets("let a = 1\na = 2"), Vec::<String>::new());
+        assert_eq!(const_lets("let r = {x: 1}\nr.x = 2"), Vec::<String>::new());
+        assert_eq!(const_lets("let a = 1\nlet a = 2"), Vec::<String>::new());
+        // A statement above reads the name's earlier meaning.
+        assert_eq!(const_lets("print(a)\nlet a = 1"), Vec::<String>::new());
+        // A let reading a later one: `b` is not constant, and `a` is read
+        // above its declaration so it stays put too.
+        assert_eq!(const_lets("let b = a\nlet a = 1"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_fn_reading_only_constant_lets_hoists() {
+        let src = "let W = 140
+let n = len([1])
+fn uses_const() W * 2 end
+fn uses_computed() n end
+fn calls_computed() uses_computed() end";
+        assert_eq!(hoistable(src, &[]), vec!["uses_const"]);
     }
 
     #[test]

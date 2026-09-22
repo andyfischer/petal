@@ -43,6 +43,11 @@ impl Compiler {
                 is_config,
                 ..
             } => {
+                // A constant `let` the prescan already emitted ahead of the
+                // file's first statement (see `hoistable_const_lets`).
+                if self.hoisted_decls.contains(&stmt_span) {
+                    return;
+                }
                 let val_tid = self.compile_bound_expr(name, value);
                 self.note_shadow(name);
                 if *is_var {
@@ -91,7 +96,7 @@ impl Compiler {
                 // ahead of the file's first statement — compiling it again
                 // would emit a second closure and, for an overloaded name, a
                 // second variant.
-                if self.hoisted_fn_decls.contains(&stmt_span) {
+                if self.hoisted_decls.contains(&stmt_span) {
                     return;
                 }
                 // Declared parameter types are not yet used at compile time

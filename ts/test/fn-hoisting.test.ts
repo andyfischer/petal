@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";
-import { runPetal, runPetalFile, checkText, checkJsonAllowFail } from "./helpers";
+import { runPetal, runPetalFile, checkText, checkJsonAllowFail, checkStrict } from "./helpers";
 
 const FIXTURES = resolve(__dirname, "fixtures/hoisting");
 
@@ -248,7 +248,7 @@ print(outer())
   it("a call to a not-hoistable declaration below is a compile diagnostic", () => {
     // The residue hoisting cannot fix. Before, this was a bare runtime
     // `Cannot call nil` and `petal check` passed clean.
-    const code = `let base = 10\nprint(h(1))\nfn h(n) n + base end`;
+    const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
     const { stdout, stderr } = checkText(code);
     const out = stdout + stderr;
     expect(out).toContain("call to `h` before its declaration");
@@ -256,7 +256,7 @@ print(outer())
   });
 
   it("that diagnostic reaches `check --json`", () => {
-    const code = `let base = 10\nprint(h(1))\nfn h(n) n + base end`;
+    const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
     const report = checkJsonAllowFail(code);
     expect(JSON.stringify(report)).toContain(
       "call to `h` before its declaration"
@@ -267,7 +267,7 @@ print(outer())
     // `max` is a builtin, so this used to be filtered out of the warnings and
     // silently bound to the builtin. The declaration below owns the name now,
     // which makes the early call a plain too-early call — and it says so.
-    const code = `let base = 10\nprint(max(1))\nfn max(n) n + base end`;
+    const code = `let base = abs(-10)\nprint(max(1))\nfn max(n) n + base end`;
     const { stdout, stderr } = checkText(code);
     expect(stdout + stderr).toContain("call to `max` before its declaration");
   });
@@ -275,9 +275,54 @@ print(outer())
   it("a reference from inside a body is never reported as too early", () => {
     // `k` runs after the whole file has, so reaching a declaration below it is
     // exactly what the hoist is for — no diagnostic, even un-hoistable.
-    const code = `let base = 10\nfn k() h(1) end\nfn h(n) n + base end\nprint(k())`;
+    const code = `let base = abs(-10)\nfn k() h(1) end\nfn h(n) n + base end\nprint(k())`;
     const { stdout, stderr } = checkText(code);
     expect(stdout + stderr).not.toContain("before its declaration");
     expect(runPetal(code)).toBe("11");
+  });
+});
+
+describe("constant top-level lets are hoisted with the functions", () => {
+  // The node-editor crash: `state cam = fit_all(...)` above `fn fit_all`,
+  // whose body reads layout constants. A `let` whose initializer is a
+  // compile-time constant is emitted ahead of the hoisted bodies, so the
+  // function that reads it hoists too.
+  it("a call above a fn that reads constant lets", () => {
+    expect(
+      runPetal(`
+let NODE_W = 140
+let GAP = NODE_W / 2
+let BG = {r: 20, g: 20, b: 24}
+let NAMES = ["a", "b"]
+state cam = fit_all([1, 2])
+print(cam)
+fn fit_all(ns)
+  len(ns) * NODE_W + GAP + BG.r + len(NAMES)
+end
+`)
+    ).toBe("372");
+  });
+
+  it("no too-early diagnostic once the fn hoists", () => {
+    const code = `let base = 10\nprint(h(1))\nfn h(n) n + base end`;
+    const { code: exit, stdout, stderr } = checkStrict(code);
+    expect(stdout + stderr).not.toContain("before its declaration");
+    expect(exit).toBe(0);
+    expect(runPetal(code)).toBe("11");
+  });
+
+  it("a rebound let is not a constant", () => {
+    // `base = 20` rebinds; the fn below it must capture 20, so neither the
+    // let nor the fn may move.
+    const code = `let base = 10\nbase = 20\nfn h(n) n + base end\nprint(h(1))`;
+    expect(runPetal(code)).toBe("21");
+  });
+
+  it("a computed let still blocks hoisting, and `check --strict` fails on the call", () => {
+    // The program is known to crash if the line runs, so CI must not pass it.
+    const code = `let base = abs(-10)\nprint(h(1))\nfn h(n) n + base end`;
+    const { code: exit, stderr } = checkStrict(code);
+    expect(stderr).toContain("call to `h` before its declaration");
+    expect(exit).not.toBe(0);
   });
 });

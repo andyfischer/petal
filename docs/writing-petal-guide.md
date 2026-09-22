@@ -97,13 +97,17 @@ Things to notice, because each is a rule you will meet again:
   parameter is the receiver. There is no `self`.
 - **Commas are required** between list elements, and a trailing comma is fine.
 - **Recursion works, including mutual recursion**, because top-level `fn`s are
-  hoisted — a flood fill or a tree walk needs no forward declaration. The one
-  exception: a `fn` whose body reads a top-level `let` that is computed at run
-  time (a layout rect, `let NODE_W = screen_width() / 4`) cannot be hoisted
-  above that `let`, and calling it earlier fails at run time with
+  hoisted — a flood fill or a tree walk needs no forward declaration. A
+  top-level `let` whose value is a compile-time constant (`let NODE_W = 140`,
+  `let GAP = NODE_W / 2`, a list or record of literals) is hoisted with them,
+  so a `fn` reading it can be called from above. The one exception: a `fn`
+  whose body reads a top-level `let` that is computed at run time (a layout
+  rect, `let NODE_W = screen_width() / 4`), or a `var`/`state`, cannot be
+  hoisted above it, and calling it earlier fails at run time with
   `Cannot call nil`. `petal check` warns (`call to fit_all before its
-  declaration … cannot be hoisted`); the fix is to keep helpers that read
-  layout constants below the constants and above their first use.
+  declaration … cannot be hoisted`) and `petal check --strict` fails; the fix
+  is to keep helpers that read computed values below them and above their
+  first use.
 
 ---
 

@@ -1463,6 +1463,15 @@ impl PanelView {
         (self.observed_frame >= 0).then_some(self.observed_frame)
     }
 
+    /// Whether [`observed`](Self::observed) is out of date: the last frame that
+    /// actually **ran** raised, so the values are an older good frame's. A
+    /// frame the gate skipped re-uses the previous frame's result, so an idle
+    /// (gated) panel whose `observed_frame` trails `frame_count - 1` is still
+    /// current — comparing frame numbers would call it stale.
+    pub fn values_stale(&self) -> bool {
+        self.partial_observed.is_some()
+    }
+
     /// The partial observations of the last **failed** frame (frame number and
     /// the bindings it reached before raising), or `None` when the last frame
     /// succeeded. See the [`partial_observed`](Self::partial_observed) field.

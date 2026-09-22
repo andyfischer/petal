@@ -162,7 +162,7 @@ A panel pane (a Petal graphical panel, including every GPP app) reports a
     "list_row.y": 88, "files": ["a.rs", "b.rs"]
   },
   "values_frame": 233,      // the panel frame `values` came from
-  "values_stale": true,     // true when that is NOT the frame that just ran
+  "values_stale": true,     // true when the last frame that ran raised
   "values_partial": {       // present only when the last frame raised:
     "frame": 234,           // how far it got before it did
     "values": {"sel": 3}

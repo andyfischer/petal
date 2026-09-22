@@ -619,13 +619,15 @@ impl App {
                         // `?values=` / `?values_prefix=`; unfiltered it is
                         // every binding the script made, seeded data included.
                         "values": filter_values(pv.observed(), values),
-                        // Which frame `values` came from, and whether that is
-                        // the frame that just ran. A key missing from a stale
-                        // map means "the frame that would have bound it
+                        // Which frame `values` came from, and whether the last
+                        // frame that actually ran failed. A key missing from a
+                        // stale map means "the frame that would have bound it
                         // failed", not "that branch never ran" — the two read
-                        // identically without this.
+                        // identically without this. A gated (skipped) frame
+                        // re-uses the last result, so `values_frame` may trail
+                        // `frame` on a healthy idle panel without being stale.
                         "values_frame": pv.observed_frame(),
-                        "values_stale": pv.observed_frame() != Some(pv.frame_count() - 1),
+                        "values_stale": pv.values_stale(),
                         // How far the *failing* frame got before it raised, when
                         // the last frame raised: the partial bindings, beside
                         // (never on top of) the last good ones.
@@ -1433,6 +1435,28 @@ mod tests {
             broken["values_partial"]["values"]["alive"], 20,
             "how far the failing frame got, kept beside the good values"
         );
+    }
+
+    /// An idle panel is skipped by the frame gate, so the frame its values
+    /// came from trails `frame - 1` while nothing is wrong. `values_stale`
+    /// used to compare frame numbers and so flagged every healthy idle panel;
+    /// it now means "the last frame that ran failed".
+    #[test]
+    fn gated_idle_panel_values_are_not_stale() {
+        let (mut app, _f) = panel_app("let shown = 1\n");
+        app.advance_panels(10, 0.016, true);
+        let p = panel_of(&state_with(&mut app, "/state")).clone();
+        assert!(
+            p["frame_stats"]["frames_skipped"].as_u64().unwrap() >= 1,
+            "the panel must actually be gated for this test: {p}"
+        );
+        assert!(p["error"].is_null());
+        assert!(
+            p["values_frame"].as_i64().unwrap() < p["frame"].as_i64().unwrap() - 1,
+            "values_frame trails the frame count on a gated panel: {p}"
+        );
+        assert_eq!(p["values"]["shown"], 1);
+        assert_eq!(p["values_stale"], false, "a healthy idle panel is not stale: {p}");
     }
 
     /// The input endpoints' default acknowledgment is a projection of the

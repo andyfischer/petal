@@ -827,7 +827,7 @@ pub(super) fn handle_check(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::typecheck::globals::{self, HostProfile};
+    use crate::typecheck::globals;
     let mut env = make_env(include_dirs);
     // A petal-ui host imports its `ui` prelude implicitly, so a script calls
     // `button(...)` bare; check against the same module, or every widget call
@@ -835,7 +835,7 @@ pub(super) fn handle_check(
     // prelude, unknown globals go unreported for these hosts rather than
     // flagging every prelude name.
     let mut check_globals = true;
-    if host != HostProfile::Core {
+    if host.uses_ui_prelude() {
         match globals::ui_prelude_source() {
             Some(src) => {
                 env.register_module(globals::UI_MODULE, src);

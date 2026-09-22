@@ -152,6 +152,22 @@ pub const GARDEN_NATIVES: &[&str] = &[
     "color_scheme",
 ];
 
+/// The natives Garden's config host (`init.ptl`, a layout script) registers:
+/// the layout builders and the theme setters. That host is its own `Env`, with
+/// the core builtins and these alone: no petal-ui natives and no `ui` prelude.
+/// Checking such a script as `garden` would resolve `row(children)` against
+/// the prelude's 3-argument `row` and warn about a call that runs fine.
+pub const GARDEN_CONFIG_NATIVES: &[&str] = &[
+    "editor",
+    "process",
+    "panel",
+    "row",
+    "column",
+    "layout",
+    "color_theme",
+    "color_scheme",
+];
+
 /// The natives petal-desktop-sdl (`integrations/petal-desktop-sdl`) adds on
 /// top of the petal-ui set: the example launcher and plain-text file I/O.
 pub const SDL_NATIVES: &[&str] = &[
@@ -177,6 +193,9 @@ pub enum HostProfile {
     Garden,
     /// Core, petal-ui, and the desktop SDL runner's extras ([`SDL_NATIVES`]).
     Sdl,
+    /// Garden's config host (`init.ptl`, layout scripts): core plus
+    /// [`GARDEN_CONFIG_NATIVES`], without petal-ui or its prelude.
+    GardenConfig,
 }
 
 impl HostProfile {
@@ -187,8 +206,14 @@ impl HostProfile {
             "ui" | "petal-ui" => Some(HostProfile::Ui),
             "garden" => Some(HostProfile::Garden),
             "sdl" | "desktop" => Some(HostProfile::Sdl),
+            "garden-config" => Some(HostProfile::GardenConfig),
             _ => None,
         }
+    }
+
+    /// Whether this host imports the petal-ui `ui` prelude implicitly.
+    pub fn uses_ui_prelude(self) -> bool {
+        !matches!(self, HostProfile::Core | HostProfile::GardenConfig)
     }
 
     /// The natives this host adds to the core table.
@@ -198,6 +223,7 @@ impl HostProfile {
             HostProfile::Ui => (PETAL_UI_NATIVES, &[]),
             HostProfile::Garden => (PETAL_UI_NATIVES, GARDEN_NATIVES),
             HostProfile::Sdl => (PETAL_UI_NATIVES, SDL_NATIVES),
+            HostProfile::GardenConfig => (&[], GARDEN_CONFIG_NATIVES),
         };
         ui.iter().chain(garden.iter()).copied()
     }
@@ -392,6 +418,10 @@ mod tests {
         assert_eq!(HostProfile::from_name("garden"), Some(HostProfile::Garden));
         assert_eq!(HostProfile::from_name("sdl"), Some(HostProfile::Sdl));
         assert_eq!(HostProfile::from_name("core"), Some(HostProfile::Core));
+        assert_eq!(
+            HostProfile::from_name("garden-config"),
+            Some(HostProfile::GardenConfig)
+        );
         assert_eq!(HostProfile::from_name("x"), None);
     }
 }

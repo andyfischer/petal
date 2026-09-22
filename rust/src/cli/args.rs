@@ -456,18 +456,18 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     let mut natives: Vec<String> = Vec::new();
     let source = parse_source_args(
         args,
-        "Usage: petal check [--json] [--strict] [--ir] [--host core|ui|garden|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
+        "Usage: petal check [--json] [--strict] [--ir] [--host core|ui|garden|garden-config|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
         |args, i| {
             match args[*i].as_str() {
                 "--json" => json = true,
                 "--strict" => strict = true,
                 "--ir" => ir = true,
                 "--host" => {
-                    let name = take(args, i, "Expected 'core', 'ui', 'garden' or 'sdl' after --host");
+                    let name = take(args, i, "Expected 'core', 'ui', 'garden', 'garden-config' or 'sdl' after --host");
                     host = match crate::typecheck::globals::HostProfile::from_name(name) {
                         Some(h) => h,
                         None => {
-                            eprintln!("Unknown --host '{name}' (expected 'core', 'ui', 'garden' or 'sdl')");
+                            eprintln!("Unknown --host '{name}' (expected 'core', 'ui', 'garden', 'garden-config' or 'sdl')");
                             process::exit(2);
                         }
                     };

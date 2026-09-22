@@ -57,6 +57,19 @@ print(g(fn(x) -> x + 1))`);
     expect(checkWith(["--host", "garden"], "print(palette())")).toEqual([]);
   });
 
+  it("--host garden-config checks a layout script without the ui prelude", () => {
+    // Garden's config host registers `row(children)`; the ui prelude's
+    // 3-argument `row` must not shadow it.
+    const layout = `layout(column([row([editor("a"), editor("b")]), editor("c")], [0.7, 0.3]))`;
+    expect(checkWith(["--host", "garden"], layout)).toEqual([
+      expect.stringContaining("`row` expects 3 arguments"),
+    ]);
+    expect(checkWith(["--host", "garden-config"], layout)).toEqual([]);
+    expect(checkWith(["--host", "garden-config"], "button(1)")).toEqual([
+      expect.stringContaining("unknown function `button`"),
+    ]);
+  });
+
   it("--native names extra host natives", () => {
     expect(checkWith(["--native", "wf_action,wf_goto"], "wf_action(1)\nwf_goto(2)")).toEqual([]);
   });

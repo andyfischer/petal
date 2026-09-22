@@ -137,6 +137,116 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
     Some(ty)
 }
 
+/// What one argument position of a builtin accepts, for the call-site check
+/// in [`super::Checker::check_call`]. Every slot also accepts [`Type::Any`]
+/// (nothing is known) and [`Type::Pending`] (the native-call boundary absorbs
+/// a pending argument before the native sees it), so only a statically known,
+/// definitely-wrong type ever warns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArgSlot {
+    /// Unchecked.
+    Any,
+    /// `PetalCxt::get_float`/`get_int`: an int, a float, or a dual number.
+    /// (`get_int` refuses a dual, but a dual is never inferred, and accepting
+    /// one keeps the slot sound.)
+    Num,
+    /// `PetalCxt::get_string`.
+    Str,
+    /// A list.
+    List,
+    /// A record, which a class instance is at runtime.
+    Record,
+    /// Anything `len` measures: a list, a string, an `f64_array`.
+    Sized,
+}
+
+impl ArgSlot {
+    /// Whether an argument of static type `ty` can fill this slot.
+    pub fn accepts(self, ty: Type) -> bool {
+        if matches!(ty, Type::Any | Type::Pending) {
+            return true;
+        }
+        match self {
+            ArgSlot::Any => true,
+            ArgSlot::Num => matches!(ty, Type::Int | Type::Float | Type::Num | Type::Dual),
+            ArgSlot::Str => ty == Type::String,
+            ArgSlot::List => ty == Type::List,
+            ArgSlot::Record => matches!(ty, Type::Record | Type::Class(_)),
+            ArgSlot::Sized => matches!(ty, Type::List | Type::String | Type::F64Array),
+        }
+    }
+
+    /// How the slot reads in a diagnostic.
+    pub fn describe(self) -> &'static str {
+        match self {
+            ArgSlot::Any => "any",
+            ArgSlot::Num => "a number",
+            ArgSlot::Str => "a string",
+            ArgSlot::List => "a list",
+            ArgSlot::Record => "a record",
+            ArgSlot::Sized => "a list or string",
+        }
+    }
+}
+
+/// The argument slots of a call to builtin `name` with `arity` arguments, or
+/// `None` when nothing is declared. A shorter slice than `arity` leaves the
+/// remaining positions unchecked.
+///
+/// The same rule as the result table governs this one, more strictly: an entry
+/// is a claim that the native **fails at runtime** on any other type, so each
+/// row below was read off the native's body (`rust/src/builtins/`,
+/// `petal-ui/src/`). A native that coerces (`fixed` takes a bool), dispatches
+/// on its argument's type (`min`, `distance`, `mag`), or is shadowed by a
+/// prelude overload set (`draw_rect`, which the checker resolves to the
+/// overloads instead) is left out or marked [`ArgSlot::Any`].
+pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot]> {
+    use ArgSlot::*;
+    let slots: &'static [ArgSlot] = match (name, arity) {
+        // ── core math: `unary_float_dual`, `unary_num_preserving`, get_float ──
+        (
+            "sqrt" | "sin" | "cos" | "tan" | "abs" | "floor" | "ceil" | "sign" | "round" | "fract"
+            | "radians" | "degrees" | "exp",
+            1,
+        ) => &[Num],
+        ("round", 2) => &[Num, Num],
+        ("atan2" | "pow" | "random" | "random_int", 2) => &[Num, Num],
+        ("lerp" | "smoothstep" | "clamp" | "hsv" | "hsl" | "hsv_deg" | "hsl_deg", 3) => {
+            &[Num, Num, Num]
+        }
+        ("map_range", 5) => &[Num, Num, Num, Num, Num],
+        // ── core collections and strings ──────────────────────────────────────
+        ("range", 1) => &[Num],
+        ("range", 2) => &[Num, Num],
+        ("range", 3) => &[Num, Num, Num],
+        ("len", 1) => &[Sized],
+        ("keys" | "values", 1) => &[Record],
+        ("upper" | "lower" | "chars" | "char_len", 1) => &[Str],
+        ("split", 2) => &[Str, Str],
+        ("join", 2) => &[List, Str],
+        ("char_at", 2) => &[Str, Num],
+        ("fixed" | "commas", 2) => &[Any, Num],
+        ("pad_start" | "pad_end", 2) => &[Any, Num],
+        ("pad_start" | "pad_end", 3) => &[Any, Num, Str],
+        ("format", n) if n >= 1 => &[Str],
+        // ── host (petal-ui) ───────────────────────────────────────────────────
+        ("key_down" | "key_pressed" | "key_released", 1) => &[Str],
+        ("mouse_down" | "mouse_pressed" | "mouse_released", 1) => &[Num],
+        // The style argument is a record or a size (optionally with a face
+        // name after it), so only the text itself is checked.
+        ("text_width" | "text_advance" | "text_wrap" | "text_ellipsize" | "text_index_at", n)
+            if n >= 2 =>
+        {
+            &[Str]
+        }
+        ("create_canvas", 2) => &[Num, Num],
+        ("clear", 3 | 4) => &[Num, Num, Num],
+        _ => return None,
+    };
+    Some(slots)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::builtin_return_type;

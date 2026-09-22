@@ -128,6 +128,11 @@ pub enum Command {
         ir: bool,
         /// How errors are printed (`--error-format full|bare`).
         error_format: ErrorFormat,
+        /// The host the script is written for (`--host`), which decides the
+        /// natives a call may name beyond the core builtins.
+        host: crate::typecheck::globals::HostProfile,
+        /// Extra host natives (`--native a,b`), on top of `host`'s.
+        natives: Vec<String>,
     },
     /// `suggest` — propose type annotations the program already implies.
     /// Report-only unless `--apply`; nothing here ever warns or fails a build.
@@ -455,9 +460,20 @@ pub fn execute(cli: CliArgs) {
             strict,
             ir,
             error_format,
+            host,
+            natives,
         } => {
             set_error_format(error_format);
-            handlers::handle_check(json, strict, ir, &source, &source_input, &include_dirs);
+            handlers::handle_check(
+                json,
+                strict,
+                ir,
+                host,
+                &natives,
+                &source,
+                &source_input,
+                &include_dirs,
+            );
         }
         Command::Lint { fix, check, verify } => {
             handlers::handle_lint(fix, check, verify, &source, &source_input, &include_dirs);

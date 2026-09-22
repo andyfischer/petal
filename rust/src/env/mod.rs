@@ -607,9 +607,29 @@ impl Env {
         }
     }
 
+    /// Whether a native of this name is registered.
+    pub fn has_native(&self, name: &str) -> bool {
+        self.native_fns.lookup_name(name).is_some()
+    }
+
+    /// Every registered native's name, in registration order. What a host
+    /// test compares against a static list of the natives it provides (see
+    /// [`crate::typecheck::globals`]).
+    pub fn native_fn_names(&self) -> Vec<String> {
+        (0..self.native_fns.count())
+            .map(|i| self.native_fns.get_name(NativeFnId(i as u32)).to_string())
+            .collect()
+    }
+
     /// Get a reference to a loaded program
     pub fn get_program(&self, id: ProgramId) -> Option<&Program> {
         self.programs.get(&id)
+    }
+
+    /// Get a mutable reference to a loaded program — for a tool that adds
+    /// diagnostics of its own after the compile (`petal check`).
+    pub fn get_program_mut(&mut self, id: ProgramId) -> Option<&mut Program> {
+        self.programs.get_mut(&id)
     }
 
     /// Reset a stack to re-run while keeping state

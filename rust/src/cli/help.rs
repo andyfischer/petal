@@ -253,6 +253,20 @@ OPTIONS
        --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
               source. Use '-' to read the IR from stdin.
 
+       --host core|ui|garden|sdl
+              The host the script runs in, which decides the natives a call
+              may name. A call to, or read of, a name that neither the
+              program nor the host defines is a warning (it fails with
+              'Unknown builtin' or 'Undefined variable' when the line runs).
+              'ui' (the default) is the core builtins, the petal-ui natives
+              and the 'ui' prelude as an implicit import; 'garden' adds
+              Garden's panel and config natives; 'sdl' adds
+              petal-desktop-sdl's; 'core' is the core builtins alone.
+
+       --native <name>[,<name>...]
+              Further natives the host registers, on top of --host's.
+              Repeatable.
+
        --error-format full|bare
               'bare' prints only the error message, with no position suffix
               and no source snippet. Same flag as 'run'.

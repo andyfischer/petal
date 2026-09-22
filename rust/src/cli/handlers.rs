@@ -821,16 +821,45 @@ pub(super) fn handle_check(
     json: bool,
     strict: bool,
     ir: bool,
+    host: crate::typecheck::globals::HostProfile,
+    natives: &[String],
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
+    use crate::typecheck::globals::{self, HostProfile};
     let mut env = make_env(include_dirs);
+    // A petal-ui host imports its `ui` prelude implicitly, so a script calls
+    // `button(...)` bare; check against the same module, or every widget call
+    // would look like an unknown global. When this build cannot see the
+    // prelude, unknown globals go unreported for these hosts rather than
+    // flagging every prelude name.
+    let mut check_globals = true;
+    if host != HostProfile::Core {
+        match globals::ui_prelude_source() {
+            Some(src) => {
+                env.register_module(globals::UI_MODULE, src);
+                env.set_implicit_imports(&[globals::UI_MODULE]);
+            }
+            None => check_globals = false,
+        }
+    }
+    let host_natives = globals::host_names(host, natives);
     let is_empty = source.trim().is_empty();
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below
     // is unchanged: the lowering gate is the point of `check` either way.
     let pid = load_or_die(&mut env, json, ir, source, source_input);
+    // A call or read of a name nothing defines compiles (it is resolved, or
+    // fails, when the line runs), so the compile alone cannot answer "will
+    // this run?". Report each one the target host does not provide.
+    let unresolved = env
+        .get_program(pid)
+        .filter(|_| check_globals)
+        .map(|p| globals::unresolved_globals(p, |n| env.has_native(n), &host_natives));
+    if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {
+        p.warnings.extend(diags);
+    }
     let program = env.get_program(pid);
     // `check` answers "will this run?", so it must lower to bytecode as
     // well as compile: a program can compile cleanly and still fail to

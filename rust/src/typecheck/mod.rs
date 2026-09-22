@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 pub mod builtin_types;
+pub mod globals;
 pub mod infer;
 pub mod unused;
 
@@ -1545,9 +1546,29 @@ impl<'a> Checker<'a> {
             if let ExprKind::Ident(f) = &function.kind
                 && self.lookup(f).is_none()
             {
-                // Not a module function: fall back to the builtin table. It
-                // knows only result types (builtins declare no parameter
-                // types), so there is nothing to check the arguments against.
+                // Not a module function: fall back to the builtin tables —
+                // the argument slots the native is known to insist on, then
+                // its result type.
+                // A named argument to a native is refused outright by the VM,
+                // so positions are only meaningful when none is named.
+                if let Some(slots) = builtin_types::builtin_param_slots(f, args.len())
+                    && arg_names.iter().all(Option::is_none)
+                {
+                    for (i, slot) in slots.iter().enumerate() {
+                        let at = arg_types[i];
+                        if !slot.accepts(at) {
+                            self.warn(
+                                args[i].span,
+                                format!(
+                                    "argument {} to `{f}`: expected {}, found `{}`",
+                                    i + 1,
+                                    slot.describe(),
+                                    self.spell(at)
+                                ),
+                            );
+                        }
+                    }
+                }
                 return builtin_types::builtin_return_type(f, arg_types).unwrap_or(Type::Any);
             }
             return Type::Any;
@@ -2570,5 +2591,52 @@ mod tests {
         // A file with no imports at all is unaffected.
         let w = warns(&format!("{src}m.scaled(\"no\", 2)"));
         assert!(w.is_empty(), "{w:?}");
+    }
+
+    /// Natives declare argument slots (`builtin_types::builtin_param_slots`):
+    /// a statically known type the native is certain to refuse warns, in the
+    /// same shape as a declared parameter.
+    #[test]
+    fn native_arguments_are_checked_against_their_slots() {
+        let w = warns("print(sqrt(\"x\"))");
+        assert_eq!(w, ["argument 1 to `sqrt`: expected a number, found `string`"]);
+        let w = warns("print(range({r: 1}))");
+        assert_eq!(w, ["argument 1 to `range`: expected a number, found `record`"]);
+        let w = warns("print(join(\",\", [1]))");
+        assert_eq!(
+            w,
+            [
+                "argument 1 to `join`: expected a list, found `string`",
+                "argument 2 to `join`: expected a string, found `list`",
+            ]
+        );
+        let w = warns("print(key_down(1), len(3))");
+        assert_eq!(w.len(), 2, "{w:?}");
+        let w = warns("print(text_width(12, {size: 13}))");
+        assert_eq!(w, ["argument 1 to `text_width`: expected a string, found `int`"]);
+    }
+
+    /// Only a definite mismatch warns: numbers of either width, class
+    /// instances as records, unknown types, and every unlisted native pass.
+    #[test]
+    fn native_argument_slots_are_conservative() {
+        for src in [
+            "print(sqrt(2), sqrt(2.5), range(1, 4), range(0, 10, 2))",
+            "fn f(x) sqrt(x) end\nprint(f(1))",
+            "class P\n  x: int\nend\nprint(keys(P(1)), values({a: 1}))",
+            "print(len([1]), len(\"ab\"), upper(\"a\"), split(\"a,b\", \",\"))",
+            "print(text_width(\"a\", 13), text_width(\"a\", {size: 13}), text_width(\"a\", 13, \"ui\"))",
+            // Coercing or type-dispatching natives are unlisted.
+            "print(fixed(true), min(\"a\", \"b\"), mag(vec2(1, 2)), str([1]))",
+            // A user function of the same name shadows the native.
+            "fn sqrt(s) s end\nprint(sqrt(\"x\"))",
+            // A named argument is the VM's to refuse.
+            "print(sqrt(x: \"s\"))",
+        ] {
+            let w = warns(src);
+            assert!(w.is_empty(), "{src}: {w:?}");
+        }
+        // A local binding shadows the native too.
+        assert!(warns("let range = fn(r) -> r\nprint(range({r: 1}))").is_empty());
     }
 }

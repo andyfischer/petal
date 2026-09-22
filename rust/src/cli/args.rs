@@ -452,14 +452,35 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     let mut strict = false;
     let mut ir = false;
     let mut error_format = ErrorFormat::Full;
+    let mut host = crate::typecheck::globals::HostProfile::default();
+    let mut natives: Vec<String> = Vec::new();
     let source = parse_source_args(
         args,
-        "Usage: petal check [--json] [--strict] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>",
+        "Usage: petal check [--json] [--strict] [--ir] [--host core|ui|garden|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
         |args, i| {
             match args[*i].as_str() {
                 "--json" => json = true,
                 "--strict" => strict = true,
                 "--ir" => ir = true,
+                "--host" => {
+                    let name = take(args, i, "Expected 'core', 'ui', 'garden' or 'sdl' after --host");
+                    host = match crate::typecheck::globals::HostProfile::from_name(name) {
+                        Some(h) => h,
+                        None => {
+                            eprintln!("Unknown --host '{name}' (expected 'core', 'ui', 'garden' or 'sdl')");
+                            process::exit(2);
+                        }
+                    };
+                }
+                "--native" => {
+                    let list = take(args, i, "Expected a comma-separated list of names after --native");
+                    natives.extend(
+                        list.split(',')
+                            .map(str::trim)
+                            .filter(|n| !n.is_empty())
+                            .map(str::to_string),
+                    );
+                }
                 "--error-format" => {
                     error_format = parse_error_format(take(
                         args,
@@ -479,6 +500,8 @@ fn parse_check_args(args: &[String]) -> CliArgs {
             strict,
             ir,
             error_format,
+            host,
+            natives,
         },
         source,
         include_dirs: Vec::new(),

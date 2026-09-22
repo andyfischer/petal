@@ -37,6 +37,12 @@ fn main() {
         if dirty { "1" } else { "0" }
     );
     println!("cargo:rustc-env=GARDEN_BUILD_DATE={}", build_date());
+    // The checkout this binary was built from, so a running binary can compare
+    // its commit against that checkout's current HEAD and say it is stale.
+    println!(
+        "cargo:rustc-env=GARDEN_SOURCE_ROOT={}",
+        git(&manifest_dir, &["rev-parse", "--show-toplevel"]).unwrap_or_default()
+    );
 
     // Re-stamp when HEAD moves. Day-granularity build dates and these narrow
     // triggers keep a plain `cargo build` from re-running this script (and so

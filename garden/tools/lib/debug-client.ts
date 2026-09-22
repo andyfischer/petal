@@ -132,6 +132,10 @@ export interface AppState {
     layout: string | null;
     panels: { pane: number; path: string; script: string }[];
     build: VersionReport["build"];
+    /** Whether this binary is behind the checkout it was built from: `changed`
+     *  source files since its commit (null if that commit is unknown), and a
+     *  non-empty `warning` when `stale`. Null when git can't tell. */
+    freshness?: { head: string; changed: number | null; stale: boolean; warning: string } | null;
   };
   theme?: { key: string; label: string };
   /** Script `print(...)` output (see `?output=`) and the cursor to resume from. */

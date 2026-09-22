@@ -210,6 +210,10 @@ pub fn run() {
         return;
     }
 
+    // An old binary still launches, and every fix since then looks unfixed:
+    // say so up front, where a launch.sh log shows it next to the port.
+    version::warn_if_stale();
+
     let Cli {
         mode,
         debug_port,

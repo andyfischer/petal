@@ -497,6 +497,9 @@ impl App {
             // /state on every step can tell a stale binary without a second
             // request. The full feature list is at `GET /version`.
             "build": crate::version::build_json(),
+            // …and whether that build is behind its checkout's HEAD: `stale`
+            // plus a `warning` line, so a harness never trusts an old binary.
+            "freshness": crate::version::freshness_json(),
             "panels": panels,
         })
     }

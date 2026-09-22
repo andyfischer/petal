@@ -32,7 +32,7 @@
       "clocks": [
         {
           "pane": 1,
-          "time": 0.04290845866666666,
+          "time": 0.10745362566666666,
           "virtual": true
         }
       ],
@@ -45,7 +45,7 @@
         {
           "frame": 2,
           "pane": 1,
-          "script": "<tmp>/.tmpTHxUn1.ptl"
+          "script": "<tmp>/.tmpcVzSOP.ptl"
         }
       ]
     }

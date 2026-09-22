@@ -43,6 +43,127 @@ pub const GIT_DATE: &str = env!("GARDEN_GIT_DATE");
 /// `"1"` when the worktree had uncommitted changes at build time.
 pub const GIT_DIRTY: &str = env!("GARDEN_GIT_DIRTY");
 
+/// The git checkout this binary was built from (its top level), or `""`.
+pub const SOURCE_ROOT: &str = env!("GARDEN_SOURCE_ROOT");
+
+/// The source paths whose changes make a built `garden` out of date: the
+/// app, the petal-ui prelude and runtime it links, and the Petal language.
+/// Markdown is excluded, so a docs-only commit does not flag a binary stale.
+const SOURCE_PATHSPECS: &[&str] = &[
+    ":(top)garden",
+    ":(top)petal-ui",
+    ":(top)rust",
+    ":(top,exclude,glob)**/*.md",
+    ":(top,exclude)garden/tools",
+];
+
+/// Whether this binary is behind the checkout it was built from — the
+/// "testing against an old build" trap: a `garden/target/debug/garden` left
+/// over from days ago still launches, and every fix since looks unfixed.
+///
+/// `None` when it can't be told (no git, a source tarball, a binary run on a
+/// machine without its checkout). Otherwise `head` is the checkout's current
+/// short HEAD and `changed` the number of source files (see
+/// [`SOURCE_PATHSPECS`]) that differ between the build commit and HEAD; the
+/// binary is `stale` when that is nonzero. Uncommitted edits are not counted
+/// (the build stamp records only whether the tree was dirty).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Freshness {
+    pub head: String,
+    /// `None` when the build commit isn't in the checkout at all.
+    pub changed: Option<usize>,
+}
+
+impl Freshness {
+    pub fn stale(&self) -> bool {
+        self.changed != Some(0)
+    }
+
+    /// One loud line for stderr and `/state`, or `None` when current.
+    pub fn warning(&self) -> Option<String> {
+        self.stale().then(|| {
+            let changed = match self.changed {
+                Some(n) => format!("{n} changed source file(s) since"),
+                None => "the build commit missing from its history".to_string(),
+            };
+            format!(
+                "this garden binary was built from {GIT_COMMIT} but the checkout is at {} \
+                 with {changed}; rebuild (cargo build in garden/) or you are testing old code",
+                self.head
+            )
+        })
+    }
+}
+
+/// Compare `built` (a commit) against `root`'s HEAD. Split out of
+/// [`freshness`] so a test can point it at a commit of its choosing.
+pub fn freshness_of(root: &str, built: &str) -> Option<Freshness> {
+    if root.is_empty() || built.is_empty() || built == "unknown" {
+        return None;
+    }
+    let git = |args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let head = git(&["rev-parse", "--short", "HEAD"])?;
+    let mut args = vec!["diff", "--name-only", built, "HEAD", "--"];
+    args.extend_from_slice(SOURCE_PATHSPECS);
+    // `None`: the build commit isn't in this checkout (rewritten history,
+    // another clone) — nothing vouches for the binary, so it counts as stale.
+    let changed = git(&args).map(|out| out.lines().filter(|l| !l.is_empty()).count());
+    Some(Freshness { head, changed })
+}
+
+/// [`freshness_of`] this binary, cached for a few seconds: `/state` asks on
+/// every read, and two `git` calls per request would dominate a tight
+/// polling loop.
+pub fn freshness() -> Option<Freshness> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, Option<Freshness>)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, value)) = cache.as_ref() {
+        if at.elapsed() < Duration::from_secs(5) {
+            return value.clone();
+        }
+    }
+    let value = freshness_of(SOURCE_ROOT, GIT_COMMIT);
+    *cache = Some((Instant::now(), value.clone()));
+    value
+}
+
+/// Print the stale-binary warning to stderr, if there is one. Called once at
+/// startup so a `launch.sh` log shows it beside the debug port.
+pub fn warn_if_stale() {
+    if let Some(warning) = freshness().and_then(|f| f.warning()) {
+        eprintln!("garden: WARNING: {warning}");
+    }
+}
+
+/// `/state`'s `identity.freshness`: `{head, changed, stale, warning}`, or
+/// null when it can't be told. `changed` is null when the build commit is not
+/// in the checkout; `warning` is `""` for a current binary.
+pub fn freshness_json() -> Value {
+    match freshness() {
+        None => Value::Null,
+        Some(f) => json!({
+            "head": f.head,
+            "changed": f.changed,
+            "stale": f.stale(),
+            // Always a string (empty when current) so the reply's shape does
+            // not change with the checkout's state.
+            "warning": f.warning().unwrap_or_default(),
+        }),
+    }
+}
+
 /// Named capabilities of *this* build. See the module docs for the rules.
 pub const HOST_FEATURES: &[&str] = &[
     // Argument-parser flags. `cli.<name>` must correspond to `--<name>`; a
@@ -147,6 +268,9 @@ pub const HOST_FEATURES: &[&str] = &[
     // `POST /mouse` `"hover_first": true` on `click`/`down`/`drag`: a hover
     // frame at the press point runs before the press, as with a real pointer.
     "debug.mouse-hover-first",
+    // `/state`'s `identity.freshness`: whether this binary is behind the
+    // checkout it was built from (and a startup stderr warning when it is).
+    "state.identity-freshness",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a
@@ -268,6 +392,42 @@ mod tests {
         }
         assert!(r["prelude"]["level"].as_u64().unwrap() >= 1);
         assert!(!r["prelude"]["exports"].as_array().unwrap().is_empty());
+    }
+
+    /// A binary built from HEAD is current; one built from an older commit
+    /// that source files changed after is stale; an unknown commit is stale
+    /// and says so; no checkout means "can't tell", not a false alarm.
+    #[test]
+    fn freshness_compares_the_build_commit_against_head() {
+        let root = SOURCE_ROOT;
+        if root.is_empty() {
+            return; // built without git: nothing to compare
+        }
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git").arg("-C").arg(root).args(args).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        let head = git(&["rev-parse", "--short", "HEAD"]);
+        let now = freshness_of(root, &head).expect("a checkout");
+        assert_eq!(now.changed, Some(0));
+        assert!(!now.stale() && now.warning().is_none());
+
+        // The last commit that touched a source file, and its parent: a build
+        // from the parent is behind by at least that file.
+        let touched = git(&["log", "-1", "--format=%h", "--", "garden/garden-app/src"]);
+        let before = git(&["rev-parse", "--short", &format!("{touched}^")]);
+        let old = freshness_of(root, &before).expect("a checkout");
+        assert!(old.changed.unwrap() >= 1, "{old:?}");
+        assert!(old.stale());
+        assert!(old.warning().unwrap().contains("rebuild"));
+
+        let bogus = freshness_of(root, "0000000").expect("a checkout");
+        assert_eq!(bogus.changed, None);
+        assert!(bogus.stale());
+
+        assert_eq!(freshness_of("", &head), None);
+        assert_eq!(freshness_of(root, "unknown"), None);
+        assert_eq!(freshness_of("/nonexistent/dir", &head), None);
     }
 
     /// Feature names are unique and sorted-by-area readable; a duplicate means

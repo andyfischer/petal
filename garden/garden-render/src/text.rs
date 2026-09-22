@@ -386,6 +386,34 @@ pub(crate) fn measure_family_advances(font: FontId, weight: u16, italic: bool) -
     )
 }
 
+/// One glyph's advance as a fraction of the font size, shaped the way the
+/// renderer will shape it: the style's family over the full database, so a
+/// codepoint that face lacks (`⌘`, `—` in some cuts, CJK) is measured in the
+/// fallback face that will actually draw it. Backs
+/// [`crate::fonts::glyph_advance_ratio`], which memoizes per glyph; the ASCII
+/// tables cover everything else.
+pub(crate) fn measure_glyph_advance(font: FontId, weight: u16, italic: bool, ch: char) -> f64 {
+    static MEASURER: std::sync::OnceLock<std::sync::Mutex<FontSystem>> = std::sync::OnceLock::new();
+    let measurer = MEASURER.get_or_init(|| std::sync::Mutex::new(font_system(full_db())));
+    let family = fonts::family_of(font);
+    let mut font_system = measurer.lock().expect("glyph measurer poisoned");
+    let mut buffer = glyphon::Buffer::new(&mut font_system, Metrics::new(FONT_SIZE, LINE_HEIGHT));
+    let style = TextStyle {
+        font,
+        weight,
+        italic,
+        ..TextStyle::default()
+    };
+    let advance = first_glyph_advance(
+        &mut font_system,
+        &mut buffer,
+        family.as_deref(),
+        style,
+        &ch.to_string(),
+    );
+    (advance / FONT_SIZE) as f64
+}
+
 impl TextStack {
     pub fn new(
         device: &wgpu::Device,

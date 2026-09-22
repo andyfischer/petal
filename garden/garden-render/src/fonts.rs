@@ -240,6 +240,27 @@ pub fn advance_ratios(id: FontId, weight: u16, italic: bool) -> Vec<f64> {
     ratios
 }
 
+/// One codepoint's advance ratio in this face, cut and slant, for a glyph
+/// outside the ASCII table [`advance_ratios`] returns — measured by shaping it,
+/// fallback faces included, so a per-glyph layout (a letter-spaced run) places
+/// `⌘` or `—` at its real width rather than at a 0.6 em guess. Memoized per
+/// glyph: a spaced label asks for the same few characters every frame.
+pub fn glyph_advance_ratio(id: FontId, weight: u16, italic: bool, ch: char) -> f64 {
+    type Key = (FontId, u16, bool, char);
+    static CACHE: OnceLock<Mutex<HashMap<Key, f64>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = (id, weight, italic, ch);
+    if let Some(hit) = cache.lock().expect("glyph advance cache poisoned").get(&key) {
+        return *hit;
+    }
+    let ratio = crate::text::measure_glyph_advance(id, weight, italic, ch);
+    cache
+        .lock()
+        .expect("glyph advance cache poisoned")
+        .insert(key, ratio);
+    ratio
+}
+
 /// Weight at or above which a run is bold — CSS semibold. Below this, nothing
 /// is emboldened, real or synthetic.
 pub const BOLD_THRESHOLD: u16 = 600;

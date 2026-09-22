@@ -148,7 +148,9 @@ impl petal_ui::draw::FontSource for SystemFonts {
 /// one primitive **per glyph**, because cosmic-text has no letter-spacing of
 /// its own: the pen advances by the glyph's measured advance plus the spacing,
 /// which is exactly the sum `text_width` reports for the same style, so a
-/// spaced run measures and draws the same width. The cost (one shaped run per
+/// spaced run measures and draws the same width. (Off the ASCII table the pen
+/// uses the glyph's shaped width, as an unspaced run's shaper does; the
+/// script's `text_width` still estimates those glyphs at 0.6 em.) The cost (one shaped run per
 /// character) is why only spaced text pays it.
 fn push_text_run(
     prims: &mut Vec<Primitive>,
@@ -173,11 +175,10 @@ fn push_text_run(
     let ratios = advance_ratios_for(style);
     let mut pen = x;
     for ch in text.chars() {
-        let advance = ratios
-            .get(ch as usize)
-            .copied()
-            .unwrap_or(FALLBACK_ADVANCE_RATIO) as f32
-            * size;
+        // Off the ASCII table the glyph is shaped (through the renderer's own
+        // fallback chain) rather than guessed at 0.6 em: `⌘` or `—` at the
+        // guess overlaps the next letter.
+        let advance = garden_render::glyph_advance_ratio(&ratios, style, ch) as f32 * size;
         prims.push(Primitive::Text {
             pos: (pen, y),
             text: ch.to_string(),
@@ -4193,6 +4194,61 @@ edit_view_projection(1, {{
             step * 3.0,
             "text_width must equal the pen's total travel for the same style"
         );
+    }
+
+    #[test]
+    fn letter_spacing_advances_non_ascii_glyphs_by_their_shaped_width() {
+        // Off the ASCII advance table the pen used to fall back to 0.6 em, so at
+        // size 32 `⌘`, `—` and `·` each advanced 19.2 px whatever their real
+        // width, and `⌘` overlapped the letter after it. Each step must be
+        // the glyph's shaped advance plus the spacing.
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        write!(
+            f,
+            "draw_text(\"⌘x—x·x\", {{x: 0, y: 4}}, {{size: 32, spacing: 2, font: \"ui\"}})\n"
+        )
+        .unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        let mut prims = Vec::new();
+        pv.build_scene(RECT, CELL, &Theme::default(), true, &mut prims);
+
+        let runs: Vec<(String, f32, TextStyle)> = prims
+            .iter()
+            .filter_map(|p| match p {
+                Primitive::Text {
+                    text, pos, style, ..
+                } => Some((text.clone(), pos.0, *style)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            runs.iter().map(|(t, ..)| t.as_str()).collect::<Vec<_>>(),
+            ["\u{2318}", "x", "\u{2014}", "x", "\u{00b7}", "x"],
+        );
+        for pair in runs.windows(2) {
+            let (glyph, x0, style) = &pair[0];
+            let step = pair[1].1 - x0;
+            let ch = glyph.chars().next().unwrap();
+            let shaped = garden_render::fonts::glyph_advance_ratio(
+                style.font,
+                style.weight,
+                style.italic,
+                ch,
+            ) as f32
+                * 32.0;
+            if !ch.is_ascii() {
+                assert!(
+                    (step - 2.0 - shaped).abs() < 0.01,
+                    "{glyph:?} advanced {step} px; its shaped width is {shaped} + 2 spacing"
+                );
+                assert!(
+                    (step - 2.0 - 19.2).abs() > 0.01 || (shaped - 19.2).abs() < 0.01,
+                    "{glyph:?} still advances by the 0.6 em fallback"
+                );
+            }
+        }
     }
 
     #[test]

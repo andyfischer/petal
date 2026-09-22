@@ -418,14 +418,23 @@ pub fn measure_text(text: &str, size: f32, style: TextStyle) -> f32 {
     let ratios = fonts::advance_ratios(style.font, style.weight, style.italic);
     let sum: f64 = text
         .chars()
-        .map(|ch| {
-            ratios
-                .get(ch as usize)
-                .copied()
-                .unwrap_or(FALLBACK_ADVANCE_RATIO)
-        })
+        .map(|ch| glyph_advance_ratio(&ratios, style, ch))
         .sum();
     sum as f32 * size + style.spacing * text.chars().count() as f32
+}
+
+/// One glyph's advance ratio in `style`: from `ratios` (the style's ASCII
+/// table) when the glyph is on it, otherwise measured by shaping it through
+/// the same fallback chain the renderer uses. A per-glyph layout — a
+/// letter-spaced run is drawn one glyph at a time — must use this rather than
+/// a flat guess, or every non-ASCII glyph lands at 0.6 em and overlaps (or
+/// gaps) its neighbour.
+pub fn glyph_advance_ratio(ratios: &[f64], style: TextStyle, ch: char) -> f64 {
+    match ratios.get(ch as usize) {
+        Some(ratio) => *ratio,
+        None if (ch as u32) < 0x80 => FALLBACK_ADVANCE_RATIO,
+        None => fonts::glyph_advance_ratio(style.font, style.weight, style.italic, ch),
+    }
 }
 
 /// The shared GPU handles every renderer is built on: one wgpu

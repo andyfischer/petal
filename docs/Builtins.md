@@ -103,13 +103,17 @@ random(0.0, 1.0)    // 0.7342... (varies)
 random(1.0, 10.0)   // 4.218...  (varies)
 ```
 
-### `range(start, end)`
+### `range(start, end)` / `range(start, end, step)`
 
 Returns a list of integers from `start` (inclusive) to `end` (exclusive).
+With a `step`, counts by it; a negative step counts down, stopping before
+`end`. A step of 0 is an error. (`range(n)` is `range(0, n)`.)
 
 ```petal
-range(0, 5)    // [0, 1, 2, 3, 4]
-range(3, 7)    // [3, 4, 5, 6]
+range(0, 5)        // [0, 1, 2, 3, 4]
+range(3, 7)        // [3, 4, 5, 6]
+range(0, 10, 3)    // [0, 3, 6, 9]
+range(5, 0, -1)    // [5, 4, 3, 2, 1]
 ```
 
 ### `pi()`
@@ -377,6 +381,17 @@ direction scaled to that magnitude. Useful for capping velocities.
 ```petal
 limit(vec2(6.0, 8.0), 5.0)    // vec2(3.0, 4.0)
 limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
+```
+
+### `rotate(v, angle)`
+
+Return `v` turned by `angle` radians, in the same sense as
+`vec2(cos(angle), sin(angle))` — so on a y-down screen a positive angle turns
+clockwise. Useful for ship headings and polygon outlines.
+
+```petal
+rotate(vec2(1.0, 0.0), pi() / 2)   // vec2(~0.0, 1.0)
+rotate(vec2(2.0, 1.0), pi())       // vec2(-2.0, ~-1.0)
 ```
 
 ## Type Conversion

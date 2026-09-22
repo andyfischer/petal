@@ -33,21 +33,41 @@ fn checked_f64_index(i: i64, len: usize) -> Result<usize, String> {
 
 pub(super) fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
     let argc = state.arg_count();
-    let (start, end) = match argc {
-        1 => {
-            let end = state.get_int(1)?;
-            (0, end)
-        }
-        2 => {
-            let start = state.get_int(1)?;
-            let end = state.get_int(2)?;
-            (start, end)
+    let (start, end, step) = match argc {
+        1 => (0, state.get_int(1)?, 1),
+        2 => (state.get_int(1)?, state.get_int(2)?, 1),
+        // `range(a, b, step)`: `a`, `a + step`, … stopping before `b`. A
+        // negative step counts down (`range(5, 0, -1)` is 5..1), which is the
+        // only way to iterate backwards without building and reversing a list.
+        3 => {
+            let step = state.get_int(3)?;
+            if step == 0 {
+                return Err("range() step must not be 0".to_string());
+            }
+            (state.get_int(1)?, state.get_int(2)?, step)
         }
         _ => {
-            return Err("range() expects 1 or 2 arguments".to_string());
+            return Err(
+                "range() expects 1 to 3 arguments: range(end), range(start, end) \
+                 or range(start, end, step)"
+                    .to_string(),
+            );
         }
     };
-    let items: Vec<Value> = (start..end).map(Value::Int).collect();
+    let items: Vec<Value> = if step == 1 {
+        (start..end).map(Value::Int).collect()
+    } else {
+        let mut items = Vec::new();
+        let mut i = start;
+        while (step > 0 && i < end) || (step < 0 && i > end) {
+            items.push(Value::Int(i));
+            match i.checked_add(step) {
+                Some(next) => i = next,
+                None => break,
+            }
+        }
+        items
+    };
     state.push_list(items);
     Ok(1)
 }

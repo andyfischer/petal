@@ -734,7 +734,7 @@ guess costs a compile round-trip (`Unknown builtin: flatten`).
 |---|---|
 | **Output** | `print(a, b, …)` — space-separated, newline at the end |
 | **Length** | `len(x)` — list or string. Bytes for a string; `char_len` for characters |
-| **Build a list** | `range(a, b)` — `a`..`b-1`, **no step argument**. `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
+| **Build a list** | `range(a, b)` — `a`..`b-1`; `range(a, b, step)` counts by `step`, down when it is negative (`range(5, 0, -1)` is 5..1). `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
 | **Read a list** | `xs[i]`, `slice(xs, start, end)` (end-exclusive, negatives allowed), `contains(xs, v)`, `index_of(xs, v)` (`-1` if absent) |
 | **Reshape** | `reverse(xs)`, `sort(xs)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
 | **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |

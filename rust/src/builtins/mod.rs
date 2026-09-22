@@ -415,6 +415,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // `json_parse` is failable like `parse_*`.
     table.register("json_stringify", json::native_json_stringify, NativeEffects::PURE);
     table.register("json_parse", json::native_json_parse, NativeEffects::PURE);
+    // `rotate(v, angle)` — a vec2 rotated counter-clockwise (in y-up terms;
+    // clockwise on a y-down screen) by `angle` radians. Append-only, like the
+    // rest of this block.
+    table.register("rotate", vec2::native_rotate, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

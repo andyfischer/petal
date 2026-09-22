@@ -1,4 +1,4 @@
-//! 2D vector builtins: vec2, normalize, dot, limit.
+//! 2D vector builtins: vec2, normalize, dot, limit, rotate.
 
 use crate::native_fn::PetalCxt;
 use crate::value::Value;
@@ -55,5 +55,20 @@ pub(super) fn native_limit(state: &mut PetalCxt) -> Result<u32, String> {
             Ok(1)
         }
         _ => Err("limit() expects a vec2 as first argument".into()),
+    }
+}
+
+/// `rotate(v, angle)`: `v` turned by `angle` radians, the same sense as
+/// `vec2(cos(a), sin(a))` — so `rotate(vec2(1, 0), a)` is that vector.
+pub(super) fn native_rotate(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "rotate")?;
+    match state.get_value(1)? {
+        Value::Vec2(x, y) => {
+            let a = state.get_float(2)?;
+            let (s, c) = a.sin_cos();
+            state.push_value(Value::Vec2(x * c - y * s, x * s + y * c));
+            Ok(1)
+        }
+        _ => Err("rotate() expects a vec2 as first argument".into()),
     }
 }

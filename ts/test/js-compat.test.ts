@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runPetal, showIrJson, userTerms } from "./helpers";
+import { runPetal, runPetalError, showIrJson, userTerms } from "./helpers";
 
 
 describe("range() single argument", () => {
@@ -16,6 +16,22 @@ describe("range() single argument", () => {
   it("range(start, end) still works", () => {
     const out = runPetal("print(range(2, 5))");
     expect(out.trim()).toBe("[2, 3, 4]");
+  });
+
+  it("range(start, end, step) counts by step, down with a negative one", () => {
+    expect(runPetal("print(range(0, 10, 3))").trim()).toBe("[0, 3, 6, 9]");
+    expect(runPetal("print(range(10, 0, -2))").trim()).toBe("[10, 8, 6, 4, 2]");
+    expect(runPetal("print(range(0, 5, -1))").trim()).toBe("[]");
+    const out = runPetal(`
+      for i in range(3, 0, -1) do
+        print(i)
+      end
+    `);
+    expect(out.trim()).toBe("3\n2\n1");
+  });
+
+  it("range with a zero step is an error", () => {
+    expect(runPetalError("print(range(0, 5, 0))")).toContain("step must not be 0");
   });
 
   it("range(n) works in for loops", () => {
@@ -105,5 +121,24 @@ describe("JS idiom error hints", () => {
     expect(errorTerm).toBeDefined();
     const errorMsg = ir.constants.values[errorTerm.op.Error];
     expect(errorMsg.String).toContain("type()");
+  });
+});
+
+describe("rotate(v, angle) on vec2", () => {
+  it("turns in the same sense as vec2(cos(a), sin(a))", () => {
+    const out = runPetal(`
+      let v = rotate(vec2(1.0, 0.0), pi() / 2)
+      print(round(v.x * 1000.0) / 1000.0)
+      print(round(v.y * 1000.0) / 1000.0)
+      let w = rotate(vec2(3.0, 4.0), 1.1)
+      print(round(mag(w) * 1000.0) / 1000.0)
+    `);
+    expect(out.trim()).toBe("0.0\n1.0\n5.0");
+  });
+
+  it("rejects a non-vec2", () => {
+    expect(runPetalError("print(rotate({x: 1, y: 0}, 1.0))")).toContain(
+      "rotate() expects a vec2"
+    );
   });
 });

@@ -169,6 +169,7 @@ builtin_effects![
     ("normalize", PURE),
     ("dot", PURE),
     ("limit", PURE),
+    ("rotate", PURE),
     // autodiff (pure readers)
     ("value_of", PURE),
     ("deriv_of", PURE),
@@ -434,6 +435,7 @@ mod tests {
                 "range",
                 "remove",
                 "reverse",
+                "rotate",
                 "round",
                 "safe_div",
                 "set_at",

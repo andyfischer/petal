@@ -4,16 +4,17 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-24 of the 50 exist. Nineteen are panel apps under the category directories
+25 of the 50 exist. Twenty are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category, plus Asteroids, Flappy Bird, the node-based editor and the
-Markdown editor), and five more were written as headless console programs
-under `examples/games/`, which stress the language rather than the host.
+of each category, plus Asteroids, Flappy Bird, the command palette, the
+node-based editor and the Markdown editor), and five more were written as
+headless console programs under `examples/games/`, which stress the language
+rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a twentieth panel app that was not on this
-list. The remaining 26 have not been attempted.
+`examples/games/side-scroller` is a twenty-first panel app that was not on this
+list. The remaining 25 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -40,7 +41,7 @@ list. The remaining 26 have not been attempted.
 | 19 | **File browser** | Trees, icons, selection, context menus |  |
 | 20 | **Settings screen** | Forms, toggles, sliders, nested sections |  |
 | 21 | **Login + signup flow** | Forms, validation, focus, errors |  |
-| 22 | **Command palette** | Keyboard handling, fuzzy search, overlays |  |
+| 22 | **Command palette** | Keyboard handling, fuzzy search, overlays | built — `examples/productivity/command-palette/` |
 | **Business / professional UI** | | | |
 | 23 | **CRM contact manager** | Tables, forms, sorting, filtering | built — `examples/productivity/crm-contact-manager/` |
 | 24 | **Kanban board** | Drag/drop, columns, cards | built — `examples/productivity/kanban/` |

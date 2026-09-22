@@ -9,6 +9,12 @@
   ],
   "categories": [
     {
+      "id": "json",
+      "title": "json",
+      "group": "core",
+      "doc": "`json_stringify` / `json_parse`: the string codec for anything that has to leave the process as text — chiefly the panel store, whose values are strings, and whose docs have always told authors to \"pair it with `json_stringify`\". Every embedder already exposed the conversion (the debug server's `panel.values`, GPP, the MCP tools) through [`crate::value::value_to_json`]; this is the same conversion handed to the script.  The mapping is the one `value_to_json` / `json_to_value` define: nil ↔ `null`, bools, ints and floats ↔ numbers, strings, lists ↔ arrays, records ↔ objects. `json_parse` yields plain records, not class instances, so a round trip flattens a class value to its fields — the same thing a `state` dump shows. A value with no JSON form (a function, a symbol) stringifies as its display text rather than failing, since a stringified debug dump is more useful than an aborted frame."
+    },
+    {
       "id": "io",
       "title": "I/O & Types",
       "group": "core",
@@ -48,7 +54,7 @@
       "id": "vec2",
       "title": "Vectors (2D)",
       "group": "core",
-      "doc": "2D vector builtins: vec2, normalize, dot, limit."
+      "doc": "2D vector builtins: vec2, normalize, dot, limit, rotate."
     },
     {
       "id": "collections",
@@ -132,11 +138,7 @@
       "variadic": true,
       "params": [
         {
-          "name": "end",
-          "type": "int"
-        },
-        {
-          "name": "end",
+          "name": "step",
           "type": "int"
         }
       ],
@@ -159,7 +161,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 55
+        "line": 75
       }
     },
     {
@@ -171,7 +173,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 219
+        "line": 239
       }
     },
     {
@@ -319,7 +321,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 148
+        "line": 168
       }
     },
     {
@@ -331,7 +333,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 228
+        "line": 248
       }
     },
     {
@@ -343,7 +345,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 299
+        "line": 319
       }
     },
     {
@@ -355,7 +357,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 318
+        "line": 338
       }
     },
     {
@@ -376,7 +378,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 330
+        "line": 350
       }
     },
     {
@@ -492,7 +494,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 413
+        "line": 433
       }
     },
     {
@@ -504,7 +506,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 442
+        "line": 462
       }
     },
     {
@@ -525,7 +527,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 460
+        "line": 480
       }
     },
     {
@@ -546,7 +548,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 489
+        "line": 509
       }
     },
     {
@@ -558,7 +560,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 516
+        "line": 536
       }
     },
     {
@@ -570,7 +572,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 528
+        "line": 548
       }
     },
     {
@@ -582,7 +584,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 540
+        "line": 560
       }
     },
     {
@@ -603,7 +605,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 561
+        "line": 581
       }
     },
     {
@@ -628,7 +630,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 604
+        "line": 624
       }
     },
     {
@@ -640,7 +642,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 672
+        "line": 692
       }
     },
     {
@@ -661,7 +663,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 330
+        "line": 350
       },
       "aliasOf": "contains"
     },
@@ -1235,7 +1237,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 422
+        "line": 431
       }
     },
     {
@@ -1247,7 +1249,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 422
+        "line": 431
       },
       "aliasOf": "map"
     },
@@ -1260,7 +1262,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 422
+        "line": 431
       },
       "aliasOf": "map"
     },
@@ -1273,7 +1275,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 422
+        "line": 431
       },
       "aliasOf": "map"
     },
@@ -1333,7 +1335,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 75
+        "line": 95
       }
     },
     {
@@ -1358,7 +1360,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 91
+        "line": 111
       }
     },
     {
@@ -1383,7 +1385,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 123
+        "line": 143
       }
     },
     {
@@ -1491,7 +1493,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 234
+        "line": 254
       }
     },
     {
@@ -1503,7 +1505,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 254
+        "line": 274
       }
     },
     {
@@ -1524,7 +1526,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 273
+        "line": 293
       }
     },
     {
@@ -1744,7 +1746,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 719
+        "line": 739
       }
     },
     {
@@ -1756,7 +1758,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 739
+        "line": 759
       }
     },
     {
@@ -1773,7 +1775,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 754
+        "line": 774
       }
     },
     {
@@ -1790,7 +1792,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 779
+        "line": 799
       }
     },
     {
@@ -1811,7 +1813,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 816
+        "line": 836
       }
     },
     {
@@ -1823,7 +1825,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 422
+        "line": 431
       },
       "aliasOf": "map"
     },
@@ -1845,7 +1847,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 173
+        "line": 193
       }
     },
     {
@@ -1857,7 +1859,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 192
+        "line": 212
       }
     },
     {
@@ -1953,6 +1955,57 @@
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 309
+      }
+    },
+    {
+      "name": "json_stringify",
+      "category": "json",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/json.rs",
+        "line": 28
+      }
+    },
+    {
+      "name": "json_parse",
+      "category": "json",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/json.rs",
+        "line": 60
+      }
+    },
+    {
+      "name": "rotate",
+      "category": "vec2",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "a",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/vec2.rs",
+        "line": 63
       }
     },
     {
@@ -2306,7 +2359,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1157
+        "line": 1165
       }
     },
     {
@@ -2331,7 +2384,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1147
+        "line": 1155
       }
     },
     {
@@ -2372,7 +2425,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1171
+        "line": 1179
       }
     },
     {
@@ -2417,7 +2470,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1182
+        "line": 1190
       }
     },
     {
@@ -2458,7 +2511,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1212
+        "line": 1220
       }
     },
     {
@@ -2503,7 +2556,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1226
+        "line": 1234
       }
     },
     {
@@ -2536,7 +2589,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1306
+        "line": 1314
       }
     },
     {
@@ -2573,7 +2626,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1322
+        "line": 1330
       }
     },
     {
@@ -2598,7 +2651,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1339
+        "line": 1347
       }
     },
     {
@@ -2659,7 +2712,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1368
+        "line": 1376
       }
     },
     {
@@ -2700,7 +2753,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1406
+        "line": 1414
       }
     },
     {
@@ -2729,7 +2782,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1661
+        "line": 1683
       }
     },
     {
@@ -2766,7 +2819,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1416
+        "line": 1424
       }
     },
     {
@@ -2803,7 +2856,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1427
+        "line": 1435
       }
     },
     {
@@ -2844,7 +2897,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1454
+        "line": 1462
       }
     },
     {
@@ -2885,7 +2938,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1463
+        "line": 1471
       }
     },
     {
@@ -2934,7 +2987,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1489
+        "line": 1497
       }
     },
     {
@@ -2983,7 +3036,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1521
+        "line": 1529
       }
     },
     {
@@ -3012,7 +3065,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1582
+        "line": 1604
       }
     },
     {
@@ -3041,7 +3094,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1608
+        "line": 1630
       }
     },
     {
@@ -3078,7 +3131,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1632
+        "line": 1654
       }
     },
     {
@@ -3103,7 +3156,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1688
+        "line": 1710
       }
     },
     {
@@ -3132,7 +3185,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1718
+        "line": 1740
       }
     },
     {
@@ -3144,7 +3197,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1726
+        "line": 1748
       }
     },
     {
@@ -3173,7 +3226,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1736
+        "line": 1758
       }
     },
     {
@@ -3185,7 +3238,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1744
+        "line": 1766
       }
     },
     {
@@ -3206,6 +3259,23 @@
       }
     },
     {
+      "name": "text_advance",
+      "category": "drawing",
+      "group": "canvas",
+      "arity": null,
+      "variadic": false,
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "source": {
+        "file": "petal-ui/src/text.rs",
+        "line": 798
+      }
+    },
+    {
       "name": "text_metrics",
       "category": "drawing",
       "group": "canvas",
@@ -3214,7 +3284,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/text.rs",
-        "line": 877
+        "line": 889
       }
     },
     {
@@ -3231,7 +3301,7 @@
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
-        "line": 1061
+        "line": 1073
       }
     },
     {
@@ -3248,7 +3318,7 @@
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
-        "line": 1191
+        "line": 1203
       }
     },
     {
@@ -3265,7 +3335,7 @@
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
-        "line": 1231
+        "line": 1243
       }
     },
     {
@@ -3315,7 +3385,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1750
+        "line": 1772
       }
     },
     {
@@ -3332,7 +3402,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1778
+        "line": 1800
       }
     },
     {
@@ -3344,7 +3414,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1784
+        "line": 1806
       }
     },
     {
@@ -3369,7 +3439,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1791
+        "line": 1813
       }
     },
     {
@@ -3394,7 +3464,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1803
+        "line": 1825
       }
     },
     {
@@ -3415,7 +3485,7 @@
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1811
+        "line": 1833
       }
     },
     {
@@ -3427,7 +3497,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 735
+        "line": 739
       }
     },
     {
@@ -3439,7 +3509,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 783
+        "line": 787
       }
     },
     {
@@ -3456,7 +3526,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 750
+        "line": 754
       }
     },
     {
@@ -3468,7 +3538,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 787
+        "line": 791
       }
     },
     {
@@ -3480,7 +3550,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 791
+        "line": 795
       }
     },
     {
@@ -3497,7 +3567,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 795
+        "line": 799
       }
     },
     {
@@ -3514,7 +3584,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 802
+        "line": 806
       }
     },
     {
@@ -3531,7 +3601,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 809
+        "line": 813
       }
     },
     {
@@ -3543,7 +3613,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 816
+        "line": 820
       }
     },
     {
@@ -3555,7 +3625,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 820
+        "line": 824
       }
     },
     {
@@ -3572,7 +3642,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 824
+        "line": 828
       }
     },
     {
@@ -3589,7 +3659,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 831
+        "line": 835
       }
     },
     {
@@ -3606,7 +3676,7 @@
       ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 838
+        "line": 842
       }
     },
     {
@@ -3618,7 +3688,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 845
+        "line": 849
       }
     },
     {
@@ -3630,7 +3700,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 849
+        "line": 853
       }
     },
     {
@@ -3642,7 +3712,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 853
+        "line": 857
       }
     },
     {
@@ -3654,7 +3724,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 857
+        "line": 861
       }
     },
     {
@@ -3666,7 +3736,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 861
+        "line": 865
       }
     },
     {
@@ -3678,7 +3748,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 865
+        "line": 869
       }
     },
     {
@@ -3690,7 +3760,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 869
+        "line": 873
       }
     },
     {
@@ -3702,7 +3772,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 873
+        "line": 877
       }
     },
     {
@@ -3714,7 +3784,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 877
+        "line": 881
       }
     },
     {
@@ -3726,7 +3796,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 886
+        "line": 890
       }
     },
     {
@@ -3738,7 +3808,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 893
+        "line": 897
       }
     },
     {
@@ -3750,7 +3820,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 900
+        "line": 904
       }
     },
     {
@@ -3762,7 +3832,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 909
+        "line": 913
       }
     },
     {
@@ -3774,7 +3844,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 915
+        "line": 919
       }
     },
     {
@@ -3786,7 +3856,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 919
+        "line": 923
       }
     },
     {
@@ -3798,7 +3868,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 923
+        "line": 927
       }
     },
     {
@@ -3810,7 +3880,7 @@
       "params": [],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 927
+        "line": 931
       }
     }
   ]

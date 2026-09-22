@@ -34,7 +34,7 @@ cannot skip a frame that must recompute, and memoized scopes make it *worse*
 
 Use a record as a lookup table, built once at the top level:
 
-```petal
+```petal ignore
 let DIGIT_VAL = {"0": 0, "1": 1, ...}
 fn digit_val(c: string) -> int
   _get(DIGIT_VAL, c, -1)

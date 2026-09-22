@@ -45,7 +45,7 @@ frame clock. **Locators** such as `text("Save")` are plain records, resolved
 against the app's frame when the step runs. So a driver never hard-codes
 coordinates, and it keeps working after a layout change.
 
-```petal
+```petal ignore
 // examples/productivity/spreadsheet/tests/edit-formula.drive.ptl
 import auto: *
 

@@ -480,7 +480,7 @@ subset.
 | `size` | honored per run |
 | `font` | any installed family, plus `mono` (JetBrains Mono) and `ui` (Inter); fallback lists work; an unresolvable name degrades to JetBrains Mono |
 | `italic` | resolves when a matching face is available; no italic cut is embedded, so on `mono` and `ui` it is upright |
-| glyph coverage | the embedded faces have no fallback chain: a character the face lacks (`⌘`, `⇧`; on `ui` also `—` and `·`) advances but draws nothing. Prefer `mono` or a system family for symbol-heavy text |
+| glyph coverage | a character the face lacks (`⌘`, `⇧`, `—`, `·`, CJK, emoji) is drawn from an installed system face that has it, per cluster, on every face including `mono` and `ui` |
 | `weight` | real on a system family and on `ui` (Inter Bold is embedded, so `weight >= 600` shapes the Bold cut); synthetic on `mono` (drawn twice at a sub-pixel offset, so it measures regular) |
 | `spacing` | honored; the pen matches `text_width` exactly for ASCII, and places other glyphs at their shaped width (which `text_width` estimates at 0.6 em) |
 

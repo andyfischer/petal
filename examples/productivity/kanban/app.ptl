@@ -4,7 +4,7 @@
 // Exercises: columns, cards, mouse drag/drop with a live insertion ghost,
 // per-column pixel scrolling, keyboard navigation and card movement,
 // hover/selection states, and a typographic hierarchy built only from size /
-// color / spacing (the embedded face has no bold).
+// color / spacing.
 //
 // Run:  garden --headless --debug-port 0 --init layout.ptl
 // ─────────────────────────────────────────────────────────────────────────

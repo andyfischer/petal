@@ -238,7 +238,7 @@ Unfiltered, `values` is every binding the script made, which on a real app is
 thousands of lines per request. Narrow it:
 
 ```bash
-curl -s "127.0.0.1:$PORT/state?values=sel,scroll_right"   # exact names
+curl -s "127.0.0.1:$PORT/state?values=sel,scroll_right"   # by name (tail match, below)
 curl -s "127.0.0.1:$PORT/state?values_prefix=obs_"         # by prefix
 curl -s "127.0.0.1:$PORT/state?values=none"                # drop values entirely
 ```
@@ -410,7 +410,7 @@ clean boundary.
 | `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance every panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600. Replies with each panel's new `frame` and `clocks` |
 | `POST /tick` | `{"n": 60, "advance_clock": false}` | The same, leaving the panel's `time()` clock alone |
 | `POST /seed` | `{"seed": 42}` | Reseed every panel's `random()` stream, so a script that generates placeholder content draws the same content on two renders. Reset first, then seed |
-| `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. A GPP-pushed panel has no file and is skipped |
+| `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. A panel that persists through `panel_store_*` reloads its saved store, not its seed data; launch with `GARDEN_PANEL_STORE_DIR=<scratch dir>` for a clean start. A GPP-pushed panel has no file and is skipped |
 
 `POST /tick` is how you drive an animation or a game: panel time advances
 deterministically, with the `dt` you asked for, and no input is fabricated.

@@ -37,7 +37,11 @@ examples/<category>/<slug>/
 Multi-file apps may add modules next to `app.ptl` and import them. Copy an
 existing app's `launch.sh` (for example `games/pong/launch.sh`); it finds the
 Garden binary at `garden/target/debug/garden`, or wherever `GARDEN_BIN` points,
-and sets a default `GARDEN_HEADLESS_SIZE`.
+and sets a default `GARDEN_HEADLESS_SIZE`. `launch.sh` does not rebuild, so
+build Garden first (`cd garden && cargo build`). A binary that is behind the
+checkout prints a warning to the log at startup, and
+`/state` → `identity.freshness.stale` is true; rebuild before trusting
+anything it tells you.
 
 `layout(...)` is required in `layout.ptl`. A bare `panel("...")` at top level
 silently leaves you with an empty editor pane.
@@ -152,6 +156,11 @@ click 80 30      # the pixel the script calls (80, 30)
 
 Before trusting a click script, post a `move` to a known spot and read
 `panel.input.mouse` back from `/state`. That is the coordinate the script saw.
+
+A `click`, `down` or `drag` presses at once, with no hover frame in between.
+If your hit-testing relies on hover from the previous frame, add
+`"hover_first": true` to the op: Garden moves the pointer and runs a frame
+there before pressing.
 
 **One-frame edges** (`key_pressed`, `*_released`, `click_count`, `scroll`,
 `text_input`) are cleared by the next idle tick. A test that must observe an
@@ -359,9 +368,13 @@ These are showpieces, not smoke tests. Aim for:
 - Enough content to look alive (plausible seeded data, not `foo`/`bar`).
 - Idiomatic Petal: `state` for what persists across frames, `let` for
   dataflow, `var`/`set` only where mutation is genuinely needed, functions to
-  factor drawing, classes to name record shapes.
+  factor drawing, classes to name record shapes. Every function reads a
+  module-level `var` with `get` (`get level`), helpers called from the top
+  level included; only module scope reads it bare. `petal check` flags the
+  slip (see the [writing guide](../docs/writing-petal-guide.md)).
 - No script error at any point in the interaction you exercise. `petal check
-  app.ptl` confirms the script compiles before you launch anything;
+  --strict --host garden app.ptl` (see [Driving it](#driving-it)) confirms the
+  script compiles and has no warnings before you launch anything;
   `status_error` in `/state` reports anything that breaks after.
 
 ## Rules of the road

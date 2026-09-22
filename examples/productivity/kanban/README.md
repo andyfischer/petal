@@ -72,8 +72,7 @@ live as cards move.
 - Text: `draw_text` with style records (`{size, color, spacing}`),
   `draw_text_center`, `draw_text_right`, `text_width` for exact measurement,
   `preview` for two-line title wrapping, `ellipsize` and `fit_parts` for the
-  footer. Hierarchy is built from size, colour and letter-spacing only —
-  the embedded face has no bold.
+  footer. Hierarchy is built from size, colour and letter-spacing only.
 - Input: `mouse_pressed(0)` / `mouse_down(0)` / `mouse_released(0)` for the
   drag gesture, `mouse_x`/`mouse_y`, `scroll_y`, `key_pressed`, `mod_shift`.
 - Prelude widgets: `rect`, `point_in`, `hovered`, `ensure_visible_px`.

@@ -160,6 +160,21 @@ pow(2.0, 10.0)   // 1024.0
 pow(9.0, 0.5)    // 3.0
 ```
 
+### `safe_div(a, b)`
+
+Division that returns `nil` instead of aborting when the divisor is zero.
+Otherwise it is exactly `/`: int / int truncates, floats divide as floats.
+Bare `/` aborts on a zero divisor by design; use `safe_div` where the divisor
+comes from input or can legitimately be zero, and default with `??`.
+
+```petal
+safe_div(7, 2)          // 3
+safe_div(7.0, 2)        // 3.5
+safe_div(1, 0)          // nil
+safe_div(1.0, 0.0)      // nil
+safe_div(3, 0) ?? 0     // 0
+```
+
 ### `sign(x)`
 
 Returns `-1`, `0`, or `1` depending on the sign of the argument.

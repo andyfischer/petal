@@ -264,6 +264,12 @@ and the ellipsize/wrap family take a style record for this reason.
 `text_width` rounds to a whole pixel. Where the fraction matters — a column
 position `col * cw` in a monospace editor — measure with
 `text_advance(s, ts)`, which takes the same style and returns the float.
+There is no need to measure a long run and divide.
+
+A space measures like any other glyph: `text_advance(" ", ts)` is the gap a
+space adds in that style (7.8 at size 13 in the default face), and leading or
+trailing spaces count toward `text_width`. Use it for a word gap or an indent
+step rather than guessing a fraction of the size.
 
 ### Compositing flat tints
 
@@ -303,7 +309,8 @@ drawn.
 ## Draw primitives — gradients, shadows, nested clips
 
 Beyond the fills and strokes (`draw_rect`, `draw_rect_rounded`, `draw_line`,
-`fill_arc`, …), each of which takes a rect record and a color record:
+`fill_arc`, `draw_polyline`, `draw_polygon_outline`, …), each of which takes
+either a geometry record or flat coordinates, plus a color record:
 
 | Call | Draws |
 |---|---|

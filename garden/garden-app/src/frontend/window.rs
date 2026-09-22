@@ -406,12 +406,11 @@ impl ApplicationHandler<DebugRequest> for Handler {
                         (-(p.x as f32) / cell_w, -(p.y as f32) / cell_h)
                     }
                 };
-                if lines != 0.0 {
-                    state.app.handle_scroll(lines);
-                }
-                if cols != 0.0 {
-                    state.app.handle_scroll_h(cols);
-                }
+                // The held chord goes with the wheel, so a panel's ⌘-wheel
+                // zoom sees `mod_cmd()` for a user as it does for the debug
+                // `scroll` op.
+                let mods = state.mods();
+                state.app.scroll_with_mods(lines, cols, mods);
             }
             WindowEvent::RedrawRequested => {
                 let scene = state.app.build_scene();

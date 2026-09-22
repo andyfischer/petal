@@ -327,22 +327,9 @@ impl App {
                     }
                     "scroll" => {
                         self.mouse = (x, y);
-                        // A wheel under a chord (⌘-wheel zoom, shift-wheel for
-                        // horizontal) is read by the script as `mod_cmd()` /
-                        // `mod_shift()` on the frame the ticks arrive, so the
-                        // named modifiers go to the panel under the pointer
-                        // before the scroll, exactly as a press delivers them.
-                        if let Some(idx) = self.pane_at(x, y) {
-                            if let Some(panel) = self.panes[idx].panel.as_mut() {
-                                panel.set_modifiers(mods);
-                            }
-                        }
-                        if lines != 0.0 {
-                            self.handle_scroll(lines);
-                        }
-                        if cols != 0.0 {
-                            self.handle_scroll_h(cols);
-                        }
+                        // The named modifiers reach the panel under the
+                        // pointer before the scroll — see `scroll_with_mods`.
+                        self.scroll_with_mods(lines, cols, mods);
                     }
                     other => return Err(format!("unknown mouse op {other:?}")),
                 }
@@ -1486,6 +1473,33 @@ mod tests {
         assert_eq!(
             panel_of(&chord)["values"]["obs_zoomed"], true,
             "the script saw mod_cmd() on the frame the wheel ticks arrived"
+        );
+    }
+
+    /// The windowed frontend's `MouseWheel` used to call `handle_scroll` with
+    /// no modifier state, so ⌘-wheel zoom worked headless and not for a user.
+    /// It now goes through `scroll_with_mods` with the held chord — the same
+    /// entry point the debug `scroll` op uses.
+    #[test]
+    fn wheel_with_held_chord_reaches_the_panel() {
+        let (mut app, _f) = panel_app(
+            "state zoomed = false\n\
+             if scroll_y() != 0 && mod_cmd() then zoomed = true end\n\
+             let obs_zoomed = zoomed\n",
+        );
+        app.mouse_moved(100.0, 100.0);
+        app.scroll_with_mods(1.0, 0.0, super::super::Mods::default());
+        app.settle_panels();
+        let plain = state_with(&mut app, "/state?values_prefix=obs_");
+        assert_eq!(panel_of(&plain)["values"]["obs_zoomed"], false);
+
+        let cmd = super::super::Mods { cmd: true, ..Default::default() };
+        app.scroll_with_mods(1.0, 0.0, cmd);
+        app.settle_panels();
+        let chord = state_with(&mut app, "/state?values_prefix=obs_");
+        assert_eq!(
+            panel_of(&chord)["values"]["obs_zoomed"], true,
+            "a user's ⌘-wheel must reach the script as mod_cmd()"
         );
     }
 

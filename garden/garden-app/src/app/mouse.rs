@@ -772,6 +772,28 @@ impl App {
         }
     }
 
+    /// One wheel event under a modifier chord: `lines` rows down and `cols`
+    /// columns right at the current pointer. A wheel under a chord (⌘-wheel
+    /// zoom, shift-wheel for horizontal) is read by the script as `mod_cmd()` /
+    /// `mod_shift()` on the frame the ticks arrive, so the chord goes to the
+    /// panel under the pointer before the scroll, exactly as a press delivers
+    /// it. Shared by the windowed frontend's `MouseWheel` and the debug
+    /// `scroll` op, so ⌘-wheel behaves the same for a user and a script.
+    pub fn scroll_with_mods(&mut self, lines: f32, cols: f32, mods: super::Mods) {
+        let (x, y) = self.mouse;
+        if let Some(idx) = self.pane_at(x, y) {
+            if let Some(panel) = self.panes[idx].panel.as_mut() {
+                panel.set_modifiers(mods);
+            }
+        }
+        if lines != 0.0 {
+            self.handle_scroll(lines);
+        }
+        if cols != 0.0 {
+            self.handle_scroll_h(cols);
+        }
+    }
+
     /// Scroll the pane under the mouse (falling back to the focused pane)
     /// vertically by `lines` rows — fractional, so a trackpad's pixel deltas
     /// arrive intact and the pane scrolls smoothly rather than a row at a time.

@@ -239,6 +239,7 @@ Input reads: `dt()`, `frame_count()`, `time()`, `screen_width()`,
 click, 3 on a triple), `drag_active()`, `key_down(name)`, `key_pressed(name)`,
 `key_released(name)`, `mod_shift()`, `mod_ctrl()`, `mod_alt()`, `mod_cmd()`,
 `scroll_y()`, `scroll_x()`, `text_input()`, `text_width(s, style)`,
+`text_advance(s, style)`,
 `panel_theme()`.
 
 Garden owns the Cmd/Ctrl chords. If your app needs one — a spreadsheet's
@@ -283,10 +284,10 @@ even `—` and `·`) advances but draws nothing — check a Markdown preview's
 first em dash against `mono` or ASCII. Text cannot be rotated;
 `draw_text_along` and `draw_axis_labels` are the workarounds.
 
-`text_width` returns a rounded whole pixel. For monospace column math do not
-measure one glyph and multiply — the advance is fractional and the error is a
-full column by column 30. Measure a long run and divide:
-`let CW = float(text_width(rep("m", 50), style)) / 50.0`. See
+`text_width` returns a rounded whole pixel. For monospace column math use
+`text_advance(s, style)`, the same measurement as a float: one glyph of a
+13 px face is 7.8, which `text_width` rounds to 8 and which drifts a full
+column by column 30. `let CW = text_advance("m", style)`. See
 [Text size and measurement](../garden/docs/petal-graphical-panels.md#text-size-and-measurement)
 and [docs/text-and-fonts.md](../docs/text-and-fonts.md).
 

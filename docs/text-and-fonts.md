@@ -24,6 +24,7 @@ its measurements into the environment, and the script reads them back through
 draw_text("hello", x, y, size, r, g, b, [a])   // emits a `text` draw command
 text_width("hello", size)                       // px width, default font
 text_width("hello", size, "mono")               // px width, a named face
+text_advance("hello", style)                    // the same width as a float
 text_metrics(size)                              // px: where the ink sits (below)
 text_wrap(s, style, 200.0)                      // -> [line], greedy word wrap
 text_ellipsize(s, style, 200.0, "tail")         // -> "a long lab…"
@@ -33,7 +34,9 @@ fonts()                                         // families this host can draw
 ```
 
 `text_width` is exact for the host's font when the host bound real metrics,
-and an estimate otherwise (monospace, 0.6 × size per character). The last three
+and an estimate otherwise (monospace, 0.6 × size per character). It rounds to
+a whole pixel; `text_advance` takes the same arguments and returns the
+unrounded float, which is what column math over a monospace face needs. The last three
 above measure with the same table in one walk, rather than a `text_width` call
 per character — which is what a script otherwise writes, on every frame.
 

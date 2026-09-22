@@ -790,6 +790,18 @@ pub(crate) fn native_text_width(state: &mut PetalCxt) -> NativeResult {
     Ok(1)
 }
 
+/// `text_advance(s, style) -> float`: the same measurement as `text_width`,
+/// unrounded. `text_width` rounds to a whole pixel because layouts built on it
+/// rely on an integer; column math over a monospace face wants the true
+/// advance instead — `text_width("m", {size: 13})` is 8 where the advance is
+/// 7.8, which drifts a whole character by column 30.
+pub(crate) fn native_text_advance(state: &mut PetalCxt) -> NativeResult {
+    let text = state.get_string(1)?;
+    let (style, metrics) = style_and_metrics(state, 2)?;
+    state.push_float(run_width(&metrics, &style, &text));
+    Ok(1)
+}
+
 /// The style argument at `index` (a style record, or a bare size optionally
 /// followed by a face name at `index + 1`) together with the metrics it
 /// resolves to. Every text native takes its style this way, so one call
@@ -1473,6 +1485,24 @@ mod tests {
         bind_text_metrics(&mut env, 0.6);
         let v = env.run_source("text_width(\"abc\", 14)").expect("run");
         assert_eq!(v, Value::Int(25)); // 3 × 14 × 0.6 = 25.2 → 25
+    }
+
+    #[test]
+    fn text_advance_is_text_width_unrounded() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        bind_text_metrics(&mut env, 0.6);
+        // 13 × 0.6 = 7.8: text_width rounds to 8, which drifts a whole glyph
+        // by column 30; text_advance keeps the fraction.
+        assert_eq!(env.run_source("text_width(\"m\", {size: 13})").expect("run"), Value::Int(8));
+        let v = env.run_source("text_advance(\"m\", {size: 13})").expect("run");
+        assert!(matches!(v, Value::Float(_)), "a float, not a rounded int: {v:?}");
+        assert!((as_float(&v) - 7.8).abs() < 1e-9, "{v:?}");
+        // Same style argument forms as text_width, spacing included.
+        let v = env.run_source("text_advance(\"abc\", 10)").expect("run");
+        assert!((as_float(&v) - 18.0).abs() < 1e-9, "{v:?}");
+        let v = env.run_source("text_advance(\"abc\", {size: 10, spacing: 0.5})").expect("run");
+        assert!((as_float(&v) - 19.5).abs() < 1e-9, "{v:?}");
     }
 
     #[test]

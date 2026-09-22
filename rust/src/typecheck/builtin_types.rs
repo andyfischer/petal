@@ -123,7 +123,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         | "scroll_x" | "scroll_y" | "drag_start_x" | "drag_start_y" | "click_count"
         | "frame_count" | "text_width" | "ui_version" => Type::Int,
         // ── host (petal-ui): float results ──────────────────────────────────
-        "dt" | "time" => Type::Float,
+        "dt" | "time" | "text_advance" => Type::Float,
         // ── host (petal-ui): bool results ───────────────────────────────────
         "mouse_down" | "mouse_pressed" | "mouse_released" | "key_down" | "key_pressed"
         | "key_released" | "mod_shift" | "mod_ctrl" | "mod_alt" | "mod_cmd" | "drag_active" => {
@@ -148,6 +148,9 @@ mod tests {
         assert_eq!(builtin_return_type("str", &[Type::Int]), Some(Type::String));
         assert_eq!(builtin_return_type("range", &[Type::Int]), Some(Type::List));
         assert_eq!(builtin_return_type("banana", &[]), None);
+        // text_width rounds; text_advance is the same measurement unrounded.
+        assert_eq!(builtin_return_type("text_width", &[]), Some(Type::Int));
+        assert_eq!(builtin_return_type("text_advance", &[]), Some(Type::Float));
     }
 
     /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is

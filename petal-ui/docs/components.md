@@ -259,6 +259,10 @@ while the measure uses the default metric table, and with a proportional face
 a centred title lands noticeably off. Every alignment helper, every widget,
 and the ellipsize/wrap family take a style record for this reason.
 
+`text_width` rounds to a whole pixel. Where the fraction matters — a column
+position `col * cw` in a monospace editor — measure with
+`text_advance(s, ts)`, which takes the same style and returns the float.
+
 ### Compositing flat tints
 
 A hover wash, a disabled label, a hairline divider or a zebra stripe is a

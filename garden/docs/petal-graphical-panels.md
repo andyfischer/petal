@@ -193,7 +193,7 @@ Input and timing reads: `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
 `mouse_released`, `click_count`, `drag_active`, `key_down`, `key_pressed`,
 `key_released`, `mod_shift`, `mod_ctrl`, `mod_alt`, `mod_cmd`, `scroll_x`,
-`scroll_y`, `text_input`, `text_width`, `text_metrics`, `text_wrap`,
+`scroll_y`, `text_input`, `text_width`, `text_advance`, `text_metrics`, `text_wrap`,
 `text_ellipsize`, `text_index_at`.
 
 The `ui` prelude is an implicit import, so scripts call its widgets bare:
@@ -480,7 +480,7 @@ subset.
 | `italic` | resolves when a matching face is available; no italic cut is embedded, so on `mono` and `ui` it is upright |
 | glyph coverage | the embedded faces have no fallback chain: a character the face lacks (`⌘`, `⇧`; on `ui` also `—` and `·`) advances but draws nothing. Prefer `mono` or a system family for symbol-heavy text |
 | `weight` | real on a system family and on `ui` (Inter Bold is embedded, so `weight >= 600` shapes the Bold cut); synthetic on `mono` (drawn twice at a sub-pixel offset, so it measures regular) |
-| `spacing` | honored; the pen matches `text_width` exactly |
+| `spacing` | honored; the pen matches `text_width` exactly for ASCII, and places other glyphs at their shaped width (which `text_width` estimates at 0.6 em) |
 
 Measure in the face you draw in. `text_width(s, 22)` sums monospace advances,
 so measuring a `font: "ui"` run without the third argument lands visibly

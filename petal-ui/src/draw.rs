@@ -32,7 +32,7 @@ use petal::stack::StackKey;
 use petal::value::Value;
 use serde::Serialize;
 
-use crate::text::native_text_width;
+use crate::text::{native_text_advance, native_text_width};
 
 /// Buffered-output channel carrying draw commands to the renderer.
 pub const DRAW_COMMANDS_SYMBOL: &str = "draw_commands";
@@ -1082,6 +1082,7 @@ pub fn register_draw(env: &mut Env) {
     env.register_native("clip_push", native_clip_push, DRAW);
     env.register_native("clip_pop", native_clip_pop, DRAW);
     env.register_native("text_width", native_text_width, MEASURES_TEXT);
+    env.register_native("text_advance", native_text_advance, MEASURES_TEXT);
     // The other axis, and the fitting that needs both. `text_width` answers
     // how wide a run is; `text_metrics` answers where its ink sits relative to
     // the `y` a script hands `draw_text`, which is what vertical centring has

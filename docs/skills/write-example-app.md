@@ -145,7 +145,6 @@ Before calling it done:
   branch that never ran.
 - Reload the process once and confirm a persisted app restores what it
   saved, and its "reset demo data" path restores the seed.
-- Stop Garden with `kill $GPID`. Never `pkill -f garden` or `killall`.
 
 ### 6. Write the README
 
@@ -164,7 +163,20 @@ Follow the shape of `examples/productivity/markdown-editor/README.md`:
    exact symptom. This section is where language feedback lives now that the
    `.temp/testbed-debriefs/` files are no longer written.
 
-### 7. Register it and commit
+### 7. Write a debrief
+
+Write a file to `.temp/<todays-ISO-date>-<name>-debrief.md`
+
+The debrief should contain:
+
+ - Any bugs or blockers or challenges that were encountered while building the app.
+ - Ways in which it was harder to build the app due to the design of Petal or Garden.
+ - Ideas to improve or streamline the core platform to make this easier.
+ - Ideas for tooling or skills to improve the development process.
+ - Feedback on the documentation, any areas that were unclear or confusing.
+ - Short list of action item ideas to improve the project.
+
+### 8. Register it and commit
 
 - Change the entry's Status cell in `docs/dev/testbed-challenge-plan.md` to
   ``built — `examples/<category>/<slug>/` `` and bump the counts in that
@@ -173,67 +185,21 @@ Follow the shape of `examples/productivity/markdown-editor/README.md`:
 - Stage explicit paths only, never `git add -A`. One commit:
 
 ```bash
-git add examples/<category>/<slug> docs/dev/testbed-challenge-plan.md examples/README.md
-git commit -m "examples: add <App name> as a Garden panel app (testbed NN)"
+git add ...
+git commit -m "examples: add <App name> example app/game <with description>"
 ```
-
-The body can carry two or three lines on what it does and how it was verified
-(for example "Verified headlessly through sector clear and game over via
-/tick"). Remove `log.txt` and `shot.png` from the app directory before
-staging.
-
-## Procedure — console program
-
-For an entry that is better as a headless program (the Aug 30 batch: Tetris,
-2048, Minesweeper, boids, terrain):
-
-1. One file, `examples/games/<slug>/<slug>.ptl`, run with
-   `./ts/bin/run-petal.ts run examples/games/<slug>/<slug>.ptl`.
-2. Deterministic: a fixed seed or a scripted sequence of moves, so two runs
-   print byte-identical output. Tuning knobs are `config let` bindings.
-3. Prints enough to be checked without a screen: the board as ASCII after key
-   events, plus a numeric summary (score, lines, a cohesion metric, a
-   histogram) so correctness is verifiable rather than merely visible.
-4. Terminates on its own in a second or two, exit 0, `check --strict` clean.
-5. A short README in the directory, the plan-table entry set to
-   ``console — `examples/games/<slug>/<slug>.ptl` ``, and the app listed in
-   `examples/README.md`.
-
-That batch was also a documentation stress test: each agent was allowed to
-read only `docs/writing-petal-guide.md`, nothing else in `docs/`, no source,
-no other `.ptl`, and had to discover every missing fact by running
-`run-petal.ts run -e '<snippet>'`, logging each guess-and-check round with the
-exact snippet and error text. Reuse that restriction when the goal is to
-improve the guide rather than the app; the friction log then feeds edits to
-the guide.
-
 ## Quality bar
 
-From the original build prompt, still the standard:
+The goal is to write very **high quality** apps in order to fully demonstrate
+the project.
 
-> This is a showpiece, not a smoke test. A considered palette, a real
-> typographic hierarchy (size, color and spacing, not just bold), a consistent
-> spacing scale, generous padding, plausible seeded content rather than
-> placeholder junk, and interactions that feel deliberate. Take the time to
-> make it genuinely beautiful.
+This is a showpiece, not a smoke test. A considered palette, a real
+typographic hierarchy (size, color and spacing, not just bold), a consistent
+spacing scale, generous padding, plausible seeded content rather than
+placeholder junk, and interactions that feel deliberate. Take the time to
+make it genuinely beautiful.
 
-Plus idiomatic Petal: `state` for what persists across frames, `let` for
-per-frame dataflow, `var`/`set` only where mutation is genuinely needed,
-functions to factor drawing, classes to name record shapes. Run
-`petal lint` at the end; recent work folds function-local `var`s into `let`s
-and `x = x op e` into `x op= e`.
+Once the initial app is running, check it in various ways, including
+debugging and visual verification, then iterate on the result to 
+hone and perfect it.
 
-## Running several at once
-
-The original 50-app run (Aug 8, 2026) drove five agents per batch, one from
-each track, through a workflow. What it learned about a shared checkout:
-
-- No worktrees: `garden/target` alone is ~15 GB. Share one checkout and one
-  prebuilt binary; nobody runs `cargo build` during the run.
-- Each agent touches only its own directory. Concurrent commits contend on
-  `.git/index.lock`; sleep and retry, never checkout/reset/stash/rebase.
-- `--debug-port 0` per agent, and kill by PID.
-- Each agent returned a short status (complete/partial/blocked), one line on
-  what it built, and its single biggest issue; those were collated into a
-  ranked fix list. Fifteen of the fifty landed before the run stopped, and
-  zero reported a hard blocker.

@@ -1,0 +1,659 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  SOLAR SYSTEM — a Garden panel app written in Petal.
+//
+//  An orrery: the Sun, eight planets and thirteen moons as a body table with
+//  parent links, resolved every frame into world positions by walking the
+//  hierarchy (a moon orbits its planet, which orbits the Sun), then pushed
+//  through one view transform (pan, zoom about the cursor, an optional tilt)
+//  onto the screen. Time runs at an adjustable rate; the camera can follow
+//  any body; labels place themselves greedily so they never overlap; hover
+//  shows a fact card and an inspector lists what you have selected.
+//
+//  Exercises: hierarchical transforms, dt()-driven animation, zoom and pan,
+//  and label layout.
+//
+//  Designed for a 1200x800 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG     = #05060d
+let C_SPACE  = #080a14
+let C_PANEL  = #0e111c
+let C_CHIP   = #141827
+let C_LINE   = #1d2233
+let C_EDGE   = #2a3147
+let C_TEXT   = #e8ecf8
+let C_DIM    = #7d869e
+let C_MUTE   = #4a5166
+let C_ORBIT  = #3a4460
+let C_ACCENT = #7fb2ff
+let C_GOLD   = #ffd166
+let C_SUN    = #ffb347
+let C_SUN_C  = #fff1c9
+
+// ── Type scale ───────────────────────────────────────────────────────────
+// Five sizes: 10 / 12 / 14 / 20 / 30.
+
+let S_TITLE = {size: 30, color: C_TEXT, spacing: 10}
+let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
+let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
+let S_STAT  = {size: 20, color: C_TEXT}
+let S_CAP   = {size: 12, color: C_TEXT}
+let S_HINT  = {size: 12, color: C_DIM}
+let S_NAME  = {size: 12, font: "ui", color: C_TEXT}
+let S_NAME_M = {size: 11, font: "ui", color: C_DIM}
+let S_UI    = {size: 13, font: "ui", color: C_TEXT}
+let S_UI_M  = {size: 13, font: "ui", color: C_DIM}
+let S_UI_B  = {size: 14, font: "ui", color: C_TEXT, weight: 700}
+let S_H     = {size: 20, font: "ui", color: C_TEXT, weight: 700}
+
+// ── Tunables ─────────────────────────────────────────────────────────────
+
+config let speed_start   = 4.0      // simulated days per real second
+config let zoom_min      = 0.35
+config let zoom_max      = 40.0
+config let tilt_amount   = 0.42     // y scale in the three-quarter view
+config let follow_rate   = 6.0      // camera easing, 1/s
+
+let PAD  = 28
+let HEAD = 104
+let FOOT = 60
+let SIDE_W = 268
+
+// ── The bodies ───────────────────────────────────────────────────────────
+// Orbit radii are display units at zoom 1 (not to scale); periods are real
+// days (negative = retrograde); `au` is the real semi-major axis in AU for a
+// planet and in thousands of km for a moon; `km` is the real radius.
+
+class Body
+  name: string,
+  parent: int,
+  kind: string,
+  orbit: num,
+  period: num,
+  r: num,
+  color: record,
+  phase: num,
+  au: num,
+  km: num,
+  note: string,
+end
+
+let BODIES = [
+  Body("Sun",      -1, "star",   0.0,   1.0,     22.0, C_SUN,    0.0,  0.0,   695700.0, "A G-type main-sequence star; 99.8% of the system's mass"),
+  Body("Mercury",   0, "planet", 62.0,  87.97,   3.0,  #b8b0a4,  0.9,  0.39,  2440.0,   "Smallest planet; a day lasts 176 Earth days"),
+  Body("Venus",     0, "planet", 88.0,  224.7,   5.0,  #e6c48a,  2.4,  0.72,  6052.0,   "Rotates backwards, once every 243 days"),
+  Body("Earth",     0, "planet", 120.0, 365.25,  5.2,  #5ea0ff,  4.1,  1.00,  6371.0,   "The only body known to host life"),
+  Body("Mars",      0, "planet", 158.0, 687.0,   4.0,  #e0704a,  0.3,  1.52,  3390.0,   "Home of Olympus Mons, three times the height of Everest"),
+  Body("Jupiter",   0, "planet", 236.0, 4333.0,  14.0, #d9a877,  5.2,  5.20,  69911.0,  "Twice the mass of every other planet combined"),
+  Body("Saturn",    0, "planet", 306.0, 10759.0, 12.0, #e8d3a0,  1.7,  9.54,  58232.0,  "Rings a hundred thousand km across and ten metres thick"),
+  Body("Uranus",    0, "planet", 376.0, 30687.0, 8.0,  #9fdbe6,  3.5,  19.2,  25362.0,  "Spins on its side, 98 degrees from its orbit"),
+  Body("Neptune",   0, "planet", 440.0, 60190.0, 8.0,  #5a7cff,  2.0,  30.1,  24622.0,  "The windiest planet: gusts over 2000 km/h"),
+  Body("Moon",      3, "moon",   13.0,  27.32,   1.6,  #d7d7de,  1.0,  384.0, 1737.0,   "Slowly drifting away, 3.8 cm a year"),
+  Body("Phobos",    4, "moon",   8.0,   0.319,   1.0,  #b39b8a,  0.0,  9.4,   11.0,     "Orbits faster than Mars rotates"),
+  Body("Deimos",    4, "moon",   12.0,  1.263,   1.0,  #b39b8a,  2.0,  23.5,  6.0,      "Smaller than many cities"),
+  Body("Io",        5, "moon",   22.0,  1.769,   1.8,  #e9d36a,  0.5,  422.0, 1822.0,   "The most volcanically active body known"),
+  Body("Europa",    5, "moon",   28.0,  3.551,   1.6,  #cfd6e6,  2.9,  671.0, 1561.0,   "A global ocean under a shell of ice"),
+  Body("Ganymede",  5, "moon",   36.0,  7.155,   2.2,  #a89f95,  4.4,  1070.0, 2634.0,  "Larger than Mercury; has its own magnetic field"),
+  Body("Callisto",  5, "moon",   46.0,  16.69,   2.0,  #7f7873,  1.4,  1883.0, 2410.0,  "The most heavily cratered surface in the system"),
+  Body("Rhea",      6, "moon",   22.0,  4.518,   1.4,  #cfcfd6,  3.1,  527.0, 764.0,    "May have a faint ring system of its own"),
+  Body("Titan",     6, "moon",   32.0,  15.95,   2.4,  #d9a24a,  0.8,  1222.0, 2575.0,  "Rivers and lakes of liquid methane"),
+  Body("Titania",   7, "moon",   18.0,  8.706,   1.4,  #b8c4cc,  1.9,  436.0, 788.0,    "Largest moon of Uranus, named for Shakespeare"),
+  Body("Oberon",    7, "moon",   25.0,  13.46,   1.4,  #a5b0b8,  4.6,  584.0, 761.0,    "The outermost of the five major moons"),
+  Body("Triton",    8, "moon",   20.0,  -5.877,  1.8,  #cfd8e8,  2.2,  355.0, 1353.0,   "Retrograde orbit: probably a captured Kuiper belt object"),
+]
+
+let N = len(BODIES)
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state var ready   = false
+state var day_base = 0.0            // simulated days at the last mark
+state var t_mark  = 0.0             // panel clock at the last mark
+state var speed   = speed_start
+state var playing = true
+state var zoom    = 1.0
+state var pan     = vec2(0.0, 0.0)   // world point at the viewport centre
+state var tilt    = true
+state var labels  = true
+state var orbits  = true
+state var sel     = -1               // selected body index
+state var follow  = false
+state var drag_last = vec2(0.0, 0.0)
+state var dragging = false
+state var drag_moved = 0.0
+state var stars   = []
+state var pulse   = 0.0
+state var zooms   = 0
+state var clicks  = 0
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record)
+  draw_text(s, {x: int(x), y: int(y)}, style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record)
+  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record)
+  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+end
+
+fn fmt1(x: num) -> string
+  str(round(x, 1))
+end
+
+fn fmt_days(d: num) -> string
+  if abs(d) < 1.0 then "{fmt1(d * 24.0)} h"
+  elsif abs(d) < 400.0 then "{fmt1(d)} d"
+  else "{fmt1(d / 365.25)} y" end
+end
+
+fn fmt_int(n: num) -> string
+  // 69911 -> "69,911"
+  let s = str(int(n))
+  let cs = chars(s)
+  let out = ""
+  for i in range(0, len(cs)) do
+    if i > 0 && (len(cs) - i) % 3 == 0 then out ++= "," end
+    out ++= cs[i]
+  end
+  out
+end
+
+fn children_of(i: int) -> list
+  for k in range(0, N) do
+    if BODIES[k].parent != i then continue end
+    k
+  end
+end
+
+// The hierarchy walk: every body's world position from its parent's. The
+// table is ordered parents-first, so one pass resolves the whole tree.
+fn resolve(t: num) -> list
+  let pos = []
+  for i in range(0, N) do
+    let b = BODIES[i]
+    let p = if b.parent < 0 then vec2(0.0, 0.0)
+    else
+      let a = b.phase + t / b.period * 2.0 * pi()
+      pos[b.parent] + vec2(cos(a) * b.orbit, sin(a) * b.orbit)
+    end
+    pos = append(pos, p)
+  end
+  pos
+end
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let view = rect(PAD, HEAD, W - PAD * 2 - SIDE_W - 16, H - HEAD - FOOT - PAD)
+let side = rect(view.x + view.w + 16, HEAD, SIDE_W, view.h)
+let vcx = float(view.x + view.w / 2)
+let vcy = float(view.y + view.h / 2)
+
+if !ready then
+  set ready = true
+  let st = []
+  for i in range(0, 220) do
+    st = append(st, {x: random(0.0, 1.0), y: random(0.0, 1.0),
+      sz: if random(0.0, 1.0) < 0.12 then 2 else 1 end, ph: random(0.0, 6.2832),
+      a: random(0.3, 1.0)})
+  end
+  set stars = st
+  set t_mark = time()
+end
+
+let sdt = min(dt(), 0.1)
+set pulse += sdt
+
+// Simulated time is read off the panel clock rather than accumulated from
+// dt(): `time()` is virtual under POST /tick, so a scripted run is exact.
+fn days_now() -> num
+  if get playing then get day_base + (time() - get t_mark) * get speed else get day_base end
+end
+
+// Fold the elapsed time into the base before anything changes the rate.
+fn mark()
+  set day_base = days_now()
+  set t_mark = time()
+end
+
+if playing then request_frame() end
+
+// ── View transform ───────────────────────────────────────────────────────
+
+let ty = if tilt then tilt_amount else 1.0 end
+
+fn to_screen(w: vec2) -> vec2
+  let z = get zoom
+  let p = get pan
+  vec2(vcx + (w.x - p.x) * z, vcy + (w.y - p.y) * z * ty)
+end
+
+fn to_world(sx: num, sy: num) -> vec2
+  let z = get zoom
+  let p = get pan
+  vec2((sx - vcx) / z + p.x, (sy - vcy) / (z * ty) + p.y)
+end
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+let mx = mouse_x()
+let my = mouse_y()
+let in_view = point_in(mx, my, view)
+
+if key_pressed("space") then
+  mark()
+  set playing = !playing
+end
+if key_pressed("=") || key_pressed("+") then
+  mark()
+  set speed = min(speed * 2.0, 512.0)
+end
+if key_pressed("-") then
+  mark()
+  set speed = max(speed / 2.0, 0.125)
+end
+if key_pressed("t") then set tilt = !tilt end
+if key_pressed("l") then set labels = !labels end
+if key_pressed("o") then set orbits = !orbits end
+if key_pressed("f") && sel >= 0 then set follow = !follow end
+if key_pressed("escape") then
+  set follow = false
+  set sel = -1
+end
+if key_pressed("0") then
+  set zoom = 1.0
+  set pan = vec2(0.0, 0.0)
+  set follow = false
+end
+if key_pressed("tab") then
+  // Cycle the planets (and the Sun); shift goes backwards.
+  let dir = if mod_shift() then -1 else 1 end
+  let nxt = (sel + dir + 9) % 9
+  set sel = nxt
+  set follow = true
+end
+
+// Zoom about the cursor: keep the world point under the pointer fixed.
+fn zoom_at(sx: num, sy: num, factor: num)
+  let before = to_world(sx, sy)
+  set zoom = clamp(get zoom * factor, zoom_min, zoom_max)
+  let after = to_world(sx, sy)
+  set pan = get pan + (before - after)
+  set zooms += 1
+end
+
+if key_pressed("]") then zoom_at(vcx, vcy, 1.5) end
+if key_pressed("[") then zoom_at(vcx, vcy, 1.0 / 1.5) end
+if in_view && scroll_y() != 0.0 then
+  zoom_at(float(mx), float(my), pow(1.18, -scroll_y()))
+end
+
+// Positions for this frame (after time advanced, before the camera moves).
+let days = days_now()
+let pos = resolve(days)
+
+// Follow: ease the pan onto the followed body.
+if follow && sel >= 0 then
+  let target = pos[sel]
+  set pan = vec2(approach(pan.x, target.x, follow_rate), approach(pan.y, target.y, follow_rate))
+  if mag(pan - target) > 0.01 then request_frame() end
+end
+
+// Hit-test bodies under the pointer (nearest wins, small bodies get a
+// minimum radius so moons are clickable).
+let hover = -1
+let hover_d = 1.0e9
+if in_view then
+  for i in range(0, N) do
+    let b = BODIES[i]
+    let visible = b.parent <= 0 || b.orbit * zoom >= 6.0
+    if !visible then continue end
+    let s = to_screen(pos[i])
+    let d = distance(float(mx), float(my), s.x, s.y)
+    let hit_r = max(b.r * sqrt(zoom) + 2.0, 8.0)
+    if d <= hit_r && d < hover_d then
+      hover = i
+      hover_d = d
+    end
+  end
+end
+
+// Drag to pan; a click (no movement) on a body selects and follows it, a
+// click on empty space just deselects.
+if in_view && mouse_pressed(0) then
+  set dragging = true
+  set drag_last = vec2(float(mx), float(my))
+  set drag_moved = 0.0
+end
+if dragging && mouse_down(0) then
+  let cur = vec2(float(mx), float(my))
+  let d = cur - drag_last
+  set drag_moved += mag(d)
+  if drag_moved > 3.0 then
+    set pan -= vec2(d.x / zoom, d.y / (zoom * ty))
+    set follow = false
+  end
+  set drag_last = cur
+end
+if dragging && mouse_released(0) then
+  set dragging = false
+  if drag_moved <= 3.0 then
+    set clicks += 1
+    if hover >= 0 then
+      set sel = hover
+      set follow = true
+    else
+      set sel = -1
+      set follow = false
+    end
+  end
+end
+
+// Sidebar list clicks (rows are laid out again in the draw pass with the
+// same geometry).
+fn side_rows() -> list
+  // The Sun and the planets, each followed by its moons when it is selected
+  // or a moon of it is selected.
+  let rows = []
+  let s = get sel
+  let open_parent = if s < 0 then -1 elsif BODIES[s].kind == "moon" then BODIES[s].parent else s end
+  for i in range(0, 9) do
+    rows = append(rows, i)
+    if i == open_parent then
+      for k in children_of(i) do rows = append(rows, k) end
+    end
+  end
+  rows
+end
+let rows = side_rows()
+let list_y = side.y + 166
+let ROW_H = 24
+if mouse_pressed(0) && point_in(mx, my, side) then
+  for k in range(0, len(rows)) do
+    let r = rect(side.x + 10, list_y + k * ROW_H, side.w - 20, ROW_H)
+    if point_in(mx, my, r) then
+      set sel = rows[k]
+      set follow = true
+    end
+  end
+end
+let rows2 = side_rows()   // may have changed by the click
+
+// ── Draw: chrome ─────────────────────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+tx("SOLAR SYSTEM", PAD, 24, S_TITLE)
+tx("PETAL / GARDEN TESTBED 50", PAD + 3, 62, S_KICK)
+
+let years = days / 365.25
+let cell3 = W - PAD
+let cell2 = cell3 - 132
+let cell1 = cell2 - 132
+let cell0 = cell1 - 132
+tx_right("ELAPSED", cell0, 30, S_LABEL)
+tx_right(if years >= 1.0 then "{fmt1(years)} y" else "{int(days)} d" end, cell0, 46, S_STAT)
+tx_right("SPEED", cell1, 30, S_LABEL)
+tx_right(if playing then "{fmt1(speed)} d/s" else "paused" end, cell1, 46, if playing then S_STAT else {...S_STAT, color: C_DIM} end)
+tx_right("ZOOM", cell2, 30, S_LABEL)
+tx_right("{fmt1(zoom)}x", cell2, 46, S_STAT)
+tx_right("VIEW", cell3, 30, S_LABEL)
+tx_right(if tilt then "3/4" else "top" end, cell3, 46, S_STAT)
+let following = if follow && sel >= 0 then "following {BODIES[sel].name}" else "free camera" end
+tx_right("{following}   ·   {N} bodies", cell3, 76, S_HINT)
+
+// ── Draw: space ──────────────────────────────────────────────────────────
+
+draw_rect_rounded(view, 14, C_SPACE)
+clip_push(view, 14)
+
+// Stars drift very slightly with the pan so the background reads as far.
+for s in stars do
+  let sx = view.x + int((s.x * float(view.w) - pan.x * 0.02) % float(view.w) + float(view.w)) % view.w
+  let sy = view.y + int((s.y * float(view.h) - pan.y * 0.02) % float(view.h) + float(view.h)) % view.h
+  let tw = 0.6 + 0.4 * sin(pulse * 1.1 + s.ph)
+  draw_rect(rect(sx, sy, s.sz, s.sz), C_TEXT, int(s.a * 120.0 * tw))
+end
+
+// Orbits: an ellipse per body around its parent, screen-space.
+fn draw_orbit(i: int, col: record, a: int)
+  let b = BODIES[i]
+  let c = to_screen(pos[b.parent])
+  let rx = b.orbit * get zoom
+  let ry = rx * ty
+  if rx < 4.0 then return nil end
+  draw_ellipse_outline({x: int(c.x), y: int(c.y)}, int(rx), int(ry), col, a, 1)
+end
+
+if orbits then
+  for i in range(1, 9) do
+    let hl = sel == i
+    draw_orbit(i, if hl then C_ACCENT else C_ORBIT end, if hl then 200 else 120 end)
+  end
+  for i in range(9, N) do
+    let b = BODIES[i]
+    if b.orbit * zoom >= 6.0 then
+      let hl = sel == i || sel == b.parent
+      draw_orbit(i, if hl then C_ACCENT else C_ORBIT end, if hl then 150 else 70 end)
+    end
+  end
+end
+
+// Bodies, parents first so moons draw over their planet's glow.
+let scr = for i in range(0, N) do to_screen(pos[i]) end
+fn body_radius(i: int) -> num
+  let b = BODIES[i]
+  // Radii grow with the square root of the zoom so a planet never fills the
+  // view, but a moon still becomes visible as you zoom in.
+  max(1.5, b.r * sqrt(get zoom))
+end
+
+// Sun
+let sun = scr[0]
+let sr = body_radius(0)
+draw_circle_gradient({x: int(sun.x), y: int(sun.y)}, int(sr * 3.2), C_SUN, C_SUN, 70, 0)
+draw_circle_gradient({x: int(sun.x), y: int(sun.y)}, int(sr * 1.6), C_SUN, C_SUN, 160, 0)
+draw_circle({x: int(sun.x), y: int(sun.y)}, int(sr), C_SUN)
+draw_circle({x: int(sun.x), y: int(sun.y)}, int(sr * 0.72), C_SUN_C, 200)
+
+for i in range(1, N) do
+  let b = BODIES[i]
+  if b.kind == "moon" && b.orbit * zoom < 6.0 then continue end
+  let s = scr[i]
+  let r = body_radius(i)
+  let p = {x: int(s.x), y: int(s.y)}
+  let is_sel = sel == i
+  let is_hov = hover == i
+  if is_sel || is_hov then
+    draw_circle(p, int(r) + 7, C_ACCENT, if is_sel then 55 else 30 end)
+  end
+  if b.name == "Saturn" then
+    draw_ellipse_outline(p, int(r * 2.2), int(r * 2.2 * ty * 0.9), #cbb58a, 150, max(1, int(r * 0.35)))
+  end
+  // A lit side: the body colour, then a dark crescent on the far side.
+  draw_circle(p, int(r), b.color)
+  let away = normalize(s - sun)
+  draw_circle({x: int(s.x + away.x * r * 0.55), y: int(s.y + away.y * r * 0.55 * ty)}, int(r * 0.9), C_BG, 70)
+  if is_sel then
+    draw_circle_outline(p, int(r) + 4, C_ACCENT, 220, 1)
+  end
+end
+
+// Labels: greedy placement, never overlapping. The selected and hovered
+// bodies go first so they always keep their label.
+var placed = []
+var labels_drawn = 0
+fn try_label(i: int, force: bool) -> bool
+  let b = BODIES[i]
+  let s = scr[i]
+  let r = body_radius(i)
+  let style = if b.kind == "moon" then S_NAME_M else S_NAME end
+  let w = text_width(b.name, style) + 10
+  let lr = rect(int(s.x + r + 6), int(s.y - 8), w, 16)
+  if !point_in(lr.x, lr.y, view) && !point_in(lr.x + lr.w, lr.y + lr.h, view) then return false end
+  let clash = false
+  for q in get placed do
+    if lr.x < q.x + q.w && lr.x + lr.w > q.x && lr.y < q.y + q.h && lr.y + lr.h > q.y then clash = true end
+  end
+  if clash && !force then return false end
+  set placed = append(get placed, lr)
+  let col = if get sel == i then C_ACCENT elsif b.kind == "moon" then C_DIM else C_TEXT end
+  draw_line({x: lr.x - 4, y: lr.y + 8}, {x: int(s.x + r + 1), y: int(s.y)}, col, 120, 1)
+  draw_text(b.name, {x: lr.x + 4, y: lr.y + 1}, {...style, color: col})
+  set labels_drawn += 1
+  true
+end
+
+if labels then
+  if sel >= 0 then try_label(sel, true) end
+  if hover >= 0 && hover != sel then try_label(hover, true) end
+  for i in range(0, 9) do
+    if i != sel && i != hover then try_label(i, false) end
+  end
+  // Moons only once they are separated from their planet, or when their
+  // planet is selected.
+  for i in range(9, N) do
+    let b = BODIES[i]
+    if i == sel || i == hover then continue end
+    let open = sel == b.parent || (sel >= 0 && BODIES[sel].parent == b.parent)
+    if b.orbit * zoom >= 22.0 || (open && b.orbit * zoom >= 6.0) then try_label(i, false) end
+  end
+end
+
+// Hover card.
+if hover >= 0 then
+  let b = BODIES[hover]
+  let parent = if b.parent >= 0 then BODIES[b.parent].name else "" end
+  let line1 = if b.kind == "star" then "Star" elsif b.kind == "planet" then "Planet · orbits the Sun" else "Moon of {parent}" end
+  let line2 = if b.kind == "star" then "radius {fmt_int(b.km)} km"
+  elsif b.kind == "planet" then "{fmt1(b.au)} AU · {fmt_days(b.period)} · {fmt_int(b.km)} km"
+  else "{fmt_int(b.au)}k km · {fmt_days(abs(b.period))} · {fmt_int(b.km)} km" end
+  let cw = max(text_width(b.name, S_UI_B), max(text_width(line1, S_UI_M), text_width(line2, S_UI_M))) + 28
+  let cx0 = clamp(mx + 18, view.x + 8, view.x + view.w - cw - 8)
+  let cy0 = clamp(my + 18, view.y + 8, view.y + view.h - 76)
+  let card = rect(cx0, cy0, cw, 68)
+  draw_rect_rounded(card, 8, C_CHIP, 240)
+  draw_rect_rounded_outline(card, 8, C_EDGE, 255, 1)
+  draw_circle({x: card.x + 15, y: card.y + 17}, 4, b.color)
+  draw_text(b.name, {x: card.x + 26, y: card.y + 9}, S_UI_B)
+  draw_text(line1, {x: card.x + 14, y: card.y + 28}, S_UI_M)
+  draw_text(line2, {x: card.x + 14, y: card.y + 46}, S_UI_M)
+end
+
+clip_pop()
+draw_rect_rounded_outline(view, 14, C_EDGE, 255, 1)
+
+// ── Draw: inspector ──────────────────────────────────────────────────────
+
+draw_rect_rounded(side, 14, C_PANEL)
+draw_rect_rounded_outline(side, 14, C_EDGE, 255, 1)
+
+if sel >= 0 then
+  let b = BODIES[sel]
+  draw_circle({x: side.x + 28, y: side.y + 30}, 9, b.color)
+  draw_text(b.name, {x: side.x + 46, y: side.y + 18}, S_H)
+  let kind = if b.kind == "star" then "STAR" elsif b.kind == "planet" then "PLANET" else "MOON OF " ++ upper(BODIES[b.parent].name) end
+  tx(kind, side.x + 46, side.y + 44, S_LABEL)
+  let facts = if b.kind == "star" then [["radius", "{fmt_int(b.km)} km"], ["moons", str(len(children_of(sel)))]]
+  elsif b.kind == "planet" then [["distance", "{fmt1(b.au)} AU"], ["year", fmt_days(b.period)], ["radius", "{fmt_int(b.km)} km"], ["moons", str(len(children_of(sel)))]]
+  else [["distance", "{fmt_int(b.au)},000 km"], ["period", fmt_days(abs(b.period)) ++ (if b.period < 0.0 then " retro" else "" end)], ["radius", "{fmt_int(b.km)} km"]] end
+  let fy = side.y + 72
+  let fx = side.x + 16
+  for k in range(0, len(facts)) do
+    let col_x = fx + (k % 2) * 120
+    let row_y = fy + (k / 2) * 38
+    tx(upper(facts[k][0]), col_x, row_y, S_LABEL)
+    draw_text(facts[k][1], {x: col_x, y: row_y + 12}, S_UI)
+  end
+else
+  draw_text("Nothing selected", {x: side.x + 16, y: side.y + 20}, S_UI_B)
+  draw_text("Click a body, or pick one below.", {x: side.x + 16, y: side.y + 42}, S_UI_M)
+  draw_text("Scroll to zoom, drag to pan.", {x: side.x + 16, y: side.y + 60}, S_UI_M)
+end
+draw_rect(rect(side.x + 12, list_y - 12, side.w - 24, 1), C_LINE)
+
+// The body list.
+for k in range(0, len(rows2)) do
+  let i = rows2[k]
+  let b = BODIES[i]
+  let r = rect(side.x + 10, list_y + k * ROW_H, side.w - 20, ROW_H)
+  let is_sel = sel == i
+  let hov = point_in(mx, my, r)
+  if is_sel then
+    draw_rect_rounded(r, 6, C_ACCENT, 40)
+    draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), 2, C_ACCENT)
+  elsif hov then
+    draw_rect_rounded(r, 6, C_CHIP)
+  end
+  let indent = if b.kind == "moon" then 22 else 0 end
+  draw_circle({x: r.x + 16 + indent, y: r.y + 12}, if b.kind == "moon" then 3 else 5 end, b.color)
+  draw_text(b.name, {x: r.x + 30 + indent, y: r.y + 4}, if is_sel then {...S_UI, color: C_ACCENT} else (if b.kind == "moon" then S_UI_M else S_UI end) end)
+  let right = if b.kind == "star" then "" elsif b.kind == "planet" then "{fmt1(b.au)} AU" else fmt_days(abs(b.period)) end
+  draw_text_right(right, r.x + r.w - 10, r.y + 5, {...S_NAME_M, color: C_MUTE})
+  let kids = len(children_of(i))
+  if b.kind == "planet" && kids > 0 && !is_sel then
+    draw_text_right("{kids} moons", r.x + r.w - 70, r.y + 5, {...S_NAME_M, color: C_MUTE})
+  end
+end
+
+// Cursor world position, at the bottom of the inspector.
+if in_view then
+  let wpos = to_world(float(mx), float(my))
+  tx_right("cursor {int(wpos.x)}, {int(wpos.y)}", side.x + side.w - 14, side.y + side.h - 20, S_HINT)
+end
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn chip(x: num, y: num, cap: string, desc: string) -> int
+  let cw = text_width(cap, S_CAP) + 20
+  let box = rect(int(x), int(y), cw, 24)
+  draw_rect_rounded(box, 7, C_CHIP)
+  draw_rect_outline(box, C_LINE, 255, 1)
+  tx(cap, x + 10, y + 6, S_CAP)
+  tx(desc, x + cw + 10, y + 6, S_HINT)
+  cw + 10 + text_width(desc, S_HINT) + 18
+end
+
+let fy2 = view.y + view.h + 18
+let fx2 = PAD
+fx2 += chip(fx2, fy2, "SCROLL", "zoom")
+fx2 += chip(fx2, fy2, "DRAG", "pan")
+fx2 += chip(fx2, fy2, "CLICK", "follow")
+fx2 += chip(fx2, fy2, "TAB", "next")
+fx2 += chip(fx2, fy2, "SPACE", "pause")
+fx2 += chip(fx2, fy2, "+ / -", "speed")
+fx2 += chip(fx2, fy2, "T", "tilt")
+fx2 += chip(fx2, fy2, "L", "labels")
+fx2 += chip(fx2, fy2, "O", "orbits")
+fx2 += chip(fx2, fy2, "0", "reset")
+
+// ── Observation mirrors (readable in /state → panel.values) ──────────────
+
+let obs_days = round(days, 2)
+let obs_speed = speed
+let obs_playing = playing
+let obs_zoom = round(zoom, 3)
+let obs_pan = [round(pan.x, 1), round(pan.y, 1)]
+let obs_tilt = tilt
+let obs_labels = labels
+let obs_orbits = orbits
+let obs_sel = sel
+let obs_sel_name = if sel >= 0 then BODIES[sel].name else "" end
+let obs_follow = follow
+let obs_hover = if hover >= 0 then BODIES[hover].name else "" end
+let obs_labels_drawn = labels_drawn
+let obs_bodies = N
+let obs_zooms = zooms
+let obs_clicks = clicks
+let obs_earth = [round(pos[3].x, 1), round(pos[3].y, 1)]
+let obs_moon = [round(pos[9].x, 1), round(pos[9].y, 1)]
+let obs_moon_rel = round(mag(pos[9] - pos[3]), 2)
+let obs_earth_screen = [int(scr[3].x), int(scr[3].y)]
+let obs_rows = len(rows2)

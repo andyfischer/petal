@@ -4,17 +4,17 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-25 of the 50 exist. Twenty are panel apps under the category directories
+26 of the 50 exist. Twenty-one are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each category, plus Asteroids, Flappy Bird, the command palette, the
-node-based editor and the Markdown editor), and five more were written as
-headless console programs under `examples/games/`, which stress the language
-rather than the host.
+node-based editor, the Markdown editor and the solar system), and five more
+were written as headless console programs under `examples/games/`, which
+stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a twenty-first panel app that was not on this
-list. The remaining 25 have not been attempted.
+`examples/games/side-scroller` is a twenty-second panel app that was not on
+this list. The remaining 24 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -73,4 +73,4 @@ list. The remaining 25 have not been attempted.
 | 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/games/boids/boids.ptl` |
 | 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation |  |
 | 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates | console — `examples/games/terrain/terrain.ptl` |
-| 50 | **Interactive solar system** | Hierarchical transforms, animation, zoom, labels |  |
+| 50 | **Interactive solar system** | Hierarchical transforms, animation, zoom, labels | built — `examples/games/solar-system/` |

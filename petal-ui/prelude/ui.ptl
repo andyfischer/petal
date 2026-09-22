@@ -81,6 +81,20 @@ let _native_font = font
 // Every primitive takes an optional trailing alpha (0–255, 255 = opaque).
 // Lines and outlines also take an optional trailing stroke `width`. Rounded
 // rects add a `radius`. Each forwards to the native, which fills defaults.
+//
+// Each primitive comes in three shapes: the flat packed-int form
+// (`draw_line(x1, y1, x2, y2, r, g, b)`), the record form (points, centres and
+// rects as `{x, y}` / `{x, y, w, h}` records plus a colour record), and the
+// mixed form with flat coordinates and a colour record
+// (`draw_line(x1, y1, x2, y2, C)`). Overloads dispatch on argument count alone,
+// so where two shapes land on the same count, one overload takes both and
+// tells them apart with `_is_num` — a number where the other shape has a
+// record. `draw_polyline`'s four-argument form below is the model.
+
+fn _is_num(v)
+  let t = type(v)
+  t == "int" || t == "float"
+end
 
 export fn draw_image(source, x, y, w, h)
   _native_image(source, x, y, w, h)
@@ -115,6 +129,12 @@ end
 export fn draw_rect(r, c, a)
   _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)
 end
+export fn draw_rect(x, y, w, h, c)
+  _native_rect(x, y, w, h, c.r, c.g, c.b)
+end
+export fn draw_rect(x, y, w, h, c, a)
+  _native_rect(x, y, w, h, c.r, c.g, c.b, a)
+end
 
 export fn draw_rect_rounded(x, y, w, h, radius, r, g, b)
   _native_rect_rounded(x, y, w, h, radius, r, g, b)
@@ -128,9 +148,27 @@ end
 export fn draw_rect_rounded(rect, radius, c, a)
   _native_rect_rounded(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a)
 end
+export fn draw_rect_rounded(x, y, w, h, radius, c)
+  _native_rect_rounded(x, y, w, h, radius, c.r, c.g, c.b)
+end
+export fn draw_rect_rounded(x, y, w, h, radius, c, a)
+  _native_rect_rounded(x, y, w, h, radius, c.r, c.g, c.b, a)
+end
 
-export fn draw_rect_outline(x, y, w, h, r, g, b)
-  _native_rect_outline(x, y, w, h, r, g, b)
+// Seven arguments is both the flat `(x, y, w, h, r, g, b)` and the mixed
+// `(x, y, w, h, c, a, width)`.
+export fn draw_rect_outline(x, y, w, h, c_or_r, a_or_g, width_or_b)
+  if _is_num(c_or_r) then
+    _native_rect_outline(x, y, w, h, c_or_r, a_or_g, width_or_b)
+  else
+    _native_rect_outline(x, y, w, h, c_or_r.r, c_or_r.g, c_or_r.b, a_or_g, width_or_b)
+  end
+end
+export fn draw_rect_outline(x, y, w, h, c)
+  _native_rect_outline(x, y, w, h, c.r, c.g, c.b)
+end
+export fn draw_rect_outline(x, y, w, h, c, a)
+  _native_rect_outline(x, y, w, h, c.r, c.g, c.b, a)
 end
 export fn draw_rect_outline(x, y, w, h, r, g, b, a)
   _native_rect_outline(x, y, w, h, r, g, b, a)
@@ -148,8 +186,17 @@ export fn draw_rect_outline(r, c, a, width)
   _native_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a, width)
 end
 
-export fn draw_line(x1, y1, x2, y2, r, g, b)
-  _native_line(x1, y1, x2, y2, r, g, b)
+// Seven arguments is both the flat `(x1, y1, x2, y2, r, g, b)` and the mixed
+// `(x1, y1, x2, y2, c, a, width)`.
+export fn draw_line(x1, y1, x2, y2, c_or_r, a_or_g, width_or_b)
+  if _is_num(c_or_r) then
+    _native_line(x1, y1, x2, y2, c_or_r, a_or_g, width_or_b)
+  else
+    _native_line(x1, y1, x2, y2, c_or_r.r, c_or_r.g, c_or_r.b, a_or_g, width_or_b)
+  end
+end
+export fn draw_line(x1, y1, x2, y2, c, a)
+  _native_line(x1, y1, x2, y2, c.r, c.g, c.b, a)
 end
 export fn draw_line(x1, y1, x2, y2, r, g, b, a)
   _native_line(x1, y1, x2, y2, r, g, b, a)
@@ -168,8 +215,13 @@ end
 export fn draw_line(a, b, c, alpha)
   _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha)
 end
-export fn draw_line(a, b, c, alpha, width)
-  _native_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha, width)
+// Five arguments is also the mixed `(x1, y1, x2, y2, c)`.
+export fn draw_line(p1, p2, p3, p4, p5)
+  if _is_num(p1) then
+    _native_line(p1, p2, p3, p4, p5.r, p5.g, p5.b)
+  else
+    _native_line(p1.x, p1.y, p2.x, p2.y, p3.r, p3.g, p3.b, p4, p5)
+  end
 end
 
 export fn draw_circle(cx, cy, radius, r, g, b)
@@ -181,8 +233,18 @@ end
 export fn draw_circle(center, radius, c)
   _native_circle(center.x, center.y, radius, c.r, c.g, c.b)
 end
-export fn draw_circle(center, radius, c, a)
-  _native_circle(center.x, center.y, radius, c.r, c.g, c.b, a)
+// Four arguments is both `(center, radius, c, a)` and the mixed
+// `(cx, cy, radius, c)`.
+export fn draw_circle(center_or_cx, radius_or_cy, c_or_radius, a_or_c)
+  if _is_num(center_or_cx) then
+    _native_circle(center_or_cx, radius_or_cy, c_or_radius, a_or_c.r, a_or_c.g, a_or_c.b)
+  else
+    _native_circle(center_or_cx.x, center_or_cx.y, radius_or_cy,
+                   c_or_radius.r, c_or_radius.g, c_or_radius.b, a_or_c)
+  end
+end
+export fn draw_circle(cx, cy, radius, c, a)
+  _native_circle(cx, cy, radius, c.r, c.g, c.b, a)
 end
 
 // Record overloads for the rest of the draw surface. Every one of these was
@@ -192,8 +254,21 @@ end
 // round-trip the prelude exists to save. The shapes mirror the flat natives
 // exactly — the same optional alpha and stroke width, in the same order — so
 // switching a call from packed ints to a colour record changes nothing else.
-export fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b)
-  _native_rect_rounded_outline(x, y, w, h, radius, r, g, b)
+// Eight arguments is both the flat `(x, y, w, h, radius, r, g, b)` and the
+// mixed `(x, y, w, h, radius, c, a, width)`.
+export fn draw_rect_rounded_outline(x, y, w, h, radius, c_or_r, a_or_g, width_or_b)
+  if _is_num(c_or_r) then
+    _native_rect_rounded_outline(x, y, w, h, radius, c_or_r, a_or_g, width_or_b)
+  else
+    _native_rect_rounded_outline(x, y, w, h, radius, c_or_r.r, c_or_r.g, c_or_r.b,
+                                 a_or_g, width_or_b)
+  end
+end
+export fn draw_rect_rounded_outline(x, y, w, h, radius, c)
+  _native_rect_rounded_outline(x, y, w, h, radius, c.r, c.g, c.b)
+end
+export fn draw_rect_rounded_outline(x, y, w, h, radius, c, a)
+  _native_rect_rounded_outline(x, y, w, h, radius, c.r, c.g, c.b, a)
 end
 export fn draw_rect_rounded_outline(x, y, w, h, radius, r, g, b, a)
   _native_rect_rounded_outline(x, y, w, h, radius, r, g, b, a)
@@ -211,8 +286,16 @@ export fn draw_rect_rounded_outline(rect, radius, c, a, width)
   _native_rect_rounded_outline(rect.x, rect.y, rect.w, rect.h, radius, c.r, c.g, c.b, a, width)
 end
 
-export fn draw_circle_outline(cx, cy, radius, r, g, b)
-  _native_circle_outline(cx, cy, radius, r, g, b)
+// The mixed `(cx, cy, radius, c[, a[, width]])` shares every one of its counts
+// with another shape: four and five with the centre-record form, six with the
+// flat form. Each of those overloads looks at the argument where the two
+// differ.
+export fn draw_circle_outline(cx, cy, radius, c_or_r, a_or_g, width_or_b)
+  if _is_num(c_or_r) then
+    _native_circle_outline(cx, cy, radius, c_or_r, a_or_g, width_or_b)
+  else
+    _native_circle_outline(cx, cy, radius, c_or_r.r, c_or_r.g, c_or_r.b, a_or_g, width_or_b)
+  end
 end
 export fn draw_circle_outline(cx, cy, radius, r, g, b, a)
   _native_circle_outline(cx, cy, radius, r, g, b, a)
@@ -223,11 +306,21 @@ end
 export fn draw_circle_outline(center, radius, c)
   _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b)
 end
-export fn draw_circle_outline(center, radius, c, a)
-  _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b, a)
+// `(center, radius, c, a)` or `(cx, cy, radius, c)`.
+export fn draw_circle_outline(p1, p2, p3, p4)
+  if _is_num(p1) then
+    _native_circle_outline(p1, p2, p3, p4.r, p4.g, p4.b)
+  else
+    _native_circle_outline(p1.x, p1.y, p2, p3.r, p3.g, p3.b, p4)
+  end
 end
-export fn draw_circle_outline(center, radius, c, a, width)
-  _native_circle_outline(center.x, center.y, radius, c.r, c.g, c.b, a, width)
+// `(center, radius, c, a, width)` or `(cx, cy, radius, c, a)`.
+export fn draw_circle_outline(p1, p2, p3, p4, p5)
+  if _is_num(p1) then
+    _native_circle_outline(p1, p2, p3, p4.r, p4.g, p4.b, p5)
+  else
+    _native_circle_outline(p1.x, p1.y, p2, p3.r, p3.g, p3.b, p4, p5)
+  end
 end
 
 export fn draw_ellipse(cx, cy, rx, ry, r, g, b)
@@ -239,12 +332,27 @@ end
 export fn draw_ellipse(center, rx, ry, c)
   _native_ellipse(center.x, center.y, rx, ry, c.r, c.g, c.b)
 end
-export fn draw_ellipse(center, rx, ry, c, a)
-  _native_ellipse(center.x, center.y, rx, ry, c.r, c.g, c.b, a)
+// `(center, rx, ry, c, a)` or the mixed `(cx, cy, rx, ry, c)`.
+export fn draw_ellipse(p1, p2, p3, p4, p5)
+  if _is_num(p1) then
+    _native_ellipse(p1, p2, p3, p4, p5.r, p5.g, p5.b)
+  else
+    _native_ellipse(p1.x, p1.y, p2, p3, p4.r, p4.g, p4.b, p5)
+  end
+end
+export fn draw_ellipse(cx, cy, rx, ry, c, a)
+  _native_ellipse(cx, cy, rx, ry, c.r, c.g, c.b, a)
 end
 
-export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b)
-  _native_ellipse_outline(cx, cy, rx, ry, r, g, b)
+// As with `draw_circle_outline`, the mixed `(cx, cy, rx, ry, c[, a[, width]])`
+// shares its counts: five and six with the centre-record form, seven with the
+// flat form.
+export fn draw_ellipse_outline(cx, cy, rx, ry, c_or_r, a_or_g, width_or_b)
+  if _is_num(c_or_r) then
+    _native_ellipse_outline(cx, cy, rx, ry, c_or_r, a_or_g, width_or_b)
+  else
+    _native_ellipse_outline(cx, cy, rx, ry, c_or_r.r, c_or_r.g, c_or_r.b, a_or_g, width_or_b)
+  end
 end
 export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b, a)
   _native_ellipse_outline(cx, cy, rx, ry, r, g, b, a)
@@ -255,11 +363,21 @@ end
 export fn draw_ellipse_outline(center, rx, ry, c)
   _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b)
 end
-export fn draw_ellipse_outline(center, rx, ry, c, a)
-  _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b, a)
+// `(center, rx, ry, c, a)` or `(cx, cy, rx, ry, c)`.
+export fn draw_ellipse_outline(p1, p2, p3, p4, p5)
+  if _is_num(p1) then
+    _native_ellipse_outline(p1, p2, p3, p4, p5.r, p5.g, p5.b)
+  else
+    _native_ellipse_outline(p1.x, p1.y, p2, p3, p4.r, p4.g, p4.b, p5)
+  end
 end
-export fn draw_ellipse_outline(center, rx, ry, c, a, width)
-  _native_ellipse_outline(center.x, center.y, rx, ry, c.r, c.g, c.b, a, width)
+// `(center, rx, ry, c, a, width)` or `(cx, cy, rx, ry, c, a)`.
+export fn draw_ellipse_outline(p1, p2, p3, p4, p5, p6)
+  if _is_num(p1) then
+    _native_ellipse_outline(p1, p2, p3, p4, p5.r, p5.g, p5.b, p6)
+  else
+    _native_ellipse_outline(p1.x, p1.y, p2, p3, p4.r, p4.g, p4.b, p5, p6)
+  end
 end
 
 // `fill_arc(center, r_in, r_out, a0, a1, c[, a])` — angles in radians,
@@ -273,8 +391,17 @@ end
 export fn fill_arc(center, r_in, r_out, a0, a1, c)
   _native_arc(center.x, center.y, r_in, r_out, a0, a1, c.r, c.g, c.b)
 end
-export fn fill_arc(center, r_in, r_out, a0, a1, c, a)
-  _native_arc(center.x, center.y, r_in, r_out, a0, a1, c.r, c.g, c.b, a)
+// `(center, r_in, r_out, a0, a1, c, a)` or the mixed
+// `(cx, cy, r_in, r_out, a0, a1, c)`.
+export fn fill_arc(p1, p2, p3, p4, p5, p6, p7)
+  if _is_num(p1) then
+    _native_arc(p1, p2, p3, p4, p5, p6, p7.r, p7.g, p7.b)
+  else
+    _native_arc(p1.x, p1.y, p2, p3, p4, p5, p6.r, p6.g, p6.b, p7)
+  end
+end
+export fn fill_arc(cx, cy, r_in, r_out, a0, a1, c, a)
+  _native_arc(cx, cy, r_in, r_out, a0, a1, c.r, c.g, c.b, a)
 end
 
 // `fill_triangle(p1, p2, p3, c[, a])` with `{x, y}` (or `vec2`) corners, next
@@ -290,6 +417,12 @@ export fn fill_triangle(p1, p2, p3, c)
 end
 export fn fill_triangle(p1, p2, p3, c, a)
   _native_triangle(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, c.r, c.g, c.b, a)
+end
+export fn fill_triangle(x1, y1, x2, y2, x3, y3, c)
+  _native_triangle(x1, y1, x2, y2, x3, y3, c.r, c.g, c.b)
+end
+export fn fill_triangle(x1, y1, x2, y2, x3, y3, c, a)
+  _native_triangle(x1, y1, x2, y2, x3, y3, c.r, c.g, c.b, a)
 end
 
 // The point-list primitives take their points as a list already, so the
@@ -329,8 +462,16 @@ end
 export fn fill_fan(center, points, c)
   _native_fan(center.x, center.y, points, c.r, c.g, c.b)
 end
-export fn fill_fan(center, points, c, a)
-  _native_fan(center.x, center.y, points, c.r, c.g, c.b, a)
+// `(center, points, c, a)` or the mixed `(cx, cy, points, c)`.
+export fn fill_fan(p1, p2, p3, p4)
+  if _is_num(p1) then
+    _native_fan(p1, p2, p3, p4.r, p4.g, p4.b)
+  else
+    _native_fan(p1.x, p1.y, p2, p3.r, p3.g, p3.b, p4)
+  end
+end
+export fn fill_fan(cx, cy, points, c, a)
+  _native_fan(cx, cy, points, c.r, c.g, c.b, a)
 end
 
 // Overloads dispatch on argument count alone, and `(points, c, a, width)` has
@@ -363,11 +504,24 @@ end
 export fn draw_text(text, x, y, size, r, g, b, a)
   _native_text(text, x, y, size, r, g, b, a)
 end
-export fn draw_text(text, pos, size, c)
-  _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b)
+// `(text, pos, size, c)` or the styled `(text, x, y, style)`.
+export fn draw_text(text, p2, p3, p4)
+  if _is_num(p2) then
+    _native_text(text, p2, p3, p4)
+  else
+    _native_text(text, p2.x, p2.y, p3, p4.r, p4.g, p4.b)
+  end
 end
-export fn draw_text(text, pos, size, c, a)
-  _native_text(text, pos.x, pos.y, size, c.r, c.g, c.b, a)
+// `(text, pos, size, c, a)` or the mixed `(text, x, y, size, c)`.
+export fn draw_text(text, p2, p3, p4, p5)
+  if _is_num(p2) then
+    _native_text(text, p2, p3, p4, p5.r, p5.g, p5.b)
+  else
+    _native_text(text, p2.x, p2.y, p3, p4.r, p4.g, p4.b, p5)
+  end
+end
+export fn draw_text(text, x, y, size, c, a)
+  _native_text(text, x, y, size, c.r, c.g, c.b, a)
 end
 // Styled: a record of any subset of {size, color, font, weight, italic,
 // spacing}. Omitted fields mean plain text — the host's own font, upright,
@@ -470,6 +624,11 @@ end
 export fn draw_rect_gradient_rounded(rect, radius, c0, c1, angle, a0, a1)
   _native_rect_gradient_rounded(rect.x, rect.y, rect.w, rect.h, radius,
                                 c0.r, c0.g, c0.b, a0, c1.r, c1.g, c1.b, a1, angle)
+end
+export fn draw_rect_gradient_rounded(x, y, w, h, radius, c0, c1, angle)
+  _native_rect_gradient_rounded(x, y, w, h, radius,
+                                c0.r, c0.g, c0.b, _stop_a(c0),
+                                c1.r, c1.g, c1.b, _stop_a(c1), angle)
 end
 export fn draw_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
   _native_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle)
@@ -829,11 +988,6 @@ end
 // *outside* the layer — `draw_material` draws its tint after the blurred
 // snapshot, which on such a host is the tint alone: right in aggregate.
 let _native_draw_canvas = draw_canvas
-
-fn _is_num(v)
-  let t = type(v)
-  t == "int" || t == "float"
-end
 
 // An offscreen canvas, transparent until drawn into, recreated each frame.
 export fn canvas(w, h)

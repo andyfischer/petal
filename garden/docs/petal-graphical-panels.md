@@ -157,8 +157,13 @@ color[, a])`, `draw_rect_rounded_outline(rect, radius, color[, a[, width]])`,
 `fill_triangle(p1, p2, p3, color[, a])`, `draw_polyline(points, color[, a[,
 width]])`, `fill_polygon(points, color[, a])` and so on, where `color` is an
 `{r, g, b}` record or `#rrggbb` literal and every optional argument sits where
-the flat form has it — plus `linear_gradient(rect, stops, angle[, radius])`
-for three or more stops and `draw_shadow(rect, {radius, blur, spread, dx, dy,
+the flat form has it. Each primitive also takes flat coordinates with a colour
+record — `draw_line(x1, y1, x2, y2, color[, a[, width]])`,
+`draw_rect_rounded(x, y, w, h, radius, color[, a])`,
+`fill_triangle(x1, y1, x2, y2, x3, y3, color[, a])`,
+`draw_circle_outline(cx, cy, r, color[, a[, width]])` and so on. On top of
+those come `linear_gradient(rect, stops, angle[, radius])` for three or more
+stops and `draw_shadow(rect, {radius, blur, spread, dx, dy,
 color, a})`. Point lists take `vec2`, `[x, y]` or `{x, y}` points.
 
 Three of these exist because composing the older calls gives the wrong

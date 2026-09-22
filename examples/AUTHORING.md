@@ -249,7 +249,10 @@ unconditionally near the top of every frame. A claimed chord arrives as
 Every draw primitive has a **record form** next to its packed-int form —
 `draw_rect(rect, color[, a])`, `draw_polyline(points, color[, a[, width]])`,
 `fill_arc(center, r_in, r_out, a0, a1, color[, a])` and so on, where `color`
-is a `{r, g, b}` record or a `#rrggbb` literal. Both forms accept floats
+is a `{r, g, b}` record or a `#rrggbb` literal. Each also takes flat
+coordinates with a colour record — `draw_line(x1, y1, x2, y2, color[, a[,
+width]])`, `fill_triangle(x1, y1, x2, y2, x3, y3, color[, a])`,
+`draw_circle_outline(cx, cy, r, color)` — with the same optional arguments. Both forms accept floats
 (they are truncated to whole pixels), so world-space coordinates after a zoom
 multiply need no `int(...)`.
 

@@ -2325,3 +2325,105 @@ fn menu_keyboard_wins_while_the_pointer_rests() {
         assert_eq!(ui.state_string("picked").as_deref(), Some("Three"));
     });
 }
+
+/// Flat coordinates with a colour record — the shape the testbed apps kept
+/// writing (`draw_line(x1, y1, x2, y2, C, a, w)`, `fill_triangle(..., C)`) — must
+/// draw exactly what the packed-int form draws. Several of these share their
+/// argument count with another shape, so each pair also pins that the older
+/// shape at that count still dispatches the old way.
+#[test]
+fn flat_coordinates_with_a_colour_record_match_the_packed_form() {
+    let pairs: &[(&str, &str)] = &[
+        ("draw_rect(1, 2, 3, 4, C)", "draw_rect(1, 2, 3, 4, 10, 20, 30)"),
+        ("draw_rect(1, 2, 3, 4, C, 99)", "draw_rect(1, 2, 3, 4, 10, 20, 30, 99)"),
+        ("draw_rect_rounded(1, 2, 3, 4, 5, C)", "draw_rect_rounded(1, 2, 3, 4, 5, 10, 20, 30)"),
+        ("draw_rect_rounded(1, 2, 3, 4, 5, C, 99)", "draw_rect_rounded(1, 2, 3, 4, 5, 10, 20, 30, 99)"),
+        ("draw_rect_outline(1, 2, 3, 4, C)", "draw_rect_outline(1, 2, 3, 4, 10, 20, 30)"),
+        ("draw_rect_outline(1, 2, 3, 4, C, 99)", "draw_rect_outline(1, 2, 3, 4, 10, 20, 30, 99)"),
+        ("draw_rect_outline(1, 2, 3, 4, C, 99, 3)", "draw_rect_outline(1, 2, 3, 4, 10, 20, 30, 99, 3)"),
+        ("draw_rect_rounded_outline(1, 2, 3, 4, 5, C)", "draw_rect_rounded_outline(1, 2, 3, 4, 5, 10, 20, 30)"),
+        ("draw_rect_rounded_outline(1, 2, 3, 4, 5, C, 99)", "draw_rect_rounded_outline(1, 2, 3, 4, 5, 10, 20, 30, 99)"),
+        ("draw_rect_rounded_outline(1, 2, 3, 4, 5, C, 99, 3)", "draw_rect_rounded_outline(1, 2, 3, 4, 5, 10, 20, 30, 99, 3)"),
+        ("draw_line(1, 2, 3, 4, C)", "draw_line(1, 2, 3, 4, 10, 20, 30)"),
+        ("draw_line(1, 2, 3, 4, C, 99)", "draw_line(1, 2, 3, 4, 10, 20, 30, 99)"),
+        ("draw_line(1, 2, 3, 4, C, 99, 3)", "draw_line(1, 2, 3, 4, 10, 20, 30, 99, 3)"),
+        ("draw_line(P, {x: 7, y: 8}, C, 99, 3)", "draw_line(5, 6, 7, 8, 10, 20, 30, 99, 3)"),
+        ("draw_circle(5, 6, 7, C)", "draw_circle(5, 6, 7, 10, 20, 30)"),
+        ("draw_circle(P, 7, C, 99)", "draw_circle(5, 6, 7, 10, 20, 30, 99)"),
+        ("draw_circle(5, 6, 7, C, 99)", "draw_circle(5, 6, 7, 10, 20, 30, 99)"),
+        ("draw_circle_outline(5, 6, 7, C)", "draw_circle_outline(5, 6, 7, 10, 20, 30)"),
+        ("draw_circle_outline(P, 7, C, 99)", "draw_circle_outline(5, 6, 7, 10, 20, 30, 99)"),
+        ("draw_circle_outline(5, 6, 7, C, 99)", "draw_circle_outline(5, 6, 7, 10, 20, 30, 99)"),
+        ("draw_circle_outline(P, 7, C, 99, 3)", "draw_circle_outline(5, 6, 7, 10, 20, 30, 99, 3)"),
+        ("draw_circle_outline(5, 6, 7, C, 99, 3)", "draw_circle_outline(5, 6, 7, 10, 20, 30, 99, 3)"),
+        ("draw_ellipse(5, 6, 7, 8, C)", "draw_ellipse(5, 6, 7, 8, 10, 20, 30)"),
+        ("draw_ellipse(P, 7, 8, C, 99)", "draw_ellipse(5, 6, 7, 8, 10, 20, 30, 99)"),
+        ("draw_ellipse(5, 6, 7, 8, C, 99)", "draw_ellipse(5, 6, 7, 8, 10, 20, 30, 99)"),
+        ("draw_ellipse_outline(5, 6, 7, 8, C)", "draw_ellipse_outline(5, 6, 7, 8, 10, 20, 30)"),
+        ("draw_ellipse_outline(P, 7, 8, C, 99)", "draw_ellipse_outline(5, 6, 7, 8, 10, 20, 30, 99)"),
+        ("draw_ellipse_outline(5, 6, 7, 8, C, 99)", "draw_ellipse_outline(5, 6, 7, 8, 10, 20, 30, 99)"),
+        ("draw_ellipse_outline(P, 7, 8, C, 99, 3)", "draw_ellipse_outline(5, 6, 7, 8, 10, 20, 30, 99, 3)"),
+        ("draw_ellipse_outline(5, 6, 7, 8, C, 99, 3)", "draw_ellipse_outline(5, 6, 7, 8, 10, 20, 30, 99, 3)"),
+        ("fill_arc(5, 6, 2, 9, 0.0, 1.0, C)", "fill_arc(5, 6, 2, 9, 0.0, 1.0, 10, 20, 30)"),
+        ("fill_arc(P, 2, 9, 0.0, 1.0, C, 99)", "fill_arc(5, 6, 2, 9, 0.0, 1.0, 10, 20, 30, 99)"),
+        ("fill_arc(5, 6, 2, 9, 0.0, 1.0, C, 99)", "fill_arc(5, 6, 2, 9, 0.0, 1.0, 10, 20, 30, 99)"),
+        ("fill_triangle(1, 2, 3, 4, 5, 6, C)", "fill_triangle(1, 2, 3, 4, 5, 6, 10, 20, 30)"),
+        ("fill_triangle(1, 2, 3, 4, 5, 6, C, 99)", "fill_triangle(1, 2, 3, 4, 5, 6, 10, 20, 30, 99)"),
+        ("fill_fan(5, 6, PTS, C)", "fill_fan(5, 6, PTS, 10, 20, 30)"),
+        ("fill_fan(P, PTS, C, 99)", "fill_fan(5, 6, PTS, 10, 20, 30, 99)"),
+        ("fill_fan(5, 6, PTS, C, 99)", "fill_fan(5, 6, PTS, 10, 20, 30, 99)"),
+        ("draw_text(\"hi\", 5, 6, 12, C)", "draw_text(\"hi\", 5, 6, 12, 10, 20, 30)"),
+        ("draw_text(\"hi\", P, 12, C, 99)", "draw_text(\"hi\", 5, 6, 12, 10, 20, 30, 99)"),
+        ("draw_text(\"hi\", 5, 6, 12, C, 99)", "draw_text(\"hi\", 5, 6, 12, 10, 20, 30, 99)"),
+        ("draw_text(\"hi\", P, 12, C)", "draw_text(\"hi\", 5, 6, 12, 10, 20, 30)"),
+        ("draw_text(\"hi\", 5, 6, {size: 12, color: C})", "draw_text(\"hi\", P, {size: 12, color: C})"),
+        ("draw_rect_gradient_rounded(1, 2, 3, 4, 5, C, D, 0.5)",
+         "draw_rect_gradient_rounded(1, 2, 3, 4, 5, 10, 20, 30, 255, 40, 50, 60, 255, 0.5)"),
+    ];
+    let prefix = "let C = {r: 10, g: 20, b: 30}\n\
+                  let D = {r: 40, g: 50, b: 60}\n\
+                  let P = {x: 5, y: 6}\n\
+                  let PTS = [{x: 1, y: 1}, {x: 9, y: 1}, {x: 9, y: 9}]\n";
+    // Two programs, one call per line, so the prelude compiles twice rather
+    // than once per pair.
+    let draw = |calls: Vec<&str>| {
+        let src = format!("{prefix}{}", calls.join("\n"));
+        let mut ui = Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+        let cmds = ui.frame().unwrap_or_else(|e| panic!("frame failed: {e}")).to_vec();
+        cmds.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>()
+    };
+    let got = draw(pairs.iter().map(|p| p.0).collect());
+    let want = draw(pairs.iter().map(|p| p.1).collect());
+    assert_eq!(want.len(), pairs.len(), "one command per flat call: {want:?}");
+    for (i, (mixed, flat)) in pairs.iter().enumerate() {
+        assert_eq!(got.get(i), Some(&want[i]), "{mixed} should draw what {flat} draws");
+    }
+}
+
+/// Overloads dispatch on argument count, and a second `fn` with the same name
+/// and count silently replaces the first. Adding the mixed draw forms hit this
+/// (the new `draw_line(x1, y1, x2, y2, c)` hid the record `(a, b, c, alpha,
+/// width)`), so the prelude is checked for it: a shared count must be one
+/// overload that tells its shapes apart.
+#[test]
+fn prelude_has_no_two_overloads_with_the_same_argument_count() {
+    let src = petal_ui::prelude_source();
+    let mut seen = std::collections::HashMap::new();
+    for (i, line) in src.lines().enumerate() {
+        let rest = line
+            .strip_prefix("export fn ")
+            .or_else(|| line.strip_prefix("fn "));
+        let Some(rest) = rest else { continue };
+        let Some((name, args)) = rest.split_once('(') else { continue };
+        let args = args.split(')').next().unwrap_or("");
+        let count = args.split(',').filter(|a| !a.trim().is_empty()).count();
+        if let Some(prev) = seen.insert((name.trim().to_string(), count), i + 1) {
+            panic!(
+                "ui.ptl:{} redefines `{}` with {count} arguments (first at line {prev}); \
+                 the later one silently wins",
+                i + 1,
+                name.trim()
+            );
+        }
+    }
+}

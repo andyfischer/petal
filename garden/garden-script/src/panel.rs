@@ -1833,21 +1833,52 @@ impl PanelHost {
     ///   removes the prelude's ~20 unprefixed implicit-import aliases
     ///   (`draw_rect`, `list_update`, `rect`, …).
     ///
-    /// One prelude binding survives all three by construction: `theme`, its
-    /// `export let theme = { … }` palette record. It is left in rather than
-    /// name-blocked, because a script that binds its own `theme` overwrites the
-    /// key anyway (its term is later in program order, and later wins) — so the
-    /// key is never *wrong*, only occasionally not-yours.
+    /// - **a name bound only by an imported module** — the prelude's
+    ///   unprefixed, non-callable exports (`theme`, `GRAD_RIGHT`/`DOWN`/`LEFT`/
+    ///   `UP`) survive the three rules above by construction, so a key whose
+    ///   only observed bindings come from a non-entry file of the program's
+    ///   source map is dropped too. A script that binds the same name itself
+    ///   keeps the key (its term is in the entry file, and later wins).
     ///
     /// This is Garden policy, not Petal's; the unfiltered map is a call to
     /// `Env::get_observations_json` away.
     pub fn observed_json(&self) -> serde_json::Map<String, serde_json::Value> {
+        let imported_only = self.imported_only_names();
         self.core
             .env
             .get_observations_json(self.core.program_id(), self.core.stack_id())
             .into_iter()
-            .filter(|(k, v)| !k.contains("::") && !k.starts_with('_') && !is_callable_json(v))
+            .filter(|(k, v)| {
+                !k.contains("::")
+                    && !k.starts_with('_')
+                    && !is_callable_json(v)
+                    && !imported_only.contains(k.as_str())
+            })
             .collect()
+    }
+
+    /// Names of observed terms bound only outside the entry file — by an
+    /// imported module such as the `ui` prelude — and never by the script
+    /// itself. See the last rule of [`observed_json`](Self::observed_json).
+    fn imported_only_names(&self) -> std::collections::HashSet<String> {
+        use petal::source_map::ENTRY_FILE;
+        let env = &self.core.env;
+        let Some(program) = env.get_program(self.core.program_id()) else {
+            return Default::default();
+        };
+        let mut imported = std::collections::HashSet::new();
+        let mut own = std::collections::HashSet::new();
+        for (term_id, _) in env.observations().iter() {
+            let Some(name) = program.get_term(term_id).name.as_deref() else {
+                continue;
+            };
+            match program.source_map.get(term_id) {
+                Some(span) if span.file != ENTRY_FILE => imported.insert(name.to_string()),
+                _ => own.insert(name.to_string()),
+            };
+        }
+        imported.retain(|n| !own.contains(n));
+        imported
     }
 
     /// The script's live `state` variables as a JSON map keyed by name — the
@@ -4832,31 +4863,16 @@ mod tests {
         assert!(!obs.contains_key("draw_rect") && !obs.contains_key("rect"));
         assert!(!obs.contains_key("mine"));
 
-        // What survives is the script's own bindings, plus the documented
-        // leftovers: the prelude's *unprefixed, non-callable* exports (`theme`,
-        // the `GRAD_*` angles). Nothing in a name separates those from a
-        // script's own, and a script that wants one of the names simply takes
-        // it — later in program order wins the key (the next test). So the
-        // assertion is "nothing here is a surprise", not a fixed list, which
-        // would otherwise have to be edited every time the prelude exports
-        // another constant.
-        let prelude_consts: Vec<&str> = petal_ui::prelude_source()
-            .lines()
-            .filter_map(|l| l.strip_prefix("export let "))
-            .filter_map(|l| l.split_whitespace().next())
-            .collect();
-        for key in obs.keys() {
-            assert!(
-                ["name", "sel"].contains(&key.as_str()) || prelude_consts.contains(&key.as_str()),
-                "unexpected observed key {key:?} (obs: {:?})",
-                obs.keys().collect::<Vec<_>>()
-            );
-        }
-        assert!(obs.contains_key("sel") && obs.contains_key("name") && obs.contains_key("theme"));
+        // Rule 4: the prelude's unprefixed, non-callable exports (`theme`, the
+        // `GRAD_*` angles) survive rules 1-3 by name, so they are dropped by
+        // where they were bound: only in an imported module's file.
+        assert!(raw.contains_key("theme") && raw.contains_key("GRAD_RIGHT"));
+        let keys: Vec<&String> = obs.keys().collect();
+        assert_eq!(keys, ["name", "sel"], "only the script's own bindings");
     }
 
-    /// The `theme` leftover is harmless because a script that wants the name
-    /// takes it: its term is later in program order, and later wins the key.
+    /// A script that binds a name the prelude also exported keeps the key: its
+    /// term is in the entry file, and later in program order wins.
     #[test]
     fn a_scripts_own_binding_wins_a_name_the_prelude_exported() {
         let f = write_script("let theme = \"mine\"\n");

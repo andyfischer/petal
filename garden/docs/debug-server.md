@@ -216,8 +216,10 @@ readable as `sel`, and a `state` var as itself. Rules:
   and `values_stale` say so, and `values_partial` carries the failing frame's
   own bindings as far as it got.
 - **Only the script's own bindings are reported.** Keys containing `::`
-  (imports), keys starting with `_`, and function values are filtered out, so
-  the petal-ui prelude does not bury your names.
+  (imports), keys starting with `_`, function values, and names bound only by
+  an imported module (the prelude's `theme` and `GRAD_*` exports) are
+  filtered out, so the petal-ui prelude does not bury your names. A script
+  that binds one of those names itself still reports it.
 - **One-frame edges** (`*_released`, `click_count`, `scroll`, `text`) are
   cleared by the next idle tick (~200 ms in headless). A script that must
   expose them to a later `GET /state` should count them into a `state` var.

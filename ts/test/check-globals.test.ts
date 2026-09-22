@@ -67,3 +67,42 @@ print(g(fn(x) -> x + 1))`);
     expect(r.stderr).toContain("Unknown --host 'nope'");
   });
 });
+
+// Natives declare argument slots, and the ui prelude's un-annotated draw
+// overloads are held to what their bodies do with each parameter, so a call
+// whose argument count selects the wrong overload is caught by `check`
+// instead of failing inside the prelude. See rust/src/typecheck/param_reqs.rs.
+describe("check: native arguments and prelude overloads", () => {
+  it("flags a native argument of the wrong type", () => {
+    expect(checkWith([], 'print(sqrt("x"), range({r: 1}))')).toEqual([
+      "argument 1 to `sqrt`: expected a number, found `string`",
+      "argument 1 to `range`: expected a number, found `record`",
+    ]);
+  });
+
+  it("flags a prelude overload that cannot take its arguments", () => {
+    const msgs = checkWith([], "draw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)");
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]).toContain(
+      "argument 3 to `draw_rect`: the 7-argument `draw_rect` uses it as a number, found `record`",
+    );
+    expect(msgs[1]).toContain(
+      "argument 5 to `draw_rect`: the 5-argument `draw_rect` reads field `r` from it, found `int`",
+    );
+  });
+
+  it("accepts every shape the prelude really takes", () => {
+    const r = checkStrict(`let C = {r: 255, g: 0, b: 0}
+let R = {x: 0, y: 0, w: 10, h: 10}
+draw_rect(0, 0, 10, 10, C)
+draw_rect(0, 0, 10, 10, 255, 0, 0)
+draw_rect(R, C)
+draw_rect(R, C, 128)
+draw_line(0, 0, 10, 10, C, 255, 2)
+draw_line(0, 0, 10, 10, 1, 2, 3)
+draw_circle_outline(5, 5, 3, C)
+draw_polyline([{x: 0, y: 0}, {x: 1, y: 1}], C, 235, 1)`);
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+});

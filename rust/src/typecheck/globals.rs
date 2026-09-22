@@ -271,7 +271,12 @@ pub fn unresolved_globals(
         let Some(span) = program.source_map.get(term.id) else {
             continue;
         };
-        if seen.insert((span.file, span.start.line, span.start.column, message.clone())) {
+        if seen.insert((
+            span.file,
+            span.start.line,
+            span.start.column,
+            message.clone(),
+        )) {
             out.push(Diagnostic {
                 span: *span,
                 message,
@@ -313,15 +318,27 @@ mod tests {
         let program = env.get_program(pid).unwrap();
         unresolved_globals(program, |n| env.has_native(n), &host)
             .into_iter()
-            .map(|d| format!("{}:{} {}", d.span.start.line, d.span.start.column, d.message))
+            .map(|d| {
+                format!(
+                    "{}:{} {}",
+                    d.span.start.line, d.span.start.column, d.message
+                )
+            })
             .collect()
     }
 
     #[test]
     fn unknown_call_and_read_are_reported() {
-        let got = unresolved("totally_bogus_fn(1)\nlet y = nope + 1", HostProfile::Ui, &[]);
+        let got = unresolved(
+            "totally_bogus_fn(1)\nlet y = nope + 1",
+            HostProfile::Ui,
+            &[],
+        );
         assert_eq!(got.len(), 2, "{got:?}");
-        assert!(got[0].starts_with("1:1 unknown function `totally_bogus_fn`"), "{got:?}");
+        assert!(
+            got[0].starts_with("1:1 unknown function `totally_bogus_fn`"),
+            "{got:?}"
+        );
         assert_eq!(got[1], "2:9 undefined variable `nope`");
     }
 

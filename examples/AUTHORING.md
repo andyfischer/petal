@@ -106,11 +106,13 @@ followed by a capture needs no sleep.
 
 ### Driving it
 
-`petal check --strict app.ptl` resolves the `ui` prelude without Garden (no
-`-I` needed; `-I petal-libs` only when the app imports `bloom`). It catches
-arity and type slips on known functions, captured-`state` reads and hoisting
-order, but not a misspelled global: `totally_bogus_fn(1)` passes `check` and
-fails in Garden.
+`petal check --strict --host garden app.ptl` resolves the `ui` prelude without
+Garden (no `-I` needed; `-I petal-libs` only when the app imports `bloom`). It
+catches arity and type slips on known functions, a misspelled global
+(`totally_bogus_fn(1)`), a native handed the wrong type (`sqrt("x")`), a call
+whose argument count selects a prelude overload that cannot take its arguments,
+captured-`state` reads and hoisting order. `--host garden` adds Garden's own
+natives (`palette`, `emit`, `query`, …) to the petal-ui set the default knows.
 
 ```bash
 curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"left"}'

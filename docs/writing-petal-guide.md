@@ -791,6 +791,15 @@ Warnings are non-fatal by design: mismatched annotations, arity errors, unknown
 type names, a discarded pure call, a function capturing a module `state` that is
 rebound below it. `--strict` is what you want in CI.
 
+`check` also reports a call to, or read of, a name nothing defines — it would
+fail with `Unknown builtin` or `Undefined variable` the moment the line ran — a
+builtin handed a type it refuses (`sqrt("x")`), and a call whose argument count
+picks an overload whose body cannot take those arguments. What counts as
+defined depends on the host: `--host ui` (the default) is the core builtins,
+the petal-ui natives and the `ui` prelude; `--host garden` adds Garden's panel
+and config natives, `--host sdl` petal-desktop-sdl's, `--host core` is core
+only, and `--native name,name` adds any others your host registers.
+
 Every `--json` error carries a `phase` (`lex` / `parse` / `module` / `compile` /
 `lower` / `runtime`) telling you exactly which stage rejected the program, and
 an `errors[]` array with *every* diagnostic rather than only the last.

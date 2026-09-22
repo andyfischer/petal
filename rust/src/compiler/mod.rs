@@ -120,6 +120,10 @@ pub struct Compiler {
     // types, and only the named-argument check needs the names. Empty for a
     // name nothing declares, which is what keeps that check conservative.
     fn_param_names: HashMap<(String, usize), Vec<String>>,
+    // What each function body requires of its un-annotated parameters, keyed
+    // the same way; see `crate::typecheck::param_reqs`. Accumulates across
+    // modules like `fn_signatures`.
+    fn_param_reqs: crate::typecheck::param_reqs::ParamReqs,
 
     // Classes visible to this compilation: the built-ins, plus every `class`
     // declaration found by `prescan_declarations` (so a `fn f(p: Point)` above
@@ -350,6 +354,7 @@ impl Compiler {
             enum_variants: HashMap::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
+            fn_param_reqs: HashMap::new(),
             collect_inferences: false,
             inferences: crate::typecheck::infer::Inferences::default(),
             fn_param_names: HashMap::new(),
@@ -611,6 +616,7 @@ impl Compiler {
                 namespaces: &namespaces,
                 module: &module_identity(module),
                 collect_inferences: self.collect_inferences,
+                param_reqs: Some(&self.fn_param_reqs),
             },
         );
         self.warnings.extend(diags);
@@ -1456,6 +1462,21 @@ impl Compiler {
         // method declaration has to find its class whichever order the file
         // declares them in.
         self.prescan_classes(stmts, Some(module.display_name.as_str()));
+
+        // What un-annotated parameters must be, read off the bodies. Computed
+        // before this module's signatures join the map, so "declared by some
+        // other module" means exactly that.
+        let other_fns: HashSet<&str> = self.fn_signatures.keys().map(|(n, _)| n.as_str()).collect();
+        let reqs = crate::typecheck::param_reqs::collect(stmts, &|n| other_fns.contains(n));
+        // This module's declarations replace any earlier module's of the same
+        // `(name, arity)` — including one with no requirements, which must
+        // not inherit the earlier one's.
+        for stmt in stmts {
+            if let StmtKind::FnDecl { name, params, .. } = &stmt.kind {
+                self.fn_param_reqs.remove(&(name.clone(), params.len()));
+            }
+        }
+        self.fn_param_reqs.extend(reqs);
 
         // Record declared signatures so the checker can verify call sites even
         // across forward references. Accumulates across modules.

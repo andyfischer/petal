@@ -202,6 +202,7 @@ impl ArgSlot {
 /// overloads instead) is left out or marked [`ArgSlot::Any`].
 pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot]> {
     use ArgSlot::*;
+    const NUMS: [ArgSlot; 16] = [Num; 16];
     let slots: &'static [ArgSlot] = match (name, arity) {
         // ── core math: `unary_float_dual`, `unary_num_preserving`, get_float ──
         (
@@ -241,11 +242,34 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         }
         ("create_canvas", 2) => &[Num, Num],
         ("clear", 3 | 4) => &[Num, Num, Num],
+        // The flat draw natives read every argument with `get_int` (or a
+        // numeric `get_num`), up to their optional trailing alpha / width.
+        // A script's bare `draw_rect(...)` resolves to the ui prelude's
+        // overloads instead, so these rows matter where the native itself is
+        // called: through the prelude's `_native_*` aliases, which is how
+        // [`super::param_reqs`] learns what each overload's parameters must
+        // be, and under a host with no prelude.
+        (
+            "draw_rect"
+            | "draw_line"
+            | "draw_ellipse"
+            | "draw_rect_outline"
+            | "draw_ellipse_outline",
+            7..=8,
+        )
+        | ("draw_rect_outline" | "draw_line" | "draw_ellipse_outline", 9)
+        | ("draw_rect_rounded", 8..=9)
+        | ("draw_rect_rounded_outline", 8..=10)
+        | ("draw_circle", 6..=7)
+        | ("draw_circle_outline", 6..=8)
+        | ("fill_triangle", 9..=10)
+        | ("fill_arc", 9..=10)
+        | ("draw_circle_gradient", 11)
+        | ("draw_shadow", 12..=13) => &NUMS[..arity],
         _ => return None,
     };
     Some(slots)
 }
-
 
 #[cfg(test)]
 mod tests {

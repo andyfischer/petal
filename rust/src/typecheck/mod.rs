@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 pub mod builtin_types;
 pub mod globals;
 pub mod infer;
+pub mod param_reqs;
 pub mod unused;
 
 use crate::ast::{
@@ -105,6 +106,8 @@ pub enum CastSlot {
 
 struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
+    /// See [`CheckContext::param_reqs`].
+    param_reqs: Option<&'a param_reqs::ParamReqs>,
     /// The parameter names of those same module functions, for checking a
     /// call's named arguments against the declaration. See
     /// [`crate::compiler::collect_fn_param_names`].
@@ -175,6 +178,10 @@ pub struct CheckContext<'a> {
     /// Collect the evidence `petal suggest` reads. Off for an ordinary
     /// compile, which then does no extra work at all.
     pub collect_inferences: bool,
+    /// What each module function's body requires of its un-annotated
+    /// parameters ([`param_reqs`]), keyed like `fn_signatures`. `None` checks
+    /// only declared types.
+    pub param_reqs: Option<&'a param_reqs::ParamReqs>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -193,6 +200,7 @@ impl<'a> CheckContext<'a> {
             namespaces,
             module: "",
             collect_inferences: false,
+            param_reqs: None,
         }
     }
 }
@@ -204,6 +212,7 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
     let mut checker = Checker {
         fn_signatures: opts.fn_signatures,
         fn_param_names: opts.fn_param_names,
+        param_reqs: opts.param_reqs,
         classes: opts.classes,
         namespaces: opts.namespaces,
         scopes: vec![HashMap::new()],
@@ -1626,7 +1635,65 @@ impl<'a> Checker<'a> {
                 );
             }
         }
+        self.check_param_reqs(function, &sig, args, arg_names, arg_types);
         sig.ret.unwrap_or(Type::Any)
+    }
+
+    /// Check a call against what the selected overload's body requires of
+    /// its un-annotated parameters ([`param_reqs`]). Overloads dispatch on
+    /// arity alone, so the overload `sig` is the only one this call can run;
+    /// a requirement it certainly fails means no overload of that arity
+    /// accepts these arguments, and the runtime error would come from inside
+    /// the overload's body, far from the call.
+    fn check_param_reqs(
+        &mut self,
+        function: &Expr,
+        sig: &FnSignature,
+        args: &[Expr],
+        arg_names: &[Option<String>],
+        arg_types: &[Type],
+    ) {
+        let (Some(all), ExprKind::Ident(f)) = (self.param_reqs, &function.kind) else {
+            return;
+        };
+        // Only the module function itself: a local binding of the name holds
+        // some other callable.
+        if self.lookup(f).is_some() || !arg_names.iter().all(Option::is_none) {
+            return;
+        }
+        let Some(reqs) = all.get(&(f.clone(), args.len())) else {
+            return;
+        };
+        let arities: Vec<usize> = self
+            .module_signatures(f)
+            .iter()
+            .map(|s| s.params.len())
+            .collect();
+        for (i, req) in reqs.iter().enumerate() {
+            let (Some(req), Some(&at)) = (req, arg_types.get(i)) else {
+                continue;
+            };
+            // A declared parameter type was already checked above.
+            if matches!(sig.params.get(i), Some(Some(_))) || req.accepts(at) {
+                continue;
+            }
+            let others = if arities.len() > 1 {
+                let list: Vec<String> = arities.iter().map(usize::to_string).collect();
+                format!(" (`{f}` overloads by argument count alone: {})", list.join(", "))
+            } else {
+                String::new()
+            };
+            self.warn(
+                args[i].span,
+                format!(
+                    "argument {} to `{f}`: the {}-argument `{f}` {}, found `{}`{others}",
+                    i + 1,
+                    args.len(),
+                    req.describe(),
+                    self.spell(at),
+                ),
+            );
+        }
     }
 
     /// Record what one resolved call says about types nobody wrote down. Two
@@ -2638,5 +2705,63 @@ mod tests {
         }
         // A local binding shadows the native too.
         assert!(warns("let range = fn(r) -> r\nprint(range({r: 1}))").is_empty());
+    }
+
+    /// [`warns`] with the body-derived parameter requirements the compiler
+    /// supplies ([`super::param_reqs`]).
+    fn warns_with_reqs(src: &str) -> Vec<String> {
+        let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
+        crate::desugar::desugar(&mut stmts);
+        let mut classes = crate::classes::ClassTable::new();
+        crate::compiler::collect_classes(&mut classes, &stmts, None);
+        let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
+        let names = crate::compiler::collect_fn_param_names(&stmts);
+        let reqs = super::param_reqs::collect(&stmts, &|_| false);
+        let namespaces = HashMap::new();
+        let mut ctx = CheckContext::new(&sigs, &names, &classes, &namespaces);
+        ctx.param_reqs = Some(&reqs);
+        check_module(&stmts, &ctx)
+            .0
+            .into_iter()
+            .map(|d| d.message)
+            .collect()
+    }
+
+    /// A call whose arity selects an overload that certainly cannot take its
+    /// arguments warns at the argument, naming what the overload does with it.
+    #[test]
+    fn overload_selected_by_arity_is_held_to_its_body() {
+        let src = "let _native_rect = draw_rect\n\
+                   fn box(r, c)\n  _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b)\nend\n\
+                   fn box(x, y, w, h, c)\n  _native_rect(x, y, w, h, c.r, c.g, c.b)\nend\n";
+        let w = warns_with_reqs(&format!("{src}box(0, 0, 4, 4, 9)"));
+        assert_eq!(
+            w,
+            ["argument 5 to `box`: the 5-argument `box` reads field `r` from it, found `int` \
+              (`box` overloads by argument count alone: 2, 5)"]
+        );
+        let w = warns_with_reqs(&format!("{src}box(0, {{r: 1}}, 4, 4, {{r: 1, g: 2, b: 3}})"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument 2 to `box`: the 5-argument `box` uses it as a number, found `record`"), "{w:?}");
+        // Well-shaped calls, and calls of unknown types, pass.
+        for call in [
+            "box(0, 0, 4, 4, {r: 1, g: 2, b: 3})",
+            "box({x: 0, y: 0, w: 4, h: 4}, {r: 1, g: 2, b: 3})",
+            "fn go(a, b) box(a, b) end",
+        ] {
+            let w = warns_with_reqs(&format!("{src}{call}"));
+            assert!(w.is_empty(), "{call}: {w:?}");
+        }
+    }
+
+    /// A declared parameter type is checked by the ordinary rule and not
+    /// reported twice; a local of the same name is some other callable.
+    #[test]
+    fn param_requirements_defer_to_declarations_and_locals() {
+        let w = warns_with_reqs("fn f(p: int)\n  p.x\nend\nprint(f(\"s\"))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("expected `int`"), "{w:?}");
+        let w = warns_with_reqs("fn f(p)\n  p.x\nend\nfn g(f)\n  f(3)\nend");
+        assert!(w.is_empty(), "{w:?}");
     }
 }

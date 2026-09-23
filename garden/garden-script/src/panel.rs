@@ -36,6 +36,7 @@ use petal::direct_manipulation::{self, ManipulationGoal};
 use petal::env::Env;
 use petal::heap::Heap;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
+use petal::source_watch::SourceWatch;
 use petal::static_value::StaticValue;
 use petal::value::Value;
 use petal_ui::draw::DrawCommand;
@@ -1128,10 +1129,11 @@ pub struct PanelHost {
     /// (the same swap as the providers) and flushed to disk after it, so a
     /// write costs a rewrite only on the frames that actually change something.
     store: Option<crate::panel_store::PanelStore>,
-    /// (path, signature) of every *imported* module file the program compiled
+    /// A stat snapshot of every *imported* module file the program compiled
     /// from, so editing a module a panel imports hot-reloads the panel too. A
-    /// single-file panel leaves this empty and costs nothing.
-    import_sigs: Vec<(PathBuf, Option<FileSig>)>,
+    /// single-file panel leaves this empty and costs nothing. (The entry file
+    /// is tracked apart, in `last_sig`, because its disappearing is an error.)
+    imports: SourceWatch,
     /// The call site of each command the last [`frame`](Self::frame) returned,
     /// index-aligned with that command list. Empty while tracing is off.
     ///
@@ -1186,11 +1188,11 @@ impl PanelHost {
             role_metrics: None,
             trace_origins: false,
             store: Some(crate::panel_store::PanelStore::for_script(path)),
-            import_sigs: Vec::new(),
+            imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
         };
-        host.import_sigs = host.collect_import_sigs();
+        host.imports = host.watch_imports();
         Ok(host)
     }
 
@@ -1248,7 +1250,7 @@ impl PanelHost {
             // exactly the scoping key the store wants — so a GPP app's drawer
             // persists under its own name like any other panel.
             store: Some(crate::panel_store::PanelStore::for_script(Path::new(name))),
-            import_sigs: Vec::new(),
+            imports: SourceWatch::default(),
             frame_origins: Vec::new(),
             last_cmds: Vec::new(),
         })
@@ -1715,7 +1717,7 @@ impl PanelHost {
                 return Ok(false);
             }
         };
-        let imports_changed = self.imports_changed();
+        let imports_changed = self.imports.changed();
         if self.last_sig == Some(sig) && !imports_changed {
             return Ok(false);
         }
@@ -1732,7 +1734,7 @@ impl PanelHost {
         self.core
             .env
             .transfer_state(self.core.stack_id(), new_program)?;
-        self.import_sigs = self.collect_import_sigs();
+        self.imports = self.watch_imports();
         Ok(true)
     }
 
@@ -1740,24 +1742,15 @@ impl PanelHost {
     /// current signatures. Modules a host registered in memory (the `ui`
     /// prelude, the bloom library) have no origin and are skipped: nothing on
     /// disk backs them, and they change only when Garden itself is rebuilt.
-    fn collect_import_sigs(&self) -> Vec<(PathBuf, Option<FileSig>)> {
-        self.core
-            .env
-            .module_manifest(self.core.program_id())
-            .into_iter()
-            .filter_map(|entry| entry.origin)
-            .filter(|origin| origin != &self.path)
-            .map(|origin| {
-                let sig = stat_sig(&origin);
-                (origin, sig)
-            })
-            .collect()
-    }
-
-    fn imports_changed(&self) -> bool {
-        self.import_sigs
-            .iter()
-            .any(|(path, sig)| stat_sig(path) != *sig)
+    fn watch_imports(&self) -> SourceWatch {
+        let entry = self.path.canonicalize().unwrap_or_else(|_| self.path.clone());
+        SourceWatch::new(
+            self.core
+                .env
+                .program_source_paths(self.core.program_id(), None)
+                .into_iter()
+                .filter(|p| p.canonicalize().unwrap_or_else(|_| p.clone()) != entry),
+        )
     }
 
     /// Recompile the panel from an **in-memory** source string, preserving Petal
@@ -4489,6 +4482,29 @@ mod tests {
         assert!(host.poll_reload().unwrap(), "the edit should reload");
         host.frame(0.0, 0).unwrap();
         assert_eq!(host.take_output()[0].trim(), "50");
+    }
+
+    #[test]
+    fn editing_an_imported_module_reloads_the_panel() {
+        // The panel's watch covers the modules it imports, not just its own
+        // file: a multi-file panel app edited in its helper hot-reloads.
+        let dir = tempfile::tempdir().unwrap();
+        let helper = dir.path().join("helper.ptl");
+        fs::write(&helper, "export fn word()\n  \"one\"\nend\n").unwrap();
+        let entry = dir.path().join("main.ptl");
+        fs::write(&entry, "import helper\nprint(helper.word())\n").unwrap();
+
+        let mut host = PanelHost::load(&entry).unwrap();
+        host.set_dimensions(100, 80);
+        host.frame(0.0, 0).unwrap();
+        assert_eq!(host.take_output()[0].trim(), "one");
+        assert_eq!(host.poll_reload(), Ok(false), "nothing changed yet");
+
+        fs::write(&helper, "export fn word()\n  \"three\"\nend\n").unwrap();
+        assert_eq!(host.poll_reload(), Ok(true), "the import edit should reload");
+        host.frame(0.0, 0).unwrap();
+        assert_eq!(host.take_output()[0].trim(), "three");
+        assert_eq!(host.poll_reload(), Ok(false), "and only once");
     }
 
     #[test]

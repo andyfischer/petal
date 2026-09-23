@@ -55,17 +55,19 @@ pub fn check_hot_reload(
 }
 
 /// Watch every directory the program's source files live in — the entry
-/// script's directory plus the directory of each imported module in the
-/// program's module manifest. Editing an imported `palette.ptl` hot-reloads the
-/// scripts that import it, not just edits to the entry file. Directories are
-/// watched (non-recursively); any modify event triggers a reload check.
+/// script plus each imported module with a file behind it
+/// ([`Env::program_source_paths`]). Editing an imported `palette.ptl`
+/// hot-reloads the scripts that import it, not just edits to the entry file.
+/// Directories are watched (non-recursively); any modify event triggers a
+/// reload check.
 pub fn setup_watcher(
     env: &Env,
     program_id: ProgramId,
     source_path: &str,
     tx: mpsc::Sender<()>,
 ) -> Result<Option<notify::RecommendedWatcher>, String> {
-    let path = Path::new(source_path)
+    // Fail early, with the entry's own error, if it cannot be resolved.
+    Path::new(source_path)
         .canonicalize()
         .map_err(|e| format!("Failed to resolve path: {}", e))?;
 
@@ -78,16 +80,11 @@ pub fn setup_watcher(
     })
     .map_err(|e| format!("Failed to create watcher: {}", e))?;
 
-    let mut dirs: Vec<std::path::PathBuf> =
-        vec![path.parent().unwrap_or(Path::new(".")).to_path_buf()];
-    for entry in env.module_manifest(program_id) {
-        if let Some(origin) = entry.origin
-            && let Ok(canonical) = origin.canonicalize()
-            && let Some(parent) = canonical.parent()
-        {
-            dirs.push(parent.to_path_buf());
-        }
-    }
+    let mut dirs: Vec<std::path::PathBuf> = env
+        .program_source_paths(program_id, Some(Path::new(source_path)))
+        .into_iter()
+        .filter_map(|p| Some(p.canonicalize().ok()?.parent()?.to_path_buf()))
+        .collect();
     dirs.sort();
     dirs.dedup();
     for dir in &dirs {

@@ -174,6 +174,47 @@ TEST(bindings_reach_the_script) {
     CHECK(vm.drain("out")[0].is_nil());
 }
 
+TEST(vec3_is_native_both_ways) {
+    petal::Vm vm;
+    // A host native that takes and returns native vec3s.
+    vm.native("host_up", [](petal::Call& c) {
+        REQUIRE(c.size() == 1);
+        petal::Value v = c[0];
+        CHECK(v.is_vec3());
+        c.result().vec3(v.x(), v.y() + 1, v.z());
+    });
+    vm.set_vec3("sun", 0.5, -1, 0.25);
+    vm.load_source(
+        "let out = symbol(\"out\")\n"
+        "let sun = binding(symbol(\"sun\"))\n"
+        "push_output(out, sun)\n"
+        "push_output(out, sun + vec3(1, 1, 1))\n"               // operators work: it is a real vec3
+        "push_output(out, cross(vec3(1, 0, 0), vec3(0, 1, 0)))\n"
+        "push_output(out, host_up(vec3(1, 2, 3)))\n"
+        "push_output(out, {pos: vec3(7, 8, 9), rec: {x: 1, y: 2, z: 3}})\n");
+    vm.run();
+    petal::Values out = vm.drain("out");
+    REQUIRE(out.size() == 5);
+    CHECK(out[0].is_vec3());
+    CHECK(!out[0].is_vec2() && !out[0].is_map() && out[0].empty());
+    CHECK_NEAR(out[0].x(), 0.5, 1e-9);
+    CHECK_NEAR(out[0].y(), -1.0, 1e-9);
+    CHECK_NEAR(out[0].z(), 0.25, 1e-9);
+    CHECK_NEAR(out[1].z(), 1.25, 1e-9);
+    CHECK(out[2].is_vec3());
+    CHECK_NEAR(out[2].z(), 1.0, 1e-9);
+    CHECK(out[3].is_vec3());
+    CHECK_NEAR(out[3].y(), 3.0, 1e-9);
+    CHECK_NEAR(out[3].z(), 3.0, 1e-9);
+    CHECK(out[4]["pos"].is_vec3());
+    CHECK_NEAR(out[4]["pos"].z(), 9.0, 1e-9);
+    // An {x, y, z} record is still a record.
+    CHECK(out[4]["rec"].is_map());
+    CHECK_NEAR(out[4]["rec"].num("z"), 3.0, 1e-9);
+    // A missing value reads as zero components.
+    CHECK_NEAR(petal::Value().z(), 0.0, 1e-9);
+}
+
 TEST(builder_misuse_is_reported) {
     petal::Vm vm;
     petal::Builder b;

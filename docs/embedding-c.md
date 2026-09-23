@@ -172,6 +172,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `42` | `PB_INT` | `integer()`, `number()` |
 | `1.5` | `PB_FLOAT` | `number()`, `integer()` (truncated) |
 | `vec2(x, y)` | `PB_VEC2` | `x()`, `y()` |
+| `vec3(x, y, z)` | `PB_VEC3` | `x()`, `y()`, `z()` |
 | `"text"` | `PB_STRING` | `str()` |
 | `[a, b]` | `PB_LIST` | `size()`, `[i]`, iteration |
 | `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
@@ -179,8 +180,10 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
 | handles | `PB_HANDLE` | `integer()` = slot |
 
-Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A 3D vector
-is by convention the record `{x, y, z}`.
+Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
+`vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`
+(full `f64` precision); an `{x, y, z}` *record* is still an ordinary
+`PB_MAP`.
 
 **Lifetime:** views stay valid until the next `run()`, `call()`, `load_*()`,
 `reload*()` or `clear_views()` on the same VM. Several buffers can be drained
@@ -195,7 +198,7 @@ They persist until overwritten or cleared.
 
 ```cpp
 vm.set_float("gravity", -9.81);
-vm.set_vec3("sun_dir", 0.3, -1, 0.2);          // {x, y, z}
+vm.set_vec3("sun_dir", 0.3, -1, 0.2);          // a native vec3
 vm.set_floats("heights", std::span<const double>(h));
 vm.set_value("bodies", [&](petal::BuilderRef b) {
     b.list([&](petal::BuilderRef l) {
@@ -218,6 +221,13 @@ passed or returned, so they are reusable and independent of any VM. Misuse
 (a key outside a map, unbalanced containers) surfaces as `PB_ERR_INVALID_ARG`
 when the builder is consumed.
 
+`vec3` (`pb_builder_vec3`, `pb_vm_set_vec3`) produces a native Petal `vec3`,
+so scripts get vector arithmetic, `.x/.y/.z`, `mag`, `dot`, `cross` and the
+rest on it directly. *Changed in 0.2.0:* earlier versions (and Cheesecake's
+original bridge) built the record `{x, y, z}` instead. Scripts that only read
+`.x/.y/.z` are unaffected; a script that treats the value as a record (adds
+fields to it, spreads it, iterates it with `keys`) must build its own record.
+
 ## Host natives
 
 ### Callbacks: synchronous, with return values
@@ -225,7 +235,8 @@ when the builder is consumed.
 ```cpp
 vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
     petal::Value from = c[0], dir = c[1];
-    auto hit = physics.raycast(vec3(from), vec3(dir), c[2].number(100));
+    auto hit = physics.raycast({from.x(), from.y(), from.z()},  // PB_VEC3 args
+                              {dir.x(), dir.y(), dir.z()}, c[2].number(100));
     if (!hit) return;                          // empty result = nil
     c.result().map([&](petal::BuilderRef m) {
         m.field("dist", hit->dist);
@@ -236,7 +247,7 @@ vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
 ```
 
 ```petal
-let hit = raycast(pos, {x: 0, y: -1, z: 0}, 2.0)
+let hit = raycast(pos, vec3(0, -1, 0), 2.0)
 let grounded = hit != nil && hit.dist < 0.6
 ```
 
@@ -278,7 +289,7 @@ vm.emitter("body", "physics", "declare_body");    // custom tag
 ```
 
 ```petal
-draw_mesh("cube", {x: 0, y: 1, z: 0}, rot, 1.0, {color: #cc3333})
+draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: #cc3333})
 sfx("jump", {volume: 0.8})
 ```
 
@@ -287,7 +298,7 @@ arguments — into the named buffer, in call order, and returns `nil`:
 
 ```cpp
 for (petal::Value cmd : vm.drain("scene")) {
-    if (cmd.tag() == "draw_mesh") renderer.submit(cmd[0].str(), vec3(cmd[1]), ...);
+    if (cmd.tag() == "draw_mesh") renderer.submit(cmd[0].str(), {cmd[1].x(), cmd[1].y(), cmd[1].z()}, ...);
     else if (cmd.tag() == "point_light") ...
 }
 ```
@@ -530,9 +541,7 @@ everything, costs about 0.4 ms. Loading or reloading a program takes about
 - `petal-query` is linked by default (its protocol version is reported by
   `pb_version()`) but its provider/cache layer is not exposed yet; host data
   queries use host natives instead.
-- `pb_builder_vec3` / `pb_vm_set_vec3` build the record `{x, y, z}`, and a
-  script's 3D vectors decode as `PB_MAP`; there is no `PB_VEC3` kind yet.
-  Any other value the bridge does not know decodes as `PB_OTHER` with its
-  type name.
+- Any value the bridge does not know decodes as `PB_OTHER` with its type
+  name.
 - Emit tracing / provenance (Petal's "which line drew this?") and forked
   speculative runs are not exposed yet.

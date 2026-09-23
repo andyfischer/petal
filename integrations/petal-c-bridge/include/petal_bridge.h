@@ -118,7 +118,8 @@ typedef enum pb_kind {
     PB_SYMBOL = 9,   /* str = symbol name */
     PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
     PB_PENDING = 11, /* an unresolved resource */
-    PB_OTHER = 12    /* closure, native fn, element…; str = type name */
+    PB_OTHER = 12,   /* closure, native fn, element…; str = type name */
+    PB_VEC3 = 13     /* number = x, y = y, z = z */
 } pb_kind;
 
 /* A decoded, immutable view of one Petal value. Children are contiguous. */
@@ -132,7 +133,8 @@ typedef struct pb_value {
     size_t key_len;
     int64_t integer;
     double number;
-    double y;
+    double y;                      /* VEC2/VEC3 y component */
+    double z;                      /* VEC3 z component */
 } pb_value;
 
 /* A list of root values (e.g. everything drained from one output buffer). */
@@ -183,7 +185,7 @@ void pb_builder_bool(pb_builder* b, bool v);
 void pb_builder_int(pb_builder* b, int64_t v);
 void pb_builder_float(pb_builder* b, double v);
 void pb_builder_vec2(pb_builder* b, double x, double y);
-/* A record {x, y, z} of floats. */
+/* A native vec3 (decodes back as PB_VEC3). */
 void pb_builder_vec3(pb_builder* b, double x, double y, double z);
 void pb_builder_string(pb_builder* b, const char* utf8, size_t len);
 void pb_builder_symbol(pb_builder* b, const char* name);
@@ -303,7 +305,7 @@ pb_status pb_vm_set_int(pb_vm* vm, const char* name, int64_t v);
 pb_status pb_vm_set_bool(pb_vm* vm, const char* name, bool v);
 pb_status pb_vm_set_string(pb_vm* vm, const char* name, const char* utf8);
 pb_status pb_vm_set_vec2(pb_vm* vm, const char* name, double x, double y);
-/* Binds the record {x, y, z}. */
+/* Binds a native vec3. */
 pb_status pb_vm_set_vec3(pb_vm* vm, const char* name, double x, double y, double z);
 pb_status pb_vm_set_floats(pb_vm* vm, const char* name, const double* values, size_t n);
 /* Binds the builder's single root value (exactly one root required). The

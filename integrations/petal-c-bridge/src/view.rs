@@ -35,6 +35,7 @@ pub enum Kind {
     Handle = 10,
     Pending = 11,
     Other = 12,
+    Vec3 = 13,
 }
 
 /// Mirrors `pb_value`.
@@ -51,6 +52,7 @@ pub struct PbValue {
     pub integer: i64,
     pub number: f64,
     pub y: f64,
+    pub z: f64,
 }
 
 impl PbValue {
@@ -66,6 +68,7 @@ impl PbValue {
             integer: 0,
             number: 0.0,
             y: 0.0,
+            z: 0.0,
         }
     }
 }
@@ -83,6 +86,7 @@ pub static NIL_VALUE: SyncValue = SyncValue(PbValue {
     integer: 0,
     number: 0.0,
     y: 0.0,
+    z: 0.0,
 });
 
 /// `PbValue` holds raw pointers; the static nil holds only nulls.
@@ -174,6 +178,17 @@ impl ViewArena {
                 node = PbValue::scalar(Kind::Vec2);
                 node.number = x;
                 node.y = y;
+            }
+            Value::Vec3(id) => {
+                node = PbValue::scalar(Kind::Vec3);
+                // A stale id (collected since it was drained) decodes as zero
+                // rather than panicking, like the other heap kinds.
+                if heap.is_live(*v) {
+                    let [x, y, z] = heap.get_vec3(id);
+                    node.number = x;
+                    node.y = y;
+                    node.z = z;
+                }
             }
             Value::String(id) => {
                 node = PbValue::scalar(Kind::String);

@@ -35,6 +35,15 @@ int main(void) {
     REQUIRE(pb_vm_take_output(vm, &lines, &n) == PB_OK);
     REQUIRE(n == 1 && strcmp(lines[0], "from c") == 0);
 
+    /* Native vec3s cross the boundary as PB_VEC3 in both directions. */
+    REQUIRE(pb_vm_set_vec3(vm, "v", 1.0, 2.0, 3.0) == PB_OK);
+    REQUIRE(pb_vm_load_source(vm, "note(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);
+    REQUIRE(pb_vm_run(vm) == PB_OK);
+    REQUIRE(pb_vm_drain(vm, "notes", &notes) == PB_OK);
+    REQUIRE(notes.count == 1);
+    const pb_value* v = pb_value_at(&notes.items[0], 0);
+    REQUIRE(v->kind == PB_VEC3 && v->number == 2.0 && v->y == 4.0 && v->z == 6.0);
+
     /* A compile error keeps the VM usable and reports a position. */
     REQUIRE(pb_vm_load_source(vm, "let = 3", "bad.ptl") == PB_ERR_COMPILE);
     const pb_error* err = pb_vm_last_error(vm);

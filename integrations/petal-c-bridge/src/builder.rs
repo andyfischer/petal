@@ -24,6 +24,7 @@ pub enum HostValue {
     Int(i64),
     Float(f64),
     Vec2(f64, f64),
+    Vec3(f64, f64, f64),
     Str(String),
     Symbol(String),
     List(Vec<HostValue>),
@@ -53,6 +54,7 @@ impl HostValue {
             HostValue::Int(i) => Value::Int(*i),
             HostValue::Float(f) => Value::Float(*f),
             HostValue::Vec2(x, y) => Value::Vec2(*x, *y),
+            HostValue::Vec3(x, y, z) => heap.vec3_value(*x, *y, *z),
             HostValue::Str(s) => Value::String(heap.alloc_string(s.clone())),
             HostValue::Symbol(s) => syms
                 .get(s.as_str())
@@ -300,18 +302,9 @@ pub extern "C" fn pb_builder_vec2(b: *mut PbBuilder, x: f64, y: f64) {
     with(b, |b| b.push(HostValue::Vec2(x, y)));
 }
 
-/// The record `{x, y, z}` — Petal's idiomatic 3D vector.
-pub fn vec3(x: f64, y: f64, z: f64) -> HostValue {
-    HostValue::Map(vec![
-        ("x".into(), HostValue::Float(x)),
-        ("y".into(), HostValue::Float(y)),
-        ("z".into(), HostValue::Float(z)),
-    ])
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_builder_vec3(b: *mut PbBuilder, x: f64, y: f64, z: f64) {
-    with(b, |b| b.push(vec3(x, y, z)));
+    with(b, |b| b.push(HostValue::Vec3(x, y, z)));
 }
 
 #[unsafe(no_mangle)]

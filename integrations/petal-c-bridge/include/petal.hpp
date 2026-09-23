@@ -125,6 +125,7 @@ public:
     bool is_float() const noexcept { return kind() == PB_FLOAT; }
     bool is_number() const noexcept { return pb_value_is_number(v_); }
     bool is_vec2() const noexcept { return kind() == PB_VEC2; }
+    bool is_vec3() const noexcept { return kind() == PB_VEC3; }
     bool is_string() const noexcept { return kind() == PB_STRING; }
     bool is_list() const noexcept { return kind() == PB_LIST; }
     bool is_map() const noexcept { return kind() == PB_MAP; }
@@ -138,9 +139,11 @@ public:
     int64_t integer(int64_t fallback = 0) const noexcept { return is_number() ? v_->integer : fallback; }
     // Truthiness of BOOL (and nonzero numbers); false for everything else.
     bool boolean(bool fallback = false) const noexcept { return is_number() ? v_->integer != 0 : fallback; }
-    // VEC2 components (number = x, y = y).
-    double x() const noexcept { return is_vec2() ? v_->number : 0.0; }
-    double y() const noexcept { return is_vec2() ? v_->y : 0.0; }
+    // VEC2/VEC3 components (number = x, y = y, z = z); 0 otherwise, and z()
+    // is 0 for a VEC2.
+    double x() const noexcept { return (is_vec2() || is_vec3()) ? v_->number : 0.0; }
+    double y() const noexcept { return (is_vec2() || is_vec3()) ? v_->y : 0.0; }
+    double z() const noexcept { return is_vec3() ? v_->z : 0.0; }
 
     // STRING text, ENUM tag, SYMBOL name, MAP class name, HANDLE class, OTHER type name.
     std::string_view str() const noexcept {

@@ -676,11 +676,7 @@ pub unsafe extern "C" fn pb_vm_set_vec3(
     y: f64,
     z: f64,
 ) -> Status {
-    status(vm, |vm| {
-        let name = unsafe { arg_str(name, "name") }?;
-        vm.bind(name, builder::vec3(x, y, z));
-        Ok(())
-    })
+    bind_with(vm, name, |vm| Ok(vm.env.heap_mut().vec3_value(x, y, z)))
 }
 
 #[unsafe(no_mangle)]
@@ -1179,6 +1175,27 @@ mod tests {
         assert_eq!(FREED.load(Ordering::SeqCst), 0);
         drop(vm);
         assert_eq!(FREED.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn vec3_binds_and_decodes_natively() {
+        let mut vm = Vm::new();
+        vm.bind("v", HostValue::Vec3(1.0, 2.0, 3.0));
+        vm.load(
+            "let v = binding(symbol(\"v\"))\npush_output(symbol(\"out\"), v + vec3(0.5, 0, -1))\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        vm.run().unwrap();
+        let sym = vm.env.intern_symbol("out");
+        let vals = vm.env.take_output_buffer(sym);
+        let mut arena = crate::view::ViewArena::new();
+        let first = arena.decode(&vals, vm.env.heap(), &crate::view::Names::NONE);
+        arena.finish();
+        let node = unsafe { &*arena.node_ptr(first) };
+        assert_eq!(node.kind, crate::view::Kind::Vec3 as u32);
+        assert_eq!((node.number, node.y, node.z), (1.5, 2.0, 2.0));
     }
 
     #[test]

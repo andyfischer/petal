@@ -117,6 +117,44 @@ jobs:
       - name: Build petal-fps
         run: cargo build --manifest-path examples/custom-integrations/petal-fps/Cargo.toml
 
+  # The C/C++ embedding bridge. Builds against the in-repo rust/, petal-ui/
+  # and petal-query/ crates, so a Rust API change that breaks it fails here.
+  c-bridge:
+    name: C bridge (petal-c-bridge, CMake + ctest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CMake + Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build
+
+      - name: Cache Cargo registry & build (c-bridge)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            integrations/petal-c-bridge/target
+          key: cargo-c-bridge-${{ runner.os }}-${{ hashFiles('integrations/petal-c-bridge/Cargo.lock') }}
+          restore-keys: cargo-c-bridge-${{ runner.os }}-
+
+      - name: Configure
+        run: cmake -S integrations/petal-c-bridge -B integrations/petal-c-bridge/build -G Ninja
+
+      - name: Build (cargo staticlib + C/C++ tests)
+        run: cmake --build integrations/petal-c-bridge/build
+
+      - name: Test (C++ suite, C smoke, example, Rust unit tests)
+        run: ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
+
+      - name: Build without the petal-query feature
+        run: cargo build --release --no-default-features --manifest-path integrations/petal-c-bridge/Cargo.toml
+
   web-builds:
     name: Web builds (wasm + vite)
     runs-on: ubuntu-latest

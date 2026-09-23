@@ -151,3 +151,15 @@ covered by `ts/test/ir-equal.test.ts`. The load-bearing test is
 repo that compiles standalone is mangled (three extra spaces of indentation on
 every line), re-indented, and asserted IR-equal to the original. That is the
 property that makes the formatting pass safe to run over the whole corpus.
+
+## The C/C++ bridge
+
+`integrations/petal-c-bridge` (see [embedding-c.md](../embedding-c.md)) is
+built against the in-repo `rust/`, `petal-ui/` and `petal-query/` crates, so
+it is the first thing to break when an `Env` or petal-ui API it uses changes
+shape. `make test-c-bridge` configures it with CMake + Ninja under
+`integrations/petal-c-bridge/build/` and runs `ctest`: the C++ suite
+(`tests/bridge_tests.cpp`, filterable by name:
+`integrations/petal-c-bridge/build/petal_bridge_tests reload`), a plain-C
+smoke test that keeps the header valid C, the `hello` example, and the
+crate's Rust unit tests. CI runs the same in the `c-bridge` job.

@@ -6,6 +6,8 @@ globals**.
 
 - **Primitives reference:** [ffi.md](ffi.md) — the native-fn API, `Value`, and the
   three symbol-keyed channels (bindings, output buffers, counters).
+- **Embedding from C or C++:** [embedding-c.md](embedding-c.md) — the
+  `petal-c-bridge` C ABI and C++ wrapper, built on the patterns below.
 - **Where embedding fits among the app-building paths:**
   [Building Apps](building-apps.md).
 - **Persisting settings back to a script file:**

@@ -98,7 +98,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [`petal-ui/`](petal-ui/README.md) | The UI layer shared by every host: input events, draw commands, and the `ui` prelude module |
 | [`petal-query/`](petal-query/README.md) | Async data layer for UI panels: `query(kind, arg)` handlers with a host-side cache |
 | [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal itself — [`bloom`](petal-libs/bloom/), the UI component library |
-| [`integrations/`](integrations/) | Hosts that embed Petal for a platform: desktop SDL, web HTML, web canvas |
+| [`integrations/`](integrations/) | Hosts that embed Petal for a platform: desktop SDL, web HTML, web canvas, C/C++ |
 | [`garden/`](garden/README.md) | Garden, a text editor and IDE scripted with Petal |
 | [`editor-support/`](editor-support/README.md) | Tree-sitter grammar and Vim syntax files |
 | [`ts/`](ts/) | TypeScript tooling: dev scripts, MCP servers, and the vitest integration suite |
@@ -133,6 +133,7 @@ Petal Core  →  Integrations  →  Apps
   | [petal-desktop-sdl](integrations/petal-desktop-sdl/README.md) | SDL2 desktop host with hot reload. See the [game dev guide](integrations/petal-desktop-sdl/docs/game-dev-guide.md) and [agent protocol](integrations/petal-desktop-sdl/docs/agent-protocol.md) |
   | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly host that renders DOM from JSX-like syntax |
   | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that renders to an HTML canvas |
+  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal (with petal-ui) in a C/C++ program. See [embedding-c.md](docs/embedding-c.md) |
 
 - **Apps** ([`examples/`](examples/README.md)) build on an integration rather than on the core directly. Some ship their own host:
 

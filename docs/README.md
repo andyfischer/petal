@@ -29,6 +29,7 @@ How to build on Petal from a host program, a tool, or an agent:
 | [Building Apps](building-apps.md) | The three ways to build an app: a pure Petal script, extending an integration, or embedding a new host |
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: native functions, values, host channels |
 | [Embedding Guide](embedding-guide.md) | Patterns for hosts: observing calls, reading named values, feeding inputs, per-run ids |
+| [Embedding from C/C++](embedding-c.md) | The petal-c-bridge C ABI and C++ wrapper: frame contract, values, host natives, petal-ui, scenarios, hot reload |
 | [Program Modification](program-modification.md) | Editing programs from code, both source text and running state |
 | [Goal-Based Editing](goal-based-editing.md) | Formatting-preserving source edits described as goals |
 | [Direct Manipulation](direct-manipulation.md) | Tracing a drawn shape or emitted value back to the call that produced it, then editing that call |

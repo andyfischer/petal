@@ -13,6 +13,7 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 | `make build` | Build the Petal compiler (debug). Binary lands at `rust/target/debug/petal`. |
 | `make test` | Build, then run the full vitest suite (which also runs every `examples/console/*.ptl`). |
 | `make test-examples` | Print each example program's output for manual inspection. |
+| `make test-c-bridge` | Build `integrations/petal-c-bridge` (the C/C++ embedding bridge) with CMake + Ninja and run its `ctest` suite: C++ tests, plain-C smoke test, example, and the crate's Rust unit tests. Needs CMake, Ninja and a C++20 compiler. See [embedding-c.md](../embedding-c.md). |
 | `make clean` | Remove Rust build artifacts (`cargo clean`). |
 
 ## Building & running

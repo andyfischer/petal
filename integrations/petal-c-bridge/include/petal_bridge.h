@@ -346,6 +346,11 @@ pb_status pb_vm_set_dimensions(pb_vm* vm, int32_t width, int32_t height);
  * match what the host's font actually draws. All values are ratios of the
  * font size. `advance_ratio`: monospace glyph advance (e.g. 0.6). */
 pb_status pb_vm_set_text_metrics(pb_vm* vm, double advance_ratio);
+/* Per-glyph advances for proportional fonts: `advances[codepoint]` is that
+ * glyph's advance as a ratio of the font size (one table serves every size).
+ * Codepoints past the end use the pb_vm_set_text_metrics ratio; NULL/0 binds
+ * an empty table (uniform advances). The values are copied. */
+pb_status pb_vm_set_text_advances(pb_vm* vm, const double* advances, size_t n);
 /* Vertical metrics: y -> baseline, baseline -> line bottom, line pitch,
  * cap height and x height (defaults 0.8, 0.2, 1.2, 0.7, 0.52). */
 pb_status pb_vm_set_text_vertical_metrics(pb_vm* vm, double baseline, double descent, double line_height,
@@ -361,6 +366,10 @@ pb_status pb_vm_set_seed(pb_vm* vm, uint64_t seed);
  * canvas ids, reset_stack + run the whole program. `state` persists. On
  * PB_ERR_RUNTIME the buffers hold whatever was emitted before the error. */
 pb_status pb_vm_run(pb_vm* vm);
+
+/* Start the loaded program over with empty `state`, without recompiling (a
+ * fresh stack on the same program). PB_ERR_NOT_LOADED without a program. */
+pb_status pb_vm_restart(pb_vm* vm);
 
 /* Call a top-level Petal function (after at least one successful run).
  * `args` (optional) supplies every root as a positional argument. On success

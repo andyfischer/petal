@@ -460,6 +460,10 @@ public:
     }
     void set_dimensions(int32_t w, int32_t h) { check(pb_vm_set_dimensions(vm_, w, h)); }
     void set_text_metrics(double advance_ratio) { check(pb_vm_set_text_metrics(vm_, advance_ratio)); }
+    // advances[codepoint] = advance / font size; past the end, the set_text_metrics ratio.
+    void set_text_advances(std::span<const double> advances) {
+        check(pb_vm_set_text_advances(vm_, advances.data(), advances.size()));
+    }
     void set_text_vertical_metrics(double baseline, double descent, double line_height, double cap_height,
                                    double x_height) {
         check(pb_vm_set_text_vertical_metrics(vm_, baseline, descent, line_height, cap_height, x_height));
@@ -475,6 +479,8 @@ public:
 
     // ── Running ──
     void run() { check(pb_vm_run(vm_)); }
+    // Empty `state`, same program: a fresh stack without recompiling.
+    void restart() { check(pb_vm_restart(vm_)); }
     Value call(const std::string& function) { return call_raw(function, nullptr); }
     Value call(const std::string& function, const BuilderRef& args) { return call_raw(function, args.raw()); }
     // Whether the last run defined a top-level function `function`.

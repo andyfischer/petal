@@ -22,7 +22,8 @@
 //!
 //! The crate is also an `rlib`: a Rust crate that exposes its own C ABI can
 //! reuse [`vm::Vm`], [`view::ViewArena`], [`draw::DrawList`] and
-//! [`builder::HostValue`] directly.
+//! [`builder::HostValue`] directly, and [`vm::VmHandle::into_raw`] hands a
+//! `Vm` it configured itself to C as a `pb_vm*`.
 
 // Every `extern "C"` function here takes raw pointers from C; their safety
 // contracts are the ones documented in `include/petal_bridge.h` (valid handles

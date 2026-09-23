@@ -340,6 +340,43 @@ impl Vm {
         Ok(self.keep_view(&[result]).0)
     }
 
+    /// Start the loaded program over with fresh `state`, without
+    /// recompiling: a new stack on the same program. What a host wants when
+    /// it re-enters a screen it already has loaded, or between two test cases
+    /// of one script.
+    pub fn restart(&mut self) -> BResult<()> {
+        let l = self.loaded()?;
+        let (program_id, name) = (l.program_id, l.entry_name.clone());
+        let stack_id = self
+            .env
+            .create_stack(program_id)
+            .map_err(|e| BridgeError::runtime(e, &name))?;
+        self.clear_views();
+        if let Some(l) = &mut self.loaded {
+            l.stack_id = stack_id;
+        }
+        Ok(())
+    }
+
+    /// Start a frame: promote the input edges by `dt` seconds and bind
+    /// `dt()`, `frame_count()` and the absolute clock `time()` (monotonic
+    /// seconds, not a sum of `dt`). What `pb_vm_begin_frame` does.
+    pub fn begin_frame(&mut self, dt: f64, frame: i64, time_seconds: f64) {
+        self.input.begin_frame(dt);
+        petal_ui::input::bind_input(&mut self.env, &self.input);
+        petal_ui::input::bind_frame_info(&mut self.env, dt, frame);
+        petal_ui::input::bind_time(&mut self.env, time_seconds);
+    }
+
+    /// Replace the error `pb_vm_last_error` reports (`None` clears it).
+    ///
+    /// For a Rust crate that layers its own C entry points over a `pb_vm`
+    /// (see [`VmHandle::into_raw`]): its failures then reach the host through
+    /// the same structured `pb_error` as the bridge's own.
+    pub fn set_last_error(&mut self, err: Option<BridgeError>) {
+        self.last_error = err.map(PublishedError::new);
+    }
+
     /// Whether the last run defined a top-level function `name`.
     pub fn has_function(&self, name: &str) -> bool {
         self.loaded
@@ -360,6 +397,35 @@ impl Vm {
             n += 1;
         }
         n
+    }
+}
+
+impl VmHandle {
+    /// Box `vm` behind a `pb_vm*`, for a Rust crate that configures a [`Vm`]
+    /// itself (registers its own natives, loads its own program) and then
+    /// hands the host a `pb_vm*` for everything generic: input, draw
+    /// commands, errors, bindings. Free it with `pb_vm_destroy`.
+    pub fn into_raw(vm: Vm) -> *mut VmHandle {
+        Box::into_raw(Box::new(VmHandle {
+            busy: Cell::new(false),
+            vm: UnsafeCell::new(vm),
+        }))
+    }
+
+    /// The [`Vm`] behind `ptr`, for the crate that owns the handle. `None`
+    /// when `ptr` is NULL or the VM is mid-call (a native running inside it),
+    /// where a second `&mut Vm` would alias the one in use.
+    ///
+    /// # Safety
+    /// `ptr` must come from [`VmHandle::into_raw`] or `pb_vm_create` and not
+    /// be destroyed, and the returned reference must be dropped before any
+    /// `pb_vm_*` call on the same handle.
+    pub unsafe fn vm_mut<'a>(ptr: *mut VmHandle) -> Option<&'a mut Vm> {
+        let handle = unsafe { ptr.as_ref() }?;
+        if handle.busy.get() {
+            return None;
+        }
+        Some(unsafe { &mut *handle.vm.get() })
     }
 }
 
@@ -421,13 +487,7 @@ fn put<T>(out: *mut T, v: T) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_create() -> *mut VmHandle {
-    catch_unwind(|| {
-        Box::into_raw(Box::new(VmHandle {
-            busy: Cell::new(false),
-            vm: UnsafeCell::new(Vm::new()),
-        }))
-    })
-    .unwrap_or(std::ptr::null_mut())
+    catch_unwind(|| VmHandle::into_raw(Vm::new())).unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -837,10 +897,7 @@ pub extern "C" fn pb_vm_begin_frame(
     time_seconds: f64,
 ) -> Status {
     status(vm, |vm| {
-        vm.input.begin_frame(dt);
-        petal_ui::input::bind_input(&mut vm.env, &vm.input);
-        petal_ui::input::bind_frame_info(&mut vm.env, dt, frame);
-        petal_ui::input::bind_time(&mut vm.env, time_seconds);
+        vm.begin_frame(dt, frame, time_seconds);
         Ok(())
     })
 }
@@ -865,6 +922,24 @@ pub extern "C" fn pb_vm_set_seed(vm: *mut VmHandle, seed: u64) -> Status {
 pub extern "C" fn pb_vm_set_text_metrics(vm: *mut VmHandle, advance_ratio: f64) -> Status {
     status(vm, |vm| {
         petal_ui::draw::bind_text_metrics(&mut vm.env, advance_ratio);
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_text_advances(
+    vm: *mut VmHandle,
+    advances: *const f64,
+    n: usize,
+) -> Status {
+    status(vm, |vm| {
+        let table: &[f64] = if advances.is_null() || n == 0 {
+            &[]
+        } else {
+            // SAFETY: the caller passes `n` readable doubles.
+            unsafe { std::slice::from_raw_parts(advances, n) }
+        };
+        petal_ui::text::bind_text_advance_table(&mut vm.env, table);
         Ok(())
     })
 }
@@ -896,6 +971,11 @@ pub extern "C" fn pb_vm_set_text_vertical_metrics(
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_run(vm: *mut VmHandle) -> Status {
     status(vm, |vm| vm.run())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_restart(vm: *mut VmHandle) -> Status {
+    status(vm, |vm| vm.restart())
 }
 
 #[unsafe(no_mangle)]
@@ -1175,6 +1255,41 @@ mod tests {
         assert_eq!(FREED.load(Ordering::SeqCst), 0);
         drop(vm);
         assert_eq!(FREED.load(Ordering::SeqCst), 1);
+    }
+
+    /// A crate layering its own entry points: it configures a `Vm`, hands
+    /// out the `pb_vm*`, keeps driving the same VM from Rust, and publishes
+    /// its own failures through `pb_vm_last_error`.
+    #[test]
+    fn a_rust_owned_vm_is_shared_with_c() {
+        let mut vm = Vm::new();
+        vm.load(
+            "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n",
+            None,
+            "t".into(),
+        )
+        .unwrap();
+        let ptr = VmHandle::into_raw(vm);
+        assert_eq!(pb_vm_run(ptr), Status::Ok);
+        {
+            let vm = unsafe { VmHandle::vm_mut(ptr) }.unwrap();
+            assert_eq!(out_ints(vm), vec![1]);
+            vm.run().unwrap();
+            assert_eq!(out_ints(vm), vec![2]);
+            vm.restart().unwrap();
+            vm.run().unwrap();
+            assert_eq!(out_ints(vm), vec![1]);
+            vm.set_last_error(Some(BridgeError::new(Status::NotFound, "no such screen")));
+        }
+        let err = pb_vm_last_error(ptr);
+        assert!(!err.is_null());
+        assert_eq!(unsafe { &*err }.code, Status::NotFound);
+        unsafe { VmHandle::vm_mut(ptr) }
+            .unwrap()
+            .set_last_error(None);
+        assert!(pb_vm_last_error(ptr).is_null());
+        assert!(unsafe { VmHandle::vm_mut(std::ptr::null_mut()) }.is_none());
+        pb_vm_destroy(ptr);
     }
 
     #[test]

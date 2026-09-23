@@ -111,6 +111,16 @@ TEST(state_persists_across_frames) {
     CHECK_EQ(run_out(vm), std::vector<double>{101});
 }
 
+TEST(restart_starts_state_over_without_recompiling) {
+    petal::Vm vm;
+    CHECK_THROWS_CODE(vm.restart(), PB_ERR_NOT_LOADED);
+    vm.load_source("state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{1});
+    CHECK_EQ(run_out(vm), std::vector<double>{2});
+    vm.restart();
+    CHECK_EQ(run_out(vm), std::vector<double>{1});
+}
+
 TEST(buffers_are_cleared_each_run) {
     petal::Vm vm;
     vm.load_source("push_output(symbol(\"out\"), 1)\n");
@@ -742,6 +752,21 @@ TEST(ui_draw_full_vocabulary) {
     CHECK_EQ(cmds[10].kind, uint32_t(PB_DRAW_CLIP));
     CHECK_EQ(cmds[11].kind, uint32_t(PB_DRAW_CLIP_NONE));
     CHECK_NEAR(vm.drain("out")[0].number(), 20.0, 1e-3);  // 4 glyphs * 10px * 0.5
+}
+
+TEST(text_advance_table_measures_per_glyph) {
+    petal::Vm vm;
+    vm.set_text_metrics(0.5);
+    // 'a' (97) is narrow, 'b' (98) wide; 'c' falls off the end of the table.
+    std::vector<double> advances(99, 0.5);
+    advances[97] = 0.2;
+    advances[98] = 1.0;
+    vm.set_text_advances(advances);
+    vm.load_source("push_output(symbol(\"out\"), text_width(\"abc\", 10))\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{2.0 + 10.0 + 5.0});
+    // An empty table is uniform again.
+    vm.set_text_advances({});
+    CHECK_EQ(run_out(vm), std::vector<double>{15.0});
 }
 
 TEST(seeded_random_is_reproducible) {

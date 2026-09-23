@@ -353,6 +353,7 @@ anything else is rejected with `PB_ERR_INVALID_ARG`
 | `begin_frame(dt, frame, t)` | `dt()`, `frame_count()`, `time()` |
 | `set_dimensions(w, h)` | `screen_width()`, `screen_height()` |
 | `set_text_metrics(ratio)` / `set_text_vertical_metrics(...)` | `text_width()`, `text_metrics()` match the host font |
+| `set_text_advances(table)` | proportional `text_width()`: `table[codepoint]` is that glyph's advance ÷ size |
 | `set_seed(n)` | reproducible `random(...)` |
 | `apply_scenario(sc, frame)` | whatever the scenario schedules for `frame` (see below) |
 
@@ -492,6 +493,8 @@ All of these affect later loads.
   exists and fails is `PB_ERR_RUNTIME` (the bridge matches Petal's typed
   `CallError`, not the message text). `has_function("fn_name")` asks first,
   for optional hooks.
+- `restart()` starts the loaded program over with empty `state`, without
+  recompiling (a fresh stack on the same program).
 - `state("name")` reads a top-level state variable as a view;
   `state_json()` dumps all state (debug use only).
 - `take_output()` returns the lines the script `print`ed. Echo to stdout is
@@ -525,6 +528,34 @@ Host natives in C: `pb_vm_register_native(vm, name, fn, userdata, free_fn,
 effects)` with `int fn(pb_call*, void* userdata)`; read arguments with
 `pb_call_arg(call, i)`, build the result into `pb_call_result(call)` with
 `pb_builder_*`, and fail with `pb_call_set_error` + a nonzero return.
+
+## Layering an engine's own C ABI in Rust
+
+Some hosts want a few C entry points of their own on top of the bridge —
+concepts that belong to the game, not to Petal (a screen registry, a data
+model, the game's action vocabulary). Such a crate depends on
+`petal-c-bridge` as an `rlib` and builds one static library: the bridge's
+`pb_*` symbols come along, so the host includes `petal_bridge.h` next to its
+own header and uses the bridge for everything generic.
+
+```rust
+use petal_bridge::vm::{Vm, VmHandle};
+
+let mut vm = Vm::new();                       // petal-ui registered, `ui` imported
+vm.env_mut().register_native("game_model", ...);
+vm.load(&source, None, "hud".into())?;
+let ptr = VmHandle::into_raw(vm);             // the host's pb_vm*; pb_vm_destroy frees it
+
+// inside the crate's own entry points:
+let vm = unsafe { VmHandle::vm_mut(ptr) }.unwrap();  // None while a native is running
+vm.begin_frame(dt, frame, t);
+vm.run()?;
+vm.set_last_error(Some(err));                 // surfaces through pb_vm_last_error
+```
+
+The host then feeds input (`pb_vm_input_*`), reads draw commands
+(`pb_vm_drain_draw`) and reads errors (`pb_vm_last_error`) on that same
+`pb_vm*`. WorldsFair's Unreal UI (`ui/crates/wf-ui-ffi`) is built this way.
 
 ## Performance notes
 

@@ -4572,6 +4572,39 @@ fn a_claimed_chord_reaches_the_panel_script() {
     );
 }
 
+/// The global chords Garden handles before pane routing — `Cmd/Ctrl+P` (file
+/// finder) and `Ctrl+W` (window-command prefix) — yield to a panel's claim
+/// like every other host chord. A command palette on `Cmd+P` used to accept
+/// the claim and then open the file finder over itself.
+#[test]
+fn a_claimed_global_chord_reaches_the_panel_script() {
+    let mut app = app_with_input_probe(
+        "panel-claim-global",
+        "claim_key(\"p\", \"cmd\")\n\
+         claim_key(\"p\", \"ctrl\")\n\
+         claim_key(\"w\", \"ctrl\")\n\
+         state globals = 0\n\
+         if key_pressed(\"p\") || key_pressed(\"w\") then globals = globals + 1 end\n",
+    );
+    cmd_key(&mut app, 'p');
+    ctrl_key(&mut app, 'p');
+    ctrl_key(&mut app, 'w');
+    // Had Ctrl+W started a window command, this key would be eaten by it.
+    app.apply_key(Key::Char('a'), Mods::default());
+    app.settle_panels();
+    assert!(app.file_finder.is_none(), "a claimed Cmd/Ctrl+P must not open the finder");
+    assert_eq!(panel_value(&app, "globals"), Some(json!(3)));
+    assert_eq!(panel_value(&app, "typed"), Some(json!("a")));
+}
+
+/// Unclaimed, those chords keep their host meaning over a focused panel.
+#[test]
+fn an_unclaimed_global_chord_stays_with_the_host() {
+    let mut app = app_with_input_probe("panel-unclaimed-global", "");
+    cmd_key(&mut app, 'p');
+    assert!(app.file_finder.is_some(), "unclaimed Cmd+P opens the finder");
+}
+
 /// An unclaimed Cmd chord stays host-global — claiming is opt-in, so an
 /// existing panel keeps every editor shortcut it always had.
 #[test]

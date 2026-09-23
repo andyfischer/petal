@@ -671,6 +671,7 @@ The modifier argument is a spelling (`"shift"`, `"ctrl"` / `"control"`,
 the raw bitmask `1=shift 2=ctrl 4=alt 8=cmd`, the same encoding `/state`
 reports as `panel.input.modifiers`. An unknown spelling is an error.
 
-Cmd/Ctrl+Q cannot be claimed. Everything else, including the `:` command bar
-and the `Ctrl+[` / `Ctrl+]` history chords, can be, so a panel that claims
-them takes on the job of offering its own way out.
+Cmd/Ctrl+Q cannot be claimed. Everything else, including the `:` command bar,
+the `Cmd/Ctrl+P` file finder, the `Ctrl+W` window prefix and the `Ctrl+[` /
+`Ctrl+]` history chords, can be, so a panel that claims them takes on the job
+of offering its own way out.

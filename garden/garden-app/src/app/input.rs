@@ -112,11 +112,21 @@ impl App {
             return self.file_finder_key(key, mods);
         }
 
+        // A focused panel's claim beats the global chords below, as it beats
+        // every other host chord (see `classify_panel_key`); only quit is
+        // unclaimable, and that is decided in `panel_key`.
+        let panel_claimed = self.panes.get(self.focus).is_some_and(Pane::is_panel)
+            && self.panel_claims_key(key, mods);
+
         // `Cmd`/`Ctrl`+`P` opens the fuzzy file finder. It is global (like the
         // command bar): it works in every vim mode and over a process pane, so
         // it is handled before pane-specific routing. Shift is excluded so it
         // does not shadow a future `Cmd+Shift+P`.
-        if (mods.cmd || mods.ctrl) && !mods.shift && matches!(key, Key::Char('p' | 'P')) {
+        if !panel_claimed
+            && (mods.cmd || mods.ctrl)
+            && !mods.shift
+            && matches!(key, Key::Char('p' | 'P'))
+        {
             self.open_file_finder();
             return KeyOutcome::Handled;
         }
@@ -128,7 +138,7 @@ impl App {
         }
         // `Ctrl+W` starts a window command (vim's window prefix). It takes
         // precedence over the clipboard Ctrl aliases and the vim layer.
-        if mods.ctrl && !mods.cmd && matches!(key, Key::Char('w' | 'W')) {
+        if !panel_claimed && mods.ctrl && !mods.cmd && matches!(key, Key::Char('w' | 'W')) {
             self.window_cmd_pending = true;
             return KeyOutcome::Handled;
         }

@@ -138,14 +138,6 @@ command changed.
 
 ## Known limits
 
-- **`Cmd P` / `Ctrl P` cannot be claimed.** Garden opens its own fuzzy file
-  finder on that chord before the panel's claims are consulted
-  (`garden-app/src/app/input.rs`, `key_outcome`), even though
-  `petal-graphical-panels.md` says only `Cmd Q` is unclaimable. Typing into
-  the finder then opens a real file into the pane, replacing the panel. The
-  file picker is on `Cmd O` instead. `Ctrl W` is reserved the same way (the
-  window-command prefix) and `Cmd W` closes the window, so no command is
-  bound to either.
 - The Garden binary the app was built against predates `text_advance` and
   the three-argument `range(a, b, step)`, although `petal check --host
   garden` accepts both. Highlight runs are measured with `text_width`

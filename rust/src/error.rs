@@ -29,10 +29,12 @@
 //! ## The public facade stays `String`
 //!
 //! Every public `Env` API keeps `Result<_, String>`; the typed error is an
-//! internal channel with typed entry points (`Env::load_program_diag`) added
-//! alongside. [`LoadError`]'s [`Display`] therefore has to reproduce the old
-//! strings *byte for byte* — that is what keeps every existing caller and test
-//! green. See the `display_*` tests below.
+//! internal channel with typed entry points (`Env::load_program_diag`,
+//! `Env::compile_program_diag`) added alongside. [`LoadError`]'s [`Display`]
+//! therefore has to reproduce the old strings *byte for byte* — that is what
+//! keeps every existing caller and test green. See the `display_*` tests
+//! below. [`CallError`] is the same arrangement for
+//! `Env::call_function_diag`.
 
 use std::fmt;
 
@@ -227,6 +229,55 @@ impl fmt::Display for LoadError {
 }
 
 impl std::error::Error for LoadError {}
+
+/// Why [`Env::call_function_diag`](crate::env::Env::call_function_diag)
+/// failed: the one distinction a host acting on the answer needs is "there is
+/// no such function" (fall back, skip an optional hook) versus "the function
+/// ran and failed" (report it).
+///
+/// [`Display`](fmt::Display) reproduces the strings
+/// [`Env::call_function`](crate::env::Env::call_function) has always
+/// returned, and `From<CallError> for String` lets `?` carry one into a
+/// `Result<_, String>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallError {
+    /// The stack key names no live stack.
+    StackNotFound,
+    /// No top-level function by this name was captured by the stack's last
+    /// run: it is not defined, or the program has not been `run` yet.
+    FunctionNotFound { name: String },
+    /// The function was found and failed: a runtime error in its body, an
+    /// arity mismatch, or a failure preparing the program to run.
+    Runtime(String),
+}
+
+impl CallError {
+    /// Whether this is [`FunctionNotFound`](Self::FunctionNotFound).
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, CallError::FunctionNotFound { .. })
+    }
+}
+
+impl fmt::Display for CallError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CallError::StackNotFound => f.write_str("Stack not found"),
+            CallError::FunctionNotFound { name } => write!(
+                f,
+                "No top-level function named '{name}' (define it and `run` the program before calling)"
+            ),
+            CallError::Runtime(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for CallError {}
+
+impl From<CallError> for String {
+    fn from(e: CallError) -> String {
+        e.to_string()
+    }
+}
 
 #[cfg(test)]
 mod tests {

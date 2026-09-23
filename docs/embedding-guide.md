@@ -357,11 +357,54 @@ native.
 
 Output buffers observe *data*. When a native must call *back into host logic*
 synchronously mid-run — e.g. an async data provider answering `query(kind, arg)`
-— a buffer can't carry the `Box<dyn Trait>`. That case uses a scoped-swap
-`thread_local!` (install the provider around `env.run`, reclaim it after), as
-in `garden/garden-script/src/query.rs`. This is the one case the buffer pattern
-does not cover; prefer bindings/buffers whenever the host side is plain data
-rather than a callback.
+— register it with `env.register_native_boxed` and let the closure own (a
+shared handle to) that logic:
+
+```rust
+let provider: Rc<RefCell<dyn Provider>> = …;
+let p = provider.clone();
+env.register_native_boxed(
+    "query",
+    move |cxt: &mut PetalCxt| {
+        cxt.note_host_read();
+        let answer = p.borrow_mut().answer(&cxt.get_string(1)?);
+        cxt.push_str(&answer);
+        Ok(1)
+    },
+    NativeEffects::reads(InputClasses::HOST_DATA),
+);
+```
+
+The captures live as long as the `Env` and are shared by every execution of
+it, forks included; the runtime cannot see into them, so the row must say
+what the closure reads and whether it mutates anything (see
+[ffi.md](ffi.md#native-functions)). Garden's `query.rs` predates boxed natives
+and still uses a scoped-swap `thread_local!` (install the provider around
+`env.run`, reclaim it after), which fits when the provider is owned
+elsewhere and only lent for the duration of a run. Prefer bindings/buffers
+whenever the host side is plain data rather than a callback.
+
+### Hot reload
+
+Recompile into the same program id and move live state across:
+
+```rust
+let mut watch = env.watch_program_sources(pid, Some(&entry));
+// each frame:
+if watch.changed() {
+    let source = std::fs::read_to_string(&entry)?;
+    match env.compile_program_diag(pid, &source, Some(&entry)) {
+        Ok(program) => { env.transfer_state(stack, program)?; }
+        Err(e) => show_diagnostics(e.phase, &e.items), // old program keeps running
+    }
+    watch = env.watch_program_sources(pid, Some(&entry));
+}
+```
+
+The watch covers the entry file and every imported module that came from
+disk, so editing a helper module reloads the scripts that import it. Take a
+fresh watch after each attempt (the new program's imports may differ), even
+a failed one, so a broken save is reported once rather than every frame.
 
 ### Persisting an observed call back to source
 

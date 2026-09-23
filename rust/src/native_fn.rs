@@ -22,6 +22,23 @@ pub type NativeResult = Result<u32, String>;
 /// Signature for native functions.
 pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;
 
+/// A native that owns captured state: a closure rather than a bare function
+/// pointer. Registered with [`NativeFnTable::register_boxed`] /
+/// [`Env::register_native_boxed`](crate::env::Env::register_native_boxed).
+///
+/// This is what an embedder reaches for when one Rust function serves many
+/// natives — a C bridge forwarding to a host callback plus its `userdata`, a
+/// scripting layer registering one native per host command — so it does not
+/// need a pool of monomorphized trampolines or a global dispatch table.
+///
+/// It is `Fn`, not `FnMut`: the table is shared by every run of the `Env`, so
+/// a native that mutates its captures does so through `Cell`/`RefCell`. It
+/// need not be `Send` (an `Env` is not). The captured state belongs to the
+/// `Env`, not to an execution: a forked execution
+/// ([`Env::fork_execution`](crate::env::Env::fork_execution),
+/// `run_speculative`) calls the same closure and sees the same captures.
+pub type BoxedNativeFn = Box<dyn Fn(&mut PetalCxt) -> NativeResult>;
+
 /// How a native function behaves when handed a `Value::Pending` argument.
 /// Consulted at the single native-call boundary (see the bytecode VM's
 /// `call_native_or_intrinsic`) only when a Pending arg is actually present.
@@ -196,10 +213,17 @@ impl NativeEffects {
     }
 }
 
+/// How a registered native is invoked: a bare function pointer (every
+/// builtin, and most host natives) or a closure owning captured state.
+enum NativeImpl {
+    Fn(NativeFn),
+    Boxed(BoxedNativeFn),
+}
+
 /// Entry in the native function table.
 struct NativeFnEntry {
     name: String,
-    func: NativeFn,
+    func: NativeImpl,
     /// The Pending-argument policy: `effects.pending`, kept as its own field
     /// so the hot `intercept_pending` check is one load.
     class: NativeClass,
@@ -275,6 +299,24 @@ impl NativeFnTable {
     /// reaches host state without saying so would look pure, and every
     /// memoized scope that called it would replay stale.
     pub fn register(&mut self, name: &str, func: NativeFn, effects: NativeEffects) -> NativeFnId {
+        self.insert(name, NativeImpl::Fn(func), effects)
+    }
+
+    /// [`register`](Self::register) for a native that owns captured state
+    /// (see [`BoxedNativeFn`]). Everything else is identical: the id is
+    /// allocated the same way, the row means the same thing, and
+    /// [`set_class`](Self::set_class), the effect audit and the compiler's
+    /// name resolution treat the two kinds alike.
+    pub fn register_boxed(
+        &mut self,
+        name: &str,
+        func: BoxedNativeFn,
+        effects: NativeEffects,
+    ) -> NativeFnId {
+        self.insert(name, NativeImpl::Boxed(func), effects)
+    }
+
+    fn insert(&mut self, name: &str, func: NativeImpl, effects: NativeEffects) -> NativeFnId {
         let id = NativeFnId(self.entries.len() as u32);
         self.entries.push(NativeFnEntry {
             name: name.to_string(),
@@ -321,9 +363,31 @@ impl NativeFnTable {
         &self.entries[id.0 as usize].name
     }
 
-    /// Get the function pointer for a native function.
-    pub fn get_func(&self, id: NativeFnId) -> NativeFn {
-        self.entries[id.0 as usize].func
+    /// The function pointer of a native registered with
+    /// [`register`](Self::register); `None` for a boxed native. To invoke
+    /// either kind, use [`call`](Self::call).
+    pub fn get_func(&self, id: NativeFnId) -> Option<NativeFn> {
+        match self.entries[id.0 as usize].func {
+            NativeImpl::Fn(f) => Some(f),
+            NativeImpl::Boxed(_) => None,
+        }
+    }
+
+    /// Whether the native was registered with a closure
+    /// ([`register_boxed`](Self::register_boxed)).
+    pub fn is_boxed(&self, id: NativeFnId) -> bool {
+        matches!(self.entries[id.0 as usize].func, NativeImpl::Boxed(_))
+    }
+
+    /// Invoke a native against `cxt`. The one call site for both kinds: a
+    /// bare function pointer is called directly, a boxed native through its
+    /// closure.
+    #[inline]
+    pub fn call(&self, id: NativeFnId, cxt: &mut PetalCxt) -> NativeResult {
+        match &self.entries[id.0 as usize].func {
+            NativeImpl::Fn(f) => f(cxt),
+            NativeImpl::Boxed(f) => f(cxt),
+        }
     }
 
     /// Number of registered native functions.

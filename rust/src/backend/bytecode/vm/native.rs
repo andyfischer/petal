@@ -265,7 +265,7 @@ impl<'a> Vm<'a> {
             return Ok(v);
         }
         self.profile.record_native(nid.0);
-        let func = self.native_fns.get_func(nid);
+        let natives = self.native_fns;
         let chain = self.emit_call_chain(origin);
         // The row says up front what the native does, so nothing around the
         // call is consulted — unless the effect audit is on, which brackets
@@ -279,7 +279,7 @@ impl<'a> Vm<'a> {
             None
         };
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
-        let count = func(&mut cxt)?;
+        let count = natives.call(nid, &mut cxt)?;
         let result = cxt.take_result(count);
         if let Some(before) = before {
             let deps = &self.stack.run_deps;

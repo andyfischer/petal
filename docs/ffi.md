@@ -36,11 +36,11 @@ Entry points, all on `Env` (`rust/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func, effects) -> NativeFnId`, `native_effects`, `set_native_class` |
+| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class` |
 | Handles | `register_handle_class`, `make_handle` |
 | Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
-| Programs | `load_program`, `load_program_at`, `compile_program_at`, `load_program_ir` |
-| Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function` |
+| Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
+| Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
 | Script→host data | `take_output_buffer`, `output_buffer`, `take_output` (print lines) |
 | Id allocation | `reset_counter`, `next_counter` |
@@ -48,12 +48,38 @@ Entry points, all on `Env` (`rust/src/env/`):
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
 | Emit tracing | `enable_emit_trace`, `take_output_origins` (see [direct-manipulation.md](direct-manipulation.md)) |
 | Speculation | `fork_execution`, `run_speculative`, `drop_fork` |
-| Hot reload | `module_manifest`, `transfer_state` |
+| Hot reload | `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` |
 
 `run_bounded` returns `RunOutcome::Done | Yielded`, so a 60fps host can slice a
 long computation across frames. `call_function(stack, "name", args)` calls a
 top-level Petal function by (possibly module-qualified) name after at least one
 `run`; this is the host-to-script call direction.
+
+**Typed errors.** The `String`-returning entry points each have a `_diag`
+twin with a typed error, and the string is always that error's `Display`:
+
+- `load_program_diag(source, origin)` / `compile_program_diag(pid, source,
+  origin)` → `Result<_, error::LoadError>`: the phase that rejected the
+  program (`Lex`, `Parse`, `Module`, `Compile`, `Lower`) and each diagnostic
+  with its message, span (line/column) and file. `compile_program_diag` is the
+  recompile half of a hot reload — compile, then `transfer_state`.
+- `call_function_diag(stack, name, args)` → `Result<Value,
+  error::CallError>`: `StackNotFound`, `FunctionNotFound { name }` (not
+  defined, or the program has not been `run`), or `Runtime(msg)` (it ran and
+  failed — including an arity mismatch). A host calling an optional hook
+  matches `FunctionNotFound` (or asks `has_function` first) instead of
+  sniffing the message. `CallError` converts into `String`, so `?` still
+  works in a `Result<_, String>` host.
+
+**Watching source files.** `program_source_paths(pid, entry)` lists every file
+on disk a loaded program was compiled from — the entry path the host loaded
+it from (if any) first, then each manifest module with a file origin, deduped
+by filesystem identity; in-memory modules are skipped.
+`watch_program_sources(pid, entry)` stamps them (mtime + length) into a
+`SourceWatch`, whose `changed()` / `changed_paths()` a host polls each frame;
+after a reload, take a fresh watch from the new program (its imports may have
+changed). A host that prefers OS notifications watches the parent directories
+of `program_source_paths` instead (petal-desktop-sdl's `watcher.rs`).
 
 ## Native functions
 
@@ -67,6 +93,26 @@ appends it to the native table (the id is the table index) and **must be
 called before `load_program`**: at load time every native becomes a
 `Value::NativeFunction(id)` in the root frame, so scripts resolve natives
 through ordinary scope lookup and can shadow them.
+
+**Natives with captured state.** `Env::register_native_boxed(name, closure,
+effects)` registers a closure (`impl Fn(&mut PetalCxt) -> NativeResult +
+'static`, stored as `native_fn::BoxedNativeFn`) instead: the host's userdata
+rides in its captures, so one Rust function can serve any number of natives —
+a C bridge forwarding each to its own callback, a host registering one native
+per command — with no trampoline pool or global dispatch table. It shares the
+id space, the effect row, `set_native_class`, the `Pending` interception and
+`--effect-audit` with bare natives; a bare `fn` native still dispatches
+through its pointer. Three rules:
+
+- It is `Fn`, not `FnMut`: mutate captures through `Cell`/`RefCell`. It need
+  not be `Send` (an `Env` is not).
+- The runtime cannot see what the closure does to its captures. Mutating them
+  is an `effect`; answering from captured state the host changes is a read
+  (`HOST_DATA`, and `note_host_data_changed` when it moves). The effect audit
+  observes only what the call does through its `PetalCxt`.
+- Captures belong to the `Env`, not to an execution: a forked or speculative
+  run calls the same closure. They are dropped with the `Env`, which is the
+  hook for freeing host userdata.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,

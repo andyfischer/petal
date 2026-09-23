@@ -49,6 +49,7 @@ pub mod suggest;
 pub mod rewrite;
 pub mod run_deps;
 pub mod source_map;
+pub mod source_watch;
 pub mod stack;
 pub mod static_value;
 pub mod stats;

@@ -425,8 +425,25 @@ impl Env {
     /// Compile source code into a Program without loading it.
     /// Use this to prepare a program for `transfer_state`.
     pub fn compile_program(&self, program_id: ProgramId, source: &str) -> Result<Program, String> {
-        self.compile_source(program_id, source, None)
+        self.compile_program_diag(program_id, source, None)
             .map_err(|e| e.to_string())
+    }
+
+    /// [`compile_program`](Self::compile_program) /
+    /// [`compile_program_at`](Self::compile_program_at) with a *typed* error —
+    /// the recompile half of a hot reload, as
+    /// [`load_program_diag`](Self::load_program_diag) is of a first load. A
+    /// host that shows compile errors structurally (phase, file, line and
+    /// column per diagnostic) uses this rather than recompiling through
+    /// `load_program_diag` to recover them. `origin` is the entry file's path
+    /// when it has one: imports resolve relative to its directory first.
+    pub fn compile_program_diag(
+        &self,
+        program_id: ProgramId,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<Program, crate::error::LoadError> {
+        self.compile_source(program_id, source, origin)
     }
 
     /// [`compile_program`](Self::compile_program) for source that lives at a
@@ -438,7 +455,7 @@ impl Env {
         source: &str,
         origin: &std::path::Path,
     ) -> Result<Program, String> {
-        self.compile_source(program_id, source, Some(origin))
+        self.compile_program_diag(program_id, source, Some(origin))
             .map_err(|e| e.to_string())
     }
 
@@ -509,6 +526,40 @@ impl Env {
                 content_hash: hash(&f.source),
             })
             .collect()
+    }
+
+    /// Every file on disk a loaded program was compiled from: `entry` (the
+    /// path the host loaded it from, if any) first, then each module in the
+    /// [`module_manifest`](Self::module_manifest) that has a filesystem
+    /// origin. Deduped by filesystem identity (two spellings of one file
+    /// collapse, the first spelling kept). Modules registered in memory
+    /// ([`register_module`](Self::register_module), the `std` prelude) have
+    /// no file and are not listed. These are the files a hot-reloading host
+    /// watches; [`watch_program_sources`](Self::watch_program_sources)
+    /// snapshots them.
+    pub fn program_source_paths(
+        &self,
+        program_id: ProgramId,
+        entry: Option<&std::path::Path>,
+    ) -> Vec<std::path::PathBuf> {
+        let origins = self
+            .module_manifest(program_id)
+            .into_iter()
+            .filter_map(|m| m.origin);
+        crate::source_watch::dedup_paths(entry.map(|p| p.to_path_buf()).into_iter().chain(origins))
+    }
+
+    /// A [`SourceWatch`](crate::source_watch::SourceWatch) over
+    /// [`program_source_paths`](Self::program_source_paths), stamped now.
+    /// Take it right after compiling; poll
+    /// [`changed`](crate::source_watch::SourceWatch::changed) to decide when
+    /// to recompile; take a fresh one from the new program after a reload.
+    pub fn watch_program_sources(
+        &self,
+        program_id: ProgramId,
+        entry: Option<&std::path::Path>,
+    ) -> crate::source_watch::SourceWatch {
+        crate::source_watch::SourceWatch::new(self.program_source_paths(program_id, entry))
     }
 
     /// Load a program from its JSON IR form (the shape `show-ir --json` emits)
@@ -729,6 +780,39 @@ impl Env {
         effects: NativeEffects,
     ) -> NativeFnId {
         self.native_fns.register(name, func, effects)
+    }
+
+    /// [`register_native`](Self::register_native) for a native that owns
+    /// captured state — a closure instead of a bare `fn`. The embedder's
+    /// userdata rides in the captures, so a host registering many natives at
+    /// runtime (a C bridge forwarding each one to its own callback) needs no
+    /// trampoline pool and no global dispatch table.
+    ///
+    /// Everything else is as for a bare native: call it before
+    /// `load_program`; the effect row is required and means the same thing;
+    /// [`set_native_class`](Self::set_native_class) and `--effect-audit`
+    /// apply unchanged. Two things to keep in mind:
+    ///
+    /// - **Captured state is invisible to the runtime.** A closure that
+    ///   mutates its captures (through a `Cell`/`RefCell`) must declare
+    ///   `effect`, and one that answers from captured state the host changes
+    ///   between frames must declare what it reads
+    ///   ([`InputClasses::HOST_DATA`](crate::native_fn::InputClasses::HOST_DATA),
+    ///   plus [`note_host_data_changed`](Self::note_host_data_changed) when it
+    ///   moves) — the effect audit sees only what the call does through its
+    ///   [`PetalCxt`](crate::native_fn::PetalCxt), not what it does to its
+    ///   captures.
+    /// - **Captures are per-`Env`, not per-execution.** A forked execution
+    ///   (`fork_execution`, `run_speculative`) calls the same closure; a
+    ///   native whose captures must not see speculative calls should keep its
+    ///   state in the execution (bindings, counters, output buffers) instead.
+    pub fn register_native_boxed(
+        &mut self,
+        name: &str,
+        func: impl Fn(&mut crate::native_fn::PetalCxt) -> crate::native_fn::NativeResult + 'static,
+        effects: NativeEffects,
+    ) -> NativeFnId {
+        self.native_fns.register_boxed(name, Box::new(func), effects)
     }
 
     /// The declared effect row of a native.

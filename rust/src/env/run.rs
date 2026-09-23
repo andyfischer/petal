@@ -325,29 +325,58 @@ impl Env {
     /// (docs/dev/state-call-paths.md §2.5): repeated host calls of one function
     /// share their slots with each other, but not with any in-program call of
     /// the same function. The workaround, as always, is a top-level `state var`.
+    ///
+    /// The error is a string; [`call_function_diag`](Self::call_function_diag)
+    /// is the same call with a typed error that tells "no such function"
+    /// apart from "it ran and failed".
     pub fn call_function(
         &mut self,
         stack_id: StackKey,
         name: &str,
         args: &[Value],
     ) -> Result<Value, String> {
-        let stack = self.stacks.get(&stack_id).ok_or("Stack not found")?;
+        self.call_function_diag(stack_id, name, args)
+            .map_err(String::from)
+    }
+
+    /// [`call_function`](Self::call_function) with a typed
+    /// [`CallError`](crate::error::CallError): a host calling an optional
+    /// hook (`on_key`, `update`) matches
+    /// [`FunctionNotFound`](crate::error::CallError::FunctionNotFound) instead
+    /// of sniffing the message. Whether a function exists can also be asked
+    /// up front with [`has_function`](Self::has_function).
+    pub fn call_function_diag(
+        &mut self,
+        stack_id: StackKey,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, crate::error::CallError> {
+        use crate::error::CallError;
+        let stack = self
+            .stacks
+            .get(&stack_id)
+            .ok_or(CallError::StackNotFound)?;
         let callable = stack.functions.get(name).copied().ok_or_else(|| {
-            format!(
-                "No top-level function named '{}' (define it and `run` the program before calling)",
-                name
-            )
+            CallError::FunctionNotFound {
+                name: name.to_string(),
+            }
         })?;
 
-        let ck = self.stacks.get(&stack_id).ok_or("Stack not found")?.context;
-        let pid = self.stacks.get(&stack_id).unwrap().program_id;
-        self.ensure_bytecode(pid)?;
+        let ck = stack.context;
+        let pid = stack.program_id;
+        self.ensure_bytecode(pid).map_err(CallError::Runtime)?;
         self.observations.enter_context(ck);
 
         let bc = &self.bytecode.get(&pid).unwrap().1;
-        let program = self.programs.get(&pid).ok_or("Program not found")?;
+        let program = self
+            .programs
+            .get(&pid)
+            .ok_or_else(|| CallError::Runtime("Program not found".into()))?;
         let stack = self.stacks.get_mut(&stack_id).unwrap();
-        let ctx = self.contexts.get_mut(&ck).ok_or("Context not found")?;
+        let ctx = self
+            .contexts
+            .get_mut(&ck)
+            .ok_or_else(|| CallError::Runtime("Context not found".into()))?;
 
         // A host call runs outside any frame's run: nothing it does is
         // recorded into a scope, and nothing is replayed for it.
@@ -369,7 +398,16 @@ impl Env {
         // The call may have written state the next run reads; the run's
         // dependency record cannot tell, so the next frame must run.
         self.invalidate_run(stack_id);
-        result
+        result.map_err(CallError::Runtime)
+    }
+
+    /// Whether [`call_function`](Self::call_function) would find a top-level
+    /// function named `name` on this stack — i.e. the stack's last run
+    /// defined it. `false` for an unknown stack.
+    pub fn has_function(&self, stack_id: StackKey, name: &str) -> bool {
+        self.stacks
+            .get(&stack_id)
+            .is_some_and(|s| s.functions.contains_key(name))
     }
 
     /// Run one frame without disturbing the source execution at all.

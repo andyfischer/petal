@@ -104,6 +104,16 @@ env.register_native("layout", native_layout, NativeEffects::EMITS);
 inspect pendings themselves. See [`NativeEffects`] and [`NativeClass`] in
 [ffi.md](ffi.md).
 
+Declare the row by what the native does to the *host*, not how the call looks
+from the script. A memoized helper that calls the native is replayed without
+calling it, and a replay reproduces only output-buffer pushes: a native that
+writes host-side state (declares a physics body, queues a sound on a host
+list) is an `effect`, not an emitter, and a host-data read needs the host to
+call `note_host_data_changed` whenever that data moves. Getting this wrong
+works at top level and breaks the moment a call moves into a helper; see
+[Embedder pitfalls](ffi.md#embedder-pitfalls) for the worked example and how
+`--effect-audit` catches it.
+
 ### 3. The host drains and interprets after the run
 
 Intern the same names (ids are idempotent), clear stale values, run, then read

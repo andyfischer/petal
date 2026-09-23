@@ -94,7 +94,9 @@ the memo consults, the call is what the frame gate records — and one with an
 effect the `PetalCxt` methods do not already report (`print`, the counters,
 the mutable resource table do) calls `note_effect()`. `petal run
 --effect-audit` and `petal-ui-run --effect-audit` hold what every native was
-observed doing against its row and name any facet the row lacks.
+observed doing against its row and name any facet the row lacks. What
+"honest" means for a native that touches host state, and what the audit
+cannot see, is under [Embedder pitfalls](#embedder-pitfalls).
 
 `PetalCxt` is the per-call context. Argument readers are 1-indexed like Lua
 (`get_int(1)`, `get_string(2)`, `get_value`, `get_symbol`, `get_handle`, …);
@@ -293,6 +295,155 @@ Petal values are immutable **by construction**, not by runtime check:
 
 `Heap::fork`, speculative runs, cheap state snapshots, and the
 "re-run the whole program every frame" model all depend on this.
+
+## Embedder pitfalls
+
+### Declaring native effects honestly
+
+The frame gate ([frame-gate.md](dev/frame-gate.md)) skips a whole run whose
+inputs did not move; memoized scopes ([memo-scopes.md](dev/memo-scopes.md))
+skip a single user-function call whose arguments and reads did not move, and
+**replay** it instead. Both decide from the native's `NativeEffects` row and
+nothing else, so the row has to describe what the native does *to the host*,
+not what it looks like from the script.
+
+What a replay does, exactly: it appends the output-buffer values the call
+pushed last time, re-applies its `state` and `var` writes, re-marks the state
+keys it touched, and returns the cached result. It does **not** call any
+native. So:
+
+- **`emits` is only honest for a push into an output buffer** —
+  `PetalCxt::push_output` / `emit`, drained by the host after the run. That is
+  the one kind of output a replay reproduces. A native that writes to a
+  host-side list, a scene graph, a physics world, a mixer or a counter is
+  *not* an emitter, however much it feels like one: that write is an
+  `effect`.
+- **A host-data read is only honest if the host bumps the revision.** A
+  `HOST_DATA` read is recorded as "valid while the host-data revision is
+  unchanged", and the revision moves only when the host calls
+  `Env::note_host_data_changed(stack)`. A native answering from state that
+  changes every step (a physics query, a clock the host keeps itself) either
+  gets that call every time the state moves, or declares the read as a
+  `probe` of an input class (when re-calling it with the same arguments at
+  validation is harmless and cheap), or declares an `effect`.
+- **Top-level code hides the bug.** The root frame is not a scope and always
+  runs, and a call too small to be worth a record is folded into its caller.
+  An under-declared native works perfectly until someone moves the call into
+  a helper function — the ordinary refactor — and then silently stops
+  reaching the host from the second frame on.
+
+| The native… | Row |
+|---|---|
+| computes from its arguments only | `PURE` |
+| pushes into an output buffer the host drains after the run | `EMITS` |
+| writes host state directly (declares a body, queues a sound, spawns, draws into a host-owned list) | `EFFECT`, and call `note_effect()` in it |
+| reads host state that the host reports changes of with `note_host_data_changed` | `reads(HOST_DATA)`, and call `note_host_read()` in it |
+| reads host state that moves without such a report (a live simulation) | `EFFECT` (plus the read), or bump the revision whenever it moves |
+| reads a bound input and answers a pure function of it | `probe(class)` |
+
+**The cheesecake case.** Cheesecake, a C++ engine scripted in Petal through a
+C bridge, registered its scene natives (`body`, `draw_mesh`, `point_light`,
+`camera`, …) as `Emits` and its queries (`raycast`, `contacts`,
+`body_state`, `world_to_screen`) as plain `ReadsHostData`. The scene natives
+did not push into a Petal buffer at all: they wrote the engine's per-frame
+declaration lists. The script
+
+```petal
+fn crate(id, at)
+  body(id, {size: 1.0, pos: at})
+end
+fn height_of(id)
+  let hit = raycast(vec3(0.0, 20.0, 0.0), vec3(0.0, -1.0, 0.0), 50.0, {static: false})
+  if hit != nil then hit.point.y else -1.0 end
+end
+for i in range(0, 3) do
+  crate("crate{i}", vec3(float(i) * 3.0, 6.0, 0.0))
+end
+```
+
+declared its crates on the first frame only: from the second frame on each
+`crate(...)` call had unchanged arguments and a record with no reads to
+invalidate it, so it was replayed and `body()` never ran — and the engine reaped the crates as undeclared. A
+helper in an imported module lost its meshes and lights the same way.
+`height_of` recorded a host-data read, but the engine never called
+`note_host_data_changed` as the physics stepped, so the record stayed valid
+and the helper returned the first frame's hit forever. The fix (cheesecake
+`4753d07`) registered all of them as `Effect` (`Effect | ReadsHostData` for
+the queries), which makes any scope calling them unrecordable, and added a
+regression test that calls each native from a helper with the same arguments
+for 30 frames.
+
+The other honest fix, where it fits, is to make the native a real emitter:
+validate the arguments, push the request into an output buffer, and apply it
+host-side after the run. Helpers calling it then stay memoizable, because a
+replay re-emits the request. petal-desktop-sdl's `sfx`/`synth` natives work
+this way (`integrations/petal-desktop-sdl/src/sound.rs`, whose tests pin both
+the replay and the trap).
+
+**A bridge makes the declared facets self-fulfilling.** A C/C++ bridge that
+forwards registration flags into the row usually also calls `note_effect()` /
+`note_host_read()` on the native's behalf when the flags say so (cheesecake's
+does). The row and the activity counters then agree by construction, and
+neither the memo nor the audit can see what the C++ callback did behind
+them. Only the embedder knows what a callback touches; a bridge's emitter flag
+in particular should mean "this call's output goes through the bridge's
+buffer-emitter path", never "this callback writes something somewhere".
+
+**The frame gate has the same shape at frame granularity.** On a skipped frame
+no native runs at all. A host whose natives must reach the host every frame
+(declarations reaped when not re-declared, audio pumped from `end_frame`)
+either keeps the last frame's declarations in force on a skipped frame, as
+Garden's key claims do, or answers "don't gate" for as long as it needs
+frames — petal-desktop-sdl's `Host::frame_gating` does this while a sound is
+playing.
+
+### Catching it with the effect audit
+
+The effect audit brackets every native call with activity snapshots and holds
+what each native was observed doing against its row
+(`rust/src/effect_audit.rs`). `petal run --effect-audit` and
+`petal-ui-run --effect-audit` cover the builtins and the `petal-ui` natives;
+an embedder audits its own natives by turning it on in the host:
+
+```rust
+env.set_effect_audit(true);                  // clears what was observed so far
+for _ in 0..frames { /* bind inputs, reset_stack, run */ }
+eprint!("{}", env.effect_audit_report());    // Display: one line per finding
+assert!(!env.effect_audit_report().has_under_declared());
+```
+
+Read the report knowing what the audit can see: only what goes through the
+`PetalCxt` — output pushes, `note_host_read`, `note_effect` (and `print`, the
+counters, the resource table, which note it themselves), binding reads. A
+C++ or Rust callback that writes host state and says nothing looks *silent*,
+so it is never reported as under-declared. What does give it away is the
+other direction:
+
+- **`over-declared … emit`** — a native declared `EMITS` that never pushed
+  output. That is exactly the cheesecake bug's signature, and usually means
+  the row should be `EFFECT`.
+- **`over-declared … effect`** — a native declared `EFFECT` that never called
+  `note_effect()`. If the native does write host state the row is right;
+  add the `note_effect()` call so the report is clean and the next reader of
+  the native sees the effect where it happens.
+- **A call count far below the frame count.** The audit counts calls that
+  reached the native; replayed calls do not. A native called from a helper
+  that ran for 60 frames but shows `1 calls` is being replayed.
+
+An audit of the cheesecake shape (a helper calling a host-queueing native
+declared `EMITS`, four frames):
+
+```text
+effect audit: 1 natives called, 0 under-declared, 1 over-declared
+  over-declared queue_on_host                      1 calls  emit
+```
+
+To confirm a suspicion, run the same frames with memoization off
+(`env.set_policy(RunPolicy::FAST.with_memo(false))`, or `--no-memo` on
+`petal-ui-run`): a native whose host-side behavior
+changes with the policy is declared wrong. A regression test of the form
+"call every native from a helper with unchanged arguments for N frames and
+check the host saw every call" catches the next one.
 
 ## Existing embedders
 

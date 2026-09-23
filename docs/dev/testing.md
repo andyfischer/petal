@@ -64,6 +64,14 @@ full output instead of an 8-line preview. `./ts/bin/gen-example-golden.ts`
 re-baselines the corpus; run it deliberately, since a golden update asserts
 that behavior was meant to change.
 
+## Proofs and exhaustive checks
+
+The core numeric semantics (checked arithmetic, `==` and `<` across int and
+float, the `sort` order, state-key hashing, index and slice resolution) are
+proven for every input with the Kani model checker, and `rust/tests/small_scope.rs`
+checks every small program end to end. See
+[formal-verification.md](formal-verification.md).
+
 ## Deterministic runs
 
 Two knobs make a run byte-reproducible, which is what before/after diffing of

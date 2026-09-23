@@ -689,7 +689,8 @@ JavaScript-style alias for `contains`. Same behavior.
 
 ### `sort(list)`
 
-Returns a new sorted list. Numbers sort before strings.
+Returns a new sorted list. Numbers sort before strings; NaNs sort after every
+other number.
 
 ```petal
 sort([3, 1, 2])           // [1, 2, 3]

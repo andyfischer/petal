@@ -408,6 +408,11 @@ let f = -a        // -13
 
 Float arithmetic works the same way. Mixed int/float operations promote to float.
 
+Integer arithmetic is checked: a result outside the 64-bit range
+(`9223372036854775807 + 1`, `-x` or `abs(x)` for the smallest integer) is a
+runtime error, never a silent wraparound. Division and `%` truncate toward
+zero (`-7 % 3` is `-1`), and dividing by zero is an error.
+
 ### Vectors
 
 `vec2(x, y)` and `vec3(x, y, z)` are built-in vector values with float
@@ -538,6 +543,19 @@ a && b    // true if both true
 a || b    // true if either true
 !a        // negation
 ```
+
+`==` compares by value. Lists, records and enum variants are equal when their
+contents are (`{a: 1, b: 2} == {b: 2, a: 1}` is `true`; a class instance only
+equals an instance of the same class), and functions are equal only to
+themselves. Numbers compare exactly across int and float: `2 == 2.0` is `true`,
+but a large integer is never equal to a float it merely rounds to
+(`9007199254740993 == 9007199254740992.0` is `false`). A dual number compares by
+its value, ignoring the derivative. NaN is unordered: every comparison with it,
+including `NaN == NaN`, is `false` (and `sort` puts NaNs last).
+
+Values that are `==` are the same key everywhere keys matter — `state(key)`
+included — so `state({id: 1})` finds the same slot each run, and `state(2)` and
+`state(2.0)` share one.
 
 ## Control Flow
 

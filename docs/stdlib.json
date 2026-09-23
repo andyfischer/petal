@@ -144,7 +144,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 34
+        "line": 30
       }
     },
     {
@@ -161,7 +161,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 75
+        "line": 67
       }
     },
     {
@@ -202,7 +202,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 56
+        "line": 59
       }
     },
     {
@@ -214,7 +214,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 69
+        "line": 72
       }
     },
     {
@@ -226,7 +226,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 77
+        "line": 80
       }
     },
     {
@@ -238,7 +238,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 82
+        "line": 85
       }
     },
     {
@@ -250,7 +250,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 97
+        "line": 100
       }
     },
     {
@@ -262,7 +262,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 156
+        "line": 159
       }
     },
     {
@@ -283,7 +283,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 181
+        "line": 184
       }
     },
     {
@@ -399,7 +399,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 190
+        "line": 193
       }
     },
     {
@@ -420,7 +420,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 206
+        "line": 209
       }
     },
     {
@@ -437,7 +437,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 234
+        "line": 237
       }
     },
     {
@@ -494,7 +494,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 433
+        "line": 438
       }
     },
     {
@@ -506,7 +506,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 462
+        "line": 467
       }
     },
     {
@@ -527,7 +527,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 480
+        "line": 485
       }
     },
     {
@@ -548,7 +548,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 509
+        "line": 514
       }
     },
     {
@@ -560,7 +560,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 536
+        "line": 541
       }
     },
     {
@@ -572,7 +572,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 548
+        "line": 553
       }
     },
     {
@@ -584,7 +584,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 560
+        "line": 565
       }
     },
     {
@@ -605,7 +605,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 581
+        "line": 586
       }
     },
     {
@@ -630,7 +630,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 624
+        "line": 629
       }
     },
     {
@@ -642,7 +642,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 692
+        "line": 681
       }
     },
     {
@@ -676,7 +676,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 267
+        "line": 270
       }
     },
     {
@@ -688,7 +688,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 272
+        "line": 275
       }
     },
     {
@@ -700,7 +700,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 277
+        "line": 280
       }
     },
     {
@@ -721,7 +721,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 285
+        "line": 288
       }
     },
     {
@@ -733,7 +733,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 293
+        "line": 296
       }
     },
     {
@@ -1088,7 +1088,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 256
+        "line": 257
       }
     },
     {
@@ -1344,7 +1344,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 95
+        "line": 87
       }
     },
     {
@@ -1731,7 +1731,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 118
+        "line": 121
       }
     },
     {
@@ -1743,7 +1743,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 139
+        "line": 142
       }
     },
     {
@@ -1755,7 +1755,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 739
+        "line": 724
       }
     },
     {
@@ -1767,7 +1767,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 759
+        "line": 744
       }
     },
     {
@@ -1784,7 +1784,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 774
+        "line": 759
       }
     },
     {
@@ -1801,7 +1801,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 799
+        "line": 784
       }
     },
     {
@@ -1822,7 +1822,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
-        "line": 836
+        "line": 821
       }
     },
     {
@@ -1913,7 +1913,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 181
+        "line": 191
       }
     },
     {
@@ -1925,7 +1925,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 185
+        "line": 195
       }
     },
     {
@@ -1942,7 +1942,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/format.rs",
-        "line": 269
+        "line": 279
       }
     },
     {
@@ -1963,7 +1963,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 309
+        "line": 312
       }
     },
     {

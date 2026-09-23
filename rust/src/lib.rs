@@ -36,6 +36,7 @@ pub mod lsp;
 pub mod memo;
 pub mod module;
 pub mod native_fn;
+pub mod numeric;
 pub mod observe;
 pub mod package;
 pub mod policy;
@@ -43,6 +44,8 @@ pub mod parse;
 pub mod profile;
 pub mod program;
 pub mod program_analysis;
+#[cfg(kani)]
+mod proofs;
 pub mod provenance;
 pub mod resource_table;
 pub mod suggest;

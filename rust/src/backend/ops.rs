@@ -16,6 +16,7 @@ use indexmap::IndexMap;
 
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
+use crate::numeric::{self, IntArithError, IntOp};
 use crate::program::{MapSpreadEntry, Program, TermOp};
 use crate::value::{self, Value};
 
@@ -307,23 +308,19 @@ fn list_scalar_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result
 /// Integer arithmetic with checked operators. A raw `+`/`*`/`%` would panic on
 /// overflow or a zero divisor, which in WASM is an `unreachable` trap that
 /// poisons the whole module; a clean `Err` surfaces a normal runtime error.
+/// The kernel is `numeric::int_arith`, proven exact for all inputs.
 fn int_arith(op: &TermOp, a: i64, b: i64) -> Result<i64, String> {
-    let result = match op {
-        TermOp::Add => a.checked_add(b),
-        TermOp::Sub => a.checked_sub(b),
-        TermOp::Mul => a.checked_mul(b),
-        // checked_div / checked_rem return None for a zero divisor and for the
-        // i64::MIN / -1 overflow case.
-        TermOp::Div => a.checked_div(b),
-        TermOp::Mod => a.checked_rem(b),
+    let iop = match op {
+        TermOp::Add => IntOp::Add,
+        TermOp::Sub => IntOp::Sub,
+        TermOp::Mul => IntOp::Mul,
+        TermOp::Div => IntOp::Div,
+        TermOp::Mod => IntOp::Mod,
         _ => unreachable!("non-arithmetic op in arithmetic()"),
     };
-    result.ok_or_else(|| {
-        if b == 0 && matches!(op, TermOp::Div | TermOp::Mod) {
-            "Division by zero".to_string()
-        } else {
-            format!("Integer overflow when trying to {}", binop_verb(op))
-        }
+    numeric::int_arith(iop, a, b).map_err(|e| match e {
+        IntArithError::DivisionByZero => "Division by zero".to_string(),
+        IntArithError::Overflow => format!("Integer overflow when trying to {}", binop_verb(op)),
     })
 }
 
@@ -384,7 +381,11 @@ pub fn comparison(op: &TermOp, a: Value, b: Value, heap: &Heap) -> Result<Value,
     if let Some(p) = leftmost_pending(a, b) {
         return Ok(p);
     }
-    let ord = value::compare_values(&a, &b, heap)?;
+    // Unordered (a NaN operand) makes every ordering false, as in IEEE 754;
+    // treating it as `Equal` made `nan <= 1` and `nan >= 1` both true.
+    let Some(ord) = value::compare_values_partial(&a, &b, heap)? else {
+        return Ok(Value::Bool(false));
+    };
     let result = match op {
         TermOp::Lt => ord == Ordering::Less,
         TermOp::Le => ord != Ordering::Greater,
@@ -410,7 +411,11 @@ pub fn negate(v: Value, heap: &mut Heap) -> Result<Value, String> {
     match v {
         // Pending absorbs: negating an unresolved value stays that Pending.
         p @ Value::Pending(_) => Ok(p),
-        Value::Int(n) => Ok(Value::Int(-n)),
+        // Checked: `-i64::MIN` overflows, and a raw `-n` panics (or wraps in
+        // release builds).
+        Value::Int(n) => numeric::int_neg(n)
+            .map(Value::Int)
+            .map_err(|_| "Integer overflow when trying to negate".to_string()),
         Value::Float(f) => Ok(Value::Float(-f)),
         Value::Dual { value, derivative } => Ok(Value::Dual {
             value: -value,
@@ -731,12 +736,7 @@ pub fn get_index(heap: &Heap, obj: Value, idx: Value, opt: bool) -> Result<Value
     match (obj, idx) {
         (Value::List(list_id), Value::Int(i)) => {
             let list = heap.get_list(list_id);
-            let index = if i < 0 {
-                (list.len() as i64 + i) as usize
-            } else {
-                i as usize
-            };
-            match list.get(index).copied() {
+            match numeric::resolve_index(list.len(), i).map(|k| list[k]) {
                 Some(v) => Ok(v),
                 None => Err(format!(
                     "Index {} out of bounds (len {})",
@@ -747,10 +747,9 @@ pub fn get_index(heap: &Heap, obj: Value, idx: Value, opt: bool) -> Result<Value
         }
         (Value::F64Array(arr_id), Value::Int(i)) => {
             let data = heap.get_f64_array(arr_id);
-            if i < 0 || i as usize >= data.len() {
-                Err(format!("Index {} out of bounds (len {})", i, data.len()))
-            } else {
-                Ok(Value::Float(data[i as usize]))
+            match numeric::checked_index(data.len(), i) {
+                Some(k) => Ok(Value::Float(data[k])),
+                None => Err(format!("Index {} out of bounds (len {})", i, data.len())),
             }
         }
         (Value::Map(map_id), Value::String(key_id)) => {
@@ -805,12 +804,11 @@ fn set_index_impl(
             // Negative indices count from the end, symmetric with get_index —
             // required so a negative index at a non-leaf level of a nested
             // assignment (`grid[-1][0] = v`) rebuilds the slot it read from.
-            let index = if i < 0 { len as i64 + i } else { i };
-            if index >= 0 && (index as usize) < len {
+            if let Some(index) = numeric::resolve_index(len, i) {
                 let new_id = if in_place {
-                    heap.list_set_in_place(list_id, index as usize, val)
+                    heap.list_set_in_place(list_id, index, val)
                 } else {
-                    heap.list_set(list_id, index as usize, val)
+                    heap.list_set(list_id, index, val)
                 };
                 Ok(Value::List(new_id))
             } else {
@@ -828,11 +826,11 @@ fn set_index_impl(
                     ));
                 }
             };
-            if i >= 0 && (i as usize) < heap.f64_array_len(arr_id) {
+            if let Some(index) = numeric::checked_index(heap.f64_array_len(arr_id), i) {
                 let new_id = if in_place {
-                    heap.f64_array_set_in_place(arr_id, i as usize, v)
+                    heap.f64_array_set_in_place(arr_id, index, v)
                 } else {
-                    heap.f64_array_set(arr_id, i as usize, v)
+                    heap.f64_array_set(arr_id, index, v)
                 };
                 Ok(Value::F64Array(new_id))
             } else {

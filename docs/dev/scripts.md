@@ -14,6 +14,7 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 | `make test` | Build, then run the full vitest suite (which also runs every `examples/console/*.ptl`). |
 | `make test-examples` | Print each example program's output for manual inspection. |
 | `make test-c-bridge` | Build `integrations/petal-c-bridge` (the C/C++ embedding bridge) with CMake + Ninja and run its `ctest` suite: C++ tests, plain-C smoke test, example, and the crate's Rust unit tests. Needs CMake, Ninja and a C++20 compiler. See [embedding-c.md](../embedding-c.md). |
+| `make prove` | Run the Kani proof harnesses (`cargo kani`) for the core numeric semantics. Needs Kani installed; see [formal-verification.md](formal-verification.md). |
 | `make clean` | Remove Rust build artifacts (`cargo clean`). |
 
 ## Building & running
@@ -36,6 +37,8 @@ See [testing.md](testing.md) for the full guide.
 | `npm test` | Run the vitest suite once, from the repo root. |
 | `npm run test:watch` | Vitest in watch mode. |
 | `cd ts && npx vitest test/ir-basics.test.ts` | Run one test file. |
+| `cd rust && cargo kani --solver cadical` | Prove the contracts of `rust/src/numeric.rs` for every input. `--harness <name>` runs one. See [formal-verification.md](formal-verification.md). |
+| `PETAL_SMALL_SCOPE_TOKENS=4 cargo test --release --test small_scope` | Run the small-scope exhaustive check over every program of up to 4 tokens (6.3M programs, about a minute). The default `cargo test` covers 2. |
 | `./ts/bin/test-examples.ts` | Run every `examples/console/*.ptl` with the optimizer on and off (`--no-opt`), require identical output between the two, and require both to match the golden corpus in `test/example-golden/`. |
 | `./ts/bin/test-examples.ts --full` | Same, but print full output rather than an 8-line preview. |
 | `./ts/bin/gen-example-golden.ts` | Re-baseline `test/example-golden/` from the current output. Run deliberately: a golden update asserts that the intended behavior changed. |

@@ -8,7 +8,8 @@
 
 use crate::ast::{Literal, Pattern};
 use crate::heap::Heap;
-use crate::value::Value;
+use crate::numeric::{Num, num_eq};
+use crate::value::{Value, as_num};
 
 /// Match `value` against `pattern`, pushing any captured `(name, value)`
 /// bindings onto `bindings`. Returns whether the pattern matched. On a failed
@@ -25,8 +26,10 @@ pub fn match_pattern(
         Pattern::Literal(lit) => match (lit, value) {
             (Literal::Nil, Value::Nil) => true,
             (Literal::Bool(a), Value::Bool(b)) => *a == b,
-            (Literal::Int(a), Value::Int(b)) => *a == b,
-            (Literal::Float(a), Value::Float(b)) => *a == b,
+            // A numeric literal matches what it is `==` to, so `when 2` matches
+            // `2.0` exactly as `x == 2` would (the proven `num_eq`).
+            (Literal::Int(a), v) => as_num(&v).is_some_and(|n| num_eq(Num::Int(*a), n)),
+            (Literal::Float(a), v) => as_num(&v).is_some_and(|n| num_eq(Num::Float(*a), n)),
             (Literal::String(a), Value::String(sid)) => a == heap.get_string(sid),
             _ => false,
         },

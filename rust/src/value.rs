@@ -193,6 +193,7 @@ impl fmt::Debug for Value {
 /// Display helpers that need heap access. These are standalone functions
 /// rather than methods because they need &Heap.
 use crate::heap::Heap;
+use crate::numeric::{self, Num};
 
 pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
     match val {
@@ -611,92 +612,139 @@ fn json_to_vector(json: &serde_json::Value, heap: &mut Heap) -> Option<Value> {
     }
 }
 
+/// The numeric view of a value that `==` and `<` compare by: ints, floats, and
+/// a dual number's primal. `None` for everything else.
+pub fn as_num(v: &Value) -> Option<Num> {
+    match *v {
+        Value::Int(n) => Some(Num::Int(n)),
+        Value::Float(f) => Some(Num::Float(f)),
+        Value::Dual { value, .. } => Some(Num::Float(value)),
+        _ => None,
+    }
+}
+
 /// Hash a value to a u64 for use as an explicit state key.
-/// Uses the value's content directly — no heap needed for primitives.
+///
+/// Consistent with [`values_equal`]: values that are `==` hash equally, so
+/// `state(key)` finds the same slot for every key that is `==` — including a
+/// record rebuilt each frame, and `2` vs `2.0`. Containers hash their content,
+/// never their heap id (ids differ between two equal values).
 pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
-    use std::hash::{Hash, Hasher};
+    use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    hash_into(val, heap, &mut hasher);
+    hasher.finish()
+}
+
+fn hash_into(val: &Value, heap: &Heap, h: &mut impl std::hash::Hasher) {
+    use std::hash::{Hash, Hasher};
+    if let Some(n) = as_num(val) {
+        2u8.hash(h);
+        numeric::num_key(n).hash(h);
+        return;
+    }
     match val {
-        Value::Nil => 0u8.hash(&mut hasher),
+        Value::Nil => 0u8.hash(h),
         Value::Bool(b) => {
-            1u8.hash(&mut hasher);
-            b.hash(&mut hasher);
-        }
-        Value::Int(n) => {
-            2u8.hash(&mut hasher);
-            n.hash(&mut hasher);
-        }
-        Value::Float(f) => {
-            3u8.hash(&mut hasher);
-            f.to_bits().hash(&mut hasher);
+            1u8.hash(h);
+            b.hash(h);
         }
         Value::String(id) => {
-            4u8.hash(&mut hasher);
-            heap.get_string(*id).hash(&mut hasher);
+            4u8.hash(h);
+            heap.get_string(*id).hash(h);
         }
         Value::List(id) => {
-            5u8.hash(&mut hasher);
+            5u8.hash(h);
             let elems = heap.get_list(*id);
+            elems.len().hash(h);
             for elem in elems {
-                hash_value(elem, heap).hash(&mut hasher);
+                hash_into(elem, heap, h);
             }
         }
         Value::Vec2(x, y) => {
-            7u8.hash(&mut hasher);
-            x.to_bits().hash(&mut hasher);
-            y.to_bits().hash(&mut hasher);
+            7u8.hash(h);
+            numeric::num_key(Num::Float(*x)).hash(h);
+            numeric::num_key(Num::Float(*y)).hash(h);
         }
         Value::Vec3(id) => {
-            10u8.hash(&mut hasher);
+            13u8.hash(h);
             for f in heap.get_vec3(*id) {
-                f.to_bits().hash(&mut hasher);
+                numeric::num_key(Num::Float(f)).hash(h);
             }
         }
         Value::F64Array(id) => {
-            8u8.hash(&mut hasher);
+            8u8.hash(h);
             for f in heap.get_f64_array(*id) {
-                f.to_bits().hash(&mut hasher);
+                numeric::num_key(Num::Float(*f)).hash(h);
             }
         }
-        Value::Handle(h) => {
-            9u8.hash(&mut hasher);
-            h.class.0.hash(&mut hasher);
-            h.slot.hash(&mut hasher);
-            h.serial.hash(&mut hasher);
+        Value::Handle(hv) => {
+            9u8.hash(h);
+            hv.class.0.hash(h);
+            hv.slot.hash(h);
+            hv.serial.hash(h);
         }
-        // For other types, hash the debug representation
+        Value::Map(id) => {
+            10u8.hash(h);
+            heap.map_class_name(*id).hash(h);
+            // Record equality ignores key order, so the hash must too: combine
+            // per-entry hashes with a commutative sum.
+            let map = heap.get_map(*id);
+            map.len().hash(h);
+            let mut sum = 0u64;
+            for (k, v) in map {
+                let mut eh = std::collections::hash_map::DefaultHasher::new();
+                k.hash(&mut eh);
+                hash_into(v, heap, &mut eh);
+                sum = sum.wrapping_add(eh.finish());
+            }
+            sum.hash(h);
+        }
+        Value::EnumVariant { tag, data } => {
+            11u8.hash(h);
+            heap.get_string(*tag).hash(h);
+            hash_into(&Value::List(*data), heap, h);
+        }
+        Value::Element(id) => {
+            12u8.hash(h);
+            heap.get_string(heap.get_element_tag(*id)).hash(h);
+            hash_into(&Value::Map(heap.get_element_props(*id)), heap, h);
+            hash_into(&Value::List(heap.get_element_children(*id)), heap, h);
+        }
+        // Identity-compared values (functions, symbols, cells, pendings): the
+        // debug form is the id, which is exactly what equality compares.
         other => {
-            6u8.hash(&mut hasher);
-            format!("{:?}", other).hash(&mut hasher);
+            6u8.hash(h);
+            format!("{:?}", other).hash(h);
         }
     }
-    hasher.finish()
 }
 
 /// Compare two values for equality. Needs heap access for deep comparison
 /// of lists and maps.
+///
+/// This is `==`. It is symmetric and transitive, and reflexive on everything
+/// but NaN (checked by the `proofs` harnesses for numbers and by the
+/// exhaustive tests in this module for containers):
+/// - numbers compare exactly across Int and Float (no rounding to f64), and a
+///   dual number compares by its primal value, against anything numeric;
+/// - lists, enum variants and elements compare element-wise; records compare
+///   by class and by key set and values, ignoring key order;
+/// - functions, symbols, cells, handles and pendings compare by identity.
 pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
+    if let (Some(x), Some(y)) = (as_num(a), as_num(b)) {
+        return numeric::num_eq(x, y);
+    }
     match (a, b) {
         (Value::Nil, Value::Nil) => true,
         (Value::Bool(a), Value::Bool(b)) => a == b,
-        (Value::Int(a), Value::Int(b)) => a == b,
-        (Value::Float(a), Value::Float(b)) => a == b,
-        (Value::Int(a), Value::Float(b)) => (*a as f64) == *b,
-        (Value::Float(a), Value::Int(b)) => *a == (*b as f64),
         (Value::String(a), Value::String(b)) => {
             // With string interning, equal content means equal IDs
             a == b || heap.get_string(*a) == heap.get_string(*b)
         }
         (Value::EnumVariant { tag: at, data: ad }, Value::EnumVariant { tag: bt, data: bd }) => {
-            (at == bt || heap.get_string(*at) == heap.get_string(*bt)) && {
-                let a_fields = heap.get_list(*ad);
-                let b_fields = heap.get_list(*bd);
-                a_fields.len() == b_fields.len()
-                    && a_fields
-                        .iter()
-                        .zip(b_fields.iter())
-                        .all(|(a, b)| values_equal(a, b, heap))
-            }
+            (at == bt || heap.get_string(*at) == heap.get_string(*bt))
+                && values_equal(&Value::List(*ad), &Value::List(*bd), heap)
         }
         (Value::List(a), Value::List(b)) => {
             let a_elems = heap.get_list(*a);
@@ -707,28 +755,27 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                     .zip(b_elems.iter())
                     .all(|(a, b)| values_equal(a, b, heap))
         }
+        (Value::Map(a), Value::Map(b)) => {
+            if heap.map_class_name(*a) != heap.map_class_name(*b) {
+                return false;
+            }
+            let (xs, ys) = (heap.get_map(*a), heap.get_map(*b));
+            xs.len() == ys.len()
+                && xs.iter().all(|(k, x)| match ys.get(k) {
+                    Some(y) => values_equal(x, y, heap),
+                    None => false,
+                })
+        }
         (Value::F64Array(a), Value::F64Array(b)) => {
             let a_data = heap.get_f64_array(*a);
             let b_data = heap.get_f64_array(*b);
             a_data == b_data
         }
         (Value::NativeFunction(a), Value::NativeFunction(b)) => a == b,
-        (
-            Value::Dual {
-                value: av,
-                derivative: ad,
-            },
-            Value::Dual {
-                value: bv,
-                derivative: bd,
-            },
-        ) => av == bv && ad == bd,
-        // Dual compared with numeric: compare primal values only
-        (Value::Dual { value, .. }, Value::Float(f))
-        | (Value::Float(f), Value::Dual { value, .. }) => value == f,
-        (Value::Dual { value, .. }, Value::Int(n)) | (Value::Int(n), Value::Dual { value, .. }) => {
-            *value == *n as f64
-        }
+        (Value::Closure(a), Value::Closure(b)) => a == b,
+        (Value::OverloadSet(a), Value::OverloadSet(b)) => a == b,
+        (Value::Cell(a), Value::Cell(b)) => a == b,
+        (Value::Symbol(a), Value::Symbol(b)) => a == b,
         (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
         (Value::Vec3(a), Value::Vec3(b)) => a == b || heap.get_vec3(*a) == heap.get_vec3(*b),
         (Value::Handle(a), Value::Handle(b)) => a == b,
@@ -755,27 +802,22 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
     }
 }
 
-/// Order two Values (used for sorting and by the `min`/`max` builtins). Numeric
-/// kinds compare by their `f64` value (dual numbers by their primal); strings
-/// compare lexically; mismatched non-numeric kinds are an error.
-pub fn compare_values(a: &Value, b: &Value, heap: &Heap) -> Result<std::cmp::Ordering, String> {
+/// Order two Values (used by the `<`/`<=`/`>`/`>=` operators and the
+/// `min`/`max` builtins). Numeric kinds compare exactly by value (dual numbers
+/// by their primal); strings compare lexically; mismatched non-numeric kinds
+/// are an error. `Ok(None)` when the two are unordered — a NaN is involved —
+/// so every ordering operator on it is false, as in IEEE 754.
+pub fn compare_values_partial(
+    a: &Value,
+    b: &Value,
+    heap: &Heap,
+) -> Result<Option<std::cmp::Ordering>, String> {
+    if let (Some(x), Some(y)) = (as_num(a), as_num(b)) {
+        return Ok(numeric::num_cmp(x, y));
+    }
     match (a, b) {
-        (Value::Int(a), Value::Int(b)) => Ok(a.cmp(b)),
-        (Value::Float(a), Value::Float(b)) => {
-            Ok(a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        }
-        (Value::Int(a), Value::Float(b)) => Ok((*a as f64)
-            .partial_cmp(b)
-            .unwrap_or(std::cmp::Ordering::Equal)),
-        (Value::Float(a), Value::Int(b)) => Ok(a
-            .partial_cmp(&(*b as f64))
-            .unwrap_or(std::cmp::Ordering::Equal)),
-        (Value::String(a), Value::String(b)) => Ok(heap.get_string(*a).cmp(heap.get_string(*b))),
-        // Dual comparisons use primal value only
-        _ if a.as_f64().is_some() && b.as_f64().is_some() => {
-            let af = a.as_f64().unwrap();
-            let bf = b.as_f64().unwrap();
-            Ok(af.partial_cmp(&bf).unwrap_or(std::cmp::Ordering::Equal))
+        (Value::String(a), Value::String(b)) => {
+            Ok(Some(heap.get_string(*a).cmp(heap.get_string(*b))))
         }
         _ => Err(format!(
             "Cannot compare {} and {}",
@@ -785,9 +827,16 @@ pub fn compare_values(a: &Value, b: &Value, heap: &Heap) -> Result<std::cmp::Ord
     }
 }
 
+/// [`compare_values_partial`] with unordered (NaN) pairs reported as `Equal`,
+/// for callers that must pick one side (`min`/`max` keep the first argument).
+pub fn compare_values(a: &Value, b: &Value, heap: &Heap) -> Result<std::cmp::Ordering, String> {
+    Ok(compare_values_partial(a, b, heap)?.unwrap_or(std::cmp::Ordering::Equal))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indexmap::IndexMap;
 
     #[test]
     fn nil_is_falsy() {
@@ -841,5 +890,151 @@ mod tests {
     #[test]
     fn format_float_fractional() {
         assert_eq!(format_float(3.25), "3.25");
+    }
+
+    // ── Exhaustive laws of `==`, hashing and ordering ──────────────
+    //
+    // Small-scope exhaustive check: every pair and triple drawn from a universe
+    // of values up to nesting depth 2 — numeric edge cases (±0, NaN, 2^53 + 1
+    // vs 2^53 as float, duals), strings allocated twice, and every container
+    // kind built from them. The numeric kernels are proven for all inputs by
+    // the Kani harnesses in `crate::proofs`; this covers how containers
+    // compose them. See docs/dev/formal-verification.md.
+
+    fn universe(heap: &mut Heap) -> Vec<Value> {
+        let mut atoms = vec![
+            Value::Nil,
+            Value::Bool(true),
+            Value::Bool(false),
+            Value::Int(0),
+            Value::Int(1),
+            Value::Int(9007199254740993),
+            Value::Float(0.0),
+            Value::Float(-0.0),
+            Value::Float(1.0),
+            Value::Float(9007199254740992.0),
+            Value::Float(f64::NAN),
+            Value::Dual {
+                value: 1.0,
+                derivative: 5.0,
+            },
+            Value::Dual {
+                value: 1.0,
+                derivative: 0.0,
+            },
+            Value::Vec2(0.0, 1.0),
+            Value::Vec2(-0.0, 1.0),
+        ];
+        // Equal strings with distinct ids, and a different one.
+        for s in ["a", "a", "b"] {
+            atoms.push(Value::String(heap.alloc_string(s.to_string())));
+        }
+        let mut all = atoms.clone();
+        let small: Vec<Value> = atoms.iter().copied().step_by(2).collect();
+        let key = heap.intern_str("Some");
+        let class = heap.intern_str("Point");
+        for &x in &small {
+            all.push(Value::List(heap.alloc_list(vec![x])));
+            all.push(Value::List(heap.alloc_list(vec![x, Value::Int(1)])));
+            let mut m = IndexMap::new();
+            m.insert("a".to_string(), x);
+            all.push(Value::Map(heap.alloc_map(m.clone())));
+            all.push(Value::Map(heap.alloc_class_instance(m, class)));
+            let data = heap.alloc_list(vec![x]);
+            all.push(Value::EnumVariant { tag: key, data });
+        }
+        all.push(Value::List(heap.alloc_list(vec![])));
+        all.push(Value::List(heap.alloc_list(vec![])));
+        // Same entries, both key orders.
+        for (k1, k2) in [("a", "b"), ("b", "a")] {
+            let mut m = IndexMap::new();
+            m.insert(k1.to_string(), Value::Int(1));
+            m.insert(k2.to_string(), Value::Float(2.0));
+            all.push(Value::Map(heap.alloc_map(m)));
+        }
+        // Depth 2: a list of each depth-1 container.
+        let depth1: Vec<Value> = all[atoms.len()..].to_vec();
+        for &c in depth1.iter().step_by(3) {
+            all.push(Value::List(heap.alloc_list(vec![c])));
+        }
+        all
+    }
+
+    fn contains_nan(v: &Value, heap: &Heap) -> bool {
+        match *v {
+            Value::Float(f) => f.is_nan(),
+            Value::Dual { value, .. } => value.is_nan(),
+            Value::List(id) => heap.get_list(id).iter().any(|x| contains_nan(x, heap)),
+            Value::Map(id) => heap.get_map(id).values().any(|x| contains_nan(x, heap)),
+            Value::EnumVariant { data, .. } => contains_nan(&Value::List(data), heap),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn equality_is_a_partial_equivalence_consistent_with_hash() {
+        let mut heap = Heap::new();
+        let u = universe(&mut heap);
+        let eq = |a: &Value, b: &Value| values_equal(a, b, &heap);
+        for a in &u {
+            assert!(
+                eq(a, a) || contains_nan(a, &heap),
+                "== is not reflexive on {}",
+                value_to_display_string(a, &heap)
+            );
+            for b in &u {
+                let ab = eq(a, b);
+                assert_eq!(ab, eq(b, a), "== is not symmetric");
+                if ab {
+                    assert_eq!(
+                        hash_value(a, &heap),
+                        hash_value(b, &heap),
+                        "{} == {} but they hash differently",
+                        value_to_display_string(a, &heap),
+                        value_to_display_string(b, &heap),
+                    );
+                }
+                if !ab {
+                    continue;
+                }
+                for c in &u {
+                    if eq(b, c) {
+                        assert!(
+                            eq(a, c),
+                            "== is not transitive: {} == {} == {}",
+                            value_to_display_string(a, &heap),
+                            value_to_display_string(b, &heap),
+                            value_to_display_string(c, &heap),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ordering_is_antisymmetric_and_agrees_with_equality() {
+        let mut heap = Heap::new();
+        let u = universe(&mut heap);
+        for a in &u {
+            for b in &u {
+                let ab = compare_values_partial(a, b, &heap);
+                let ba = compare_values_partial(b, a, &heap);
+                match (ab, ba) {
+                    (Ok(x), Ok(y)) => {
+                        assert_eq!(x, y.map(std::cmp::Ordering::reverse));
+                        if let Some(o) = x {
+                            assert_eq!(
+                                o == std::cmp::Ordering::Equal,
+                                values_equal(a, b, &heap),
+                                "ordering says Equal but == disagrees"
+                            );
+                        }
+                    }
+                    (Err(_), Err(_)) => {}
+                    _ => panic!("compare_values_partial errs on one side only"),
+                }
+            }
+        }
     }
 }

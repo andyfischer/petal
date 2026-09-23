@@ -247,8 +247,9 @@ pub(super) fn native_random_int(state: &mut PetalCxt) -> Result<u32, String> {
         state.push_int(min);
         return Ok(1);
     }
-    let range = (max - min) as f64;
-    let val = min + (state.rng_next_f64() * range) as i64;
+    // `max - min` overflows i64 for wide bounds; the kernel works in i128 and
+    // is proven to land in [min, max).
+    let val = crate::numeric::scale_unit_to_range(state.rng_next_f64(), min, max);
     state.push_int(val);
     Ok(1)
 }

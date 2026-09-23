@@ -60,3 +60,8 @@ strip = true
 inherits = "release"
 debug = true
 strip = false
+
+# `cfg(kani)` is set by the Kani model checker (`cargo kani`), which compiles
+# the proof harnesses in `src/proofs/`. See docs/dev/formal-verification.md.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

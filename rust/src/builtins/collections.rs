@@ -4,6 +4,7 @@
 //! index_of).
 
 use crate::native_fn::PetalCxt;
+use crate::numeric;
 use crate::value::{self, Value};
 
 use super::require_args;
@@ -22,13 +23,8 @@ fn leftmost_pending_element(items: &[Value]) -> Option<Value> {
 /// Bounds-check a signed index against an f64-array length, returning the
 /// validated `usize` or the standard out-of-bounds error.
 fn checked_f64_index(i: i64, len: usize) -> Result<usize, String> {
-    if i < 0 || i as usize >= len {
-        return Err(format!(
-            "Index {} out of bounds for f64_array of length {}",
-            i, len
-        ));
-    }
-    Ok(i as usize)
+    numeric::checked_index(len, i)
+        .ok_or_else(|| format!("Index {} out of bounds for f64_array of length {}", i, len))
 }
 
 pub(super) fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
@@ -54,20 +50,16 @@ pub(super) fn native_range(state: &mut PetalCxt) -> Result<u32, String> {
             );
         }
     };
-    let items: Vec<Value> = if step == 1 {
-        (start..end).map(Value::Int).collect()
-    } else {
-        let mut items = Vec::new();
-        let mut i = start;
-        while (step > 0 && i < end) || (step < 0 && i > end) {
-            items.push(Value::Int(i));
-            match i.checked_add(step) {
-                Some(next) => i = next,
-                None => break,
-            }
-        }
-        items
-    };
+    // Size the list exactly and reserve it fallibly: collecting an
+    // open-ended iterator aborts the process on a length whose byte size
+    // overflows (`range(2^62)`), and a step > 1 used to loop forever growing.
+    let n = numeric::range_len(start, end, step);
+    let mut items: Vec<Value> = Vec::new();
+    usize::try_from(n)
+        .ok()
+        .filter(|&n| items.try_reserve_exact(n).is_ok())
+        .ok_or_else(|| format!("range() of {n} elements is too large"))?;
+    items.extend((0..n).map(|k| Value::Int(numeric::range_nth(start, step, k))));
     state.push_list(items);
     Ok(1)
 }
@@ -98,7 +90,15 @@ pub(super) fn native_f64_array(state: &mut PetalCxt) -> Result<u32, String> {
     if n < 0 {
         return Err("f64_array() expects a non-negative length".to_string());
     }
-    let id = state.heap_mut().alloc_f64_array(vec![0.0_f64; n as usize]);
+    // Reserve fallibly: `vec![0.0; n]` aborts the process on a length whose
+    // byte size overflows, which a script must not be able to trigger.
+    let mut data: Vec<f64> = Vec::new();
+    let len = usize::try_from(n)
+        .ok()
+        .filter(|&len| data.try_reserve_exact(len).is_ok())
+        .ok_or_else(|| format!("f64_array() length {} is too large", n))?;
+    data.resize(len, 0.0);
+    let id = state.heap_mut().alloc_f64_array(data);
     state.push_value(Value::F64Array(id));
     Ok(1)
 }
@@ -379,11 +379,16 @@ pub(super) fn native_contains(state: &mut PetalCxt) -> Result<u32, String> {
 /// intrinsic (`backend::bytecode::vm::intrinsics`), so both orderings — direct
 /// and by extracted key — agree on how numbers, strings, and everything else
 /// rank against each other.
-#[derive(PartialEq)]
 pub(crate) enum SortKey {
-    Num(f64),
+    Num(crate::numeric::Num),
     Str(String),
     Other,
+}
+
+impl PartialEq for SortKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
 }
 
 impl Eq for SortKey {}
@@ -393,11 +398,11 @@ impl SortKey {
     /// comparison itself needs no heap access.
     pub(crate) fn of(heap: &crate::heap::Heap, v: Value) -> SortKey {
         match v {
-            Value::Int(n) => SortKey::Num(n as f64),
-            Value::Float(f) => SortKey::Num(f),
-            Value::Dual { value, .. } => SortKey::Num(value),
             Value::String(sid) => SortKey::Str(heap.get_string(sid).to_string()),
-            _ => SortKey::Other,
+            _ => match crate::value::as_num(&v) {
+                Some(n) => SortKey::Num(n),
+                None => SortKey::Other,
+            },
         }
     }
 
@@ -414,10 +419,10 @@ impl SortKey {
 
 impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
         match (self, other) {
-            // NaN is incomparable; treat it as equal so the sort stays total.
-            (SortKey::Num(a), SortKey::Num(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            // Must be a total order or `sort_by` panics. `num_total_cmp` is
+            // proven one (NaNs sort last); mapping NaN to `Equal` was not.
+            (SortKey::Num(a), SortKey::Num(b)) => crate::numeric::num_total_cmp(*a, *b),
             (SortKey::Str(a), SortKey::Str(b)) => a.cmp(b),
             _ => self.rank().cmp(&other.rank()),
         }
@@ -630,21 +635,13 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
     match list {
         Value::List(id) => {
             let items = state.heap().get_list(id);
-            let len = items.len() as i64;
-            let start_idx = if start < 0 {
-                (len + start).max(0) as usize
-            } else {
-                start.min(len) as usize
-            };
+            let len = items.len();
+            let start_idx = numeric::clamp_slice_bound(len, start);
             let end_idx = if state.arg_count() == 3 {
                 let end = state.get_int(3)?;
-                if end < 0 {
-                    (len + end).max(0) as usize
-                } else {
-                    end.min(len) as usize
-                }
+                numeric::clamp_slice_bound(len, end)
             } else {
-                len as usize
+                len
             };
             let sliced = if start_idx <= end_idx {
                 items[start_idx..end_idx].to_vec()
@@ -656,21 +653,13 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
         }
         Value::String(id) => {
             let s = state.heap().get_string(id);
-            let len = s.len() as i64;
-            let start_idx = if start < 0 {
-                (len + start).max(0) as usize
-            } else {
-                start.min(len) as usize
-            };
+            let len = s.len();
+            let start_idx = numeric::clamp_slice_bound(len, start);
             let end_idx = if state.arg_count() == 3 {
                 let end = state.get_int(3)?;
-                if end < 0 {
-                    (len + end).max(0) as usize
-                } else {
-                    end.min(len) as usize
-                }
+                numeric::clamp_slice_bound(len, end)
             } else {
-                len as usize
+                len
             };
             // Indices are byte offsets (matching byte-indexed len()). A byte
             // that lands inside a multi-byte char would panic String slicing,
@@ -728,11 +717,7 @@ fn char_byte_offset(s: &str, i: usize) -> usize {
 /// Resolve a possibly-negative char index against a string of `count` chars,
 /// clamping into `0..=count`. `-1` is the last character.
 fn resolve_char_index(i: i64, count: usize) -> usize {
-    if i < 0 {
-        (count as i64 + i).max(0) as usize
-    } else {
-        (i as usize).min(count)
-    }
+    numeric::clamp_slice_bound(count, i)
 }
 
 /// `chars(s)` — the string split into single-character strings.

@@ -139,20 +139,30 @@ pub(super) fn native_commas(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 /// Pad `s` to `width` characters (not bytes) with `fill`, on the given side.
-fn pad(s: &str, width: i64, fill: &str, at_start: bool) -> String {
+/// Errs, rather than aborting the process, when the result cannot be allocated.
+fn pad(s: &str, width: i64, fill: &str, at_start: bool) -> Result<String, String> {
     let fill_char = fill.chars().next().unwrap_or(' ');
     let len = s.chars().count() as i64;
     if len >= width {
-        return s.to_string();
+        return Ok(s.to_string());
     }
-    let padding: String = std::iter::repeat(fill_char)
-        .take((width - len) as usize)
-        .collect();
+    let count = (width - len) as u64;
+    let mut out = String::new();
+    usize::try_from(count)
+        .ok()
+        .and_then(|n| n.checked_mul(fill_char.len_utf8()))
+        .and_then(|n| n.checked_add(s.len()))
+        .filter(|&bytes| out.try_reserve_exact(bytes).is_ok())
+        .ok_or_else(|| format!("Padding width {width} is too large"))?;
+    let padding = std::iter::repeat_n(fill_char, count as usize);
     if at_start {
-        format!("{padding}{s}")
+        out.extend(padding);
+        out.push_str(s);
     } else {
-        format!("{s}{padding}")
+        out.push_str(s);
+        out.extend(padding);
     }
+    Ok(out)
 }
 
 /// The shared body of `pad_start`/`pad_end`: `(value, width, fill = " ")`.
@@ -173,7 +183,7 @@ fn native_pad(state: &mut PetalCxt, name: &str, at_start: bool) -> Result<u32, S
         " ".to_string()
     };
     let s = value::value_to_display_string(&v, state.heap());
-    let padded = pad(&s, width, &fill, at_start);
+    let padded = pad(&s, width, &fill, at_start)?;
     state.push_string(padded);
     Ok(1)
 }
@@ -318,7 +328,7 @@ pub(super) fn native_format(state: &mut PetalCxt) -> Result<u32, String> {
             rendered = group_thousands(&rendered);
         }
         if let Some(w) = spec.width {
-            rendered = pad(&rendered, w, " ", !spec.left_align);
+            rendered = pad(&rendered, w, " ", !spec.left_align)?;
         }
         out.push_str(&rendered);
     }
@@ -373,9 +383,9 @@ mod tests {
 
     #[test]
     fn pad_counts_characters_not_bytes() {
-        assert_eq!(pad("7", 3, "0", true), "007");
-        assert_eq!(pad("ok", 4, " ", false), "ok  ");
-        assert_eq!(pad("toolong", 3, " ", true), "toolong");
-        assert_eq!(pad("é", 3, ".", true), "..é");
+        assert_eq!(pad("7", 3, "0", true).unwrap(), "007");
+        assert_eq!(pad("ok", 4, " ", false).unwrap(), "ok  ");
+        assert_eq!(pad("toolong", 3, " ", true).unwrap(), "toolong");
+        assert_eq!(pad("é", 3, ".", true).unwrap(), "..é");
     }
 }

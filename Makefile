@@ -2,7 +2,7 @@
 # Run `make` or `make help` to see the available targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-examples test-c-bridge clean
+.PHONY: help build test test-examples test-c-bridge prove clean
 
 help: ## Show this help
 	@echo "Petal — make targets:"
@@ -22,6 +22,9 @@ test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and 
 	cmake -S integrations/petal-c-bridge -B integrations/petal-c-bridge/build -G Ninja
 	cmake --build integrations/petal-c-bridge/build
 	ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
+
+prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
+	cd rust && cargo kani --solver cadical
 
 clean: ## Remove Rust build artifacts
 	cd rust && cargo clean

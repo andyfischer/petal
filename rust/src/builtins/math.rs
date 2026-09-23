@@ -3,6 +3,7 @@
 //! pi.
 
 use crate::native_fn::PetalCxt;
+use crate::numeric::{self, IntArithError};
 use crate::value::{Value, compare_values};
 
 use super::require_args;
@@ -36,13 +37,15 @@ fn unary_float_dual(
 fn unary_num_preserving(
     state: &mut PetalCxt,
     name: &str,
-    int_fn: fn(i64) -> i64,
+    int_fn: fn(i64) -> Result<i64, IntArithError>,
     float_fn: fn(f64) -> f64,
     deriv: fn(f64) -> f64,
 ) -> Result<u32, String> {
     require_args(state, 1, name)?;
     match state.get_value(1)? {
-        Value::Int(n) => state.push_int(int_fn(n)),
+        Value::Int(n) => {
+            state.push_int(int_fn(n).map_err(|_| format!("Integer overflow in {}()", name))?)
+        }
         Value::Float(f) => state.push_float(float_fn(f)),
         Value::Dual { value, derivative } => state.push_value(Value::Dual {
             value: float_fn(value),
@@ -55,7 +58,7 @@ fn unary_num_preserving(
 
 pub(super) fn native_abs(state: &mut PetalCxt) -> Result<u32, String> {
     // d/dx |x| = sign(x), with the derivative pinned to 0 at exactly 0
-    unary_num_preserving(state, "abs", i64::abs, f64::abs, |x| {
+    unary_num_preserving(state, "abs", numeric::int_abs, f64::abs, |x| {
         if x > 0.0 {
             1.0
         } else if x < 0.0 {
@@ -76,11 +79,11 @@ pub(super) fn native_sqrt(state: &mut PetalCxt) -> Result<u32, String> {
 
 pub(super) fn native_floor(state: &mut PetalCxt) -> Result<u32, String> {
     // floor is a step function: derivative is 0 almost everywhere
-    unary_num_preserving(state, "floor", |n| n, f64::floor, |_| 0.0)
+    unary_num_preserving(state, "floor", Ok, f64::floor, |_| 0.0)
 }
 
 pub(super) fn native_ceil(state: &mut PetalCxt) -> Result<u32, String> {
-    unary_num_preserving(state, "ceil", |n| n, f64::ceil, |_| 0.0)
+    unary_num_preserving(state, "ceil", Ok, f64::ceil, |_| 0.0)
 }
 
 /// Parse `s` as a float the way `float`/`parse_float` accept it: surrounding
@@ -261,7 +264,7 @@ pub(super) fn native_round(state: &mut PetalCxt) -> Result<u32, String> {
             _ => Err("round() expects a number".to_string()),
         };
     }
-    unary_num_preserving(state, "round", |n| n, f64::round, |_| 0.0)
+    unary_num_preserving(state, "round", Ok, f64::round, |_| 0.0)
 }
 
 pub(super) fn native_sin(state: &mut PetalCxt) -> Result<u32, String> {

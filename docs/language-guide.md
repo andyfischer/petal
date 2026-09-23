@@ -225,6 +225,8 @@ Petal has the following value types:
 | `record` | `{name: "Alice", age: 30}` |
 | `color` | `#ff8800`, `#f80` (desugars to record) |
 | `enum` | `Some(42)`, `None` |
+| `vec2` | `vec2(3.0, 4.0)` (see [Vectors](#vectors)) |
+| `vec3` | `vec3(1.0, 2.0, 3.0)` (see [Vectors](#vectors)) |
 | a class | `Rect(0, 0, 8, 8)` (a record tagged with its [class](#classes--methods)) |
 
 Use `type(value)` to get the type name as a string at runtime. For a class
@@ -283,7 +285,7 @@ types every read *and* constrains every write, wherever the write is.
 
 The type names are the ones `type(value)` reports, written lowercase: `nil`,
 `bool`, `int`, `float`, `string` (alias `str`), `list`, `record`, `function`,
-`enum`, `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending` —
+`enum`, `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `dual`, `handle`, `pending` —
 plus two that no value ever reports: `any`, the dynamic escape hatch, and
 `num`, meaning **`int` or `float`**. They are recognized only in type position,
 so `int`, `float`, and `str` remain callable as the cast builtins everywhere
@@ -405,6 +407,30 @@ let f = -a        // -13
 ```
 
 Float arithmetic works the same way. Mixed int/float operations promote to float.
+
+### Vectors
+
+`vec2(x, y)` and `vec3(x, y, z)` are built-in vector values with float
+components. The arithmetic operators work on them directly: `+ - * /` between
+two vectors of the same kind is component-wise, a number on either side of
+`+ - *` (or on the right of `/`) applies to every component, and `-v` negates.
+Components read as fields.
+
+```petal
+let p = vec3(1.0, 2.0, 3.0)
+let v = vec3(0.5, 0.0, -1.0)
+print(p + v * 2)     // vec3(2.0, 2.0, 1.0)
+print(-p)            // vec3(-1.0, -2.0, -3.0)
+print(p.x + p.z)     // 4.0
+print(p == vec3(1.0, 2.0, 3.0))   // true
+```
+
+`mag`, `distance`, `normalize`, `dot`, `limit` and `lerp` take either kind;
+`cross` is 3D and `rotate` 2D. See [Builtins.md](Builtins.md#vectors-2d-and-3d).
+A `vec2` is stored inline, while a `vec3` is a small immutable heap object —
+three f64s do not fit in a value slot — so it costs an allocation to make but
+otherwise behaves as a plain value. The one visible difference: a zero `vec2`
+is falsy, whereas every `vec3` is truthy (like a record).
 
 ### Compound Assignment
 

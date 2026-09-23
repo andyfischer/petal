@@ -405,7 +405,7 @@ table is cleared on `transfer_state` and refreshed on the next `run`.
 ### Native Functions
 
 Built-ins live in `src/builtins/`, one module per topic (`io`, `math`,
-`collections`, `format`, `creative_coding`, `noise`, `color`, `vec2`,
+`collections`, `format`, `creative_coding`, `noise`, `color`, `vec2` (vec2 + vec3),
 `autodiff`, `classes`, `effects`, `handle`, `pending`, `output`). They are
 registered into the `NativeFnTable` at startup by `register_builtins`.
 

@@ -42,8 +42,8 @@ pub fn constant_to_value(program: &Program, heap: &mut Heap, cid: ConstantId) ->
 // Arithmetic
 // ---------------------------------------------------------------------------
 
-/// Arithmetic on Int/Float pairs, with dual-number (forward-mode AD) and vec2
-/// operands delegated to their own handlers. `op` must be one of
+/// Arithmetic on Int/Float pairs, with dual-number (forward-mode AD), vec2 and
+/// vec3 operands delegated to their own handlers. `op` must be one of
 /// `Add`/`Sub`/`Mul`/`Div`/`Mod`.
 pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
     // Pending is strict-absorbing: any Pending operand short-circuits the whole
@@ -68,6 +68,7 @@ pub fn arithmetic(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Va
     match (a, b) {
         (Value::Dual { .. }, _) | (_, Value::Dual { .. }) => dual_arith(op, a, b),
         (Value::Vec2(..), _) | (_, Value::Vec2(..)) => vec2_arith(op, a, b),
+        (Value::Vec3(..), _) | (_, Value::Vec3(..)) => vec3_arith(op, a, b, heap),
         (Value::List(..), _) | (_, Value::List(..)) => list_scalar_arith(op, a, b, heap),
         (Value::Int(x), Value::Int(y)) => int_arith(op, x, y).map(Value::Int),
         (Value::Float(x), Value::Float(y)) => Ok(Value::Float(float_arith(op, x, y))),
@@ -196,6 +197,69 @@ fn vec2_arith(op: &TermOp, a: Value, b: Value) -> Result<Value, String> {
         _ => return Err("Unsupported vec2 operation".into()),
     };
     Ok(val)
+}
+
+/// Vec3 arithmetic, with exactly vec2's rules: component-wise between two
+/// vectors, and a scalar broadcast to every component otherwise (`v op s` for
+/// `+ - * /`, `s op v` for `+ - *`). Each result is a fresh heap vec3.
+fn vec3_arith(op: &TermOp, a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
+    let scalar = |other: Value, vec_first: bool| {
+        other.as_f64().ok_or_else(|| {
+            if vec_first {
+                format!("Cannot perform arithmetic on vec3 and {}", other.type_name())
+            } else {
+                format!("Cannot perform arithmetic on {} and vec3", other.type_name())
+            }
+        })
+    };
+    let [x, y, z] = match (a, b) {
+        // vec3 op vec3
+        (Value::Vec3(a), Value::Vec3(b)) => {
+            let ([ax, ay, az], [bx, by, bz]) = (heap.get_vec3(a), heap.get_vec3(b));
+            match op {
+                TermOp::Add => [ax + bx, ay + by, az + bz],
+                TermOp::Sub => [ax - bx, ay - by, az - bz],
+                TermOp::Mul => [ax * bx, ay * by, az * bz],
+                TermOp::Div => {
+                    if bx == 0.0 || by == 0.0 || bz == 0.0 {
+                        return Err("Division by zero in vec3".into());
+                    }
+                    [ax / bx, ay / by, az / bz]
+                }
+                _ => return Err("Unsupported vec3 operation".into()),
+            }
+        }
+        // vec3 op scalar
+        (Value::Vec3(v), other) => {
+            let s = scalar(other, true)?;
+            let [x, y, z] = heap.get_vec3(v);
+            match op {
+                TermOp::Mul => [x * s, y * s, z * s],
+                TermOp::Div => {
+                    if s == 0.0 {
+                        return Err("Division by zero".into());
+                    }
+                    [x / s, y / s, z / s]
+                }
+                TermOp::Add => [x + s, y + s, z + s],
+                TermOp::Sub => [x - s, y - s, z - s],
+                _ => return Err("Unsupported vec3 operation".into()),
+            }
+        }
+        // scalar op vec3
+        (other, Value::Vec3(v)) => {
+            let s = scalar(other, false)?;
+            let [x, y, z] = heap.get_vec3(v);
+            match op {
+                TermOp::Mul => [s * x, s * y, s * z],
+                TermOp::Add => [s + x, s + y, s + z],
+                TermOp::Sub => [s - x, s - y, s - z],
+                _ => return Err("Unsupported vec3 operation".into()),
+            }
+        }
+        _ => return Err("Unsupported vec3 operation".into()),
+    };
+    Ok(heap.vec3_value(x, y, z))
 }
 
 /// Broadcast a numeric scalar across a list element-wise: `[a, b, c] op s` or
@@ -340,8 +404,9 @@ pub fn not(v: Value) -> Value {
     Value::Bool(!v.is_truthy())
 }
 
-/// Unary negation for numbers, dual numbers, and vec2.
-pub fn negate(v: Value) -> Result<Value, String> {
+/// Unary negation for numbers, dual numbers, vec2 and vec3 (which allocates
+/// its result, hence the heap).
+pub fn negate(v: Value, heap: &mut Heap) -> Result<Value, String> {
     match v {
         // Pending absorbs: negating an unresolved value stays that Pending.
         p @ Value::Pending(_) => Ok(p),
@@ -352,6 +417,10 @@ pub fn negate(v: Value) -> Result<Value, String> {
             derivative: -derivative,
         }),
         Value::Vec2(x, y) => Ok(Value::Vec2(-x, -y)),
+        Value::Vec3(id) => {
+            let [x, y, z] = heap.get_vec3(id);
+            Ok(heap.vec3_value(-x, -y, -z))
+        }
         other => Err(format!("Cannot negate {}", other.type_name())),
     }
 }
@@ -506,7 +575,7 @@ pub fn make_enum_variant(
 // Field / index access
 // ---------------------------------------------------------------------------
 
-/// Field access on records, elements, lists/strings (`.length`), and vec2.
+/// Field access on records, elements, lists/strings (`.length`), vec2 and vec3.
 ///
 /// `opt` is the absence-tolerant form (`TermOp::GetFieldOpt`, the left side of
 /// `??`): a record or class instance that does not carry the field, and a Nil
@@ -568,6 +637,20 @@ pub fn get_field(
                 ));
             }
         },
+        Value::Vec3(id) => {
+            let [x, y, z] = heap.get_vec3(id);
+            match field_name {
+                "x" => Value::Float(x),
+                "y" => Value::Float(y),
+                "z" => Value::Float(z),
+                _ => {
+                    return Err(format!(
+                        "No field '{}' on vec3 (available: x, y, z)",
+                        field_name
+                    ));
+                }
+            }
+        }
         _ => {
             return Err(format!(
                 "Cannot access field '{}' on {}",

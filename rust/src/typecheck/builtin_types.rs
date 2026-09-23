@@ -86,6 +86,24 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
                 _ => None,
             };
         }
+        // The vector natives take a vec2 or a vec3 and hand back the same
+        // kind (`rust/src/builtins/vec2.rs`).
+        "normalize" | "limit" => {
+            return match args.first() {
+                Some(Type::Vec2) => Some(Type::Vec2),
+                Some(Type::Vec3) => Some(Type::Vec3),
+                _ => None,
+            };
+        }
+        // `lerp` interpolates numbers, or two vectors of the same kind.
+        "lerp" => {
+            return match args {
+                [Type::Vec2, Type::Vec2, _] => Some(Type::Vec2),
+                [Type::Vec3, Type::Vec3, _] => Some(Type::Vec3),
+                [Type::Int | Type::Float, Type::Int | Type::Float, _] => Some(Type::Float),
+                _ => None,
+            };
+        }
         _ => {}
     }
 
@@ -97,7 +115,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         // sanctioned cast: `float(x)` is written precisely to leave the float
         // domain, and treating it as anything but `float` would defeat every
         // annotation that uses it.
-        "float" | "atan2" | "pi" | "random" | "lerp" | "map_range" | "distance" | "mag" | "pow"
+        "float" | "atan2" | "pi" | "random" | "map_range" | "distance" | "mag" | "pow"
         | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log" | "dot" => Type::Float,
         // ── core: string results ────────────────────────────────────────────
         // `format`/`fixed`/`commas`/`pad_*` render *into* a string, so unlike
@@ -112,9 +130,10 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         // ── core: list results ──────────────────────────────────────────────
         "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort"
         | "sort_by" | "prepend" | "chars" => Type::List,
-        // ── core: record / vec2 results ─────────────────────────────────────
+        // ── core: record / vector results ───────────────────────────────────
         "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
-        "vec2" | "normalize" | "limit" | "rotate" => Type::Vec2,
+        "vec2" | "rotate" => Type::Vec2,
+        "vec3" | "cross" => Type::Vec3,
         "f64_array" => Type::F64Array,
         "symbol" => Type::Symbol,
 
@@ -212,9 +231,11 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         ) => &[Num],
         ("round", 2) => &[Num, Num],
         ("atan2" | "pow" | "random" | "random_int", 2) => &[Num, Num],
-        ("lerp" | "smoothstep" | "clamp" | "hsv" | "hsl" | "hsv_deg" | "hsl_deg", 3) => {
+        ("smoothstep" | "clamp" | "hsv" | "hsl" | "hsv_deg" | "hsl_deg", 3) => {
             &[Num, Num, Num]
         }
+        // `lerp` also blends two vectors; only the fraction must be a number.
+        ("lerp", 3) => &[Any, Any, Num],
         ("map_range", 5) => &[Num, Num, Num, Num, Num],
         // ── core collections and strings ──────────────────────────────────────
         ("range", 1) => &[Num],
@@ -289,6 +310,30 @@ mod tests {
             builtin_return_type("rotate", &[Type::Vec2, Type::Float]),
             Some(Type::Vec2)
         );
+        assert_eq!(
+            builtin_return_type("vec3", &[Type::Float, Type::Float, Type::Float]),
+            Some(Type::Vec3)
+        );
+        assert_eq!(
+            builtin_return_type("cross", &[Type::Vec3, Type::Vec3]),
+            Some(Type::Vec3)
+        );
+    }
+
+    /// The vector natives answer in the kind they were given.
+    #[test]
+    fn vector_natives_follow_their_argument() {
+        for v in [Type::Vec2, Type::Vec3] {
+            assert_eq!(builtin_return_type("normalize", &[v]), Some(v));
+            assert_eq!(builtin_return_type("limit", &[v, Type::Float]), Some(v));
+            assert_eq!(builtin_return_type("lerp", &[v, v, Type::Float]), Some(v));
+        }
+        assert_eq!(builtin_return_type("normalize", &[Type::Any]), None);
+        assert_eq!(
+            builtin_return_type("lerp", &[Type::Float, Type::Int, Type::Float]),
+            Some(Type::Float)
+        );
+        assert_eq!(builtin_return_type("lerp", &[Type::Any, Type::Any, Type::Float]), None);
     }
 
     /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is

@@ -1,0 +1,44 @@
+// Vec3 Demo
+// Shows off the first-class vec3 type: operators, fields, and the vector
+// builtins (dot, cross, normalize, mag, distance, lerp, limit).
+// Simulates a ball thrown across a room, bouncing off the floor, then
+// builds a camera basis with cross products.
+
+let gravity = vec3(0.0, -9.8, 0.0)
+let dt = 0.1
+var pos = vec3(0.0, 1.0, 0.0)
+var vel = vec3(3.0, 6.0, 1.5)
+
+print("Throwing a ball from {get pos}")
+print("=====================================")
+
+for step in range(0, 16) do
+  set vel = limit(vel + gravity * dt, 12.0)
+  set pos = pos + vel * dt
+  // Bounce: reflect the vertical velocity, losing some energy.
+  if pos.y < 0.0 then
+    set pos = vec3(pos.x, -pos.y, pos.z)
+    set vel = vec3(vel.x, -vel.y * 0.6, vel.z)
+  end
+  if step % 3 == 0 then
+    let p = get pos
+    print("step {step}: pos=({fixed(p.x, 2)}, {fixed(p.y, 2)}, {fixed(p.z, 2)})  speed={fixed(mag(get vel), 2)}")
+  end
+end
+
+print("")
+print("Camera basis looking from eye to target")
+print("=====================================")
+let eye = vec3(0.0, 2.0, 5.0)
+let target = vec3(0.0, 0.0, 0.0)
+let world_up = vec3(0.0, 1.0, 0.0)
+let forward = normalize(target - eye)
+let right = normalize(cross(forward, world_up))
+let up = cross(right, forward)
+print("forward = {forward}")
+print("right   = {right}")
+print("up      = {up}")
+print("orthogonal: {fixed(dot(forward, right), 6)} {fixed(dot(forward, up), 6)} {fixed(dot(right, up), 6)}")
+print("eye distance = {distance(eye, target)}")
+print("halfway = {lerp(eye, target, 0.5)}")
+print("same point: {lerp(eye, target, 0.0) == eye}")

@@ -1,0 +1,6 @@
+{
+  "example": "vec3_demo.ptl",
+  "status": 0,
+  "stdout": "Throwing a ball from vec3(0.0, 1.0, 0.0)\n=====================================\nstep 0: pos=(0.30, 1.50, 0.15)  speed=6.04\nstep 3: pos=(1.20, 2.42, 0.60)  speed=3.95\nstep 6: pos=(2.10, 2.46, 1.05)  speed=3.46\nstep 9: pos=(3.00, 1.61, 1.50)  speed=5.07\nstep 12: pos=(3.90, 0.12, 1.95)  speed=5.25\nstep 15: pos=(4.80, 0.74, 2.40)  speed=3.53\n\nCamera basis looking from eye to target\n=====================================\nforward = vec3(0.0, -0.3713906763541037, -0.9284766908852594)\nright   = vec3(1.0, -0.0, 0.0)\nup      = vec3(0.0, 0.9284766908852594, -0.3713906763541037)\northogonal: 0.000000 0.000000 0.000000\neye distance = 5.385164807134504\nhalfway = vec3(0.0, 1.0, 2.5)\nsame point: true\n",
+  "stderr": ""
+}

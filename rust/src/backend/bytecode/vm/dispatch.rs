@@ -174,7 +174,7 @@ impl<'a> Vm<'a> {
             Inst::Div { dst, a, b } => self.binop(fi, TermOp::Div, *dst, *a, *b, origin)?,
             Inst::Mod { dst, a, b } => self.binop(fi, TermOp::Mod, *dst, *a, *b, origin)?,
             Inst::Neg { dst, a } => {
-                let v = ops::negate(self.reg(fi, *a))?;
+                let v = ops::negate(self.reg(fi, *a), self.heap)?;
                 self.note_absorption(v, origin);
                 self.set(fi, *dst, v);
             }

@@ -5,7 +5,7 @@
 use std::fmt;
 
 use crate::handle::HandleVal;
-use crate::heap::{CellId, ElementId, F64ArrayId, ListId, MapId, StringId};
+use crate::heap::{CellId, ElementId, F64ArrayId, ListId, MapId, StringId, Vec3Id};
 use crate::native_fn::NativeFnId;
 use crate::program::{ClosureId, OverloadSetId, Program, TermId};
 use crate::resource_table::{ResourceState, ResourceTable};
@@ -55,6 +55,10 @@ pub enum Value {
     },
     /// 2D vector for creative coding (positions, velocities, forces).
     Vec2(f64, f64),
+    /// 3D vector (positions, directions, colors in 3D code). Heap-allocated
+    /// because three `f64`s would widen every `Value`; the components are
+    /// immutable, so the id behaves like a value. See docs/dev/vec3.md.
+    Vec3(Vec3Id),
     /// An interned symbol — a binding key shared with the embedding host.
     /// See `crate::symbol`.
     Symbol(SymbolId),
@@ -68,7 +72,8 @@ pub enum Value {
 }
 
 // Heap ids are 8 bytes (index + generation); the widest payloads are
-// `Dual`/`Vec2` and `EnumVariant`'s two ids, all 16 bytes. Keep it that way.
+// `Dual`/`Vec2` and `EnumVariant`'s two ids, all 16 bytes. Keep it that way —
+// it is why `Vec3` is a heap id rather than three inline f64s.
 const _: () = assert!(std::mem::size_of::<Value>() == 24);
 
 impl Value {
@@ -80,6 +85,10 @@ impl Value {
             Value::Float(f) => *f != 0.0,
             Value::Dual { value, .. } => *value != 0.0,
             Value::Vec2(x, y) => *x != 0.0 || *y != 0.0,
+            // Always truthy, like a list or record: its components are on the
+            // heap, which this heap-free check cannot read. Test a zero vector
+            // explicitly (`v == vec3(0, 0, 0)`).
+            Value::Vec3(_) => true,
             _ => true,
         }
     }
@@ -109,6 +118,7 @@ impl Value {
             Value::Cell(_) => "cell",
             Value::Dual { .. } => "dual",
             Value::Vec2(_, _) => "vec2",
+            Value::Vec3(_) => "vec3",
             Value::Symbol(_) => "symbol",
             Value::Handle(_) => "handle",
             Value::Pending(_) => "pending",
@@ -172,6 +182,7 @@ impl fmt::Debug for Value {
             Value::Vec2(x, y) => {
                 write!(f, "Vec2({}, {})", format_float(*x), format_float(*y))
             }
+            Value::Vec3(id) => write!(f, "Vec3({:?})", id),
             Value::Symbol(id) => write!(f, "Symbol({})", id.0),
             Value::Handle(h) => write!(f, "{}", h),
             Value::Pending(id) => write!(f, "Pending({})", id.0),
@@ -242,6 +253,15 @@ pub fn value_to_display_string(val: &Value, heap: &Heap) -> String {
         }
         Value::Vec2(x, y) => {
             format!("vec2({}, {})", format_float(*x), format_float(*y))
+        }
+        Value::Vec3(id) => {
+            let [x, y, z] = heap.get_vec3(*id);
+            format!(
+                "vec3({}, {}, {})",
+                format_float(x),
+                format_float(y),
+                format_float(z)
+            )
         }
         Value::Symbol(id) => format!("symbol#{}", id.0),
         Value::Handle(h) => h.to_string(),
@@ -498,6 +518,10 @@ pub fn value_to_json_ctx(
         Value::Vec2(x, y) => {
             serde_json::json!({ "type": "vec2", "x": *x, "y": *y })
         }
+        Value::Vec3(id) => {
+            let [x, y, z] = heap.get_vec3(*id);
+            serde_json::json!({ "type": "vec3", "x": x, "y": y, "z": z })
+        }
         Value::EnumVariant { tag, data } => {
             let name = heap.get_string(*tag).to_string();
             let fields = heap.get_list(*data);
@@ -525,8 +549,15 @@ pub fn value_to_json_ctx(
 }
 
 /// Convert a JSON value to a Petal Value.
-/// Supports null, bool, number (int/float), and string.
+/// Supports null, bool, number (int/float), string, array and object — plus
+/// the tagged vector objects [`value_to_json`] writes (`{"type": "vec2", "x",
+/// "y"}` and `{"type": "vec3", "x", "y", "z"}`), which come back as vectors so
+/// a vector survives a JSON round trip (`json_parse(json_stringify(v))`, a
+/// state dump and restore).
 pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value, String> {
+    if let Some(v) = json_to_vector(json, heap) {
+        return Ok(v);
+    }
     match json {
         serde_json::Value::Null => Ok(Value::Nil),
         serde_json::Value::Bool(b) => Ok(Value::Bool(*b)),
@@ -559,6 +590,24 @@ pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value,
             let id = heap.alloc_map(entries);
             Ok(Value::Map(id))
         }
+    }
+}
+
+/// The vector a tagged JSON object denotes, if it is exactly one of the shapes
+/// [`value_to_json`] writes for `vec2` / `vec3`: a `"type"` tag plus one
+/// numeric field per component and nothing else. Anything looser stays a
+/// record, so an ordinary `{type: "vec3", ...}` record with extra fields is
+/// never reinterpreted.
+fn json_to_vector(json: &serde_json::Value, heap: &mut Heap) -> Option<Value> {
+    let obj = json.as_object()?;
+    let num = |k: &str| obj.get(k).and_then(serde_json::Value::as_f64);
+    match obj.get("type")?.as_str()? {
+        "vec2" if obj.len() == 3 => Some(Value::Vec2(num("x")?, num("y")?)),
+        "vec3" if obj.len() == 4 => {
+            let (x, y, z) = (num("x")?, num("y")?, num("z")?);
+            Some(heap.vec3_value(x, y, z))
+        }
+        _ => None,
     }
 }
 
@@ -596,6 +645,12 @@ pub fn hash_value(val: &Value, heap: &Heap) -> u64 {
             7u8.hash(&mut hasher);
             x.to_bits().hash(&mut hasher);
             y.to_bits().hash(&mut hasher);
+        }
+        Value::Vec3(id) => {
+            10u8.hash(&mut hasher);
+            for f in heap.get_vec3(*id) {
+                f.to_bits().hash(&mut hasher);
+            }
         }
         Value::F64Array(id) => {
             8u8.hash(&mut hasher);
@@ -675,6 +730,7 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
             *value == *n as f64
         }
         (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => ax == bx && ay == by,
+        (Value::Vec3(a), Value::Vec3(b)) => a == b || heap.get_vec3(*a) == heap.get_vec3(*b),
         (Value::Handle(a), Value::Handle(b)) => a == b,
         // Two Pendings are equal iff they reference the same resource entry.
         // (Ordinary `==` on Pending is strict — absorbs — in later chunks; this

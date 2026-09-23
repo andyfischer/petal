@@ -71,6 +71,7 @@ example and asserts it exits cleanly.
 | `string_interp.ptl` | String interpolation | `"text {expr}"` syntax |
 | `noise_field.ptl` | 2D Perlin noise | `noise`, `map_range` |
 | `vec2_demo.ptl` | 2D vectors and physics | `vec2`, `normalize`, `limit`, operator overloads |
+| `vec3_demo.ptl` | 3D vectors: a bouncing ball and a camera basis | `vec3`, `cross`, `dot`, `normalize`, `lerp`, `limit`, operator overloads |
 | `color_gradient.ptl` | HSV + color interpolation | `hsv`, `color_lerp`, `lerp` |
 | `map_range_demo.ptl` | Remapping values | `map_range`, `clamp` |
 | `differentiation.ptl` | Gradient descent with dual numbers | `dual`, `value_of`, `deriv_of` |

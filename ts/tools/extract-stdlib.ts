@@ -119,7 +119,7 @@ const CATEGORY_TITLES: Record<string, string> = {
   creative_coding: "Creative-Coding Math",
   noise: "Noise",
   color: "Color",
-  vec2: "Vectors (2D)",
+  vec2: "Vectors (2D & 3D)",
   collections: "Collections",
   json: "JSON",
   classes: "Built-in Classes",

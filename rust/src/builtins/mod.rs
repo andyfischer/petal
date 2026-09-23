@@ -419,6 +419,11 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // clockwise on a y-down screen) by `angle` radians. Append-only, like the
     // rest of this block.
     table.register("rotate", vec2::native_rotate, NativeEffects::PURE);
+    // `vec3(x, y, z)` and `cross(a, b)` — the 3D vector (a heap value; see
+    // docs/dev/vec3.md). The shared vector natives above take vec3s too.
+    // Append-only, like the rest of this block.
+    table.register("vec3", vec2::native_vec3, NativeEffects::PURE);
+    table.register("cross", vec2::native_cross, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

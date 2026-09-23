@@ -136,6 +136,17 @@ generational_id! {
 }
 
 generational_id! {
+    /// Opaque handle to a heap-allocated 3D vector: three `f64` components.
+    ///
+    /// A `vec3` lives on the heap only because three `f64`s do not fit in
+    /// [`Value`]'s 16-byte payload (`vec2`'s two do, so it stays inline). The
+    /// payload is a fixed `[f64; 3]` stored directly in the slab slot, so an
+    /// allocation is a free-list pop with no `malloc`, and a vec3 is immutable
+    /// like every other heap object. See docs/dev/vec3.md.
+    pub struct Vec3Id;
+}
+
+generational_id! {
     /// Opaque handle to a heap-allocated element.
     pub struct ElementId;
 }
@@ -429,6 +440,8 @@ pub struct Heap {
     strings: Slab<String>,
     lists: Slab<Vec<Value>>,
     f64_arrays: Slab<Vec<f64>>,
+    /// `vec3` components, inline in the slot. See [`Vec3Id`].
+    vec3s: Slab<[f64; 3]>,
     maps: Slab<MapObj>,
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
@@ -480,6 +493,9 @@ pub struct Heap {
 /// bytes".
 const SLOT_TRACE_COST: u64 = 64;
 
+/// Payload bytes of one `vec3` slot (three `f64`s).
+const VEC3_BYTES: usize = 3 * std::mem::size_of::<f64>();
+
 /// Floor on the work budget between collections. Below this the heap is small
 /// enough that collecting is pointless: a megabyte of floating garbage is
 /// cheaper to tolerate than the collections that would reclaim it. (The previous
@@ -502,6 +518,7 @@ impl Heap {
             strings: Slab::new(),
             lists: Slab::new(),
             f64_arrays: Slab::new(),
+            vec3s: Slab::new(),
             maps: Slab::new(),
             elements: Slab::new(),
             cells: Slab::new(),
@@ -583,7 +600,8 @@ impl Heap {
             .iter()
             .map(|m| value_slice_bytes(m.data.entries.capacity()))
             .sum();
-        strings + lists + f64s + maps
+        let vec3s = (self.vec3s.slots.len() * VEC3_BYTES) as u64;
+        strings + lists + f64s + maps + vec3s
     }
 
     /// Total bytes of live payload this heap holds — the rough cost of cloning
@@ -619,7 +637,8 @@ impl Heap {
             .filter(|m| m.alive)
             .map(|m| map_entries_bytes(&m.data.entries))
             .sum();
-        strings + lists + f64s + maps
+        let vec3s = (self.vec3s.slots.iter().filter(|v| v.alive).count() * VEC3_BYTES) as u64;
+        strings + lists + f64s + maps + vec3s
     }
 
     /// Estimated cost of running one collection right now: the live payload
@@ -630,6 +649,7 @@ impl Heap {
         let slots = (self.strings.slots.len()
             + self.lists.slots.len()
             + self.f64_arrays.slots.len()
+            + self.vec3s.slots.len()
             + self.maps.slots.len()
             + self.elements.slots.len()
             + self.cells.slots.len()) as u64;
@@ -731,6 +751,8 @@ impl Heap {
         self.lists.inherit_generations(&previous.lists, Vec::new);
         self.f64_arrays
             .inherit_generations(&previous.f64_arrays, Vec::new);
+        self.vec3s
+            .inherit_generations(&previous.vec3s, || [0.0; 3]);
         self.maps.inherit_generations(&previous.maps, || MapObj {
             entries: IndexMap::new(),
             class: None,
@@ -762,6 +784,7 @@ impl Heap {
             Value::String(id) => self.strings.is_live(id.raw()),
             Value::List(id) => self.lists.is_live(id.raw()),
             Value::F64Array(id) => self.f64_arrays.is_live(id.raw()),
+            Value::Vec3(id) => self.vec3s.is_live(id.raw()),
             Value::Map(id) => self.maps.is_live(id.raw()),
             Value::Element(id) => self.elements.is_live(id.raw()),
             Value::Cell(id) => self.cells.is_live(id.raw()),
@@ -979,6 +1002,26 @@ impl Heap {
             (data.len() * std::mem::size_of::<f64>()) as u64,
         );
         F64ArrayId::from_raw(self.f64_arrays.alloc(data))
+    }
+
+    // --- Vec3 allocation ---
+
+    /// Allocate a `vec3`. Cheap: the three components live in the slot itself,
+    /// so this is a free-list pop (no `malloc` once the slab has warmed up).
+    pub fn alloc_vec3(&mut self, v: [f64; 3]) -> Vec3Id {
+        self.tick_alloc(AllocKind::Vec3, VEC3_BYTES as u64);
+        Vec3Id::from_raw(self.vec3s.alloc(v))
+    }
+
+    /// Allocate a `vec3` and wrap it as a [`Value`] — the usual way a native
+    /// or a host hands one to a script.
+    pub fn vec3_value(&mut self, x: f64, y: f64, z: f64) -> Value {
+        Value::Vec3(self.alloc_vec3([x, y, z]))
+    }
+
+    /// A `vec3`'s components, copied out (`[f64; 3]` is `Copy`).
+    pub fn get_vec3(&self, id: Vec3Id) -> [f64; 3] {
+        *self.vec3s.get(id.raw())
     }
 
     pub fn get_f64_array(&self, id: F64ArrayId) -> &[f64] {
@@ -1203,6 +1246,10 @@ impl Heap {
             Value::String(id) => self.mark_string(id),
             Value::List(id) => self.mark_list(id),
             Value::F64Array(id) => self.mark_f64_array(id),
+            // Leaf: three f64s, nothing to recurse into.
+            Value::Vec3(id) => {
+                self.vec3s.mark(id.raw());
+            }
             Value::Map(id) => self.mark_map(id),
             Value::Element(id) => self.mark_element(id),
             Value::Cell(id) => self.mark_cell(id),
@@ -1318,6 +1365,7 @@ impl Heap {
 
         self.lists.sweep_with(|_, v| *v = Vec::new());
         self.f64_arrays.sweep_with(|_, v| *v = Vec::new());
+        self.vec3s.sweep_with(|_, _| {});
         self.maps.sweep_with(|_, v| {
             v.entries = IndexMap::new();
             v.class = None;

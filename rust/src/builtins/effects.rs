@@ -164,10 +164,12 @@ builtin_effects![
     ("color_lerp", PURE),
     ("hsv_deg", PURE),
     ("hsl_deg", PURE),
-    // vec2
+    // vectors
     ("vec2", PURE),
+    ("vec3", PURE),
     ("normalize", PURE),
     ("dot", PURE),
+    ("cross", PURE),
     ("limit", PURE),
     ("rotate", PURE),
     // autodiff (pure readers)
@@ -380,6 +382,7 @@ mod tests {
                 "concat",
                 "contains",
                 "cos",
+                "cross",
                 "degrees",
                 "deriv_of",
                 "distance",
@@ -455,6 +458,7 @@ mod tests {
                 "value_of",
                 "values",
                 "vec2",
+                "vec3",
                 "zip"
             ]
         );

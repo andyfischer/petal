@@ -42,7 +42,7 @@ syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0
 " still light up its value if that value happens to be a type name — the same
 " harmless overlap a record key has, and not separable with a `syn match`.
 " `nil` and `enum` stay Constant/Keyword — syn keyword outranks syn match.
-syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|function\|enum\|vec2\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
+syn match petalType "\%(:\|->\)\s*\zs\%(any\|nil\|bool\|int\|float\|num\|string\|str\|list\|record\|function\|enum\|vec2\|vec3\|f64_array\|element\|symbol\|dual\|handle\|pending\)\>\ze\s*(\@!"
 
 " ---- Numbers ----
 syn match petalFloat  "\<\d\+\.\d\+\>"

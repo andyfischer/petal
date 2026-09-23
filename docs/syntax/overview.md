@@ -466,7 +466,7 @@ annotations only.
 
 Recognised type names: `int`, `float`, `num` (either of the two), `bool`,
 `string` (alias `str`), `list`, `record`, `function`, `enum`, `nil`, `any`,
-host types such as `vec2`, `f64_array`, `element`, `symbol`, `dual`, `handle`,
+host types such as `vec2`, `vec3`, `f64_array`, `element`, `symbol`, `dual`, `handle`,
 `pending`, and the name of any [class](#class-declaration) in scope. A type is
 a single bare name; there are no parameterized (`list<int>`), arrow, or
 structural forms. An unknown name gives an `unknown type name` warning. Type

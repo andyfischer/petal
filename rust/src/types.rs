@@ -43,6 +43,7 @@ pub enum Type {
     Function,
     Enum,
     Vec2,
+    Vec3,
     F64Array,
     Element,
     Symbol,
@@ -83,6 +84,7 @@ impl Type {
             "function" => Type::Function,
             "enum" => Type::Enum,
             "vec2" => Type::Vec2,
+            "vec3" => Type::Vec3,
             "f64_array" => Type::F64Array,
             "element" => Type::Element,
             "symbol" => Type::Symbol,
@@ -134,6 +136,7 @@ impl Type {
             Type::Function => "function",
             Type::Enum => "enum",
             Type::Vec2 => "vec2",
+            Type::Vec3 => "vec3",
             Type::F64Array => "f64_array",
             Type::Element => "element",
             Type::Symbol => "symbol",
@@ -228,6 +231,7 @@ mod tests {
             Type::Function,
             Type::Enum,
             Type::Vec2,
+            Type::Vec3,
             Type::F64Array,
             Type::Element,
             Type::Symbol,
@@ -286,6 +290,8 @@ mod tests {
         assert_eq!(Type::Function.name(), "function"); // callables collapse
         assert_eq!(Type::Enum.name(), "enum");
         assert_eq!(Type::F64Array.name(), "f64_array");
+        let mut heap = crate::heap::Heap::new();
+        assert_eq!(Type::Vec3.name(), heap.vec3_value(0.0, 0.0, 0.0).type_name());
         assert_eq!(Type::Element.name(), "element");
         assert_eq!(Type::Symbol.name(), "symbol");
         assert_eq!(Type::Handle.name(), "handle");

@@ -658,7 +658,7 @@ takes an int or a float — that is most arithmetic.
 
 The vocabulary is closed, and every name is a **single bare word**: `int`,
 `float`, `num` (int *or* float), `bool`, `string` (alias `str`), `list`,
-`record`, `function`, `nil`, `enum`, `vec2`, `element`, `any` — plus the name of
+`record`, `function`, `nil`, `enum`, `vec2`, `vec3`, `element`, `any` — plus the name of
 any class. There are no parameterized types: `list<int>` and record shapes are
 not expressible, so `list` and `record` are opaque and their elements are never
 checked. An unknown name warns (`unknown type name \`banana\``) rather than

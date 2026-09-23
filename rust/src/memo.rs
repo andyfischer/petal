@@ -621,6 +621,12 @@ impl<'a> ValueEq<'a> {
             (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
                 ax.to_bits() == bx.to_bits() && ay.to_bits() == by.to_bits()
             }
+            (Value::Vec3(a), Value::Vec3(b)) => {
+                a == b || {
+                    let (xs, ys) = (heap.get_vec3(*a), heap.get_vec3(*b));
+                    xs.iter().zip(ys).all(|(x, y)| x.to_bits() == y.to_bits())
+                }
+            }
             (
                 Value::Dual {
                     value: av,

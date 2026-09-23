@@ -227,11 +227,13 @@ xs[clamp(i, 0, len(xs) - 1)]   // a clamped index is still an index
 
 ### `lerp(a, b, t)`
 
-Linear interpolation. `t=0` returns `a`, `t=1` returns `b`.
+Linear interpolation. `t=0` returns `a`, `t=1` returns `b`. `a` and `b` may
+also be two `vec2`s or two `vec3`s, interpolated component-wise.
 
 ```petal
 lerp(0.0, 100.0, 0.3)   // 30.0
 lerp(10.0, 20.0, 0.5)   // 15.0
+lerp(vec3(0.0, 0.0, 0.0), vec3(10.0, 20.0, 30.0), 0.5)   // vec3(5.0, 10.0, 15.0)
 ```
 
 ### `map_range(value, in_lo, in_hi, out_lo, out_hi)`
@@ -246,20 +248,24 @@ map_range(0.5, 0.0, 1.0, -1.0, 1.0)       //   0.0
 
 ### `distance(x1, y1, x2, y2)` / `distance(v1, v2)`
 
-Euclidean distance. Accepts either four scalars or two `vec2` values.
+Euclidean distance. Accepts either four scalars, two `vec2` values, or two
+`vec3` values.
 
 ```petal
 distance(0.0, 0.0, 3.0, 4.0)                // 5.0
 distance(vec2(0.0, 0.0), vec2(3.0, 4.0))    // 5.0
+distance(vec3(1.0, 1.0, 1.0), vec3(3.0, 4.0, 7.0))    // 7.0
 ```
 
 ### `mag(x, y)` / `mag(x, y, z)` / `mag(v)`
 
-Vector magnitude. Accepts 2D or 3D scalars, or a single `vec2`.
+Vector magnitude (length). Accepts 2D or 3D scalars, or a single `vec2` or
+`vec3`.
 
 ```petal
 mag(3.0, 4.0)          // 5.0
 mag(vec2(3.0, 4.0))    // 5.0
+mag(vec3(2.0, 3.0, 6.0))    // 7.0
 ```
 
 ### `smoothstep(edge0, edge1, x)`
@@ -356,10 +362,30 @@ let blue = hsv_deg(240.0, 1.0, 1.0)
 color_lerp(red, blue, 0.5)   // { r: 128, g: 0, b: 128 }
 ```
 
-## Vectors (2D)
+## Vectors (2D and 3D)
 
-Petal has a built-in `vec2` type backed by two f64s. It works with the usual
-arithmetic operators (`+`, `-`, `*`, `/`) as well as the helpers below.
+Petal has built-in `vec2` and `vec3` types, backed by two and three f64s. Both
+work with the usual arithmetic operators and share the helpers below
+(`normalize`, `dot`, `limit`, plus `mag`, `distance` and `lerp` above), which
+answer in the kind of vector they were given. `rotate` is 2D-only and `cross`
+3D-only.
+
+Operators, for either kind:
+
+- `a + b`, `a - b`, `a * b`, `a / b` between two vectors of the same kind work
+  component-wise. Mixing a `vec2` with a `vec3` is an error.
+- `v + s`, `v - s`, `v * s`, `v / s` with a number `s` apply `s` to every
+  component; `s + v`, `s - v`, `s * v` work too.
+- `-v` negates every component.
+- `==` / `!=` compare components.
+- `.x`, `.y` (and `.z` on a `vec3`) read a component as a float.
+
+A `vec2` is stored inline in a value; a `vec3` is a small immutable heap object
+(three f64s would not fit), which makes it slightly costlier to create but
+otherwise indistinguishable. One visible difference: a zero `vec2` is falsy in
+an `if`, while every `vec3` is truthy, like a record — compare against
+`vec3(0, 0, 0)` explicitly. Both survive `json_stringify` / `json_parse` (as
+`{"type": "vec3", "x": ..., "y": ..., "z": ...}`) and a state save/restore.
 
 ### `vec2(x, y)`
 
@@ -370,22 +396,44 @@ let v = vec2(3.0, 4.0)
 print(mag(v))    // 5.0
 ```
 
+### `vec3(x, y, z)`
+
+Construct a 3D vector.
+
+```petal
+let p = vec3(1.0, 2.0, 2.0)
+print(mag(p))    // 3.0
+print(p * 2)     // vec3(2.0, 4.0, 4.0)
+print(p.z)       // 2.0
+```
+
 ### `normalize(v)`
 
 Return a vector pointing in the same direction as `v` with magnitude 1. The
-zero vector normalizes to `vec2(0, 0)`.
+zero vector normalizes to the zero vector (`vec2(0, 0)` / `vec3(0, 0, 0)`).
 
 ```petal
 normalize(vec2(3.0, 4.0))    // vec2(0.6, 0.8)
+normalize(vec3(0.0, 0.0, 5.0))    // vec3(0.0, 0.0, 1.0)
 ```
 
 ### `dot(a, b)`
 
-Dot product of two `vec2` values.
+Dot product of two `vec2` or two `vec3` values.
 
 ```petal
 dot(vec2(1.0, 0.0), vec2(0.0, 1.0))   // 0.0
 dot(vec2(2.0, 3.0), vec2(4.0, 5.0))   // 23.0
+dot(vec3(1.0, 2.0, 3.0), vec3(4.0, 5.0, 6.0))   // 32.0
+```
+
+### `cross(a, b)`
+
+Cross product of two `vec3` values: a vector perpendicular to both, following
+the right-hand rule.
+
+```petal
+cross(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0))   // vec3(0.0, 0.0, 1.0)
 ```
 
 ### `limit(v, max_mag)`
@@ -396,6 +444,7 @@ direction scaled to that magnitude. Useful for capping velocities.
 ```petal
 limit(vec2(6.0, 8.0), 5.0)    // vec2(3.0, 4.0)
 limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
+limit(vec3(0.0, 0.0, 10.0), 2.0)    // vec3(0.0, 0.0, 2.0)
 ```
 
 ### `rotate(v, angle)`

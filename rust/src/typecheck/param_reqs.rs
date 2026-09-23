@@ -626,6 +626,7 @@ mod tests {
             Type::Record,
             Type::Any,
             Type::Vec2,
+            Type::Vec3,
             Type::Pending,
             Type::Handle,
         ] {

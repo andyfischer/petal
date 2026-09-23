@@ -6,6 +6,7 @@ use crate::native_fn::PetalCxt;
 use crate::value::Value;
 
 use super::require_args;
+use super::vec2::{push_vec3, vec3_parts};
 
 pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "clamp")?;
@@ -29,8 +30,34 @@ pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
     Ok(1)
 }
 
+/// `lerp(a, b, t)`: `a + (b - a) * t` — for two numbers, or component-wise
+/// for two vec2s or two vec3s.
 pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "lerp")?;
+    match (state.get_value(1)?, state.get_value(2)?) {
+        (Value::Vec2(ax, ay), Value::Vec2(bx, by)) => {
+            let t = state.get_float(3)?;
+            state.push_value(Value::Vec2(ax + (bx - ax) * t, ay + (by - ay) * t));
+            return Ok(1);
+        }
+        (a @ Value::Vec3(_), b @ Value::Vec3(_)) => {
+            let t = state.get_float(3)?;
+            let (a, b) = (vec3_parts(state, a).unwrap(), vec3_parts(state, b).unwrap());
+            push_vec3(
+                state,
+                [
+                    a[0] + (b[0] - a[0]) * t,
+                    a[1] + (b[1] - a[1]) * t,
+                    a[2] + (b[2] - a[2]) * t,
+                ],
+            );
+            return Ok(1);
+        }
+        (Value::Vec2(..) | Value::Vec3(_), _) | (_, Value::Vec2(..) | Value::Vec3(_)) => {
+            return Err("lerp(a, b, t) expects two numbers or two vectors of the same kind".into());
+        }
+        _ => {}
+    }
     let a = state.get_float(1)?;
     let b = state.get_float(2)?;
     let t = state.get_float(3)?;
@@ -58,7 +85,7 @@ pub(super) fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
     let argc = state.arg_count();
     match argc {
         2 => {
-            // distance(vec2, vec2)
+            // distance(vec2, vec2) / distance(vec3, vec3)
             let a = state.get_value(1)?;
             let b = state.get_value(2)?;
             match (a, b) {
@@ -68,7 +95,13 @@ pub(super) fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
                     state.push_float((dx * dx + dy * dy).sqrt());
                     Ok(1)
                 }
-                _ => Err("distance(a, b) expects two vec2 values".into()),
+                (Value::Vec3(_), Value::Vec3(_)) => {
+                    let (a, b) = (vec3_parts(state, a).unwrap(), vec3_parts(state, b).unwrap());
+                    let (dx, dy, dz) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+                    state.push_float((dx * dx + dy * dy + dz * dz).sqrt());
+                    Ok(1)
+                }
+                _ => Err("distance(a, b) expects two vec2 or two vec3 values".into()),
             }
         }
         4 => {
@@ -81,7 +114,9 @@ pub(super) fn native_distance(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_float((dx * dx + dy * dy).sqrt());
             Ok(1)
         }
-        _ => Err("distance() expects 2 (vec2, vec2) or 4 (x1, y1, x2, y2) arguments".into()),
+        _ => Err(
+            "distance() expects 2 (two vec2s or two vec3s) or 4 (x1, y1, x2, y2) arguments".into(),
+        ),
     }
 }
 
@@ -89,10 +124,15 @@ pub(super) fn native_mag(state: &mut PetalCxt) -> Result<u32, String> {
     let argc = state.arg_count();
     match argc {
         1 => {
-            // mag(vec2)
+            // mag(vec2) / mag(vec3)
             match state.get_value(1)? {
                 Value::Vec2(x, y) => {
                     state.push_float((x * x + y * y).sqrt());
+                    Ok(1)
+                }
+                v @ Value::Vec3(_) => {
+                    let [x, y, z] = vec3_parts(state, v).unwrap();
+                    state.push_float((x * x + y * y + z * z).sqrt());
                     Ok(1)
                 }
                 _ => {

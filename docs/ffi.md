@@ -179,7 +179,7 @@ word lives in the `Heap` behind a typed u32 id:
 
 ```
 Nil, Bool, Int(i64), Float(f64), Vec2(f64, f64), Dual { value, derivative },
-String(StringId), List(ListId), F64Array(F64ArrayId), Map(MapId),
+String(StringId), List(ListId), F64Array(F64ArrayId), Vec3(Vec3Id), Map(MapId),
 Closure(ClosureId), OverloadSet(..), NativeFunction(NativeFnId),
 EnumVariant { tag: StringId, data: ListId }, Element(ElementId),
 Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
@@ -187,6 +187,10 @@ Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 
 Notes for embedders:
 
+- `Vec3` is heap-allocated (three f64s would widen every `Value`): build one
+  with `heap.vec3_value(x, y, z)` and read it with `heap.get_vec3(id)` →
+  `[f64; 3]`. It is immutable, so the id behaves as a value. See
+  [dev/vec3.md](dev/vec3.md).
 - `Cell` is the box behind a `var`; it never reaches host code, because every
   read dereferences it (see [var.md](var.md#containment)).
 - `Pending` is an unresolved resource (loading or errored). Ordinary operations

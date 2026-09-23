@@ -437,6 +437,12 @@ fn hash_content(
             h.write_u64(x.to_bits());
             h.write_u64(y.to_bits());
         }
+        Value::Vec3(id) => {
+            h.write_u8(16);
+            for f in heap.get_vec3(*id) {
+                h.write_u64(f.to_bits());
+            }
+        }
         Value::Dual { value, derivative } => {
             h.write_u8(10);
             h.write_u64(value.to_bits());

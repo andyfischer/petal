@@ -1,0 +1,3 @@
+# CMake build dir (standalone: cmake -B build) and cargo's target dir.
+/build/
+/target/

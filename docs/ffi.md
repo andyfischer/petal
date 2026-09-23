@@ -3,7 +3,8 @@
 How a host application talks to the Petal runtime: the API on `Env`, native
 functions, the value model, the host channels, and retained state. For
 task-oriented patterns built on these primitives, see
-[embedding-guide.md](embedding-guide.md).
+[embedding-guide.md](embedding-guide.md); to embed from C or C++ rather than
+Rust, see [embedding-c.md](embedding-c.md).
 
 The design is Lua-inspired. Native functions are registered by name against a
 stack-style calling convention (`rust/src/native_fn.rs`). Everything crosses
@@ -505,6 +506,12 @@ check the host saw every call" catches the next one.
   place in the command stream), the Petal-source `ui` prelude registered as an
   implicit import, and a `Headless` harness that mirrors the frame contract
   for tests.
+- **petal-c-bridge** (`integrations/petal-c-bridge/`) — the C ABI and C++
+  wrapper ([embedding-c.md](embedding-c.md)). One `Env` + program + stack per
+  `pb_vm`; every C callback and emitter is a `register_native_boxed` closure
+  owning its userdata; hot reload via `compile_program_diag` +
+  `transfer_state` + `watch_program_sources`; values cross as decoded
+  `pb_value` trees rather than JSON.
 - **petal-web-html** (`integrations/petal-web-html/`) and **diagram-canvas**
   (`examples/custom-integrations/diagram-canvas/`) — wasm-bindgen
   `PetalRuntime` structs owning an `Env`, with the same channels marshalled as
@@ -514,9 +521,10 @@ check the host saw every call" catches the next one.
 
 ## Current limitations
 
-1. **Natives are bare `fn` pointers.** No captured per-function context, so a
-   binding generator cannot close over a descriptor; each native reaches host
-   state through the channels or a handle class's boxed callbacks.
+1. **Captured native state is invisible to the runtime.** A native can be a
+   closure (`register_native_boxed`), but the effect audit and the memo see
+   only what it does through `PetalCxt`; its row has to declare what the
+   captures read and whether it mutates them.
 2. **Natives must be registered before `load_program`**, so the native set
    cannot grow while a program is loaded. Handle classes can.
 3. **Natives cannot call Petal closures.** Host-driven callbacks must be

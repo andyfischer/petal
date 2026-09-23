@@ -1,0 +1,47 @@
+[package]
+name = "petal-c-bridge"
+version = "0.2.0"
+edition = "2024"
+description = "C ABI (and header-only C++ wrapper) over the Petal VM + petal-ui, for embedding Petal in C and C++ hosts"
+license = "MIT"
+repository = "https://github.com/andyfischer/petal"
+publish = false
+# The C/C++ side (include/, tests/, examples/) is built by CMakeLists.txt;
+# cargo only builds the library below.
+autoexamples = false
+autotests = false
+
+[lib]
+# The library keeps the name `petal_bridge` (libpetal_bridge.a), which is what
+# C/C++ hosts link. `staticlib` is that archive; `rlib` lets a Rust crate that
+# exposes its own C ABI (e.g. an engine's UI FFI crate) reuse the bridge's
+# value decoding, draw-command flattening and VM wrapper as a library.
+name = "petal_bridge"
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = ["query"]
+# Link petal-query and report its protocol version in pb_version(). Its
+# provider/cache layer is not exposed through the C ABI yet.
+query = ["dep:petal-query"]
+
+[dependencies]
+petal = { path = "../../rust" }
+petal-ui = { path = "../../petal-ui" }
+petal-query = { path = "../../petal-query", optional = true }
+indexmap = "2"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+# Unwinding must stay on: every FFI entry point catches panics with
+# `catch_unwind` and turns them into PB_ERR_PANIC instead of aborting the host.
+panic = "unwind"
+debug = false
+codegen-units = 16
+lto = false
+
+[profile.dev]
+panic = "unwind"
+# The VM is unbearably slow unoptimized; keep dev builds usable.
+opt-level = 1

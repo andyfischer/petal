@@ -36,7 +36,7 @@ use std::path::Path;
 
 use petal::env::Env;
 use petal::heap::Heap;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::stack::StackKey;
 use petal::value::Value;
 
@@ -49,29 +49,39 @@ use crate::ppu::{
 /// Output channel carrying video commands from the cart to the PPU.
 pub const VIDEO_CHANNEL: &str = "nes_video";
 
+/// Checks the file exists now; the decode happens host-side at apply time.
+const LOADS_FILE: NativeEffects = NativeEffects::reads(InputClasses::RESOURCES).with_emits();
+/// Emits the command and also updates the in-run map mirror `get_tile`
+/// reads, which a memo replay would skip, so these are effects too.
+const MIRRORED: NativeEffects = NativeEffects::EMITS.with_effect();
+
 pub fn register_video(env: &mut Env) {
     // Palettes
-    env.register_native("set_palette", native_set_palette);
-    env.register_native("set_backdrop", native_set_backdrop);
-    env.register_native("master_rgb", native_master_rgb);
+    env.register_native("set_palette", native_set_palette, NativeEffects::EMITS);
+    env.register_native("set_backdrop", native_set_backdrop, NativeEffects::EMITS);
+    env.register_native("master_rgb", native_master_rgb, NativeEffects::PURE);
 
     // Pattern table
-    env.register_native("define_tile", native_define_tile);
-    env.register_native("define_tiles", native_define_tiles);
-    env.register_native("load_tiles_png", native_load_tiles_png);
+    env.register_native("define_tile", native_define_tile, NativeEffects::EMITS);
+    env.register_native("define_tiles", native_define_tiles, NativeEffects::EMITS);
+    env.register_native("load_tiles_png", native_load_tiles_png, LOADS_FILE);
 
     // Background map
-    env.register_native("set_map_size", native_set_map_size);
-    env.register_native("set_tile", native_set_tile);
-    env.register_native("get_tile", native_get_tile);
-    env.register_native("fill_map", native_fill_map);
-    env.register_native("set_scroll", native_set_scroll);
-    env.register_native("set_scroll_at", native_set_scroll_at);
+    env.register_native("set_map_size", native_set_map_size, MIRRORED);
+    env.register_native("set_tile", native_set_tile, MIRRORED);
+    env.register_native("get_tile", native_get_tile, NativeEffects::EFFECT);
+    env.register_native("fill_map", native_fill_map, MIRRORED);
+    env.register_native("set_scroll", native_set_scroll, NativeEffects::EMITS);
+    env.register_native("set_scroll_at", native_set_scroll_at, NativeEffects::EMITS);
 
     // Sprites
-    env.register_native("sprite", native_sprite);
-    env.register_native("sprite_meta", native_sprite_meta);
-    env.register_native("set_sprite_limit", native_set_sprite_limit);
+    env.register_native("sprite", native_sprite, NativeEffects::EMITS);
+    env.register_native("sprite_meta", native_sprite_meta, NativeEffects::EMITS);
+    env.register_native(
+        "set_sprite_limit",
+        native_set_sprite_limit,
+        NativeEffects::EMITS,
+    );
 }
 
 // ── The map mirror ────────────────────────────────────────────────────────

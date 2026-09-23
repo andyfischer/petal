@@ -8,7 +8,7 @@
 //! feeds `framebuffer.rs`.
 
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 /// Buffered-output channel carrying draw commands to the renderer. Shares the
@@ -30,23 +30,28 @@ fn int_args(state: &PetalCxt, n: usize) -> Result<Vec<Value>, String> {
 }
 
 /// Register the 3D/2D draw natives and `log`. Input/timing/dimension natives
-/// are registered separately from `petal_ui::input`.
+/// are registered separately from `petal_ui::input`. The draw natives only push
+/// into the `draw_commands` buffer, so they are honestly `EMITS`.
 pub fn register_draw(env: &mut Env) {
     // 3D drawing
-    env.register_native("clear3d", native_clear3d);
-    env.register_native("sky_gradient", native_sky_gradient);
-    env.register_native("triangle3d", native_triangle3d);
-    env.register_native("triangle3d_shaded", native_triangle3d_shaded);
-    env.register_native("line3d", native_line3d);
+    env.register_native("clear3d", native_clear3d, NativeEffects::EMITS);
+    env.register_native("sky_gradient", native_sky_gradient, NativeEffects::EMITS);
+    env.register_native("triangle3d", native_triangle3d, NativeEffects::EMITS);
+    env.register_native(
+        "triangle3d_shaded",
+        native_triangle3d_shaded,
+        NativeEffects::EMITS,
+    );
+    env.register_native("line3d", native_line3d, NativeEffects::EMITS);
 
     // 2D (HUD) drawing
-    env.register_native("rect2d", native_rect2d);
-    env.register_native("line2d", native_line2d);
-    env.register_native("circle2d", native_circle2d);
-    env.register_native("text2d", native_text2d);
+    env.register_native("rect2d", native_rect2d, NativeEffects::EMITS);
+    env.register_native("line2d", native_line2d, NativeEffects::EMITS);
+    env.register_native("circle2d", native_circle2d, NativeEffects::EMITS);
+    env.register_native("text2d", native_text2d, NativeEffects::EMITS);
 
-    // Logging
-    env.register_native("log", native_log);
+    // Logging: writes stderr during the run, which no memo replay reproduces.
+    env.register_native("log", native_log, NativeEffects::EFFECT);
 }
 
 // --- 3D drawing ---

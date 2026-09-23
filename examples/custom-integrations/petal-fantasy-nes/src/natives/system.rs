@@ -13,7 +13,7 @@
 //! host owns and a native cannot reach.
 
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 use petal_ui::input::{SYM_KEYS_DOWN, SYM_KEYS_PRESSED, SYM_KEYS_RELEASED};
@@ -29,20 +29,25 @@ pub const LAUNCH_CART_SIGNAL: &str = "launch_cart";
 /// Script->host: window presentation requests.
 pub const PRESENTATION_CHANNEL: &str = "nes_presentation";
 
+/// Reads a binding the host sets before each run.
+const BINDINGS_READ: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS);
+/// Reads the keyboard bindings a pad button maps to.
+const PAD_READ: NativeEffects = NativeEffects::probe(InputClasses::KEYBOARD);
+
 pub fn register_system(env: &mut Env) {
-    env.register_native("nes_version", native_nes_version);
-    env.register_native("log", native_log);
-    env.register_native("set_scale", native_set_scale);
-    env.register_native("set_crt", native_set_crt);
+    env.register_native("nes_version", native_nes_version, NativeEffects::PURE);
+    env.register_native("log", native_log, NativeEffects::EFFECT);
+    env.register_native("set_scale", native_set_scale, NativeEffects::EMITS);
+    env.register_native("set_crt", native_set_crt, NativeEffects::EMITS);
 
-    env.register_native("cart_count", native_cart_count);
-    env.register_native("cart_name", native_cart_name);
-    env.register_native("cart_path", native_cart_path);
-    env.register_native("launch_cart", native_launch_cart);
+    env.register_native("cart_count", native_cart_count, BINDINGS_READ);
+    env.register_native("cart_name", native_cart_name, BINDINGS_READ);
+    env.register_native("cart_path", native_cart_path, BINDINGS_READ);
+    env.register_native("launch_cart", native_launch_cart, NativeEffects::EMITS);
 
-    env.register_native("pad_down", native_pad_down);
-    env.register_native("pad_pressed", native_pad_pressed);
-    env.register_native("pad_released", native_pad_released);
+    env.register_native("pad_down", native_pad_down, PAD_READ);
+    env.register_native("pad_pressed", native_pad_pressed, PAD_READ);
+    env.register_native("pad_released", native_pad_released, PAD_READ);
 }
 
 // ── Host-side entry points ────────────────────────────────────────────────

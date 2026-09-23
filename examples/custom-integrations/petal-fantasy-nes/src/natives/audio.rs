@@ -17,7 +17,7 @@
 //! the pump. [`crate::audio`] owns the calling, the caching, and the budget.
 
 use petal::env::Env;
-use petal::native_fn::{NativeResult, PetalCxt};
+use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
 
 use crate::apu::Apu;
@@ -27,19 +27,26 @@ use crate::natives::{Command, emit, opt_nums, take_commands};
 /// Output channel carrying sound commands from the cart to the APU/mixer.
 pub const AUDIO_CHANNEL: &str = "nes_audio";
 
+/// Reads a binding the host sets before each run.
+const BINDINGS_READ: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS);
+
 pub fn register_audio(env: &mut Env) {
     // Chip channels
-    env.register_native("apu_pulse", native_apu_pulse);
-    env.register_native("apu_triangle", native_apu_triangle);
-    env.register_native("apu_noise", native_apu_noise);
-    env.register_native("apu_mute", native_apu_mute);
+    env.register_native("apu_pulse", native_apu_pulse, NativeEffects::EMITS);
+    env.register_native("apu_triangle", native_apu_triangle, NativeEffects::EMITS);
+    env.register_native("apu_noise", native_apu_noise, NativeEffects::EMITS);
+    env.register_native("apu_mute", native_apu_mute, NativeEffects::EMITS);
 
     // Petal-synthesized PCM
-    env.register_native("register_sound", native_register_sound);
-    env.register_native("play_sound", native_play_sound);
-    env.register_native("stop_sound", native_stop_sound);
-    env.register_native("enable_dsp", native_enable_dsp);
-    env.register_native("dsp_cost_ms", native_dsp_cost_ms);
+    env.register_native(
+        "register_sound",
+        native_register_sound,
+        NativeEffects::EMITS,
+    );
+    env.register_native("play_sound", native_play_sound, NativeEffects::EMITS);
+    env.register_native("stop_sound", native_stop_sound, NativeEffects::EMITS);
+    env.register_native("enable_dsp", native_enable_dsp, NativeEffects::EMITS);
+    env.register_native("dsp_cost_ms", native_dsp_cost_ms, BINDINGS_READ);
 }
 
 /// Apply this frame's sound commands from the live stack.

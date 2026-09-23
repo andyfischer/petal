@@ -1405,6 +1405,17 @@ fn box_blur_v(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, h: usize, radius
     }
 }
 
+/// SDL_ttf is process-global: `sdl2::ttf::init()` fails with
+/// `AlreadyInitializedError` while another context is alive, and dropping a
+/// context calls `TTF_Quit` under everyone else. Tests that open a TTF context
+/// hold this lock for their whole body so the parallel test runner cannot
+/// interleave them.
+#[cfg(test)]
+pub(crate) fn ttf_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1484,6 +1495,7 @@ mod tests {
     /// hard edge in the copy into a ramp; `draw_canvas` puts it back.
     #[test]
     fn a_snapshot_blurred_and_redrawn_is_a_ramp() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1534,6 +1546,7 @@ mod tests {
     /// A layer composited at half opacity scales the whole layer once.
     #[test]
     fn draw_canvas_alpha_applies_to_the_layer() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1570,6 +1583,7 @@ mod tests {
 
     #[test]
     fn no_clear_accumulates() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
@@ -1619,6 +1633,7 @@ mod tests {
 
     #[test]
     fn clear_wipes() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let mut surface = new_black_surface();
@@ -1674,6 +1689,7 @@ mod tests {
         // Confirms TTF text rendering works on a `Canvas<Surface>` (software
         // renderer path) and is not silently dropped. We scan the text's
         // bounding box for any non-black pixel.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1734,6 +1750,7 @@ mod tests {
     fn line_width_thickens_the_stroke() {
         // A width-6 horizontal line must light several rows; a hairline lights
         // ~1. (AA may add a faint fringe row, so compare thick vs thin.)
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let thin = render_frame(
@@ -1782,6 +1799,7 @@ mod tests {
     fn circle_edge_is_antialiased() {
         // A white disc on black must have partially-lit edge pixels (grays),
         // not a hard black/white boundary — proof of coverage antialiasing.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1822,6 +1840,7 @@ mod tests {
         // A rounded rect must leave its corners unpainted (background shows
         // through) while its center is filled. A square rect would paint the
         // corner too.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1859,6 +1878,7 @@ mod tests {
     fn alpha_blends_over_background() {
         // A 50%-opacity white rect over black should composite to mid-gray, not
         // overwrite to full white — proof that per-primitive alpha blends.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let surface = render_frame(
@@ -1892,6 +1912,7 @@ mod tests {
         // A larger `size` must render taller glyphs than a smaller one — the
         // ladder picks a bigger font rung. With size ignored (one baked font)
         // both would be identical and this fails.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
 
@@ -1924,6 +1945,7 @@ mod tests {
         // onto the main framebuffer at an offset. Only the painted region
         // should appear; the rest of the framebuffer stays black (the canvas
         // is transparent where nothing was drawn).
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
 
@@ -2004,6 +2026,7 @@ mod tests {
 
     #[test]
     fn weight_italic_and_spacing_change_the_pixels() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         let text = |weight, italic, spacing| DrawCommand::Text {
@@ -2049,6 +2072,7 @@ mod tests {
         // come out a different width than the proportional default. Where no
         // fixed-pitch font exists the role degrades to the default face, which
         // is also correct — so that machine is skipped rather than failing.
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = load_test_fonts(&ttf).expect("a system font for tests");
         if !fonts.has_role("mono") {

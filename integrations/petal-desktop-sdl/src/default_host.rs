@@ -368,6 +368,7 @@ mod tests {
     /// gaps — not a solid filled rectangle (the old block approximation).
     #[test]
     fn text_screenshot_has_glyphs_not_a_block() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = test_fonts(&ttf).expect("a system font for tests");
         let commands = vec![
@@ -401,6 +402,7 @@ mod tests {
     /// Primitives read back with the correct color at the correct place.
     #[test]
     fn rect_screenshot_reads_back_color() {
+        let _ttf_guard = crate::renderer::ttf_test_lock();
         let ttf = sdl2::ttf::init().unwrap();
         let mut fonts = test_fonts(&ttf).expect("a system font for tests");
         let commands = vec![

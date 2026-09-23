@@ -171,8 +171,8 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `true` | `PB_BOOL` | `boolean()` (also `number()` = 0/1) |
 | `42` | `PB_INT` | `integer()`, `number()` |
 | `1.5` | `PB_FLOAT` | `number()`, `integer()` (truncated) |
-| `vec2(x, y)` | `PB_VEC2` | `x()`, `y()` |
-| `vec3(x, y, z)` | `PB_VEC3` | `x()`, `y()`, `z()` |
+| `vec2(x, y)` | `PB_VEC2` | `x()`, `y()`; also `num("x")`/`num("y")` |
+| `vec3(x, y, z)` | `PB_VEC3` | `x()`, `y()`, `z()`; also `num("x")`…`num("z")`, so host code written for `{x, y, z}` records accepts vectors (`[key]`/`has` stay map-only) |
 | `"text"` | `PB_STRING` | `str()` |
 | `[a, b]` | `PB_LIST` | `size()`, `[i]`, iteration |
 | `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
@@ -263,13 +263,14 @@ let grounded = hit != nil && hit.dist < 0.6
 - There is no limit on how many natives a VM registers.
 
 **Effects.** Petal's reactive layers trust each native's declared effect row,
-so declare honestly (combine with `|`):
+so declare honestly (combine with `|`; [Embedder pitfalls](ffi.md#embedder-pitfalls)
+shows what a dishonest row breaks):
 
 | Flag | Meaning |
 |---|---|
 | `fx::Pure` (0) | pure function of its arguments |
 | `fx::Probe` | pure function of its arguments and its reads; safe to re-evaluate |
-| `fx::Emits` | pushes into an output buffer |
+| `fx::Emits` | pushes into an output buffer. Only [emitters](#emitters-the-command-stream-fast-path) do that (they set it themselves); a callback has no way to push, so a callback that queues work for the host is `fx::Effect` |
 | `fx::Effect` | does something no replay reproduces (mutates host state, plays a sound) |
 | `fx::ReadsHostData` | answers from host state (body transforms, raycasts). The bridge also calls `note_host_read()` for you. |
 | `fx::ReadsPointer/Keyboard/Clock/Viewport/Resources/Rng/Bindings` | other input classes |

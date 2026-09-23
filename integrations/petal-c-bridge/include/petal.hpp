@@ -11,7 +11,7 @@
 //
 //   petal::Vm vm;
 //   vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
-//       auto hit = world.raycast(c[0].num("x"), ...);
+//       auto hit = world.raycast(c[0].x(), c[0].y(), c[0].z(), ...);  // a vec3 arg
 //       c.result().map([&](petal::BuilderRef m) { m.field("dist", hit.dist); });
 //   });
 //   vm.emitter("spawn", "scene");           // spawn(...) -> "scene" buffer
@@ -93,6 +93,8 @@ inline void check(const pb_vm* vm, pb_status st) {
 namespace fx {
 inline constexpr uint32_t Pure = PB_FX_PURE;
 inline constexpr uint32_t Probe = PB_FX_PROBE;
+// Only emitters (Vm::emitter) push into an output buffer; a callback that
+// queues work on the host is fx::Effect, not fx::Emits.
 inline constexpr uint32_t Emits = PB_FX_EMITS;
 inline constexpr uint32_t Effect = PB_FX_EFFECT;
 inline constexpr uint32_t PendingEffectful = PB_FX_PENDING_EFFECTFUL;
@@ -171,8 +173,19 @@ public:
         return Value();
     }
     bool has(std::string_view field) const noexcept { return get(field).raw() != nullptr; }
-    // Numeric field of a map, or `fallback`.
-    double num(std::string_view field, double fallback = 0.0) const noexcept { return get(field).number(fallback); }
+    // Numeric field of a map, or `fallback`. On a VEC2/VEC3, "x"/"y" (and "z"
+    // on a VEC3) read the components, as `.x/.y/.z` do in a script, so host
+    // code reading {x, y, z} records keeps working when scripts pass vectors.
+    // get()/operator[] stay map-only: a vector component has no pb_value node.
+    double num(std::string_view field, double fallback = 0.0) const noexcept {
+        if (is_vec2() || is_vec3()) {
+            if (field == "x") return x();
+            if (field == "y") return y();
+            if (field == "z" && is_vec3()) return z();
+            return fallback;
+        }
+        return get(field).number(fallback);
+    }
 
     class iterator {
     public:

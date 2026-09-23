@@ -221,6 +221,12 @@ TEST(vec3_is_native_both_ways) {
     // An {x, y, z} record is still a record.
     CHECK(out[4]["rec"].is_map());
     CHECK_NEAR(out[4]["rec"].num("z"), 3.0, 1e-9);
+    // num("x"/"y"/"z") reads a vector's components the way a record's fields
+    // read, so host code written against {x, y, z} records accepts vectors.
+    CHECK_NEAR(out[4]["pos"].num("z"), 9.0, 1e-9);
+    CHECK_NEAR(out[0].num("x"), 0.5, 1e-9);
+    CHECK_NEAR(out[0].num("w", -7.0), -7.0, 1e-9);
+    CHECK(!out[4]["pos"].has("z"));  // get()/has() stay map-only
     // A missing value reads as zero components.
     CHECK_NEAR(petal::Value().z(), 0.0, 1e-9);
 }

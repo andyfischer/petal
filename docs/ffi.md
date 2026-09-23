@@ -433,12 +433,15 @@ the replay and the trap).
 
 **A bridge makes the declared facets self-fulfilling.** A C/C++ bridge that
 forwards registration flags into the row usually also calls `note_effect()` /
-`note_host_read()` on the native's behalf when the flags say so (cheesecake's
-does). The row and the activity counters then agree by construction, and
+`note_host_read()` on the native's behalf when the flags say so
+([petal-c-bridge](embedding-c.md)'s `HostCallback::call` does). The row and the activity counters then agree by construction, and
 neither the memo nor the audit can see what the C++ callback did behind
 them. Only the embedder knows what a callback touches; a bridge's emitter flag
 in particular should mean "this call's output goes through the bridge's
 buffer-emitter path", never "this callback writes something somewhere".
+petal-c-bridge follows this: only `pb_vm_register_emitter` pushes into a
+buffer, a C callback has no way to, and so `PB_FX_EMITS` on a callback is
+always an over-declaration (use `PB_FX_EFFECT`).
 
 **The frame gate has the same shape at frame granularity.** On a skipped frame
 no native runs at all. A host whose natives must reach the host every frame

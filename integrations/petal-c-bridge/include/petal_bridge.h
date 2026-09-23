@@ -228,7 +228,10 @@ pb_status pb_vm_add_implicit_import(pb_vm* vm, const char* module_name);
 /* Effect flags for a native (a Petal `NativeEffects` row). Combine with `|`.
  *   PB_FX_PURE      reads nothing, emits nothing, no effect (default: 0)
  *   PB_FX_PROBE     result is a pure function of args + its reads; re-evaluable
- *   PB_FX_EMITS     pushes into an output buffer
+ *   PB_FX_EMITS     pushes into an output buffer. A pb_native_fn callback has no
+ *                   way to push, so this is right only for pb_vm_register_emitter
+ *                   (which sets it itself); a callback that queues work on the
+ *                   host is PB_FX_EFFECT. See docs/ffi.md "Embedder pitfalls".
  *   PB_FX_EFFECT    does something no replay reproduces (mutates host state…)
  *   PB_FX_READS_*   input classes it reads. PB_FX_READS_HOST_DATA also makes the
  *                   bridge call note_host_read() on every call.

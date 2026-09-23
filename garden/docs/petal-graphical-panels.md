@@ -482,7 +482,7 @@ subset.
 | `italic` | resolves when a matching face is available; no italic cut is embedded, so on `mono` and `ui` it is upright |
 | glyph coverage | a character the face lacks (`⌘`, `⇧`, `—`, `·`, CJK, emoji) is drawn from an installed system face that has it, per cluster, on every face including `mono` and `ui` |
 | `weight` | real on a system family and on `ui` (Inter Bold is embedded, so `weight >= 600` shapes the Bold cut); synthetic on `mono` (drawn twice at a sub-pixel offset, so it measures regular) |
-| `spacing` | honored; the pen matches `text_width` exactly for ASCII, and places other glyphs at their shaped width (which `text_width` estimates at 0.6 em) |
+| `spacing` | honored; the pen advances each glyph by exactly what `text_width` measures for it, ASCII or not |
 
 Measure in the face you draw in. `text_width(s, 22)` sums monospace advances,
 so measuring a `font: "ui"` run without the third argument lands visibly

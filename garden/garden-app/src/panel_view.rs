@@ -140,6 +140,11 @@ impl petal_ui::draw::FontSource for SystemFonts {
     fn families(&mut self) -> Vec<String> {
         garden_render::fonts::available_families()
     }
+
+    fn glyph_advance(&mut self, face: &str, weight: u16, italic: bool, ch: char) -> Option<f64> {
+        let id = garden_render::fonts::try_resolve(face)?;
+        Some(garden_render::fonts::glyph_advance_ratio(id, weight, italic, ch))
+    }
 }
 
 /// Emit a script's text run as scene primitives.
@@ -148,10 +153,10 @@ impl petal_ui::draw::FontSource for SystemFonts {
 /// one primitive **per glyph**, because cosmic-text has no letter-spacing of
 /// its own: the pen advances by the glyph's measured advance plus the spacing,
 /// which is exactly the sum `text_width` reports for the same style, so a
-/// spaced run measures and draws the same width. (Off the ASCII table the pen
-/// uses the glyph's shaped width, as an unspaced run's shaper does; the
-/// script's `text_width` still estimates those glyphs at 0.6 em.) The cost (one shaped run per
-/// character) is why only spaced text pays it.
+/// spaced run measures and draws the same width — off the ASCII table too,
+/// where the pen and `text_width` (through [`SystemFonts::glyph_advance`])
+/// both use the glyph's shaped width. The cost (one shaped run per character)
+/// is why only spaced text pays it.
 fn push_text_run(
     prims: &mut Vec<Primitive>,
     (x, y): (f32, f32),
@@ -4248,6 +4253,26 @@ edit_view_projection(1, {{
                     "{glyph:?} still advances by the 0.6 em fallback"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn text_width_measures_non_ascii_glyphs_at_their_shaped_width() {
+        // The script's measurement must agree with the pen above: `⌘` off the
+        // ASCII table used to measure 0.6 em (60 px at size 100) whatever
+        // the renderer drew it at, so a label measured around it was misplaced.
+        let src = "let cmd_ui = text_width(\"\u{2318}\", {size: 100, font: \"ui\"})\n\
+                   let dash_ui = text_width(\"\u{2014}\", {size: 100, font: \"ui\"})\n";
+        let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
+        write!(f, "{src}").unwrap();
+        let host = PanelHost::load(f.path()).unwrap();
+        let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
+        pv.tick(Instant::now(), RECT, CELL);
+        let ui = garden_render::fonts::try_resolve("ui").unwrap();
+        for (name, ch) in [("cmd_ui", '\u{2318}'), ("dash_ui", '\u{2014}')] {
+            let shaped = garden_render::fonts::glyph_advance_ratio(ui, 400, false, ch) * 100.0;
+            assert_ne!(shaped.round() as i64, 60, "{name}: shaped width must differ from the guess");
+            assert_eq!(debug_val(&mut pv, name), Some(shaped.round() as i64), "{name}");
         }
     }
 

@@ -95,6 +95,19 @@ pub struct FontMetrics {
     /// [`VerticalMetrics`]; a host that publishes nothing gets the default
     /// UI-sans proportions.
     pub vertical: VerticalMetrics,
+    /// The face these metrics were resolved for, so a non-ASCII glyph off the
+    /// table can be measured by the host's [`FontSource::glyph_advance`]
+    /// instead of guessed at `advance`. Set by the text natives; `None` on a
+    /// table a host builds, which only ever guesses.
+    face: Option<GlyphFace>,
+}
+
+/// One cut of one face, as [`FontSource::glyph_advance`] is asked about it.
+#[derive(Clone, Debug, PartialEq)]
+struct GlyphFace {
+    spec: String,
+    weight: u16,
+    italic: bool,
 }
 
 /// Where the ink of a text run sits relative to the `y` a script hands
@@ -193,6 +206,7 @@ impl Default for FontMetrics {
             advance: DEFAULT_TEXT_ADVANCE,
             advances: Vec::new(),
             vertical: VerticalMetrics::default(),
+            face: None,
         }
     }
 }
@@ -205,6 +219,7 @@ impl FontMetrics {
             advance,
             advances,
             vertical: VerticalMetrics::default(),
+            face: None,
         }
     }
 
@@ -214,6 +229,7 @@ impl FontMetrics {
             advance,
             advances: Vec::new(),
             vertical: VerticalMetrics::default(),
+            face: None,
         }
     }
 
@@ -226,15 +242,24 @@ impl FontMetrics {
     }
 
     fn width_of(&self, text: &str, size: f64) -> f64 {
-        text.chars()
-            .map(|c| {
-                self.advances
-                    .get(c as usize)
-                    .copied()
-                    .unwrap_or(self.advance)
-                    * size
-            })
-            .sum()
+        text.chars().map(|c| self.ratio_of(c) * size).sum()
+    }
+
+    /// One glyph's advance ÷ size: from the table when it covers `c`; for a
+    /// non-ASCII glyph off it, the host's shaped width (the fallback face that
+    /// will actually draw `⌘` or `—`); otherwise the uniform `advance`.
+    fn ratio_of(&self, c: char) -> f64 {
+        if let Some(ratio) = self.advances.get(c as usize) {
+            return *ratio;
+        }
+        if !c.is_ascii() {
+            if let Some(face) = &self.face {
+                if let Some(ratio) = provider_glyph_advance(face, c) {
+                    return ratio;
+                }
+            }
+        }
+        self.advance
     }
 }
 
@@ -427,6 +452,7 @@ fn default_font_metrics(state: &mut PetalCxt) -> FontMetrics {
         advance: uniform,
         advances: advances.unwrap_or_default(),
         vertical,
+        face: None,
     }
 }
 
@@ -479,6 +505,7 @@ fn named_font_metrics(
                 advance,
                 advances: advances.unwrap_or_default(),
                 vertical,
+                face: None,
             });
         }
     }
@@ -516,6 +543,16 @@ pub trait FontSource {
     /// Every family a script could name here, for a font picker or a
     /// diagnostic. May be empty.
     fn families(&mut self) -> Vec<String>;
+
+    /// One non-ASCII glyph's advance ÷ font size in `face` (a role name, a
+    /// family, or a fallback list, as a style names it), measured the way the
+    /// host will draw it — fallback faces included. The [`metrics`](Self::metrics)
+    /// tables cover ASCII only, so without this `text_width("⌘")` guesses the
+    /// uniform advance while the renderer draws the real glyph. `None` keeps
+    /// the guess.
+    fn glyph_advance(&mut self, _face: &str, _weight: u16, _italic: bool, _ch: char) -> Option<f64> {
+        None
+    }
 }
 
 /// A host's attached [`FontSource`], owned between frames and swapped into the
@@ -536,6 +573,10 @@ thread_local! {
         RefCell::new(HashMap::new());
     /// Names already resolved through the provider, for the same reason.
     static FONT_NAME_CACHE: RefCell<HashMap<String, Option<String>>> =
+        RefCell::new(HashMap::new());
+    /// Single-glyph advances from the provider, for the same reason: a label
+    /// with a `⌘` in it is measured every frame.
+    static GLYPH_ADVANCE_CACHE: RefCell<HashMap<(String, u16, bool, char), Option<f64>>> =
         RefCell::new(HashMap::new());
 }
 
@@ -583,12 +624,27 @@ fn provider_font_metrics(family: &str, weight: u16, italic: bool) -> Option<Font
     metrics
 }
 
+/// One glyph's advance ratio in `face` from the host's font source, memoized.
+fn provider_glyph_advance(face: &GlyphFace, ch: char) -> Option<f64> {
+    let key = (face.spec.clone(), face.weight, face.italic, ch);
+    if let Some(hit) = GLYPH_ADVANCE_CACHE.with(|c| c.borrow().get(&key).copied()) {
+        return hit;
+    }
+    let ratio = with_font_provider(|p| p.glyph_advance(&face.spec, face.weight, face.italic, ch))
+        .flatten();
+    GLYPH_ADVANCE_CACHE.with(|c| {
+        c.borrow_mut().insert(key, ratio);
+    });
+    ratio
+}
+
 /// Forget everything learned from a font source. Only useful in tests, where
 /// one process attaches several different sources and must not see an earlier
 /// one's answers.
 pub fn clear_font_cache() {
     FONT_NAME_CACHE.with(|c| c.borrow_mut().clear());
     FONT_METRICS_CACHE.with(|c| c.borrow_mut().clear());
+    GLYPH_ADVANCE_CACHE.with(|c| c.borrow_mut().clear());
 }
 
 /// `font(name) -> style`: a **font object** — the style record `draw_text`,
@@ -853,12 +909,24 @@ fn resolve_metrics(state: &mut PetalCxt, style: &TextStyle) -> FontMetrics {
         }
         None => None,
     };
-    match &spec {
-        Some(spec) => named_font_metrics(state, spec, style.weight, style.italic)
+    let found = spec.as_deref().and_then(|spec| {
+        named_font_metrics(state, spec, style.weight, style.italic)
             .or_else(|| source_font_metrics(spec, style.weight, style.italic))
-            .unwrap_or_else(|| default_font_metrics(state)),
-        None => default_font_metrics(state),
-    }
+    });
+    let (mut metrics, face) = match found {
+        Some(metrics) => (metrics, spec),
+        // The default face, by the name the host published for it.
+        None => (default_font_metrics(state), match state.binding_named(SYM_TEXT_DEFAULT_FONT) {
+            Value::String(id) => Some(state.heap().get_string(id).to_string()),
+            _ => None,
+        }),
+    };
+    metrics.face = face.map(|spec| GlyphFace {
+        spec,
+        weight: style.weight,
+        italic: style.italic,
+    });
+    metrics
 }
 
 /// The advance width of one run: the summed glyph advances plus the style's
@@ -911,13 +979,7 @@ pub(crate) fn native_text_metrics(state: &mut PetalCxt) -> NativeResult {
 
 /// One glyph's advance in this style, letter-spacing included.
 fn char_width(metrics: &FontMetrics, style: &TextStyle, c: char) -> f64 {
-    metrics
-        .advances
-        .get(c as usize)
-        .copied()
-        .unwrap_or(metrics.advance)
-        * style.size as f64
-        + style.spacing
+    metrics.ratio_of(c) * style.size as f64 + style.spacing
 }
 
 /// Greedy word wrap: the lines `text` breaks into so that none is wider than
@@ -1584,6 +1646,32 @@ mod tests {
         fn families(&mut self) -> Vec<String> {
             vec!["Courier".to_string(), "Helvetica".to_string()]
         }
+
+        /// `⌘` is a full em in either face; everything else goes unanswered.
+        fn glyph_advance(&mut self, face: &str, _weight: u16, _italic: bool, ch: char) -> Option<f64> {
+            let known = matches!(face.to_lowercase().as_str(), "helvetica" | "courier");
+            (known && ch == '\u{2318}').then_some(1.0)
+        }
+    }
+
+    /// A non-ASCII glyph off the ASCII table is measured by the host's shaped
+    /// width, not guessed at the face's uniform advance: `⌘` at 0.6 em
+    /// overlapped the next letter in every label that measured around it.
+    #[test]
+    fn an_off_table_glyph_measures_at_the_hosts_shaped_width() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        crate::register_prelude(&mut env);
+        // Named face: ⌘ is 1.0 × 20; `x` and the unanswered `—` stay 0.5 × 20.
+        let v = with_test_fonts(&mut env, r#"text_advance("x⌘—", {size: 20, font: "Helvetica"})"#);
+        assert_eq!(v, Value::Float(40.0));
+        // A style naming no face asks about the default face by its published name.
+        bind_default_font_name(&mut env, "courier");
+        let v = with_test_fonts(&mut env, r#"text_advance("⌘", {size: 10})"#);
+        assert_eq!(v, Value::Float(10.0));
+        // Without a source, the guess is unchanged.
+        let v = env.run_source(r#"text_advance("⌘", {size: 10})"#).expect("run");
+        assert_eq!(v, Value::Float(6.0));
     }
 
     /// Run `source` with [`TestFonts`] attached, the way a host wraps its own

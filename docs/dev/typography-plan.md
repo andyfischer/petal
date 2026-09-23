@@ -171,8 +171,10 @@ through the petal-ui harness without a renderer.
 ## 5. Open questions
 
 - **Non-ASCII coverage.** Advance tables are dense codepoint-indexed lists,
-  fine for Latin, wrong shape for CJK and emoji. Plan: cover 0–0x2FF and fall
-  back to a per-font uniform ratio above that.
+  fine for Latin, wrong shape for CJK and emoji. The tables cover ASCII; a
+  host that can shape asks `FontSource::glyph_advance` for anything else
+  (Garden does, memoized per glyph), and a host that can't falls back to the
+  face's uniform ratio.
 - **Perf of script-side flow layout** on very long documents. If
   `layout_cached` is not enough, the inner loop can move into Rust behind the
   same API.

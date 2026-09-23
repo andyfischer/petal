@@ -1,7 +1,8 @@
 //! petal-sdl's host-specific natives and bindings. The standard input/draw
 //! contract (mouse/key natives, draw commands, offscreen canvases, the `ui`
 //! prelude module) comes from `petal-ui`; this module adds only what is
-//! particular to this app: the example browser and sandboxed file I/O.
+//! particular to this app: the example browser and sandboxed file I/O (and
+//! registers the `sfx`/`synth` sound natives from [`crate::sound`]).
 
 use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
@@ -19,12 +20,13 @@ pub struct ExampleEntry {
 
 /// Register everything a petal-sdl script can call: the petal-ui standard
 /// set (input, draw, offscreen canvases, the `ui` prelude as an implicit
-/// import) plus the browser/file natives.
+/// import) plus the browser/file natives and the sound natives.
 pub fn register_all(env: &mut Env) {
     petal_ui::input::register_input(env);
     petal_ui::draw::register_draw(env);
     petal_ui::draw::register_canvas(env);
     petal_ui::register_prelude(env);
+    crate::sound::register_natives(env);
     // The browser natives read the bound example list; `launch_script`
     // pushes a request the host drains; the file natives reach the
     // filesystem, which the runtime cannot see change — a host read for the

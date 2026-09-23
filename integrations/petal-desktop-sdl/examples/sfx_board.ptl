@@ -1,0 +1,86 @@
+// === SFX BOARD ===
+// Procedural sound effects: click a pad (or press 1-8) to play a preset,
+// press R for a random synth() zap. Every sound is synthesized on the host,
+// sfxr-style; nothing is loaded from disk.
+
+state last = ""
+state flash = 0.0
+state zaps = 0
+
+let presets = ["jump", "hit", "pickup", "explosion", "blip", "laser", "powerup", "bounce"]
+let colors = [
+  {r: 90, g: 200, b: 255}, {r: 255, g: 110, b: 90}, {r: 255, g: 210, b: 60},
+  {r: 255, g: 140, b: 40}, {r: 160, g: 255, b: 160}, {r: 255, g: 80, b: 200},
+  {r: 170, g: 120, b: 255}, {r: 120, g: 220, b: 200},
+]
+
+let sw = screen_width()
+let sh = screen_height()
+let mx = mouse_x()
+let my = mouse_y()
+
+let cols = 4
+let pad = 20
+let cell_w = (sw - pad * (cols + 1)) / cols
+let cell_h = 120
+let top = 110
+
+fn pad_rect(i)
+  let col = i % cols
+  let row = i / cols
+  {x: pad + col * (cell_w + pad), y: top + row * (cell_h + pad), w: cell_w, h: cell_h}
+end
+
+fn inside(r, x, y)
+  x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+end
+
+// A sound is an event: fire it on the frame the key or button went down.
+// Each pad is panned by its column so the stereo field is audible.
+fn play(i)
+  let pan = float(i % cols) / float(cols - 1) * 1.2 - 0.6
+  sfx(presets[i], {pan: pan})
+end
+
+for i in range(0, len(presets)) do
+  if key_pressed(str(i + 1)) || (mouse_pressed(0) && inside(pad_rect(i), mx, my)) then
+    play(i)
+    last = presets[i]
+    flash = 1.0
+  end
+end
+
+if key_pressed("r") then
+  zaps += 1
+  // Deterministic "random": the seed makes each zap distinct but repeatable.
+  let f = 300.0 + float((zaps * 7919) % 1200)
+  synth({wave: "square", freq: f, slide: -4.0 - float(zaps % 5), duty: 0.25,
+         duty_sweep: 0.8, sustain: 0.06, decay: 0.2, hpf_cutoff: 150.0,
+         volume: 0.35, seed: zaps})
+  last = "synth #{zaps} ({int(f)} Hz)"
+  flash = 1.0
+end
+
+flash = max(0.0, flash - dt() * 3.0)
+
+// --- Drawing ---
+clear(12, 12, 24)
+draw_text("SFX BOARD", pad, 28, 32, 230, 230, 255)
+draw_text("click a pad or press 1-8  -  R: random synth zap", pad, 70, 16, 120, 130, 170)
+
+for i in range(0, len(presets)) do
+  let r = pad_rect(i)
+  let c = colors[i]
+  let hot = inside(r, mx, my)
+  let lit = if presets[i] == last then flash else 0.0 end
+  let k = if hot then 0.55 else 0.35 end + lit * 0.45
+  draw_rect(r.x, r.y, r.w, r.h, int(float(c.r) * k), int(float(c.g) * k), int(float(c.b) * k))
+  draw_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
+  draw_text("{i + 1}", r.x + 12, r.y + 10, 18, c.r, c.g, c.b)
+  draw_text(presets[i], r.x + 12, r.y + r.h - 36, 22, 240, 240, 250)
+end
+
+if last != "" then
+  let a = 140 + int(115.0 * flash)
+  draw_text("last: {last}", pad, sh - 40, 18, a, a, a)
+end

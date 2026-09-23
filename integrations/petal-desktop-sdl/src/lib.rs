@@ -15,7 +15,8 @@
 //!   else from this crate — see `docs/building-apps.md`.
 //!
 //! The reusable building blocks ([`input`] SDL translation and gamepad
-//! folding, [`audio`] queued-sample output, [`protocol`] agent JSON,
+//! folding, [`audio`] queued-sample output, [`sfx`] procedural sound-effect
+//! synthesis and [`sound`] its `sfx`/`synth` natives and mixer, [`protocol`] agent JSON,
 //! [`watcher`] hot reload, [`screenshot`] PNG encoding, [`font`] ladder,
 //! [`renderer`] SDL-canvas primitives) are public so hosts can compose them.
 
@@ -28,6 +29,8 @@ pub mod native_fns;
 pub mod protocol;
 pub mod renderer;
 pub mod screenshot;
+pub mod sfx;
+pub mod sound;
 pub mod timeline;
 pub mod watcher;
 

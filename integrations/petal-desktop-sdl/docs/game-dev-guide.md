@@ -182,6 +182,45 @@ screen_width()    // window width in pixels
 screen_height()   // window height in pixels
 ```
 
+### Sound
+
+Sound effects are synthesized on the host, sfxr-style; there are no audio
+files to load.
+
+```petal
+sfx("jump")                                  // a built-in effect
+sfx("pickup", {volume: 0.6, pitch: 1.5, pan: -0.5, variant: 2})
+synth({wave: "sine", freq: 880.0, slide: -2.0, decay: 0.15, volume: 0.4})
+```
+
+`sfx` presets: `jump`, `hit`, `pickup` (alias `coin`), `explosion`, `blip`,
+`laser`, `powerup`, `bounce`. Repeated plays rotate through 8 subtle variants
+so they don't all sound identical; `variant: n` picks one. `pitch` 2 is an
+octave up, `pan` runs from -1 (left) to 1 (right).
+
+`synth` takes the synth's parameters directly, in physical units:
+
+| Field | Default | |
+|---|---|---|
+| `wave` | `"square"` | `"square"`, `"saw"`, `"sine"`, `"triangle"`, `"noise"` |
+| `freq` | 440 | start frequency, Hz |
+| `slide`, `delta_slide` | 0 | pitch slide in octaves/s, and its change per s |
+| `min_freq` | 0 | the sound ends when a slide drops below this |
+| `vibrato_depth`, `vibrato_rate` | 0 | fraction of the frequency, Hz |
+| `duty`, `duty_sweep` | 0.5, 0 | square-wave duty cycle |
+| `arp_mult`, `arp_time` | 1, 0 | jump the pitch by `arp_mult` after `arp_time` s |
+| `repeat_time` | 0 | restart the pitch envelope every n s |
+| `attack`, `sustain`, `punch`, `decay` | 0, 0.1, 0, 0.2 | amplitude envelope (s, capped at 5; punch 0-1) |
+| `lpf_cutoff`, `lpf_resonance`, `lpf_sweep` | off | low-pass filter (Hz, 0-1, octaves/s) |
+| `hpf_cutoff`, `hpf_sweep` | off | high-pass filter |
+| `volume` | 0.5 | loudness of the sound |
+| `seed` | 1 | noise seed: the same parameters always sound the same |
+| `pitch`, `pan` | 1, 0 | playback, as for `sfx` |
+
+A sound is an event. Call it on the frame something happens
+(`key_pressed`, a collision), not every frame. An unknown preset, wave, or
+option key is an error at the call. See `examples/sfx_board.ptl`.
+
 ### Built-in functions from Petal core
 
 Always available:

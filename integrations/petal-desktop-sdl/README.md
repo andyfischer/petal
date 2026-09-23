@@ -71,6 +71,7 @@ With no file argument, `petal-sdl` opens a browser over the bundled examples.
 | `invaders.ptl` | Space Invaders with shields |
 | `platformer.ptl` | Side-scrolling platformer |
 | `paint.ptl` | Drawing app with a color palette |
+| `sfx_board.ptl` | Procedural sound effects: every `sfx` preset plus a `synth` zap |
 | `browser.ptl` | The example browser (uses the host's launcher natives) |
 | `cc_*.ptl` | Creative-coding sketches: attractors, metaballs, reaction-diffusion, offscreen layers |
 | `noc_*.ptl` | *Nature of Code* sketches: flocking, flow fields, springs, cloth, fractal trees |

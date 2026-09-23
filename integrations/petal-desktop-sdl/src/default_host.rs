@@ -1,5 +1,6 @@
 //! The default `petal-sdl` host: an SDL-canvas renderer over the standard
-//! `petal-ui` draw vocabulary, plus the example browser and sandboxed file I/O.
+//! `petal-ui` draw vocabulary, plus the example browser, sandboxed file I/O and
+//! `sfx`/`synth` sound effects ([`crate::sound`]).
 //!
 //! This is the [`Host`] the shipped `petal-sdl` binary runs. Sample apps that
 //! only need 2D drawing + the `ui` prelude use this host unchanged (Shape A);
@@ -23,6 +24,7 @@ use crate::font::{self, FontBook};
 use crate::game_loop::{EscapeAction, Host, ScriptSwitch};
 use crate::native_fns::{self, ExampleEntry, bind_examples, take_pending_launch};
 use crate::renderer;
+use crate::sound::SoundBoard;
 
 const BROWSER_SCRIPT: &str = include_str!("../examples/browser.ptl");
 
@@ -46,6 +48,9 @@ pub struct DefaultHost {
     /// Whether the currently-loaded program is the browser (Escape quits from
     /// the browser, but returns to it from a launched example).
     in_browser: bool,
+    /// `sfx`/`synth` playback: silent (but still draining requests) until
+    /// `on_sdl_init` opens a device.
+    sound: SoundBoard,
 }
 
 impl DefaultHost {
@@ -67,6 +72,7 @@ impl DefaultHost {
             examples_dir,
             framebuffer: None,
             in_browser: false,
+            sound: SoundBoard::new(),
         }
     }
 }
@@ -221,6 +227,21 @@ impl Host for DefaultHost {
                 path: None,
             })
         }
+    }
+
+    fn on_sdl_init(&mut self, sdl: &sdl2::Sdl) {
+        self.sound.open(sdl);
+    }
+
+    fn end_frame(&mut self, env: &mut Env) {
+        self.sound.end_frame(env);
+    }
+
+    /// The device queue is only topped up from `end_frame`, which a gated
+    /// frame never reaches — so run every frame while a sound is playing,
+    /// and gate again once the last one has been fed.
+    fn frame_gating(&self) -> bool {
+        !self.sound.is_playing()
     }
 
     fn after_frame(&mut self, env: &mut Env) -> Option<ScriptSwitch> {

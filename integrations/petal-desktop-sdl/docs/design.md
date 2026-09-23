@@ -25,10 +25,11 @@ The crate is a library (`petal_sdl`) plus a thin binary (`petal-sdl`,
   an image, and a few optional hooks.
 - **`DefaultHost`** (`src/default_host.rs`) is the host the shipped binary
   runs. It paints the `petal-ui` draw vocabulary onto an SDL canvas and adds
-  the example browser and sandboxed file I/O natives.
+  the example browser, sandboxed file I/O, and `sfx`/`synth` sound natives.
 - **Building blocks** are public so other hosts can compose them: `input`
   (SDL event translation and gamepad folding), `audio` (queued sample
-  output), `protocol` (agent JSON), `watcher` (hot reload), `screenshot` (PNG
+  output), `sfx` (sfxr-style synthesis), `sound` (the sound natives, a voice
+  mixer, and the `SoundBoard` that drives them), `protocol` (agent JSON), `watcher` (hot reload), `screenshot` (PNG
   encoding), `font` (size ladder), and `renderer` (SDL canvas primitives).
 
 The draw functions (`draw_rect`, `draw_text`, offscreen canvases, ...) and
@@ -103,6 +104,35 @@ its own audio.
 
 The device opens paused and reports the rate and channel count it actually
 got, which may differ from the request.
+
+### Sound effects
+
+`sfx` is a pure synthesis module ported from cheesecake's sfxr-style synth:
+`render_sfx(&SfxParams, sample_rate) -> Vec<f32>` in physical units (Hz,
+seconds, octaves per second), eight presets (`jump`, `hit`, `pickup`/`coin`,
+`explosion`, `blip`, `laser`, `powerup`, `bounce`) with deterministic xorshift
+variants, and a render cache keyed by a hash of the parameters. Output is
+deterministic, always finite, never above a peak of 1.0, and ends in a 3 ms
+fade. No SDL, no `Env`.
+
+`sound` puts it in front of scripts. `sfx(name, opts?)` and `synth(params)`
+validate their arguments and push the request into the `sfx` output buffer;
+they do nothing else during the run, so they are registered as
+`NativeEffects::EMITS`. That is the honest row, and it matters: a memoized
+helper that plays a sound is replayed by re-appending its buffered output, so
+the request still arrives. (A native that queued the sound on a host-side list
+instead would be skipped by the replay and would have to declare an `effect`;
+see "Embedder pitfalls" in [`docs/ffi.md`](../../../docs/ffi.md).) Variant
+rotation happens on the host for the same reason.
+
+After the run, `SoundBoard::end_frame` drains the buffer, renders each request
+through the cache, starts a `Mixer` voice (linear-interpolated `pitch`, linear
+`pan`), and tops the `AudioOutput` queue up to about 50 ms of lead. The
+`DefaultHost` wires it in: `on_sdl_init` opens the device, `end_frame` drives
+the board, and `frame_gating` answers `false` while a voice is playing, since a
+gated frame never reaches `end_frame` and the queue would run dry. In the
+headless modes there is no device: requests are still drained and counted, and
+nothing is rendered.
 
 ### Gamepads
 

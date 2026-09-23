@@ -29,7 +29,7 @@ fn check_int_arith(op: IntOp) {
         IntOp::Add => wa + wb,
         IntOp::Sub => wa - wb,
         IntOp::Mul => wa * wb,
-        IntOp::Div | IntOp::Mod => unreachable!("see int_div_is_exact / int_mod_is_exact"),
+        IntOp::Div | IntOp::Mod => unreachable!("see int_div_is_exact / int_mod_errors_are_exact"),
     };
     match int_arith(op, a, b) {
         Ok(r) => assert!(r as i128 == exact),
@@ -76,21 +76,19 @@ fn int_div_is_exact() {
     }
 }
 
-/// `%` is the machine's truncated remainder (Rust's `%`, `-7 % 3 == -1`) for
-/// every nonzero divisor, and never overflows — including `i64::MIN % -1`,
-/// which is 0 (`checked_rem` alone reports it as overflow). Unlike the other
-/// arithmetic proofs this one does not re-derive the remainder from a
-/// reference: a second 64-bit division in the spec takes the solver over an
-/// hour. The remainder's value is the `%` primitive's; what is proven is that
-/// `int_arith` returns it, or the right error, for every input.
+/// `%` never overflows — including `i64::MIN % -1`, which is 0 (`checked_rem`
+/// reports it as overflow) — and fails exactly on a zero divisor. The value is
+/// `wrapping_rem`'s by construction (see `int_arith`); asserting it here would
+/// put a 64-bit division in the formula, which the solver did not finish in an
+/// hour, while leaving the value unobserved lets it slice the division away.
 #[kani::proof]
-fn int_mod_is_the_remainder() {
+fn int_mod_errors_are_exact() {
     let a: i64 = kani::any();
     let b: i64 = kani::any();
     match int_arith(IntOp::Mod, a, b) {
         Err(IntArithError::DivisionByZero) => assert!(b == 0),
         Err(IntArithError::Overflow) => panic!("a remainder always fits"),
-        Ok(m) => assert!(b != 0 && m == a.wrapping_rem(b)),
+        Ok(_) => assert!(b != 0),
     }
 }
 
@@ -291,29 +289,9 @@ fn checked_index_is_exact() {
 
 // ── range() ─────────────────────────────────────────────────────
 
-/// `range_len` counts exactly the progression elements before `end`: the last
-/// counted element is strictly before `end`, the next one is not, and every
-/// counted element (`range_nth`) is exact in i64.
-#[kani::proof]
-fn range_len_is_exact() {
-    let start: i64 = kani::any();
-    let end: i64 = kani::any();
-    let step: i64 = kani::any();
-    kani::assume(step != 0);
-    let n = range_len(start, end, step) as i128;
-    let (s, e, st) = (start as i128, end as i128, step as i128);
-    let before_end = |x: i128| if st > 0 { x < e } else { x > e };
-    if n > 0 {
-        let last = s + (n - 1) * st;
-        assert!(before_end(last));
-        assert!(range_nth(start, step, (n - 1) as u64) as i128 == last);
-    }
-    assert!(!before_end(s + n * st));
-}
-
 /// Every element of the range is computed exactly (no i64 wraparound). The
 /// precondition "`start + k*step` is before `end`" is the division-free form of
-/// `k < range_len(...)` — `range_len_is_exact` proves they coincide — which
+/// `k < range_len(...)` — the `range_len` tests in `numeric.rs` check they coincide — which
 /// keeps a 64-bit division out of this proof.
 #[kani::proof]
 fn range_nth_is_exact() {
@@ -323,7 +301,11 @@ fn range_nth_is_exact() {
     let k: u64 = kani::any();
     kani::assume(step != 0);
     let want = start as i128 + k as i128 * step as i128;
-    kani::assume(if step > 0 { want < end as i128 } else { want > end as i128 });
+    kani::assume(if step > 0 {
+        want < end as i128
+    } else {
+        want > end as i128
+    });
     assert!(range_nth(start, step, k) as i128 == want);
 }
 

@@ -239,3 +239,60 @@ pub fn scale_unit_to_range(u: f64, lo: i64, hi: i64) -> i64 {
     let offset = ((u * span as f64) as u128).min(span - 1);
     (lo as i128 + offset as i128) as i64
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `range_len` is division-bound, too slow for the model checker, so it
+    /// is checked exhaustively instead: every small range against a naive
+    /// count, and every combination of i64 extremes against the exact (i128)
+    /// characterization — the last element is before `end`, the next is not.
+    #[test]
+    fn range_len_is_exact() {
+        let naive = |start: i64, end: i64, step: i64| {
+            let (mut n, mut x) = (0u64, start as i128);
+            while (step > 0 && x < end as i128) || (step < 0 && x > end as i128) {
+                n += 1;
+                x += step as i128;
+            }
+            n
+        };
+        for start in -12..=12 {
+            for end in -12..=12 {
+                for step in (-6..=6).filter(|&s| s != 0) {
+                    assert_eq!(range_len(start, end, step), naive(start, end, step));
+                }
+            }
+        }
+        let edges = [
+            i64::MIN,
+            i64::MIN + 1,
+            -3,
+            -1,
+            0,
+            1,
+            2,
+            3,
+            i64::MAX - 1,
+            i64::MAX,
+        ];
+        for &start in &edges {
+            for &end in &edges {
+                for &step in edges.iter().filter(|&&s| s != 0) {
+                    let n = range_len(start, end, step) as i128;
+                    let (s, e, st) = (start as i128, end as i128, step as i128);
+                    let before_end = |x: i128| if st > 0 { x < e } else { x > e };
+                    if n > 0 {
+                        assert!(before_end(s + (n - 1) * st));
+                        assert_eq!(
+                            range_nth(start, step, (n - 1) as u64) as i128,
+                            s + (n - 1) * st
+                        );
+                    }
+                    assert!(!before_end(s + n * st), "{start} {end} {step}");
+                }
+            }
+        }
+    }
+}

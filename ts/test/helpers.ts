@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { execFile, spawnSync } from "child_process";
 import { resolve } from "path";
 
 /** Absolute path of the built debug binary (built once in global-setup.ts). */
@@ -27,6 +27,22 @@ export function petalCapture(args: string[], input?: string): CliResult {
     stderr: (r.stderr || "").toString(),
     code: typeof r.status === "number" ? r.status : 1,
   };
+}
+
+/**
+ * `petalCapture` without blocking the worker: resolves once the child exits.
+ * A file with hundreds of back-to-back `spawnSync` calls starves the vitest
+ * worker's event loop for minutes, and its RPC to the main process then times
+ * out ("Timeout calling onTaskUpdate") even though every test passed. Such
+ * files use this, which also lets their tests run concurrently.
+ */
+export function petalCaptureAsync(args: string[]): Promise<CliResult> {
+  return new Promise((resolvePromise) => {
+    execFile(PETAL, args, { encoding: "utf-8", timeout: 10000 }, (err, stdout, stderr) => {
+      const code = err ? (typeof err.code === "number" ? err.code : 1) : 0;
+      resolvePromise({ stdout: stdout ?? "", stderr: stderr ?? "", code });
+    });
+  });
 }
 
 /** Run the binary expecting success; returns trimmed stdout, throws on failure. */

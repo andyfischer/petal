@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { petalCapture } from "./helpers";
+import { petalCaptureAsync } from "./helpers";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..");
 
@@ -68,13 +68,15 @@ function extractSnippets(relFile: string): Snippet[] {
   return snippets;
 }
 
-function petalCheck(code: string): { ok: boolean; err: string } {
-  const r = petalCapture(["check", "-e", code]);
+async function petalCheck(code: string): Promise<{ ok: boolean; err: string }> {
+  const r = await petalCaptureAsync(["check", "-e", code]);
   return { ok: r.code === 0, err: r.stderr.trim() };
 }
 
-function petalRun(code: string): { ok: boolean; stdout: string; stderr: string } {
-  const r = petalCapture(["run", "-e", code]);
+async function petalRun(
+  code: string,
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  const r = await petalCaptureAsync(["run", "-e", code]);
   return { ok: r.code === 0, stdout: r.stdout, stderr: r.stderr.trim() };
 }
 
@@ -104,7 +106,9 @@ function expectedOutput(code: string): string[] | null {
 
 const snippets = docFiles().flatMap(extractSnippets);
 
-describe("doc snippets", () => {
+// Concurrent, and async spawns: ~300 blocks at a debug-build `petal check`
+// each would otherwise block the worker for minutes (see petalCaptureAsync).
+describe.concurrent("doc snippets", () => {
   it("found petal code blocks to verify", () => {
     expect(snippets.length).toBeGreaterThan(50);
   });
@@ -113,8 +117,8 @@ describe("doc snippets", () => {
     const label = `${s.file}:${s.line} (block #${s.index})`;
     if (s.tags.some((t) => SKIP_TAGS.has(t))) continue;
 
-    it(`compiles — ${label}`, () => {
-      const { ok, err } = petalCheck(s.code);
+    it(`compiles — ${label}`, async ({ expect }) => {
+      const { ok, err } = await petalCheck(s.code);
       expect(ok, `\`petal check\` failed for ${label}:\n${err}\n\n${s.code}`).toBe(
         true,
       );
@@ -122,8 +126,8 @@ describe("doc snippets", () => {
 
     const expected = expectedOutput(s.code);
     if (expected) {
-      it(`prints the documented output — ${label}`, () => {
-        const { ok, stdout, stderr } = petalRun(s.code);
+      it(`prints the documented output — ${label}`, async ({ expect }) => {
+        const { ok, stdout, stderr } = await petalRun(s.code);
         expect(ok, `\`petal run\` failed for ${label}:\n${stderr}`).toBe(true);
         const actual = stdout.replace(/\n$/, "").split("\n").map((l) => l.trim());
         expect(actual).toEqual(expected);

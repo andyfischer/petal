@@ -1015,6 +1015,79 @@ TEST(hot_reload_watches_new_imports_and_deletions) {
     CHECK_EQ(run_out(vm), std::vector<double>{7});
 }
 
+// A first load that fails leaves nothing loaded, but the VM watches for the
+// fix: the entry file and any .ptl file beside it, and reload() retries the
+// load.
+TEST(failed_load_file_is_watched_and_retried) {
+    fs::path dir = scratch_dir("failed_load");
+    fs::path main = dir / "main.ptl";
+    write_file(main, "import helper\npush_output(symbol(\"out\"), helper.N)\n");
+    petal::Vm vm;
+    CHECK_THROWS_CODE(vm.load_file(main.string()), PB_ERR_COMPILE);  // no helper.ptl yet
+    CHECK(!vm.loaded());
+    CHECK(!vm.sources_changed());
+
+    // Creating the missing module is the fix.
+    write_file(dir / "helper.ptl", "export let N = 4\n");
+    CHECK(vm.sources_changed());
+    auto changed = vm.changed_sources();
+    REQUIRE(changed.size() == 1);
+    CHECK_EQ(fs::path(changed[0]).filename().string(), std::string("helper.ptl"));
+    petal::ReloadResult r = vm.reload();
+    CHECK_EQ(r.state_preserved, 0u);
+    CHECK(vm.loaded());
+    CHECK(!vm.sources_changed());
+    CHECK_EQ(run_out(vm), std::vector<double>{4});
+
+    // A missing entry file is watched too: it appearing is the change.
+    fs::path later = dir / "later.ptl";
+    petal::Vm vm2;
+    CHECK_THROWS_CODE(vm2.load_file(later.string()), PB_ERR_IO);
+    CHECK(!vm2.sources_changed());
+    write_file(later, "push_output(symbol(\"out\"), 9)\n");
+    CHECK(vm2.sources_changed());
+    vm2.reload();
+    CHECK_EQ(run_out(vm2), std::vector<double>{9});
+}
+
+// After a failed reload the old program keeps running and its files stay
+// watched, and so does every .ptl file under the entry's directory: the fix
+// may land in a module the broken edit newly imports.
+TEST(failed_reload_watches_the_script_directory) {
+    fs::path dir = scratch_dir("failed_reload_dir");
+    fs::path main = dir / "main.ptl";
+    fs::create_directories(dir / "lib");
+    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = (\n");  // broken, not imported yet
+    write_file(main, "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    petal::Vm vm;
+    vm.load_file(main.string());
+    CHECK_EQ(run_out(vm), std::vector<double>{1});
+    // An edit in a file the program does not import is not a change yet.
+    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = (\n\n");
+    CHECK(!vm.sources_changed());
+
+    // The edit imports the broken module: the reload fails.
+    write_file(main, "import lib/shapes\nstate n = 0\nn += shapes.SIDES\npush_output(symbol(\"out\"), n)\n");
+    CHECK(vm.sources_changed());
+    CHECK_THROWS_CODE(vm.reload(), PB_ERR_COMPILE);
+    CHECK(!vm.sources_changed());  // this version was looked at
+    CHECK_EQ(run_out(vm), std::vector<double>{2});
+
+    // Fixing the module (which the old program never imported) is seen.
+    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = 6\n");
+    CHECK(vm.sources_changed());
+    auto changed = vm.changed_sources();
+    REQUIRE(changed.size() == 1);
+    CHECK_EQ(fs::path(changed[0]).filename().string(), std::string("shapes.ptl"));
+    petal::ReloadResult r = vm.reload();
+    CHECK(r.state_preserved >= 1u);  // `n` kept
+    CHECK_EQ(run_out(vm), std::vector<double>{8});
+
+    // Healthy again: only the program's own files are watched.
+    write_file(dir / "unrelated.ptl", "export let X = 1\n");
+    CHECK(!vm.sources_changed());
+}
+
 TEST(reload_from_source) {
     petal::Vm vm;
     vm.native("host_scale", [](petal::Call& c) { c.result().value(c[0].number() * 10); });

@@ -295,7 +295,8 @@ void pb_call_set_error(pb_call* call, const char* message);
 
 /* Compile the file at `path` (imports resolve relative to it) and make it the
  * VM's program with a fresh stack (state starts empty). On failure the
- * previously loaded program, if any, stays loaded. */
+ * previously loaded program, if any, stays loaded, and the VM watches for the
+ * fix (pb_vm_sources_changed); pb_vm_reload then retries this load. */
 pb_status pb_vm_load_file(pb_vm* vm, const char* path);
 /* As pb_vm_load_file but from memory. `name` (optional) labels errors. */
 pb_status pb_vm_load_source(pb_vm* vm, const char* source, const char* name);
@@ -476,12 +477,18 @@ pb_status pb_vm_source_files(pb_vm* vm, const char* const** out_paths, size_t* o
 
 /* True when any source file changed (modification time or length), was
  * deleted, or appeared, since the program was last (re)loaded or a reload was
- * last attempted. Cheap (stat only). */
+ * last attempted. Cheap (stat only). While broken — after a failed
+ * pb_vm_load_file, or a failed reload of a file-loaded program — the watched
+ * set also covers every .ptl file under the entry file's directory (hidden
+ * directories skipped), and a new .ptl file there counts as a change, until a
+ * load or reload succeeds: the fix may land in a module the broken edit
+ * imports. */
 bool pb_vm_sources_changed(pb_vm* vm);
 
 /* The source files pb_vm_sources_changed reports as changed, in
- * pb_vm_source_files order (0 when nothing changed or no program is loaded).
- * Valid until the next call to this function. */
+ * pb_vm_source_files order (while broken: the entry file first, then other
+ * watched files, then new ones). 0 when nothing changed or nothing is
+ * watched. Valid until the next call to this function. */
 pb_status pb_vm_changed_sources(pb_vm* vm, const char* const** out_paths, size_t* out_count);
 
 typedef struct pb_reload_result {
@@ -491,7 +498,9 @@ typedef struct pb_reload_result {
 
 /* Re-read the entry file from disk, recompile, and swap the new program in
  * with transfer_state. On PB_ERR_COMPILE the old program keeps running.
- * Only valid for programs loaded with pb_vm_load_file. */
+ * Only valid for programs loaded with pb_vm_load_file. After a failed
+ * pb_vm_load_file it retries that load instead (fresh state; `out` counts
+ * nothing preserved or dropped). */
 pb_status pb_vm_reload(pb_vm* vm, pb_reload_result* out);
 /* The same with new source text (the program keeps its original file origin). */
 pb_status pb_vm_reload_source(pb_vm* vm, const char* source, pb_reload_result* out);

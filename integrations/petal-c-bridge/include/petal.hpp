@@ -527,14 +527,17 @@ public:
         return std::vector<std::string>(paths, paths + n);
     }
     bool sources_changed() { return pb_vm_sources_changed(vm_); }
-    // The files sources_changed() reports, in source_files() order.
+    // The files sources_changed() reports, in source_files() order. While
+    // broken (a failed load_file() or reload), sources_changed() and this also
+    // cover every .ptl file under the entry file's directory, new ones included.
     std::vector<std::string> changed_sources() {
         const char* const* paths = nullptr;
         size_t n = 0;
         check(pb_vm_changed_sources(vm_, &paths, &n));
         return std::vector<std::string>(paths, paths + n);
     }
-    // Throws on compile error; the old program keeps running.
+    // Throws on compile error; the old program keeps running. After a failed
+    // load_file(), retries that load (fresh state).
     ReloadResult reload() {
         pb_reload_result r{};
         check(pb_vm_reload(vm_, &r));

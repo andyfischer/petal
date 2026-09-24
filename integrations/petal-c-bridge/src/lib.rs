@@ -38,6 +38,7 @@ pub mod natives;
 pub mod scenario;
 pub mod view;
 pub mod vm;
+mod watch;
 
 use std::ffi::c_char;
 

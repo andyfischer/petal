@@ -473,6 +473,23 @@ if (vm.sources_changed()) {                 // stat() of every source file
   modules that did not change. Empty when nothing changed or the program
   came from memory. From C, `pb_vm_changed_sources` (the list stays valid
   until the next call to it).
+- **While the program is broken** — a `load_file()` that failed, or a failed
+  reload of a file-loaded program — the program's own file list is missing
+  or stale: the broken edit may import a module that does not exist yet, or
+  one that exists but does not compile. Until a load or reload succeeds,
+  `sources_changed()` / `changed_sources()` also watch every `.ptl` file
+  under the entry file's directory (hidden directories skipped, the scan
+  bounded to 4096 entries), and a `.ptl` file that appears there counts as a
+  change. After a failed first load, `reload()` retries the load (fresh
+  state), so one loop covers both cases:
+
+  ```cpp
+  try { vm.load_file("game.ptl"); } catch (const petal::Error& e) { overlay.show(e); }
+  // every ~0.25 s
+  if (vm.sources_changed()) {
+      try { vm.reload(); } catch (const petal::Error& e) { overlay.show(e); }
+  }
+  ```
 - `reload()` re-reads the entry file (imports are re-resolved and re-read
   too), compiles it once with `Env::compile_program_diag` (so a compile error
   arrives with its structured diagnostics), and calls Petal's

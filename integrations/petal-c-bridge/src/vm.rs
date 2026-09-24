@@ -28,6 +28,7 @@ use crate::ffi::{
 use crate::natives::{self, HostCallback, PbFreeFn, PbNativeFn};
 use crate::scenario::PbScenario;
 use crate::view::{Names, PbValue, ViewArena};
+use crate::watch::BrokenWatch;
 
 /// The loaded program.
 struct Loaded {
@@ -78,6 +79,10 @@ pub struct Vm {
     env: Env,
     implicit_imports: Vec<String>,
     loaded: Option<Loaded>,
+    /// Set by a failed `load_file` or a failed reload of a file-loaded
+    /// program, cleared by the next successful one: while it is set, it is
+    /// what `sources_changed` / `changed_sources` poll (see `watch.rs`).
+    broken: Option<BrokenWatch>,
     input: InputState,
     last_error: Option<Box<PublishedError>>,
     // Everything below is handed out to C and lives until the documented
@@ -121,6 +126,7 @@ impl Vm {
             env,
             implicit_imports: vec![petal_ui::MODULE_NAME.to_string()],
             loaded: None,
+            broken: None,
             input: InputState::new(),
             last_error: None,
             views: Vec::new(),
@@ -224,7 +230,35 @@ impl Vm {
             entry_name,
             watch: self.env.watch_program_sources(program_id, origin),
         });
+        self.broken = None;
         Ok(())
+    }
+
+    /// Read `path` and [`load`](Self::load) it. On failure (unreadable file
+    /// or compile error) the VM watches for a fix: `sources_changed()`
+    /// reports an edit to the entry file or to any `.ptl` file under its
+    /// directory, and [`reload`](Self::reload) retries this load.
+    pub fn load_file(&mut self, path: &Path) -> BResult<()> {
+        let result = match std::fs::read_to_string(path) {
+            Ok(source) => self.load(&source, Some(path), path.display().to_string()),
+            Err(e) => Err(BridgeError::new(
+                Status::Io,
+                format!("cannot read {}: {e}", path.display()),
+            )),
+        };
+        if result.is_err() {
+            self.broken = Some(BrokenWatch::new(path, Vec::new(), true));
+        }
+        result
+    }
+
+    /// A reload of the file-loaded program failed: watch for a fix beyond
+    /// the program's own files (see `watch.rs`).
+    fn mark_reload_broken(&mut self) {
+        let entry = self.loaded.as_ref().and_then(|l| l.entry_path.clone());
+        if let Some(entry) = entry {
+            self.broken = Some(BrokenWatch::new(&entry, self.source_paths(), false));
+        }
     }
 
     /// Every source file of the loaded program: the entry file, then each
@@ -248,21 +282,33 @@ impl Vm {
     }
 
     /// Whether any source file changed (modification time or length),
-    /// appeared or disappeared since the last load or reload attempt.
+    /// appeared or disappeared since the last load or reload attempt. After
+    /// a failed `load_file` or a failed reload of a file-loaded program, the
+    /// watched set also covers every `.ptl` file under the entry file's
+    /// directory, including new ones, until a load or reload succeeds.
     pub fn sources_changed(&self) -> bool {
-        self.loaded.as_ref().is_some_and(|l| l.watch.changed())
+        match &self.broken {
+            Some(b) => b.changed(),
+            None => self.loaded.as_ref().is_some_and(|l| l.watch.changed()),
+        }
     }
 
     /// The source files [`sources_changed`](Self::sources_changed) would
     /// report, in [`source_paths`](Self::source_paths) order: what a host
     /// names in its "reloaded ..." message, or uses to decide which of its
-    /// own caches a reload invalidates. Empty when nothing changed or no
-    /// program is loaded.
+    /// own caches a reload invalidates. While broken (see
+    /// [`sources_changed`](Self::sources_changed)): the entry file first,
+    /// then any other watched file, then new `.ptl` files. Empty when
+    /// nothing changed or nothing is watched.
     pub fn changed_sources(&self) -> Vec<PathBuf> {
-        self.loaded
-            .as_ref()
-            .map(|l| l.watch.changed_paths())
-            .unwrap_or_default()
+        match &self.broken {
+            Some(b) => b.changed_paths(),
+            None => self
+                .loaded
+                .as_ref()
+                .map(|l| l.watch.changed_paths())
+                .unwrap_or_default(),
+        }
     }
 
     /// Recompile the program from `source` (keeping its entry file origin)
@@ -285,6 +331,7 @@ impl Vm {
                 // This version of the files has been looked at: don't report
                 // it as changed again until it is edited.
                 self.refresh_watch();
+                self.mark_reload_broken();
                 return Err(BridgeError::from_load(&e, &name));
             }
         };
@@ -295,6 +342,7 @@ impl Vm {
         self.clear_views();
         // The new program may import a different set of files.
         self.refresh_watch();
+        self.broken = None;
         Ok(PbReloadResult {
             state_preserved: result.state_preserved as u32,
             state_dropped: result.state_dropped as u32,
@@ -302,7 +350,17 @@ impl Vm {
     }
 
     /// Re-read the entry file and [`reload_with`](Self::reload_with) it.
+    /// After a failed [`load_file`](Self::load_file) there is no program to
+    /// carry state from: this retries that load (fresh state; the result
+    /// counts nothing preserved or dropped).
     pub fn reload(&mut self) -> BResult<PbReloadResult> {
+        if let Some(entry) = self.broken.as_ref().filter(|b| b.retry_load).map(|b| b.entry.clone()) {
+            self.load_file(&entry)?;
+            return Ok(PbReloadResult {
+                state_preserved: 0,
+                state_dropped: 0,
+            });
+        }
         let path = self.loaded()?.entry_path.clone().ok_or_else(|| {
             BridgeError::invalid("pb_vm_reload needs a program loaded with pb_vm_load_file")
         })?;
@@ -310,6 +368,7 @@ impl Vm {
             Ok(s) => s,
             Err(e) => {
                 self.refresh_watch();
+                self.mark_reload_broken();
                 return Err(BridgeError::new(
                     Status::Io,
                     format!("cannot read {}: {e}", path.display()),
@@ -668,9 +727,7 @@ pub unsafe extern "C" fn pb_vm_register_emitter(
 pub unsafe extern "C" fn pb_vm_load_file(vm: *mut VmHandle, path: *const c_char) -> Status {
     status(vm, |vm| {
         let path = unsafe { arg_str(path, "path") }?;
-        let source = std::fs::read_to_string(path)
-            .map_err(|e| BridgeError::new(Status::Io, format!("cannot read {path}: {e}")))?;
-        vm.load(&source, Some(Path::new(path)), path.to_string())
+        vm.load_file(Path::new(path))
     })
 }
 

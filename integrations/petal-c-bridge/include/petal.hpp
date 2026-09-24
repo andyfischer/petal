@@ -527,6 +527,13 @@ public:
         return std::vector<std::string>(paths, paths + n);
     }
     bool sources_changed() { return pb_vm_sources_changed(vm_); }
+    // The files sources_changed() reports, in source_files() order.
+    std::vector<std::string> changed_sources() {
+        const char* const* paths = nullptr;
+        size_t n = 0;
+        check(pb_vm_changed_sources(vm_, &paths, &n));
+        return std::vector<std::string>(paths, paths + n);
+    }
     // Throws on compile error; the old program keeps running.
     ReloadResult reload() {
         pb_reload_result r{};

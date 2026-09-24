@@ -20,6 +20,7 @@
  *     pb_vm_run                          reset_stack + run the whole program
  *     pb_vm_drain / pb_vm_drain_draw     read what the script emitted
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
+ *     (pb_vm_changed_sources names the edited files)
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
  *
  * Threading: a pb_vm is single-threaded; use it from one thread at a time.
@@ -477,6 +478,11 @@ pb_status pb_vm_source_files(pb_vm* vm, const char* const** out_paths, size_t* o
  * deleted, or appeared, since the program was last (re)loaded or a reload was
  * last attempted. Cheap (stat only). */
 bool pb_vm_sources_changed(pb_vm* vm);
+
+/* The source files pb_vm_sources_changed reports as changed, in
+ * pb_vm_source_files order (0 when nothing changed or no program is loaded).
+ * Valid until the next call to this function. */
+pb_status pb_vm_changed_sources(pb_vm* vm, const char* const** out_paths, size_t* out_count);
 
 typedef struct pb_reload_result {
     uint32_t state_preserved; /* state slots whose declaration still exists */

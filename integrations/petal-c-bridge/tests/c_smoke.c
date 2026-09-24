@@ -35,6 +35,11 @@ int main(void) {
     REQUIRE(pb_vm_take_output(vm, &lines, &n) == PB_OK);
     REQUIRE(n == 1 && strcmp(lines[0], "from c") == 0);
 
+    /* A program loaded from memory has no files to change. */
+    const char* const* changed = &lines[0];
+    REQUIRE(pb_vm_changed_sources(vm, &changed, &n) == PB_OK);
+    REQUIRE(n == 0);
+
     /* Native vec3s cross the boundary as PB_VEC3 in both directions. */
     REQUIRE(pb_vm_set_vec3(vm, "v", 1.0, 2.0, 3.0) == PB_OK);
     REQUIRE(pb_vm_load_source(vm, "note(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);

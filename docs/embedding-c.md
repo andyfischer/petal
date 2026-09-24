@@ -448,9 +448,10 @@ for (size_t f = 0; f < frames; ++f) {
 vm.load_file("games/marble/game.ptl");
 ...
 if (vm.sources_changed()) {                 // stat() of every source file
+    auto edited = vm.changed_sources();     // which ones, e.g. {".../tuning.ptl"}
     try {
         auto r = vm.reload();               // recompile + transfer_state
-        log("reloaded: kept {} state slots, dropped {}", r.state_preserved, r.state_dropped);
+        log("reloaded {}: kept {} state slots, dropped {}", edited, r.state_preserved, r.state_dropped);
     } catch (const petal::Error& e) {
         overlay.show(e);                    // old program keeps running
     }
@@ -465,6 +466,13 @@ if (vm.sources_changed()) {                 // stat() of every source file
   Garden use). A failed reload counts as an attempt, so a broken file is not
   recompiled every poll. After a successful reload the watched set follows
   the new program's imports.
+- `changed_sources()` names the files `sources_changed()` counts, in
+  `source_files()` order and spelling (a deleted file is included). Read it
+  *before* `reload()`, which re-stamps the watch: a host uses it for its
+  "reloaded tuning.ptl" message, or to keep caches that depend only on
+  modules that did not change. Empty when nothing changed or the program
+  came from memory. From C, `pb_vm_changed_sources` (the list stays valid
+  until the next call to it).
 - `reload()` re-reads the entry file (imports are re-resolved and re-read
   too), compiles it once with `Env::compile_program_diag` (so a compile error
   arrives with its structured diagnostics), and calls Petal's

@@ -86,6 +86,7 @@ pub struct Vm {
     views: Vec<ViewArena>,
     draws: Vec<DrawList>,
     source_files: CStrList,
+    changed_files: CStrList,
     output_lines: CStrList,
     state_json: CString,
     package_name: CString,
@@ -121,6 +122,7 @@ impl Vm {
             views: Vec::new(),
             draws: Vec::new(),
             source_files: CStrList::default(),
+            changed_files: CStrList::default(),
             output_lines: CStrList::default(),
             state_json: CString::default(),
             package_name: CString::default(),
@@ -243,6 +245,18 @@ impl Vm {
     /// appeared or disappeared since the last load or reload attempt.
     pub fn sources_changed(&self) -> bool {
         self.loaded.as_ref().is_some_and(|l| l.watch.changed())
+    }
+
+    /// The source files [`sources_changed`](Self::sources_changed) would
+    /// report, in [`source_paths`](Self::source_paths) order: what a host
+    /// names in its "reloaded ..." message, or uses to decide which of its
+    /// own caches a reload invalidates. Empty when nothing changed or no
+    /// program is loaded.
+    pub fn changed_sources(&self) -> Vec<PathBuf> {
+        self.loaded
+            .as_ref()
+            .map(|l| l.watch.changed_paths())
+            .unwrap_or_default()
     }
 
     /// Recompile the program from `source` (keeping its entry file origin)
@@ -1110,6 +1124,26 @@ pub extern "C" fn pb_vm_sources_changed(vm: *mut VmHandle) -> bool {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_changed_sources(
+    vm: *mut VmHandle,
+    out_paths: *mut *const *const c_char,
+    out_count: *mut usize,
+) -> Status {
+    let (st, (paths, count)) = with_vm(vm, (std::ptr::null(), 0), |vm| {
+        let paths: Vec<String> = vm
+            .changed_sources()
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        vm.changed_files.set(paths);
+        Ok((vm.changed_files.ptrs.as_ptr(), vm.changed_files.ptrs.len()))
+    });
+    put(out_paths, paths);
+    put(out_count, count);
+    st
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_reload(vm: *mut VmHandle, out: *mut PbReloadResult) -> Status {
     let (st, r) = with_vm(vm, None, |vm| vm.reload().map(Some));
     if let Some(r) = r {
@@ -1368,11 +1402,14 @@ mod tests {
             .unwrap();
         assert_eq!(vm.source_paths(), vec![main.clone()]);
         assert!(!vm.sources_changed());
+        assert!(vm.changed_sources().is_empty());
         // A length change is detected even within one mtime tick.
         std::fs::write(&main, "push_output(symbol(\"out\"), 22)\n").unwrap();
         assert!(vm.sources_changed());
+        assert_eq!(vm.changed_sources(), vec![main.clone()]);
         vm.reload().unwrap();
         assert!(!vm.sources_changed());
+        assert!(vm.changed_sources().is_empty());
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![22]);
         std::fs::remove_dir_all(&dir).ok();

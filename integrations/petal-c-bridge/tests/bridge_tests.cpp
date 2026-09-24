@@ -918,10 +918,23 @@ TEST(hot_reload_tracks_imported_modules) {
     CHECK_EQ(fs::path(files[1]).filename().string(), std::string("tuning.ptl"));
 
     CHECK_EQ(run_out(vm), std::vector<double>{2});
+    CHECK(vm.changed_sources().empty());
     write_file(dir / "tuning.ptl", "export let SPEED = 10\n");
     CHECK(vm.sources_changed());
+    // Only the edited module is named, with the path source_files() gives it.
+    CHECK_EQ(vm.changed_sources(), std::vector<std::string>{files[1]});
     vm.reload();
+    CHECK(vm.changed_sources().empty());
     CHECK_EQ(run_out(vm), std::vector<double>{12});
+
+    // Both files edited: named in source_files() order.
+    write_file(dir / "tuning.ptl", "export let SPEED = 1\n");
+    write_file(dir / "main.ptl",
+               "import tuning\n"
+               "state pos = 0\n"
+               "pos += tuning.SPEED * 2\n"
+               "push_output(symbol(\"out\"), pos)\n");
+    CHECK_EQ(vm.changed_sources(), files);
 }
 
 TEST(hot_reload_watches_new_imports_and_deletions) {
@@ -944,6 +957,9 @@ TEST(hot_reload_watches_new_imports_and_deletions) {
     // compile error and the old program keeps running.
     fs::remove(dir / "extra.ptl");
     CHECK(vm.sources_changed());
+    auto changed = vm.changed_sources();
+    REQUIRE(changed.size() == 1);
+    CHECK_EQ(fs::path(changed[0]).filename().string(), std::string("extra.ptl"));
     CHECK_THROWS_CODE(vm.reload(), PB_ERR_COMPILE);
     CHECK(!vm.sources_changed());
     CHECK_EQ(run_out(vm), std::vector<double>{5});

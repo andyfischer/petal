@@ -174,9 +174,28 @@ fn corner_fan(buf: &mut Vec<Vertex>, cx: f32, cy: f32, r: f32, start: f32, shade
 
 /// Number of segments to approximate a circle of the given radius — more for
 /// bigger circles, capped so a huge radius doesn't explode the vertex count.
+///
+/// Small circles take the linear ramp. A large one is budgeted by chord error
+/// instead: enough segments that no chord strays more than
+/// [`CIRCLE_MAX_SAGITTA`] px inside the true rim. A flat 64-segment cap drew a
+/// 500 px disc as a visible polygon with 49 px sides, which a background glow
+/// or a large gradient disc shows immediately.
 fn circle_segments(radius: f32) -> usize {
-    ((radius * 0.7) as usize + 8).clamp(8, 64)
+    let ramp = ((radius * 0.7) as usize + 8).clamp(8, 64);
+    if radius <= CIRCLE_MAX_SAGITTA {
+        return ramp;
+    }
+    // A chord across angle `a` sits `r · (1 − cos(a / 2))` inside the rim.
+    let half_angle = (1.0 - CIRCLE_MAX_SAGITTA / radius).acos();
+    let by_error = (std::f32::consts::PI / half_angle).ceil() as usize;
+    ramp.max(by_error).min(CIRCLE_MAX_SEGMENTS)
 }
+
+/// The furthest a circle's chord may fall inside the true rim, in px.
+const CIRCLE_MAX_SAGITTA: f32 = 0.25;
+
+/// The segment cap for one full circle, whatever its radius.
+const CIRCLE_MAX_SEGMENTS: usize = 512;
 
 /// Append a filled circle as a triangle fan around its center.
 pub fn circle(buf: &mut Vec<Vertex>, cx: f32, cy: f32, radius: f32, color: Color) {
@@ -405,6 +424,17 @@ pub fn polyline(buf: &mut Vec<Vertex>, points: &[(f32, f32)], width: f32, color:
     // double coverage. On a turn too sharp (or segments too short) for that
     // crossing to lie on both segments, they meet at the vertex itself, which
     // leaves a sliver unpainted rather than painting it twice.
+    //
+    // "Lies on the segment" is measured *along* it: the crossing sits
+    // `half · tan(θ/2)` back from the vertex on each segment, a fraction of a
+    // pixel on a gentle bend. (Its straight-line distance from the vertex is
+    // never less than `half`, so testing that pinched every bend of a densely
+    // sampled curve — segments shorter than the half-width — to the
+    // centreline.) Each trim is held to half its segment, so the trims from
+    // a segment's two ends can never cross each other.
+    // Trimmed corners, with the outer rim points either side of their vertex:
+    // the join fill below needs all three.
+    let mut trimmed: Vec<((f32, f32), (f32, f32), (f32, f32), (f32, f32))> = Vec::new();
     for i in 1..path.len() - 1 {
         let (d0, d1) = (dirs[i - 1], dirs[i]);
         let turn = d0.0 * d1.1 - d0.1 * d1.0;
@@ -417,9 +447,15 @@ pub fn polyline(buf: &mut Vec<Vertex>, points: &[(f32, f32)], width: f32, color:
         } else {
             (minus[i - 1][1], minus[i][0])
         };
-        let reach = seg_len(path[i - 1], path[i]).min(seg_len(path[i], path[i + 1]));
+        let v = path[i];
+        let fits = |x: (f32, f32)| {
+            let back = (v.0 - x.0) * d0.0 + (v.1 - x.1) * d0.1;
+            let ahead = (x.0 - v.0) * d1.0 + (x.1 - v.1) * d1.1;
+            (0.0..=0.5 * seg_len(path[i - 1], v)).contains(&back)
+                && (0.0..=0.5 * seg_len(v, path[i + 1])).contains(&ahead)
+        };
         let corner = match line_intersection(r0, d0, r1, d1) {
-            Some(x) if seg_len(x, path[i]) <= reach => x,
+            Some(x) if fits(x) => x,
             _ => path[i],
         };
         if inner_is_plus {
@@ -429,7 +465,16 @@ pub fn polyline(buf: &mut Vec<Vertex>, points: &[(f32, f32)], width: f32, color:
             minus[i - 1][1] = corner;
             minus[i][0] = corner;
         }
+        if corner != v {
+            let (o0, o1) = if inner_is_plus {
+                (minus[i - 1][1], minus[i][0])
+            } else {
+                (plus[i - 1][1], plus[i][0])
+            };
+            trimmed.push((corner, v, o0, o1));
+        }
     }
+
 
     for i in 0..dirs.len() {
         triangle(buf, plus[i][0], minus[i][0], plus[i][1], color);
@@ -440,6 +485,18 @@ pub fn polyline(buf: &mut Vec<Vertex>, points: &[(f32, f32)], width: f32, color:
     // vertices, and a paint stroke is exactly where that cost would show.
     if half <= LINE_HALF_WIDTH {
         return;
+    }
+
+    // A trimmed corner sits *behind* the vertex on the incoming segment and
+    // *ahead* of it on the outgoing one, so the incoming quad now ends on the
+    // edge corner→o0 and the outgoing one starts on corner→o1, and the vertex
+    // lies between them. The round join below only covers the sector outside
+    // the vertex (v, o0, o1), so the two slivers (corner, v, o0) and (corner,
+    // v, o1) must be filled here or every trimmed join has a hole in its body.
+    // A dense curve has one at every sample, and they read as a ragged edge.
+    for &(corner, v, o0, o1) in &trimmed {
+        triangle(buf, corner, v, o0, color);
+        triangle(buf, corner, o1, v, color);
     }
 
     // Round joins: at each interior vertex, the wedge between the two segments'
@@ -1100,7 +1157,17 @@ mod tests {
     fn circle_segment_count_grows_and_caps() {
         assert_eq!(circle_segments(0.0), 8);
         assert!(circle_segments(20.0) > 8);
-        assert_eq!(circle_segments(1000.0), 64);
+        // Up to UI sizes the count is what it always was.
+        assert_eq!(circle_segments(10.0), 15);
+        assert_eq!(circle_segments(100.0), 64);
+        // A big disc keeps its chord error under a quarter pixel…
+        for r in [200.0f32, 500.0, 1000.0, 2000.0] {
+            let n = circle_segments(r) as f32;
+            let sagitta = r * (1.0 - (std::f32::consts::PI / n).cos());
+            assert!(sagitta <= CIRCLE_MAX_SAGITTA + 1e-3, "r={r}: {n} segments sag {sagitta}px");
+        }
+        // …and the count still stops somewhere.
+        assert_eq!(circle_segments(1.0e6), CIRCLE_MAX_SEGMENTS);
     }
 
     #[test]
@@ -1332,6 +1399,43 @@ mod tests {
                 .any(|gy| { coverage_count(&lines, (gx as f32 + 0.5, gy as f32 + 0.5)) > 1 })),
             "per-segment lines were supposed to overlap at the joins"
         );
+    }
+
+    /// A densely sampled curve whose segments are *shorter than the stroke's
+    /// half-width* — a sine wave, a spiral, a smoothed brush path. Each inner
+    /// corner still has to trim to where the two rims cross (a fraction of a
+    /// pixel along each segment on a gentle bend); falling back to the
+    /// centreline vertex there pinched the stroke to half its width at every
+    /// sample and drew a ragged, sawtooth edge.
+    #[test]
+    fn a_dense_curve_keeps_its_full_width_at_every_bend() {
+        let path: Vec<(f32, f32)> = (0..40)
+            .map(|k| {
+                let x = k as f32 * 2.5;
+                (x, 20.0 + 8.0 * (x * 0.08).sin())
+            })
+            .collect();
+        let width = 8.0;
+        let mut buf = Vec::new();
+        polyline(&mut buf, &path, width, col());
+        // Just inside both rims, at every interior vertex.
+        for i in 1..path.len() - 1 {
+            let (a, b) = (path[i - 1], path[i + 1]);
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len = (dx * dx + dy * dy).sqrt();
+            let (nx, ny) = (-dy / len, dx / len);
+            for side in [-1.0, 1.0] {
+                let r = side * width * 0.5 * 0.8;
+                let p = (path[i].0 + nx * r, path[i].1 + ny * r);
+                assert!(covers(&buf, p), "vertex {i}: the stroke is pinched at {p:?}");
+            }
+        }
+        for gx in -6..105 {
+            for gy in 0..40 {
+                let p = (gx as f32 + 0.5, gy as f32 + 0.5);
+                assert!(coverage_count(&buf, p) <= 1, "point {p:?} is covered twice");
+            }
+        }
     }
 
     #[test]

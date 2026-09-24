@@ -2969,6 +2969,32 @@ mod observation_tests {
         );
     }
 
+    /// A binding whose value came from a native reached *indirectly* — through
+    /// a value (`let r = rect(…)` where `rect = Rect`, which is how the `ui`
+    /// prelude exports it), or as a method (`xs.len()`, `r.center_x()`) — is
+    /// observable like any other. Those calls lower to `Call`/`MethodCall`,
+    /// whose result used to be recorded only when a pushed closure frame
+    /// returned, so a native's in-place result was silently dropped.
+    #[test]
+    fn natives_called_through_a_value_or_method_are_observable() {
+        let map = observe(
+            "let rr = Rect\n\
+             let r = rr(1, 2, 3, 4)\n\
+             let f = abs\n\
+             let g = f(-3)\n\
+             let xs = [1, 2, 3]\n\
+             let n = xs.len()\n\
+             let cx = Rect(10, 0, 4, 4).center_x()\n",
+        );
+        assert_eq!(
+            map.get("r"),
+            Some(&serde_json::json!({ "x": 1, "y": 2, "w": 3, "h": 4 }))
+        );
+        assert_eq!(map.get("g"), Some(&serde_json::json!(3)));
+        assert_eq!(map.get("n"), Some(&serde_json::json!(3)));
+        assert_eq!(map.get("cx"), Some(&serde_json::json!(12)));
+    }
+
     /// 2. The collision this facility exists to fix: a binding inside `fn foo`
     ///    and a same-named top-level binding are two different values, and both
     ///    are readable — the function-local one under `foo.<name>`.

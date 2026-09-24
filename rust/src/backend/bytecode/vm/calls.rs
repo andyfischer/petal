@@ -142,10 +142,12 @@ impl<'a> Vm<'a> {
             Value::NativeFunction(nid) => {
                 reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v = self.call_native_or_intrinsic(nid, args, call_site)?;
-                self.set(fi, dst, v);
+                self.set_call_result(fi, dst, v, call_site);
             }
             // Calling a fieldless enum variant yields the variant itself.
-            Value::EnumVariant { .. } if args.is_empty() => self.set(fi, dst, callable),
+            Value::EnumVariant { .. } if args.is_empty() => {
+                self.set_call_result(fi, dst, callable, call_site)
+            }
             _ => return Err(format!("Cannot call {}", callable.type_name())),
         }
         Ok(())
@@ -235,7 +237,7 @@ impl<'a> Vm<'a> {
                     Value::NativeFunction(nid) => {
                         reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                         let v = self.call_native_fn(nid, args, false, call_site)?;
-                        self.set(fi, dst, v);
+                        self.set_call_result(fi, dst, v, call_site);
                         return Ok(());
                     }
                     _ => {} // not callable — fall through to method lookup
@@ -271,7 +273,7 @@ impl<'a> Vm<'a> {
                 reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v =
                     self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
-                self.set(fi, dst, v);
+                self.set_call_result(fi, dst, v, call_site);
                 return Ok(());
             }
         }
@@ -305,7 +307,7 @@ impl<'a> Vm<'a> {
                 reject_named_args(arg_names, self.native_fns.get_name(nid))?;
                 let v =
                     self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
-                self.set(fi, dst, v);
+                self.set_call_result(fi, dst, v, call_site);
                 return Ok(());
             }
         }
@@ -316,7 +318,7 @@ impl<'a> Vm<'a> {
         if let Value::Handle(h) = recv {
             reject_named_args(arg_names, method_name)?;
             let v = self.call_handle_method(h, method_name, args, call_site)?;
-            self.set(fi, dst, v);
+            self.set_call_result(fi, dst, v, call_site);
             return Ok(());
         }
 
@@ -330,7 +332,7 @@ impl<'a> Vm<'a> {
         if let Some(nid) = self.native_fns.lookup_name(method_name) {
             match self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site) {
                 Ok(v) => {
-                    self.set(fi, dst, v);
+                    self.set_call_result(fi, dst, v, call_site);
                     Ok(())
                 }
                 // A class instance that reaches the global-native fallback and
@@ -363,6 +365,29 @@ impl<'a> Vm<'a> {
     /// compile-time hash of the callee's canonical text at this call site, which
     /// is what gives each callsite of a function its own `state` slots.
     #[allow(clippy::too_many_arguments)]
+    /// Write the result of a call that finished without pushing a frame — a
+    /// native, a builtin method, a handle method, a fieldless variant — and
+    /// record it against the call site.
+    ///
+    /// `step` cannot do this: `Inst::dst()` is `None` for `Call` and
+    /// `MethodCall`, because a closure call fills `dst` only when its frame
+    /// returns, and [`deliver_value`](Self::deliver_value) records it there.
+    /// Without this, every named binding whose value came from a native reached
+    /// through a value or a method (`let r = rect(…)` with `rect = Rect`,
+    /// `let n = xs.len()`, `let cx = r.center_x()`) was missing from the
+    /// observation buffer and the trace.
+    fn set_call_result(&mut self, fi: usize, dst: Reg, value: Value, call_site: Option<TermId>) {
+        self.set(fi, dst, value);
+        let Some(call_site) = call_site else { return };
+        if self.trace.enabled {
+            self.trace.push(call_site, &[], value);
+        }
+        if self.observations.enabled && self.is_observable(call_site) {
+            self.observations.record(call_site, value);
+            self.memo_note_observation(call_site, value);
+        }
+    }
+
     pub(super) fn push_closure_frame(
         &mut self,
         cid: ClosureId,

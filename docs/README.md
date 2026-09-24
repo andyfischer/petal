@@ -6,7 +6,7 @@ Start here if you are learning or writing Petal:
 
 | Document | Description |
 |----------|-------------|
-| [Getting Started](Getting_Started.md) | Install or build the CLI, run your first program, find the examples |
+| [Getting Started](Getting_Started.md) | Install the CLI, run your first program, and find what to read next |
 | [Writing Petal](writing-petal-guide.md) | A short guide for programmers new to Petal: how programs are shaped, what is different, and how to use the tooling |
 | [Language Guide](language-guide.md) | The full language reference: values, syntax, control flow, functions, classes, state, type annotations |
 | [Syntax Overview](syntax/overview.md) | A compact map of every lexical form, statement, expression, and operator |

@@ -8,7 +8,7 @@ Petal is a programming language for creative coding.
  - **First-class state.** `state` declares a value that persists across runs, keyed by where in the program it lives.
  - **Live editing.** Change the source while a program runs and keep its state.
  - **Speculative execution.** Re-run a program safely in exploration modes.
- - **Differentiable.** Back-propagation is built in, so a program can be adjusted from observed outputs.
+ - **Differentiable.** Forward-mode automatic differentiation is built in (dual numbers), and `petal propose-edit` can work backward from an observed output to the source edit that would produce it.
  - **Goal-based editing.** Tools can rewrite source programmatically by stating what a value should become.
  - **Optional type annotations.** Annotate bindings, parameters, and return types where you want them. A shallow checker reports mismatches as warnings and never blocks the run.
  - **Classes as named records.** `class Rect … end` names a record shape and gives it a constructor. `fn Rect.center_x(r: Rect)` declares a method on it. Instances are still plain records: no inheritance, no `self`.
@@ -109,7 +109,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 
 | Document | Description |
 |----------|-------------|
-| [Getting Started](docs/Getting_Started.md) | Install or build, run your first program, find the examples |
+| [Getting Started](docs/Getting_Started.md) | Install the CLI, run your first program, and find what to read next |
 | [Language Guide](docs/language-guide.md) | The full language reference |
 | [Builtins Reference](docs/Builtins.md) | Every built-in function |
 | [CLI Reference](docs/CLI.md) | Every `petal` subcommand and flag |

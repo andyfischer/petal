@@ -800,16 +800,16 @@ scale(2, value: 3, by: 1)  // error: scale() got multiple values for parameter '
 
 Wherever the callee is known before the program runs — a function or a
 constructor named at the call site, or a binding that holds one — `petal check`
-reports both of these as warnings too, whether or not the line ever executes,
+reports both of these as errors too, whether or not the line ever executes,
 and lists the detail the runtime error has no room for:
 
 ```
-warning: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offset')
-warning: scale() got multiple values for parameter 'value' (argument 1 already fills it)
+error: scale() has no parameter named 'nudge' (parameters: 'value', 'by', 'offset')
+error: scale() got multiple values for parameter 'value' (argument 1 already fills it)
 ```
 
-`petal check --strict` exits non-zero on them, so a bad name fails CI without
-the branch ever being taken. The runtime error is still the only report for a
+`petal check` exits non-zero on them, so a bad name fails CI without the
+branch ever being taken. The runtime error is still the only report for a
 method call, for a callee this pass cannot see (a function passed in as a
 parameter), and for a builtin.
 
@@ -837,6 +837,26 @@ fn factorial(n)
     end
 end
 ```
+
+Calls may nest 5,000 deep. A recursion that goes deeper, usually one that
+never reaches its base case, stops with an error rather than running out of
+memory:
+
+```
+Error: Stack overflow: more than 5000 nested calls. A recursive function that never reaches its base case causes this; if the recursion is meant to be this deep, rewrite it as a loop [line 1, column 13]
+  |
+1 | fn f(n) 1 + f(n + 1) end
+  |             ^^^^^^^^
+Stack trace:
+  in f() [line 1, column 13]
+  ... previous line repeated 4997 more times
+  in f() [line 2, column 7]
+```
+
+A function that recurses through a callback (`map(xs, fn(x) -> walk(x))`) has
+a lower limit, a few hundred levels, because each callback level also uses the
+native stack. A tree walk is fine. A recursion as deep as a list is long is
+not, so write that one as a loop.
 
 ### Declaration order: top-level `fn`s are hoisted
 

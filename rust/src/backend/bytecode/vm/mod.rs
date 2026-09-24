@@ -11,6 +11,8 @@
 //!   loop-cursor / state-key plumbing.
 //! - [`dispatch`] — `exec_inst` (the per-`Inst` executor) and the arithmetic
 //!   helpers it calls.
+//! - [`fast`] — `run_straight`, the tight loop that retires the common
+//!   instructions of one frame between calls.
 //! - [`calls`] — user-function call/return handling and frame push/pop for
 //!   calls.
 //! - [`native`] — native-function and `BuiltinCall` dispatch.
@@ -35,6 +37,7 @@ use crate::value::{PendingId, Value};
 
 mod calls;
 mod dispatch;
+mod fast;
 mod frame;
 mod intrinsics;
 mod memo;
@@ -325,10 +328,9 @@ impl<'a> Vm<'a> {
         // which is one comparison against data the loop has to touch anyway.
         let mut cached: Option<(usize, Option<FunctionId>, &'a BytecodeFn)> = None;
         while consumed < budget {
-            consumed += 1;
             let depth = self.stack.vm_frames.len();
             if depth == 0 {
-                return (StepResult::Complete(Value::Nil), consumed);
+                return (StepResult::Complete(Value::Nil), consumed + 1);
             }
             let fid = self.stack.vm_frames[depth - 1].func;
             let func = match cached {
@@ -339,6 +341,22 @@ impl<'a> Vm<'a> {
                     func
                 }
             };
+            // Most instructions are straight-line and uneventful: retire them
+            // in the fast loop, which stops at the first one that needs the
+            // general executor below (see the `fast` module). The hooks trace,
+            // observe or profile every instruction, so they take the general
+            // path throughout.
+            if !self.hooks {
+                let (stop, n) = self.run_straight(depth - 1, func, budget - consumed);
+                consumed += n;
+                match stop {
+                    fast::StraightStop::Slow => {}
+                    fast::StraightStop::Budget | fast::StraightStop::Collect => {
+                        return (StepResult::Continue, consumed);
+                    }
+                }
+            }
+            consumed += 1;
             match self.step_in(depth - 1, func) {
                 StepResult::Continue => {
                     if self.heap.should_collect() {
@@ -409,7 +427,14 @@ impl<'a> Vm<'a> {
 
     /// Gather operand registers. Inline capacity covers typical arities, so
     /// the hot call path (`Call`/`BuiltinCall` args) stays allocation-free.
+    /// The frame is resolved once, not per operand.
+    #[inline]
     fn regs(&self, fi: usize, rs: &[Reg]) -> SmallVec<[Value; 8]> {
-        rs.iter().map(|&r| self.reg(fi, r)).collect()
+        let regs = &self.stack.vm_frames[fi].regs;
+        let mut out = SmallVec::with_capacity(rs.len());
+        for &r in rs {
+            out.push(regs.get(r as usize).copied().unwrap_or(Value::Nil));
+        }
+        out
     }
 }

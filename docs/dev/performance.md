@@ -129,8 +129,15 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
 `examples/productivity/spreadsheet` recomputing its whole grid:
 
 - **Interpreter dispatch is the dominant cost** (~55% of samples across
-  `step_in` / `exec_inst` / `run_batch`). Cutting it further means retiring
-  fewer instructions, not making dispatch cheaper.
+  `step_in` / `exec_inst` / `run_batch` before the fast path below).
+  `run_batch` now hands each frame to `run_straight` (`vm/fast.rs`) first: a
+  loop that keeps `ip` and the register file in locals and retires the happy
+  path of the hot instructions (constants, moves, jumps, loop steps, number
+  arithmetic and comparisons, field and index reads), checking the GC budget
+  only at back-edges. Anything else — a call, an allocation, a `Pending`
+  operand, an error — stops the loop at that instruction and `step_in` runs
+  it as before. That took ~18% off Cheesecake's `neon` script time. Cutting
+  further means retiring fewer instructions (or a JIT), not cheaper dispatch.
 - **`Move` is ~30% of instructions.** What is left are live phi copies
   around loops — the copy in and the carry out. Register coalescing (giving a
   phi and its sources one register when their live ranges do not interfere)

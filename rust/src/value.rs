@@ -936,7 +936,7 @@ mod tests {
         for &x in &small {
             all.push(Value::List(heap.alloc_list(vec![x])));
             all.push(Value::List(heap.alloc_list(vec![x, Value::Int(1)])));
-            let mut m = IndexMap::new();
+            let mut m = crate::heap::RecordMap::default();
             m.insert("a".to_string(), x);
             all.push(Value::Map(heap.alloc_map(m.clone())));
             all.push(Value::Map(heap.alloc_class_instance(m, class)));
@@ -947,7 +947,7 @@ mod tests {
         all.push(Value::List(heap.alloc_list(vec![])));
         // Same entries, both key orders.
         for (k1, k2) in [("a", "b"), ("b", "a")] {
-            let mut m = IndexMap::new();
+            let mut m = crate::heap::RecordMap::default();
             m.insert(k1.to_string(), Value::Int(1));
             m.insert(k2.to_string(), Value::Float(2.0));
             all.push(Value::Map(heap.alloc_map(m)));

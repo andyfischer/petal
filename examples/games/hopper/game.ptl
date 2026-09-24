@@ -183,7 +183,7 @@ set cam = cam + (want - cam) * min(1.0, CAM_LAG * dts)
 
 // ------------------------------ DRAW ---------------------------------
 
-fn sx(x: num) -> int  int(x - get cam) end     // world -> screen x
+fn sx(x: num) -> int int(x - get cam) end      // world -> screen x
 
 fn draw_backdrop()
   clear(118, 186, 240)

@@ -40,10 +40,10 @@ print(account.user.name, "is an", account.role)
 // Pattern matching on records
 fn describe(person: record)
   match person
-    when { name: n, age: a } if a >= 18 -> print(n, "is an adult")
-    when { name: n } -> print(n, "is a minor")
+    when {name: n, age: a} if a >= 18 -> print(n, "is an adult")
+    when {name: n} -> print(n, "is a minor")
   end
 end
 
-describe({ name: "Alice", age: 30 })
-describe({ name: "Charlie", age: 12 })
+describe({name: "Alice", age: 30})
+describe({name: "Charlie", age: 12})

@@ -484,7 +484,6 @@ let h = screen_height()
 
 clear(BG.r, BG.g, BG.b)
 
-
 // ── Input ────────────────────────────────────────────────────────────────────
 
 let prev_sel = sel

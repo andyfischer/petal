@@ -141,7 +141,7 @@ if (mouse_pressed(1) || key_pressed("space")) && ammo > 0 then
         let px = rx * t - dx
         let py = ry * t - dy
         let pz = rz * t - dz
-        let d2 = px*px + py*py + pz*pz
+        let d2 = px * px + py * py + pz * pz
         if d2 < 1.4 then
           best_t = t
           best_i = i
@@ -177,7 +177,7 @@ while ei < len(enemies) do
     // Damage player if close
     let dx = (e.x + ox) - player_x
     let dz = (e.z + oz) - player_z
-    if dx*dx + dz*dz < 1.5 then
+    if dx * dx + dz * dz < 1.5 then
       hp = hp - 1
       if hp < 0 then hp = 0 end
     end
@@ -202,9 +202,9 @@ fn project(x: num, y: num, z: num) -> record
   let ry = dy * cos_p - rz * sin_p
   let rz2 = dy * sin_p + rz * cos_p
   if rz2 < near then
-    { sx: 0.0, sy: 0.0, z: rz2, ok: false }
+    {sx: 0.0, sy: 0.0, z: rz2, ok: false}
   else
-    { sx: cx + rx / rz2 * focal, sy: cy - ry / rz2 * focal, z: rz2, ok: true }
+    {sx: cx + rx / rz2 * focal, sy: cy - ry / rz2 * focal, z: rz2, ok: true}
   end
 end
 
@@ -247,14 +247,14 @@ fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
   let y1 = y + hh
   let z0 = z - hd
   let z1 = z + hd
-  quad(x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1, r, g, b)
-  quad(x1,y0,z0, x0,y0,z0, x0,y1,z0, x1,y1,z0,
+  quad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b)
+  quad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0,
     int(float(r) * 0.55), int(float(g) * 0.55), int(float(b) * 0.55))
-  quad(x1,y0,z1, x1,y0,z0, x1,y1,z0, x1,y1,z1,
+  quad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1,
     int(float(r) * 0.8),  int(float(g) * 0.8),  int(float(b) * 0.8))
-  quad(x0,y0,z0, x0,y0,z1, x0,y1,z1, x0,y1,z0,
+  quad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0,
     int(float(r) * 0.65), int(float(g) * 0.65), int(float(b) * 0.65))
-  quad(x0,y1,z1, x1,y1,z1, x1,y1,z0, x0,y1,z0,
+  quad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0,
     int(min(255.0, float(r) * 1.2)),
     int(min(255.0, float(g) * 1.2)),
     int(min(255.0, float(b) * 1.2)))
@@ -310,7 +310,7 @@ while neon_i < 12 do
   neon_i = neon_i + 1
 end
 neon_line(-1.0, 0.05, -48.0, -1.0, 0.05, 72.0, 255, 50, 180)
-neon_line( 1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
+neon_line(1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
 
 // =========================================================================
 // Draw: buildings with neon rooftop outline

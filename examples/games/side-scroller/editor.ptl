@@ -492,6 +492,6 @@ draw_text(stats, 8, SCREEN_H - 52, 16, 200, 200, 230)
 draw_text("@ {hover_world.x},{hover_world.y}", SCREEN_W - 200, 8, 16, 200, 200, 230)
 
 if msg_t > 0.0 then
-  draw_rect(SCREEN_W/2 - 200, 44, 400, 26, 0, 0, 0)
-  draw_text(msg, SCREEN_W/2 - 190, 48, 18, 255, 230, 120)
+  draw_rect(SCREEN_W / 2 - 200, 44, 400, 26, 0, 0, 0)
+  draw_text(msg, SCREEN_W / 2 - 190, 48, 18, 255, 230, 120)
 end

@@ -18,7 +18,7 @@ print(rect(1, 2, height: 8, width: 6))
 
 // Names are worth most where the call site is otherwise a row of literals.
 fn make_window(title: string, width: num, height: num, resizable: bool) -> record
-  { title: title, width: width, height: height, resizable: resizable }
+  {title: title, width: width, height: height, resizable: resizable}
 end
 
 print(make_window("Editor", 800, 600, true))

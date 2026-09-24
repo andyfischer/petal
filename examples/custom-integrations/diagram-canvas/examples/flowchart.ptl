@@ -89,7 +89,7 @@ end
 
 // Draw nodes
 for n in nodes do
-  let node_rect = { x: n.x, y: n.y, w: n.w, h: n.h }
+  let node_rect = {x: n.x, y: n.y, w: n.w, h: n.h}
   if mouse_over(node_rect) then
     draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, highlight_border.r, highlight_border.g, highlight_border.b)
     draw_rect(n.x, n.y, n.w, n.h, highlight_bg.r, highlight_bg.g, highlight_bg.b)

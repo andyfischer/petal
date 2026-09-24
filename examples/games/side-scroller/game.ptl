@@ -319,7 +319,7 @@ if phase == Playing then
     while i < 8 do
       set particles = append(particles, {
         kind: "dust",
-        x: px + float(PLAYER_W)/2.0 + random(-6.0, 6.0),
+        x: px + float(PLAYER_W) / 2.0 + random(-6.0, 6.0),
         y: py + float(PLAYER_H),
         vx: random(-90.0, 90.0),
         vy: random(-120.0, -20.0),
@@ -408,7 +408,7 @@ if phase == Playing then
   for c in level.coins do
     if !c.collected then
       let cx = float(c.x); let cy = float(c.y)
-      if abs(px + pw/2.0 - cx) < 18.0 && abs(py + ph/2.0 - cy) < 22.0 then
+      if abs(px + pw / 2.0 - cx) < 18.0 && abs(py + ph / 2.0 - cy) < 22.0 then
         c.collected = true
         set coins_got = coins_got + 1
         set floats = append(floats, {x: cx, y: cy, vy: -40.0, life: 0.8, text: "+1"})
@@ -509,7 +509,7 @@ if phase == Playing then
         set shake = 16.0
         set vy = -360.0
         set vx = float(-facing) * 200.0
-        set floats = append(floats, {x: px + pw/2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
+        set floats = append(floats, {x: px + pw / 2.0, y: py, vy: -40.0, life: 1.0, text: "OUCH"})
       end
     end
   end
@@ -564,7 +564,7 @@ if phase == Playing then
   end
 
   // --- camera follow ---
-  let target = px + pw/2.0 - float(SCREEN_W)/2.0
+  let target = px + pw / 2.0 - float(SCREEN_W) / 2.0
   target = clamp(target, 0.0, float(level.width) - float(SCREEN_W))
   cam_target = target
   set cam_x = approach(cam_x, cam_target, abs(cam_target - cam_x) * 6.0 * dts + 50.0 * dts)
@@ -725,9 +725,9 @@ fn draw_clouds()
     let cx = (c * 240 - (off % 240)) % (SCREEN_W + 240) - 120
     let cy = 60 + (c % 3) * 30
     let cw = 70 + (c % 2) * 20
-    draw_circle(cx + cw/3, cy + 8, cw/4, 235, 240, 250)
-    draw_circle(cx + cw*2/3, cy + 8, cw/4, 235, 240, 250)
-    draw_circle(cx + cw/2, cy, cw/3, 245, 248, 252)
+    draw_circle(cx + cw / 3, cy + 8, cw / 4, 235, 240, 250)
+    draw_circle(cx + cw * 2 / 3, cy + 8, cw / 4, 235, 240, 250)
+    draw_circle(cx + cw / 2, cy, cw / 3, 245, 248, 252)
     c = c + 1
   end
 end
@@ -778,7 +778,7 @@ fn draw_coins()
   for c in get level.coins do
     if !c.collected then
       let bob = ((fc + c.x * 3) % 40)
-      let off = if bob < 20 then bob/5 - 2 else 2 - (bob-20)/5 end
+      let off = if bob < 20 then bob / 5 - 2 else 2 - (bob - 20) / 5 end
       let cy = c.y + off
       circ_at(c.x, cy, 11, 180, 140, 20)
       circ_at(c.x, cy, 8, 255, 210, 40)
@@ -962,8 +962,8 @@ fn draw_hud()
   draw_text(get level.name, SCREEN_W - 240, 8, 22, 230, 230, 250)
   // toast
   if get toast_t > 0.0 then
-    draw_rect(SCREEN_W/2 - 100, 50, 200, 28, 0, 0, 0)
-    draw_text(get toast, SCREEN_W/2 - 90, 54, 20, 255, 230, 120)
+    draw_rect(SCREEN_W / 2 - 100, 50, 200, 28, 0, 0, 0)
+    draw_text(get toast, SCREEN_W / 2 - 90, 54, 20, 255, 230, 120)
   end
 end
 
@@ -983,60 +983,60 @@ fn draw_title()
   end
   // title text wobble
   let bob = int(sin(title_t * 2.0) * 4.0)
-  draw_text("PETAL  RUNNER", SCREEN_W/2 - 130, 100 + bob, 48, 255, 230, 120)
-  draw_text("a side-scroller written in petal", SCREEN_W/2 - 150, 160, 18, 200, 200, 230)
+  draw_text("PETAL  RUNNER", SCREEN_W / 2 - 130, 100 + bob, 48, 255, 230, 120)
+  draw_text("a side-scroller written in petal", SCREEN_W / 2 - 150, 160, 18, 200, 200, 230)
   // level select
-  draw_text("Select a level:", SCREEN_W/2 - 80, 220, 22, 230, 230, 250)
+  draw_text("Select a level:", SCREEN_W / 2 - 80, 220, 22, 230, 230, 250)
   let i = 0
   while i < len(level_titles) do
     let y = 260 + i * 36
     let sel = i == menu_idx
     let bg_col = if sel then 80 else 30 end
-    draw_rect(SCREEN_W/2 - 200, y - 4, 400, 30, bg_col, bg_col + 10, bg_col + 30)
+    draw_rect(SCREEN_W / 2 - 200, y - 4, 400, 30, bg_col, bg_col + 10, bg_col + 30)
     let mark = if sel then ">" else " " end
-    draw_text("{mark} {i + 1}. {level_titles[i]}", SCREEN_W/2 - 190, y, 22, 240, 240, 255)
+    draw_text("{mark} {i + 1}. {level_titles[i]}", SCREEN_W / 2 - 190, y, 22, 240, 240, 255)
     let bt = best_times[i]
     if bt < 9000.0 then
       let mins = int(bt) / 60
       let secs = int(bt) % 60
-      draw_text("best {mins}:{secs}  *{best_coins[i]}", SCREEN_W/2 + 60, y, 18, 220, 200, 100)
+      draw_text("best {mins}:{secs}  *{best_coins[i]}", SCREEN_W / 2 + 60, y, 18, 220, 200, 100)
     end
     i = i + 1
   end
-  draw_text("up/down to choose, ENTER to play", SCREEN_W/2 - 130, 480, 18, 180, 180, 220)
-  draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", SCREEN_W/2 - 220, 510, 16, 150, 160, 200)
+  draw_text("up/down to choose, ENTER to play", SCREEN_W / 2 - 130, 480, 18, 180, 180, 220)
+  draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", SCREEN_W / 2 - 220, 510, 16, 150, 160, 200)
 end
 
 fn draw_pause_overlay()
   draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("PAUSED", SCREEN_W/2 - 60, SCREEN_H/2 - 60, 36, 240, 240, 255)
-  draw_text("ESC resume   R restart   Q quit", SCREEN_W/2 - 140, SCREEN_H/2, 20, 200, 200, 230)
+  draw_text("PAUSED", SCREEN_W / 2 - 60, SCREEN_H / 2 - 60, 36, 240, 240, 255)
+  draw_text("ESC resume   R restart   Q quit", SCREEN_W / 2 - 140, SCREEN_H / 2, 20, 200, 200, 230)
 end
 
 fn draw_complete_overlay()
   let alpha = min(1.0, phase_t * 2.0)
   let dim = int(180.0 * alpha)
   draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("LEVEL CLEAR!", SCREEN_W/2 - 130, 180, 40, 100, 230, 120)
-  draw_text(get level.name, SCREEN_W/2 - 80, 230, 22, 230, 230, 250)
+  draw_text("LEVEL CLEAR!", SCREEN_W / 2 - 130, 180, 40, 100, 230, 120)
+  draw_text(get level.name, SCREEN_W / 2 - 80, 230, 22, 230, 230, 250)
   let mins = int(get level_timer) / 60
   let secs = int(get level_timer) % 60
   let cents = int(get level_timer * 100.0) % 100
-  draw_text("time  {mins}:{secs}.{cents}", SCREEN_W/2 - 70, 280, 22, 220, 220, 240)
-  draw_text("coins {get coins_got}", SCREEN_W/2 - 50, 310, 22, 255, 220, 120)
-  draw_text("ENTER to continue   Q for menu", SCREEN_W/2 - 140, 380, 18, 180, 180, 220)
+  draw_text("time  {mins}:{secs}.{cents}", SCREEN_W / 2 - 70, 280, 22, 220, 220, 240)
+  draw_text("coins {get coins_got}", SCREEN_W / 2 - 50, 310, 22, 255, 220, 120)
+  draw_text("ENTER to continue   Q for menu", SCREEN_W / 2 - 140, 380, 18, 180, 180, 220)
 end
 
 fn draw_gameover_overlay()
   draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("GAME OVER", SCREEN_W/2 - 110, 200, 40, 220, 80, 80)
-  draw_text("ENTER to retry   Q for menu", SCREEN_W/2 - 130, 280, 20, 220, 220, 240)
+  draw_text("GAME OVER", SCREEN_W / 2 - 110, 200, 40, 220, 80, 80)
+  draw_text("ENTER to retry   Q for menu", SCREEN_W / 2 - 130, 280, 20, 220, 220, 240)
 end
 
 fn draw_alldone_overlay()
   clear(20, 30, 50)
-  draw_text("YOU FINISHED THE GAME", SCREEN_W/2 - 220, 200, 36, 240, 230, 120)
-  draw_text("thanks for playing!", SCREEN_W/2 - 110, 250, 22, 220, 220, 240)
+  draw_text("YOU FINISHED THE GAME", SCREEN_W / 2 - 220, 200, 36, 240, 230, 120)
+  draw_text("thanks for playing!", SCREEN_W / 2 - 110, 250, 22, 220, 220, 240)
   let i = 0
   while i < len(level_titles) do
     let y = 320 + i * 30
@@ -1044,10 +1044,10 @@ fn draw_alldone_overlay()
     let mins = int(bt) / 60
     let secs = int(bt) % 60
     draw_text("{level_titles[i]}  -  {mins}:{secs}  *{best_coins[i]}",
-      SCREEN_W/2 - 180, y, 20, 220, 220, 250)
+      SCREEN_W / 2 - 180, y, 20, 220, 220, 250)
     i = i + 1
   end
-  draw_text("ENTER for title", SCREEN_W/2 - 70, 480, 18, 200, 200, 230)
+  draw_text("ENTER for title", SCREEN_W / 2 - 70, 480, 18, 200, 200, 230)
 end
 
 // =====================================================================

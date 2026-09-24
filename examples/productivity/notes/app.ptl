@@ -107,7 +107,7 @@ state notes = [
       "",
       "Bed early. The light comes back at five whether or not I am ready",
       "for it, and I would rather meet it than be met by it.",
-  ]},
+    ]},
   {id: 2, book: "Work", pinned: true, mins: 52,
     title: "Panel runtime - open questions",
     lines: [
@@ -124,7 +124,7 @@ state notes = [
       "   rules out the whole cmd-key vocabulary an editor expects.",
       "",
       "Ask Priya whether the diff viewer hit the same wall.",
-  ]},
+    ]},
   {id: 3, book: "Ideas", pinned: false, mins: 190,
     title: "A quieter kind of search",
     lines: [
@@ -133,7 +133,7 @@ state notes = [
       "The cost is that you cannot find what is not already on screen, which is most things. Unless the dimming applies to the list and the highlighting applies to the page - two behaviours, one field, and the reader never has to decide which one they wanted.",
       "",
       "Worth a prototype. An afternoon, no more.",
-  ]},
+    ]},
   {id: 4, book: "Recipes", pinned: false, mins: 1180,
     title: "Buckwheat pancakes, the good ratio",
     lines: [
@@ -147,7 +147,7 @@ state notes = [
       "",
       "Medium-low heat. They want longer than you think on the first side",
       "and about half that on the second.",
-  ]},
+    ]},
   {id: 5, book: "Reading", pinned: false, mins: 1520,
     title: "The Overstory - marginalia",
     lines: [
@@ -160,7 +160,7 @@ state notes = [
       "book has to keep whether or not it still wants to.",
       "",
       "Still: nothing else I have read makes time feel that long.",
-  ]},
+    ]},
   {id: 6, book: "Work", pinned: false, mins: 2600,
     title: "Interview loop - compiler role",
     lines: [
@@ -172,7 +172,7 @@ state notes = [
       "  4. Team, 45m - no whiteboard, no puzzles",
       "",
       "The take-home is gone. It was filtering for free time, not skill.",
-  ]},
+    ]},
   {id: 7, book: "Journal", pinned: false, mins: 4300,
     title: "Reservoir loop, late",
     lines: [
@@ -182,14 +182,14 @@ state notes = [
       "",
       "Two herons on the spillway, standing the way they do, as if being",
       "still were a job with a wage attached.",
-  ]},
+    ]},
   {id: 8, book: "Ideas", pinned: false, mins: 7800,
     title: "Objects that explain themselves",
     lines: [
       "Every widget carrying a one-line account of why it is the size it is. Not a tooltip - a debug overlay that reads the layout code and prints the constraint that actually won.",
       "",
       "Half of my layout bugs are me being wrong about which rule was binding.",
-  ]},
+    ]},
   {id: 9, book: "Recipes", pinned: false, mins: 10200,
     title: "Preserved lemons, small batch",
     lines: [
@@ -198,7 +198,7 @@ state notes = [
       "",
       "Four weeks in the dark. Turn the jar when you remember. The rind",
       "is the point; the flesh goes in the bin without ceremony.",
-  ]},
+    ]},
 ]
 state saved   = notes
 state history = []                    // undo snapshots, oldest first

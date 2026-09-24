@@ -18,7 +18,7 @@ let CARD     = #191d25
 let ELEV     = #1f242e
 let HOVER    = #262d39
 let LINE     = #2b3240
-let LINE_SOFT= #212734
+let LINE_SOFT = #212734
 let TEXT     = #e9edf5
 let DIM      = #97a1b2
 let FAINT    = #626c7d
@@ -115,7 +115,7 @@ end
 // Each is a pure function of (u, v) in 0..1, v = 0 at the top.
 
 let PHOTOS = [
-  {name: "Harbour Dusk",     place: "Sausalito, CA",  meta: "f/8 · 1/250 · ISO 100"},
+  {name: "Harbour Dusk",     place: "Sausalito, CA", meta: "f/8 · 1/250 · ISO 100"},
   {name: "Alpine Fog",       place: "Val Gardena, IT", meta: "f/11 · 1/500 · ISO 64"},
   {name: "Neon Alley",       place: "Shinjuku, JP",   meta: "f/1.8 · 1/60 · ISO 1600"},
   {name: "Desert Highway",   place: "Route 190, CA",  meta: "f/9 · 1/800 · ISO 200"},
@@ -150,7 +150,6 @@ fn scene_harbour(u: num, v: num) -> record
     cadd(out, fc(chop, chop * 0.95, chop * 0.9))
   end
 end
-
 
 fn scene_alpine(u: num, v: num) -> record
   let horizon = 0.70

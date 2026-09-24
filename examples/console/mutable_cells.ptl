@@ -54,12 +54,12 @@ print("Reads copy, they don't alias")
 print("===========================")
 
 var level = 1
-let snapshot = { level: level }
+let snapshot = {level: level}
 set level = 99
 print("snapshot:", snapshot, "level:", level)
 
 // `set` also takes field and index targets.
-var player = { hp: 100, pos: [0, 0] }
+var player = {hp: 100, pos: [0, 0]}
 fn take_damage(amount: num)
   set player.hp = get player.hp - amount
 end

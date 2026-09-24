@@ -108,7 +108,7 @@ let N = len(BODIES)
 
 // ── Persistent state ─────────────────────────────────────────────────────
 
-state var ready   = false
+state var ready = false
 state var day_base = 0.0            // simulated days at the last mark
 state var t_mark  = 0.0             // panel clock at the last mark
 state var speed   = speed_start

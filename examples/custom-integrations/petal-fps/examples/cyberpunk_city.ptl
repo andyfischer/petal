@@ -80,7 +80,7 @@ fn project(x: num, y: num, z: num) -> record
   let ry = dy * cos_p - rz * sin_p
   let rz2 = dy * sin_p + rz * cos_p
   if rz2 < near then
-    { sx: 0.0, sy: 0.0, z: rz2, ok: false }
+    {sx: 0.0, sy: 0.0, z: rz2, ok: false}
   else
     {
       sx: cx + rx / rz2 * focal,

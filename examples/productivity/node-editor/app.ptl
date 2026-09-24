@@ -562,7 +562,6 @@ claim_key("z", "cmd+shift")
 claim_key("d", "cmd")
 claim_key("a", "cmd")
 
-
 let z = cam.zoom
 let over_canvas = point_in(mx, my, canvas)
 let blocked = menu_blocking(menu)

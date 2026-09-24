@@ -101,7 +101,7 @@ for i in range(0, len(people)) do
   let x = pos.x
   let y = pos.y
 
-  let node_rect = { x: x, y: y, w: node_w, h: node_h }
+  let node_rect = {x: x, y: y, w: node_w, h: node_h}
   let hover = mouse_over(node_rect)
 
   // Color by level

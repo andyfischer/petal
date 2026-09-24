@@ -132,7 +132,7 @@ let COMMANDS = [
   {id: "go.prev_file",    cat: "Go",      label: "Previous file",                  key: ""},
   {id: "edit.upper",      cat: "Edit",    label: "Uppercase current line",         key: ""},
   {id: "edit.lower",      cat: "Edit",    label: "Lowercase current line",         key: ""},
-  {id: "edit.title",     cat: "Edit",    label: "Title-case current line",        key: ""},
+  {id: "edit.title", cat: "Edit", label: "Title-case current line", key: ""},
   {id: "edit.dup",        cat: "Edit",    label: "Duplicate line",                 key: "Cmd D"},
   {id: "edit.delete",     cat: "Edit",    label: "Delete line",                    key: "Cmd Shift K"},
   {id: "edit.move_up",    cat: "Edit",    label: "Move line up",                   key: "Alt Up"},

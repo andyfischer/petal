@@ -425,16 +425,28 @@ impl<'a> Vm<'a> {
         }
     }
 
-    /// Gather operand registers. Inline capacity covers typical arities, so
-    /// the hot call path (`Call`/`BuiltinCall` args) stays allocation-free.
-    /// The frame is resolved once, not per operand.
-    #[inline]
-    fn regs(&self, fi: usize, rs: &[Reg]) -> SmallVec<[Value; 8]> {
+    /// Copy operand registers into a new vector (a closure's captures).
+    fn read_regs(&self, fi: usize, rs: &[Reg]) -> Vec<Value> {
         let regs = &self.stack.vm_frames[fi].regs;
-        let mut out = SmallVec::with_capacity(rs.len());
-        for &r in rs {
-            out.push(regs.get(r as usize).copied().unwrap_or(Value::Nil));
-        }
+        rs.iter().map(|&r| regs.get(r as usize).copied().unwrap_or(Value::Nil)).collect()
+    }
+
+    /// Gather an instruction's operand registers (a call's arguments, a
+    /// literal's elements) into the stack's scratch buffer
+    /// (hand it back with [`give_args`](Self::give_args)). A call made while
+    /// another is being set up (a native re-entering the VM) finds the
+    /// buffer taken and starts a fresh one.
+    #[inline]
+    fn take_args(&mut self, fi: usize, rs: &[Reg]) -> Vec<Value> {
+        let mut out = std::mem::take(&mut self.stack.vm_arg_scratch);
+        let regs = &self.stack.vm_frames[fi].regs;
+        out.extend(rs.iter().map(|&r| regs.get(r as usize).copied().unwrap_or(Value::Nil)));
         out
+    }
+
+    #[inline]
+    fn give_args(&mut self, mut argv: Vec<Value>) {
+        argv.clear();
+        self.stack.vm_arg_scratch = argv;
     }
 }

@@ -206,8 +206,9 @@ impl<'a> Vm<'a> {
             }
 
             Inst::AllocList { dst, elems } => {
-                let vals = self.regs(fi, elems);
+                let vals = self.take_args(fi, elems);
                 let v = ops::alloc_list(self.heap, &vals);
+                self.give_args(vals);
                 self.set(fi, *dst, v);
             }
             Inst::AllocMap {
@@ -216,13 +217,17 @@ impl<'a> Vm<'a> {
                 vals,
                 class,
             } => {
-                let inputs = self.regs(fi, vals);
-                let v = ops::alloc_map(self.program, self.heap, fields, &inputs, *class)?;
+                let inputs = self.take_args(fi, vals);
+                let v = ops::alloc_map(self.program, self.heap, fields, &inputs, *class);
+                self.give_args(inputs);
+                let v = v?;
                 self.set(fi, *dst, v);
             }
             Inst::AllocMapSpread { dst, entries, ins } => {
-                let inputs = self.regs(fi, ins);
-                let v = ops::alloc_map_spread(self.program, self.heap, entries, &inputs)?;
+                let inputs = self.take_args(fi, ins);
+                let v = ops::alloc_map_spread(self.program, self.heap, entries, &inputs);
+                self.give_args(inputs);
+                let v = v?;
                 self.set(fi, *dst, v);
             }
             Inst::AllocElement {
@@ -231,13 +236,17 @@ impl<'a> Vm<'a> {
                 prop_keys,
                 ins,
             } => {
-                let inputs = self.regs(fi, ins);
-                let v = ops::alloc_element(self.program, self.heap, *tag, prop_keys, &inputs)?;
+                let inputs = self.take_args(fi, ins);
+                let v = ops::alloc_element(self.program, self.heap, *tag, prop_keys, &inputs);
+                self.give_args(inputs);
+                let v = v?;
                 self.set(fi, *dst, v);
             }
             Inst::MakeEnumVariant { dst, name, fields } => {
-                let inputs = self.regs(fi, fields);
-                let v = ops::make_enum_variant(self.program, self.heap, *name, &inputs)?;
+                let inputs = self.take_args(fi, fields);
+                let v = ops::make_enum_variant(self.program, self.heap, *name, &inputs);
+                self.give_args(inputs);
+                let v = v?;
                 self.set(fi, *dst, v);
             }
 
@@ -318,7 +327,7 @@ impl<'a> Vm<'a> {
 
             // --- calls / closures ---
             Inst::MakeClosure { dst, func, caps } => {
-                let captures = self.regs(fi, caps).into_vec();
+                let captures = self.read_regs(fi, caps);
                 let closure = RuntimeClosure {
                     function_id: *func,
                     captures,
@@ -332,8 +341,9 @@ impl<'a> Vm<'a> {
                 self.set(fi, *dst, Value::Closure(cid));
             }
             Inst::MakeOverloadSet { dst, closures } => {
-                let inputs = self.regs(fi, closures);
+                let inputs = self.take_args(fi, closures);
                 let v = calls::make_overload_set(self.program, self.closures, &inputs);
+                self.give_args(inputs);
                 self.set(fi, *dst, v);
             }
             Inst::Call {
@@ -344,8 +354,10 @@ impl<'a> Vm<'a> {
                 no_memo,
             } => {
                 let callable = self.reg(fi, *callee);
-                let argv = self.regs(fi, args);
-                self.do_call(fi, *dst, callable, &argv, arg_names, origin, !*no_memo)?;
+                let argv = self.take_args(fi, args);
+                let r = self.do_call(fi, *dst, callable, &argv, arg_names, origin, !*no_memo);
+                self.give_args(argv);
+                r?;
             }
             Inst::MethodCall {
                 dst,
@@ -356,8 +368,10 @@ impl<'a> Vm<'a> {
                 arg_names,
             } => {
                 let receiver = self.reg(fi, *recv);
-                let argv = self.regs(fi, args);
-                self.do_method_call(fi, *dst, receiver, *name, &argv, arg_names, *hint, origin)?;
+                let argv = self.take_args(fi, args);
+                let r = self.do_method_call(fi, *dst, receiver, *name, &argv, arg_names, *hint, origin);
+                self.give_args(argv);
+                r?;
             }
             Inst::BuiltinCall {
                 dst,
@@ -366,8 +380,10 @@ impl<'a> Vm<'a> {
                 in_place,
                 arg_names,
             } => {
-                let argv = self.regs(fi, args);
-                self.do_builtin_call(fi, *dst, *name, &argv, arg_names, *in_place, origin)?;
+                let argv = self.take_args(fi, args);
+                let r = self.do_builtin_call(fi, *dst, *name, &argv, arg_names, *in_place, origin);
+                self.give_args(argv);
+                r?;
             }
             Inst::Return { val } => {
                 let value = val.map(|r| self.reg(fi, r)).unwrap_or(Value::Nil);

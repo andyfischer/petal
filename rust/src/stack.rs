@@ -129,6 +129,10 @@ pub struct Stack {
     /// instead of hitting the allocator per call. Cleared frames hold no
     /// values, so this is deliberately *not* a GC root — keep it that way.
     pub vm_frame_pool: Vec<crate::backend::bytecode::VmFrame>,
+    /// A reusable buffer the VM gathers a call's argument registers into, so
+    /// a call neither allocates nor copies a large inline array. Empty
+    /// between calls (taken while one is being set up), so not a GC root.
+    pub vm_arg_scratch: Vec<Value>,
     /// What the most recent run depended on — the record behind
     /// [`Env::run_needed`](crate::env::Env::run_needed). See [`crate::run_deps`].
     pub run_deps: RunDeps,
@@ -173,6 +177,7 @@ impl Stack {
             vm_frames: Vec::new(),
             vm_started: false,
             vm_frame_pool: Vec::new(),
+            vm_arg_scratch: Vec::new(),
             run_deps: RunDeps::default(),
             cells_at_run_start: Vec::new(),
             memo: crate::memo::MemoTable::default(),

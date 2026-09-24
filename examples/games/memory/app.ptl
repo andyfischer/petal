@@ -780,7 +780,7 @@ clear(C_BG.r, C_BG.g, C_BG.b)
 tx("Pairs", PAD, 18, S_TITLE)
 let title_w = text_width("Pairs", S_TITLE)
 tx("MEMORY", PAD + title_w + 14, 25, S_KICK)
-tx("{L.name} board, {COLS} x {ROWS}. Flip two cards; keep them if they match.", PAD + title_w + 14, 41, S_SMALL)
+tx("{L.name} board, {COLS} × {ROWS}. Flip two cards — keep them if they match.", PAD + title_w + 14, 41, S_SMALL)
 
 let btn_new = rect(W - PAD - 118, 20, 118, 34)
 let btn_peek = rect(btn_new.x - 12 - 112, 20, 112, 34)
@@ -1038,8 +1038,8 @@ for i in range(0, len(LEVELS)) do
     draw_rect_rounded(row_r, 9, C_TABLE_H)
   end
   tx(lv.name, row_r.x + 10, row_r.y + 5, S_BODYB)
-  let won_s = if rec.played > 0 then ", won {rec.played}" else "" end
-  tx("{lv.cols} x {lv.rows}, {lv.cols * lv.rows / 2} pairs{won_s}", row_r.x + 10, row_r.y + 23, S_SMALL)
+  let won_s = if rec.played > 0 then " · won {rec.played}" else "" end
+  tx("{lv.cols} × {lv.rows} · {lv.cols * lv.rows / 2} pairs{won_s}", row_r.x + 10, row_r.y + 23, S_SMALL)
   if rec.moves >= 0 then
     let mv = "{rec.moves} moves"
     tx_right(mv, row_r.x + row_r.w - 10, row_r.y + 5, S_BODY)

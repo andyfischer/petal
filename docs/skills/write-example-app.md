@@ -138,8 +138,8 @@ Before calling it done:
   `/text` and `/mouse`, and confirm both the values and the pixels change.
   Held keys are `{"key":"left","op":"down"}` … `{"op":"up"}`.
 - **Games and animations: prove the whole arc deterministically.**
-  `POST /panel/reset`, then `POST /seed {"seed":42}`, then
-  `POST /tick {"n":60,"dt":0.016}` between inputs. Asteroids was driven this
+  `POST /panel/reset {"seed":42}` (the seed in the reset body, so frame 1
+  is seeded too), then `POST /tick {"n":60,"dt":0.016}` between inputs. Asteroids was driven this
   way through a sector clear and a game over before it was committed.
 - `status_error` is `null` at every point of that script. Check `values_stale`
   is not set; a missing key because the frame raised is not the same as a

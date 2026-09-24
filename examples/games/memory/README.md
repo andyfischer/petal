@@ -141,30 +141,16 @@ every position, which is enough to solve the board from a script),
 `gy0`, `cw`, `ch`, `GAP` and `COLS` are there too, so a harness can compute
 any card's centre.
 
-A deterministic run: `POST /panel/reset`, `POST /seed {"seed":42}`, then press
-`n` (see Known limits for why), `POST /tick {"n":120,"dt":0.016}` to finish
-the deal, then click cards with `/tick` between them. It was verified that
+A deterministic run: `POST /panel/reset {"seed":42}` (the seed goes in the
+reset body, because the deal happens on the restarted script's first frame),
+then `POST /tick {"n":120,"dt":0.016}` to finish the deal, then click cards
+with `/tick` between them. It was verified that
 way through a miss, a third-pick turn-back, a peek, a clear on Easy and on
 Classic, the result screen's buttons, a process restart restoring the bests,
 and Reset clearing them, with `status_error` null throughout.
 
 ## Known limits
 
-- **`/seed` cannot pin the first deal.** `POST /panel/reset` runs the panel's
-  first frame immediately, and this app deals on that frame, before a
-  following `POST /seed` can take effect. Seeding before the reset does not
-  help either. A test that needs a known board resets, seeds, and then presses
-  `n` to re-deal from the seeded stream.
-- The copy avoids `·`, `—` and `×` ("6 x 4", commas instead of dots).
-  [AUTHORING.md](../../AUTHORING.md) says the embedded `ui` face has no glyph
-  for the first two, while
-  [petal-graphical-panels.md](../../../garden/docs/petal-graphical-panels.md)
-  says missing glyphs fall back to a system face. It was not worth finding out
-  which is right for a board label.
-- Thick strokes fray. A `draw_polyline` several pixels wide with many short
-  segments (the tide glyph) or two stroked halves meeting (the planet's ring)
-  showed ragged edges at the joins. Both glyphs are filled ribbons
-  (`fill_polygon` of an offset curve) instead.
 - A flip is faked by scaling x, since there is no transform stack. Every
   primitive goes through the glyph transform by hand, and circles are
   `draw_ellipse` so they can narrow.

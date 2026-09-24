@@ -176,16 +176,19 @@ then visible under its own name in `panel.values`.
 
 ```bash
 curl -sX POST 127.0.0.1:$PORT/tick        -d '{"n":60,"dt":0.016}'   # 60 frames of exactly 16ms
-curl -sX POST 127.0.0.1:$PORT/seed        -d '{"seed":42}'           # fix random()
+curl -sX POST 127.0.0.1:$PORT/seed        -d '{"seed":42}'           # fix random() from the next frame on
 curl -sX POST 127.0.0.1:$PORT/panel/reset -d '{}'                    # restart panels, drop `state`
+curl -sX POST 127.0.0.1:$PORT/panel/reset -d '{"seed":42}'           # both at once: restart on seed 42
 ```
 
 `POST /tick` runs frames on demand with the `dt` you name, ignores the sleep
 window, fabricates no input, and puts the panel's `time()` on a virtual clock
 that advances by exactly `dt` per frame. An animation or game test is a
-deterministic frame count, not a stream of phantom keypresses. Reset first,
-then seed, then tick, and a screenshot of a moving UI is byte-identical each
-run. See [Stepping frames and resetting panels](../garden/docs/debug-server.md#stepping-frames-and-resetting-panels).
+deterministic frame count, not a stream of phantom keypresses. Reset with a
+seed (`{"seed":42}`), then tick, and a screenshot of a moving UI is
+byte-identical each run. Put the seed in the reset body rather than sending
+`/seed` after it: the restarted panel's first frame runs as soon as the reset
+lands, so content generated on frame 1 would miss a later seed. See [Stepping frames and resetting panels](../garden/docs/debug-server.md#stepping-frames-and-resetting-panels).
 
 ## The headless frame contract
 

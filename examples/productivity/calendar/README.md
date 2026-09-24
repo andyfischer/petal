@@ -152,9 +152,10 @@ later.
 - **No date or wall-clock builtin.** Petal has `time()` (seconds since the
   panel started) and nothing else, so "today" and "now" are pinned demo
   values rather than the real date.
-- **`text_wrap` breaks inside words.** In a narrow event block it turned
-  "Usability" into "Usabilit / y". The app wraps by words itself
-  (`wrap_words`) and ellipsizes a word that cannot fit.
+- **`text_wrap` breaks a word too wide for the box** (by design: it never
+  overflows). In a narrow event block that turned "Usability" into
+  "Usabilit / y", so the app wraps by words itself (`wrap_words`) and
+  ellipsizes a word that cannot fit instead.
 - **No selection in the text field.** `text_field_update` has a caret but no
   selection, so a new event's title starts empty with an "Add title"
   placeholder rather than as a selected "New event". An event whose editor

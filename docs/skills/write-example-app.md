@@ -85,7 +85,7 @@ Do not write the whole app blind and hope. The loop is:
 cd examples/<category>/<slug>
 (nohup ./launch.sh --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
-GPID=$(pgrep -f "garden --init $(pwd)/layout.ptl" | head -1)
+GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
 
 curl -s 127.0.0.1:$PORT/state | jq '.status_error, .panes[0].panel.values'
 curl -s 127.0.0.1:$PORT/screenshot -o shot.png     # then OPEN shot.png and look at it
@@ -131,8 +131,9 @@ Before calling it done:
 
 - **Look at the screenshot with your own eyes.** A PNG you never opened is
   not verification. Fix overlaps, cramped padding, muddy contrast,
-  misalignment, text running out of its box, missing glyphs (the embedded
-  `ui` face has no `⌘`, `—`, `·`, `⇧`).
+  misalignment, text running out of its box, and glyphs the embedded face
+  lacks (`⌘`, `⇧` and friends fall back to a system face, so they render,
+  but in a different design).
 - **Exercise every control the README documents** through `POST /key`,
   `/text` and `/mouse`, and confirm both the values and the pixels change.
   Held keys are `{"key":"left","op":"down"}` … `{"op":"up"}`.

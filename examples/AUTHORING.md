@@ -52,7 +52,7 @@ silently leaves you with an empty editor pane.
 cd examples/<category>/<slug>
 (nohup ./launch.sh --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
-GPID=$(pgrep -f "garden --init $(pwd)/layout.ptl" | head -1)
+GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
 ```
 
 Use `--headless --debug-port 0` while developing. A windowed launch steals
@@ -78,8 +78,11 @@ numbers are not a contract. Inside the script use `screen_width()` /
 `screen_height()`, which report the pane. Outside it, read `panes[0].rect`
 from `/state`.
 
-To stop, `kill $GPID`. Never `pkill -f garden` or `killall`: other Garden
-processes (someone else's session, an agent's harness) will die with yours.
+To stop, `kill $GPID`. Find the pid by the debug port, as above, rather than
+by `pgrep -f`: `launch.sh` execs Garden with a relative `layout.ptl`, so the
+command line carries no path that tells your app from another one. Never
+`pkill -f garden` or `killall`: other Garden processes (someone else's
+session, an agent's harness) will die with yours.
 
 ## Inspecting it
 
@@ -111,7 +114,8 @@ followed by a capture needs no sleep.
 ### Driving it
 
 `petal check --strict --host garden app.ptl` resolves the `ui` prelude without
-Garden (no `-I` needed; `-I petal-libs` only when the app imports `bloom`). It
+Garden, and the packages Garden registers for panels (`bloom`,
+`text_layout`), with no `-I`. It
 catches arity and type slips on known functions, a misspelled global
 (`totally_bogus_fn(1)`), a native handed the wrong type (`sqrt("x")`), a call
 whose argument count selects a prelude overload that cannot take its arguments,
@@ -125,6 +129,7 @@ curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"shift","op":"down"}'   # held un
 curl -sX POST 127.0.0.1:$PORT/text  -d '{"text":"hello"}'
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68}'            # WINDOW coords
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68,"button":1}' # right click
+curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68,"clicks":2}' # double click
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"drag","x":86,"y":68,"to":{"x":306,"y":128}}'
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"scroll","x":86,"y":68,"lines":3}'
 ```
@@ -290,10 +295,10 @@ once and pass the same value to both, so what you measure is what you draw.
 (JetBrains Mono) and `ui` (Inter). `weight` is real on `ui` and on system
 families; on `mono` only Regular is embedded, so bold there is synthetic.
 `italic` is upright on both embedded faces (no italic cut is embedded), so an
-italic run needs a system family or a colour cue instead. The embedded faces
-also have no glyph fallback: a character the face lacks (`⌘`, `⇧`, and on `ui`
-even `—` and `·`) advances but draws nothing — check a Markdown preview's
-first em dash against `mono` or ASCII. Text cannot be rotated;
+italic run needs a system family or a colour cue instead. A character the
+face lacks (`⌘`, `⇧`, `—`, `·`, CJK) is drawn from an installed system face
+that has it, so it shows up, but in that face's design, not Inter's or
+JetBrains Mono's. Text cannot be rotated;
 `draw_text_along` and `draw_axis_labels` are the workarounds.
 
 `text_width` returns a rounded whole pixel. For monospace column math use

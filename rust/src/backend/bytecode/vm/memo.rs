@@ -227,12 +227,10 @@ impl<'a> Vm<'a> {
         args: &[Value],
         previous: Option<Box<PreviousRecord>>,
     ) {
-        let path = self
-            .stack
-            .vm_frames
-            .last()
-            .map(|f| f.path.clone())
-            .unwrap_or_default();
+        let path = match self.stack.vm_frames.len() {
+            0 => ScopePath::new(),
+            n => self.full_path(n - 1),
+        };
         let out_start = self.memo_output_lens();
         let captures: ScopeValues = self
             .closures
@@ -659,7 +657,8 @@ impl<'a> Vm<'a> {
             .charge_external_alloc(ClosureTable::alloc_cost(&closure));
         let cid = self.closures.alloc_closure(closure);
         let mut frame = self.frame_from_pool(Some(fn_id), bcfn.reg_count, None, None, None);
-        frame.path = path.clone();
+        // The recorded path is the whole path: nothing is inherited.
+        frame.path = path.iter().copied().collect();
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];

@@ -515,6 +515,11 @@ All of these affect later loads.
   counters, all since profiling was turned on. Profiling roughly doubles
   script time, so turn it on after warm-up and read the report once
   (docs/dev/performance.md).
+- `set_memo(false)` / `memo()` (`pb_vm_set_memo`, `pb_vm_memo`) switch call
+  memoization off or on for later runs (on by default, or as `PETAL_POLICY`
+  says). Memo replays a call whose inputs repeat, which pays off for UI-like
+  programs; a game whose inputs change every frame runs a few percent faster
+  with it off. Output is the same either way.
 - `pb_version()` names the bridge, petal-ui contract and prelude level, and
   petal-query protocol version.
 

@@ -11,9 +11,15 @@ use super::super::isa::LoopSlot;
 use crate::program::StateKey;
 use crate::stack::{PathPart, RuntimeStateKey};
 
-/// A frame's state path. Sized for a UI tree's typical depth (a handful of
-/// nested calls and loops), so the common case never allocates.
+/// A full state path (a frame's own parts under every ancestor's). Sized for
+/// a UI tree's typical depth (a handful of nested calls and loops), so the
+/// common case never allocates.
 pub type FramePath = SmallVec<[PathPart; 4]>;
+
+/// The parts one frame adds to its caller's path: the `Call` part it was
+/// pushed through, then one `Index` part per loop iterating in it. Two inline
+/// parts cover a call with one loop running, the common case.
+pub type LocalPath = SmallVec<[PathPart; 2]>;
 
 /// A per-call activation record: one flat register file plus loop cursors.
 #[derive(Clone)]
@@ -31,13 +37,19 @@ pub struct VmFrame {
     /// Loop cursors, indexed by [`LoopSlot`]. A slot is `Some` while its loop is
     /// active (set by a `*Init` op, cleared by `LoopPop`); grown on demand.
     pub loops: Vec<Option<LoopCursor>>,
-    /// This frame's **state path**: the caller's path plus the `Call` part for
-    /// the callsite that pushed it, plus one `Index` part per loop currently
+    /// This frame's own part of its **state path**: the `Call` part for the
+    /// callsite that pushed it, plus one `Index` part per loop currently
     /// iterating *in this frame* (pushed by `*Init`, bumped by `*Next`, popped
-    /// by `LoopPop`). Composed incrementally at push time, so resolving a
-    /// state key is a clone of this vector rather than a walk of the frame
-    /// stack. The root frame's path is empty.
-    pub path: FramePath,
+    /// by `LoopPop`). The full path is the caller's full path followed by
+    /// these parts when `path_inherits` is set, else these parts alone; see
+    /// [`Vm::full_path`]. The caller is always the frame directly below, and
+    /// it is suspended (so its path is frozen) for as long as this frame
+    /// lives, so the prefix need not be copied on every call: it is walked
+    /// only when a state key or a memo scope needs the whole path. The root
+    /// frame's path is empty.
+    pub path: LocalPath,
+    /// Whether the frame below's full path prefixes this frame's `path`.
+    pub path_inherits: bool,
     /// The `Call` term that created this frame (for stack-trace annotation).
     /// `None` for the root frame and synchronous-intrinsic frames.
     pub call_site: Option<TermId>,
@@ -60,7 +72,8 @@ impl VmFrame {
             regs: vec![Value::Nil; reg_count as usize],
             dst_in_caller,
             loops: Vec::new(),
-            path: FramePath::new(),
+            path: LocalPath::new(),
+            path_inherits: false,
             call_site,
             memo_scope: false,
         }
@@ -82,6 +95,7 @@ impl VmFrame {
         self.dst_in_caller = dst_in_caller;
         self.call_site = call_site;
         self.memo_scope = false;
+        self.path_inherits = false;
     }
 
     /// Empty the frame for the pool: registers, cursors, and the state path are
@@ -162,10 +176,8 @@ impl<'a> Vm<'a> {
     /// loop iterations it is inside right now) with `Call(site)` appended. With
     /// no frames on the stack — the host entry point — that is the root path
     /// `[Call(site)]`; `None` is the program root, which runs on the empty path.
-    ///
-    /// The path is *extended into* the pooled frame rather than assigned from a
-    /// freshly built one: `recycle` empties the vector but keeps its buffer, so
-    /// a warm pool copies the caller's parts without an allocation per call.
+    /// Only the `Call(site)` part is stored; the caller's part is inherited
+    /// (see [`VmFrame::path`]).
     pub(super) fn frame_from_pool(
         &mut self,
         func: Option<FunctionId>,
@@ -182,12 +194,61 @@ impl<'a> Vm<'a> {
             None => VmFrame::new(func, reg_count, dst_in_caller, call_site),
         };
         if let Some(site) = site {
-            if let Some(caller) = self.stack.vm_frames.last() {
-                frame.path.extend_from_slice(&caller.path);
-            }
+            frame.path_inherits = !self.stack.vm_frames.is_empty();
             frame.path.push(PathPart::Call(site));
         }
         frame
+    }
+
+    /// Push an initialized frame straight onto the frame stack, taking a
+    /// pooled one when there is one, and return its index. Same frame as
+    /// [`frame_from_pool`](Self::frame_from_pool) builds, but a frame is
+    /// ~150 bytes, and initializing it in place on the stack saves the moves
+    /// through locals a built-then-pushed frame costs on every call.
+    pub(super) fn push_frame(
+        &mut self,
+        func: Option<FunctionId>,
+        reg_count: u16,
+        dst_in_caller: Option<Reg>,
+        call_site: Option<TermId>,
+        site: Option<u64>,
+    ) -> usize {
+        let stack = &mut *self.stack;
+        let inherits = !stack.vm_frames.is_empty();
+        match stack.vm_frame_pool.pop() {
+            Some(f) => stack.vm_frames.push(f),
+            None => stack
+                .vm_frames
+                .push(VmFrame::new(func, reg_count, dst_in_caller, call_site)),
+        }
+        let fi = stack.vm_frames.len() - 1;
+        let frame = &mut stack.vm_frames[fi];
+        frame.reset(func, reg_count, dst_in_caller, call_site);
+        if let Some(site) = site {
+            frame.path_inherits = inherits;
+            frame.path.push(PathPart::Call(site));
+        }
+        fi
+    }
+
+    /// Frame `fi`'s full state path, appended to `out`: the parts of every
+    /// frame from the nearest one that does not inherit up to `fi`.
+    pub(super) fn full_path_into(&self, fi: usize, out: &mut FramePath) {
+        let frames = &self.stack.vm_frames[..=fi];
+        let mut start = fi;
+        while start > 0 && frames[start].path_inherits {
+            start -= 1;
+        }
+        for f in &frames[start..] {
+            out.extend_from_slice(&f.path);
+        }
+    }
+
+    /// Frame `fi`'s full state path.
+    pub(super) fn full_path(&self, fi: usize) -> FramePath {
+        let mut out = FramePath::new();
+        self.full_path_into(fi, &mut out);
+        out
     }
 
     /// The compile-time callsite id of the call term that is pushing a frame.
@@ -263,9 +324,10 @@ impl<'a> Vm<'a> {
                 v
             }
             None => {
-                let live = &self.stack.vm_frames[fi].path;
+                let mut live = self.full_path(fi);
                 let keep = live.len().saturating_sub(path_pop as usize);
-                live[..keep].into()
+                live.truncate(keep);
+                live
             }
         };
         RuntimeStateKey { base, path }

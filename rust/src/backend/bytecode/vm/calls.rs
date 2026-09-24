@@ -32,43 +32,62 @@ impl<'a> Vm<'a> {
         if self.stack.vm_frames.last().is_some_and(|f| f.memo_scope) {
             self.memo_close(value);
         }
-        let frame = self.stack.vm_frames.pop().unwrap();
         self.stack.last_pop_result = Some(value);
-        let result = if self.stack.vm_frames.is_empty() {
+        let top = self.stack.vm_frames.len() - 1;
+        if top == 0 {
             // The root frame just completed — capture top-level named functions
             // so `Env::call_function` can invoke them without a re-run.
+            let frame = self.stack.vm_frames.pop().unwrap();
             if frame.func.is_none() {
                 self.capture_root_functions(&frame);
             }
-            StepResult::Complete(value)
-        } else {
-            if let Some(dst) = frame.dst_in_caller {
-                let caller = self.stack.vm_frames.len() - 1;
-                self.set(caller, dst, value);
-            }
-            // Trace the call's result against the call-site term, so `explain`
-            // can show the value of a term whose value came from a call (the
-            // `Call`/`MethodCall` op itself is skipped in `step`).
-            if self.trace.enabled {
-                if let Some(call_site) = frame.call_site {
-                    self.trace.push(call_site, &[], value);
-                }
-            }
-            // Likewise for observation: `let x = f()` binds its value here, not
-            // in `step`, so without this the whole call-valued half of a
-            // program's named terms would be missing.
-            if self.observations.enabled {
-                if let Some(call_site) = frame.call_site {
-                    if self.is_observable(call_site) {
-                        self.observations.record(call_site, value);
-                        self.memo_note_observation(call_site, value);
-                    }
-                }
-            }
-            StepResult::Continue
+            self.recycle_frame(frame);
+            return StepResult::Complete(value);
+        }
+        // Read what the return needs, then hand the frame straight to the
+        // pool rather than moving it through a local.
+        let (dst_in_caller, call_site) = {
+            let f = &self.stack.vm_frames[top];
+            (f.dst_in_caller, f.call_site)
         };
-        self.recycle_frame(frame);
-        result
+        self.pop_frame_to_pool();
+        if let Some(dst) = dst_in_caller {
+            self.set(top - 1, dst, value);
+        }
+        // Trace the call's result against the call-site term, so `explain`
+        // can show the value of a term whose value came from a call (the
+        // `Call`/`MethodCall` op itself is skipped in `step`).
+        if self.trace.enabled {
+            if let Some(call_site) = call_site {
+                self.trace.push(call_site, &[], value);
+            }
+        }
+        // Likewise for observation: `let x = f()` binds its value here, not
+        // in `step`, so without this the whole call-valued half of a
+        // program's named terms would be missing.
+        if self.observations.enabled {
+            if let Some(call_site) = call_site {
+                if self.is_observable(call_site) {
+                    self.observations.record(call_site, value);
+                    self.memo_note_observation(call_site, value);
+                }
+            }
+        }
+        StepResult::Continue
+    }
+
+    /// Pop the top frame into the pool (emptied), or drop it if the pool is
+    /// full.
+    fn pop_frame_to_pool(&mut self) {
+        let stack = &mut *self.stack;
+        if stack.vm_frame_pool.len() < FRAME_POOL_MAX {
+            if let Some(mut f) = stack.vm_frames.pop() {
+                f.recycle();
+                stack.vm_frame_pool.push(f);
+            }
+        } else {
+            stack.vm_frames.pop();
+        }
     }
 
     /// Return a finished frame to the pool, unless the pool is full.
@@ -456,8 +475,6 @@ impl<'a> Vm<'a> {
             &bound[..]
         };
 
-        let mut frame =
-            self.frame_from_pool(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
         // A call with a destination register is a memo scope: replay it if
         // its record is still good, else run it and record it. Calls driven
         // synchronously (intrinsics, the host), and calls whose result the
@@ -482,8 +499,13 @@ impl<'a> Vm<'a> {
             !tiny
         };
         if scope {
+            // The scope's path: the callee frame's, which is the caller's
+            // full path plus this call's part (see `push_frame`).
             let caller = self.stack.vm_frames.len() - 1;
-            if let Some(value) = self.memo_try(&frame.path, fn_id, cid, args) {
+            let mut path = FramePath::new();
+            self.full_path_into(caller, &mut path);
+            path.push(crate::stack::PathPart::Call(site));
+            if let Some(value) = self.memo_try(&path, fn_id, cid, args) {
                 if let Some(dst) = dst {
                     self.set(caller, dst, value);
                 }
@@ -494,17 +516,17 @@ impl<'a> Vm<'a> {
                     self.observations.record(call_site, value);
                     self.memo_note_observation(call_site, value);
                 }
-                self.recycle_frame(frame);
                 return Ok(());
             }
         }
         self.profile.record_call();
+        let fi = self.push_frame(Some(fn_id), bcfn.reg_count, dst, call_site, Some(site));
+        let frame = &mut self.stack.vm_frames[fi];
         for (i, &preg) in bcfn.param_regs.iter().enumerate() {
             if let Some(slot) = frame.regs.get_mut(preg as usize) {
                 *slot = args[i];
             }
         }
-        // Reborrowed (not cloned) — the frame is local, so nothing conflicts.
         let captures = &self.closures.closure(cid).captures;
         for (i, &creg) in bcfn.capture_regs.iter().enumerate() {
             if let (Some(slot), Some(cap)) = (frame.regs.get_mut(creg as usize), captures.get(i)) {
@@ -517,7 +539,6 @@ impl<'a> Vm<'a> {
             }
         }
         frame.memo_scope = scope;
-        self.stack.vm_frames.push(frame);
         if scope {
             self.memo_open(fn_id, cid, site, args, None);
         }

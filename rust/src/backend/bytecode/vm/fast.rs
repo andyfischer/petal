@@ -334,7 +334,7 @@ impl<'a> Vm<'a> {
 
 /// [`Vm::set_loop_idx_top`] on a borrowed path.
 #[inline(always)]
-fn set_loop_idx(path: &mut FramePath, idx: usize) {
+fn set_loop_idx(path: &mut super::frame::LocalPath, idx: usize) {
     if let Some(last @ PathPart::Index(_)) = path.last_mut() {
         *last = PathPart::Index(idx);
     }

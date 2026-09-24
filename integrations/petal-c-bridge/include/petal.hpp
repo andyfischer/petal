@@ -552,6 +552,9 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }
+    // Call memoization (see pb_vm_set_memo); on by default.
+    void set_memo(bool on) { check(pb_vm_set_memo(vm_, on)); }
+    bool memo() const { return pb_vm_memo(vm_); }
     // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
     void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
     std::string profile_report(size_t top_n = 20) {

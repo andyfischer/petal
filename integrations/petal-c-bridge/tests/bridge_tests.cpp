@@ -111,6 +111,29 @@ TEST(state_persists_across_frames) {
     CHECK_EQ(run_out(vm), std::vector<double>{101});
 }
 
+TEST(memo_switch_keeps_output_and_state) {
+    petal::Vm vm;
+    vm.load_source(
+        "fn counter(step)\n"
+        "  state n = 0\n"
+        "  n += step\n"
+        "  n\n"
+        "end\n"
+        "for i in range(0, 2) do push_output(symbol(\"out\"), counter(i + 1)) end\n"
+        "push_output(symbol(\"out\"), counter(10))\n");
+    vm.set_memo(true);
+    CHECK(vm.memo());
+    CHECK_EQ(run_out(vm), (std::vector<double>{1, 2, 10}));
+    // Switching memo off (and back on) between runs changes nothing a
+    // program can see: every call site keeps its own state slot.
+    vm.set_memo(false);
+    CHECK(!vm.memo());
+    CHECK_EQ(run_out(vm), (std::vector<double>{2, 4, 20}));
+    CHECK_EQ(run_out(vm), (std::vector<double>{3, 6, 30}));
+    vm.set_memo(true);
+    CHECK_EQ(run_out(vm), (std::vector<double>{4, 8, 40}));
+}
+
 TEST(profiler_reports_functions_and_natives) {
     petal::Vm vm;
     vm.load_source(

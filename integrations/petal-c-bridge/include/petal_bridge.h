@@ -554,6 +554,14 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
 const char* pb_vm_state_json(pb_vm* vm);
 /* A top-level state variable by name, decoded; PB_ERR_NOT_FOUND if absent. */
 pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
+/* Call memoization (on by default, or as the PETAL_POLICY environment
+ * variable says): a user-function call whose arguments and recorded reads are
+ * what they were last run is replayed instead of run. It pays off for UI-like
+ * programs whose inputs mostly repeat; a game whose inputs change every frame
+ * runs faster with it off. Output is the same either way. Takes effect at the
+ * next run. */
+pb_status pb_vm_set_memo(pb_vm* vm, bool on);
+bool pb_vm_memo(pb_vm* vm);
 /* The VM profiler (off by default): instructions per opcode and per function,
  * native calls and the time spent in them, collections. Turning it on clears
  * earlier counts; while on, every run pays a per-instruction hook (roughly 2x

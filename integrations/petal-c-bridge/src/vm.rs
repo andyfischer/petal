@@ -1188,6 +1188,29 @@ pub extern "C" fn pb_vm_state_json(vm: *mut VmHandle) -> *const c_char {
     .1
 }
 
+/// Turn call memoization on or off for this VM's runs (the
+/// [`RunPolicy::memo`](petal::policy::RunPolicy::memo) switch; on by
+/// default, or as `PETAL_POLICY` says). Memo pays off for UI-like programs
+/// whose inputs mostly repeat frame to frame; a game whose inputs change
+/// every frame runs faster without the bookkeeping. Output is the same
+/// either way. Takes effect at the next run; the first run without memo
+/// drops the records it leaves unvisited.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_memo(vm: *mut VmHandle, on: bool) -> Status {
+    with_vm(vm, (), |vm| {
+        let policy = vm.env.policy().with_memo(on);
+        vm.env.set_policy(policy);
+        Ok(())
+    })
+    .0
+}
+
+/// Whether call memoization is on (see [`pb_vm_set_memo`]).
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_memo(vm: *mut VmHandle) -> bool {
+    with_vm(vm, false, |vm| Ok(vm.env.policy().memo)).1
+}
+
 /// Turn the VM profiler on or off. Turning it on clears earlier counts.
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_vm_set_profiling(vm: *mut VmHandle, on: bool) -> Status {

@@ -398,6 +398,11 @@ impl<'a> Vm<'a> {
         site: u64,
         memoize: bool,
     ) -> Result<(), String> {
+        // Every Petal call, callbacks included, pushes its frame here, so
+        // this one check bounds recursion of every shape.
+        if self.stack.vm_frames.len() >= super::MAX_CALL_DEPTH {
+            return Err(super::stack_overflow_message(super::MAX_CALL_DEPTH));
+        }
         let bc = self.bc;
         let program = self.program;
         let fn_id = self.closures.closure(cid).function_id;

@@ -26,6 +26,38 @@ impl<'a> Vm<'a> {
         call_args: &[Value],
         site: u64,
     ) -> Result<Value, String> {
+        // Unlike an ordinary call, this one nests a step loop on the native
+        // stack, so a callback that recurses through `map` would overflow the
+        // thread and abort the process long before `MAX_CALL_DEPTH`. Measure
+        // the native stack used since the outermost synchronous call began
+        // (it grows down on every target Petal builds for) and fail cleanly
+        // past the budget.
+        let marker = 0u8;
+        let here = std::hint::black_box(&marker) as *const u8 as usize;
+        if self.stack.sync_depth == 0 {
+            self.stack.sync_stack_base = here;
+        } else if self.stack.sync_stack_base.saturating_sub(here) > super::SYNC_STACK_BUDGET {
+            return Err(format!(
+                "Stack overflow: callbacks nested {} deep (a function passed to \
+                 map, filter, reduce, sort or forEach that calls back into one). \
+                 A recursive function that never reaches its base case causes \
+                 this; if the recursion is meant to be this deep, rewrite it as \
+                 a loop",
+                self.stack.sync_depth
+            ));
+        }
+        self.stack.sync_depth += 1;
+        let result = self.call_closure_sync_nested(callable, call_args, site);
+        self.stack.sync_depth -= 1;
+        result
+    }
+
+    fn call_closure_sync_nested(
+        &mut self,
+        callable: Value,
+        call_args: &[Value],
+        site: u64,
+    ) -> Result<Value, String> {
         let cid = calls::resolve_callable(self.program, self.closures, callable, call_args.len())?;
         let target_depth = self.stack.vm_frames.len();
         self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, false)?;

@@ -136,6 +136,47 @@ fn format_position(program: &Program, span: &SourceSpan) -> String {
 /// Build a stack trace from call `frames` (bottom-to-top), walked top-first.
 /// Only frames with a function name (i.e. function-call frames) are included.
 fn build_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
+    shorten_stack_trace(full_stack_trace(program, frames))
+}
+
+/// The most frames a stack trace prints before eliding the middle.
+const STACK_TRACE_MAX: usize = 40;
+
+/// Keep a deep trace readable: a run of identical lines (one recursive
+/// callsite) prints once with a repeat count, like Python's "[Previous line
+/// repeated N more times]", and a trace still longer than
+/// [`STACK_TRACE_MAX`] (mutual recursion, which does not repeat line for line)
+/// keeps its innermost and outermost frames and elides the rest.
+fn shorten_stack_trace(trace: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < trace.len() {
+        let mut j = i + 1;
+        while j < trace.len() && trace[j] == trace[i] {
+            j += 1;
+        }
+        out.push(trace[i].clone());
+        let repeats = j - i - 1;
+        match repeats {
+            0 => {}
+            1 => out.push(trace[i].clone()),
+            n => out.push(format!("... previous line repeated {n} more times")),
+        }
+        i = j;
+    }
+    if out.len() > STACK_TRACE_MAX {
+        let head = STACK_TRACE_MAX * 3 / 4;
+        let tail = STACK_TRACE_MAX - head;
+        let elided = out.len() - head - tail;
+        let mut short = out[..head].to_vec();
+        short.push(format!("... {elided} more frames ..."));
+        short.extend_from_slice(&out[out.len() - tail..]);
+        out = short;
+    }
+    out
+}
+
+fn full_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
     let mut trace = Vec::new();
     for frame in frames.iter().rev() {
         let Some(ref name) = frame.name else {

@@ -50,6 +50,33 @@ pub use frame::{FramePath, LoopCursor, VmFrame};
 /// pooled frames, popped frames are dropped instead.
 const FRAME_POOL_MAX: usize = 1024;
 
+/// The deepest a chain of Petal calls may nest before the call fails with a
+/// stack overflow error instead of growing without bound. Frames live on the
+/// heap (`Stack::vm_frames`), so this is a memory bound, not a native-stack
+/// one. Each frame copies its caller's call path, which makes memory
+/// quadratic in depth; 5,000 frames is a few hundred MB, where 10,000 would
+/// be about 2 GB (docs/tasks/todo-bugs-20260923.md §1.2).
+pub const MAX_CALL_DEPTH: usize = 5_000;
+
+/// How much native stack synchronous closure calls nested inside one another
+/// (a `map` callback that recurses into another `map`) may use. Each level
+/// runs its own step loop on the native stack — about 3 KB in a release build
+/// and 25 KB in a debug one — so the bound is measured in bytes, not levels.
+/// It stays well inside a 2 MB thread stack, and a wasm module's 1 MB one.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SYNC_STACK_BUDGET: usize = 1024 * 1024;
+#[cfg(target_arch = "wasm32")]
+pub const SYNC_STACK_BUDGET: usize = 256 * 1024;
+
+/// The message a call too deep to make fails with.
+pub(crate) fn stack_overflow_message(depth: usize) -> String {
+    format!(
+        "Stack overflow: more than {depth} nested calls. A recursive function \
+         that never reaches its base case causes this; if the recursion is \
+         meant to be this deep, rewrite it as a loop"
+    )
+}
+
 /// The bytecode VM: a bundle of borrows over `Env`'s runtime data, rebuilt for
 /// each `step`. Frame state lives on `stack.vm_frames`.
 pub struct Vm<'a> {

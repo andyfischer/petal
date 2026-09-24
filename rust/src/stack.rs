@@ -133,6 +133,14 @@ pub struct Stack {
     /// a call neither allocates nor copies a large inline array. Empty
     /// between calls (taken while one is being set up), so not a GC root.
     pub vm_arg_scratch: Vec<Value>,
+    /// How many synchronous closure calls (a `map` callback, a host
+    /// `call_function`) are running inside one another right now. Each one
+    /// nests a Rust-level step loop, so unlike an ordinary call it uses native
+    /// stack. See `Vm::call_closure_sync`.
+    pub sync_depth: u32,
+    /// The native stack address when the outermost synchronous call began, so
+    /// nested ones can measure how much native stack they have used.
+    pub sync_stack_base: usize,
     /// What the most recent run depended on — the record behind
     /// [`Env::run_needed`](crate::env::Env::run_needed). See [`crate::run_deps`].
     pub run_deps: RunDeps,
@@ -178,6 +186,8 @@ impl Stack {
             vm_started: false,
             vm_frame_pool: Vec::new(),
             vm_arg_scratch: Vec::new(),
+            sync_depth: 0,
+            sync_stack_base: 0,
             run_deps: RunDeps::default(),
             cells_at_run_start: Vec::new(),
             memo: crate::memo::MemoTable::default(),

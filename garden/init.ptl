@@ -5,7 +5,7 @@ layout(
     row([
       editor("README.md"),
       editor("docs/architecture.md"),
-      editor("CLAUDE.md"),
+      editor("AGENTS.md"),
     ]),
     editor("init.ptl"),
   ], [0.7, 0.3])

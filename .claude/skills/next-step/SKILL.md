@@ -13,7 +13,7 @@ Read the project's goals and documentation to understand the vision and current 
 
 1. Read `docs/goals.md` (the primary goals document — vision and remaining work).
 2. Read all `.md` files in the project root directory (e.g. any `Goals_` documents and etc).
-3. Read `CLAUDE.md` for project conventions, testing instructions, and build commands.
+3. Read `AGENTS.md` for project conventions, testing instructions, and build commands.
 
 Summarize your understanding of the project's goals and current priorities before proceeding.
 

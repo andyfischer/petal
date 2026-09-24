@@ -145,10 +145,10 @@ counts, reading time, and the save state.
 
 - No clipboard: there is no copy/paste API for a panel, so `⌘C`/`⌘V` are not
   bound.
-- The embedded `ui` face draws no glyph for `⌘`, `—`, `·` or `⇧` (the `mono`
-  face has them, and so does the chrome font), so the seed text spells out
-  `Cmd+B`. Anything outside Inter's Latin coverage will show as a gap in the
-  preview.
+- A character the embedded `ui` face lacks (`⌘`, `⇧`, CJK, emoji) is drawn
+  from an installed system face that has it, so it renders, but in that
+  face's design rather than Inter's. The seed text spells out `Cmd+B` all the
+  same.
 - Italic is upright on the embedded faces; the preview marks emphasis by
   colour as well.
 - Wrapping in the editor is by character count (monospace), so a line of

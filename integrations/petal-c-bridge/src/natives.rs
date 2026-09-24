@@ -15,6 +15,7 @@
 //! A forked or speculative execution of the same `Env` calls the same
 //! closure, as for any boxed native.
 
+use std::cell::RefCell;
 use std::ffi::{CString, c_char, c_void};
 use std::rc::Rc;
 
@@ -68,6 +69,18 @@ pub struct HostCallback {
     func: PbNativeFn,
     userdata: *mut c_void,
     free: Option<PbFreeFn>,
+    /// Buffers reused from call to call: the argument list, the decoded
+    /// argument views and the result builder. A game calls its natives
+    /// thousands of times a frame, and building these fresh each time was
+    /// most of the bridge's cost.
+    scratch: RefCell<CallScratch>,
+}
+
+#[derive(Default)]
+struct CallScratch {
+    args: Vec<Value>,
+    arena: ViewArena,
+    result: Builder,
 }
 
 impl HostCallback {
@@ -86,6 +99,7 @@ impl HostCallback {
             func,
             userdata,
             free,
+            scratch: RefCell::default(),
         }
     }
 
@@ -97,25 +111,39 @@ impl HostCallback {
         if self.flags & FX_EFFECT != 0 {
             cxt.note_effect();
         }
-        let args = args_of(cxt)?;
-        let mut arena = ViewArena::new();
-        let first = arena.decode(&args, cxt.heap(), &Names::NONE);
-        arena.finish();
+        // The scratch is busy only if the host re-entered this same native
+        // from inside its callback; that call gets buffers of its own.
+        let mut fresh = CallScratch::default();
+        let mut guard = self.scratch.try_borrow_mut();
+        let scratch = match guard {
+            Ok(ref mut s) => &mut **s,
+            Err(_) => &mut fresh,
+        };
+        scratch.args.clear();
+        for i in 1..=cxt.arg_count() {
+            scratch.args.push(cxt.get_value(i)?);
+        }
+        scratch.arena.reset();
+        let first = scratch.arena.decode(&scratch.args, cxt.heap(), &Names::NONE);
+        scratch.arena.finish();
+        scratch.result.clear();
         let mut call = PbCall {
             name: self.name.as_ptr(),
-            args: arena.node_ptr(first),
-            argc: args.len(),
-            result: Builder::new(),
+            args: scratch.arena.node_ptr(first),
+            argc: scratch.args.len(),
+            result: std::mem::take(&mut scratch.result),
             error: None,
         };
         // SAFETY: the host's callback with the userdata it registered.
         let rc = unsafe { (self.func)(&mut call, self.userdata) };
+        let result = call.result.take_result();
+        scratch.result = call.result;
         if rc != 0 || call.error.is_some() {
             return Err(call.error.unwrap_or_else(|| {
                 format!("host native `{}` failed", self.name.to_string_lossy())
             }));
         }
-        let result = call.result.result().map_err(|e| e.message)?;
+        let result = result.map_err(|e| e.message)?;
         let one = [result];
         let syms = builder::intern_symbols(&one, |s| cxt.intern_symbol(s));
         let value = builder::materialize(&one, cxt.heap_mut(), &syms)

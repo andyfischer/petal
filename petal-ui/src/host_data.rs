@@ -39,7 +39,6 @@
 
 use std::cell::RefCell;
 
-use indexmap::IndexMap;
 use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -202,7 +201,7 @@ fn data_to_value(cxt: &mut PetalCxt, data: &HostData) -> Value {
             Value::List(cxt.heap_mut().alloc_list(values))
         }
         HostData::Record(fields) => {
-            let mut map = IndexMap::new();
+            let mut map = petal::heap::RecordMap::default();
             for (name, d) in fields {
                 let v = data_to_value(cxt, d);
                 map.insert(name.clone(), v);

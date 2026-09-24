@@ -443,6 +443,14 @@ impl<'a> Vm<'a> {
             }
             records
         };
+        // A site whose scopes are always folded as too small opens none.
+        let scope = scope && {
+            let tiny = self.stack.memo.site_is_tiny(fn_id, site);
+            if tiny {
+                self.stack.memo.stats.tiny += 1;
+            }
+            !tiny
+        };
         if scope {
             let caller = self.stack.vm_frames.len() - 1;
             if let Some(value) = self.memo_try(&frame.path, fn_id, cid, args) {

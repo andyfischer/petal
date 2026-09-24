@@ -556,10 +556,10 @@ pub const HOST_PALETTE_BINDING: &str = "__ui_host_palette";
 /// palette can change live. Hosts that never call it lose nothing: the
 /// prelude falls back to its built-in dark theme.
 pub fn bind_host_palette(env: &mut Env, colors: &[(&str, [u8; 4])]) {
-    let mut record: indexmap::IndexMap<String, Value> =
-        indexmap::IndexMap::with_capacity(colors.len());
+    let mut record: petal::heap::RecordMap =
+        petal::heap::record_map_with_capacity(colors.len());
     for (key, [r, g, b, a]) in colors {
-        let mut color: indexmap::IndexMap<String, Value> = indexmap::IndexMap::with_capacity(4);
+        let mut color: petal::heap::RecordMap = petal::heap::record_map_with_capacity(4);
         color.insert("r".to_string(), Value::Int(*r as i64));
         color.insert("g".to_string(), Value::Int(*g as i64));
         color.insert("b".to_string(), Value::Int(*b as i64));

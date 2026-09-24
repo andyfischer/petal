@@ -554,6 +554,14 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
 const char* pb_vm_state_json(pb_vm* vm);
 /* A top-level state variable by name, decoded; PB_ERR_NOT_FOUND if absent. */
 pb_status pb_vm_get_state(pb_vm* vm, const char* name, const pb_value** out);
+/* The VM profiler (off by default): instructions per opcode and per function,
+ * native calls and the time spent in them, collections. Turning it on clears
+ * earlier counts; while on, every run pays a per-instruction hook (roughly 2x
+ * slower), so profile a representative stretch rather than a whole session. */
+pb_status pb_vm_set_profiling(pb_vm* vm, bool on);
+/* The profile report (text, top `top_n` rows per section) for the loaded
+ * program. NULL if nothing is loaded. Valid until the next call to this function. */
+const char* pb_vm_profile_report(pb_vm* vm, size_t top_n);
 /* Take the lines the script printed since the last take. Valid until the next
  * call to this function. */
 pb_status pb_vm_take_output(pb_vm* vm, const char* const** out_lines, size_t* out_count);

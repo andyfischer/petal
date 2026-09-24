@@ -45,7 +45,7 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
 }
 
 fn push_color_map(state: &mut PetalCxt, r: f64, g: f64, b: f64) {
-    let mut map = indexmap::IndexMap::new();
+    let mut map = crate::heap::RecordMap::default();
     map.insert("r".to_string(), Value::Int(r.round() as i64));
     map.insert("g".to_string(), Value::Int(g.round() as i64));
     map.insert("b".to_string(), Value::Int(b.round() as i64));

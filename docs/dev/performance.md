@@ -9,8 +9,15 @@ Three tools, in the order you should reach for them.
 
 **1. Count what ran.** `petal run --profile <file>` prints an opcode histogram,
 a builtin histogram, user-call and collection totals, and an instructions/second
-rate. Counting is a runtime switch, so a release binary profiles without a
-rebuild. Start here: it is exact, it is cheap, and a surprising count (half of
+rate, then two attribution tables: **top functions** (instructions retired in
+each function's own body, labelled `name file:line`, plus the wall time of the
+natives it called directly) and **natives by time** (calls, total and per-call
+wall time; host callbacks included). Counting is a runtime switch, so a release
+binary profiles without a rebuild. Embedders get the same report through
+`Env::profile_report` (C: `pb_vm_set_profiling` / `pb_vm_profile_report`, which
+adds the memo counters for the measured runs); timing every native call has
+overhead of its own (~40 ns a call), so read cheap natives' times as upper
+bounds. Start here: it is exact, it is cheap, and a surprising count (half of
 all instructions being `Move`; 83% of builtin calls being `slice`) points at the
 problem far more directly than a time profile does.
 
@@ -128,16 +135,28 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   around loops — the copy in and the carry out. Register coalescing (giving a
   phi and its sources one register when their live ranges do not interfere)
   is the pass that would remove them.
-- **`JumpIfPending` is ~7%**, one per branch, and almost never taken. Folding
-  the pending test into the conditional-branch opcodes would remove all of them,
-  at the cost of a two-target instruction — which the CFG helpers
+- **`JumpIfPending` is ~7%**, one per branch, and almost never taken. The
+  dispatch loop now takes a `JumpIfPending` and the `JumpIfFalse` on the same
+  register that follows it in one step (both still counted), so the pair costs
+  one dispatch; folding the test into the opcode itself would also shrink the
+  code, at the cost of a two-target instruction — which the CFG helpers
   (`branch_target`) currently assume does not exist.
 - **Native calls cost more than their bodies** for cheap builtins: a `PetalCxt`
   is built per call, and arguments are gathered into a `SmallVec` first.
-- **Records hash their field names.** Map payloads are `IndexMap<String, Value>`
-  under the default SipHash, so a field read hashes a string. Interning field
-  names to symbol ids (or a linear scan for the small records that dominate)
-  would make `GetField` a comparison of integers.
+- **Records hash their field names.** Map payloads are `heap::RecordMap`
+  (`IndexMap<String, Value>` under the Fx hash in `fxhash.rs`; SipHash was
+  most of a field read). A field read still hashes a string, and every record
+  owns a `String` per key, so building one is a malloc per field. Interning
+  field names to symbol ids — better, shapes (hidden classes: one shared key
+  layout per record literal, a `Vec<Value>` per record) — would make
+  `GetField` an indexed load and a record one allocation.
+- **Memo scopes cost every call.** Opening a scope clones the frame path and
+  snapshots the output buffers; most calls in a game loop are small and get
+  folded into their parent anyway. A call site whose scopes are folded
+  `TINY_AFTER_FOLDS` times in a row stops opening them (one probe per run, like
+  a cold site); `memo_stats().tiny` counts the skipped ones. On a game whose
+  calls rarely replay (Cheesecake's `neon`), memo still costs a few percent
+  over `--no-memo`.
 
 And one that is not the runtime's to fix: the spreadsheet's own `digit_val`
 classifies a character by slicing a 10-character string ten times, which is why

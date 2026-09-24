@@ -139,6 +139,15 @@ pub const OUTPUT_COMPARE_PER_VALUE: usize = 24;
 /// records that never come back as a replay.
 pub const COLD_AFTER_UNHIT_EVICTIONS: u32 = 3;
 
+/// How many times in a row a call site's scope may be folded into its
+/// parent as too small to record before the site stops opening scopes (one
+/// probe per run aside, as for a cold site). Opening and folding a scope costs
+/// more than the small call it wraps: a game's vector helpers and field
+/// accessors are hundreds of thousands of calls a second, and every one of
+/// them was folded. Not opening one is what folding it amounts to: its reads
+/// land in the enclosing scope either way.
+pub const TINY_AFTER_FOLDS: u32 = 4;
+
 /// A scope with more dependency entries than this is not recorded:
 /// validating it would cost about what running it does, and its record
 /// would be most of the memory the run touched.
@@ -292,6 +301,9 @@ pub struct MemoStats {
     /// Scopes not recorded because their call site went cold — its records
     /// kept being evicted without ever being replayed.
     pub cold: u64,
+    /// Scopes not opened because their call site's scopes are always folded
+    /// as too small to record (see [`TINY_AFTER_FOLDS`]).
+    pub tiny: u64,
 }
 
 /// What a call site's records have been worth, for [`MemoTable::site_records`].
@@ -302,6 +314,17 @@ struct ColdSite {
     unhit_evictions: u32,
     /// The run a cold site was last allowed one record, so a site that
     /// becomes productive again can be noticed.
+    probed_run: u64,
+}
+
+/// How often a call site's scopes have been folded as too small to record,
+/// for [`MemoTable::site_is_tiny`].
+#[derive(Debug, Default, Clone)]
+struct TinySite {
+    /// Folds in a row since the site's last recorded scope.
+    folds: u32,
+    /// The run a tiny site was last allowed to open a scope, so a site whose
+    /// calls grow worth recording can be noticed.
     probed_run: u64,
 }
 
@@ -324,6 +347,8 @@ pub struct MemoTable {
     pub last_reexec_changed: Option<bool>,
     /// Per-callsite record of what memoizing there has been worth.
     cold: FastMap<(FunctionId, u64), ColdSite>,
+    /// Per-callsite count of scopes folded as too small to record.
+    tiny: FastMap<(FunctionId, u64), TinySite>,
     /// Structural-equality answers for pairs of closures compared this run.
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
@@ -403,6 +428,37 @@ impl MemoTable {
         }
     }
 
+    /// Whether calls from this site skip opening a scope because they are
+    /// always folded as too small (see [`TINY_AFTER_FOLDS`]). A tiny site
+    /// still opens one scope per run, which notices when its calls grow.
+    pub fn site_is_tiny(&mut self, fn_id: FunctionId, site: u64) -> bool {
+        let run = self.run;
+        match self.tiny.get_mut(&(fn_id, site)) {
+            Some(t) if t.folds >= TINY_AFTER_FOLDS => {
+                if t.probed_run != run {
+                    t.probed_run = run;
+                    false
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// A scope from this site was folded into its parent as too small.
+    pub fn note_folded(&mut self, fn_id: FunctionId, site: u64) {
+        let t = self.tiny.entry((fn_id, site)).or_default();
+        t.folds = t.folds.saturating_add(1);
+    }
+
+    /// A scope from this site was recorded: it is worth opening again.
+    pub fn note_recorded(&mut self, fn_id: FunctionId, site: u64) {
+        if !self.tiny.is_empty() {
+            self.tiny.remove(&(fn_id, site));
+        }
+    }
+
     /// Note that the record at `path` was replayed: the site is productive,
     /// so it is no longer cold.
     pub fn note_hit(&mut self, path: &ScopePath) {
@@ -419,6 +475,7 @@ impl MemoTable {
         self.open.clear();
         self.eq_cache.clear();
         self.cold.clear();
+        self.tiny.clear();
     }
 
     pub fn get(&self, path: &ScopePath) -> Option<&MemoSlot> {
@@ -850,7 +907,7 @@ mod tests {
         let mut closures = ClosureTable::new();
         let mut table = MemoTable::default();
 
-        let mut m1 = indexmap::IndexMap::new();
+        let mut m1 = crate::heap::RecordMap::default();
         m1.insert("x".to_string(), Value::Int(1));
         let a = Value::Map(heap.alloc_map(m1.clone()));
         let b = Value::Map(heap.alloc_map(m1.clone()));
@@ -926,7 +983,7 @@ mod tests {
             function_id: FunctionId(1),
             captures: vec![Value::Cell(cell)],
         });
-        let mut m = indexmap::IndexMap::new();
+        let mut m = crate::heap::RecordMap::default();
         m.insert("on_click".to_string(), Value::Closure(c));
         let rec = Value::Map(heap.alloc_map(m));
         let mut locals = HashSet::new();
@@ -1041,6 +1098,53 @@ total"
             per_run[7] <= 1,
             "and only probes once a run when cold: {per_run:?}"
         );
+    }
+
+    #[test]
+    fn a_site_whose_scopes_are_always_folded_stops_opening_them() {
+        // `twice` is far under MIN_SCOPE_INSTS, so every scope it opens is
+        // folded into the caller. After TINY_AFTER_FOLDS folds the site stops
+        // opening scopes (one probe per run aside); the answer is unchanged.
+        let src = "fn twice(x)\n  x * 2\nend\nlet t = 0\nfor i in range(0, 20) do t = t + twice(i) end\nt";
+        let (mut env, sid) = env(src);
+        let mut folded_per_run = Vec::new();
+        for _ in 0..4 {
+            let before = env.memo_stats(sid).unwrap().inlined;
+            env.reset_stack(sid).unwrap();
+            assert_eq!(env.run(sid).unwrap(), Value::Int(380));
+            folded_per_run.push(env.memo_stats(sid).unwrap().inlined - before);
+        }
+        let stats = env.memo_stats(sid).unwrap();
+        assert!(stats.tiny > 0, "the site went tiny: {stats:?}");
+        assert!(
+            folded_per_run[3] <= 1,
+            "and opens only its probe scope per run: {folded_per_run:?}"
+        );
+    }
+
+    #[test]
+    fn a_tiny_site_is_recorded_again_once_its_calls_grow() {
+        // `work(n)` is tiny while `n` is 0, then loops once `n` grows: the
+        // once-per-run probe records it and replays resume.
+        let src = "fn work(n)
+  let acc = 0
+  for k in range(0, n) do acc = acc + k end
+  acc
+end
+state n = 0
+let t = 0
+for i in range(0, 10) do t = t + work(n + i * 0) end
+n = 40
+t";
+        let (mut env, sid) = env(src);
+        env.run(sid).unwrap();
+        for _ in 0..6 {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+        }
+        let stats = env.memo_stats(sid).unwrap();
+        assert!(stats.tiny > 0, "it went tiny while n was 0: {stats:?}");
+        assert!(stats.hits > 0, "and replays once it grew: {stats:?}");
     }
 
     #[test]

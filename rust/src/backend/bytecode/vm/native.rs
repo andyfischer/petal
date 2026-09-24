@@ -278,9 +278,14 @@ impl<'a> Vm<'a> {
         } else {
             None
         };
+        let timed = self.profile.enabled.then(std::time::Instant::now);
         let mut cxt = self.native_cxt(args, &chain, origin, in_place);
         let count = natives.call(nid, &mut cxt)?;
         let result = cxt.take_result(count);
+        if let Some(t) = timed {
+            let caller = self.stack.vm_frames.last().and_then(|f| f.func);
+            self.profile.record_native_time(nid.0, caller, t.elapsed());
+        }
         if let Some(before) = before {
             let deps = &self.stack.run_deps;
             self.audit.record(

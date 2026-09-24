@@ -176,10 +176,10 @@ mod tests {
 
     /// Build a record `{ kind: "row", count: 3, children: [<map>] }` for tests.
     fn sample(heap: &mut Heap) -> Value {
-        let inner = heap.alloc_map(IndexMap::new());
+        let inner = heap.alloc_map(crate::heap::RecordMap::default());
         let children = heap.alloc_list(vec![Value::Map(inner)]);
         let kind = Value::String(heap.alloc_string("row".to_string()));
-        let mut fields = IndexMap::new();
+        let mut fields = crate::heap::RecordMap::default();
         fields.insert("kind".to_string(), kind);
         fields.insert("count".to_string(), Value::Int(3));
         fields.insert("children".to_string(), Value::List(children));

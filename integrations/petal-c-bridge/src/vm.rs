@@ -89,6 +89,10 @@ pub struct Vm {
     changed_files: CStrList,
     output_lines: CStrList,
     state_json: CString,
+    profile_report: CString,
+    /// The memo counters when profiling was last turned on: the report shows
+    /// what the measured runs added.
+    profile_memo_start: Option<petal::memo::MemoStats>,
     package_name: CString,
 }
 
@@ -125,6 +129,8 @@ impl Vm {
             changed_files: CStrList::default(),
             output_lines: CStrList::default(),
             state_json: CString::default(),
+            profile_report: CString::default(),
+            profile_memo_start: None,
             package_name: CString::default(),
         }
     }
@@ -1178,6 +1184,45 @@ pub extern "C" fn pb_vm_state_json(vm: *mut VmHandle) -> *const c_char {
         let text = serde_json::Value::Object(map).to_string();
         vm.state_json = cstring_lossy(&text);
         Ok(vm.state_json.as_ptr())
+    })
+    .1
+}
+
+/// Turn the VM profiler on or off. Turning it on clears earlier counts.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_profiling(vm: *mut VmHandle, on: bool) -> Status {
+    with_vm(vm, (), |vm| {
+        vm.env.profile_mut().set_enabled(on);
+        vm.profile_memo_start = vm.loaded.as_ref().and_then(|l| vm.env.memo_stats(l.stack_id));
+        Ok(())
+    })
+    .0
+}
+
+/// The profiler's report for the loaded program since profiling was turned on.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_profile_report(vm: *mut VmHandle, top_n: usize) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let (pid, stack) = (vm.loaded()?.program_id, vm.loaded()?.stack_id);
+        let mut text = vm.env.profile_report(pid, None, top_n);
+        if let Some(now) = vm.env.memo_stats(stack) {
+            let was = vm.profile_memo_start.unwrap_or_default();
+            let d = |a: u64, b: u64| a.saturating_sub(b);
+            text.push_str(&format!(
+                "\n  memo (call memoization, over the measured runs):\n    \
+                 hits {}  misses {}  records {}  inlined {}  effectful {}  cold {}  tiny {}  evicted {}\n",
+                d(now.hits, was.hits),
+                d(now.misses, was.misses),
+                d(now.records, was.records),
+                d(now.inlined, was.inlined),
+                d(now.effectful, was.effectful),
+                d(now.cold, was.cold),
+                d(now.tiny, was.tiny),
+                d(now.evicted, was.evicted),
+            ));
+        }
+        vm.profile_report = cstring_lossy(&text);
+        Ok(vm.profile_report.as_ptr())
     })
     .1
 }

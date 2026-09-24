@@ -39,7 +39,6 @@
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 
-use indexmap::IndexMap;
 use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeClass, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -129,9 +128,9 @@ pub fn register_panel_stubs(env: &mut Env) {
 }
 
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
-    let mut out: IndexMap<String, Value> = IndexMap::with_capacity(STUB_PALETTE.len());
+    let mut out: petal::heap::RecordMap = petal::heap::record_map_with_capacity(STUB_PALETTE.len());
     for (key, [r, g, b, a]) in STUB_PALETTE {
-        let mut color: IndexMap<String, Value> = IndexMap::with_capacity(4);
+        let mut color: petal::heap::RecordMap = petal::heap::record_map_with_capacity(4);
         color.insert("r".to_string(), Value::Int(*r as i64));
         color.insert("g".to_string(), Value::Int(*g as i64));
         color.insert("b".to_string(), Value::Int(*b as i64));
@@ -145,7 +144,7 @@ fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
 }
 
 fn native_panel_theme(cxt: &mut PetalCxt) -> NativeResult {
-    let id = cxt.heap_mut().alloc_map(IndexMap::new());
+    let id = cxt.heap_mut().alloc_map(petal::heap::RecordMap::default());
     cxt.push_value(Value::Map(id));
     Ok(1)
 }

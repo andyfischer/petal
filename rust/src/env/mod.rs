@@ -628,6 +628,48 @@ impl Env {
         &mut self.profile
     }
 
+    /// The profile report for program `pid`: [`VmProfile::report`] plus the
+    /// per-function section, whose function slots are resolved against `pid`'s
+    /// bytecode (the lowering that ran). `elapsed` is the wall time measured.
+    pub fn profile_report(
+        &self,
+        pid: ProgramId,
+        elapsed: Option<std::time::Duration>,
+        top_n: usize,
+    ) -> String {
+        let bc = self.bytecode.get(&pid).map(|(_, bc)| bc);
+        let program = self.programs.get(&pid);
+        self.profile.report_with_functions(
+            elapsed,
+            |nid| self.native_fn_name(nid),
+            |slot| {
+                let bc = bc?;
+                if slot == 0 {
+                    return Some("<root>".to_string());
+                }
+                let f = bc.fns.get(slot - 1)?;
+                let name = f.name.as_deref().unwrap_or("<fn>");
+                // `file:line` of the body's first instruction with a source
+                // position: tells same-named functions in different modules
+                // apart, and places anonymous ones.
+                let at = program.and_then(|p| {
+                    let span = f.origins.iter().flatten().find_map(|&t| {
+                        p.source_map.get(t).filter(|s| s.start.line > 0)
+                    })?;
+                    Some(match p.source_map.file_name_for_span(span) {
+                        Some(file) => {
+                            let file = file.rsplit('/').next().unwrap_or(file);
+                            format!(" {file}:{}", span.start.line)
+                        }
+                        None => format!(" line {}", span.start.line),
+                    })
+                });
+                Some(format!("{name}{}", at.unwrap_or_default()))
+            },
+            top_n,
+        )
+    }
+
     /// Turn the native effect audit on (or off) for subsequent runs: every
     /// native call is then classified by inference as well as by its row, and
     /// the two are compared in [`effect_audit_report`](Self::effect_audit_report).

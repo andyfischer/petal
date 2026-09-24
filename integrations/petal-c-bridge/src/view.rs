@@ -121,12 +121,24 @@ pub struct ViewArena {
     nodes: Vec<PbValue>,
     fix: Vec<Pending>,
     strings: Vec<u8>,
+    /// `decode`'s breadth-first work list, kept for its capacity.
+    queue: Vec<(usize, Value)>,
     finished: bool,
 }
 
 impl ViewArena {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Empty the arena for another decode, keeping its buffers' capacity.
+    /// Every pointer handed out from it before is dangling afterwards.
+    pub fn reset(&mut self) {
+        self.nodes.clear();
+        self.fix.clear();
+        self.strings.clear();
+        self.queue.clear();
+        self.finished = false;
     }
 
     /// Append `s` (NUL-terminated) to the string buffer; returns its offset.
@@ -234,7 +246,8 @@ impl ViewArena {
     pub fn decode(&mut self, roots: &[Value], heap: &Heap, names: &Names) -> usize {
         assert!(!self.finished, "ViewArena is frozen");
         let start = self.nodes.len();
-        let mut queue: Vec<(usize, Value)> = Vec::with_capacity(roots.len());
+        let mut queue = std::mem::take(&mut self.queue);
+        queue.clear();
         for v in roots {
             let idx = self.push_shallow(v, None, heap, names);
             queue.push((idx, *v));
@@ -292,6 +305,7 @@ impl ViewArena {
                 self.fix[idx].first_child = Some(first);
             }
         }
+        self.queue = queue;
         start
     }
 
@@ -318,7 +332,7 @@ impl ViewArena {
                 node.key_len = bytes.iter().position(|b| *b == 0).unwrap_or(0);
             }
         }
-        self.fix = Vec::new();
+        self.fix.clear();
     }
 
     /// Pointer to node `index` (valid once finished).

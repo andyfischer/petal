@@ -22,6 +22,7 @@ pub mod env;
 pub mod error;
 pub mod execution_context;
 pub mod extract;
+pub mod fxhash;
 pub mod goal_based_editing;
 pub mod handle;
 pub mod heap;

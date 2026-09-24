@@ -508,6 +508,13 @@ All of these affect later loads.
   `state_json()` dumps all state (debug use only).
 - `take_output()` returns the lines the script `print`ed. Echo to stdout is
   off by default (`set_echo(true)` turns it on).
+- `set_profiling(true)` / `profile_report(top_n)` (`pb_vm_set_profiling`,
+  `pb_vm_profile_report`) turn on the VM profiler and read its report:
+  opcodes, functions (self instructions and the time in the natives they
+  call, as `name file:line`), natives by wall time, collections and the memo
+  counters, all since profiling was turned on. Profiling roughly doubles
+  script time, so turn it on after warm-up and read the report once
+  (docs/dev/performance.md).
 - `pb_version()` names the bridge, petal-ui contract and prelude level, and
   petal-query protocol version.
 
@@ -570,7 +577,9 @@ The host then feeds input (`pb_vm_input_*`), reads draw commands
 
 Measured on an M-series Mac, release build, in Cheesecake: a frame that makes
 200 emitter calls, 200 host-callback calls and 2 draw calls, then drains and decodes
-everything, costs about 0.4 ms. Loading or reloading a program takes about
+everything, costs about 0.4 ms. Each host-callback native reuses its own
+argument, view and result buffers from call to call, so a call allocates
+nothing on the bridge side beyond its result. Loading or reloading a program takes about
 0.1 s, most of it compiling the `ui` prelude.
 
 ## Limitations

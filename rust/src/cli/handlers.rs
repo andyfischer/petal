@@ -112,9 +112,7 @@ pub(super) fn handle_run(
     if profile {
         // Names are resolved here rather than in `VmProfile` because the native
         // table is the `Env`'s, not the profile's.
-        let report = env
-            .profile()
-            .report(Some(run_elapsed), |nid| env.native_fn_name(nid), 15);
+        let report = env.profile_report(pid, Some(run_elapsed), 15);
         eprint!("{report}");
     }
 

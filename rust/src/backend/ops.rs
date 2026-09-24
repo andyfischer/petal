@@ -12,7 +12,6 @@
 //! caller stores the result into a register and is responsible for error
 //! annotation (source snippet / stack trace).
 
-use indexmap::IndexMap;
 
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
@@ -470,7 +469,7 @@ pub fn alloc_map(
     inputs: &[Value],
     class: Option<ConstantId>,
 ) -> Result<Value, String> {
-    let mut map = IndexMap::new();
+    let mut map = crate::heap::RecordMap::default();
     for (i, field_cid) in fields.iter().enumerate() {
         if let Some(key) = program.get_string_constant(*field_cid) {
             let val = inputs.get(i).copied().unwrap_or(Value::Nil);
@@ -493,7 +492,7 @@ pub fn alloc_map_spread(
     entries: &[MapSpreadEntry],
     inputs: &[Value],
 ) -> Result<Value, String> {
-    let mut map = IndexMap::new();
+    let mut map = crate::heap::RecordMap::default();
     for entry in entries {
         match entry {
             MapSpreadEntry::Spread(idx) => {
@@ -544,7 +543,7 @@ pub fn alloc_element(
     };
     let tag_id = heap.alloc_string(tag_str);
 
-    let mut map = IndexMap::new();
+    let mut map = crate::heap::RecordMap::default();
     for (i, key_cid) in prop_keys.iter().enumerate() {
         if let Some(key) = program.get_string_constant(*key_cid) {
             let val = inputs.get(i).copied().unwrap_or(Value::Nil);

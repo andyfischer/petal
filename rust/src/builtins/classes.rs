@@ -18,7 +18,6 @@
 //! *other* half of dispatch (the VM's per-run method table); the two never
 //! collide, because a user declaration is consulted first.
 
-use indexmap::IndexMap;
 
 use crate::backend::ops::arithmetic;
 use crate::classes::{RECT_FIELDS, qualified_method_name};
@@ -38,7 +37,7 @@ use super::require_args;
 /// coordinates become integers at the draw call, which is the only place that
 /// has to decide.
 fn push_rect(state: &mut PetalCxt, edges: [Value; 4]) {
-    let mut entries = IndexMap::new();
+    let mut entries = crate::heap::RecordMap::default();
     for (name, value) in RECT_FIELDS.iter().zip(edges) {
         entries.insert((*name).to_string(), value);
     }

@@ -337,6 +337,9 @@ impl<'a> Vm<'a> {
             // observations and output range, and inherits its cells so a
             // later escape through the parent's result is still caught.
             self.stack.memo.stats.inlined += 1;
+            if !worth {
+                self.stack.memo.note_folded(sc.fn_id, sc.site);
+            }
             if let Some(p) = self.stack.memo.innermost() {
                 p.deps.append(&mut sc.deps);
                 p.local_cells.extend(sc.local_cells.drain());
@@ -349,6 +352,7 @@ impl<'a> Vm<'a> {
             Dep::Child { path, .. } => self.stack.memo.get(path).is_some_and(|c| c.pure),
             _ => true,
         });
+        self.stack.memo.note_recorded(sc.fn_id, sc.site);
         let serial = self.stack.memo.next_serial();
         let slot = MemoSlot {
             serial,

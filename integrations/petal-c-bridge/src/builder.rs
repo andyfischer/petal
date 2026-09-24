@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 use std::ffi::c_char;
 
-use indexmap::IndexMap;
 use petal::heap::Heap;
 use petal::symbol::SymbolId;
 use petal::value::Value;
@@ -65,7 +64,7 @@ impl HostValue {
                 Value::List(heap.alloc_list(vals))
             }
             HostValue::Map(fields) => {
-                let mut map = IndexMap::with_capacity(fields.len());
+                let mut map = petal::heap::record_map_with_capacity(fields.len());
                 for (k, v) in fields {
                     let v = v.to_value(heap, syms);
                     map.insert(k.clone(), v);
@@ -213,6 +212,19 @@ impl Builder {
     }
 
     /// Zero roots = nil, one root = that value (for native results).
+    /// [`result`](Self::result), moving the value out instead of cloning it
+    /// (the builder is left empty on success).
+    pub fn take_result(&mut self) -> BResult<HostValue> {
+        self.roots()?;
+        match self.roots.len() {
+            0 => Ok(HostValue::Nil),
+            1 => Ok(self.roots.pop().unwrap_or(HostValue::Nil)),
+            n => Err(BridgeError::invalid(format!(
+                "native result: expected at most one value, found {n}"
+            ))),
+        }
+    }
+
     pub fn result(&self) -> BResult<HostValue> {
         match self.roots()? {
             [] => Ok(HostValue::Nil),

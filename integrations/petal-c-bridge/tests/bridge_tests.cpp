@@ -111,6 +111,27 @@ TEST(state_persists_across_frames) {
     CHECK_EQ(run_out(vm), std::vector<double>{101});
 }
 
+TEST(profiler_reports_functions_and_natives) {
+    petal::Vm vm;
+    vm.load_source(
+        "fn spin(n)\n"
+        "  let acc = 0.0\n"
+        "  for i in range(0, n) do acc = acc + sqrt(float(i)) end\n"
+        "  acc\n"
+        "end\n"
+        "push_output(symbol(\"out\"), spin(50))\n");
+    vm.set_profiling(true);
+    vm.run();
+    std::string report = vm.profile_report(10);
+    CHECK(report.find("top functions") != std::string::npos);
+    CHECK(report.find("spin") != std::string::npos);
+    CHECK(report.find("natives by time") != std::string::npos);
+    CHECK(report.find("sqrt") != std::string::npos);
+    // Turning it back on starts a fresh measurement.
+    vm.set_profiling(true);
+    CHECK(vm.profile_report(10).find("spin") == std::string::npos);
+}
+
 TEST(restart_starts_state_over_without_recompiling) {
     petal::Vm vm;
     CHECK_THROWS_CODE(vm.restart(), PB_ERR_NOT_LOADED);

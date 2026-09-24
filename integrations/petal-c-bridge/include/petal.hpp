@@ -552,6 +552,13 @@ public:
         if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
         return s;
     }
+    // The VM profiler (see pb_vm_set_profiling / pb_vm_profile_report).
+    void set_profiling(bool on) { check(pb_vm_set_profiling(vm_, on)); }
+    std::string profile_report(size_t top_n = 20) {
+        const char* s = pb_vm_profile_report(vm_, top_n);
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_LOADED);
+        return s;
+    }
     // A top-level state variable (throws PB_ERR_NOT_FOUND if absent).
     Value state(const std::string& name) {
         const pb_value* v = nullptr;

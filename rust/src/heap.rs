@@ -34,6 +34,17 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+/// A record's fields: name → value, in insertion order. Hashed with
+/// [`FxHasher`](crate::fxhash::FxHasher), since field reads are among the
+/// VM's hottest operations. Build one with `RecordMap::default()` or
+/// [`record_map_with_capacity`].
+pub type RecordMap = IndexMap<String, Value, crate::fxhash::FxBuildHasher>;
+
+/// An empty [`RecordMap`] with room for `n` fields.
+pub fn record_map_with_capacity(n: usize) -> RecordMap {
+    RecordMap::with_capacity_and_hasher(n, Default::default())
+}
+
 use crate::program::{ClosureId, OverloadSetId};
 use crate::stats::{AllocKind, AllocStats, DupKind, DupStats};
 use crate::value::Value;
@@ -47,7 +58,7 @@ fn value_slice_bytes(len: usize) -> u64 {
 
 /// Bytes copied when a map's entry table is cloned: each key `String`'s content
 /// plus one `Copy` `Value` per entry.
-fn map_entries_bytes(entries: &IndexMap<String, Value>) -> u64 {
+fn map_entries_bytes(entries: &RecordMap) -> u64 {
     let keys: u64 = entries.keys().map(|k| k.len() as u64).sum();
     keys + value_slice_bytes(entries.len())
 }
@@ -182,7 +193,7 @@ generational_id! {
 /// because the result is no longer that class's shape).
 #[derive(Clone)]
 struct MapObj {
-    entries: IndexMap<String, Value>,
+    entries: RecordMap,
     /// The interned class name, or `None` for a plain record. Marked by the
     /// collector so the name outlives every instance that carries it.
     class: Option<StringId>,
@@ -754,7 +765,7 @@ impl Heap {
         self.vec3s
             .inherit_generations(&previous.vec3s, || [0.0; 3]);
         self.maps.inherit_generations(&previous.maps, || MapObj {
-            entries: IndexMap::new(),
+            entries: RecordMap::default(),
             class: None,
         });
         self.elements
@@ -817,7 +828,7 @@ impl Heap {
     }
 
     /// [`get_map`](Self::get_map) for a weak id: `None` once collected.
-    pub fn try_get_map(&self, id: MapId) -> Option<&IndexMap<String, Value>> {
+    pub fn try_get_map(&self, id: MapId) -> Option<&RecordMap> {
         self.maps.try_get(id.raw()).map(|m| &m.entries)
     }
 
@@ -1079,7 +1090,7 @@ impl Heap {
 
     // --- Map allocation ---
 
-    pub fn alloc_map(&mut self, entries: IndexMap<String, Value>) -> MapId {
+    pub fn alloc_map(&mut self, entries: RecordMap) -> MapId {
         self.alloc_map_tagged(entries, None)
     }
 
@@ -1088,7 +1099,7 @@ impl Heap {
     /// See [`MapObj`].
     pub fn alloc_class_instance(
         &mut self,
-        entries: IndexMap<String, Value>,
+        entries: RecordMap,
         class: StringId,
     ) -> MapId {
         self.alloc_map_tagged(entries, Some(class))
@@ -1096,14 +1107,14 @@ impl Heap {
 
     fn alloc_map_tagged(
         &mut self,
-        entries: IndexMap<String, Value>,
+        entries: RecordMap,
         class: Option<StringId>,
     ) -> MapId {
         self.tick_alloc(AllocKind::Map, map_entries_bytes(&entries));
         MapId::from_raw(self.maps.alloc(MapObj { entries, class }))
     }
 
-    pub fn get_map(&self, id: MapId) -> &IndexMap<String, Value> {
+    pub fn get_map(&self, id: MapId) -> &RecordMap {
         &self.maps.get(id.raw()).entries
     }
 
@@ -1367,7 +1378,7 @@ impl Heap {
         self.f64_arrays.sweep_with(|_, v| *v = Vec::new());
         self.vec3s.sweep_with(|_, _| {});
         self.maps.sweep_with(|_, v| {
-            v.entries = IndexMap::new();
+            v.entries = RecordMap::default();
             v.class = None;
         });
         self.elements.sweep_with(|_, _| {});
@@ -1553,7 +1564,7 @@ mod tests {
     fn a_class_instance_is_a_record_with_a_tag() {
         let mut heap = Heap::new();
         let tag = heap.alloc_string("Rect".to_string());
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("x".to_string(), Value::Int(1));
         let instance = heap.alloc_class_instance(entries.clone(), tag);
         let plain = heap.alloc_map(entries);
@@ -1569,7 +1580,7 @@ mod tests {
     fn map_set_and_remove_carry_the_class_tag() {
         let mut heap = Heap::new();
         let tag = heap.alloc_string("Rect".to_string());
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("x".to_string(), Value::Int(1));
         entries.insert("y".to_string(), Value::Int(2));
         let r = heap.alloc_class_instance(entries, tag);
@@ -1595,7 +1606,7 @@ mod tests {
     fn the_class_tag_survives_a_collection() {
         let mut heap = Heap::new();
         let tag = heap.alloc_string("Rect".to_string());
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("x".to_string(), Value::Int(1));
         let r = heap.alloc_class_instance(entries, tag);
         // Garbage the collector should reclaim, so the sweep really runs.
@@ -1610,7 +1621,7 @@ mod tests {
     #[test]
     fn map_set_does_not_mutate_the_input() {
         let mut heap = Heap::new();
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("a".to_string(), Value::Int(1));
         entries.insert("b".to_string(), Value::Int(2));
         let original = heap.alloc_map(entries);
@@ -1629,7 +1640,7 @@ mod tests {
     #[test]
     fn map_set_can_add_a_new_key() {
         let mut heap = Heap::new();
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("a".to_string(), Value::Int(1));
         let original = heap.alloc_map(entries);
 
@@ -1696,7 +1707,7 @@ mod tests {
     #[test]
     fn map_remove_does_not_mutate_the_input() {
         let mut heap = Heap::new();
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("a".to_string(), Value::Int(1));
         entries.insert("b".to_string(), Value::Int(2));
         let original = heap.alloc_map(entries);
@@ -1804,7 +1815,7 @@ mod tests {
     #[test]
     fn map_remove_absent_key_is_a_noop_copy() {
         let mut heap = Heap::new();
-        let mut entries = IndexMap::new();
+        let mut entries = RecordMap::default();
         entries.insert("a".to_string(), Value::Int(1));
         let original = heap.alloc_map(entries);
 

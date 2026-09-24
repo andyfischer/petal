@@ -273,7 +273,7 @@ impl FontMetrics {
 pub fn bind_font_metrics(env: &mut Env, font: &str, metrics: &FontMetrics) {
     let advances: Vec<Value> = metrics.advances.iter().map(|r| Value::Float(*r)).collect();
     let advances_id = env.heap_mut().alloc_list(advances);
-    let mut entry = indexmap::IndexMap::new();
+    let mut entry = petal::heap::RecordMap::default();
     entry.insert("advance".to_string(), Value::Float(metrics.advance));
     entry.insert("advances".to_string(), Value::List(advances_id));
     for (key, value) in vertical_fields(&metrics.vertical) {
@@ -284,7 +284,7 @@ pub fn bind_font_metrics(env: &mut Env, font: &str, metrics: &FontMetrics) {
     let sym = env.intern_symbol(SYM_TEXT_FONTS);
     let mut fonts = match env.binding(sym) {
         Some(Value::Map(id)) => env.heap().get_map(id).clone(),
-        _ => indexmap::IndexMap::new(),
+        _ => petal::heap::RecordMap::default(),
     };
     fonts.insert(font.to_string(), Value::Map(entry_id));
     let fonts_id = env.heap_mut().alloc_map(fonts);
@@ -346,7 +346,7 @@ pub fn font_variant_key(font: &str, weight: u16, italic: bool) -> String {
 /// else's font. Any host that can ask its rasterizer where the baseline lands
 /// should call this.
 pub fn bind_text_vertical_metrics(env: &mut Env, vertical: &VerticalMetrics) {
-    let mut fields = indexmap::IndexMap::new();
+    let mut fields = petal::heap::RecordMap::default();
     for (key, value) in vertical_fields(vertical) {
         fields.insert(key.to_string(), Value::Float(value));
     }
@@ -372,7 +372,7 @@ fn vertical_fields(v: &VerticalMetrics) -> [(&'static str, f64); 5] {
 /// host left out from `fallback`. A host that publishes only a baseline gets
 /// sensible proportions around it rather than zeros.
 fn vertical_from_map(
-    map: &indexmap::IndexMap<String, Value>,
+    map: &petal::heap::RecordMap,
     fallback: VerticalMetrics,
 ) -> VerticalMetrics {
     let get = |key: &str, default: f64| map.get(key).map_or(default, |v| num_or(v, default));
@@ -666,7 +666,7 @@ pub(crate) fn native_font(state: &mut PetalCxt) -> NativeResult {
     let name = state.get_string(1)?;
     let resolved = resolve_font_name(&name).unwrap_or(name);
     let id = state.heap_mut().alloc_string(resolved);
-    let mut fields = indexmap::IndexMap::new();
+    let mut fields = petal::heap::RecordMap::default();
     fields.insert("font".to_string(), Value::String(id));
     let map = state.heap_mut().alloc_map(fields);
     state.push_value(Value::Map(map));
@@ -958,7 +958,7 @@ pub(crate) fn native_text_metrics(state: &mut PetalCxt) -> NativeResult {
     let (style, metrics) = style_and_metrics(state, 1)?;
     let size = style.size as f64;
     let v = metrics.vertical;
-    let mut fields = indexmap::IndexMap::new();
+    let mut fields = petal::heap::RecordMap::default();
     fields.insert("size".to_string(), Value::Float(size));
     for (key, ratio) in vertical_fields(&v) {
         fields.insert(key.to_string(), Value::Float(ratio * size));

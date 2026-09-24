@@ -18,6 +18,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use crate::program::FunctionId;
+
 use crate::backend::bytecode::isa::{Inst, Opcode};
 
 /// Execution counters for one profiled session. Lives on the
@@ -35,6 +37,19 @@ pub struct VmProfile {
     /// because the table's size is a host decision (embedders register their
     /// own natives), not a constant.
     by_native: Vec<u64>,
+    /// Instructions retired per function, indexed by [`fn_slot`]: slot 0 is the
+    /// implicit root function, slot `n + 1` is `FunctionId(n)`. Counted where
+    /// the instruction executes, so it is *self* work — a function's callees
+    /// are charged to the callees. Grown on demand like `by_native`.
+    by_function: Vec<u64>,
+    /// Wall time spent inside each native (host callbacks included), by
+    /// `NativeFnId`. Intrinsics that call back into Petal (`map`, `filter`,
+    /// ...) are not timed: their time is the closures' instructions.
+    native_time: Vec<Duration>,
+    /// Wall time spent in natives called directly from each function, by
+    /// [`fn_slot`] — the part of a function's cost that its instruction count
+    /// cannot show.
+    fn_native_time: Vec<Duration>,
     /// User-function calls (`Call`/`MethodCall` reaching a Petal function),
     /// i.e. how many VM frames were pushed.
     pub calls: u64,
@@ -50,6 +65,9 @@ impl Default for VmProfile {
             // `[u64; N]` only derives Default up to N = 32.
             by_opcode: [0; Opcode::COUNT],
             by_native: Vec::new(),
+            by_function: Vec::new(),
+            native_time: Vec::new(),
+            fn_native_time: Vec::new(),
             calls: 0,
             collections: 0,
             gc_time: Duration::ZERO,
@@ -77,6 +95,40 @@ impl VmProfile {
             return;
         }
         self.by_opcode[inst.opcode() as usize] += 1;
+    }
+
+    /// Record one retired instruction of function `func` (`None` = root). The
+    /// per-opcode count is [`record_inst`](Self::record_inst)'s; this adds the
+    /// per-function attribution. Only reached with hooks on.
+    #[inline]
+    pub fn record_inst_in(&mut self, inst: &Inst, func: Option<FunctionId>) {
+        if !self.enabled {
+            return;
+        }
+        self.by_opcode[inst.opcode() as usize] += 1;
+        let slot = fn_slot(func);
+        if slot >= self.by_function.len() {
+            self.by_function.resize(slot + 1, 0);
+        }
+        self.by_function[slot] += 1;
+    }
+
+    /// Record the wall time one call of native `nid` took, made from function
+    /// `caller` (`None` = root).
+    pub fn record_native_time(&mut self, nid: u32, caller: Option<FunctionId>, elapsed: Duration) {
+        if !self.enabled {
+            return;
+        }
+        let idx = nid as usize;
+        if idx >= self.native_time.len() {
+            self.native_time.resize(idx + 1, Duration::ZERO);
+        }
+        self.native_time[idx] += elapsed;
+        let slot = fn_slot(caller);
+        if slot >= self.fn_native_time.len() {
+            self.fn_native_time.resize(slot + 1, Duration::ZERO);
+        }
+        self.fn_native_time[slot] += elapsed;
     }
 
     /// Record one native/builtin invocation by table index.
@@ -146,6 +198,39 @@ impl VmProfile {
         rows
     }
 
+    /// `(fn slot, self instructions, time in natives it called)` for every
+    /// function that ran, by instruction count, most first. Slot 0 is the root
+    /// function, slot `n + 1` is `FunctionId(n)` (see [`fn_slot`]).
+    pub fn functions_by_count(&self) -> Vec<(usize, u64, Duration)> {
+        let n = self.by_function.len().max(self.fn_native_time.len());
+        let mut rows: Vec<(usize, u64, Duration)> = (0..n)
+            .map(|i| {
+                (
+                    i,
+                    self.by_function.get(i).copied().unwrap_or(0),
+                    self.fn_native_time.get(i).copied().unwrap_or(Duration::ZERO),
+                )
+            })
+            .filter(|&(_, c, t)| c > 0 || !t.is_zero())
+            .collect();
+        rows.sort_by_key(|&(_, n, _)| std::cmp::Reverse(n));
+        rows
+    }
+
+    /// `(native fn id, calls, total wall time)` for every timed native, by
+    /// time, most first.
+    pub fn natives_by_time(&self) -> Vec<(u32, u64, Duration)> {
+        let mut rows: Vec<(u32, u64, Duration)> = self
+            .native_time
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| !t.is_zero())
+            .map(|(i, t)| (i as u32, self.by_native.get(i).copied().unwrap_or(0), *t))
+            .collect();
+        rows.sort_by_key(|&(_, _, t)| std::cmp::Reverse(t));
+        rows
+    }
+
     /// Clear every counter, leaving `enabled` alone.
     pub fn reset(&mut self) {
         let enabled = self.enabled;
@@ -160,6 +245,20 @@ impl VmProfile {
         &self,
         elapsed: Option<Duration>,
         native_name: impl Fn(u32) -> String,
+        top_n: usize,
+    ) -> String {
+        self.report_with_functions(elapsed, native_name, |_| None, top_n)
+    }
+
+    /// [`report`](Self::report) plus the per-function and per-native-time
+    /// sections, resolving a function slot (see [`fn_slot`]) to its name with
+    /// `fn_name`. A `None` name drops that section (the caller has no program
+    /// to resolve against).
+    pub fn report_with_functions(
+        &self,
+        elapsed: Option<Duration>,
+        native_name: impl Fn(u32) -> String,
+        fn_name: impl Fn(usize) -> Option<String>,
         top_n: usize,
     ) -> String {
         use fmt::Write as _;
@@ -204,7 +303,54 @@ impl VmProfile {
             self.total_natives(),
             top_n,
         );
+
+        let functions = self.functions_by_count();
+        if !functions.is_empty() && fn_name(0).is_some() {
+            let _ = writeln!(
+                s,
+                "\n  top functions (self instructions, then time in the natives they call):"
+            );
+            for &(slot, n, t) in functions.iter().take(top_n) {
+                let name = fn_name(slot).unwrap_or_else(|| format!("fn#{slot}"));
+                let pct = if total == 0 { 0.0 } else { n as f64 * 100.0 / total as f64 };
+                let _ = writeln!(
+                    s,
+                    "    {:<44} {:>12}  {:>5.1}%  {:>9.2} ms",
+                    name,
+                    commas(n),
+                    pct,
+                    t.as_secs_f64() * 1e3
+                );
+            }
+        }
+
+        let timed = self.natives_by_time();
+        if !timed.is_empty() {
+            let _ = writeln!(s, "\n  natives by time:");
+            for &(nid, calls, t) in timed.iter().take(top_n) {
+                let ms = t.as_secs_f64() * 1e3;
+                let per = if calls == 0 { 0.0 } else { t.as_secs_f64() * 1e9 / calls as f64 };
+                let _ = writeln!(
+                    s,
+                    "    {:<18} {:>9.2} ms  {:>10} calls  {:>7.0} ns/call",
+                    native_name(nid),
+                    ms,
+                    commas(calls),
+                    per
+                );
+            }
+        }
         s
+    }
+}
+
+/// The per-function counters' index for a function: 0 for the implicit root,
+/// `id + 1` for `FunctionId(id)`.
+#[inline(always)]
+pub fn fn_slot(func: Option<FunctionId>) -> usize {
+    match func {
+        None => 0,
+        Some(FunctionId(i)) => i as usize + 1,
     }
 }
 
@@ -279,6 +425,27 @@ mod tests {
             vec![(Opcode::LoadNil, 2), (Opcode::Jump, 1)]
         );
         assert_eq!(p.natives_by_count(), vec![(2, 2), (5, 1)]);
+    }
+
+    #[test]
+    fn per_function_counts_and_native_time() {
+        let mut p = VmProfile::new();
+        p.set_enabled(true);
+        p.record_inst_in(&Inst::LoadNil { dst: 0 }, None);
+        p.record_inst_in(&Inst::LoadNil { dst: 0 }, Some(FunctionId(2)));
+        p.record_inst_in(&Inst::LoadNil { dst: 0 }, Some(FunctionId(2)));
+        p.record_native(7);
+        p.record_native_time(7, Some(FunctionId(2)), Duration::from_micros(5));
+        assert_eq!(p.total_insts(), 3);
+        assert_eq!(
+            p.functions_by_count(),
+            vec![(3, 2, Duration::from_micros(5)), (0, 1, Duration::ZERO)]
+        );
+        assert_eq!(p.natives_by_time(), vec![(7, 1, Duration::from_micros(5))]);
+        let r = p.report_with_functions(None, |n| format!("n{n}"), |s| Some(format!("f{s}")), 5);
+        assert!(r.contains("top functions"), "{r}");
+        assert!(r.contains("f3"), "{r}");
+        assert!(r.contains("natives by time"), "{r}");
     }
 
     #[test]

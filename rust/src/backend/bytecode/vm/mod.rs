@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
-use super::isa::{BytecodeFn, BytecodeProgram, Reg};
+use super::isa::{BytecodeFn, BytecodeProgram, Inst, Reg};
 use crate::backend::errors::TraceFrame;
 use crate::backend::{RuntimeClosure, StepResult};
 use crate::closure_table::ClosureTable;
@@ -191,6 +191,7 @@ impl<'a> Vm<'a> {
     /// [`step`](Self::step) so [`run_batch`](Self::run_batch) can resolve the
     /// frame's function once and reuse it for the whole straight-line run
     /// between calls, which is most of a program's instructions.
+    #[inline(always)]
     fn step_in(&mut self, frame_idx: usize, func: &'a BytecodeFn) -> StepResult {
         let ip = self.stack.vm_frames[frame_idx].ip;
         if ip >= func.code.len() {
@@ -205,6 +206,26 @@ impl<'a> Vm<'a> {
         // into dispatch. Every hook's own gate is still checked below, so this
         // only decides whether to look.
         if !self.hooks {
+            // `if` and `while` test their condition with a JumpIfPending and
+            // then a JumpIfFalse on the same register. Falling through the
+            // first always runs the second, so take both in one dispatch —
+            // still counted as two instructions. (With hooks on, each is
+            // stepped on its own so the trace and profile see both.)
+            if let Inst::JumpIfPending { cond, to } = *inst {
+                let v = self.reg(frame_idx, cond);
+                if matches!(v, Value::Pending(_)) {
+                    self.stack.vm_frames[frame_idx].ip = to as usize;
+                    return StepResult::Continue;
+                }
+                if let Some(&Inst::JumpIfFalse { cond: c2, to: t2 }) = func.code.get(ip + 1)
+                    && c2 == cond
+                {
+                    self.stack.insts += 1;
+                    self.stack.vm_frames[frame_idx].ip =
+                        if v.is_truthy() { ip + 2 } else { t2 as usize };
+                    return StepResult::Continue;
+                }
+            }
             let origin = func.origins.get(ip).copied().flatten();
             return match self.exec_inst(frame_idx, inst, origin) {
                 Ok(sr) => sr,
@@ -217,7 +238,7 @@ impl<'a> Vm<'a> {
                 }
             };
         }
-        self.profile.record_inst(inst);
+        self.profile.record_inst_in(inst, func.func_id);
         let origin = func.origins.get(ip).copied().flatten();
         // Gather trace inputs before execution — a `dst` that aliases a source
         // register would clobber it otherwise. The `enabled` check comes first
@@ -361,6 +382,7 @@ impl<'a> Vm<'a> {
 
     // -- register access -----------------------------------------------------
 
+    #[inline(always)]
     fn reg(&self, fi: usize, r: Reg) -> Value {
         self.stack.vm_frames[fi]
             .regs
@@ -369,6 +391,7 @@ impl<'a> Vm<'a> {
             .unwrap_or(Value::Nil)
     }
 
+    #[inline(always)]
     fn set(&mut self, fi: usize, r: Reg, v: Value) {
         // A frame is built with its function's full register file, so the
         // in-bounds arm is the only one lowered code ever takes; writing it as

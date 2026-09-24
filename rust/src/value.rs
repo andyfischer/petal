@@ -584,7 +584,7 @@ pub fn json_to_value(json: &serde_json::Value, heap: &mut Heap) -> Result<Value,
             Ok(Value::List(id))
         }
         serde_json::Value::Object(obj) => {
-            let mut entries = indexmap::IndexMap::with_capacity(obj.len());
+            let mut entries = crate::heap::record_map_with_capacity(obj.len());
             for (key, item) in obj {
                 entries.insert(key.clone(), json_to_value(item, heap)?);
             }

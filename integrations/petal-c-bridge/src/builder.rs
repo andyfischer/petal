@@ -67,7 +67,7 @@ impl HostValue {
                 let mut map = petal::heap::record_map_with_capacity(fields.len());
                 for (k, v) in fields {
                     let v = v.to_value(heap, syms);
-                    map.insert(k.clone(), v);
+                    map.insert(k.as_str(), v);
                 }
                 Value::Map(heap.alloc_map(map))
             }

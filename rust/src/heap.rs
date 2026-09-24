@@ -32,17 +32,14 @@
 
 use std::collections::HashMap;
 
-use indexmap::IndexMap;
-
-/// A record's fields: name → value, in insertion order. Hashed with
-/// [`FxHasher`](crate::fxhash::FxHasher), since field reads are among the
-/// VM's hottest operations. Build one with `RecordMap::default()` or
-/// [`record_map_with_capacity`].
-pub type RecordMap = IndexMap<String, Value, crate::fxhash::FxBuildHasher>;
+/// A record's fields: name → value, in insertion order: a shared key list
+/// (shape) plus a value vector. See `crate::record`. Build one with
+/// `RecordMap::default()` or [`record_map_with_capacity`].
+pub use crate::record::RecordMap;
 
 /// An empty [`RecordMap`] with room for `n` fields.
 pub fn record_map_with_capacity(n: usize) -> RecordMap {
-    RecordMap::with_capacity_and_hasher(n, Default::default())
+    RecordMap::with_capacity(n)
 }
 
 use crate::program::{ClosureId, OverloadSetId};
@@ -59,8 +56,7 @@ fn value_slice_bytes(len: usize) -> u64 {
 /// Bytes copied when a map's entry table is cloned: each key `String`'s content
 /// plus one `Copy` `Value` per entry.
 fn map_entries_bytes(entries: &RecordMap) -> u64 {
-    let keys: u64 = entries.keys().map(|k| k.len() as u64).sum();
-    keys + value_slice_bytes(entries.len())
+    entries.payload_bytes()
 }
 
 /// The raw `(slot index, generation)` pair a [`Slab`] hands out. Wrapped by
@@ -1131,7 +1127,7 @@ impl Heap {
 
     /// Return a new map equal to `id` with `key` set to `val`. `id` is
     /// unchanged (value semantics).
-    pub fn map_set(&mut self, id: MapId, key: String, val: Value) -> MapId {
+    pub fn map_set<K: crate::record::IntoKey>(&mut self, id: MapId, key: K, val: Value) -> MapId {
         let class = self.maps.get(id.raw()).class;
         let mut entries = self.maps.get(id.raw()).entries.clone();
         self.dup_stats
@@ -1155,7 +1151,12 @@ impl Heap {
     /// In-place [`map_set`](Self::map_set): insert/overwrite `key` in `id`'s
     /// entry table and return `id`. See the in-place list methods for the
     /// soundness contract.
-    pub fn map_set_in_place(&mut self, id: MapId, key: String, val: Value) -> MapId {
+    pub fn map_set_in_place<K: crate::record::IntoKey>(
+        &mut self,
+        id: MapId,
+        key: K,
+        val: Value,
+    ) -> MapId {
         debug_assert!(
             self.maps.is_live(id.raw()),
             "in-place set on a dead map"

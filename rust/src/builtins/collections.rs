@@ -320,7 +320,7 @@ pub(super) fn native_keys(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "keys")?;
     match state.get_value(1)? {
         Value::Map(id) => {
-            let key_strings: Vec<String> = state.heap().get_map(id).keys().cloned().collect();
+            let key_strings: Vec<String> = state.heap().get_map(id).keys().map(|k| k.to_string()).collect();
             let keys: Vec<Value> = key_strings
                 .into_iter()
                 .map(|k| {

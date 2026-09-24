@@ -48,6 +48,7 @@ pub mod program_analysis;
 #[cfg(kani)]
 mod proofs;
 pub mod provenance;
+pub mod record;
 pub mod resource_table;
 pub mod suggest;
 pub mod rewrite;

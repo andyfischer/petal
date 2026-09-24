@@ -394,7 +394,7 @@ fn element_to_json(
 
     let props_obj: serde_json::Map<String, serde_json::Value> = props
         .iter()
-        .map(|(k, v)| (k.clone(), value_to_json_ctx(v, heap, ctx)))
+        .map(|(k, v)| (k.to_string(), value_to_json_ctx(v, heap, ctx)))
         .collect();
 
     let children_arr: Vec<serde_json::Value> = children
@@ -509,7 +509,7 @@ pub fn value_to_json_ctx(
             let map = heap.get_map(*id);
             let obj: serde_json::Map<String, serde_json::Value> = map
                 .iter()
-                .map(|(k, v)| (k.clone(), value_to_json_ctx(v, heap, ctx)))
+                .map(|(k, v)| (k.to_string(), value_to_json_ctx(v, heap, ctx)))
                 .collect();
             serde_json::Value::Object(obj)
         }
@@ -760,6 +760,10 @@ pub fn values_equal(a: &Value, b: &Value, heap: &Heap) -> bool {
                 return false;
             }
             let (xs, ys) = (heap.get_map(*a), heap.get_map(*b));
+            // Same shape: the keys match position by position.
+            if std::sync::Arc::ptr_eq(xs.shape(), ys.shape()) {
+                return xs.values().zip(ys.values()).all(|(x, y)| values_equal(x, y, heap));
+            }
             xs.len() == ys.len()
                 && xs.iter().all(|(k, x)| match ys.get(k) {
                     Some(y) => values_equal(x, y, heap),

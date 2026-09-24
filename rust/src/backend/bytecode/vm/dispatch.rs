@@ -216,9 +216,17 @@ impl<'a> Vm<'a> {
                 fields,
                 vals,
                 class,
+                shape,
             } => {
                 let inputs = self.take_args(fi, vals);
-                let v = ops::alloc_map(self.program, self.heap, fields, &inputs, *class);
+                let v = ops::alloc_map(
+                    self.program,
+                    self.heap,
+                    fields,
+                    &inputs,
+                    *class,
+                    shape.as_ref(),
+                );
                 self.give_args(inputs);
                 let v = v?;
                 self.set(fi, *dst, v);
@@ -255,9 +263,13 @@ impl<'a> Vm<'a> {
                 obj,
                 field,
                 opt,
+                cache,
             } => {
                 let base = self.reg(fi, *obj);
-                let v = ops::get_field(self.program, self.heap, *field, base, *opt)?;
+                let v = match ops::cached_field(self.program, self.heap, cache, *field, base) {
+                    Some(v) => v,
+                    None => ops::get_field(self.program, self.heap, *field, base, *opt)?,
+                };
                 // Absorption gates on the BASE: `pending.field` yields that same
                 // Pending. A resolved record that merely holds a Pending field is
                 // element-wise (not an absorption), so the result value can't be

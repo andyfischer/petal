@@ -468,14 +468,24 @@ pub fn alloc_map(
     fields: &[ConstantId],
     inputs: &[Value],
     class: Option<ConstantId>,
+    shape: Option<&std::sync::Arc<crate::record::Shape>>,
 ) -> Result<Value, String> {
-    let mut map = crate::heap::RecordMap::default();
-    for (i, field_cid) in fields.iter().enumerate() {
-        if let Some(key) = program.get_string_constant(*field_cid) {
-            let val = inputs.get(i).copied().unwrap_or(Value::Nil);
-            map.insert(key.to_string(), val);
+    let map = match shape {
+        // The lowered literal's shared shape: no key is copied.
+        Some(shape) if shape.len() == fields.len() && inputs.len() == fields.len() => {
+            crate::heap::RecordMap::from_shape(shape.clone(), inputs.to_vec())
         }
-    }
+        _ => {
+            let mut map = crate::heap::RecordMap::with_capacity(fields.len());
+            for (i, field_cid) in fields.iter().enumerate() {
+                if let Some(key) = program.get_string_constant(*field_cid) {
+                    let val = inputs.get(i).copied().unwrap_or(Value::Nil);
+                    map.insert(key, val);
+                }
+            }
+            map
+        }
+    };
     // A class instance is the same entry table plus a tag naming its class;
     // the name is interned so every instance shares one heap string.
     let Some(class) = class.and_then(|c| program.get_string_constant(c)) else {
@@ -499,13 +509,15 @@ pub fn alloc_map_spread(
                 let src = inputs.get(*idx).copied().unwrap_or(Value::Nil);
                 match src {
                     Value::Map(src_id) => {
-                        let pairs: Vec<(String, Value)> = heap
-                            .get_map(src_id)
-                            .iter()
-                            .map(|(k, v)| (k.clone(), *v))
-                            .collect();
-                        for (k, v) in pairs {
-                            map.insert(k, v);
+                        let src = heap.get_map(src_id);
+                        if map.is_empty() {
+                            // Leading spread: share the source's shape, so
+                            // `{...r, x: 1}` for a field `r` has keeps it.
+                            map = src.clone();
+                        } else {
+                            for (k, v) in src {
+                                map.insert(k, *v);
+                            }
                         }
                     }
                     Value::Nil => {} // Spreading nil is a no-op
@@ -520,7 +532,7 @@ pub fn alloc_map_spread(
             MapSpreadEntry::Named(cid, idx) => {
                 if let Some(key) = program.get_string_constant(*cid) {
                     let val = inputs.get(*idx).copied().unwrap_or(Value::Nil);
-                    map.insert(key.to_string(), val);
+                    map.insert(key, val);
                 }
             }
         }
@@ -547,7 +559,7 @@ pub fn alloc_element(
     for (i, key_cid) in prop_keys.iter().enumerate() {
         if let Some(key) = program.get_string_constant(*key_cid) {
             let val = inputs.get(i).copied().unwrap_or(Value::Nil);
-            map.insert(key.to_string(), val);
+            map.insert(key, val);
         }
     }
     let props_id = heap.alloc_map(map);
@@ -578,6 +590,26 @@ pub fn make_enum_variant(
 // ---------------------------------------------------------------------------
 // Field / index access
 // ---------------------------------------------------------------------------
+
+/// A record field read through a `GetField` site's inline cache: the value
+/// when `obj` is a record that has the field, filling the cache on a miss;
+/// `None` for anything else (not a record, no such field), which the caller
+/// hands to [`get_field`] for the general path and its errors.
+#[inline(always)]
+pub fn cached_field(
+    program: &Program,
+    heap: &Heap,
+    cache: &crate::record::FieldCache,
+    field_cid: ConstantId,
+    obj: Value,
+) -> Option<Value> {
+    let Value::Map(id) = obj else { return None };
+    let map = heap.get_map(id);
+    if let Some(v) = cache.lookup(map) {
+        return Some(v);
+    }
+    cache.fill(map, program.get_string_constant(field_cid)?)
+}
 
 /// Field access on records, elements, lists/strings (`.length`), vec2 and vec3.
 ///
@@ -702,7 +734,7 @@ fn set_field_impl(
     match obj {
         Value::Map(map_id) => {
             let field_name = match program.get_string_constant(field_cid) {
-                Some(s) => s.to_string(),
+                Some(s) => s,
                 None => return Err("SetField: invalid field name".into()),
             };
             let new_id = if in_place {

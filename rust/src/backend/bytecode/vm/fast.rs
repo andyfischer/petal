@@ -298,8 +298,15 @@ impl<'a> Vm<'a> {
                     obj,
                     field,
                     opt,
+                    ref cache,
                 } => {
                     let base = get!(obj);
+                    if let Some(v) = ops::cached_field(program, heap, cache, field, base) {
+                        put!(dst, v);
+                        n += 1;
+                        ip += 1;
+                        continue;
+                    }
                     if is_pending(base) {
                         break StraightStop::Slow;
                     }

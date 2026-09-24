@@ -117,7 +117,7 @@ pub(crate) fn convert_theme(
             }
         };
         match parse_hex_color(raw) {
-            Ok(rgba) => theme.insert(key.clone(), rgba),
+            Ok(rgba) => theme.insert(key.to_string(), rgba),
             Err(e) => warnings.push(format!("color_theme '{key}': {e}; ignoring")),
         }
     }

@@ -307,6 +307,10 @@ pub enum Inst {
         /// The class name constant when this allocates a class instance (see
         /// `crate::classes`); `None` for a plain record.
         class: Option<ConstantId>,
+        /// The literal's shared shape (`fields` in order), built at lowering;
+        /// `None` when a field name repeats.
+        #[serde(skip)]
+        shape: Option<std::sync::Arc<crate::record::Shape>>,
     },
     AllocMapSpread {
         dst: Reg,
@@ -331,6 +335,10 @@ pub enum Inst {
         /// Absence-tolerant read: a record without the field, or a Nil object,
         /// yields Nil instead of erroring. Set only for `TermOp::GetFieldOpt`.
         opt: bool,
+        /// Inline cache: the record shape this site last read and the field's
+        /// slot in it.
+        #[serde(skip)]
+        cache: crate::record::FieldCache,
     },
     SetField {
         dst: Reg,

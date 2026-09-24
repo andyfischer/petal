@@ -709,6 +709,10 @@ impl<'a> ValueEq<'a> {
                     return false;
                 }
                 let (xs, ys) = (heap.get_map(*a), heap.get_map(*b));
+                // Same shape: the keys match position by position.
+                if std::sync::Arc::ptr_eq(xs.shape(), ys.shape()) {
+                    return xs.values().zip(ys.values()).all(|(x, y)| self.eq(x, y));
+                }
                 xs.len() == ys.len()
                     && xs.iter().all(|(k, x)| match ys.get(k) {
                         Some(y) => self.eq(x, y),

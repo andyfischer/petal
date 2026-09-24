@@ -203,6 +203,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             fields,
             vals,
             class,
+            ..
         } => {
             let pairs: Vec<String> = fields
                 .iter()
@@ -241,6 +242,7 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             obj,
             field,
             opt,
+            ..
         } => format!(
             "r{} = r{}{}{}",
             dst,

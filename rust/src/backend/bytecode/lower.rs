@@ -17,13 +17,22 @@
 //! `Copy`, and the data-structure allocators / field & index access). Control
 //! flow, calls, closures, and state return an `unlowered op` error until M1–M3.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use smallvec::SmallVec;
 
 use super::escape::InPlaceSet;
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
+use crate::constant_table::ConstantId;
 use crate::program::{BlockId, FunctionDef, Program, Term, TermId, TermOp};
+use crate::record::{FieldCache, Key, Shape};
+
+/// Record literal shapes by field-name list, so literals with the same
+/// fields in the same order share one shape (and one inline-cache entry at
+/// the sites that read them).
+type ShapeTable = HashMap<String, Option<Arc<Shape>>>;
 
 /// Break/continue backpatch targets for one active loop during lowering.
 struct LoopCtx {
@@ -56,11 +65,13 @@ pub fn lower_program_opt(
     in_place: &InPlaceSet,
 ) -> Result<BytecodeProgram, String> {
     let mut match_binds = HashMap::new();
-    let (root, root_binds) = FnLowerer::new(program, None, program.root_block, in_place).lower()?;
+    let shapes = RefCell::new(ShapeTable::default());
+    let (root, root_binds) =
+        FnLowerer::new(program, None, program.root_block, in_place, &shapes).lower()?;
     match_binds.extend(root_binds);
     let mut fns = Vec::with_capacity(program.functions.len());
     for func in &program.functions {
-        let (bf, binds) = FnLowerer::for_function(program, func, in_place).lower()?;
+        let (bf, binds) = FnLowerer::for_function(program, func, in_place, &shapes).lower()?;
         match_binds.extend(binds);
         fns.push(bf);
     }
@@ -80,6 +91,8 @@ struct FnLowerer<'p> {
     func: Option<&'p FunctionDef>,
     /// Mutation terms escape analysis proved safe to lower in place (M4).
     in_place: &'p InPlaceSet,
+    /// Record literal shapes, shared by every function of the program.
+    shapes: &'p RefCell<ShapeTable>,
     /// The function's entry block (root block, or the def's `body_block`).
     entry_block: BlockId,
     /// Blocks belonging to this function, in discovery order.
@@ -114,11 +127,13 @@ impl<'p> FnLowerer<'p> {
         func: Option<&'p FunctionDef>,
         entry_block: BlockId,
         in_place: &'p InPlaceSet,
+        shapes: &'p RefCell<ShapeTable>,
     ) -> Self {
         FnLowerer {
             program,
             func,
             in_place,
+            shapes,
             entry_block,
             blocks: Vec::new(),
             base: HashMap::new(),
@@ -141,8 +156,31 @@ impl<'p> FnLowerer<'p> {
         self.code.len() - 1
     }
 
-    fn for_function(program: &'p Program, func: &'p FunctionDef, in_place: &'p InPlaceSet) -> Self {
-        Self::new(program, Some(func), func.body_block, in_place)
+    fn for_function(
+        program: &'p Program,
+        func: &'p FunctionDef,
+        in_place: &'p InPlaceSet,
+        shapes: &'p RefCell<ShapeTable>,
+    ) -> Self {
+        Self::new(program, Some(func), func.body_block, in_place, shapes)
+    }
+
+    /// The shared shape of a record literal with these field-name constants,
+    /// or `None` when a name repeats or is not a string (the VM then builds
+    /// the record key by key).
+    fn literal_shape(&self, fields: &[ConstantId]) -> Option<Arc<Shape>> {
+        let mut names = Vec::with_capacity(fields.len());
+        for cid in fields {
+            names.push(self.program.get_string_constant(*cid)?);
+        }
+        let joined = names.join("\0");
+        let mut table = self.shapes.borrow_mut();
+        if let Some(shape) = table.get(&joined) {
+            return shape.clone();
+        }
+        let shape = Shape::from_keys(names.iter().map(|n| Key::new(n)));
+        table.insert(joined, shape.clone());
+        shape
     }
 
     /// Flat register for a term (in any block belonging to this function).
@@ -426,6 +464,7 @@ impl<'p> FnLowerer<'p> {
                 fields: fields.clone(),
                 vals: self.regs(ins)?,
                 class: *class,
+                shape: self.literal_shape(fields),
             },
             TermOp::AllocMapSpread { entries } => Inst::AllocMapSpread {
                 dst,
@@ -448,12 +487,14 @@ impl<'p> FnLowerer<'p> {
                 obj: self.flat(ins[0])?,
                 field: *field,
                 opt: false,
+                cache: FieldCache::default(),
             },
             TermOp::GetFieldOpt(field) => Inst::GetField {
                 dst,
                 obj: self.flat(ins[0])?,
                 field: *field,
                 opt: true,
+                cache: FieldCache::default(),
             },
             TermOp::SetField(field) if self.in_place.allows(term.id) => Inst::SetFieldInPlace {
                 dst,

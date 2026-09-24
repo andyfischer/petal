@@ -80,7 +80,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         }
         // `unary_float_dual`: a Dual argument propagates as a Dual, so these
         // are only known-Float for a statically numeric argument.
-        "sqrt" | "sin" | "cos" | "tan" => {
+        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
             return match args {
                 [Type::Int | Type::Float] => Some(Type::Float),
                 _ => None,
@@ -95,11 +95,14 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
                 _ => None,
             };
         }
-        // `lerp` interpolates numbers, or two vectors of the same kind.
+        // `lerp` interpolates numbers, or two vectors, colors or number lists
+        // of the same kind.
         "lerp" => {
             return match args {
                 [Type::Vec2, Type::Vec2, _] => Some(Type::Vec2),
                 [Type::Vec3, Type::Vec3, _] => Some(Type::Vec3),
+                [Type::Record, Type::Record, _] => Some(Type::Record),
+                [Type::List, Type::List, _] => Some(Type::List),
                 [Type::Int | Type::Float, Type::Int | Type::Float, _] => Some(Type::Float),
                 _ => None,
             };
@@ -115,7 +118,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         // sanctioned cast: `float(x)` is written precisely to leave the float
         // domain, and treating it as anything but `float` would defeat every
         // annotation that uses it.
-        "float" | "atan2" | "pi" | "random" | "map_range" | "distance" | "mag" | "pow"
+        "float" | "atan2" | "hypot" | "pi" | "random" | "map_range" | "distance" | "mag" | "pow"
         | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log" | "dot" => Type::Float,
         // ── core: string results ────────────────────────────────────────────
         // `format`/`fixed`/`commas`/`pad_*` render *into* a string, so unlike
@@ -225,12 +228,13 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
     let slots: &'static [ArgSlot] = match (name, arity) {
         // ── core math: `unary_float_dual`, `unary_num_preserving`, get_float ──
         (
-            "sqrt" | "sin" | "cos" | "tan" | "abs" | "floor" | "ceil" | "sign" | "round" | "fract"
+            "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "abs" | "floor" | "ceil" | "sign" | "round" | "fract"
             | "radians" | "degrees" | "exp",
             1,
         ) => &[Num],
         ("round", 2) => &[Num, Num],
-        ("atan2" | "pow" | "random" | "random_int", 2) => &[Num, Num],
+        ("atan2" | "hypot" | "pow" | "random" | "random_int", 2) => &[Num, Num],
+        ("random", 1) => &[Num],
         ("smoothstep" | "clamp" | "hsv" | "hsl" | "hsv_deg" | "hsl_deg", 3) => {
             &[Num, Num, Num]
         }

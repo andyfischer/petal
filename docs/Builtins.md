@@ -94,12 +94,14 @@ max(3, 5)       // 5
 max("a", "b")   // "b"
 ```
 
-### `random(min, max)`
+### `random()` / `random(max)` / `random(min, max)`
 
-Returns a pseudo-random float in the range [min, max).
+Returns a pseudo-random float in the range [min, max). `min` defaults to 0.0
+and `max` to 1.0.
 
 ```petal
-random(0.0, 1.0)    // 0.7342... (varies)
+random()            // 0.7342... (varies), in [0, 1)
+random(16.0)        // 9.310...  (varies), in [0, 16)
 random(1.0, 10.0)   // 4.218...  (varies)
 ```
 
@@ -140,6 +142,27 @@ and the point `(x, y)`.
 
 ```petal
 atan2(1.0, 1.0)   // 0.7853981633974483 (π/4)
+```
+
+### `asin(x)` / `acos(x)` / `atan(x)`
+
+Inverse trigonometric functions, returning radians. `asin` and `acos` take
+`x` in [-1, 1] (outside it they return NaN); `atan` takes any number. For the
+angle of a point, use `atan2(y, x)`, which knows the quadrant.
+
+```petal
+asin(1.0)            // 1.5707963267948966 (π/2)
+degrees(acos(0.5))   // 59.99999999999999
+atan(1.0)            // 0.7853981633974483 (π/4)
+```
+
+### `hypot(x, y)`
+
+The length of the vector `(x, y)`, `sqrt(x*x + y*y)`, without overflowing on
+large inputs.
+
+```petal
+hypot(3.0, 4.0)   // 5.0
 ```
 
 ### `exp(x)` / `log(x)`
@@ -228,12 +251,16 @@ xs[clamp(i, 0, len(xs) - 1)]   // a clamped index is still an index
 ### `lerp(a, b, t)`
 
 Linear interpolation. `t=0` returns `a`, `t=1` returns `b`. `a` and `b` may
-also be two `vec2`s or two `vec3`s, interpolated component-wise.
+also be two `vec2`s or two `vec3`s, two colors, or two equal-length lists of
+numbers, interpolated component-wise. Colors blend like `color_lerp`: per
+channel, alpha included, rounded to int channels.
 
 ```petal
 lerp(0.0, 100.0, 0.3)   // 30.0
 lerp(10.0, 20.0, 0.5)   // 15.0
 lerp(vec3(0.0, 0.0, 0.0), vec3(10.0, 20.0, 30.0), 0.5)   // vec3(5.0, 10.0, 15.0)
+lerp(#6a5a48, #ffd08a, 0.5)            // { r: 181, g: 149, b: 105 }
+lerp([0.0, 10.0], [1.0, 20.0], 0.5)    // [0.5, 15.0]
 ```
 
 ### `map_range(value, in_lo, in_hi, out_lo, out_hi)`
@@ -354,7 +381,9 @@ hsl_deg(120.0, 1.0, 0.5)    // { r: 0, g: 255, b: 0 }
 
 ### `color_lerp(c1, c2, t)`
 
-Interpolate between two RGB color records. `t=0` returns `c1`, `t=1` returns `c2`.
+Interpolate between two RGB color records. `t=0` returns `c1`, `t=1` returns
+`c2`. If either color has an alpha `a`, the result does too (a color without
+one counts as opaque, 255). `lerp` does the same on two colors.
 
 ```petal
 let red = hsv_deg(0.0, 1.0, 1.0)

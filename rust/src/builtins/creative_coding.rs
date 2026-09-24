@@ -31,7 +31,8 @@ pub(super) fn native_clamp(state: &mut PetalCxt) -> Result<u32, String> {
 }
 
 /// `lerp(a, b, t)`: `a + (b - a) * t` — for two numbers, or component-wise
-/// for two vec2s or two vec3s.
+/// for two vec2s, two vec3s, two colors (per channel, alpha too; see
+/// `color_lerp`) or two equal-length lists of numbers.
 pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 3, "lerp")?;
     match (state.get_value(1)?, state.get_value(2)?) {
@@ -53,8 +54,49 @@ pub(super) fn native_lerp(state: &mut PetalCxt) -> Result<u32, String> {
             );
             return Ok(1);
         }
-        (Value::Vec2(..) | Value::Vec3(_), _) | (_, Value::Vec2(..) | Value::Vec3(_)) => {
-            return Err("lerp(a, b, t) expects two numbers or two vectors of the same kind".into());
+        (Value::Map(a), Value::Map(b))
+            if super::color::is_color_map(state, a) && super::color::is_color_map(state, b) =>
+        {
+            let t = state.get_float(3)?;
+            super::color::lerp_color_maps(state, a, b, t);
+            return Ok(1);
+        }
+        (Value::List(a), Value::List(b)) => {
+            let t = state.get_float(3)?;
+            let (a, b) = (state.heap().get_list(a), state.heap().get_list(b));
+            if a.len() != b.len() {
+                return Err(format!(
+                    "lerp(a, b, t) on lists needs equal lengths, got {} and {}",
+                    a.len(),
+                    b.len()
+                ));
+            }
+            let mixed = a
+                .iter()
+                .zip(b)
+                .map(|(x, y)| match (x.as_f64(), y.as_f64()) {
+                    (Some(x), Some(y)) => Ok(Value::Float(x + (y - x) * t)),
+                    _ => Err(format!(
+                        "lerp(a, b, t) on lists needs numbers, got {} and {}",
+                        x.type_name(),
+                        y.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let id = state.heap_mut().alloc_list(mixed);
+            state.push_value(Value::List(id));
+            return Ok(1);
+        }
+        (
+            Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_),
+            _,
+        )
+        | (_, Value::Vec2(..) | Value::Vec3(_) | Value::Map(_) | Value::List(_)) => {
+            return Err(
+                "lerp(a, b, t) expects two numbers, two vectors of the same kind, \
+                 two colors {r, g, b} or two lists of numbers"
+                    .into(),
+            );
         }
         _ => {}
     }

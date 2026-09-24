@@ -2,6 +2,7 @@
 //! `{r, g, b}` with 0..255 integer channels, matching the shape produced
 //! by color literals like `#ff8800`.
 
+use crate::heap::MapId;
 use crate::native_fn::PetalCxt;
 use crate::value::Value;
 
@@ -106,20 +107,40 @@ pub(super) fn native_color_lerp(state: &mut PetalCxt) -> Result<u32, String> {
     let t = state.get_float(3)?;
     match (c1, c2) {
         (Value::Map(id1), Value::Map(id2)) => {
-            let m1 = state.heap().get_map(id1);
-            let r1 = m1.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let g1 = m1.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let b1 = m1.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let m2 = state.heap().get_map(id2);
-            let r2 = m2.get("r").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let g2 = m2.get("g").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let b2 = m2.get("b").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let r = r1 + (r2 - r1) * t;
-            let g = g1 + (g2 - g1) * t;
-            let b = b1 + (b2 - b1) * t;
-            push_color_map(state, r, g, b);
+            lerp_color_maps(state, id1, id2, t);
             Ok(1)
         }
         _ => Err("color_lerp() expects two color records {r, g, b}".into()),
     }
+}
+
+/// Whether a record has the `r`, `g`, `b` number fields of a color.
+pub(super) fn is_color_map(state: &PetalCxt, id: MapId) -> bool {
+    let m = state.heap().get_map(id);
+    ["r", "g", "b"]
+        .iter()
+        .all(|k| m.get(*k).and_then(|v| v.as_f64()).is_some())
+}
+
+/// Blend two color records channel by channel and push the result, rounded to
+/// int channels like every other color. A missing `r`/`g`/`b` reads as 0. If
+/// either side has an alpha `a`, so does the result, with a missing alpha
+/// reading as opaque (255).
+pub(super) fn lerp_color_maps(state: &mut PetalCxt, id1: MapId, id2: MapId, t: f64) {
+    let channel = |state: &PetalCxt, id: MapId, k: &str| {
+        state.heap().get_map(id).get(k).and_then(|v| v.as_f64())
+    };
+    let mix = |a: f64, b: f64| Value::Int((a + (b - a) * t).round() as i64);
+    let mut map = crate::heap::RecordMap::default();
+    for k in ["r", "g", "b"] {
+        let a = channel(state, id1, k).unwrap_or(0.0);
+        let b = channel(state, id2, k).unwrap_or(0.0);
+        map.insert(k.to_string(), mix(a, b));
+    }
+    let (a1, a2) = (channel(state, id1, "a"), channel(state, id2, "a"));
+    if a1.is_some() || a2.is_some() {
+        map.insert("a".to_string(), mix(a1.unwrap_or(255.0), a2.unwrap_or(255.0)));
+    }
+    let map_id = state.heap_mut().alloc_map(map);
+    state.push_value(Value::Map(map_id));
 }

@@ -1,6 +1,6 @@
 //! Basic math, trig, and numeric conversion: abs, sqrt, floor, ceil, round,
-//! float, int, parse_float, parse_int, random, min, max, sin/cos/tan, atan2,
-//! pi.
+//! float, int, parse_float, parse_int, random, min, max, sin/cos/tan,
+//! asin/acos/atan, atan2, hypot, pi.
 
 use crate::native_fn::PetalCxt;
 use crate::numeric::{self, IntArithError};
@@ -181,10 +181,19 @@ pub(super) fn native_int(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `random()` is a float in [0, 1); `random(hi)` in [0, hi); `random(lo, hi)`
+/// in [lo, hi).
 pub(super) fn native_random(state: &mut PetalCxt) -> Result<u32, String> {
-    require_args(state, 2, "random")?;
-    let min = state.get_float(1)?;
-    let max = state.get_float(2)?;
+    let (min, max) = match state.arg_count() {
+        0 => (0.0, 1.0),
+        1 => (0.0, state.get_float(1)?),
+        2 => (state.get_float(1)?, state.get_float(2)?),
+        n => {
+            return Err(format!(
+                "random() expects 0, 1 or 2 arguments (random(), random(hi), random(lo, hi)), got {n}"
+            ))
+        }
+    };
     let r = state.rng_next_f64() * (max - min) + min;
     state.push_float(r);
     Ok(1)
@@ -290,6 +299,30 @@ pub(super) fn native_atan2(state: &mut PetalCxt) -> Result<u32, String> {
     let y = state.get_float(1)?;
     let x = state.get_float(2)?;
     state.push_float(y.atan2(x));
+    Ok(1)
+}
+
+pub(super) fn native_asin(state: &mut PetalCxt) -> Result<u32, String> {
+    // d/dx asin(x) = 1 / sqrt(1 - x^2)
+    unary_float_dual(state, "asin", f64::asin, |x| 1.0 / (1.0 - x * x).sqrt())
+}
+
+pub(super) fn native_acos(state: &mut PetalCxt) -> Result<u32, String> {
+    // d/dx acos(x) = -1 / sqrt(1 - x^2)
+    unary_float_dual(state, "acos", f64::acos, |x| -1.0 / (1.0 - x * x).sqrt())
+}
+
+pub(super) fn native_atan(state: &mut PetalCxt) -> Result<u32, String> {
+    // d/dx atan(x) = 1 / (1 + x^2)
+    unary_float_dual(state, "atan", f64::atan, |x| 1.0 / (1.0 + x * x))
+}
+
+/// `hypot(x, y)`: `sqrt(x*x + y*y)`, without the intermediate overflow.
+pub(super) fn native_hypot(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "hypot")?;
+    let x = state.get_float(1)?;
+    let y = state.get_float(2)?;
+    state.push_float(x.hypot(y));
     Ok(1)
 }
 

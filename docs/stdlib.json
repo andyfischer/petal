@@ -24,7 +24,7 @@
       "id": "math",
       "title": "Math",
       "group": "core",
-      "doc": "Basic math, trig, and numeric conversion: abs, sqrt, floor, ceil, round, float, int, parse_float, parse_int, random, min, max, sin/cos/tan, atan2, pi."
+      "doc": "Basic math, trig, and numeric conversion: abs, sqrt, floor, ceil, round, float, int, parse_float, parse_int, random, min, max, sin/cos/tan, asin/acos/atan, atan2, hypot, pi."
     },
     {
       "id": "creative_coding",
@@ -269,21 +269,12 @@
       "name": "random",
       "category": "math",
       "group": "core",
-      "arity": 2,
-      "variadic": false,
-      "params": [
-        {
-          "name": "min",
-          "type": "float"
-        },
-        {
-          "name": "max",
-          "type": "float"
-        }
-      ],
+      "arity": null,
+      "variadic": true,
+      "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 184
+        "line": 186
       }
     },
     {
@@ -399,7 +390,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 193
+        "line": 202
       }
     },
     {
@@ -420,7 +411,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 209
+        "line": 218
       }
     },
     {
@@ -437,7 +428,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 237
+        "line": 246
       }
     },
     {
@@ -676,7 +667,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 270
+        "line": 279
       }
     },
     {
@@ -688,7 +679,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 275
+        "line": 284
       }
     },
     {
@@ -700,7 +691,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 280
+        "line": 289
       }
     },
     {
@@ -721,7 +712,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 288
+        "line": 297
       }
     },
     {
@@ -733,7 +724,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 296
+        "line": 329
       }
     },
     {
@@ -783,7 +774,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 35
+        "line": 36
       }
     },
     {
@@ -816,7 +807,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 68
+        "line": 110
       }
     },
     {
@@ -845,7 +836,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 84
+        "line": 126
       }
     },
     {
@@ -870,7 +861,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 123
+        "line": 165
       }
     },
     {
@@ -891,7 +882,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 162
+        "line": 204
       }
     },
     {
@@ -903,7 +894,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 170
+        "line": 212
       }
     },
     {
@@ -920,7 +911,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 197
+        "line": 239
       }
     },
     {
@@ -945,7 +936,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 204
+        "line": 246
       }
     },
     {
@@ -962,7 +953,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 214
+        "line": 256
       }
     },
     {
@@ -979,7 +970,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 221
+        "line": 263
       }
     },
     {
@@ -996,7 +987,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 228
+        "line": 270
       }
     },
     {
@@ -1013,7 +1004,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 235
+        "line": 277
       }
     },
     {
@@ -1076,7 +1067,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 242
+        "line": 284
       }
     },
     {
@@ -1088,7 +1079,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
-        "line": 257
+        "line": 299
       }
     },
     {
@@ -1113,7 +1104,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
-        "line": 56
+        "line": 57
       }
     },
     {
@@ -1138,7 +1129,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
-        "line": 69
+        "line": 70
       }
     },
     {
@@ -1163,7 +1154,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
-        "line": 102
+        "line": 103
       }
     },
     {
@@ -1246,7 +1237,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 436
+        "line": 442
       }
     },
     {
@@ -1258,7 +1249,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 436
+        "line": 442
       },
       "aliasOf": "map"
     },
@@ -1271,7 +1262,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 436
+        "line": 442
       },
       "aliasOf": "map"
     },
@@ -1284,7 +1275,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 436
+        "line": 442
       },
       "aliasOf": "map"
     },
@@ -1419,7 +1410,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
-        "line": 81
+        "line": 82
       }
     },
     {
@@ -1444,7 +1435,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
-        "line": 92
+        "line": 93
       }
     },
     {
@@ -1834,7 +1825,7 @@
       "params": [],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 436
+        "line": 442
       },
       "aliasOf": "map"
     },
@@ -1963,7 +1954,7 @@
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
-        "line": 312
+        "line": 345
       }
     },
     {
@@ -2052,6 +2043,63 @@
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 102
+      }
+    },
+    {
+      "name": "asin",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 305
+      }
+    },
+    {
+      "name": "acos",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 310
+      }
+    },
+    {
+      "name": "atan",
+      "category": "math",
+      "group": "core",
+      "arity": null,
+      "variadic": false,
+      "params": [],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 315
+      }
+    },
+    {
+      "name": "hypot",
+      "category": "math",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "float"
+        },
+        {
+          "name": "y",
+          "type": "float"
+        }
+      ],
+      "source": {
+        "file": "rust/src/builtins/math.rs",
+        "line": 321
       }
     },
     {

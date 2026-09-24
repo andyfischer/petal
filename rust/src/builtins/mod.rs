@@ -424,6 +424,12 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     // Append-only, like the rest of this block.
     table.register("vec3", vec2::native_vec3, NativeEffects::PURE);
     table.register("cross", vec2::native_cross, NativeEffects::PURE);
+    // The inverse trig functions and `hypot`, next to `sin`/`cos`/`atan2` in
+    // spirit. Append-only, like the rest of this block.
+    table.register("asin", math::native_asin, NativeEffects::PURE);
+    table.register("acos", math::native_acos, NativeEffects::PURE);
+    table.register("atan", math::native_atan, NativeEffects::PURE);
+    table.register("hypot", math::native_hypot, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

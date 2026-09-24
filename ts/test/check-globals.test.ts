@@ -57,6 +57,14 @@ print(g(fn(x) -> x + 1))`);
     expect(checkWith(["--host", "garden"], "print(palette())")).toEqual([]);
   });
 
+  it("--host garden resolves the packages Garden registers, with no -I", () => {
+    const src = "import text_layout\nimport bloom\nprint(text_layout.line_step({size: 12}))";
+    expect(checkWith(["--host", "garden"], src)).toEqual([]);
+    const r = petalCapture(["check", "-e", "import text_layout"]);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain("cannot find module 'text_layout'");
+  });
+
   it("--host garden-config checks a layout script without the ui prelude", () => {
     // Garden's config host registers `row(children)`; the ui prelude's
     // 3-argument `row` must not shadow it.

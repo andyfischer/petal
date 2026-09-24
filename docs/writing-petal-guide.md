@@ -801,7 +801,8 @@ builtin handed a type it refuses (`sqrt("x")`), and a call whose argument count
 picks an overload whose body cannot take those arguments. What counts as
 defined depends on the host: `--host ui` (the default) is the core builtins,
 the petal-ui natives and the `ui` prelude; `--host garden` adds Garden's panel
-and config natives, `--host garden-config` is Garden's config host (`init.ptl`,
+and config natives and the packages Garden registers (`bloom`,
+`text_layout`, so no `-I petal-libs`), `--host garden-config` is Garden's config host (`init.ptl`,
 layout scripts: core plus `layout`/`row`/`column`/…, no `ui` prelude),
 `--host sdl` petal-desktop-sdl's, `--host core` is core only, and
 `--native name,name` adds any others your host registers.

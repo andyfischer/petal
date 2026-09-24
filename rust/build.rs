@@ -17,4 +17,13 @@ fn main() {
     } else {
         println!("cargo::rerun-if-changed=build.rs");
     }
+    // The packages Garden registers for its panels (bloom, text_layout) live
+    // here; `petal check --host garden` puts it on the module path so a panel
+    // script's `import text_layout` resolves the way it does inside Garden.
+    println!("cargo::rustc-check-cfg=cfg(petal_libs_dir)");
+    let libs = Path::new(&manifest).join("../petal-libs");
+    if let Ok(path) = libs.canonicalize() {
+        println!("cargo::rustc-cfg=petal_libs_dir");
+        println!("cargo::rustc-env=PETAL_LIBS_DIR={}", path.display());
+    }
 }

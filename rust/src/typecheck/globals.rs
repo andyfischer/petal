@@ -328,6 +328,20 @@ pub fn ui_prelude_source() -> Option<&'static str> {
     }
 }
 
+/// The checkout's `petal-libs/` directory, holding the packages Garden
+/// registers for every panel (`bloom`, `text_layout`). `None` when this build
+/// could not see it.
+pub fn garden_packages_dir() -> Option<std::path::PathBuf> {
+    #[cfg(all(petal_libs_dir, not(target_arch = "wasm32")))]
+    {
+        Some(std::path::PathBuf::from(env!("PETAL_LIBS_DIR")))
+    }
+    #[cfg(not(all(petal_libs_dir, not(target_arch = "wasm32"))))]
+    {
+        None
+    }
+}
+
 /// Name of the petal-ui prelude module (`petal_ui::MODULE_NAME`).
 pub const UI_MODULE: &str = "ui";
 

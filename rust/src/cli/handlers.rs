@@ -828,7 +828,17 @@ pub(super) fn handle_check(
     include_dirs: &[PathBuf],
 ) {
     use crate::typecheck::globals;
-    let mut env = make_env(include_dirs);
+    // Garden registers bloom and text_layout for every panel, so a panel
+    // script imports them with no `-I`; check sees the same packages.
+    let mut dirs = include_dirs.to_vec();
+    if host == globals::HostProfile::Garden
+        && let Some(libs) = globals::garden_packages_dir()
+        && libs.is_dir()
+        && !dirs.contains(&libs)
+    {
+        dirs.push(libs);
+    }
+    let mut env = make_env(&dirs);
     // A petal-ui host imports its `ui` prelude implicitly, so a script calls
     // `button(...)` bare; check against the same module, or every widget call
     // would look like an unknown global. When this build cannot see the

@@ -154,11 +154,13 @@ by `petal lint --fix --verify`, which refuses to write a rewrite it cannot
 prove equivalent (exit 3).
 
 Its unit tests live in `rust/src/ir_equiv.rs`; the CLI and lint contracts are
-covered by `ts/test/ir-equal.test.ts`. The load-bearing test is
-`lint::tests::reindent_is_ir_equal_over_repo_corpus`: every `.ptl` in the
-repo that compiles standalone is mangled (three extra spaces of indentation on
-every line), re-indented, and asserted IR-equal to the original. That is the
-property that makes the formatting pass safe to run over the whole corpus.
+covered by `ts/test/ir-equal.test.ts`. The load-bearing tests are
+`fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` (every `.ptl` in
+the repo that compiles standalone formats to identical IR, and formatting is a
+fixed point) and `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus`
+(every file with three extra spaces on every line formats back to the same
+text). Those are the properties that make `petal fmt` safe to run over the
+whole corpus.
 
 ## The C/C++ bridge
 

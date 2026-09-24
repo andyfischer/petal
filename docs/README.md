@@ -69,7 +69,7 @@ working documents and may contain point-in-time status.
 | [Releasing Garden](dev/releasing-garden.md) | How the Garden Homebrew formula is updated |
 | [Type Declarations](dev/type-declarations-plan.md) | Design record for optional, warning-only type annotations (shipped) |
 | [Typography](dev/typography-plan.md) | Design for fonts, measurement, and flow layout (partly shipped) |
-| [Linter](dev/linter-plan.md) | `petal lint` design and the catalogue of possible further rules (shipped) |
+| [Formatter and linter](dev/linter-plan.md) | `petal fmt` / `petal lint`: how rules are split between them, and the catalogue of possible further rules (shipped) |
 | [Pending Values](dev/pending-values-plan.md) | Async pending-value semantics and the petal-query data layer |
 | [IR Format Improvements](dev/ir-format-improvements-plan.md) | Audit of the token, AST, IR, and bytecode dumps, with ranked improvements |
 | [Experimental: IR-based Editing](dev/experimental-ir-based-editing.md) | An early, unfinished surface for building a program as IR data |

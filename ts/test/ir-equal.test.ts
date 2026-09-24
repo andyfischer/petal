@@ -88,19 +88,20 @@ describe("petal ir-equal", () => {
 });
 
 describe("petal lint --verify", () => {
-  test("a formatting-only fix is proven and written", () => {
-    const path = file("fn f(a)\nif a > 1 then\nreturn a\nend\nend\n");
+  test("an IR-invisible fix is proven and written", () => {
+    const path = file("let x = 1\nx = x + 1\nprint(x)\n");
     const r = petalCapture(["lint", "--fix", "--verify", path]);
     expect(r.code).toBe(0);
     expect(r.stderr).toContain("IR unchanged");
-    expect(readFileSync(path, "utf-8")).toContain("  if a > 1 then");
+    expect(readFileSync(path, "utf-8")).toContain("x += 1");
   });
 
-  test("--check --verify leaves the file alone and still exits 1", () => {
-    const before = "fn f(a)\nif a > 1 then\nreturn a\nend\nend\n";
+  test("--verify without --fix leaves the file alone and still exits 1", () => {
+    const before = "let x = 1\nx = x + 1\nprint(x)\n";
     const path = file(before);
-    const r = petalCapture(["lint", "--check", "--verify", path]);
+    const r = petalCapture(["lint", "--verify", path]);
     expect(r.code).toBe(1);
+    expect(r.stdout).toContain("prefer-compound-assign");
     expect(readFileSync(path, "utf-8")).toBe(before);
   });
 

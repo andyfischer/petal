@@ -17,24 +17,32 @@
 
 use crate::ast::{AssignTarget, BinOp, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_stmt};
 
+use super::Fix;
 use super::to_match::Splice;
 
-/// Plan every compound fold in `stmts`. Returns the splices in source order.
-pub(super) fn plan_compound_edits(stmts: &[Stmt], chars: &[char]) -> Vec<Splice> {
+/// Plan every compound fold in `stmts`, one [`Fix`] per statement, in source
+/// order.
+pub(super) fn plan_compound_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
     let mut finder = Finder {
         chars,
-        splices: Vec::new(),
+        fixes: Vec::new(),
     };
     for s in stmts {
         finder.visit_stmt(s);
     }
-    finder.splices.sort_by_key(|s| s.start);
-    finder.splices
+    finder.fixes.sort_by_key(|f| f.anchor);
+    finder.fixes
+}
+
+/// [`plan_compound_fixes`], flattened to splices.
+#[cfg(test)]
+pub(super) fn plan_compound_edits(stmts: &[Stmt], chars: &[char]) -> Vec<Splice> {
+    super::flatten(plan_compound_fixes(stmts, chars))
 }
 
 struct Finder<'a> {
     chars: &'a [char],
-    splices: Vec<Splice>,
+    fixes: Vec<Fix>,
 }
 
 impl ExprVisitor for Finder<'_> {
@@ -50,8 +58,12 @@ impl ExprVisitor for Finder<'_> {
             } => plan_one(s, name, value, true, self.chars),
             _ => None,
         };
-        if let Some(splice) = planned {
-            self.splices.push(splice);
+        if let Some((splice, name, op)) = planned {
+            self.fixes.push(Fix {
+                anchor: s.span.start.offset as usize,
+                message: format!("`{name} = {name} {op} …` can be written `{name} {op}= …`"),
+                splices: vec![splice],
+            });
         }
         // A fold only rewrites the text in front of `e`, so a fold inside `e`
         // (a lambda body, say) never overlaps it.
@@ -76,7 +88,13 @@ fn text(chars: &[char], start: usize, end: usize) -> Option<String> {
     (start <= end && end <= chars.len()).then(|| chars[start..end].iter().collect())
 }
 
-fn plan_one(stmt: &Stmt, name: &str, value: &Expr, is_set: bool, chars: &[char]) -> Option<Splice> {
+fn plan_one<'n>(
+    stmt: &Stmt,
+    name: &'n str,
+    value: &Expr,
+    is_set: bool,
+    chars: &[char],
+) -> Option<(Splice, &'n str, &'static str)> {
     let ExprKind::BinaryOp { op, left, right } = &value.kind else {
         return None;
     };
@@ -119,11 +137,12 @@ fn plan_one(stmt: &Stmt, name: &str, value: &Expr, is_set: bool, chars: &[char])
         return None;
     }
     let prefix = if is_set { "set " } else { "" };
-    Some(Splice {
+    let splice = Splice {
         start: stmt_start,
         end: right_start,
         text: format!("{prefix}{name} {op}= "),
-    })
+    };
+    Some((splice, name, op))
 }
 
 #[cfg(test)]

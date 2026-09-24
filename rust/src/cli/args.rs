@@ -113,6 +113,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "lsp" => parse_lsp_args(&args[1..]),
         "packages" => parse_packages_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
+        "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
         "lint-fix" => parse_lint_fix_args(&args[1..]),
@@ -347,35 +348,125 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
     }
 }
 
-fn parse_lint_args(args: &[String]) -> CliArgs {
-    let mut fix = false;
-    let mut check = false;
-    let mut verify: Option<crate::lint::VerifyMode> = None;
-    let source = parse_source_args(
-        args,
-        "Usage: petal lint [--fix | --check] <file>  |  petal lint -e <code>",
-        |args, i| {
-            match args[*i].as_str() {
-                "--fix" => fix = true,
-                "--check" => check = true,
-                "--verify" | "--verify=ir" => verify = Some(crate::lint::VerifyMode::Ir),
-                "--verify=strict" => verify = Some(crate::lint::VerifyMode::Strict),
-                other if other.starts_with("--verify=") => {
-                    eprintln!(
-                        "Unknown --verify mode '{}' (expected 'ir' or 'strict')",
-                        &other["--verify=".len()..]
-                    );
-                    process::exit(1);
-                }
-                _ => return false,
-            }
-            true
-        },
-    );
+/// Split a `--flag=a,b` / `--flag a,b` list value.
+fn rule_list(value: &str) -> Vec<String> {
+    let rules: Vec<String> = value
+        .split(',')
+        .map(|r| r.trim().to_string())
+        .filter(|r| !r.is_empty())
+        .collect();
+    for r in &rules {
+        if !crate::lint::is_rule(r) {
+            eprintln!("Unknown lint rule '{r}'. See 'petal lint --rules'.");
+            process::exit(1);
+        }
+    }
+    rules
+}
 
+/// The paths and `-e` code shared by `fmt` and `lint`. Any argument that is
+/// not a flag is a path (a file, or a directory searched for `.ptl` files);
+/// `-` reads stdin.
+struct PathArgs {
+    paths: Vec<String>,
+    inline: Option<String>,
+}
+
+fn parse_path_args(
+    args: &[String],
+    usage: &str,
+    mut on_flag: impl FnMut(&[String], &mut usize) -> bool,
+) -> PathArgs {
+    let mut out = PathArgs {
+        paths: Vec::new(),
+        inline: None,
+    };
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "-e" {
+            out.inline = Some(take(args, &mut i, "Expected code after -e").to_string());
+        } else if !on_flag(args, &mut i) {
+            if args[i].starts_with('-') && args[i] != "-" {
+                eprintln!("Unexpected option '{}'. {}", args[i], usage);
+                process::exit(1);
+            }
+            out.paths.push(args[i].clone());
+        }
+        i += 1;
+    }
+    if out.inline.is_some() && !out.paths.is_empty() {
+        eprintln!("-e takes no paths. {usage}");
+        process::exit(1);
+    }
+    out
+}
+
+/// `fmt [--check] [--diff] [<path>…]` — gofmt/deno-fmt shaped: rewrite in
+/// place by default, `.` when no path is given.
+fn parse_fmt_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal fmt [--check] [--diff] [<path>...]  |  petal fmt -e <code>";
+    let mut check = false;
+    let mut diff = false;
+    let p = parse_path_args(args, usage, |args, i| {
+        match args[*i].as_str() {
+            "--check" => check = true,
+            "--diff" | "-d" => diff = true,
+            _ => return false,
+        }
+        true
+    });
     CliArgs {
-        command: Command::Lint { fix, check, verify },
-        source,
+        command: Command::Fmt {
+            paths: p.paths,
+            inline: p.inline,
+            check,
+            diff,
+        },
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+fn parse_lint_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal lint [--fix] [--json] [--rules-include=<r,..>] \
+                 [--rules-exclude=<r,..>] [<path>...]  |  petal lint --rules  |  petal lint -e <code>";
+    let mut opts = super::LintArgs::default();
+    let p = parse_path_args(args, usage, |args, i| {
+        let arg = args[*i].as_str();
+        let value = |i: &mut usize, flag: &str| -> String {
+            match arg.split_once('=') {
+                Some((_, v)) => v.to_string(),
+                None => take(args, i, &format!("Expected a rule list after {flag}")).to_string(),
+            }
+        };
+        match arg {
+            "--fix" => opts.fix = true,
+            "--json" => opts.json = true,
+            "--rules" => opts.list_rules = true,
+            "--verify" | "--verify=ir" => opts.verify = Some(crate::lint::VerifyMode::Ir),
+            "--verify=strict" => opts.verify = Some(crate::lint::VerifyMode::Strict),
+            other if other.starts_with("--verify=") => {
+                eprintln!(
+                    "Unknown --verify mode '{}' (expected 'ir' or 'strict')",
+                    &other["--verify=".len()..]
+                );
+                process::exit(1);
+            }
+            other if other == "--rules-include" || other.starts_with("--rules-include=") => {
+                opts.rules.include = Some(rule_list(&value(i, "--rules-include")));
+            }
+            other if other == "--rules-exclude" || other.starts_with("--rules-exclude=") => {
+                opts.rules.exclude = rule_list(&value(i, "--rules-exclude"));
+            }
+            _ => return false,
+        }
+        true
+    });
+    opts.paths = p.paths;
+    opts.inline = p.inline;
+    CliArgs {
+        command: Command::Lint(opts),
+        source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }
 }
@@ -411,38 +502,12 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `lint-fix <file>` — `lint --fix` under its own name, because rewriting a
-/// file in place is the thing most callers want and a flag is easy to forget.
-/// It takes a path only: there is no file to rewrite for inline `-e` code.
+/// `lint-fix [<path>…]` — `lint --fix` under its own name, because rewriting
+/// files in place is the thing most callers want and a flag is easy to forget.
 fn parse_lint_fix_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal lint-fix <file>";
-    let mut source: Option<SourceInput> = None;
-    for arg in args {
-        if arg.starts_with('-') {
-            eprintln!("Unexpected option '{}'. {}", arg, usage);
-            process::exit(1);
-        }
-        if source.is_some() {
-            eprintln!("lint-fix takes a single file. {}", usage);
-            process::exit(1);
-        }
-        source = Some(SourceInput::File(arg.clone()));
-    }
-
-    let source = source.unwrap_or_else(|| {
-        eprintln!("{}", usage);
-        process::exit(1);
-    });
-
-    CliArgs {
-        command: Command::Lint {
-            fix: true,
-            check: false,
-            verify: None,
-        },
-        source,
-        include_dirs: Vec::new(),
-    }
+    let mut with_fix = vec!["--fix".to_string()];
+    with_fix.extend(args.iter().cloned());
+    parse_lint_args(&with_fix)
 }
 
 /// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings

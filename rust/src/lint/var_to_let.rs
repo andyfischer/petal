@@ -47,25 +47,24 @@ use crate::ast::{
 };
 use crate::source_map::SourceSpan;
 
+use super::Fix;
 use super::to_match::Splice;
 
-/// Plan every `var` → `let` rewrite in `stmts`. Returns the splices in source
-/// order and the number of `var`s converted.
-pub(super) fn plan_var_edits(stmts: &[Stmt], chars: &[char]) -> (Vec<Splice>, usize) {
+/// Plan every `var` → `let` rewrite in `stmts`, one [`Fix`] per `var`, in
+/// source order.
+pub(super) fn plan_var_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
     let mut finder = Finder {
         chars,
-        splices: Vec::new(),
-        converted: 0,
+        fixes: Vec::new(),
     };
     finder.block(stmts);
-    finder.splices.sort_by_key(|s| s.start);
-    (finder.splices, finder.converted)
+    finder.fixes.sort_by_key(|f| f.anchor);
+    finder.fixes
 }
 
 struct Finder<'a> {
     chars: &'a [char],
-    splices: Vec<Splice>,
-    converted: usize,
+    fixes: Vec<Fix>,
 }
 
 impl Finder<'_> {
@@ -74,15 +73,18 @@ impl Finder<'_> {
     fn block(&mut self, stmts: &[Stmt]) {
         for (i, s) in stmts.iter().enumerate() {
             if let StmtKind::Let {
-                name,
-                is_var: true,
-                ..
+                name, is_var: true, ..
             } = &s.kind
                 && !s.exported
                 && let Some(edits) = plan_one(name, s, &stmts[..i], &stmts[i + 1..], self.chars)
             {
-                self.splices.extend(edits);
-                self.converted += 1;
+                self.fixes.push(Fix {
+                    anchor: s.span.start.offset as usize,
+                    message: format!(
+                        "`var {name}` is never shared with a nested function; declare it with `let`"
+                    ),
+                    splices: edits,
+                });
             }
             self.visit_stmt(s);
         }
@@ -198,7 +200,10 @@ fn is_keyword_at(chars: &[char], pos: usize, kw: &str) -> bool {
         return false;
     }
     let word: String = chars[pos..pos + n].iter().collect();
-    word == kw && chars.get(pos + n).is_none_or(|c| !(c.is_alphanumeric() || *c == '_'))
+    word == kw
+        && chars
+            .get(pos + n)
+            .is_none_or(|c| !(c.is_alphanumeric() || *c == '_'))
 }
 
 /// The offset just past `kw` at `pos` and the whitespace after it, so
@@ -309,7 +314,9 @@ impl ExprVisitor for Uses<'_> {
         match &s.kind {
             StmtKind::Let { name, .. } | StmtKind::State { name, .. } => self.rebinds(name),
             StmtKind::For { var, .. } => self.rebinds(var),
-            StmtKind::FnDecl { name, params, body, .. } => {
+            StmtKind::FnDecl {
+                name, params, body, ..
+            } => {
                 self.rebinds(name);
                 self.nested_fn(params, body);
                 return;
@@ -376,8 +383,10 @@ mod tests {
     fn rewrite(src: &str) -> String {
         let (_tree, stmts) = crate::rewrite::parse_ast(src).expect("parse");
         let chars: Vec<char> = src.chars().collect();
-        let (edits, _) = plan_var_edits(&stmts, &chars);
-        apply_match_edits(&chars, &edits)
+        apply_match_edits(
+            &chars,
+            &super::super::flatten(plan_var_fixes(&stmts, &chars)),
+        )
     }
 
     fn unchanged(src: &str) {
@@ -396,7 +405,10 @@ mod tests {
     #[test]
     fn converts_writes_inside_control_flow() {
         let src = "fn f(xs)\n  var out = []\n  for x in xs do\n    if x > 1 then\n      set out = append(out, x)\n    end\n  end\n  out\nend\n";
-        assert_eq!(rewrite(src), src.replace("var out", "let out").replace("set out", "out"));
+        assert_eq!(
+            rewrite(src),
+            src.replace("var out", "let out").replace("set out", "out")
+        );
     }
 
     #[test]
@@ -421,13 +433,18 @@ mod tests {
     #[test]
     fn keeps_a_var_read_from_a_function() {
         // A `let` capture would freeze the value where the function is written.
-        unchanged("var hits = 0\nfn describe() \"{get hits}\" end\nset hits = 3\nprint(describe())\n");
+        unchanged(
+            "var hits = 0\nfn describe() \"{get hits}\" end\nset hits = 3\nprint(describe())\n",
+        );
     }
 
     #[test]
     fn a_shadowing_parameter_does_not_block() {
         let src = "var x = 1\nlet f = fn(x) x * 2 end\nset x = f(x)\nprint(x)\n";
-        assert_eq!(rewrite(src), "let x = 1\nlet f = fn(x) x * 2 end\nx = f(x)\nprint(x)\n");
+        assert_eq!(
+            rewrite(src),
+            "let x = 1\nlet f = fn(x) x * 2 end\nx = f(x)\nprint(x)\n"
+        );
     }
 
     #[test]

@@ -34,8 +34,9 @@ Every command that compiles a program accepts these:
 | `check` | Compile without executing |
 | `lsp` | Serve the language server over stdio |
 | `packages` | List the libraries the search path makes available |
-| `lint` | Report or apply source normalization |
-| `lint-fix` | `lint --fix <file>` under its own name |
+| `fmt` | Rewrite files in the canonical layout |
+| `lint` | Report code with a better spelling; `--fix` applies it |
+| `lint-fix` | `lint --fix` under its own name |
 | `suggest` | Propose type annotations the program already implies |
 | `ir-equal` | Compare two files' compiled IR |
 | `show-tokens` | Lexer output |
@@ -51,8 +52,8 @@ Every command that compiles a program accepts these:
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
-Every command except `lsp`, `lint`, `lint-fix` and `show-graph` accepts
-`--json` for machine-readable output.
+Every command except `lsp`, `fmt` and `show-graph` accepts `--json` for
+machine-readable output.
 
 ## Commands
 
@@ -278,96 +279,118 @@ x = 2'
 Each entry's `message` has no position suffix; `file` is the module's display
 name, or `null` for the entry file.
 
-### `lint` — Normalize source
+### `fmt` — Canonical layout
 
 ```
-petal lint <file.ptl>                  # report; exit 1 if changes are needed
-petal lint --fix <file.ptl>            # rewrite the file in place
-petal lint --check <file.ptl>          # CI mode: exit 0/1, no output on success
-petal lint -e '<code>'                 # lint inline code, print result to stdout
-
-petal lint --fix --verify <file.ptl>          # prove the rewrite before writing it
-petal lint --fix --verify=strict <file.ptl>   # demand full IR equality
-
-petal lint-fix <file.ptl>              # same as: lint --fix <file.ptl>
+petal fmt [<path>...]          # rewrite in place; directories recurse; default "."
+petal fmt --check [<path>...]  # write nothing; list files that would change; exit 1 if any
+petal fmt --diff [<path>...]   # write nothing; print a unified diff (also -d)
+petal fmt -e '<code>'          # print the formatted code
+petal fmt -                    # stdin to stdout
 ```
 
-`lint-fix` exists because rewriting in place is the common case and `--fix` is
-easy to forget. It takes a single path and no options. If the file does not
-parse, it reports the parse error, exits non-zero, and leaves the file
-untouched.
+Shaped like `gofmt`/`deno fmt`: in-place by default, no style options, `.ptl`
+files found by walking directories (dot-directories, `node_modules` and
+`target` are skipped). A file that does not parse is reported and left alone;
+the rest still run.
+
+fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
+
+- **Indentation** — 2 spaces per open construct, from the token stream.
+- **Spacing within a line** — one space around binary and assignment operators,
+  `->` and `|>`, and after `,` and `:`; none inside `()` `[]` `{}` or a string's
+  `{…}` hole, none before `,` `:` `;`, none around `.` `?.` `..`, none after a
+  unary `-` `!` or `@` or a spread `...`, and none between a callee and its `(`.
+  Any other run of blanks becomes one space.
+- **Blank lines** — at most one in a row, none at the start or end of the file,
+  exactly one final newline. Trailing whitespace goes.
+
+It keeps what the author aligned. A run of spaces that lines a token up with a
+token on the line above or below (a table of records, a column of `=`), a
+double space repeated after commas to group arguments, a trailing comment's
+column, and a continuation line lined up under its open bracket or its `if` all
+survive, moving only as far as the line they hang from moves.
+
+It never wraps lines, reorders anything, or edits strings, raw strings or JSX
+text, and it checks every result: the output must lex to exactly the input's
+tokens, or the file is refused with a `fmt bug` error.
+
+Opt out with `// petal-fmt-ignore` (the next line stays as written),
+`// petal-fmt-off` … `// petal-fmt-on` (a region), or `// petal-fmt-ignore-file`.
+
+### `lint` — Rules with fixes
 
 ```
-$ petal lint -e 'fn f(x: int)
-let y = int(x)
-    y
-end'
-lint: removed 1 redundant cast(s)
-fn f(x: int)
-  let y = x
-  y
-end
+petal lint [<path>...]                       # report findings; exit 1 if any
+petal lint --fix [<path>...]                 # apply every fix in place
+petal lint --json [<path>...]                # findings as JSON
+petal lint --rules                           # list the rules
+petal lint --rules-include=prefer-let ...    # run only these (comma-separated)
+petal lint --rules-exclude=prefer-match ...  # run all but these
+petal lint -e '<code>'                       # report; with --fix, print the fixed code
+
+petal lint --fix --verify <path>             # prove the rewrite before writing it
+petal lint --fix --verify=strict <path>      # demand full IR equality
+
+petal lint-fix [<path>...]                   # same as: lint --fix
 ```
 
-Five passes (see [dev/linter-plan.md](dev/linter-plan.md)):
+Shaped like `deno lint`: each finding names its rule, and each rule has a fix.
 
-- **Formatting** — 2-space re-indentation, trailing-whitespace trim, and a
-  single trailing newline. Only whitespace outside tokens is touched, so
-  comments, strings and JSX text are preserved exactly.
-- **Identity casts** — deletes `int(n)` where `n` is already an `int`, and
-  likewise `float()` on a float and `str()` on a string. Candidates come from
-  the type checker, which infers `any` for anything it cannot prove, so an
-  un-annotated parameter or a `var` is never touched. Parentheses follow the
-  slot: `2 * int(a + 1)` becomes `2 * (a + 1)`.
-- **`if`-chain to `match`** — rewrites an `if`/`elsif` chain that tests one
-  subject against string, bool or nil literals into a `match`.
-- **`var` to `let`** — a `var` whose every read and write stays in the function
-  that declares it becomes a `let`: `var` → `let`, `set x = …` → `x = …`,
-  `get x` → `x`. A `let` rebind carries through `if`, `match`, `for` and
-  `while` just as a `set` does, so the program's shape is unchanged. The `var`
-  stays when a nested `fn` or lambda mentions it (that is what a cell is for),
-  when the name is re-bound in its scope, and for `export var` and
-  `state var`.
-- **Compound assignment** — `x = x + e` becomes `x += e` (and `set x = x + e`
-  becomes `set x += e`) for every operator with a compound form. It fires only
-  when the text between the operand and `e` is just the operator, so `e` is
-  kept exactly as written; `x = x - a - b` is left alone. This one is a pure
-  respelling: the IR is identical.
+```
+$ petal lint app.ptl
+app.ptl:12:3: prefer-let: `var n` is never shared with a nested function; declare it with `let`
+app.ptl:14:5: prefer-compound-assign: `n = n + …` can be written `n += …`
+found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
+```
 
-The passes after formatting change tokens, so `lint` checks that the rewritten source still
-compiles whenever the original did, and refuses to produce output otherwise.
+| Rule | Finds | Fix |
+|---|---|---|
+| `prefer-let` | a `var` whose every read and write stays in its function | `var` → `let`, `set x = …` → `x = …`, `get x` → `x` |
+| `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`) |
+| `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
+| `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
+
+Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
+afterwards, because a rewritten chain moves code between lines. Every fix is
+compile-gated: if the original compiled, the fixed file must too, or nothing is
+written.
+
+Silence a rule with `// petal-lint-ignore <rule> [<rule>…]` on the line before
+the finding or at the end of its line (no names silences every rule), or for a
+whole file with `// petal-lint-ignore-file [<rule>…]`. Text after `--` is a
+reason. A silenced finding's fix is not applied.
 
 #### `--verify` — prove the rewrite
 
 `--verify` compiles the original and the rewritten text and compares their IR
 (the same comparison as [`ir-equal`](#ir-equal--are-two-files-the-same-program)).
 Nothing is written unless the comparison is acceptable; a rewrite that cannot
-be accepted exits **3**, distinct from the plain "needs changes" exit 1. It
-works with `--fix` and with `--check`.
+be accepted exits **3**, distinct from the plain "problems found" exit 1. It
+works with and without `--fix`.
 
 | Mode | Demands | When a semantic pass fired |
 |---|---|---|
-| `--verify` (= `--verify=ir`, the default) | The formatting pass must not change the IR | Allowed: reported as an expected IR change, file still written |
+| `--verify` (= `--verify=ir`, the default) | Formatting and the IR-invisible rules must not change the IR | Allowed: reported as an expected IR change, file still written |
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
-Formatting and the compound-assignment fold are the passes that are meant to
-leave the IR unchanged. The cast, `match` and `var` passes change it by design. On such a file the default mode proves
+Formatting and `prefer-compound-assign` are meant to leave the IR unchanged.
+The cast, `match` and `var` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 
 ```
 $ petal lint --fix --verify app.ptl
-lint: rewrote 1 if/elsif chain(s) as match
-verify: rewrite changed IR (0 cast(s) removed, 1 if-chain(s) rewritten as match);
-        formatting alone was proven IR-equal. First difference:
+verify: app.ptl: rewrite changed IR (1 prefer-match); formatting was proven IR-equal.
+        First difference:
 function `label` body: statement count differs (at 2:6)
   original: 4
   rewritten: 2
-verify: run-diff verification needed for the semantic passes
+verify: run-diff verification needed for the semantic rules
 ```
 
-If formatting alone ever moves the IR, that is a linter bug: `--verify` reports
-it as one and refuses to write, whatever the mode.
+If formatting ever moves the IR, that is a bug: `--verify` reports it as one
+and refuses to write, whatever the mode.
 
 ### `suggest` — Propose type annotations
 

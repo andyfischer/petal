@@ -1,53 +1,50 @@
-//! `petal lint` — source normalization (see docs/dev/linter-plan.md).
+//! `petal lint` — rules about *which* code to write, as opposed to how to lay
+//! it out (that is `petal fmt`, [`crate::fmt`]; see docs/dev/linter-plan.md).
 //!
-//! Several passes, split by mechanism so none ever reprints from the AST:
+//! Every rule has a kebab-case name, reports a [`Finding`] per site, and
+//! carries a fix that `--fix` applies. The rules, in the order they run:
 //!
-//! 1. **Formatting** ([`reindent`]) — token-driven 2-space re-indentation.
-//!    Nesting depth is computed from block-opening/-closing tokens and
-//!    delimiters, and only the *leading whitespace* of each line is rewritten
-//!    (plus trailing-whitespace trim and a single trailing newline).
-//!    Everything else on a line — including comments — is copied verbatim, and
-//!    any line that starts or ends inside a multi-line token (raw strings, JSX
-//!    text) is left untouched, so the pass is comment- and content-safe by
-//!    construction. Petal is newline-significant but not
-//!    indentation-significant, so this cannot change semantics.
-//!
-//! 2. **Identity casts** ([`casts`]) — delete `int(n)` where `n` is already an
-//!    `int` (likewise `float`/`str`). Candidates come from the type checker,
-//!    which is deliberately conservative — anything it cannot prove infers
-//!    `any` and is left alone — and are applied as two minimal string splices
-//!    per cast, so comments and layout inside the argument survive.
-//!
-//! 3. **`if`-chain to `match`** ([`to_match`]) — rewrite an `if`/`elsif` chain
-//!    that tests one subject against string/bool/nil literals into a `match`.
-//!    Like the cast rule it detects over the AST and applies span splices, and
-//!    the splices only ever cover the glue between the arms, so every pattern
-//!    and body survives verbatim. It runs after the cast rule on the cast
-//!    rule's output, which means a re-parse: the casts moved the spans.
-//!
-//! 4. **`var` to `let`** ([`var_to_let`]) — a `var` that no nested function
+//! 1. **`prefer-let`** ([`var_to_let`]) — a `var` that no nested function
 //!    mentions is a `let` in disguise: `var` → `let`, `set x` → `x`, `get x`
-//!    → `x`. Keyword splices only, so the program keeps its shape. This one
-//!    actually runs *first*, because it gives the cast rule types to prove.
+//!    → `x`. Keyword splices only, so the program keeps its shape. This runs
+//!    first because it gives the cast rule types to prove.
+//! 2. **`no-redundant-cast`** ([`casts`]) — delete `int(n)` where `n` is
+//!    already an `int` (likewise `float`/`str`). Candidates come from the type
+//!    checker, which is deliberately conservative — anything it cannot prove
+//!    infers `any` and is left alone — and are applied as two minimal string
+//!    splices per cast, so comments and layout inside the argument survive.
+//! 3. **`prefer-match`** ([`to_match`]) — an `if`/`elsif` chain that tests one
+//!    subject against string/bool/nil literals becomes a `match`. The splices
+//!    only ever cover the glue between the arms, so every pattern and body
+//!    survives verbatim.
+//! 4. **`prefer-compound-assign`** ([`compound`]) — `x = x + e` → `x += e`.
+//!    The parser desugars the compound form back to the long one, so this
+//!    rule is IR-invisible.
 //!
-//! 5. **Compound assignment** ([`compound`]) — `x = x + e` → `x += e`. The
-//!    parser desugars the compound form back to the long one, so this pass is
-//!    IR-invisible, like formatting.
+//! Each rule detects over a fresh parse of the previous rule's output, so a
+//! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
+//! point. Findings are reported at their position in the *original* text:
+//! every applied splice is recorded, and a later stage's offsets are mapped
+//! back through them ([`map_back`]).
 //!
-//! Because the cast rule changes tokens (not just whitespace), [`lint_source`]
-//! gates it: if the original source compiles, the rewritten source must compile
-//! too, or lint refuses to produce output. That is a weaker gate than
-//! full IR equality — removing a call *does* change the IR, which is the point
-//! — so the real guarantee comes from the detection rule: an `int` cast is only
-//! dropped when its argument's static type is `int`, and `int()` on an `int` is
-//! the identity (`rust/src/builtins/math.rs`).
+//! **Opting out.** `// petal-lint-ignore <rule> [<rule>…]` on the line before a
+//! finding, or trailing on its line, silences those rules there (no names
+//! silences every rule); `// petal-lint-ignore-file [<rule>…]` does the same
+//! for the whole file. Text after `--` is a reason and is ignored. A
+//! suppressed finding's fix is not applied either.
 //!
-//! [`verify_rewrite`] (`petal lint --verify`) is the gate on top of all of
-//! this: it compiles both sides and compares their IR with
-//! [`crate::ir_equiv::ir_equivalent`], so a rewrite that cannot be accepted is
-//! never written. Only the formatting pass is required to be IR-invisible; the
-//! other two change the IR by design, and the default mode says so rather than
-//! calling it a failure. See docs/dev/refactor-verification.md §7.
+//! **Gates.** The fixes change tokens, so [`lint_source`] gates them: if the
+//! original source compiles, the fixed source must compile too, or lint
+//! refuses to produce output. That is weaker than full IR equality — removing
+//! a call *does* change the IR, which is the point — so the real guarantee
+//! comes from each detection rule being an identity (`int()` on an `int` is
+//! the identity, `rust/src/builtins/math.rs`). [`verify_rewrite`]
+//! (`petal lint --fix --verify`) compiles both sides and compares their IR
+//! with [`crate::ir_equiv::ir_equivalent`]; see
+//! docs/dev/refactor-verification.md §7.
+//!
+//! A fixed file is run through `petal fmt` before it is written: a rewritten
+//! chain has to be re-indented, and fmt is proven IR-invisible.
 //!
 //! A note on what is *not* here: an earlier slice rewrote `x = f(x)` to the
 //! rebind form `f(@x)`. That rule is gone. The `@` operator remains a language
@@ -58,15 +55,71 @@ use std::path::PathBuf;
 
 mod casts;
 mod compound;
-mod reindent;
 mod to_match;
 mod var_to_let;
 
-use casts::{apply_cast_edits, plan_cast_edits};
-use compound::plan_compound_edits;
-use var_to_let::plan_var_edits;
-pub use reindent::reindent;
-use to_match::{apply_match_edits, plan_match_edits};
+use casts::plan_cast_fixes;
+use compound::plan_compound_fixes;
+use to_match::{Splice, apply_match_edits, plan_match_fixes};
+use var_to_let::plan_var_fixes;
+
+pub use crate::fmt::reindent;
+
+/// Directive comments.
+pub const IGNORE_NEXT: &str = "petal-lint-ignore";
+pub const IGNORE_FILE: &str = "petal-lint-ignore-file";
+
+/// One lint rule, as `petal lint --rules` lists it.
+pub struct RuleInfo {
+    pub name: &'static str,
+    pub summary: &'static str,
+}
+
+pub const PREFER_LET: &str = "prefer-let";
+pub const NO_REDUNDANT_CAST: &str = "no-redundant-cast";
+pub const PREFER_MATCH: &str = "prefer-match";
+pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
+
+/// Every rule, in the order it runs.
+pub const RULES: &[RuleInfo] = &[
+    RuleInfo {
+        name: PREFER_LET,
+        summary: "a `var` no nested function shares should be a `let`",
+    },
+    RuleInfo {
+        name: NO_REDUNDANT_CAST,
+        summary: "`int(n)` / `float(x)` / `str(s)` on a value already of that type",
+    },
+    RuleInfo {
+        name: PREFER_MATCH,
+        summary: "an if/elsif chain testing one value against literals should be a `match`",
+    },
+    RuleInfo {
+        name: PREFER_COMPOUND_ASSIGN,
+        summary: "`x = x + e` should be `x += e`",
+    },
+];
+
+pub fn is_rule(name: &str) -> bool {
+    RULES.iter().any(|r| r.name == name)
+}
+
+/// Which rules run (`--rules-include` / `--rules-exclude`).
+#[derive(Default, Clone)]
+pub struct RuleFilter {
+    /// When set, only these rules run.
+    pub include: Option<Vec<String>>,
+    pub exclude: Vec<String>,
+}
+
+impl RuleFilter {
+    pub fn enabled(&self, rule: &str) -> bool {
+        self.include
+            .as_ref()
+            .is_none_or(|inc| inc.iter().any(|r| r == rule))
+            && !self.exclude.iter().any(|r| r == rule)
+    }
+}
 
 /// Context the compile gate needs to compile the source the same way
 /// `petal run` would: module search dirs and the file's own path (imports
@@ -75,29 +128,45 @@ use to_match::{apply_match_edits, plan_match_edits};
 pub struct LintOptions {
     pub include_dirs: Vec<PathBuf>,
     pub origin: Option<PathBuf>,
+    pub rules: RuleFilter,
+}
+
+/// One rule firing at one place.
+#[derive(Debug, Clone)]
+pub struct Finding {
+    pub rule: &'static str,
+    /// 1-based position in the original source.
+    pub line: usize,
+    pub column: usize,
+    pub message: String,
+}
+
+/// A rule's planned fix for one site, in the coordinates of the text the rule
+/// ran on: where to report it, and the splices that fix it.
+struct Fix {
+    anchor: usize,
+    message: String,
+    splices: Vec<Splice>,
+}
+
+#[cfg(test)]
+fn flatten(fixes: Vec<Fix>) -> Vec<Splice> {
+    let mut all: Vec<Splice> = fixes.into_iter().flat_map(|f| f.splices).collect();
+    all.sort_by_key(|s| s.start);
+    all
 }
 
 /// The result of linting one source text.
 pub struct LintOutcome {
-    /// The normalized source.
+    /// Every finding, in source order.
+    pub findings: Vec<Finding>,
+    /// The source with every finding fixed, then formatted. Equal to the input
+    /// when there are no findings.
     pub output: String,
-    /// Lines whose text changed in the formatting pass.
-    pub reindented_lines: usize,
-    /// Identity casts removed.
-    pub casts_removed: usize,
-    /// `if`/`elsif` chains rewritten as a `match`.
-    pub chains_to_match: usize,
-    /// `var`s that never left their function, rewritten as `let`.
-    pub vars_to_let: usize,
-    /// `x = x op e` statements folded into `x op= e`.
-    pub compound_assigns: usize,
-    /// The text after the semantic passes but *before* re-indentation — the
-    /// input the formatting pass was handed. `--verify` compares this against
-    /// [`LintOutcome::output`] to prove the formatting pass on its own, which
-    /// is the only part of the rewrite that is supposed to leave the IR alone.
+    /// The fixed text *before* formatting. `--verify` compares this against
+    /// [`LintOutcome::output`] to prove the formatting on its own, which is
+    /// the only part of the rewrite that is supposed to leave the IR alone.
     pub pre_format: String,
-    /// Human-readable notes.
-    pub notes: Vec<String>,
 }
 
 impl LintOutcome {
@@ -105,88 +174,187 @@ impl LintOutcome {
         self.output != original
     }
 
-    /// Did a pass that is *expected* to change the IR run on this file?
+    pub fn count(&self, rule: &str) -> usize {
+        self.findings.iter().filter(|f| f.rule == rule).count()
+    }
+
+    /// Did a rule that is *expected* to change the IR fire on this file?
     pub fn has_semantic_rewrite(&self) -> bool {
-        self.casts_removed > 0 || self.chains_to_match > 0 || self.vars_to_let > 0
+        self.findings
+            .iter()
+            .any(|f| f.rule != PREFER_COMPOUND_ASSIGN)
     }
 }
 
-/// Normalize `source`: drop identity casts (compile-gated), then re-indent.
-/// Errors if the source doesn't parse, or if a rewrite fails the gate outright
+/// The source as it moves through the rules: the current text, and the
+/// splices each earlier stage applied (to map a position back to the
+/// original).
+struct Pipeline<'a> {
+    line_starts: Vec<usize>,
+    ignores: Ignores,
+    rules: &'a RuleFilter,
+    text: String,
+    stages: Vec<Vec<Splice>>,
+    findings: Vec<Finding>,
+}
+
+impl<'a> Pipeline<'a> {
+    fn new(source: &'a str, rules: &'a RuleFilter) -> Result<Self, String> {
+        let mut line_starts = vec![0usize];
+        for (i, c) in source.chars().enumerate() {
+            if c == '\n' {
+                line_starts.push(i + 1);
+            }
+        }
+        Ok(Pipeline {
+            line_starts,
+            ignores: Ignores::scan(source)?,
+            rules,
+            text: source.to_string(),
+            stages: Vec::new(),
+            findings: Vec::new(),
+        })
+    }
+
+    /// Keep the fixes `rule` is allowed to make, record their findings, and
+    /// apply them. Returns how many were applied.
+    fn apply(&mut self, rule: &'static str, fixes: Vec<Fix>) -> usize {
+        let mut kept: Vec<Splice> = Vec::new();
+        let mut count = 0;
+        if self.rules.enabled(rule) {
+            for fix in fixes {
+                let mut at = fix.anchor;
+                for stage in self.stages.iter().rev() {
+                    at = map_back(at, stage);
+                }
+                let line = self.line_starts.partition_point(|&s| s <= at) - 1;
+                if self.ignores.suppresses(rule, line) {
+                    continue;
+                }
+                self.findings.push(Finding {
+                    rule,
+                    line: line + 1,
+                    column: at - self.line_starts[line] + 1,
+                    message: fix.message,
+                });
+                kept.extend(fix.splices);
+                count += 1;
+            }
+        }
+        kept.sort_by_key(|s| s.start);
+        if !kept.is_empty() {
+            let chars: Vec<char> = self.text.chars().collect();
+            self.text = apply_match_edits(&chars, &kept);
+        }
+        self.stages.push(kept);
+        count
+    }
+}
+
+/// Map char offset `pos` in the text *after* `splices` were applied back to
+/// the text before. A position inside inserted text, or at a deletion, maps to
+/// the splice start.
+fn map_back(pos: usize, splices: &[Splice]) -> usize {
+    let mut delta: isize = 0;
+    for s in splices {
+        let new_start = (s.start as isize + delta) as usize;
+        if pos < new_start {
+            break;
+        }
+        let inserted = s.text.chars().count();
+        // Inside the replacement — or exactly at a deletion, where the text
+        // that follows used to start after the deleted run: either way the
+        // position belongs to where the splice began.
+        if pos < new_start + inserted.max(1) {
+            return s.start;
+        }
+        delta += inserted as isize - (s.end - s.start) as isize;
+    }
+    (pos as isize - delta) as usize
+}
+
+/// `// petal-lint-ignore` comments: per 0-based line, the rules silenced there
+/// (an empty list silences every rule).
+struct Ignores {
+    file: Option<Vec<String>>,
+    lines: std::collections::HashMap<usize, Vec<String>>,
+}
+
+impl Ignores {
+    fn scan(source: &str) -> Result<Self, String> {
+        let mut file = None;
+        let mut lines = std::collections::HashMap::new();
+        for (line, text, whole_line) in crate::fmt::line_comments(source)? {
+            let Some(word) = crate::fmt::directive_word(&text) else {
+                continue;
+            };
+            let rest = text.trim_start_matches('/').trim_start()[word.len()..]
+                .split("--")
+                .next()
+                .unwrap_or("");
+            let rules: Vec<String> = rest
+                .split(|c: char| c.is_whitespace() || c == ',')
+                .filter(|w| !w.is_empty())
+                .map(str::to_string)
+                .collect();
+            if word == IGNORE_FILE {
+                file = Some(rules);
+            } else if word == IGNORE_NEXT {
+                // Alone on a line it covers the next line; trailing, its own.
+                let target = if whole_line { line + 1 } else { line };
+                lines.insert(target, rules);
+            }
+        }
+        Ok(Ignores { file, lines })
+    }
+
+    fn suppresses(&self, rule: &str, line: usize) -> bool {
+        let hit = |rules: &Vec<String>| rules.is_empty() || rules.iter().any(|r| r == rule);
+        self.file.as_ref().is_some_and(hit) || self.lines.get(&line).is_some_and(hit)
+    }
+}
+
+/// Run every enabled rule over `source`, collecting findings and building the
+/// fixed text. Errors if the source doesn't parse, or if a fix fails a gate
 /// (which indicates a lint bug and refuses all output).
 pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, String> {
     // Lint operates on valid programs only.
-    let (var_chars, var_stmts) = reparse(source)?;
-    let mut notes = Vec::new();
+    let (chars, stmts) = reparse(source)?;
+    let mut p = Pipeline::new(source, &opts.rules)?;
 
-    // `var` to `let` runs first: a `var` reads as `any` to the type checker,
+    // `prefer-let` runs first: a `var` reads as `any` to the type checker,
     // so a cast on one only becomes provably redundant once it is a `let`.
     // Running it after the cast rule would leave those casts for a second
     // `lint` to find, and lint has to be a fixed point.
-    let (var_edits, vars_to_let) = plan_var_edits(&var_stmts, &var_chars);
-    let after_vars = if var_edits.is_empty() {
-        source.to_string()
-    } else {
-        apply_match_edits(&var_chars, &var_edits)
-    };
-    if vars_to_let > 0 {
-        notes.push(format!(
-            "turned {vars_to_let} function-local var(s) into let"
-        ));
-    }
-    let (chars, stmts) = reparse(&after_vars)?;
+    let vars_to_let = p.apply(PREFER_LET, plan_var_fixes(&stmts, &chars));
 
     // Lint sees no `class` declarations of its own: identity-cast detection
     // never consults one, and the built-in table is what resolves `Rect`.
+    let (chars, stmts) = reparse(&p.text)?;
     let classes = crate::classes::ClassTable::new();
     let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
     let found = crate::typecheck::find_redundant_casts(&stmts, &signatures, &classes);
-    let edits = plan_cast_edits(&found, &chars);
-    let casts_removed = edits.len();
-    let rewritten = if edits.is_empty() {
-        after_vars
-    } else {
-        apply_cast_edits(&chars, &edits)
-    };
+    let casts_removed = p.apply(NO_REDUNDANT_CAST, plan_cast_fixes(&found, &chars));
 
-    if casts_removed > 0 {
-        notes.push(format!("removed {casts_removed} redundant cast(s)"));
-    }
+    // The cast splices moved every offset, so each later rule re-parses.
+    let (chars, match_stmts) = reparse(&p.text)?;
+    let chains_to_match = p.apply(PREFER_MATCH, plan_match_fixes(&match_stmts, &chars));
 
-    // Pass 3 — `if`-chain to `match`. The cast splices moved every offset, so
-    // this re-parses rather than reusing the AST above.
-    let (chars, stmts) = if casts_removed > 0 {
-        let chars: Vec<char> = rewritten.chars().collect();
-        let (_tree, stmts) = crate::rewrite::parse_ast(&rewritten)?;
-        (chars, stmts)
-    } else {
-        (chars, stmts)
-    };
-    let (match_edits, chains_to_match) = plan_match_edits(&stmts, &chars);
-    let rewritten = if match_edits.is_empty() {
-        rewritten
-    } else {
-        apply_match_edits(&chars, &match_edits)
-    };
-    if chains_to_match > 0 {
-        notes.push(format!(
-            "rewrote {chains_to_match} if/elsif chain(s) as match"
-        ));
-    }
+    let (chars, stmts) = reparse(&p.text)?;
+    let compound_assigns = p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars));
 
-    // Pass 5 — `x = x + e` to `x += e`, on a re-parse of the output so far.
-    let (compound_chars, compound_stmts) = reparse(&rewritten)?;
-    let compound_edits = plan_compound_edits(&compound_stmts, &compound_chars);
-    let compound_assigns = compound_edits.len();
-    let rewritten = if compound_edits.is_empty() {
-        rewritten
-    } else {
-        apply_match_edits(&compound_chars, &compound_edits)
-    };
-    if compound_assigns > 0 {
-        notes.push(format!(
-            "folded {compound_assigns} assignment(s) into compound form (`x += e`)"
-        ));
+    let Pipeline {
+        text: rewritten,
+        mut findings,
+        ..
+    } = p;
+    findings.sort_by_key(|f| (f.line, f.column));
+    if findings.is_empty() {
+        return Ok(LintOutcome {
+            findings,
+            output: source.to_string(),
+            pre_format: source.to_string(),
+        });
     }
 
     if casts_removed > 0 || chains_to_match > 0 || vars_to_let > 0 || compound_assigns > 0 {
@@ -204,7 +372,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         // A structural check the compile gate can't make: the rewrite must
         // have turned exactly the chains we counted into matches, and left
         // every other `if` alone.
-        verify_chain_counts(&stmts, &rewritten, chains_to_match)?;
+        verify_chain_counts(&match_stmts, &rewritten, chains_to_match)?;
     }
     if vars_to_let > 0 {
         // Same idea for the `var` rule: exactly the counted `var`s are gone.
@@ -218,17 +386,11 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         }
     }
 
-    let output = reindent(&rewritten)?;
-    let reindented_lines = count_changed_lines(&rewritten, &output);
+    let output = crate::fmt::format_source(&rewritten)?;
     Ok(LintOutcome {
+        findings,
         output,
-        reindented_lines,
-        casts_removed,
-        chains_to_match,
-        vars_to_let,
-        compound_assigns,
         pre_format: rewritten,
-        notes,
     })
 }
 
@@ -312,15 +474,6 @@ fn count_nodes(stmts: &[crate::ast::Stmt]) -> (usize, usize) {
     (c.ifs, c.matches)
 }
 
-fn count_changed_lines(before: &str, after: &str) -> usize {
-    let a: Vec<&str> = before.lines().collect();
-    let b: Vec<&str> = after.lines().collect();
-    let common = a.len().min(b.len());
-    let mut n = (0..common).filter(|&i| a[i] != b[i]).count();
-    n += a.len().max(b.len()) - common;
-    n
-}
-
 // ---------------------------------------------------------------------------
 // `--verify`
 // ---------------------------------------------------------------------------
@@ -352,9 +505,6 @@ pub enum VerifyVerdict {
     SemanticChange {
         /// The first difference between the original and the final text.
         diff: crate::ir_equiv::IrDiff,
-        casts_removed: usize,
-        chains_to_match: usize,
-        vars_to_let: usize,
     },
 }
 
@@ -407,9 +557,9 @@ pub fn verify_rewrite(
         });
     }
     if !outcome.has_semantic_rewrite() {
-        // Formatting alone must never move the IR — this is a linter bug.
+        // Only the IR-invisible rules fired, so the IR must not move.
         return Err(VerifyFailure {
-            message: "lint bug: formatting alone changed the IR".to_string(),
+            message: "lint bug: an IR-invisible rewrite changed the IR".to_string(),
             diff: Some(diff),
         });
     }
@@ -424,16 +574,11 @@ pub fn verify_rewrite(
     .map_err(VerifyFailure::msg)?;
     if let Err(fmt_diff) = formatting {
         return Err(VerifyFailure {
-            message: "lint bug: re-indenting the rewritten source changed the IR".to_string(),
+            message: "lint bug: formatting the rewritten source changed the IR".to_string(),
             diff: Some(fmt_diff),
         });
     }
-    Ok(VerifyVerdict::SemanticChange {
-        diff,
-        casts_removed: outcome.casts_removed,
-        chains_to_match: outcome.chains_to_match,
-        vars_to_let: outcome.vars_to_let,
-    })
+    Ok(VerifyVerdict::SemanticChange { diff })
 }
 
 /// Compile `source` and return its entry program's serialized IR, minus the
@@ -472,6 +617,7 @@ mod tests {
             let opts = LintOptions {
                 include_dirs: vec![],
                 origin: Some(path.clone()),
+                ..Default::default()
             };
             let Ok(outcome) = lint_source(&src, &opts) else {
                 continue;
@@ -483,136 +629,107 @@ mod tests {
                 Ok(ir) => ir,
                 Err(e) => panic!("lint broke compilation for {}: {}", path.display(), e),
             };
-            // A file the rules leave alone must be byte-identical in IR too,
-            // which pins the formatting pass (and the compound-assignment
-            // fold, which is only a respelling) as semantics-free. The
-            // semantic rules change the IR on purpose — deleting a call,
-            // replacing an `if` chain with a `match`, a cell with a rebind —
-            // so a file one of them touched is exempt here and gated by
-            // compilation above instead.
+            // A file only the IR-invisible rules touched must be
+            // byte-identical in IR. The semantic rules change the IR on
+            // purpose — deleting a call, replacing an `if` chain with a
+            // `match`, a cell with a rebind — so a file one of them touched
+            // is gated by compilation above instead.
             if !outcome.has_semantic_rewrite() {
                 assert_eq!(
                     src_ir,
                     out_ir,
-                    "formatting changed IR for {}",
+                    "IR-invisible lint changed IR for {}",
                     path.display()
                 );
             }
-            // And linting again must be a fixed point.
+            // Linting the fixed text must find nothing: `--fix` is a fixed
+            // point.
             let again = lint_source(&outcome.output, &opts).expect("relint");
-            assert_eq!(
-                again.output,
-                outcome.output,
-                "lint not idempotent for {}",
-                path.display()
+            assert!(
+                again.findings.is_empty(),
+                "lint --fix not a fixed point for {}: {:?}",
+                path.display(),
+                again.findings
             );
             checked += 1;
         }
         assert!(checked > 50, "expected a real corpus, checked {checked}");
     }
 
-    /// Reindentation must be *provably* semantics-free, over the whole repo
-    /// corpus, using the real equivalence primitive rather than a JSON
-    /// comparison of two serialized programs.
-    ///
-    /// The stimulus matters: every `.ptl` in the repo is already lint-clean,
-    /// so `reindent(src) == src` and comparing those two proves nothing. Each
-    /// file is therefore *mangled* first — three extra spaces on the front of
-    /// every non-empty line — and the reindented mangled source is compared
-    /// against the original. Files containing a multi-line token (raw string,
-    /// JSX text) are skipped, because there the extra spaces would be content
-    /// rather than layout and the mangle itself would change the program.
     #[test]
-    fn reindent_is_ir_equal_over_repo_corpus() {
-        use crate::ir_equiv::{ir_equivalent, sources_equivalent};
-
-        let files = crate::test_corpus::repo_ptl_files();
-        let mut checked = 0;
-        let mut mangled_checked = 0;
-        for path in &files {
-            let Ok(src) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let opts = LintOptions {
-                include_dirs: vec![],
-                origin: Some(path.clone()),
-            };
-            // Only files that compile standalone can be compared at all.
-            if compile_ir(&src, &opts).is_err() {
-                continue;
-            }
-            let Ok(formatted) = reindent(&src) else {
-                continue;
-            };
-            match sources_equivalent(&src, &formatted, &[], Some(path)) {
-                Ok(Ok(())) => {}
-                Ok(Err(diff)) => panic!("reindent changed IR for {}:\n{}", path.display(), diff),
-                Err(e) => panic!("reindent broke compilation for {}: {}", path.display(), e),
-            }
-            checked += 1;
-
-            let Some(mangled) = mangle_indentation(&src) else {
-                continue;
-            };
-            let remangled = match reindent(&mangled) {
-                Ok(t) => t,
-                Err(e) => panic!("reindent failed on mangled {}: {}", path.display(), e),
-            };
-            assert_eq!(
-                remangled,
-                formatted,
-                "reindent did not undo the mangle for {}",
-                path.display()
-            );
-            match sources_equivalent(&src, &remangled, &[], Some(path)) {
-                Ok(Ok(())) => {}
-                Ok(Err(diff)) => panic!(
-                    "reindent of mangled source changed IR for {}:\n{}",
-                    path.display(),
-                    diff
-                ),
-                Err(e) => panic!("mangled {} did not compile: {}", path.display(), e),
-            }
-            mangled_checked += 1;
-        }
-        assert!(checked > 150, "expected a real corpus, checked {checked}");
-        assert!(
-            mangled_checked > 150,
-            "expected most of the corpus to be manglable, got {mangled_checked}"
-        );
-
-        // A program really is equivalent to itself, so the walk above can't be
-        // passing by accident of never comparing anything.
-        let src = "let x = 1\nprint(x)\n";
-        let (env, pid) = crate::ir_equiv::compile_for_compare(src, &[], None).expect("compile");
-        let program = env.get_program(pid).expect("program");
-        assert!(ir_equivalent(program, program).is_ok());
+    fn map_back_through_splices() {
+        // "var x" -> "let x"; "set x = 1" -> "x = 1" (5 chars dropped at 6).
+        let splices = vec![
+            Splice {
+                start: 0,
+                end: 3,
+                text: "let".into(),
+            },
+            Splice {
+                start: 6,
+                end: 10,
+                text: String::new(),
+            },
+        ];
+        assert_eq!(map_back(0, &splices), 0);
+        assert_eq!(map_back(4, &splices), 4);
+        assert_eq!(map_back(6, &splices), 6);
+        assert_eq!(map_back(7, &splices), 11);
+        assert_eq!(map_back(8, &splices), 12);
     }
 
-    /// Add three spaces to the front of every non-empty line. Returns `None`
-    /// when the file has a token spanning more than one line (a raw string or
-    /// JSX text), where leading whitespace is content rather than layout and
-    /// the mangle itself would change the program.
-    fn mangle_indentation(src: &str) -> Option<String> {
-        let mut lexer = crate::lexer::Lexer::new(src);
-        lexer.tokenize().ok()?;
-        let multiline = lexer.tokens_with_spans().any(|(token, span)| {
-            !matches!(
-                token,
-                crate::lexer::Token::Newline | crate::lexer::Token::Eof
-            ) && span.end.line > span.start.line
-        });
-        if multiline {
-            return None;
-        }
-        let mut out = String::with_capacity(src.len() + src.lines().count() * 3);
-        for line in src.lines() {
-            if !line.trim().is_empty() {
-                out.push_str("   ");
-            }
-            out.push_str(line);
-            out.push('\n');
-        }
-        Some(out)
+    #[test]
+    fn findings_carry_rule_and_original_position() {
+        let src = "fn f()\n  var n = 0\n  set n = get n + 1\n  n\nend\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        let rules: Vec<_> = out
+            .findings
+            .iter()
+            .map(|f| (f.rule, f.line, f.column))
+            .collect();
+        assert_eq!(
+            rules,
+            vec![(PREFER_LET, 2, 3), (PREFER_COMPOUND_ASSIGN, 3, 3)]
+        );
+        assert_eq!(out.output, "fn f()\n  let n = 0\n  n += 1\n  n\nend\n");
+    }
+
+    #[test]
+    fn ignore_comments_suppress_findings_and_their_fixes() {
+        let src = "fn f()\n  // petal-lint-ignore prefer-let -- shared later\n  var n = 0\n  set n = get n + 1\n  get n\nend\n";
+        let out = lint_source(src, &LintOptions::default()).unwrap();
+        assert!(out.findings.iter().all(|f| f.rule != PREFER_LET));
+        assert!(out.output.contains("var n = 0"));
+
+        let trailing = "let x = 1\nx = x + 1 // petal-lint-ignore\n";
+        assert!(
+            lint_source(trailing, &LintOptions::default())
+                .unwrap()
+                .findings
+                .is_empty()
+        );
+
+        let file = "// petal-lint-ignore-file prefer-compound-assign\nlet x = 1\nx = x + 1\n";
+        assert!(
+            lint_source(file, &LintOptions::default())
+                .unwrap()
+                .findings
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn rule_filter_selects_rules() {
+        let src = "fn f()\n  var n = 0\n  set n = get n + 1\n  n\nend\n";
+        let opts = LintOptions {
+            rules: RuleFilter {
+                include: None,
+                exclude: vec![PREFER_COMPOUND_ASSIGN.to_string()],
+            },
+            ..Default::default()
+        };
+        let out = lint_source(src, &opts).unwrap();
+        assert_eq!(out.findings.len(), 1);
+        assert_eq!(out.findings[0].rule, PREFER_LET);
     }
 }

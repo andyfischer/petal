@@ -50,6 +50,8 @@ use crate::ast::{
 };
 use crate::source_map::SourceSpan;
 
+use super::Fix;
+
 /// The shortest chain worth converting. At two arms `if … else … end` is the
 /// plainer spelling and the repetition the rule exists to remove is one line.
 const MIN_ARMS: usize = 3;
@@ -63,18 +65,18 @@ pub(super) struct Splice {
     pub(super) text: String,
 }
 
-/// Plan every chain rewrite in `stmts`. Returns the splices in source order.
-pub(super) fn plan_match_edits(stmts: &[Stmt], chars: &[char]) -> (Vec<Splice>, usize) {
+/// Plan every chain rewrite in `stmts`, one [`Fix`] per chain, in source
+/// order.
+pub(super) fn plan_match_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
     let mut finder = Finder {
         chars,
-        splices: Vec::new(),
-        chains: 0,
+        fixes: Vec::new(),
     };
     for s in stmts {
         finder.visit_stmt(s);
     }
-    finder.splices.sort_by_key(|s| s.start);
-    (finder.splices, finder.chains)
+    finder.fixes.sort_by_key(|f| f.anchor);
+    finder.fixes
 }
 
 /// Apply the splices, highest offset first so earlier positions stay valid.
@@ -88,8 +90,7 @@ pub(super) fn apply_match_edits(chars: &[char], splices: &[Splice]) -> String {
 
 struct Finder<'a> {
     chars: &'a [char],
-    splices: Vec<Splice>,
-    chains: usize,
+    fixes: Vec<Fix>,
 }
 
 impl ExprVisitor for Finder<'_> {
@@ -103,8 +104,20 @@ impl ExprVisitor for Finder<'_> {
         // shorter chain of its own.
         let chain = collect_chain(e);
         if let Some(edits) = plan_chain(&chain, self.chars) {
-            self.splices.extend(edits);
-            self.chains += 1;
+            let subject = match &chain.arms[0].cond.kind {
+                ExprKind::BinaryOp { left, .. } => span_text(self.chars, left.span),
+                _ => None,
+            }
+            .unwrap_or_default();
+            self.fixes.push(Fix {
+                anchor: e.span.start.offset as usize,
+                message: format!(
+                    "this if/elsif chain compares `{subject}` against {} literals; \
+                     write it as a `match`",
+                    chain.arms.len()
+                ),
+                splices: edits,
+            });
         }
         for arm in &chain.arms {
             self.visit_expr(arm.cond);
@@ -219,6 +232,17 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         return None;
     }
     let mut splices = Vec::new();
+    // Arms go one step in from the line the chain starts on, so what follows
+    // them on continuation lines keeps its place when fmt re-indents.
+    let line_start = chars[..if_start]
+        .iter()
+        .rposition(|&c| c == '\n')
+        .map_or(0, |p| p + 1);
+    let lead: String = chars[line_start..if_start]
+        .iter()
+        .take_while(|c| **c == ' ' || **c == '\t')
+        .collect();
+    let arm = format!("\n{lead}  when ");
 
     // `if ` -> `match `, leaving the subject text that follows it in place.
     let head_end = conds[0].0.start.offset as usize;
@@ -261,7 +285,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         splices.push(Splice {
             start: from,
             end: to,
-            text: "\nwhen ".to_string(),
+            text: arm.clone(),
         });
 
         // ` then ` -> ` -> `.
@@ -287,7 +311,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
             splices.push(Splice {
                 start: last_body_end,
                 end: to,
-                text: "\nwhen _ -> ".to_string(),
+                text: format!("{arm}_ -> "),
             });
         }
         None => {
@@ -296,7 +320,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
             splices.push(Splice {
                 start: last_body_end,
                 end: last_body_end,
-                text: "\nwhen _ -> nil".to_string(),
+                text: format!("{arm}_ -> nil"),
             });
         }
     }

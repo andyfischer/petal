@@ -1,22 +1,26 @@
-// Source→source regression tests for `petal lint` (rust/src/lint.rs).
+// Source→source regression tests for `petal lint` (rust/src/lint/) and the
+// `petal fmt` layout it is followed by (rust/src/fmt/).
 //
-// Every case asserts the exact linted output for a given input source, so any
-// behavior change in the re-indenter or the cast rewrite shows up as a
-// readable string diff. `assert_lints_to` also re-lints its own output and
+// Every case asserts the exact output of "fix, then format" for a given input
+// source — `lint --fix` followed by `fmt` — so any behavior change in the
+// re-indenter or a rewrite shows up as a readable string diff. `assert_lints_to` also re-lints its own output and
 // asserts a fixed point, so idempotence is pinned by every positive case.
 //
 // Note on test sources: multi-line Petal programs are written as Rust string
 // literals with real newlines starting at column 0, so what you see is
 // byte-for-byte what the linter sees.
 
-use petal::lint::{LintOptions, LintOutcome, lint_source};
+use petal::lint::{
+    LintOptions, LintOutcome, NO_REDUNDANT_CAST, PREFER_COMPOUND_ASSIGN, PREFER_LET,
+    PREFER_MATCH, lint_source,
+};
 
 fn lint_outcome(src: &str) -> LintOutcome {
     lint_source(src, &LintOptions::default()).expect("lint_source should succeed")
 }
 
 fn lint(src: &str) -> String {
-    lint_outcome(src).output
+    petal::fmt::format_source(&lint_outcome(src).output).expect("fmt should succeed")
 }
 
 #[track_caller]
@@ -391,7 +395,7 @@ let e = <div wide={x > 1}>
 <p>y</p>
 </div>
 ";
-    let out = petal::lint::reindent(src).expect("reindent");
+    let out = petal::fmt::reindent(src).expect("reindent");
     assert_eq!(
         out,
         "\
@@ -727,7 +731,7 @@ fn a_list_slot_drops_its_parens() {
     );
     assert_lints_to(
         "let n = 5\nlet r = { k: int(n + 1) }\nprint(r)\n",
-        "let n = 5\nlet r = { k: n + 1 }\nprint(r)\n",
+        "let n = 5\nlet r = {k: n + 1}\nprint(r)\n",
     );
 }
 
@@ -807,26 +811,23 @@ fn outcome_reports_no_change_for_clean_source() {
     let src = "let x = 1\nprint(x)\n";
     let outcome = lint_outcome(src);
     assert!(!outcome.changed(src));
-    assert_eq!(outcome.casts_removed, 0);
-    assert_eq!(outcome.reindented_lines, 0);
-    assert!(outcome.notes.is_empty());
+    assert!(outcome.findings.is_empty());
 }
 
 #[test]
-fn outcome_counts_reindented_lines_and_casts() {
+fn outcome_counts_findings_per_rule() {
+    // Layout alone is not a lint finding: that is `petal fmt`'s business.
     let src = "fn f()\nlet x = 1\nx\nend\n";
     let outcome = lint_outcome(src);
-    assert!(outcome.changed(src));
-    assert_eq!(outcome.reindented_lines, 2); // the two body lines
-    assert_eq!(outcome.casts_removed, 0);
+    assert!(outcome.findings.is_empty());
+    assert!(!outcome.changed(src));
 
     let outcome = lint_outcome("let n = 5\nprint(int(n) + int(n))\n");
-    assert_eq!(outcome.casts_removed, 2);
-    assert_eq!(outcome.notes.len(), 1);
+    assert_eq!(outcome.count(NO_REDUNDANT_CAST), 2);
     assert!(
-        outcome.notes[0].contains("2 redundant cast"),
+        outcome.findings[0].message.contains("already an int"),
         "{:?}",
-        outcome.notes
+        outcome.findings
     );
 }
 
@@ -845,7 +846,7 @@ int(n)
 end
 ",
     );
-    assert_eq!(outcome.casts_removed, 1);
+    assert_eq!(outcome.count(NO_REDUNDANT_CAST), 1);
     assert_eq!(
         outcome.output,
         "\
@@ -1071,7 +1072,7 @@ fn f(c)
 end
 ",
     );
-    assert_eq!(outcome.chains_to_match, 0);
+    assert_eq!(outcome.count(PREFER_MATCH), 0);
     assert!(outcome.output.contains("elsif"), "{}", outcome.output);
     assert!(
         outcome.output.contains("// fall through to c"),
@@ -1146,7 +1147,7 @@ end
     // expression, so it satisfies the one-expression rule and both chains
     // convert. Their splices are disjoint — the inner ones fall entirely
     // inside a body span the outer rewrite preserves.
-    assert_eq!(outcome.chains_to_match, 2);
+    assert_eq!(outcome.count(PREFER_MATCH), 2);
     assert!(outcome.output.contains("match a"), "{}", outcome.output);
     assert!(outcome.output.contains("match b"), "{}", outcome.output);
     assert!(!outcome.output.contains("elsif"), "{}", outcome.output);
@@ -1191,12 +1192,12 @@ fn f(c)
 end
 ",
     );
-    assert_eq!(outcome.chains_to_match, 1);
-    assert_eq!(outcome.casts_removed, 0);
+    assert_eq!(outcome.count(PREFER_MATCH), 1);
+    assert_eq!(outcome.count(NO_REDUNDANT_CAST), 0);
     assert!(
-        outcome.notes.iter().any(|n| n.contains("1 if/elsif chain")),
+        outcome.findings.iter().any(|f| f.message.contains("if/elsif chain")),
         "{:?}",
-        outcome.notes
+        outcome.findings
     );
 }
 
@@ -1215,8 +1216,8 @@ fn f(c, n: int)
 end
 ",
     );
-    assert_eq!(outcome.casts_removed, 2);
-    assert_eq!(outcome.chains_to_match, 1);
+    assert_eq!(outcome.count(NO_REDUNDANT_CAST), 2);
+    assert_eq!(outcome.count(PREFER_MATCH), 1);
     assert_eq!(
         outcome.output,
         "\
@@ -1252,8 +1253,8 @@ set fx = fx + chip(fx, fy, \"SPACE\", \"fire\")
 print(get fx)
 ";
     let outcome = lint_outcome(src);
-    assert_eq!(outcome.vars_to_let, 1);
-    assert_eq!(outcome.compound_assigns, 2);
+    assert_eq!(outcome.count(PREFER_LET), 1);
+    assert_eq!(outcome.count(PREFER_COMPOUND_ASSIGN), 2);
     assert_lints_to(
         src,
         "\
@@ -1282,7 +1283,7 @@ hit()
 print(hits)
 ";
     let outcome = lint_outcome(src);
-    assert_eq!(outcome.vars_to_let, 0);
+    assert_eq!(outcome.count(PREFER_LET), 0);
     assert_lints_to(
         src,
         "\

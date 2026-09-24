@@ -12,6 +12,7 @@ use std::process;
 mod args;
 mod handlers;
 mod help;
+mod source_tools;
 
 /// How human-readable (non-`--json`) errors are printed.
 ///
@@ -149,14 +150,15 @@ pub enum Command {
         /// library module compiled alone has no callers.
         from: Vec<PathBuf>,
     },
-    Lint {
-        fix: bool,
+    /// `fmt` — canonical layout (`crate::fmt`). Rewrites files in place;
+    /// `--check` only lists the ones that would change.
+    Fmt {
+        paths: Vec<String>,
+        inline: Option<String>,
         check: bool,
-        /// Prove the rewrite before writing it: compile the original and the
-        /// fixed text and compare their IR (`crate::ir_equiv`). A rewrite that
-        /// changes the IR is never written; see `handle_lint`.
-        verify: Option<crate::lint::VerifyMode>,
+        diff: bool,
     },
+    Lint(LintArgs),
     /// Compare two source files' compiled IR, ignoring everything positional
     /// (spans, comments, whitespace). Exit 0 when equivalent, 1 when not,
     /// 2 when a side fails to compile. The `<file>` in `CliArgs::source` is
@@ -219,6 +221,22 @@ pub enum Command {
     Packages {
         json: bool,
     },
+}
+
+/// Every flag `petal lint` accepts.
+#[derive(Default)]
+pub struct LintArgs {
+    pub paths: Vec<String>,
+    pub inline: Option<String>,
+    pub fix: bool,
+    pub json: bool,
+    /// `--rules`: list the rules and exit.
+    pub list_rules: bool,
+    pub rules: crate::lint::RuleFilter,
+    /// Prove the rewrite before writing it: compile the original and the
+    /// fixed text and compare their IR (`crate::ir_equiv`). A rewrite that
+    /// cannot be accepted is never written; see `handle_lint`.
+    pub verify: Option<crate::lint::VerifyMode>,
 }
 
 pub enum SourceInput {
@@ -437,6 +455,21 @@ pub fn execute(cli: CliArgs) {
         handlers::handle_lsp();
         return;
     }
+    // `fmt` and `lint` take any number of paths (or `-e`), not one source.
+    if let Command::Fmt {
+        paths,
+        inline,
+        check,
+        diff,
+    } = &command
+    {
+        source_tools::handle_fmt(paths, inline.as_deref(), *check, *diff);
+        return;
+    }
+    if let Command::Lint(opts) = &command {
+        source_tools::handle_lint(opts, &include_dirs);
+        return;
+    }
     // `packages` reports on the search path itself; there is no program.
     if let Command::Packages { json } = command {
         handlers::handle_packages(json, &include_dirs);
@@ -481,9 +514,7 @@ pub fn execute(cli: CliArgs) {
                 &include_dirs,
             );
         }
-        Command::Lint { fix, check, verify } => {
-            handlers::handle_lint(fix, check, verify, &source, &source_input, &include_dirs);
-        }
+        Command::Fmt { .. } | Command::Lint(_) => unreachable!("dispatched above"),
         Command::Suggest { json, apply, from } => {
             handlers::handle_suggest(
                 json,

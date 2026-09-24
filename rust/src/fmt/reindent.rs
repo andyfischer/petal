@@ -1,19 +1,83 @@
-//! Pass 1 — token-driven 2-space re-indentation.
+//! Pass 2 — token-driven 2-space re-indentation.
 
 use crate::lexer::{Lexer, Token};
 
 /// The open-construct stack: one entry per unclosed construct, holding the
-/// indent its *contents* get — the display indent of the line that opened it,
-/// plus one. Keying content indent to the opening line (rather than raw stack
-/// depth) makes several delimiters opened on one line (`column([`) indent
-/// their contents once, and their closers (`])`) realign with the opening
-/// line.
+/// column its *contents* get — the column the line that opened it is shown
+/// at, plus one step. Keying content to the opening line (rather than raw
+/// stack depth) makes several delimiters opened on one line (`column([`)
+/// indent their contents once, and a line of closers (`])`) realign with the
+/// line that opened its first closer's construct.
 ///
 /// Constructs and their closers: `end` closes fn/enum/class/if/for/while/match,
 /// block lambdas, and `when … do` arms; `)` `]` `}` close their delimiters;
 /// `</tag>` closes a JSX element's children. Closers just pop the innermost
 /// entry — lint runs on parseable source, so they always correspond.
-type OpenStack = Vec<usize>;
+///
+/// A construct that *hangs* ([`Hang`]) — `draw(a, b,` with `c)` wrapped
+/// below — is a visual continuation: the author lined the wrapped lines up
+/// under it by eye. Those lines keep their position relative to the opener's
+/// line, shifting only by however far that line moved, rather than being
+/// forced to the block indent, which would lose the alignment. So does a line
+/// that opens with a binary operator, relative to the statement it continues.
+type OpenStack = Vec<Open>;
+
+/// Columns per indent step.
+const INDENT: usize = 2;
+
+#[derive(Clone, Copy)]
+struct Open {
+    /// Column of the construct's contents.
+    content: usize,
+    /// Set when the construct *hangs* off its opening line.
+    hang: Option<Hang>,
+}
+
+/// A construct whose contents the author may have aligned by eye: a delimiter
+/// with contents on its own line, or an `if` that starts mid-line
+/// (`let y = if c then a` with `elsif`/`else` lined up below).
+#[derive(Clone, Copy)]
+struct Hang {
+    /// How many columns the opener's line moved.
+    shift: isize,
+    /// The opener line's new indent. A hanging line keeps its (shifted)
+    /// column only while it stays deeper than this.
+    floor: usize,
+}
+
+impl Open {
+    fn block(content: usize) -> Self {
+        Open {
+            content,
+            hang: None,
+        }
+    }
+}
+
+/// Can `t` open a line that continues the one above (`* (1.0 + k)`)?
+fn is_continuation_op(t: &Token) -> bool {
+    use Token::*;
+    matches!(
+        t,
+        Plus | Minus
+            | Star
+            | Slash
+            | Percent
+            | PlusPlus
+            | And
+            | Or
+            | DoubleQuestion
+            | Pipe
+            | Dot
+            | QuestionDot
+            | Eq
+            | Ne
+            | Lt
+            | Le
+            | Gt
+            | Ge
+    )
+}
 
 /// Re-indent `source` to 2-space indentation, trim trailing whitespace, and
 /// end with exactly one newline. Only whitespace outside tokens is touched;
@@ -21,6 +85,14 @@ type OpenStack = Vec<usize>;
 /// copied verbatim. Works from the token stream alone, so it needs the source
 /// to lex but not to parse.
 pub fn reindent(source: &str) -> Result<String, String> {
+    reindent_protected(source, &[])
+}
+
+/// [`reindent`], copying each line marked in `protected` (0-based) verbatim —
+/// the lines a `// petal-fmt-ignore` / `petal-fmt-off` comment fenced off.
+/// Their tokens still open and close constructs, so the lines after them
+/// indent as if the fence were not there.
+pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, String> {
     if source.is_empty() {
         return Ok(String::new());
     }
@@ -42,6 +114,9 @@ pub fn reindent(source: &str) -> Result<String, String> {
     lines.push((start, chars.len()));
 
     let mut stack: OpenStack = Vec::new();
+    // The most recent line that did not open with an operator: what a
+    // leading-operator continuation line hangs from.
+    let mut stmt = Hang { shift: 0, floor: 0 };
     // A `for`/`while` header's `do` belongs to the construct already opened at
     // the keyword; only a `do` with no pending header opens a block itself
     // (a `when … do` match arm).
@@ -56,20 +131,17 @@ pub fn reindent(source: &str) -> Result<String, String> {
 
     let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
     let mut ti = 0usize; // next token index
-    let mut covered_end = 0usize; // max token end seen so far
 
-    for &(ls, le) in &lines {
+    for (line_idx, &(ls, le)) in lines.iter().enumerate() {
         // Tokens starting on this line (the Newline terminator included).
         let first_ti = ti;
         while ti < tokens.len() && (spans[ti].start.offset as usize) <= le {
-            covered_end = covered_end.max(spans[ti].end.offset as usize);
             ti += 1;
         }
         let line_tokens = first_ti..ti;
 
         // A line beginning inside a token that started earlier (multi-line raw
-        // string, JSX text) is content, not layout — copy it verbatim. The
-        // check uses tokens *before* this line, so recompute from `ti` bounds.
+        // string, JSX text) is content, not layout — copy it verbatim.
         let starts_inside = spans[..first_ti]
             .iter()
             .any(|s| (s.start.offset as usize) < ls && (s.end.offset as usize) > ls);
@@ -92,10 +164,11 @@ pub fn reindent(source: &str) -> Result<String, String> {
             .clone()
             .any(|k| (spans[k].end.offset as usize) > le + 1);
 
-        // Display indent. A line opening no new construct sits at the
-        // innermost open construct's content indent. A run of closers at the
-        // start of the line realigns with the line that opened the outermost
-        // construct the run closes; `else`/`elsif` realign with their `if`.
+        // Display indent, in columns. A line opening no new construct sits at
+        // the innermost open construct's content column. A run of closers at
+        // the start of the line realigns with the line that opened the
+        // construct its first closer closes; `else`/`elsif` realign with
+        // their `if`.
         let sig: Vec<usize> = line_tokens
             .clone()
             .filter(|&k| !matches!(tokens[k], Token::Newline | Token::Eof))
@@ -118,24 +191,47 @@ pub fn reindent(source: &str) -> Result<String, String> {
                 _ => break,
             }
         }
-        let indent = if dedent > 0 {
-            // Align with the opener of the outermost construct the run closes.
-            stack
-                .len()
-                .checked_sub(dedent)
-                .and_then(|i| stack.get(i))
-                .map_or(0, |content| content.saturating_sub(1))
-        } else if matches!(
+        let leads_with_else = matches!(
             sig.first().map(|&k| &tokens[k]),
             Some(Token::Else | Token::Elsif)
-        ) {
-            stack.last().map_or(0, |content| content.saturating_sub(1))
+        );
+        // The construct this line's column is judged against, and the column
+        // the block rule gives it.
+        let (governing, block_cols) = if dedent > 0 || leads_with_else {
+            let open = stack.last();
+            (open, open.map_or(0, |o| o.content.saturating_sub(INDENT)))
         } else {
-            stack.last().copied().unwrap_or(0)
+            let open = stack.last();
+            (open, open.map_or(0, |o| o.content))
         };
+        let old_cols = ws_end - ls;
+        // A hanging continuation keeps its column, moved with the line it
+        // hangs from, as long as it still sits deeper than that line.
+        let keep = |shift: isize, floor: usize| {
+            let cols = old_cols as isize + shift;
+            (cols > floor as isize).then_some(cols as usize)
+        };
+        let leads_with_op = sig.first().is_some_and(|&k| is_continuation_op(&tokens[k]));
+        let visual_cols = match governing {
+            Some(Open { hang: Some(h), .. }) => keep(h.shift, h.floor),
+            _ if leads_with_op && dedent == 0 => keep(stmt.shift, stmt.floor.saturating_sub(1)),
+            _ => None,
+        };
+        let new_cols = visual_cols.unwrap_or(block_cols);
+        let verbatim = starts_inside
+            || token_in_leading_ws
+            || protected.get(line_idx).copied().unwrap_or(false);
+        let shown_cols = if verbatim { old_cols } else { new_cols };
+        let this_line = Hang {
+            shift: shown_cols as isize - old_cols as isize,
+            floor: shown_cols,
+        };
+        if !sig.is_empty() && !leads_with_op {
+            stmt = this_line;
+        }
 
         // Render the line.
-        if starts_inside || token_in_leading_ws {
+        if verbatim {
             out_lines.push(chars[ls..le].iter().collect());
         } else {
             let mut content_end = le;
@@ -147,16 +243,17 @@ pub fn reindent(source: &str) -> Result<String, String> {
             if content_end == ws_end {
                 out_lines.push(String::new()); // blank line
             } else {
-                let mut line = "  ".repeat(indent);
+                let mut line = " ".repeat(new_cols);
                 line.extend(chars[ws_end..content_end].iter());
                 out_lines.push(line);
             }
         }
 
-        // Update depth with this line's tokens (done for every line — a
+        // Update the stack with this line's tokens (done for every line — a
         // verbatim line can still contain tokens that open or close blocks).
-        // Constructs opened on this line indent their contents one past this
-        // line's own indent, however many of them open here.
+        // Constructs opened on this line indent their contents one step past
+        // the column this line is shown at, however many of them open here.
+        let content = shown_cols + INDENT;
         for k in line_tokens {
             match &tokens[k] {
                 Token::Newline => when_header = false,
@@ -167,33 +264,45 @@ pub fn reindent(source: &str) -> Result<String, String> {
                     if pending_do {
                         pending_do = false;
                     } else {
-                        stack.push(indent + 1); // `when … do` arm body
+                        stack.push(Open::block(content)); // `when … do` arm body
                     }
                 }
                 Token::For | Token::While => {
                     pending_do = true;
-                    stack.push(indent + 1);
+                    stack.push(Open::block(content));
                 }
                 Token::If => {
                     if !when_header {
-                        stack.push(indent + 1);
+                        let mid_line = sig.first() != Some(&k);
+                        stack.push(Open {
+                            content,
+                            hang: mid_line.then_some(this_line),
+                        });
                     }
                 }
-                Token::Match | Token::Enum => stack.push(indent + 1),
+                Token::Match | Token::Enum => stack.push(Open::block(content)),
                 // `class Name … end` — contextual, so it arrives as an
                 // identifier; only the declaration form (a name follows) opens
                 // a block, never a variable or a JSX `class=` attribute.
                 Token::Ident(w) if w == crate::parse::CLASS_KEYWORD => {
                     if matches!(tokens.get(k + 1), Some(Token::Ident(_))) {
-                        stack.push(indent + 1);
+                        stack.push(Open::block(content));
                     }
                 }
                 Token::Fn => {
                     if fn_takes_end(tokens, k) {
-                        stack.push(indent + 1);
+                        stack.push(Open::block(content));
                     }
                 }
-                Token::LParen | Token::LBracket | Token::LBrace => stack.push(indent + 1),
+                Token::LParen | Token::LBracket | Token::LBrace => {
+                    let hanging =
+                        !matches!(tokens.get(k + 1), Some(Token::Newline | Token::Eof) | None)
+                            && spans[k + 1].start.line == spans[k].start.line;
+                    stack.push(Open {
+                        content,
+                        hang: hanging.then_some(this_line),
+                    });
+                }
                 Token::End | Token::RParen | Token::RBracket | Token::RBrace => {
                     stack.pop();
                 }
@@ -204,7 +313,7 @@ pub fn reindent(source: &str) -> Result<String, String> {
                 Token::Gt => {
                     if open_tags.last() == Some(&stack.len()) {
                         open_tags.pop();
-                        stack.push(indent + 1); // children until `</tag>`
+                        stack.push(Open::block(content)); // children until `</tag>`
                     }
                 }
                 Token::JsxCloseStart => {
@@ -316,6 +425,27 @@ mod tests {
             out,
             "let xs = [\n  1,\n  2\n]\nlet r = {\n  a: 1,\n  b: 2\n}\n"
         );
+    }
+
+    #[test]
+    fn hanging_continuations_keep_their_alignment() {
+        let src = "  synth({wave: \"sine\", freq: 1.0,\n         decay: 0.1})\nlet a = 1\n";
+        assert_eq!(
+            reindent(src).unwrap(),
+            "synth({wave: \"sine\", freq: 1.0,\n       decay: 0.1})\nlet a = 1\n"
+        );
+        // Aligned under the first element of a bracket that opens a line.
+        let first = "let xs = [\n  {a: 1,\n   b: 2},\n]\n";
+        assert_eq!(reindent(first).unwrap(), first);
+        // A mid-line `if` whose arms are lined up under it.
+        let arms = "let y = if a then 1\n        elsif b then 2\n        else 3 end\n";
+        assert_eq!(reindent(arms).unwrap(), arms);
+        // A leading-operator continuation lined up under the right-hand side.
+        let cont = "  let s = a * b\n          * c\n";
+        assert_eq!(reindent(cont).unwrap(), "let s = a * b\n        * c\n");
+        // Shallower than the block indent: the block indent wins.
+        let shallow = "f(a,\nb)\n";
+        assert_eq!(reindent(shallow).unwrap(), "f(a,\n  b)\n");
     }
 
     #[test]

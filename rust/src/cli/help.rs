@@ -28,9 +28,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
     (
         "tidy and compare source",
         &[
-            ("lint", "Report the source normalization a file needs"),
+            ("fmt", "Rewrite files in the canonical layout"),
+            ("lint", "Report code that has a better spelling, and fix it"),
             ("suggest", "Propose type annotations the program already implies"),
-            ("lint-fix", "Apply the lint rewrite to a file in place"),
+            ("lint-fix", "The same as 'lint --fix'"),
             ("ir-equal", "Compare two files' compiled IR for equivalence"),
         ],
     ),
@@ -116,6 +117,7 @@ fn page(name: &str) -> Option<&'static str> {
     Some(match name {
         "run" => RUN,
         "check" => CHECK,
+        "fmt" => FMT,
         "lint" => LINT,
         "suggest" => SUGGEST,
         "lint-fix" => LINT_FIX,
@@ -290,43 +292,129 @@ SEE ALSO
        petal help run, petal help lint
 ";
 
-const LINT: &str = "\
+const FMT: &str = "\
 NAME
-       petal-lint - Report the source normalization a file needs
+       petal-fmt - Rewrite files in the canonical layout
 
 SYNOPSIS
-       petal lint [--fix | --check] [--verify[=ir|strict]] <file>
+       petal fmt [--check] [--diff] [<path>...]
+       petal fmt -e <code>
+       petal fmt -
+
+DESCRIPTION
+       Formats every .ptl file under the given paths (directories are
+       searched recursively, skipping dot-directories, node_modules and
+       target; the default is the current directory) and rewrites them in
+       place. There are no style options: one layout, like gofmt.
+
+       What it changes is whitespace only: indentation (2 spaces per open
+       construct), spacing within a line (one space around binary operators
+       and after commas and colons, none inside brackets or before commas),
+       trailing whitespace, runs of blank lines (at most one), and the final
+       newline. It never wraps lines, reorders code, or touches the inside of
+       strings or JSX text. Choices about which code to write belong to
+       'petal lint'.
+
+       Alignment is kept. A run of spaces that lines a token up with one on
+       the line above or below (a table of records, a column of =), a
+       repeated double space that groups arguments, a trailing comment's
+       column, and a continuation line lined up under its open bracket all
+       survive, moving only as far as the code they hang from moves.
+
+       Every result is checked before it is written: the formatted text must
+       lex to exactly the original tokens. A file that does not parse is
+       reported and left alone.
+
+       To keep lines exactly as written, put '// petal-fmt-ignore' on the
+       line before one line, or wrap a region in '// petal-fmt-off' and
+       '// petal-fmt-on'. '// petal-fmt-ignore-file' anywhere in a file skips
+       the whole file.
+
+OPTIONS
+       --check
+              Write nothing; list the files that would change and exit 1 if
+              there are any. For CI.
+
+       --diff, -d
+              Write nothing; print a unified diff of what would change. Exits
+              1 if anything would.
+
+       -e <code>
+              Format inline code and print the result.
+
+       -      Read source from stdin and print the result.
+
+SEE ALSO
+       petal help lint
+";
+
+const LINT: &str = "\
+NAME
+       petal-lint - Report code that has a better spelling, and fix it
+
+SYNOPSIS
+       petal lint [--fix [--verify[=ir|strict]]] [--json]
+                  [--rules-include=<rules>] [--rules-exclude=<rules>] [<path>...]
+       petal lint --rules
        petal lint [<options>] -e <code>
 
 DESCRIPTION
-       Normalizes source: 2-space indentation, and semantic tidying such as
-       dropping identity casts like int(n) where n is already an int. With
-       no option it reports the change and exits 1 if one is needed. With
-       -e it prints the linted code to stdout.
+       Runs named rules over every .ptl file under the given paths (the
+       default is the current directory) and prints one line per finding:
+
+              file:line:column: rule: message
+
+       and exits 1 if there are any. Every rule carries a fix, and --fix
+       applies them in place; a fixed file is then formatted with
+       'petal fmt', since a rewrite can move code between lines. Layout is
+       not lint's business: an unformatted file with no findings is clean.
+
+       Each fix is gated: if the file compiled before, it must compile after,
+       or nothing is written.
+
+       Rules (see 'petal lint --rules'):
+
+       prefer-let
+              a var that no nested function shares becomes a let
+       no-redundant-cast
+              int(n), float(x) or str(s) on a value already of that type
+       prefer-match
+              an if/elsif chain testing one value against literals becomes
+              a match
+       prefer-compound-assign
+              x = x + e becomes x += e
+
+       To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
+       the line before the finding or at the end of its line; with no rule
+       names it silences them all. '// petal-lint-ignore-file [<rule>...]'
+       does the same for a whole file. Text after '--' is a reason. A
+       silenced finding's fix is not applied.
 
 OPTIONS
-       --fix  Rewrite the file in place. 'petal lint-fix' is the same thing
-              under its own name.
-
-       --check
-              CI mode: exit 0 or 1 with no output on success.
+       --fix  Apply the fixes in place. With -e, print the fixed code.
 
        --verify[=ir|strict]
               Prove the rewrite before writing it, by compiling both sides
-              and comparing their IR. Not provably equal means no write and
-              exit 3.
+              and comparing their IR. Not provably acceptable means no write
+              and exit 3. --verify=ir (the default) accepts the rules that
+              change the IR by design and proves the rest; --verify=strict
+              demands IR equality of the whole rewrite.
 
-              --verify=ir (the default) accepts the semantic passes
-              (identity casts, if-chain to match) as expected-to-differ and
-              proves only the formatting pass.
+       --json Print the findings as a JSON array of objects with file, line,
+              column, rule, message and fixed.
 
-              --verify=strict demands IR equality of the whole rewrite, so a
-              file with a semantic rewrite pending exits 3 and needs a
-              run-diff instead.
+       --rules
+              List the rules and exit.
+
+       --rules-include=<rule>,...
+              Run only these rules.
+
+       --rules-exclude=<rule>,...
+              Run every rule but these.
 
 {COMMON}
 SEE ALSO
-       petal help lint-fix, petal help ir-equal
+       petal help fmt, petal help ir-equal
 ";
 
 const SUGGEST: &str = "\
@@ -386,18 +474,15 @@ SEE ALSO
 
 const LINT_FIX: &str = "\
 NAME
-       petal-lint-fix - Apply the lint rewrite to a file in place
+       petal-lint-fix - The same as 'lint --fix'
 
 SYNOPSIS
-       petal lint-fix <file>
+       petal lint-fix [<options>] [<path>...]
 
 DESCRIPTION
-       The same as 'petal lint --fix <file>', under its own name because
-       rewriting the file is what most callers want and a flag is easy to
-       forget. Makes no change if the file fails to parse.
-
-       It takes a single path and no options: there is no file to rewrite
-       for inline -e code.
+       The same as 'petal lint --fix', under its own name because fixing the
+       files is what most callers want and a flag is easy to forget. Takes
+       every option 'petal lint' does.
 
 SEE ALSO
        petal help lint
@@ -848,6 +933,7 @@ mod tests {
     const ALL_PAGES: &[&str] = &[
         "run",
         "check",
+        "fmt",
         "lint",
         "lint-fix",
         "ir-equal",

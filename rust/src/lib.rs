@@ -32,6 +32,7 @@ pub mod ir_equiv;
 pub mod ir_serialize;
 pub mod ir_validate;
 pub mod lexer;
+pub mod fmt;
 pub mod lint;
 pub mod lsp;
 pub mod memo;

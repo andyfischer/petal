@@ -148,7 +148,7 @@ describe("a selective import list may wrap across lines", () => {
 
   it("a wrapped import survives a format round-trip", () => {
     const src = "import palette: colors,\n                brighten\nprint(brighten(colors.fg))\n";
-    const r = petalCapture(["lint", "-e", src]);
+    const r = petalCapture(["fmt", "-e", src]);
     if (r.code !== 0) throw new Error(r.stderr);
     const formatted = r.stdout;
     const again = petalCapture(["run", "-e", formatted, "-I", FIXTURES]);

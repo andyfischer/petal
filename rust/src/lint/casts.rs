@@ -11,22 +11,58 @@
 
 use crate::typecheck::{CastSlot, RedundantCast};
 
+use super::Fix;
+use super::to_match::Splice;
+
 /// One accepted rewrite, as the two char ranges to replace: the call's head
 /// `int(` becomes `` or `(`, and its tail `)` becomes `` or `)`.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct CastEdit {
+struct CastEdit {
     head: (usize, usize),
     tail: (usize, usize),
     keep_parens: bool,
 }
 
-/// Turn the checker's reports into edits, dropping any whose spans don't match
+/// Turn the checker's reports into fixes, dropping any whose spans don't match
 /// the source text they claim to cover.
-pub(super) fn plan_cast_edits(casts: &[RedundantCast], chars: &[char]) -> Vec<CastEdit> {
-    casts
+pub(super) fn plan_cast_fixes(casts: &[RedundantCast], chars: &[char]) -> Vec<Fix> {
+    let mut fixes: Vec<Fix> = casts
         .iter()
-        .filter_map(|c| plan_one(c, chars))
-        .collect::<Vec<_>>()
+        .filter_map(|c| {
+            let edit = plan_one(c, chars)?;
+            let (open, close) = if edit.keep_parens {
+                ("(", ")")
+            } else {
+                ("", "")
+            };
+            let kind = match c.name {
+                "int" => "an int",
+                "float" => "a float",
+                _ => "a string",
+            };
+            Some(Fix {
+                anchor: edit.head.0,
+                message: format!(
+                    "`{}(…)` does nothing here: its argument is already {kind}",
+                    c.name
+                ),
+                splices: vec![
+                    Splice {
+                        start: edit.head.0,
+                        end: edit.head.1,
+                        text: open.to_string(),
+                    },
+                    Splice {
+                        start: edit.tail.0,
+                        end: edit.tail.1,
+                        text: close.to_string(),
+                    },
+                ],
+            })
+        })
+        .collect();
+    fixes.sort_by_key(|f| f.anchor);
+    fixes
 }
 
 fn plan_one(cast: &RedundantCast, chars: &[char]) -> Option<CastEdit> {
@@ -73,21 +109,4 @@ fn plan_one(cast: &RedundantCast, chars: &[char]) -> Option<CastEdit> {
         tail: (arg_end, call_end),
         keep_parens,
     })
-}
-
-/// Apply the edits, highest offset first so earlier positions stay valid.
-/// Nested casts (`int(int(n))`) produce disjoint ranges and both apply.
-pub(super) fn apply_cast_edits(chars: &[char], edits: &[CastEdit]) -> String {
-    let mut splices: Vec<(usize, usize, &str)> = Vec::with_capacity(edits.len() * 2);
-    for e in edits {
-        let (open, close) = if e.keep_parens { ("(", ")") } else { ("", "") };
-        splices.push((e.head.0, e.head.1, open));
-        splices.push((e.tail.0, e.tail.1, close));
-    }
-    splices.sort_by_key(|&(start, _, _)| std::cmp::Reverse(start));
-    let mut out: Vec<char> = chars.to_vec();
-    for (start, end, text) in splices {
-        out.splice(start..end, text.chars());
-    }
-    out.into_iter().collect()
 }

@@ -22,10 +22,11 @@ fn collect_ptl(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path
-                .file_name()
-                .is_some_and(|n| n == "node_modules" || n == "target")
-            {
+            // Dot-directories are scratch (`.temp/` holds whole copies of the
+            // tree from verify runs), not the corpus.
+            if path.file_name().is_some_and(|n| {
+                n == "node_modules" || n == "target" || n.to_string_lossy().starts_with('.')
+            }) {
                 continue;
             }
             collect_ptl(&path, out);

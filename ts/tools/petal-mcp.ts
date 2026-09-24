@@ -138,12 +138,15 @@ server.registerTool("ExplainTerm", {
 server.registerTool("CheckSnippet", {
   title: "Check Petal Snippet",
   description:
-    "Lex+parse+compile a Petal snippet without running it. On success returns " +
-    "{ok: true, warnings: [...]} where each warning is a non-fatal type-checker " +
-    "diagnostic {message, line, column, file} (e.g. a declared/inferred type " +
-    "mismatch or unknown type name); on failure a structured error with " +
-    "phase/line/column. Warnings never fail the check. Cheaper than TestSnippet " +
-    "for validating syntax and type annotations.",
+    "Lex+parse+compile a Petal snippet without running it. Returns " +
+    "{ok, warnings: [...]} where each entry is a checker diagnostic " +
+    "{message, severity, line, column, file}. severity \"warning\" is advice " +
+    "(a declared/inferred type mismatch, an unknown type name) and never fails " +
+    "the check; severity \"error\" is a line that fails whenever it runs (an " +
+    "unknown function or variable, a call no overload's arity accepts) and makes " +
+    "ok false. The names known are core builtins plus petal-ui. A program that " +
+    "does not compile returns a structured error with phase/line/column instead. " +
+    "Cheaper than TestSnippet for validating syntax and type annotations.",
   inputSchema: {
     code: z.string().describe("The Petal source code to validate"),
   },

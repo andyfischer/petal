@@ -757,8 +757,9 @@ fn warning_position(program: &Program, span: &crate::source_map::SourceSpan) -> 
     }
 }
 
-/// Render a program's type-checker warnings as human-readable text (for
-/// stderr). Each diagnostic becomes a `warning:` line, a ` --> <position>`
+/// Render a program's type-checker diagnostics as human-readable text (for
+/// stderr). Each diagnostic becomes a `warning:` or `error:` line (its
+/// [`Severity`](crate::diagnostic::Severity)), a ` --> <position>`
 /// line, and (when a real span + source exist) a caret snippet.
 ///
 /// Under `--error-format bare` the position line and the snippet are dropped,
@@ -769,7 +770,7 @@ fn render_warnings_text(program: &Program) -> String {
     let bare = super::bare_errors();
     let mut out = String::new();
     for d in &program.warnings {
-        out.push_str(&format!("warning: {}\n", d.message));
+        out.push_str(&format!("{}: {}\n", d.severity.label(), d.message));
         if bare {
             continue;
         }
@@ -796,8 +797,9 @@ fn eprint_warnings(program: &Program) {
     }
 }
 
-/// Build the JSON array of a program's warnings: one object per diagnostic with
-/// `message`, `line`, `column`, and `file` (null for the entry file).
+/// Build the JSON array of a program's diagnostics: one object per diagnostic
+/// with `message`, `severity` (`"warning"` or `"error"`), `line`, `column`,
+/// and `file` (null for the entry file).
 fn warnings_json(program: &Program) -> serde_json::Value {
     let items: Vec<serde_json::Value> = program
         .warnings
@@ -806,6 +808,7 @@ fn warnings_json(program: &Program) -> serde_json::Value {
             let file = program.source_map.file_name_for_span(&d.span);
             serde_json::json!({
                 "message": d.message,
+                "severity": d.severity.label(),
                 "line": d.span.start.line,
                 "column": d.span.start.column,
                 "file": file,
@@ -818,6 +821,7 @@ fn warnings_json(program: &Program) -> serde_json::Value {
 pub(super) fn handle_check(
     json: bool,
     strict: bool,
+    lenient: bool,
     ir: bool,
     host: crate::typecheck::globals::HostProfile,
     natives: &[String],
@@ -865,6 +869,7 @@ pub(super) fn handle_check(
         .get_program(pid)
         .filter(|_| check_globals)
         .map(|p| globals::unresolved_globals(p, |n| env.has_native(n), &host_natives));
+    let unresolved_count = unresolved.as_ref().map_or(0, Vec::len);
     if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {
         p.warnings.extend(diags);
     }
@@ -888,11 +893,15 @@ pub(super) fn handle_check(
         die_with(json, &e, "lower", warnings_json(program));
     }
     let warning_count = program.map_or(0, |p| p.warnings.len());
+    let error_count = program.map_or(0, |p| p.warnings.iter().filter(|d| d.is_error()).count());
+    // A checker error is a line that fails whenever it runs, so the program
+    // does not pass `check` — unless `--lenient` asks only "does it compile?".
+    let failed = error_count > 0 && !lenient;
     if json {
         let warnings = program
             .map(warnings_json)
             .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
-        let mut obj = serde_json::json!({ "ok": true, "warnings": warnings });
+        let mut obj = serde_json::json!({ "ok": !failed, "warnings": warnings });
         if is_empty {
             obj["warning"] = serde_json::json!("empty program");
         }
@@ -904,11 +913,28 @@ pub(super) fn handle_check(
         if is_empty {
             eprintln!("warning: empty program");
         }
+        // An unknown name is only unknown to the host profile `check` used,
+        // so say which one, and how to name the real host.
+        if check_globals && unresolved_count > 0 {
+            eprintln!(
+                "note: names were checked against `--host {}`; if your host provides them, \
+                 pass its profile (`--host core|ui|garden|garden-config|sdl`) or name them \
+                 with `--native a,b`",
+                host.name()
+            );
+        }
+        if error_count > 0 {
+            eprintln!(
+                "{} error{} found by check",
+                error_count,
+                if error_count == 1 { "" } else { "s" }
+            );
+        }
         // Otherwise silent on success, like most linters
     }
-    // `--strict` turns warnings into a non-zero exit (for CI); plain
-    // `check` always succeeds. Output above is unchanged either way.
-    if strict && warning_count > 0 {
+    // Checker errors fail `check`; `--strict` extends that to warnings (for
+    // CI). Output above is unchanged either way.
+    if failed || (strict && warning_count > 0) {
         process::exit(1);
     }
 }

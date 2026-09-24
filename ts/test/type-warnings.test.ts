@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   checkJson,
+  checkJsonAllowFail,
   checkText,
   checkStrict,
   runWithStderr,
@@ -275,10 +276,13 @@ describe("calls through a function-valued binding", () => {
 // overloads by arity (docs/function-overloading.md): the call is wrong only
 // when *no* declared arity matches.
 describe("statically-known arity errors", () => {
-  it("warns on a call no overload can take, which `run` rejects outright", () => {
-    const out = checkJson("fn f(a, b)\n  a\nend\nprint(f(1))");
-    expect(out.ok).toBe(true);
+  it("errors on a call no overload can take, which `run` rejects outright", () => {
+    const out = checkJsonAllowFail("fn f(a, b)\n  a\nend\nprint(f(1))");
+    // An error, not a warning: the call fails whenever it runs, so `check`
+    // fails without `--strict`.
+    expect(out.ok).toBe(false);
     expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].severity).toBe("error");
     expect(out.warnings[0].message).toBe("`f` expects 2 arguments, got 1");
     const { stderr } = runWithStderr("fn f(a, b)\n  a\nend\nprint(f(1))");
     expect(stderr).toMatch(/f\(\) expects 2 arguments, got 1/);
@@ -287,13 +291,13 @@ describe("statically-known arity errors", () => {
   it("accepts any declared arity and names them all when none matches", () => {
     const overloads = "fn f(a)\n  a\nend\nfn f(a, b)\n  b\nend\n";
     expect(checkJson(`${overloads}print(f(1))\nprint(f(1, 2))`).warnings).toEqual([]);
-    const out = checkJson(`${overloads}print(f(1, 2, 3))`);
+    const out = checkJsonAllowFail(`${overloads}print(f(1, 2, 3))`);
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toBe("`f` expects 1 or 2 arguments, got 3");
   });
 
   it("counts a lambda binding's parameters too", () => {
-    const out = checkJson("let f = fn(a) -> a\nprint(f(1, 2))");
+    const out = checkJsonAllowFail("let f = fn(a) -> a\nprint(f(1, 2))");
     expect(out.warnings).toHaveLength(1);
     expect(out.warnings[0].message).toBe("`f` expects 1 argument, got 2");
   });

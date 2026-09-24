@@ -1262,7 +1262,7 @@ impl Compiler {
     /// warning rides along on the compiled program, like the type checker's.
     pub(super) fn warn_at(&mut self, span: SourceSpan, message: String) {
         self.warnings
-            .push(crate::diagnostic::Diagnostic { span, message });
+            .push(crate::diagnostic::Diagnostic::new(span, message));
     }
 
     /// Record a fatal compile error at `span`. Compilation continues so a
@@ -1270,7 +1270,7 @@ impl Compiler {
     pub(super) fn error_at(&mut self, span: SourceSpan, message: String) {
         let file = self.error_file.clone();
         self.errors
-            .push((crate::diagnostic::Diagnostic { span, message }, file));
+            .push((crate::diagnostic::Diagnostic::new(span, message), file));
     }
 
     // -----------------------------------------------------------------------
@@ -2051,15 +2051,15 @@ fn late_declaration_warnings(
             {
                 self.out.push((
                     name.clone(),
-                    crate::diagnostic::Diagnostic {
-                        span: function.span,
-                        message: format!(
+                    crate::diagnostic::Diagnostic::new(
+                        function.span,
+                        format!(
                             "call to `{name}` before its declaration, which is further down \
                              this file and cannot be hoisted: its body reads a value the file \
                              computes at run time, so at this point `{name}` is still nil. \
                              Move this call below the declaration of `{name}`."
                         ),
-                    },
+                    ),
                 ));
             }
             crate::ast::walk_expr(self, e);
@@ -2229,7 +2229,7 @@ pub fn collect_classes(
 ) -> Vec<crate::diagnostic::Diagnostic> {
     let mut diags = Vec::new();
     let mut err = |span: SourceSpan, message: String| {
-        diags.push(crate::diagnostic::Diagnostic { span, message });
+        diags.push(crate::diagnostic::Diagnostic::new(span, message));
     };
 
     // A `class` is a top-level declaration, so a nested one is rejected before

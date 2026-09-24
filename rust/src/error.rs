@@ -302,14 +302,8 @@ mod tests {
     #[test]
     fn display_matches_the_old_compiler_join() {
         let diags = vec![
-            Diagnostic {
-                span: span(4, 5),
-                message: "`x` is bound outside this function".to_string(),
-            },
-            Diagnostic {
-                span: span(5, 5),
-                message: "`y` is bound outside this function".to_string(),
-            },
+            Diagnostic::new(span(4, 5), "`x` is bound outside this function".to_string()),
+            Diagnostic::new(span(5, 5), "`y` is bound outside this function".to_string()),
         ];
         let expected = diags
             .iter()

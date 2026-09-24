@@ -43,8 +43,8 @@ petal check app.ptl    # fast: compiles + type-checks, never runs. Do this first
 petal run app.ptl      # then run it
 ```
 
-`check` is much cheaper than `run` and catches syntax errors, arity errors, type
-mismatches and a few lints. Reach for it after every edit; `run` only when you
+`check` is much cheaper than `run` and catches syntax errors, misspelled names,
+arity errors, type mismatches and a few lints. Reach for it after every edit; `run` only when you
 want output. More on the tooling in [§10](#10-the-tooling).
 
 ---
@@ -786,19 +786,24 @@ Using it beats reading your own code back to yourself.
 ### `petal check` — your fastest feedback
 
 ```bash
-petal check app.ptl              # compile + type-check, don't run. exit 0/1
-petal check --strict app.ptl     # warnings become a non-zero exit — use in CI
+petal check app.ptl              # compile + type-check, don't run. exit 1 on any error
+petal check --strict app.ptl     # warnings fail it too — use in CI
 petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structured error
 ```
 
-Warnings are non-fatal by design: mismatched annotations, arity errors, unknown
-type names, a discarded pure call, a function capturing a module `state` that is
-rebound below it. `--strict` is what you want in CI.
+`check` sorts what it finds into errors and warnings. An **error** is a line
+that fails whenever it runs, and `check` exits 1 on it: a call to, or read of, a
+name nothing defines (it would fail with `Unknown builtin` or
+`Undefined variable`), a call whose argument count no overload accepts, and a
+named argument no parameter has.
 
-`check` also reports a call to, or read of, a name nothing defines — it would
-fail with `Unknown builtin` or `Undefined variable` the moment the line ran — a
-builtin handed a type it refuses (`sqrt("x")`), and a call whose argument count
-picks an overload whose body cannot take those arguments. What counts as
+**Warnings** are advice, and exit 0 unless you pass `--strict`: mismatched
+annotations, unknown type names, a builtin handed a type it refuses
+(`sqrt("x")`), a call whose argument count picks an overload whose body cannot
+take those arguments, a discarded pure call, a function capturing a module
+`state` that is rebound below it. `--strict` is what you want in CI.
+
+What counts as
 defined depends on the host: `--host ui` (the default) is the core builtins,
 the petal-ui natives and the `ui` prelude; `--host garden` adds Garden's panel
 and config natives and the packages Garden registers (`bloom`,
@@ -924,8 +929,9 @@ binary automatically. See [dev/mcp-server.md](dev/mcp-server.md).
 
 When a program does the wrong thing:
 
-1. **`petal check --strict f.ptl`** — clear the warnings first. An arity or type
-   warning is frequently the actual bug, reported before you ran anything.
+1. **`petal check --strict f.ptl`** — clear the errors and warnings first. An
+   arity error or a type warning is frequently the actual bug, reported before
+   you ran anything.
 2. **`petal run --observe f.ptl`** — look at what everything actually held. The
    dump survives a crash, so this works on failing runs too.
 3. **`petal explain --term <the wrong value> f.ptl`** — walk back to where the

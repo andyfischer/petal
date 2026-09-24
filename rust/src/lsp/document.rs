@@ -122,7 +122,14 @@ pub fn analyze(source: &str) -> Analysis {
             .map(|p| {
                 p.warnings
                     .iter()
-                    .map(|w| petal_diagnostic_to_lsp(w, lsp_types::DiagnosticSeverity::Warning))
+                    .map(|w| {
+                        let severity = if w.is_error() {
+                            lsp_types::DiagnosticSeverity::Error
+                        } else {
+                            lsp_types::DiagnosticSeverity::Warning
+                        };
+                        petal_diagnostic_to_lsp(w, severity)
+                    })
                     .collect()
             })
             .unwrap_or_default(),

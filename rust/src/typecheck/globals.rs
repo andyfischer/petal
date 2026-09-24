@@ -211,6 +211,17 @@ impl HostProfile {
         }
     }
 
+    /// The canonical `--host` value for this profile.
+    pub fn name(self) -> &'static str {
+        match self {
+            HostProfile::Core => "core",
+            HostProfile::Ui => "ui",
+            HostProfile::Garden => "garden",
+            HostProfile::Sdl => "sdl",
+            HostProfile::GardenConfig => "garden-config",
+        }
+    }
+
     /// Whether this host imports the petal-ui `ui` prelude implicitly.
     pub fn uses_ui_prelude(self) -> bool {
         !matches!(self, HostProfile::Core | HostProfile::GardenConfig)
@@ -249,7 +260,9 @@ pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
 /// term under a table that lacks it, which is why reads are filtered by the
 /// host set too.
 ///
-/// One diagnostic per source position, in term order.
+/// One diagnostic per source position, in term order. Each is an error
+/// ([`Severity::Error`](crate::diagnostic::Severity::Error)): the line fails
+/// whenever it runs, so `check` fails on it without `--strict`.
 pub fn unresolved_globals(
     program: &Program,
     is_native: impl Fn(&str) -> bool,
@@ -303,10 +316,7 @@ pub fn unresolved_globals(
             span.start.column,
             message.clone(),
         )) {
-            out.push(Diagnostic {
-                span: *span,
-                message,
-            });
+            out.push(Diagnostic::error(*span, message));
         }
     }
     out

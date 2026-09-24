@@ -121,8 +121,12 @@ pub enum Command {
     Check {
         json: bool,
         /// Exit non-zero when type-checker warnings exist (for CI). Plain
-        /// `check` always exits 0.
+        /// `check` exits non-zero only for checker errors.
         strict: bool,
+        /// Exit 0 despite checker errors: only a program that fails to
+        /// compile or lower fails. For tools that ask "does it compile?"
+        /// about a script written for a host `--host` cannot name.
+        lenient: bool,
         /// Load the input as JSON IR (`show-ir --json` output) instead of
         /// source, then check it lowers — same flag as `run --ir`.
         ir: bool,
@@ -458,6 +462,7 @@ pub fn execute(cli: CliArgs) {
         Command::Check {
             json,
             strict,
+            lenient,
             ir,
             error_format,
             host,
@@ -467,6 +472,7 @@ pub fn execute(cli: CliArgs) {
             handlers::handle_check(
                 json,
                 strict,
+                lenient,
                 ir,
                 host,
                 &natives,

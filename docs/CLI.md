@@ -146,23 +146,36 @@ Tracing and inspection options:
 ### `check` — Compile without running
 
 ```
-petal check [--json] [--strict] [--ir] [--error-format full|bare] <file.ptl>
-petal check [--json] [--strict] [--error-format full|bare] -e '<code>'
+petal check [--json] [--strict | --lenient] [--ir] [--host <profile>] [--native <names>] [--error-format full|bare] <file.ptl>
+petal check [--json] [--strict | --lenient] [--host <profile>] [--native <names>] [--error-format full|bare] -e '<code>'
 ```
 
-Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 0
-when all of that succeeds and 1 when it does not. This is the cheap gate for
-editors and CI.
+Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 1
+when any of that fails, or when the checker finds an **error**: a line that
+fails whenever it runs (see [Errors and warnings](#errors-and-warnings)).
+Exits 0 otherwise. This is the cheap gate for editors and CI.
 
 Options:
 
-- `--json` — emit errors and warnings as JSON. On success:
-  `{"ok": true, "warnings": [...]}`, each warning
-  `{message, line, column, file}` (`file` is `null` for the entry file). On a
-  hard failure: `{message, line, column, phase, errors, ...}` — see
+- `--json` — emit errors and warnings as JSON. When the program compiles:
+  `{"ok": <bool>, "warnings": [...]}`, each entry
+  `{message, severity, line, column, file}` — `severity` is `"warning"` or
+  `"error"`, `ok` is `false` when any entry is an error, and `file` is `null`
+  for the entry file. When it does not compile:
+  `{message, line, column, phase, errors, ...}` — see
   [Error phases](#error-phases).
-- `--strict` — exit 1 when there are warnings. Plain `check` exits 0 for a
+- `--strict` — exit 1 when there are warnings too. Plain `check` exits 0 for a
   program that only has warnings.
+- `--lenient` — report checker errors but exit 0 unless the program fails to
+  compile or lower. For a sweep that only asks "does this compile?" over
+  scripts written for several hosts.
+- `--host core|ui|garden|garden-config|sdl` — the host the script runs in,
+  which decides which names exist beyond the core builtins. `ui` (the
+  default) is the core builtins, the petal-ui natives and the `ui` prelude;
+  `garden` adds Garden's panel natives and the packages Garden registers;
+  `garden-config` is Garden's config host (`init.ptl`, layout scripts);
+  `sdl` is petal-desktop-sdl's; `core` is the core builtins alone.
+- `--native a,b` — names your own host registers, on top of `--host`'s.
 - `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
   with `run --ir`. The IR is validated, then lowered, so a third-party IR
   emitter can be checked without running its output:
@@ -170,12 +183,43 @@ Options:
   `"phase": "parse"`; IR that loads but cannot be lowered gets `"phase": "lower"`.
 - `--error-format full|bare` — as on [`run`](#run--execute-a-program).
 
-#### Warnings
+#### Errors and warnings
 
 Compiling runs the optional type checker (see
-[Type Annotations](language-guide.md#type-annotations)). Its findings are
-warnings: they print to stderr with a source caret, or appear in the `warnings`
-array with `--json`, and do not change the exit code unless `--strict` is set.
+[Type Annotations](language-guide.md#type-annotations)) and a few lints. Their
+findings never stop the program from compiling or running; they print to
+stderr with a source caret, or appear in the `warnings` array with `--json`.
+Each has a severity.
+
+An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
+
+- a call to, or read of, a name that neither the program nor the host defines
+  (`unknown function \`frob\``, `undefined variable \`nope\``) — it would
+  fail with `Unknown builtin` or `Undefined variable`;
+- a call whose argument count no overload accepts (`f(1)` where every `f`
+  takes two arguments);
+- a named argument no parameter has, or one that fills a slot twice.
+
+```
+$ petal check -e 'print(nope)'
+error: undefined variable `nope`
+ --> [line 1, column 7]
+  |
+1 | print(nope)
+  |       ^^^^
+note: names were checked against `--host ui`; if your host provides them, pass its profile (`--host core|ui|garden|garden-config|sdl`) or name them with `--native a,b`
+1 error found by check
+$ echo $?
+1
+```
+
+Which names exist depends on the host, so an unknown-name error can mean the
+script was checked against the wrong one: pass `--host` or `--native`, as the
+note says. `run` reports these too, before running, and still runs the
+program — the failing line may never execute.
+
+Everything else is a **warning**, and does not change the exit code unless
+`--strict` is set:
 
 ```
 $ petal check -e 'let x: int = "s"'
@@ -188,12 +232,10 @@ $ echo $?
 0
 ```
 
-The same channel carries a few lints that are not about types: a discarded
+The same channel carries a few warnings that are not about types: a discarded
 pure call (`push(xs, x)` whose result is thrown away), a function that captures
-a module `state` rebound below it, a call to a declaration further down the
-file that could not be hoisted, and a call no overload could accept (`f(1)`
-where every `f` takes two arguments). `run` reports that last one as a hard
-error only when the call executes; `check --strict` catches it up front.
+a module `state` rebound below it, and a call to a declaration further down the
+file that could not be hoisted.
 
 #### Error phases
 

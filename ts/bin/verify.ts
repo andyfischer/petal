@@ -564,13 +564,20 @@ async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
     // corpus app that imports a shared library (petal-libs) must not be
     // written off as `unsupported` merely because this step forgot its -I.
     const one = (s: Side, p: string) =>
-        exec(s.petal, ['check', '--error-format', 'bare', ...s.includeArgs, p]);
+        exec(s.petal, ['check', '--lenient', '--error-format', 'bare', ...s.includeArgs, p]);
     const [b, a] = await Promise.all([one(ctx.before, t.before), one(ctx.after, t.after)]);
+    // Checker findings, and the summary lines that follow them. An `error:`
+    // finding (an unknown name, a bad arity) is still a finding about the
+    // source, not a failure to compile: `--lenient` keeps the exit code 0, and
+    // a corpus app written for Garden or an NES cart names natives the default
+    // `--host ui` profile cannot know.
+    const isDiagnostic = (l: string) =>
+        /^(warning|error): /.test(l) || l.startsWith('note: ') || / errors? found by check$/.test(l);
     const split = (r: Run) => {
         const lines = `${r.stdout}${r.stderr}`.split('\n');
         return {
-            warnings: lines.filter(l => l.startsWith('warning:')).join('\n'),
-            errors: lines.filter(l => !l.startsWith('warning:')).join('\n'),
+            warnings: lines.filter(isDiagnostic).join('\n'),
+            errors: lines.filter(l => !isDiagnostic(l)).join('\n'),
         };
     };
     const [bs, as] = [split(b), split(a)];

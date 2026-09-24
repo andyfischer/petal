@@ -238,8 +238,13 @@ SYNOPSIS
        petal check [<options>] -e <code>
 
 DESCRIPTION
-       Lexes, parses, compiles and lowers the program, then stops. Exits 0
-       when it compiles and 1 when it does not, so it is the cheap gate for
+       Lexes, parses, compiles and lowers the program, then stops. Exits 1
+       when it does not compile, or when the checker finds an error: a line
+       that fails whenever it runs, such as a call to or read of a name
+       nothing defines, or a call whose argument count no overload accepts.
+       Other findings (type mismatches against annotations, discarded
+       results) are warnings and do not change the exit code unless
+       --strict is given. Exits 0 otherwise, so it is the cheap gate for
        editors and CI.
 
 OPTIONS
@@ -250,13 +255,19 @@ OPTIONS
               Exit non-zero when type-checker warnings exist. Plain 'check'
               exits 0 for a program that only has warnings.
 
+       --lenient
+              Report checker errors but exit 0 unless the program fails to
+              compile or lower. For tools that only ask whether a file
+              compiles, such as a corpus sweep over scripts for several
+              hosts.
+
        --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
               source. Use '-' to read the IR from stdin.
 
        --host core|ui|garden|garden-config|sdl
               The host the script runs in, which decides the natives a call
               may name. A call to, or read of, a name that neither the
-              program nor the host defines is a warning (it fails with
+              program nor the host defines is an error (it fails with
               'Unknown builtin' or 'Undefined variable' when the line runs).
               'ui' (the default) is the core builtins, the petal-ui natives
               and the 'ui' prelude as an implicit import; 'garden' adds

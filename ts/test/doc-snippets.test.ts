@@ -68,8 +68,11 @@ function extractSnippets(relFile: string): Snippet[] {
   return snippets;
 }
 
+// `--lenient`: a snippet is a fragment of a larger program, so it may name
+// something defined elsewhere or show a call that fails on purpose. This test
+// asks only whether it compiles; checker errors are not failures here.
 async function petalCheck(code: string): Promise<{ ok: boolean; err: string }> {
-  const r = await petalCaptureAsync(["check", "-e", code]);
+  const r = await petalCaptureAsync(["check", "--lenient", "-e", code]);
   return { ok: r.code === 0, err: r.stderr.trim() };
 }
 

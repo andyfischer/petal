@@ -255,10 +255,7 @@ impl Walker {
         } else {
             format!("result of `{name}` is discarded, so this call has no effect.")
         };
-        self.diags.push(Diagnostic {
-            span: call.span,
-            message,
-        });
+        self.diags.push(Diagnostic::new(call.span, message));
     }
 }
 

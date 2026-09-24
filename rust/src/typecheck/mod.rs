@@ -520,7 +520,7 @@ impl<'a> Checker<'a> {
             };
             let Some(slot) = params.iter().position(|p| p == name) else {
                 let known: Vec<String> = params.iter().map(|p| format!("'{p}'")).collect();
-                self.warn(
+                self.error(
                     args[i].span,
                     format!(
                         "{callee} has no parameter named '{name}' (parameters: {})",
@@ -530,7 +530,7 @@ impl<'a> Checker<'a> {
                 continue;
             };
             if let Some(first) = filled[slot] {
-                self.warn(
+                self.error(
                     args[i].span,
                     format!(
                         "{callee} got multiple values for parameter '{name}' (argument {} already fills it)",
@@ -543,13 +543,14 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Warn that no candidate accepts `got` arguments. `expected` is every
+    /// Report that no candidate accepts `got` arguments. `expected` is every
     /// arity that would have worked — Petal overloads by arity
     /// (docs/function-overloading.md), so a call is wrong only when it matches
-    /// *none* of them.
+    /// *none* of them, and then it fails whenever it runs: an error, not a
+    /// warning.
     fn warn_arity(&mut self, span: SourceSpan, what: &str, expected: &[usize], got: usize) {
         let list: Vec<String> = expected.iter().map(|a| a.to_string()).collect();
-        self.warn(
+        self.error(
             span,
             format!(
                 "{what} expects {} argument{}, got {got}",
@@ -560,7 +561,12 @@ impl<'a> Checker<'a> {
     }
 
     fn warn(&mut self, span: SourceSpan, message: String) {
-        self.diags.push(Diagnostic { span, message });
+        self.diags.push(Diagnostic::new(span, message));
+    }
+
+    /// Record a checker error: a line that fails whenever it runs.
+    fn error(&mut self, span: SourceSpan, message: String) {
+        self.diags.push(Diagnostic::error(span, message));
     }
 
     /// The type an annotation denotes here. The parser resolves the built-in

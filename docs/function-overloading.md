@@ -139,11 +139,10 @@ fn add(a, b, c) a + b + c end
 add(1)  // Error: add() expects 2 or 3 arguments, got 1
 ```
 
-`petal check` reports the same thing as a warning before the program runs
-(`` `add` expects 2 or 3 arguments, got 1 ``), and `petal check --strict`
-fails on it. Constructors and methods are checked the same way; for a method
-the warning counts the arguments written at the call site, without the
-receiver.
+`petal check` reports the same thing as an error before the program runs
+(`` `add` expects 2 or 3 arguments, got 1 ``) and exits non-zero on it.
+Constructors and methods are checked the same way; for a method the error
+counts the arguments written at the call site, without the receiver.
 
 ## Across files
 

@@ -15,6 +15,36 @@ function checkWith(args: string[], code: string) {
 }
 
 describe("check: unknown globals", () => {
+  it("fails plain check (no --strict) on a name nothing defines", () => {
+    const r = petalCapture(["check", "-e", "print(nope)"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("error: undefined variable `nope`");
+    // Names the host profile it checked against, since a host-provided
+    // native would look the same.
+    expect(r.stderr).toContain("note: names were checked against `--host ui`");
+    expect(r.stderr).toContain("1 error found by check");
+  });
+
+  it("reports it as severity error with ok false in --json", () => {
+    const r = petalCapture(["check", "--json", "-e", "frob(1)"]);
+    expect(r.code).toBe(1);
+    const out = JSON.parse(r.stdout);
+    expect(out.ok).toBe(false);
+    expect(out.warnings.map((w: any) => w.severity)).toEqual(["error"]);
+  });
+
+  it("--lenient reports the error but exits 0", () => {
+    const r = petalCapture(["check", "--lenient", "-e", "print(nope)"]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("error: undefined variable `nope`");
+  });
+
+  it("leaves a warnings-only program at exit 0", () => {
+    const r = petalCapture(["check", "-e", 'let x: int = "s"']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("warning: type mismatch");
+  });
+
   it("flags a call to an unknown function under --strict", () => {
     const r = checkStrict("totally_bogus_fn(1)");
     expect(r.code).not.toBe(0);

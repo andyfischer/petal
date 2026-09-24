@@ -446,21 +446,24 @@ fn parse_lint_fix_args(args: &[String]) -> CliArgs {
 }
 
 /// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings
-/// exist), and `--ir` (read JSON IR instead of source, as `run --ir` does).
+/// exist), `--lenient` (exit 0 despite checker errors), and `--ir` (read JSON
+/// IR instead of source, as `run --ir` does).
 fn parse_check_args(args: &[String]) -> CliArgs {
     let mut json = false;
     let mut strict = false;
+    let mut lenient = false;
     let mut ir = false;
     let mut error_format = ErrorFormat::Full;
     let mut host = crate::typecheck::globals::HostProfile::default();
     let mut natives: Vec<String> = Vec::new();
     let source = parse_source_args(
         args,
-        "Usage: petal check [--json] [--strict] [--ir] [--host core|ui|garden|garden-config|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
+        "Usage: petal check [--json] [--strict | --lenient] [--ir] [--host core|ui|garden|garden-config|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
         |args, i| {
             match args[*i].as_str() {
                 "--json" => json = true,
                 "--strict" => strict = true,
+                "--lenient" => lenient = true,
                 "--ir" => ir = true,
                 "--host" => {
                     let name = take(args, i, "Expected 'core', 'ui', 'garden', 'garden-config' or 'sdl' after --host");
@@ -498,6 +501,7 @@ fn parse_check_args(args: &[String]) -> CliArgs {
         command: Command::Check {
             json,
             strict,
+            lenient,
             ir,
             error_format,
             host,

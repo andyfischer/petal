@@ -243,23 +243,27 @@ describe("field and method checks on a class-typed value", () => {
     expect(out.warnings).toEqual([]);
   });
 
-  it("warns when no overload of a method takes that many arguments", () => {
+  it("errors when no overload of a method takes that many arguments", () => {
     const src =
       "class P\n  x: int,\n  y: int,\nend\nfn P.shift(p: P, dx: int)\n  p.x + dx\nend\n";
-    const out = checkJson(`${src}print(P(1, 2).shift())`);
+    const out = checkJsonAllowFail(`${src}print(P(1, 2).shift())`);
+    expect(out.ok).toBe(false);
     expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].severity).toBe("error");
     expect(out.warnings[0].message).toBe("method `P.shift` expects 1 argument, got 0");
     // The same call is a hard error at runtime — that is the gap `check` closes.
     const { stderr } = runWithStderr(`${src}print(P(1, 2).shift())`);
     // The runtime counts the arguments the call site wrote, not the hidden
-    // receiver, so it agrees with the warning above rather than saying "2".
+    // receiver, so it agrees with the error above rather than saying "2".
     expect(stderr).toMatch(/P\.shift\(\) expects 1 argument, got 0/);
     expect(checkJson(`${src}print(P(1, 2).shift(3))`).warnings).toEqual([]);
   });
 
-  it("warns when a constructor is given the wrong number of fields", () => {
-    const out = checkJson("class P\n  x: int,\n  y: int,\nend\nprint(P(1))");
+  it("errors when a constructor is given the wrong number of fields", () => {
+    const out = checkJsonAllowFail("class P\n  x: int,\n  y: int,\nend\nprint(P(1))");
+    expect(out.ok).toBe(false);
     expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].severity).toBe("error");
     expect(out.warnings[0].message).toBe("`P` expects 2 arguments, got 1");
   });
 });

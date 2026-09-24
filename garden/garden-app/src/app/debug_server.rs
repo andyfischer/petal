@@ -221,9 +221,19 @@ impl App {
                     "panels": self.panel_frame_counts(),
                 })))
             }
-            DebugCmd::PanelReset => {
+            DebugCmd::PanelReset { seed } => {
+                // Seed before restarting: each panel keeps the seed it was
+                // given and hands it to the host `restart` builds, so frame 1
+                // of the fresh script already draws from it.
+                if let Some(seed) = seed {
+                    self.seed_panels(seed);
+                }
                 let count = self.reset_panel_state();
-                Ok(Reply::Json(json!({"ok": true, "panels_reset": count})))
+                let mut reply = json!({"ok": true, "panels_reset": count});
+                if let Some(seed) = seed {
+                    reply["seed"] = json!(seed);
+                }
+                Ok(Reply::Json(reply))
             }
             DebugCmd::Seed { seed } => {
                 let count = self.seed_panels(seed);
@@ -526,8 +536,8 @@ impl App {
     }
 
     /// Reseed every panel's `random()` stream (`POST /seed`). Returns how many
-    /// panels were reseeded. Takes effect on their next frame, so a harness
-    /// seeds, then ticks, then captures.
+    /// panels were reseeded. Takes effect on their next frame, and sticks: a
+    /// later `/panel/reset` restarts each panel on the same seed.
     fn seed_panels(&mut self, seed: u64) -> usize {
         let mut count = 0;
         for pane in &mut self.panes {
@@ -1707,7 +1717,7 @@ mod tests {
     fn command_snapshot_does_not_drain_output() {
         let (mut app, _f) = panel_app("print(\"hello\")\n");
         match app
-            .answer(DebugCmd::PanelReset, true, &mut NoCapture)
+            .answer(DebugCmd::PanelReset { seed: None }, true, &mut NoCapture)
             .expect("reset")
         {
             Reply::Json(v) => assert!(!v["script"]["output"].as_array().unwrap().is_empty()),
@@ -1820,7 +1830,7 @@ mod tests {
                 >= 5
         );
 
-        match app.handle_debug(DebugCmd::PanelReset).expect("reset") {
+        match app.handle_debug(DebugCmd::PanelReset { seed: None }).expect("reset") {
             Reply::Json(v) => assert_eq!(v["panels_reset"], 1),
             _ => panic!("/panel/reset must answer JSON"),
         }
@@ -2307,22 +2317,49 @@ mod tests {
 
     /// Seeding is what makes generated placeholder content comparable between
     /// two renders of the same script.
+    ///
+    /// Each helper settles the panels straight after the reset, before reading
+    /// anything: that is what Garden's event loop does between two HTTP
+    /// requests, so the restarted script's first frame has always run by the
+    /// time a separate `POST /seed` arrives. Content generated on that first
+    /// frame (a shuffled deck, seeded placeholder rows) must therefore get its
+    /// seed *with* the reset, or from a `/seed` sent before it.
     #[test]
     fn seeding_makes_generated_content_reproducible() {
         let src = "state n = random(0, 1000000)\nlet seen = n\ndraw_rect(0, 0, 1, 1, 1, 2, 3)\n";
         let (mut app, _f) = panel_app(src);
-        let draw = |app: &mut App| {
-            // Reset first: a restart rebuilds the panel host (and with it the
-            // engine's clock-derived seed), so the seed has to be published
-            // after it.
-            app.handle_debug(DebugCmd::PanelReset).expect("reset");
-            app.handle_debug(DebugCmd::Seed { seed: 42 }).expect("seed");
+        let reset_seeded = |app: &mut App| {
+            app.handle_debug(DebugCmd::PanelReset { seed: Some(42) }).expect("reset");
             app.settle_panels();
             panel_of(&state_with(app, "/state"))["values"]["seen"].clone()
         };
-        let first = draw(&mut app);
-        let second = draw(&mut app);
-        assert_eq!(first, second, "the same seed must draw the same content");
+        let first = reset_seeded(&mut app);
+        let second = reset_seeded(&mut app);
+        assert!(first.is_number(), "the first frame must have bound `seen`: {first}");
+        assert_eq!(first, second, "a seeded reset must draw the same first frame");
+    }
+
+    /// A `/seed` sticks to the panel, so seeding *before* a reset pins the
+    /// restarted script's first frame too — the restart used to build a fresh
+    /// host with a clock-derived seed and silently drop it.
+    #[test]
+    fn a_seed_survives_a_reset() {
+        let src = "state n = random(0, 1000000)\nlet seen = n\ndraw_rect(0, 0, 1, 1, 1, 2, 3)\n";
+        let (mut app, _f) = panel_app(src);
+        let seed_then_reset = |app: &mut App| {
+            app.handle_debug(DebugCmd::Seed { seed: 42 }).expect("seed");
+            app.handle_debug(DebugCmd::PanelReset { seed: None }).expect("reset");
+            app.settle_panels();
+            panel_of(&state_with(app, "/state"))["values"]["seen"].clone()
+        };
+        let first = seed_then_reset(&mut app);
+        let second = seed_then_reset(&mut app);
+        assert_eq!(first, second, "seed then reset must draw the same first frame");
+        // And the seeded reset agrees with it: both are "seed 42, then frame 1".
+        app.handle_debug(DebugCmd::PanelReset { seed: Some(42) }).expect("reset");
+        app.settle_panels();
+        let third = panel_of(&state_with(&mut app, "/state"))["values"]["seen"].clone();
+        assert_eq!(first, third);
     }
 
     /// `/state` used to *drain* the output, which made it single-reader: an

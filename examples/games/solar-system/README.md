@@ -103,8 +103,8 @@ already placed.
 `obs_labels_drawn`, `obs_bodies`, `obs_zooms`, `obs_clicks`, `obs_earth` and
 `obs_moon` (world positions), `obs_moon_rel` (the Moon's distance from
 Earth, always 13.0), `obs_earth_screen` (where to click to select Earth),
-`obs_rows`. `POST /panel/reset`, `POST /seed {"seed":42}` and `POST /tick
-{"n":120,"dt":0.016}` give the same `obs_days` and `obs_earth` every run;
+`obs_rows`. `POST /panel/reset {"seed":42}` and `POST /tick {"n":120,"dt":0.016}`
+give the same `obs_days` and `obs_earth` every run;
 six presses of `=` (256 days per second) and 90 ticks of 15.86 ms carry
 Earth through roughly a year, back near its starting position.
 

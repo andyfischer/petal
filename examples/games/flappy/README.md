@@ -99,8 +99,8 @@ bindings so the whole game is assertable from
 the bird has not yet passed), `obs_scroll`, `obs_cause` (`"pipe"` or
 `"ground"`).
 
-A whole run is a deterministic script: `POST /panel/reset`, `POST /seed
-{"seed": 42}`, then `POST /key {"key":"space"}` and `POST /tick {"n": 4,
+A whole run is a deterministic script: `POST /panel/reset {"seed": 42}`,
+then `POST /key {"key":"space"}` and `POST /tick {"n": 4,
 "dt": 0.016}` in a loop, flapping whenever `obs_bird[1]` is below
 `obs_next_gap[1]`. That controller scores 31 with seed 42 before the run is
 cut off, and the same script gives the same numbers every time.

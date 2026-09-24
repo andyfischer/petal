@@ -409,8 +409,8 @@ clean boundary.
 |----------|------|--------|
 | `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance every panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600. Replies with each panel's new `frame` and `clocks` |
 | `POST /tick` | `{"n": 60, "advance_clock": false}` | The same, leaving the panel's `time()` clock alone |
-| `POST /seed` | `{"seed": 42}` | Reseed every panel's `random()` stream, so a script that generates placeholder content draws the same content on two renders. Reset first, then seed |
-| `POST /panel/reset` | — | Restart every file-backed panel from its source, discarding Petal `state`. A panel that persists through `panel_store_*` reloads its saved store, not its seed data; launch with `GARDEN_PANEL_STORE_DIR=<scratch dir>` for a clean start. A GPP-pushed panel has no file and is skipped |
+| `POST /seed` | `{"seed": 42}` | Reseed every panel's `random()` stream, so a script that generates placeholder content draws the same content on two renders. Applies from each panel's next frame, and sticks to the panel: a later `/panel/reset` restarts it on the same seed |
+| `POST /panel/reset` | `{}` or `{"seed": 42}` | Restart every file-backed panel from its source, discarding Petal `state`. With `seed`, every panel is reseeded first, so the restarted script's **first** frame draws from that stream (see below). A panel that persists through `panel_store_*` reloads its saved store, not its seed data; launch with `GARDEN_PANEL_STORE_DIR=<scratch dir>` for a clean start. A GPP-pushed panel has no file and is skipped |
 
 `POST /tick` is how you drive an animation or a game: panel time advances
 deterministically, with the `dt` you asked for, and no input is fabricated.
@@ -422,11 +422,18 @@ capture) advance it by nothing, so two identical tick sequences draw the
 identical frame. That is what makes a golden image of a moving UI stable:
 
 ```bash
-curl -s -XPOST 127.0.0.1:8080/panel/reset
-curl -s -XPOST 127.0.0.1:8080/seed -d '{"seed":42}'
+curl -s -XPOST 127.0.0.1:8080/panel/reset -d '{"seed":42}'
 curl -s -XPOST 127.0.0.1:8080/tick -d '{"n":30,"dt":0.016}'
 curl -s -o frame.png '127.0.0.1:8080/screenshot?pane=0'   # byte-identical each run
 ```
+
+**Seed with the reset, not after it.** Garden's event loop runs the restarted
+panel's first frame as soon as the reset lands, before a separate request can
+arrive. So `POST /panel/reset` followed by `POST /seed` seeds only from frame
+2 on, and anything the script generates on frame 1 (a shuffled deck, seeded
+placeholder rows, a first level) comes from an unseeded stream. Pass the seed
+in the reset body, or send `/seed` *before* the reset, since a panel keeps its
+seed across restarts. Both give the same first frame.
 
 The switch is one-way per panel: an interactive run never calls `/tick` and
 keeps the wall clock. `{"advance_clock": false}` opts a call out.

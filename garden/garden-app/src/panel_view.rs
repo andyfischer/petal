@@ -466,6 +466,11 @@ const OUTPUT_CAP: usize = 200;
 
 pub struct PanelView {
     host: PanelHost,
+    /// The `random()` seed a harness asked for (`POST /seed`), if any. Kept
+    /// here as well as in the host because [`restart`](Self::restart) builds a
+    /// new host, and a reset that silently dropped the seed would make the
+    /// restarted script's first frame unreproducible.
+    seed: Option<u64>,
     frame_count: i64,
     /// When the previous frame ran, for computing `dt`.
     last_frame: Option<Instant>,
@@ -678,6 +683,7 @@ impl PanelView {
         };
         PanelView {
             host,
+            seed: None,
             frame_count: 0,
             last_frame: None,
             last_activity: now,
@@ -1586,6 +1592,7 @@ impl PanelView {
 
     /// Reseed this panel's `random()` stream (`POST /seed`).
     pub fn set_seed(&mut self, seed: u64) {
+        self.seed = Some(seed);
         self.host.set_seed(seed);
     }
 
@@ -2355,6 +2362,9 @@ impl PanelView {
         match PanelHost::load(&path) {
             Ok(mut host) => {
                 adopt_font(&mut host);
+                if let Some(seed) = self.seed {
+                    host.set_seed(seed);
+                }
                 self.host = host;
                 self.reload_error = None;
                 self.frame_error = None;

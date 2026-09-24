@@ -428,7 +428,13 @@ pub enum DebugCmd {
         seed: u64,
     },
     /// Restart every file-backed panel from source, discarding Petal `state`.
-    PanelReset,
+    /// With a `seed`, every panel is reseeded first, so the restarted script's
+    /// very first frame already draws from that stream — the only way to pin
+    /// content a script generates on frame 1, since the event loop runs that
+    /// frame before a separate `POST /seed` could arrive.
+    PanelReset {
+        seed: Option<u64>,
+    },
     /// The global frame counter, answered instantly (the client polls it —
     /// blocking here would tie up the event-loop thread that must keep
     /// ticking to advance the very frame being waited on). `min` is echoed
@@ -545,7 +551,7 @@ impl DebugCmd {
             | DebugCmd::Theme { .. }
             | DebugCmd::Tick { .. }
             | DebugCmd::Seed { .. }
-            | DebugCmd::PanelReset => true,
+            | DebugCmd::PanelReset { .. } => true,
             DebugCmd::Batch { steps } => steps.iter().any(|step| step.cmd.changes_state()),
             DebugCmd::State { .. }
             | DebugCmd::Capture { .. }
@@ -1010,7 +1016,21 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
                 .ok_or((400, "missing integer \"seed\"".to_string()))?;
             Ok(DebugCmd::Seed { seed })
         }
-        ("POST", "/panel/reset") => Ok(DebugCmd::PanelReset),
+        ("POST", "/panel/reset") => {
+            let v = if body.is_empty() {
+                Value::Null
+            } else {
+                parse_body()?
+            };
+            let seed = match &v["seed"] {
+                Value::Null => None,
+                s => Some(
+                    s.as_u64()
+                        .ok_or((400, "\"seed\" must be a non-negative integer".to_string()))?,
+                ),
+            };
+            Ok(DebugCmd::PanelReset { seed })
+        }
         ("GET", "/frame") => {
             // Optional ?min=N: never blocks, just echoed back as `reached` so a
             // client poll loop is a one-liner. See the DebugCmd::Frame docs.
@@ -1498,8 +1518,20 @@ mod tests {
     #[test]
     fn panel_reset_routes() {
         match route("POST", "/panel/reset", b"") {
-            Ok(DebugCmd::PanelReset) => {}
+            Ok(DebugCmd::PanelReset { seed: None }) => {}
             _ => panic!("POST /panel/reset must route to PanelReset"),
+        }
+        match route("POST", "/panel/reset", br#"{}"#) {
+            Ok(DebugCmd::PanelReset { seed: None }) => {}
+            _ => panic!("an empty body object is a plain reset"),
+        }
+        match route("POST", "/panel/reset", br#"{"seed": 42}"#) {
+            Ok(DebugCmd::PanelReset { seed: Some(42) }) => {}
+            _ => panic!("a seed in the body must reach the command"),
+        }
+        match route("POST", "/panel/reset", br#"{"seed": "x"}"#) {
+            Err((400, _)) => {}
+            _ => panic!("a non-integer seed must be a 400"),
         }
     }
 

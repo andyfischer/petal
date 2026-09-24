@@ -225,6 +225,10 @@ pub const HOST_FEATURES: &[&str] = &[
     "debug.tick-clock",
     // `POST /seed` reseeds every panel's `random()` stream.
     "debug.seed",
+    // `POST /panel/reset {"seed": N}` reseeds before restarting, so the
+    // restarted script's first frame is reproducible; a `/seed` also sticks
+    // to its panel across later resets.
+    "debug.reset-seed",
     // `GET /state?output=all` / `?output=<cursor>`: a non-draining read of the
     // script output, so an observer can run beside a driver.
     "state.output-cursor",

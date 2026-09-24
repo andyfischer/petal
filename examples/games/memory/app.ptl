@@ -1,0 +1,1172 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  PAIRS — a memory matching game as a Garden panel app, written in Petal.
+//
+//  Exercises: card components drawn from vector primitives (sixteen glyphs,
+//  a patterned back), a 3D-style flip done by squashing every primitive
+//  about the card's centre line, delayed state changes (a missed pair stays
+//  up for a beat and turns back; a match lands, pops and settles; the win
+//  screen arrives after the last pair has finished its flip), a staggered
+//  deal, a timed peek, confetti, keyboard + mouse play, and best scores kept
+//  per difficulty in the panel store.
+//
+//  Designed for a 1280x850 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+import bloom
+import text_layout
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG      = #0d0f15
+let C_TABLE   = #141824
+let C_TABLE_H = #1b2031
+let C_RAIL    = #161a26
+let C_WELL    = #10131c
+let C_LINE    = #232939
+let C_EDGE    = #2d3447
+let C_TEXT    = #eceff6
+let C_DIM     = #8b93a8
+let C_MUTE    = #5b6379
+let C_GOLD    = #e7b75a
+let C_GOLD_L  = #f6d894
+let C_MISS    = #ec6a5c
+let C_BACK_A  = #3c43a3
+let C_BACK_B  = #22276a
+let C_BACK_LN = #6a70d0
+let C_FACE    = #f6f1e7
+let C_FACE_ED = #e2d8c6
+let C_INK     = #1d2030
+
+// ── Type scale ───────────────────────────────────────────────────────────
+// Everything is Inter (`ui`). Six sizes: 11 / 12 / 13 / 16 / 24 / 28.
+
+let F = "ui"
+let S_TITLE = {size: 28, weight: 700, font: F, color: C_TEXT}
+let S_KICK  = {size: 11, weight: 700, font: F, color: C_MUTE, spacing: 2}
+let S_HEAD  = {size: 11, weight: 700, font: F, color: C_DIM, spacing: 1.5}
+let S_STAT  = {size: 24, weight: 700, font: F, color: C_TEXT}
+let S_LABEL = {size: 12, font: F, color: C_DIM}
+let S_BODY  = {size: 13, font: F, color: C_TEXT}
+let S_BODYB = {size: 13, weight: 700, font: F, color: C_TEXT}
+let S_SMALL = {size: 12, font: F, color: C_MUTE}
+let S_CAP   = {size: 11, weight: 700, font: F, color: C_TEXT}
+let S_FLOAT = {size: 16, weight: 700, font: F, color: C_GOLD_L}
+
+// ── Rules and timings ────────────────────────────────────────────────────
+
+let LEVELS = [
+  {name: "Easy",    cols: 4, rows: 3},
+  {name: "Classic", cols: 6, rows: 4},
+  {name: "Expert",  cols: 8, rows: 4},
+]
+
+config let FLIP_T     = 0.30   // one half-turn of a card, seconds
+config let MISS_VIEW  = 0.85   // how long a missed pair stays up once it has landed
+config let DEAL_T     = 0.45   // one card's flight from the deck
+config let DEAL_STEP  = 0.035  // stagger between cards in the deal
+config let PEEK_T     = 1.6    // how long a peek shows the board
+config let PEEK_COST  = 2      // moves a peek costs
+config let WIN_DELAY  = 0.75   // pause between the last match landing and the result
+
+// ── Glyph geometry ───────────────────────────────────────────────────────
+// Every face is drawn from these unit shapes (y down, roughly -1..1), placed
+// through a transform that squashes x during a flip.
+
+fn rot(p: list, a: num) -> list
+  [p[0] * cos(a) - p[1] * sin(a), p[0] * sin(a) + p[1] * cos(a)]
+end
+
+// A pointed almond from x = -1 to 1, `hh` tall at its widest.
+fn almond(hh: num) -> list
+  let top = for k in range(0, 21) do
+    let x = -1.0 + float(k) * 0.1
+    [x, -hh * (1.0 - x * x)]
+  end
+  let bot = for k in range(1, 20) do
+    let x = 1.0 - float(k) * 0.1
+    [x, hh * (1.0 - x * x)]
+  end
+  flat([top, bot])
+end
+
+let U_STAR = for k in range(0, 10) do
+  let a = -pi() / 2.0 + float(k) * pi() / 5.0
+  let r = if k % 2 == 0 then 1.0 else 0.42 end
+  [cos(a) * r, sin(a) * r + 0.08]
+end
+
+let U_RAYS = for k in range(0, 8) do
+  let a = float(k) * pi() / 4.0
+  [[cos(a) * 0.98, sin(a) * 0.98], [cos(a - 0.2) * 0.62, sin(a - 0.2) * 0.62], [cos(a + 0.2) * 0.62, sin(a + 0.2) * 0.62]]
+end
+
+let U_HEART = for k in range(0, 40) do
+  let t = float(k) / 40.0 * 2.0 * pi()
+  let s = sin(t)
+  let y = 13.0 * cos(t) - 5.0 * cos(2.0 * t) - 2.0 * cos(3.0 * t) - cos(4.0 * t)
+  [16.0 * s * s * s / 17.0, 0.1 - y / 17.0]
+end
+
+let U_DROP = for k in range(0, 40) do
+  let t = float(k) / 40.0 * 2.0 * pi()
+  [sin(t) * sin(t / 2.0) * 0.8, 0.1 - cos(t) * 0.9]
+end
+
+let U_GEM = [[-0.85, -0.3], [-0.45, -0.8], [0.45, -0.8], [0.85, -0.3], [0.0, 0.9]]
+let U_GEM_TOP = [[-0.85, -0.3], [-0.45, -0.8], [0.45, -0.8], [0.85, -0.3]]
+let U_GEM_FACET = [[-0.85, -0.3], [-0.28, -0.3], [0.0, 0.9]]
+
+let U_BOLT = [[0.12, -1.0], [-0.52, 0.14], [-0.04, 0.14], [-0.26, 1.0], [0.56, -0.2], [0.07, -0.2], [0.5, -1.0]]
+
+let U_LEAF = map(almond(0.46), fn(p) -> rot([p[0] * 0.92, p[1]], -0.785))
+let U_LEAF_RIB = [rot([-1.2, 0.0], -0.785), rot([0.72, 0.0], -0.785)]
+
+let U_CROWN = [[-0.85, 0.5], [-0.95, -0.5], [-0.45, -0.04], [0.0, -0.74], [0.45, -0.04], [0.95, -0.5], [0.85, 0.5]]
+let U_CROWN_BAND = [[-0.86, 0.6], [0.86, 0.6], [0.86, 0.84], [-0.86, 0.84]]
+
+let U_MT_BACK = [[0.0, 0.75], [0.52, -0.3], [1.0, 0.75]]
+let U_MT_FRONT = [[-1.0, 0.75], [-0.25, -0.82], [0.55, 0.75]]
+let U_MT_SNOW = [[-0.25, -0.82], [-0.47, -0.36], [-0.34, -0.44], [-0.24, -0.32], [-0.12, -0.45], [-0.03, -0.38]]
+
+let U_EYE = almond(0.62)
+let U_EYE_IN = map(almond(0.5), fn(p) -> [p[0] * 0.8, p[1] * 0.8])
+
+let U_FLAKE = flat(for k in range(0, 6) do
+  let a = float(k) * pi() / 3.0 - pi() / 2.0
+  let m = [cos(a) * 0.55, sin(a) * 0.55]
+  [
+    [[0.0, 0.0], [cos(a) * 0.95, sin(a) * 0.95]],
+    [[m[0] + cos(a - 0.9) * 0.3, m[1] + sin(a - 0.9) * 0.3], m, [m[0] + cos(a + 0.9) * 0.3, m[1] + sin(a + 0.9) * 0.3]],
+  ]
+end)
+
+// Three bands, each a filled ribbon: a stroked polyline this thick frays at
+// its joins, a polygon does not.
+let U_WAVES = for row in [-0.4, 0.0, 0.4] do
+  let top = for k in range(0, 25) do
+    let x = -0.9 + float(k) * 0.075
+    [x, row + 0.15 * sin(x * 3.6) - 0.075]
+  end
+  let bot = for k in range(0, 25) do
+    let x = 0.9 - float(k) * 0.075
+    [x, row + 0.15 * sin(x * 3.6) + 0.075]
+  end
+  flat([top, bot])
+end
+
+// Half of a tilted elliptical band, from angle t0 to t1: the outer edge out,
+// the inner edge back. The planet sits between the back half and the front.
+fn ring_band(t0: num, t1: num) -> list
+  let outer = for k in range(0, 25) do
+    let t = t0 + (t1 - t0) * float(k) / 24.0
+    rot([cos(t), sin(t) * 0.32], -0.35)
+  end
+  let inner = for k in range(0, 25) do
+    let t = t1 - (t1 - t0) * float(k) / 24.0
+    rot([cos(t) * 0.84, sin(t) * 0.2], -0.35)
+  end
+  flat([outer, inner])
+end
+
+let U_RING_BACK = ring_band(pi(), 2.0 * pi())
+let U_RING_FRONT = ring_band(0.0, pi())
+
+let U_HEX = for k in range(0, 6) do
+  let a = float(k) * pi() / 3.0 - pi() / 2.0
+  [cos(a) * 0.95, sin(a) * 0.95]
+end
+let U_HEX_IN = for k in range(0, 6) do
+  let a = float(k) * pi() / 3.0 - pi() / 2.0
+  [cos(a) * 0.5, sin(a) * 0.5]
+end
+
+// Four-pointed star on the card back.
+let U_SPARK = for k in range(0, 8) do
+  let a = -pi() / 2.0 + float(k) * pi() / 4.0
+  let r = if k % 2 == 0 then 1.0 else 0.3 end
+  [cos(a) * r, sin(a) * r]
+end
+
+let DESIGNS = [
+  {g: "sun",      c: #ef7630, name: "Sun"},
+  {g: "moon",     c: #4c6ee0, name: "Moon"},
+  {g: "star",     c: #8a5cf2, name: "Star"},
+  {g: "heart",    c: #e2434f, name: "Heart"},
+  {g: "gem",      c: #139e9e, name: "Gem"},
+  {g: "drop",     c: #2f8fe0, name: "Drop"},
+  {g: "bolt",     c: #e3a712, name: "Bolt"},
+  {g: "flower",   c: #d8468e, name: "Bloom"},
+  {g: "leaf",     c: #3a9d52, name: "Leaf"},
+  {g: "crown",    c: #b8841c, name: "Crown"},
+  {g: "mountain", c: #3e6e8c, name: "Peak"},
+  {g: "eye",      c: #7a5230, name: "Eye"},
+  {g: "flake",    c: #26a6d4, name: "Frost"},
+  {g: "clover",   c: #1f7a45, name: "Clover"},
+  {g: "wave",     c: #1f5fbf, name: "Tide"},
+  {g: "planet",   c: #a24fd0, name: "Ringed"},
+]
+
+// ── Glyph drawing ────────────────────────────────────────────────────────
+// `T` is {cx, cy, s, sx, bg}: the centre, the unit size in px, the flip's x
+// squash, and the face colour (the moon's bite is painted in it).
+
+fn gx(T: record, x: num) -> float
+  T.cx + x * T.s * T.sx
+end
+
+fn gy(T: record, y: num) -> float
+  T.cy + y * T.s
+end
+
+fn gpts(T: record, pts: list) -> list
+  for p in pts do
+    {x: gx(T, p[0]), y: gy(T, p[1])}
+  end
+end
+
+fn gpoly(T: record, pts: list, c: record)
+  fill_polygon(gpts(T, pts), c)
+end
+
+fn gdisc(T: record, x: num, y: num, r: num, c: record)
+  draw_ellipse(gx(T, x), gy(T, y), max(0.5, r * T.s * T.sx), r * T.s, c)
+end
+
+fn gstroke(T: record, pts: list, c: record, w: num)
+  draw_polyline(gpts(T, pts), c, 255, max(1.0, w * T.s))
+end
+
+fn lighten(c: record, t: num) -> record
+  mix(c, #ffffff, t)
+end
+
+fn darken(c: record, t: num) -> record
+  mix(c, #000000, t)
+end
+
+fn glyph(D: record, T: record)
+  let c = D.c
+  match D.g
+    when "sun" do
+      for tri in U_RAYS do gpoly(T, tri, c) end
+      gdisc(T, 0.0, 0.0, 0.5, c)
+      gdisc(T, -0.12, -0.12, 0.2, lighten(c, 0.35))
+    end
+    when "moon" do
+      gdisc(T, 0.0, 0.0, 0.8, c)
+      gdisc(T, 0.38, -0.24, 0.66, T.bg)
+    end
+    when "star" do
+      gpoly(T, U_STAR, c)
+    end
+    when "heart" do
+      gpoly(T, U_HEART, c)
+      gdisc(T, -0.4, -0.28, 0.13, lighten(c, 0.45))
+    end
+    when "gem" do
+      gpoly(T, U_GEM, c)
+      gpoly(T, U_GEM_TOP, lighten(c, 0.3))
+      gpoly(T, U_GEM_FACET, darken(c, 0.15))
+    end
+    when "drop" do
+      gpoly(T, U_DROP, c)
+      gdisc(T, -0.22, 0.3, 0.14, lighten(c, 0.5))
+    end
+    when "bolt" do
+      gpoly(T, U_BOLT, c)
+    end
+    when "flower" do
+      for k in range(0, 6) do
+        let a = float(k) * pi() / 3.0 - pi() / 2.0
+        gdisc(T, cos(a) * 0.5, sin(a) * 0.5, 0.36, c)
+      end
+      gdisc(T, 0.0, 0.0, 0.3, #f3c34a)
+      gdisc(T, 0.0, 0.0, 0.12, darken(#f3c34a, 0.2))
+    end
+    when "leaf" do
+      gpoly(T, U_LEAF, c)
+      gstroke(T, U_LEAF_RIB, lighten(c, 0.45), 0.08)
+    end
+    when "crown" do
+      gpoly(T, U_CROWN, c)
+      gpoly(T, U_CROWN_BAND, darken(c, 0.2))
+      gdisc(T, -0.95, -0.5, 0.13, c)
+      gdisc(T, 0.0, -0.74, 0.13, c)
+      gdisc(T, 0.95, -0.5, 0.13, c)
+      gdisc(T, 0.0, 0.72, 0.08, #e2434f)
+    end
+    when "mountain" do
+      gpoly(T, U_MT_BACK, lighten(c, 0.35))
+      gpoly(T, U_MT_FRONT, c)
+      gpoly(T, U_MT_SNOW, #ffffff)
+      gdisc(T, 0.62, -0.62, 0.16, #ef7630)
+    end
+    when "eye" do
+      gpoly(T, U_EYE, c)
+      gpoly(T, U_EYE_IN, T.bg)
+      gdisc(T, 0.0, 0.0, 0.36, c)
+      gdisc(T, 0.0, 0.0, 0.16, C_INK)
+      gdisc(T, -0.1, -0.1, 0.06, #ffffff)
+    end
+    when "flake" do
+      for s in U_FLAKE do gstroke(T, s, c, 0.11) end
+      gdisc(T, 0.0, 0.0, 0.14, c)
+    end
+    when "clover" do
+      gdisc(T, 0.0, -0.4, 0.34, c)
+      gdisc(T, -0.4, 0.08, 0.34, c)
+      gdisc(T, 0.4, 0.08, 0.34, c)
+      gdisc(T, 0.0, -0.04, 0.24, c)
+      gpoly(T, [[0.0, 0.0], [-0.2, 0.92], [0.2, 0.92]], c)
+    end
+    when "wave" do
+      for w in U_WAVES do gpoly(T, w, c) end
+    end
+    when "planet" do
+      gpoly(T, U_RING_BACK, lighten(c, 0.35))
+      gdisc(T, 0.0, 0.0, 0.52, c)
+      gdisc(T, -0.16, -0.18, 0.18, lighten(c, 0.3))
+      gpoly(T, U_RING_FRONT, lighten(c, 0.35))
+    end
+    when _ do
+      gpoly(T, U_HEX, c)
+      gpoly(T, U_HEX_IN, lighten(c, 0.35))
+    end
+  end
+  nil
+end
+
+// ── Small helpers ────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record)
+  draw_text(s, {x: int(x), y: int(y)}, style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record)
+  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record)
+  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+end
+
+fn fmt_time(t: num) -> string
+  let secs = int(floor(t))
+  "{secs / 60}:{pad_start(secs % 60, 2, "0")}"
+end
+
+fn shuffled(xs: list) -> list
+  let out = xs
+  for i in range(len(out) - 1, 0, -1) do
+    let j = random_int(0, i + 1)
+    let tmp = out[i]
+    out[i] = out[j]
+    out[j] = tmp
+  end
+  out
+end
+
+fn put(xs: list, i: int, v) -> list
+  let out = xs
+  out[i] = v
+  out
+end
+
+fn stars_for(moves: int, pairs: int) -> int
+  if moves * 4 <= pairs * 7 then 3
+  elsif moves * 2 <= pairs * 5 then 2
+  else 1
+  end
+end
+
+fn star_pts(cx: num, cy: num, r: num) -> list
+  for p in U_STAR do
+    {x: cx + p[0] * r, y: cy + (p[1] - 0.08) * r}
+  end
+end
+
+fn draw_star(cx: num, cy: num, r: num, lit: bool)
+  if lit then
+    fill_polygon(star_pts(cx, cy, r), C_GOLD)
+  else
+    fill_polygon(star_pts(cx, cy, r), C_LINE)
+  end
+end
+
+// A rotated quad, for confetti.
+fn quad(x: num, y: num, w: num, h: num, a: num) -> list
+  let c = cos(a)
+  let s = sin(a)
+  for p in [[-w, -h], [w, -h], [w, h], [-w, h]] do
+    {x: x + p[0] * c - p[1] * s, y: y + p[0] * s + p[1] * c}
+  end
+end
+
+fn burst(lst: list, x: num, y: num, n: int, col: record, power: num) -> list
+  let out = lst
+  for i in range(0, n) do
+    let a = random(0.0, 6.2832)
+    let sp = random(60.0, 200.0) * power
+    out = append(out, {
+      kind: "spark", x: x, y: y,
+      vx: cos(a) * sp, vy: sin(a) * sp,
+      life: random(0.35, 0.7), max: 0.7, c: col,
+      sz: random(1.5, 3.2), rot: 0.0, vr: 0.0,
+    })
+  end
+  out
+end
+
+fn confetti(lst: list, x0: num, x1: num, y: num, n: int) -> list
+  let cols = [C_GOLD, C_GOLD_L, #ef7630, #e2434f, #8a5cf2, #26a6d4, #3a9d52, #d8468e]
+  let out = lst
+  for i in range(0, n) do
+    out = append(out, {
+      kind: "paper", x: random(x0, x1), y: y - random(0.0, 120.0),
+      vx: random(-90.0, 90.0), vy: random(40.0, 220.0),
+      life: random(2.2, 3.4), max: 3.4, c: choose(cols),
+      sz: random(3.0, 5.5), rot: random(0.0, 6.28), vr: random(-9.0, 9.0),
+    })
+  end
+  out
+end
+
+fn load_records() -> list
+  let raw = panel_store_get("records")
+  let parsed = if raw == nil then nil else json_parse(raw) end
+  if parsed == nil || type(parsed) != "list" || len(parsed) != len(LEVELS) then
+    for i in range(0, len(LEVELS)) do
+      {moves: -1, time: -1.0, stars: 0, played: 0}
+    end
+  else
+    parsed
+  end
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state var ready    = false
+state var level    = clamp(parse_int(panel_store_get("level") ?? "1") ?? 1, 0, 2)
+state var cards    = []     // {d, up, flip, matched, t_match, t_miss, t_deal, hv, sparked}
+state var open     = []     // indices face up and not yet resolved (0..2)
+state var hold     = 0.0    // countdown until a missed pair turns back
+state var moves    = 0
+state var found    = 0
+state var misses   = 0
+state var streak   = 0
+state var best_streak = 0
+state var clock    = 0.0    // animation clock, seconds
+state var elapsed  = 0.0    // the round's timer
+state var timing   = false
+state var phase    = "deal" // deal | play | won
+state var won_at   = 0.0
+state var won_t    = 0.0    // clock when the result screen opened
+state var peeks    = 1
+state var peek_t   = 0.0
+state var cursor   = 0
+state var kbd      = false
+state var last_mx  = -1
+state var last_my  = -1
+state var bits     = []     // sparks + confetti
+state var floaters = []     // {x, y, text, t0}
+state var order    = []     // pairs in the order found: {d, t}
+state var note     = "Deal in progress"
+state var note_c   = C_DIM
+state var result   = {stars: 0, record: false}
+state var records  = load_records()
+state var prog_vis = 0.0
+state var games    = 0
+
+fn level_pairs(lv: int) -> int
+  LEVELS[lv].cols * LEVELS[lv].rows / 2
+end
+
+fn new_game(lv: int)
+  if lv != get level then panel_store_set("level", str(lv)) end
+  set level = lv
+  let n = level_pairs(lv)
+  let picks = slice(shuffled(range(0, len(DESIGNS))), 0, n)
+  let deck = shuffled(flat([picks, picks]))
+  let t0 = get clock + 0.08
+  set cards = for i in range(0, len(deck)) do
+    {
+      d: deck[i], up: false, flip: 0.0, matched: false,
+      t_match: -1.0, t_miss: -1.0, t_deal: t0 + float(i) * DEAL_STEP,
+      hv: 0.0, sparked: false,
+    }
+  end
+  set open = []
+  set hold = 0.0
+  set moves = 0
+  set found = 0
+  set misses = 0
+  set streak = 0
+  set best_streak = 0
+  set elapsed = 0.0
+  set timing = false
+  set phase = "deal"
+  set peeks = 1
+  set peek_t = 0.0
+  set order = []
+  set bits = []
+  set floaters = []
+  set cursor = 0
+  set result = {stars: 0, record: false}
+  set note = "Dealing {n} pairs"
+  set note_c = C_DIM
+end
+
+// Turn an unresolved (missed) pair back over.
+fn turn_back()
+  let cs = get cards
+  for i in get open do
+    cs[i] = {...cs[i], up: false, t_miss: -1.0}
+  end
+  set cards = cs
+  set open = []
+  set hold = 0.0
+end
+
+fn flip_card(i: int, anchor: record)
+  let c = (get cards)[i]
+  if c.matched || c.up then return nil end
+  // A third pick while a miss is still showing turns that pair back first,
+  // so a fast player never waits on the animation.
+  if len(get open) == 2 then turn_back() end
+  set cards = put(get cards, i, {...c, up: true})
+  set open = append(get open, i)
+  set timing = true
+  if len(get open) == 2 then
+    let a = (get open)[0]
+    let b = (get open)[1]
+    set moves += 1
+    let cs = get cards
+    let land = get clock + FLIP_T
+    if cs[a].d == cs[b].d then
+      set cards = put(put(cs, a, {...cs[a], matched: true, t_match: land}), b, {...cs[b], matched: true, t_match: land})
+      set found += 1
+      set streak += 1
+      set best_streak = max(get best_streak, get streak)
+      set order = append(get order, {d: cs[a].d, t: land})
+      set open = []
+      let label = if get streak >= 2 then "Streak x{get streak}" else "Pair!" end
+      set floaters = append(get floaters, {x: anchor.x, y: anchor.y, text: label, t0: land})
+      set note = "Found the {DESIGNS[cs[a].d].name} pair"
+      set note_c = C_GOLD
+      if get found == level_pairs(get level) then
+        set timing = false
+        set won_at = land + WIN_DELAY
+      end
+    else
+      set cards = put(put(cs, a, {...cs[a], t_miss: land}), b, {...cs[b], t_miss: land})
+      set streak = 0
+      set misses += 1
+      set hold = FLIP_T + MISS_VIEW
+      set note = "{DESIGNS[cs[a].d].name} and {DESIGNS[cs[b].d].name} don't match"
+      set note_c = C_MISS
+    end
+  else
+    set note = "{DESIGNS[c.d].name}. Now find its twin"
+    set note_c = C_DIM
+  end
+  nil
+end
+
+fn start_peek()
+  if len(get open) == 2 then turn_back() end
+  set peeks -= 1
+  set moves += PEEK_COST
+  set peek_t = PEEK_T + FLIP_T
+  set timing = true
+  set streak = 0
+  set note = "Peeking (+{PEEK_COST} moves)"
+  set note_c = C_GOLD
+end
+
+fn finish_game()
+  let lv = get level
+  let n = level_pairs(lv)
+  let st = stars_for(get moves, n)
+  let rec = (get records)[lv]
+  let better = rec.moves < 0 || get moves < rec.moves || (get moves == rec.moves && get elapsed < rec.time)
+  let next = if better then
+    {moves: get moves, time: round(get elapsed, 1), stars: max(st, rec.stars), played: rec.played + 1}
+  else
+    {...rec, stars: max(st, rec.stars), played: rec.played + 1}
+  end
+  set records = put(get records, lv, next)
+  panel_store_set("records", json_stringify(get records))
+  set result = {stars: st, record: better}
+  set games += 1
+  set phase = "won"
+  set won_t = get clock
+  set note = if better then "New best for {LEVELS[lv].name}" else "Board cleared" end
+  set note_c = C_GOLD
+end
+
+// ── Frame setup ──────────────────────────────────────────────────────────
+
+bloom.theme_set({
+  bg: C_BG, panel: C_RAIL, surface: C_RAIL, overlay: C_TABLE_H,
+  text: C_TEXT, muted: C_DIM, dim: C_MUTE, accent: C_GOLD,
+  outline: C_EDGE, border: C_EDGE, font: F,
+})
+
+let W = screen_width()
+let H = screen_height()
+let PAD = 24
+let SIDE_W = 296
+let HEAD_H = 76
+let FOOT_H = 48
+
+let content = rect(PAD, HEAD_H, W - PAD * 2, H - HEAD_H - FOOT_H)
+let side = rect(content.x + content.w - SIDE_W, content.y, SIDE_W, content.h)
+let table = rect(content.x, content.y, content.w - SIDE_W - 20, content.h)
+let board = pad(table, 30)
+
+if !ready then
+  set ready = true
+  new_game(level)
+end
+
+let L = LEVELS[level]
+let COLS = L.cols
+let ROWS = L.rows
+let PAIRS = COLS * ROWS / 2
+let GAP = 14.0
+let cw = min((float(board.w) - GAP * float(COLS - 1)) / float(COLS), ((float(board.h) - GAP * float(ROWS - 1)) / float(ROWS)) * 0.74)
+let ch = cw / 0.74
+let grid_w = cw * float(COLS) + GAP * float(COLS - 1)
+let grid_h = ch * float(ROWS) + GAP * float(ROWS - 1)
+let gx0 = float(board.x) + (float(board.w) - grid_w) / 2.0
+let gy0 = float(board.y) + (float(board.h) - grid_h) / 2.0
+let RAD = max(6.0, cw * 0.09)
+let deck_x = float(table.x + table.w / 2)
+let deck_y = float(table.y + table.h) - ch * 0.35
+
+fn slot(i: int) -> Rect
+  rect(gx0 + float(i % COLS) * (cw + GAP), gy0 + float(i / COLS) * (ch + GAP), cw, ch)
+end
+
+let sdt = min(dt(), 0.05)
+set clock += sdt
+if timing && phase == "play" then set elapsed += min(dt(), 1.0) end
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+let mx = mouse_x()
+let my = mouse_y()
+if (mx != last_mx || my != last_my) && last_mx >= 0 then set kbd = false end
+set last_mx = mx
+set last_my = my
+
+fn landed(c: record) -> bool
+  get clock >= c.t_deal + DEAL_T
+end
+
+let can_play = phase == "play" && peek_t <= 0.0
+
+let hov = -1
+for i in range(0, len(cards)) do
+  if point_in(mx, my, slot(i)) && landed(cards[i]) then hov = i end
+end
+let hov_pickable = hov >= 0 && can_play && !cards[hov].matched && !cards[hov].up
+
+if can_play && mouse_pressed(0) && hov_pickable then
+  set cursor = hov
+  let r = slot(hov)
+  flip_card(hov, {x: r.center_x(), y: r.y})
+end
+
+if key_pressed("left") && cursor % COLS > 0 then
+  set cursor -= 1
+  set kbd = true
+elsif key_pressed("right") && cursor % COLS < COLS - 1 then
+  set cursor += 1
+  set kbd = true
+elsif key_pressed("up") && cursor >= COLS then
+  set cursor -= COLS
+  set kbd = true
+elsif key_pressed("down") && cursor + COLS < len(cards) then
+  set cursor += COLS
+  set kbd = true
+end
+if key_pressed("left") || key_pressed("right") || key_pressed("up") || key_pressed("down") then set kbd = true end
+
+if (key_pressed("space") || key_pressed("return")) then
+  if phase == "won" then
+    new_game(level)
+  elsif can_play then
+    set kbd = true
+    let r = slot(cursor)
+    flip_card(cursor, {x: r.center_x(), y: r.y})
+  end
+end
+
+if key_pressed("n") then new_game(level) end
+if key_pressed("1") then new_game(0) end
+if key_pressed("2") then new_game(1) end
+if key_pressed("3") then new_game(2) end
+if key_pressed("p") && phase == "play" && peeks > 0 && peek_t <= 0.0 then start_peek() end
+
+// ── Delayed state changes ────────────────────────────────────────────────
+
+if hold > 0.0 then
+  set hold -= sdt
+  if hold <= 0.0 && len(open) == 2 then
+    turn_back()
+    set note = "Turned back. Keep looking"
+    set note_c = C_DIM
+  end
+end
+
+if peek_t > 0.0 then
+  set peek_t = max(0.0, peek_t - sdt)
+  if peek_t == 0.0 then
+    set note = "Peek over"
+    set note_c = C_DIM
+  end
+end
+
+if phase == "deal" && len(cards) > 0 && clock >= cards[len(cards) - 1].t_deal + DEAL_T then
+  set phase = "play"
+  set note = "Find all {PAIRS} pairs"
+  set note_c = C_DIM
+end
+
+if phase == "play" && found == PAIRS && clock >= won_at then
+  finish_game()
+  set bits = confetti(bits, float(table.x + 40), float(table.x + table.w - 40), float(table.y), 150)
+end
+
+// ── Card animation ───────────────────────────────────────────────────────
+
+let peeking = peek_t > 0.0
+set cards = for i in range(0, len(cards)) do
+  let c = cards[i]
+  let want = if c.up || c.matched || peeking then 1.0 else 0.0 end
+  let step = sdt / FLIP_T
+  let nf = if c.flip < want then min(want, c.flip + step) else max(want, c.flip - step) end
+  let hot = if i == hov && hov_pickable && !kbd then 1.0 else 0.0 end
+  let nc = {...c, flip: nf, hv: approach(c.hv, hot, 20.0)}
+  if nc.matched && !nc.sparked && clock >= nc.t_match then
+    let r = slot(i)
+    set bits = burst(bits, r.center_x(), r.center_y(), 16, C_GOLD_L, 1.0)
+    nc = {...nc, sparked: true}
+  end
+  nc
+end
+
+set bits = for p in bits do
+  let nl = p.life - sdt
+  if nl <= 0.0 then continue end
+  if p.kind == "paper" then
+    {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt, vx: p.vx * 0.99, vy: min(p.vy + 260.0 * sdt, 260.0), rot: p.rot + p.vr * sdt, life: nl}
+  else
+    {...p, x: p.x + p.vx * sdt, y: p.y + p.vy * sdt, vx: p.vx * 0.9, vy: p.vy * 0.9 + 40.0 * sdt, life: nl}
+  end
+end
+
+let now = clock
+set floaters = filter(floaters, fn(f) -> now - f.t0 < 1.1)
+
+let target_prog = float(found) / float(max(1, PAIRS))
+set prog_vis = approach(prog_vis, target_prog, 10.0)
+
+// ── Draw: backdrop and header ────────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+tx("Pairs", PAD, 18, S_TITLE)
+let title_w = text_width("Pairs", S_TITLE)
+tx("MEMORY", PAD + title_w + 14, 25, S_KICK)
+tx("{L.name} board, {COLS} x {ROWS}. Flip two cards; keep them if they match.", PAD + title_w + 14, 41, S_SMALL)
+
+let btn_new = rect(W - PAD - 118, 20, 118, 34)
+let btn_peek = rect(btn_new.x - 12 - 112, 20, 112, 34)
+let seg_r = rect(btn_peek.x - 20 - 270, 20, 270, 34)
+
+let picked = bloom.segmented(seg_r, ["Easy", "Classic", "Expert"], level, {size: 13})
+if picked != level then new_game(picked) end
+
+let peek_ok = phase == "play" && peeks > 0 && !peeking
+let peek_label = if peeks > 0 then "Peek (+{PEEK_COST})" else "Peek used" end
+if bloom.button(btn_peek, peek_label, {icon: "search", disabled: !peek_ok, size: 13}) then start_peek() end
+if bloom.button(btn_new, "New game", {variant: "primary", icon: "plus", size: 13}) then new_game(level) end
+
+// ── Draw: table ──────────────────────────────────────────────────────────
+
+draw_shadow(table, {radius: 18, blur: 30, dy: 10, a: 110})
+draw_rect_rounded(table, 18, C_TABLE)
+clip_push(table, 18)
+draw_circle_gradient({x: table.center_x(), y: table.center_y()}, int(float(table.h) * 0.62), C_TABLE_H, C_TABLE)
+clip_pop()
+draw_rect_rounded_outline(table, 18, C_LINE, 255, 1)
+
+// The deck the deal flies out of, drawn until the last card leaves it.
+let in_deck = len(filter(cards, fn(c) -> now < c.t_deal))
+if in_deck > 0 then
+  for k in range(0, min(in_deck, 6)) do
+    let dr = rect(deck_x - cw * 0.3, deck_y - ch * 0.3 - float(k) * 2.0, cw * 0.6, ch * 0.6)
+    draw_shadow(dr, {radius: 6, blur: 8, dy: 3, a: 90})
+    draw_rect_gradient_rounded(dr, 6, C_BACK_A, C_BACK_B, 1.2)
+    draw_rect_rounded_outline(dr.inset(3), 4, C_GOLD, 150, 1)
+  end
+end
+
+fn draw_back(fr: Rect, sx: float, rad: num, full_w: float)
+  draw_rect_gradient_rounded(fr, rad, C_BACK_A, C_BACK_B, 1.2)
+  if fr.w < 8.0 then return nil end
+  let ins = 7.0
+  let inner = rect(fr.x + ins * sx, fr.y + ins, fr.w - 2.0 * ins * sx, fr.h - 2.0 * ins)
+  let cx = fr.center_x()
+  let cy = fr.center_y()
+  let hw = full_w / 2.0 - ins
+  let hh = float(fr.h) / 2.0 - ins
+  clip_push(inner, max(2.0, rad - 4.0))
+  let step = 13.0
+  let n = int((hw + hh) / step) + 1
+  for k in range(-n, n + 1) do
+    let off = float(k) * step
+    draw_line(cx + (off - hh) * sx, cy - hh, cx + (off + hh) * sx, cy + hh, C_BACK_LN, 70, 1)
+    draw_line(cx + (off + hh) * sx, cy - hh, cx + (off - hh) * sx, cy + hh, C_BACK_LN, 70, 1)
+  end
+  clip_pop()
+  draw_rect_rounded_outline(inner, max(2.0, rad - 4.0), C_GOLD, 170, 1)
+  let er = min(full_w, float(fr.h)) * 0.2
+  let T = {cx: cx, cy: cy, s: er, sx: sx, bg: C_BACK_B}
+  gdisc(T, 0.0, 0.0, 1.0, C_BACK_B)
+  draw_ellipse_outline(cx, cy, er * sx, er, C_GOLD, 220, 1.5)
+  gpoly(T, map(U_SPARK, fn(p) -> [p[0] * 0.7, p[1] * 0.7]), C_GOLD)
+  nil
+end
+
+fn draw_face(fr: Rect, sx: float, rad: num, full_w: float, D: record)
+  draw_rect_rounded(fr, rad, C_FACE)
+  if fr.w < 8.0 then return nil end
+  let ins = 5.0
+  let inner = rect(fr.x + ins * sx, fr.y + ins, fr.w - 2.0 * ins * sx, fr.h - 2.0 * ins)
+  draw_rect_rounded_outline(inner, max(2.0, rad - 3.0), C_FACE_ED, 255, 1)
+  let s = min(full_w, float(fr.h)) * 0.33
+  glyph(D, {cx: fr.center_x(), cy: fr.center_y(), s: s, sx: sx, bg: C_FACE})
+  nil
+end
+
+// One card, at its slot `r`, given its animation parameters.
+fn draw_card(c: record, r: Rect, k: record)
+  let e = ease_in_out(c.flip)
+  let sx = max(0.03, abs(cos(pi() * e)))
+  let lift = sin(pi() * e)
+  let scale = k.scale * (1.0 + 0.07 * lift + 0.03 * c.hv + k.pop)
+  let w = float(r.w) * scale
+  let h = float(r.h) * scale
+  let cx = k.cx + k.dx
+  let cy = k.cy - 4.0 * c.hv - 6.0 * lift
+  let fr = rect(cx - w * sx / 2.0, cy - h / 2.0, w * sx, h)
+  let rad = min(RAD * scale, w * sx / 2.0)
+  draw_shadow(fr, {radius: int(rad), blur: int(10.0 + 14.0 * lift + 6.0 * c.hv), dy: int(4.0 + 8.0 * lift + 3.0 * c.hv), a: 110})
+  if e < 0.5 then
+    draw_back(fr, sx, rad, w)
+  else
+    draw_face(fr, sx, rad, w, DESIGNS[c.d])
+    if k.settle > 0.0 then
+      draw_rect_rounded(fr, rad, C_TABLE, int(34.0 * k.settle))
+      draw_rect_rounded_outline(fr, rad, C_GOLD, int(230.0 * k.settle), 2)
+      if sx > 0.9 then
+        // The check badge, sitting on the top-right corner.
+        let br = 9.0 * k.settle
+        let bx = fr.x + fr.w - 13.0
+        let by = fr.y + 13.0
+        draw_circle({x: int(bx), y: int(by)}, int(br + 0.5), C_GOLD)
+        if br > 5.0 then
+          draw_polyline([{x: bx - 4.0, y: by}, {x: bx - 1.0, y: by + 3.0}, {x: bx + 4.0, y: by - 3.0}], C_INK, 255, 2)
+        end
+      end
+    end
+    if k.miss > 0.0 then
+      draw_rect_rounded_outline(fr, rad, C_MISS, int(255.0 * k.miss), 3)
+    end
+  end
+  if k.ring > 0.0 then
+    let g = 14.0 * (1.0 - k.ring)
+    draw_rect_rounded_outline(rect(fr.x - g, fr.y - g, fr.w + 2.0 * g, fr.h + 2.0 * g), rad + g, C_GOLD_L, int(220.0 * k.ring), 2)
+  end
+  nil
+end
+
+for i in range(0, len(cards)) do
+  let c = cards[i]
+  let r = slot(i)
+  let dt_deal = (clock - c.t_deal) / DEAL_T
+  if dt_deal < 0.0 then continue end
+  let de = ease_out(dt_deal)
+  let cx = lerp(deck_x, r.center_x(), de)
+  let cy = lerp(deck_y, r.center_y(), de)
+  let sc = lerp(0.6, 1.0, de)
+  let since_m = if c.matched && c.t_match >= 0.0 then clock - c.t_match else -1.0 end
+  let pk = if since_m >= 0.0 && since_m < 0.5 then since_m / 0.5 else -1.0 end
+  let pop = if pk >= 0.0 then 0.09 * sin(pi() * pk) else 0.0 end
+  let ring = if pk >= 0.0 then 1.0 - pk else 0.0 end
+  let settle = if since_m >= 0.0 then clamp((since_m - 0.3) / 0.4, 0.0, 1.0) else 0.0 end
+  let since_x = if c.t_miss >= 0.0 then clock - c.t_miss else -1.0 end
+  let shk = if since_x >= 0.0 && since_x < 0.4 then since_x / 0.4 else -1.0 end
+  let dx = if shk >= 0.0 then sin(shk * pi() * 6.0) * 7.0 * (1.0 - shk) else 0.0 end
+  let miss = if since_x >= 0.0 && c.up then 1.0 else 0.0 end
+  draw_card(c, r, {cx: cx, cy: cy, dx: dx, scale: sc, pop: pop, ring: ring, settle: settle, miss: miss})
+  if kbd && i == cursor && phase != "won" then
+    let fr = r.inset(-7)
+    draw_rect_rounded_outline(fr, RAD + 7.0, C_GOLD, 255, 2)
+  end
+end
+
+// Sparks over the cards; confetti goes on top of everything, below.
+for p in bits do
+  if p.kind == "spark" then
+    let f = p.life / p.max
+    draw_circle({x: int(p.x), y: int(p.y)}, max(1, int(p.sz * f + 0.5)), p.c, int(240.0 * f))
+  end
+end
+
+for f in floaters do
+  let k = (clock - f.t0) / 1.1
+  if k < 0.0 then continue end
+  let a = if k < 0.6 then 255 else int(255.0 * (1.0 - (k - 0.6) / 0.4)) end
+  let st = {...S_FLOAT, color: C_GOLD_L}
+  let tw = text_width(f.text, st)
+  let y = f.y - 12.0 - 34.0 * ease_out(k)
+  let chip_r = rect(f.x - float(tw) / 2.0 - 10.0, y - 4.0, float(tw) + 20.0, 28.0)
+  draw_rect_rounded(chip_r, 14, C_INK, int(float(a) * 0.85))
+  draw_text(f.text, {x: int(f.x) - tw / 2, y: int(y)}, {...st, color: {...C_GOLD_L, a: a}})
+end
+
+// Peek banner across the top of the table.
+if peeking then
+  let pk_w = 280
+  let pr = rect(table.center_x() - pk_w / 2, table.y + 8, pk_w, 34)
+  draw_shadow(pr, {radius: 17, blur: 12, dy: 4, a: 120})
+  draw_rect_rounded(pr, 17, C_INK)
+  draw_rect_rounded_outline(pr, 17, over(C_INK, C_GOLD, 60), 255, 1)
+  let frac = clamp(peek_t / (PEEK_T + FLIP_T), 0.0, 1.0)
+  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, pr.w - 36, 2), 1, C_LINE)
+  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, int(float(pr.w - 36) * frac), 2), 1, C_GOLD)
+  text_layout.draw_text_line("Peeking. Memorize the board", rect(pr.x, pr.y - 1, pr.w, pr.h - 2), {...S_BODYB, color: C_GOLD_L}, "center")
+end
+
+// ── Draw: sidebar ────────────────────────────────────────────────────────
+
+fn side_card(r: Rect, title: string)
+  draw_shadow(r, {radius: 14, blur: 18, dy: 6, a: 90})
+  draw_rect_rounded(r, 14, C_RAIL)
+  draw_rect_rounded_outline(r, 14, C_LINE, 255, 1)
+  tx(title, r.x + 18, r.y + 16, S_HEAD)
+end
+
+fn stat_block(x: num, y: num, label: string, value: string, sub: string, hi: bool)
+  tx(label, x, y, S_LABEL)
+  tx(value, x, y + 18, if hi then {...S_STAT, color: C_GOLD} else S_STAT end)
+  if sub != "" then
+    tx(sub, x + text_width(value, S_STAT) + 8, y + 29, S_SMALL)
+  end
+end
+
+let round_r = rect(side.x, side.y, side.w, 200)
+side_card(round_r, "THIS ROUND")
+let rx0 = round_r.x + 18
+let rx1 = round_r.x + side.w / 2 + 6
+let acc = if moves > 0 then "{found * 100 / moves}% hits" else "" end
+stat_block(rx0, round_r.y + 44, "Moves", str(moves), acc, false)
+stat_block(rx1, round_r.y + 44, "Time", fmt_time(elapsed), if timing then "" else (if phase == "won" then "final" else "" end) end, false)
+stat_block(rx0, round_r.y + 104, "Pairs", "{found}", "of {PAIRS}", phase == "won")
+stat_block(rx1, round_r.y + 104, "Streak", str(streak), "best {best_streak}", streak >= 2)
+let bar = rect(round_r.x + 18, round_r.y + round_r.h - 26, round_r.w - 36, 6)
+draw_rect_rounded(bar, 3, C_WELL)
+if prog_vis > 0.001 then
+  draw_rect_gradient_rounded(rect(bar.x, bar.y, max(6.0, float(bar.w) * prog_vis), bar.h), 3, C_GOLD, C_GOLD_L, 0.0)
+end
+
+// The collection: one tile per pair on the board, filled in as they're found.
+let col_n = 6
+let tile_gap = 8.0
+let tile_w = (float(side.w) - 36.0 - tile_gap * float(col_n - 1)) / float(col_n)
+let tile_h = tile_w * 1.18
+let tile_rows = (PAIRS + col_n - 1) / col_n
+let coll_h = 52 + int(float(tile_rows) * (tile_h + tile_gap))
+let coll_r = rect(side.x, round_r.y + round_r.h + 16, side.w, coll_h + 10)
+side_card(coll_r, "COLLECTION")
+tx_right("{found} of {PAIRS}", coll_r.x + coll_r.w - 18, coll_r.y + 16, S_SMALL)
+for i in range(0, PAIRS) do
+  let tr = rect(float(coll_r.x) + 18.0 + float(i % col_n) * (tile_w + tile_gap), float(coll_r.y) + 42.0 + float(i / col_n) * (tile_h + tile_gap), tile_w, tile_h)
+  if i < len(order) then
+    let o = order[i]
+    let k = clamp((clock - o.t) / 0.35, 0.0, 1.0)
+    if k > 0.0 then
+      let sc = 0.6 + 0.4 * ease_out(k) + 0.12 * sin(pi() * k)
+      let fr = rect(tr.center_x() - tile_w * sc / 2.0, tr.center_y() - tile_h * sc / 2.0, tile_w * sc, tile_h * sc)
+      draw_rect_rounded(fr, 5, C_FACE)
+      glyph(DESIGNS[o.d], {cx: fr.center_x(), cy: fr.center_y(), s: tile_w * sc * 0.3, sx: 1.0, bg: C_FACE})
+    else
+      draw_rect_rounded(tr, 5, C_WELL)
+    end
+  else
+    draw_rect_rounded(tr, 5, C_WELL)
+    draw_rect_rounded_outline(tr, 5, C_LINE, 255, 1)
+    draw_circle({x: int(tr.center_x()), y: int(tr.center_y())}, 2, C_LINE)
+  end
+end
+
+// Records, one row per difficulty.
+let rec_r = rect(side.x, coll_r.y + coll_r.h + 16, side.w, 58 + 46 * len(LEVELS))
+side_card(rec_r, "PERSONAL BESTS")
+let any_played = len(filter(records, fn(r) -> r.played > 0)) > 0
+if any_played then
+  let rl = "Reset"
+  let rlw = text_width(rl, {size: 12, font: F})
+  if bloom.link(rec_r.x + rec_r.w - 18 - rlw, rec_r.y + 14, rl, {size: 12, color: C_MUTE}) then
+    set records = for i in range(0, len(LEVELS)) do
+      {moves: -1, time: -1.0, stars: 0, played: 0}
+    end
+    panel_store_set("records", nil)
+    set note = "Personal bests cleared"
+    set note_c = C_DIM
+  end
+end
+for i in range(0, len(LEVELS)) do
+  let lv = LEVELS[i]
+  let rec = records[i]
+  let row_r = rect(rec_r.x + 8, rec_r.y + 40 + i * 46, rec_r.w - 16, 42)
+  if i == level then
+    draw_rect_rounded(row_r, 9, C_TABLE_H)
+  end
+  tx(lv.name, row_r.x + 10, row_r.y + 5, S_BODYB)
+  let won_s = if rec.played > 0 then ", won {rec.played}" else "" end
+  tx("{lv.cols} x {lv.rows}, {lv.cols * lv.rows / 2} pairs{won_s}", row_r.x + 10, row_r.y + 23, S_SMALL)
+  if rec.moves >= 0 then
+    let mv = "{rec.moves} moves"
+    tx_right(mv, row_r.x + row_r.w - 10, row_r.y + 5, S_BODY)
+    tx_right(fmt_time(rec.time), row_r.x + row_r.w - 10, row_r.y + 23, S_SMALL)
+    let star_x = float(row_r.x + row_r.w - 10 - text_width(mv, S_BODY)) - 46.0
+    for s in range(0, 3) do
+      draw_star(star_x + float(s) * 13.0, float(row_r.y) + 13.0, 5.5, s < rec.stars)
+    end
+  else
+    tx_right("not yet played", row_r.x + row_r.w - 10, row_r.y + 14, S_SMALL)
+  end
+end
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn key_chip(x: num, y: num, cap: string, desc: string) -> num
+  let cw2 = text_width(cap, S_CAP) + 16
+  let box = rect(int(x), int(y), cw2, 22)
+  draw_rect_rounded(box, 6, C_RAIL)
+  draw_rect_rounded_outline(box, 6, C_EDGE, 255, 1)
+  text_layout.draw_text_line(cap, box, S_CAP, "center")
+  tx(desc, x + cw2 + 8, y + 3, S_SMALL)
+  cw2 + 8 + text_width(desc, S_SMALL) + 20
+end
+
+let fy = H - FOOT_H + 13
+let fx = PAD
+fx += key_chip(fx, fy, "CLICK", "flip")
+fx += key_chip(fx, fy, "ARROWS", "move")
+fx += key_chip(fx, fy, "SPACE", "flip selected")
+fx += key_chip(fx, fy, "P", "peek")
+fx += key_chip(fx, fy, "N", "new game")
+fx += key_chip(fx, fy, "1  2  3", "difficulty")
+
+let note_s = ellipsize(note, table.x + table.w - 8 - fx - 20, S_BODY)
+draw_circle({x: table.x + table.w - 8 - text_width(note_s, S_BODY) - 14, y: fy + 11}, 4, note_c)
+tx_right(note_s, table.x + table.w - 8, fy + 3, S_BODY)
+
+// ── Draw: result ─────────────────────────────────────────────────────────
+
+if phase == "won" then
+  let k = clamp((clock - won_t) / 0.35, 0.0, 1.0)
+  let e = ease_out(k)
+  draw_rect_rounded(table, 18, C_BG, int(170.0 * e))
+  let cw3 = 420
+  let ch3 = 300
+  let card_r = rect(table.center_x() - cw3 / 2, int(float(table.center_y() - ch3 / 2) + 24.0 * (1.0 - e)), cw3, ch3)
+  draw_shadow(card_r, {radius: 18, blur: 40, dy: 16, a: int(160.0 * e)})
+  draw_rect_rounded(card_r, 18, C_RAIL)
+  draw_rect_rounded_outline(card_r, 18, C_EDGE, 255, 1)
+  let mid = card_r.center_x()
+  tx_center("Board cleared", mid, card_r.y + 28, {...S_TITLE, size: 24})
+  tx_center("{L.name}, {PAIRS} pairs", mid, card_r.y + 62, S_LABEL)
+  for s in range(0, 3) do
+    let sk = clamp((clock - won_t - 0.25 - float(s) * 0.18) / 0.3, 0.0, 1.0)
+    let lit = s < result.stars && sk > 0.0
+    let r0 = 20.0 + (if lit then 6.0 * sin(pi() * sk) else 0.0 end)
+    draw_star(float(mid) + float(s - 1) * 58.0, float(card_r.y) + 112.0 - (if s == 1 then 6.0 else 0.0 end), r0, lit)
+  end
+  let sy = card_r.y + 152
+  let cols3 = [
+    {l: "Moves", v: str(moves)},
+    {l: "Time", v: fmt_time(elapsed)},
+    {l: "Best streak", v: str(best_streak)},
+  ]
+  for j in range(0, 3) do
+    let cxj = float(card_r.x) + float(cw3) * (float(j) + 0.5) / 3.0
+    tx_center(cols3[j].v, cxj, sy, S_STAT)
+    tx_center(cols3[j].l, cxj, sy + 32, S_LABEL)
+  end
+  if result.record then
+    let lab = "NEW PERSONAL BEST"
+    let lw = text_width(lab, S_CAP) + 24
+    let pr = rect(mid - lw / 2, card_r.y + 208, lw, 22)
+    draw_rect_rounded(pr, 11, over(C_RAIL, C_GOLD, 50))
+    text_layout.draw_text_line(lab, pr, {...S_CAP, color: C_GOLD_L}, "center")
+  end
+  let by = card_r.y + ch3 - 54
+  if level < len(LEVELS) - 1 then
+    if bloom.button(rect(mid - 158, by, 150, 36), "Play again", {variant: "primary", size: 13}) then new_game(level) end
+    if bloom.button(rect(mid + 8, by, 150, 36), "Try {LEVELS[level + 1].name}", {icon_end: "arrow_right", size: 13}) then new_game(level + 1) end
+  else
+    if bloom.button(rect(mid - 75, by, 150, 36), "Play again", {variant: "primary", size: 13}) then new_game(level) end
+  end
+end
+
+// Confetti stays on the table, as if it were falling onto it.
+clip_push(table, 18)
+for p in bits do
+  if p.kind == "paper" then
+    let f = min(1.0, p.life / 0.6)
+    let wob = abs(cos(p.rot * 0.7))
+    fill_poly(quad(p.x, p.y, p.sz * (0.35 + 0.65 * wob), p.sz * 0.55, p.rot), p.c, int(255.0 * f))
+  end
+end
+clip_pop()
+
+bloom.overlays()
+
+// Keep ticking while anything is moving or the clock is running.
+let settling = len(filter(cards, fn(c) -> c.flip != (if c.up || c.matched || peeking then 1.0 else 0.0 end))) > 0
+if phase == "deal" || hold > 0.0 || peeking || len(bits) > 0 || len(floaters) > 0 || settling || timing || (phase == "won" && clock - won_t < 2.0) then
+  request_frame()
+end
+
+// ── Observation mirrors (readable in /state panel.values) ────────────────
+
+let obs_phase = phase
+let obs_level = L.name
+let obs_moves = moves
+let obs_found = found
+let obs_pairs = PAIRS
+let obs_misses = misses
+let obs_streak = streak
+let obs_best_streak = best_streak
+let obs_open = open
+let obs_deck = map(cards, fn(c) -> c.d)
+let obs_matched = map(cards, fn(c) -> c.matched)
+let obs_face_up = len(filter(cards, fn(c) -> c.flip >= 0.5))
+let obs_time = round(elapsed, 1)
+let obs_peeks = peeks
+let obs_peeking = peeking
+let obs_cursor = cursor
+let obs_hover = hov
+let obs_stars = result.stars
+let obs_record = result.record
+let obs_records = records
+let obs_bits = len(bits)
+let obs_note = note
+let obs_games = games

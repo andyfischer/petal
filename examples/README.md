@@ -5,7 +5,7 @@ Runnable Petal programs, grouped by what they are:
 | Directory | What's in it |
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
-| [`games/`](games/) | Games — pong, breakout, snake, asteroids, flappy, an interactive solar system, two SDL-hosted side-scrollers (the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation), and five headless console programs written as language stress tests: [`2048`](games/2048/), [`boids`](games/boids/), [`minesweeper`](games/minesweeper/), [`terrain`](games/terrain/), [`tetris`](games/tetris/) |
+| [`games/`](games/) | Games — pong, breakout, snake, asteroids, flappy, a [`memory`](games/memory/) matching game, an interactive solar system, two SDL-hosted side-scrollers (the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation), and five headless console programs written as language stress tests: [`2048`](games/2048/), [`boids`](games/boids/), [`minesweeper`](games/minesweeper/), [`terrain`](games/terrain/), [`tetris`](games/tetris/) |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, calendar, kanban, CRM, spreadsheet, paint, vector editor, photo adjust, node editor, markdown editor, command palette |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |

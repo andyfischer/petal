@@ -1,0 +1,1804 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Almanac — a week / day / month calendar, drawn as a Garden panel.
+//
+// Exercises: calendar arithmetic written in Petal (there is no date builtin),
+// a dense time grid with overlap packing, drag to move / resize / create,
+// all-day lanes, a month grid with overflow, a popover editor with a text
+// field, undo/redo, keyboard navigation, and persistence through the panel
+// store.
+//
+// Run:  ./launch.sh   (or garden --headless --debug-port 0 --init layout.ptl)
+// ─────────────────────────────────────────────────────────────────────────
+
+import text_layout
+
+// An event is a plain record (it round-trips through json_parse, which would
+// drop a class tag anyway):
+//
+//   {id, title, cal, day, start, dur, allday, span, loc}
+//
+// `day` is a day number (days since 1970-01-01), `start` and `dur` are
+// minutes, `cal` indexes CALS. An all-day event covers `span` days from `day`.
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let PAPER    = #f4f1ea      // sidebar
+let CANVAS   = #fbfaf6      // main surface
+let SURFACE  = #ffffff      // cards, popover
+let RULE     = #e6e1d6      // hour lines, dividers
+let RULE_2   = #efebe2      // half-hour lines
+let INK      = #1d2027
+let INK_2    = #4a4f5a
+let MUTED    = #7d828c
+let FAINT    = #a9adb4
+let TODAY    = #e5484d
+let HILITE   = #ece7dc      // hover wash on paper
+
+let CALS = [
+  {name: "Work",     color: #3b78d8},
+  {name: "Personal", color: #2a9a73},
+  {name: "Family",   color: #e27434},
+  {name: "Fitness",  color: #cf4d8c},
+  {name: "Travel",   color: #7b5bd3},
+]
+
+let MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"]
+let DAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+  "Saturday", "Sunday"]
+let DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+fn st(size: num, color: record) -> record
+  {size: size, color: color, font: "ui"}
+end
+
+fn stb(size: num, color: record) -> record
+  {size: size, color: color, font: "ui", weight: 700}
+end
+
+fn cal_color(i: int) -> record
+  CALS[clamp(i, 0, len(CALS) - 1)].color
+end
+
+// ── Calendar arithmetic ──────────────────────────────────────────────────
+// Day numbers count from 1970-01-01. These are Howard Hinnant's civil-date
+// algorithms, restricted to dates after 1970 so every `/` truncates the way
+// floor would.
+
+fn days_from_civil(y: int, m: int, d: int) -> int
+  let yy = if m <= 2 then y - 1 else y end
+  let era = yy / 400
+  let yoe = yy - era * 400
+  let mp = (m + 9) % 12
+  let doy = (153 * mp + 2) / 5 + d - 1
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+  era * 146097 + doe - 719468
+end
+
+fn civil(z: int) -> record
+  let z2 = z + 719468
+  let era = z2 / 146097
+  let doe = z2 - era * 146097
+  let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+  let mp = (5 * doy + 2) / 153
+  let d = doy - (153 * mp + 2) / 5 + 1
+  let m = if mp < 10 then mp + 3 else mp - 9 end
+  let y = yoe + era * 400
+  {y: if m <= 2 then y + 1 else y end, m: m, d: d}
+end
+
+// 0 = Monday … 6 = Sunday. 1970-01-01 was a Thursday.
+fn weekday(z: int) -> int
+  (z + 3) % 7
+end
+
+fn week_start(z: int) -> int
+  z - weekday(z)
+end
+
+fn month_first(z: int) -> int
+  let c = civil(z)
+  days_from_civil(c.y, c.m, 1)
+end
+
+// Move by whole months, clamping the day (Jan 31 + 1 month = Feb 28).
+fn add_months(z: int, n: int) -> int
+  let c = civil(z)
+  let idx = c.y * 12 + (c.m - 1) + n
+  let y = idx / 12
+  let m = idx % 12 + 1
+  let first = days_from_civil(y, m, 1)
+  let next = if m == 12 then days_from_civil(y + 1, 1, 1) else days_from_civil(y, m + 1, 1) end
+  first + min(c.d, next - first) - 1
+end
+
+// ISO-8601 week number: the week holding the year's first Thursday is week 1.
+fn iso_week(z: int) -> int
+  let thu = z - weekday(z) + 3
+  let jan1 = days_from_civil(civil(thu).y, 1, 1)
+  (thu - jan1) / 7 + 1
+end
+
+// ── Formatting ───────────────────────────────────────────────────────────
+
+fn two(n: int) -> string
+  if n < 10 then "0{n}" else str(n) end
+end
+
+fn hour12(h: int) -> int
+  let k = h % 12
+  if k == 0 then 12 else k end
+end
+
+fn meridiem(m: int) -> string
+  if (m / 60) % 24 < 12 then "AM" else "PM" end
+end
+
+// "9:30", "10" — the minutes only when they are not zero.
+fn clock(m: int) -> string
+  let h = (m / 60) % 24
+  let mm = m % 60
+  if mm == 0 then str(hour12(h)) else "{hour12(h)}:{two(mm)}" end
+end
+
+fn clock_full(m: int) -> string
+  "{clock(m)} {meridiem(m)}"
+end
+
+fn time_range(start: int, dur: int) -> string
+  let e = start + dur
+  if meridiem(start) == meridiem(e) then
+    "{clock(start)} – {clock(e)} {meridiem(e)}"
+  else
+    "{clock_full(start)} – {clock_full(e)}"
+  end
+end
+
+fn dur_label(d: int) -> string
+  if d < 60 then "{d} min"
+  elsif d % 60 == 0 then
+    if d == 60 then "1 hr" else "{d / 60} hrs" end
+  else "{d / 60} hr {d % 60} min"
+  end
+end
+
+fn hour_label(h: int) -> string
+  if h == 12 then "Noon" else "{hour12(h)} {if h < 12 then "AM" else "PM" end}" end
+end
+
+fn month_short(m: int) -> string
+  slice(MONTHS[m - 1], 0, 3)
+end
+
+fn date_long(z: int) -> string
+  let c = civil(z)
+  "{DAYS_LONG[weekday(z)]}, {MONTHS[c.m - 1]} {c.d}"
+end
+
+// ── Seed data ────────────────────────────────────────────────────────────
+// A designer's September and October: a daily standup, gym mornings, and a
+// hand-written week around "today" dense enough to show overlap packing.
+
+let DEMO_TODAY = days_from_civil(2026, 9, 23)
+
+fn ev(id: int, title: string, cal: int, day: int, start: int, dur: int, loc: string) -> record
+  {id: id, title: title, cal: cal, day: day, start: start, dur: dur,
+    allday: false, span: 1, loc: loc}
+end
+
+fn allday_ev(id: int, title: string, cal: int, day: int, span: int, loc: string) -> record
+  {id: id, title: title, cal: cal, day: day, start: 0, dur: 1440,
+    allday: true, span: span, loc: loc}
+end
+
+fn hm(h: int, m: int) -> int
+  h * 60 + m
+end
+
+fn seed_events() -> list
+  let d = fn(m, dd) -> days_from_civil(2026, m, dd)
+  let out = [
+    // This week (Mon 21 – Sun 27 September).
+    ev(1, "Sprint planning", 0, d(9, 21), hm(10, 0), 90, "Room 4B"),
+    ev(2, "Lunch with Marco", 1, d(9, 21), hm(12, 30), 60, "Tartine"),
+    ev(3, "Onboarding flow critique", 0, d(9, 21), hm(14, 0), 60, "Figma"),
+    ev(4, "Pick up Theo", 2, d(9, 21), hm(16, 30), 30, "Lincoln Elementary"),
+    ev(5, "Design review", 0, d(9, 22), hm(11, 0), 60, "Room 2A"),
+    ev(6, "1:1 with Priya", 0, d(9, 22), hm(13, 0), 30, "Zoom"),
+    ev(7, "Research synthesis", 0, d(9, 22), hm(14, 0), 120, "War room"),
+    ev(8, "Dentist", 1, d(9, 22), hm(15, 30), 45, "Dr. Okafor"),
+    ev(9, "Yoga", 3, d(9, 22), hm(18, 30), 60, "Studio Flow"),
+    ev(10, "Portfolio review", 0, d(9, 23), hm(10, 0), 60, "Room 4B"),
+    ev(11, "Accessibility audit", 0, d(9, 23), hm(10, 30), 90, "Room 3C"),
+    ev(12, "Coffee with Ines", 1, d(9, 23), hm(12, 0), 45, "Blue Bottle"),
+    ev(13, "Usability tests", 0, d(9, 23), hm(13, 30), 150, "Lab"),
+    ev(14, "Hiring debrief", 0, d(9, 23), hm(14, 0), 30, "Zoom"),
+    ev(15, "Parent-teacher night", 2, d(9, 23), hm(18, 0), 90, "Lincoln Elementary"),
+    ev(16, "Roadmap sync", 0, d(9, 24), hm(10, 0), 60, "Room 4B"),
+    ev(17, "Prototype handoff", 0, d(9, 24), hm(14, 30), 60, "Eng pod"),
+    ev(18, "Run club", 3, d(9, 24), hm(18, 0), 60, "Embarcadero"),
+    ev(19, "Demo day", 0, d(9, 25), hm(11, 0), 90, "Town hall"),
+    ev(20, "Team lunch", 0, d(9, 25), hm(12, 30), 90, "Nopa"),
+    ev(21, "Pack for Lisbon", 4, d(9, 25), hm(19, 0), 60, ""),
+    ev(22, "Farmers market", 1, d(9, 26), hm(9, 0), 90, "Ferry Building"),
+    ev(23, "Theo's soccer game", 2, d(9, 26), hm(11, 0), 90, "Kezar Stadium"),
+    ev(24, "Dinner at Ana's", 1, d(9, 26), hm(19, 0), 150, ""),
+    ev(25, "Long run", 3, d(9, 27), hm(8, 0), 90, "Golden Gate Park"),
+    ev(26, "Brunch with grandparents", 2, d(9, 27), hm(11, 0), 120, ""),
+    allday_ev(27, "Mom's birthday", 2, d(9, 24), 1, ""),
+    allday_ev(28, "Lisbon offsite", 4, d(9, 28), 5, "Lisbon"),
+    allday_ev(29, "Design week", 0, d(9, 21), 3, ""),
+    ev(30, "Flight TP 238 to Lisbon", 4, d(9, 27), hm(17, 45), 150, "SFO Terminal A"),
+
+    // Earlier in September.
+    allday_ev(31, "Labor Day", 1, d(9, 7), 1, ""),
+    ev(32, "Quarterly kickoff", 0, d(9, 1), hm(10, 0), 120, "Town hall"),
+    ev(33, "Haircut", 1, d(9, 3), hm(17, 30), 45, "Barber & Co"),
+    ev(34, "Theo's first day", 2, d(9, 2), hm(8, 0), 60, "Lincoln Elementary"),
+    ev(35, "Design review", 0, d(9, 8), hm(11, 0), 60, "Room 2A"),
+    ev(36, "Book club", 1, d(9, 10), hm(19, 0), 90, "Green Apple"),
+    ev(37, "Stakeholder readout", 0, d(9, 11), hm(15, 0), 60, "Room 4B"),
+    ev(38, "Camping", 2, d(9, 12), hm(9, 0), 60, "Point Reyes"),
+    allday_ev(39, "Camping trip", 2, d(9, 12), 2, "Point Reyes"),
+    ev(40, "Design review", 0, d(9, 15), hm(11, 0), 60, "Room 2A"),
+    ev(41, "Concert: Khruangbin", 1, d(9, 17), hm(20, 0), 150, "The Greek"),
+    ev(42, "Offsite planning", 0, d(9, 18), hm(13, 0), 60, "Zoom"),
+    ev(43, "Kids' swim lesson", 2, d(9, 19), hm(10, 0), 45, "Rossi Pool"),
+
+    // October.
+    ev(44, "Return flight", 4, d(10, 3), hm(11, 20), 180, "LIS"),
+    ev(45, "Design review", 0, d(10, 6), hm(11, 0), 60, "Room 2A"),
+    ev(46, "Halloween costume shopping", 2, d(10, 10), hm(14, 0), 90, ""),
+    ev(47, "Half marathon", 3, d(10, 18), hm(7, 0), 150, "Golden Gate Park"),
+    allday_ev(48, "Dad visiting", 2, d(10, 14), 4, ""),
+    ev(49, "Q4 planning", 0, d(10, 13), hm(10, 0), 180, "Town hall"),
+    ev(50, "Pumpkin patch", 2, d(10, 24), hm(10, 0), 180, "Half Moon Bay"),
+  ]
+  // Recurring: standup every working day, gym Monday / Wednesday / Friday.
+  let id = 100
+  for z in range(d(8, 31), d(10, 31)) do
+    let wd = weekday(z)
+    let away = z >= d(9, 28) && z <= d(10, 2)
+    if wd < 5 && !away then
+      out = append(out, ev(id, "Standup", 0, z, hm(9, 30), 15, "Zoom"))
+      id += 1
+    end
+    if (wd == 0 || wd == 2 || wd == 4) && !away then
+      out = append(out, ev(id, "Gym", 3, z, hm(7, 0), 60, "Mission Cliffs"))
+      id += 1
+    end
+  end
+  out
+end
+
+// ── State ────────────────────────────────────────────────────────────────
+
+fn load_events() -> list
+  let saved = panel_store_get("events")
+  if saved == nil then seed_events() else json_parse(saved) end
+end
+
+fn max_id(evs: list) -> int
+  reduce(evs, 0, fn(a, e) -> max(a, e.id))
+end
+
+state events = load_events()
+state next_id = max_id(events) + 1
+state view = panel_store_get("view") ?? "week"
+state focus_day = DEMO_TODAY
+state mini_first = month_first(DEMO_TODAY)
+state hidden = [false, false, false, false, false]
+state sel_id = -1
+state pop_id = -1
+state scroll_px = -1.0
+state fc = focus_state()
+state title_undo_armed = true
+state undo = []
+state redo = []
+state drag = {mode: "none", id: -1, sx: 0, sy: 0, moved: false, grab: 0,
+  day: 0, anchor: 0}
+state saves = 0
+state created = 0
+state moved_n = 0
+state deleted = 0
+
+// ── Layout metrics (the pane can resize, so recomputed every frame) ───────
+
+let W = screen_width()
+let H = screen_height()
+let SIDE_W = 268
+let MX0 = SIDE_W            // main area left edge
+let HEAD_H = 84
+let DAYHEAD_H = 54
+let GUTTER = 62
+let HOUR_H = 52
+let PAD = 24
+let GX = MX0 + GUTTER
+let AGENDA_W = 330          // day view: the agenda column beside the grid
+let ALL_TOP = HEAD_H + DAYHEAD_H
+let MONTH_TOP = HEAD_H + 34
+let DEMO_NOW = hm(10, 42) + int(time() / 60)
+
+let mx = mouse_x()
+let my = mouse_y()
+
+fn snap15(m: num) -> int
+  int(round(m / 15.0)) * 15
+end
+
+fn floor15(m: num) -> int
+  int(floor(m / 15.0)) * 15
+end
+
+// The day numbers the time grid shows.
+fn grid_days(v: string, fd: int) -> list
+  if v == "day" then
+    [fd]
+  else
+    let ws = week_start(fd)
+    for i in range(0, 7) do ws + i end
+  end
+end
+
+// The grid's right edge: the day view gives the rest to its agenda.
+fn grid_r(n: int) -> int
+  if n == 1 then W - AGENDA_W else W - 14 end
+end
+
+fn col_w(n: int) -> float
+  float(grid_r(n) - GX) / n
+end
+
+fn col_at(n: int, x: num) -> int
+  clamp(int(floor((x - GX) / col_w(n))), 0, n - 1)
+end
+
+fn visible(e: record, hid: list) -> bool
+  !hid[e.cal]
+end
+
+fn covers(e: record, z: int) -> bool
+  if e.allday then z >= e.day && z < e.day + e.span else e.day == z end
+end
+
+// Overlap packing for one day's timed events: a cluster is a run of
+// transitively overlapping events; within it each event takes the first
+// column that is free at its start, and the whole cluster shares a width.
+fn pack_day(evs: list) -> list
+  let sorted = sort(evs, fn(a, b) -> if a.start != b.start then a.start - b.start else b.dur - a.dur end)
+  let out = []
+  let cluster = []
+  let ends = []
+  let cluster_end = -1
+  for e in sorted do
+    if len(cluster) > 0 && e.start >= cluster_end then
+      for c in cluster do
+        out = append(out, {...c, n: len(ends)})
+      end
+      cluster = []
+      ends = []
+      cluster_end = -1
+    end
+    let fin = e.start + max(e.dur, 25)
+    let col = -1
+    for i in range(0, len(ends)) do
+      if col < 0 && ends[i] <= e.start then
+        col = i
+      end
+    end
+    if col < 0 then
+      col = len(ends)
+      ends = append(ends, fin)
+    else
+      ends[col] = fin
+    end
+    cluster = append(cluster, {ev: e, col: col})
+    cluster_end = max(cluster_end, fin)
+  end
+  for c in cluster do
+    out = append(out, {...c, n: len(ends)})
+  end
+  out
+end
+
+// All-day events clipped to the visible days and packed into lanes.
+fn pack_allday(evs: list, d0: int, n: int) -> record
+  let segs = []
+  let lane_ends = []
+  let sorted = sort(evs, fn(a, b) -> if a.day != b.day then a.day - b.day else b.span - a.span end)
+  for e in sorted do
+    let c0 = max(e.day, d0) - d0
+    let c1 = min(e.day + e.span, d0 + n) - d0
+    if c1 <= c0 then
+      continue
+    end
+    let lane = -1
+    for i in range(0, len(lane_ends)) do
+      if lane < 0 && lane_ends[i] <= c0 then
+        lane = i
+      end
+    end
+    if lane < 0 then
+      lane = len(lane_ends)
+      lane_ends = append(lane_ends, c1)
+    else
+      lane_ends[lane] = c1
+    end
+    segs = append(segs, {ev: e, c0: c0, c1: c1, lane: lane})
+  end
+  {segs: segs, lanes: len(lane_ends)}
+end
+
+fn replace_ev(evs: list, ne) -> list
+  for e in evs do
+    if e.id == ne.id then ne else e end
+  end
+end
+
+fn find_ev(evs: list, id: int)
+  let out = nil
+  for e in evs do
+    if e.id == id then
+      out = e
+    end
+  end
+  out
+end
+
+fn remove_ev(evs: list, id: int) -> list
+  filter(evs, fn(e) -> e.id != id)
+end
+
+fn push_snap(stack: list, evs: list) -> list
+  let s = append(stack, evs)
+  if len(s) > 60 then slice(s, len(s) - 60, len(s)) else s end
+end
+
+// Month grid geometry: six weeks starting on the Monday on or before the 1st.
+fn month_cell(i: int) -> Rect
+  let cw = float(W - MX0 - PAD * 2) / 7
+  let ch = float(H - MONTH_TOP - PAD) / 6
+  rect(MX0 + PAD + (i % 7) * cw, MONTH_TOP + (i / 7) * ch, cw, ch)
+end
+
+fn month_cell_at(x: num, y: num) -> int
+  let cw = float(W - MX0 - PAD * 2) / 7
+  let ch = float(H - MONTH_TOP - PAD) / 6
+  let c = clamp(int(floor((x - MX0 - PAD) / cw)), 0, 6)
+  let r = clamp(int(floor((y - MONTH_TOP) / ch)), 0, 5)
+  r * 7 + c
+end
+
+// ── The plan: every rect this frame draws and hit-tests ───────────────────
+// Built from the events with the in-flight drag already applied, so the
+// packing reflows live under the pointer.
+
+fn plan(evs: list, v: string, fd: int, d: record, hid: list, scroll: num) -> record
+  let shown = filter(evs, fn(e) -> visible(e, hid))
+  let orig = find_ev(evs, d.id)
+  let pv = nil
+
+  if v == "month" then
+    let g0 = week_start(month_first(fd))
+    if d.mode == "mmove" && d.moved && orig != nil then
+      let cell = month_cell_at(mx, my)
+      pv = {...orig, day: g0 + cell - d.grab}
+      shown = replace_ev(shown, pv)
+    end
+    let cells = for i in range(0, 42) do
+      let z = g0 + i
+      let r = month_cell(i)
+      let today_evs = filter(shown, fn(e) -> covers(e, z))
+      let evs_sorted = sort(today_evs, fn(a, b) -> if a.allday != b.allday then (if a.allday then -1 else 1 end) else a.start - b.start end)
+      {day: z, r: r, evs: evs_sorted}
+    end
+    let hits = []
+    for c in cells do
+      let cap = max(1, int((c.r.h - 34) / 20))
+      let n = len(c.evs)
+      let k = if n > cap then cap - 1 else n end
+      for j in range(0, k) do
+        let cr = rect(c.r.x + 5, c.r.y + 30 + j * 20, c.r.w - 10, 18)
+        hits = append(hits, {ev: c.evs[j], r: cr, kind: "chip"})
+      end
+    end
+    return {view: v, cells: cells, hits: hits, pv: pv, g0: g0,
+      days: [], n: 7, lanes: 0, all_h: 0, grid_top: MONTH_TOP, segs: [], blocks: []}
+  end
+
+  let days = grid_days(v, fd)
+  let n = len(days)
+  let cw = col_w(n)
+
+  // All-day row first: its height decides where the time grid starts.
+  if d.mode == "amove" && d.moved && orig != nil then
+    pv = {...orig, day: days[0] + col_at(n, mx) - d.grab}
+    shown = replace_ev(shown, pv)
+  end
+  let ad = pack_allday(filter(shown, fn(e) -> e.allday), days[0], n)
+  let all_h = max(1, ad.lanes) * 24 + 10
+  let grid_top = ALL_TOP + all_h + 1
+  let min_at = fn(y) -> (y - grid_top + scroll) * 60.0 / HOUR_H
+
+  if d.mode == "move" && d.moved && orig != nil then
+    let st0 = clamp(snap15(min_at(my) - d.grab), 0, 1440 - orig.dur)
+    pv = {...orig, day: days[col_at(n, mx)], start: st0}
+    shown = replace_ev(shown, pv)
+  elsif d.mode == "resize" && orig != nil then
+    let e = clamp(snap15(min_at(my)), orig.start + 15, 1440)
+    pv = {...orig, dur: e - orig.start}
+    shown = replace_ev(shown, pv)
+  elsif d.mode == "create" && d.moved then
+    let b = clamp(snap15(min_at(my)), 0, 1440)
+    let s0 = min(d.anchor, b)
+    let e0 = max(d.anchor + 15, b)
+    if b < d.anchor then
+      e0 = d.anchor + 15
+    end
+    pv = {id: -1, title: "", cal: 0, day: d.day, start: s0, dur: max(15, e0 - s0),
+      allday: false, span: 1, loc: ""}
+    shown = append(shown, pv)
+  end
+
+  let hits = []
+  let segs = []
+  for s in ad.segs do
+    let r = rect(GX + s.c0 * cw + 2, ALL_TOP + 5 + s.lane * 24, (s.c1 - s.c0) * cw - 4, 21)
+    segs = append(segs, {...s, r: r})
+    hits = append(hits, {ev: s.ev, r: r, kind: "allday"})
+  end
+  let blocks = []
+  for ci in range(0, n) do
+    let z = days[ci]
+    let timed = filter(shown, fn(e) -> !e.allday && e.day == z)
+    for p in pack_day(timed) do
+      let inner = cw - 8
+      let bx = GX + ci * cw + 2 + p.col * inner / p.n
+      let bw = if p.col == p.n - 1 then inner / p.n + 4 else inner / p.n - 1 end
+      let by = grid_top + p.ev.start * HOUR_H / 60.0 - scroll
+      let bh = max(18, p.ev.dur * HOUR_H / 60.0 - 2)
+      let r = rect(bx, by, bw, bh)
+      blocks = append(blocks, {ev: p.ev, r: r})
+      hits = append(hits, {ev: p.ev, r: r, kind: "block"})
+    end
+  end
+  {view: v, days: days, n: n, cw: cw, lanes: ad.lanes, all_h: all_h,
+    grid_top: grid_top, segs: segs, blocks: blocks, hits: hits, pv: pv,
+    cells: [], g0: 0}
+end
+
+// The topmost hit under a point (later draws sit on top).
+fn hit_at(hits: list, x: num, y: num, grid_top: num)
+  let out = nil
+  for h in hits do
+    let clipped = h.kind == "block" && y < grid_top
+    if !clipped && point_in(x, y, h.r) then
+      out = h
+    end
+  end
+  out
+end
+
+fn hit_for(hits: list, id: int)
+  let out = nil
+  for h in hits do
+    if h.ev.id == id && out == nil then
+      out = h
+    end
+  end
+  out
+end
+
+// ── Popover geometry ─────────────────────────────────────────────────────
+
+let POP_W = 316
+
+// Taller when there is a location line to show.
+fn pop_h(e: record) -> int
+  if e.loc != "" then 250 else 226 end
+end
+
+fn pop_rect(anchor: record, h: int) -> Rect
+  let x = anchor.x + anchor.w + 12
+  if x + POP_W > W - 8 then
+    x = anchor.x - POP_W - 12
+  end
+  if x < MX0 + 8 then
+    x = clamp(anchor.x + 20, MX0 + 8, W - POP_W - 8)
+  end
+  let y = clamp(anchor.y - 12, HEAD_H + 8, H - h - 10)
+  rect(x, y, POP_W, h)
+end
+
+fn pop_parts(p: record) -> record
+  let x = p.x + 18
+  let w = p.w - 36
+  let sy = p.y + p.h - 92
+  {
+    title: rect(x - 8, p.y + 20, w + 16, 34),
+    rule_y: sy - 22,
+    swatch_y: sy,
+    swatches: for i in range(0, len(CALS)) do rect(x + i * 30, sy, 24, 24) end,
+    shorter: rect(x, p.y + p.h - 46, 58, 28),
+    longer: rect(x + 64, p.y + p.h - 46, 58, 28),
+    del: rect(p.x + p.w - 18 - 78, p.y + p.h - 46, 78, 28),
+  }
+end
+
+// ── Sidebar geometry ─────────────────────────────────────────────────────
+
+let SB_X = 22
+let NEW_BTN = rect(SB_X, 74, SIDE_W - SB_X * 2, 36)
+let MINI_TOP = 134
+let MINI_CELL = 32
+let MINI_X = SB_X - 2
+let MINI_PREV = rect(SIDE_W - SB_X - 52, MINI_TOP - 4, 24, 24)
+let MINI_NEXT = rect(SIDE_W - SB_X - 24, MINI_TOP - 4, 24, 24)
+let CALS_TOP = MINI_TOP + 48 + MINI_CELL * 6 + 26
+let RESET_BTN = rect(SB_X - 6, H - 40, 132, 26)
+
+fn mini_cell(i: int) -> Rect
+  rect(MINI_X + (i % 7) * MINI_CELL, MINI_TOP + 48 + (i / 7) * MINI_CELL, MINI_CELL, MINI_CELL)
+end
+
+fn cal_row(i: int) -> Rect
+  rect(SB_X - 8, CALS_TOP + 30 + i * 30, SIDE_W - SB_X * 2 + 16, 28)
+end
+
+// ── Header geometry ──────────────────────────────────────────────────────
+
+let SEG_W = 198
+let NAV_R = rect(W - PAD - 150, 26, 150, 32)
+let SEG_R = rect(NAV_R.x - 16 - SEG_W, 26, SEG_W, 32)
+let VIEWS = ["day", "week", "month"]
+let VIEW_LABELS = ["Day", "Week", "Month"]
+
+fn seg_cell(i: int) -> Rect
+  rect(SEG_R.x + 3 + i * (SEG_W - 6) / 3, SEG_R.y + 3, (SEG_W - 6) / 3, SEG_R.h - 6)
+end
+
+let PREV_R = rect(NAV_R.x, NAV_R.y, 32, 32)
+let TODAY_R = rect(NAV_R.x + 38, NAV_R.y, 74, 32)
+let NEXT_R = rect(NAV_R.x + 118, NAV_R.y, 32, 32)
+
+// ── Day agenda geometry ──────────────────────────────────────────────────
+
+fn agenda_events(evs: list, z: int, hid: list) -> list
+  let day_evs = filter(evs, fn(e) -> !hid[e.cal] && covers(e, z))
+  sort(day_evs, fn(a, b) -> if a.allday != b.allday then (if a.allday then -1 else 1 end) else a.start - b.start end)
+end
+
+let AG_X = W - AGENDA_W + 1
+let AG_LIST_TOP = HEAD_H + 176
+
+fn agenda_row(i: int) -> Rect
+  rect(AG_X + 14, AG_LIST_TOP + i * 58, AGENDA_W - 30, 54)
+end
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+claim_key("z", "cmd")
+claim_key("z", "cmd+shift")
+
+// First frame: park the grid at 7:30 in the morning.
+if scroll_px < 0 then
+  scroll_px = 7.5 * HOUR_H
+end
+
+let P0 = plan(events, view, focus_day, drag, hidden, scroll_px)
+let editing = focused(fc, "title")
+let changed = false
+let before = events
+
+// The popover, when its event is on screen.
+let pop_hit = if pop_id >= 0 then hit_for(P0.hits, pop_id) else nil end
+if pop_id >= 0 && pop_hit == nil && drag.mode == "none" then
+  pop_id = -1
+  fc = focus_clear(fc)
+end
+let pop_r = if pop_hit != nil then pop_rect(pop_hit.r, pop_h(find_ev(events, pop_id))) else rect(-1000, -1000, 0, 0) end
+let pp = pop_parts(pop_r)
+let over_pop = pop_hit != nil && point_in(mx, my, pop_r)
+
+let title_caret = -1
+
+// Title field: typing edits the event live; the first keystroke of an edit
+// takes one undo snapshot.
+if pop_hit != nil then
+  let pe = find_ev(events, pop_id)
+  let res = text_field_update(fc, "title", pp.title, pe.title, {size: 17, font: "ui", inset: 8})
+  if focused(res.focus, "title") && !focused(fc, "title") then
+    title_undo_armed = true
+  end
+  fc = res.focus
+  title_caret = res.caret
+  if res.text != pe.title then
+    if title_undo_armed then
+      undo = push_snap(undo, events)
+      redo = []
+      title_undo_armed = false
+    end
+    events = replace_ev(events, {...pe, title: res.text})
+    changed = true
+  end
+  if res.submitted || (focused(fc, "title") && key_pressed("escape")) then
+    fc = focus_clear(fc)
+  end
+  if mouse_pressed(0) && !point_in(mx, my, pp.title) then
+    fc = focus_clear(fc)
+  end
+end
+editing = focused(fc, "title")
+
+// Popover buttons.
+if pop_hit != nil && mouse_pressed(0) && over_pop then
+  let pe = find_ev(events, pop_id)
+  for i in range(0, len(CALS)) do
+    if point_in(mx, my, pp.swatches[i]) && pe.cal != i then
+      undo = push_snap(undo, events)
+      redo = []
+      events = replace_ev(events, {...pe, cal: i})
+      changed = true
+    end
+  end
+  if !pe.allday && point_in(mx, my, pp.shorter) && pe.dur > 15 then
+    undo = push_snap(undo, events)
+    redo = []
+    events = replace_ev(events, {...pe, dur: pe.dur - 15})
+    changed = true
+  end
+  if !pe.allday && point_in(mx, my, pp.longer) && pe.start + pe.dur < 1440 then
+    undo = push_snap(undo, events)
+    redo = []
+    events = replace_ev(events, {...pe, dur: pe.dur + 15})
+    changed = true
+  end
+  if point_in(mx, my, pp.del) then
+    undo = push_snap(undo, events)
+    redo = []
+    events = remove_ev(events, pop_id)
+    deleted += 1
+    changed = true
+    pop_id = -1
+    sel_id = -1
+  end
+end
+
+// Header: view switch and period navigation.
+fn step_period(fd: int, v: string, dir: int) -> int
+  if v == "day" then fd + dir
+  elsif v == "week" then fd + 7 * dir
+  else add_months(fd, dir)
+  end
+end
+
+// A new event starts at the next half hour today, or at 9 on any other day.
+fn new_start(z: int) -> int
+  if z == DEMO_TODAY then min((DEMO_NOW / 30 + 1) * 30, 1380) else hm(9, 0) end
+end
+
+let nav_dir = 0
+let over_main = mx >= MX0
+if mouse_pressed(0) && !over_pop then
+  for i in range(0, 3) do
+    if point_in(mx, my, seg_cell(i)) then
+      view = VIEWS[i]
+      pop_id = -1
+    end
+  end
+  if point_in(mx, my, PREV_R) then nav_dir = -1 end
+  if point_in(mx, my, NEXT_R) then nav_dir = 1 end
+  if point_in(mx, my, TODAY_R) then
+    focus_day = DEMO_TODAY
+    mini_first = month_first(DEMO_TODAY)
+    pop_id = -1
+  end
+end
+
+// Keyboard (not while the title field has the keys).
+if !editing then
+  if key_pressed("left") && sel_id < 0 then nav_dir = -1 end
+  if key_pressed("right") && sel_id < 0 then nav_dir = 1 end
+  if key_pressed("t") then
+    focus_day = DEMO_TODAY
+    mini_first = month_first(DEMO_TODAY)
+    pop_id = -1
+  end
+  if key_pressed("d") then
+    view = "day"
+    pop_id = -1
+  end
+  if key_pressed("w") then
+    view = "week"
+    pop_id = -1
+  end
+  if key_pressed("m") then
+    view = "month"
+    pop_id = -1
+  end
+  if key_pressed("escape") then
+    if pop_id >= 0 then pop_id = -1 else sel_id = -1 end
+  end
+  if key_pressed("return") && sel_id >= 0 && pop_id < 0 then
+    pop_id = sel_id
+  end
+  let se = find_ev(events, sel_id)
+  if se != nil && (key_pressed("backspace") || key_pressed("delete")) then
+    undo = push_snap(undo, events)
+    redo = []
+    events = remove_ev(events, sel_id)
+    deleted += 1
+    changed = true
+    sel_id = -1
+    pop_id = -1
+  elsif se != nil && !se.allday && (key_pressed("up") || key_pressed("down")) then
+    let dm = if key_pressed("up") then -15 else 15 end
+    undo = push_snap(undo, events)
+    redo = []
+    if mod_shift() then
+      events = replace_ev(events, {...se, dur: clamp(se.dur + dm, 15, 1440 - se.start)})
+    else
+      events = replace_ev(events, {...se, start: clamp(se.start + dm, 0, 1440 - se.dur)})
+    end
+    changed = true
+  elsif se != nil && (key_pressed("left") || key_pressed("right")) then
+    let dd = if key_pressed("left") then -1 else 1 end
+    undo = push_snap(undo, events)
+    redo = []
+    events = replace_ev(events, {...se, day: se.day + dd})
+    focus_day = se.day + dd
+    changed = true
+  end
+  if key_pressed("n") then
+    let ne = ev(next_id, "", 0, focus_day, new_start(focus_day), 60, "")
+    undo = push_snap(undo, events)
+    redo = []
+    events = append(events, ne)
+    next_id += 1
+    created += 1
+    changed = true
+    sel_id = ne.id
+    pop_id = ne.id
+    fc = focus_set(fc, "title")
+    title_undo_armed = false
+    if view == "month" then view = "week" end
+    scroll_px = clamp(ne.start * HOUR_H / 60.0 - 120, 0, 24 * HOUR_H)
+  end
+  if key_pressed("z") && mod_cmd() then
+    if mod_shift() then
+      if len(redo) > 0 then
+        undo = push_snap(undo, events)
+        events = last(redo)
+        redo = drop_last(redo)
+        changed = true
+      end
+    elsif len(undo) > 0 then
+      redo = append(redo, events)
+      events = last(undo)
+      undo = drop_last(undo)
+      changed = true
+    end
+    if find_ev(events, sel_id) == nil then
+      sel_id = -1
+      pop_id = -1
+    end
+  end
+end
+
+if nav_dir != 0 then
+  focus_day = step_period(focus_day, view, nav_dir)
+  mini_first = month_first(focus_day)
+  pop_id = -1
+end
+
+// Sidebar: new event, mini month, calendar toggles, reset.
+if mouse_pressed(0) && mx < SIDE_W then
+  if point_in(mx, my, NEW_BTN) then
+    let ne = ev(next_id, "", 0, focus_day, new_start(focus_day), 60, "")
+    undo = push_snap(undo, events)
+    redo = []
+    events = append(events, ne)
+    next_id += 1
+    created += 1
+    changed = true
+    sel_id = ne.id
+    pop_id = ne.id
+    fc = focus_set(fc, "title")
+    title_undo_armed = false
+    if view == "month" then view = "week" end
+    scroll_px = clamp(ne.start * HOUR_H / 60.0 - 120, 0, 24 * HOUR_H)
+  end
+  if point_in(mx, my, MINI_PREV) then mini_first = add_months(mini_first, -1) end
+  if point_in(mx, my, MINI_NEXT) then mini_first = add_months(mini_first, 1) end
+  let mg0 = week_start(mini_first)
+  for i in range(0, 42) do
+    if point_in(mx, my, mini_cell(i)) then
+      focus_day = mg0 + i
+      if month_first(focus_day) != mini_first then
+        mini_first = month_first(focus_day)
+      end
+      pop_id = -1
+    end
+  end
+  for i in range(0, len(CALS)) do
+    if point_in(mx, my, cal_row(i)) then
+      hidden[i] = !hidden[i]
+    end
+  end
+  if point_in(mx, my, RESET_BTN) then
+    undo = push_snap(undo, events)
+    redo = []
+    events = seed_events()
+    next_id = max_id(events) + 1
+    hidden = [false, false, false, false, false]
+    focus_day = DEMO_TODAY
+    mini_first = month_first(DEMO_TODAY)
+    sel_id = -1
+    pop_id = -1
+    changed = true
+  end
+end
+
+// Day agenda: clicking an entry selects it and brings it into view.
+if view == "day" && mouse_pressed(0) && mx >= AG_X && !over_pop then
+  let ag = agenda_events(events, focus_day, hidden)
+  let picked = false
+  for i in range(0, len(ag)) do
+    let r = agenda_row(i)
+    if r.bottom() < H && point_in(mx, my, r) then
+      sel_id = ag[i].id
+      pop_id = ag[i].id
+      picked = true
+      if !ag[i].allday then
+        let top = ag[i].start * HOUR_H / 60.0
+        let vis = float(H - P0.grid_top)
+        if top < scroll_px || top + ag[i].dur * HOUR_H / 60.0 > scroll_px + vis then
+          scroll_px = top - 60.0
+        end
+      end
+    end
+  end
+  if !picked then
+    sel_id = -1
+    pop_id = -1
+  end
+end
+
+// Wheel scrolls the time grid.
+let grid_h = H - P0.grid_top
+let max_scroll = max(0.0, float(24 * HOUR_H - grid_h))
+if view != "month" && scroll_y() != 0 && over_main && my > P0.grid_top && !over_pop then
+  scroll_px = clamp(scroll_px + scroll_y() * 40.0, 0.0, max_scroll)
+end
+scroll_px = clamp(scroll_px, 0.0, max_scroll)
+
+// Pointer on the grid: press arms a drag, travel makes it real, release
+// commits the preview.
+let in_grid = view != "month" && over_main && my >= P0.grid_top && mx >= GX && mx < grid_r(P0.n)
+let hit = hit_at(P0.hits, mx, my, P0.grid_top)
+
+let over_agenda = view == "day" && mx >= AG_X
+if mouse_pressed(0) && over_main && !over_agenda && !over_pop && my > HEAD_H && drag.mode == "none" then
+  if hit != nil then
+    sel_id = hit.ev.id
+    if pop_id != hit.ev.id then
+      pop_id = -1
+    end
+    let mode = if hit.kind == "chip" then "mmove"
+    elsif hit.kind == "allday" then "amove"
+    elsif !hit.ev.allday && my > hit.r.y + hit.r.h - 7 then "resize"
+    else "move"
+    end
+    let grab = 0
+    if mode == "move" then
+      grab = int((my - P0.grid_top + scroll_px) * 60.0 / HOUR_H) - hit.ev.start
+    elsif mode == "amove" then
+      grab = col_at(P0.n, mx) - (max(hit.ev.day, P0.days[0]) - P0.days[0]) + (max(hit.ev.day, P0.days[0]) - hit.ev.day)
+    elsif mode == "mmove" then
+      grab = month_cell_at(mx, my) - (hit.ev.day - P0.g0)
+      if hit.ev.day < P0.g0 then
+        grab = month_cell_at(mx, my) + (P0.g0 - hit.ev.day)
+      end
+    end
+    drag = {mode: mode, id: hit.ev.id, sx: mx, sy: my, moved: false, grab: grab,
+      day: hit.ev.day, anchor: 0}
+    if click_count() == 2 then
+      pop_id = hit.ev.id
+      fc = focus_set(fc, "title")
+      title_undo_armed = true
+      drag.mode = "none"
+    end
+  elsif in_grid then
+    sel_id = -1
+    pop_id = -1
+    let z = P0.days[col_at(P0.n, mx)]
+    let m = floor15((my - P0.grid_top + scroll_px) * 60.0 / HOUR_H)
+    drag = {mode: "create", id: -1, sx: mx, sy: my, moved: false, grab: 0,
+      day: z, anchor: m}
+    if click_count() == 2 then
+      let ne = ev(next_id, "", 0, z, clamp(floor(m / 30) * 30, 0, 1380), 60, "")
+      undo = push_snap(undo, events)
+      redo = []
+      events = append(events, ne)
+      next_id += 1
+      created += 1
+      changed = true
+      sel_id = ne.id
+      pop_id = ne.id
+      fc = focus_set(fc, "title")
+      title_undo_armed = false
+      drag.mode = "none"
+    end
+  elsif view == "month" && my > MONTH_TOP then
+    let cell = month_cell_at(mx, my)
+    let cr = month_cell(cell)
+    let cap = max(1, int((cr.h - 34) / 20))
+    let more_y = cr.y + 30 + (cap - 1) * 20
+    focus_day = P0.g0 + cell
+    sel_id = -1
+    pop_id = -1
+    let has_more = len(P0.cells[cell].evs) > cap
+    if click_count() == 2 || (has_more && my >= more_y && my < more_y + 20) then
+      view = "day"
+    end
+  else
+    sel_id = -1
+    pop_id = -1
+  end
+end
+
+if drag.mode != "none" && !drag.moved && (abs(mx - drag.sx) + abs(my - drag.sy)) > 4 then
+  drag.moved = true
+  pop_id = -1
+end
+
+// While dragging near the grid's edges, scroll it.
+if (drag.mode == "move" || drag.mode == "resize" || drag.mode == "create") && drag.moved then
+  if my < P0.grid_top + 24 then
+    scroll_px = clamp(scroll_px - 6.0, 0.0, max_scroll)
+    request_frame()
+  elsif my > H - 24 then
+    scroll_px = clamp(scroll_px + 6.0, 0.0, max_scroll)
+    request_frame()
+  end
+end
+
+if mouse_released(0) && drag.mode != "none" then
+  let Pd = plan(events, view, focus_day, drag, hidden, scroll_px)
+  if drag.moved && Pd.pv != nil then
+    undo = push_snap(undo, events)
+    redo = []
+    if drag.mode == "create" then
+      let ne = {...Pd.pv, id: next_id}
+      events = append(events, ne)
+      next_id += 1
+      created += 1
+      sel_id = ne.id
+      pop_id = ne.id
+      fc = focus_set(fc, "title")
+      title_undo_armed = false
+    else
+      events = replace_ev(events, Pd.pv)
+      moved_n += 1
+    end
+    changed = true
+  elsif !drag.moved && drag.mode != "create" && drag.id >= 0 then
+    // A click with no travel opens (or keeps) the popover.
+    pop_id = drag.id
+  end
+  drag = {mode: "none", id: -1, sx: 0, sy: 0, moved: false, grab: 0, day: 0, anchor: 0}
+end
+
+// An untitled event whose editor closed gets a name rather than a blank.
+if !focused(fc, "title") then
+  let blank = filter(events, fn(e) -> e.title == "")
+  for b in blank do
+    if b.id != pop_id then
+      events = replace_ev(events, {...b, title: "New event"})
+      changed = true
+    end
+  end
+end
+
+if changed then
+  panel_store_set("events", json_stringify(events))
+  saves += 1
+end
+if view != (panel_store_get("view") ?? "week") then
+  panel_store_set("view", view)
+end
+if drag.mode != "none" then
+  request_frame()
+end
+
+// ── Frame ────────────────────────────────────────────────────────────────
+
+let P = plan(events, view, focus_day, drag, hidden, scroll_px)
+let hover = if drag.mode == "none" && !over_pop then hit_at(P.hits, mx, my, P.grid_top) else nil end
+
+clear(CANVAS.r, CANVAS.g, CANVAS.b)
+
+// Event fills: a pale wash of the calendar colour with a saturated edge.
+// Past events fade further toward the canvas; the selected one inverts.
+fn ev_colors(e: record, selected: bool, hot: bool) -> record
+  let c = cal_color(e.cal)
+  let past = e.day < DEMO_TODAY || (e.day == DEMO_TODAY && !e.allday && e.start + e.dur <= DEMO_NOW)
+  if selected then
+    {fill: c, edge: mix(c, #000000, 0.18), ink: #ffffff, sub: mix(c, #ffffff, 0.78)}
+  else
+    let wash = if hot then 26 elsif past then 11 else 17 end
+    let ink = mix(c, INK, 0.55)
+    {fill: tint(SURFACE, c, wash), edge: if past then tint(SURFACE, c, 55) else c end,
+      ink: if past then mix(ink, CANVAS, 0.35) else ink end,
+      sub: if past then mix(c, CANVAS, 0.45) else mix(c, INK, 0.2) end}
+  end
+end
+
+// Greedy word wrap that never breaks inside a word: a word too wide for the
+// block is ellipsized on a line of its own. (`text_wrap` hard-breaks long
+// words, which in a 60 px column turns "Usability" into "Usabilit / y".)
+fn wrap_words(s: string, style: record, w: num) -> list
+  let lines = []
+  let cur = ""
+  for word in split(s, " ") do
+    let cand = if cur == "" then word else cur ++ " " ++ word end
+    if text_width(cand, style) <= w || cur == "" then
+      cur = cand
+    else
+      lines = append(lines, cur)
+      cur = word
+    end
+  end
+  if cur != "" then
+    lines = append(lines, cur)
+  end
+  for l in lines do
+    if text_width(l, style) > w then ellipsize(l, w, style) else l end
+  end
+end
+
+fn draw_block(e: record, r: record, selected: bool, hot: bool, ghost: bool)
+  let k = ev_colors(e, selected, hot)
+  if selected then
+    draw_shadow(r, {radius: 6, blur: 14, spread: 0, dx: 0, dy: 4, color: #1d2027, a: 50})
+  end
+  if ghost then
+    draw_rect_rounded(r, 6, k.fill, 150)
+    draw_rect_rounded_outline(r, 6, k.edge, 200, 1)
+  else
+    draw_rect_rounded(r, 6, k.fill)
+    draw_rect_rounded(rect(r.x, r.y, 3, r.h), 2, k.edge)
+  end
+  clip_push(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2))
+  let title = if e.title == "" then "New event" else e.title end
+  let tx = r.x + 8
+  let tw = r.w - 12
+  if r.h < 30 then
+    // Short: title and start time on one line.
+    let t1 = stb(11, k.ink)
+    let label = ellipsize(title, tw, t1)
+    draw_text(label, {x: tx, y: r.y + (r.h - 15) / 2}, t1)
+    let lw = text_width(label, t1)
+    if lw + 40 < tw then
+      draw_text(clock_full(e.start), {x: tx + lw + 6, y: r.y + (r.h - 15) / 2}, st(11, k.sub))
+    end
+  else
+    let t1 = stb(12, k.ink)
+    let lines = wrap_words(title, t1, tw)
+    let max_lines = max(1, int((r.h - 26) / 16))
+    let shown_n = min(len(lines), max_lines)
+    for i in range(0, shown_n) do
+      let line = if i == shown_n - 1 && len(lines) > shown_n then ellipsize(lines[i] ++ "…", tw, t1) else lines[i] end
+      draw_text(line, {x: tx, y: r.y + 5 + i * 16}, t1)
+    end
+    let ty = r.y + 7 + shown_n * 16
+    if ty + 14 < r.y + r.h then
+      draw_text(ellipsize(time_range(e.start, e.dur), tw, st(11, k.sub)), {x: tx, y: ty}, st(11, k.sub))
+    end
+    if e.loc != "" && ty + 30 < r.y + r.h then
+      draw_text(ellipsize(e.loc, tw, st(11, k.sub)), {x: tx, y: ty + 15}, st(11, k.sub))
+    end
+  end
+  clip_pop()
+  if hot && !selected && !e.allday && r.h > 28 then
+    draw_rect_rounded(rect(r.x + r.w / 2 - 9, r.y + r.h - 5, 18, 2), 1, k.edge, 140)
+  end
+end
+
+fn draw_allday(e: record, r: record, selected: bool, hot: bool, cont_l: bool, cont_r: bool)
+  let k = ev_colors(e, selected, hot)
+  if selected then
+    draw_shadow(r, {radius: 5, blur: 10, spread: 0, dx: 0, dy: 3, color: #1d2027, a: 45})
+    draw_rect_rounded(r, 5, k.fill)
+  else
+    draw_rect_rounded(r, 5, tint(SURFACE, cal_color(e.cal), if hot then 34 else 24 end))
+  end
+  let tx = r.x + 8
+  if cont_l then
+    fill_triangle(r.x + 5, r.y + r.h / 2, r.x + 10, r.y + 6, r.x + 10, r.y + r.h - 6, k.ink)
+    tx = r.x + 15
+  end
+  if cont_r then
+    fill_triangle(r.x + r.w - 5, r.y + r.h / 2, r.x + r.w - 10, r.y + 6, r.x + r.w - 10, r.y + r.h - 6, k.ink)
+  end
+  let t1 = stb(11, k.ink)
+  draw_text(ellipsize(e.title, r.w - (tx - r.x) - 14, t1), {x: tx, y: r.y + 3}, t1)
+end
+
+// Sidebar ------------------------------------------------------------------
+draw_rect(rect(0, 0, SIDE_W, H), PAPER)
+draw_rect(rect(SIDE_W - 1, 0, 1, H), RULE)
+
+// Wordmark: a small calendar glyph and the name.
+draw_rect_rounded(rect(SB_X, 26, 26, 26), 6, TODAY)
+draw_rect_rounded(rect(SB_X + 2, 33, 22, 17), 4, SURFACE)
+draw_text_center(str(civil(DEMO_TODAY).d), SB_X + 13, 34, stb(11, TODAY))
+draw_text("Almanac", {x: SB_X + 36, y: 27}, stb(19, INK))
+
+let nb_hot = hovered(NEW_BTN)
+draw_rect_rounded(NEW_BTN, 8, if nb_hot then mix(INK, #000000, 0.2) else INK end)
+text_layout.draw_text_line("+  New event", NEW_BTN, stb(13, #ffffff), "center")
+
+// Mini month.
+let mc = civil(mini_first)
+draw_text("{MONTHS[mc.m - 1]} {mc.y}", {x: SB_X, y: MINI_TOP}, stb(13, INK))
+for pair in [[MINI_PREV, -1], [MINI_NEXT, 1]] do
+  let r = pair[0]
+  if hovered(r) then
+    draw_rect_rounded(r, 6, HILITE)
+  end
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  let d = pair[1] * 3
+  draw_polyline([[cx - d, cy - 5], [cx + d, cy], [cx - d, cy + 5]], INK_2, 255, 1.6)
+end
+for i in range(0, 7) do
+  let c = mini_cell(i)
+  draw_text_center(slice(DAYS_SHORT[i], 0, 1), c.x + c.w / 2, MINI_TOP + 28, st(11, FAINT))
+end
+let mg0 = week_start(mini_first)
+let fws = week_start(focus_day)
+let busy = for i in range(0, 42) do false end
+for e in events do
+  if !hidden[e.cal] && e.day >= mg0 && e.day < mg0 + 42 && e.cal != 0 then
+    busy[e.day - mg0] = true
+  end
+end
+// The shown week (or day) as a soft band behind its row.
+if view != "month" then
+  let band0 = if view == "week" then fws else focus_day end
+  let band_n = if view == "week" then 7 else 1 end
+  let i0 = band0 - mg0
+  if i0 >= 0 && i0 < 42 then
+    let c0 = mini_cell(i0)
+    draw_rect_rounded(rect(c0.x + 1, c0.y + 2, MINI_CELL * band_n - 2, MINI_CELL - 4), 8, HILITE)
+  end
+end
+for i in range(0, 42) do
+  let z = mg0 + i
+  let c = mini_cell(i)
+  let zc = civil(z)
+  let in_month = zc.m == mc.m
+  let cx = c.x + c.w / 2
+  let cy = c.y + c.h / 2
+  let col = if in_month then INK_2 else FAINT end
+  if z == DEMO_TODAY then
+    draw_circle(cx, cy, 12, TODAY)
+    col = #ffffff
+  elsif z == focus_day then
+    draw_circle(cx, cy, 12, INK)
+    col = #ffffff
+  elsif hovered(c) then
+    draw_circle(cx, cy, 12, HILITE)
+  end
+  let fs = if z == DEMO_TODAY || z == focus_day then stb(12, col) else st(12, col) end
+  draw_text_center(str(zc.d), cx, cy - 8, fs)
+  if busy[i] && z != DEMO_TODAY && z != focus_day then
+    draw_circle(cx, cy + 9, 1.6, if in_month then MUTED else FAINT end)
+  end
+end
+
+// Calendars.
+draw_text("CALENDARS", {x: SB_X, y: CALS_TOP}, {size: 10, color: MUTED, font: "ui", weight: 700, spacing: 1.2})
+let week_counts = for i in range(0, len(CALS)) do
+  len(filter(events, fn(e) -> e.cal == i && e.day >= fws && e.day < fws + 7))
+end
+for i in range(0, len(CALS)) do
+  let r = cal_row(i)
+  let c = CALS[i].color
+  if hovered(r) then
+    draw_rect_rounded(r, 6, HILITE)
+  end
+  let box = rect(r.x + 8, r.y + 7, 14, 14)
+  if hidden[i] then
+    draw_rect_rounded_outline(box, 4, c, 255, 1.5)
+  else
+    draw_rect_rounded(box, 4, c)
+    draw_polyline([[box.x + 3.5, box.y + 7.5], [box.x + 6, box.y + 10], [box.x + 10.5, box.y + 4.5]], #ffffff, 255, 1.8)
+  end
+  draw_text(CALS[i].name, {x: r.x + 32, y: r.y + 6}, st(13, if hidden[i] then FAINT else INK end))
+  draw_text_right(str(week_counts[i]), r.x + r.w - 8, r.y + 7, st(11, FAINT))
+end
+
+// Up next: the next few events after "now".
+let UP_TOP = CALS_TOP + 30 + len(CALS) * 30 + 22
+if UP_TOP + 120 < H - 50 then
+  draw_text("UP NEXT", {x: SB_X, y: UP_TOP}, {size: 10, color: MUTED, font: "ui", weight: 700, spacing: 1.2})
+  let upcoming = filter(events, fn(e) -> !hidden[e.cal] && !e.allday && (e.day > DEMO_TODAY || (e.day == DEMO_TODAY && e.start >= DEMO_NOW)))
+  upcoming = sort(upcoming, fn(a, b) -> if a.day != b.day then a.day - b.day else a.start - b.start end)
+  let room = int((H - 56 - UP_TOP - 26) / 44)
+  let k = min(len(upcoming), min(3, room))
+  for i in range(0, k) do
+    let e = upcoming[i]
+    let y = UP_TOP + 26 + i * 44
+    draw_rect_rounded(rect(SB_X, y + 2, 3, 34), 2, cal_color(e.cal))
+    draw_text(ellipsize(e.title, SIDE_W - SB_X * 2 - 14, stb(12, INK)), {x: SB_X + 12, y: y}, stb(12, INK))
+    let when_s = if e.day == DEMO_TODAY then "Today" elsif e.day == DEMO_TODAY + 1 then "Tomorrow" else DAYS_SHORT[weekday(e.day)] ++ " " ++ str(civil(e.day).d) end
+    draw_text("{when_s}  {time_range(e.start, e.dur)}", {x: SB_X + 12, y: y + 18}, st(11, MUTED))
+  end
+end
+
+let rs_hot = hovered(RESET_BTN)
+draw_text("Reset demo data", {x: RESET_BTN.x + 6, y: RESET_BTN.y + 5}, st(11, if rs_hot then INK_2 else FAINT end))
+if rs_hot then
+  draw_rect(rect(RESET_BTN.x + 6, RESET_BTN.y + 20, text_width("Reset demo data", st(11, FAINT)), 1), INK_2)
+end
+
+// Header -------------------------------------------------------------------
+let title_main = ""
+let title_sub = ""
+if view == "month" then
+  let c = civil(focus_day)
+  title_main = MONTHS[c.m - 1]
+  title_sub = str(c.y)
+elsif view == "week" then
+  let a = civil(fws)
+  let b = civil(fws + 6)
+  title_main = if a.m == b.m then MONTHS[a.m - 1] else "{month_short(a.m)} – {month_short(b.m)}" end
+  title_sub = str(b.y)
+else
+  let c = civil(focus_day)
+  title_main = "{MONTHS[c.m - 1]} {c.d}"
+  title_sub = str(c.y)
+end
+let tstyle = stb(26, INK)
+draw_text(title_main, {x: MX0 + PAD, y: 22}, tstyle)
+draw_text(title_sub, {x: MX0 + PAD + text_width(title_main, tstyle) + 9, y: 22}, st(26, FAINT))
+let caption = if view == "month" then
+  let n_month = len(filter(events, fn(e) -> !hidden[e.cal] && month_first(e.day) == month_first(focus_day)))
+  "{n_month} events"
+elsif view == "week" then
+  let n_week = len(filter(events, fn(e) -> !hidden[e.cal] && e.day >= fws && e.day < fws + 7))
+  "Week {iso_week(focus_day)}  ·  {n_week} events"
+else
+  let n_day = len(filter(events, fn(e) -> !hidden[e.cal] && covers(e, focus_day)))
+  "{DAYS_LONG[weekday(focus_day)]}  ·  {n_day} events"
+end
+draw_text(caption, {x: MX0 + PAD + 1, y: 56}, st(12, MUTED))
+
+// Segmented view switch.
+draw_rect_rounded(SEG_R, 9, #efebe3)
+let vi = index_of(VIEWS, view)
+for i in range(0, 3) do
+  let c = seg_cell(i)
+  if i == vi then
+    draw_shadow(c, {radius: 7, blur: 4, spread: 0, dx: 0, dy: 1, color: #000000, a: 30})
+    draw_rect_rounded(c, 7, SURFACE)
+  end
+  let col = if i == vi then INK elsif hovered(c) then INK_2 else MUTED end
+  text_layout.draw_text_line(VIEW_LABELS[i], c, if i == vi then stb(12, col) else st(12, col) end, "center")
+end
+
+// Prev / Today / Next.
+for r in [PREV_R, TODAY_R, NEXT_R] do
+  draw_rect_rounded(r, 8, if hovered(r) then #efebe3 else SURFACE end)
+  draw_rect_rounded_outline(r, 8, RULE, 255, 1)
+end
+text_layout.draw_text_line("Today", TODAY_R, stb(12, INK), "center")
+for pair in [[PREV_R, -1], [NEXT_R, 1]] do
+  let r = pair[0]
+  let cx = r.x + r.w / 2
+  let cy = r.y + r.h / 2
+  let d = pair[1] * 3
+  draw_polyline([[cx - d, cy - 5], [cx + d, cy], [cx - d, cy + 5]], INK, 255, 1.7)
+end
+
+draw_rect(rect(MX0, HEAD_H - 1, W - MX0, 1), RULE)
+
+// Time grid (day and week) ---------------------------------------------------
+if view != "month" then
+  let n = P.n
+  let cw = P.cw
+  let gt = P.grid_top
+
+  // Day headers.
+  for ci in range(0, n) do
+    let z = P.days[ci]
+    let x = GX + ci * cw
+    let is_today = z == DEMO_TODAY
+    let lab = if n == 1 then upper(DAYS_LONG[weekday(z)]) else upper(DAYS_SHORT[weekday(z)]) end
+    let lab_st = {size: 10, color: if is_today then TODAY else MUTED end, font: "ui", weight: 700, spacing: 1.2}
+    let num_st = if is_today then stb(20, #ffffff) else st(20, if weekday(z) >= 5 then MUTED else INK end) end
+    let dn = str(civil(z).d)
+    if n == 1 then
+      draw_text(lab, {x: x + 12, y: HEAD_H + 8}, lab_st)
+      if is_today then
+        draw_circle(x + 12 + 16, HEAD_H + 36, 15, TODAY)
+        draw_text_center(dn, x + 28, HEAD_H + 24, num_st)
+      else
+        draw_text(dn, {x: x + 12, y: HEAD_H + 24}, num_st)
+      end
+    else
+      let cx = x + cw / 2
+      draw_text_center(lab, cx, HEAD_H + 8, lab_st)
+      if is_today then
+        draw_circle(cx, HEAD_H + 35, 15, TODAY)
+      elsif z == focus_day then
+        draw_circle(cx, HEAD_H + 35, 15, HILITE)
+      end
+      draw_text_center(dn, cx, HEAD_H + 23, num_st)
+    end
+  end
+
+  // All-day row.
+  draw_text_right("all-day", GX - 10, ALL_TOP + 9, st(10, FAINT))
+  draw_rect(rect(MX0, ALL_TOP - 1, grid_r(n) - MX0, 1), RULE)
+  for s in P.segs do
+    let is_sel = s.ev.id == sel_id
+    let is_hot = hover != nil && hover.ev.id == s.ev.id
+    draw_allday(s.ev, s.r, is_sel, is_hot, s.ev.day < P.days[0], s.ev.day + s.ev.span > P.days[0] + n)
+  end
+  draw_rect(rect(MX0, gt - 1, grid_r(n) - MX0, 1), RULE)
+
+  // The grid itself, clipped under the headers.
+  clip_push(rect(MX0, gt, grid_r(n) - MX0, H - gt))
+  for ci in range(0, n) do
+    let z = P.days[ci]
+    let x = GX + ci * cw
+    if weekday(z) >= 5 then
+      draw_rect(rect(x, gt, cw, H - gt), #f7f5ef)
+    end
+    if z == DEMO_TODAY && n > 1 then
+      draw_rect(rect(x, gt, cw, H - gt), #fdf6f2)
+    end
+  end
+  let h0 = max(0, int(scroll_px / HOUR_H))
+  let h1 = min(24, int((scroll_px + H - gt) / HOUR_H) + 1)
+  for h in range(h0, h1 + 1) do
+    let y = gt + h * HOUR_H - scroll_px
+    draw_rect(rect(GX - 6, y, grid_r(n) - GX + 6, 1), RULE)
+    if h < 24 then
+      draw_rect(rect(GX, y + HOUR_H / 2, grid_r(n) - GX, 1), RULE_2)
+    end
+  end
+  for ci in range(0, n + 1) do
+    draw_rect(rect(GX + ci * cw, gt, 1, H - gt), RULE)
+  end
+
+  // Where a dragged event came from: a dashed-looking ghost.
+  let orig = find_ev(events, drag.id)
+  if orig != nil && drag.moved && (drag.mode == "move") && P.pv != nil then
+    let ci = index_of(P.days, orig.day)
+    if ci >= 0 then
+      let r0 = rect(GX + ci * cw + 2, gt + orig.start * HOUR_H / 60.0 - scroll_px, cw - 5, max(18, orig.dur * HOUR_H / 60.0 - 2))
+      draw_rect_rounded_outline(r0, 6, cal_color(orig.cal), 110, 1)
+    end
+  end
+
+  for b in P.blocks do
+    let is_sel = b.ev.id == sel_id || b.ev.id == -1 || (P.pv != nil && b.ev.id == P.pv.id)
+    let is_hot = hover != nil && hover.ev.id == b.ev.id
+    draw_block(b.ev, b.r, is_sel, is_hot, false)
+  end
+
+  // A week with nothing in it says so, rather than looking unloaded.
+  if len(P.blocks) == 0 && len(P.segs) == 0 then
+    let cx = GX + (grid_r(n) - GX) / 2
+    let ey = gt + 90
+    draw_text_center(if n == 1 then "A clear day" else "A clear week" end, cx, ey, stb(15, INK_2))
+    draw_text_center("Drag on the grid to add an event, or press N", cx, ey + 24, st(12, MUTED))
+  end
+
+  // Now: a line across today, a dot at the gutter edge.
+  let ti = index_of(P.days, DEMO_TODAY)
+  let ny = gt + DEMO_NOW * HOUR_H / 60.0 - scroll_px
+  if ti >= 0 && ny >= gt then
+    let nx = GX + ti * cw
+    draw_rect(rect(GX, ny, grid_r(n) - GX, 1), TODAY, 70)
+    draw_rect(rect(nx, ny - 1, cw, 2), TODAY)
+    draw_circle(nx, ny, 4.5, TODAY)
+  end
+  clip_pop()
+
+  // Hour labels in the gutter.
+  clip_push(rect(MX0, gt, GUTTER, H - gt))
+  let now_y = gt + DEMO_NOW * HOUR_H / 60.0 - scroll_px
+  for h in range(max(1, h0), min(24, h1 + 1)) do
+    let y = gt + h * HOUR_H - scroll_px
+    if ti >= 0 && abs(y - now_y) < 14 then
+      continue
+    end
+    draw_text_right(hour_label(h), GX - 10, y - 7, st(10, MUTED))
+  end
+  if ti >= 0 && ny >= gt then
+    let lab = clock(DEMO_NOW)
+    let ls = stb(10, #ffffff)
+    let lw = text_width(lab, ls) + 10
+    draw_rect_rounded(rect(GX - 6 - lw, ny - 8, lw, 16), 8, TODAY)
+    draw_text(lab, {x: GX - 1 - lw, y: ny - 7}, ls)
+  end
+  clip_pop()
+
+  // Scroll position, as a thin thumb on the right edge.
+  let vis = H - gt
+  let th = max(30, vis * vis / (24 * HOUR_H))
+  let ty = gt + (vis - th) * scroll_px / max(1.0, max_scroll)
+  draw_rect_rounded(rect(grid_r(n) + (if n == 1 then 4 else 6 end), ty + 2, 3, th - 4), 2, FAINT, 120)
+
+  // A time tag riding with the pointer during a drag.
+  if P.pv != nil && drag.moved && drag.mode != "amove" then
+    let tag = if drag.mode == "resize" then dur_label(P.pv.dur) else time_range(P.pv.start, P.pv.dur) end
+    let ts = stb(11, #ffffff)
+    let tw = text_width(tag, ts) + 16
+    let tr = rect(min(mx + 14, W - tw - 6), my + 16, tw, 22)
+    draw_rect_rounded(tr, 6, INK, 230)
+    text_layout.draw_text_line(tag, tr, ts, "center")
+  end
+end
+
+// Day agenda ---------------------------------------------------------------
+if view == "day" then
+  let ax = AG_X
+  let aw = AGENDA_W - 1
+  draw_rect(rect(ax, HEAD_H, aw, H - HEAD_H), #f7f4ee)
+  draw_rect(rect(ax - 1, HEAD_H, 1, H - HEAD_H), RULE)
+  let ag = agenda_events(events, focus_day, hidden)
+  let timed = filter(ag, fn(e) -> !e.allday)
+  let booked = reduce(timed, 0, fn(a, e) -> a + e.dur)
+  let x = ax + 22
+  draw_text("AGENDA", {x: x, y: HEAD_H + 20}, {size: 10, color: MUTED, font: "ui", weight: 700, spacing: 1.2})
+  draw_text(date_long(focus_day), {x: x, y: HEAD_H + 38}, stb(16, INK))
+  let rel = if focus_day == DEMO_TODAY then "Today"
+  elsif focus_day == DEMO_TODAY + 1 then "Tomorrow"
+  elsif focus_day == DEMO_TODAY - 1 then "Yesterday"
+  elsif focus_day > DEMO_TODAY then "In {focus_day - DEMO_TODAY} days"
+  else "{DEMO_TODAY - focus_day} days ago"
+  end
+  let summary = if len(ag) == 0 then rel else "{rel}  ·  {len(ag)} events  ·  {dur_label(booked)} booked" end
+  draw_text(summary, {x: x, y: HEAD_H + 62}, st(12, MUTED))
+
+  // The day at a glance: 7 AM to 10 PM as one bar, busy time filled.
+  let bar = rect(x, HEAD_H + 96, aw - 44, 10)
+  let b0 = hm(7, 0)
+  let b1 = hm(22, 0)
+  draw_rect_rounded(bar, 5, #ebe6dc)
+  for e in timed do
+    let s0 = clamp(e.start, b0, b1)
+    let s1 = clamp(e.start + e.dur, b0, b1)
+    if s1 > s0 then
+      let fx = bar.x + (s0 - b0) * bar.w / (b1 - b0)
+      let fw = max(3, (s1 - s0) * bar.w / (b1 - b0))
+      draw_rect_rounded(rect(fx, bar.y, fw, bar.h), 3, cal_color(e.cal), 210)
+    end
+  end
+  if focus_day == DEMO_TODAY && DEMO_NOW > b0 && DEMO_NOW < b1 then
+    let nx = bar.x + (DEMO_NOW - b0) * bar.w / (b1 - b0)
+    draw_rect(rect(nx - 1, bar.y - 4, 2, bar.h + 8), TODAY)
+  end
+  for h in [7, 12, 17, 22] do
+    let tx = bar.x + (hm(h, 0) - b0) * bar.w / (b1 - b0)
+    let lab = if h == 12 then "Noon" else "{hour12(h)}{if h < 12 then "a" else "p" end}" end
+    let ls = st(10, FAINT)
+    let lx = if h == 7 then tx elsif h == 22 then tx - text_width(lab, ls) else tx - text_width(lab, ls) / 2 end
+    draw_text(lab, {x: lx, y: bar.y + 16}, ls)
+  end
+  draw_rect(rect(x, AG_LIST_TOP - 16, aw - 44, 1), RULE)
+
+  if len(ag) == 0 then
+    draw_text("Nothing scheduled", {x: x, y: AG_LIST_TOP + 10}, stb(14, INK_2))
+    draw_text("Drag on the grid to add an event,", {x: x, y: AG_LIST_TOP + 34}, st(12, MUTED))
+    draw_text("or press N.", {x: x, y: AG_LIST_TOP + 52}, st(12, MUTED))
+  end
+  for i in range(0, len(ag)) do
+    let e = ag[i]
+    let r = agenda_row(i)
+    if r.bottom() > H then
+      draw_text("+{len(ag) - i} more", {x: x, y: r.y + 6}, stb(11, MUTED))
+      break
+    end
+    let is_sel = e.id == sel_id
+    if is_sel then
+      draw_rect_rounded(r, 8, SURFACE)
+      draw_rect_rounded_outline(r, 8, RULE, 255, 1)
+    elsif hovered(r) then
+      draw_rect_rounded(r, 8, HILITE)
+    end
+    let tcol = r.x + 10
+    if e.allday then
+      draw_text("all-day", {x: tcol, y: r.y + 10}, stb(11, INK_2))
+    else
+      draw_text(clock_full(e.start), {x: tcol, y: r.y + 10}, stb(11, INK_2))
+      draw_text(clock_full(e.start + e.dur), {x: tcol, y: r.y + 27}, st(11, FAINT))
+    end
+    draw_rect_rounded(rect(r.x + 76, r.y + 10, 3, r.h - 20), 2, cal_color(e.cal))
+    let tx = r.x + 90
+    let tw = r.w - 100
+    draw_text(ellipsize(e.title, tw, stb(13, INK)), {x: tx, y: r.y + 8}, stb(13, INK))
+    let sub = if e.loc != "" then e.loc else CALS[e.cal].name end
+    draw_text(ellipsize(sub, tw, st(12, MUTED)), {x: tx, y: r.y + 27}, st(12, MUTED))
+  end
+end
+
+// Month grid -----------------------------------------------------------------
+if view == "month" then
+  let fm = civil(focus_day).m
+  for i in range(0, 7) do
+    let c = month_cell(i)
+    draw_text(upper(DAYS_SHORT[i]), {x: c.x + 10, y: HEAD_H + 12},
+      {size: 10, color: MUTED, font: "ui", weight: 700, spacing: 1.2})
+  end
+  for c in P.cells do
+    let r = c.r
+    let zc = civil(c.day)
+    let in_month = zc.m == fm
+    if !in_month then
+      draw_rect(r, #f6f3ec)
+    elsif weekday(c.day) >= 5 then
+      draw_rect(r, #f9f7f2)
+    end
+    if c.day == focus_day then
+      draw_rect(r, #f3eee4)
+    end
+    let ds = if c.day == DEMO_TODAY then stb(12, #ffffff) elsif in_month then st(12, INK) else st(12, FAINT) end
+    let label = if zc.d == 1 then "{month_short(zc.m)} 1" else str(zc.d) end
+    if c.day == DEMO_TODAY then
+      draw_circle(r.x + 17, r.y + 16, 11, TODAY)
+      draw_text_center(label, r.x + 17, r.y + 8, ds)
+    else
+      draw_text(label, {x: r.x + 9, y: r.y + 8}, if zc.d == 1 then stb(12, if in_month then INK else FAINT end) else ds end)
+    end
+    let cap = max(1, int((r.h - 34) / 20))
+    let n = len(c.evs)
+    if n > cap then
+      draw_text("+{n - cap + 1} more", {x: r.x + 10, y: r.y + 30 + (cap - 1) * 20 + 2}, stb(11, MUTED))
+    end
+  end
+  // Grid lines over the cell fills.
+  let c0 = month_cell(0)
+  for i in range(0, 8) do
+    draw_rect(rect(c0.x + i * c0.w, MONTH_TOP, 1, c0.h * 6), RULE)
+  end
+  for j in range(0, 7) do
+    draw_rect(rect(c0.x, MONTH_TOP + j * c0.h, c0.w * 7, 1), RULE)
+  end
+  for h in P.hits do
+    let e = h.ev
+    let r = h.r
+    let is_sel = e.id == sel_id
+    let is_hot = hover != nil && hover.ev.id == e.id
+    if e.allday then
+      let k = ev_colors(e, is_sel, is_hot)
+      draw_rect_rounded(r, 4, if is_sel then k.fill else tint(SURFACE, cal_color(e.cal), if is_hot then 34 else 24 end) end)
+      draw_text(ellipsize(e.title, r.w - 12, stb(11, k.ink)), {x: r.x + 6, y: r.y + 2}, stb(11, k.ink))
+    else
+      let k = ev_colors(e, is_sel, is_hot)
+      if is_sel then
+        draw_rect_rounded(r, 4, k.fill)
+      elsif is_hot then
+        draw_rect_rounded(r, 4, HILITE)
+      end
+      let dot = if is_sel then #ffffff else cal_color(e.cal) end
+      draw_circle(r.x + 6, r.y + 9, 3, dot)
+      let tm = clock(e.start)
+      let tms = st(11, if is_sel then k.sub else MUTED end)
+      let tmw = text_width(tm, tms)
+      draw_text(tm, {x: r.x + 14, y: r.y + 2}, tms)
+      let ts2 = st(11, if is_sel then #ffffff else INK end)
+      draw_text(ellipsize(e.title, r.w - tmw - 24, ts2), {x: r.x + 19 + tmw, y: r.y + 2}, ts2)
+    end
+  end
+end
+
+// Popover ------------------------------------------------------------------
+let pop_open = pop_hit != nil && find_ev(events, pop_id) != nil
+if pop_open then
+  let pe = find_ev(events, pop_id)
+  let anchor = hit_for(P.hits, pop_id)?.r ?? pop_hit.r
+  let pr = pop_rect(anchor, pop_h(pe))
+  let pq = pop_parts(pr)
+  let c = cal_color(pe.cal)
+  draw_elevation(pr, 12, 3)
+  draw_rect_rounded(pr, 12, SURFACE)
+  draw_rect_rounded_outline(pr, 12, RULE, 255, 1)
+  // A nub pointing back at the event, on whichever side faces it.
+  let ny = clamp(anchor.y + min(anchor.h, 44) / 2, pr.y + 20, pr.y + pr.h - 20)
+  if pr.x >= anchor.x + anchor.w then
+    fill_triangle(pr.x + 1, ny - 8, pr.x + 1, ny + 8, pr.x - 7, ny, SURFACE)
+    draw_line(pr.x - 7, ny, pr.x, ny - 8, RULE, 255, 1)
+    draw_line(pr.x - 7, ny, pr.x, ny + 8, RULE, 255, 1)
+  elsif pr.x + pr.w <= anchor.x then
+    let rx = pr.x + pr.w
+    fill_triangle(rx - 1, ny - 8, rx - 1, ny + 8, rx + 7, ny, SURFACE)
+    draw_line(rx + 7, ny, rx, ny - 8, RULE, 255, 1)
+    draw_line(rx + 7, ny, rx, ny + 8, RULE, 255, 1)
+  end
+  draw_rect_rounded(rect(pr.x + 18, pr.y + 12, 28, 3), 2, c)
+
+  // Title field.
+  let tf = pq.title
+  let has = focused(fc, "title")
+  if has then
+    draw_rect_rounded(tf, 7, #f7f5f0)
+    draw_rect_rounded_outline(tf, 7, c, 255, 1.5)
+  elsif hovered(tf) then
+    draw_rect_rounded(tf, 7, #f7f5f0)
+  end
+  let tst = st(17, INK)
+  if pe.title == "" then
+    draw_text("Add title", {x: tf.x + 8, y: tf.y + 6}, st(17, FAINT))
+  else
+    draw_text(ellipsize(pe.title, tf.w - 16, tst), {x: tf.x + 8, y: tf.y + 6}, tst)
+  end
+  if has && int(time() * 2) % 2 == 0 then
+    let caret = if title_caret < 0 then char_len(pe.title) else clamp(title_caret, 0, char_len(pe.title)) end
+    let cx = tf.x + 8 + text_width(char_slice(pe.title, 0, caret), tst)
+    draw_rect(rect(cx, tf.y + 8, 1.5, 20), c)
+  end
+  if has then
+    request_frame()
+  end
+
+  let x = pr.x + 18
+  let y = pr.y + 66
+  draw_text(date_long(pe.day), {x: x, y: y}, st(13, INK))
+  if pe.allday then
+    let span_l = if pe.span == 1 then "All day" else "All day  ·  {pe.span} days, until {date_long(pe.day + pe.span - 1)}" end
+    draw_text(ellipsize(span_l, pr.w - 36, st(12, MUTED)), {x: x, y: y + 20}, st(12, MUTED))
+  else
+    draw_text(time_range(pe.start, pe.dur), {x: x, y: y + 20}, st(13, INK_2))
+    let trw = text_width(time_range(pe.start, pe.dur), st(13, INK_2))
+    draw_text(dur_label(pe.dur), {x: x + trw + 10, y: y + 21}, st(12, FAINT))
+  end
+  if pe.loc != "" then
+    draw_circle(x + 4, y + 51, 3, FAINT)
+    draw_text(ellipsize(pe.loc, pr.w - 50, st(12, MUTED)), {x: x + 14, y: y + 43}, st(12, MUTED))
+  end
+
+  draw_rect(rect(pr.x + 18, pq.rule_y, pr.w - 36, 1), RULE)
+  for i in range(0, len(CALS)) do
+    let s = pq.swatches[i]
+    let cx = s.x + s.w / 2
+    let cy = s.y + s.h / 2
+    if i == pe.cal then
+      draw_circle(cx, cy, 11, CALS[i].color, 60)
+    end
+    draw_circle(cx, cy, 7, CALS[i].color)
+  end
+  draw_text(CALS[pe.cal].name, {x: pq.swatches[len(CALS) - 1].x + 36, y: pq.swatch_y + 4}, st(12, INK_2))
+
+  let btn = fn(r, label, ink, enabled)
+    let hot = enabled && hovered(r)
+    draw_rect_rounded(r, 7, if hot then #efebe3 else #f7f5f0 end)
+    text_layout.draw_text_line(label, r, stb(12, if enabled then ink else FAINT end), "center")
+  end
+  btn(pq.shorter, "- 15m", INK_2, !pe.allday && pe.dur > 15)
+  btn(pq.longer, "+ 15m", INK_2, !pe.allday && pe.start + pe.dur < 1440)
+  btn(pq.del, "Delete", TODAY, true)
+end
+
+// Hint strip along the bottom of the sidebar is the reset link; the
+// keyboard hints live in the README. Observable values for tests:
+let obs_view = view
+let obs_focus = focus_day
+let obs_focus_date = "{civil(focus_day).y}-{two(civil(focus_day).m)}-{two(civil(focus_day).d)}"
+let obs_sel = sel_id
+let obs_pop = pop_id
+let obs_events = len(events)
+let obs_undo = len(undo)
+let obs_redo = len(redo)
+let obs_drag = drag.mode
+let obs_scroll = scroll_px
+let obs_hidden = hidden
+let obs_editing = focused(fc, "title")
+let obs_sel_ev = find_ev(events, sel_id)

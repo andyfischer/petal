@@ -4,17 +4,18 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-26 of the 50 exist. Twenty-one are panel apps under the category directories
+27 of the 50 exist. Twenty-two are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category, plus Asteroids, Flappy Bird, the command palette, the
-node-based editor, the Markdown editor and the solar system), and five more
+of each category, plus Asteroids, Flappy Bird, the calendar, the command
+palette, the node-based editor, the Markdown editor and the solar system),
+and five more
 were written as headless console programs under `examples/games/`, which
 stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
 `examples/games/side-scroller` is a twenty-second panel app that was not on
-this list. The remaining 24 have not been attempted.
+this list. The remaining 23 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -35,7 +36,7 @@ this list. The remaining 24 have not been attempted.
 | 13 | **Calculator** | Buttons, layout, expression/state handling | built — `examples/productivity/calculator/` |
 | 14 | **Todo app** | CRUD, lists, persistence, filtering | built — `examples/productivity/todo/` |
 | 15 | **Notes app** | Text editing, selection, persistence, search | built — `examples/productivity/notes/` |
-| 16 | **Calendar** | Dense layout, dates, navigation, drag/drop |  |
+| 16 | **Calendar** | Dense layout, dates, navigation, drag/drop | built — `examples/productivity/calendar/` |
 | 17 | **Email client** | Master/detail UI, lists, search, selection |  |
 | 18 | **Chat / Slack clone** | Scrolling feeds, composer, async messages |  |
 | 19 | **File browser** | Trees, icons, selection, context menus |  |

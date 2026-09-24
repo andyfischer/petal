@@ -462,7 +462,7 @@ fn convert_ratios(
 mod tests {
     use super::{convert_layout, parse_hex_color};
     use crate::LayoutNode;
-    use indexmap::IndexMap;
+    use petal::record::RecordMap;
     use petal::heap::Heap;
     use petal::value::Value;
 
@@ -479,7 +479,7 @@ mod tests {
     /// omitting any field whose value is `None`.
     fn process_record(heap: &mut Heap, command: Option<Value>, args: Option<Value>) -> Value {
         let kind = str_val(heap, "process");
-        let mut fields = IndexMap::new();
+        let mut fields = RecordMap::default();
         fields.insert("kind".to_string(), kind);
         if let Some(command) = command {
             fields.insert("command".to_string(), command);
@@ -596,7 +596,7 @@ mod tests {
         let mut heap = Heap::new();
         let kind = str_val(&mut heap, "panel");
         let script = str_val(&mut heap, "sketch.ptl");
-        let mut fields = IndexMap::new();
+        let mut fields = RecordMap::default();
         fields.insert("kind".to_string(), kind);
         fields.insert("script".to_string(), script);
         let record = Value::Map(heap.alloc_map(fields));
@@ -617,7 +617,7 @@ mod tests {
     fn panel_missing_script_is_error() {
         let mut heap = Heap::new();
         let kind = str_val(&mut heap, "panel");
-        let mut fields = IndexMap::new();
+        let mut fields = RecordMap::default();
         fields.insert("kind".to_string(), kind);
         let record = Value::Map(heap.alloc_map(fields));
         let mut warnings = Vec::new();
@@ -630,7 +630,7 @@ mod tests {
     fn panel_record(heap: &mut Heap, script: &str, screens: Option<Value>) -> Value {
         let kind = str_val(heap, "panel");
         let script = str_val(heap, script);
-        let mut fields = IndexMap::new();
+        let mut fields = RecordMap::default();
         fields.insert("kind".to_string(), kind);
         fields.insert("script".to_string(), script);
         if let Some(screens) = screens {

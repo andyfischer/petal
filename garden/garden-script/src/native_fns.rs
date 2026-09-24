@@ -12,7 +12,7 @@
 //! canonical mechanism for observing what a script called — no thread-locals,
 //! and it works identically for forks. See `../docs/embedding-guide.md`.
 
-use indexmap::IndexMap;
+use petal::record::RecordMap;
 use petal::env::Env;
 use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -92,7 +92,7 @@ fn native_editor(cxt: &mut PetalCxt) -> NativeResult {
         }
     };
 
-    let mut fields = IndexMap::new();
+    let mut fields = RecordMap::default();
     fields.insert("kind".to_string(), alloc_str(cxt, "editor"));
     fields.insert("file".to_string(), file);
     fields.insert("line_numbers".to_string(), Value::Bool(line_numbers));
@@ -133,7 +133,7 @@ fn native_process(cxt: &mut PetalCxt) -> NativeResult {
         Value::Nil
     };
 
-    let mut fields = IndexMap::new();
+    let mut fields = RecordMap::default();
     fields.insert("kind".to_string(), alloc_str(cxt, "process"));
     fields.insert("command".to_string(), command);
     fields.insert("args".to_string(), args);
@@ -188,7 +188,7 @@ fn native_panel(cxt: &mut PetalCxt) -> NativeResult {
         }
     };
 
-    let mut fields = IndexMap::new();
+    let mut fields = RecordMap::default();
     fields.insert("kind".to_string(), alloc_str(cxt, "panel"));
     fields.insert("script".to_string(), script);
     fields.insert("screens".to_string(), screens);
@@ -251,7 +251,7 @@ fn build_container(cxt: &mut PetalCxt, kind: &str) -> NativeResult {
         Value::Nil
     };
 
-    let mut fields = IndexMap::new();
+    let mut fields = RecordMap::default();
     fields.insert("kind".to_string(), alloc_str(cxt, kind));
     fields.insert("children".to_string(), children);
     fields.insert("ratios".to_string(), ratios);

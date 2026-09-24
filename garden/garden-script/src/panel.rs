@@ -31,7 +31,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use indexmap::IndexMap;
+use petal::record::RecordMap;
 use petal::direct_manipulation::{self, ManipulationGoal};
 use petal::env::Env;
 use petal::heap::Heap;
@@ -968,7 +968,7 @@ pub struct PanelInput {
 pub struct PanelTheme {
     /// `(key, [r, g, b, a])` pairs (each channel `0..=255`), bound as a record
     /// of `{ r, g, b, a }` color records under `panel_theme()`. Insertion order
-    /// is preserved (an `IndexMap`-backed record on the script side).
+    /// is preserved (an ordered record on the script side).
     colors: Vec<(String, [u8; 4])>,
     /// The face this panel's text is drawn and measured in when a run names
     /// none (`"ui"`, `"mono"`, or any family the host can resolve), or `None`
@@ -2477,7 +2477,7 @@ fn value_to_json(heap: &Heap, v: &Value) -> serde_json::Value {
         Value::Map(id) => serde_json::Value::Object(
             heap.get_map(*id)
                 .iter()
-                .map(|(k, v)| (k.clone(), value_to_json(heap, v)))
+                .map(|(k, v)| (k.to_string(), value_to_json(heap, v)))
                 .collect(),
         ),
         _ => serde_json::Value::Null,
@@ -2783,9 +2783,9 @@ fn register_panel_natives(env: &mut Env) {
 /// Called by [`PanelHost::frame`] before the run, so a live theme change lands
 /// on the next frame like any other per-frame input.
 fn bind_panel_theme(env: &mut Env, theme: &PanelTheme) {
-    let mut record: IndexMap<String, Value> = IndexMap::with_capacity(theme.colors.len());
+    let mut record: RecordMap = RecordMap::with_capacity(theme.colors.len());
     for (key, [r, g, b, a]) in &theme.colors {
-        let mut color: IndexMap<String, Value> = IndexMap::with_capacity(4);
+        let mut color: RecordMap = RecordMap::with_capacity(4);
         color.insert("r".to_string(), Value::Int(*r as i64));
         color.insert("g".to_string(), Value::Int(*g as i64));
         color.insert("b".to_string(), Value::Int(*b as i64));
@@ -2825,7 +2825,7 @@ fn bind_host_palette(env: &mut Env, theme: &PanelTheme) {
 /// Rebuilt each frame from the host's table rather than mutated in place, so a
 /// reply that arrived between two frames is visible on the very next one.
 fn bind_mutation_results(env: &mut Env, results: &HashMap<i64, serde_json::Value>) {
-    let mut record: IndexMap<String, Value> = IndexMap::with_capacity(results.len());
+    let mut record: RecordMap = RecordMap::with_capacity(results.len());
     for (handle, reply) in results {
         let value = petal::value::json_to_value(reply, env.heap_mut()).unwrap_or(Value::Nil);
         record.insert(handle.to_string(), value);
@@ -2891,7 +2891,7 @@ fn native_panel_theme(cxt: &mut PetalCxt) -> NativeResult {
     match cxt.binding_named(PANEL_THEME_BINDING) {
         v @ Value::Map(_) => cxt.push_value(v),
         _ => {
-            let id = cxt.heap_mut().alloc_map(IndexMap::new());
+            let id = cxt.heap_mut().alloc_map(RecordMap::default());
             cxt.push_value(Value::Map(id));
         }
     }
@@ -2937,7 +2937,7 @@ const FALLBACK_PALETTE: &[(&str, [u8; 4])] = &[
 /// Allocate one `{ r, g, b, a }` color record (each channel an int `0..=255`) —
 /// the same shape [`bind_panel_theme`] binds and the draw natives consume.
 fn alloc_color(heap: &mut Heap, [r, g, b, a]: [u8; 4]) -> Value {
-    let mut color: IndexMap<String, Value> = IndexMap::with_capacity(4);
+    let mut color: RecordMap = RecordMap::with_capacity(4);
     color.insert("r".to_string(), Value::Int(r as i64));
     color.insert("g".to_string(), Value::Int(g as i64));
     color.insert("b".to_string(), Value::Int(b as i64));
@@ -2958,11 +2958,11 @@ fn alloc_color(heap: &mut Heap, [r, g, b, a]: [u8; 4]) -> Value {
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
     // The host's injected theme (a Garden host supplies a full palette; a bare
     // embedder supplies nothing, leaving the fallback to stand for every key).
-    let injected: IndexMap<String, Value> = match cxt.binding_named(PANEL_THEME_BINDING) {
+    let injected: RecordMap = match cxt.binding_named(PANEL_THEME_BINDING) {
         Value::Map(id) => cxt.heap().get_map(id).clone(),
-        _ => IndexMap::new(),
+        _ => RecordMap::default(),
     };
-    let mut out: IndexMap<String, Value> = IndexMap::with_capacity(FALLBACK_PALETTE.len());
+    let mut out: RecordMap = RecordMap::with_capacity(FALLBACK_PALETTE.len());
     for (key, rgba) in FALLBACK_PALETTE {
         let color = injected
             .get(*key)
@@ -2973,7 +2973,9 @@ fn native_palette(cxt: &mut PetalCxt) -> NativeResult {
     // Carry through any host-injected keys the fallback doesn't name, so the
     // host can add semantic colors without this table gating them out.
     for (key, v) in &injected {
-        out.entry(key.clone()).or_insert(*v);
+        if !out.contains_key(key) {
+            out.insert(key, *v);
+        }
     }
     let id = cxt.heap_mut().alloc_map(out);
     cxt.push_value(Value::Map(id));

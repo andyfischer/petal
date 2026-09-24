@@ -1295,7 +1295,6 @@ dependencies = [
 name = "garden-script"
 version = "0.1.0"
 dependencies = [
- "indexmap",
  "petal",
  "petal-ui",
  "serde_json",

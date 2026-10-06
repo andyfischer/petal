@@ -281,7 +281,9 @@ fn lambdas_take_defaults_in_both_forms() {
         "11\n3"
     );
     assert_eq!(
-        out("let add = fn(a, b = 10)\n  let s = a + b\n  s * 2\nend\nprint(add(1))\nprint(add(1, b: 2))"),
+        out(
+            "let add = fn(a, b = 10)\n  let s = a + b\n  s * 2\nend\nprint(add(1))\nprint(add(1, b: 2))"
+        ),
         "22\n6"
     );
     // Invoked in place.
@@ -449,7 +451,10 @@ fn a_named_argument_is_type_checked_against_the_slot_it_fills() {
     assert_eq!(warn, vec![]);
     let warn = diagnostics("fn f(a: int, b: str = \"x\")\n  a\nend\nf(1, b: 2)\n");
     assert_eq!(warn.len(), 1, "{warn:?}");
-    assert!(warn[0].1.contains("expected `string`, found `int`"), "{warn:?}");
+    assert!(
+        warn[0].1.contains("expected `string`, found `int`"),
+        "{warn:?}"
+    );
 }
 
 #[test]
@@ -460,7 +465,8 @@ fn the_checker_follows_a_method_with_defaults() {
     let d = diagnostics(src);
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].1.contains("`x` declared `string`"), "{d:?}");
-    let errs = errors("class C\n  n: int\nend\nfn C.m(c: C, a, b = 1)\n  a\nend\nlet c = C(1)\nc.m()\n");
+    let errs =
+        errors("class C\n  n: int\nend\nfn C.m(c: C, a, b = 1)\n  a\nend\nlet c = C(1)\nc.m()\n");
     assert_eq!(errs, ["method `C.m` expects 1-2 arguments, got 0"]);
 }
 
@@ -502,10 +508,26 @@ fn a_memoized_call_keeps_omitted_and_passed_arguments_apart() {
          for pass in [1, 2] do\n  print(safe(1))\n  print(safe(1, nil))\nend"
     );
     let (output, stats) = run_frames(&src, 3);
-    let frame = ["60", "100", "140", "[20, 3]", "[20, nil]", "[20, 3]", "[20, nil]"];
-    let expected: Vec<&str> = frame.iter().cycle().take(frame.len() * 3).copied().collect();
+    let frame = [
+        "60",
+        "100",
+        "140",
+        "[20, 3]",
+        "[20, nil]",
+        "[20, 3]",
+        "[20, nil]",
+    ];
+    let expected: Vec<&str> = frame
+        .iter()
+        .cycle()
+        .take(frame.len() * 3)
+        .copied()
+        .collect();
     assert_eq!(output, expected);
-    assert!(stats.hits > 0, "later frames replay recorded calls: {stats:?}");
+    assert!(
+        stats.hits > 0,
+        "later frames replay recorded calls: {stats:?}"
+    );
 }
 
 #[test]
@@ -564,7 +586,10 @@ fn the_formatter_spaces_a_default_and_is_then_stable() {
     assert_eq!(petal::fmt::format_source(&formatted).unwrap(), formatted);
     // Formatting changes nothing about what runs.
     let call = "print(f(1))\nprint(g(1))\n";
-    assert_eq!(out(&format!("{src}{call}")), out(&format!("{formatted}{call}")));
+    assert_eq!(
+        out(&format!("{src}{call}")),
+        out(&format!("{formatted}{call}"))
+    );
 }
 
 #[test]

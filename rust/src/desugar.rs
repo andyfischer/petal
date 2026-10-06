@@ -1,4 +1,9 @@
-//! `@`-argument desugaring — the in-out call operator.
+//! AST rewrites that run before anything analyses or compiles a module:
+//! default parameter values are moved into their function's body (see
+//! [`lower_param_defaults`]), then `@`-arguments are desugared — the subject
+//! of the rest of this header.
+//!
+//! # `@`-argument desugaring — the in-out call operator
 //!
 //! Petal lets a call argument be prefixed with `@` to mean "update this
 //! variable in place with the call's result". The canonical form
@@ -101,8 +106,9 @@ fn lower_param_defaults(params: &mut [Param], body: &mut Vec<Stmt>) {
     }
     // A function with nothing but defaults still returns what an empty body
     // does, not its last default.
-    if body.is_empty() {
-        let span = prologue.last().map(|s| s.span).unwrap_or(ast_zero_span());
+    if body.is_empty()
+        && let Some(span) = prologue.last().map(|s| s.span)
+    {
         prologue.push(Stmt {
             kind: StmtKind::Expr(Expr {
                 kind: ExprKind::Literal(ast::Literal::Nil),
@@ -114,10 +120,6 @@ fn lower_param_defaults(params: &mut [Param], body: &mut Vec<Stmt>) {
     }
     prologue.append(body);
     *body = prologue;
-}
-
-fn ast_zero_span() -> crate::source_map::SourceSpan {
-    crate::source_map::ZERO_SPAN
 }
 
 /// `name = if name#given then name else default end`, carrying the default

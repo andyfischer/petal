@@ -591,3 +591,14 @@ fn cli_ir_equal_accepts_named_arguments_only_when_asked() {
     let (_, _, code) = petal(&["ir-equal", "--named-args", before.path(), swapped.path()]);
     assert_eq!(code, Some(1));
 }
+
+#[test]
+fn a_parenthesized_callee_is_shown_whole() {
+    let src = "fn box(left, top, wide, high)\n  left + top + wide + high\nend\n\
+               var h = box\nprint((get h)(1, 2, 3, 4))\n";
+    assert_eq!(
+        rewrites(src),
+        ["(get h)(left: 1, top: 2, wide: 3, high: 4)"]
+    );
+    assert!(applied(src).contains("print((get h)(left: 1, top: 2, wide: 3, high: 4))"));
+}

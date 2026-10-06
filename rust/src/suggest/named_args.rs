@@ -587,7 +587,29 @@ impl<'a> Finder<'a> {
                 text: format!("{}: ", params[i]),
             })
             .collect();
-        let (from, to) = (site.callee_start, self.tokens[close].2);
+        // A parenthesized callee, `(get h)(1, 2, 3)`, has a span that starts
+        // inside its parentheses; show it whole.
+        let mut from = site.callee_start;
+        let (mut depth, mut unopened) = (0i32, 0i32);
+        for c in &self.chars[from..self.tokens[open].1] {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            unopened = unopened.max(-depth);
+        }
+        for _ in 0..unopened {
+            let mut at = from;
+            while at > 0 && self.chars[at - 1].is_whitespace() {
+                at -= 1;
+            }
+            if at == 0 || self.chars[at - 1] != '(' {
+                break;
+            }
+            from = at - 1;
+        }
+        let to = self.tokens[close].2;
         let before: String = self.chars[from..to].iter().collect();
         let after = apply_edits(
             &before,

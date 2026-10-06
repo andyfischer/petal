@@ -7,21 +7,21 @@ fn rect(x: num, y: num, width: num, height: num) -> string
 end
 
 // All positional — the familiar form.
-print(rect(x: 0, y: 0, width: 10, height: 4))
+print(rect(0, 0, 10, 4))
 
 // All named. The written order doesn't matter; each value goes to its slot.
 print(rect(height: 4, width: 10, y: 0, x: 0))
 
 // Mixed: positional arguments first, then named ones. The reverse (a
 // positional argument after a named one) is a compile error.
-print(rect(x: 1, y: 2, height: 8, width: 6))
+print(rect(1, 2, height: 8, width: 6))
 
 // Names are worth most where the call site is otherwise a row of literals.
 fn make_window(title: string, width: num, height: num, resizable: bool) -> record
   {title: title, width: width, height: height, resizable: resizable}
 end
 
-print(make_window(title: "Editor", width: 800, height: 600, resizable: true))
+print(make_window("Editor", 800, 600, true))
 print(make_window(title: "Editor", width: 800, height: 600, resizable: true))
 
 // Methods work the same way — the receiver is just the first parameter, so it

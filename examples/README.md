@@ -53,6 +53,7 @@ example and asserts it exits cleanly.
 | `fizzbuzz.ptl` | Classic FizzBuzz | Loops, conditionals, modulo |
 | `functions.ptl` | Function declarations | Functions, recursion, implicit return |
 | `named_arguments.ptl` | Named call arguments | `f(x, limit: 10)`, binding by parameter name |
+| `default_parameters.ptl` | Default parameter values | `fn f(a, b = expr)`, evaluated on every call that omits the argument; skipping by name; defaults with overloads |
 | `argless_lambdas.ptl` | Lambdas with no parameters | `fn … end` without `()` |
 | `typed.ptl` | Optional type annotations | `let x: int`, param/return types, `str` alias, int→float promotion |
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |

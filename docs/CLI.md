@@ -200,6 +200,8 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
 - a call whose argument count no overload accepts (`f(1)` where every `f`
   takes two arguments);
 - a named argument no parameter has, or one that fills a slot twice;
+- a required parameter left without a value, and a call that more than one
+  overload's default parameter values could accept;
 - a named argument to a builtin (`clamp(v, lo: 0, hi: 1)`), which takes
   arguments by position only.
 
@@ -924,7 +926,7 @@ Consumers should treat the single key of the `kind` object as the node type
 | `StringInterp` | `{"StringInterp": {"parts": string[], "exprs": Expr[]}}` — `parts` has one more element than `exprs` |
 | `Element` | `{"Element": {"tag": string, "props": [string, Expr][], "children": JsxChild[]}}` |
 
-**Param**: `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — a function/lambda parameter with its optional declared type annotation.
+**Param**: `{"name": string, "ty": TypeAnn (omitted when un-annotated), "default": Expr (omitted when the parameter has none)}` — a function/lambda parameter with its optional declared type annotation and its optional [default value](language-guide.md#default-parameter-values). `default` is the expression as written; it is evaluated in the callee on every call that omits the argument, so it is an `Expr`, never a value. In the text output a defaulted parameter shows as `name = …` in the parameter list, with the expression printed as a `Default name` child node ahead of the body.
 
 **ClassField**: one field of a `ClassDecl`, as `{"name": string, "ty": TypeAnn (omitted when un-annotated)}` — the same optional-annotation shape as a **Param**.
 
@@ -1050,7 +1052,12 @@ The text form is designed to be read without cross-referencing:
   top-level section, labeled `(body of fn0 double)`.
 - **Block headers name their bindings** — params, captures, the self
   reference, and match-pattern variables — with term id and register
-  (`params: x=t117:r0  self: double=t118:r1`, `binds: n=t127:r0`). These
+  (`params: x=t117:r0  self: double=t118:r1`, `binds: n=t127:r0`). A function
+  with [default parameter values](language-guide.md#default-parameter-values)
+  adds a `given:` segment — one hidden *was-it-passed* flag per optional
+  parameter (`given: b#given=t128:r2`), which the body's first terms branch on
+  to decide whether to evaluate the default — and its line in the Functions
+  section gains `optional=N`. These
   binding terms are hidden phantoms, so the header is what ties `Copy [t117]`
   to the `x` parameter. A reference to any *other* hidden term is annotated
   inline with its name: `Copy [t162(std::sum)]`.
@@ -1208,7 +1215,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | `id` | `number` | Unique block ID |
 | `parent_term_id` | `number` | TermId that created this block (omitted for root and function bodies) |
 | `terms` | `number[]` | The block's TermIds in execution order (omitted when empty). Binding phantoms are not listed. |
-| `param_names` | `string[]` | Parameter names (function params, for-loop variable); omitted when empty |
+| `param_names` | `string[]` | Parameter names (function params, for-loop variable); omitted when empty. These are the block's first registers, in order. For the body of a function with default parameter values the list continues past the parameters with one `name#given` flag per optional parameter (see `FunctionDef.optional_params`) |
 | `register_count` | `number` | Total registers needed for this block's frame. Optional for imports — recomputed/filled by the loader |
 | `phi_outs` | `PhiOut[]` | Carry-outs: when this block's frame pops, copy each `src_term`'s register into the parent block's `Phi` term register. Drives the rebinding-as-pure-dataflow model. Omitted when empty. |
 
@@ -1219,6 +1226,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | `id` | `number` | FunctionId |
 | `name` | `string` | Function name (omitted for lambdas) |
 | `params` | `string[]` | Parameter names (omitted when empty) |
+| `optional_params` | `number` | How many of `params` — always the trailing ones — have a default value and may be omitted by a call (omitted when 0). The default *expressions* are not stored here: they are ordinary terms at the head of the body block. Each optional parameter owns a was-it-passed flag, a binding phantom named `name#given` seated in the body block's registers straight after the parameters (so the body block's `param_names` has `params.length + optional_params` entries). A call writes `true`/`false` into each flag, and a placeholder `nil` into the register of a parameter it omitted; the body opens with `name = if name#given then name else <default> end` for each one, in order |
 | `body_block` | `number` | BlockId of the function body |
 | `capture_names` | `string[]` | Names of captured variables (omitted when empty) |
 | `capture_registers` | `number[]` | Which body registers receive captured values (parallel to `capture_names`). Optional for imports — re-derived from the body block's binding phantoms when registers are omitted |
@@ -1292,7 +1300,8 @@ the left-hand column.
 | `name` | `string \| null` | Function name (null for the root and for lambdas) |
 | `reg_count` | `number` | Size of the function's flat register file |
 | `loop_slots` | `number` | Number of loop-cursor slots the function needs |
-| `param_regs` | `number[]` | Registers that receive positional parameters, in order |
+| `param_regs` | `number[]` | Registers that receive the parameters, in order, followed by the was-it-passed flag register of each parameter that has a default value |
+| `optional_params` | `number` | How many trailing parameters have a default value — the last `optional_params` entries of `param_regs` are their flags (`0` for most functions). The text form prints those registers on a separate `given:` line |
 | `capture_regs` | `number[]` | Registers that receive captured values, in capture order |
 | `self_ref_reg` | `number \| null` | Register holding the self-reference (recursion), if any |
 | `code` | `InstRow[]` | The instruction stream |

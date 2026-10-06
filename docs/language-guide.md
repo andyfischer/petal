@@ -785,10 +785,12 @@ scale(value: 2, 10, 1)
 // named, every later argument must be named too
 ```
 
-Overloads are still chosen by the *total* number of arguments (positional plus
-named) — see [Function Overloading](function-overloading.md). Only once a
-variant is chosen do the names pick out its parameter slots, so the count still
-has to match a declared arity before any name is looked at, and a slot left
+Overloads are chosen by the *total* number of arguments (positional plus
+named) first — see [Function Overloading](function-overloading.md) — and the
+names then pick out the chosen variant's parameter slots. (The names take part
+in the choice itself only when the count alone does not settle it, which needs
+a variant with [default parameter values](#default-parameter-values).) For a
+function without defaults every parameter needs a value, so a slot left
 unfilled shows up as the ordinary arity error (`scale() expects 3 arguments,
 got 2`). The two failures that are specific to names are an unknown parameter
 and a slot filled twice:
@@ -830,6 +832,114 @@ outright rather than guessing: `append(list, x: 1)` is
 reports as an error as well. A function the standard prelude or a library
 writes in Petal (`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an
 ordinary `fn` and takes names like any other.
+
+### Default Parameter Values
+
+A parameter may be given a default with `= expression`. A call that leaves the
+argument out gets the default instead:
+
+```petal
+fn greet(name, greeting = "Hello", punct = "!")
+    "{greeting}, {name}{punct}"
+end
+
+print(greet("Ada"))                  // Hello, Ada!
+print(greet("Ada", "Hi"))            // Hi, Ada!
+print(greet("Ada", punct: "?"))      // Hello, Ada?
+```
+
+Trailing defaulted parameters can simply be left off, and *any* defaulted
+parameter can be skipped by [naming](#named-arguments) a later one, as
+`punct: "?"` does above. A type annotation goes before the default:
+`fn fade(c, amount: num = 0.5)`.
+
+**The default is an expression, and it is evaluated on every call that omits
+the argument.** It is not computed once when the function is declared, and its
+result is never kept from one call to the next. It runs inside the function,
+as the call starts, so it behaves exactly as if it were the first line of the
+body:
+
+```petal
+fn tagged(item, tags = [])
+    push(tags, item)
+end
+
+print(tagged("a"))   // ["a"]
+print(tagged("b"))   // ["b"]    a fresh list each call — not ["a", "b"]
+```
+
+```petal
+var issued = 0
+fn next_id()
+    set issued = get issued + 1
+    get issued
+end
+
+fn make(label, id = next_id())
+    "{id}: {label}"
+end
+
+print(make("first"))       // 1: first
+print(make("second"))      // 2: second     next_id() ran again
+print(make("third", 99))   // 99: third     an argument was passed — it did not run
+print(make("fourth"))      // 3: fourth
+```
+
+So `fn stamp(at = time())` reads the clock on each call, and
+`fn roll(n = random_int(1, 6))` rolls again each time.
+
+Because it runs in the function, a default can use anything the body could:
+the parameters declared **before** it, and any outer binding the function
+captures.
+
+```petal
+let margin = 4
+
+fn inset(w, h = w, pad = margin * 2)
+    [w - pad, h - pad]
+end
+
+print(inset(20))           // [12, 12]    h defaults to w
+print(inset(20, 10))       // [12, 2]
+print(inset(20, pad: 0))   // [20, 20]
+```
+
+Defaults are evaluated left to right, and only for the parameters the call
+left out. A default cannot read its own parameter or one declared after it —
+that is a compile error, since the later parameter has no value yet:
+
+```petal ignore
+fn span(lo = hi - 10, hi = 100) lo end
+// Error: The default value of parameter 'lo' refers to 'hi', which is declared
+// after it — a default can only use the parameters declared before it
+```
+
+The rules:
+
+- **Defaulted parameters come last.** A parameter without a default cannot
+  follow one that has one (`fn f(a = 1, b)` is a parse error) — a call fills
+  parameters left to right.
+- **Passing `nil` is passing an argument.** `greet("Ada", nil)` binds
+  `greeting` to `nil`; only *omitting* the argument evaluates the default.
+- **A required parameter must be given.** Leaving one out names it:
+  `greet()` is `greet() is missing a value for parameter 'name'`, and too many
+  arguments is `greet() expects 1-3 arguments, got 4`. `petal check` reports
+  both before the program runs.
+- **Lambdas and methods take defaults too**: `fn(x, step = 1) -> x + step`, and
+  `fn Rect.grow(r, by = 1)` (the receiver is always supplied, so it is never
+  the one with a default). A callback that is handed fewer arguments than it
+  declares uses its defaults for the rest: `map(xs, fn(x, scale = 10) -> x * scale)`.
+- **An annotation is checked against the default**: `fn f(n: int = "one")`
+  is a `petal check` warning.
+- **Class fields and enum variant fields do not take defaults.** A constructor
+  still needs every field; write a function with defaults that calls it.
+
+A default is ordinary code in the function, so it costs nothing when the
+argument is passed, and a call that passes every argument positionally to a
+function that has no defaults is exactly as fast as it was. With overloads, a
+variant's defaults widen the calls it accepts — see
+[Function Overloading](function-overloading.md#default-parameter-values) for how
+a variant is then chosen.
 
 ### Recursion
 
@@ -1844,7 +1954,9 @@ petal-diagram-canvas) walk the tree and produce DOM / canvas output.
 ## Function Overloading
 
 Petal supports defining multiple functions with the same name but different
-numbers of parameters. Dispatch happens at runtime by argument count:
+numbers of parameters. Dispatch happens at runtime by argument count (and,
+for a variant with [default parameter values](#default-parameter-values), by
+which variant accepts the call):
 
 ```petal
 fn greet()       print("hi") end

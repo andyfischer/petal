@@ -2,7 +2,9 @@
 
 A top-level `fn` name can be declared more than once with different numbers
 of parameters. Each call picks the variant whose parameter count matches the
-number of arguments.
+number of arguments. (A variant with
+[default parameter values](#default-parameter-values) accepts a range of
+counts; the rule for that case is below.)
 
 ```petal
 fn greet() print("hi") end
@@ -16,7 +18,8 @@ greet("a", "b")   // hi a b
 
 ## The rules
 
-- **Argument count is the only thing that matters.** Types play no part:
+- **Argument count is what matters** (with defaults, the names written too —
+  see [below](#default-parameter-values)). Types play no part:
   `fn f(x: int)` and `fn f(x: string)` have the same count, so the second
   simply replaces the first. Annotations are checked, not dispatched on.
 - **Same count, same function.** Two declarations with the same number of
@@ -107,7 +110,9 @@ Point(1, 2).shifted(1, 2, 3)
 
 [Named arguments](language-guide.md#named-arguments) are bound *after* the
 variant is chosen. The count (positional plus named) picks the variant; the
-names then map onto that variant's parameters.
+names then map onto that variant's parameters. (Names help *choose* the
+variant only when no variant has exactly that many parameters, or the one that
+does lacks the name — see [Default parameter values](#default-parameter-values).)
 
 ```petal
 fn box(w) box(w, w) end
@@ -128,6 +133,74 @@ one-argument variant internally. That internal name never appears in output —
 not in an error, not in `show-ir`, `show-bytecode`, `show-graph`, `explain`, a
 recorded trace, or the function table a host calls through.
 
+## Default parameter values
+
+A variant whose trailing parameters have
+[defaults](language-guide.md#default-parameter-values) takes a *range* of
+argument counts, and its optional parameters can be skipped by naming later
+ones. Selection therefore asks one question of every variant — **does it
+accept this call?** — and a variant accepts when
+
+- there are no more arguments than it has parameters,
+- every written name is one of its parameters (and is not already filled by a
+  positional argument or by the same name twice), and
+- every parameter the call leaves unfilled has a default.
+
+Then:
+
+1. **An accepting variant with exactly as many parameters as arguments were
+   written wins.** A call that names nothing and matches an arity exactly
+   always lands here, which is the whole rule as it stood before defaults —
+   every such call resolves as it always has.
+2. **Otherwise the call must be accepted by exactly one variant.**
+3. **Accepted by more than one, with no exact match, it is an error** — never
+   settled by declaration order.
+
+```petal
+fn box(w) "square {w}" end
+fn box(w, h, depth = 1) "box {w} {h} {depth}" end
+
+print(box(2))               // square 2      exact: the 1-parameter variant
+print(box(2, 3))            // box 2 3 1     no 2-parameter variant; one accepts
+print(box(2, 3, 4))         // box 2 3 4     exact
+print(box(2, 3, depth: 9))  // box 2 3 9
+```
+
+Written names take part in the choice. Here two arguments are written both
+times, and only the name tells the variants apart:
+
+```petal
+fn at(x, y) "point {x},{y}" end
+fn at(angle, radius, turns = 1) "polar {angle} {radius} x{turns}" end
+
+print(at(1, 2))                   // point 1,2     exact arity
+print(at(radius: 2, angle: 1))    // polar 1 2 x1  the 2-parameter `at` has no `radius`
+```
+
+Two variants whose defaults both stretch to cover a call are ambiguous for
+that call, and the error says which:
+
+```petal
+fn pad(s, left = 1) s end
+fn pad(s, left = 1, right = 1) s end
+
+pad("x", 2)          // fine: exact arity, the 2-parameter variant
+pad("x", right: 2)   // fine: only the 3-parameter variant has `right`
+pad("x")
+// Error: pad() is ambiguous: pad(s, left = …) and pad(s, left = …, right = …)
+// both accept this call — pass or name another argument to pick one
+```
+
+The ambiguity is reported for the call, not the declarations: such a pair is
+still useful for every call that says enough to pick one. `petal check`
+reports it before the program runs wherever the callee is known. To avoid it
+altogether, give each variant a distinct number of *required* parameters, or
+fold the variants into one function with defaults.
+
+Variants are still identified by their total parameter count: two
+declarations with the same number of parameters do not overload, whatever
+their defaults, and the later one replaces the earlier.
+
 ## Wrong argument count
 
 A call that matches no variant is an error listing the counts on offer:
@@ -138,6 +211,12 @@ fn add(a, b, c) a + b + c end
 
 add(1)  // Error: add() expects 2 or 3 arguments, got 1
 ```
+
+A variant with defaults is listed as a range — `box() expects 1 or 2-3
+arguments, got 0` for the `box` above. When the count fits a variant but the
+written names fit none, the error lists the variants instead:
+`box() has no variant that accepts 2 arguments with one named 'nope'
+(variants: box(w), box(w, h, depth = …))`.
 
 `petal check` reports the same thing as an error before the program runs
 (`` `add` expects 2 or 3 arguments, got 1 ``) and exits non-zero on it.

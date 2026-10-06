@@ -1799,9 +1799,27 @@ impl<'a> Checker<'a> {
                     // call and none takes exactly this many: the runtime
                     // refuses to pick, so this fails whenever it runs.
                     if let ExprKind::Ident(f) = &function.kind {
+                        // Spelled as the runtime spells them — `f(a, b = …)` —
+                        // wherever the parameter names are known.
                         let ranges: Vec<String> = many
                             .iter()
-                            .map(|s| format!("the {}-parameter `{f}`", s.params.len()))
+                            .map(|s| match names_of(s) {
+                                Some(names) => {
+                                    let params: Vec<String> = names
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, n)| {
+                                            if i < s.required() {
+                                                n.clone()
+                                            } else {
+                                                format!("{n} = …")
+                                            }
+                                        })
+                                        .collect();
+                                    format!("{f}({})", params.join(", "))
+                                }
+                                None => format!("the {}-parameter `{f}`", s.params.len()),
+                            })
                             .collect();
                         self.error(
                             call_span,

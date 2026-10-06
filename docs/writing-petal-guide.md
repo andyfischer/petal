@@ -646,12 +646,20 @@ positional ones. Reach for it when a call is a row of same-typed literals —
 `pill(8, 4, 120, 24, "Save")` does not — and for class constructors with more
 than two or three fields. Names bind to the callee's parameter slots directly;
 no record is built, so it costs nothing a positional call doesn't beyond the
-name lookup. Two limits: every parameter still needs a value (there are no
-defaults, and overloads are chosen by argument count before names are read),
-and it works on anything written in Petal — your `fn`s, lambdas, methods,
+name lookup. One limit: it works on anything written in Petal — your `fn`s, lambdas, methods,
 constructors, prelude functions — but **not on native builtins**
 (`clamp(v, lo: 0, hi: 1)` is an error, which `petal check` catches). See
 [Named Arguments](language-guide.md#named-arguments).
+
+**Parameters can have defaults**: `fn button(label, w = 120, h = 24, on = false)`,
+called as `button("Save")` or `button("Save", on: true)`. Use one where most
+callers pass the same value, instead of a second overload that only forwards.
+The default is an *expression that runs on every call that omits the argument*
+— not a value computed once — so `fn add(x, into = [])` gets a fresh list each
+time and `fn stamp(at = time())` reads the clock each time, and it may use the
+parameters before it (`fn box(w, h = w)`). Defaulted parameters go last;
+passing `nil` is passing a value, not asking for the default. See
+[Default Parameter Values](language-guide.md#default-parameter-values).
 
 **Method syntax reaches builtins, not your own functions.** `value.name(args)`
 falls back to a **builtin** with the receiver as the first argument, which is

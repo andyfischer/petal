@@ -410,6 +410,19 @@ print(scale(2, by: 10, offset: 1))          // 21
 print(scale(by: 10, offset: 1, value: 2))   // 21
 ```
 
+A parameter may declare a default, `name = expr` (after the type annotation,
+if there is one); defaulted parameters come last. The default is an
+*expression evaluated on every call that omits the argument* — never once at
+declaration — and it may use the parameters before it:
+
+```petal
+fn box(w, h = w, label: str = "box") "{label} {w}x{h}" end
+
+print(box(3))                 // box 3x3
+print(box(3, 4))              // box 3x4
+print(box(3, label: "tile"))  // tile 3x3
+```
+
 Overloads are chosen by the total argument count (positional plus named);
 names then bind to the chosen variant's parameters. Naming a parameter that
 does not exist, or giving one twice, is an error — and a warning from

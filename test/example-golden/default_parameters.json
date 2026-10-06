@@ -1,0 +1,6 @@
+{
+  "example": "default_parameters.ptl",
+  "status": 0,
+  "stdout": "Hello, Ada!\nHi, Ada!\nHello, Ada?\nHello, Ada...\ninset: [12, 12]\ninset: [12, 2]\ninset: [20, 20]\ntagged: [\"a\"]\ntagged: [\"b\"]\ntagged: [\"x\", \"c\"]\n#1 first\n#2 second\n#99 reserved\n#3 third\nids issued: 3\ngot nothing passed\ngot nil\nscale: 30 6\nmapped: [100, 200, 300]\nbumped: 6 15 8\nsquare 25\nrect 15px\nrect 15pt\n",
+  "stderr": ""
+}

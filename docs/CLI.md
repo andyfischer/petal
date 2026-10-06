@@ -199,11 +199,18 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   fail with `Unknown builtin` or `Undefined variable`;
 - a call whose argument count no overload accepts (`f(1)` where every `f`
   takes two arguments);
-- a named argument no parameter has, or one that fills a slot twice;
+- a named argument no parameter has, or one that fills a slot twice — on a
+  `fn`, or on a builtin, which is checked against the parameter names it
+  declares (`clamp(v, low: 0, hi: 1)` is `clamp() has no parameter named
+  'low'`);
 - a required parameter left without a value, and a call that more than one
   overload's default parameter values could accept;
-- a named argument to a builtin (`clamp(v, lo: 0, hi: 1)`), which takes
-  arguments by position only.
+- a named argument to a builtin that declares none (`print(1, sep: 2)`).
+
+A host native is held to its declared names when the checker knows them: the
+petal-ui set always, anything the running `Env` registers. A native known only
+by name — Garden's, the SDL runner's, a `--native` — has its named arguments
+left to the run, since its host may declare parameters `check` cannot see.
 
 ```
 $ petal check -e 'print(nope)'

@@ -178,7 +178,8 @@ impl<'a> Vm<'a> {
                 self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site, memoize)?;
             }
             Value::NativeFunction(nid) => {
-                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
+                let bound = self.bind_native_args(nid, args, arg_names)?;
+                let args = bound.as_deref().unwrap_or(args);
                 let v = self.call_native_or_intrinsic(nid, args, call_site)?;
                 self.set_call_result(fi, dst, v, call_site);
             }
@@ -273,7 +274,8 @@ impl<'a> Vm<'a> {
                         return self.do_call(fi, dst, field_val, args, arg_names, call_site, true);
                     }
                     Value::NativeFunction(nid) => {
-                        reject_named_args(arg_names, self.native_fns.get_name(nid))?;
+                        let bound = self.bind_native_args(nid, args, arg_names)?;
+                        let args = bound.as_deref().unwrap_or(args);
                         let v = self.call_native_fn(nid, args, false, call_site)?;
                         self.set_call_result(fi, dst, v, call_site);
                         return Ok(());
@@ -308,9 +310,13 @@ impl<'a> Vm<'a> {
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(class, method_name) {
-                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
-                let v =
-                    self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
+                // The receiver is the native's first parameter, and takes
+                // the leading positional slot.
+                let full = with_receiver(recv, args);
+                let bound =
+                    self.bind_native_args(nid, &full, &with_receiver_names(arg_names))?;
+                let full = bound.as_deref().unwrap_or(&full);
+                let v = self.call_native_or_intrinsic(nid, full, call_site)?;
                 self.set_call_result(fi, dst, v, call_site);
                 return Ok(());
             }
@@ -342,9 +348,13 @@ impl<'a> Vm<'a> {
                 );
             }
             if let Some(nid) = self.native_fns.lookup_class_method(hint, method_name) {
-                reject_named_args(arg_names, self.native_fns.get_name(nid))?;
-                let v =
-                    self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site)?;
+                // The receiver is the native's first parameter, and takes
+                // the leading positional slot.
+                let full = with_receiver(recv, args);
+                let bound =
+                    self.bind_native_args(nid, &full, &with_receiver_names(arg_names))?;
+                let full = bound.as_deref().unwrap_or(&full);
+                let v = self.call_native_or_intrinsic(nid, full, call_site)?;
                 self.set_call_result(fi, dst, v, call_site);
                 return Ok(());
             }
@@ -354,7 +364,11 @@ impl<'a> Vm<'a> {
         //    table. This runs before the native-table lookup so class methods
         //    win over same-named globals (e.g. the builtin `get`).
         if let Value::Handle(h) = recv {
-            reject_named_args(arg_names, method_name)?;
+            // A handle class dispatches its methods by name inside one host
+            // callback; it has no per-method parameter list to bind against.
+            if !arg_names.is_empty() {
+                return Err(crate::native_fn::undeclared_named_args(method_name));
+            }
             let v = self.call_handle_method(h, method_name, args, call_site)?;
             self.set_call_result(fi, dst, v, call_site);
             return Ok(());
@@ -368,7 +382,16 @@ impl<'a> Vm<'a> {
 
         // 5) Native function with `recv` prepended.
         if let Some(nid) = self.native_fns.lookup_name(method_name) {
-            match self.call_native_or_intrinsic(nid, &with_receiver(recv, args), call_site) {
+            // `xs.slice(start: 1, end: 3)`: the receiver fills the builtin's
+            // first parameter, and the names bind against the rest.
+            let full = with_receiver(recv, args);
+            let called = self
+                .bind_native_args(nid, &full, &with_receiver_names(arg_names))
+                .and_then(|bound| {
+                    let full = bound.as_deref().unwrap_or(&full);
+                    self.call_native_or_intrinsic(nid, full, call_site)
+                });
+            match called {
                 Ok(v) => {
                     self.set_call_result(fi, dst, v, call_site);
                     Ok(())
@@ -613,13 +636,46 @@ fn with_receiver_names(arg_names: &ArgNames) -> ArgNames {
     full
 }
 
-/// Phase one: the native registry carries no parameter names at runtime, so a
-/// named argument to a builtin is refused rather than guessed at.
-pub(super) fn reject_named_args(arg_names: &ArgNames, name: &str) -> Result<(), String> {
-    if arg_names.is_empty() {
-        return Ok(());
+impl<'a> Vm<'a> {
+    /// Named arguments to a native, permuted into the positional order the
+    /// native reads them in — `None` when the call names nothing, which is
+    /// every call on the hot path: it returns before touching the table and
+    /// the caller passes its own `args` straight through.
+    ///
+    /// The names bind against the parameter lists the native declared
+    /// ([`NativeFnTable::declare_params`](crate::native_fn::NativeFnTable::declare_params)),
+    /// with the errors a Petal `fn` gives for the same slips. A native that
+    /// declared none refuses names rather than guessing at them. Every
+    /// dispatch path that reaches a native with caller-written names goes
+    /// through here: `BuiltinCall`, a native held in a value or a record
+    /// field, a built-in class method, and the method-syntax fallback.
+    pub(super) fn bind_native_args(
+        &self,
+        nid: NativeFnId,
+        args: &[Value],
+        arg_names: &ArgNames,
+    ) -> Result<Option<SmallVec<[Value; 8]>>, String> {
+        if arg_names.is_empty() {
+            return Ok(None);
+        }
+        let name = self.native_fns.get_name(nid);
+        let sigs = self.native_fns.signatures(nid);
+        if sigs.is_empty() {
+            return Err(crate::native_fn::undeclared_named_args(name));
+        }
+        let program = self.program;
+        let mut names: SmallVec<[Option<&str>; 4]> = SmallVec::with_capacity(arg_names.len());
+        for cid in arg_names {
+            names.push(match cid {
+                Some(cid) => match program.get_string_constant(*cid) {
+                    Some(s) => Some(s),
+                    None => return Err("Invalid argument name".into()),
+                },
+                None => None,
+            });
+        }
+        crate::native_fn::bind_native_args(name, sigs, args, &names).map(Some)
     }
-    Err(format!("builtin '{name}' does not accept named arguments"))
 }
 
 /// A method's real argument list: the receiver, then the written arguments.

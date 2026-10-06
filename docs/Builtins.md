@@ -6,12 +6,33 @@ The built-in functions available in every Petal program. For language syntax
 `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
 [petal-ui README](../petal-ui/README.md).
 
-Builtins take **positional arguments only**. The parameter names in this
-reference are for reading, not for calling: a
-[named argument](language-guide.md#named-arguments) such as `append(xs, x: 1)`
-is an error (`builtin 'append' does not accept named arguments`), at run time
-and from `petal check`. Named
-arguments work on `fn` declarations, methods and lambdas.
+**The parameter names in this reference are real.** Every builtin with a
+fixed parameter list takes [named arguments](language-guide.md#named-arguments)
+under the names its heading shows, in any order after the positional ones:
+
+```petal
+print(clamp(15, lo: 0, hi: 10))                        // 10
+print(map_range(value: 5, in_lo: 0, in_hi: 10, out_lo: 0, out_hi: 100))  // 50.0
+print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
+```
+
+- A parameter marked `?` (`slice(collection, start, end?)`) is optional and
+  may be left off, named or not. Optional parameters are always last, and one
+  cannot be skipped to reach a later one: `noise(x: 1, z: 2)` is
+  `noise() is missing a value for parameter 'y'`.
+- A builtin listed in several forms (`random()` / `random(max)` /
+  `random(min, max)`, `distance(x1, y1, x2, y2)` / `distance(v1, v2)`) takes
+  the names of whichever form the call fits.
+- With method syntax the receiver is the first parameter, so
+  `xs.slice(start: 1)` names the ones after it.
+- A name may be a keyword: `end:` is an ordinary argument label
+  (`range(start: 0, end: 5)`).
+- The variadic builtins — `print(args...)` and `format(template, args...)` —
+  have no parameter names to give, and refuse a named argument
+  (`builtin 'print' does not accept named arguments`).
+
+A wrong name is an error when the line runs (`clamp() has no parameter named
+'low'`), and from `petal check` before that.
 
 ## I/O
 
@@ -106,7 +127,7 @@ random(16.0)        // 9.310...  (varies), in [0, 16)
 random(1.0, 10.0)   // 4.218...  (varies)
 ```
 
-### `range(start, end)` / `range(start, end, step)`
+### `range(end)` / `range(start, end)` / `range(start, end, step)`
 
 Returns a list of integers from `start` (inclusive) to `end` (exclusive).
 With a `step`, counts by it; a negative step counts down, stopping before
@@ -525,7 +546,7 @@ float("3.5")   // 3.5
 float("42")    // 42.0
 ```
 
-### `parse_float(s)` / `parse_int(s)`
+### `parse_float(string)` / `parse_int(string)`
 
 Like `float` / `int`, but return `nil` instead of erroring when the text isn't
 a number. `parse_int` accepts only whole numbers: `"3.5"` is `nil`, not `3`.
@@ -828,7 +849,7 @@ end
 first character is two bytes, so `slice("Óscar", 0, 1)` is `""`. The builtins
 here count **characters** instead.
 
-### `chars(s)`
+### `chars(string)`
 
 The string as a list of single-character strings.
 
@@ -837,7 +858,7 @@ chars("Óscar")   // ["Ó", "s", "c", "a", "r"]
 chars("")        // []
 ```
 
-### `char_len(s)`
+### `char_len(string)`
 
 Number of characters, as opposed to `len`'s bytes.
 
@@ -846,9 +867,9 @@ char_len("Óscar")   // 5
 len("Óscar")        // 6
 ```
 
-### `char_at(s, i)`
+### `char_at(string, index)`
 
-The single character at character index `i`. Negative indices count from the
+The single character at character index `index`. Negative indices count from the
 end. An out-of-range index gives `""` rather than an error.
 
 ```petal
@@ -857,7 +878,7 @@ char_at("Óscar", -1)   // "r"
 char_at("Óscar", 99)   // ""
 ```
 
-### `char_slice(s, start, end?)`
+### `char_slice(string, start, end?)`
 
 `slice` for text: the indices count characters. Negative indices count from the
 end, both ends clamp, and `end` defaults to the end of the string.
@@ -870,7 +891,7 @@ char_slice("Óscar", -3, -1)         // "ca"
 
 ## Higher-Order Functions
 
-### `map(list, fn)`
+### `map(list, f)`
 
 Applies a function to each element and returns a new list.
 
@@ -879,7 +900,7 @@ map([1, 2, 3], fn(x) -> x * 2)         // [2, 4, 6]
 map(["a", "b"], fn(s) -> s ++ "!")     // ["a!", "b!"]
 ```
 
-### `filter(list, fn)`
+### `filter(list, pred)`
 
 Returns a new list containing only elements where the function returns `true`.
 
@@ -888,7 +909,7 @@ filter([1, 2, 3, 4], fn(x) -> x > 2)            // [3, 4]
 filter(["hi", "", "ok"], fn(s) -> len(s) > 0)   // ["hi", "ok"]
 ```
 
-### `reduce(list, initial, fn)`
+### `reduce(list, initial, f)`
 
 Folds over a list, accumulating a result.
 
@@ -897,7 +918,7 @@ reduce([1, 2, 3], 0, fn(acc, x) -> acc + x)   // 6
 reduce([1, 2, 3], 1, fn(acc, x) -> acc * x)   // 6
 ```
 
-### `forEach(list, fn)`
+### `forEach(list, f)`
 
 Runs a function once for each element and returns `nil`. Use when you
 want the side effects (logging, drawing, mutations) but don't need a
@@ -977,18 +998,18 @@ a[0] = 2.5
 a[0]             // 2.5
 ```
 
-### `f64_array(n)`
+### `f64_array(length)`
 
-Creates a zero-filled array of length `n`.
+Creates a zero-filled array of `length` elements.
 
 ```petal
 f64_array(3)   // [0.0, 0.0, 0.0]
 f64_array(0)   // []
 ```
 
-### `set_at(a, i, v)`
+### `set_at(array, index, value)`
 
-Returns a new array with slot `i` set to `v` (an int or float). An
+Returns a new array with slot `index` set to `value` (an int or float). An
 out-of-bounds or negative index is an error.
 
 ```petal
@@ -997,7 +1018,7 @@ a = set_at(a, 1, 5.5)
 a[1]             // 5.5
 ```
 
-### `swap(a, i, j)`
+### `swap(array, i, j)`
 
 Returns a new array with the elements at `i` and `j` exchanged. Both indices
 are bounds-checked.

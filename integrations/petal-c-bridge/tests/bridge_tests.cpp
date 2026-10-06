@@ -551,6 +551,33 @@ TEST(native_userdata_outlives_reload) {
     CHECK_EQ(freed, 1);
 }
 
+TEST(native_takes_named_arguments_once_declared) {
+    pb_vm* vm = pb_vm_create();
+    auto cb = [](pb_call* call, void*) -> int {
+        // a - b, plus c when it was passed: reads by index, as always.
+        int64_t v = pb_call_arg(call, 0)->integer - pb_call_arg(call, 1)->integer;
+        if (pb_call_arg_count(call) > 2) v += pb_call_arg(call, 2)->integer;
+        pb_builder_int(pb_call_result(call), v);
+        return 0;
+    };
+    CHECK_EQ(pb_vm_register_native(vm, "sub", cb, nullptr, nullptr, PB_FX_PURE), PB_OK);
+    CHECK_EQ(pb_vm_declare_native_params(vm, "sub", "a, b, c?"), PB_OK);
+    CHECK_EQ(pb_vm_declare_native_params(vm, "nope", "a"), PB_ERR_INVALID_ARG);
+    CHECK_EQ(pb_vm_declare_native_params(vm, "sub", "a?, b"), PB_ERR_INVALID_ARG);
+    CHECK_EQ(pb_vm_load_source(vm,
+                               "push_output(symbol(\"out\"), sub(b: 1, a: 10))\n"
+                               "push_output(symbol(\"out\"), sub(10, c: 5, b: 1))\n",
+                               nullptr),
+             PB_OK);
+    CHECK_EQ(pb_vm_run(vm), PB_OK);
+    pb_values out;
+    CHECK_EQ(pb_vm_drain(vm, "out", &out), PB_OK);
+    REQUIRE(out.count == 2);
+    CHECK_EQ(out.items[0].integer, 9);
+    CHECK_EQ(out.items[1].integer, 14);
+    pb_vm_destroy(vm);
+}
+
 // ─── Calling functions ──────────────────────────────────────────────────────
 
 TEST(call_function_by_name) {

@@ -24,6 +24,7 @@
 //! Coordinates are logical pixels, `(0, 0)` at the drawable's top-left.
 //! Colors are 0–255 sRGB components.
 
+use crate::params::register;
 use petal::env::Env;
 use petal::execution_context::EmitSite;
 use petal::heap::Heap;
@@ -1047,57 +1048,60 @@ const MEASURES_TEXT: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS
 /// Register the standard draw natives, the offscreen-canvas ops included
 /// (see [`register_canvas`]).
 pub fn register_draw(env: &mut Env) {
-    env.register_native("draw_image", native_draw_image, DRAW);
-    env.register_native("clear", native_clear, DRAW);
-    env.register_native("draw_rect", native_draw_rect, DRAW);
-    env.register_native("draw_rect_rounded", native_draw_rect_rounded, DRAW);
-    env.register_native("draw_rect_outline", native_draw_rect_outline, DRAW);
-    env.register_native(
+    register(env, "draw_image", native_draw_image, DRAW);
+    register(env, "clear", native_clear, DRAW);
+    register(env, "draw_rect", native_draw_rect, DRAW);
+    register(env, "draw_rect_rounded", native_draw_rect_rounded, DRAW);
+    register(env, "draw_rect_outline", native_draw_rect_outline, DRAW);
+    register(
+        env,
         "draw_rect_rounded_outline",
         native_draw_rect_rounded_outline,
         DRAW,
     );
-    env.register_native("draw_rect_gradient", native_draw_rect_gradient, DRAW);
-    env.register_native(
+    register(env, "draw_rect_gradient", native_draw_rect_gradient, DRAW);
+    register(
+        env,
         "draw_rect_gradient_rounded",
         native_draw_rect_gradient_rounded,
         DRAW,
     );
-    env.register_native("draw_circle_gradient", native_draw_circle_gradient, DRAW);
-    env.register_native("draw_shadow", native_draw_shadow, DRAW);
-    env.register_native("draw_line", native_draw_line, DRAW);
-    env.register_native("draw_polyline", native_draw_polyline, DRAW);
-    env.register_native("draw_circle", native_draw_circle, DRAW);
-    env.register_native("draw_circle_outline", native_draw_circle_outline, DRAW);
-    env.register_native("draw_ellipse", native_draw_ellipse, DRAW);
-    env.register_native("draw_ellipse_outline", native_draw_ellipse_outline, DRAW);
-    env.register_native("fill_arc", native_fill_arc, DRAW);
-    env.register_native("fill_triangle", native_fill_triangle, DRAW);
-    env.register_native("fill_poly", native_fill_poly, DRAW);
-    env.register_native("fill_polygon", native_fill_polygon, DRAW);
-    env.register_native("fill_fan", native_fill_fan, DRAW);
-    env.register_native("draw_text", native_draw_text, DRAW);
-    env.register_native("clip", native_clip, DRAW);
-    env.register_native("clip_none", native_clip_none, DRAW);
-    env.register_native("clip_push", native_clip_push, DRAW);
-    env.register_native("clip_pop", native_clip_pop, DRAW);
-    env.register_native("text_width", native_text_width, MEASURES_TEXT);
-    env.register_native("text_advance", native_text_advance, MEASURES_TEXT);
+    register(env, "draw_circle_gradient", native_draw_circle_gradient, DRAW);
+    register(env, "draw_shadow", native_draw_shadow, DRAW);
+    register(env, "draw_line", native_draw_line, DRAW);
+    register(env, "draw_polyline", native_draw_polyline, DRAW);
+    register(env, "draw_circle", native_draw_circle, DRAW);
+    register(env, "draw_circle_outline", native_draw_circle_outline, DRAW);
+    register(env, "draw_ellipse", native_draw_ellipse, DRAW);
+    register(env, "draw_ellipse_outline", native_draw_ellipse_outline, DRAW);
+    register(env, "fill_arc", native_fill_arc, DRAW);
+    register(env, "fill_triangle", native_fill_triangle, DRAW);
+    register(env, "fill_poly", native_fill_poly, DRAW);
+    register(env, "fill_polygon", native_fill_polygon, DRAW);
+    register(env, "fill_fan", native_fill_fan, DRAW);
+    register(env, "draw_text", native_draw_text, DRAW);
+    register(env, "clip", native_clip, DRAW);
+    register(env, "clip_none", native_clip_none, DRAW);
+    register(env, "clip_push", native_clip_push, DRAW);
+    register(env, "clip_pop", native_clip_pop, DRAW);
+    register(env, "text_width", native_text_width, MEASURES_TEXT);
+    register(env, "text_advance", native_text_advance, MEASURES_TEXT);
     // The other axis, and the fitting that needs both. `text_width` answers
     // how wide a run is; `text_metrics` answers where its ink sits relative to
     // the `y` a script hands `draw_text`, which is what vertical centring has
     // always had to guess. `text_wrap` / `text_ellipsize` / `text_index_at`
     // are the walks over the advance table a script would otherwise write as a
     // `text_width` call per character, per frame.
-    env.register_native("text_metrics", native_text_metrics, MEASURES_TEXT);
-    env.register_native("text_wrap", native_text_wrap, MEASURES_TEXT);
-    env.register_native("text_ellipsize", native_text_ellipsize, MEASURES_TEXT);
-    env.register_native("text_index_at", native_text_index_at, MEASURES_TEXT);
+    register(env, "text_metrics", native_text_metrics, MEASURES_TEXT);
+    register(env, "text_wrap", native_text_wrap, MEASURES_TEXT);
+    register(env, "text_ellipsize", native_text_ellipsize, MEASURES_TEXT);
+    register(env, "text_index_at", native_text_index_at, MEASURES_TEXT);
     // `font(name)` resolves the name against the host's font source, which is
     // attached once at startup: a pure function of its argument for the life
     // of the process. `fonts()` lists that source, and says so as a host read.
-    env.register_native("font", native_font, NativeEffects::PURE);
-    env.register_native(
+    register(env, "font", native_font, NativeEffects::PURE);
+    register(
+        env,
         "fonts",
         native_fonts,
         NativeEffects::reads(InputClasses::HOST_DATA),
@@ -1121,12 +1125,12 @@ pub fn register_draw(env: &mut Env) {
 /// well as emitting, which no replay reproduces: a scope that opens a layer
 /// is never memoized.
 pub fn register_canvas(env: &mut Env) {
-    env.register_native("create_canvas", native_create_canvas, DRAW.with_effect());
-    env.register_native("draw_to", native_draw_to, DRAW.with_effect());
-    env.register_native("draw_to_screen", native_draw_to_screen, DRAW.with_effect());
-    env.register_native("draw_canvas", native_draw_canvas, DRAW);
-    env.register_native("snapshot_to", native_snapshot_to, DRAW);
-    env.register_native("blur_canvas", native_blur_canvas, DRAW);
+    register(env, "create_canvas", native_create_canvas, DRAW.with_effect());
+    register(env, "draw_to", native_draw_to, DRAW.with_effect());
+    register(env, "draw_to_screen", native_draw_to_screen, DRAW.with_effect());
+    register(env, "draw_canvas", native_draw_canvas, DRAW);
+    register(env, "snapshot_to", native_snapshot_to, DRAW);
+    register(env, "blur_canvas", native_blur_canvas, DRAW);
 }
 
 /// Emit a draw command into the `draw_commands` output buffer.

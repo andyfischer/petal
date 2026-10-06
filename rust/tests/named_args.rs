@@ -404,11 +404,341 @@ fn an_unfilled_slot_is_reported() {
     assert_eq!(e, "sub() is missing a value for parameter 'a'");
 }
 
+// ---------------------------------------------------------------------------
+// Natives
+// ---------------------------------------------------------------------------
+//
+// A native reads its arguments by index. It takes names once it declares its
+// parameters (`NativeFnTable::declare_params`; the core builtins do, in
+// `builtins/params.rs`): the names are permuted into positional order and the
+// native runs exactly as the positional call would have run it. There are two
+// places that happens — the compiler, for a direct call to an unshadowed
+// builtin, and the VM, for every path where the callee is only known at run
+// time — so each dispatch path gets its own test.
+
+/// A builtin that declares no parameters (the variadic ones) keeps refusing.
 #[test]
-fn a_builtin_refuses_named_arguments() {
-    let e = err("print(append([1], x: 2))");
+fn an_undeclared_builtin_refuses_named_arguments() {
+    let e = err("print(1, sep: 2)");
     assert!(
-        e.contains("builtin 'append' does not accept named arguments"),
+        e.contains("builtin 'print' does not accept named arguments"),
         "unexpected error: {e}"
     );
+}
+
+#[test]
+fn a_builtin_binds_named_arguments() {
+    assert_eq!(out("print(clamp(value: 15, lo: 0, hi: 10))"), "10");
+    assert_eq!(out("print(clamp(hi: 10, value: 15, lo: 0))"), "10");
+    assert_eq!(out("print(clamp(15, hi: 10, lo: 0))"), "10");
+    assert_eq!(out("print(append([1], value: 2))"), "[1, 2]");
+    assert_eq!(out("print(pow(exp: 3, base: 2))"), "8.0");
+    assert_eq!(out("print(join(separator: \"-\", list: [1, 2]))"), "1-2");
+}
+
+/// The direct call is put in positional order by the compiler, so the term —
+/// and everything downstream of it — is the positional call's.
+#[test]
+fn a_direct_builtin_call_is_normalized_at_compile_time() {
+    let (env, pid) = compile("print(pow(exp: 3, base: 2))\n");
+    let program = env.get_program(pid).expect("program");
+    let named = program
+        .terms
+        .iter()
+        .filter(|t| !t.arg_names.is_empty())
+        .count();
+    assert_eq!(named, 0, "names survived on a call that binds");
+    // A call whose names do not bind keeps them, for the VM (and `check`) to
+    // report against.
+    let (env, pid) = compile("pow(exp: 3, bass: 2)\n");
+    let program = env.get_program(pid).expect("program");
+    assert_eq!(
+        term_names(program, |op| matches!(op, TermOp::BuiltinCall(_))),
+        vec![Some("exp".to_string()), Some("bass".to_string())]
+    );
+}
+
+/// Arguments are evaluated in the order they are written, whatever order the
+/// names put them in.
+#[test]
+fn named_builtin_arguments_evaluate_in_written_order() {
+    let src = "fn say(x)
+  print(x)
+  x
+end
+print(pow(exp: say(3), base: say(2)))";
+    assert_eq!(out(src), "3\n2\n8.0");
+}
+
+/// An in-place-eligible builtin still sees its container in slot 0.
+#[test]
+fn a_named_mutating_builtin_keeps_value_semantics() {
+    let src = "let xs = [1]
+let ys = append(value: 2, list: xs)
+let zs = append(value: 3, list: xs)
+print(xs, ys, zs)";
+    assert_eq!(out(src), "[1] [1, 2] [1, 3]");
+    let src = "var xs = [1]
+for i in range(3) do
+  set xs = append(value: i, list: xs)
+end
+print(xs)";
+    assert_eq!(out(src), "[1, 0, 1, 2]");
+}
+
+#[test]
+fn trailing_optional_parameters_may_be_left_off() {
+    assert_eq!(out("print(slice([1, 2, 3, 4], start: 1))"), "[2, 3, 4]");
+    assert_eq!(out("print(slice([1, 2, 3, 4], start: 1, end: 3))"), "[2, 3]");
+    assert_eq!(out("print(slice(end: 3, collection: [1, 2, 3, 4], start: 1))"), "[2, 3]");
+    assert_eq!(out("print(round(x: 3.14159, places: 2))"), "3.14");
+    assert_eq!(out("print(round(x: 2.6))"), "3.0");
+}
+
+/// `noise(x, y?, z?)`: `z` cannot be supplied past an unfilled `y`, since the
+/// native has no value to read in between.
+#[test]
+fn a_hole_before_a_supplied_optional_is_reported() {
+    let e = err("print(noise(x: 1, z: 2))");
+    assert!(
+        e.contains("noise() is missing a value for parameter 'y'"),
+        "unexpected error: {e}"
+    );
+    let e = err("print(clamp(5, hi: 3))");
+    assert!(
+        e.contains("clamp() is missing a value for parameter 'lo'"),
+        "unexpected error: {e}"
+    );
+}
+
+#[test]
+fn a_builtin_reports_an_unknown_or_repeated_name() {
+    let e = err("print(clamp(5, low: 0, hi: 3))");
+    assert!(
+        e.contains("clamp() has no parameter named 'low'"),
+        "unexpected error: {e}"
+    );
+    let e = err("print(clamp(5, value: 0, hi: 3))");
+    assert!(
+        e.contains("clamp() got multiple values for parameter 'value'"),
+        "unexpected error: {e}"
+    );
+    let e = err("print(clamp(5, lo: 0, lo: 3))");
+    assert!(
+        e.contains("clamp() got multiple values for parameter 'lo'"),
+        "unexpected error: {e}"
+    );
+}
+
+/// A builtin that reads its arguments differently by count declares each form;
+/// the names pick the form.
+#[test]
+fn a_builtin_with_several_forms_binds_the_one_the_names_fit() {
+    assert_eq!(out("print(distance(x1: 0, y1: 0, x2: 3, y2: 4))"), "5.0");
+    assert_eq!(out("print(distance(v2: vec2(3, 4), v1: vec2(0, 0)))"), "5.0");
+    assert_eq!(out("print(mag(y: 4, x: 3))"), "5.0");
+    assert_eq!(out("print(mag(v: vec2(3, 4)))"), "5.0");
+    assert_eq!(out("print(range(end: 3))"), "[0, 1, 2]");
+    assert_eq!(out("print(range(start: 1, end: 3))"), "[1, 2]");
+    assert_eq!(out("print(range(step: 2, start: 0, end: 5))"), "[0, 2, 4]");
+    assert_eq!(out("print(random(max: 1) < 1, random(min: 5, max: 6) >= 5)"), "true true");
+    let e = err("print(random(lo: 1, hi: 2))");
+    assert!(
+        e.contains("random() has no parameter named 'lo'"),
+        "unexpected error: {e}"
+    );
+}
+
+/// The higher-order builtins are VM intrinsics; names reach them the same way.
+#[test]
+fn an_intrinsic_binds_named_arguments() {
+    assert_eq!(out("print(map(f: fn(x) x * 2 end, list: [1, 2]))"), "[2, 4]");
+    assert_eq!(
+        out("print(reduce([1, 2, 3], f: fn(a, b) a + b end, initial: 10))"),
+        "16"
+    );
+    assert_eq!(
+        out("print(sort_by([3, 1, 2], key: fn(x) x end, descending: true))"),
+        "[3, 2, 1]"
+    );
+    assert_eq!(out("print(sort(compare: fn(a, b) b - a end, list: [1, 3, 2]))"), "[3, 2, 1]");
+}
+
+/// A native held in a value is only known at run time, so the VM binds it.
+#[test]
+fn a_native_value_binds_named_arguments() {
+    assert_eq!(out("let c = clamp\nprint(c(hi: 10, value: 15, lo: 0))"), "10");
+    assert_eq!(
+        out("fn apply(f)\n  f(exp: 3, base: 2)\nend\nprint(apply(pow))"),
+        "8.0"
+    );
+    let e = err("let c = clamp\nprint(c(5, low: 0, hi: 3))");
+    assert!(
+        e.contains("clamp() has no parameter named 'low'"),
+        "unexpected error: {e}"
+    );
+    let e = err("let p = print\np(1, sep: 2)");
+    assert!(
+        e.contains("builtin 'print' does not accept named arguments"),
+        "unexpected error: {e}"
+    );
+    // …and one held in a record field, called with method syntax.
+    assert_eq!(
+        out("let m = {c: clamp}\nprint(m.c(hi: 10, value: 15, lo: 0))"),
+        "10"
+    );
+}
+
+/// `xs.slice(start: 1, end: 3)`: the receiver is the builtin's first
+/// parameter, and the names bind against the rest.
+#[test]
+fn method_syntax_on_a_builtin_binds_named_arguments() {
+    assert_eq!(out("print([1, 2, 3, 4].slice(start: 1, end: 3))"), "[2, 3]");
+    assert_eq!(out("print([1, 2, 3, 4].slice(end: 3, start: 1))"), "[2, 3]");
+    assert_eq!(out("print([1, 2, 3, 4].slice(start: 2))"), "[3, 4]");
+    assert_eq!(out("print(\"a,b\".split(separator: \",\"))"), "[\"a\", \"b\"]");
+    assert_eq!(out("print([1, 2].map(f: fn(x) x + 1 end))"), "[2, 3]");
+    // Naming the receiver's own parameter is the double-bind error, as it is
+    // for a Petal method.
+    let e = err("print([1, 2, 3].slice(collection: [9], start: 1))");
+    assert!(
+        e.contains("slice() got multiple values for parameter 'collection'"),
+        "unexpected error: {e}"
+    );
+    let e = err("print([1, 2, 3].slice(from: 1))");
+    assert!(
+        e.contains("slice() has no parameter named 'from'"),
+        "unexpected error: {e}"
+    );
+    let e = err("[1].print(sep: 2)");
+    assert!(
+        e.contains("builtin 'print' does not accept named arguments"),
+        "unexpected error: {e}"
+    );
+}
+
+/// A built-in class: the constructor, and its methods through both dispatch
+/// routes — pinned statically when the receiver's class is known, by the
+/// receiver's tag when it is not.
+#[test]
+fn a_builtin_class_binds_named_arguments() {
+    assert_eq!(out("let r = Rect(w: 4, h: 2, x: 1, y: 1)\nprint(r.w, r.x)"), "4 1");
+    assert_eq!(
+        out("let r = Rect(0, 0, 10, 10)\nlet m = r.offset(dy: 2, dx: 1)\nprint(m.x, m.y)"),
+        "1 2"
+    );
+    assert_eq!(out("print(Rect(0, 0, 10, 10).inset(n: 2).w)"), "6");
+    // Through a parameter the checker cannot type: dispatched on the tag.
+    let src = "fn shift(r)
+  r.offset(dy: 2, dx: 1)
+end
+let m = shift(Rect(0, 0, 10, 10))
+print(m.x, m.y)";
+    assert_eq!(out(src), "1 2");
+    let e = err("fn shift(r)\n  r.offset(dz: 2, dx: 1)\nend\nshift(Rect(0, 0, 1, 1))");
+    assert!(
+        e.contains("Rect.offset() has no parameter named 'dz'"),
+        "unexpected error: {e}"
+    );
+    let e = err("fn shift(r)\n  r.offset(r: 2, dx: 1)\nend\nshift(Rect(0, 0, 1, 1))");
+    assert!(
+        e.contains("Rect.offset() got multiple values for parameter 'r'"),
+        "unexpected error: {e}"
+    );
+}
+
+/// `x |> f(b: 2)`: the piped value is the first positional argument.
+#[test]
+fn a_pipe_into_a_builtin_binds_named_arguments() {
+    assert_eq!(out("print(15 |> clamp(hi: 10, lo: 0))"), "10");
+    assert_eq!(out("print([1, 2, 3, 4] |> slice(end: 3, start: 1))"), "[2, 3]");
+    assert_eq!(out("let c = clamp\nprint(15 |> c(hi: 10, lo: 0))"), "10");
+    let e = err("print(15 |> clamp(value: 1, lo: 0))");
+    assert!(
+        e.contains("clamp() got multiple values for parameter 'value'"),
+        "unexpected error: {e}"
+    );
+}
+
+/// A user function shadowing a builtin is a Petal `fn`: its own parameter
+/// names apply, not the builtin's.
+#[test]
+fn a_shadowing_fn_binds_its_own_names() {
+    let src = "fn clamp(n, floor, top)
+  n - floor - top
+end
+print(clamp(top: 1, floor: 2, n: 10))";
+    assert_eq!(out(src), "7");
+}
+
+/// The embedder's side: a host native takes names once it declares them, and
+/// is handed the positional list — it never sees a name.
+#[test]
+fn a_host_native_binds_named_arguments_once_declared() {
+    use petal::native_fn::{NativeEffects, PetalCxt};
+
+    fn native_sub(cxt: &mut PetalCxt) -> Result<u32, String> {
+        let mut v = cxt.get_int(1)? - cxt.get_int(2)?;
+        if cxt.arg_count() == 3 {
+            v += cxt.get_int(3)?;
+        }
+        cxt.push_int(v);
+        Ok(1)
+    }
+    let run_with = |declare: bool, src: &str| -> Result<String, String> {
+        let mut env = Env::new();
+        let id = env.register_native("hsub", native_sub, NativeEffects::PURE);
+        if declare {
+            env.declare_native_params(id, "a, b, extra?")?;
+        }
+        let pid = env.load_program(src)?;
+        let sid = env.create_stack(pid)?;
+        env.run(sid)?;
+        Ok(env.take_output().join("\n").trim().to_string())
+    };
+    assert_eq!(run_with(true, "print(hsub(b: 1, a: 10))").unwrap(), "9");
+    assert_eq!(run_with(true, "print(hsub(10, extra: 5, b: 1))").unwrap(), "14");
+    assert_eq!(run_with(true, "let h = hsub\nprint(h(b: 1, a: 10))").unwrap(), "9");
+    assert_eq!(run_with(true, "print(10.hsub(b: 1))").unwrap(), "9");
+    let e = run_with(true, "print(hsub(a: 1, extra: 2))").unwrap_err();
+    assert!(e.contains("hsub() is missing a value for parameter 'b'"), "{e}");
+    let e = run_with(false, "print(hsub(b: 1, a: 10))").unwrap_err();
+    assert!(
+        e.contains("builtin 'hsub' does not accept named arguments"),
+        "{e}"
+    );
+    // The by-name form, and what a bad declaration says.
+    let mut env = Env::new();
+    env.register_native("hsub", native_sub, NativeEffects::PURE);
+    assert!(env.declare_native_params_by_name("hsub", "a, b").is_ok());
+    assert!(env.declare_native_params_by_name("nope", "a").is_err());
+    assert!(env.declare_native_params_by_name("hsub", "a?, b").is_err());
+    assert!(env.declare_native_params_by_name("hsub", "a, a").is_err());
+    assert!(env.declare_native_params_by_name("hsub", "a, 1b").is_err());
+}
+
+/// A native that dispatches on argument count declares one form per shape; a
+/// named call takes the first form it fits.
+#[test]
+fn a_host_native_may_declare_several_forms() {
+    use petal::native_fn::{NativeEffects, PetalCxt};
+
+    fn native_area(cxt: &mut PetalCxt) -> Result<u32, String> {
+        let v = match cxt.arg_count() {
+            1 => cxt.get_int(1)? * cxt.get_int(1)?,
+            _ => cxt.get_int(1)? * cxt.get_int(2)?,
+        };
+        cxt.push_int(v);
+        Ok(1)
+    }
+    let mut env = Env::new();
+    let id = env.register_native("area", native_area, NativeEffects::PURE);
+    env.declare_native_params(id, "side").unwrap();
+    env.declare_native_params(id, "w, h").unwrap();
+    let pid = env
+        .load_program("print(area(side: 3), area(h: 2, w: 5))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output().join("\n").trim(), "9 10");
 }

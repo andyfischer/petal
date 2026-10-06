@@ -446,6 +446,59 @@ impl Compiler {
             .map(|(program, _, _)| program)
     }
 
+    /// Put every named-argument `BuiltinCall` whose names bind into positional
+    /// order, and drop the names: `clamp(max: 9, value: v, min: 0)` leaves
+    /// here as the term `clamp(v, 0, 9)` would have been.
+    ///
+    /// The argument *expressions* were already compiled in the order they were
+    /// written, so evaluation order is untouched; only which register feeds
+    /// which parameter changes. Doing it here rather than in the VM is what
+    /// keeps every later pass honest — escape analysis and the in-place
+    /// optimizer read a builtin's inputs by position (`append`'s container is
+    /// input 0) — and it makes the named call cost exactly what the positional
+    /// one does.
+    ///
+    /// A call whose names do not bind (an unknown name, a slot filled twice, a
+    /// native that declares no parameters) is left as written, names and all:
+    /// the VM reports it when the line runs, and `petal check` before that
+    /// (`typecheck::globals`).
+    fn normalize_named_builtin_calls(&mut self, native_fns: &NativeFnTable) {
+        for term in &mut self.terms {
+            let TermOp::BuiltinCall(name_cid) = term.op else {
+                continue;
+            };
+            if term.arg_names.is_empty() {
+                continue;
+            }
+            let ConstantValue::String(name) = self.constants.get(name_cid) else {
+                continue;
+            };
+            let Some(nid) = native_fns.lookup_name(name) else {
+                continue;
+            };
+            let sigs = native_fns.signatures(nid);
+            if sigs.is_empty() {
+                continue;
+            }
+            let mut names: SmallVec<[Option<&str>; 4]> = SmallVec::new();
+            for cid in &term.arg_names {
+                names.push(match cid {
+                    Some(cid) => match self.constants.get(*cid) {
+                        ConstantValue::String(s) => Some(s.as_str()),
+                        _ => None,
+                    },
+                    None => None,
+                });
+            }
+            if let Ok(bound) =
+                crate::native_fn::bind_native_args(name, sigs, &term.inputs, &names)
+            {
+                term.inputs = bound.into_iter().collect();
+                term.arg_names.clear();
+            }
+        }
+    }
+
     /// Also hand back the evidence `petal suggest` reads, and the class table
     /// it must be spelled against — the field declarations a suggestion needs
     /// are in the table, not in the `Program`'s bare list of class names.
@@ -481,6 +534,7 @@ impl Compiler {
         for module in modules {
             self.compile_module(module)?;
         }
+        self.normalize_named_builtin_calls(native_fns);
 
         // Finalize root block
         self.finalize_block(root_block);

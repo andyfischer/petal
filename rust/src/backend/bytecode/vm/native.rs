@@ -74,7 +74,15 @@ impl<'a> Vm<'a> {
                 }
             }
         };
-        super::calls::reject_named_args(arg_names, self.native_fns.get_name(nid))?;
+        // A named call the compiler could not put in positional order itself
+        // (it does so whenever the names bind; see
+        // `Compiler::normalize_named_builtin_calls`) is bound — and, far more
+        // often, refused — here.
+        let bound = self.bind_native_args(nid, args, arg_names)?;
+        // The in-place proof is about the container the *written* first
+        // argument names, which a permuted call no longer has in that slot.
+        let in_place = in_place && bound.is_none();
+        let args = bound.as_deref().unwrap_or(args);
         // `__declare_method` publishes a method into the running stack, which
         // is state no native can reach through `PetalCxt` — so it is handled
         // here rather than dispatched. The compiler is its only caller.

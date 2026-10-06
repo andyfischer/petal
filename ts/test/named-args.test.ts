@@ -103,13 +103,47 @@ print(p.shift(p: 1))`;
     );
   });
 
-  it("refuse a named argument to a builtin", () => {
+  it("refuse a named argument to a builtin that declares no parameters", () => {
+    expect(runPetalError("print(1, sep: 2)")).toContain(
+      "builtin 'print' does not accept named arguments",
+    );
+  });
+
+  it("report a builtin's unknown, repeated and missing parameters", () => {
     expect(runPetalError("print(append([1], x: 2))")).toContain(
-      "builtin 'append' does not accept named arguments",
+      "append() has no parameter named 'x'",
+    );
+    expect(runPetalError("print(clamp(5, value: 0, hi: 3))")).toContain(
+      "clamp() got multiple values for parameter 'value'",
+    );
+    expect(runPetalError("print(noise(x: 1, z: 2))")).toContain(
+      "noise() is missing a value for parameter 'y'",
     );
   });
 
   it("refuse a positional argument after a named one", () => {
     expect(runPetalError(`${SUB}print(sub(a: 1, 2))`)).toContain("named");
+  });
+});
+
+describe("named arguments to builtins", () => {
+  it("bind against the builtin's declared parameters", () => {
+    expect(runPetal("print(clamp(hi: 10, value: 15, lo: 0))").trim()).toBe("10");
+    expect(runPetal("print(append([1], value: 2))").trim()).toBe("[1, 2]");
+  });
+
+  it("leave trailing optional parameters off", () => {
+    expect(runPetal("print(slice([1, 2, 3, 4], start: 1))").trim()).toBe("[2, 3, 4]");
+    expect(runPetal("print(slice([1, 2, 3, 4], start: 1, end: 3))").trim()).toBe("[2, 3]");
+  });
+
+  it("bind through method syntax, a native value and a pipe", () => {
+    expect(runPetal("print([1, 2, 3, 4].slice(end: 3, start: 1))").trim()).toBe("[2, 3]");
+    expect(runPetal("let c = clamp\nprint(c(hi: 10, value: 15, lo: 0))").trim()).toBe("10");
+    expect(runPetal("print(15 |> clamp(hi: 10, lo: 0))").trim()).toBe("10");
+  });
+
+  it("bind a built-in class's constructor and methods", () => {
+    expect(runPetal("print(Rect(w: 4, h: 2, x: 1, y: 1).inset(n: 1).w)").trim()).toBe("2");
   });
 });

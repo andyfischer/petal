@@ -646,9 +646,13 @@ positional ones. Reach for it when a call is a row of same-typed literals —
 `pill(8, 4, 120, 24, "Save")` does not — and for class constructors with more
 than two or three fields. Names bind to the callee's parameter slots directly;
 no record is built, so it costs nothing a positional call doesn't beyond the
-name lookup. One limit: it works on anything written in Petal — your `fn`s, lambdas, methods,
-constructors, prelude functions — but **not on native builtins**
-(`clamp(v, lo: 0, hi: 1)` is an error, which `petal check` catches). See
+name lookup. The names are the callee's own — your `fn`s, lambdas, methods,
+constructors and prelude functions use the names they declare, and **builtins
+use the names in the [Builtins Reference](Builtins.md)**
+(`clamp(v, lo: 0, hi: 1)`, `map_range(value: t, in_lo: 0, in_hi: 1, out_lo: a,
+out_hi: b)`, `xs.slice(start: 1, end: 3)`). Only the variadic builtins, `print`
+and `format`, take no names. Every parameter without a default still needs a
+value, and a wrong name is an error `petal check` catches. See
 [Named Arguments](language-guide.md#named-arguments).
 
 **Parameters can have defaults**: `fn button(label, w = 120, h = 24, on = false)`,
@@ -812,8 +816,8 @@ petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structur
 `check` sorts what it finds into errors and warnings. An **error** is a line
 that fails whenever it runs, and `check` exits 1 on it: a call to, or read of, a
 name nothing defines (it would fail with `Unknown builtin` or
-`Undefined variable`), a call whose argument count no overload accepts, a
-named argument no parameter has, and a named argument to a builtin.
+`Undefined variable`), a call whose argument count no overload accepts, and a
+named argument no parameter has (a builtin's parameters included).
 
 **Warnings** are advice, and exit 0 unless you pass `--strict`: mismatched
 annotations, unknown type names, a builtin handed a type it refuses

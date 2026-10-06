@@ -13,6 +13,7 @@
 
 use std::collections::HashSet;
 
+use crate::params::register;
 use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -637,45 +638,47 @@ pub fn register_input(env: &mut Env) {
     const KEYBOARD: NativeEffects = NativeEffects::probe(InputClasses::KEYBOARD);
     const CLOCK: NativeEffects = NativeEffects::probe(InputClasses::CLOCK);
     const VIEWPORT: NativeEffects = NativeEffects::probe(InputClasses::VIEWPORT);
-    env.register_native("mouse_x", native_mouse_x, POINTER);
-    env.register_native("mouse_y", native_mouse_y, POINTER);
-    env.register_native("hovered", native_hovered, POINTER);
-    env.register_native("mouse_dx", native_mouse_dx, POINTER);
-    env.register_native("mouse_dy", native_mouse_dy, POINTER);
-    env.register_native("mouse_down", native_mouse_down, POINTER);
-    env.register_native("mouse_pressed", native_mouse_pressed, POINTER);
-    env.register_native("mouse_released", native_mouse_released, POINTER);
-    env.register_native("scroll_x", native_scroll_x, POINTER);
-    env.register_native("scroll_y", native_scroll_y, POINTER);
-    env.register_native("key_down", native_key_down, KEYBOARD);
-    env.register_native("key_pressed", native_key_pressed, KEYBOARD);
-    env.register_native("key_released", native_key_released, KEYBOARD);
-    env.register_native("mod_shift", native_mod_shift, KEYBOARD);
-    env.register_native("mod_ctrl", native_mod_ctrl, KEYBOARD);
-    env.register_native("mod_alt", native_mod_alt, KEYBOARD);
-    env.register_native("mod_cmd", native_mod_cmd, KEYBOARD);
-    env.register_native("drag_active", native_drag_active, POINTER);
-    env.register_native("drag_start_x", native_drag_start_x, POINTER);
-    env.register_native("drag_start_y", native_drag_start_y, POINTER);
-    env.register_native("click_count", native_click_count, POINTER);
-    env.register_native("text_input", native_text_input, KEYBOARD);
+    register(env, "mouse_x", native_mouse_x, POINTER);
+    register(env, "mouse_y", native_mouse_y, POINTER);
+    register(env, "hovered", native_hovered, POINTER);
+    register(env, "mouse_dx", native_mouse_dx, POINTER);
+    register(env, "mouse_dy", native_mouse_dy, POINTER);
+    register(env, "mouse_down", native_mouse_down, POINTER);
+    register(env, "mouse_pressed", native_mouse_pressed, POINTER);
+    register(env, "mouse_released", native_mouse_released, POINTER);
+    register(env, "scroll_x", native_scroll_x, POINTER);
+    register(env, "scroll_y", native_scroll_y, POINTER);
+    register(env, "key_down", native_key_down, KEYBOARD);
+    register(env, "key_pressed", native_key_pressed, KEYBOARD);
+    register(env, "key_released", native_key_released, KEYBOARD);
+    register(env, "mod_shift", native_mod_shift, KEYBOARD);
+    register(env, "mod_ctrl", native_mod_ctrl, KEYBOARD);
+    register(env, "mod_alt", native_mod_alt, KEYBOARD);
+    register(env, "mod_cmd", native_mod_cmd, KEYBOARD);
+    register(env, "drag_active", native_drag_active, POINTER);
+    register(env, "drag_start_x", native_drag_start_x, POINTER);
+    register(env, "drag_start_y", native_drag_start_y, POINTER);
+    register(env, "click_count", native_click_count, POINTER);
+    register(env, "text_input", native_text_input, KEYBOARD);
     // The grab signals push into an output buffer the host drains.
-    env.register_native(
+    register(
+        env,
         "grab_mouse",
         native_grab_mouse,
         NativeEffects::PURE.with_emits(),
     );
-    env.register_native(
+    register(
+        env,
         "release_mouse",
         native_release_mouse,
         NativeEffects::PURE.with_emits(),
     );
-    env.register_native("dt", native_dt, CLOCK);
-    env.register_native("time", native_time, CLOCK);
-    env.register_native("frame_count", native_frame_count, CLOCK);
-    env.register_native("screen_width", native_screen_width, VIEWPORT);
-    env.register_native("screen_height", native_screen_height, VIEWPORT);
-    env.register_native("ui_version", native_ui_version, NativeEffects::PURE);
+    register(env, "dt", native_dt, CLOCK);
+    register(env, "time", native_time, CLOCK);
+    register(env, "frame_count", native_frame_count, CLOCK);
+    register(env, "screen_width", native_screen_width, VIEWPORT);
+    register(env, "screen_height", native_screen_height, VIEWPORT);
+    register(env, "ui_version", native_ui_version, NativeEffects::PURE);
 }
 
 fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {

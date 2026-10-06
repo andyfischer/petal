@@ -211,6 +211,29 @@ impl ArgSlot {
     }
 }
 
+/// For a call to builtin `name` that names some of its arguments: which
+/// written argument fills each parameter slot, in slot order, per the
+/// parameters the native declares — a core builtin's
+/// ([`crate::builtins::BUILTIN_PARAMS`]) or a petal-ui native's
+/// ([`super::globals::PETAL_UI_NATIVE_PARAMS`]), the two sets this table
+/// covers. `None` when it declares none or the names do not bind.
+pub fn builtin_arg_order(name: &str, arg_names: &[Option<String>]) -> Option<Vec<usize>> {
+    use crate::native_fn::{NativeSignature, bind_native_args};
+    let (_, specs) = crate::builtins::BUILTIN_PARAMS
+        .iter()
+        .chain(super::globals::PETAL_UI_NATIVE_PARAMS)
+        .find(|(n, _)| *n == name)?;
+    let sigs: Vec<NativeSignature> = specs
+        .iter()
+        .map(|s| NativeSignature::parse(s).ok())
+        .collect::<Option<_>>()?;
+    let names: Vec<Option<&str>> = arg_names.iter().map(|n| n.as_deref()).collect();
+    let indices: Vec<usize> = (0..arg_names.len()).collect();
+    bind_native_args(name, &sigs, &indices, &names)
+        .ok()
+        .map(|order| order.into_vec())
+}
+
 /// The argument slots of a call to builtin `name` with `arity` arguments, or
 /// `None` when nothing is declared. A shorter slice than `arity` leaves the
 /// remaining positions unchecked.

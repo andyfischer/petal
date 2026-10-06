@@ -868,13 +868,17 @@ pub(super) fn handle_check(
     let unresolved = env
         .get_program(pid)
         .filter(|_| check_globals)
-        .map(|p| globals::unresolved_globals(p, |n| env.has_native(n), &host_natives));
-    // Counted for the host-profile note below, which is about names: a named
-    // argument to a builtin that *did* resolve is not something `--host` fixes.
+        .map(|p| globals::unresolved_globals(p, |n| env.native_signatures(n), &host_natives));
+    // Counted for the host-profile note below, which is about names nothing
+    // defines: a bad named argument to a builtin that *did* resolve is not
+    // something `--host` fixes.
     let unresolved_count = unresolved.as_ref().map_or(0, |diags| {
         diags
             .iter()
-            .filter(|d| !d.message.contains("does not accept named arguments"))
+            .filter(|d| {
+                d.message.starts_with("unknown function")
+                    || d.message.starts_with("undefined variable")
+            })
             .count()
     });
     if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {

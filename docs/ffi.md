@@ -37,7 +37,7 @@ Entry points, all on `Env` (`rust/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class` |
+| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `native_signatures(name)` |
 | Handles | `register_handle_class`, `make_handle` |
 | Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
@@ -114,6 +114,46 @@ through its pointer. Three rules:
 - Captures belong to the `Env`, not to an execution: a forked or speculative
   run calls the same closure. They are dropped with the `Env`, which is the
   hook for freeing host userdata.
+
+**Parameter names are opt-in.** A native reads its arguments by index and, by
+default, takes them by position only: a script that writes
+`spawn(kind: "spark")` gets `builtin 'spawn' does not accept named arguments`.
+Declaring the names lifts that, without touching the native:
+
+```rust
+let id = env.register_native("spawn", native_spawn, NativeEffects::EMITS);
+env.declare_native_params(id, "kind, x, y, speed?")?;
+// script: spawn(kind: "spark", x: 10, y: 20)   → the native sees ("spark", 10, 20)
+```
+
+The spec lists the names in the order the native reads its arguments,
+comma-separated. A trailing `?` marks an optional parameter — one the native
+checks `arg_count()` for — and optional ones must come last. Named arguments
+are permuted into that order before the call (at compile time for a direct
+call, in the VM when the callee is a value, a method-syntax call or a pipe), so
+the native is handed exactly the list the positional call would have passed and
+the all-positional path is untouched. What the binding rejects, in the words a
+Petal `fn` uses: an unknown name, a parameter given twice, a required
+parameter left out, and an optional one skipped to reach a later one
+(`spawn() is missing a value for parameter 'x'`).
+
+A native that dispatches on its argument count declares each form with its own
+call, and a named call takes the first form it fits:
+
+```rust
+env.declare_native_params(id, "x1, y1, x2, y2")?;   // distance(x1: …, …)
+env.declare_native_params(id, "v1, v2")?;           // distance(v1: a, v2: b)
+```
+
+`declare_native_params_by_name(name, spec)` does the same by registered name,
+and `native_signatures(name)` reads the declarations back. Declare before
+`load_program`. A genuinely variadic native (`print`) has no roles to name and
+should declare nothing. The core builtins' declarations are
+`builtins::BUILTIN_PARAMS`; petal-ui's are
+`typecheck::globals::PETAL_UI_NATIVE_PARAMS`, kept in the core crate so that
+`petal check` can hold a script to them without the host's `Env` — a host
+whose natives `check` should verify needs its names there too, and any other
+host native's named arguments are left to the run.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,

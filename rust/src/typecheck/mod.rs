@@ -480,8 +480,10 @@ impl<'a> Checker<'a> {
     /// it is the only report a call inside an untaken branch ever gets. The
     /// VM's check answers *"this call just failed"* — only when reached, but
     /// for the shapes this pass cannot see at all: method calls and opaque
-    /// callees (`fn apply(f) f(nope: 1) end`). (A named argument to a builtin
-    /// is reported after the compile, by `globals::unresolved_globals`.)
+    /// callees (`fn apply(f) f(nope: 1) end`). (A named argument a builtin
+    /// cannot take is reported after the compile, by
+    /// `globals::unresolved_globals`, against the parameters the native
+    /// declares.)
     ///
     /// So the two are diagnosis and failure, not one complaint typed twice.
     /// To keep them reading that way they share the VM's wording *exactly* —
@@ -1591,10 +1593,11 @@ impl<'a> Checker<'a> {
         arg_types: &[Type],
         call_span: SourceSpan,
     ) -> Type {
-        // For a constructor or a builtin, argument *i* is checked against
-        // slot *i* — meaningless once an argument is named, so those paths see
-        // no types at all then. A function call maps each argument to its
-        // real slot below and keeps them.
+        // For a constructor, argument *i* is checked against slot *i* —
+        // meaningless once an argument is named, so that path sees no types
+        // at all then. A function call and a builtin that declares its
+        // parameter names map each argument to its real slot below and keep
+        // them.
         let real_types = arg_types;
         let erased;
         let arg_types: &[Type] = if arg_names.is_empty() {
@@ -1681,12 +1684,25 @@ impl<'a> Checker<'a> {
                 // Not a module function: fall back to the builtin tables —
                 // the argument slots the native is known to insist on, then
                 // its result type.
-                // A named argument to a native is refused outright by the VM,
-                // so positions are only meaningful when none is named.
-                if let Some(slots) = builtin_types::builtin_param_slots(f, args.len())
-                    && arg_names.iter().all(Option::is_none)
-                {
-                    for (i, slot) in slots.iter().enumerate() {
+                // The tables speak of parameter slots, so a call that names
+                // its arguments is first put in the order the builtin declares
+                // (`builtins::BUILTIN_PARAMS`): `order[slot]` is the written
+                // argument filling that slot. Names that do not bind leave
+                // nothing to check here — `globals::unresolved_globals`
+                // reports them after the compile.
+                let order: Vec<usize> = if arg_names.iter().all(Option::is_none) {
+                    (0..args.len()).collect()
+                } else {
+                    match builtin_types::builtin_arg_order(f, arg_names) {
+                        Some(order) => order,
+                        None => return Type::Any,
+                    }
+                };
+                // `order` has put every argument in its slot, so the types
+                // erased above for a named call are good again here.
+                let arg_types = real_types;
+                if let Some(slots) = builtin_types::builtin_param_slots(f, args.len()) {
+                    for (slot, &i) in slots.iter().zip(&order) {
                         let at = arg_types[i];
                         if !slot.accepts(at) {
                             self.warn(
@@ -1701,7 +1717,8 @@ impl<'a> Checker<'a> {
                         }
                     }
                 }
-                return builtin_types::builtin_return_type(f, arg_types).unwrap_or(Type::Any);
+                let slot_types: Vec<Type> = order.iter().map(|&i| arg_types[i]).collect();
+                return builtin_types::builtin_return_type(f, &slot_types).unwrap_or(Type::Any);
             }
             return Type::Any;
         }
@@ -2930,6 +2947,26 @@ mod tests {
         assert_eq!(w, ["argument 1 to `text_width`: expected a string, found `int`"]);
     }
 
+    /// A named call is checked the same way: the names are bound to the
+    /// native's declared parameters first, so each argument is held to the
+    /// slot it actually fills — and blamed at the position it was written.
+    #[test]
+    fn named_native_arguments_are_checked_against_the_slot_they_fill() {
+        let w = warns("print(sqrt(x: \"s\"))");
+        assert_eq!(w, ["argument 1 to `sqrt`: expected a number, found `string`"]);
+        let w = warns("print(join(separator: 3, list: [1]))");
+        assert_eq!(w, ["argument 1 to `join`: expected a string, found `int`"]);
+        let w = warns("print(join(separator: \",\", list: [1]), clamp(hi: 3, value: 5, lo: 0))");
+        assert!(w.is_empty(), "{w:?}");
+        // The result type follows the slots too.
+        let w = warns("let n: string = pow(exp: 2, base: 3)\nprint(n)");
+        assert_eq!(w.len(), 1, "{w:?}");
+        // Names that do not bind are `globals::unresolved_globals`'s to
+        // report; nothing is guessed here.
+        let w = warns("print(sqrt(y: \"s\"))");
+        assert!(w.is_empty(), "{w:?}");
+    }
+
     /// Only a definite mismatch warns: numbers of either width, class
     /// instances as records, unknown types, and every unlisted native pass.
     #[test]
@@ -2944,8 +2981,6 @@ mod tests {
             "print(fixed(true), min(\"a\", \"b\"), mag(vec2(1, 2)), str([1]))",
             // A user function of the same name shadows the native.
             "fn sqrt(s) s end\nprint(sqrt(\"x\"))",
-            // A named argument is the VM's to refuse.
-            "print(sqrt(x: \"s\"))",
         ] {
             let w = warns(src);
             assert!(w.is_empty(), "{src}: {w:?}");

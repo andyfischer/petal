@@ -826,12 +826,43 @@ print(sub(b: 1, a: 10))  // 9
 A method's receiver occupies the first parameter, so `p.shift(dx: 2)` names the
 parameters after it — and naming the receiver's own parameter is the
 double-bind error above (`Point.shift() got multiple values for parameter
-'p'`). Builtins carry no parameter names at runtime, so they reject names
-outright rather than guessing: `append(list, x: 1)` is
-`builtin 'append' does not accept named arguments`, which `petal check`
-reports as an error as well. A function the standard prelude or a library
-writes in Petal (`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an
-ordinary `fn` and takes names like any other.
+'p'`).
+
+**Builtins take names too**, under the parameter names the
+[Builtins Reference](Builtins.md) gives them:
+
+```petal
+print(clamp(15, lo: 0, hi: 10))              // 10
+print(pow(exp: 3, base: 2))                  // 8.0
+print([1, 2, 3, 4].slice(start: 1, end: 3))  // [2, 3]
+print(15 |> clamp(lo: 0, hi: 10))            // 10
+```
+
+The names are put in the builtin's own argument order before it runs, so a
+named call does exactly what the positional one does, at the same cost. Method
+syntax and `|>` supply the first parameter, and the names bind against the
+rest. Three things differ from a `fn`:
+
+- A builtin can have **optional trailing parameters** (`slice`'s `end`,
+  `round`'s `places`), which a call may leave off. One cannot be skipped to
+  reach a later one — there is no value to put in the gap — so
+  `noise(x: 1, z: 2)` is `noise() is missing a value for parameter 'y'`.
+- A builtin that reads its arguments differently by count declares each form
+  (`distance(x1, y1, x2, y2)` and `distance(v1, v2)`), and the names pick the
+  form.
+- A parameter may be named with a keyword, which an argument label is free to
+  be: `range(start: 0, end: 5)`.
+
+The errors are the ones above (`clamp() has no parameter named 'low'`), and
+`petal check` reports them the same way. The variadic builtins, `print` and
+`format`, have no parameter names and refuse one outright:
+`builtin 'print' does not accept named arguments`. So does a host native whose
+embedder declared no names for it (see
+[Native functions](ffi.md#native-functions)).
+
+A function the standard prelude or a library writes in Petal
+(`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an ordinary `fn`
+and takes the names its declaration gives.
 
 ### Default Parameter Values
 

@@ -100,6 +100,20 @@ absorbed as its result:
 env.register_native("layout", native_layout, NativeEffects::EMITS);
 ```
 
+Registration returns the native's id. If scripts should be able to pass its
+arguments by name — worth it for anything that takes more than two or three —
+declare the names against that id, in the order the native reads them:
+
+```rust
+let id = env.register_native("draw_node", native_draw_node, NativeEffects::EMITS);
+env.declare_native_params(id, "x, y, w, h, color, alpha?")?;
+// script: draw_node(x: 0, y: 0, w: 120, h: 40, color: accent)
+```
+
+The native does not change: named arguments are put in positional order before
+it runs. `?` marks a trailing optional parameter. See
+[Native functions](ffi.md#native-functions).
+
 `NativeClass::Strict` (the default `pending` policy) is for pure natives
 (`sqrt(pending)` → `pending`). `Effectful` is for emitters (`print`,
 `push_output`, and your observed calls). `AllowPending` is for natives that

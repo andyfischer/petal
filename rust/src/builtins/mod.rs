@@ -23,10 +23,12 @@ mod json;
 mod math;
 mod noise;
 mod output;
+mod params;
 mod pending;
 mod vec2;
 
 pub(crate) use collections::SortKey;
+pub use params::BUILTIN_PARAMS;
 pub use effects::{
     is_mutating_builtin, is_pure_builtin, looks_mutating, retains_no_reference,
     returns_fresh_container,
@@ -437,6 +439,10 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_filter = Some(filter_id);
     table.intrinsic_reduce = Some(reduce_id);
     table.intrinsic_for_each = Some(for_each_id);
+
+    // Parameter names, for named arguments. Applied last and by name, so the
+    // registration order above — which is load-bearing — is not disturbed.
+    params::declare(table);
 }
 
 fn native_intrinsic_placeholder(_state: &mut PetalCxt) -> Result<u32, String> {

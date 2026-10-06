@@ -39,6 +39,7 @@
 
 use std::cell::RefCell;
 
+use crate::params::register;
 use petal::env::Env;
 use petal::native_fn::{InputClasses, NativeEffects, NativeResult, PetalCxt};
 use petal::value::Value;
@@ -162,7 +163,8 @@ pub fn swap_data_provider(provider: Option<DataProvider>) -> Option<DataProvider
 pub fn register_host_data(env: &mut Env) {
     // Answers from the host's provider, which the binding table does not
     // cover: a host-data read, invalidated by `note_host_data_changed`.
-    env.register_native(
+    register(
+        env,
         "host_data",
         native_host_data,
         NativeEffects::reads(InputClasses::HOST_DATA),

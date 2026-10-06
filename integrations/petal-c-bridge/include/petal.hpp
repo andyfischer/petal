@@ -424,6 +424,11 @@ public:
     void emitter(const std::string& name, const std::string& buffer, const std::string& tag = {}) {
         check(pb_vm_register_emitter(vm_, name.c_str(), buffer.c_str(), tag.empty() ? nullptr : tag.c_str()));
     }
+    // Parameter names for a registered native, so scripts can call it with
+    // named arguments: native_params("spawn", "kind, x, y, speed?").
+    void native_params(const std::string& name, const std::string& params) {
+        check(pb_vm_declare_native_params(vm_, name.c_str(), params.c_str()));
+    }
 
     // ── Loading ──
     void load_file(const std::string& path) { check(pb_vm_load_file(vm_, path.c_str())); }

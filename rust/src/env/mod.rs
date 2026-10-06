@@ -857,6 +857,45 @@ impl Env {
         self.native_fns.register_boxed(name, Box::new(func), effects)
     }
 
+    /// Declare the parameter names of a native, by the id
+    /// [`register_native`](Self::register_native) returned, so Petal code may
+    /// call it with named arguments: after
+    /// `declare_native_params(id, "x, y, w, h, alpha?")`, a script can write
+    /// `fill(x: 0, y: 0, w: 10, h: 10)`. Call it before `load_program`.
+    ///
+    /// `spec` lists the names in the order the native reads its arguments; a
+    /// trailing `?` marks an optional parameter, and optional ones must come
+    /// last. The native itself does not change: named arguments are permuted
+    /// into positional order before it runs, so it keeps reading by index. A
+    /// native that takes several argument counts declares each form with its
+    /// own call, and a named call uses the first form it fits. One that
+    /// declares nothing keeps refusing names
+    /// (`builtin 'f' does not accept named arguments`).
+    ///
+    /// Errors on a malformed spec (an empty, repeated or non-identifier name,
+    /// or a required parameter after an optional one).
+    pub fn declare_native_params(&mut self, id: NativeFnId, spec: &str) -> Result<(), String> {
+        self.native_fns.declare_params(id, spec)
+    }
+
+    /// [`declare_native_params`](Self::declare_native_params) by the native's
+    /// registered name. Errors when no native of that name is registered.
+    pub fn declare_native_params_by_name(&mut self, name: &str, spec: &str) -> Result<(), String> {
+        let id = self
+            .native_fns
+            .lookup_name(name)
+            .ok_or_else(|| format!("no native named '{name}' is registered"))?;
+        self.native_fns.declare_params(id, spec)
+    }
+
+    /// The parameter lists the native of this name declares. `None` when no
+    /// such native is registered; empty when it takes arguments by position
+    /// only.
+    pub fn native_signatures(&self, name: &str) -> Option<&[crate::native_fn::NativeSignature]> {
+        let id = self.native_fns.lookup_name(name)?;
+        Some(self.native_fns.signatures(id))
+    }
+
     /// The declared effect row of a native.
     pub fn native_effects(&self, id: NativeFnId) -> NativeEffects {
         self.native_fns.effects(id)

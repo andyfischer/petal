@@ -27,21 +27,28 @@
 //      interactivity API that hosts like petal-web-canvas and petal-sdl expose
 //      to sketches.
 //
-// For each registered function we open its implementation and read:
-//   • arity      — from `require_args(state, N, "name")`
-//   • parameters — from `let <name> = state.get_<type>(<index>)` bindings,
-//                  which give both the argument's name and its type, in order
+// For each registered function we read:
+//   • parameters — the names the native *declares* for named arguments:
+//                  `BUILTIN_PARAMS` (rust/src/builtins/params.rs) for the core
+//                  builtins, `PETAL_UI_NATIVE_PARAMS`
+//                  (rust/src/typecheck/globals.rs) for the canvas ones. These
+//                  are call syntax, not just documentation — the registry
+//                  binds `clamp(value: v, lo: 0, hi: 1)` against them — so
+//                  they are the source of truth for every name in the
+//                  manifest. A builtin that declares several call forms
+//                  (`random`, `distance`) lists them all in `signatures`.
+//   • arity      — from `require_args(state, N, "name")` in the implementation
+//   • types      — from `let <name> = state.get_<type>(<index>)` bindings in
+//                  the implementation, matched onto the declared parameters
 //   • source     — file + line, so docs can point back at the implementation
 //
-// The recovered parameter names are *documentation*, not call syntax: a native
-// carries no parameter names at runtime, so the VM rejects a named argument to
-// a builtin (`builtin 'append' does not accept named arguments`). Named
-// arguments — `f(a: 1)` — bind only against a Petal `fn`'s parameter list.
+// A native with no declaration (the variadic `print` / `format`, the `__`
+// internals) refuses named arguments at runtime; for those the names fall back
+// to what the body's bindings suggest, and `signatures` is empty.
 //
 // Functions that dispatch on `arg_count()` (overloaded arities like `noise`,
-// `distance`, `mag`, `range`, `slice`) can't be summarised by a single
-// signature; they're flagged `variadic` and their human-facing signature is
-// expected to come from the markdown overlay instead.
+// `distance`, `mag`, `range`, `slice`) have no single arity; they're flagged
+// `variadic`, and their call forms are the entries of `signatures`.
 //
 // Usage:
 //   tsx tools/extract-stdlib.ts            # write stdlib.json next to docs/
@@ -54,6 +61,8 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
+const coreParamsRs = join(repoRoot, "rust/src/builtins/params.rs");
+const hostParamsRs = join(repoRoot, "rust/src/typecheck/globals.rs");
 const petalUiDrawRs = join(repoRoot, "petal-ui/src/draw.rs");
 const petalUiTextRs = join(repoRoot, "petal-ui/src/text.rs");
 const petalUiInputRs = join(repoRoot, "petal-ui/src/input.rs");
@@ -66,6 +75,8 @@ export type ParamType = "int" | "float" | "string" | "list" | "any";
 export interface Param {
   name: string;
   type: ParamType;
+  /** Set on a trailing parameter a call may leave off. */
+  optional?: boolean;
 }
 
 export interface StdlibFunction {
@@ -79,8 +90,20 @@ export interface StdlibFunction {
   arity: number | null;
   /** True when the function accepts a variable number of arguments. */
   variadic: boolean;
-  /** Argument names + types recovered from the Rust source (best effort). */
+  /**
+   * The parameters, by the names a call can pass them under. For a native
+   * that declares its parameters this is its longest declared form (optional
+   * ones flagged); otherwise it is what the implementation's bindings suggest
+   * (best effort), and the function takes positional arguments only.
+   */
   params: Param[];
+  /**
+   * Every call form the function declares for named arguments — one entry
+   * for most, several for a builtin that reads its arguments differently by
+   * count (`random()` / `random(max)` / `random(min, max)`). Empty when the
+   * function refuses named arguments (variadic builtins, internals).
+   */
+  signatures: Param[][];
   /** Source location of the implementation, repo-relative. */
   source: { file: string; line: number };
   /** When set, this name is an alias for another builtin. */
@@ -232,6 +255,82 @@ function parseFnBody(body: string): {
   return { arity, variadic, params };
 }
 
+// ── Declared parameters ──────────────────────────────────────────────────────
+
+/** One declared call form: names in argument order, optional ones flagged. */
+type DeclaredForm = Array<{ name: string; optional: boolean }>;
+
+/**
+ * Parse a `pub const <NAME>: &[(&str, &[&str])] = &[ ("fn", &["a, b?"]), … ];`
+ * table: each entry is a native's name and one spec per call form, a spec being
+ * comma-separated parameter names with `?` on a trailing optional one (the
+ * format `NativeSignature::parse` reads).
+ */
+function parseParamTable(source: string, constName: string): Map<string, DeclaredForm[]> {
+  const start = source.indexOf(`pub const ${constName}:`);
+  if (start < 0) throw new Error(`could not find ${constName}`);
+  const end = source.indexOf("\n];", start);
+  if (end < 0) throw new Error(`unterminated ${constName}`);
+  const body = source.slice(source.indexOf("= &[", start) + 4, end);
+  const out = new Map<string, DeclaredForm[]>();
+  const entryRe = /\(\s*"([^"]+)"\s*,\s*&\[([^\]]*)\]\s*,?\s*\)/g;
+  for (let m; (m = entryRe.exec(body)); ) {
+    const forms: DeclaredForm[] = [];
+    for (const spec of m[2].matchAll(/"([^"]*)"/g)) {
+      forms.push(
+        spec[1]
+          .split(",")
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0)
+          .map((p) => ({ name: p.replace(/\?$/, ""), optional: p.endsWith("?") })),
+      );
+    }
+    out.set(m[1], forms);
+  }
+  return out;
+}
+
+let declaredParamsCache: Map<string, DeclaredForm[]> | null = null;
+/** The declared call forms of every native, core and canvas, by name. */
+function declaredParams(): Map<string, DeclaredForm[]> {
+  if (!declaredParamsCache) {
+    declaredParamsCache = new Map([
+      ...parseParamTable(readFileSync(coreParamsRs, "utf8"), "BUILTIN_PARAMS"),
+      ...parseParamTable(readFileSync(hostParamsRs, "utf8"), "PETAL_UI_NATIVE_PARAMS"),
+    ]);
+  }
+  return declaredParamsCache;
+}
+
+/**
+ * The manifest's `params` + `signatures` for native `name`, given what its
+ * body's bindings recovered. Declared names win; the recovered list only
+ * supplies types — by name where a binding happens to share the declared
+ * name, else by position when the body bound exactly the form's required
+ * arguments (so positions line up). With no declaration the recovered list is
+ * all there is.
+ */
+function withDeclaredParams(
+  name: string,
+  recovered: Param[],
+): { params: Param[]; signatures: Param[][] } {
+  const forms = declaredParams().get(name);
+  if (!forms) return { params: recovered, signatures: [] };
+  const byName = new Map(recovered.map((p) => [p.name, p.type]));
+  const signatures = forms.map((form) => {
+    const required = form.filter((p) => !p.optional).length;
+    const dense = recovered.length === required;
+    return form.map((p, i): Param => ({
+      name: p.name,
+      type: byName.get(p.name) ?? (dense && i < required ? recovered[i].type : "any"),
+      ...(p.optional ? { optional: true } : {}),
+    }));
+  });
+  // The longest form is the one that shows every parameter the function has.
+  const params = signatures.reduce((a, b) => (b.length > a.length ? b : a), signatures[0] ?? []);
+  return { params, signatures };
+}
+
 /** Find a `fn <name>(` definition and return its body + 1-based line number. */
 function findFn(
   source: string,
@@ -346,8 +445,9 @@ function extractCore(): {
     } else {
       const fn = findFn(modSource, reg.fnName);
       if (fn) source = { file: "rust/src/builtins/mod.rs", line: fn.line };
-      // Intrinsics (map/filter/reduce/forEach) take a list + a function; their
-      // real shape is documented in the overlay.
+      // Intrinsics (map/filter/reduce/forEach) take a list + a function. The
+      // VM drives them, so there is no body to read an arity from; their
+      // parameters come from the declaration alone.
       parsed.variadic = true;
     }
 
@@ -363,7 +463,7 @@ function extractCore(): {
       group: "core",
       arity: parsed.arity,
       variadic: parsed.variadic,
-      params: parsed.params,
+      ...withDeclaredParams(reg.name, parsed.params),
       source,
       ...(aliasOf ? { aliasOf } : {}),
       ...(reg.name.startsWith("__") ? { internal: true } : {}),
@@ -426,6 +526,8 @@ function extractPrelude(): {
       arity: params.length,
       variadic: false,
       params,
+      // A Petal `fn` takes named arguments under its own parameter names.
+      signatures: [params],
       source: { file: "rust/prelude/std.ptl", line },
     });
   }
@@ -518,9 +620,15 @@ function bufferedDrawSignature(
   };
 }
 
-/** Parse `env.register_native("name", native_fn, <effects>)` lines from a register block. */
+/**
+ * Parse the registrations in a register block: `register(env, "name",
+ * native_fn, <effects>)` — petal-ui's wrapper, which also declares the
+ * native's parameters (`petal-ui/src/params.rs`) — or a bare
+ * `env.register_native("name", native_fn, <effects>)`.
+ */
 function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
-  const re = /env\.register_native\(\s*"([^"]+)"\s*,\s*(\w+)\s*(?:,[^;]*)?\)/g;
+  const re =
+    /(?:env\.register_native\(|\bregister\(\s*env\s*,)\s*"([^"]+)"\s*,\s*(\w+)\s*(?:,[^;]*)?\)/g;
   const out: Array<{ name: string; fnName: string }> = [];
   for (let m; (m = re.exec(block)); ) out.push({ name: m[1], fnName: m[2] });
   return out;
@@ -568,7 +676,7 @@ function extractCanvas(): {
       group: "canvas",
       arity: parsed.arity,
       variadic: parsed.variadic,
-      params: parsed.params,
+      ...withDeclaredParams(name, parsed.params),
       source: { file: found?.file ?? candidates[0].file, line: fn?.line ?? 0 },
     });
   };
@@ -630,6 +738,7 @@ export function buildManifest(): StdlibManifest {
     generatedFrom: [
       "rust/src/builtins/mod.rs",
       "rust/src/builtins/*.rs",
+      "rust/src/typecheck/globals.rs",
       "rust/prelude/std.ptl",
       "petal-ui/src/draw.rs",
       "petal-ui/src/text.rs",

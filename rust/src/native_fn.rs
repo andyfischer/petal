@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
+use smallvec::SmallVec;
 
 use crate::handle::{HandleClass, HandleClassId, HandleVal};
 use crate::heap::Heap;
@@ -220,6 +221,206 @@ enum NativeImpl {
     Boxed(BoxedNativeFn),
 }
 
+/// One parameter list a native declares, so a call can pass its arguments by
+/// name (`clamp(value: v, min: 0, max: 1)`).
+///
+/// A native reads its arguments by index and knows nothing of names; the
+/// declaration is what lets the caller's names be permuted into that order
+/// before the native runs. Trailing parameters may be optional (`slice`'s
+/// `end`, a draw native's `alpha`): a call may leave them off, but may not
+/// skip one and supply a later one, since there is no value to put in the gap.
+///
+/// Written as a comma-separated spec, with `?` marking an optional parameter:
+/// `"list, start, end?"`. See [`NativeFnTable::declare_params`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeSignature {
+    params: Vec<String>,
+    /// The leading parameters every call must fill; the rest are optional.
+    required: usize,
+}
+
+impl NativeSignature {
+    /// Parse a spec: parameter names separated by commas, a trailing `?` on
+    /// each optional one. The empty spec is a native of no parameters.
+    /// Refused: an empty or repeated name, a name that is not an identifier,
+    /// and a required parameter after an optional one.
+    pub fn parse(spec: &str) -> Result<NativeSignature, String> {
+        let mut params: Vec<String> = Vec::new();
+        let mut required = None;
+        if spec.trim().is_empty() {
+            return Ok(NativeSignature {
+                params,
+                required: 0,
+            });
+        }
+        for part in spec.split(',') {
+            let part = part.trim();
+            let (name, optional) = match part.strip_suffix('?') {
+                Some(name) => (name.trim_end(), true),
+                None => (part, false),
+            };
+            let ident = name
+                .chars()
+                .enumerate()
+                .all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()));
+            if name.is_empty() || !ident {
+                return Err(format!(
+                    "invalid parameter name '{name}' in native signature \"{spec}\""
+                ));
+            }
+            if params.iter().any(|p| p == name) {
+                return Err(format!(
+                    "parameter '{name}' is repeated in native signature \"{spec}\""
+                ));
+            }
+            match (optional, required) {
+                (true, None) => required = Some(params.len()),
+                (false, Some(_)) => {
+                    return Err(format!(
+                        "required parameter '{name}' follows an optional one in native \
+                         signature \"{spec}\""
+                    ));
+                }
+                _ => {}
+            }
+            params.push(name.to_string());
+        }
+        let required = required.unwrap_or(params.len());
+        Ok(NativeSignature { params, required })
+    }
+
+    /// The parameter names, in the order the native reads its arguments.
+    pub fn params(&self) -> &[String] {
+        &self.params
+    }
+
+    /// How many leading parameters a call must fill.
+    pub fn required(&self) -> usize {
+        self.required
+    }
+
+    /// Whether a call of `count` arguments can fill this parameter list.
+    pub fn accepts_count(&self, count: usize) -> bool {
+        (self.required..=self.params.len()).contains(&count)
+    }
+
+    /// Permute `args` into this parameter order, given the written name of
+    /// each (`None` = positional). The native-side twin of
+    /// [`bind_named_args`](crate::backend::calls::bind_named_args), with the
+    /// same wording, plus the one thing a Petal `fn` has no need of: trailing
+    /// optional parameters may be left unfilled, so the result is as long as
+    /// the last slot the call fills — exactly the argument list a positional
+    /// call would have passed.
+    ///
+    /// Generic over the argument so the compiler can permute terms and the VM
+    /// values with one rule.
+    pub fn bind<T: Copy>(
+        &self,
+        fn_name: &str,
+        args: &[T],
+        names: &[Option<&str>],
+    ) -> Result<SmallVec<[T; 8]>, String> {
+        let params = &self.params;
+        let mut slots: SmallVec<[Option<T>; 8]> = smallvec::smallvec![None; params.len()];
+        let mut next_positional = 0usize;
+        let mut filled = 0usize;
+        for (i, &arg) in args.iter().enumerate() {
+            let slot = match names.get(i).copied().flatten() {
+                None => {
+                    let slot = next_positional;
+                    next_positional += 1;
+                    slot
+                }
+                Some(name) => match params.iter().position(|p| p == name) {
+                    Some(slot) => slot,
+                    None => return Err(format!("{fn_name}() has no parameter named '{name}'")),
+                },
+            };
+            match slots.get_mut(slot) {
+                Some(cell) if cell.is_none() => *cell = Some(arg),
+                Some(_) => {
+                    return Err(format!(
+                        "{}() got multiple values for parameter '{}'",
+                        fn_name, params[slot]
+                    ));
+                }
+                None => return Err(self.arity_error(fn_name, args.len())),
+            }
+            filled = filled.max(slot + 1);
+        }
+        let mut bound: SmallVec<[T; 8]> = SmallVec::with_capacity(filled);
+        for (slot, cell) in slots.into_iter().enumerate() {
+            match cell {
+                Some(v) => bound.push(v),
+                // A gap below a supplied argument, or a required parameter
+                // nothing filled.
+                None if slot < filled || slot < self.required => {
+                    return Err(format!(
+                        "{}() is missing a value for parameter '{}'",
+                        fn_name, params[slot]
+                    ));
+                }
+                None => break,
+            }
+        }
+        Ok(bound)
+    }
+
+    fn arity_error(&self, fn_name: &str, got: usize) -> String {
+        let max = self.params.len();
+        let want = if self.required == max {
+            max.to_string()
+        } else {
+            format!("{} to {}", self.required, max)
+        };
+        format!(
+            "{}() expects {} argument{}, got {}",
+            fn_name,
+            want,
+            if want == "1" { "" } else { "s" },
+            got
+        )
+    }
+}
+
+/// Bind a named call against the signatures a native declares, in declaration
+/// order: the first one the call fits wins. When none does, the error is the
+/// one from the first signature whose length the argument count fits (else the
+/// first declared), which is the one the caller most plausibly meant.
+///
+/// `sigs` must not be empty — an undeclared native never gets this far.
+pub fn bind_native_args<T: Copy>(
+    fn_name: &str,
+    sigs: &[NativeSignature],
+    args: &[T],
+    names: &[Option<&str>],
+) -> Result<SmallVec<[T; 8]>, String> {
+    let mut first_err = None;
+    let mut fitting_err = None;
+    for sig in sigs {
+        match sig.bind(fn_name, args, names) {
+            Ok(bound) => return Ok(bound),
+            Err(e) => {
+                if fitting_err.is_none() && sig.accepts_count(args.len()) {
+                    fitting_err = Some(e);
+                } else if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
+    }
+    Err(fitting_err
+        .or(first_err)
+        .unwrap_or_else(|| undeclared_named_args(fn_name)))
+}
+
+/// The refusal for a named argument to a native that declares no parameter
+/// names: there is nothing to bind the name against, and guessing would be
+/// worse than saying so.
+pub fn undeclared_named_args(fn_name: &str) -> String {
+    format!("builtin '{fn_name}' does not accept named arguments")
+}
+
 /// Entry in the native function table.
 struct NativeFnEntry {
     name: String,
@@ -229,6 +430,9 @@ struct NativeFnEntry {
     class: NativeClass,
     /// The declared effect row.
     effects: NativeEffects,
+    /// The parameter lists this native declares for named arguments; empty
+    /// (the default) for one that takes arguments by position only.
+    signatures: Vec<NativeSignature>,
 }
 
 /// Registry of native functions, mapping IDs to names and function pointers.
@@ -323,6 +527,7 @@ impl NativeFnTable {
             func,
             class: effects.pending,
             effects,
+            signatures: Vec::new(),
         });
         // Last registration of a name wins, matching the scan this replaced:
         // it returned the *first* match, so a re-registration under an existing
@@ -341,6 +546,32 @@ impl NativeFnTable {
         let entry = &mut self.entries[id.0 as usize];
         entry.class = class;
         entry.effects.pending = class;
+    }
+
+    /// Declare a parameter list for an already-registered native, so calls
+    /// may pass its arguments by name. Opt-in, and applied by id after
+    /// registration like [`set_class`](Self::set_class): a native that
+    /// declares nothing keeps refusing names.
+    ///
+    /// `spec` is the parameter names in the order the native reads its
+    /// arguments, comma-separated, a `?` marking each trailing optional one
+    /// (`"x, y, w, h, color, alpha?"`). A native that dispatches on argument
+    /// count declares each form with its own call; a named call takes the
+    /// first declared form it fits (see [`bind_native_args`]).
+    ///
+    /// The names are the caller's vocabulary only. The native is still handed
+    /// a positional argument list, exactly the one the equivalent positional
+    /// call would have passed.
+    pub fn declare_params(&mut self, id: NativeFnId, spec: &str) -> Result<(), String> {
+        let sig = NativeSignature::parse(spec)?;
+        self.entries[id.0 as usize].signatures.push(sig);
+        Ok(())
+    }
+
+    /// The parameter lists a native declares; empty when it declares none.
+    #[inline]
+    pub fn signatures(&self, id: NativeFnId) -> &[NativeSignature] {
+        &self.entries[id.0 as usize].signatures
     }
 
     /// The declared effect row of a native.
@@ -835,5 +1066,99 @@ impl<'a> PetalCxt<'a> {
             return Value::Nil;
         }
         self.results.first().copied().unwrap_or(Value::Nil)
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+
+    fn sig(spec: &str) -> NativeSignature {
+        NativeSignature::parse(spec).unwrap()
+    }
+
+    #[test]
+    fn a_spec_parses_into_names_and_a_required_count() {
+        let s = sig("list, start, end?");
+        assert_eq!(s.params(), ["list", "start", "end"]);
+        assert_eq!(s.required(), 2);
+        assert!(s.accepts_count(2) && s.accepts_count(3));
+        assert!(!s.accepts_count(1) && !s.accepts_count(4));
+        let none = sig("");
+        assert!(none.params().is_empty() && none.accepts_count(0));
+        assert_eq!(sig(" a ,b? , c ? ").params(), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_malformed_spec_is_refused() {
+        for spec in ["a,,b", "a, a", "a?, b", "1a", "a b", "a,", "?"] {
+            assert!(NativeSignature::parse(spec).is_err(), "{spec:?} parsed");
+        }
+    }
+
+    #[test]
+    fn bind_permutes_into_parameter_order() {
+        let s = sig("a, b, c");
+        let bound = s.bind("f", &[1, 2, 3], &[None, Some("c"), Some("b")]).unwrap();
+        assert_eq!(&bound[..], [1, 3, 2]);
+        let bound = s.bind("f", &[3, 2, 1], &[Some("c"), Some("b"), Some("a")]).unwrap();
+        assert_eq!(&bound[..], [1, 2, 3]);
+    }
+
+    /// The result is as long as the last slot filled: an unfilled optional
+    /// tail is simply not passed, as in the positional call.
+    #[test]
+    fn bind_leaves_off_unfilled_trailing_optionals() {
+        let s = sig("a, b?, c?");
+        assert_eq!(&s.bind("f", &[1], &[Some("a")]).unwrap()[..], [1]);
+        assert_eq!(&s.bind("f", &[2, 1], &[Some("b"), Some("a")]).unwrap()[..], [1, 2]);
+        assert_eq!(
+            s.bind("f", &[1, 3], &[None, Some("c")]).unwrap_err(),
+            "f() is missing a value for parameter 'b'"
+        );
+    }
+
+    #[test]
+    fn bind_reports_what_a_petal_fn_would() {
+        let s = sig("a, b");
+        assert_eq!(
+            s.bind("f", &[1, 2], &[None, Some("x")]).unwrap_err(),
+            "f() has no parameter named 'x'"
+        );
+        assert_eq!(
+            s.bind("f", &[1, 2], &[None, Some("a")]).unwrap_err(),
+            "f() got multiple values for parameter 'a'"
+        );
+        assert_eq!(
+            s.bind("f", &[1], &[Some("b")]).unwrap_err(),
+            "f() is missing a value for parameter 'a'"
+        );
+        assert_eq!(
+            s.bind("f", &[1, 2, 3], &[None, None, None]).unwrap_err(),
+            "f() expects 2 arguments, got 3"
+        );
+        assert_eq!(
+            sig("a, b?").bind("f", &[1, 2, 3], &[None, None, None]).unwrap_err(),
+            "f() expects 1 to 2 arguments, got 3"
+        );
+    }
+
+    /// Several forms: the first that fits wins, and when none does the error
+    /// is the one from the form the argument count fits.
+    #[test]
+    fn several_forms_bind_the_first_that_fits() {
+        let forms = [sig("side"), sig("w, h")];
+        let bound = bind_native_args("area", &forms, &[2, 5], &[Some("h"), Some("w")]).unwrap();
+        assert_eq!(&bound[..], [5, 2]);
+        let bound = bind_native_args("area", &forms, &[3], &[Some("side")]).unwrap();
+        assert_eq!(&bound[..], [3]);
+        assert_eq!(
+            bind_native_args("area", &forms, &[1, 2], &[Some("w"), Some("d")]).unwrap_err(),
+            "area() has no parameter named 'd'"
+        );
+        assert_eq!(
+            bind_native_args("area", &forms, &[1], &[Some("size")]).unwrap_err(),
+            "area() has no parameter named 'size'"
+        );
     }
 }

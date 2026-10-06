@@ -1,7 +1,8 @@
 // Guards the stdlib doc extractor (tools/extract-stdlib.ts) against drift.
 //
-// The extractor reads the Rust registration tables and recovers each builtin's
-// arity and argument names. These tests don't pin the exact function count
+// The extractor reads the Rust registration tables: each builtin's declared
+// parameter names (the ones named arguments bind against), and the arity and
+// argument types its implementation shows. These tests don't pin the exact function count
 // (which grows as the language does) — they assert the *invariants* that the
 // docs site relies on, so a refactor that breaks extraction fails loudly here
 // rather than silently producing an empty or wrong reference.
@@ -14,6 +15,9 @@ import { buildManifest } from "../tools/extract-stdlib";
 const repoRoot = resolve(import.meta.dirname, "..", "..");
 const manifest = buildManifest();
 const byName = new Map(manifest.functions.map((f) => [f.name, f]));
+
+/** The parameters every call must pass: `params` without the optional tail. */
+const required = (name: string) => byName.get(name)!.params.filter((p) => !p.optional);
 
 describe("stdlib extractor", () => {
   it("recovers every name registered in register_builtins", () => {
@@ -47,9 +51,10 @@ describe("stdlib extractor", () => {
   });
 
   it("reads argument names + types straight from the source", () => {
-    // draw_rect's `let x = state.get_int(1)` … bindings give a full signature.
-    const drawRect = byName.get("draw_rect")!;
-    expect(drawRect.params.map((p) => p.name)).toEqual([
+    // The names are draw_rect's declared parameters; the types come from its
+    // body's `int_args(state, 7)`.
+    const drawRect = required("draw_rect");
+    expect(drawRect.map((p) => p.name)).toEqual([
       "x",
       "y",
       "w",
@@ -58,17 +63,50 @@ describe("stdlib extractor", () => {
       "g",
       "b",
     ]);
-    expect(drawRect.params.every((p) => p.type === "int")).toBe(true);
+    expect(drawRect.every((p) => p.type === "int")).toBe(true);
+    // …and the optional alpha it also takes is there, flagged.
+    expect(byName.get("draw_rect")!.params.at(-1)).toMatchObject({
+      name: "a",
+      optional: true,
+    });
 
+    // The declared name (`value`), not the body's local (`v`).
     const mapRange = byName.get("map_range")!;
     expect(mapRange.arity).toBe(5);
     expect(mapRange.params.map((p) => p.name)).toEqual([
-      "v",
+      "value",
       "in_lo",
       "in_hi",
       "out_lo",
       "out_hi",
     ]);
+    expect(mapRange.params.every((p) => p.type === "float")).toBe(true);
+  });
+
+  it("lists every call form a builtin declares for named arguments", () => {
+    const forms = (name: string) =>
+      byName
+        .get(name)!
+        .signatures.map((s) => s.map((p) => p.name + (p.optional ? "?" : "")).join(", "));
+    expect(forms("clamp")).toEqual(["value, lo, hi"]);
+    expect(forms("slice")).toEqual(["collection, start, end?"]);
+    expect(forms("random")).toEqual(["", "max", "min, max"]);
+    expect(forms("distance")).toEqual(["x1, y1, x2, y2", "v1, v2"]);
+    expect(forms("map")).toEqual(["list, f"]);
+    expect(forms("mouse_down")).toEqual(["button"]);
+    expect(forms("text_width")).toEqual(["text, style", "text, size, font?"]);
+    // `params` is the longest form.
+    expect(byName.get("random")!.params.map((p) => p.name)).toEqual(["min", "max"]);
+    // A prelude `fn` takes names under its own parameters.
+    expect(forms("take")).toEqual(["xs, n"]);
+  });
+
+  it("leaves only the variadic and internal builtins without a call form", () => {
+    const undeclared = manifest.functions
+      .filter((f) => f.signatures.length === 0)
+      .map((f) => f.name)
+      .sort();
+    expect(undeclared).toEqual(["__pending", "__reject", "__resolve", "format", "print"]);
   });
 
   it("recovers arguments read through a helper, not just state.get_*", () => {
@@ -77,7 +115,7 @@ describe("stdlib extractor", () => {
     // no binding at those indices and silently dropped them — so `fill_arc`
     // documented its colours as arguments 3-5 when they are really 7-9, and
     // `fill_poly` lost its point list entirely.
-    expect(byName.get("fill_arc")!.params.map((p) => p.name)).toEqual([
+    expect(required("fill_arc").map((p) => p.name)).toEqual([
       "cx",
       "cy",
       "r_in",
@@ -91,10 +129,10 @@ describe("stdlib extractor", () => {
     expect(byName.get("fill_arc")!.params[2].type).toBe("float");
 
     for (const name of ["fill_poly", "fill_polygon", "draw_polyline"]) {
-      const fn = byName.get(name)!;
-      expect(fn.params.length, `${name} lost its point list`).toBe(4);
-      expect(fn.params[0].type).toBe("list");
-      expect(fn.params.slice(1).map((p) => p.name)).toEqual(["r", "g", "b"]);
+      const params = required(name);
+      expect(params.length, `${name} lost its point list`).toBe(4);
+      expect(params[0].type).toBe("list");
+      expect(params.slice(1).map((p) => p.name)).toEqual(["r", "g", "b"]);
     }
   });
 
@@ -115,7 +153,7 @@ describe("stdlib extractor", () => {
       "fill_poly",
       "draw_polyline",
     ]) {
-      const names = byName.get(name)!.params.map((p) => p.name);
+      const names = required(name).map((p) => p.name);
       expect(names.slice(-3), `${name} is missing r/g/b`).toEqual([
         "r",
         "g",

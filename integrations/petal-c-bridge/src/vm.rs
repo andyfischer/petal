@@ -721,6 +721,21 @@ pub unsafe extern "C" fn pb_vm_register_emitter(
     })
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_declare_native_params(
+    vm: *mut VmHandle,
+    name: *const c_char,
+    params: *const c_char,
+) -> Status {
+    status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        let params = unsafe { arg_str(params, "params") }?;
+        vm.env
+            .declare_native_params_by_name(name, params)
+            .map_err(BridgeError::invalid)
+    })
+}
+
 // ── Loading ──────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]

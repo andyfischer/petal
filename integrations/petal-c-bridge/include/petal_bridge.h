@@ -12,6 +12,7 @@
  *
  *   pb_vm_create                         one Env + one program + one stack
  *   pb_vm_register_native / _emitter     host natives (before the load that uses them)
+ *   pb_vm_declare_native_params          optional: names for named arguments
  *   pb_vm_load_file / _load_source       compile; errors -> pb_vm_last_error
  *   per frame:
  *     pb_vm_input_*                      feed events as they arrive
@@ -278,6 +279,23 @@ pb_status pb_vm_register_native(pb_vm* vm, const char* name, pb_native_fn fn, vo
  * Pending-no-op policy. This is the fast path for command streams: no host
  * code runs during the script; drain `buffer` after the run. */
 pb_status pb_vm_register_emitter(pb_vm* vm, const char* name, const char* buffer, const char* tag);
+
+/* Declare the parameter names of a registered native (a callback or an
+ * emitter), so scripts may call it with named arguments:
+ *
+ *   pb_vm_declare_native_params(vm, "spawn", "kind, x, y, speed?");
+ *   // script: spawn(kind: "spark", x: 10, y: 20)
+ *
+ * `params` lists the names in the order the native reads its arguments,
+ * comma-separated; a trailing `?` marks an optional parameter, and optional
+ * ones come last. Named arguments are put in that order before the native
+ * runs, so the callback still reads them by index. A native that takes
+ * several argument counts may declare each form with its own call; a named
+ * call uses the first form it fits. Without a declaration a named argument is
+ * a script error ("builtin 'spawn' does not accept named arguments").
+ * Declare before the pb_vm_load_* that uses the names. PB_ERR_INVALID_ARG for
+ * an unknown native or a malformed list. */
+pb_status pb_vm_declare_native_params(pb_vm* vm, const char* name, const char* params);
 
 /* Inside a callback: the native's registered name. */
 const char* pb_call_name(const pb_call* call);

@@ -567,6 +567,20 @@ effects)` with `int fn(pb_call*, void* userdata)`; read arguments with
 `pb_call_arg(call, i)`, build the result into `pb_call_result(call)` with
 `pb_builder_*`, and fail with `pb_call_set_error` + a nonzero return.
 
+To let scripts pass a native's arguments by name, declare them once after
+registering it (a callback or an emitter):
+
+```c
+pb_vm_declare_native_params(vm, "spawn", "kind, x, y, speed?");
+/* script: spawn(kind: "spark", x: 10, y: 20) */
+```
+
+The list is in the order the callback reads its arguments; `?` marks a
+trailing optional one. Names are put in that order before the callback runs,
+so it still reads by index. Without a declaration a named argument is a script
+error. In C++: `vm.native_params("spawn", "kind, x, y, speed?")`. See
+[Native functions](ffi.md#native-functions) for the rules.
+
 ## Layering an engine's own C ABI in Rust
 
 Some hosts want a few C entry points of their own on top of the bridge —

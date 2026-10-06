@@ -426,8 +426,10 @@ print(box(3, label: "tile"))  // tile 3x3
 Overloads are chosen by the total argument count (positional plus named);
 names then bind to the chosen variant's parameters. Naming a parameter that
 does not exist, or giving one twice, is an error — and a warning from
-`petal check` first, wherever the callee is known statically. Builtins do not
-accept named arguments. See
+`petal check` first, wherever the callee is known statically. Builtins take
+names too, under the parameter names the [Builtins Reference](../Builtins.md)
+lists (`clamp(v, lo: 0, hi: 1)`, `xs.slice(start: 1, end: 3)`); only the
+variadic ones (`print`, `format`) refuse them. See
 [Named Arguments](../language-guide.md#named-arguments).
 
 ### Collection and access forms

@@ -2,6 +2,7 @@
   "generatedFrom": [
     "rust/src/builtins/mod.rs",
     "rust/src/builtins/*.rs",
+    "rust/src/typecheck/globals.rs",
     "rust/prelude/std.ptl",
     "petal-ui/src/draw.rs",
     "petal-ui/src/text.rs",
@@ -125,6 +126,7 @@
       "arity": null,
       "variadic": true,
       "params": [],
+      "signatures": [],
       "source": {
         "file": "rust/src/builtins/io.rs",
         "line": 7
@@ -138,9 +140,41 @@
       "variadic": true,
       "params": [
         {
+          "name": "start",
+          "type": "any"
+        },
+        {
+          "name": "end",
+          "type": "any"
+        },
+        {
           "name": "step",
-          "type": "int"
+          "type": "int",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "end",
+            "type": "int"
+          }
+        ],
+        [
+          {
+            "name": "start",
+            "type": "any"
+          },
+          {
+            "name": "end",
+            "type": "any"
+          },
+          {
+            "name": "step",
+            "type": "int",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -155,9 +189,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "v",
+          "name": "collection",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -170,7 +212,28 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 239
@@ -184,9 +247,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "v",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
@@ -199,7 +270,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 59
@@ -211,7 +295,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 72
@@ -223,7 +320,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 80
@@ -235,7 +345,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 85
@@ -247,7 +370,20 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 100
@@ -259,7 +395,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 159
@@ -271,7 +420,35 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "min",
+          "type": "any"
+        },
+        {
+          "name": "max",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [],
+        [
+          {
+            "name": "max",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "min",
+            "type": "any"
+          },
+          {
+            "name": "max",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 186
@@ -285,9 +462,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "v",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
@@ -306,9 +491,21 @@
           "type": "any"
         },
         {
-          "name": "val",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -321,7 +518,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 248
@@ -333,7 +543,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "record",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "record",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 319
@@ -345,7 +568,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "record",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "record",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 338
@@ -359,13 +595,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "container",
+          "name": "collection",
           "type": "any"
         },
         {
           "name": "needle",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          },
+          {
+            "name": "needle",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -388,6 +636,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 202
@@ -409,6 +669,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 218
@@ -422,9 +694,27 @@
       "variadic": true,
       "params": [
         {
-          "name": "places",
+          "name": "x",
           "type": "int"
+        },
+        {
+          "name": "places",
+          "type": "int",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "places",
+            "type": "int",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
@@ -447,6 +737,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "derivative",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/autodiff.rs",
         "line": 8
@@ -458,7 +760,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/autodiff.rs",
         "line": 24
@@ -470,7 +785,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/autodiff.rs",
         "line": 43
@@ -482,7 +810,30 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "compare",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "compare",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 438
@@ -494,7 +845,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "collection",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 467
@@ -512,9 +876,21 @@
           "type": "any"
         },
         {
-          "name": "sep",
+          "name": "separator",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "separator",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -529,13 +905,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "s",
+          "name": "string",
           "type": "any"
         },
         {
-          "name": "sep",
+          "name": "separator",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "separator",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -548,7 +936,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 541
@@ -560,7 +961,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 553
@@ -572,7 +986,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 565
@@ -586,13 +1013,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "a",
+          "name": "list_a",
           "type": "any"
         },
         {
-          "name": "b",
+          "name": "list_b",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list_a",
+            "type": "any"
+          },
+          {
+            "name": "list_b",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -607,7 +1046,7 @@
       "variadic": true,
       "params": [
         {
-          "name": "list",
+          "name": "collection",
           "type": "any"
         },
         {
@@ -616,8 +1055,26 @@
         },
         {
           "name": "end",
-          "type": "int"
+          "type": "int",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          },
+          {
+            "name": "start",
+            "type": "int"
+          },
+          {
+            "name": "end",
+            "type": "int",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -630,7 +1087,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 681
@@ -644,13 +1114,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "container",
+          "name": "collection",
           "type": "any"
         },
         {
           "name": "needle",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          },
+          {
+            "name": "needle",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -664,7 +1146,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 279
@@ -676,7 +1171,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 284
@@ -688,7 +1196,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 289
@@ -710,6 +1231,18 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "y",
+            "type": "float"
+          },
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 297
@@ -722,6 +1255,9 @@
       "arity": 0,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 329
@@ -735,7 +1271,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "v",
+          "name": "value",
           "type": "float"
         },
         {
@@ -746,6 +1282,22 @@
           "name": "hi",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "float"
+          },
+          {
+            "name": "lo",
+            "type": "float"
+          },
+          {
+            "name": "hi",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -772,6 +1324,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "float"
+          },
+          {
+            "name": "b",
+            "type": "float"
+          },
+          {
+            "name": "t",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 36
@@ -785,7 +1353,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "v",
+          "name": "value",
           "type": "float"
         },
         {
@@ -805,6 +1373,30 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "float"
+          },
+          {
+            "name": "in_lo",
+            "type": "float"
+          },
+          {
+            "name": "in_hi",
+            "type": "float"
+          },
+          {
+            "name": "out_lo",
+            "type": "float"
+          },
+          {
+            "name": "out_hi",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 110
@@ -818,11 +1410,11 @@
       "variadic": true,
       "params": [
         {
-          "name": "a",
+          "name": "x1",
           "type": "any"
         },
         {
-          "name": "b",
+          "name": "y1",
           "type": "any"
         },
         {
@@ -833,6 +1425,36 @@
           "name": "y2",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x1",
+            "type": "any"
+          },
+          {
+            "name": "y1",
+            "type": "any"
+          },
+          {
+            "name": "x2",
+            "type": "float"
+          },
+          {
+            "name": "y2",
+            "type": "float"
+          }
+        ],
+        [
+          {
+            "name": "v1",
+            "type": "any"
+          },
+          {
+            "name": "v2",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -856,8 +1478,32 @@
         },
         {
           "name": "z",
-          "type": "float"
+          "type": "float",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          },
+          {
+            "name": "y",
+            "type": "float"
+          },
+          {
+            "name": "z",
+            "type": "float",
+            "optional": true
+          }
+        ],
+        [
+          {
+            "name": "v",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -880,6 +1526,18 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "base",
+            "type": "float"
+          },
+          {
+            "name": "exp",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 204
@@ -891,7 +1549,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 212
@@ -905,9 +1576,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "f",
+          "name": "x",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -934,6 +1613,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "edge0",
+            "type": "float"
+          },
+          {
+            "name": "edge1",
+            "type": "float"
+          },
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 246
@@ -947,9 +1642,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "deg",
+          "name": "degrees",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "degrees",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -964,9 +1667,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "rad",
+          "name": "radians",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "radians",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -985,6 +1696,14 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 270
@@ -1001,6 +1720,14 @@
           "name": "x",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -1020,12 +1747,32 @@
         },
         {
           "name": "y",
-          "type": "float"
+          "type": "float",
+          "optional": true
         },
         {
           "name": "z",
-          "type": "float"
+          "type": "float",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          },
+          {
+            "name": "y",
+            "type": "float",
+            "optional": true
+          },
+          {
+            "name": "z",
+            "type": "float",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/noise.rs",
@@ -1044,6 +1791,14 @@
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "seed",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/noise.rs",
         "line": 157
@@ -1057,13 +1812,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "min",
+          "name": "lo",
           "type": "int"
         },
         {
-          "name": "max",
+          "name": "hi",
           "type": "int"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "lo",
+            "type": "int"
+          },
+          {
+            "name": "hi",
+            "type": "int"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
@@ -1076,7 +1843,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/creative_coding.rs",
         "line": 299
@@ -1101,6 +1881,22 @@
           "name": "v",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "h",
+            "type": "float"
+          },
+          {
+            "name": "s",
+            "type": "float"
+          },
+          {
+            "name": "v",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/color.rs",
@@ -1127,6 +1923,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "h",
+            "type": "float"
+          },
+          {
+            "name": "s",
+            "type": "float"
+          },
+          {
+            "name": "l",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/color.rs",
         "line": 70
@@ -1152,6 +1964,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "c1",
+            "type": "any"
+          },
+          {
+            "name": "c2",
+            "type": "any"
+          },
+          {
+            "name": "t",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/color.rs",
         "line": 103
@@ -1173,6 +2001,18 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          },
+          {
+            "name": "y",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 13
@@ -1190,6 +2030,14 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "v",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 53
@@ -1201,7 +2049,28 @@
       "group": "core",
       "arity": 2,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 82
@@ -1223,6 +2092,18 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "v",
+            "type": "any"
+          },
+          {
+            "name": "max_mag",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 117
@@ -1234,10 +2115,31 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 442
+        "line": 448
       }
     },
     {
@@ -1246,10 +2148,31 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "pred",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 442
+        "line": 448
       },
       "aliasOf": "map"
     },
@@ -1259,10 +2182,39 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "initial",
+          "type": "any"
+        },
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "initial",
+            "type": "any"
+          },
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 442
+        "line": 448
       },
       "aliasOf": "map"
     },
@@ -1272,10 +2224,31 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 442
+        "line": 448
       },
       "aliasOf": "map"
     },
@@ -1287,13 +2260,27 @@
       "variadic": true,
       "params": [
         {
-          "name": "cond",
+          "name": "condition",
           "type": "any"
         },
         {
-          "name": "m",
-          "type": "any"
+          "name": "message",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "condition",
+            "type": "any"
+          },
+          {
+            "name": "message",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
@@ -1308,13 +2295,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "a",
+          "name": "actual",
           "type": "any"
         },
         {
-          "name": "b",
+          "name": "expected",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "actual",
+            "type": "any"
+          },
+          {
+            "name": "expected",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/io.rs",
@@ -1329,9 +2328,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "n",
+          "name": "length",
           "type": "int"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "length",
+            "type": "int"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1346,17 +2353,33 @@
       "variadic": false,
       "params": [
         {
-          "name": "container",
+          "name": "array",
           "type": "any"
         },
         {
-          "name": "i",
+          "name": "index",
           "type": "int"
         },
         {
-          "name": "v",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "array",
+            "type": "any"
+          },
+          {
+            "name": "index",
+            "type": "int"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1371,7 +2394,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "container",
+          "name": "array",
           "type": "any"
         },
         {
@@ -1382,6 +2405,22 @@
           "name": "j",
           "type": "int"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "array",
+            "type": "any"
+          },
+          {
+            "name": "i",
+            "type": "int"
+          },
+          {
+            "name": "j",
+            "type": "int"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1408,6 +2447,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "h",
+            "type": "float"
+          },
+          {
+            "name": "s",
+            "type": "float"
+          },
+          {
+            "name": "v",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/color.rs",
         "line": 82
@@ -1433,6 +2488,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "h",
+            "type": "float"
+          },
+          {
+            "name": "s",
+            "type": "float"
+          },
+          {
+            "name": "l",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/color.rs",
         "line": 93
@@ -1450,6 +2521,14 @@
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/output.rs",
         "line": 12
@@ -1463,9 +2542,25 @@
       "variadic": false,
       "params": [
         {
+          "name": "buffer",
+          "type": "any"
+        },
+        {
           "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "buffer",
+            "type": "any"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/output.rs",
@@ -1478,7 +2573,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "symbol",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "symbol",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/output.rs",
         "line": 31
@@ -1490,7 +2598,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 254
@@ -1502,7 +2623,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 274
@@ -1516,13 +2650,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "container",
+          "name": "record",
           "type": "any"
         },
         {
           "name": "key",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "record",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1535,7 +2681,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "handle",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "handle",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/handle.rs",
         "line": 10
@@ -1548,6 +2707,7 @@
       "arity": 1,
       "variadic": false,
       "params": [],
+      "signatures": [],
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 25
@@ -1566,6 +2726,7 @@
           "type": "any"
         }
       ],
+      "signatures": [],
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 52
@@ -1584,6 +2745,7 @@
           "type": "any"
         }
       ],
+      "signatures": [],
       "source": {
         "file": "rust/src/builtins/pending.rs",
         "line": 64
@@ -1598,9 +2760,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1615,9 +2785,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1632,9 +2810,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1649,9 +2835,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1666,9 +2860,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1683,13 +2885,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         },
         {
-          "name": "default",
+          "name": "fallback",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "fallback",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1704,9 +2918,17 @@
       "variadic": false,
       "params": [
         {
-          "name": "x",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/pending.rs",
@@ -1719,7 +2941,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 121
@@ -1731,7 +2966,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 142
@@ -1743,7 +2991,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 724
@@ -1755,7 +3016,20 @@
       "group": "core",
       "arity": 1,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 744
@@ -1769,9 +3043,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "i",
-          "type": "int"
+          "name": "string",
+          "type": "any"
+        },
+        {
+          "name": "index",
+          "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "index",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1786,9 +3076,35 @@
       "variadic": true,
       "params": [
         {
+          "name": "string",
+          "type": "any"
+        },
+        {
           "name": "start",
           "type": "int"
+        },
+        {
+          "name": "end",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "start",
+            "type": "int"
+          },
+          {
+            "name": "end",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1803,13 +3119,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "haystack",
+          "name": "collection",
           "type": "any"
         },
         {
           "name": "needle",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "collection",
+            "type": "any"
+          },
+          {
+            "name": "needle",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1822,10 +3150,41 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "list",
+          "type": "any"
+        },
+        {
+          "name": "key",
+          "type": "any"
+        },
+        {
+          "name": "descending",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          },
+          {
+            "name": "descending",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/mod.rs",
-        "line": 442
+        "line": 448
       },
       "aliasOf": "map"
     },
@@ -1841,9 +3200,21 @@
           "type": "any"
         },
         {
-          "name": "val",
+          "name": "value",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "list",
+            "type": "any"
+          },
+          {
+            "name": "value",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
@@ -1856,7 +3227,28 @@
       "group": "core",
       "arity": 2,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/collections.rs",
         "line": 212
@@ -1868,7 +3260,30 @@
       "group": "core",
       "arity": null,
       "variadic": true,
-      "params": [],
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "places",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "places",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/format.rs",
         "line": 93
@@ -1882,13 +3297,27 @@
       "variadic": true,
       "params": [
         {
-          "name": "v",
+          "name": "value",
           "type": "any"
         },
         {
           "name": "places",
-          "type": "int"
+          "type": "int",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "places",
+            "type": "int",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/format.rs",
@@ -1901,7 +3330,38 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "width",
+          "type": "any"
+        },
+        {
+          "name": "fill",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "width",
+            "type": "any"
+          },
+          {
+            "name": "fill",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/format.rs",
         "line": 191
@@ -1913,7 +3373,38 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "value",
+          "type": "any"
+        },
+        {
+          "name": "width",
+          "type": "any"
+        },
+        {
+          "name": "fill",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "width",
+            "type": "any"
+          },
+          {
+            "name": "fill",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/format.rs",
         "line": 195
@@ -1931,6 +3422,7 @@
           "type": "string"
         }
       ],
+      "signatures": [],
       "source": {
         "file": "rust/src/builtins/format.rs",
         "line": 279
@@ -1952,6 +3444,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 345
@@ -1967,7 +3471,25 @@
         {
           "name": "value",
           "type": "any"
+        },
+        {
+          "name": "indent",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "value",
+            "type": "any"
+          },
+          {
+            "name": "indent",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/json.rs",
@@ -1986,6 +3508,14 @@
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/json.rs",
         "line": 60
@@ -1999,9 +3529,25 @@
       "variadic": false,
       "params": [
         {
-          "name": "a",
-          "type": "float"
+          "name": "v",
+          "type": "any"
+        },
+        {
+          "name": "angle",
+          "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "v",
+            "type": "any"
+          },
+          {
+            "name": "angle",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
@@ -2028,6 +3574,22 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          },
+          {
+            "name": "y",
+            "type": "float"
+          },
+          {
+            "name": "z",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 21
@@ -2039,7 +3601,28 @@
       "group": "core",
       "arity": 2,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "a",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "a",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/vec2.rs",
         "line": 102
@@ -2051,7 +3634,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 305
@@ -2063,7 +3659,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 310
@@ -2075,7 +3684,20 @@
       "group": "core",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "x",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/math.rs",
         "line": 315
@@ -2096,6 +3718,18 @@
           "name": "y",
           "type": "float"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "float"
+          },
+          {
+            "name": "y",
+            "type": "float"
+          }
+        ]
       ],
       "source": {
         "file": "rust/src/builtins/math.rs",
@@ -2126,6 +3760,26 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          },
+          {
+            "name": "y",
+            "type": "any"
+          },
+          {
+            "name": "w",
+            "type": "any"
+          },
+          {
+            "name": "h",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/src/builtins/classes.rs",
         "line": 131
@@ -2142,6 +3796,14 @@
           "name": "xs",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2160,6 +3822,14 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 26
@@ -2176,6 +3846,14 @@
           "name": "xs",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2194,6 +3872,14 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 36
@@ -2210,6 +3896,14 @@
           "name": "xs",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2228,6 +3922,14 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 46
@@ -2244,6 +3946,14 @@
           "name": "xs",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2266,6 +3976,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 66
@@ -2286,6 +4008,18 @@
           "name": "pred",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2308,6 +4042,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 76
@@ -2328,6 +4074,18 @@
           "name": "pred",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "pred",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2350,6 +4108,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "n",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 91
@@ -2371,6 +4141,18 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "xs",
+            "type": "any"
+          },
+          {
+            "name": "n",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 96
@@ -2391,6 +4173,18 @@
           "name": "key",
           "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "rec",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "rust/prelude/std.ptl",
@@ -2417,6 +4211,22 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "rec",
+            "type": "any"
+          },
+          {
+            "name": "key",
+            "type": "any"
+          },
+          {
+            "name": "fallback",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 116
@@ -2434,6 +4244,14 @@
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "rust/prelude/std.ptl",
         "line": 123
@@ -2449,11 +4267,71 @@
         {
           "name": "source",
           "type": "string"
+        },
+        {
+          "name": "x",
+          "type": "any"
+        },
+        {
+          "name": "y",
+          "type": "any"
+        },
+        {
+          "name": "w",
+          "type": "any"
+        },
+        {
+          "name": "h",
+          "type": "any"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "radius",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "source",
+            "type": "string"
+          },
+          {
+            "name": "x",
+            "type": "any"
+          },
+          {
+            "name": "y",
+            "type": "any"
+          },
+          {
+            "name": "w",
+            "type": "any"
+          },
+          {
+            "name": "h",
+            "type": "any"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "radius",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1165
+        "line": 1169
       }
     },
     {
@@ -2476,9 +4354,25 @@
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1155
+        "line": 1159
       }
     },
     {
@@ -2515,11 +4409,53 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1179
+        "line": 1183
       }
     },
     {
@@ -2560,11 +4496,57 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1190
+        "line": 1194
       }
     },
     {
@@ -2601,11 +4583,63 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1220
+        "line": 1224
       }
     },
     {
@@ -2646,11 +4680,67 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1234
+        "line": 1238
       }
     },
     {
@@ -2677,13 +4767,101 @@
           "type": "int"
         },
         {
+          "name": "r0",
+          "type": "any"
+        },
+        {
+          "name": "g0",
+          "type": "any"
+        },
+        {
+          "name": "b0",
+          "type": "any"
+        },
+        {
+          "name": "a0",
+          "type": "any"
+        },
+        {
+          "name": "r1",
+          "type": "any"
+        },
+        {
+          "name": "g1",
+          "type": "any"
+        },
+        {
+          "name": "b1",
+          "type": "any"
+        },
+        {
+          "name": "a1",
+          "type": "any"
+        },
+        {
           "name": "angle",
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "r0",
+            "type": "any"
+          },
+          {
+            "name": "g0",
+            "type": "any"
+          },
+          {
+            "name": "b0",
+            "type": "any"
+          },
+          {
+            "name": "a0",
+            "type": "any"
+          },
+          {
+            "name": "r1",
+            "type": "any"
+          },
+          {
+            "name": "g1",
+            "type": "any"
+          },
+          {
+            "name": "b1",
+            "type": "any"
+          },
+          {
+            "name": "a1",
+            "type": "any"
+          },
+          {
+            "name": "angle",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1314
+        "line": 1318
       }
     },
     {
@@ -2714,13 +4892,105 @@
           "type": "int"
         },
         {
+          "name": "r0",
+          "type": "any"
+        },
+        {
+          "name": "g0",
+          "type": "any"
+        },
+        {
+          "name": "b0",
+          "type": "any"
+        },
+        {
+          "name": "a0",
+          "type": "any"
+        },
+        {
+          "name": "r1",
+          "type": "any"
+        },
+        {
+          "name": "g1",
+          "type": "any"
+        },
+        {
+          "name": "b1",
+          "type": "any"
+        },
+        {
+          "name": "a1",
+          "type": "any"
+        },
+        {
           "name": "angle",
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r0",
+            "type": "any"
+          },
+          {
+            "name": "g0",
+            "type": "any"
+          },
+          {
+            "name": "b0",
+            "type": "any"
+          },
+          {
+            "name": "a0",
+            "type": "any"
+          },
+          {
+            "name": "r1",
+            "type": "any"
+          },
+          {
+            "name": "g1",
+            "type": "any"
+          },
+          {
+            "name": "b1",
+            "type": "any"
+          },
+          {
+            "name": "a1",
+            "type": "any"
+          },
+          {
+            "name": "angle",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1330
+        "line": 1334
       }
     },
     {
@@ -2741,11 +5011,91 @@
         {
           "name": "radius",
           "type": "int"
+        },
+        {
+          "name": "r0",
+          "type": "any"
+        },
+        {
+          "name": "g0",
+          "type": "any"
+        },
+        {
+          "name": "b0",
+          "type": "any"
+        },
+        {
+          "name": "a0",
+          "type": "any"
+        },
+        {
+          "name": "r1",
+          "type": "any"
+        },
+        {
+          "name": "g1",
+          "type": "any"
+        },
+        {
+          "name": "b1",
+          "type": "any"
+        },
+        {
+          "name": "a1",
+          "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r0",
+            "type": "any"
+          },
+          {
+            "name": "g0",
+            "type": "any"
+          },
+          {
+            "name": "b0",
+            "type": "any"
+          },
+          {
+            "name": "a0",
+            "type": "any"
+          },
+          {
+            "name": "r1",
+            "type": "any"
+          },
+          {
+            "name": "g1",
+            "type": "any"
+          },
+          {
+            "name": "b1",
+            "type": "any"
+          },
+          {
+            "name": "a1",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1347
+        "line": 1351
       }
     },
     {
@@ -2802,11 +5152,73 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "blur",
+            "type": "int"
+          },
+          {
+            "name": "spread",
+            "type": "int"
+          },
+          {
+            "name": "dx",
+            "type": "int"
+          },
+          {
+            "name": "dy",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1376
+        "line": 1380
       }
     },
     {
@@ -2843,11 +5255,63 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x1",
+            "type": "int"
+          },
+          {
+            "name": "y1",
+            "type": "int"
+          },
+          {
+            "name": "x2",
+            "type": "int"
+          },
+          {
+            "name": "y2",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1414
+        "line": 1418
       }
     },
     {
@@ -2858,7 +5322,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "points_value",
+          "name": "points",
           "type": "list"
         },
         {
@@ -2872,11 +5336,51 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "points",
+            "type": "list"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1683
+        "line": 1687
       }
     },
     {
@@ -2909,11 +5413,49 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1424
+        "line": 1428
       }
     },
     {
@@ -2946,11 +5488,59 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1435
+        "line": 1439
       }
     },
     {
@@ -2987,11 +5577,53 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "rx",
+            "type": "int"
+          },
+          {
+            "name": "ry",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1462
+        "line": 1466
       }
     },
     {
@@ -3028,11 +5660,63 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "width",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "rx",
+            "type": "int"
+          },
+          {
+            "name": "ry",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "width",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1471
+        "line": 1475
       }
     },
     {
@@ -3077,11 +5761,61 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "r_in",
+            "type": "float"
+          },
+          {
+            "name": "r_out",
+            "type": "float"
+          },
+          {
+            "name": "a0",
+            "type": "float"
+          },
+          {
+            "name": "a1",
+            "type": "float"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1497
+        "line": 1501
       }
     },
     {
@@ -3126,11 +5860,61 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x1",
+            "type": "int"
+          },
+          {
+            "name": "y1",
+            "type": "int"
+          },
+          {
+            "name": "x2",
+            "type": "int"
+          },
+          {
+            "name": "y2",
+            "type": "int"
+          },
+          {
+            "name": "x3",
+            "type": "int"
+          },
+          {
+            "name": "y3",
+            "type": "int"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1529
+        "line": 1533
       }
     },
     {
@@ -3141,7 +5925,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "points_value",
+          "name": "points",
           "type": "list"
         },
         {
@@ -3155,11 +5939,41 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "points",
+            "type": "list"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1604
+        "line": 1608
       }
     },
     {
@@ -3170,7 +5984,7 @@
       "variadic": false,
       "params": [
         {
-          "name": "points_value",
+          "name": "points",
           "type": "list"
         },
         {
@@ -3184,11 +5998,41 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "points",
+            "type": "list"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1630
+        "line": 1634
       }
     },
     {
@@ -3207,7 +6051,7 @@
           "type": "int"
         },
         {
-          "name": "points_value",
+          "name": "points",
           "type": "list"
         },
         {
@@ -3221,11 +6065,49 @@
         {
           "name": "b",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "cx",
+            "type": "int"
+          },
+          {
+            "name": "cy",
+            "type": "int"
+          },
+          {
+            "name": "points",
+            "type": "list"
+          },
+          {
+            "name": "r",
+            "type": "int"
+          },
+          {
+            "name": "g",
+            "type": "int"
+          },
+          {
+            "name": "b",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1654
+        "line": 1658
       }
     },
     {
@@ -3246,11 +6128,87 @@
         {
           "name": "y",
           "type": "int"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "r",
+          "type": "any"
+        },
+        {
+          "name": "g",
+          "type": "any"
+        },
+        {
+          "name": "b",
+          "type": "any"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "r",
+            "type": "any"
+          },
+          {
+            "name": "g",
+            "type": "any"
+          },
+          {
+            "name": "b",
+            "type": "any"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1710
+        "line": 1714
       }
     },
     {
@@ -3275,11 +6233,41 @@
         {
           "name": "h",
           "type": "int"
+        },
+        {
+          "name": "radius",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1740
+        "line": 1744
       }
     },
     {
@@ -3289,9 +6277,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1748
+        "line": 1752
       }
     },
     {
@@ -3316,11 +6307,41 @@
         {
           "name": "h",
           "type": "int"
+        },
+        {
+          "name": "radius",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1758
+        "line": 1762
       }
     },
     {
@@ -3330,9 +6351,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1766
+        "line": 1770
       }
     },
     {
@@ -3345,7 +6369,43 @@
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
@@ -3362,7 +6422,43 @@
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
@@ -3375,7 +6471,36 @@
       "group": "canvas",
       "arity": null,
       "variadic": false,
-      "params": [],
+      "params": [
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any",
+          "optional": true
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "style",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any",
+            "optional": true
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/text.rs",
         "line": 957
@@ -3391,7 +6516,67 @@
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any"
+        },
+        {
+          "name": "max_width",
+          "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
@@ -3408,7 +6593,87 @@
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any"
+        },
+        {
+          "name": "max_width",
+          "type": "any"
+        },
+        {
+          "name": "where",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          },
+          {
+            "name": "where",
+            "type": "any",
+            "optional": true
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          },
+          {
+            "name": "where",
+            "type": "any",
+            "optional": true
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any"
+          },
+          {
+            "name": "max_width",
+            "type": "any"
+          },
+          {
+            "name": "where",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
@@ -3425,7 +6690,67 @@
         {
           "name": "text",
           "type": "string"
+        },
+        {
+          "name": "size",
+          "type": "any"
+        },
+        {
+          "name": "font",
+          "type": "any"
+        },
+        {
+          "name": "dx",
+          "type": "any"
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "style",
+            "type": "any"
+          },
+          {
+            "name": "dx",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "dx",
+            "type": "any"
+          }
+        ],
+        [
+          {
+            "name": "text",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "any"
+          },
+          {
+            "name": "font",
+            "type": "any"
+          },
+          {
+            "name": "dx",
+            "type": "any"
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/text.rs",
@@ -3444,6 +6769,14 @@
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "name",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/text.rs",
         "line": 665
@@ -3456,6 +6789,9 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/text.rs",
         "line": 680
@@ -3477,9 +6813,21 @@
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "w",
+            "type": "int"
+          },
+          {
+            "name": "h",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1772
+        "line": 1776
       }
     },
     {
@@ -3494,9 +6842,17 @@
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "id",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1800
+        "line": 1804
       }
     },
     {
@@ -3506,9 +6862,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1806
+        "line": 1810
       }
     },
     {
@@ -3529,11 +6888,57 @@
         {
           "name": "y",
           "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "w",
+          "type": "any",
+          "optional": true
+        },
+        {
+          "name": "h",
+          "type": "any",
+          "optional": true
         }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "id",
+            "type": "int"
+          },
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          },
+          {
+            "name": "a",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "w",
+            "type": "any",
+            "optional": true
+          },
+          {
+            "name": "h",
+            "type": "any",
+            "optional": true
+          }
+        ]
       ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1813
+        "line": 1817
       }
     },
     {
@@ -3556,9 +6961,25 @@
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "id",
+            "type": "int"
+          },
+          {
+            "name": "x",
+            "type": "int"
+          },
+          {
+            "name": "y",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1825
+        "line": 1829
       }
     },
     {
@@ -3577,9 +6998,21 @@
           "type": "float"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "id",
+            "type": "int"
+          },
+          {
+            "name": "radius",
+            "type": "float"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/draw.rs",
-        "line": 1833
+        "line": 1837
       }
     },
     {
@@ -3589,9 +7022,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 739
+        "line": 742
       }
     },
     {
@@ -3601,9 +7037,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 787
+        "line": 790
       }
     },
     {
@@ -3614,13 +7053,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "r",
+          "name": "rect",
           "type": "any"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "rect",
+            "type": "any"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 754
+        "line": 757
       }
     },
     {
@@ -3630,9 +7077,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 791
+        "line": 794
       }
     },
     {
@@ -3642,9 +7092,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 795
+        "line": 798
       }
     },
     {
@@ -3655,13 +7108,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "b",
+          "name": "button",
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "button",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 799
+        "line": 802
       }
     },
     {
@@ -3672,13 +7133,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "b",
+          "name": "button",
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "button",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 806
+        "line": 809
       }
     },
     {
@@ -3689,13 +7158,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "b",
+          "name": "button",
           "type": "int"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "button",
+            "type": "int"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 813
+        "line": 816
       }
     },
     {
@@ -3705,9 +7182,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 820
+        "line": 823
       }
     },
     {
@@ -3717,9 +7197,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 824
+        "line": 827
       }
     },
     {
@@ -3730,13 +7213,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "name",
+          "name": "key",
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "key",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 828
+        "line": 831
       }
     },
     {
@@ -3747,13 +7238,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "name",
+          "name": "key",
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "key",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 835
+        "line": 838
       }
     },
     {
@@ -3764,13 +7263,21 @@
       "variadic": false,
       "params": [
         {
-          "name": "name",
+          "name": "key",
           "type": "string"
         }
       ],
+      "signatures": [
+        [
+          {
+            "name": "key",
+            "type": "string"
+          }
+        ]
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 842
+        "line": 845
       }
     },
     {
@@ -3780,9 +7287,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 849
+        "line": 852
       }
     },
     {
@@ -3792,9 +7302,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 853
+        "line": 856
       }
     },
     {
@@ -3804,9 +7317,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 857
+        "line": 860
       }
     },
     {
@@ -3816,9 +7332,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 861
+        "line": 864
       }
     },
     {
@@ -3828,9 +7347,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 865
+        "line": 868
       }
     },
     {
@@ -3840,9 +7362,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 869
+        "line": 872
       }
     },
     {
@@ -3852,9 +7377,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 873
+        "line": 876
       }
     },
     {
@@ -3864,9 +7392,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 877
+        "line": 880
       }
     },
     {
@@ -3876,9 +7407,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 881
+        "line": 884
       }
     },
     {
@@ -3888,9 +7422,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 890
+        "line": 893
       }
     },
     {
@@ -3900,9 +7437,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 897
+        "line": 900
       }
     },
     {
@@ -3912,9 +7452,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 904
+        "line": 907
       }
     },
     {
@@ -3924,9 +7467,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 913
+        "line": 916
       }
     },
     {
@@ -3936,9 +7482,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 919
+        "line": 922
       }
     },
     {
@@ -3948,9 +7497,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 923
+        "line": 926
       }
     },
     {
@@ -3960,9 +7512,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 927
+        "line": 930
       }
     },
     {
@@ -3972,9 +7527,12 @@
       "arity": null,
       "variadic": false,
       "params": [],
+      "signatures": [
+        []
+      ],
       "source": {
         "file": "petal-ui/src/input.rs",
-        "line": 931
+        "line": 934
       }
     }
   ]

@@ -137,8 +137,20 @@ Petal `fn` uses: an unknown name, a parameter given twice, a required
 parameter left out, and an optional one skipped to reach a later one
 (`spawn() is missing a value for parameter 'x'`).
 
+An optional parameter is the native counterpart of a Petal `fn`'s
+[default value](language-guide.md#default-parameter-values), minus the
+expression: the native itself supplies whatever a missing argument means. Too
+many arguments reads as it does for a `fn` with defaults
+(`spawn() expects 3-4 arguments, got 5`).
+
 A native that dispatches on its argument count declares each form with its own
-call, and a named call takes the first form it fits:
+call, and a named call takes the first form it fits. A call that fits none is
+reported the way an overloaded `fn` reports it — by the form with exactly that
+many parameters when there is one; else by listing the forms, when the count
+suits one and the names suit none (`range() has no variant that accepts 2
+arguments with some named 'start', 'stop' (variants: range(end), range(start,
+end, step?))`); else by the counts (`distance() expects 4 or 2 arguments, got
+3`):
 
 ```rust
 env.declare_native_params(id, "x1, y1, x2, y2")?;   // distance(x1: …, …)

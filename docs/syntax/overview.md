@@ -424,13 +424,17 @@ print(box(3, label: "tile"))  // tile 3x3
 ```
 
 Overloads are chosen by the total argument count (positional plus named);
-names then bind to the chosen variant's parameters. Naming a parameter that
-does not exist, or giving one twice, is an error — and a warning from
-`petal check` first, wherever the callee is known statically. Builtins take
-names too, under the parameter names the [Builtins Reference](../Builtins.md)
-lists (`clamp(v, lo: 0, hi: 1)`, `xs.slice(start: 1, end: 3)`); only the
-variadic ones (`print`, `format`) refuse them. See
-[Named Arguments](../language-guide.md#named-arguments).
+names then bind to the chosen variant's parameters, and help choose it when a
+variant's defaults leave the count alone undecided. Naming a parameter that
+does not exist, giving one twice, or leaving out one that has no default is an
+error — one `petal check` reports first, wherever the callee is known
+statically. Builtins take names too, under the parameter names the
+[Builtins Reference](../Builtins.md) lists (`clamp(v, lo: 0, hi: 1)`,
+`xs.slice(start: 1, end: 3)`); only the variadic ones (`print`, `format`)
+refuse them. A builtin has no default expressions: a parameter the reference
+marks `?` (`round(x, places?)`) is optional and may be left off the end. See
+[Named Arguments](../language-guide.md#named-arguments) and
+[Default Parameter Values](../language-guide.md#default-parameter-values).
 
 ### Collection and access forms
 

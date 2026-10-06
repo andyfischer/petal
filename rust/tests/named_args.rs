@@ -742,3 +742,61 @@ fn a_host_native_may_declare_several_forms() {
     env.run(sid).unwrap();
     assert_eq!(env.take_output().join("\n").trim(), "9 10");
 }
+
+/// Default values and native parameter names meet: a default may be a named
+/// builtin call, a builtin's optional trailing parameter is left off the way
+/// a defaulted one is, and a fn that shadows a builtin brings its own
+/// defaults with it.
+#[test]
+fn defaults_and_builtin_names_work_together() {
+    let src = "fn unit(v, lo = 0, hi = clamp(value: lo + 1, lo: 1, hi: 10))
+  clamp(v, hi: hi, lo: lo)
+end
+print(unit(5), unit(5, hi: 3), unit(-2, lo: -1))";
+    assert_eq!(out(src), "1 3 -1");
+    let src = "fn head(xs, n = len(xs))
+  slice(xs, start: 0, end: n)
+end
+print(head([1, 2, 3]), head([1, 2, 3], n: 1), slice([1, 2, 3], start: 1))";
+    assert_eq!(out(src), "[1, 2, 3] [1] [2, 3]");
+    let src = "fn round(x, places = 1)
+  [x, places]
+end
+print(round(x: 2), round(2, places: 3))";
+    assert_eq!(out(src), "[2, 1] [2, 3]");
+}
+
+/// A builtin with several call forms and an overloaded `fn` report a call
+/// that fits none of them in the same words.
+#[test]
+fn builtin_forms_and_fn_overloads_report_alike() {
+    // A form (variant) of exactly the call's length: its own complaint.
+    let e = err("print(random(min: 1))");
+    assert!(e.contains("random() has no parameter named 'min'"), "{e}");
+    let e = err("fn pick(max) max end\nfn pick(min, max) min end\nprint(pick(min: 1))");
+    assert!(e.contains("pick() has no parameter named 'min'"), "{e}");
+    // None of that length, but the count fits one: the forms are listed.
+    let e = err("print(range(start: 1, stop: 5))");
+    assert!(
+        e.contains(
+            "range() has no variant that accepts 2 arguments with some named 'start', 'stop' \
+             (variants: range(end), range(start, end, step?))"
+        ),
+        "{e}"
+    );
+    let e = err("fn span(hi) hi end
+fn span(lo, hi, step = 1) hi - lo end
+print(span(lo: 1, top: 5))");
+    assert!(
+        e.contains(
+            "span() has no variant that accepts 2 arguments with some named 'lo', 'top' \
+             (variants: span(hi), span(lo, hi, step = …))"
+        ),
+        "{e}"
+    );
+    // Too many for an optional trailing parameter: a range, spelt one way.
+    let e = err("print(round(1.5, 2, places: 3))");
+    assert!(e.contains("round() expects 1-2 arguments, got 3"), "{e}");
+    let e = err("fn near(x, places = 0) x end\nprint(near(1.5, 2, places: 3))");
+    assert!(e.contains("near() expects 1-2 arguments, got 3"), "{e}");
+}

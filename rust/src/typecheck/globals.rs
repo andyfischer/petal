@@ -261,12 +261,20 @@ pub fn named_native_call_error(
     if sigs.iter().any(|s| s.bind(name, &indices, names).is_ok()) {
         return None;
     }
-    // The form the call was most plausibly aimed at: the first whose length
-    // fits the argument count, else the first declared.
-    let sig = sigs
-        .iter()
-        .find(|s| s.accepts_count(names.len()))
-        .or_else(|| sigs.first())?;
+    // The form the call was aimed at, chosen as the run chooses it
+    // (`native_fn::bind_native_args`): the only one, or the one with exactly
+    // this many parameters. With several forms and none of that length there
+    // is no single parameter list to hold the names against, and the run's
+    // own summary of the forms is the report.
+    let sig = match sigs {
+        [only] => only,
+        _ => match sigs.iter().find(|s| s.params().len() == names.len()) {
+            Some(sig) => sig,
+            None => {
+                return crate::native_fn::bind_native_args(name, sigs, &indices, names).err();
+            }
+        },
+    };
     let params = sig.params();
     let mut filled: Vec<Option<usize>> = vec![None; params.len()];
     for (i, written) in names.iter().enumerate() {

@@ -841,15 +841,22 @@ print(15 |> clamp(lo: 0, hi: 10))            // 10
 The names are put in the builtin's own argument order before it runs, so a
 named call does exactly what the positional one does, at the same cost. Method
 syntax and `|>` supply the first parameter, and the names bind against the
-rest. Three things differ from a `fn`:
+rest. A builtin's parameter list reads like a `fn`'s, with these differences:
 
-- A builtin can have **optional trailing parameters** (`slice`'s `end`,
-  `round`'s `places`), which a call may leave off. One cannot be skipped to
-  reach a later one — there is no value to put in the gap — so
-  `noise(x: 1, z: 2)` is `noise() is missing a value for parameter 'y'`.
+- Where a `fn` has [default values](#default-parameter-values), a builtin has
+  **optional trailing parameters** — written `end?` in the reference
+  (`slice(collection, start, end?)`, `round(x, places?)`). A call may leave
+  them off, just as it may leave off a defaulted parameter. Unlike a default,
+  one cannot be skipped to reach a later one — the builtin has no expression
+  to fill the gap with — so `noise(x: 1, z: 2)` is `noise() is missing a
+  value for parameter 'y'`.
 - A builtin that reads its arguments differently by count declares each form
-  (`distance(x1, y1, x2, y2)` and `distance(v1, v2)`), and the names pick the
-  form.
+  (`distance(x1, y1, x2, y2)` and `distance(v1, v2)`), the way a `fn` declares
+  [overloads](function-overloading.md), and the names take part in picking
+  the form. A call no form takes is reported as it is for an overloaded `fn`:
+  `range(start: 1, stop: 5)` is `range() has no variant that accepts 2
+  arguments with some named 'start', 'stop' (variants: range(end),
+  range(start, end, step?))`.
 - A parameter may be named with a keyword, which an argument label is free to
   be: `range(start: 0, end: 5)`.
 
@@ -964,6 +971,11 @@ The rules:
   is a `petal check` warning.
 - **Class fields and enum variant fields do not take defaults.** A constructor
   still needs every field; write a function with defaults that calls it.
+- **Builtins have optional parameters rather than defaults.** A builtin is
+  not written in Petal, so it has no default *expression*; the reference marks
+  a parameter a call may leave off with `?` (`round(x, places?)`). It can be
+  omitted or [named](#named-arguments) like a defaulted one, but only from the
+  end: it cannot be skipped to reach a later one.
 
 A default is ordinary code in the function, so it costs nothing when the
 argument is passed, and a call that passes every argument positionally to a

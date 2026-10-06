@@ -321,6 +321,11 @@ impl NativeSignature {
         names: &[Option<&str>],
     ) -> Result<SmallVec<[T; 8]>, String> {
         let params = &self.params;
+        // Too many arguments is the count's fault whatever they are named —
+        // the order a Petal `fn` call checks in.
+        if args.len() > params.len() {
+            return Err(self.arity_error(fn_name, args.len()));
+        }
         let mut slots: SmallVec<[Option<T>; 8]> = smallvec::smallvec![None; params.len()];
         let mut next_positional = 0usize;
         let mut filled = 0usize;
@@ -366,13 +371,11 @@ impl NativeSignature {
         Ok(bound)
     }
 
+    /// Worded as a Petal `fn` with default values words it
+    /// (`backend::calls::arity_range`): `2`, or `1-2` when the trailing
+    /// parameters are optional.
     fn arity_error(&self, fn_name: &str, got: usize) -> String {
-        let max = self.params.len();
-        let want = if self.required == max {
-            max.to_string()
-        } else {
-            format!("{} to {}", self.required, max)
-        };
+        let want = self.arity();
         format!(
             "{}() expects {} argument{}, got {}",
             fn_name,
@@ -381,12 +384,38 @@ impl NativeSignature {
             got
         )
     }
+
+    fn arity(&self) -> String {
+        crate::backend::calls::arity_range(self.required, self.params.len())
+    }
+
+    /// `slice(collection, start, end?)` — this form, as a message lists it.
+    fn describe(&self, fn_name: &str) -> String {
+        let params: Vec<String> = self
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if i < self.required {
+                    p.clone()
+                } else {
+                    format!("{p}?")
+                }
+            })
+            .collect();
+        format!("{fn_name}({})", params.join(", "))
+    }
 }
 
-/// Bind a named call against the signatures a native declares, in declaration
-/// order: the first one the call fits wins. When none does, the error is the
-/// one from the first signature whose length the argument count fits (else the
-/// first declared), which is the one the caller most plausibly meant.
+/// Bind a named call against the forms a native declares, in declaration
+/// order: the first one the call fits wins.
+///
+/// When none does, the error follows the rule a Petal overload set uses
+/// (`backend::calls::resolve_overload`), in the same words: a form with exactly
+/// as many parameters as the call has arguments is the one the call was aimed
+/// at, so its own complaint is reported; failing that the forms are listed,
+/// when the count fits one and it is the names that fit none; otherwise it is
+/// the count that is wrong.
 ///
 /// `sigs` must not be empty — an undeclared native never gets this far.
 pub fn bind_native_args<T: Copy>(
@@ -395,23 +424,44 @@ pub fn bind_native_args<T: Copy>(
     args: &[T],
     names: &[Option<&str>],
 ) -> Result<SmallVec<[T; 8]>, String> {
-    let mut first_err = None;
-    let mut fitting_err = None;
+    let mut only_err = None;
+    let mut exact_err = None;
     for sig in sigs {
         match sig.bind(fn_name, args, names) {
             Ok(bound) => return Ok(bound),
             Err(e) => {
-                if fitting_err.is_none() && sig.accepts_count(args.len()) {
-                    fitting_err = Some(e);
-                } else if first_err.is_none() {
-                    first_err = Some(e);
+                if exact_err.is_none() && sig.params.len() == args.len() {
+                    exact_err = Some(e);
+                } else if only_err.is_none() {
+                    only_err = Some(e);
                 }
             }
         }
     }
-    Err(fitting_err
-        .or(first_err)
-        .unwrap_or_else(|| undeclared_named_args(fn_name)))
+    if let Some(e) = exact_err {
+        return Err(e);
+    }
+    if sigs.len() <= 1 {
+        return Err(only_err.unwrap_or_else(|| undeclared_named_args(fn_name)));
+    }
+    let written: Vec<String> = names.iter().flatten().map(|n| format!("'{n}'")).collect();
+    if !written.is_empty() && sigs.iter().any(|s| s.accepts_count(args.len())) {
+        let variants: Vec<String> = sigs.iter().map(|s| s.describe(fn_name)).collect();
+        return Err(format!(
+            "{fn_name}() has no variant that accepts {} argument{} with {} named {} (variants: {})",
+            args.len(),
+            if args.len() == 1 { "" } else { "s" },
+            if written.len() == 1 { "one" } else { "some" },
+            written.join(", "),
+            variants.join(", "),
+        ));
+    }
+    let arities: Vec<String> = sigs.iter().map(|s| s.arity()).collect();
+    Err(format!(
+        "{fn_name}() expects {} arguments, got {}",
+        arities.join(" or "),
+        args.len(),
+    ))
 }
 
 /// The refusal for a named argument to a native that declares no parameter
@@ -1139,7 +1189,7 @@ mod signature_tests {
         );
         assert_eq!(
             sig("a, b?").bind("f", &[1, 2, 3], &[None, None, None]).unwrap_err(),
-            "f() expects 1 to 2 arguments, got 3"
+            "f() expects 1-2 arguments, got 3"
         );
     }
 
@@ -1159,6 +1209,25 @@ mod signature_tests {
         assert_eq!(
             bind_native_args("area", &forms, &[1], &[Some("size")]).unwrap_err(),
             "area() has no parameter named 'size'"
+        );
+    }
+
+    /// No form of exactly the call's length: the forms are listed when the
+    /// count fits one, and the count is the complaint when it fits none — the
+    /// two sentences an overloaded Petal `fn` gets.
+    #[test]
+    fn several_forms_none_fitting_are_reported_as_an_overload_set_is() {
+        let forms = [sig("end"), sig("start, end, step?")];
+        assert_eq!(
+            bind_native_args("range", &forms, &[1, 2], &[Some("start"), Some("stop")])
+                .unwrap_err(),
+            "range() has no variant that accepts 2 arguments with some named 'start', 'stop' \
+             (variants: range(end), range(start, end, step?))"
+        );
+        assert_eq!(
+            bind_native_args("range", &forms, &[1, 2, 3, 4], &[None, None, None, Some("step")])
+                .unwrap_err(),
+            "range() expects 1 or 2-3 arguments, got 4"
         );
     }
 }

@@ -640,8 +640,18 @@ the arrow form takes no terminator. A multi-statement lambda is the block form
 `fn(args) … end` (no arrow), and the parameter list can be left off when there
 are no parameters: `fn 42 end`.
 
-**Arguments can be passed by name**: `f(x: 1)`, in any order, mixed with
-positional ones. See [Named Arguments](language-guide.md#named-arguments).
+**Arguments can be passed by name**: `f(x: 1)`, in any order, after any
+positional ones. Reach for it when a call is a row of same-typed literals —
+`pill(x: 8, y: 4, w: 120, h: 24, label: "Save")` reads at a glance where
+`pill(8, 4, 120, 24, "Save")` does not — and for class constructors with more
+than two or three fields. Names bind to the callee's parameter slots directly;
+no record is built, so it costs nothing a positional call doesn't beyond the
+name lookup. Two limits: every parameter still needs a value (there are no
+defaults, and overloads are chosen by argument count before names are read),
+and it works on anything written in Petal — your `fn`s, lambdas, methods,
+constructors, prelude functions — but **not on native builtins**
+(`clamp(v, lo: 0, hi: 1)` is an error, which `petal check` catches). See
+[Named Arguments](language-guide.md#named-arguments).
 
 **Method syntax reaches builtins, not your own functions.** `value.name(args)`
 falls back to a **builtin** with the receiver as the first argument, which is
@@ -794,8 +804,8 @@ petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structur
 `check` sorts what it finds into errors and warnings. An **error** is a line
 that fails whenever it runs, and `check` exits 1 on it: a call to, or read of, a
 name nothing defines (it would fail with `Unknown builtin` or
-`Undefined variable`), a call whose argument count no overload accepts, and a
-named argument no parameter has.
+`Undefined variable`), a call whose argument count no overload accepts, a
+named argument no parameter has, and a named argument to a builtin.
 
 **Warnings** are advice, and exit 0 unless you pass `--strict`: mismatched
 annotations, unknown type names, a builtin handed a type it refuses

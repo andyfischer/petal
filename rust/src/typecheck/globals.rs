@@ -260,6 +260,9 @@ pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
 /// term under a table that lacks it, which is why reads are filtered by the
 /// host set too.
 ///
+/// A `BuiltinCall` that *does* resolve is reported when it names an argument:
+/// natives take arguments by position only, so that call fails just as surely.
+///
 /// One diagnostic per source position, in term order. Each is an error
 /// ([`Severity::Error`](crate::diagnostic::Severity::Error)): the line fails
 /// whenever it runs, so `check` fails on it without `--strict`.
@@ -278,12 +281,22 @@ pub fn unresolved_globals(
                     continue;
                 };
                 if known(name) {
-                    continue;
+                    // A native carries no parameter names, so the VM refuses
+                    // a named argument to one on every run (`reject_named_args`
+                    // in `backend/bytecode/vm/calls.rs`). Same wording as that
+                    // failure, like the checker's other named-argument errors.
+                    if term.arg_names.iter().all(Option::is_none) {
+                        continue;
+                    }
+                    format!(
+                        "builtin '{name}' does not accept named arguments (pass them by position)"
+                    )
+                } else {
+                    format!(
+                        "unknown function `{name}`: nothing by that name is in scope, and it is not \
+                         a builtin (running this line fails with \"Unknown builtin: {name}\")"
+                    )
                 }
-                format!(
-                    "unknown function `{name}`: nothing by that name is in scope, and it is not \
-                     a builtin (running this line fails with \"Unknown builtin: {name}\")"
-                )
             }
             TermOp::Error(cid) => {
                 let Some(msg) = program.get_string_constant(cid) else {
@@ -405,6 +418,24 @@ mod tests {
         assert_eq!(unresolved(src, HostProfile::Ui, &[]).len(), 1);
         assert!(unresolved(src, HostProfile::Garden, &[]).is_empty());
         assert!(unresolved(src, HostProfile::Ui, &["palette"]).is_empty());
+    }
+
+    #[test]
+    fn a_named_argument_to_a_builtin_is_reported() {
+        let got = unresolved(
+            "if false then print(clamp(5, lo: 0, hi: 3)) end\nprint(clamp(5, 0, 3))",
+            HostProfile::Core,
+            &[],
+        );
+        assert_eq!(
+            got,
+            ["1:21 builtin 'clamp' does not accept named arguments (pass them by position)"]
+        );
+        // A host native is a native too; a Petal `fn` of the same call shape is not.
+        let host = unresolved("mouse_down(button: 0)", HostProfile::Ui, &[]);
+        assert_eq!(host.len(), 1, "{host:?}");
+        let src = "fn f(a, b) a - b end\nprint(f(b: 1, a: 2), sum(xs: [1]))";
+        assert!(unresolved(src, HostProfile::Core, &[]).is_empty());
     }
 
     #[test]

@@ -199,7 +199,9 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   fail with `Unknown builtin` or `Undefined variable`;
 - a call whose argument count no overload accepts (`f(1)` where every `f`
   takes two arguments);
-- a named argument no parameter has, or one that fills a slot twice.
+- a named argument no parameter has, or one that fills a slot twice;
+- a named argument to a builtin (`clamp(v, lo: 0, hi: 1)`), which takes
+  arguments by position only.
 
 ```
 $ petal check -e 'print(nope)'

@@ -9,7 +9,8 @@ The built-in functions available in every Petal program. For language syntax
 Builtins take **positional arguments only**. The parameter names in this
 reference are for reading, not for calling: a
 [named argument](language-guide.md#named-arguments) such as `append(xs, x: 1)`
-is an error (`builtin 'append' does not accept named arguments`). Named
+is an error (`builtin 'append' does not accept named arguments`), at run time
+and from `petal check`. Named
 arguments work on `fn` declarations, methods and lambdas.
 
 ## I/O

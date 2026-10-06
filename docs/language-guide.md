@@ -810,8 +810,8 @@ error: scale() got multiple values for parameter 'value' (argument 1 already fil
 
 `petal check` exits non-zero on them, so a bad name fails CI without the
 branch ever being taken. The runtime error is still the only report for a
-method call, for a callee this pass cannot see (a function passed in as a
-parameter), and for a builtin.
+method call and for a callee this pass cannot see (a function passed in as a
+parameter).
 
 Lambdas take named arguments too, since they have parameter names like any
 other function:
@@ -826,7 +826,10 @@ parameters after it — and naming the receiver's own parameter is the
 double-bind error above (`Point.shift() got multiple values for parameter
 'p'`). Builtins carry no parameter names at runtime, so they reject names
 outright rather than guessing: `append(list, x: 1)` is
-`builtin 'append' does not accept named arguments`.
+`builtin 'append' does not accept named arguments`, which `petal check`
+reports as an error as well. A function the standard prelude or a library
+writes in Petal (`sum(xs: [1, 2])`, petal-ui's `draw_rect(x: 0, y: 0, …)`) is an
+ordinary `fn` and takes names like any other.
 
 ### Recursion
 

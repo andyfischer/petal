@@ -487,8 +487,9 @@ impl<'a> Checker<'a> {
     /// what `petal check`, `--strict`, the LSP and the MCP server consume, and
     /// it is the only report a call inside an untaken branch ever gets. The
     /// VM's check answers *"this call just failed"* — only when reached, but
-    /// for the shapes this pass cannot see at all: method calls, opaque
-    /// callees (`fn apply(f) f(nope: 1) end`), and builtins.
+    /// for the shapes this pass cannot see at all: method calls and opaque
+    /// callees (`fn apply(f) f(nope: 1) end`). (A named argument to a builtin
+    /// is reported after the compile, by `globals::unresolved_globals`.)
     ///
     /// So the two are diagnosis and failure, not one complaint typed twice.
     /// To keep them reading that way they share the VM's wording *exactly* —

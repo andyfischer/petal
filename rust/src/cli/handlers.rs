@@ -869,7 +869,14 @@ pub(super) fn handle_check(
         .get_program(pid)
         .filter(|_| check_globals)
         .map(|p| globals::unresolved_globals(p, |n| env.has_native(n), &host_natives));
-    let unresolved_count = unresolved.as_ref().map_or(0, Vec::len);
+    // Counted for the host-profile note below, which is about names: a named
+    // argument to a builtin that *did* resolve is not something `--host` fixes.
+    let unresolved_count = unresolved.as_ref().map_or(0, |diags| {
+        diags
+            .iter()
+            .filter(|d| !d.message.contains("does not accept named arguments"))
+            .count()
+    });
     if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {
         p.warnings.extend(diags);
     }

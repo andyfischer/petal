@@ -222,6 +222,13 @@ fn a_default_may_not_read_a_later_parameter_or_itself() {
     // A lambda's own parameter of that name is a different binding.
     let src = "fn f(g = fn(b) -> b + 1, b = 1)\n  g(b)\nend\nprint(f())";
     assert_eq!(out(src), "2");
+    // ...but only that name: the lambda's body is still held to the rule for
+    // every other later parameter.
+    let e = err("fn f(g = fn(b) -> b + c, b = 1, c = 2)\n  g(b)\nend\nprint(f())");
+    assert!(
+        e.contains("The default value of parameter 'g' refers to 'c', which is declared after it"),
+        "{e}"
+    );
 }
 
 // ── named arguments ─────────────────────────────────────────────────────

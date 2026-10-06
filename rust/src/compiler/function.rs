@@ -373,21 +373,29 @@ impl Compiler {
     /// whatever the caller did or did not pass.
     fn check_default_references(&mut self, params: &[String], body: &[Stmt]) {
         struct Reads<'a> {
-            later: &'a [String],
+            later: Vec<&'a String>,
             found: Option<(String, SourceSpan)>,
         }
         impl crate::ast::ExprVisitor for Reads<'_> {
             fn visit_expr(&mut self, e: &Expr) {
                 match &e.kind {
                     ExprKind::Ident(n) | ExprKind::CellGet(n) | ExprKind::AtVar(n)
-                        if self.found.is_none() && self.later.contains(n) =>
+                        if self.found.is_none() && self.later.contains(&n) =>
                     {
                         self.found = Some((n.clone(), e.span));
                     }
                     // A lambda's own parameter of that name is a different
-                    // binding altogether.
+                    // binding altogether; the rest of its body is still held
+                    // to the rule.
                     ExprKind::Lambda { params, .. }
-                        if params.iter().any(|p| self.later.contains(&p.name)) => {}
+                        if params.iter().any(|p| self.later.contains(&&p.name)) =>
+                    {
+                        let outer = self.later.clone();
+                        self.later
+                            .retain(|n| !params.iter().any(|p| &p.name == *n));
+                        crate::ast::walk_expr(self, e);
+                        self.later = outer;
+                    }
                     _ => crate::ast::walk_expr(self, e),
                 }
             }
@@ -400,7 +408,7 @@ impl Compiler {
                 continue;
             };
             let mut reads = Reads {
-                later: &params[index..],
+                later: params[index..].iter().collect(),
                 found: None,
             };
             crate::ast::ExprVisitor::visit_expr(&mut reads, default);

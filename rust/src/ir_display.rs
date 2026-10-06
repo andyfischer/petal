@@ -274,10 +274,16 @@ pub fn display_program_with(program: &Program, hide_noise: bool) -> String {
         let name = func.name.as_deref().map(base_fn_name).unwrap_or("<lambda>");
         let params: Vec<&str> = func.params.iter().map(|s| s.as_str()).collect();
         let captures: Vec<&str> = func.capture_names.iter().map(|s| s.as_str()).collect();
+        // Only a function with default parameter values says so, which keeps
+        // every other function's line as it was.
+        let optional = match func.optional_params {
+            0 => String::new(),
+            n => format!(" optional={n}"),
+        };
         writeln!(
             out,
-            "  fn{}: {} params={:?} body=block{} captures={:?}",
-            func.id.0, name, params, func.body_block.0, captures,
+            "  fn{}: {} params={:?}{} body=block{} captures={:?}",
+            func.id.0, name, params, optional, func.body_block.0, captures,
         )
         .unwrap();
     }
@@ -443,6 +449,14 @@ fn render_block(
         segments.push(format!("params: {}", parts.join(", ")));
     }
     if let Some(f) = func {
+        // The was-it-passed flag of each parameter that has a default value.
+        if f.optional_params > 0 {
+            let parts: Vec<String> = f.params[f.required_params()..]
+                .iter()
+                .map(|n| bind(&crate::ast::arg_given_name(n), &mut consumed))
+                .collect();
+            segments.push(format!("given: {}", parts.join(", ")));
+        }
         if !f.capture_names.is_empty() {
             let parts: Vec<String> = f
                 .capture_names

@@ -38,7 +38,7 @@ struct VarType {
     fns: Vec<FnSignature>,
     /// The parameter *names* of the same callables, one entry per arity —
     /// parallel to [`VarType::fns`] in what it describes, but matched by
-    /// length rather than by index (see [`Checker::callee_param_names`]).
+    /// length rather than by index (see [`Checker::param_name_candidates`]).
     /// Empty whenever the names are unknown, which suppresses the
     /// named-argument check.
     param_names: Vec<Vec<String>>,
@@ -419,6 +419,7 @@ impl<'a> Checker<'a> {
                     .collect(),
                 // Lambdas have no return-type slot (type-declarations-plan §2).
                 ret: None,
+                optional: params.iter().filter(|p| p.has_default()).count(),
             }],
             // A bare class name has no signature here — a constructor is
             // checked on its own path, against the class's fields.
@@ -465,15 +466,6 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// The parameter names of the overload this call selects, or `None` when
-    /// nothing declares them. Overloads differ by arity, so the argument count
-    /// picks the entry out — the same rule the runtime resolves by.
-    fn callee_param_names(&self, expr: &Expr, arity: usize) -> Option<Vec<String>> {
-        self.param_name_candidates(expr)
-            .into_iter()
-            .find(|names| names.len() == arity)
-    }
-
     /// Check a call's named arguments against the parameter names its callee
     /// declares: every name must name a parameter, and no slot may be filled
     /// twice. Runs only where the callee is statically known; the VM's own
@@ -502,20 +494,28 @@ impl<'a> Checker<'a> {
     /// `this lambda`). Positional arguments always precede named ones (the
     /// parser enforces it), so argument `i` fills slot `i` until the first name
     /// appears.
+    ///
+    /// The first `required` parameters have no default value: one that no
+    /// argument fills is reported too, by name, at `call_span` — unless a
+    /// misnamed argument was already reported, which is almost always the
+    /// reason for the gap.
     fn check_named_args(
         &mut self,
         callee: &str,
         params: &[String],
+        required: usize,
         args: &[Expr],
         arg_names: &[Option<String>],
+        call_span: SourceSpan,
     ) {
-        if arg_names.len() != args.len() || params.len() != args.len() {
+        if args.len() > params.len() {
             return;
         }
+        let before = self.diags.len();
         // `Some(i)`: argument `i` (0-based) already claimed this slot.
         let mut filled: Vec<Option<usize>> = vec![None; params.len()];
-        for (i, name) in arg_names.iter().enumerate() {
-            let Some(name) = name else {
+        for i in 0..args.len() {
+            let Some(name) = arg_names.get(i).and_then(|n| n.as_ref()) else {
                 filled[i] = Some(i);
                 continue;
             };
@@ -542,21 +542,71 @@ impl<'a> Checker<'a> {
             }
             filled[slot] = Some(i);
         }
+        if self.diags.len() != before {
+            return;
+        }
+        if let Some(missing) = (0..required.min(params.len())).find(|&s| filled[s].is_none()) {
+            self.error(
+                call_span,
+                format!(
+                    "{callee} is missing a value for parameter '{}'",
+                    params[missing]
+                ),
+            );
+        }
+    }
+
+    /// Whether `sig` can run a call that writes `arg_names.len()`-or-`count`
+    /// arguments — the checker's copy of the runtime's
+    /// `backend::calls::accepts_call`, which is the definition. `names` are
+    /// the signature's parameter names when they are known; without them a
+    /// call that names an argument is only matched by exact count, which is
+    /// all the old rule ever did.
+    fn sig_accepts(
+        sig: &FnSignature,
+        names: Option<&Vec<String>>,
+        count: usize,
+        arg_names: &[Option<String>],
+    ) -> bool {
+        if count > sig.params.len() {
+            return false;
+        }
+        if arg_names.iter().all(Option::is_none) {
+            return count >= sig.required();
+        }
+        let Some(params) = names else {
+            return count == sig.params.len();
+        };
+        let positional = arg_names.iter().take_while(|n| n.is_none()).count();
+        let named: Vec<&str> = arg_names[positional..]
+            .iter()
+            .filter_map(|n| n.as_deref())
+            .collect();
+        for (i, name) in named.iter().enumerate() {
+            match params.iter().position(|p| p == name) {
+                Some(slot) if slot >= positional => {}
+                _ => return false,
+            }
+            if named[..i].contains(name) {
+                return false;
+            }
+        }
+        (positional..sig.required()).all(|slot| named.contains(&params[slot].as_str()))
     }
 
     /// Report that no candidate accepts `got` arguments. `expected` is every
-    /// arity that would have worked — Petal overloads by arity
+    /// count that would have worked, each spelled by
+    /// [`FnSignature::arity_range`] — Petal overloads by arity
     /// (docs/function-overloading.md), so a call is wrong only when it matches
     /// *none* of them, and then it fails whenever it runs: an error, not a
     /// warning.
-    fn warn_arity(&mut self, span: SourceSpan, what: &str, expected: &[usize], got: usize) {
-        let list: Vec<String> = expected.iter().map(|a| a.to_string()).collect();
+    fn warn_arity(&mut self, span: SourceSpan, what: &str, expected: &[String], got: usize) {
         self.error(
             span,
             format!(
                 "{what} expects {} argument{}, got {got}",
-                list.join(" or "),
-                if expected == [1] { "" } else { "s" },
+                expected.join(" or "),
+                if expected == ["1"] { "" } else { "s" },
             ),
         );
     }
@@ -735,6 +785,30 @@ impl<'a> Checker<'a> {
             }
             // A `set` writes the same value into the same target shape as `=`;
             // the declared type of a `var` constrains its writes identically.
+            // A default parameter value, moved to the head of the body by the
+            // desugar pass. Not a rebind: the parameter still is its slot, and
+            // what gets checked is the default against the annotation.
+            StmtKind::Assign { .. } if crate::desugar::as_param_default(stmt).is_some() => {
+                let (name, default) = crate::desugar::as_param_default(stmt).unwrap();
+                self.slot = CastSlot::Delimited;
+                let actual = self.check_expr(default);
+                let declared = self.lookup(name).and_then(|v| v.declared);
+                if let Some(dt) = declared
+                    && actual != Type::Any
+                    && dt != Type::Any
+                    && !actual.is_assignable_to(&dt)
+                {
+                    self.warn(
+                        default.span,
+                        format!(
+                            "default value for parameter `{}`: expected `{}`, found `{}`",
+                            name,
+                            self.spell(dt),
+                            self.spell(actual)
+                        ),
+                    );
+                }
+            }
             StmtKind::Assign { target, value } | StmtKind::Set { target, value } => match target {
                 AssignTarget::Name(n) => {
                     self.slot = CastSlot::Delimited;
@@ -925,7 +999,7 @@ impl<'a> Checker<'a> {
         self.bind_enum_variants(stmts);
         let mut sigs: HashMap<&str, Vec<FnSignature>> = HashMap::new();
         // The parameter names of the same declarations, matched by arity where
-        // they are read back (see `callee_param_names`).
+        // they are read back (see `param_name_candidates`).
         let mut names: HashMap<&str, Vec<Vec<String>>> = HashMap::new();
         for stmt in stmts {
             let StmtKind::FnDecl {
@@ -944,6 +1018,7 @@ impl<'a> Checker<'a> {
                     .map(|p| p.ty.as_ref().and_then(|t| self.resolve_ann(t)))
                     .collect(),
                 ret: ret.as_ref().and_then(|t| self.resolve_ann(t)),
+                optional: params.iter().filter(|p| p.has_default()).count(),
             };
             let entry = sigs.entry(name.as_str()).or_default();
             // Same name, same arity: the later declaration wins, as in
@@ -1087,26 +1162,28 @@ impl<'a> Checker<'a> {
                 } else {
                     CastSlot::ListElement
                 };
-                let mut arg_types: Vec<Type> = args
+                let arg_types: Vec<Type> = args
                     .iter()
                     .map(|a| {
                         self.slot = arg_slot;
                         self.check_expr(a)
                     })
                     .collect();
-                // Every check below pairs argument *i* with parameter *i*, a
-                // pairing named arguments break. Arity and the result type are
-                // still right (selection is by total count), so only the
-                // per-argument types are dropped — each argument's own
-                // expression has already been walked above.
-                if !arg_names.is_empty() {
-                    arg_types.iter_mut().for_each(|t| *t = Type::Any);
-                }
+                // The checks that pair argument *i* with parameter *i* — a
+                // pairing named arguments break — get the types dropped
+                // instead. `check_call` maps each argument to the slot it
+                // really fills when it knows the callee's parameter names, and
+                // does the same erasure itself where it does not.
+                let positional_types: Vec<Type> = if arg_names.is_empty() {
+                    arg_types.clone()
+                } else {
+                    vec![Type::Any; arg_types.len()]
+                };
                 // Deliberately the *written* callee, not the namespace
                 // stand-in: `m.int(x)` is a module's own `int`, and deleting it
                 // as an identity cast (which `lint --fix` would) would be a
                 // wrong rewrite. A `FieldAccess` callee returns early here.
-                self.note_redundant_cast(expr, function, args, &arg_types, slot);
+                self.note_redundant_cast(expr, function, args, &positional_types, slot);
                 // A pinned method call is already fully resolved — its
                 // signature answers both the argument check and the result
                 // type, and `check_call` has no name to look up for it.
@@ -1115,7 +1192,7 @@ impl<'a> Checker<'a> {
                         ExprKind::FieldAccess { field, .. } => field.clone(),
                         _ => String::new(),
                     };
-                    return self.check_method_args(&sig, &name, args, &arg_types);
+                    return self.check_method_args(&sig, &name, args, &positional_types);
                 }
                 let callee = namespace_callee.as_ref().unwrap_or(function);
                 self.check_call(callee, args, arg_names, &arg_types, expr.span)
@@ -1410,32 +1487,52 @@ impl<'a> Checker<'a> {
         if def.field(name).is_some() {
             return None;
         }
-        let mut arities: Vec<usize> = def
-            .methods
-            .iter()
-            .filter(|m| m.name == name)
-            .map(|m| m.arity)
-            .collect();
+        let mut methods: Vec<&crate::classes::MethodDef> =
+            def.methods.iter().filter(|m| m.name == name).collect();
         // No method of that name: dispatch falls through to a global native
         // with the receiver prepended (`r.len()`), which this pass knows
         // nothing about.
-        if arities.is_empty() {
+        if methods.is_empty() {
             return None;
         }
-        if arities.contains(&(args + 1)) {
+        // The variant this call selects, by the runtime's rule: the one whose
+        // parameter count is exactly what was written, else the only one whose
+        // defaults stretch to cover it. (Which arguments are *named* is not
+        // known here; a call that more than one variant could take is left to
+        // the runtime rather than pinned to a guess.)
+        let in_range: Vec<&&crate::classes::MethodDef> = methods
+            .iter()
+            .filter(|m| m.sig.takes_count(args + 1))
+            .collect();
+        let chosen = in_range
+            .iter()
+            .find(|m| m.arity == args + 1)
+            .or(match in_range.as_slice() {
+                [only] => Some(only),
+                _ => None,
+            });
+        if let Some(m) = chosen {
+            let sig = m.sig.clone();
             self.dispatch
                 .pinned
                 .insert(span, self.classes.name_of(id).to_string());
-            return def
-                .methods
-                .iter()
-                .find(|m| m.name == name && m.arity == args + 1)
-                .map(|m| m.sig.clone());
+            return Some(sig);
         }
-        arities.sort_unstable();
+        if !in_range.is_empty() {
+            return None;
+        }
+        methods.sort_by_key(|m| m.arity);
         // Report what the call site writes, which excludes the receiver the
         // method syntax supplies for you.
-        let written: Vec<usize> = arities.iter().map(|a| a - 1).collect();
+        let written: Vec<String> = methods
+            .iter()
+            .map(|m| {
+                crate::backend::calls::arity_range(
+                    m.sig.required().saturating_sub(1),
+                    m.arity - 1,
+                )
+            })
+            .collect();
         let what = format!("method `{}.{}`", self.spell(recv), name);
         self.warn_arity(span, &what, &written, args);
         None
@@ -1494,6 +1591,18 @@ impl<'a> Checker<'a> {
         arg_types: &[Type],
         call_span: SourceSpan,
     ) -> Type {
+        // For a constructor or a builtin, argument *i* is checked against
+        // slot *i* — meaningless once an argument is named, so those paths see
+        // no types at all then. A function call maps each argument to its
+        // real slot below and keeps them.
+        let real_types = arg_types;
+        let erased;
+        let arg_types: &[Type] = if arg_names.is_empty() {
+            arg_types
+        } else {
+            erased = vec![Type::Any; arg_types.len()];
+            &erased
+        };
         if let ExprKind::Ident(f) = &function.kind
             && self.lookup(f).is_none()
         {
@@ -1521,7 +1630,7 @@ impl<'a> Checker<'a> {
                 let fields = self.classes.get(id).fields.clone();
                 if fields.len() != args.len() {
                     let what = format!("`{f}`");
-                    self.warn_arity(call_span, &what, &[fields.len()], args.len());
+                    self.warn_arity(call_span, &what, &[fields.len().to_string()], args.len());
                     return Type::Class(id);
                 }
                 if !arg_names.is_empty() {
@@ -1529,7 +1638,14 @@ impl<'a> Checker<'a> {
                     // which is exactly how the VM binds `Point(y: 2, x: 1)`.
                     let field_names: Vec<String> =
                         fields.iter().map(|fd| fd.name.clone()).collect();
-                    self.check_named_args(&format!("{f}()"), &field_names, args, arg_names);
+                    self.check_named_args(
+                        &format!("{f}()"),
+                        &field_names,
+                        field_names.len(),
+                        args,
+                        arg_names,
+                        call_span,
+                    );
                 }
                 for (i, fd) in fields.iter().enumerate() {
                     let (Some(ft), Some(at)) = (fd.ty, arg_types.get(i).copied()) else {
@@ -1589,42 +1705,141 @@ impl<'a> Checker<'a> {
             }
             return Type::Any;
         }
-        let Some(sig) = candidates
+        // Select the variant the way the runtime does
+        // (`backend::calls::resolve_overload`): of the candidates that accept
+        // the call, the one whose parameter count is exactly the argument
+        // count, else the only one there is.
+        let name_lists = self.param_name_candidates(function);
+        let names_of = |sig: &FnSignature| name_lists.iter().find(|l| l.len() == sig.params.len());
+        let accepting: Vec<&FnSignature> = candidates
             .iter()
-            .find(|s| s.params.len() == args.len())
-            .cloned()
-        else {
-            // No overload takes this many arguments — the call cannot resolve
-            // at runtime, whatever the argument types are.
-            if let ExprKind::Ident(f) = &function.kind {
-                let expected: Vec<usize> = candidates.iter().map(|s| s.params.len()).collect();
-                let what = format!("`{f}`");
-                self.warn_arity(call_span, &what, &expected, args.len());
+            .filter(|s| Self::sig_accepts(s, names_of(s), args.len(), arg_names))
+            .collect();
+        // Named as the VM names it — except for a lambda invoked in place,
+        // which the VM can only call `<anonymous>()` and this pass can at
+        // least point at.
+        let vm_callee = match &function.kind {
+            ExprKind::Ident(f) => format!("{f}()"),
+            _ => "this lambda".to_string(),
+        };
+        let exact = |s: &&FnSignature| s.params.len() == args.len();
+        let sig = match accepting.as_slice() {
+            [] => {
+                // Nothing accepts. A candidate with exactly this many
+                // parameters — or the only candidate there is, when it has
+                // defaults and the count does not overshoot it — is the one the
+                // call was aimed at, and checking the arguments against it says
+                // precisely what is wrong: a misspelt name, a slot filled
+                // twice, a required parameter left out.
+                let aimed = candidates.iter().find(|s| exact(s)).or(match candidates.as_slice() {
+                    [only] if only.optional > 0 && args.len() <= only.params.len() => Some(only),
+                    _ => None,
+                });
+                match (aimed, aimed.and_then(|s| names_of(s))) {
+                    (Some(s), Some(params)) => {
+                        let (s, params) = (s.clone(), params.clone());
+                        let before = self.diags.len();
+                        self.check_named_args(
+                            &vm_callee,
+                            &params,
+                            s.required(),
+                            args,
+                            arg_names,
+                            call_span,
+                        );
+                        if self.diags.len() == before {
+                            // Unreachable when `sig_accepts` and
+                            // `check_named_args` agree; never stay silent
+                            // about a call nothing accepts.
+                            let what = format!("`{}`", vm_callee.trim_end_matches("()"));
+                            self.warn_arity(call_span, &what, &[s.arity_range()], args.len());
+                        }
+                    }
+                    // The names are unknown, so nothing can be said about a
+                    // named call beyond what the runtime will.
+                    (Some(_), None) => {}
+                    (None, _) => {
+                        if let ExprKind::Ident(f) = &function.kind {
+                            if candidates.iter().any(|s| s.takes_count(args.len())) {
+                                // The count fits a variant; the names fit none.
+                                let written: Vec<String> = arg_names
+                                    .iter()
+                                    .flatten()
+                                    .map(|n| format!("'{n}'"))
+                                    .collect();
+                                self.error(
+                                    call_span,
+                                    format!(
+                                        "{f}() has no variant that accepts {} argument{} with {} named {}",
+                                        args.len(),
+                                        if args.len() == 1 { "" } else { "s" },
+                                        if written.len() == 1 { "one" } else { "some" },
+                                        written.join(", "),
+                                    ),
+                                );
+                            } else {
+                                // No overload takes this many arguments — the
+                                // call cannot resolve at runtime, whatever the
+                                // argument types are.
+                                let expected: Vec<String> =
+                                    candidates.iter().map(FnSignature::arity_range).collect();
+                                let what = format!("`{f}`");
+                                self.warn_arity(call_span, &what, &expected, args.len());
+                            }
+                        }
+                    }
+                }
+                return Type::Any;
             }
-            return Type::Any;
+            [only] => (*only).clone(),
+            many => match many.iter().find(|s| exact(s)) {
+                Some(s) => (*s).clone(),
+                None => {
+                    // More than one variant's defaults stretch to cover this
+                    // call and none takes exactly this many: the runtime
+                    // refuses to pick, so this fails whenever it runs.
+                    if let ExprKind::Ident(f) = &function.kind {
+                        let ranges: Vec<String> = many
+                            .iter()
+                            .map(|s| format!("the {}-parameter `{f}`", s.params.len()))
+                            .collect();
+                        self.error(
+                            call_span,
+                            format!(
+                                "{f}() is ambiguous: {} {} accept this call — pass or name \
+                                 another argument to pick one",
+                                ranges.join(" and "),
+                                if ranges.len() == 2 { "both" } else { "all" },
+                            ),
+                        );
+                    }
+                    return Type::Any;
+                }
+            },
         };
         // A lambda invoked in place has no name to blame the argument on.
         let callee = match &function.kind {
             ExprKind::Ident(f) => format!(" to `{f}`"),
             _ => String::new(),
         };
-        if !arg_names.is_empty()
-            && let Some(params) = self.callee_param_names(function, args.len())
-        {
-            // Named as the VM names it — except for a lambda invoked in place,
-            // which the VM can only call `<anonymous>()` and this pass can at
-            // least point at.
-            let callee = match &function.kind {
-                ExprKind::Ident(f) => format!("{f}()"),
-                _ => "this lambda".to_string(),
-            };
-            self.check_named_args(&callee, &params, args, arg_names);
-        }
+        // Which parameter each written argument fills: its own position, or
+        // the one its name picks out. `None` for a named argument whose
+        // callee's parameter names are unknown — nothing is checked there.
+        let params = names_of(&sig).cloned();
+        let slots: Vec<Option<usize>> = (0..args.len())
+            .map(|i| match arg_names.get(i).and_then(|n| n.as_ref()) {
+                None => Some(i),
+                Some(name) => params.as_ref()?.iter().position(|p| p == name),
+            })
+            .collect();
+        let arg_types = real_types;
         if self.collect_inferences {
-            self.note_call_evidence(function, args, arg_types, &sig);
+            self.note_call_evidence(function, args, arg_types, &sig, &slots);
         }
-        for (i, pt) in sig.params.iter().enumerate() {
-            let Some(pt) = pt else { continue };
+        for (i, slot) in slots.iter().enumerate() {
+            let Some(Some(pt)) = slot.and_then(|s| sig.params.get(s)) else {
+                continue;
+            };
             if *pt == Type::Any {
                 continue;
             }
@@ -1668,7 +1883,7 @@ impl<'a> Checker<'a> {
         if self.lookup(f).is_some() || !arg_names.iter().all(Option::is_none) {
             return;
         }
-        let Some(reqs) = all.get(&(f.clone(), args.len())) else {
+        let Some(reqs) = all.get(&(f.clone(), sig.params.len())) else {
             return;
         };
         let arities: Vec<usize> = self
@@ -1695,7 +1910,7 @@ impl<'a> Checker<'a> {
                 format!(
                     "argument {} to `{f}`: the {}-argument `{f}` {}, found `{}`{others}",
                     i + 1,
-                    args.len(),
+                    sig.params.len(),
                     req.describe(),
                     self.spell(at),
                 ),
@@ -1722,6 +1937,7 @@ impl<'a> Checker<'a> {
         args: &[Expr],
         arg_types: &[Type],
         sig: &FnSignature,
+        slots: &[Option<usize>],
     ) {
         let ExprKind::Ident(callee) = &function.kind else {
             return;
@@ -1730,9 +1946,15 @@ impl<'a> Checker<'a> {
             return;
         }
         let callee = callee.clone();
-        let key = (callee.clone(), args.len());
-        for (i, arg) in args.iter().enumerate() {
-            if let Some(&ty) = arg_types.get(i) {
+        // The declaration is keyed by its parameter count, which a call that
+        // leans on a default does not write out.
+        let key = (callee.clone(), sig.params.len());
+        for (arg_index, arg) in args.iter().enumerate() {
+            // The parameter this argument fills, which a name can move.
+            let Some(i) = slots.get(arg_index).copied().flatten() else {
+                continue;
+            };
+            if let Some(&ty) = arg_types.get(arg_index) {
                 self.inferences.note_param(
                     key.clone(),
                     i,

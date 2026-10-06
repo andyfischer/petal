@@ -1,60 +1,209 @@
 //! Call-resolution helpers for the bytecode VM.
 //!
 //! Resolving a callable `Value` to a concrete `ClosureId` (including overload
-//! selection by argument count) and building an overload-set value are pure over
+//! selection by argument count and names) and building an overload-set value are pure over
 //! `(&Program, &ClosureTable)`, so they live here rather than inline
 //! in the [`Vm`](super::bytecode::Vm). Frame construction
 //! ([`VmFrame`](super::bytecode::VmFrame)) stays in the VM.
 
 use crate::closure_table::ClosureTable;
-use crate::program::{ClosureId, OverloadEntry, Program, base_fn_name};
+use crate::program::{ClosureId, FunctionDef, OverloadEntry, Program, base_fn_name};
 use crate::value::Value;
 use smallvec::SmallVec;
 
-/// Resolve a callable to a `ClosureId`, selecting an overload by `arg_count`.
+/// Resolve a callable to a `ClosureId`, selecting an overload for a call that
+/// writes `arg_count` arguments, named as `names` says (empty when none is).
 pub fn resolve_callable(
     program: &Program,
     closures: &ClosureTable,
     callable: Value,
     arg_count: usize,
+    names: &[Option<&str>],
 ) -> Result<ClosureId, String> {
     match callable {
         Value::Closure(id) => Ok(id),
         Value::OverloadSet(set_id) => {
-            resolve_overload(program, closures, closures.set(set_id), arg_count)
+            resolve_overload(program, closures, closures.set(set_id), arg_count, names)
         }
         _ => Err(format!("Expected a function, got {}", callable.type_name())),
     }
 }
 
-/// Resolve an overload set to the closure whose arity matches `arg_count`.
+/// Whether `func` can run a call that writes `arg_count` arguments, the
+/// trailing ones named as `names` says (empty = all positional): no more
+/// arguments than parameters, every name one of its parameters and not one a
+/// positional argument or an earlier name already filled, and every parameter
+/// left unfilled one that has a default.
+///
+/// The one definition of "this variant accepts this call" — overload
+/// resolution asks it of each variant, and it never allocates.
+pub fn accepts_call(func: &FunctionDef, arg_count: usize, names: &[Option<&str>]) -> bool {
+    let params = &func.params;
+    if arg_count > params.len() {
+        return false;
+    }
+    let required = func.required_params();
+    if names.is_empty() {
+        return arg_count >= required;
+    }
+    // Positional arguments precede named ones (the parser enforces it).
+    let positional = names.iter().take_while(|n| n.is_none()).count();
+    let named = &names[positional..];
+    for (i, name) in named.iter().enumerate() {
+        let Some(name) = name else { return false };
+        match params.iter().position(|p| p == name) {
+            Some(slot) if slot >= positional => {}
+            _ => return false,
+        }
+        if named[..i].contains(&Some(*name)) {
+            return false;
+        }
+    }
+    (positional..required).all(|slot| named.contains(&Some(params[slot].as_str())))
+}
+
+/// Resolve an overload set to the variant a call selects.
+///
+/// 1. A variant *accepts* the call per [`accepts_call`].
+/// 2. An accepting variant whose parameter count equals the number of
+///    arguments written wins outright. A call that names nothing and matches
+///    an arity exactly always lands here, which is the whole of the rule as it
+///    stood before defaults — so such a call resolves as it always has.
+/// 3. Otherwise the call must be accepted by exactly one variant. None is the
+///    arity error; more than one is reported as ambiguous rather than settled
+///    by declaration order.
 pub fn resolve_overload(
     program: &Program,
     closures: &ClosureTable,
     entries: &[OverloadEntry],
     arg_count: usize,
+    names: &[Option<&str>],
 ) -> Result<ClosureId, String> {
-    for entry in entries {
-        if entry.arity == arg_count {
-            return Ok(entry.closure_id);
+    if names.is_empty() {
+        for entry in entries {
+            if entry.arity == arg_count {
+                return Ok(entry.closure_id);
+            }
         }
     }
-    // Derive the base function name from the first entry's internal name
-    // (e.g. "foo#2" → "foo") for the error message.
-    let base_name = entries
-        .first()
-        .and_then(|e| {
-            let func = &program.functions[closures.closure(e.closure_id).function_id.0 as usize];
-            func.name.as_deref().map(|n| base_fn_name(n).to_string())
-        })
-        .unwrap_or_else(|| "<anonymous>".to_string());
-    let arities: Vec<String> = entries.iter().map(|e| e.arity.to_string()).collect();
+    let func_of = |e: &OverloadEntry| {
+        &program.functions[closures.closure(e.closure_id).function_id.0 as usize]
+    };
+    let mut accepting = entries
+        .iter()
+        .filter(|e| accepts_call(func_of(e), arg_count, names));
+    let first = accepting.next();
+    let second = accepting.next();
+    match (first, second) {
+        (Some(only), None) => return Ok(only.closure_id),
+        (Some(a), Some(b)) => {
+            // Two or more accept. Arities are distinct within a set, so at most
+            // one of them is the exact-arity variant.
+            if let Some(exact) = [a, b]
+                .into_iter()
+                .chain(accepting)
+                .find(|e| e.arity == arg_count)
+            {
+                return Ok(exact.closure_id);
+            }
+            let base = overload_base_name(program, closures, entries);
+            let all: Vec<String> = entries
+                .iter()
+                .filter(|e| accepts_call(func_of(e), arg_count, names))
+                .map(|e| describe_variant(&base, func_of(e)))
+                .collect();
+            return Err(format!(
+                "{base}() is ambiguous: {} {} accept this call — pass or name \
+                 another argument to pick one",
+                all.join(" and "),
+                if all.len() == 2 { "both" } else { "all" },
+            ));
+        }
+        (None, _) => {}
+    }
+    // Nothing accepts. When a variant has exactly this many parameters the
+    // call was aimed at it, and binding its arguments says precisely which
+    // name is wrong — a better message than any summary written here.
+    if let Some(exact) = entries.iter().find(|e| e.arity == arg_count) {
+        return Ok(exact.closure_id);
+    }
+    let base_name = overload_base_name(program, closures, entries);
+    let in_range = entries
+        .iter()
+        .any(|e| (func_of(e).required_params()..=e.arity).contains(&arg_count));
+    if in_range {
+        // The count fits a variant, so it is the names that fit none.
+        let variants: Vec<String> = entries
+            .iter()
+            .map(|e| describe_variant(&base_name, func_of(e)))
+            .collect();
+        let written: Vec<String> = names
+            .iter()
+            .flatten()
+            .map(|n| format!("'{n}'"))
+            .collect();
+        return Err(format!(
+            "{base_name}() has no variant that accepts {arg_count} argument{} with {} named {} (variants: {})",
+            if arg_count == 1 { "" } else { "s" },
+            if written.len() == 1 { "one" } else { "some" },
+            written.join(", "),
+            variants.join(", "),
+        ));
+    }
+    let arities: Vec<String> = entries
+        .iter()
+        .map(|e| arity_range(func_of(e).required_params(), e.arity))
+        .collect();
     Err(format!(
         "{}() expects {} arguments, got {}",
         base_name,
         arities.join(" or "),
         arg_count,
     ))
+}
+
+/// The source name of an overload set, from its first variant's internal name
+/// (e.g. "foo#2" → "foo").
+fn overload_base_name(
+    program: &Program,
+    closures: &ClosureTable,
+    entries: &[OverloadEntry],
+) -> String {
+    entries
+        .first()
+        .and_then(|e| {
+            let func = &program.functions[closures.closure(e.closure_id).function_id.0 as usize];
+            func.name.as_deref().map(|n| base_fn_name(n).to_string())
+        })
+        .unwrap_or_else(|| "<anonymous>".to_string())
+}
+
+/// How many arguments a function takes, as an error message spells it: `2`,
+/// or `1-3` when the trailing parameters have defaults.
+pub fn arity_range(required: usize, total: usize) -> String {
+    if required == total {
+        total.to_string()
+    } else {
+        format!("{required}-{total}")
+    }
+}
+
+/// `f(a, b = …)` — one variant, as a message lists it.
+fn describe_variant(base: &str, func: &FunctionDef) -> String {
+    let required = func.required_params();
+    let params: Vec<String> = func
+        .params
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if i < required {
+                p.clone()
+            } else {
+                format!("{p} = …")
+            }
+        })
+        .collect();
+    format!("{base}({})", params.join(", "))
 }
 
 /// Build an overload-set value from per-arity closures, patching each closure's
@@ -107,29 +256,39 @@ pub fn make_overload_set(
     overload_val
 }
 
-/// Permute `args` into the callee's parameter order, given the written name of
-/// each argument (`None` = positional).
+/// Lay a call's arguments out in the order the callee's frame takes them,
+/// given the written name of each argument (`None` = positional).
 ///
-/// `names` is parallel to `args`; the parser guarantees every positional
-/// argument precedes every named one, so the positional prefix fills slots
-/// `0..k` in order and each named argument then claims the slot its name picks
-/// out. A method's receiver arrives as a leading positional argument, so it
-/// owns `params[0]` and a named argument that repeats it is reported as a
-/// double-bind rather than silently overwriting it.
+/// `names` is parallel to `args`, or empty when no argument is named; the
+/// parser guarantees every positional argument precedes every named one, so
+/// the positional prefix fills slots `0..k` in order and each named argument
+/// then claims the slot its name picks out. A method's receiver arrives as a
+/// leading positional argument, so it owns `params[0]` and a named argument
+/// that repeats it is reported as a double-bind rather than silently
+/// overwriting it.
 ///
-/// Only called when at least one argument is named — the all-positional path
-/// never builds this vector. `args.len() == params.len()` is already checked by
-/// the caller's arity error, which is why an unfilled slot here can only mean a
-/// name landed on a slot some other argument already took.
+/// The last `optional` parameters have default values. One left unfilled is
+/// not an error: its slot gets a placeholder `nil`, and the result carries
+/// `optional` extra trailing values — a `Bool` per optional parameter saying
+/// whether the call supplied it — which is what the callee's prologue tests
+/// before evaluating a default (see `FunctionDef::optional_params`). The
+/// default itself is *not* evaluated here; it is code in the callee.
+///
+/// Only called when an argument is named or the callee has defaults — the
+/// all-positional call of a function without them never builds this vector.
+/// The caller has already rejected a call with too many arguments, which is
+/// why an out-of-range slot here cannot happen outside hand-written bytecode.
 pub fn bind_named_args(
     fn_name: &str,
     params: &[String],
+    optional: usize,
     args: &[Value],
     names: &[Option<&str>],
 ) -> Result<SmallVec<[Value; 8]>, String> {
     // An overload variant is named `box#1` internally; every message below
     // names the function as the source wrote it, like `resolve_overload`.
     let fn_name = base_fn_name(fn_name);
+    let required = params.len().saturating_sub(optional);
     let mut slots: SmallVec<[Option<Value>; 8]> = smallvec::smallvec![None; params.len()];
     let mut next_positional = 0usize;
     for (i, &arg) in args.iter().enumerate() {
@@ -158,16 +317,17 @@ pub fn bind_named_args(
                 return Err(format!(
                     "{}() expects {} arguments, got {}",
                     fn_name,
-                    params.len(),
+                    arity_range(required, params.len()),
                     args.len()
                 ));
             }
         }
     }
-    let mut bound: SmallVec<[Value; 8]> = SmallVec::with_capacity(params.len());
-    for (slot, cell) in slots.into_iter().enumerate() {
+    let mut bound: SmallVec<[Value; 8]> = SmallVec::with_capacity(params.len() + optional);
+    for (slot, cell) in slots.iter().enumerate() {
         match cell {
-            Some(v) => bound.push(v),
+            Some(v) => bound.push(*v),
+            None if slot >= required => bound.push(Value::Nil),
             None => {
                 return Err(format!(
                     "{}() is missing a value for parameter '{}'",
@@ -175,6 +335,9 @@ pub fn bind_named_args(
                 ));
             }
         }
+    }
+    for cell in &slots[required..] {
+        bound.push(Value::Bool(cell.is_some()));
     }
     Ok(bound)
 }

@@ -150,11 +150,30 @@ impl<'a> Vm<'a> {
     ) -> Result<(), String> {
         match callable {
             Value::Closure(_) | Value::OverloadSet(_) => {
-                // Overload selection is by *total* argument count, named or
-                // not; the names only matter once a callee — and so a parameter
-                // list — has been picked.
-                let cid =
-                    calls::resolve_callable(self.program, self.closures, callable, args.len())?;
+                // Overload selection is by argument count first; the written
+                // names (and which parameters have defaults) decide between
+                // variants only when the count alone does not — see
+                // `calls::resolve_overload`.
+                let cid = match callable {
+                    Value::Closure(cid) => cid,
+                    _ if arg_names.is_empty() => calls::resolve_callable(
+                        self.program,
+                        self.closures,
+                        callable,
+                        args.len(),
+                        &[],
+                    )?,
+                    _ => {
+                        let names = arg_name_strs(self.program, arg_names)?;
+                        calls::resolve_callable(
+                            self.program,
+                            self.closures,
+                            callable,
+                            args.len(),
+                            &names,
+                        )?
+                    }
+                };
                 let site = self.site_of(call_site);
                 self.push_closure_frame(cid, args, arg_names, Some(dst), call_site, site, memoize)?;
             }
@@ -433,7 +452,11 @@ impl<'a> Vm<'a> {
         // (`split_qualified_method_name` still reads the stripped name — the
         // `Class.method` prefix is untouched by the suffix.)
         let fn_name = base_fn_name(func.name.as_deref().unwrap_or("<anonymous>"));
-        if args.len() != func.params.len() {
+        // A parameter with a default value may be left out, so a function that
+        // has any accepts a range of counts; too *few* for the required ones
+        // is reported below, by name, when the arguments are bound.
+        let optional = func.optional_params as usize;
+        if args.len() != func.params.len() && (optional == 0 || args.len() > func.params.len()) {
             // A method's receiver is a parameter the *call site* supplies:
             // `c.foo()` passes `c` even though the user wrote no arguments.
             // Counting it would report `C.foo() expects 2 arguments, got 1` at
@@ -447,7 +470,7 @@ impl<'a> Vm<'a> {
             return Err(format!(
                 "{}() expects {} argument{}, got {}",
                 fn_name,
-                want,
+                calls::arity_range(func.required_params().saturating_sub(hidden), want),
                 if want == 1 { "" } else { "s" },
                 got
             ));
@@ -455,23 +478,18 @@ impl<'a> Vm<'a> {
 
         // Named arguments are permuted into parameter order here: the one
         // place the callee's `params` sits next to the caller's `args`. An
-        // empty `arg_names` — every call that writes no name — reuses `args`
-        // untouched, so the common path allocates nothing.
+        // empty `arg_names` — every call that writes no name — to a function
+        // without defaults reuses `args` untouched, so the common path
+        // allocates nothing. A function *with* defaults always goes through
+        // the binder, which appends the was-it-passed flag its prologue reads
+        // for each optional parameter (inline storage; still no allocation
+        // for up to eight values).
         let bound;
-        let args = if arg_names.is_empty() {
+        let args = if arg_names.is_empty() && optional == 0 {
             args
         } else {
-            let mut names: SmallVec<[Option<&str>; 4]> = SmallVec::with_capacity(arg_names.len());
-            for cid in arg_names {
-                names.push(match cid {
-                    Some(cid) => match program.get_string_constant(*cid) {
-                        Some(s) => Some(s),
-                        None => return Err("Invalid argument name".into()),
-                    },
-                    None => None,
-                });
-            }
-            bound = calls::bind_named_args(fn_name, &func.params, args, &names)?;
+            let names = arg_name_strs(program, arg_names)?;
+            bound = calls::bind_named_args(fn_name, &func.params, optional, args, &names)?;
             &bound[..]
         };
 
@@ -561,6 +579,25 @@ fn no_method(method_name: &str, what: &str) -> String {
         Some(hint) => format!("No method '{method_name}' on {what} — {hint}"),
         None => format!("No method '{method_name}' on {what}"),
     }
+}
+
+/// The written argument names of a call, as strings (`None` = positional).
+/// Empty for a call that names nothing.
+fn arg_name_strs<'p>(
+    program: &'p crate::program::Program,
+    arg_names: &ArgNames,
+) -> Result<SmallVec<[Option<&'p str>; 4]>, String> {
+    let mut names: SmallVec<[Option<&str>; 4]> = SmallVec::with_capacity(arg_names.len());
+    for cid in arg_names {
+        names.push(match cid {
+            Some(cid) => match program.get_string_constant(*cid) {
+                Some(s) => Some(s),
+                None => return Err("Invalid argument name".into()),
+            },
+            None => None,
+        });
+    }
+    Ok(names)
 }
 
 /// The argument names for a method's real argument list: a leading `None` for

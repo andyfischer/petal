@@ -236,49 +236,75 @@ struct ParamList {
 
 /// Scan a `fn` declaration's parameter list out of the source text.
 ///
-/// Petal parameters are `name` or `name: type` — no defaults, no nesting — so
-/// this only has to find the parens and split on commas. It still tracks depth
-/// so a stray bracket cannot run the scan off the end of the declaration, and
-/// returns `None` rather than guessing whenever the text surprises it.
+/// A parameter is `name`, `name: type`, or either followed by `= default`,
+/// and a default is an arbitrary expression — brackets, commas and strings
+/// included — so the declaration is re-lexed rather than split on characters.
+/// Each parameter's slice stops before its `=`: an annotation is inserted
+/// after the name, never after the default. Returns `None` rather than
+/// guessing whenever the text surprises it.
 fn param_list(decl: &Stmt, chars: &[char]) -> Option<ParamList> {
+    use crate::lexer::Token;
+
     let start = decl.span.start.offset as usize;
     let end = (decl.span.end.offset as usize).min(chars.len());
     if start >= end {
         return None;
     }
-    let open = (start..end).find(|&i| chars[i] == '(')?;
+    let text: String = chars[start..end].iter().collect();
+    let mut lexer = crate::lexer::Lexer::new(&text);
+    lexer.tokenize().ok()?;
+    let tokens: Vec<(Token, usize, usize)> = lexer
+        .tokens_with_spans()
+        .map(|(t, s)| {
+            (
+                t.clone(),
+                start + s.start.offset as usize,
+                start + s.end.offset as usize,
+            )
+        })
+        .collect();
+    let open = tokens
+        .iter()
+        .position(|(t, ..)| matches!(t, Token::LParen))?;
 
     let mut params = Vec::new();
     let mut depth = 1usize;
-    let mut item_start = open + 1;
-    let mut i = open + 1;
-    let close = loop {
-        let c = *chars.get(i)?;
-        if i >= end {
-            return None;
-        }
-        match c {
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' | '}' => {
+    // The slice of the parameter being read, up to (not including) its `=`.
+    let mut item: Option<(usize, usize)> = None;
+    let mut in_default = false;
+    for (token, tok_start, tok_end) in &tokens[open + 1..] {
+        match token {
+            Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+            Token::RParen | Token::RBracket | Token::RBrace => {
                 depth -= 1;
                 if depth == 0 {
-                    break i;
+                    params.extend(item.take());
+                    return Some(ParamList {
+                        params,
+                        close: *tok_start,
+                    });
                 }
             }
-            ',' if depth == 1 => {
-                params.push((item_start, i));
-                item_start = i + 1;
+            Token::Comma if depth == 1 => {
+                params.extend(item.take());
+                in_default = false;
+                continue;
             }
+            Token::Assign if depth == 1 => {
+                in_default = true;
+                continue;
+            }
+            Token::Newline => continue,
             _ => {}
         }
-        i += 1;
-    };
-    // An empty list has no parameter slice at all; a non-empty one ends its
-    // last parameter at the closing paren.
-    if chars[item_start..close].iter().any(|c| !c.is_whitespace()) {
-        params.push((item_start, close));
+        if !in_default {
+            item = Some(match item {
+                None => (*tok_start, *tok_end),
+                Some((first, _)) => (first, *tok_end),
+            });
+        }
     }
-    Some(ParamList { params, close })
+    None
 }
 
 /// One line saying why, built by summarizing rather than listing: "7 call

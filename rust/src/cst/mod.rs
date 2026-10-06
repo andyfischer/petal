@@ -115,6 +115,9 @@ pub enum SyntaxKind {
     /// An optional `: type` annotation on a `let` binding or a parameter.
     /// Wraps the `:` token and the type-name identifier.
     TypeAnnotation,
+    /// An optional `= expr` default value on a parameter. Wraps the `=` token
+    /// and the default expression's node.
+    ParamDefault,
     /// An optional `-> type` return-type annotation on a named `fn`
     /// declaration. Wraps the `->` token and the type-name identifier.
     ReturnType,

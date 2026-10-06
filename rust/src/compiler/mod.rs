@@ -1640,7 +1640,9 @@ impl Compiler {
             // `def_end` is where the declaration *is written*, not where it is
             // emitted: the capture-lag check compares it against the source
             // position of a later rebind, which hoisting must not move.
-            let bound = self.compile_fn_decl(name, &param_names, body, stmt.span.end.offset);
+            let optional = params.iter().filter(|p| p.has_default()).count();
+            let bound =
+                self.compile_fn_decl(name, &param_names, optional, body, stmt.span.end.offset);
             if let Some(tid) = bound {
                 self.source_map.add(tid, stmt.span);
             }
@@ -2347,6 +2349,7 @@ pub fn collect_classes(
                 .map(|p| resolve_ann(p.ty.as_ref(), classes))
                 .collect(),
             ret: resolve_ann(ret.as_ref(), classes),
+            optional: params.iter().filter(|p| p.has_default()).count(),
         };
         if let Err(msg) = classes.declare_method(id, method, sig) {
             err(stmt.span, msg);
@@ -2423,6 +2426,7 @@ pub(crate) fn collect_fn_signatures(
                     .map(|p| resolve_ann(p.ty.as_ref(), classes))
                     .collect(),
                 ret: resolve_ann(ret.as_ref(), classes),
+                optional: params.iter().filter(|p| p.has_default()).count(),
             };
             sigs.insert((name.clone(), params.len()), sig);
         }
@@ -2492,6 +2496,7 @@ mod prescan_tests {
             Some(&FnSignature {
                 params: vec![Some(Type::Float)],
                 ret: Some(Type::Float),
+                optional: 0,
             })
         );
     }
@@ -2505,6 +2510,7 @@ mod prescan_tests {
             Some(&FnSignature {
                 params: vec![Some(Type::Int), None, None],
                 ret: None,
+                optional: 0,
             })
         );
     }

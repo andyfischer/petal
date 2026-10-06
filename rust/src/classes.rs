@@ -334,6 +334,7 @@ fn rect_method_sig(name: &str, arity: usize) -> FnSignature {
         "center_x" | "center_y" | "right" | "bottom" => FnSignature {
             params: vec![recv],
             ret: Some(Type::Num),
+            optional: 0,
         },
         // The margin and the deltas go through the same `number()` guard the
         // fields do, so they are `num` for the same reason.
@@ -342,13 +343,11 @@ fn rect_method_sig(name: &str, arity: usize) -> FnSignature {
                 .chain(std::iter::repeat_n(Some(Type::Num), arity - 1))
                 .collect(),
             ret: Some(Type::Class(RECT_CLASS_ID)),
+            optional: 0,
         },
         // A built-in method with no signature written here constrains nothing,
         // exactly like an un-annotated user method.
-        _ => FnSignature {
-            params: vec![None; arity],
-            ret: None,
-        },
+        _ => FnSignature::untyped(arity),
     }
 }
 

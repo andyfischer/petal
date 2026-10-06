@@ -49,6 +49,17 @@ impl Printer {
         self.out.push('\n');
     }
 
+    /// One `Default name` line per parameter that has a default value, with
+    /// the expression as its child — ahead of the body, which is where it runs.
+    fn param_defaults(&mut self, params: &[Param], depth: usize) {
+        for p in params {
+            if let Some(default) = &p.default {
+                self.line(depth, &format!("Default {}", p.name), Some(&default.span));
+                self.expr(default, depth + 1);
+            }
+        }
+    }
+
     fn stmts(&mut self, stmts: &[Stmt], depth: usize) {
         for s in stmts {
             self.stmt(s, depth);
@@ -94,6 +105,7 @@ impl Printer {
                 };
                 let head = format!("FnDecl {export}{name} {}{ret}", fmt_params(params));
                 self.line(depth, &head, Some(&stmt.span));
+                self.param_defaults(params, depth + 1);
                 self.stmts(body, depth + 1);
             }
             StmtKind::EnumDecl { name, variants } => {
@@ -294,6 +306,7 @@ impl Printer {
             }
             ExprKind::Lambda { params, body } => {
                 self.line(depth, &format!("Lambda {}", fmt_params(params)), span);
+                self.param_defaults(params, depth + 1);
                 self.stmts(body, depth + 1);
             }
             ExprKind::StringInterp { parts, exprs } => {
@@ -362,11 +375,16 @@ fn fmt_literal(lit: &Literal) -> String {
     }
 }
 
-/// `(x: number, y)` — a parameter list, source-like.
+/// `(x: number, y, z = …)` — a parameter list, source-like. A default value
+/// is an expression tree of its own, so the list only marks that one exists;
+/// `Printer::param_defaults` prints it underneath.
 fn fmt_params(params: &[Param]) -> String {
     let rendered: Vec<String> = params
         .iter()
-        .map(|p| format!("{}{}", p.name, fmt_ty_suffix(&p.ty)))
+        .map(|p| {
+            let default = if p.has_default() { " = …" } else { "" };
+            format!("{}{}{default}", p.name, fmt_ty_suffix(&p.ty))
+        })
         .collect();
     format!("({})", rendered.join(", "))
 }

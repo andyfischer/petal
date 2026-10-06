@@ -400,7 +400,7 @@ fn an_unfilled_slot_is_reported() {
 
     let params = vec!["a".to_string(), "b".to_string()];
     let e =
-        bind_named_args("sub", &params, &[Value::Int(1)], &[Some("b")]).expect_err("a is unfilled");
+        bind_named_args("sub", &params, 0, &[Value::Int(1)], &[Some("b")]).expect_err("a is unfilled");
     assert_eq!(e, "sub() is missing a value for parameter 'a'");
 }
 

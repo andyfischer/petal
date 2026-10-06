@@ -185,13 +185,16 @@ impl Projector {
     /// Project the parameters of a `ParamList` node, pairing each parameter name
     /// with a following `TypeAnnotation` node (if any). Un-annotated params get
     /// `ty: None`.
-    fn projected_params(&self, param_list: &SyntaxNode) -> Vec<Param> {
+    ///
+    /// A `ParamDefault` node (`= expr`) likewise attaches its one expression
+    /// child to the parameter before it.
+    fn projected_params(&mut self, param_list: &SyntaxNode) -> Result<Vec<Param>, String> {
         let mut params: Vec<Param> = Vec::new();
         for el in param_list.children() {
             match el {
                 SyntaxElement::Token(t) => {
                     if let Some(name) = ident_value(&t) {
-                        params.push(Param { name, ty: None });
+                        params.push(Param::plain(name));
                     }
                 }
                 SyntaxElement::Node(n) if n.kind() == SyntaxKind::TypeAnnotation => {
@@ -199,10 +202,16 @@ impl Projector {
                         last.ty = self.type_from_annotation_node(&n);
                     }
                 }
+                SyntaxElement::Node(n) if n.kind() == SyntaxKind::ParamDefault => {
+                    let default = self.only_expr(&n)?;
+                    if let Some(last) = params.last_mut() {
+                        last.default = Some(default);
+                    }
+                }
                 SyntaxElement::Node(_) => {}
             }
         }
-        params
+        Ok(params)
     }
 
     // ---- Span reconstruction ----
@@ -596,12 +605,12 @@ impl Projector {
         child_nodes(block).iter().map(|n| self.stmt(n)).collect()
     }
 
-    fn param_list(&self, parent: &SyntaxNode) -> Result<Vec<Param>, String> {
+    fn param_list(&mut self, parent: &SyntaxNode) -> Result<Vec<Param>, String> {
         let params = child_nodes(parent)
             .into_iter()
             .find(|n| n.kind() == SyntaxKind::ParamList)
             .ok_or_else(|| format!("{:?} missing its ParamList child", parent.kind()))?;
-        Ok(self.projected_params(&params))
+        self.projected_params(&params)
     }
 
     /// The first direct identifier token — the declared name of a let / fn /
@@ -1160,6 +1169,7 @@ impl Projector {
             .into_iter()
             .find(|n| n.kind() == SyntaxKind::ParamList)
             .map(|n| self.projected_params(&n))
+            .transpose()?
             .unwrap_or_default();
         let has_arrow = direct_tokens(node)
             .iter()
@@ -1356,6 +1366,26 @@ mod tests {
         assert_projects("f(end: 1)\n");
         assert_projects("x |> f(b: 2)\n");
         assert_projects("f(a: {b: 1})\n");
+    }
+
+    #[test]
+    fn projects_default_parameter_values() {
+        assert_projects("fn f(a, b = 1)\n  a\nend\n");
+        assert_projects("fn f(a, b: num = a * 2, c = [])\n  a\nend\n");
+        assert_projects("let g = fn(a, b = {x: 1}) -> a\n");
+        assert_projects("let g = fn(cb = fn(x) -> x, n = f(1, 2))\n  cb(n)\nend\n");
+        assert_projects("fn Rect.grow(r, by = 1)\n  r\nend\n");
+        // The default is on the AST, as an expression of its own.
+        let ast = projected_ast("fn f(a, b: int = 2)\n  a\nend\n").expect("parse");
+        let StmtKind::FnDecl { params, .. } = &ast[0].kind else {
+            panic!("expected a fn declaration");
+        };
+        assert!(params[0].default.is_none());
+        assert!(matches!(
+            params[1].default.as_ref().map(|d| &d.kind),
+            Some(ExprKind::Literal(Literal::Int(2)))
+        ));
+        assert_eq!(params[1].ty.as_ref().map(|t| t.name.as_str()), Some("int"));
     }
 
     #[test]

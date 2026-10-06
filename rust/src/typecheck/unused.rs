@@ -154,6 +154,11 @@ impl Walker {
                 for p in params {
                     self.bind(&p.name);
                 }
+                // A default value that has not been moved into the body yet
+                // (this pass also runs on an un-desugared tree).
+                for default in params.iter().filter_map(|p| p.default.as_ref()) {
+                    self.walk_expr(default, true);
+                }
                 // A function body's tail is its return value — used.
                 self.walk_block(body, true);
                 self.pop_scope();
@@ -237,6 +242,9 @@ impl Walker {
                 self.push_scope();
                 for p in params {
                     self.bind(&p.name);
+                }
+                for default in params.iter().filter_map(|p| p.default.as_ref()) {
+                    self.walk_expr(default, true);
                 }
                 self.walk_block(body, true);
                 self.pop_scope();

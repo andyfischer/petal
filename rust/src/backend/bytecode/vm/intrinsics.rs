@@ -58,7 +58,13 @@ impl<'a> Vm<'a> {
         call_args: &[Value],
         site: u64,
     ) -> Result<Value, String> {
-        let cid = calls::resolve_callable(self.program, self.closures, callable, call_args.len())?;
+        let cid = calls::resolve_callable(
+            self.program,
+            self.closures,
+            callable,
+            call_args.len(),
+            &[],
+        )?;
         let target_depth = self.stack.vm_frames.len();
         self.push_closure_frame(cid, call_args, &Default::default(), None, None, site, false)?;
         self.stack.last_pop_result = None;

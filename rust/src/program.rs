@@ -501,6 +501,14 @@ pub struct FunctionDef {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<String>,
+    /// How many of `params` — always the trailing ones — have a default value
+    /// and may be left out of a call. Each owns a hidden *was-it-passed* flag:
+    /// the body block's parameter registers continue past `params` with one
+    /// flag per optional parameter, in order (they are the tail of the body
+    /// block's `param_names`, spelled `name#given`), and the body opens by
+    /// testing each flag to decide whether to evaluate the default.
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
+    pub optional_params: u16,
     pub body_block: BlockId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capture_names: Vec<String>,
@@ -516,6 +524,23 @@ pub struct FunctionDef {
     pub self_ref_register: Option<RegisterIndex>,
     #[serde(default)]
     pub register_count: u16,
+}
+
+fn is_zero_u16(n: &u16) -> bool {
+    *n == 0
+}
+
+impl FunctionDef {
+    /// How many leading parameters every call must supply.
+    pub fn required_params(&self) -> usize {
+        self.params.len().saturating_sub(self.optional_params as usize)
+    }
+
+    /// How many values a frame for this function is seeded with: one per
+    /// parameter, then one was-it-passed flag per optional parameter.
+    pub fn bound_arg_count(&self) -> usize {
+        self.params.len() + self.optional_params as usize
+    }
 }
 
 /// Strip the internal `#arity` overload suffix from a function's internal name

@@ -274,11 +274,54 @@ pub struct ClassFieldDecl {
 /// A function/lambda parameter with an optional declared type.
 /// `ty` is `None` when the parameter is un-annotated. A written annotation is
 /// preserved even when its name is unrecognized (`resolved: None`).
+///
+/// `default` is the expression written after `=` (`fn f(a, b = a * 2)`). It is
+/// not a value: it is evaluated in the callee, on every call that leaves the
+/// argument out. See docs/language-guide.md (Default Parameter Values).
 #[derive(Debug, Clone, Serialize)]
 pub struct Param {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ty: Option<TypeAnn>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<Expr>,
+    /// Set by [`crate::desugar`] once it has moved `default` to the head of
+    /// the function body (where every later pass sees it as ordinary code).
+    /// `default` is then `None`; ask [`Param::has_default`] rather than either
+    /// field.
+    #[serde(skip)]
+    pub default_in_body: bool,
+}
+
+impl Param {
+    /// A parameter with no annotation and no default.
+    pub fn plain(name: String) -> Self {
+        Param {
+            name,
+            ty: None,
+            default: None,
+            default_in_body: false,
+        }
+    }
+
+    /// Whether a call may leave this parameter out — true before and after
+    /// the desugar pass relocates the default expression.
+    pub fn has_default(&self) -> bool {
+        self.default.is_some() || self.default_in_body
+    }
+}
+
+/// The hidden binding that tells a function body whether the caller passed
+/// the defaulted parameter `param`. `#` cannot appear in a source identifier,
+/// so no program can name, shadow or capture it by accident.
+pub fn arg_given_name(param: &str) -> String {
+    format!("{param}#given")
+}
+
+/// How many of `params` a call must supply: the ones before the first default
+/// (the parser guarantees every defaulted parameter is trailing).
+pub fn required_param_count(params: &[Param]) -> usize {
+    params.iter().take_while(|p| !p.has_default()).count()
 }
 
 /// A statement with source location.
@@ -534,7 +577,10 @@ pub fn walk_expr<V: ExprVisitor + ?Sized>(v: &mut V, e: &Expr) {
                 v.visit_stmt(s);
             }
         }
-        ExprKind::Lambda { body, .. } => {
+        ExprKind::Lambda { params, body } => {
+            for d in params.iter().filter_map(|p| p.default.as_ref()) {
+                v.visit_expr(d);
+            }
             for s in body {
                 v.visit_stmt(s);
             }
@@ -575,7 +621,10 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
             v.visit_expr(value);
         }
         StmtKind::Expr(e) => v.visit_expr(e),
-        StmtKind::FnDecl { body, .. } => {
+        StmtKind::FnDecl { params, body, .. } => {
+            for d in params.iter().filter_map(|p| p.default.as_ref()) {
+                v.visit_expr(d);
+            }
             for s in body {
                 v.visit_stmt(s);
             }
@@ -691,7 +740,10 @@ pub fn walk_expr_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 v.visit_stmt(s);
             }
         }
-        ExprKind::Lambda { body, .. } => {
+        ExprKind::Lambda { params, body } => {
+            for d in params.iter_mut().filter_map(|p| p.default.as_mut()) {
+                v.visit_expr(d);
+            }
             for s in body.iter_mut() {
                 v.visit_stmt(s);
             }
@@ -732,7 +784,10 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             v.visit_expr(value);
         }
         StmtKind::Expr(e) => v.visit_expr(e),
-        StmtKind::FnDecl { body, .. } => {
+        StmtKind::FnDecl { params, body, .. } => {
+            for d in params.iter_mut().filter_map(|p| p.default.as_mut()) {
+                v.visit_expr(d);
+            }
             for s in body.iter_mut() {
                 v.visit_stmt(s);
             }

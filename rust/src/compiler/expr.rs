@@ -319,7 +319,8 @@ impl Compiler {
 
             ExprKind::Lambda { params, body } => {
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-                self.compile_function(None, &param_names, body, None)
+                let optional = params.iter().filter(|p| p.has_default()).count();
+                self.compile_function(None, &param_names, optional, body, None)
             }
 
             ExprKind::Element {

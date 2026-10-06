@@ -116,10 +116,12 @@ impl Compiler {
     /// appears only once every arity has been compiled). Callers that need the
     /// *callable value* — method registration — must use the returned term, not
     /// the individual variant.
+    /// `optional` is how many trailing `params` have a default value.
     pub(super) fn compile_fn_decl(
         &mut self,
         name: &str,
         params: &[String],
+        optional: usize,
         body: &[Stmt],
         def_end: u32,
     ) -> Option<TermId> {
@@ -137,8 +139,13 @@ impl Compiler {
             .get(name)
             .filter(|_| self.fn_name_chain.is_empty());
         let Some(&expected_count) = overloaded else {
-            let closure_tid =
-                self.compile_function(Some(name.to_string()), params, body, Some(def_end));
+            let closure_tid = self.compile_function(
+                Some(name.to_string()),
+                params,
+                optional,
+                body,
+                Some(def_end),
+            );
             // Module functions carry a qualified display name ("ui::button")
             // so root-frame harvesting exposes them to `Env::call_function`
             // without colliding with the entry file's names. The scope
@@ -150,7 +157,8 @@ impl Compiler {
 
         // Overloaded function: compile with internal name "name#arity"
         let internal_name = format!("{}#{}", name, params.len());
-        let closure_tid = self.compile_function(Some(internal_name), params, body, Some(def_end));
+        let closure_tid =
+            self.compile_function(Some(internal_name), params, optional, body, Some(def_end));
         self.record_fn_closure(closure_tid, params.len());
         self.overload_variants
             .entry(name.to_string())
@@ -229,7 +237,7 @@ impl Compiler {
         fields: &[ClassFieldDecl],
     ) -> TermId {
         let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
-        let (body_block, saved_block) = self.begin_function_scope(&field_names);
+        let (body_block, saved_block) = self.begin_function_scope(&field_names, 0);
 
         let inputs: SmallVec<[TermId; 4]> = field_names
             .iter()
@@ -254,6 +262,7 @@ impl Compiler {
         self.end_function_scope(
             Some(name.to_string()),
             &field_names,
+            0,
             body_block,
             saved_block,
             None,
@@ -304,10 +313,15 @@ impl Compiler {
     /// the point at which it froze whatever module bindings it captures — or
     /// `None` for a lambda, which the capture-lag rule exempts. See
     /// [`crate::compiler::capture_lag`].
+    ///
+    /// `optional` is how many trailing `params` have a default value. The
+    /// defaults themselves are already the head of `body` (the desugar pass put
+    /// them there); all this does is give each one the flag it tests.
     pub(super) fn compile_function(
         &mut self,
         name: Option<String>,
         params: &[String],
+        optional: usize,
         body: &[Stmt],
         def_end: Option<u32>,
     ) -> TermId {
@@ -320,7 +334,10 @@ impl Compiler {
         // inside one measures its depth from the function's own entry — not
         // from a loop the *declaration of this function* happens to sit in.
         let saved_loop_depth = std::mem::take(&mut self.loop_depth);
-        let (body_block, saved_block) = self.begin_function_scope(params);
+        let (body_block, saved_block) = self.begin_function_scope(params, optional);
+        if optional > 0 {
+            self.check_default_references(params, body);
+        }
 
         // Self-reference phantom for recursion (if named)
         let self_ref_register = if let Some(ref fn_name) = name {
@@ -339,13 +356,76 @@ impl Compiler {
         self.closure_def_ends.pop();
         self.pop_fn_name_chain();
         self.loop_depth = saved_loop_depth;
-        self.end_function_scope(name, params, body_block, saved_block, self_ref_register)
+        self.end_function_scope(
+            name,
+            params,
+            optional,
+            body_block,
+            saved_block,
+            self_ref_register,
+        )
+    }
+
+    /// Reject a default value that reads its own parameter or one declared
+    /// after it. Defaults run left to right as the call starts, so such a
+    /// parameter has no value yet — and since every parameter is in scope for
+    /// the whole body, the read would otherwise compile, and quietly see
+    /// whatever the caller did or did not pass.
+    fn check_default_references(&mut self, params: &[String], body: &[Stmt]) {
+        struct Reads<'a> {
+            later: &'a [String],
+            found: Option<(String, SourceSpan)>,
+        }
+        impl crate::ast::ExprVisitor for Reads<'_> {
+            fn visit_expr(&mut self, e: &Expr) {
+                match &e.kind {
+                    ExprKind::Ident(n) | ExprKind::CellGet(n) | ExprKind::AtVar(n)
+                        if self.found.is_none() && self.later.contains(n) =>
+                    {
+                        self.found = Some((n.clone(), e.span));
+                    }
+                    // A lambda's own parameter of that name is a different
+                    // binding altogether.
+                    ExprKind::Lambda { params, .. }
+                        if params.iter().any(|p| self.later.contains(&p.name)) => {}
+                    _ => crate::ast::walk_expr(self, e),
+                }
+            }
+        }
+        for stmt in body {
+            let Some((name, default)) = crate::desugar::as_param_default(stmt) else {
+                break;
+            };
+            let Some(index) = params.iter().position(|p| p == name) else {
+                continue;
+            };
+            let mut reads = Reads {
+                later: &params[index..],
+                found: None,
+            };
+            crate::ast::ExprVisitor::visit_expr(&mut reads, default);
+            if let Some((read, span)) = reads.found {
+                let message = if read == name {
+                    format!(
+                        "The default value of parameter '{name}' refers to '{name}' itself \
+                         — a default can only use the parameters declared before it"
+                    )
+                } else {
+                    format!(
+                        "The default value of parameter '{name}' refers to '{read}', which is \
+                         declared after it — a default can only use the parameters declared \
+                         before it"
+                    )
+                };
+                self.error_at(span, message);
+            }
+        }
     }
 
     /// An enum variant with fields compiles to a constructor function whose
     /// body emits the variant from its parameters.
     pub(super) fn compile_enum_constructor(&mut self, variant: &EnumVariant) -> TermId {
-        let (body_block, saved_block) = self.begin_function_scope(&variant.fields);
+        let (body_block, saved_block) = self.begin_function_scope(&variant.fields, 0);
 
         // Collect phantom term IDs for the fields (already created by begin_function_scope)
         let field_tids: SmallVec<[TermId; 4]> = variant
@@ -363,6 +443,7 @@ impl Compiler {
         self.end_function_scope(
             Some(variant.name.clone()),
             &variant.fields,
+            0,
             body_block,
             saved_block,
             None,
@@ -371,9 +452,18 @@ impl Compiler {
 
     /// Enter a new function body scope. Returns (body_block, saved_block).
     /// After calling this, compile the body, then call `end_function_scope`.
-    fn begin_function_scope(&mut self, params: &[String]) -> (BlockId, BlockId) {
+    ///
+    /// The last `optional` parameters have defaults: each gets a hidden
+    /// was-it-passed flag, bound as `name#given` and seated in the registers
+    /// straight after the parameters, where the call writes it.
+    fn begin_function_scope(&mut self, params: &[String], optional: usize) -> (BlockId, BlockId) {
         let body_block = self.new_block(None);
-        self.blocks[body_block.0 as usize].param_names = params.to_vec();
+        let flags: Vec<String> = params[params.len() - optional.min(params.len())..]
+            .iter()
+            .map(|p| crate::ast::arg_given_name(p))
+            .collect();
+        self.blocks[body_block.0 as usize].param_names =
+            params.iter().chain(flags.iter()).cloned().collect();
 
         let saved_block = self.set_block(body_block);
         self.push_scope(true); // function boundary
@@ -381,7 +471,7 @@ impl Compiler {
         self.function_body_blocks.push(body_block);
 
         // Bind params as phantom terms
-        for param in params {
+        for param in params.iter().chain(flags.iter()) {
             let param_tid = self.emit_phantom_term(param.clone());
             self.scope_bind(param.clone(), param_tid);
         }
@@ -395,6 +485,7 @@ impl Compiler {
         &mut self,
         name: Option<String>,
         params: &[String],
+        optional: usize,
         body_block: BlockId,
         saved_block: BlockId,
         self_ref_register: Option<RegisterIndex>,
@@ -423,6 +514,7 @@ impl Compiler {
             id: fn_id,
             name: name.clone(),
             params: params.to_vec(),
+            optional_params: optional as u16,
             body_block,
             capture_names,
             capture_registers,

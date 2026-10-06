@@ -197,6 +197,9 @@ pub struct FnSignature {
     pub params: Vec<Option<Type>>,
     /// Declared return type.
     pub ret: Option<Type>,
+    /// How many trailing parameters have a default value, and so may be left
+    /// out of a call.
+    pub optional: usize,
 }
 
 impl FnSignature {
@@ -208,7 +211,26 @@ impl FnSignature {
         FnSignature {
             params: vec![None; arity],
             ret: None,
+            optional: 0,
         }
+    }
+
+    /// How many leading parameters every call must supply.
+    pub fn required(&self) -> usize {
+        self.params.len().saturating_sub(self.optional)
+    }
+
+    /// Whether a call writing `count` arguments is within this signature's
+    /// range — which says nothing about whether the *named* ones fit.
+    pub fn takes_count(&self, count: usize) -> bool {
+        (self.required()..=self.params.len()).contains(&count)
+    }
+
+    /// The argument counts this signature takes, as a message spells them:
+    /// `2`, or `1-3` when trailing parameters have defaults. The same spelling
+    /// as the runtime's arity error.
+    pub fn arity_range(&self) -> String {
+        crate::backend::calls::arity_range(self.required(), self.params.len())
     }
 }
 

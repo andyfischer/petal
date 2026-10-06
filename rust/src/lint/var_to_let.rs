@@ -96,7 +96,12 @@ impl Finder<'_> {
 impl ExprVisitor for Finder<'_> {
     fn visit_stmt(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::FnDecl { body, .. } => self.block(body),
+            StmtKind::FnDecl { params, body, .. } => {
+                for default in params.iter().filter_map(|p| p.default.as_ref()) {
+                    self.visit_expr(default);
+                }
+                self.block(body)
+            }
             StmtKind::For { iter, body, .. } => {
                 self.visit_expr(iter);
                 self.block(body);
@@ -128,7 +133,13 @@ impl ExprVisitor for Finder<'_> {
                 self.visit_expr(iter);
                 self.block(body);
             }
-            ExprKind::Block(stmts) | ExprKind::Lambda { body: stmts, .. } => self.block(stmts),
+            ExprKind::Lambda { params, body } => {
+                for default in params.iter().filter_map(|p| p.default.as_ref()) {
+                    self.visit_expr(default);
+                }
+                self.block(body)
+            }
+            ExprKind::Block(stmts) => self.block(stmts),
             _ => walk_expr(self, e),
         }
     }
@@ -250,7 +261,17 @@ impl<'a> Uses<'a> {
 
     /// A nested function body. One that binds the name as a parameter reads
     /// its own parameter throughout, so it is skipped whole.
+    ///
+    /// Default parameter values run inside the function too, so a mention in
+    /// one counts as a mention from a nested function — and they are walked
+    /// before the shadowing test, since a default may be written ahead of the
+    /// parameter that shadows the name.
     fn nested_fn(&mut self, params: &[Param], body: &[Stmt]) {
+        self.fn_depth += 1;
+        for default in params.iter().filter_map(|p| p.default.as_ref()) {
+            self.visit_expr(default);
+        }
+        self.fn_depth -= 1;
         if params.iter().any(|p| p.name == self.name) {
             return;
         }

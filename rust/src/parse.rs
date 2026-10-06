@@ -864,7 +864,7 @@ impl Parser {
         };
         self.ev_open(SyntaxKind::ParamList);
         self.expect(&Token::LParen)?;
-        let params = self.parse_param_list()?;
+        let params = self.parse_param_list(true)?;
         self.expect(&Token::RParen)?;
         self.ev_close(); // ParamList
         let ret = self.parse_return_type()?;
@@ -951,7 +951,7 @@ impl Parser {
             let fields = if matches!(self.peek(), Token::LParen) {
                 self.ev_open(SyntaxKind::ParamList);
                 self.advance(); // consume '('
-                let params = self.parse_param_list()?;
+                let params = self.parse_param_list(false)?;
                 self.expect(&Token::RParen)?;
                 self.ev_close();
                 // Enum field type annotations are deferred (see the plan): keep
@@ -1101,17 +1101,60 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_param_list(&mut self) -> Result<Vec<Param>, String> {
-        let mut params = Vec::new();
+    /// `defaults` says whether a parameter may carry `= expr` here: true for
+    /// a `fn` or lambda, false for an enum variant's field list, which reuses
+    /// this grammar but declares data rather than a call signature.
+    fn parse_param_list(&mut self, defaults: bool) -> Result<Vec<Param>, String> {
+        let mut params: Vec<Param> = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
             self.expect_element_start("a parameter name")?;
+            let name_pos = self.pos;
             let name = self.expect_ident()?;
             let ty = self.parse_type_annotation()?;
-            params.push(Param { name, ty });
+            let default = self.parse_param_default(defaults)?;
+            // A call fills parameters left to right, so one that can be left
+            // out may only be followed by others that can.
+            if default.is_none()
+                && let Some(prev) = params.iter().rev().find(|p| p.default.is_some())
+            {
+                let msg = format!(
+                    "Parameter '{name}' has no default value but follows '{}', which has one \
+                     — parameters with defaults must come after all required parameters",
+                    prev.name
+                );
+                return Err(self.error_at(name_pos, msg));
+            }
+            params.push(Param {
+                name,
+                ty,
+                default,
+                default_in_body: false,
+            });
             self.expect_element_separator(&Token::RParen, "parameters")?;
         }
         Ok(params)
+    }
+
+    /// Parse an optional `= expr` default on a parameter. Consumes nothing and
+    /// returns `Ok(None)` when the next token isn't `=`. The `=` and the
+    /// expression are wrapped in a `ParamDefault` CST node, so a parameter
+    /// without one keeps its old CST shape.
+    fn parse_param_default(&mut self, allowed: bool) -> Result<Option<Expr>, String> {
+        if !matches!(self.peek(), Token::Assign) {
+            return Ok(None);
+        }
+        if !allowed {
+            return Err(self.error_at_current(
+                "An enum variant's fields cannot have default values".to_string(),
+            ));
+        }
+        self.ev_open(SyntaxKind::ParamDefault);
+        self.expect(&Token::Assign)?;
+        self.skip_newlines();
+        let expr = self.parse_expr()?;
+        self.ev_close();
+        Ok(Some(expr))
     }
 
     /// Parse an optional `: type` annotation. Consumes nothing and returns
@@ -2157,7 +2200,7 @@ impl Parser {
         let params = if matches!(self.peek(), Token::LParen) {
             self.ev_open(SyntaxKind::ParamList);
             self.expect(&Token::LParen)?;
-            let params = self.parse_param_list()?;
+            let params = self.parse_param_list(true)?;
             self.expect(&Token::RParen)?;
             self.ev_close(); // ParamList
             params

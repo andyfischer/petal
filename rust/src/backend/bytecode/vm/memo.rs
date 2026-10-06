@@ -640,7 +640,9 @@ impl<'a> Vm<'a> {
         };
         let bcfn = self.bc.function(fn_id);
         let func = self.program.functions.get(fn_id.0 as usize)?;
-        if args.len() != func.params.len() {
+        // The recorded arguments are the bound ones: a value per parameter,
+        // then the was-it-passed flag of each optional parameter.
+        if args.len() != func.bound_arg_count() {
             return None;
         }
         let target = self.stack.vm_frames.len();

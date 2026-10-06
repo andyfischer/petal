@@ -228,12 +228,17 @@ impl<'p> Cmp<'p> {
 
     fn compare_function(&mut self, fa: &FunctionDef, fb: &FunctionDef) -> Result<(), IrDiff> {
         let label = Self::fn_label(fa);
-        let checks: [(&str, String, String); 5] = [
+        let checks: [(&str, String, String); 6] = [
             ("name", format!("{:?}", fa.name), format!("{:?}", fb.name)),
             (
                 "parameters",
                 format!("{:?}", fa.params),
                 format!("{:?}", fb.params),
+            ),
+            (
+                "optional params",
+                format!("{:?}", fa.optional_params),
+                format!("{:?}", fb.optional_params),
             ),
             (
                 "captures",

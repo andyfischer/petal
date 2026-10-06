@@ -103,7 +103,14 @@ impl Compiler {
                 // (checking lands in a later chunk); the compiler only needs the
                 // names.
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-                let bound = self.compile_fn_decl(name, &param_names, body, stmt_span.end.offset);
+                let optional = params.iter().filter(|p| p.has_default()).count();
+                let bound = self.compile_fn_decl(
+                    name,
+                    &param_names,
+                    optional,
+                    body,
+                    stmt_span.end.offset,
+                );
                 // A declaration's term is where the declaration is written.
                 // Without this every `<function>` in a provenance chain reads
                 // `[no location]` — the one entry a reader most needs to find.

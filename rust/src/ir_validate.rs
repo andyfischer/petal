@@ -432,6 +432,41 @@ impl Program {
             }
         }
 
+        // Default parameter values: only trailing parameters have them, and
+        // each one's was-it-passed flag is a body-block parameter slot after
+        // the real ones (`FunctionDef::optional_params`).
+        for (i, func) in self.functions.iter().enumerate() {
+            let optional = func.optional_params as usize;
+            if optional == 0 {
+                continue;
+            }
+            if optional > func.params.len() {
+                return Err(format!(
+                    "fn{}: optional_params is {} but there are only {} params",
+                    i,
+                    optional,
+                    func.params.len()
+                ));
+            }
+            let seated = self
+                .blocks
+                .get(func.body_block.0 as usize)
+                .map(|b| b.param_names.len())
+                .unwrap_or(0);
+            if seated != func.bound_arg_count() {
+                return Err(format!(
+                    "fn{}: {} params with {} optional need {} body-block param_names \
+                     (each optional parameter is followed, after the last parameter, by \
+                     its `name#given` flag), found {}",
+                    i,
+                    func.params.len(),
+                    optional,
+                    func.bound_arg_count(),
+                    seated
+                ));
+            }
+        }
+
         // A `Copy` on a block's execution list is a value copy and takes
         // exactly one input; an empty-inputs `Copy` is a binding phantom and
         // must stay OFF the list (it only names a register — executing it

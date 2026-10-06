@@ -863,7 +863,9 @@ pub struct BytecodeFn {
     pub code: Vec<Inst>,
     /// Size of this function's flat register file.
     pub reg_count: u16,
-    /// Flat registers that receive positional parameters, in order.
+    /// Flat registers that receive the parameters, in order, followed by the
+    /// was-it-passed flag of each parameter that has a default value
+    /// (`FunctionDef::bound_arg_count` registers in all).
     pub param_regs: Vec<Reg>,
     /// Flat registers that receive captured values, in capture order.
     pub capture_regs: Vec<Reg>,

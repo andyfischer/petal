@@ -18,6 +18,15 @@ pub fn render_text(bc: &BytecodeProgram, program: &Program) -> String {
     out
 }
 
+/// How many of a function's trailing parameters have a default value — and so
+/// how many of its trailing `param_regs` are was-it-passed flags.
+fn optional_params(f: &BytecodeFn, program: &Program) -> usize {
+    f.func_id
+        .and_then(|id| program.functions.get(id.0 as usize))
+        .map(|func| (func.optional_params as usize).min(f.param_regs.len() / 2))
+        .unwrap_or(0)
+}
+
 fn render_fn_text(out: &mut String, f: &BytecodeFn, program: &Program) {
     let title = match f.func_id {
         Some(id) => format!("fn f{}{}", id.0, name_suffix(&f.name)),
@@ -27,8 +36,14 @@ fn render_fn_text(out: &mut String, f: &BytecodeFn, program: &Program) {
         "{}  ({} regs, {} loop slots)\n",
         title, f.reg_count, f.loop_slots
     ));
-    if !f.param_regs.is_empty() {
-        out.push_str(&format!("  params:   {}\n", regs(&f.param_regs)));
+    // `param_regs` runs on past the parameters with the was-it-passed flag of
+    // each one that has a default value.
+    let n_params = f.param_regs.len() - optional_params(f, program);
+    if n_params > 0 {
+        out.push_str(&format!("  params:   {}\n", regs(&f.param_regs[..n_params])));
+    }
+    if n_params < f.param_regs.len() {
+        out.push_str(&format!("  given:    {}\n", regs(&f.param_regs[n_params..])));
     }
     if !f.capture_regs.is_empty() {
         out.push_str(&format!("  captures: {}\n", regs(&f.capture_regs)));
@@ -468,6 +483,7 @@ fn fn_json(f: &BytecodeFn, program: &Program) -> Json {
         "reg_count": f.reg_count,
         "loop_slots": f.loop_slots,
         "param_regs": f.param_regs,
+        "optional_params": optional_params(f, program),
         "capture_regs": f.capture_regs,
         "self_ref_reg": f.self_ref_reg,
         "code": code,

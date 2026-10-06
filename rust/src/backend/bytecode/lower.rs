@@ -283,8 +283,9 @@ impl<'p> FnLowerer<'p> {
             return (Vec::new(), Vec::new(), None);
         };
         let body = func.body_block;
-        // Parameters occupy body-block registers 0..N (see build_closure_frame).
-        let param_regs = (0..func.params.len() as u16)
+        // Parameters occupy body-block registers 0..N (see build_closure_frame),
+        // followed by one was-it-passed flag per optional parameter.
+        let param_regs = (0..func.bound_arg_count() as u16)
             .map(|i| self.flat_reg(body, i))
             .collect();
         let capture_regs = func

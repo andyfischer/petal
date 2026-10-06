@@ -111,7 +111,7 @@ pub fn analyze(source: &str) -> Analysis {
     // later phase still has usable symbols, so go-to-definition, document
     // symbols and completion keep working while the error is being fixed.
     let definitions = match crate::cst::parse_source(source, crate::source_map::ENTRY_FILE) {
-        Ok((_, stmts)) => collect_definitions(&stmts),
+        Ok((_, stmts)) => collect_definitions(&stmts, source),
         Err(_) => Vec::new(),
     };
 
@@ -210,15 +210,17 @@ pub fn span_to_range(span: &SourceSpan) -> lsp_types::Range {
 // Definition collection — walk the AST to find named bindings
 // ---------------------------------------------------------------------------
 
-fn collect_definitions(stmts: &[Stmt]) -> Vec<Definition> {
+fn collect_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
+    let src: Vec<char> = source.chars().collect();
+    let src = &src[..];
     let mut defs = Vec::new();
     for stmt in stmts {
-        collect_definitions_from_stmt(stmt, &mut defs);
+        collect_definitions_from_stmt(stmt, src, &mut defs);
     }
     defs
 }
 
-fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
+fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Definition>) {
     match &stmt.kind {
         StmtKind::Let {
             name, ty, value, ..
@@ -230,7 +232,7 @@ fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
                 span: stmt.span,
                 detail,
             });
-            collect_definitions_from_expr(value, defs);
+            collect_definitions_from_expr(value, src, defs);
         }
         StmtKind::FnDecl {
             name,
@@ -242,11 +244,12 @@ fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
             let param_list = params
                 .iter()
                 .map(|p| {
-                    if let Some(ty) = &p.ty {
+                    let head = if let Some(ty) = &p.ty {
                         format!("{}: {}", p.name, ty.name)
                     } else {
                         p.name.clone()
-                    }
+                    };
+                    format!("{head}{}", param_default_suffix(p, src))
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -266,11 +269,11 @@ fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
                     name: p.name.clone(),
                     kind: DefinitionKind::Parameter,
                     span: stmt.span,
-                    detail: p.ty.as_ref().map(|t| format!(": {}", t.name)),
+                    detail: param_detail(p, src),
                 });
             }
             for s in body {
-                collect_definitions_from_stmt(s, defs);
+                collect_definitions_from_stmt(s, src, defs);
             }
         }
         StmtKind::EnumDecl { name, variants } => {
@@ -290,17 +293,44 @@ fn collect_definitions_from_stmt(stmt: &Stmt, defs: &mut Vec<Definition>) {
         }
         StmtKind::For { body, .. } | StmtKind::While { body, .. } => {
             for s in body {
-                collect_definitions_from_stmt(s, defs);
+                collect_definitions_from_stmt(s, src, defs);
             }
         }
         StmtKind::Expr(e) => {
-            collect_definitions_from_expr(e, defs);
+            collect_definitions_from_expr(e, src, defs);
         }
         _ => {}
     }
 }
 
-fn collect_definitions_from_expr(expr: &Expr, defs: &mut Vec<Definition>) {
+/// ` = <default>` for a parameter that has a default value, as the source
+/// spells it (`…` if the text cannot be recovered); empty otherwise.
+fn param_default_suffix(p: &crate::ast::Param, src: &[char]) -> String {
+    let Some(default) = &p.default else {
+        return String::new();
+    };
+    let (start, end) = (
+        default.span.start.offset as usize,
+        default.span.end.offset as usize,
+    );
+    let text: String = match src.get(start..end) {
+        Some(chars) if !chars.is_empty() && !chars.contains(&'\n') => chars.iter().collect(),
+        _ => "…".to_string(),
+    };
+    format!(" = {text}")
+}
+
+/// A parameter's hover detail: its annotation and default value, if any.
+fn param_detail(p: &crate::ast::Param, src: &[char]) -> Option<String> {
+    let ty =
+        p.ty.as_ref()
+            .map(|t| format!(": {}", t.name))
+            .unwrap_or_default();
+    let detail = format!("{ty}{}", param_default_suffix(p, src));
+    (!detail.is_empty()).then_some(detail)
+}
+
+fn collect_definitions_from_expr(expr: &Expr, src: &[char], defs: &mut Vec<Definition>) {
     match &expr.kind {
         ExprKind::If {
             then_body,
@@ -308,17 +338,17 @@ fn collect_definitions_from_expr(expr: &Expr, defs: &mut Vec<Definition>) {
             ..
         } => {
             for s in then_body {
-                collect_definitions_from_stmt(s, defs);
+                collect_definitions_from_stmt(s, src, defs);
             }
             if let Some(crate::ast::ElseBranch::Block(stmts)) = else_body {
                 for s in stmts {
-                    collect_definitions_from_stmt(s, defs);
+                    collect_definitions_from_stmt(s, src, defs);
                 }
             }
         }
         ExprKind::Block(stmts) => {
             for s in stmts {
-                collect_definitions_from_stmt(s, defs);
+                collect_definitions_from_stmt(s, src, defs);
             }
         }
         ExprKind::Lambda { params, body, .. } => {
@@ -327,11 +357,11 @@ fn collect_definitions_from_expr(expr: &Expr, defs: &mut Vec<Definition>) {
                     name: p.name.clone(),
                     kind: DefinitionKind::Parameter,
                     span: expr.span,
-                    detail: p.ty.as_ref().map(|t| format!(": {}", t.name)),
+                    detail: param_detail(p, src),
                 });
             }
             for s in body {
-                collect_definitions_from_stmt(s, defs);
+                collect_definitions_from_stmt(s, src, defs);
             }
         }
         _ => {}

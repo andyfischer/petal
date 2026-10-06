@@ -24,7 +24,10 @@
 //! within a statement only the parts evaluated unconditionally — not a branch
 //! of an `if`/`match`, not the right of `&&`/`||`, not a loop body, not a
 //! lambda, and nothing on an absence-tolerant `??`/`?.` spine. A parameter
-//! that is rebound or shadowed anywhere in the body is left alone entirely.
+//! that is rebound or shadowed anywhere in the body is left alone entirely —
+//! except by its own default value, which only runs for a call that left the
+//! argument out: `fn f(c, a = 255)` still holds a passed `a` to what its body
+//! does with it.
 //! Anything this cannot prove is simply not a requirement, so a function that
 //! tells its shapes apart at runtime (`if _is_num(p1) then … else p1.x …`)
 //! imposes nothing on `p1` and never warns.
@@ -34,6 +37,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     self, AssignTarget, BinOp, Expr, ExprKind, ExprVisitor, Pattern, RecordField, Stmt, StmtKind,
 };
+use crate::desugar::as_param_default;
 use crate::types::Type;
 
 use super::builtin_types::{ArgSlot, builtin_param_slots};
@@ -223,7 +227,14 @@ struct Ctx<'a> {
 fn infer_one(params: &[ast::Param], body: &[Stmt], ctx: &Ctx) -> Vec<Option<ParamReq>> {
     let mut bound = BoundNames::default();
     for s in body {
-        bound.visit_stmt(s);
+        // A default value is lowered to an assignment at the head of the body
+        // (`desugar::lower_param_defaults`). It only runs for a call that
+        // left the argument out, so it is not a rebinding of the parameter a
+        // passed argument has to answer for; just its expression is searched.
+        match as_param_default(s) {
+            Some((_, default)) => bound.visit_expr(default),
+            None => bound.visit_stmt(s),
+        }
     }
     let mut w = Walker {
         tracked: params
@@ -239,6 +250,9 @@ fn infer_one(params: &[ast::Param], body: &[Stmt], ctx: &Ctx) -> Vec<Option<Para
     for s in body {
         if stmt_may_exit(s) {
             break;
+        }
+        if as_param_default(s).is_some() {
+            continue;
         }
         w.stmt(s);
     }
@@ -535,6 +549,26 @@ mod tests {
             get(&r, "f", 3),
             Some(vec![Some(ParamReq::Num), field("x"), None])
         );
+    }
+
+    #[test]
+    fn a_default_value_is_not_a_rebinding() {
+        // The default is lowered to an assignment at the head of the body; a
+        // passed argument never runs it, so the parameter stays tracked.
+        let src = "let _native_rect = draw_rect\n\
+                   fn box(rect, c, a = 255)\n  \
+                   _native_rect(rect.x, rect.y, rect.w, rect.h, c.r, c.g, c.b, a)\nend";
+        assert_eq!(
+            get(&reqs_of(src), "box", 3),
+            Some(vec![field("x"), field("r"), Some(ParamReq::Num)])
+        );
+        // A default that reads an earlier parameter imposes nothing on it:
+        // it does not run on every call.
+        let r = reqs_of("fn f(c, a = c.a)\n  sqrt(a)\nend");
+        assert_eq!(get(&r, "f", 2), Some(vec![None, Some(ParamReq::Num)]));
+        // An ordinary rebinding still drops the parameter.
+        let r = reqs_of("fn f(c, a = 255)\n  a = a + 1\n  sqrt(a) + c.r\nend");
+        assert_eq!(get(&r, "f", 2), Some(vec![field("r"), None]));
     }
 
     #[test]

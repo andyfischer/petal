@@ -150,10 +150,11 @@ pub fn resolve_overload(
             variants.join(", "),
         ));
     }
-    let arities: Vec<String> = entries
-        .iter()
-        .map(|e| arity_range(func_of(e).required_params(), e.arity))
-        .collect();
+    let arities = arity_ranges(
+        entries
+            .iter()
+            .map(|e| (func_of(e).required_params(), e.arity)),
+    );
     Err(format!(
         "{}() expects {} arguments, got {}",
         base_name,
@@ -186,6 +187,40 @@ pub fn arity_range(required: usize, total: usize) -> String {
     } else {
         format!("{required}-{total}")
     }
+}
+
+/// The argument counts a set of variants takes between them, each spelled by
+/// [`arity_range`], in declaration order. Ranges that share a count are
+/// reported as the one range they cover, so variants whose defaults stretch
+/// over each other's counts read `3-9` rather than `3 or 3-5 or 5-7 or 7-9`.
+/// Ranges that merely sit side by side stay apart (`1 or 2-3`).
+pub fn arity_ranges(ranges: impl IntoIterator<Item = (usize, usize)>) -> Vec<String> {
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (mut lo, mut hi) in ranges {
+        // Fold in every range already kept that this one touches; the result
+        // takes the place of the first of them.
+        let mut at = None;
+        let mut i = 0;
+        while i < merged.len() {
+            let (l, h) = merged[i];
+            if l <= hi && lo <= h {
+                lo = lo.min(l);
+                hi = hi.max(h);
+                merged.remove(i);
+                at = Some(at.map_or(i, |a: usize| a.min(i)));
+                // An earlier range may only now overlap the widened one.
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+        let at = at.map_or(merged.len(), |a| a.min(merged.len()));
+        merged.insert(at, (lo, hi));
+    }
+    merged
+        .into_iter()
+        .map(|(lo, hi)| arity_range(lo, hi))
+        .collect()
 }
 
 /// `f(a, b = …)` — one variant, as a message lists it.
@@ -340,4 +375,29 @@ pub fn bind_named_args(
         bound.push(Value::Bool(cell.is_some()));
     }
     Ok(bound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::arity_ranges;
+
+    #[test]
+    fn arity_ranges_merge_only_where_they_overlap() {
+        // Distinct counts, and ranges that merely touch, are listed apart.
+        assert_eq!(arity_ranges([(2, 2), (3, 3)]), ["2", "3"]);
+        assert_eq!(arity_ranges([(1, 1), (2, 3)]), ["1", "2-3"]);
+        assert_eq!(arity_ranges([(4, 4), (2, 2)]), ["4", "2"]);
+        // A range that covers another's counts absorbs it, in the place of
+        // the first of them.
+        assert_eq!(
+            arity_ranges([(3, 3), (4, 4), (4, 5), (6, 7)]),
+            ["3", "4-5", "6-7"]
+        );
+        assert_eq!(arity_ranges([(2, 2), (2, 3)]), ["2-3"]);
+        // A chain of overlaps collapses to its span.
+        assert_eq!(
+            arity_ranges([(7, 9), (6, 6), (5, 7), (3, 3), (4, 4), (3, 5)]),
+            ["3-9"]
+        );
+    }
 }

@@ -1798,8 +1798,9 @@ impl<'a> Checker<'a> {
                                 // No overload takes this many arguments — the
                                 // call cannot resolve at runtime, whatever the
                                 // argument types are.
-                                let expected: Vec<String> =
-                                    candidates.iter().map(FnSignature::arity_range).collect();
+                                let expected = crate::backend::calls::arity_ranges(
+                                    candidates.iter().map(|s| (s.required(), s.params.len())),
+                                );
                                 let what = format!("`{f}`");
                                 self.warn_arity(call_span, &what, &expected, args.len());
                             }
@@ -1921,11 +1922,12 @@ impl<'a> Checker<'a> {
         let Some(reqs) = all.get(&(f.clone(), sig.params.len())) else {
             return;
         };
-        let arities: Vec<usize> = self
-            .module_signatures(f)
-            .iter()
-            .map(|s| s.params.len())
-            .collect();
+        let variants = self.module_signatures(f).len();
+        let arities = crate::backend::calls::arity_ranges(
+            self.module_signatures(f)
+                .iter()
+                .map(|s| (s.required(), s.params.len())),
+        );
         for (i, req) in reqs.iter().enumerate() {
             let (Some(req), Some(&at)) = (req, arg_types.get(i)) else {
                 continue;
@@ -1934,9 +1936,11 @@ impl<'a> Checker<'a> {
             if matches!(sig.params.get(i), Some(Some(_))) || req.accepts(at) {
                 continue;
             }
-            let others = if arities.len() > 1 {
-                let list: Vec<String> = arities.iter().map(usize::to_string).collect();
-                format!(" (`{f}` overloads by argument count alone: {})", list.join(", "))
+            let others = if variants > 1 {
+                format!(
+                    " (`{f}` overloads by argument count alone: {})",
+                    arities.join(", ")
+                )
             } else {
                 String::new()
             };
@@ -1945,7 +1949,7 @@ impl<'a> Checker<'a> {
                 format!(
                     "argument {} to `{f}`: the {}-argument `{f}` {}, found `{}`{others}",
                     i + 1,
-                    sig.params.len(),
+                    sig.arity_range(),
                     req.describe(),
                     self.spell(at),
                 ),
@@ -3007,6 +3011,30 @@ mod tests {
             .into_iter()
             .map(|d| d.message)
             .collect()
+    }
+
+    /// An overload with defaults is named by the range of counts it takes,
+    /// and held to its body for the arguments a call does pass.
+    #[test]
+    fn overload_with_defaults_is_held_to_its_body() {
+        let src = "let _native_rect = draw_rect\n\
+                   fn box(r, c, a = 255)\n  \
+                   _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)\nend\n\
+                   fn box(x, y, w, h, c, a = 255)\n  \
+                   _native_rect(x, y, w, h, c.r, c.g, c.b, a)\nend\n";
+        let w = warns_with_reqs(&format!("{src}box(0, 0, 4, 4, 9)"));
+        assert_eq!(
+            w,
+            ["argument 5 to `box`: the 5-6-argument `box` reads field `r` from it, found `int` \
+              (`box` overloads by argument count alone: 2-3, 5-6)"]
+        );
+        let w = warns_with_reqs(&format!("{src}box({{x: 0}}, {{r: 1}}, {{r: 1}})"));
+        assert_eq!(
+            w,
+            ["argument 3 to `box`: the 2-3-argument `box` uses it as a number, found `record` \
+              (`box` overloads by argument count alone: 2-3, 5-6)"]
+        );
+        assert!(warns_with_reqs(&format!("{src}box({{x: 0}}, {{r: 1}})")).is_empty());
     }
 
     /// A call whose arity selects an overload that certainly cannot take its

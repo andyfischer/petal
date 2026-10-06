@@ -233,7 +233,8 @@ with its golden.
 
 ### Suggesting annotations
 
-`petal suggest` proposes the annotations a program already implies, from its
+`petal suggest` — the safe-refactor tool — proposes, as one of its kinds of
+suggestion, the annotations a program already implies, from its
 own call sites and function bodies, and can apply them behind a verification
 gate. It reads evidence the checker records on its ordinary walk, so what it
 believes about a type is by construction what the checker believes. See

@@ -855,6 +855,29 @@ preserved byte for byte) and deletion of identity casts like `int(n)` where `n`
 is already an `int`. Add `--verify` to make it prove the rewrite is IR-equal
 before writing anything.
 
+### `petal suggest` — safe refactors, on request
+
+```bash
+petal suggest app.ptl                             # report both kinds, write nothing
+petal suggest --only named-args --apply app.ptl   # name the arguments of long calls
+petal suggest --only types --apply app.ptl        # write the implied type annotations
+```
+
+Suggests changes that make a file say more without making it do anything else.
+Two kinds: **type annotations** the program already implies, and **named
+arguments** for calls that pass three or more by position —
+`draw_rect(0, 0, 320, 48, PANEL)` becomes
+`draw_rect(x: 0, y: 0, w: 320, h: 48, c: PANEL)`. Nothing is written without
+`--apply`, and `--apply` proves each change first: an annotation must add no
+type warning, and a named-argument rewrite must compile to the same program
+(the callee is resolved for certain, the same overload variant is selected,
+every argument lands in the same parameter, in the same order). It leaves a
+call alone rather than guess — an unknown callee, a method dispatched at
+runtime, a count two overload shapes share — and it keeps the subject and
+placeholder parameters positional (`clamp(t, lo: 0, hi: 1)`,
+`lerp(a, b, t: 0.5)`). Pass the `--host` your script runs in, as for `check`.
+See [CLI.md](CLI.md#suggest--suggest-safe-refactors-for-a-file).
+
 ### `petal run --observe` — what was everything set to?
 
 The debugging tool to reach for first. It dumps the last value bound to every

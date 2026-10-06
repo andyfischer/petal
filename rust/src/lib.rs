@@ -51,6 +51,7 @@ mod proofs;
 pub mod provenance;
 pub mod record;
 pub mod resource_table;
+pub mod named_calls;
 pub mod suggest;
 pub mod rewrite;
 pub mod run_deps;

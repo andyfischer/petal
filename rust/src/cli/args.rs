@@ -312,29 +312,38 @@ fn parse_packages_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `suggest [--json] [--apply] [--from <file>]... <file>` — propose type
-/// annotations. `--from` is repeatable: each names another entry point to
-/// compile for its call sites, which is how a library module (whose own
-/// compile has no callers) learns what its parameters are passed.
+/// `suggest [--only <kinds>] [--apply | --verify] [--host <h>] [--json]
+/// [--from <file>]... <file>` — suggest safe refactors. `--from` is
+/// repeatable: each names another entry point to compile for its call sites,
+/// which is how a library module (whose own compile has no callers) learns
+/// what its parameters are passed.
 fn parse_suggest_args(args: &[String]) -> CliArgs {
-    let mut json = false;
-    let mut apply = false;
-    let mut from: Vec<std::path::PathBuf> = Vec::new();
+    let mut opts = super::SuggestArgs::default();
     let source = parse_source_args(
         args,
-        "Usage: petal suggest [--json] [--apply] [--from <file>]... <file>  |  \
+        "Usage: petal suggest [--only types|named-args] [--apply | --verify] \
+         [--host core|ui|garden|garden-config|sdl] [--json] [--from <file>]... <file>  |  \
          petal suggest -e <code>",
         |args, i| {
             match args[*i].as_str() {
-                "--json" => json = true,
-                "--apply" => apply = true,
+                "--json" => opts.json = true,
+                "--apply" => opts.apply = true,
+                "--verify" => opts.verify = true,
                 "--from" => {
-                    from.push(std::path::PathBuf::from(take(
+                    opts.from.push(std::path::PathBuf::from(take(
                         args,
                         i,
                         "--from needs a file path",
                     )));
                 }
+                "--only" => {
+                    let list = take(args, i, "--only needs a kind: 'types' or 'named-args'");
+                    opts.kinds = crate::suggest::Kinds::parse(list).unwrap_or_else(|e| {
+                        eprintln!("{e}");
+                        process::exit(1);
+                    });
+                }
+                "--host" => opts.host = parse_host(take(args, i, HOST_EXPECTED)),
                 _ => return false,
             }
             true
@@ -342,10 +351,23 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
     );
 
     CliArgs {
-        command: Command::Suggest { json, apply, from },
+        command: Command::Suggest(opts),
         source,
         include_dirs: Vec::new(),
     }
+}
+
+/// What `--host` takes, for the message when it is missing or unknown.
+const HOST_EXPECTED: &str = "Expected 'core', 'ui', 'garden', 'garden-config' or 'sdl' after --host";
+
+/// Parse a `--host` value, or exit naming the ones there are.
+fn parse_host(name: &str) -> crate::typecheck::globals::HostProfile {
+    crate::typecheck::globals::HostProfile::from_name(name).unwrap_or_else(|| {
+        eprintln!(
+            "Unknown --host '{name}' (expected 'core', 'ui', 'garden', 'garden-config' or 'sdl')"
+        );
+        process::exit(1);
+    })
 }
 
 /// Split a `--flag=a,b` / `--flag a,b` list value.
@@ -471,22 +493,28 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `ir-equal [--json] <a.ptl> <b.ptl>` — the two-file IR comparison. The
-/// first path is the original (its spans are what diffs point at), the second
-/// the rewritten side.
+/// `ir-equal [--json] [--named-args [--host <h>]] <a.ptl> <b.ptl>` — the
+/// two-file IR comparison. The first path is the original (its spans are what
+/// diffs point at), the second the rewritten side.
 fn parse_ir_equal_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal ir-equal [--json] <a.ptl> <b.ptl>";
+    let usage = "Usage: petal ir-equal [--json] [--named-args [--host <host>]] <a.ptl> <b.ptl>";
     let mut json = false;
+    let mut named_args = false;
+    let mut host = crate::typecheck::globals::HostProfile::default();
     let mut paths: Vec<String> = Vec::new();
-    for arg in args {
-        match arg.as_str() {
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
             "--json" => json = true,
+            "--named-args" => named_args = true,
+            "--host" => host = parse_host(take(args, &mut i, HOST_EXPECTED)),
             other if other.starts_with("--") => {
                 eprintln!("Unexpected option '{}'. {}", other, usage);
                 process::exit(1);
             }
             other => paths.push(other.to_string()),
         }
+        i += 1;
     }
     if paths.len() != 2 {
         eprintln!("ir-equal takes exactly two files. {}", usage);
@@ -496,6 +524,8 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
         command: Command::IrEqual {
             json,
             other: paths[1].clone(),
+            named_args,
+            host,
         },
         source: SourceInput::File(paths[0].clone()),
         include_dirs: Vec::new(),

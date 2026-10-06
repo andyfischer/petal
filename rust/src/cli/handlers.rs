@@ -955,9 +955,15 @@ pub(super) fn handle_check(
 /// two compile to the same program, 1 with the first difference when they
 /// don't, 2 when a side fails to compile (an answer of "can't tell", which
 /// must not be mistaken for "not equal").
+///
+/// `named_args` is `--named-args`, with the host both files are written for:
+/// calls may then differ in writing an argument by name instead of position,
+/// wherever both provably bind alike — the comparison `petal suggest --apply`
+/// proves its named-argument rewrites with.
 pub(super) fn handle_ir_equal(
     json: bool,
     other_path: &str,
+    named_args: Option<crate::typecheck::globals::HostProfile>,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -970,8 +976,22 @@ pub(super) fn handle_ir_equal(
         }
     };
     let origin = source_origin(source_input);
-    let result =
-        crate::ir_equiv::sources_equivalent(source, &other, include_dirs, origin.as_deref());
+    let result = match named_args {
+        None => crate::ir_equiv::sources_equivalent(source, &other, include_dirs, origin.as_deref()),
+        Some(host) => {
+            let opts = crate::suggest::SuggestOptions {
+                include_dirs: include_dirs.to_vec(),
+                host,
+                ..Default::default()
+            };
+            crate::suggest::sources_equivalent_modulo_named_args(
+                source,
+                &other,
+                origin.as_deref(),
+                &opts,
+            )
+        }
+    };
     match result {
         Err(msg) => {
             if json {
@@ -1642,49 +1662,64 @@ fn term_to_json(term: &Term) -> serde_json::Value {
     })
 }
 
-/// `petal suggest` — propose type annotations the program already implies.
+/// `petal suggest` — suggest safe refactors for a file.
 ///
-/// Report-only by default. `--apply` writes, but only behind two gates that
-/// together make an accepted suggestion safe:
+/// Report-only by default. `--apply` writes, but each kind of suggestion only
+/// behind the proof that makes accepting it safe; `--verify` runs the same
+/// proofs and reports without writing.
+///
+/// **Type annotations** are *claims* about a type, and the checker is the
+/// thing that verifies claims:
 ///
 /// 1. the rewritten source must still compile;
 /// 2. it must not have gained a type-checker warning.
 ///
-/// The second is the one that matters. Every suggestion is a *claim* about a
-/// type, and the checker is the thing that verifies claims — so writing an
-/// annotation and then finding the checker unhappy with it means the inference
-/// was wrong, and the file is left alone. Nothing is written on either failure.
+/// So writing an annotation and then finding the checker unhappy with it
+/// means the inference was wrong, and it is dropped.
+///
+/// **Named arguments** are claimed to change nothing at all, which is a
+/// stronger claim with a stronger proof: the rewritten source must compile to
+/// the same IR, where a call may differ from its original only in how its
+/// arguments are written and only if both provably bind alike
+/// (`suggest::verify_named_args`) — and it must gain no warning either. They
+/// are proven on top of the accepted annotations, so the two kinds cannot
+/// vouch for each other.
+///
+/// Nothing is written unless at least one suggestion survives.
 pub(super) fn handle_suggest(
-    json: bool,
-    apply: bool,
-    from: &[PathBuf],
+    args: &super::SuggestArgs,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
+    use crate::suggest::{NamedArgs, Suggestion};
+
     let origin = source_origin(source_input);
     let opts = crate::suggest::SuggestOptions {
         include_dirs: include_dirs.to_vec(),
-        from: from.to_vec(),
+        from: args.from.clone(),
+        host: args.host,
+        kinds: args.kinds,
     };
     let outcome = match crate::suggest::suggest_source(source, origin.as_deref(), &opts) {
         Ok(o) => o,
         Err(e) => die_plain(&e),
     };
 
-    if json {
+    if args.json {
         print_suggest_json(&outcome);
         return;
     }
     for note in &outcome.notes {
         eprintln!("suggest: {note}");
     }
-    if outcome.suggestions.is_empty() {
-        println!(
-            "no suggestions ({} function{} examined)",
-            outcome.functions,
-            if outcome.functions == 1 { "" } else { "s" }
-        );
+    let functions = format!(
+        "{} function{}",
+        outcome.functions,
+        if outcome.functions == 1 { "" } else { "s" }
+    );
+    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() {
+        println!("no suggestions ({functions} examined)");
         return;
     }
 
@@ -1692,50 +1727,86 @@ pub(super) fn handle_suggest(
         SourceInput::File(p) => p.as_str(),
         _ => "<inline>",
     };
+    let annotation = |s: &Suggestion| match s.slot {
+        crate::typecheck::infer::Slot::Return => format!("-> {}", s.ty),
+        crate::typecheck::infer::Slot::Param(_) => format!("{}: {}", s.param, s.ty),
+    };
     let mut last: Option<&(String, usize)> = None;
     for s in &outcome.suggestions {
         if last != Some(&s.function) {
             println!("\n{}:{}  fn {}", name, s.line, s.function.0);
             last = Some(&s.function);
         }
-        let what = match s.slot {
-            crate::typecheck::infer::Slot::Return => "-> ".to_string() + &s.ty,
-            crate::typecheck::infer::Slot::Param(_) => format!("{}: {}", s.param, s.ty),
-        };
-        println!("  suggest: {what}");
+        println!("  suggest: {}", annotation(s));
         println!("  because: {}", s.because);
     }
-    println!(
-        "\n{} suggestion{} across {} function{}.",
-        outcome.suggestions.len(),
-        if outcome.suggestions.len() == 1 { "" } else { "s" },
-        outcome.functions,
-        if outcome.functions == 1 { "" } else { "s" }
-    );
+    for n in &outcome.named_args {
+        println!("\n{}:{}:{}  call {}", name, n.line, n.column, n.callee);
+        println!("  suggest: {}", one_line(&n.after));
+        println!("  because: {}", n.because);
+    }
 
-    if !apply {
+    let count = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    let mut summary = Vec::new();
+    if !outcome.suggestions.is_empty() || !args.kinds.named_args {
+        summary.push(format!(
+            "{} across {functions}",
+            count(outcome.suggestions.len(), "type annotation")
+        ));
+    }
+    if !outcome.named_args.is_empty() {
+        summary.push(format!(
+            "{} that could name {} arguments",
+            count(outcome.named_args.len(), "call"),
+            if outcome.named_args.len() == 1 { "its" } else { "their" }
+        ));
+    }
+    println!("\n{}.", summary.join("; "));
+
+    if !args.apply && !args.verify {
         println!("Re-run with --apply to write them.");
         return;
     }
-    let SourceInput::File(path) = source_input else {
-        // Inline code has nowhere to be written; print the result instead.
-        print!("{}", crate::suggest::apply(source, &outcome.suggestions));
-        return;
+
+    // Each side of a proof is compiled once. The original is allowed not to
+    // compile here only in the sense that it cannot: `suggest_source` above
+    // already compiled it.
+    use crate::suggest::Compiled;
+    let compile = |src: &str, what: &str| {
+        Compiled::new(src, origin.as_deref(), &opts)
+            .map_err(|e| format!("the {what} source does not compile ({e})"))
     };
-    let verify = |candidate: &[crate::suggest::Suggestion]| {
-        verify_suggestions(
-            source,
-            &crate::suggest::apply(source, candidate),
-            origin.as_deref(),
-            include_dirs,
-        )
+    let no_new_warning = |before: &Compiled, after: &Compiled, what: &str| {
+        // Baselined against the original: plenty of working files carry a
+        // warning already (a capture-lag note, a discarded result), and
+        // counting those would refuse every suggestion in them for a reason
+        // that has nothing to do with the suggestion.
+        match after.warnings_gained_over(before).as_slice() {
+            [] => Ok(()),
+            gained => Err(format!(
+                "the {what} source gains {} type warning(s): {}",
+                gained.len(),
+                gained[0]
+            )),
+        }
+    };
+    let original = match compile(source, "original") {
+        Ok(c) => c,
+        Err(e) => die_plain(&e),
     };
 
-    // The fast path: the whole batch verifies, which is what happens almost
-    // always. Only when it does not is it worth paying for the search below.
+    // Annotations first. The fast path: the whole batch verifies, which is
+    // what happens almost always. Only when it does not is it worth paying
+    // for the search below.
+    let annotated = |accepted: &[Suggestion]| crate::suggest::apply(source, accepted);
+    let check_annotations = |candidate: &[Suggestion]| {
+        let after = compile(&annotated(candidate), "annotated")?;
+        no_new_warning(&original, &after, "annotated")
+            .map_err(|e| format!("{e} — the inference was wrong"))
+    };
     let mut accepted = outcome.suggestions.clone();
-    let mut rejected: Vec<(&crate::suggest::Suggestion, String)> = Vec::new();
-    if let Err(batch_err) = verify(&accepted) {
+    let mut rejected: Vec<(&Suggestion, String)> = Vec::new();
+    if !accepted.is_empty() && check_annotations(&accepted).is_err() {
         // One wrong inference must not cost the other thirty. Re-admit the
         // suggestions one at a time, keeping each that still verifies, so the
         // offender is isolated and named instead of sinking the file.
@@ -1743,95 +1814,112 @@ pub(super) fn handle_suggest(
         for s in &outcome.suggestions {
             let mut candidate = accepted.clone();
             candidate.push(s.clone());
-            match verify(&candidate) {
+            match check_annotations(&candidate) {
                 Ok(()) => accepted = candidate,
                 Err(e) => rejected.push((s, e)),
             }
         }
-        if accepted.is_empty() {
-            eprintln!("suggest: refusing to write {path}: {batch_err}");
-            process::exit(3);
+    }
+
+    // Then the named arguments, proven against the annotated source: the
+    // only difference between the two sides is the names.
+    let mut named = outcome.named_args.clone();
+    let mut unproven: Vec<(&NamedArgs, String)> = Vec::new();
+    if !named.is_empty() {
+        let base = match compile(&annotated(&accepted), "annotated") {
+            Ok(c) => c,
+            Err(e) => die_plain(&e),
+        };
+        let check_named = |candidate: &[NamedArgs]| -> Result<(), String> {
+            let rewritten = crate::suggest::apply_all(source, &accepted, candidate);
+            let after = compile(&rewritten, "rewritten")?;
+            base.same_program_modulo_named_args(&after)
+                .map_err(|diff| crate::suggest::not_the_same_program(&diff))?;
+            no_new_warning(&base, &after, "rewritten")
+        };
+        if check_named(&named).is_err() {
+            named = Vec::new();
+            for n in &outcome.named_args {
+                let mut candidate = named.clone();
+                candidate.push(n.clone());
+                match check_named(&candidate) {
+                    Ok(()) => named = candidate,
+                    Err(e) => unproven.push((n, e)),
+                }
+            }
         }
     }
 
     for (s, why) in &rejected {
-        let what = match s.slot {
-            crate::typecheck::infer::Slot::Return => format!("-> {}", s.ty),
-            crate::typecheck::infer::Slot::Param(_) => format!("{}: {}", s.param, s.ty),
-        };
         eprintln!(
-            "suggest: dropped `{what}` on `{}` (line {}) — {why}",
-            s.function.0, s.line
+            "suggest: dropped `{}` on `{}` (line {}) — {why}",
+            annotation(s),
+            s.function.0,
+            s.line
+        );
+    }
+    for (n, why) in &unproven {
+        eprintln!(
+            "suggest: dropped `{}` (line {}) — {why}",
+            one_line(&n.after),
+            n.line
+        );
+    }
+    if !accepted.is_empty() {
+        eprintln!(
+            "verify: {name}: {} compile{} with no new type warning",
+            count(accepted.len(), "type annotation"),
+            if accepted.len() == 1 { "s" } else { "" }
+        );
+    }
+    if !named.is_empty() {
+        eprintln!(
+            "verify: {name}: {} proven IR-equal — the same program",
+            count(named.len(), "named-argument rewrite"),
         );
     }
 
-    let rewritten = crate::suggest::apply(source, &accepted);
+    let total = outcome.suggestions.len() + outcome.named_args.len();
+    let kept = accepted.len() + named.len();
+    if args.verify && !args.apply {
+        if kept < total {
+            eprintln!("verify: {} of {total} suggestions did not pass.", total - kept);
+            process::exit(3);
+        }
+        return;
+    }
+    let rewritten = crate::suggest::apply_all(source, &accepted, &named);
+    let SourceInput::File(path) = source_input else {
+        // Inline code has nowhere to be written; print the result instead.
+        print!("{rewritten}");
+        return;
+    };
+    if kept == 0 {
+        eprintln!("suggest: refusing to write {path}: no suggestion passed its proof");
+        process::exit(3);
+    }
     if let Err(e) = fs::write(path, &rewritten) {
         eprintln!("Error writing '{path}': {e}");
         process::exit(1);
     }
-    println!(
-        "Applied {} of {} to {path}.",
-        accepted.len(),
-        outcome.suggestions.len()
-    );
+    println!("Applied {kept} of {total} to {path}.");
 }
 
-/// The `--apply` gate: the rewritten source must compile, and must not have
-/// gained a warning *the original did not already have*. A suggestion the
-/// checker then disagrees with was a wrong inference, and a wrong inference
-/// must cost a refusal rather than a file.
-///
-/// Baselining against the original matters: plenty of working files carry a
-/// warning already (a capture-lag note, a discarded result), and counting
-/// those would refuse every suggestion in them for a reason that has nothing
-/// to do with the suggestion.
-fn verify_suggestions(
-    original: &str,
-    rewritten: &str,
-    origin: Option<&std::path::Path>,
-    include_dirs: &[PathBuf],
-) -> Result<(), String> {
-    let warnings_of = |src: &str| -> Result<Vec<String>, String> {
-        let mut env = make_env(include_dirs);
-        let pid = match origin {
-            Some(path) => env.load_program_at(src, path),
-            None => env.load_program(src),
-        }?;
-        Ok(env
-            .get_program(pid)
-            .map(|p| p.warnings.iter().map(|d| d.message.clone()).collect())
-            .unwrap_or_default())
-    };
-
-    let before = warnings_of(original).unwrap_or_default();
-    let after = warnings_of(rewritten)
-        .map_err(|e| format!("the annotated source does not compile ({e})"))?;
-
-    // By message, not by count: an annotation can legitimately *remove* a
-    // warning while adding a different one, and that is still a regression.
-    let mut gained: Vec<&String> = Vec::new();
-    let mut remaining = before.clone();
-    for w in &after {
-        match remaining.iter().position(|b| b == w) {
-            Some(i) => {
-                remaining.remove(i);
-            }
-            None => gained.push(w),
+/// A suggestion's rewritten text on one line, for the report: runs of
+/// whitespace that cross a line break collapse to a single space.
+fn one_line(text: &str) -> String {
+    let mut out = String::new();
+    for (i, line) in text.lines().enumerate() {
+        if i > 0 {
+            out.push(' ');
         }
+        out.push_str(if i > 0 { line.trim() } else { line.trim_end() });
     }
-    if !gained.is_empty() {
-        return Err(format!(
-            "the annotated source gains {} type warning(s) — the inference was wrong: {}",
-            gained.len(),
-            gained[0]
-        ));
-    }
-    Ok(())
+    out
 }
 
 fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
-    let items: Vec<serde_json::Value> = outcome
+    let mut items: Vec<(usize, serde_json::Value)> = outcome
         .suggestions
         .iter()
         .map(|s| {
@@ -1839,7 +1927,8 @@ fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
                 crate::typecheck::infer::Slot::Return => serde_json::json!("return"),
                 crate::typecheck::infer::Slot::Param(i) => serde_json::json!(i),
             };
-            serde_json::json!({
+            let item = serde_json::json!({
+                "kind": "type-annotation",
                 "function": s.function.0,
                 "arity": s.function.1,
                 "slot": slot,
@@ -1848,15 +1937,37 @@ fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
                 "line": s.line,
                 "insert_at": s.at,
                 "insert_text": s.text,
+                "edits": [{ "insert_at": s.at, "insert_text": s.text }],
                 "because": s.because,
                 "evidence": s.evidence.iter().map(|e| serde_json::json!({
                     "kind": e.kind,
                     "detail": e.detail,
                     "line": e.line,
                 })).collect::<Vec<_>>(),
-            })
+            });
+            (s.at, item)
         })
         .collect();
+    items.extend(outcome.named_args.iter().map(|n| {
+        let item = serde_json::json!({
+            "kind": "named-args",
+            "callee": n.callee,
+            "line": n.line,
+            "column": n.column,
+            "names": n.names,
+            "call": n.before,
+            "rewrite": n.after,
+            "edits": n.edits.iter().map(|e| serde_json::json!({
+                "insert_at": e.at,
+                "insert_text": e.text,
+            })).collect::<Vec<_>>(),
+            "because": n.because,
+        });
+        (n.edits.first().map_or(0, |e| e.at), item)
+    }));
+    // One list, in source order, whatever the kind.
+    items.sort_by_key(|(at, _)| *at);
+    let items: Vec<serde_json::Value> = items.into_iter().map(|(_, item)| item).collect();
     println!(
         "{}",
         serde_json::json!({

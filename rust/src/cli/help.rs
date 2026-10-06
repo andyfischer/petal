@@ -30,7 +30,7 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("fmt", "Rewrite files in the canonical layout"),
             ("lint", "Report code that has a better spelling, and fix it"),
-            ("suggest", "Propose type annotations the program already implies"),
+            ("suggest", "Suggest safe refactors for a file"),
             ("lint-fix", "The same as 'lint --fix'"),
             ("ir-equal", "Compare two files' compiled IR for equivalence"),
         ],
@@ -419,23 +419,32 @@ SEE ALSO
 
 const SUGGEST: &str = "\
 NAME
-       petal-suggest - Propose type annotations the program already implies
+       petal-suggest - Suggest safe refactors for a file
 
 SYNOPSIS
-       petal suggest [--json] [--apply] [--from <file>]... <file>
+       petal suggest [--only <kind>[,<kind>]] [--apply | --verify]
+                     [--host <host>] [--json] [--from <file>]... <file>
        petal suggest [<options>] -e <code>
 
 DESCRIPTION
-       Reads what a program's own call sites and function bodies already say
-       about types nobody wrote down, and proposes the annotations. Each
-       proposal comes with the evidence behind it, so it can be judged
-       without re-deriving it.
+       Proposes changes to a file that make it say more without making it do
+       anything else, each with the reason behind it. Two kinds:
+
+       types
+              Type annotations the program already implies, read from its
+              own call sites and function bodies.
+
+       named-args
+              Named arguments for calls that pass three or more arguments by
+              position: 'draw_rect(0, 0, 320, 48, panel)' becomes
+              'draw_rect(x: 0, y: 0, w: 320, h: 48, c: panel)'.
 
        This is a suggestion channel, not a check. Nothing here runs during an
-       ordinary compile, nothing here can fail a build, and no annotation is
+       ordinary compile, nothing here can fail a build, and nothing is
        written unless --apply is given. 'petal check' remains the tool that
        warns; this is the tool that proposes.
 
+TYPE ANNOTATIONS
        What counts as evidence, for a parameter: the types callers actually
        pass; the declared type of a slot the parameter is forwarded into; and
        a field read, which proves the value is record-shaped (a plain record
@@ -451,25 +460,81 @@ DESCRIPTION
        Suggestions compound: an applied annotation is evidence for the next
        pass. Re-running until it reports nothing is the intended workflow.
 
+NAMED ARGUMENTS
+       A call is rewritten only where its callee is known for certain and
+       accepts names: a fn (each overload variant by itself), a lambda held
+       in a let, a class constructor, a function of an imported module or of
+       the host's prelude, a method call the checker pinned to one class, and
+       a builtin that declares its parameter names. A parameter or any other
+       value that merely holds a function, a method dispatched at runtime,
+       and a variadic builtin (print) are left alone.
+
+       The rewritten call must be the same call: it selects the same
+       overload variant under the name-aware rule, every argument fills the
+       slot it filled, and the arguments stay in the order written, so they
+       are evaluated in the same order. A call is also left alone when two
+       variants both take that many arguments and call them different things
+       — the ui prelude's draw_line takes seven as (x1, y1, x2, y2, r, g, b)
+       and as (x1, y1, x2, y2, c, a, width) — since only one of the two
+       readings could be written down.
+
+       Positional arguments must come first, so the choice is where the names
+       start. They start as early as they can, after:
+
+       o  the receiver of a method call or the piped value of 'x |> f(...)';
+       o  placeholder parameters, whose names say nothing: a name starting
+          with '_', neighbours that only count from 'a' ('a, b', 'a, b, c'),
+          and neighbours numbered on one stem ('p1, p2', 'c0, c1');
+       o  the subject, when the first parameter is the thing operated on
+          (self, this, value, list, collection, string, record, array, text,
+          rect): 'clamp(v, lo: 0, hi: 1)';
+       o  arguments already spelled like their parameter: 'box(x, y, w: 3,
+          h: 4)', not 'box(x: x, y: y, ...)'.
+
+       Arguments already named are kept as written, and an applied file
+       yields no further suggestion.
+
 OPTIONS
+       --only <kind>[,<kind>]
+              Look for these kinds only: 'types', 'named-args'. Both by
+              default.
+
        --apply
-              Write the annotations into the file. Refused, with exit 3 and
-              no write, unless the annotated source still compiles and gains
-              no type-checker warning the original did not already have — an
-              annotation the checker then disagrees with was a wrong guess.
+              Write the suggestions into the file, each kind behind its own
+              proof. An annotation is kept when the annotated source still
+              compiles and gains no type-checker warning the original did not
+              already have. A named-argument rewrite is kept when the
+              rewritten source compiles to the same IR — the comparison of
+              'petal ir-equal --named-args', in which a call may differ only
+              in how its arguments are written and only where both provably
+              bind alike — and gains no warning either. A suggestion that
+              fails is dropped and named on stderr; exit 3, with no write,
+              when none passes.
+
+       --verify
+              Run the --apply proofs and report, writing nothing. Exit 3 if
+              any suggestion fails its proof.
+
+       --host <host>
+              The host the script runs in, as for 'petal check': 'core',
+              'ui' (the default), 'garden', 'garden-config' or 'sdl'. It
+              decides which prelude is imported implicitly, and so what a
+              bare 'draw_rect' is. A script for an embedding with natives of
+              its own should say 'core'.
 
        --from <file>
               Also compile <file> for its call sites. A library module
               compiled on its own has no callers, so its parameters have no
               call-site evidence; point this at an app that uses the library.
-              Repeatable.
+              Repeatable. Type annotations only.
 
-       --json Emit the suggestions as JSON, each with its insertion offset,
-              the exact text to insert, and its evidence.
+       --json Emit the suggestions as JSON, in source order. Each has a
+              'kind' ('type-annotation' or 'named-args'), its reason, and its
+              'edits': the insertion offsets and the exact text to insert.
 
 {COMMON}
 SEE ALSO
-       petal help check, petal help lint
+       petal help check, petal help lint, petal help ir-equal
 ";
 
 const LINT_FIX: &str = "\
@@ -493,7 +558,7 @@ NAME
        petal-ir-equal - Compare two files' compiled IR for equivalence
 
 SYNOPSIS
-       petal ir-equal [--json] <a.ptl> <b.ptl>
+       petal ir-equal [--json] [--named-args [--host <host>]] <a.ptl> <b.ptl>
 
 DESCRIPTION
        Compiles both files and compares their IR, ignoring everything
@@ -504,15 +569,34 @@ DESCRIPTION
        Exits 0 when the two are equivalent, 1 with the first difference, and
        2 when a side fails to compile.
 
+       The names a call writes its arguments with are part of the IR, so
+       'f(1, 2)' and 'f(x: 1, y: 2)' differ: whether they mean the same
+       depends on what 'f' is. --named-args answers that instead of refusing.
+
 OPTIONS
        --json
               Emit the comparison result as structured JSON.
+
+       --named-args
+              Accept two calls that differ only in writing an argument by
+              name instead of by position, where the callee is known for
+              certain on both sides and both calls select the same overload
+              variant and put every argument in the same parameter. A callee
+              that cannot be pinned down (a parameter, a method dispatched at
+              runtime) is still a difference. This is the proof 'petal
+              suggest --apply' holds its named-argument rewrites to.
+
+       --host <host>
+              With --named-args: the host both files are written for, as for
+              'petal check' ('core', 'ui' — the default — 'garden',
+              'garden-config', 'sdl'). It decides which prelude is imported
+              implicitly.
 
        -I <dir>
               Add a module search directory. Repeatable.
 
 SEE ALSO
-       petal help lint, petal help show-ir
+       petal help lint, petal help suggest, petal help show-ir
 ";
 
 const EXPLAIN: &str = "\

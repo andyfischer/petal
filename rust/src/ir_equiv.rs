@@ -47,6 +47,7 @@ use std::collections::VecDeque;
 use std::fmt;
 
 use crate::constant_table::{ConstantId, ConstantValue};
+use crate::named_calls::{CallResolver, NativeSignatures};
 use crate::program::{BlockId, FunctionDef, MapSpreadEntry, Program, TermId, TermOp};
 use crate::source_map::SourceSpan;
 
@@ -133,6 +134,44 @@ pub fn ir_equivalent(a: &Program, b: &Program) -> Result<(), IrDiff> {
     Cmp::new(a, b).run()
 }
 
+/// [`ir_equivalent`], except that two calls may differ in how their arguments
+/// are *written* — by position or by name — as long as they provably bind the
+/// same values to the same parameters of the same function.
+///
+/// This is the proof behind `petal suggest`'s named-argument refactor. A call
+/// term records the names its arguments were written with, so `f(1, 2)` and
+/// `f(x: 1, y: 2)` are different IR and plain [`ir_equivalent`] rightly says
+/// so: whether they mean the same thing depends on what `f` is. Here that
+/// question is answered instead of refused. For each pair of call terms whose
+/// written names differ, both callees are resolved statically
+/// ([`crate::named_calls`]) and the pair is accepted only when each side
+/// selects the same overload variant and every argument lands in the same
+/// parameter slot. A callee the IR does not pin down — a parameter, a value
+/// out of a record, a method dispatched on its receiver — is not resolved, and
+/// the difference is reported exactly as [`ir_equivalent`] would report it.
+///
+/// Everything else is compared as strictly as before; in particular the
+/// arguments themselves are still paired in written order, so a rewrite that
+/// reorders them is a difference however they are named.
+///
+/// `natives` supplies the parameter lists of natives the compiling `Env` did
+/// not register (a host's). Calls to natives it *did* register never reach
+/// this check: the compiler has already put their named arguments in
+/// positional order.
+pub fn ir_equivalent_modulo_named_args(
+    a: &Program,
+    b: &Program,
+    natives: NativeSignatures,
+) -> Result<(), IrDiff> {
+    let mut cmp = Cmp::new(a, b);
+    cmp.named = Some(NamedCalls {
+        a: CallResolver::new(a),
+        b: CallResolver::new(b),
+        natives,
+    });
+    cmp.run()
+}
+
 // ---------------------------------------------------------------------------
 // Comparison walk
 // ---------------------------------------------------------------------------
@@ -154,6 +193,16 @@ struct Cmp<'p> {
     /// elsewhere — and the structural one is the better thing to show. This is
     /// reported only if the walk finds nothing else.
     deferred: Option<IrDiff>,
+    /// Set by [`ir_equivalent_modulo_named_args`]: how to decide whether two
+    /// calls written with different argument names bind alike.
+    named: Option<NamedCalls<'p>>,
+}
+
+/// The two programs' callee resolvers, for the named-argument mode.
+struct NamedCalls<'p> {
+    a: CallResolver<'p>,
+    b: CallResolver<'p>,
+    natives: NativeSignatures<'p>,
 }
 
 impl<'p> Cmp<'p> {
@@ -167,6 +216,7 @@ impl<'p> Cmp<'p> {
             blocks_rev: HashMap::new(),
             queue: VecDeque::new(),
             deferred: None,
+            named: None,
         }
     }
 
@@ -346,6 +396,24 @@ impl<'p> Cmp<'p> {
         Ok(())
     }
 
+    /// Whether two call terms that write their argument names differently
+    /// still hand the same callee the same arguments in the same slots. Only
+    /// ever true in the named-argument mode, and only when both callees
+    /// resolve. Functions are compared in declaration order, so equal
+    /// function ids are corresponding functions.
+    fn same_binding(&self, ta: TermId, tb: TermId) -> bool {
+        let Some(named) = &self.named else {
+            return false;
+        };
+        match (
+            named.a.binding(ta, named.natives),
+            named.b.binding(tb, named.natives),
+        ) {
+            (Some(left), Some(right)) => left == right,
+            _ => false,
+        }
+    }
+
     fn first_span(&self, terms: &[TermId]) -> Option<SourceSpan> {
         terms
             .first()
@@ -421,6 +489,9 @@ impl<'p> Cmp<'p> {
         ];
         for (what, left, right) in scalars {
             if left != right {
+                if what == "argument names" && self.same_binding(ta, tb) {
+                    continue;
+                }
                 return Err(IrDiff::new(label, what, left, right).at(span));
             }
         }

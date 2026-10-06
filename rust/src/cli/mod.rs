@@ -139,17 +139,11 @@ pub enum Command {
         /// Extra host natives (`--native a,b`), on top of `host`'s.
         natives: Vec<String>,
     },
-    /// `suggest` — propose type annotations the program already implies.
-    /// Report-only unless `--apply`; nothing here ever warns or fails a build.
-    Suggest {
-        json: bool,
-        /// Write the suggestions into the file. Refused unless the result
-        /// still compiles and still type-checks clean.
-        apply: bool,
-        /// Extra entry points to compile purely for their call sites — a
-        /// library module compiled alone has no callers.
-        from: Vec<PathBuf>,
-    },
+    /// `suggest` — suggest safe refactors for a file: type annotations the
+    /// program already implies, and named arguments for long positional
+    /// calls. Report-only unless `--apply`; nothing here ever warns or fails
+    /// a build.
+    Suggest(SuggestArgs),
     /// `fmt` — canonical layout (`crate::fmt`). Rewrites files in place;
     /// `--check` only lists the ones that would change.
     Fmt {
@@ -166,6 +160,13 @@ pub enum Command {
     IrEqual {
         json: bool,
         other: String,
+        /// `--named-args`: accept calls that differ only in writing an
+        /// argument by name instead of by position, where both provably bind
+        /// alike.
+        named_args: bool,
+        /// The host both files are written for (`--host`), read only with
+        /// `--named-args`.
+        host: crate::typecheck::globals::HostProfile,
     },
     Explain {
         json: bool,
@@ -221,6 +222,24 @@ pub enum Command {
     Packages {
         json: bool,
     },
+}
+
+/// Every flag `petal suggest` accepts.
+#[derive(Default)]
+pub struct SuggestArgs {
+    pub json: bool,
+    /// Write the suggestions into the file. Refused unless every one of them
+    /// passes its proof (see `handlers::handle_suggest`).
+    pub apply: bool,
+    /// Run the `--apply` proofs and report, without writing anything.
+    pub verify: bool,
+    /// Extra entry points to compile purely for their call sites — a
+    /// library module compiled alone has no callers.
+    pub from: Vec<PathBuf>,
+    /// The host the script is written for (`--host`).
+    pub host: crate::typecheck::globals::HostProfile,
+    /// Which kinds of suggestion to look for (`--only`).
+    pub kinds: crate::suggest::Kinds,
 }
 
 /// Every flag `petal lint` accepts.
@@ -515,18 +534,23 @@ pub fn execute(cli: CliArgs) {
             );
         }
         Command::Fmt { .. } | Command::Lint(_) => unreachable!("dispatched above"),
-        Command::Suggest { json, apply, from } => {
-            handlers::handle_suggest(
+        Command::Suggest(args) => {
+            handlers::handle_suggest(&args, &source, &source_input, &include_dirs);
+        }
+        Command::IrEqual {
+            json,
+            other,
+            named_args,
+            host,
+        } => {
+            handlers::handle_ir_equal(
                 json,
-                apply,
-                &from,
+                &other,
+                named_args.then_some(host),
                 &source,
                 &source_input,
                 &include_dirs,
             );
-        }
-        Command::IrEqual { json, other } => {
-            handlers::handle_ir_equal(json, &other, &source, &source_input, &include_dirs);
         }
         Command::ShowTokens { json } => {
             handlers::handle_show_tokens(json, &source);

@@ -37,7 +37,7 @@ Every command that compiles a program accepts these:
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
 | `lint-fix` | `lint --fix` under its own name |
-| `suggest` | Propose type annotations the program already implies |
+| `suggest` | Suggest safe refactors for a file |
 | `ir-equal` | Compare two files' compiled IR |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
@@ -403,36 +403,55 @@ verify: run-diff verification needed for the semantic rules
 If formatting ever moves the IR, that is a bug: `--verify` reports it as one
 and refuses to write, whatever the mode.
 
-### `suggest` — Propose type annotations
+### `suggest` — Suggest safe refactors for a file
 
 ```
-petal suggest [--json] [--apply] [--from <file>]... <file>
+petal suggest [--only <kind>[,<kind>]] [--apply | --verify] [--host <host>]
+              [--json] [--from <file>]... <file>
 petal suggest [<options>] -e <code>
 ```
 
-Reads what a program's own call sites and function bodies already say about
-types nobody wrote down, and proposes the annotations with the evidence behind
-each one. A **suggestion channel**, not a check: nothing here runs during an
-ordinary compile, nothing can fail a build, and no annotation is written
-without `--apply`. See [suggestions-plan.md](dev/suggestions-plan.md).
+Proposes changes to a file that make it say more without making it do anything
+else, each with the reason behind it. A **suggestion channel**, not a check:
+nothing here runs during an ordinary compile, nothing can fail a build, and
+nothing is written without `--apply`. See
+[suggestions-plan.md](dev/suggestions-plan.md).
+
+There are two kinds, and `--only` picks between them:
+
+| Kind | What it proposes | The proof `--apply` holds it to |
+|---|---|---|
+| `types` | A type annotation the program already implies | Still compiles, and gains no type-checker warning |
+| `named-args` | Named arguments for a call that passes three or more by position | Compiles to the same IR ([`ir-equal --named-args`](#ir-equal--are-two-files-the-same-program)), and gains no warning |
 
 ```
-$ petal suggest -I petal-libs petal-libs/bloom/src/motion.ptl
+$ petal suggest app.ptl
 
-petal-libs/bloom/src/motion.ptl:22  fn step
+app.ptl:22  fn step
   suggest: -> float
   because: the body's tail expression is `float`
 
-petal-libs/bloom/src/motion.ptl:241  fn scale_rect
+app.ptl:41  fn scale_rect
   suggest: r: record
   because: read with .h, .w, .x, .y (all fields of `Rect` — narrow it by hand
            if a plain record is never passed)
-  suggest: -> Rect
-  because: the body's tail expression is `Rect`
 
-16 suggestions across 24 functions.
+app.ptl:58:3  call draw_rect
+  suggest: draw_rect(x: 0, y: 0, w: 320, h: 48, c: PANEL)
+  because: `draw_rect` is `draw_rect(x, y, w, h, c, a = …)`
+
+app.ptl:61:11  call clamp
+  suggest: clamp(t, lo: 0, hi: 1)
+  because: `clamp` is the builtin `clamp(value, lo, hi)`; `value` stays positional
+
+2 type annotations across 24 functions; 2 calls that could name their arguments.
 Re-run with --apply to write them.
 ```
+
+#### Type annotations
+
+Reads what a program's own call sites and function bodies already say about
+types nobody wrote down.
 
 Evidence, for a parameter: the types callers actually pass, the declared type
 of a slot the parameter is forwarded into, and a field read (which proves
@@ -448,24 +467,111 @@ body keeps, so it stays precise.
 Suggestions **compound** — an applied annotation is evidence for the next pass
 — so re-running until it reports nothing is the intended workflow.
 
-Options:
+#### Named arguments
 
-- `--apply` — write the annotations into the file. Refused, with exit 3 and no
-  write, unless the annotated source still compiles and gains no type-checker
-  warning the original did not already have. An annotation the checker then
-  disagrees with was a wrong guess, and a wrong guess must cost a refusal
-  rather than a file.
+`draw_rect(0, 0, 320, 48, panel)` says nothing about which number is which;
+`draw_rect(x: 0, y: 0, w: 320, h: 48, c: panel)` does. Every call that writes
+**three or more** arguments, at least one of them by position, is a candidate.
+
+**The callee must be known for certain, and accept names.** It is read from the
+compiled program, not guessed from the text: the call is followed back to the
+function it must run, so a name that was rebound or shadowed on the way is
+followed too.
+
+| Rewritten | Left alone |
+|---|---|
+| a `fn`, each overload variant by itself | a parameter, or any value that merely holds a function |
+| a lambda held in a `let` | a function read out of a record or a list |
+| a class constructor | a name rebound under a branch or in a loop |
+| a function of an imported module (`shapes.area(…)`) or of the host's prelude | a method dispatched on its receiver at runtime (`xs.slice(…)`) |
+| a method call the checker pinned to one class | a variadic builtin (`print`) |
+| a builtin that declares its parameter names ([Builtins.md](Builtins.md)) | a native whose host this build cannot see |
+
+**The rewritten call must be the same call.** It selects the same overload
+variant under the [name-aware rule](function-overloading.md), every argument
+fills the parameter it filled before, and the arguments stay in the order they
+were written — so they are evaluated in the same order.
+
+**Two shapes on one count are left alone.** Proving the rewrite changes nothing
+is not the same as proving the names are true. When two variants of an overload
+set both take a call of that many arguments and call them different things,
+only one of the two readings could be written down, so neither is. The `ui`
+prelude's `draw_line` takes seven arguments as the flat `(x1, y1, x2, y2, r, g,
+b)` and as `(x1, y1, x2, y2, c, a, width)`; a seven-argument `draw_line` gets
+no suggestion, an eight-argument one (flat only) does. Variants that agree on
+the names — one shape declared at several lengths — are named. A *single*
+function that serves two shapes from one parameter list cannot be told apart
+this way: its parameter names are all it declares, and they are what is
+suggested.
+
+**Which arguments get a name.** Positional arguments must come before named
+ones, so the only choice is where the names start. They start as early as they
+can, after:
+
+- the **receiver** of a method call or the **piped value** of `x |> f(…)`,
+  which is not written between the parentheses;
+- **placeholder parameters**, whose names say nothing about the role: a name
+  starting with `_`; neighbouring parameters that only count through the
+  alphabet from `a` (`a, b`, `a, b, c`); and neighbouring parameters numbered
+  in sequence on one stem (`p1, p2`, `c0, c1`). Everything up to the last
+  placeholder stays positional — `lerp(0, 10, t: 0.5)`. Coordinates such as
+  `x1, y1, x2, y2` are not a run (the stems alternate), and a lone `a` is
+  alpha, not a placeholder;
+- the **subject**, when the first parameter is the thing being operated on —
+  `self`, `this`, `value`, `list`, `collection`, `string`, `record`, `array`,
+  `text` or `rect`: `slice(xs, start: 1, end: 3)`;
+- arguments **already spelled like their parameter**, for as long as the run
+  lasts: `box(x, y, w: 3, h: 4)`, not `box(x: x, y: y, …)`. Once a name has
+  been written every later argument needs one, so `box(x: 1, y: y, w: 3, h: h)`.
+
+Arguments already named are kept exactly as written, and a call with nothing
+left to name gets no suggestion — so applying is idempotent: a second run
+reports nothing.
+
+**`--host` matters here.** A bare `draw_rect` is the `ui` prelude's function
+under `--host ui` (the default) and an unknown global under `--host core`.
+Suggest for the host the script actually runs in: a script for an embedding
+with natives of its own (`examples/custom-integrations/`) should say `--host
+core`, which leaves that host's natives alone.
+
+#### Options
+
+- `--only <kind>[,<kind>]` — look for these kinds only: `types`, `named-args`.
+  Both by default.
+- `--apply` — write the suggestions into the file, each kind behind its proof
+  (the table above). Annotations are proven first and named arguments on top of
+  the annotated source, so neither kind vouches for the other. A suggestion
+  that fails is dropped and named on stderr, and the rest are written; exit 3,
+  with no write, when none passes. Edits are insertions only — comments,
+  layout and everything outside the touched arguments are left as they were.
+
+  ```
+  $ petal suggest --only named-args --apply app.ptl
+  verify: app.ptl: 2 named-argument rewrites proven IR-equal — the same program
+  Applied 2 of 2 to app.ptl.
+  ```
+- `--verify` — run the `--apply` proofs and report, writing nothing. Exit 3 if
+  any suggestion fails its proof.
+- `--host <host>` — the host the script runs in, as for
+  [`check`](#check--compile-without-running): `core`, `ui` (default), `garden`,
+  `garden-config` or `sdl`. It decides which prelude is imported implicitly.
 - `--from <file>` — also compile `<file>` for its call sites. A library module
   compiled on its own has no callers, so its parameters have no call-site
-  evidence; point this at an app that uses the library. Repeatable.
-- `--json` — the suggestions as JSON, each with its insertion offset, the exact
-  text to insert, and its evidence.
+  evidence; point this at an app that uses the library. Repeatable. Type
+  annotations only.
+- `--json` — the suggestions as JSON, in source order. Each carries its `kind`
+  (`type-annotation` or `named-args`), its `because`, and its `edits` — a list
+  of `{insert_at, insert_text}`, offsets in characters into the original text.
+  A type annotation also has `function`, `arity`, `slot`, `param`, `type`,
+  `evidence` (and `insert_at` / `insert_text`, its one edit); a named-argument
+  suggestion has `callee`, `line`, `column`, `names`, `call` and `rewrite`.
 
 ### `ir-equal` — Are two files the same program?
 
 ```
 petal ir-equal <a.ptl> <b.ptl>          # exit 0 equal, 1 different, 2 can't tell
 petal ir-equal --json <a.ptl> <b.ptl>   # {"equal": bool, "diff"?: {...}}
+petal ir-equal --named-args [--host <host>] <a.ptl> <b.ptl>
 ```
 
 Compiles both files and compares their IR, ignoring everything positional:
@@ -491,6 +597,21 @@ reported:
   even in a program with no `state` — it compares the IR, not reachability.
   Reformatting, renaming a local that is not a callee, and reordering unrelated
   statements stay IR-equal.
+
+- **Argument names.** A call records the name each argument was written with,
+  so `f(1, 2)` and `f(x: 1, y: 2)` differ: whether they mean the same thing
+  depends on what `f` is. `--named-args` answers that instead of refusing. Two
+  calls that differ only in how their arguments are written are accepted when
+  the callee is known for certain on both sides — followed back through
+  bindings, captures and imports to the `fn`, overload set, lambda or
+  constructor it must be — and both calls select the same overload variant and
+  put every argument in the same parameter. Arguments are still paired in the
+  order written, so a rewrite that reorders them is a difference however they
+  are named; and a callee that cannot be pinned down (a parameter, a method
+  dispatched at runtime) is a difference as before. `--host` (default `ui`)
+  says which prelude both files are compiled against, as for `check`. This is
+  the proof [`suggest --apply`](#suggest--suggest-safe-refactors-for-a-file)
+  holds its named-argument rewrites to.
 
 When a refactor is meant to move calls, prove it with a run diff
 (`ts/bin/verify.ts`, see [dev/refactor-verification.md](dev/refactor-verification.md))

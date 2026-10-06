@@ -1,9 +1,17 @@
-//! `petal suggest` — propose type annotations the program already implies.
+//! `petal suggest` — suggest safe refactors for a file.
 //!
 //! A *suggestion channel*, deliberately separate from `petal check` (which
 //! warns) and `petal lint` (which normalizes). Nothing here ever fires during
 //! an ordinary compile, nothing here can fail a build, and applying a
 //! suggestion is always an explicit act. See docs/dev/suggestions-plan.md.
+//!
+//! Two kinds of suggestion ([`Kinds`]), each a set of text insertions:
+//!
+//! - **type annotations** the program already implies (this file);
+//! - **named arguments** for calls that pass three or more arguments by
+//!   position ([`named_args`]).
+//!
+//! # Type annotations
 //!
 //! The analysis is `crate::typecheck::infer`, which records evidence while the
 //! type checker walks each module. This file is the rest of the command:
@@ -20,14 +28,133 @@
 //! source. Every located edit is re-validated against the text it claims to
 //! cover before it is accepted, the way `lint`'s cast rule validates its
 //! spans: a scan that goes wrong costs a suggestion, never a corrupted file.
+//!
+//! # Which host
+//!
+//! A script is compiled the way `petal check` compiles it: for a host
+//! ([`HostEnv`]), with that host's prelude imported implicitly. That is what
+//! lets a call to `draw_rect` resolve to the `ui` prelude's overloads rather
+//! than look like an unknown global.
+
+pub mod named_args;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{Stmt, StmtKind};
 use crate::classes::ClassTable;
+use crate::native_fn::NativeSignature;
+use crate::typecheck::globals::{self, HostProfile};
 use crate::typecheck::infer::{Evidence, FnKey, Inferences, Resolved, Slot};
 use crate::types::Type;
+
+pub use named_args::NamedArgs;
+
+/// Which kinds of suggestion to look for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Kinds {
+    /// Type annotations the program already implies.
+    pub types: bool,
+    /// Named arguments for calls of three or more positional ones.
+    pub named_args: bool,
+}
+
+impl Default for Kinds {
+    fn default() -> Self {
+        Kinds {
+            types: true,
+            named_args: true,
+        }
+    }
+}
+
+impl Kinds {
+    /// The `--only` spelling of each kind, with the aliases it accepts.
+    pub const NAMES: &'static str = "'types' or 'named-args'";
+
+    /// Parse an `--only` list (`types,named-args`).
+    pub fn parse(list: &str) -> Result<Kinds, String> {
+        let mut kinds = Kinds {
+            types: false,
+            named_args: false,
+        };
+        for name in list.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            match name {
+                "types" | "type-annotations" | "annotations" => kinds.types = true,
+                "named-args" | "named-arguments" => kinds.named_args = true,
+                other => {
+                    return Err(format!(
+                        "Unknown suggestion kind '{other}' (expected {})",
+                        Self::NAMES
+                    ));
+                }
+            }
+        }
+        if kinds == (Kinds { types: false, named_args: false }) {
+            return Err(format!("--only needs a kind: {}", Self::NAMES));
+        }
+        Ok(kinds)
+    }
+}
+
+/// An [`Env`](crate::env::Env) set up the way a host sets its own up, as far
+/// as this process can: the module search path, and the host's implicit
+/// prelude. Every compile `petal suggest` does — the analysis and the
+/// `--apply` proofs alike — goes through one of these, so they agree on what
+/// each name means.
+pub struct HostEnv {
+    pub env: crate::env::Env,
+    host: HostProfile,
+    /// Whether the host's natives can be trusted to be what a bare call
+    /// reaches: false when the host has a prelude this build cannot see, since
+    /// a prelude function of the same name would have shadowed the native.
+    host_natives: bool,
+}
+
+impl HostEnv {
+    pub fn new(include_dirs: &[PathBuf], host: HostProfile) -> Self {
+        let mut env = crate::env::Env::new();
+        for dir in include_dirs {
+            env.add_module_path(dir.clone());
+        }
+        // Garden registers its packages for every panel; see `petal check`.
+        if host == HostProfile::Garden
+            && let Some(libs) = globals::garden_packages_dir()
+            && libs.is_dir()
+            && !include_dirs.contains(&libs)
+        {
+            env.add_module_path(libs);
+        }
+        let mut host_natives = true;
+        if host.uses_ui_prelude() {
+            match globals::ui_prelude_source() {
+                Some(src) => {
+                    env.register_module(globals::UI_MODULE, src);
+                    env.set_implicit_imports(&[globals::UI_MODULE]);
+                }
+                None => host_natives = false,
+            }
+        }
+        HostEnv {
+            env,
+            host,
+            host_natives,
+        }
+    }
+
+    /// The parameter lists native `name` declares: the `Env`'s own when it
+    /// registers one, else the host's when this process carries them (the
+    /// petal-ui set). `None` for a name that is not a known native.
+    pub fn native_signatures(&self, name: &str) -> Option<Vec<NativeSignature>> {
+        if let Some(sigs) = self.env.native_signatures(name) {
+            return Some(sigs.to_vec());
+        }
+        if self.host_natives && self.host.natives().any(|n| n == name) {
+            return globals::host_native_signatures(name);
+        }
+        None
+    }
+}
 
 /// What the command was asked to do.
 #[derive(Default)]
@@ -38,6 +165,10 @@ pub struct SuggestOptions {
     /// module compiled on its own has no callers, so its parameters have no
     /// call-site evidence; pointing at an app that uses it supplies them.
     pub from: Vec<PathBuf>,
+    /// The host the script is written for, as `petal check --host` names it.
+    pub host: HostProfile,
+    /// Which kinds of suggestion to produce.
+    pub kinds: Kinds,
 }
 
 /// One proposed annotation, resolved down to a single text insertion.
@@ -73,7 +204,10 @@ pub struct EvidenceLine {
 
 /// Everything one `petal suggest` run produced.
 pub struct SuggestOutcome {
+    /// Proposed type annotations.
     pub suggestions: Vec<Suggestion>,
+    /// Calls that could name their arguments.
+    pub named_args: Vec<NamedArgs>,
     /// How many functions the target file declares, for the summary line.
     pub functions: usize,
     /// Notes worth printing above the suggestions (a `--from` that would not
@@ -91,53 +225,63 @@ pub fn suggest_source(
 ) -> Result<SuggestOutcome, String> {
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
     let mut notes = Vec::new();
-
-    let (inferences, classes) = gather(source, origin, opts, &mut notes)?;
-    let resolved = inferences.resolve(&classes);
-
-    // Only the target file's own declarations. Evidence is compilation-wide by
-    // design — that is how a caller in another module informs this one — but a
-    // rewrite must stay inside the file the user named.
+    let host = HostEnv::new(&opts.include_dirs, opts.host);
+    let (program, mut inferences, classes) = host
+        .env
+        .compile_collecting_program(source, origin)
+        .map_err(|e| e.to_string())?;
     let declared = declarations(&stmts);
-    let chars: Vec<char> = source.chars().collect();
+
     let mut suggestions = Vec::new();
-    for (key, slots) in &resolved {
-        let Some(decl) = declared.get(key) else {
-            continue;
-        };
-        for r in slots {
-            if let Some(s) = locate(key, decl, r, &chars, &classes) {
-                suggestions.push(s);
+    if opts.kinds.types {
+        gather_from(&host, opts, &mut inferences, &mut notes);
+        let resolved = inferences.resolve(&classes);
+
+        // Only the target file's own declarations. Evidence is
+        // compilation-wide by design — that is how a caller in another module
+        // informs this one — but a rewrite must stay inside the file the user
+        // named.
+        let chars: Vec<char> = source.chars().collect();
+        for (key, slots) in &resolved {
+            let Some(decl) = declared.get(key) else {
+                continue;
+            };
+            for r in slots {
+                if let Some(s) = locate(key, decl, r, &chars, &classes) {
+                    suggestions.push(s);
+                }
             }
         }
+        suggestions.sort_by_key(|s| s.at);
     }
-    suggestions.sort_by_key(|s| s.at);
+
+    let named_args = if opts.kinds.named_args {
+        named_args::find(source, &stmts, &program, &|name| {
+            host.native_signatures(name)
+        })
+    } else {
+        Vec::new()
+    };
     Ok(SuggestOutcome {
         suggestions,
+        named_args,
         functions: declared.len(),
         notes,
     })
 }
 
-/// Compile the target and every `--from` entry, merging what each observed.
-/// The target's own compile also supplies the class table the suggestions are
-/// spelled against.
-fn gather(
-    source: &str,
-    origin: Option<&Path>,
+/// Compile every `--from` entry and merge what each observed into the
+/// target's own evidence. A `--from` entry contributes call sites and nothing
+/// else; its class table is discarded with it.
+fn gather_from(
+    host: &HostEnv,
     opts: &SuggestOptions,
+    inferences: &mut Inferences,
     notes: &mut Vec<String>,
-) -> Result<(Inferences, ClassTable), String> {
-    let env = crate::suggest::make_env(&opts.include_dirs);
-    let (mut inferences, classes) = env
-        .compile_collecting(source, origin)
-        .map_err(|e| e.to_string())?;
-
+) {
     for extra in &opts.from {
         match std::fs::read_to_string(extra) {
-            Ok(text) => match env.compile_collecting(&text, Some(extra)) {
-                // A `--from` entry contributes call sites and nothing else;
-                // its class table is discarded with it.
+            Ok(text) => match host.env.compile_collecting(&text, Some(extra)) {
                 Ok((more, _)) => inferences.merge(more),
                 Err(e) => notes.push(format!(
                     "--from {}: skipped, it does not compile ({e})",
@@ -147,15 +291,6 @@ fn gather(
             Err(e) => notes.push(format!("--from {}: {e}", extra.display())),
         }
     }
-    Ok((inferences, classes))
-}
-
-fn make_env(include_dirs: &[PathBuf]) -> crate::env::Env {
-    let mut env = crate::env::Env::new();
-    for dir in include_dirs {
-        env.add_module_path(dir.clone());
-    }
-    env
 }
 
 /// The target file's own `fn` declarations, by key.
@@ -412,17 +547,133 @@ fn evidence_line(e: &Evidence, classes: &ClassTable) -> EvidenceLine {
     }
 }
 
-/// Apply every suggestion to `source`, back to front so earlier offsets stay
-/// valid. The result is only ever written by the caller after it re-compiles
-/// clean — see `handle_suggest`.
+/// Apply every type annotation to `source`. The result is only ever written
+/// by the caller after it re-compiles clean — see `handle_suggest`.
 pub fn apply(source: &str, suggestions: &[Suggestion]) -> String {
-    let mut chars: Vec<char> = source.chars().collect();
-    let mut ordered: Vec<&Suggestion> = suggestions.iter().collect();
-    ordered.sort_by_key(|s| std::cmp::Reverse(s.at));
-    for s in ordered {
-        let at = s.at.min(chars.len());
-        let insert: Vec<char> = s.text.chars().collect();
-        chars.splice(at..at, insert);
+    apply_all(source, suggestions, &[])
+}
+
+/// Apply suggestions of both kinds to `source` in one pass. Every offset is
+/// relative to the original text, and the two kinds never insert at the same
+/// place: one writes inside a declaration's parameter list, the other inside
+/// a call's.
+pub fn apply_all(source: &str, suggestions: &[Suggestion], named: &[NamedArgs]) -> String {
+    let annotations = suggestions.iter().map(|s| (s.at, s.text.as_str()));
+    let names = named
+        .iter()
+        .flat_map(|n| n.edits.iter().map(|e| (e.at, e.text.as_str())));
+    named_args::apply_edits(source, annotations.chain(names))
+}
+
+/// One source text compiled for a host: what the `--apply` proofs compare.
+/// Owns its [`HostEnv`], since a `Program` is borrowed from the `Env` that
+/// loaded it.
+pub struct Compiled {
+    host: HostEnv,
+    pid: crate::program::ProgramId,
+}
+
+impl Compiled {
+    /// Compile `source` the way a run for `opts.host` would. `Err` is the
+    /// compile error.
+    pub fn new(source: &str, origin: Option<&Path>, opts: &SuggestOptions) -> Result<Self, String> {
+        let mut host = HostEnv::new(&opts.include_dirs, opts.host);
+        let pid = match origin {
+            Some(path) => host.env.load_program_at(source, path),
+            None => host.env.load_program(source),
+        }?;
+        Ok(Compiled { host, pid })
     }
-    chars.into_iter().collect()
+
+    pub fn program(&self) -> &crate::program::Program {
+        self.host
+            .env
+            .get_program(self.pid)
+            .expect("a loaded program stays loaded")
+    }
+
+    /// The type-checker warnings this compile produced, as messages.
+    pub fn warnings(&self) -> Vec<String> {
+        self.program()
+            .warnings
+            .iter()
+            .map(|d| d.message.clone())
+            .collect()
+    }
+
+    /// The warnings this compile has that `before` did not. By message, not
+    /// by count: a rewrite can legitimately *remove* a warning while adding a
+    /// different one, and that is still a regression.
+    pub fn warnings_gained_over(&self, before: &Compiled) -> Vec<String> {
+        let mut remaining = before.warnings();
+        let mut gained = Vec::new();
+        for w in self.warnings() {
+            match remaining.iter().position(|b| *b == w) {
+                Some(i) => {
+                    remaining.remove(i);
+                }
+                None => gained.push(w),
+            }
+        }
+        gained
+    }
+
+    /// The proof behind a named-argument rewrite: is `rewritten` the program
+    /// this is — every term, block and function paired, with the one licence
+    /// that two calls may write their argument names differently where both
+    /// provably bind the same values to the same parameters of the same
+    /// function ([`crate::ir_equiv::ir_equivalent_modulo_named_args`])?
+    #[allow(clippy::result_large_err)]
+    pub fn same_program_modulo_named_args(
+        &self,
+        rewritten: &Compiled,
+    ) -> Result<(), crate::ir_equiv::IrDiff> {
+        crate::ir_equiv::ir_equivalent_modulo_named_args(
+            self.program(),
+            rewritten.program(),
+            &|name| rewritten.host.native_signatures(name),
+        )
+    }
+}
+
+/// [`Compiled::same_program_modulo_named_args`] from two source texts, with
+/// the reason for a failure already worded for the user.
+pub fn verify_named_args(
+    original: &str,
+    rewritten: &str,
+    origin: Option<&Path>,
+    opts: &SuggestOptions,
+) -> Result<(), String> {
+    match sources_equivalent_modulo_named_args(original, rewritten, origin, opts) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(diff)) => Err(not_the_same_program(&diff)),
+        Err(e) => Err(e),
+    }
+}
+
+/// One line for a named-argument rewrite the IR comparison rejected.
+pub fn not_the_same_program(diff: &crate::ir_equiv::IrDiff) -> String {
+    let at = diff.position().map(|p| format!(" at {p}")).unwrap_or_default();
+    format!(
+        "the rewritten source is not provably the same program ({}: {} differs{at})",
+        diff.location, diff.what
+    )
+}
+
+/// Compile both texts for `opts.host` and compare them, accepting calls that
+/// differ only in how their arguments are written. Shaped like
+/// [`crate::ir_equiv::sources_equivalent`]: `Ok(Err(diff))` is "compiled, not
+/// equivalent"; `Err(msg)` is "one of them didn't compile".
+#[allow(clippy::result_large_err)]
+pub fn sources_equivalent_modulo_named_args(
+    original: &str,
+    rewritten: &str,
+    origin: Option<&Path>,
+    opts: &SuggestOptions,
+) -> Result<Result<(), crate::ir_equiv::IrDiff>, String> {
+    let a = Compiled::new(original, origin, opts)
+        .map_err(|e| format!("original does not compile: {e}"))?;
+    let b = Compiled::new(rewritten, origin, opts)
+        .map_err(|e| format!("rewritten does not compile: {e}"))?;
+    Ok(a.same_program_modulo_named_args(&b))
 }

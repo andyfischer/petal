@@ -1,11 +1,13 @@
 # A suggestion channel (`petal suggest`)
 
-Status: **shipped** for type annotations. `rust/src/typecheck/infer.rs` holds
-the analysis, `rust/src/suggest/` the command. The catalogue of further
-suggestion rules in §7 is not scheduled.
+Status: **shipped** for type annotations (`rust/src/typecheck/infer.rs` holds
+the analysis) and for named arguments (`rust/src/suggest/named_args.rs`, over
+the callee resolution in `rust/src/named_calls.rs`); `rust/src/suggest/` is the
+command. The catalogue of further suggestion rules in §7 is not scheduled.
 
-The command reference is in [CLI.md](../CLI.md#suggest--propose-type-annotations),
-and `petal help suggest` is the same text.
+The command reference is in [CLI.md](../CLI.md#suggest--suggest-safe-refactors-for-a-file),
+and `petal help suggest` is the same text. Sections 2–6 below are about the
+type-annotation kind; §8 is the named-argument kind.
 
 ## 1. Why a third channel
 
@@ -207,3 +209,39 @@ print(f([1]))'
 # The corpus check: apply everywhere in a scratch copy, then require the IR
 # to be unchanged for every file that was rewritten.
 ```
+
+## 8. Named arguments
+
+The second kind of suggestion: write a long positional call with its
+parameter names. It differs from annotations in what it claims — not "this is
+probably what you meant" but "this is exactly what you wrote" — and so in what
+proves it.
+
+**Analysis from the IR, not the checker.** The checker's knowledge of a callee
+is keyed by bare name across the whole compilation, which is the right
+looseness for a warning and the wrong one for a rewrite. The compiled program
+has the exact answer: a call term's callee edge, followed back through copies,
+closure captures and function cells to the `MakeClosure` or `MakeOverloadSet`
+that produced it (`named_calls::CallResolver`). SSA makes shadowing and
+rebinding a non-question — a rebound name is a different term, and a join is a
+phi, which does not resolve.
+
+**The proof is IR equality, extended rather than weakened.** A call term keeps
+the names its arguments were written with, so a named call and a positional
+one are different IR and `ir-equal` says so. `ir_equivalent_modulo_named_args`
+compares everything as strictly as before, and for a pair of calls whose
+written names differ it resolves both callees with the same resolver and
+accepts the pair only when each side selects the same variant
+(`backend::calls::accepts_call`, the runtime's own definition) and binds every
+argument to the same slot. An unresolvable callee is a difference. A builtin
+the `Env` registers never reaches the comparison at all: the compiler has
+already put its named arguments in positional order.
+
+**True names are a separate question from a safe rewrite.** A variant that
+serves two shapes on one count (the `ui` prelude's "also positionally"
+declarations) would lend the wrong shape's names to a call that is provably
+unchanged by them. The suggestion is withheld whenever the variants accepting
+a call disagree on what its positional arguments are called.
+
+The noise rules — which leading arguments stay positional — are in the module
+docs of `suggest/named_args.rs` and in CLI.md.

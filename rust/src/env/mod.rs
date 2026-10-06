@@ -409,6 +409,26 @@ impl Env {
         ),
         crate::error::LoadError,
     > {
+        let (_program, inferences, classes) = self.compile_collecting_program(source, origin)?;
+        Ok((inferences, classes))
+    }
+
+    /// [`compile_collecting`](Self::compile_collecting), keeping the
+    /// `Program` too — for the half of `petal suggest` that reads the IR
+    /// (which function a call resolves to) rather than the checker's evidence.
+    #[allow(clippy::type_complexity)]
+    pub fn compile_collecting_program(
+        &self,
+        source: &str,
+        origin: Option<&std::path::Path>,
+    ) -> Result<
+        (
+            Program,
+            crate::typecheck::infer::Inferences,
+            crate::classes::ClassTable,
+        ),
+        crate::error::LoadError,
+    > {
         let modules = crate::module::load_modules(
             source,
             origin,
@@ -416,10 +436,9 @@ impl Env {
             &self.modules.implicit_imports,
             &self.modules.base_implicit_imports,
         )?;
-        let (_program, inferences, classes) = Compiler::new()
+        Compiler::new()
             .collecting_inferences()
-            .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)?;
-        Ok((inferences, classes))
+            .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)
     }
 
     /// Compile source code into a Program without loading it.

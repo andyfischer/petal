@@ -37,7 +37,7 @@ for i in range(0, 60) do
   let g = int(128.0 + 127.0 * sin(tt * 0.9 + 2.0))
   let b = int(128.0 + 127.0 * sin(tt * 1.1 + 4.0))
 
-  draw_circle(int(x), int(y), 2, r, g, b)
+  draw_circle(cx: int(x), cy: int(y), radius: 2, r: r, g: g, b: b)
 end
 
 t += dt() * 2.0

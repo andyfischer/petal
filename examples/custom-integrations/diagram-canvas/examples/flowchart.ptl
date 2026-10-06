@@ -32,7 +32,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text: string, pos: record, size: num, color: record)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 // Nodes: {label, x, y, w, h}
@@ -91,11 +91,11 @@ end
 for n in nodes do
   let node_rect = {x: n.x, y: n.y, w: n.w, h: n.h}
   if mouse_over(node_rect) then
-    draw_rect(n.x - 2, n.y - 2, n.w + 4, n.h + 4, highlight_border.r, highlight_border.g, highlight_border.b)
-    draw_rect(n.x, n.y, n.w, n.h, highlight_bg.r, highlight_bg.g, highlight_bg.b)
+    draw_rect(x: n.x - 2, y: n.y - 2, w: n.w + 4, h: n.h + 4, r: highlight_border.r, g: highlight_border.g, b: highlight_border.b)
+    draw_rect(x: n.x, y: n.y, w: n.w, h: n.h, r: highlight_bg.r, g: highlight_bg.g, b: highlight_bg.b)
     draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, #ffffff)
   else
-    draw_rect(n.x, n.y, n.w, n.h, node_bg.r, node_bg.g, node_bg.b)
+    draw_rect(x: n.x, y: n.y, w: n.w, h: n.h, r: node_bg.r, g: node_bg.g, b: node_bg.b)
     draw_rect_outline(n.x, n.y, n.w, n.h, node_border.r, node_border.g, node_border.b)
     draw_text(n.label, {x: n.x + 10, y: n.y + 12}, 16, text_color)
   end

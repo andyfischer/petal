@@ -82,7 +82,7 @@ let step = (if btn_repeat("right", 0.3, 0.03) then 1 else 0 end) -
 
 let c = cfg
 if step != 0 then
-  c[k[1]] = clamp(c[k[1]] + step, k[2], k[3])
+  c[k[1]] = clamp(c[k[1]] + step, lo: k[2], hi: k[3])
 end
 if btnp("b") then
   for kn in rows do

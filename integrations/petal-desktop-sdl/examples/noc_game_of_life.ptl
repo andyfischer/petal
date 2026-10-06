@@ -146,16 +146,16 @@ for y in range(0, rows) do
       let cr = int(float(c.r) * age_fade)
       let cg = int(float(c.g) * age_fade)
       let cb = int(float(c.b) * age_fade)
-      draw_rect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1, cr, cg, cb)
+      draw_rect(x: x * cell_size, y: y * cell_size, w: cell_size - 1, h: cell_size - 1, r: cr, g: cg, b: cb)
     end
   end
 end
 
 // HUD
-draw_rect(0, 0, 250, 55, 0, 0, 0)
-draw_text("Game of Life", 10, 5, 16, 100, 100, 120)
-draw_text("Gen: " ++ str(generation), 10, 25, 12, 60, 60, 80)
+draw_rect(x: 0, y: 0, w: 250, h: 55, r: 0, g: 0, b: 0)
+draw_text("Game of Life", x: 10, y: 5, size: 16, r: 100, g: 100, b: 120)
+draw_text("Gen: " ++ str(generation), x: 10, y: 25, size: 12, r: 60, g: 60, b: 80)
 if paused then
-  draw_text("PAUSED", 100, 25, 12, 255, 100, 100)
+  draw_text("PAUSED", x: 100, y: 25, size: 12, r: 255, g: 100, b: 100)
 end
-draw_text("Space=pause  Click=draw  RClick=erase", 10, 40, 10, 50, 50, 70)
+draw_text("Space=pause  Click=draw  RClick=erase", x: 10, y: 40, size: 10, r: 50, g: 50, b: 70)

@@ -85,11 +85,11 @@ clear(14, 16, 28)
 
 for b in balls do
   // soft outer halo
-  draw_circle(int(b.x), int(b.y), int(b.r + 3.0), b.cr / 4, b.cg / 4, b.cb / 4)
-  draw_circle(int(b.x), int(b.y), int(b.r), b.cr, b.cg, b.cb)
-  draw_circle(int(b.x - b.r * 0.3), int(b.y - b.r * 0.3), int(b.r * 0.35),
-    min(255, b.cr + 60), min(255, b.cg + 60), min(255, b.cb + 60))
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: int(b.r + 3.0), r: b.cr / 4, g: b.cg / 4, b: b.cb / 4)
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: int(b.r), r: b.cr, g: b.cg, b: b.cb)
+  draw_circle(cx: int(b.x - b.r * 0.3), cy: int(b.y - b.r * 0.3), radius: int(b.r * 0.35),
+    r: min(255, b.cr + 60), g: min(255, b.cg + 60), b: min(255, b.cb + 60))
 end
 
-draw_text("Bouncing Balls — click to add", 16, 12, 14, 200, 200, 220)
-draw_text("count: " ++ str(len(balls)), 16, 32, 12, 150, 150, 180)
+draw_text("Bouncing Balls — click to add", x: 16, y: 12, size: 14, r: 200, g: 200, b: 220)
+draw_text("count: " ++ str(len(balls)), x: 16, y: 32, size: 12, r: 150, g: 150, b: 180)

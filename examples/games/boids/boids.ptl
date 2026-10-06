@@ -78,10 +78,10 @@ fn make_boids(n: num) -> list
     let angle = hash01(i, 7) * TAU
     let speed = MIN_SPEED + hash01(i, 13) * (MAX_SPEED - MIN_SPEED)
     Boid(
-      hash01(i, 1) * FIELD_W,
-      hash01(i, 2) * FIELD_H,
-      cos(angle) * speed,
-      sin(angle) * speed,
+      x: hash01(i, 1) * FIELD_W,
+      y: hash01(i, 2) * FIELD_H,
+      vx: cos(angle) * speed,
+      vy: sin(angle) * speed,
     )
   end
 end
@@ -158,10 +158,10 @@ fn Boid.steer(self: Boid, flock: list) -> Boid
   let fvy = nvy * scale
 
   Boid(
-    wrap_coord(self.x + fvx, FIELD_W),
-    wrap_coord(self.y + fvy, FIELD_H),
-    fvx,
-    fvy,
+    x: wrap_coord(self.x + fvx, FIELD_W),
+    y: wrap_coord(self.y + fvy, FIELD_H),
+    vx: fvx,
+    vy: fvy,
   )
 end
 

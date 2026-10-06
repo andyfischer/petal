@@ -12,7 +12,7 @@ let t = time()
 clear(18, 20, 26)
 
 fn label(text, x, y)
-  draw_text(text, x, y, 12, 150, 160, 180)
+  draw_text(text, x, y, size: 12, r: 150, g: 160, b: 180)
 end
 
 // ── The content: stripes that scroll under the bar ────────────────────────
@@ -21,44 +21,44 @@ let offset = (t * 40) % 48
 for i in range(0, 14) do
   let y = i * 48 - offset
   let shade = if i % 2 == 0 then 1 else 0 end
-  draw_rect(0, y, w, 48, 40 + shade * 30, 90 + shade * 40, 160 + shade * 60)
-  draw_text("row " ++ str(i), 16, y + 16, 14, 230, 235, 245)
+  draw_rect(x: 0, y: y, w: w, h: 48, r: 40 + shade * 30, g: 90 + shade * 40, b: 160 + shade * 60)
+  draw_text("row " ++ str(i), x: 16, y: y + 16, size: 14, r: 230, g: 235, b: 245)
 end
 
 // ── The material bar ──────────────────────────────────────────────────────
 // What is behind it, blurred, under a tint — the iOS navigation bar. The
 // hairline sits on the content-facing edge.
 draw_material(rect(0, 0, w, 56), {kind: "regular", tint: #1c1f28, hairline: "bottom"})
-draw_text("Layers", 16, 20, 18, 240, 242, 248)
+draw_text("Layers", x: 16, y: 20, size: 18, r: 240, g: 242, b: 248)
 draw_material(rect(w - 150, 12, 136, 32), {kind: "thin", radius: 16, tint: #ffffff, a: 60})
-label("search", w - 130, 22)
+label("search", x: w - 130, y: 22)
 
 // ── Group opacity ─────────────────────────────────────────────────────────
 // Two overlapping discs as one object at 45%: the overlap is no darker than
 // the rest, which drawing each disc at 45% cannot achieve.
 let card = rect(24, 90, 180, 110)
-label("layer at a = 115", card.x, card.y - 18)
-layer(card, {a: 115}, fn()
-  draw_circle(50, 55, 45, 255, 120, 80)
-  draw_circle(120, 55, 45, 90, 200, 255)
+label("layer at a = 115", x: card.x, y: card.y - 18)
+layer(card, opts: {a: 115}, body: fn()
+  draw_circle(cx: 50, cy: 55, radius: 45, r: 255, g: 120, b: 80)
+  draw_circle(cx: 120, cy: 55, radius: 45, r: 90, g: 200, b: 255)
 end)
 
-label("same shapes at a=115 each", 230, 72)
-draw_circle(280, 145, 45, 255, 120, 80, 115)
-draw_circle(350, 145, 45, 90, 200, 255, 115)
+label("same shapes at a=115 each", x: 230, y: 72)
+draw_circle(cx: 280, cy: 145, radius: 45, r: 255, g: 120, b: 80, a: 115)
+draw_circle(cx: 350, cy: 145, radius: 45, r: 90, g: 200, b: 255, a: 115)
 
 // ── A glow ────────────────────────────────────────────────────────────────
 // The shape drawn into a layer and the layer blurred; then the crisp shape
 // on top.
 let halo = rect(440, 80, 140, 140)
-label("layer with blur 14", halo.x, halo.y - 18)
-layer(halo, {blur: 14}, fn()
-  draw_circle(70, 70, 36, 120, 255, 170)
+label("layer with blur 14", x: halo.x, y: halo.y - 18)
+layer(halo, opts: {blur: 14}, body: fn()
+  draw_circle(cx: 70, cy: 70, radius: 36, r: 120, g: 255, b: 170)
 end)
-draw_circle(halo.x + 70, halo.y + 70, 28, 120, 255, 170)
+draw_circle(cx: halo.x + 70, cy: halo.y + 70, radius: 28, r: 120, g: 255, b: 170)
 
 // ── A frosted sheet over everything drawn so far ──────────────────────────
 let sheet = rect(24, h - 120, w - 48, 96)
 draw_material(sheet, {kind: "thick", radius: 16, tint: #ffffff, a: 200})
-draw_text("thick material, radius 16", sheet.x + 16, sheet.y + 16, 14, 30, 34, 44)
-label("snapshot → blur → tint, clipped to the rounded rect", sheet.x + 16, sheet.y + 44)
+draw_text("thick material, radius 16", x: sheet.x + 16, y: sheet.y + 16, size: 14, r: 30, g: 34, b: 44)
+label("snapshot → blur → tint, clipped to the rounded rect", x: sheet.x + 16, y: sheet.y + 44)

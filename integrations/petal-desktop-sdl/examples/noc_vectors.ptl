@@ -101,17 +101,17 @@ for m in movers do
     100, 200, 100)
 
   // Glow
-  draw_circle(int(m.x), int(m.y), radius + 4, m.r / 4, m.g / 4, m.b / 4)
+  draw_circle(cx: int(m.x), cy: int(m.y), radius: radius + 4, r: m.r / 4, g: m.g / 4, b: m.b / 4)
   // Body
-  draw_circle(int(m.x), int(m.y), radius, m.r, m.g, m.b)
+  draw_circle(cx: int(m.x), cy: int(m.y), radius: radius, r: m.r, g: m.g, b: m.b)
   // Highlight
-  draw_circle(int(m.x) - radius / 3, int(m.y) - radius / 3, max(2, radius / 3),
-    min(255, m.r + 80), min(255, m.g + 80), min(255, m.b + 80))
+  draw_circle(cx: int(m.x) - radius / 3, cy: int(m.y) - radius / 3, radius: max(2, radius / 3),
+    r: min(255, m.r + 80), g: min(255, m.g + 80), b: min(255, m.b + 80))
 end
 
 // Mouse indicator
-draw_circle(int(mx), int(my), 6, 255, 255, 100)
-draw_circle(int(mx), int(my), 3, 255, 255, 255)
+draw_circle(cx: int(mx), cy: int(my), radius: 6, r: 255, g: 255, b: 100)
+draw_circle(cx: int(mx), cy: int(my), radius: 3, r: 255, g: 255, b: 255)
 
-draw_text("Vectors & Motion", 10, 10, 16, 100, 100, 120)
-draw_text("Mouse attracts all objects", 10, 30, 12, 60, 60, 80)
+draw_text("Vectors & Motion", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Mouse attracts all objects", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

@@ -10,15 +10,15 @@ print("Hue sweep (HSV, normalized hue 0..1)")
 print("====================================")
 for i in range(0, 13) do
   let h = float(i) / 12.0
-  let c = hsv(h, 0.85, 1.0)
+  let c = hsv(h, s: 0.85, v: 1.0)
   print("  h={h}  {format_color(c)}")
 end
 print("")
 
 print("Linear color lerp (warm -> cool)")
 print("================================")
-let warm = hsv_deg(30.0, 0.9, 1.0)
-let cool = hsv_deg(220.0, 0.9, 1.0)
+let warm = hsv_deg(h: 30.0, s: 0.9, v: 1.0)
+let cool = hsv_deg(h: 220.0, s: 0.9, v: 1.0)
 let steps = 9
 for i in range(0, steps) do
   let t = float(i) / float(steps - 1)
@@ -31,6 +31,6 @@ print("HSL sweep at varying lightness")
 print("==============================")
 for l_step in range(1, 5) do
   let l = float(l_step) * 0.2
-  let c = hsl(0.0, 1.0, l)
+  let c = hsl(h: 0.0, s: 1.0, l: l)
   print("  l={l}  {format_color(c)}")
 end

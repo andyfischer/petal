@@ -32,7 +32,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 let score_color = {r: 200, g: 255, b: 220}
@@ -138,7 +138,7 @@ clear(15, 12, 30)
 for gx in range(1, cols - 1) do
   for gy in range(1, rows - 1) do
     if (gx + gy) % 2 == 0 then
-      draw_rect(gx * grid_size, gy * grid_size, grid_size, grid_size, 18, 15, 35)
+      draw_rect(x: gx * grid_size, y: gy * grid_size, w: grid_size, h: grid_size, r: 18, g: 15, b: 35)
     end
   end
 end
@@ -149,19 +149,19 @@ let border_g = 30
 let border_b = 80
 // Top wall
 for bx in range(0, cols) do
-  draw_rect(bx * grid_size, 0, grid_size, grid_size, border_r, border_g, border_b)
+  draw_rect(x: bx * grid_size, y: 0, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
 end
 // Bottom wall
 for bx in range(0, cols) do
-  draw_rect(bx * grid_size, (rows - 1) * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+  draw_rect(x: bx * grid_size, y: (rows - 1) * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
 end
 // Left wall
 for by in range(0, rows) do
-  draw_rect(0, by * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+  draw_rect(x: 0, y: by * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
 end
 // Right wall
 for by in range(0, rows) do
-  draw_rect((cols - 1) * grid_size, by * grid_size, grid_size, grid_size, border_r, border_g, border_b)
+  draw_rect(x: (cols - 1) * grid_size, y: by * grid_size, w: grid_size, h: grid_size, r: border_r, g: border_g, b: border_b)
 end
 // Inner border glow line
 draw_rect_outline(grid_size + 1, grid_size + 1, (cols - 2) * grid_size - 2, (rows - 2) * grid_size - 2, 80, 60, 160)
@@ -180,12 +180,12 @@ end
 // Outer glow
 let fx = food_x * grid_size + grid_size / 2
 let fy = food_y * grid_size + grid_size / 2
-draw_circle(fx, fy, 12 + pulse_size, 80, 10, 10)
-draw_circle(fx, fy, 10 + pulse_size, 140, 20, 20)
+draw_circle(cx: fx, cy: fy, radius: 12 + pulse_size, r: 80, g: 10, b: 10)
+draw_circle(cx: fx, cy: fy, radius: 10 + pulse_size, r: 140, g: 20, b: 20)
 // Main food body
-draw_circle(fx, fy, 8, 255, 60, 80)
+draw_circle(cx: fx, cy: fy, radius: 8, r: 255, g: 60, b: 80)
 // Highlight
-draw_circle(fx - 2, fy - 2, 3, 255, 160, 160)
+draw_circle(cx: fx - 2, cy: fy - 2, radius: 3, r: 255, g: 160, b: 160)
 
 // ---- Draw snake body with gradient ----
 let snake_len = len(snake)
@@ -207,62 +207,62 @@ for i in range(0, snake_len) do
 
   if i == 0 then
     // Head: draw slightly larger with brighter color
-    draw_rect(sx + pad, sy + pad, grid_size - pad * 2, grid_size - pad * 2, 100, 255, 200)
+    draw_rect(x: sx + pad, y: sy + pad, w: grid_size - pad * 2, h: grid_size - pad * 2, r: 100, g: 255, b: 200)
     // Inner highlight on head
-    draw_rect(sx + 4, sy + 4, grid_size - 8, grid_size - 8, 160, 255, 220)
+    draw_rect(x: sx + 4, y: sy + 4, w: grid_size - 8, h: grid_size - 8, r: 160, g: 255, b: 220)
 
     // Eyes
     let eye_size = 3
     if dir_x == 1 then
       // Facing right
-      draw_circle(sx + 14, sy + 6, eye_size, 255, 255, 255)
-      draw_circle(sx + 14, sy + 14, eye_size, 255, 255, 255)
-      draw_circle(sx + 15, sy + 6, 1, 20, 20, 40)
-      draw_circle(sx + 15, sy + 14, 1, 20, 20, 40)
+      draw_circle(cx: sx + 14, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 14, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 15, cy: sy + 6, radius: 1, r: 20, g: 20, b: 40)
+      draw_circle(cx: sx + 15, cy: sy + 14, radius: 1, r: 20, g: 20, b: 40)
     end
     if dir_x == -1 then
       // Facing left
-      draw_circle(sx + 6, sy + 6, eye_size, 255, 255, 255)
-      draw_circle(sx + 6, sy + 14, eye_size, 255, 255, 255)
-      draw_circle(sx + 5, sy + 6, 1, 20, 20, 40)
-      draw_circle(sx + 5, sy + 14, 1, 20, 20, 40)
+      draw_circle(cx: sx + 6, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 6, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 5, cy: sy + 6, radius: 1, r: 20, g: 20, b: 40)
+      draw_circle(cx: sx + 5, cy: sy + 14, radius: 1, r: 20, g: 20, b: 40)
     end
     if dir_y == -1 then
       // Facing up
-      draw_circle(sx + 6, sy + 6, eye_size, 255, 255, 255)
-      draw_circle(sx + 14, sy + 6, eye_size, 255, 255, 255)
-      draw_circle(sx + 6, sy + 5, 1, 20, 20, 40)
-      draw_circle(sx + 14, sy + 5, 1, 20, 20, 40)
+      draw_circle(cx: sx + 6, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 14, cy: sy + 6, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 6, cy: sy + 5, radius: 1, r: 20, g: 20, b: 40)
+      draw_circle(cx: sx + 14, cy: sy + 5, radius: 1, r: 20, g: 20, b: 40)
     end
     if dir_y == 1 then
       // Facing down
-      draw_circle(sx + 6, sy + 14, eye_size, 255, 255, 255)
-      draw_circle(sx + 14, sy + 14, eye_size, 255, 255, 255)
-      draw_circle(sx + 6, sy + 15, 1, 20, 20, 40)
-      draw_circle(sx + 14, sy + 15, 1, 20, 20, 40)
+      draw_circle(cx: sx + 6, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 14, cy: sy + 14, radius: eye_size, r: 255, g: 255, b: 255)
+      draw_circle(cx: sx + 6, cy: sy + 15, radius: 1, r: 20, g: 20, b: 40)
+      draw_circle(cx: sx + 14, cy: sy + 15, radius: 1, r: 20, g: 20, b: 40)
     end
   else
     // Body segment with gradient and padding for "segmented" look
-    draw_rect(sx + pad, sy + pad, grid_size - pad * 2, grid_size - pad * 2, sr, sg, sb)
+    draw_rect(x: sx + pad, y: sy + pad, w: grid_size - pad * 2, h: grid_size - pad * 2, r: sr, g: sg, b: sb)
     // Subtle inner highlight
-    draw_rect(sx + 4, sy + 4, grid_size - 8, grid_size - 8, min(sr + 30, 255), min(sg + 20, 255), min(sb + 20, 255))
+    draw_rect(x: sx + 4, y: sy + 4, w: grid_size - 8, h: grid_size - 8, r: min(sr + 30, 255), g: min(sg + 20, 255), b: min(sb + 20, 255))
   end
 end
 
 // ---- Score display with background panel ----
-draw_rect(10, 8, 160, 32, 20, 15, 40)
+draw_rect(x: 10, y: 8, w: 160, h: 32, r: 20, g: 15, b: 40)
 draw_rect_outline(10, 8, 160, 32, 80, 60, 160)
 draw_text("Score: " ++ str(score), {x: 18, y: 12}, 24, score_color)
 
 // ---- Game over screen ----
 if game_over then
   // Dim overlay (draw a large semi-transparent-ish dark rect)
-  draw_rect(grid_size, grid_size, (cols - 2) * grid_size, (rows - 2) * grid_size, 10, 8, 20)
+  draw_rect(x: grid_size, y: grid_size, w: (cols - 2) * grid_size, h: (rows - 2) * grid_size, r: 10, g: 8, b: 20)
 
   // Game over panel
   let panel_x = screen_width() / 2 - 160
   let panel_y = screen_height() / 2 - 60
-  draw_rect(panel_x, panel_y, 320, 120, 30, 20, 50)
+  draw_rect(x: panel_x, y: panel_y, w: 320, h: 120, r: 30, g: 20, b: 50)
   draw_rect_outline(panel_x, panel_y, 320, 120, 120, 80, 200)
 
   draw_text("GAME OVER", {x: screen_width() / 2 - 100, y: screen_height() / 2 - 40}, 40, {r: 255, g: 80, b: 100})

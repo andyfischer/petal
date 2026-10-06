@@ -51,8 +51,8 @@ fn todo_app(event)
     when None() -> ""
   end
 
-  let add_btn = button("add", "Add", pressed == "add")
-  let clear_btn = button("clear", "Clear", pressed == "clear")
+  let add_btn = button(id: "add", label: "Add", clicked: pressed == "add")
+  let clear_btn = button(id: "clear", label: "Clear", clicked: pressed == "clear")
 
   let list = get items
   print("  Todo App ({len(list)} items)")

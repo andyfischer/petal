@@ -18,8 +18,8 @@ for y in range(0, height) do
     // Scale coordinates so neighboring cells sample nearby points
     let n = noise(float(x) * 0.12, float(y) * 0.18)
     // noise() returns roughly -1..1; map into 0..levels
-    let idx = int(map_range(n, -1.0, 1.0, 0.0, float(levels)))
-    let clamped = clamp(float(idx), 0.0, float(levels - 1))
+    let idx = int(map_range(n, in_lo: -1.0, in_hi: 1.0, out_lo: 0.0, out_hi: float(levels)))
+    let clamped = clamp(float(idx), lo: 0.0, hi: float(levels - 1))
     row = row ++ ramp[int(clamped)]
   end
   print(row)

@@ -61,37 +61,37 @@ end
 
 let KINDS = [
   {id: "number", label: "Number", cat: "source", desc: "A constant you set by hand.",
-    ins: [], params: [port("value", -10, 10, 1)]},
+    ins: [], params: [port(name: "value", lo: -10, hi: 10, def: 1)]},
   {id: "time", label: "Time", cat: "source", desc: "Seconds since the patch started, times speed.",
-    ins: [], params: [port("speed", 0, 4, 1)]},
+    ins: [], params: [port(name: "speed", lo: 0, hi: 4, def: 1)]},
   {id: "sine", label: "Sine", cat: "gen", desc: "amp · sin(2π · freq · t + phase)",
-    ins: [port("t", 0, 10, 0)],
-    params: [port("freq", 0.05, 4, 0.5), port("amp", 0, 10, 1), port("phase", 0, 6.283, 0)]},
+    ins: [port(name: "t", lo: 0, hi: 10, def: 0)],
+    params: [port(name: "freq", lo: 0.05, hi: 4, def: 0.5), port(name: "amp", lo: 0, hi: 10, def: 1), port(name: "phase", lo: 0, hi: 6.283, def: 0)]},
   {id: "noise", label: "Noise", cat: "gen", desc: "Smooth noise sampled at x · scale, in -1..1.",
-    ins: [port("x", 0, 10, 0)], params: [port("scale", 0.05, 4, 1)]},
+    ins: [port(name: "x", lo: 0, hi: 10, def: 0)], params: [port(name: "scale", lo: 0.05, hi: 4, def: 1)]},
   {id: "add", label: "Add", cat: "math", desc: "a + b",
-    ins: [port("a", -10, 10, 0), port("b", -10, 10, 0)], params: []},
+    ins: [port(name: "a", lo: -10, hi: 10, def: 0), port(name: "b", lo: -10, hi: 10, def: 0)], params: []},
   {id: "sub", label: "Subtract", cat: "math", desc: "a − b",
-    ins: [port("a", -10, 10, 0), port("b", -10, 10, 0)], params: []},
+    ins: [port(name: "a", lo: -10, hi: 10, def: 0), port(name: "b", lo: -10, hi: 10, def: 0)], params: []},
   {id: "mul", label: "Multiply", cat: "math", desc: "a × b",
-    ins: [port("a", -10, 10, 1), port("b", -10, 10, 1)], params: []},
+    ins: [port(name: "a", lo: -10, hi: 10, def: 1), port(name: "b", lo: -10, hi: 10, def: 1)], params: []},
   {id: "div", label: "Divide", cat: "math", desc: "a ÷ b — 0 when b is 0",
-    ins: [port("a", -10, 10, 1), port("b", -10, 10, 1)], params: []},
+    ins: [port(name: "a", lo: -10, hi: 10, def: 1), port(name: "b", lo: -10, hi: 10, def: 1)], params: []},
   {id: "clamp", label: "Clamp", cat: "math", desc: "v held inside [lo, hi]",
-    ins: [port("v", -10, 10, 0)], params: [port("lo", -10, 10, 0), port("hi", -10, 10, 1)]},
+    ins: [port(name: "v", lo: -10, hi: 10, def: 0)], params: [port(name: "lo", lo: -10, hi: 10, def: 0), port(name: "hi", lo: -10, hi: 10, def: 1)]},
   {id: "lerp", label: "Lerp", cat: "math", desc: "a + (b − a) · t",
-    ins: [port("a", -10, 10, 0), port("b", -10, 10, 1), port("t", 0, 1, 0.5)], params: []},
+    ins: [port(name: "a", lo: -10, hi: 10, def: 0), port(name: "b", lo: -10, hi: 10, def: 1), port(name: "t", lo: 0, hi: 1, def: 0.5)], params: []},
   {id: "map", label: "Map range", cat: "math", desc: "v remapped from [in lo, in hi] to [out lo, out hi]",
-    ins: [port("v", -10, 10, 0)],
-    params: [port("in lo", -10, 10, -1), port("in hi", -10, 10, 1), port("out lo", -10, 10, 0), port("out hi", -10, 10, 1)]},
+    ins: [port(name: "v", lo: -10, hi: 10, def: 0)],
+    params: [port(name: "in lo", lo: -10, hi: 10, def: -1), port(name: "in hi", lo: -10, hi: 10, def: 1), port(name: "out lo", lo: -10, hi: 10, def: 0), port(name: "out hi", lo: -10, hi: 10, def: 1)]},
   {id: "display", label: "Display", cat: "sink", desc: "Shows the value arriving at it, large.",
-    ins: [port("v", -10, 10, 0)], params: []},
+    ins: [port(name: "v", lo: -10, hi: 10, def: 0)], params: []},
   {id: "scope", label: "Scope", cat: "sink", desc: "Plots the last four seconds of its input.",
-    ins: [port("v", -10, 10, 0)], params: []},
+    ins: [port(name: "v", lo: -10, hi: 10, def: 0)], params: []},
   {id: "gauge", label: "Gauge", cat: "sink", desc: "A dial from min to max.",
-    ins: [port("v", -10, 10, 0)], params: [port("min", -10, 10, -1), port("max", -10, 10, 1)]},
+    ins: [port(name: "v", lo: -10, hi: 10, def: 0)], params: [port(name: "min", lo: -10, hi: 10, def: -1), port(name: "max", lo: -10, hi: 10, def: 1)]},
   {id: "color", label: "Color", cat: "sink", desc: "Mixes r, g, b (0..1) into a swatch.",
-    ins: [port("r", 0, 1, 0.5), port("g", 0, 1, 0.5), port("b", 0, 1, 0.5)], params: []},
+    ins: [port(name: "r", lo: 0, hi: 1, def: 0.5), port(name: "g", lo: 0, hi: 1, def: 0.5), port(name: "b", lo: 0, hi: 1, def: 0.5)], params: []},
 ]
 
 fn kind_of(id: string) -> record
@@ -203,7 +203,7 @@ fn links_without_into(links: list, id: num, port_i: num) -> list
 end
 
 fn add_link(links: list, from: num, to: num, port_i: num) -> list
-  append(links_without_into(links, to, port_i), {from: from, to: to, port: port_i})
+  append(links_without_into(links, id: to, port_i: port_i), {from: from, to: to, port: port_i})
 end
 
 // Move the given ids to the end of the list so they draw on top.
@@ -224,7 +224,7 @@ fn reaches(links: list, from: num, target: num, depth: num) -> bool
   let hit = false
   for l in links do
     if l.to == from && !hit then
-      hit = reaches(links, l.from, target, depth + 1)
+      hit = reaches(links, from: l.from, target: target, depth: depth + 1)
     end
   end
   hit
@@ -240,7 +240,7 @@ var EV_T = 0.0
 
 fn ev_input(idx: int, i: int) -> num
   let n = get EV_NODES[idx]
-  let li = link_into(get EV_LINKS, n.id, i)
+  let li = link_into(links: get EV_LINKS, id: n.id, port_i: i)
   if li < 0 then
     n.ins[i]
   else
@@ -268,11 +268,11 @@ fn ev_node(idx: int) -> num
       let b = ev_input(idx, 1)
       if abs(b) < 0.000001 then 0.0 else ev_input(idx, 0) / b end
     end
-    when "clamp" -> clamp(ev_input(idx, 0), min(p[0], p[1]), max(p[0], p[1]))
-    when "lerp" -> lerp(ev_input(idx, 0), ev_input(idx, 1), ev_input(idx, 2))
+    when "clamp" -> clamp(ev_input(idx, 0), lo: min(p[0], p[1]), hi: max(p[0], p[1]))
+    when "lerp" -> lerp(ev_input(idx, 0), ev_input(idx, 1), t: ev_input(idx, 2))
     when "map" do
       if abs(p[1] - p[0]) < 0.000001 then p[2]
-      else map_range(ev_input(idx, 0), p[0], p[1], p[2], p[3]) end
+      else map_range(ev_input(idx, 0), in_lo: p[0], in_hi: p[1], out_lo: p[2], out_hi: p[3]) end
     end
     when "color" -> ev_input(idx, 0) * 0.299 + ev_input(idx, 1) * 0.587 + ev_input(idx, 2) * 0.114
     when _ -> ev_input(idx, 0)
@@ -294,7 +294,7 @@ end
 fn input_values(nodes: list, links: list, vals: list, n: record) -> list
   let k = kind_of(n.kind)
   for i in range(0, len(k.ins)) do
-    let li = link_into(links, n.id, i)
+    let li = link_into(links, id: n.id, port_i: i)
     if li < 0 then
       n.ins[i]
     else
@@ -310,7 +310,7 @@ fn scope_push(id: num, v: num, playing: bool) -> list
   state(id) samples = []
   if playing then
     samples = append(samples, v)
-    if len(samples) > 160 then samples = slice(samples, len(samples) - 160, len(samples)) end
+    if len(samples) > 160 then samples = slice(samples, start: len(samples) - 160, end: len(samples)) end
   end
   samples
 end
@@ -336,20 +336,20 @@ fn mono(size: num, c: record) -> record
 end
 
 fn caps(s: string, x: num, y: num, c: record)
-  draw_text(s, {x: x, y: y}, {size: 10, font: "ui", color: c, spacing: 2})
+  draw_text(s, pos: {x: x, y: y}, style: {size: 10, font: "ui", color: c, spacing: 2})
 end
 
 fn clamp01(v: num) -> num
-  clamp(v, 0.0, 1.0)
+  clamp(v, lo: 0.0, hi: 1.0)
 end
 
 // The prelude has no record overloads for these two outlines.
 fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
-  draw_rect_rounded_outline(int(r.x), int(r.y), int(r.w), int(r.h), int(radius), c.r, c.g, c.b, int(a), max(1, int(wd)))
+  draw_rect_rounded_outline(x: int(r.x), y: int(r.y), w: int(r.w), h: int(r.h), radius: int(radius), r: c.r, g: c.g, b: c.b, a: int(a), width: max(1, int(wd)))
 end
 
 fn circ_outline(cx: num, cy: num, rad: num, c: record, a: num, wd: num)
-  draw_circle_outline(int(cx), int(cy), max(1, int(rad)), c.r, c.g, c.b, int(a), max(1, int(wd)))
+  draw_circle_outline(cx: int(cx), cy: int(cy), radius: max(1, int(rad)), r: c.r, g: c.g, b: c.b, a: int(a), width: max(1, int(wd)))
 end
 
 fn to_rgb(v: num) -> int
@@ -382,36 +382,36 @@ end
 // A small pill button drawn in the app's own chrome. True on click.
 fn pill_btn(r: Rect, label: string, active: bool) -> bool
   let hov = hovered(r)
-  let fill = if active then over(PANEL, ACCENT, 0.22) elsif hov then HOVER else ELEV end
-  draw_rect_rounded(r, 7, fill)
-  rr_outline(r, 7, if active then ACCENT else OUTLINE end, 255, 1)
+  let fill = if active then over(bg: PANEL, fg: ACCENT, a: 0.22) elsif hov then HOVER else ELEV end
+  draw_rect_rounded(r, radius: 7, c: fill)
+  rr_outline(r, radius: 7, c: if active then ACCENT else OUTLINE end, a: 255, wd: 1)
   let st = ts(12, if active then TEXT else DIM end)
-  draw_text(label, {x: r.x + (r.w - text_width(label, st)) / 2, y: r.y + (r.h - 12) / 2 - 1}, st)
+  draw_text(label, pos: {x: r.x + (r.w - text_width(label, st)) / 2, y: r.y + (r.h - 12) / 2 - 1}, style: st)
   clicked(r)
 end
 
 // ── The seeded patch ─────────────────────────────────────────────────────
 
 fn seed_nodes() -> list
-  let n1 = make_node(1, "time", 40, 40)
-  let n2 = make_node(2, "sine", 280, 40)
+  let n1 = make_node(id: 1, kind: "time", x: 40, y: 40)
+  let n2 = make_node(id: 2, kind: "sine", x: 280, y: 40)
   n2.params = [0.4, 1.0, 0.0]
-  let n3 = make_node(3, "number", 280, 190)
+  let n3 = make_node(id: 3, kind: "number", x: 280, y: 190)
   n3.params = [3.0]
-  let n4 = make_node(4, "mul", 520, 60)
-  let n5 = make_node(5, "scope", 760, 150)
-  let n6 = make_node(6, "noise", 280, 330)
+  let n4 = make_node(id: 4, kind: "mul", x: 520, y: 60)
+  let n5 = make_node(id: 5, kind: "scope", x: 760, y: 150)
+  let n6 = make_node(id: 6, kind: "noise", x: 280, y: 330)
   n6.params = [0.6]
-  let n7 = make_node(7, "map", 520, 290)
+  let n7 = make_node(id: 7, kind: "map", x: 520, y: 290)
   n7.params = [-1.0, 1.0, 0.0, 1.0]
-  let n8 = make_node(8, "gauge", 760, 340)
+  let n8 = make_node(id: 8, kind: "gauge", x: 760, y: 340)
   n8.params = [-3.0, 3.0]
-  let n9 = make_node(9, "color", 760, 510)
+  let n9 = make_node(id: 9, kind: "color", x: 760, y: 510)
   n9.ins = [0.9, 0.55, 0.2]
-  let n10 = make_node(10, "display", 760, 20)
-  let n11 = make_node(11, "sine", 280, 440)
+  let n10 = make_node(id: 10, kind: "display", x: 760, y: 20)
+  let n11 = make_node(id: 11, kind: "sine", x: 280, y: 440)
   n11.params = [0.15, 0.35, 1.57]
-  let n12 = make_node(12, "add", 520, 470)
+  let n12 = make_node(id: 12, kind: "add", x: 520, y: 470)
   n12.ins = [0.0, 0.3]
   [n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12]
 end
@@ -452,7 +452,7 @@ let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
 // ── Camera helpers ───────────────────────────────────────────────────────
 
 fn zoom_about(cam: record, canvas: Rect, sx: num, sy: num, factor: num) -> record
-  let nz = clamp(cam.zoom * factor, 0.35, 2.5)
+  let nz = clamp(cam.zoom * factor, lo: 0.35, hi: 2.5)
   let wx = to_wx(cam, canvas, sx)
   let wy = to_wy(cam, canvas, sy)
   {x: wx - (float(sx) - float(canvas.x)) / nz,
@@ -476,7 +476,7 @@ fn fit_all(nodes: list, canvas: Rect) -> record
     let pad_w = 28.0
     let zx = (float(canvas.w) - pad_w * 2.0) / max(1.0, x1 - x0)
     let zy = (float(canvas.h) - pad_w * 2.0) / max(1.0, y1 - y0)
-    let nz = clamp(min(zx, zy), 0.35, 1.5)
+    let nz = clamp(min(zx, zy), lo: 0.35, hi: 1.5)
     {x: (x0 + x1) / 2.0 - float(canvas.w) / 2.0 / nz,
       y: (y0 + y1) / 2.0 - float(canvas.h) / 2.0 / nz, zoom: nz}
   end
@@ -563,7 +563,7 @@ claim_key("d", "cmd")
 claim_key("a", "cmd")
 
 let z = cam.zoom
-let over_canvas = point_in(mx, my, canvas)
+let over_canvas = point_in(px: mx, py: my, r: canvas)
 let blocked = menu_blocking(menu)
 
 let raw_dt = dt()
@@ -586,8 +586,8 @@ fn to_wy(cam: record, canvas: Rect, sy: num) -> num
   cam.y + (float(sy) - float(canvas.y)) / cam.zoom
 end
 
-let wmx = to_wx(cam, canvas, mx)
-let wmy = to_wy(cam, canvas, my)
+let wmx = to_wx(cam, canvas, sx: mx)
+let wmy = to_wy(cam, canvas, sy: my)
 
 // ── Hit testing (world space) ────────────────────────────────────────────
 //  {kind: "none"|"node"|"in"|"out", node: id, port: i}
@@ -609,7 +609,7 @@ fn hit_test(nodes: list, wx: num, wy: num, z: num) -> record
         out = {kind: "in", node: n.id, port: j}
       end
     end
-    if out.kind == "none" && point_in(wx, wy, node_rect(n)) then
+    if out.kind == "none" && point_in(px: wx, py: wy, r: node_rect(n)) then
       out = {kind: "node", node: n.id, port: -1}
     end
     i = i - 1
@@ -617,13 +617,13 @@ fn hit_test(nodes: list, wx: num, wy: num, z: num) -> record
   out
 end
 
-let hit = if over_canvas then hit_test(nodes, wmx, wmy, z) else {kind: "none", node: -1, port: -1} end
+let hit = if over_canvas then hit_test(nodes, wx: wmx, wy: wmy, z: z) else {kind: "none", node: -1, port: -1} end
 
 // ── Undo bookkeeping ─────────────────────────────────────────────────────
 
 fn push_hist(hist: list, nodes: list, links: list) -> list
   let h = append(hist, {nodes: nodes, links: links})
-  if len(h) > 60 then h = slice(h, len(h) - 60, len(h)) end
+  if len(h) > 60 then h = slice(h, start: len(h) - 60, end: len(h)) end
   h
 end
 
@@ -651,10 +651,10 @@ if key_pressed("escape") && !blocked then
 end
 if key_pressed("p") && !mod_cmd() then playing = !playing end
 if key_pressed("=") || key_pressed("+") then
-  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.2)
+  cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.2)
 end
 if key_pressed("-") then
-  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.0 / 1.2)
+  cam = zoom_about(cam, canvas, sx: canvas.x + canvas.w / 2, sy: canvas.y + canvas.h / 2, factor: 1.0 / 1.2)
 end
 if key_pressed("0") then cam = {...cam, zoom: 1.0} end
 if want_fit then cam = fit_all(nodes, canvas) end
@@ -711,7 +711,7 @@ if want_delete && len(sel) > 0 then
   fut = []
   links = links_without_nodes(links, sel)
   nodes = without(nodes, sel)
-  flash = note(flash, "Deleted {len(sel)} node" ++ (if len(sel) == 1 then "" else "s" end), time())
+  flash = note(flash, text: "Deleted {len(sel)} node" ++ (if len(sel) == 1 then "" else "s" end), now: time())
   sel = []
   ops = ops + 1
 end
@@ -719,7 +719,7 @@ end
 if want_dup && len(sel) > 0 then
   hist = push_hist(hist, nodes, links)
   fut = []
-  let d = dup_sel(nodes, links, sel, next_id)
+  let d = dup_sel(nodes, links, sel, start_id: next_id)
   nodes = d.nodes
   links = d.links
   sel = d.sel
@@ -753,7 +753,7 @@ if over_canvas && !blocked then
   let sx = scroll_x()
   if sy != 0.0 || sx != 0.0 then
     if mod_cmd() || mod_ctrl() then
-      cam = zoom_about(cam, canvas, mx, my, if sy > 0.0 then 1.1 else 1.0 / 1.1 end)
+      cam = zoom_about(cam, canvas, sx: mx, sy: my, factor: if sy > 0.0 then 1.1 else 1.0 / 1.1 end)
     else
       cam = {...cam, x: cam.x - sx * 18.0 / z, y: cam.y - sy * 18.0 / z}
     end
@@ -777,13 +777,13 @@ if over_canvas && !blocked && drag.mode == "none" then
     if hit.kind == "out" then
       drag = {...drag, mode: "link", node: hit.node, port: 0, dir: "out", moved: false}
     elsif hit.kind == "in" then
-      let li = link_into(links, hit.node, hit.port)
+      let li = link_into(links, id: hit.node, port_i: hit.port)
       if li >= 0 then
         // Pick the wire back up from its source and drop it elsewhere.
         hist = push_hist(hist, nodes, links)
         fut = []
         let src = links[li].from
-        links = links_without_into(links, hit.node, hit.port)
+        links = links_without_into(links, id: hit.node, port_i: hit.port)
         drag = {...drag, mode: "link", node: src, port: 0, dir: "out", moved: true}
         ops = ops + 1
       else
@@ -812,7 +812,7 @@ if over_canvas && !blocked && drag.mode == "none" then
       sel = [hit.node]
     end
     let tag = if hit.kind == "node" then {what: "node", id: hit.node} else {what: "canvas", id: -1} end
-    menu = menu_show(menu, mx, my, tag)
+    menu = menu_show(m: menu, x: mx, y: my, tag: tag)
   end
 end
 
@@ -853,7 +853,7 @@ end
 if drag.mode == "place" && !mouse_down(0) && over_canvas then
   hist = push_hist(hist, nodes, links)
   fut = []
-  let n = make_node(next_id, drag.kind, wmx - NODE_W / 2.0, wmy - HDR_H / 2.0)
+  let n = make_node(id: next_id, kind: drag.kind, x: wmx - NODE_W / 2.0, y: wmy - HDR_H / 2.0)
   nodes = append(nodes, n)
   sel = [n.id]
   next_id = next_id + 1
@@ -867,22 +867,22 @@ if mouse_released(0) || mouse_released(2) then
   if drag.mode == "link" then
     let ok = false
     if drag.dir == "out" && hit.kind == "in" && hit.node != drag.node then
-      if !reaches(links, drag.node, hit.node, 0) then
+      if !reaches(links, from: drag.node, target: hit.node, depth: 0) then
         hist = push_hist(hist, nodes, links)
         fut = []
-        links = add_link(links, drag.node, hit.node, hit.port)
+        links = add_link(links, from: drag.node, to: hit.node, port_i: hit.port)
         ok = true
       else
-        flash = note(flash, "That wire would make a loop", time())
+        flash = note(flash, text: "That wire would make a loop", now: time())
       end
     elsif drag.dir == "in" && hit.kind == "out" && hit.node != drag.node then
-      if !reaches(links, hit.node, drag.node, 0) then
+      if !reaches(links, from: hit.node, target: drag.node, depth: 0) then
         hist = push_hist(hist, nodes, links)
         fut = []
-        links = add_link(links, hit.node, drag.node, drag.port)
+        links = add_link(links, from: hit.node, to: drag.node, port_i: drag.port)
         ok = true
       else
-        flash = note(flash, "That wire would make a loop", time())
+        flash = note(flash, text: "That wire would make a loop", now: time())
       end
     end
     if ok then ops = ops + 1 end
@@ -915,26 +915,26 @@ end
 
 // ── Evaluate ─────────────────────────────────────────────────────────────
 
-let vals = eval_all(nodes, links, clock)
+let vals = eval_all(nodes, links, t: clock)
 
 // ── Draw: canvas ─────────────────────────────────────────────────────────
 
 clear(BG.r, BG.g, BG.b)
 draw_rect(canvas, CANVAS)
-clip(canvas.x, canvas.y, canvas.w, canvas.h)
+clip(x: canvas.x, y: canvas.y, w: canvas.w, h: canvas.h)
 
 // dotted grid
 let gstep = if z < 0.7 then 64.0 else 32.0 end
 let gx0 = float(int(floor(cam.x / gstep))) * gstep
 let gy0 = float(int(floor(cam.y / gstep))) * gstep
 let gwx = gx0
-while to_sx(cam, canvas, gwx) < float(canvas.x + canvas.w) do
-  let sx = to_sx(cam, canvas, gwx)
+while to_sx(cam, canvas, wx: gwx) < float(canvas.x + canvas.w) do
+  let sx = to_sx(cam, canvas, wx: gwx)
   let gwy = gy0
-  while to_sy(cam, canvas, gwy) < float(canvas.y + canvas.h) do
-    let sy = to_sy(cam, canvas, gwy)
+  while to_sy(cam, canvas, wy: gwy) < float(canvas.y + canvas.h) do
+    let sy = to_sy(cam, canvas, wy: gwy)
     let major = (int(round(gwx / gstep)) % 4 == 0) && (int(round(gwy / gstep)) % 4 == 0)
-    draw_rect(int(sx), int(sy), 2, 2, GRID.r, GRID.g, GRID.b, if major then 255 else 150 end)
+    draw_rect(x: int(sx), y: int(sy), w: 2, h: 2, r: GRID.r, g: GRID.g, b: GRID.b, a: if major then 255 else 150 end)
     gwy = gwy + gstep
   end
   gwx = gwx + gstep
@@ -948,14 +948,14 @@ for l in links do
   if a >= 0 && b >= 0 then
     let o = out_port(nodes[a])
     let p = in_port(nodes[b], l.port)
-    let x0 = to_sx(cam, canvas, o.x)
-    let y0 = to_sy(cam, canvas, o.y)
-    let x1 = to_sx(cam, canvas, p.x)
-    let y1 = to_sy(cam, canvas, p.y)
+    let x0 = to_sx(cam, canvas, wx: o.x)
+    let y0 = to_sy(cam, canvas, wy: o.y)
+    let x1 = to_sx(cam, canvas, wx: p.x)
+    let y1 = to_sy(cam, canvas, wy: p.y)
     let c = cat_color(kind_of(nodes[a].kind).cat)
     let lit = contains(sel, l.from) || contains(sel, l.to)
-    let pts = bezier_pts(x0, y0, x1, y1, 28)
-    draw_polyline(pts, c.r, c.g, c.b, if lit then 230 else 120 end, max(1.0, 2.0 * z))
+    let pts = bezier_pts(x0, y0, x1, y1, n: 28)
+    draw_polyline(points: pts, r: c.r, g: c.g, b: c.b, a: if lit then 230 else 120 end, width: max(1.0, 2.0 * z))
     if playing then
       for k in range(0, 2) do
         let t = (flow_t + float(k) * 0.5) % 1.0
@@ -974,21 +974,21 @@ if drag.mode == "link" then
     let c = cat_color(kind_of(n.kind).cat)
     if drag.dir == "out" then
       let o = out_port(n)
-      let tx = if hit.kind == "in" then to_sx(cam, canvas, in_port(nodes[idx_of(nodes, hit.node)], hit.port).x) else float(mx) end
-      let ty = if hit.kind == "in" then to_sy(cam, canvas, in_port(nodes[idx_of(nodes, hit.node)], hit.port).y) else float(my) end
-      draw_polyline(bezier_pts(to_sx(cam, canvas, o.x), to_sy(cam, canvas, o.y), tx, ty, 28), c.r, c.g, c.b, 220, max(1.0, 2.0 * z))
+      let tx = if hit.kind == "in" then to_sx(cam, canvas, wx: in_port(nodes[idx_of(nodes, hit.node)], hit.port).x) else float(mx) end
+      let ty = if hit.kind == "in" then to_sy(cam, canvas, wy: in_port(nodes[idx_of(nodes, hit.node)], hit.port).y) else float(my) end
+      draw_polyline(points: bezier_pts(x0: to_sx(cam, canvas, wx: o.x), y0: to_sy(cam, canvas, wy: o.y), x1: tx, y1: ty, n: 28), r: c.r, g: c.g, b: c.b, a: 220, width: max(1.0, 2.0 * z))
     else
       let p = in_port(n, drag.port)
-      let fx = if hit.kind == "out" then to_sx(cam, canvas, out_port(nodes[idx_of(nodes, hit.node)]).x) else float(mx) end
-      let fy = if hit.kind == "out" then to_sy(cam, canvas, out_port(nodes[idx_of(nodes, hit.node)]).y) else float(my) end
-      draw_polyline(bezier_pts(fx, fy, to_sx(cam, canvas, p.x), to_sy(cam, canvas, p.y), 28), ACCENT.r, ACCENT.g, ACCENT.b, 220, max(1.0, 2.0 * z))
+      let fx = if hit.kind == "out" then to_sx(cam, canvas, wx: out_port(nodes[idx_of(nodes, hit.node)]).x) else float(mx) end
+      let fy = if hit.kind == "out" then to_sy(cam, canvas, wy: out_port(nodes[idx_of(nodes, hit.node)]).y) else float(my) end
+      draw_polyline(points: bezier_pts(x0: fx, y0: fy, x1: to_sx(cam, canvas, wx: p.x), y1: to_sy(cam, canvas, wy: p.y), n: 28), r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 220, width: max(1.0, 2.0 * z))
     end
   end
 end
 
 // nodes
 fn draw_scope(r: Rect, samples: list, c: record)
-  draw_rect_rounded(r, 4, BG)
+  draw_rect_rounded(r, radius: 4, c: BG)
   if len(samples) >= 2 then
     let lo = samples[0]
     let hi = samples[0]
@@ -1011,11 +1011,11 @@ fn draw_scope(r: Rect, samples: list, c: record)
     // zero line when it is inside the window
     if lo < 0.0 && hi > 0.0 then
       let zy = float(r.y) + float(r.h) - pad_y - (0.0 - lo) / (hi - lo) * (float(r.h) - pad_y * 2.0)
-      draw_line(r.x + 4, int(zy), r.x + r.w - 4, int(zy), FAINT.r, FAINT.g, FAINT.b, 120, 1)
+      draw_line(x1: r.x + 4, y1: int(zy), x2: r.x + r.w - 4, y2: int(zy), r: FAINT.r, g: FAINT.g, b: FAINT.b, a: 120, width: 1)
     end
-    draw_polyline(pts, c.r, c.g, c.b, 230, 1.5)
+    draw_polyline(points: pts, r: c.r, g: c.g, b: c.b, a: 230, width: 1.5)
     let last_p = pts[n - 1]
-    draw_circle({x: last_p[0], y: last_p[1]}, 2.5, c)
+    draw_circle(center: {x: last_p[0], y: last_p[1]}, radius: 2.5, c: c)
   end
   nil
 end
@@ -1026,9 +1026,9 @@ fn draw_gauge(r: Rect, v: num, lo: num, hi: num, c: record)
   let rad = min(float(r.w) / 2.0 - 8.0, float(r.h) - 10.0)
   let a0 = 3.14159
   let frac = if abs(hi - lo) < 0.000001 then 0.0 else clamp01((v - lo) / (hi - lo)) end
-  fill_arc(cx, cy, rad - 7.0, rad, a0, a0 * 2.0, ELEV.r, ELEV.g, ELEV.b, 255)
+  fill_arc(cx, cy, rad - 7.0, rad, a0, a0 * 2.0, r: ELEV.r, g: ELEV.g, b: ELEV.b, a: 255)
   if frac > 0.002 then
-    fill_arc(cx, cy, rad - 7.0, rad, a0, a0 + frac * a0, c.r, c.g, c.b, 255)
+    fill_arc(cx, cy, rad - 7.0, rad, a0, a0 + frac * a0, r: c.r, g: c.g, b: c.b, a: 255)
   end
   nil
 end
@@ -1037,8 +1037,8 @@ for n in nodes do
   let k = kind_of(n.kind)
   let c = cat_color(k.cat)
   let r = node_rect(n)
-  let sx = to_sx(cam, canvas, r.x)
-  let sy = to_sy(cam, canvas, r.y)
+  let sx = to_sx(cam, canvas, wx: r.x)
+  let sy = to_sy(cam, canvas, wy: r.y)
   let sw = r.w * z
   let sh = r.h * z
   let sr = rect(sx, sy, sw, sh)
@@ -1053,54 +1053,54 @@ for n in nodes do
   else
     draw_shadow(sr, {radius: rad, blur: 12, spread: 0, dx: 0, dy: 4, color: BG, a: 140})
   end
-  draw_rect_rounded(sr, rad, if hov then NODE_HOV else NODE_BG end)
+  draw_rect_rounded(sr, radius: rad, c: if hov then NODE_HOV else NODE_BG end)
   // header band
   let hdr = rect(sx, sy, sw, HDR_H * z)
-  draw_rect_rounded(hdr, rad, over(NODE_BG, c, 0.16))
-  draw_rect(sx, sy + HDR_H * z - rad, sw, rad, over(NODE_BG, c, 0.16).r, over(NODE_BG, c, 0.16).g, over(NODE_BG, c, 0.16).b)
-  draw_rect(sx, sy + HDR_H * z - 1.0, sw, 1.0, c.r, c.g, c.b, 90)
+  draw_rect_rounded(hdr, radius: rad, c: over(bg: NODE_BG, fg: c, a: 0.16))
+  draw_rect(x: sx, y: sy + HDR_H * z - rad, w: sw, h: rad, r: over(bg: NODE_BG, fg: c, a: 0.16).r, g: over(bg: NODE_BG, fg: c, a: 0.16).g, b: over(bg: NODE_BG, fg: c, a: 0.16).b)
+  draw_rect(x: sx, y: sy + HDR_H * z - 1.0, w: sw, h: 1.0, r: c.r, g: c.g, b: c.b, a: 90)
   // title
   let tsz = max(7, int(13.0 * z))
   let title_s = ts(tsz, TEXT)
-  draw_text(k.label, {x: sx + 12.0 * z, y: sy + (HDR_H * z - float(tsz)) / 2.0 - 1.0}, title_s)
+  draw_text(k.label, pos: {x: sx + 12.0 * z, y: sy + (HDR_H * z - float(tsz)) / 2.0 - 1.0}, style: title_s)
   let vsz = max(6, int(11.0 * z))
-  let vs = mono(vsz, over(NODE_BG, c, 0.85))
+  let vs = mono(vsz, over(bg: NODE_BG, fg: c, a: 0.85))
   let vtxt = fmt(v)
-  draw_text(vtxt, {x: sx + sw - 14.0 * z - text_width(vtxt, vs), y: sy + (HDR_H * z - float(vsz)) / 2.0}, vs)
+  draw_text(vtxt, pos: {x: sx + sw - 14.0 * z - text_width(vtxt, vs), y: sy + (HDR_H * z - float(vsz)) / 2.0}, style: vs)
 
   // input rows
   let ivals = input_values(nodes, links, vals, n)
   for i in range(0, len(k.ins)) do
     let p = in_port(n, i)
-    let py = to_sy(cam, canvas, p.y)
+    let py = to_sy(cam, canvas, wy: p.y)
     let rsz = max(6, int(11.0 * z))
-    let wired = link_into(links, n.id, i) >= 0
-    draw_text(k.ins[i].name, {x: sx + 14.0 * z, y: py - float(rsz) / 2.0 - 1.0}, ts(rsz, if wired then TEXT else DIM end))
-    let val_s = mono(rsz, if wired then over(NODE_BG, c, 0.75) else FAINT end)
+    let wired = link_into(links, id: n.id, port_i: i) >= 0
+    draw_text(k.ins[i].name, pos: {x: sx + 14.0 * z, y: py - float(rsz) / 2.0 - 1.0}, style: ts(rsz, if wired then TEXT else DIM end))
+    let val_s = mono(rsz, if wired then over(bg: NODE_BG, fg: c, a: 0.75) else FAINT end)
     let vt = fmt(ivals[i])
-    draw_text(vt, {x: sx + sw - 12.0 * z - text_width(vt, val_s), y: py - float(rsz) / 2.0 - 1.0}, val_s)
+    draw_text(vt, pos: {x: sx + sw - 12.0 * z - text_width(vt, val_s), y: py - float(rsz) / 2.0 - 1.0}, style: val_s)
     // port
-    let px = to_sx(cam, canvas, p.x)
+    let px = to_sx(cam, canvas, wx: p.x)
     let port_hot = (hit.kind == "in" && hit.node == n.id && hit.port == i) ||
     (drag.mode == "link" && drag.dir == "out" && drag.node != n.id)
     let pr = PORT_R * z
     if port_hot then
       draw_circle({x: px, y: py}, pr + 4.0 * z, c, 60)
     end
-    draw_circle({x: px, y: py}, pr, if wired then c else NODE_BG end)
-    circ_outline(px, py, pr, c, 255, max(1.0, 1.5 * z))
+    draw_circle(center: {x: px, y: py}, radius: pr, c: if wired then c else NODE_BG end)
+    circ_outline(cx: px, cy: py, rad: pr, c: c, a: 255, wd: max(1.0, 1.5 * z))
   end
 
   // output port
   let o = out_port(n)
-  let ox = to_sx(cam, canvas, o.x)
-  let oy = to_sy(cam, canvas, o.y)
+  let ox = to_sx(cam, canvas, wx: o.x)
+  let oy = to_sy(cam, canvas, wy: o.y)
   let out_hot = (hit.kind == "out" && hit.node == n.id) ||
   (drag.mode == "link" && drag.dir == "in" && drag.node != n.id)
   if out_hot then
     draw_circle({x: ox, y: oy}, PORT_R * z + 4.0 * z, c, 60)
   end
-  draw_circle({x: ox, y: oy}, PORT_R * z, c)
+  draw_circle(center: {x: ox, y: oy}, radius: PORT_R * z, c: c)
 
   // preview area
   let ph = preview_h(n.kind)
@@ -1108,56 +1108,56 @@ for n in nodes do
     let py0 = sy + (HDR_H + float(len(k.ins)) * ROW_H + 4.0) * z
     let pr = rect(sx + 10.0 * z, py0, sw - 20.0 * z, (ph - 4.0) * z)
     if n.kind == "scope" then
-      draw_scope(pr, scope_push(n.id, v, playing), c)
+      draw_scope(pr, samples: scope_push(n.id, v, playing), c: c)
     elsif n.kind == "gauge" then
-      draw_gauge(pr, v, n.params[0], n.params[1], c)
+      draw_gauge(pr, v, lo: n.params[0], hi: n.params[1], c: c)
       let gs = mono(max(6, int(10.0 * z)), DIM)
-      draw_text(fmt(n.params[0]), {x: pr.x, y: pr.y + pr.h - 12.0 * z}, gs)
+      draw_text(fmt(n.params[0]), pos: {x: pr.x, y: pr.y + pr.h - 12.0 * z}, style: gs)
       let hi_t = fmt(n.params[1])
-      draw_text(hi_t, {x: pr.x + pr.w - text_width(hi_t, gs), y: pr.y + pr.h - 12.0 * z}, gs)
+      draw_text(hi_t, pos: {x: pr.x + pr.w - text_width(hi_t, gs), y: pr.y + pr.h - 12.0 * z}, style: gs)
     elsif n.kind == "color" then
       let col = {r: to_rgb(ivals[0]), g: to_rgb(ivals[1]), b: to_rgb(ivals[2])}
-      draw_rect_rounded(pr, 5.0 * z, col)
-      rr_outline(pr, 5.0 * z, TEXT, 40, 1)
+      draw_rect_rounded(pr, radius: 5.0 * z, c: col)
+      rr_outline(pr, radius: 5.0 * z, c: TEXT, a: 40, wd: 1)
     else
       let big = max(8, int(22.0 * z))
       let bs = mono(big, if n.kind == "display" then c else TEXT end)
       let bt = fmt(v)
-      draw_text(bt, {x: pr.x + (pr.w - text_width(bt, bs)) / 2.0, y: pr.y + (pr.h - float(big)) / 2.0 - 1.0}, bs)
+      draw_text(bt, pos: {x: pr.x + (pr.w - text_width(bt, bs)) / 2.0, y: pr.y + (pr.h - float(big)) / 2.0 - 1.0}, style: bs)
     end
   end
 
   if selected then
-    rr_outline(sr.inset(-1), rad + 1.0, ACCENT, 255, max(1.0, 1.5 * z))
+    rr_outline(sr.inset(-1), radius: rad + 1.0, c: ACCENT, a: 255, wd: max(1.0, 1.5 * z))
   else
-    rr_outline(sr, rad, OUTLINE, 255, 1)
+    rr_outline(sr, radius: rad, c: OUTLINE, a: 255, wd: 1)
   end
 end
 
 // marquee
 if drag.mode == "marquee" then
-  let x0 = to_sx(cam, canvas, min(drag.x0, wmx))
-  let y0 = to_sy(cam, canvas, min(drag.y0, wmy))
-  let x1 = to_sx(cam, canvas, max(drag.x0, wmx))
-  let y1 = to_sy(cam, canvas, max(drag.y0, wmy))
+  let x0 = to_sx(cam, canvas, wx: min(drag.x0, wmx))
+  let y0 = to_sy(cam, canvas, wy: min(drag.y0, wmy))
+  let x1 = to_sx(cam, canvas, wx: max(drag.x0, wmx))
+  let y1 = to_sy(cam, canvas, wy: max(drag.y0, wmy))
   let mr = rect(x0, y0, x1 - x0, y1 - y0)
-  draw_rect(mr, ACCENT, 28)
-  draw_rect_outline(mr, ACCENT, 200, 1)
+  draw_rect(mr, c: ACCENT, a: 28)
+  draw_rect_outline(mr, c: ACCENT, a: 200, width: 1)
 end
 
 // ghost of a node being placed from the palette
 if drag.mode == "place" && over_canvas then
   let k = kind_of(drag.kind)
   let gr = rect(float(mx) - NODE_W * z / 2.0, float(my) - HDR_H * z / 2.0, NODE_W * z, HDR_H * z)
-  draw_rect_rounded(gr, 8.0 * z, cat_color(k.cat), 40)
-  rr_outline(gr, 8.0 * z, cat_color(k.cat), 160, 1)
+  draw_rect_rounded(gr, radius: 8.0 * z, c: cat_color(k.cat), a: 40)
+  rr_outline(gr, radius: 8.0 * z, c: cat_color(k.cat), a: 160, wd: 1)
 end
 
 // empty-canvas hint
 if len(nodes) == 0 then
   let es = ts(14, FAINT)
   let et = "Drag a node in from the palette, or right-click to add one."
-  draw_text(et, {x: canvas.x + (canvas.w - text_width(et, es)) / 2, y: canvas.y + canvas.h / 2 - 8}, es)
+  draw_text(et, pos: {x: canvas.x + (canvas.w - text_width(et, es)) / 2, y: canvas.y + canvas.h / 2 - 8}, style: es)
 end
 
 clip_none()
@@ -1165,7 +1165,7 @@ clip_none()
 // ── Draw: palette ────────────────────────────────────────────────────────
 
 draw_rect(palette, PANEL)
-draw_rect(palette.x + palette.w - 1, palette.y, 1, palette.h, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+draw_rect(x: palette.x + palette.w - 1, y: palette.y, w: 1, h: palette.h, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
 
 let py = palette.y + 18
 let last_cat = ""
@@ -1173,7 +1173,7 @@ let pal_rows = []
 for k in KINDS do
   if k.cat != last_cat then
     if last_cat != "" then py = py + 8 end
-    caps(cat_label(k.cat), palette.x + 18, py, FAINT)
+    caps(cat_label(k.cat), x: palette.x + 18, y: py, c: FAINT)
     py = py + 20
     last_cat = k.cat
   end
@@ -1186,12 +1186,12 @@ for pr in pal_rows do
   let k = kind_of(pr.kind)
   let c = cat_color(k.cat)
   let hov = hovered(pr.r) && drag.mode == "none"
-  if hov then draw_rect_rounded(pr.r, 6, HOVER) end
-  draw_circle({x: pr.r.x + 14, y: pr.r.y + 14}, 4, c)
-  draw_text(k.label, {x: pr.r.x + 28, y: pr.r.y + 7}, ts(13, if hov then TEXT else DIM end))
+  if hov then draw_rect_rounded(pr.r, radius: 6, c: HOVER) end
+  draw_circle(center: {x: pr.r.x + 14, y: pr.r.y + 14}, radius: 4, c: c)
+  draw_text(k.label, pos: {x: pr.r.x + 28, y: pr.r.y + 7}, style: ts(13, if hov then TEXT else DIM end))
   if hov then
     let plus = ts(13, FAINT)
-    draw_text("+", {x: pr.r.x + pr.r.w - 10 - text_width("+", plus), y: pr.r.y + 6}, plus)
+    draw_text("+", pos: {x: pr.r.x + pr.r.w - 10 - text_width("+", plus), y: pr.r.y + 6}, style: plus)
   end
   if mouse_pressed(0) && hovered(pr.r) && !blocked && drag.mode == "none" then
     drag = {...drag, mode: "place", kind: pr.kind, x0: float(mx), y0: float(my), moved: false}
@@ -1203,9 +1203,9 @@ end
 if drag.mode == "place" && !mouse_down(0) && !over_canvas then
   hist = push_hist(hist, nodes, links)
   fut = []
-  let cxw = to_wx(cam, canvas, canvas.x + canvas.w / 2) - NODE_W / 2.0
-  let cyw = to_wy(cam, canvas, canvas.y + canvas.h / 2) - 60.0
-  let n = make_node(next_id, drag.kind, cxw + float(ops % 5) * 24.0, cyw + float(ops % 5) * 24.0)
+  let cxw = to_wx(cam, canvas, sx: canvas.x + canvas.w / 2) - NODE_W / 2.0
+  let cyw = to_wy(cam, canvas, sy: canvas.y + canvas.h / 2) - 60.0
+  let n = make_node(id: next_id, kind: drag.kind, x: cxw + float(ops % 5) * 24.0, y: cyw + float(ops % 5) * 24.0)
   nodes = append(nodes, n)
   sel = [n.id]
   next_id = next_id + 1
@@ -1215,17 +1215,17 @@ end
 
 // palette footer: legend
 let leg_y = palette.y + palette.h - 96
-draw_rect(palette.x + 14, leg_y - 12, palette.w - 28, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
-caps("TIPS", palette.x + 18, leg_y, FAINT)
+draw_rect(x: palette.x + 14, y: leg_y - 12, w: palette.w - 28, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
+caps("TIPS", x: palette.x + 18, y: leg_y, c: FAINT)
 let tips = ["drag a row onto the canvas", "wire output → input", "shift-drag snaps to grid", "scroll pans · ⌘-scroll zooms"]
 for i in range(0, len(tips)) do
-  draw_text(tips[i], {x: palette.x + 18, y: leg_y + 20 + i * 17}, ts(11, FAINT))
+  draw_text(tips[i], pos: {x: palette.x + 18, y: leg_y + 20 + i * 17}, style: ts(11, FAINT))
 end
 
 // ── Draw: inspector ──────────────────────────────────────────────────────
 
 draw_rect(insp, PANEL)
-draw_rect(insp.x, insp.y, 1, insp.h, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+draw_rect(x: insp.x, y: insp.y, w: 1, h: insp.h, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
 
 let ix = insp.x + 22
 let iw = insp.w - 44
@@ -1237,35 +1237,35 @@ if one >= 0 then
   let n = nodes[one]
   let k = kind_of(n.kind)
   let c = cat_color(k.cat)
-  caps("NODE", ix, iy, FAINT)
+  caps("NODE", x: ix, y: iy, c: FAINT)
   iy = iy + 20
-  draw_circle({x: ix + 6, y: iy + 10}, 5, c)
-  draw_text(k.label, {x: ix + 20, y: iy}, ts(18, TEXT))
+  draw_circle(center: {x: ix + 6, y: iy + 10}, radius: 5, c: c)
+  draw_text(k.label, pos: {x: ix + 20, y: iy}, style: ts(18, TEXT))
   let idt = "#" ++ str(n.id)
-  draw_text(idt, {x: ix + iw - text_width(idt, mono(11, FAINT)), y: iy + 5}, mono(11, FAINT))
+  draw_text(idt, pos: {x: ix + iw - text_width(idt, mono(11, FAINT)), y: iy + 5}, style: mono(11, FAINT))
   iy = iy + 28
-  let desc_lines = wrap_px(k.desc, iw, ts(12, DIM))
+  let desc_lines = wrap_px(k.desc, avail_px: iw, size: ts(12, DIM))
   for line in desc_lines do
-    draw_text(line, {x: ix, y: iy}, ts(12, DIM))
+    draw_text(line, pos: {x: ix, y: iy}, style: ts(12, DIM))
     iy = iy + 17
   end
   iy = iy + 10
-  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
 
   // parameters
   let changed = false
   let np = n.params
   if len(k.params) > 0 then
-    caps("PARAMETERS", ix, iy, FAINT)
+    caps("PARAMETERS", x: ix, y: iy, c: FAINT)
     iy = iy + 22
     for i in range(0, len(k.params)) do
       let p = k.params[i]
-      draw_text(p.name, {x: ix, y: iy}, ts(12, TEXT))
+      draw_text(p.name, pos: {x: ix, y: iy}, style: ts(12, TEXT))
       let vt = fmt(np[i])
-      draw_text(vt, {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, mono(12, c))
+      draw_text(vt, pos: {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, style: mono(12, c))
       let sr = rect(ix, iy + 20, iw, 18)
-      let nv = if blocked then np[i] else slider(sr, np[i], p.lo, p.hi, {fill: c, track: ELEV, knob: TEXT}) end
+      let nv = if blocked then np[i] else slider(sr, value: np[i], lo: p.lo, hi: p.hi, style: {fill: c, track: ELEV, knob: TEXT}) end
       if nv != np[i] then
         np[i] = nv
         changed = true
@@ -1278,33 +1278,33 @@ if one >= 0 then
   let ni = n.ins
   if len(k.ins) > 0 then
     iy = iy + 4
-    caps("INPUTS", ix, iy, FAINT)
+    caps("INPUTS", x: ix, y: iy, c: FAINT)
     iy = iy + 22
     let ivals = input_values(nodes, links, vals, n)
     for i in range(0, len(k.ins)) do
       let p = k.ins[i]
-      let li = link_into(links, n.id, i)
-      draw_text(p.name, {x: ix, y: iy}, ts(12, TEXT))
+      let li = link_into(links, id: n.id, port_i: i)
+      draw_text(p.name, pos: {x: ix, y: iy}, style: ts(12, TEXT))
       let vt = fmt(ivals[i])
-      draw_text(vt, {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, mono(12, c))
+      draw_text(vt, pos: {x: ix + iw - text_width(vt, mono(12, c)), y: iy}, style: mono(12, c))
       if li >= 0 then
         let src = idx_of(nodes, links[li].from)
         let from_label = if src >= 0 then kind_of(nodes[src].kind).label ++ " #" ++ str(nodes[src].id) else "?" end
         let wire_r = rect(ix, iy + 20, iw, 18)
-        draw_rect_rounded(wire_r, 4, ELEV)
-        draw_text("← " ++ from_label, {x: ix + 8, y: iy + 22}, ts(11, DIM))
+        draw_rect_rounded(wire_r, radius: 4, c: ELEV)
+        draw_text("← " ++ from_label, pos: {x: ix + 8, y: iy + 22}, style: ts(11, DIM))
         let xb = rect(wire_r.x + wire_r.w - 22, wire_r.y, 22, 18)
-        if hovered(xb) then draw_rect_rounded(xb, 4, HOVER) end
-        draw_text("×", {x: xb.x + 7, y: xb.y + 2}, ts(12, if hovered(xb) then DANGER else FAINT end))
+        if hovered(xb) then draw_rect_rounded(xb, radius: 4, c: HOVER) end
+        draw_text("×", pos: {x: xb.x + 7, y: xb.y + 2}, style: ts(12, if hovered(xb) then DANGER else FAINT end))
         if clicked(xb) && !blocked then
           hist = push_hist(hist, nodes, links)
           fut = []
-          links = links_without_into(links, n.id, i)
+          links = links_without_into(links, id: n.id, port_i: i)
           ops = ops + 1
         end
       else
         let sr = rect(ix, iy + 20, iw, 18)
-        let nv = if blocked then ni[i] else slider(sr, ni[i], p.lo, p.hi, {fill: DIM, track: ELEV, knob: TEXT}) end
+        let nv = if blocked then ni[i] else slider(sr, value: ni[i], lo: p.lo, hi: p.hi, style: {fill: DIM, track: ELEV, knob: TEXT}) end
         if nv != ni[i] then
           ni[i] = nv
           changed = true
@@ -1320,7 +1320,7 @@ if one >= 0 then
       fut = []
       param_dirty = true
     end
-    nodes = put(nodes, one, {...n, params: np, ins: ni})
+    nodes = put(nodes, i: one, n: {...n, params: np, ins: ni})
   end
   if !mouse_down(0) && param_dirty then
     param_dirty = false
@@ -1329,30 +1329,30 @@ if one >= 0 then
 
   // output
   iy = iy + 6
-  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
-  caps("OUTPUT", ix, iy, FAINT)
+  caps("OUTPUT", x: ix, y: iy, c: FAINT)
   iy = iy + 20
-  draw_text(fmt(vals[one]), {x: ix, y: iy}, mono(26, c))
+  draw_text(fmt(vals[one]), pos: {x: ix, y: iy}, style: mono(26, c))
   iy = iy + 40
   let fanout = filter(links, fn(l) -> l.from == n.id)
   let fo = "feeds " ++ str(len(fanout)) ++ (if len(fanout) == 1 then " input" else " inputs" end)
-  draw_text(fo, {x: ix, y: iy}, ts(11, FAINT))
+  draw_text(fo, pos: {x: ix, y: iy}, style: ts(11, FAINT))
   iy = iy + 26
 
   // actions
   let bw = (iw - 8) / 2
-  if pill_btn(rect(ix, iy, bw, 28), "Duplicate", false) && !blocked then
+  if pill_btn(rect(ix, iy, bw, 28), label: "Duplicate", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
-    let d = dup_sel(nodes, links, sel, next_id)
+    let d = dup_sel(nodes, links, sel, start_id: next_id)
     nodes = d.nodes
     links = d.links
     sel = d.sel
     next_id = d.next
     ops = ops + 1
   end
-  if pill_btn(rect(ix + bw + 8, iy, bw, 28), "Delete", false) && !blocked then
+  if pill_btn(rect(ix + bw + 8, iy, bw, 28), label: "Delete", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
     links = links_without_node(links, n.id)
@@ -1361,28 +1361,28 @@ if one >= 0 then
     ops = ops + 1
   end
 elsif len(sel) > 1 then
-  caps("SELECTION", ix, iy, FAINT)
+  caps("SELECTION", x: ix, y: iy, c: FAINT)
   iy = iy + 20
-  draw_text("{len(sel)} nodes", {x: ix, y: iy}, ts(18, TEXT))
+  draw_text("{len(sel)} nodes", pos: {x: ix, y: iy}, style: ts(18, TEXT))
   iy = iy + 34
   let lines = ["Drag to move them together.", "⌘D duplicates the group with", "its internal wires intact.", "Delete removes them all."]
   for line in lines do
-    draw_text(line, {x: ix, y: iy}, ts(12, DIM))
+    draw_text(line, pos: {x: ix, y: iy}, style: ts(12, DIM))
     iy = iy + 17
   end
   iy = iy + 16
   let bw = (iw - 8) / 2
-  if pill_btn(rect(ix, iy, bw, 28), "Duplicate", false) && !blocked then
+  if pill_btn(rect(ix, iy, bw, 28), label: "Duplicate", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
-    let d = dup_sel(nodes, links, sel, next_id)
+    let d = dup_sel(nodes, links, sel, start_id: next_id)
     nodes = d.nodes
     links = d.links
     sel = d.sel
     next_id = d.next
     ops = ops + 1
   end
-  if pill_btn(rect(ix + bw + 8, iy, bw, 28), "Delete", false) && !blocked then
+  if pill_btn(rect(ix + bw + 8, iy, bw, 28), label: "Delete", active: false) && !blocked then
     hist = push_hist(hist, nodes, links)
     fut = []
     links = links_without_nodes(links, sel)
@@ -1391,9 +1391,9 @@ elsif len(sel) > 1 then
     ops = ops + 1
   end
 else
-  caps("PATCH", ix, iy, FAINT)
+  caps("PATCH", x: ix, y: iy, c: FAINT)
   iy = iy + 20
-  draw_text("Nothing selected", {x: ix, y: iy}, ts(18, TEXT))
+  draw_text("Nothing selected", pos: {x: ix, y: iy}, style: ts(18, TEXT))
   iy = iy + 34
   let stats = [
     {k: "nodes", v: str(len(nodes))},
@@ -1402,14 +1402,14 @@ else
     {k: "zoom", v: str(int(round(z * 100.0))) ++ "%"},
   ]
   for s in stats do
-    draw_text(s.k, {x: ix, y: iy}, ts(12, DIM))
-    draw_text(s.v, {x: ix + iw - text_width(s.v, mono(12, TEXT)), y: iy}, mono(12, TEXT))
+    draw_text(s.k, pos: {x: ix, y: iy}, style: ts(12, DIM))
+    draw_text(s.v, pos: {x: ix + iw - text_width(s.v, mono(12, TEXT)), y: iy}, style: mono(12, TEXT))
     iy = iy + 22
   end
   iy = iy + 10
-  draw_rect(ix, iy, iw, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+  draw_rect(x: ix, y: iy, w: iw, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
   iy = iy + 16
-  caps("KEYS", ix, iy, FAINT)
+  caps("KEYS", x: ix, y: iy, c: FAINT)
   iy = iy + 20
   let keys = [
     ["click · shift-click", "select"],
@@ -1424,19 +1424,19 @@ else
     ["P", "play · pause"],
   ]
   for kv in keys do
-    draw_text(kv[0], {x: ix, y: iy}, ts(11, DIM))
-    draw_text(kv[1], {x: ix + iw - text_width(kv[1], ts(11, FAINT)), y: iy}, ts(11, FAINT))
+    draw_text(kv[0], pos: {x: ix, y: iy}, style: ts(11, DIM))
+    draw_text(kv[1], pos: {x: ix + iw - text_width(kv[1], ts(11, FAINT)), y: iy}, style: ts(11, FAINT))
     iy = iy + 19
   end
 end
 
 // ── Draw: header ─────────────────────────────────────────────────────────
 
-draw_rect(0, 0, W, HEADER_H, PANEL.r, PANEL.g, PANEL.b)
-draw_rect(0, HEADER_H - 1, W, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
-draw_text("PATCHWORK", {x: 22, y: 17}, {size: 16, font: "ui", color: TEXT, spacing: 3})
+draw_rect(x: 0, y: 0, w: W, h: HEADER_H, r: PANEL.r, g: PANEL.g, b: PANEL.b)
+draw_rect(x: 0, y: HEADER_H - 1, w: W, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
+draw_text("PATCHWORK", pos: {x: 22, y: 17}, style: {size: 16, font: "ui", color: TEXT, spacing: 3})
 let sub_x = 22 + text_width("PATCHWORK", {size: 16, font: "ui", color: TEXT, spacing: 3}) + 14
-draw_text("node-based dataflow", {x: sub_x, y: 21}, ts(12, FAINT))
+draw_text("node-based dataflow", pos: {x: sub_x, y: 21}, style: ts(12, FAINT))
 
 let bh = 30
 let by = (HEADER_H - bh) / 2
@@ -1447,9 +1447,9 @@ let b_undo = rect(b_redo.x - 8 - 62, by, 62, bh)
 let b_play = rect(b_undo.x - 20 - 84, by, 84, bh)
 let b_reset = rect(b_play.x - 8 - 62, by, 62, bh)
 
-if pill_btn(b_play, if playing then "❚❚ Pause" else "▶ Play" end, playing) && !blocked then playing = !playing end
-if pill_btn(b_reset, "Rewind", false) && !blocked then clock = 0.0 end
-if pill_btn(b_undo, "Undo", false) && !blocked && len(hist) > 0 then
+if pill_btn(b_play, label: if playing then "❚❚ Pause" else "▶ Play" end, active: playing) && !blocked then playing = !playing end
+if pill_btn(b_reset, label: "Rewind", active: false) && !blocked then clock = 0.0 end
+if pill_btn(b_undo, label: "Undo", active: false) && !blocked && len(hist) > 0 then
   fut = append(fut, {nodes: nodes, links: links})
   let h = last(hist)
   hist = drop_last(hist)
@@ -1458,7 +1458,7 @@ if pill_btn(b_undo, "Undo", false) && !blocked && len(hist) > 0 then
   sel = filter(sel, fn(id) -> idx_of(h.nodes, id) >= 0)
   ops = ops + 1
 end
-if pill_btn(b_redo, "Redo", false) && !blocked && len(fut) > 0 then
+if pill_btn(b_redo, label: "Redo", active: false) && !blocked && len(fut) > 0 then
   hist = append(hist, {nodes: nodes, links: links})
   let f = last(fut)
   fut = drop_last(fut)
@@ -1467,20 +1467,20 @@ if pill_btn(b_redo, "Redo", false) && !blocked && len(fut) > 0 then
   sel = filter(sel, fn(id) -> idx_of(f.nodes, id) >= 0)
   ops = ops + 1
 end
-if pill_btn(b_fit, "Fit", false) && !blocked then cam = fit_all(nodes, canvas) end
-if pill_btn(b_zoom, str(int(round(z * 100.0))) ++ "%", false) && !blocked then cam = {...cam, zoom: 1.0} end
+if pill_btn(b_fit, label: "Fit", active: false) && !blocked then cam = fit_all(nodes, canvas) end
+if pill_btn(b_zoom, label: str(int(round(z * 100.0))) ++ "%", active: false) && !blocked then cam = {...cam, zoom: 1.0} end
 
 // clock readout beside the transport
 let ck = "t = " ++ fmt(clock) ++ " s"
-draw_text(ck, {x: b_reset.x - 14 - text_width(ck, mono(12, DIM)), y: by + 8}, mono(12, DIM))
+draw_text(ck, pos: {x: b_reset.x - 14 - text_width(ck, mono(12, DIM)), y: by + 8}, style: mono(12, DIM))
 
 // ── Draw: status bar ─────────────────────────────────────────────────────
 
 let sb = rect(0, H - STATUS_H, W, STATUS_H)
 draw_rect(sb, PANEL)
-draw_rect(0, sb.y, W, 1, OUTLINE.r, OUTLINE.g, OUTLINE.b)
+draw_rect(x: 0, y: sb.y, w: W, h: 1, r: OUTLINE.r, g: OUTLINE.g, b: OUTLINE.b)
 let left_t = "{len(nodes)} nodes · {len(links)} wires"
-draw_text(left_t, {x: 22, y: sb.y + 8}, ts(12, DIM))
+draw_text(left_t, pos: {x: 22, y: sb.y + 8}, style: ts(12, DIM))
 
 let hint = if drag.mode == "link" then
   "release on a port to wire it · anywhere else to cancel"
@@ -1491,7 +1491,7 @@ elsif drag.mode == "marquee" then
 elsif hit.kind == "out" then
   "drag from the output to wire it into an input"
 elsif hit.kind == "in" then
-  if link_into(links, hit.node, hit.port) >= 0 then "drag to move this wire · drop away to remove it" else "drag to an output to wire it" end
+  if link_into(links, id: hit.node, port_i: hit.port) >= 0 then "drag to move this wire · drop away to remove it" else "drag to an output to wire it" end
 elsif hit.kind == "node" then
   "drag to move · shift-click to add to the selection · right-click for actions"
 elsif over_canvas then
@@ -1500,15 +1500,15 @@ else
   ""
 end
 let hint_s = ts(12, FAINT)
-draw_text(hint, {x: (W - text_width(hint, hint_s)) / 2, y: sb.y + 8}, hint_s)
+draw_text(hint, pos: {x: (W - text_width(hint, hint_s)) / 2, y: sb.y + 8}, style: hint_s)
 
 if flash.until > time() then
   let fs = ts(12, C_SINK)
-  draw_text(flash.text, {x: W - 22 - text_width(flash.text, fs), y: sb.y + 8}, fs)
+  draw_text(flash.text, pos: {x: W - 22 - text_width(flash.text, fs), y: sb.y + 8}, style: fs)
 else
   let ps = ts(12, if playing then C_SOURCE else FAINT end)
   let pt = if playing then "● live" else "○ paused" end
-  draw_text(pt, {x: W - 22 - text_width(pt, ps), y: sb.y + 8}, ps)
+  draw_text(pt, pos: {x: W - 22 - text_width(pt, ps), y: sb.y + 8}, style: ps)
 end
 
 // ── Context menu: the last draw call ─────────────────────────────────────
@@ -1533,7 +1533,7 @@ if picked.index >= 0 then
     if picked.label == "Duplicate" then
       hist = push_hist(hist, nodes, links)
       fut = []
-      let d = dup_sel(nodes, links, sel, next_id)
+      let d = dup_sel(nodes, links, sel, start_id: next_id)
       nodes = d.nodes
       links = d.links
       sel = d.sel
@@ -1571,8 +1571,8 @@ if picked.index >= 0 then
         if picked.label == "Add " ++ k.label then
           hist = push_hist(hist, nodes, links)
           fut = []
-          let n = make_node(next_id, k.id,
-            to_wx(cam, canvas, menu.x) - 8.0, to_wy(cam, canvas, menu.y) - 8.0)
+          let n = make_node(id: next_id, kind: k.id,
+            x: to_wx(cam, canvas, sx: menu.x) - 8.0, y: to_wy(cam, canvas, sy: menu.y) - 8.0)
           nodes = append(nodes, n)
           sel = [n.id]
           next_id = next_id + 1

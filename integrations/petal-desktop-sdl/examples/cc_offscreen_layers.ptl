@@ -24,8 +24,8 @@ clear(12, 12, 24)
 let stamp = create_canvas(24, 24)
 draw_to(stamp)
 // A plus sign. The rest of the 24x24 canvas stays transparent.
-draw_rect(9, 2, 6, 20, 240, 220, 120)
-draw_rect(2, 9, 20, 6, 240, 220, 120)
+draw_rect(x: 9, y: 2, w: 6, h: 20, r: 240, g: 220, b: 120)
+draw_rect(x: 2, y: 9, w: 20, h: 6, r: 240, g: 220, b: 120)
 draw_to_screen()
 
 // --- Composite the stamp across the screen ---

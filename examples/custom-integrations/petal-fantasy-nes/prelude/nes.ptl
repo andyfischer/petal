@@ -208,7 +208,7 @@ fn _pad_to(s: string, n: num) -> string
   while len(out) < n do
     out = out ++ "0"
   end
-  slice(out, 0, n)
+  slice(out, start: 0, end: n)
 end
 
 // Normalize authored art into the 8 rows of 8 digits `define_tile` wants,
@@ -226,7 +226,7 @@ export fn art(rows: list, remap: record) -> list
   while len(out) < 8 do
     out = append(out, "00000000")
   end
-  slice(out, 0, 8)
+  slice(out, start: 0, end: 8)
 end
 
 // Define one tile from readable string art. Idempotent — the host hashes the
@@ -249,7 +249,7 @@ end
 //   let coin = next
 //
 export fn define_art_run(base: num, arts: list) -> num
-  define_art_run(base, arts, {})
+  define_art_run(base, arts, remap: {})
 end
 
 export fn define_art_run(base: num, arts: list, remap: record) -> num
@@ -300,11 +300,11 @@ end
 // One piece of an irregular metasprite: `dx`/`dy` are pixel offsets from the
 // object's top-left corner.
 export fn meta_part(dx: num, dy: num, tile: num) -> record
-  meta_part(dx, dy, tile, 4, 0)
+  meta_part(dx, dy, tile, pal: 4, flags: 0)
 end
 
 export fn meta_part(dx: num, dy: num, tile: num, pal: num) -> record
-  meta_part(dx, dy, tile, pal, 0)
+  meta_part(dx, dy, tile, pal, flags: 0)
 end
 
 export fn meta_part(dx: num, dy: num, tile: num, pal: num, flags: num) -> record
@@ -328,7 +328,7 @@ end
 // the same `remap` rules as `define_art` apply. Idempotent, like every other
 // artwork call. Returns the metasprite.
 export fn define_meta(base: num, rows: list, pal: num) -> record
-  define_meta(base, rows, pal, {})
+  define_meta(base, rows, pal, remap: {})
 end
 
 export fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
@@ -347,12 +347,12 @@ export fn define_meta(base: num, rows: list, pal: num, remap: record) -> record
       for y in range(0, 8) do
         let src = ty * 8 + y
         let line = if src < len(norm) then _pad_to(norm[src], cols * 8) else "" end
-        cell_rows = append(cell_rows, _pad_to(slice(line, tx * 8, min(len(line), tx * 8 + 8)), 8))
+        cell_rows = append(cell_rows, _pad_to(slice(line, start: tx * 8, end: min(len(line), tx * 8 + 8)), 8))
       end
       define_tile(base + ty * cols + tx, cell_rows)
     end
   end
-  meta(base, cols, rws, pal)
+  meta(tile_base: base, w_tiles: cols, h_tiles: rws, pal: pal)
 end
 
 // Pixel size of a metasprite, and the rect it occupies at (x, y) — the box the
@@ -372,7 +372,7 @@ end
 // Draw a metasprite with its top-left corner at (x, y). Costs one sprite per
 // tile out of the 64-per-frame budget.
 export fn draw_meta(x: num, y: num, m: record)
-  draw_meta(x, y, m, 0)
+  draw_meta(x, y, m, flags: 0)
 end
 
 export fn draw_meta(x: num, y: num, m: record, flags: num)
@@ -597,7 +597,7 @@ end
 // longer one erases the tail — which is what makes this safe to call every
 // frame with a changing score.
 export fn map_text(x_cell: num, y_cell: num, s: string)
-  map_text(x_cell, y_cell, s, 0)
+  map_text(x_cell, y_cell, s, pal: 0)
 end
 
 export fn map_text(x_cell: num, y_cell: num, s: string, pal: num)
@@ -617,11 +617,11 @@ end
 // characters cost nothing. Returns the number of sprites used, so a HUD can
 // stay inside the 64-sprite budget deliberately instead of by luck.
 export fn text_sprites(x: num, y: num, s: string) -> int
-  text_sprites(x, y, s, 4, 0)
+  text_sprites(x, y, s, pal: 4, flags: 0)
 end
 
 export fn text_sprites(x: num, y: num, s: string, pal: num) -> int
-  text_sprites(x, y, s, pal, 0)
+  text_sprites(x, y, s, pal, flags: 0)
 end
 
 export fn text_sprites(x: num, y: num, s: string, pal: num, flags: num) -> int
@@ -723,8 +723,8 @@ end
 // Point the camera at a world position, clamped so the view never runs past
 // the edge of the map. Returns the position actually used.
 export fn camera(x: num, y: num) -> record
-  let cx = clamp(x, 0, max(0, map_w() - screen_w))
-  let cy = clamp(y, 0, max(0, map_h() - screen_h))
+  let cx = clamp(x, lo: 0, hi: max(0, map_w() - screen_w))
+  let cy = clamp(y, lo: 0, hi: max(0, map_h() - screen_h))
   set_scroll(cx, cy)
   {x: cx, y: cy}
 end
@@ -744,7 +744,7 @@ end
 // you. Most gameplay code never wants screen space, and hand-subtracting the
 // camera at every sprite call is where off-by-one jitter comes from.
 export fn sprite_world(x: num, y: num, tile: num, pal: num)
-  sprite_world(x, y, tile, pal, 0)
+  sprite_world(x, y, tile, pal, flags: 0)
 end
 
 export fn sprite_world(x: num, y: num, tile: num, pal: num, flags: num)
@@ -752,11 +752,11 @@ export fn sprite_world(x: num, y: num, tile: num, pal: num, flags: num)
 end
 
 export fn draw_meta_world(x: num, y: num, m: record)
-  draw_meta_world(x, y, m, 0)
+  draw_meta_world(x, y, m, flags: 0)
 end
 
 export fn draw_meta_world(x: num, y: num, m: record, flags: num)
-  draw_meta(x - cam_x(), y - cam_y(), m, flags)
+  draw_meta(x: x - cam_x(), y: y - cam_y(), m: m, flags: flags)
 end
 
 // Is this world-space rect anywhere near the visible screen? The cheap cull
@@ -997,15 +997,15 @@ export fn menu_update(id: string, count: num) -> record
   if count <= 0 then
     {index: 0, chosen: -1, cancelled: false}
   else
-    let s = _menu_sel(id, false, 0)
-    if btn_repeat("up", 0.35, 0.12) then
+    let s = _menu_sel(id, write: false, v: 0)
+    if btn_repeat(name: "up", delay: 0.35, rate: 0.12) then
       s = s - 1
     end
-    if btn_repeat("down", 0.35, 0.12) then
+    if btn_repeat(name: "down", delay: 0.35, rate: 0.12) then
       s = s + 1
     end
     s = pmod(s, count)
-    _menu_sel(id, true, s)
+    _menu_sel(id, write: true, v: s)
     {index: s,
       chosen: if btnp("a") || btnp("start") then s else -1 end,
       cancelled: btnp("b")}
@@ -1024,7 +1024,7 @@ end
 
 // Where a menu's cursor currently sits, without touching it.
 export fn menu_index(id: string) -> num
-  _menu_sel(id, false, 0)
+  _menu_sel(id, write: false, v: 0)
 end
 
 // The sprite-drawn menu: floats over anything, costs one sprite per visible
@@ -1035,9 +1035,9 @@ export fn menu(id: string, x: num, y: num, items: list, pal: num) -> record
   for i in range(0, len(items)) do
     let row_y = y + i * 16
     if i == m.index then
-      text_sprites(x, row_y, ">", pal, 0)
+      text_sprites(x, y: row_y, s: ">", pal: pal, flags: 0)
     end
-    text_sprites(x + 16, row_y, items[i], pal, 0)
+    text_sprites(x: x + 16, y: row_y, s: items[i], pal: pal, flags: 0)
   end
   m
 end
@@ -1049,8 +1049,8 @@ export fn map_menu(id: string, x_cell: num, y_cell: num, items: list, pal: num) 
   let m = menu_update(id, len(items))
   for i in range(0, len(items)) do
     let row = y_cell + i * 2
-    map_text(x_cell, row, if i == m.index then ">" else " " end, pal)
-    map_text(x_cell + 2, row, items[i], pal)
+    map_text(x_cell, y_cell: row, s: if i == m.index then ">" else " " end, pal: pal)
+    map_text(x_cell: x_cell + 2, y_cell: row, s: items[i], pal: pal)
   end
   m
 end
@@ -1214,7 +1214,7 @@ end
 // The clock is absolute, not accumulated, so animations do not drift and two
 // objects sharing a cycle stay in step.
 export fn anim(frames: list, fps: num)
-  anim(frames, fps, time())
+  anim(frames, fps, t: time())
 end
 
 // The same, driven by a clock you own — `scene_time()`, a per-entity timer —
@@ -1227,7 +1227,7 @@ end
 // A one-shot animation: plays once from `t` = 0 and holds on the last frame.
 // Explosions, door opens, a death sprite that must not loop.
 export fn anim_once(frames: list, fps: num, t: num)
-  frames[clamp(int(floor(t * fps)), 0, len(frames) - 1)]
+  frames[clamp(int(floor(t * fps)), lo: 0, hi: len(frames) - 1)]
 end
 
 // True for the first half of each 1/hz cycle: the flashing "PRESS START", the

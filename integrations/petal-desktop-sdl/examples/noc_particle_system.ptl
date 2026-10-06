@@ -139,13 +139,13 @@ sparks = new_sparks
 clear(8, 8, 15)
 
 // Ground
-draw_rect(0, int(sh) - 40, int(sw), 40, 20, 22, 18)
+draw_rect(x: 0, y: int(sh) - 40, w: int(sw), h: 40, r: 20, g: 22, b: 18)
 
 // Draw snow (behind everything)
 for p in snow do
   let alpha = min(1.0, p.life)
   let bright = int(200.0 * alpha)
-  draw_circle(int(p.x), int(p.y), int(p.size), bright, bright, min(255, bright + 30))
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size), r: bright, g: bright, b: min(255, bright + 30))
 end
 
 // Draw fire
@@ -155,12 +155,12 @@ for p in fire do
   let fr = int(255.0 * min(1.0, alpha * 2.0))
   let fg = int(255.0 * min(1.0, alpha * 1.5) * alpha)
   let fb = int(100.0 * alpha * alpha)
-  draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), fr, fg, fb)
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: fr, g: fg, b: fb)
 end
 
 // Fire base glow
-draw_circle(int(fire_x), int(fire_y) - 10, 30, 60, 20, 5)
-draw_circle(int(fire_x), int(fire_y) - 5, 20, 100, 40, 5)
+draw_circle(cx: int(fire_x), cy: int(fire_y) - 10, radius: 30, r: 60, g: 20, b: 5)
+draw_circle(cx: int(fire_x), cy: int(fire_y) - 5, radius: 20, r: 100, g: 40, b: 5)
 
 // Draw fountain
 for p in fountain do
@@ -168,12 +168,12 @@ for p in fountain do
   let fr = int(50.0 * alpha)
   let fg = int(150.0 * alpha + 50.0)
   let fb = int(255.0 * alpha)
-  draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), fr, fg, fb)
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: fr, g: fg, b: fb)
 end
 
 // Fountain base
-draw_rect(int(fountain_x) - 20, int(fountain_y), 40, 10, 50, 60, 80)
-draw_rect(int(fountain_x) - 30, int(fountain_y) + 10, 60, 5, 40, 50, 70)
+draw_rect(x: int(fountain_x) - 20, y: int(fountain_y), w: 40, h: 10, r: 50, g: 60, b: 80)
+draw_rect(x: int(fountain_x) - 30, y: int(fountain_y) + 10, w: 60, h: 5, r: 40, g: 50, b: 70)
 
 // Draw sparks
 for p in sparks do
@@ -181,16 +181,16 @@ for p in sparks do
   let sr = int(255.0 * alpha)
   let sg = int(200.0 * alpha * alpha)
   let sb = int(50.0 * alpha)
-  draw_circle(int(p.x), int(p.y), int(p.size * alpha + 1.0), sr, sg, sb)
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: int(p.size * alpha + 1.0), r: sr, g: sg, b: sb)
 end
 
 // Labels
-draw_text("Particle Systems", 10, 10, 16, 100, 100, 120)
-draw_text("Fire", int(fire_x) - 10, int(fire_y) + 20, 12, 200, 100, 50)
-draw_text("Fountain", int(fountain_x) - 25, int(fountain_y) + 20, 12, 80, 150, 255)
-draw_text("Snow", int(sw) / 2 + 100, 30, 12, 180, 180, 200)
-draw_text("Click to spawn sparks", 10, 30, 12, 60, 60, 80)
+draw_text("Particle Systems", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Fire", x: int(fire_x) - 10, y: int(fire_y) + 20, size: 12, r: 200, g: 100, b: 50)
+draw_text("Fountain", x: int(fountain_x) - 25, y: int(fountain_y) + 20, size: 12, r: 80, g: 150, b: 255)
+draw_text("Snow", x: int(sw) / 2 + 100, y: 30, size: 12, r: 180, g: 180, b: 200)
+draw_text("Click to spawn sparks", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
 
 // Particle counts
 let total = len(fountain) + len(fire) + len(snow) + len(sparks)
-draw_text("Particles: " ++ str(total), int(sw) - 150, 10, 12, 60, 60, 80)
+draw_text("Particles: " ++ str(total), x: int(sw) - 150, y: 10, size: 12, r: 60, g: 60, b: 80)

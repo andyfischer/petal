@@ -94,15 +94,15 @@ state var pulse      = 0.0
 // ── Small pure helpers ───────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
-  draw_text(s, {x: int(x), y: int(y)}, style)
+  draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
 end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
-  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+  draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
 end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
-  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+  draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
 end
 
 // Where a ball travelling (vx, vy) from (x, y) crosses the vertical line
@@ -145,24 +145,24 @@ fn burst(list, x: num, y: num, n: num, col: record, dirx: num, spread: num)
 end
 
 fn draw_paddle(r: record, col: record, glow: num)
-  draw_rect_rounded(rect(r.x - 7, r.y - 7, r.w + 14, r.h + 14), 13, col, int(18.0 + glow * 60.0))
-  draw_rect_rounded(rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6), 9, col, int(26.0 + glow * 80.0))
-  draw_rect_rounded(r, 6, col)
-  draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), 3, #ffffff, 60)
+  draw_rect_rounded(rect(r.x - 7, r.y - 7, r.w + 14, r.h + 14), radius: 13, c: col, a: int(18.0 + glow * 60.0))
+  draw_rect_rounded(rect(r.x - 3, r.y - 3, r.w + 6, r.h + 6), radius: 9, c: col, a: int(26.0 + glow * 80.0))
+  draw_rect_rounded(r, radius: 6, c: col)
+  draw_rect_rounded(rect(r.x + 4, r.y + 9, r.w - 8, r.h - 18), radius: 3, c: #ffffff, a: 60)
 end
 
 fn stat_cell(right_x: num, y: num, label: string, value: string, style: record)
-  tx_right(label, right_x, y, S_LABEL)
-  tx_right(value, right_x, y + 15, style)
+  tx_right(label, right_x, y, style: S_LABEL)
+  tx_right(value, right_x, y: y + 15, style: style)
 end
 
 fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
   let box = rect(int(x), int(y), cw, 24)
-  draw_rect_rounded(box, 7, C_CHIP)
-  draw_rect_outline(box, C_LINE, 255, 1)
-  tx(cap, x + 10, y + 6, S_CAP)
-  tx(desc, x + cw + 10, y + 6, S_HINT)
+  draw_rect_rounded(box, radius: 7, c: C_CHIP)
+  draw_rect_outline(box, c: C_LINE, a: 255, width: 1)
+  tx(cap, x: x + 10, y: y + 6, style: S_CAP)
+  tx(desc, x: x + cw + 10, y: y + 6, style: S_HINT)
   cw + 10 + text_width(desc, S_HINT) + 26
 end
 
@@ -227,7 +227,7 @@ if key_pressed("space") then
     set bx = float(cx)
     set by = float(cy)
     set trail = []
-    set bits = burst(bits, float(cx), float(cy), 14, C_BALL, serve_dir, 1.2)
+    set bits = burst(bits, x: float(cx), y: float(cy), n: 14, col: C_BALL, dirx: serve_dir, spread: 1.2)
   elsif phase == "play" then
     set phase = "paused"
     set banner = "PAUSED"
@@ -251,14 +251,14 @@ set hold_up = max(0.0, hold_up - sdt)
 set hold_dn = max(0.0, hold_dn - sdt)
 
 if mdir != 0.0 && phase != "paused" then
-  set py = clamp(py + mdir * paddle_speed * sdt, ct, cb - float(PH))
+  set py = clamp(py + mdir * paddle_speed * sdt, lo: ct, hi: cb - float(PH))
 end
 
 let mx = mouse_x()
 let my = mouse_y()
 let mouse_moved = (mx != last_mx || my != last_my) && last_mx >= 0
-if mouse_moved && point_in(mx, my, court) && phase != "paused" then
-  set py = clamp(float(my - PH / 2), ct, cb - float(PH))
+if mouse_moved && point_in(px: mx, py: my, r: court) && phase != "paused" then
+  set py = clamp(float(my - PH / 2), lo: ct, hi: cb - float(PH))
 end
 set last_mx = mx
 set last_my = my
@@ -278,20 +278,20 @@ if phase == "play" then
       set by = ct + float(BR)
       set vy = -vy
       set flash_t = 1.0
-      set bits = burst(bits, bx, ct, 8, C_EDGE, 0.0, 3.14)
+      set bits = burst(bits, x: bx, y: ct, n: 8, col: C_EDGE, dirx: 0.0, spread: 3.14)
     end
     if by + float(BR) > cb && vy > 0.0 then
       set by = cb - float(BR)
       set vy = -vy
       set flash_b = 1.0
-      set bits = burst(bits, bx, cb, 8, C_EDGE, 0.0, 3.14)
+      set bits = burst(bits, x: bx, y: cb, n: 8, col: C_EDGE, dirx: 0.0, spread: 3.14)
     end
 
     // Player paddle
     if vx < 0.0 && bx - float(BR) <= plx + float(PW) && bx - float(BR) > plx - 14.0 then
       if by >= py - float(BR) && by <= py + float(PH) + float(BR) then
         set bx = plx + float(PW) + float(BR)
-        let rel = clamp((by - (py + float(PH) / 2.0)) / (float(PH) / 2.0), -1.0, 1.0)
+        let rel = clamp((by - (py + float(PH) / 2.0)) / (float(PH) / 2.0), lo: -1.0, hi: 1.0)
         set speed = min(speed * 1.045 + 9.0, ball_speed_max)
         let ang = rel * 0.92
         set vx = speed * cos(ang)
@@ -300,7 +300,7 @@ if phase == "play" then
         set flash_l = 1.0
         set ai_err = random(-30.0, 30.0)
         set ai_timer = 0.0
-        set bits = burst(bits, bx, by, 16, C_YOU, 1.0, 1.0)
+        set bits = burst(bits, x: bx, y: by, n: 16, col: C_YOU, dirx: 1.0, spread: 1.0)
       end
     end
 
@@ -308,14 +308,14 @@ if phase == "play" then
     if vx > 0.0 && bx + float(BR) >= prx && bx + float(BR) < prx + float(PW) + 14.0 then
       if by >= ay - float(BR) && by <= ay + float(PH) + float(BR) then
         set bx = prx - float(BR)
-        let rel = clamp((by - (ay + float(PH) / 2.0)) / (float(PH) / 2.0), -1.0, 1.0)
+        let rel = clamp((by - (ay + float(PH) / 2.0)) / (float(PH) / 2.0), lo: -1.0, hi: 1.0)
         set speed = min(speed * 1.045 + 9.0, ball_speed_max)
         let ang = rel * 0.92
         set vx = -speed * cos(ang)
         set vy = speed * sin(ang)
         set rally = rally + 1
         set flash_r = 1.0
-        set bits = burst(bits, bx, by, 16, C_CPU, -1.0, 1.0)
+        set bits = burst(bits, x: bx, y: by, n: 16, col: C_CPU, dirx: -1.0, spread: 1.0)
       end
     end
 
@@ -339,13 +339,13 @@ if phase == "scored" then
     set serve_dir = 1.0
     set banner = "YOUR POINT"
     set goal_r = 1.0
-    set bits = burst(bits, float(court.x + court.w), by, 26, C_YOU, -1.0, 1.1)
+    set bits = burst(bits, x: float(court.x + court.w), y: by, n: 26, col: C_YOU, dirx: -1.0, spread: 1.1)
   else
     set s_cpu = s_cpu + 1
     set serve_dir = -1.0
     set banner = "CPU POINT"
     set goal_l = 1.0
-    set bits = burst(bits, float(court.x), by, 26, C_CPU, 1.0, 1.1)
+    set bits = burst(bits, x: float(court.x), y: by, n: 26, col: C_CPU, dirx: 1.0, spread: 1.1)
   end
   set rally = 0
   set bx = float(cx)
@@ -370,12 +370,12 @@ if phase == "play" then
   if ai_timer <= 0.0 then
     set ai_timer = 0.11
     if vx > 0.0 then
-      set ai_target = predict_y(bx, by, vx, vy, prx, ct + float(BR), cb - float(BR)) + ai_err
+      set ai_target = predict_y(x: bx, y: by, dx: vx, dy: vy, target_x: prx, top: ct + float(BR), bot: cb - float(BR)) + ai_err
     else
       set ai_target = (ct + cb) / 2.0 + ai_err * 0.4
     end
   end
-  let want = clamp(ai_target - float(PH) / 2.0, ct, cb - float(PH))
+  let want = clamp(ai_target - float(PH) / 2.0, lo: ct, hi: cb - float(PH))
   let step = ai_speed * sdt
   if abs(want - ay) <= step then
     set ay = want
@@ -388,7 +388,7 @@ end
 if phase == "play" then
   set trail = append(trail, {x: bx, y: by})
   if len(trail) > 16 then
-    set trail = slice(trail, len(trail) - 16, len(trail))
+    set trail = slice(trail, start: len(trail) - 16, end: len(trail))
   end
 end
 
@@ -410,19 +410,19 @@ set goal_r = goal_r - goal_r * decay
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
-tx("PONG", PAD, 26, S_TITLE)
-tx("PETAL / GARDEN TESTBED 01", PAD + 3, 64, S_KICK)
+tx("PONG", x: PAD, y: 26, style: S_TITLE)
+tx("PETAL / GARDEN TESTBED 01", x: PAD + 3, y: 64, style: S_KICK)
 
 // Scoreboard
 let s_you_txt = str(s_you)
 let s_cpu_txt = str(s_cpu)
 let you_style = {...S_SCORE, color: if s_you >= s_cpu then C_YOU else C_MUTE end}
 let cpu_style = {...S_SCORE, color: if s_cpu >= s_you then C_CPU else C_MUTE end}
-tx_right(s_you_txt, cx - 26, 20, you_style)
-tx(s_cpu_txt, cx + 26, 20, cpu_style)
+tx_right(s_you_txt, right_x: cx - 26, y: 20, style: you_style)
+tx(s_cpu_txt, x: cx + 26, y: 20, style: cpu_style)
 draw_rect(rect(cx - 1, 32, 2, 40), C_LINE)
-tx_right("YOU", cx - 26, 76, {...S_LABEL, color: C_YOU})
-tx("CPU", cx + 26, 76, {...S_LABEL, color: C_CPU})
+tx_right("YOU", right_x: cx - 26, y: 76, style: {...S_LABEL, color: C_YOU})
+tx("CPU", x: cx + 26, y: 76, style: {...S_LABEL, color: C_CPU})
 
 // Match pips — one per point needed to win.
 for i in range(0, win_score) do
@@ -430,42 +430,42 @@ for i in range(0, win_score) do
   let lit_cpu = i < s_cpu
   let px_you = cx - 26 - 8 - i * 12
   let px_cpu = cx + 26 + i * 12
-  draw_rect_rounded(rect(px_you, 96, 8, 3), 1, if lit_you then C_YOU else C_LINE end)
-  draw_rect_rounded(rect(px_cpu, 96, 8, 3), 1, if lit_cpu then C_CPU else C_LINE end)
+  draw_rect_rounded(rect(px_you, 96, 8, 3), radius: 1, c: if lit_you then C_YOU else C_LINE end)
+  draw_rect_rounded(rect(px_cpu, 96, 8, 3), radius: 1, c: if lit_cpu then C_CPU else C_LINE end)
 end
 
 // Stats, right-aligned
 let cell3 = W - PAD
 let cell2 = cell3 - 104
 let cell1 = cell2 - 104
-stat_cell(cell1, 32, "RALLY", str(rally), if rally > 0 then S_STAT else S_STATD end)
-stat_cell(cell2, 32, "BEST RALLY", str(best), if best > 0 then S_STAT else S_STATD end)
-stat_cell(cell3, 32, "BALL SPEED", str(int(speed)), if speed > 0.0 then S_STAT else S_STATD end)
+stat_cell(right_x: cell1, y: 32, label: "RALLY", value: str(rally), style: if rally > 0 then S_STAT else S_STATD end)
+stat_cell(right_x: cell2, y: 32, label: "BEST RALLY", value: str(best), style: if best > 0 then S_STAT else S_STATD end)
+stat_cell(right_x: cell3, y: 32, label: "BALL SPEED", value: str(int(speed)), style: if speed > 0.0 then S_STAT else S_STATD end)
 
 // ── Draw: court ──────────────────────────────────────────────────────────
 
-draw_rect_rounded(court, 16, C_COURT)
-draw_rect_rounded(court.inset(1), 15, C_FIELD)
-draw_rect_outline(court, C_EDGE, 255, 1)
+draw_rect_rounded(court, radius: 16, c: C_COURT)
+draw_rect_rounded(court.inset(1), radius: 15, c: C_FIELD)
+draw_rect_outline(court, c: C_EDGE, a: 255, width: 1)
 
 // Goal edges — they light up when a point lands there.
-draw_rect_rounded(rect(court.x + 4, int(ct), 3, int(cb - ct)), 2, C_CPU, int(14.0 + goal_l * 210.0))
-draw_rect_rounded(rect(court.x + court.w - 7, int(ct), 3, int(cb - ct)), 2, C_YOU, int(14.0 + goal_r * 210.0))
+draw_rect_rounded(rect(court.x + 4, int(ct), 3, int(cb - ct)), radius: 2, c: C_CPU, a: int(14.0 + goal_l * 210.0))
+draw_rect_rounded(rect(court.x + court.w - 7, int(ct), 3, int(cb - ct)), radius: 2, c: C_YOU, a: int(14.0 + goal_r * 210.0))
 
 // The rails the ball bounces off — always faintly present, lit on impact.
 draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), C_LINE)
 draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), C_LINE)
-draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), C_TEXT, int(flash_t * 200.0))
-draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), C_TEXT, int(flash_b * 200.0))
+draw_rect(rect(court.x + 14, int(ct) - 2, court.w - 28, 2), c: C_TEXT, a: int(flash_t * 200.0))
+draw_rect(rect(court.x + 14, int(cb), court.w - 28, 2), c: C_TEXT, a: int(flash_b * 200.0))
 
 // Dashed centre line
 let dash_n = (int(cb - ct) + 10) / 26
 for i in range(0, dash_n) do
   let dy = int(ct) + 6 + i * 26
-  draw_rect_rounded(rect(cx - 1, dy, 3, 14), 1, C_LINE)
+  draw_rect_rounded(rect(cx - 1, dy, 3, 14), radius: 1, c: C_LINE)
 end
 
-clip(court.x, court.y, court.w, court.h)
+clip(x: court.x, y: court.y, w: court.w, h: court.h)
 
 // Particles
 for p in bits do
@@ -484,15 +484,15 @@ for i in range(0, tn) do
 end
 
 // Paddles
-draw_paddle(rect(int(plx), int(py), PW, PH), C_YOU, flash_l)
-draw_paddle(rect(int(prx), int(ay), PW, PH), C_CPU, flash_r)
+draw_paddle(rect(int(plx), int(py), PW, PH), col: C_YOU, glow: flash_l)
+draw_paddle(rect(int(prx), int(ay), PW, PH), col: C_CPU, glow: flash_r)
 
 // Ball
 if phase != "over" then
   let bob = if phase == "play" then 0.0 else sin(pulse * 2.6) * 3.0 end
   draw_circle({x: int(bx), y: int(by + bob)}, BR + 15, C_BALL, 12)
   draw_circle({x: int(bx), y: int(by + bob)}, BR + 7, C_BALL, 30)
-  draw_circle({x: int(bx), y: int(by + bob)}, BR, C_BALL)
+  draw_circle(center: {x: int(bx), y: int(by + bob)}, radius: BR, c: C_BALL)
   draw_circle({x: int(bx) - 2, y: int(by + bob) - 2}, 3, #ffffff, 220)
 end
 
@@ -501,17 +501,17 @@ clip_none()
 // ── Draw: overlay ────────────────────────────────────────────────────────
 
 if phase != "play" then
-  draw_rect_rounded(court.inset(1), 15, C_BG, 168)
+  draw_rect_rounded(court.inset(1), radius: 15, c: C_BG, a: 168)
   let bw = max(text_width(banner, S_BIG), text_width(subbanner, S_SUB)) + 72
   let card = rect(cx - bw / 2, cy - 58, bw, 116)
-  draw_rect_rounded(card, 14, C_COURT)
-  draw_rect_outline(card, C_EDGE, 255, 1)
+  draw_rect_rounded(card, radius: 14, c: C_COURT)
+  draw_rect_outline(card, c: C_EDGE, a: 255, width: 1)
   let accent = if phase == "over" then (if s_you >= win_score then C_YOU else C_CPU end)
   elsif phase == "paused" then C_DIM
   else C_TEXT end
-  draw_rect_rounded(rect(card.x + 20, cy - 26, 3, 52), 2, accent, 190)
-  tx_center(banner, cx + 8, cy - 34, {...S_BIG, color: accent})
-  tx_center(subbanner, cx + 8, cy + 14, S_SUB)
+  draw_rect_rounded(rect(card.x + 20, cy - 26, 3, 52), radius: 2, c: accent, a: 190)
+  tx_center(banner, cx: cx + 8, y: cy - 34, style: {...S_BIG, color: accent})
+  tx_center(subbanner, cx: cx + 8, y: cy + 14, style: S_SUB)
 
   // Which way the next ball goes.
   if phase == "serve" || phase == "title" then
@@ -522,8 +522,8 @@ if phase != "play" then
     let left = cx - total / 2
     let lab_x = if serve_dir > 0.0 then left else left + 28 end
     let arrow = if serve_dir > 0.0 then left + lw + 17 else left + 11 end
-    tx(lab, lab_x, cy + 80, {...S_LABEL, color: C_DIM})
-    fill_triangle(arrow + int(serve_dir * 11.0), cy + 85, arrow, cy + 79, arrow, cy + 91, col.r, col.g, col.b, 210)
+    tx(lab, x: lab_x, y: cy + 80, style: {...S_LABEL, color: C_DIM})
+    fill_triangle(x1: arrow + int(serve_dir * 11.0), y1: cy + 85, x2: arrow, y2: cy + 79, x3: arrow, y3: cy + 91, r: col.r, g: col.g, b: col.b, a: 210)
   end
 end
 
@@ -531,11 +531,11 @@ end
 
 let fy = court.y + court.h + 20
 var fx = PAD
-set fx = fx + chip(fx, fy, "W / UP", "up")
-set fx = fx + chip(fx, fy, "S / DN", "down")
-set fx = fx + chip(fx, fy, "SPACE", "serve · pause")
-set fx = fx + chip(fx, fy, "R", "restart")
-set fx = fx + chip(fx, fy, "MOUSE", "track paddle")
+set fx = fx + chip(x: fx, y: fy, cap: "W / UP", desc: "up")
+set fx = fx + chip(x: fx, y: fy, cap: "S / DN", desc: "down")
+set fx = fx + chip(x: fx, y: fy, cap: "SPACE", desc: "serve · pause")
+set fx = fx + chip(x: fx, y: fy, cap: "R", desc: "restart")
+set fx = fx + chip(x: fx, y: fy, cap: "MOUSE", desc: "track paddle")
 
 let status = match phase
   when "play" -> "RALLY IN PLAY"
@@ -543,7 +543,7 @@ let status = match phase
   when "over" -> "MATCH OVER"
   when _ -> "AWAITING SERVE"
 end
-tx_right("first to {win_score}   ·   {status}", W - PAD, fy + 7, S_HINT)
+tx_right("first to {win_score}   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
 // ── Observation mirrors (readable in /state panel.values) ────────────────
 

@@ -89,7 +89,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text: string, pos: record, size: num, color: record)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 // === DRAW ===
@@ -118,17 +118,17 @@ for i in range(0, len(nodes)) do
   if n.active then
     // Active: green glow
     if hover then
-      draw_circle(n.x, n.y, node_r + 6, 40, 120, 60)
+      draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 40, g: 120, b: 60)
     end
-    draw_circle(n.x, n.y, node_r, active_outer.r, active_outer.g, active_outer.b)
-    draw_circle(n.x, n.y, node_r - 4, active_inner.r, active_inner.g, active_inner.b)
+    draw_circle(cx: n.x, cy: n.y, radius: node_r, r: active_outer.r, g: active_outer.g, b: active_outer.b)
+    draw_circle(cx: n.x, cy: n.y, radius: node_r - 4, r: active_inner.r, g: active_inner.g, b: active_inner.b)
   else
     // Inactive: dim
     if hover then
-      draw_circle(n.x, n.y, node_r + 6, 80, 70, 70)
+      draw_circle(cx: n.x, cy: n.y, radius: node_r + 6, r: 80, g: 70, b: 70)
     end
-    draw_circle(n.x, n.y, node_r, inactive_outer.r, inactive_outer.g, inactive_outer.b)
-    draw_circle(n.x, n.y, node_r - 4, inactive_inner.r, inactive_inner.g, inactive_inner.b)
+    draw_circle(cx: n.x, cy: n.y, radius: node_r, r: inactive_outer.r, g: inactive_outer.g, b: inactive_outer.b)
+    draw_circle(cx: n.x, cy: n.y, radius: node_r - 4, r: inactive_inner.r, g: inactive_inner.g, b: inactive_inner.b)
   end
 
   let tw = len(n.label) * 7

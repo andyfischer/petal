@@ -213,7 +213,7 @@ end
 
 fn clamp_line()
   let n = len(cur_file().lines)
-  set cur_line = clamp(get cur_line, 0, max(0, n - 1))
+  set cur_line = clamp(get cur_line, lo: 0, hi: max(0, n - 1))
 end
 
 fn replace_line(f)
@@ -246,7 +246,7 @@ fn trim_right(s: string) -> string
   let cs = chars(s)
   let n = len(cs)
   while n > 0 && cs[n - 1] == " " do n -= 1 end
-  join(slice(cs, 0, n), "")
+  join(slice(cs, start: 0, end: n), "")
 end
 
 fn swap_lines(i: int, j: int)
@@ -299,13 +299,13 @@ end
 fn fuzzy(q: list, t: string)
   if len(q) == 0 then return {score: 0, pos: []} end
   let tc = chars(lower(t))
-  let a = fuzzy_from(q, tc, 0)
+  let a = fuzzy_from(q, tc, start: 0)
   // Second pass: first query char anchored at a word start.
   let ws = -1
   for i in range(0, len(tc)) do
     if ws < 0 && tc[i] == q[0] && is_word_start(tc, i) then ws = i end
   end
-  let b = if ws > 0 then fuzzy_from(q, tc, ws) else nil end
+  let b = if ws > 0 then fuzzy_from(q, tc, start: ws) else nil end
   if a == nil then b
   elsif b == nil then a
   elsif b.score > a.score then b
@@ -418,7 +418,7 @@ end
 
 fn remember(id: string)
   let rest = filter(get recent, fn(r) -> r != id)
-  set recent = slice(append([id], rest), 0, min(5, len(rest) + 1))
+  set recent = slice(append([id], rest), start: 0, end: min(5, len(rest) + 1))
 end
 
 fn run_command(id: string)
@@ -452,7 +452,7 @@ fn run_command(id: string)
       if len(get files) > 1 then
         let fi = get file_i
         set files = filter(get files, fn(x) -> x.name != f.name)
-        set file_i = clamp(fi, 0, len(get files) - 1)
+        set file_i = clamp(fi, lo: 0, hi: len(get files) - 1)
         set cur_line = 0
         toast("Closed {f.name}", "info")
       else
@@ -643,9 +643,9 @@ if open then
       let cut = char_len(s)
       let cs = chars(s)
       while cut > 0 && cs[cut - 1] != " " do cut -= 1 end
-      set query = char_slice(s, 0, cut)
+      set query = char_slice(s, start: 0, end: cut)
     else
-      set query = char_slice(query, 0, char_len(query) - 1)
+      set query = char_slice(query, start: 0, end: char_len(query) - 1)
     end
     set sel = 0
     set list_scroll = 0
@@ -657,16 +657,16 @@ let rows = if open then build_rows(mode, query, recent, files) else [] end
 // Keep the selection on a selectable row.
 if open then
   if !selectable(rows, sel) then set sel = first_selectable(rows) end
-  if key_pressed("down") || (mod_ctrl() && key_pressed("n")) then set sel = step_sel(rows, sel, 1) end
-  if key_pressed("up") || (mod_ctrl() && key_pressed("p")) then set sel = step_sel(rows, sel, -1) end
+  if key_pressed("down") || (mod_ctrl() && key_pressed("n")) then set sel = step_sel(rows, from: sel, dir: 1) end
+  if key_pressed("up") || (mod_ctrl() && key_pressed("p")) then set sel = step_sel(rows, from: sel, dir: -1) end
   if key_pressed("pagedown") then
-    for k in range(0, 8) do set sel = step_sel(rows, sel, 1) end
+    for k in range(0, 8) do set sel = step_sel(rows, from: sel, dir: 1) end
   end
   if key_pressed("pageup") then
-    for k in range(0, 8) do set sel = step_sel(rows, sel, -1) end
+    for k in range(0, 8) do set sel = step_sel(rows, from: sel, dir: -1) end
   end
   if key_pressed("home") then set sel = first_selectable(rows) end
-  if key_pressed("end") then set sel = step_sel(rows, 0, -1) end
+  if key_pressed("end") then set sel = step_sel(rows, from: 0, dir: -1) end
 end
 
 // ── Geometry ─────────────────────────────────────────────────────────────
@@ -714,15 +714,15 @@ let foot_r = rect(px, pal.y + pal.h - FOOT_H, PW, FOOT_H)
 
 // Keep the selected row in view, then honour the wheel over the list.
 if open then
-  set list_scroll = ensure_visible(list_scroll, sel, VISIBLE)
-  if scroll_y() != 0.0 && point_in(mouse_x(), mouse_y(), list_r) then
-    set list_scroll = clamp(list_scroll + scroll_y(), 0, max(0, len(rows) - VISIBLE))
+  set list_scroll = ensure_visible(scroll: list_scroll, selected: sel, visible_rows: VISIBLE)
+  if scroll_y() != 0.0 && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
+    set list_scroll = clamp(list_scroll + scroll_y(), lo: 0, hi: max(0, len(rows) - VISIBLE))
   end
-  set list_scroll = clamp(list_scroll, 0, max(0, len(rows) - VISIBLE))
+  set list_scroll = clamp(list_scroll, lo: 0, hi: max(0, len(rows) - VISIBLE))
 end
 
 // Mouse over the palette rows: hover selects, click runs.
-let mouse_row = if open && point_in(mouse_x(), mouse_y(), list_r) then
+let mouse_row = if open && point_in(px: mouse_x(), py: mouse_y(), r: list_r) then
   list_scroll + (mouse_y() - list_r.y) / ROW_H
 else -1 end
 if open && mouse_row >= 0 && selectable(rows, mouse_row) then
@@ -735,7 +735,7 @@ end
 // Activation: Return, or a click on a row, or a click outside closes.
 let activate = open && (key_pressed("return") || key_pressed("enter") ||
   (mouse_pressed(0) && mouse_row >= 0 && selectable(rows, mouse_row)))
-if open && mouse_pressed(0) && !point_in(mouse_x(), mouse_y(), pal) then
+if open && mouse_pressed(0) && !point_in(px: mouse_x(), py: mouse_y(), r: pal) then
   close_palette()
 end
 if activate && selectable(rows, sel) then
@@ -759,7 +759,7 @@ end
 let side_rows = if sidebar then for i in range(0, len(files)) do rect(side.x + 8, side.y + 44 + i * 30, side.w - 16, 28) end else [] end
 if !open && sidebar && mouse_pressed(0) then
   for i in range(0, len(side_rows)) do
-    if point_in(mouse_x(), mouse_y(), side_rows[i]) then
+    if point_in(px: mouse_x(), py: mouse_y(), r: side_rows[i]) then
       set file_i = i
       set cur_line = 0
     end
@@ -767,7 +767,7 @@ if !open && sidebar && mouse_pressed(0) then
 end
 // The search box in the top bar opens the palette by mouse.
 let search_r = rect(W / 2 - 170, 9, 340, 26)
-if !open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), search_r) then open_palette("commands") end
+if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: search_r) then open_palette("commands") end
 
 // Document: clicking a line selects it; wheel scrolls.
 let f = cur_file()
@@ -776,13 +776,13 @@ let LINE_H = int(float(zoom) * 1.55)
 let doc_pad = 28
 let doc_body = rect(doc.x + doc_pad, doc.y + 52, doc.w - doc_pad * 2, doc.h - 52 - 16)
 let doc_vis = max(1, doc_body.h / LINE_H)
-if !open && scroll_y() != 0.0 && point_in(mouse_x(), mouse_y(), doc) then
+if !open && scroll_y() != 0.0 && point_in(px: mouse_x(), py: mouse_y(), r: doc) then
   set doc_scroll += int(scroll_y() * 3.0)
 end
-set doc_scroll = clamp(doc_scroll, 0, max(0, len(lines) - doc_vis))
+set doc_scroll = clamp(doc_scroll, lo: 0, hi: max(0, len(lines) - doc_vis))
 if cur_line < doc_scroll then set doc_scroll = cur_line end
 if cur_line >= doc_scroll + doc_vis then set doc_scroll = cur_line - doc_vis + 1 end
-if !open && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), doc_body) then
+if !open && mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: doc_body) then
   let li = doc_scroll + (mouse_y() - doc_body.y) / LINE_H
   if li >= 0 && li < len(lines) then set cur_line = li end
 end
@@ -794,61 +794,61 @@ clear(T.bg.r, T.bg.g, T.bg.b)
 // Top bar.
 draw_rect(top_bar, T.panel)
 draw_rect(rect(0, TOP_H - 1, W, 1), T.line)
-draw_circle({x: 22, y: 22}, 7, T.accent)
-draw_circle({x: 22, y: 22}, 3, T.panel)
-draw_text("Beacon notes", {x: 38, y: 14}, S_UI_B)
-draw_text(f.name ++ (if dirty then "  •  edited" else "" end), {x: 38 + text_width("Beacon notes", S_UI_B) + 14, y: 14}, S_UI_M)
+draw_circle(center: {x: 22, y: 22}, radius: 7, c: T.accent)
+draw_circle(center: {x: 22, y: 22}, radius: 3, c: T.panel)
+draw_text("Beacon notes", pos: {x: 38, y: 14}, style: S_UI_B)
+draw_text(f.name ++ (if dirty then "  •  edited" else "" end), pos: {x: 38 + text_width("Beacon notes", S_UI_B) + 14, y: 14}, style: S_UI_M)
 // The fake search box that opens the palette.
-let search_hov = point_in(mouse_x(), mouse_y(), search_r)
-draw_rect_rounded(search_r, 7, if search_hov then T.hover else T.surface end)
-draw_rect_rounded_outline(search_r, 7, T.edge, 255, 1)
+let search_hov = point_in(px: mouse_x(), py: mouse_y(), r: search_r)
+draw_rect_rounded(search_r, radius: 7, c: if search_hov then T.hover else T.surface end)
+draw_rect_rounded_outline(search_r, radius: 7, c: T.edge, a: 255, width: 1)
 draw_circle_outline({x: search_r.x + 14, y: search_r.y + 12}, 4, T.dim, 255, 1)
 draw_line({x: search_r.x + 17, y: search_r.y + 15}, {x: search_r.x + 20, y: search_r.y + 18}, T.dim, 255, 1)
-draw_text("Search commands and files", {x: search_r.x + 26, y: search_r.y + 5}, {...S_UI_M, color: T.dim})
-draw_text_right("Cmd K", search_r.x + search_r.w - 10, search_r.y + 7, S_KEY)
-draw_text_right("Theme: {title_case(theme_name)}   Zoom {zoom}px", W - 16, 14, S_UI_D)
+draw_text("Search commands and files", pos: {x: search_r.x + 26, y: search_r.y + 5}, style: {...S_UI_M, color: T.dim})
+draw_text_right("Cmd K", right_x: search_r.x + search_r.w - 10, y: search_r.y + 7, style: S_KEY)
+draw_text_right("Theme: {title_case(theme_name)}   Zoom {zoom}px", right_x: W - 16, y: 14, style: S_UI_D)
 
 // Sidebar.
 if sidebar then
   draw_rect(side, T.panel)
   draw_rect(rect(side.x + side.w - 1, side.y, 1, side.h), T.line)
-  draw_text("FILES", {x: side.x + 16, y: side.y + 18}, S_LABEL)
-  draw_text_right(str(len(files)), side.x + side.w - 16, side.y + 17, S_UI_D)
+  draw_text("FILES", pos: {x: side.x + 16, y: side.y + 18}, style: S_LABEL)
+  draw_text_right(str(len(files)), right_x: side.x + side.w - 16, y: side.y + 17, style: S_UI_D)
   for i in range(0, len(files)) do
     let r = side_rows[i]
     let active = i == file_i
-    let hov = !open && point_in(mouse_x(), mouse_y(), r)
+    let hov = !open && point_in(px: mouse_x(), py: mouse_y(), r: r)
     if active then
-      draw_rect_rounded(r, 6, T.sel)
-      draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), 2, T.accent)
+      draw_rect_rounded(r, radius: 6, c: T.sel)
+      draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), radius: 2, c: T.accent)
     elsif hov then
-      draw_rect_rounded(r, 6, T.hover)
+      draw_rect_rounded(r, radius: 6, c: T.hover)
     end
     // A tiny document glyph.
-    draw_rect_rounded_outline(rect(r.x + 12, r.y + 7, 10, 13), 2, if active then T.accent else T.dim end, 255, 1)
+    draw_rect_rounded_outline(rect(r.x + 12, r.y + 7, 10, 13), radius: 2, c: if active then T.accent else T.dim end, a: 255, width: 1)
     draw_rect(rect(r.x + 15, r.y + 11, 4, 1), if active then T.accent else T.dim end)
     draw_rect(rect(r.x + 15, r.y + 14, 4, 1), if active then T.accent else T.dim end)
-    draw_text(ellipsize(files[i].name, r.w - 70, S_UI), {x: r.x + 30, y: r.y + 6}, if active then S_UI else S_UI_M end)
-    draw_text_right(str(len(files[i].lines)), r.x + r.w - 10, r.y + 8, S_UI_D)
+    draw_text(ellipsize(files[i].name, avail_px: r.w - 70, size: S_UI), pos: {x: r.x + 30, y: r.y + 6}, style: if active then S_UI else S_UI_M end)
+    draw_text_right(str(len(files[i].lines)), right_x: r.x + r.w - 10, y: r.y + 8, style: S_UI_D)
   end
   // Recently used, below the files.
   let ry = side.y + 44 + len(files) * 30 + 24
-  draw_text("RECENT COMMANDS", {x: side.x + 16, y: ry}, S_LABEL)
+  draw_text("RECENT COMMANDS", pos: {x: side.x + 16, y: ry}, style: S_LABEL)
   if len(recent) == 0 then
-    draw_text("Nothing yet", {x: side.x + 16, y: ry + 22}, S_UI_D)
+    draw_text("Nothing yet", pos: {x: side.x + 16, y: ry + 22}, style: S_UI_D)
   end
   for i in range(0, len(recent)) do
     let c = cmd_by_id(recent[i])
     if c != nil then
-      draw_text(ellipsize(c.label, side.w - 36, S_UI_M), {x: side.x + 16, y: ry + 22 + i * 22}, S_UI_M)
+      draw_text(ellipsize(c.label, avail_px: side.w - 36, size: S_UI_M), pos: {x: side.x + 16, y: ry + 22 + i * 22}, style: S_UI_M)
     end
   end
 end
 
 // Document.
 draw_rect(doc, T.bg)
-draw_text(f.name, {x: doc.x + doc_pad, y: doc.y + 18}, {...S_UI_B, size: 15})
-draw_text_right("{len(lines)} lines   line {cur_line + 1}", doc.x + doc.w - doc_pad, doc.y + 20, S_UI_D)
+draw_text(f.name, pos: {x: doc.x + doc_pad, y: doc.y + 18}, style: {...S_UI_B, size: 15})
+draw_text_right("{len(lines)} lines   line {cur_line + 1}", right_x: doc.x + doc.w - doc_pad, y: doc.y + 20, style: S_UI_D)
 draw_rect(rect(doc.x + doc_pad, doc.y + 44, doc.w - doc_pad * 2, 1), T.line)
 clip_push(doc_body)
 let gutter = if numbers then 44 else 0 end
@@ -857,19 +857,19 @@ for i in range(doc_scroll, last_vis) do
   let y = doc_body.y + (i - doc_scroll) * LINE_H
   let ln = lines[i]
   if i == cur_line then
-    draw_rect_rounded(rect(doc_body.x - 8, y - 2, doc_body.w + 16, LINE_H), 4, T.sel)
-    draw_rect_rounded(rect(doc_body.x - 8, y + 2, 3, LINE_H - 8), 2, T.accent)
+    draw_rect_rounded(rect(doc_body.x - 8, y - 2, doc_body.w + 16, LINE_H), radius: 4, c: T.sel)
+    draw_rect_rounded(rect(doc_body.x - 8, y + 2, 3, LINE_H - 8), radius: 2, c: T.accent)
   end
   if numbers then
-    draw_text_right(str(i + 1), doc_body.x + gutter - 14, y + 2, S_NUM)
+    draw_text_right(str(i + 1), right_x: doc_body.x + gutter - 14, y: y + 2, style: S_NUM)
   end
   let style = if index_of(ln, "#") == 0 then S_DOC_H
   elsif index_of(ln, "- [x]") == 0 then S_DOC_M
   else S_DOC end
-  draw_text(ln, {x: doc_body.x + gutter, y: y}, style)
+  draw_text(ln, pos: {x: doc_body.x + gutter, y: y}, style: style)
 end
 if len(lines) == 0 then
-  draw_text("Empty file", {x: doc_body.x + gutter, y: doc_body.y}, S_DOC_M)
+  draw_text("Empty file", pos: {x: doc_body.x + gutter, y: doc_body.y}, style: S_DOC_M)
 end
 clip_pop()
 
@@ -878,9 +878,9 @@ if statusbar then
   draw_rect(status, T.panel)
   draw_rect(rect(0, status.y, W, 1), T.line)
   draw_text("{f.name}   Ln {cur_line + 1}, {len(lines)} lines" ++ (if dirty then "   unsaved" else "   saved" end),
-    {x: 16, y: status.y + 6}, S_UI_D)
+    pos: {x: 16, y: status.y + 6}, style: S_UI_D)
   draw_text_right("Cmd K palette   Cmd O files   Ctrl G go to line   {run_count} commands run",
-    W - 16, status.y + 6, S_UI_D)
+    right_x: W - 16, y: status.y + 6, style: S_UI_D)
 end
 
 // ── Draw: palette overlay ────────────────────────────────────────────────
@@ -895,7 +895,7 @@ fn draw_highlighted(s: string, pos: list, x: num, y: num, base: record, hi: reco
     let is_hi = contains(pos, i)
     if i > 0 && is_hi != run_hi then
       let st = if run_hi then hi else base end
-      draw_text(run, {x: int(cx), y: int(y)}, st)
+      draw_text(run, pos: {x: int(cx), y: int(y)}, style: st)
       cx += text_width(run, st)
       run = ""
     end
@@ -903,7 +903,7 @@ fn draw_highlighted(s: string, pos: list, x: num, y: num, base: record, hi: reco
     run_hi = is_hi
   end
   let st = if run_hi then hi else base end
-  draw_text(run, {x: int(cx), y: int(y)}, st)
+  draw_text(run, pos: {x: int(cx), y: int(y)}, style: st)
   cx + text_width(run, st) - x
 end
 
@@ -916,18 +916,18 @@ fn keycaps(caption: string, right_x: num, y: num, col: record, bg: record)
     let p = parts[i]
     let w = text_width(p, S_KEY) + 12
     x -= w
-    draw_rect_rounded(rect(int(x), int(y), w, 18), 4, bg)
-    draw_rect_rounded_outline(rect(int(x), int(y), w, 18), 4, col, 90, 1)
-    draw_text(p, {x: int(x) + 6, y: int(y) + 3}, {...S_KEY, color: col})
+    draw_rect_rounded(rect(int(x), int(y), w, 18), radius: 4, c: bg)
+    draw_rect_rounded_outline(rect(int(x), int(y), w, 18), radius: 4, c: col, a: 90, width: 1)
+    draw_text(p, pos: {x: int(x) + 6, y: int(y) + 3}, style: {...S_KEY, color: col})
     x -= 4
   end
 end
 
 if open then
-  draw_rect(rect(0, 0, W, H), T.scrim, if theme_name == "light" then 70 else 130 end)
-  draw_elevation(pal, 12, 3)
-  draw_rect_rounded(pal, 12, T.overlay)
-  draw_rect_rounded_outline(pal, 12, T.edge, 255, 1)
+  draw_rect(rect(0, 0, W, H), c: T.scrim, a: if theme_name == "light" then 70 else 130 end)
+  draw_elevation(pal, radius: 12, level: 3)
+  draw_rect_rounded(pal, radius: 12, c: T.overlay)
+  draw_rect_rounded_outline(pal, radius: 12, c: T.edge, a: 255, width: 1)
 
   // Input row: a mode chip, the query, a caret, and the result count.
   let chip_text = match mode
@@ -937,8 +937,8 @@ if open then
   let qx = input_r.x + 22
   if len(chip_text) > 0 then
     let cw = text_width(chip_text, S_LABEL) + 16
-    draw_rect_rounded(rect(qx, input_r.y + 18, cw, 20), 5, T.accent, 40)
-    draw_text(chip_text, {x: qx + 8, y: input_r.y + 22}, {...S_LABEL, color: T.accent})
+    draw_rect_rounded(rect(qx, input_r.y + 18, cw, 20), radius: 5, c: T.accent, a: 40)
+    draw_text(chip_text, pos: {x: qx + 8, y: input_r.y + 22}, style: {...S_LABEL, color: T.accent})
     qx += cw + 10
   else
     draw_circle_outline({x: qx + 7, y: input_r.y + 26}, 6, T.dim, 255, 2)
@@ -950,20 +950,20 @@ if open then
     when "goto" -> "Line number"
     when _ -> "Type a command" end
   if char_len(query) == 0 then
-    draw_text(placeholder, {x: qx, y: input_r.y + 16}, S_Q_PH)
+    draw_text(placeholder, pos: {x: qx, y: input_r.y + 16}, style: S_Q_PH)
   else
-    draw_text(query, {x: qx, y: input_r.y + 16}, S_Q)
+    draw_text(query, pos: {x: qx, y: input_r.y + 16}, style: S_Q)
   end
   let caret_x = qx + (if char_len(query) == 0 then 0 else text_width(query, S_Q) + 1 end)
   draw_rect(rect(caret_x, input_r.y + 17, 2, 21), T.accent)
   let count_txt = if mode == "goto" then "" else "{len(filter(rows, fn(r) -> r.kind != "header"))} results" end
-  draw_text_right(count_txt, input_r.x + input_r.w - 18, input_r.y + 20, S_UI_D)
+  draw_text_right(count_txt, right_x: input_r.x + input_r.w - 18, y: input_r.y + 20, style: S_UI_D)
   draw_rect(rect(input_r.x + 1, input_r.y + INPUT_H - 1, input_r.w - 2, 1), T.line)
 
   // Rows.
   clip_push(list_r)
   if len(rows) == 0 then
-    draw_text_center("No matching commands", pal.x + PW / 2, list_r.y + 14, S_UI_M)
+    draw_text_center("No matching commands", cx: pal.x + PW / 2, y: list_r.y + 14, style: S_UI_M)
   end
   let vis_end = min(len(rows), list_scroll + VISIBLE + 1)
   for i in range(list_scroll, vis_end) do
@@ -971,34 +971,34 @@ if open then
     let ry = list_r.y + (i - list_scroll) * ROW_H
     let rr = rect(list_r.x + 8, ry, PW - 16, ROW_H)
     if r.kind == "header" then
-      draw_text(r.text, {x: rr.x + 14, y: ry + 15}, S_LABEL)
+      draw_text(r.text, pos: {x: rr.x + 14, y: ry + 15}, style: S_LABEL)
     else
       let is_sel = i == sel
       if is_sel then
-        draw_rect_rounded(rr, 7, T.sel)
-        draw_rect_rounded(rect(rr.x, ry + 10, 3, ROW_H - 20), 2, T.accent)
+        draw_rect_rounded(rr, radius: 7, c: T.sel)
+        draw_rect_rounded(rect(rr.x, ry + 10, 3, ROW_H - 20), radius: 2, c: T.accent)
       end
       let lx = rr.x + 22
       let ty = ry + 10
       if r.kind == "cmd" then
-        draw_highlighted(r.cmd.label, r.pos, lx, ty, S_ROW, S_ROW_H)
+        draw_highlighted(r.cmd.label, pos: r.pos, x: lx, y: ty, base: S_ROW, hi: S_ROW_H)
         if len(r.cmd.key) > 0 then
-          keycaps(r.cmd.key, rr.x + rr.w - 14, ry + 10, if is_sel then T.text else T.muted end, if is_sel then T.overlay else T.surface end)
+          keycaps(caption: r.cmd.key, right_x: rr.x + rr.w - 14, y: ry + 10, col: if is_sel then T.text else T.muted end, bg: if is_sel then T.overlay else T.surface end)
         end
-        draw_text_right(r.cmd.cat, rr.x + rr.w - 150, ty + 2, S_ROW_M)
+        draw_text_right(r.cmd.cat, right_x: rr.x + rr.w - 150, y: ty + 2, style: S_ROW_M)
       elsif r.kind == "file" then
-        draw_rect_rounded_outline(rect(lx, ty + 1, 10, 13), 2, T.muted, 255, 1)
-        draw_highlighted(r.name, r.pos, lx + 20, ty, S_ROW, S_ROW_H)
-        draw_text_right("{r.n} lines", rr.x + rr.w - 14, ty + 2, S_ROW_M)
+        draw_rect_rounded_outline(rect(lx, ty + 1, 10, 13), radius: 2, c: T.muted, a: 255, width: 1)
+        draw_highlighted(r.name, pos: r.pos, x: lx + 20, y: ty, base: S_ROW, hi: S_ROW_H)
+        draw_text_right("{r.n} lines", right_x: rr.x + rr.w - 14, y: ty + 2, style: S_ROW_M)
       elsif r.kind == "line" then
-        draw_text(r.text, {x: lx, y: ty}, if r.ok then S_ROW else {...S_ROW, color: T.muted} end)
-        if r.ok then draw_text_right("Return", rr.x + rr.w - 14, ty + 2, S_ROW_M) end
+        draw_text(r.text, pos: {x: lx, y: ty}, style: if r.ok then S_ROW else {...S_ROW, color: T.muted} end)
+        if r.ok then draw_text_right("Return", right_x: rr.x + rr.w - 14, y: ty + 2, style: S_ROW_M) end
       end
     end
   end
   clip_pop()
   if len(rows) > VISIBLE then
-    draw_scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), len(rows), VISIBLE, list_scroll, {})
+    draw_scrollbar(rect(pal.x + PW - 10, list_r.y, 6, list_r.h), count: len(rows), rows: VISIBLE, scroll: list_scroll, style: {})
   end
 
   // Footer hints.
@@ -1006,16 +1006,16 @@ if open then
   let hx = foot_r.x + 18
   fn hint_cap(x: num, cap: string, label: string) -> num
     let w = text_width(cap, S_KEY) + 12
-    draw_rect_rounded(rect(int(x), foot_r.y + 8, w, 18), 4, T.surface)
-    draw_text(cap, {x: int(x) + 6, y: foot_r.y + 11}, S_KEY)
-    draw_text(label, {x: int(x) + w + 6, y: foot_r.y + 10}, S_UI_D)
+    draw_rect_rounded(rect(int(x), foot_r.y + 8, w, 18), radius: 4, c: T.surface)
+    draw_text(cap, pos: {x: int(x) + 6, y: foot_r.y + 11}, style: S_KEY)
+    draw_text(label, pos: {x: int(x) + w + 6, y: foot_r.y + 10}, style: S_UI_D)
     w + 6 + text_width(label, S_UI_D) + 16
   end
-  hx += hint_cap(hx, "Up Down", "navigate")
-  hx += hint_cap(hx, "Return", if mode == "files" then "open" elsif mode == "goto" then "jump" else "run" end)
-  hx += hint_cap(hx, "Esc", if mode == "commands" then "close" else "back" end)
+  hx += hint_cap(x: hx, cap: "Up Down", label: "navigate")
+  hx += hint_cap(x: hx, cap: "Return", label: if mode == "files" then "open" elsif mode == "goto" then "jump" else "run" end)
+  hx += hint_cap(x: hx, cap: "Esc", label: if mode == "commands" then "close" else "back" end)
   draw_text_right(if mode == "commands" then "Cmd O files   Ctrl G line" else "Cmd K commands" end,
-    foot_r.x + foot_r.w - 18, foot_r.y + 10, S_UI_D)
+    right_x: foot_r.x + foot_r.w - 18, y: foot_r.y + 10, style: S_UI_D)
 end
 
 // ── Draw: toasts (always on top) ─────────────────────────────────────────
@@ -1023,7 +1023,7 @@ end
 let ty0 = H - STATUS_H - 18
 for i in range(0, len(toasts)) do
   let t = toasts[len(toasts) - 1 - i]
-  let a = clamp(t.t / 0.5, 0.0, 1.0)
+  let a = clamp(t.t / 0.5, lo: 0.0, hi: 1.0)
   let col = match t.kind
     when "success" -> T.success
     when "danger" -> T.danger
@@ -1031,11 +1031,11 @@ for i in range(0, len(toasts)) do
     when _ -> T.accent end
   let tw = text_width(t.msg, S_UI) + 46
   let tr = rect(W - 18 - tw, ty0 - 34 - i * 42, tw, 32)
-  draw_elevation(tr, 8, 2)
-  draw_rect_rounded(tr, 8, T.overlay, int(a * 255.0))
-  draw_rect_rounded_outline(tr, 8, T.edge, int(a * 255.0), 1)
+  draw_elevation(tr, radius: 8, level: 2)
+  draw_rect_rounded(tr, radius: 8, c: T.overlay, a: int(a * 255.0))
+  draw_rect_rounded_outline(tr, radius: 8, c: T.edge, a: int(a * 255.0), width: 1)
   draw_circle({x: tr.x + 16, y: tr.y + 16}, 4, col, int(a * 255.0))
-  draw_text(t.msg, {x: tr.x + 30, y: tr.y + 8}, {...S_UI, color: {...T.text, a: int(a * 255.0)}})
+  draw_text(t.msg, pos: {x: tr.x + 30, y: tr.y + 8}, style: {...S_UI, color: {...T.text, a: int(a * 255.0)}})
 end
 
 // ── Observation mirrors (readable in /state → panel.values) ──────────────
@@ -1054,7 +1054,7 @@ fn row_id(r: record) -> string
     when _ -> "#" ++ r.text end
 end
 let obs_top = if open && selectable(rows, sel) then row_id(rows[sel]) else "" end
-let obs_ranked = for r in slice(rows, 0, min(5, len(rows))) do row_id(r) end
+let obs_ranked = for r in slice(rows, start: 0, end: min(5, len(rows))) do row_id(r) end
 let obs_runs = run_count
 let obs_last = last_cmd
 let obs_opens = opens

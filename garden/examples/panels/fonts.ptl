@@ -33,28 +33,28 @@ let body = full
 // ── Header ────────────────────────────────────────────────────────────────
 draw_text(
   str(len(families)) ++ " fonts",
-  {x: 12, y: 9},
-  {size: t.font_md, color: t.text, weight: 700}
+  pos: {x: 12, y: 9},
+  style: {size: t.font_md, color: t.text, weight: 700}
 )
 draw_text_right(
   "↑↓ to browse",
-  screen_width() - 12,
-  11,
-  {size: t.font_sm, color: t.dim}
+  right_x: screen_width() - 12,
+  y: 11,
+  style: {size: t.font_sm, color: t.dim}
 )
 draw_line(0, 33, screen_width(), 33, t.border.r, t.border.g, t.border.b)
 
 if len(families) == 0 then
   // A host that publishes no font list — every petal-ui embedder but Garden,
   // and Garden's own headless `petal-ui-run`.
-  empty_state(body, "No fonts", "This host publishes no font list.")
+  empty_state(body, title: "No fonts", hint_text: "This host publishes no font list.")
 else
 
 // ── Selection ─────────────────────────────────────────────────────────────
 let rows = max(1, body.h / ROW_H)
 if key_pressed("down") then selected = min(len(families) - 1, selected + 1) end
 if key_pressed("up") then selected = max(0, selected - 1) end
-scroll = ensure_visible(scroll, selected, rows)
+scroll = ensure_visible(scroll, selected, visible_rows: rows)
 
 // ── Rows ──────────────────────────────────────────────────────────────────
 for i in range(0, min(rows, len(families) - scroll)) do
@@ -65,20 +65,20 @@ for i in range(0, min(rows, len(families) - scroll)) do
   if index == selected then
     draw_rect(r, t.selection)
   elsif hovered(r) then
-    draw_rect(r, mix(t.bg, t.text, 0.06))
+    draw_rect(r, mix(t.bg, t.text, t: 0.06))
   end
   if clicked(r) then selected = index end
 
   // The family, in Garden's own face — a label, not a specimen.
-  draw_text(name, {x: r.x + 12, y: r.y + 8}, {size: t.font_sm, color: t.dim})
+  draw_text(name, pos: {x: r.x + 12, y: r.y + 8}, style: {size: t.font_sm, color: t.dim})
 
   // …and the specimen, in the family itself. One object measures and draws,
   // so the width used to place the ellipsis is the width that gets rendered.
   let specimen = font(name, 24)
   draw_text(
-    ellipsize(SAMPLE, r.w - 24, specimen),
-    {x: r.x + 12, y: r.y + 26},
-    font_color(specimen, t.text)
+    ellipsize(SAMPLE, avail_px: r.w - 24, size: specimen),
+    pos: {x: r.x + 12, y: r.y + 26},
+    style: font_color(specimen, t.text)
   )
 end
 

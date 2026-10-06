@@ -118,7 +118,7 @@ fn painted(rows: list, x: num, y: num, value: num) -> list
   let out = []
   for j in range(0, len(rows)) do
     if j == y then
-      out = append(out, char_slice(rows[j], 0, x) ++ ink_chars[value] ++ char_slice(rows[j], x + 1))
+      out = append(out, char_slice(rows[j], start: 0, end: x) ++ ink_chars[value] ++ char_slice(rows[j], x + 1))
     else
       out = append(out, rows[j])
     end
@@ -147,7 +147,7 @@ end
 
 // Held, not tapped: painting while the pad is moving is how you draw a line.
 if btn("a") then
-  set art_rows = painted(art_rows, cx, cy, ink)
+  set art_rows = painted(rows: art_rows, x: cx, y: cy, value: ink)
 end
 
 // Recoloring ink 0 would mean recoloring the backdrop, which every palette on
@@ -174,7 +174,7 @@ fn source_text(slot: num, rows: list, inks: list) -> string
 end
 
 if btnp("start") then
-  log("\n" ++ source_text(slot, art_rows, inks))
+  log("\n" ++ source_text(slot, rows: art_rows, inks: inks))
 end
 
 // ── The canvas ────────────────────────────────────────────────────────────

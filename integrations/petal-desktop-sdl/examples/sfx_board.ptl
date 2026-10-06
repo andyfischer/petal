@@ -43,7 +43,7 @@ fn play(i)
 end
 
 for i in range(0, len(presets)) do
-  if key_pressed(str(i + 1)) || (mouse_pressed(0) && inside(pad_rect(i), mx, my)) then
+  if key_pressed(str(i + 1)) || (mouse_pressed(0) && inside(pad_rect(i), x: mx, y: my)) then
     play(i)
     last = presets[i]
     flash = 1.0
@@ -65,22 +65,22 @@ flash = max(0.0, flash - dt() * 3.0)
 
 // --- Drawing ---
 clear(12, 12, 24)
-draw_text("SFX BOARD", pad, 28, 32, 230, 230, 255)
-draw_text("click a pad or press 1-8  -  R: random synth zap", pad, 70, 16, 120, 130, 170)
+draw_text("SFX BOARD", x: pad, y: 28, size: 32, r: 230, g: 230, b: 255)
+draw_text("click a pad or press 1-8  -  R: random synth zap", x: pad, y: 70, size: 16, r: 120, g: 130, b: 170)
 
 for i in range(0, len(presets)) do
   let r = pad_rect(i)
   let c = colors[i]
-  let hot = inside(r, mx, my)
+  let hot = inside(r, x: mx, y: my)
   let lit = if presets[i] == last then flash else 0.0 end
   let k = if hot then 0.55 else 0.35 end + lit * 0.45
-  draw_rect(r.x, r.y, r.w, r.h, int(float(c.r) * k), int(float(c.g) * k), int(float(c.b) * k))
+  draw_rect(x: r.x, y: r.y, w: r.w, h: r.h, r: int(float(c.r) * k), g: int(float(c.g) * k), b: int(float(c.b) * k))
   draw_rect_outline(r.x, r.y, r.w, r.h, c.r, c.g, c.b)
-  draw_text("{i + 1}", r.x + 12, r.y + 10, 18, c.r, c.g, c.b)
-  draw_text(presets[i], r.x + 12, r.y + r.h - 36, 22, 240, 240, 250)
+  draw_text("{i + 1}", x: r.x + 12, y: r.y + 10, size: 18, r: c.r, g: c.g, b: c.b)
+  draw_text(presets[i], x: r.x + 12, y: r.y + r.h - 36, size: 22, r: 240, g: 240, b: 250)
 end
 
 if last != "" then
   let a = 140 + int(115.0 * flash)
-  draw_text("last: {last}", pad, sh - 40, 18, a, a, a)
+  draw_text("last: {last}", x: pad, y: sh - 40, size: 18, r: a, g: a, b: a)
 end

@@ -183,8 +183,8 @@ fn dsp_voice(t: num) -> float
     let hz = note_hz(get dsp_note)
     let vib = 1.0 + 0.02 * float(get dsp_vib) * osc_sine(t, 5.5)
     let k = get dsp_wave
-    let a = wave_at(k, t, hz * vib)
-    let b = wave_at(k, t, hz * vib * (1.0 + 0.0015 * float(get dsp_detune)))
+    let a = wave_at(kind: k, t: t, hz: hz * vib)
+    let b = wave_at(kind: k, t: t, hz: hz * vib * (1.0 + 0.0015 * float(get dsp_detune)))
     (a + b) * 0.5 * 0.05 * float(get dsp_level)
   end
 end
@@ -206,7 +206,7 @@ fn dsp_block(start: num, count: num, rate: num) -> f64_array
     for j in range(0, count) do
       let t = (start + j) / float(rate)
       let f = hz * (1.0 + vd * osc_sine(t, 5.5))
-      out[j] = (wave_at(k, t, f) + wave_at(k, t, f * dt)) * g
+      out[j] = (wave_at(kind: k, t: t, hz: f) + wave_at(kind: k, t: t, hz: f * dt)) * g
     end
   end
   out
@@ -262,15 +262,15 @@ if realtime then
   if step != 0 then
     let k = knobs[pick]
     if pick == 0 then
-      set dsp_note = clamp(dsp_note + step, k[1], k[2])
+      set dsp_note = clamp(dsp_note + step, lo: k[1], hi: k[2])
     elsif pick == 1 then
-      set dsp_wave = clamp(dsp_wave + step, k[1], k[2])
+      set dsp_wave = clamp(dsp_wave + step, lo: k[1], hi: k[2])
     elsif pick == 2 then
-      set dsp_detune = clamp(dsp_detune + step, k[1], k[2])
+      set dsp_detune = clamp(dsp_detune + step, lo: k[1], hi: k[2])
     elsif pick == 3 then
-      set dsp_vib = clamp(dsp_vib + step, k[1], k[2])
+      set dsp_vib = clamp(dsp_vib + step, lo: k[1], hi: k[2])
     else
-      set dsp_level = clamp(dsp_level + step, k[1], k[2])
+      set dsp_level = clamp(dsp_level + step, lo: k[1], hi: k[2])
     end
   end
 else
@@ -333,7 +333,7 @@ fn plot_envelope(x_cell: num, y_cell: num, w: num, half: num, span: num, f: func
   end
   map_rect(x_cell, y_cell - half, w, half * 2 + 1, 0, 0)
   for c in range(0, w) do
-    let h = clamp(int(round(vs[c] / peak * half)), 0, half)
+    let h = clamp(int(round(vs[c] / peak * half)), lo: 0, hi: half)
     map_rect(x_cell + c, y_cell - h, 1, h * 2 + 1, 1, 3)
   end
 end
@@ -409,7 +409,7 @@ fn screen_realtime(pick: num, knobs: list, vals: list, on: bool)
   // noise. The verdict line is computed from that, not asserted.
   let ms = dsp_cost_ms()
   let frac = ms / dsp_budget_ms
-  let lit = clamp(int(round(28 * frac)), 0, 28)
+  let lit = clamp(int(round(28 * frac)), lo: 0, hi: 28)
   let hot = if frac > 0.6 then 1 else 2 end
 
   map_text(1, 22, "COST {round(ms, 3)} MS  OF {dsp_budget_ms} MS SLICE", 0)
@@ -428,7 +428,7 @@ fn screen_realtime(pick: num, knobs: list, vals: list, on: bool)
 end
 
 if realtime then
-  screen_realtime(pick, knobs, [dsp_note, dsp_wave, dsp_detune, dsp_vib, dsp_level], dsp_on)
+  screen_realtime(pick, knobs, vals: [dsp_note, dsp_wave, dsp_detune, dsp_vib, dsp_level], on: dsp_on)
 else
   screen_banked(pick, probe, block_samples)
 end

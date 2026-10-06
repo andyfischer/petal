@@ -248,19 +248,19 @@ fn iclamp(v: num, lo: num, hi: num) -> num
 end
 
 fn stroke(x1: num, y1: num, x2: num, y2: num, c: record, a: num, w: num)
-  draw_line(x1, y1, x2, y2, c.r, c.g, c.b, a, w)
+  draw_line(x1, y1, x2, y2, r: c.r, g: c.g, b: c.b, a: a, width: w)
 end
 
 fn hairline(x1: num, y1: num, x2: num, y2: num, c: record)
-  draw_line(x1, y1, x2, y2, c.r, c.g, c.b, 255, 1)
+  draw_line(x1, y1, x2, y2, r: c.r, g: c.g, b: c.b, a: 255, width: 1)
 end
 
 fn label(text: string, x: num, y: num, c: record)
-  draw_text(text, {x: x, y: y}, {size: FS_MICRO, color: c, spacing: 1.3})
+  draw_text(text, pos: {x: x, y: y}, style: {size: FS_MICRO, color: c, spacing: 1.3})
 end
 
 fn dot(cx: num, cy: num, r: num, c: record)
-  draw_circle({x: cx, y: cy}, r, c)
+  draw_circle(center: {x: cx, y: cy}, radius: r, c: c)
 end
 
 // ── text utilities ──────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ fn find_all(hay: string, needle: string) -> list
     let n = lower(needle)
     let i = 0
     while i + len(n) <= len(h) do
-      if slice(h, i, i + len(n)) == n then
+      if slice(h, start: i, end: i + len(n)) == n then
         out = append(out, i)
         i = i + len(n)
       else
@@ -341,7 +341,7 @@ fn wrap_starts(s: string, maxc: num) -> list
     let brk = -1
     let j = start + maxc
     while j > start && brk < 0 do
-      if slice(s, j - 1, j) == " " then
+      if slice(s, start: j - 1, end: j) == " " then
         brk = j
       end
       j = j - 1
@@ -400,8 +400,8 @@ fn sel_hi(a: record, c: record) -> record
 end
 
 fn clamp_pos(lines: list, p: record) -> record
-  let l = iclamp(p.line, 0, len(lines) - 1)
-  {line: l, col: iclamp(p.col, 0, len(lines[l]))}
+  let l = iclamp(p.line, lo: 0, hi: len(lines) - 1)
+  {line: l, col: iclamp(p.col, lo: 0, hi: len(lines[l]))}
 end
 
 // ── edit primitives (pure: they return new documents) ───────────────────────
@@ -411,8 +411,8 @@ fn delete_range(lines: list, s: record, e: record) -> list
     if i < s.line || i > e.line then
       out = append(out, lines[i])
     elsif i == s.line then
-      let head = slice(lines[s.line], 0, s.col)
-      let tail = slice(lines[e.line], e.col, len(lines[e.line]))
+      let head = slice(lines[s.line], start: 0, end: s.col)
+      let tail = slice(lines[e.line], start: e.col, end: len(lines[e.line]))
       out = append(out, head ++ tail)
     end
   end
@@ -422,8 +422,8 @@ end
 fn insert_text(lines: list, p: record, txt: string) -> record
   let parts = split(txt, "\n")
   let src = lines[p.line]
-  let head = slice(src, 0, p.col)
-  let tail = slice(src, p.col, len(src))
+  let head = slice(src, start: 0, end: p.col)
+  let tail = slice(src, start: p.col, end: len(src))
   let last = parts[len(parts) - 1]
   let out = []
   for i in range(0, len(lines)) do
@@ -472,7 +472,7 @@ end
 
 fn word_start(s: string, col: num) -> num
   let i = col
-  while i > 0 && is_word_char(slice(s, i - 1, i)) do
+  while i > 0 && is_word_char(slice(s, start: i - 1, end: i)) do
     i = i - 1
   end
   i
@@ -480,7 +480,7 @@ end
 
 fn word_end(s: string, col: num) -> num
   let i = col
-  while i < len(s) && is_word_char(slice(s, i, i + 1)) do
+  while i < len(s) && is_word_char(slice(s, start: i, end: i + 1)) do
     i = i + 1
   end
   i
@@ -579,8 +579,8 @@ fn preview_text(lines: list) -> string
   let out = ""
   for ln in lines do
     let t = ln
-    while len(t) > 0 && slice(t, 0, 1) == " " do
-      t = slice(t, 1, len(t))
+    while len(t) > 0 && slice(t, start: 0, end: 1) == " " do
+      t = slice(t, start: 1, end: len(t))
     end
     if len(t) > 0 && len(out) < 200 then
       if len(out) == 0 then
@@ -597,7 +597,7 @@ end
 //  frame
 // ════════════════════════════════════════════════════════════════════════════
 let now = time()
-let shown = visible_notes(notes, book, q)
+let shown = visible_notes(notes, bk: book, query: q)
 
 // Keep the selection pointing at something that exists and is visible.
 if len(shown) > 0 && note_by_id(shown, sel_id) == nil then
@@ -618,17 +618,17 @@ let click = mouse_pressed(0)
 clear(LIST_BG.r, LIST_BG.g, LIST_BG.b)
 draw_rect(rect(0, 0, RAIL_W, H), RAIL_BG)
 draw_rect(rect(EDX, 0, EDW, H), PAPER)
-hairline(RAIL_W + 0.5, 0, RAIL_W + 0.5, H, RULE)
-hairline(EDX + 0.5, 0, EDX + 0.5, H, RULE)
+hairline(x1: RAIL_W + 0.5, y1: 0, x2: RAIL_W + 0.5, y2: H, c: RULE)
+hairline(x1: EDX + 0.5, y1: 0, x2: EDX + 0.5, y2: H, c: RULE)
 
 // ════════════════════════════════════════════════════════════════════════════
 //  rail
 // ════════════════════════════════════════════════════════════════════════════
-draw_text("Vellum", {x: PAD, y: 26}, {size: FS_MARK, color: INK, spacing: 0.4})
-draw_text("notes & scraps", {x: PAD, y: 54}, {size: FS_TINY, color: FAINT})
-hairline(PAD, 82.5, RAIL_W - PAD, 82.5, RULE)
+draw_text("Vellum", pos: {x: PAD, y: 26}, style: {size: FS_MARK, color: INK, spacing: 0.4})
+draw_text("notes & scraps", pos: {x: PAD, y: 54}, style: {size: FS_TINY, color: FAINT})
+hairline(x1: PAD, y1: 82.5, x2: RAIL_W - PAD, y2: 82.5, c: RULE)
 
-label("NOTEBOOKS", PAD, 98, FAINT)
+label("NOTEBOOKS", x: PAD, y: 98, c: FAINT)
 
 let rail_rows = ["All"]
 for b in BOOKS do
@@ -643,18 +643,18 @@ for i in range(0, len(rail_rows)) do
   let on = name == book
   let hot = hovered(r)
   if on then
-    draw_rect_rounded(r, 7, ACCENT, 26)
+    draw_rect_rounded(r, radius: 7, c: ACCENT, a: 26)
     draw_rect(rect(r.x, r.y + 5, 2, r.h - 10), ACCENT)
   elsif hot then
-    draw_rect_rounded(r, 7, CARD_HOV)
+    draw_rect_rounded(r, radius: 7, c: CARD_HOV)
   end
   if name != "All" then
-    dot(r.x + 17, r.y + 14, 3.5, book_color(name))
+    dot(cx: r.x + 17, cy: r.y + 14, r: 3.5, c: book_color(name))
   end
   let fg = if on then ACCENT elsif hot then INK else INK_SOFT end
-  draw_text(name, {x: r.x + 28, y: r.y + 7}, {size: FS, color: fg})
+  draw_text(name, pos: {x: r.x + 28, y: r.y + 7}, style: {size: FS, color: fg})
   let cnt = str(book_count(notes, name))
-  draw_text_right(cnt, r.x + r.w - 10, r.y + 8, FS_TINY, if on then ACCENT else GHOST end)
+  draw_text_right(cnt, right_x: r.x + r.w - 10, y: r.y + 8, size: FS_TINY, c: if on then ACCENT else GHOST end)
   if hot && click then
     want_book = name
   end
@@ -662,14 +662,14 @@ end
 book = want_book
 
 let tag_y = rail_y + len(rail_rows) * 30 + 20
-hairline(PAD, tag_y - 12.5, RAIL_W - PAD, tag_y - 12.5, RULE)
-label("LIBRARY", PAD, tag_y, FAINT)
+hairline(x1: PAD, y1: tag_y - 12.5, x2: RAIL_W - PAD, y2: tag_y - 12.5, c: RULE)
+label("LIBRARY", x: PAD, y: tag_y, c: FAINT)
 
 // A stacked bar of the collection: one segment per notebook, in its own colour.
 let bar_w = RAIL_W - PAD * 2
 let bar_x = PAD
 let bar_y = tag_y + 22
-draw_rect_rounded(rect(bar_x, bar_y, bar_w, 6), 3, RULE)
+draw_rect_rounded(rect(bar_x, bar_y, bar_w, 6), radius: 3, c: RULE)
 let seg_x = bar_x
 for b in BOOKS do
   let c = book_count(notes, b)
@@ -694,34 +694,34 @@ end
 let stats = [["notes", str(len(notes))], ["words", str(total_words)], ["pinned", str(pinned_n)]]
 for i in range(0, len(stats)) do
   let sy = stat_y + i * 20
-  draw_text(stats[i][0], {x: PAD, y: sy}, {size: FS_SM, color: INK_SOFT})
-  draw_text_right(stats[i][1], RAIL_W - PAD, sy, FS_SM, INK)
+  draw_text(stats[i][0], pos: {x: PAD, y: sy}, style: {size: FS_SM, color: INK_SOFT})
+  draw_text_right(stats[i][1], right_x: RAIL_W - PAD, y: sy, size: FS_SM, c: INK)
 end
 
 // rail footer: the persistence indicator
 let foot_y = H - 84
-hairline(PAD, foot_y - 0.5, RAIL_W - PAD, foot_y - 0.5, RULE)
+hairline(x1: PAD, y1: foot_y - 0.5, x2: RAIL_W - PAD, y2: foot_y - 0.5, c: RULE)
 let save_c = if dirty then GOLD else SAGE end
-dot(PAD + 4, foot_y + 22, 4, save_c)
+dot(cx: PAD + 4, cy: foot_y + 22, r: 4, c: save_c)
 draw_text(if dirty then "unsaved" else "saved" end,
-  {x: PAD + 15, y: foot_y + 16}, {size: FS_SM, color: save_c})
+  pos: {x: PAD + 15, y: foot_y + 16}, style: {size: FS_SM, color: save_c})
 let since_save = now - flash
 let stamp = if dirty then "autosaving in a moment"
 elsif since_save < 4 then "written just now"
 elsif saves == 0 then "opened from disk"
 else "{saves} writes this session"
 end
-draw_text(stamp, {x: PAD, y: foot_y + 40}, {size: FS_MICRO, color: GHOST})
+draw_text(stamp, pos: {x: PAD, y: foot_y + 40}, style: {size: FS_MICRO, color: GHOST})
 
 let undo_r = rect(10, H - 40, RAIL_W - 20, 26)
 let can_undo = len(history) > 0
 let undo_hot = hovered(undo_r) && can_undo
-draw_rect_rounded(undo_r, 6, if undo_hot then ACCENT else RAIL_BG end, if undo_hot then 26 else 255 end)
+draw_rect_rounded(undo_r, radius: 6, c: if undo_hot then ACCENT else RAIL_BG end, a: if undo_hot then 26 else 255 end)
 draw_rect_outline(undo_r, if can_undo then RULE else RULE_SOFT end)
 let undo_fg = if !can_undo then GHOST elsif undo_hot then ACCENT else INK_SOFT end
-draw_text("undo last edit", {x: undo_r.x + 12, y: undo_r.y + 7}, {size: FS_TINY, color: undo_fg})
+draw_text("undo last edit", pos: {x: undo_r.x + 12, y: undo_r.y + 7}, style: {size: FS_TINY, color: undo_fg})
 draw_text_right(if can_undo then str(len(history)) else "0" end,
-  undo_r.x + undo_r.w - 12, undo_r.y + 7, FS_TINY, undo_fg)
+  right_x: undo_r.x + undo_r.w - 12, y: undo_r.y + 7, size: FS_TINY, c: undo_fg)
 
 // ════════════════════════════════════════════════════════════════════════════
 //  note list
@@ -731,25 +731,25 @@ let newr = rect(sf.x + sf.w + 8, sf.y, 26, 32)
 
 // search field
 let sfocus = focus == "search"
-draw_rect_rounded(sf, 8, if sfocus then WHITE else PAPER end)
+draw_rect_rounded(sf, radius: 8, c: if sfocus then WHITE else PAPER end)
 draw_rect_outline(sf, if sfocus then ACCENT else RULE end)
 draw_circle({x: sf.x + 15, y: sf.y + 14}, 4.5, if sfocus then ACCENT else GHOST end, 255)
-draw_circle({x: sf.x + 15, y: sf.y + 14}, 3, if sfocus then WHITE else PAPER end)
-stroke(sf.x + 18, sf.y + 18, sf.x + 21, sf.y + 22, if sfocus then ACCENT else GHOST end, 255, 1.6)
+draw_circle(center: {x: sf.x + 15, y: sf.y + 14}, radius: 3, c: if sfocus then WHITE else PAPER end)
+stroke(x1: sf.x + 18, y1: sf.y + 18, x2: sf.x + 21, y2: sf.y + 22, c: if sfocus then ACCENT else GHOST end, a: 255, w: 1.6)
 if len(q) == 0 then
-  draw_text("Search notes", {x: sf.x + 28, y: sf.y + 9}, {size: FS, color: GHOST})
+  draw_text("Search notes", pos: {x: sf.x + 28, y: sf.y + 9}, style: {size: FS, color: GHOST})
 else
-  draw_text(ellipsize(q, sf.w - 44, FS), {x: sf.x + 28, y: sf.y + 9}, {size: FS, color: INK})
+  draw_text(ellipsize(q, avail_px: sf.w - 44, size: FS), pos: {x: sf.x + 28, y: sf.y + 9}, style: {size: FS, color: INK})
 end
 if sfocus then
   let qc = sf.x + 28 + text_width(q, FS)
-  stroke(qc, sf.y + 8, qc, sf.y + 24, ACCENT, 255, 1.5)
+  stroke(x1: qc, y1: sf.y + 8, x2: qc, y2: sf.y + 24, c: ACCENT, a: 255, w: 1.5)
 end
 if len(q) > 0 then
   let clr = rect(sf.x + sf.w - 24, sf.y + 6, 20, 20)
   let hot = hovered(clr)
-  stroke(clr.x + 6, clr.y + 6, clr.x + 14, clr.y + 14, if hot then ACCENT else GHOST end, 255, 1.5)
-  stroke(clr.x + 14, clr.y + 6, clr.x + 6, clr.y + 14, if hot then ACCENT else GHOST end, 255, 1.5)
+  stroke(x1: clr.x + 6, y1: clr.y + 6, x2: clr.x + 14, y2: clr.y + 14, c: if hot then ACCENT else GHOST end, a: 255, w: 1.5)
+  stroke(x1: clr.x + 14, y1: clr.y + 6, x2: clr.x + 6, y2: clr.y + 14, c: if hot then ACCENT else GHOST end, a: 255, w: 1.5)
   if hot && click then
     q = ""
   end
@@ -757,19 +757,19 @@ end
 
 // new-note button
 let new_hot = hovered(newr)
-draw_rect_rounded(newr, 8, if new_hot then ACCENT else PAPER end)
+draw_rect_rounded(newr, radius: 8, c: if new_hot then ACCENT else PAPER end)
 if !new_hot then
   draw_rect_outline(newr, RULE)
 end
 let plus_c = if new_hot then WHITE else INK_SOFT end
-stroke(newr.x + 8, newr.y + 16, newr.x + 18, newr.y + 16, plus_c, 255, 1.6)
-stroke(newr.x + 13, newr.y + 11, newr.x + 13, newr.y + 21, plus_c, 255, 1.6)
+stroke(x1: newr.x + 8, y1: newr.y + 16, x2: newr.x + 18, y2: newr.y + 16, c: plus_c, a: 255, w: 1.6)
+stroke(x1: newr.x + 13, y1: newr.y + 11, x2: newr.x + 13, y2: newr.y + 21, c: plus_c, a: 255, w: 1.6)
 
 // header row
 let hdr_y = 68
 let count_txt = if len(q) > 0 then "{len(shown)} of {len(notes)} notes" elsif len(shown) == 1 then "1 note" else "{len(shown)} notes" end
-label(upper(count_txt), RAIL_W + LPAD, hdr_y, FAINT)
-label("PINNED FIRST", RAIL_W + LIST_W - LPAD - text_width("PINNED FIRST", FS_MICRO) - 15, hdr_y, GHOST)
+label(upper(count_txt), x: RAIL_W + LPAD, y: hdr_y, c: FAINT)
+label("PINNED FIRST", x: RAIL_W + LIST_W - LPAD - text_width("PINNED FIRST", FS_MICRO) - 15, y: hdr_y, c: GHOST)
 
 let list_top = 88
 let list_h = H - list_top - 12
@@ -788,9 +788,9 @@ end
 if hovered(list_r) then
   lscroll = lscroll - scroll_y() * 34
 end
-lscroll = iclamp(lscroll, 0, max(0, content_h - list_h))
+lscroll = iclamp(lscroll, lo: 0, hi: max(0, content_h - list_h))
 
-clip(RAIL_W, list_top, LIST_W, list_h)
+clip(x: RAIL_W, y: list_top, w: LIST_W, h: list_h)
 let want_sel = sel_id
 let want_focus = focus
 let act = ""
@@ -805,42 +805,42 @@ for i in range(0, len(shown)) do
     let on = n.id == sel_id
     let hot = hovered(cr)
     if on || opened then
-      draw_rect_rounded(cr, 9, WHITE)
+      draw_rect_rounded(cr, radius: 9, c: WHITE)
       if on then
-        draw_rect_rounded(rect(cr.x, cr.y + 8, 3, cr.h - 16), 1.5, ACCENT)
+        draw_rect_rounded(rect(cr.x, cr.y + 8, 3, cr.h - 16), radius: 1.5, c: ACCENT)
       end
     elsif hot then
-      draw_rect_rounded(cr, 9, CARD_HOV)
+      draw_rect_rounded(cr, radius: 9, c: CARD_HOV)
     end
     let tx = cr.x + 16
     let tw = cr.w - 28
     let ttl = if len(n.title) > 0 then n.title else "Untitled note" end
     let ttl_c = if len(n.title) == 0 then GHOST elsif on then INK else INK_SOFT end
-    draw_text(ellipsize(ttl, tw - 12, FS_ROW), {x: tx, y: cr.y + 11},
-      {size: FS_ROW, color: ttl_c})
+    draw_text(ellipsize(ttl, avail_px: tw - 12, size: FS_ROW), pos: {x: tx, y: cr.y + 11},
+      style: {size: FS_ROW, color: ttl_c})
     if n.pinned then
-      dot(cr.x + cr.w - 14, cr.y + 18, 3, ACCENT)
+      dot(cx: cr.x + cr.w - 14, cy: cr.y + 18, r: 3, c: ACCENT)
     end
     let body_txt = preview_text(n.lines)
     if len(body_txt) == 0 then
-      draw_text("no words yet", {x: tx, y: cr.y + 33}, {size: FS_SM, color: GHOST})
+      draw_text("no words yet", pos: {x: tx, y: cr.y + 33}, style: {size: FS_SM, color: GHOST})
     else
-      let pv = preview(body_txt, int(tw / text_width("m", FS_SM)), 2)
+      let pv = preview(body_txt, max_chars: int(tw / text_width("m", FS_SM)), max_lines: 2)
       for k in range(0, len(pv.lines)) do
-        draw_text(pv.lines[k], {x: tx, y: cr.y + 33 + k * 16},
-          {size: FS_SM, color: if on then INK_SOFT else FAINT end})
+        draw_text(pv.lines[k], pos: {x: tx, y: cr.y + 33 + k * 16},
+          style: {size: FS_SM, color: if on then INK_SOFT else FAINT end})
       end
     end
-    dot(tx + 3, cr.y + 71, 3, book_color(n.book))
-    draw_text(n.book, {x: tx + 12, y: cr.y + 65}, {size: FS_MICRO, color: FAINT})
-    draw_text_right(ago(n.mins), cr.x + cr.w - 14, cr.y + 65, FS_MICRO, GHOST)
+    dot(cx: tx + 3, cy: cr.y + 71, r: 3, c: book_color(n.book))
+    draw_text(n.book, pos: {x: tx + 12, y: cr.y + 65}, style: {size: FS_MICRO, color: FAINT})
+    draw_text_right(ago(n.mins), right_x: cr.x + cr.w - 14, y: cr.y + 65, size: FS_MICRO, c: GHOST)
 
     // The action row lives *inside* the card rather than in a floating menu:
     // a panel's shapes never paint over its text (every rect in a frame is one
     // mesh, drawn under every text run), so a popup would show the list
     // straight through it. Expanding the row keeps everything legible.
     if opened then
-      hairline(cr.x + 14, cr.y + CARD_H - 3.5, cr.x + cr.w - 14, cr.y + CARD_H - 3.5, RULE_SOFT)
+      hairline(x1: cr.x + 14, y1: cr.y + CARD_H - 3.5, x2: cr.x + cr.w - 14, y2: cr.y + CARD_H - 3.5, c: RULE_SOFT)
       let acts = [
         {label: if n.pinned then "Unpin" else "Pin" end, tag: "pin", danger: false},
         {label: "Duplicate", tag: "dup", danger: false},
@@ -852,10 +852,10 @@ for i in range(0, len(shown)) do
         let br = rect(bx, cr.y + CARD_H + 4, bw, 24)
         let bhot = hovered(br)
         let bc = if a.danger then #a8402f else INK_SOFT end
-        draw_rect_rounded(br, 12, if bhot then (if a.danger then #a8402f else ACCENT end) else RULE end,
-          if bhot then 28 else 90 end)
-        draw_text_center(a.label, br.x + br.w / 2, br.y + 6, FS_TINY,
-          if bhot then bc else INK_SOFT end)
+        draw_rect_rounded(br, radius: 12, c: if bhot then (if a.danger then #a8402f else ACCENT end) else RULE end,
+          a: if bhot then 28 else 90 end)
+        draw_text_center(a.label, cx: br.x + br.w / 2, y: br.y + 6, size: FS_TINY,
+          c: if bhot then bc else INK_SOFT end)
         if bhot && click then
           act = a.tag
           act_id = n.id
@@ -868,7 +868,7 @@ for i in range(0, len(shown)) do
       want_sel = n.id
       want_focus = "list"
     end
-    if mouse_pressed(1) && point_in(mx, my, cr) then
+    if mouse_pressed(1) && point_in(px: mx, py: my, r: cr) then
       acts_id = if opened then 0 else n.id end
     end
   end
@@ -878,11 +878,11 @@ end
 if len(shown) == 0 then
   let ey = list_top + 90
   draw_circle({x: RAIL_W + LIST_W / 2, y: ey}, 15, GHOST, 60)
-  draw_circle({x: RAIL_W + LIST_W / 2, y: ey}, 12, LIST_BG)
-  draw_text_center("Nothing here", RAIL_W + LIST_W / 2, ey + 30, FS_ROW, INK_SOFT)
+  draw_circle(center: {x: RAIL_W + LIST_W / 2, y: ey}, radius: 12, c: LIST_BG)
+  draw_text_center("Nothing here", cx: RAIL_W + LIST_W / 2, y: ey + 30, size: FS_ROW, c: INK_SOFT)
   let msg = if len(q) > 0 then "No note matches \"{q}\"" else "This notebook is empty" end
-  draw_text_center(msg, RAIL_W + LIST_W / 2, ey + 52, FS_SM, FAINT)
-  draw_text_center("press + to start one", RAIL_W + LIST_W / 2, ey + 74, FS_TINY, GHOST)
+  draw_text_center(msg, cx: RAIL_W + LIST_W / 2, y: ey + 52, size: FS_SM, c: FAINT)
+  draw_text_center("press + to start one", cx: RAIL_W + LIST_W / 2, y: ey + 74, size: FS_TINY, c: GHOST)
 end
 clip_none()
 
@@ -898,7 +898,7 @@ end
 if content_h > list_h then
   let bar_h = max(30, list_h * list_h / content_h)
   let bar_y = list_top + (list_h - bar_h) * lscroll / max(1, content_h - list_h)
-  draw_rect_rounded(rect(RAIL_W + LIST_W - 6, bar_y, 3, bar_h), 1.5, GHOST, 140)
+  draw_rect_rounded(rect(RAIL_W + LIST_W - 6, bar_y, 3, bar_h), radius: 1.5, c: GHOST, a: 140)
 end
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -908,30 +908,30 @@ let title_txt = if note == nil then "" else note.title end
 let tr = rect(EDX + EPAD - 10, 34, EDW - EPAD - 40, 38)
 let tfocus = focus == "title"
 if tfocus then
-  draw_rect_rounded(tr, 7, WHITE)
-  draw_rect_outline(tr, ACCENT, 90)
+  draw_rect_rounded(tr, radius: 7, c: WHITE)
+  draw_rect_outline(tr, c: ACCENT, a: 90)
 elsif hovered(tr) then
-  draw_rect_rounded(tr, 7, LIST_BG, 120)
+  draw_rect_rounded(tr, radius: 7, c: LIST_BG, a: 120)
 end
 if len(title_txt) == 0 then
-  draw_text("Untitled note", {x: tr.x + 10, y: tr.y + 6}, {size: FS_TITLE, color: GHOST})
+  draw_text("Untitled note", pos: {x: tr.x + 10, y: tr.y + 6}, style: {size: FS_TITLE, color: GHOST})
 else
-  draw_text(ellipsize(title_txt, tr.w - 24, FS_TITLE), {x: tr.x + 10, y: tr.y + 6},
-    {size: FS_TITLE, color: INK})
+  draw_text(ellipsize(title_txt, avail_px: tr.w - 24, size: FS_TITLE), pos: {x: tr.x + 10, y: tr.y + 6},
+    style: {size: FS_TITLE, color: INK})
 end
 if tfocus then
   let tc = tr.x + 10 + text_width(title_txt, FS_TITLE)
-  stroke(tc, tr.y + 6, tc, tr.y + 30, ACCENT, 255, 2)
+  stroke(x1: tc, y1: tr.y + 6, x2: tc, y2: tr.y + 30, c: ACCENT, a: 255, w: 2)
 end
 
 if note != nil then
   let meta_parts = [note.book, "edited " ++ ago(note.mins),
     "{words_in(doc)} words", "{chars_in(doc)} characters"]
-  dot(EDX + EPAD + 3, 90, 3.5, book_color(note.book))
-  draw_text(fit_parts(meta_parts, EDW - EPAD * 2, FS_SM), {x: EDX + EPAD + 14, y: 84},
-    {size: FS_SM, color: FAINT})
+  dot(cx: EDX + EPAD + 3, cy: 90, r: 3.5, c: book_color(note.book))
+  draw_text(fit_parts(parts: meta_parts, avail_px: EDW - EPAD * 2, size: FS_SM), pos: {x: EDX + EPAD + 14, y: 84},
+    style: {size: FS_SM, color: FAINT})
 end
-hairline(EDX + EPAD, 122.5, W - 36, 122.5, RULE_SOFT)
+hairline(x1: EDX + EPAD, y1: 122.5, x2: W - 36, y2: 122.5, c: RULE_SOFT)
 
 // ════════════════════════════════════════════════════════════════════════════
 //  editor — body
@@ -941,14 +941,14 @@ let bfocus = focus == "body"
 
 // -- input: pointer ---------------------------------------------------------
 fn hit_pos(rows: list, px: num, py: num, scroll: num) -> record
-  let ri = iclamp(int((py - BODY_Y + scroll) / LH), 0, max(0, len(rows) - 1))
+  let ri = iclamp(int((py - BODY_Y + scroll) / LH), lo: 0, hi: max(0, len(rows) - 1))
   let r = rows[ri]
   let off = int((px - BODY_X + CW / 2) / CW)
-  {line: r.li, col: iclamp(r.a + off, r.a, r.b)}
+  {line: r.li, col: iclamp(r.a + off, lo: r.a, hi: r.b)}
 end
 
-if mouse_pressed(0) && point_in(mx, my, body_r) && note != nil then
-  let p = hit_pos(rows, mx, my, bscroll)
+if mouse_pressed(0) && point_in(px: mx, py: my, r: body_r) && note != nil then
+  let p = hit_pos(rows, px: mx, py: my, scroll: bscroll)
   focus = "body"
   let dbl = click_count() >= 2 ||
   (now - click_t < 0.45 && abs(mx - click_x) < 6 && abs(my - click_y) < 6)
@@ -970,7 +970,7 @@ if mouse_pressed(0) && point_in(mx, my, body_r) && note != nil then
   end
 end
 if dragging && mouse_down(0) && note != nil then
-  cur = hit_pos(rows, mx, my, bscroll)
+  cur = hit_pos(rows, px: mx, py: my, scroll: bscroll)
 end
 if !mouse_down(0) then
   dragging = false
@@ -1020,9 +1020,9 @@ if bfocus && note != nil then
     elsif key_pressed("pageup") then -(BODY_H / LH) + 1
     else (BODY_H / LH) - 1
     end
-    let nr = iclamp(ri + step, 0, len(rows) - 1)
+    let nr = iclamp(ri + step, lo: 0, hi: len(rows) - 1)
     let row = rows[nr]
-    cur = {line: row.li, col: iclamp(row.a + goal, row.a, row.b)}
+    cur = {line: row.li, col: iclamp(row.a + goal, lo: row.a, hi: row.b)}
   elsif key_pressed("home") then
     moved = true
     cur = {line: cur.line, col: rows[ri].a}
@@ -1032,15 +1032,15 @@ if bfocus && note != nil then
   elsif key_pressed("backspace") then
     did_edit = true
     if hassel then
-      new_lines = delete_range(doc, lo, hi)
+      new_lines = delete_range(lines: doc, s: lo, e: hi)
       cur = lo
     elsif cur.col > 0 then
       let p0 = {line: cur.line, col: cur.col - 1}
-      new_lines = delete_range(doc, p0, cur)
+      new_lines = delete_range(lines: doc, s: p0, e: cur)
       cur = p0
     elsif cur.line > 0 then
       let p0 = {line: cur.line - 1, col: len(doc[cur.line - 1])}
-      new_lines = delete_range(doc, p0, cur)
+      new_lines = delete_range(lines: doc, s: p0, e: cur)
       cur = p0
     else
       did_edit = false
@@ -1049,21 +1049,21 @@ if bfocus && note != nil then
   elsif key_pressed("delete") then
     did_edit = true
     if hassel then
-      new_lines = delete_range(doc, lo, hi)
+      new_lines = delete_range(lines: doc, s: lo, e: hi)
       cur = lo
     elsif cur.col < len(doc[cur.line]) then
-      new_lines = delete_range(doc, cur, {line: cur.line, col: cur.col + 1})
+      new_lines = delete_range(lines: doc, s: cur, e: {line: cur.line, col: cur.col + 1})
     elsif cur.line < len(doc) - 1 then
-      new_lines = delete_range(doc, cur, {line: cur.line + 1, col: 0})
+      new_lines = delete_range(lines: doc, s: cur, e: {line: cur.line + 1, col: 0})
     else
       did_edit = false
     end
     anchor = cur
   elsif key_pressed("return") then
     did_edit = true
-    let base = if hassel then delete_range(doc, lo, hi) else doc end
+    let base = if hassel then delete_range(lines: doc, s: lo, e: hi) else doc end
     let at = if hassel then lo else cur end
-    let res = insert_text(base, at, "\n")
+    let res = insert_text(lines: base, p: at, txt: "\n")
     new_lines = res.lines
     cur = res.cur
     anchor = cur
@@ -1078,9 +1078,9 @@ if bfocus && note != nil then
   let typed = text_input()
   if len(typed) > 0 && typing_ok() then
     did_edit = true
-    let base2 = if pos_eq(anchor, cur) then doc else delete_range(doc, sel_lo(anchor, cur), sel_hi(anchor, cur)) end
+    let base2 = if pos_eq(anchor, cur) then doc else delete_range(lines: doc, s: sel_lo(anchor, cur), e: sel_hi(anchor, cur)) end
     let at2 = if pos_eq(anchor, cur) then cur else sel_lo(anchor, cur) end
-    let res2 = insert_text(base2, at2, typed)
+    let res2 = insert_text(lines: base2, p: at2, txt: typed)
     new_lines = res2.lines
     cur = res2.cur
     anchor = cur
@@ -1112,14 +1112,14 @@ if focus == "list" && len(shown) > 0 then
     cur = {line: 0, col: 0}
     anchor = cur
     bscroll = 0
-    lscroll = iclamp(lscroll, (nidx + 1) * (CARD_H + CARD_GAP) - list_h, nidx * (CARD_H + CARD_GAP))
+    lscroll = iclamp(lscroll, lo: (nidx + 1) * (CARD_H + CARD_GAP) - list_h, hi: nidx * (CARD_H + CARD_GAP))
   end
 end
 
 // search-field keyboard
 if focus == "search" then
   if key_pressed("backspace") && len(q) > 0 then
-    q = slice(q, 0, len(q) - 1)
+    q = slice(q, start: 0, end: len(q) - 1)
   end
   if key_pressed("escape") then
     q = ""
@@ -1138,7 +1138,7 @@ end
 let new_title = title_txt
 if focus == "title" && note != nil then
   if key_pressed("backspace") && len(new_title) > 0 then
-    new_title = slice(new_title, 0, len(new_title) - 1)
+    new_title = slice(new_title, start: 0, end: len(new_title) - 1)
     did_edit = true
   end
   if key_pressed("return") || key_pressed("escape") then
@@ -1152,13 +1152,13 @@ if focus == "title" && note != nil then
 end
 
 // focus by click, and Tab to cycle
-if click && point_in(mx, my, sf) then
+if click && point_in(px: mx, py: my, r: sf) then
   focus = "search"
 end
-if click && point_in(mx, my, tr) then
+if click && point_in(px: mx, py: my, r: tr) then
   focus = "title"
 end
-if click && point_in(mx, my, list_r) then
+if click && point_in(px: mx, py: my, r: list_r) then
   focus = "list"
 end
 if key_pressed("tab") then
@@ -1179,10 +1179,10 @@ if did_edit && note != nil then
   if !dirty then
     history = append(history, {id: sel_id, note: note, at: index_of_note(notes, sel_id)})
     if len(history) > 30 then
-      history = slice(history, 1, len(history))
+      history = slice(history, start: 1, end: len(history))
     end
   end
-  notes = put_note(notes, sel_id, {...note, lines: new_lines, title: new_title, mins: 0})
+  notes = put_note(notes, id: sel_id, updated: {...note, lines: new_lines, title: new_title, mins: 0})
   dirty = true
   last_edit = now
   edits = edits + 1
@@ -1209,13 +1209,13 @@ end
 // undo: pop the snapshot pushed at the start of the last edit burst
 if undo_hot && click then
   let last = history[len(history) - 1]
-  history = slice(history, 0, len(history) - 1)
+  history = slice(history, start: 0, end: len(history) - 1)
   // A snapshot restores whether the note was edited or deleted: put it back if
   // it is still there, re-insert it if it is not.
   if note_by_id(notes, last.id) == nil then
-    notes = insert_note(notes, last.at, last.note)
+    notes = insert_note(notes, at: last.at, item: last.note)
   else
-    notes = put_note(notes, last.id, last.note)
+    notes = put_note(notes, id: last.id, updated: last.note)
   end
   sel_id = last.id
   cur = {line: 0, col: 0}
@@ -1250,9 +1250,9 @@ if moved || did_edit then
   bscroll = max(bscroll, (cri + 1) * LH - BODY_H)
 end
 let doc_h = len(rows2) * LH
-bscroll = iclamp(bscroll, 0, max(0, doc_h - BODY_H + 8))
+bscroll = iclamp(bscroll, lo: 0, hi: max(0, doc_h - BODY_H + 8))
 
-clip(EDX, BODY_Y - 10, EDW, BODY_H + 18)
+clip(x: EDX, y: BODY_Y - 10, w: EDW, h: BODY_H + 18)
 let lo2 = sel_lo(anchor, cur)
 let hi2 = sel_hi(anchor, cur)
 let hassel2 = !pos_eq(anchor, cur)
@@ -1262,7 +1262,7 @@ let last_row = min(len(rows2), first_row + (BODY_H / LH) + 3)
 for i in range(first_row, last_row) do
   let r = rows2[i]
   let s = doc2[r.li]
-  let txt = slice(s, r.a, r.b)
+  let txt = slice(s, start: r.a, end: r.b)
   let ry = BODY_Y + i * LH - bscroll
 
   // selection band
@@ -1279,11 +1279,11 @@ for i in range(first_row, last_row) do
   // search matches
   if len(q) > 0 then
     for off in find_all(txt, q) do
-      draw_rect_rounded(rect(BODY_X + off * CW - 1, ry - 2, len(q) * CW + 2, LH - 3), 3, MATCH)
+      draw_rect_rounded(rect(BODY_X + off * CW - 1, ry - 2, len(q) * CW + 2, LH - 3), radius: 3, c: MATCH)
     end
   end
 
-  draw_text(txt, {x: BODY_X, y: ry}, {size: FS_BODY, color: INK})
+  draw_text(txt, pos: {x: BODY_X, y: ry}, style: {size: FS_BODY, color: INK})
 end
 
 // caret
@@ -1298,26 +1298,26 @@ clip_none()
 if doc_h > BODY_H then
   let bh = max(36, BODY_H * BODY_H / doc_h)
   let by = BODY_Y + (BODY_H - bh) * bscroll / max(1, doc_h - BODY_H + 8)
-  draw_rect_rounded(rect(W - 20, by, 3, bh), 1.5, GHOST, 150)
+  draw_rect_rounded(rect(W - 20, by, 3, bh), radius: 1.5, c: GHOST, a: 150)
 end
 
 // ── editor footer ───────────────────────────────────────────────────────────
 let fy = H - FOOT_H
 draw_rect(rect(EDX + 1, fy, EDW - 1, FOOT_H), PAPER)
-hairline(EDX + EPAD, fy + 0.5, W - 36, fy + 0.5, RULE_SOFT)
-let sel_chars = if hassel2 then sel_len(doc2, lo2, hi2) else 0 end
+hairline(x1: EDX + EPAD, y1: fy + 0.5, x2: W - 36, y2: fy + 0.5, c: RULE_SOFT)
+let sel_chars = if hassel2 then sel_len(lines: doc2, lo: lo2, hi: hi2) else 0 end
 let pos_txt = if hassel2 then "{sel_chars} selected" else "Ln {cur.line + 1}, Col {cur.col + 1}" end
-draw_text(pos_txt, {x: EDX + EPAD, y: fy + 15}, {size: FS_TINY, color: FAINT})
+draw_text(pos_txt, pos: {x: EDX + EPAD, y: fy + 15}, style: {size: FS_TINY, color: FAINT})
 
 let focus_txt = match focus
   when "body" -> "editing"
   when "title" -> "renaming"
   when "search" -> "searching"
   when _ -> "browsing" end
-draw_text_center(focus_txt, EDX + EDW / 2, fy + 15, FS_TINY, INK_SOFT)
+draw_text_center(focus_txt, cx: EDX + EDW / 2, y: fy + 15, size: FS_TINY, c: INK_SOFT)
 
 let hint = if now - flash < 2.2 then "saved" else "tab moves focus  ·  ctrl+s saves" end
-draw_text_right(hint, W - 36, fy + 15, FS_TINY, if now - flash < 2.2 then SAGE else GHOST end)
+draw_text_right(hint, right_x: W - 36, y: fy + 15, size: FS_TINY, c: if now - flash < 2.2 then SAGE else GHOST end)
 
 // ── card actions ────────────────────────────────────────────────────────────
 let anote = note_by_id(notes, act_id)
@@ -1325,11 +1325,11 @@ if len(act) > 0 && anote != nil then
   if act != "dup" then
     history = append(history, {id: act_id, note: anote, at: index_of_note(notes, act_id)})
     if len(history) > 30 then
-      history = slice(history, 1, len(history))
+      history = slice(history, start: 1, end: len(history))
     end
   end
   if act == "pin" then
-    notes = put_note(notes, act_id, {...anote, pinned: !anote.pinned})
+    notes = put_note(notes, id: act_id, updated: {...anote, pinned: !anote.pinned})
   elsif act == "dup" then
     notes = append(notes, {...anote, id: next_id, pinned: false, mins: 0,
       title: anote.title ++ " (copy)"})

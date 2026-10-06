@@ -198,7 +198,7 @@ for b in boids do
   let cb = int(200.0 + (1.0 - angle_approx) * 55.0)
 
   // Body
-  draw_circle(int(b.x), int(b.y), 4, cr / 2, cg / 2, cb / 2)
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: 4, r: cr / 2, g: cg / 2, b: cb / 2)
 
   // Triangle outline
   draw_line(int(nx_pt), int(ny_pt), int(lx), int(ly), cr, cg, cb)
@@ -207,10 +207,10 @@ for b in boids do
 end
 
 // Mouse indicator
-draw_circle(int(float(mouse_x())), int(float(mouse_y())), 12, 40, 15, 15)
-draw_circle(int(float(mouse_x())), int(float(mouse_y())), 8, 60, 20, 20)
+draw_circle(cx: int(float(mouse_x())), cy: int(float(mouse_y())), radius: 12, r: 40, g: 15, b: 15)
+draw_circle(cx: int(float(mouse_x())), cy: int(float(mouse_y())), radius: 8, r: 60, g: 20, b: 20)
 
-draw_text("Flocking (Boids)", 10, 10, 16, 100, 100, 120)
-draw_text("Separation + Alignment + Cohesion", 10, 30, 12, 60, 60, 80)
-draw_text("Move mouse to scatter", 10, 46, 12, 60, 60, 80)
-draw_text("Boids: " ++ str(len(boids)), 10, 62, 10, 50, 50, 70)
+draw_text("Flocking (Boids)", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Separation + Alignment + Cohesion", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
+draw_text("Move mouse to scatter", x: 10, y: 46, size: 12, r: 60, g: 60, b: 80)
+draw_text("Boids: " ++ str(len(boids)), x: 10, y: 62, size: 10, r: 50, g: 50, b: 70)

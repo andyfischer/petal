@@ -109,22 +109,22 @@ for i in range(0, iters) do
     // hsv_deg() takes degrees (0..360), which is handier here.
     let r = sqrt(x * x + y * y)
     let h = ((r * 65.0 + hue_shift * 360.0) % 360.0 + 360.0) % 360.0
-    let col = hsv_deg(h, 0.7, 0.95)
+    let col = hsv_deg(h, s: 0.7, v: 0.95)
     // 1-pixel point as a 1x1 rect (no draw_pixel primitive)
-    draw_rect(px, py, 1, 1, col.r, col.g, col.b)
+    draw_rect(x: px, y: py, w: 1, h: 1, r: col.r, g: col.g, b: col.b)
   end
 end
 
 // HUD with a faint backdrop
-draw_rect(8, 8, 280, 78, 0, 0, 0)
-draw_text("Strange Attractor", 14, 12, 16, 200, 200, 230)
-draw_text(p.name, 14, 32, 12, 140, 180, 220)
+draw_rect(x: 8, y: 8, w: 280, h: 78, r: 0, g: 0, b: 0)
+draw_text("Strange Attractor", x: 14, y: 12, size: 16, r: 200, g: 200, b: 230)
+draw_text(p.name, x: 14, y: 32, size: 12, r: 140, g: 180, b: 220)
 let mode_label = "fixed params"
 if mouse_tune then mode_label = "live: a=mouse_x b=mouse_y" end
-draw_text(mode_label, 14, 48, 10, 100, 140, 180)
-draw_text("1-8 preset  r reseed  space tune", 14, 64, 10, 80, 100, 140)
+draw_text(mode_label, x: 14, y: 48, size: 10, r: 100, g: 140, b: 180)
+draw_text("1-8 preset  r reseed  space tune", x: 14, y: 64, size: 10, r: 80, g: 100, b: 140)
 
 // Param readout
 let pa = "a=" ++ str(floor(a * 100.0) / 100.0)
 let pb = "  b=" ++ str(floor(b * 100.0) / 100.0)
-draw_text(pa ++ pb, 14, 78, 10, 80, 100, 140)
+draw_text(pa ++ pb, x: 14, y: 78, size: 10, r: 80, g: 100, b: 140)

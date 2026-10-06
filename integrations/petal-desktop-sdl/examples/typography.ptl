@@ -8,16 +8,16 @@ clear(18, 18, 22)
 let BODY = {size: 26, color: {r: 235, g: 235, b: 240}}
 
 fn row(label, style, y)
-  draw_text(label, {x: 20, y: y}, style)
+  draw_text(label, pos: {x: 20, y: y}, style: style)
   // A rule exactly as wide as text_width claims: it must end flush with the
   // text in every style, including bold, italic and letter-spaced.
-  draw_rect(20, y + 32, text_width(label, style), 2, 120, 200, 255)
+  draw_rect(x: 20, y: y + 32, w: text_width(label, style), h: 2, r: 120, g: 200, b: 255)
 end
 
-row("Regular sans", BODY, 20)
-row("Bold sans", {...BODY, weight: 700}, 70)
-row("Italic sans", {...BODY, italic: true}, 120)
-row("Bold italic", {...BODY, weight: 700, italic: true}, 170)
-row("Monospace role", {...BODY, font: "mono"}, 220)
-row("Mono bold", {...BODY, font: "mono", weight: 700}, 270)
-row("Letter spaced", {...BODY, spacing: 6}, 320)
+row(label: "Regular sans", style: BODY, y: 20)
+row(label: "Bold sans", style: {...BODY, weight: 700}, y: 70)
+row(label: "Italic sans", style: {...BODY, italic: true}, y: 120)
+row(label: "Bold italic", style: {...BODY, weight: 700, italic: true}, y: 170)
+row(label: "Monospace role", style: {...BODY, font: "mono"}, y: 220)
+row(label: "Mono bold", style: {...BODY, font: "mono", weight: 700}, y: 270)
+row(label: "Letter spaced", style: {...BODY, spacing: 6}, y: 320)

@@ -151,7 +151,7 @@ end
 // How warm a contact is, as a 0..1 fraction of a 45-day window plus the color
 // the table paints it in.
 fn freshness(days: num) -> record
-  let f = clamp(1.0 - float(days) / 45.0, 0.0, 1.0)
+  let f = clamp(1.0 - float(days) / 45.0, lo: 0.0, hi: 1.0)
   let c = if days <= 7 then TEAL
   elsif days <= 30 then AMBER
   else ROSE
@@ -164,7 +164,7 @@ end
 fn digits(s: string) -> string
   var out = ""
   for i in range(0, len(s)) do
-    let ch = slice(s, i, i + 1)
+    let ch = slice(s, start: i, end: i + 1)
     if contains("0123456789", ch) && len(ch) > 0 then set out = out ++ ch end
   end
   out
@@ -177,11 +177,11 @@ fn initials(name: string) -> string
       // slice is byte-indexed and snaps DOWN to a char boundary, so a leading
       // multi-byte letter ("Ó") makes slice(part, 0, 1) empty — widen until a
       // whole character comes out.
-      var ch = slice(part, 0, 1)
+      var ch = slice(part, start: 0, end: 1)
       var n = 1
       while len(ch) == 0 && n < 5 do
         set n = n + 1
-        set ch = slice(part, 0, n)
+        set ch = slice(part, start: 0, end: n)
       end
       set out = out ++ upper(ch)
     end
@@ -208,15 +208,15 @@ end
 
 // A rounded panel with a 1px border, since draw_rect_outline is square-cornered.
 fn rr(r: record, radius: num, fill: record, border: record)
-  draw_rect_rounded(r, radius, border)
-  draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius - 1, fill)
+  draw_rect_rounded(r, radius, c: border)
+  draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius: radius - 1, c: fill)
 end
 
 fn chip(x: num, y: num, label: string, c: record) -> num
   let tw = text_width(label, FS_MICRO)
   let r = rect(x, y, tw + 16, 18)
-  draw_rect_rounded(r, 9, c, 38)
-  draw_text(label, {x: x + 8, y: y + 4}, {size: FS_MICRO, color: c, spacing: 0.4})
+  draw_rect_rounded(r, radius: 9, c: c, a: 38)
+  draw_text(label, pos: {x: x + 8, y: y + 4}, style: {size: FS_MICRO, color: c, spacing: 0.4})
   r.w
 end
 
@@ -227,13 +227,13 @@ fn btn(r: record, label: string, kind: num, on: bool) -> bool
   let hov = hovered(r)
   if kind == 1 then
     let bg = if hov then #829eff else ACCENT end
-    draw_rect_rounded(r, 8, bg)
-    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, #10141a)
+    draw_rect_rounded(r, radius: 8, c: bg)
+    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: #10141a)
   else
     let bg = if hov then CARD_HI else CARD end
-    rr(r, 8, bg, LINE)
+    rr(r, radius: 8, fill: bg, border: LINE)
     let fg = if on then TEXT else DIM end
-    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, fg)
+    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: fg)
   end
   hov && mouse_pressed(0)
 end
@@ -291,7 +291,7 @@ let filtered = for c in contacts do
   if len(needle) > 0 && !matches(c, needle) then continue end
   c
 end
-let rows = sort_rows(filtered, sort_key, sort_dir)
+let rows = sort_rows(rows: filtered, key: sort_key, dir: sort_dir)
 let n_rows = len(rows)
 
 let pipeline = reduce(rows, 0, fn(acc, c) -> acc + c.value)
@@ -356,7 +356,7 @@ let ring = if editing then ["name", "title", "co", "email", "phone", "value"] el
 // A press anywhere that is not a field clears the keyboard focus.
 let grabbed = false
 
-if mouse_pressed(0) && point_in(mx, my, search_r) then
+if mouse_pressed(0) && point_in(px: mx, py: my, r: search_r) then
   focus = "q"
   grabbed = true
 end
@@ -371,7 +371,7 @@ end
 if mouse_pressed(0) then
   for c in cols do
     let hr = head_rect(c)
-    if point_in(mx, my, hr) then
+    if point_in(px: mx, py: my, r: hr) then
       if sort_key == c.key then
         sort_dir = -sort_dir
       else
@@ -397,7 +397,7 @@ end
 for i in range(0, len(STAGES) + 1) do
   let label = seg_label(i)
   let r = seg_rect(i)
-  if mouse_pressed(0) && point_in(mx, my, r) then
+  if mouse_pressed(0) && point_in(px: mx, py: my, r: r) then
     seg = label
     scroll = 0
     focus = ""
@@ -405,7 +405,7 @@ for i in range(0, len(STAGES) + 1) do
 end
 
 // Row selection by click.
-if mouse_pressed(0) && point_in(mx, my, rows_rect) then
+if mouse_pressed(0) && point_in(px: mx, py: my, r: rows_rect) then
   let ix = scroll + int((my - ROWS_TOP) / ROW_H)
   if ix >= 0 && ix < n_rows then
     sel_id = rows[ix].id
@@ -415,8 +415,8 @@ if mouse_pressed(0) && point_in(mx, my, rows_rect) then
 end
 
 // Wheel over the table.
-if point_in(mx, my, rows_rect) then
-  scroll = clamp(int(scroll + scroll_y()), 0, max(0, n_rows - VISIBLE))
+if point_in(px: mx, py: my, r: rows_rect) then
+  scroll = clamp(int(scroll + scroll_y()), lo: 0, hi: max(0, n_rows - VISIBLE))
 end
 
 // Keyboard navigation — only when no text field owns the keyboard.
@@ -430,15 +430,15 @@ if len(focus) == 0 then
     if key_pressed("home") then set want = 0 end
     if key_pressed("end") then set want = n_rows - 1 end
     if want != sel_ix then
-      let w2 = int(clamp(want, 0, n_rows - 1))
+      let w2 = int(clamp(want, lo: 0, hi: n_rows - 1))
       sel_id = rows[w2].id
-      scroll = ensure_visible(scroll, w2, VISIBLE)
+      scroll = ensure_visible(scroll, selected: w2, visible_rows: VISIBLE)
     end
   end
 end
 
 // Clamp scroll after any filter change, and keep the selection on screen.
-scroll = int(clamp(scroll, 0, max(0, n_rows - VISIBLE)))
+scroll = int(clamp(scroll, lo: 0, hi: max(0, n_rows - VISIBLE)))
 
 // Tab cycles the focus ring.
 if key_pressed("tab") && len(focus) > 0 then
@@ -482,7 +482,7 @@ let submitted = key_pressed("return")
 
 fn edited(cur: string, typed: string, backsp: bool) -> string
   var t = cur
-  if backsp && len(t) > 0 then set t = slice(t, 0, len(t) - 1) end
+  if backsp && len(t) > 0 then set t = slice(t, start: 0, end: len(t) - 1) end
   if len(typed) > 0 then set t = t ++ typed end
   t
 end
@@ -508,7 +508,7 @@ end
 // Clicking a form field focuses it.
 if editing && mouse_pressed(0) then
   for i in range(0, len(ring)) do
-    if point_in(mx, my, field_rect(i, dx, form_top, dw)) then
+    if point_in(px: mx, py: my, r: field_rect(i, x: dx, y: form_top, w: dw)) then
       focus = ring[i]
       grabbed = true
     end
@@ -518,15 +518,15 @@ end
 // Stage chips in the form.
 if editing && mouse_pressed(0) then
   for i in range(0, len(STAGES)) do
-    if point_in(mx, my, stage_pick_rect(i, dx, form_top + 6 * 52 + 22, dw)) then
+    if point_in(px: mx, py: my, r: stage_pick_rect(i, x: dx, y: form_top + 6 * 52 + 22, w: dw)) then
       ed_stage = STAGES[i]
     end
   end
 end
 
 // Action buttons: Edit / Advance in read mode, Save / Cancel in form mode.
-let hit1 = has_sel && mouse_pressed(0) && point_in(mx, my, act1)
-let hit2 = has_sel && mouse_pressed(0) && point_in(mx, my, act2)
+let hit1 = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act1)
+let hit2 = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act2)
 let do_save = editing && (hit1 || (submitted && len(focus) > 0))
 
 if has_sel && !editing && hit1 then
@@ -582,63 +582,63 @@ draw_rect(rect(0, 0, RAIL_W, H), RAIL)
 draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
 // brand
-draw_rect_rounded(rect(24, 19, 22, 22), 6, ACCENT)
-draw_text("M", {x: 31, y: 24}, {size: FS, color: #0f1319})
-draw_text("meridian", {x: 56, y: 21}, {size: FS_H, color: TEXT, spacing: 0.2})
+draw_rect_rounded(rect(24, 19, 22, 22), radius: 6, c: ACCENT)
+draw_text("M", pos: {x: 31, y: 24}, style: {size: FS, color: #0f1319})
+draw_text("meridian", pos: {x: 56, y: 21}, style: {size: FS_H, color: TEXT, spacing: 0.2})
 
-draw_text("SEGMENTS", {x: 24, y: TOP_H + 26}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
+draw_text("SEGMENTS", pos: {x: 24, y: TOP_H + 26}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
 
 for i in range(0, len(STAGES) + 1) do
   let label = seg_label(i)
   let r = seg_rect(i)
   let on = seg == label
-  let hov = point_in(mx, my, r)
+  let hov = point_in(px: mx, py: my, r: r)
   if on then
-    draw_rect_rounded(r, 8, CARD_HI)
-    draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), 2, ACCENT)
+    draw_rect_rounded(r, radius: 8, c: CARD_HI)
+    draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: ACCENT)
   elsif hov then
-    draw_rect_rounded(r, 8, CARD, 140)
+    draw_rect_rounded(r, radius: 8, c: CARD, a: 140)
   end
   let dot = if i == 0 then FAINT else stage_color(label) end
-  draw_circle({x: r.x + 18, y: r.y + 15}, 3.5, dot)
+  draw_circle(center: {x: r.x + 18, y: r.y + 15}, radius: 3.5, c: dot)
   let fg = if on then TEXT else DIM end
-  draw_text(label, {x: r.x + 30, y: r.y + 8}, {size: FS, color: fg})
+  draw_text(label, pos: {x: r.x + 30, y: r.y + 8}, style: {size: FS, color: fg})
   let cnt = count_stage(contacts, label)
-  draw_text_right("{cnt}", r.x + r.w - 12, r.y + 8, FS_SM, if on then DIM else FAINT end)
+  draw_text_right("{cnt}", right_x: r.x + r.w - 12, y: r.y + 8, size: FS_SM, c: if on then DIM else FAINT end)
 end
 
 // pipeline card at the foot of the rail
 let card_y = H - 130
-rr(rect(12, card_y, RAIL_W - 24, 106), 10, CARD, LINE)
-draw_text("OPEN PIPELINE", {x: 26, y: card_y + 16}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-draw_text(money_big(pipeline), {x: 26, y: card_y + 34}, {size: FS_XL, color: TEXT})
-draw_line({x: 26, y: card_y + 68}, {x: RAIL_W - 26, y: card_y + 68}, LINE)
-draw_text("{n_rows} shown", {x: 26, y: card_y + 78}, {size: FS_SM, color: DIM})
-draw_text_right("of {len(contacts)}", RAIL_W - 26, card_y + 78, FS_SM, FAINT)
+rr(rect(12, card_y, RAIL_W - 24, 106), radius: 10, fill: CARD, border: LINE)
+draw_text("OPEN PIPELINE", pos: {x: 26, y: card_y + 16}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
+draw_text(money_big(pipeline), pos: {x: 26, y: card_y + 34}, style: {size: FS_XL, color: TEXT})
+draw_line({x: 26, y: card_y + 68}, {x: RAIL_W - 26, y: card_y + 68}, c: LINE)
+draw_text("{n_rows} shown", pos: {x: 26, y: card_y + 78}, style: {size: FS_SM, color: DIM})
+draw_text_right("of {len(contacts)}", right_x: RAIL_W - 26, y: card_y + 78, size: FS_SM, c: FAINT)
 
 // ── top bar ─────────────────────────────────────────────────────────────────
 draw_rect(rect(0, TOP_H, W, 1), LINE)
 
 // search box
 let q_focus = focus == "q"
-rr(search_r, 9, if q_focus then #10141b else CARD end, if q_focus then ACCENT else LINE end)
+rr(search_r, radius: 9, fill: if q_focus then #10141b else CARD end, border: if q_focus then ACCENT else LINE end)
 draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5, FAINT, 0)
-draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 5.5, if q_focus then ACCENT else FAINT end)
-draw_circle({x: search_r.x + 17, y: search_r.y + 14}, 3.6, if q_focus then #10141b else CARD end)
+draw_circle(center: {x: search_r.x + 17, y: search_r.y + 14}, radius: 5.5, c: if q_focus then ACCENT else FAINT end)
+draw_circle(center: {x: search_r.x + 17, y: search_r.y + 14}, radius: 3.6, c: if q_focus then #10141b else CARD end)
 draw_line({x: search_r.x + 21, y: search_r.y + 18}, {x: search_r.x + 25, y: search_r.y + 22},
-  if q_focus then ACCENT else FAINT end)
+  c: if q_focus then ACCENT else FAINT end)
 let qx = search_r.x + 34
 if len(q) == 0 && !q_focus then
-  draw_text("Search contacts, companies, tags…", {x: qx, y: search_r.y + 9}, {size: FS, color: FAINT})
+  draw_text("Search contacts, companies, tags…", pos: {x: qx, y: search_r.y + 9}, style: {size: FS, color: FAINT})
 else
-  draw_text(q, {x: qx, y: search_r.y + 9}, {size: FS, color: TEXT})
+  draw_text(q, pos: {x: qx, y: search_r.y + 9}, style: {size: FS, color: TEXT})
 end
 if q_focus && int(time() * 2) % 2 == 0 then
   let cxp = qx + text_width(q, FS) + 1
-  draw_line({x: cxp, y: search_r.y + 8}, {x: cxp, y: search_r.y + 24}, ACCENT)
+  draw_line({x: cxp, y: search_r.y + 8}, {x: cxp, y: search_r.y + 24}, c: ACCENT)
 end
 if !q_focus then
-  draw_text("/", {x: search_r.x + search_r.w - 18, y: search_r.y + 9}, {size: FS_SM, color: FAINT})
+  draw_text("/", pos: {x: search_r.x + search_r.w - 18, y: search_r.y + 9}, style: {size: FS_SM, color: FAINT})
 end
 
 let sort_label = if sort_key == "days" then "last contact"
@@ -646,34 +646,34 @@ elsif sort_key == "value" then "deal size"
 else sort_key
 end
 let dir_label = if sort_dir == 1 then "ascending" else "descending" end
-draw_text_right("sorted by {sort_label} · {dir_label}", TABLE_X + TABLE_W - 22, 22, FS_SM, FAINT)
+draw_text_right("sorted by {sort_label} · {dir_label}", right_x: TABLE_X + TABLE_W - 22, y: 22, size: FS_SM, c: FAINT)
 
 // ── table header ────────────────────────────────────────────────────────────
 for c in cols do
   let on = sort_key == c.key
   let hr = head_rect(c)
-  if point_in(mx, my, hr) then
-    draw_rect_rounded(hr, 6, CARD, 120)
+  if point_in(px: mx, py: my, r: hr) then
+    draw_rect_rounded(hr, radius: 6, c: CARD, a: 120)
   end
   let fg = if on then ACCENT else FAINT end
   let st = {size: FS_MICRO, color: fg, spacing: 1.0}
   let lw = text_width(c.label, st)
   let lx = if c.right then c.x + c.w - lw - 4 else c.x end
-  draw_text(c.label, {x: lx, y: HEAD_Y + 8}, st)
+  draw_text(c.label, pos: {x: lx, y: HEAD_Y + 8}, style: st)
   if on then
     let ax = if c.right then lx - 12 else lx + lw + 7 end
     let ay = HEAD_Y + 12
     if sort_dir == 1 then
-      fill_triangle(ax, ay + 3, ax + 7, ay + 3, ax + 3.5, ay - 2, fg.r, fg.g, fg.b)
+      fill_triangle(x1: ax, y1: ay + 3, x2: ax + 7, y2: ay + 3, x3: ax + 3.5, y3: ay - 2, r: fg.r, g: fg.g, b: fg.b)
     else
-      fill_triangle(ax, ay - 2, ax + 7, ay - 2, ax + 3.5, ay + 3, fg.r, fg.g, fg.b)
+      fill_triangle(x1: ax, y1: ay - 2, x2: ax + 7, y2: ay - 2, x3: ax + 3.5, y3: ay + 3, r: fg.r, g: fg.g, b: fg.b)
     end
   end
 end
 draw_rect(rect(TABLE_X, HEAD_Y + HEAD_H + 3, TABLE_W, 1), LINE)
 
 // ── rows ────────────────────────────────────────────────────────────────────
-clip(TABLE_X, ROWS_TOP, TABLE_W, ROWS_H)
+clip(x: TABLE_X, y: ROWS_TOP, w: TABLE_W, h: ROWS_H)
 let shown = min(VISIBLE, max(0, n_rows - scroll))
 for i in range(0, shown) do
   let idx = scroll + i
@@ -681,41 +681,41 @@ for i in range(0, shown) do
   let y = ROWS_TOP + i * ROW_H
   let r = rect(TABLE_X + 10, y + 2, TABLE_W - 20, ROW_H - 4)
   let on = c.id == sel_id
-  let hov = point_in(mx, my, r)
+  let hov = point_in(px: mx, py: my, r: r)
   if on then
-    draw_rect_rounded(r, 8, CARD_HI)
-    draw_rect_rounded(rect(TABLE_X + 10, y + 8, 3, ROW_H - 16), 2, ACCENT)
+    draw_rect_rounded(r, radius: 8, c: CARD_HI)
+    draw_rect_rounded(rect(TABLE_X + 10, y + 8, 3, ROW_H - 16), radius: 2, c: ACCENT)
   elsif hov then
-    draw_rect_rounded(r, 8, CARD, 150)
+    draw_rect_rounded(r, radius: 8, c: CARD, a: 150)
   end
 
   // avatar + name + title
   let acol = AV[c.id % len(AV)]
   let ax = cx0 + 14
   draw_circle({x: ax, y: y + ROW_H / 2}, 14, acol, 46)
-  draw_text_center(initials(c.name), ax, y + ROW_H / 2 - 6, FS_SM, acol)
+  draw_text_center(initials(c.name), cx: ax, y: y + ROW_H / 2 - 6, size: FS_SM, c: acol)
   let nm_x = cx0 + 34
   let nm_w = w_name - 46
-  draw_text(ellipsize(c.name, nm_w, FS_ROW), {x: nm_x, y: y + 8},
-    {size: FS_ROW, color: if on then WHITE else TEXT end})
-  draw_text(ellipsize(c.title, nm_w, FS_SM), {x: nm_x, y: y + 26}, {size: FS_SM, color: FAINT})
+  draw_text(ellipsize(c.name, avail_px: nm_w, size: FS_ROW), pos: {x: nm_x, y: y + 8},
+    style: {size: FS_ROW, color: if on then WHITE else TEXT end})
+  draw_text(ellipsize(c.title, avail_px: nm_w, size: FS_SM), pos: {x: nm_x, y: y + 26}, style: {size: FS_SM, color: FAINT})
 
   // company + owner
-  draw_text(ellipsize(c.company, w_co - 16, FS), {x: cols[1].x, y: y + 9}, {size: FS, color: DIM})
-  draw_text(c.owner, {x: cols[1].x, y: y + 27}, {size: FS_SM, color: FAINT})
+  draw_text(ellipsize(c.company, avail_px: w_co - 16, size: FS), pos: {x: cols[1].x, y: y + 9}, style: {size: FS, color: DIM})
+  draw_text(c.owner, pos: {x: cols[1].x, y: y + 27}, style: {size: FS_SM, color: FAINT})
 
   // stage chip
-  chip(cols[2].x, y + 13, c.stage, stage_color(c.stage))
+  chip(x: cols[2].x, y: y + 13, label: c.stage, c: stage_color(c.stage))
 
   // deal value
-  draw_text_right(money(c.value), cols[3].x + cols[3].w - 4, y + 16, FS_ROW,
-    if on then TEXT else DIM end)
+  draw_text_right(money(c.value), right_x: cols[3].x + cols[3].w - 4, y: y + 16, size: FS_ROW,
+    c: if on then TEXT else DIM end)
 
   // last contact: a freshness dot and the phrase, on the row's centre line
   let fresh = freshness(c.days)
   let last_r = cols[4].x + cols[4].w - 4
   let last_s = ago(c.days)
-  draw_text_right(last_s, last_r, y + 16, FS, fresh.color)
+  draw_text_right(last_s, right_x: last_r, y: y + 16, size: FS, c: fresh.color)
   draw_circle({x: last_r - text_width(last_s, FS) - 11, y: y + 23}, 3.5, fresh.color, 210)
 
   if !on && i < shown - 1 then
@@ -725,150 +725,150 @@ end
 clip_none()
 
 if n_rows == 0 then
-  draw_text("No contacts match this filter.", {x: cx0, y: ROWS_TOP + 40}, {size: FS_ROW, color: DIM})
+  draw_text("No contacts match this filter.", pos: {x: cx0, y: ROWS_TOP + 40}, style: {size: FS_ROW, color: DIM})
   draw_text("Clear the search with Escape, or pick a different segment.",
-    {x: cx0, y: ROWS_TOP + 64}, {size: FS, color: FAINT})
+    pos: {x: cx0, y: ROWS_TOP + 64}, style: {size: FS, color: FAINT})
 end
 
 // scrollbar
 if n_rows > VISIBLE then
   let track = rect(TABLE_X + TABLE_W - 13, ROWS_TOP + 2, 6, ROWS_H - 6)
-  draw_rect_rounded(track, 3, LINE)
+  draw_rect_rounded(track, radius: 3, c: LINE)
   let th = max(28, int(track.h * VISIBLE / n_rows))
   let ty = track.y + int((track.h - th) * scroll / max(1, n_rows - VISIBLE))
-  draw_rect_rounded(rect(track.x, ty, track.w, th), 3, #4c5768)
+  draw_rect_rounded(rect(track.x, ty, track.w, th), radius: 3, c: #4c5768)
 end
 
 // ── footer ──────────────────────────────────────────────────────────────────
 draw_rect(rect(TABLE_X, H - FOOT_H, TABLE_W, 1), LINE)
 let foot = if n_rows == 0 then "no results" else "{n_rows} contacts · {money_big(pipeline)} in view" end
-draw_text(foot, {x: cx0, y: H - 26}, {size: FS_SM, color: FAINT})
-draw_text_right("click a header to sort  ·  ↑↓ select  ·  / search", TABLE_X + TABLE_W - 22, H - 26,
-  FS_SM, FAINT)
+draw_text(foot, pos: {x: cx0, y: H - 26}, style: {size: FS_SM, color: FAINT})
+draw_text_right("click a header to sort  ·  ↑↓ select  ·  / search", right_x: TABLE_X + TABLE_W - 22, y: H - 26,
+  size: FS_SM, c: FAINT)
 
 // ── inspector ───────────────────────────────────────────────────────────────
 draw_rect(rect(DETAIL_X, 0, DETAIL_W, H), SURFACE)
 draw_rect(rect(DETAIL_X, 0, 1, H), LINE)
 
 if !has_sel then
-  draw_text("Nothing selected", {x: dx, y: TOP_H + 40}, {size: FS_ROW, color: DIM})
-  draw_text("Pick a row to see the full record.", {x: dx, y: TOP_H + 64}, {size: FS, color: FAINT})
+  draw_text("Nothing selected", pos: {x: dx, y: TOP_H + 40}, style: {size: FS_ROW, color: DIM})
+  draw_text("Pick a row to see the full record.", pos: {x: dx, y: TOP_H + 64}, style: {size: FS, color: FAINT})
 else
   let acol = AV[selected.id % len(AV)]
   let hy = TOP_H + 30
   draw_circle({x: dx + 26, y: hy + 26}, 26, acol, 40)
-  draw_text_center(initials(selected.name), dx + 26, hy + 17, FS_H, acol)
+  draw_text_center(initials(selected.name), cx: dx + 26, y: hy + 17, size: FS_H, c: acol)
 
   if editing then
-    draw_text("EDIT RECORD", {x: dx + 66, y: hy + 12}, {size: FS_MICRO, color: ACCENT, spacing: 1.4})
-    draw_text(ellipsize(ed_name, dw - 70, FS_H), {x: dx + 66, y: hy + 28}, {size: FS_H, color: TEXT})
+    draw_text("EDIT RECORD", pos: {x: dx + 66, y: hy + 12}, style: {size: FS_MICRO, color: ACCENT, spacing: 1.4})
+    draw_text(ellipsize(ed_name, avail_px: dw - 70, size: FS_H), pos: {x: dx + 66, y: hy + 28}, style: {size: FS_H, color: TEXT})
 
     let labels = ["FULL NAME", "TITLE", "COMPANY", "EMAIL", "PHONE", "DEAL VALUE (USD)"]
     let vals = [ed_name, ed_title, ed_co, ed_email, ed_phone, ed_value]
     for i in range(0, 6) do
-      let fr = field_rect(i, dx, form_top, dw)
+      let fr = field_rect(i, x: dx, y: form_top, w: dw)
       let f_on = focus == ring[i]
-      draw_text(labels[i], {x: dx, y: fr.y - 15}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-      rr(fr, 8, if f_on then #10141b else CARD end, if f_on then ACCENT else LINE end)
-      draw_text(ellipsize(vals[i], dw - 22, FS), {x: fr.x + 10, y: fr.y + 9}, {size: FS, color: TEXT})
+      draw_text(labels[i], pos: {x: dx, y: fr.y - 15}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
+      rr(fr, radius: 8, fill: if f_on then #10141b else CARD end, border: if f_on then ACCENT else LINE end)
+      draw_text(ellipsize(vals[i], avail_px: dw - 22, size: FS), pos: {x: fr.x + 10, y: fr.y + 9}, style: {size: FS, color: TEXT})
       if f_on && int(time() * 2) % 2 == 0 then
         let cxp = fr.x + 10 + text_width(vals[i], FS) + 1
-        draw_line({x: cxp, y: fr.y + 8}, {x: cxp, y: fr.y + 24}, ACCENT)
+        draw_line({x: cxp, y: fr.y + 8}, {x: cxp, y: fr.y + 24}, c: ACCENT)
       end
     end
 
     let sy = form_top + 6 * 52 + 22
-    draw_text("STAGE", {x: dx, y: sy - 15}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    draw_text("STAGE", pos: {x: dx, y: sy - 15}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
     for i in range(0, len(STAGES)) do
-      let pr = stage_pick_rect(i, dx, sy, dw)
+      let pr = stage_pick_rect(i, x: dx, y: sy, w: dw)
       let s = STAGES[i]
       let sc = stage_color(s)
       let on = ed_stage == s
       if on then
-        draw_rect_rounded(pr, 7, sc, 52)
-        draw_rect_rounded(rect(pr.x, pr.y, pr.w, pr.h), 7, sc, 52)
+        draw_rect_rounded(pr, radius: 7, c: sc, a: 52)
+        draw_rect_rounded(rect(pr.x, pr.y, pr.w, pr.h), radius: 7, c: sc, a: 52)
       elsif hovered(pr) then
-        draw_rect_rounded(pr, 7, CARD_HI)
+        draw_rect_rounded(pr, radius: 7, c: CARD_HI)
       else
-        draw_rect_rounded(pr, 7, CARD)
+        draw_rect_rounded(pr, radius: 7, c: CARD)
       end
-      draw_text_center(s, pr.x + pr.w / 2, pr.y + 7, FS_SM, if on then sc else DIM end)
+      draw_text_center(s, cx: pr.x + pr.w / 2, y: pr.y + 7, size: FS_SM, c: if on then sc else DIM end)
     end
 
     // Everything the form does not own, shown so the record still reads whole.
     let ry2 = sy + 78
-    draw_line({x: dx, y: ry2 - 16}, {x: dx + dw, y: ry2 - 16}, LINE)
-    draw_text("NOT EDITABLE HERE", {x: dx, y: ry2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-    draw_text("Owner", {x: dx, y: ry2 + 20}, {size: FS, color: FAINT})
-    draw_text_right(selected.owner, dx + dw, ry2 + 20, FS, DIM)
-    draw_text("Last contact", {x: dx, y: ry2 + 42}, {size: FS, color: FAINT})
-    draw_text_right(ago(selected.days), dx + dw, ry2 + 42, FS, DIM)
-    draw_text("Tags", {x: dx, y: ry2 + 64}, {size: FS, color: FAINT})
-    draw_text_right(join(selected.tags, " · "), dx + dw, ry2 + 64, FS, DIM)
+    draw_line({x: dx, y: ry2 - 16}, {x: dx + dw, y: ry2 - 16}, c: LINE)
+    draw_text("NOT EDITABLE HERE", pos: {x: dx, y: ry2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    draw_text("Owner", pos: {x: dx, y: ry2 + 20}, style: {size: FS, color: FAINT})
+    draw_text_right(selected.owner, right_x: dx + dw, y: ry2 + 20, size: FS, c: DIM)
+    draw_text("Last contact", pos: {x: dx, y: ry2 + 42}, style: {size: FS, color: FAINT})
+    draw_text_right(ago(selected.days), right_x: dx + dw, y: ry2 + 42, size: FS, c: DIM)
+    draw_text("Tags", pos: {x: dx, y: ry2 + 64}, style: {size: FS, color: FAINT})
+    draw_text_right(join(selected.tags, " · "), right_x: dx + dw, y: ry2 + 64, size: FS, c: DIM)
 
-    draw_text("Tab moves between fields · Return saves", {x: dx, y: act_y - 26},
-      {size: FS_SM, color: FAINT})
-    btn(act1, "Save changes", 1, true)
-    btn(act2, "Cancel", 0, false)
+    draw_text("Tab moves between fields · Return saves", pos: {x: dx, y: act_y - 26},
+      style: {size: FS_SM, color: FAINT})
+    btn(act1, label: "Save changes", kind: 1, on: true)
+    btn(act2, label: "Cancel", kind: 0, on: false)
   else
-    draw_text(ellipsize(selected.name, dw - 70, FS_XL), {x: dx + 66, y: hy + 6},
-      {size: FS_XL, color: TEXT})
-    draw_text(ellipsize(selected.title, dw - 70, FS), {x: dx + 66, y: hy + 34},
-      {size: FS, color: DIM})
-    chip(dx + 66, hy + 56, selected.stage, stage_color(selected.stage))
+    draw_text(ellipsize(selected.name, avail_px: dw - 70, size: FS_XL), pos: {x: dx + 66, y: hy + 6},
+      style: {size: FS_XL, color: TEXT})
+    draw_text(ellipsize(selected.title, avail_px: dw - 70, size: FS), pos: {x: dx + 66, y: hy + 34},
+      style: {size: FS, color: DIM})
+    chip(x: dx + 66, y: hy + 56, label: selected.stage, c: stage_color(selected.stage))
 
     let by = hy + 96
-    draw_line({x: dx, y: by - 12}, {x: dx + dw, y: by - 12}, LINE)
+    draw_line({x: dx, y: by - 12}, {x: dx + dw, y: by - 12}, c: LINE)
 
     fn detail_row(x: num, y: num, w: num, label: string, value: string, color: record)
-      draw_text(label, {x: x, y: y}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-      draw_text(ellipsize(value, w, FS), {x: x, y: y + 16}, {size: FS, color: color})
+      draw_text(label, pos: {x: x, y: y}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
+      draw_text(ellipsize(value, avail_px: w, size: FS), pos: {x: x, y: y + 16}, style: {size: FS, color: color})
     end
 
-    detail_row(dx, by, dw, "COMPANY", selected.company, TEXT)
-    detail_row(dx, by + 46, dw, "EMAIL", selected.email, ACCENT)
-    detail_row(dx, by + 92, (dw / 2) - 8, "PHONE", selected.phone, TEXT)
-    detail_row(dx + (dw / 2) + 8, by + 92, (dw / 2) - 8, "OWNER", selected.owner, TEXT)
-    detail_row(dx, by + 138, (dw / 2) - 8, "DEAL VALUE", money(selected.value), TEAL)
-    detail_row(dx + (dw / 2) + 8, by + 138, (dw / 2) - 8, "LAST CONTACT",
-      ago(selected.days), if selected.days > 30 then AMBER else TEXT end)
+    detail_row(x: dx, y: by, w: dw, label: "COMPANY", value: selected.company, color: TEXT)
+    detail_row(x: dx, y: by + 46, w: dw, label: "EMAIL", value: selected.email, color: ACCENT)
+    detail_row(x: dx, y: by + 92, w: (dw / 2) - 8, label: "PHONE", value: selected.phone, color: TEXT)
+    detail_row(x: dx + (dw / 2) + 8, y: by + 92, w: (dw / 2) - 8, label: "OWNER", value: selected.owner, color: TEXT)
+    detail_row(x: dx, y: by + 138, w: (dw / 2) - 8, label: "DEAL VALUE", value: money(selected.value), color: TEAL)
+    detail_row(x: dx + (dw / 2) + 8, y: by + 138, w: (dw / 2) - 8, label: "LAST CONTACT",
+      value: ago(selected.days), color: if selected.days > 30 then AMBER else TEXT end)
 
     let ty2 = by + 188
-    draw_text("TAGS", {x: dx, y: ty2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    draw_text("TAGS", pos: {x: dx, y: ty2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
     var tagx = dx
     for t in selected.tags do
-      let adv = chip(tagx, ty2 + 16, t, DIM)
+      let adv = chip(x: tagx, y: ty2 + 16, label: t, c: DIM)
       set tagx = tagx + adv + 6
     end
 
     let ny = ty2 + 54
-    draw_text("NOTES", {x: dx, y: ny}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
-    let lines = preview(selected.notes, dw / 7, 5).lines
+    draw_text("NOTES", pos: {x: dx, y: ny}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    let lines = preview(selected.notes, max_chars: dw / 7, max_lines: 5).lines
     for i in range(0, len(lines)) do
-      draw_text(lines[i], {x: dx, y: ny + 18 + i * 19}, {size: FS, color: DIM})
+      draw_text(lines[i], pos: {x: dx, y: ny + 18 + i * 19}, style: {size: FS, color: DIM})
     end
 
     // Activity timeline — synthesized from the record so every contact has a
     // plausible history behind it.
     let ay2 = ny + 132
-    draw_line({x: dx, y: ay2 - 16}, {x: dx + dw, y: ay2 - 16}, LINE)
-    draw_text("ACTIVITY", {x: dx, y: ay2}, {size: FS_MICRO, color: FAINT, spacing: 1.2})
+    draw_line({x: dx, y: ay2 - 16}, {x: dx + dw, y: ay2 - 16}, c: LINE)
+    draw_text("ACTIVITY", pos: {x: dx, y: ay2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.2})
     let acts = activity(selected)
     for i in range(0, len(acts)) do
       let a = acts[i]
       let ry = ay2 + 24 + i * 34
       if i < len(acts) - 1 then
-        draw_line({x: dx + 4, y: ry + 10}, {x: dx + 4, y: ry + 34}, LINE)
+        draw_line({x: dx + 4, y: ry + 10}, {x: dx + 4, y: ry + 34}, c: LINE)
       end
       let dotc = if i == 0 then stage_color(selected.stage) else FAINT end
       draw_circle({x: dx + 4, y: ry + 5}, 4, dotc, if i == 0 then 255 else 150 end)
-      draw_text(ellipsize(a.label, dw - 90, FS), {x: dx + 18, y: ry}, {size: FS, color: TEXT})
-      draw_text_right(ago(a.ago_days), dx + dw, ry + 1, FS_SM, FAINT)
+      draw_text(ellipsize(a.label, avail_px: dw - 90, size: FS), pos: {x: dx + 18, y: ry}, style: {size: FS, color: TEXT})
+      draw_text_right(ago(a.ago_days), right_x: dx + dw, y: ry + 1, size: FS_SM, c: FAINT)
     end
 
-    btn(act1, "Edit record", 1, true)
+    btn(act1, label: "Edit record", kind: 1, on: true)
     let last_stage = selected.stage == "Customer" || selected.stage == "Churned"
-    btn(act2, "Advance stage", 0, !last_stage)
+    btn(act2, label: "Advance stage", kind: 0, on: !last_stage)
   end
 end
 

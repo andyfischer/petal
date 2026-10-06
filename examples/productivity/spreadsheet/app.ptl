@@ -23,7 +23,7 @@ end
 fn digit_val(c: string) -> int
   let d = -1
   for i in range(0, 10) do
-    if slice(DIGITS, i, i + 1) == c then
+    if slice(DIGITS, start: i, end: i + 1) == c then
       d = i
     end
   end
@@ -33,7 +33,7 @@ end
 fn letter_val(c: string) -> int
   let d = -1
   for i in range(0, 26) do
-    if slice(LETTERS, i, i + 1) == c then
+    if slice(LETTERS, start: i, end: i + 1) == c then
       d = i
     end
   end
@@ -82,22 +82,22 @@ fn str_num(s: string) -> record
   let n = len(s)
   let i = 0
   let neg = false
-  if n > 0 && slice(s, 0, 1) == "-" then
+  if n > 0 && slice(s, start: 0, end: 1) == "-" then
     neg = true
     i = 1
   end
   let seen = false
   let whole = 0.0
-  while i < n && is_digit(slice(s, i, i + 1)) do
-    whole = whole * 10.0 + float(digit_val(slice(s, i, i + 1)))
+  while i < n && is_digit(slice(s, start: i, end: i + 1)) do
+    whole = whole * 10.0 + float(digit_val(slice(s, start: i, end: i + 1)))
     seen = true
     i = i + 1
   end
-  if i < n && slice(s, i, i + 1) == "." then
+  if i < n && slice(s, start: i, end: i + 1) == "." then
     i = i + 1
     let scale = 0.1
-    while i < n && is_digit(slice(s, i, i + 1)) do
-      whole = whole + float(digit_val(slice(s, i, i + 1))) * scale
+    while i < n && is_digit(slice(s, start: i, end: i + 1)) do
+      whole = whole + float(digit_val(slice(s, start: i, end: i + 1))) * scale
       scale = scale * 0.1
       seen = true
       i = i + 1
@@ -119,33 +119,33 @@ fn tokenize(src: string) -> list
   let toks = []
   let i = 0
   while i < n do
-    let c = slice(s, i, i + 1)
+    let c = slice(s, start: i, end: i + 1)
     if c == " " then
       i = i + 1
     elsif c == "\"" then
       let j = i + 1
-      while j < n && slice(s, j, j + 1) != "\"" do
+      while j < n && slice(s, start: j, end: j + 1) != "\"" do
         j = j + 1
       end
-      toks = append(toks, {t: "str", s: slice(s, i + 1, j), n: 0.0})
+      toks = append(toks, {t: "str", s: slice(s, start: i + 1, end: j), n: 0.0})
       i = min(j + 1, n)
     elsif is_digit(c) || c == "." then
       let j = i
-      while j < n && (is_digit(slice(s, j, j + 1)) || slice(s, j, j + 1) == ".") do
+      while j < n && (is_digit(slice(s, start: j, end: j + 1)) || slice(s, start: j, end: j + 1) == ".") do
         j = j + 1
       end
-      let lit = str_num(slice(s, i, j))
-      toks = append(toks, {t: "num", s: slice(s, i, j), n: lit.v})
+      let lit = str_num(slice(s, start: i, end: j))
+      toks = append(toks, {t: "num", s: slice(s, start: i, end: j), n: lit.v})
       i = j
     elsif is_alpha(c) then
       let j = i
-      while j < n && (is_alpha(slice(s, j, j + 1)) || is_digit(slice(s, j, j + 1))) do
+      while j < n && (is_alpha(slice(s, start: j, end: j + 1)) || is_digit(slice(s, start: j, end: j + 1))) do
         j = j + 1
       end
-      toks = append(toks, {t: "name", s: upper(slice(s, i, j)), n: 0.0})
+      toks = append(toks, {t: "name", s: upper(slice(s, start: i, end: j)), n: 0.0})
       i = j
     elsif c == ">" || c == "<" then
-      let nx = if i + 1 < n then slice(s, i + 1, i + 2) else "" end
+      let nx = if i + 1 < n then slice(s, start: i + 1, end: i + 2) else "" end
       if nx == "=" || (c == "<" && nx == ">") then
         toks = append(toks, {t: "op", s: c ++ nx, n: 0.0})
         i = i + 2
@@ -177,14 +177,14 @@ fn parse_ref(name: string) -> record
   let n = len(name)
   let i = 0
   let col = 0
-  while i < n && letter_val(slice(name, i, i + 1)) >= 0 do
-    col = col * 26 + letter_val(slice(name, i, i + 1)) + 1
+  while i < n && letter_val(slice(name, start: i, end: i + 1)) >= 0 do
+    col = col * 26 + letter_val(slice(name, start: i, end: i + 1)) + 1
     i = i + 1
   end
   if i == 0 || i >= n then
     {ok: false, r: 0, c: 0}
   else
-    let rowpart = str_num(slice(name, i, n))
+    let rowpart = str_num(slice(name, start: i, end: n))
     if !rowpart.ok || rowpart.v < 1.0 then
       {ok: false, r: 0, c: 0}
     else
@@ -198,7 +198,7 @@ fn ref_name(r: num, c: num) -> string
   let n = c + 1
   while n > 0 do
     let d = (n - 1) % 26
-    col = slice(LETTERS, d, d + 1) ++ col
+    col = slice(LETTERS, start: d, end: d + 1) ++ col
     n = (n - 1) / 26
   end
   col ++ str(r + 1)
@@ -282,7 +282,7 @@ fn parse_args(cx: record, toks: list, i0: num) -> record
   let i = i0
   let vals = []
   let err = ""
-  if is_op(toks, i, ")") then
+  if is_op(toks, i, s: ")") then
     {vals: vals, i: i + 1, err: ""}
   else
     let done = false
@@ -291,7 +291,7 @@ fn parse_args(cx: record, toks: list, i0: num) -> record
       let b = tok_at(toks, i + 2)
       let ra = if a.t == "name" then parse_ref(a.s) else {ok: false, r: 0, c: 0} end
       let rb = if b.t == "name" then parse_ref(b.s) else {ok: false, r: 0, c: 0} end
-      if ra.ok && is_op(toks, i + 1, ":") && rb.ok then
+      if ra.ok && is_op(toks, i: i + 1, s: ":") && rb.ok then
         for r in range(min(ra.r, rb.r), max(ra.r, rb.r) + 1) do
           for c in range(min(ra.c, rb.c), max(ra.c, rb.c) + 1) do
             vals = append(vals, get _eval_at(cx, r, c))
@@ -299,13 +299,13 @@ fn parse_args(cx: record, toks: list, i0: num) -> record
         end
         i = i + 3
       else
-        let res = get _expr(cx, toks, i)
+        let res = get _expr(cx, toks, i0: i)
         vals = append(vals, res.v)
         i = res.i
       end
-      if is_op(toks, i, ",") then
+      if is_op(toks, i, s: ",") then
         i = i + 1
-      elsif is_op(toks, i, ")") then
+      elsif is_op(toks, i, s: ")") then
         i = i + 1
         done = true
       else
@@ -324,15 +324,15 @@ fn parse_primary(cx: record, toks: list, i: num) -> record
   elsif t.t == "str" then
     {v: vtext(t.s), i: i + 1}
   elsif t.t == "op" && t.s == "(" then
-    let inner = get _expr(cx, toks, i + 1)
-    if is_op(toks, inner.i, ")") then
+    let inner = get _expr(cx, toks, i0: i + 1)
+    if is_op(toks, i: inner.i, s: ")") then
       {v: inner.v, i: inner.i + 1}
     else
       {v: verr("#SYNTAX"), i: inner.i}
     end
   elsif t.t == "name" then
-    if is_op(toks, i + 1, "(") then
-      let args = parse_args(cx, toks, i + 2)
+    if is_op(toks, i: i + 1, s: "(") then
+      let args = parse_args(cx, toks, i0: i + 2)
       if len(args.err) > 0 then
         {v: verr(args.err), i: args.i}
       else
@@ -341,7 +341,7 @@ fn parse_primary(cx: record, toks: list, i: num) -> record
     else
       let ref = parse_ref(t.s)
       if ref.ok then
-        {v: get _eval_at(cx, ref.r, ref.c), i: i + 1}
+        {v: get _eval_at(cx, r: ref.r, c: ref.c), i: i + 1}
       else
         {v: verr("#NAME?"), i: i + 1}
       end
@@ -352,12 +352,12 @@ fn parse_primary(cx: record, toks: list, i: num) -> record
 end
 
 fn parse_unary(cx: record, toks: list, i: num) -> record
-  if is_op(toks, i, "-") then
-    let inner = parse_unary(cx, toks, i + 1)
+  if is_op(toks, i, s: "-") then
+    let inner = parse_unary(cx, toks, i: i + 1)
     let a = as_num(inner.v)
     {v: if a.k == "err" then a else vnum(-a.n) end, i: inner.i}
-  elsif is_op(toks, i, "+") then
-    parse_unary(cx, toks, i + 1)
+  elsif is_op(toks, i, s: "+") then
+    parse_unary(cx, toks, i: i + 1)
   else
     parse_primary(cx, toks, i)
   end
@@ -365,8 +365,8 @@ end
 
 fn parse_pow(cx: record, toks: list, i: num) -> record
   let a = parse_unary(cx, toks, i)
-  if is_op(toks, a.i, "^") then
-    let b = parse_pow(cx, toks, a.i + 1)
+  if is_op(toks, i: a.i, s: "^") then
+    let b = parse_pow(cx, toks, i: a.i + 1)
     let x = as_num(a.v)
     let y = as_num(b.v)
     let v = if x.k == "err" then x elsif y.k == "err" then y else vnum(pow(x.n, y.n)) end
@@ -377,12 +377,12 @@ fn parse_pow(cx: record, toks: list, i: num) -> record
 end
 
 fn parse_mul(cx: record, toks: list, i0: num) -> record
-  let acc = parse_pow(cx, toks, i0)
+  let acc = parse_pow(cx, toks, i: i0)
   let i = acc.i
   let v = acc.v
-  while is_op(toks, i, "*") || is_op(toks, i, "/") do
+  while is_op(toks, i, s: "*") || is_op(toks, i, s: "/") do
     let op = tok_at(toks, i).s
-    let rhs = parse_pow(cx, toks, i + 1)
+    let rhs = parse_pow(cx, toks, i: i + 1)
     let x = as_num(v)
     let y = as_num(rhs.v)
     if x.k == "err" then v = x
@@ -400,9 +400,9 @@ fn parse_add(cx: record, toks: list, i0: num) -> record
   let acc = parse_mul(cx, toks, i0)
   let i = acc.i
   let v = acc.v
-  while is_op(toks, i, "+") || is_op(toks, i, "-") do
+  while is_op(toks, i, s: "+") || is_op(toks, i, s: "-") do
     let op = tok_at(toks, i).s
-    let rhs = parse_mul(cx, toks, i + 1)
+    let rhs = parse_mul(cx, toks, i0: i + 1)
     let x = as_num(v)
     let y = as_num(rhs.v)
     if x.k == "err" then v = x
@@ -430,7 +430,7 @@ fn parse_cmp(cx: record, toks: list, i0: num) -> record
   let a = parse_add(cx, toks, i0)
   let t = tok_at(toks, a.i)
   if t.t == "op" && (t.s == ">" || t.s == "<" || t.s == ">=" || t.s == "<=" || t.s == "<>" || t.s == "=") then
-    let b = parse_add(cx, toks, a.i + 1)
+    let b = parse_add(cx, toks, i0: a.i + 1)
     let x = as_num(a.v)
     let y = as_num(b.v)
     let v = if x.k == "err" then x
@@ -465,12 +465,12 @@ fn eval_at(cx: record, r: num, c: num) -> record
     let raw = raw_at(cx.cells, r, c)
     if len(raw) == 0 then
       vempty()
-    elsif slice(raw, 0, 1) == "=" then
-      let toks = tokenize(slice(raw, 1, len(raw)))
+    elsif slice(raw, start: 0, end: 1) == "=" then
+      let toks = tokenize(slice(raw, start: 1, end: len(raw)))
       if len(toks) == 0 then
         vempty()
       else
-        let res = parse_cmp({cells: cx.cells, depth: cx.depth + 1}, toks, 0)
+        let res = parse_cmp(cx: {cells: cx.cells, depth: cx.depth + 1}, toks: toks, i0: 0)
         if res.v.k != "err" && res.i < len(toks) then
           verr("#SYNTAX")
         else
@@ -506,7 +506,7 @@ fn group3(digits: string) -> string
     if i > 0 && (n - i) % 3 == 0 then
       out = out ++ ","
     end
-    out = out ++ slice(digits, i, i + 1)
+    out = out ++ slice(digits, start: i, end: i + 1)
   end
   out
 end
@@ -521,7 +521,7 @@ fn fmt_num(x: num) -> string
   if cents > 0 then
     let frac = if cents < 10 then "0" ++ str(cents) else str(cents) end
     if cents % 10 == 0 then
-      frac = slice(frac, 0, 1)
+      frac = slice(frac, start: 0, end: 1)
     end
     body = body ++ "." ++ frac
   end
@@ -538,7 +538,7 @@ fn display(v: record) -> string
 end
 
 fn kind_label(raw: string, v: record) -> string
-  if len(raw) > 0 && slice(raw, 0, 1) == "=" then
+  if len(raw) > 0 && slice(raw, start: 0, end: 1) == "=" then
     if v.k == "err" then "formula · error" else "formula" end
   elsif v.k == "num" then "number"
   elsif v.k == "text" then "text"
@@ -677,7 +677,7 @@ end
 
 // The cell under a pane-local point, or {ok: false}.
 fn cell_at(px: num, py: num) -> record
-  if !point_in(px, py, body_rect) || px < PAD + RHW || px >= PAD + SW - SBW then
+  if !point_in(px, py, r: body_rect) || px < PAD + RHW || px >= PAD + SW - SBW then
     {ok: false, r: 0, c: 0}
   else
     let r = scroll + (py - (GRID_Y + HEAD_H)) / ROW_H
@@ -710,7 +710,7 @@ end
 
 fn is_formula(r: num, c: num) -> bool
   let raw = raw_at(cells, r, c)
-  len(raw) > 0 && slice(raw, 0, 1) == "="
+  len(raw) > 0 && slice(raw, start: 0, end: 1) == "="
 end
 
 // ══ 6. input ══════════════════════════════════════════════════════════════
@@ -728,7 +728,7 @@ let hit = cell_at(mouse_x(), mouse_y())
 let bar_rect = rect(PAD, BAR_Y, SW, BAR_H)
 
 // The undo pill takes the press before anything else looks at it.
-let undo_click = mouse_pressed(0) && point_in(mouse_x(), mouse_y(), undo_r) && len(undo) > 0
+let undo_click = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: undo_r) && len(undo) > 0
 if undo_click then
   cells = last(undo)
   undo = drop_last(undo)
@@ -751,11 +751,11 @@ elsif mouse_pressed(0) then
     end
     if click_count() >= 2 then
       editing = true
-      buf = raw_at(cells, sel_r, sel_c)
+      buf = raw_at(cells, r: sel_r, c: sel_c)
     end
-  elsif point_in(mouse_x(), mouse_y(), bar_rect) && !editing then
+  elsif point_in(px: mouse_x(), py: mouse_y(), r: bar_rect) && !editing then
     editing = true
-    buf = raw_at(cells, sel_r, sel_c)
+    buf = raw_at(cells, r: sel_r, c: sel_c)
   end
 elsif mouse_down(0) && drag_active() && hit.ok && !editing then
   sel_r = hit.r
@@ -765,7 +765,7 @@ end
 // Column / row headers jump the selection to that column / row.
 if mouse_pressed(0) && !editing then
   for c in range(0, COLS) do
-    if point_in(mouse_x(), mouse_y(), rect(col_x(c), GRID_Y, col_w(c), HEAD_H)) then
+    if point_in(px: mouse_x(), py: mouse_y(), r: rect(col_x(c), GRID_Y, col_w(c), HEAD_H)) then
       sel_c = c
       anch_c = c
       sel_r = scroll
@@ -775,7 +775,7 @@ if mouse_pressed(0) && !editing then
 end
 
 if hovered(grid_rect) then
-  scroll = clamp_i(scroll - scroll_y(), 0, ROWS - VIS)
+  scroll = clamp_i(scroll - scroll_y(), lo: 0, hi: ROWS - VIS)
 end
 
 // --- keyboard ------------------------------------------------------------
@@ -805,7 +805,7 @@ if editing then
     moved = true
   else
     if key_pressed("backspace") && len(buf) > 0 then
-      buf = slice(buf, 0, len(buf) - 1)
+      buf = slice(buf, start: 0, end: len(buf) - 1)
     end
     if len(typed) > 0 then
       buf = buf ++ typed
@@ -834,7 +834,7 @@ else
   end
   if key_pressed("return") then
     editing = true
-    buf = raw_at(cells, sel_r, sel_c)
+    buf = raw_at(cells, r: sel_r, c: sel_c)
   end
   if key_pressed("pagedown") then
     dr = VIS
@@ -894,17 +894,17 @@ end
 // A bounded history: 40 snapshots of a 26x8 sheet is cheap, an unbounded one
 // grows for as long as the panel is open.
 while len(undo) > 40 do
-  undo = slice(undo, 1, len(undo))
+  undo = slice(undo, start: 1, end: len(undo))
 end
 
 if moved then
-  sel_r = clamp_i(sel_r + dr, 0, ROWS - 1)
-  sel_c = clamp_i(sel_c + dc, 0, COLS - 1)
+  sel_r = clamp_i(sel_r + dr, lo: 0, hi: ROWS - 1)
+  sel_c = clamp_i(sel_c + dc, lo: 0, hi: COLS - 1)
   if !shift then
     anch_r = sel_r
     anch_c = sel_c
   end
-  scroll = clamp_i(ensure_visible(scroll, sel_r, VIS), 0, ROWS - VIS)
+  scroll = clamp_i(ensure_visible(scroll, selected: sel_r, visible_rows: VIS), lo: 0, hi: ROWS - VIS)
 end
 
 // The selection rectangle, normalised; `multi` is true for more than one cell.
@@ -919,70 +919,70 @@ let multi = selr1 > selr0 || selc1 > selc0
 clear(BG.r, BG.g, BG.b)
 
 // --- masthead ------------------------------------------------------------
-draw_text("LEDGER", {x: PAD, y: 26}, {size: 11, color: ACCENT, spacing: 3.2})
-draw_text("fy26-plan", {x: PAD, y: 44}, {size: 24, color: TEXT})
+draw_text("LEDGER", pos: {x: PAD, y: 26}, style: {size: 11, color: ACCENT, spacing: 3.2})
+draw_text("fy26-plan", pos: {x: PAD, y: 44}, style: {size: 24, color: TEXT})
 let sub = "quarterly model  ·  " ++ str(ROWS) ++ " x " ++ str(COLS) ++ " cells"
-draw_text(sub, {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, {size: 12, color: FAINT})
+draw_text(sub, pos: {x: PAD + text_width("fy26-plan", 24) + 16, y: 53}, style: {size: 12, color: FAINT})
 
 // The mode chip.
 let mode_label = if armed then "UNDO?" elsif editing then "EDIT" else "READY" end
 let mode_col = if armed then #8ab4ff elsif editing then AMBER else ACCENT end
-draw_rect_rounded(chip_r, 11, PANEL)
-draw_rect_outline(chip_r, mode_col, 90)
-draw_circle(chip_r.x + 13, chip_r.y + 11, 3, mode_col.r, mode_col.g, mode_col.b)
-draw_text(mode_label, {x: chip_r.x + 22, y: chip_r.y + 6}, {size: 11, color: mode_col, spacing: 1.2})
+draw_rect_rounded(chip_r, radius: 11, c: PANEL)
+draw_rect_outline(chip_r, c: mode_col, a: 90)
+draw_circle(cx: chip_r.x + 13, cy: chip_r.y + 11, radius: 3, r: mode_col.r, g: mode_col.g, b: mode_col.b)
+draw_text(mode_label, pos: {x: chip_r.x + 22, y: chip_r.y + 6}, style: {size: 11, color: mode_col, spacing: 1.2})
 
 // The undo pill — the mouse half of `esc z`, dimmed when there is no history.
 let can_undo = len(undo) > 0
 let undo_hot = can_undo && hovered(undo_r)
-draw_rect_rounded(undo_r, 11, if undo_hot then #232b39 else PANEL end)
+draw_rect_rounded(undo_r, radius: 11, c: if undo_hot then #232b39 else PANEL end)
 draw_rect_outline(undo_r, if can_undo then LINE else LINE_SOFT end)
 let undo_txt = if can_undo then "undo " ++ str(len(undo)) else "undo" end
-draw_text_center(undo_txt, undo_r.center_x(), undo_r.y + 6, 11,
-  if can_undo then (if undo_hot then TEXT else DIM end) else FAINT end)
+draw_text_center(undo_txt, cx: undo_r.center_x(), y: undo_r.y + 6, size: 11,
+  c: if can_undo then (if undo_hot then TEXT else DIM end) else FAINT end)
 
 // --- formula bar ---------------------------------------------------------
 let addr = ref_name(sel_r, sel_c)
 let addr_w = 66
-draw_rect_rounded(rect(PAD, BAR_Y, SW, BAR_H), 6, SURFACE)
-draw_rect_outline(rect(PAD, BAR_Y, SW, BAR_H), if editing then ACCENT else LINE end,
-  if editing then 210 else 255 end)
+draw_rect_rounded(rect(PAD, BAR_Y, SW, BAR_H), radius: 6, c: SURFACE)
+draw_rect_outline(rect(PAD, BAR_Y, SW, BAR_H), c: if editing then ACCENT else LINE end,
+  a: if editing then 210 else 255 end)
 draw_rect(rect(PAD + addr_w, BAR_Y + 7, 1, BAR_H - 14), LINE)
-draw_text_center(addr, PAD + addr_w / 2, BAR_Y + 13, 13, ACCENT)
-draw_text("fx", {x: PAD + addr_w + 14, y: BAR_Y + 14}, {size: 11, color: FAINT, italic: true})
+draw_text_center(addr, cx: PAD + addr_w / 2, y: BAR_Y + 13, size: 13, c: ACCENT)
+draw_text("fx", pos: {x: PAD + addr_w + 14, y: BAR_Y + 14}, style: {size: 11, color: FAINT, italic: true})
 
 let bar_text_x = PAD + addr_w + 38
 let bar_avail = SW - (bar_text_x - PAD) - 16
-let raw_sel = raw_at(cells, sel_r, sel_c)
+let raw_sel = raw_at(cells, r: sel_r, c: sel_c)
 if editing then
-  draw_text(ellipsize_tail(buf, bar_avail, 13), {x: bar_text_x, y: BAR_Y + 13}, {size: 13, color: TEXT})
+  draw_text(ellipsize_tail(buf, avail_px: bar_avail, size: 13), pos: {x: bar_text_x, y: BAR_Y + 13}, style: {size: 13, color: TEXT})
   if int(time() * 2.0) % 2 == 0 then
     let cx = bar_text_x + min(text_width(buf, 13), bar_avail)
     draw_rect(rect(cx + 1, BAR_Y + 11, 2, 17), ACCENT)
   end
 elsif len(raw_sel) > 0 then
   let c = if is_formula(sel_r, sel_c) then FORMULA else TEXT end
-  draw_text(ellipsize(raw_sel, bar_avail, 13), {x: bar_text_x, y: BAR_Y + 13}, {size: 13, color: c})
+  draw_text(ellipsize(raw_sel, avail_px: bar_avail, size: 13), pos: {x: bar_text_x, y: BAR_Y + 13}, style: {size: 13, color: c})
 else
   draw_text("empty  ·  type to enter a value, or = to start a formula",
-    {x: bar_text_x, y: BAR_Y + 13}, {size: 13, color: FAINT})
+    pos: {x: bar_text_x, y: BAR_Y + 13}, style: {size: 13, color: FAINT})
 end
 
 // --- grid ----------------------------------------------------------------
-draw_rect_rounded(rect(PAD, GRID_Y, SW, GRID_H), 6, SURFACE)
+draw_rect_rounded(rect(PAD, GRID_Y, SW, GRID_H), radius: 6, c: SURFACE)
 
 // column header band
 draw_rect(rect(PAD, GRID_Y, SW, HEAD_H), BAND)
-draw_text_center("#", PAD + RHW / 2, GRID_Y + 11, 11, FAINT)
+draw_text_center("#", cx: PAD + RHW / 2, y: GRID_Y + 11, size: 11, c: FAINT)
 for c in range(0, COLS) do
   let x = col_x(c)
   let on = c >= selc0 && c <= selc1
   if on then
-    draw_rect(rect(x, GRID_Y, col_w(c), HEAD_H), ACCENT_DK, 60)
+    draw_rect(rect(x, GRID_Y, col_w(c), HEAD_H), c: ACCENT_DK, a: 60)
     draw_rect(rect(x, GRID_Y + HEAD_H - 2, col_w(c), 2), ACCENT)
   end
-  draw_text_center(slice(LETTERS, c, c + 1), x + col_w(c) / 2, GRID_Y + 11, 11,
-    if on then ACCENT else DIM end)
+  draw_text_center(slice(LETTERS, start: c, end: c + 1), cx: x + col_w(c) / 2, y: GRID_Y + 11, size: 11,
+    c: if on then ACCENT else DIM end)
 end
 
 // rows
@@ -992,20 +992,20 @@ for i in range(0, VIS) do
   if r < ROWS then
     let y = GRID_Y + HEAD_H + i * ROW_H
     if i % 2 == 1 then
-      draw_rect(rect(PAD, y, SW, ROW_H), BAND, 110)
+      draw_rect(rect(PAD, y, SW, ROW_H), c: BAND, a: 110)
     end
     let rsel = r >= selr0 && r <= selr1
     if rsel then
-      draw_rect(rect(PAD, y, RHW, ROW_H), ACCENT_DK, 60)
+      draw_rect(rect(PAD, y, RHW, ROW_H), c: ACCENT_DK, a: 60)
     end
-    draw_text_center(str(r + 1), PAD + RHW / 2, y + (ROW_H - 11) / 2, 11,
-      if rsel then ACCENT else FAINT end)
+    draw_text_center(str(r + 1), cx: PAD + RHW / 2, y: y + (ROW_H - 11) / 2, size: 11,
+      c: if rsel then ACCENT else FAINT end)
 
     for c in range(0, COLS) do
       let cr = rect(col_x(c), y, col_w(c), ROW_H)
       let inrange = rsel && c >= selc0 && c <= selc1
       if inrange then
-        draw_rect(cr, ACCENT, 26)
+        draw_rect(cr, c: ACCENT, a: 26)
       elsif hover_cell.ok && hover_cell.r == r && hover_cell.c == c then
         // A flat tint, not white-at-low-alpha: the renderer composites in
         // linear space, so even `a: 10` white over this background lands
@@ -1015,9 +1015,9 @@ for i in range(0, VIS) do
 
       let v = val_at(r, c)
       let raw = raw_at(cells, r, c)
-      let fml = len(raw) > 0 && slice(raw, 0, 1) == "="
+      let fml = len(raw) > 0 && slice(raw, start: 0, end: 1) == "="
       if v.k == "err" then
-        draw_rect(cr, ERRC, 15)
+        draw_rect(cr, c: ERRC, a: 15)
       end
       let col = if v.k == "err" then ERRC
       elsif v.k == "text" then (if r == 0 then DIM else TEXT end)
@@ -1034,18 +1034,18 @@ for i in range(0, VIS) do
       end
       if len(txt) > 0 then
         let avail = col_w(c) - 20
-        let shown = ellipsize(txt, avail, 13)
+        let shown = ellipsize(txt, avail_px: avail, size: 13)
         if c == 0 then
-          draw_text(shown, {x: cr.x + 10, y: y + 8}, {size: 13, color: col})
+          draw_text(shown, pos: {x: cr.x + 10, y: y + 8}, style: {size: 13, color: col})
         else
-          draw_text_right(shown, cr.x + col_w(c) - 10, y + 8, 13, col)
+          draw_text_right(shown, right_x: cr.x + col_w(c) - 10, y: y + 8, size: 13, c: col)
         end
       end
       // The formula tick: a 4px corner flag, the classic "this cell is
       // computed" affordance, kept out of the text's way.
       if fml then
-        fill_triangle(cr.x + col_w(c) - 5, y + 1, cr.x + col_w(c) - 1, y + 1,
-          cr.x + col_w(c) - 1, y + 5, ACCENT.r, ACCENT.g, ACCENT.b, 150)
+        fill_triangle(x1: cr.x + col_w(c) - 5, y1: y + 1, x2: cr.x + col_w(c) - 1, y2: y + 1,
+          x3: cr.x + col_w(c) - 1, y3: y + 5, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b, a: 150)
       end
     end
   end
@@ -1065,37 +1065,37 @@ if sel_r >= scroll && sel_r < scroll + VIS then
   let ar = cell_rect(sel_r, sel_c)
   if editing then
     draw_rect(ar, #0b0d12)
-    draw_rect_outline(ar, ACCENT, 255, 2)
+    draw_rect_outline(ar, c: ACCENT, a: 255, width: 2)
     let avail = ar.w - 16
-    let shown = ellipsize_tail(buf, avail, 13)
-    draw_text(shown, {x: ar.x + 8, y: ar.y + 8}, {size: 13, color: TEXT})
+    let shown = ellipsize_tail(buf, avail_px: avail, size: 13)
+    draw_text(shown, pos: {x: ar.x + 8, y: ar.y + 8}, style: {size: 13, color: TEXT})
     if int(time() * 2.0) % 2 == 0 then
       let cx = ar.x + 8 + min(text_width(shown, 13), avail)
       draw_rect(rect(cx + 1, ar.y + 6, 2, 18), ACCENT)
     end
   else
-    draw_rect_outline(ar, ACCENT, 255, 2)
+    draw_rect_outline(ar, c: ACCENT, a: 255, width: 2)
     draw_rect(rect(ar.x + ar.w - 4, ar.y + ar.h - 4, 4, 4), ACCENT)
   end
 end
 
-draw_scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), ROWS, VIS, scroll)
+draw_scrollbar(rect(PAD + SW - SBW, GRID_Y + HEAD_H, SBW - 3, VIS * ROW_H), count: ROWS, rows: VIS, scroll: scroll)
 
 // ══ 8. the inspector rail ═════════════════════════════════════════════════
 
 fn rail_label(text: string, y: num) -> num
-  draw_text(text, {x: RAIL_X + 16, y: y}, {size: 10, color: FAINT, spacing: 2.4})
+  draw_text(text, pos: {x: RAIL_X + 16, y: y}, style: {size: 10, color: FAINT, spacing: 2.4})
   y + 16
 end
 
-draw_rect_rounded(rect(RAIL_X, BAR_Y, RAIL_W, STATUS_Y + STATUS_H - BAR_Y), 6, SURFACE)
+draw_rect_rounded(rect(RAIL_X, BAR_Y, RAIL_W, STATUS_Y + STATUS_H - BAR_Y), radius: 6, c: SURFACE)
 draw_rect_outline(rect(RAIL_X, BAR_Y, RAIL_W, STATUS_Y + STATUS_H - BAR_Y), LINE)
 
 let sel_val = val_at(sel_r, sel_c)
 let ry = BAR_Y + 18
-draw_text(addr, {x: RAIL_X + 16, y: ry}, {size: 22, color: ACCENT})
-draw_text(kind_label(raw_sel, sel_val), {x: RAIL_X + 16 + text_width(addr, 22) + 12, y: ry + 9},
-  {size: 11, color: FAINT})
+draw_text(addr, pos: {x: RAIL_X + 16, y: ry}, style: {size: 22, color: ACCENT})
+draw_text(kind_label(raw_sel, sel_val), pos: {x: RAIL_X + 16 + text_width(addr, 22) + 12, y: ry + 9},
+  style: {size: 11, color: FAINT})
 ry = ry + 42
 draw_rect(rect(RAIL_X + 16, ry, RAIL_W - 32, 1), LINE)
 ry = ry + 16
@@ -1103,12 +1103,12 @@ ry = ry + 16
 ry = rail_label("CONTENT", ry)
 let content_chars = (RAIL_W - 40) / 7
 if len(raw_sel) == 0 then
-  draw_text("—", {x: RAIL_X + 16, y: ry}, {size: 12, color: FAINT})
+  draw_text("—", pos: {x: RAIL_X + 16, y: ry}, style: {size: 12, color: FAINT})
   ry = ry + 18
 else
-  let lines = preview(raw_sel, content_chars, 4).lines
+  let lines = preview(raw_sel, max_chars: content_chars, max_lines: 4).lines
   for ln in lines do
-    draw_text(ln, {x: RAIL_X + 16, y: ry}, {size: 12,
+    draw_text(ln, pos: {x: RAIL_X + 16, y: ry}, style: {size: 12,
       color: if is_formula(sel_r, sel_c) then FORMULA else TEXT end})
     ry = ry + 17
   end
@@ -1117,7 +1117,7 @@ ry = ry + 10
 
 ry = rail_label("VALUE", ry)
 let shown_val = if len(display(sel_val)) > 0 then display(sel_val) else "—" end
-draw_text(ellipsize(shown_val, RAIL_W - 32, 17), {x: RAIL_X + 16, y: ry}, {size: 17,
+draw_text(ellipsize(shown_val, avail_px: RAIL_W - 32, size: 17), pos: {x: RAIL_X + 16, y: ry}, style: {size: 17,
   color: if sel_val.k == "err" then ERRC elsif sel_val.k == "empty" then FAINT else TEXT end})
 ry = ry + 32
 
@@ -1153,12 +1153,12 @@ if any_num && peak > 0.0 && !multi then
       let bx = RAIL_X + 16 + i * bw + 6
       let bcol = if v.n < 0.0 then NEG else ACCENT end
       if v.n < 0.0 then
-        draw_rect_rounded(rect(bx, base + 1, bw - 12, hgt), 2, bcol, 190)
+        draw_rect_rounded(rect(bx, base + 1, bw - 12, hgt), radius: 2, c: bcol, a: 190)
       else
-        draw_rect_rounded(rect(bx, base - hgt, bw - 12, hgt), 2, bcol, 190)
+        draw_rect_rounded(rect(bx, base - hgt, bw - 12, hgt), radius: 2, c: bcol, a: 190)
       end
     end
-    draw_text_center("Q" ++ str(i + 1), RAIL_X + 16 + i * bw + bw / 2, ry + ch + 6, 10, FAINT)
+    draw_text_center("Q" ++ str(i + 1), cx: RAIL_X + 16 + i * bw + bw / 2, y: ry + ch + 6, size: 10, c: FAINT)
   end
   ry = ry + ch + 26
 end
@@ -1179,8 +1179,8 @@ if multi then
     ["max", display(agg(picked, "max"))],
   ]
   for pair in rows_out do
-    draw_text(pair[0], {x: RAIL_X + 16, y: ry}, {size: 12, color: DIM})
-    draw_text_right(ellipsize(pair[1], RAIL_W - 90, 12), RAIL_X + RAIL_W - 16, ry, 12, TEXT)
+    draw_text(pair[0], pos: {x: RAIL_X + 16, y: ry}, style: {size: 12, color: DIM})
+    draw_text_right(ellipsize(pair[1], avail_px: RAIL_W - 90, size: 12), right_x: RAIL_X + RAIL_W - 16, y: ry, size: 12, c: TEXT)
     ry = ry + 18
   end
   ry = ry + 12
@@ -1208,15 +1208,15 @@ let fy = ky - 32 - fns_h
 draw_rect(rect(RAIL_X + 16, fy - 16, RAIL_W - 32, 1), LINE)
 fy = rail_label("FUNCTIONS", fy)
 for line in fnrows do
-  draw_text(line, {x: RAIL_X + 16, y: fy}, {size: 12, color: DIM})
+  draw_text(line, pos: {x: RAIL_X + 16, y: fy}, style: {size: 12, color: DIM})
   fy = fy + 18
 end
 
 draw_rect(rect(RAIL_X + 16, ky - 16, RAIL_W - 32, 1), LINE)
 ky = rail_label("KEYS", ky)
 for kr in keyrows do
-  draw_text(kr[0], {x: RAIL_X + 16, y: ky}, {size: 12, color: DIM})
-  draw_text_right(kr[1], RAIL_X + RAIL_W - 16, ky, 12, FAINT)
+  draw_text(kr[0], pos: {x: RAIL_X + 16, y: ky}, style: {size: 12, color: DIM})
+  draw_text_right(kr[1], right_x: RAIL_X + RAIL_W - 16, y: ky, size: 12, c: FAINT)
   ky = ky + 17
 end
 
@@ -1230,7 +1230,7 @@ for r in range(0, ROWS) do
     let raw = raw_at(cells, r, c)
     if len(raw) > 0 then
       n_filled = n_filled + 1
-      if slice(raw, 0, 1) == "=" then
+      if slice(raw, start: 0, end: 1) == "=" then
         n_formula = n_formula + 1
       end
     end
@@ -1240,19 +1240,19 @@ for r in range(0, ROWS) do
   end
 end
 
-draw_rect_rounded(rect(PAD, STATUS_Y, SW, 32), 6, PANEL)
+draw_rect_rounded(rect(PAD, STATUS_Y, SW, 32), radius: 6, c: PANEL)
 let left_parts = [
   str(n_filled) ++ " filled",
   str(n_formula) ++ " formulas",
   str(edits) ++ (if edits == 1 then " edit" else " edits" end),
   "rows " ++ str(scroll + 1) ++ "–" ++ str(min(scroll + VIS, ROWS)),
 ]
-draw_text(fit_parts(left_parts, SW - 300, 11), {x: PAD + 14, y: STATUS_Y + 10},
-  {size: 11, color: DIM})
+draw_text(fit_parts(parts: left_parts, avail_px: SW - 300, size: 11), pos: {x: PAD + 14, y: STATUS_Y + 10},
+  style: {size: 11, color: DIM})
 let err_txt = if n_err > 0 then str(n_err) ++ " error" ++ (if n_err == 1 then "" else "s" end)
 else "no errors" end
 let err_col = if n_err > 0 then ERRC else ACCENT end
-draw_circle(PAD + SW - 250, STATUS_Y + 16, 3, err_col.r, err_col.g, err_col.b)
-draw_text(err_txt, {x: PAD + SW - 240, y: STATUS_Y + 10}, {size: 11,
+draw_circle(cx: PAD + SW - 250, cy: STATUS_Y + 16, radius: 3, r: err_col.r, g: err_col.g, b: err_col.b)
+draw_text(err_txt, pos: {x: PAD + SW - 240, y: STATUS_Y + 10}, style: {size: 11,
   color: if n_err > 0 then ERRC else DIM end})
-draw_text_right("recalc #" ++ str(rev), PAD + SW - 14, STATUS_Y + 10, 11, FAINT)
+draw_text_right("recalc #" ++ str(rev), right_x: PAD + SW - 14, y: STATUS_Y + 10, size: 11, c: FAINT)

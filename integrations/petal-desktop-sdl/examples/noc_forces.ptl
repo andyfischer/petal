@@ -113,7 +113,7 @@ clear(20, 20, 30)
 for i in range(0, 8) do
   let gy = i * int(sh) / 8
   let gb = 30 + i * 3
-  draw_rect(0, gy, int(sw), int(sh) / 8 + 1, 20, 20, gb)
+  draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 20, g: 20, b: gb)
 end
 
 // Wind indicator
@@ -128,11 +128,11 @@ if abs(wind_x) > 5.0 then
     arrow_x + arrow_len * dir - 10 * dir, arrow_y - 5, 200, 200, 100)
   draw_line(arrow_x + arrow_len * dir, arrow_y,
     arrow_x + arrow_len * dir - 10 * dir, arrow_y + 5, 200, 200, 100)
-  draw_text("WIND", arrow_x - 15, arrow_y - 20, 12, 200, 200, 100)
+  draw_text("WIND", x: arrow_x - 15, y: arrow_y - 20, size: 12, r: 200, g: 200, b: 100)
 end
 
 // Ground
-draw_rect(0, int(ground_y), int(sw), int(sh) - int(ground_y), 40, 50, 35)
+draw_rect(x: 0, y: int(ground_y), w: int(sw), h: int(sh) - int(ground_y), r: 40, g: 50, b: 35)
 draw_line(0, int(ground_y), int(sw), int(ground_y), 70, 90, 50)
 
 // Draw objects
@@ -156,15 +156,15 @@ for obj in objects do
   cb = min(255, cb)
 
   // Shadow
-  draw_circle(int(obj.x) + 3, int(ground_y) - 2, max(3, radius / 2), 20, 25, 15)
+  draw_circle(cx: int(obj.x) + 3, cy: int(ground_y) - 2, radius: max(3, radius / 2), r: 20, g: 25, b: 15)
 
   // Object glow
-  draw_circle(int(obj.x), int(obj.y), radius + 3, cr / 4, cg / 4, cb / 4)
+  draw_circle(cx: int(obj.x), cy: int(obj.y), radius: radius + 3, r: cr / 4, g: cg / 4, b: cb / 4)
   // Object body
-  draw_circle(int(obj.x), int(obj.y), radius, cr, cg, cb)
+  draw_circle(cx: int(obj.x), cy: int(obj.y), radius: radius, r: cr, g: cg, b: cb)
   // Highlight
-  draw_circle(int(obj.x) - radius / 3, int(obj.y) - radius / 3,
-    max(2, radius / 3), min(255, cr + 80), min(255, cg + 80), min(255, cb + 80))
+  draw_circle(cx: int(obj.x) - radius / 3, cy: int(obj.y) - radius / 3,
+    radius: max(2, radius / 3), r: min(255, cr + 80), g: min(255, cg + 80), b: min(255, cb + 80))
 
   // Velocity vector
   let vlen = min(30.0, sqrt(obj.vx * obj.vx + obj.vy * obj.vy) * 0.08)
@@ -177,6 +177,6 @@ for obj in objects do
   end
 end
 
-draw_text("Forces: Gravity, Wind & Friction", 10, 10, 16, 100, 100, 120)
-draw_text("Click left/right to apply wind", 10, 30, 12, 60, 60, 80)
-draw_text("Larger objects = more mass", 10, 46, 12, 60, 60, 80)
+draw_text("Forces: Gravity, Wind & Friction", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Click left/right to apply wind", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
+draw_text("Larger objects = more mass", x: 10, y: 46, size: 12, r: 60, g: 60, b: 80)

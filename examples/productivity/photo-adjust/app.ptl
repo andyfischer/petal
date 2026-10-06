@@ -51,7 +51,7 @@ fn iclamp(v: num, lo: num, hi: num) -> num
 end
 
 fn smoothstep(e0: num, e1: num, x: num)
-  let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0)
+  let t = clamp((x - e0) / (e1 - e0), lo: 0.0, hi: 1.0)
   t * t * (3.0 - 2.0 * t)
 end
 
@@ -105,9 +105,9 @@ fn lum(c: record)
 end
 
 fn pack(c: record) -> int
-  let r = int(clamp(c.r, 0.0, 1.0) * 255.0)
-  let g = int(clamp(c.g, 0.0, 1.0) * 255.0)
-  let b = int(clamp(c.b, 0.0, 1.0) * 255.0)
+  let r = int(clamp(c.r, lo: 0.0, hi: 1.0) * 255.0)
+  let g = int(clamp(c.g, lo: 0.0, hi: 1.0) * 255.0)
+  let b = int(clamp(c.b, lo: 0.0, hi: 1.0) * 255.0)
   r * 65536 + g * 256 + b
 end
 
@@ -127,25 +127,25 @@ fn scene_harbour(u: num, v: num) -> record
   let land = horizon - 0.055 - 0.040 * sin(u * 4.1 + 0.6) - 0.030 * fbm(u * 3.0, 4.0)
   if v < horizon then
     let t = v / horizon
-    let sky = cmix(fc(0.99, 0.66, 0.33), fc(0.10, 0.12, 0.31), pow(t, 0.42))
+    let sky = cmix(fc(0.99, 0.66, 0.33), fc(0.10, 0.12, 0.31), t: pow(t, 0.42))
     let dx = (u - 0.66) * 1.55
     let dy = (v - horizon + 0.015) * 3.0
     let glow = exp(-sqrt(dx * dx + dy * dy) * 4.2)
-    let out = cglow(sky, fc(1.0, 0.74, 0.38), glow * 1.05)
-    let cl = smoothstep(0.48, 0.78, fbm(u * 3.4 + 1.0, v * 8.0)) * (1.0 - t) * 0.55
-    out = cmix(out, fc(0.70, 0.40, 0.46), cl)
+    let out = cglow(a: sky, c: fc(1.0, 0.74, 0.38), s: glow * 1.05)
+    let cl = smoothstep(0.48, 0.78, x: fbm(u * 3.4 + 1.0, v * 8.0)) * (1.0 - t) * 0.55
+    out = cmix(out, fc(0.70, 0.40, 0.46), t: cl)
     if v > land then
       let shade = 0.10 + 0.12 * fbm(u * 6.0, v * 9.0)
-      out = cmix(fc(0.07, 0.07, 0.12), fc(0.16, 0.13, 0.17), shade * 3.0)
+      out = cmix(fc(0.07, 0.07, 0.12), fc(0.16, 0.13, 0.17), t: shade * 3.0)
     end
     out
   else
     let t = (v - horizon) / (1.0 - horizon)
-    let water = cmix(fc(0.52, 0.34, 0.30), fc(0.045, 0.055, 0.115), pow(t, 0.55))
+    let water = cmix(fc(0.52, 0.34, 0.30), fc(0.045, 0.055, 0.115), t: pow(t, 0.55))
     let band = exp(-abs(u - 0.66) * 4.4)
     let rip = sin(v * 130.0 + sin(u * 9.0 + v * 20.0) * 2.4)
     let spec = max(0.0, rip) * band * 0.55 * (1.0 - t * 0.65)
-    let out = cglow(water, fc(1.0, 0.72, 0.36), spec)
+    let out = cglow(a: water, c: fc(1.0, 0.72, 0.36), s: spec)
     let chop = (fbm(u * 9.0, v * 26.0) - 0.5) * 0.10 * (0.4 + t)
     cadd(out, fc(chop, chop * 0.95, chop * 0.9))
   end
@@ -155,7 +155,7 @@ fn scene_alpine(u: num, v: num) -> record
   let horizon = 0.70
   if v < horizon then
     let t = v / horizon
-    let sky = cmix(fc(0.90, 0.93, 0.96), fc(0.45, 0.57, 0.72), pow(t, 0.85))
+    let sky = cmix(fc(0.90, 0.93, 0.96), fc(0.45, 0.57, 0.72), t: pow(t, 0.85))
     var out = sky
     // three receding ridges, each washed further into the fog
     for k in range(0, 3) do
@@ -165,19 +165,19 @@ fn scene_alpine(u: num, v: num) -> record
       amp * 0.9 * fbm(u * (3.4 + float(k) * 1.8) + float(k) * 3.0, 2.0)
       if v > ridge then
         let depth = (v - ridge) * 5.0
-        let rock = cmix(fc(0.44, 0.49, 0.58), fc(0.19, 0.24, 0.32), clamp(depth, 0.0, 1.0))
-        let snow = smoothstep(0.015, 0.075, ridge + 0.075 - v) * smoothstep(0.36, 0.29, ridge)
-        let lit = cmix(rock, fc(0.95, 0.96, 0.99), snow * 0.85)
+        let rock = cmix(fc(0.44, 0.49, 0.58), fc(0.19, 0.24, 0.32), t: clamp(depth, lo: 0.0, hi: 1.0))
+        let snow = smoothstep(0.015, 0.075, x: ridge + 0.075 - v) * smoothstep(0.36, 0.29, x: ridge)
+        let lit = cmix(rock, fc(0.95, 0.96, 0.99), t: snow * 0.85)
         let fogv = 0.60 - float(k) * 0.23
-        set out = cmix(lit, fc(0.85, 0.89, 0.93), fogv)
+        set out = cmix(lit, fc(0.85, 0.89, 0.93), t: fogv)
       end
     end
     // the fog bank itself, thickest just under the last ridge
-    set out = cmix(out, fc(0.88, 0.91, 0.94), exp(-abs(v - (horizon - 0.05)) * 13.0) * 0.75)
+    set out = cmix(out, fc(0.88, 0.91, 0.94), t: exp(-abs(v - (horizon - 0.05)) * 13.0) * 0.75)
     out
   else
     let t = (v - horizon) / (1.0 - horizon)
-    var out = cmix(fc(0.80, 0.84, 0.87), fc(0.13, 0.19, 0.18), pow(t, 0.55))
+    var out = cmix(fc(0.80, 0.84, 0.87), fc(0.13, 0.19, 0.18), t: pow(t, 0.55))
     // far tree line, then a nearer, darker one
     for k in range(0, 2) do
       let n = if k == 0 then 15.0 else 7.0 end
@@ -185,12 +185,12 @@ fn scene_alpine(u: num, v: num) -> record
       let cell = fract(u * n)
       let wid = 0.42 + 0.46 * hash2(idx, 9.0)
       let hgt = (0.055 + 0.075 * hash2(idx, 3.0)) * (1.0 + float(k) * 1.5)
-      let taper = clamp(abs(cell - 0.5) * 2.0 / wid, 0.0, 1.0)
+      let taper = clamp(abs(cell - 0.5) * 2.0 / wid, lo: 0.0, hi: 1.0)
       let top = horizon + 0.012 + float(k) * 0.10 + hgt * taper
       if v > top then
         let dark = if k == 0 then fc(0.15, 0.22, 0.19) else fc(0.07, 0.12, 0.11) end
         let wash = if k == 0 then max(0.0, 0.50 - t * 1.5) else max(0.0, 0.20 - t * 1.1) end
-        set out = cmix(dark, fc(0.82, 0.86, 0.90), wash)
+        set out = cmix(dark, fc(0.82, 0.86, 0.90), t: wash)
       end
     end
     out
@@ -201,7 +201,7 @@ end
 // scene_neon would bounce between the two branches forever.
 fn scene_neon_upper(u: num, v: num) -> record
   let ground = 0.70
-  var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(clamp(v / ground, 0.0, 1.0), 0.5))
+  var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), t: pow(clamp(v / ground, lo: 0.0, hi: 1.0), 0.5))
   let bi = floor(u * 7.0)
   let bf = fract(u * 7.0)
   let btop = 0.06 + 0.22 * hash2(bi, 11.0)
@@ -213,20 +213,20 @@ fn scene_neon_upper(u: num, v: num) -> record
     let lit = hash2(bi * 13.0 + wx, wy)
     if lit > 0.63 then
       let warm = hash2(wx + 7.0, wy + 2.0)
-      set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), warm), 0.8)
+      set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), t: warm), 0.8)
     end
   end
   let d1 = sqrt(pow((u - 0.22) * 1.0, 2.0) + pow((v - 0.40) * 1.9, 2.0))
   let d2 = sqrt(pow((u - 0.79) * 1.0, 2.0) + pow((v - 0.26) * 1.9, 2.0))
-  set out = cglow(out, fc(1.0, 0.22, 0.62), exp(-d1 * 9.0) * 1.5)
-  set out = cglow(out, fc(0.20, 0.95, 1.0), exp(-d2 * 10.0) * 1.3)
+  set out = cglow(a: out, c: fc(1.0, 0.22, 0.62), s: exp(-d1 * 9.0) * 1.5)
+  set out = cglow(a: out, c: fc(0.20, 0.95, 1.0), s: exp(-d2 * 10.0) * 1.3)
   out
 end
 
 fn scene_neon(u: num, v: num) -> record
   let ground = 0.70
   if v < ground then
-    var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), pow(v / ground, 0.5))
+    var out = cmix(fc(0.13, 0.11, 0.19), fc(0.035, 0.036, 0.062), t: pow(v / ground, 0.5))
     let bi = floor(u * 7.0)
     let bf = fract(u * 7.0)
     let btop = 0.06 + 0.22 * hash2(bi, 11.0)
@@ -244,15 +244,15 @@ fn scene_neon(u: num, v: num) -> record
         let iny = (v - btop) * 34.0 - wy
         if lit > 0.63 && inx > 0.24 && inx < 0.76 && iny > 0.28 && iny < 0.72 then
           let warm = hash2(wx + 7.0, wy + 2.0)
-          set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), warm), 0.55 + 0.45 * lit)
+          set out = cscale(cmix(fc(1.0, 0.82, 0.48), fc(0.62, 0.86, 1.0), t: warm), 0.55 + 0.45 * lit)
         end
       end
     end
     // two neon signs
     let d1 = sqrt(pow((u - 0.22) * 1.0, 2.0) + pow((v - 0.40) * 1.9, 2.0))
     let d2 = sqrt(pow((u - 0.79) * 1.0, 2.0) + pow((v - 0.26) * 1.9, 2.0))
-    set out = cglow(out, fc(1.0, 0.22, 0.62), exp(-d1 * 9.0) * 1.5)
-    set out = cglow(out, fc(0.20, 0.95, 1.0), exp(-d2 * 10.0) * 1.3)
+    set out = cglow(a: out, c: fc(1.0, 0.22, 0.62), s: exp(-d1 * 9.0) * 1.5)
+    set out = cglow(a: out, c: fc(0.20, 0.95, 1.0), s: exp(-d2 * 10.0) * 1.3)
     if abs(u - 0.22) < 0.030 && abs(v - 0.40) < 0.075 then
       set out = fc(1.0, 0.55, 0.80)
     end
@@ -264,7 +264,7 @@ fn scene_neon(u: num, v: num) -> record
     // wet asphalt: a smeared, rippled reflection of the block above
     let t = (v - ground) / (1.0 - ground)
     let mirror = ground - t * 0.55 + sin(v * 70.0 + u * 6.0) * 0.010
-    let src = scene_neon_upper(u + sin(v * 45.0) * 0.012, clamp(mirror, 0.02, ground - 0.004))
+    let src = scene_neon_upper(u + sin(v * 45.0) * 0.012, clamp(mirror, lo: 0.02, hi: ground - 0.004))
     let refl = cscale(src, 0.42 * (1.0 - t * 0.55))
     let road = cmix(fc(0.060, 0.058, 0.080), fc(0.024, 0.024, 0.036), t)
     let out = cadd(road, refl)
@@ -279,29 +279,29 @@ fn scene_desert(u: num, v: num) -> record
   (0.45 + 0.75 * fbm(u * 1.9, 7.0)) - 0.016 * fbm(u * 6.0, 3.0)
   if v < horizon then
     let t = v / horizon
-    let sky = cmix(fc(0.09, 0.27, 0.62), fc(0.90, 0.89, 0.82), pow(t, 1.5))
-    var out = cglow(sky, fc(1.0, 0.95, 0.80), exp(-abs(u - 0.40) * 1.6) * pow(t, 3.0) * 0.55)
-    let cl = smoothstep(0.58, 0.82, fbm(u * 2.4, v * 5.5 + 2.0)) * (1.0 - t) * 0.60
-    set out = cmix(out, fc(0.96, 0.97, 0.98), cl)
+    let sky = cmix(fc(0.09, 0.27, 0.62), fc(0.90, 0.89, 0.82), t: pow(t, 1.5))
+    var out = cglow(a: sky, c: fc(1.0, 0.95, 0.80), s: exp(-abs(u - 0.40) * 1.6) * pow(t, 3.0) * 0.55)
+    let cl = smoothstep(0.58, 0.82, x: fbm(u * 2.4, v * 5.5 + 2.0)) * (1.0 - t) * 0.60
+    set out = cmix(out, fc(0.96, 0.97, 0.98), t: cl)
     if v > mesa then
-      let rock = cmix(fc(0.46, 0.36, 0.34), fc(0.60, 0.48, 0.42), fbm(u * 7.0, 3.0))
-      set out = cmix(rock, fc(0.86, 0.86, 0.82), 0.52)
+      let rock = cmix(fc(0.46, 0.36, 0.34), fc(0.60, 0.48, 0.42), t: fbm(u * 7.0, 3.0))
+      set out = cmix(rock, fc(0.86, 0.86, 0.82), t: 0.52)
     end
     out
   else
     let t = (v - horizon) / (1.0 - horizon)
-    var out = cmix(fc(0.80, 0.68, 0.48), fc(0.50, 0.38, 0.24), pow(t, 0.55))
+    var out = cmix(fc(0.80, 0.68, 0.48), fc(0.50, 0.38, 0.24), t: pow(t, 0.55))
     let ripple = (fbm(u * 13.0, v * 34.0) - 0.5) * 0.11
     set out = cadd(out, fc(ripple, ripple * 0.86, ripple * 0.62))
-    set out = cmix(out, fc(0.88, 0.87, 0.81), exp(-t * 22.0) * 0.55)
+    set out = cmix(out, fc(0.88, 0.87, 0.81), t: exp(-t * 22.0) * 0.55)
     // the highway, converging on the vanishing point
     let half = 0.007 + t * t * 0.205
     let centre = 0.50 + t * t * 0.045
     let dx = abs(u - centre)
     if dx < half then
-      let asphalt = cmix(fc(0.36, 0.35, 0.36), fc(0.17, 0.17, 0.19), pow(t, 0.7))
+      let asphalt = cmix(fc(0.36, 0.35, 0.36), fc(0.17, 0.17, 0.19), t: pow(t, 0.7))
       let grit = (hash2(floor(u * 120.0), floor(v * 90.0)) - 0.5) * 0.05
-      set out = cmix(cadd(asphalt, fc(grit, grit, grit)), out, smoothstep(half * 0.86, half, dx))
+      set out = cmix(cadd(asphalt, fc(grit, grit, grit)), out, t: smoothstep(half * 0.86, half, x: dx))
       if abs(dx - half * 0.80) < max(0.0015, half * 0.055) then
         set out = fc(0.90, 0.88, 0.84)
       end
@@ -317,12 +317,12 @@ fn scene_orchard(u: num, v: num) -> record
   let horizon = 0.38
   if v < horizon then
     let t = v / horizon
-    let sky = cmix(fc(0.55, 0.71, 0.87), fc(0.98, 0.95, 0.86), pow(t, 0.8))
+    let sky = cmix(fc(0.55, 0.71, 0.87), fc(0.98, 0.95, 0.86), t: pow(t, 0.8))
     let sun = exp(-sqrt(pow((u - 0.78) * 1.3, 2.0) + pow((v - 0.17) * 1.7, 2.0)) * 8.5)
-    cglow(sky, fc(1.0, 0.96, 0.80), sun * 0.60)
+    cglow(a: sky, c: fc(1.0, 0.96, 0.80), s: sun * 0.60)
   else
     let t = (v - horizon) / (1.0 - horizon)
-    var out = cmix(fc(0.62, 0.68, 0.42), fc(0.15, 0.28, 0.14), pow(t, 0.55))
+    var out = cmix(fc(0.62, 0.68, 0.42), fc(0.15, 0.28, 0.14), t: pow(t, 0.55))
     let mow = 0.045 * sin(v * 46.0 + sin(u * 3.0) * 1.5) * (0.3 + t)
     set out = cadd(out, fc(mow * 0.7, mow, mow * 0.4))
     // five rows of trees, drawn far to near so the near ones occlude
@@ -341,8 +341,8 @@ fn scene_orchard(u: num, v: num) -> record
         let rr = dx * dx * 4.0 + pow(dy * 2.0 - 1.0, 2.0)
         if rr < 1.0 then
           let shade = 0.16 + 0.42 * hash2(idx, float(k) + 11.0) + 0.30 * (1.0 - dx)
-          let leaf = cmix(fc(0.09, 0.20, 0.09), fc(0.44, 0.60, 0.25), clamp(shade, 0.0, 1.0))
-          set out = cmix(leaf, fc(0.90, 0.92, 0.84), max(0.0, 0.42 - f * 0.55))
+          let leaf = cmix(fc(0.09, 0.20, 0.09), fc(0.44, 0.60, 0.25), t: clamp(shade, lo: 0.0, hi: 1.0))
+          set out = cmix(leaf, fc(0.90, 0.92, 0.84), t: max(0.0, 0.42 - f * 0.55))
         end
       end
       // trunks, only close enough to resolve
@@ -351,7 +351,7 @@ fn scene_orchard(u: num, v: num) -> record
       end
     end
     // morning mist hugging the far rows
-    set out = cmix(out, fc(0.94, 0.93, 0.86), exp(-abs(v - (horizon + 0.03)) * 30.0) * 0.60)
+    set out = cmix(out, fc(0.94, 0.93, 0.86), t: exp(-abs(v - (horizon + 0.03)) * 30.0) * 0.60)
     let gr = (fbm(u * 15.0, v * 28.0) - 0.5) * 0.09 * (0.3 + t)
     cadd(out, fc(gr, gr * 1.1, gr * 0.7))
   end
@@ -459,7 +459,7 @@ fn develop(c0: record, a: record, u: num, v: num, gain: num) -> record
     let dx = (u - 0.5) * 1.18
     let dy = (v - 0.5)
     let d = sqrt(dx * dx + dy * dy) * 1.72
-    set c = cscale(c, 1.0 - a.vg * 0.95 * smoothstep(0.34, 1.08, d))
+    set c = cscale(c, 1.0 - a.vg * 0.95 * smoothstep(0.34, 1.08, x: d))
   end
 
   c
@@ -470,7 +470,7 @@ end
 fn build_base(id: num, gw: num, gh: num) -> list
   let img = for j in range(0, gh) do
     let row = for i in range(0, gw) do
-      pack(sample(id, (float(i) + 0.5) / float(gw), (float(j) + 0.5) / float(gh)))
+      pack(sample(id, u: (float(i) + 0.5) / float(gw), v: (float(j) + 0.5) / float(gh)))
     end
     row
   end
@@ -524,7 +524,7 @@ fn analyse(img: list) -> record
   for row in img do
     for p in row do
       let l = ((p / 65536) * 54 + ((p / 256) % 256) * 183 + (p % 256) * 19) / 256
-      set bins[iclamp(l * 40 / 256, 0, 39)] = bins[iclamp(l * 40 / 256, 0, 39)] + 1
+      set bins[iclamp(l * 40 / 256, lo: 0, hi: 39)] = bins[iclamp(l * 40 / 256, lo: 0, hi: 39)] + 1
       set total = total + l
       set n = n + 1
       if l <= 2 then
@@ -573,7 +573,7 @@ state recomputes = 0
 // ── Drawing helpers ──────────────────────────────────────────────────────
 
 fn cap(s: string, x: num, y: num, size: num, c: record, sp: num)
-  draw_text(s, {x: x, y: y}, {size: size, color: c, spacing: sp})
+  draw_text(s, pos: {x: x, y: y}, style: {size: size, color: c, spacing: sp})
 end
 
 fn body(s: string, x: num, y: num, size: num, c: record)
@@ -581,7 +581,7 @@ fn body(s: string, x: num, y: num, size: num, c: record)
 end
 
 fn hline(x: num, y: num, w: num, c: record)
-  draw_rect(x, y, w, 1, c.r, c.g, c.b)
+  draw_rect(x, y, w, h: 1, r: c.r, g: c.g, b: c.b)
 end
 
 fn draw_img(img: list, x: num, y: num, cw: num, ch: num, cs: num, from_col: num, to_col: num)
@@ -590,7 +590,7 @@ fn draw_img(img: list, x: num, y: num, cw: num, ch: num, cs: num, from_col: num,
     let ry = y + j * cs
     for i in range(from_col, to_col) do
       let p = row[i]
-      draw_rect(x + i * cs, ry, cs, cs, p / 65536, (p / 256) % 256, p % 256)
+      draw_rect(x: x + i * cs, y: ry, w: cs, h: cs, r: p / 65536, g: (p / 256) % 256, b: p % 256)
     end
   end
 end
@@ -612,10 +612,10 @@ if base_sig != want_base then
   // Scanning a negative is the expensive half, so each one is kept once it
   // has been read: revisiting a photo in the library is instant.
   if len(negatives[photo]) == 0 then
-    negatives[photo] = build_base(photo, GRID_W, GRID_H)
+    negatives[photo] = build_base(id: photo, gw: GRID_W, gh: GRID_H)
   end
   base_img = negatives[photo]
-  base_half = halve(base_img, GRID_W, GRID_H)
+  base_half = halve(img: base_img, gw: GRID_W, gh: GRID_H)
   base_mean = analyse(base_img).mean
   base_sig = want_base
 end
@@ -625,11 +625,11 @@ let live = dragging >= 0 && dragging < 100
 let want_dev = sig_of(photo, adj)
 if live then
   if draft_sig != want_dev then
-    draft_img = build_dev(base_half, adj, GRID_W / 2, GRID_H / 2)
+    draft_img = build_dev(base: base_half, vals: adj, gw: GRID_W / 2, gh: GRID_H / 2)
     draft_sig = want_dev
   end
 elsif dev_sig != want_dev then
-  dev_img = build_dev(base_img, adj, GRID_W, GRID_H)
+  dev_img = build_dev(base: base_img, vals: adj, gw: GRID_W, gh: GRID_H)
   hist = analyse(dev_img)
   dev_sig = want_dev
   recomputes = recomputes + 1
@@ -637,30 +637,30 @@ end
 let want_thumb = "{THUMB_W}x{THUMB_H}"
 if thumb_sig != want_thumb then
   thumbs = for k in range(0, len(PHOTOS)) do
-    build_base(k, THUMB_W, THUMB_H)
+    build_base(id: k, gw: THUMB_W, gh: THUMB_H)
   end
   thumb_sig = want_thumb
 end
 
 // ── Top bar ──────────────────────────────────────────────────────────────
-draw_rect(0, 0, W, TOP_H, RAIL.r, RAIL.g, RAIL.b)
-hline(0, TOP_H - 1, W, LINE)
-draw_rect(24, 22, 4, 20, ACCENT.r, ACCENT.g, ACCENT.b)
-cap("APERTURE", 40, 22, 17, TEXT, 4)
-cap("DEVELOP", 168, 26, 10, FAINT, 3)
+draw_rect(x: 0, y: 0, w: W, h: TOP_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
+hline(x: 0, y: TOP_H - 1, w: W, c: LINE)
+draw_rect(x: 24, y: 22, w: 4, h: 20, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
+cap("APERTURE", x: 40, y: 22, size: 17, c: TEXT, sp: 4)
+cap("DEVELOP", x: 168, y: 26, size: 10, c: FAINT, sp: 3)
 
 let cur = PHOTOS[photo]
 let dirty = adj != ZERO
-draw_text_right(cur.meta, W - 24, 34, 11, FAINT)
-draw_text_right(cur.name ++ "  ·  " ++ cur.place, W - 24, 17, 13, DIM)
+draw_text_right(cur.meta, right_x: W - 24, y: 34, size: 11, c: FAINT)
+draw_text_right(cur.name ++ "  ·  " ++ cur.place, right_x: W - 24, y: 17, size: 13, c: DIM)
 let dot_c = if dirty then ACCENT else GHOST end
-draw_circle(W - 24 - text_width(cur.name ++ "  ·  " ++ cur.place, 13) - 14, 23, 4, dot_c.r, dot_c.g, dot_c.b)
+draw_circle(cx: W - 24 - text_width(cur.name ++ "  ·  " ++ cur.place, 13) - 14, cy: 23, radius: 4, r: dot_c.r, g: dot_c.g, b: dot_c.b)
 
 // ── Left rail: library ───────────────────────────────────────────────────
-draw_rect(0, TOP_H, LEFT_W, H - TOP_H - BOT_H, RAIL.r, RAIL.g, RAIL.b)
-draw_rect(LEFT_W - 1, TOP_H, 1, H - TOP_H - BOT_H, LINE.r, LINE.g, LINE.b)
-cap("LIBRARY", 24, TOP_H + 22, 10, FAINT, 3)
-draw_text_right("{len(PHOTOS)}", LEFT_W - 24, TOP_H + 22, 10, GHOST)
+draw_rect(x: 0, y: TOP_H, w: LEFT_W, h: H - TOP_H - BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
+draw_rect(x: LEFT_W - 1, y: TOP_H, w: 1, h: H - TOP_H - BOT_H, r: LINE.r, g: LINE.g, b: LINE.b)
+cap("LIBRARY", x: 24, y: TOP_H + 22, size: 10, c: FAINT, sp: 3)
+draw_text_right("{len(PHOTOS)}", right_x: LEFT_W - 24, y: TOP_H + 22, size: 10, c: GHOST)
 
 let CARD_H = 116
 var clicked_photo = -1
@@ -669,19 +669,19 @@ for k in range(0, len(PHOTOS)) do
   let on = k == photo
   let hov = hovered(r)
   let bgc = if on then ELEV elsif hov then HOVER else CARD end
-  draw_rect_rounded(r, 6, bgc)
+  draw_rect_rounded(r, radius: 6, c: bgc)
   if on then
-    draw_rect(r.x, r.y + 8, 3, r.h - 16, ACCENT.r, ACCENT.g, ACCENT.b)
+    draw_rect(x: r.x, y: r.y + 8, w: 3, h: r.h - 16, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
   end
   let tw = THUMB_W * THUMB_C
   let tx = r.x + (r.w - tw) / 2
-  draw_img(thumbs[k], tx, r.y + 8, THUMB_W, THUMB_H, THUMB_C, 0, THUMB_W)
+  draw_img(img: thumbs[k], x: tx, y: r.y + 8, cw: THUMB_W, ch: THUMB_H, cs: THUMB_C, from_col: 0, to_col: THUMB_W)
   if !on then
-    draw_rect(tx, r.y + 8, tw, THUMB_H * THUMB_C, BG.r, BG.g, BG.b, if hov then 40 else 90 end)
+    draw_rect(x: tx, y: r.y + 8, w: tw, h: THUMB_H * THUMB_C, r: BG.r, g: BG.g, b: BG.b, a: if hov then 40 else 90 end)
   end
   let nc = if on then TEXT else DIM end
-  body(PHOTOS[k].name, r.x + 14, r.y + THUMB_H * THUMB_C + 20, 12, nc)
-  draw_text_right("0{k + 1}", r.x + r.w - 14, r.y + THUMB_H * THUMB_C + 21, 10, if on then ACCENT else GHOST end)
+  body(PHOTOS[k].name, x: r.x + 14, y: r.y + THUMB_H * THUMB_C + 20, size: 12, c: nc)
+  draw_text_right("0{k + 1}", right_x: r.x + r.w - 14, y: r.y + THUMB_H * THUMB_C + 21, size: 10, c: if on then ACCENT else GHOST end)
   if clicked(r) then
     set clicked_photo = k
   end
@@ -697,10 +697,10 @@ let cx0 = LEFT_W + (W - LEFT_W - RIGHT_W - IMG_W) / 2
 let cy0 = TOP_H + 30
 
 // matte
-draw_rect(cx0 - 10, cy0 - 10, IMG_W + 20, IMG_H + 20, ELEV.r, ELEV.g, ELEV.b)
+draw_rect(x: cx0 - 10, y: cy0 - 10, w: IMG_W + 20, h: IMG_H + 20, r: ELEV.r, g: ELEV.g, b: ELEV.b)
 draw_rect_outline(cx0 - 10, cy0 - 10, IMG_W + 20, IMG_H + 20, LINE.r, LINE.g, LINE.b)
 
-let split_col = iclamp(int(split * float(GRID_W)), 0, GRID_W)
+let split_col = iclamp(int(split * float(GRID_W)), lo: 0, hi: GRID_W)
 // Space slams back to the untouched negative without disturbing the mode.
 let peek = peeking
 let shown = if peek then "before" else view end
@@ -709,35 +709,35 @@ let ag = if live then GRID_W / 2 else GRID_W end
 let ah = if live then GRID_H / 2 else GRID_H end
 let ac = if live then CELL * 2 else CELL end
 if shown == "before" then
-  draw_img(base_img, cx0, cy0, GRID_W, GRID_H, CELL, 0, GRID_W)
+  draw_img(img: base_img, x: cx0, y: cy0, cw: GRID_W, ch: GRID_H, cs: CELL, from_col: 0, to_col: GRID_W)
 elsif shown == "after" then
-  draw_img(after_img, cx0, cy0, ag, ah, ac, 0, ag)
+  draw_img(img: after_img, x: cx0, y: cy0, cw: ag, ch: ah, cs: ac, from_col: 0, to_col: ag)
 else
-  draw_img(base_img, cx0, cy0, GRID_W, GRID_H, CELL, 0, split_col)
-  draw_img(after_img, cx0, cy0, ag, ah, ac, if live then split_col / 2 else split_col end, ag)
+  draw_img(img: base_img, x: cx0, y: cy0, cw: GRID_W, ch: GRID_H, cs: CELL, from_col: 0, to_col: split_col)
+  draw_img(img: after_img, x: cx0, y: cy0, cw: ag, ch: ah, cs: ac, from_col: if live then split_col / 2 else split_col end, to_col: ag)
 end
 
 // split handle
 let sx = cx0 + split_col * CELL
 if shown == "split" then
-  draw_rect(sx - 1, cy0, 2, IMG_H, 240, 244, 250, 210)
+  draw_rect(x: sx - 1, y: cy0, w: 2, h: IMG_H, r: 240, g: 244, b: 250, a: 210)
   let hyc = cy0 + IMG_H / 2
-  draw_circle(sx, hyc, 13, 12, 14, 18, 170)
-  draw_circle(sx, hyc, 11, 240, 244, 250, 245)
-  fill_triangle(sx - 7, hyc, sx - 2, hyc - 4, sx - 2, hyc + 4, 24, 28, 36)
-  fill_triangle(sx + 7, hyc, sx + 2, hyc - 4, sx + 2, hyc + 4, 24, 28, 36)
-  draw_rect_rounded(rect(cx0 + 10, cy0 + 10, 66, 20), 3, BG, 150)
-  cap("BEFORE", cx0 + 19, cy0 + 15, 9, {r: 240, g: 244, b: 250}, 2)
-  draw_rect_rounded(rect(cx0 + IMG_W - 68, cy0 + 10, 58, 20), 3, BG, 150)
-  draw_text_right("AFTER", cx0 + IMG_W - 18, cy0 + 15, 9, {r: 240, g: 244, b: 250})
+  draw_circle(cx: sx, cy: hyc, radius: 13, r: 12, g: 14, b: 18, a: 170)
+  draw_circle(cx: sx, cy: hyc, radius: 11, r: 240, g: 244, b: 250, a: 245)
+  fill_triangle(x1: sx - 7, y1: hyc, x2: sx - 2, y2: hyc - 4, x3: sx - 2, y3: hyc + 4, r: 24, g: 28, b: 36)
+  fill_triangle(x1: sx + 7, y1: hyc, x2: sx + 2, y2: hyc - 4, x3: sx + 2, y3: hyc + 4, r: 24, g: 28, b: 36)
+  draw_rect_rounded(rect(cx0 + 10, cy0 + 10, 66, 20), radius: 3, c: BG, a: 150)
+  cap("BEFORE", x: cx0 + 19, y: cy0 + 15, size: 9, c: {r: 240, g: 244, b: 250}, sp: 2)
+  draw_rect_rounded(rect(cx0 + IMG_W - 68, cy0 + 10, 58, 20), radius: 3, c: BG, a: 150)
+  draw_text_right("AFTER", right_x: cx0 + IMG_W - 18, y: cy0 + 15, size: 9, c: {r: 240, g: 244, b: 250})
 end
 if live then
-  draw_rect_rounded(rect(cx0 + IMG_W - 92, cy0 + IMG_H - 30, 82, 20), 3, ACCENT, 235)
-  draw_text_center("DRAFT 1:2", cx0 + IMG_W - 51, cy0 + IMG_H - 25, 9, BG)
+  draw_rect_rounded(rect(cx0 + IMG_W - 92, cy0 + IMG_H - 30, 82, 20), radius: 3, c: ACCENT, a: 235)
+  draw_text_center("DRAFT 1:2", cx: cx0 + IMG_W - 51, y: cy0 + IMG_H - 25, size: 9, c: BG)
 end
 if peek then
-  draw_rect_rounded(rect(cx0 + 10, cy0 + IMG_H - 30, 122, 20), 3, BG, 190)
-  cap("UNTOUCHED NEGATIVE", cx0 + 18, cy0 + IMG_H - 25, 8, TEXT, 1)
+  draw_rect_rounded(rect(cx0 + 10, cy0 + IMG_H - 30, 122, 20), radius: 3, c: BG, a: 190)
+  cap("UNTOUCHED NEGATIVE", x: cx0 + 18, y: cy0 + IMG_H - 25, size: 8, c: TEXT, sp: 1)
 end
 
 // ── Centre: view mode + histogram ────────────────────────────────────────
@@ -748,11 +748,11 @@ var clicked_mode = ""
 for k in range(0, 3) do
   let r = rect(cx0 + k * 92, strip_y, 88, 28)
   let on = view == MODES[k]
-  draw_rect_rounded(r, 4, if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  draw_rect_rounded(r, radius: 4, c: if on then ELEV elsif hovered(r) then HOVER else CARD end)
   if on then
     draw_rect_outline(r, LINE)
   end
-  draw_text_center(MODE_LABELS[k], r.center_x(), r.y + 8, 12, if on then TEXT else DIM end)
+  draw_text_center(MODE_LABELS[k], cx: r.center_x(), y: r.y + 8, size: 12, c: if on then TEXT else DIM end)
   if clicked(r) then
     set clicked_mode = MODES[k]
   end
@@ -760,18 +760,18 @@ end
 if clicked_mode != "" then
   view = clicked_mode
 end
-draw_text_right("{GRID_W} × {GRID_H} samples  ·  {recomputes} develop passes", cx0 + IMG_W, strip_y + 9, 11, GHOST)
+draw_text_right("{GRID_W} × {GRID_H} samples  ·  {recomputes} develop passes", right_x: cx0 + IMG_W, y: strip_y + 9, size: 11, c: GHOST)
 
 let hy = strip_y + 46
-cap("LUMINANCE", cx0, hy, 9, FAINT, 3)
+cap("LUMINANCE", x: cx0, y: hy, size: 9, c: FAINT, sp: 3)
 let delta = hist.mean - base_mean
 let arrow = if live then "recomputing" else "{base_mean} → {hist.mean}   ({signed(delta)})" end
-draw_text_right(arrow, cx0 + IMG_W, hy, 10, if delta != 0 then ACCENT else GHOST end)
+draw_text_right(arrow, right_x: cx0 + IMG_W, y: hy, size: 10, c: if delta != 0 then ACCENT else GHOST end)
 let HH = 78
 let hy0 = hy + 16
-draw_rect(cx0, hy0, IMG_W, HH, CARD.r, CARD.g, CARD.b)
+draw_rect(x: cx0, y: hy0, w: IMG_W, h: HH, r: CARD.r, g: CARD.g, b: CARD.b)
 for q in range(1, 4) do
-  draw_rect(cx0 + IMG_W * q / 4, hy0, 1, HH, LINE_SOFT.r, LINE_SOFT.g, LINE_SOFT.b)
+  draw_rect(x: cx0 + IMG_W * q / 4, y: hy0, w: 1, h: HH, r: LINE_SOFT.r, g: LINE_SOFT.g, b: LINE_SOFT.b)
 end
 var hmax = 1
 for b in hist.bins do
@@ -783,35 +783,35 @@ for k in range(0, 40) do
   let bh = max(1, hist.bins[k] * (HH - 8) / hmax)
   let t = float(k) / 39.0
   let cc = cmix(fc(0.30, 0.34, 0.42), fc(0.92, 0.94, 0.98), t)
-  draw_rect(cx0 + k * bw + 1, hy0 + HH - bh, bw - 2, bh, int(cc.r * 255.0), int(cc.g * 255.0), int(cc.b * 255.0), halpha)
+  draw_rect(x: cx0 + k * bw + 1, y: hy0 + HH - bh, w: bw - 2, h: bh, r: int(cc.r * 255.0), g: int(cc.g * 255.0), b: int(cc.b * 255.0), a: halpha)
 end
 
-hline(cx0, hy0 + HH, IMG_W, LINE)
-cap("SHADOWS", cx0, hy0 + HH + 8, 9, GHOST, 2)
-draw_text_center("MIDTONES", cx0 + IMG_W / 2, hy0 + HH + 8, 9, GHOST)
-draw_text_right("HIGHLIGHTS", cx0 + IMG_W, hy0 + HH + 8, 9, GHOST)
+hline(x: cx0, y: hy0 + HH, w: IMG_W, c: LINE)
+cap("SHADOWS", x: cx0, y: hy0 + HH + 8, size: 9, c: GHOST, sp: 2)
+draw_text_center("MIDTONES", cx: cx0 + IMG_W / 2, y: hy0 + HH + 8, size: 9, c: GHOST)
+draw_text_right("HIGHLIGHTS", right_x: cx0 + IMG_W, y: hy0 + HH + 8, size: 9, c: GHOST)
 let clip_lo = hist.low * 1000 / max(1, hist.n)
 let clip_hi = hist.high * 1000 / max(1, hist.n)
 if clip_lo > 2 then
-  draw_circle(cx0 + 74, hy0 + HH + 12, 3, COOL.r, COOL.g, COOL.b)
-  body("{clip_lo / 10}.{clip_lo % 10}% clipped", cx0 + 82, hy0 + HH + 7, 9, COOL)
+  draw_circle(cx: cx0 + 74, cy: hy0 + HH + 12, radius: 3, r: COOL.r, g: COOL.g, b: COOL.b)
+  body("{clip_lo / 10}.{clip_lo % 10}% clipped", x: cx0 + 82, y: hy0 + HH + 7, size: 9, c: COOL)
 end
 if clip_hi > 2 then
   let s2 = "{clip_hi / 10}.{clip_hi % 10}% clipped"
-  draw_text_right(s2, cx0 + IMG_W - 82, hy0 + HH + 7, 9, ACCENT)
-  draw_circle(cx0 + IMG_W - 74, hy0 + HH + 12, 3, ACCENT.r, ACCENT.g, ACCENT.b)
+  draw_text_right(s2, right_x: cx0 + IMG_W - 82, y: hy0 + HH + 7, size: 9, c: ACCENT)
+  draw_circle(cx: cx0 + IMG_W - 74, cy: hy0 + HH + 12, radius: 3, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
 end
 
 // ── Right rail: adjustments ──────────────────────────────────────────────
 let RX = W - RIGHT_W
-draw_rect(RX, TOP_H, RIGHT_W, H - TOP_H - BOT_H, RAIL.r, RAIL.g, RAIL.b)
-draw_rect(RX, TOP_H, 1, H - TOP_H - BOT_H, LINE.r, LINE.g, LINE.b)
+draw_rect(x: RX, y: TOP_H, w: RIGHT_W, h: H - TOP_H - BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
+draw_rect(x: RX, y: TOP_H, w: 1, h: H - TOP_H - BOT_H, r: LINE.r, g: LINE.g, b: LINE.b)
 
 let PX = RX + 24
 let PW = RIGHT_W - 48
-cap("ADJUSTMENTS", PX, TOP_H + 22, 10, FAINT, 3)
+cap("ADJUSTMENTS", x: PX, y: TOP_H + 22, size: 10, c: FAINT, sp: 3)
 if dirty then
-  draw_text_right("edited", RX + RIGHT_W - 24, TOP_H + 22, 10, ACCENT)
+  draw_text_right("edited", right_x: RX + RIGHT_W - 24, y: TOP_H + 22, size: 10, c: ACCENT)
 end
 
 let ROW_H = 40
@@ -825,40 +825,40 @@ var new_drag = dragging
 var pending = adj
 for i in range(0, len(SLIDERS)) do
   let sl = SLIDERS[i]
-  let r = slider_rect(i, PX, PW, ROW_Y, ROW_H)
+  let r = slider_rect(i, px: PX, pw: PW, row_y: ROW_Y, row_h: ROW_H)
   let track = rect(r.x, r.y + 25, r.w, 4)
   let sel = i == slider_sel
   let hov = hovered(r)
   if sel then
-    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), 4, ELEV)
+    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), radius: 4, c: ELEV)
   elsif hov then
-    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), 4, CARD)
+    draw_rect_rounded(rect(r.x - 10, r.y - 2, r.w + 20, r.h - 4), radius: 4, c: CARD)
   end
   let v = adj[i]
   let lo = if sl.bipolar then -100 else 0 end
   let frac = float(v - lo) / float(100 - lo)
   let kx = track.x + int(frac * float(track.w))
-  body(sl.name, r.x, r.y + 4, 12, if sel then TEXT else DIM end)
+  body(sl.name, x: r.x, y: r.y + 4, size: 12, c: if sel then TEXT else DIM end)
   let vc = if v != 0 then ACCENT else GHOST end
-  draw_text_right(if sl.bipolar then signed(v) else "{v}" end, r.x + r.w, r.y + 4, 12, vc)
-  draw_rect_rounded(track, 2, GHOST)
+  draw_text_right(if sl.bipolar then signed(v) else "{v}" end, right_x: r.x + r.w, y: r.y + 4, size: 12, c: vc)
+  draw_rect_rounded(track, radius: 2, c: GHOST)
   let zx = track.x + if sl.bipolar then track.w / 2 else 0 end
   if kx > zx then
-    draw_rect_rounded(rect(zx, track.y, kx - zx, 4), 2, ACCENT)
+    draw_rect_rounded(rect(zx, track.y, kx - zx, 4), radius: 2, c: ACCENT)
   elsif kx < zx then
-    draw_rect_rounded(rect(kx, track.y, zx - kx, 4), 2, ACCENT)
+    draw_rect_rounded(rect(kx, track.y, zx - kx, 4), radius: 2, c: ACCENT)
   end
   if sl.bipolar then
-    draw_rect(track.x + track.w / 2, track.y - 4, 1, 12, LINE.r, LINE.g, LINE.b)
+    draw_rect(x: track.x + track.w / 2, y: track.y - 4, w: 1, h: 12, r: LINE.r, g: LINE.g, b: LINE.b)
   end
-  draw_circle(kx, track.y + 2, if sel || hov then 7 else 5 end, TEXT.r, TEXT.g, TEXT.b)
-  draw_circle(kx, track.y + 2, if sel || hov then 4 else 3 end, RAIL.r, RAIL.g, RAIL.b)
+  draw_circle(cx: kx, cy: track.y + 2, radius: if sel || hov then 7 else 5 end, r: TEXT.r, g: TEXT.g, b: TEXT.b)
+  draw_circle(cx: kx, cy: track.y + 2, radius: if sel || hov then 4 else 3 end, r: RAIL.r, g: RAIL.g, b: RAIL.b)
   if mouse_pressed(0) && hovered(r) then
     set new_drag = i
     slider_sel = i
   end
   if hovered(r) && scroll_y() != 0 then
-    set pending[i] = iclamp(pending[i] + scroll_y() * 2, lo, 100)
+    set pending[i] = iclamp(pending[i] + scroll_y() * 2, lo, hi: 100)
   end
 end
 
@@ -869,25 +869,25 @@ end
 if new_drag >= 0 && new_drag < 100 then
   let i = new_drag
   let lo = if SLIDERS[i].bipolar then -100 else 0 end
-  let t = clamp(float(mouse_x() - PX) / float(PW), 0.0, 1.0)
+  let t = clamp(float(mouse_x() - PX) / float(PW), lo: 0.0, hi: 1.0)
   set pending[i] = lo + int(round(t * float(100 - lo)))
 end
 
 // ── Right rail: presets ──────────────────────────────────────────────────
 let PRE_Y = ROW_Y + len(SLIDERS) * ROW_H + 22
-hline(PX, PRE_Y - 14, PW, LINE_SOFT)
-cap("LOOKS", PX, PRE_Y, 10, FAINT, 3)
+hline(x: PX, y: PRE_Y - 14, w: PW, c: LINE_SOFT)
+cap("LOOKS", x: PX, y: PRE_Y, size: 10, c: FAINT, sp: 3)
 var clicked_preset = -1
 for k in range(0, len(PRESETS)) do
   let col = k % 2
   let row = k / 2
   let r = rect(PX + col * (PW / 2 + 4), PRE_Y + 22 + row * 38, PW / 2 - 4, 30)
   let on = preset == k && adj == PRESETS[k].vals
-  draw_rect_rounded(r, 4, if on then ELEV elsif hovered(r) then HOVER else CARD end)
+  draw_rect_rounded(r, radius: 4, c: if on then ELEV elsif hovered(r) then HOVER else CARD end)
   if on then
-    draw_rect_outline(r, ACCENT, 150)
+    draw_rect_outline(r, c: ACCENT, a: 150)
   end
-  draw_text_center(PRESETS[k].name, r.center_x(), r.y + 9, 11, if on then TEXT else DIM end)
+  draw_text_center(PRESETS[k].name, cx: r.center_x(), y: r.y + 9, size: 11, c: if on then TEXT else DIM end)
   if clicked(r) then
     set clicked_preset = k
   end
@@ -895,9 +895,9 @@ end
 
 let RESET_Y = PRE_Y + 22 + 3 * 38 + 10
 let reset_r = rect(PX, RESET_Y, PW, 30)
-draw_rect_rounded(reset_r, 4, if hovered(reset_r) then HOVER else CARD end)
+draw_rect_rounded(reset_r, radius: 4, c: if hovered(reset_r) then HOVER else CARD end)
 draw_rect_outline(reset_r, LINE)
-draw_text_center("Reset all adjustments", reset_r.center_x(), reset_r.y + 9, 11, if dirty then TEXT else GHOST end)
+draw_text_center("Reset all adjustments", cx: reset_r.center_x(), y: reset_r.y + 9, size: 11, c: if dirty then TEXT else GHOST end)
 
 // ── Keyboard ─────────────────────────────────────────────────────────────
 if key_pressed("down") then
@@ -910,7 +910,7 @@ let step = if mod_shift() then 10 else 2 end
 if key_pressed("left") || key_pressed("right") then
   let lo = if SLIDERS[slider_sel].bipolar then -100 else 0 end
   let d = if key_pressed("right") then step else -step end
-  set pending[slider_sel] = iclamp(pending[slider_sel] + d, lo, 100)
+  set pending[slider_sel] = iclamp(pending[slider_sel] + d, lo, hi: 100)
 end
 if key_pressed("space") then
   peeking = !peeking
@@ -934,10 +934,10 @@ if key_pressed("0") || (clicked(reset_r)) then
   preset = 0
 end
 if key_pressed("[") then
-  split = clamp(split - 0.05, 0.0, 1.0)
+  split = clamp(split - 0.05, lo: 0.0, hi: 1.0)
 end
 if key_pressed("]") then
-  split = clamp(split + 0.05, 0.0, 1.0)
+  split = clamp(split + 0.05, lo: 0.0, hi: 1.0)
 end
 
 if clicked_preset >= 0 then
@@ -951,16 +951,16 @@ if view == "split" && mouse_pressed(0) && hovered(img_r) then
   set new_drag = 100
 end
 if new_drag == 100 && mouse_down(0) then
-  split = clamp(float(mouse_x() - cx0) / float(IMG_W), 0.0, 1.0)
+  split = clamp(float(mouse_x() - cx0) / float(IMG_W), lo: 0.0, hi: 1.0)
 end
 
 dragging = new_drag
 adj = pending
 
 // ── Bottom bar ───────────────────────────────────────────────────────────
-draw_rect(0, H - BOT_H, W, BOT_H, RAIL.r, RAIL.g, RAIL.b)
-hline(0, H - BOT_H, W, LINE)
-let hints = fit_parts([
+draw_rect(x: 0, y: H - BOT_H, w: W, h: BOT_H, r: RAIL.r, g: RAIL.g, b: RAIL.b)
+hline(x: 0, y: H - BOT_H, w: W, c: LINE)
+let hints = fit_parts(parts: [
   "1–5 photo",
   "↑↓ slider",
   "←→ adjust",
@@ -970,7 +970,7 @@ let hints = fit_parts([
   "space peek",
   "p look",
   "0 reset",
-], W - 240, 11)
-body(hints, 24, H - BOT_H + 11, 11, FAINT)
+], avail_px: W - 240, size: 11)
+body(hints, x: 24, y: H - BOT_H + 11, size: 11, c: FAINT)
 let look_name = if adj == PRESETS[preset].vals then PRESETS[preset].name else PRESETS[preset].name ++ " · edited" end
-draw_text_right(if dirty then look_name else "Original" end, W - 24, H - BOT_H + 11, 11, DIM)
+draw_text_right(if dirty then look_name else "Original" end, right_x: W - 24, y: H - BOT_H + 11, size: 11, c: DIM)

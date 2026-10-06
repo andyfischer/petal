@@ -200,7 +200,7 @@ end
 // Lowest py at which the piece still fits, starting from py.
 fn drop_to(board: list, cells: list, px: int, py: int) -> int
   let y = py
-  while !collides(board, cells, px, y + 1) do
+  while !collides(board, cells, px, py: y + 1) do
     y = y + 1
   end
   y
@@ -283,8 +283,8 @@ fn best_placement(board: list, kind: int) -> record
   for rot in range(rot_count) do
     let cells = piece_cells(kind, rot)
     for px in range(-2, WIDTH + 1) do
-      if collides(board, cells, px, 0) then continue end
-      let py = drop_to(board, cells, px, 0)
+      if collides(board, cells, px, py: 0) then continue end
+      let py = drop_to(board, cells, px, py: 0)
       // Landing height = midpoint of the piece, measured up from the floor.
       let lo = HEIGHT
       let hi = 0
@@ -295,7 +295,7 @@ fn best_placement(board: list, kind: int) -> record
       end
       let landed = merge_piece(board, cells, px, py, kind)
       let res = clear_lines(landed)
-      let s = score_board(res.board, res.cleared, (lo + hi) / 2.0)
+      let s = score_board(board: res.board, cleared: res.cleared, landing_height: (lo + hi) / 2.0)
       if !found || s > best_score then
         found = true
         best_score = s
@@ -368,7 +368,7 @@ while running do
     seed = drawn.seed
   end
   let kind = queue[0]
-  queue = slice(queue, 1, len(queue))
+  queue = slice(queue, start: 1, end: len(queue))
 
   let rot = 0
   let px = 3
@@ -394,9 +394,9 @@ while running do
         let to_rot = (rot + 1) % 4
         let want = piece_cells(kind, to_rot)
         let placed = false
-        for k in kick_offsets(kind, rot, to_rot) do
+        for k in kick_offsets(kind, from_rot: rot, to_rot: to_rot) do
           if placed then continue end
-          if !collides(board, want, px + k[0], py + k[1]) then
+          if !collides(board, cells: want, px: px + k[0], py: py + k[1]) then
             placed = true
             px = px + k[0]
             py = py + k[1]
@@ -410,7 +410,7 @@ while running do
         end
       elsif px != plan.x then
         let dx = if plan.x > px then 1 else -1 end
-        if collides(board, cells, px + dx, py) then
+        if collides(board, cells, px: px + dx, py: py) then
           plan = {rot: rot, x: px}
         else
           px = px + dx
@@ -426,7 +426,7 @@ while running do
         grav = grav + 1
         if grav >= gravity_period(level) then
           grav = 0
-          if collides(board, cells, px, py + 1) then
+          if collides(board, cells, px, py: py + 1) then
             locked = true
           else
             py = py + 1

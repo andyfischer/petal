@@ -243,35 +243,35 @@ fn subs_done(t: record) -> int
 end
 
 fn stroke(a: record, b: record, c: record, alpha: num, width: num)
-  draw_line(a.x, a.y, b.x, b.y, c.r, c.g, c.b, alpha, width)
+  draw_line(x1: a.x, y1: a.y, x2: b.x, y2: b.y, r: c.r, g: c.g, b: c.b, a: alpha, width: width)
 end
 
 // A rounded panel with a hairline border (draw_rect_outline is square-cornered).
 fn rr(r: record, radius: num, fill: record, border: record)
-  draw_rect_rounded(r, radius, border)
-  draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius - 1, fill)
+  draw_rect_rounded(r, radius, c: border)
+  draw_rect_rounded(rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2), radius: radius - 1, c: fill)
 end
 
 fn chip(x: num, y: num, label: string, c: record, strong: bool)
   let tw = text_width(label, FS_MICRO)
   let r = rect(x, y, tw + 16, 19)
-  draw_rect_rounded(r, 9, c, if strong then 46 else 26 end)
-  draw_text(label, {x: x + 8, y: y + 4}, {size: FS_MICRO, color: c, spacing: 0.4})
+  draw_rect_rounded(r, radius: 9, c: c, a: if strong then 46 else 26 end)
+  draw_text(label, pos: {x: x + 8, y: y + 4}, style: {size: FS_MICRO, color: c, spacing: 0.4})
   r.w
 end
 
 fn checkbox(cx: num, cy: num, done: bool, hot: bool)
   if done then
-    draw_circle({x: cx, y: cy}, 10, GREEN)
-    stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, INK, 255, 2)
-    stroke({x: cx - 1, y: cy + 3.5}, {x: cx + 5, y: cy - 3.5}, INK, 255, 2)
+    draw_circle(center: {x: cx, y: cy}, radius: 10, c: GREEN)
+    stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, INK, alpha: 255, width: 2)
+    stroke({x: cx - 1, y: cy + 3.5}, {x: cx + 5, y: cy - 3.5}, INK, alpha: 255, width: 2)
   else
     let c = if hot then GREEN else GHOST end
     draw_circle({x: cx, y: cy}, 10, c, if hot then 200 else 130 end)
-    draw_circle({x: cx, y: cy}, 8.5, if hot then #16202a else BG end)
+    draw_circle(center: {x: cx, y: cy}, radius: 8.5, c: if hot then #16202a else BG end)
     if hot then
-      stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, GREEN, 150, 2)
-      stroke({x: cx - 1, y: cy + 3.5}, {x: cx + 5, y: cy - 3.5}, GREEN, 150, 2)
+      stroke({x: cx - 4.5, y: cy}, {x: cx - 1, y: cy + 3.5}, GREEN, alpha: 150, width: 2)
+      stroke({x: cx - 1, y: cy + 3.5}, {x: cx + 5, y: cy - 3.5}, GREEN, alpha: 150, width: 2)
     end
   end
 end
@@ -281,13 +281,13 @@ fn btn(r: record, label: string, kind: num, enabled: bool) -> bool
   let hov = hovered(r) && enabled
   if kind == 1 then
     let bg = if hov then #ffb765 else AMBER end
-    draw_rect_rounded(r, r.h / 2, bg, if enabled then 255 else 90 end)
-    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, INK)
+    draw_rect_rounded(r, radius: r.h / 2, c: bg, a: if enabled then 255 else 90 end)
+    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: INK)
   else
     let base = if kind == 2 then RED else DIM end
-    rr(r, r.h / 2, if hov then CARD_HI else CARD end, LINE)
+    rr(r, radius: r.h / 2, fill: if hov then CARD_HI else CARD end, border: LINE)
     let fg = if !enabled then GHOST elsif hov then base else DIM end
-    draw_text_center(label, r.x + r.w / 2, r.y + (r.h - FS) / 2, FS, fg)
+    draw_text_center(label, cx: r.x + r.w / 2, y: r.y + (r.h - FS) / 2, size: FS, c: fg)
   end
   hov && mouse_pressed(0)
 end
@@ -468,13 +468,13 @@ let has_sel = sel_ix >= 0
 
 // Focus by click.
 if mouse_pressed(0) then
-  if point_in(mx, my, search_r) then
+  if point_in(px: mx, py: my, r: search_r) then
     focus = "search"
     grabbed = true
-  elsif point_in(mx, my, comp_r) then
+  elsif point_in(px: mx, py: my, r: comp_r) then
     focus = "compose"
     grabbed = true
-  elsif !point_in(mx, my, rect(DX0, 0, DETAIL_W, H)) then
+  elsif !point_in(px: mx, py: my, r: rect(DX0, 0, DETAIL_W, H)) then
     focus = ""
   end
 end
@@ -496,7 +496,7 @@ end
 if mouse_pressed(0) then
   for i in range(0, len(PROJECTS) + 1) do
     let name = if i == 0 then "All" else PROJECTS[i - 1] end
-    if point_in(mx, my, rail_rect(i)) then
+    if point_in(px: mx, py: my, r: rail_rect(i)) then
       lst = name
       scroll = 0
     end
@@ -506,7 +506,7 @@ end
 // Status segments.
 if mouse_pressed(0) then
   for i in range(0, len(SEGS)) do
-    if point_in(mx, my, seg_rect(i)) then
+    if point_in(px: mx, py: my, r: seg_rect(i)) then
       status = SEGS[i]
       scroll = 0
     end
@@ -515,7 +515,7 @@ end
 
 // Feed: click a row to select, click its checkbox to toggle done.
 let toggled = -1
-if mouse_pressed(0) && point_in(mx, my, feed_r) then
+if mouse_pressed(0) && point_in(px: mx, py: my, r: feed_r) then
   for it in items do
     if it.kind == "t" then
       let ry = FEED_TOP + it.y - scroll
@@ -531,7 +531,7 @@ if mouse_pressed(0) && point_in(mx, my, feed_r) then
 end
 
 // Wheel over the feed.
-if point_in(mx, my, feed_r) then
+if point_in(px: mx, py: my, r: feed_r) then
   scroll = scroll - scroll_y() * 44
 end
 
@@ -548,7 +548,7 @@ if !typing && n_shown > 0 then
     // The selected task just left this view (completed, or filtered out), so
     // the selection lands on whichever row took its place rather than on the
     // top of the feed — and this frame's keys are spent doing only that.
-    set w2 = int(clamp(last_ix, 0, n_shown - 1))
+    set w2 = int(clamp(last_ix, lo: 0, hi: n_shown - 1))
   else
     if key_pressed("down") || key_pressed("j") then set w2 = w2 + 1 end
     if key_pressed("up") || key_pressed("k") then set w2 = w2 - 1 end
@@ -558,7 +558,7 @@ if !typing && n_shown > 0 then
     if key_pressed("end") then set w2 = n_shown - 1 end
   end
   if w2 != cur then
-    want_ix = int(clamp(w2, 0, n_shown - 1))
+    want_ix = int(clamp(w2, lo: 0, hi: n_shown - 1))
     sel_id = order[want_ix]
   end
 end
@@ -571,11 +571,11 @@ end
 if want_ix >= 0 then
   for it in items do
     if it.kind == "t" && it.task.id == sel_id then
-      scroll = ensure_visible_px(scroll, it.y, ROW_H, FEED_H)
+      scroll = ensure_visible_px(scroll, row_off: it.y, row_h: ROW_H, view_h: FEED_H)
     end
   end
 end
-scroll = int(clamp(scroll, 0, max(0, feed_h - FEED_H)))
+scroll = int(clamp(scroll, lo: 0, hi: max(0, feed_h - FEED_H)))
 
 // ── mutations ───────────────────────────────────────────────────────────────
 // Every write to `tasks` bumps `rev`, which the rail reports as the autosave
@@ -583,7 +583,7 @@ scroll = int(clamp(scroll, 0, max(0, feed_h - FEED_H)))
 let space_toggle = !typing && (key_pressed("space") || key_pressed("x"))
 // The inspector's primary button is the third way to flip `done`; all three
 // land in the one mutation below so the "done today" tally stays honest.
-let act_click = has_sel && mouse_pressed(0) && point_in(mx, my, act1)
+let act_click = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act1)
 let do_toggle = toggled >= 0 || ((space_toggle || act_click) && has_sel)
 let toggle_id = if toggled >= 0 then toggled else sel_id end
 
@@ -611,7 +611,7 @@ end
 state prio_row_y = 0
 if has_sel && mouse_pressed(0) then
   for i in range(0, 4) do
-    if point_in(mx, my, prio_pick_rect(i, dx, prio_row_y, dw)) then
+    if point_in(px: mx, py: my, r: prio_pick_rect(i, x: dx, y: prio_row_y, w: dw)) then
       set_prio = i
     end
   end
@@ -646,7 +646,7 @@ state sub_row_y = 0
 let sub_hit = -1
 if has_sel && mouse_pressed(0) then
   for i in range(0, len(selected.subs)) do
-    if point_in(mx, my, sub_rect(i, dx, sub_row_y, dw)) then
+    if point_in(px: mx, py: my, r: sub_rect(i, x: dx, y: sub_row_y, w: dw)) then
       sub_hit = i
     end
   end
@@ -671,14 +671,14 @@ let submitted = key_pressed("return")
 
 fn edited(cur: string, t: string, bs: bool) -> string
   var s = cur
-  if bs && len(s) > 0 then set s = slice(s, 0, len(s) - 1) end
+  if bs && len(s) > 0 then set s = slice(s, start: 0, end: len(s) - 1) end
   if len(t) > 0 then set s = s ++ t end
   s
 end
 
-if focus == "compose" then compose = edited(compose, typed, backsp) end
-if focus == "search" then q = edited(q, typed, backsp) end
-if focus == "title" then ed_title = edited(ed_title, typed, backsp) end
+if focus == "compose" then compose = edited(cur: compose, t: typed, bs: backsp) end
+if focus == "search" then q = edited(cur: q, t: typed, bs: backsp) end
+if focus == "title" then ed_title = edited(cur: ed_title, t: typed, bs: backsp) end
 
 // Create.
 let parsed = parse_line(compose, if lst == "All" then "Product" else lst end)
@@ -709,14 +709,14 @@ if !typing && has_sel && key_pressed("e") then
   ed_title = selected.title
   grabbed = true
 end
-if has_sel && focus != "title" && mouse_pressed(0) && point_in(mx, my, title_r) then
+if has_sel && focus != "title" && mouse_pressed(0) && point_in(px: mx, py: my, r: title_r) then
   focus = "title"
   ed_title = selected.title
   grabbed = true
 end
 
 // ── delete + undo ───────────────────────────────────────────────────────────
-let del_click = has_sel && mouse_pressed(0) && point_in(mx, my, act2)
+let del_click = has_sel && mouse_pressed(0) && point_in(px: mx, py: my, r: act2)
 let do_delete = has_sel && (del_click || (!typing && (key_pressed("d") || key_pressed("delete"))))
 if do_delete then
   trash = append(trash, selected)
@@ -727,7 +727,7 @@ if do_delete then
   end
   // Hand the selection to the neighbour that took the deleted row's place.
   if len(tasks) > 0 then
-    sel_id = tasks[clamp(gone_ix, 0, len(tasks) - 1)].id
+    sel_id = tasks[clamp(gone_ix, lo: 0, hi: len(tasks) - 1)].id
   end
   rev = rev + 1
 end
@@ -736,7 +736,7 @@ let undo_key = !typing && key_pressed("u") && len(trash) > 0
 if undo_key then
   let back = trash[len(trash) - 1]
   tasks = append(tasks, back)
-  trash = slice(trash, 0, len(trash) - 1)
+  trash = slice(trash, start: 0, end: len(trash) - 1)
   sel_id = back.id
   rev = rev + 1
 end
@@ -770,115 +770,115 @@ draw_rect(rect(0, 0, RAIL_W, H), RAIL)
 draw_rect(rect(RAIL_W, 0, 1, H), LINE)
 
 // brand mark
-draw_rect_rounded(rect(24, 20, 24, 24), 7, AMBER)
-draw_circle({x: 36, y: 29}, 4.5, INK)
-stroke({x: 36, y: 29}, {x: 36, y: 38}, INK, 255, 2)
-draw_text("thicket", {x: 58, y: 23}, {size: FS_H, color: TEXT, spacing: 0.3})
+draw_rect_rounded(rect(24, 20, 24, 24), radius: 7, c: AMBER)
+draw_circle(center: {x: 36, y: 29}, radius: 4.5, c: INK)
+stroke({x: 36, y: 29}, {x: 36, y: 38}, INK, alpha: 255, width: 2)
+draw_text("thicket", pos: {x: 58, y: 23}, style: {size: FS_H, color: TEXT, spacing: 0.3})
 
-draw_text("LISTS", {x: 24, y: rail_top - 26}, {size: FS_MICRO, color: FAINT, spacing: 1.6})
+draw_text("LISTS", pos: {x: 24, y: rail_top - 26}, style: {size: FS_MICRO, color: FAINT, spacing: 1.6})
 
 for i in range(0, len(PROJECTS) + 1) do
   let name = if i == 0 then "All" else PROJECTS[i - 1] end
   let r = rail_rect(i)
   let on = lst == name
-  let hov = point_in(mx, my, r)
+  let hov = point_in(px: mx, py: my, r: r)
   if on then
-    draw_rect_rounded(r, 9, CARD_HI)
-    draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), 2, AMBER)
+    draw_rect_rounded(r, radius: 9, c: CARD_HI)
+    draw_rect_rounded(rect(r.x, r.y + 7, 3, r.h - 14), radius: 2, c: AMBER)
   elsif hov then
-    draw_rect_rounded(r, 9, CARD, 150)
+    draw_rect_rounded(r, radius: 9, c: CARD, a: 150)
   end
   let dot = if i == 0 then FAINT else list_color(name) end
-  draw_circle({x: r.x + 20, y: r.y + 16}, 4, dot)
+  draw_circle(center: {x: r.x + 20, y: r.y + 16}, radius: 4, c: dot)
   let label = if i == 0 then "All tasks" else name end
-  draw_text(label, {x: r.x + 34, y: r.y + 9}, {size: FS, color: if on then TEXT else DIM end})
+  draw_text(label, pos: {x: r.x + 34, y: r.y + 9}, style: {size: FS, color: if on then TEXT else DIM end})
   let n = count_open(tasks, name)
   if n > 0 then
-    draw_text_right("{n}", r.x + r.w - 14, r.y + 9, FS_SM, if on then DIM else GHOST end)
+    draw_text_right("{n}", right_x: r.x + r.w - 14, y: r.y + 9, size: FS_SM, c: if on then DIM else GHOST end)
   end
 end
 
 // today card
 let card_y = H - 196
-rr(rect(12, card_y, RAIL_W - 24, 108), 12, CARD, LINE)
-draw_text("DONE TODAY", {x: 26, y: card_y + 16}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
-draw_text("{completed_today}", {x: 26, y: card_y + 34}, {size: FS_XL, color: GREEN})
+rr(rect(12, card_y, RAIL_W - 24, 108), radius: 12, fill: CARD, border: LINE)
+draw_text("DONE TODAY", pos: {x: 26, y: card_y + 16}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
+draw_text("{completed_today}", pos: {x: 26, y: card_y + 34}, style: {size: FS_XL, color: GREEN})
 let open_now = count_open(tasks, lst)
 let total_now = completed_today + open_now
-draw_text_right("{open_now} left", RAIL_W - 26, card_y + 42, FS_SM, DIM)
+draw_text_right("{open_now} left", right_x: RAIL_W - 26, y: card_y + 42, size: FS_SM, c: DIM)
 let bar = rect(26, card_y + 74, RAIL_W - 52, 6)
-draw_rect_rounded(bar, 3, SOFT)
+draw_rect_rounded(bar, radius: 3, c: SOFT)
 if total_now > 0 then
   let fw = int(bar.w * completed_today / total_now)
   if fw > 3 then
-    draw_rect_rounded(rect(bar.x, bar.y, fw, bar.h), 3, GREEN)
+    draw_rect_rounded(rect(bar.x, bar.y, fw, bar.h), radius: 3, c: GREEN)
   end
 end
-draw_text("in {if lst == "All" then "every list" else lst end}", {x: 26, y: card_y + 88}, {size: FS_MICRO, color: GHOST})
+draw_text("in {if lst == "All" then "every list" else lst end}", pos: {x: 26, y: card_y + 88}, style: {size: FS_MICRO, color: GHOST})
 
 // autosave line
 draw_circle({x: 27, y: H - 60}, 3.5, GREEN, 220)
-draw_text("autosaved · rev {rev}", {x: 38, y: H - 66}, {size: FS_MICRO, color: FAINT})
+draw_text("autosaved · rev {rev}", pos: {x: 38, y: H - 66}, style: {size: FS_MICRO, color: FAINT})
 let trash_note = if len(trash) > 0 then "{len(trash)} in trash · u to undo" else "trash empty" end
-draw_text(trash_note, {x: 38, y: H - 50}, {size: FS_MICRO, color: GHOST})
+draw_text(trash_note, pos: {x: 38, y: H - 50}, style: {size: FS_MICRO, color: GHOST})
 
 // ── top bar ─────────────────────────────────────────────────────────────────
 let head = if lst == "All" then "All tasks" else lst end
-draw_text(head, {x: MX + 22, y: 21}, {size: FS_XL, color: TEXT})
-draw_text("{n_shown}", {x: MX + 26 + text_width(head, FS_XL), y: 27}, {size: FS, color: GHOST})
+draw_text(head, pos: {x: MX + 22, y: 21}, style: {size: FS_XL, color: TEXT})
+draw_text("{n_shown}", pos: {x: MX + 26 + text_width(head, FS_XL), y: 27}, style: {size: FS, color: GHOST})
 
 // search box
 let q_on = focus == "search"
-rr(search_r, 9, if q_on then #0d1118 else CARD end, if q_on then AMBER else LINE end)
+rr(search_r, radius: 9, fill: if q_on then #0d1118 else CARD end, border: if q_on then AMBER else LINE end)
 let sc = if q_on then AMBER else FAINT end
-draw_circle({x: search_r.x + 18, y: search_r.y + 14}, 5.5, sc)
-draw_circle({x: search_r.x + 18, y: search_r.y + 14}, 3.6, if q_on then #0d1118 else CARD end)
-draw_line({x: search_r.x + 22, y: search_r.y + 18}, {x: search_r.x + 26, y: search_r.y + 22}, sc)
+draw_circle(center: {x: search_r.x + 18, y: search_r.y + 14}, radius: 5.5, c: sc)
+draw_circle(center: {x: search_r.x + 18, y: search_r.y + 14}, radius: 3.6, c: if q_on then #0d1118 else CARD end)
+draw_line({x: search_r.x + 22, y: search_r.y + 18}, {x: search_r.x + 26, y: search_r.y + 22}, c: sc)
 let qx = search_r.x + 36
 if len(q) == 0 && !q_on then
-  draw_text("Search tasks and notes", {x: qx, y: search_r.y + 9}, {size: FS, color: GHOST})
-  draw_text("/", {x: search_r.x + search_r.w - 16, y: search_r.y + 9}, {size: FS_SM, color: GHOST})
+  draw_text("Search tasks and notes", pos: {x: qx, y: search_r.y + 9}, style: {size: FS, color: GHOST})
+  draw_text("/", pos: {x: search_r.x + search_r.w - 16, y: search_r.y + 9}, style: {size: FS_SM, color: GHOST})
 else
-  draw_text(ellipsize(q, search_r.w - 52, FS), {x: qx, y: search_r.y + 9}, {size: FS, color: TEXT})
+  draw_text(ellipsize(q, avail_px: search_r.w - 52, size: FS), pos: {x: qx, y: search_r.y + 9}, style: {size: FS, color: TEXT})
 end
 if q_on && int(time() * 2) % 2 == 0 then
   draw_line({x: qx + text_width(q, FS) + 1, y: search_r.y + 8},
-    {x: qx + text_width(q, FS) + 1, y: search_r.y + 24}, AMBER)
+    {x: qx + text_width(q, FS) + 1, y: search_r.y + 24}, c: AMBER)
 end
 
 draw_rect(rect(MX, TOP_H, MAIN_W, 1), LINE)
 
 // ── composer ────────────────────────────────────────────────────────────────
 let c_on = focus == "compose"
-rr(comp_r, 12, if c_on then #0d1118 else SOFT end, if c_on then AMBER else LINE end)
+rr(comp_r, radius: 12, fill: if c_on then #0d1118 else SOFT end, border: if c_on then AMBER else LINE end)
 let plus_c = if c_on then AMBER else FAINT end
 draw_circle({x: comp_r.x + 26, y: comp_r.y + 22}, 9, plus_c, 40)
-stroke({x: comp_r.x + 21, y: comp_r.y + 22}, {x: comp_r.x + 31, y: comp_r.y + 22}, plus_c, 255, 1.6)
-stroke({x: comp_r.x + 26, y: comp_r.y + 17}, {x: comp_r.x + 26, y: comp_r.y + 27}, plus_c, 255, 1.6)
+stroke({x: comp_r.x + 21, y: comp_r.y + 22}, {x: comp_r.x + 31, y: comp_r.y + 22}, plus_c, alpha: 255, width: 1.6)
+stroke({x: comp_r.x + 26, y: comp_r.y + 17}, {x: comp_r.x + 26, y: comp_r.y + 27}, plus_c, alpha: 255, width: 1.6)
 let cx0 = comp_r.x + 46
 if len(compose) == 0 then
-  draw_text("Add a task…", {x: cx0, y: comp_r.y + 14}, {size: FS_ROW, color: if c_on then GHOST else FAINT end})
+  draw_text("Add a task…", pos: {x: cx0, y: comp_r.y + 14}, style: {size: FS_ROW, color: if c_on then GHOST else FAINT end})
   if !c_on then
-    draw_text_right("press n", comp_r.x + comp_r.w - 18, comp_r.y + 16, FS_SM, GHOST)
+    draw_text_right("press n", right_x: comp_r.x + comp_r.w - 18, y: comp_r.y + 16, size: FS_SM, c: GHOST)
   end
 else
-  draw_text(ellipsize(compose, comp_r.w - 200, FS_ROW), {x: cx0, y: comp_r.y + 13}, {size: FS_ROW, color: TEXT})
+  draw_text(ellipsize(compose, avail_px: comp_r.w - 200, size: FS_ROW), pos: {x: cx0, y: comp_r.y + 13}, style: {size: FS_ROW, color: TEXT})
 end
 if c_on then
   if int(time() * 2) % 2 == 0 then
     let ccx = cx0 + text_width(compose, FS_ROW) + 2
-    stroke({x: ccx, y: comp_r.y + 12}, {x: ccx, y: comp_r.y + 32}, AMBER, 255, 1.5)
+    stroke({x: ccx, y: comp_r.y + 12}, {x: ccx, y: comp_r.y + 32}, AMBER, alpha: 255, width: 1.5)
   end
   // Live read-out of what the line will actually create.
   let hx = comp_r.x + comp_r.w - 14
   let dl = due_label(parsed.due)
   let hw = text_width(dl, FS_MICRO) + 16
-  chip(hx - hw, comp_r.y + 13, dl, AMBER, false)
+  chip(x: hx - hw, y: comp_r.y + 13, label: dl, c: AMBER, strong: false)
   let pw = text_width(parsed.list, FS_MICRO) + 16
-  chip(hx - hw - pw - 6, comp_r.y + 13, parsed.list, list_color(parsed.list), false)
+  chip(x: hx - hw - pw - 6, y: comp_r.y + 13, label: parsed.list, c: list_color(parsed.list), strong: false)
   if parsed.prio >= 2 then
     let sw = text_width(prio_name(parsed.prio), FS_MICRO) + 16
-    chip(hx - hw - pw - sw - 12, comp_r.y + 13, prio_name(parsed.prio), prio_color(parsed.prio), false)
+    chip(x: hx - hw - pw - sw - 12, y: comp_r.y + 13, label: prio_name(parsed.prio), c: prio_color(parsed.prio), strong: false)
   end
 end
 
@@ -886,20 +886,20 @@ end
 for i in range(0, len(SEGS)) do
   let r = seg_rect(i)
   let on = status == SEGS[i]
-  let hov = point_in(mx, my, r)
+  let hov = point_in(px: mx, py: my, r: r)
   if on then
-    draw_rect_rounded(r, 14, CARD_HI)
-    draw_rect_rounded(r, 14, AMBER, 30)
+    draw_rect_rounded(r, radius: 14, c: CARD_HI)
+    draw_rect_rounded(r, radius: 14, c: AMBER, a: 30)
   elsif hov then
-    draw_rect_rounded(r, 14, CARD, 150)
+    draw_rect_rounded(r, radius: 14, c: CARD, a: 150)
   end
-  draw_text_center(SEGS[i], r.x + r.w / 2, r.y + 7, FS_SM, if on then TEXT else FAINT end)
+  draw_text_center(SEGS[i], cx: r.x + r.w / 2, y: r.y + 7, size: FS_SM, c: if on then TEXT else FAINT end)
 end
 draw_text_right("!  !!  ·  @today @tomorrow @week @someday  ·  #product #home",
-  MX + MAIN_W - 22, seg_y + 8, FS_MICRO, GHOST)
+  right_x: MX + MAIN_W - 22, y: seg_y + 8, size: FS_MICRO, c: GHOST)
 
 // ── feed ────────────────────────────────────────────────────────────────────
-clip(MX, FEED_TOP, MAIN_W, FEED_H)
+clip(x: MX, y: FEED_TOP, w: MAIN_W, h: FEED_H)
 for it in items do
   let iy = FEED_TOP + it.y - scroll
   if iy > FEED_TOP + FEED_H || iy + it.h < FEED_TOP then
@@ -908,35 +908,35 @@ for it in items do
   if it.kind == "h" then
     let gc = group_color(it.key)
     let lbl = group_label(it.key)
-    draw_text(lbl, {x: feed_x, y: iy + 14}, {size: FS_MICRO, color: gc, spacing: 1.6})
+    draw_text(lbl, pos: {x: feed_x, y: iy + 14}, style: {size: FS_MICRO, color: gc, spacing: 1.6})
     let lw = text_width(lbl, {size: FS_MICRO, spacing: 1.6})
-    draw_text("{it.n}", {x: feed_x + lw + 10, y: iy + 14}, {size: FS_MICRO, color: GHOST})
-    draw_line({x: feed_x + lw + 34, y: iy + 19}, {x: feed_x + feed_w, y: iy + 19}, LINE)
+    draw_text("{it.n}", pos: {x: feed_x + lw + 10, y: iy + 14}, style: {size: FS_MICRO, color: GHOST})
+    draw_line({x: feed_x + lw + 34, y: iy + 19}, {x: feed_x + feed_w, y: iy + 19}, c: LINE)
   else
     let t = it.task
     let r = rect(feed_x - 6, iy + 3, feed_w + 6, ROW_H - 8)
     let on = t.id == sel_id
-    let hov = point_in(mx, my, r) && point_in(mx, my, feed_r)
+    let hov = point_in(px: mx, py: my, r: r) && point_in(px: mx, py: my, r: feed_r)
     if on then
-      draw_rect_rounded(r, 11, CARD_HI)
-      draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), 2, list_color(t.list))
+      draw_rect_rounded(r, radius: 11, c: CARD_HI)
+      draw_rect_rounded(rect(r.x, r.y + 10, 3, r.h - 20), radius: 2, c: list_color(t.list))
     elsif hov then
-      draw_rect_rounded(r, 11, CARD, 140)
+      draw_rect_rounded(r, radius: 11, c: CARD, a: 140)
     end
 
     let box_hot = hov && mx < feed_x + 48
-    checkbox(feed_x + 22, iy + ROW_H / 2 - 1, t.done, box_hot)
+    checkbox(cx: feed_x + 22, cy: iy + ROW_H / 2 - 1, done: t.done, hot: box_hot)
 
     let tx = feed_x + 48
     let right_pad = 132
     let avail = feed_w - 48 - right_pad
     let tcol = if t.done then FAINT elsif on then #ffffff else TEXT end
-    let title = ellipsize(t.title, avail, FS_ROW)
+    let title = ellipsize(t.title, avail_px: avail, size: FS_ROW)
     let ty = iy + 12
-    draw_text(title, {x: tx, y: ty}, {size: FS_ROW, color: tcol})
+    draw_text(title, pos: {x: tx, y: ty}, style: {size: FS_ROW, color: tcol})
     if t.done then
       let sy = ty + 9
-      stroke({x: tx, y: sy}, {x: tx + text_width(title, FS_ROW), y: sy}, FAINT, 190, 1)
+      stroke({x: tx, y: sy}, {x: tx + text_width(title, FS_ROW), y: sy}, FAINT, alpha: 190, width: 1)
     end
 
     // second line: list, subtask progress, note hint
@@ -948,19 +948,19 @@ for it in items do
       set meta = append(meta, "note")
     end
     draw_circle({x: tx + 4, y: iy + 38}, 3, list_color(t.list), if t.done then 120 else 235 end)
-    draw_text(fit_parts(meta, avail - 16, FS_SM), {x: tx + 14, y: iy + 32},
-      {size: FS_SM, color: if t.done then GHOST else FAINT end})
+    draw_text(fit_parts(parts: meta, avail_px: avail - 16, size: FS_SM), pos: {x: tx + 14, y: iy + 32},
+      style: {size: FS_SM, color: if t.done then GHOST else FAINT end})
 
     // right edge: priority pip + due phrase
     let dcol = due_color(t.due, t.done)
     let dlbl = due_label(t.due)
-    draw_text_right(dlbl, feed_x + feed_w - 8, iy + 20, FS_SM, dcol)
+    draw_text_right(dlbl, right_x: feed_x + feed_w - 8, y: iy + 20, size: FS_SM, c: dcol)
     if t.prio >= 2 && !t.done then
       let pc = prio_color(t.prio)
       let px = feed_x + feed_w - 8 - text_width(dlbl, FS_SM) - 16
-      draw_rect_rounded(rect(px, iy + 20, 3, 12), 1.5, pc)
+      draw_rect_rounded(rect(px, iy + 20, 3, 12), radius: 1.5, c: pc)
       if t.prio == 3 then
-        draw_rect_rounded(rect(px - 6, iy + 20, 3, 12), 1.5, pc)
+        draw_rect_rounded(rect(px - 6, iy + 20, 3, 12), radius: 1.5, c: pc)
       end
     end
   end
@@ -970,17 +970,17 @@ clip_none()
 // feed scrollbar
 if feed_h > FEED_H then
   let track = rect(MX + MAIN_W - 8, FEED_TOP + 4, 4, FEED_H - 8)
-  draw_rect_rounded(track, 2, SOFT)
+  draw_rect_rounded(track, radius: 2, c: SOFT)
   let th = max(28, int(track.h * FEED_H / feed_h))
   let ty2 = track.y + int((track.h - th) * scroll / max(1, feed_h - FEED_H))
-  draw_rect_rounded(rect(track.x, ty2, track.w, th), 2, GHOST, 200)
+  draw_rect_rounded(rect(track.x, ty2, track.w, th), radius: 2, c: GHOST, a: 200)
 end
 
 // empty state
 if n_shown == 0 then
-  draw_text_center("Nothing here", MX + MAIN_W / 2, FEED_TOP + 92, FS_H, DIM)
+  draw_text_center("Nothing here", cx: MX + MAIN_W / 2, y: FEED_TOP + 92, size: FS_H, c: DIM)
   let hint = if len(q) > 0 then "No task matches “{q}”." else "This view is clear. Add one above." end
-  draw_text_center(hint, MX + MAIN_W / 2, FEED_TOP + 120, FS, GHOST)
+  draw_text_center(hint, cx: MX + MAIN_W / 2, y: FEED_TOP + 120, size: FS, c: GHOST)
 end
 
 // ── inspector ───────────────────────────────────────────────────────────────
@@ -988,126 +988,126 @@ draw_rect(rect(DX0, 0, DETAIL_W, H), SURFACE)
 draw_rect(rect(DX0, 0, 1, H), LINE)
 
 if !have then
-  draw_text("No task selected", {x: dx, y: 100}, {size: FS, color: GHOST})
+  draw_text("No task selected", pos: {x: dx, y: 100}, style: {size: FS, color: GHOST})
 else
-  draw_text("TASK", {x: dx, y: 26}, {size: FS_MICRO, color: FAINT, spacing: 1.6})
-  draw_text_right(ago(cur.age), DX0 + DETAIL_W - dpad, 25, FS_MICRO, GHOST)
+  draw_text("TASK", pos: {x: dx, y: 26}, style: {size: FS_MICRO, color: FAINT, spacing: 1.6})
+  draw_text_right(ago(cur.age), right_x: DX0 + DETAIL_W - dpad, y: 25, size: FS_MICRO, c: GHOST)
 
   // title block, editable in place
   let editing_title = focus == "title"
   if editing_title then
-    rr(rect(dx - 8, 92, dw + 16, 66), 10, #0d1118, AMBER)
-  elsif point_in(mx, my, title_r) then
-    draw_rect_rounded(rect(dx - 8, 92, dw + 16, 66), 10, CARD, 120)
+    rr(rect(dx - 8, 92, dw + 16, 66), radius: 10, fill: #0d1118, border: AMBER)
+  elsif point_in(px: mx, py: my, r: title_r) then
+    draw_rect_rounded(rect(dx - 8, 92, dw + 16, 66), radius: 10, c: CARD, a: 120)
   end
   let shown_title = if editing_title then ed_title else cur.title end
   let tcols = int(dw / max(1.0, text_width("m", FS_H)))
-  let tlines = preview(shown_title, tcols, 2).lines
+  let tlines = preview(shown_title, max_chars: tcols, max_lines: 2).lines
   for i in range(0, len(tlines)) do
-    draw_text(tlines[i], {x: dx, y: 100 + i * 26}, {size: FS_H, color: if cur.done then DIM else TEXT end})
+    draw_text(tlines[i], pos: {x: dx, y: 100 + i * 26}, style: {size: FS_H, color: if cur.done then DIM else TEXT end})
   end
   if editing_title then
     let last = tlines[len(tlines) - 1]
     let cxx = dx + text_width(last, FS_H) + 2
     if int(time() * 2) % 2 == 0 then
-      stroke({x: cxx, y: 100 + (len(tlines) - 1) * 26}, {x: cxx, y: 122 + (len(tlines) - 1) * 26}, AMBER, 255, 1.5)
+      stroke({x: cxx, y: 100 + (len(tlines) - 1) * 26}, {x: cxx, y: 122 + (len(tlines) - 1) * 26}, AMBER, alpha: 255, width: 1.5)
     end
-    draw_text("return saves · esc cancels", {x: dx, y: 162}, {size: FS_MICRO, color: GHOST})
+    draw_text("return saves · esc cancels", pos: {x: dx, y: 162}, style: {size: FS_MICRO, color: GHOST})
   else
-    draw_text("click or press e to rename", {x: dx, y: 162}, {size: FS_MICRO, color: GHOST})
+    draw_text("click or press e to rename", pos: {x: dx, y: 162}, style: {size: FS_MICRO, color: GHOST})
   end
 
   // status + list + due chips
   let chip_y = 188
-  let sx = chip(dx, chip_y, if cur.done then "Completed" else "Open" end,
-    if cur.done then GREEN else AMBER end, true)
-  let lx2 = chip(dx + sx + 8, chip_y, cur.list, list_color(cur.list), true)
-  chip(dx + sx + lx2 + 16, chip_y, due_label(cur.due), due_color(cur.due, cur.done), true)
+  let sx = chip(x: dx, y: chip_y, label: if cur.done then "Completed" else "Open" end,
+    c: if cur.done then GREEN else AMBER end, strong: true)
+  let lx2 = chip(x: dx + sx + 8, y: chip_y, label: cur.list, c: list_color(cur.list), strong: true)
+  chip(x: dx + sx + lx2 + 16, y: chip_y, label: due_label(cur.due), c: due_color(cur.due, cur.done), strong: true)
 
-  draw_line({x: dx, y: chip_y + 42}, {x: dx + dw, y: chip_y + 42}, LINE)
+  draw_line({x: dx, y: chip_y + 42}, {x: dx + dw, y: chip_y + 42}, c: LINE)
 
   // priority picker
   let py = chip_y + 62
   prio_row_y = py + 20
-  draw_text("PRIORITY", {x: dx, y: py}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
-  draw_text_right("keys 0 – 3", dx + dw, py, FS_MICRO, GHOST)
+  draw_text("PRIORITY", pos: {x: dx, y: py}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
+  draw_text_right("keys 0 – 3", right_x: dx + dw, y: py, size: FS_MICRO, c: GHOST)
   for i in range(0, 4) do
-    let r = prio_pick_rect(i, dx, prio_row_y, dw)
+    let r = prio_pick_rect(i, x: dx, y: prio_row_y, w: dw)
     let on = cur.prio == i
     let c = prio_color(i)
     if on then
-      draw_rect_rounded(r, 8, c, 52)
-      draw_rect_rounded(rect(r.x, r.y, r.w, r.h), 8, c, 30)
-    elsif point_in(mx, my, r) then
-      draw_rect_rounded(r, 8, CARD_HI)
+      draw_rect_rounded(r, radius: 8, c: c, a: 52)
+      draw_rect_rounded(rect(r.x, r.y, r.w, r.h), radius: 8, c: c, a: 30)
+    elsif point_in(px: mx, py: my, r: r) then
+      draw_rect_rounded(r, radius: 8, c: CARD_HI)
     else
-      draw_rect_rounded(r, 8, CARD)
+      draw_rect_rounded(r, radius: 8, c: CARD)
     end
-    draw_text_center(prio_name(i), r.x + r.w / 2, r.y + 7, FS_MICRO, if on then c else FAINT end)
+    draw_text_center(prio_name(i), cx: r.x + r.w / 2, y: r.y + 7, size: FS_MICRO, c: if on then c else FAINT end)
   end
 
   // due nudge hint
   let dy2 = prio_row_y + 46
-  draw_text("SCHEDULE", {x: dx, y: dy2}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
-  draw_text_right("keys , and .", dx + dw, dy2, FS_MICRO, GHOST)
-  draw_text(due_label(cur.due), {x: dx, y: dy2 + 18}, {size: FS, color: due_color(cur.due, cur.done)})
+  draw_text("SCHEDULE", pos: {x: dx, y: dy2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
+  draw_text_right("keys , and .", right_x: dx + dw, y: dy2, size: FS_MICRO, c: GHOST)
+  draw_text(due_label(cur.due), pos: {x: dx, y: dy2 + 18}, style: {size: FS, color: due_color(cur.due, cur.done)})
 
   // notes
   let ny = dy2 + 56
-  draw_text("NOTES", {x: dx, y: ny}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
+  draw_text("NOTES", pos: {x: dx, y: ny}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
   if len(cur.notes) == 0 then
-    draw_text("No notes on this task.", {x: dx, y: ny + 20}, {size: FS, color: GHOST})
+    draw_text("No notes on this task.", pos: {x: dx, y: ny + 20}, style: {size: FS, color: GHOST})
   else
     let ncols = int(dw / max(1.0, text_width("m", FS)))
-    let nlines = preview(cur.notes, ncols, 5).lines
+    let nlines = preview(cur.notes, max_chars: ncols, max_lines: 5).lines
     for i in range(0, len(nlines)) do
-      draw_text(nlines[i], {x: dx, y: ny + 20 + i * 19}, {size: FS, color: DIM})
+      draw_text(nlines[i], pos: {x: dx, y: ny + 20 + i * 19}, style: {size: FS, color: DIM})
     end
   end
 
   // checklist
   let sy2 = ny + 132
-  draw_line({x: dx, y: sy2 - 18}, {x: dx + dw, y: sy2 - 18}, LINE)
-  draw_text("CHECKLIST", {x: dx, y: sy2}, {size: FS_MICRO, color: FAINT, spacing: 1.4})
+  draw_line({x: dx, y: sy2 - 18}, {x: dx + dw, y: sy2 - 18}, c: LINE)
+  draw_text("CHECKLIST", pos: {x: dx, y: sy2}, style: {size: FS_MICRO, color: FAINT, spacing: 1.4})
   if len(cur.subs) > 0 then
-    draw_text_right("{subs_done(cur)} of {len(cur.subs)}", dx + dw, sy2, FS_MICRO, GHOST)
+    draw_text_right("{subs_done(cur)} of {len(cur.subs)}", right_x: dx + dw, y: sy2, size: FS_MICRO, c: GHOST)
   end
   sub_row_y = sy2 + 20
   if len(cur.subs) == 0 then
-    draw_text("No steps yet.", {x: dx, y: sub_row_y + 3}, {size: FS, color: GHOST})
+    draw_text("No steps yet.", pos: {x: dx, y: sub_row_y + 3}, style: {size: FS, color: GHOST})
   else
     for i in range(0, len(cur.subs)) do
       let s = cur.subs[i]
-      let r = sub_rect(i, dx, sub_row_y, dw)
-      let hov = point_in(mx, my, r)
+      let r = sub_rect(i, x: dx, y: sub_row_y, w: dw)
+      let hov = point_in(px: mx, py: my, r: r)
       if hov then
-        draw_rect_rounded(rect(r.x - 6, r.y - 1, r.w + 12, r.h), 6, CARD, 150)
+        draw_rect_rounded(rect(r.x - 6, r.y - 1, r.w + 12, r.h), radius: 6, c: CARD, a: 150)
       end
       let bx = r.x + 8
       let by2 = r.y + 11
       if s.done then
-        draw_rect_rounded(rect(bx - 6, by2 - 6, 12, 12), 3, GREEN)
-        stroke({x: bx - 3, y: by2}, {x: bx - 1, y: by2 + 2.5}, INK, 255, 1.6)
-        stroke({x: bx - 1, y: by2 + 2.5}, {x: bx + 3, y: by2 - 2.5}, INK, 255, 1.6)
+        draw_rect_rounded(rect(bx - 6, by2 - 6, 12, 12), radius: 3, c: GREEN)
+        stroke({x: bx - 3, y: by2}, {x: bx - 1, y: by2 + 2.5}, INK, alpha: 255, width: 1.6)
+        stroke({x: bx - 1, y: by2 + 2.5}, {x: bx + 3, y: by2 - 2.5}, INK, alpha: 255, width: 1.6)
       else
-        draw_rect_rounded(rect(bx - 6, by2 - 6, 12, 12), 3, if hov then GREEN else GHOST end, 170)
-        draw_rect_rounded(rect(bx - 5, by2 - 5, 10, 10), 2, SURFACE)
+        draw_rect_rounded(rect(bx - 6, by2 - 6, 12, 12), radius: 3, c: if hov then GREEN else GHOST end, a: 170)
+        draw_rect_rounded(rect(bx - 5, by2 - 5, 10, 10), radius: 2, c: SURFACE)
       end
       let scol = if s.done then GHOST else DIM end
-      let st = ellipsize(s.t, dw - 30, FS)
-      draw_text(st, {x: bx + 14, y: r.y + 4}, {size: FS, color: scol})
+      let st = ellipsize(s.t, avail_px: dw - 30, size: FS)
+      draw_text(st, pos: {x: bx + 14, y: r.y + 4}, style: {size: FS, color: scol})
       if s.done then
-        stroke({x: bx + 14, y: r.y + 11}, {x: bx + 14 + text_width(st, FS), y: r.y + 11}, GHOST, 190, 1)
+        stroke({x: bx + 14, y: r.y + 11}, {x: bx + 14 + text_width(st, FS), y: r.y + 11}, GHOST, alpha: 190, width: 1)
       end
     end
   end
 
   // actions
-  draw_line({x: dx, y: act_y - 26}, {x: dx + dw, y: act_y - 26}, LINE)
-  draw_text("task #{cur.id}", {x: dx, y: act_y - 46}, {size: FS_MICRO, color: GHOST})
-  draw_text_right("added {ago(cur.age)} · in {cur.list}", dx + dw, act_y - 46, FS_MICRO, GHOST)
-  if btn(act1, if cur.done then "Reopen" else "Complete" end, 1, true) then end
-  if btn(act2, "Delete", 2, true) then end
+  draw_line({x: dx, y: act_y - 26}, {x: dx + dw, y: act_y - 26}, c: LINE)
+  draw_text("task #{cur.id}", pos: {x: dx, y: act_y - 46}, style: {size: FS_MICRO, color: GHOST})
+  draw_text_right("added {ago(cur.age)} · in {cur.list}", right_x: dx + dw, y: act_y - 46, size: FS_MICRO, c: GHOST)
+  if btn(act1, label: if cur.done then "Reopen" else "Complete" end, kind: 1, enabled: true) then end
+  if btn(act2, label: "Delete", kind: 2, enabled: true) then end
 end
 
 // ── observable summary (read from /state → panes[0].panel.values) ───────────

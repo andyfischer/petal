@@ -101,14 +101,14 @@ for v in vehicles do
   end
 
   // Limit steering force
-  let steer = limit_vec(steer_x, steer_y, v.max_force)
+  let steer = limit_vec(vx: steer_x, vy: steer_y, max_val: v.max_force)
 
   // Apply steering
   let nvx = v.vx + steer.x * delta
   let nvy = v.vy + steer.y * delta
 
   // Limit speed
-  let vel = limit_vec(nvx, nvy, v.max_speed)
+  let vel = limit_vec(vx: nvx, vy: nvy, max_val: v.max_speed)
   nvx = vel.x
   nvy = vel.y
 
@@ -147,7 +147,7 @@ for t in trails do
 end
 trails = new_trails
 if len(trails) > 2000 then
-  trails = slice(trails, len(trails) - 1500, len(trails))
+  trails = slice(trails, start: len(trails) - 1500, end: len(trails))
 end
 
 // === Drawing ===
@@ -156,15 +156,15 @@ clear(10, 12, 20)
 // Draw trails
 for t in trails do
   let alpha = t.life * 0.5
-  draw_circle(int(t.x), int(t.y), 2,
-    int(float(t.r) * alpha), int(float(t.g) * alpha), int(float(t.b) * alpha))
+  draw_circle(cx: int(t.x), cy: int(t.y), radius: 2,
+    r: int(float(t.r) * alpha), g: int(float(t.g) * alpha), b: int(float(t.b) * alpha))
 end
 
 // Draw target
-draw_circle(int(target_x), int(target_y), 15, 40, 15, 15)
-draw_circle(int(target_x), int(target_y), 10, 60, 20, 20)
-draw_circle(int(target_x), int(target_y), 5, 200, 50, 50)
-draw_circle(int(target_x), int(target_y), 2, 255, 100, 100)
+draw_circle(cx: int(target_x), cy: int(target_y), radius: 15, r: 40, g: 15, b: 15)
+draw_circle(cx: int(target_x), cy: int(target_y), radius: 10, r: 60, g: 20, b: 20)
+draw_circle(cx: int(target_x), cy: int(target_y), radius: 5, r: 200, g: 50, b: 50)
+draw_circle(cx: int(target_x), cy: int(target_y), radius: 2, r: 255, g: 100, b: 100)
 
 // Draw vehicles as triangles (using lines)
 for v in vehicles do
@@ -182,7 +182,7 @@ for v in vehicles do
   let right_y = v.y - heading_y * size * 0.6 + heading_x * size * 0.5
 
   // Fill body
-  draw_circle(int(v.x), int(v.y), 6, v.r / 2, v.g / 2, v.b / 2)
+  draw_circle(cx: int(v.x), cy: int(v.y), radius: 6, r: v.r / 2, g: v.g / 2, b: v.b / 2)
 
   // Triangle outline
   draw_line(int(nose_x), int(nose_y), int(left_x), int(left_y), v.r, v.g, v.b)
@@ -192,18 +192,18 @@ for v in vehicles do
   // Mode indicator
   if v.mode == 0 then
     // Seeker - dot at nose
-    draw_circle(int(nose_x), int(nose_y), 3, 100, 255, 100)
+    draw_circle(cx: int(nose_x), cy: int(nose_y), radius: 3, r: 100, g: 255, b: 100)
   elsif v.mode == 1 then
     // Fleer - red warning
-    draw_circle(int(nose_x), int(nose_y), 3, 255, 100, 100)
+    draw_circle(cx: int(nose_x), cy: int(nose_y), radius: 3, r: 255, g: 100, b: 100)
   end
 end
 
 // Legend
-draw_text("Autonomous Agents", 10, 10, 16, 100, 100, 120)
-draw_text("Move mouse to steer", 10, 30, 12, 60, 60, 80)
-draw_circle(10, 55, 4, 100, 255, 100)
-draw_text("Seek", 20, 49, 12, 100, 255, 100)
-draw_circle(10, 75, 4, 255, 100, 100)
-draw_text("Flee", 20, 69, 12, 255, 100, 100)
-draw_text("Wander", 20, 89, 12, 150, 200, 220)
+draw_text("Autonomous Agents", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Move mouse to steer", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
+draw_circle(cx: 10, cy: 55, radius: 4, r: 100, g: 255, b: 100)
+draw_text("Seek", x: 20, y: 49, size: 12, r: 100, g: 255, b: 100)
+draw_circle(cx: 10, cy: 75, radius: 4, r: 255, g: 100, b: 100)
+draw_text("Flee", x: 20, y: 69, size: 12, r: 255, g: 100, b: 100)
+draw_text("Wander", x: 20, y: 89, size: 12, r: 150, g: 200, b: 220)

@@ -22,7 +22,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 let gravity = 400.0
@@ -321,7 +321,7 @@ clear(8, 6, 18)
 for i in range(0, 6) do
   let gy = 500 + i * 20
   let gb = 18 + i * 3
-  draw_rect(0, gy, 800, 20, 8 + i, 6 + i, gb)
+  draw_rect(x: 0, y: gy, w: 800, h: 20, r: 8 + i, g: 6 + i, b: gb)
 end
 
 // Draw twinkling stars
@@ -332,7 +332,7 @@ for s in stars do
   if flicker % 120 < 15 then
     bright = min(255, s.bright + 40)
   end
-  draw_rect(int(s.x) % 800, int(s.y), s.size, s.size, bright, bright, bright + 10)
+  draw_rect(x: int(s.x) % 800, y: int(s.y), w: s.size, h: s.size, r: bright, g: bright, b: bright + 10)
 end
 
 // Draw subtle ground line
@@ -353,18 +353,18 @@ for p in particles do
     let gr = int(float(cr) * 0.3)
     let gg = int(float(cg) * 0.3)
     let gb = int(float(cb) * 0.3)
-    draw_circle(px, py, p.size + 2, gr, gg, gb)
+    draw_circle(cx: px, cy: py, radius: p.size + 2, r: gr, g: gg, b: gb)
   end
 
   // Core particle
-  draw_circle(px, py, p.size, cr, cg, cb)
+  draw_circle(cx: px, cy: py, radius: p.size, r: cr, g: cg, b: cb)
 
   // Bright center
   if p.size > 3 && fade > 0.5 then
     let hr = min(255, cr + 60)
     let hg = min(255, cg + 60)
     let hb = min(255, cb + 60)
-    draw_circle(px, py, max(1, p.size - 2), hr, hg, hb)
+    draw_circle(cx: px, cy: py, radius: max(1, p.size - 2), r: hr, g: hg, b: hb)
   end
 end
 
@@ -378,8 +378,8 @@ if len(electrics) > 1 then
     let dy = abs(a.y - b.y)
     if dx < 120.0 && dy < 120.0 then
       let fade = max(0.0, min(1.0, a.life))
-      draw_line(int(a.x), int(a.y), int(b.x), int(b.y),
-        int(60.0 * fade), int(120.0 * fade), int(255.0 * fade))
+      draw_line(x1: int(a.x), y1: int(a.y), x2: int(b.x), y2: int(b.y),
+        r: int(60.0 * fade), g: int(120.0 * fade), b: int(255.0 * fade))
     end
   end
 end

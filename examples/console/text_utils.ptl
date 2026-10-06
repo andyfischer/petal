@@ -5,7 +5,7 @@
 export let ellipsis = "..."
 
 fn _cut(s: string, n: num) -> string
-  slice(s, 0, n)
+  slice(s, start: 0, end: n)
 end
 
 export fn truncate(s: string, max: num) -> string

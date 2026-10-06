@@ -67,7 +67,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text: string, pos: record, size: num, color: record)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 clear(bg.r, bg.g, bg.b)
@@ -133,8 +133,8 @@ for i in range(0, len(people)) do
   end
 
   // Drop shadow: the same box, offset two pixels.
-  draw_rect(x + 2, y + 2, node_w, node_h, shadow_color.r, shadow_color.g, shadow_color.b)
-  draw_rect(x, y, node_w, node_h, bg_r, bg_g, bg_b)
+  draw_rect(x: x + 2, y: y + 2, w: node_w, h: node_h, r: shadow_color.r, g: shadow_color.g, b: shadow_color.b)
+  draw_rect(x, y, w: node_w, h: node_h, r: bg_r, g: bg_g, b: bg_b)
   draw_rect_outline(x, y, node_w, node_h, border_r, border_g, border_b)
 
   // No bold in this host, so the name is simply drawn a size larger.

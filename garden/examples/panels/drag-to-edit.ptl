@@ -21,16 +21,16 @@ clear(16, 18, 26)
 // ── 1. Literals ──────────────────────────────────────────
 // Both numbers are written right here, so a drag rewrites
 // this line and nothing else moves.
-draw_rect(46, 210, 96, 64, 90, 150, 220)
-draw_text("literals", 46, 284, 12, 130, 145, 175)
+draw_rect(x: 46, y: 210, w: 96, h: 64, r: 90, g: 150, b: 220)
+draw_text("literals", x: 46, y: 284, size: 12, r: 130, g: 145, b: 175)
 
 // ── 2. One knob, two shapes ──────────────────────────────
 // Both squares read `edge`. Drag either one sideways and they
 // move together — the status bar says the edit is shared. The
 // y positions are literals, so they still move one at a time.
-draw_rect(edge, 60, 52, 52, 220, 120, 90)
-draw_rect(edge, 130, 52, 52, 130, 130, 230)
-draw_text("shared knob", edge, 200, 12, 130, 145, 175)
+draw_rect(x: edge, y: 60, w: 52, h: 52, r: 220, g: 120, b: 90)
+draw_rect(x: edge, y: 130, w: 52, h: 52, r: 130, g: 130, b: 230)
+draw_text("shared knob", x: edge, y: 200, size: 12, r: 130, g: 145, b: 175)
 
 // ── 3. Solved, not looked up ─────────────────────────────
 // There is no number to edit in `x0 + i * spacing` — the last
@@ -46,11 +46,11 @@ draw_text("shared knob", edge, 200, 12, 130, 145, 175)
 let x0 = 46
 let row_y = 96
 for i in range(0, 4) do
-  draw_rect(x0 + i * spacing, row_y, 44, 44, 70, 165, 150)
+  draw_rect(x: x0 + i * spacing, y: row_y, w: 44, h: 44, r: 70, g: 165, b: 150)
 end
-draw_text("drag the last card to re-space the row", x0, 152, 12, 130, 145, 175)
+draw_text("drag the last card to re-space the row", x: x0, y: 152, size: 12, r: 130, g: 145, b: 175)
 
 // ── 4. Text is a shape too ───────────────────────────────
-draw_text("cmd-drag me", 250, 250, 18, 235, 200, 120)
+draw_text("cmd-drag me", x: 250, y: 250, size: 18, r: 235, g: 200, b: 120)
 
-draw_text("cmd-drag a shape — this file edits itself", 16, 20, 13, 200, 210, 235)
+draw_text("cmd-drag a shape — this file edits itself", x: 16, y: 20, size: 13, r: 200, g: 210, b: 235)

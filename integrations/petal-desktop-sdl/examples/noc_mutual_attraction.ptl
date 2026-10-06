@@ -114,7 +114,7 @@ for t in trails do
 end
 trails = new_trails
 if len(trails) > 4000 then
-  trails = slice(trails, len(trails) - 3000, len(trails))
+  trails = slice(trails, start: len(trails) - 3000, end: len(trails))
 end
 
 // === Drawing ===
@@ -139,8 +139,8 @@ end
 // Draw trails
 for t in trails do
   let alpha = t.life * 0.4
-  draw_circle(int(t.x), int(t.y), 1,
-    int(float(t.r) * alpha), int(float(t.g) * alpha), int(float(t.b) * alpha))
+  draw_circle(cx: int(t.x), cy: int(t.y), radius: 1,
+    r: int(float(t.r) * alpha), g: int(float(t.g) * alpha), b: int(float(t.b) * alpha))
 end
 
 // Draw bodies
@@ -148,15 +148,15 @@ for b in bodies do
   let radius = int(b.mass * 1.5) + 2
 
   // Glow
-  draw_circle(int(b.x), int(b.y), radius + 6, b.r / 6, b.g / 6, b.b / 6)
-  draw_circle(int(b.x), int(b.y), radius + 3, b.r / 3, b.g / 3, b.b / 3)
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: radius + 6, r: b.r / 6, g: b.g / 6, b: b.b / 6)
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: radius + 3, r: b.r / 3, g: b.g / 3, b: b.b / 3)
   // Body
-  draw_circle(int(b.x), int(b.y), radius, b.r, b.g, b.b)
+  draw_circle(cx: int(b.x), cy: int(b.y), radius: radius, r: b.r, g: b.g, b: b.b)
   // Core highlight
-  draw_circle(int(b.x) - radius / 3, int(b.y) - radius / 3, max(1, radius / 3),
-    min(255, b.r + 80), min(255, b.g + 80), min(255, b.b + 80))
+  draw_circle(cx: int(b.x) - radius / 3, cy: int(b.y) - radius / 3, radius: max(1, radius / 3),
+    r: min(255, b.r + 80), g: min(255, b.g + 80), b: min(255, b.b + 80))
 end
 
-draw_text("Mutual Attraction (N-body)", 10, 10, 16, 100, 100, 120)
-draw_text("Every body attracts every other", 10, 30, 12, 60, 60, 80)
-draw_text("Bodies: " ++ str(len(bodies)), 10, 46, 10, 50, 50, 70)
+draw_text("Mutual Attraction (N-body)", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Every body attracts every other", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
+draw_text("Bodies: " ++ str(len(bodies)), x: 10, y: 46, size: 10, r: 50, g: 50, b: 70)

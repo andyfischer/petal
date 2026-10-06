@@ -37,7 +37,7 @@ fn make_ring(cx, cy, r, n)
 end
 
 if key_pressed("r") || len(nodes) == 0 then
-  nodes = make_ring(sw * 0.5, sh * 0.5, 60.0, 24)
+  nodes = make_ring(cx: sw * 0.5, cy: sh * 0.5, r: 60.0, n: 24)
   attractors = []
 end
 
@@ -175,24 +175,24 @@ let t_now = float(frame_count()) * delta * 30.0
 for i in range(0, n) do
   let next_i = (i + 1) % n
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
-  let col = hsv_deg(h, 0.5, 0.45)
+  let col = hsv_deg(h, s: 0.5, v: 0.45)
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
 end
 // Crisp inner stroke
 for i in range(0, n) do
   let next_i = (i + 1) % n
   let h = (float(i) / float(n) * 360.0 + t_now * 0.4) % 360.0
-  let col = hsv_deg(h, 0.85, 1.0)
+  let col = hsv_deg(h, s: 0.85, v: 1.0)
   draw_line(int(nodes[i].x), int(nodes[i].y), int(nodes[next_i].x), int(nodes[next_i].y), col.r, col.g, col.b)
 end
 
 // Attractor markers
 for a in attractors do
-  draw_circle(int(a.x), int(a.y), 10, 60, 30, 60)
-  draw_circle(int(a.x), int(a.y), 4, 255, 200, 220)
+  draw_circle(cx: int(a.x), cy: int(a.y), radius: 10, r: 60, g: 30, b: 60)
+  draw_circle(cx: int(a.x), cy: int(a.y), radius: 4, r: 255, g: 200, b: 220)
 end
 
-draw_rect(8, 8, 280, 60, 0, 0, 0)
-draw_text("Differential Growth", 14, 12, 16, 220, 200, 230)
-draw_text("nodes: " ++ str(n), 14, 32, 11, 150, 130, 200)
-draw_text("click: attractor  c: clear  r: reset  space: pause", 14, 50, 10, 110, 110, 160)
+draw_rect(x: 8, y: 8, w: 280, h: 60, r: 0, g: 0, b: 0)
+draw_text("Differential Growth", x: 14, y: 12, size: 16, r: 220, g: 200, b: 230)
+draw_text("nodes: " ++ str(n), x: 14, y: 32, size: 11, r: 150, g: 130, b: 200)
+draw_text("click: attractor  c: clear  r: reset  space: pause", x: 14, y: 50, size: 10, r: 110, g: 110, b: 160)

@@ -61,4 +61,4 @@ for s in stars do
   draw_line(int(psx), int(psy), int(sx), int(sy), b, b, b)
 end
 
-draw_text("Starfield", 16, 12, 14, 180, 180, 220)
+draw_text("Starfield", x: 16, y: 12, size: 14, r: 180, g: 180, b: 220)

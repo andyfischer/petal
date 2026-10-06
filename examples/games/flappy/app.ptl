@@ -101,15 +101,15 @@ state var cause    = ""
 // ── Pure helpers ─────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
-  draw_text(s, {x: int(x), y: int(y)}, style)
+  draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
 end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
-  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+  draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
 end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
-  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+  draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
 end
 
 fn gap_for(sc: int) -> num
@@ -206,7 +206,7 @@ if key_pressed("r") then
   new_run()
 end
 
-let clicked_field = mouse_pressed(0) && point_in(mouse_x(), mouse_y(), field)
+let clicked_field = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r: field)
 let go = key_pressed("space") || key_pressed("up") || key_pressed("w") || clicked_field
 
 if go then
@@ -264,9 +264,9 @@ if phase == "play" then
           let top_h = p.gap_y - p.gap_h / 2.0
           let bot_y = p.gap_y + p.gap_h / 2.0
           // Closest point on each rect to the bird centre.
-          let qx = clamp(bird_x, p.x, p.x + pipe_w)
-          let qy_top = clamp(by, ft, top_h)
-          let qy_bot = clamp(by, bot_y, fb)
+          let qx = clamp(bird_x, lo: p.x, hi: p.x + pipe_w)
+          let qy_top = clamp(by, lo: ft, hi: top_h)
+          let qy_bot = clamp(by, lo: bot_y, hi: fb)
           let d_top = (bird_x - qx) * (bird_x - qx) + (by - qy_top) * (by - qy_top)
           let d_bot = (bird_x - qx) * (bird_x - qx) + (by - qy_bot) * (by - qy_bot)
           if d_top < BIRD_R * BIRD_R * 0.85 || d_bot < BIRD_R * BIRD_R * 0.85 then
@@ -282,8 +282,8 @@ if phase == "play" then
       set flash = 1.0
       set shake = 1.0
       set best = max(best, score)
-      set bits = burst(bits, bird_x, by, 26, C_BIRD, 1.2)
-      set bits = burst(bits, bird_x, by, 10, C_WING, 0.9)
+      set bits = burst(bits, x: bird_x, y: by, n: 26, col: C_BIRD, power: 1.2)
+      set bits = burst(bits, x: bird_x, y: by, n: 10, col: C_WING, power: 0.9)
       t_left = 0.0
     end
   end
@@ -327,8 +327,8 @@ end
 // Tilt follows the velocity: nose up right after a flap, then dives.
 let want_ang = if phase == "title" then 0.0
 elsif phase == "dead" || phase == "over" then 1.45
-else clamp(bvy / 600.0, -0.45, 1.2) end
-set bang = approach(bang, want_ang, if bvy < 0.0 then 18.0 else 6.0 end)
+else clamp(bvy / 600.0, lo: -0.45, hi: 1.2) end
+set bang = approach(cur: bang, target: want_ang, rate: if bvy < 0.0 then 18.0 else 6.0 end)
 
 set bits = for p in bits do
   let nl = p.life - sdt
@@ -346,35 +346,35 @@ set pop_t = max(0.0, pop_t - sdt)
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
-tx("FLAPPY", PAD, 24, S_TITLE)
-tx("PETAL / GARDEN TESTBED 06", PAD + 3, 62, S_KICK)
+tx("FLAPPY", x: PAD, y: 24, style: S_TITLE)
+tx("PETAL / GARDEN TESTBED 06", x: PAD + 3, y: 62, style: S_KICK)
 
 // Score, centred, with a pop when it changes.
 let pop = if pop_t > 0.0 then 1.0 + ease_out(pop_t / 0.4) * 0.18 else 1.0 end
-tx_center(str(score), cx, 8, {...S_SCORE, size: int(52.0 * pop)})
-tx_center("SCORE", cx, 70, S_LABEL)
+tx_center(str(score), cx, y: 8, style: {...S_SCORE, size: int(52.0 * pop)})
+tx_center("SCORE", cx, y: 70, style: S_LABEL)
 
 let cell3 = W - PAD
 let cell2 = cell3 - 116
 let cell1 = cell2 - 116
-tx_right("BEST", cell3, 30, S_LABEL)
-tx_right(str(best), cell3, 46, if best > 0 then {...S_STAT, color: C_GOLD} else S_STATD end)
-tx_right("RUNS", cell2, 30, S_LABEL)
-tx_right(str(runs), cell2, 46, if runs > 0 then S_STAT else S_STATD end)
-tx_right("GAP", cell1, 30, S_LABEL)
-tx_right("{int(gap_for(score))}px", cell1, 46, S_STAT)
-tx_right("{flaps} FLAPS   ·   {int(scroll)} m", cell3, 76, S_HINT)
+tx_right("BEST", right_x: cell3, y: 30, style: S_LABEL)
+tx_right(str(best), right_x: cell3, y: 46, style: if best > 0 then {...S_STAT, color: C_GOLD} else S_STATD end)
+tx_right("RUNS", right_x: cell2, y: 30, style: S_LABEL)
+tx_right(str(runs), right_x: cell2, y: 46, style: if runs > 0 then S_STAT else S_STATD end)
+tx_right("GAP", right_x: cell1, y: 30, style: S_LABEL)
+tx_right("{int(gap_for(score))}px", right_x: cell1, y: 46, style: S_STAT)
+tx_right("{flaps} FLAPS   ·   {int(scroll)} m", right_x: cell3, y: 76, style: S_HINT)
 
 // ── Draw: field ──────────────────────────────────────────────────────────
 
 let shx = if shake > 0.0 then int(sin(pulse * 90.0) * shake * 4.0) else 0 end
 let shy = if shake > 0.0 then int(cos(pulse * 77.0) * shake * 3.0) else 0 end
 
-draw_rect_rounded(field, 16, C_SKY_TOP)
+draw_rect_rounded(field, radius: 16, c: C_SKY_TOP)
 clip_push(field, 16)
 
 // Sky gradient and a low sun.
-draw_rect_gradient(field, C_SKY_TOP, C_SKY_BOT, pi() / 2.0)
+draw_rect_gradient(field, C_SKY_TOP, C_SKY_BOT, angle: pi() / 2.0)
 let sun_x = int(fr) - 190 - int(scroll * 0.02) % 60
 let sun_y = int(fb) - 120
 draw_circle({x: sun_x, y: sun_y}, 70, C_SUN, 22)
@@ -407,8 +407,8 @@ fn hills(par: num, amp: num, freq: num, base_y: num, col: record)
   pts = append(pts, [int(fr) + 2, int(fb) + 2])
   fill_polygon(pts, col)
 end
-hills(0.35, 60.0, 0.0065, fb - 80.0, C_HILL_B)
-hills(0.6, 44.0, 0.011, fb - 34.0, C_HILL_F)
+hills(par: 0.35, amp: 60.0, freq: 0.0065, base_y: fb - 80.0, col: C_HILL_B)
+hills(par: 0.6, amp: 44.0, freq: 0.011, base_y: fb - 34.0, col: C_HILL_F)
 
 // Pipes.
 for p in pipes do
@@ -419,17 +419,17 @@ for p in pipes do
   // Shaft, cap, highlight — for both halves.
   draw_rect(rect(px, int(ft) - 4, pw, top_h - int(ft) + 4), C_PIPE_D)
   draw_rect(rect(px + 4, int(ft) - 4, pw - 20, top_h - int(ft) + 4), C_PIPE)
-  draw_rect(rect(px + 8, int(ft) - 4, 5, top_h - int(ft) + 4), C_PIPE_L, 120)
-  draw_rect_rounded(rect(px - 5, top_h - 24, pw + 10, 26), 4, C_PIPE_D)
-  draw_rect_rounded(rect(px - 1, top_h - 22, pw + 2 - 12, 22), 3, C_PIPE)
-  draw_rect(rect(px + 3, top_h - 20, 5, 18), C_PIPE_L, 120)
+  draw_rect(rect(px + 8, int(ft) - 4, 5, top_h - int(ft) + 4), c: C_PIPE_L, a: 120)
+  draw_rect_rounded(rect(px - 5, top_h - 24, pw + 10, 26), radius: 4, c: C_PIPE_D)
+  draw_rect_rounded(rect(px - 1, top_h - 22, pw + 2 - 12, 22), radius: 3, c: C_PIPE)
+  draw_rect(rect(px + 3, top_h - 20, 5, 18), c: C_PIPE_L, a: 120)
 
   draw_rect(rect(px, bot_y, pw, int(fb) - bot_y + 4), C_PIPE_D)
   draw_rect(rect(px + 4, bot_y, pw - 20, int(fb) - bot_y + 4), C_PIPE)
-  draw_rect(rect(px + 8, bot_y, 5, int(fb) - bot_y + 4), C_PIPE_L, 120)
-  draw_rect_rounded(rect(px - 5, bot_y - 2, pw + 10, 26), 4, C_PIPE_D)
-  draw_rect_rounded(rect(px - 1, bot_y, pw + 2 - 12, 22), 3, C_PIPE)
-  draw_rect(rect(px + 3, bot_y + 2, 5, 18), C_PIPE_L, 120)
+  draw_rect(rect(px + 8, bot_y, 5, int(fb) - bot_y + 4), c: C_PIPE_L, a: 120)
+  draw_rect_rounded(rect(px - 5, bot_y - 2, pw + 10, 26), radius: 4, c: C_PIPE_D)
+  draw_rect_rounded(rect(px - 1, bot_y, pw + 2 - 12, 22), radius: 3, c: C_PIPE)
+  draw_rect(rect(px + 3, bot_y + 2, 5, 18), c: C_PIPE_L, a: 120)
 end
 
 // Ground: a dark band with a scrolling grass edge and stripes.
@@ -441,7 +441,7 @@ let stripe_off = int(scroll) % 28
 let n_stripes = field.w / 28 + 2
 for i in range(0, n_stripes) do
   let sx = int(fl) + i * 28 - stripe_off
-  fill_triangle({x: sx, y: gy + 10}, {x: sx + 14, y: gy + 10}, {x: sx - 6, y: gy + GROUND_H + 4}, C_LINE, 120)
+  fill_triangle({x: sx, y: gy + 10}, {x: sx + 14, y: gy + 10}, {x: sx - 6, y: gy + GROUND_H + 4}, c: C_LINE, a: 120)
 end
 
 // Feathers.
@@ -460,28 +460,28 @@ fn rot(dx: num, dy: num, a: num)
 end
 let a = bang
 let wing_ph = if wing_t < 0.25 then sin(wing_t / 0.25 * pi()) else 0.0 end
-let body = rot(0.0, 0.0, a)
+let body = rot(dx: 0.0, dy: 0.0, a: a)
 draw_circle(body, int(BIRD_R) + 6, C_BIRD, 28)
-draw_circle(body, int(BIRD_R), C_BIRD_D)
-draw_circle(rot(-1.0, -1.5, a), int(BIRD_R) - 2, C_BIRD)
+draw_circle(center: body, radius: int(BIRD_R), c: C_BIRD_D)
+draw_circle(center: rot(dx: -1.0, dy: -1.5, a: a), radius: int(BIRD_R) - 2, c: C_BIRD)
 // Wing: an ellipse behind the body centre, its y offset animated.
-let wing = rot(-4.0, 3.0 - wing_ph * 9.0, a)
+let wing = rot(dx: -4.0, dy: 3.0 - wing_ph * 9.0, a: a)
 draw_ellipse(wing, 8, 5, C_WING, 235)
 draw_ellipse_outline(wing, 8, 5, C_BIRD_D, 160, 1)
 // Eye and beak.
-let eye = rot(5.0, -4.0, a)
-draw_circle(eye, 4, C_TEXT)
-draw_circle(rot(6.5, -4.0, a), 2, C_EYE)
-fill_triangle(rot(9.0, -1.0, a), rot(19.0, 2.0, a), rot(9.0, 5.0, a), C_BEAK)
-fill_triangle(rot(9.0, 2.0, a), rot(17.0, 3.0, a), rot(9.0, 6.0, a), C_BEAK, 140)
+let eye = rot(dx: 5.0, dy: -4.0, a: a)
+draw_circle(center: eye, radius: 4, c: C_TEXT)
+draw_circle(center: rot(dx: 6.5, dy: -4.0, a: a), radius: 2, c: C_EYE)
+fill_triangle(rot(dx: 9.0, dy: -1.0, a: a), rot(dx: 19.0, dy: 2.0, a: a), rot(dx: 9.0, dy: 5.0, a: a), c: C_BEAK)
+fill_triangle(rot(dx: 9.0, dy: 2.0, a: a), rot(dx: 17.0, dy: 3.0, a: a), rot(dx: 9.0, dy: 6.0, a: a), c: C_BEAK, a: 140)
 
 // Death flash.
 if flash > 0.0 then
-  draw_rect(field, C_TEXT, int(flash * 110.0))
+  draw_rect(field, c: C_TEXT, a: int(flash * 110.0))
 end
 
 clip_pop()
-draw_rect_rounded_outline(field, 16, C_EDGE, 255, 1)
+draw_rect_rounded_outline(field, radius: 16, c: C_EDGE, a: 255, width: 1)
 
 // ── Draw: overlay ────────────────────────────────────────────────────────
 
@@ -503,11 +503,11 @@ if phase == "title" || phase == "over" || phase == "paused" then
   let card_h = if phase == "over" then 176 else 116 end
   let card_y = if phase == "title" then cy - 206 else cy - card_h / 2 end
   let card = rect(cx - bw / 2, card_y, bw, card_h)
-  draw_rect_rounded(card, 14, C_CHIP, 236)
-  draw_rect_rounded_outline(card, 14, C_EDGE, 255, 1)
-  draw_rect_rounded(rect(card.x + 22, card.y + 30, 3, 52), 2, accent, 200)
-  tx_center(banner, cx + 9, card.y + 24, {...S_BIG, color: accent})
-  tx_center(sub, cx + 9, card.y + 74, S_SUB)
+  draw_rect_rounded(card, radius: 14, c: C_CHIP, a: 236)
+  draw_rect_rounded_outline(card, radius: 14, c: C_EDGE, a: 255, width: 1)
+  draw_rect_rounded(rect(card.x + 22, card.y + 30, 3, 52), radius: 2, c: accent, a: 200)
+  tx_center(banner, cx: cx + 9, y: card.y + 24, style: {...S_BIG, color: accent})
+  tx_center(sub, cx: cx + 9, y: card.y + 74, style: S_SUB)
 
   if phase == "over" then
     // Medal + the run's numbers.
@@ -517,15 +517,15 @@ if phase == "title" || phase == "over" || phase == "paused" then
     else {c: C_MUTE, t: "NO MEDAL"} end
     let my = card.y + 122
     draw_circle({x: card.x + 46, y: my + 8}, 14, medal.c, 40)
-    draw_circle({x: card.x + 46, y: my + 8}, 10, medal.c)
+    draw_circle(center: {x: card.x + 46, y: my + 8}, radius: 10, c: medal.c)
     draw_circle({x: card.x + 43, y: my + 5}, 3, C_TEXT, 150)
-    tx(medal.t, card.x + 68, my + 2, {...S_BADGE, color: medal.c})
+    tx(medal.t, x: card.x + 68, y: my + 2, style: {...S_BADGE, color: medal.c})
     let why = if cause == "pipe" then "hit a pipe" else "hit the ground" end
-    tx_right("{score} PTS   ·   {why}", card.x + card.w - 26, my + 2, S_HINT)
+    tx_right("{score} PTS   ·   {why}", right_x: card.x + card.w - 26, y: my + 2, style: S_HINT)
   end
   if phase == "title" then
-    tx_center("each flap is one impulse  ·  the gap shrinks as you score", cx, card.y + card_h + 16,
-      {size: 12, color: C_MUTE})
+    tx_center("each flap is one impulse  ·  the gap shrinks as you score", cx, y: card.y + card_h + 16,
+      style: {size: 12, color: C_MUTE})
   end
 end
 
@@ -534,19 +534,19 @@ end
 fn chip(x: num, y: num, cap: string, desc: string) -> int
   let cw = text_width(cap, S_CAP) + 20
   let box = rect(int(x), int(y), cw, 24)
-  draw_rect_rounded(box, 7, C_CHIP)
-  draw_rect_outline(box, C_LINE, 255, 1)
-  tx(cap, x + 10, y + 6, S_CAP)
-  tx(desc, x + cw + 10, y + 6, S_HINT)
+  draw_rect_rounded(box, radius: 7, c: C_CHIP)
+  draw_rect_outline(box, c: C_LINE, a: 255, width: 1)
+  tx(cap, x: x + 10, y: y + 6, style: S_CAP)
+  tx(desc, x: x + cw + 10, y: y + 6, style: S_HINT)
   cw + 10 + text_width(desc, S_HINT) + 24
 end
 
 let fy = field.y + field.h + 18
 let fx = PAD
-fx += chip(fx, fy, "SPACE / ↑ / W", "flap")
-fx += chip(fx, fy, "CLICK", "flap")
-fx += chip(fx, fy, "P", "pause")
-fx += chip(fx, fy, "R", "restart")
+fx += chip(x: fx, y: fy, cap: "SPACE / ↑ / W", desc: "flap")
+fx += chip(x: fx, y: fy, cap: "CLICK", desc: "flap")
+fx += chip(x: fx, y: fy, cap: "P", desc: "pause")
+fx += chip(x: fx, y: fy, cap: "R", desc: "restart")
 
 let status = match phase
   when "play" -> "IN FLIGHT"
@@ -555,7 +555,7 @@ let status = match phase
   when "over" -> "GAME OVER"
   when _ -> "READY"
 end
-tx_right("{int(bvy)} px/s   ·   {status}", W - PAD, fy + 7, S_HINT)
+tx_right("{int(bvy)} px/s   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
 // ── Observation mirrors (readable in /state → panel.values) ──────────────
 

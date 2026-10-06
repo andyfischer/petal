@@ -603,7 +603,7 @@ fn level_cache(n: num) -> record
   let src = maps.level(n)
   let c = get _pq_level
   if c == nil || c.id != n || c.chunks != src.chunks || c.world != src.world then
-    c = build_level(n, src, if c == nil then 1 else c.rev + 1 end)
+    c = build_level(n, src, rev: if c == nil then 1 else c.rev + 1 end)
     set _pq_level = c
   end
   c
@@ -700,7 +700,7 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
   while rem > 0.0 && !hx do
     let s = min(1.0, rem)
     let nx = cx + step * s
-    if box_solid(lv, nx, cy, w, h) then
+    if box_solid(lv, x: nx, y: cy, w: w, h: h) then
       hx = true
     else
       cx = nx
@@ -713,9 +713,9 @@ fn move_body(lv: record, x: num, y: num, w: num, h: num, dx: num, dy: num, drop:
   while rem > 0.0 && !hy do
     let s = min(1.0, rem)
     let ny = cy + step * s
-    if box_solid(lv, cx, ny, w, h) then
+    if box_solid(lv, x: cx, y: ny, w: w, h: h) then
       hy = true
-    elsif !drop && oneway_block(lv, cx, w, cy + float(h), ny + float(h)) then
+    elsif !drop && oneway_block(lv, x: cx, w: w, old_bottom: cy + float(h), new_bottom: ny + float(h)) then
       hy = true
     else
       cy = ny
@@ -730,7 +730,7 @@ end
 // coyote time and the walkers' ledge test both want.
 fn grounded(lv: record, x: num, y: num, w: num, h: num) -> bool
   box_solid(lv, x, y + 1.0, w, h) ||
-  oneway_block(lv, x, w, y + float(h), y + float(h) + 1.0)
+  oneway_block(lv, x, w, old_bottom: y + float(h), new_bottom: y + float(h) + 1.0)
 end
 
 // ── Painting the map ──────────────────────────────────────────────────────
@@ -959,7 +959,7 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
 
   let drop = ctl && btn("down")
   let was_ground = h.ground
-  let m = move_body(lv, h.x, h.y, HERO_BW, HERO_BH, h.vx, h.vy, drop)
+  let m = move_body(lv, x: h.x, y: h.y, w: HERO_BW, h: HERO_BH, dx: h.vx, dy: h.vy, drop: drop)
   h.x = m.x
   h.y = m.y
   if m.hx then h.vx = 0.0 end
@@ -969,13 +969,13 @@ fn update_hero(g: record, lv: record, boss_lock: num) -> record
     end
     h.vy = 0.0
   end
-  h.ground = m.ground || grounded(lv, h.x, h.y, HERO_BW, HERO_BH)
+  h.ground = m.ground || grounded(lv, x: h.x, y: h.y, w: HERO_BW, h: HERO_BH)
 
   // The boss arena is fenced by the camera, not by tiles.
   if boss_lock > 0.0 then
-    h.x = clamp(h.x, boss_lock + 8.0, boss_lock + 256.0 - 8.0 - float(HERO_BW))
+    h.x = clamp(h.x, lo: boss_lock + 8.0, hi: boss_lock + 256.0 - 8.0 - float(HERO_BW))
   end
-  h.x = clamp(h.x, 0.0, float(lv.cols * 8 - HERO_BW))
+  h.x = clamp(h.x, lo: 0.0, hi: float(lv.cols * 8 - HERO_BW))
 
   if h.mode == "hurt" then
     h.timer = h.timer - 1
@@ -1073,10 +1073,10 @@ end
 fn update_walker(e: record, lv: record) -> record
   e.vy = min(e.vy + GRAV, MAX_FALL)
   let b = ent_box(e)
-  let m = move_body(lv, b.x, b.y, b.w, b.h, e.vx, e.vy, false)
+  let m = move_body(lv, x: b.x, y: b.y, w: b.w, h: b.h, dx: e.vx, dy: e.vy, drop: false)
   // Turn at a wall, and at the edge of the floor — a walker that falls off
   // every ledge would clear the level of enemies before the player arrived.
-  let edge = !grounded(lv, m.x + (if e.vx < 0.0 then -2.0 else 2.0 end), m.y, b.w, b.h)
+  let edge = !grounded(lv, x: m.x + (if e.vx < 0.0 then -2.0 else 2.0 end), y: m.y, w: b.w, h: b.h)
   if m.hx || (m.ground && edge) then
     e.vx = -e.vx
   end
@@ -1090,7 +1090,7 @@ end
 fn update_jumper(e: record, lv: record, hero: record) -> record
   e.vy = min(e.vy + GRAV, MAX_FALL)
   let b = ent_box(e)
-  let on = grounded(lv, b.x, b.y, b.w, b.h)
+  let on = grounded(lv, x: b.x, y: b.y, w: b.w, h: b.h)
   if on && e.vy >= 0.0 then
     e.t = e.t + 1
     e.vx = approach(e.vx, 0.0, 0.2)
@@ -1101,7 +1101,7 @@ fn update_jumper(e: record, lv: record, hero: record) -> record
       e.face = sign(e.vx)
     end
   end
-  let m = move_body(lv, b.x, b.y, b.w, b.h, e.vx, e.vy, false)
+  let m = move_body(lv, x: b.x, y: b.y, w: b.w, h: b.h, dx: e.vx, dy: e.vy, drop: false)
   if m.hx then e.vx = -e.vx * 0.5 end
   if m.hy then e.vy = 0.0 end
   e.x = m.x - 2.0
@@ -1118,7 +1118,7 @@ fn update_flyer(e: record, lv: record, hero: record) -> record
   if abs(hero.x - e.hx) < 128.0 then
     target = hero.x
   end
-  e.vx = approach(e.vx, clamp((target - e.x) * 0.02, -1.1, 1.1), 0.06)
+  e.vx = approach(e.vx, clamp((target - e.x) * 0.02, lo: -1.1, hi: 1.1), 0.06)
   e.x = e.x + e.vx
   e.y = e.hy + sin(float(e.t) * 0.05) * 22.0
   e.face = if e.vx < 0.0 then -1 else 1 end
@@ -1272,7 +1272,7 @@ end
 
 fn draw_poofs(g: record) -> int
   for p in g.poofs do
-    let f = clamp(int(p.t / 6), 0, 2)
+    let f = clamp(int(p.t / 6), lo: 0, hi: 2)
     draw_meta_world(p.x, p.y, meta(T_POOF + f * 4, 2, 2, PAL_ITEM), 0)
   end
   0
@@ -1465,11 +1465,11 @@ fn game_frame() -> int
       music_play(tunes().boss)
     end
   else
-    cam = clamp(g.hero.x + float(HERO_BW) / 2.0 - 128.0, 0.0,
-      float(max(0, lv.cols * 8 - 256)))
+    cam = clamp(g.hero.x + float(HERO_BW) / 2.0 - 128.0, lo: 0.0,
+      hi: float(max(0, lv.cols * 8 - 256)))
   end
 
-  g = update_hero(g, lv, if arena then cam else -1.0 end)
+  g = update_hero(g, lv, boss_lock: if arena then cam else -1.0 end)
 
   if g.hero.mode != "dying" then
     g = update_entities(g, lv, cam)
@@ -1480,7 +1480,7 @@ fn game_frame() -> int
       g = collide_boss(g)
     end
     // Spikes, and the checkpoint the hero has walked past.
-    if box_hurts(lv, g.hero.x, g.hero.y, HERO_BW, HERO_BH) then
+    if box_hurts(lv, x: g.hero.x, y: g.hero.y, w: HERO_BW, h: HERO_BH) then
       g = hurt_hero(g, g.hero.x - float(g.hero.face) * 16.0)
     end
     let chunk = int(g.hero.x / float(CHUNK_W * 8))

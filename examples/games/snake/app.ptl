@@ -175,7 +175,7 @@ if hit_restart then
   if score > 0 && phase != "over" then
     runs = append(runs, score)
     if len(runs) > 5 then
-      runs = slice(runs, len(runs) - 5, len(runs))
+      runs = slice(runs, start: len(runs) - 5, end: len(runs))
     end
   end
   body = [11 * COLS + 13, 11 * COLS + 12, 11 * COLS + 11, 11 * COLS + 10]
@@ -243,7 +243,7 @@ while phase == "playing" && acc >= step_time && steps < 3 do
   if !dead then
     let ncell = ny * COLS + nx
     // The tail cell vacates this step unless the snake is growing into it.
-    let occupied = if grow > 0 then body else slice(body, 0, len(body) - 1) end
+    let occupied = if grow > 0 then body else slice(body, start: 0, end: len(body) - 1) end
     if contains(occupied, ncell) then
       dead = true
     else
@@ -290,7 +290,7 @@ while phase == "playing" && acc >= step_time && steps < 3 do
     if len(body) > 0 then
       runs = append(runs, score)
       if len(runs) > 5 then
-        runs = slice(runs, len(runs) - 5, len(runs))
+        runs = slice(runs, start: len(runs) - 5, end: len(runs))
       end
     end
   end
@@ -302,9 +302,9 @@ let length = len(body)
 clear(BG.r, BG.g, BG.b)
 
 // Header
-draw_text("SNAKE", {x: PAD, y: PAD - 2}, {size: 30, color: TEXT, spacing: 7})
+draw_text("SNAKE", pos: {x: PAD, y: PAD - 2}, style: {size: 30, color: TEXT, spacing: 7})
 draw_text("grid simulation · fixed-step accumulator · petal panel",
-  {x: PAD + 1, y: PAD + 38}, {size: 13, color: FAINT, spacing: 1})
+  pos: {x: PAD + 1, y: PAD + 38}, style: {size: 13, color: FAINT, spacing: 1})
 
 let phase_label = match phase
   when "ready" -> "READY"
@@ -318,9 +318,9 @@ let phase_color = match phase
   when _ -> DIM end
 let pill_w = text_width(phase_label, 11) + 26
 let pill = rect(side.x + side_w - pill_w, PAD + 4, pill_w, 26)
-draw_rect_rounded(pill, 13, mix(BG, phase_color, 0.16))
-draw_rect_rounded(rect(pill.x + 10, pill.y + 10, 6, 6), 3, phase_color)
-draw_text(phase_label, {x: pill.x + 22, y: pill.y + 8}, {size: 11, color: phase_color, spacing: 2})
+draw_rect_rounded(pill, radius: 13, c: mix(BG, phase_color, t: 0.16))
+draw_rect_rounded(rect(pill.x + 10, pill.y + 10, 6, 6), radius: 3, c: phase_color)
+draw_text(phase_label, pos: {x: pill.x + 22, y: pill.y + 8}, style: {size: 11, color: phase_color, spacing: 2})
 
 // ── Board ────────────────────────────────────────────────────────────────────
 let sx = if shake > 0.0 then int(sin(time() * 47.0) * shake * 5.0) else 0 end
@@ -328,8 +328,8 @@ let sy = if shake > 0.0 then int(cos(time() * 39.0) * shake * 4.0) else 0 end
 let bx = board.x + sx
 let by = board.y + sy
 
-draw_rect_rounded(rect(bx - 1, by - 1, board_w + 2, board_h + 2), 12, BOARD)
-draw_rect_rounded(rect(bx, by, board_w, board_h), 11, BOARD)
+draw_rect_rounded(rect(bx - 1, by - 1, board_w + 2, board_h + 2), radius: 12, c: BOARD)
+draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: BOARD)
 
 for c in range(1, COLS) do
   draw_line(bx + c * CELL, by + 4, bx + c * CELL, by + board_h - 4, GRID.r, GRID.g, GRID.b)
@@ -339,8 +339,8 @@ for r in range(1, ROWS) do
 end
 
 // The wall reads as a hazard when wrap is off, and as an open seam when it is on.
-let wall_c = if wrap then mix(BOARD, ACCENT, 0.35) else EDGE end
-draw_rect_outline(rect(bx, by, board_w, board_h), wall_c, 255, 2)
+let wall_c = if wrap then mix(BOARD, ACCENT, t: 0.35) else EDGE end
+draw_rect_outline(rect(bx, by, board_w, board_h), c: wall_c, a: 255, width: 2)
 
 fn cell_rect(ox, oy, c, inset: num)
   rect(ox + cell_x(c) * CELL + inset, oy + cell_y(c) * CELL + inset,
@@ -349,13 +349,13 @@ end
 
 // Food — a soft halo, the fruit, and a highlight.
 let pulse = (sin(time() * 3.4) + 1.0) * 0.5
-let fr = cell_rect(bx, by, food, 0)
+let fr = cell_rect(ox: bx, oy: by, c: food, inset: 0)
 draw_circle({x: fr.x + CELL / 2, y: fr.y + CELL / 2}, 12 + int(pulse * 3.0), APPLE, 34)
-draw_circle({x: fr.x + CELL / 2, y: fr.y + CELL / 2}, 8, APPLE)
-draw_circle({x: fr.x + CELL / 2 - 2, y: fr.y + CELL / 2 - 3}, 2, mix(APPLE, #ffffff, 0.7))
+draw_circle(center: {x: fr.x + CELL / 2, y: fr.y + CELL / 2}, radius: 8, c: APPLE)
+draw_circle(center: {x: fr.x + CELL / 2 - 2, y: fr.y + CELL / 2 - 3}, radius: 2, c: mix(APPLE, #ffffff, t: 0.7))
 
 if bonus >= 0 then
-  let gr = cell_rect(bx, by, bonus, 0)
+  let gr = cell_rect(ox: bx, oy: by, c: bonus, inset: 0)
   let gx = gr.x + CELL / 2
   let gy = gr.y + CELL / 2
   let fade = min(1.0, bonus_left / 2.0)
@@ -365,7 +365,7 @@ if bonus >= 0 then
   draw_circle({x: gx - 2, y: gy - 3}, 2, #fff3d0, int(255.0 * fade))
   // A countdown bar under the apple, shrinking as its time runs out.
   let tw = int(float(CELL - 6) * (bonus_left / 7.0))
-  draw_rect(rect(gr.x + 3, gr.y + CELL - 3, tw, 2), GOLD, 200)
+  draw_rect(rect(gr.x + 3, gr.y + CELL - 3, tw, 2), c: GOLD, a: 200)
 end
 
 // Snake — head first, colour walking from bright head to dark tail. Each
@@ -374,7 +374,7 @@ end
 // skipped across a wrap seam (the two cells are not adjacent on screen).
 fn seg_color(i: num, n: num) -> record
   let t = if n > 1 then float(i) / float(n - 1) else 0.0 end
-  mix(BODY_HI, BODY_LO, t * 0.92)
+  mix(BODY_HI, BODY_LO, t: t * 0.92)
 end
 
 for i in range(0, length) do
@@ -401,116 +401,116 @@ for i in range(0, length) do
       draw_rect(jr, col)
     end
   end
-  draw_rect_rounded(cell_rect(bx, by, c, inset), radius, col)
+  draw_rect_rounded(cell_rect(ox: bx, oy: by, c: c, inset: inset), radius, c: col)
 end
 
 // Eyes on the head, facing the direction of travel.
-let hr = cell_rect(bx, by, body[0], 0)
+let hr = cell_rect(ox: bx, oy: by, c: body[0], inset: 0)
 let hcx = hr.x + CELL / 2
 let hcy = hr.y + CELL / 2
 let ex = if dir == 1 then 4 elsif dir == 3 then -4 else 0 end
 let ey = if dir == 2 then 4 elsif dir == 0 then -4 else 0 end
 let px = if dir == 0 || dir == 2 then 5 else 0 end
 let py = if dir == 1 || dir == 3 then 5 else 0 end
-draw_circle({x: hcx + ex + px, y: hcy + ey + py}, 2, #0b2318)
-draw_circle({x: hcx + ex - px, y: hcy + ey - py}, 2, #0b2318)
+draw_circle(center: {x: hcx + ex + px, y: hcy + ey + py}, radius: 2, c: #0b2318)
+draw_circle(center: {x: hcx + ex - px, y: hcy + ey - py}, radius: 2, c: #0b2318)
 
 if flash > 0.0 then
-  draw_rect_rounded(rect(bx, by, board_w, board_h), 11, #ffffff, int(flash * 26.0))
+  draw_rect_rounded(rect(bx, by, board_w, board_h), radius: 11, c: #ffffff, a: int(flash * 26.0))
 end
 
 // ── Overlays ─────────────────────────────────────────────────────────────────
 fn overlay(r: record, kicker: string, title: string, line1: string, line2: string, accent: record)
-  draw_rect_rounded(r, 11, #06080c, 205)
+  draw_rect_rounded(r, radius: 11, c: #06080c, a: 205)
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
   let tw = max(text_width(title, 44), text_width(kicker, 11) + 40)
   let card_r = rect(cx - tw / 2 - 34, cy - 92, tw + 68, 116)
-  draw_rect_rounded(card_r, 12, #111827, 240)
-  draw_rect_outline(card_r, mix(#111827, accent, 0.45), 150)
-  draw_text_center(kicker, cx, cy - 74, 11, mix(DIM, accent, 0.5))
-  draw_text_center(title, cx, cy - 52, 44, accent)
-  draw_text_center(line1, cx, cy + 44, 16, TEXT)
-  draw_text_center(line2, cx, cy + 72, 13, DIM)
+  draw_rect_rounded(card_r, radius: 12, c: #111827, a: 240)
+  draw_rect_outline(card_r, c: mix(#111827, accent, t: 0.45), a: 150)
+  draw_text_center(kicker, cx, y: cy - 74, size: 11, c: mix(DIM, accent, t: 0.5))
+  draw_text_center(title, cx, y: cy - 52, size: 44, c: accent)
+  draw_text_center(line1, cx, y: cy + 44, size: 16, c: TEXT)
+  draw_text_center(line2, cx, y: cy + 72, size: 13, c: DIM)
 end
 
 if phase == "ready" then
   overlay(rect(bx, by, board_w, board_h), "32 × 23 GRID", "SNAKE",
     "Arrow keys or WASD to start",
-    "space pauses · R restarts · T toggles wall wrap", HEAD)
+    "space pauses · R restarts · T toggles wall wrap", accent: HEAD)
 elsif phase == "paused" then
   overlay(rect(bx, by, board_w, board_h), "HELD", "PAUSED",
     "space or the Resume button to continue",
-    "score {score} · length {length} · level {lvl}", GOLD)
+    "score {score} · length {length} · level {lvl}", accent: GOLD)
 elsif phase == "over" then
   let verdict = if score >= best then "a new personal best" else "best so far is {best}" end
   overlay(rect(bx, by, board_w, board_h), "FINAL SCORE", "{score}",
     "{apples} apples in {int(run_time)}s — {verdict}",
-    "press R or Restart to go again", DANGER)
+    "press R or Restart to go again", accent: DANGER)
 end
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 fn card(r: record)
-  draw_rect_rounded(r, 10, CARD)
-  draw_rect_outline(r, EDGE, 90)
+  draw_rect_rounded(r, radius: 10, c: CARD)
+  draw_rect_outline(r, c: EDGE, a: 90)
 end
 
 fn label(s: string, x, y)
-  draw_text(s, {x: x, y: y}, {size: 11, color: FAINT, spacing: 2})
+  draw_text(s, pos: {x: x, y: y}, style: {size: 11, color: FAINT, spacing: 2})
 end
 
 // Score card
 let sc = rect(side.x, side.y, side_w, SC_H)
 card(sc)
-label("SCORE", sc.x + 18, sc.y + 16)
-draw_text("{score}", {x: sc.x + 16, y: sc.y + 32}, {size: 44, color: TEXT})
-draw_text_right("BEST", sc.x + side_w - 18, sc.y + 16, 11, FAINT)
-draw_text_right("{best}", sc.x + side_w - 18, sc.y + 36, 22, GOLD)
+label("SCORE", x: sc.x + 18, y: sc.y + 16)
+draw_text("{score}", pos: {x: sc.x + 16, y: sc.y + 32}, style: {size: 44, color: TEXT})
+draw_text_right("BEST", right_x: sc.x + side_w - 18, y: sc.y + 16, size: 11, c: FAINT)
+draw_text_right("{best}", right_x: sc.x + side_w - 18, y: sc.y + 36, size: 22, c: GOLD)
 
-draw_line(sc.x + 18, sc.y + 100, sc.x + side_w - 18, sc.y + 100, EDGE.r, EDGE.g, EDGE.b, 110)
+draw_line(x1: sc.x + 18, y1: sc.y + 100, x2: sc.x + side_w - 18, y2: sc.y + 100, r: EDGE.r, g: EDGE.g, b: EDGE.b, a: 110)
 
 // Speed meter across the bottom of the score card
 let meter = rect(sc.x + 18, sc.y + 130, side_w - 36, 6)
-draw_rect_rounded(meter, 3, #0c1017)
-draw_rect_rounded(rect(meter.x, meter.y, meter.w * (lvl + 1) / 10, 6), 3,
-  mix(BODY_HI, DANGER, float(lvl) / 9.0))
-draw_text("SPEED LEVEL {lvl}", {x: meter.x, y: sc.y + 110}, {size: 11, color: DIM, spacing: 2})
-draw_text_right("{int(1.0 / step_time)} steps/s", meter.x + meter.w, sc.y + 110, 11, FAINT)
+draw_rect_rounded(meter, radius: 3, c: #0c1017)
+draw_rect_rounded(rect(meter.x, meter.y, meter.w * (lvl + 1) / 10, 6), radius: 3,
+  c: mix(BODY_HI, DANGER, t: float(lvl) / 9.0))
+draw_text("SPEED LEVEL {lvl}", pos: {x: meter.x, y: sc.y + 110}, style: {size: 11, color: DIM, spacing: 2})
+draw_text_right("{int(1.0 / step_time)} steps/s", right_x: meter.x + meter.w, y: sc.y + 110, size: 11, c: FAINT)
 
 // Stat tiles
 fn tile(r: record, key: string, value: string, color: record)
-  draw_rect_rounded(r, 8, CARD_HI)
-  draw_text(key, {x: r.x + 12, y: r.y + 10}, {size: 11, color: FAINT, spacing: 2})
-  draw_text(value, {x: r.x + 12, y: r.y + 28}, {size: 22, color: color})
+  draw_rect_rounded(r, radius: 8, c: CARD_HI)
+  draw_text(key, pos: {x: r.x + 12, y: r.y + 10}, style: {size: 11, color: FAINT, spacing: 2})
+  draw_text(value, pos: {x: r.x + 12, y: r.y + 28}, style: {size: 22, color: color})
 end
 
 let tile_w = (side_w - 12) / 2
 let tile_h = TILE_H
-tile(rect(side.x, tile_y, tile_w, tile_h), "LENGTH", "{length}", TEXT)
-tile(rect(side.x + tile_w + 12, tile_y, tile_w, tile_h), "APPLES", "{apples}", APPLE)
-tile(rect(side.x, tile_y + tile_h + 12, tile_w, tile_h), "TIME", "{int(run_time)}s", TEXT)
-tile(rect(side.x + tile_w + 12, tile_y + tile_h + 12, tile_w, tile_h), "RUNS", "{deaths}", DIM)
+tile(rect(side.x, tile_y, tile_w, tile_h), key: "LENGTH", value: "{length}", color: TEXT)
+tile(rect(side.x + tile_w + 12, tile_y, tile_w, tile_h), key: "APPLES", value: "{apples}", color: APPLE)
+tile(rect(side.x, tile_y + tile_h + 12, tile_w, tile_h), key: "TIME", value: "{int(run_time)}s", color: TEXT)
+tile(rect(side.x + tile_w + 12, tile_y + tile_h + 12, tile_w, tile_h), key: "RUNS", value: "{deaths}", color: DIM)
 
 // Golden apple ticker takes the slot under the tiles when one is on the board
 if bonus >= 0 && phase == "playing" then
   let nr = rect(side.x, note_y, side_w, 34)
-  draw_rect_rounded(nr, 8, mix(CARD, GOLD, 0.14))
-  draw_circle({x: nr.x + 20, y: nr.y + 17}, 6, GOLD)
+  draw_rect_rounded(nr, radius: 8, c: mix(CARD, GOLD, t: 0.14))
+  draw_circle(center: {x: nr.x + 20, y: nr.y + 17}, radius: 6, c: GOLD)
   draw_text("Golden apple — {int(bonus_left) + 1}s left",
-    {x: nr.x + 36, y: nr.y + 10}, {size: 13, color: GOLD})
+    pos: {x: nr.x + 36, y: nr.y + 10}, style: {size: 13, color: GOLD})
 else
   draw_text("Every 5th apple drops a golden one.",
-    {x: side.x + 2, y: note_y + 10}, {size: 13, color: FAINT})
+    pos: {x: side.x + 2, y: note_y + 10}, style: {size: 13, color: FAINT})
 end
 
 // Buttons
 fn chip(r: record, text: string, on: bool, accent: record)
   let hot = hovered(r)
-  let bg = if on then mix(CARD, accent, 0.16) elsif hot then CARD_HI else CARD end
-  draw_rect_rounded(r, 8, bg)
-  draw_rect_outline(r, if on then accent else EDGE end, if on then 160 else 110 end)
+  let bg = if on then mix(CARD, accent, t: 0.16) elsif hot then CARD_HI else CARD end
+  draw_rect_rounded(r, radius: 8, c: bg)
+  draw_rect_outline(r, c: if on then accent else EDGE end, a: if on then 160 else 110 end)
   let fg = if on then accent elsif hot then TEXT else DIM end
-  draw_text_center(text, r.x + r.w / 2, r.y + (r.h - 13) / 2, 13, fg)
+  draw_text_center(text, cx: r.x + r.w / 2, y: r.y + (r.h - 13) / 2, size: 13, c: fg)
 end
 
 let pause_label = match phase
@@ -518,12 +518,12 @@ let pause_label = match phase
   when "paused" -> "Resume"
   when "ready" -> "Start"
   when _ -> "Play again" end
-chip(b_pause, pause_label, phase == "paused", GOLD)
-chip(b_reset, "Restart", false, DANGER)
-chip(b_wrap, if wrap then "Wall wrap: ON" else "Wall wrap: OFF" end, wrap, ACCENT)
+chip(b_pause, text: pause_label, on: phase == "paused", accent: GOLD)
+chip(b_reset, text: "Restart", on: false, accent: DANGER)
+chip(b_wrap, text: if wrap then "Wall wrap: ON" else "Wall wrap: OFF" end, on: wrap, accent: ACCENT)
 
 // Recent runs
-label("RECENT RUNS", side.x + 2, hist_y)
+label("RECENT RUNS", x: side.x + 2, y: hist_y)
 let hmax = max(1, best)
 let n = len(runs)
 let row_h = 20
@@ -532,21 +532,21 @@ for i in range(0, n) do
   let ry = hist_y + 22 + i * row_h
   let full = side_w - 56
   let bwid = max(3, full * v / hmax)
-  let c = if v >= best then GOLD else mix(BODY_LO, BODY_HI, float(v) / float(hmax)) end
-  draw_rect_rounded(rect(side.x + 2, ry, full, 12), 6, #0c1017)
-  draw_rect_rounded(rect(side.x + 2, ry, bwid, 12), 6, c)
-  draw_text_right("{v}", side.x + side_w, ry, 11, if v >= best then GOLD else DIM end)
+  let c = if v >= best then GOLD else mix(BODY_LO, BODY_HI, t: float(v) / float(hmax)) end
+  draw_rect_rounded(rect(side.x + 2, ry, full, 12), radius: 6, c: #0c1017)
+  draw_rect_rounded(rect(side.x + 2, ry, bwid, 12), radius: 6, c: c)
+  draw_text_right("{v}", right_x: side.x + side_w, y: ry, size: 11, c: if v >= best then GOLD else DIM end)
 end
 
 // ── Footer ───────────────────────────────────────────────────────────────────
 let foot_y = board.y + board_h + 22
-draw_line(PAD, foot_y - 8, W - PAD, foot_y - 8, EDGE.r, EDGE.g, EDGE.b, 120)
-let hints = fit_parts([
+draw_line(x1: PAD, y1: foot_y - 8, x2: W - PAD, y2: foot_y - 8, r: EDGE.r, g: EDGE.g, b: EDGE.b, a: 120)
+let hints = fit_parts(parts: [
   "↑←↓→ / WASD  move",
   "SPACE  pause",
   "R  restart",
   "T  wall wrap",
   "click the sidebar controls too",
-], W - PAD * 2 - 200, 13)
-draw_text(hints, {x: PAD, y: foot_y + 2}, {size: 13, color: DIM})
-draw_text_right("frame {frame_count()}", W - PAD, foot_y + 2, 13, FAINT)
+], avail_px: W - PAD * 2 - 200, size: 13)
+draw_text(hints, pos: {x: PAD, y: foot_y + 2}, style: {size: 13, color: DIM})
+draw_text_right("frame {frame_count()}", right_x: W - PAD, y: foot_y + 2, size: 13, c: FAINT)

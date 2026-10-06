@@ -27,7 +27,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 // Colors
@@ -150,7 +150,7 @@ for i in range(0, 12) do
   let r = 70 + i * 12
   let g = 140 + i * 5
   let b = 220 - i * 8
-  draw_rect(0, band_y, SW, band_h, r, g, b)
+  draw_rect(x: 0, y: band_y, w: SW, h: band_h, r: r, g: g, b: b)
 end
 
 // Distant hills (background layer)
@@ -160,7 +160,7 @@ for hx in range(0, 20) do
   let hx_pos = hx * 50 - 30
   let hill_h = 40 + int(abs(float(10 - hx)) * 3.0)
   let hy = SH - GROUND_H - hill_h + 30
-  draw_rect(hx_pos, hy, 52, hill_h + 10, 120, 180, 100)
+  draw_rect(x: hx_pos, y: hy, w: 52, h: hill_h + 10, r: 120, g: 180, b: 100)
 end
 
 // Clouds
@@ -169,13 +169,13 @@ for c in clouds do
   let cy = c.y
   let sz = c.size
   // Cloud body (overlapping circles for puffy look)
-  draw_circle(cx, cy, sz, 255, 255, 255)
-  draw_circle(cx - sz + 8, cy + 5, sz - 10, 255, 255, 255)
-  draw_circle(cx + sz - 8, cy + 5, sz - 10, 255, 255, 255)
-  draw_circle(cx - 5, cy - 8, sz - 8, 255, 255, 255)
-  draw_circle(cx + 8, cy - 5, sz - 5, 255, 255, 255)
+  draw_circle(cx, cy, radius: sz, r: 255, g: 255, b: 255)
+  draw_circle(cx: cx - sz + 8, cy: cy + 5, radius: sz - 10, r: 255, g: 255, b: 255)
+  draw_circle(cx: cx + sz - 8, cy: cy + 5, radius: sz - 10, r: 255, g: 255, b: 255)
+  draw_circle(cx: cx - 5, cy: cy - 8, radius: sz - 8, r: 255, g: 255, b: 255)
+  draw_circle(cx: cx + 8, cy: cy - 5, radius: sz - 5, r: 255, g: 255, b: 255)
   // Slight shadow underneath
-  draw_circle(cx, cy + 8, sz - 5, 230, 240, 250)
+  draw_circle(cx, cy: cy + 8, radius: sz - 5, r: 230, g: 240, b: 250)
 end
 
 // Pipes with caps and gradient shading
@@ -186,14 +186,14 @@ for p in pipes do
   // --- Top pipe ---
   let top_h = p.gap_y
   // Main body - darker green
-  draw_rect(px, 0, PIPE_WIDTH, top_h, 70, 170, 45)
+  draw_rect(x: px, y: 0, w: PIPE_WIDTH, h: top_h, r: 70, g: 170, b: 45)
   // Light highlight strip on left
-  draw_rect(px + 4, 0, 10, top_h, 100, 210, 75)
+  draw_rect(x: px + 4, y: 0, w: 10, h: top_h, r: 100, g: 210, b: 75)
   // Dark shadow strip on right
-  draw_rect(px + PIPE_WIDTH - 10, 0, 10, top_h, 45, 120, 30)
+  draw_rect(x: px + PIPE_WIDTH - 10, y: 0, w: 10, h: top_h, r: 45, g: 120, b: 30)
   // Cap at bottom of top pipe
-  draw_rect(cap_x, top_h - PIPE_CAP_H, PIPE_CAP_W, PIPE_CAP_H, 80, 190, 55)
-  draw_rect(cap_x + 3, top_h - PIPE_CAP_H + 3, PIPE_CAP_W - 6, 6, 110, 220, 90)
+  draw_rect(x: cap_x, y: top_h - PIPE_CAP_H, w: PIPE_CAP_W, h: PIPE_CAP_H, r: 80, g: 190, b: 55)
+  draw_rect(x: cap_x + 3, y: top_h - PIPE_CAP_H + 3, w: PIPE_CAP_W - 6, h: 6, r: 110, g: 220, b: 90)
   draw_rect_outline(cap_x, top_h - PIPE_CAP_H, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
   // Outline for body
   draw_rect_outline(px, 0, PIPE_WIDTH, top_h - PIPE_CAP_H, 40, 110, 25)
@@ -202,14 +202,14 @@ for p in pipes do
   let bottom_y = p.gap_y + PIPE_GAP
   let bottom_h = SH - GROUND_H - bottom_y
   // Main body
-  draw_rect(px, bottom_y, PIPE_WIDTH, bottom_h, 70, 170, 45)
+  draw_rect(x: px, y: bottom_y, w: PIPE_WIDTH, h: bottom_h, r: 70, g: 170, b: 45)
   // Light highlight
-  draw_rect(px + 4, bottom_y, 10, bottom_h, 100, 210, 75)
+  draw_rect(x: px + 4, y: bottom_y, w: 10, h: bottom_h, r: 100, g: 210, b: 75)
   // Dark shadow
-  draw_rect(px + PIPE_WIDTH - 10, bottom_y, 10, bottom_h, 45, 120, 30)
+  draw_rect(x: px + PIPE_WIDTH - 10, y: bottom_y, w: 10, h: bottom_h, r: 45, g: 120, b: 30)
   // Cap at top of bottom pipe
-  draw_rect(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 80, 190, 55)
-  draw_rect(cap_x + 3, bottom_y + 3, PIPE_CAP_W - 6, 6, 110, 220, 90)
+  draw_rect(x: cap_x, y: bottom_y, w: PIPE_CAP_W, h: PIPE_CAP_H, r: 80, g: 190, b: 55)
+  draw_rect(x: cap_x + 3, y: bottom_y + 3, w: PIPE_CAP_W - 6, h: 6, r: 110, g: 220, b: 90)
   draw_rect_outline(cap_x, bottom_y, PIPE_CAP_W, PIPE_CAP_H, 40, 110, 25)
   // Outline for body
   draw_rect_outline(px, bottom_y + PIPE_CAP_H, PIPE_WIDTH, bottom_h - PIPE_CAP_H, 40, 110, 25)
@@ -217,37 +217,37 @@ end
 
 // Ground with grass and dirt layers
 // Dirt base
-draw_rect(0, SH - GROUND_H, SW, GROUND_H, 160, 120, 60)
+draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: GROUND_H, r: 160, g: 120, b: 60)
 // Darker dirt bottom
-draw_rect(0, SH - 25, SW, 25, 130, 95, 45)
+draw_rect(x: 0, y: SH - 25, w: SW, h: 25, r: 130, g: 95, b: 45)
 // Grass top layer
-draw_rect(0, SH - GROUND_H, SW, 14, 80, 190, 50)
+draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: 14, r: 80, g: 190, b: 50)
 // Grass highlight
-draw_rect(0, SH - GROUND_H, SW, 5, 110, 220, 70)
+draw_rect(x: 0, y: SH - GROUND_H, w: SW, h: 5, r: 110, g: 220, b: 70)
 // Grass tufts
 for gx in range(0, 40) do
   let gx_pos = gx * 20 + 5
   let tuft_h = 6 + (gx % 3) * 3
-  draw_rect(gx_pos, SH - GROUND_H - tuft_h, 4, tuft_h + 2, 70, 180, 45)
+  draw_rect(x: gx_pos, y: SH - GROUND_H - tuft_h, w: 4, h: tuft_h + 2, r: 70, g: 180, b: 45)
 end
 // Ground line
 draw_line({x: 0, y: SH - GROUND_H}, {x: SW, y: SH - GROUND_H}, grass_green)
 // Dirt texture dots
 for dx in range(0, 16) do
   let dx_pos = dx * 50 + 20
-  draw_circle(dx_pos, SH - 35, 3, 140, 105, 50)
-  draw_circle(dx_pos + 25, SH - 20, 2, 140, 105, 50)
+  draw_circle(cx: dx_pos, cy: SH - 35, radius: 3, r: 140, g: 105, b: 50)
+  draw_circle(cx: dx_pos + 25, cy: SH - 20, radius: 2, r: 140, g: 105, b: 50)
 end
 
 // Bird with wing animation and more detail
 let bird_yi = int(bird_y)
 
 // Bird body (orange outline for depth)
-draw_circle(BIRD_X, bird_yi, BIRD_RADIUS + 2, 230, 150, 20)
+draw_circle(cx: BIRD_X, cy: bird_yi, radius: BIRD_RADIUS + 2, r: 230, g: 150, b: 20)
 // Main body
-draw_circle(BIRD_X, bird_yi, BIRD_RADIUS, 255, 220, 50)
+draw_circle(cx: BIRD_X, cy: bird_yi, radius: BIRD_RADIUS, r: 255, g: 220, b: 50)
 // Belly highlight
-draw_circle(BIRD_X - 2, bird_yi + 4, 9, 255, 240, 130)
+draw_circle(cx: BIRD_X - 2, cy: bird_yi + 4, radius: 9, r: 255, g: 240, b: 130)
 
 // Wing (animated flap)
 let wing_offset = 0
@@ -262,19 +262,19 @@ if started && !game_over then
   end
 end
 // Wing shape (small ellipse approximation)
-draw_circle(BIRD_X - 8, bird_yi + wing_offset, 8, 230, 190, 30)
-draw_circle(BIRD_X - 12, bird_yi + wing_offset - 1, 5, 240, 200, 50)
+draw_circle(cx: BIRD_X - 8, cy: bird_yi + wing_offset, radius: 8, r: 230, g: 190, b: 30)
+draw_circle(cx: BIRD_X - 12, cy: bird_yi + wing_offset - 1, radius: 5, r: 240, g: 200, b: 50)
 
 // Eye white
-draw_circle(BIRD_X + 6, bird_yi - 5, 6, 255, 255, 255)
+draw_circle(cx: BIRD_X + 6, cy: bird_yi - 5, radius: 6, r: 255, g: 255, b: 255)
 // Eye pupil
-draw_circle(BIRD_X + 8, bird_yi - 5, 3, 0, 0, 0)
+draw_circle(cx: BIRD_X + 8, cy: bird_yi - 5, radius: 3, r: 0, g: 0, b: 0)
 // Eye glint
-draw_circle(BIRD_X + 9, bird_yi - 7, 1, 255, 255, 255)
+draw_circle(cx: BIRD_X + 9, cy: bird_yi - 7, radius: 1, r: 255, g: 255, b: 255)
 
 // Beak
-draw_rect(BIRD_X + 12, bird_yi - 3, 10, 4, 255, 120, 30)
-draw_rect(BIRD_X + 12, bird_yi + 1, 10, 3, 230, 90, 20)
+draw_rect(x: BIRD_X + 12, y: bird_yi - 3, w: 10, h: 4, r: 255, g: 120, b: 30)
+draw_rect(x: BIRD_X + 12, y: bird_yi + 1, w: 10, h: 3, r: 230, g: 90, b: 20)
 
 // Score display with shadow/outline effect
 let score_str = str(score)
@@ -287,9 +287,9 @@ draw_text(score_str, {x: score_x, y: 40}, 52, white)
 // Game over overlay
 if game_over then
   // Dim overlay
-  draw_rect(0, SH / 2 - 70, SW, 140, 0, 0, 0)
+  draw_rect(x: 0, y: SH / 2 - 70, w: SW, h: 140, r: 0, g: 0, b: 0)
   // Semi-transparent effect (lighter inner box)
-  draw_rect(4, SH / 2 - 66, SW - 8, 132, 30, 30, 30)
+  draw_rect(x: 4, y: SH / 2 - 66, w: SW - 8, h: 132, r: 30, g: 30, b: 30)
 
   // Game over text with shadow
   draw_text("GAME OVER", {x: SW / 2 - 102, y: SH / 2 - 42}, 40, dark_red)

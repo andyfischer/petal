@@ -102,12 +102,12 @@ for i in range(0, 12) do
   let sky_r = 15 + i * 2
   let sky_g = 20 + i * 4
   let sky_b = 50 + i * 8
-  draw_rect(0, gy, int(sw), int(sh) / 12 + 1, sky_r, sky_g, sky_b)
+  draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 12 + 1, r: sky_r, g: sky_g, b: sky_b)
 end
 
 // Ground
-draw_rect(0, int(sh) - 20, int(sw), 20, 30, 50, 25)
-draw_rect(0, int(sh) - 22, int(sw), 4, 45, 70, 35)
+draw_rect(x: 0, y: int(sh) - 20, w: int(sw), h: 20, r: 30, g: 50, b: 25)
+draw_rect(x: 0, y: int(sh) - 22, w: int(sw), h: 4, r: 45, g: 70, b: 35)
 
 // Draw branches with wind displacement
 for b in branches do
@@ -143,8 +143,8 @@ for leaf in leaves do
   let lb = int(30.0 + (1.0 - leaf.hue) * 40.0)
 
   // Leaf glow
-  draw_circle(lx, ly, ls + 2, lr / 4, lg / 4, lb / 4)
-  draw_circle(lx, ly, ls, min(255, lr), min(255, lg), min(255, lb))
+  draw_circle(cx: lx, cy: ly, radius: ls + 2, r: lr / 4, g: lg / 4, b: lb / 4)
+  draw_circle(cx: lx, cy: ly, radius: ls, r: min(255, lr), g: min(255, lg), b: min(255, lb))
 end
 
 // Stars in sky (subtle)
@@ -152,9 +152,9 @@ for i in range(0, 20) do
   let sx = int(float(i) * sw / 20.0 + sin(float(i) * 7.3) * 30.0)
   let sy = int(30.0 + sin(float(i) * 3.7) * 60.0)
   let bright = int(abs(sin(time + float(i))) * 80.0) + 30
-  draw_circle(sx, sy, 1, bright, bright, min(255, bright + 30))
+  draw_circle(cx: sx, cy: sy, radius: 1, r: bright, g: bright, b: min(255, bright + 30))
 end
 
-draw_text("Fractal Tree", 10, 10, 16, 100, 100, 120)
-draw_text("Swaying in the wind", 10, 30, 12, 60, 60, 80)
-draw_text("Branches: " ++ str(len(branches)) ++ "  Leaves: " ++ str(len(leaves)), 10, 46, 10, 50, 50, 70)
+draw_text("Fractal Tree", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Swaying in the wind", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
+draw_text("Branches: " ++ str(len(branches)) ++ "  Leaves: " ++ str(len(leaves)), x: 10, y: 46, size: 10, r: 50, g: 50, b: 70)

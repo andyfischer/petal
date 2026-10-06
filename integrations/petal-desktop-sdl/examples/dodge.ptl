@@ -19,7 +19,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 // Shared colors
@@ -240,14 +240,14 @@ for i in range(0, 12) do
   let br = 5 + i * 1
   let bg = 5 + i * 2
   let bb = 15 + i * 3
-  draw_rect(0, band_y, SW, band_h, br, bg, bb)
+  draw_rect(x: 0, y: band_y, w: SW, h: band_h, r: br, g: bg, b: bb)
 end
 
 // Draw stars
 for s in stars do
   let pulse = s.brightness + 20.0 * (float(frame % 120) / 120.0)
   let sb = int(min(pulse, 200.0))
-  draw_circle(int(s.x), int(s.y), s.size, sb, sb, sb + 20)
+  draw_circle(cx: int(s.x), cy: int(s.y), radius: s.size, r: sb, g: sb, b: sb + 20)
 end
 
 // Scrolling grid for depth
@@ -258,7 +258,7 @@ for gx in range(0, SW / grid_spacing + 1) do
   // Fade grid lines based on distance from center
   let cx_dist = abs(line_x - SW / 2)
   let grid_alpha = max(10, 30 - cx_dist / 20)
-  draw_line(line_x, 0, line_x, SH, grid_alpha, grid_alpha, grid_alpha + 20)
+  draw_line(x1: line_x, y1: 0, x2: line_x, y2: SH, r: grid_alpha, g: grid_alpha, b: grid_alpha + 20)
 end
 for gy in range(0, SH / grid_spacing + 2) do
   let line_y = gy * grid_spacing - grid_offset
@@ -270,7 +270,7 @@ for t in trail do
   let ta = int(t.life * 150.0)
   let ts = int(t.size * t.life)
   if ts > 0 then
-    draw_circle(int(t.x), int(t.y), ts, 30, ta, int(t.life * 255.0))
+    draw_circle(cx: int(t.x), cy: int(t.y), radius: ts, r: 30, g: ta, b: int(t.life * 255.0))
   end
 end
 
@@ -281,47 +281,47 @@ for e in enemies do
   let er = e.radius
 
   // Outer glow ring
-  draw_circle(ex, ey, er + 5, max(0, e.r / 3), max(0, e.g / 3), max(0, e.b / 3))
+  draw_circle(cx: ex, cy: ey, radius: er + 5, r: max(0, e.r / 3), g: max(0, e.g / 3), b: max(0, e.b / 3))
 
   // Main body
-  draw_circle(ex, ey, er, e.r, e.g, e.b)
+  draw_circle(cx: ex, cy: ey, radius: er, r: e.r, g: e.g, b: e.b)
 
   // Inner dark ring (creates a ring effect)
   if er > 6 then
-    draw_circle(ex, ey, er - 3, e.r / 2, e.g / 2, e.b / 2)
+    draw_circle(cx: ex, cy: ey, radius: er - 3, r: e.r / 2, g: e.g / 2, b: e.b / 2)
   end
 
   // Bright core with highlight offset
-  draw_circle(ex, ey, max(2, er / 3), min(255, e.r + 80), min(255, e.g + 80), min(255, e.b + 80))
-  draw_circle(ex - 1, ey - 1, max(1, er / 5), 255, 255, 255)
+  draw_circle(cx: ex, cy: ey, radius: max(2, er / 3), r: min(255, e.r + 80), g: min(255, e.g + 80), b: min(255, e.b + 80))
+  draw_circle(cx: ex - 1, cy: ey - 1, radius: max(1, er / 5), r: 255, g: 255, b: 255)
 end
 
 // Near miss screen flash effect
 if near_miss_flash > 0.0 then
   let flash_a = int(near_miss_flash * 30.0)
-  draw_rect(0, 0, SW, SH, flash_a, flash_a, flash_a + 10)
+  draw_rect(x: 0, y: 0, w: SW, h: SH, r: flash_a, g: flash_a, b: flash_a + 10)
 end
 
 // Draw explosion particles
 for p in particles do
   let pa = max(0, int(p.life * 255.0))
   let ps = max(1, int(p.life * 4.0))
-  draw_circle(int(p.x), int(p.y), ps, p.r, min(pa, p.g), p.b)
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: ps, r: p.r, g: min(pa, p.g), b: p.b)
 end
 
 // Draw player with shield-like layers
 // Outer shield ring
 let shield_pulse = 4.0 + 2.0 * (float(frame % 60) / 60.0)
 let shield_radius = PLAYER_RADIUS + int(shield_pulse)
-draw_circle(player_x, player_y, shield_radius, 20, 80, 140)
+draw_circle(cx: player_x, cy: player_y, radius: shield_radius, r: 20, g: 80, b: 140)
 // Shield outline
-draw_circle(player_x, player_y, PLAYER_RADIUS + 3, 40, 140, 220)
+draw_circle(cx: player_x, cy: player_y, radius: PLAYER_RADIUS + 3, r: 40, g: 140, b: 220)
 // Main body
-draw_circle(player_x, player_y, PLAYER_RADIUS, 60, 180, 255)
+draw_circle(cx: player_x, cy: player_y, radius: PLAYER_RADIUS, r: 60, g: 180, b: 255)
 // Inner glow
-draw_circle(player_x, player_y, PLAYER_RADIUS - 3, 120, 210, 255)
+draw_circle(cx: player_x, cy: player_y, radius: PLAYER_RADIUS - 3, r: 120, g: 210, b: 255)
 // Bright core
-draw_circle(player_x, player_y, 3, 220, 240, 255)
+draw_circle(cx: player_x, cy: player_y, radius: 3, r: 220, g: 240, b: 255)
 
 // Direction indicator line
 if pspeed > 3.0 then
@@ -337,7 +337,7 @@ end
 
 // === HUD ===
 // Score bar background
-draw_rect(0, 0, SW, 45, 10, 10, 30)
+draw_rect(x: 0, y: 0, w: SW, h: 45, r: 10, g: 10, b: 30)
 draw_line({x: 0, y: 45}, {x: SW, y: 45}, hud_border)
 
 let score_int = int(score)
@@ -355,7 +355,7 @@ draw_text("LV " ++ str(diff_display), {x: SW / 2 - 20, y: 12}, 20, purple)
 // Combo display
 if combo > 1 then
   let combo_bright = int(min(combo_timer, 1.0) * 255.0)
-  draw_text("CLOSE CALL x" ++ str(combo), SW / 2 - 70, 55, 18, 255, combo_bright, 80)
+  draw_text("CLOSE CALL x" ++ str(combo), x: SW / 2 - 70, y: 55, size: 18, r: 255, g: combo_bright, b: 80)
 end
 
 // Enemy count
@@ -365,7 +365,7 @@ draw_text(str(enemy_count) ++ " threats", {x: SW / 2 - 40, y: SH - 30}, 16, thre
 // Game over overlay
 if game_over then
   // Semi-transparent overlay using dark rect
-  draw_rect(0, 0, SW, SH, 5, 0, 10)
+  draw_rect(x: 0, y: 0, w: SW, h: SH, r: 5, g: 0, b: 10)
 
   // Decorative lines
   draw_line({x: SW / 2 - 180, y: SH / 2 - 80}, {x: SW / 2 + 180, y: SH / 2 - 80}, red_accent)
@@ -384,6 +384,6 @@ if game_over then
   for p in particles do
     let pa2 = max(0, int(p.life * 255.0))
     let ps2 = max(1, int(p.life * 5.0))
-    draw_circle(int(p.x), int(p.y), ps2, p.r, min(pa2, p.g), p.b)
+    draw_circle(cx: int(p.x), cy: int(p.y), radius: ps2, r: p.r, g: min(pa2, p.g), b: p.b)
   end
 end

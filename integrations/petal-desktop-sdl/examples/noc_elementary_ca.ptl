@@ -55,7 +55,7 @@ for step in range(0, rows_per_frame) do
       let left = cells[(i - 1 + num_cells) % num_cells]
       let center = cells[i]
       let right = cells[(i + 1) % num_cells]
-      new_cells = append(new_cells, apply_rule(left, center, right, rule_num))
+      new_cells = append(new_cells, apply_rule(left, center, right, rule: rule_num))
     end
     cells = new_cells
     next_row += 1
@@ -106,19 +106,19 @@ for y in range(0, len(history)) do
       let pr = min(255, cr + (x * 3) % 30)
       let pg = min(255, cg + (y * 2) % 20)
       let pb = min(255, cb)
-      draw_rect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1, pr, pg, pb)
+      draw_rect(x: x * cell_size, y: y * cell_size, w: cell_size - 1, h: cell_size - 1, r: pr, g: pg, b: pb)
     end
   end
 end
 
 // HUD
-draw_rect(0, 0, 200, 35, 0, 0, 0)
-draw_text("Rule " ++ str(rule_num), 10, 5, 16, cr, cg, cb)
-draw_text("Elementary CA", 10, 22, 10, 60, 60, 80)
+draw_rect(x: 0, y: 0, w: 200, h: 35, r: 0, g: 0, b: 0)
+draw_text("Rule " ++ str(rule_num), x: 10, y: 5, size: 16, r: cr, g: cg, b: cb)
+draw_text("Elementary CA", x: 10, y: 22, size: 10, r: 60, g: 60, b: 80)
 
 // Rule visualization (8 cells showing the rule)
 let rule_x = sw - 180
-draw_rect(rule_x - 5, 5, 175, 30, 0, 0, 0)
+draw_rect(x: rule_x - 5, y: 5, w: 175, h: 30, r: 0, g: 0, b: 0)
 for bit in range(0, 8) do
   let r = rule_num
   for i in range(0, bit) do r = r / 2 end
@@ -130,14 +130,14 @@ for bit in range(0, 8) do
   let input_c = (bit / 2) % 2
   let input_r = bit % 2
 
-  if input_l == 1 then draw_rect(bx, 8, 5, 5, 80, 80, 80) end
-  if input_c == 1 then draw_rect(bx + 5, 8, 5, 5, 80, 80, 80) end
-  if input_r == 1 then draw_rect(bx + 10, 8, 5, 5, 80, 80, 80) end
+  if input_l == 1 then draw_rect(x: bx, y: 8, w: 5, h: 5, r: 80, g: 80, b: 80) end
+  if input_c == 1 then draw_rect(x: bx + 5, y: 8, w: 5, h: 5, r: 80, g: 80, b: 80) end
+  if input_r == 1 then draw_rect(x: bx + 10, y: 8, w: 5, h: 5, r: 80, g: 80, b: 80) end
 
   // Show result
   if active == 1 then
-    draw_rect(bx + 5, 18, 5, 5, cr, cg, cb)
+    draw_rect(x: bx + 5, y: 18, w: 5, h: 5, r: cr, g: cg, b: cb)
   else
-    draw_rect(bx + 5, 18, 5, 5, 20, 20, 20)
+    draw_rect(x: bx + 5, y: 18, w: 5, h: 5, r: 20, g: 20, b: 20)
   end
 end

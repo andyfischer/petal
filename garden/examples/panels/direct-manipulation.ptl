@@ -12,15 +12,15 @@ clear(16, 18, 26)
 
 // Overlapping shapes: hover the overlap and the highlight
 // names the shape on top — the one your eye picks.
-draw_circle(120, 110, 60, 210, 90, 110)
-draw_circle(170, 140, 60, 90, 170, 210)
-draw_circle(145, 175, 45, 240, 200, 110)
+draw_circle(cx: 120, cy: 110, radius: 60, r: 210, g: 90, b: 110)
+draw_circle(cx: 170, cy: 140, radius: 60, r: 90, g: 170, b: 210)
+draw_circle(cx: 145, cy: 175, radius: 45, r: 240, g: 200, b: 110)
 
 // A frame is hit on its *stroke*. Hovering its hollow middle
 // reaches the text inside, the way a picture frame doesn't
 // intercept the picture.
-draw_rect_outline(260, 70, 180, 150, 70, 80, 105, 255, 3)
-draw_text("inside the frame", 276, 136, 13, 150, 160, 185)
+draw_rect_outline(x: 260, y: 70, w: 180, h: 150, r: 70, g: 80, b: 105, a: 255, width: 3)
+draw_text("inside the frame", x: 276, y: 136, size: 13, r: 150, g: 160, b: 185)
 
 // One call, many shapes: every bar comes from the same
 // `draw_rect`, so they all highlight that one line. Which is
@@ -30,7 +30,7 @@ let bars = [40, 72, 28, 96, 55, 81, 34]
 let base_y = h - 60
 for i in range(0, len(bars)) do
   let bh = bars[i]
-  draw_rect(w - 200 + i * 26, base_y - bh, 18, bh, 90, 150, 220)
+  draw_rect(x: w - 200 + i * 26, y: base_y - bh, w: 18, h: bh, r: 90, g: 150, b: 220)
 end
 
 // Through a function you wrote: hovering a swatch highlights
@@ -41,9 +41,9 @@ fn swatch(x, y, r, g, b)
   draw_rect(x, y, 46, 46, r, g, b)
 end
 
-swatch(60, base_y - 46, 220, 120, 90)
-swatch(116, base_y - 46, 120, 200, 140)
-swatch(172, base_y - 46, 130, 130, 230)
+swatch(x: 60, y: base_y - 46, r: 220, g: 120, b: 90)
+swatch(x: 116, y: base_y - 46, r: 120, g: 200, b: 140)
+swatch(x: 172, y: base_y - 46, r: 130, g: 130, b: 230)
 
 // Literals vs. names. These two rects are written the same way
 // apart from the x: one a literal, one a binding. Both trace —
@@ -51,7 +51,7 @@ swatch(172, base_y - 46, 130, 130, 230)
 // editing `edge` moves every shape that reads it.
 let edge = 300
 
-draw_rect(edge, 250, 70, 40, 200, 170, 90)
-draw_rect(400, 250, 70, 40, 200, 170, 90)
+draw_rect(x: edge, y: 250, w: 70, h: 40, r: 200, g: 170, b: 90)
+draw_rect(x: 400, y: 250, w: 70, h: 40, r: 200, g: 170, b: 90)
 
-draw_text("hover a shape — its code lights up on the left", 16, 20, 14, 200, 210, 235)
+draw_text("hover a shape — its code lights up on the left", x: 16, y: 20, size: 14, r: 200, g: 210, b: 235)

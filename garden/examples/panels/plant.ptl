@@ -67,7 +67,7 @@ fn leaf(id, tip, bend)
   length = min(length + gdt * LENGTH_GROW_RATE / 5.0, LEAF_MAX_LENGTH)
 
   let ease = 1.0 - 1.0 / (age + 1.0)
-  let angle = tip.angle + clamp(wiggle * wiggle_factor + bend, -angle_ceiling, angle_ceiling) * ease
+  let angle = tip.angle + clamp(wiggle * wiggle_factor + bend, lo: -angle_ceiling, hi: angle_ceiling) * ease
   let shown = length * ease
 
   // The blade: a long thin diamond, widest a third of the way out. Same
@@ -92,8 +92,8 @@ end
 
 fn bud(lineage, tip)
   let spread = leaf_spread_angle / 2.0
-  leaf(lineage ++ ":0", tip, -spread)
-  leaf(lineage ++ ":1", tip, spread)
+  leaf(id: lineage ++ ":0", tip: tip, bend: -spread)
+  leaf(id: lineage ++ ":1", tip: tip, bend: spread)
 end
 
 // ── One segment ───────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   // The trunk stands straight; only what grows off it veers. (The Flash version
   // arrived at the same place by a bug: it tilted the root quad and then zeroed
   // the angle its children read, which put a kink at the base.)
-  let veer = if depth == 0 then 0.0 else clamp(wiggle * wiggle_factor + bend, -angle_ceiling, angle_ceiling) end
+  let veer = if depth == 0 then 0.0 else clamp(wiggle * wiggle_factor + bend, lo: -angle_ceiling, hi: angle_ceiling) end
   let angle = base.angle + veer * ease
   let shown_length = length * ease
 
@@ -149,9 +149,9 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
   let end_rx = end_x + half * cos(angle)
   let end_ry = end_y + half * sin(angle)
 
-  fill_poly([
+  fill_poly(points: [
     [base.lx, base.ly], [end_lx, end_ly], [end_rx, end_ry], [base.rx, base.ry],
-  ], BARK[0], BARK[1], BARK[2])
+  ], r: BARK[0], g: BARK[1], b: BARK[2])
 
   // How much unbranched growth stands between here and the last fork.
   let dist = dist_before + length
@@ -172,17 +172,17 @@ fn grow(id, lineage, depth, base, bend, ratio, parent_end_radius, dist_before)
 
   if children == 1 then
     // Straight extension: same lineage, so this branch's leaves stay with it.
-    grow(id ++ ".c", lineage, depth + 1, handoff, 0.0, 1.0, end_radius, dist)
+    grow(id: id ++ ".c", lineage: lineage, depth: depth + 1, base: handoff, bend: 0.0, ratio: 1.0, parent_end_radius: end_radius, dist_before: dist)
   elsif children == 2 then
     // A fork. One child inherits the leaf pair (so those leaves keep the age
     // they have already accumulated and stay the big ones); the other starts
     // a lineage of its own, with fresh buds.
     let spread = branch_spread_angle / 2.0
     let heir_a = leaf_heir == 0
-    grow(id ++ ".a", if heir_a then lineage else id ++ ".a" end,
-      depth + 1, handoff, -spread, fork_share, end_radius, 0.0)
-    grow(id ++ ".b", if heir_a then id ++ ".b" else lineage end,
-      depth + 1, handoff, spread, 1.0 - fork_share, end_radius, 0.0)
+    grow(id: id ++ ".a", lineage: if heir_a then lineage else id ++ ".a" end,
+      depth: depth + 1, base: handoff, bend: -spread, ratio: fork_share, parent_end_radius: end_radius, dist_before: 0.0)
+    grow(id: id ++ ".b", lineage: if heir_a then id ++ ".b" else lineage end,
+      depth: depth + 1, base: handoff, bend: spread, ratio: 1.0 - fork_share, parent_end_radius: end_radius, dist_before: 0.0)
   else
     bud(lineage, handoff)
   end
@@ -193,24 +193,24 @@ end
 clear(18, 20, 28)
 
 let ground_y = int(float(h) * 0.86)
-draw_rect(0, ground_y, w, h - ground_y, SOIL[0], SOIL[1], SOIL[2])
+draw_rect(x: 0, y: ground_y, w: w, h: h - ground_y, r: SOIL[0], g: SOIL[1], b: SOIL[2])
 
 let root_x = float(w) * 0.5
 let root_y = float(ground_y)
 let trunk_half = 2.0 * max_segment_radius
 
-grow("r" ++ str(generation), "L" ++ str(generation), 0,
-  {x: root_x, y: root_y,
+grow(id: "r" ++ str(generation), lineage: "L" ++ str(generation), depth: 0,
+  base: {x: root_x, y: root_y,
     lx: root_x - trunk_half, ly: root_y,
     rx: root_x + trunk_half, ry: root_y,
     angle: 0.0},
-  0.0, 1.0, max_segment_radius, 0.0)
+  bend: 0.0, ratio: 1.0, parent_end_radius: max_segment_radius, dist_before: 0.0)
 
 // Leaves last, so a blade is never buried under a branch drawn after it —
 // the same two-pass order the Flash renderer used.
 for blade in leaf_blades do
-  fill_poly(blade.points, blade.r, blade.g, blade.b)
+  fill_poly(points: blade.points, r: blade.r, g: blade.g, b: blade.b)
 end
 
 let hud = "segments {segment_count}   leaves {len(leaf_blades)}   —  r or click to regrow"
-draw_text(hud, 10, 10, 13, 150, 160, 180)
+draw_text(hud, x: 10, y: 10, size: 13, r: 150, g: 160, b: 180)

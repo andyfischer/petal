@@ -36,7 +36,7 @@ print(describe(p))
 
 // `Rect` is built in — no declaration, no import. Its fields are x, y, w, h
 // and it comes with the geometry every layout keeps rewriting by hand.
-let card = Rect(0, 0, 100, 40)
+let card = Rect(x: 0, y: 0, w: 100, h: 40)
 print(card.center_x(), card.center_y())
 print(card.right(), card.bottom())
 print(card.inset(5))

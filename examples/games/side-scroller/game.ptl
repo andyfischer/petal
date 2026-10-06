@@ -146,7 +146,7 @@ fn parse_level(src: string) -> record
     if tag == "" then continue end
     if tag == "name" then
       // join everything after the tag so multi-word names work
-      L.name = join(slice(toks, 1, len(toks)), " ")
+      L.name = join(slice(toks, start: 1, end: len(toks)), " ")
     elsif tag == "width" then
       L.width = parse_int(toks[1])
     elsif tag == "bg" then
@@ -301,9 +301,9 @@ if phase == Playing then
   if target_vx == 0.0 then
     // friction
     let fr = if on_ground then FRICTION else AIR_ACCEL * 0.4 end
-    set vx = approach(vx, 0.0, fr * dts)
+    set vx = approach(cur: vx, target: 0.0, step: fr * dts)
   else
-    set vx = approach(vx, target_vx, accel * dts)
+    set vx = approach(cur: vx, target: target_vx, step: accel * dts)
   end
 
   // jump
@@ -343,7 +343,7 @@ if phase == Playing then
   for p in level.plats do
     let plx = float(p.x); let ply = float(p.y)
     let plw = float(p.w); let plh = float(p.h)
-    if aabb(new_px, py, pw, ph, plx, ply, plw, plh) then
+    if aabb(ax: new_px, ay: py, aw: pw, ah: ph, bx: plx, by: ply, bw: plw, bh: plh) then
       if vx > 0.0 then new_px = plx - pw elsif vx < 0.0 then new_px = plx + plw end
       set vx = 0.0
     end
@@ -356,7 +356,7 @@ if phase == Playing then
   for p in level.plats do
     let plx = float(p.x); let ply = float(p.y)
     let plw = float(p.w); let plh = float(p.h)
-    if aabb(px, new_py, pw, ph, plx, ply, plw, plh) then
+    if aabb(ax: px, ay: new_py, aw: pw, ah: ph, bx: plx, by: ply, bw: plw, bh: plh) then
       if vy > 0.0 then
         new_py = ply - ph
         if !on_ground then
@@ -390,7 +390,7 @@ if phase == Playing then
   for o in level.oneways do
     let ox = float(o.x); let oy = float(o.y); let ow = float(o.w)
     if vy > 0.0 && py + ph <= oy + 1.0 then
-      if aabb(px, new_py, pw, ph, ox, oy, ow, 8.0) then
+      if aabb(ax: px, ay: new_py, aw: pw, ah: ph, bx: ox, by: oy, bw: ow, bh: 8.0) then
         new_py = oy - ph
         set vy = 0.0
         set on_ground = true
@@ -440,7 +440,7 @@ if phase == Playing then
         e.x = e.x + e.vx * dts
       end
       // collision with player
-      if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) then
+      if invul <= 0.0 && aabb(ax: px, ay: py, aw: pw, ah: ph, bx: e.x, by: e.y, bw: 24.0, bh: 22.0) then
         if vy > 50.0 && py + ph - 14.0 < e.y then
           e.alive = false
           e.squash = 1.0
@@ -472,7 +472,7 @@ if phase == Playing then
       let bounce = abs(sin(e.anim * 4.0)) * 60.0
       e.y = e.origin_y - bounce
       // collision with player
-      if invul <= 0.0 && aabb(px, py, pw, ph, e.x, e.y, 24.0, 22.0) then
+      if invul <= 0.0 && aabb(ax: px, ay: py, aw: pw, ah: ph, bx: e.x, by: e.y, bw: 24.0, bh: 22.0) then
         if vy > 50.0 && py + ph - 14.0 < e.y then
           e.alive = false
           set vy = JUMP_VY * 0.6
@@ -503,7 +503,7 @@ if phase == Playing then
   // --- spikes ---
   for s in level.spikes do
     if invul <= 0.0 then
-      if aabb(px, py, pw, ph, float(s.x), float(s.y), 24.0, 16.0) then
+      if aabb(ax: px, ay: py, aw: pw, ah: ph, bx: float(s.x), by: float(s.y), bw: 24.0, bh: 16.0) then
         set invul = INVUL_MAX
         lives = lives - 1
         set shake = 16.0
@@ -516,7 +516,7 @@ if phase == Playing then
 
   // --- checkpoints ---
   for ck in level.checks do
-    if aabb(px, py, pw, ph, float(ck.x) - 8.0, float(ck.y) - 30.0, 32.0, 50.0) then
+    if aabb(ax: px, ay: py, aw: pw, ah: ph, bx: float(ck.x) - 8.0, by: float(ck.y) - 30.0, bw: 32.0, bh: 50.0) then
       if checkpoint == nil || float(ck.x) > checkpoint.x then
         set checkpoint = {x: float(ck.x), y: float(ck.y) - float(PLAYER_H)}
         say("Checkpoint!")
@@ -527,7 +527,7 @@ if phase == Playing then
   // --- goal ---
   let gx = level.goal.x
   let gy = level.goal.y
-  if aabb(px, py, pw, ph, gx - 6.0, gy - 60.0, 24.0, 80.0) then
+  if aabb(ax: px, ay: py, aw: pw, ah: ph, bx: gx - 6.0, by: gy - 60.0, bw: 24.0, bh: 80.0) then
     phase = Complete
     phase_t = 0.0
     if level_timer < best_times[level_idx] then
@@ -565,13 +565,13 @@ if phase == Playing then
 
   // --- camera follow ---
   let target = px + pw / 2.0 - float(SCREEN_W) / 2.0
-  target = clamp(target, 0.0, float(level.width) - float(SCREEN_W))
+  target = clamp(target, lo: 0.0, hi: float(level.width) - float(SCREEN_W))
   cam_target = target
-  set cam_x = approach(cam_x, cam_target, abs(cam_target - cam_x) * 6.0 * dts + 50.0 * dts)
+  set cam_x = approach(cur: cam_x, target: cam_target, step: abs(cam_target - cam_x) * 6.0 * dts + 50.0 * dts)
 
   // squash/stretch decay
-  set squash = approach(squash, 1.0, 4.0 * dts)
-  set stretch = approach(stretch, 1.0, 4.0 * dts)
+  set squash = approach(cur: squash, target: 1.0, step: 4.0 * dts)
+  set stretch = approach(cur: stretch, target: 1.0, step: 4.0 * dts)
 end
 
 // ===================== PAUSE / COMPLETE / OVER =======================
@@ -671,14 +671,14 @@ fn draw_at(x: num, y: num, w: num, h: num, r: num, g: num, b: num)
   draw_rect(x - cam_offset_x(), y - cam_offset_y(), w, h, r, g, b)
 end
 fn circ_at(x: num, y: num, rad: num, r: num, g: num, b: num)
-  draw_circle(x - cam_offset_x(), y - cam_offset_y(), rad, r, g, b)
+  draw_circle(cx: x - cam_offset_x(), cy: y - cam_offset_y(), radius: rad, r: r, g: g, b: b)
 end
 fn line_at(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num)
   draw_line(x1 - cam_offset_x(), y1 - cam_offset_y(),
     x2 - cam_offset_x(), y2 - cam_offset_y(), r, g, b)
 end
 fn text_at(t: string, x: num, y: num, sz: num, r: num, g: num, b: num)
-  draw_text(t, x - cam_offset_x(), y - cam_offset_y(), sz, r, g, b)
+  draw_text(t, x: x - cam_offset_x(), y: y - cam_offset_y(), size: sz, r: r, g: g, b: b)
 end
 
 fn draw_sky()
@@ -690,7 +690,7 @@ fn draw_sky()
     let r = int(float(get level.bg_r) * (1.0 - t) + 240.0 * t)
     let g = int(float(get level.bg_g) * (1.0 - t) + 220.0 * t)
     let b = int(float(get level.bg_b) * (1.0 - t) + 200.0 * t)
-    draw_rect(0, sy, SCREEN_W, 55, r, g, b)
+    draw_rect(x: 0, y: sy, w: SCREEN_W, h: 55, r: r, g: g, b: b)
     row = row + 1
   end
 end
@@ -704,7 +704,7 @@ fn draw_parallax_mountains()
     let mh = 90 + (m % 4) * 25
     let my = 480 - mh
     let r = 60; let g = 80; let b = 110
-    draw_circle(mx + 110, my + mh + 30, mh + 30, r, g, b)
+    draw_circle(cx: mx + 110, cy: my + mh + 30, radius: mh + 30, r: r, g: g, b: b)
     m = m + 1
   end
   let off2 = int(get cam_x * 0.4)
@@ -713,7 +713,7 @@ fn draw_parallax_mountains()
     let nx = n * 180 - (off2 % 180) - 40
     let nh = 70 + (n % 3) * 20
     let ny = 510 - nh
-    draw_circle(nx + 90, ny + nh + 25, nh + 25, 90, 110, 140)
+    draw_circle(cx: nx + 90, cy: ny + nh + 25, radius: nh + 25, r: 90, g: 110, b: 140)
     n = n + 1
   end
 end
@@ -725,9 +725,9 @@ fn draw_clouds()
     let cx = (c * 240 - (off % 240)) % (SCREEN_W + 240) - 120
     let cy = 60 + (c % 3) * 30
     let cw = 70 + (c % 2) * 20
-    draw_circle(cx + cw / 3, cy + 8, cw / 4, 235, 240, 250)
-    draw_circle(cx + cw * 2 / 3, cy + 8, cw / 4, 235, 240, 250)
-    draw_circle(cx + cw / 2, cy, cw / 3, 245, 248, 252)
+    draw_circle(cx: cx + cw / 3, cy: cy + 8, radius: cw / 4, r: 235, g: 240, b: 250)
+    draw_circle(cx: cx + cw * 2 / 3, cy: cy + 8, radius: cw / 4, r: 235, g: 240, b: 250)
+    draw_circle(cx: cx + cw / 2, cy: cy, radius: cw / 3, r: 245, g: 248, b: 252)
     c = c + 1
   end
 end
@@ -735,26 +735,26 @@ end
 fn draw_platforms()
   for p in get level.plats do
     // dirt body
-    draw_at(p.x, p.y + 4, p.w, p.h - 4, 110, 70, 40)
-    draw_at(p.x, p.y + p.h - 3, p.w, 3, 80, 50, 28)
+    draw_at(x: p.x, y: p.y + 4, w: p.w, h: p.h - 4, r: 110, g: 70, b: 40)
+    draw_at(x: p.x, y: p.y + p.h - 3, w: p.w, h: 3, r: 80, g: 50, b: 28)
     // grass top
-    draw_at(p.x, p.y, p.w, 6, 60, 170, 55)
-    draw_at(p.x, p.y, p.w, 2, 90, 210, 70)
+    draw_at(x: p.x, y: p.y, w: p.w, h: 6, r: 60, g: 170, b: 55)
+    draw_at(x: p.x, y: p.y, w: p.w, h: 2, r: 90, g: 210, b: 70)
     // blades
     let i = 0
     while i < p.w / 24 do
       let bx = p.x + i * 24 + 4
-      line_at(bx, p.y, bx - 1, p.y - 4, 70, 200, 70)
+      line_at(x1: bx, y1: p.y, x2: bx - 1, y2: p.y - 4, r: 70, g: 200, b: 70)
       i = i + 1
     end
   end
   for o in get level.oneways do
     // wooden plank
-    draw_at(o.x, o.y, o.w, 6, 200, 160, 90)
-    draw_at(o.x, o.y + 3, o.w, 3, 160, 120, 70)
+    draw_at(x: o.x, y: o.y, w: o.w, h: 6, r: 200, g: 160, b: 90)
+    draw_at(x: o.x, y: o.y + 3, w: o.w, h: 3, r: 160, g: 120, b: 70)
     let i = 0
     while i < o.w / 30 do
-      line_at(o.x + i * 30 + 10, o.y, o.x + i * 30 + 10, o.y + 6, 130, 90, 50)
+      line_at(x1: o.x + i * 30 + 10, y1: o.y, x2: o.x + i * 30 + 10, y2: o.y + 6, r: 130, g: 90, b: 50)
       i = i + 1
     end
   end
@@ -765,11 +765,11 @@ fn draw_spikes()
     let bx = s.x
     let by = s.y
     // 2 triangle spikes per tile (24 wide)
-    line_at(bx + 2, by + 16, bx + 8, by, 220, 220, 230)
-    line_at(bx + 8, by, bx + 14, by + 16, 220, 220, 230)
-    line_at(bx + 2, by + 16, bx + 14, by + 16, 220, 220, 230)
-    line_at(bx + 12, by + 16, bx + 18, by + 4, 200, 200, 210)
-    line_at(bx + 18, by + 4, bx + 22, by + 16, 200, 200, 210)
+    line_at(x1: bx + 2, y1: by + 16, x2: bx + 8, y2: by, r: 220, g: 220, b: 230)
+    line_at(x1: bx + 8, y1: by, x2: bx + 14, y2: by + 16, r: 220, g: 220, b: 230)
+    line_at(x1: bx + 2, y1: by + 16, x2: bx + 14, y2: by + 16, r: 220, g: 220, b: 230)
+    line_at(x1: bx + 12, y1: by + 16, x2: bx + 18, y2: by + 4, r: 200, g: 200, b: 210)
+    line_at(x1: bx + 18, y1: by + 4, x2: bx + 22, y2: by + 16, r: 200, g: 200, b: 210)
   end
 end
 
@@ -780,13 +780,13 @@ fn draw_coins()
       let bob = ((fc + c.x * 3) % 40)
       let off = if bob < 20 then bob / 5 - 2 else 2 - (bob - 20) / 5 end
       let cy = c.y + off
-      circ_at(c.x, cy, 11, 180, 140, 20)
-      circ_at(c.x, cy, 8, 255, 210, 40)
-      circ_at(c.x - 2, cy - 2, 4, 255, 240, 130)
+      circ_at(x: c.x, y: cy, rad: 11, r: 180, g: 140, b: 20)
+      circ_at(x: c.x, y: cy, rad: 8, r: 255, g: 210, b: 40)
+      circ_at(x: c.x - 2, y: cy - 2, rad: 4, r: 255, g: 240, b: 130)
       let sp = (fc + c.x * 7) % 30
       if sp < 10 then
-        line_at(c.x + 7, cy - 7, c.x + 13, cy - 7, 255, 255, 200)
-        line_at(c.x + 10, cy - 10, c.x + 10, cy - 4, 255, 255, 200)
+        line_at(x1: c.x + 7, y1: cy - 7, x2: c.x + 13, y2: cy - 7, r: 255, g: 255, b: 200)
+        line_at(x1: c.x + 10, y1: cy - 10, x2: c.x + 10, y2: cy - 4, r: 255, g: 255, b: 200)
       end
     end
   end
@@ -798,11 +798,11 @@ fn draw_checks()
     let pole_r = if lit then 230 else 110 end
     let pole_g = if lit then 230 else 110 end
     let pole_b = if lit then 240 else 130 end
-    draw_at(ck.x + 6, ck.y - 32, 3, 32, pole_r, pole_g, pole_b)
+    draw_at(x: ck.x + 6, y: ck.y - 32, w: 3, h: 32, r: pole_r, g: pole_g, b: pole_b)
     let flag_r = if lit then 240 else 100 end
     let flag_g = if lit then 80  else 100 end
     let flag_b = if lit then 90  else 100 end
-    draw_at(ck.x + 9, ck.y - 30, 14, 9, flag_r, flag_g, flag_b)
+    draw_at(x: ck.x + 9, y: ck.y - 30, w: 14, h: 9, r: flag_r, g: flag_g, b: flag_b)
   end
 end
 
@@ -814,18 +814,18 @@ fn draw_enemies()
       let walk = (fc + int(e.x)) % 16
       let foot_off = if walk < 8 then 0 else 2 end
       // body
-      draw_at(int(e.x) + 2, int(e.y) + 4, 20, 18, 120, 70, 30)
+      draw_at(x: int(e.x) + 2, y: int(e.y) + 4, w: 20, h: 18, r: 120, g: 70, b: 30)
       // belly
-      draw_at(int(e.x) + 5, int(e.y) + 10, 14, 10, 200, 160, 90)
+      draw_at(x: int(e.x) + 5, y: int(e.y) + 10, w: 14, h: 10, r: 200, g: 160, b: 90)
       // eyes
-      draw_at(int(e.x) + 6, int(e.y) + 6, 4, 5, 255, 255, 255)
-      draw_at(int(e.x) + 14, int(e.y) + 6, 4, 5, 255, 255, 255)
+      draw_at(x: int(e.x) + 6, y: int(e.y) + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
+      draw_at(x: int(e.x) + 14, y: int(e.y) + 6, w: 4, h: 5, r: 255, g: 255, b: 255)
       let pup = if e.vx < 0.0 then 0 else 2 end
-      draw_at(int(e.x) + 7 + pup, int(e.y) + 8, 2, 3, 30, 30, 30)
-      draw_at(int(e.x) + 15 + pup, int(e.y) + 8, 2, 3, 30, 30, 30)
+      draw_at(x: int(e.x) + 7 + pup, y: int(e.y) + 8, w: 2, h: 3, r: 30, g: 30, b: 30)
+      draw_at(x: int(e.x) + 15 + pup, y: int(e.y) + 8, w: 2, h: 3, r: 30, g: 30, b: 30)
       // feet
-      draw_at(int(e.x) + 2, int(e.y) + 22 - foot_off, 8, 4, 60, 30, 10)
-      draw_at(int(e.x) + 14, int(e.y) + 22 + foot_off, 8, 4, 60, 30, 10)
+      draw_at(x: int(e.x) + 2, y: int(e.y) + 22 - foot_off, w: 8, h: 4, r: 60, g: 30, b: 10)
+      draw_at(x: int(e.x) + 14, y: int(e.y) + 22 + foot_off, w: 8, h: 4, r: 60, g: 30, b: 10)
     elsif e.kind == "jumper" then
       // e.y already carries the bounce from the update loop
       let by = int(e.y)
@@ -833,13 +833,13 @@ fn draw_enemies()
       let bphase = (e.anim * 4.0) % 3.14159
       let stretchy = if bphase < 1.5 && bphase > 0.5 then 1 else 0 end
       // body (slime-y green)
-      draw_at(int(e.x), by + 4 - stretchy, 24, 20 + stretchy, 60, 170, 80)
-      draw_at(int(e.x) + 4, by + 8, 16, 10, 100, 220, 120)
+      draw_at(x: int(e.x), y: by + 4 - stretchy, w: 24, h: 20 + stretchy, r: 60, g: 170, b: 80)
+      draw_at(x: int(e.x) + 4, y: by + 8, w: 16, h: 10, r: 100, g: 220, b: 120)
       // eyes
-      draw_at(int(e.x) + 6, by + 8, 4, 5, 255, 255, 255)
-      draw_at(int(e.x) + 14, by + 8, 4, 5, 255, 255, 255)
-      draw_at(int(e.x) + 7, by + 10, 2, 3, 30, 30, 30)
-      draw_at(int(e.x) + 15, by + 10, 2, 3, 30, 30, 30)
+      draw_at(x: int(e.x) + 6, y: by + 8, w: 4, h: 5, r: 255, g: 255, b: 255)
+      draw_at(x: int(e.x) + 14, y: by + 8, w: 4, h: 5, r: 255, g: 255, b: 255)
+      draw_at(x: int(e.x) + 7, y: by + 10, w: 2, h: 3, r: 30, g: 30, b: 30)
+      draw_at(x: int(e.x) + 15, y: by + 10, w: 2, h: 3, r: 30, g: 30, b: 30)
     end
   end
 end
@@ -850,15 +850,15 @@ fn draw_goal()
   let pulse = (frame_count() % 60)
   let r = 200 + (pulse * 55) / 60
   // pole
-  draw_at(gx + 8, gy - 80, 4, 80, 230, 230, 230)
-  draw_at(gx + 6, gy - 84, 8, 8, 255, 220, 60)
+  draw_at(x: gx + 8, y: gy - 80, w: 4, h: 80, r: 230, g: 230, b: 230)
+  draw_at(x: gx + 6, y: gy - 84, w: 8, h: 8, r: 255, g: 220, b: 60)
   // flag waves
   let wave = sin(float(frame_count()) * 0.15) * 4.0
   let f = 0
   while f < 24 do
     let fx = gx + 12 + f
     let fy = gy - 76 + int(sin(float(frame_count()) * 0.1 + float(f) * 0.3) * 1.5)
-    draw_at(fx, fy, 1, 16, r, 60, 60)
+    draw_at(x: fx, y: fy, w: 1, h: 16, r: r, g: 60, b: 60)
     f = f + 1
   end
 end
@@ -874,36 +874,36 @@ fn draw_player()
   let dx = (PLAYER_W - sw) / 2
   let dy = PLAYER_H - sh
   // body
-  draw_rect(bx + dx + 2, by + dy + 10, sw - 4, sh - 12, 60, 130, 230)
-  draw_rect(bx + dx + 4, by + dy + 12, 6, sh - 16, 90, 160, 250)
+  draw_rect(x: bx + dx + 2, y: by + dy + 10, w: sw - 4, h: sh - 12, r: 60, g: 130, b: 230)
+  draw_rect(x: bx + dx + 4, y: by + dy + 12, w: 6, h: sh - 16, r: 90, g: 160, b: 250)
   // head
-  draw_rect(bx + dx + 1, by + dy + 2, sw - 2, 12, 245, 200, 165)
+  draw_rect(x: bx + dx + 1, y: by + dy + 2, w: sw - 2, h: 12, r: 245, g: 200, b: 165)
   // hat
-  draw_rect(bx + dx, by + dy - 2, sw, 5, 200, 60, 60)
-  draw_rect(bx + dx - 2, by + dy + 2, sw + 4, 3, 180, 50, 50)
+  draw_rect(x: bx + dx, y: by + dy - 2, w: sw, h: 5, r: 200, g: 60, b: 60)
+  draw_rect(x: bx + dx - 2, y: by + dy + 2, w: sw + 4, h: 3, r: 180, g: 50, b: 50)
   // eyes
   let eo = if get facing > 0 then sw - 9 else 3 end
-  draw_rect(bx + dx + eo, by + dy + 6, 4, 4, 255, 255, 255)
-  draw_rect(bx + dx + eo - 5, by + dy + 6, 4, 4, 255, 255, 255)
-  draw_rect(bx + dx + eo + 1, by + dy + 7, 2, 3, 20, 20, 50)
-  draw_rect(bx + dx + eo - 4, by + dy + 7, 2, 3, 20, 20, 50)
+  draw_rect(x: bx + dx + eo, y: by + dy + 6, w: 4, h: 4, r: 255, g: 255, b: 255)
+  draw_rect(x: bx + dx + eo - 5, y: by + dy + 6, w: 4, h: 4, r: 255, g: 255, b: 255)
+  draw_rect(x: bx + dx + eo + 1, y: by + dy + 7, w: 2, h: 3, r: 20, g: 20, b: 50)
+  draw_rect(x: bx + dx + eo - 4, y: by + dy + 7, w: 2, h: 3, r: 20, g: 20, b: 50)
   // legs
   let leg = (frame_count() * 3) % 12
   if abs(get vx) > 20.0 && get on_ground then
     if leg < 6 then
-      draw_rect(bx + dx + 3, by + dy + sh - 6, 6, 6, 60, 60, 130)
-      draw_rect(bx + dx + sw - 9, by + dy + sh - 8, 6, 8, 60, 60, 130)
+      draw_rect(x: bx + dx + 3, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
+      draw_rect(x: bx + dx + sw - 9, y: by + dy + sh - 8, w: 6, h: 8, r: 60, g: 60, b: 130)
     else
-      draw_rect(bx + dx + 3, by + dy + sh - 8, 6, 8, 60, 60, 130)
-      draw_rect(bx + dx + sw - 9, by + dy + sh - 6, 6, 6, 60, 60, 130)
+      draw_rect(x: bx + dx + 3, y: by + dy + sh - 8, w: 6, h: 8, r: 60, g: 60, b: 130)
+      draw_rect(x: bx + dx + sw - 9, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
     end
   else
-    draw_rect(bx + dx + 3, by + dy + sh - 6, 6, 6, 60, 60, 130)
-    draw_rect(bx + dx + sw - 9, by + dy + sh - 6, 6, 6, 60, 60, 130)
+    draw_rect(x: bx + dx + 3, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
+    draw_rect(x: bx + dx + sw - 9, y: by + dy + sh - 6, w: 6, h: 6, r: 60, g: 60, b: 130)
   end
   // shoes
-  draw_rect(bx + dx + 2, by + dy + sh - 1, 8, 3, 160, 50, 40)
-  draw_rect(bx + dx + sw - 10, by + dy + sh - 1, 8, 3, 160, 50, 40)
+  draw_rect(x: bx + dx + 2, y: by + dy + sh - 1, w: 8, h: 3, r: 160, g: 50, b: 40)
+  draw_rect(x: bx + dx + sw - 10, y: by + dy + sh - 1, w: 8, h: 3, r: 160, g: 50, b: 40)
 end
 
 fn draw_particles()
@@ -914,56 +914,56 @@ fn draw_particles()
     if p.kind == "spark" then r = 255; g = 230; b = 80 end
     if p.kind == "puff"  then r = 200; g = 200; b = 220 end
     let life_t = p.life
-    circ_at(int(p.x), int(p.y), max(1, int(p.size * min(1.0, life_t * 2.0))), r, g, b)
+    circ_at(x: int(p.x), y: int(p.y), rad: max(1, int(p.size * min(1.0, life_t * 2.0))), r: r, g: g, b: b)
   end
 end
 
 fn draw_floats()
   for f in get floats do
-    let alpha = clamp(f.life, 0.0, 1.0)
+    let alpha = clamp(f.life, lo: 0.0, hi: 1.0)
     let r = int(255.0 * alpha)
     let g = int(240.0 * alpha)
     let b = int(120.0 * alpha)
-    text_at(f.text, int(f.x), int(f.y), 18, r + 30, g, b)
+    text_at(t: f.text, x: int(f.x), y: int(f.y), sz: 18, r: r + 30, g: g, b: b)
   end
 end
 
 fn draw_hud()
   // top bar
-  draw_rect(0, 0, SCREEN_W, 36, 0, 0, 0)
-  draw_rect(0, 0, SCREEN_W, 34, 25, 30, 50)
+  draw_rect(x: 0, y: 0, w: SCREEN_W, h: 36, r: 0, g: 0, b: 0)
+  draw_rect(x: 0, y: 0, w: SCREEN_W, h: 34, r: 25, g: 30, b: 50)
   // hearts
   let h = 0
   while h < 3 do
     let hx = 12 + h * 24
     if h < lives then
-      draw_circle(hx + 4, 18, 6, 220, 60, 70)
-      draw_circle(hx + 12, 18, 6, 220, 60, 70)
-      draw_rect(hx + 1, 17, 16, 8, 220, 60, 70)
-      draw_rect(hx + 4, 22, 10, 4, 220, 60, 70)
+      draw_circle(cx: hx + 4, cy: 18, radius: 6, r: 220, g: 60, b: 70)
+      draw_circle(cx: hx + 12, cy: 18, radius: 6, r: 220, g: 60, b: 70)
+      draw_rect(x: hx + 1, y: 17, w: 16, h: 8, r: 220, g: 60, b: 70)
+      draw_rect(x: hx + 4, y: 22, w: 10, h: 4, r: 220, g: 60, b: 70)
     else
-      draw_circle(hx + 4, 18, 6, 60, 25, 30)
-      draw_circle(hx + 12, 18, 6, 60, 25, 30)
-      draw_rect(hx + 1, 17, 16, 8, 60, 25, 30)
+      draw_circle(cx: hx + 4, cy: 18, radius: 6, r: 60, g: 25, b: 30)
+      draw_circle(cx: hx + 12, cy: 18, radius: 6, r: 60, g: 25, b: 30)
+      draw_rect(x: hx + 1, y: 17, w: 16, h: 8, r: 60, g: 25, b: 30)
     end
     h = h + 1
   end
   // coin count
-  draw_circle(110, 18, 8, 255, 210, 40)
-  draw_circle(108, 16, 4, 255, 240, 130)
-  draw_text("x{get coins_got}", 122, 8, 22, 255, 255, 255)
+  draw_circle(cx: 110, cy: 18, radius: 8, r: 255, g: 210, b: 40)
+  draw_circle(cx: 108, cy: 16, radius: 4, r: 255, g: 240, b: 130)
+  draw_text("x{get coins_got}", x: 122, y: 8, size: 22, r: 255, g: 255, b: 255)
   // timer
   let t = get level_timer
   let mins = int(t) / 60
   let secs = int(t) % 60
   let cents = int(t * 100.0) % 100
-  draw_text("{mins}:{secs}.{cents}", 220, 8, 22, 220, 220, 240)
+  draw_text("{mins}:{secs}.{cents}", x: 220, y: 8, size: 22, r: 220, g: 220, b: 240)
   // level name
-  draw_text(get level.name, SCREEN_W - 240, 8, 22, 230, 230, 250)
+  draw_text(get level.name, x: SCREEN_W - 240, y: 8, size: 22, r: 230, g: 230, b: 250)
   // toast
   if get toast_t > 0.0 then
-    draw_rect(SCREEN_W / 2 - 100, 50, 200, 28, 0, 0, 0)
-    draw_text(get toast, SCREEN_W / 2 - 90, 54, 20, 255, 230, 120)
+    draw_rect(x: SCREEN_W / 2 - 100, y: 50, w: 200, h: 28, r: 0, g: 0, b: 0)
+    draw_text(get toast, x: SCREEN_W / 2 - 90, y: 54, size: 20, r: 255, g: 230, b: 120)
   end
 end
 
@@ -978,65 +978,65 @@ fn draw_title()
     let sy = (s * 73) % 400
     let tw = (frame_count() + s * 3) % 60
     let bright = if tw < 30 then 100 + tw * 4 else 220 - (tw - 30) * 4 end
-    draw_rect(sx, sy, 2, 2, bright, bright, bright + 20)
+    draw_rect(x: sx, y: sy, w: 2, h: 2, r: bright, g: bright, b: bright + 20)
     s = s + 1
   end
   // title text wobble
   let bob = int(sin(title_t * 2.0) * 4.0)
-  draw_text("PETAL  RUNNER", SCREEN_W / 2 - 130, 100 + bob, 48, 255, 230, 120)
-  draw_text("a side-scroller written in petal", SCREEN_W / 2 - 150, 160, 18, 200, 200, 230)
+  draw_text("PETAL  RUNNER", x: SCREEN_W / 2 - 130, y: 100 + bob, size: 48, r: 255, g: 230, b: 120)
+  draw_text("a side-scroller written in petal", x: SCREEN_W / 2 - 150, y: 160, size: 18, r: 200, g: 200, b: 230)
   // level select
-  draw_text("Select a level:", SCREEN_W / 2 - 80, 220, 22, 230, 230, 250)
+  draw_text("Select a level:", x: SCREEN_W / 2 - 80, y: 220, size: 22, r: 230, g: 230, b: 250)
   let i = 0
   while i < len(level_titles) do
     let y = 260 + i * 36
     let sel = i == menu_idx
     let bg_col = if sel then 80 else 30 end
-    draw_rect(SCREEN_W / 2 - 200, y - 4, 400, 30, bg_col, bg_col + 10, bg_col + 30)
+    draw_rect(x: SCREEN_W / 2 - 200, y: y - 4, w: 400, h: 30, r: bg_col, g: bg_col + 10, b: bg_col + 30)
     let mark = if sel then ">" else " " end
-    draw_text("{mark} {i + 1}. {level_titles[i]}", SCREEN_W / 2 - 190, y, 22, 240, 240, 255)
+    draw_text("{mark} {i + 1}. {level_titles[i]}", x: SCREEN_W / 2 - 190, y: y, size: 22, r: 240, g: 240, b: 255)
     let bt = best_times[i]
     if bt < 9000.0 then
       let mins = int(bt) / 60
       let secs = int(bt) % 60
-      draw_text("best {mins}:{secs}  *{best_coins[i]}", SCREEN_W / 2 + 60, y, 18, 220, 200, 100)
+      draw_text("best {mins}:{secs}  *{best_coins[i]}", x: SCREEN_W / 2 + 60, y: y, size: 18, r: 220, g: 200, b: 100)
     end
     i = i + 1
   end
-  draw_text("up/down to choose, ENTER to play", SCREEN_W / 2 - 130, 480, 18, 180, 180, 220)
-  draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", SCREEN_W / 2 - 220, 510, 16, 150, 160, 200)
+  draw_text("up/down to choose, ENTER to play", x: SCREEN_W / 2 - 130, y: 480, size: 18, r: 180, g: 180, b: 220)
+  draw_text("R restart   ESC pause   arrows/WASD move   SPACE jump", x: SCREEN_W / 2 - 220, y: 510, size: 16, r: 150, g: 160, b: 200)
 end
 
 fn draw_pause_overlay()
-  draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("PAUSED", SCREEN_W / 2 - 60, SCREEN_H / 2 - 60, 36, 240, 240, 255)
-  draw_text("ESC resume   R restart   Q quit", SCREEN_W / 2 - 140, SCREEN_H / 2, 20, 200, 200, 230)
+  draw_rect(x: 0, y: 0, w: SCREEN_W, h: SCREEN_H, r: 0, g: 0, b: 0)
+  draw_text("PAUSED", x: SCREEN_W / 2 - 60, y: SCREEN_H / 2 - 60, size: 36, r: 240, g: 240, b: 255)
+  draw_text("ESC resume   R restart   Q quit", x: SCREEN_W / 2 - 140, y: SCREEN_H / 2, size: 20, r: 200, g: 200, b: 230)
 end
 
 fn draw_complete_overlay()
   let alpha = min(1.0, phase_t * 2.0)
   let dim = int(180.0 * alpha)
-  draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("LEVEL CLEAR!", SCREEN_W / 2 - 130, 180, 40, 100, 230, 120)
-  draw_text(get level.name, SCREEN_W / 2 - 80, 230, 22, 230, 230, 250)
+  draw_rect(x: 0, y: 0, w: SCREEN_W, h: SCREEN_H, r: 0, g: 0, b: 0)
+  draw_text("LEVEL CLEAR!", x: SCREEN_W / 2 - 130, y: 180, size: 40, r: 100, g: 230, b: 120)
+  draw_text(get level.name, x: SCREEN_W / 2 - 80, y: 230, size: 22, r: 230, g: 230, b: 250)
   let mins = int(get level_timer) / 60
   let secs = int(get level_timer) % 60
   let cents = int(get level_timer * 100.0) % 100
-  draw_text("time  {mins}:{secs}.{cents}", SCREEN_W / 2 - 70, 280, 22, 220, 220, 240)
-  draw_text("coins {get coins_got}", SCREEN_W / 2 - 50, 310, 22, 255, 220, 120)
-  draw_text("ENTER to continue   Q for menu", SCREEN_W / 2 - 140, 380, 18, 180, 180, 220)
+  draw_text("time  {mins}:{secs}.{cents}", x: SCREEN_W / 2 - 70, y: 280, size: 22, r: 220, g: 220, b: 240)
+  draw_text("coins {get coins_got}", x: SCREEN_W / 2 - 50, y: 310, size: 22, r: 255, g: 220, b: 120)
+  draw_text("ENTER to continue   Q for menu", x: SCREEN_W / 2 - 140, y: 380, size: 18, r: 180, g: 180, b: 220)
 end
 
 fn draw_gameover_overlay()
-  draw_rect(0, 0, SCREEN_W, SCREEN_H, 0, 0, 0)
-  draw_text("GAME OVER", SCREEN_W / 2 - 110, 200, 40, 220, 80, 80)
-  draw_text("ENTER to retry   Q for menu", SCREEN_W / 2 - 130, 280, 20, 220, 220, 240)
+  draw_rect(x: 0, y: 0, w: SCREEN_W, h: SCREEN_H, r: 0, g: 0, b: 0)
+  draw_text("GAME OVER", x: SCREEN_W / 2 - 110, y: 200, size: 40, r: 220, g: 80, b: 80)
+  draw_text("ENTER to retry   Q for menu", x: SCREEN_W / 2 - 130, y: 280, size: 20, r: 220, g: 220, b: 240)
 end
 
 fn draw_alldone_overlay()
   clear(20, 30, 50)
-  draw_text("YOU FINISHED THE GAME", SCREEN_W / 2 - 220, 200, 36, 240, 230, 120)
-  draw_text("thanks for playing!", SCREEN_W / 2 - 110, 250, 22, 220, 220, 240)
+  draw_text("YOU FINISHED THE GAME", x: SCREEN_W / 2 - 220, y: 200, size: 36, r: 240, g: 230, b: 120)
+  draw_text("thanks for playing!", x: SCREEN_W / 2 - 110, y: 250, size: 22, r: 220, g: 220, b: 240)
   let i = 0
   while i < len(level_titles) do
     let y = 320 + i * 30
@@ -1044,10 +1044,10 @@ fn draw_alldone_overlay()
     let mins = int(bt) / 60
     let secs = int(bt) % 60
     draw_text("{level_titles[i]}  -  {mins}:{secs}  *{best_coins[i]}",
-      SCREEN_W / 2 - 180, y, 20, 220, 220, 250)
+      x: SCREEN_W / 2 - 180, y: y, size: 20, r: 220, g: 220, b: 250)
     i = i + 1
   end
-  draw_text("ENTER for title", SCREEN_W / 2 - 70, 480, 18, 200, 200, 230)
+  draw_text("ENTER for title", x: SCREEN_W / 2 - 70, y: 480, size: 18, r: 200, g: 200, b: 230)
 end
 
 // =====================================================================

@@ -67,13 +67,13 @@ for dx in range(0, 20) do
     let by = dy * 42 + (fc / 4 + dy * 5) % 6 - 3
     let pulse = abs((fc + dx * 13 + dy * 17) % 60 - 30)
     let brightness = 18 + pulse / 2
-    draw_rect(bx, by, 2, 2, brightness, brightness, brightness + 10)
+    draw_rect(x: bx, y: by, w: 2, h: 2, r: brightness, g: brightness, b: brightness + 10)
   end
 end
 
 // Header background
-draw_rect(0, 0, sw, header_h, 8, 8, 24)
-draw_rect(0, header_h - 2, sw, 2, 60, 100, 220)
+draw_rect(x: 0, y: 0, w: sw, h: header_h, r: 8, g: 8, b: 24)
+draw_rect(x: 0, y: header_h - 2, w: sw, h: 2, r: 60, g: 100, b: 220)
 
 // Title
 draw_text("PETAL GAMES", {x: sw / 2 - 100, y: 18}, 36, {r: 100, g: 180, b: 255})
@@ -93,12 +93,12 @@ for i in range(0, count) do
     if is_selected then
       // Highlighted item
       let glow = abs(fc % 40 - 20)
-      draw_rect(list_x - 4, iy - 2, list_w + 8, item_h + 4, 20 + glow, 30 + glow, 70 + glow)
-      draw_rect(list_x, iy, list_w, item_h, 30, 45, 100)
+      draw_rect(x: list_x - 4, y: iy - 2, w: list_w + 8, h: item_h + 4, r: 20 + glow, g: 30 + glow, b: 70 + glow)
+      draw_rect(x: list_x, y: iy, w: list_w, h: item_h, r: 30, g: 45, b: 100)
       draw_rect_outline(list_x, iy, list_w, item_h, 80, 140, 255)
 
       // Selection indicator
-      draw_rect(list_x + 8, iy + 12, 4, item_h - 24, 80, 180, 255)
+      draw_rect(x: list_x + 8, y: iy + 12, w: 4, h: item_h - 24, r: 80, g: 180, b: 255)
 
       // Name text (bright)
       draw_text(name, {x: list_x + 24, y: iy + 14}, 22, {r: 200, g: 230, b: 255})
@@ -107,7 +107,7 @@ for i in range(0, count) do
       draw_text(">", {x: list_x + list_w - 30, y: iy + 14}, 22, {r: 80, g: 180, b: 255})
     else
       // Normal item
-      draw_rect(list_x, iy, list_w, item_h, 18, 20, 40)
+      draw_rect(x: list_x, y: iy, w: list_w, h: item_h, r: 18, g: 20, b: 40)
       draw_rect_outline(list_x, iy, list_w, item_h, 35, 40, 70)
 
       // Name text (dim)
@@ -117,8 +117,8 @@ for i in range(0, count) do
 end
 
 // Top/bottom fade bars (cover scrolled items near edges)
-draw_rect(0, header_h, sw, 20, 12, 12, 30)
-draw_rect(0, sh - 20, sw, 20, 12, 12, 30)
+draw_rect(x: 0, y: header_h, w: sw, h: 20, r: 12, g: 12, b: 30)
+draw_rect(x: 0, y: sh - 20, w: sw, h: 20, r: 12, g: 12, b: 30)
 
 // Footer
 let footer_text = str(count) ++ " games available"

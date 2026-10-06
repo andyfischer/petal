@@ -83,9 +83,9 @@ fn app()
     modal_visible = false
   end
 
-  let file_dropdown = dropdown("File", ["New", "Open", "Save", "Export"], file_open, file_btn_id, file_backdrop_id)
-  let edit_dropdown = dropdown("Edit", ["Undo", "Redo", "Cut", "Copy", "Paste"], edit_open, edit_btn_id, edit_backdrop_id)
-  let info_modal = modal_view("About Petal", "A custom programming language with JSX, state management, and more.", modal_visible, modal_open_id, modal_close_id)
+  let file_dropdown = dropdown(label: "File", items: ["New", "Open", "Save", "Export"], open: file_open, btn_id: file_btn_id, backdrop_id: file_backdrop_id)
+  let edit_dropdown = dropdown(label: "Edit", items: ["Undo", "Redo", "Cut", "Copy", "Paste"], open: edit_open, btn_id: edit_btn_id, backdrop_id: edit_backdrop_id)
+  let info_modal = modal_view(title: "About Petal", body: "A custom programming language with JSX, state management, and more.", visible: modal_visible, open_id: modal_open_id, close_id: modal_close_id)
 
   <div>
     <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">

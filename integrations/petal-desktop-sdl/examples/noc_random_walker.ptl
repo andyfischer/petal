@@ -74,7 +74,7 @@ trail = new_trail
 
 // Keep trail manageable
 if len(trail) > 3000 then
-  trail = slice(trail, len(trail) - 2500, len(trail))
+  trail = slice(trail, start: len(trail) - 2500, end: len(trail))
 end
 
 // === Drawing ===
@@ -87,15 +87,15 @@ for t in trail do
   let tg = int(float(t.g) * fade)
   let tb = int(float(t.b) * fade)
   let size = max(1, int(4.0 * fade))
-  draw_circle(int(t.x), int(t.y), size, tr, tg, tb)
+  draw_circle(cx: int(t.x), cy: int(t.y), radius: size, r: tr, g: tg, b: tb)
 end
 
 // Draw walkers
 for w in walkers do
-  draw_circle(int(w.x), int(w.y), 8, min(255, w.r + 50), min(255, w.g + 50), min(255, w.b + 50))
-  draw_circle(int(w.x), int(w.y), 5, w.r, w.g, w.b)
+  draw_circle(cx: int(w.x), cy: int(w.y), radius: 8, r: min(255, w.r + 50), g: min(255, w.g + 50), b: min(255, w.b + 50))
+  draw_circle(cx: int(w.x), cy: int(w.y), radius: 5, r: w.r, g: w.g, b: w.b)
 end
 
 // Title
-draw_text("Random Walkers", 10, 10, 16, 100, 100, 120)
-draw_text("Move mouse to attract", 10, 30, 12, 60, 60, 80)
+draw_text("Random Walkers", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Move mouse to attract", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

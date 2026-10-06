@@ -248,28 +248,28 @@ fn glyph(D: record, T: record)
   let c = D.c
   match D.g
     when "sun" do
-      for tri in U_RAYS do gpoly(T, tri, c) end
-      gdisc(T, 0.0, 0.0, 0.5, c)
+      for tri in U_RAYS do gpoly(T, pts: tri, c: c) end
+      gdisc(T, x: 0.0, y: 0.0, r: 0.5, c: c)
       gdisc(T, -0.12, -0.12, 0.2, lighten(c, 0.35))
     end
     when "moon" do
-      gdisc(T, 0.0, 0.0, 0.8, c)
+      gdisc(T, x: 0.0, y: 0.0, r: 0.8, c: c)
       gdisc(T, 0.38, -0.24, 0.66, T.bg)
     end
     when "star" do
       gpoly(T, U_STAR, c)
     end
     when "heart" do
-      gpoly(T, U_HEART, c)
+      gpoly(T, pts: U_HEART, c: c)
       gdisc(T, -0.4, -0.28, 0.13, lighten(c, 0.45))
     end
     when "gem" do
-      gpoly(T, U_GEM, c)
-      gpoly(T, U_GEM_TOP, lighten(c, 0.3))
+      gpoly(T, pts: U_GEM, c: c)
+      gpoly(T, pts: U_GEM_TOP, c: lighten(c, 0.3))
       gpoly(T, U_GEM_FACET, darken(c, 0.15))
     end
     when "drop" do
-      gpoly(T, U_DROP, c)
+      gpoly(T, pts: U_DROP, c: c)
       gdisc(T, -0.22, 0.3, 0.14, lighten(c, 0.5))
     end
     when "bolt" do
@@ -278,58 +278,58 @@ fn glyph(D: record, T: record)
     when "flower" do
       for k in range(0, 6) do
         let a = float(k) * pi() / 3.0 - pi() / 2.0
-        gdisc(T, cos(a) * 0.5, sin(a) * 0.5, 0.36, c)
+        gdisc(T, x: cos(a) * 0.5, y: sin(a) * 0.5, r: 0.36, c: c)
       end
-      gdisc(T, 0.0, 0.0, 0.3, #f3c34a)
+      gdisc(T, x: 0.0, y: 0.0, r: 0.3, c: #f3c34a)
       gdisc(T, 0.0, 0.0, 0.12, darken(#f3c34a, 0.2))
     end
     when "leaf" do
-      gpoly(T, U_LEAF, c)
+      gpoly(T, pts: U_LEAF, c: c)
       gstroke(T, U_LEAF_RIB, lighten(c, 0.45), 0.08)
     end
     when "crown" do
-      gpoly(T, U_CROWN, c)
-      gpoly(T, U_CROWN_BAND, darken(c, 0.2))
-      gdisc(T, -0.95, -0.5, 0.13, c)
-      gdisc(T, 0.0, -0.74, 0.13, c)
-      gdisc(T, 0.95, -0.5, 0.13, c)
+      gpoly(T, pts: U_CROWN, c: c)
+      gpoly(T, pts: U_CROWN_BAND, c: darken(c, 0.2))
+      gdisc(T, x: -0.95, y: -0.5, r: 0.13, c: c)
+      gdisc(T, x: 0.0, y: -0.74, r: 0.13, c: c)
+      gdisc(T, x: 0.95, y: -0.5, r: 0.13, c: c)
       gdisc(T, 0.0, 0.72, 0.08, #e2434f)
     end
     when "mountain" do
-      gpoly(T, U_MT_BACK, lighten(c, 0.35))
-      gpoly(T, U_MT_FRONT, c)
-      gpoly(T, U_MT_SNOW, #ffffff)
+      gpoly(T, pts: U_MT_BACK, c: lighten(c, 0.35))
+      gpoly(T, pts: U_MT_FRONT, c: c)
+      gpoly(T, pts: U_MT_SNOW, c: #ffffff)
       gdisc(T, 0.62, -0.62, 0.16, #ef7630)
     end
     when "eye" do
-      gpoly(T, U_EYE, c)
-      gpoly(T, U_EYE_IN, T.bg)
-      gdisc(T, 0.0, 0.0, 0.36, c)
-      gdisc(T, 0.0, 0.0, 0.16, C_INK)
+      gpoly(T, pts: U_EYE, c: c)
+      gpoly(T, pts: U_EYE_IN, c: T.bg)
+      gdisc(T, x: 0.0, y: 0.0, r: 0.36, c: c)
+      gdisc(T, x: 0.0, y: 0.0, r: 0.16, c: C_INK)
       gdisc(T, -0.1, -0.1, 0.06, #ffffff)
     end
     when "flake" do
-      for s in U_FLAKE do gstroke(T, s, c, 0.11) end
+      for s in U_FLAKE do gstroke(T, pts: s, c: c, w: 0.11) end
       gdisc(T, 0.0, 0.0, 0.14, c)
     end
     when "clover" do
-      gdisc(T, 0.0, -0.4, 0.34, c)
-      gdisc(T, -0.4, 0.08, 0.34, c)
-      gdisc(T, 0.4, 0.08, 0.34, c)
-      gdisc(T, 0.0, -0.04, 0.24, c)
+      gdisc(T, x: 0.0, y: -0.4, r: 0.34, c: c)
+      gdisc(T, x: -0.4, y: 0.08, r: 0.34, c: c)
+      gdisc(T, x: 0.4, y: 0.08, r: 0.34, c: c)
+      gdisc(T, x: 0.0, y: -0.04, r: 0.24, c: c)
       gpoly(T, [[0.0, 0.0], [-0.2, 0.92], [0.2, 0.92]], c)
     end
     when "wave" do
-      for w in U_WAVES do gpoly(T, w, c) end
+      for w in U_WAVES do gpoly(T, pts: w, c: c) end
     end
     when "planet" do
-      gpoly(T, U_RING_BACK, lighten(c, 0.35))
-      gdisc(T, 0.0, 0.0, 0.52, c)
-      gdisc(T, -0.16, -0.18, 0.18, lighten(c, 0.3))
+      gpoly(T, pts: U_RING_BACK, c: lighten(c, 0.35))
+      gdisc(T, x: 0.0, y: 0.0, r: 0.52, c: c)
+      gdisc(T, x: -0.16, y: -0.18, r: 0.18, c: lighten(c, 0.3))
       gpoly(T, U_RING_FRONT, lighten(c, 0.35))
     end
     when _ do
-      gpoly(T, U_HEX, c)
+      gpoly(T, pts: U_HEX, c: c)
       gpoly(T, U_HEX_IN, lighten(c, 0.35))
     end
   end
@@ -339,25 +339,25 @@ end
 // ── Small helpers ────────────────────────────────────────────────────────
 
 fn tx(s: string, x: num, y: num, style: record)
-  draw_text(s, {x: int(x), y: int(y)}, style)
+  draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
 end
 
 fn tx_right(s: string, right_x: num, y: num, style: record)
-  draw_text(s, {x: int(right_x) - text_width(s, style), y: int(y)}, style)
+  draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
 end
 
 fn tx_center(s: string, cx: num, y: num, style: record)
-  draw_text(s, {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style)
+  draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
 end
 
 fn fmt_time(t: num) -> string
   let secs = int(floor(t))
-  "{secs / 60}:{pad_start(secs % 60, 2, "0")}"
+  "{secs / 60}:{pad_start(secs % 60, width: 2, fill: "0")}"
 end
 
 fn shuffled(xs: list) -> list
   let out = xs
-  for i in range(len(out) - 1, 0, -1) do
+  for i in range(start: len(out) - 1, end: 0, step: -1) do
     let j = random_int(0, i + 1)
     let tmp = out[i]
     out[i] = out[j]
@@ -446,7 +446,7 @@ end
 // ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready    = false
-state var level    = clamp(parse_int(panel_store_get("level") ?? "1") ?? 1, 0, 2)
+state var level    = clamp(parse_int(panel_store_get("level") ?? "1") ?? 1, lo: 0, hi: 2)
 state var cards    = []     // {d, up, flip, matched, t_match, t_miss, t_deal, hv, sparked}
 state var open     = []     // indices face up and not yet resolved (0..2)
 state var hold     = 0.0    // countdown until a missed pair turns back
@@ -485,7 +485,7 @@ fn new_game(lv: int)
   if lv != get level then panel_store_set("level", str(lv)) end
   set level = lv
   let n = level_pairs(lv)
-  let picks = slice(shuffled(range(0, len(DESIGNS))), 0, n)
+  let picks = slice(shuffled(range(0, len(DESIGNS))), start: 0, end: n)
   let deck = shuffled(flat([picks, picks]))
   let t0 = get clock + 0.08
   set cards = for i in range(0, len(deck)) do
@@ -533,7 +533,7 @@ fn flip_card(i: int, anchor: record)
   // A third pick while a miss is still showing turns that pair back first,
   // so a fast player never waits on the animation.
   if len(get open) == 2 then turn_back() end
-  set cards = put(get cards, i, {...c, up: true})
+  set cards = put(get cards, i, v: {...c, up: true})
   set open = append(get open, i)
   set timing = true
   if len(get open) == 2 then
@@ -543,7 +543,7 @@ fn flip_card(i: int, anchor: record)
     let cs = get cards
     let land = get clock + FLIP_T
     if cs[a].d == cs[b].d then
-      set cards = put(put(cs, a, {...cs[a], matched: true, t_match: land}), b, {...cs[b], matched: true, t_match: land})
+      set cards = put(put(cs, i: a, v: {...cs[a], matched: true, t_match: land}), i: b, v: {...cs[b], matched: true, t_match: land})
       set found += 1
       set streak += 1
       set best_streak = max(get best_streak, get streak)
@@ -558,7 +558,7 @@ fn flip_card(i: int, anchor: record)
         set won_at = land + WIN_DELAY
       end
     else
-      set cards = put(put(cs, a, {...cs[a], t_miss: land}), b, {...cs[b], t_miss: land})
+      set cards = put(put(cs, i: a, v: {...cs[a], t_miss: land}), i: b, v: {...cs[b], t_miss: land})
       set streak = 0
       set misses += 1
       set hold = FLIP_T + MISS_VIEW
@@ -594,7 +594,7 @@ fn finish_game()
   else
     {...rec, stars: max(st, rec.stars), played: rec.played + 1}
   end
-  set records = put(get records, lv, next)
+  set records = put(get records, i: lv, v: next)
   panel_store_set("records", json_stringify(get records))
   set result = {stars: st, record: better}
   set games += 1
@@ -668,7 +668,7 @@ let can_play = phase == "play" && peek_t <= 0.0
 
 let hov = -1
 for i in range(0, len(cards)) do
-  if point_in(mx, my, slot(i)) && landed(cards[i]) then hov = i end
+  if point_in(px: mx, py: my, r: slot(i)) && landed(cards[i]) then hov = i end
 end
 let hov_pickable = hov >= 0 && can_play && !cards[hov].matched && !cards[hov].up
 
@@ -736,7 +736,7 @@ end
 
 if phase == "play" && found == PAIRS && clock >= won_at then
   finish_game()
-  set bits = confetti(bits, float(table.x + 40), float(table.x + table.w - 40), float(table.y), 150)
+  set bits = confetti(bits, float(table.x + 40), float(table.x + table.w - 40), y: float(table.y), n: 150)
 end
 
 // ── Card animation ───────────────────────────────────────────────────────
@@ -748,10 +748,10 @@ set cards = for i in range(0, len(cards)) do
   let step = sdt / FLIP_T
   let nf = if c.flip < want then min(want, c.flip + step) else max(want, c.flip - step) end
   let hot = if i == hov && hov_pickable && !kbd then 1.0 else 0.0 end
-  let nc = {...c, flip: nf, hv: approach(c.hv, hot, 20.0)}
+  let nc = {...c, flip: nf, hv: approach(cur: c.hv, target: hot, rate: 20.0)}
   if nc.matched && !nc.sparked && clock >= nc.t_match then
     let r = slot(i)
-    set bits = burst(bits, r.center_x(), r.center_y(), 16, C_GOLD_L, 1.0)
+    set bits = burst(bits, x: r.center_x(), y: r.center_y(), n: 16, col: C_GOLD_L, power: 1.0)
     nc = {...nc, sparked: true}
   end
   nc
@@ -771,37 +771,37 @@ let now = clock
 set floaters = filter(floaters, fn(f) -> now - f.t0 < 1.1)
 
 let target_prog = float(found) / float(max(1, PAIRS))
-set prog_vis = approach(prog_vis, target_prog, 10.0)
+set prog_vis = approach(cur: prog_vis, target: target_prog, rate: 10.0)
 
 // ── Draw: backdrop and header ────────────────────────────────────────────
 
 clear(C_BG.r, C_BG.g, C_BG.b)
 
-tx("Pairs", PAD, 18, S_TITLE)
+tx("Pairs", x: PAD, y: 18, style: S_TITLE)
 let title_w = text_width("Pairs", S_TITLE)
-tx("MEMORY", PAD + title_w + 14, 25, S_KICK)
-tx("{L.name} board, {COLS} × {ROWS}. Flip two cards — keep them if they match.", PAD + title_w + 14, 41, S_SMALL)
+tx("MEMORY", x: PAD + title_w + 14, y: 25, style: S_KICK)
+tx("{L.name} board, {COLS} × {ROWS}. Flip two cards — keep them if they match.", x: PAD + title_w + 14, y: 41, style: S_SMALL)
 
 let btn_new = rect(W - PAD - 118, 20, 118, 34)
 let btn_peek = rect(btn_new.x - 12 - 112, 20, 112, 34)
 let seg_r = rect(btn_peek.x - 20 - 270, 20, 270, 34)
 
-let picked = bloom.segmented(seg_r, ["Easy", "Classic", "Expert"], level, {size: 13})
+let picked = bloom.segmented(seg_r, labels: ["Easy", "Classic", "Expert"], index: level, opts: {size: 13})
 if picked != level then new_game(picked) end
 
 let peek_ok = phase == "play" && peeks > 0 && !peeking
 let peek_label = if peeks > 0 then "Peek (+{PEEK_COST})" else "Peek used" end
-if bloom.button(btn_peek, peek_label, {icon: "search", disabled: !peek_ok, size: 13}) then start_peek() end
-if bloom.button(btn_new, "New game", {variant: "primary", icon: "plus", size: 13}) then new_game(level) end
+if bloom.button(btn_peek, label: peek_label, opts: {icon: "search", disabled: !peek_ok, size: 13}) then start_peek() end
+if bloom.button(btn_new, label: "New game", opts: {variant: "primary", icon: "plus", size: 13}) then new_game(level) end
 
 // ── Draw: table ──────────────────────────────────────────────────────────
 
 draw_shadow(table, {radius: 18, blur: 30, dy: 10, a: 110})
-draw_rect_rounded(table, 18, C_TABLE)
+draw_rect_rounded(table, radius: 18, c: C_TABLE)
 clip_push(table, 18)
 draw_circle_gradient({x: table.center_x(), y: table.center_y()}, int(float(table.h) * 0.62), C_TABLE_H, C_TABLE)
 clip_pop()
-draw_rect_rounded_outline(table, 18, C_LINE, 255, 1)
+draw_rect_rounded_outline(table, radius: 18, c: C_LINE, a: 255, width: 1)
 
 // The deck the deal flies out of, drawn until the last card leaves it.
 let in_deck = len(filter(cards, fn(c) -> now < c.t_deal))
@@ -809,13 +809,13 @@ if in_deck > 0 then
   for k in range(0, min(in_deck, 6)) do
     let dr = rect(deck_x - cw * 0.3, deck_y - ch * 0.3 - float(k) * 2.0, cw * 0.6, ch * 0.6)
     draw_shadow(dr, {radius: 6, blur: 8, dy: 3, a: 90})
-    draw_rect_gradient_rounded(dr, 6, C_BACK_A, C_BACK_B, 1.2)
-    draw_rect_rounded_outline(dr.inset(3), 4, C_GOLD, 150, 1)
+    draw_rect_gradient_rounded(dr, 6, C_BACK_A, C_BACK_B, angle: 1.2)
+    draw_rect_rounded_outline(dr.inset(3), radius: 4, c: C_GOLD, a: 150, width: 1)
   end
 end
 
 fn draw_back(fr: Rect, sx: float, rad: num, full_w: float)
-  draw_rect_gradient_rounded(fr, rad, C_BACK_A, C_BACK_B, 1.2)
+  draw_rect_gradient_rounded(fr, rad, C_BACK_A, C_BACK_B, angle: 1.2)
   if fr.w < 8.0 then return nil end
   let ins = 7.0
   let inner = rect(fr.x + ins * sx, fr.y + ins, fr.w - 2.0 * ins * sx, fr.h - 2.0 * ins)
@@ -832,21 +832,21 @@ fn draw_back(fr: Rect, sx: float, rad: num, full_w: float)
     draw_line(cx + (off + hh) * sx, cy - hh, cx + (off - hh) * sx, cy + hh, C_BACK_LN, 70, 1)
   end
   clip_pop()
-  draw_rect_rounded_outline(inner, max(2.0, rad - 4.0), C_GOLD, 170, 1)
+  draw_rect_rounded_outline(inner, radius: max(2.0, rad - 4.0), c: C_GOLD, a: 170, width: 1)
   let er = min(full_w, float(fr.h)) * 0.2
   let T = {cx: cx, cy: cy, s: er, sx: sx, bg: C_BACK_B}
-  gdisc(T, 0.0, 0.0, 1.0, C_BACK_B)
+  gdisc(T, x: 0.0, y: 0.0, r: 1.0, c: C_BACK_B)
   draw_ellipse_outline(cx, cy, er * sx, er, C_GOLD, 220, 1.5)
-  gpoly(T, map(U_SPARK, fn(p) -> [p[0] * 0.7, p[1] * 0.7]), C_GOLD)
+  gpoly(T, pts: map(U_SPARK, fn(p) -> [p[0] * 0.7, p[1] * 0.7]), c: C_GOLD)
   nil
 end
 
 fn draw_face(fr: Rect, sx: float, rad: num, full_w: float, D: record)
-  draw_rect_rounded(fr, rad, C_FACE)
+  draw_rect_rounded(fr, radius: rad, c: C_FACE)
   if fr.w < 8.0 then return nil end
   let ins = 5.0
   let inner = rect(fr.x + ins * sx, fr.y + ins, fr.w - 2.0 * ins * sx, fr.h - 2.0 * ins)
-  draw_rect_rounded_outline(inner, max(2.0, rad - 3.0), C_FACE_ED, 255, 1)
+  draw_rect_rounded_outline(inner, radius: max(2.0, rad - 3.0), c: C_FACE_ED, a: 255, width: 1)
   let s = min(full_w, float(fr.h)) * 0.33
   glyph(D, {cx: fr.center_x(), cy: fr.center_y(), s: s, sx: sx, bg: C_FACE})
   nil
@@ -866,30 +866,30 @@ fn draw_card(c: record, r: Rect, k: record)
   let rad = min(RAD * scale, w * sx / 2.0)
   draw_shadow(fr, {radius: int(rad), blur: int(10.0 + 14.0 * lift + 6.0 * c.hv), dy: int(4.0 + 8.0 * lift + 3.0 * c.hv), a: 110})
   if e < 0.5 then
-    draw_back(fr, sx, rad, w)
+    draw_back(fr, sx, rad, full_w: w)
   else
-    draw_face(fr, sx, rad, w, DESIGNS[c.d])
+    draw_face(fr, sx, rad, full_w: w, D: DESIGNS[c.d])
     if k.settle > 0.0 then
-      draw_rect_rounded(fr, rad, C_TABLE, int(34.0 * k.settle))
-      draw_rect_rounded_outline(fr, rad, C_GOLD, int(230.0 * k.settle), 2)
+      draw_rect_rounded(fr, radius: rad, c: C_TABLE, a: int(34.0 * k.settle))
+      draw_rect_rounded_outline(fr, radius: rad, c: C_GOLD, a: int(230.0 * k.settle), width: 2)
       if sx > 0.9 then
         // The check badge, sitting on the top-right corner.
         let br = 9.0 * k.settle
         let bx = fr.x + fr.w - 13.0
         let by = fr.y + 13.0
-        draw_circle({x: int(bx), y: int(by)}, int(br + 0.5), C_GOLD)
+        draw_circle(center: {x: int(bx), y: int(by)}, radius: int(br + 0.5), c: C_GOLD)
         if br > 5.0 then
           draw_polyline([{x: bx - 4.0, y: by}, {x: bx - 1.0, y: by + 3.0}, {x: bx + 4.0, y: by - 3.0}], C_INK, 255, 2)
         end
       end
     end
     if k.miss > 0.0 then
-      draw_rect_rounded_outline(fr, rad, C_MISS, int(255.0 * k.miss), 3)
+      draw_rect_rounded_outline(fr, radius: rad, c: C_MISS, a: int(255.0 * k.miss), width: 3)
     end
   end
   if k.ring > 0.0 then
     let g = 14.0 * (1.0 - k.ring)
-    draw_rect_rounded_outline(rect(fr.x - g, fr.y - g, fr.w + 2.0 * g, fr.h + 2.0 * g), rad + g, C_GOLD_L, int(220.0 * k.ring), 2)
+    draw_rect_rounded_outline(rect(fr.x - g, fr.y - g, fr.w + 2.0 * g, fr.h + 2.0 * g), radius: rad + g, c: C_GOLD_L, a: int(220.0 * k.ring), width: 2)
   end
   nil
 end
@@ -900,22 +900,22 @@ for i in range(0, len(cards)) do
   let dt_deal = (clock - c.t_deal) / DEAL_T
   if dt_deal < 0.0 then continue end
   let de = ease_out(dt_deal)
-  let cx = lerp(deck_x, r.center_x(), de)
-  let cy = lerp(deck_y, r.center_y(), de)
-  let sc = lerp(0.6, 1.0, de)
+  let cx = lerp(deck_x, r.center_x(), t: de)
+  let cy = lerp(deck_y, r.center_y(), t: de)
+  let sc = lerp(0.6, 1.0, t: de)
   let since_m = if c.matched && c.t_match >= 0.0 then clock - c.t_match else -1.0 end
   let pk = if since_m >= 0.0 && since_m < 0.5 then since_m / 0.5 else -1.0 end
   let pop = if pk >= 0.0 then 0.09 * sin(pi() * pk) else 0.0 end
   let ring = if pk >= 0.0 then 1.0 - pk else 0.0 end
-  let settle = if since_m >= 0.0 then clamp((since_m - 0.3) / 0.4, 0.0, 1.0) else 0.0 end
+  let settle = if since_m >= 0.0 then clamp((since_m - 0.3) / 0.4, lo: 0.0, hi: 1.0) else 0.0 end
   let since_x = if c.t_miss >= 0.0 then clock - c.t_miss else -1.0 end
   let shk = if since_x >= 0.0 && since_x < 0.4 then since_x / 0.4 else -1.0 end
   let dx = if shk >= 0.0 then sin(shk * pi() * 6.0) * 7.0 * (1.0 - shk) else 0.0 end
   let miss = if since_x >= 0.0 && c.up then 1.0 else 0.0 end
-  draw_card(c, r, {cx: cx, cy: cy, dx: dx, scale: sc, pop: pop, ring: ring, settle: settle, miss: miss})
+  draw_card(c, r, k: {cx: cx, cy: cy, dx: dx, scale: sc, pop: pop, ring: ring, settle: settle, miss: miss})
   if kbd && i == cursor && phase != "won" then
     let fr = r.inset(-7)
-    draw_rect_rounded_outline(fr, RAD + 7.0, C_GOLD, 255, 2)
+    draw_rect_rounded_outline(fr, radius: RAD + 7.0, c: C_GOLD, a: 255, width: 2)
   end
 end
 
@@ -935,8 +935,8 @@ for f in floaters do
   let tw = text_width(f.text, st)
   let y = f.y - 12.0 - 34.0 * ease_out(k)
   let chip_r = rect(f.x - float(tw) / 2.0 - 10.0, y - 4.0, float(tw) + 20.0, 28.0)
-  draw_rect_rounded(chip_r, 14, C_INK, int(float(a) * 0.85))
-  draw_text(f.text, {x: int(f.x) - tw / 2, y: int(y)}, {...st, color: {...C_GOLD_L, a: a}})
+  draw_rect_rounded(chip_r, radius: 14, c: C_INK, a: int(float(a) * 0.85))
+  draw_text(f.text, pos: {x: int(f.x) - tw / 2, y: int(y)}, style: {...st, color: {...C_GOLD_L, a: a}})
 end
 
 // Peek banner across the top of the table.
@@ -944,28 +944,28 @@ if peeking then
   let pk_w = 280
   let pr = rect(table.center_x() - pk_w / 2, table.y + 8, pk_w, 34)
   draw_shadow(pr, {radius: 17, blur: 12, dy: 4, a: 120})
-  draw_rect_rounded(pr, 17, C_INK)
-  draw_rect_rounded_outline(pr, 17, over(C_INK, C_GOLD, 60), 255, 1)
-  let frac = clamp(peek_t / (PEEK_T + FLIP_T), 0.0, 1.0)
-  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, pr.w - 36, 2), 1, C_LINE)
-  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, int(float(pr.w - 36) * frac), 2), 1, C_GOLD)
-  text_layout.draw_text_line("Peeking. Memorize the board", rect(pr.x, pr.y - 1, pr.w, pr.h - 2), {...S_BODYB, color: C_GOLD_L}, "center")
+  draw_rect_rounded(pr, radius: 17, c: C_INK)
+  draw_rect_rounded_outline(pr, radius: 17, c: over(bg: C_INK, fg: C_GOLD, a: 60), a: 255, width: 1)
+  let frac = clamp(peek_t / (PEEK_T + FLIP_T), lo: 0.0, hi: 1.0)
+  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, pr.w - 36, 2), radius: 1, c: C_LINE)
+  draw_rect_rounded(rect(pr.x + 18, pr.y + pr.h - 5, int(float(pr.w - 36) * frac), 2), radius: 1, c: C_GOLD)
+  text_layout.draw_text_line("Peeking. Memorize the board", r: rect(pr.x, pr.y - 1, pr.w, pr.h - 2), style: {...S_BODYB, color: C_GOLD_L}, align: "center")
 end
 
 // ── Draw: sidebar ────────────────────────────────────────────────────────
 
 fn side_card(r: Rect, title: string)
   draw_shadow(r, {radius: 14, blur: 18, dy: 6, a: 90})
-  draw_rect_rounded(r, 14, C_RAIL)
-  draw_rect_rounded_outline(r, 14, C_LINE, 255, 1)
-  tx(title, r.x + 18, r.y + 16, S_HEAD)
+  draw_rect_rounded(r, radius: 14, c: C_RAIL)
+  draw_rect_rounded_outline(r, radius: 14, c: C_LINE, a: 255, width: 1)
+  tx(title, x: r.x + 18, y: r.y + 16, style: S_HEAD)
 end
 
 fn stat_block(x: num, y: num, label: string, value: string, sub: string, hi: bool)
-  tx(label, x, y, S_LABEL)
-  tx(value, x, y + 18, if hi then {...S_STAT, color: C_GOLD} else S_STAT end)
+  tx(label, x, y, style: S_LABEL)
+  tx(value, x, y: y + 18, style: if hi then {...S_STAT, color: C_GOLD} else S_STAT end)
   if sub != "" then
-    tx(sub, x + text_width(value, S_STAT) + 8, y + 29, S_SMALL)
+    tx(sub, x: x + text_width(value, S_STAT) + 8, y: y + 29, style: S_SMALL)
   end
 end
 
@@ -974,14 +974,14 @@ side_card(round_r, "THIS ROUND")
 let rx0 = round_r.x + 18
 let rx1 = round_r.x + side.w / 2 + 6
 let acc = if moves > 0 then "{found * 100 / moves}% hits" else "" end
-stat_block(rx0, round_r.y + 44, "Moves", str(moves), acc, false)
-stat_block(rx1, round_r.y + 44, "Time", fmt_time(elapsed), if timing then "" else (if phase == "won" then "final" else "" end) end, false)
-stat_block(rx0, round_r.y + 104, "Pairs", "{found}", "of {PAIRS}", phase == "won")
-stat_block(rx1, round_r.y + 104, "Streak", str(streak), "best {best_streak}", streak >= 2)
+stat_block(x: rx0, y: round_r.y + 44, label: "Moves", value: str(moves), sub: acc, hi: false)
+stat_block(x: rx1, y: round_r.y + 44, label: "Time", value: fmt_time(elapsed), sub: if timing then "" else (if phase == "won" then "final" else "" end) end, hi: false)
+stat_block(x: rx0, y: round_r.y + 104, label: "Pairs", value: "{found}", sub: "of {PAIRS}", hi: phase == "won")
+stat_block(x: rx1, y: round_r.y + 104, label: "Streak", value: str(streak), sub: "best {best_streak}", hi: streak >= 2)
 let bar = rect(round_r.x + 18, round_r.y + round_r.h - 26, round_r.w - 36, 6)
-draw_rect_rounded(bar, 3, C_WELL)
+draw_rect_rounded(bar, radius: 3, c: C_WELL)
 if prog_vis > 0.001 then
-  draw_rect_gradient_rounded(rect(bar.x, bar.y, max(6.0, float(bar.w) * prog_vis), bar.h), 3, C_GOLD, C_GOLD_L, 0.0)
+  draw_rect_gradient_rounded(rect(bar.x, bar.y, max(6.0, float(bar.w) * prog_vis), bar.h), 3, C_GOLD, C_GOLD_L, angle: 0.0)
 end
 
 // The collection: one tile per pair on the board, filled in as they're found.
@@ -993,24 +993,24 @@ let tile_rows = (PAIRS + col_n - 1) / col_n
 let coll_h = 52 + int(float(tile_rows) * (tile_h + tile_gap))
 let coll_r = rect(side.x, round_r.y + round_r.h + 16, side.w, coll_h + 10)
 side_card(coll_r, "COLLECTION")
-tx_right("{found} of {PAIRS}", coll_r.x + coll_r.w - 18, coll_r.y + 16, S_SMALL)
+tx_right("{found} of {PAIRS}", right_x: coll_r.x + coll_r.w - 18, y: coll_r.y + 16, style: S_SMALL)
 for i in range(0, PAIRS) do
   let tr = rect(float(coll_r.x) + 18.0 + float(i % col_n) * (tile_w + tile_gap), float(coll_r.y) + 42.0 + float(i / col_n) * (tile_h + tile_gap), tile_w, tile_h)
   if i < len(order) then
     let o = order[i]
-    let k = clamp((clock - o.t) / 0.35, 0.0, 1.0)
+    let k = clamp((clock - o.t) / 0.35, lo: 0.0, hi: 1.0)
     if k > 0.0 then
       let sc = 0.6 + 0.4 * ease_out(k) + 0.12 * sin(pi() * k)
       let fr = rect(tr.center_x() - tile_w * sc / 2.0, tr.center_y() - tile_h * sc / 2.0, tile_w * sc, tile_h * sc)
-      draw_rect_rounded(fr, 5, C_FACE)
+      draw_rect_rounded(fr, radius: 5, c: C_FACE)
       glyph(DESIGNS[o.d], {cx: fr.center_x(), cy: fr.center_y(), s: tile_w * sc * 0.3, sx: 1.0, bg: C_FACE})
     else
-      draw_rect_rounded(tr, 5, C_WELL)
+      draw_rect_rounded(tr, radius: 5, c: C_WELL)
     end
   else
-    draw_rect_rounded(tr, 5, C_WELL)
-    draw_rect_rounded_outline(tr, 5, C_LINE, 255, 1)
-    draw_circle({x: int(tr.center_x()), y: int(tr.center_y())}, 2, C_LINE)
+    draw_rect_rounded(tr, radius: 5, c: C_WELL)
+    draw_rect_rounded_outline(tr, radius: 5, c: C_LINE, a: 255, width: 1)
+    draw_circle(center: {x: int(tr.center_x()), y: int(tr.center_y())}, radius: 2, c: C_LINE)
   end
 end
 
@@ -1021,7 +1021,7 @@ let any_played = len(filter(records, fn(r) -> r.played > 0)) > 0
 if any_played then
   let rl = "Reset"
   let rlw = text_width(rl, {size: 12, font: F})
-  if bloom.link(rec_r.x + rec_r.w - 18 - rlw, rec_r.y + 14, rl, {size: 12, color: C_MUTE}) then
+  if bloom.link(x: rec_r.x + rec_r.w - 18 - rlw, y: rec_r.y + 14, label: rl, opts: {size: 12, color: C_MUTE}) then
     set records = for i in range(0, len(LEVELS)) do
       {moves: -1, time: -1.0, stars: 0, played: 0}
     end
@@ -1035,21 +1035,21 @@ for i in range(0, len(LEVELS)) do
   let rec = records[i]
   let row_r = rect(rec_r.x + 8, rec_r.y + 40 + i * 46, rec_r.w - 16, 42)
   if i == level then
-    draw_rect_rounded(row_r, 9, C_TABLE_H)
+    draw_rect_rounded(row_r, radius: 9, c: C_TABLE_H)
   end
-  tx(lv.name, row_r.x + 10, row_r.y + 5, S_BODYB)
+  tx(lv.name, x: row_r.x + 10, y: row_r.y + 5, style: S_BODYB)
   let won_s = if rec.played > 0 then " · won {rec.played}" else "" end
-  tx("{lv.cols} × {lv.rows} · {lv.cols * lv.rows / 2} pairs{won_s}", row_r.x + 10, row_r.y + 23, S_SMALL)
+  tx("{lv.cols} × {lv.rows} · {lv.cols * lv.rows / 2} pairs{won_s}", x: row_r.x + 10, y: row_r.y + 23, style: S_SMALL)
   if rec.moves >= 0 then
     let mv = "{rec.moves} moves"
-    tx_right(mv, row_r.x + row_r.w - 10, row_r.y + 5, S_BODY)
-    tx_right(fmt_time(rec.time), row_r.x + row_r.w - 10, row_r.y + 23, S_SMALL)
+    tx_right(mv, right_x: row_r.x + row_r.w - 10, y: row_r.y + 5, style: S_BODY)
+    tx_right(fmt_time(rec.time), right_x: row_r.x + row_r.w - 10, y: row_r.y + 23, style: S_SMALL)
     let star_x = float(row_r.x + row_r.w - 10 - text_width(mv, S_BODY)) - 46.0
     for s in range(0, 3) do
-      draw_star(star_x + float(s) * 13.0, float(row_r.y) + 13.0, 5.5, s < rec.stars)
+      draw_star(cx: star_x + float(s) * 13.0, cy: float(row_r.y) + 13.0, r: 5.5, lit: s < rec.stars)
     end
   else
-    tx_right("not yet played", row_r.x + row_r.w - 10, row_r.y + 14, S_SMALL)
+    tx_right("not yet played", right_x: row_r.x + row_r.w - 10, y: row_r.y + 14, style: S_SMALL)
   end
 end
 
@@ -1058,46 +1058,46 @@ end
 fn key_chip(x: num, y: num, cap: string, desc: string) -> num
   let cw2 = text_width(cap, S_CAP) + 16
   let box = rect(int(x), int(y), cw2, 22)
-  draw_rect_rounded(box, 6, C_RAIL)
-  draw_rect_rounded_outline(box, 6, C_EDGE, 255, 1)
-  text_layout.draw_text_line(cap, box, S_CAP, "center")
-  tx(desc, x + cw2 + 8, y + 3, S_SMALL)
+  draw_rect_rounded(box, radius: 6, c: C_RAIL)
+  draw_rect_rounded_outline(box, radius: 6, c: C_EDGE, a: 255, width: 1)
+  text_layout.draw_text_line(cap, r: box, style: S_CAP, align: "center")
+  tx(desc, x: x + cw2 + 8, y: y + 3, style: S_SMALL)
   cw2 + 8 + text_width(desc, S_SMALL) + 20
 end
 
 let fy = H - FOOT_H + 13
 let fx = PAD
-fx += key_chip(fx, fy, "CLICK", "flip")
-fx += key_chip(fx, fy, "ARROWS", "move")
-fx += key_chip(fx, fy, "SPACE", "flip selected")
-fx += key_chip(fx, fy, "P", "peek")
-fx += key_chip(fx, fy, "N", "new game")
-fx += key_chip(fx, fy, "1  2  3", "difficulty")
+fx += key_chip(x: fx, y: fy, cap: "CLICK", desc: "flip")
+fx += key_chip(x: fx, y: fy, cap: "ARROWS", desc: "move")
+fx += key_chip(x: fx, y: fy, cap: "SPACE", desc: "flip selected")
+fx += key_chip(x: fx, y: fy, cap: "P", desc: "peek")
+fx += key_chip(x: fx, y: fy, cap: "N", desc: "new game")
+fx += key_chip(x: fx, y: fy, cap: "1  2  3", desc: "difficulty")
 
-let note_s = ellipsize(note, table.x + table.w - 8 - fx - 20, S_BODY)
-draw_circle({x: table.x + table.w - 8 - text_width(note_s, S_BODY) - 14, y: fy + 11}, 4, note_c)
-tx_right(note_s, table.x + table.w - 8, fy + 3, S_BODY)
+let note_s = ellipsize(note, avail_px: table.x + table.w - 8 - fx - 20, size: S_BODY)
+draw_circle(center: {x: table.x + table.w - 8 - text_width(note_s, S_BODY) - 14, y: fy + 11}, radius: 4, c: note_c)
+tx_right(note_s, right_x: table.x + table.w - 8, y: fy + 3, style: S_BODY)
 
 // ── Draw: result ─────────────────────────────────────────────────────────
 
 if phase == "won" then
-  let k = clamp((clock - won_t) / 0.35, 0.0, 1.0)
+  let k = clamp((clock - won_t) / 0.35, lo: 0.0, hi: 1.0)
   let e = ease_out(k)
-  draw_rect_rounded(table, 18, C_BG, int(170.0 * e))
+  draw_rect_rounded(table, radius: 18, c: C_BG, a: int(170.0 * e))
   let cw3 = 420
   let ch3 = 300
   let card_r = rect(table.center_x() - cw3 / 2, int(float(table.center_y() - ch3 / 2) + 24.0 * (1.0 - e)), cw3, ch3)
   draw_shadow(card_r, {radius: 18, blur: 40, dy: 16, a: int(160.0 * e)})
-  draw_rect_rounded(card_r, 18, C_RAIL)
-  draw_rect_rounded_outline(card_r, 18, C_EDGE, 255, 1)
+  draw_rect_rounded(card_r, radius: 18, c: C_RAIL)
+  draw_rect_rounded_outline(card_r, radius: 18, c: C_EDGE, a: 255, width: 1)
   let mid = card_r.center_x()
-  tx_center("Board cleared", mid, card_r.y + 28, {...S_TITLE, size: 24})
-  tx_center("{L.name}, {PAIRS} pairs", mid, card_r.y + 62, S_LABEL)
+  tx_center("Board cleared", cx: mid, y: card_r.y + 28, style: {...S_TITLE, size: 24})
+  tx_center("{L.name}, {PAIRS} pairs", cx: mid, y: card_r.y + 62, style: S_LABEL)
   for s in range(0, 3) do
-    let sk = clamp((clock - won_t - 0.25 - float(s) * 0.18) / 0.3, 0.0, 1.0)
+    let sk = clamp((clock - won_t - 0.25 - float(s) * 0.18) / 0.3, lo: 0.0, hi: 1.0)
     let lit = s < result.stars && sk > 0.0
     let r0 = 20.0 + (if lit then 6.0 * sin(pi() * sk) else 0.0 end)
-    draw_star(float(mid) + float(s - 1) * 58.0, float(card_r.y) + 112.0 - (if s == 1 then 6.0 else 0.0 end), r0, lit)
+    draw_star(cx: float(mid) + float(s - 1) * 58.0, cy: float(card_r.y) + 112.0 - (if s == 1 then 6.0 else 0.0 end), r: r0, lit: lit)
   end
   let sy = card_r.y + 152
   let cols3 = [
@@ -1107,22 +1107,22 @@ if phase == "won" then
   ]
   for j in range(0, 3) do
     let cxj = float(card_r.x) + float(cw3) * (float(j) + 0.5) / 3.0
-    tx_center(cols3[j].v, cxj, sy, S_STAT)
-    tx_center(cols3[j].l, cxj, sy + 32, S_LABEL)
+    tx_center(cols3[j].v, cx: cxj, y: sy, style: S_STAT)
+    tx_center(cols3[j].l, cx: cxj, y: sy + 32, style: S_LABEL)
   end
   if result.record then
     let lab = "NEW PERSONAL BEST"
     let lw = text_width(lab, S_CAP) + 24
     let pr = rect(mid - lw / 2, card_r.y + 208, lw, 22)
-    draw_rect_rounded(pr, 11, over(C_RAIL, C_GOLD, 50))
-    text_layout.draw_text_line(lab, pr, {...S_CAP, color: C_GOLD_L}, "center")
+    draw_rect_rounded(pr, radius: 11, c: over(bg: C_RAIL, fg: C_GOLD, a: 50))
+    text_layout.draw_text_line(lab, r: pr, style: {...S_CAP, color: C_GOLD_L}, align: "center")
   end
   let by = card_r.y + ch3 - 54
   if level < len(LEVELS) - 1 then
-    if bloom.button(rect(mid - 158, by, 150, 36), "Play again", {variant: "primary", size: 13}) then new_game(level) end
-    if bloom.button(rect(mid + 8, by, 150, 36), "Try {LEVELS[level + 1].name}", {icon_end: "arrow_right", size: 13}) then new_game(level + 1) end
+    if bloom.button(rect(mid - 158, by, 150, 36), label: "Play again", opts: {variant: "primary", size: 13}) then new_game(level) end
+    if bloom.button(rect(mid + 8, by, 150, 36), label: "Try {LEVELS[level + 1].name}", opts: {icon_end: "arrow_right", size: 13}) then new_game(level + 1) end
   else
-    if bloom.button(rect(mid - 75, by, 150, 36), "Play again", {variant: "primary", size: 13}) then new_game(level) end
+    if bloom.button(rect(mid - 75, by, 150, 36), label: "Play again", opts: {variant: "primary", size: 13}) then new_game(level) end
   end
 end
 
@@ -1132,7 +1132,7 @@ for p in bits do
   if p.kind == "paper" then
     let f = min(1.0, p.life / 0.6)
     let wob = abs(cos(p.rot * 0.7))
-    fill_poly(quad(p.x, p.y, p.sz * (0.35 + 0.65 * wob), p.sz * 0.55, p.rot), p.c, int(255.0 * f))
+    fill_poly(points: quad(x: p.x, y: p.y, w: p.sz * (0.35 + 0.65 * wob), h: p.sz * 0.55, a: p.rot), c: p.c, a: int(255.0 * f))
   end
 end
 clip_pop()

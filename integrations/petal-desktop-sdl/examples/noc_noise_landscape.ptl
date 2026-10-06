@@ -44,21 +44,21 @@ end
 // Night sky gradient
 for i in range(0, 8) do
   let gy = i * int(sh) / 8
-  draw_rect(0, gy, int(sw), int(sh) / 8 + 1, 5 + i, 5 + i * 2, 20 + i * 5)
+  draw_rect(x: 0, y: gy, w: int(sw), h: int(sh) / 8 + 1, r: 5 + i, g: 5 + i * 2, b: 20 + i * 5)
 end
 
 // Moon
 let moon_x = int(sw * 0.8)
 let moon_y = 60
-draw_circle(moon_x, moon_y, 35, 30, 30, 40)
-draw_circle(moon_x, moon_y, 30, 50, 50, 60)
-draw_circle(moon_x, moon_y, 25, 80, 80, 90)
-draw_circle(moon_x + 5, moon_y - 3, 22, 10, 10, 20)
+draw_circle(cx: moon_x, cy: moon_y, radius: 35, r: 30, g: 30, b: 40)
+draw_circle(cx: moon_x, cy: moon_y, radius: 30, r: 50, g: 50, b: 60)
+draw_circle(cx: moon_x, cy: moon_y, radius: 25, r: 80, g: 80, b: 90)
+draw_circle(cx: moon_x + 5, cy: moon_y - 3, radius: 22, r: 10, g: 10, b: 20)
 
 // Stars with twinkling
 for s in stars do
   let bright = int(s.bright * (0.5 + 0.5 * abs(sin(time * 2.0 + s.twinkle))))
-  draw_circle(int(s.x), int(s.y), 1, bright, bright, min(255, bright + 20))
+  draw_circle(cx: int(s.x), cy: int(s.y), radius: 1, r: bright, g: bright, b: min(255, bright + 20))
 end
 
 // --- Draw layered mountain ranges ---
@@ -89,7 +89,7 @@ for layer in range(0, num_layers) do
     // Draw vertical strip from mountain top to bottom of screen
     let strip_h = int(sh) - int(height)
     if strip_h > 0 then
-      draw_rect(int(x), int(height), step, strip_h, lr, lg, lb)
+      draw_rect(x: int(x), y: int(height), w: step, h: strip_h, r: lr, g: lg, b: lb)
     end
   end
 
@@ -100,7 +100,7 @@ for layer in range(0, num_layers) do
       let n = noise(x * detail, time * speed + fl * 100.0)
       let height = base_y + n * amplitude
       let bright = int(10.0 + (1.0 - layer_frac) * 15.0)
-      draw_rect(int(x), int(height), step, 1, lr + bright, lg + bright, lb + bright)
+      draw_rect(x: int(x), y: int(height), w: step, h: 1, r: lr + bright, g: lg + bright, b: lb + bright)
     end
   end
 end
@@ -116,7 +116,7 @@ for i in range(0, int(sw) / 2) do
   let wr = 10 + int(sin(x * 0.03 + time) * 8.0)
   let wg = 30 + int(sin(x * 0.02 + time * 0.7) * 15.0)
   let wb = 80 + int(sin(x * 0.04 + time * 1.2) * 20.0)
-  draw_rect(int(x), wy, 2, depth, wr, wg, wb)
+  draw_rect(x: int(x), y: wy, w: 2, h: depth, r: wr, g: wg, b: wb)
 end
 
 // Water surface highlights
@@ -124,8 +124,8 @@ for i in range(0, 20) do
   let hx = random(0.0, sw)
   let hy = water_base + sin(hx * 0.05 + time * 2.0) * 5.0
   let hw = int(random(5.0, 20.0))
-  draw_rect(int(hx), int(hy), hw, 1, 40, 60, 120)
+  draw_rect(x: int(hx), y: int(hy), w: hw, h: 1, r: 40, g: 60, b: 120)
 end
 
-draw_text("Noise Landscape", 10, 10, 16, 100, 100, 140)
-draw_text("Layered sine waves simulate Perlin noise", 10, 30, 12, 60, 60, 90)
+draw_text("Noise Landscape", x: 10, y: 10, size: 16, r: 100, g: 100, b: 140)
+draw_text("Layered sine waves simulate Perlin noise", x: 10, y: 30, size: 12, r: 60, g: 60, b: 90)

@@ -70,7 +70,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 let delta = dt()
@@ -203,7 +203,7 @@ if !game_over then
     // `if !hit` below consumes the bullet — both need the callback's write.
     var hit = false
     aliens = map(aliens, fn(a)
-      if a.alive && !get hit && rects_collide(b.x, b.y, bullet_w, bullet_h, a.x, a.y, alien_w, alien_h) then
+      if a.alive && !get hit && rects_collide(x1: b.x, y1: b.y, w1: bullet_w, h1: bullet_h, x2: a.x, y2: a.y, w2: alien_w, h2: alien_h) then
         set hit = true
         set score += 10
         // Spawn explosion
@@ -230,7 +230,7 @@ if !game_over then
   for b in bullets do
     var hit = false
     shields = map(shields, fn(s)
-      if s.health > 0 && !get hit && rects_collide(b.x, b.y, bullet_w, bullet_h, s.x, s.y, 8.0, 8.0) then
+      if s.health > 0 && !get hit && rects_collide(x1: b.x, y1: b.y, w1: bullet_w, h1: bullet_h, x2: s.x, y2: s.y, w2: 8.0, h2: 8.0) then
         set hit = true
         { x: s.x, y: s.y, health: s.health - 1 }
       else
@@ -248,7 +248,7 @@ if !game_over then
   for b in enemy_bullets do
     var hit = false
     shields = map(shields, fn(s)
-      if s.health > 0 && !get hit && rects_collide(b.x, b.y, 4.0, 12.0, s.x, s.y, 8.0, 8.0) then
+      if s.health > 0 && !get hit && rects_collide(x1: b.x, y1: b.y, w1: 4.0, h1: 12.0, x2: s.x, y2: s.y, w2: 8.0, h2: 8.0) then
         set hit = true
         { x: s.x, y: s.y, health: s.health - 1 }
       else
@@ -278,7 +278,7 @@ if !game_over then
 
   // --- Enemy bullet-player collision ---
   enemy_bullets = filter(enemy_bullets, fn(b)
-    if rects_collide(b.x, b.y, bullet_w, bullet_h, player_x, player_y, player_w, player_h) then
+    if rects_collide(x1: b.x, y1: b.y, w1: bullet_w, h1: bullet_h, x2: player_x, y2: player_y, w2: player_w, h2: player_h) then
       set lives -= 1
       if get lives <= 0 then
         set game_over = true
@@ -315,9 +315,9 @@ for s in stars do
   let bright = int(s.brightness)
   // Slight blue tint for smaller stars
   if s.size == 1 then
-    draw_rect(int(s.x), int(s.y), 1, 1, bright - 30, bright - 20, bright)
+    draw_rect(x: int(s.x), y: int(s.y), w: 1, h: 1, r: bright - 30, g: bright - 20, b: bright)
   else
-    draw_rect(int(s.x), int(s.y), s.size, s.size, bright, bright, bright - 10)
+    draw_rect(x: int(s.x), y: int(s.y), w: s.size, h: s.size, r: bright, g: bright, b: bright - 10)
   end
 end
 
@@ -339,7 +339,7 @@ for s in shields do
     if s.health == 3 then sr = 40  sg = 200  sb = 40 end
     if s.health == 2 then sr = 180  sg = 180  sb = 30 end
     if s.health == 1 then sr = 150  sg = 80  sb = 30 end
-    draw_rect(int(s.x), int(s.y), 8, 8, sr, sg, sb)
+    draw_rect(x: int(s.x), y: int(s.y), w: 8, h: 8, r: sr, g: sg, b: sb)
   end
 end
 
@@ -347,23 +347,23 @@ end
 // Main body
 let px = int(player_x)
 let py = int(player_y)
-draw_rect(px + 2, py + 4, 36, 12, 30, 180, 30)
+draw_rect(x: px + 2, y: py + 4, w: 36, h: 12, r: 30, g: 180, b: 30)
 // Cockpit / nose
-draw_rect(px + 16, py - 4, 8, 8, 60, 255, 60)
-draw_rect(px + 18, py - 8, 4, 4, 120, 255, 120)
+draw_rect(x: px + 16, y: py - 4, w: 8, h: 8, r: 60, g: 255, b: 60)
+draw_rect(x: px + 18, y: py - 8, w: 4, h: 4, r: 120, g: 255, b: 120)
 // Wings
-draw_rect(px, py + 8, 6, 8, 20, 150, 20)
-draw_rect(px + 34, py + 8, 6, 8, 20, 150, 20)
+draw_rect(x: px, y: py + 8, w: 6, h: 8, r: 20, g: 150, b: 20)
+draw_rect(x: px + 34, y: py + 8, w: 6, h: 8, r: 20, g: 150, b: 20)
 // Engine glow (flicker)
 if frame % 4 < 2 then
-  draw_rect(px + 14, py + 16, 4, 4, 255, 200, 50)
-  draw_rect(px + 22, py + 16, 4, 4, 255, 200, 50)
+  draw_rect(x: px + 14, y: py + 16, w: 4, h: 4, r: 255, g: 200, b: 50)
+  draw_rect(x: px + 22, y: py + 16, w: 4, h: 4, r: 255, g: 200, b: 50)
 else
-  draw_rect(px + 14, py + 16, 4, 3, 255, 150, 30)
-  draw_rect(px + 22, py + 16, 4, 3, 255, 150, 30)
+  draw_rect(x: px + 14, y: py + 16, w: 4, h: 3, r: 255, g: 150, b: 30)
+  draw_rect(x: px + 22, y: py + 16, w: 4, h: 3, r: 255, g: 150, b: 30)
 end
 // Highlight on cockpit
-draw_rect(px + 18, py - 2, 2, 2, 200, 255, 200)
+draw_rect(x: px + 18, y: py - 2, w: 2, h: 2, r: 200, g: 255, b: 200)
 
 // --- Draw aliens ---
 let anim_frame = (frame / 30) % 2
@@ -384,28 +384,28 @@ for a in aliens do
     let ay = int(a.y)
 
     // Body
-    draw_rect(ax + 4, ay + 2, 22, 14, r, g, b)
+    draw_rect(x: ax + 4, y: ay + 2, w: 22, h: 14, r: r, g: g, b: b)
     // Head bumps
-    draw_rect(ax + 6, ay, 6, 4, r, g, b)
-    draw_rect(ax + 18, ay, 6, 4, r, g, b)
+    draw_rect(x: ax + 6, y: ay, w: 6, h: 4, r: r, g: g, b: b)
+    draw_rect(x: ax + 18, y: ay, w: 6, h: 4, r: r, g: g, b: b)
     // Eyes (white with dark pupil)
-    draw_rect(ax + 8, ay + 5, 5, 5, 220, 220, 255)
-    draw_rect(ax + 17, ay + 5, 5, 5, 220, 220, 255)
-    draw_rect(ax + 10, ay + 6, 2, 3, 20, 20, 60)
-    draw_rect(ax + 19, ay + 6, 2, 3, 20, 20, 60)
+    draw_rect(x: ax + 8, y: ay + 5, w: 5, h: 5, r: 220, g: 220, b: 255)
+    draw_rect(x: ax + 17, y: ay + 5, w: 5, h: 5, r: 220, g: 220, b: 255)
+    draw_rect(x: ax + 10, y: ay + 6, w: 2, h: 3, r: 20, g: 20, b: 60)
+    draw_rect(x: ax + 19, y: ay + 6, w: 2, h: 3, r: 20, g: 20, b: 60)
     // Mouth
-    draw_rect(ax + 10, ay + 12, 10, 2, r - 60, g - 40, b - 40)
+    draw_rect(x: ax + 10, y: ay + 12, w: 10, h: 2, r: r - 60, g: g - 40, b: b - 40)
     // Legs/tentacles (animate)
     if anim_frame == 0 then
-      draw_rect(ax + 2, ay + 16, 4, 4, r - 30, g - 20, b - 20)
-      draw_rect(ax + 24, ay + 16, 4, 4, r - 30, g - 20, b - 20)
-      draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-      draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+      draw_rect(x: ax + 2, y: ay + 16, w: 4, h: 4, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 24, y: ay + 16, w: 4, h: 4, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 10, y: ay + 16, w: 3, h: 3, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 17, y: ay + 16, w: 3, h: 3, r: r - 30, g: g - 20, b: b - 20)
     else
-      draw_rect(ax, ay + 14, 4, 4, r - 30, g - 20, b - 20)
-      draw_rect(ax + 26, ay + 14, 4, 4, r - 30, g - 20, b - 20)
-      draw_rect(ax + 10, ay + 16, 3, 3, r - 30, g - 20, b - 20)
-      draw_rect(ax + 17, ay + 16, 3, 3, r - 30, g - 20, b - 20)
+      draw_rect(x: ax, y: ay + 14, w: 4, h: 4, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 26, y: ay + 14, w: 4, h: 4, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 10, y: ay + 16, w: 3, h: 3, r: r - 30, g: g - 20, b: b - 20)
+      draw_rect(x: ax + 17, y: ay + 16, w: 3, h: 3, r: r - 30, g: g - 20, b: b - 20)
     end
   end
 end
@@ -421,15 +421,15 @@ for e in explosions do
   let eg = int(float(e.g) * alpha_mult)
   let eb = int(float(e.b) * alpha_mult)
   // Center flash
-  draw_rect(ex + 8 - sz / 4, ey + 4 - sz / 4, 14 + sz / 2, 12 + sz / 2, er, eg, eb)
+  draw_rect(x: ex + 8 - sz / 4, y: ey + 4 - sz / 4, w: 14 + sz / 2, h: 12 + sz / 2, r: er, g: eg, b: eb)
   // Particles flying out
   let spread = int((0.4 - t) * 40.0)
-  draw_rect(ex + 2 - spread, ey + 4 - spread, 4, 4, er, eg, 0)
-  draw_rect(ex + 24 + spread, ey + 4 - spread, 4, 4, er, eg, 0)
-  draw_rect(ex + 2 - spread, ey + 12 + spread, 4, 4, er, 0, eb)
-  draw_rect(ex + 24 + spread, ey + 12 + spread, 4, 4, er, 0, eb)
-  draw_rect(ex + 12, ey - spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
-  draw_rect(ex + 12, ey + 16 + spread, 6, 3, 255, 255, int(200.0 * alpha_mult))
+  draw_rect(x: ex + 2 - spread, y: ey + 4 - spread, w: 4, h: 4, r: er, g: eg, b: 0)
+  draw_rect(x: ex + 24 + spread, y: ey + 4 - spread, w: 4, h: 4, r: er, g: eg, b: 0)
+  draw_rect(x: ex + 2 - spread, y: ey + 12 + spread, w: 4, h: 4, r: er, g: 0, b: eb)
+  draw_rect(x: ex + 24 + spread, y: ey + 12 + spread, w: 4, h: 4, r: er, g: 0, b: eb)
+  draw_rect(x: ex + 12, y: ey - spread, w: 6, h: 3, r: 255, g: 255, b: int(200.0 * alpha_mult))
+  draw_rect(x: ex + 12, y: ey + 16 + spread, w: 6, h: 3, r: 255, g: 255, b: int(200.0 * alpha_mult))
 end
 
 // --- Draw player bullets (glowing) ---
@@ -437,11 +437,11 @@ for b in bullets do
   let bx = int(b.x)
   let by = int(b.y)
   // Glow
-  draw_rect(bx - 1, by - 1, 6, 14, 100, 100, 40)
+  draw_rect(x: bx - 1, y: by - 1, w: 6, h: 14, r: 100, g: 100, b: 40)
   // Core
-  draw_rect(bx, by, 4, 12, 255, 255, 120)
+  draw_rect(x: bx, y: by, w: 4, h: 12, r: 255, g: 255, b: 120)
   // Bright tip
-  draw_rect(bx + 1, by, 2, 3, 255, 255, 255)
+  draw_rect(x: bx + 1, y: by, w: 2, h: 3, r: 255, g: 255, b: 255)
 end
 
 // --- Draw enemy bullets (zigzag style) ---
@@ -449,41 +449,41 @@ for b in enemy_bullets do
   let bx = int(b.x)
   let by = int(b.y)
   // Lightning bolt shape
-  draw_rect(bx + 1, by, 3, 4, 255, 100, 100)
-  draw_rect(bx, by + 4, 3, 4, 255, 60, 60)
-  draw_rect(bx + 2, by + 8, 3, 4, 255, 100, 100)
+  draw_rect(x: bx + 1, y: by, w: 3, h: 4, r: 255, g: 100, b: 100)
+  draw_rect(x: bx, y: by + 4, w: 3, h: 4, r: 255, g: 60, b: 60)
+  draw_rect(x: bx + 2, y: by + 8, w: 3, h: 4, r: 255, g: 100, b: 100)
   // Hot core
-  draw_rect(bx + 1, by + 4, 2, 4, 255, 200, 200)
+  draw_rect(x: bx + 1, y: by + 4, w: 2, h: 4, r: 255, g: 200, b: 200)
 end
 
 // --- HUD ---
 // Score panel
-draw_rect(10, 6, 180, 28, 20, 20, 50)
+draw_rect(x: 10, y: 6, w: 180, h: 28, r: 20, g: 20, b: 50)
 draw_rect_outline(10, 6, 180, 28, 60, 60, 150)
 draw_text("SCORE: " ++ str(score), {x: 20, y: 10}, 24, {r: 0, g: 255, b: 100})
 
 // Lives display
-draw_rect(610, 6, 180, 28, 20, 20, 50)
+draw_rect(x: 610, y: 6, w: 180, h: 28, r: 20, g: 20, b: 50)
 draw_rect_outline(610, 6, 180, 28, 60, 60, 150)
 draw_text("LIVES: ", {x: 620, y: 10}, 24, {r: 200, g: 200, b: 255})
 // Draw small ships for lives
 for i in range(0, lives) do
   let lx = 730 + i * 20
-  draw_rect(lx + 3, lx - lx + 16, 8, 6, 30, 180, 30)
-  draw_rect(lx + 5, lx - lx + 12, 4, 4, 60, 255, 60)
+  draw_rect(x: lx + 3, y: lx - lx + 16, w: 8, h: 6, r: 30, g: 180, b: 30)
+  draw_rect(x: lx + 5, y: lx - lx + 12, w: 4, h: 4, r: 60, g: 255, b: 60)
 end
 
 // --- Game over screen ---
 if game_over then
   // Darkened overlay
-  draw_rect(0, 0, 800, 600, 0, 0, 0)
+  draw_rect(x: 0, y: 0, w: 800, h: 600, r: 0, g: 0, b: 0)
   // Redraw stars dimly
   for s in stars do
     let dim = int(s.brightness * 0.3)
-    draw_rect(int(s.x), int(s.y), 1, 1, dim, dim, dim)
+    draw_rect(x: int(s.x), y: int(s.y), w: 1, h: 1, r: dim, g: dim, b: dim)
   end
   // Panel
-  draw_rect(200, 220, 400, 160, 30, 5, 5)
+  draw_rect(x: 200, y: 220, w: 400, h: 160, r: 30, g: 5, b: 5)
   draw_rect_outline(200, 220, 400, 160, 200, 30, 30)
   draw_rect_outline(202, 222, 396, 156, 100, 15, 15)
   draw_text("GAME OVER", {x: 275, y: 245}, 44, {r: 255, g: 50, b: 50})

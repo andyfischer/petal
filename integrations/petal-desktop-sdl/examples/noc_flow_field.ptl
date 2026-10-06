@@ -41,7 +41,7 @@ end
 // Update particles
 let new_particles = []
 for p in particles do
-  let angle = field_angle(p.x, p.y, field_time)
+  let angle = field_angle(px: p.x, py: p.y, t: field_time)
 
   let vx = cos(angle) * p.speed
   let vy = sin(angle) * p.speed
@@ -69,12 +69,12 @@ particles = new_particles
 
 // Semi-transparent background for trail effect (draw dark rect with low opacity)
 // Since we can't do alpha, we use a very dark rect each frame for fading trails
-draw_rect(0, 0, int(sw), int(sh), 5, 5, 12)
+draw_rect(x: 0, y: 0, w: int(sw), h: int(sh), r: 5, g: 5, b: 12)
 
 // Draw particles as short lines (from previous to current position)
 for p in particles do
   // Color based on hue + position
-  let h = p.hue + field_angle(p.x, p.y, field_time) * 0.05
+  let h = p.hue + field_angle(px: p.x, py: p.y, t: field_time) * 0.05
   let hmod = ((h * 6.0) % 6.0 + 6.0) % 6.0
   let cr = 0
   let cg = 0
@@ -89,10 +89,10 @@ for p in particles do
   end
 
   draw_line(int(p.prev_x), int(p.prev_y), int(p.x), int(p.y), cr, cg, cb)
-  draw_circle(int(p.x), int(p.y), 1, min(255, cr + 50), min(255, cg + 50), min(255, cb + 50))
+  draw_circle(cx: int(p.x), cy: int(p.y), radius: 1, r: min(255, cr + 50), g: min(255, cg + 50), b: min(255, cb + 50))
 end
 
 // Title (with background for readability)
-draw_rect(5, 5, 200, 50, 0, 0, 0)
-draw_text("Flow Field", 10, 10, 16, 100, 100, 120)
-draw_text("Particles follow a vector field", 10, 30, 12, 60, 60, 80)
+draw_rect(x: 5, y: 5, w: 200, h: 50, r: 0, g: 0, b: 0)
+draw_text("Flow Field", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Particles follow a vector field", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)

@@ -62,7 +62,7 @@ fn draw_text(text, x, y, size, r, g, b)
   _draw_text(text, x, y, size, r, g, b)
 end
 fn draw_text(text, pos, size, color)
-  _draw_text(text, pos.x, pos.y, size, color.r, color.g, color.b)
+  _draw_text(text, x: pos.x, y: pos.y, size: size, r: color.r, g: color.g, b: color.b)
 end
 
 // ── Common UI colors ──
@@ -230,7 +230,7 @@ end
 clear(25, 25, 35)
 
 // Subtle canvas area with slightly lighter background
-draw_rect(0, toolbar_h + 1, 800, 600 - toolbar_h - 1, 28, 28, 38)
+draw_rect(x: 0, y: toolbar_h + 1, w: 800, h: 600 - toolbar_h - 1, r: 28, g: 28, b: 38)
 
 // Very subtle grid dots for visual texture
 for gx in range(0, 20) do
@@ -238,7 +238,7 @@ for gx in range(0, 20) do
     let dotx = 20 + gx * 40
     let doty = toolbar_h + 10 + gy * 40
     if doty > toolbar_h then
-      draw_circle(dotx, doty, 1, 35, 35, 45)
+      draw_circle(cx: dotx, cy: doty, radius: 1, r: 35, g: 35, b: 45)
     end
   end
 end
@@ -246,28 +246,28 @@ end
 // Draw all stored points
 for i in range(0, len(points)) do
   let p = points[i]
-  draw_circle(p.x, p.y, p.size, p.r, p.g, p.b)
+  draw_circle(cx: p.x, cy: p.y, radius: p.size, r: p.r, g: p.g, b: p.b)
 end
 
 // Draw cursor preview (only below toolbar)
 if mouse_y() > toolbar_h then
   // Outer ring
-  draw_circle(mouse_x(), mouse_y(), brush_size + 2, min(brush_r + 30, 255), min(brush_g + 30, 255), min(brush_b + 30, 255))
+  draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size + 2, r: min(brush_r + 30, 255), g: min(brush_g + 30, 255), b: min(brush_b + 30, 255))
   // Inner brush
-  draw_circle(mouse_x(), mouse_y(), brush_size, brush_r, brush_g, brush_b)
+  draw_circle(cx: mouse_x(), cy: mouse_y(), radius: brush_size, r: brush_r, g: brush_g, b: brush_b)
 end
 
 // ── Toolbar ──
 
 // Toolbar background with gradient effect
-draw_rect(0, 0, 800, toolbar_h, 18, 18, 28)
-draw_rect(0, toolbar_h, 800, 2, 50, 50, 70)
+draw_rect(x: 0, y: 0, w: 800, h: toolbar_h, r: 18, g: 18, b: 28)
+draw_rect(x: 0, y: toolbar_h, w: 800, h: 2, r: 50, g: 50, b: 70)
 
 // App title
 draw_text("Paint", {x: 12, y: 4}, 22, ui_bright)
 
 // Separator line
-draw_rect(75, 6, 2, 38, 50, 50, 70)
+draw_rect(x: 75, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
 // ── Color swatches in toolbar ──
 for ci in range(0, len(palette)) do
@@ -277,42 +277,42 @@ for ci in range(0, len(palette)) do
 
   // Selection highlight
   if ci == selected_color then
-    draw_rect(sx - 2, sy - 2, 24, 24, 220, 220, 255)
+    draw_rect(x: sx - 2, y: sy - 2, w: 24, h: 24, r: 220, g: 220, b: 255)
   end
 
   // Swatch
-  draw_rect(sx, sy, 20, 20, c.color.r, c.color.g, c.color.b)
+  draw_rect(x: sx, y: sy, w: 20, h: 20, r: c.color.r, g: c.color.g, b: c.color.b)
 end
 
 // Separator
-draw_rect(430, 6, 2, 38, 50, 50, 70)
+draw_rect(x: 430, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
 // ── Brush size display ──
 draw_text("Size", {x: 442, y: 4}, 16, ui_dim)
 draw_text(str(brush_size), {x: 442, y: 22}, 18, ui_medium)
 
 // Brush size preview circle
-draw_circle(500, 18, min(brush_size, 15), brush_r, brush_g, brush_b)
+draw_circle(cx: 500, cy: 18, radius: min(brush_size, 15), r: brush_r, g: brush_g, b: brush_b)
 
 // +/- labels
 draw_text("-", {x: 522, y: 4}, 20, ui_dim)
 draw_text("+", {x: 540, y: 4}, 20, ui_dim)
 
 // Separator
-draw_rect(560, 6, 2, 38, 50, 50, 70)
+draw_rect(x: 560, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
 // ── Info section ──
 draw_text("C:Clear", {x: 572, y: 4}, 16, ui_dim)
 draw_text(str(len(points)) ++ "/3000", {x: 572, y: 24}, 14, ui_dimmer)
 
 // Separator
-draw_rect(656, 6, 2, 38, 50, 50, 70)
+draw_rect(x: 656, y: 6, w: 2, h: 38, r: 50, g: 50, b: 70)
 
 // Keys help at bottom of toolbar
 draw_text("Keys: 1-9 colors", {x: 666, y: 4}, 14, ui_dimmer)
 draw_text("+/- size  C clear", {x: 666, y: 22}, 14, ui_dimmer)
 
 // ── Bottom status bar ──
-draw_rect(0, 588, 800, 12, 18, 18, 28)
+draw_rect(x: 0, y: 588, w: 800, h: 12, r: 18, g: 18, b: 28)
 let col_name = palette[selected_color].name
 draw_text("Brush: " ++ col_name ++ " | Size: " ++ str(brush_size) ++ " | Mouse: " ++ str(mouse_x()) ++ "," ++ str(mouse_y()), {x: 8, y: 589}, 12, ui_subtle)

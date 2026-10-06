@@ -36,13 +36,13 @@ end
 // water bands are placed relative to it and the land bands above it.
 fn terrain_bands(sea: num) -> list
   [
-    Band("deep water", "~", sea * 0.55),
-    Band("shallow water", "-", sea),
-    Band("beach", ".", sea + 0.05),
-    Band("grass", "\"", sea + 0.22),
-    Band("forest", "*", sea + 0.38),
-    Band("rock", "^", sea + 0.50),
-    Band("snow", "#", 1.01),
+    Band(name: "deep water", glyph: "~", ceiling: sea * 0.55),
+    Band(name: "shallow water", glyph: "-", ceiling: sea),
+    Band(name: "beach", glyph: ".", ceiling: sea + 0.05),
+    Band(name: "grass", glyph: "\"", ceiling: sea + 0.22),
+    Band(name: "forest", glyph: "*", ceiling: sea + 0.38),
+    Band(name: "rock", glyph: "^", ceiling: sea + 0.50),
+    Band(name: "snow", glyph: "#", ceiling: 1.01),
   ]
 end
 
@@ -79,9 +79,9 @@ fn value_noise(x: num, y: num, seed: int) -> num
   let iy = int(floor(y))
   let fx = smoothstep(x - float(ix))
   let fy = smoothstep(y - float(iy))
-  let top = lerp(hash_2d(ix, iy, seed), hash_2d(ix + 1, iy, seed), fx)
-  let bot = lerp(hash_2d(ix, iy + 1, seed), hash_2d(ix + 1, iy + 1, seed), fx)
-  lerp(top, bot, fy)
+  let top = lerp(hash_2d(ix, iy, seed), hash_2d(ix + 1, iy, seed), t: fx)
+  let bot = lerp(hash_2d(ix, iy: iy + 1, seed: seed), hash_2d(ix: ix + 1, iy: iy + 1, seed: seed), t: fx)
+  lerp(top, bot, t: fy)
 end
 
 // Fractal brownian motion: `octaves` layers of value noise, frequency scaled
@@ -94,7 +94,7 @@ fn fbm(x: num, y: num) -> num
   var norm = 0.0
   for o in range(0, octaves) do
     set total = get total
-    + get amp * value_noise(x * get freq, y * get freq, noise_seed + o * 101)
+    + get amp * value_noise(x: x * get freq, y: y * get freq, seed: noise_seed + o * 101)
     set norm = get norm + get amp
     set amp = get amp * persistence
     set freq = get freq * lacunarity
@@ -181,7 +181,7 @@ end
 
 fn bar(n: int, total: int, width: int) -> string
   let filled = int(floor(float(n) * float(width) / float(max(total, 1))))
-  pad_end(join(for i in range(0, filled) do "#" end, ""), width, " ")
+  pad_end(join(for i in range(0, filled) do "#" end, ""), width, fill: " ")
 end
 
 fn percent(n: int, total: int) -> string
@@ -206,16 +206,16 @@ print("")
 print(render_map(heights, bands))
 print("")
 
-let counts = for i in range(0, len(bands)) do count_band(heights, bands, i) end
+let counts = for i in range(0, len(bands)) do count_band(grid: heights, bands: bands, idx: i) end
 
 print("terrain distribution ({cell_count} cells)")
 for i in range(0, len(bands)) do
   let b = bands[i]
   let n = counts[i]
-  print("  {b.glyph}  " ++ pad_end(b.name, 15, " ")
-    ++ pad_start(str(n), 5, " ") ++ "  "
-    ++ pad_start(percent(n, cell_count), 5, " ") ++ "%  "
-    ++ bar(n, cell_count, 32)
+  print("  {b.glyph}  " ++ pad_end(b.name, width: 15, fill: " ")
+    ++ pad_start(str(n), width: 5, fill: " ") ++ "  "
+    ++ pad_start(percent(n, cell_count), width: 5, fill: " ") ++ "%  "
+    ++ bar(n, total: cell_count, width: 32)
     ++ "  " ++ slope_hint(i))
 end
 print("")
@@ -236,7 +236,7 @@ for step in range(0, 9) do
   let wet = reduce(heights, 0, fn(acc, row) ->
     acc + count(row, fn(h) -> band_index(h, sweep_bands) < 2))
   print("  sea " ++ format("%.2f", sea)
-    ++ "  water " ++ pad_start(percent(wet, cell_count), 5, " ") ++ "%  "
-    ++ bar(wet, cell_count, 40))
+    ++ "  water " ++ pad_start(percent(wet, cell_count), width: 5, fill: " ") ++ "%  "
+    ++ bar(n: wet, total: cell_count, width: 40))
 end
 nil

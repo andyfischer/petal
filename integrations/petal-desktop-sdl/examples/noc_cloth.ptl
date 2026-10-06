@@ -203,20 +203,20 @@ for y in range(0, rows_count) do
 
     // Pinned points
     if p.pinned then
-      draw_circle(int(p.x), int(p.y), 4, 255, 200, 50)
+      draw_circle(cx: int(p.x), cy: int(p.y), radius: 4, r: 255, g: 200, b: 50)
     end
   end
 end
 
 // Mouse indicator
 if mouse_down(0) then
-  draw_circle(int(mx), int(my), int(mouse_radius), 30, 15, 15)
+  draw_circle(cx: int(mx), cy: int(my), radius: int(mouse_radius), r: 30, g: 15, b: 15)
 end
 
-draw_text("Cloth Simulation", 10, 10, 16, 100, 100, 120)
-draw_text("Click and drag to push", 10, 30, 12, 60, 60, 80)
+draw_text("Cloth Simulation", x: 10, y: 10, size: 16, r: 100, g: 100, b: 120)
+draw_text("Click and drag to push", x: 10, y: 30, size: 12, r: 60, g: 60, b: 80)
 if tearing then
-  draw_text("Tearing: ON (Space to toggle)", 10, 46, 12, 255, 100, 100)
+  draw_text("Tearing: ON (Space to toggle)", x: 10, y: 46, size: 12, r: 255, g: 100, b: 100)
 else
-  draw_text("Space to enable tearing", 10, 46, 12, 60, 60, 80)
+  draw_text("Space to enable tearing", x: 10, y: 46, size: 12, r: 60, g: 60, b: 80)
 end

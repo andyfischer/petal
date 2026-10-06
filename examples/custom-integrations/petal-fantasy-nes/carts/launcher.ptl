@@ -106,10 +106,10 @@ fn big_glyph(ch: string) -> list
   let empty = BLANK_ROW ++ BLANK_ROW
   let rows = concat([empty], concat(doubled, [empty]))
   [
-    for y in range(0, 8) do slice(rows[y], 0, 8) end,
-    for y in range(0, 8) do slice(rows[y], 8, 16) end,
-    for y in range(8, 16) do slice(rows[y], 0, 8) end,
-    for y in range(8, 16) do slice(rows[y], 8, 16) end,
+    for y in range(0, 8) do slice(rows[y], start: 0, end: 8) end,
+    for y in range(0, 8) do slice(rows[y], start: 8, end: 16) end,
+    for y in range(8, 16) do slice(rows[y], start: 0, end: 8) end,
+    for y in range(8, 16) do slice(rows[y], start: 8, end: 16) end,
   ]
 end
 
@@ -223,8 +223,8 @@ for x in range(0, 32) do
 end
 
 let TITLE = "FANTASY NES"
-big_text(centered_big(TITLE), 3, TITLE, 2, 3)
-text_at(centered("A PETAL FANTASY CONSOLE"), 6, "A PETAL FANTASY CONSOLE", 0)
+big_text(cx: centered_big(TITLE), cy: 3, text: TITLE, top_pal: 2, bottom_pal: 3)
+text_at(cx: centered("A PETAL FANTASY CONSOLE"), cy: 6, text: "A PETAL FANTASY CONSOLE", pal: 0)
 rule_at(8, 3)
 rule_at(24, 3)
 
@@ -246,7 +246,7 @@ if count > 0 then
   end
   // A cart may have been deleted while the menu was up; the list is rescanned
   // on every load, so the selection has to be re-clamped rather than trusted.
-  set selected = clamp(selected, 0, count - 1)
+  set selected = clamp(selected, lo: 0, hi: count - 1)
 
   if pad_pressed(0, "start") || pad_pressed(0, "a") then
     launch_cart(cart_path(selected))
@@ -256,18 +256,18 @@ else
 end
 
 if count == 0 then
-  text_at(centered("NO CARTS FOUND"), 13, "NO CARTS FOUND", 0)
-  text_at(centered("ADD PTL FILES TO CARTS/"), 15, "ADD PTL FILES TO CARTS/", 0)
+  text_at(cx: centered("NO CARTS FOUND"), cy: 13, text: "NO CARTS FOUND", pal: 0)
+  text_at(cx: centered("ADD PTL FILES TO CARTS/"), cy: 15, text: "ADD PTL FILES TO CARTS/", pal: 0)
 else
   let heading = if count == 1 then "1 CART" else "{count} CARTS" end
-  text_at(3, 9, heading, 0)
+  text_at(cx: 3, cy: 9, text: heading, pal: 0)
 
   // Scroll the window only once the selection would leave it, keeping the
   // cursor mid-list on long lists and pinned at the top on short ones.
   let first = if count <= LIST_ROWS then
     0
   else
-    clamp(selected - (LIST_ROWS / 2), 0, count - LIST_ROWS)
+    clamp(selected - (LIST_ROWS / 2), lo: 0, hi: count - LIST_ROWS)
   end
   let last = min(count, first + LIST_ROWS)
 
@@ -277,16 +277,16 @@ else
     // Filenames can be longer than the column; cut rather than run into the
     // right edge of the map (a write past the last cell is dropped anyway).
     let name = upper(cart_name(i))
-    text_at(LIST_X, row, if len(name) > 24 then slice(name, 0, 24) else name end, pal)
+    text_at(cx: LIST_X, cy: row, text: if len(name) > 24 then slice(name, start: 0, end: 24) else name end, pal: pal)
   end
 
   // More entries above or below the window than fit: mark the edges. Kept one
   // column clear of the cursor, which lives at LIST_X - 2.
   if first > 0 then
-    text_at(LIST_X - 3, LIST_TOP, "-", 0)
+    text_at(cx: LIST_X - 3, cy: LIST_TOP, text: "-", pal: 0)
   end
   if last < count then
-    text_at(LIST_X - 3, LIST_TOP + LIST_ROWS - 1, "-", 0)
+    text_at(cx: LIST_X - 3, cy: LIST_TOP + LIST_ROWS - 1, text: "-", pal: 0)
   end
 
   // The cursor is the one moving thing on the screen; the two-frame bob is
@@ -299,8 +299,8 @@ end
 // ── Footer ────────────────────────────────────────────────────────────────
 
 let HELP = "UP DOWN MOVE - ESC QUITS"
-text_at(centered(HELP), 26, HELP, 0)
+text_at(cx: centered(HELP), cy: 26, text: HELP, pal: 0)
 
 if count > 0 && (frame / 24) % 2 == 0 then
-  text_at(centered("PRESS START"), 27, "PRESS START", 1)
+  text_at(cx: centered("PRESS START"), cy: 27, text: "PRESS START", pal: 1)
 end

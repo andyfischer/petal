@@ -212,9 +212,9 @@ fn tri(x1: num, y1: num, z1: num,
   x2: num, y2: num, z2: num,
   x3: num, y3: num, z3: num,
   r: num, g: num, b: num)
-  let p1 = project(x1, y1, z1)
-  let p2 = project(x2, y2, z2)
-  let p3 = project(x3, y3, z3)
+  let p1 = project(x: x1, y: y1, z: z1)
+  let p2 = project(x: x2, y: y2, z: z2)
+  let p3 = project(x: x3, y: y3, z: z3)
   if p1.ok && p2.ok && p3.ok then
     triangle3d(p1.sx, p1.sy, p1.z, p2.sx, p2.sy, p2.z, p3.sx, p3.sy, p3.z, r, g, b)
   end
@@ -225,13 +225,13 @@ fn quad(ax: num, ay: num, az: num,
   cx_: num, cy_: num, cz: num,
   dx: num, dy_: num, dz: num,
   r: num, g: num, b: num)
-  tri(ax, ay, az, bx, by, bz, cx_, cy_, cz, r, g, b)
-  tri(ax, ay, az, cx_, cy_, cz, dx, dy_, dz, r, g, b)
+  tri(x1: ax, y1: ay, z1: az, x2: bx, y2: by, z2: bz, x3: cx_, y3: cy_, z3: cz, r: r, g: g, b: b)
+  tri(x1: ax, y1: ay, z1: az, x2: cx_, y2: cy_, z2: cz, x3: dx, y3: dy_, z3: dz, r: r, g: g, b: b)
 end
 
 fn neon_line(x1: num, y1: num, z1: num, x2: num, y2: num, z2: num, r: num, g: num, b: num)
-  let p1 = project(x1, y1, z1)
-  let p2 = project(x2, y2, z2)
+  let p1 = project(x: x1, y: y1, z: z1)
+  let p2 = project(x: x2, y: y2, z: z2)
   if p1.ok && p2.ok then
     line3d(x1, y1, z1, x2, y2, z2, r, g, b)
   end
@@ -247,17 +247,17 @@ fn box_(x: num, y: num, z: num, w: num, h: num, d: num, r: num, g: num, b: num)
   let y1 = y + hh
   let z0 = z - hd
   let z1 = z + hd
-  quad(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b)
-  quad(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0,
-    int(float(r) * 0.55), int(float(g) * 0.55), int(float(b) * 0.55))
-  quad(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1,
-    int(float(r) * 0.8),  int(float(g) * 0.8),  int(float(b) * 0.8))
-  quad(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0,
-    int(float(r) * 0.65), int(float(g) * 0.65), int(float(b) * 0.65))
-  quad(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0,
-    int(min(255.0, float(r) * 1.2)),
-    int(min(255.0, float(g) * 1.2)),
-    int(min(255.0, float(b) * 1.2)))
+  quad(ax: x0, ay: y0, az: z1, bx: x1, by: y0, bz: z1, cx_: x1, cy_: y1, cz: z1, dx: x0, dy_: y1, dz: z1, r: r, g: g, b: b)
+  quad(ax: x1, ay: y0, az: z0, bx: x0, by: y0, bz: z0, cx_: x0, cy_: y1, cz: z0, dx: x1, dy_: y1, dz: z0,
+    r: int(float(r) * 0.55), g: int(float(g) * 0.55), b: int(float(b) * 0.55))
+  quad(ax: x1, ay: y0, az: z1, bx: x1, by: y0, bz: z0, cx_: x1, cy_: y1, cz: z0, dx: x1, dy_: y1, dz: z1,
+    r: int(float(r) * 0.8),  g: int(float(g) * 0.8),  b: int(float(b) * 0.8))
+  quad(ax: x0, ay: y0, az: z0, bx: x0, by: y0, bz: z1, cx_: x0, cy_: y1, cz: z1, dx: x0, dy_: y1, dz: z0,
+    r: int(float(r) * 0.65), g: int(float(g) * 0.65), b: int(float(b) * 0.65))
+  quad(ax: x0, ay: y1, az: z1, bx: x1, by: y1, bz: z1, cx_: x1, cy_: y1, cz: z0, dx: x0, dy_: y1, dz: z0,
+    r: int(min(255.0, float(r) * 1.2)),
+    g: int(min(255.0, float(g) * 1.2)),
+    b: int(min(255.0, float(b) * 1.2)))
 end
 
 // =========================================================================
@@ -286,8 +286,8 @@ fn gstrip(near_d: num, far_d: num, shade: num)
   let cz2 = player_z + fwd_z * far_d + right_z * gp_right
   let dx2 = player_x + fwd_x * far_d + right_x * gp_left
   let dz2 = player_z + fwd_z * far_d + right_z * gp_left
-  quad(ax, 0.0, az,  bx, 0.0, bz,  cx2, 0.0, cz2,  dx2, 0.0, dz2,
-    shade, shade / 2, shade + 20)
+  quad(ax, ay: 0.0, az: az,  bx: bx, by: 0.0, bz: bz,  cx_: cx2, cy_: 0.0, cz: cz2,  dx: dx2, dy_: 0.0, dz: dz2,
+    r: shade, g: shade / 2, b: shade + 20)
 end
 
 // Layer bands of alternating shade from near to far for visual depth.
@@ -295,22 +295,22 @@ let gi = 0
 while gi < 10 do
   let n = gp_near + float(gi) * 6.0
   let f = gp_near + float(gi + 1) * 6.0
-  gstrip(n, f, 12 + (gi % 2) * 10)
+  gstrip(near_d: n, far_d: f, shade: 12 + (gi % 2) * 10)
   gi = gi + 1
 end
 // Behind the camera — single darker strip (only visible if you turn around).
-gstrip(0.0 - gp_far, 0.0 - gp_near, 10)
+gstrip(near_d: 0.0 - gp_far, far_d: 0.0 - gp_near, shade: 10)
 
 // Neon street lines: cyan cross-strips every 6 m in world Z + fixed magenta
 // center stripe. These are in world coordinates so they anchor the scene.
 let neon_i = -8
 while neon_i < 12 do
   let z = float(neon_i) * 6.0
-  neon_line(0.0 - ground_half, 0.05, z, ground_half, 0.05, z, 0, 220, 200)
+  neon_line(x1: 0.0 - ground_half, y1: 0.05, z1: z, x2: ground_half, y2: 0.05, z2: z, r: 0, g: 220, b: 200)
   neon_i = neon_i + 1
 end
-neon_line(-1.0, 0.05, -48.0, -1.0, 0.05, 72.0, 255, 50, 180)
-neon_line(1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
+neon_line(x1: -1.0, y1: 0.05, z1: -48.0, x2: -1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
+neon_line(x1: 1.0, y1: 0.05, z1: -48.0,  x2: 1.0, y2: 0.05, z2: 72.0, r: 255, g: 50, b: 180)
 
 // =========================================================================
 // Draw: buildings with neon rooftop outline
@@ -318,15 +318,15 @@ neon_line(1.0, 0.05, -48.0,  1.0, 0.05, 72.0, 255, 50, 180)
 let bi = 0
 while bi < len(buildings) do
   let b = buildings[bi]
-  box_(b.x, b.h / 2.0, b.z, b.w, b.h, b.d, b.r, b.g, b.b)
+  box_(x: b.x, y: b.h / 2.0, z: b.z, w: b.w, h: b.h, d: b.d, r: b.r, g: b.g, b: b.b)
   // Rooftop neon rim
   let hx = b.w / 2.0
   let hz = b.d / 2.0
   let rt = b.h + 0.02
-  neon_line(b.x - hx, rt, b.z - hz, b.x + hx, rt, b.z - hz, 255, 180, 40)
-  neon_line(b.x + hx, rt, b.z - hz, b.x + hx, rt, b.z + hz, 255, 180, 40)
-  neon_line(b.x + hx, rt, b.z + hz, b.x - hx, rt, b.z + hz, 255, 180, 40)
-  neon_line(b.x - hx, rt, b.z + hz, b.x - hx, rt, b.z - hz, 255, 180, 40)
+  neon_line(x1: b.x - hx, y1: rt, z1: b.z - hz, x2: b.x + hx, y2: rt, z2: b.z - hz, r: 255, g: 180, b: 40)
+  neon_line(x1: b.x + hx, y1: rt, z1: b.z - hz, x2: b.x + hx, y2: rt, z2: b.z + hz, r: 255, g: 180, b: 40)
+  neon_line(x1: b.x + hx, y1: rt, z1: b.z + hz, x2: b.x - hx, y2: rt, z2: b.z + hz, r: 255, g: 180, b: 40)
+  neon_line(x1: b.x - hx, y1: rt, z1: b.z + hz, x2: b.x - hx, y2: rt, z2: b.z - hz, r: 255, g: 180, b: 40)
   bi = bi + 1
 end
 
@@ -340,12 +340,12 @@ while di < len(enemies) do
     let ex = e.x + sin(e.phase) * 2.0
     let ez = e.z + cos(e.phase) * 2.0
     // Body
-    box_(ex, 0.8, ez, 0.9, 1.4, 0.9, 230, 40, 60)
+    box_(x: ex, y: 0.8, z: ez, w: 0.9, h: 1.4, d: 0.9, r: 230, g: 40, b: 60)
     // Head (glowing cyan)
-    box_(ex, 1.7, ez, 0.55, 0.55, 0.55, 60, 240, 230)
+    box_(x: ex, y: 1.7, z: ez, w: 0.55, h: 0.55, d: 0.55, r: 60, g: 240, b: 230)
     // HP dot — small white box on top that shrinks as HP drops
     let hb = 0.15 * float(e.hp)
-    box_(ex, 2.1, ez, hb, 0.1, hb, 255, 255, 255)
+    box_(x: ex, y: 2.1, z: ez, w: hb, h: 0.1, d: hb, r: 255, g: 255, b: 255)
   end
   di = di + 1
 end

@@ -171,7 +171,7 @@ end
 let visible = 12
 let lead = 4
 let total = frame_rows(tune, pos.order)
-let first_row = clamp(pos.row - lead, 0, max(0, total - visible))
+let first_row = clamp(pos.row - lead, lo: 0, hi: max(0, total - visible))
 
 for i in range(0, visible) do
   let r = first_row + i
@@ -180,7 +180,7 @@ for i in range(0, visible) do
   map_text(0, y, if r == pos.row then ">" else " " end, pal)
   if r >= 0 && r < total then
     for c in range(0, 4) do
-      map_text(1 + c * 8, y, cell_text(tune, pos.order, chans[c], r), pal)
+      map_text(1 + c * 8, y, cell_text(tune, order_index: pos.order, ch: chans[c], r: r), pal)
     end
   else
     for c in range(0, 4) do
@@ -196,7 +196,7 @@ end
 
 for c in range(0, 4) do
   let y = 20 + c * 2
-  let s = sounding(tune, pos, chans[c])
+  let s = sounding(tune, pos, ch: chans[c])
   let label = if s.note < 0 then "----"
   elsif chans[c] == "noise" then "P" ++ pad_num(noise_period(s.note), 2)
   else note_name(s.note) end

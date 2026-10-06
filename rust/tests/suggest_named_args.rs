@@ -117,6 +117,73 @@ fn a_builtin_that_declares_its_parameters_is_named() {
     );
 }
 
+// --- calls not worth naming --------------------------------------------------
+
+#[test]
+fn a_bare_colour_is_left_alone() {
+    let src = "fn tint(r, g, b)\n  r + g + b\nend\n\
+               fn glass(r, g, b, a)\n  r + g + b + a\nend\n\
+               print(tint(1, 2, 3))\nprint(glass(1, 2, 3, 4))\n";
+    assert_eq!(rewrites(src), [] as [&str; 0]);
+    // Channels that are only part of a call are named with the rest of it.
+    let src = "fn fill(rect, r, g, b)\n  rect + r + g + b\nend\n\
+               fn dot(x, y, r, g, b)\n  x + y + r + g + b\nend\n\
+               print(fill(0, 1, 2, 3))\nprint(dot(0, 0, 1, 2, 3))\n";
+    assert_eq!(
+        rewrites(src),
+        [
+            "fill(0, r: 1, g: 2, b: 3)",
+            "dot(x: 0, y: 0, r: 1, g: 2, b: 3)"
+        ]
+    );
+}
+
+#[test]
+fn a_function_literal_is_not_labelled_with_one_letter() {
+    let src = "fn each(count, step, f)\n  f(count * step)\nend\n\
+               fn button(label, width, on_click)\n  on_click(label)\nend\n\
+               print(reduce([1, 2], 0, fn(a, b) -> a + b))\n\
+               print(each(3, 2, fn(n) -> n))\n\
+               let double = fn(n) -> n * 2\nprint(each(3, 2, double))\n\
+               print(button(\"ok\", 80, fn(l) -> l))\n";
+    assert_eq!(
+        rewrites(src),
+        [
+            "each(count: 3, step: 2, f: double)",
+            "button(label: \"ok\", width: 80, on_click: fn(l) -> l)"
+        ]
+    );
+}
+
+#[test]
+fn a_call_that_would_mostly_echo_its_arguments_is_left_alone() {
+    let src = "fn hash(ix, iy, seed)\n  ix + iy + seed\nend\n\
+               let ix = 1\nlet iy = 2\nlet seed = 3\n\
+               print(hash(ix + 1, iy, seed))\nprint(hash(ix + 1, iy + 1, seed))\n";
+    // Two echoes of three is noise; one of three still says more than it repeats.
+    assert_eq!(rewrites(src), ["hash(ix: ix + 1, iy: iy + 1, seed: seed)"]);
+}
+
+#[test]
+fn a_subject_under_its_short_name_stays_positional() {
+    let src = "fn tx(s, x, y, style)\n  s\nend\n\
+               fn iclamp(v, lo, hi)\n  v + lo + hi\nend\n\
+               fn pill(r, label, active)\n  r\nend\n\
+               fn dot(r, g, b, size)\n  r + g + b + size\nend\n\
+               print(tx(\"hi\", 1, 2, 3))\nprint(iclamp(7, 0, 5))\n\
+               print(pill(1, \"Fit\", false))\nprint(dot(1, 2, 3, 4))\n";
+    // A leading `r` is a rect, and stays positional — unless it is red.
+    assert_eq!(
+        rewrites(src),
+        [
+            "tx(\"hi\", x: 1, y: 2, style: 3)",
+            "iclamp(7, lo: 0, hi: 5)",
+            "pill(1, label: \"Fit\", active: false)",
+            "dot(r: 1, g: 2, b: 3, size: 4)"
+        ]
+    );
+}
+
 #[test]
 fn a_pinned_method_call_names_what_it_writes() {
     let src = "class V\n  x, y\nend\n\

@@ -519,7 +519,10 @@ can, after:
   alpha, not a placeholder;
 - the **subject**, when the first parameter is the thing being operated on —
   `self`, `this`, `value`, `list`, `collection`, `string`, `record`, `array`,
-  `text` or `rect`: `slice(xs, start: 1, end: 3)`;
+  `text` or `rect`, or one of the short forms scripts write for those roles
+  (`s`, `str`, `txt`, `v`, `val`, `xs`, `lst`, `arr`, `items`, and a leading `r`
+  — a rect — unless a `g` follows it): `slice(xs, start: 1, end: 3)`,
+  `tx(title, x: 12, y: 8, style: S_TITLE)`, `pill(r, label: "Fit", active: on)`;
 - arguments **already spelled like their parameter**, for as long as the run
   lasts: `box(x, y, w: 3, h: 4)`, not `box(x: x, y: y, …)`. Once a name has
   been written every later argument needs one, so `box(x: 1, y: y, w: 3, h: h)`.
@@ -527,6 +530,21 @@ can, after:
 Arguments already named are kept exactly as written, and a call with nothing
 left to name gets no suggestion — so applying is idempotent: a second run
 reports nothing.
+
+**Calls not worth naming.** A rewrite can be safe and still read worse than
+what it replaces. Three shapes are left alone, each because the names would
+only repeat what the call already says:
+
+- a **bare colour** — a call whose arguments are colour channels and nothing
+  else, `(r, g, b)` or `(r, g, b, a)`: `clear(18, 20, 28)` stays as it is. The
+  channels at the end of a longer call are named with the rest of it:
+  `draw_rect(x: 0, y: 0, w: 320, h: 48, r: 20, g: 25, b: 45)`;
+- a **function literal under a one-letter name** — `reduce(xs, 0, fn(a, b) ->
+  a + b)` is not rewritten to `reduce(xs, initial: 0, f: fn(a, b) -> a + b)`:
+  the literal is visibly the function. A parameter with a real name
+  (`on_click: fn() -> …`) is still written;
+- **mostly echoes** — a call where more of the names would repeat their own
+  argument than add to it: `hash(ix: ix + 1, iy: iy, seed: seed)`.
 
 **`--host` matters here.** A bare `draw_rect` is the `ui` prelude's function
 under `--host ui` (the default) and an unknown global under `--host core`.

@@ -243,5 +243,9 @@ declarations) would lend the wrong shape's names to a call that is provably
 unchanged by them. The suggestion is withheld whenever the variants accepting
 a call disagree on what its positional arguments are called.
 
-The noise rules — which leading arguments stay positional — are in the module
-docs of `suggest/named_args.rs` and in CLI.md.
+The noise rules — which leading arguments stay positional, and which calls
+are not worth naming at all (a bare `(r, g, b)` colour, a function literal
+under a one-letter name, a call that would mostly echo its own arguments) —
+are in the module docs of `suggest/named_args.rs` and in CLI.md. The second
+group came out of applying the tool to the example corpus: every one of those
+rewrites was provably safe and read worse than the call it replaced.

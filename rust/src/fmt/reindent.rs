@@ -54,6 +54,25 @@ impl Open {
     }
 }
 
+/// Whether the keyword at token `k` is spelling a name rather than acting as
+/// the keyword: `slice(xs, start: 1, end: 3)`, `{end: 3}`. A keyword directly
+/// followed by `:` is always a label, so it neither opens nor closes anything.
+fn is_label(tokens: &[Token], k: usize) -> bool {
+    matches!(tokens.get(k + 1), Some(Token::Colon))
+        && matches!(
+            tokens[k],
+            Token::End
+                | Token::If
+                | Token::For
+                | Token::While
+                | Token::Do
+                | Token::Match
+                | Token::Enum
+                | Token::Fn
+                | Token::When
+        )
+}
+
 /// Can `t` open a line that continues the one above (`* (1.0 + k)`)?
 fn is_continuation_op(t: &Token) -> bool {
     use Token::*;
@@ -177,6 +196,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         let mut si = 0usize;
         while si < sig.len() {
             match tokens[sig[si]] {
+                Token::End if is_label(tokens, sig[si]) => break,
                 Token::End | Token::RParen | Token::RBracket | Token::RBrace => {
                     dedent += 1;
                     si += 1;
@@ -256,6 +276,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         let content = shown_cols + INDENT;
         for k in line_tokens {
             match &tokens[k] {
+                _ if is_label(tokens, k) => {}
                 Token::Newline => when_header = false,
                 Token::When => when_header = true,
                 Token::Arrow => when_header = false,

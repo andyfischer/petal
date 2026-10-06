@@ -198,8 +198,28 @@ pub fn respace(source: &str, protected: &[bool]) -> Result<String, String> {
         } else {
             spans[i + 1].end
         };
+        // So does a label: in a table of named arguments, `parent: -1` over
+        // `parent: 0` right-aligns by the value, one column left of its
+        // neighbour's label.
+        let labelled_value = (matches!(tokens.get(i + 2), Some(Token::Colon))
+            && spans[i + 2].start == spans[i + 1].end
+            && i + 3 < spans.len())
+        .then(|| {
+            let v = i + 3;
+            let signed = matches!(tokens[v], Token::Minus | Token::Plus)
+                && spans.get(v + 1).is_some_and(|s| s.start == spans[v].end);
+            (
+                v,
+                if signed {
+                    spans[v + 1].end
+                } else {
+                    spans[v].end
+                },
+            )
+        });
         let aligned = gap.len() > 1
             && (columns.aligned(&spans[i + 1], end)
+                || labelled_value.is_some_and(|(v, end)| columns.aligned(&spans[v], end))
                 || (matches!(tokens[i], Token::Comma)
                     && grouping.get(&(line, gap.len())).is_some_and(|&n| n >= 2)));
         match rule {
@@ -452,6 +472,15 @@ mod tests {
         assert_eq!(sp("f(a,  b, c)\n"), "f(a, b, c)\n");
         // A double space that lines up with nothing is just a double space.
         assert_eq!(sp("let a  = 1\nlet b = 2\n"), "let a = 1\nlet b = 2\n");
+    }
+
+    #[test]
+    fn a_label_ahead_of_a_right_aligned_value_keeps_the_alignment() {
+        // The labels sit a column apart because the values end together.
+        let rows = "let a = [\n  Body(name: \"Sun\",    parent: -1, kind: \"star\"),\n  Body(name: \"Earth\",   parent: 0, kind: \"planet\"),\n]\n";
+        assert_eq!(sp(rows), rows);
+        // Neither the label nor its value lines up: just a run of spaces.
+        assert_eq!(sp("f(a,   lo: 10)\ng(b)\n"), "f(a, lo: 10)\ng(b)\n");
     }
 
     #[test]

@@ -23,6 +23,15 @@ fn is_idempotent_on_its_own_output() {
 }
 
 #[test]
+fn a_keyword_used_as_a_label_does_not_close_or_open_a_block() {
+    // `end:` names slice's parameter; it is not the `end` of the `if` or `fn`.
+    let src = "fn trim(s, t)\n  if len(s) > 0 then set s = slice(s, start: 0, end: len(s) - 1) end\n  if len(t) > 0 then set s = s ++ t end\n  s\nend\n";
+    assert_eq!(fmt(src), src);
+    let src = "fn span()\n  let r = {\n    if: 1,\n    end: 2,\n  }\n  slice(\n    xs,\n    start: 0,\n    end: 3,\n  )\nend\n";
+    assert_eq!(fmt(src), src);
+}
+
+#[test]
 fn ignore_next_line_keeps_it_verbatim() {
     let src = "// petal-fmt-ignore\nquad(x0,y0,z1,   x1,y0,z1)\nquad(x0,y0)\n";
     assert_eq!(

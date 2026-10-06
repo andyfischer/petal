@@ -487,12 +487,21 @@ NAMED ARGUMENTS
           and neighbours numbered on one stem ('p1, p2', 'c0, c1');
        o  the subject, when the first parameter is the thing operated on
           (self, this, value, list, collection, string, record, array, text,
-          rect): 'clamp(v, lo: 0, hi: 1)';
+          rect, or a short form: s, str, txt, v, val, xs, lst, arr, items,
+          and r unless a g follows it): 'clamp(v, lo: 0, hi: 1)';
        o  arguments already spelled like their parameter: 'box(x, y, w: 3,
           h: 4)', not 'box(x: x, y: y, ...)'.
 
        Arguments already named are kept as written, and an applied file
        yields no further suggestion.
+
+       Three calls are left alone because the names would only repeat what
+       the call already says: a bare colour, whose arguments are the channels
+       (r, g, b) or (r, g, b, a) and nothing else — 'clear(18, 20, 28)'; a
+       function literal that would get a one-letter name — 'reduce(xs, 0,
+       fn(a, b) -> a + b)', not 'f: fn(a, b) -> ...'; and a call where more
+       of the names would echo their own argument than add to it —
+       'hash(ix: ix + 1, iy: iy, seed: seed)'.
 
 OPTIONS
        --only <kind>[,<kind>]

@@ -67,12 +67,30 @@
 //!   parameters numbered in sequence on one stem (`p1, p2`, `c0, c1`). Every
 //!   argument up to the last placeholder stays positional;
 //! - **the subject**, when the first parameter is the thing being operated on
-//!   ([`SUBJECT_PARAMS`]): `clamp(v, lo: 0, hi: 1)`, `slice(xs, start: 1, end: 3)`;
+//!   ([`is_subject`]: the role words and their usual short forms, a leading
+//!   `r` for a rect among them): `clamp(v, lo: 0, hi: 1)`,
+//!   `slice(xs, start: 1, end: 3)`, `button(r, label: "OK", style: s)`;
 //! - **arguments already spelled like their parameter** — `rect(x, y, w: 10,
 //!   h: 4)` rather than `rect(x: x, y: y, …)` — for as long as the run lasts.
 //!
 //! Arguments that are already named are left exactly as written. A call with
 //! nothing left to name gets no suggestion.
+//!
+//! # Calls not worth naming
+//!
+//! A rewrite can be safe and still read worse than what it replaces. Three
+//! shapes are left alone ([`is_noise`]), each because the names would repeat
+//! what the call already says:
+//!
+//! - **a bare colour** — a call whose arguments are colour channels and
+//!   nothing else, `(r, g, b)` or `(r, g, b, a)`: `clear(r: 18, g: 20, b: 28)`.
+//!   Three numbers handed to such a function already read as a colour. The
+//!   channels at the end of a longer call (`draw_rect(x: 0, y: 0, w: 320,
+//!   h: 48, r: 20, g: 25, b: 45)`) are named with the rest;
+//! - **a function literal under a one-letter name** — `reduce(xs, initial: 0,
+//!   f: fn(a, b) -> a + b)`: the literal is visibly the function;
+//! - **mostly echoes** — more of the names would repeat their own argument
+//!   than add to it: `hash(ix: ix + 1, iy: iy, seed: seed)`.
 
 use std::collections::HashMap;
 
@@ -91,7 +109,9 @@ pub const MIN_ARGS: usize = 3;
 /// First-parameter names that mark the argument as the subject of the call —
 /// the value a method-style reading would put before the dot. The role words
 /// the builtins use for it (`rust/src/builtins/params.rs`), plus the receiver
-/// names a class method declares.
+/// names a class method declares, and the short forms scripts write for
+/// the same roles (`s`, `str`, `txt`, `v`, `val`, `xs`, `lst`, `arr`,
+/// `items`). `r` is one more, with a condition — see [`is_subject`].
 pub const SUBJECT_PARAMS: &[&str] = &[
     "self",
     "this",
@@ -103,7 +123,27 @@ pub const SUBJECT_PARAMS: &[&str] = &[
     "array",
     "text",
     "rect",
+    "s",
+    "str",
+    "txt",
+    "v",
+    "val",
+    "xs",
+    "lst",
+    "arr",
+    "items",
 ];
+
+/// Whether the first of `params` is the subject of the call. A leading `r`
+/// is a rect (`button(r, label, style)`) unless a `g` follows it, which makes
+/// it the red of a colour.
+pub fn is_subject(params: &[String]) -> bool {
+    match params.first().map(String::as_str) {
+        Some("r") => params.get(1).is_none_or(|p| p != "g"),
+        Some(first) => SUBJECT_PARAMS.contains(&first),
+        None => false,
+    }
+}
 
 /// One text insertion: `text` goes in at character offset `at`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +220,24 @@ fn in_numbered_run(params: &[String], i: usize) -> bool {
     (i > 0 && follows(i - 1, i)) || (i + 1 < params.len() && follows(i, i + 1))
 }
 
+/// Whether writing `names` onto a call would add noise rather than meaning —
+/// see "Calls not worth naming" in the module docs. `names[i]` is the label
+/// argument `i` would get, `echo[i]` whether that argument is already an
+/// identifier of the same spelling, `literal_fn[i]` whether it is a function
+/// literal, and `all_written` whether these are all the arguments the call
+/// passes (none stays positional, none was named before).
+pub fn is_noise(names: &[String], echo: &[bool], literal_fn: &[bool], all_written: bool) -> bool {
+    let letter = |n: &String| n.chars().count() == 1;
+    let bare_colour = all_written
+        && matches!(
+            names.iter().map(String::as_str).collect::<Vec<_>>()[..],
+            ["r", "g", "b"] | ["r", "g", "b", "a"]
+        );
+    let lettered_fn = names.iter().zip(literal_fn).any(|(n, f)| *f && letter(n));
+    let echoes = echo.iter().filter(|e| **e).count();
+    bare_colour || lettered_fn || echoes * 2 > names.len()
+}
+
 /// A parameter name that can be written as an argument label and read back
 /// by every tool: a plain identifier.
 fn is_label(name: &str) -> bool {
@@ -229,6 +287,8 @@ struct Arg {
     ident: Option<String>,
     /// `@x` — rewritten into an assignment before compilation; left alone.
     at_var: bool,
+    /// `fn(…) -> …` written in place.
+    literal_fn: bool,
 }
 
 struct Sites(Vec<Site>);
@@ -258,6 +318,7 @@ impl ExprVisitor for Sites {
                             _ => None,
                         },
                         at_var: matches!(a.kind, ExprKind::AtVar(_)),
+                        literal_fn: matches!(a.kind, ExprKind::Lambda { .. }),
                     })
                     .collect(),
                 names: arg_names.clone(),
@@ -489,13 +550,23 @@ impl<'a> Finder<'a> {
         }
         while start < positional {
             let arg = &site.args[piped + (start - lead)];
-            let subject = start == 0 && SUBJECT_PARAMS.contains(&params[0].as_str());
+            let subject = start == 0 && is_subject(params);
             if !subject && arg.ident.as_deref() != Some(params[start].as_str()) {
                 break;
             }
             start += 1;
         }
         if start >= positional || !params[start..positional].iter().all(|p| is_label(p)) {
+            return None;
+        }
+        let naming = || (start..positional).map(|i| &site.args[piped + (i - lead)]);
+        let echo: Vec<bool> = (start..positional)
+            .zip(naming())
+            .map(|(i, arg)| arg.ident.as_deref() == Some(params[i].as_str()))
+            .collect();
+        let literal_fn: Vec<bool> = naming().map(|arg| arg.literal_fn).collect();
+        let all_written = start == *lead && positional == names.len();
+        if is_noise(&params[start..positional], &echo, &literal_fn, all_written) {
             return None;
         }
 
@@ -730,6 +801,46 @@ mod tests {
         // Coordinates interleave two stems: each number means something.
         assert_eq!(placeholders(&["x1", "y1", "x2", "y2"]), [false; 4]);
         assert_eq!(placeholders(&["edge0", "edge1", "x"]), [true, true, false]);
+    }
+
+    #[test]
+    fn noise_is_bare_colours_lettered_fn_literals_and_echoes() {
+        let noise = |names: &[&str], echo: &[bool], literal_fn: &[bool], all: bool| {
+            is_noise(&params(names), echo, literal_fn, all)
+        };
+        let no = [false; 8];
+        // `clear(r, g, b)`: colour channels and nothing else.
+        assert!(noise(&["r", "g", "b"], &no[..3], &no[..3], true));
+        assert!(noise(&["r", "g", "b", "a"], &no[..4], &no[..4], true));
+        // Other letters, and channels that are only part of the call, are
+        // worth their names.
+        assert!(!noise(&["x", "y", "w", "h"], &no[..4], &no[..4], true));
+        assert!(!noise(&["h", "s", "v"], &no[..3], &no[..3], true));
+        assert!(!noise(&["r", "g", "b"], &no[..3], &no[..3], false));
+        // `f: fn(…)` — but `on_click: fn(…)` says something.
+        assert!(noise(&["initial", "f"], &no[..2], &[false, true], false));
+        assert!(!noise(
+            &["label", "on_click"],
+            &no[..2],
+            &[false, true],
+            false
+        ));
+        // Echoes: a majority is noise, half is not.
+        assert!(noise(
+            &["ix", "iy", "seed"],
+            &[false, true, true],
+            &no[..3],
+            true
+        ));
+        assert!(!noise(&["i", "s"], &[false, true], &no[..2], false));
+    }
+
+    #[test]
+    fn a_leading_r_is_a_subject_unless_it_is_red() {
+        assert!(is_subject(&params(&["r", "label", "style"])));
+        assert!(is_subject(&params(&["s", "x", "y"])));
+        assert!(!is_subject(&params(&["r", "g", "b"])));
+        assert!(!is_subject(&params(&["x", "y", "r"])));
     }
 
     #[test]

@@ -135,10 +135,14 @@ describe("check: native arguments and prelude overloads", () => {
     const msgs = checkWith([], "draw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)");
     expect(msgs).toHaveLength(2);
     expect(msgs[0]).toContain(
-      "argument 3 to `draw_rect`: the 7-argument `draw_rect` uses it as a number, found `record`",
+      "argument 3 to `draw_rect`: the 7-8-argument `draw_rect` uses it as a number, found `record`",
     );
     expect(msgs[1]).toContain(
-      "argument 5 to `draw_rect`: the 5-argument `draw_rect` reads field `r` from it, found `int`",
+      "argument 5 to `draw_rect`: the 5-6-argument `draw_rect` reads field `r` from it, found `int`",
+    );
+    // An optional trailing argument is held to its use as well.
+    expect(checkWith([], "draw_rect({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})")[0]).toContain(
+      "argument 3 to `draw_rect`: the 2-3-argument `draw_rect` uses it as a number, found `record`",
     );
   });
 

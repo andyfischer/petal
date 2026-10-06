@@ -325,7 +325,8 @@ opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 `petal-ui/prelude/ui.ptl` is an implicit import; call its functions bare. The
 catalogue is in [components.md](../petal-ui/docs/components.md): `rect`
 (the built-in `Rect` under the prelude's name), `point_in`, `hovered`,
-`clicked`, record overloads of every `draw_*`, alignment and ellipsizing
+`clicked`, record overloads of every `draw_*` (each callable by name:
+`draw_rect_outline(rect: r, c: red, width: 2)`), alignment and ellipsizing
 helpers, `button`, lists and scrolling, the focus registry and text fields,
 context menus, drag and drop, tabs, modals, tables, splitters, RectCut layout,
 and theming via `ui_theme()` / `theme_set({...})`.

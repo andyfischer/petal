@@ -42,7 +42,13 @@ input events → bind_frame_info / bind_input → clear_draw_commands
 - **The `ui` prelude** (`prelude/ui.ptl`). Registered as an implicit import,
   so scripts call `button(...)`, `list_update(...)`, `checkbox(...)` bare.
   Implicit bindings are weak: a script's own `fn button` shadows the
-  prelude's.
+  prelude's. It also wraps every draw native in record overloads
+  (`draw_rect(rect, c)`, `draw_line(p1, p2, c, a, width)`), and each shape's
+  parameters carry plain names — `x, y, w, h` / `rect`, `cx, cy` / `center`,
+  `radius`, `r, g, b` / `c`, `a`, `width` — so a call can be written by name:
+  `draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`. The
+  signatures are tabulated in
+  [docs/components.md](docs/components.md#draw-primitives--fills-and-strokes).
 
 See [docs/components.md](docs/components.md) for the full reference: theme,
 layout, every widget, motion helpers, draw primitives and layers.

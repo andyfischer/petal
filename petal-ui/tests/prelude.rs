@@ -2405,24 +2405,76 @@ fn flat_coordinates_with_a_colour_record_match_the_packed_form() {
 /// (the new `draw_line(x1, y1, x2, y2, c)` hid the record `(a, b, c, alpha,
 /// width)`), so the prelude is checked for it: a shared count must be one
 /// overload that tells its shapes apart.
-#[test]
-fn prelude_has_no_two_overloads_with_the_same_argument_count() {
-    let src = petal_ui::prelude_source();
-    let mut seen = std::collections::HashMap::new();
-    for (i, line) in src.lines().enumerate() {
+/// Every top-level `fn` of the prelude as `(name, required, total, line)`:
+/// how many parameters it declares, and how many of them have no default.
+fn prelude_signatures() -> Vec<(String, usize, usize, usize)> {
+    let mut out = Vec::new();
+    for (i, line) in petal_ui::prelude_source().lines().enumerate() {
         let rest = line
             .strip_prefix("export fn ")
             .or_else(|| line.strip_prefix("fn "));
         let Some(rest) = rest else { continue };
         let Some((name, args)) = rest.split_once('(') else { continue };
-        let args = args.split(')').next().unwrap_or("");
-        let count = args.split(',').filter(|a| !a.trim().is_empty()).count();
-        if let Some(prev) = seen.insert((name.trim().to_string(), count), i + 1) {
+        // The parameter list runs to its own closing paren; a default value
+        // (`a0 = _stop_a(c0)`) may hold parens and commas of its own.
+        let (mut depth, mut total, mut defaults, mut any) = (0, 0, 0, false);
+        for ch in args.chars() {
+            match ch {
+                '(' | '[' | '{' => depth += 1,
+                ')' if depth == 0 => break,
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => total += 1,
+                '=' if depth == 0 => defaults += 1,
+                c if !c.is_whitespace() => any = true,
+                _ => {}
+            }
+        }
+        let total = if any { total + 1 } else { 0 };
+        out.push((name.trim().to_string(), total - defaults, total, i + 1));
+    }
+    out
+}
+
+#[test]
+fn prelude_has_no_two_overloads_with_the_same_argument_count() {
+    let mut seen = std::collections::HashMap::new();
+    for (name, _, count, line) in prelude_signatures() {
+        if let Some(prev) = seen.insert((name.clone(), count), line) {
             panic!(
-                "ui.ptl:{} redefines `{}` with {count} arguments (first at line {prev}); \
-                 the later one silently wins",
-                i + 1,
-                name.trim()
+                "ui.ptl:{line} redefines `{name}` with {count} arguments (first at line {prev}); \
+                 the later one silently wins"
+            );
+        }
+    }
+}
+
+/// A variant with defaults takes a range of counts, and a positional call
+/// whose count two ranges cover is an error unless some variant declares
+/// exactly that many parameters (docs/function-overloading.md). The prelude
+/// leans on defaults throughout, so it is checked that no count a script can
+/// write positionally is left ambiguous.
+#[test]
+fn prelude_has_no_ambiguous_positional_count() {
+    let mut sets: std::collections::BTreeMap<String, Vec<(usize, usize, usize)>> =
+        Default::default();
+    for (name, required, total, line) in prelude_signatures() {
+        sets.entry(name).or_default().push((required, total, line));
+    }
+    for (name, variants) in sets {
+        let most = variants.iter().map(|v| v.1).max().unwrap_or(0);
+        for count in 0..=most {
+            if variants.iter().any(|v| v.1 == count) {
+                continue;
+            }
+            let accepting: Vec<usize> = variants
+                .iter()
+                .filter(|v| (v.0..=v.1).contains(&count))
+                .map(|v| v.2)
+                .collect();
+            assert!(
+                accepting.len() <= 1,
+                "`{name}` called with {count} positional arguments is ambiguous between the \
+                 declarations at ui.ptl lines {accepting:?}"
             );
         }
     }

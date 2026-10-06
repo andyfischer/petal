@@ -650,8 +650,12 @@ name lookup. The names are the callee's own — your `fn`s, lambdas, methods,
 constructors and prelude functions use the names they declare, and **builtins
 use the names in the [Builtins Reference](Builtins.md)**
 (`clamp(v, lo: 0, hi: 1)`, `map_range(value: t, in_lo: 0, in_hi: 1, out_lo: a,
-out_hi: b)`, `xs.slice(start: 1, end: 3)`). Only the variadic builtins, `print`
-and `format`, take no names. Every parameter without a default still needs a
+out_hi: b)`, `xs.slice(start: 1, end: 3)`). The `ui` prelude's draw calls name
+every shape they take, and the names pick the shape:
+`draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`,
+`draw_circle(center: p, radius: 6, c: red)` — see the
+[signature table](../petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
+Only the variadic builtins, `print` and `format`, take no names. Every parameter without a default still needs a
 value, and a wrong name is an error `petal check` catches. See
 [Named Arguments](language-guide.md#named-arguments).
 

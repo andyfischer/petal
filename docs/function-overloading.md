@@ -201,6 +201,36 @@ Variants are still identified by their total parameter count: two
 declarations with the same number of parameters do not overload, whatever
 their defaults, and the later one replaces the earlier.
 
+### Two shapes with the same count
+
+Since one count is one variant, a function that takes two *shapes* of the same
+length — a point record and a radius, or two coordinates — declares that
+length once, under the names of one shape, and tells a positional call apart
+by looking at an argument. The other shape gets its names from a variant of a
+different length, whose defaults stretch down to the shared count; a named
+call that does not fit the exact-count variant goes there by rule 2:
+
+```petal
+fn _is_num(v) type(v) == "int" || type(v) == "float" end
+
+fn dot(center, radius)                       // also, positionally, (cx, cy)
+    if _is_num(center) then "at {center},{radius} r=1"
+    else "at {center.x},{center.y} r={radius}" end
+end
+fn dot(cx, cy, radius = 1) "at {cx},{cy} r={radius}" end
+
+print(dot({x: 1, y: 2}, 5))            // at 1,2 r=5
+print(dot(1, 2))                       // at 1,2 r=1    told apart by type
+print(dot(cx: 1, cy: 2))               // at 1,2 r=1    told apart by name
+print(dot(center: {x: 1, y: 2}, radius: 5))
+```
+
+The `ui` prelude's draw calls are written this way
+(`petal-ui/prelude/ui.ptl`). The limit of the technique: a call that passes
+the *second* shape's leading arguments positionally and then uses a name the
+exact-count variant also has is bound by that variant, because the count and
+the names both fit it.
+
 ## Wrong argument count
 
 A call that matches no variant is an error listing the counts on offer:
@@ -213,7 +243,8 @@ add(1)  // Error: add() expects 2 or 3 arguments, got 1
 ```
 
 A variant with defaults is listed as a range — `box() expects 1 or 2-3
-arguments, got 0` for the `box` above. When the count fits a variant but the
+arguments, got 0` for the `box` above. Ranges that share a count are listed as
+the one range they cover (`3-5` and `5-7` read `3-7`). When the count fits a variant but the
 written names fit none, the error lists the variants instead:
 `box() has no variant that accepts 2 arguments with one named 'nope'
 (variants: box(w), box(w, h, depth = …))`.

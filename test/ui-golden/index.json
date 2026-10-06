@@ -49,7 +49,7 @@
     "garden/garden-script/tests/fixtures/bloom_smoke.ptl/monkey-1-s1": "ca91207e106f95c471f17416f9a0594d02142c0dd6f1d307e7d98ff8b32c455c",
     "garden/gpp-apps/directory-browser/src/browser.ptl/monkey-1-s1": "9851a28cc4cf565826edb29537986efd938658010404f549de48bbbd5e12553a",
     "garden/gpp-apps/garden-diff/src/garden_diff.ptl/monkey-1-s1": "8f70bce19ab77eb2f8fa8c4210205c03cbc55fc1f8cf06165820185b304c18d5",
-    "garden/gpp-apps/git-viewers/src/git_panel.ptl/monkey-1-s1": "90783cc0c1bf887e64defd60e859329e4f14627d8a6ddc8b8e904b2a56e5e0e7",
+    "garden/gpp-apps/git-viewers/src/git_panel.ptl/monkey-1-s1": "f02fda5ac3f41aab6d2c18f13dbfa9c4f2cc4cf3e9eb0805d56ecc999b75bed3",
     "garden/gpp-apps/gpp-test-app/src/ok.ptl/monkey-1-s1": "b592f01d21dd900a510f5c8de58d7486af95372fd028ea2d4e97344641fa77af",
     "garden/gpp-apps/gpp-test-app/src/query_error.ptl/monkey-1-s1": "f9922f87e63cbe58948b626b066296e0b856c2e6055f1b22e4a6d414a3c7867f",
     "garden/gpp-apps/gpp-test-app/src/runtime_error.ptl/monkey-1-s1": "dc527826706363892e2a56c60f32f46d6404996ff7370b495167cc715a90eedd",

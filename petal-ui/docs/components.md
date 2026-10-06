@@ -306,6 +306,66 @@ transform. The two honest workarounds:
 `ticks` is a list of `{x, label}` (or `{y, label}`); both return how many were
 drawn.
 
+## Draw primitives — fills and strokes
+
+Every fill and stroke comes in up to three shapes: **flat** (packed ints, what
+the native takes), **mixed** (flat coordinates and a color record) and
+**record** (a rect / center / point record and a color record). `a` is alpha,
+0–255, and `width` a stroke width in pixels; both are optional everywhere they
+appear, defaulting to `255` and `1` (a `radius` defaults to `0`).
+
+| Primitive | Flat | Mixed | Record |
+|---|---|---|---|
+| `draw_rect` | `x, y, w, h, r, g, b[, a]` | `x, y, w, h, c[, a]` | `rect, c[, a]` |
+| `draw_rect_rounded` | `x, y, w, h, radius, r, g, b[, a]` | `x, y, w, h, radius, c[, a]` | `rect, radius, c[, a]` |
+| `draw_rect_outline` | `x, y, w, h, r, g, b[, a[, width]]` | `x, y, w, h, c[, a[, width]]` | `rect, c[, a[, width]]` |
+| `draw_rect_rounded_outline` | `x, y, w, h, radius, r, g, b[, a[, width]]` | `x, y, w, h, radius, c[, a[, width]]` | `rect, radius, c[, a[, width]]` |
+| `draw_line` | `x1, y1, x2, y2, r, g, b[, a[, width]]` | `x1, y1, x2, y2, c[, a[, width]]` | `p1, p2, c[, a[, width]]` |
+| `draw_circle` | `cx, cy, radius, r, g, b[, a]` | `cx, cy, radius, c[, a]` | `center, radius, c[, a]` |
+| `draw_circle_outline` | `cx, cy, radius, r, g, b[, a[, width]]` | `cx, cy, radius, c[, a[, width]]` | `center, radius, c[, a[, width]]` |
+| `draw_ellipse` | `cx, cy, rx, ry, r, g, b[, a]` | `cx, cy, rx, ry, c[, a]` | `center, rx, ry, c[, a]` |
+| `draw_ellipse_outline` | `cx, cy, rx, ry, r, g, b[, a[, width]]` | `cx, cy, rx, ry, c[, a[, width]]` | `center, rx, ry, c[, a[, width]]` |
+| `fill_arc` | `cx, cy, r_in, r_out, a0, a1, r, g, b[, a]` | `cx, cy, r_in, r_out, a0, a1, c[, a]` | `center, r_in, r_out, a0, a1, c[, a]` |
+| `fill_triangle` | `x1, y1, x2, y2, x3, y3, r, g, b[, a]` | `x1, y1, x2, y2, x3, y3, c[, a]` | `p1, p2, p3, c[, a]` |
+| `fill_fan` | `cx, cy, points, r, g, b[, a]` | `cx, cy, points, c[, a]` | `center, points, c[, a]` |
+| `fill_poly`, `fill_polygon` | `points, r, g, b[, a]` | | `points, c[, a]` |
+| `draw_polyline`, `draw_polygon_outline` | `points, r, g, b[, a[, width]]` | | `points, c[, a[, width]]` |
+| `draw_text` | `text, x, y, size, r, g, b[, a]` | `text, x, y, size, c[, a]` | `text, pos, size, c[, a]` |
+| `draw_text` (styled) | | `text, x, y, style` | `text, pos, style` |
+| `draw_image` | `source, x, y, w, h[, a[, radius]]` | | `source, rect[, a[, radius]]` |
+
+The names in the table are the parameters' own, so any of these calls can be
+written with [named arguments](../../docs/language-guide.md#named-arguments),
+and the names say which shape is meant:
+
+```petal
+let red = #e5484d
+let card = rect(20, 20, 200, 120)
+
+draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, a: 255, width: 2)
+draw_rect_rounded_outline(rect: card, radius: 8, c: red, width: 2)   // alpha skipped
+draw_line(0, 40, 200, 40, c: red, width: 3)
+draw_circle(center: {x: 60, y: 60}, radius: 12, c: red, a: 128)
+draw_text("Total", x: 24, y: 28, size: 13, c: red)
+```
+
+Naming `width` without `a` leaves alpha at its default, which no positional
+call can do.
+
+**One exception.** `draw_circle_outline(cx, cy, radius, c, width: 2)` and
+`draw_ellipse_outline(cx, cy, rx, ry, c, width: 2)` — flat coordinates passed
+*positionally*, with alpha skipped by naming `width` — are read with `width` as
+the alpha. The call has the argument count and the `width` name of the record
+shape (`center, radius, c, a, width`), and what tells the shapes apart from
+there is the type of the first argument, which cannot see a name. Name the
+coordinates as well (`cx: …, cy: …, radius: …, c: …, width: 2`), or pass the
+alpha.
+
+A positional call is unaffected by any of this: it means what it always has.
+Where two shapes take the same number of arguments (`draw_circle(center,
+radius, c, a)` and `draw_circle(cx, cy, radius, c)`), a positional call is
+told apart by whether the first differing argument is a number.
+
 ## Draw primitives — gradients, shadows, nested clips
 
 Beyond the fills and strokes (`draw_rect`, `draw_rect_rounded`, `draw_line`,
@@ -320,7 +380,7 @@ either a geometry record or flat coordinates, plus a color record:
 | `linear_gradient(rect, stops, angle[, radius])` | 3+ stops, subdivided into bands |
 | `draw_shadow(rect, {radius, blur, spread, dx, dy, color, a})` | a CSS box-shadow |
 | `draw_shadow(rect, radius, blur, color[, a])` | the positional short form |
-| `clip_push(rect[, radius])` / `clip_pop()` | a clip that nests inside the enclosing one |
+| `clip_push(rect[, radius])` / `clip_pop()` | a clip that nests inside the enclosing one (flat: `clip_push(x, y, w, h[, radius])`) |
 | `clip(rect[, radius])` / `clip_none()` | replace / clear the clip (unchanged) |
 | `draw_image(source, rect[, a[, radius]])` | a bitmap, optionally round-cornered |
 
@@ -390,7 +450,7 @@ opacity and an optional destination size).
 | `draw_backdrop_blur(rect, radius)` | blur what is under `rect`, in place |
 | `draw_material(rect[, {kind, radius, tint, a, blur, hairline}])` | the iOS-style translucent material: the backdrop blurred under a tint, clipped to `radius`; `kind` is `"thin"` / `"regular"` / `"thick"` |
 | `canvas(w, h)` / `canvas(rect)` | a bare canvas id, for hand-rolled effects |
-| `draw_canvas(id, x, y[, a[, w, h]])` / `draw_canvas(id, rect[, {a}])` | composite a canvas, at opacity `a`, scaled to `w`×`h` |
+| `draw_canvas(id, x, y[, a[, w, h]])` / `draw_canvas(id, at[, opts])` (`at` a point or rect, `opts` `{a}`) | composite a canvas, at opacity `a`, scaled to `w`×`h` |
 
 The body of a `layer` draws in canvas-local coordinates, and `draw_to` returns
 the target it replaced, so layers nest without a stack anyone has to keep:

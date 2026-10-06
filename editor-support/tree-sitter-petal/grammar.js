@@ -191,9 +191,16 @@ module.exports = grammar({
     // Higher precedence than an expression: after `fn`, a leading `(` is always
     // the parameter list, never a parenthesized body (the documented wart —
     // `fn (a + b) * 2 end` reads `(a + b)` as parameters).
+    //
+    // `= expr` gives the parameter a default value: an expression evaluated in
+    // the callee on every call that omits the argument (rust/src/parse.rs
+    // `parse_param_default`). The annotation, when there is one, comes first.
+    // The real parser rejects a default on an enum variant's field, which
+    // shares this rule; a highlighting grammar need not.
     parameter: $ => prec(1, seq(
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
+      optional(seq('=', field('default', $._expression))),
     )),
 
     // `class Name` … `end`, comma-separated `field: type` declarations — the

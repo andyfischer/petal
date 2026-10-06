@@ -269,6 +269,47 @@ let d = fn(n: int) -> n * 2
         right: (integer)))))
 
 ==================
+Default parameter values
+==================
+
+fn greet(name, greeting = "hello", times: int = len(name) * 2)
+  greeting
+end
+
+let pick = fn(xs, i = 0) -> xs[i]
+
+---
+
+(source_file
+  (function_declaration
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter name: (identifier))
+      (parameter
+        name: (identifier)
+        default: (string (string_content)))
+      (parameter
+        name: (identifier)
+        type: (type_annotation type: (type_name (identifier)))
+        default: (binary_expression
+          left: (call
+            function: (identifier)
+            arguments: (argument_list (identifier)))
+          right: (integer))))
+    body: (block (identifier)))
+  (let_declaration
+    name: (identifier)
+    value: (lambda
+      parameters: (parameter_list
+        (parameter name: (identifier))
+        (parameter
+          name: (identifier)
+          default: (integer)))
+      body: (index_access
+        object: (identifier)
+        index: (identifier)))))
+
+==================
 Class and method declaration
 ==================
 

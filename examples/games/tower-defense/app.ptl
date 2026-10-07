@@ -204,6 +204,11 @@ fn tx_center(s: string, cx: num, y: num, style: record)
   draw_text(s, int(cx) - text_width(s, style) / 2, int(y), style)
 end
 
+// "1 PEST", "2 PESTS".
+fn count_of(n: int, one: string, many: string) -> string
+  if n == 1 then "{n} {one}" else "{n} {many}" end
+end
+
 // A route as geometry: cell-centre waypoints, the running length at each, and
 // the total. Segments are axis-aligned, so length is a plain sum.
 fn build_route(cells: list) -> record
@@ -613,7 +618,7 @@ while t_left > 0.0001 do
   if leaked > 0 then
     set lives = max(0, lives - leaked)
     set hurt_t = 0.6
-    set floaters = append(floaters, {x: float(COLS) - 0.9, y: 6.2, life: 1.1, s: "-{leaked}", c: C_WARN})
+    set floaters = append(floaters, {x: float(COLS) - 0.9, y: 7.8, life: 1.1, s: "-{leaked}", c: C_WARN})
   end
   set peak = max(peak, len(creeps))
 
@@ -762,6 +767,8 @@ while t_left > 0.0001 do
   if lives <= 0 then
     set phase = "lost"
     set build_sel = -1
+    set sel_id = -1                     // the sidebar turns over to the debrief
+    sel_i = -1
     t_left = 0.0
   end
 end
@@ -774,6 +781,8 @@ if phase == "wave" && len(queue) == 0 && len(creeps) == 0 then
   if wave >= NW then
     set phase = "won"
     set build_sel = -1
+    set sel_id = -1
+    sel_i = -1
     set score += lives * 100 + gold
   else
     let bonus = 25 + 5 * wave
@@ -814,7 +823,8 @@ if len(floaters) > 48 then
 end
 
 // Keep ticking while anything on the board is in motion.
-if (phase == "wave" && !paused) || len(bits) > 0 || len(rings) > 0 || toast_t > 0.0 then
+// Nothing moves under the pause card, so a paused panel is left to sleep.
+if !paused && (phase == "wave" || len(bits) > 0 || len(rings) > 0 || toast_t > 0.0) then
   request_frame()
 end
 
@@ -1201,9 +1211,10 @@ if sel_i >= 0 then
   // Targeting priority: a five-way segmented control.
   tx("TARGETS", ix, info.y + 86, {...S_TINY, color: C_MUTE})
   if tw.k != 0 then
-    tx_right("{tw.kills} KILLS", ix + iw, info.y + 86, {...S_TINY, color: C_MUTE})
+    tx_right(count_of(tw.kills, "KILL", "KILLS"), ix + iw, info.y + 86, {...S_TINY, color: C_MUTE})
   end
-  let segw = iw / len(MODES)
+  // Five segments and four 3 px gaps, ending flush with the buttons below.
+  let segw = (iw + 3) / len(MODES)
   for i in range(0, len(MODES)) do
     let seg = rect(ix + i * segw, info.y + 102, segw - 3, 22)
     let on = tw.mode == i
@@ -1230,23 +1241,41 @@ if sel_i >= 0 then
   end
 else
   let nxt = if wave < NW then wave + 1 else 0 end
-  tx(if phase == "won" then "DEBRIEF" elsif nxt == 0 then "FINAL WAVE" elsif phase == "wave" then "NEXT UP" else "INCOMING" end, side.x, info.y - 22, S_LABEL)
+  let over = phase == "won" || phase == "lost"
+  tx(if over then "DEBRIEF" elsif nxt == 0 then "FINAL WAVE" elsif phase == "wave" then "NEXT UP" else "INCOMING" end, side.x, info.y - 22, S_LABEL)
   draw_rect_rounded(info, 10, C_CARD)
   draw_rect_rounded_outline(info, 10, C_LINE, 255, 1)
   let ix = info.x + 14
   let iw = info.w - 28
-  if nxt == 0 && phase == "won" then
-    tx("A quiet night", ix, info.y + 12, S_NAME)
-    tx("All {NW} waves turned back.", ix, info.y + 38, S_BODY)
-    tx("{kills} pests stopped, {leaks} got through.", ix, info.y + 54, S_BODY)
+  if over then
+    // The night in numbers, whichever way it went.
+    let won = phase == "won"
+    tx(if won then "A quiet night" else "The glass is broken" end, ix, info.y + 12, S_NAME)
+    tx(if won then "All {NW} waves turned back." else "They got in during wave {wave} of {NW}." end, ix, info.y + 38, S_BODY)
+    let rows = [
+      {l: "PESTS STOPPED", v: "{kills}"},
+      {l: "GOT THROUGH", v: "{leaks}"},
+      {l: "TOWERS PLANTED", v: "{built}"},
+      {l: "MOST ON THE PATH", v: "{peak}"},
+    ]
+    let ry = info.y + 68
+    for row in rows do
+      draw_rect(ix, ry - 6, iw, 1, C_LINE)
+      tx(row.l, ix, ry + 2, {...S_TINY, color: C_MUTE})
+      tx_right(row.v, ix + iw, ry, S_NUM)
+      ry += 26
+    end
+    draw_rect(ix, ry - 6, iw, 1, C_LINE)
+    tx("SCORE", ix, ry + 2, {...S_TINY, color: C_MUTE})
+    tx_right("{score}", ix + iw, ry, {...S_NUM, color: if won then C_GOLD else C_TEXT end})
   elsif nxt == 0 then
     tx("The last of them", ix, info.y + 12, S_NAME)
-    tx("{len(creeps) + len(queue)} pests still between you", ix, info.y + 38, S_BODY)
+    tx("{count_of(len(creeps) + len(queue), "pest", "pests")} still between you", ix, info.y + 38, S_BODY)
     tx("and a quiet night.", ix, info.y + 54, S_BODY)
   else
     let spec = WAVES[nxt - 1]
     tx("Wave {nxt}", ix, info.y + 12, S_NAME)
-    tx_right("{wave_size(nxt)} PESTS", ix + iw, info.y + 14, {...S_TINY, color: C_DIM})
+    tx_right(count_of(wave_size(nxt), "PEST", "PESTS"), ix + iw, info.y + 14, {...S_TINY, color: C_DIM})
     let gy = info.y + 42
     for g in spec.groups do
       let K = KINDS[g.k]
@@ -1269,9 +1298,19 @@ else
 end
 
 // Send / call-early button.
-let send_label = if wave >= NW then "ALL WAVES SENT" elsif phase == "wave" then "CALL WAVE {wave + 1} EARLY" else "SEND WAVE {wave + 1}" end
-let send_note = if wave >= NW then "" elsif phase == "wave" then "+{10 + 4 * wave}" else "SPACE" end
-if press(sendr, send_label, send_note, playing && wave < NW, if phase == "wave" then C_GOLD else C_THORN end) then
+// On the title and end cards the same button offers the way back in; the
+// click itself is taken by the card handler at the top of the frame.
+let idle_label = match phase
+  when "title" -> "BEGIN"
+  when "won" -> "PLAY AGAIN"
+  when "lost" -> "TRY AGAIN"
+  when _ -> ""
+end
+let send_label = if len(idle_label) > 0 then idle_label elsif wave >= NW then "ALL WAVES SENT" elsif phase == "wave" then "CALL WAVE {wave + 1} EARLY" else "SEND WAVE {wave + 1}" end
+let send_note = if len(idle_label) > 0 then "SPACE" elsif wave >= NW then "" elsif phase == "wave" then "+{10 + 4 * wave}" else "SPACE" end
+let send_on = len(idle_label) > 0 || (playing && wave < NW)
+let send_hit = press(sendr, send_label, send_note, send_on, if phase == "wave" then C_GOLD elsif phase == "lost" then C_WARN else C_THORN end)
+if send_hit && playing && wave < NW then
   send_wave()
 end
 
@@ -1332,7 +1371,7 @@ if show_card then
   tx_center(sub, ccx + 8, ccy + 2, S_SUB)
   let line = if phase == "title" then "Pests walk the path to the greenhouse. Plant along it."
     elsif paused then "WAVE {wave} OF {NW}   ·   {len(creeps)} ON THE PATH"
-    else "SCORE {score}   ·   WAVE {wave} OF {NW}   ·   {kills} PESTS STOPPED   ·   {leaks} THROUGH" end
+    else "SCORE {score}   ·   WAVE {wave} OF {NW}   ·   {count_of(kills, "PEST", "PESTS")} STOPPED   ·   {leaks} THROUGH" end
   tx_center(line, ccx + 8, ccy + 34, {...S_HINT, color: C_MUTE})
 end
 

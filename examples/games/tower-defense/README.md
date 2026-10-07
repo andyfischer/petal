@@ -52,8 +52,16 @@ limits). The app stores nothing, so no `GARDEN_PANEL_STORE_DIR` is needed.
 Garden puts a panel to sleep 10 s after the last input, and a headless panel
 ticks at about 5 fps rather than 60. The app calls `request_frame()` while a
 wave is running, so a wave in progress keeps going; a build phase that stops
-animating is the documented scheduling model, not a hang. Use `POST /tick` to
-advance it deterministically.
+animating is the documented scheduling model, not a hang. A paused game asks
+for no frames at all, so it sleeps too. Use `POST /tick` to advance it
+deterministically.
+
+To check the script without launching anything, name the Garden host so that
+`request_frame` resolves (the default profile does not know it):
+
+```bash
+./ts/bin/run-petal.ts check --strict --host garden examples/games/tower-defense/app.ptl   # from the repo root
+```
 
 ## Controls
 
@@ -84,8 +92,12 @@ advance it deterministically.
 | right click | disarm, or deselect |
 | click a `TARGETS` segment | set that priority directly |
 | click `UPGRADE` / `SELL` | the same as `U` / `X` |
-| click `SEND WAVE` / `CALL WAVE EARLY` | the same as `SPACE` |
+| click `SEND WAVE` / `CALL WAVE EARLY` | the same as `SPACE`; the button reads `BEGIN`, `PLAY AGAIN` or `TRY AGAIN` on the title and end cards |
 | click anywhere on the title or end card | begin / play again |
+
+When the game ends the selection is dropped and the lower sidebar card turns
+into a debrief: pests stopped, pests through, towers planted, the most pests
+on the path at once, and the score.
 
 ### The towers
 

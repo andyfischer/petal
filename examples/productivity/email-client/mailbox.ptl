@@ -1,0 +1,841 @@
+// ─────────────────────────────────────────────────────────────────────────
+// mailbox — the data half of Plume: people, the seeded mail store, the clock,
+// the query language and every pure transform the UI applies to the store.
+//
+// Nothing in here draws. A thread is a plain record
+//
+//   {id, box, labels, starred, unread, subject, msgs}
+//
+// and a message is {from, to, age, body, atts}. `from` and each `to` entry is
+// a key into PEOPLE (or a raw address the user typed), `age` is minutes
+// before NOW (zero or less for mail written during the session), `body` is a
+// list of paragraphs and `atts` a list of {name, size, kind}.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── The clock ────────────────────────────────────────────────────────────
+// There is no date builtin, and a demo whose "38 minutes ago" drifts with the
+// wall clock cannot be screenshot-tested, so the mailbox lives at one fixed
+// instant: Tuesday 6 October, 10:24.
+
+export let NOW_MIN = 624          // 10:24, as minutes into the day
+let NOW_DOM = 6
+let NOW_MON = 9                   // October, zero-based
+let NOW_WD = 1                    // Tuesday, Monday = 0
+
+let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+  "Oct", "Nov", "Dec"]
+let MONTH_LEN = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+let WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+// The age of something that happened `days` days ago at hh:mm.
+fn at(days: int, hh: int, mm: int) -> int
+  days * 1440 + NOW_MIN - (hh * 60 + mm)
+end
+
+fn days_ago(age: int) -> int
+  if age <= NOW_MIN then 0 else (age - NOW_MIN - 1) / 1440 + 1 end
+end
+
+fn two(n: int) -> string
+  if n < 10 then "0{n}" else str(n) end
+end
+
+fn clock(age: int) -> string
+  let m = ((NOW_MIN - age) % 1440 + 1440) % 1440
+  let h = m / 60
+  let h12 = if h % 12 == 0 then 12 else h % 12 end
+  let half = if h < 12 then "AM" else "PM" end
+  "{h12}:{two(m % 60)} {half}"
+end
+
+fn month_day(d: int) -> string
+  let dom = NOW_DOM - d
+  let mon = NOW_MON
+  while dom < 1 do
+    mon = (mon + 11) % 12
+    dom = dom + MONTH_LEN[mon]
+  end
+  "{MONTHS[mon]} {dom}"
+end
+
+fn weekday(d: int) -> string
+  WEEKDAYS[((NOW_WD - d) % 7 + 7) % 7]
+end
+
+// The list's timestamp: as short as it can be and still be unambiguous.
+export fn when_short(age: int) -> string
+  let d = days_ago(age)
+  if age <= 0 then "now"
+  elsif d == 0 then clock(age)
+  elsif d == 1 then "Yesterday"
+  elsif d < 7 then weekday(d)
+  else month_day(d)
+  end
+end
+
+// The reading pane's timestamp: the whole thing.
+export fn when_long(age: int) -> string
+  let d = days_ago(age)
+  if age <= 0 then "Just now"
+  elsif d == 0 then "Today, {clock(age)}"
+  elsif d == 1 then "Yesterday, {clock(age)}"
+  else "{weekday(d)}, {month_day(d)}, {clock(age)}"
+  end
+end
+
+// ── People ───────────────────────────────────────────────────────────────
+
+export let ME = "me"
+
+let PEOPLE = {
+  me:      {name: "Noor Halloran",    email: "noor@fernhill.studio",       color: #4b5bd6},
+  maya:    {name: "Maya Okonkwo",     email: "maya@harborandpine.co",      color: #1f9d8f},
+  sofia:   {name: "Sofia Marchetti",  email: "sofia@harborandpine.co",     color: #c2573f},
+  tomas:   {name: "Tomas Lindqvist",  email: "tomas@fernhill.studio",      color: #2f7fd6},
+  priya:   {name: "Priya Raman",      email: "priya@fernhill.studio",      color: #7c5cd6},
+  dana:    {name: "Dana Whitfield",   email: "dana@fernhill.studio",       color: #b8791a},
+  kofi:    {name: "Kofi Mensah",      email: "kofi@fernhill.studio",       color: #2f9e77},
+  jonah:   {name: "Jonah Eze",        email: "jonah.eze@postbox.dev",      color: #d6527a},
+  rafael:  {name: "Rafael Costa",     email: "rafael@costadraws.com",      color: #8a63c9},
+  bram:    {name: "Bram de Vries",    email: "bram@devriesbooks.nl",       color: #5b6b83},
+  lena:    {name: "Lena Brandt",      email: "lena@haldentype.com",        color: #b0518f},
+  ines:    {name: "Ines Halloran",    email: "ines.halloran@postbox.dev",  color: #cf6b4d},
+  aiko:    {name: "Aiko Tanaka",      email: "aiko@tanaka.works",          color: #3a8fb7},
+  ledger:  {name: "Ledgerly Billing", email: "billing@ledgerly.app",       color: #6a7388},
+  skyward: {name: "Skyward Air",      email: "trips@skywardair.com",       color: #2f7fd6},
+  casa:    {name: "Casa do Largo",    email: "reservas@casadolargo.pt",    color: #a7793a},
+  kerning: {name: "The Kerning Weekly", email: "hello@kerningweekly.com",  color: #30343f},
+  forge:   {name: "Forge",            email: "notifications@forge.dev",    color: #3d4455},
+  fnotes:  {name: "Fieldnotes Conf",  email: "speakers@fieldnotes.events", color: #c2573f},
+  bank:    {name: "Northlight Bank",  email: "no-reply@northlight.bank",   color: #23755e},
+  press:   {name: "Halftone Press",   email: "orders@halftonepress.com",   color: #7a5c3e},
+  quay:    {name: "Quay Street Residents", email: "notices@quaystreet.org", color: #5b6b83},
+  promo:   {name: "Prize Desk",       email: "winner@prize-desk.biz",      color: #a3a9b8},
+  webinar: {name: "Growthline",       email: "events@growthline.io",       color: #a3a9b8},
+}
+
+// The contacts a recipient field can complete against, in the order a short
+// prefix should prefer them.
+export let CONTACTS = ["maya", "sofia", "tomas", "priya", "dana", "kofi",
+  "jonah", "rafael", "bram", "lena", "ines", "aiko"]
+
+fn before_at(addr: string) -> string
+  let i = index_of(addr, "@")
+  if i > 0 then char_slice(addr, 0, i) else addr end
+end
+
+// A person by key. An address the user typed has no entry, so it is shown as
+// itself — which is what a mail client does with a stranger.
+export fn person(key: string) -> record
+  let known = field(PEOPLE, key, nil)
+  if known != nil then
+    known
+  else
+    {name: before_at(key), email: key, color: #6a7388}
+  end
+end
+
+export fn first_name(key: string) -> string
+  if key == ME then
+    "me"
+  else
+    split(person(key).name, " ")[0]
+  end
+end
+
+export fn initials(name: string) -> string
+  let out = ""
+  for part in split(name, " ") do
+    if char_len(part) > 0 && char_len(out) < 2 then
+      out = out ++ upper(char_at(part, 0))
+    end
+  end
+  out
+end
+
+// The contact a half-typed recipient most plausibly means: a prefix of a
+// first name, a surname or an address. "" when nothing fits.
+export fn complete_contact(fragment: string) -> string
+  let f = lower(fragment)
+  let found = ""
+  if char_len(f) > 0 then
+    // A first name or an address wins over a surname: "ra" is Rafael before
+    // it is Priya Raman.
+    for key in CONTACTS do
+      let p = person(key)
+      if found == "" && (index_of(lower(p.name), f) == 0 || index_of(lower(p.email), f) == 0) then found = key end
+    end
+    for key in CONTACTS do
+      if found == "" then
+        for part in split(lower(person(key).name), " ") do
+          if index_of(part, f) == 0 then found = key end
+        end
+      end
+    end
+  end
+  found
+end
+
+// Turn what was typed into the To field into recipient keys: a known address
+// or name collapses to its contact key, anything else is kept verbatim.
+export fn parse_recipients(typed: string) -> list
+  let out = []
+  for raw in split(typed, ",") do
+    let s = trim_spaces(raw)
+    if char_len(s) > 0 then
+      let key = s
+      for k in CONTACTS do
+        let p = person(k)
+        if lower(p.email) == lower(s) || lower(p.name) == lower(s) then key = k end
+      end
+      out = append(out, key)
+    end
+  end
+  out
+end
+
+// Whether every recipient is someone mail could reach: a contact, or at least
+// something shaped like an address.
+export fn deliverable(keys: list) -> bool
+  let ok = len(keys) > 0
+  for k in keys do
+    if !contains(CONTACTS, k) && index_of(k, "@") < 1 then ok = false end
+  end
+  ok
+end
+
+export fn trim_spaces(s: string) -> string
+  let a = 0
+  let b = char_len(s)
+  while a < b && char_at(s, a) == " " do a = a + 1 end
+  while b > a && char_at(s, b - 1) == " " do b = b - 1 end
+  char_slice(s, a, b)
+end
+
+// ── Labels and mailboxes ─────────────────────────────────────────────────
+
+export let LABELS = [
+  {key: "clients",  name: "Clients",  color: #1f9d8f},
+  {key: "design",   name: "Design",   color: #7c5cd6},
+  {key: "finance",  name: "Finance",  color: #c98414},
+  {key: "travel",   name: "Travel",   color: #2f7fd6},
+  {key: "personal", name: "Personal", color: #d6527a},
+]
+
+export fn label_of(key: string) -> record
+  let found = {key: key, name: key, color: #6a7388}
+  for l in LABELS do
+    if l.key == key then found = l end
+  end
+  found
+end
+
+export let BOXES = [
+  {key: "inbox",   name: "Inbox"},
+  {key: "starred", name: "Starred"},
+  {key: "sent",    name: "Sent"},
+  {key: "drafts",  name: "Drafts"},
+  {key: "archive", name: "Archive"},
+  {key: "all",     name: "All mail"},
+  {key: "trash",   name: "Trash"},
+]
+
+// A view is a mailbox key or "label:<key>".
+export fn view_name(view: string) -> string
+  let name = view
+  for b in BOXES do
+    if b.key == view then name = b.name end
+  end
+  if index_of(view, "label:") == 0 then
+    name = label_of(char_slice(view, 6)).name
+  end
+  name
+end
+
+fn from_me(t: record) -> bool
+  let any = false
+  for m in t.msgs do
+    if m.from == ME then any = true end
+  end
+  any
+end
+
+export fn in_view(t: record, view: string) -> bool
+  if view == "inbox" then t.box == "inbox"
+  elsif view == "starred" then t.starred && t.box != "trash"
+  elsif view == "sent" then t.box == "sent" || (from_me(t) && (t.box == "inbox" || t.box == "archive"))
+  elsif view == "drafts" then t.box == "drafts"
+  elsif view == "archive" then t.box == "archive"
+  elsif view == "all" then t.box != "trash" && t.box != "drafts"
+  elsif view == "trash" then t.box == "trash"
+  elsif index_of(view, "label:") == 0 then
+    contains(t.labels, char_slice(view, 6)) && t.box != "trash"
+  else false
+  end
+end
+
+// ── Reading a thread ─────────────────────────────────────────────────────
+
+export fn last_msg(t: record) -> record
+  t.msgs[len(t.msgs) - 1]
+end
+
+// Newest first means largest stamp first; mail written this session has a
+// negative age and so sorts above everything seeded.
+export fn stamp(t: record) -> int
+  0 - last_msg(t).age
+end
+
+export fn has_attachment(t: record) -> bool
+  let any = false
+  for m in t.msgs do
+    if len(m.atts) > 0 then any = true end
+  end
+  any
+end
+
+export fn attachment_count(t: record) -> int
+  let n = 0
+  for m in t.msgs do n = n + len(m.atts) end
+  n
+end
+
+// Who the row is "from": the correspondents in the order they first spoke.
+// A thread that is only me talking is shown by who it is addressed to.
+export fn participants(t: record) -> string
+  let keys = []
+  for m in t.msgs do
+    if !contains(keys, m.from) then keys = append(keys, m.from) end
+  end
+  if len(keys) == 1 && keys[0] == ME then
+    let to = t.msgs[0].to
+    if len(to) == 0 then
+      "(no recipient)"
+    else
+      let names = for k in to do person(k).name end
+      "To: " ++ join(names, ", ")
+    end
+  elsif len(keys) == 1 then
+    person(keys[0]).name
+  else
+    let names = for k in keys do first_name(k) end
+    join(names, ", ")
+  end
+end
+
+// The person whose face the row wears: the latest correspondent who is not me.
+export fn face_of(t: record) -> string
+  let key = ME
+  for m in t.msgs do
+    if m.from != ME then key = m.from end
+  end
+  if key == ME && len(t.msgs[0].to) > 0 then key = t.msgs[0].to[0] end
+  key
+end
+
+export fn body_text(m: record) -> string
+  join(m.body, " ")
+end
+
+// Everything a free-text term can match in a thread, lowercased once.
+fn haystack(t: record) -> string
+  let parts = [t.subject]
+  for m in t.msgs do
+    let p = person(m.from)
+    parts = append(parts, p.name)
+    parts = append(parts, p.email)
+    parts = append(parts, body_text(m))
+    for a in m.atts do parts = append(parts, a.name) end
+  end
+  lower(join(parts, " "))
+end
+
+// ── The query language ───────────────────────────────────────────────────
+// Free words must all appear somewhere in the thread; `from:maya`,
+// `is:unread`, `is:starred`, `has:attachment` and `label:design` narrow it.
+
+export fn tokens(q: string) -> list
+  for tok in split(lower(q), " ") do
+    if char_len(tok) == 0 then continue end
+    tok
+  end
+end
+
+export fn parse_query(q: string) -> record
+  let pq = {terms: [], from: "", unread: false, starred: false, att: false, label: "", active: false}
+  for tok in tokens(q) do
+    let i = index_of(tok, ":")
+    let key = if i > 0 then char_slice(tok, 0, i) else "" end
+    let val = if i > 0 then char_slice(tok, i + 1) else "" end
+    if key == "from" then
+      pq.from = val
+    elsif key == "is" && val == "unread" then
+      pq.unread = true
+    elsif key == "is" && val == "starred" then
+      pq.starred = true
+    elsif key == "has" then
+      pq.att = true
+    elsif key == "label" then
+      pq.label = val
+    else
+      pq.terms = append(pq.terms, tok)
+    end
+    pq.active = true
+  end
+  pq
+end
+
+fn sender_matches(t: record, who: string) -> bool
+  let hit = false
+  for m in t.msgs do
+    let p = person(m.from)
+    if contains(lower(p.name), who) || contains(lower(p.email), who) then hit = true end
+  end
+  hit
+end
+
+export fn matches(t: record, pq: record) -> bool
+  if pq.unread && !t.unread then return false end
+  if pq.starred && !t.starred then return false end
+  if pq.att && !has_attachment(t) then return false end
+  if char_len(pq.label) > 0 then
+    let any = false
+    for l in t.labels do
+      if index_of(l, pq.label) == 0 then any = true end
+    end
+    if !any then return false end
+  end
+  if char_len(pq.from) > 0 && !sender_matches(t, pq.from) then return false end
+  if len(pq.terms) > 0 then
+    let hay = haystack(t)
+    for term in pq.terms do
+      if !contains(hay, term) then return false end
+    end
+  end
+  true
+end
+
+// Add `tok` to the query, or take it out if it is already there — what a
+// filter chip does when it is clicked.
+export fn toggle_token(q: string, tok: string) -> string
+  let toks = tokens(q)
+  if contains(toks, tok) then
+    let kept = for t in toks do
+      if t == tok then continue end
+      t
+    end
+    join(kept, " ")
+  elsif len(toks) == 0 then
+    tok
+  else
+    trim_spaces(q) ++ " " ++ tok
+  end
+end
+
+// The line of body a row shows. With a search running, that is the stretch of
+// text around the first hit rather than the opening words, so the row shows
+// why it matched.
+export fn snippet(t: record, terms: list) -> string
+  let text = body_text(last_msg(t))
+  if len(terms) > 0 then
+    let found = false
+    for m in t.msgs do
+      if found then continue end
+      let b = body_text(m)
+      let at_i = index_of(lower(b), terms[0])
+      if at_i >= 0 then
+        found = true
+        if at_i > 34 then
+          // Back up a few words and start on a word boundary.
+          let from = at_i - 28
+          while from < at_i && char_at(b, from - 1) != " " do from = from + 1 end
+          text = "… " ++ char_slice(b, from)
+        else
+          text = b
+        end
+      end
+    end
+  end
+  text
+end
+
+// ── Transforms ───────────────────────────────────────────────────────────
+// Each takes the store and returns a new one; the caller owns the `state`.
+
+export fn find_thread(ts: list, id: int)
+  let found = nil
+  for t in ts do
+    if t.id == id then found = t end
+  end
+  found
+end
+
+export fn move_to(ts: list, ids: list, box: string) -> list
+  for t in ts do
+    if contains(ids, t.id) then {...t, box: box} else t end
+  end
+end
+
+export fn drop_threads(ts: list, ids: list) -> list
+  for t in ts do
+    if contains(ids, t.id) then continue end
+    t
+  end
+end
+
+export fn set_unread(ts: list, ids: list, unread: bool) -> list
+  for t in ts do
+    if contains(ids, t.id) then {...t, unread: unread} else t end
+  end
+end
+
+export fn set_starred(ts: list, ids: list, starred: bool) -> list
+  for t in ts do
+    if contains(ids, t.id) then {...t, starred: starred} else t end
+  end
+end
+
+export fn add_reply(ts: list, id: int, m: record) -> list
+  for t in ts do
+    if t.id == id then {...t, msgs: append(t.msgs, m), unread: false} else t end
+  end
+end
+
+export fn next_id(ts: list) -> int
+  let top = 0
+  for t in ts do top = max(top, t.id) end
+  top + 1
+end
+
+// Who a reply to this thread goes to: whoever last wrote that was not me.
+export fn reply_to(t: record) -> list
+  let key = ""
+  for m in t.msgs do
+    if m.from != ME then key = m.from end
+  end
+  if key == "" then t.msgs[0].to else [key] end
+end
+
+export fn count_unread(ts: list, view: string) -> int
+  let n = 0
+  for t in ts do
+    if t.unread && in_view(t, view) then n = n + 1 end
+  end
+  n
+end
+
+export fn count_view(ts: list, view: string) -> int
+  let n = 0
+  for t in ts do
+    if in_view(t, view) then n = n + 1 end
+  end
+  n
+end
+
+// ── Seed data ────────────────────────────────────────────────────────────
+
+fn msg(from: string, to: list, age: int, body: list, atts: list)
+  {from: from, to: to, age: age, body: body, atts: atts}
+end
+
+fn file(name: string, size: string, kind: string) -> record
+  {name: name, size: size, kind: kind}
+end
+
+// `flags` holds "u" for unread and "s" for starred.
+fn thread(id: int, box: string, labels: list, subject: string, msgs: list, flags: string)
+  {id: id, box: box, labels: labels, starred: contains(flags, "s"), unread: contains(flags, "u"), subject: subject, msgs: msgs}
+end
+
+export fn seed_threads() -> list
+  [
+    thread(1, "inbox", ["clients", "design"], "Harbor & Pine rebrand: round two feedback", [
+      msg("maya", ["me"], at(1, 15, 12), [
+        "Hi Noor,",
+        "The board saw the three directions on Monday and the room went quiet in the good way. Direction B (the lighthouse mark with the condensed serif) is the clear favourite, and nobody wants to revisit A.",
+        "Two things came up that I would like your read on before we lock anything. First, the teal reads a little cold next to our packaging stock. Second, the wordmark feels tight at small sizes on the mobile nav.",
+      ], []),
+      msg("me", ["maya"], at(1, 17, 40), [
+        "That is great news, and both notes are fair.",
+        "On the teal: I can warm it two steps toward the kelp green without losing contrast on white. On the wordmark, the tightness is the optical size, not the tracking. I will cut a small-size variant with opened counters and send both on the nav mockup.",
+        "Would Thursday work for a 30 minute walkthrough?",
+      ], []),
+      msg("maya", ["me"], 38, [
+        "Thursday at 2 works. I have pulled in Sofia so she can sanity check it against the launch copy.",
+        "I attached the board's annotated deck. Page 6 has the comment about the lighthouse beam angle, which I think is a taste note and not a change request, but you should see it. Page 9 is the one that matters: they want the secondary palette cut from six colours to four.",
+        "Also, quietly: they loved the motion study. Expect a request for more of that.",
+      ], [file("Board-feedback-round-2.pdf", "2.4 MB", "pdf"), file("nav-crops.png", "640 KB", "img")]),
+    ], "s"),
+
+    thread(2, "inbox", ["design"], "Token export is breaking dark mode", [
+      msg("tomas", ["me", "priya"], at(0, 8, 31), [
+        "Morning. The nightly export from the tokens file flipped surface-2 and surface-3 in the dark theme, so every card in the app now sits darker than the page behind it.",
+        "I think it is the alias chain: surface-3 points at neutral-850, which was renamed last week. The exporter falls back to the light value when an alias does not resolve, and it does it silently.",
+      ], []),
+      msg("tomas", ["me", "priya"], 72, [
+        "Follow up: confirmed. Nine aliases point at names that no longer exist. I have a branch that makes the exporter fail loudly instead of guessing.",
+        "Can you look at the list and tell me which ones were meant to move to the new elevation scale? I do not want to guess at intent.",
+      ], [file("unresolved-aliases.csv", "3 KB", "sheet")]),
+    ], "u"),
+
+    thread(3, "inbox", ["finance"], "Invoice INV-2041 is due Friday", [
+      msg("ledger", ["me"], 128, [
+        "Hello Noor,",
+        "This is a reminder that invoice INV-2041 for Fernhill Studio is due on Friday 9 October. The amount outstanding is 1,180.00 EUR for the Studio plan, 12 seats, billed annually.",
+        "You can pay by card or bank transfer from the billing page. If you have already paid, thank you, and please disregard this message.",
+      ], [file("INV-2041.pdf", "88 KB", "pdf")]),
+    ], "u"),
+
+    thread(4, "inbox", [], "Offsite agenda, draft for your eyes", [
+      msg("priya", ["me"], at(0, 8, 5), [
+        "Here is the first pass at the offsite agenda. I kept Thursday morning free of anything with slides.",
+        "The open question is whether the critique session should be one long block or two short ones either side of lunch. I lean two short ones: people are sharper, and it gives the quieter folks a second run at it.",
+        "Tell me what to cut. It is too full.",
+      ], [file("Offsite-agenda-v1.docx", "41 KB", "doc")]),
+    ], ""),
+
+    thread(5, "inbox", ["clients"], "Q4 capacity: can we take the Meridian project?", [
+      msg("dana", ["me", "priya", "tomas"], at(1, 10, 2), [
+        "Meridian came back. They want a full product redesign, twelve weeks, starting the first week of November. It is the kind of work we say we want.",
+        "Before I answer I need an honest picture of capacity. Please reply with what you are committed to through December.",
+      ], []),
+      msg("priya", ["dana", "me", "tomas"], at(1, 11, 30), [
+        "I am on Harbor & Pine support two days a week until launch, then free. I could lead research for Meridian from mid November.",
+      ], []),
+      msg("tomas", ["dana", "me", "priya"], at(1, 13, 15), [
+        "Engineering is the constraint. The tokens migration eats me through October. I can do a technical discovery in November but not a build.",
+      ], []),
+      msg("dana", ["me"], at(1, 16, 48), [
+        "Noor, yours is the one I am waiting on. If you can hold design lead with Harbor & Pine in launch, I say yes. If not, I would rather decline than do it badly.",
+        "No pressure either way, but I told them Wednesday.",
+      ], []),
+    ], "us"),
+
+    thread(6, "inbox", ["personal"], "Portfolio review next week?", [
+      msg("jonah", ["me"], at(1, 9, 20), [
+        "Hey Noor, cheeky ask. I am applying for the senior role at the transit agency and my portfolio is three years stale.",
+        "Would you have forty minutes next week to tear it apart? I will bring coffee and a thick skin.",
+      ], []),
+      msg("me", ["jonah"], at(1, 12, 4), [
+        "Always. Wednesday after five or any time Friday morning. Send the link ahead and I will come with notes instead of first impressions.",
+      ], []),
+      msg("jonah", ["me"], at(1, 18, 55), [
+        "Wednesday at 5:30 then. You are a hero. Link coming tonight once I have hidden the worst of it.",
+      ], []),
+    ], ""),
+
+    thread(7, "inbox", ["travel"], "Your itinerary: Lisbon to San Francisco, 19 Oct", [
+      msg("skyward", ["me"], at(1, 7, 44), [
+        "Thank you for booking with Skyward Air. Your trip is confirmed.",
+        "Outbound: Monday 19 October. Lisbon (LIS) 10:55 to San Francisco (SFO) 14:20, flight SW 418, seat 23A.",
+        "Return: Sunday 25 October. San Francisco (SFO) 16:40 to Lisbon (LIS) 12:15 the next day, flight SW 419, seat 31C.",
+        "Check-in opens 24 hours before departure. One cabin bag and one checked bag are included.",
+      ], [file("Itinerary-SW418.pdf", "132 KB", "pdf"), file("Receipt-8841.pdf", "64 KB", "pdf")]),
+    ], ""),
+
+    thread(8, "inbox", [], "Issue 212: Optical sizes, explained", [
+      msg("kerning", ["me"], at(2, 9, 0), [
+        "This week: why a typeface drawn for 9 point looks clumsy at 90, and the other way round.",
+        "Optical sizing is the oldest trick in type. Punchcutters did it by hand, cutting each size as its own design: wider and sturdier when small, tighter and finer when large. Digital type forgot it for thirty years and is now remembering.",
+        "Also inside: a specimen that is actually useful, three new releases worth your budget, and a reader question about hanging punctuation.",
+      ], []),
+    ], ""),
+
+    thread(9, "inbox", ["personal"], "Photos from the lake", [
+      msg("ines", ["me"], at(2, 19, 26), [
+        "Darling, the photos from the weekend. Your father insists the heron is in the third one. I cannot see it.",
+        "The pear tree finally gave us something. I have put six jars of jam aside with your name on them, so you have to visit before Christmas or your brother will find them.",
+        "Call when you are not working. Which I realise is a narrow window.",
+      ], [file("lake-01.jpg", "3.1 MB", "img"), file("lake-02.jpg", "2.8 MB", "img"), file("lake-03-heron.jpg", "3.4 MB", "img")]),
+    ], ""),
+
+    thread(10, "inbox", ["clients", "finance"], "Illustration set v3 and invoice", [
+      msg("rafael", ["me"], at(3, 14, 10), [
+        "Noor, version three of the spot illustrations is attached. I redrew the harbour scene so the horizon sits on your baseline grid, and thinned the line weight to match the new wordmark.",
+        "Invoice for the second milestone is in the same folder. Thirty days is fine.",
+        "One open question: do you want the gulls? I like the gulls. Maya may not like the gulls.",
+      ], [file("HP-spots-v3.zip", "18.2 MB", "zip"), file("Costa-invoice-0093.pdf", "71 KB", "pdf")]),
+    ], "u"),
+
+    thread(11, "inbox", ["design"], "[fernhill/design-tokens] Add elevation scale (#482)", [
+      msg("forge", ["me"], at(4, 16, 22), [
+        "tomas-l requested your review on pull request #482.",
+        "Adds a five step elevation scale (elevation-0 to elevation-4) and migrates card, menu and dialog shadows to it. Removes eleven one-off shadow values. 14 files changed, 212 additions, 187 deletions.",
+        "All checks have passed.",
+      ], []),
+    ], ""),
+
+    thread(12, "inbox", ["travel"], "Booking confirmed: 3 nights at Casa do Largo", [
+      msg("casa", ["me"], at(4, 11, 3), [
+        "Dear Noor Halloran, we are pleased to confirm your stay.",
+        "Arrival Friday 16 October, departure Monday 19 October. One double room with a river view, breakfast included. Total 414.00 EUR, payable on arrival.",
+        "Reception is open until 23:00. If you expect to arrive later, reply to this message and we will leave a key.",
+      ], [file("Confirmation-CL-20931.pdf", "55 KB", "pdf")]),
+    ], ""),
+
+    thread(13, "inbox", ["clients"], "Launch copy for the homepage hero", [
+      msg("sofia", ["me", "maya"], at(5, 10, 40), [
+        "Three options for the hero line, in order of how nervous they make legal:",
+        "1. Coffee that knows where it came from. 2. From the harbour to your cup, with nothing hidden. 3. Roasted on the water since 1988.",
+        "I think 1 is the brand and 3 is the safe one. Does the lockup hold a line that long?",
+      ], []),
+      msg("me", ["sofia", "maya"], at(5, 15, 18), [
+        "1, and yes. It holds on two lines at desktop and three on mobile if we drop the size one step. I would not use 2: the comma makes it wrap badly at every width I tried.",
+        "Mockups by tomorrow.",
+      ], []),
+    ], ""),
+
+    thread(14, "inbox", ["finance"], "VAT return: two receipts missing", [
+      msg("bram", ["me"], at(5, 9, 12), [
+        "Hello Noor, I am closing the third quarter and two receipts are missing from the shared folder.",
+        "The first is the type licence from Halden (around 640 EUR, in August). The second is the train to Porto on 11 September.",
+        "If you can send both by the 12th I can file without an extension.",
+      ], []),
+    ], "u"),
+
+    thread(15, "inbox", ["design", "finance"], "Quote for the Halden family, studio licence", [
+      msg("lena", ["me"], at(6, 13, 30), [
+        "Hi Noor, thank you for your interest in Halden. For a studio of up to fifteen people, the desktop and web licence for the full family (sixteen styles, with optical sizes) is 1,920 EUR as a one-off.",
+        "If you only need the text cuts, the eight style subset is 1,080 EUR and can be upgraded later for the difference.",
+        "The trial fonts are attached. They are complete, with a restricted character set.",
+      ], [file("Halden-trial-fonts.zip", "4.6 MB", "zip"), file("Halden-quote-Q3318.pdf", "96 KB", "pdf")]),
+    ], ""),
+
+    thread(16, "inbox", [], "Invitation: Design crit, Thursdays at 15:00", [
+      msg("priya", ["me", "tomas", "kofi", "dana"], at(6, 9, 45), [
+        "A standing invitation. Thursdays at 15:00, forty five minutes, the big table.",
+        "One piece of work per session, shown unfinished. The person showing says what kind of feedback they want before anyone speaks. No laptops unless you are the one presenting.",
+      ], []),
+    ], ""),
+
+    thread(17, "inbox", ["design"], "Interview synthesis: five themes", [
+      msg("kofi", ["me", "priya"], at(7, 16, 5), [
+        "Synthesis from the twelve interviews is done. Five themes, ranked by how often they came up unprompted.",
+        "The headline: people do not distrust the product, they distrust their own setup. Nine of twelve had configured something once, forgotten how, and were afraid to touch it again.",
+        "Full deck attached, with clips. The second theme is the one I would build the next quarter around.",
+      ], [file("Synthesis-deck.pdf", "9.7 MB", "pdf")]),
+    ], ""),
+
+    thread(18, "inbox", ["personal"], "Bike room access codes are changing", [
+      msg("quay", ["me"], at(8, 8, 15), [
+        "Dear residents, the access code for the bike room will change on Monday 12 October.",
+        "The new code will be posted through each door on Sunday evening. Please do not share it with couriers. Bikes left in the corridor after the 12th will be moved to the yard.",
+      ], []),
+    ], ""),
+
+    thread(19, "inbox", ["travel"], "Your talk is accepted: Designing with constraints", [
+      msg("fnotes", ["me"], at(10, 12, 0), [
+        "Congratulations! We would love to have you speak at Fieldnotes in San Francisco on 22 October.",
+        "Your slot is 25 minutes plus questions, on the main stage, just after lunch. We cover the flight and three nights at the conference hotel.",
+        "Please send a final title, a 60 word abstract and a headshot by 9 October.",
+      ], []),
+    ], "s"),
+
+    thread(20, "inbox", ["personal"], "Long overdue catch up", [
+      msg("aiko", ["me"], at(12, 20, 12), [
+        "Noor! I saw the Harbor & Pine teaser going around and recognised your hand in about four seconds.",
+        "I am in Lisbon for the whole of November. Dinner? I want to hear about the studio, and I have a half formed idea about a type foundry that I need someone sensible to talk me out of.",
+      ], []),
+    ], ""),
+
+    thread(21, "inbox", ["finance"], "Your September statement is available", [
+      msg("bank", ["me"], at(14, 6, 30), [
+        "Your statement for the business account ending 4471 is now available in online banking.",
+        "For your security we never include account details or links to sign in by email.",
+      ], []),
+    ], ""),
+
+    thread(22, "inbox", [], "Studio all-hands: notes and decisions", [
+      msg("dana", ["me", "priya", "tomas", "kofi"], at(15, 17, 20), [
+        "Notes from this afternoon, for anyone who was heads down.",
+        "Decided: Fridays stay meeting free. The studio closes from 24 December to 4 January. We are trialling a four week rotation on client support so nobody carries it alone.",
+        "Not decided: the new space. Two viewings next week, and I would like one designer and one engineer to come to each.",
+      ], []),
+    ], ""),
+
+    thread(23, "inbox", ["clients"], "Kickoff recap and next steps", [
+      msg("maya", ["me", "sofia"], at(18, 11, 48), [
+        "Thank you both for yesterday. A short recap so we are all working from the same page.",
+        "We agreed on three directions for the identity, to be shown on the 28th. The packaging refresh is out of scope until the mark is approved. Sofia owns copy and will share the brand voice notes this week.",
+        "The statement of work is attached, countersigned.",
+      ], [file("HP-statement-of-work.pdf", "310 KB", "pdf")]),
+    ], ""),
+
+    thread(24, "inbox", [], "Proofs are ready for pickup", [
+      msg("press", ["me"], at(20, 15, 33), [
+        "Good afternoon. The risograph proofs for order 7718 are ready for collection at the counter.",
+        "We printed the two colour version on both the natural and the bright white stock, as requested. The teal is a little heavier on the natural.",
+      ], []),
+    ], ""),
+
+    // ── Sent ──
+    thread(30, "sent", ["clients"], "Meridian: rough estimate, version one", [
+      msg("me", ["dana"], at(0, 9, 2), [
+        "Dana, a first estimate so you have numbers before Wednesday.",
+        "Discovery and research: three weeks. Design system and core flows: six weeks. Handoff and build support: three weeks. That is twelve, but only if research starts on day one and Harbor & Pine launches on time.",
+        "The risk is me. I can lead it at about sixty percent until the launch, and full time after.",
+      ], [file("Meridian-estimate-v1.xlsx", "28 KB", "sheet")]),
+    ], ""),
+
+    thread(31, "sent", ["design"], "Feedback on the onboarding flows", [
+      msg("me", ["kofi", "priya"], at(2, 16, 30), [
+        "Went through all four flows this afternoon. The short version: flow C is the one, and it is closer than it looks.",
+        "The step where we ask for a workspace name comes too early. People do not have a name yet, they have a task. Move it after the first success and I think the drop off goes away.",
+      ], []),
+    ], ""),
+
+    thread(32, "sent", [], "Out Friday afternoon", [
+      msg("me", ["dana", "priya", "tomas", "kofi"], at(4, 9, 15), [
+        "I am out from 1 pm on Friday for the print shop and then a dentist. Reachable by phone for anything on fire.",
+      ], []),
+    ], ""),
+
+    // ── Drafts ──
+    thread(40, "drafts", ["travel"], "Talk abstract: Designing with constraints", [
+      msg("me", ["fnotes"], at(1, 21, 10), [
+        "Constraints are not what is left after the interesting decisions. They are the interesting decisions.",
+        "This talk is about three projects where the brief was mostly limits, and what happened when we treated the limits as the material.",
+      ], []),
+    ], ""),
+
+    thread(41, "drafts", ["finance"], "Receipts for Q3", [
+      msg("me", ["bram"], at(3, 18, 2), [
+        "Bram, the Halden licence receipt is attached. Still hunting for the train ticket.",
+      ], []),
+    ], ""),
+
+    // ── Archive ──
+    thread(50, "archive", ["clients"], "Welcome to the Harbor & Pine workspace", [
+      msg("maya", ["me"], at(24, 10, 0), [
+        "Noor, you should have an invitation to our shared workspace. Brand history, the old guidelines and a folder of things the founder likes are all in there.",
+        "Ignore the folder called FINAL. Nothing in it is final.",
+      ], []),
+    ], ""),
+
+    thread(51, "archive", ["finance"], "Receipt for your payment", [
+      msg("ledger", ["me"], at(33, 7, 12), [
+        "We received your payment of 1,180.00 EUR. Thank you. Your next invoice will be issued on 2 October.",
+      ], [file("Receipt-INV-1987.pdf", "61 KB", "pdf")]),
+    ], ""),
+
+    thread(52, "archive", ["design"], "Type crit: notes on the condensed serif", [
+      msg("lena", ["me"], at(27, 15, 41), [
+        "As promised, some notes on how Halden Condensed behaves in headlines. The short version is that it wants tighter leading than you expect and looser tracking than you expect.",
+        "At display sizes, switch on the alternate lowercase g. It was drawn for exactly this.",
+      ], []),
+    ], ""),
+
+    // ── Trash ──
+    thread(60, "trash", [], "You have been selected, claim within 24 hours", [
+      msg("promo", ["me"], at(2, 3, 14), [
+        "Dear customer, your address was drawn in our monthly prize selection. To release your reward, confirm your details within 24 hours.",
+      ], []),
+    ], ""),
+
+    thread(61, "trash", [], "Webinar: 10x your funnel with one weird layout", [
+      msg("webinar", ["me"], at(6, 12, 0), [
+        "Join us live this Thursday as our growth team reveals the single layout change behind a 340 percent lift.",
+      ], []),
+    ], ""),
+  ]
+end

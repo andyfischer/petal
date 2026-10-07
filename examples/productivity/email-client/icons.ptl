@@ -1,0 +1,126 @@
+// ─────────────────────────────────────────────────────────────────────────
+// icons — Plume's glyphs, drawn as strokes.
+//
+// No font and no image: each icon is a few polylines in a unit box, where
+// (-0.5, -0.5) is the top-left and (0.5, 0.5) the bottom-right, scaled into
+// the rect it is asked to fill. `draw_polyline` strokes each path as one mesh
+// with round joins, so a corner never shows the double-blended knuckle that a
+// run of `draw_line`s leaves behind.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Unit points, given flat as [x0, y0, x1, y1, …], placed in the box at
+// (cx, cy) with side s.
+fn pts(cx: num, cy: num, s: num, flat: list) -> list
+  for i in range(0, len(flat) / 2) do
+    {x: cx + flat[i * 2] * s, y: cy + flat[i * 2 + 1] * s}
+  end
+end
+
+fn path(cx: num, cy: num, s: num, flat: list, c: record, w: num)
+  draw_polyline(pts(cx, cy, s, flat), c, 255, w)
+end
+
+fn closed(cx: num, cy: num, s: num, flat: list, c: record, w: num)
+  draw_polygon_outline(pts(cx, cy, s, flat), c, 255, w)
+end
+
+let STAR = [0.0, -0.46, 0.13, -0.15, 0.46, -0.12, 0.21, 0.1, 0.29, 0.43, 0.0, 0.25,
+  -0.29, 0.43, -0.21, 0.1, -0.46, -0.12, -0.13, -0.15]
+
+// A five-pointed star, filled or outlined. `fill_polygon` ear-clips, so the
+// reflex corners between the points fill correctly.
+export fn star(r: record, c: record, filled: bool)
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  let s = min(r.w, r.h)
+  if filled then
+    fill_polygon(pts(cx, cy, s, STAR), c)
+  end
+  closed(cx, cy, s, STAR, c, 1.3)
+  nil
+end
+
+// One of the named glyphs, centred in `r`. An unknown name draws a small dot
+// so a typo shows up where it was made.
+export fn icon(name: string, r: record, c: record, w: num)
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  let s = min(r.w, r.h)
+  match name
+    when "inbox" do
+      closed(cx, cy, s, [-0.42, -0.34, 0.42, -0.34, 0.42, 0.36, -0.42, 0.36], c, w)
+      path(cx, cy, s, [-0.42, 0.06, -0.17, 0.06, -0.09, 0.2, 0.09, 0.2, 0.17, 0.06, 0.42, 0.06], c, w)
+    end
+    when "sent" do
+      closed(cx, cy, s, [-0.42, -0.36, 0.44, 0.0, -0.42, 0.36, -0.24, 0.0], c, w)
+      path(cx, cy, s, [-0.24, 0.0, 0.44, 0.0], c, w)
+    end
+    when "drafts" do
+      closed(cx, cy, s, [-0.3, -0.42, 0.1, -0.42, 0.32, -0.2, 0.32, 0.42, -0.3, 0.42], c, w)
+      path(cx, cy, s, [0.1, -0.42, 0.1, -0.2, 0.32, -0.2], c, w)
+    end
+    when "archive" do
+      closed(cx, cy, s, [-0.44, -0.36, 0.44, -0.36, 0.44, -0.14, -0.44, -0.14], c, w)
+      path(cx, cy, s, [-0.36, -0.14, -0.36, 0.38, 0.36, 0.38, 0.36, -0.14], c, w)
+      path(cx, cy, s, [-0.12, 0.08, 0.12, 0.08], c, w)
+    end
+    when "all" do
+      closed(cx, cy, s, [-0.42, -0.1, 0.0, -0.4, 0.42, -0.1, 0.0, 0.2], c, w)
+      path(cx, cy, s, [-0.42, 0.14, 0.0, 0.44, 0.42, 0.14], c, w)
+    end
+    when "trash" do
+      path(cx, cy, s, [-0.42, -0.26, 0.42, -0.26], c, w)
+      path(cx, cy, s, [-0.14, -0.26, -0.14, -0.42, 0.14, -0.42, 0.14, -0.26], c, w)
+      path(cx, cy, s, [-0.31, -0.26, -0.25, 0.42, 0.25, 0.42, 0.31, -0.26], c, w)
+    end
+    when "mail" do
+      closed(cx, cy, s, [-0.44, -0.32, 0.44, -0.32, 0.44, 0.32, -0.44, 0.32], c, w)
+      path(cx, cy, s, [-0.44, -0.3, 0.0, 0.06, 0.44, -0.3], c, w)
+    end
+    when "reply" do
+      path(cx, cy, s, [-0.08, -0.32, -0.42, -0.02, -0.08, 0.28], c, w)
+      path(cx, cy, s, [-0.42, -0.02, 0.08, -0.02, 0.28, 0.06, 0.4, 0.2, 0.44, 0.36], c, w)
+    end
+    when "clip" do
+      path(cx, cy, s, [0.17, -0.14, 0.17, 0.22, 0.11, 0.37, 0.0, 0.42, -0.11, 0.37, -0.17, 0.22,
+        -0.17, -0.26, -0.13, -0.38, -0.05, -0.43, 0.03, -0.38, 0.06, -0.26, 0.06, 0.16], c, w)
+    end
+    when "search" do
+      draw_circle_outline({x: cx - 0.07 * s, y: cy - 0.07 * s}, 0.3 * s, c, 255, w)
+      path(cx, cy, s, [0.15, 0.15, 0.42, 0.42], c, w)
+    end
+    when "compose" do
+      closed(cx, cy, s, [-0.4, 0.4, -0.32, 0.12, 0.18, -0.38, 0.4, -0.16, -0.1, 0.34], c, w)
+      path(cx, cy, s, [0.04, -0.24, 0.26, -0.02], c, w)
+    end
+    when "close" do
+      path(cx, cy, s, [-0.3, -0.3, 0.3, 0.3], c, w)
+      path(cx, cy, s, [0.3, -0.3, -0.3, 0.3], c, w)
+    end
+    when "check" do
+      path(cx, cy, s, [-0.34, 0.02, -0.1, 0.26, 0.36, -0.26], c, w)
+    end
+    when "up" do
+      path(cx, cy, s, [-0.3, 0.14, 0.0, -0.16, 0.3, 0.14], c, w)
+    end
+    when "down" do
+      path(cx, cy, s, [-0.3, -0.14, 0.0, 0.16, 0.3, -0.14], c, w)
+    end
+    when "undo" do
+      path(cx, cy, s, [-0.16, -0.4, -0.42, -0.14, -0.16, 0.12], c, w)
+      path(cx, cy, s, [-0.42, -0.14, 0.14, -0.14, 0.34, -0.04, 0.42, 0.14, 0.34, 0.32, 0.14, 0.4, -0.1, 0.4], c, w)
+    end
+    when "file" do
+      closed(cx, cy, s, [-0.3, -0.42, 0.1, -0.42, 0.32, -0.2, 0.32, 0.42, -0.3, 0.42], c, w)
+      path(cx, cy, s, [-0.14, 0.02, 0.16, 0.02], c, w)
+      path(cx, cy, s, [-0.14, 0.2, 0.16, 0.2], c, w)
+    end
+    when _ -> draw_circle({x: cx, y: cy}, 2, c)
+  end
+  nil
+end
+
+// The same glyph at the weight the chrome uses everywhere.
+export fn icon(name: string, r: record, c: record)
+  icon(name, r, c, 1.5)
+end

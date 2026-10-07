@@ -1,0 +1,1656 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Plume — a three-pane mail client, drawn as a Garden panel.
+//
+// Exercises: master/detail (a mailbox rail, a conversation list and a reading
+// pane that follow one selection), long scrolling lists with pixel scrolling,
+// a small query language with live match highlighting, single and multiple
+// selection (cursor, checkboxes, shift ranges, select all), bulk actions with
+// undo, an inline reply editor, a compose dialog with recipient completion,
+// and a draggable divider between master and detail.
+//
+// The data model, the query language and every transform on the mail store
+// live in mailbox.ptl; the glyphs in icons.ptl. This file is input and paint.
+//
+// Run:  ./launch.sh   (or garden --headless --debug-port 0 --init layout.ptl)
+// ─────────────────────────────────────────────────────────────────────────
+
+import text_layout
+import mailbox as mb
+import icons
+
+// ── Palette ──────────────────────────────────────────────────────────────
+// A dark rail against light paper: navigation recedes, mail reads like print.
+
+let RAIL      = #141826
+let RAIL_HOT  = #1e2435      // hover
+let RAIL_ON   = #283150      // the current mailbox
+let RAIL_RULE = #232a3c
+let RAIL_TEXT = #d4d9e6
+let RAIL_DIM  = #8d95aa
+let RAIL_FAINT = #5d6579
+
+let LIST_BG   = #f3f4f7
+let PAPER     = #ffffff
+let INK       = #171b26
+let INK_2     = #3d4455
+let MUTED     = #6c7487
+let FAINT     = #a0a7b6
+let RULE      = #e3e6ed
+let RULE_SOFT = #eceef3
+let ACCENT    = #4b5bd6
+let ACCENT_HI = #5f6fe6
+let ACCENT_SOFT = #e8ebfc
+let MARK      = #ffe27a      // a search hit
+let GOLD      = #e9a514      // a star
+let DANGER    = #d4445c
+let WHITE     = #ffffff
+
+// ── Type ─────────────────────────────────────────────────────────────────
+
+fn st(size: num, color: record) -> record
+  {size: size, color: color, font: "ui"}
+end
+
+fn sb(size: num, color: record) -> record
+  {size: size, color: color, font: "ui", weight: 700}
+end
+
+fn caps(color: record) -> record
+  {size: 10, color: color, font: "ui", weight: 700, spacing: 1.3}
+end
+
+let Q_STYLE     = st(14, INK)
+let REPLY_STYLE = st(14, INK)
+let FIELD_STYLE = st(14, INK)
+let BODY_SIZE   = 15
+let BODY_STEP   = 24
+let AREA_STEP   = 21
+
+// ── Metrics ──────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+
+let RAIL_W = 224
+let HEAD_H = 104      // search + title row above the list
+let ROW_H  = 90
+let TOOL_H = 56       // the reading pane's toolbar
+let SPLIT_DEFAULT = 396
+let MODAL_W = 640
+let MODAL_H = 476
+
+// ── State ────────────────────────────────────────────────────────────────
+
+state threads = mb.seed_threads()
+state view = "inbox"            // a mailbox key, or "label:<key>"
+state sel = 1                   // the open conversation's id, 0 for none
+state shown = 1                 // the id the reading pane was last laid out for
+state checked = []              // ids ticked for a bulk action
+state anchor = 0                // where a shift-click range starts
+state keep_unread = 0           // a thread just marked unread stays that way while open
+state open_msgs = []            // earlier messages expanded in the open thread
+
+state q = ""                    // the search field
+state q_c = 0
+state focus = ""                // "", q, reply, to, subj, body
+state reply = ""
+state reply_c = 0
+
+state compose = false
+state c_draft = 0               // the draft being continued, 0 for a new message
+state c_to = ""
+state c_to_c = 0
+state c_subj = ""
+state c_subj_c = 0
+state c_body = ""
+state c_body_c = 0
+state modal_a = 0.0             // the dialog's fade, 0..1
+
+state list_w = 396             // list width
+state split_drag = false
+state list_scroll = 0.0
+state detail_scroll = 0.0
+state detail_h = 0.0            // the open thread's laid-out height, from last frame
+
+state undo = []                 // snapshots: {threads, sel, note}
+state toast = {msg: "", left: 0.0, can_undo: false}   // `left` is seconds still to show
+state tip_key = ""              // the tooltip the pointer is resting on
+state tip_rest = 0.0             // how long the pointer has rested on it
+state seq = 0                   // messages written this session (their negative age)
+state sent_n = 0
+
+// ── Small pure helpers ───────────────────────────────────────────────────
+
+fn hit(r: record, ok: bool) -> bool
+  ok && point_in(mouse_x(), mouse_y(), r)
+end
+
+fn plural(n: int, one: string, many: string) -> string
+  if n == 1 then "1 {one}" else "{n} {many}" end
+end
+
+fn word_start(t: string, c: int) -> int
+  let i = c
+  while i > 0 && char_at(t, i - 1) == " " do i = i - 1 end
+  while i > 0 && char_at(t, i - 1) != " " && char_at(t, i - 1) != "\n" do i = i - 1 end
+  i
+end
+
+fn clean_typed(s: string) -> string
+  let out = ""
+  for ch in chars(s) do
+    if ch != "\n" && ch != "\t" then out = out ++ ch end
+  end
+  out
+end
+
+// Greedy word wrap that keeps character offsets: each row is {s, e}, the
+// half-open character range it shows. The editor needs offsets (to put the
+// caret on the right row and to move it between rows), which is why this is
+// not `text_wrap` — that returns the row strings and drops where they began.
+fn wrap_rows(t: string, style: record, w: num) -> list
+  let cs = chars(t)
+  let rows = []
+  let s = 0
+  let sp = -1
+  for i in range(0, len(cs)) do
+    let ch = cs[i]
+    if ch == "\n" then
+      rows = append(rows, {s: s, e: i})
+      s = i + 1
+      sp = -1
+      continue
+    end
+    if ch == " " then sp = i end
+    if i > s && text_width(char_slice(t, s, i + 1), style) > w then
+      if sp > s then
+        rows = append(rows, {s: s, e: sp})
+        s = sp + 1
+      else
+        rows = append(rows, {s: s, e: i})
+        s = i
+      end
+      sp = -1
+    end
+  end
+  append(rows, {s: s, e: len(cs)})
+end
+
+// The row the caret sits on. A caret at a hard break belongs to the row that
+// starts there, so the last match wins.
+fn row_of(rows: list, c: int) -> int
+  let idx = 0
+  for i in range(0, len(rows)) do
+    if c >= rows[i].s && c <= rows[i].e then idx = i end
+  end
+  idx
+end
+
+// One frame of keyboard editing applied to a buffer and its caret. `multi`
+// turns on Return-inserts-a-newline and row-wise up/down/home/end, which need
+// the wrap width the area is drawn at.
+fn edit_text(t0: string, c0: int, ev: record, multi: bool, style: record, w: num) -> record
+  let t = t0
+  let c = clamp(c0, 0, char_len(t))
+  if ev.back && c > 0 then
+    let from = if ev.word then word_start(t, c) else c - 1 end
+    t = char_slice(t, 0, from) ++ char_slice(t, c)
+    c = from
+  elsif ev.del && c < char_len(t) then
+    t = char_slice(t, 0, c) ++ char_slice(t, c + 1)
+  end
+  let ins = clean_typed(ev.typed)
+  if multi && ev.enter && !ev.cmd then ins = ins ++ "\n" end
+  if char_len(ins) > 0 then
+    t = char_slice(t, 0, c) ++ ins ++ char_slice(t, c)
+    c = c + char_len(ins)
+  end
+  if ev.left && c > 0 then c = c - 1 end
+  if ev.right && c < char_len(t) then c = c + 1 end
+  if multi then
+    let rows = wrap_rows(t, style, w)
+    let ri = row_of(rows, c)
+    if ev.home then c = rows[ri].s end
+    if ev.endk then c = rows[ri].e end
+    if (ev.up && ri > 0) || (ev.down && ri < len(rows) - 1) then
+      let x = text_width(char_slice(t, rows[ri].s, c), style)
+      let to = rows[if ev.up then ri - 1 else ri + 1 end]
+      c = to.s + text_layout.caret_index(char_slice(t, to.s, to.e), style, x)
+    end
+  else
+    if ev.home then c = 0 end
+    if ev.endk then c = char_len(t) end
+  end
+  {t: t, c: c}
+end
+
+// Where a click at (px, py) puts the caret in a wrapped area drawn at (x, y).
+fn area_caret_at(t: string, style: record, w: num, x: num, y: num, step: num, px: num, py: num) -> int
+  let rows = wrap_rows(t, style, w)
+  let ri = clamp(int((py - y) / step), 0, len(rows) - 1)
+  let row = rows[ri]
+  row.s + text_layout.caret_index(char_slice(t, row.s, row.e), style, px - x)
+end
+
+// The conversation to land on once `ids` have left the list: the open one if
+// it is still here, otherwise its nearest surviving neighbour.
+fn reselect(ts: list, rows: list, ids: list, cur: int, v: string) -> int
+  let t = mb.find_thread(ts, cur)
+  if t != nil && mb.in_view(t, v) then return cur end
+  let at_i = -1
+  for i in range(0, len(rows)) do
+    if rows[i].id == cur then at_i = i end
+  end
+  if at_i < 0 then return 0 end
+  let pick = 0
+  for i in range(at_i + 1, len(rows)) do
+    if pick == 0 && !contains(ids, rows[i].id) then pick = rows[i].id end
+  end
+  for i in range(at_i - 1, -1, -1) do
+    if pick == 0 && !contains(ids, rows[i].id) then pick = rows[i].id end
+  end
+  pick
+end
+
+fn push_undo(stack: list, ts: list, cur: int, note: string) -> list
+  let grown = append(stack, {threads: ts, sel: cur, note: note})
+  if len(grown) > 20 then slice(grown, len(grown) - 20) else grown end
+end
+
+fn paragraphs(text: string) -> list
+  for line in split(text, "\n") do
+    let s = mb.trim_spaces(line)
+    if char_len(s) == 0 then continue end
+    s
+  end
+end
+
+fn kind_color(kind: string) -> record
+  match kind
+    when "pdf" -> #d4445c
+    when "img" -> #2f9e77
+    when "doc" -> #2f7fd6
+    when "sheet" -> #1f9d8f
+    when "zip" -> #b8791a
+    when _ -> #6c7487
+  end
+end
+
+// ── Paint helpers ────────────────────────────────────────────────────────
+
+// Two runs of different sizes read as one line only when they share a
+// baseline. `draw_text` takes the top of a run's line box, and in the
+// interface face the baseline falls 1.05 x the size below that, so that is
+// the one number these two need.
+fn base_of(y: num, style: record) -> num
+  y + style.size * 1.05
+end
+
+// Draw `s` sitting on `baseline`, its left or right edge at `x`.
+fn text_on(s: string, x: num, baseline: num, style: record, align: string)
+  let left = if align == "right" then x - text_width(s, style) else x end
+  draw_text(s, {x: left, y: int(baseline - style.size * 1.05 + 0.5)}, style)
+  nil
+end
+
+fn label_line(s: string, r: record, style: record, align: string)
+  text_layout.draw_text_line(s, r, style, align)
+  nil
+end
+
+// Text with every occurrence of each search term washed in highlighter.
+fn draw_marked(s: string, x: num, y: num, style: record, terms: list)
+  if len(terms) > 0 then
+    let low = lower(s)
+    for term in terms do
+      let n = char_len(term)
+      let from = 0
+      while n > 0 && from + n <= char_len(low) do
+        let i = index_of(char_slice(low, from), term)
+        if i < 0 then break end
+        let a = from + i
+        let x0 = x + text_width(char_slice(s, 0, a), style)
+        let x1 = x + text_width(char_slice(s, 0, a + n), style)
+        draw_rect_rounded(x0 - 1, y + 1, x1 - x0 + 2, int(style.size * 1.32), 3, MARK)
+        from = a + n
+      end
+    end
+  end
+  draw_text(s, {x: x, y: y}, style)
+  nil
+end
+
+fn avatar(key: string, cx: num, cy: num, radius: num, on: record)
+  let p = mb.person(key)
+  if key == mb.ME then
+    draw_circle({x: cx, y: cy}, radius, ACCENT)
+    label_line(mb.initials(p.name), rect(cx - radius, cy - radius, radius * 2, radius * 2),
+      sb(int(radius * 0.74), WHITE), "center")
+  else
+    draw_circle({x: cx, y: cy}, radius, tint(on, p.color, 18))
+    label_line(mb.initials(p.name), rect(cx - radius, cy - radius, radius * 2, radius * 2),
+      sb(int(radius * 0.74), mix(p.color, INK, 0.2)), "center")
+  end
+  nil
+end
+
+fn pill(x: num, y: num, label: string, color: record, on: record) -> num
+  let ts = sb(11, mix(color, INK, 0.3))
+  let w = text_width(label, ts) + 18
+  let r = rect(x, y, w, 22)
+  draw_rect_rounded(r, 11, tint(on, color, 14))
+  label_line(label, rect(x, y - 1, w, 22), ts, "center")
+  w
+end
+
+fn keycap(x: num, y: num, label: string, bg: record, fg: record) -> num
+  let ts = sb(11, fg)
+  let w = max(20, text_width(label, ts) + 12)
+  let r = rect(x, y, w, 20)
+  draw_rect_rounded(r, 5, bg)
+  label_line(label, r, ts, "center")
+  w
+end
+
+fn checkbox(r: record, on: bool, hot: bool)
+  if on then
+    draw_rect_rounded(r, 5, ACCENT)
+    icons.icon("check", r.inset(2), WHITE, 1.8)
+  else
+    draw_rect_rounded(r, 5, PAPER)
+    draw_rect_rounded_outline(r, 5, if hot then ACCENT else FAINT end, 255, 1.5)
+  end
+  nil
+end
+
+fn icon_button(r: record, name: string, hot: bool, tone: record, wash: record)
+  if hot then draw_rect_rounded(r, 8, wash) end
+  icons.icon(name, r.inset(8), if hot then INK else tone end)
+  nil
+end
+
+// A single-line editable run, clipped to `r` and scrolled so the caret stays
+// in sight. Returns nothing; the caller owns the buffer.
+fn draw_field(r: record, text: string, caret: int, style: record, focused: bool, hint: string)
+  clip_push(r)
+  let m = text_metrics(style)
+  let y = text_layout.text_line_y(r, style)
+  if char_len(text) == 0 then
+    draw_text(hint, {x: r.x, y: y}, {...style, color: FAINT})
+  end
+  let cx = text_width(char_slice(text, 0, caret), style)
+  let shift = if focused then max(0, cx - r.w + 6) else 0 end
+  draw_text(text, {x: r.x - shift, y: y}, style)
+  if focused then
+    draw_rect(r.x - shift + cx, y + m.baseline - m.cap_height - 3, 2, m.cap_height + 7, ACCENT)
+  end
+  clip_pop()
+  nil
+end
+
+// A wrapped editable block. Draws the rows and the caret; returns the row
+// count so the caller can size around it.
+fn draw_area(x: num, y: num, w: num, text: string, caret: int, style: record, step: num, focused: bool, hint: string) -> int
+  let rows = wrap_rows(text, style, w)
+  let m = text_metrics(style)
+  if char_len(text) == 0 then
+    draw_text(hint, {x: x, y: y}, {...style, color: FAINT})
+  end
+  for i in range(0, len(rows)) do
+    let row = rows[i]
+    draw_text(char_slice(text, row.s, row.e), {x: x, y: y + i * step}, style)
+  end
+  if focused then
+    let ri = row_of(rows, caret)
+    let cx = text_width(char_slice(text, rows[ri].s, caret), style)
+    draw_rect(x + cx, y + ri * step + m.baseline - m.cap_height - 3, 2, m.cap_height + 7, ACCENT)
+  end
+  len(rows)
+end
+
+fn button_primary(r: record, label: string, hot: bool, enabled: bool)
+  let face = if !enabled then tint(PAPER, ACCENT, 38) elsif hot then ACCENT_HI else ACCENT end
+  if enabled then draw_shadow(r, {radius: 9, blur: 10, dy: 3, color: ACCENT, a: 60}) end
+  draw_rect_rounded(r, 9, face)
+  label_line(label, r, sb(13, WHITE), "center")
+  nil
+end
+
+fn button_quiet(r: record, label: string, hot: bool, tone: record)
+  if hot then draw_rect_rounded(r, 9, RULE_SOFT) end
+  label_line(label, r, sb(13, tone), "center")
+  nil
+end
+
+// ── One conversation row ─────────────────────────────────────────────────
+
+fn row_check_rect(r: record) -> Rect
+  rect(r.x + 18, r.y + 14, 42, 42)
+end
+
+// The quick actions that replace the timestamp on hover: 0 archive, 1 trash,
+// 2 star, right to left from the row's edge.
+fn row_action_rect(r: record, k: int) -> Rect
+  rect(r.x + r.w - 50 - (2 - k) * 32, r.y + 8, 30, 30)
+end
+
+fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot: bool, picking: bool, terms: list, tagged: bool)
+  let card = rect(r.x + 8, r.y + 3, r.w - 16, r.h - 6)
+  let ground = if is_sel then PAPER elsif is_checked then ACCENT_SOFT elsif hot then tint(LIST_BG, INK, 4) else LIST_BG end
+  if is_sel then
+    draw_shadow(card, {radius: 12, blur: 14, dy: 3, color: #1a2040, a: 26})
+    draw_rect_rounded(card, 12, PAPER)
+    draw_rect_rounded(card.x, card.y + 14, 3, card.h - 28, 2, ACCENT)
+  elsif is_checked || hot then
+    draw_rect_rounded(card, 12, ground)
+  end
+
+  let last = mb.last_msg(t)
+  let face = mb.face_of(t)
+  let ax = r.x + 39
+  let ay = r.y + 35
+  let box = row_check_rect(r)
+  if picking || is_checked || hit(box, hot) then
+    checkbox(rect(ax - 10, ay - 10, 20, 20), is_checked, hit(box, hot))
+  else
+    avatar(face, ax, ay, 17, ground)
+  end
+  if t.unread then
+    draw_circle({x: r.x + 14, y: ay}, 3.5, ACCENT)
+  end
+
+  let tx = r.x + 70
+  let right = r.x + r.w - 22
+
+  // Line 1: who, how many, when.
+  let when_s = mb.when_short(last.age)
+  let when_st = if t.unread then sb(12, ACCENT) else st(12, MUTED) end
+  let when_w = if hot then 96 else text_width(when_s, when_st) end
+  let who_st = if t.unread then sb(14, INK) else st(14, INK_2) end
+  let count_w = if len(t.msgs) > 1 then 26 else 0 end
+  let who = ellipsize(mb.participants(t), right - tx - when_w - 14 - count_w, who_st)
+  let line1 = base_of(r.y + 13, who_st)
+  draw_marked(who, tx, r.y + 13, who_st, terms)
+  if len(t.msgs) > 1 then
+    text_on(str(len(t.msgs)), tx + text_width(who, who_st) + 7, line1, st(12, FAINT), "left")
+  end
+  if !hot then
+    text_on(when_s, right, line1, when_st, "right")
+  end
+
+  // Line 2: the subject, with the star and the paperclip at its end.
+  let marks = right
+  if t.starred && !hot then
+    icons.star(rect(marks - 14, r.y + 38, 14, 14), GOLD, true)
+    marks = marks - 20
+  end
+  if mb.has_attachment(t) then
+    icons.icon("clip", rect(marks - 15, r.y + 37, 15, 15), FAINT, 1.3)
+    marks = marks - 20
+  end
+  let subj_st = if t.unread then sb(13, INK) else st(13, INK_2) end
+  draw_marked(ellipsize(t.subject, marks - tx - 6, subj_st), tx, r.y + 36, subj_st, terms)
+
+  // Line 3: a line of the body, then the labels as dots (and where the
+  // conversation lives, when the list mixes mailboxes).
+  let dots = right
+  for l in reverse(t.labels) do
+    draw_circle({x: dots - 4, y: r.y + 68}, 4, mb.label_of(l).color)
+    dots = dots - 13
+  end
+  if tagged && t.box != "inbox" then
+    let ts = sb(10, MUTED)
+    let name = mb.view_name(t.box)
+    let w = text_width(name, ts) + 12
+    let tag = rect(dots - w - 2, r.y + 59, w, 18)
+    draw_rect_rounded(tag, 5, tint(ground, INK, 8))
+    label_line(name, tag, ts, "center")
+    dots = dots - w - 8
+  end
+  let snip_st = st(13, MUTED)
+  let lead = if t.box == "drafts" then "Draft  " else "" end
+  if lead != "" then
+    draw_text("Draft", {x: tx, y: r.y + 58}, sb(13, DANGER))
+  end
+  let lead_w = if lead != "" then text_width("Draft", sb(13, DANGER)) + 8 else 0 end
+  draw_marked(ellipsize(mb.snippet(t, terms), dots - tx - 8 - lead_w, snip_st), tx + lead_w, r.y + 58, snip_st, terms)
+
+  if hot then
+    let names = ["archive", "trash"]
+    for k in range(0, 2) do
+      let br = row_action_rect(r, k)
+      icon_button(br, names[k], hit(br, true), MUTED, tint(ground, INK, 9))
+    end
+    let sr = row_action_rect(r, 2)
+    if hit(sr, true) then draw_rect_rounded(sr, 8, tint(ground, INK, 9)) end
+    icons.star(sr.inset(7), if t.starred then GOLD else MUTED end, t.starred)
+  end
+  nil
+end
+
+// ── One message in the reading pane ──────────────────────────────────────
+
+// A collapsed earlier message: one line, 56 px.
+fn draw_msg_shut(m: record, x: num, y: num, w: num, hot: bool)
+  if hot then draw_rect_rounded(x - 12, y + 4, w + 24, 48, 10, tint(PAPER, INK, 3)) end
+  avatar(m.from, x + 16, y + 28, 15, PAPER)
+  let name = if m.from == mb.ME then "You" else mb.person(m.from).name end
+  let name_st = sb(13, INK_2)
+  draw_text(name, {x: x + 46, y: y + 19}, name_st)
+  let when_s = mb.when_short(m.age)
+  let when_st = st(12, FAINT)
+  text_on(when_s, x + w, base_of(y + 19, name_st), when_st, "right")
+  let sx = x + 46 + text_width(name, name_st) + 12
+  let room = x + w - text_width(when_s, when_st) - 16 - sx
+  draw_text(ellipsize(mb.body_text(m), room, st(13, MUTED)), {x: sx, y: y + 19}, st(13, MUTED))
+  nil
+end
+
+// An expanded message. Draws it and returns its height, so the caller can
+// stack the next one and size the scroll range from the same pass.
+fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> num
+  let p = mb.person(m.from)
+  avatar(m.from, x + 19, y + 22, 19, PAPER)
+  let name_st = sb(14, INK)
+  draw_text(p.name, {x: x + 52, y: y + 3}, name_st)
+  let line1 = base_of(y + 3, name_st)
+  let when_s = mb.when_long(m.age)
+  text_on(when_s, x + w, line1, st(12, MUTED), "right")
+  let ex = x + 52 + text_width(p.name, name_st) + 9
+  let room = x + w - text_width(when_s, st(12, MUTED)) - 16 - ex
+  if room > 60 then
+    text_on(ellipsize(p.email, room, st(12, FAINT)), ex, line1, st(12, FAINT), "left")
+  end
+  let names = for k in m.to do
+    if k == mb.ME then "me" else mb.person(k).name end
+  end
+  let to_line = if len(names) == 0 then "no recipient yet" else "to " ++ join(names, ", ") end
+  draw_text(ellipsize(to_line, w - 52, st(12, MUTED)), {x: x + 52, y: y + 24}, st(12, MUTED))
+
+  // The body sets in a measure that stays readable when the pane is wide.
+  let bx = x + 52
+  let bw = min(w - 52, 620)
+  let body_st = st(BODY_SIZE, INK_2)
+  let cy = y + 60
+  for para in m.body do
+    for line in text_layout.wrap_text(para, body_st, bw) do
+      draw_marked(line, bx, cy, body_st, terms)
+      cy = cy + BODY_STEP
+    end
+    cy = cy + 12
+  end
+
+  // Attachments flow left to right and wrap.
+  if len(m.atts) > 0 then
+    cy = cy + 4
+    let fx = bx
+    for a in m.atts do
+      let name_w = min(text_width(a.name, sb(13, INK)), 190)
+      let cw = name_w + 70
+      if fx + cw > bx + bw && fx > bx then
+        fx = bx
+        cy = cy + 58
+      end
+      let card = rect(fx, cy, cw, 48)
+      let hot = hit(card, ok)
+      draw_rect_rounded(card, 10, if hot then tint(PAPER, ACCENT, 6) else PAPER end)
+      draw_rect_rounded_outline(card, 10, if hot then tint(PAPER, ACCENT, 50) else RULE end)
+      let kc = kind_color(a.kind)
+      let chip = rect(fx + 8, cy + 8, 32, 32)
+      draw_rect_rounded(chip, 7, tint(PAPER, kc, 14))
+      let dot = split(a.name, ".")
+      label_line(upper(char_slice(dot[len(dot) - 1], 0, 3)), chip, {size: 9, color: mix(kc, INK, 0.25), font: "ui", weight: 700, spacing: 0.4}, "center")
+      draw_text(ellipsize(a.name, name_w + 2, sb(13, INK)), {x: fx + 50, y: cy + 7}, sb(13, INK))
+      draw_text(a.size, {x: fx + 50, y: cy + 25}, st(11, MUTED))
+      fx = fx + cw + 10
+    end
+    cy = cy + 48 + 12
+  end
+  cy + 12 - y
+end
+
+// ═════════════════════════════════════════════════════════════════════════
+// Frame
+// ═════════════════════════════════════════════════════════════════════════
+
+claim_key("a", "cmd")           // select all
+claim_key("return", "cmd")      // send
+
+// A new selection starts the reading pane from the top with nothing expanded.
+if sel != shown then
+  shown = sel
+  detail_scroll = 0.0
+  open_msgs = []
+  reply = ""
+  reply_c = 0
+  if focus == "reply" then focus = "" end
+end
+if keep_unread != 0 && keep_unread != sel then keep_unread = 0 end
+
+// Opening a conversation reads it.
+let opened = mb.find_thread(threads, sel)
+if opened != nil && opened.unread && keep_unread != sel then
+  threads = mb.set_unread(threads, [sel], false)
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+let split_max = max(340, min(560, W - RAIL_W - 430))
+if split_drag then
+  if mouse_down(0) then
+    list_w = int(clamp(mouse_x() - RAIL_W, 340, split_max))
+  else
+    split_drag = false
+  end
+end
+list_w = int(clamp(list_w, 340, split_max))
+
+let LX = RAIL_W
+let LW = list_w
+let DX = LX + LW
+let DW = W - DX
+let list_view = rect(LX, HEAD_H, LW, H - HEAD_H)
+let split_r = rect(DX - 4, 0, 8, H)
+let modal_r = rect((W - MODAL_W) / 2, (H - MODAL_H) / 2, MODAL_W, MODAL_H)
+let reply_w = DW - 112          // the reply area's wrap width
+let body_w = MODAL_W - 64       // the compose body's wrap width
+
+// Lifetimes count down in dt() rather than against time(), so a toast expires
+// on schedule whether frames come from a display, an idle poll or POST /tick.
+if toast.left > 0.0 then toast.left = max(0.0, toast.left - dt()) end
+let toast_on = toast.left > 0.0
+let toast_r = rect(LX + (LW - 300) / 2, H - 62, 300, 44)
+
+// Which layer the pointer belongs to this frame.
+let m_main = !compose && !split_drag && !(toast_on && point_in(mouse_x(), mouse_y(), toast_r))
+let m_modal = compose
+let press = mouse_pressed(0)
+
+// ── Text entry ───────────────────────────────────────────────────────────
+// Edits land in the focused buffer before anything is derived from it, so the
+// list below is already filtered by the character typed this frame.
+
+let ev = {
+  typed: text_input(), back: key_pressed("backspace"), del: key_pressed("delete"),
+  left: key_pressed("left"), right: key_pressed("right"), home: key_pressed("home"),
+  endk: key_pressed("end"), up: key_pressed("up"), down: key_pressed("down"),
+  enter: key_pressed("return"), word: mod_alt() || mod_ctrl(), cmd: mod_cmd(),
+}
+
+if focus == "q" then
+  let e = edit_text(q, q_c, ev, false, Q_STYLE, 0)
+  if e.t != q then list_scroll = 0.0 end
+  q = e.t
+  q_c = e.c
+elsif focus == "reply" then
+  let e = edit_text(reply, reply_c, ev, true, REPLY_STYLE, reply_w)
+  reply = e.t
+  reply_c = e.c
+elsif focus == "to" then
+  let e = edit_text(c_to, c_to_c, ev, false, FIELD_STYLE, 0)
+  c_to = e.t
+  c_to_c = e.c
+elsif focus == "subj" then
+  let e = edit_text(c_subj, c_subj_c, ev, false, FIELD_STYLE, 0)
+  c_subj = e.t
+  c_subj_c = e.c
+elsif focus == "body" then
+  let e = edit_text(c_body, c_body_c, ev, true, FIELD_STYLE, body_w)
+  c_body = e.t
+  c_body_c = e.c
+end
+
+// The recipient being typed, and the contact it would complete to.
+let to_parts = split(c_to, ",")
+let to_frag = mb.trim_spaces(to_parts[len(to_parts) - 1])
+let to_guess = if focus == "to" && c_to_c == char_len(c_to) then mb.complete_contact(to_frag) else "" end
+let to_keys = mb.parse_recipients(c_to)
+let to_ready = mb.deliverable(to_keys)
+
+// ── Derived: the list ────────────────────────────────────────────────────
+
+let pq = mb.parse_query(q)
+let terms = pq.terms
+let in_box = for t in threads do
+  if !mb.in_view(t, view) then continue end
+  if pq.active && !mb.matches(t, pq) then continue end
+  t
+end
+let rows = sort(in_box, fn(a, b) -> mb.stamp(b) - mb.stamp(a))
+let n = len(rows)
+
+// A search that is narrower than the mail it could find says so.
+let elsewhere = 0
+if pq.active && view != "all" && view != "trash" then
+  for t in threads do
+    if mb.in_view(t, "all") && !mb.in_view(t, view) && mb.matches(t, pq) then elsewhere += 1 end
+  end
+end
+
+let sel_ix = -1
+for i in range(0, n) do
+  if rows[i].id == sel then sel_ix = i end
+end
+let sel_t = mb.find_thread(threads, sel)
+let row_ids = for t in rows do t.id end
+checked = for id in checked do
+  if !contains(row_ids, id) then continue end
+  id
+end
+let picking = len(checked) > 0
+let targets = if picking then checked elsif sel_t != nil then [sel] else [] end
+
+let foot_h = if elsewhere > 0 then 64 else 16 end
+let list_h = n * ROW_H + foot_h
+let list_max = float(max(0, list_h - list_view.h))
+if hit(list_view, m_main) then list_scroll = list_scroll + scroll_y() * 56.0 end
+list_scroll = clamp(list_scroll, 0.0, list_max)
+
+let can_reply = sel_t != nil && sel_t.box != "drafts" && sel_t.box != "trash"
+let reply_open = can_reply && (focus == "reply" || char_len(reply) > 0)
+let reply_rows = if reply_open then len(wrap_rows(reply, REPLY_STYLE, reply_w)) else 0 end
+let reply_h = if !can_reply then 0 elsif reply_open then 132 + clamp(reply_rows, 3, 7) * AREA_STEP else 76 end
+let detail_view = rect(DX, TOOL_H, DW, H - TOOL_H - reply_h)
+let detail_max = max(0.0, detail_h - float(detail_view.h))
+if hit(detail_view, m_main) then detail_scroll = detail_scroll + scroll_y() * 56.0 end
+
+// ── Keys ─────────────────────────────────────────────────────────────────
+// Every key and click below only *names* what should happen; the store is
+// changed once, at the bottom of the frame.
+
+let act = ""
+let act_ids = targets
+let act_arg = ""
+let by_key = false
+
+if key_pressed("escape") then
+  if compose then
+    act = "close_compose"
+  elsif focus != "" then
+    focus = ""
+  elsif picking then
+    checked = []
+  elsif char_len(q) > 0 then
+    q = ""
+    q_c = 0
+  end
+end
+
+if compose then
+  if key_pressed("tab") then
+    if focus == "to" && to_guess != "" then
+      act = "complete"
+    else
+      let ring = ["to", "subj", "body"]
+      let at_i = max(0, index_of(ring, focus))
+      focus = ring[(at_i + (if mod_shift() then 2 else 1 end)) % 3]
+    end
+  end
+  if key_pressed("return") then
+    if mod_cmd() then
+      act = "send"
+    elsif focus == "to" && to_guess != "" then
+      act = "complete"
+    elsif focus == "to" then
+      focus = "subj"
+    elsif focus == "subj" then
+      focus = "body"
+    end
+  end
+elsif focus == "reply" then
+  if key_pressed("return") && mod_cmd() then act = "send_reply" end
+elsif focus == "q" then
+  // Return or Down hands the keyboard back to the list, on the first result.
+  if key_pressed("return") || key_pressed("down") then
+    focus = ""
+    if n > 0 && sel_ix < 0 then
+      act = "select"
+      act_arg = str(rows[0].id)
+      by_key = true
+    end
+  end
+elsif mod_cmd() then
+  if key_pressed("a") then checked = row_ids end
+else
+  let typed = text_input()
+  let want = sel_ix
+  if key_pressed("down") || key_pressed("j") then want = sel_ix + 1 end
+  if key_pressed("up") || key_pressed("k") then want = if sel_ix < 0 then 0 else sel_ix - 1 end end
+  if key_pressed("home") then want = 0 end
+  if key_pressed("end") then want = n - 1 end
+  let page = max(1, int(list_view.h / ROW_H) - 1)
+  if key_pressed("pagedown") then want = sel_ix + page end
+  if key_pressed("pageup") then want = max(0, sel_ix - page) end
+  if n > 0 && want != sel_ix then
+    act = "select"
+    act_arg = str(rows[clamp(want, 0, n - 1)].id)
+    by_key = true
+  end
+
+  if key_pressed("/") then
+    focus = "q"
+    q_c = char_len(q)
+  end
+  if key_pressed("c") then act = "compose" end
+  if key_pressed("r") && can_reply then
+    focus = "reply"
+    reply_c = char_len(reply)
+  end
+  if key_pressed("return") && sel_t != nil && sel_t.box == "drafts" then act = "edit_draft" end
+  if key_pressed("x") && sel_t != nil then
+    act = "check"
+    act_arg = str(sel)
+  end
+  if key_pressed("e") then act = "archive" end
+  if key_pressed("delete") || key_pressed("backspace") || typed == "#" then act = "trash" end
+  if key_pressed("s") then act = "star" end
+  if key_pressed("u") then act = "read" end
+  if key_pressed("z") then act = "undo" end
+  if key_pressed("space") then
+    let page_px = float(detail_view.h) - 80.0
+    detail_scroll = detail_scroll + (if mod_shift() then 0.0 - page_px else page_px end)
+  end
+  for i in range(0, len(mb.BOXES)) do
+    if key_pressed(str(i + 1)) then
+      act = "view"
+      act_arg = mb.BOXES[i].key
+    end
+  end
+end
+
+detail_scroll = clamp(detail_scroll, 0.0, detail_max)
+
+// A click lands in at most one field; anywhere else gives the keyboard back.
+let focus_hit = ""
+let tip = ""
+
+// ═════════════════════════════════════════════════════════════════════════
+// Paint
+// ═════════════════════════════════════════════════════════════════════════
+
+clear(LIST_BG.r, LIST_BG.g, LIST_BG.b)
+
+// ── Rail ─────────────────────────────────────────────────────────────────
+
+draw_rect(0, 0, RAIL_W, H, RAIL)
+
+draw_rect_gradient_rounded(rect(20, 20, 30, 30), 9, ACCENT_HI, #3a47b8, 1.2)
+icons.icon("sent", rect(27, 27, 16, 16), WHITE, 1.6)
+draw_text("Plume", {x: 60, y: 22}, {size: 19, color: WHITE, font: "ui", weight: 700, spacing: 0.2})
+
+let compose_r = rect(16, 70, RAIL_W - 32, 42)
+let compose_hot = hit(compose_r, m_main)
+draw_shadow(compose_r, {radius: 11, blur: 16, dy: 4, color: ACCENT, a: 70})
+draw_rect_gradient_rounded(compose_r, 11, if compose_hot then #6b7af0 else ACCENT_HI end, ACCENT, 1.57)
+icons.icon("compose", rect(compose_r.x + 14, compose_r.y + 13, 16, 16), WHITE, 1.6)
+draw_text("Compose", {x: compose_r.x + 40, y: text_layout.text_line_y(compose_r, sb(14, WHITE))}, sb(14, WHITE))
+keycap(compose_r.x + compose_r.w - 32, compose_r.y + 11, "C", #6b79e6, WHITE)
+if compose_hot && press then act = "compose" end
+
+draw_text("MAILBOXES", {x: 24, y: 136}, caps(RAIL_FAINT))
+let rail_y = 158
+for i in range(0, len(mb.BOXES)) do
+  let b = mb.BOXES[i]
+  let r = rect(12, rail_y + i * 36, RAIL_W - 24, 34)
+  let on = view == b.key
+  let hot = hit(r, m_main)
+  if on then
+    draw_rect_rounded(r, 9, RAIL_ON)
+  elsif hot then
+    draw_rect_rounded(r, 9, RAIL_HOT)
+  end
+  let tone = if on then WHITE elsif hot then RAIL_TEXT else RAIL_DIM end
+  if b.key == "starred" then
+    icons.star(rect(r.x + 14, r.y + 9, 16, 16), tone, false)
+  else
+    icons.icon(b.key, rect(r.x + 14, r.y + 9, 16, 16), tone)
+  end
+  let name_st = if on then sb(14, WHITE) else st(14, if hot then WHITE else RAIL_TEXT end) end
+  draw_text(b.name, {x: r.x + 42, y: text_layout.text_line_y(r, st(14, WHITE))}, name_st)
+  let unread_n = mb.count_unread(threads, b.key)
+  if b.key == "inbox" && unread_n > 0 then
+    let ts = sb(11, WHITE)
+    let bw = max(22, text_width(str(unread_n), ts) + 12)
+    let badge = rect(r.x + r.w - bw - 10, r.y + 8, bw, 18)
+    draw_rect_rounded(badge, 9, ACCENT)
+    label_line(str(unread_n), badge, ts, "center")
+  elsif b.key == "drafts" || b.key == "starred" then
+    let total = mb.count_view(threads, b.key)
+    if total > 0 then
+      label_line(str(total), rect(r.x, r.y, r.w - 16, r.h), st(12, RAIL_FAINT), "right")
+    end
+  end
+  if hot && press then
+    act = "view"
+    act_arg = b.key
+  end
+end
+
+let labels_y = rail_y + len(mb.BOXES) * 36 + 22
+draw_text("LABELS", {x: 24, y: labels_y}, caps(RAIL_FAINT))
+for i in range(0, len(mb.LABELS)) do
+  let l = mb.LABELS[i]
+  let key = "label:" ++ l.key
+  let r = rect(12, labels_y + 22 + i * 34, RAIL_W - 24, 32)
+  let on = view == key
+  let hot = hit(r, m_main)
+  if on then
+    draw_rect_rounded(r, 9, RAIL_ON)
+  elsif hot then
+    draw_rect_rounded(r, 9, RAIL_HOT)
+  end
+  draw_circle({x: r.x + 22, y: r.y + 16}, 4.5, l.color)
+  let name_st = if on then sb(14, WHITE) else st(14, if hot then WHITE else RAIL_TEXT end) end
+  draw_text(l.name, {x: r.x + 42, y: text_layout.text_line_y(r, st(14, WHITE))}, name_st)
+  label_line(str(mb.count_view(threads, key)), rect(r.x, r.y, r.w - 16, r.h), st(12, RAIL_FAINT), "right")
+  if hot && press then
+    act = "view"
+    act_arg = key
+  end
+end
+
+// The account, pinned to the foot of the rail.
+draw_rect(16, H - 70, RAIL_W - 32, 1, RAIL_RULE)
+let me = mb.person(mb.ME)
+avatar(mb.ME, 34, H - 35, 16, RAIL)
+draw_text(me.name, {x: 60, y: H - 53}, sb(13, RAIL_TEXT))
+draw_text(ellipsize(me.email, RAIL_W - 76, st(11, RAIL_DIM)), {x: 60, y: H - 34}, st(11, RAIL_DIM))
+
+// ── List: the rows ───────────────────────────────────────────────────────
+
+let tagged = view != "inbox" && view != "trash" && view != "drafts" && view != "archive"
+clip_push(list_view)
+for i in range(0, n) do
+  let y = HEAD_H + i * ROW_H - int(list_scroll) + 4
+  if y + ROW_H < HEAD_H || y > H then continue end
+  let t = rows[i]
+  let r = rect(LX, y, LW, ROW_H)
+  let hot = hit(r, m_main) && hit(list_view, true)
+  let is_checked = contains(checked, t.id)
+  draw_row(t, r, view, t.id == sel, is_checked, hot, picking, terms, tagged)
+  if hot && press then
+    let on_action = -1
+    for k in range(0, 3) do
+      if hit(row_action_rect(r, k), true) then on_action = k end
+    end
+    if on_action >= 0 then
+      act = ["archive", "trash", "star"][on_action]
+      act_ids = [t.id]
+    elsif hit(row_check_rect(r), true) || mod_cmd() then
+      act = "check"
+      act_arg = str(t.id)
+    elsif mod_shift() && anchor != 0 then
+      act = "range"
+      act_arg = str(t.id)
+    else
+      act = "select"
+      act_arg = str(t.id)
+    end
+  end
+end
+
+if n == 0 then
+  let mid = LX + LW / 2
+  draw_circle({x: mid, y: HEAD_H + 96}, 34, tint(LIST_BG, INK, 5))
+  icons.icon(if pq.active then "search" else "inbox" end, rect(mid - 14, HEAD_H + 82, 28, 28), FAINT, 1.8)
+  let title = if pq.active then "Nothing matches" else "Nothing in {mb.view_name(view)}" end
+  draw_text_center(title, mid, HEAD_H + 148, sb(15, INK_2))
+  let hint = if pq.active then "Try fewer words, or one of these:" else "Conversations you move here will show up in this list." end
+  draw_text_center(hint, mid, HEAD_H + 174, st(13, MUTED))
+  if pq.active then
+    // Two rows of two, each pair centred, so they fit the narrowest list.
+    let ops = [["from:maya", "is:unread"], ["has:attachment", "label:design"]]
+    let ts = {size: 12, color: INK_2, font: "mono"}
+    for k in range(0, 2) do
+      let w0 = text_width(ops[k][0], ts) + 18
+      let w1 = text_width(ops[k][1], ts) + 18
+      let ox = mid - (w0 + w1 + 8) / 2
+      let oy = HEAD_H + 206 + k * 32
+      draw_rect_rounded(ox, oy, w0, 24, 6, tint(LIST_BG, INK, 7))
+      label_line(ops[k][0], rect(ox, oy, w0, 24), ts, "center")
+      draw_rect_rounded(ox + w0 + 8, oy, w1, 24, 6, tint(LIST_BG, INK, 7))
+      label_line(ops[k][1], rect(ox + w0 + 8, oy, w1, 24), ts, "center")
+    end
+  end
+end
+
+if elsewhere > 0 then
+  let fr = rect(LX + 16, HEAD_H + n * ROW_H - int(list_scroll) + 14, LW - 32, 40)
+  let hot = hit(fr, m_main) && hit(list_view, true)
+  draw_rect_rounded(fr, 10, if hot then tint(LIST_BG, ACCENT, 12) else tint(LIST_BG, ACCENT, 7) end)
+  let more = "{elsewhere} more in other mailboxes"
+  draw_text(more, {x: fr.x + 14, y: text_layout.text_line_y(fr, st(13, INK_2))}, st(13, INK_2))
+  label_line("Search all mail", rect(fr.x, fr.y, fr.w - 14, fr.h), sb(13, ACCENT), "right")
+  if hot && press then
+    act = "view_keep"
+    act_arg = "all"
+  end
+end
+clip_pop()
+
+if list_max > 0.0 then
+  let track_h = float(list_view.h - 12)
+  let thumb_h = max(36.0, track_h * float(list_view.h) / float(list_h))
+  let thumb_y = float(HEAD_H + 6) + (track_h - thumb_h) * list_scroll / list_max
+  draw_rect_rounded(LX + LW - 7, thumb_y, 4, thumb_h, 2, tint(LIST_BG, INK, 16))
+end
+
+// ── List: the header, drawn over the rows it hides ───────────────────────
+
+draw_rect(LX, 0, LW, HEAD_H, LIST_BG)
+draw_scroll_shadow(rect(LX, 0, LW, HEAD_H), min(1.0, list_scroll / 24.0), {a: 34, height: 10})
+draw_rect(LX, HEAD_H - 1, LW, 1, RULE)
+
+let search_r = rect(LX + 16, 14, LW - 32, 40)
+let q_on = focus == "q"
+if q_on then draw_focus_ring(search_r, 11, {color: ACCENT, a: 70, blur: 6}) end
+draw_rect_rounded(search_r, 11, PAPER)
+draw_rect_rounded_outline(search_r, 11, if q_on then ACCENT else RULE end, 255, if q_on then 1.5 else 1 end)
+icons.icon("search", rect(search_r.x + 12, search_r.y + 12, 16, 16), if q_on then ACCENT else MUTED end, 1.6)
+let q_text_r = rect(search_r.x + 38, search_r.y, search_r.w - 38 - 40, search_r.h)
+draw_field(q_text_r, q, q_c, Q_STYLE, q_on, "Search mail")
+let q_clear = rect(search_r.x + search_r.w - 34, search_r.y + 7, 26, 26)
+if char_len(q) > 0 then
+  icon_button(q_clear, "close", hit(q_clear, m_main), MUTED, RULE_SOFT)
+elsif !q_on then
+  keycap(search_r.x + search_r.w - 32, search_r.y + 10, "/", RULE_SOFT, MUTED)
+end
+if press && hit(q_clear, m_main) && char_len(q) > 0 then
+  q = ""
+  q_c = 0
+  focus_hit = "q"
+elsif press && hit(search_r, m_main) then
+  focus_hit = "q"
+  q_c = text_layout.caret_index(q, Q_STYLE, mouse_x() - q_text_r.x)
+end
+
+let title_r = rect(LX + 18, 64, LW - 36, 28)
+if picking then
+  // The bulk bar: what is ticked, and what can be done to all of it at once.
+  let all_r = rect(title_r.x + 11, title_r.y + 4, 20, 20)
+  checkbox(all_r, true, false)
+  draw_text(plural(len(checked), "selected", "selected"), {x: all_r.x + 30, y: text_layout.text_line_y(title_r, sb(14, INK))}, sb(14, INK))
+  if press && hit(all_r, m_main) then checked = [] end
+  let bulk = [
+    {icon: "mail", act: "read", tip: "Mark read or unread"},
+    {icon: "trash", act: "trash", tip: "Delete"},
+    {icon: "archive", act: "archive", tip: "Archive"},
+  ]
+  for k in range(0, len(bulk)) do
+    let br = rect(title_r.x + title_r.w - 30 - k * 34, title_r.y - 1, 30, 30)
+    let hot = hit(br, m_main)
+    icon_button(br, bulk[k].icon, hot, INK_2, tint(LIST_BG, INK, 8))
+    if hot then tip = bulk[k].tip end
+    if hot && press then
+      act = bulk[k].act
+      act_ids = checked
+    end
+  end
+else
+  let name_st = sb(16, INK)
+  let heading = mb.view_name(view)
+  draw_text(heading, {x: title_r.x, y: text_layout.text_line_y(title_r, name_st)}, name_st)
+  let tally = if pq.active then plural(n, "match", "matches") else str(n) end
+  text_on(tally, title_r.x + text_width(heading, name_st) + 9, base_of(text_layout.text_line_y(title_r, name_st), name_st), st(13, MUTED), "left")
+
+  // Filter chips are the query language with a mouse: each one adds or
+  // removes its own token in the search field.
+  let chips = [
+    {name: "Files", tok: "has:attachment"},
+    {name: "Starred", tok: "is:starred"},
+    {name: "Unread", tok: "is:unread"},
+  ]
+  let live = mb.tokens(q)
+  let chip_x = title_r.x + title_r.w
+  for chip in chips do
+    let on = contains(live, chip.tok)
+    let ts = if on then sb(12, ACCENT) else st(12, INK_2) end
+    let w = text_width(chip.name, ts) + 22
+    let cr = rect(chip_x - w, title_r.y + 1, w, 26)
+    let hot = hit(cr, m_main)
+    draw_rect_rounded(cr, 13, if on then ACCENT_SOFT elsif hot then tint(LIST_BG, INK, 9) else tint(LIST_BG, INK, 5) end)
+    if on then draw_rect_rounded_outline(cr, 13, tint(PAPER, ACCENT, 45)) end
+    label_line(chip.name, cr, ts, "center")
+    if hot && press then
+      q = mb.toggle_token(q, chip.tok)
+      q_c = char_len(q)
+      list_scroll = 0.0
+    end
+    chip_x = chip_x - w - 6
+  end
+end
+
+// ── Reading pane ─────────────────────────────────────────────────────────
+
+draw_rect(DX, 0, DW, H, PAPER)
+
+let col_x = DX + 36
+let col_w = DW - 72
+let laid_h = 0.0
+
+if sel_t == nil then
+  let mid = DX + DW / 2
+  let top = H / 2 - 170
+  draw_circle({x: mid, y: top + 44}, 44, ACCENT_SOFT)
+  icons.icon("mail", rect(mid - 19, top + 25, 38, 38), ACCENT, 2)
+  draw_text_center("No conversation selected", mid, top + 108, sb(18, INK))
+  draw_text_center("Pick one from the list, or use the keyboard.", mid, top + 136, st(14, MUTED))
+  let keys = [
+    {k: "J", k2: "K", what: "next and previous conversation"},
+    {k: "/", k2: "", what: "search this mailbox"},
+    {k: "X", k2: "", what: "tick a conversation for a bulk action"},
+    {k: "E", k2: "#", what: "archive, or move to Trash"},
+    {k: "C", k2: "R", what: "compose, or reply"},
+    {k: "Z", k2: "", what: "undo the last move"},
+  ]
+  for i in range(0, len(keys)) do
+    let ky = top + 184 + i * 30
+    let used = keycap(mid - 150, ky, keys[i].k, RULE_SOFT, INK_2)
+    if keys[i].k2 != "" then keycap(mid - 150 + used + 5, ky, keys[i].k2, RULE_SOFT, INK_2) end
+    draw_text(keys[i].what, {x: mid - 86, y: ky + 1}, st(13, MUTED))
+  end
+else
+  let last_i = len(sel_t.msgs) - 1
+  clip_push(detail_view)
+  let y = float(TOOL_H + 28) - detail_scroll
+
+  // The subject, at reading size, wrapped rather than cut.
+  let subj_st = {size: 23, color: INK, font: "ui", weight: 700}
+  for line in text_layout.wrap_text(sel_t.subject, subj_st, col_w) do
+    draw_marked(line, col_x, y, subj_st, terms)
+    y = y + 31.0
+  end
+  y = y + 10.0
+  let px = col_x
+  for l in sel_t.labels do
+    let lab = mb.label_of(l)
+    px = px + pill(px, y, lab.name, lab.color, PAPER) + 6
+  end
+  let files = mb.attachment_count(sel_t)
+  let meta = plural(len(sel_t.msgs), "message", "messages") ++
+    (if files > 0 then "  ·  " ++ plural(files, "attachment", "attachments") else "" end) ++
+    (if sel_t.box != "inbox" then "  ·  in " ++ mb.view_name(sel_t.box) else "" end)
+  draw_text(meta, {x: px + (if px > col_x then 6 else 0 end), y: y + 3}, st(12, MUTED))
+  y = y + 40.0
+  draw_rect(col_x, y, col_w, 1, RULE)
+  y = y + 1.0
+
+  for i in range(0, len(sel_t.msgs)) do
+    let m = sel_t.msgs[i]
+    let open = i == last_i || contains(open_msgs, i)
+    if open then
+      let head = rect(col_x, y + 12, col_w, 50)
+      if i != last_i && press && hit(head, m_main) && hit(detail_view, true) then
+        act = "fold"
+        act_arg = str(i)
+      end
+      let h = draw_msg_open(m, col_x, y + 20.0, col_w, terms, m_main && hit(detail_view, true))
+      y = y + 20.0 + h
+    else
+      let rr = rect(col_x - 12, y, col_w + 24, 56)
+      let hot = hit(rr, m_main) && hit(detail_view, true)
+      draw_msg_shut(m, col_x, y, col_w, hot)
+      if hot && press then
+        act = "fold"
+        act_arg = str(i)
+      end
+      y = y + 56.0
+    end
+    if i != last_i then
+      draw_rect(col_x, y, col_w, 1, RULE_SOFT)
+      y = y + 1.0
+    end
+  end
+
+  if sel_t.box == "drafts" then
+    let dr = rect(col_x + 52, y + 4, 172, 38)
+    let hot = hit(dr, m_main) && hit(detail_view, true)
+    button_primary(dr, "Continue writing", hot, true)
+    keycap(dr.x + dr.w + 12, dr.y + 9, "Return", RULE_SOFT, MUTED)
+    if hot && press then act = "edit_draft" end
+    y = y + 56.0
+  end
+  laid_h = y + detail_scroll - float(TOOL_H) + 28.0
+  clip_pop()
+
+  if detail_max > 0.0 then
+    let track_h = float(detail_view.h - 12)
+    let thumb_h = max(36.0, track_h * float(detail_view.h) / detail_h)
+    let thumb_y = float(TOOL_H + 6) + (track_h - thumb_h) * detail_scroll / detail_max
+    draw_rect_rounded(W - 8, thumb_y, 4, thumb_h, 2, tint(PAPER, INK, 14))
+  end
+
+  // The toolbar, over the scrolled thread.
+  draw_rect(DX, 0, DW, TOOL_H, PAPER)
+  draw_scroll_shadow(rect(DX, 0, DW, TOOL_H), min(1.0, detail_scroll / 24.0), {a: 30, height: 10})
+  draw_rect(DX, TOOL_H - 1, DW, 1, RULE)
+  let home = sel_t.box == "archive" || sel_t.box == "trash"
+  let tools = [
+    {icon: if home then "inbox" else "archive" end, act: "archive", tip: if home then "Move to Inbox  (E)" else "Archive  (E)" end},
+    {icon: "trash", act: "trash", tip: if sel_t.box == "trash" || sel_t.box == "drafts" then "Delete forever  (#)" else "Move to Trash  (#)" end},
+    {icon: "mail", act: "read", tip: "Mark as unread  (U)"},
+    {icon: "star", act: "star", tip: if sel_t.starred then "Remove star  (S)" else "Add star  (S)" end},
+  ]
+  for i in range(0, len(tools)) do
+    let br = rect(DX + 28 + i * 40, 11, 34, 34)
+    let hot = hit(br, m_main)
+    if tools[i].icon == "star" then
+      if hot then draw_rect_rounded(br, 8, RULE_SOFT) end
+      icons.star(br.inset(9), if sel_t.starred then GOLD elsif hot then INK else MUTED end, sel_t.starred)
+    else
+      icon_button(br, tools[i].icon, hot, MUTED, RULE_SOFT)
+    end
+    if hot then tip = tools[i].tip end
+    if hot && press then
+      act = tools[i].act
+      act_ids = [sel]
+    end
+  end
+
+  // Where this conversation sits in the list, and a way to step through it.
+  let step_dn = rect(W - 28 - 30, 13, 30, 30)
+  let step_up = rect(W - 28 - 62, 13, 30, 30)
+  if sel_ix >= 0 then
+    let hot_up = hit(step_up, m_main) && sel_ix > 0
+    let hot_dn = hit(step_dn, m_main) && sel_ix < n - 1
+    icon_button(step_up, "up", hot_up, if sel_ix > 0 then MUTED else RULE end, RULE_SOFT)
+    icon_button(step_dn, "down", hot_dn, if sel_ix < n - 1 then MUTED else RULE end, RULE_SOFT)
+    label_line("{sel_ix + 1} of {n}", rect(DX, 13, step_up.x - DX - 10, 30), st(12, MUTED), "right")
+    if hot_up then tip = "Previous  (K)" end
+    if hot_dn then tip = "Next  (J)" end
+    if press && (hot_up || hot_dn) then
+      act = "select"
+      act_arg = str(rows[if hot_up then sel_ix - 1 else sel_ix + 1 end].id)
+      by_key = true
+    end
+  end
+
+  // The reply bar, pinned to the foot of the pane.
+  if can_reply then
+    let ry = H - reply_h
+    draw_rect(DX, ry, DW, reply_h, PAPER)
+    draw_rect(DX, ry, DW, 1, RULE)
+    let reply_keys = mb.reply_to(sel_t)
+    let to_name = if len(reply_keys) > 0 then mb.person(reply_keys[0]).name else "everyone" end
+    let box = rect(DX + 36, ry + 16, DW - 72, reply_h - 32)
+    if reply_open then
+      if focus == "reply" then draw_focus_ring(box, 12, {color: ACCENT, a: 60, blur: 6}) end
+      draw_rect_rounded(box, 12, PAPER)
+      draw_rect_rounded_outline(box, 12, if focus == "reply" then ACCENT else RULE end, 255, if focus == "reply" then 1.5 else 1 end)
+      icons.icon("reply", rect(box.x + 16, box.y + 14, 14, 14), MUTED)
+      draw_text("Reply to", {x: box.x + 38, y: box.y + 11}, st(12, MUTED))
+      draw_text(to_name, {x: box.x + 38 + text_width("Reply to ", st(12, MUTED)), y: box.y + 11}, sb(12, INK_2))
+      let ax = box.x + 20
+      let ay = box.y + 42
+      draw_area(ax, ay, reply_w, reply, reply_c, REPLY_STYLE, AREA_STEP, focus == "reply", "Write your reply")
+      let send_r = rect(box.x + box.w - 104, box.y + box.h - 46, 90, 34)
+      let ready = char_len(mb.trim_spaces(reply)) > 0
+      let hot = hit(send_r, m_main)
+      button_primary(send_r, "Send", hot && ready, ready)
+      draw_text("Cmd + Return to send   ·   Esc to step out", {x: box.x + 20, y: box.y + box.h - 36}, st(12, FAINT))
+      if hot && press then
+        act = "send_reply"
+      elsif press && hit(box, m_main) then
+        focus_hit = "reply"
+        reply_c = area_caret_at(reply, REPLY_STYLE, reply_w, ax, ay, AREA_STEP, mouse_x(), mouse_y())
+      end
+    else
+      let hot = hit(box, m_main)
+      draw_rect_rounded(box, 12, if hot then tint(PAPER, INK, 4) else tint(PAPER, INK, 2) end)
+      draw_rect_rounded_outline(box, 12, if hot then tint(PAPER, INK, 22) else RULE end)
+      icons.icon("reply", rect(box.x + 16, box.y + 15, 14, 14), MUTED)
+      draw_text("Reply to {to_name}", {x: box.x + 40, y: text_layout.text_line_y(box, st(14, MUTED))}, st(14, MUTED))
+      keycap(box.x + box.w - 34, box.y + 12, "R", RULE_SOFT, MUTED)
+      if hot && press then
+        focus_hit = "reply"
+        reply_c = 0
+      end
+    end
+  end
+end
+detail_h = laid_h
+
+// ── The divider between master and detail ────────────────────────────────
+
+let split_hot = hit(split_r, !compose) || split_drag
+draw_rect(DX, 0, 1, H, RULE)
+if split_hot then draw_rect(DX - 1, 0, 3, H, tint(PAPER, ACCENT, 70)) end
+if press && hit(split_r, !compose) then
+  if click_count() >= 2 then
+    list_w = SPLIT_DEFAULT
+  else
+    split_drag = true
+  end
+  act = ""
+end
+
+// ── Toast ────────────────────────────────────────────────────────────────
+
+if toast_on then
+  request_frame()
+  let a = int(255.0 * clamp(toast.left / 0.35, 0.0, 1.0))
+  draw_shadow(toast_r, {radius: 12, blur: 22, dy: 8, color: #0b0e1a, a: a / 4})
+  draw_rect_rounded(toast_r, 12, #1b2033, a)
+  let msg_w = if toast.can_undo then toast_r.w - 118 else toast_r.w - 32 end
+  let ts = st(13, WHITE)
+  draw_text(ellipsize(toast.msg, msg_w, ts), {x: toast_r.x + 16, y: text_layout.text_line_y(toast_r, ts)}, {...ts, color: {...WHITE, a: a}})
+  if toast.can_undo then
+    let ur = rect(toast_r.x + toast_r.w - 96, toast_r.y + 7, 88, 30)
+    let hot = hit(ur, !compose)
+    if hot then draw_rect_rounded(ur, 8, #2b3350, a) end
+    label_line("Undo", rect(ur.x + 8, ur.y, 40, ur.h), sb(13, {r: 157, g: 170, b: 255, a: a}), "left")
+    keycap(ur.x + 54, ur.y + 5, "Z", #2b3350, RAIL_TEXT)
+    if hot && press then act = "undo" end
+  end
+end
+
+// ── Compose ──────────────────────────────────────────────────────────────
+
+modal_a = approach(modal_a, if compose then 1.0 else 0.0 end, 18.0)
+if modal_a > 0.0 && modal_a < 1.0 then request_frame() end
+
+if compose then
+  draw_rect(0, 0, W, H, #0e1220, int(120.0 * modal_a))
+  let mr = rect(modal_r.x, modal_r.y + int((1.0 - modal_a) * 14.0), MODAL_W, MODAL_H)
+  draw_shadow(mr, {radius: 16, blur: 44, dy: 18, color: #0b0e1a, a: 90})
+  draw_rect_rounded(mr, 16, PAPER)
+
+  let heading = if c_draft != 0 then "Continue draft" else "New message" end
+  draw_text(heading, {x: mr.x + 32, y: mr.y + 22}, sb(17, INK))
+  let close_r = rect(mr.x + mr.w - 52, mr.y + 16, 32, 32)
+  icon_button(close_r, "close", hit(close_r, m_modal), MUTED, RULE_SOFT)
+  if press && hit(close_r, m_modal) then act = "close_compose" end
+
+  // To
+  let to_row = rect(mr.x + 32, mr.y + 66, mr.w - 64, 44)
+  draw_text("To", {x: to_row.x, y: text_layout.text_line_y(to_row, st(13, MUTED))}, st(13, MUTED))
+  let to_r = rect(to_row.x + 76, to_row.y, to_row.w - 76, to_row.h)
+  draw_field(to_r, c_to, c_to_c, FIELD_STYLE, focus == "to", "name or address")
+  if to_guess != "" then
+    // The completion, as ghost text after the caret: the rest of the address
+    // when the address is what was being typed, the whole contact otherwise.
+    let p = mb.person(to_guess)
+    let typed_w = text_width(c_to, FIELD_STYLE)
+    let rest = if index_of(lower(p.email), lower(to_frag)) == 0 then char_slice(p.email, char_len(to_frag)) else "  {p.name}  ·  {p.email}" end
+    let gy = text_layout.text_line_y(to_r, FIELD_STYLE)
+    draw_text(rest, {x: to_r.x + typed_w + 3, y: gy}, st(14, FAINT))
+    keycap(to_r.x + typed_w + text_width(rest, st(14, FAINT)) + 14, to_r.y + 12, "Tab", RULE_SOFT, MUTED)
+  end
+  draw_rect(to_row.x, to_row.y + to_row.h, to_row.w, 1, if focus == "to" then ACCENT else RULE end)
+  if press && hit(to_row, m_modal) then
+    focus_hit = "to"
+    c_to_c = text_layout.caret_index(c_to, FIELD_STYLE, mouse_x() - to_r.x)
+  end
+
+  // Subject
+  let subj_row = rect(mr.x + 32, mr.y + 111, mr.w - 64, 44)
+  draw_text("Subject", {x: subj_row.x, y: text_layout.text_line_y(subj_row, st(13, MUTED))}, st(13, MUTED))
+  let subj_r = rect(subj_row.x + 76, subj_row.y, subj_row.w - 76, subj_row.h)
+  draw_field(subj_r, c_subj, c_subj_c, FIELD_STYLE, focus == "subj", "what is this about?")
+  draw_rect(subj_row.x, subj_row.y + subj_row.h, subj_row.w, 1, if focus == "subj" then ACCENT else RULE end)
+  if press && hit(subj_row, m_modal) then
+    focus_hit = "subj"
+    c_subj_c = text_layout.caret_index(c_subj, FIELD_STYLE, mouse_x() - subj_r.x)
+  end
+
+  // Body
+  let body_r = rect(mr.x + 32, mr.y + 172, body_w, MODAL_H - 172 - 76)
+  clip_push(body_r)
+  let body_rows = wrap_rows(c_body, FIELD_STYLE, body_w)
+  let caret_row = row_of(body_rows, c_body_c)
+  let fits = int(body_r.h / AREA_STEP)
+  let body_shift = max(0, caret_row - fits + 1) * AREA_STEP
+  draw_area(body_r.x, body_r.y - body_shift, body_w, c_body, c_body_c, FIELD_STYLE, AREA_STEP, focus == "body", "Write your message")
+  clip_pop()
+  if press && hit(body_r, m_modal) then
+    focus_hit = "body"
+    c_body_c = area_caret_at(c_body, FIELD_STYLE, body_w, body_r.x, body_r.y - body_shift, AREA_STEP, mouse_x(), mouse_y())
+  end
+
+  // Footer
+  draw_rect(mr.x, mr.y + mr.h - 68, mr.w, 1, RULE)
+  let send_r = rect(mr.x + 32, mr.y + mr.h - 52, 96, 36)
+  let send_hot = hit(send_r, m_modal)
+  button_primary(send_r, "Send", send_hot && to_ready, to_ready)
+  if send_hot && press then act = "send" end
+  let hint = if to_ready then "Cmd + Return to send" elsif len(to_keys) > 0 then "That recipient is not an address yet" else "Add a recipient to send" end
+  draw_text(hint, {x: send_r.x + send_r.w + 16, y: text_layout.text_line_y(send_r, st(12, FAINT))}, st(12, FAINT))
+  let drop_r = rect(mr.x + mr.w - 32 - 84, send_r.y, 84, 36)
+  let keep_r = rect(drop_r.x - 104, send_r.y, 98, 36)
+  button_quiet(keep_r, "Save draft", hit(keep_r, m_modal), INK_2)
+  button_quiet(drop_r, "Discard", hit(drop_r, m_modal), DANGER)
+  if press && hit(keep_r, m_modal) then act = "close_compose" end
+  if press && hit(drop_r, m_modal) then act = "discard" end
+  if press && !hit(mr, true) then act = "close_compose" end
+end
+
+// ── Tooltip ──────────────────────────────────────────────────────────────
+// One for the whole panel: whichever control named itself this frame, shown
+// once the pointer has rested on it for a beat.
+
+if tip != tip_key then
+  tip_key = tip
+  tip_rest = 0.0
+end
+if tip != "" then
+  request_frame()
+  tip_rest = tip_rest + dt()
+  if tip_rest > 0.45 then
+    let ts = st(12, WHITE)
+    let w = text_width(tip, ts) + 20
+    let tx = clamp(mouse_x() - w / 2, 8, W - w - 8)
+    let tr = rect(tx, mouse_y() + 22, w, 26)
+    draw_shadow(tr, {radius: 7, blur: 12, dy: 4, color: #0b0e1a, a: 60})
+    draw_rect_rounded(tr, 7, #1b2033)
+    label_line(tip, tr, ts, "center")
+  end
+end
+
+// ═════════════════════════════════════════════════════════════════════════
+// Apply
+// ═════════════════════════════════════════════════════════════════════════
+
+if press && !split_drag then focus = focus_hit end
+
+let how_many = plural(len(act_ids), "conversation", "conversations")
+
+if act == "view" || act == "view_keep" then
+  view = act_arg
+  sel = 0
+  checked = []
+  anchor = 0
+  list_scroll = 0.0
+  focus = ""
+  if act == "view" then
+    q = ""
+    q_c = 0
+  end
+elsif act == "select" then
+  sel = int(act_arg)
+  anchor = sel
+  if !by_key then checked = [] end
+  if by_key then
+    for i in range(0, n) do
+      if rows[i].id == sel then
+        list_scroll = float(ensure_visible_px(int(list_scroll), i * ROW_H, ROW_H + 12, list_view.h))
+      end
+    end
+  end
+elsif act == "check" then
+  let id = int(act_arg)
+  anchor = id
+  checked = if contains(checked, id) then
+    for c in checked do
+      if c == id then continue end
+      c
+    end
+  else
+    append(checked, id)
+  end
+elsif act == "range" then
+  let a = index_of(row_ids, anchor)
+  let b = index_of(row_ids, int(act_arg))
+  if a >= 0 && b >= 0 then
+    for i in range(min(a, b), max(a, b) + 1) do
+      if !contains(checked, row_ids[i]) then checked = append(checked, row_ids[i]) end
+    end
+  end
+elsif act == "fold" then
+  let i = int(act_arg)
+  open_msgs = if contains(open_msgs, i) then
+    for k in open_msgs do
+      if k == i then continue end
+      k
+    end
+  else
+    append(open_msgs, i)
+  end
+elsif act == "archive" && len(act_ids) > 0 then
+  let first = mb.find_thread(threads, act_ids[0])
+  let dest = if first.box == "archive" || first.box == "trash" then "inbox" else "archive" end
+  undo = push_undo(undo, threads, sel, "archive")
+  threads = mb.move_to(threads, act_ids, dest)
+  sel = reselect(threads, rows, act_ids, sel, view)
+  checked = []
+  toast = {msg: if dest == "inbox" then "{how_many} moved to Inbox" else "{how_many} archived" end, left: 6.0, can_undo: true}
+elsif act == "trash" && len(act_ids) > 0 then
+  let first = mb.find_thread(threads, act_ids[0])
+  let gone = first.box == "trash" || first.box == "drafts"
+  undo = push_undo(undo, threads, sel, "trash")
+  threads = if gone then mb.drop_threads(threads, act_ids) else mb.move_to(threads, act_ids, "trash") end
+  sel = reselect(threads, rows, act_ids, sel, view)
+  checked = []
+  toast = {msg: if gone then "{how_many} deleted" else "{how_many} moved to Trash" end, left: 6.0, can_undo: true}
+elsif act == "star" && len(act_ids) > 0 then
+  let first = mb.find_thread(threads, act_ids[0])
+  threads = mb.set_starred(threads, act_ids, !first.starred)
+elsif act == "read" && len(act_ids) > 0 then
+  // Anything read among them means "mark these unread"; otherwise read them.
+  let any_read = false
+  for id in act_ids do
+    let t = mb.find_thread(threads, id)
+    if t != nil && !t.unread then any_read = true end
+  end
+  threads = mb.set_unread(threads, act_ids, any_read)
+  if any_read && contains(act_ids, sel) then keep_unread = sel end
+  if !any_read && keep_unread != 0 && contains(act_ids, keep_unread) then keep_unread = 0 end
+elsif act == "undo" then
+  if len(undo) > 0 then
+    let snap = undo[len(undo) - 1]
+    threads = snap.threads
+    sel = snap.sel
+    undo = drop_last(undo)
+    checked = []
+    toast = {msg: "Undone", left: 2.5, can_undo: false}
+  else
+    toast = {msg: "Nothing to undo", left: 2.5, can_undo: false}
+  end
+elsif act == "compose" then
+  compose = true
+  c_draft = 0
+  c_to = ""
+  c_to_c = 0
+  c_subj = ""
+  c_subj_c = 0
+  c_body = ""
+  c_body_c = 0
+  focus = "to"
+elsif act == "edit_draft" && sel_t != nil then
+  let m = sel_t.msgs[0]
+  let addrs = for k in m.to do mb.person(k).email end
+  compose = true
+  c_draft = sel_t.id
+  c_to = join(addrs, ", ")
+  c_to_c = char_len(c_to)
+  c_subj = sel_t.subject
+  c_subj_c = char_len(c_subj)
+  c_body = join(m.body, "\n\n")
+  c_body_c = char_len(c_body)
+  focus = "body"
+elsif act == "complete" then
+  // Swap the fragment being typed for the contact's address.
+  let kept = for i in range(0, len(to_parts) - 1) do mb.trim_spaces(to_parts[i]) end
+  c_to = join(append(kept, mb.person(to_guess).email), ", ")
+  c_to_c = char_len(c_to)
+  focus = "subj"
+elsif act == "send" then
+  if !to_ready then
+    focus = "to"
+    toast = {msg: "Add a recipient with an address first", left: 3.0, can_undo: false}
+  else
+    seq = seq + 1
+    sent_n = sent_n + 1
+    let to = mb.parse_recipients(c_to)
+    let kept = if c_draft != 0 then mb.drop_threads(threads, [c_draft]) else threads end
+    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else "(no subject)" end
+    let fresh = {id: mb.next_id(threads), box: "sent", labels: [], starred: false, unread: false, subject: subject,
+      msgs: [{from: mb.ME, to: to, age: 0 - seq, body: paragraphs(c_body), atts: []}]}
+    threads = append(kept, fresh)
+    if c_draft != 0 && sel == c_draft then sel = 0 end
+    compose = false
+    focus = ""
+    toast = {msg: "Sent to {mb.person(to[0]).name}", left: 4.0, can_undo: false}
+  end
+elsif act == "close_compose" then
+  // Closing never loses words: anything written is kept as a draft.
+  let wrote = char_len(mb.trim_spaces(c_to ++ c_subj ++ c_body)) > 0
+  if wrote then
+    seq = seq + 1
+    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else "(no subject)" end
+    let m = {from: mb.ME, to: mb.parse_recipients(c_to), age: 0 - seq, body: paragraphs(c_body), atts: []}
+    if c_draft != 0 then
+      threads = for t in threads do
+        if t.id == c_draft then {...t, subject: subject, msgs: [m]} else t end
+      end
+    else
+      threads = append(threads, {id: mb.next_id(threads), box: "drafts", labels: [], starred: false, unread: false, subject: subject, msgs: [m]})
+    end
+    toast = {msg: "Saved to Drafts", left: 3.0, can_undo: false}
+  end
+  compose = false
+  focus = ""
+elsif act == "discard" then
+  if c_draft != 0 then
+    undo = push_undo(undo, threads, sel, "discard")
+    threads = mb.drop_threads(threads, [c_draft])
+    if sel == c_draft then sel = reselect(threads, rows, [c_draft], sel, view) end
+    toast = {msg: "Draft discarded", left: 6.0, can_undo: true}
+  end
+  compose = false
+  focus = ""
+elsif act == "send_reply" && sel_t != nil then
+  if char_len(mb.trim_spaces(reply)) > 0 then
+    seq = seq + 1
+    sent_n = sent_n + 1
+    let to = mb.reply_to(sel_t)
+    threads = mb.add_reply(threads, sel, {from: mb.ME, to: to, age: 0 - seq, body: paragraphs(reply), atts: []})
+    reply = ""
+    reply_c = 0
+    focus = ""
+    detail_scroll = 100000.0
+    toast = {msg: "Reply sent to {mb.person(to[0]).name}", left: 4.0, can_undo: false}
+  end
+end
+
+// ── What a test can read (GET /state → panes[0].panel.values) ────────────
+
+let obs_view = view
+let obs_query = q
+let obs_rows = n
+let obs_row_ids = row_ids
+let obs_sel = sel
+let obs_sel_ix = sel_ix
+let obs_subject = if sel_t != nil then sel_t.subject else "" end
+let obs_msgs = if sel_t != nil then len(sel_t.msgs) else 0 end
+let obs_checked = len(checked)
+let obs_unread = mb.count_unread(threads, "inbox")
+let obs_total = len(threads)
+let obs_focus = focus
+let obs_compose = compose
+let obs_sent = sent_n
+let obs_undo = len(undo)
+let obs_toast = if toast.left > 0.0 then toast.msg else "" end
+let obs_split = list_w
+let obs_list_scroll = int(list_scroll)
+let obs_detail_scroll = int(detail_scroll)
+let obs_act = act

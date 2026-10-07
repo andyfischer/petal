@@ -735,24 +735,42 @@ fn a_name_no_shape_has_is_an_error() {
     assert!(e.contains("draw_circle()"), "{e}");
 }
 
-/// The one reading the names cannot fix (see the note at the head of the
-/// prelude's draw section): flat coordinates passed positionally, with alpha
-/// skipped by naming `width`, has the count and the name of the centre-record
-/// shape's longest declaration, so `width` lands in the mixed shape's alpha.
+/// Flat coordinates passed positionally, with alpha skipped by naming `width`,
+/// has the count and the name of the centre-record shape's longest declaration
+/// as well. The name skips a parameter of the mixed shape's declaration, which
+/// outranks the exact count — so `width` is the width, not the alpha it used
+/// to land in.
 #[test]
-fn positional_coordinates_with_a_named_width_read_width_as_alpha() {
-    assert_eq!(
+fn positional_coordinates_with_a_named_width_skip_the_alpha() {
+    same(&[
+        (
+            "draw_circle_outline(1, 2, 3, C, width: 8)",
+            "draw_circle_outline(1, 2, 3, C, 255, 8)",
+        ),
+        (
+            "draw_ellipse_outline(1, 2, 3, 4, C, width: 9)",
+            "draw_ellipse_outline(1, 2, 3, 4, C, 255, 9)",
+        ),
+        // The centre-record call of the same count and name goes to the same
+        // declaration, which tells it apart by its first argument.
+        (
+            "draw_circle_outline(P, 3, C, 7, width: 8)",
+            "draw_circle_outline(P, 3, C, 7, 8)",
+        ),
+        (
+            "draw_ellipse_outline(P, 3, 4, C, 8, width: 9)",
+            "draw_ellipse_outline(P, 3, 4, C, 8, 9)",
+        ),
+        // Passing the alpha positionally still reads as it did.
+        (
+            "draw_circle_outline(1, 2, 3, C, 255, width: 8)",
+            "draw_circle_outline(1, 2, 3, C, 255, 8)",
+        ),
+    ]);
+    // ...and it is not the alpha: the two widths draw differently.
+    assert_ne!(
         draw("draw_circle_outline(1, 2, 3, C, width: 8)"),
         draw("draw_circle_outline(1, 2, 3, C, 8)"),
-    );
-    assert_eq!(
-        draw("draw_ellipse_outline(1, 2, 3, 4, C, width: 9)"),
-        draw("draw_ellipse_outline(1, 2, 3, 4, C, 9)"),
-    );
-    // Naming the coordinates, or passing the alpha, says which is meant.
-    assert_eq!(
-        draw("draw_circle_outline(1, 2, 3, C, 255, width: 8)"),
-        draw("draw_circle_outline(1, 2, 3, C, 255, 8)"),
     );
 }
 

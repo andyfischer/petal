@@ -398,6 +398,42 @@ fn a_call_two_variants_could_take_is_ambiguous_not_guessed() {
 }
 
 #[test]
+fn a_name_that_skips_a_parameter_outranks_the_exact_count() {
+    // Two shapes that meet at four arguments ending in `width`.
+    let src = "fn ring(center, radius, a = 255, width = 1)\n  \"centre {center} {radius} {a} {width}\"\nend\n\
+               fn ring(cx, cy, radius, a = 255, width = 1)\n  \"flat {cx} {cy} {radius} {a} {width}\"\nend\n";
+    // In the four-parameter variant `width` sits where a fourth positional
+    // argument would have gone; in the five-parameter one it skips `a`, which
+    // no positional call can do. The name was written for that one.
+    assert_eq!(
+        out(&format!("{src}print(ring(1, 2, 3, width: 9))")),
+        "flat 1 2 3 255 9"
+    );
+    // All positional, and names that skip nothing: the exact count, as ever.
+    assert_eq!(out(&format!("{src}print(ring(1, 2, 3, 9))")), "centre 1 2 3 9");
+    assert_eq!(
+        out(&format!("{src}print(ring(1, 2, a: 3, width: 9))")),
+        "centre 1 2 3 9"
+    );
+    let pad = "fn pad(s, left = 1)\n  1\nend\nfn pad(s, left = 1, right = 1)\n  2\nend\n";
+    assert_eq!(out(&format!("{pad}print(pad(\"x\", left: 2))")), "1");
+    // The checker selects the same variant: nothing to report.
+    assert_eq!(
+        errors(&format!("{src}print(ring(1, 2, 3, width: 9))")),
+        Vec::<String>::new()
+    );
+
+    // Skipping into two variants picks neither.
+    let two = "fn v(a, b, c, width = 1)\n  4\nend\n\
+               fn v(a, b, c, d = 0, width = 1)\n  5\nend\n\
+               fn v(a, b, c, d = 0, e = 0, width = 1)\n  6\nend\n";
+    let e = err(&format!("{two}print(v(1, 2, 3, width: 9))"));
+    assert!(e.starts_with("v() is ambiguous"), "{e}");
+    let errs = errors(&format!("{two}fn never()\n  v(1, 2, 3, width: 9)\nend\n"));
+    assert!(errs.iter().any(|m| m.contains("v() is ambiguous")), "{errs:?}");
+}
+
+#[test]
 fn a_misnamed_argument_to_an_exact_arity_variant_still_says_which_name() {
     let e = err(&format!("{BOX}print(box(nope: 1))"));
     assert_eq!(e, "box() has no parameter named 'nope'");

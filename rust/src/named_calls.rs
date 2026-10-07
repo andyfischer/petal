@@ -26,7 +26,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::backend::calls::accepts_call;
+use crate::backend::calls::{accepts_call, skips_a_parameter};
 use crate::constant_table::ConstantValue;
 use crate::ir_validate::is_binding_phantom;
 use crate::native_fn::{NativeSignature, bind_native_args};
@@ -375,7 +375,17 @@ pub fn select_variant(fns: &[&FunctionDef], count: usize, names: &[Option<&str>]
     match accepting.as_slice() {
         [] => None,
         [only] => Some(*only),
-        many => many.iter().copied().find(exact),
+        many => {
+            let exact = many.iter().copied().find(exact)?;
+            let mut skipping = many.iter().copied().filter(|&i| {
+                skips_a_parameter(&fns[i].params, count, names.iter().flatten().copied())
+            });
+            match (skipping.next(), skipping.next()) {
+                (None, _) => Some(exact),
+                (Some(only), None) => Some(only),
+                _ => None,
+            }
+        }
     }
 }
 

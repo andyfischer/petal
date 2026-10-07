@@ -352,14 +352,10 @@ draw_text("Total", x: 24, y: 28, size: 13, c: red)
 Naming `width` without `a` leaves alpha at its default, which no positional
 call can do.
 
-**One exception.** `draw_circle_outline(cx, cy, radius, c, width: 2)` and
-`draw_ellipse_outline(cx, cy, rx, ry, c, width: 2)` — flat coordinates passed
-*positionally*, with alpha skipped by naming `width` — are read with `width` as
-the alpha. The call has the argument count and the `width` name of the record
-shape (`center, radius, c, a, width`), and what tells the shapes apart from
-there is the type of the first argument, which cannot see a name. Name the
-coordinates as well (`cx: …, cy: …, radius: …, c: …, width: 2`), or pass the
-alpha.
+That holds with the coordinates passed positionally too:
+`draw_circle_outline(cx, cy, radius, c, width: 2)` and
+`draw_ellipse_outline(cx, cy, rx, ry, c, width: 2)` draw at full alpha with a
+2px stroke.
 
 A positional call is unaffected by any of this: it means what it always has.
 Where two shapes take the same number of arguments (`draw_circle(center,

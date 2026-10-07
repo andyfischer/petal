@@ -564,6 +564,32 @@ impl<'a> Checker<'a> {
     /// the signature's parameter names when they are known; without them a
     /// call that names an argument is only matched by exact count, which is
     /// all the old rule ever did.
+    /// Of several accepting candidates, the one the runtime runs
+    /// (`backend::calls::resolve_overload`, rule 2): the exact-count one,
+    /// unless a written name skips a parameter of exactly one other.
+    fn pick_among<'s>(
+        many: &[&'s FnSignature],
+        names_of: &impl Fn(&FnSignature) -> Option<&'s Vec<String>>,
+        count: usize,
+        arg_names: &[Option<String>],
+    ) -> Option<&'s FnSignature> {
+        let exact = many.iter().copied().find(|s| s.params.len() == count)?;
+        let mut skipping = many.iter().copied().filter(|s| {
+            names_of(s).is_some_and(|params| {
+                crate::backend::calls::skips_a_parameter(
+                    params,
+                    count,
+                    arg_names.iter().flatten().map(String::as_str),
+                )
+            })
+        });
+        match (skipping.next(), skipping.next()) {
+            (None, _) => Some(exact),
+            (Some(only), None) => Some(only),
+            _ => None,
+        }
+    }
+
     fn sig_accepts(
         sig: &FnSignature,
         names: Option<&Vec<String>>,
@@ -1810,8 +1836,8 @@ impl<'a> Checker<'a> {
                 return Type::Any;
             }
             [only] => (*only).clone(),
-            many => match many.iter().find(|s| exact(s)) {
-                Some(s) => (*s).clone(),
+            many => match Self::pick_among(many, &names_of, args.len(), arg_names) {
+                Some(s) => s.clone(),
                 None => {
                     // More than one variant's defaults stretch to cover this
                     // call and none takes exactly this many: the runtime

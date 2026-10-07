@@ -109,12 +109,14 @@ let _native_font = font
 // their own, so each still says in its own body what its parameters must be
 // (`petal check` reads that) rather than deferring to a runtime test.
 //
-// One exception follows from this. `draw_circle_outline(cx, cy, radius, c,
+// One pair needs a third look. `draw_circle_outline(cx, cy, radius, c,
 // width: 2)` and `draw_ellipse_outline(cx, cy, rx, ry, c, width: 2)` — flat
 // coordinates passed positionally, alpha skipped by naming `width` — have the
-// argument count and the `width` name of the centre-record shape, and are
-// read as the mixed shape with `width` taken for its last argument, the
-// alpha. Name the coordinates too, or pass the alpha.
+// argument count and the `width` name of the centre-record shape's longest
+// declaration too. A name that skips a parameter outranks the exact count, so
+// the mixed shape's declaration takes the call, and with it the centre-record
+// call of the same outline, `(center, radius, c, a, width: 2)`: it tells that
+// one apart by its first argument being a record.
 
 fn _is_num(v)
   let t = type(v)
@@ -260,11 +262,16 @@ export fn draw_circle_outline(cx, cy, radius, r, g, b, a = 255, width = 1)
   _native_circle_outline(cx, cy, radius, r, g, b, a, width)
 end
 // Also positionally the flat `(cx, cy, radius, r, g, b)`.
+// And, with `width` named, the centre-record `(center, radius, c, a)`.
 export fn draw_circle_outline(cx, cy, radius, c, a = 255, width = 1)
-  if _is_num(c) then
-    _native_circle_outline(cx, cy, radius, c, a, width)
+  if !_is_num(cx) then
+    _native_circle_outline(cx.x, cx.y, cy, radius.r, radius.g, radius.b, c, width)
   else
-    _native_circle_outline(cx, cy, radius, c.r, c.g, c.b, a, width)
+    if _is_num(c) then
+      _native_circle_outline(cx, cy, radius, c, a, width)
+    else
+      _native_circle_outline(cx, cy, radius, c.r, c.g, c.b, a, width)
+    end
   end
 end
 export fn draw_circle_outline(center, radius, c)
@@ -312,11 +319,16 @@ export fn draw_ellipse_outline(cx, cy, rx, ry, r, g, b, a = 255, width = 1)
   _native_ellipse_outline(cx, cy, rx, ry, r, g, b, a, width)
 end
 // Also positionally the flat `(cx, cy, rx, ry, r, g, b)`.
+// And, with `width` named, the centre-record `(center, rx, ry, c, a)`.
 export fn draw_ellipse_outline(cx, cy, rx, ry, c, a = 255, width = 1)
-  if _is_num(c) then
-    _native_ellipse_outline(cx, cy, rx, ry, c, a, width)
+  if !_is_num(cx) then
+    _native_ellipse_outline(cx.x, cx.y, cy, rx, ry.r, ry.g, ry.b, c, width)
   else
-    _native_ellipse_outline(cx, cy, rx, ry, c.r, c.g, c.b, a, width)
+    if _is_num(c) then
+      _native_ellipse_outline(cx, cy, rx, ry, c, a, width)
+    else
+      _native_ellipse_outline(cx, cy, rx, ry, c.r, c.g, c.b, a, width)
+    end
   end
 end
 export fn draw_ellipse_outline(center, rx, ry, c)

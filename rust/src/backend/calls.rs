@@ -62,13 +62,37 @@ pub fn accepts_call(func: &FunctionDef, arg_count: usize, names: &[Option<&str>]
     (positional..required).all(|slot| named.contains(&Some(params[slot].as_str())))
 }
 
+/// Whether a call of `arg_count` arguments, the named ones spelt `names`,
+/// *skips* a parameter of `params`: a name lands past the slots the call's own
+/// argument count reaches, so some earlier parameter is left to its default.
+/// Such a call cannot be written positionally against that variant — the name
+/// is doing work there — which is what lets it outrank the exact-arity variant
+/// in [`resolve_overload`].
+pub fn skips_a_parameter<'a, S: AsRef<str>>(
+    params: &[S],
+    arg_count: usize,
+    names: impl IntoIterator<Item = &'a str>,
+) -> bool {
+    names.into_iter().any(|name| {
+        params
+            .iter()
+            .position(|p| p.as_ref() == name)
+            .is_some_and(|slot| slot >= arg_count)
+    })
+}
+
 /// Resolve an overload set to the variant a call selects.
 ///
 /// 1. A variant *accepts* the call per [`accepts_call`].
 /// 2. An accepting variant whose parameter count equals the number of
-///    arguments written wins outright. A call that names nothing and matches
-///    an arity exactly always lands here, which is the whole of the rule as it
-///    stood before defaults — so such a call resolves as it always has.
+///    arguments written wins. A call that names nothing and matches an arity
+///    exactly always lands here, which is the whole of the rule as it stood
+///    before defaults — so such a call resolves as it always has.
+///    The one thing that outranks it: a single other accepting variant in
+///    which a written name skips a parameter ([`skips_a_parameter`]). In the
+///    exact-arity variant that name sits where a positional argument would
+///    have gone anyway; in the other it is the only way to write the call, so
+///    that is the variant the name was written for.
 /// 3. Otherwise the call must be accepted by exactly one variant. None is the
 ///    arity error; more than one is reported as ambiguous rather than settled
 ///    by declaration order.
@@ -99,12 +123,19 @@ pub fn resolve_overload(
         (Some(a), Some(b)) => {
             // Two or more accept. Arities are distinct within a set, so at most
             // one of them is the exact-arity variant.
-            if let Some(exact) = [a, b]
-                .into_iter()
-                .chain(accepting)
-                .find(|e| e.arity == arg_count)
-            {
-                return Ok(exact.closure_id);
+            let all: SmallVec<[&OverloadEntry; 4]> = [a, b].into_iter().chain(accepting).collect();
+            let skips = |e: &&&OverloadEntry| {
+                skips_a_parameter(&func_of(e).params, arg_count, names.iter().flatten().copied())
+            };
+            let mut skipping = all.iter().filter(skips);
+            let (skip, more) = (skipping.next(), skipping.next());
+            if let Some(exact) = all.iter().find(|e| e.arity == arg_count) {
+                match (skip, more) {
+                    (None, _) => return Ok(exact.closure_id),
+                    (Some(only), None) => return Ok(only.closure_id),
+                    // Two variants the name skips into: nothing picks one.
+                    _ => {}
+                }
             }
             let base = overload_base_name(program, closures, entries);
             let all: Vec<String> = entries

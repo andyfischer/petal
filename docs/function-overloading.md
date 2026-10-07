@@ -151,7 +151,13 @@ Then:
 1. **An accepting variant with exactly as many parameters as arguments were
    written wins.** A call that names nothing and matches an arity exactly
    always lands here, which is the whole rule as it stood before defaults —
-   every such call resolves as it always has.
+   every such call resolves as it always has. One thing outranks it: a single
+   other accepting variant in which a written name **skips a parameter** —
+   the name lands past the slots the call's own count reaches, leaving an
+   earlier parameter to its default. In the exact-count variant that name
+   sits where a positional argument would have gone anyway; in the other it
+   is the only way to write the call, so that is the variant it was written
+   for. (Two such variants, and the call is ambiguous.)
 2. **Otherwise the call must be accepted by exactly one variant.**
 3. **Accepted by more than one, with no exact match, it is an error** — never
    settled by declaration order.
@@ -226,10 +232,11 @@ print(dot(center: {x: 1, y: 2}, radius: 5))
 ```
 
 The `ui` prelude's draw calls are written this way
-(`petal-ui/prelude/ui.ptl`). The limit of the technique: a call that passes
-the *second* shape's leading arguments positionally and then uses a name the
-exact-count variant also has is bound by that variant, because the count and
-the names both fit it.
+(`petal-ui/prelude/ui.ptl`). Where a call passes the *second* shape's leading
+arguments positionally and then skips one of its parameters with a name the
+exact-count variant also has — `draw_circle_outline(cx, cy, radius, c,
+width: 2)`, whose count and `width` also fit `(center, radius, c, a, width)`
+— the skip sends it to the second shape's declaration, as rule 1 says.
 
 ## Wrong argument count
 

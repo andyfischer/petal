@@ -41,7 +41,15 @@ Designed for a **1280x850** viewport, which gives the panel a pane of
 1268x778 at origin (6, 38); `POST /mouse` takes window coordinates, so a
 pane point `(x, y)` is clicked at `(x + 6, y + 38)`. The layout is written
 against `screen_width()` / `screen_height()` and the list width is the
-divider's, so it reflows, but the proportions are tuned for that size.
+divider's, so it reflows (checked at 1000x700, where the rail's last labels
+tuck under the account footer), but the proportions are tuned for that size.
+
+Check the scripts with `--host garden`, which knows `text_layout` and the
+panel natives; the default host profile does not:
+
+```bash
+./ts/bin/run-petal.ts check --strict --host garden examples/productivity/email-client/app.ptl
+```
 
 Nothing is persisted: the mailbox is `state`, so it survives a hot reload and
 is rebuilt from the seed by `POST /panel/reset`. There is no
@@ -65,11 +73,11 @@ AM", "Yesterday" and "Sep 16" are the same on every run.
 | `/` | focus the search field |
 | `x` | tick or untick the open conversation |
 | `cmd+a` | tick everything in the list |
-| `e` | archive the ticked conversations, or the open one (from Archive or Trash: move back to Inbox) |
-| `#`, `delete`, `backspace` | move to Trash (from Trash or Drafts: delete for good) |
+| `e` | archive the ticked conversations, or the open one (from Archive or Trash: move back to Inbox; a draft stays in Drafts) |
+| `#`, `delete`, `backspace` | move to Trash (a draft, or a conversation already in Trash, is deleted for good) |
 | `s` | star / unstar |
 | `u` | mark unread / read |
-| `z` | undo the last archive, trash, delete or discard (up to 20 deep) |
+| `z` | undo the last archive, trash, delete or discard (up to 20 deep); it puts those conversations back and leaves everything done since alone |
 | `c` | compose |
 | `r` | reply to the open conversation |
 | `return` | on a draft: continue writing it |
@@ -111,17 +119,18 @@ AM", "Yesterday" and "Sep 16" are the same on every run.
 
 | | |
 |---|---|
-| typing, `return` | text; Return starts a new line in a body |
-| arrows, `home`, `end` | move the caret, row-wise in a wrapped body |
+| typing, `return` | text; Return starts a new line in a body, and a blank line starts a new paragraph |
+| arrows, `home`, `end` | move the caret, row-wise in a wrapped body; the reply editor grows to seven rows and then scrolls with the caret |
 | click | place the caret |
 | `cmd+return` | send |
 | `tab` / `shift+tab` | next / previous field in the dialog |
-| `tab` or `return` in To | accept the ghosted contact completion |
+| `tab` or `return` in To | accept the ghosted contact completion (once the address is whole they move on to Subject) |
 | `escape`, the close button, a click outside, "Save draft" | close; anything written is saved to Drafts |
 | "Discard" | close without saving (a continued draft is deleted, undoably) |
 
-A reply joins the conversation, which then also appears in Sent. A new
-message needs a recipient that is a contact or contains `@`.
+A reply joins the conversation, which then also appears in Sent, and the
+reading pane scrolls to it. A new message needs a recipient that is a contact
+or contains `@`.
 
 ## What it exercises
 
@@ -143,8 +152,10 @@ message needs a recipient that is a contact or contains `@`.
   select-all through `claim_key("a", "cmd")`, and bulk actions over whichever
   of the two is active.
 - **Immutable data.** Every change to the mailbox is a function from the list
-  of threads to a new list, so undo is a stack of earlier lists and costs
-  nothing to take.
+  of threads to a new list. An undo entry is the handful of thread records a
+  move touched, as they were (`pick`); `restore` returns each to its mailbox,
+  or brings it back whole if it was deleted, without rolling back a reply
+  sent or a star set in between.
 - **Text editing in Petal.** One `edit_text` function serves all five fields:
   a character-indexed caret, word delete, and for wrapped bodies a wrapper
   that keeps character offsets so the caret can move between display rows.
@@ -199,6 +210,9 @@ Garden at all: `petal run -I examples/productivity/email-client test.ptl` with
 - **Seeded text is ASCII.** Highlighting lowercases a string and then slices
   the original by the same character offsets, which holds as long as `lower`
   does not change a string's character count.
+- **One frame late again for scroll-to-end.** A sent reply's height is known
+  only after it has been laid out, so the reading pane is pinned to its end
+  for two frames (`to_bottom`) rather than scrolled once.
 - **Sent mail is all stamped "now".** The mailbox clock is fixed, so messages
   written in a session get a negative age and sort by the order they were
   sent rather than by a real time.

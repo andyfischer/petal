@@ -78,6 +78,7 @@ let TOOL_H = 56       // the reading pane's toolbar
 let SPLIT_DEFAULT = 396
 let MODAL_W = 640
 let MODAL_H = 476
+let NO_SUBJECT = "(no subject)"
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -111,8 +112,9 @@ state split_drag = false
 state list_scroll = 0.0
 state detail_scroll = 0.0
 state detail_h = 0.0            // the open thread's laid-out height, from last frame
+state to_bottom = 0             // frames left to pin the reading pane to its end
 
-state undo = []                 // snapshots: {threads, sel, note}
+state undo = []                 // entries: {was, sel, note}, see push_undo
 state toast = {msg: "", left: 0.0, can_undo: false}   // `left` is seconds still to show
 state tip_key = ""              // the tooltip the pointer is resting on
 state tip_rest = 0.0             // how long the pointer has rested on it
@@ -252,17 +254,30 @@ fn reselect(ts: list, rows: list, ids: list, cur: int, v: string) -> int
   pick
 end
 
-fn push_undo(stack: list, ts: list, cur: int, note: string) -> list
-  let grown = append(stack, {threads: ts, sel: cur, note: note})
+// An undo entry holds the threads a move touched, as they were, rather than
+// the whole store: undoing an archive must not also take back a reply sent or
+// a star set since.
+fn push_undo(stack: list, ts: list, ids: list, cur: int, note: string) -> list
+  let grown = append(stack, {was: mb.pick(ts, ids), sel: cur, note: note})
   if len(grown) > 20 then slice(grown, len(grown) - 20) else grown end
 end
 
+// What was typed, as a message body: a blank line ends a paragraph, and a
+// single Return stays a line break inside one.
 fn paragraphs(text: string) -> list
+  let out = []
+  let cur = ""
   for line in split(text, "\n") do
     let s = mb.trim_spaces(line)
-    if char_len(s) == 0 then continue end
-    s
+    if char_len(s) == 0 then
+      if cur != "" then out = append(out, cur) end
+      cur = ""
+    else
+      cur = if cur == "" then s else cur ++ "\n" ++ s end
+    end
   end
+  if cur != "" then out = append(out, cur) end
+  out
 end
 
 fn kind_color(kind: string) -> record
@@ -498,7 +513,7 @@ fn draw_row(t: record, r: record, v: string, is_sel: bool, is_checked: bool, hot
     draw_circle({x: dots - 4, y: r.y + 68}, 4, mb.label_of(l).color)
     dots = dots - 13
   end
-  if tagged && t.box != "inbox" then
+  if tagged && t.box != "inbox" && t.box != v then
     let ts = sb(10, MUTED)
     let name = mb.view_name(t.box)
     let w = text_width(name, ts) + 12
@@ -573,9 +588,11 @@ fn draw_msg_open(m: record, x: num, y: num, w: num, terms: list, ok: bool) -> nu
   let body_st = st(BODY_SIZE, INK_2)
   let cy = y + 60
   for para in m.body do
-    for line in text_layout.wrap_text(para, body_st, bw) do
-      draw_marked(line, bx, cy, body_st, terms)
-      cy = cy + BODY_STEP
+    for hard in split(para, "\n") do
+      for line in text_layout.wrap_text(hard, body_st, bw) do
+        draw_marked(line, bx, cy, body_st, terms)
+        cy = cy + BODY_STEP
+      end
     end
     cy = cy + 12
   end
@@ -703,7 +720,9 @@ end
 // The recipient being typed, and the contact it would complete to.
 let to_parts = split(c_to, ",")
 let to_frag = mb.trim_spaces(to_parts[len(to_parts) - 1])
-let to_guess = if focus == "to" && c_to_c == char_len(c_to) then mb.complete_contact(to_frag) else "" end
+let to_cand = if focus == "to" && c_to_c == char_len(c_to) then mb.complete_contact(to_frag) else "" end
+// Nothing to offer once the address is already whole: Tab then moves on.
+let to_guess = if to_cand != "" && lower(mb.person(to_cand).email) == lower(to_frag) then "" else to_cand end
 let to_keys = mb.parse_recipients(c_to)
 let to_ready = mb.deliverable(to_keys)
 
@@ -748,8 +767,9 @@ list_scroll = clamp(list_scroll, 0.0, list_max)
 
 let can_reply = sel_t != nil && sel_t.box != "drafts" && sel_t.box != "trash"
 let reply_open = can_reply && (focus == "reply" || char_len(reply) > 0)
-let reply_rows = if reply_open then len(wrap_rows(reply, REPLY_STYLE, reply_w)) else 0 end
-let reply_h = if !can_reply then 0 elsif reply_open then 132 + clamp(reply_rows, 3, 7) * AREA_STEP else 76 end
+let reply_lines = if reply_open then wrap_rows(reply, REPLY_STYLE, reply_w) else [] end
+let reply_vis = clamp(len(reply_lines), 3, 7)      // rows the editor shows before it scrolls
+let reply_h = if !can_reply then 0 elsif reply_open then 132 + reply_vis * AREA_STEP else 76 end
 let detail_view = rect(DX, TOOL_H, DW, H - TOOL_H - reply_h)
 let detail_max = max(0.0, detail_h - float(detail_view.h))
 if hit(detail_view, m_main) then detail_scroll = detail_scroll + scroll_y() * 56.0 end
@@ -782,8 +802,8 @@ if compose then
       act = "complete"
     else
       let ring = ["to", "subj", "body"]
-      let at_i = max(0, index_of(ring, focus))
-      focus = ring[(at_i + (if mod_shift() then 2 else 1 end)) % 3]
+      let at_i = index_of(ring, focus)
+      focus = if at_i < 0 then "to" else ring[(at_i + (if mod_shift() then 2 else 1 end)) % 3] end
     end
   end
   if key_pressed("return") then
@@ -858,6 +878,13 @@ else
   end
 end
 
+// A reply just sent should be in sight. Its height is only known once it has
+// been laid out, a frame after it joins the thread, so the pin holds for two.
+if to_bottom > 0 then
+  detail_scroll = detail_max
+  to_bottom = to_bottom - 1
+  request_frame()
+end
 detail_scroll = clamp(detail_scroll, 0.0, detail_max)
 
 // A click lands in at most one field; anywhere else gives the keyboard back.
@@ -950,6 +977,9 @@ for i in range(0, len(mb.LABELS)) do
 end
 
 // The account, pinned to the foot of the rail.
+// It paints its own ground, so on a short pane the labels pass under it
+// rather than through it.
+draw_rect(0, H - 71, RAIL_W, 71, RAIL)
 draw_rect(16, H - 70, RAIL_W - 32, 1, RAIL_RULE)
 let me = mb.person(mb.ME)
 avatar(mb.ME, 34, H - 35, 16, RAIL)
@@ -1282,17 +1312,23 @@ else
       draw_text(to_name, {x: box.x + 38 + text_width("Reply to ", st(12, MUTED)), y: box.y + 11}, sb(12, INK_2))
       let ax = box.x + 20
       let ay = box.y + 42
-      draw_area(ax, ay, reply_w, reply, reply_c, REPLY_STYLE, AREA_STEP, focus == "reply", "Write your reply")
+      // Past seven rows the editor scrolls, keeping the caret's row in sight.
+      let reply_shift = max(0, row_of(reply_lines, reply_c) - reply_vis + 1) * AREA_STEP
+      clip_push(rect(ax - 2, ay - 2, reply_w + 6, reply_vis * AREA_STEP + 4))
+      draw_area(ax, ay - reply_shift, reply_w, reply, reply_c, REPLY_STYLE, AREA_STEP, focus == "reply", "Write your reply")
+      clip_pop()
       let send_r = rect(box.x + box.w - 104, box.y + box.h - 46, 90, 34)
       let ready = char_len(mb.trim_spaces(reply)) > 0
       let hot = hit(send_r, m_main)
       button_primary(send_r, "Send", hot && ready, ready)
-      draw_text("Cmd + Return to send   ·   Esc to step out", {x: box.x + 20, y: box.y + box.h - 36}, st(12, FAINT))
+      let keys_full = "Cmd + Return to send   ·   Esc to step out"
+      let keys_hint = if box.x + 20 + text_width(keys_full, st(12, FAINT)) <= send_r.x - 16 then keys_full else "Cmd + Return to send" end
+      draw_text(keys_hint, {x: box.x + 20, y: box.y + box.h - 36}, st(12, FAINT))
       if hot && press then
         act = "send_reply"
       elsif press && hit(box, m_main) then
         focus_hit = "reply"
-        reply_c = area_caret_at(reply, REPLY_STYLE, reply_w, ax, ay, AREA_STEP, mouse_x(), mouse_y())
+        reply_c = area_caret_at(reply, REPLY_STYLE, reply_w, ax, ay - reply_shift, AREA_STEP, mouse_x(), mouse_y())
       end
     else
       let hot = hit(box, m_main)
@@ -1373,8 +1409,12 @@ if compose then
     let typed_w = text_width(c_to, FIELD_STYLE)
     let rest = if index_of(lower(p.email), lower(to_frag)) == 0 then char_slice(p.email, char_len(to_frag)) else "  {p.name}  ·  {p.email}" end
     let gy = text_layout.text_line_y(to_r, FIELD_STYLE)
-    draw_text(rest, {x: to_r.x + typed_w + 3, y: gy}, st(14, FAINT))
-    keycap(to_r.x + typed_w + text_width(rest, st(14, FAINT)) + 14, to_r.y + 12, "Tab", RULE_SOFT, MUTED)
+    let rest_w = text_width(rest, st(14, FAINT))
+    // Only while it fits: a To line long enough to scroll has no room for it.
+    if typed_w + rest_w + 56 <= to_r.w then
+      draw_text(rest, {x: to_r.x + typed_w + 3, y: gy}, st(14, FAINT))
+      keycap(to_r.x + typed_w + rest_w + 14, to_r.y + 12, "Tab", RULE_SOFT, MUTED)
+    end
   end
   draw_rect(to_row.x, to_row.y + to_row.h, to_row.w, 1, if focus == "to" then ACCENT else RULE end)
   if press && hit(to_row, m_modal) then
@@ -1506,18 +1546,36 @@ elsif act == "fold" then
     append(open_msgs, i)
   end
 elsif act == "archive" && len(act_ids) > 0 then
-  let first = mb.find_thread(threads, act_ids[0])
-  let dest = if first.box == "archive" || first.box == "trash" then "inbox" else "archive" end
-  undo = push_undo(undo, threads, sel, "archive")
-  threads = mb.move_to(threads, act_ids, dest)
-  sel = reselect(threads, rows, act_ids, sel, view)
-  checked = []
-  toast = {msg: if dest == "inbox" then "{how_many} moved to Inbox" else "{how_many} archived" end, left: 6.0, can_undo: true}
+  // A draft has nowhere to be archived to, so a mixed selection (a label can
+  // hold both) leaves its drafts where they are.
+  let movable = for id in act_ids do
+    let t = mb.find_thread(threads, id)
+    if t == nil || t.box == "drafts" then continue end
+    id
+  end
+  if len(movable) == 0 then
+    toast = {msg: "Drafts stay in Drafts until sent", left: 3.0, can_undo: false}
+  else
+    let first = mb.find_thread(threads, movable[0])
+    let dest = if first.box == "archive" || first.box == "trash" then "inbox" else "archive" end
+    let moved = plural(len(movable), "conversation", "conversations")
+    undo = push_undo(undo, threads, movable, sel, "archive")
+    threads = mb.move_to(threads, movable, dest)
+    sel = reselect(threads, rows, movable, sel, view)
+    checked = []
+    toast = {msg: if dest == "inbox" then "{moved} moved to Inbox" else "{moved} archived" end, left: 6.0, can_undo: true}
+  end
 elsif act == "trash" && len(act_ids) > 0 then
-  let first = mb.find_thread(threads, act_ids[0])
-  let gone = first.box == "trash" || first.box == "drafts"
-  undo = push_undo(undo, threads, sel, "trash")
-  threads = if gone then mb.drop_threads(threads, act_ids) else mb.move_to(threads, act_ids, "trash") end
+  // Each conversation goes by where it is: a draft, or one already in Trash,
+  // is deleted; anything else moves to Trash.
+  let dead = for id in act_ids do
+    let t = mb.find_thread(threads, id)
+    if t == nil || (t.box != "trash" && t.box != "drafts") then continue end
+    id
+  end
+  let gone = len(dead) == len(act_ids)
+  undo = push_undo(undo, threads, act_ids, sel, "trash")
+  threads = mb.move_to(mb.drop_threads(threads, dead), act_ids, "trash")
   sel = reselect(threads, rows, act_ids, sel, view)
   checked = []
   toast = {msg: if gone then "{how_many} deleted" else "{how_many} moved to Trash" end, left: 6.0, can_undo: true}
@@ -1537,7 +1595,7 @@ elsif act == "read" && len(act_ids) > 0 then
 elsif act == "undo" then
   if len(undo) > 0 then
     let snap = undo[len(undo) - 1]
-    threads = snap.threads
+    threads = mb.restore(threads, snap.was)
     sel = snap.sel
     undo = drop_last(undo)
     checked = []
@@ -1562,7 +1620,7 @@ elsif act == "edit_draft" && sel_t != nil then
   c_draft = sel_t.id
   c_to = join(addrs, ", ")
   c_to_c = char_len(c_to)
-  c_subj = sel_t.subject
+  c_subj = if sel_t.subject == NO_SUBJECT then "" else sel_t.subject end
   c_subj_c = char_len(c_subj)
   c_body = join(m.body, "\n\n")
   c_body_c = char_len(c_body)
@@ -1582,7 +1640,7 @@ elsif act == "send" then
     sent_n = sent_n + 1
     let to = mb.parse_recipients(c_to)
     let kept = if c_draft != 0 then mb.drop_threads(threads, [c_draft]) else threads end
-    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else "(no subject)" end
+    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else NO_SUBJECT end
     let fresh = {id: mb.next_id(threads), box: "sent", labels: [], starred: false, unread: false, subject: subject,
       msgs: [{from: mb.ME, to: to, age: 0 - seq, body: paragraphs(c_body), atts: []}]}
     threads = append(kept, fresh)
@@ -1596,7 +1654,7 @@ elsif act == "close_compose" then
   let wrote = char_len(mb.trim_spaces(c_to ++ c_subj ++ c_body)) > 0
   if wrote then
     seq = seq + 1
-    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else "(no subject)" end
+    let subject = if char_len(mb.trim_spaces(c_subj)) > 0 then mb.trim_spaces(c_subj) else NO_SUBJECT end
     let m = {from: mb.ME, to: mb.parse_recipients(c_to), age: 0 - seq, body: paragraphs(c_body), atts: []}
     if c_draft != 0 then
       threads = for t in threads do
@@ -1611,7 +1669,7 @@ elsif act == "close_compose" then
   focus = ""
 elsif act == "discard" then
   if c_draft != 0 then
-    undo = push_undo(undo, threads, sel, "discard")
+    undo = push_undo(undo, threads, [c_draft], sel, "discard")
     threads = mb.drop_threads(threads, [c_draft])
     if sel == c_draft then sel = reselect(threads, rows, [c_draft], sel, view) end
     toast = {msg: "Draft discarded", left: 6.0, can_undo: true}
@@ -1627,7 +1685,7 @@ elsif act == "send_reply" && sel_t != nil then
     reply = ""
     reply_c = 0
     focus = ""
-    detail_scroll = 100000.0
+    to_bottom = 2
     toast = {msg: "Reply sent to {mb.person(to[0]).name}", left: 4.0, can_undo: false}
   end
 end

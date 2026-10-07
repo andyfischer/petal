@@ -333,8 +333,10 @@ export fn face_of(t: record) -> string
   key
 end
 
+// A message as one run of text, for snippets and search: paragraphs and the
+// line breaks inside them both become spaces.
 export fn body_text(m: record) -> string
-  join(m.body, " ")
+  join(split(join(m.body, " "), "\n"), " ")
 end
 
 // Everything a free-text term can match in a thread, lowercased once.
@@ -481,6 +483,28 @@ export fn drop_threads(ts: list, ids: list) -> list
     if contains(ids, t.id) then continue end
     t
   end
+end
+
+// The threads with these ids, as they are now: what an undo entry keeps.
+export fn pick(ts: list, ids: list) -> list
+  for t in ts do
+    if !contains(ids, t.id) then continue end
+    t
+  end
+end
+
+// Put `was` back: a thread that is still in the store returns to the mailbox
+// it was in and keeps whatever has happened to it since; one that was deleted
+// comes back whole.
+export fn restore(ts: list, was: list) -> list
+  let out = for t in ts do
+    let old = find_thread(was, t.id)
+    if old != nil then {...t, box: old.box} else t end
+  end
+  for old in was do
+    if find_thread(ts, old.id) == nil then out = append(out, old) end
+  end
+  out
 end
 
 export fn set_unread(ts: list, ids: list, unread: bool) -> list

@@ -4,18 +4,19 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-28 of the 50 exist. Twenty-three are panel apps under the category directories
+31 of the 50 exist. Twenty-six are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
-of each category, plus Asteroids, Flappy Bird, the memory game, the calendar,
-the command palette, the node-based editor, the Markdown editor and the solar
-system), and five more
+of each of the first five categories, plus Asteroids, Flappy Bird, the memory
+game, the tower defense mini-game, the calendar, the email client, the command
+palette, the node-based editor, the Markdown editor, the network graph explorer
+and the solar system), and five more
 were written as headless console programs under `examples/games/`, which
 stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a twenty-fourth panel app that was not on
-this list. The remaining 22 have not been attempted.
+`examples/games/side-scroller` is a twenty-seventh panel app that was not on
+this list. The remaining 19 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -29,7 +30,7 @@ this list. The remaining 22 have not been attempted.
 | 7 | **2048** | Grid layout, gestures/keys, transitions | console — `examples/games/2048/2048.ptl` |
 | 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/games/minesweeper/minesweeper.ptl` |
 | 9 | **Memory matching game** | Card components, animation, delayed state changes | built — `examples/games/memory/` |
-| 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation |  |
+| 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation | built — `examples/games/tower-defense/` |
 | 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance |  |
 | 12 | **Physics playground** | Dragging, gravity, collisions, constraints |  |
 | **Everyday UI** | | | |
@@ -37,7 +38,7 @@ this list. The remaining 22 have not been attempted.
 | 14 | **Todo app** | CRUD, lists, persistence, filtering | built — `examples/productivity/todo/` |
 | 15 | **Notes app** | Text editing, selection, persistence, search | built — `examples/productivity/notes/` |
 | 16 | **Calendar** | Dense layout, dates, navigation, drag/drop | built — `examples/productivity/calendar/` |
-| 17 | **Email client** | Master/detail UI, lists, search, selection |  |
+| 17 | **Email client** | Master/detail UI, lists, search, selection | built — `examples/productivity/email-client/` |
 | 18 | **Chat / Slack clone** | Scrolling feeds, composer, async messages |  |
 | 19 | **File browser** | Trees, icons, selection, context menus |  |
 | 20 | **Settings screen** | Forms, toggles, sliders, nested sections |  |
@@ -68,7 +69,7 @@ this list. The remaining 22 have not been attempted.
 | 42 | **Live server-monitoring dashboard** | Streaming data, sparklines, alerts | built — `examples/dashboards/server-monitoring/` |
 | 43 | **Personal finance dashboard** | Pie/bar/line charts, drill-down | built — `examples/dashboards/finance-dashboard/` |
 | 44 | **Interactive election map** | SVG/vector maps, hover, colors, tooltips |  |
-| 45 | **Network graph explorer** | Force-directed layout, zoom/pan, selection |  |
+| 45 | **Network graph explorer** | Force-directed layout, zoom/pan, selection | built — `examples/dashboards/network-graph/` |
 | 46 | **Timeline explorer** | Zooming time axis, events, filtering |  |
 | **Creative / graphical experiments** | | | |
 | 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/games/boids/boids.ptl` |

@@ -24,7 +24,10 @@ that go down with it:
   Calls are arrows from caller to callee, weighted by throughput. Unhealthy
   services wear a breathing halo. Labels are placed greedily, most connected
   first, each trying four positions and skipping any that would cover another
-  label or node; how many appear depends on the zoom.
+  label, node or piece of floating chrome; how many appear depends on the
+  zoom. A selection of one or two always keeps its labels; a larger one takes
+  the free spots like everything else. With every group hidden the canvas
+  says so and how to get them back.
 - **Sidebar** — the eight groups (click to hide one, hover to light it), the
   highlight mode, three force sliders, a temperature meter for the layout, and
   Reheat / Scatter / Freeze.
@@ -77,7 +80,7 @@ one frame per tick.
 | **Shift-drag empty canvas** | Box-select every node inside. |
 | **Drag a node** | Move it (and the rest of the selection) and pin it where it is dropped; the layout reheats around it. |
 | **Double-click a node** | Select it and glide the camera to it at 170%. |
-| **Hover a node** | Preview its neighbourhood and show a card with its figures. |
+| **Hover a node** | Preview its neighbourhood and show a card with its figures beside it. |
 | **Right-click a node** | Pin / Unpin · Focus camera · Select neighbours · Select group · Hide group. |
 | **Right-click the canvas** | Fit to view · Reheat layout · Scatter · Unpin all · Show all groups. |
 | **Minimap** | Click or drag to put the view there. |
@@ -98,7 +101,7 @@ one frame per tick.
 | `L` | Labels: auto → all → off. |
 | `M` | Ambient motion (halos, packets) on or off. |
 | `⌘A` | Select everything visible. |
-| `esc` | Cancel a drag, else clear the selection, else clear the search. |
+| `esc` | Cancel a drag in progress (a dragged node, its pin and the layout go back to where they were; a pan returns the camera), else clear the selection, else clear the search. |
 
 ### Sidebar and inspector
 
@@ -208,6 +211,9 @@ could not be driven from the debug server and are untested: middle-drag pan
   `scroll_y()` — `POST /mouse {"op":"scroll","lines":-3}`. Whether that is
   the comfortable direction on a trackpad with natural scrolling was not
   checked in a window, and there is no host read for that setting.
+- **The minimap can sit on top of a node.** Fit pads the graph evenly and
+  does not reserve the minimap's corner, so a node that settles bottom-right
+  is covered until the view is panned. Labels do steer round the chrome.
 - **Overlays have to announce themselves early.** The zoom pills, legend and
   search dropdown are drawn after the canvas but must swallow presses before
   the canvas sees them, so their rects are computed at the top of the frame

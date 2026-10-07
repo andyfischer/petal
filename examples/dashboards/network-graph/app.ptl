@@ -1,0 +1,2029 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  LATTICE — a network graph explorer as a Garden Petal panel.
+//
+//  Fifty-nine services of a fictional storefront and the calls between them, laid
+//  out by a force simulation that runs inside the script: every node repels
+//  every other, every call is a spring, and a weak gravity keeps the whole
+//  thing on the table. The camera zooms about the pointer and pans by drag;
+//  selecting a node lights up its neighbourhood, its blast radius, or
+//  everything it depends on.
+//
+//  Designed for a 1440x900 viewport. See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+let TAU = 6.28318530718
+
+// ── Palette ──────────────────────────────────────────────────────────────
+let BG      = #090b10
+let CANVAS  = #0b0e14
+let GRID    = #1b2230
+let PANEL   = #10141c
+let ELEV    = #171c27
+let HOVER   = #1f2634
+let LINE    = #222a38
+let TEXT    = #e8ecf3
+let DIM     = #97a1b3
+let FAINT   = #5d677b
+let ACCENT  = #8ab4ff
+let EDGE    = #8490a8
+let GOOD    = #4fd1a1
+let WARN    = #f5b547
+let BAD     = #ff6b6b
+
+// ── The dataset ──────────────────────────────────────────────────────────
+//  g: group index · k: kind · rps: requests/s · p99: ms · err: % · st: health
+//  (0 healthy, 1 degraded, 2 failing)
+
+let GROUPS = [
+  {name: "Edge", team: "Web Platform", c: #f2b441},
+  {name: "Identity", team: "Identity & Access", c: #a78bfa},
+  {name: "Commerce", team: "Checkout", c: #ff7d92},
+  {name: "Catalog", team: "Discovery", c: #2dd4bf},
+  {name: "Fulfilment", team: "Logistics", c: #5aa9ff},
+  {name: "Messaging", team: "Engagement", c: #9bd75a},
+  {name: "Platform", team: "Core Infrastructure", c: #d6a77a},
+  {name: "External", team: "Third party", c: #8d98ad},
+]
+
+let NODES = [
+  {n: "edge-cdn", g: 0, k: "edge", rps: 9200, p99: 12, err: 0.02, st: 0},
+  {n: "api-gateway", g: 0, k: "edge", rps: 6400, p99: 38, err: 0.11, st: 0},
+  {n: "web-app", g: 0, k: "svc", rps: 3100, p99: 96, err: 0.08, st: 0},
+  {n: "mobile-bff", g: 0, k: "svc", rps: 2400, p99: 84, err: 0.12, st: 0},
+  {n: "graphql-federation", g: 0, k: "svc", rps: 1900, p99: 122, err: 0.21, st: 0},
+  {n: "rate-limiter", g: 0, k: "svc", rps: 6400, p99: 4, err: 0.0, st: 0},
+
+  {n: "auth", g: 1, k: "svc", rps: 2800, p99: 41, err: 0.05, st: 0},
+  {n: "sessions", g: 1, k: "svc", rps: 5200, p99: 9, err: 0.01, st: 0},
+  {n: "accounts", g: 1, k: "svc", rps: 640, p99: 58, err: 0.04, st: 0},
+  {n: "permissions", g: 1, k: "svc", rps: 2100, p99: 14, err: 0.02, st: 0},
+  {n: "sso-bridge", g: 1, k: "svc", rps: 85, p99: 240, err: 0.31, st: 0},
+  {n: "identity-db", g: 1, k: "store", rps: 1900, p99: 6, err: 0.0, st: 0},
+  {n: "session-cache", g: 1, k: "store", rps: 5200, p99: 1, err: 0.0, st: 0},
+
+  {n: "cart", g: 2, k: "svc", rps: 720, p99: 66, err: 0.09, st: 0},
+  {n: "checkout", g: 2, k: "svc", rps: 310, p99: 412, err: 1.8, st: 1},
+  {n: "orders", g: 2, k: "svc", rps: 280, p99: 92, err: 0.07, st: 0},
+  {n: "payments", g: 2, k: "svc", rps: 190, p99: 690, err: 2.6, st: 1},
+  {n: "invoicing", g: 2, k: "svc", rps: 60, p99: 140, err: 0.05, st: 0},
+  {n: "fraud-scoring", g: 2, k: "svc", rps: 190, p99: 1240, err: 4.2, st: 1},
+  {n: "tax-engine", g: 2, k: "svc", rps: 240, p99: 75, err: 0.03, st: 0},
+  {n: "promotions", g: 2, k: "svc", rps: 410, p99: 48, err: 0.06, st: 0},
+  {n: "orders-db", g: 2, k: "store", rps: 520, p99: 11, err: 0.0, st: 0},
+  {n: "ledger-db", g: 2, k: "store", rps: 230, p99: 9, err: 0.0, st: 0},
+  {n: "payment-events", g: 2, k: "queue", rps: 380, p99: 3, err: 0.0, st: 0},
+
+  {n: "catalog", g: 3, k: "svc", rps: 2600, p99: 44, err: 0.04, st: 0},
+  {n: "search", g: 3, k: "svc", rps: 1500, p99: 71, err: 0.09, st: 0},
+  {n: "pricing", g: 3, k: "svc", rps: 1800, p99: 29, err: 0.02, st: 0},
+  {n: "inventory", g: 3, k: "svc", rps: 950, p99: 52, err: 0.05, st: 0},
+  {n: "recommendations", g: 3, k: "svc", rps: 700, p99: 133, err: 0.14, st: 0},
+  {n: "reviews", g: 3, k: "svc", rps: 430, p99: 61, err: 0.06, st: 0},
+  {n: "catalog-db", g: 3, k: "store", rps: 2100, p99: 7, err: 0.0, st: 0},
+  {n: "search-index", g: 3, k: "store", rps: 1500, p99: 18, err: 0.01, st: 0},
+  {n: "price-cache", g: 3, k: "store", rps: 1800, p99: 1, err: 0.0, st: 0},
+  {n: "media-store", g: 3, k: "store", rps: 3400, p99: 22, err: 0.01, st: 0},
+
+  {n: "shipping", g: 4, k: "svc", rps: 120, p99: 530, err: 2.1, st: 1},
+  {n: "warehouse", g: 4, k: "svc", rps: 90, p99: 95, err: 0.08, st: 0},
+  {n: "returns", g: 4, k: "svc", rps: 22, p99: 130, err: 0.1, st: 0},
+  {n: "carrier-adapter", g: 4, k: "svc", rps: 140, p99: 2900, err: 31.0, st: 2},
+  {n: "tracking", g: 4, k: "svc", rps: 380, p99: 480, err: 3.4, st: 1},
+  {n: "shipments-db", g: 4, k: "store", rps: 260, p99: 8, err: 0.0, st: 0},
+  {n: "fulfilment-events", g: 4, k: "queue", rps: 210, p99: 4, err: 0.0, st: 0},
+
+  {n: "notifications", g: 5, k: "svc", rps: 460, p99: 37, err: 0.03, st: 0},
+  {n: "email-sender", g: 5, k: "svc", rps: 210, p99: 150, err: 0.12, st: 0},
+  {n: "sms-sender", g: 5, k: "svc", rps: 40, p99: 210, err: 0.2, st: 0},
+  {n: "push-sender", g: 5, k: "svc", rps: 260, p99: 88, err: 0.09, st: 0},
+  {n: "templates", g: 5, k: "svc", rps: 470, p99: 12, err: 0.0, st: 0},
+  {n: "notify-queue", g: 5, k: "queue", rps: 510, p99: 2, err: 0.0, st: 0},
+
+  {n: "event-bus", g: 6, k: "queue", rps: 4100, p99: 5, err: 0.0, st: 0},
+  {n: "feature-flags", g: 6, k: "svc", rps: 7800, p99: 3, err: 0.0, st: 0},
+  {n: "config-store", g: 6, k: "store", rps: 900, p99: 4, err: 0.0, st: 0},
+  {n: "analytics-ingest", g: 6, k: "svc", rps: 3600, p99: 16, err: 0.02, st: 0},
+  {n: "lakehouse", g: 6, k: "store", rps: 3600, p99: 45, err: 0.01, st: 0},
+  {n: "metrics", g: 6, k: "svc", rps: 8800, p99: 7, err: 0.0, st: 0},
+  {n: "audit-log", g: 6, k: "svc", rps: 620, p99: 19, err: 0.0, st: 0},
+
+  {n: "card-network", g: 7, k: "ext", rps: 185, p99: 280, err: 0.7, st: 0},
+  {n: "carrier-apis", g: 7, k: "ext", rps: 135, p99: 2750, err: 34.0, st: 2},
+  {n: "smtp-relay", g: 7, k: "ext", rps: 210, p99: 120, err: 0.2, st: 0},
+  {n: "sms-gateway", g: 7, k: "ext", rps: 40, p99: 190, err: 0.4, st: 0},
+  {n: "push-gateway", g: 7, k: "ext", rps: 260, p99: 70, err: 0.1, st: 0},
+]
+
+//  caller>callee
+let LINKS = [
+  "edge-cdn>api-gateway", "edge-cdn>media-store",
+  "api-gateway>web-app", "api-gateway>mobile-bff", "api-gateway>graphql-federation",
+  "api-gateway>rate-limiter", "api-gateway>auth", "api-gateway>feature-flags", "api-gateway>metrics",
+  "web-app>graphql-federation", "web-app>sessions", "mobile-bff>graphql-federation", "mobile-bff>sessions",
+  "graphql-federation>catalog", "graphql-federation>search", "graphql-federation>cart",
+  "graphql-federation>orders", "graphql-federation>accounts", "graphql-federation>recommendations",
+  "graphql-federation>reviews", "graphql-federation>tracking", "graphql-federation>checkout",
+  "auth>sessions", "auth>accounts", "auth>permissions", "auth>sso-bridge", "auth>identity-db", "auth>audit-log",
+  "sessions>session-cache", "accounts>identity-db", "accounts>event-bus", "accounts>notifications",
+  "permissions>identity-db", "permissions>config-store",
+  "cart>pricing", "cart>inventory", "cart>promotions", "cart>session-cache", "cart>catalog",
+  "checkout>cart", "checkout>orders", "checkout>payments", "checkout>tax-engine", "checkout>shipping",
+  "checkout>promotions", "checkout>auth", "checkout>feature-flags",
+  "orders>orders-db", "orders>payment-events", "orders>inventory", "orders>event-bus", "orders>notifications",
+  "payments>fraud-scoring", "payments>card-network", "payments>ledger-db", "payments>payment-events", "payments>audit-log",
+  "invoicing>payment-events", "invoicing>ledger-db", "invoicing>tax-engine", "invoicing>email-sender",
+  "fraud-scoring>accounts", "fraud-scoring>lakehouse", "tax-engine>config-store",
+  "promotions>pricing", "promotions>feature-flags",
+  "catalog>catalog-db", "catalog>media-store", "catalog>pricing", "catalog>inventory", "catalog>event-bus",
+  "search>search-index", "search>catalog", "search>feature-flags",
+  "pricing>price-cache", "pricing>catalog-db",
+  "inventory>catalog-db", "inventory>warehouse", "inventory>event-bus",
+  "recommendations>lakehouse", "recommendations>catalog", "recommendations>feature-flags",
+  "reviews>catalog-db", "reviews>accounts", "reviews>media-store",
+  "shipping>carrier-adapter", "shipping>warehouse", "shipping>shipments-db", "shipping>fulfilment-events",
+  "warehouse>shipments-db", "warehouse>fulfilment-events",
+  "returns>orders", "returns>shipping", "returns>payments", "returns>shipments-db",
+  "carrier-adapter>carrier-apis",
+  "tracking>shipments-db", "tracking>fulfilment-events", "tracking>carrier-adapter", "tracking>notifications",
+  "notifications>notify-queue", "notifications>templates", "notifications>feature-flags",
+  "email-sender>notify-queue", "email-sender>smtp-relay", "email-sender>templates",
+  "sms-sender>notify-queue", "sms-sender>sms-gateway", "push-sender>notify-queue", "push-sender>push-gateway",
+  "analytics-ingest>event-bus", "analytics-ingest>lakehouse", "analytics-ingest>metrics",
+  "audit-log>lakehouse", "feature-flags>config-store", "event-bus>metrics",
+]
+
+fn kind_label(k: string) -> string
+  match k
+    when "svc" -> "Service"
+    when "store" -> "Data store"
+    when "queue" -> "Queue"
+    when "edge" -> "Gateway"
+    when _ -> "External API"
+  end
+end
+
+fn status_label(st: int) -> string
+  if st == 2 then "failing" elsif st == 1 then "degraded" else "healthy" end
+end
+
+fn status_color(st: int) -> record
+  if st == 2 then BAD elsif st == 1 then WARN else GOOD end
+end
+
+// ── Graph structure, built once ──────────────────────────────────────────
+
+fn name_index(name: string) -> int
+  let found = -1
+  for i in range(0, len(NODES)) do
+    if NODES[i].n == name then found = i end
+  end
+  assert(found >= 0, "unknown service in LINKS: " ++ name)
+  found
+end
+
+fn build_graph() -> record
+  let n = len(NODES)
+  let edges = for s in LINKS do
+    let p = split(s, ">")
+    {a: name_index(p[0]), b: name_index(p[1])}
+  end
+  let out = for i in range(0, n) do
+    for e in edges do
+      if e.a != i then continue end
+      e.b
+    end
+  end
+  let inn = for i in range(0, n) do
+    for e in edges do
+      if e.b != i then continue end
+      e.a
+    end
+  end
+  let deg = for i in range(0, n) do len(out[i]) + len(inn[i]) end
+  let und = for i in range(0, n) do
+    let xs = out[i]
+    for j in inn[i] do xs = append(xs, j) end
+    xs
+  end
+  // Springs as seen from each node: the other end, a rest-length multiplier
+  // (short inside a group, long across groups — that is what makes clusters)
+  // and a strength that shrinks on hubs so they are not crushed.
+  let nbr = for i in range(0, n) do
+    for j in und[i] do
+      {j: j,
+        l: if NODES[i].g == NODES[j].g then 0.78 else 1.42 end,
+        s: 1.0 / float(min(deg[i], deg[j]))}
+    end
+  end
+  let rad = for i in range(0, n) do 7.0 + 2.4 * sqrt(float(deg[i])) end
+  let wide = for e in edges do
+    let w = float(min(NODES[e.a].rps, NODES[e.b].rps))
+    clamp(0.35 + log(w) / 6.2, 1.0, 1.9)
+  end
+  let order = sort(range(0, n), fn(a, b) -> deg[b] - deg[a])
+  {n: n, edges: edges, out: out, inn: inn, und: und, deg: deg, nbr: nbr, rad: rad, wide: wide, order: order}
+end
+
+// ── Force simulation ─────────────────────────────────────────────────────
+
+fn lcg(s: int) -> int
+  (s * 1103515245 + 12345) % 2147483648
+end
+
+// Starting positions. Shuffle 0 seats each group on its own spoke of a wheel
+// (a warm start the simulation only has to relax); any other shuffle throws
+// every node into a disc at random, so the layout has to find itself.
+fn seed_layout(n: int, shuffle: int) -> record
+  let s = 9781 + shuffle * 7919
+  let px = []
+  let py = []
+  for i in range(0, n) do
+    s = lcg(s)
+    let a = float((s / 65536) % 10000) / 10000.0
+    s = lcg(s)
+    let b = float((s / 65536) % 10000) / 10000.0
+    if shuffle == 0 then
+      let ga = TAU * float(NODES[i].g) / 8.0 - 2.2
+      px = append(px, cos(ga) * 270.0 + (a - 0.5) * 170.0)
+      py = append(py, sin(ga) * 230.0 + (b - 0.5) * 170.0)
+    else
+      let rr = 40.0 + sqrt(b) * 460.0
+      px = append(px, cos(a * TAU) * rr)
+      py = append(py, sin(a * TAU) * rr * 0.8)
+    end
+  end
+  {px: px, py: py, vx: for i in range(0, n) do 0.0 end, vy: for i in range(0, n) do 0.0 end}
+end
+
+// One step, d3-style: forces become velocity scaled by `alpha` (the layout's
+// temperature), velocity decays, position follows. Everything is accumulated
+// per node from the node's own point of view, so the step is a pure function
+// from four lists to four lists.
+fn sim_step(G: record, S: record, pins: list, act: list, alpha: num, F: record) -> record
+  let idx = range(0, G.n)
+  let px = S.px
+  let py = S.py
+  let nx = []
+  let ny = []
+  let nvx = []
+  let nvy = []
+  for i in idx do
+    let xi = px[i]
+    let yi = py[i]
+    if pins[i] || !act[i] then
+      nx = append(nx, xi)
+      ny = append(ny, yi)
+      nvx = append(nvx, 0.0)
+      nvy = append(nvy, 0.0)
+    else
+      // gravity toward the origin, stronger vertically so the layout settles
+      // into the landscape shape of the canvas
+      let fx = 0.0 - xi * F.grav
+      let fy = 0.0 - yi * F.grav * 1.55
+      // many-body repulsion, plus a stiff shove when two discs overlap
+      let ri = G.rad[i] + 12.0
+      for j in idx do
+        if j != i && act[j] then
+          let dx = xi - px[j]
+          let dy = yi - py[j]
+          let d2 = dx * dx + dy * dy + 1.0
+          if d2 < 360000.0 then
+            let f = F.rep / d2
+            let minr = ri + G.rad[j]
+            if d2 < minr * minr then
+              let d = sqrt(d2)
+              f = f + (minr - d) / d * 1.6
+            end
+            fx = fx + dx * f
+            fy = fy + dy * f
+          end
+        end
+      end
+      // springs along every call this node takes part in
+      for e in G.nbr[i] do
+        if act[e.j] then
+          let dx = px[e.j] - xi
+          let dy = py[e.j] - yi
+          let d = sqrt(dx * dx + dy * dy) + 0.01
+          let k = (d - F.len * e.l) / d * e.s * 0.85
+          fx = fx + dx * k
+          fy = fy + dy * k
+        end
+      end
+      let vx = clamp((S.vx[i] + fx * alpha) * 0.58, -34.0, 34.0)
+      let vy = clamp((S.vy[i] + fy * alpha) * 0.58, -34.0, 34.0)
+      nx = append(nx, xi + vx)
+      ny = append(ny, yi + vy)
+      nvx = append(nvx, vx)
+      nvy = append(nvy, vy)
+    end
+  end
+  {px: nx, py: ny, vx: nvx, vy: nvy}
+end
+
+let ALPHA_DECAY = 0.986
+let ALPHA_MIN = 0.02
+
+// ── Graph queries ────────────────────────────────────────────────────────
+
+// Breadth-first depth of every node from `starts` along `adj`, -1 if not
+// reached within `maxd` hops. Hidden nodes do not conduct.
+fn bfs(adj: list, starts: list, act: list, maxd: int) -> list
+  let depth = for i in range(0, len(adj)) do -1 end
+  let q = []
+  for s in starts do
+    if act[s] && depth[s] < 0 then
+      depth[s] = 0
+      q = append(q, s)
+    end
+  end
+  let h = 0
+  while h < len(q) do
+    let u = q[h]
+    h = h + 1
+    if depth[u] < maxd then
+      for v in adj[u] do
+        if depth[v] < 0 && act[v] then
+          depth[v] = depth[u] + 1
+          q = append(q, v)
+        end
+      end
+    end
+  end
+  depth
+end
+
+// Shortest undirected path between two nodes as a list of indices, or [].
+fn shortest_path(adj: list, a: int, b: int, act: list) -> list
+  let prev = for i in range(0, len(adj)) do -2 end
+  prev[a] = -1
+  let q = [a]
+  let h = 0
+  while h < len(q) && prev[b] == -2 do
+    let u = q[h]
+    h = h + 1
+    for v in adj[u] do
+      if prev[v] == -2 && act[v] then
+        prev[v] = u
+        q = append(q, v)
+      end
+    end
+  end
+  if prev[b] == -2 then
+    []
+  else
+    let path = [b]
+    let cur = b
+    while prev[cur] >= 0 do
+      cur = prev[cur]
+      path = append(path, cur)
+    end
+    reverse(path)
+  end
+end
+
+fn count_pos(xs: list) -> int
+  let c = 0
+  for v in xs do
+    if v > 0 then c = c + 1 end
+  end
+  c
+end
+
+// ── Formatting & small draw helpers ──────────────────────────────────────
+
+fn ts(size: num, c: record) -> record
+  {size: int(size), font: "ui", color: c}
+end
+
+fn tb(size: num, c: record) -> record
+  {size: int(size), font: "ui", color: c, weight: 700}
+end
+
+fn mono(size: num, c: record) -> record
+  {size: int(size), font: "mono", color: c}
+end
+
+fn txt(s: string, x: num, y: num, st: record)
+  draw_text(s, {x: x, y: y}, st)
+end
+
+fn txt_r(s: string, right: num, y: num, st: record)
+  draw_text(s, {x: right - text_width(s, st), y: y}, st)
+end
+
+fn txt_c(s: string, cx: num, y: num, st: record)
+  draw_text(s, {x: cx - text_width(s, st) / 2, y: y}, st)
+end
+
+fn caps(s: string, x: num, y: num, c: record)
+  draw_text(s, {x: x, y: y}, {size: 10, font: "ui", color: c, spacing: 2})
+end
+
+fn hline(x: num, y: num, w: num, c: record)
+  draw_rect(x, y, w, 1, c)
+end
+
+fn rr_outline(r: Rect, radius: num, c: record, a: num, wd: num)
+  draw_rect_rounded_outline(int(r.x), int(r.y), int(r.w), int(r.h), int(radius), c, int(a), max(1, int(wd)))
+end
+
+fn fmt_rps(v: num) -> string
+  if v >= 1000 then str(round(float(v) / 1000.0, 1)) ++ "k" else str(v) end
+end
+
+fn fmt_ms(v: num) -> string
+  if v >= 1000 then str(round(float(v) / 1000.0, 2)) ++ " s" else str(v) ++ " ms" end
+end
+
+fn plural(n: int, one: string, many: string) -> string
+  if n == 1 then "1 " ++ one else str(n) ++ " " ++ many end
+end
+
+// A regular polygon's corners, first corner at angle `a0`.
+fn ngon(cx: num, cy: num, r: num, sides: int, a0: num) -> list
+  for i in range(0, sides) do
+    let a = a0 + TAU * float(i) / float(sides)
+    [cx + cos(a) * r, cy + sin(a) * r]
+  end
+end
+
+// Each kind has its own silhouette, so the graph reads without the legend:
+// services are discs, data stores squares, queues diamonds, gateways
+// hexagons, and third-party APIs hollow rings.
+fn node_fill(kind: string, cx: num, cy: num, r: num, c: record, a: num)
+  if kind == "store" then
+    let h = r * 0.88
+    draw_rect_rounded(rect(cx - h, cy - h, h * 2.0, h * 2.0), max(2.0, r * 0.28), c, int(a))
+  elsif kind == "queue" then
+    fill_polygon(ngon(cx, cy, r * 1.16, 4, 0.0), c, int(a))
+  elsif kind == "edge" then
+    fill_polygon(ngon(cx, cy, r * 1.1, 6, 0.0), c, int(a))
+  elsif kind == "ext" then
+    draw_circle({x: cx, y: cy}, r, CANVAS, 255)
+    draw_circle_outline(cx, cy, r - 1.0, c, int(a), max(2, int(r * 0.34)))
+  else
+    draw_circle({x: cx, y: cy}, r, c, int(a))
+  end
+  nil
+end
+
+fn node_ring(kind: string, cx: num, cy: num, r: num, c: record, a: num, wd: num)
+  let w = max(1, int(wd))
+  if kind == "store" then
+    let h = r * 0.88
+    rr_outline(rect(cx - h, cy - h, h * 2.0, h * 2.0), max(2.0, r * 0.28), c, a, w)
+  elsif kind == "queue" then
+    draw_polygon_outline(ngon(cx, cy, r * 1.16, 4, 0.0), c, int(a), w)
+  elsif kind == "edge" then
+    draw_polygon_outline(ngon(cx, cy, r * 1.1, 6, 0.0), c, int(a), w)
+  else
+    draw_circle_outline(cx, cy, r, c, int(a), w)
+  end
+  nil
+end
+
+// A small pill button in the app's own chrome. True on click.
+fn pill_btn(r: Rect, label: string, active: bool, live: bool) -> bool
+  let hov = hovered(r) && live
+  let fill = if active then over(PANEL, ACCENT, 0.2) elsif hov then HOVER else ELEV end
+  draw_rect_rounded(r, 7, fill)
+  rr_outline(r, 7, if active then ACCENT else LINE end, 255, 1)
+  let st = ts(12, if active || hov then TEXT else DIM end)
+  txt_c(label, r.x + r.w / 2, r.y + (r.h - 12) / 2 - 2, st)
+  hov && mouse_pressed(0)
+end
+
+// A segmented control; returns the (possibly new) active index.
+fn segmented(r: Rect, labels: list, active: int, live: bool) -> int
+  draw_rect_rounded(r, 7, ELEV)
+  let n = len(labels)
+  let cw = float(r.w - 4) / float(n)
+  let pick = active
+  for i in range(0, n) do
+    let cell = rect(r.x + 2 + int(cw * float(i)), r.y + 2, int(cw), r.h - 4)
+    let hov = hovered(cell) && live
+    if i == active then
+      draw_rect_rounded(cell, 5, over(ELEV, ACCENT, 0.26))
+    elsif hov then
+      draw_rect_rounded(cell, 5, HOVER)
+    end
+    txt_c(labels[i], cell.x + cell.w / 2, cell.y + (cell.h - 11) / 2 - 2, ts(11, if i == active || hov then TEXT else DIM end))
+    if hov && mouse_pressed(0) then pick = i end
+  end
+  rr_outline(r, 7, LINE, 255, 1)
+  pick
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let mx = mouse_x()
+let my = mouse_y()
+
+let HEADER_H = 60
+let STATUS_H = 30
+let SIDE_W = 252
+let INSP_W = 308
+
+let canvas = rect(SIDE_W, HEADER_H, W - SIDE_W - INSP_W, H - HEADER_H - STATUS_H)
+let side = rect(0, HEADER_H, SIDE_W, H - HEADER_H - STATUS_H)
+let insp = rect(W - INSP_W, HEADER_H, INSP_W, H - HEADER_H - STATUS_H)
+let search_r = rect(W - INSP_W + 22, 14, INSP_W - 44, 32)
+let mini = rect(canvas.x + canvas.w - 196 - 16, canvas.y + canvas.h - 132 - 16, 196, 132)
+
+// floating canvas chrome: the kinds legend along the top, zoom pills bottom-left
+let kinds = [["svc", "Service"], ["store", "Data store"], ["queue", "Queue"], ["edge", "Gateway"], ["ext", "External"]]
+let lg_w = 0
+for kd in kinds do lg_w = lg_w + 19 + text_width(kd[1], ts(11, FAINT)) + 20 end
+lg_w = lg_w + 21 + text_width("Unhealthy", ts(11, FAINT)) + 24
+let lg_r = rect(canvas.x + 16, canvas.y + 14, lg_w, 30)
+let zb_y = canvas.y + canvas.h - 16 - 30
+let b_out = rect(canvas.x + 16, zb_y, 32, 30)
+let b_pct = rect(b_out.x + 32 + 6, zb_y, 58, 30)
+let b_in = rect(b_pct.x + 58 + 6, zb_y, 32, 30)
+let b_fit = rect(b_in.x + 32 + 12, zb_y, 46, 30)
+
+// ── Camera ───────────────────────────────────────────────────────────────
+//  cam.x / cam.y is the world point at the centre of the canvas.
+
+let ZOOM_MIN = 0.25
+let ZOOM_MAX = 3.5
+
+fn to_sx(cam: record, cv: Rect, wx: num) -> num
+  float(cv.x) + float(cv.w) / 2.0 + (wx - cam.x) * cam.z
+end
+fn to_sy(cam: record, cv: Rect, wy: num) -> num
+  float(cv.y) + float(cv.h) / 2.0 + (wy - cam.y) * cam.z
+end
+fn to_wx(cam: record, cv: Rect, sx: num) -> num
+  cam.x + (float(sx) - float(cv.x) - float(cv.w) / 2.0) / cam.z
+end
+fn to_wy(cam: record, cv: Rect, sy: num) -> num
+  cam.y + (float(sy) - float(cv.y) - float(cv.h) / 2.0) / cam.z
+end
+
+// Zoom by `factor` keeping the world point under (sx, sy) where it is.
+fn zoom_about(cam: record, cv: Rect, sx: num, sy: num, factor: num) -> record
+  let nz = clamp(cam.z * factor, ZOOM_MIN, ZOOM_MAX)
+  let wx = to_wx(cam, cv, sx)
+  let wy = to_wy(cam, cv, sy)
+  {x: wx - (float(sx) - float(cv.x) - float(cv.w) / 2.0) / nz,
+    y: wy - (float(sy) - float(cv.y) - float(cv.h) / 2.0) / nz, z: nz}
+end
+
+// World-space bounding box of the nodes flagged in `mask`.
+fn bounds_of(px: list, py: list, rad: list, mask: list) -> record
+  let x0 = 0.0
+  let y0 = 0.0
+  let x1 = 0.0
+  let y1 = 0.0
+  let any = false
+  for i in range(0, len(px)) do
+    if mask[i] then
+      let r = rad[i]
+      if !any then
+        x0 = px[i] - r
+        x1 = px[i] + r
+        y0 = py[i] - r
+        y1 = py[i] + r
+        any = true
+      else
+        x0 = min(x0, px[i] - r)
+        x1 = max(x1, px[i] + r)
+        y0 = min(y0, py[i] - r)
+        y1 = max(y1, py[i] + r)
+      end
+    end
+  end
+  {x0: x0, y0: y0, x1: x1, y1: y1, any: any}
+end
+
+fn fit_cam(b: record, cv: Rect, zmax: num) -> record
+  if !b.any then
+    {x: 0.0, y: 0.0, z: 1.0}
+  else
+    let padw = 50.0
+    let zx = (float(cv.w) - padw * 2.0) / max(40.0, b.x1 - b.x0)
+    let zy = (float(cv.h) - padw * 2.0) / max(40.0, b.y1 - b.y0)
+    {x: (b.x0 + b.x1) / 2.0, y: (b.y0 + b.y1) / 2.0, z: clamp(min(zx, zy), ZOOM_MIN, zmax)}
+  end
+end
+
+// Where the camera should glide to so that every node in `mask` is in view.
+fn fit_target(px: list, py: list, rad: list, mask: list, cv: Rect) -> record
+  let fz = fit_cam(bounds_of(px, py, rad, mask), cv, 1.25)
+  {on: true, x: fz.x, y: fz.y, z: fz.z}
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+let FORCE_DEFAULT = {rep: 560.0, len: 52.0, grav: 0.085}
+
+fn settle(G: record, S: record, steps: int, F: record) -> record
+  let pins = for i in range(0, G.n) do false end
+  let act = for i in range(0, G.n) do true end
+  let out = S
+  let a = 1.0
+  for k in range(0, steps) do
+    out = sim_step(G, out, pins, act, a, F)
+    a = a * 0.975
+  end
+  out
+end
+
+state G = build_graph()
+// Open on a layout that has already found its shape; the last of the cooling
+// plays out live so the first thing a viewer sees is the graph settling.
+state boot = settle(G, seed_layout(G.n, 0), 140, FORCE_DEFAULT)
+state px = boot.px
+state py = boot.py
+state vx = boot.vx
+state vy = boot.vy
+state pins = for i in range(0, G.n) do false end
+state alpha = 0.22
+state frozen = false
+state force = FORCE_DEFAULT
+state shuffle = 0
+state steps_run = 140
+
+state sel = []
+state mode = 0            // 0 neighbours · 1 dependents (upstream) · 2 dependencies (downstream)
+state hidden = []         // hidden group indices
+state label_mode = 0      // 0 auto · 1 all · 2 none
+state motion = true
+state cam = fit_cam(bounds_of(boot.px, boot.py, G.rad, for i in range(0, G.n) do true end), canvas, 1.25)
+state cam_to = {on: false, x: 0.0, y: 0.0, z: 1.0}
+state drag = {mode: "none", sx: 0.0, sy: 0.0, wx: 0.0, wy: 0.0, cx: 0.0, cy: 0.0, starts: [], id: -1, moved: false, shift: false}
+state menu = menu_state()
+state fc = focus_state()
+state query = ""
+state qsel = 0
+state clicks = 0          // every canvas press, for tests
+state link_hover = -1     // node hovered from a list in the inspector
+state queued = ""         // an action a button or menu asked for, run at the top of the next frame
+state auto_fit = true     // keep the whole graph framed until the user moves the camera
+
+// ── Frame setup ──────────────────────────────────────────────────────────
+
+claim_key("a", "cmd")
+
+let n = G.n
+let all_idx = range(0, n)
+let act = for i in all_idx do !contains(hidden, NODES[i].g) end
+sel = filter(sel, fn(i) -> act[i])
+
+let blocked = menu_blocking(menu)
+
+// Search field: the logic half now, the pixels with the header.
+let field_r = rect(search_r.x + 30, search_r.y, search_r.w - 62, search_r.h)
+let was_typing = focused(fc, "search")
+let fres = text_field_update(fc, "search", field_r, query, {size: 13, font: "ui", inset: 0})
+fc = fres.focus
+if fres.text != query then
+  query = fres.text
+  qsel = 0
+end
+let typing = focused(fc, "search")
+if key_pressed("/") && !was_typing && !blocked then
+  fc = focus_set(fc, "search")
+end
+
+let q = lower(query)
+let matches = if q == "" then [] else
+  let starts = for i in G.order do
+    if !act[i] || index_of(NODES[i].n, q) != 0 then continue end
+    i
+  end
+  let rest = for i in G.order do
+    if !act[i] || index_of(NODES[i].n, q) <= 0 then continue end
+    i
+  end
+  for i in rest do starts = append(starts, i) end
+  starts
+end
+let match_flag = for i in all_idx do contains(matches, i) end
+let drop_n = if typing then min(len(matches), 7) else 0 end
+let drop_r = rect(search_r.x, search_r.y + search_r.h + 6, search_r.w, drop_n * 28 + 12)
+let over_drop = drop_n > 0 && point_in(mx, my, drop_r)
+qsel = clamp(qsel, 0, max(0, drop_n - 1))
+
+// Anything that should swallow the pointer before the canvas and panels see it.
+let ui_block = blocked || over_drop
+let keys_ok = !typing && !blocked
+
+let over_chrome = point_in(mx, my, lg_r) || point_in(mx, my, rect(b_out.x, zb_y, b_fit.x + b_fit.w - b_out.x, 30))
+let over_canvas = point_in(mx, my, canvas) && !ui_block && !over_chrome
+let over_mini = point_in(mx, my, mini) && !ui_block
+let wmx = to_wx(cam, canvas, mx)
+let wmy = to_wy(cam, canvas, my)
+
+// ── Hit testing ──────────────────────────────────────────────────────────
+
+fn node_scale(z: num) -> num
+  pow(z, 0.55)
+end
+
+fn hit_node(G: record, px: list, py: list, act: list, wx: num, wy: num, z: num) -> int
+  let best = -1
+  let bd = 1000000000.0
+  for i in range(0, G.n) do
+    if act[i] then
+      let dx = px[i] - wx
+      let dy = py[i] - wy
+      let d2 = dx * dx + dy * dy
+      let rr = (G.rad[i] * node_scale(z) * 1.16 + 4.0) / z
+      if d2 <= rr * rr && d2 < bd then
+        best = i
+        bd = d2
+      end
+    end
+  end
+  best
+end
+
+let hit = if over_canvas && !over_mini then hit_node(G, px, py, act, wmx, wmy, cam.z) else -1 end
+
+// ── Small state transitions shared by keys, buttons and menus ────────────
+
+fn toggle_in(xs: list, v: int) -> list
+  if contains(xs, v) then filter(xs, fn(x) -> x != v) else append(xs, v) end
+end
+
+fn focus_target(px: list, py: list, i: int, z: num) -> record
+  {on: true, x: px[i], y: py[i], z: z}
+end
+
+let want_fit = false
+let want_reheat = false
+let want_scatter = queued == "scatter"
+queued = ""
+let want_unpin_all = false
+let want_focus = -1           // glide the camera to this node
+let pin_toggle = []           // nodes whose pin flips this frame
+
+// ── Keyboard ─────────────────────────────────────────────────────────────
+
+if typing then
+  if key_pressed("escape") then
+    if query != "" then query = "" else fc = focus_clear(fc) end
+  end
+  if key_pressed("down") then qsel = min(qsel + 1, max(0, drop_n - 1)) end
+  if key_pressed("up") then qsel = max(qsel - 1, 0) end
+  if fres.submitted && len(matches) > 0 then
+    let pick = matches[clamp(qsel, 0, len(matches) - 1)]
+    sel = [pick]
+    want_focus = pick
+    fc = focus_clear(fc)
+  end
+end
+
+if keys_ok then
+  if key_pressed("escape") then
+    if drag.mode != "none" then
+      drag = {...drag, mode: "none"}
+    elsif len(sel) > 0 then
+      sel = []
+    else
+      query = ""
+    end
+  end
+  if key_pressed("a") && mod_cmd() then
+    sel = for i in all_idx do
+      if !act[i] then continue end
+      i
+    end
+  end
+  if !mod_cmd() then
+    if key_pressed("f") then want_fit = true end
+    if key_pressed("r") then want_reheat = true end
+    if key_pressed("s") then want_scatter = true end
+    if key_pressed("u") then want_unpin_all = true end
+    if key_pressed("space") then frozen = !frozen end
+    if key_pressed("m") then motion = !motion end
+    if key_pressed("l") then label_mode = (label_mode + 1) % 3 end
+    if key_pressed("1") then mode = 0 end
+    if key_pressed("2") then mode = 1 end
+    if key_pressed("3") then mode = 2 end
+    if key_pressed("p") then pin_toggle = sel end
+    if key_pressed("c") && len(sel) > 0 then
+      let b = bounds_of(px, py, G.rad, for i in all_idx do contains(sel, i) end)
+      let fz = fit_cam(b, canvas, max(cam.z, 1.4))
+      cam_to = {on: true, x: fz.x, y: fz.y, z: fz.z}
+      auto_fit = false
+    end
+    if key_pressed("e") && len(sel) > 0 then
+      // grow the selection by one hop
+      let d = bfs(G.und, sel, act, 1)
+      sel = for i in all_idx do
+        if d[i] < 0 then continue end
+        i
+      end
+    end
+    if key_pressed("=") || key_pressed("+") then
+      cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.25)
+      cam_to = {...cam_to, on: false}
+      auto_fit = false
+    end
+    if key_pressed("-") then
+      cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 0.8)
+      cam_to = {...cam_to, on: false}
+      auto_fit = false
+    end
+    if key_pressed("0") then
+      cam_to = {on: true, x: cam.x, y: cam.y, z: 1.0}
+      auto_fit = false
+    end
+  end
+
+  // Arrow keys walk the selection to the nearest node in that direction.
+  let ax = 0.0
+  let ay = 0.0
+  if key_pressed("left") then ax = -1.0 end
+  if key_pressed("right") then ax = 1.0 end
+  if key_pressed("up") then ay = -1.0 end
+  if key_pressed("down") then ay = 1.0 end
+  if ax != 0.0 || ay != 0.0 then
+    if len(sel) == 0 then
+      // nothing selected: start from the node nearest the middle of the view
+      let near = hit_node(G, px, py, act, cam.x, cam.y, 0.004)
+      if near >= 0 then
+        sel = [near]
+        want_focus = near
+      end
+    else
+      let from = last(sel)
+      let best = -1
+      let bscore = 1000000000.0
+      for i in all_idx do
+        if act[i] && i != from then
+          let dx = px[i] - px[from]
+          let dy = py[i] - py[from]
+          let along = dx * ax + dy * ay
+          let across = abs(dx * ay) + abs(dy * ax)
+          // inside a 45° cone; prefer near and straight ahead
+          if along > 0.0 && across <= along * 1.1 then
+            let score = along + across * 1.8
+            if score < bscore then
+              best = i
+              bscore = score
+            end
+          end
+        end
+      end
+      if best >= 0 then
+        sel = [best]
+        want_focus = best
+      end
+    end
+  end
+end
+
+// ── Mouse: wheel zoom ────────────────────────────────────────────────────
+
+let wheel = scroll_y()
+if over_canvas && wheel != 0.0 then
+  // wheel up (a negative scroll) zooms in, about the pointer
+  cam = zoom_about(cam, canvas, mx, my, exp(0.0 - clamp(float(wheel), -6.0, 6.0) * 0.14))
+  cam_to = {...cam_to, on: false}
+  auto_fit = false
+end
+
+// ── Mouse: press ─────────────────────────────────────────────────────────
+
+// A gesture whose release never reached the panel must not wedge the canvas.
+if drag.mode != "none" && !mouse_down(0) && !mouse_down(2) && !mouse_released(0) && !mouse_released(2) then
+  drag = {...drag, mode: "none"}
+end
+
+if drag.mode == "none" && !ui_block then
+  if over_mini && mouse_pressed(0) then
+    drag = {...drag, mode: "mini", moved: false}
+    clicks = clicks + 1
+  elsif over_canvas && mouse_pressed(2) then
+    drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
+  elsif over_canvas && mouse_pressed(0) then
+    clicks = clicks + 1
+    if typing then fc = focus_clear(fc) end
+    if hit >= 0 then
+      if mod_shift() then
+        sel = toggle_in(sel, hit)
+        drag = {...drag, mode: "none"}
+      else
+        if !contains(sel, hit) then sel = [hit] end
+        if click_count() >= 2 then
+          sel = [hit]
+          cam_to = focus_target(px, py, hit, max(cam.z, 1.7))
+          auto_fit = false
+        end
+        let starts = for i in sel do {i: i, x: px[i], y: py[i]} end
+        drag = {...drag, mode: "node", id: hit, wx: wmx, wy: wmy, starts: starts, moved: false, shift: false}
+      end
+    elsif mod_shift() then
+      drag = {...drag, mode: "marquee", wx: wmx, wy: wmy, moved: false, shift: true}
+    else
+      drag = {...drag, mode: "pan", sx: float(mx), sy: float(my), cx: cam.x, cy: cam.y, moved: false, shift: false}
+    end
+  elsif over_canvas && mouse_pressed(1) then
+    if hit >= 0 && !contains(sel, hit) then sel = [hit] end
+    menu = menu_show(menu, mx, my, if hit >= 0 then {what: "node", id: hit} else {what: "canvas", id: -1} end)
+  end
+end
+
+// ── Mouse: drag ──────────────────────────────────────────────────────────
+
+if drag.mode == "pan" && (mouse_down(0) || mouse_down(2)) then
+  let ddx = float(mx) - drag.sx
+  let ddy = float(my) - drag.sy
+  if abs(ddx) + abs(ddy) > 3.0 then drag = {...drag, moved: true} end
+  if drag.moved then
+    cam = {...cam, x: drag.cx - ddx / cam.z, y: drag.cy - ddy / cam.z}
+    cam_to = {...cam_to, on: false}
+    auto_fit = false
+  end
+end
+
+if drag.mode == "node" && mouse_down(0) then
+  let ddx = wmx - drag.wx
+  let ddy = wmy - drag.wy
+  if !drag.moved && (abs(ddx) + abs(ddy)) * cam.z > 3.0 then
+    drag = {...drag, moved: true}
+    cam_to = {...cam_to, on: false}
+    auto_fit = false
+  end
+  if drag.moved then
+    // The dragged nodes follow the pointer and stay where they are dropped.
+    for st in drag.starts do
+      px[st.i] = st.x + ddx
+      py[st.i] = st.y + ddy
+      vx[st.i] = 0.0
+      vy[st.i] = 0.0
+      pins[st.i] = true
+    end
+    alpha = max(alpha, 0.3)
+  end
+end
+
+if drag.mode == "marquee" && mouse_down(0) then
+  if abs(wmx - drag.wx) + abs(wmy - drag.wy) > 2.0 then drag = {...drag, moved: true} end
+end
+
+// ── Mouse: release ───────────────────────────────────────────────────────
+
+if mouse_released(0) || mouse_released(2) then
+  if drag.mode == "pan" && !drag.moved && mouse_released(0) then
+    sel = []
+  elsif drag.mode == "node" && !drag.moved && len(sel) > 1 then
+    sel = [drag.id]
+  elsif drag.mode == "marquee" then
+    let x0 = min(drag.wx, wmx)
+    let y0 = min(drag.wy, wmy)
+    let x1 = max(drag.wx, wmx)
+    let y1 = max(drag.wy, wmy)
+    if drag.moved then
+      for i in all_idx do
+        if act[i] && px[i] >= x0 && px[i] <= x1 && py[i] >= y0 && py[i] <= y1 && !contains(sel, i) then
+          sel = append(sel, i)
+        end
+      end
+    end
+  end
+  drag = {...drag, mode: "none"}
+end
+
+// ── Simulation ───────────────────────────────────────────────────────────
+
+if len(pin_toggle) > 0 then
+  let all_pinned = len(filter(pin_toggle, fn(i) -> !pins[i])) == 0
+  for i in pin_toggle do pins[i] = !all_pinned end
+  alpha = max(alpha, 0.25)
+end
+if want_unpin_all then
+  pins = for i in all_idx do false end
+  alpha = max(alpha, 0.4)
+end
+if want_reheat then alpha = 1.0 end
+if want_scatter then
+  shuffle = shuffle + 1
+  let fresh = seed_layout(n, shuffle)
+  px = fresh.px
+  py = fresh.py
+  vx = fresh.vx
+  vy = fresh.vy
+  pins = for i in all_idx do false end
+  alpha = 1.0
+  want_fit = true
+end
+
+let raw_dt = dt()
+let hot = alpha >= ALPHA_MIN && !frozen
+let steps_now = 0
+if hot then
+  steps_now = clamp(int(round(min(raw_dt, 0.1) * 60.0)), 1, 3)
+  let S = {px: px, py: py, vx: vx, vy: vy}
+  for k in range(0, steps_now) do
+    S = sim_step(G, S, pins, act, alpha, force)
+    alpha = alpha * ALPHA_DECAY
+  end
+  px = S.px
+  py = S.py
+  vx = S.vx
+  vy = S.vy
+  steps_run = steps_run + steps_now
+  if drag.mode == "node" && drag.moved then alpha = max(alpha, 0.3) end
+  if alpha < ALPHA_MIN then alpha = 0.0 end
+  request_frame()
+end
+
+// ── Camera animation ─────────────────────────────────────────────────────
+
+if want_fit then
+  cam_to = fit_target(px, py, G.rad, act, canvas)
+  auto_fit = true
+end
+if want_focus >= 0 then
+  // Only move if the node is outside the comfortable middle of the view.
+  let fsx = to_sx(cam, canvas, px[want_focus])
+  let fsy = to_sy(cam, canvas, py[want_focus])
+  let comfy = rect(canvas.x + 90, canvas.y + 70, canvas.w - 180, canvas.h - 220)
+  if !point_in(fsx, fsy, comfy) then
+    cam_to = focus_target(px, py, want_focus, cam.z)
+    auto_fit = false
+  end
+end
+// While the layout is still finding its shape, keep the whole graph framed —
+// until the user takes the camera, after which it is theirs.
+if auto_fit && hot && drag.mode == "none" then
+  cam_to = fit_target(px, py, G.rad, act, canvas)
+  auto_fit = true
+end
+if cam_to.on then
+  let k = 1.0 - exp(0.0 - min(raw_dt, 0.1) * 9.0)
+  cam = {x: cam.x + (cam_to.x - cam.x) * k, y: cam.y + (cam_to.y - cam.y) * k, z: cam.z + (cam_to.z - cam.z) * k}
+  if abs(cam_to.x - cam.x) < 0.3 && abs(cam_to.y - cam.y) < 0.3 && abs(cam_to.z - cam.z) < 0.002 then
+    cam = {x: cam_to.x, y: cam_to.y, z: cam_to.z}
+    cam_to = {...cam_to, on: false}
+  end
+  request_frame()
+end
+
+// Minimap drag: put the view centre under the pointer.
+let mb = bounds_of(px, py, G.rad, act)
+let mpad = 70.0
+let mw = max(200.0, mb.x1 - mb.x0 + mpad * 2.0)
+let mh = max(140.0, mb.y1 - mb.y0 + mpad * 2.0)
+let mscale = min(float(mini.w - 12) / mw, float(mini.h - 12) / mh)
+let mcx = (mb.x0 + mb.x1) / 2.0
+let mcy = (mb.y0 + mb.y1) / 2.0
+let mini_cx = float(mini.x) + float(mini.w) / 2.0
+let mini_cy = float(mini.y) + float(mini.h) / 2.0
+if drag.mode == "mini" && mouse_down(0) then
+  cam = {...cam, x: mcx + (float(mx) - mini_cx) / mscale, y: mcy + (float(my) - mini_cy) / mscale}
+  cam_to = {...cam_to, on: false}
+  auto_fit = false
+end
+
+let z = cam.z
+
+// ── What is lit ──────────────────────────────────────────────────────────
+//  focus: the selection, or the hovered node when nothing is selected.
+//  depth[i] >= 0 means node i is part of the highlighted neighbourhood.
+
+let hover_node = if drag.mode == "node" then drag.id elsif hit >= 0 then hit else link_hover end
+let focus = if len(sel) > 0 then sel elsif hover_node >= 0 && act[hover_node] then [hover_node] else [] end
+let has_focus = len(focus) > 0
+let depth = if !has_focus then
+  for i in all_idx do -1 end
+elsif mode == 1 then
+  bfs(G.inn, focus, act, 99)
+elsif mode == 2 then
+  bfs(G.out, focus, act, 99)
+else
+  bfs(G.und, focus, act, 1)
+end
+let path = if len(sel) == 2 then shortest_path(G.und, sel[0], sel[1], act) else [] end
+let on_path = for i in all_idx do contains(path, i) end
+
+// Group hover from the sidebar is last frame's — the sidebar draws after the
+// canvas — so it is kept in state.
+state group_hover = -1
+
+// emph: 2 selected · 1 lit · 0 dimmed. With nothing to emphasise all are 1.
+let filtering = has_focus || q != "" || group_hover >= 0
+let emph = for i in all_idx do
+  if contains(sel, i) then
+    2
+  elsif has_focus then
+    if depth[i] >= 0 || on_path[i] then 1 else 0 end
+  elsif q != "" then
+    if match_flag[i] then 1 else 0 end
+  elsif group_hover >= 0 then
+    if NODES[i].g == group_hover then 1 else 0 end
+  else
+    1
+  end
+end
+let lit_n = len(filter(emph, fn(e) -> e > 0))
+
+fn edge_on_path(path: list, a: int, b: int) -> bool
+  let hit = false
+  for i in range(0, len(path) - 1) do
+    if (path[i] == a && path[i + 1] == b) || (path[i] == b && path[i + 1] == a) then hit = true end
+  end
+  hit
+end
+
+// ── Draw: canvas ─────────────────────────────────────────────────────────
+
+clear(BG.r, BG.g, BG.b)
+draw_rect(canvas, CANVAS)
+clip(canvas.x, canvas.y, canvas.w, canvas.h)
+
+// A soft pool of light under the graph, then a dot grid that pans and zooms
+// with the camera so motion always has something to read against.
+draw_circle_gradient({x: to_sx(cam, canvas, 0.0), y: to_sy(cam, canvas, 0.0)}, 620.0 * z, #141a26, CANVAS, 255, 0)
+let gstep = if z < 0.45 then 192.0 elsif z < 0.9 then 96.0 else 48.0 end
+let gx = floor(to_wx(cam, canvas, canvas.x) / gstep) * gstep
+while to_sx(cam, canvas, gx) < float(canvas.x + canvas.w) do
+  let gsx = to_sx(cam, canvas, gx)
+  let gy = floor(to_wy(cam, canvas, canvas.y) / gstep) * gstep
+  while to_sy(cam, canvas, gy) < float(canvas.y + canvas.h) do
+    draw_rect(gsx, to_sy(cam, canvas, gy), 2, 2, GRID)
+    gy = gy + gstep
+  end
+  gx = gx + gstep
+end
+
+// screen positions, once
+let sxs = for i in all_idx do to_sx(cam, canvas, px[i]) end
+let sys = for i in all_idx do to_sy(cam, canvas, py[i]) end
+// Discs grow more slowly than the space between them, so zooming in opens
+// the graph up rather than just magnifying it.
+let srs = for i in all_idx do max(3.0, G.rad[i] * node_scale(z)) end
+
+// edges
+let flow_on = motion && len(sel) > 0
+let flow_t = time() * 0.55
+if flow_on then request_frame() end
+let lit_edges = 0
+for pass in range(0, 2) do
+  for ei in range(0, len(G.edges)) do
+    let e = G.edges[ei]
+    if act[e.a] && act[e.b] then
+      let is_path = len(path) > 1 && edge_on_path(path, e.a, e.b)
+      let lit = is_path || (has_focus && (if mode == 0 then (contains(focus, e.a) || contains(focus, e.b)) else (depth[e.a] >= 0 && depth[e.b] >= 0) end))
+      // dim edges in the first pass, lit ones over them in the second
+      if (pass == 1) == lit then
+        let x0 = sxs[e.a]
+        let y0 = sys[e.a]
+        let x1 = sxs[e.b]
+        let y1 = sys[e.b]
+        let ddx = x1 - x0
+        let ddy = y1 - y0
+        let d = sqrt(ddx * ddx + ddy * ddy) + 0.001
+        let ux = ddx / d
+        let uy = ddy / d
+        // stop the line at the rim of each node
+        let ax = x0 + ux * srs[e.a]
+        let ay = y0 + uy * srs[e.a]
+        let tip = srs[e.b] * 1.12 + 2.0
+        let bx = x1 - ux * tip
+        let by = y1 - uy * tip
+        let c = if is_path then TEXT elsif lit then GROUPS[NODES[e.a].g].c else EDGE end
+        let a = if is_path then 255 elsif lit then 220 elsif filtering then 26 elsif NODES[e.a].g == NODES[e.b].g then 120 else 78 end
+        let wd = G.wide[ei] * clamp(z, 0.7, 1.5) + (if is_path then 1.4 elsif lit then 0.5 else 0.0 end)
+        if d > srs[e.a] + tip + 2.0 then
+          let ah = clamp(5.5 * z, 3.5, 9.0) + (if lit then 1.5 else 0.0 end)
+          let show_head = lit || z >= 0.6
+          let ex = if show_head then bx - ux * ah * 0.8 else bx end
+          let ey = if show_head then by - uy * ah * 0.8 else by end
+          draw_line(ax, ay, ex, ey, c, a, wd)
+          if show_head then
+            fill_triangle(bx, by,
+              bx - ux * ah - uy * ah * 0.5, by - uy * ah + ux * ah * 0.5,
+              bx - ux * ah + uy * ah * 0.5, by - uy * ah - ux * ah * 0.5, c, a)
+          end
+          if lit && flow_on then
+            // two packets riding each lit call, caller to callee
+            for kk in range(0, 2) do
+              let ft = fract(flow_t + float(kk) * 0.5 + float(ei) * 0.137)
+              draw_circle({x: ax + (bx - ax) * ft, y: ay + (by - ay) * ft}, clamp(2.4 * z, 1.8, 4.0), TEXT, 230)
+            end
+          end
+        end
+        if lit then lit_edges = lit_edges + 1 end
+      end
+    end
+  end
+end
+
+// nodes, dim ones first so the lit neighbourhood sits on top
+let pulse = 0.5 + 0.5 * sin(time() * 3.2)
+let unhealthy_live = false
+for level in range(0, 3) do
+  for i in all_idx do
+    if act[i] && emph[i] == level then
+      let nd = NODES[i]
+      let gc = GROUPS[nd.g].c
+      let cx = sxs[i]
+      let cy = sys[i]
+      let r = srs[i]
+      if cx > float(canvas.x) - 40.0 && cx < float(canvas.x + canvas.w) + 40.0 && cy > float(canvas.y) - 40.0 && cy < float(canvas.y + canvas.h) + 40.0 then
+        let is_hover = i == hover_node
+        if level == 0 then
+          node_fill(nd.k, cx, cy, r, over(CANVAS, gc, 0.2), 255)
+        else
+          if level == 2 || is_hover then
+            draw_circle_gradient({x: cx, y: cy}, r * 2.6 + 6.0, gc, gc, if level == 2 then 110 else 70 end, 0)
+          end
+          if nd.st > 0 then
+            // an unhealthy service wears a breathing halo in its status colour
+            let sc = status_color(nd.st)
+            let pr = r + 4.0 + pulse * (if nd.st == 2 then 5.0 else 2.5 end)
+            draw_circle_outline(cx, cy, pr, sc, int(200.0 - pulse * 120.0), 2)
+            unhealthy_live = true
+          end
+          node_fill(nd.k, cx, cy, r, gc, 255)
+          if nd.k != "ext" then
+            // a soft top-left sheen gives the flat fill a little volume
+            draw_circle_gradient({x: cx - r * 0.3, y: cy - r * 0.34}, r * 0.62, #ffffff, #ffffff, 58, 0)
+          end
+          if level == 2 then
+            node_ring(nd.k, cx, cy, r + 3.0, TEXT, 255, 2)
+          elsif on_path[i] then
+            node_ring(nd.k, cx, cy, r + 2.5, TEXT, 200, 1.5)
+          elsif is_hover then
+            node_ring(nd.k, cx, cy, r + 2.5, TEXT, 150, 1.5)
+          elsif q != "" && match_flag[i] then
+            node_ring(nd.k, cx, cy, r + 3.0, ACCENT, 255, 2)
+          end
+        end
+        if pins[i] then
+          // a pinned node carries a small dark stud
+          draw_circle({x: cx, y: cy}, max(1.6, r * 0.24), BG, if level == 0 then 120 else 235 end)
+        end
+      end
+    end
+  end
+end
+if unhealthy_live && motion then request_frame() end
+
+// labels — greedy, most connected first, skipping any that would collide
+let LBL = 11
+let placed = []
+let labels_drawn = 0
+let auto_min = if z >= 1.3 then 0 elsif z >= 0.95 then 3 elsif z >= 0.7 then 5 elsif z >= 0.5 then 7 else 10 end
+if label_mode != 2 || has_focus then
+  for pass in range(0, 3) do
+    for i in G.order do
+      if act[i] then
+        let forced = emph[i] == 2 || i == hover_node || (has_focus && emph[i] == 1) || (q != "" && match_flag[i]) || (group_hover >= 0 && emph[i] == 1)
+        let wanted = forced || (label_mode == 1 && emph[i] > 0) || (label_mode == 0 && emph[i] > 0 && !filtering && G.deg[i] >= auto_min)
+        // The selection and the hovered node claim their space first, then the
+        // rest of what is lit, then whatever the zoom level has room for.
+        let top = emph[i] == 2 || i == hover_node
+        let rank = if top then 0 elsif forced then 1 else 2 end
+        if wanted && pass == rank then
+          let st = if emph[i] == 2 then tb(12, TEXT) elsif forced then ts(LBL, TEXT) else ts(LBL, DIM) end
+          let name = NODES[i].n
+          let tw = text_width(name, st)
+          // try below, above, right, then left of the node; take the first
+          // spot that covers neither another label nor another node
+          let gap = srs[i] * 1.16 + 4.0
+          let lr = rect(sxs[i] - float(tw) / 2.0 - 5.0, sys[i] + gap, tw + 10, 17)
+          let clash = !top
+          for side_i in range(0, 4) do
+            if clash then
+              let cand = if side_i == 0 then lr
+                elsif side_i == 1 then rect(lr.x, sys[i] - gap - 17.0, lr.w, 17)
+                elsif side_i == 2 then rect(sxs[i] + gap, sys[i] - 8.5, lr.w, 17)
+                else rect(sxs[i] - gap - float(lr.w), sys[i] - 8.5, lr.w, 17) end
+              let bad = false
+              for p in placed do
+                if cand.x < p.x + p.w && p.x < cand.x + cand.w && cand.y < p.y + p.h && p.y < cand.y + cand.h then bad = true end
+              end
+              if !bad then
+                for j in all_idx do
+                  if j != i && act[j] && emph[j] > 0 then
+                    let rj = srs[j] + 2.0
+                    if cand.x < sxs[j] + rj && sxs[j] - rj < cand.x + cand.w && cand.y < sys[j] + rj && sys[j] - rj < cand.y + cand.h then bad = true end
+                  end
+                end
+              end
+              if !bad then
+                lr = cand
+                clash = false
+              end
+            end
+          end
+          if !clash && lr.x + lr.w > canvas.x && lr.x < canvas.x + canvas.w && lr.y + lr.h > canvas.y && lr.y < canvas.y + canvas.h then
+            draw_rect_rounded(lr, 4, CANVAS, if forced then 225 else 170 end)
+            txt(name, lr.x + 5.0, lr.y + 1.0, st)
+            placed = append(placed, lr)
+            labels_drawn = labels_drawn + 1
+          end
+        end
+      end
+    end
+  end
+end
+
+// marquee
+if drag.mode == "marquee" && drag.moved then
+  let x0 = to_sx(cam, canvas, min(drag.wx, wmx))
+  let y0 = to_sy(cam, canvas, min(drag.wy, wmy))
+  let x1 = to_sx(cam, canvas, max(drag.wx, wmx))
+  let y1 = to_sy(cam, canvas, max(drag.wy, wmy))
+  let mr = rect(x0, y0, x1 - x0, y1 - y0)
+  draw_rect(mr, ACCENT, 26)
+  draw_rect_outline(mr, ACCENT, 210, 1)
+end
+
+// hover card
+if hit >= 0 && drag.mode == "none" && !blocked && !(len(sel) == 1 && sel[0] == hit) then
+  let nd = NODES[hit]
+  let l1 = nd.n
+  let l2 = kind_label(nd.k) ++ " · " ++ GROUPS[nd.g].name
+  let l3 = fmt_rps(nd.rps) ++ " req/s  ·  p99 " ++ fmt_ms(nd.p99)
+  let cw = max(text_width(l1, tb(13, TEXT)), max(text_width(l2, ts(11, DIM)), text_width(l3, mono(11, DIM)))) + 28
+  let ch = 72
+  let hx = if mx + 18 + cw > canvas.x + canvas.w - 8 then mx - 18 - cw else mx + 18 end
+  let hy = if my + 20 + ch > canvas.y + canvas.h - 8 then my - 12 - ch else my + 20 end
+  let hr = rect(hx, hy, cw, ch)
+  draw_shadow(hr, {radius: 8, blur: 18, spread: 0, dx: 0, dy: 6, color: BG, a: 190})
+  draw_rect_rounded(hr, 8, ELEV)
+  rr_outline(hr, 8, LINE, 255, 1)
+  draw_rect_rounded(rect(hx + 10, hy + 13, 3, 14), 1, GROUPS[nd.g].c)
+  txt(l1, hx + 20, hy + 10, tb(13, TEXT))
+  txt(l2, hx + 14, hy + 31, ts(11, DIM))
+  txt(l3, hx + 14, hy + 49, mono(11, if nd.st > 0 then status_color(nd.st) else DIM end))
+end
+
+clip_none()
+
+// ── Draw: canvas chrome (zoom pills, minimap) ────────────────────────────
+
+let chrome_live = !ui_block && drag.mode == "none"
+if pill_btn(b_out, "−", false, chrome_live) then
+  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 0.8)
+  cam_to = {...cam_to, on: false}
+  auto_fit = false
+end
+if pill_btn(b_pct, str(int(round(z * 100.0))) ++ "%", false, chrome_live) then
+  cam_to = {on: true, x: cam.x, y: cam.y, z: 1.0}
+  auto_fit = false
+end
+if pill_btn(b_in, "+", false, chrome_live) then
+  cam = zoom_about(cam, canvas, canvas.x + canvas.w / 2, canvas.y + canvas.h / 2, 1.25)
+  cam_to = {...cam_to, on: false}
+  auto_fit = false
+end
+if pill_btn(b_fit, "Fit", false, chrome_live) then
+  cam_to = fit_target(px, py, G.rad, act, canvas)
+  auto_fit = true
+end
+
+// kinds legend, floating along the top of the canvas
+draw_rect_rounded(lg_r, 8, PANEL, 225)
+rr_outline(lg_r, 8, LINE, 255, 1)
+let lgx = lg_r.x + 12
+let lgy = lg_r.y + 7
+for kd in kinds do
+  node_fill(kd[0], lgx + 6, lgy + 8, 5.0, DIM, 255)
+  txt(kd[1], lgx + 19, lgy, ts(11, FAINT))
+  lgx = lgx + 19 + text_width(kd[1], ts(11, FAINT)) + 20
+end
+draw_circle({x: lgx + 6, y: lgy + 8}, 3.5, DIM, 255)
+draw_circle_outline(lgx + 6, lgy + 8, 7, WARN, 255, 2)
+txt("Unhealthy", lgx + 21, lgy, ts(11, FAINT))
+
+// minimap
+draw_shadow(mini, {radius: 8, blur: 16, spread: 0, dx: 0, dy: 4, color: BG, a: 170})
+draw_rect_rounded(mini, 8, PANEL, 240)
+rr_outline(mini, 8, LINE, 255, 1)
+clip_push(mini.x + 1, mini.y + 1, mini.w - 2, mini.h - 2)
+for i in all_idx do
+  if act[i] then
+    let ux = mini_cx + (px[i] - mcx) * mscale
+    let uy = mini_cy + (py[i] - mcy) * mscale
+    let c = GROUPS[NODES[i].g].c
+    if emph[i] == 2 then
+      draw_circle({x: ux, y: uy}, 3.5, TEXT, 255)
+    else
+      draw_circle({x: ux, y: uy}, 2.0, c, if emph[i] == 0 then 70 else 235 end)
+    end
+  end
+end
+// the part of the world the canvas is showing
+let vw = float(canvas.w) / z * mscale
+let vh = float(canvas.h) / z * mscale
+let vr = rect(mini_cx + (cam.x - mcx) * mscale - vw / 2.0, mini_cy + (cam.y - mcy) * mscale - vh / 2.0, vw, vh)
+draw_rect(vr, ACCENT, 22)
+draw_rect_outline(vr, ACCENT, 230, 1)
+clip_pop()
+
+// ── Draw: sidebar ────────────────────────────────────────────────────────
+
+draw_rect(side, PANEL)
+draw_rect(side.x + side.w - 1, side.y, 1, side.h, LINE)
+
+let sxl = side.x + 20
+let sw = side.w - 40
+let sy = side.y + 20
+let side_live = !ui_block && drag.mode == "none"
+
+caps("GROUPS", sxl, sy, FAINT)
+txt_r(str(len(GROUPS) - len(hidden)) ++ " of " ++ str(len(GROUPS)), sxl + sw, sy - 1, ts(11, FAINT))
+sy = sy + 22
+let next_group_hover = -1
+for gi in range(0, len(GROUPS)) do
+  let g = GROUPS[gi]
+  let rr = rect(side.x + 10, sy, side.w - 20, 28)
+  let off = contains(hidden, gi)
+  let hov = hovered(rr) && side_live
+  if hov then
+    draw_rect_rounded(rr, 6, HOVER)
+    if !off then next_group_hover = gi end
+  end
+  if off then
+    draw_circle_outline(sxl + 6, sy + 14, 5, FAINT, 255, 1)
+  else
+    draw_circle({x: sxl + 6, y: sy + 14}, 5, g.c, 255)
+  end
+  txt(g.name, sxl + 22, sy + 6, ts(13, if off then FAINT else TEXT end))
+  let cnt = len(filter(NODES, fn(nd) -> nd.g == gi))
+  txt_r(if off then "hidden" else str(cnt) end, sxl + sw, sy + 7, if off then ts(11, FAINT) else mono(11, DIM) end)
+  if hov && mouse_pressed(0) then
+    hidden = toggle_in(hidden, gi)
+    alpha = max(alpha, 0.5)
+  end
+  sy = sy + 30
+end
+group_hover = next_group_hover
+
+sy = sy + 10
+hline(sxl, sy, sw, LINE)
+sy = sy + 16
+caps("HIGHLIGHT", sxl, sy, FAINT)
+sy = sy + 22
+mode = segmented(rect(sxl, sy, sw, 30), ["Nearby", "Dependents", "Requires"], mode, side_live)
+sy = sy + 40
+let mode_note = if mode == 0 then "A selection lights its direct callers and callees."
+  elsif mode == 1 then "Everything that breaks if the selection does."
+  else "Everything the selection needs to stay up." end
+for line in wrap_px(mode_note, sw, ts(11, FAINT)) do
+  txt(line, sxl, sy, ts(11, FAINT))
+  sy = sy + 16
+end
+
+sy = sy + 12
+hline(sxl, sy, sw, LINE)
+sy = sy + 16
+caps("FORCES", sxl, sy, FAINT)
+sy = sy + 22
+
+let nrep = force.rep
+let nlen = force.len
+let ngrav = force.grav
+txt("Repulsion", sxl, sy, ts(12, TEXT))
+txt_r(str(int(round(force.rep))), sxl + sw, sy + 1, mono(11, ACCENT))
+let nrep_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.rep, 150.0, 2400.0, {fill: ACCENT, track: ELEV, knob: TEXT})
+if side_live then nrep = nrep_s end
+sy = sy + 44
+txt("Link length", sxl, sy, ts(12, TEXT))
+txt_r(str(int(round(force.len))) ++ " px", sxl + sw, sy + 1, mono(11, ACCENT))
+let nlen_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.len, 25.0, 140.0, {fill: ACCENT, track: ELEV, knob: TEXT})
+if side_live then nlen = nlen_s end
+sy = sy + 44
+txt("Gravity", sxl, sy, ts(12, TEXT))
+txt_r(str(round(force.grav * 100.0, 1)), sxl + sw, sy + 1, mono(11, ACCENT))
+let ngrav_s = slider(rect(sxl - 2, sy + 19, sw + 4, 18), force.grav, 0.0, 0.2, {fill: ACCENT, track: ELEV, knob: TEXT})
+if side_live then ngrav = ngrav_s end
+sy = sy + 48
+if nrep != force.rep || nlen != force.len || ngrav != force.grav then
+  force = {rep: nrep, len: nlen, grav: ngrav}
+  alpha = max(alpha, 0.5)
+end
+
+// temperature
+let temp_r = rect(sxl, sy + 18, sw, 5)
+let temp_label = if frozen then "frozen" elsif alpha < ALPHA_MIN then "settled" else "cooling" end
+txt("Temperature", sxl, sy, ts(12, TEXT))
+txt_r(if alpha < ALPHA_MIN || frozen then temp_label else temp_label ++ " " ++ str(int(round(alpha * 100.0))) ++ "%" end, sxl + sw, sy + 1,
+  mono(11, if frozen then WARN elsif alpha < ALPHA_MIN then GOOD else ACCENT end))
+draw_rect_rounded(temp_r, 2, ELEV)
+if alpha > 0.0 then
+  draw_rect_gradient_rounded(rect(temp_r.x, temp_r.y, max(5, int(float(sw) * clamp(alpha, 0.0, 1.0))), 5), 2, ACCENT, #ff9d6b, 0.0)
+end
+sy = sy + 38
+
+let bw3 = (sw - 12) / 3
+if pill_btn(rect(sxl, sy, bw3, 28), "Reheat", false, side_live) then alpha = 1.0 end
+if pill_btn(rect(sxl + bw3 + 6, sy, bw3, 28), "Scatter", false, side_live) then
+  queued = "scatter"
+end
+if pill_btn(rect(sxl + (bw3 + 6) * 2, sy, bw3, 28), if frozen then "Resume" else "Freeze" end, frozen, side_live) then frozen = !frozen end
+sy = sy + 38
+
+let pin_n = len(filter(pins, fn(p) -> p))
+let foot = if pin_n > 0 then plural(pin_n, "node", "nodes") ++ " pinned · U frees them" else "Drag a node to pin it where you drop it." end
+txt(foot, sxl, side.y + side.h - 30, ts(11, FAINT))
+
+// ── Draw: inspector ──────────────────────────────────────────────────────
+
+draw_rect(insp, PANEL)
+draw_rect(insp.x, insp.y, 1, insp.h, LINE)
+
+let ix = insp.x + 22
+let iw = insp.w - 44
+let iy = insp.y + 20
+let insp_live = !ui_block && drag.mode == "none"
+let next_link_hover = -1
+
+// One clickable row naming another node. Returns "click", "hover" or "".
+fn node_row(r: Rect, i: int, live: bool, act: list, right: string) -> string
+  let nd = NODES[i]
+  let on = act[i]
+  let hov = hovered(r) && live && on
+  if hov then draw_rect_rounded(r, 6, HOVER) end
+  node_fill(nd.k, r.x + 14, r.y + r.h / 2, 5.0, if on then GROUPS[nd.g].c else FAINT end, 255)
+  txt(nd.n, r.x + 30, r.y + (r.h - 13) / 2 - 2, ts(13, if !on then FAINT elsif hov then TEXT else DIM end))
+  if nd.st > 0 && on then
+    draw_circle({x: r.x + 36 + text_width(nd.n, ts(13, DIM)), y: r.y + r.h / 2}, 3, status_color(nd.st), 255)
+  end
+  txt_r(if on then right else "hidden" end, r.x + r.w - 8, r.y + (r.h - 11) / 2 - 2, mono(11, FAINT))
+  if hov && mouse_pressed(0) then "click" elsif hov then "hover" else "" end
+end
+
+fn metric_tile(r: Rect, label: string, value: string, unit: string, c: record)
+  draw_rect_rounded(r, 8, ELEV)
+  caps(label, r.x + 12, r.y + 10, FAINT)
+  txt(value, r.x + 12, r.y + 26, mono(19, c))
+  txt(unit, r.x + 16 + text_width(value, mono(19, c)), r.y + 34, ts(11, FAINT))
+  nil
+end
+
+let picked_row = -1
+
+if len(sel) == 1 then
+  let i = sel[0]
+  let nd = NODES[i]
+  let g = GROUPS[nd.g]
+  caps(upper(kind_label(nd.k)), ix, iy, FAINT)
+  let stl = status_label(nd.st)
+  let stc = status_color(nd.st)
+  let pw = text_width(stl, ts(11, stc)) + 26
+  let pr = rect(ix + iw - pw, iy - 5, pw, 20)
+  draw_rect_rounded(pr, 10, over(PANEL, stc, 0.16))
+  draw_circle({x: pr.x + 11, y: pr.y + 10}, 3, stc, 255)
+  txt(stl, pr.x + 19, pr.y + 3, ts(11, stc))
+  iy = iy + 22
+  txt(ellipsize(nd.n, iw, tb(21, TEXT)), ix, iy, tb(21, TEXT))
+  iy = iy + 34
+  draw_circle({x: ix + 5, y: iy + 8}, 4, g.c, 255)
+  txt(g.name ++ "  ·  " ++ g.team, ix + 16, iy, ts(12, DIM))
+  iy = iy + 30
+
+  let tw2 = (iw - 10) / 2
+  metric_tile(rect(ix, iy, tw2, 62), "THROUGHPUT", fmt_rps(nd.rps), "req/s", TEXT)
+  metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "P99 LATENCY", if nd.p99 >= 1000 then str(round(float(nd.p99) / 1000.0, 2)) else str(nd.p99) end,
+    if nd.p99 >= 1000 then "s" else "ms" end, if nd.p99 >= 1000 then BAD elsif nd.p99 >= 400 then WARN else TEXT end)
+  iy = iy + 72
+  metric_tile(rect(ix, iy, tw2, 62), "ERROR RATE", str(nd.err), "%", if nd.err >= 5.0 then BAD elsif nd.err >= 1.0 then WARN else TEXT end)
+  metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "DEGREE", str(G.deg[i]), str(len(G.inn[i])) ++ " in · " ++ str(len(G.out[i])) ++ " out", TEXT)
+  iy = iy + 78
+
+  // reach
+  let up = count_pos(bfs(G.inn, [i], act, 99))
+  let down = count_pos(bfs(G.out, [i], act, 99))
+  txt("Blast radius", ix, iy, ts(12, DIM))
+  txt_r(plural(up, "dependent", "dependents"), ix + iw, iy, mono(12, if mode == 1 then ACCENT else TEXT end))
+  iy = iy + 21
+  txt("Depends on", ix, iy, ts(12, DIM))
+  txt_r(plural(down, "service", "services"), ix + iw, iy, mono(12, if mode == 2 then ACCENT else TEXT end))
+  iy = iy + 28
+  hline(ix, iy, iw, LINE)
+  iy = iy + 16
+
+  // the two neighbour lists share whatever height is left
+  let room = insp.y + insp.h - 60 - iy
+  let max_rows = max(2, (room - 2 * 30) / 26)
+  let outs = G.out[i]
+  let inns = G.inn[i]
+  let out_rows = min(len(outs), max(max_rows / 2, max_rows - len(inns)))
+  let in_rows = min(len(inns), max_rows - out_rows)
+
+  caps("CALLS", ix, iy, FAINT)
+  txt_r(str(len(outs)), ix + iw, iy - 1, mono(11, FAINT))
+  iy = iy + 20
+  if len(outs) == 0 then
+    txt("Nothing — this is a leaf.", ix, iy + 2, ts(12, FAINT))
+    iy = iy + 26
+  end
+  for k in range(0, out_rows) do
+    let j = outs[k]
+    if k == out_rows - 1 && len(outs) > out_rows then
+      txt("+ " ++ str(len(outs) - out_rows + 1) ++ " more", ix + 30, iy + 4, ts(12, FAINT))
+    else
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_ms(NODES[j].p99))
+      if res == "click" then picked_row = j end
+      if res != "" then next_link_hover = j end
+    end
+    iy = iy + 26
+  end
+  iy = iy + 12
+  caps("CALLED BY", ix, iy, FAINT)
+  txt_r(str(len(inns)), ix + iw, iy - 1, mono(11, FAINT))
+  iy = iy + 20
+  if len(inns) == 0 then
+    txt("Nothing — this is an entry point.", ix, iy + 2, ts(12, FAINT))
+    iy = iy + 26
+  end
+  for k in range(0, in_rows) do
+    let j = inns[k]
+    if k == in_rows - 1 && len(inns) > in_rows then
+      txt("+ " ++ str(len(inns) - in_rows + 1) ++ " more", ix + 30, iy + 4, ts(12, FAINT))
+    else
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_ms(NODES[j].p99))
+      if res == "click" then picked_row = j end
+      if res != "" then next_link_hover = j end
+    end
+    iy = iy + 26
+  end
+
+  // actions, pinned to the bottom
+  let by = insp.y + insp.h - 46
+  let bw = (iw - 16) / 3
+  if pill_btn(rect(ix, by, bw, 28), if pins[i] then "Unpin" else "Pin" end, pins[i], insp_live) then
+    pins[i] = !pins[i]
+    alpha = max(alpha, 0.25)
+  end
+  if pill_btn(rect(ix + bw + 8, by, bw, 28), "Focus", false, insp_live) then
+    cam_to = focus_target(px, py, i, max(z, 1.7))
+    auto_fit = false
+  end
+  if pill_btn(rect(ix + (bw + 8) * 2, by, bw, 28), "Expand", false, insp_live) then
+    let d = bfs(G.und, sel, act, 1)
+    sel = for k in all_idx do
+      if d[k] < 0 then continue end
+      k
+    end
+  end
+elsif len(sel) > 1 then
+  caps("SELECTION", ix, iy, FAINT)
+  iy = iy + 22
+  txt(str(len(sel)) ++ " services", ix, iy, tb(21, TEXT))
+  iy = iy + 36
+  let inner = len(filter(G.edges, fn(e) -> contains(sel, e.a) && contains(sel, e.b)))
+  let total_rps = reduce(sel, 0, fn(acc, i) -> acc + NODES[i].rps)
+  let sick = len(filter(sel, fn(i) -> NODES[i].st > 0))
+  let tw2 = (iw - 10) / 2
+  metric_tile(rect(ix, iy, tw2, 62), "CALLS INSIDE", str(inner), "edges", TEXT)
+  metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "UNHEALTHY", str(sick), "of " ++ str(len(sel)), if sick > 0 then WARN else TEXT end)
+  iy = iy + 72
+  metric_tile(rect(ix, iy, iw, 62), "COMBINED THROUGHPUT", fmt_rps(total_rps), "req/s", TEXT)
+  iy = iy + 78
+
+  if len(sel) == 2 then
+    caps("SHORTEST PATH", ix, iy, FAINT)
+    txt_r(if len(path) > 0 then plural(len(path) - 1, "hop", "hops") else "none" end, ix + iw, iy - 1, mono(11, ACCENT))
+    iy = iy + 20
+    if len(path) == 0 then
+      txt("No route between them through", ix, iy + 2, ts(12, FAINT))
+      txt("the groups that are showing.", ix, iy + 19, ts(12, FAINT))
+      iy = iy + 44
+    end
+    for k in range(0, min(len(path), 12)) do
+      let j = path[k]
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, if k == 0 then "from" elsif k == len(path) - 1 then "to" else str(k) end)
+      if res == "click" then picked_row = j end
+      if res != "" then next_link_hover = j end
+      iy = iy + 26
+    end
+  else
+    caps("MEMBERS", ix, iy, FAINT)
+    iy = iy + 20
+    let room = insp.y + insp.h - 60 - iy
+    let rows = max(1, room / 26)
+    for k in range(0, min(len(sel), rows)) do
+      let j = sel[k]
+      if k == rows - 1 && len(sel) > rows then
+        txt("+ " ++ str(len(sel) - rows + 1) ++ " more", ix + 30, iy + 4, ts(12, FAINT))
+      else
+        let res = node_row(rect(ix - 8, iy, iw + 16, 26), j, insp_live, act, fmt_rps(NODES[j].rps))
+        if res == "click" then picked_row = j end
+        if res != "" then next_link_hover = j end
+      end
+      iy = iy + 26
+    end
+  end
+
+  let by = insp.y + insp.h - 46
+  let bw = (iw - 16) / 3
+  let all_pinned = len(filter(sel, fn(i) -> !pins[i])) == 0
+  if pill_btn(rect(ix, by, bw, 28), if all_pinned then "Unpin" else "Pin" end, all_pinned, insp_live) then
+    for i in sel do pins[i] = !all_pinned end
+    alpha = max(alpha, 0.25)
+  end
+  if pill_btn(rect(ix + bw + 8, by, bw, 28), "Frame", false, insp_live) then
+    let fz = fit_cam(bounds_of(px, py, G.rad, for i in all_idx do contains(sel, i) end), canvas, 1.8)
+    cam_to = {on: true, x: fz.x, y: fz.y, z: fz.z}
+    auto_fit = false
+  end
+  if pill_btn(rect(ix + (bw + 8) * 2, by, bw, 28), "Clear", false, insp_live) then sel = [] end
+else
+  caps("OVERVIEW", ix, iy, FAINT)
+  iy = iy + 22
+  txt("storefront / prod", ix, iy, tb(21, TEXT))
+  iy = iy + 34
+  txt("eu-west-1  ·  snapshot 14:32 UTC", ix, iy, ts(12, DIM))
+  iy = iy + 30
+
+  let live_n = len(filter(act, fn(a) -> a))
+  let live_e = len(filter(G.edges, fn(e) -> act[e.a] && act[e.b]))
+  let sick = len(filter(all_idx, fn(i) -> act[i] && NODES[i].st > 0))
+  let tw2 = (iw - 10) / 2
+  metric_tile(rect(ix, iy, tw2, 62), "SERVICES", str(live_n), if live_n < n then "of " ++ str(n) else "nodes" end, TEXT)
+  metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "CALLS", str(live_e), "edges", TEXT)
+  iy = iy + 72
+  metric_tile(rect(ix, iy, tw2, 62), "UNHEALTHY", str(sick), "now", if sick > 0 then WARN else GOOD end)
+  metric_tile(rect(ix + tw2 + 10, iy, tw2, 62), "AVG DEGREE", str(round(float(live_e) * 2.0 / float(max(1, live_n)), 1)), "calls", TEXT)
+  iy = iy + 80
+
+  caps("NEEDS ATTENTION", ix, iy, FAINT)
+  iy = iy + 20
+  txt_r(str(sick), ix + iw, iy - 21, mono(11, FAINT))
+  let worst = sort(filter(all_idx, fn(i) -> act[i] && NODES[i].st > 0), fn(a, b) -> int(sign(NODES[b].err - NODES[a].err)))
+  let shown = 0
+  for i in worst do
+    if shown < 5 then
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), i, insp_live, act, str(NODES[i].err) ++ "%")
+      if res == "click" then picked_row = i end
+      if res != "" then next_link_hover = i end
+      iy = iy + 26
+      shown = shown + 1
+    end
+  end
+  if shown == 0 then
+    txt("Every visible service is healthy.", ix, iy + 2, ts(12, FAINT))
+    iy = iy + 26
+  end
+  iy = iy + 12
+  caps("MOST CONNECTED", ix, iy, FAINT)
+  iy = iy + 20
+  let room = insp.y + insp.h - 16 - iy
+  let hubs = 0
+  for i in G.order do
+    if act[i] && hubs < min(7, room / 26) then
+      let res = node_row(rect(ix - 8, iy, iw + 16, 26), i, insp_live, act, str(G.deg[i]) ++ " calls")
+      if res == "click" then picked_row = i end
+      if res != "" then next_link_hover = i end
+      iy = iy + 26
+      hubs = hubs + 1
+    end
+  end
+end
+
+link_hover = next_link_hover
+if picked_row >= 0 then
+  sel = [picked_row]
+  let fsx = to_sx(cam, canvas, px[picked_row])
+  let fsy = to_sy(cam, canvas, py[picked_row])
+  if !point_in(fsx, fsy, rect(canvas.x + 90, canvas.y + 70, canvas.w - 180, canvas.h - 220)) then
+    cam_to = focus_target(px, py, picked_row, z)
+    auto_fit = false
+  end
+end
+
+// ── Draw: header ─────────────────────────────────────────────────────────
+
+draw_rect(0, 0, W, HEADER_H, PANEL)
+draw_rect(0, HEADER_H - 1, W, 1, LINE)
+
+// wordmark: three linked dots
+draw_line(26, 37, 36, 23, DIM, 255, 1.5)
+draw_line(36, 23, 46, 37, DIM, 255, 1.5)
+draw_line(26, 37, 46, 37, DIM, 110, 1.5)
+draw_circle({x: 26, y: 37}, 4, GROUPS[3].c, 255)
+draw_circle({x: 36, y: 23}, 4, GROUPS[0].c, 255)
+draw_circle({x: 46, y: 37}, 4, GROUPS[2].c, 255)
+let WM = {size: 16, font: "ui", color: TEXT, spacing: 3, weight: 700}
+txt("LATTICE", 62, 20, WM)
+txt("service dependency map", 62 + text_width("LATTICE", WM) + 16, 23, ts(12, FAINT))
+
+// health summary, centred over the canvas
+let healthy_n = len(filter(NODES, fn(nd) -> nd.st == 0))
+let degraded_n = len(filter(NODES, fn(nd) -> nd.st == 1))
+let failing_n = len(filter(NODES, fn(nd) -> nd.st == 2))
+let chips = [[str(healthy_n) ++ " healthy", GOOD], [str(degraded_n) ++ " degraded", WARN], [str(failing_n) ++ " failing", BAD]]
+let chip_w = 0
+for ch in chips do chip_w = chip_w + text_width(ch[0], ts(12, DIM)) + 16 + 22 end
+let chx = canvas.x + canvas.w - chip_w + 6
+for ch in chips do
+  draw_circle({x: chx + 4, y: 30}, 4, ch[1], 255)
+  txt(ch[0], chx + 16, 22, ts(12, DIM))
+  chx = chx + text_width(ch[0], ts(12, DIM)) + 16 + 22
+end
+
+// search field
+let SF = {size: 13, font: "ui", color: TEXT}
+draw_rect_rounded(search_r, 8, if typing then BG else ELEV end)
+rr_outline(search_r, 8, if typing then ACCENT else LINE end, 255, 1)
+draw_circle_outline(search_r.x + 15, search_r.y + 15, 5, if typing then ACCENT else FAINT end, 255, 2)
+draw_line(search_r.x + 19, search_r.y + 19, search_r.x + 23, search_r.y + 23, if typing then ACCENT else FAINT end, 255, 2)
+if query == "" then
+  txt(if typing then "Type a service name…" else "Find a service" end, field_r.x, field_r.y + 8, ts(13, FAINT))
+else
+  txt(query, field_r.x, field_r.y + 8, SF)
+end
+if typing && fract(time() * 1.1) < 0.6 then
+  let cx = field_r.x + text_width(char_slice(query, 0, fres.caret), SF) + 1
+  draw_rect(cx, field_r.y + 8, 1, 16, ACCENT)
+end
+if typing then request_frame() end
+let key_r = rect(search_r.x + search_r.w - 28, search_r.y + 6, 20, 20)
+if query != "" then
+  let hov = hovered(key_r) && !blocked
+  if hov then draw_rect_rounded(key_r, 5, HOVER) end
+  txt_c("×", key_r.x + 10, key_r.y + 1, ts(14, if hov then TEXT else FAINT end))
+  if hov && mouse_pressed(0) then
+    query = ""
+    fc = focus_clear(fc)
+  end
+else
+  draw_rect_rounded(key_r, 5, PANEL)
+  rr_outline(key_r, 5, LINE, 255, 1)
+  txt_c("/", key_r.x + 10, key_r.y + 3, mono(11, FAINT))
+end
+// a press anywhere outside the field and its dropdown lets go of the keyboard
+if typing && mouse_pressed(0) && !point_in(mx, my, search_r) && !over_drop then
+  fc = focus_clear(fc)
+end
+
+// ── Draw: status bar ─────────────────────────────────────────────────────
+
+let sb = rect(0, H - STATUS_H, W, STATUS_H)
+draw_rect(sb, PANEL)
+draw_rect(0, sb.y, W, 1, LINE)
+let left_t = if len(sel) > 0 then
+  plural(len(sel), "selected", "selected") ++ "  ·  " ++ plural(lit_n - len(sel), "service lit", "services lit") ++ "  ·  " ++ plural(lit_edges, "call", "calls")
+elsif q != "" then
+  plural(len(matches), "match", "matches") ++ " for “" ++ query ++ "”"
+else
+  str(len(filter(act, fn(a) -> a))) ++ " services  ·  " ++ str(len(filter(G.edges, fn(e) -> act[e.a] && act[e.b]))) ++ " calls"
+end
+txt(left_t, 22, sb.y + 7, ts(12, DIM))
+
+let hint = if drag.mode == "node" && drag.moved then
+  "release to pin it here"
+elsif drag.mode == "marquee" then
+  "release to add everything inside to the selection"
+elsif drag.mode == "pan" && drag.moved then
+  "panning"
+elsif typing then
+  "↑ ↓ choose  ·  return selects  ·  esc clears"
+elsif hit >= 0 then
+  "click select  ·  shift-click add  ·  drag to pin  ·  double-click focus  ·  right-click for more"
+elsif over_mini then
+  "drag to move the view"
+elsif over_canvas then
+  "drag pan  ·  wheel zoom  ·  shift-drag box select  ·  / search"
+else
+  "F fit  ·  R reheat  ·  S scatter  ·  space freeze  ·  1 2 3 highlight  ·  L labels"
+end
+txt_c(hint, canvas.x + canvas.w / 2, sb.y + 7, ts(12, FAINT))
+
+let live_t = if frozen then "❚❚ frozen" elsif hot then "● simulating" else "○ settled" end
+let live_c = if frozen then WARN elsif hot then ACCENT else FAINT end
+txt_r(live_t, W - 22, sb.y + 7, ts(12, live_c))
+let lbl_t = "labels " ++ (if label_mode == 0 then "auto" elsif label_mode == 1 then "all" else "off" end)
+txt_r(lbl_t, W - 22 - text_width(live_t, ts(12, live_c)) - 22, sb.y + 7, ts(12, FAINT))
+
+// ── Draw: search dropdown (over everything but the menu) ─────────────────
+
+if drop_n > 0 then
+  draw_shadow(drop_r, {radius: 8, blur: 22, spread: 0, dx: 0, dy: 8, color: BG, a: 210})
+  draw_rect_rounded(drop_r, 8, ELEV)
+  rr_outline(drop_r, 8, LINE, 255, 1)
+  for k in range(0, drop_n) do
+    let i = matches[k]
+    let rr = rect(drop_r.x + 6, drop_r.y + 6 + k * 28, drop_r.w - 12, 28)
+    if hovered(rr) && !blocked then qsel = k end
+    if k == qsel then draw_rect_rounded(rr, 6, HOVER) end
+    node_fill(NODES[i].k, rr.x + 14, rr.y + 14, 5.0, GROUPS[NODES[i].g].c, 255)
+    txt(NODES[i].n, rr.x + 30, rr.y + 6, ts(13, if k == qsel then TEXT else DIM end))
+    txt_r(GROUPS[NODES[i].g].name, rr.x + rr.w - 8, rr.y + 7, ts(11, FAINT))
+    if hovered(rr) && mouse_pressed(0) && !blocked then
+      sel = [i]
+      cam_to = focus_target(px, py, i, z)
+      auto_fit = false
+      fc = focus_clear(fc)
+    end
+  end
+end
+
+// ── Context menu: the last draw call ─────────────────────────────────────
+
+let m_tag = menu.tag
+let node_menu = menu.open && m_tag.what == "node"
+let items = if node_menu then
+  [menu_item(if pins[m_tag.id] then "Unpin" else "Pin in place" end), menu_item("Focus camera"), menu_sep(),
+    menu_item("Select neighbours"), menu_item("Select group"), menu_item("Hide group")]
+else
+  [menu_item("Fit to view"), menu_item("Reheat layout"), menu_item("Scatter"), menu_sep(),
+    menu_item("Unpin all", pin_n > 0), menu_item("Show all groups", len(hidden) > 0)]
+end
+let picked = context_menu(menu, items, {font: "ui", bg: ELEV, fg: TEXT, dim: FAINT, outline: LINE, rule: LINE, selection: HOVER})
+menu = picked.menu
+if picked.index >= 0 then
+  if node_menu then
+    let id = m_tag.id
+    if picked.index == 0 then
+      let tgt = if contains(sel, id) then sel else [id] end
+      let flip = !pins[id]
+      for i in tgt do pins[i] = flip end
+      alpha = max(alpha, 0.25)
+    elsif picked.label == "Focus camera" then
+      cam_to = focus_target(px, py, id, max(z, 1.7))
+      auto_fit = false
+    elsif picked.label == "Select neighbours" then
+      let d = bfs(G.und, [id], act, 1)
+      sel = for k in all_idx do
+        if d[k] < 0 then continue end
+        k
+      end
+    elsif picked.label == "Select group" then
+      sel = for k in all_idx do
+        if NODES[k].g != NODES[id].g then continue end
+        k
+      end
+    elsif picked.label == "Hide group" then
+      hidden = toggle_in(hidden, NODES[id].g)
+      alpha = max(alpha, 0.5)
+    end
+  else
+    if picked.label == "Fit to view" then
+      cam_to = fit_target(px, py, G.rad, act, canvas)
+      auto_fit = true
+    elsif picked.label == "Reheat layout" then
+      alpha = 1.0
+    elsif picked.label == "Scatter" then
+      queued = "scatter"
+    elsif picked.label == "Unpin all" then
+      pins = for i in all_idx do false end
+      alpha = max(alpha, 0.4)
+    elsif picked.label == "Show all groups" then
+      hidden = []
+      alpha = max(alpha, 0.5)
+    end
+  end
+end
+
+// ── Observables for the debug server ─────────────────────────────────────
+//  Read these from GET /state → panes[0].panel.values.
+
+fn names_of(xs: list) -> list
+  map(xs, fn(i) -> NODES[i].n)
+end
+
+// every visible node's place on screen, pane-local, so a test can click one
+fn screen_nodes(act: list, sxs: list, sys: list, srs: list) -> list
+  let out = []
+  for i in range(0, len(act)) do
+    if act[i] then
+      out = append(out, {n: NODES[i].n, x: int(round(sxs[i])), y: int(round(sys[i])), r: int(round(srs[i]))})
+    end
+  end
+  out
+end
+
+let obs_sel = names_of(sel)
+let obs_mode = mode
+let obs_alpha = round(alpha, 4)
+let obs_zoom = round(cam.z, 4)
+let obs_cam = [round(cam.x, 2), round(cam.y, 2)]
+let obs_hot = hot
+let obs_frozen = frozen
+let obs_lit = lit_n
+let obs_lit_edges = lit_edges
+let obs_path = names_of(path)
+let obs_pins = pin_n
+let obs_hidden = map(hidden, fn(g) -> GROUPS[g].name)
+let obs_hover = if hit >= 0 then NODES[hit].n else "" end
+let obs_query = query
+let obs_typing = typing
+let obs_matches = names_of(matches)
+let obs_labels = labels_drawn
+let obs_label_mode = label_mode
+let obs_steps = steps_run
+let obs_shuffle = shuffle
+let obs_drag = drag.mode
+let obs_clicks = clicks
+let obs_force = [round(force.rep, 1), round(force.len, 1), round(force.grav, 4)]
+let obs_nodes = screen_nodes(act, sxs, sys, srs)
+// how far the layout still moves per step, summed over every node
+let obs_speed = round(reduce(all_idx, 0.0, fn(acc, i) -> acc + abs(vx[i]) + abs(vy[i])), 3)
+
+// A queued action runs at the top of the next frame; make sure there is one.
+if queued != "" then request_frame() end

@@ -32,7 +32,7 @@ npm install          # installs the whole workspace, including this app
 ## Run
 
 ```bash
-npm run dev --workspace examples/custom-integrations/diagram-canvas
+npm run dev --workspace examples/custom-apps/diagram-canvas
 ```
 
 Then open http://localhost:4012.
@@ -40,8 +40,8 @@ Then open http://localhost:4012.
 ## Production build
 
 ```bash
-npm run build --workspace examples/custom-integrations/diagram-canvas     # output to dist/
-npm run preview --workspace examples/custom-integrations/diagram-canvas   # serve the build locally
+npm run build --workspace examples/custom-apps/diagram-canvas     # output to dist/
+npm run preview --workspace examples/custom-apps/diagram-canvas   # serve the build locally
 ```
 
 ## Examples

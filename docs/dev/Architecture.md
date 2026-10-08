@@ -620,7 +620,7 @@ keep it across reloads.
 
 The host side lives in `integrations/petal-web-html/src/runtime.ts` and
 `integrations/petal-web-canvas/src/runtime.ts`;
-`examples/custom-integrations/diagram-canvas` consumes the latter through the
+`examples/custom-apps/diagram-canvas` consumes the latter through the
 `petal-web-canvas` package.
 
 ---

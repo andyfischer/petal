@@ -1,7 +1,7 @@
 // =====================================================================
 // SIDE-SCROLLER  -  written in Petal, hosted by petal-sdl
 // =====================================================================
-//     ./examples/games/side-scroller/run-game.sh
+//     ./examples/custom-apps/side-scroller/run-game.sh
 //
 // A whole platformer in one script: physics, collision, enemies, camera
 // and every pixel of the render. Levels are plain text (levels/*.lvl),

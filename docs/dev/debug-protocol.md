@@ -10,7 +10,7 @@ Implementations:
 
 - **petal-sdl:** `integrations/petal-desktop-sdl/src/protocol.rs`
   (`Command`, `Response`, `handle_command`).
-- **petal-diagram-canvas:** `examples/custom-integrations/diagram-canvas/src/debug.ts`
+- **petal-diagram-canvas:** `examples/custom-apps/diagram-canvas/src/debug.ts`
   (`PetalDebugAPI.handleCommand`).
 
 This document is the source of truth. When an implementation drifts, fix the

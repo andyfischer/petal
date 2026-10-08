@@ -9,6 +9,6 @@ if [ ! -x "$BIN" ]; then
     echo "Building petal-desktop-sdl..."
     ( cd "$SDL_DIR" && cargo build )
 fi
-# cwd = examples/games/ so the hard-coded "side-scroller/levels/..." paths resolve.
+# cwd = examples/custom-apps/ so the hard-coded "side-scroller/levels/..." paths resolve.
 cd "$SCRIPT_DIR/.."
 exec "$BIN" side-scroller/game.ptl --width 960 --height 600 --title "Petal Runner"

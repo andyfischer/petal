@@ -149,7 +149,7 @@ The small ones first, then the ones that are the point.
    this is "what can the player do from here" made visible.
 10. **Bidirectional level editing.** Once idea 1 lands, the editor pane
     *is* the level editor: drag a platform on the canvas, the list literal
-    changes; type a number, the platform moves. `examples/games/side-scroller/`
+    changes; type a number, the platform moves. `examples/custom-apps/side-scroller/`
     carries a 500-line hand-written editor that this would delete.
 
 ### Ambitious — too big for a session, and worth it

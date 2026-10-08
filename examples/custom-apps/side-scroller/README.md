@@ -38,17 +38,17 @@ The "hybrid" Rust/Petal split:
 ( cd integrations/petal-desktop-sdl && cargo build )
 
 # play
-./examples/games/side-scroller/run-game.sh
+./examples/custom-apps/side-scroller/run-game.sh
 
 # edit
-./examples/games/side-scroller/run-editor.sh
+./examples/custom-apps/side-scroller/run-editor.sh
 ```
 
-The launchers build the host if needed and run from `examples/games/` so the
+The launchers build the host if needed and run from `examples/custom-apps/` so the
 level paths in the scripts resolve. To pass the script directly, do the same:
 
 ```bash
-cd examples/games
+cd examples/custom-apps
 ../../integrations/petal-desktop-sdl/target/debug/petal-sdl side-scroller/game.ptl --width 960 --height 600
 ```
 

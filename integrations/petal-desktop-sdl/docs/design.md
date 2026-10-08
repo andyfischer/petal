@@ -10,7 +10,7 @@ For other material:
 - [`game-dev-guide.md`](game-dev-guide.md) — the script-side API and common game patterns
 - [`agent-protocol.md`](agent-protocol.md) — the `--agent` / `--headless` command reference
 - [`docs/building-apps.md`](../../../docs/building-apps.md) — how to build your own app on this crate
-- [`examples/custom-integrations/petal-fps/README.md`](../../../examples/custom-integrations/petal-fps/README.md) — a Rust + Petal 3D app that implements its own `Host`
+- [`examples/custom-apps/petal-fps/README.md`](../../../examples/custom-apps/petal-fps/README.md) — a Rust + Petal 3D app that implements its own `Host`
 
 ## Layers
 

@@ -6,7 +6,7 @@ covers building, running and the run modes.
 
 The console is a Shape B app on `integrations/petal-desktop-sdl` (see
 [docs/building-apps.md](../../../../docs/building-apps.md)), the same way
-`examples/custom-integrations/petal-fps` is. The window, event pump, frame
+`examples/custom-apps/petal-fps` is. The window, event pump, frame
 timing, input, hot reload and the agent/headless/screenshot/record modes are
 all inherited from `petal-sdl`. The Rust here adds only the console itself: a
 PPU-shaped rasterizer and an APU-shaped sound chip, both fed from Petal every
@@ -39,7 +39,7 @@ correctly with gameplay state preserved.
 ## Crate layout
 
 ```
-examples/custom-integrations/petal-fantasy-nes/
+examples/custom-apps/petal-fantasy-nes/
   Cargo.toml               package `petal-fantasy-nes`, bin `fantasy-nes`
   src/main.rs              CLI: arg parsing, run-mode dispatch to petal_sdl::run_*
   src/host.rs              `NesHost`: impl petal_sdl::Host (natives, present, render_image, cart switching)

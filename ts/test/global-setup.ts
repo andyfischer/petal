@@ -41,7 +41,7 @@ export default function globalSetup() {
   });
 
   try {
-    execSync("bash examples/custom-integrations/diagram-canvas/build-wasm.sh", {
+    execSync("bash examples/custom-apps/diagram-canvas/build-wasm.sh", {
       cwd: root,
       stdio: "pipe",
       env,

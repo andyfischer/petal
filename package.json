@@ -5,7 +5,7 @@
   "description": "Petal: a custom programming language (Lexer → Parser → AST → Compiler → IR → Step Evaluator).",
   "workspaces": [
     "integrations/petal-web-canvas",
-    "examples/custom-integrations/diagram-canvas"
+    "examples/custom-apps/diagram-canvas"
   ],
   "scripts": {
     "test": "npm test --prefix ts",

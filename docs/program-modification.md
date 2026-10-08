@@ -199,7 +199,7 @@ and `rust/tests/class_live_edit.rs`.
   errors are non-fatal; the old program keeps running. On by default,
   `--no-hot-reload` disables.
 - **Browser live editor (diagram-canvas)** — a CodeMirror widget
-  ([`editor.ts`](../examples/custom-integrations/diagram-canvas/src/editor.ts))
+  ([`editor.ts`](../examples/custom-apps/diagram-canvas/src/editor.ts))
   with a debounced recompile. This is a **full reload, not state-preserving**:
   it calls `petal.load(source)`, which recreates the stack (state resets,
   frame count returns to 0). Browser UI only; not exposed over the debug
@@ -227,7 +227,7 @@ These change **runtime state or inputs**, not the program. There is no
 over-the-wire source-swap command; reload is file-watcher-driven only. The
 diagram-canvas command set is `pause, resume, step, state, set_state,
 capture_draw_commands, input, screenshot, pending_report`
-([`debug.ts`](../examples/custom-integrations/diagram-canvas/src/debug.ts)).
+([`debug.ts`](../examples/custom-apps/diagram-canvas/src/debug.ts)).
 
 ### Rewind, and replaying history through an edit
 

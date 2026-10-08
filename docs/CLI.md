@@ -574,7 +574,7 @@ only repeat what the call already says:
 **`--host` matters here.** A bare `draw_rect` is the `ui` prelude's function
 under `--host ui` (the default) and an unknown global under `--host core`.
 Suggest for the host the script actually runs in: a script for an embedding
-with natives of its own (`examples/custom-integrations/`) should say `--host
+with natives of its own (`examples/custom-apps/`) should say `--host
 core`, which leaves that host's natives alone.
 
 #### Options

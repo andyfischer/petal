@@ -41,12 +41,12 @@ Your app is only `.ptl` files (plus assets and a launch script). It runs on an
 integration's **existing binary/host unchanged**; all app logic is in Petal.
 This is the ideal — zero host code to maintain.
 
-`examples/games/side-scroller` is the model. It has no Rust and no TS: `game.ptl`,
+`examples/custom-apps/side-scroller` is the model. It has no Rust and no TS: `game.ptl`,
 `editor.ptl`, level files, and a launch script that points the `petal-sdl`
 binary at its script:
 
 ```bash
-# examples/games/side-scroller/run-game.sh (abridged)
+# examples/custom-apps/side-scroller/run-game.sh (abridged)
 SDL_DIR="$REPO/integrations/petal-desktop-sdl"
 BIN="$SDL_DIR/target/debug/petal-sdl"
 [ -x "$BIN" ] || ( cd "$SDL_DIR" && cargo build )   # build the integration if needed
@@ -64,7 +64,7 @@ renderer, extra native functions, an editor/debug shell. It **depends on the
 integration as a library/package** and adds only its delta on top. It never
 copies the integration's shared code.
 
-`examples/custom-integrations/diagram-canvas` is the model on the web side: it consumes
+`examples/custom-apps/diagram-canvas` is the model on the web side: it consumes
 `petal-web-canvas` for the WASM runtime, canvas renderer, and input plumbing,
 and adds only a CodeMirror editor and a pause/step debug protocol.
 
@@ -88,7 +88,7 @@ importable by name:
 // package.json (repo root)
 "workspaces": [
   "integrations/petal-web-canvas",
-  "examples/custom-integrations/diagram-canvas"
+  "examples/custom-apps/diagram-canvas"
 ]
 ```
 
@@ -116,12 +116,12 @@ export { default as initRuntime, PetalRuntime } from "../pkg/petal_web_canvas.js
 tree:
 
 ```jsonc
-// examples/custom-integrations/diagram-canvas/package.json
+// examples/custom-apps/diagram-canvas/package.json
 "dependencies": { "petal-web-canvas": "*" }
 ```
 
 ```ts
-// examples/custom-integrations/diagram-canvas/src/main.ts
+// examples/custom-apps/diagram-canvas/src/main.ts
 import { PetalCanvas } from "petal-web-canvas";
 ```
 
@@ -165,7 +165,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   ```bash
   npm run build:wasm --workspace integrations/petal-web-canvas
   npm run build      --workspace integrations/petal-web-canvas
-  npm run build      --workspace examples/custom-integrations/diagram-canvas
+  npm run build      --workspace examples/custom-apps/diagram-canvas
   ```
 
 ## Mechanism: Desktop (Rust + SDL) — the SDL track
@@ -177,7 +177,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
 - `petal-fps` is **Shape B** — it depends on the library and adds only its
   delta (a software-framebuffer 3D rasterizer and the `triangle3d` native
   family): one small `Host` impl plus its rasterizer and font.
-- [`petal-fantasy-nes`](../examples/custom-integrations/petal-fantasy-nes/) is **Shape B at the
+- [`petal-fantasy-nes`](../examples/custom-apps/petal-fantasy-nes/) is **Shape B at the
   integration tier** — an NES-style fantasy console whose "carts" are `.ptl`
   scripts. Its delta is two emulated chips (a PPU-shaped tile/sprite rasterizer
   and an APU-shaped sound chip), the natives that feed them, and a Petal-source
@@ -188,8 +188,8 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   **audio** (`on_sdl_init` to open the device, `end_frame` to fill it, and
   Petal functions called *by* the host to synthesize samples), and a host that
   ships a **prelude written in Petal** rather than in Rust. See its
-  [design](../examples/custom-integrations/petal-fantasy-nes/docs/design.md) and
-  [LANGUAGE_NOTES](../examples/custom-integrations/petal-fantasy-nes/LANGUAGE_NOTES.md).
+  [design](../examples/custom-apps/petal-fantasy-nes/docs/design.md) and
+  [LANGUAGE_NOTES](../examples/custom-apps/petal-fantasy-nes/LANGUAGE_NOTES.md).
 
 ### The design: one `Host` trait over a generic loop
 

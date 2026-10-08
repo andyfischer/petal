@@ -208,7 +208,7 @@ garden integration tests instead.
 
 Every UI app under `examples/dashboards`, `examples/games`, and
 `examples/productivity` runs clean under this driver, as do
-`examples/custom-integrations/diagram-canvas/examples/*` and, through the
+`examples/custom-apps/diagram-canvas/examples/*` and, through the
 panel-native stubs above, the drawers under `garden/examples/panels/` and
 `garden/gpp-apps/*/src/`.
 
@@ -218,8 +218,8 @@ the frame record carries the name; the driver writes that record and exits 1.
 
 | Corpus | Missing |
 |---|---|
-| `examples/custom-integrations/petal-fps/examples/*` | `sky_gradient` and the rest of the petal-fps renderer's natives |
-| `examples/custom-integrations/petal-fantasy-nes/carts/*` | `set_backdrop` and the cart palette bindings the fantasy-NES host installs |
-| `examples/games/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
+| `examples/custom-apps/petal-fps/examples/*` | `sky_gradient` and the rest of the petal-fps renderer's natives |
+| `examples/custom-apps/petal-fantasy-nes/carts/*` | `set_backdrop` and the cart palette bindings the fantasy-NES host installs |
+| `examples/custom-apps/side-scroller/editor.ptl` | `load_text_file` (a host filesystem native) |
 
 Those need their own embedder, not this one.

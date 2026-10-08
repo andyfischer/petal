@@ -572,7 +572,7 @@ check the host saw every call" catches the next one.
   `transfer_state` + `watch_program_sources`; values cross as decoded
   `pb_value` trees rather than JSON.
 - **petal-web-html** (`integrations/petal-web-html/`) and **diagram-canvas**
-  (`examples/custom-integrations/diagram-canvas/`) — wasm-bindgen
+  (`examples/custom-apps/diagram-canvas/`) — wasm-bindgen
   `PetalRuntime` structs owning an `Env`, with the same channels marshalled as
   JSON strings across the wasm boundary. petal-web-html returns a retained
   element tree instead of draw commands; diagram-canvas exposes

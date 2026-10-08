@@ -202,7 +202,7 @@ The vitest helpers in `ts/test/helpers.ts` shell out to the compiled binary:
   `PETAL_DEBUG=1`. Query it after the run through `Env::trace().explain(...)`
   or `petal explain`.
 - The diagram canvas shows runtime errors in an on-page error panel
-  (`examples/custom-integrations/diagram-canvas/src/main.ts`).
+  (`examples/custom-apps/diagram-canvas/src/main.ts`).
 
 ### Trace JSON schema (`--record-trace <path>`)
 

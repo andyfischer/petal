@@ -5,18 +5,17 @@ Runnable Petal programs, grouped by what they are:
 | Directory | What's in it |
 |-----------|--------------|
 | [`console/`](console/) | Console programs demonstrating language features — the golden-tested corpus |
-| [`games/`](games/) | Games — pong, breakout, snake, asteroids, flappy, a [`memory`](games/memory/) matching game, a [`tower-defense`](games/tower-defense/) mini-game, a [`physics-playground`](games/physics-playground/), an interactive solar system, two SDL-hosted side-scrollers (the full-size one and [`hopper`](games/hopper/), a small one built for time travel and direct manipulation), and five headless console programs written as language stress tests: [`2048`](games/2048/), [`boids`](games/boids/), [`minesweeper`](games/minesweeper/), [`terrain`](games/terrain/), [`tetris`](games/tetris/) |
+| [`games/`](games/) | Games — pong, breakout, snake, asteroids, flappy, a [`memory`](games/memory/) matching game, a [`tower-defense`](games/tower-defense/) mini-game, a [`physics-playground`](games/physics-playground/), an interactive solar system, [`hopper`](games/hopper/) (a small SDL-hosted side-scroller built for time travel and direct manipulation), and five headless console programs written as language stress tests: [`2048`](games/2048/), [`boids`](games/boids/), [`minesweeper`](games/minesweeper/), [`terrain`](games/terrain/), [`tetris`](games/tetris/) |
 | [`productivity/`](productivity/) | Applications — calculator, todo, notes, calendar, email client, kanban, CRM, spreadsheet, paint, vector editor, photo adjust, node editor, markdown editor, command palette, a [`music-sequencer`](productivity/music-sequencer/) |
 | [`dashboards/`](dashboards/) | Data-visualization demos — analytics, server monitoring, finance, a [`network-graph`](dashboards/network-graph/) explorer, a [`timeline-explorer`](dashboards/timeline-explorer/) |
 | [`ui/`](ui/) | Component-library showcases — [`bloom-gallery`](ui/bloom-gallery/), every component in [bloom](../petal-libs/bloom/) |
-| [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |
+| [`custom-apps/`](custom-apps/) | Full applications that run outside Garden, each on an integration — [`diagram-canvas`](custom-apps/diagram-canvas/) (petal-web-canvas), and [`petal-fps`](custom-apps/petal-fps/), [`petal-fantasy-nes`](custom-apps/petal-fantasy-nes/) and the [`side-scroller`](custom-apps/side-scroller/) platformer (petal-desktop-sdl) |
 
 The apps under `games/`, `productivity/`, `dashboards/`, and `ui/` are Garden
 panel apps: pure Petal, each with its own README and a `layout.ptl`;
 `tools/run-example.ts <slug>` starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
-built and tested. The exceptions are [`games/side-scroller/`](games/side-scroller/)
-and [`games/hopper/`](games/hopper/), which run on the `petal-desktop-sdl`
-integration via their own launch scripts, and the five console programs
+built and tested. The exceptions are [`games/hopper/`](games/hopper/), which runs on the `petal-desktop-sdl`
+integration via its own launch script, and the five console programs
 (`2048`, `boids`, `minesweeper`, `terrain`, `tetris`), which print to stdout
 and are deterministic: two runs print the same output.
 

@@ -11,7 +11,7 @@ Hosts that embed it: Garden panels (`garden/garden-script`),
 `integrations/petal-desktop-sdl` (crate and binary still named `petal-sdl`),
 `integrations/petal-web-canvas` (which also serves `diagram-canvas`), the
 `petal-fps` and `petal-fantasy-nes` examples under
-`examples/custom-integrations/`, standalone app embedders outside this repo
+`examples/custom-apps/`, standalone app embedders outside this repo
 (the todo app, worlds-fair), and the headless `petal-ui-run` CLI in this crate.
 
 ## The model

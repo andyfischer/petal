@@ -16,7 +16,7 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a thirtieth panel app that was not on
+`examples/custom-apps/side-scroller` is a thirtieth panel app that was not on
 this list. The remaining 16 have not been attempted.
 
 | # | App | What it tests | Status |

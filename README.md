@@ -2,26 +2,45 @@
 
 Petal is a programming language for creative coding.
 
-### Main features
+## Design Goals
 
- - **Programs are dataflow graphs.** Every value knows where it came from, so tools can inspect, trace, and modify a running program.
- - **First-class state.** `state` declares a value that persists across runs, keyed by where in the program it lives.
- - **Live editing.** Change the source while a program runs and keep its state.
- - **Speculative execution.** Re-run a program safely in exploration modes.
+### Goal: Managed state, highly introspectable runtime
+
+Petal encourages dataflow-based computation, and discourages shared mutable state. This helps
+make a Petal program highly introspectable.
+
+This includes:
+
+ - Two kinds of variable binding - `let` (preferred, for dataflow expressions) and `var` (slot-based variable, only used when needed).
+ - First-class persistent state support with the `state` keyword. Easily build stateful programs including UIs, animations, games, etc.
+
+### Goal: Live editing - programs are editable at runtime
+
+Petal includes a lot of features to modify a running program. These work in combination with language features like `state`.
+
+ - **Live editing.** Change the source while a program runs, existing program state is preserved.
+ - **Speculative execution.** Re-run a program safely in exploration modes to safely experiment with a variation.
  - **Differentiable.** Forward-mode automatic differentiation is built in (dual numbers), and `petal propose-edit` can work backward from an observed output to the source edit that would produce it.
- - **Goal-based editing.** Tools can rewrite source programmatically by stating what a value should become.
- - **Optional type annotations.** Annotate bindings, parameters, and return types where you want them. A shallow checker reports mismatches as warnings and never blocks the run.
- - **Classes as named records.** `class Rect … end` names a record shape and gives it a constructor. `fn Rect.center_x(r: Rect)` declares a method on it. Instances are still plain records: no inheritance, no `self`.
- - **Mutation is opt-in and visible.** `let` bindings are dataflow edges. When you need a mutable slot you declare it with `var` and every write says `set`.
- - A hybrid functional/imperative style with immutable values and other conveniences for quick iteration.
+ - **Goal-based editing.** Tools can rewrite source programmatically by specifying a desired outcome.
 
-### Project status
+### Goal: Simple to complex
 
-This project is in an early, experimental phase. Language stability is not guaranteed.
+Petal programs can start simple and grow to be complex applications.
+
+ - **Optional type annotations.** Comes with an optional type annotation system. Programs can be written as typed or typeless.
+
+### Goal: Agent friendly
+
+Petal aims to be easy for coding agents. This mainly comes in the form of tooling, with a variety of tools to check and
+improve a Petal program.
+
+## Project status
+
+This project is in an early, experimental phase. Large backwards-incompatible changes are still happening. Stability not guaranteed.
 
 ### Related work
 
-Projects and research on the same topics:
+A few references to existing work that Petal is inspired by:
 
  - **Dataflow and reactive languages:** [Lucid](https://en.wikipedia.org/wiki/Lucid_(programming_language)),
    [Lustre](https://en.wikipedia.org/wiki/Lustre_(programming_language)), LabVIEW, and
@@ -94,7 +113,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 |-----------|-------------|
 | [`rust/`](rust/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
 | [`docs/`](docs/README.md) | Documentation for using Petal, and [`docs/dev/`](docs/dev/) for working on it |
-| [`examples/`](examples/README.md) | Runnable examples: console demos, panel apps (games, productivity, dashboards), and custom host integrations |
+| [`examples/`](examples/README.md) | Collection of runnable examples using Petal |
 | [`petal-ui/`](petal-ui/README.md) | The UI layer shared by every host: input events, draw commands, and the `ui` prelude module |
 | [`petal-query/`](petal-query/README.md) | Async data layer for UI panels: `query(kind, arg)` handlers with a host-side cache |
 | [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal itself — [`bloom`](petal-libs/bloom/), the UI component library |
@@ -119,14 +138,24 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 
 The full index is in [docs/README.md](docs/README.md).
 
-## How the pieces fit
+## Building a full app with Petal
+
+The repo comes with "integrations" and "apps", which come together in layers:
 
 ```
 Petal Core  →  Integrations  →  Apps
 ```
 
-- **Petal Core** is the language ([`rust/`](rust/)) plus the shared UI layer ([`petal-ui/`](petal-ui/)) and data layer ([`petal-query/`](petal-query/README.md)).
-- **Integrations** ([`integrations/`](integrations/)) embed the core for one platform:
+### Core
+
+"Petal Core" is the core Rust based language implementation in `rust/` which includes the compiler, runtime, type checker, and more.
+
+### Integrations
+
+An **integration** is a language binding of Petal code to some native platform. These can be used as part of an application
+but they aren't full runnable apps on their own.
+
+The repo contains:
 
   | Integration | Description |
   |-------------|-------------|
@@ -135,14 +164,17 @@ Petal Core  →  Integrations  →  Apps
   | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that renders to an HTML canvas |
   | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal (with petal-ui) in a C/C++ program. See [embedding-c.md](docs/embedding-c.md) |
 
-- **Apps** ([`examples/`](examples/README.md)) build on an integration rather than on the core directly. Some ship their own host:
+### Apps
+
+An "app" is a full runnable application that loads Petal source and does something with it.
 
   | App | Built on | Description |
   |-----|----------|-------------|
-  | [diagram-canvas](examples/custom-integrations/diagram-canvas/README.md) | petal-web-canvas | Diagram visualization with a live source editor |
-  | [petal-fps](examples/custom-integrations/petal-fps/README.md) | petal-desktop-sdl | Rust + Petal 3D first-person experiment with a software rasterizer |
-  | [petal-fantasy-nes](examples/custom-integrations/petal-fantasy-nes/README.md) | petal-desktop-sdl | NES-style fantasy console driven by Petal carts |
-  | [side-scroller](examples/games/side-scroller/README.md) | petal-desktop-sdl | 2D platformer written almost entirely in Petal |
+  | [Garden](garden/README.md) | petal-ui | IDE and text editor built for Petal |
+  | [diagram-canvas](examples/custom-apps/diagram-canvas/README.md) | petal-web-canvas | Diagram visualization with a live source editor |
+  | [petal-fps](examples/custom-apps/petal-fps/README.md) | petal-desktop-sdl | Rust + Petal 3D first-person experiment with a software rasterizer |
+  | [petal-fantasy-nes](examples/custom-apps/petal-fantasy-nes/README.md) | petal-desktop-sdl | NES-style fantasy console driven by Petal carts |
+  | [side-scroller](examples/custom-apps/side-scroller/README.md) | petal-desktop-sdl | 2D platformer written almost entirely in Petal |
 
 ## License
 

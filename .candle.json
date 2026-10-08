@@ -8,7 +8,7 @@
     {
       "name": "diagram-canvas",
       "shell": "npx vite --port 4012",
-      "root": "examples/custom-integrations/diagram-canvas"
+      "root": "examples/custom-apps/diagram-canvas"
     },
     {
       "name": "web-canvas",

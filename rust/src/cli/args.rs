@@ -110,6 +110,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
             process::exit(0);
         }
         "run" => parse_run_args(&args[1..]),
+        "bench" => parse_bench_args(&args[1..]),
         "lsp" => parse_lsp_args(&args[1..]),
         "packages" => parse_packages_args(&args[1..]),
         "check" => parse_check_args(&args[1..]),
@@ -182,6 +183,62 @@ fn parse_run_args(args: &[String]) -> CliArgs {
 
     CliArgs {
         command: Command::Run(o),
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `bench --fn <name> [--fn <name>]... [--iters N] [--host core] [--seed <n>]
+/// [--json] <file>` — measure what a call of each named function costs.
+///
+/// `--host` is accepted for symmetry with the checking commands, but `bench`
+/// runs the script the way `run` does, and this binary provides the core host
+/// only: any other value is refused here rather than failing later with an
+/// unknown native.
+fn parse_bench_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal bench --fn <name> [--fn <name>]... [--iters <n>] [--host core] \
+                 [--seed <n>] [--json] <file>";
+    let mut o = super::BenchOpts::default();
+    let source = parse_source_args(args, usage, |args, i| {
+        match args[*i].as_str() {
+            "--json" => o.json = true,
+            "--fn" => o
+                .fns
+                .push(take(args, i, "Expected a function name after --fn").to_string()),
+            "--iters" => {
+                let text = take(args, i, "Expected a run count after --iters");
+                match text.parse::<u32>() {
+                    Ok(n) if n > 0 => o.iters = Some(n),
+                    _ => {
+                        eprintln!("Invalid --iters value '{text}': expected a positive integer");
+                        process::exit(1);
+                    }
+                }
+            }
+            "--seed" => o.seed = Some(parse_seed(take(args, i, "Expected a number after --seed"))),
+            "--host" => {
+                let host = parse_host(take(args, i, HOST_EXPECTED));
+                if host != crate::typecheck::globals::HostProfile::Core {
+                    eprintln!(
+                        "petal bench runs a script the way 'petal run' does, which provides \
+                         the core host only; '--host {}' scripts need their host's own runner \
+                         (for a petal-ui panel: bench_panel, see docs/dev/performance.md)",
+                        host.name()
+                    );
+                    process::exit(1);
+                }
+            }
+            _ => return false,
+        }
+        true
+    });
+    if o.fns.is_empty() {
+        eprintln!("bench needs at least one --fn <name>. {usage}");
+        process::exit(1);
+    }
+
+    CliArgs {
+        command: Command::Bench(o),
         source,
         include_dirs: Vec::new(),
     }

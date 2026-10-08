@@ -18,6 +18,7 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("run", "Execute a program"),
             ("check", "Compile a program without executing it"),
+            ("bench", "Measure what a call of a named function costs"),
             ("lsp", "Serve the language server over stdio"),
             (
                 "packages",
@@ -117,6 +118,7 @@ fn page(name: &str) -> Option<&'static str> {
     Some(match name {
         "run" => RUN,
         "check" => CHECK,
+        "bench" => BENCH,
         "fmt" => FMT,
         "lint" => LINT,
         "suggest" => SUGGEST,
@@ -150,6 +152,78 @@ COMMON OPTIONS
               Add a module search directory. Repeatable. Imports also
               resolve from the importing file's directory and PETAL_PATH.
 ";
+
+const BENCH: &str = "\
+NAME
+       petal-bench - Measure what a call of a named function costs
+
+SYNOPSIS
+       petal bench --fn <name> [--fn <name>]... [<options>] <file>
+       petal bench --fn <name> [--fn <name>]... [<options>] -e <code>
+
+DESCRIPTION
+       Runs <file> the way 'petal run' does, repeatedly, and reports for each
+       named function what one call cost, over the calls the script itself
+       makes: how many there were, instructions per call, and milliseconds
+       per call (mean, minimum, median, 95th percentile), then heap
+       allocations, list/record copies, and garbage collections per call.
+
+       Everything is measured twice, with the optimizer on and with it off,
+       and the last column is the optimized figure relative to the
+       unoptimized one. The two runs differ only in the optimizer: memoization
+       and every other part of the run policy are the same on both sides.
+
+       Each figure comes in two forms. The headline is inclusive: the
+       function and everything it calls. 'self' leaves out the user functions
+       it calls (builtins it calls stay in). For a recursive function the
+       inclusive figures are per outermost call, so nothing is counted twice,
+       and the self figures are per call.
+
+       The file is run once as a warm-up, then again until about one second
+       has passed, for each of the two measurements. Every run starts from
+       scratch, as a separate 'petal run' would. The script's own output is
+       not printed. A run that fails ends the command with the error and no
+       report.
+
+       <name> is a function's name as written in the source, wherever it is
+       declared: at the top level, inside another function, or in an imported
+       module. A bare method name selects that method on every class
+       ('area'); 'Class.method' selects one. Several functions with the same
+       name are reported separately, each with its file and line. A name that
+       matches nothing is an error; a function that exists and is never
+       called is reported as such.
+
+       Timing a call is not free: about 50 ns for each call of a benched
+       function and for each user function it calls directly. The report
+       states the figure measured on this machine. It is inside the times
+       shown, so a function that does only a few instructions' work reads
+       as mostly overhead; its instruction count is exact regardless.
+
+OPTIONS
+       --fn <name>
+              A function to measure. Repeatable; at least one is required.
+
+       --iters <n>
+              Run the file exactly <n> times per measurement (after the
+              warm-up) rather than for about a second.
+
+       --json
+              Print the report as one JSON object: 'runs' (per measurement:
+              policy, run count, ms per run, ms to lower, instructions per
+              run), 'timer_overhead_ns', and 'functions', each with 'opt',
+              'no_opt' and 'delta_pct'. Per-call values are null for a
+              function that was never called. Errors are JSON too.
+
+       --seed <n>
+              Seed every run's PRNG, so a script that calls random() makes
+              the same calls on each run. Decimal or 0x-hex.
+
+       --host core
+              Accepted for symmetry with 'check'. bench runs what 'run'
+              runs, which is the core host; a script written for another
+              host needs that host's own runner.
+
+{COMMON}";
 
 const RUN: &str = "\
 NAME
@@ -193,8 +267,8 @@ OPTIONS
               to stderr after the run. PETAL_TRACE_PENDING=1 does the same.
 
        --dup-stats
-              Print value-duplication and heap allocation stats to stderr
-              after the run. Debug builds / the dup-stats feature only.
+              Count copy-on-write duplications and heap allocations during
+              the run and print them to stderr afterwards.
 
        --profile
               Count instructions, builtin calls and collections during the

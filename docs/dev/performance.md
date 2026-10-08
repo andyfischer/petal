@@ -45,6 +45,62 @@ before either layer existed. `--policy baseline` also turns off the optimizer.
 Under a scenario the bench also reports the frames that ran on their own and
 the session's total script time, which is the number to compare.
 
+For one function rather than a whole program, `petal bench <file> --fn <name>`
+re-runs the file and reports what a call of that function costs, over the
+calls the script makes: instructions and milliseconds per call (min, median,
+p95; inclusive of its callees, and self), heap allocations, copy-on-write
+copies and collections per call, with the optimizer on and off in adjacent
+columns. It is the tool for "did this change make `step` cheaper": the
+instruction and copy counts are exact and repeat to the digit, so a change of
+a few percent that wall time cannot resolve still shows. Three things to know
+when reading it:
+
+- It is not a per-instruction hook. The VM consults the bench only where a
+  user-function frame is pushed and popped (`CallBench` in
+  `rust/src/profile.rs`), so a benched run stays on the fast dispatch loop and
+  retires exactly the instructions a plain run does — unlike `--profile`,
+  which takes the general path for every instruction and so is no use for
+  timing.
+- Timing a frame costs two clock reads, about 50 ns together (the report
+  prints the figure measured on the spot). Each call of a benched function
+  pays it, and so does each user function it calls directly, which is timed so
+  the caller's self time can leave it out. On a variant of
+  `test/benchmarks/calls.ptl` (300,000 calls a run of a four-instruction
+  function) benching that function took a run from 55 ms to 67 ms, ~42 ns a
+  call, and its reported 46 ns/call is mostly that. A function that
+  takes microseconds is unaffected; one that takes tens of nanoseconds reads as
+  mostly overhead, and should be judged by its instruction count.
+- `ms to lower` in the header is the optimizer's own cost, paid once per
+  program. It is usually well under a millisecond, but it is not always small:
+  the physics playground's solver takes ~48 ms to lower optimized against
+  0.45 ms unoptimized, which is more than the optimizer saves over a
+  120-frame run of it. A console script that runs once pays that; a host that
+  keeps the program loaded does not.
+
+`bench` runs core-host scripts, like `petal run`. For a library used by a
+panel, write a console driver that imports it and calls the function in a
+loop; for the panel itself, `bench_panel` above.
+
+The allocation and copy counters behind `bench` and `run --dup-stats`
+(`rust/src/stats.rs`) are a runtime switch on the heap, off until one of those
+turns it on, so a release binary has them without the `dup-stats` cargo
+feature (which now only sets the default, as a debug build does). Off, each
+recording site is one branch on a flag in the heap. Measured as whole-process
+`petal run` wall time, minimum of 15 alternating runs, before and after the
+switch replaced the compile-time gate:
+
+| Program | Before | After |
+|---|---|---|
+| `test/benchmarks/append.ptl` | 8.0 ms | 7.9 ms |
+| `test/benchmarks/arith.ptl` | 16.2 ms | 16.2 ms |
+| `test/benchmarks/calls.ptl` | 38.8 ms | 38.4 ms |
+| `test/benchmarks/life.ptl` | 27.6 ms | 27.5 ms |
+| `test/benchmarks/particles.ptl` | 32.5 ms | 32.6 ms |
+| `test/benchmarks/audio_synth.ptl` | 326.9 ms | 321.9 ms |
+| `test/benchmarks/spreadsheet.ptl` | 702.4 ms | 701.6 ms |
+
+Every difference is inside the run-to-run noise (about 1%).
+
 For the specific question "did the optimizer help", `PETAL_OPT_STATS=1` reports
 what it did to the program, and `PETAL_POLICY=baseline` (or `--policy
 baseline`, or `--no-opt`) gives the unoptimized baseline for a same-binary A/B.

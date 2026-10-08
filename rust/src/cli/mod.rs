@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process;
 
 mod args;
+mod bench;
 mod handlers;
 mod help;
 mod source_tools;
@@ -84,6 +85,20 @@ pub struct RunOpts {
     pub error_format: ErrorFormat,
 }
 
+/// The arguments of one `petal bench` invocation (see [`Command::Bench`]).
+#[derive(Default)]
+pub struct BenchOpts {
+    pub json: bool,
+    /// The functions to measure (`--fn <name>`, repeatable).
+    pub fns: Vec<String>,
+    /// Measured runs of the file per variant (`--iters N`); `None` re-runs it
+    /// until the time budget is spent.
+    pub iters: Option<u32>,
+    /// Seed every run's PRNG (`--seed N`), so a script that calls `random()`
+    /// makes the same calls each time.
+    pub seed: Option<u64>,
+}
+
 /// The arguments of one `petal propose-edit` invocation (see
 /// [`Command::ProposeEdit`]).
 pub struct ProposeEditOpts {
@@ -119,6 +134,9 @@ pub enum GraphQuery {
 
 pub enum Command {
     Run(RunOpts),
+    /// `bench` — run a file repeatedly and report what a call of each named
+    /// function costs, with the optimizer on and off.
+    Bench(BenchOpts),
     Check {
         json: bool,
         /// Exit non-zero when type-checker warnings exist (for CI). Plain
@@ -501,6 +519,9 @@ pub fn execute(cli: CliArgs) {
         Command::Run(opts) => {
             set_error_format(opts.error_format);
             handlers::handle_run(&opts, &source, &source_input, &include_dirs);
+        }
+        Command::Bench(opts) => {
+            bench::handle_bench(&opts, &source, &source_input, &include_dirs);
         }
         Command::ProposeEdit(opts) => {
             handlers::handle_propose_edit(&opts, &source, &source_input, &include_dirs);

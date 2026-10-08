@@ -60,7 +60,7 @@ The main files and directories under `rust/src/`, grouped by pipeline stage.
 | `rewrite.rs`, `goal_based_editing.rs`, `direct_manipulation.rs` | Formatting-preserving source rewriting, goal-based edits, and emit-trace provenance |
 | `lint/` | `petal lint`: `reindent.rs` (formatting), `casts.rs` (identity casts), `to_match.rs` (if-chain to match) |
 | `lsp/` | `petal lsp`, the language server |
-| `inspect.rs`, `observe.rs`, `profile.rs`, `stats.rs` | Introspection helpers, the observation buffer, the `--profile` counters, `--dup-stats` |
+| `inspect.rs`, `observe.rs`, `profile.rs`, `stats.rs` | Introspection helpers, the observation buffer, the `--profile` counters and the per-call `CallBench` behind `petal bench`, `--dup-stats` |
 | `test_corpus.rs` | Enumerates the repo's `.ptl` files for corpus-wide unit tests |
 
 **Runtime**

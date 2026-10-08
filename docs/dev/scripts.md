@@ -54,6 +54,7 @@ See [testing.md](testing.md) for the full guide.
 
 | Command | Description |
 |---------|-------------|
+| `petal bench <file> --fn <name> [--fn <name>]...` | What one call of a named function costs, over the calls the script itself makes: calls, instructions and ms per call (min / median / p95, inclusive and self), allocations, list/record copies and collections per call, with the optimizer on and off side by side. Re-runs the file for about a second per side (`--iters N` pins the count); `--json` for a machine-readable report. Core-host scripts only. See [CLI.md](../CLI.md#bench--what-a-call-of-a-function-costs). |
 | `./tools/bench-opts.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` with the optimizer on and off (release build) and report per-file medians plus the speedup. |
 | `./tools/bench-opts.ts --runs=10` | Use more repetitions per file (default 5). |
 | `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]` | Per-frame cost of a **panel** script under the headless harness, which is the shape of work a Garden pane does. Add `--observe` to mirror a real panel (Garden leaves observation on) and `--profile` for the counters below. Frames run under the frame gate, so add `--wiggle` (pointer moves every frame) for an interactive frame or `--no-gate` for the script alone. Calls are memoized unless `--no-memo`; the memo's counters are printed either way. |
@@ -65,7 +66,7 @@ See [performance.md](performance.md) for how to read these numbers.
 | Command | Description |
 |---------|-------------|
 | `petal run --profile <file>` | Count what the run executed (instructions per opcode, builtin calls by name, user calls, collections) and print the histogram to stderr. Works in any build, including a shipped release binary. |
-| `petal run --dup-stats <file>` | Value-duplication and heap-allocation counters (debug builds, or release with the `dup-stats` cargo feature). |
+| `petal run --dup-stats <file>` | Value-duplication and heap-allocation counters. A runtime switch, so it works in any build; the `dup-stats` cargo feature only makes it the default (as it is in debug builds). |
 | `PETAL_OPT_STATS=1 petal run <file>` | Report what the bytecode optimizer did: instructions before/after, moves removed, reads rewritten, jumps threaded. |
 | `PETAL_POLICY=<name> petal run <file>` | Run under a named [run policy](../../rust/src/policy.rs) — `fast` (default), `baseline`, `explain`, `replay`, with modifiers like `fast-memo` — for every command and embedder. Same as `--policy <name>`; `PETAL_OPT=off` and `--no-opt` still mean `baseline`. |
 | `cd rust && cargo build --profile profiling` | Release codegen with symbols kept, at `rust/target/profiling/petal`, for a sampling profiler (`sample <pid>`, `perf`, `samply`). |

@@ -194,6 +194,10 @@ impl<'a> Vm<'a> {
             }
         }
         self.stack.vm_frames.push(frame);
+        // Frames a failed run left measured are gone with its frame stack.
+        if self.profile.bench.enabled {
+            self.profile.bench.begin_run();
+        }
     }
 
     /// Whether a term's value is worth observing: it must carry a source name

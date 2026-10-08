@@ -4,11 +4,14 @@
 //! us?"; this answers the prior question — "which opcodes and which builtins is
 //! a program running at all?" — which is where an optimization effort starts.
 //!
-//! Unlike the duplication counters, collection is a **runtime** switch rather
-//! than a compile-time one, so a shipped release binary can profile a slow
-//! script without a rebuild: `petal run --profile <file>`. When
-//! [`enabled`](VmProfile::enabled) is false every `record_*` is one
-//! predictable branch, which does not measurably move the benchmarks.
+//! Collection is a **runtime** switch rather than a compile-time one, so a
+//! shipped release binary can profile a slow script without a rebuild:
+//! `petal run --profile <file>`. When [`enabled`](VmProfile::enabled) is false
+//! every `record_*` is one predictable branch, which does not measurably move
+//! the benchmarks.
+//!
+//! [`CallBench`] is the second tool here: where the profile describes a whole
+//! run, it measures individual calls of chosen functions (`petal bench`).
 //!
 //! The counts are exact, but note what a *count* can and cannot tell you: it
 //! says a program executed 4 M `GetField`s, not that `GetField` is slow. Pair it
@@ -16,7 +19,7 @@
 //! to turn a large count into a time attribution.
 
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::program::FunctionId;
 
@@ -56,6 +59,12 @@ pub struct VmProfile {
     /// Garbage collections run, and the wall time they took.
     pub collections: u64,
     pub gc_time: Duration,
+    /// Per-call measurement of chosen functions (`petal bench`). It has its
+    /// own switch and is independent of `enabled`: it is consulted where a
+    /// frame is pushed and popped rather than per instruction, so turning it
+    /// on does not take the VM off its fast dispatch loop. Not touched by
+    /// [`reset`](VmProfile::reset) / [`set_enabled`](VmProfile::set_enabled).
+    pub bench: CallBench,
 }
 
 impl Default for VmProfile {
@@ -71,6 +80,7 @@ impl Default for VmProfile {
             calls: 0,
             collections: 0,
             gc_time: Duration::ZERO,
+            bench: CallBench::default(),
         }
     }
 }
@@ -231,11 +241,13 @@ impl VmProfile {
         rows
     }
 
-    /// Clear every counter, leaving `enabled` alone.
+    /// Clear every counter, leaving `enabled` and the call bench alone.
     pub fn reset(&mut self) {
         let enabled = self.enabled;
+        let bench = std::mem::take(&mut self.bench);
         *self = Self::default();
         self.enabled = enabled;
+        self.bench = bench;
     }
 
     /// Render the report, resolving native ids through `native_name`. `elapsed`
@@ -344,6 +356,405 @@ impl VmProfile {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-call measurement (`petal bench`)
+// ---------------------------------------------------------------------------
+
+/// The cumulative counters a call is measured against: read when a measured
+/// frame is pushed and again when it pops, and the difference is what the call
+/// cost. The VM supplies them (instructions from the stack, the rest from the
+/// heap's [`stats`](crate::stats)).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CallCounters {
+    /// Instructions retired on the stack.
+    pub insts: u64,
+    /// Heap objects allocated, all kinds.
+    pub allocs: u64,
+    /// Copy-on-write duplications of a list, record or f64 array.
+    pub copies: u64,
+    /// Bytes those duplications copied.
+    pub copy_bytes: u64,
+}
+
+/// How many per-call wall times a [`CallStats`] keeps for its percentiles.
+/// Up to this many calls the median and p95 are exact; past it they are taken
+/// over a uniform random sample of this size (min, max and every mean stay
+/// exact regardless).
+pub const BENCH_SAMPLE_CAP: usize = 1 << 16;
+
+/// What one benched function cost, summed over the calls measured so far.
+///
+/// Two populations are kept apart so recursion cannot double count:
+///
+/// - **Inclusive** figures (the function plus everything it calls) are summed
+///   over *outermost* activations only — a call made while no other call of
+///   the same function is on the stack. A recursive call's time is already
+///   inside its outermost caller's.
+/// - **Self** figures (minus the user functions it calls; natives it calls
+///   stay in) are summed over *every* activation, recursive ones included.
+#[derive(Debug, Clone)]
+pub struct CallStats {
+    /// The function measured.
+    pub func: FunctionId,
+    /// Every activation that ran, recursive ones included.
+    pub calls: u64,
+    /// Activations with no other activation of this function below them.
+    pub outer_calls: u64,
+    /// Calls the memo replayed from a record instead of running. They pushed
+    /// no frame, so they are in none of the other figures.
+    pub replayed: u64,
+    /// Inclusive wall time and instructions, over `outer_calls`.
+    pub incl_ns: u64,
+    pub incl_insts: u64,
+    /// Self wall time and instructions, over `calls`.
+    pub self_ns: u64,
+    pub self_insts: u64,
+    /// Heap allocations and copy-on-write duplications, inclusive, over
+    /// `outer_calls`.
+    pub allocs: u64,
+    pub copies: u64,
+    pub copy_bytes: u64,
+    /// Collections that ran during an outermost activation, and their time
+    /// (which is also inside `incl_ns`).
+    pub collections: u64,
+    pub gc_ns: u64,
+    /// Extremes of one outermost activation's inclusive time and instructions.
+    pub min_ns: u64,
+    pub max_ns: u64,
+    pub min_insts: u64,
+    pub max_insts: u64,
+    /// Inclusive nanoseconds of individual outermost activations, for the
+    /// percentiles: all of them up to [`BENCH_SAMPLE_CAP`], a uniform sample
+    /// past it.
+    samples: Vec<u64>,
+    /// Activations of this function on the stack right now.
+    active: u32,
+    /// Reservoir-sampling PRNG state (xorshift; fixed seed, so two runs over
+    /// the same calls sample the same ones).
+    rng: u64,
+}
+
+impl CallStats {
+    fn new(func: FunctionId) -> Self {
+        CallStats {
+            func,
+            calls: 0,
+            outer_calls: 0,
+            replayed: 0,
+            incl_ns: 0,
+            incl_insts: 0,
+            self_ns: 0,
+            self_insts: 0,
+            allocs: 0,
+            copies: 0,
+            copy_bytes: 0,
+            collections: 0,
+            gc_ns: 0,
+            min_ns: u64::MAX,
+            max_ns: 0,
+            min_insts: u64::MAX,
+            max_insts: 0,
+            samples: Vec::new(),
+            active: 0,
+            rng: 0x9E37_79B9_7F4A_7C15 ^ (func.0 as u64 + 1),
+        }
+    }
+
+    /// Keep `ns` as a percentile sample (algorithm R once the cap is reached).
+    fn push_sample(&mut self, ns: u64) {
+        if self.samples.len() < BENCH_SAMPLE_CAP {
+            self.samples.push(ns);
+            return;
+        }
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        // `outer_calls` already counts this one.
+        let slot = (self.rng % self.outer_calls) as usize;
+        if slot < BENCH_SAMPLE_CAP {
+            self.samples[slot] = ns;
+        }
+    }
+
+    /// The `q` quantile (0.0 ..= 1.0) of one outermost call's inclusive
+    /// nanoseconds, by nearest rank. `None` when nothing was measured.
+    pub fn quantile_ns(&self, q: f64) -> Option<u64> {
+        if self.samples.is_empty() {
+            return None;
+        }
+        let mut sorted = self.samples.clone();
+        sorted.sort_unstable();
+        let rank = (q * sorted.len() as f64).ceil() as usize;
+        Some(sorted[rank.clamp(1, sorted.len()) - 1])
+    }
+
+    /// Whether the percentiles come from a sample rather than every call.
+    pub fn sampled(&self) -> bool {
+        self.outer_calls as usize > self.samples.len()
+    }
+}
+
+/// A frame being measured: a benched function's, or one a benched function
+/// called directly (timed only so the caller's self figures can subtract it).
+#[derive(Debug, Clone)]
+struct OpenCall {
+    /// Index of the frame in the VM's frame stack.
+    depth: usize,
+    /// Index into [`CallBench::targets`] plus one; 0 for a callee that is not
+    /// itself benched.
+    target: u32,
+    /// Whether this is the outermost activation of its target.
+    outermost: bool,
+    start: CallCounters,
+    gc_count: u64,
+    gc_ns: u64,
+    /// Inclusive time and instructions of the frames this one called.
+    child_ns: u64,
+    child_insts: u64,
+    t0: Instant,
+}
+
+/// Per-call measurement of a chosen set of functions: how many times each ran
+/// and what a call cost in instructions, wall time, allocations, copies and
+/// collections. This is what `petal bench` reads.
+///
+/// It lives on the [`VmProfile`] but is deliberately not a per-instruction
+/// hook: the VM consults it only where a user-function frame is pushed
+/// ([`enter`](Self::enter)) and popped ([`leave`](Self::leave)), so a benched
+/// run executes on the same fast dispatch loop as an ordinary one and the
+/// timings are of the code a shipped host runs. Disabled, it costs one branch
+/// per call and one per return.
+///
+/// Only benched functions and their direct callees are timed, so the cost of
+/// measuring — two clock reads per timed frame — lands inside a benched call
+/// in proportion to the user functions it calls directly.
+#[derive(Debug, Clone, Default)]
+pub struct CallBench {
+    /// Master switch; [`enter`](Self::enter) returns at once when false.
+    pub enabled: bool,
+    /// `FunctionId` → index into `targets` plus one, 0 for "not benched".
+    target_of: Vec<u32>,
+    targets: Vec<CallStats>,
+    /// The measured frames live on the stack, innermost last.
+    open: Vec<OpenCall>,
+    /// Collections seen while enabled, and their time. Cumulative, like
+    /// [`CallCounters`]: a call's share is the difference across it.
+    collections: u64,
+    gc_ns: u64,
+}
+
+impl CallBench {
+    /// A bench over `funcs`, enabled. Duplicates are measured once.
+    pub fn new(funcs: &[FunctionId]) -> Self {
+        let mut b = CallBench {
+            enabled: true,
+            ..Default::default()
+        };
+        for &f in funcs {
+            let slot = f.0 as usize;
+            if slot >= b.target_of.len() {
+                b.target_of.resize(slot + 1, 0);
+            }
+            if b.target_of[slot] == 0 {
+                b.targets.push(CallStats::new(f));
+                b.target_of[slot] = b.targets.len() as u32;
+            }
+        }
+        b
+    }
+
+    /// What was measured, one entry per benched function in the order given
+    /// to [`new`](Self::new).
+    pub fn stats(&self) -> &[CallStats] {
+        &self.targets
+    }
+
+    /// Forget every measurement, keeping the function set and the switch:
+    /// what a warm-up run is followed by.
+    pub fn clear(&mut self) {
+        for t in &mut self.targets {
+            *t = CallStats::new(t.func);
+        }
+        self.open.clear();
+        self.collections = 0;
+        self.gc_ns = 0;
+    }
+
+    /// A run is starting on an empty frame stack: drop whatever a previous
+    /// run that ended in an error left open.
+    pub fn begin_run(&mut self) {
+        self.unwind(0);
+    }
+
+    /// Whether any measured frame is live. The VM's pop path tests this
+    /// before calling [`leave`](Self::leave).
+    #[inline(always)]
+    pub fn any_open(&self) -> bool {
+        !self.open.is_empty()
+    }
+
+    /// The frames at `depth` and above were discarded without returning (an
+    /// error unwound them): close their entries without recording a call.
+    pub fn unwind(&mut self, depth: usize) {
+        while self.open.last().is_some_and(|e| e.depth >= depth) {
+            let e = self.open.pop().unwrap();
+            if e.target != 0 {
+                let t = &mut self.targets[e.target as usize - 1];
+                t.active = t.active.saturating_sub(1);
+            }
+        }
+    }
+
+    /// A frame for `func` was just pushed at index `depth`. Starts measuring
+    /// it if it is benched, or if the frame that called it is. `counters` is
+    /// only invoked in that case.
+    #[inline]
+    pub fn enter(
+        &mut self,
+        func: FunctionId,
+        depth: usize,
+        counters: impl FnOnce() -> CallCounters,
+    ) {
+        if !self.enabled {
+            return;
+        }
+        let target = self.target_of.get(func.0 as usize).copied().unwrap_or(0);
+        if target == 0 && self.open.is_empty() {
+            return;
+        }
+        self.enter_measured(target, depth, counters());
+    }
+
+    #[inline(never)]
+    fn enter_measured(&mut self, target: u32, depth: usize, start: CallCounters) {
+        // Anything still open at this depth belongs to a frame that is gone.
+        self.unwind(depth);
+        let parent_benched = self
+            .open
+            .last()
+            .is_some_and(|e| e.depth + 1 == depth && e.target != 0);
+        if target == 0 && !parent_benched {
+            return;
+        }
+        let outermost = target != 0 && {
+            let t = &mut self.targets[target as usize - 1];
+            t.active += 1;
+            t.active == 1
+        };
+        self.open.push(OpenCall {
+            depth,
+            target,
+            outermost,
+            start,
+            gc_count: self.collections,
+            gc_ns: self.gc_ns,
+            child_ns: 0,
+            child_insts: 0,
+            // Read last, so the bookkeeping above is outside the interval.
+            t0: Instant::now(),
+        });
+    }
+
+    /// The frame at index `depth` is about to pop with a value. Records the
+    /// call if it was being measured. Call only when
+    /// [`any_open`](Self::any_open).
+    #[inline(never)]
+    pub fn leave(&mut self, depth: usize, counters: impl FnOnce() -> CallCounters) {
+        match self.open.last() {
+            Some(e) if e.depth == depth => {}
+            Some(e) if e.depth > depth => {
+                self.unwind(depth + 1);
+                if self.open.last().is_none_or(|e| e.depth != depth) {
+                    return;
+                }
+            }
+            _ => return,
+        }
+        let e = self.open.pop().unwrap();
+        // Read first, for the same reason `enter` reads last.
+        let ns = e.t0.elapsed().as_nanos() as u64;
+        let now = counters();
+        let insts = now.insts - e.start.insts;
+        if let Some(p) = self.open.last_mut()
+            && p.depth + 1 == depth
+        {
+            p.child_ns += ns;
+            p.child_insts += insts;
+        }
+        if e.target == 0 {
+            return;
+        }
+        let t = &mut self.targets[e.target as usize - 1];
+        t.active = t.active.saturating_sub(1);
+        t.calls += 1;
+        t.self_ns += ns.saturating_sub(e.child_ns);
+        t.self_insts += insts.saturating_sub(e.child_insts);
+        if e.outermost {
+            t.outer_calls += 1;
+            t.incl_ns += ns;
+            t.incl_insts += insts;
+            t.allocs += now.allocs - e.start.allocs;
+            t.copies += now.copies - e.start.copies;
+            t.copy_bytes += now.copy_bytes - e.start.copy_bytes;
+            t.collections += self.collections - e.gc_count;
+            t.gc_ns += self.gc_ns - e.gc_ns;
+            t.min_ns = t.min_ns.min(ns);
+            t.max_ns = t.max_ns.max(ns);
+            t.min_insts = t.min_insts.min(insts);
+            t.max_insts = t.max_insts.max(insts);
+            t.push_sample(ns);
+        }
+    }
+
+    /// A call of `func` was replayed from its memo record instead of run.
+    #[inline]
+    pub fn note_replay(&mut self, func: FunctionId) {
+        if !self.enabled {
+            return;
+        }
+        if let Some(&t) = self.target_of.get(func.0 as usize)
+            && t != 0
+        {
+            self.targets[t as usize - 1].replayed += 1;
+        }
+    }
+
+    /// One garbage collection finished and took `elapsed`.
+    pub fn record_gc(&mut self, elapsed: Duration) {
+        if !self.enabled {
+            return;
+        }
+        self.collections += 1;
+        self.gc_ns += elapsed.as_nanos() as u64;
+    }
+
+    /// What measuring one frame costs: the wall time of the two clock reads
+    /// and the bookkeeping between them, in nanoseconds, measured here and now
+    /// by timing a run of empty enter/leave pairs. A benched call's inclusive
+    /// time carries roughly half of this for itself plus all of it for every
+    /// user function it calls directly.
+    pub fn timer_overhead_ns() -> f64 {
+        const ROUNDS: u32 = 20_000;
+        let mut b = CallBench::new(&[FunctionId(0)]);
+        let c = CallCounters::default;
+        // Each round is a benched call with one direct callee: two timed
+        // frames.
+        let run = |b: &mut CallBench| {
+            for _ in 0..ROUNDS {
+                b.enter(FunctionId(0), 1, c);
+                b.enter(FunctionId(1), 2, c);
+                b.leave(2, c);
+                b.leave(1, c);
+            }
+        };
+        run(&mut b); // warm the caches and the branch predictor
+        b.clear();
+        let t0 = Instant::now();
+        run(&mut b);
+        t0.elapsed().as_nanos() as f64 / (ROUNDS as f64 * 2.0)
+    }
+}
+
 /// The per-function counters' index for a function: 0 for the implicit root,
 /// `id + 1` for `FunctionId(id)`.
 #[inline(always)]
@@ -382,7 +793,7 @@ fn histogram(
 
 /// `1234567` → `"1,234,567"`. Big counts are the norm here and are unreadable
 /// undelimited.
-fn commas(n: u64) -> String {
+pub(crate) fn commas(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
@@ -455,6 +866,103 @@ mod tests {
         p.record_call();
         p.set_enabled(true);
         assert_eq!(p.calls, 0);
+    }
+
+    fn counters(insts: u64) -> CallCounters {
+        CallCounters {
+            insts,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn call_bench_disabled_records_nothing() {
+        let mut b = CallBench::new(&[FunctionId(1)]);
+        b.enabled = false;
+        b.enter(FunctionId(1), 1, || counters(0));
+        assert!(!b.any_open());
+        assert_eq!(b.stats()[0].calls, 0);
+    }
+
+    #[test]
+    fn call_bench_splits_self_from_inclusive() {
+        // f (10 insts of its own) calls g (5 insts), which is not benched.
+        let mut b = CallBench::new(&[FunctionId(1)]);
+        b.enter(FunctionId(1), 1, || counters(100));
+        b.enter(FunctionId(2), 2, || counters(104));
+        // g's own callee is not timed: only a benched function's direct
+        // callees are.
+        b.enter(FunctionId(3), 3, || counters(105));
+        assert_eq!(b.open.len(), 2);
+        b.leave(3, || counters(107));
+        b.leave(2, || counters(109));
+        b.leave(1, || counters(115));
+        let s = &b.stats()[0];
+        assert_eq!((s.calls, s.outer_calls), (1, 1));
+        assert_eq!(s.incl_insts, 15);
+        assert_eq!(s.self_insts, 10);
+        assert!(s.self_ns <= s.incl_ns);
+        assert_eq!((s.min_insts, s.max_insts), (15, 15));
+        assert!(!b.any_open());
+    }
+
+    #[test]
+    fn call_bench_recursion_counts_inclusive_once() {
+        // f calls f calls f: three activations, one outermost.
+        let mut b = CallBench::new(&[FunctionId(0)]);
+        b.enter(FunctionId(0), 1, || counters(0));
+        b.enter(FunctionId(0), 2, || counters(10));
+        b.enter(FunctionId(0), 3, || counters(20));
+        b.leave(3, || counters(30));
+        b.leave(2, || counters(40));
+        b.leave(1, || counters(50));
+        let s = &b.stats()[0];
+        assert_eq!((s.calls, s.outer_calls), (3, 1));
+        assert_eq!(s.incl_insts, 50, "the nested calls are inside the outer one");
+        assert_eq!(s.self_insts, 50, "self over every activation sums to the same");
+        assert_eq!(s.quantile_ns(0.5), Some(s.incl_ns));
+    }
+
+    #[test]
+    fn call_bench_unwinds_frames_an_error_discarded() {
+        let mut b = CallBench::new(&[FunctionId(0)]);
+        b.enter(FunctionId(0), 1, || counters(0));
+        b.enter(FunctionId(0), 2, || counters(1));
+        b.begin_run();
+        assert!(!b.any_open());
+        // The next call is outermost again, not a recursion into the lost ones.
+        b.enter(FunctionId(0), 1, || counters(5));
+        b.leave(1, || counters(9));
+        let s = &b.stats()[0];
+        assert_eq!((s.calls, s.outer_calls, s.incl_insts), (1, 1, 4));
+    }
+
+    #[test]
+    fn call_bench_percentiles_and_reservoir() {
+        let mut s = CallStats::new(FunctionId(0));
+        for ns in 1..=100u64 {
+            s.outer_calls += 1;
+            s.push_sample(ns);
+        }
+        assert_eq!(s.quantile_ns(0.5), Some(50));
+        assert_eq!(s.quantile_ns(0.95), Some(95));
+        assert_eq!(s.quantile_ns(0.0), Some(1));
+        assert!(!s.sampled());
+        for ns in 0..(BENCH_SAMPLE_CAP as u64 * 2) {
+            s.outer_calls += 1;
+            s.push_sample(ns);
+        }
+        assert_eq!(s.samples.len(), BENCH_SAMPLE_CAP);
+        assert!(s.sampled());
+    }
+
+    #[test]
+    fn profile_reset_keeps_the_call_bench() {
+        let mut p = VmProfile::new();
+        p.bench = CallBench::new(&[FunctionId(4)]);
+        p.set_enabled(true);
+        assert!(p.bench.enabled);
+        assert_eq!(p.bench.stats().len(), 1);
     }
 
     #[test]

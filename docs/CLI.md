@@ -32,6 +32,7 @@ Every command that compiles a program accepts these:
 |---------|---------|
 | `run` | Execute a program |
 | `check` | Compile without executing |
+| `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
 | `packages` | List the libraries the search path makes available |
 | `fmt` | Rewrite files in the canonical layout |
@@ -141,8 +142,150 @@ Tracing and inspection options:
   [`pending-report`](#pending-report--report-live-pending-resources).
 - `--profile` — count instructions, builtin calls and collections during the
   run and print the histogram to stderr.
-- `--dup-stats` — print value-duplication and heap allocation stats to stderr
-  after the run. Debug builds / the `dup-stats` feature only.
+- `--dup-stats` — count copy-on-write duplications and heap allocations
+  during the run and print them to stderr afterwards. Works in any build.
+
+### `bench` — What a call of a function costs
+
+```
+petal bench --fn <name> [--fn <name>]... [--iters <n>] [--seed <n>] [--json] <file.ptl>
+```
+
+Runs the file the way `run` does, repeatedly, and reports what one call of
+each named function cost, over the calls the script itself makes. Where
+`run --profile` describes a whole run, `bench` answers "how expensive is
+`step`?".
+
+```
+$ petal bench test/benchmarks/life.ptl --fn step
+bench test/benchmarks/life.ptl
+  opt       44 runs      20.146 ms/run       3,913,944 instructions/run   0.861042 ms to lower  (policy fast)
+  no-opt    36 runs      25.991 ms/run       6,393,899 instructions/run   0.055416 ms to lower  (policy baseline+memo+gate)
+  timing costs about 48 ns per timed call (each call of a benched function, and each
+  user function it calls directly); that is inside the times below, not subtracted
+
+fn step  line 27
+                                    opt         no-opt   opt vs no-opt
+  calls/run                          40             40
+  instructions/call            97,663.6      159,557.6   -38.8%
+    self                          5,403         10,345   -47.8%
+  ms/call                      0.501205       0.645980   -22.4%
+    min                        0.428584       0.558084   -23.2%
+    median                     0.471666       0.603958   -21.9%
+    p95                        0.645833       0.888792   -27.3%
+    self                       0.143209       0.192124   -25.5%
+  allocations/call                   17            289   -94.1%
+  copies/call                         0            272   -100.0%
+    bytes copied/call                 0         48,960   -100.0%
+  collections/call                    0         0.0500
+    gc ms/call                 0.000000       0.009922
+```
+
+How to read it:
+
+- **Two measurements.** Everything is measured with the optimizer on (`opt`,
+  the policy a plain `run` uses) and again with it off (`no-opt`); the last
+  column is the optimized figure relative to the unoptimized one. Only the
+  optimizer differs between the two: memoization and the rest of the
+  [run policy](../rust/src/policy.rs) are the same on both sides, which is why
+  the second policy reads `baseline+memo+gate` rather than `baseline`.
+- **Inclusive and self.** The headline figure of each pair is *inclusive*: the
+  function and everything it calls. `self` leaves out the user functions it
+  calls; builtins it calls stay in. Allocations, copies and collections are
+  inclusive.
+- **Recursion.** For a recursive function the inclusive figures are per
+  *outermost* call (a call made while no other call of the same function is on
+  the stack), so the calls underneath are counted once, and an extra
+  `outermost/run` row appears. The self figures are per call, recursive ones
+  included.
+- **ms/call** is the mean; `min`, `median` and `p95` are over individual calls
+  (over a random sample of 65,536 of them once there are more, which the report
+  says).
+- **copies/call** counts copy-on-write duplications of a list, record or f64
+  array: the cost of a value being immutable, and what the optimizer's in-place
+  updates remove. **allocations/call** counts new heap objects of every kind.
+  **collections/call** and **gc ms/call** are the garbage collections that ran
+  during a call; their time is inside `ms/call`.
+- **ms to lower** is the time spent lowering the program to bytecode, which is
+  where the optimizer's passes run. It is a one-time cost per program, kept out
+  of `ms/run`.
+
+The file is run once as a warm-up and then until about one second has passed,
+for each of the two measurements; `--iters <n>` runs it exactly `n` times
+instead. Every run starts from scratch, with empty `state`, as a separate
+`petal run` would. The script's own output is not printed. A run that fails
+ends the command with the error (exit 1) and no report. `--seed <n>` seeds
+every run's PRNG, for a script whose calls depend on `random()`.
+
+`--fn` takes a function's name as written in the source, wherever it is
+declared: at the top level, nested in another function, or in an imported
+module (reported with its `file:line`). A bare method name selects that method
+on every class (`--fn area`); `--fn Rect.area` selects one. Functions that
+share a name are reported separately. A name that matches nothing is an error
+that lists the functions there are; a function that exists and is never called
+gets a `never called` row.
+
+Timing is not free: each call of a benched function, and each user function it
+calls directly, costs two clock reads (about 50 ns together on an Apple
+M-series machine; the report prints the figure it measured). That time is
+inside the reported milliseconds, so a function a few instructions long reads
+as mostly overhead, and the clock's own resolution (about 42 ns on macOS)
+shows as a `min` of zero. The instruction, allocation and copy counts are
+exact regardless, and the instructions do not change: a benched run executes
+on the same dispatch loop as an ordinary one.
+
+`bench` runs what `run` runs, which is the core host. A script written for
+another host (a petal-ui panel, a Garden pane) needs that host's own runner:
+see `bench_panel` in [dev/performance.md](dev/performance.md). To bench a
+library such a script uses, write a small console driver that imports it and
+calls the function. `--host core` is accepted and any other value refused.
+
+With `--json` the report is one object (this one is from a separate run of
+the same command, so its timings differ a little from the text above):
+
+```json
+{
+  "file": "test/benchmarks/life.ptl",
+  "host": "core",
+  "runs": {
+    "opt":    { "policy": "fast", "runs": 40,
+                "ms_per_run": { "min": 19.459542, "median": 19.89675 },
+                "lower_ms": 0.857792, "instructions_per_run": 3913944 },
+    "no_opt": { "policy": "baseline+memo+gate", "runs": 37,
+                "ms_per_run": { "min": 24.884959, "median": 25.342167 },
+                "lower_ms": 0.052, "instructions_per_run": 6393899 }
+  },
+  "timer_overhead_ns": 48.2,
+  "functions": [
+    {
+      "name": "step", "query": "step", "file": null, "line": 27,
+      "opt": {
+        "calls": 1600, "calls_per_run": 40.0, "outermost_calls": 1600, "replayed_calls": 0,
+        "instructions_per_call": { "inclusive": 97663.6, "self": 5403.0,
+                                   "min": 97343, "max": 100855 },
+        "ms_per_call": { "inclusive": 0.548808, "self": 0.14145, "min": 0.45125,
+                         "median": 0.470334, "p95": 0.818083, "max": 11.928625,
+                         "percentiles_sampled": false },
+        "allocations_per_call": 17.0, "copies_per_call": 0.0, "copied_bytes_per_call": 0.0,
+        "gc_collections_per_call": 0.0, "gc_ms_per_call": 0.0
+      },
+      "no_opt": { "...": "the same fields" },
+      "delta_pct": { "instructions_per_call": -38.791, "ms_per_call": -13.785,
+                     "allocations_per_call": -94.118, "copies_per_call": -100.0 }
+    }
+  ]
+}
+```
+
+The 11.9 ms `max` against a 0.47 ms median is one call the OS interrupted: it
+is why the report leads with min, median and p95 rather than the mean alone.
+
+`file` is null for a function in the entry file. `calls` is the total over all
+measured runs. Every per-call value is null for a function that was never
+called, and a `delta_pct` entry is null when either side is missing or the
+unoptimized figure is zero. `replayed_calls` counts calls the memo replayed
+from a record instead of running; they are in no other figure. Errors are the
+usual JSON error object, with `"phase": "bench"` for a bad `--fn`.
 
 ### `check` — Compile without running
 

@@ -34,6 +34,13 @@ impl<'a> Vm<'a> {
         }
         self.stack.last_pop_result = Some(value);
         let top = self.stack.vm_frames.len() - 1;
+        // A call `petal bench` is measuring ends here (see `bench_enter`).
+        if self.profile.bench.any_open() {
+            let (stack, heap) = (&*self.stack, &*self.heap);
+            self.profile
+                .bench
+                .leave(top, || bench_counters(stack, heap));
+        }
         if top == 0 {
             // The root frame just completed — capture top-level named functions
             // so `Env::call_function` can invoke them without a re-run.
@@ -74,6 +81,18 @@ impl<'a> Vm<'a> {
             }
         }
         StepResult::Continue
+    }
+
+    /// Tell the call bench (`petal bench`, off by default) that a frame for
+    /// `fn_id` was just pushed at index `fi`. One branch when it is off.
+    #[inline(always)]
+    pub(super) fn bench_enter(&mut self, fn_id: FunctionId, fi: usize) {
+        if self.profile.bench.enabled {
+            let (stack, heap) = (&*self.stack, &*self.heap);
+            self.profile
+                .bench
+                .enter(fn_id, fi, || bench_counters(stack, heap));
+        }
     }
 
     /// Pop the top frame into the pool (emptied), or drop it if the pool is
@@ -547,6 +566,7 @@ impl<'a> Vm<'a> {
             self.full_path_into(caller, &mut path);
             path.push(crate::stack::PathPart::Call(site));
             if let Some(value) = self.memo_try(&path, fn_id, cid, args) {
+                self.profile.bench.note_replay(fn_id);
                 if let Some(dst) = dst {
                     self.set(caller, dst, value);
                 }
@@ -583,7 +603,25 @@ impl<'a> Vm<'a> {
         if scope {
             self.memo_open(fn_id, cid, site, args, None);
         }
+        // Last, so argument binding and the memo bookkeeping stay outside the
+        // interval a benched call is timed over.
+        self.bench_enter(fn_id, fi);
         Ok(())
+    }
+}
+
+/// The cumulative counters a benched call is measured against, read at its
+/// push and its pop (see [`crate::profile::CallBench`]).
+fn bench_counters(stack: &Stack, heap: &Heap) -> crate::profile::CallCounters {
+    let dups = heap.dup_stats();
+    // A fork is not a copy the script asked for; the per-call "copies" are
+    // the copy-on-write ones.
+    let fork = dups.get(crate::stats::DupKind::Fork);
+    crate::profile::CallCounters {
+        insts: stack.insts,
+        allocs: heap.alloc_stats().total(),
+        copies: dups.total_count() - fork.count,
+        copy_bytes: dups.total_bytes() - fork.bytes,
     }
 }
 

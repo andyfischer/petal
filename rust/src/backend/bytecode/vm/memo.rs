@@ -679,6 +679,8 @@ impl<'a> Vm<'a> {
         frame.memo_scope = true;
         self.stack.vm_frames.push(frame);
         self.memo_open(fn_id, cid, site, &args, Some(Box::new(previous)));
+        // A re-execution runs the function, so a call bench counts it.
+        self.bench_enter(fn_id, target);
         self.stack.memo.last_reexec_changed = None;
 
         let mut failed = false;
@@ -713,6 +715,7 @@ impl<'a> Vm<'a> {
                 let f = self.stack.vm_frames.pop().unwrap();
                 self.recycle_frame(f);
             }
+            self.profile.bench.unwind(target);
             while self
                 .stack
                 .memo

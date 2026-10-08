@@ -1708,7 +1708,7 @@ impl Compiler {
                 &param_names,
                 optional,
                 body,
-                stmt.span.end.offset,
+                stmt.span,
                 !crate::ast::declares_nil(ret.as_ref()),
             );
             if let Some(tid) = bound {

@@ -109,7 +109,7 @@ impl Compiler {
                     &param_names,
                     optional,
                     body,
-                    stmt_span.end.offset,
+                    stmt_span,
                     !crate::ast::declares_nil(ret.as_ref()),
                 );
                 // A declaration's term is where the declaration is written.

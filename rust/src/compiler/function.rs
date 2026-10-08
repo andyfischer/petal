@@ -125,9 +125,10 @@ impl Compiler {
         params: &[String],
         optional: usize,
         body: &[Stmt],
-        def_end: u32,
+        decl_span: SourceSpan,
         tail_value: bool,
     ) -> Option<TermId> {
+        let def_end = decl_span.end.offset;
         // `overloaded_fns` is collected from a module's *top-level* statements
         // only, but every `fn` declaration reaches this point. A nested
         // declaration that happens to share a name with a top-level overload set
@@ -170,6 +171,11 @@ impl Compiler {
             tail_value,
         );
         self.record_fn_closure(closure_tid, params.len());
+        // The caller locates the term this returns, which for an overloaded
+        // name is the set (and only once it is complete). Each variant is
+        // written somewhere too, and that is where a tool reporting on one of
+        // them (`petal bench`) has to point.
+        self.source_map.add(closure_tid, decl_span);
         self.overload_variants
             .entry(name.to_string())
             .or_default()

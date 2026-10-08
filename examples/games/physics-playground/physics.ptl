@@ -1,0 +1,676 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  physics.ptl — the solver behind the Physics playground.
+//
+//  A world is one immutable record of parallel lists (structure-of-arrays):
+//  every body is a disc with a position, a velocity, a spin and an inverse
+//  mass, and index i means the same body in every list. Nothing here draws
+//  or reads input, so the whole module runs under a bare `petal run`.
+//
+//  The step is a sequential-impulse solver with small sub-steps:
+//
+//    1. find the pairs that could touch this frame            (broadphase)
+//    2. per sub-step:
+//       a. un-overlap what the last sub-step left overlapping (positions)
+//          and remember each touching pair with its normal    (contacts)
+//       b. gravity, drag, spring forces, the mouse's pull     (velocities)
+//       c. rods, then contacts with restitution and Coulomb
+//          friction against the discs' spin                   (impulses)
+//       d. move, then pull every rod back to its length       (positions)
+//
+//  Units are pixels, seconds and "one 14 px disc" of mass.
+// ─────────────────────────────────────────────────────────────────────────
+
+let SUB_H    = 1.0 / 180.0   // longest sub-step, seconds
+let ITERS    = 2             // impulse passes per sub-step
+let ROD_PASSES = 4           // rod passes per impulse pass
+let SLOP     = 0.3           // overlap left alone, px
+let TOUCH    = 0.25          // gap still treated as touching, px
+let PUSH     = 0.8           // fraction of an overlap removed per sub-step
+let REST_V   = 34.0          // closing speed below which nothing bounces
+let SEG_R    = 3.0           // half-thickness of a static bar
+let SPRING_Z = 0.12          // damping ratio of a spring
+let MAX_V    = 4200.0        // speed limit, px/s
+
+export let ROD = 0
+export let SPRING = 1
+export let BAR_R = 3.0
+
+// Length of the vector (dx, dy).
+export fn norm(dx: num, dy: num) -> num
+  sqrt(dx * dx + dy * dy)
+end
+
+// ── Building a world ─────────────────────────────────────────────────────
+
+export fn empty_world() -> record
+  {n: 0, x: [], y: [], vx: [], vy: [], r: [], m: [], w: [], ang: [], om: [],
+    c: [], id: [], pin: [], links: [], segs: [], order: [], tension: [], next_id: 1}
+end
+
+// Mass grows with area; `dens` scales it (a wrecking ball is 6).
+export fn mass_of(r: num, dens: num) -> num
+  dens * (r * r) / 196.0
+end
+
+export fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num,
+    vx: num, vy: num) -> record
+  let m = mass_of(float(r), float(dens))
+  {...wd, n: wd.n + 1,
+    x: append(wd.x, float(x)), y: append(wd.y, float(y)),
+    vx: append(wd.vx, float(vx)), vy: append(wd.vy, float(vy)),
+    r: append(wd.r, float(r)), m: append(wd.m, m),
+    w: append(wd.w, if pin then 0.0 else 1.0 / m end),
+    ang: append(wd.ang, 0.0), om: append(wd.om, 0.0),
+    c: append(wd.c, c), id: append(wd.id, wd.next_id), pin: append(wd.pin, pin),
+    order: [], next_id: wd.next_id + 1}
+end
+
+// The two common cases: a free disc at rest, and a pinned one.
+export fn add_ball(wd: record, x: num, y: num, r: num, c: int) -> record
+  add_body(wd, x, y, r, c, false, 1.0, 0.0, 0.0)
+end
+
+export fn add_pin(wd: record, x: num, y: num, r: num, c: int) -> record
+  add_body(wd, x, y, r, c, true, 1.0, 0.0, 0.0)
+end
+
+// Join bodies a and b at their current distance. A rod is never shorter
+// than the two radii, so it cannot fight the contact between its own ends.
+// `hz` is a spring's natural frequency; a negative `rest_len` means "as far
+// apart as they are now".
+export fn add_link(wd: record, a: int, b: int, kind: int, hz: num, rest_len: num) -> record
+  let d = norm(wd.x[b] - wd.x[a], wd.y[b] - wd.y[a])
+  let rest = if rest_len >= 0.0 then float(rest_len) else d end
+  if kind == 0 then rest = max(rest, wd.r[a] + wd.r[b]) end
+  {...wd, tension: [], links: append(wd.links, {a: a, b: b, len: rest, kind: kind, hz: float(hz)})}
+end
+
+export fn add_seg(wd: record, x1: num, y1: num, x2: num, y2: num) -> record
+  {...wd, segs: append(wd.segs, {x1: float(x1), y1: float(y1), x2: float(x2), y2: float(y2),
+    lx: float(min(x1, x2)), hx: float(max(x1, x2)), ly: float(min(y1, y2)), hy: float(max(y1, y2))})}
+end
+
+fn without(xs: list, i: int) -> list
+  for k in range(0, len(xs)) do
+    if k == i then continue end
+    xs[k]
+  end
+end
+
+// Drop body i, and every link that touched it; later bodies shift down one.
+export fn remove_body(wd: record, i: int) -> record
+  let links = for L in wd.links do
+    if L.a == i || L.b == i then continue end
+    {...L, a: if L.a > i then L.a - 1 else L.a end, b: if L.b > i then L.b - 1 else L.b end}
+  end
+  {...wd, n: wd.n - 1,
+    x: without(wd.x, i), y: without(wd.y, i), vx: without(wd.vx, i), vy: without(wd.vy, i),
+    r: without(wd.r, i), m: without(wd.m, i), w: without(wd.w, i),
+    ang: without(wd.ang, i), om: without(wd.om, i), c: without(wd.c, i),
+    id: without(wd.id, i), pin: without(wd.pin, i), links: links, order: [], tension: []}
+end
+
+export fn remove_link(wd: record, k: int) -> record
+  {...wd, tension: [], links: without(wd.links, k)}
+end
+
+export fn set_pin(wd: record, i: int, on: bool) -> record
+  let pin = wd.pin
+  let w = wd.w
+  let vx = wd.vx
+  let vy = wd.vy
+  let om = wd.om
+  pin[i] = on
+  w[i] = if on then 0.0 else 1.0 / wd.m[i] end
+  vx[i] = 0.0
+  vy[i] = 0.0
+  om[i] = 0.0
+  {...wd, pin: pin, w: w, vx: vx, vy: vy, om: om, tension: []}
+end
+
+export fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
+  let vx = wd.vx
+  let vy = wd.vy
+  vx[i] = float(nvx)
+  vy[i] = float(nvy)
+  {...wd, vx: vx, vy: vy}
+end
+
+export fn index_of_id(wd: record, id: int) -> int
+  index_of(wd.id, id)
+end
+
+export fn links_on(wd: record, i: int) -> int
+  let k = 0
+  for L in wd.links do
+    if L.a == i || L.b == i then k += 1 end
+  end
+  k
+end
+
+// ── Picking ──────────────────────────────────────────────────────────────
+
+// The body under (px, py), allowing `slack` px beyond its rim; the one whose
+// centre is nearest wins. -1 when there is none.
+export fn pick_body(wd: record, px: num, py: num, slack: num) -> int
+  let best = -1
+  let best_d = 0.0
+  for i in range(0, wd.n) do
+    let d = norm(wd.x[i] - px, wd.y[i] - py)
+    if d > wd.r[i] + slack then continue end
+    if best < 0 || d < best_d then
+      best = i
+      best_d = d
+    end
+  end
+  best
+end
+
+// Distance from point p to segment a-b.
+export fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
+  let ex = bx - ax
+  let ey = by - ay
+  let l2 = ex * ex + ey * ey
+  let t = if l2 < 0.0001 then 0.0 else clamp(((px - ax) * ex + (py - ay) * ey) / l2, 0.0, 1.0) end
+  norm(px - (ax + ex * t), py - (ay + ey * t))
+end
+
+export fn pick_link(wd: record, px: num, py: num, tol: num) -> int
+  let best = -1
+  let best_d = float(tol)
+  for k in range(0, len(wd.links)) do
+    let L = wd.links[k]
+    let d = seg_dist(px, py, wd.x[L.a], wd.y[L.a], wd.x[L.b], wd.y[L.b])
+    if d <= best_d then
+      best = k
+      best_d = d
+    end
+  end
+  best
+end
+
+fn orient(ax: num, ay: num, bx: num, by: num, cx: num, cy: num) -> num
+  (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+end
+
+// Indices of the links the stroke p-q crosses, highest first so they can be
+// removed in order.
+export fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
+  let out = []
+  for k in range(len(wd.links) - 1, -1, -1) do
+    let L = wd.links[k]
+    let ax = wd.x[L.a]
+    let ay = wd.y[L.a]
+    let bx = wd.x[L.b]
+    let by = wd.y[L.b]
+    let d1 = orient(px, py, qx, qy, ax, ay)
+    let d2 = orient(px, py, qx, qy, bx, by)
+    let d3 = orient(ax, ay, bx, by, px, py)
+    let d4 = orient(ax, ay, bx, by, qx, qy)
+    if d1 * d2 < 0.0 && d3 * d4 < 0.0 then out = append(out, k) end
+  end
+  out
+end
+
+// ── Measuring ────────────────────────────────────────────────────────────
+
+// Kinetic energy (linear + spin), potential energy against the far wall in
+// the direction of gravity, and the energy stored in stretched springs.
+export fn energy(wd: record, env: record) -> record
+  let ke = 0.0
+  let pe = 0.0
+  let top_x = if env.gx > 0.0 then env.w else 0.0 end
+  let top_y = if env.gy > 0.0 then env.h else 0.0 end
+  for i in range(0, wd.n) do
+    if wd.w[i] == 0.0 then continue end
+    let m = wd.m[i]
+    let r = wd.r[i]
+    ke += 0.5 * m * (wd.vx[i] * wd.vx[i] + wd.vy[i] * wd.vy[i]) + 0.25 * m * r * r * wd.om[i] * wd.om[i]
+    pe += m * (env.gx * (top_x - wd.x[i]) + env.gy * (top_y - wd.y[i]))
+  end
+  let se = 0.0
+  for L in wd.links do
+    if L.kind != 1 then continue end
+    let ws = wd.w[L.a] + wd.w[L.b]
+    if ws == 0.0 then continue end
+    let k = (6.2832 * L.hz) * (6.2832 * L.hz) / ws
+    let d = norm(wd.x[L.b] - wd.x[L.a], wd.y[L.b] - wd.y[L.a]) - L.len
+    se += 0.5 * k * d * d
+  end
+  {ke: ke, pe: pe, se: se}
+end
+
+// Worst rod error and worst disc overlap, in px: how honest the solver is.
+export fn audit(wd: record) -> record
+  let stretch = 0.0
+  for L in wd.links do
+    if L.kind != 0 then continue end
+    let d = norm(wd.x[L.b] - wd.x[L.a], wd.y[L.b] - wd.y[L.a])
+    stretch = max(stretch, abs(d - L.len))
+  end
+  let overlap = 0.0
+  for i in range(0, wd.n) do
+    for j in range(i + 1, wd.n) do
+      let rr = wd.r[i] + wd.r[j]
+      let dx = wd.x[j] - wd.x[i]
+      if dx > rr || dx < 0.0 - rr then continue end
+      let d = norm(dx, wd.y[j] - wd.y[i])
+      overlap = max(overlap, rr - d)
+    end
+  end
+  {stretch: stretch, overlap: overlap}
+end
+
+// ── The step ─────────────────────────────────────────────────────────────
+
+// Advance `wd` by `dt` seconds. `env` carries gravity (gx, gy), `bounce`
+// (restitution 0..1), `fric` (Coulomb mu), `drag` (fraction of velocity lost
+// per second), the stage size (w, h) and the mouse grab (`grab` is a body
+// index or -1, pulled toward tx, ty).
+//
+// Returns {world, contacts, pts, subs}: the new world, how many contacts the
+// last sub-step solved, their positions as a flat [x, y, x, y, …] list, and
+// the number of sub-steps taken.
+export fn step(wd: record, dt: num, env: record) -> record
+  let n = wd.n
+  if n == 0 || dt <= 0.0 then
+    return {world: wd, contacts: 0, pts: [], subs: 0}
+  end
+  let x = wd.x
+  let y = wd.y
+  let vx = wd.vx
+  let vy = wd.vy
+  let r = wd.r
+  let w = wd.w
+  let ang = wd.ang
+  let om = wd.om
+  let links = wd.links
+  let segs = wd.segs
+  let gx = float(env.gx)
+  let gy = float(env.gy)
+  let bounce = float(env.bounce)
+  let fric = float(env.fric)
+  let W = float(env.w)
+  let H = float(env.h)
+  let grab = env.grab
+
+  let subs = max(1, int(ceil(dt / SUB_H - 0.001)))
+  let h = dt / float(subs)
+  let damp = max(0.0, 1.0 - env.drag * h)
+  let spin_damp = max(0.0, 1.0 - (0.25 + env.drag) * h)
+
+  // Broadphase, once per frame: sweep the bodies in x order and keep every
+  // pair whose boxes could meet before the frame is over. `reach` is a
+  // body's radius plus the distance it can cover; a body at rest reaches no
+  // further than its own rim, so a settled pile costs almost nothing here.
+  let reach = for i in range(0, n) do
+    let sp = abs(vx[i]) + abs(vy[i])
+    r[i] + 2.5 + (if i == grab then max(sp, 1500.0) else sp end) * dt
+  end
+  let max_reach = 0.0
+  for i in range(0, n) do
+    max_reach = max(max_reach, reach[i])
+  end
+  let order = if len(wd.order) == n then wd.order else range(0, n) end
+  for a in range(1, n) do
+    let i = order[a]
+    let xi = x[i]
+    let b = a - 1
+    while b >= 0 && x[order[b]] > xi do
+      order[b + 1] = order[b]
+      b -= 1
+    end
+    order[b + 1] = i
+  end
+  let pairs = []
+  for a in range(0, n) do
+    let i = order[a]
+    let xi = x[i]
+    let yi = y[i]
+    let ri = reach[i]
+    let wi = w[i]
+    let limit = xi + ri + max_reach
+    for b in range(a + 1, n) do
+      let j = order[b]
+      let xj = x[j]
+      if xj > limit then break end
+      if wi + w[j] == 0.0 then continue end
+      let rr = ri + reach[j]
+      if xj - xi > rr then continue end
+      let dy = y[j] - yi
+      if dy > rr || dy < 0.0 - rr then continue end
+      pairs = append(pairs, i)
+      pairs = append(pairs, j)
+    end
+  end
+  let np = len(pairs)
+  let spairs = []
+  let nseg = len(segs)
+  if nseg > 0 then
+    for i in range(0, n) do
+      if w[i] == 0.0 then continue end
+      let ri = reach[i] + SEG_R
+      let xi = x[i]
+      let yi = y[i]
+      for s in range(0, nseg) do
+        let sg = segs[s]
+        if xi + ri < sg.lx || xi - ri > sg.hx || yi + ri < sg.ly || yi - ri > sg.hy then continue end
+        spairs = append(spairs, i)
+        spairs = append(spairs, s)
+      end
+    end
+  end
+  let nsp = len(spairs)
+
+  // Rods as flat lists, so the passes below index instead of reading fields.
+  let ra = []
+  let rb = []
+  let rl = []
+  for L in links do
+    if L.kind != 0 || w[L.a] + w[L.b] == 0.0 then continue end
+    ra = append(ra, L.a)
+    rb = append(rb, L.b)
+    rl = append(rl, L.len)
+  end
+  let nr = len(rl)
+  // Each rod remembers the force it carried last sub-step and starts from
+  // it (a warm start), so a loaded bridge or a hanging chain holds its
+  // length instead of re-deriving its tension from nothing every step.
+  let rf = if len(wd.tension) == nr then wd.tension else for q in range(0, nr) do 0.0 end end
+
+  let contacts = 0
+  let pts = []
+
+  for sub in range(0, subs) do
+    let keep = sub == subs - 1
+
+    // a. Contacts. Body/body: [i, j, nx, ny] with n pointing from i to j.
+    let bc = []
+    let k = 0
+    while k < np do
+      let i = pairs[k]
+      let j = pairs[k + 1]
+      k += 2
+      let rr = r[i] + r[j]
+      let dx = x[j] - x[i]
+      let dy = y[j] - y[i]
+      let d2 = dx * dx + dy * dy
+      let lim = rr + TOUCH
+      if d2 >= lim * lim then continue end
+      let d = sqrt(d2)
+      let nx = if d > 0.0001 then dx / d else 1.0 end
+      let ny = if d > 0.0001 then dy / d else 0.0 end
+      let pen = rr - d
+      if pen > SLOP then
+        let cor = (pen - SLOP) * PUSH / (w[i] + w[j])
+        x[i] = x[i] - nx * cor * w[i]
+        y[i] = y[i] - ny * cor * w[i]
+        x[j] = x[j] + nx * cor * w[j]
+        y[j] = y[j] + ny * cor * w[j]
+      end
+      bc = append(bc, i)
+      bc = append(bc, j)
+      bc = append(bc, nx)
+      bc = append(bc, ny)
+      if keep then
+        pts = append(pts, x[i] + nx * r[i])
+        pts = append(pts, y[i] + ny * r[i])
+      end
+    end
+    // Body/static: [i, nx, ny] with n pointing from the body into the wall.
+    let sc = []
+    for i in range(0, n) do
+      if w[i] == 0.0 then continue end
+      let ri = r[i]
+      let edge = ri + TOUCH
+      if x[i] > edge && x[i] < W - edge && y[i] > edge && y[i] < H - edge then continue end
+      if x[i] - ri < TOUCH then
+        if x[i] - ri < 0.0 - SLOP then x[i] = ri - SLOP end
+        sc = append(sc, i)
+        sc = append(sc, -1.0)
+        sc = append(sc, 0.0)
+        if keep then
+          pts = append(pts, 0.0)
+          pts = append(pts, y[i])
+        end
+      end
+      if x[i] + ri > W - TOUCH then
+        if x[i] + ri > W + SLOP then x[i] = W - ri + SLOP end
+        sc = append(sc, i)
+        sc = append(sc, 1.0)
+        sc = append(sc, 0.0)
+        if keep then
+          pts = append(pts, W)
+          pts = append(pts, y[i])
+        end
+      end
+      if y[i] - ri < TOUCH then
+        if y[i] - ri < 0.0 - SLOP then y[i] = ri - SLOP end
+        sc = append(sc, i)
+        sc = append(sc, 0.0)
+        sc = append(sc, -1.0)
+        if keep then
+          pts = append(pts, x[i])
+          pts = append(pts, 0.0)
+        end
+      end
+      if y[i] + ri > H - TOUCH then
+        if y[i] + ri > H + SLOP then y[i] = H - ri + SLOP end
+        sc = append(sc, i)
+        sc = append(sc, 0.0)
+        sc = append(sc, 1.0)
+        if keep then
+          pts = append(pts, x[i])
+          pts = append(pts, H)
+        end
+      end
+    end
+    k = 0
+    while k < nsp do
+      let i = spairs[k]
+      let sg = segs[spairs[k + 1]]
+      k += 2
+      if w[i] == 0.0 then continue end
+      let ex = sg.x2 - sg.x1
+      let ey = sg.y2 - sg.y1
+      let l2 = ex * ex + ey * ey
+      let t = if l2 < 0.0001 then 0.0 else clamp(((x[i] - sg.x1) * ex + (y[i] - sg.y1) * ey) / l2, 0.0, 1.0) end
+      let qx = sg.x1 + ex * t
+      let qy = sg.y1 + ey * t
+      let dx = qx - x[i]
+      let dy = qy - y[i]
+      let rr = r[i] + SEG_R
+      let d2 = dx * dx + dy * dy
+      let lim = rr + TOUCH
+      if d2 >= lim * lim then continue end
+      let d = sqrt(d2)
+      let nx = if d > 0.0001 then dx / d else 0.0 end
+      let ny = if d > 0.0001 then dy / d else 1.0 end
+      let pen = rr - d
+      if pen > SLOP then
+        x[i] = x[i] - nx * (pen - SLOP)
+        y[i] = y[i] - ny * (pen - SLOP)
+      end
+      sc = append(sc, i)
+      sc = append(sc, nx)
+      sc = append(sc, ny)
+      if keep then
+        pts = append(pts, qx - nx * SEG_R)
+        pts = append(pts, qy - ny * SEG_R)
+      end
+    end
+    let nbc = len(bc)
+    let nsc = len(sc)
+    if keep then contacts = nbc / 4 + nsc / 3 end
+
+    // b. Forces.
+    for i in range(0, n) do
+      if w[i] > 0.0 then
+        vx[i] = (vx[i] + gx * h) * damp
+        vy[i] = (vy[i] + gy * h) * damp
+        om[i] = om[i] * spin_damp
+      end
+    end
+    for L in links do
+      if L.kind != 1 then continue end
+      let a = L.a
+      let b = L.b
+      let ws = w[a] + w[b]
+      if ws == 0.0 then continue end
+      let dx = x[b] - x[a]
+      let dy = y[b] - y[a]
+      let d = sqrt(dx * dx + dy * dy)
+      if d < 0.0001 then continue end
+      let nx = dx / d
+      let ny = dy / d
+      let omega = 6.2832 * L.hz
+      let vrel = (vx[b] - vx[a]) * nx + (vy[b] - vy[a]) * ny
+      // Force over the pair's reduced mass, so every spring rings at `hz`
+      // whatever it carries.
+      let imp = (omega * omega * (d - L.len) + 2.0 * SPRING_Z * omega * vrel) * h / ws
+      vx[a] = vx[a] + nx * imp * w[a]
+      vy[a] = vy[a] + ny * imp * w[a]
+      vx[b] = vx[b] - nx * imp * w[b]
+      vy[b] = vy[b] - ny * imp * w[b]
+    end
+    if grab >= 0 then
+      // The mouse is a velocity servo: the grabbed disc closes most of the
+      // distance each frame, but rods and contacts still get their say.
+      let pvx = (env.tx - x[grab]) * 22.0
+      let pvy = (env.ty - y[grab]) * 22.0
+      let sp = sqrt(pvx * pvx + pvy * pvy)
+      let cap = if sp > MAX_V then MAX_V / sp else 1.0 end
+      vx[grab] = pvx * cap
+      vy[grab] = pvy * cap
+    end
+
+    // c. Impulses.
+    for q in range(0, nr) do
+      let a = ra[q]
+      let b = rb[q]
+      let dx = x[b] - x[a]
+      let dy = y[b] - y[a]
+      let d = sqrt(dx * dx + dy * dy)
+      if d < 0.0001 then continue end
+      let p = rf[q] * h / d
+      rf[q] = rf[q] * h
+      vx[a] = vx[a] + dx * p * w[a]
+      vy[a] = vy[a] + dy * p * w[a]
+      vx[b] = vx[b] - dx * p * w[b]
+      vy[b] = vy[b] - dy * p * w[b]
+    end
+    for it in range(0, ITERS) do
+      // Rods get extra passes, alternating direction: a chain converges
+      // from both ends, which a heavy ball on a light chain needs.
+      for pass in range(0, ROD_PASSES) do
+        for q in range(0, nr) do
+          let ri = if pass % 2 == 0 then q else nr - 1 - q end
+          let a = ra[ri]
+          let b = rb[ri]
+          let dx = x[b] - x[a]
+          let dy = y[b] - y[a]
+          let d = sqrt(dx * dx + dy * dy)
+          if d < 0.0001 then continue end
+          let lam = ((vx[b] - vx[a]) * dx + (vy[b] - vy[a]) * dy) / (d * d * (w[a] + w[b]))
+          rf[ri] = rf[ri] + lam * d
+          vx[a] = vx[a] + dx * lam * w[a]
+          vy[a] = vy[a] + dy * lam * w[a]
+          vx[b] = vx[b] - dx * lam * w[b]
+          vy[b] = vy[b] - dy * lam * w[b]
+        end
+      end
+      k = 0
+      while k < nbc do
+        let i = bc[k]
+        let j = bc[k + 1]
+        let nx = bc[k + 2]
+        let ny = bc[k + 3]
+        k += 4
+        let vn = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
+        if vn >= 0.0 then continue end
+        let wi = w[i]
+        let wj = w[j]
+        let ws = wi + wj
+        let e = if vn < 0.0 - REST_V then bounce else 0.0 end
+        let jn = (0.0 - (1.0 + e) * vn) / ws
+        vx[i] = vx[i] - nx * jn * wi
+        vy[i] = vy[i] - ny * jn * wi
+        vx[j] = vx[j] + nx * jn * wj
+        vy[j] = vy[j] + ny * jn * wj
+        // Friction acts on the sliding speed of the two rims, so it spins
+        // the discs as well as slowing them.
+        let tx = 0.0 - ny
+        let ty = nx
+        let vt = (vx[j] - vx[i]) * tx + (vy[j] - vy[i]) * ty - om[j] * r[j] - om[i] * r[i]
+        let jt = clamp((0.0 - vt) / (3.0 * ws), 0.0 - fric * jn, fric * jn)
+        vx[i] = vx[i] - tx * jt * wi
+        vy[i] = vy[i] - ty * jt * wi
+        vx[j] = vx[j] + tx * jt * wj
+        vy[j] = vy[j] + ty * jt * wj
+        om[i] = om[i] - jt * 2.0 * wi / r[i]
+        om[j] = om[j] - jt * 2.0 * wj / r[j]
+      end
+      k = 0
+      while k < nsc do
+        let i = sc[k]
+        let nx = sc[k + 1]
+        let ny = sc[k + 2]
+        k += 3
+        let vn = vx[i] * nx + vy[i] * ny
+        if vn <= 0.0 then continue end
+        let e = if vn > REST_V then bounce else 0.0 end
+        let dv = (1.0 + e) * vn
+        vx[i] = vx[i] - nx * dv
+        vy[i] = vy[i] - ny * dv
+        let tx = 0.0 - ny
+        let ty = nx
+        let slide = vx[i] * tx + vy[i] * ty + om[i] * r[i]
+        let dt_v = clamp((0.0 - slide) / 3.0, 0.0 - fric * dv, fric * dv)
+        vx[i] = vx[i] + tx * dt_v
+        vy[i] = vy[i] + ty * dt_v
+        om[i] = om[i] + 2.0 * dt_v / r[i]
+      end
+    end
+
+    for q in range(0, nr) do
+      rf[q] = rf[q] / h
+    end
+
+    // d. Move, then put every rod back to its length.
+    for i in range(0, n) do
+      if w[i] == 0.0 && i != grab then
+        vx[i] = 0.0
+        vy[i] = 0.0
+        continue
+      end
+      let sp2 = vx[i] * vx[i] + vy[i] * vy[i]
+      if sp2 > MAX_V * MAX_V then
+        let f = MAX_V / sqrt(sp2)
+        vx[i] = vx[i] * f
+        vy[i] = vy[i] * f
+      end
+      x[i] = x[i] + vx[i] * h
+      y[i] = y[i] + vy[i] * h
+      ang[i] = ang[i] + om[i] * h
+    end
+    for pass in range(0, ROD_PASSES * 2) do
+      for q in range(0, nr) do
+        let ri = if pass % 2 == 0 then q else nr - 1 - q end
+        let a = ra[ri]
+        let b = rb[ri]
+        let dx = x[b] - x[a]
+        let dy = y[b] - y[a]
+        let d = sqrt(dx * dx + dy * dy)
+        if d < 0.0001 then continue end
+        let cor = (d - rl[ri]) / (d * (w[a] + w[b]))
+        x[a] = x[a] + dx * cor * w[a]
+        y[a] = y[a] + dy * cor * w[a]
+        x[b] = x[b] - dx * cor * w[b]
+        y[b] = y[b] - dy * cor * w[b]
+      end
+    end
+  end
+
+  {world: {...wd, x: x, y: y, vx: vx, vy: vy, ang: ang, om: om, order: order, tension: rf},
+    contacts: contacts, pts: pts, subs: subs}
+end

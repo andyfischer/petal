@@ -1,0 +1,1310 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  PHYSICS PLAYGROUND — a Garden panel app written in Petal.
+//
+//  Exercises: dragging (grab and throw, a slingshot launcher, link-drawing
+//  and a cutting stroke), gravity (strength and direction, live), collisions
+//  (discs against discs, walls and static bars, with restitution, friction
+//  and spin) and constraints (rigid rods, springs, pins).
+//
+//  The solver lives in physics.ptl and the seeded stages in scenes.ptl; this
+//  file is input, chrome and drawing. The world is one immutable record, so
+//  undo is a list of earlier worlds.
+//
+//  Designed for a 1240x820 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+import physics as ph
+import scenes as sc
+
+// ── Palette: a drafting table at night ───────────────────────────────────
+
+let C_BG     = #0b0e14
+let C_STAGE  = #10141d
+let C_GRID   = #151a26
+let C_GRID2  = #1a2030
+let C_EDGE   = #283044
+let C_CARD   = #121722
+let C_LINE   = #1f2636
+let C_WELL   = #0d111a
+let C_TEXT   = #e8ecf4
+let C_DIM    = #8b94a7
+let C_MUTE   = #566075
+let C_ACC    = #ffb454
+let C_WARN   = #ff6b6b
+let C_BAR    = #3b4763
+let C_BAR_HI = #5a688a
+let C_ROD    = #b7c0d2
+let C_SPRING = #6fd6a8
+let C_WHITE  = #ffffff
+
+// Body colours, by index: coral, amber, mint, sky, violet, rose, steel.
+let HUES = [#ff7a6b, #ffb454, #6fd6a8, #6cb8ff, #a48cf2, #f283b6, #9aa4b8]
+
+// ── Type scale: 10 / 11 / 12 / 14 / 24 ───────────────────────────────────
+
+let S_TITLE = {size: 24, color: C_TEXT, font: "ui", weight: 700}
+let S_KICK  = {size: 10, color: C_MUTE, font: "ui", spacing: 3}
+let S_LABEL = {size: 10, color: C_DIM, font: "ui", weight: 700, spacing: 2}
+let S_TINY  = {size: 10, color: C_MUTE, font: "ui", weight: 700, spacing: 1}
+let S_VAL   = {size: 12, color: C_TEXT, font: "ui", weight: 700}
+let S_BODY  = {size: 12, color: C_DIM, font: "ui"}
+let S_HINT  = {size: 11, color: C_DIM, font: "ui"}
+let S_CAP   = {size: 11, color: C_TEXT, font: "ui", weight: 700}
+let S_NAME  = {size: 14, color: C_TEXT, font: "ui", weight: 700}
+let S_TAB   = {size: 12, color: C_DIM, font: "ui", weight: 700}
+
+// ── Tunables ─────────────────────────────────────────────────────────────
+
+config let gravity_px  = 980.0     // px/s^2 at 1.0 g
+config let launch_gain = 5.0       // slingshot: px of pull to px/s of launch
+config let spring_hz   = 3.5       // natural frequency of a hand-drawn spring
+config let max_bodies  = 200
+config let rest_after  = 0.7       // seconds of stillness before the world sleeps
+
+let PAD  = 24
+let HEAD = 84
+let FOOT = 52
+let RAIL = 64
+let SIDE = 256
+let GAP  = 16
+
+let TOOLS = ["GRAB", "BALL", "ROD", "SPRING", "PIN", "CUT"]
+let TOOL_KEYS = ["g", "b", "l", "s", "p", "x"]
+let TOOL_HINTS = [
+  "Drag a body and let go to throw it. Right-click pins it.",
+  "Click to drop a ball, or drag back and release to launch.",
+  "Drag from one body to another to join them rigidly.",
+  "Drag from one body to another to join them with a spring.",
+  "Click a body to pin it in place, or to free it.",
+  "Click a body or a link to remove it. Drag to slice links.",
+]
+let BALL_SIZES = [8.0, 14.0, 22.0, 32.0]
+let SPEEDS = [1.0, 0.5, 0.25]
+let SPEED_LABELS = ["1×", "½", "¼"]
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state ready      = false
+state scene      = 0
+state world      = ph.empty_world()
+state emit       = {x: 0.0, y: 0.0, every: 1.0, left: 0, r: 7.0}
+state emit_t     = 0.0
+state tool       = 0
+state size_i     = 1
+state grav       = 1.0           // in g
+state grav_keep  = 1.0           // what `0` restores
+state gdir       = 1.5708        // radians; pi/2 is straight down
+state bounce     = 0.45
+state fric       = 0.4
+state drag       = 0.02
+state paused     = false
+state speed_i    = 0
+state show_vec   = false
+state show_trail = false
+state show_pts   = false
+state grab_id    = -1            // body id being dragged
+state grab_ox    = 0.0
+state grab_oy    = 0.0
+state aiming     = false         // ball tool: a launch is being drawn
+state aim_x      = 0.0
+state aim_y      = 0.0
+state linking    = false         // rod/spring tool: a link is being drawn
+state link_id    = -1            // body id it started on, or -1 for open stage
+state link_x     = 0.0
+state link_y     = 0.0
+state cutting    = false
+state cut_x      = 0.0
+state cut_y      = 0.0
+state cut_saved  = false         // this stroke already pushed its undo step
+state sel_id     = -1
+state ui_drag    = ""            // the slider or dial holding the mouse
+state undo       = []            // earlier worlds, oldest first
+state trail      = []            // recent {x, y} position lists
+state hist       = []            // recent {k, p} energy samples
+state sim_t      = 0.0
+state steps      = 0
+state subs       = 0
+state contacts   = 0
+state pts        = []
+state rest_t     = 0.0
+state asleep     = false
+state moved      = 0.0
+state toast      = ""
+state toast_t    = 0.0
+state last_time  = -1.0
+state n_spawned  = 0
+state n_linked   = 0
+state n_cut      = 0
+state n_thrown   = 0
+state n_removed  = 0
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record)
+  draw_text(s, int(x), int(y), style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record)
+  draw_text(s, int(right_x) - text_width(s, style), int(y), style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record)
+  draw_text(s, int(cx) - text_width(s, style) / 2, int(y), style)
+end
+
+fn blend(a: record, b: record, t: num) -> record
+  {r: int(float(a.r) + (float(b.r) - float(a.r)) * t),
+    g: int(float(a.g) + (float(b.g) - float(a.g)) * t),
+    b: int(float(a.b) + (float(b.b) - float(a.b)) * t)}
+end
+
+fn hit(x: num, y: num, w: num, h: num) -> bool
+  let px = mouse_x()
+  let py = mouse_y()
+  px >= x && px < x + w && py >= y && py < y + h
+end
+
+// "1.00", "0.45": two places, always.
+fn fixed2(v: num) -> string
+  let n = int(round(float(v) * 100.0))
+  let frac = n % 100
+  if frac < 10 then "{n / 100}.0{frac}" else "{n / 100}.{frac}" end
+end
+
+// 940 -> "940", 12400 -> "12.4k", 3200000 -> "3.20M".
+fn compact(v: num) -> string
+  let a = abs(float(v))
+  if a >= 1000000.0 then "{fixed2(a / 1000000.0)}M"
+  elsif a >= 1000.0 then "{round(a / 1000.0, 1)}k"
+  else str(int(a)) end
+end
+
+fn plural(n: int, one: string, many: string) -> string
+  if n == 1 then "{n} {one}" else "{n} {many}" end
+end
+
+fn wrap_lines(s: string, width: num, style: record) -> list
+  let lines = []
+  let cur = ""
+  for word in split(s, " ") do
+    let trial = if cur == "" then word else cur ++ " " ++ word end
+    if cur != "" && text_width(trial, style) > width then
+      lines = append(lines, cur)
+      cur = word
+    else
+      cur = trial
+    end
+  end
+  if cur != "" then lines = append(lines, cur) end
+  lines
+end
+
+// How many pins, rods and springs a world holds.
+fn count_parts(wd: record) -> record
+  let pins = 0
+  for i in range(0, wd.n) do
+    if wd.pin[i] then pins += 1 end
+  end
+  let rods = 0
+  for L in wd.links do
+    if L.kind == 0 then rods += 1 end
+  end
+  {pins: pins, rods: rods, springs: len(wd.links) - rods}
+end
+
+fn pushed(stack: list, wd: record) -> list
+  let s = append(stack, wd)
+  if len(s) > 24 then slice(s, len(s) - 24, len(s)) else s end
+end
+
+fn dir_name(a: num) -> string
+  let deg = (int(round(degrees(float(a)))) % 360 + 360) % 360
+  if deg == 90 then "down"
+  elsif deg == 270 then "up"
+  elsif deg == 0 then "right"
+  elsif deg == 180 then "left"
+  else "{deg}°" end
+end
+
+// A zigzag from a to b: the coils of a spring.
+fn coil_points(ax: num, ay: num, bx: num, by: num, teeth: int, amp: num) -> list
+  let dx = bx - ax
+  let dy = by - ay
+  let d = max(0.001, ph.norm(dx, dy))
+  let nx = (0.0 - dy) / d
+  let ny = dx / d
+  let lead = min(10.0, d * 0.18)
+  let ux = dx / d
+  let uy = dy / d
+  let px0 = ax + ux * lead
+  let py0 = ay + uy * lead
+  let span = d - lead * 2.0
+  let mid = for i in range(0, teeth) do
+    let t = (float(i) + 0.5) / float(teeth)
+    let side = if i % 2 == 0 then amp else 0.0 - amp end
+    [px0 + ux * span * t + nx * side, py0 + uy * span * t + ny * side]
+  end
+  let head = [[ax, ay], [px0, py0]]
+  let tail = [[px0 + ux * span, py0 + uy * span], [bx, by]]
+  flat([head, mid, tail])
+end
+
+// ── Geometry ─────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let sx = PAD + RAIL + GAP                 // the stage, in pane pixels
+let sy = HEAD
+let sw = W - PAD * 2 - RAIL - SIDE - GAP * 2
+let sh = H - HEAD - FOOT - 8
+let SW = float(sw)                        // and as the world sees it
+let SH = float(sh)
+let side_x = sx + sw + GAP
+let rail_x = PAD
+
+let mx = mouse_x()
+let my = mouse_y()
+let wx = float(mx - sx)                   // the pointer, in world pixels
+let wy = float(my - sy)
+let in_stage = mx >= sx && mx < sx + sw && my >= sy && my < sy + sh
+
+let HUE_FILL = for c in HUES do blend(C_STAGE, c, 0.26) end
+let HUE_DIM = for c in HUES do blend(C_STAGE, c, 0.5) end
+
+// ── Frame timing ─────────────────────────────────────────────────────────
+// The delta comes from time(), not dt(): under POST /tick the panel's clock
+// is virtual and advances by exactly the dt of each driven frame, so a tick
+// script replays to the same world every run.
+
+let now = time()
+let raw_dt = if last_time < 0.0 then 0.0 else clamp(now - last_time, 0.0, 0.25) end
+last_time = now
+let frame_dt = min(raw_dt, 0.05)
+toast_t = max(0.0, toast_t - min(raw_dt, 0.05))
+
+claim_key("z", "cmd")
+
+// ── Intents ──────────────────────────────────────────────────────────────
+// Keys and widgets only say what they want; one block below carries it out,
+// so every way of asking for a thing does exactly the same thing.
+
+let want_scene  = -1
+let want_undo   = false
+let want_clear  = false
+let want_step   = false
+let want_pin    = -1        // body index to pin or free
+let want_remove = -1        // body index to delete
+let wake        = false
+let obs_bins    = []
+let said        = ""
+
+if !ready then
+  ready = true
+  want_scene = 0
+end
+
+// ── Input: keys ──────────────────────────────────────────────────────────
+
+for i in range(0, len(TOOLS)) do
+  if key_pressed(str(i + 1)) || (key_pressed(TOOL_KEYS[i]) && !mod_cmd()) then
+    tool = i
+    aiming = false
+    linking = false
+    cutting = false
+  end
+end
+
+if key_pressed("space") then
+  paused = !paused
+  wake = true
+end
+if key_pressed("n") || key_pressed("period") || key_pressed(".") then
+  paused = true
+  want_step = true
+end
+if key_pressed("r") then want_scene = scene end
+if key_pressed("tab") then
+  want_scene = if mod_shift() then (scene + len(sc.NAMES) - 1) % len(sc.NAMES) else (scene + 1) % len(sc.NAMES) end
+end
+if key_pressed("z") || key_pressed("u") then want_undo = true end
+if key_pressed("c") then want_clear = true end
+if key_pressed("v") then show_vec = !show_vec end
+if key_pressed("t") then show_trail = !show_trail end
+if key_pressed("k") then show_pts = !show_pts end
+if key_pressed("f") then speed_i = (speed_i + 1) % len(SPEEDS) end
+if key_pressed("equals") || key_pressed("=") || key_pressed("]") then size_i = min(len(BALL_SIZES) - 1, size_i + 1) end
+if key_pressed("minus") || key_pressed("-") || key_pressed("[") then size_i = max(0, size_i - 1) end
+
+// Arrows tip the whole stage; 0 switches gravity off and back on.
+let tipped = -1.0
+if key_pressed("down") then tipped = 1.5708 end
+if key_pressed("up") then tipped = 4.7124 end
+if key_pressed("left") then tipped = 3.1416 end
+if key_pressed("right") then tipped = 0.0 end
+if tipped >= 0.0 then
+  gdir = tipped
+  if grav < 0.05 then grav = grav_keep end
+  wake = true
+  said = "Gravity points {dir_name(gdir)}"
+end
+if key_pressed("0") then
+  if grav > 0.05 then
+    grav_keep = grav
+    grav = 0.0
+    said = "Zero gravity"
+  else
+    grav = grav_keep
+    said = "Gravity back to {fixed2(grav)} g"
+  end
+  wake = true
+end
+
+if key_pressed("escape") then
+  if aiming || linking || cutting then
+    aiming = false
+    linking = false
+    cutting = false
+  else
+    sel_id = -1
+  end
+end
+
+let sel = ph.index_of_id(world, sel_id)
+if sel >= 0 && (key_pressed("backspace") || key_pressed("delete")) then want_remove = sel end
+
+// ── Chrome ───────────────────────────────────────────────────────────────
+
+fn card(x: num, y: num, w: num, h: num)
+  draw_rect_rounded(rect(x, y, w, h), 10, C_CARD)
+  draw_rect_rounded_outline(rect(x, y, w, h), 10, C_LINE, 255, 1)
+end
+
+// A push button. Returns true on the frame it is clicked.
+fn ui_btn(x: num, y: num, w: num, h: num, label: string, on: bool, tone: record) -> bool
+  let over = hit(x, y, w, h)
+  let face = if on then blend(C_CARD, tone, 0.22) elsif over then blend(C_CARD, C_TEXT, 0.08) else C_WELL end
+  let edge = if on then blend(C_CARD, tone, 0.75) elsif over then C_EDGE else C_LINE end
+  draw_rect_rounded(rect(x, y, w, h), 6, face)
+  draw_rect_rounded_outline(rect(x, y, w, h), 6, edge, 255, 1)
+  let st = {...S_CAP, color: if on then tone elsif over then C_TEXT else C_DIM end}
+  tx_center(label, x + w / 2, y + (h - 15) / 2, st)
+  over && mouse_pressed(0)
+end
+
+// A labelled slider. `drag` is the id currently holding the mouse; returns
+// the new fraction and the new holder.
+fn ui_slider(id: string, x: num, y: num, w: num, label: string, value: string, frac: num, drag: string) -> record
+  tx(label, x, y, S_LABEL)
+  tx_right(value, x + w, y - 2, S_VAL)
+  let ty = y + 21
+  let over = hit(x - 8, ty - 9, w + 16, 22)
+  let d = drag
+  if mouse_pressed(0) && over && d == "" then d = id end
+  let f = float(frac)
+  if d == id then
+    if mouse_down(0) then
+      f = clamp(float(mouse_x() - x) / float(w), 0.0, 1.0)
+    else
+      d = ""
+    end
+  end
+  let kx = x + int(float(w) * f)
+  draw_rect_rounded(rect(x, ty, w, 4), 2, C_LINE)
+  if kx - x > 1 then draw_rect_rounded(rect(x, ty, kx - x, 4), 2, C_ACC) end
+  let hot = d == id || (over && drag == "")
+  draw_circle(kx, ty + 2, if hot then 7 else 6 end, if hot then C_WHITE else C_TEXT end)
+  draw_circle(kx, ty + 2, 2, C_ACC)
+  {frac: f, drag: d}
+end
+
+// The gravity compass: an arrow you drag round. Snaps to 15 degrees.
+fn ui_dial(cx: num, cy: num, r: num, ang: num, strength: num, drag: string) -> record
+  let px = mouse_x()
+  let py = mouse_y()
+  let over = ph.norm(px - cx, py - cy) <= r + 5
+  let d = drag
+  if mouse_pressed(0) && over && d == "" then d = "dial" end
+  let a = float(ang)
+  if d == "dial" then
+    if mouse_down(0) then
+      if ph.norm(px - cx, py - cy) > 4 then
+        let raw = atan2(float(py - cy), float(px - cx))
+        let snapped = round(raw / 0.2618) * 0.2618
+        a = if snapped < 0.0 then snapped + 6.2832 else snapped end
+      end
+    else
+      d = ""
+    end
+  end
+  let hot = d == "dial" || (over && drag == "")
+  draw_circle(cx, cy, r, C_WELL)
+  draw_circle_outline(cx, cy, r, if hot then C_EDGE else C_LINE end, 255, 1)
+  for k in range(0, 8) do
+    let ta = float(k) * 0.7854
+    let r0 = if k % 2 == 0 then r - 6 else r - 4 end
+    draw_line(cx + cos(ta) * r0, cy + sin(ta) * r0, cx + cos(ta) * (r - 1), cy + sin(ta) * (r - 1),
+      if k % 2 == 0 then C_MUTE else C_EDGE end, 255, 1)
+  end
+  if strength < 0.025 then
+    draw_circle_outline(cx, cy, 5, C_MUTE, 255, 2)
+  else
+    let reach = float(r - 8) * (0.45 + 0.55 * min(1.0, strength))
+    let ex = cx + cos(a) * reach
+    let ey = cy + sin(a) * reach
+    let col = if hot then C_WHITE else C_ACC end
+    draw_line(cx, cy, ex, ey, col, 255, 2)
+    fill_triangle(ex + cos(a) * 6.0, ey + sin(a) * 6.0,
+      ex + cos(a + 2.5) * 6.0, ey + sin(a + 2.5) * 6.0,
+      ex + cos(a - 2.5) * 6.0, ey + sin(a - 2.5) * 6.0, col)
+    draw_circle(cx, cy, 3, col)
+  end
+  {ang: a, drag: d}
+end
+
+// The six tool glyphs, drawn from primitives in a 24 px box around (cx, cy).
+fn tool_icon(k: int, cx: num, cy: num, col: record)
+  if k == 0 then
+    draw_circle_outline(cx - 4, cy + 4, 6, col, 255, 2)
+    draw_line(cx + 2, cy - 2, cx + 10, cy - 10, col, 255, 2)
+    draw_line(cx + 10, cy - 10, cx + 4, cy - 10, col, 255, 2)
+    draw_line(cx + 10, cy - 10, cx + 10, cy - 4, col, 255, 2)
+  elsif k == 1 then
+    draw_circle_outline(cx, cy, 9, col, 255, 2)
+    draw_line(cx - 4, cy, cx + 4, cy, col, 255, 2)
+    draw_line(cx, cy - 4, cx, cy + 4, col, 255, 2)
+  elsif k == 2 then
+    draw_line(cx - 8, cy + 6, cx + 8, cy - 6, col, 255, 2)
+    draw_circle(cx - 8, cy + 6, 4, col)
+    draw_circle(cx + 8, cy - 6, 4, col)
+  elsif k == 3 then
+    draw_polyline(coil_points(cx - 10, cy + 5, cx + 10, cy - 5, 5, 4.0), col, 255, 2)
+    draw_circle(cx - 10, cy + 5, 3, col)
+    draw_circle(cx + 10, cy - 5, 3, col)
+  elsif k == 4 then
+    draw_circle_outline(cx, cy - 3, 7, col, 255, 2)
+    draw_circle(cx, cy - 3, 2, col)
+    draw_line(cx, cy + 4, cx, cy + 11, col, 255, 2)
+  else
+    draw_line(cx - 8, cy - 9, cx + 5, cy + 5, col, 255, 2)
+    draw_line(cx + 8, cy - 9, cx - 5, cy + 5, col, 255, 2)
+    draw_circle_outline(cx + 7, cy + 8, 3, col, 255, 2)
+    draw_circle_outline(cx - 7, cy + 8, 3, col, 255, 2)
+  end
+end
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+
+// Header: title on the left, the scene tabs over the stage's right edge.
+tx("Physics playground", PAD, 16, S_TITLE)
+tx("PETAL / GARDEN TESTBED 12", PAD + 1, 52, S_KICK)
+
+let tab_w = for name in sc.NAMES do text_width(name, S_TAB) + 26 end
+let tabs_total = reduce(tab_w, 0, fn(acc, v) -> acc + v + 6) - 6
+let tab_x = sx + sw - tabs_total
+for i in range(0, len(sc.NAMES)) do
+  let on = i == scene
+  let over = hit(tab_x, 30, tab_w[i], 30)
+  if on then
+    draw_rect_rounded(rect(tab_x, 30, tab_w[i], 30), 8, blend(C_BG, C_ACC, 0.14))
+    draw_rect_rounded(rect(tab_x + 10, 57, tab_w[i] - 20, 2), 1, C_ACC)
+  elsif over then
+    draw_rect_rounded(rect(tab_x, 30, tab_w[i], 30), 8, C_CARD)
+  end
+  tx_center(sc.NAMES[i], tab_x + tab_w[i] / 2, 37,
+    {...S_TAB, color: if on then C_ACC elsif over then C_TEXT else C_DIM end})
+  if over && mouse_pressed(0) then want_scene = i end
+  tab_x += tab_w[i] + 6
+end
+
+// Tool rail.
+for i in range(0, len(TOOLS)) do
+  let by = HEAD + i * 68
+  let on = i == tool
+  let over = hit(rail_x, by, RAIL, 60)
+  let tone = if on then C_ACC elsif over then C_TEXT else C_DIM end
+  draw_rect_rounded(rect(rail_x, by, RAIL, 60), 10,
+    if on then blend(C_CARD, C_ACC, 0.13) elsif over then blend(C_CARD, C_TEXT, 0.05) else C_CARD end)
+  draw_rect_rounded_outline(rect(rail_x, by, RAIL, 60), 10,
+    if on then blend(C_CARD, C_ACC, 0.7) else C_LINE end, 255, 1)
+  tool_icon(i, rail_x + RAIL / 2, by + 24, tone)
+  tx_center(TOOLS[i], rail_x + RAIL / 2 + 1, by + 42, {...S_TINY, color: tone})
+  tx(str(i + 1), rail_x + 7, by + 5, {...S_TINY, color: if on then C_ACC else C_MUTE end})
+  if over && mouse_pressed(0) then
+    tool = i
+    aiming = false
+    linking = false
+    cutting = false
+  end
+end
+
+// Ball size, under the tools.
+let size_y = HEAD + len(TOOLS) * 68 + 10
+tx_center("SIZE", rail_x + RAIL / 2 + 1, size_y, S_TINY)
+for i in range(0, len(BALL_SIZES)) do
+  let cx0 = rail_x + (i % 2) * 32
+  let cy0 = size_y + 20 + (i / 2) * 32
+  let on = i == size_i
+  let over = hit(cx0, cy0, 32, 32)
+  if on || over then
+    draw_rect_rounded(rect(cx0 + 1, cy0 + 1, 30, 30), 7, if on then blend(C_BG, C_ACC, 0.14) else C_CARD end)
+  end
+  draw_circle_outline(cx0 + 16, cy0 + 16, 3.5 + float(i) * 2.6, if on then C_ACC elsif over then C_TEXT else C_MUTE end, 255, 2)
+  if over && mouse_pressed(0) then size_i = i end
+end
+
+// Sidebar: world.
+let card_w = SIDE
+let inner = card_w - 28
+let cx1 = side_x + 14
+let world_y = HEAD
+let world_h = 226
+card(side_x, world_y, card_w, world_h)
+tx("WORLD", cx1, world_y + 13, S_LABEL)
+tx_right(dir_name(gdir), side_x + card_w - 14, world_y + 12, S_HINT)
+
+let dial = ui_dial(cx1 + 30, world_y + 68, 30, gdir, grav / 2.0, ui_drag)
+if dial.ang != gdir then wake = true end
+gdir = dial.ang
+ui_drag = dial.drag
+
+let g_s = ui_slider("grav", cx1 + 78, world_y + 44, inner - 78, "GRAVITY", "{fixed2(grav)} g", grav / 2.0, ui_drag)
+if g_s.frac * 2.0 != grav then wake = true end
+grav = round(g_s.frac * 2.0, 2)
+ui_drag = g_s.drag
+tx("drag the compass to aim it", cx1 + 78, world_y + 80, {...S_HINT, color: C_MUTE})
+
+let b_s = ui_slider("bounce", cx1, world_y + 112, inner, "BOUNCE", fixed2(bounce), bounce, ui_drag)
+bounce = round(b_s.frac, 2)
+ui_drag = b_s.drag
+let f_s = ui_slider("fric", cx1, world_y + 150, inner, "FRICTION", fixed2(fric), fric, ui_drag)
+fric = round(f_s.frac, 2)
+ui_drag = f_s.drag
+let d_s = ui_slider("drag", cx1, world_y + 188, inner, "AIR DRAG", fixed2(drag), drag / 0.5, ui_drag)
+drag = round(d_s.frac * 0.5, 2)
+ui_drag = d_s.drag
+if ui_drag != "" then wake = true end
+
+// Sidebar: time and overlays.
+let time_y = world_y + world_h + 10
+let time_h = 100
+card(side_x, time_y, card_w, time_h)
+tx("TIME", cx1, time_y + 13, S_LABEL)
+tx_right("{fixed2(sim_t)} s", side_x + card_w - 14, time_y + 12, S_HINT)
+if ui_btn(cx1, time_y + 34, 74, 26, if paused then "RUN" else "PAUSE" end, paused, C_ACC) then
+  paused = !paused
+  wake = true
+end
+if ui_btn(cx1 + 80, time_y + 34, 52, 26, "STEP", false, C_ACC) then
+  paused = true
+  want_step = true
+end
+for i in range(0, len(SPEEDS)) do
+  if ui_btn(cx1 + 138 + i * 30, time_y + 34, 30, 26, SPEED_LABELS[i], speed_i == i, C_SPRING) then speed_i = i end
+end
+let tog_w = (inner - 12) / 3
+if ui_btn(cx1, time_y + 66, tog_w, 22, "VECTORS", show_vec, HUES[3]) then show_vec = !show_vec end
+if ui_btn(cx1 + tog_w + 6, time_y + 66, tog_w, 22, "TRAILS", show_trail, HUES[3]) then show_trail = !show_trail end
+if ui_btn(cx1 + (tog_w + 6) * 2, time_y + 66, tog_w, 22, "CONTACTS", show_pts, HUES[3]) then show_pts = !show_pts end
+
+// ── Sidebar: selection, or the scene ─────────────────────────────────────
+
+let census = count_parts(world)
+let en_y = time_y + time_h + 10
+let en_h = 108
+let in_y = en_y + en_h + 10
+let in_h = sy + sh - in_y
+card(side_x, in_y, card_w, in_h)
+if sel >= 0 then
+  let col = HUES[world.c[sel]]
+  tx("BODY", cx1, in_y + 13, S_LABEL)
+  draw_circle(cx1 + 4, in_y + 42, 4, col)
+  tx("#{sel_id}", cx1 + 14, in_y + 33, S_NAME)
+  tx_right(if world.pin[sel] then "PINNED" else "FREE" end, side_x + card_w - 14, in_y + 13,
+    {...S_LABEL, color: if world.pin[sel] then C_ACC else C_SPRING end})
+  let col_w = inner / 4
+  let stats = [
+    ["RADIUS", "{int(world.r[sel])}"],
+    ["MASS", "{round(world.m[sel], 1)}"],
+    ["SPEED", "{int(ph.norm(world.vx[sel], world.vy[sel]))}"],
+    ["LINKS", "{ph.links_on(world, sel)}"],
+  ]
+  for i in range(0, 4) do
+    tx(stats[i][0], cx1 + i * col_w, in_y + 62, S_TINY)
+    tx(stats[i][1], cx1 + i * col_w, in_y + 76, S_VAL)
+  end
+  let half = (inner - 8) / 2
+  if ui_btn(cx1, in_y + in_h - 38, half, 26, if world.pin[sel] then "FREE" else "PIN" end, false, C_ACC) then
+    want_pin = sel
+  end
+  if ui_btn(cx1 + half + 8, in_y + in_h - 38, half, 26, "DELETE", false, C_WARN) then
+    want_remove = sel
+  end
+else
+  tx("STAGE", cx1, in_y + 13, S_LABEL)
+  tx(sc.NAMES[scene], cx1, in_y + 33, S_NAME)
+  let lines = wrap_lines(sc.BLURBS[scene], inner, S_HINT)
+  for i in range(0, len(lines)) do
+    tx(lines[i], cx1, in_y + 55 + i * 16, S_HINT)
+  end
+  let col_w = inner / 4
+  let stats = [["BODIES", str(world.n)], ["PINS", str(census.pins)],
+    ["RODS", str(census.rods)], ["SPRINGS", str(census.springs)]]
+  for i in range(0, 4) do
+    tx(stats[i][0], cx1 + i * col_w, in_y + in_h - 41, S_TINY)
+    tx(stats[i][1], cx1 + i * col_w, in_y + in_h - 27, S_VAL)
+  end
+end
+
+// ── Input: the stage ─────────────────────────────────────────────────────
+
+let free_mouse = ui_drag == ""
+let hover = if in_stage && free_mouse then ph.pick_body(world, wx, wy, 4.0) else -1 end
+let hover_link = if in_stage && free_mouse && hover < 0 then ph.pick_link(world, wx, wy, 6.0) else -1 end
+let grab = ph.index_of_id(world, grab_id)
+
+if in_stage && free_mouse && mouse_pressed(1) then
+  wake = true
+  if aiming || linking || cutting then
+    aiming = false
+    linking = false
+    cutting = false
+  elsif hover >= 0 then
+    want_pin = hover
+  else
+    sel_id = -1
+  end
+end
+
+if in_stage && free_mouse && mouse_pressed(0) then
+  wake = true
+  if tool == 0 then
+    if hover >= 0 then
+      grab_id = world.id[hover]
+      grab_ox = world.x[hover] - wx
+      grab_oy = world.y[hover] - wy
+      sel_id = grab_id
+    else
+      sel_id = -1
+    end
+  elsif tool == 1 then
+    aiming = true
+    aim_x = wx
+    aim_y = wy
+  elsif tool == 2 || tool == 3 then
+    linking = true
+    link_id = if hover >= 0 then world.id[hover] else -1 end
+    link_x = wx
+    link_y = wy
+  elsif tool == 4 then
+    if hover >= 0 then want_pin = hover end
+  else
+    cut_saved = false
+    if hover >= 0 then
+      want_remove = hover
+    elsif hover_link >= 0 then
+      undo = pushed(undo, world)
+      cut_saved = true
+      world = ph.remove_link(world, hover_link)
+      trail = []
+      n_cut += 1
+      said = "Link cut"
+    end
+    cutting = true
+    cut_x = wx
+    cut_y = wy
+  end
+end
+
+grab = ph.index_of_id(world, grab_id)
+
+// A cutting stroke severs every link it crosses between two frames.
+if cutting && mouse_down(0) then
+  let cwx = clamp(wx, 0.0, SW)
+  let cwy = clamp(wy, 0.0, SH)
+  if abs(cwx - cut_x) + abs(cwy - cut_y) > 1.0 then
+    let crossed = ph.links_crossing(world, cut_x, cut_y, cwx, cwy)
+    if len(crossed) > 0 then
+      if !cut_saved then
+        undo = pushed(undo, world)
+        cut_saved = true
+      end
+      for k in crossed do
+        world = ph.remove_link(world, k)
+      end
+      trail = []
+      n_cut += len(crossed)
+      said = if len(crossed) == 1 then "Link cut" else "{len(crossed)} links cut" end
+      wake = true
+    end
+    cut_x = cwx
+    cut_y = cwy
+  end
+end
+
+if mouse_released(0) || !mouse_down(0) then
+  if grab >= 0 then
+    if ph.norm(world.vx[grab], world.vy[grab]) > 240.0 then n_thrown += 1 end
+    grab_id = -1
+    wake = true
+  end
+  cutting = false
+
+  if aiming then
+    aiming = false
+    if world.n >= max_bodies then
+      said = "The stage is full ({max_bodies} bodies)"
+    else
+      let r = BALL_SIZES[size_i]
+      let lvx = clamp((aim_x - wx) * launch_gain, -1800.0, 1800.0)
+      let lvy = clamp((aim_y - wy) * launch_gain, -1800.0, 1800.0)
+      let still = abs(aim_x - wx) + abs(aim_y - wy) < 6.0
+      undo = pushed(undo, world)
+      world = ph.add_body(world, clamp(aim_x, r, SW - r), clamp(aim_y, r, SH - r), r, n_spawned % 6,
+        false, 1.0, if still then 0.0 else lvx end, if still then 0.0 else lvy end)
+      sel_id = world.id[world.n - 1]
+      trail = []
+      n_spawned += 1
+      wake = true
+      said = if still then "Ball #{sel_id} dropped" else "Ball #{sel_id} launched at {int(ph.norm(lvx, lvy))} px/s" end
+    end
+  end
+
+  if linking then
+    linking = false
+    let kind = if tool == 3 then ph.SPRING else ph.ROD end
+    let noun = if tool == 3 then "spring" else "rod" end
+    let la = ph.index_of_id(world, link_id)
+    let lb = hover
+    let dragged = ph.norm(wx - link_x, wy - link_y) > 14.0
+    if la >= 0 && lb == la then
+      said = ""
+    elsif la < 0 && lb < 0 then
+      if dragged then said = "A {noun} needs a body at one end" end
+    elsif world.n >= max_bodies && (la < 0 || lb < 0) then
+      said = "The stage is full ({max_bodies} bodies)"
+    else
+      undo = pushed(undo, world)
+      // An end left on open stage gets a small pinned anchor lb hold it.
+      if la < 0 then
+        world = ph.add_pin(world, link_x, link_y, 5, 6)
+        la = world.n - 1
+      end
+      if lb < 0 then
+        world = ph.add_pin(world, clamp(wx, 5.0, SW - 5.0), clamp(wy, 5.0, SH - 5.0), 5, 6)
+        lb = world.n - 1
+      end
+      let dup = false
+      for L in world.links do
+        if (L.a == la && L.b == lb) || (L.a == lb && L.b == la) then dup = true end
+      end
+      if dup then
+        undo = drop_last(undo)
+        said = "Those two are already linked"
+      else
+        world = ph.add_link(world, la, lb, kind, spring_hz, -1.0)
+        trail = []
+        n_linked += 1
+        wake = true
+        said = "#{world.id[la]} and #{world.id[lb]} joined by a {noun}"
+      end
+    end
+  end
+end
+
+// The Ball tool's size also answers the wheel.
+if in_stage && tool == 1 && scroll_y() != 0.0 then
+  size_i = clamp(size_i + (if scroll_y() < 0.0 then 1 else -1 end), 0, len(BALL_SIZES) - 1)
+end
+
+// ── Carry out the intents ────────────────────────────────────────────────
+
+if want_scene >= 0 then
+  let built = sc.build(want_scene, SW, SH)
+  scene = want_scene
+  world = built.world
+  emit = built.emit
+  bounce = built.bounce
+  fric = built.fric
+  drag = built.drag
+  show_trail = built.trails
+  grav = 1.0
+  gdir = 1.5708
+  emit_t = 0.0
+  undo = []
+  trail = []
+  hist = []
+  pts = []
+  contacts = 0
+  sim_t = 0.0
+  steps = 0
+  sel_id = -1
+  grab_id = -1
+  aiming = false
+  linking = false
+  cutting = false
+  paused = false
+  wake = true
+end
+
+if want_undo then
+  if len(undo) > 0 then
+    world = last(undo)
+    undo = drop_last(undo)
+    trail = []
+    grab_id = -1
+    wake = true
+    said = "Undone"
+  else
+    said = "Nothing to undo"
+  end
+end
+
+if want_clear then
+  let loose = 0
+  for i in range(0, world.n) do
+    if !world.pin[i] then loose += 1 end
+  end
+  if loose > 0 then
+    undo = pushed(undo, world)
+    for i in range(world.n - 1, -1, -1) do
+      if !world.pin[i] then world = ph.remove_body(world, i) end
+    end
+    emit = {...emit, left: 0}
+    trail = []
+    sel_id = -1
+    grab_id = -1
+    wake = true
+    said = "{plural(loose, "loose body", "loose bodies")} cleared"
+  else
+    said = "Nothing loose to clear"
+  end
+end
+
+if want_pin >= 0 && want_pin < world.n then
+  undo = pushed(undo, world)
+  let was = world.pin[want_pin]
+  world = ph.set_pin(world, want_pin, !was)
+  sel_id = world.id[want_pin]
+  wake = true
+  said = if was then "#{sel_id} freed" else "#{sel_id} pinned" end
+end
+
+if want_remove >= 0 && want_remove < world.n then
+  undo = pushed(undo, world)
+  let gone = world.id[want_remove]
+  world = ph.remove_body(world, want_remove)
+  trail = []
+  if sel_id == gone then sel_id = -1 end
+  if grab_id == gone then grab_id = -1 end
+  n_removed += 1
+  wake = true
+  said = "#{gone} removed"
+end
+
+if said != "" then
+  toast = said
+  toast_t = 2.2
+end
+
+// ── Simulation ───────────────────────────────────────────────────────────
+
+if wake then
+  asleep = false
+  rest_t = 0.0
+end
+
+// The edits above may have removed or renumbered bodies: look them up again.
+grab = ph.index_of_id(world, grab_id)
+sel = ph.index_of_id(world, sel_id)
+hover = if in_stage && free_mouse then ph.pick_body(world, wx, wy, 4.0) else -1 end
+hover_link = if in_stage && free_mouse && hover < 0 then ph.pick_link(world, wx, wy, 6.0) else -1 end
+let gx = cos(gdir) * grav * gravity_px
+let gy = sin(gdir) * grav * gravity_px
+let env = {gx: gx, gy: gy, bounce: bounce, fric: fric, drag: drag, w: SW, h: SH,
+  grab: grab,
+  tx: if grab >= 0 then clamp(wx + grab_ox, world.r[grab], SW - world.r[grab]) else 0.0 end,
+  ty: if grab >= 0 then clamp(wy + grab_oy, world.r[grab], SH - world.r[grab]) else 0.0 end}
+
+let sim_dt = if want_step then 1.0 / 60.0 elsif paused || asleep then 0.0 else frame_dt * SPEEDS[speed_i] end
+
+if sim_dt > 0.0 then
+  // The dispenser (Pegboard): one ball every `every` seconds until it is empty.
+  if emit.left > 0 then
+    emit_t += sim_dt
+    while emit_t >= emit.every && emit.left > 0 && world.n < max_bodies do
+      emit_t -= emit.every
+      world = ph.add_body(world, emit.x + random(-2.5, 2.5), emit.y, emit.r, emit.left % 6,
+        false, 1.0, random(-14.0, 14.0), 40.0)
+      emit = {...emit, left: emit.left - 1}
+      trail = []
+    end
+  end
+
+  let prev_x = world.x
+  let prev_y = world.y
+  let res = ph.step(world, sim_dt, env)
+  world = res.world
+  contacts = res.contacts
+  pts = res.pts
+  subs = res.subs
+  steps += res.subs
+  sim_t += sim_dt
+
+  // Rest is judged on how far things actually moved, not on the velocities
+  // the solver is still juggling inside a settled pile.
+  let shift = 0.0
+  if len(prev_x) == world.n then
+    for i in range(0, world.n) do
+      shift = max(shift, abs(world.x[i] - prev_x[i]) + abs(world.y[i] - prev_y[i]))
+    end
+  else
+    shift = 99.0
+  end
+  moved = shift / sim_dt
+  if moved < 3.0 && grab < 0 && emit.left == 0 && !aiming then
+    rest_t += sim_dt
+  else
+    rest_t = 0.0
+  end
+  if rest_t >= rest_after && !want_step then asleep = true end
+
+  let en = ph.energy(world, env)
+  hist = append(hist, {k: en.ke, p: en.pe + en.se})
+  if len(hist) > 110 then hist = slice(hist, len(hist) - 110, len(hist)) end
+  if show_trail then
+    trail = append(trail, {x: world.x, y: world.y})
+    if len(trail) > 26 then trail = slice(trail, len(trail) - 26, len(trail)) end
+  end
+end
+
+let running = !paused && !asleep
+if running || toast_t > 0.0 || grab >= 0 || aiming || linking || cutting || ui_drag != "" then
+  request_frame()
+end
+
+// ── Sidebar: energy ──────────────────────────────────────────────────────
+
+card(side_x, en_y, card_w, en_h)
+tx("ENERGY", cx1, en_y + 13, S_LABEL)
+let last_e = if len(hist) > 0 then last(hist) else {k: 0.0, p: 0.0} end
+// Stored energy is shown above its lowest point in the window, so the two
+// bands trade height as a pendulum swings and the top edge stays level
+// when nothing is being lost.
+let p_floor = reduce(hist, last_e.p, fn(acc, e) -> min(acc, e.p))
+let e_peak = reduce(hist, 1.0, fn(acc, e) -> max(acc, e.k + e.p - p_floor))
+let gx0 = cx1
+let gy0 = en_y + 36
+let gw = inner
+let gh = 38
+draw_rect_rounded(rect(gx0, gy0, gw, gh), 5, C_WELL)
+if len(hist) > 1 then
+  let nh = len(hist)
+  let step_x = float(gw - 2) / 109.0
+  let top_pts = for i in range(0, nh) do
+    [float(gx0 + 1) + step_x * float(i), float(gy0 + gh - 2) - (hist[i].k + hist[i].p - p_floor) / e_peak * float(gh - 6)]
+  end
+  let k_pts = for i in range(0, nh) do
+    [float(gx0 + 1) + step_x * float(i), float(gy0 + gh - 2) - hist[i].k / e_peak * float(gh - 6)]
+  end
+  let base = [[float(gx0 + 1) + step_x * float(nh - 1), float(gy0 + gh - 2)], [float(gx0 + 1), float(gy0 + gh - 2)]]
+  fill_polygon(flat([top_pts, base]), blend(C_WELL, HUES[3], 0.22))
+  fill_polygon(flat([k_pts, base]), blend(C_WELL, C_ACC, 0.45))
+  draw_polyline(top_pts, HUES[3], 255, 1)
+  draw_polyline(k_pts, C_ACC, 255, 1)
+end
+draw_circle(cx1 + 4, en_y + 91, 3, C_ACC)
+tx("KINETIC", cx1 + 13, en_y + 85, S_TINY)
+tx(compact(last_e.k), cx1 + 66, en_y + 83, S_VAL)
+draw_circle(cx1 + 122, en_y + 91, 3, HUES[3])
+tx("STORED", cx1 + 131, en_y + 85, S_TINY)
+tx(compact(last_e.p - p_floor), cx1 + 180, en_y + 83, S_VAL)
+
+// ── Draw: the stage ──────────────────────────────────────────────────────
+
+draw_rect_rounded(rect(sx, sy, sw, sh), 12, C_STAGE)
+clip(sx, sy, sw, sh)
+
+// Graph paper: a fine grid with every fourth line a touch brighter.
+let cell = 32
+for i in range(1, sw / cell + 1) do
+  draw_rect(rect(sx + i * cell, sy, 1, sh), if i % 4 == 0 then C_GRID2 else C_GRID end)
+end
+for i in range(1, sh / cell + 1) do
+  draw_rect(rect(sx, sy + i * cell, sw, 1), if i % 4 == 0 then C_GRID2 else C_GRID end)
+end
+
+let n = world.n
+let X = world.x
+let Y = world.y
+
+// Pegboard: the dispenser, and a count over every bin.
+if scene == 2 then
+  let lay = sc.bin_layout(SW, SH)
+  let hx = sx + int(emit.x)
+  let hy = sy + int(emit.y)
+  if emit.x > 0.0 then
+    draw_polyline([[hx - 26, hy - 26], [hx - 9, hy - 2], [hx - 9, hy + 10]], C_BAR_HI, 255, 2)
+    draw_polyline([[hx + 26, hy - 26], [hx + 9, hy - 2], [hx + 9, hy + 10]], C_BAR_HI, 255, 2)
+    tx(if emit.left > 0 then "{emit.left} TO GO" else "EMPTY" end, hx + 36, hy - 24, S_TINY)
+  end
+  let bins = for b in range(0, lay.n) do 0 end
+  for i in range(0, n) do
+    if world.pin[i] || Y[i] < lay.bin_top then continue end
+    let b = clamp(int(floor((X[i] - lay.x0) / lay.sp)), 0, lay.n - 1)
+    bins[b] = bins[b] + 1
+  end
+  for b in range(0, lay.n) do
+    if bins[b] > 0 then
+      tx_center(str(bins[b]), sx + int(lay.x0 + lay.sp * (float(b) + 0.5)), sy + int(lay.bin_top) + 2,
+        {...S_CAP, color: C_DIM})
+    end
+  end
+  obs_bins = bins
+end
+
+// A quiet census in the corner, under everything that moves.
+tx("{plural(n, "BODY", "BODIES")}  ·  {plural(contacts, "CONTACT", "CONTACTS")}", sx + 16, sy + 14, S_TINY)
+
+// Static bars.
+for sg in world.segs do
+  draw_line(sx + sg.x1, sy + sg.y1, sx + sg.x2, sy + sg.y2, C_BAR, 255, 6)
+  draw_line(sx + sg.x1, sy + sg.y1, sx + sg.x2, sy + sg.y2, C_BAR_HI, 255, 1)
+end
+
+// Trails: only the bigger bodies leave one, so a ball pit stays readable.
+if show_trail && len(trail) > 2 && len(trail[0].x) == n then
+  let nt = len(trail)
+  let drawn = 0
+  for i in range(0, n) do
+    if world.pin[i] || world.r[i] < 12.5 || drawn >= 22 then continue end
+    drawn += 1
+    let tail_pts = for k in range(0, nt / 2 + 1) do [sx + trail[k].x[i], sy + trail[k].y[i]] end
+    let head_pts = for k in range(nt / 2, nt) do [sx + trail[k].x[i], sy + trail[k].y[i]] end
+    draw_polyline(tail_pts, HUES[world.c[i]], 40, 2)
+    draw_polyline(head_pts, HUES[world.c[i]], 110, 2)
+  end
+end
+
+// Links, under the bodies they join.
+for k in range(0, len(world.links)) do
+  let L = world.links[k]
+  let ax = sx + X[L.a]
+  let ay = sy + Y[L.a]
+  let bx = sx + X[L.b]
+  let by = sy + Y[L.b]
+  let hot = k == hover_link && tool == 5
+  if L.kind == 0 then
+    draw_line(ax, ay, bx, by, if hot then C_WARN else C_ROD end, 255, 3)
+  else
+    // A spring warms from mint to coral as it is pulled or squeezed.
+    let strain = abs(ph.norm(bx - ax, by - ay) - L.len) / max(1.0, L.len)
+    let col = if hot then C_WARN else blend(C_SPRING, HUES[0], min(1.0, strain * 2.2)) end
+    if L.hz >= 8.0 then
+      // The stiff lacing inside a soft body reads better as bare thread.
+      draw_line(ax, ay, bx, by, col, 150, 1)
+    else
+      draw_polyline(coil_points(ax, ay, bx, by, clamp(int(L.len / 9.0), 4, 10), 5.0), col, 255, 2)
+    end
+  end
+end
+
+// Bodies.
+for i in range(0, n) do
+  let cx = sx + X[i]
+  let cy = sy + Y[i]
+  let r = world.r[i]
+  let col = HUES[world.c[i]]
+  if world.pin[i] then
+    draw_circle(cx, cy, r, blend(C_STAGE, col, 0.55))
+    draw_circle_outline(cx, cy, r, col, 255, 2)
+    if r >= 7.0 then
+      draw_line(cx - 3, cy - 3, cx + 3, cy + 3, C_STAGE, 255, 2)
+      draw_line(cx - 3, cy + 3, cx + 3, cy - 3, C_STAGE, 255, 2)
+    else
+      draw_circle(cx, cy, 1, C_STAGE)
+    end
+  elsif r < 6.5 then
+    draw_circle(cx, cy, r, HUE_DIM[world.c[i]])
+    draw_circle_outline(cx, cy, r, col, 255, 1)
+  else
+    draw_circle(cx, cy, r, HUE_FILL[world.c[i]])
+    draw_circle_outline(cx, cy, r, col, 255, 2)
+    // A spoke, so spin is something you can see.
+    let a = world.ang[i]
+    draw_line(cx + cos(a) * r * 0.28, cy + sin(a) * r * 0.28, cx + cos(a) * (r - 3.0), cy + sin(a) * (r - 3.0), col, 255, 2)
+  end
+end
+
+// Overlays.
+if show_vec then
+  for i in range(0, n) do
+    let sp = ph.norm(world.vx[i], world.vy[i])
+    if world.pin[i] || sp < 12.0 then continue end
+    let reach = min(90.0, sp * 0.14)
+    let ux = world.vx[i] / sp
+    let uy = world.vy[i] / sp
+    let ax = sx + X[i]
+    let ay = sy + Y[i]
+    let ex = ax + ux * reach
+    let ey = ay + uy * reach
+    draw_line(ax, ay, ex, ey, C_WHITE, 170, 1)
+    fill_triangle(ex + ux * 5.0, ey + uy * 5.0, ex - uy * 3.0, ey + ux * 3.0, ex + uy * 3.0, ey - ux * 3.0, C_WHITE, 170)
+  end
+end
+if show_pts then
+  let k = 0
+  while k < len(pts) do
+    draw_circle(sx + pts[k], sy + pts[k + 1], 3, C_ACC)
+    draw_circle(sx + pts[k], sy + pts[k + 1], 1, C_STAGE)
+    k += 2
+  end
+end
+
+// Hover and selection rings.
+if sel >= 0 then
+  draw_circle_outline(sx + X[sel], sy + Y[sel], world.r[sel] + 5.0, C_ACC, 255, 1)
+end
+if hover >= 0 && grab < 0 then
+  draw_circle_outline(sx + X[hover], sy + Y[hover], world.r[hover] + 3.0,
+    if tool == 5 then C_WARN else C_WHITE end, 200, 1)
+end
+
+// The gesture in progress.
+let pwx = clamp(wx, 0.0, SW)
+let pwy = clamp(wy, 0.0, SH)
+if grab >= 0 then
+  draw_line(sx + X[grab], sy + Y[grab], sx + pwx + grab_ox, sy + pwy + grab_oy, C_WHITE, 120, 1)
+  draw_circle_outline(sx + X[grab], sy + Y[grab], world.r[grab] + 4.0, C_WHITE, 255, 1)
+end
+if tool == 1 && in_stage && free_mouse && !aiming then
+  draw_circle_outline(mx, my, BALL_SIZES[size_i], HUES[n_spawned % 6], 150, 1)
+end
+if aiming then
+  let r = BALL_SIZES[size_i]
+  let col = HUES[n_spawned % 6]
+  let lvx = clamp((aim_x - pwx) * launch_gain, -1800.0, 1800.0)
+  let lvy = clamp((aim_y - pwy) * launch_gain, -1800.0, 1800.0)
+  draw_line(sx + aim_x, sy + aim_y, sx + pwx, sy + pwy, col, 150, 2)
+  draw_circle(sx + pwx, sy + pwy, 3, col)
+  draw_circle(sx + aim_x, sy + aim_y, r, blend(C_STAGE, col, 0.26))
+  draw_circle_outline(sx + aim_x, sy + aim_y, r, col, 255, 2)
+  // Where it will go: the first 0.7 s of free flight.
+  if abs(lvx) + abs(lvy) > 30.0 then
+    for k in range(1, 15) do
+      let t = float(k) * 0.05
+      draw_circle(sx + aim_x + lvx * t + 0.5 * gx * t * t, sy + aim_y + lvy * t + 0.5 * gy * t * t, 2, col, 200 - k * 12)
+    end
+  end
+end
+if linking then
+  let la = ph.index_of_id(world, link_id)
+  let ax = if la >= 0 then X[la] else link_x end
+  let ay = if la >= 0 then Y[la] else link_y end
+  let bx = if hover >= 0 && hover != la then X[hover] else pwx end
+  let by = if hover >= 0 && hover != la then Y[hover] else pwy end
+  if tool == 3 then
+    draw_polyline(coil_points(sx + ax, sy + ay, sx + bx, sy + by, 9, 5.0), C_SPRING, 200, 2)
+  else
+    draw_line(sx + ax, sy + ay, sx + bx, sy + by, C_ROD, 200, 3)
+  end
+  if la < 0 then draw_circle_outline(sx + ax, sy + ay, 5, HUES[6], 255, 2) end
+  if hover < 0 || hover == la then draw_circle_outline(sx + bx, sy + by, 5, HUES[6], 255, 2) end
+end
+if cutting then
+  draw_circle_outline(sx + pwx, sy + pwy, 7, C_WARN, 255, 1)
+  draw_line(sx + pwx - 4.0, sy + pwy - 4.0, sx + pwx + 4.0, sy + pwy + 4.0, C_WARN, 255, 1)
+end
+
+if n == 0 then
+  tx_center("An empty stage", sx + sw / 2, sy + sh / 2 - 26, S_NAME)
+  tx_center("Press 2 and click to drop a ball, or pick a scene above.", sx + sw / 2, sy + sh / 2, S_BODY)
+end
+
+// State badge, top-right; toast, bottom-centre.
+let badge = if paused then "PAUSED" elsif asleep && n > 0 then "AT REST" else "" end
+if badge != "" then
+  let bw = text_width(badge, S_LABEL) + 22
+  let tone = if paused then C_ACC else C_SPRING end
+  draw_rect_rounded(rect(sx + sw - bw - 14, sy + 12, bw, 22), 6, blend(C_STAGE, tone, 0.16))
+  draw_rect_rounded_outline(rect(sx + sw - bw - 14, sy + 12, bw, 22), 6, blend(C_STAGE, tone, 0.6), 255, 1)
+  tx(badge, sx + sw - bw - 3, sy + 18, {...S_LABEL, color: tone})
+end
+
+if toast_t > 0.0 then
+  let a = min(1.0, toast_t / 0.5)
+  let tw = text_width(toast, S_CAP) + 32
+  let tyy = sy + 12
+  draw_rect_rounded(rect(sx + sw / 2 - tw / 2, tyy, tw, 28), 8, C_CARD, int(a * 240.0))
+  draw_rect_rounded_outline(rect(sx + sw / 2 - tw / 2, tyy, tw, 28), 8, C_EDGE, int(a * 255.0), 1)
+  draw_text(toast, sx + sw / 2 - (tw - 32) / 2, tyy + 7, {...S_CAP, color: blend(C_CARD, C_TEXT, a)})
+end
+
+clip_none()
+draw_rect_rounded_outline(rect(sx, sy, sw, sh), 12, C_EDGE, 255, 1)
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn chip(x: num, y: num, cap: string, desc: string) -> int
+  let cw = text_width(cap, S_CAP) + 16
+  draw_rect_rounded(rect(int(x), int(y), cw, 22), 6, C_CARD)
+  draw_rect_rounded_outline(rect(int(x), int(y), cw, 22), 6, C_LINE, 255, 1)
+  tx(cap, x + 8, y + 4, S_CAP)
+  tx(desc, x + cw + 8, y + 4, S_HINT)
+  cw + 8 + text_width(desc, S_HINT) + 18
+end
+
+let fy = sy + sh + 20
+let fx = PAD
+fx += chip(fx, fy, "SPACE", "pause")
+fx += chip(fx, fy, "R", "reset")
+fx += chip(fx, fy, "Z", "undo")
+fx += chip(fx, fy, "← ↑ ↓ →", "tip gravity")
+fx += chip(fx, fy, "0", "zero-g")
+fx += chip(fx, fy, "TAB", "next scene")
+
+// The armed tool and what it does, at the right.
+let hint_w = text_width(TOOL_HINTS[tool], S_HINT)
+tx_right(TOOL_HINTS[tool], W - PAD, fy + 4, S_HINT)
+tx_right(TOOLS[tool], W - PAD - hint_w - 10, fy + 5, {...S_LABEL, color: C_ACC})
+
+// ── Observation mirrors (readable in /state → panel.values) ──────────────
+
+let obs_scene     = sc.NAMES[scene]
+let obs_tool      = TOOLS[tool]
+let obs_bodies    = n
+let parts = count_parts(world)
+let obs_pins      = parts.pins
+let obs_rods      = parts.rods
+let obs_springs   = parts.springs
+let obs_contacts  = contacts
+let obs_paused    = paused
+let obs_asleep    = asleep
+let obs_time      = round(sim_t, 3)
+let obs_steps     = steps
+let obs_subs      = subs
+let obs_gravity   = grav
+let obs_gdir      = int(round(degrees(gdir)))
+let obs_bounce    = bounce
+let obs_friction  = fric
+let obs_drag      = drag
+let obs_speed     = SPEEDS[speed_i]
+let obs_size      = BALL_SIZES[size_i]
+let obs_ke        = round(last_e.k, 0)
+let obs_pe        = round(last_e.p, 0)
+let obs_moved     = round(moved, 2)
+let obs_sel       = sel_id
+let obs_grab      = grab_id
+let obs_hover     = if hover >= 0 then world.id[hover] else -1 end
+let obs_undo      = len(undo)
+let obs_emit_left = emit.left
+let obs_spawned   = n_spawned
+let obs_linked    = n_linked
+let obs_cut       = n_cut
+let obs_thrown    = n_thrown
+let obs_removed   = n_removed
+let obs_toast     = toast
+let obs_stage     = [sx, sy, sw, sh]
+// The O(n^2) audit only runs while nothing moves.
+let obs_audit     = if paused || asleep then ph.audit(world) else nil end
+let obs_first     = if n > 0 then [round(X[0], 1), round(Y[0], 1)] else [] end
+let obs_last      = if n > 0 then [round(X[n - 1], 1), round(Y[n - 1], 1)] else [] end

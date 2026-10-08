@@ -114,7 +114,7 @@ update the client types from the sample diff.
 | `GET /scene` | The primitives of the current frame: quads, text runs, meshes, images, and canvas ops. See [Asserting on the scene](#asserting-on-the-scene) |
 | `GET /scene?pane=<n>` | The same, restricted to pane *n* and rebased onto that pane's origin, so it lines up with `GET /screenshot?pane=<n>` |
 | `GET /scene?find=text:<s>` | Only the text runs reading exactly `<s>` (`text~:<s>` for a substring), each with its `rect` and `center`. Combines with `pane=`. See [Locating text](#locating-text) |
-| `GET /screenshot` | PNG of a complete, settled frame at physical-pixel size. The captured frame number is in the `X-Garden-Frame` header |
+| `GET /screenshot` | PNG of a complete, settled frame at physical-pixel size. The captured frame number is in the `X-Garden-Frame` header. `?settle=idle` also runs any script-requested animation to its end first; see [Frame consistency](#frame-consistency) |
 | `GET /screenshot?pane=<n>` | The same, cropped to pane *n*: no tab strip, status bar, or gutter. This is the supported way to get chrome-free pixels |
 | `GET /capture?format=png\|json\|text` | One capture of the settled frame; `/scene` is `format=json` and `/screenshot` is the default (the frontend's native raster: PNG, or the character grid under `--term`). `png` carries `X-Garden-Frame` and `json` a top-level `frame` (`text` carries neither). Takes `pane=` for every format and `find=` for JSON (which `find=` alone implies). A format the frontend cannot make (`text` on a pixel frontend, `png` under `--term`) is a 400. `/scene?format=png` is a 400: use `/capture`. Feature `debug.capture` |
 | `GET /frame` | `{"ok": true, "frame": n}`, the global frame counter, answered instantly. `?min=N` adds `"reached": true/false` |
@@ -191,7 +191,9 @@ A panel pane (a Petal graphical panel, including every GPP app) reports a
     "last_run_reason": null, // e.g. "binding_changed:mouse_x" when it ran
     "memo": {"enabled": true, "hits": 40, "misses": 3, "records": 9,
              "inlined": 0, "effectful": 0, "reexecs": 0, "cutoffs": 0,
-             "evicted": 0, "cold": 0}
+             "evicted": 0, "cold": 0},
+    "last_ms": 12.8,         // cost of the last frame that ran; null before any
+    "total_ms": 161.3        // of all frames that ran: / frames_run = the mean
   }
 }
 ```
@@ -206,6 +208,14 @@ recent frame ran (`no_record`, `forced`, `binding_changed:<name>`,
 `host_data_changed`, `state_unsettled`, `rng_consumed`, `resources_changed`)
 and is null when it was skipped — a panel that keeps running while nothing
 moves says which binding keeps changing.
+
+`last_ms` and `total_ms` (feature `state.panel-frame-ms`) are Garden's own
+wall-clock timing of the script frames, so "what does a frame cost" is one
+read rather than timing a `POST /tick` from outside. Only frames that ran
+count: a gate-skipped frame costs next to nothing and leaves `last_ms` alone,
+so the figure after a batch of ticks is still the last real frame. They are
+measurements, not counters: expect noise, and a debug build's numbers are
+several times a release build's.
 
 `panel.values` is the hook for testing interactive panels: the last value
 bound to every named term the frame evaluated, so a panel's logical state
@@ -572,6 +582,35 @@ input was applied, and an immediately following `GET /screenshot` reflects it,
 including panel state that takes an extra frame or two to propagate. Not
 covered: data a GPP panel fetches asynchronously from its subprocess. Poll
 `/state` until the panel's `values` show it.
+
+**`?settle=idle`: capture an animation at rest.** Settle passes do not advance
+time, so a transition a script eases over `dt()` (a zoom, a slide, a fade it
+keeps alive with `request_frame()`) is captured wherever the last injected
+event left it: usually its first frame. `GET /screenshot?settle=idle` (and
+`/scene`, `/capture`; feature `debug.capture-settle-idle`) settles as above,
+then steps every panel at 1/60 s until no panel's frame calls
+`request_frame()` / `animating()`:
+
+```bash
+curl -s -X POST 127.0.0.1:$PORT/mouse -d '{"op":"scroll","x":400,"y":300,"lines":-9}'
+curl -s "127.0.0.1:$PORT/screenshot?settle=idle" -o zoomed.png   # the zoom has landed
+```
+
+- The steps are `POST /tick {"n": 1}` exactly, so the panels move onto the
+  [virtual clock](#stepping-frames-and-resetting-panels) and script time
+  advances by 1/60 s per step. That is the point (the capture is the same on
+  every run) but it is a capture that changes panel state, unlike the default.
+- "Idle" is the script's own word. A panel that moves without asking for
+  frames (it reads `time()` and relies on the wake window) is not waited for;
+  drive it with `POST /tick`.
+- A panel that always asks (a spinner, a running game) never goes idle. The
+  loop stops after 600 steps (ten seconds of script time) and captures that.
+- A JSON capture reports what happened as
+  `"settle": {"mode": "idle", "frames": 14, "idle": true}`: the steps taken,
+  and whether idle was reached before the cap. A PNG carries no such report;
+  ask `/scene?settle=idle` first if a test needs it.
+
+`settle=steady` names the default.
 
 Every scene build gets a global frame number, monotonically increasing for the
 app's lifetime (unlike a panel's `frame`, which resets when its script

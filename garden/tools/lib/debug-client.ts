@@ -49,6 +49,11 @@ export interface PanelFrameStats {
     evicted: number;
     cold: number;
   };
+  /** Wall-clock cost of the most recent frame that ran the script; null before
+   *  any has (feature `state.panel-frame-ms`). */
+  last_ms?: number | null;
+  /** Summed cost of every frame that ran; `total_ms / frames_run` is the mean. */
+  total_ms?: number;
 }
 
 /** A text selection as `/state` and the input acknowledgments report it. */
@@ -227,6 +232,9 @@ export interface SceneReply {
   /** The clear colour, RGBA. */
   bg?: [number, number, number, number];
   frame?: number;
+  /** Present under `settle=idle`: the frames stepped per panel, and whether
+   *  every panel stopped asking for one before the cap. */
+  settle?: { mode: "idle"; frames: number; idle: boolean };
   /** Present under `pane=`: which pane, and its rect in window coordinates. */
   pane?: { index: number; rect: Rect };
 }
@@ -431,8 +439,10 @@ export class DebugClient {
     return this.post<PanelResetReply>("/panel/reset", {});
   }
 
-  scene(): Promise<SceneReply> {
-    return this.getJson("/scene");
+  /** `settle: "idle"` also steps panels until none calls `request_frame()`
+   *  (feature `debug.capture-settle-idle`). */
+  scene(opts: { settle?: "steady" | "idle" } = {}): Promise<SceneReply> {
+    return this.getJson(opts.settle ? `/scene?settle=${opts.settle}` : "/scene");
   }
 
   /** `GET /scene?find=text:…`: the text runs matching `text` exactly (trimmed),
@@ -573,8 +583,8 @@ export class DebugClient {
 
   /** GET /screenshot: writes the PNG to `path`, returns the X-Garden-Frame
    *  header the capture carries (or undefined when the header is missing). */
-  async screenshot(path: string): Promise<number | undefined> {
-    const res = await fetch(this.base + "/screenshot");
+  async screenshot(path: string, opts: { settle?: "steady" | "idle" } = {}): Promise<number | undefined> {
+    const res = await fetch(this.base + (opts.settle ? `/screenshot?settle=${opts.settle}` : "/screenshot"));
     const header = res.headers.get("x-garden-frame");
     await writeFile(path, Buffer.from(await res.arrayBuffer()));
     return header === null ? undefined : Number(header);

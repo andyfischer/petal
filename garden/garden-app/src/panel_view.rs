@@ -483,6 +483,18 @@ pub struct PanelView {
     /// (commands or error text) — the steadiness signal
     /// [`App::settle_panels`](crate::app::App::settle_panels) converges on.
     last_tick_changed: bool,
+    /// How long the most recent frame that ran the script took, in
+    /// milliseconds (`None` until one has). A gate-skipped frame leaves it.
+    last_frame_ms: Option<f64>,
+    /// The summed duration of every frame that ran the script, so a tool can
+    /// divide by `frames_run` for a mean.
+    total_frame_ms: f64,
+    /// Whether the frame now on screen called `request_frame()`/`animating()`:
+    /// the script's own word that it is mid-motion, which is what
+    /// [`App::settle_panels_idle`](crate::app::App::settle_panels_idle) steps
+    /// until it stops. A skipped frame keeps the claim of the frame it stands
+    /// in for; a frame that raised drops it.
+    last_frame_animating: bool,
     /// Every named binding of the last **successful** frame, as JSON keyed by
     /// (function-qualified) name — Petal's observation buffer, surfaced to the
     /// debug server so an interactive panel's logical state is assertable.
@@ -689,6 +701,9 @@ impl PanelView {
             last_activity: now,
             cmds: Vec::new(),
             last_tick_changed: false,
+            last_frame_ms: None,
+            total_frame_ms: 0.0,
+            last_frame_animating: false,
             observed: serde_json::Map::new(),
             observed_frame: -1,
             partial_observed: None,
@@ -1495,8 +1510,22 @@ impl PanelView {
     /// why the last one ran, memo hits and misses) as `/state` reports them
     /// under `panel.frame_stats`. Cumulative since this host was created, so a
     /// hot reload (which builds a new host) starts them over.
+    ///
+    /// `last_ms` and `total_ms` are this view's own wall-clock timing of the
+    /// frames that ran the script (a gate-skipped frame costs next to nothing
+    /// and is not counted): `last_ms` the most recent one, `null` before any;
+    /// `total_ms / frames_run` the mean.
     pub fn frame_stats_json(&self) -> serde_json::Value {
-        self.host.frame_stats().to_json()
+        let mut stats = self.host.frame_stats().to_json();
+        stats["last_ms"] = serde_json::json!(self.last_frame_ms);
+        stats["total_ms"] = serde_json::json!(self.total_frame_ms);
+        stats
+    }
+
+    /// Whether the frame on screen asked for another one (`request_frame()` /
+    /// `animating()`). See [`App::settle_panels_idle`](crate::app::App::settle_panels_idle).
+    pub fn is_animating(&self) -> bool {
+        self.last_frame_animating
     }
 
     /// The script's live `state` variables as a JSON map keyed by name — the
@@ -1627,7 +1656,14 @@ impl PanelView {
                 self.host.note_host_data_changed();
             }
         }
-        match self.host.frame(dt, self.frame_count) {
+        let started = Instant::now();
+        let frame = self.host.frame(dt, self.frame_count);
+        if !self.host.last_frame_skipped() {
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            self.last_frame_ms = Some(ms);
+            self.total_frame_ms += ms;
+        }
+        match frame {
             Ok(cmds) if self.host.last_frame_skipped() => {
                 // Nothing ran: the commands, observations, key claims and
                 // text views of the last frame all stand. A frame that failed
@@ -1652,7 +1688,8 @@ impl PanelView {
                 // which otherwise freeze mid-motion and read as a hang. The
                 // claim covers only this frame, so the panel sleeps again as
                 // soon as the motion stops asking.
-                if self.host.take_animating() {
+                self.last_frame_animating = self.host.take_animating();
+                if self.last_frame_animating {
                     self.last_activity = Instant::now();
                 }
                 let emitted = self.host.take_emitted();

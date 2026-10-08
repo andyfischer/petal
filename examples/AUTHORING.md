@@ -109,7 +109,11 @@ frame got. A key missing because the frame blew up is not the same as a branch
 that never ran.
 
 `/screenshot` and `/scene` settle panel frames before answering, so input
-followed by a capture needs no sleep.
+followed by a capture needs no sleep. The settle does not advance time: a
+transition the script eases under `request_frame()` is captured at its first
+frame. Add `?settle=idle` to run it to rest first (`/screenshot?settle=idle`),
+or `POST /tick` it yourself. `panel.frame_stats.last_ms` in `/state` is what
+the last frame cost.
 
 ### Driving it
 

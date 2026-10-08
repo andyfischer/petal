@@ -577,6 +577,42 @@ impl App {
         }
     }
 
+    /// `?settle=idle` on a capture: [`settle_panels`](Self::settle_panels), then
+    /// step every panel at 1/60 s until none asks for another frame, so a
+    /// transition a script eases over `dt()` under `request_frame()` is
+    /// captured where it comes to rest rather than wherever the last injected
+    /// event left it. Settle passes run at `dt ≈ 0` and cannot do this.
+    ///
+    /// The steps are `POST /tick {"n": 1}` exactly, so they share its contract:
+    /// each panel moves onto the virtual clock and the result is reproducible.
+    /// "Idle" is the script's own word — the frame on screen did not call
+    /// `request_frame()`/`animating()` — so a panel that moves without asking
+    /// (it reads `time()` inside the wake window) is not waited for; `/tick`
+    /// it. Returns the frames stepped per panel and whether idle was reached
+    /// before `IDLE_MAX_FRAMES` (a spinner that always asks never is; the
+    /// capture is then simply ten seconds on).
+    pub fn settle_panels_idle(&mut self) -> (u32, bool) {
+        /// The `/tick` cap: ten seconds of script time at `IDLE_DT`.
+        const IDLE_MAX_FRAMES: u32 = 600;
+        const IDLE_DT: f64 = 1.0 / 60.0;
+        self.settle_panels();
+        let animating = |app: &Self| {
+            app.panes
+                .iter()
+                .filter_map(|pane| pane.panel.as_ref())
+                .any(|panel| panel.is_animating())
+        };
+        let mut frames = 0;
+        while animating(self) {
+            if frames == IDLE_MAX_FRAMES {
+                return (frames, false);
+            }
+            self.advance_panels(1, IDLE_DT, true);
+            frames += 1;
+        }
+        (frames, true)
+    }
+
     /// Advance every panel by `n` frames of exactly `dt` seconds each, ignoring
     /// the sleep/wake window — the debug server's `POST /tick`. Deterministic
     /// panel time for a harness driving a game or an animation, which otherwise

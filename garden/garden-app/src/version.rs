@@ -275,6 +275,13 @@ pub const HOST_FEATURES: &[&str] = &[
     // `/state`'s `identity.freshness`: whether this binary is behind the
     // checkout it was built from (and a startup stderr warning when it is).
     "state.identity-freshness",
+    // `/state`'s `panes[].panel.frame_stats` carries `last_ms` and `total_ms`:
+    // the wall-clock cost of the frames that ran the script.
+    "state.panel-frame-ms",
+    // `GET /capture?settle=idle` (and `/screenshot`, `/scene`): step panels
+    // until none calls `request_frame()`, so an eased transition is captured
+    // at rest.
+    "debug.capture-settle-idle",
 ];
 
 /// Is `name` a feature of this build? The in-process form of the check a

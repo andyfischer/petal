@@ -241,7 +241,12 @@ impl App {
                     json!({"ok": true, "seed": seed, "panels": count}),
                 ))
             }
-            DebugCmd::Capture { pane, format, find } => self.capture(pane, format, find, capture),
+            DebugCmd::Capture {
+                pane,
+                format,
+                find,
+                settle,
+            } => self.capture(pane, format, find, settle, capture),
             DebugCmd::Batch { steps } => Ok(Reply::Json(self.run_batch(steps, capture))),
             DebugCmd::Windows => Ok(Reply::Json(capture.windows(self))),
             DebugCmd::Frame { min } => {
@@ -360,12 +365,15 @@ impl App {
     /// cannot produce, settle panel frames so the capture reflects all
     /// previously injected input — a frontend may answer several requests
     /// back-to-back with no tick between them — build the scene once, then
-    /// serialize it and stamp the frame.
+    /// serialize it and stamp the frame. `?settle=idle` settles further, to
+    /// the end of any script-requested animation; a JSON reply then reports
+    /// how under `settle`.
     fn capture(
         &mut self,
         pane: Option<usize>,
         format: Option<debug::CaptureFormat>,
         find: Option<debug::SceneFind>,
+        settle: debug::Settle,
         capture: &mut dyn Capture,
     ) -> Result<Reply, String> {
         use debug::CaptureFormat;
@@ -386,7 +394,13 @@ impl App {
             }
             _ => {}
         }
-        self.settle_panels();
+        let idle = match settle {
+            debug::Settle::Steady => {
+                self.settle_panels();
+                None
+            }
+            debug::Settle::Idle => Some(self.settle_panels_idle()),
+        };
         let scene = self.build_scene();
         if format == Some(CaptureFormat::Json) {
             let view = self.scene_view(pane)?;
@@ -395,6 +409,9 @@ impl App {
                 None => scene_json_view(&scene, view),
             };
             json["frame"] = json!(self.frame());
+            if let Some((frames, idle)) = idle {
+                json["settle"] = json!({"mode": "idle", "frames": frames, "idle": idle});
+            }
             return Ok(Reply::Json(json));
         }
         let viewport = self.viewport();
@@ -1796,6 +1813,82 @@ mod tests {
         assert_eq!(s["last_run_reason"], "state_unsettled", "{s}");
     }
 
+    /// `frame_stats.last_ms` / `total_ms` time the frames that ran the script;
+    /// a gate-skipped frame leaves them alone.
+    #[test]
+    fn state_reports_panel_frame_time() {
+        let (mut app, _f) = panel_app("let shown = 1\n");
+        let stats = |app: &mut App| {
+            panel_of(&state_with(app, "/state?select=panes.*.panel.frame_stats"))["frame_stats"]
+                .clone()
+        };
+        let first = stats(&mut app);
+        let last = first["last_ms"].as_f64().expect("a frame has run");
+        assert!(last >= 0.0 && first["total_ms"].as_f64().unwrap() >= last, "{first}");
+
+        // An unchanging panel is skipped from here on: nothing more is timed.
+        let run = first["frames_run"].as_u64().unwrap();
+        app.advance_panels(10, 0.016, true);
+        let later = stats(&mut app);
+        if later["frames_run"].as_u64().unwrap() == run {
+            assert_eq!(later["last_ms"], first["last_ms"], "{later}");
+            assert_eq!(later["total_ms"], first["total_ms"], "{later}");
+        }
+    }
+
+    /// `?settle=idle` runs a script-requested animation to its end before the
+    /// capture; the default settle (`dt ≈ 0`) leaves it where it was.
+    #[test]
+    fn capture_settle_idle_runs_requested_frames_out() {
+        // Eases `x` to 100 over half a second of `dt()`, asking for frames
+        // only while it is still moving.
+        let source = "state x = 0.0\n\
+                      if x < 100.0 then\n\
+                        x = min(100.0, x + 200.0 * dt())\n\
+                        request_frame()\n\
+                      end\n\
+                      let shown = x\n\
+                      draw_rect(x, 0, 10, 10, 1, 2, 3)\n";
+        let scene = |app: &mut App, path: &str| {
+            let cmd = crate::debug::route_for_test("GET", path, b"").expect("routes");
+            match app.handle_debug(cmd).expect("scene") {
+                Reply::Json(v) => v,
+                _ => panic!("/scene answers JSON"),
+            }
+        };
+        let x_of = |app: &mut App| {
+            panel_of(&state_with(app, "/state"))["values"]["shown"]
+                .as_f64()
+                .unwrap()
+        };
+
+        let (mut app, _f) = panel_app(source);
+        let steady = scene(&mut app, "/scene");
+        assert!(steady.get("settle").is_none(), "{steady}");
+        assert!(x_of(&mut app) < 100.0, "the default settle does not advance time");
+
+        let idle = scene(&mut app, "/scene?settle=idle");
+        assert_eq!(idle["settle"]["mode"], "idle");
+        assert_eq!(idle["settle"]["idle"], true, "{}", idle["settle"]);
+        let frames = idle["settle"]["frames"].as_u64().unwrap();
+        // Half a second is 30 steps of 1/60 s, less whatever wall-clock `dt`
+        // the frames before this capture already spent.
+        assert!((1..=31).contains(&frames), "at most 30 steps of 1/60 s: {frames}");
+        assert_eq!(x_of(&mut app), 100.0);
+
+        // Already at rest: nothing is stepped.
+        let again = scene(&mut app, "/scene?settle=idle");
+        assert_eq!(again["settle"]["frames"], 0);
+
+        // A panel that always asks stops at the cap and says so.
+        let (mut spinner, _g) = panel_app("request_frame()\ndraw_rect(0, 0, 10, 10, 1, 2, 3)\n");
+        let capped = scene(&mut spinner, "/scene?settle=idle");
+        assert_eq!(capped["settle"]["idle"], false);
+        assert_eq!(capped["settle"]["frames"], 600);
+
+        assert!(crate::debug::route_for_test("GET", "/screenshot?settle=soon", b"").is_err());
+    }
+
     /// A ticked panel keeps ticking past the wake window: `/tick` ignores it
     /// (and re-stamps activity), so a long deterministic run doesn't stall.
     #[test]
@@ -2035,6 +2128,7 @@ mod tests {
             pane,
             format: None,
             find: None,
+            settle: debug::Settle::default(),
         }
     }
 
@@ -2131,6 +2225,7 @@ mod tests {
             pane: Some(0),
             format,
             find: None,
+            settle: debug::Settle::default(),
         };
         // JSON needs no raster at all, on any frontend.
         match app.handle_debug(json(Some(CaptureFormat::Json))) {
@@ -2165,6 +2260,7 @@ mod tests {
                 pane: Some(99),
                 format: Some(CaptureFormat::Json),
                 find: None,
+                settle: debug::Settle::default(),
             })
             .err()
             .expect("bad pane");
@@ -2222,6 +2318,7 @@ mod tests {
                 pane: None,
                 format: Some(debug::CaptureFormat::Json),
                 find: None,
+                settle: debug::Settle::default(),
             })
             .unwrap()
         {
@@ -2233,6 +2330,7 @@ mod tests {
                 pane: Some(0),
                 format: Some(debug::CaptureFormat::Json),
                 find: None,
+                settle: debug::Settle::default(),
             })
             .unwrap()
         {

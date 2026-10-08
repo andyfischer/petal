@@ -13,9 +13,9 @@
   "frame": 0,
   "identity": {
     "build": {
-      "build_date": "2026-09-22",
-      "commit": "66fd46f",
-      "commit_date": "2026-09-21",
+      "build_date": "2026-10-08",
+      "commit": "6b12cb8",
+      "commit_date": "2026-10-07",
       "dirty": true,
       "prelude_level": 7,
       "version": "0.1.0"
@@ -23,7 +23,7 @@
     "cwd": "<cwd>",
     "freshness": {
       "changed": 0,
-      "head": "66fd46f",
+      "head": "6b12cb8",
       "stale": false,
       "warning": ""
     },
@@ -31,11 +31,11 @@
     "panels": [
       {
         "pane": 1,
-        "path": "<tmp>/.tmpcVzSOP.ptl",
-        "script": "<tmp>/.tmpcVzSOP.ptl"
+        "path": "<tmp>/.tmp5b1EyE.ptl",
+        "script": "<tmp>/.tmp5b1EyE.ptl"
       }
     ],
-    "pid": 83823,
+    "pid": 38569,
     "port": null
   },
   "lsp": {
@@ -53,7 +53,7 @@
         "line": 0
       },
       "dirty": false,
-      "file": "<tmp>/.tmpzA1ISl.txt",
+      "file": "<tmp>/.tmp9jXUTI.txt",
       "index": 0,
       "kind": "editor",
       "line_count": 3,
@@ -71,7 +71,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": "<tmp>/.tmpzA1ISl.txt",
+      "title": "<tmp>/.tmp9jXUTI.txt",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true
@@ -97,6 +97,7 @@
           "frames_skipped": 1,
           "gate": true,
           "last_frame_skipped": true,
+          "last_ms": 37.776583,
           "last_run_reason": null,
           "memo": {
             "cold": 0,
@@ -109,7 +110,8 @@
             "misses": 0,
             "records": 2,
             "reexecs": 0
-          }
+          },
+          "total_ms": 37.776583
         },
         "input": {
           "click_count": 0,
@@ -135,8 +137,10 @@
           ],
           "text": ""
         },
-        "script": "<tmp>/.tmpcVzSOP.ptl",
+        "script": "<tmp>/.tmp5b1EyE.ptl",
         "values": {
+          "draw_rect.a": 255,
+          "draw_text.a": 255,
           "hits": 0,
           "label": "Save",
           "seen": 0
@@ -157,7 +161,7 @@
       "scroll_sub": 0,
       "scroll_top": 0,
       "selection": null,
-      "title": ".tmpcVzSOP.ptl",
+      "title": ".tmp5b1EyE.ptl",
       "trace_highlight": null,
       "visible_lines": 34,
       "wrap": true

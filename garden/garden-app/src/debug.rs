@@ -58,7 +58,9 @@
 //! GET  /screenshot   = /capture: PNG of a complete, settled frame rendered offscreen:
 //!                    panel frames are run until their output is steady, so
 //!                    the capture reflects all previously injected input; the
-//!                    captured frame number is in the X-Garden-Frame header
+//!                    captured frame number is in the X-Garden-Frame header.
+//!                    ?settle=idle also steps panels at 1/60 s until none
+//!                    calls request_frame(), so an easing is captured at rest
 //! POST /key          {"key": "s", "mods": ["cmd"]}   named keys: enter, tab,
 //!                    space, backspace, delete, escape, left/right/up/down,
 //!                    home, end, pageup, pagedown. Modifier names: cmd/super/
@@ -411,6 +413,9 @@ pub enum DebugCmd {
         /// so a test can click a label instead of hard-coding where it was
         /// last drawn.
         find: Option<SceneFind>,
+        /// `?settle=steady|idle`: how far panel frames are run before the
+        /// scene is built.
+        settle: Settle,
     },
     /// Advance every panel by `n` frames of `dt` seconds each, ignoring the
     /// sleep/wake window — deterministic panel time for animation and game
@@ -874,6 +879,30 @@ impl SceneFind {
     }
 }
 
+/// `GET /capture?settle=`: how far panel frames are run before a capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Settle {
+    /// The default contract: back-to-back passes at `dt ≈ 0` until no panel's
+    /// drawn output changes. Injected input is reflected; time-based motion
+    /// is not advanced.
+    #[default]
+    Steady,
+    /// `Steady`, then step every panel at 1/60 s until none asks for another
+    /// frame (`request_frame()` / `animating()`), so an eased transition is
+    /// captured at rest. See [`crate::app::App::settle_panels_idle`].
+    Idle,
+}
+
+impl Settle {
+    fn parse(name: &str) -> Option<Settle> {
+        match name {
+            "steady" => Some(Settle::Steady),
+            "idle" => Some(Settle::Idle),
+            _ => None,
+        }
+    }
+}
+
 /// What `GET /capture?format=` serializes the settled frame as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureFormat {
@@ -948,10 +977,20 @@ fn route_capture(
         }
         (_, f) => f,
     };
+    let settle = match query.iter().find(|(k, _)| k == "settle") {
+        Some((_, v)) => Settle::parse(v).ok_or_else(|| {
+            (
+                400,
+                format!("bad settle={v:?} in {path} (expected steady or idle)"),
+            )
+        })?,
+        None => Settle::default(),
+    };
     Ok(DebugCmd::Capture {
         pane: pane_selector(query, path)?,
         format,
         find,
+        settle,
     })
 }
 

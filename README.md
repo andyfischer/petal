@@ -136,8 +136,6 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [Architecture](docs/dev/Architecture.md) | How the implementation works |
 | [Goals](docs/dev/goals.md) | The vision and the remaining work |
 
-The full index is in [docs/README.md](docs/README.md).
-
 ## Building a full app with Petal
 
 The repo comes with "integrations" and "apps", which come together in layers:
@@ -152,23 +150,22 @@ Petal Core  →  Integrations  →  Apps
 
 ### Integrations
 
-An **integration** is a language binding of Petal code to some native platform. These can be used as part of an application
-but they aren't full runnable apps on their own.
+An **integration** is a binding of Petal script execution to a native platform. These can be used as part of building a full application.
 
 The repo contains:
 
   | Integration | Description |
   |-------------|-------------|
   | [petal-desktop-sdl](integrations/petal-desktop-sdl/README.md) | SDL2 desktop host with hot reload. See the [game dev guide](integrations/petal-desktop-sdl/docs/game-dev-guide.md) and [agent protocol](integrations/petal-desktop-sdl/docs/agent-protocol.md) |
-  | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly host that renders DOM from JSX-like syntax |
-  | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that renders to an HTML canvas |
-  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal (with petal-ui) in a C/C++ program. See [embedding-c.md](docs/embedding-c.md) |
+  | [petal-web-html](integrations/petal-web-html/README.md) | WebAssembly host that loads Petal and renders to HTML / DOM |
+  | [petal-web-canvas](integrations/petal-web-canvas/README.md) | WebAssembly host that loads Petal and renders graphics to a canvas |
+  | [petal-c-bridge](integrations/petal-c-bridge/README.md) | C ABI and C++20 wrapper for embedding Petal. See [embedding-c.md](docs/embedding-c.md) |
 
 ### Apps
 
 An "app" is a full runnable application that loads Petal source and does something with it.
 
-  | App | Built on | Description |
+  | App | Built with | Description |
   |-----|----------|-------------|
   | [Garden](garden/README.md) | petal-ui | IDE and text editor built for Petal |
   | [diagram-canvas](examples/custom-apps/diagram-canvas/README.md) | petal-web-canvas | Diagram visualization with a live source editor |

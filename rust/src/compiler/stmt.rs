@@ -89,8 +89,8 @@ impl Compiler {
                 name,
                 class,
                 params,
+                ret,
                 body,
-                ..
             } => {
                 // A hoisted declaration was already compiled by the prescan,
                 // ahead of the file's first statement — compiling it again
@@ -110,6 +110,7 @@ impl Compiler {
                     optional,
                     body,
                     stmt_span.end.offset,
+                    !crate::ast::declares_nil(ret.as_ref()),
                 );
                 // A declaration's term is where the declaration is written.
                 // Without this every `<function>` in a provenance chain reads

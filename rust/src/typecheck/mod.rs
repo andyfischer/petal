@@ -947,7 +947,12 @@ impl<'a> Checker<'a> {
                     .map(|rt| (rt, name.clone()));
                 self.ret_stack.push(ctx);
                 let (tail_ty, tail_span) = self.check_block_body(body);
-                self.check_return_type(tail_ty, tail_span.unwrap_or(stmt.span));
+                // A `-> nil` function has no implicit return — its tail is a
+                // statement whose value is dropped — so there is nothing to
+                // hold to the declared type. Its explicit `return`s still are.
+                if !crate::ast::declares_nil(ret.as_ref()) {
+                    self.check_return_type(tail_ty, tail_span.unwrap_or(stmt.span));
+                }
                 if self.collect_inferences && ret.is_none() {
                     self.inferences.note_return(
                         key,

@@ -117,6 +117,8 @@ impl Compiler {
     /// *callable value* — method registration — must use the returned term, not
     /// the individual variant.
     /// `optional` is how many trailing `params` have a default value.
+    /// `tail_value` is false for a declaration written `-> nil` (see
+    /// [`Self::compile_function`]).
     pub(super) fn compile_fn_decl(
         &mut self,
         name: &str,
@@ -124,6 +126,7 @@ impl Compiler {
         optional: usize,
         body: &[Stmt],
         def_end: u32,
+        tail_value: bool,
     ) -> Option<TermId> {
         // `overloaded_fns` is collected from a module's *top-level* statements
         // only, but every `fn` declaration reaches this point. A nested
@@ -145,6 +148,7 @@ impl Compiler {
                 optional,
                 body,
                 Some(def_end),
+                tail_value,
             );
             // Module functions carry a qualified display name ("ui::button")
             // so root-frame harvesting exposes them to `Env::call_function`
@@ -157,8 +161,14 @@ impl Compiler {
 
         // Overloaded function: compile with internal name "name#arity"
         let internal_name = format!("{}#{}", name, params.len());
-        let closure_tid =
-            self.compile_function(Some(internal_name), params, optional, body, Some(def_end));
+        let closure_tid = self.compile_function(
+            Some(internal_name),
+            params,
+            optional,
+            body,
+            Some(def_end),
+            tail_value,
+        );
         self.record_fn_closure(closure_tid, params.len());
         self.overload_variants
             .entry(name.to_string())
@@ -317,6 +327,12 @@ impl Compiler {
     /// `optional` is how many trailing `params` have a default value. The
     /// defaults themselves are already the head of `body` (the desugar pass put
     /// them there); all this does is give each one the flag it tests.
+    ///
+    /// `tail_value` says the body's last statement is the function's implicit
+    /// return value. It is false only for a `fn` declared `-> nil`, whose body
+    /// is compiled entirely in statement position and yields nil (see
+    /// docs/implicit-return-values.md). A lambda has no return-type slot, so it
+    /// always passes true.
     pub(super) fn compile_function(
         &mut self,
         name: Option<String>,
@@ -324,6 +340,7 @@ impl Compiler {
         optional: usize,
         body: &[Stmt],
         def_end: Option<u32>,
+        tail_value: bool,
     ) -> TermId {
         self.closure_def_ends.push(def_end);
         // Names the body's `state` declarations by their enclosing functions
@@ -351,7 +368,16 @@ impl Compiler {
         // Compile body (this may discover captures). The last statement is in
         // value position: a function with no explicit `return` yields its body
         // block's last term.
-        self.compile_stmts(body, true);
+        self.compile_stmts(body, tail_value);
+        // A `-> nil` function has no implicit return: nothing in its body was
+        // compiled in value position (so a trailing `for` built no list), and
+        // the body block ends in a nil of its own rather than in whatever the
+        // last statement happened to leave behind. A body that already ends in
+        // `return` never reaches this point, so it gets no dead constant.
+        if !tail_value && !matches!(body.last().map(|s| &s.kind), Some(StmtKind::Return(_))) {
+            let nil_cid = self.constants.intern(ConstantValue::Nil);
+            self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
+        }
 
         self.closure_def_ends.pop();
         self.pop_fn_name_chain();

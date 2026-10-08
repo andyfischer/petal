@@ -256,6 +256,15 @@ impl TypeAnn {
     }
 }
 
+/// Is this declared return type `-> nil`? Such a function has no implicit
+/// return: its body is compiled with the tail in statement position, and the
+/// type checker does not hold the tail to the declared type. Any other
+/// annotation, or none, leaves the tail as the function's value. See
+/// docs/implicit-return-values.md.
+pub fn declares_nil(ret: Option<&TypeAnn>) -> bool {
+    ret.is_some_and(|ann| ann.resolved == Some(crate::types::Type::Nil))
+}
+
 /// One field of a `class` declaration: `x: int`. The annotation is optional
 /// (an un-annotated field is `any`) and is kept verbatim even when the name is
 /// unrecognized, exactly like a parameter's.

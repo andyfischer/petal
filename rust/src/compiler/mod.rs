@@ -1689,8 +1689,8 @@ impl Compiler {
                 name,
                 class,
                 params,
+                ret,
                 body,
-                ..
             } = &stmt.kind
             else {
                 continue;
@@ -1703,8 +1703,14 @@ impl Compiler {
             // emitted: the capture-lag check compares it against the source
             // position of a later rebind, which hoisting must not move.
             let optional = params.iter().filter(|p| p.has_default()).count();
-            let bound =
-                self.compile_fn_decl(name, &param_names, optional, body, stmt.span.end.offset);
+            let bound = self.compile_fn_decl(
+                name,
+                &param_names,
+                optional,
+                body,
+                stmt.span.end.offset,
+                !crate::ast::declares_nil(ret.as_ref()),
+            );
             if let Some(tid) = bound {
                 self.source_map.add(tid, stmt.span);
             }

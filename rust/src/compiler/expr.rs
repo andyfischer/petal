@@ -248,11 +248,18 @@ impl Compiler {
                 else_body,
             } => self.compile_if(condition, then_body, else_body.as_ref(), value_used, span),
 
-            ExprKind::Match { subject, arms } => self.compile_match(subject, arms, span),
+            ExprKind::Match { subject, arms } => {
+                self.compile_match(subject, arms, value_used, span)
+            }
 
             // Value-position `for`: collect each iteration's last expression
             // into a list (see `compile_for`). `while` has no expression form.
-            ExprKind::For { var, iter, body } => self.compile_for(var, iter, body, true, span),
+            // An expression-form `for` whose value is discarded — the arm of a
+            // statement-level `match`, the last line of a discarded block —
+            // stays a side-effect loop.
+            ExprKind::For { var, iter, body } => {
+                self.compile_for(var, iter, body, value_used, span)
+            }
 
             ExprKind::List(elements) => {
                 let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
@@ -320,7 +327,8 @@ impl Compiler {
             ExprKind::Lambda { params, body } => {
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
                 let optional = params.iter().filter(|p| p.has_default()).count();
-                self.compile_function(None, &param_names, optional, body, None)
+                // A lambda has no return-type slot: its tail is always its value.
+                self.compile_function(None, &param_names, optional, body, None, true)
             }
 
             ExprKind::Element {
@@ -589,7 +597,16 @@ impl Compiler {
         branch_tid
     }
 
-    fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm], span: SourceSpan) -> TermId {
+    /// `value_used` is threaded down to the arm bodies, as [`Self::compile_if`]
+    /// does for its branches: a `match` whose value is consumed puts each arm's
+    /// tail in value position, a discarded one does not.
+    fn compile_match(
+        &mut self,
+        subject: &Expr,
+        arms: &[MatchArm],
+        value_used: bool,
+        span: SourceSpan,
+    ) -> TermId {
         let subj_tid = self.compile_expr(subject);
 
         // Pre-scan all arm bodies for names that will be rebound,
@@ -634,6 +651,7 @@ impl Compiler {
                     c.scope_bind(var_name.clone(), phantom);
                 }
                 c.seed_arm_entry_copies(body_block, &phis);
+                c.value_used = value_used;
                 c.compile_expr(&arm.body);
                 c.carry_slots.pop();
             });

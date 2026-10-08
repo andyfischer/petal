@@ -113,16 +113,16 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | Directory | Description |
 |-----------|-------------|
 | [`rust/`](rust/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
-| [`docs/`](docs/README.md) | Documentation for using Petal, and [`docs/dev/`](docs/dev/) for working on it |
-| [`examples/`](examples/README.md) | Collection of runnable examples using Petal |
-| [`petal-ui/`](petal-ui/README.md) | The UI layer shared by every host: input events, draw commands, and the `ui` prelude module |
-| [`petal-query/`](petal-query/README.md) | Async data layer for UI panels: `query(kind, arg)` handlers with a host-side cache |
-| [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal itself — [`bloom`](petal-libs/bloom/), the UI component library |
-| [`integrations/`](integrations/) | Hosts that embed Petal for a platform: desktop SDL, web HTML, web canvas, C/C++ |
-| [`garden/`](garden/README.md) | Garden, a text editor and IDE scripted with Petal |
+| [`integrations/`](integrations/) | Native bindings for Petal |
+| [`garden/`](garden/README.md) | Text editor and IDE built for Petal |
+| [`examples/`](examples/README.md) | Collection of runnable examples |
+| [`docs/`](docs/README.md) | Documentation |
+| [`petal-ui/`](petal-ui/README.md) | Helper library that implements user-interaction primitives |
+| [`petal-query/`](petal-query/README.md) | Helper library that implements asynchronous data fetching |
+| [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal |
 | [`editor-support/`](editor-support/README.md) | Files for IDEs, syntax definitions, etc. |
-| [`tools/`](tools/) | TypeScript tooling: dev scripts and MCP servers |
-| [`test/`](test/README.md) | The vitest integration suite, test corpora, golden files, and benchmarks |
+| [`tools/`](tools/) | Scripts and tooling for development |
+| [`test/`](test/README.md) | Test suite |
 
 ## Documentation
 

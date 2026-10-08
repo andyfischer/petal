@@ -25,15 +25,18 @@ let x = 1   // trailing comment
 
 Identifiers are letters, digits and underscores, not starting with a digit. A
 leading `_` has no special meaning (visibility across files is controlled by
-`export`; see the [Module System](../module-system.md)). By convention it marks
+`pub`; see the [Module System](../module-system.md)). By convention it marks
 an unused or internal name. A lone `_` is the wildcard pattern in `match`.
 
 Reserved keywords:
 
 ```
 let  var  set  get  fn  if  else  elsif  then  for  in  while  match  when  do
-end  return  break  continue  state  enum  import  export  true  false  nil
+end  return  break  continue  state  enum  import  pub  export  true  false  nil
 ```
+
+`export` is the deprecated spelling of `pub`; it stays reserved and keeps
+working.
 
 `as` (in `import ui as u`), `class` (in `class Rect … end`), and `config` (in
 `config let x = …`) are **contextual** — recognised only in those positions,
@@ -153,7 +156,7 @@ config let offset = 4        // a declared tuning knob (see the Language Guide)
 
 `config` marks a binding as a value that direct manipulation may edit (see
 [direct-manipulation.md](../direct-manipulation.md)). It combines with
-`export` (`export config let`) and is not allowed on `var`.
+`pub` (`pub config let`) and is not allowed on `var`.
 
 ### `var`, `set` and `get`
 
@@ -253,7 +256,7 @@ class name is a positional constructor and a type name;
 
 A `class` is top-level only and hoisted, so the constructor and type name are
 usable anywhere in the file. Its name may not be a built-in type name, and it
-is visible to other files only when `export`ed.
+is visible to other files only when marked `pub`.
 
 ```petal
 class Point

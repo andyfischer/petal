@@ -93,7 +93,7 @@ two `register_package` calls over `include_str!`s — so every Garden panel can
 
 | Module | Contents |
 |--------|----------|
-| `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `export import bloom/…: *` |
+| `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `pub import bloom/…: *` |
 | `bloom/motion` | The animation core: `ease_to`, `ease_flag`, `spring`, `enter`, `impulse`, `stagger`, `shake`, easings, rect interpolation |
 | `bloom/theme` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `text_block_in`, `text_cut`, `ts` |
 | `bloom/icon` | 22 vector glyphs, drawn as strokes in a unit box |

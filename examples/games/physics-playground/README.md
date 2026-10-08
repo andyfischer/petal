@@ -151,7 +151,7 @@ EOF
 ## What it exercises
 
 **Language.** A three-file program: `import physics as ph` and
-`import scenes as sc`, with `export fn` / `export let` drawing the line
+`import scenes as sc`, with `pub fn` / `pub let` drawing the line
 between the solver's surface and its internals. The world as a
 structure-of-arrays record of float lists, advanced by one long function that
 rebinds local lists by index (`vx[i] = …`) inside nested `for` and `while`

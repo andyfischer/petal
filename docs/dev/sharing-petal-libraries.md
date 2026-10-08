@@ -21,7 +21,7 @@ possible.** A `state` slot inside a library function is keyed by the whole call
 path, so this is a complete, reusable, animated component:
 
 ```petal
-export fn ease_flag(on, rate)
+pub fn ease_flag(on, rate)
   state v = 0.0            // one animator per *callsite*, not per function
   …
 end
@@ -33,8 +33,8 @@ record threaded through the app. Every other UI toolkit spends its API budget
 on this problem. (See [state-call-paths.md](state-call-paths.md).)
 
 **A facade module re-exports cleanly.** It used to be 130 hand-written lines of
-`export let button = bloom_button.button`; it is now eight lines of
-`export import bloom/button: *` (gap 3). Either way a library can present one
+`pub let button = bloom_button.button`; it is now eight lines of
+`pub import bloom/button: *` (gap 3). Either way a library can present one
 import surface (`import bloom`) over many implementation modules, and — the
 property that matters — a re-export carries a whole overload set, so
 `bloom.button` has both of `bloom/button`'s arities.
@@ -64,7 +64,7 @@ the raw native, or to nothing:
 
 ```petal ignore
 // lib.ptl
-export fn box(r, c)
+pub fn box(r, c)
   draw_rect(r, c)     // Error: Expected int at arg 1, got record
 end                   // — the *native*, not the prelude's record overload
 ```
@@ -129,14 +129,14 @@ internal imports included.
 
 ### 3. There is no re-export form — fixed
 
-The facade *was* 130 lines of `export let x = mod.x`: correct, and it did carry
+The facade *was* 130 lines of `pub let x = mod.x`: correct, and it did carry
 overload sets, but it was a list to keep in sync by hand that said nothing when
-an export was forgotten. `export import` makes it declarative:
+an export was forgotten. `pub import` makes it declarative:
 
 ```petal ignore
-export import bloom/button: *        // every export, whole overload sets
-export import bloom/theme: accent    // a selection — a missing name is an error
-export import bloom/menu             // the module binding itself
+pub import bloom/button: *        // every export, whole overload sets
+pub import bloom/theme: accent    // a selection — a missing name is an error
+pub import bloom/menu             // the module binding itself
 ```
 
 A star also binds the names locally (the facade can use them), is the weakest
@@ -151,8 +151,8 @@ becomes `ink_on`, `NAMES` becomes `ICONS` — are ordinary declarations layered
 over what the stars bound locally:
 
 ```petal ignore
-export import bloom/theme: *
-export let ink_on = on
+pub import bloom/theme: *
+pub let ink_on = on
 ```
 
 The immediate payoff was the thing the hand-written list could not do: two
@@ -230,7 +230,7 @@ already put in scope joins its set by arity:
 
 ```petal ignore
 // lib.ptl — no `import ui` anywhere
-export fn draw_rect(r)               // adds arity 1 to the prelude's set
+pub fn draw_rect(r)               // adds arity 1 to the prelude's set
   ui.draw_rect(r, {r: 9, g: 9, b: 9})
 end
 ```
@@ -256,11 +256,11 @@ that implicit imports reach every module (gap 1), outward is the host prelude.
 The classic two-line default-argument idiom silently changes meaning:
 
 ```petal ignore
-export fn context_menu(area, items)
+pub fn context_menu(area, items)
   context_menu(area, items, {})   // ← the *prelude's* arity 3, not this file's
 end
 
-export fn context_menu(area, items, opts)
+pub fn context_menu(area, items, opts)
   …
 end
 ```
@@ -276,11 +276,11 @@ The library-side fix is to route both arities through a private implementation
 the prelude cannot reach:
 
 ```petal ignore
-export fn context_menu(area, items)
+pub fn context_menu(area, items)
   context_menu_impl(area, items, {})
 end
 
-export fn context_menu(area, items, opts)
+pub fn context_menu(area, items, opts)
   context_menu_impl(area, items, opts)
 end
 

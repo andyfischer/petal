@@ -159,7 +159,7 @@ or contains `@`.
 - **Text editing in Petal.** One `edit_text` function serves all five fields:
   a character-indexed caret, word delete, and for wrapped bodies a wrapper
   that keeps character offsets so the caret can move between display rows.
-- **Language features.** Three modules with `import … as` and `export`;
+- **Language features.** Three modules with `import … as` and `pub`;
   `state`; collecting `for` with `continue` as filter; `match` with block
   arms; overloads by arity (`icons.icon`); spreads and field assignment on
   records; `sort` with a comparator lambda; early `return`.

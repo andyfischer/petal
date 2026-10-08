@@ -263,7 +263,7 @@ counts the arguments written at the call site, without the receiver.
 
 ## Across files
 
-An overloaded name is one binding, so either every variant is `export`ed or
+An overloaded name is one binding, so either every variant is `pub` or
 none is; a mixed group is a compile error. Importing `f` from two modules by
 name is still a collision — a selective import is an explicit request, and two
 of them for one name are ambiguous. See
@@ -279,13 +279,13 @@ one-argument default-colored form:
 
 ```petal ignore
 // lib.ptl — no `import ui` needed; `ui` is the host's implicit import
-export fn draw_rect(r)
+pub fn draw_rect(r)
   ui.draw_rect(r, { r: 9, g: 9, b: 9 })
 end
 
 // every arity is callable here: the one this file added, and the
 // prelude's 2, 3, 7 and 8-argument forms
-export fn paint()
+pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 })
   draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
 end

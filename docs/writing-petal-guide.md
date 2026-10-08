@@ -699,14 +699,14 @@ to rewrite *those* bindings and leave the rest of the program alone.
 config let offset = 10
 ```
 
-**Split files with `import`; declarations are private until `export`ed.**
+**Split files with `import`; declarations are private until marked `pub`.**
 
 ```petal ignore
 // shapes.ptl
-export class Circle
+pub class Circle
   radius: num,
 end
-export fn Circle.area(c: Circle) -> num
+pub fn Circle.area(c: Circle) -> num
   3.14159 * c.radius * c.radius
 end
 
@@ -716,7 +716,7 @@ print(Circle(2).area())
 ```
 
 `import shapes` finds `shapes.ptl` next to the importing file. The rest —
-search paths, what `export` covers, how modules share state — is in the
+search paths, what `pub` covers, how modules share state — is in the
 [Module System](module-system.md).
 
 **Wrap long expressions by ending the line with the operator, not starting the

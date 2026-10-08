@@ -376,7 +376,7 @@ draw_circle(x + offset, 110, 60)
 ```
 
 `config` is a contextual modifier on `let` (usable as an ordinary name
-elsewhere; composes as `export config let`; rejected on `var` — a mutable
+elsewhere; composes as `pub config let`; rejected on `var` — a mutable
 cell is not a knob). It changes nothing about evaluation. What it changes is
 the *default policy*: when a program declares any config binding,
 `propose_edits` treats config bindings as `Configurable` and every other

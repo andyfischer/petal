@@ -25,6 +25,12 @@ token stream, it is lint.** Everything fmt does is re-lexed and checked
 against the original tokens, so fmt can be run blind, on save, over a whole
 tree; lint rules each carry their own argument for why the fix is an identity.
 
+The one exception is the deprecated `export` modifier, which both tools
+rewrite to `pub`: it is a lint rule (`prefer-pub`) because it changes a token,
+and fmt does it too because the two words are one declaration to everything
+after the parser, so a formatter that left the old spelling in place would be
+leaving a non-canonical file. fmt gates it separately (below).
+
 Diagnostics that describe a *bug* rather than a spelling — a discarded pure
 call (`typecheck/unused.rs`), a type mismatch — stay in `petal check`, the way
 Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
@@ -45,8 +51,10 @@ Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
 - Trailing comments keep their column (≥ 1 space from the code); a group of
   consecutive comments at one column moves together.
 
+- `export` → `pub` (the exception above; not whitespace).
+
 **lint** (token-changing, each with a fix): `prefer-let`, `no-redundant-cast`,
-`prefer-match`, `prefer-compound-assign` (§5).
+`prefer-match`, `prefer-compound-assign`, `prefer-pub` (§5).
 
 ## 2. CLI
 
@@ -110,7 +118,10 @@ each later stage's offsets back through the earlier stages' splices.
 ## 4. Safeguards
 
 - **fmt**: re-lexes its output and refuses it unless the token stream is the
-  one it started from (runs of newlines compared as one). The corpus tests
+  one it started from (runs of newlines compared as one). The `export` → `pub`
+  pass runs first and is checked on its own: its output must lex to the
+  original stream with exactly the planned `Export` tokens now `Pub`. The
+  corpus tests
   (`fmt_is_ir_equal_and_idempotent_over_repo_corpus`,
   `fmt_undoes_mangled_indentation_over_repo_corpus`) hold every repo `.ptl` to
   identical IR, idempotence, and undoing an injected indentation mangle.
@@ -120,8 +131,8 @@ each later stage's offsets back through the earlier stages' splices.
   file still compiles after `--fix` and that `--fix` is a fixed point (a second
   `lint` finds nothing).
 - **`--verify`** compiles both sides and compares IR with `ir-equal`.
-  `--verify=ir` (the default) proves formatting and the IR-invisible rule
-  (`prefer-compound-assign`) and accepts the others as expected-to-differ;
+  `--verify=ir` (the default) proves formatting and the IR-invisible rules
+  (`prefer-compound-assign`, `prefer-pub`) and accepts the others as expected-to-differ;
   `--verify=strict` demands IR equality of the whole rewrite. A rewrite that
   cannot be proven exits 3 without writing.
 

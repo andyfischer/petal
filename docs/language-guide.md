@@ -208,7 +208,7 @@ config bindings and leaves the rest of the program alone — dragging the circle
 above edits `offset`, never `x` — and a live-editing host has an honest place
 to render a slider per knob. `config` is contextual (only special immediately
 before `let`), so it remains usable as an ordinary name, and it composes with
-`export` as `export config let`. A mutable `var` cell cannot be `config`.
+`pub` as `pub config let`. A mutable `var` cell cannot be `config`.
 
 ## Types
 
@@ -1733,7 +1733,7 @@ Method dispatch spans the whole program rather than one file: a module can
 declare `fn Rect.area(…)` and every file's rects gain it, and a file can extend
 a class it imported.
 
-The class *name* is an ordinary binding governed by `export`, and it is one
+The class *name* is an ordinary binding governed by `pub`, and it is one
 name covering both positions — exporting a class exports the constructor
 `Point(…)` **and** the type `Point` in an annotation. A class its module does
 not export is private in both. Two modules still may not declare the same class

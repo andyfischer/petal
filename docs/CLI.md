@@ -305,7 +305,8 @@ files found by walking directories (dot-directories, `node_modules` and
 `target` are skipped). A file that does not parse is reported and left alone;
 the rest still run.
 
-fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
+fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)),
+with one exception listed last:
 
 - **Indentation** — 2 spaces per open construct, from the token stream.
 - **Spacing within a line** — one space around binary and assignment operators,
@@ -315,6 +316,8 @@ fmt touches whitespace only (see [dev/linter-plan.md](dev/linter-plan.md)):
   Any other run of blanks becomes one space.
 - **Blank lines** — at most one in a row, none at the start or end of the file,
   exactly one final newline. Trailing whitespace goes.
+- **`export` → `pub`** — the deprecated spelling of the modifier is rewritten.
+  The two words declare the same thing, so the program does not change.
 
 It keeps what the author aligned. A run of spaces that lines a token up with a
 token on the line above or below (a table of records, a column of `=`), a
@@ -324,7 +327,7 @@ survive, moving only as far as the line they hang from moves.
 
 It never wraps lines, reorders anything, or edits strings, raw strings or JSX
 text, and it checks every result: the output must lex to exactly the input's
-tokens, or the file is refused with a `fmt bug` error.
+tokens (an `export` modifier counting as its `pub`), or the file is refused with a `fmt bug` error.
 
 Opt out with `// petal-fmt-ignore` (the next line stays as written),
 `// petal-fmt-off` … `// petal-fmt-on` (a region), or `// petal-fmt-ignore-file`.
@@ -361,6 +364,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`) |
 | `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
+| `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
 afterwards, because a rewritten chain moves code between lines. Every fix is
@@ -385,7 +389,7 @@ works with and without `--fix`.
 | `--verify` (= `--verify=ir`, the default) | Formatting and the IR-invisible rules must not change the IR | Allowed: reported as an expected IR change, file still written |
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
-Formatting and `prefer-compound-assign` are meant to leave the IR unchanged.
+Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
 The cast, `match` and `var` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
@@ -964,7 +968,7 @@ indented two spaces, spans as `@line:col-line:col` (end-exclusive, collapsed
 to `@line:col` for single-character spans). Patterns and type annotations are
 rendered source-like; default facts (`exported: false`, `is_var: false`, an
 absent type annotation) are elided, and modifiers show as words after the
-kind (`Let var c`, `FnDecl export f`). For this source:
+kind (`Let var c`, `FnDecl pub f`). For this source:
 
 ```petal ignore
 fn square(x: number) -> number

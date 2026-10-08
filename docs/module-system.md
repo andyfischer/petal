@@ -68,11 +68,11 @@ since two namespaces may well ship the same file name.
 
 ## Exporting
 
-A module's top-level declarations are private unless marked `export`:
+A module's top-level declarations are private unless marked `pub`:
 
 ```petal ignore
 // ui.ptl
-export fn button(label)      // importable: ui.button, `import ui: button`
+pub fn button(label)         // importable: ui.button, `import ui: button`
   "[" ++ label ++ "]"
 end
 
@@ -81,14 +81,19 @@ fn helper(x)                 // private to ui.ptl
 end
 ```
 
-`export` goes directly before the declaration keyword: `export fn`,
-`export let`, `export var`, `export state`, `export enum`, `export class`.
-An `export enum` exports its variants; an `export class` exports its
-constructor and its type name. `export` in the entry file is allowed but
-does nothing, since nothing imports the entry file.
+`pub` goes directly before the declaration keyword: `pub fn`, `pub let`,
+`pub var`, `pub state`, `pub enum`, `pub class`. A `pub enum` exports its
+variants; a `pub class` exports its constructor and its type name. `pub` in
+the entry file is allowed but does nothing, since nothing imports the entry
+file.
+
+`pub` used to be spelled `export`. The old word still works everywhere `pub`
+does, with no removal planned, and means exactly the same thing; `petal check`
+and the language server flag it as deprecated, and `petal lint --fix` (rule
+`prefer-pub`) or `petal fmt` rewrites it. Both words are reserved.
 
 A leading underscore carries no meaning: `fn _helper` is private because it
-lacks `export`, not because of the name.
+lacks `pub`, not because of the name.
 
 Naming something that is not exported is an error. A selective import
 fails at compile time and lists what the module does export:
@@ -100,21 +105,21 @@ Error: module 'ui' has no export 'helper' (exports: button, palette, twice)
 A qualified access (`ui.helper()`) fails when it runs:
 
 ```
-Error: module 'ui' has no export 'helper' (declarations are private unless marked `export`)
+Error: module 'ui' has no export 'helper' (declarations are private unless marked `pub`)
 ```
 
 ### Re-exporting
 
 A **facade** module presents one import surface over a library's several
-implementation modules. `export import` builds it declaratively — the
+implementation modules. `pub import` builds it declaratively — the
 facade names the modules, not each of their exports, so a name added to an
 implementation module needs no edit here:
 
 ```petal ignore
 // bloom.ptl — the whole facade
-export import bloom/button: *        // every export of bloom/button
-export import bloom/theme: accent    // just these
-export import bloom/menu             // the module binding itself
+pub import bloom/button: *        // every export of bloom/button
+pub import bloom/theme: accent    // just these
+pub import bloom/menu             // the module binding itself
 ```
 
 An importer of `bloom` sees those names as if `bloom` had declared them:
@@ -127,22 +132,22 @@ menu.open()         // a module alias, passed on by the bare form
 
 The three forms:
 
-- **`export import m: *`** re-exports every export of `m` under its own
+- **`pub import m: *`** re-exports every export of `m` under its own
   name, *and* binds it locally, so the facade can use what it passes on.
   Whole overload sets travel: a `button` with two arities arrives with both.
-- **`export import m: a, b`** re-exports exactly those names. Naming
+- **`pub import m: a, b`** re-exports exactly those names. Naming
   something `m` does not export is the usual compile error —
   `module 'bloom/menu' has no export 'nope' (exports: close, open)` — which
   is the check a hand-written facade could not give you.
-- **`export import m`** re-exports the module *binding*. A module name is
+- **`pub import m`** re-exports the module *binding*. A module name is
   not a value, so what travels is the alias: an importer that names it
   (`import bloom: menu`) gets a module alias of its own and writes
   `menu.open()`. `bloom.menu.open()` does **not** work — there is no
   value to reach through.
 
-`*` and `export` are independent. A plain `import m: *` binds the whole
+`*` and `pub` are independent. A plain `import m: *` binds the whole
 surface locally without re-exporting it, and a nested path works in every
-form (`export import bloom/button: *`).
+form (`pub import bloom/button: *`).
 
 **A star is the weakest explicit binding in the file.** It never fights:
 
@@ -164,7 +169,7 @@ Error: bloom.ptl: 'shared' is re-exported by both 'a' and 'b' — name one of th
 Chains work — a facade over a facade re-exports what it received — and a
 re-export cycle is caught by the ordinary cycle check
 (`import cycle: a -> b -> a`) rather than hanging. Re-exporting does not
-widen privacy: a star only ever carries names the target marked `export`.
+widen privacy: a star only ever carries names the target marked `pub`.
 
 ### Classes and methods
 
@@ -172,17 +177,17 @@ Methods are program-wide. A module that declares `fn Rect.area(r: Rect)`
 gives every `Rect` in the program that method, and an importer can add its
 own methods to a class it imported.
 
-The class *name* follows `export`, and it is one name for both uses: the
+The class *name* follows `pub`, and it is one name for both uses: the
 constructor `Circle(...)` and the type in an annotation `c: Circle`. An
 unexported class is private in both positions; using it as a type elsewhere
 is the usual `unknown type name` warning.
 
 ```petal ignore
 // shapes.ptl
-class Hidden          // no `export`
+class Hidden          // no `pub`
   a: int
 end
-export class Circle
+pub class Circle
   radius: int
 end
 
@@ -232,11 +237,11 @@ where it is written.
 ### Overloaded functions
 
 The variants of an [overloaded function](function-overloading.md) share one
-name, so either all of them are `export`ed or none. A mixed group is an
+name, so either all of them are `pub` or none. A mixed group is an
 error:
 
 ```
-Error: overloaded function 'f' has mixed export markers: mark all overloads 'export' or none
+Error: overloaded function 'f' has mixed `pub` markers: mark all overloads `pub` or none
 ```
 
 Importing `f` from two modules by hand is a collision like any other. Sets
@@ -424,7 +429,7 @@ still a matter of `-I`, `PETAL_PATH`, or a host call.
 ## Shipping a library
 
 A library written in Petal is a directory of modules plus, usually, a facade
-module that re-exports them — `export import bloom/button: *` per
+module that re-exports them — `pub import bloom/button: *` per
 implementation module, which carries whole overload sets and errors on a name
 that is not there (see [Re-exporting](#re-exporting)). Give it a
 [`petal.toml`](#packages) and the directory becomes a named package: users

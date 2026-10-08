@@ -178,7 +178,10 @@ state last_t = -1.0
 state undo = []
 state redo = []
 state gesture = false
+state cancels = 0
 state drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
+// What a gesture started from, so `escape` can put it all back mid-drag.
+state g0 = {pats: [], mixer: [], undo: [], redo: [], bpm: 0, swing: 0.0, la: 0, lb: 0, lon: true, pos: 0.0}
 state menu = menu_state()
 
 // ── Layout (recomputed every frame — the pane can resize) ────────────────
@@ -211,10 +214,10 @@ let TB_H = 48
 let R_PLAY  = rect(GX, TB_Y, 48, TB_H)
 let R_STOP  = rect(GX + 54, TB_Y, 42, TB_H)
 let R_LOOP  = rect(GX + 102, TB_Y, 54, TB_H)
-let R_POS   = rect(GX + 170, TB_Y, 132, TB_H)
-let R_BPM   = rect(GX + 314, TB_Y, 116, TB_H)
-let R_SWING = rect(GX + 442, TB_Y, 136, TB_H)
-let PAT_X   = GX + 590
+let R_POS   = rect(GX + 170, TB_Y, 156, TB_H)
+let R_BPM   = rect(GX + 338, TB_Y, 116, TB_H)
+let R_SWING = rect(GX + 466, TB_Y, 128, TB_H)
+let PAT_X   = GX + 606
 let PAT_W   = 62
 let R_SCOPE = rect(PAT_X + (PAT_W + 4) * 4 + 8, TB_Y, max(60, W - M - (PAT_X + (PAT_W + 4) * 4 + 8)), TB_H)
 let R_BPM_DN = rect(R_BPM.x + R_BPM.w - 26, R_BPM.y + 26, 20, 16)
@@ -307,6 +310,14 @@ fn lane_text(l: list) -> string
     out = out ++ (if v >= 90 then "X" elsif v >= 60 then "x" elsif v > 0 then "o" else "." end)
   end
   out
+end
+
+fn lane_hits(l: list) -> int
+  let n = 0
+  for v in l do
+    if v > 0 then n += 1 end
+  end
+  n
 end
 
 fn lane_fill(l: list, every: int) -> list
@@ -459,6 +470,7 @@ if !blocked then
       elapsed = 0.0
       loops = 0
       queued = -1
+      levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   // stop silences the tails
     end
     if key_pressed("l") then loop_on = !loop_on end
     if key_pressed("m") then mixer[sel_trk].mute = !mixer[sel_trk].mute end
@@ -535,7 +547,7 @@ if !blocked then
       end
       sel_note = -1
     end
-    if key_pressed("escape") then
+    if key_pressed("escape") && drag.kind == "" then
       sel_note = -1
       queued = -1
     end
@@ -578,6 +590,7 @@ if free && mouse_pressed(0) then
     elapsed = 0.0
     loops = 0
     queued = -1
+    levels = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   // stop silences the tails
   elsif point_in(mx, my, R_LOOP) then
     loop_on = !loop_on
   elsif point_in(mx, my, R_BPM_UP) then
@@ -652,6 +665,30 @@ if free && mouse_pressed(0) then
       end
     end
   end
+end
+
+// Remember where the gesture began. `snap` rather than `pats`: drawing a new
+// note has already appended it by now.
+if mouse_pressed(0) && drag.kind != "" then
+  g0 = {pats: snap, mixer: mixer, undo: undo, redo: redo, bpm: bpm, swing: swing,
+    la: loop_a, lb: loop_b, lon: loop_on, pos: pos}
+end
+// `escape` with the button still down abandons the gesture: the pattern, the
+// undo stack and whichever dial was being dragged go back to how they were.
+if drag.kind != "" && key_pressed("escape") then
+  pats = g0.pats
+  mixer = g0.mixer
+  undo = g0.undo
+  redo = g0.redo
+  bpm = g0.bpm
+  swing = g0.swing
+  loop_a = g0.la
+  loop_b = g0.lb
+  loop_on = g0.lon
+  if drag.kind == "seek" then pos = g0.pos end
+  if drag.kind == "note_new" then sel_note = -1 end
+  cancels += 1
+  drag = {kind: "", trk: 0, val: 0, a: 0, b: 0, idx: -1, y0: 0, v0: 0}
 end
 
 // ── Mouse: the gesture in flight ─────────────────────────────────────────
@@ -759,7 +796,7 @@ if wheel != 0 && !blocked && drag.kind == "" then
 end
 
 // ── Undo bookkeeping: one snapshot per gesture ───────────────────────────
-if changed then
+if changed && (gesture || pats != snap) then
   if !gesture then
     undo = append(undo, snap)
     if len(undo) > 60 then undo = slice(undo, 1, len(undo)) end
@@ -837,7 +874,7 @@ let ringing = false
 for lv in levels do
   if lv > 0.0 then ringing = true end
 end
-if ringing || queued >= 0 then request_frame() end
+if ringing then request_frame() end
 
 let play_step = clamp(int(floor(pos)), 0, STEPS - 1)
 let pat = pats[cur]
@@ -993,7 +1030,8 @@ draw_polyline(sc_pts, if total_lv > 0.01 then ACCENT else GHOST end, 255, 1.5)
 
 // ── Ruler: loop band above, time band below ──────────────────────────────
 draw_text("LOOP", {x: M + 4, y: RULER_Y + 1}, S_CAP)
-draw_text_right("{loop_a / 4 + 1} to {loop_b / 4} of 8 beats", GX - 14, RULER_Y + 1, {...S_CAP, color: if loop_on then DIM else GHOST end})
+let loop_txt = if loop_b - loop_a == 4 then "BEAT {loop_a / 4 + 1} OF 8" else "BEATS {loop_a / 4 + 1} TO {loop_b / 4} OF 8" end
+draw_text_right(loop_txt, GX - 14, RULER_Y + 1, {...S_CAP, color: if loop_on then DIM else GHOST end})
 draw_text("BAR . BEAT", {x: M + 4, y: RULER_Y + LOOP_H + 6}, S_CAP)
 
 draw_rect_rounded(rect(GX, RULER_Y + 4, GW, 5), 2, LINE_S)
@@ -1050,11 +1088,12 @@ for t in range(0, N_TRK) do
 
   let mr = mute_rect(t)
   let m_on = mixer[t].mute
-  draw_rect_rounded(mr, 4, if m_on then DANGER elsif free && point_in(mx, my, mr) then LINE else CELL end)
+  let btn_bg = if is_sel then CELL_B else CELL end
+  draw_rect_rounded(mr, 4, if m_on then DANGER elsif free && point_in(mx, my, mr) then mix(btn_bg, TEXT, 0.14) else btn_bg end)
   label("M", mr, {...S_BTN, color: if m_on then BG else FAINT end}, "center")
   let sr = solo_rect(t)
   let s_on = mixer[t].solo
-  draw_rect_rounded(sr, 4, if s_on then ACCENT elsif free && point_in(mx, my, sr) then LINE else CELL end)
+  draw_rect_rounded(sr, 4, if s_on then ACCENT elsif free && point_in(mx, my, sr) then mix(btn_bg, TEXT, 0.14) else btn_bg end)
   label("S", sr, {...S_BTN, color: if s_on then BG else FAINT end}, "center")
 
   // Volume fader with the meter riding inside it.
@@ -1165,7 +1204,7 @@ if sel_mel then
     insp = [
       {k: "NOTES", v: str(len(ns))},
       {k: "RANGE", v: if len(ns) == 0 then "none" else "{note_name(st.base + p_lo)} to {note_name(st.base + p_hi)}" end},
-      {k: "LONGEST", v: if longest == 1 then "1 step" else "{longest} steps" end},
+      {k: "LONGEST", v: if longest == 0 then "none" elsif longest == 1 then "1 step" else "{longest} steps" end},
       {k: "LEVEL", v: "{int(round(mixer[sel_trk].vol * 100.0))}%"},
     ]
   end
@@ -1251,6 +1290,10 @@ if sel_mel then
       draw_rect_rounded_outline(nr, 3, DIM)
     end
   end
+  if len(ns) == 0 && !over_roll then
+    draw_text_center("No notes in this lane", GX + GW / 2, BODY_Y + PR_H / 2 - 18, {size: 14, font: "ui", weight: 600, color: DIM})
+    draw_text_center("Click to add one, or drag to draw its length", GX + GW / 2, BODY_Y + PR_H / 2 + 4, {size: 11, font: "ui", color: FAINT})
+  end
 else
   // Velocity lane -----------------------------------------------------------
   draw_rect_rounded(rect(GX, BODY_Y, GW, BODY_H), 6, WELL)
@@ -1289,6 +1332,10 @@ else
     end
   end
   draw_rect_rounded_outline(rect(step_x(cur_step) + 1, BODY_Y + 1, STEP_W - 2, BODY_H - 2), 5, GHOST)
+  if lane_hits(pat.drums[sel_trk]) == 0 then
+    draw_text_center("No hits in this lane", GX + GW / 2, BODY_Y + BODY_H / 2 - 18, {size: 14, font: "ui", weight: 600, color: DIM})
+    draw_text_center("Click a step in the lane above, or press x at the cursor", GX + GW / 2, BODY_Y + BODY_H / 2 + 4, {size: 11, font: "ui", color: FAINT})
+  end
 end
 
 // ── Playhead: one line through the ruler, the lanes and the editor ───────
@@ -1352,6 +1399,7 @@ let obs_undo = len(undo)
 let obs_redo = len(redo)
 let obs_drag = drag.kind
 let obs_menu = menu.open
+let obs_cancels = cancels
 
 // ── Lane menu: the last draw call of the frame ───────────────────────────
 let menu_mel = menu.tag == 6 || menu.tag == 7
@@ -1390,6 +1438,9 @@ if picked.index >= 0 then
     if picked.index == 7 then pats[cur].drums[t] = lane_shift(l, by: 1) end
     if picked.index == 9 then pats[cur].drums[t] = lane_mirror(l) end
   end
-  undo = append(undo, before)
-  redo = []
+  if pats != before then
+    undo = append(undo, before)
+    if len(undo) > 60 then undo = slice(undo, 1, len(undo)) end
+    redo = []
+  end
 end

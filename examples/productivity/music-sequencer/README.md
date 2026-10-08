@@ -60,7 +60,7 @@ curl -sX POST 127.0.0.1:$PORT/tick -d '{"n":130,"dt":0.016}'
 | Input | Effect |
 |---|---|
 | `space`, or the play button | play / pause at the playhead |
-| `return`, or the stop button | stop and return to the start of the loop |
+| `return`, or the stop button | stop, return to the start of the loop, and silence the meters |
 | `l`, or the LOOP button | loop region on / off (off plays the whole pattern) |
 | `1` – `4`, or a pattern chip | stopped: switch pattern. Playing: queue it for the next loop; the playing pattern's own key or chip cancels the queue |
 | `-` / `=` | tempo down / up by 1 bpm (`shift` for 10); range 60 – 200 |
@@ -74,8 +74,8 @@ curl -sX POST 127.0.0.1:$PORT/tick -d '{"n":130,"dt":0.016}'
 | `m` / `s` | mute / solo the selected lane |
 | `c` | clear the selected lane |
 | `delete` / `backspace` | delete the selected note |
-| `cmd z` / `shift cmd z` | undo / redo pattern edits (60 levels, one per gesture) |
-| `escape` | deselect the note, cancel a queued pattern, close the menu |
+| `cmd z` / `shift cmd z` | undo / redo pattern edits (60 levels, one per gesture; an edit that changes nothing, such as clearing an empty lane, takes no level) |
+| `escape` | with the mouse button still down: abandon the drag and put back what it changed (pattern, tempo, swing, loop, fader, playhead). Otherwise: deselect the note, cancel a queued pattern, close the menu |
 
 **Ruler**
 
@@ -125,7 +125,9 @@ note.
 - One gesture state machine. A left press starts exactly one of ten drags
   (`paint`, `vel`, `seek`, `loop`, `bpm`, `swing`, `vol`, `note_new`,
   `note_move`, `note_resize`), chosen by where it lands; the gesture then
-  owns the pointer until release, wherever it travels.
+  owns the pointer until release, wherever it travels, and `escape` before
+  the release restores the snapshot taken at the press (`g0`), undo stack
+  included.
 - Painting and velocity drawing interpolate between pointer samples, so a
   fast drag (or a debug-server drag, which is three events) leaves no holes
   and a diagonal one draws a ramp.
@@ -180,6 +182,7 @@ note.
 | `obs_mute`, `obs_solo`, `obs_vol`, `obs_audible` | mixer, per lane |
 | `obs_undo`, `obs_redo` | stack depths |
 | `obs_drag`, `obs_menu` | the gesture in flight; whether the lane menu is open |
+| `obs_cancels` | gestures abandoned with `escape` since reset |
 
 ## Known limits
 
@@ -201,7 +204,20 @@ note.
   on this binary, while the multi-line form and `map(mixer, fn(r) ->
   r.mute)` report the list. The `obs_` lists use `map`.
 - **Undo covers the patterns only.** Mixer, tempo, swing and loop changes
-  are not on the stack.
+  are not on the stack (`escape` during the drag is the way back for those).
+- **Shifting a melodic lane is lossy at the edges.** A note cannot wrap
+  around the pattern, so one pushed across the end is cut to what fits;
+  shifting back does not restore its length. Undo does.
+- **A queued pattern survives a pause** and lands on the first wrap after
+  play resumes; its chip stops pulsing while paused, because a paused panel
+  no longer asks for frames.
+- **Meters freeze under `/tick` settle frames.** The envelopes decay with
+  the panel clock, which stands still between ticks, so a screenshot taken
+  after a pause shows the meters and scope where the last tick left them.
+  Stop clears them.
+- **`petal check` needs `--host garden`.** The script imports `text_layout`,
+  which only the Garden host registers; without the flag the check stops at
+  `cannot find module 'text_layout'`.
 - **A note gesture holds a list index.** If a queued pattern lands mid-drag
   the gesture is dropped, since the index would point into another lane.
 - **Fixed length, no zoom.** Every pattern is 32 sixteenths and the timeline

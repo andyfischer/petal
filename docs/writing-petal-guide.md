@@ -220,6 +220,12 @@ print(fx)   // 110
 `petal lint` makes this rewrite for you (`var` → `let`, dropping `set`/`get`)
 wherever it is safe.
 
+The other direction is a decision, so it is a command you run on one binding:
+`petal apply-change convert-to-var app.ptl --target step/vx` turns that `let`
+into a `var` (or a `state` into a `state var`), puts `set` on every write and
+`get` on every read inside a nested function. See
+[`petal apply-change`](#petal-apply-change--refactors-that-change-behaviour).
+
 ### `state` — persistence across runs
 
 `state` declares a slot that is initialized once and keeps its value across
@@ -997,6 +1003,32 @@ remark such as "this looks like a hand-written insertion sort — use `sort` or
 `sort_by`". It has no fix attached and `--apply` never acts on it; read it and
 decide.
 See [CLI.md](CLI.md#suggest--suggest-safe-refactors-for-a-file).
+
+### `petal apply-change` — refactors that change behaviour
+
+```bash
+petal apply-change convert-to-var app.ptl --target /score --dry-run   # show the diff
+petal apply-change convert-to-var app.ptl --target /score             # write it
+petal apply-change convert-to-var physics.ptl --target step/vx        # a local, by path
+```
+
+`lint` and `suggest` keep the program the same. `apply-change` is for the
+refactor that does not: you have decided a binding should be a mutable cell,
+usually because the compiler said "`score` is bound outside this function",
+and the change has to be made at every mention. `convert-to-var` rewrites the
+declaration (`let` → `var`, `state` → `state var`), every `=` write on it
+(→ `set`), and every read inside a nested function (→ `get`); reads in the
+declaring function stay bare. Functions that mention the binding now see the
+live value instead of the one captured where they were written.
+
+`--target` is a path of enclosing declarations ending in the binding: `/score`
+for a module-level one, `step/vx` for a local of `step`, `row/out[2]` for the
+second `out` in `row`. Get it wrong and the error lists the paths it could
+have meant. For a `pub` binding the change follows it into the files that
+import it (add `--from main.ptl` to say which program to search), and it
+refuses if one of them writes the binding. Nothing is written unless every
+touched file compiles afterwards.
+See [CLI.md](CLI.md#apply-change--refactors-that-change-behaviour).
 
 ### `petal run --observe` — what was everything set to?
 

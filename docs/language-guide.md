@@ -280,6 +280,12 @@ Declare it `state var score = 0` and write `set score = get score + n`, or
 keep the `state` and have the function return the new value for module scope
 to assign.
 
+`petal apply-change convert-to-var game.ptl --target /score` makes that
+conversion for you: the declaration becomes a `state var` (a `let` becomes a
+`var`), every `=` on it becomes `set`, and every read inside a function gains
+`get`, in this file and in the files that import the binding. See
+[CLI.md](CLI.md#apply-change--refactors-that-change-behaviour).
+
 **A write into a container happens in place.** `set xs[i] = v`, `set r.f = v`
 and `set xs = append(xs, v)` change the cell's own list or record when the
 cell is its only holder, from any function that can see the cell. A helper

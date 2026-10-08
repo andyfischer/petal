@@ -171,6 +171,13 @@ When fixing such an error, code that was silently shadowing should become a
 `let` local, not a `var`; converting it to `var` would start actually mutating
 and change behavior. Only intended mutation becomes `var` + `set`.
 
+When the mutation is intended, `petal apply-change convert-to-var` makes the
+conversion mechanically: the declaration, every `=` (to `set`) and every read
+across a function boundary (to `get`), following a `pub` binding into its
+importers. It resolves mentions lexically, by the shadowing rules below. See
+[CLI.md](CLI.md#apply-change--refactors-that-change-behaviour) and
+`rust/src/apply_change/`.
+
 ## Capture lag
 
 `compiler::capture_lag` warns on a *named* function whose body reads a module

@@ -39,6 +39,7 @@ Every command that compiles a program accepts these:
 | `lint` | Report code with a better spelling; `--fix` applies it |
 | `lint-fix` | `lint --fix` under its own name |
 | `suggest` | Suggest safe refactors for a file |
+| `apply-change` | Carry out a refactor that changes behaviour |
 | `ir-equal` | Compare two files' compiled IR |
 | `show-tokens` | Lexer output |
 | `show-ast` | Parser output |
@@ -53,8 +54,8 @@ Every command that compiles a program accepts these:
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
-Every command except `lsp`, `fmt` and `show-graph` accepts `--json` for
-machine-readable output.
+Every command except `lsp`, `fmt`, `apply-change` and `show-graph` accepts
+`--json` for machine-readable output.
 
 ## Commands
 
@@ -829,6 +830,194 @@ core`, which leaves that host's natives alone.
   A type annotation also has `function`, `arity`, `slot`, `param`, `type`,
   `evidence` (and `insert_at` / `insert_text`, its one edit); a named-argument
   suggestion has `callee`, `line`, `column`, `names`, `call` and `rewrite`.
+
+### `apply-change` — Refactors that change behaviour
+
+```
+petal apply-change <operation> <file> [<options>]
+petal apply-change convert-to-var <file> --target <path> [--from <file>]...
+                   [--dry-run] [--host <host>]
+petal apply-change                      # list the operations
+```
+
+Carries out a change the author has decided on, everywhere it has to be made,
+across every file it reaches. [`lint --fix`](#lint--rules-with-fixes) and
+[`suggest --apply`](#suggest--suggest-safe-refactors-for-a-file) are held to
+leaving the program the same; an operation here changes what the program does,
+and that is its purpose. What it promises instead:
+
+- **It edits only what resolves to the target.** The target is named on the
+  command line, and a mention of the same name that belongs to another binding
+  is left alone.
+- **It refuses rather than guesses.** A use it has no faithful rewrite for
+  stops the whole change, with the lines responsible.
+- **Nothing is written unless the result compiles** ([the gate](#the-gate)).
+
+Edits are splices over the original text, so comments and layout survive. A
+file that was `petal fmt`-clean before is formatted again afterwards; a file
+that was not is left exactly as edited.
+
+Exit status is 0 when the change was written (or, with `--dry-run`, would have
+been) and 1 when it was refused or failed. On 1 no file has been touched.
+
+#### `convert-to-var`
+
+Turns a `let` into a `var`, or a `state` into a `state var`: the change from a
+dataflow binding to a [mutable cell](language-guide.md#var-and-set) that a
+function can write. It is the fix for "`score` is bound outside this function".
+
+```
+$ petal apply-change convert-to-var game.ptl --target /score --dry-run
+convert-to-var: /score: `state` -> `state var` (game.ptl line 1)
+  game.ptl: 1 write -> set, 2 reads -> get, 1 read left bare
+  importers: none considered, the binding is not exported
+--- game.ptl
++++ game.ptl (convert-to-var)
+@@ -1,6 +1,6 @@
+-state score = 0
++state var score = 0
+ fn award(n)
+-  score = score + n
++  set score = get score + n
+ end
+-let label = fn() "score: {score}" end
++let label = fn() "score: {get score}" end
+ print(score)
+dry run: 1 file(s) would change; nothing was written
+```
+
+The rewrite, over the mentions that resolve to the target:
+
+| Where | Before | After |
+|---|---|---|
+| The declaration | `let x = e`, `state x = e` | `var x = e`, `state var x = e` |
+| Every `=` write, in any function | `x = e`, `x += e`, `x.f = e`, `x[i] = e` | `set x = e`, `set x += e`, `set x.f = e`, `set x[i] = e` |
+| A read inside a nested `fn` or lambda (a default parameter value included) | `x` | `get x` |
+| A read in the declaring function | `x` | `x` |
+
+`pub`, a `state(key)` group and a type annotation stay where they are. The root
+of a `set` target and the read a compound `set x += 1` implies are not given a
+`get`; neither has a place to write one.
+
+**This changes behaviour.** A function that mentions the binding stops reading
+the value captured where the function was written and reads the live cell, and
+a write from inside a function now lands in the binding everyone else sees.
+A program that relied on the snapshot behaves differently afterwards. When no
+function mentions the binding, the program does the same thing as before.
+
+**Scoping.** The binding is visible from the statement after its declaration to
+the end of the block that declares it, less every stretch where the name is
+bound again: by another `let`/`var`/`state`, a parameter, a `for` variable, a
+match-pattern binding, or a `fn` of that name. Mentions in those stretches
+belong to the other binding and are not touched.
+
+**Refused:**
+
+- an `@x` rebind of the target. `@` desugars to `x = f(x)` and is `let`-only;
+  write those calls out as `x = f(x)` first and they are converted to `set`;
+- a file that imports the target and writes it (see [importers](#importers));
+- a `config let` (a `var` cannot be config), a binding that is already a
+  `var`, and a path that names a function.
+
+#### Target paths
+
+`--target` names one binding by the declarations it is written inside,
+outermost first, joined by `/`:
+
+```
+step/vx                 `vx`, declared in the function `step`
+build_view/row/out[2]   the second `out` declared in `row`, inside `build_view`
+/score                  the module-level `score`
+```
+
+```
+path    := ["/"] segment ("/" segment)*
+segment := name ["[" n "]"]        n counts from 1
+name    := an identifier, or Class.method for a method declaration
+```
+
+- **A segment names a declaration:** a named `fn`, or a `let`, `var`, `state`
+  or `state var` binding. A parameter, a `for` variable, a match-pattern
+  binding and a name first bound by a bare `x = …` are not declarations and
+  cannot be named.
+- **A declaration encloses what is written inside its text.** A function
+  encloses its body and its default parameter values; a binding encloses its
+  initializer, so `let row = fn(i) … end` encloses the lambda's body.
+- **Control flow and anonymous functions are transparent.** A `let` inside an
+  `if`, a loop, or a callback passed straight to a call belongs to the nearest
+  declaration around it.
+- **A leading `/` starts at module level.** Without one, the path matches any
+  binding whose full path *ends* with it: `vx` alone is enough when the file
+  has one `vx`, and `step/vx` finds `/physics/step/vx`.
+- **`name[n]` is the n-th declaration called `name` directly inside its
+  parent,** in source order, counting every kind of declaration, so an index
+  does not move when one of them is converted. A segment without an index
+  matches all of them.
+
+The path has to match exactly one binding. Otherwise the error lists the full
+path of each candidate, with its line and keyword:
+
+```
+$ petal apply-change convert-to-var game.ptl --target out
+convert-to-var: the target `out` is ambiguous: it matches 2 bindings
+name one of them by its full path:
+  /build_view/row/out[1]  (line 3, `let`)
+  /build_view/row/out[2]  (line 6, `let`)
+```
+
+#### Importers
+
+A module-level binding declared `pub` is visible to other files, so the change
+follows it into them. An importer may read an exported `var` and
+[never write it](module-system.md#an-exported-var-is-read-only-to-importers):
+
+| In the importing file | What happens |
+|---|---|
+| A bare read inside a function (`import m: x`, `import m: *`) | gains `get` |
+| A bare read at the file's top level | left alone |
+| A qualified read, `m.x` | left alone: it reads the current value wherever it is written |
+| A write, `x = …` or `@x` | **the whole change is refused** |
+
+Importers are looked for in one of two places. The report says which, and
+names every importer it found:
+
+- **`--from <file>`** (repeatable) — the entry file of a program that uses the
+  module. Its imports are followed and every file reached is considered. The
+  same flag, with the same meaning, as [`suggest --from`](#options).
+- **Otherwise, a directory scan** — every `.ptl` file under the target's
+  project root: the nearest directory at or above the target that holds a
+  [`petal.toml`](#packages--list-available-libraries), or the target's own
+  directory when there is none. An importer that lives outside that directory
+  is not found, and is not rewritten; name its program with `--from`.
+
+Either way each candidate's imports are resolved the way a compile resolves
+them, so a file is an importer only if its `import` really lands on the target
+file. A file that re-exports the name (`pub import m: x`) passes it on, and
+the files that import *it* are importers too.
+
+#### The gate
+
+Before anything is written, every file that would change, and every `--from`
+file, is compiled with all the edits in place. Each must compile, or nothing
+is written.
+
+One allowance, because the commonest reason to run an operation is a file
+that does not compile yet: a file that already failed may keep the compile
+errors it had, and gain none. A file with three bindings to convert gets there
+one conversion at a time, and each run names it in a `note:`. A file that
+failed for another reason (an import that does not resolve here, say) is a
+refusal; pass `-I <dir>` or `--host <name>` so it can be compiled.
+
+#### Options
+
+- `--target <path>` — the binding to change ([target paths](#target-paths)).
+  Required by `convert-to-var`.
+- `--from <file>` — see [importers](#importers). Repeatable.
+- `--dry-run` — print the change as a unified diff on stdout and write
+  nothing. Everything else, the gate included, runs as usual.
+- `--host <host>` — the host the scripts run in, as for
+  [`check`](#check--compile-without-running). It decides which prelude the
+  gate imports implicitly.
 
 ### `ir-equal` — Are two files the same program?
 

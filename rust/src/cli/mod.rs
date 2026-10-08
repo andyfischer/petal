@@ -162,6 +162,10 @@ pub enum Command {
     /// calls. Report-only unless `--apply`; nothing here ever warns or fails
     /// a build.
     Suggest(SuggestArgs),
+    /// `apply-change` — a refactor that changes what the program does
+    /// (`crate::apply_change`). Takes its own file argument, since an
+    /// operation may rewrite several files.
+    ApplyChange(ApplyChangeArgs),
     /// `fmt` — canonical layout (`crate::fmt`). Rewrites files in place;
     /// `--check` only lists the ones that would change.
     Fmt {
@@ -258,6 +262,25 @@ pub struct SuggestArgs {
     pub host: crate::typecheck::globals::HostProfile,
     /// Which kinds of suggestion to look for (`--only`).
     pub kinds: crate::suggest::Kinds,
+}
+
+/// Every argument `petal apply-change` accepts.
+#[derive(Default)]
+pub struct ApplyChangeArgs {
+    /// The operation name (`convert-to-var`). `None` lists the operations.
+    pub operation: Option<String>,
+    /// The file the target lives in.
+    pub file: Option<String>,
+    /// `--target <path>`: which binding, as a `crate::apply_change::target`
+    /// path.
+    pub target: Option<String>,
+    /// `--from <file>`: entry files whose import graphs are searched for
+    /// importers of the target, and compiled by the gate.
+    pub from: Vec<PathBuf>,
+    /// Print the diff and write nothing.
+    pub dry_run: bool,
+    /// The host the scripts are written for (`--host`).
+    pub host: crate::typecheck::globals::HostProfile,
 }
 
 /// Every flag `petal lint` accepts.
@@ -507,6 +530,11 @@ pub fn execute(cli: CliArgs) {
         source_tools::handle_lint(opts, &include_dirs);
         return;
     }
+    // `apply-change` reads (and writes) its files itself.
+    if let Command::ApplyChange(opts) = &command {
+        source_tools::handle_apply_change(opts, &include_dirs);
+        return;
+    }
     // `packages` reports on the search path itself; there is no program.
     if let Command::Packages { json } = command {
         handlers::handle_packages(json, &include_dirs);
@@ -554,7 +582,9 @@ pub fn execute(cli: CliArgs) {
                 &include_dirs,
             );
         }
-        Command::Fmt { .. } | Command::Lint(_) => unreachable!("dispatched above"),
+        Command::Fmt { .. } | Command::Lint(_) | Command::ApplyChange(_) => {
+            unreachable!("dispatched above")
+        }
         Command::Suggest(args) => {
             handlers::handle_suggest(&args, &source, &source_input, &include_dirs);
         }

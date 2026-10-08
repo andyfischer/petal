@@ -33,6 +33,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("lint", "Report code that has a better spelling, and fix it"),
             ("suggest", "Suggest safe refactors for a file"),
             ("lint-fix", "The same as 'lint --fix'"),
+            (
+                "apply-change",
+                "Carry out a refactor that changes behaviour",
+            ),
             ("ir-equal", "Compare two files' compiled IR for equivalence"),
         ],
     ),
@@ -123,6 +127,7 @@ fn page(name: &str) -> Option<&'static str> {
         "lint" => LINT,
         "suggest" => SUGGEST,
         "lint-fix" => LINT_FIX,
+        "apply-change" => APPLY_CHANGE,
         "ir-equal" => IR_EQUAL,
         "explain" => EXPLAIN,
         "show-ir" => SHOW_IR,
@@ -709,6 +714,141 @@ DESCRIPTION
 
 SEE ALSO
        petal help lint
+";
+
+const APPLY_CHANGE: &str = "\
+NAME
+       petal-apply-change - Carry out a refactor that changes behaviour
+
+SYNOPSIS
+       petal apply-change <operation> <file> [<options>]
+       petal apply-change convert-to-var <file> --target <path>
+                          [--from <file>]... [--dry-run] [--host <host>]
+       petal apply-change
+
+DESCRIPTION
+       Carries out a change the author has decided on, everywhere it has to
+       be made, across every file it reaches. Unlike 'petal lint --fix' and
+       'petal suggest --apply', which are held to leaving the program the
+       same, an operation here changes what the program does. That is its
+       purpose.
+
+       What it promises instead: it edits only the mentions that resolve to
+       the target named on the command line; it refuses, with the lines
+       responsible, rather than guess at a rewrite it does not have; and it
+       writes nothing unless the result compiles. Everything it does not
+       touch, comments and layout included, is left as it was.
+
+       With no operation, lists the operations.
+
+OPERATIONS
+       convert-to-var
+              Turn a 'let' into a 'var', or a 'state' into a 'state var': the
+              change from a dataflow binding to a mutable cell that a
+              function can write. It is the fix for \"`x` is bound outside
+              this function\".
+
+              The declaration's keyword changes. Every '=' write on the
+              binding gains 'set' ('x = e', 'x += e', 'x.f = e', 'x[i] = e'),
+              in the declaring function and in nested ones. Every read inside
+              a nested function or lambda gains 'get'; a read in the
+              declaring function stays bare. A function that mentions the
+              binding stops reading the value captured where it was written
+              and reads the live cell, so a program that relied on the
+              snapshot behaves differently afterwards.
+
+              Shadowing is respected: where the name is bound again, by
+              another declaration, a parameter, a 'for' variable or a match
+              pattern, those mentions belong to that binding and are left
+              alone.
+
+              Refused when the binding is rebound with '@x' ('@' is let-only),
+              when it is a 'config let', and when a file that imports it
+              writes it.
+
+TARGET PATHS
+       --target names one binding by the declarations it is written inside,
+       outermost first, joined by '/':
+
+              step/vx                'vx', declared in the function 'step'
+              build_view/row/out[2]  the second 'out' in 'row', in 'build_view'
+              /score                 the module-level 'score'
+
+       A segment names a declaration: a named 'fn' ('Class.method' for a
+       method) or a 'let', 'var', 'state' or 'state var' binding. A
+       declaration encloses whatever is written inside its text, so a
+       function encloses its body and 'let row = fn(i) ... end' encloses the
+       lambda's body. Control flow and anonymous functions are transparent: a
+       'let' inside an 'if', a loop or a callback belongs to the nearest
+       declaration around it. Parameters, 'for' variables and pattern
+       bindings are not declarations and cannot be named.
+
+       A leading '/' starts the path at module level. Without one, the path
+       matches any binding whose full path ends with it, so 'vx' alone is
+       enough when there is only one.
+
+       'name[n]' is the n-th declaration called 'name' directly inside its
+       parent, counting from 1 in source order over every kind of
+       declaration. A segment without an index matches all of them.
+
+       The path has to match exactly one binding. When it matches none, or
+       several, the error lists the full paths of the candidates, each with
+       its line.
+
+IMPORTERS
+       A module-level binding declared 'pub' is visible to other files, so
+       the change follows it there. An importer may read an exported 'var'
+       but never write it: a bare read inside one of the importer's functions
+       gains 'get', a qualified read ('m.x') needs nothing, and an importer
+       that assigns the name stops the whole change.
+
+       Importers are looked for in one of two places, and the report says
+       which, and names every importer it found:
+
+       --from <file>
+              The entry file of a program that uses the module. Its imports
+              are followed, and every file reached is considered. Repeatable.
+              The same flag, with the same meaning, as 'petal suggest
+              --from'.
+
+       With no --from, every '.ptl' file under the target's project root is
+       considered: the nearest directory at or above the target that holds a
+       'petal.toml', or the target's own directory when there is none. An
+       importer outside that directory is not found; name its program with
+       --from.
+
+OPTIONS
+       --target <path>
+              The binding to change. Required by convert-to-var.
+
+       --from <file>
+              See IMPORTERS. Each --from file is also compiled by the gate.
+
+       --dry-run
+              Print the change as a unified diff on stdout and write nothing.
+              Everything else, the gate included, runs as usual.
+
+       --host <host>
+              The host the scripts are written for, as for 'petal check'
+              ('core', 'ui' — the default — 'garden', 'garden-config',
+              'sdl'). It decides which prelude the gate imports implicitly.
+
+       -I <dir>
+              Add a module search directory. Repeatable.
+
+THE GATE
+       Before anything is written, every file that would change and every
+       --from file is compiled with all the edits in place. Each must
+       compile. A file that already failed to compile may keep the compile
+       errors it had, and gain none: that is what lets a file with several
+       bindings to convert be fixed one at a time. It is named in a 'note:'.
+
+EXIT STATUS
+       0 when the change was written (or, with --dry-run, would have been),
+       1 when it was refused or failed. On 1 no file has been touched.
+
+SEE ALSO
+       petal help lint, petal help suggest, petal help check
 ";
 
 const IR_EQUAL: &str = "\

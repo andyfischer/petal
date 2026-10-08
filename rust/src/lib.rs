@@ -2,6 +2,7 @@
 //
 // See docs/Architecture.md for the module layout and the term-graph IR design.
 
+pub mod apply_change;
 pub mod ast;
 pub mod ast_display;
 pub mod backend;

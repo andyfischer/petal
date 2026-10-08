@@ -1,6 +1,7 @@
-//! `petal fmt` and `petal lint`: the two commands that run over many files.
+//! `petal fmt`, `petal lint` and `petal apply-change`: the commands that
+//! rewrite source files.
 //!
-//! Both take paths the way `gofmt` and `deno fmt` do — files, or directories
+//! `fmt` and `lint` take paths the way `gofmt` and `deno fmt` do — files, or directories
 //! searched recursively for `.ptl` (skipping dot-directories, `node_modules`
 //! and `target`), `.` when none is given, `-` for stdin — or inline code with
 //! `-e`. A file that fails is reported and skipped; the others still run.
@@ -10,7 +11,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use super::LintArgs;
+use super::{ApplyChangeArgs, LintArgs};
 
 /// Exit code for "the rewrite could not be proven equivalent" — distinct from
 /// the plain "problems found" exit 1.
@@ -57,7 +58,7 @@ fn collect_inputs(paths: &[String], inline: Option<&str>, errors: &mut usize) ->
         }
         let path = Path::new(p);
         if path.is_dir() {
-            walk(path, &mut files);
+            files.extend(crate::apply_change::ptl_files_under(path));
         } else if path.exists() {
             files.push(path.to_path_buf());
         } else {
@@ -79,25 +80,6 @@ fn collect_inputs(paths: &[String], inline: Option<&str>, errors: &mut usize) ->
         }
     }
     inputs
-}
-
-/// Every `.ptl` file under `dir`, sorted for stable output.
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
-    entries.sort();
-    for path in entries {
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if path.is_dir() {
-            if !name.starts_with('.') && name != "node_modules" && name != "target" {
-                walk(&path, out);
-            }
-        } else if name.ends_with(".ptl") {
-            out.push(path);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +107,7 @@ pub(super) fn handle_fmt(paths: &[String], inline: Option<&str>, check: bool, di
                 if formatted != input.source {
                     unformatted += 1;
                     if diff {
-                        print!("{}", unified_diff(&input.name, &input.source, &formatted));
+                        print!("{}", unified_diff(&input.name, &input.source, &formatted, "formatted"));
                     } else {
                         println!("{}", input.name);
                     }
@@ -140,7 +122,7 @@ pub(super) fn handle_fmt(paths: &[String], inline: Option<&str>, check: bool, di
         }
         unformatted += 1;
         if diff {
-            print!("{}", unified_diff(&input.name, &input.source, &formatted));
+            print!("{}", unified_diff(&input.name, &input.source, &formatted, "formatted"));
         }
         if check {
             if !diff {
@@ -340,17 +322,125 @@ fn verify(
 }
 
 // ---------------------------------------------------------------------------
+// apply-change
+// ---------------------------------------------------------------------------
+
+/// `petal apply-change <operation> <file> …` — plan the change, report it,
+/// and write it unless `--dry-run`. The plan is already proven when it comes
+/// back (`crate::apply_change::finish`), so there is nothing left to refuse
+/// here: exit 0 means every file was written (or, under `--dry-run`, would
+/// be), and exit 1 means nothing was touched.
+pub(super) fn handle_apply_change(args: &ApplyChangeArgs, include_dirs: &[PathBuf]) {
+    use crate::apply_change::{self, CONVERT_TO_VAR, ChangeOptions, OPERATIONS, Request};
+
+    let Some(name) = args.operation.as_deref() else {
+        println!("usage: petal apply-change <operation> <file> [<options>]\n\noperations:");
+        for op in OPERATIONS {
+            println!("   {:<16} {}", op.name, op.summary);
+        }
+        println!("\nSee 'petal help apply-change'.");
+        return;
+    };
+    let Some(op) = apply_change::operation(name) else {
+        eprintln!(
+            "Unknown operation '{name}' (expected {}). See 'petal help apply-change'.",
+            OPERATIONS
+                .iter()
+                .map(|op| format!("'{}'", op.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        process::exit(1);
+    };
+    let usage = || -> ! {
+        eprintln!("Usage: {}", op.usage);
+        process::exit(1);
+    };
+    let Some(file) = args.file.as_deref() else {
+        usage();
+    };
+    let request = match op.name {
+        CONVERT_TO_VAR => match &args.target {
+            Some(target) => Request::ConvertToVar {
+                target: target.clone(),
+            },
+            None => {
+                eprintln!("{name} needs --target <path>: which binding to convert");
+                usage();
+            }
+        },
+        _ => unreachable!("every operation in OPERATIONS is handled"),
+    };
+
+    let opts = ChangeOptions {
+        include_dirs: include_dirs.to_vec(),
+        from: args.from.clone(),
+        host: args.host,
+    };
+    let plan = match apply_change::plan(Path::new(file), &request, &opts) {
+        Ok(plan) => plan,
+        Err(e) => {
+            eprintln!("{name}: {e}");
+            process::exit(1);
+        }
+    };
+
+    // The diff is the dry run's product, so it alone goes to stdout; the
+    // account of what was done goes to stderr either way.
+    eprintln!("{name}: {}", plan.summary);
+    for f in &plan.files {
+        eprintln!("  {}: {}", f.path.display(), f.detail);
+    }
+    match &plan.importers {
+        None => eprintln!("  importers: none considered, the binding is not exported"),
+        Some(report) => {
+            eprintln!(
+                "  importers: {} found, {}",
+                report.importers.len(),
+                report.how
+            );
+            for i in &report.importers {
+                eprintln!("    {} ({}): {}", i.path.display(), i.form, i.detail);
+            }
+        }
+    }
+    for note in &plan.notes {
+        eprintln!("  note: {note}");
+    }
+
+    if args.dry_run {
+        for f in &plan.files {
+            print!(
+                "{}",
+                unified_diff(&f.path.display().to_string(), &f.before, &f.after, name)
+            );
+        }
+        eprintln!(
+            "dry run: {} file(s) would change; nothing was written",
+            plan.files.len()
+        );
+        return;
+    }
+    if let Err(e) = plan.write() {
+        eprintln!("{name}: {e}");
+        process::exit(1);
+    }
+    eprintln!("wrote {} file(s)", plan.files.len());
+}
+
+// ---------------------------------------------------------------------------
 // diff
 // ---------------------------------------------------------------------------
 
-/// A unified diff of two texts (`gofmt -d`), 3 lines of context.
-fn unified_diff(name: &str, a: &str, b: &str) -> String {
+/// A unified diff of two texts (`gofmt -d`), 3 lines of context. `label`
+/// says what the second text is (`formatted`).
+fn unified_diff(name: &str, a: &str, b: &str, label: &str) -> String {
     let a: Vec<&str> = a.lines().collect();
     let b: Vec<&str> = b.lines().collect();
     let ops = myers(&a, &b);
     const CONTEXT: usize = 3;
 
-    let mut out = format!("--- {name}\n+++ {name} (formatted)\n");
+    let mut out = format!("--- {name}\n+++ {name} ({label})\n");
     // Each change wants CONTEXT lines either side; overlapping windows merge.
     let mut hunks: Vec<(usize, usize)> = Vec::new();
     for (c, op) in ops.iter().enumerate() {
@@ -482,7 +572,7 @@ mod tests {
         let a = "a\nb\nc\nd\n";
         let b = "a\nB\nc\nd\n";
         assert_eq!(
-            unified_diff("f", a, b),
+            unified_diff("f", a, b, "formatted"),
             "--- f\n+++ f (formatted)\n@@ -1,4 +1,4 @@\n a\n-b\n+B\n c\n d\n"
         );
     }
@@ -490,7 +580,7 @@ mod tests {
     #[test]
     fn diff_of_equal_texts_is_just_the_header() {
         assert_eq!(
-            unified_diff("f", "x\n", "x\n"),
+            unified_diff("f", "x\n", "x\n", "formatted"),
             "--- f\n+++ f (formatted)\n"
         );
     }
@@ -499,7 +589,7 @@ mod tests {
     fn diff_handles_deleted_blank_lines() {
         let a = "a\n\n\nb\n";
         let b = "a\n\nb\n";
-        let d = unified_diff("f", a, b);
+        let d = unified_diff("f", a, b, "formatted");
         assert!(d.contains("-\n"), "{d}");
         assert_eq!(d.matches("\n-").count(), 1, "{d}");
     }

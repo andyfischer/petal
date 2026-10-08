@@ -117,6 +117,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
+        "apply-change" => parse_apply_change_args(&args[1..]),
         "lint-fix" => parse_lint_fix_args(&args[1..]),
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
@@ -414,6 +415,48 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
     CliArgs {
         command: Command::Suggest(opts),
         source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `apply-change <operation> <file> [--target <path>] [--from <file>]...
+/// [--dry-run] [--host <h>]` — a refactor that changes behaviour. The first
+/// bare word is the operation and the second the file; which flags an
+/// operation needs is its own business (`handle_apply_change`).
+fn parse_apply_change_args(args: &[String]) -> CliArgs {
+    let mut opts = super::ApplyChangeArgs::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--dry-run" => opts.dry_run = true,
+            "--target" => {
+                opts.target = Some(take(args, &mut i, "--target needs a path, e.g. step/vx").into());
+            }
+            "--from" => {
+                opts.from.push(std::path::PathBuf::from(take(
+                    args,
+                    &mut i,
+                    "--from needs a file path",
+                )));
+            }
+            "--host" => opts.host = parse_host(take(args, &mut i, HOST_EXPECTED)),
+            flag if flag.starts_with("--") => {
+                eprintln!("Unknown option '{flag}'. See 'petal help apply-change'.");
+                process::exit(1);
+            }
+            word if opts.operation.is_none() => opts.operation = Some(word.to_string()),
+            word if opts.file.is_none() => opts.file = Some(word.to_string()),
+            word => {
+                eprintln!("Unexpected argument '{word}'. See 'petal help apply-change'.");
+                process::exit(1);
+            }
+        }
+        i += 1;
+    }
+
+    CliArgs {
+        command: Command::ApplyChange(opts),
+        source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }
 }

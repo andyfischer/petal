@@ -1,0 +1,2025 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// CHRONICLE — a timeline explorer
+//
+// Sixty-eight years of spaceflight on one zoomable time axis: six category
+// lanes, point events and long-running programs, a calendar-aware ruler that
+// re-ticks from decades down to single days, filters that re-pack the lanes,
+// an overview strip with a draggable window, and an inspector.
+//
+//   Run:   ./launch.sh            (headless: ./launch.sh --headless --debug-port 0)
+//   Mouse: wheel zoom at the pointer · drag to pan · drag the ruler to zoom a
+//          range · click an event · double-click to zoom in
+//   Keys:  left/right pan · up/down or +/- zoom · n/p next/previous event ·
+//          return zoom to the event · 1-6 categories · / search · 0 fit all
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────────
+// A near-black blue ground with two surface steps. Six lane hues of matched
+// lightness, and one warm accent that is only ever used for "you are here":
+// the selection, the pointer's date flag and the overview window.
+let BG      = #0a0d13
+let PANEL   = #0e121a
+let RAISED  = #161b26
+let HOVER   = #1b2230
+let LINE    = #1e2532
+let LINE_HI = #2d3647
+let GRID    = #131822
+let TEXT    = #e9ecf3
+let SOFT    = #bcc3d0
+let DIM     = #8992a3
+let FAINT   = #586174
+let ACCENT  = #ffd27a
+
+let CAT_NAME = ["Crewed flight", "Space stations", "The Moon", "Deep space", "Observatories", "Orbit & launch"]
+let CAT_COL  = [#f0a55c, #56c7bd, #b7a2f7, #ee7480, #73a6ff, #8ecf6c]
+let ORG_NAME = ["United States", "USSR / Russia", "Europe", "China", "India", "Japan", "Commercial", "International"]
+let IMP_NAME = ["", "Landmark", "Notable", "Detail"]
+
+let CREW = 0
+let STATION = 1
+let MOON = 2
+let DEEP = 3
+let SCOPE = 4
+let LAUNCH = 5
+
+let USA = 0
+let SOV = 1
+let EUR = 2
+let CHN = 3
+let IND = 4
+let JPN = 5
+let COM = 6
+let INTL = 7
+
+// ── Type ─────────────────────────────────────────────────────────────────────
+// Inter for words, JetBrains Mono for anything that is a number or a date.
+// Five sizes in all.
+
+fn ui(size, c)
+  {size: size, font: "ui", color: c}
+end
+
+fn uib(size, c)
+  {size: size, font: "ui", color: c, weight: 700}
+end
+
+fn mono(size, c)
+  {size: size, font: "mono", color: c}
+end
+
+fn caps(c)
+  {size: 10, font: "ui", color: c, spacing: 1.5, weight: 700}
+end
+
+fn tx(s, x, y, st)
+  draw_text(s, {x: x, y: y}, st)
+end
+
+fn tx_right(s, right_x, y, st)
+  draw_text(s, {x: right_x - text_width(s, st), y: y}, st)
+end
+
+fn tx_center(s, cx, y, st)
+  draw_text(s, {x: cx - text_width(s, st) / 2.0, y: y}, st)
+end
+
+// The y that vertically centres a run of `size` in a box: a run is drawn at the
+// top of a 1.4x line box.
+fn vmid(y, h, size)
+  y + (h - size * 1.4) / 2.0
+end
+
+fn imin(a, b)
+  if a < b then a else b end
+end
+
+fn imax(a, b)
+  if a > b then a else b end
+end
+
+// ── Calendar ─────────────────────────────────────────────────────────────────
+// Time is a day number: day 0 is 1 January 1950, and the view holds it as a
+// float so a zoom can land between days. The two conversions are the usual
+// era/day-of-era arithmetic on a March-based year; every quantity stays
+// positive, so truncating division is floor division throughout.
+
+let EPOCH = 712163        // days from 0000-03-01 to 1950-01-01
+let D0 = 2191             // 1956-01-01, the left edge of the domain
+let D1 = 28124            // 2027-01-01, the right edge
+let AS_OF = 27575         // 2025-07-01: where a still-running program is drawn to
+let DOM = 25933.0         // D1 - D0
+let MIN_SPAN = 10.0       // the tightest zoom: ten days across the plot
+
+let MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+let MONTH = ["January", "February", "March", "April", "May", "June", "July", "August",
+  "September", "October", "November", "December"]
+
+fn day_of(y, m, d)
+  let yy = if m <= 2 then y - 1 else y end
+  let era = yy / 400
+  let yoe = yy - era * 400
+  let mp = if m > 2 then m - 3 else m + 9 end
+  let doy = (153 * mp + 2) / 5 + d - 1
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+  era * 146097 + doe - EPOCH
+end
+
+fn civil(z)
+  let zz = z + EPOCH
+  let era = zz / 146097
+  let doe = zz - era * 146097
+  let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+  let mp = (5 * doy + 2) / 153
+  let d = doy - (153 * mp + 2) / 5 + 1
+  let m = if mp < 10 then mp + 3 else mp - 9 end
+  let y = yoe + era * 400 + (if m <= 2 then 1 else 0 end)
+  {y: y, m: m, d: d}
+end
+
+fn pad2(n)
+  if n < 10 then "0" ++ str(n) else str(n) end
+end
+
+fn iso(t)
+  let c = civil(int(floor(t)))
+  str(c.y) ++ "-" ++ pad2(c.m) ++ "-" ++ pad2(c.d)
+end
+
+fn fmt_day(z)
+  let c = civil(z)
+  str(c.d) ++ " " ++ MON[c.m - 1] ++ " " ++ str(c.y)
+end
+
+fn fmt_mon(z)
+  let c = civil(z)
+  MON[c.m - 1] ++ " " ++ str(c.y)
+end
+
+// A date as precise as the zoom can resolve: there is no point naming a day
+// when a pixel is a month wide.
+fn fmt_at(t, ppd)
+  let z = int(floor(t))
+  if ppd >= 0.9 then fmt_day(z)
+  elsif ppd >= 0.012 then fmt_mon(z)
+  else str(civil(z).y)
+  end
+end
+
+fn plural(n, word)
+  if n == 1 then "1 " ++ word else str(n) ++ " " ++ word ++ "s" end
+end
+
+fn fmt_dur(days)
+  if days < 60 then
+    plural(days, "day")
+  elsif days < 360 then
+    plural(int(round(float(days) / 30.44)), "month")
+  else
+    let months = int(round(float(days) / 30.4375))
+    let y = months / 12
+    let mo = months % 12
+    if mo == 0 then plural(y, "year") else plural(y, "year") ++ ", " ++ plural(mo, "month") end
+  end
+end
+
+fn fmt_span(days)
+  if days >= 730.0 then
+    str(round(days / 365.25, 1)) ++ " years"
+  elsif days >= 60.0 then
+    plural(int(round(days / 30.44)), "month")
+  else
+    plural(int(round(days)), "day")
+  end
+end
+
+// ── Events ───────────────────────────────────────────────────────────────────
+
+class Ev
+  cat: int,
+  org: int,
+  imp: int,       // 1 landmark, 2 notable, 3 detail
+  t0: int,
+  t1: int,        // == t0 for a point event
+  live: bool,     // a program that is still running
+  title: string,
+  blurb: string,
+  yr: int,
+end
+
+fn P(cat, org, imp, y, m, d, title, blurb)
+  let t = day_of(y, m, d)
+  Ev(cat, org, imp, t, t, false, title, blurb, y)
+end
+
+fn S(cat, org, imp, y0, m0, d0, y1, m1, d1, title, blurb)
+  Ev(cat, org, imp, day_of(y0, m0, d0), day_of(y1, m1, d1), false, title, blurb, y0)
+end
+
+fn O(cat, org, imp, y, m, d, title, blurb)
+  Ev(cat, org, imp, day_of(y, m, d), AS_OF, true, title, blurb, y)
+end
+
+fn build_events()
+  assert_eq(day_of(1950, 1, 1), 0)
+  assert_eq(day_of(1956, 1, 1), D0)
+  assert_eq(day_of(2027, 1, 1), D1)
+  assert_eq(day_of(2025, 7, 1), AS_OF)
+  let c = civil(day_of(1969, 7, 20))
+  assert_eq(c.y * 10000 + c.m * 100 + c.d, 19690720)
+  let c2 = civil(day_of(2000, 2, 29))
+  assert_eq(c2.y * 10000 + c2.m * 100 + c2.d, 20000229)
+  let raw = [
+    // Crewed flight
+    P(CREW, SOV, 1, 1961, 4, 12, "Vostok 1", "Yuri Gagarin completes one orbit in 108 minutes and becomes the first human in space."),
+    S(CREW, USA, 2, 1961, 5, 5, 1963, 5, 16, "Project Mercury", "Six crewed flights, from Alan Shepard's fifteen-minute hop to Gordon Cooper's 34 hours in orbit."),
+    P(CREW, USA, 2, 1962, 2, 20, "Friendship 7", "John Glenn circles the Earth three times, the first American in orbit."),
+    P(CREW, SOV, 2, 1963, 6, 16, "Vostok 6", "Valentina Tereshkova becomes the first woman in space, flying 48 orbits alone."),
+    P(CREW, SOV, 2, 1965, 3, 18, "Voskhod 2", "Alexei Leonov floats outside for twelve minutes: the first spacewalk."),
+    S(CREW, USA, 2, 1965, 3, 23, 1966, 11, 15, "Project Gemini", "Ten two-person flights rehearse rendezvous, docking and long-duration flight for the Moon program."),
+    P(CREW, USA, 3, 1967, 1, 27, "Apollo 1 fire", "A cabin fire during a launch rehearsal kills Grissom, White and Chaffee and forces a redesign of the spacecraft."),
+    P(CREW, INTL, 2, 1975, 7, 17, "Apollo-Soyuz", "An American Apollo and a Soviet Soyuz dock in orbit, and the crews shake hands through the hatch."),
+    S(CREW, USA, 1, 1981, 4, 12, 2011, 7, 21, "Space Shuttle", "135 flights of a reusable winged orbiter: satellites, Spacelab, Hubble servicing and most of the ISS."),
+    P(CREW, USA, 2, 1986, 1, 28, "Challenger lost", "The orbiter breaks apart 73 seconds after liftoff, killing all seven aboard. Flights stop for 32 months."),
+    P(CREW, USA, 2, 2003, 2, 1, "Columbia lost", "Damaged by foam at launch, Columbia disintegrates on re-entry. The accident sets the Shuttle's retirement in motion."),
+    P(CREW, CHN, 2, 2003, 10, 15, "Shenzhou 5", "Yang Liwei orbits for 21 hours, making China the third nation to launch its own astronauts."),
+    P(CREW, COM, 3, 2004, 10, 4, "SpaceShipOne", "A privately built rocket plane reaches space twice in a week and claims the Ansari X Prize."),
+    P(CREW, COM, 1, 2020, 5, 30, "Crew Dragon Demo-2", "Behnken and Hurley ride a SpaceX capsule to the ISS, the first crewed orbital flight by a private company."),
+    P(CREW, COM, 3, 2021, 9, 16, "Inspiration4", "Four private citizens spend three days in orbit with no professional astronaut aboard."),
+    P(CREW, COM, 3, 2024, 9, 12, "Polaris Dawn spacewalk", "Two members of a private crew step outside their Dragon capsule, the first commercial spacewalk."),
+
+    // The Moon
+    P(MOON, SOV, 2, 1959, 9, 13, "Luna 2", "The first human-made object to reach another world strikes the Moon east of Mare Imbrium."),
+    P(MOON, SOV, 3, 1959, 10, 7, "Luna 3", "Loops behind the Moon and radios back the first photographs of its far side."),
+    S(MOON, USA, 1, 1961, 5, 25, 1972, 12, 19, "Apollo program", "From Kennedy's challenge to Congress to the splashdown of Apollo 17: twelve people walk on the Moon."),
+    P(MOON, USA, 3, 1964, 7, 31, "Ranger 7", "Returns more than 4,000 close-up images in its final minutes before impact."),
+    P(MOON, SOV, 2, 1966, 2, 3, "Luna 9", "The first soft landing on the Moon, and the first pictures from its surface."),
+    P(MOON, USA, 3, 1966, 6, 2, "Surveyor 1", "America's first soft lander proves the surface can bear the weight of a spacecraft."),
+    S(MOON, USA, 1, 1968, 12, 21, 1968, 12, 27, "Apollo 8", "Borman, Lovell and Anders become the first people to leave Earth orbit, circling the Moon ten times."),
+    P(MOON, USA, 3, 1968, 12, 24, "Earthrise", "On the fourth orbit Bill Anders photographs the Earth coming up over the lunar horizon."),
+    P(MOON, USA, 2, 1969, 7, 20, "Eagle lands", "The lunar module touches down with under a minute of fuel left. Six hours later Armstrong steps onto the surface."),
+    S(MOON, USA, 1, 1969, 7, 16, 1969, 7, 24, "Apollo 11", "Armstrong and Aldrin land in the Sea of Tranquility on 20 July while Collins keeps watch in orbit."),
+    S(MOON, USA, 2, 1970, 4, 11, 1970, 4, 17, "Apollo 13", "An oxygen tank ruptures on the way out. The crew use the lunar module as a lifeboat and come home."),
+    P(MOON, SOV, 3, 1970, 11, 17, "Lunokhod 1", "The first remote-controlled rover on another world drives for ten months."),
+    S(MOON, USA, 2, 1972, 12, 7, 1972, 12, 19, "Apollo 17", "The last crewed landing. Cernan and the geologist Harrison Schmitt spend three days in the Taurus-Littrow valley."),
+    P(MOON, SOV, 3, 1976, 8, 18, "Luna 24", "Drills two metres into Mare Crisium and returns the last lunar samples for 44 years."),
+    P(MOON, USA, 3, 1994, 1, 25, "Clementine", "Maps the Moon in eleven wavelengths and hints at ice in the polar craters."),
+    P(MOON, IND, 3, 2008, 10, 22, "Chandrayaan-1", "India's first lunar orbiter carries the instrument that confirms water molecules across the surface."),
+    O(MOON, USA, 3, 2009, 6, 18, "Lunar Reconnaissance Orbiter", "Still mapping the Moon at half-metre resolution, the Apollo landing sites included."),
+    P(MOON, CHN, 2, 2013, 12, 14, "Chang'e 3", "China's first lunar landing, and the first soft landing by anyone since 1976, delivers the Yutu rover."),
+    P(MOON, CHN, 2, 2019, 1, 3, "Chang'e 4", "The first landing on the far side, relayed through a satellite parked beyond the Moon."),
+    S(MOON, CHN, 2, 2020, 11, 23, 2020, 12, 16, "Chang'e 5", "Collects 1.7 kg of young volcanic rock and brings it home."),
+    S(MOON, USA, 2, 2022, 11, 16, 2022, 12, 11, "Artemis I", "The first flight of the SLS rocket sends an uncrewed Orion capsule around the Moon and back."),
+    P(MOON, IND, 2, 2023, 8, 23, "Chandrayaan-3", "India lands near the lunar south pole, the fourth nation to touch down softly."),
+    P(MOON, JPN, 3, 2024, 1, 19, "SLIM", "Japan's precision lander touches down within 100 metres of its target, albeit on its nose."),
+    P(MOON, COM, 3, 2024, 2, 22, "Odysseus", "Intuitive Machines makes the first commercial lunar landing, tipping over on arrival."),
+    S(MOON, CHN, 2, 2024, 5, 3, 2024, 6, 25, "Chang'e 6", "Returns the first samples ever collected from the far side of the Moon."),
+
+    // Space stations
+    S(STATION, SOV, 2, 1971, 4, 19, 1971, 10, 11, "Salyut 1", "The first space station. Its only crew spend 23 days aboard and are lost during re-entry."),
+    S(STATION, USA, 2, 1973, 5, 14, 1979, 7, 11, "Skylab", "A converted Saturn V stage hosts three crews for up to 84 days, then falls over Western Australia."),
+    S(STATION, SOV, 3, 1977, 9, 29, 1982, 7, 29, "Salyut 6", "A second docking port allows resupply and visiting crews, and stays of half a year."),
+    S(STATION, SOV, 3, 1982, 4, 19, 1991, 2, 7, "Salyut 7", "Rescued from a dead, frozen drift in 1985 by a crew who docked with it by hand."),
+    S(STATION, SOV, 1, 1986, 2, 20, 2001, 3, 23, "Mir", "The first modular station, assembled over a decade and occupied for twelve and a half of its fifteen years."),
+    P(STATION, INTL, 3, 1995, 6, 29, "Shuttle docks with Mir", "Atlantis links up with the Russian station, the start of the partnership that builds the ISS."),
+    O(STATION, INTL, 1, 1998, 11, 20, "International Space Station", "Sixteen pressurised modules from five agencies, assembled in orbit over more than forty flights."),
+    P(STATION, INTL, 2, 2000, 11, 2, "Expedition 1", "Shepherd, Gidzenko and Krikalev move in. Someone has been living in orbit ever since."),
+    S(STATION, CHN, 3, 2011, 9, 29, 2018, 4, 2, "Tiangong-1", "A single-module testbed for docking and short stays, visited by two crews."),
+    O(STATION, CHN, 2, 2021, 4, 29, "Tiangong", "China's three-module station, permanently crewed since 2022."),
+
+    // Deep space
+    P(DEEP, USA, 2, 1962, 12, 14, "Mariner 2", "Passes Venus and returns the first data from another planet: the surface is hot enough to melt lead."),
+    P(DEEP, USA, 2, 1965, 7, 15, "Mariner 4", "Twenty-two grainy frames show a cratered Mars and end the dream of canals."),
+    P(DEEP, SOV, 2, 1970, 12, 15, "Venera 7", "Survives 23 minutes on Venus, the first transmission from the surface of another planet."),
+    P(DEEP, USA, 3, 1971, 11, 14, "Mariner 9", "The first spacecraft to orbit another planet waits out a dust storm, then maps all of Mars."),
+    P(DEEP, USA, 3, 1972, 3, 3, "Pioneer 10", "Launched toward Jupiter: the first craft to cross the asteroid belt and to leave the planets behind."),
+    P(DEEP, USA, 1, 1976, 7, 20, "Viking 1", "The first successful Mars landing begins six years of surface science and a search for life."),
+    O(DEEP, USA, 1, 1977, 8, 20, "Voyager 1 & 2", "A grand tour of the four giant planets that became the first mission to interstellar space."),
+    P(DEEP, USA, 3, 1979, 3, 5, "Voyager 1 at Jupiter", "Discovers active volcanoes on Io and a thin ring around the planet."),
+    P(DEEP, EUR, 3, 1986, 3, 14, "Giotto", "Flies within 600 km of Halley's Comet and photographs a nucleus darker than coal."),
+    P(DEEP, USA, 2, 1989, 8, 25, "Voyager 2 at Neptune", "The only visit to Neptune reveals supersonic winds and geysers on Triton."),
+    S(DEEP, USA, 2, 1989, 10, 18, 2003, 9, 21, "Galileo", "Eight years in orbit around Jupiter find evidence of an ocean under Europa's ice."),
+    P(DEEP, USA, 3, 1990, 2, 14, "Pale Blue Dot", "From six billion kilometres, Voyager 1 turns around and photographs the Earth as a single pixel."),
+    P(DEEP, USA, 2, 1997, 7, 4, "Mars Pathfinder", "Bounces to a stop on airbags and releases Sojourner, the first rover on Mars."),
+    S(DEEP, USA, 1, 1997, 10, 15, 2017, 9, 15, "Cassini-Huygens", "Thirteen years at Saturn: Titan's methane seas, Enceladus's plumes, and a final dive into the planet."),
+    P(DEEP, USA, 3, 2001, 2, 12, "NEAR Shoemaker", "Ends a year in orbit around Eros by settling onto it, the first landing on an asteroid."),
+    S(DEEP, USA, 2, 2004, 1, 25, 2018, 6, 10, "Opportunity", "Built for 90 days on Mars, it drives 45 km over more than fourteen years."),
+    P(DEEP, EUR, 2, 2005, 1, 14, "Huygens", "Parachutes onto Titan, the most distant landing ever made."),
+    P(DEEP, JPN, 2, 2010, 6, 13, "Hayabusa", "Returns grains of the asteroid Itokawa after a seven-year journey plagued by failures."),
+    O(DEEP, USA, 1, 2012, 8, 6, "Curiosity", "Lowered onto Mars by a rocket-powered sky crane, and still climbing Mount Sharp."),
+    P(DEEP, USA, 2, 2012, 8, 25, "Voyager 1 goes interstellar", "Crosses the heliopause, the boundary where the Sun's wind gives way to the galaxy's."),
+    P(DEEP, IND, 3, 2014, 9, 24, "Mangalyaan", "India reaches Mars orbit on its first attempt, for about 74 million dollars."),
+    P(DEEP, EUR, 2, 2014, 11, 12, "Philae", "Rosetta's lander bounces twice and comes to rest on comet 67P."),
+    P(DEEP, USA, 1, 2015, 7, 14, "New Horizons at Pluto", "After nine and a half years of cruise, a single flyby reveals nitrogen glaciers and mountains of ice."),
+    P(DEEP, USA, 3, 2016, 7, 5, "Juno", "Enters a polar orbit around Jupiter to map its gravity, magnetic field and deep atmosphere."),
+    P(DEEP, USA, 3, 2018, 8, 12, "Parker Solar Probe", "Launched to fly through the Sun's corona, faster than any spacecraft before it."),
+    P(DEEP, USA, 2, 2021, 2, 18, "Perseverance", "Lands in Jezero crater on Mars to cache rock samples from an ancient river delta."),
+    P(DEEP, USA, 2, 2021, 4, 19, "Ingenuity", "A 1.8 kg helicopter makes the first powered flight on another planet, then 71 more across Mars."),
+    P(DEEP, USA, 2, 2022, 9, 26, "DART", "Rams the moonlet Dimorphos and shortens its orbit by 32 minutes: the first planetary-defence test."),
+    P(DEEP, USA, 2, 2023, 9, 24, "OSIRIS-REx", "Drops a capsule in the Utah desert holding 121 grams of the asteroid Bennu."),
+    P(DEEP, USA, 3, 2024, 10, 14, "Europa Clipper", "Sets out for Jupiter to make some fifty close passes over Europa's ice shell."),
+
+    // Observatories
+    P(SCOPE, USA, 3, 1970, 12, 12, "Uhuru", "The first X-ray astronomy satellite catalogues 339 sources, among them the black-hole candidate Cygnus X-1."),
+    P(SCOPE, USA, 3, 1983, 1, 25, "IRAS", "Surveys the whole sky in infrared and finds dust discs around nearby stars."),
+    S(SCOPE, USA, 3, 1989, 11, 18, 1993, 12, 23, "COBE", "Measures the afterglow of the Big Bang and finds the faint ripples that seeded galaxies."),
+    O(SCOPE, USA, 1, 1990, 4, 24, "Hubble Space Telescope", "Launched with a flawed mirror, repaired in orbit, and still observing after more than three decades."),
+    S(SCOPE, USA, 3, 1991, 4, 5, 2000, 6, 4, "Compton", "Shows that gamma-ray bursts come from every direction, and therefore from far beyond our galaxy."),
+    P(SCOPE, USA, 2, 1993, 12, 2, "Hubble repaired", "Endeavour's crew fit corrective optics over five spacewalks and the pictures snap into focus."),
+    O(SCOPE, EUR, 3, 1995, 12, 2, "SOHO", "Watches the Sun without interruption from a point 1.5 million km sunward of Earth."),
+    O(SCOPE, USA, 2, 1999, 7, 23, "Chandra", "The sharpest X-ray telescope ever flown images supernova remnants and the gas between galaxies."),
+    S(SCOPE, USA, 3, 2001, 6, 30, 2010, 8, 20, "WMAP", "Pins down the age of the universe at about 13.8 billion years."),
+    S(SCOPE, USA, 2, 2003, 8, 25, 2020, 1, 30, "Spitzer", "An infrared observatory trailing the Earth. It reveals the seven planets of TRAPPIST-1."),
+    S(SCOPE, USA, 2, 2009, 3, 7, 2018, 10, 30, "Kepler", "Stares at one patch of sky and finds more than 2,600 planets around other stars."),
+    P(SCOPE, EUR, 3, 2009, 5, 14, "Herschel & Planck", "Two observatories share one Ariane 5: the largest infrared mirror yet, and a mapper of the cosmic background."),
+    S(SCOPE, EUR, 3, 2013, 12, 19, 2025, 3, 27, "Gaia", "Measures positions and motions for nearly two billion stars of the Milky Way."),
+    P(SCOPE, USA, 3, 2018, 4, 18, "TESS", "Begins an all-sky search for planets around the nearest and brightest stars."),
+    O(SCOPE, USA, 1, 2021, 12, 25, "James Webb Space Telescope", "A 6.5 m segmented mirror, unfolded a million and a half kilometres from Earth and tuned to the infrared."),
+    P(SCOPE, USA, 2, 2022, 7, 12, "Webb's first images", "The first full-colour images show galaxies whose light left them more than 13 billion years ago."),
+    P(SCOPE, EUR, 3, 2023, 7, 1, "Euclid", "Sets out to chart a third of the sky and the dark matter that shapes it."),
+
+    // Orbit & launch
+    P(LAUNCH, SOV, 1, 1957, 10, 4, "Sputnik 1", "An 84 kg sphere with four antennas beeps from orbit for three weeks. The space age begins."),
+    P(LAUNCH, SOV, 3, 1957, 11, 3, "Sputnik 2", "Carries the dog Laika, the first animal to orbit the Earth."),
+    P(LAUNCH, USA, 2, 1958, 1, 31, "Explorer 1", "The first American satellite discovers the radiation belts that now bear Van Allen's name."),
+    P(LAUNCH, USA, 2, 1958, 10, 1, "NASA opens", "The National Aeronautics and Space Administration begins work with 8,000 staff inherited from NACA."),
+    P(LAUNCH, USA, 3, 1960, 4, 1, "TIROS-1", "The first weather satellite sends back television pictures of cloud systems."),
+    P(LAUNCH, USA, 3, 1962, 7, 10, "Telstar 1", "Relays the first live television across the Atlantic."),
+    P(LAUNCH, USA, 3, 1964, 8, 19, "Syncom 3", "The first geostationary satellite, in time to broadcast the Tokyo Olympics."),
+    P(LAUNCH, USA, 2, 1967, 11, 9, "Saturn V flies", "Apollo 4: the first launch of the 110 m Moon rocket, uncrewed, works on the first try."),
+    P(LAUNCH, USA, 3, 1972, 7, 23, "Landsat 1", "Starts the longest continuous record of the Earth's surface from orbit."),
+    P(LAUNCH, USA, 3, 1978, 2, 22, "First GPS satellite", "Navstar 1 begins the constellation that will put a position fix in every pocket."),
+    P(LAUNCH, EUR, 3, 1979, 12, 24, "Ariane 1", "Europe's own launcher reaches orbit on its maiden flight from Kourou."),
+    P(LAUNCH, SOV, 3, 1988, 11, 15, "Buran", "The Soviet shuttle flies once, uncrewed, and lands itself on a runway."),
+    P(LAUNCH, COM, 2, 2008, 9, 28, "Falcon 1 reaches orbit", "On its fourth attempt, SpaceX flies the first privately developed liquid-fuel rocket to orbit."),
+    P(LAUNCH, COM, 2, 2012, 5, 25, "Dragon at the ISS", "The first commercial spacecraft to berth with the station."),
+    P(LAUNCH, COM, 1, 2015, 12, 21, "First booster landing", "A Falcon 9 first stage delivers its payload, turns around and lands upright at Cape Canaveral."),
+    P(LAUNCH, CHN, 3, 2016, 11, 3, "Long March 5", "China's heavy-lift rocket debuts. It goes on to launch the station modules and the Moon and Mars missions."),
+    P(LAUNCH, COM, 3, 2017, 3, 30, "First reflown booster", "SES-10 rides to orbit on a Falcon 9 stage that had flown eleven months earlier."),
+    P(LAUNCH, COM, 2, 2018, 2, 6, "Falcon Heavy", "Three cores, 27 engines, and two side boosters landing in unison."),
+    P(LAUNCH, COM, 2, 2023, 4, 20, "Starship's first flight", "The largest rocket ever built clears the pad and is destroyed four minutes later."),
+    P(LAUNCH, EUR, 3, 2024, 7, 9, "Ariane 6", "Europe's new launcher makes its first flight."),
+    P(LAUNCH, COM, 2, 2024, 10, 13, "Booster caught", "On Starship's fifth flight the Super Heavy booster returns to the pad and is caught by the tower's arms."),
+    P(LAUNCH, COM, 3, 2025, 1, 16, "New Glenn", "Blue Origin's heavy-lift rocket reaches orbit on its first launch."),
+  ]
+  sort(raw, fn(a, b) -> a.t0 - b.t0)
+end
+
+fn is_span(e)
+  e.t1 > e.t0
+end
+
+fn label_style(imp, c)
+  if imp == 1 then uib(12, c) else ui(12, c) end
+end
+
+fn build_label_w(evs)
+  let out = for e in evs do
+    text_width(e.title, label_style(e.imp, TEXT))
+  end
+  out
+end
+
+fn build_hay(evs)
+  let out = for e in evs do
+    lower(e.title ++ " " ++ e.blurb ++ " " ++ ORG_NAME[e.org] ++ " " ++ CAT_NAME[e.cat] ++ " " ++ str(e.yr))
+  end
+  out
+end
+
+// Per-lane drawing order: landmarks first, then by date. The packer places
+// events in this order, so when labels compete the important one wins.
+fn build_orders(evs)
+  let out = for c in range(0, 6) do
+    let idx = filter(range(0, len(evs)), fn(i) -> evs[i].cat == c)
+    sort(idx, fn(a, b) -> (evs[a].imp - evs[b].imp) * 100000 + (evs[a].t0 - evs[b].t0))
+  end
+  out
+end
+
+// Width of each lane's title block (swatch, name, count), which the packer
+// keeps clear in row 0.
+fn build_head_w(evs)
+  let out = for c in range(0, 6) do
+    28.0 + float(text_width(upper(CAT_NAME[c]), caps(TEXT))) + 8.0 + float(text_width("00", mono(10, FAINT))) + 12.0
+  end
+  out
+end
+
+fn fmt_when(e)
+  if !is_span(e) then
+    fmt_day(e.t0)
+  elsif e.live then
+    fmt_day(e.t0) ++ " – present"
+  else
+    let a = civil(e.t0)
+    let b = civil(e.t1)
+    if a.y == b.y && a.m == b.m then
+      str(a.d) ++ " – " ++ fmt_day(e.t1)
+    elsif a.y == b.y then
+      str(a.d) ++ " " ++ MON[a.m - 1] ++ " – " ++ fmt_day(e.t1)
+    else
+      fmt_day(e.t0) ++ " – " ++ fmt_day(e.t1)
+    end
+  end
+end
+
+fn fmt_when_short(e)
+  if is_span(e) && e.t1 - e.t0 > 400 then
+    let endy = if e.live then "now" else str(civil(e.t1).y) end
+    str(e.yr) ++ " – " ++ endy
+  else
+    fmt_mon(e.t0)
+  end
+end
+
+// ── Filtering ────────────────────────────────────────────────────────────────
+
+fn passes(e, hay, cats, orgs, kind, detail, q)
+  if !cats[e.cat] || !orgs[e.org] then return false end
+  if e.imp > detail then return false end
+  if kind == 1 && is_span(e) then return false end
+  if kind == 2 && !is_span(e) then return false end
+  if len(q) > 0 && !contains(hay, q) then return false end
+  true
+end
+
+fn bits(flags)
+  let s = ""
+  for f in flags do
+    s = s ++ (if f then "1" else "0" end)
+  end
+  s
+end
+
+fn count_true(flags)
+  let n = 0
+  for f in flags do
+    if f then n = n + 1 end
+  end
+  n
+end
+
+// ── View arithmetic ──────────────────────────────────────────────────────────
+
+fn clamp_view(t0, span)
+  let sp = max(MIN_SPAN, min(span, DOM))
+  let a = max(float(D0), min(t0, float(D1) - sp))
+  {t0: a, span: sp}
+end
+
+// Zoom by `factor` (< 1 is in) keeping the time `at` under the same pixel.
+fn zoom_at(t0, span, at, factor)
+  let sp = max(MIN_SPAN, min(span * factor, DOM))
+  let f = (at - t0) / span
+  clamp_view(at - f * sp, sp)
+end
+
+fn frame_event(e, cur_span)
+  if is_span(e) then
+    let len_d = float(e.t1 - e.t0)
+    let sp = max(40.0, len_d * 1.3)
+    clamp_view(float(e.t0) - (sp - len_d) / 2.0, sp)
+  else
+    let sp = min(cur_span, 120.0)
+    clamp_view(float(e.t0) - sp / 2.0, sp)
+  end
+end
+
+// Pan just far enough to bring an event into the comfortable middle of the
+// view; a view that already shows it does not move.
+fn reveal(e, t0, span)
+  let a = float(e.t0)
+  let lo = t0 + span * 0.08
+  let hi = t0 + span * 0.82
+  if a >= lo && a <= hi then
+    {t0: t0, span: span}
+  else
+    clamp_view(a - span * 0.35, span)
+  end
+end
+
+// ── The ruler ────────────────────────────────────────────────────────────────
+// Seven tick levels. The finest one whose labels still have room is the one
+// drawn, the level below it supplies unlabelled minor ticks, and a coarser
+// unit runs along the top as a sticky context band.
+
+let LEVEL_NAME = ["decade", "5-year", "year", "quarter", "month", "week", "day"]
+let LEVEL_DAYS = [3652.5, 1826.25, 365.25, 91.31, 30.44, 7.6, 1.0]
+let LEVEL_MINPX = [48.0, 48.0, 46.0, 42.0, 42.0, 30.0, 26.0]
+let LEVEL_MINOR = [2, 2, 3, 4, 5, 6, -1]
+
+fn pick_level(ppd)
+  let lv = 0
+  for i in range(0, 7) do
+    if LEVEL_DAYS[i] * ppd >= LEVEL_MINPX[i] then lv = i end
+  end
+  lv
+end
+
+fn gen_ticks(level, ta, tb)
+  let out = []
+  let c = civil(int(floor(ta)))
+  if level <= 2 then
+    let n = if level == 0 then 10 elsif level == 1 then 5 else 1 end
+    let y = (c.y / n) * n
+    let t = day_of(y, 1, 1)
+    while t <= tb do
+      out = append(out, {t: t, label: str(y), strong: y % 10 == 0 && level > 0})
+      y = y + n
+      t = day_of(y, 1, 1)
+    end
+  elsif level <= 5 then
+    let n = if level == 3 then 3 else 1 end
+    let mi = ((c.y * 12 + c.m - 1) / n) * n
+    let going = true
+    while going do
+      let y = mi / 12
+      let m = mi % 12 + 1
+      let t = day_of(y, m, 1)
+      if t > tb then
+        going = false
+      elsif level == 5 then
+        out = append(out, {t: t, label: MON[m - 1], strong: true})
+        out = append(out, {t: t + 7, label: "8", strong: false})
+        out = append(out, {t: t + 14, label: "15", strong: false})
+        out = append(out, {t: t + 21, label: "22", strong: false})
+      else
+        out = append(out, {t: t, label: if m == 1 then str(y) else MON[m - 1] end, strong: m == 1})
+      end
+      mi = mi + n
+    end
+  else
+    let t = int(floor(ta))
+    while t <= tb do
+      let d = civil(t)
+      out = append(out, {t: t, label: if d.d == 1 then MON[d.m - 1] else str(d.d) end, strong: d.d == 1})
+      t = t + 1
+    end
+  end
+  out
+end
+
+// The context band: centuries over decade ticks, decades over years, years
+// over months, months over days.
+fn gen_context(level, ta, tb)
+  let out = []
+  let c = civil(int(floor(ta)))
+  if level <= 1 then
+    let y = ((c.y - 1) / 100) * 100 + 1
+    while day_of(y, 1, 1) <= tb do
+      let nth = (y - 1) / 100 + 1
+      let suffix = if nth == 21 then "st" else "th" end
+      out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 100, 1, 1), label: str(nth) ++ suffix ++ " century"})
+      y = y + 100
+    end
+  elsif level == 2 then
+    let y = (c.y / 10) * 10
+    while day_of(y, 1, 1) <= tb do
+      out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 10, 1, 1), label: str(y) ++ "s"})
+      y = y + 10
+    end
+  elsif level <= 4 then
+    let y = c.y
+    while day_of(y, 1, 1) <= tb do
+      out = append(out, {t0: day_of(y, 1, 1), t1: day_of(y + 1, 1, 1), label: str(y)})
+      y = y + 1
+    end
+  else
+    let mi = c.y * 12 + c.m - 1
+    let going = true
+    while going do
+      let y = mi / 12
+      let m = mi % 12 + 1
+      let t = day_of(y, m, 1)
+      if t > tb then
+        going = false
+      else
+        let nx = mi + 1
+        out = append(out, {t0: t, t1: day_of(nx / 12, nx % 12 + 1, 1), label: MONTH[m - 1] ++ " " ++ str(y)})
+      end
+      mi = mi + 1
+    end
+  end
+  out
+end
+
+// ── Lane packing ─────────────────────────────────────────────────────────────
+// Pixel-space interval packing, done fresh every frame. Each event asks for
+// room for its mark plus its label. If no row has that much it asks for the
+// mark alone, and may take the room from the *label* of an event no more
+// important than itself. If even the mark has nowhere to go it drops to the
+// lane's rail, a thin strip along the bottom that says "there is more here".
+// So zooming out sheds labels, then marks, from the least important events
+// first, and zooming in gives them back.
+
+// An occupied interval is [left, right, mark_left, mark_right, owner]: the
+// mark's own extent inside the reservation, and the index of the event that
+// holds it in the output list.
+fn row_free(ivs, a, b)
+  for iv in ivs do
+    if a < iv[1] && b > iv[0] then return false end
+  end
+  true
+end
+
+fn row_free_of_marks(ivs, a, b)
+  for iv in ivs do
+    if a < iv[3] && b > iv[2] then return false end
+  end
+  true
+end
+
+// mode: 0 mark only, 1 label right of the mark, 2 label inside the bar,
+// 3 label left of the mark (used against the right edge of the plot).
+// `row == nrows` means the rail. `head_w` is the width of the lane's own
+// title, which sits at the left of row 0 and is reserved like any other label.
+fn pack_lane(order, evs, vis, lw, t0, span, px, pw, nrows, sel, head_w)
+  let rows = for r in range(0, nrows) do [] end
+  rows[0] = [[px - 4000.0, px + head_w, px - 4000.0, px + head_w, -1]]
+  let out = []
+  let ppd = pw / span
+  let right = px + pw
+  for pass in range(0, 2) do
+    for i in order do
+      if !vis[i] then continue end
+      if (pass == 0) != (i == sel) then continue end
+      let e = evs[i]
+      let xa = px + (float(e.t0) - t0) * ppd
+      let xb = px + (float(e.t1) - t0) * ppd
+      if xb < px - 6.0 || xa > right + 6.0 then continue end
+      let w = float(lw[i])
+      let x0 = xa
+      let x1 = xa
+      let ma = xa - 8.0
+      let mb = xa + 8.0
+      let gap = 12.0
+      let mode = 1
+      if is_span(e) then
+        x1 = max(xb, xa + 5.0)
+        ma = x0 - 2.0
+        mb = x1 + 2.0
+        gap = 8.0
+        if min(x1, right) - max(x0, px) >= w + 20.0 then mode = 2 end
+      end
+      let lx = if mode == 2 then max(x0, px) + 10.0 else x1 + gap end
+      let a = ma
+      let b = if mode == 2 then mb else lx + w end
+      if mode == 1 && b > right - 6.0 then
+        // The label would run off the right edge: hang it on the left.
+        if x0 - gap - w > px + 6.0 then
+          mode = 3
+          lx = x0 - gap - w
+          a = lx
+          b = mb
+        else
+          mode = 0
+          b = mb
+        end
+      end
+      let row = -1
+      if mode > 0 then
+        for r in range(0, nrows) do
+          if row < 0 && row_free(rows[r], a - 6.0, b + 8.0) then row = r end
+        end
+      end
+      if row < 0 then
+        // No room for the label anywhere: try the bare mark.
+        if mode == 1 || mode == 3 then
+          mode = 0
+          a = ma
+          b = mb
+        end
+        for r in range(0, nrows) do
+          if row < 0 && row_free(rows[r], a, b) then row = r end
+        end
+      end
+      if row < 0 && mode == 0 then
+        // Take the room from a label, if every label in the way belongs to an
+        // event that matters no more than this one.
+        for r in range(0, nrows) do
+          if row < 0 && row_free_of_marks(rows[r], a, b) then
+            let ok = true
+            for iv in rows[r] do
+              if a < iv[1] && b > iv[0] then
+                if iv[4] < 0 || evs[out[iv[4]].i].imp < e.imp || out[iv[4]].i == sel then ok = false end
+              end
+            end
+            if ok then
+              for j in range(0, len(rows[r])) do
+                let iv = rows[r][j]
+                if a < iv[1] && b > iv[0] then
+                  out[iv[4]].mode = 0
+                  rows[r][j] = [iv[2], iv[3], iv[2], iv[3], iv[4]]
+                end
+              end
+              row = r
+            end
+          end
+        end
+      end
+      if row < 0 then
+        row = nrows
+        mode = 0
+      else
+        rows[row] = append(rows[row], [a, b, ma, mb, len(out)])
+      end
+      out = append(out, {i: i, row: row, mode: mode, x0: x0, x1: x1, lx: lx})
+    end
+  end
+  out
+end
+
+// ── Small controls ───────────────────────────────────────────────────────────
+
+fn segmented(r, labels, active)
+  let n = len(labels)
+  let cw = float(r.w) / float(n)
+  draw_rect_rounded(r, 7, RAISED)
+  let out = active
+  for i in range(0, n) do
+    let cr = rect(r.x + cw * i, r.y, cw, r.h)
+    let on = i == active
+    let hot = hovered(cr)
+    if on then
+      draw_rect_rounded(rect(cr.x + 2, cr.y + 2, cr.w - 4, cr.h - 4), 5, LINE_HI)
+    end
+    let st = ui(12, if on then TEXT elsif hot then SOFT else DIM end)
+    tx_center(labels[i], cr.x + cw / 2.0, vmid(cr.y, cr.h, 12), st)
+    if hot && mouse_pressed(0) then out = i end
+  end
+  out
+end
+
+fn icon_button(r, glyph)
+  let hot = hovered(r)
+  draw_rect_rounded(r, 7, if hot then HOVER else RAISED end)
+  let st = mono(13, if hot then TEXT else SOFT end)
+  tx_center(glyph, r.x + r.w / 2.0, vmid(r.y, r.h, 13), st)
+  hot && mouse_pressed(0)
+end
+
+fn diamond(x, y, r, c)
+  fill_poly([[x, y - r], [x + r, y], [x, y + r], [x - r, y]], c)
+end
+
+// ═════════════════════════════════════════════════════════════════════════════
+// State
+// ═════════════════════════════════════════════════════════════════════════════
+
+state events = build_events()
+state lab_w = build_label_w(events)
+state hay = build_hay(events)
+state orders = build_orders(events)
+state head_w = build_head_w(events)
+let N = len(events)
+
+// The view: `v_*` is where the user asked to be, `s_*` is what is on screen.
+// Every input writes the target; the shown view eases after it.
+state v_t0 = float(D0)
+state v_span = DOM
+state s_t0 = float(D0)
+state s_span = DOM
+state anc_on = false      // an anchored zoom is in flight: keep `anc_t` at `anc_f`
+state anc_t = 0.0
+state anc_f = 0.5
+
+state cats_on = [true, true, true, true, true, true]
+state orgs_on = [true, true, true, true, true, true, true, true]
+state kind = 0            // 0 everything, 1 moments, 2 programs
+state detail = 3          // show importance <= detail
+state query = ""
+state fc = focus_state()
+
+state sel = -1
+state drag = ""           // "", "pan", "band", "ov-move", "ov-l", "ov-r"
+state drag_x = 0.0        // pointer x at press
+state drag_t = 0.0        // v_t0 at press (pan), or the time under the pointer
+state drag_off = 0.0
+state drag_moved = false
+
+state lane_wt = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+state ev_row = for i in range(0, 200) do 0.0 end
+state ev_seen = for i in range(0, 200) do -9 end
+state tick = 0
+tick = tick + 1
+
+// Counted edges, so a test can see that an input landed.
+state n_zooms = 0
+state n_pans = 0
+state n_band_zooms = 0
+state n_selects = 0
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Layout
+// ═════════════════════════════════════════════════════════════════════════════
+
+let W = screen_width()
+let H = screen_height()
+let mx = float(mouse_x())
+let my = float(mouse_y())
+
+let HEAD_H = 58
+let SIDE_W = 248
+let INSP_W = 312
+let FOOT_H = 28
+let RULER_H = 50
+let OVER_H = 92
+let RAIL_H = 9.0          // the overflow strip along the bottom of each lane
+let LANE_PAD = 5.0
+
+let tl = rect(SIDE_W, HEAD_H, W - SIDE_W - INSP_W, H - HEAD_H - FOOT_H)
+let ruler = rect(tl.x, tl.y, tl.w, RULER_H)
+let lanes_r = rect(tl.x, tl.y + RULER_H, tl.w, tl.h - RULER_H - OVER_H)
+let over_r = rect(tl.x, tl.y + tl.h - OVER_H, tl.w, OVER_H)
+let ov = rect(over_r.x + 16, over_r.y + 30, over_r.w - 32, 38)
+let px = float(tl.x)
+let pw = float(tl.w)
+
+let in_lanes = point_in(mx, my, lanes_r)
+let in_ruler = point_in(mx, my, ruler)
+let in_over = point_in(mx, my, over_r)
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Input, part one: everything that moves the view
+// ═════════════════════════════════════════════════════════════════════════════
+
+// The search field goes first so that a focused field swallows the letters
+// that are shortcuts everywhere else.
+let search_r = rect(16, HEAD_H + 16, SIDE_W - 32, 32)
+let was_typing = focused(fc, "search")
+let fres = text_field_update(fc, "search", rect(search_r.x + 30, search_r.y, search_r.w - 56, search_r.h), query,
+  {size: 13, font: "ui", inset: 0})
+fc = fres.focus
+query = fres.text
+let ch = text_input()
+let typing = focused(fc, "search")
+if typing && key_pressed("escape") then
+  fc = focus_clear(fc)
+  typing = false
+elsif !was_typing && !typing && ch == "/" then
+  fc = focus_set(fc, "search")
+elsif !typing && key_pressed("escape") then
+  if sel >= 0 then
+    sel = -1
+  elsif len(query) > 0 then
+    query = ""
+  end
+end
+let q = lower(query)
+let keys_ok = !typing && !was_typing
+
+// Filter keys.
+if keys_ok then
+  for c in range(0, 6) do
+    if key_pressed(str(c + 1)) then cats_on[c] = !cats_on[c] end
+  end
+  if key_pressed("a") then
+    cats_on = [true, true, true, true, true, true]
+    orgs_on = [true, true, true, true, true, true, true, true]
+  end
+  if key_pressed("m") then kind = (kind + 1) % 3 end
+  if key_pressed("d") then detail = if detail == 3 then 1 else detail + 1 end end
+  if key_pressed("r") then
+    cats_on = [true, true, true, true, true, true]
+    orgs_on = [true, true, true, true, true, true, true, true]
+    kind = 0
+    detail = 3
+    query = ""
+    sel = -1
+    v_t0 = float(D0)
+    v_span = DOM
+    anc_on = false
+  end
+end
+
+let ppd_v = pw / v_span
+
+// Keyboard pan and zoom.
+if keys_ok then
+  let step = if mod_shift() then 0.5 else 0.15 end
+  if key_pressed("left") then
+    let nv = clamp_view(v_t0 - v_span * step, v_span)
+    v_t0 = nv.t0
+    anc_on = false
+    n_pans = n_pans + 1
+  end
+  if key_pressed("right") then
+    let nv = clamp_view(v_t0 + v_span * step, v_span)
+    v_t0 = nv.t0
+    anc_on = false
+    n_pans = n_pans + 1
+  end
+  if key_pressed("home") then
+    v_t0 = float(D0)
+    anc_on = false
+  end
+  if key_pressed("end") then
+    v_t0 = float(D1) - v_span
+    anc_on = false
+  end
+  let kz = 0
+  if key_pressed("up") || ch == "+" || ch == "=" then kz = -1 end
+  if key_pressed("down") || ch == "-" || ch == "_" then kz = 1 end
+  if kz != 0 then
+    // Zoom about the pointer when it is over the timeline, else the centre.
+    let f = if in_lanes || in_ruler then (mx - px) / pw else 0.5 end
+    let at = v_t0 + v_span * f
+    let nv = zoom_at(v_t0, v_span, at, if kz < 0 then 0.5 else 2.0 end)
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = true
+    anc_t = at
+    anc_f = (at - nv.t0) / nv.span
+    n_zooms = n_zooms + 1
+  end
+  if key_pressed("0") || key_pressed("f") then
+    v_t0 = float(D0)
+    v_span = DOM
+    anc_on = false
+  end
+end
+
+// Wheel: zoom at the pointer. Shift (or a sideways wheel) pans instead.
+let sy = scroll_y()
+let sx = scroll_x()
+if (in_lanes || in_ruler) && drag == "" then
+  if sx != 0 || (sy != 0 && mod_shift()) then
+    let amt = if sx != 0 then sx else sy end
+    let nv = clamp_view(v_t0 + v_span * 0.06 * float(amt), v_span)
+    v_t0 = nv.t0
+    anc_on = false
+    n_pans = n_pans + 1
+  elsif sy != 0 then
+    let at = v_t0 + (mx - px) / ppd_v
+    let nv = zoom_at(v_t0, v_span, at, exp(float(sy) * 0.22))
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = true
+    anc_t = at
+    anc_f = (at - nv.t0) / nv.span
+    n_zooms = n_zooms + 1
+  end
+end
+
+// Overview geometry (needed for its press handling).
+let ov_ppd = float(ov.w) / DOM
+let wx0 = float(ov.x) + (s_t0 - float(D0)) * ov_ppd
+let wx1 = float(ov.x) + (s_t0 + s_span - float(D0)) * ov_ppd
+let ov_t = float(D0) + (clamp(mx, float(ov.x), float(ov.x + ov.w)) - float(ov.x)) / ov_ppd
+
+// Press: decide what this drag is.
+if mouse_pressed(0) && drag == "" then
+  if in_lanes then
+    drag = "pan"
+    drag_x = mx
+    drag_t = v_t0
+    drag_moved = false
+    if typing then
+      fc = focus_clear(fc)
+    end
+  elsif in_ruler then
+    drag = "band"
+    drag_x = mx
+    drag_t = s_t0 + (mx - px) / (pw / s_span)
+    drag_moved = false
+  elsif in_over then
+    drag_moved = true
+    if wx1 - wx0 >= 16.0 && abs(mx - wx0) <= 5.0 then
+      drag = "ov-l"
+    elsif wx1 - wx0 >= 16.0 && abs(mx - wx1) <= 5.0 then
+      drag = "ov-r"
+    else
+      drag = "ov-move"
+      if mx >= wx0 && mx <= wx1 then
+        drag_off = ov_t - v_t0
+      else
+        drag_off = v_span / 2.0
+      end
+    end
+  end
+end
+
+// Drag in progress.
+let band_a = 0.0
+let band_b = 0.0
+if drag == "pan" then
+  if abs(mx - drag_x) > 3.0 then drag_moved = true end
+  if drag_moved then
+    let nv = clamp_view(drag_t - (mx - drag_x) / ppd_v, v_span)
+    v_t0 = nv.t0
+    s_t0 = nv.t0
+    s_span = v_span
+    anc_on = false
+  end
+elsif drag == "band" then
+  if abs(mx - drag_x) > 3.0 then drag_moved = true end
+  let cur_t = s_t0 + (clamp(mx, px, px + pw) - px) / (pw / s_span)
+  band_a = min(drag_t, cur_t)
+  band_b = max(drag_t, cur_t)
+elsif drag == "ov-move" then
+  let nv = clamp_view(ov_t - drag_off, v_span)
+  v_t0 = nv.t0
+  s_t0 = nv.t0
+  s_span = v_span
+  anc_on = false
+elsif drag == "ov-l" then
+  let t1 = v_t0 + v_span
+  let a = max(float(D0), min(ov_t, t1 - MIN_SPAN))
+  v_t0 = a
+  v_span = t1 - a
+  s_t0 = v_t0
+  s_span = v_span
+  anc_on = false
+elsif drag == "ov-r" then
+  let b = min(float(D1), max(ov_t, v_t0 + MIN_SPAN))
+  v_span = b - v_t0
+  s_span = v_span
+  s_t0 = v_t0
+  anc_on = false
+end
+
+// Release.
+let click_in_lanes = false
+if mouse_released(0) || (drag != "" && !mouse_down(0) && !mouse_pressed(0)) then
+  if drag == "pan" then
+    if drag_moved then
+      n_pans = n_pans + 1
+    else
+      click_in_lanes = true
+    end
+  elsif drag == "band" then
+    if drag_moved && (band_b - band_a) * (pw / s_span) >= 6.0 then
+      let nv = clamp_view(band_a, max(MIN_SPAN, band_b - band_a))
+      v_t0 = nv.t0
+      v_span = nv.span
+      anc_on = false
+      n_band_zooms = n_band_zooms + 1
+    end
+  elsif drag == "ov-move" || drag == "ov-l" || drag == "ov-r" then
+    n_pans = n_pans + 1
+  end
+  drag = ""
+end
+
+// ── Ease the shown view toward the target ────────────────────────────────────
+let lg_t = log(v_span)
+let lg = approach(log(s_span), lg_t, 13.0)
+s_span = if lg == lg_t then v_span else exp(lg) end
+if anc_on then
+  s_t0 = anc_t - anc_f * s_span
+  if s_span == v_span then
+    anc_on = false
+    s_t0 = v_t0
+  end
+else
+  let c_now = approach(s_t0 + s_span / 2.0, v_t0 + v_span / 2.0, 13.0)
+  s_t0 = c_now - s_span / 2.0
+  if s_span == v_span && abs(s_t0 - v_t0) < 0.002 then s_t0 = v_t0 end
+end
+let animating = s_span != v_span || s_t0 != v_t0
+
+let ppd = pw / s_span
+let t_end = s_t0 + s_span
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Filter, pack, hit-test
+// ═════════════════════════════════════════════════════════════════════════════
+
+let vis = for i in range(0, N) do
+  passes(events[i], hay[i], cats_on, orgs_on, kind, detail, q)
+end
+let shown_n = count_true(vis)
+if sel >= 0 && !vis[sel] then sel = -1 end
+
+let lane_count = [0, 0, 0, 0, 0, 0]
+for i in range(0, N) do
+  if vis[i] then lane_count[events[i].cat] = lane_count[events[i].cat] + 1 end
+end
+
+// Lane heights: a switched-off category gives all of its room to the others,
+// and one with nothing left to show keeps only a title strip.
+let wt_sum = 0.0
+for c in range(0, 6) do
+  let want = if !cats_on[c] then 0.0 elsif lane_count[c] == 0 then 0.3 else 1.0 end
+  lane_wt[c] = approach(lane_wt[c], want, 14.0)
+  if lane_wt[c] != want then animating = true end
+  wt_sum = wt_sum + lane_wt[c]
+end
+let lanes_n = count_true(cats_on)
+
+let placed = []
+let lane_y = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let lane_h = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let lane_rows = [1, 1, 1, 1, 1, 1]
+let lane_rh = [24.0, 24.0, 24.0, 24.0, 24.0, 24.0]
+let label_n = 0
+let rail_n = 0
+let acc_y = float(lanes_r.y)
+for c in range(0, 6) do
+  let h = if wt_sum > 0.001 then float(lanes_r.h) * lane_wt[c] / wt_sum else 0.0 end
+  lane_y[c] = acc_y
+  lane_h[c] = h
+  acc_y = acc_y + h
+  if h < 24.0 then continue end
+  let nrows = imax(1, int((h - LANE_PAD * 2.0 - RAIL_H) / 20.0))
+  lane_rows[c] = nrows
+  lane_rh[c] = (h - LANE_PAD * 2.0 - RAIL_H) / float(nrows)
+  let ps = pack_lane(orders[c], events, vis, lab_w, s_t0, s_span, px, pw, nrows, sel, head_w[c])
+  for p in ps do
+    let target = float(p.row)
+    // An event that was not on screen last frame appears in place; one that
+    // was there glides to its new row.
+    ev_row[p.i] = if ev_seen[p.i] == tick - 1 then approach(ev_row[p.i], target, 16.0) else target end
+    if ev_row[p.i] != target then animating = true end
+    ev_seen[p.i] = tick
+    if p.mode > 0 then label_n = label_n + 1 end
+    if p.row >= nrows then rail_n = rail_n + 1 end
+    placed = append(placed, p)
+  end
+end
+// Centre line of a placed event. `rows` holds the eased row of every event;
+// past the last real row it slides down onto the rail.
+fn mark_y(i, cat, ys, hs, rhs, nrs, rows)
+  let n = nrs[cat]
+  let r = rows[i]
+  let top = ys[cat] + LANE_PAD
+  let last = top + (float(n) - 0.5) * rhs[cat]
+  if r <= float(n - 1) then
+    top + (r + 0.5) * rhs[cat]
+  else
+    lerp(last, ys[cat] + hs[cat] - RAIL_H / 2.0 - 1.0, r - float(n - 1))
+  end
+end
+
+// Hit-test: the last match wins, which is the one drawn on top.
+let hover = -1
+if in_lanes && (drag == "" || !drag_moved) then
+  for p in placed do
+    let e = events[p.i]
+    let cy = mark_y(p.i, e.cat, lane_y, lane_h, lane_rh, lane_rows, ev_row)
+    let on_rail = p.row >= lane_rows[e.cat]
+    let a = if p.mode == 3 then p.lx - 4.0 elsif is_span(e) then p.x0 else p.x0 - 8.0 end
+    let b = if p.mode == 1 then p.lx + float(lab_w[p.i]) + 4.0 elsif is_span(e) then p.x1 else p.x0 + 8.0 end
+    let reach = if on_rail then 5.0 else 10.0 end
+    if mx >= a - 2.0 && mx <= b + 2.0 && abs(my - cy) <= reach then hover = p.i end
+  end
+end
+
+// Input, part two: what needs to know what is under the pointer.
+if mouse_pressed(0) && in_lanes && click_count() >= 2 then
+  if hover >= 0 then
+    let nv = frame_event(events[hover], v_span)
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = false
+    sel = hover
+  else
+    let at = s_t0 + (mx - px) / ppd
+    let nv = zoom_at(v_t0, v_span, at, 0.4)
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = true
+    anc_t = at
+    anc_f = (at - nv.t0) / nv.span
+  end
+  n_zooms = n_zooms + 1
+elsif click_in_lanes then
+  if hover != sel then n_selects = n_selects + 1 end
+  sel = hover
+end
+
+// Next / previous event among those that pass the filters.
+if keys_ok then
+  let dir = 0
+  if key_pressed("n") || key_pressed("j") then dir = 1 end
+  if key_pressed("p") || key_pressed("k") then dir = -1 end
+  if dir != 0 && shown_n > 0 then
+    let pick = -1
+    if sel >= 0 then
+      let i = sel + dir
+      while i >= 0 && i < N && pick < 0 do
+        if vis[i] then pick = i end
+        i = i + dir
+      end
+      if pick < 0 then pick = sel end
+    else
+      // Nothing selected: start from the middle of the view.
+      let mid = v_t0 + v_span / 2.0
+      let best = -1.0
+      for i in range(0, N) do
+        if vis[i] then
+          let dist = abs(float(events[i].t0) - mid)
+          if best < 0.0 || dist < best then
+            best = dist
+            pick = i
+          end
+        end
+      end
+    end
+    if pick >= 0 then
+      if pick != sel then n_selects = n_selects + 1 end
+      sel = pick
+      let nv = reveal(events[sel], v_t0, v_span)
+      if nv.t0 != v_t0 then
+        v_t0 = nv.t0
+        anc_on = false
+      end
+    end
+  end
+  if key_pressed("return") && sel >= 0 then
+    let nv = frame_event(events[sel], v_span)
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = false
+    n_zooms = n_zooms + 1
+  end
+end
+// Return in the search field: jump to the first match.
+if fres.submitted && shown_n > 0 then
+  let first = -1
+  for i in range(0, N) do
+    if first < 0 && vis[i] then first = i end
+  end
+  sel = first
+  let nv = reveal(events[sel], v_t0, v_span)
+  v_t0 = nv.t0
+  anc_on = false
+  fc = focus_clear(fc)
+end
+
+let in_view = 0
+for i in range(0, N) do
+  if vis[i] && float(events[i].t1) >= s_t0 && float(events[i].t0) <= t_end then in_view = in_view + 1 end
+end
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw: the timeline
+// ═════════════════════════════════════════════════════════════════════════════
+
+clear(BG.r, BG.g, BG.b)
+
+let level = pick_level(ppd)
+let ticks = gen_ticks(level, s_t0, t_end)
+let minor_lv = LEVEL_MINOR[level]
+let minors = if minor_lv >= 0 && LEVEL_DAYS[minor_lv] * ppd >= 4.0 then gen_ticks(minor_lv, s_t0, t_end) else [] end
+let context = gen_context(level, s_t0, t_end)
+
+clip_push(tl)
+
+// Lane grounds and the tick grid behind everything.
+let lanes_bot = float(lanes_r.y + lanes_r.h)
+for c in range(0, 6) do
+  if lane_h[c] < 2.0 then continue end
+  if c % 2 == 1 then
+    draw_rect(rect(px, lane_y[c], pw, lane_h[c]), PANEL)
+  end
+end
+for tk in ticks do
+  let x = px + (float(tk.t) - s_t0) * ppd
+  if x >= px && x <= px + pw then
+    draw_rect(rect(x, float(lanes_r.y), 1, float(lanes_r.h)), if tk.strong then LINE else GRID end)
+  end
+end
+
+// Where the data stops. Programs still running are drawn up to this line and
+// fade out across it.
+let x_asof = px + (float(AS_OF) - s_t0) * ppd
+if x_asof > px && x_asof < px + pw then
+  let dy = float(lanes_r.y) + 2.0
+  while dy < lanes_bot do
+    draw_rect(rect(x_asof, dy, 1, 3), FAINT)
+    dy = dy + 7.0
+  end
+  if px + pw - x_asof >= 110.0 then
+    tx("data ends mid-2025", x_asof + 8.0, lanes_bot - 20.0, ui(10, FAINT))
+  end
+end
+
+// The selection's guide: a hairline (or a band, for a program) through every
+// lane, so its place in time reads against the other categories.
+if sel >= 0 then
+  let e = events[sel]
+  let xa = px + (float(e.t0) - s_t0) * ppd
+  let xb = px + (float(e.t1) - s_t0) * ppd
+  if is_span(e) && xb - xa > 2.0 then
+    draw_rect(rect(xa, float(lanes_r.y), xb - xa, float(lanes_r.h)), ACCENT, 12)
+    draw_rect(rect(xb, float(lanes_r.y), 1, float(lanes_r.h)), ACCENT, 60)
+  end
+  draw_rect(rect(xa, float(lanes_r.y), 1, float(lanes_r.h)), ACCENT, 110)
+end
+
+// Events.
+fn draw_event(e, p, cy, on_rail, is_sel, is_hot, px, right)
+  let col = CAT_COL[e.cat]
+  let lit = is_sel || is_hot
+  if on_rail then
+    // Crowded out of the rows: a sliver on the lane's rail.
+    let c2 = if lit then col else mix(BG, col, 0.55) end
+    if is_span(e) then
+      let bx = max(p.x0, px - 4.0)
+      draw_rect_rounded(rect(bx, cy - 1.5, min(p.x1, right + 4.0) - bx, 3.0), 1.5, c2)
+    else
+      draw_circle(p.x0, cy, if lit then 3.0 else 2.0 end, c2)
+    end
+    return nil
+  end
+  let tc = if lit || e.imp == 1 then TEXT elsif e.imp == 2 then SOFT else DIM end
+  let ty = cy - 8.5
+  if is_span(e) then
+    let bh = 15.0
+    let fill = mix(BG, col, if is_sel then 0.5 elsif is_hot then 0.42 else 0.27 end)
+    let bx = max(p.x0, px - 12.0)
+    let bw = min(p.x1, right + 12.0) - bx
+    if e.live then
+      // Still running: the bar dissolves instead of ending.
+      draw_rect_gradient(rect(p.x1 - 1.0, cy - bh / 2.0, 30.0, bh), fill, fill, 0.0, 255, 0)
+    end
+    draw_rect_rounded(rect(bx, cy - bh / 2.0, bw, bh), 4, fill)
+    if p.x0 >= px - 12.0 then
+      draw_rect_rounded(rect(p.x0, cy - bh / 2.0, 3.0, bh), 1.5, col)
+    end
+    if is_sel then
+      draw_rect_rounded_outline(rect(bx - 1.0, cy - bh / 2.0 - 1.0, bw + 2.0, bh + 2.0), 5, ACCENT, 255, 1.5)
+    end
+    if p.mode == 2 then
+      tx(e.title, p.lx, ty, label_style(e.imp, if lit then TEXT else mix(col, TEXT, 0.72) end))
+    elsif p.mode != 0 then
+      tx(e.title, p.lx, ty, label_style(e.imp, tc))
+    end
+  else
+    let r = if e.imp == 1 then 6.0 elsif e.imp == 2 then 5.0 else 3.5 end
+    if is_sel then
+      draw_circle(p.x0, cy, r + 5.5, ACCENT, 46)
+      draw_circle_outline(p.x0, cy, r + 4.5, ACCENT, 255, 1.5)
+    elsif is_hot then
+      draw_circle(p.x0, cy, r + 4.5, col, 50)
+    end
+    if e.imp == 3 then
+      draw_circle(p.x0, cy, r, mix(BG, col, 0.8))
+    else
+      diamond(p.x0, cy, r, col)
+      if e.imp == 1 then
+        diamond(p.x0, cy, 2.2, BG)
+      end
+    end
+    if p.mode != 0 then
+      tx(e.title, p.lx, ty, label_style(e.imp, tc))
+    end
+  end
+end
+
+for p in placed do
+  if p.i == sel then continue end
+  let e = events[p.i]
+  let c = e.cat
+  clip_push(rect(px, lane_y[c] + 1.0, pw, lane_h[c] - 1.0))
+  draw_event(e, p, mark_y(p.i, c, lane_y, lane_h, lane_rh, lane_rows, ev_row), p.row >= lane_rows[c], false,
+    p.i == hover, px, px + pw)
+  clip_pop()
+end
+for p in placed do
+  if p.i != sel then continue end
+  let e = events[p.i]
+  draw_event(e, p, mark_y(p.i, e.cat, lane_y, lane_h, lane_rh, lane_rows, ev_row), p.row >= lane_rows[e.cat], true,
+    p.i == hover, px, px + pw)
+end
+
+// Lane titles, in the room the packer kept clear at the left of row 0.
+for c in range(0, 6) do
+  if lane_h[c] < 24.0 then continue end
+  let y = lane_y[c]
+  if c > 0 then draw_rect(rect(px, y, pw, 1), LINE) end
+  let col = CAT_COL[c]
+  let hy = y + LANE_PAD + min(lane_rh[c], 22.0) / 2.0
+  draw_rect_rounded(rect(px + 14.0, hy - 3.5, 7, 7), 2, col)
+  let name = upper(CAT_NAME[c])
+  tx(name, px + 28.0, hy - 7.5, caps(mix(col, TEXT, 0.25)))
+  let nw = text_width(name, caps(TEXT))
+  tx(str(lane_count[c]), px + 28.0 + nw + 8.0, hy - 7.5, mono(10, FAINT))
+  if lane_count[c] == 0 && shown_n > 0 then
+    tx("nothing matches the filters", px + 28.0 + nw + 30.0, hy - 8.5, ui(12, FAINT))
+  end
+end
+
+if lanes_n == 0 then
+  tx_center("Every category is switched off", px + pw / 2.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 22.0, ui(16, SOFT))
+  tx_center("Press A to bring them all back, or 1 to 6 for one at a time.", px + pw / 2.0,
+    float(lanes_r.y) + float(lanes_r.h) / 2.0 + 6.0, ui(12, DIM))
+elsif shown_n == 0 then
+  let msg = if len(query) > 0 then "No event matches \"" ++ query ++ "\"" else "No event passes these filters" end
+  draw_rect_rounded(rect(px + pw / 2.0 - 190.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 40.0, 380.0, 76.0), 10, RAISED)
+  tx_center(msg, px + pw / 2.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 - 24.0, ui(16, TEXT))
+  let fix = if len(query) > 0 then "Clear the search field to bring the events back." else "Press R to reset everything." end
+  tx_center(fix, px + pw / 2.0, float(lanes_r.y) + float(lanes_r.h) / 2.0 + 4.0, ui(12, DIM))
+end
+
+// ── Ruler ────────────────────────────────────────────────────────────────────
+draw_rect(ruler, PANEL)
+draw_rect(rect(ruler.x, ruler.y + ruler.h - 1, ruler.w, 1), LINE_HI)
+let ry = float(ruler.y)
+
+// Context band.
+for seg in context do
+  let xa = px + (float(seg.t0) - s_t0) * ppd
+  let xb = px + (float(seg.t1) - s_t0) * ppd
+  let st = caps(DIM)
+  let lw = float(text_width(upper(seg.label), st))
+  if xa > px then
+    draw_rect(rect(xa, ry + 4.0, 1, 16), LINE_HI)
+  end
+  // Sticky: the label stays at the left edge until its own unit pushes it out.
+  let lx = min(max(xa, px) + 10.0, xb - lw - 10.0)
+  if lx >= px + 4.0 && xb - xa > lw + 16.0 then
+    tx(upper(seg.label), lx, ry + 5.0, st)
+  end
+end
+draw_rect(rect(ruler.x, ruler.y + 23, ruler.w, 1), LINE)
+
+// Ticks.
+for tk in minors do
+  let x = px + (float(tk.t) - s_t0) * ppd
+  if x >= px then
+    draw_rect(rect(x, ry + float(RULER_H) - 5.0, 1, 4), LINE_HI)
+  end
+end
+let last_label_end = -9999.0
+for tk in ticks do
+  let x = px + (float(tk.t) - s_t0) * ppd
+  if x < px then continue end
+  draw_rect(rect(x, ry + 24.0, 1, float(RULER_H) - 25.0), if tk.strong then FAINT else LINE_HI end)
+  let st = mono(11, if tk.strong then TEXT else DIM end)
+  if x + 6.0 >= last_label_end && x + 6.0 + float(text_width(tk.label, st)) <= px + pw - 4.0 then
+    tx(tk.label, x + 6.0, ry + 28.0, st)
+    last_label_end = x + 6.0 + float(text_width(tk.label, st)) + 8.0
+  end
+end
+
+// Band selection on the ruler.
+if drag == "band" && drag_moved then
+  let xa = px + (band_a - s_t0) * ppd
+  let xb = px + (band_b - s_t0) * ppd
+  draw_rect(rect(xa, ry, xb - xa, float(RULER_H) + float(lanes_r.h)), ACCENT, 26)
+  draw_rect(rect(xa, ry, 1, float(RULER_H) + float(lanes_r.h)), ACCENT, 200)
+  draw_rect(rect(xb, ry, 1, float(RULER_H) + float(lanes_r.h)), ACCENT, 200)
+  let lab = fmt_at(band_a, ppd) ++ " – " ++ fmt_at(band_b, ppd) ++ "   " ++ fmt_span(band_b - band_a)
+  let st = mono(11, BG)
+  let lw = float(text_width(lab, st)) + 16.0
+  let lx = clamp((xa + xb) / 2.0 - lw / 2.0, px + 4.0, px + pw - lw - 4.0)
+  draw_rect_rounded(rect(lx, ry + float(RULER_H) + 8.0, lw, 22.0), 5, ACCENT)
+  tx(lab, lx + 8.0, ry + float(RULER_H) + 11.0, st)
+end
+
+// The pointer's date: a hairline through the lanes and a flag on the ruler.
+let cursor_t = s_t0 + (mx - px) / ppd
+let show_cursor = (in_lanes || in_ruler) && drag != "band" && !(drag == "pan" && drag_moved)
+if show_cursor then
+  draw_rect(rect(mx, ry + 22.0, 1, float(RULER_H) - 22.0 + float(lanes_r.h)), ACCENT, 70)
+  let lab = fmt_at(cursor_t, ppd)
+  let st = mono(11, BG)
+  let lw = float(text_width(lab, st)) + 14.0
+  let lx = clamp(mx - lw / 2.0, px + 2.0, px + pw - lw - 2.0)
+  draw_rect_rounded(rect(lx, ry + 2.0, lw, 20.0), 5, ACCENT)
+  tx(lab, lx + 7.0, ry + 4.0, st)
+end
+
+// The selection's own flag on the ruler.
+if sel >= 0 && !show_cursor then
+  let e = events[sel]
+  let xa = px + (float(e.t0) - s_t0) * ppd
+  if xa >= px && xa <= px + pw then
+    let lab = fmt_day(e.t0)
+    let st = mono(11, ACCENT)
+    let lw = float(text_width(lab, st)) + 14.0
+    let lx = clamp(xa - lw / 2.0, px + 2.0, px + pw - lw - 2.0)
+    draw_rect(rect(xa, ry + 22.0, 1, float(RULER_H) - 22.0), ACCENT, 160)
+    draw_rect_rounded(rect(lx, ry + 2.0, lw, 20.0), 5, mix(PANEL, ACCENT, 0.16))
+    draw_rect_rounded_outline(rect(lx, ry + 2.0, lw, 20.0), 5, ACCENT, 150, 1)
+    tx(lab, lx + 7.0, ry + 4.0, st)
+  end
+end
+
+// ── Overview ─────────────────────────────────────────────────────────────────
+// The whole domain at one scale: a per-year histogram of what passes the
+// filters (stacked by category) over a ghost of everything, and the window
+// that is the view above.
+draw_rect(over_r, PANEL)
+draw_rect(rect(over_r.x, over_r.y, over_r.w, 1), LINE_HI)
+tx("OVERVIEW", float(over_r.x) + 16.0, float(over_r.y) + 9.0, caps(DIM))
+tx_right(str(in_view) ++ " in view  ·  " ++ str(shown_n) ++ " shown  ·  " ++ str(N) ++ " events",
+  float(over_r.x + over_r.w) - 16.0, float(over_r.y) + 8.0, mono(10, FAINT))
+
+let YEARS = 71
+let bin_all = for y in range(0, YEARS) do 0 end
+let bin_cat = for c in range(0, 6) do
+  for y in range(0, YEARS) do 0 end
+end
+for i in range(0, N) do
+  let e = events[i]
+  let b = e.yr - 1956
+  bin_all[b] = bin_all[b] + 1
+  if vis[i] then bin_cat[e.cat][b] = bin_cat[e.cat][b] + 1 end
+end
+let bin_max = 1
+for y in range(0, YEARS) do
+  bin_max = imax(bin_max, bin_all[y])
+end
+let ov_bot = float(ov.y + ov.h)
+let unit_h = float(ov.h) / float(bin_max)
+for y in range(0, YEARS) do
+  let xa = float(ov.x) + float(day_of(1956 + y, 1, 1) - D0) * ov_ppd
+  let xb = float(ov.x) + float(day_of(1957 + y, 1, 1) - D0) * ov_ppd
+  let bw = max(1.0, xb - xa - 2.0)
+  if bin_all[y] > 0 then
+    draw_rect(rect(xa + 1.0, ov_bot - float(bin_all[y]) * unit_h, bw, float(bin_all[y]) * unit_h), LINE)
+  end
+  let acc = 0.0
+  for c in range(0, 6) do
+    let n = bin_cat[c][y]
+    if n > 0 then
+      let hh = float(n) * unit_h
+      draw_rect(rect(xa + 1.0, ov_bot - acc - hh, bw, hh - 1.0), mix(BG, CAT_COL[c], 0.82))
+      acc = acc + hh
+    end
+  end
+end
+draw_rect(rect(ov.x, ov.y + ov.h, ov.w, 1), LINE_HI)
+for dec in range(0, 7) do
+  let y = 1960 + dec * 10
+  let x = float(ov.x) + float(day_of(y, 1, 1) - D0) * ov_ppd
+  draw_rect(rect(x, ov_bot, 1, 4), LINE_HI)
+  tx_center(str(y), x, ov_bot + 5.0, mono(10, FAINT))
+end
+
+// The window.
+let ww = wx1 - wx0
+let ov_hot = in_over || drag == "ov-move" || drag == "ov-l" || drag == "ov-r"
+if ww >= float(ov.w) - 1.0 then
+  draw_rect_rounded_outline(rect(wx0, float(ov.y) - 4.0, ww, float(ov.h) + 8.0), 4, ACCENT, 90, 1)
+else
+  draw_rect(rect(float(ov.x), float(ov.y) - 4.0, max(0.0, wx0 - float(ov.x)), float(ov.h) + 8.0), PANEL, 150)
+  draw_rect(rect(wx1, float(ov.y) - 4.0, max(0.0, float(ov.x + ov.w) - wx1), float(ov.h) + 8.0), PANEL, 150)
+  let vw = max(ww, 3.0)
+  let vx = if ww < 3.0 then wx0 - 1.5 + ww / 2.0 else wx0 end
+  draw_rect_rounded(rect(vx, float(ov.y) - 4.0, vw, float(ov.h) + 8.0), 3, ACCENT, if ov_hot then 34 else 20 end)
+  draw_rect_rounded_outline(rect(vx, float(ov.y) - 4.0, vw, float(ov.h) + 8.0), 3, ACCENT, if ov_hot then 255 else 190 end, 1)
+  if ww >= 16.0 then
+    draw_rect_rounded(rect(wx0 - 2.0, float(ov.y) + float(ov.h) / 2.0 - 8.0, 4, 16), 2, ACCENT)
+    draw_rect_rounded(rect(wx1 - 2.0, float(ov.y) + float(ov.h) / 2.0 - 8.0, 4, 16), 2, ACCENT)
+  else
+    fill_triangle(vx + vw / 2.0 - 5.0, float(ov.y) - 11.0, vx + vw / 2.0 + 5.0, float(ov.y) - 11.0,
+      vx + vw / 2.0, float(ov.y) - 5.0, ACCENT)
+  end
+end
+
+clip_pop()
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw: header
+// ═════════════════════════════════════════════════════════════════════════════
+
+draw_rect(rect(0, 0, W, HEAD_H), PANEL)
+draw_rect(rect(0, HEAD_H - 1, W, 1), LINE_HI)
+let wm = {size: 15, font: "ui", color: TEXT, spacing: 3.5, weight: 700}
+diamond(27.0, 29.0, 7.0, ACCENT)
+diamond(27.0, 29.0, 2.6, PANEL)
+tx("CHRONICLE", 44.0, vmid(0, HEAD_H, 15), wm)
+let wm_w = text_width("CHRONICLE", wm)
+tx("Spaceflight, 1957 – 2025", 44.0 + wm_w + 16.0, vmid(0, HEAD_H, 13) + 1.0, ui(13, DIM))
+
+// Right side: the visible range, scale presets and zoom buttons.
+let PRESETS = [
+  {label: "All", days: DOM},
+  {label: "25 yr", days: 9131.0},
+  {label: "5 yr", days: 1826.0},
+  {label: "1 yr", days: 365.0},
+  {label: "1 mo", days: 30.0},
+]
+let preset_i = -1
+for i in range(0, len(PRESETS)) do
+  if abs(v_span - PRESETS[i].days) / PRESETS[i].days < 0.02 then preset_i = i end
+end
+let zr_plus = rect(W - 16 - 30, 14, 30, 30)
+let zr_minus = rect(W - 16 - 64, 14, 30, 30)
+let seg_r = rect(W - 16 - 64 - 14 - 290, 14, 290, 30)
+let labels5 = ["All", "25 yr", "5 yr", "1 yr", "1 mo"]
+let picked_preset = segmented(seg_r, labels5, preset_i)
+if picked_preset != preset_i && picked_preset >= 0 then
+  // Keep the centre (or the selected event, if it is on screen) fixed.
+  let mid = v_t0 + v_span / 2.0
+  if sel >= 0 && float(events[sel].t0) >= v_t0 && float(events[sel].t0) <= v_t0 + v_span then
+    mid = (float(events[sel].t0) + float(events[sel].t1)) / 2.0
+  end
+  let sp = PRESETS[picked_preset].days
+  let nv = clamp_view(mid - sp / 2.0, sp)
+  v_t0 = nv.t0
+  v_span = nv.span
+  anc_on = false
+  n_zooms = n_zooms + 1
+end
+let hz = 0
+if icon_button(zr_minus, "−") then hz = 1 end
+if icon_button(zr_plus, "+") then hz = -1 end
+if hz != 0 then
+  let at = v_t0 + v_span / 2.0
+  let nv = zoom_at(v_t0, v_span, at, if hz < 0 then 0.5 else 2.0 end)
+  v_t0 = nv.t0
+  v_span = nv.span
+  anc_on = true
+  anc_t = at
+  anc_f = (at - nv.t0) / nv.span
+  n_zooms = n_zooms + 1
+end
+
+let range_s = fmt_at(s_t0, ppd) ++ "  –  " ++ fmt_at(t_end - 0.001, ppd)
+let range_r = float(seg_r.x) - 20.0
+tx_right(range_s, range_r, 12.0, mono(13, TEXT))
+tx_right(fmt_span(s_span) ++ "  ·  " ++ LEVEL_NAME[level] ++ " ticks", range_r, 31.0, ui(10, FAINT))
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw: sidebar (filters)
+// ═════════════════════════════════════════════════════════════════════════════
+
+draw_rect(rect(0, HEAD_H, SIDE_W, H - HEAD_H), PANEL)
+draw_rect(rect(SIDE_W - 1, HEAD_H, 1, H - HEAD_H), LINE_HI)
+let SX = 16.0
+let SW = float(SIDE_W) - 32.0
+
+// Search.
+draw_rect_rounded(search_r, 8, if typing then BG else RAISED end)
+draw_rect_rounded_outline(search_r, 8, if typing then ACCENT else LINE_HI end, if typing then 200 else 255 end, 1)
+let gx = float(search_r.x) + 15.0
+let gy = float(search_r.y) + 15.0
+draw_circle_outline(gx, gy, 4.5, if typing then TEXT else DIM end, 255, 1.5)
+draw_line(gx + 3.4, gy + 3.4, gx + 7.0, gy + 7.0, if typing then TEXT else DIM end, 255, 1.5)
+let q_st = ui(13, TEXT)
+let q_x = float(search_r.x) + 30.0
+let q_y = vmid(search_r.y, search_r.h, 13)
+if len(query) == 0 && !typing then
+  tx("Search events", q_x, q_y, ui(13, FAINT))
+  tx_right("/", float(search_r.x + search_r.w) - 12.0, q_y, mono(12, FAINT))
+else
+  tx(query, q_x, q_y, q_st)
+  if typing then
+    let cx = q_x + float(text_width(char_slice(query, 0, fres.caret), q_st))
+    draw_rect(rect(cx, float(search_r.y) + 8.0, 1.5, 16), ACCENT)
+  end
+  if len(query) > 0 then
+    let xr = rect(search_r.x + search_r.w - 28, search_r.y + 4, 24, 24)
+    let hot = hovered(xr)
+    tx_center("×", float(xr.x) + 12.0, vmid(xr.y, xr.h, 13), mono(13, if hot then TEXT else DIM end))
+    if hot && mouse_pressed(0) then
+      query = ""
+      fc = focus_clear(fc)
+    end
+  end
+end
+
+// Categories.
+let cy = float(HEAD_H) + 70.0
+tx("CATEGORIES", SX, cy, caps(FAINT))
+cy = cy + 22.0
+let cat_total = [0, 0, 0, 0, 0, 0]
+for e in events do
+  cat_total[e.cat] = cat_total[e.cat] + 1
+end
+for c in range(0, 6) do
+  let rr = rect(8, cy, SIDE_W - 16, 30)
+  let hot = hovered(rr)
+  let on = cats_on[c]
+  if hot then draw_rect_rounded(rr, 6, HOVER) end
+  let col = CAT_COL[c]
+  if on then
+    draw_rect_rounded(rect(SX + 2.0, cy + 9.0, 12, 12), 3, col)
+  else
+    draw_rect_rounded_outline(rect(SX + 2.0, cy + 9.0, 12, 12), 3, FAINT, 255, 1.5)
+  end
+  tx(CAT_NAME[c], SX + 24.0, vmid(cy, 30, 13), ui(13, if on then TEXT else FAINT end))
+  // On hover the count gives way to "only", which solos the lane.
+  let only_r = rect(SIDE_W - 16 - 44, cy + 4.0, 44, 22)
+  if hot then
+    let oh = hovered(only_r)
+    tx_right("only", float(SIDE_W) - 20.0, vmid(cy, 30, 10), caps(if oh then ACCENT else DIM end))
+    if mouse_pressed(0) then
+      if oh then
+        cats_on = for k in range(0, 6) do k == c end
+      else
+        cats_on[c] = !on
+      end
+    end
+  else
+    let ct = if on then str(lane_count[c]) ++ "/" ++ str(cat_total[c]) else str(cat_total[c]) end
+    tx_right(ct, float(SIDE_W) - 20.0, vmid(cy, 30, 10), mono(10, FAINT))
+  end
+  cy = cy + 30.0
+end
+
+// Operators, as wrapping chips.
+cy = cy + 18.0
+tx("OPERATORS", SX, cy, caps(FAINT))
+cy = cy + 24.0
+let chip_x = SX
+for o in range(0, len(ORG_NAME)) do
+  let st = ui(12, TEXT)
+  let cw = float(text_width(ORG_NAME[o], st)) + 20.0
+  if chip_x + cw > SX + SW then
+    chip_x = SX
+    cy = cy + 30.0
+  end
+  let cr = rect(chip_x, cy, cw, 24)
+  let on = orgs_on[o]
+  let hot = hovered(cr)
+  if on then
+    draw_rect_rounded(cr, 12, if hot then LINE_HI else HOVER end)
+  else
+    draw_rect_rounded_outline(cr, 12, if hot then LINE_HI else LINE end, 255, 1)
+  end
+  tx(ORG_NAME[o], chip_x + 10.0, vmid(cy, 24, 12), ui(12, if on then TEXT elsif hot then DIM else FAINT end))
+  if hot && mouse_pressed(0) then orgs_on[o] = !on end
+  chip_x = chip_x + cw + 6.0
+end
+cy = cy + 30.0
+
+// Kind and significance.
+cy = cy + 18.0
+tx("SHOW", SX, cy, caps(FAINT))
+cy = cy + 22.0
+kind = segmented(rect(SX, cy, SW, 30), ["All", "Moments", "Programs"], kind)
+cy = cy + 30.0 + 22.0
+tx("SIGNIFICANCE", SX, cy, caps(FAINT))
+cy = cy + 22.0
+let det_pick = segmented(rect(SX, cy, SW, 30), ["Landmarks", "Notable", "All"], detail - 1)
+detail = det_pick + 1
+cy = cy + 30.0
+
+// Result line, pinned to the bottom of the sidebar.
+let dirty = shown_n != N || len(query) > 0
+let res_y = float(H) - 74.0
+draw_rect(rect(16, res_y - 14.0, SIDE_W - 32, 1), LINE)
+let big = uib(22, TEXT)
+tx(str(shown_n), SX, res_y, big)
+let bw_n = float(text_width(str(shown_n), big))
+tx("of " ++ str(N) ++ " events", SX + bw_n + 8.0, res_y + 10.0, ui(12, DIM))
+if dirty then
+  let rr = rect(SIDE_W - 16 - 54, res_y + 4.0, 54, 24)
+  let hot = hovered(rr)
+  draw_rect_rounded(rr, 6, if hot then LINE_HI else RAISED end)
+  tx_center("Reset", float(rr.x) + 27.0, vmid(rr.y, rr.h, 12), ui(12, if hot then TEXT else SOFT end))
+  if hot && mouse_pressed(0) then
+    cats_on = [true, true, true, true, true, true]
+    orgs_on = [true, true, true, true, true, true, true, true]
+    kind = 0
+    detail = 3
+    query = ""
+  end
+end
+tx(plural(lanes_n, "lane") ++ "  ·  " ++ str(label_n) ++ " labelled  ·  " ++ str(rail_n) ++ " on the rail", SX, res_y + 34.0, ui(10, FAINT))
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw: inspector
+// ═════════════════════════════════════════════════════════════════════════════
+
+let IX = float(W - INSP_W)
+draw_rect(rect(W - INSP_W, HEAD_H, INSP_W, H - HEAD_H), PANEL)
+draw_rect(rect(W - INSP_W, HEAD_H, 1, H - HEAD_H), LINE_HI)
+let ipad = 22.0
+let iw = float(INSP_W) - ipad * 2.0
+let ix = IX + ipad
+let iy = float(HEAD_H) + 22.0
+
+// One clickable event row, used by both inspector lists. Returns true on click.
+fn event_row(e, x, y, w, note)
+  let rr = rect(x - 8.0, y, w + 16.0, 40)
+  let hot = hovered(rr)
+  if hot then draw_rect_rounded(rr, 6, HOVER) end
+  let col = CAT_COL[e.cat]
+  if is_span(e) then
+    draw_rect_rounded(rect(x, y + 10.0, 10, 5), 2, col)
+  else
+    diamond(x + 5.0, y + 12.5, 4.0, col)
+  end
+  let ts = if e.imp == 1 then uib(12, TEXT) else ui(12, if hot then TEXT else SOFT end) end
+  tx(ellipsize(e.title, w - 20.0, ts), x + 18.0, y + 4.0, ts)
+  tx(note, x + 18.0, y + 21.0, mono(10, FAINT))
+  hot && mouse_pressed(0)
+end
+
+let jump = -1
+if sel >= 0 then
+  let e = events[sel]
+  let col = CAT_COL[e.cat]
+  draw_rect_rounded(rect(ix, iy + 4.0, 7, 7), 2, col)
+  tx(upper(CAT_NAME[e.cat]), ix + 14.0, iy, caps(mix(col, TEXT, 0.25)))
+  tx_right(upper(IMP_NAME[e.imp]), ix + iw, iy, caps(if e.imp == 1 then ACCENT else FAINT end))
+  iy = iy + 28.0
+  let title_st = uib(22, TEXT)
+  for ln in wrap_px(e.title, iw, title_st) do
+    tx(ln, ix, iy, title_st)
+    iy = iy + 29.0
+  end
+  iy = iy + 6.0
+  tx(fmt_when(e), ix, iy, mono(12, ACCENT))
+  iy = iy + 20.0
+  let sub = if is_span(e) then
+    (if e.live then fmt_dur(e.t1 - e.t0) ++ " so far" else fmt_dur(imax(1, e.t1 - e.t0)) end) ++ "  ·  " ++ ORG_NAME[e.org]
+  else
+    ORG_NAME[e.org]
+  end
+  tx(sub, ix, iy, ui(12, DIM))
+  iy = iy + 30.0
+  let body = ui(13, SOFT)
+  for ln in wrap_px(e.blurb, iw, body) do
+    tx(ln, ix, iy, body)
+    iy = iy + 21.0
+  end
+  iy = iy + 16.0
+
+  // Actions.
+  let b1 = rect(ix, iy, 128, 30)
+  let h1 = hovered(b1)
+  draw_rect_rounded(b1, 7, if h1 then mix(RAISED, ACCENT, 0.3) else mix(RAISED, ACCENT, 0.16) end)
+  tx_center("Zoom to event", ix + 64.0, vmid(iy, 30, 12), ui(12, ACCENT))
+  if h1 && mouse_pressed(0) then
+    let nv = frame_event(e, v_span)
+    v_t0 = nv.t0
+    v_span = nv.span
+    anc_on = false
+    n_zooms = n_zooms + 1
+  end
+  let b2 = rect(ix + 136.0, iy, 70, 30)
+  let h2 = hovered(b2)
+  draw_rect_rounded(b2, 7, if h2 then LINE_HI else RAISED end)
+  tx_center("Clear", ix + 171.0, vmid(iy, 30, 12), ui(12, if h2 then TEXT else SOFT end))
+  let clear_sel = h2 && mouse_pressed(0)
+  iy = iy + 30.0 + 24.0
+
+  // Neighbours in time, among what the filters let through.
+  draw_rect(rect(ix, iy, iw, 1), LINE)
+  iy = iy + 16.0
+  tx("AROUND THIS", ix, iy, caps(FAINT))
+  iy = iy + 24.0
+  let before = []
+  let i = sel - 1
+  while i >= 0 && len(before) < 2 do
+    if vis[i] then before = append(before, i) end
+    i = i - 1
+  end
+  let after = []
+  i = sel + 1
+  while i < N && len(after) < 3 do
+    if vis[i] then after = append(after, i) end
+    i = i + 1
+  end
+  for k in reverse(before) do
+    let gap = fmt_dur(imax(1, e.t0 - events[k].t0)) ++ " earlier"
+    if event_row(events[k], ix, iy, iw, fmt_when_short(events[k]) ++ "  ·  " ++ gap) then jump = k end
+    iy = iy + 42.0
+  end
+  for k in after do
+    let d = events[k].t0 - e.t0
+    let gap = if d == 0 then "the same day" else fmt_dur(d) ++ " later" end
+    if event_row(events[k], ix, iy, iw, fmt_when_short(events[k]) ++ "  ·  " ++ gap) then jump = k end
+    iy = iy + 42.0
+  end
+  if len(before) + len(after) == 0 then
+    tx("Nothing else passes the filters.", ix, iy, ui(12, FAINT))
+  end
+  if clear_sel then sel = -1 end
+else
+  tx("IN VIEW", ix, iy, caps(FAINT))
+  iy = iy + 26.0
+  let big2 = uib(22, TEXT)
+  tx(str(in_view), ix, iy, big2)
+  tx(if in_view == 1 then "event" else "events" end, ix + float(text_width(str(in_view), big2)) + 8.0, iy + 10.0, ui(12, DIM))
+  iy = iy + 40.0
+
+  // Per-category share of what is in view.
+  let cv = [0, 0, 0, 0, 0, 0]
+  for i in range(0, N) do
+    if vis[i] && float(events[i].t1) >= s_t0 && float(events[i].t0) <= t_end then
+      cv[events[i].cat] = cv[events[i].cat] + 1
+    end
+  end
+  let cv_max = 1
+  for c in range(0, 6) do
+    cv_max = imax(cv_max, cv[c])
+  end
+  for c in range(0, 6) do
+    let on = cats_on[c]
+    tx(CAT_NAME[c], ix, iy, ui(12, if on then SOFT else FAINT end))
+    tx_right(str(cv[c]), ix + iw, iy + 1.0, mono(10, if cv[c] > 0 then DIM else FAINT end))
+    let bx = ix + 108.0
+    let bw = iw - 108.0 - 30.0
+    draw_rect_rounded(rect(bx, iy + 6.0, bw, 5), 2.5, RAISED)
+    if cv[c] > 0 then
+      draw_rect_rounded(rect(bx, iy + 6.0, max(5.0, bw * float(cv[c]) / float(cv_max)), 5), 2.5, CAT_COL[c])
+    end
+    iy = iy + 23.0
+  end
+  iy = iy + 14.0
+  draw_rect(rect(ix, iy, iw, 1), LINE)
+  iy = iy + 16.0
+  tx("MOST SIGNIFICANT HERE", ix, iy, caps(FAINT))
+  iy = iy + 24.0
+
+  // The view's own highlights: best importance first, then by date.
+  let room = int((float(H - FOOT_H) - iy - 8.0) / 42.0)
+  let listed = 0
+  for want in range(1, 4) do
+    for i in range(0, N) do
+      if listed < room && vis[i] && events[i].imp == want &&
+        float(events[i].t1) >= s_t0 && float(events[i].t0) <= t_end then
+        if event_row(events[i], ix, iy, iw, fmt_when_short(events[i]) ++ "  ·  " ++ ORG_NAME[events[i].org]) then
+          jump = i
+        end
+        iy = iy + 42.0
+        listed = listed + 1
+      end
+    end
+  end
+  if listed == 0 then
+    tx("Nothing in this stretch of time.", ix, iy, ui(12, FAINT))
+    tx("Zoom out, or loosen the filters.", ix, iy + 18.0, ui(12, FAINT))
+  end
+end
+if jump >= 0 then
+  sel = jump
+  n_selects = n_selects + 1
+  let nv = reveal(events[sel], v_t0, v_span)
+  v_t0 = nv.t0
+  anc_on = false
+end
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Draw: footer hints, tooltip
+// ═════════════════════════════════════════════════════════════════════════════
+
+let fy = float(H - FOOT_H)
+draw_rect(rect(SIDE_W, H - FOOT_H, W - SIDE_W, FOOT_H), PANEL)
+draw_rect(rect(SIDE_W, H - FOOT_H, W - SIDE_W, 1), LINE_HI)
+let HINTS = [
+  ["wheel", "zoom"], ["drag", "pan"], ["drag ruler", "zoom to range"], ["N P", "next / previous"],
+  ["Return", "zoom to event"], ["1-6", "categories"], ["/", "search"], ["0", "fit all"],
+]
+let hx = float(SIDE_W) + 16.0
+for hnt in HINTS do
+  let ks = mono(10, SOFT)
+  let ls = ui(10, FAINT)
+  tx(hnt[0], hx, fy + 8.0, ks)
+  hx = hx + float(text_width(hnt[0], ks)) + 6.0
+  tx(hnt[1], hx, fy + 8.0, ls)
+  hx = hx + float(text_width(hnt[1], ls)) + 18.0
+end
+
+// Tooltip for the event under the pointer (drawn last, over everything).
+if hover >= 0 && hover != sel && drag != "band" && !(drag == "pan" && drag_moved) then
+  let e = events[hover]
+  let t1s = uib(12, TEXT)
+  let t2s = mono(10, DIM)
+  let l2 = fmt_when(e) ++ "  ·  " ++ CAT_NAME[e.cat]
+  let tw = max(float(text_width(e.title, t1s)), float(text_width(l2, t2s))) + 24.0
+  let th = 46.0
+  let tx0 = clamp(mx + 14.0, px + 4.0, px + pw - tw - 4.0)
+  let ty0 = if my + 18.0 + th > lanes_bot then my - th - 12.0 else my + 18.0 end
+  draw_shadow(rect(tx0, ty0, tw, th), 8, 16, #000000, 120)
+  draw_rect_rounded(rect(tx0, ty0, tw, th), 8, RAISED)
+  draw_rect_rounded_outline(rect(tx0, ty0, tw, th), 8, LINE_HI, 255, 1)
+  draw_rect_rounded(rect(tx0, ty0 + 8.0, 3, th - 16.0), 1.5, CAT_COL[e.cat])
+  tx(e.title, tx0 + 12.0, ty0 + 7.0, t1s)
+  tx(l2, tx0 + 12.0, ty0 + 26.0, t2s)
+end
+
+if animating then request_frame() end
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Observables — what a test reads from panes[0].panel.values
+// ═════════════════════════════════════════════════════════════════════════════
+
+let obs_events = N
+let obs_from = iso(v_t0)
+let obs_to = iso(v_t0 + v_span - 0.001)
+let obs_span_days = round(v_span, 2)
+let obs_level = LEVEL_NAME[pick_level(pw / v_span)]
+let obs_shown = shown_n
+let obs_in_view = in_view
+let obs_labelled = label_n
+let obs_on_rail = rail_n
+let obs_lanes = lanes_n
+let obs_cats = bits(cats_on)
+let obs_orgs = bits(orgs_on)
+let obs_kind = kind
+let obs_detail = detail
+let obs_query = query
+let obs_typing = typing
+let obs_sel = sel
+let obs_sel_title = if sel >= 0 then events[sel].title else "" end
+let obs_sel_when = if sel >= 0 then fmt_when(events[sel]) else "" end
+let obs_hover = hover
+let obs_hover_title = if hover >= 0 then events[hover].title else "" end
+let obs_cursor = if show_cursor then iso(cursor_t) else "" end
+let obs_drag = drag
+let obs_animating = animating
+let obs_zooms = n_zooms
+let obs_pans = n_pans
+let obs_band_zooms = n_band_zooms
+let obs_selects = n_selects

@@ -171,7 +171,9 @@ DESCRIPTION
        Everything is measured twice, with the optimizer on and with it off,
        and the last column is the optimized figure relative to the
        unoptimized one. The two runs differ only in the optimizer: memoization
-       and every other part of the run policy are the same on both sides.
+       and every other part of the run policy are the same on both sides, and
+       the first is optimized even when PETAL_OPT=off or PETAL_POLICY=baseline
+       is set.
 
        Each figure comes in two forms. The headline is inclusive: the
        function and everything it calls. 'self' leaves out the user functions
@@ -189,9 +191,9 @@ DESCRIPTION
        declared: at the top level, inside another function, or in an imported
        module. A bare method name selects that method on every class
        ('area'); 'Class.method' selects one. Several functions with the same
-       name are reported separately, each with its file and line. A name that
-       matches nothing is an error; a function that exists and is never
-       called is reported as such.
+       name are reported separately, each with the file and line it is
+       declared at. A name that matches nothing is an error; a function that
+       exists and is never called is reported as such.
 
        Timing a call is not free: about 50 ns for each call of a benched
        function and for each user function it calls directly. The report

@@ -164,7 +164,7 @@ bench test/benchmarks/life.ptl
   timing costs about 48 ns per timed call (each call of a benched function, and each
   user function it calls directly); that is inside the times below, not subtracted
 
-fn step  line 27
+fn step  line 26
                                     opt         no-opt   opt vs no-opt
   calls/run                          40             40
   instructions/call            97,663.6      159,557.6   -38.8%
@@ -188,7 +188,10 @@ How to read it:
   column is the optimized figure relative to the unoptimized one. Only the
   optimizer differs between the two: memoization and the rest of the
   [run policy](../rust/src/policy.rs) are the same on both sides, which is why
-  the second policy reads `baseline+memo+gate` rather than `baseline`.
+  the second policy reads `baseline+memo+gate` rather than `baseline`. The
+  rest of the policy follows `PETAL_POLICY` as it does for `run`, except that
+  an environment that turns the optimizer off (`PETAL_OPT=off`,
+  `PETAL_POLICY=baseline`) still gets an optimized `opt` side.
 - **Inclusive and self.** The headline figure of each pair is *inclusive*: the
   function and everything it calls. `self` leaves out the user functions it
   calls; builtins it calls stay in. Allocations, copies and collections are
@@ -258,7 +261,7 @@ the same command, so its timings differ a little from the text above):
   "timer_overhead_ns": 48.2,
   "functions": [
     {
-      "name": "step", "query": "step", "file": null, "line": 27,
+      "name": "step", "query": "step", "file": null, "line": 26,
       "opt": {
         "calls": 1600, "calls_per_run": 40.0, "outermost_calls": 1600, "replayed_calls": 0,
         "instructions_per_call": { "inclusive": 97663.6, "self": 5403.0,
@@ -280,7 +283,8 @@ the same command, so its timings differ a little from the text above):
 The 11.9 ms `max` against a 0.47 ms median is one call the OS interrupted: it
 is why the report leads with min, median and p95 rather than the mean alone.
 
-`file` is null for a function in the entry file. `calls` is the total over all
+`line` is the line the function is declared on, and `file` is null for a
+function in the entry file. `calls` is the total over all
 measured runs. Every per-call value is null for a function that was never
 called, and a `delta_pct` entry is null when either side is missing or the
 unoptimized figure is zero. `replayed_calls` counts calls the memo replayed

@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use crate::backend::OptFlags;
 use crate::policy::RunPolicy;
 use crate::profile::{CallBench, CallStats, commas};
-use crate::program::{FunctionId, Program, base_fn_name};
+use crate::program::{FunctionDef, FunctionId, Program, TermOp, base_fn_name};
 
 use super::handlers::{eprint_warnings, load_into, make_env};
 use super::{BenchOpts, SourceInput, die, die_error, print_json};
@@ -30,7 +30,7 @@ struct Target {
     func: FunctionId,
     /// Source name, without the internal `#arity` overload suffix.
     name: String,
-    /// Where its body starts: the file (`None` for the entry file) and line.
+    /// Where it is declared: the file (`None` for the entry file) and line.
     file: Option<String>,
     line: Option<u32>,
 }
@@ -84,13 +84,19 @@ pub(super) fn handle_bench(
         Err(e) => die(json, &e, "bench"),
     };
     let funcs: Vec<FunctionId> = targets.iter().map(|t| t.func).collect();
-    let base = probe.policy();
+    let ambient = probe.policy();
     drop(probe);
 
-    let no_opt = RunPolicy {
-        opts: OptFlags::none(),
-        ..base
+    // The two sides differ in the optimizer and nothing else. The rest of the
+    // policy is the ambient one (`PETAL_POLICY`), but an ambient policy that
+    // turns the optimizer off (`PETAL_OPT=off`, `PETAL_POLICY=baseline`)
+    // cannot be the "opt" side: that would compare the baseline with itself.
+    let base = if ambient.opts == OptFlags::none().preserving(ambient.opts) {
+        ambient.with_opts(OptFlags::default_on().preserving(ambient.opts))
+    } else {
+        ambient
     };
+    let no_opt = base.with_opts(OptFlags::none());
     let measure = |policy: RunPolicy| {
         match run_variant(policy, opts, source, source_input, include_dirs, &funcs) {
             Ok(v) => v,
@@ -131,7 +137,7 @@ fn resolve_targets(program: &Program, names: &[String]) -> Result<Vec<Target>, S
             if targets.iter().any(|t| t.func == def.id) {
                 continue;
             }
-            let (file, line) = fn_location(program, def.body_block);
+            let (file, line) = fn_location(program, def);
             targets.push(Target {
                 query: query.clone(),
                 func: def.id,
@@ -164,14 +170,22 @@ fn resolve_targets(program: &Program, names: &[String]) -> Result<Vec<Target>, S
     Ok(targets)
 }
 
-/// The file and line a function's body starts at: the first term of its body
-/// block that has a source position.
-fn fn_location(program: &Program, body: crate::program::BlockId) -> (Option<String>, Option<u32>) {
-    let span = program.block_terms.get(&body).and_then(|terms| {
-        terms
-            .iter()
-            .find_map(|&t| program.source_map.get(t).filter(|s| s.start.line > 0))
-    });
+/// The file and line a function is declared at: the position of the term
+/// that creates it (its `fn` keyword), or, for a function no term in the
+/// program creates, the first term of its body that has a source position.
+fn fn_location(program: &Program, def: &FunctionDef) -> (Option<String>, Option<u32>) {
+    let located = |t: crate::program::TermId| program.source_map.get(t).filter(|s| s.start.line > 0);
+    let span = program
+        .terms
+        .iter()
+        .find(|t| matches!(t.op, TermOp::MakeClosure(f) if f == def.id))
+        .and_then(|t| located(t.id))
+        .or_else(|| {
+            program
+                .block_terms
+                .get(&def.body_block)
+                .and_then(|terms| terms.iter().find_map(|&t| located(t)))
+        });
     match span {
         Some(span) => (
             program

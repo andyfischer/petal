@@ -15,8 +15,16 @@ use serde_json::Value;
 const PETAL: &str = env!("CARGO_BIN_EXE_petal");
 
 fn run(args: &[&str]) -> (String, String, bool) {
+    run_env(args, &[])
+}
+
+/// [`run`] with the ambient run-policy variables replaced by `env`.
+fn run_env(args: &[&str], env: &[(&str, &str)]) -> (String, String, bool) {
     let out = Command::new(PETAL)
         .args(args)
+        .env_remove("PETAL_OPT")
+        .env_remove("PETAL_POLICY")
+        .envs(env.iter().copied())
         .output()
         .expect("failed to run petal");
     (
@@ -92,7 +100,8 @@ fn json_report_has_the_documented_shape() {
 
     let f = function(&report, "outer");
     assert_eq!(f["query"], "outer");
-    assert_eq!(f["line"], 6);
+    // The line of its `fn`, not of the first expression in its body.
+    assert_eq!(f["line"], 5);
     for variant in ["opt", "no_opt"] {
         let v = &f[variant];
         assert_eq!(v["calls"], 20, "10 calls a run, 2 runs");
@@ -291,8 +300,8 @@ fn text_report_shows_both_variants_and_hides_script_output() {
         "bench -e",
         "(policy fast)",
         "ms to lower",
-        "fn outer  line 6",
-        "fn inner  line 2",
+        "fn outer  line 5",
+        "fn inner  line 1",
         "opt vs no-opt",
         "calls/run",
         "instructions/call",
@@ -380,7 +389,10 @@ print(b.area() + shapes.double(sum_to(4)))
     let double = function(&report, "double");
     assert_eq!(double["opt"]["calls"], 1);
     assert_eq!(double["file"], "shapes.ptl");
-    assert_eq!(double["line"], 2);
+    assert_eq!(double["line"], 1);
+    // Methods and nested functions are located by their declaration too.
+    assert_eq!(area["line"], 8);
+    assert_eq!(function(&report, "step")["line"], 13);
 }
 
 #[test]
@@ -392,4 +404,106 @@ fn only_the_core_host_is_accepted() {
     let (_, stderr, ok) = run(&["bench", "-e", NESTED]);
     assert!(!ok);
     assert!(stderr.contains("--fn"), "{stderr}");
+}
+
+#[test]
+fn functions_sharing_a_name_are_told_apart_by_their_declaration_line() {
+    let code = "\
+fn a()
+  fn helper(x)
+    x + 1
+  end
+  helper(1)
+end
+
+fn b()
+  fn helper(x)
+    x + 2
+  end
+  helper(1) + helper(2)
+end
+print(a() + b())
+";
+    let report = bench_json(code, &["helper"]);
+    let found: Vec<(u64, u64)> = report["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["line"].as_u64().unwrap(), f["opt"]["calls_per_run"].as_f64().unwrap() as u64))
+        .collect();
+    assert_eq!(found, [(2, 1), (9, 2)]);
+}
+
+#[test]
+fn a_callee_reached_through_a_builtin_is_left_out_of_self() {
+    // `total` runs `sq` ten times through `map`; those frames are its direct
+    // callees just as if it had called them itself.
+    let code = "\
+fn sq(x)
+  x * x
+end
+
+fn total(xs)
+  len(map(xs, sq))
+end
+print(total(range(0, 10)))
+";
+    let report = bench_json(code, &["total", "sq"]);
+    for variant in ["opt", "no_opt"] {
+        let total = &function(&report, "total")[variant]["instructions_per_call"];
+        let sq = &function(&report, "sq")[variant];
+        assert_eq!(sq["calls_per_run"], 10.0);
+        let sq_insts = num(&sq["instructions_per_call"]["inclusive"]);
+        assert_eq!(
+            num(&total["inclusive"]),
+            num(&total["self"]) + 10.0 * sq_insts,
+            "{variant}: {total}"
+        );
+    }
+}
+
+#[test]
+fn the_opt_side_is_optimized_whatever_the_environment_says() {
+    // `PETAL_OPT=off` makes every `Env` start on the baseline policy. Bench
+    // still has to compare optimized against unoptimized, not the baseline
+    // against itself.
+    for env in [("PETAL_OPT", "off"), ("PETAL_POLICY", "baseline")] {
+        let (stdout, stderr, ok) = run_env(
+            &["bench", "--json", "--iters", "1", "-e", NESTED, "--fn", "outer"],
+            &[env],
+        );
+        assert!(ok, "{stderr}");
+        let report: Value = serde_json::from_str(&stdout).expect("JSON report");
+        let opt = num(&report["runs"]["opt"]["instructions_per_run"]);
+        let no_opt = num(&report["runs"]["no_opt"]["instructions_per_run"]);
+        assert!(opt < no_opt, "{env:?}: opt {opt} vs no-opt {no_opt}");
+        assert_eq!(report["runs"]["no_opt"]["policy"], "baseline");
+        let f = function(&report, "outer");
+        assert!(num(&f["delta_pct"]["instructions_per_call"]) < 0.0, "{f}");
+    }
+}
+
+#[test]
+fn arity_overloads_are_reported_separately_at_their_own_lines() {
+    let code = "\
+fn area(w)
+  w * w
+end
+
+fn area(w, h)
+  w * h
+end
+print(area(2), area(2, 3), area(4, 5))
+";
+    let report = bench_json(code, &["area"]);
+    let found: Vec<(u64, u64)> = report["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            assert_eq!(f["name"], "area", "no internal #arity suffix: {f}");
+            (f["line"].as_u64().unwrap(), f["opt"]["calls_per_run"].as_f64().unwrap() as u64)
+        })
+        .collect();
+    assert_eq!(found, [(1, 1), (5, 2)]);
 }

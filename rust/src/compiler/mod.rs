@@ -1226,6 +1226,13 @@ impl Compiler {
         if let Some(cells) = self.fn_cell_scopes.last_mut() {
             cells.remove(&name);
         }
+        // Likewise `var`-ness: a `let x` (or a `fn x`) declared after a
+        // `var x` in the same scope is a new, ordinary binding. The paths
+        // that replace a `var`'s term without redeclaring it go through
+        // `scope_rebind`, which asks first and marks it again.
+        if let Some(vars) = self.var_scopes.last_mut() {
+            vars.remove(&name);
+        }
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, term_id);
         }

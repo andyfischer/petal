@@ -157,3 +157,27 @@ fn a_bare_read_is_always_a_snapshot_and_a_get_is_always_live() {
     let live = run("var x = 1\nfn peek()\n  get x\nend\nlet before = peek()\nset x = 2\nprint(\"{before} {peek()}\")").unwrap();
     assert_eq!(live, "1 2", "a cell read tracks the write");
 }
+
+// ---------------------------------------------------------------------------
+// Redeclaring the name
+// ---------------------------------------------------------------------------
+
+/// A `let` after a `var` of the same name, in the same scope, is a new and
+/// ordinary binding: it is read bare and rebound with `=`. The scope used to
+/// go on calling the name a `var`, so the read compiled to a cell read of a
+/// plain value ("internal error: cell_read on a int") and the `=` was
+/// rejected as a write to a cell.
+#[test]
+fn a_let_that_redeclares_a_var_in_its_scope_is_a_let() {
+    assert_eq!(run("var x = 1\nlet x = 2\nprint(x)").unwrap(), "2");
+    assert_eq!(run("var x = 1\nlet x = 2\nx = 9\nprint(x)").unwrap(), "9");
+    // `set` now has no cell to write.
+    let e = err("var x = 1\nlet x = 2\nset x = 3");
+    assert!(e.contains("`x` is not a `var`"), "{e}");
+}
+
+/// The same for a function declared under a `var`'s name.
+#[test]
+fn a_fn_that_redeclares_a_var_in_its_scope_is_a_function() {
+    assert_eq!(run("var f = 1\nprint(f)\nfn f() 2 end\nprint(f())").unwrap(), "1\n2");
+}

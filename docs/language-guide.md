@@ -191,6 +191,129 @@ Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
 provenance queries (`petal show-provenance`, `petal show-slice`) that can
 otherwise answer "what produced this value?".
 
+### Mutable state shared by several functions
+
+A `var` is how several functions update the same data. `=` cannot do it, since
+a function may not assign a name bound outside itself, and returning a fresh
+copy from every helper stops being practical once the data is a handful of
+lists that a loop writes thousands of times. Put the data in cells: every
+function that can see a cell reads it with `get` and writes it with `set`.
+
+There are two places to put the cells, and the choice is about how long the
+data lives.
+
+**For one call: local `var`s and nested functions.** Declare the cells in the
+function that owns the work, then the helpers as closures over them, then the
+algorithm:
+
+```petal
+fn settle(heights: list, passes: int) -> list
+  var h = heights
+  var moves = 0
+
+  // Move one unit from a to b if a stands at least two higher.
+  let level = fn(a, b)
+    if get h[a] - get h[b] < 2 then return nil end
+    set h[a] = get h[a] - 1
+    set h[b] = get h[b] + 1
+    set moves += 1
+  end
+
+  for pass in range(0, passes) do
+    for i in range(0, len(h) - 1) do
+      level(i, i + 1)
+      level(i + 1, i)
+    end
+  end
+  print("moves:", moves)
+  h
+end
+
+print(settle([6, 0, 0, 2], 8))
+```
+
+`settle` is still a pure function of its arguments. Each call makes its own
+cells, nothing of them outlives it, and what it returns is an ordinary value.
+Its own code reads the cells bare (`len(h)`, and `h` on the last line), so only
+the helpers pay for `get`. Prefer this shape whenever the data belongs to one
+computation: a solver step, a parser, a layout pass.
+
+**For the whole program: a top-level `var` or `state var`, and top-level
+functions.** This is the shape for data that outlives any one call, which in a
+script that re-runs every frame means a [`state var`](#state-var):
+
+```petal
+state var board = [0, 0, 0, 0]
+state var turn = 0
+
+fn mark(i: int)
+  if get board[i] != 0 then return nil end
+  set board[i] = 1 + get turn % 2
+  set turn += 1
+end
+
+mark(2)
+mark(2)       // taken: nothing happens
+mark(0)
+print(board, turn)   // [2, 0, 1, 0] 2
+```
+
+Every function reads these cells with `get`, however plain the function, and
+module scope reads them bare. A top-level `var` without `state` is made afresh
+on each run; `state var` keeps its value across runs. A module can export
+either, and importers can read it but not write it
+([module system](module-system.md#an-exported-var-is-read-only-to-importers)).
+
+A plain `state` cannot stand in for the second shape. It persists, but it is
+still a dataflow binding, so a function that assigns one gets the same error
+as for a `let`:
+
+```petal ignore
+state score = 0
+
+fn award(n)
+  score = score + n   // error: `score` is bound outside this function
+end
+```
+
+Declare it `state var score = 0` and write `set score = get score + n`, or
+keep the `state` and have the function return the new value for module scope
+to assign.
+
+**A write into a container happens in place.** `set xs[i] = v`, `set r.f = v`
+and `set xs = append(xs, v)` change the cell's own list or record when the
+cell is its only holder, from any function that can see the cell. A helper
+that writes one element costs one element, not a copy of the list, so a loop
+can be factored into helpers without changing what it costs. Values still
+behave as values. Whatever took the contents earlier keeps what it took, and
+the next write pays for one copy:
+
+```petal
+var xs = [1, 2, 3]
+let snap = xs
+set xs[0] = 99
+print(snap, xs)   // [1, 2, 3] [99, 2, 3]
+```
+
+Three habits keep the writes in place:
+
+- **Call a writing helper as a statement.** A `set` is an expression, so a
+  function that ends on `set xs[i] = v` returns the whole list. Dropped, that
+  costs nothing; `let ys = put(i, v)` hands the list out, and the next write
+  copies it.
+- **Bind a call's result before the write that uses it.** `set xs = append(xs,
+  f(x))` reads `xs`, then runs `f`, which might touch `xs` itself, so it
+  copies. Write `let v = f(x)` and then `set xs = append(xs, v)`.
+- **Keep hot data one level deep.** Only the cell's outermost container is
+  written in place: `set grid[i][j] = v` copies row `i`, and `set ps[i].x = v`
+  copies one record. Parallel flat lists (`xs`, `ys`, `vx`, `vy`) avoid both.
+
+The mechanism is described in
+[Writing a container in place](var.md#writing-a-container-in-place).
+`examples/games/physics-playground` uses both shapes: `physics.ptl` steps its
+solver with closures over local cells, and `app.ptl` edits its `state var`s
+from top-level functions.
+
 ### `config let` — declaring a tuning knob
 
 A `config` modifier marks a `let` binding as the value a person is *meant* to
@@ -2013,6 +2136,13 @@ shared cell while a `state var` inside a function is one cell per call path.
 `state(key) var` works too — one cell per key, created on first touch. Reach for
 `state var` only when a plain `state` cannot express the write; a `state` read
 still carries its dataflow edges, and a cell read does not.
+
+The write a plain `state` cannot express is one from inside a function: `=` on
+a `state` declared outside the function is an error, exactly as for a `let`.
+So a `state` that a function has to update becomes a `state var`, written with
+`set` and read there with `get`; see
+[Mutable state shared by several functions](#mutable-state-shared-by-several-functions)
+for the pattern and what it costs.
 
 ### State and hot reload
 

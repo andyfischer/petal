@@ -326,7 +326,7 @@ fn methods_nested_functions_and_imports_are_all_nameable() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("shapes.ptl"),
-        "export fn double(x)\n  x * 2\nend\n",
+        "pub fn double(x)\n  x * 2\nend\n",
     )
     .unwrap();
     let main = dir.join("main.ptl");

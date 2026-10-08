@@ -351,7 +351,7 @@ fn load_scene(k: int)
   set wake = true
 end
 
-fn undo_last()
+fn undo_last() -> nil
   if len(get undo) == 0 then
     set said = "Nothing to undo"
     return nil
@@ -368,7 +368,7 @@ fn undo_last()
 end
 
 // Remove every body that is not pinned, and empty the dispenser.
-fn clear_loose()
+fn clear_loose() -> nil
   let wd = get world
   let loose = 0
   for i in range(0, wd.n) do
@@ -392,7 +392,7 @@ fn clear_loose()
 end
 
 // Pin body i, or free it; it becomes the selection.
-fn toggle_pin(i: int)
+fn toggle_pin(i: int) -> nil
   if i < 0 || i >= get world.n then return nil end
   checkpoint()
   let was = get world.pin[i]
@@ -403,7 +403,7 @@ fn toggle_pin(i: int)
 end
 
 // Delete body i and the links on it.
-fn delete_body(i: int)
+fn delete_body(i: int) -> nil
   if i < 0 || i >= get world.n then return nil end
   checkpoint()
   let gone = get world.id[i]

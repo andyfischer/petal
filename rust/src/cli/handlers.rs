@@ -1685,6 +1685,15 @@ fn term_to_json(term: &Term) -> serde_json::Value {
 /// are proven on top of the accepted annotations, so the two kinds cannot
 /// vouch for each other.
 ///
+/// **Return types** for loop-tailed functions come in two strengths. `-> list`
+/// names what the function already returns, so it gets the strong proof: the
+/// same IR, and no new warning. `-> nil` is the one rewrite here that is
+/// *meant* to change the program — it turns the implicit return off, so the
+/// loop stops building a list nobody reads — and so it cannot be held to the
+/// IR: it must compile and gain no warning, and rests otherwise on the call
+/// sites the analysis read (`suggest::return_types`). A function whose callers
+/// are not all in view is reported with both options and never written.
+///
 /// Nothing is written unless at least one suggestion survives.
 pub(super) fn handle_suggest(
     args: &super::SuggestArgs,
@@ -1692,7 +1701,7 @@ pub(super) fn handle_suggest(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::suggest::{NamedArgs, Suggestion};
+    use crate::suggest::{NamedArgs, ReturnType, Suggestion};
 
     let origin = source_origin(source_input);
     let opts = crate::suggest::SuggestOptions {
@@ -1718,7 +1727,10 @@ pub(super) fn handle_suggest(
         outcome.functions,
         if outcome.functions == 1 { "" } else { "s" }
     );
-    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() && outcome.advice.is_empty()
+    if outcome.suggestions.is_empty()
+        && outcome.named_args.is_empty()
+        && outcome.return_types.is_empty()
+        && outcome.advice.is_empty()
     {
         println!("no suggestions ({functions} examined)");
         return;
@@ -1746,6 +1758,16 @@ pub(super) fn handle_suggest(
         println!("  suggest: {}", one_line(&n.after));
         println!("  because: {}", n.because);
     }
+    // A loop tail's return type. Where the callers in view do not settle it
+    // there is a choice rather than a suggestion, and nothing to write.
+    for r in &outcome.return_types {
+        println!("\n{}:{}  fn {}", name, r.line, r.function.0);
+        match r.ty {
+            Some(ty) => println!("  suggest: -> {ty}"),
+            None => println!("  choose: -> list or -> nil"),
+        }
+        println!("  because: {}", r.because);
+    }
     // Advice is a comment about the code, not a rewrite of it: there is no
     // `suggest:` line because there is no text to write.
     for a in &outcome.advice {
@@ -1769,6 +1791,23 @@ pub(super) fn handle_suggest(
             if outcome.named_args.len() == 1 { "its" } else { "their" }
         ));
     }
+    let return_edits: Vec<ReturnType> = outcome
+        .return_types
+        .iter()
+        .filter(|r| r.is_edit())
+        .cloned()
+        .collect();
+    if !outcome.return_types.is_empty() {
+        let open = outcome.return_types.len() - return_edits.len();
+        summary.push(format!(
+            "{} for a loop's implicit return{}",
+            count(outcome.return_types.len(), "return type"),
+            match open {
+                0 => String::new(),
+                n => format!(" ({n} left to choose, never applied)"),
+            }
+        ));
+    }
     if !outcome.advice.is_empty() {
         summary.push(format!(
             "{} piece{} of advice (a comment, never applied)",
@@ -1778,8 +1817,9 @@ pub(super) fn handle_suggest(
     }
     println!("\n{}.", summary.join("; "));
 
-    // Advice alone leaves nothing to write or to prove.
-    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() {
+    // Advice, or a choice left to the author, leaves nothing to write or to
+    // prove.
+    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() && return_edits.is_empty() {
         return;
     }
     if !args.apply && !args.verify {
@@ -1840,17 +1880,60 @@ pub(super) fn handle_suggest(
         }
     }
 
+    // Then the loop-tail return types, each on top of the accepted
+    // annotations and of the return types already kept. One at a time: there
+    // are few, and the two strengths have different proofs.
+    let mut returns: Vec<ReturnType> = Vec::new();
+    let mut unreturned: Vec<(&ReturnType, String)> = Vec::new();
+    if !return_edits.is_empty() {
+        let with_returns =
+            |kept: &[ReturnType]| crate::suggest::apply_all(source, &accepted, kept, &[]);
+        let mut base = match compile(&with_returns(&returns), "annotated") {
+            Ok(c) => c,
+            Err(e) => die_plain(&e),
+        };
+        for r in outcome.return_types.iter().filter(|r| r.is_edit()) {
+            let mut candidate = returns.clone();
+            candidate.push(r.clone());
+            let checked = compile(&with_returns(&candidate), "rewritten").and_then(|after| {
+                no_new_warning(&base, &after, "rewritten")?;
+                // `-> list` only tells the checker what was already true.
+                // `-> nil` changes the function on purpose, so there is no
+                // IR to hold it to.
+                if r.ty == Some("list") {
+                    base.same_program(&after).map_err(|diff| {
+                        format!(
+                            "`-> list` changed the compiled program ({}: {} differs)",
+                            diff.location, diff.what
+                        )
+                    })?;
+                }
+                Ok(after)
+            });
+            match checked {
+                Ok(after) => {
+                    returns = candidate;
+                    base = after;
+                }
+                Err(e) => unreturned.push((r, e)),
+            }
+        }
+    }
+
     // Then the named arguments, proven against the annotated source: the
     // only difference between the two sides is the names.
     let mut named = outcome.named_args.clone();
     let mut unproven: Vec<(&NamedArgs, String)> = Vec::new();
     if !named.is_empty() {
-        let base = match compile(&annotated(&accepted), "annotated") {
+        let base = match compile(
+            &crate::suggest::apply_all(source, &accepted, &returns, &[]),
+            "annotated",
+        ) {
             Ok(c) => c,
             Err(e) => die_plain(&e),
         };
         let check_named = |candidate: &[NamedArgs]| -> Result<(), String> {
-            let rewritten = crate::suggest::apply_all(source, &accepted, candidate);
+            let rewritten = crate::suggest::apply_all(source, &accepted, &returns, candidate);
             let after = compile(&rewritten, "rewritten")?;
             base.same_program_modulo_named_args(&after)
                 .map_err(|diff| crate::suggest::not_the_same_program(&diff))?;
@@ -1877,6 +1960,14 @@ pub(super) fn handle_suggest(
             s.line
         );
     }
+    for (r, why) in &unreturned {
+        eprintln!(
+            "suggest: dropped `->{}` on `{}` (line {}) — {why}",
+            r.text.trim_start_matches(" ->"),
+            r.function.0,
+            r.line
+        );
+    }
     for (n, why) in &unproven {
         eprintln!(
             "suggest: dropped `{}` (line {}) — {why}",
@@ -1891,6 +1982,22 @@ pub(super) fn handle_suggest(
             if accepted.len() == 1 { "s" } else { "" }
         );
     }
+    let lists = returns.iter().filter(|r| r.ty == Some("list")).count();
+    if lists > 0 {
+        eprintln!(
+            "verify: {name}: {} proven IR-equal — the same program",
+            count(lists, "`-> list` return type"),
+        );
+    }
+    if returns.len() > lists {
+        let nils = returns.len() - lists;
+        eprintln!(
+            "verify: {name}: {} compile{} with no new type warning — the function no \
+             longer returns its loop's list, which no call in view reads",
+            count(nils, "`-> nil` return type"),
+            if nils == 1 { "s" } else { "" }
+        );
+    }
     if !named.is_empty() {
         eprintln!(
             "verify: {name}: {} proven IR-equal — the same program",
@@ -1898,8 +2005,8 @@ pub(super) fn handle_suggest(
         );
     }
 
-    let total = outcome.suggestions.len() + outcome.named_args.len();
-    let kept = accepted.len() + named.len();
+    let total = outcome.suggestions.len() + return_edits.len() + outcome.named_args.len();
+    let kept = accepted.len() + returns.len() + named.len();
     if args.verify && !args.apply {
         if kept < total {
             eprintln!("verify: {} of {total} suggestions did not pass.", total - kept);
@@ -1907,7 +2014,7 @@ pub(super) fn handle_suggest(
         }
         return;
     }
-    let rewritten = crate::suggest::apply_all(source, &accepted, &named);
+    let rewritten = crate::suggest::apply_all(source, &accepted, &returns, &named);
     let SourceInput::File(path) = source_input else {
         // Inline code has nowhere to be written; print the result instead.
         print!("{rewritten}");
@@ -1983,6 +2090,28 @@ fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
             "because": n.because,
         });
         (n.edits.first().map_or(0, |e| e.at), item)
+    }));
+    // A loop tail's return type. `type` is null and `edits` empty when the
+    // callers in view do not settle it; `options` is what the author would
+    // choose between either way.
+    items.extend(outcome.return_types.iter().map(|r| {
+        let edits = match r.is_edit() {
+            true => vec![serde_json::json!({ "insert_at": r.at, "insert_text": r.text })],
+            false => Vec::new(),
+        };
+        let item = serde_json::json!({
+            "kind": "return-type",
+            "function": r.function.0,
+            "arity": r.function.1,
+            "line": r.line,
+            "type": r.ty,
+            "options": ["list", "nil"],
+            "usage": r.usage.name(),
+            "preserves_ir": r.ty != Some("nil"),
+            "edits": edits,
+            "because": r.because,
+        });
+        (r.at, item)
     }));
     // Advice has a place and a comment but no rewrite, so its `edits` is
     // empty: a consumer that applies edits blindly does nothing with it.

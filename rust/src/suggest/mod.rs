@@ -5,14 +5,18 @@
 //! an ordinary compile, nothing here can fail a build, and applying a
 //! suggestion is always an explicit act. See docs/dev/suggestions-plan.md.
 //!
-//! Three kinds of suggestion ([`Kinds`]). Two are a set of text insertions,
+//! Four kinds of suggestion ([`Kinds`]). Three are a set of text insertions,
 //! each behind a proof that `--apply` runs before writing it:
 //!
 //! - **type annotations** the program already implies (this file);
 //! - **named arguments** for calls that pass three or more arguments by
-//!   position ([`named_args`]).
+//!   position ([`named_args`]);
+//! - **return types** for un-annotated functions that end in a loop, whose
+//!   implicit return is a list the callers may or may not want
+//!   ([`return_types`]). This is the one kind that can change what the
+//!   program compiles to: `-> nil` turns the implicit return off.
 //!
-//! The third is a comment, for what can be noticed but not rewritten:
+//! The fourth is a comment, for what can be noticed but not rewritten:
 //!
 //! - **advice** ([`advice`]) — a heuristic remark about a piece of code ("this
 //!   looks like a hand-written sort"). No edit, so nothing to apply or prove.
@@ -44,6 +48,7 @@
 
 pub mod advice;
 pub mod named_args;
+pub mod return_types;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -57,6 +62,7 @@ use crate::types::Type;
 
 pub use advice::Advice;
 pub use named_args::NamedArgs;
+pub use return_types::ReturnType;
 
 /// Which kinds of suggestion to look for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +71,8 @@ pub struct Kinds {
     pub types: bool,
     /// Named arguments for calls of three or more positional ones.
     pub named_args: bool,
+    /// `-> list` or `-> nil` for un-annotated functions that end in a loop.
+    pub return_types: bool,
     /// Heuristic comments that carry no rewrite.
     pub advice: bool,
 }
@@ -74,6 +82,7 @@ impl Default for Kinds {
         Kinds {
             types: true,
             named_args: true,
+            return_types: true,
             advice: true,
         }
     }
@@ -81,13 +90,14 @@ impl Default for Kinds {
 
 impl Kinds {
     /// The `--only` spelling of each kind, with the aliases it accepts.
-    pub const NAMES: &'static str = "'types', 'named-args' or 'advice'";
+    pub const NAMES: &'static str = "'types', 'named-args', 'return-types' or 'advice'";
 
     /// Parse an `--only` list (`types,named-args`).
     pub fn parse(list: &str) -> Result<Kinds, String> {
         const NONE: Kinds = Kinds {
             types: false,
             named_args: false,
+            return_types: false,
             advice: false,
         };
         let mut kinds = NONE;
@@ -95,6 +105,7 @@ impl Kinds {
             match name {
                 "types" | "type-annotations" | "annotations" => kinds.types = true,
                 "named-args" | "named-arguments" => kinds.named_args = true,
+                "return-types" | "returns" | "implicit-returns" => kinds.return_types = true,
                 "advice" | "hints" => kinds.advice = true,
                 other => {
                     return Err(format!(
@@ -222,6 +233,10 @@ pub struct SuggestOutcome {
     pub suggestions: Vec<Suggestion>,
     /// Calls that could name their arguments.
     pub named_args: Vec<NamedArgs>,
+    /// Un-annotated functions whose loop tail is an implicit return, with the
+    /// return type their callers imply — or, where the callers in view do not
+    /// settle it, both options and no edit.
+    pub return_types: Vec<ReturnType>,
     /// Heuristic comments: places worth a second look, with no rewrite to
     /// offer. Never applied.
     pub advice: Vec<Advice>,
@@ -279,6 +294,29 @@ pub fn suggest_source(
     } else {
         Vec::new()
     };
+    let return_types = if opts.kinds.return_types {
+        // A `--from` entry is read here for its call sites alone; one that
+        // does not parse was already reported (or will be) by the annotation
+        // pass, and costs this kind nothing but evidence.
+        let extra: Vec<Vec<Stmt>> = opts
+            .from
+            .iter()
+            .filter_map(|path| std::fs::read_to_string(path).ok())
+            .filter_map(|text| crate::rewrite::parse_ast(&text).ok())
+            .map(|(_tree, stmts)| stmts)
+            .collect();
+        let mut found = return_types::find(source, &stmts, &extra);
+        // The annotation pass may have its own, more precise, answer for the
+        // same slot; two insertions there would write two return types.
+        found.retain(|r| {
+            !suggestions
+                .iter()
+                .any(|s| s.function == r.function && s.slot == Slot::Return)
+        });
+        found
+    } else {
+        Vec::new()
+    };
     let advice = if opts.kinds.advice {
         advice::find(&stmts)
     } else {
@@ -287,6 +325,7 @@ pub fn suggest_source(
     Ok(SuggestOutcome {
         suggestions,
         named_args,
+        return_types,
         advice,
         functions: declared.len(),
         notes,
@@ -573,19 +612,31 @@ fn evidence_line(e: &Evidence, classes: &ClassTable) -> EvidenceLine {
 /// Apply every type annotation to `source`. The result is only ever written
 /// by the caller after it re-compiles clean — see `handle_suggest`.
 pub fn apply(source: &str, suggestions: &[Suggestion]) -> String {
-    apply_all(source, suggestions, &[])
+    apply_all(source, suggestions, &[], &[])
 }
 
-/// Apply suggestions of both kinds to `source` in one pass. Every offset is
-/// relative to the original text, and the two kinds never insert at the same
-/// place: one writes inside a declaration's parameter list, the other inside
-/// a call's.
-pub fn apply_all(source: &str, suggestions: &[Suggestion], named: &[NamedArgs]) -> String {
+/// Apply suggestions of every rewriting kind to `source` in one pass. Every
+/// offset is relative to the original text, and the kinds never insert at the
+/// same place: annotations write inside a declaration's parameter list or
+/// just past it, named arguments inside a call's, and a loop-tail return type
+/// is dropped by [`suggest_source`] when an annotation already claims that
+/// declaration's return slot. A [`ReturnType`] with no edit contributes
+/// nothing.
+pub fn apply_all(
+    source: &str,
+    suggestions: &[Suggestion],
+    returns: &[ReturnType],
+    named: &[NamedArgs],
+) -> String {
     let annotations = suggestions.iter().map(|s| (s.at, s.text.as_str()));
+    let returns = returns
+        .iter()
+        .filter(|r| r.is_edit())
+        .map(|r| (r.at, r.text.as_str()));
     let names = named
         .iter()
         .flat_map(|n| n.edits.iter().map(|e| (e.at, e.text.as_str())));
-    named_args::apply_edits(source, annotations.chain(names))
+    named_args::apply_edits(source, annotations.chain(returns).chain(names))
 }
 
 /// One source text compiled for a host: what the `--apply` proofs compare.
@@ -647,6 +698,14 @@ impl Compiled {
     /// provably bind the same values to the same parameters of the same
     /// function ([`crate::ir_equiv::ir_equivalent_modulo_named_args`])?
     #[allow(clippy::result_large_err)]
+    /// The proof behind a `-> list` on a loop-tailed function: the annotation
+    /// names what the function already returns, so the compiled program must
+    /// not have moved at all.
+    #[allow(clippy::result_large_err)]
+    pub fn same_program(&self, rewritten: &Compiled) -> Result<(), crate::ir_equiv::IrDiff> {
+        crate::ir_equiv::ir_equivalent(self.program(), rewritten.program())
+    }
+
     pub fn same_program_modulo_named_args(
         &self,
         rewritten: &Compiled,

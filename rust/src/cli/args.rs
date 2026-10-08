@@ -321,7 +321,7 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
     let mut opts = super::SuggestArgs::default();
     let source = parse_source_args(
         args,
-        "Usage: petal suggest [--only types|named-args|advice] [--apply | --verify] \
+        "Usage: petal suggest [--only types|named-args|return-types|advice] [--apply | --verify] \
          [--host core|ui|garden|garden-config|sdl] [--json] [--from <file>]... <file>  |  \
          petal suggest -e <code>",
         |args, i| {
@@ -337,7 +337,11 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
                     )));
                 }
                 "--only" => {
-                    let list = take(args, i, "--only needs a kind: 'types', 'named-args' or 'advice'");
+                    let list = take(
+                        args,
+                        i,
+                        "--only needs a kind: 'types', 'named-args', 'return-types' or 'advice'",
+                    );
                     opts.kinds = crate::suggest::Kinds::parse(list).unwrap_or_else(|e| {
                         eprintln!("{e}");
                         process::exit(1);

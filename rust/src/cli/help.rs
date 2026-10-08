@@ -433,8 +433,8 @@ SYNOPSIS
        petal suggest [<options>] -e <code>
 
 DESCRIPTION
-       Proposes changes to a file that make it say more without making it do
-       anything else, each with the reason behind it. Three kinds:
+       Proposes changes to a file that make it say more, each with the reason
+       behind it. Four kinds:
 
        types
               Type annotations the program already implies, read from its
@@ -444,6 +444,11 @@ DESCRIPTION
               Named arguments for calls that pass three or more arguments by
               position: 'draw_rect(0, 0, 320, 48, panel)' becomes
               'draw_rect(x: 0, y: 0, w: 320, h: 48, c: panel)'.
+
+       return-types
+              A return type for a function that ends in a loop and declares
+              none: '-> list' where a caller uses the list the loop collects,
+              '-> nil' where none does.
 
        advice
               Comments on code that looks like it could be something simpler,
@@ -455,6 +460,10 @@ DESCRIPTION
        ordinary compile, nothing here can fail a build, and nothing is
        written unless --apply is given. 'petal check' remains the tool that
        warns; this is the tool that proposes.
+
+       Most suggestions leave the compiled program exactly as it was, but that
+       is not a property of the command: a '-> nil' return type changes what
+       its function compiles to, on purpose. See RETURN TYPES.
 
 TYPE ANNOTATIONS
        What counts as evidence, for a parameter: the types callers actually
@@ -515,6 +524,36 @@ NAMED ARGUMENTS
        of the names would echo their own argument than add to it —
        'hash(ix: ix + 1, iy: iy, seed: seed)'.
 
+RETURN TYPES
+       A 'for' in tail position collects a list, and that list is the
+       function's implicit return. A function that ends in a loop and
+       declares no return type therefore builds a list on every call whether
+       or not anyone wants it. Declaring '-> nil' turns the implicit return
+       off: the tail becomes an ordinary statement and the loop allocates
+       nothing. Declaring '-> list' says the list is the point.
+
+       Which one applies is read from the calls in view:
+
+       o  some call uses the result: '-> list' is suggested;
+       o  called, and no call uses the result: '-> nil' is suggested;
+       o  never called, or 'pub': both options are reported under 'choose:'
+          and --apply skips it, since the callers that would settle it (a
+          host calling by name, an importing module) cannot be seen.
+
+       A result is used when the call is bound, passed, returned or
+       collected, and unused when the call is a statement. A call that is
+       another un-annotated function's tail is used exactly when that
+       function's result is. A function read as a value rather than called
+       ('map(xs, f)') is treated as 'never called'. --from <file> adds that
+       file's calls.
+
+       Only loop tails are covered. A function that also has a 'return
+       <value>' of its own is left alone, and one where only some branches
+       end in a loop is offered '-> nil' or nothing.
+
+       '-> nil' is not IR-preserving and is not held to the IR; it rests on
+       the calls that were read. '-> list' is, and --apply proves it.
+
 ADVICE
        Advice is for what can be noticed but not rewritten. Each piece names
        a place, says what it looks like, and stops there: detection is a
@@ -530,8 +569,8 @@ ADVICE
 
 OPTIONS
        --only <kind>[,<kind>]
-              Look for these kinds only: 'types', 'named-args', 'advice'.
-              All three by default.
+              Look for these kinds only: 'types', 'named-args',
+              'return-types', 'advice'. All four by default.
 
        --apply
               Write the suggestions into the file, each kind behind its own
@@ -541,9 +580,12 @@ OPTIONS
               rewritten source compiles to the same IR — the comparison of
               'petal ir-equal --named-args', in which a call may differ only
               in how its arguments are written and only where both provably
-              bind alike — and gains no warning either. A suggestion that
-              fails is dropped and named on stderr; exit 3, with no write,
-              when none passes.
+              bind alike — and gains no warning either. A '-> list' return
+              type is kept when the rewritten source compiles to the same IR
+              and gains no warning; a '-> nil' one when it compiles and gains
+              no warning, the IR being what it is there to change. A
+              suggestion that fails is dropped and named on stderr; exit 3,
+              with no write, when none passes.
 
        --verify
               Run the --apply proofs and report, writing nothing. Exit 3 if
@@ -560,12 +602,15 @@ OPTIONS
               Also compile <file> for its call sites. A library module
               compiled on its own has no callers, so its parameters have no
               call-site evidence; point this at an app that uses the library.
-              Repeatable. Type annotations only.
+              Repeatable. Type annotations and return types.
 
        --json Emit the suggestions as JSON, in source order. Each has a
-              'kind' ('type-annotation', 'named-args' or 'advice'), its
-              reason, and its 'edits': the insertion offsets and the exact
-              text to insert. Advice has a 'rule' and a 'message' and its
+              'kind' ('type-annotation', 'named-args', 'return-type' or
+              'advice'), its reason, and its 'edits': the insertion offsets
+              and the exact text to insert. A return type has a 'usage'
+              ('used', 'unused', 'unknown'), a 'type' that is null when the
+              choice is the author's (its 'edits' is then empty), and
+              'preserves_ir'. Advice has a 'rule' and a 'message' and its
               'edits' is always empty.
 
 {COMMON}

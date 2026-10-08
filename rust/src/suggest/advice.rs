@@ -1,6 +1,6 @@
 //! Advice: suggestions that are a *comment*, not a rewrite.
 //!
-//! The other two kinds each end in text to splice, behind a proof that
+//! The other kinds each end in text to splice, behind a proof that
 //! splicing it is safe. Some things worth saying have neither: "this loop is a
 //! sort" is a judgement about what the code *means*, the replacement depends
 //! on what the author intended, and nothing can prove the two alike. Advice is

@@ -20,6 +20,7 @@ fn opts(host: HostProfile) -> SuggestOptions {
         kinds: Kinds {
             types: false,
             named_args: true,
+            return_types: false,
             advice: false,
         },
         ..Default::default()
@@ -40,7 +41,7 @@ fn rewrites(src: &str) -> Vec<String> {
 /// the result is provably the same program, as `--apply` does.
 fn applied_for(src: &str, host: HostProfile) -> String {
     let out = suggest_source(src, None, &opts(host)).expect("suggest");
-    let rewritten = apply_all(src, &[], &out.named_args);
+    let rewritten = apply_all(src, &[], &[], &out.named_args);
     if rewritten != src {
         verify_named_args(src, &rewritten, None, &opts(host))
             .unwrap_or_else(|e| panic!("{e}\n--- rewritten ---\n{rewritten}"));

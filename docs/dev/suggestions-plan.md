@@ -1,13 +1,25 @@
 # A suggestion channel (`petal suggest`)
 
 Status: **shipped** for type annotations (`rust/src/typecheck/infer.rs` holds
-the analysis) and for named arguments (`rust/src/suggest/named_args.rs`, over
-the callee resolution in `rust/src/named_calls.rs`); `rust/src/suggest/` is the
-command. The catalogue of further suggestion rules in §7 is not scheduled.
+the analysis), for named arguments (`rust/src/suggest/named_args.rs`, over
+the callee resolution in `rust/src/named_calls.rs`), for loop-tail return
+types (`rust/src/suggest/return_types.rs`) and for advice
+(`rust/src/suggest/advice.rs`); `rust/src/suggest/` is the command. The
+catalogue of further suggestion rules in §8 is not scheduled.
 
 The command reference is in [CLI.md](../CLI.md#suggest--suggest-safe-refactors-for-a-file),
 and `petal help suggest` is the same text. Sections 2–6 below are about the
-type-annotation kind; §8 is the named-argument kind.
+type-annotation kind; the later sections take the named-argument kind, advice,
+and loop-tail return types in turn.
+
+**`suggest` does not promise to preserve the IR.** It did, in effect, while
+its only tenants were annotations (which happen to leave the IR alone across
+the corpus) and named arguments (which are proven to). The return-type kind
+ended that: `-> nil` is suggested *because* it changes what a function
+compiles to. What the command promises instead is narrower and per kind — each
+edit is held to the strongest proof that is true of it, the report says which
+proof that was, and an edit whose safety depends on callers the analysis
+cannot see is never written. See "Return types for loop tails" below.
 
 ## 1. Why a third channel
 
@@ -151,7 +163,9 @@ gate: an annotation that pins a method call's receiver to one class
 deliberately changes codegen (see
 [type-declarations-plan.md](type-declarations-plan.md), "Annotations drive
 static dispatch"). It happens to hold across this corpus because nothing in it
-has a pinnable receiver that was not already pinned.
+has a pinnable receiver that was not already pinned. The return-type kind goes
+further and changes the IR as its purpose (`-> nil`); the figures above are for
+the type-annotation kind alone (`--only types`).
 
 ## 7. What it does not find
 
@@ -198,6 +212,7 @@ repeated pure subexpression to a `let`" is a judgement call about naming.
 ```bash
 cd rust && cargo test --lib typecheck::infer::   # the evidence rules
 cargo test --test suggest                        # the command, end to end
+cargo test --test suggest_return_types           # loop-tail return types
 
 B=rust/target/debug/petal
 $B suggest -I petal-libs petal-libs/bloom/src/motion.ptl
@@ -259,13 +274,91 @@ sort": the detection is a heuristic, the replacement depends on intent
 equivalence check could vouch for it. `petal lint` cannot hold it either —
 every lint rule carries a verified fix.
 
-So `petal suggest` has a third kind, `advice` (`suggest/advice.rs`): a place, a
-comment, and a rule name. It carries no edit, which is what keeps the rest of
-the command's guarantees intact — `--apply` and `--verify` only ever look at
-the two rewriting kinds, and a `--json` consumer sees an empty `edits`.
+So `petal suggest` has a kind with no rewrite, `advice` (`suggest/advice.rs`): a
+place, a comment, and a rule name. It carries no edit, which is what keeps the
+rest of the command's guarantees intact — `--apply` and `--verify` only ever
+look at the rewriting kinds, and a `--json` consumer sees an empty `edits`.
 
 The bar for a rule: right often enough to be worth reading, and impossible to
 make exact enough for a lint fix. A false positive costs a line of output. The
 first rule, `hand-written-sort`, exists because two example apps wrote an
 insertion sort by hand after `sort(list, compare)` and `sort_by` had shipped;
 it fires on both originals and on nothing else in the example corpus.
+
+## 11. Return types for loop tails
+
+A `for` in tail position collects a list, and a function's tail is its
+implicit return ([implicit-return-values.md](../implicit-return-values.md)).
+So an un-annotated function that ends in a loop is one of two different
+things, and the source does not say which:
+
+```
+fn squares(xs)                 fn draw_all(items)
+  for x in xs do x * x end       for it in items do draw(it) end
+end                            end
+```
+
+The first is a mapping. The second builds, returns and drops a list of
+whatever `draw` yields on every call. Since `-> nil` now turns the implicit
+return off, the second has a one-word fix — and `suggest/return_types.rs` is
+the kind that finds it (`--only return-types`).
+
+**The evidence is how the function is called**, read from the AST by mirroring
+the compiler's own value-position rule:
+
+| Calls in view | Suggestion | `--apply` |
+|---|---|---|
+| some call uses the result | `-> list` | written; proven IR-equal |
+| called, none uses the result | `-> nil` | written; compiles, no new warning |
+| never called, or `pub` | both options, under `choose:` | skipped |
+
+A call that is the tail of another un-annotated function is neither used nor
+discarded — its result is that function's result — so usage is propagated
+through such forwarding to a fixpoint. It only ever rises (unused → unknown →
+used), which is what makes the order of resolution irrelevant.
+
+**Matching is by name, and every doubt is resolved away from `-> nil`.**
+Callee resolution here is deliberately cruder than the named-argument kind's:
+that one proves a rewrite changes nothing, and needs the exact callee; this one
+only needs to never *miss* a use. So a call counts toward every declaration of
+that bare name (overload variants share their evidence; a method is matched by
+its method name on any receiver), a `--from` file's calls count by name, a
+tail call in a `--from` file is a use, a lambda's tail is a use, and a function
+that is ever read as a value instead of called is "unknown".
+
+**This is the one kind that is not IR-preserving.** `-> list` tells the checker
+something already true, so it gets the strong proof: `ir_equivalent` on the
+compiled programs. `-> nil` cannot be held to the IR — the changed IR is the
+suggestion. It is behaviour-preserving exactly when no caller reads the list,
+and that is an analysis result rather than something a recompile can check, so
+the gate is the weaker one (compiles; gains no warning) and the safety comes
+from where the suggestion is *withheld*:
+
+- a `pub` function, whose callers are in other files;
+- a function nothing in view calls — in a UI app or an embedding that is
+  usually one the host calls by name, and the host is not in view either;
+- a function passed around as a value.
+
+Those are reported with both options and never written. `--json` says so per
+item (`"preserves_ir": false`, `"usage": "unknown"`, empty `edits`).
+
+**Scope: loop tails only.** "Every un-annotated function whose result no
+caller uses" was considered and rejected. A function that ends in `count + 1`
+and is called as a statement is not costing anything, and `-> nil` there would
+be a claim about intent with no payoff; a loop tail is the case where the
+implicit return has a real cost (an allocation per call) and where the
+ambiguity is in the language rather than in the author's head. A body with a
+`return <value>` of its own is skipped — the declaration would have to describe
+that exit too — and a tail where only some branches end in a loop gets `-> nil`
+or nothing, since there is no single type to name when it is used.
+
+**Against the other kinds.** The type-annotation kind never proposes a return
+type for a loop tail on its own (a `for` statement has no type to the checker),
+but if it does have an answer for the slot, that one wins and this kind is
+dropped for the function, so the two never insert at the same place. Return
+types are proven after annotations and before named arguments, and each kept
+edit becomes the baseline for the next.
+
+Tests: `suggest::return_types::tests` (the analysis) and
+`rust/tests/suggest_return_types.rs` (the command, including that an applied
+`-> nil` is a different program under `petal ir-equal` and prints the same).

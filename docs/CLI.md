@@ -415,19 +415,25 @@ petal suggest [--only <kind>[,<kind>]] [--apply | --verify] [--host <host>]
 petal suggest [<options>] -e <code>
 ```
 
-Proposes changes to a file that make it say more without making it do anything
-else, each with the reason behind it. A **suggestion channel**, not a check:
-nothing here runs during an ordinary compile, nothing can fail a build, and
-nothing is written without `--apply`. See
-[suggestions-plan.md](dev/suggestions-plan.md).
+Proposes changes to a file that make it say more, each with the reason behind
+it. A **suggestion channel**, not a check: nothing here runs during an ordinary
+compile, nothing can fail a build, and nothing is written without `--apply`.
+See [suggestions-plan.md](dev/suggestions-plan.md).
 
-There are three kinds, and `--only` picks between them:
+There are four kinds, and `--only` picks between them:
 
 | Kind | What it proposes | The proof `--apply` holds it to |
 |---|---|---|
 | `types` | A type annotation the program already implies | Still compiles, and gains no type-checker warning |
 | `named-args` | Named arguments for a call that passes three or more by position | Compiles to the same IR ([`ir-equal --named-args`](#ir-equal--are-two-files-the-same-program)), and gains no warning |
+| `return-types` | `-> list` or `-> nil` for an un-annotated function that ends in a loop | `-> list`: compiles to the same IR, and gains no warning. `-> nil`: compiles and gains no warning — **the IR changes, by design** |
 | `advice` | Nothing — a comment on code that looks like it could be simpler | None: there is no rewrite, so `--apply` never acts on it |
+
+**Not every suggestion preserves the compiled program.** Three of the four
+kinds leave the IR alone or have no edit at all. `return-types` is the
+exception: `-> nil` turns off a function's implicit return, so the function
+stops building a list — which is the point of suggesting it. It is offered only
+where no call in view reads that list; see [Return types](#return-types).
 
 ```
 $ petal suggest app.ptl
@@ -449,7 +455,14 @@ app.ptl:61:11  call clamp
   suggest: clamp(t, lo: 0, hi: 1)
   because: `clamp` is the builtin `clamp(value, lo, hi)`; `value` stays positional
 
-2 type annotations across 24 functions; 2 calls that could name their arguments.
+app.ptl:70  fn draw_all
+  suggest: -> nil
+  because: ends in a `for` loop, which collects a list as its implicit return,
+           but none of its 3 calls uses it — `-> nil` turns the implicit
+           return off, so the loop builds no list
+
+2 type annotations across 24 functions; 2 calls that could name their arguments;
+1 return type for a loop's implicit return.
 Re-run with --apply to write them.
 ```
 
@@ -471,6 +484,56 @@ body keeps, so it stays precise.
 
 Suggestions **compound** — an applied annotation is evidence for the next pass
 — so re-running until it reports nothing is the intended workflow.
+
+#### Return types
+
+A `for` in tail position collects a list, and that list is the function's
+[implicit return](implicit-return-values.md). An un-annotated function that
+ends in a loop therefore does not say which of two things it is: a mapping
+whose callers want the list, or a side-effect loop that builds one on every
+call for nobody. Declaring it settles that — `-> list` documents the first,
+and `-> nil` turns the implicit return off so the second allocates nothing.
+
+Which one a function is shows in how it is called:
+
+| The calls in view | Reported as | `--apply` |
+|---|---|---|
+| some call uses the result | `suggest: -> list` | writes it, proven IR-equal |
+| called, and no call uses the result | `suggest: -> nil` | writes it; the IR changes |
+| never called, or `pub` | `choose: -> list or -> nil` | skips it |
+
+A call's result is *used* when the call is bound, passed, returned, collected
+by a loop, or written with an [in-out argument](syntax/rebind-operator.md); it
+is unused when the call is a statement. A call that is the tail of another
+un-annotated function is used exactly when *that* function's result is, and the
+analysis follows such chains. Doubt resolves toward leaving the choice to the
+author: a function that is read as a value (`map(xs, f)`) rather than called
+is reported with both options, as is one whose only caller is itself
+undetermined. A use anywhere wins over `pub`.
+
+"Never called" usually means "called by the host" — a UI app's `draw`, an
+embedding's callback — and those callers cannot be seen, which is why that
+case is never written. For a `pub` function, `--from <app>` supplies the
+callers a library module lacks.
+
+The kind covers **loop tails only**. A function with a branch whose tail is a
+loop and another whose tail is not (`if n > 0 then for … end else 0 end`) is
+offered `-> nil` when its result is unused and nothing otherwise — there is no
+one type to name. A function with a `return <value>` of its own is left alone.
+
+```
+app.ptl:9  fn orphan
+  choose: -> list or -> nil
+  because: ends in a `for` loop, which collects a list as its implicit return;
+           nothing in view calls it. Declare `-> list` if callers read the
+           list, or `-> nil` if the loop is run for its side effects (no list
+           is built)
+```
+
+In `--json` this is an item with `"kind": "return-type"`: `function`, `arity`,
+`line`, `usage` (`used`, `unused` or `unknown`), `type` (`"list"`, `"nil"`, or
+`null` when the choice is the author's), `options` (always `["list", "nil"]`),
+`preserves_ir` (false for `-> nil`), and `edits` — empty when `type` is null.
 
 #### Advice
 
@@ -583,11 +646,14 @@ core`, which leaves that host's natives alone.
 
 #### Options
 
-- `--only <kind>[,<kind>]` — look for these kinds only: `types`, `named-args`.
-  Both by default.
+- `--only <kind>[,<kind>]` — look for these kinds only: `types`, `named-args`,
+  `return-types`, `advice`. All four by default.
 - `--apply` — write the suggestions into the file, each kind behind its proof
-  (the table above). Annotations are proven first and named arguments on top of
-  the annotated source, so neither kind vouches for the other. A suggestion
+  (the table above). Annotations are proven first, return types on top of them,
+  and named arguments on top of both, so no kind vouches for another. A
+  `-> nil` return type is the one edit that changes what the file compiles to;
+  use `--only types,named-args` for a run that must leave the IR alone. A
+  suggestion
   that fails is dropped and named on stderr, and the rest are written; exit 3,
   with no write, when none passes. Edits are insertions only — comments,
   layout and everything outside the touched arguments are left as they were.
@@ -605,9 +671,11 @@ core`, which leaves that host's natives alone.
 - `--from <file>` — also compile `<file>` for its call sites. A library module
   compiled on its own has no callers, so its parameters have no call-site
   evidence; point this at an app that uses the library. Repeatable. Type
-  annotations only.
+  annotations and return types (which read it for calls to the target's
+  functions, by name).
 - `--json` — the suggestions as JSON, in source order. Each carries its `kind`
-  (`type-annotation` or `named-args`), its `because`, and its `edits` — a list
+  (`type-annotation`, `named-args`, `return-type` or `advice`), its `because`,
+  and its `edits` — a list
   of `{insert_at, insert_text}`, offsets in characters into the original text.
   A type annotation also has `function`, `arity`, `slot`, `param`, `type`,
   `evidence` (and `insert_at` / `insert_text`, its one edit); a named-argument

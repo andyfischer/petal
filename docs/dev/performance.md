@@ -190,10 +190,15 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   `run_batch` now hands each frame to `run_straight` (`vm/fast.rs`) first: a
   loop that keeps `ip` and the register file in locals and retires the happy
   path of the hot instructions (constants, moves, jumps, loop steps, number
-  arithmetic and comparisons, field and index reads), checking the GC budget
-  only at back-edges. Anything else — a call, an allocation, a `Pending`
-  operand, an error — stops the loop at that instruction and `step_in` runs
-  it as before. That took ~18% off Cheesecake's `neon` script time. Cutting
+  arithmetic and comparisons, field and index reads, in-place index writes,
+  and `var` cell reads and writes), checking the GC budget only at
+  back-edges. Anything else — a call, an allocation, a `Pending` operand, an
+  error — stops the loop at that instruction and `step_in` runs it as before.
+  A cell access stays in the loop unless an open memo scope has to record it
+  (a cell the scope did not create) or the frame gate wants a fingerprint of a
+  `state var` before its first mutation of the run; before that, every `x[i]`
+  through a cell left the loop and re-entered it, which cost a solver written
+  over local `var` lists a quarter of its time. That took ~18% off Cheesecake's `neon` script time. Cutting
   further means retiring fewer instructions (or a JIT), not cheaper dispatch.
 - **`Move` is ~30% of instructions.** What is left are live phi copies
   around loops — the copy in and the carry out. Register coalescing (giving a

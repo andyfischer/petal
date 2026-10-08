@@ -136,6 +136,13 @@ Three limits, all of which fall back to copying rather than to a wrong answer:
   script whose *last* statement is such a call copies once per run: its value
   is the program's result.
 
+Reading or writing a cell is not a slow path in the VM either. The
+straight-line loop (`vm/fast.rs`) retires `CellRead`, `CellWrite` and
+`SetIndexInPlace` itself, and hands one to the general executor only when
+something outside the script has to hear of it: an open memo scope that did
+not create the cell, or the frame gate's fingerprint before a `state var` is
+first mutated in a run.
+
 The pass is `OptFlags::in_place_cells`, on by default and off under the
 `baseline` policy, and it stands down while the `explain` trace is recording,
 because the trace is a history of values that an in-place write would rewrite.

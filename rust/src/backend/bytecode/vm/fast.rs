@@ -8,12 +8,13 @@
 //! the GC budget. This loop instead keeps `ip`, the register file and the code
 //! in locals for the whole run and handles only the *happy path* of the
 //! hottest instructions — constants, moves, jumps, loop steps, number
-//! arithmetic and comparisons, field and index reads.
+//! arithmetic and comparisons, field and index reads, in-place index writes,
+//! and reads and writes of a `var` cell that memoization has no interest in.
 //!
 //! Anything else stops the run with `ip` still pointing at the instruction,
 //! and the caller hands it to `step_in` unchanged. That covers every
 //! instruction not listed here (calls, returns, allocation, loop setup,
-//! state, cells) and every unusual case of one that is: a `Pending` operand (so
+//! state) and every unusual case of one that is: a `Pending` operand (so
 //! absorption is noted by `exec_inst`), an error (so it is annotated with the
 //! origin, computed only then), an integer overflow, a register outside the
 //! file. Since the fast arms have no side effects before they commit, running
@@ -26,6 +27,7 @@
 
 use super::*;
 
+use super::super::isa::{CellReadMode, CellWriteMode};
 use crate::backend::ops;
 use crate::constant_table::ConstantValue;
 use crate::program::TermOp;
@@ -57,7 +59,20 @@ impl<'a> Vm<'a> {
     ) -> (StraightStop, u64) {
         let program = self.program;
         let code: &'a [Inst] = &func.code;
+        // A cell access is a memo dependency only while a scope is recording,
+        // and then only for a cell the scope did not create itself (see
+        // `memo_note_cell_read` and its siblings). Neither changes during a
+        // straight run: scopes open and close at calls and cells are created
+        // by `CellNew`, all of which stop it. `Some` holds the cells this run
+        // may touch without telling the recorder; `None` means any.
+        let memo_locals = if self.memo && self.stack.memo.recording() {
+            self.stack.memo.open.last().map(|s| &s.local_cells)
+        } else {
+            None
+        };
+        let recording = memo_locals.is_some();
         let frame = &mut self.stack.vm_frames[fi];
+        let result_dropped = frame.result_dropped;
         let mut ip = frame.ip;
         let regs: &mut [Value] = &mut frame.regs;
         let loops = &mut frame.loops;
@@ -324,6 +339,80 @@ impl<'a> Vm<'a> {
                         Ok(v) => put!(dst, v),
                         Err(_) => break StraightStop::Slow,
                     }
+                }
+
+                Inst::SetIndexInPlace { dst, obj, idx, val } => {
+                    if dst as usize >= regs.len() {
+                        break StraightStop::Slow;
+                    }
+                    // Writing the same element twice is harmless, so an error
+                    // here (reported by the general executor, which runs the
+                    // instruction again) has nothing to undo.
+                    match ops::set_index_in_place(heap, get!(obj), get!(idx), get!(val)) {
+                        Ok(v) => put!(dst, v),
+                        Err(_) => break StraightStop::Slow,
+                    }
+                }
+
+                // A `var` cell, when the recorder does not need to hear of it.
+                // What is left to the general executor: a cell some open memo
+                // scope depends on, a write that might carry a scope's own
+                // cell out of it, and the fingerprint the frame gate wants
+                // before a `state var` is first mutated in a run.
+                Inst::CellRead { dst, cell, mode } => {
+                    let Value::Cell(id) = get!(cell) else {
+                        break StraightStop::Slow;
+                    };
+                    if memo_locals.is_some_and(|locals| !locals.contains(&id))
+                        || dst as usize >= regs.len()
+                    {
+                        break StraightStop::Slow;
+                    }
+                    let v = match mode {
+                        CellReadMode::Peek => heap.cell_read(id),
+                        CellReadMode::Shared => heap.cell_read_shared(id),
+                        CellReadMode::Take => {
+                            if heap.cell_wants_fingerprint(id) {
+                                break StraightStop::Slow;
+                            }
+                            heap.cell_take(id)
+                        }
+                    };
+                    put!(dst, v);
+                }
+                Inst::CellWrite {
+                    dst,
+                    cell,
+                    val,
+                    mode,
+                } => {
+                    let Value::Cell(id) = get!(cell) else {
+                        break StraightStop::Slow;
+                    };
+                    if dst as usize >= regs.len() {
+                        break StraightStop::Slow;
+                    }
+                    let v = get!(val);
+                    let keeps = match mode {
+                        // The recorder inspects every value stored this way.
+                        CellWriteMode::Shared => {
+                            if recording {
+                                break StraightStop::Slow;
+                            }
+                            heap.cell_write(id, v);
+                            false
+                        }
+                        CellWriteMode::Put | CellWriteMode::PutTail => {
+                            if memo_locals.is_some_and(|locals| !locals.contains(&id)) {
+                                break StraightStop::Slow;
+                            }
+                            let keeps = mode == CellWriteMode::Put || result_dropped;
+                            heap.cell_put(id, v, keeps);
+                            keeps
+                        }
+                    };
+                    // As in `exec_inst`, with observation known to be off.
+                    put!(dst, if keeps { Value::Nil } else { v });
                 }
 
                 _ => break StraightStop::Slow,

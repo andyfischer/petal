@@ -589,6 +589,58 @@ fn the_frame_gate_settles_when_in_place_writes_change_nothing() {
 }
 
 #[test]
+fn the_frame_gate_settles_on_module_level_in_place_writes_too() {
+    // No function, so no memo scope is open and the VM's straight-line loop
+    // retires the cell accesses itself. It still has to hand the first
+    // mutation of a watched `state var` to the general executor, which takes
+    // the fingerprint the gate compares.
+    let code = "state var xs = [0, 0]\nset xs[0] = 7\nset xs[1] = xs[0] + 1\nnil";
+    let mut env = Env::new();
+    let pid = env.load_program(code).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert!(env.run_needed(sid), "the first frame changed the list");
+    for frame in 1..4 {
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert!(
+            !env.run_needed(sid),
+            "frame {frame}: writes that changed nothing read as a change: {:?}",
+            env.run_needed_reason(sid)
+        );
+    }
+    assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[7,8]");
+    // And one that keeps changing never settles.
+    let pid = env
+        .load_program("state var xs = [0, 0]\nset xs[0] = xs[0] + 1\nnil")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    for frame in 0..4 {
+        if frame > 0 {
+            env.reset_stack(sid).unwrap();
+        }
+        env.run(sid).unwrap();
+        assert!(
+            env.run_needed(sid),
+            "frame {frame}: a changed list read as settled"
+        );
+    }
+    assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[4,0]");
+}
+
+#[test]
+fn a_scope_reading_its_own_cell_and_an_outer_one_depends_on_the_outer() {
+    // The straight-line loop skips the recorder for a scope's own cells and
+    // must not skip it for anyone else's: `total` is replayed while `scale`
+    // holds still and runs again on the frame it changes.
+    let code = "state var scale = [1]\nstate tick = 0\nfn total(n)\n  var acc = [0]\n  for i in range(0, n) do\n    set acc[0] = get acc[0] + i * get scale[0]\n  end\n  acc[0]\nend\n\
+                tick = tick + 1\nif tick == 3 then set scale[0] = 2 end\nprint(total(10))";
+    let replay = run_frames(code, RunPolicy::REPLAY, 5);
+    assert_eq!(replay, run_frames(code, RunPolicy::BASELINE, 5));
+    assert_eq!(replay.0, ["45", "45", "90", "90", "90"]);
+}
+
+#[test]
 fn a_helper_that_always_writes_in_place_stops_opening_scopes() {
     // Such a helper can never be replayed, and a solver calls it thousands of
     // times a frame: after a few calls its site stops paying for a scope it

@@ -59,7 +59,7 @@ learns to reuse a payload instead of copying it, the numbers fall and the
 ceilings get tightened to lock the win in. A change that copies more than the
 ceiling fails the test.
 
-Ceilings are only enforced when duplication stats are compiled in: debug builds
+Ceilings are only enforced when duplication stats are on by default: debug builds
 (which `cargo test` uses) and the `dup-stats` cargo feature. The `out:` checks
 always run.
 

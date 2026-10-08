@@ -469,7 +469,8 @@ pub struct Heap {
     collections: u64,
     /// Value-duplication statistics. Records every copy-on-write and fork so we
     /// can track (and shrink) how much copying immutable values cost. Collected
-    /// only in debug builds or with the `dup-stats` feature — see
+    /// only while switched on ([`set_stats_enabled`](Self::set_stats_enabled));
+    /// on by default in debug builds or with the `dup-stats` feature — see
     /// [`crate::stats`].
     dup_stats: DupStats,
     /// Allocation statistics: how many new heap objects were created, per kind.
@@ -541,10 +542,17 @@ impl Heap {
     }
 
     /// Value-duplication statistics accumulated by this heap's copy-on-write
-    /// operations and forks. All zero in release builds unless the `dup-stats`
-    /// feature is enabled — see [`crate::stats`].
+    /// operations and forks. All zero unless collection is on — see
+    /// [`set_stats_enabled`](Self::set_stats_enabled) and [`crate::stats`].
     pub fn dup_stats(&self) -> &DupStats {
         &self.dup_stats
+    }
+
+    /// Turn the duplication and allocation counters on or off together. A
+    /// fork inherits the setting. Counts already taken are kept.
+    pub fn set_stats_enabled(&mut self, on: bool) {
+        self.dup_stats.set_enabled(on);
+        self.alloc_stats.set_enabled(on);
     }
 
     /// Mutable access to the duplication stats, e.g. to [`DupStats::reset`] them
@@ -1826,8 +1834,8 @@ mod tests {
         assert_eq!(heap.get_map(removed).len(), 1);
     }
 
-    // The dup-stats assertions below only hold when collection is compiled in
-    // (debug builds, which `cargo test` is, or the `dup-stats` feature).
+    // The dup-stats assertions below only hold when collection is on by
+    // default (debug builds, which `cargo test` is, or the `dup-stats` feature).
     #[test]
     fn dup_stats_count_cow_operations() {
         if !crate::stats::DUP_STATS_ENABLED {
@@ -1845,6 +1853,29 @@ mod tests {
         // Each clone copied the 3-element backing store.
         assert_eq!(stats.get(DupKind::List).bytes, 2 * value_slice_bytes(3),);
         assert_eq!(stats.total_count(), 2);
+    }
+
+    /// The counters are a runtime switch: off, nothing is recorded; on, they
+    /// count — whatever the build profile.
+    #[test]
+    fn stats_follow_the_runtime_switch() {
+        let mut heap = Heap::new();
+        heap.set_stats_enabled(false);
+        let list = heap.alloc_list(vec![Value::Int(1)]);
+        let list = heap.list_append(list, Value::Int(2));
+        assert_eq!(heap.alloc_stats().total(), 0);
+        assert!(heap.dup_stats().is_empty());
+        assert!(heap.dup_stats().to_string().contains("disabled"));
+
+        heap.set_stats_enabled(true);
+        heap.list_append(list, Value::Int(3));
+        assert_eq!(heap.alloc_stats().get(AllocKind::List), 1);
+        assert_eq!(heap.dup_stats().get(DupKind::List).count, 1);
+        // A fork inherits the switch, and resetting keeps it.
+        let mut child = heap.fork();
+        assert!(child.dup_stats().enabled() && child.alloc_stats().enabled());
+        child.dup_stats_mut().reset();
+        assert!(child.dup_stats().enabled());
     }
 
     #[test]

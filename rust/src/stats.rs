@@ -8,17 +8,21 @@
 //! sharing teach the runtime to reuse live payloads instead of duplicating
 //! them.
 //!
-//! Collection is compiled out unless [`DUP_STATS_ENABLED`] is true: on by
-//! default in debug builds (which includes `cargo test`), and switchable on for
-//! release builds via the `dup-stats` cargo feature. When disabled, every
-//! [`DupStats::record`] call folds to nothing — the `bytes` closure is never
-//! built or invoked — so release builds pay no runtime cost.
+//! Collection is a **runtime** switch on each counter set (see
+//! [`DupStats::set_enabled`]), so a shipped release binary can count without a
+//! rebuild: `petal run --dup-stats` and `petal bench` turn it on. It starts at
+//! [`DUP_STATS_ENABLED`]: on in debug builds (which includes `cargo test`) and
+//! in builds with the `dup-stats` cargo feature, off otherwise. When off,
+//! every `record` call is one predictable branch on a field of the heap that
+//! is already in cache — the `bytes` closure is never invoked — which does not
+//! measurably move the benchmarks (docs/dev/performance.md has the numbers).
 
 use std::fmt;
 
-/// Whether duplication statistics are collected. `true` in debug builds, or in
-/// any build with the `dup-stats` feature enabled; `false` otherwise. This is a
-/// compile-time constant so disabled builds optimize the recording away.
+/// Whether duplication and allocation statistics are collected *by default*.
+/// `true` in debug builds, or in any build with the `dup-stats` feature
+/// enabled; `false` otherwise. A fresh [`DupStats`] / [`AllocStats`] starts in
+/// this state, and `set_enabled` changes it at runtime.
 pub const DUP_STATS_ENABLED: bool = cfg!(debug_assertions) || cfg!(feature = "dup-stats");
 
 /// The kind of heap payload that was duplicated.
@@ -129,10 +133,22 @@ impl AllocKind {
 /// produces a new id also allocates, so this rises alongside [`DupStats`] and
 /// gives visibility into how many intermediate objects a program produces.
 ///
-/// Collected under the same [`DUP_STATS_ENABLED`] gate as [`DupStats`].
-#[derive(Debug, Clone, Default)]
+/// Collected under the same runtime switch as [`DupStats`].
+#[derive(Debug, Clone)]
 pub struct AllocStats {
+    /// Whether [`record`](Self::record) counts. Starts at
+    /// [`DUP_STATS_ENABLED`].
+    enabled: bool,
     by_kind: [u64; AllocKind::COUNT],
+}
+
+impl Default for AllocStats {
+    fn default() -> Self {
+        AllocStats {
+            enabled: DUP_STATS_ENABLED,
+            by_kind: [0; AllocKind::COUNT],
+        }
+    }
 }
 
 impl AllocStats {
@@ -140,10 +156,21 @@ impl AllocStats {
         Self::default()
     }
 
-    /// Record one allocation of `kind`. Folds to nothing when stats are off.
+    /// Whether allocations are being counted.
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Turn counting on or off. What was already counted is kept.
+    pub fn set_enabled(&mut self, on: bool) {
+        self.enabled = on;
+    }
+
+    /// Record one allocation of `kind`: one predictable branch when stats are
+    /// off.
     #[inline]
     pub fn record(&mut self, kind: AllocKind) {
-        if !DUP_STATS_ENABLED {
+        if !self.enabled {
             return;
         }
         self.by_kind[kind.index()] += 1;
@@ -164,15 +191,15 @@ impl AllocStats {
         AllocKind::ALL.iter().map(move |&k| (k, self.get(k)))
     }
 
-    /// Clear all counters back to zero.
+    /// Clear all counters back to zero, leaving the switch alone.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        self.by_kind = [0; AllocKind::COUNT];
     }
 }
 
 impl fmt::Display for AllocStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !DUP_STATS_ENABLED {
+        if !self.enabled {
             return write!(f, "heap allocation stats: disabled");
         }
         writeln!(f, "heap allocation stats (objects created):")?;
@@ -197,11 +224,23 @@ pub struct DupCounter {
 /// Lives on the [`Heap`](crate::heap::Heap) (the only place copy-on-write and
 /// forks actually happen) and is surfaced up through
 /// [`ExecutionContext`](crate::execution_context::ExecutionContext) and
-/// [`Env`](crate::env::Env). All zero in release builds unless the `dup-stats`
-/// feature is enabled.
-#[derive(Debug, Clone, Default)]
+/// [`Env`](crate::env::Env). All zero while collection is off, which is how a
+/// release build starts (see the module docs).
+#[derive(Debug, Clone)]
 pub struct DupStats {
+    /// Whether [`record`](Self::record) counts. Starts at
+    /// [`DUP_STATS_ENABLED`].
+    enabled: bool,
     by_kind: [DupCounter; DupKind::COUNT],
+}
+
+impl Default for DupStats {
+    fn default() -> Self {
+        DupStats {
+            enabled: DUP_STATS_ENABLED,
+            by_kind: [DupCounter::default(); DupKind::COUNT],
+        }
+    }
 }
 
 impl DupStats {
@@ -209,14 +248,24 @@ impl DupStats {
         Self::default()
     }
 
+    /// Whether duplications are being counted.
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Turn counting on or off. What was already counted is kept.
+    pub fn set_enabled(&mut self, on: bool) {
+        self.enabled = on;
+    }
+
     /// Record one duplication of `kind`. `bytes` is computed lazily and is only
     /// invoked when collection is enabled, so callers can pass an expensive
     /// size computation without slowing down builds where stats are off.
     ///
-    /// Folds to nothing when [`DUP_STATS_ENABLED`] is `false`.
+    /// One predictable branch when collection is off.
     #[inline]
     pub fn record(&mut self, kind: DupKind, bytes: impl FnOnce() -> u64) {
-        if !DUP_STATS_ENABLED {
+        if !self.enabled {
             return;
         }
         let counter = &mut self.by_kind[kind.index()];
@@ -250,19 +299,19 @@ impl DupStats {
         DupKind::ALL.iter().map(move |&k| (k, self.get(k)))
     }
 
-    /// Clear all counters back to zero.
+    /// Clear all counters back to zero, leaving the switch alone.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        self.by_kind = [DupCounter::default(); DupKind::COUNT];
     }
 }
 
 impl fmt::Display for DupStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if !DUP_STATS_ENABLED {
+        if !self.enabled {
             return write!(
                 f,
-                "value duplication stats: disabled (build with the `dup-stats` \
-                 feature or a debug profile to collect them)"
+                "value duplication stats: disabled (turn them on with \
+                 `Env::set_heap_stats(true)` before the run)"
             );
         }
         writeln!(f, "value duplication stats:")?;

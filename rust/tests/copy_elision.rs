@@ -12,7 +12,7 @@
 //! the bar: a per-iteration clone makes an indexed write O(len), which is the
 //! difference between a flat frame budget and one that grows with the data.
 //!
-//! `DupStats` collection is compiled out unless `DUP_STATS_ENABLED` (debug
+//! `DupStats` collection is off by default unless `DUP_STATS_ENABLED` (debug
 //! builds, or the `dup-stats` feature) — every test here skips when it is off,
 //! rather than passing vacuously against zeroed counters.
 

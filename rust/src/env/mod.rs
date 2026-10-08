@@ -169,7 +169,7 @@ impl Env {
 
     /// Ensure `pid`'s program is lowered to bytecode and cached. Returns the
     /// lowering error (naming the first unlowered op) if it cannot be lowered.
-    fn ensure_bytecode(&mut self, pid: ProgramId) -> Result<(), String> {
+    pub(crate) fn ensure_bytecode(&mut self, pid: ProgramId) -> Result<(), String> {
         let flags = self.effective_opt_flags();
         // Serve the cache only if it was lowered with the flags in effect now.
         if self.bytecode.get(&pid).map(|(f, _)| *f) == Some(flags) {
@@ -240,6 +240,17 @@ impl Env {
     pub fn set_echo(&mut self, on: bool) {
         for ctx in self.contexts.values_mut() {
             ctx.set_echo(on);
+        }
+    }
+
+    /// Turn the value-duplication and heap-allocation counters on or off for
+    /// every execution context in this env (see [`crate::stats`]). They start
+    /// on in debug builds and off in release ones; `petal run --dup-stats` and
+    /// `petal bench` switch them on. Like [`set_echo`](Self::set_echo), apply
+    /// it before the first run; forks inherit the setting.
+    pub fn set_heap_stats(&mut self, on: bool) {
+        for ctx in self.contexts.values_mut() {
+            ctx.heap.set_stats_enabled(on);
         }
     }
 
@@ -992,8 +1003,8 @@ impl Env {
     // ── Duplication statistics ───────────────────────────────────
 
     /// Value-duplication statistics for the default execution context. Counts
-    /// copy-on-write duplications and fork copies; all zero in release builds
-    /// unless the `dup-stats` feature is enabled. See [`crate::stats`].
+    /// copy-on-write duplications and fork copies; all zero unless collection
+    /// is on ([`set_heap_stats`](Self::set_heap_stats)). See [`crate::stats`].
     pub fn dup_stats(&self) -> &DupStats {
         self.ctx(self.default_context).dup_stats()
     }

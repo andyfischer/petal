@@ -83,6 +83,11 @@ pub(super) fn handle_run(
     if profile {
         env.profile_mut().set_enabled(true);
     }
+    // The counters are a runtime switch (off in a release build until asked
+    // for), so this has to precede the run.
+    if dup_stats {
+        env.set_heap_stats(true);
+    }
     if effect_audit {
         env.set_effect_audit(true);
     }
@@ -790,7 +795,7 @@ fn render_warnings_text(program: &Program) -> String {
 /// Print a program's type-checker warnings to stderr (nothing when there are
 /// none). Used before running and by `check`; stderr keeps them off the stdout
 /// JSON channel.
-fn eprint_warnings(program: &Program) {
+pub(super) fn eprint_warnings(program: &Program) {
     let text = render_warnings_text(program);
     if !text.is_empty() {
         eprint!("{}", text);
@@ -1458,7 +1463,7 @@ fn source_origin(input: &SourceInput) -> Option<PathBuf> {
 /// docs/module-system.md). A manifest that claims to be a package and then
 /// will not load is a hard error here — the user pointed at it, so a silent
 /// "no such module" later would be the wrong answer.
-fn make_env(include_dirs: &[PathBuf]) -> Env {
+pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
     let mut env = Env::new();
     for dir in include_dirs {
         env.add_module_path(dir.clone());
@@ -1536,7 +1541,7 @@ fn compile_source(
 
 /// Load `source` into `env`, resolving imports relative to the input's path
 /// when it has one.
-fn load_into(
+pub(super) fn load_into(
     env: &mut Env,
     source: &str,
     input: &SourceInput,

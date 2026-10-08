@@ -4,19 +4,20 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-31 of the 50 exist. Twenty-six are panel apps under the category directories
+34 of the 50 exist. Twenty-nine are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
-game, the tower defense mini-game, the calendar, the email client, the command
-palette, the node-based editor, the Markdown editor, the network graph explorer
-and the solar system), and five more
+game, the tower defense mini-game, the physics playground, the calendar, the email
+client, the command palette, the music sequencer, the node-based editor, the
+Markdown editor, the network graph explorer, the timeline explorer and the
+solar system), and five more
 were written as headless console programs under `examples/games/`, which
 stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/games/side-scroller` is a twenty-seventh panel app that was not on
-this list. The remaining 19 have not been attempted.
+`examples/games/side-scroller` is a thirtieth panel app that was not on
+this list. The remaining 16 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -32,7 +33,7 @@ this list. The remaining 19 have not been attempted.
 | 9 | **Memory matching game** | Card components, animation, delayed state changes | built — `examples/games/memory/` |
 | 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation | built — `examples/games/tower-defense/` |
 | 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance |  |
-| 12 | **Physics playground** | Dragging, gravity, collisions, constraints |  |
+| 12 | **Physics playground** | Dragging, gravity, collisions, constraints | built — `examples/games/physics-playground/` |
 | **Everyday UI** | | | |
 | 13 | **Calculator** | Buttons, layout, expression/state handling | built — `examples/productivity/calculator/` |
 | 14 | **Todo app** | CRUD, lists, persistence, filtering | built — `examples/productivity/todo/` |
@@ -59,7 +60,7 @@ this list. The remaining 19 have not been attempted.
 | 33 | **Drawing / paint app** | Pointer input, canvas rendering, tools | built — `examples/productivity/paint/` |
 | 34 | **Vector graphics editor** | Selection, handles, transforms, layering | built — `examples/productivity/vector-editor/` |
 | 35 | **Photo adjustment UI** | Sliders, image effects, before/after | built — `examples/productivity/photo-adjust/` |
-| 36 | **Music sequencer** | Timeline/grid interaction, playback state |  |
+| 36 | **Music sequencer** | Timeline/grid interaction, playback state | built — `examples/productivity/music-sequencer/` |
 | 37 | **Video timeline editor** | Scrubbing, tracks, resizing, drag/drop |  |
 | 38 | **Node-based editor** | Arbitrary positioning, ports, connections | built — `examples/productivity/node-editor/` |
 | 39 | **Markdown editor + preview** | Text input, parsing, split panes | built — `examples/productivity/markdown-editor/` |
@@ -70,7 +71,7 @@ this list. The remaining 19 have not been attempted.
 | 43 | **Personal finance dashboard** | Pie/bar/line charts, drill-down | built — `examples/dashboards/finance-dashboard/` |
 | 44 | **Interactive election map** | SVG/vector maps, hover, colors, tooltips |  |
 | 45 | **Network graph explorer** | Force-directed layout, zoom/pan, selection | built — `examples/dashboards/network-graph/` |
-| 46 | **Timeline explorer** | Zooming time axis, events, filtering |  |
+| 46 | **Timeline explorer** | Zooming time axis, events, filtering | built — `examples/dashboards/timeline-explorer/` |
 | **Creative / graphical experiments** | | | |
 | 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/games/boids/boids.ptl` |
 | 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation |  |

@@ -1,7 +1,7 @@
-export fn open()
+pub fn open()
   "menu open"
 end
 
-export fn close()
+pub fn close()
   "menu close"
 end

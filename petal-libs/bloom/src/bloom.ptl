@@ -23,28 +23,28 @@
 // the directory sits, and this file — named like its package — is what a bare
 // `import bloom` finds.
 
-// `export import m: *` re-exports every export of `m` under its own name, and
+// `pub import m: * re-exports every export of `m` under its own name, and
 // carries whole overload sets across, so `bloom.button` has both of
-// bloom/button's arities. This replaced 130 hand-written `export let x = m.x`
+// bloom/button's arities. This replaced 130 hand-written `pub let x = m.x`
 // lines; adding an export to a module now publishes it here with no edit.
-export import bloom/motion: *
-export import bloom/theme: *
-export import bloom/icon: *
-export import bloom/interact: *
-export import bloom/button: *
-export import bloom/controls: *
-export import bloom/menu: *
-export import bloom/overlay: *
+pub import bloom/motion: *
+pub import bloom/theme: *
+pub import bloom/icon: *
+pub import bloom/interact: *
+pub import bloom/button: *
+pub import bloom/controls: *
+pub import bloom/menu: *
+pub import bloom/overlay: *
 
 // Two names the facade spells differently from the module that defines them:
 // `on` and `NAMES` are clear inside `bloom/theme` and `bloom/icon`, and much
 // too generic out here. A star binds locally as well as re-exporting, so the
 // aliases are ordinary declarations over what the stars just brought in.
-export let ink_on = on
-export let ICONS = NAMES
+pub let ink_on = on
+pub let ICONS = NAMES
 
 // Bumped when the export surface grows. Additive: a script written against an
 // older level keeps working. Level 2 is what the star re-exports published on
 // their own: `step` and `capture_owner`, two exports the hand-written facade
 // had been missing.
-export let VERSION = 2
+pub let VERSION = 2

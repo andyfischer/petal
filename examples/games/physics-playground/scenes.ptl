@@ -13,9 +13,9 @@
 
 import physics as ph
 
-export let NAMES = ["Cradle", "Bridge", "Pegboard", "Wrecker", "Jelly", "Sandbox"]
+pub let NAMES = ["Cradle", "Bridge", "Pegboard", "Wrecker", "Jelly", "Sandbox"]
 
-export let BLURBS = [
+pub let BLURBS = [
   "Five bobs on rods and a double pendulum. Lift one and let go.",
   "A chain of rods between two pins, sprung weights below, loads above.",
   "Fifty-six balls rattle down nine rows of pegs into ten bins.",
@@ -146,7 +146,7 @@ fn pegboard(W: num, H: num) -> record
 end
 
 // Where the pegboard's bins sit, for whoever wants to count what is in them.
-export fn bin_layout(W: num, H: num) -> record
+pub fn bin_layout(W: num, H: num) -> record
   {x0: W * 0.5 - 5.0 * G_SP, sp: G_SP, n: 10, bin_top: H * G_TOP + G_DY * float(G_ROWS) + 2.0}
 end
 
@@ -216,7 +216,7 @@ fn jelly(W: num, H: num) -> record
   {world: wd, bounce: 0.2, fric: 0.7, drag: 0.03, trails: false, emit: NO_EMIT}
 end
 
-export fn build(k: int, W: num, H: num) -> record
+pub fn build(k: int, W: num, H: num) -> record
   if k == 0 then cradle(float(W), float(H))
   elsif k == 1 then bridge(float(W), float(H))
   elsif k == 2 then pegboard(float(W), float(H))

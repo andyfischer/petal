@@ -3,11 +3,11 @@
 // declaration is the higher-precedence one and wins for that arity (it shifts
 // the rect right by 1 so the trace shows which ran); the arities it does not
 // declare — here the 3-argument alpha form — stay reachable.
-export fn draw_rect(r, c)
+pub fn draw_rect(r, c)
   ui.draw_rect({ x: r.x + 1, y: r.y, w: r.w, h: r.h }, c)
 end
 
-export fn paint()
+pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
   draw_rect({ x: 40, y: 0, w: 10, h: 10 }, { r: 4, g: 5, b: 6 }, 0.5)
 end

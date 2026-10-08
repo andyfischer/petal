@@ -17,7 +17,7 @@ import text_layout/place: text_baseline
 // The lines `s` breaks into to fit `max_w` px. Existing newlines are honoured;
 // a word wider than the box is broken rather than allowed to overflow. Always
 // at least one line, so a caller can lay the result out with no empty case.
-export fn wrap_text(s: string, style: record, max_w: num) -> list
+pub fn wrap_text(s: string, style: record, max_w: num) -> list
   text_wrap(s, style, float(max_w))
 end
 
@@ -27,7 +27,7 @@ end
 // `keep` says which end survives: "head" (the default — a label reads from its
 // start), "tail" (a path, where every row shares the directories), or "both"
 // (an identifier recognizable by its ends).
-export fn elide(s: string, style: record, max_w: num, keep: string) -> string
+pub fn elide(s: string, style: record, max_w: num, keep: string) -> string
   let mode = match keep
     when "tail" -> "head"
     when "both" -> "middle"
@@ -36,7 +36,7 @@ export fn elide(s: string, style: record, max_w: num, keep: string) -> string
   text_ellipsize(s, style, float(max_w), mode)
 end
 
-export fn elide(s: string, style: record, max_w: num) -> string
+pub fn elide(s: string, style: record, max_w: num) -> string
   text_ellipsize(s, style, float(max_w), "tail")
 end
 
@@ -47,7 +47,7 @@ end
 //
 // `max_lines` of 0 or less means no limit, so a caller can pass an option
 // through without branching.
-export fn clamp_lines(s: string, style: record, max_w: num, max_lines: num) -> list
+pub fn clamp_lines(s: string, style: record, max_w: num, max_lines: num) -> list
   let lines = text_wrap(s, style, float(max_w))
   if max_lines <= 0 || len(lines) <= max_lines then
     lines
@@ -73,17 +73,17 @@ end
 // scales the face's own recommendation: 1.0 is the face's comfortable setting,
 // 1.4 opens it up, and a value of 4 or more is read as an explicit pixel
 // distance instead — a caller matching a grid says `{lead: 20}` and means 20px.
-export fn line_step(style: record, lead: num) -> float
+pub fn line_step(style: record, lead: num) -> float
   let l = float(lead)
   if l >= 4.0 then l else text_metrics(style).line_height * l end
 end
 
-export fn line_step(style: record) -> float
+pub fn line_step(style: record) -> float
   line_step(style, 1.0)
 end
 
 // The widest of `lines`, in px.
-export fn lines_width(lines: list, style: record) -> float
+pub fn lines_width(lines: list, style: record) -> float
   var w = 0.0
   for line in lines do
     let lw = float(text_width(line, style))
@@ -98,14 +98,14 @@ end
 // the block — the cap height of the first line down to the descenders of the
 // last — not `count × line_step`, which counts a leading above the first line
 // that nothing is drawn in and makes a "fitted" box look bottom-heavy.
-export fn lines_size(lines: list, style: record, lead: num) -> record
+pub fn lines_size(lines: list, style: record, lead: num) -> record
   let m = text_metrics(style)
   let n = max(1, len(lines))
   {w: lines_width(lines, style),
    h: m.cap_height + m.descent + float(n - 1) * line_step(style, lead)}
 end
 
-export fn lines_size(lines: list, style: record) -> record
+pub fn lines_size(lines: list, style: record) -> record
   lines_size(lines, style, 1.0)
 end
 
@@ -114,24 +114,24 @@ end
 // The character index a click `dx` px into the run falls on, snapped to the
 // nearer character boundary. A character index, which is what `char_slice`
 // takes — not a byte offset.
-export fn caret_index(s: string, style: record, dx: num) -> int
+pub fn caret_index(s: string, style: record, dx: num) -> int
   text_index_at(s, style, float(dx))
 end
 
 // The x offset of the caret sitting before character `i`.
-export fn caret_x(s: string, style: record, i: num) -> float
+pub fn caret_x(s: string, style: record, i: num) -> float
   float(text_width(char_slice(s, 0, max(0, i)), style))
 end
 
 // The rect of the caret before character `i`, for text set in `r` — a
 // 1px-wide bar spanning the line's ink, so it matches the text's height rather
 // than the control's.
-export fn caret_rect(s: string, r: record, style: record, i: num, valign: string) -> record
+pub fn caret_rect(s: string, r: record, style: record, i: num, valign: string) -> record
   let m = text_metrics(style)
   let base = text_baseline(r, style, valign)
   Rect(float(r.x) + caret_x(s, style, i), base - m.baseline, 1.0, m.baseline + m.descent)
 end
 
-export fn caret_rect(s: string, r: record, style: record, i: num) -> record
+pub fn caret_rect(s: string, r: record, style: record, i: num) -> record
   caret_rect(s, r, style, i, "middle")
 end

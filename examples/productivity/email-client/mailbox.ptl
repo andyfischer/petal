@@ -17,7 +17,7 @@
 // wall clock cannot be screenshot-tested, so the mailbox lives at one fixed
 // instant: Tuesday 6 October, 10:24.
 
-export let NOW_MIN = 624          // 10:24, as minutes into the day
+pub let NOW_MIN = 624          // 10:24, as minutes into the day
 let NOW_DOM = 6
 let NOW_MON = 9                   // October, zero-based
 let NOW_WD = 1                    // Tuesday, Monday = 0
@@ -63,7 +63,7 @@ fn weekday(d: int) -> string
 end
 
 // The list's timestamp: as short as it can be and still be unambiguous.
-export fn when_short(age: int) -> string
+pub fn when_short(age: int) -> string
   let d = days_ago(age)
   if age <= 0 then "now"
   elsif d == 0 then clock(age)
@@ -74,7 +74,7 @@ export fn when_short(age: int) -> string
 end
 
 // The reading pane's timestamp: the whole thing.
-export fn when_long(age: int) -> string
+pub fn when_long(age: int) -> string
   let d = days_ago(age)
   if age <= 0 then "Just now"
   elsif d == 0 then "Today, {clock(age)}"
@@ -85,7 +85,7 @@ end
 
 // ── People ───────────────────────────────────────────────────────────────
 
-export let ME = "me"
+pub let ME = "me"
 
 let PEOPLE = {
   me:      {name: "Noor Halloran",    email: "noor@fernhill.studio",       color: #4b5bd6},
@@ -116,7 +116,7 @@ let PEOPLE = {
 
 // The contacts a recipient field can complete against, in the order a short
 // prefix should prefer them.
-export let CONTACTS = ["maya", "sofia", "tomas", "priya", "dana", "kofi",
+pub let CONTACTS = ["maya", "sofia", "tomas", "priya", "dana", "kofi",
   "jonah", "rafael", "bram", "lena", "ines", "aiko"]
 
 fn before_at(addr: string) -> string
@@ -126,7 +126,7 @@ end
 
 // A person by key. An address the user typed has no entry, so it is shown as
 // itself — which is what a mail client does with a stranger.
-export fn person(key: string) -> record
+pub fn person(key: string) -> record
   let known = field(PEOPLE, key, nil)
   if known != nil then
     known
@@ -135,7 +135,7 @@ export fn person(key: string) -> record
   end
 end
 
-export fn first_name(key: string) -> string
+pub fn first_name(key: string) -> string
   if key == ME then
     "me"
   else
@@ -143,7 +143,7 @@ export fn first_name(key: string) -> string
   end
 end
 
-export fn initials(name: string) -> string
+pub fn initials(name: string) -> string
   let out = ""
   for part in split(name, " ") do
     if char_len(part) > 0 && char_len(out) < 2 then
@@ -155,7 +155,7 @@ end
 
 // The contact a half-typed recipient most plausibly means: a prefix of a
 // first name, a surname or an address. "" when nothing fits.
-export fn complete_contact(fragment: string) -> string
+pub fn complete_contact(fragment: string) -> string
   let f = lower(fragment)
   let found = ""
   if char_len(f) > 0 then
@@ -178,7 +178,7 @@ end
 
 // Turn what was typed into the To field into recipient keys: a known address
 // or name collapses to its contact key, anything else is kept verbatim.
-export fn parse_recipients(typed: string) -> list
+pub fn parse_recipients(typed: string) -> list
   let out = []
   for raw in split(typed, ",") do
     let s = trim_spaces(raw)
@@ -196,7 +196,7 @@ end
 
 // Whether every recipient is someone mail could reach: a contact, or at least
 // something shaped like an address.
-export fn deliverable(keys: list) -> bool
+pub fn deliverable(keys: list) -> bool
   let ok = len(keys) > 0
   for k in keys do
     if !contains(CONTACTS, k) && index_of(k, "@") < 1 then ok = false end
@@ -204,7 +204,7 @@ export fn deliverable(keys: list) -> bool
   ok
 end
 
-export fn trim_spaces(s: string) -> string
+pub fn trim_spaces(s: string) -> string
   let a = 0
   let b = char_len(s)
   while a < b && char_at(s, a) == " " do a = a + 1 end
@@ -214,7 +214,7 @@ end
 
 // ── Labels and mailboxes ─────────────────────────────────────────────────
 
-export let LABELS = [
+pub let LABELS = [
   {key: "clients",  name: "Clients",  color: #1f9d8f},
   {key: "design",   name: "Design",   color: #7c5cd6},
   {key: "finance",  name: "Finance",  color: #c98414},
@@ -222,7 +222,7 @@ export let LABELS = [
   {key: "personal", name: "Personal", color: #d6527a},
 ]
 
-export fn label_of(key: string) -> record
+pub fn label_of(key: string) -> record
   let found = {key: key, name: key, color: #6a7388}
   for l in LABELS do
     if l.key == key then found = l end
@@ -230,7 +230,7 @@ export fn label_of(key: string) -> record
   found
 end
 
-export let BOXES = [
+pub let BOXES = [
   {key: "inbox",   name: "Inbox"},
   {key: "starred", name: "Starred"},
   {key: "sent",    name: "Sent"},
@@ -241,7 +241,7 @@ export let BOXES = [
 ]
 
 // A view is a mailbox key or "label:<key>".
-export fn view_name(view: string) -> string
+pub fn view_name(view: string) -> string
   let name = view
   for b in BOXES do
     if b.key == view then name = b.name end
@@ -260,7 +260,7 @@ fn from_me(t: record) -> bool
   any
 end
 
-export fn in_view(t: record, view: string) -> bool
+pub fn in_view(t: record, view: string) -> bool
   if view == "inbox" then t.box == "inbox"
   elsif view == "starred" then t.starred && t.box != "trash"
   elsif view == "sent" then t.box == "sent" || (from_me(t) && (t.box == "inbox" || t.box == "archive"))
@@ -276,17 +276,17 @@ end
 
 // ── Reading a thread ─────────────────────────────────────────────────────
 
-export fn last_msg(t: record) -> record
+pub fn last_msg(t: record) -> record
   t.msgs[len(t.msgs) - 1]
 end
 
 // Newest first means largest stamp first; mail written this session has a
 // negative age and so sorts above everything seeded.
-export fn stamp(t: record) -> int
+pub fn stamp(t: record) -> int
   0 - last_msg(t).age
 end
 
-export fn has_attachment(t: record) -> bool
+pub fn has_attachment(t: record) -> bool
   let any = false
   for m in t.msgs do
     if len(m.atts) > 0 then any = true end
@@ -294,7 +294,7 @@ export fn has_attachment(t: record) -> bool
   any
 end
 
-export fn attachment_count(t: record) -> int
+pub fn attachment_count(t: record) -> int
   let n = 0
   for m in t.msgs do n = n + len(m.atts) end
   n
@@ -302,7 +302,7 @@ end
 
 // Who the row is "from": the correspondents in the order they first spoke.
 // A thread that is only me talking is shown by who it is addressed to.
-export fn participants(t: record) -> string
+pub fn participants(t: record) -> string
   let keys = []
   for m in t.msgs do
     if !contains(keys, m.from) then keys = append(keys, m.from) end
@@ -324,7 +324,7 @@ export fn participants(t: record) -> string
 end
 
 // The person whose face the row wears: the latest correspondent who is not me.
-export fn face_of(t: record) -> string
+pub fn face_of(t: record) -> string
   let key = ME
   for m in t.msgs do
     if m.from != ME then key = m.from end
@@ -335,7 +335,7 @@ end
 
 // A message as one run of text, for snippets and search: paragraphs and the
 // line breaks inside them both become spaces.
-export fn body_text(m: record) -> string
+pub fn body_text(m: record) -> string
   join(split(join(m.body, " "), "\n"), " ")
 end
 
@@ -356,14 +356,14 @@ end
 // Free words must all appear somewhere in the thread; `from:maya`,
 // `is:unread`, `is:starred`, `has:attachment` and `label:design` narrow it.
 
-export fn tokens(q: string) -> list
+pub fn tokens(q: string) -> list
   for tok in split(lower(q), " ") do
     if char_len(tok) == 0 then continue end
     tok
   end
 end
 
-export fn parse_query(q: string) -> record
+pub fn parse_query(q: string) -> record
   let pq = {terms: [], from: "", unread: false, starred: false, att: false, label: "", active: false}
   for tok in tokens(q) do
     let i = index_of(tok, ":")
@@ -396,7 +396,7 @@ fn sender_matches(t: record, who: string) -> bool
   hit
 end
 
-export fn matches(t: record, pq: record) -> bool
+pub fn matches(t: record, pq: record) -> bool
   if pq.unread && !t.unread then return false end
   if pq.starred && !t.starred then return false end
   if pq.att && !has_attachment(t) then return false end
@@ -419,7 +419,7 @@ end
 
 // Add `tok` to the query, or take it out if it is already there — what a
 // filter chip does when it is clicked.
-export fn toggle_token(q: string, tok: string) -> string
+pub fn toggle_token(q: string, tok: string) -> string
   let toks = tokens(q)
   if contains(toks, tok) then
     let kept = for t in toks do
@@ -437,7 +437,7 @@ end
 // The line of body a row shows. With a search running, that is the stretch of
 // text around the first hit rather than the opening words, so the row shows
 // why it matched.
-export fn snippet(t: record, terms: list) -> string
+pub fn snippet(t: record, terms: list) -> string
   let text = body_text(last_msg(t))
   if len(terms) > 0 then
     let found = false
@@ -464,7 +464,7 @@ end
 // ── Transforms ───────────────────────────────────────────────────────────
 // Each takes the store and returns a new one; the caller owns the `state`.
 
-export fn find_thread(ts: list, id: int)
+pub fn find_thread(ts: list, id: int)
   let found = nil
   for t in ts do
     if t.id == id then found = t end
@@ -472,13 +472,13 @@ export fn find_thread(ts: list, id: int)
   found
 end
 
-export fn move_to(ts: list, ids: list, box: string) -> list
+pub fn move_to(ts: list, ids: list, box: string) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, box: box} else t end
   end
 end
 
-export fn drop_threads(ts: list, ids: list) -> list
+pub fn drop_threads(ts: list, ids: list) -> list
   for t in ts do
     if contains(ids, t.id) then continue end
     t
@@ -486,7 +486,7 @@ export fn drop_threads(ts: list, ids: list) -> list
 end
 
 // The threads with these ids, as they are now: what an undo entry keeps.
-export fn pick(ts: list, ids: list) -> list
+pub fn pick(ts: list, ids: list) -> list
   for t in ts do
     if !contains(ids, t.id) then continue end
     t
@@ -496,7 +496,7 @@ end
 // Put `was` back: a thread that is still in the store returns to the mailbox
 // it was in and keeps whatever has happened to it since; one that was deleted
 // comes back whole.
-export fn restore(ts: list, was: list) -> list
+pub fn restore(ts: list, was: list) -> list
   let out = for t in ts do
     let old = find_thread(was, t.id)
     if old != nil then {...t, box: old.box} else t end
@@ -507,32 +507,32 @@ export fn restore(ts: list, was: list) -> list
   out
 end
 
-export fn set_unread(ts: list, ids: list, unread: bool) -> list
+pub fn set_unread(ts: list, ids: list, unread: bool) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, unread: unread} else t end
   end
 end
 
-export fn set_starred(ts: list, ids: list, starred: bool) -> list
+pub fn set_starred(ts: list, ids: list, starred: bool) -> list
   for t in ts do
     if contains(ids, t.id) then {...t, starred: starred} else t end
   end
 end
 
-export fn add_reply(ts: list, id: int, m: record) -> list
+pub fn add_reply(ts: list, id: int, m: record) -> list
   for t in ts do
     if t.id == id then {...t, msgs: append(t.msgs, m), unread: false} else t end
   end
 end
 
-export fn next_id(ts: list) -> int
+pub fn next_id(ts: list) -> int
   let top = 0
   for t in ts do top = max(top, t.id) end
   top + 1
 end
 
 // Who a reply to this thread goes to: whoever last wrote that was not me.
-export fn reply_to(t: record) -> list
+pub fn reply_to(t: record) -> list
   let key = ""
   for m in t.msgs do
     if m.from != ME then key = m.from end
@@ -540,7 +540,7 @@ export fn reply_to(t: record) -> list
   if key == "" then t.msgs[0].to else [key] end
 end
 
-export fn count_unread(ts: list, view: string) -> int
+pub fn count_unread(ts: list, view: string) -> int
   let n = 0
   for t in ts do
     if t.unread && in_view(t, view) then n = n + 1 end
@@ -548,7 +548,7 @@ export fn count_unread(ts: list, view: string) -> int
   n
 end
 
-export fn count_view(ts: list, view: string) -> int
+pub fn count_view(ts: list, view: string) -> int
   let n = 0
   for t in ts do
     if in_view(t, view) then n = n + 1 end
@@ -571,7 +571,7 @@ fn thread(id: int, box: string, labels: list, subject: string, msgs: list, flags
   {id: id, box: box, labels: labels, starred: contains(flags, "s"), unread: contains(flags, "u"), subject: subject, msgs: msgs}
 end
 
-export fn seed_threads() -> list
+pub fn seed_threads() -> list
   [
     thread(1, "inbox", ["clients", "design"], "Harbor & Pine rebrand: round two feedback", [
       msg("maya", ["me"], at(1, 15, 12), [

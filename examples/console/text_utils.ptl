@@ -1,14 +1,14 @@
 // A small library module — see imports.ptl for a script that imports it.
-// A top-level fn / let / state is exported only when marked `export`;
+// A top-level fn / let / state is exported only when marked `pub`;
 // everything else (including _underscore names) is module-private.
 
-export let ellipsis = "..."
+pub let ellipsis = "..."
 
 fn _cut(s: string, n: num) -> string
   slice(s, start: 0, end: n)
 end
 
-export fn truncate(s: string, max: num) -> string
+pub fn truncate(s: string, max: num) -> string
   if len(s) > max then
     _cut(s, max) ++ ellipsis
   else
@@ -16,6 +16,6 @@ export fn truncate(s: string, max: num) -> string
   end
 end
 
-export fn shout(s: string) -> string
+pub fn shout(s: string) -> string
   s ++ "!"
 end

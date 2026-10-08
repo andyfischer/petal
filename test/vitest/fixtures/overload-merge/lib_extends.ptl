@@ -4,6 +4,6 @@
 // since the gate ignores a name the file itself declares.
 let _keep_std = sum([1])
 
-export fn count(xs) 999 end
+pub fn count(xs) 999 end
 
-export fn both() [count([1, 2, 3]), count([1, 2, 3], fn(x) x > 1 end)] end
+pub fn both() [count([1, 2, 3]), count([1, 2, 3], fn(x) x > 1 end)] end

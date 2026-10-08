@@ -27,11 +27,11 @@ import bloom/interact: probe, focusable, focused, focus_set, is_captured
 import bloom/icon: icon
 import text_layout: text_baseline, text_top, draw_text_line, draw_text_baseline
 
-export fn button(r: record, label: string) -> bool
+pub fn button(r: record, label: string) -> bool
   button_impl(r, label, {})
 end
 
-export fn button(r: record, label: string, opts: record) -> bool
+pub fn button(r: record, label: string, opts: record) -> bool
   button_impl(r, label, opts)
 end
 
@@ -132,11 +132,11 @@ fn button_impl(r: record, label: string, opts: record) -> bool
 end
 
 // A circular icon-only button: toolbars, close buttons, steppers.
-export fn icon_button(r: record, name: string)
+pub fn icon_button(r: record, name: string)
   icon_button(r, name, {})
 end
 
-export fn icon_button(r: record, name: string, opts: record)
+pub fn icon_button(r: record, name: string, opts: record)
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -155,11 +155,11 @@ end
 
 // A row of mutually exclusive options with a thumb that slides — and springs —
 // between them. Returns the new index.
-export fn segmented(r: record, labels: list, index: num)
+pub fn segmented(r: record, labels: list, index: num)
   segmented(r, labels, index, {})
 end
 
-export fn segmented(r: record, labels: list, index: num, opts: record)
+pub fn segmented(r: record, labels: list, index: num, opts: record)
   let t = theme()
   let n = max(1, len(labels))
   let radius = field(opts, "radius", t.radius)
@@ -190,18 +190,18 @@ end
 
 // The width a chip will take, for a caller that has to place it before it
 // draws it (right-aligning one against an edge, flowing a row backwards).
-export fn chip_width(label: string, opts: record) -> num
+pub fn chip_width(label: string, opts: record) -> num
   let t = theme()
   let size = field(opts, "size", t.font_sm)
   text_width(label, ts(t, size, t.text)) + size * 1.4
 end
 
 // A small status chip. Returns its rect so a row of them can flow.
-export fn chip(x: num, y: num, label: string) -> Rect
+pub fn chip(x: num, y: num, label: string) -> Rect
   chip(x, y, label, {})
 end
 
-export fn chip(x: num, y: num, label: string, opts: record) -> Rect
+pub fn chip(x: num, y: num, label: string, opts: record) -> Rect
   let t = theme()
   let size = field(opts, "size", t.font_sm)
   let color = field(opts, "color", t.accent)
@@ -215,11 +215,11 @@ export fn chip(x: num, y: num, label: string, opts: record) -> Rect
 end
 
 // A text link: underline grows from the left on hover.
-export fn link(x: num, y: num, label: string)
+pub fn link(x: num, y: num, label: string)
   link(x, y, label, {})
 end
 
-export fn link(x: num, y: num, label: string, opts: record)
+pub fn link(x: num, y: num, label: string, opts: record)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let color = field(opts, "color", t.accent)
@@ -277,6 +277,6 @@ end
 
 // Exposed because a panel that rolls its own control still wants bloom's
 // spinner in it.
-export fn spinner(cx: num, cy: num, radius: num, color: record)
+pub fn spinner(cx: num, cy: num, radius: num, color: record)
   _spinner(cx, cy, radius, color)
 end

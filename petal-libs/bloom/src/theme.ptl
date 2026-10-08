@@ -51,7 +51,7 @@ let TOKENS = {
 state var _over = {}
 
 // The live token set: host palette → bloom tokens → app overrides.
-export fn theme() -> record
+pub fn theme() -> record
   let base = ui_theme()
   let t = {}
   for k in keys(base) do
@@ -68,7 +68,7 @@ end
 
 // Override tokens for the whole program. Merges, so an app usually sets one or
 // two keys: `theme_set({accent: #7c5cff, radius: 10})`.
-export fn theme_set(rec: record)
+pub fn theme_set(rec: record)
   let next = {}
   for k in keys(get _over) do
     next[k] = (get _over)[k]
@@ -79,18 +79,18 @@ export fn theme_set(rec: record)
   set _over = next
 end
 
-export fn theme_reset()
+pub fn theme_reset()
   set _over = {}
 end
 
 // A duration scaled by the theme's `speed`, and its rate counterpart. Every
 // component asks for its timings through these two, which is what makes
 // `theme_set({speed: 0})` freeze an entire UI for a pixel diff.
-export fn dur(t: record, seconds: num) -> float
+pub fn dur(t: record, seconds: num) -> float
   float(seconds) * float(field(t, "speed", 1.0))
 end
 
-export fn rate(t: record, r: num) -> float
+pub fn rate(t: record, r: num) -> float
   let s = float(field(t, "speed", 1.0))
   if s <= 0.0 then 100000.0 else float(r) / s end
 end
@@ -110,7 +110,7 @@ end
 state var _late = []
 state var _late_frame = -1
 
-export fn defer_paint(f: function)
+pub fn defer_paint(f: function)
   if (get _late_frame) != frame_count() then
     overlays()
     set _late_frame = frame_count()
@@ -120,7 +120,7 @@ end
 
 // Paint everything deferred this frame. Call it last; calling it twice, or
 // when nothing is pending, does nothing.
-export fn overlays()
+pub fn overlays()
   let queued = get _late
   set _late = []
   for f in queued do
@@ -133,7 +133,7 @@ end
 // Lighten (`amt` > 0) or darken (`amt` < 0) toward the theme's own extremes,
 // so one call reads correctly in a dark theme and a light one: "toward the
 // text color" is lighter on dark and darker on light.
-export fn tone(t: record, c: record, amt: num)
+pub fn tone(t: record, c: record, amt: num)
   let a = float(amt)
   if a >= 0.0 then
     mix(c, t.text, clamp(a, 0.0, 1.0))
@@ -143,13 +143,13 @@ export fn tone(t: record, c: record, amt: num)
 end
 
 // The readable ink for text sitting on `c`.
-export fn on(t: record, c: record)
+pub fn on(t: record, c: record)
   contrast_text(c)
 end
 
 // The fill for a named variant. Components take `variant` rather than a color
 // so a whole UI restyles from the theme.
-export fn variant_fill(t: record, name: string)
+pub fn variant_fill(t: record, name: string)
   match name
     when "primary" -> t.accent
     when "danger" -> t.danger
@@ -159,7 +159,7 @@ export fn variant_fill(t: record, name: string)
   end
 end
 
-export fn variant_ink(t: record, name: string)
+pub fn variant_ink(t: record, name: string)
   match name
     when "primary" -> contrast_text(t.accent)
     when "danger" -> contrast_text(t.danger)
@@ -171,7 +171,7 @@ export fn variant_ink(t: record, name: string)
 end
 
 // Whether a variant paints a filled face (and so must not also draw a border).
-export fn variant_solid(name: string)
+pub fn variant_solid(name: string)
   name == "primary" || name == "danger" || name == "success" || name == "warn"
 end
 
@@ -180,18 +180,18 @@ end
 // The one record a component measures *and* draws with. Mixing a bare
 // `draw_text(s, pos, size, color)` with `text_width(s, size)` measures a
 // different face than it paints, and every centered label lands off.
-export fn ts(t: record, size: num, color: record) -> record
+pub fn ts(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color}
 end
 
 // The same, translucent. Alpha rides on the *color* record for styled text —
 // there is no `draw_text(s, pos, style, a)` overload, because the style is
 // where the host looks for it.
-export fn ts_a(t: record, size: num, color: record, a: num) -> record
+pub fn ts_a(t: record, size: num, color: record, a: num) -> record
   {size: size, font: field(t, "font", "ui"), color: {r: color.r, g: color.g, b: color.b, a: int(clamp(float(a), 0.0, 255.0))}}
 end
 
-export fn ts_bold(t: record, size: num, color: record) -> record
+pub fn ts_bold(t: record, size: num, color: record) -> record
   {size: size, font: field(t, "font", "ui"), color: color, weight: 700}
 end
 
@@ -205,11 +205,11 @@ end
 // at `y` and is not `size` px tall, so that arithmetic put every label in
 // bloom a pixel high at 14 px and three high at 32 — consistently enough that
 // it read as a style rather than as a bug.
-export fn text_in(s: string, r: record, style: record, align: string)
+pub fn text_in(s: string, r: record, style: record, align: string)
   draw_text_line(s, r, style, align)
 end
 
-export fn text_in(s: string, r: record, style: record)
+pub fn text_in(s: string, r: record, style: record)
   draw_text_line(s, r, style, "left")
 end
 
@@ -218,30 +218,30 @@ end
 // caps the line count, `lead` opens up the leading, `align`/`valign` place the
 // block. Returns the layout record, whose `h` is what a caller sizing a panel
 // around its text wants.
-export fn text_block_in(s: string, r: record, style: record, opts: record)
+pub fn text_block_in(s: string, r: record, style: record, opts: record)
   draw_text_block(s, r, style, opts)
 end
 
-export fn text_block_in(s: string, r: record, style: record)
+pub fn text_block_in(s: string, r: record, style: record)
   draw_text_block(s, r, style, {valign: "middle"})
 end
 
 // `s` cut to fit `w` px in `style`, with a trailing "…". What a menu label, a
 // list row or a tab does with a name longer than its box.
-export fn text_cut(s: string, style: record, w: num)
+pub fn text_cut(s: string, style: record, w: num)
   elide(s, style, w)
 end
 
 // The size `s` takes in a box `w` px wide, `{w, h}` — for a component that
 // sizes itself to its text (a tooltip, a toast, a popover).
-export fn text_extent(s: string, style: record, w: num)
+pub fn text_extent(s: string, style: record, w: num)
   text_size(s, style, w)
 end
 
 // ── Surfaces ──────────────────────────────────────────────────────────────
 
 // A raised panel: shadow, face, hairline border. `level` 0 draws no shadow.
-export fn surface(t: record, r: record, radius: num, level: num)
+pub fn surface(t: record, r: record, radius: num, level: num)
   if level > 0 then
     let e = field(t, "elevation_" ++ str(min(level, 3)), {blur: 8, spread: 0, dy: 2, a: 48})
     draw_shadow(r, {radius: radius, blur: field(e, "blur", 8), spread: field(e, "spread", 0),
@@ -252,7 +252,7 @@ export fn surface(t: record, r: record, radius: num, level: num)
 end
 
 // The border color a surface draws against its own background.
-export fn hair(t: record)
+pub fn hair(t: record)
   over(t.panel, t.text, field(t, "border_pct", 14) * 255 / 100)
 end
 
@@ -260,11 +260,11 @@ end
 // ring as a rounded rect with the face punched back out of it — the same trick
 // the `ui` prelude's rounded button uses, and the reason `width` is whole
 // pixels.
-export fn stroke(t: record, r: record, radius: num, color: record)
+pub fn stroke(t: record, r: record, radius: num, color: record)
   stroke(t, r, radius, color, 1, t.panel)
 end
 
-export fn stroke(t: record, r: record, radius: num, color: record, width: num, inner: record)
+pub fn stroke(t: record, r: record, radius: num, color: record, width: num, inner: record)
   if radius <= 0 then
     draw_rect_outline(r, color, 255, width)
   else
@@ -275,7 +275,7 @@ end
 
 // The interaction wash over a surface, composited (never translucent): two
 // translucent fills over one pixel do not add up to the color the design says.
-export fn wash(t: record, base: record, hot: num, active: num)
+pub fn wash(t: record, base: record, hot: num, active: num)
   let h = float(field(t, "hover_pct", 8)) / 100.0
   let p = float(field(t, "press_pct", 14)) / 100.0
   mix(base, t.text, h * float(hot) + p * float(active))
@@ -283,7 +283,7 @@ end
 
 // The focus ring: the accent bloomed *outside* the control, so focus never
 // changes a control's size or doubles its border.
-export fn focus_ring(t: record, r: record, radius: num, amount: num)
+pub fn focus_ring(t: record, r: record, radius: num, amount: num)
   let a = clamp(float(amount), 0.0, 1.0)
   if a > 0.005 then
     let grow = 3.0 * a
@@ -294,7 +294,7 @@ export fn focus_ring(t: record, r: record, radius: num, amount: num)
 end
 
 // A hairline divider across the middle of `r`, horizontal or vertical.
-export fn divider(t: record, r: record, axis: string)
+pub fn divider(t: record, r: record, axis: string)
   let c = hair(t)
   if axis == "y" then
     let x = r.x + r.w / 2

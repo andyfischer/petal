@@ -4492,7 +4492,7 @@ mod tests {
         // file: a multi-file panel app edited in its helper hot-reloads.
         let dir = tempfile::tempdir().unwrap();
         let helper = dir.path().join("helper.ptl");
-        fs::write(&helper, "export fn word()\n  \"one\"\nend\n").unwrap();
+        fs::write(&helper, "pub fn word()\n  \"one\"\nend\n").unwrap();
         let entry = dir.path().join("main.ptl");
         fs::write(&entry, "import helper\nprint(helper.word())\n").unwrap();
 
@@ -4502,7 +4502,7 @@ mod tests {
         assert_eq!(host.take_output()[0].trim(), "one");
         assert_eq!(host.poll_reload(), Ok(false), "nothing changed yet");
 
-        fs::write(&helper, "export fn word()\n  \"three\"\nend\n").unwrap();
+        fs::write(&helper, "pub fn word()\n  \"three\"\nend\n").unwrap();
         assert_eq!(host.poll_reload(), Ok(true), "the import edit should reload");
         host.frame(0.0, 0).unwrap();
         assert_eq!(host.take_output()[0].trim(), "three");

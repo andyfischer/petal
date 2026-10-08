@@ -1,4 +1,4 @@
-export let accent = "cyan"
+pub let accent = "cyan"
 
 fn private_helper()
   "hidden"

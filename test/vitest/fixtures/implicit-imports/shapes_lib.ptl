@@ -9,7 +9,7 @@ fn margin()
   8
 end
 
-export fn banner(c)
+pub fn banner(c)
   let m = margin()
   draw_rect({ x: m, y: m, w: screen_width() - m * 2, h: 24 }, c)
   print("banner " ++ str(m))

@@ -465,7 +465,7 @@ describe("the built-in Rect class", () => {
 describe("classes across modules", () => {
   // The runtime method table is program-wide, so a module may declare a method
   // on a built-in class and an importer may extend an imported one. The class
-  // *name* — constructor and type alike — follows `export`.
+  // *name* — constructor and type alike — follows `pub`.
   it("dispatches methods declared in an imported module", () => {
     const out = runPetalFile(`${FIXTURES}/main.ptl`);
     expect(out.split("\n")).toEqual(["40", "Circle 12", "4"]);

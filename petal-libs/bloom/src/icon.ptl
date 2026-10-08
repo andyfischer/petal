@@ -39,13 +39,13 @@ fn _w(r: record) -> float
   max(1.0, min(r.w, r.h) / 11.0)
 end
 
-export fn icon(name: string, r: record, color: record)
+pub fn icon(name: string, r: record, color: record)
   icon(name, r, color, _w(r))
 end
 
 // `name` is one of the glyphs below; an unknown name draws a dot, so a typo is
 // visible in place rather than an invisible hole in a toolbar.
-export fn icon(name: string, r: record, color: record, w: num)
+pub fn icon(name: string, r: record, color: record, w: num)
   let b = _box(r)
   match name
     when "check" -> _path(b, [-0.42, 0.02, -0.12, 0.34, 0.44, -0.32], color, w)
@@ -76,7 +76,7 @@ end
 
 // Every glyph the set answers to, in a stable order — the gallery draws this
 // rather than a list it keeps in sync by hand.
-export let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_up",
+pub let NAMES = ["check", "close", "plus", "minus", "chevron_down", "chevron_up",
   "chevron_right", "chevron_left", "arrow_right", "search", "menu",
   "more", "dot", "circle", "play", "pause", "folder", "file",
   "warning", "info", "star", "trash"]

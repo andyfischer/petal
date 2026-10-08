@@ -142,14 +142,14 @@ mod tests {
         let main = dir.join("main.ptl");
         std::fs::write(&main, "import util\n").unwrap();
         std::fs::create_dir_all(dir.join("lib")).unwrap();
-        std::fs::write(dir.join("lib/deep.ptl"), "export let A = 1\n").unwrap();
+        std::fs::write(dir.join("lib/deep.ptl"), "pub let A = 1\n").unwrap();
         std::fs::create_dir_all(dir.join(".git")).unwrap();
         std::fs::write(dir.join("notes.txt"), "not petal\n").unwrap();
 
         let w = BrokenWatch::new(&main, vec![main.clone()], true);
         assert!(!w.changed());
         // A nested module is watched.
-        std::fs::write(dir.join("lib/deep.ptl"), "export let A = 22\n").unwrap();
+        std::fs::write(dir.join("lib/deep.ptl"), "pub let A = 22\n").unwrap();
         assert!(w.changed());
         assert_eq!(w.changed_paths(), vec![dir.join("lib/deep.ptl")]);
 
@@ -159,7 +159,7 @@ mod tests {
         std::fs::write(dir.join(".git/x.ptl"), "hidden\n").unwrap();
         assert!(!w.changed());
         // A module created after the failure (the import that was missing) is.
-        std::fs::write(dir.join("util.ptl"), "export let B = 2\n").unwrap();
+        std::fs::write(dir.join("util.ptl"), "pub let B = 2\n").unwrap();
         assert!(w.changed());
         assert_eq!(w.changed_paths(), vec![dir.join("util.ptl")]);
         std::fs::remove_dir_all(&dir).ok();

@@ -7,7 +7,7 @@ fn screen_width()
   42
 end
 
-export fn banner(c)
+pub fn banner(c)
   draw_rect({ x: 0, y: 0, w: screen_width(), h: 10 }, c)
   print("width " ++ str(screen_width()))
 end

@@ -34,28 +34,28 @@ state var _open_frame = -1
 state var _origin = {x: 0, y: 0}
 state var _hl = 0
 
-export fn menu_open(id: string)
+pub fn menu_open(id: string)
   set _open = id
   set _open_frame = frame_count()
   set _hl = 0
 end
 
 // Open at an explicit point rather than under an anchor (a context menu).
-export fn menu_open_at(id: string, x: num, y: num)
+pub fn menu_open_at(id: string, x: num, y: num)
   menu_open(id)
   set _origin = {x: x, y: y}
 end
 
-export fn menu_close()
+pub fn menu_close()
   set _open = ""
   capture_release()
 end
 
-export fn menu_is_open(id: string) -> bool
+pub fn menu_is_open(id: string) -> bool
   (get _open) == id
 end
 
-export fn menu_any_open() -> bool
+pub fn menu_any_open() -> bool
   (get _open) != ""
 end
 
@@ -83,7 +83,7 @@ fn _sep_h(t: record) -> int
 end
 
 // The popup's own size, measured from its items.
-export fn menu_size(items: list, opts: record) -> record
+pub fn menu_size(items: list, opts: record) -> record
   let t = theme()
   let size = field(opts, "size", t.font_md)
   let style = ts(t, size, t.text)
@@ -112,11 +112,11 @@ end
 
 // Draw the open menu `id` anchored under `anchor` and report the chosen index
 // (-1 for none). Safe to call every frame: it does nothing while closed.
-export fn menu(id: string, anchor: record, items: list)
+pub fn menu(id: string, anchor: record, items: list)
   menu(id, anchor, items, {})
 end
 
-export fn menu(id: string, anchor: record, items: list, opts: record)
+pub fn menu(id: string, anchor: record, items: list, opts: record)
   let t = theme()
   // `enter` runs in both directions, so the popup is still drawn for the two
   // frames it takes to fade out after being closed.
@@ -280,11 +280,11 @@ end
 // ── Dropdown button ───────────────────────────────────────────────────────
 
 // A button that opens a menu under itself. Returns the chosen index, or -1.
-export fn dropdown(r: record, label: string, items: list)
+pub fn dropdown(r: record, label: string, items: list)
   dropdown(r, label, items, {})
 end
 
-export fn dropdown(r: record, label: string, items: list, opts: record)
+pub fn dropdown(r: record, label: string, items: list, opts: record)
   let id = field(opts, "id", label)
   let open = menu_is_open(id)
   let bopts = {variant: field(opts, "variant", "default"), icon_end: "chevron_down",
@@ -297,11 +297,11 @@ export fn dropdown(r: record, label: string, items: list, opts: record)
 end
 
 // A dropdown bound to a value: shows the current option, returns the new index.
-export fn select(r: record, options: list, index: num)
+pub fn select(r: record, options: list, index: num)
   select(r, options, index, {})
 end
 
-export fn select(r: record, options: list, index: num, opts: record)
+pub fn select(r: record, options: list, index: num, opts: record)
   let cur = if index >= 0 && index < len(options) then options[index] else field(opts, "placeholder", "Select…") end
   let picked = dropdown(r, cur, options, {id: field(opts, "id", "select:" ++ str(r.x) ++ "," ++ str(r.y)),
     align: "left", size: field(opts, "size", theme().font_md)})
@@ -313,11 +313,11 @@ end
 // `menus` is a list of {label, items}. Returns {menu, item}, both -1 when
 // nothing was chosen. Once one menu is open, hovering along the bar opens the
 // next — the behavior every desktop menu bar has and nobody implements twice.
-export fn menu_bar(r: record, menus: list)
+pub fn menu_bar(r: record, menus: list)
   menu_bar(r, menus, {})
 end
 
-export fn menu_bar(r: record, menus: list, opts: record)
+pub fn menu_bar(r: record, menus: list, opts: record)
   let t = theme()
   let size = field(opts, "size", t.font_md)
   var x = r.x + field(opts, "inset", t.gap)
@@ -367,11 +367,11 @@ end
 
 // Right-click anywhere in `area` to open `items` at the pointer. Returns the
 // chosen index, or -1.
-export fn context_menu(area: record, items: list)
+pub fn context_menu(area: record, items: list)
   context_menu_impl(area, items, {})
 end
 
-export fn context_menu(area: record, items: list, opts: record)
+pub fn context_menu(area: record, items: list, opts: record)
   context_menu_impl(area, items, opts)
 end
 

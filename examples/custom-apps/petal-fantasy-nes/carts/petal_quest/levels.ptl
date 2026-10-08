@@ -457,7 +457,7 @@ let L3_8 = [
 // `boss` is the world pixel past which the Rift Warden wakes, or -1 for a
 // level that ends at a banner instead.
 
-export fn level(n: num) -> record
+pub fn level(n: num) -> record
   if n == 1 then
     {
       name: "THE DEEP",
@@ -504,4 +504,4 @@ export fn level(n: num) -> record
 end
 
 // How many levels there are. `game.ptl` counts wins against this.
-export let level_count = 3
+pub let level_count = 3

@@ -7,11 +7,11 @@
 // Inside a variant's own body its name still means *that variant* (the
 // self-recursion binding), so the delegation below goes through the module
 // alias rather than the bare name.
-export fn draw_rect(r)
+pub fn draw_rect(r)
   ui.draw_rect(r, { r: 9, g: 9, b: 9 })
 end
 
-export fn paint()
+pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 })
   draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })
 end

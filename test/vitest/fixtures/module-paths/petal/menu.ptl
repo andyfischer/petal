@@ -1,3 +1,3 @@
-export fn open()
+pub fn open()
   "petal open"
 end

@@ -1,8 +1,8 @@
-// Re-exports: `export import m: *` and friends (docs/module-system.md).
+// Re-exports: `pub import m: * and friends (docs/module-system.md).
 //
 // A library's facade used to be a hand-maintained list of
-// `export let button = widgets_button.button` lines — correct, but silent when
-// a name was forgotten. `export import` makes it declarative: the facade names
+// `pub let button = widgets_button.button` lines — correct, but silent when
+// a name was forgotten. `pub import` makes it declarative: the facade names
 // the modules, not their exports. fixtures/re-exports/ is a small library in
 // that shape (widgets.ptl over widgets/{button,menu,theme}.ptl) plus the
 // error cases.
@@ -60,7 +60,7 @@ describe("re-exports", () => {
   });
 
   it("a star re-export does not widen the module's privacy rule", () => {
-    // widgets/theme.ptl's `private_helper` has no `export`, so no star can
+    // widgets/theme.ptl's `private_helper` has no `pub`, so no star can
     // pick it up.
     const err = runFileError("private_app.ptl");
     expect(err).toContain("module 'widgets' has no export 'private_helper'");

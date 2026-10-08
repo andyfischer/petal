@@ -1,2 +1,2 @@
-export import collide_a: *
-export import collide_b: *
+pub import collide_a: *
+pub import collide_b: *

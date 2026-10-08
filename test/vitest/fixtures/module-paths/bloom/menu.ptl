@@ -1,9 +1,9 @@
 import motion
 
-export fn open()
+pub fn open()
   "bloom open " ++ motion.ease()
 end
 
-export fn close()
+pub fn close()
   "bloom close"
 end

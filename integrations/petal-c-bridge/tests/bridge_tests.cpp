@@ -909,9 +909,9 @@ TEST(runtime_errors_are_reported) {
 
 TEST(registered_modules_and_implicit_imports) {
     petal::Vm vm;
-    vm.register_module("engine", "export fn twice(x)\n  x * 2\nend\n");
+    vm.register_module("engine", "pub fn twice(x)\n  x * 2\nend\n");
     vm.add_implicit_import("engine");
-    vm.register_module("util", "export fn inc(x)\n  x + 1\nend\n");
+    vm.register_module("util", "pub fn inc(x)\n  x + 1\nend\n");
     vm.load_source(
         "import util\n"
         "push_output(symbol(\"out\"), twice(util.inc(20)))\n"
@@ -975,7 +975,7 @@ TEST(hot_reload_preserves_state) {
 
 TEST(hot_reload_tracks_imported_modules) {
     fs::path dir = scratch_dir("hot_reload_imports");
-    write_file(dir / "tuning.ptl", "export let SPEED = 2\n");
+    write_file(dir / "tuning.ptl", "pub let SPEED = 2\n");
     write_file(dir / "main.ptl",
                "import tuning\n"
                "state pos = 0\n"
@@ -990,7 +990,7 @@ TEST(hot_reload_tracks_imported_modules) {
 
     CHECK_EQ(run_out(vm), std::vector<double>{2});
     CHECK(vm.changed_sources().empty());
-    write_file(dir / "tuning.ptl", "export let SPEED = 10\n");
+    write_file(dir / "tuning.ptl", "pub let SPEED = 10\n");
     CHECK(vm.sources_changed());
     // Only the edited module is named, with the path source_files() gives it.
     CHECK_EQ(vm.changed_sources(), std::vector<std::string>{files[1]});
@@ -999,7 +999,7 @@ TEST(hot_reload_tracks_imported_modules) {
     CHECK_EQ(run_out(vm), std::vector<double>{12});
 
     // Both files edited: named in source_files() order.
-    write_file(dir / "tuning.ptl", "export let SPEED = 1\n");
+    write_file(dir / "tuning.ptl", "pub let SPEED = 1\n");
     write_file(dir / "main.ptl",
                "import tuning\n"
                "state pos = 0\n"
@@ -1011,7 +1011,7 @@ TEST(hot_reload_tracks_imported_modules) {
 TEST(hot_reload_watches_new_imports_and_deletions) {
     fs::path dir = scratch_dir("hot_reload_watch");
     write_file(dir / "main.ptl", "push_output(symbol(\"out\"), 1)\n");
-    write_file(dir / "extra.ptl", "export let BONUS = 5\n");
+    write_file(dir / "extra.ptl", "pub let BONUS = 5\n");
     petal::Vm vm;
     vm.load_file((dir / "main.ptl").string());
     CHECK_EQ(vm.source_files().size(), size_t(1));
@@ -1036,7 +1036,7 @@ TEST(hot_reload_watches_new_imports_and_deletions) {
     CHECK_EQ(run_out(vm), std::vector<double>{5});
 
     // Bringing it back is a change too.
-    write_file(dir / "extra.ptl", "export let BONUS = 7\n");
+    write_file(dir / "extra.ptl", "pub let BONUS = 7\n");
     CHECK(vm.sources_changed());
     vm.reload();
     CHECK_EQ(run_out(vm), std::vector<double>{7});
@@ -1055,7 +1055,7 @@ TEST(failed_load_file_is_watched_and_retried) {
     CHECK(!vm.sources_changed());
 
     // Creating the missing module is the fix.
-    write_file(dir / "helper.ptl", "export let N = 4\n");
+    write_file(dir / "helper.ptl", "pub let N = 4\n");
     CHECK(vm.sources_changed());
     auto changed = vm.changed_sources();
     REQUIRE(changed.size() == 1);
@@ -1084,13 +1084,13 @@ TEST(failed_reload_watches_the_script_directory) {
     fs::path dir = scratch_dir("failed_reload_dir");
     fs::path main = dir / "main.ptl";
     fs::create_directories(dir / "lib");
-    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = (\n");  // broken, not imported yet
+    write_file(dir / "lib" / "shapes.ptl", "pub let SIDES = (\n");  // broken, not imported yet
     write_file(main, "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
     petal::Vm vm;
     vm.load_file(main.string());
     CHECK_EQ(run_out(vm), std::vector<double>{1});
     // An edit in a file the program does not import is not a change yet.
-    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = (\n\n");
+    write_file(dir / "lib" / "shapes.ptl", "pub let SIDES = (\n\n");
     CHECK(!vm.sources_changed());
 
     // The edit imports the broken module: the reload fails.
@@ -1101,7 +1101,7 @@ TEST(failed_reload_watches_the_script_directory) {
     CHECK_EQ(run_out(vm), std::vector<double>{2});
 
     // Fixing the module (which the old program never imported) is seen.
-    write_file(dir / "lib" / "shapes.ptl", "export let SIDES = 6\n");
+    write_file(dir / "lib" / "shapes.ptl", "pub let SIDES = 6\n");
     CHECK(vm.sources_changed());
     auto changed = vm.changed_sources();
     REQUIRE(changed.size() == 1);
@@ -1111,7 +1111,7 @@ TEST(failed_reload_watches_the_script_directory) {
     CHECK_EQ(run_out(vm), std::vector<double>{8});
 
     // Healthy again: only the program's own files are watched.
-    write_file(dir / "unrelated.ptl", "export let X = 1\n");
+    write_file(dir / "unrelated.ptl", "pub let X = 1\n");
     CHECK(!vm.sources_changed());
 }
 

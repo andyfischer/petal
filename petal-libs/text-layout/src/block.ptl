@@ -35,7 +35,7 @@ import text_layout/fit: wrap_text, elide, clamp_lines, line_step, lines_width
 // A single-line, unwrapped, elided label is the common case and is what the
 // defaults produce for text that does not fit: it is cut with an ellipsis
 // rather than allowed to run out of its box.
-export fn text_block(s: string, r: record, style: record, opts: record) -> record
+pub fn text_block(s: string, r: record, style: record, opts: record) -> record
   let wrapping = field(opts, "wrap", true)
   let limit = field(opts, "lines", 0)
   let eliding = field(opts, "elide", true)
@@ -97,14 +97,14 @@ export fn text_block(s: string, r: record, style: record, opts: record) -> recor
   {lines: placed, w: widest, h: h, overflow: len(raw) > len(fitted) || widest > float(r.w) + 0.5}
 end
 
-export fn text_block(s: string, r: record, style: record) -> record
+pub fn text_block(s: string, r: record, style: record) -> record
   text_block(s, r, style, {})
 end
 
 // Lay `s` out in `r` and draw it. Returns the same record `text_block` does,
 // so the caller that needs the block's height for the next row gets it without
 // laying the text out twice.
-export fn draw_text_block(s: string, r: record, style: record, opts: record) -> record
+pub fn draw_text_block(s: string, r: record, style: record, opts: record) -> record
   let b = text_block(s, r, style, opts)
   for line in b.lines do
     draw_text(line.text, {x: line.x, y: line.y}, style)
@@ -112,18 +112,18 @@ export fn draw_text_block(s: string, r: record, style: record, opts: record) -> 
   b
 end
 
-export fn draw_text_block(s: string, r: record, style: record) -> record
+pub fn draw_text_block(s: string, r: record, style: record) -> record
   draw_text_block(s, r, style, {})
 end
 
 // The size `s` would take in a box `max_w` wide: `{w, h}`. For a caller that
 // sizes a panel, a tooltip or a table row to its content before it has
 // anywhere to put it.
-export fn text_size(s: string, style: record, max_w: num, opts: record) -> record
+pub fn text_size(s: string, style: record, max_w: num, opts: record) -> record
   let b = text_block(s, Rect(0, 0, float(max_w), 0), style, opts)
   {w: b.w, h: b.h}
 end
 
-export fn text_size(s: string, style: record, max_w: num) -> record
+pub fn text_size(s: string, style: record, max_w: num) -> record
   text_size(s, style, max_w, {})
 end

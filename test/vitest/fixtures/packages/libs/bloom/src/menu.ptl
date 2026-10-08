@@ -1,10 +1,10 @@
 // A flat internal import: the sibling module of the same package.
 import motion
 
-export fn open()
+pub fn open()
   motion.ease("bloom open")
 end
 
-export fn close()
+pub fn close()
   "bloom close"
 end

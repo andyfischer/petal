@@ -29,7 +29,7 @@ let STAR = [0.0, -0.46, 0.13, -0.15, 0.46, -0.12, 0.21, 0.1, 0.29, 0.43, 0.0, 0.
 
 // A five-pointed star, filled or outlined. `fill_polygon` ear-clips, so the
 // reflex corners between the points fill correctly.
-export fn star(r: record, c: record, filled: bool)
+pub fn star(r: record, c: record, filled: bool)
   let cx = r.x + r.w / 2.0
   let cy = r.y + r.h / 2.0
   let s = min(r.w, r.h)
@@ -42,7 +42,7 @@ end
 
 // One of the named glyphs, centred in `r`. An unknown name draws a small dot
 // so a typo shows up where it was made.
-export fn icon(name: string, r: record, c: record, w: num)
+pub fn icon(name: string, r: record, c: record, w: num)
   let cx = r.x + r.w / 2.0
   let cy = r.y + r.h / 2.0
   let s = min(r.w, r.h)
@@ -121,6 +121,6 @@ export fn icon(name: string, r: record, c: record, w: num)
 end
 
 // The same glyph at the weight the chrome uses everywhere.
-export fn icon(name: string, r: record, c: record)
+pub fn icon(name: string, r: record, c: record)
   icon(name, r, c, 1.5)
 end

@@ -4,7 +4,7 @@
 // would bind this call to the prelude's `spinner` and fail on arity — with no
 // warning, since the module's own function is right there.
 
-export fn banner(c)
+pub fn banner(c)
   draw_rect({ x: 0, y: 0, w: 20, h: spinner(4), b: 0 }, c)
   print("label " ++ label())
 end

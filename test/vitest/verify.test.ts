@@ -80,7 +80,7 @@ describe("verify.ts classification", () => {
     const v = verify("classify", [
       { path: "console/plain.ptl", before: 'print("hi")\n' },
       { path: "app/main.ptl", before: 'import helper\nprint(helper.two())\n' },
-      { path: "app/helper.ptl", before: "export fn two()\n  2\n" },
+      { path: "app/helper.ptl", before: "pub fn two()\n  2\n" },
       { path: "ui/app.ptl", before: UI_APP },
       { path: "ui/layout.ptl", before: 'layout(panel("app.ptl"))\n' },
     ]);

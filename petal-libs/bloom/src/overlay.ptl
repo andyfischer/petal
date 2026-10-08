@@ -25,11 +25,11 @@ import bloom/button: icon_button
 
 // Rests over `anchor` for `delay` seconds, then fades in above it. Call it
 // late in the frame so it lands on top of what it describes.
-export fn tooltip(anchor: record, text: string)
+pub fn tooltip(anchor: record, text: string)
   tooltip_impl(anchor, text, {})
 end
 
-export fn tooltip(anchor: record, text: string, opts: record)
+pub fn tooltip(anchor: record, text: string, opts: record)
   tooltip_impl(anchor, text, opts)
 end
 
@@ -84,30 +84,30 @@ state var _toasts = []
 state var _toast_seq = 0
 
 // Raise a toast. `kind` is "info" | "success" | "warn" | "danger".
-export fn toast(text: string, kind: string)
+pub fn toast(text: string, kind: string)
   set _toast_seq = (get _toast_seq) + 1
   set _toasts = append(get _toasts, {id: get _toast_seq, text: text, kind: kind, age: 0.0})
 end
 
-export fn toast(text: string)
+pub fn toast(text: string)
   toast(text, "info")
 end
 
-export fn toast_count() -> int
+pub fn toast_count() -> int
   len(get _toasts)
 end
 
-export fn toasts_clear()
+pub fn toasts_clear()
   set _toasts = []
 end
 
 // Draw the stack in the bottom-right of `r` and expire finished toasts.
 // `opts`: {life (seconds), width, corner ("br" | "bl" | "tr" | "tl")}.
-export fn toasts(r: record)
+pub fn toasts(r: record)
   toasts(r, {})
 end
 
-export fn toasts(r: record, opts: record)
+pub fn toasts(r: record, opts: record)
   let t = theme()
   let life = field(opts, "life", 3.2)
   let w = field(opts, "width", 280)
@@ -177,16 +177,16 @@ end
 
 state var _dialog = ""
 
-export fn dialog_open(id: string)
+pub fn dialog_open(id: string)
   set _dialog = id
 end
 
-export fn dialog_close()
+pub fn dialog_close()
   set _dialog = ""
   capture_release()
 end
 
-export fn dialog_is_open(id: string) -> bool
+pub fn dialog_is_open(id: string) -> bool
   (get _dialog) == id
 end
 
@@ -199,11 +199,11 @@ end
 //     text_in("This cannot be undone.", d.content, …)
 //     if button(…, "Delete", {variant: "danger"}) then dialog_close() end
 //   end
-export fn dialog(id: string, w: num, h: num, title: string) -> record
+pub fn dialog(id: string, w: num, h: num, title: string) -> record
   dialog(id, w, h, title, {})
 end
 
-export fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
+pub fn dialog(id: string, w: num, h: num, title: string, opts: record) -> record
   let t = theme()
   let open = dialog_is_open(id)
   let k = enter(open, dur(t, 0.16))
@@ -264,20 +264,20 @@ end
 
 state var _popover = ""
 
-export fn popover_open(id: string)
+pub fn popover_open(id: string)
   set _popover = id
 end
 
-export fn popover_close()
+pub fn popover_close()
   set _popover = ""
   capture_release()
 end
 
-export fn popover_is_open(id: string) -> bool
+pub fn popover_is_open(id: string) -> bool
   (get _popover) == id
 end
 
-export fn popover(id: string, anchor: record, w: num, h: num) -> record
+pub fn popover(id: string, anchor: record, w: num, h: num) -> record
   let t = theme()
   let open = popover_is_open(id)
   let k = enter(open, dur(t, 0.14))
@@ -309,7 +309,7 @@ end
 
 // An inline status strip that slides down into `r` when `show` turns true.
 // Returns true while it is visible (so the caller can leave room for it).
-export fn banner(r: record, text: string, kind: string, show: bool) -> bool
+pub fn banner(r: record, text: string, kind: string, show: bool) -> bool
   let t = theme()
   let k = ease_out(enter(show, dur(t, 0.2)))
   if k > 0.005 then
@@ -330,11 +330,11 @@ end
 
 // The shimmering placeholder a row shows while its data is in flight. The
 // sweep is dt-driven, so it also shimmers under the headless harness.
-export fn skeleton(r: record)
+pub fn skeleton(r: record)
   skeleton(r, {})
 end
 
-export fn skeleton(r: record, opts: record)
+pub fn skeleton(r: record, opts: record)
   let t = theme()
   let radius = field(opts, "radius", t.radius_sm)
   let base = tone(t, t.panel, 0.06)

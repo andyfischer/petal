@@ -1,1 +1,1 @@
-export let shared = "a"
+pub let shared = "a"

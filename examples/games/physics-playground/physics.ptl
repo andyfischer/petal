@@ -31,28 +31,28 @@ let SEG_R    = 3.0           // half-thickness of a static bar
 let SPRING_Z = 0.12          // damping ratio of a spring
 let MAX_V    = 4200.0        // speed limit, px/s
 
-export let ROD = 0
-export let SPRING = 1
-export let BAR_R = 3.0
+pub let ROD = 0
+pub let SPRING = 1
+pub let BAR_R = 3.0
 
 // Length of the vector (dx, dy).
-export fn norm(dx: num, dy: num) -> num
+pub fn norm(dx: num, dy: num) -> num
   sqrt(dx * dx + dy * dy)
 end
 
 // ── Building a world ─────────────────────────────────────────────────────
 
-export fn empty_world() -> record
+pub fn empty_world() -> record
   {n: 0, x: [], y: [], vx: [], vy: [], r: [], m: [], w: [], ang: [], om: [],
     c: [], id: [], pin: [], links: [], segs: [], order: [], tension: [], next_id: 1}
 end
 
 // Mass grows with area; `dens` scales it (a wrecking ball is 6).
-export fn mass_of(r: num, dens: num) -> num
+pub fn mass_of(r: num, dens: num) -> num
   dens * (r * r) / 196.0
 end
 
-export fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num,
+pub fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: num,
     vx: num, vy: num) -> record
   let m = mass_of(float(r), float(dens))
   {...wd, n: wd.n + 1,
@@ -66,11 +66,11 @@ export fn add_body(wd: record, x: num, y: num, r: num, c: int, pin: bool, dens: 
 end
 
 // The two common cases: a free disc at rest, and a pinned one.
-export fn add_ball(wd: record, x: num, y: num, r: num, c: int) -> record
+pub fn add_ball(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, false, 1.0, 0.0, 0.0)
 end
 
-export fn add_pin(wd: record, x: num, y: num, r: num, c: int) -> record
+pub fn add_pin(wd: record, x: num, y: num, r: num, c: int) -> record
   add_body(wd, x, y, r, c, true, 1.0, 0.0, 0.0)
 end
 
@@ -78,14 +78,14 @@ end
 // than the two radii, so it cannot fight the contact between its own ends.
 // `hz` is a spring's natural frequency; a negative `rest_len` means "as far
 // apart as they are now".
-export fn add_link(wd: record, a: int, b: int, kind: int, hz: num, rest_len: num) -> record
+pub fn add_link(wd: record, a: int, b: int, kind: int, hz: num, rest_len: num) -> record
   let d = norm(wd.x[b] - wd.x[a], wd.y[b] - wd.y[a])
   let rest = if rest_len >= 0.0 then float(rest_len) else d end
   if kind == 0 then rest = max(rest, wd.r[a] + wd.r[b]) end
   {...wd, tension: [], links: append(wd.links, {a: a, b: b, len: rest, kind: kind, hz: float(hz)})}
 end
 
-export fn add_seg(wd: record, x1: num, y1: num, x2: num, y2: num) -> record
+pub fn add_seg(wd: record, x1: num, y1: num, x2: num, y2: num) -> record
   {...wd, segs: append(wd.segs, {x1: float(x1), y1: float(y1), x2: float(x2), y2: float(y2),
     lx: float(min(x1, x2)), hx: float(max(x1, x2)), ly: float(min(y1, y2)), hy: float(max(y1, y2))})}
 end
@@ -98,7 +98,7 @@ fn without(xs: list, i: int) -> list
 end
 
 // Drop body i, and every link that touched it; later bodies shift down one.
-export fn remove_body(wd: record, i: int) -> record
+pub fn remove_body(wd: record, i: int) -> record
   let links = for L in wd.links do
     if L.a == i || L.b == i then continue end
     {...L, a: if L.a > i then L.a - 1 else L.a end, b: if L.b > i then L.b - 1 else L.b end}
@@ -110,11 +110,11 @@ export fn remove_body(wd: record, i: int) -> record
     id: without(wd.id, i), pin: without(wd.pin, i), links: links, order: [], tension: []}
 end
 
-export fn remove_link(wd: record, k: int) -> record
+pub fn remove_link(wd: record, k: int) -> record
   {...wd, tension: [], links: without(wd.links, k)}
 end
 
-export fn set_pin(wd: record, i: int, on: bool) -> record
+pub fn set_pin(wd: record, i: int, on: bool) -> record
   let pin = wd.pin
   let w = wd.w
   let vx = wd.vx
@@ -128,7 +128,7 @@ export fn set_pin(wd: record, i: int, on: bool) -> record
   {...wd, pin: pin, w: w, vx: vx, vy: vy, om: om, tension: []}
 end
 
-export fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
+pub fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
   let vx = wd.vx
   let vy = wd.vy
   vx[i] = float(nvx)
@@ -136,11 +136,11 @@ export fn set_velocity(wd: record, i: int, nvx: num, nvy: num) -> record
   {...wd, vx: vx, vy: vy}
 end
 
-export fn index_of_id(wd: record, id: int) -> int
+pub fn index_of_id(wd: record, id: int) -> int
   index_of(wd.id, id)
 end
 
-export fn links_on(wd: record, i: int) -> int
+pub fn links_on(wd: record, i: int) -> int
   let k = 0
   for L in wd.links do
     if L.a == i || L.b == i then k += 1 end
@@ -152,7 +152,7 @@ end
 
 // The body under (px, py), allowing `slack` px beyond its rim; the one whose
 // centre is nearest wins. -1 when there is none.
-export fn pick_body(wd: record, px: num, py: num, slack: num) -> int
+pub fn pick_body(wd: record, px: num, py: num, slack: num) -> int
   let best = -1
   let best_d = 0.0
   for i in range(0, wd.n) do
@@ -167,7 +167,7 @@ export fn pick_body(wd: record, px: num, py: num, slack: num) -> int
 end
 
 // Distance from point p to segment a-b.
-export fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
+pub fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
   let ex = bx - ax
   let ey = by - ay
   let l2 = ex * ex + ey * ey
@@ -175,7 +175,7 @@ export fn seg_dist(px: num, py: num, ax: num, ay: num, bx: num, by: num) -> num
   norm(px - (ax + ex * t), py - (ay + ey * t))
 end
 
-export fn pick_link(wd: record, px: num, py: num, tol: num) -> int
+pub fn pick_link(wd: record, px: num, py: num, tol: num) -> int
   let best = -1
   let best_d = float(tol)
   for k in range(0, len(wd.links)) do
@@ -195,7 +195,7 @@ end
 
 // Indices of the links the stroke p-q crosses, highest first so they can be
 // removed in order.
-export fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
+pub fn links_crossing(wd: record, px: num, py: num, qx: num, qy: num) -> list
   let out = []
   for k in range(len(wd.links) - 1, -1, -1) do
     let L = wd.links[k]
@@ -216,7 +216,7 @@ end
 
 // Kinetic energy (linear + spin), potential energy against the far wall in
 // the direction of gravity, and the energy stored in stretched springs.
-export fn energy(wd: record, env: record) -> record
+pub fn energy(wd: record, env: record) -> record
   let ke = 0.0
   let pe = 0.0
   let top_x = if env.gx > 0.0 then env.w else 0.0 end
@@ -241,7 +241,7 @@ export fn energy(wd: record, env: record) -> record
 end
 
 // Worst rod error and worst disc overlap, in px: how honest the solver is.
-export fn audit(wd: record) -> record
+pub fn audit(wd: record) -> record
   let stretch = 0.0
   for L in wd.links do
     if L.kind != 0 then continue end
@@ -271,7 +271,7 @@ end
 // Returns {world, contacts, pts, subs}: the new world, how many contacts the
 // last sub-step solved, their positions as a flat [x, y, x, y, …] list, and
 // the number of sub-steps taken.
-export fn step(wd: record, dt: num, env: record) -> record
+pub fn step(wd: record, dt: num, env: record) -> record
   let n = wd.n
   if n == 0 || dt <= 0.0 then
     return {world: wd, contacts: 0, pts: [], subs: 0}

@@ -21,11 +21,11 @@ import text_layout: text_baseline, text_top, draw_text_line, caret_index, caret_
 
 // The on/off switch. The knob is a spring, so it lands with a small overshoot
 // that makes the control feel mechanical rather than interpolated.
-export fn switch(r: record, on: bool) -> bool
+pub fn switch(r: record, on: bool) -> bool
   switch(r, on, {})
 end
 
-export fn switch(r: record, on: bool, opts: record) -> bool
+pub fn switch(r: record, on: bool, opts: record) -> bool
   let t = theme()
   let enabled = !field(opts, "disabled", false)
   let p = probe(r, enabled)
@@ -54,11 +54,11 @@ end
 
 // The tick is *drawn in*: the check's two strokes grow from the corner as the
 // box fills, rather than appearing whole.
-export fn checkbox(r: record, label: string, on: bool) -> bool
+pub fn checkbox(r: record, label: string, on: bool) -> bool
   checkbox_impl(r, label, on, {})
 end
 
-export fn checkbox(r: record, label: string, on: bool, opts: record) -> bool
+pub fn checkbox(r: record, label: string, on: bool, opts: record) -> bool
   checkbox_impl(r, label, on, opts)
 end
 
@@ -103,11 +103,11 @@ end
 
 // One row per label; returns the new index. The dot scales in, and the ring of
 // the row you are hovering warms toward the accent.
-export fn radio_group(r: record, labels: list, index: num)
+pub fn radio_group(r: record, labels: list, index: num)
   radio_group_impl(r, labels, index, {})
 end
 
-export fn radio_group(r: record, labels: list, index: num, opts: record)
+pub fn radio_group(r: record, labels: list, index: num, opts: record)
   radio_group_impl(r, labels, index, opts)
 end
 
@@ -147,11 +147,11 @@ end
 // Press anywhere on the track to jump there, then keep dragging — the drag
 // tracks outside the control, so running off the end does not drop the grab.
 // While dragging, the value floats above the knob.
-export fn slider(r: record, value: num, lo: num, hi: num)
+pub fn slider(r: record, value: num, lo: num, hi: num)
   slider_impl(r, value, lo, hi, {})
 end
 
-export fn slider(r: record, value: num, lo: num, hi: num, opts: record)
+pub fn slider(r: record, value: num, lo: num, hi: num, opts: record)
   slider_impl(r, value, lo, hi, opts)
 end
 
@@ -200,7 +200,7 @@ end
 
 // − value + . The value rolls: it springs between the old and new number's
 // vertical position, so a change is visible even when you are not watching.
-export fn stepper(r: record, value: num, lo: num, hi: num, step: num)
+pub fn stepper(r: record, value: num, lo: num, hi: num, step: num)
   let t = theme()
   let bw = min(r.h, r.w / 3.0)
   var v = value
@@ -231,11 +231,11 @@ end
 
 // `frac` in [0, 1]; negative runs the indeterminate sweep. The bar eases toward
 // its target, so a jump from 10% to 90% is a movement rather than a cut.
-export fn progress(r: record, frac: num)
+pub fn progress(r: record, frac: num)
   progress(r, frac, {})
 end
 
-export fn progress(r: record, frac: num, opts: record)
+pub fn progress(r: record, frac: num, opts: record)
   let t = theme()
   let color = field(opts, "color", t.accent)
   let radius = int(min(r.h, 8) / 2)
@@ -263,11 +263,11 @@ end
 // Returns {text, focused, submitted, changed}. There is no selection model —
 // caret, insert, delete, word-delete and Return, which is what a panel's
 // filter box and rename field need.
-export fn text_field(r: record, buf: string) -> record
+pub fn text_field(r: record, buf: string) -> record
   text_field_impl(r, buf, {})
 end
 
-export fn text_field(r: record, buf: string, opts: record) -> record
+pub fn text_field(r: record, buf: string, opts: record) -> record
   text_field_impl(r, buf, opts)
 end
 

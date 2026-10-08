@@ -61,9 +61,9 @@ print(total)`),
     ).toBe("6");
   });
 
-  it("accepts a type annotation, `export`, and the `state` forms", () => {
+  it("accepts a type annotation, `pub`, and the `state` forms", () => {
     expect(
-      runPetal(`export var counter: int = 0
+      runPetal(`pub var counter: int = 0
 state var hits = 0
 state(1) var keyed = 0
 set counter += 2

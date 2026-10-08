@@ -105,6 +105,24 @@ pub fn splice(source: &str, span: SourceSpan, replacement: &str) -> String {
     out
 }
 
+/// One replacement, as a char range and the text to put there. An empty range
+/// is an insertion.
+#[derive(Debug, Clone)]
+pub struct Splice {
+    pub start: usize,
+    pub end: usize,
+    pub text: String,
+}
+
+/// Apply the splices, highest offset first so earlier positions stay valid.
+pub fn apply_splices(chars: &[char], splices: &[Splice]) -> String {
+    let mut out: Vec<char> = chars.to_vec();
+    for s in splices.iter().rev() {
+        out.splice(s.start..s.end, s.text.chars());
+    }
+    out.into_iter().collect()
+}
+
 /// Tree splice: replace the node of `tree` whose significant tokens cover
 /// exactly `span` with `replacement`, parsed as a single expression (or
 /// statement). The old node's leading/trailing trivia leaves — indentation and

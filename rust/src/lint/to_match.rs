@@ -56,14 +56,9 @@ use super::Fix;
 /// plainer spelling and the repetition the rule exists to remove is one line.
 const MIN_ARMS: usize = 3;
 
-/// One replacement, as a char range and the text to put there. An empty range
-/// is an insertion.
-#[derive(Debug, Clone)]
-pub(super) struct Splice {
-    pub(super) start: usize,
-    pub(super) end: usize,
-    pub(super) text: String,
-}
+// The splice type and its application are shared source-rewriting
+// infrastructure (`petal apply-change` plans edits the same way).
+pub(super) use crate::rewrite::{Splice, apply_splices as apply_match_edits};
 
 /// Plan every chain rewrite in `stmts`, one [`Fix`] per chain, in source
 /// order.
@@ -77,15 +72,6 @@ pub(super) fn plan_match_fixes(stmts: &[Stmt], chars: &[char]) -> Vec<Fix> {
     }
     finder.fixes.sort_by_key(|f| f.anchor);
     finder.fixes
-}
-
-/// Apply the splices, highest offset first so earlier positions stay valid.
-pub(super) fn apply_match_edits(chars: &[char], splices: &[Splice]) -> String {
-    let mut out: Vec<char> = chars.to_vec();
-    for s in splices.iter().rev() {
-        out.splice(s.start..s.end, s.text.chars());
-    }
-    out.into_iter().collect()
 }
 
 struct Finder<'a> {

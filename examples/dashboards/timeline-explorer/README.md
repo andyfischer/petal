@@ -37,7 +37,14 @@ for frames (`request_frame()`) only while something is moving. Garden puts an
 idle panel to sleep after 10 s; a still timeline is the app at rest, not a
 hang. A headless test should `POST /tick {"n":60,"dt":0.016}` after an input
 to let the easing finish before it takes a screenshot (the `obs_*` values
-describe the *target* view, so they are right immediately).
+describe the *target* view, so they are right immediately). A zoom settles in
+about 40 such frames; once `obs_animating` is false the screenshot is
+byte-identical from run to run. Frames captured mid-ease are not, because the
+frame an injected event runs on uses wall-clock `dt()`.
+
+Check the script with `petal check --strict --host garden app.ptl`. Without
+`--host garden` the checker does not know `request_frame` and reports it as
+an unknown function.
 
 ## Reading it
 
@@ -69,6 +76,7 @@ describe the *target* view, so they are right immediately).
 | double-click an event | select it and frame it |
 | double-click empty space | zoom in 2.5× at that point |
 | hover | a date flag on the ruler; a tooltip over an event |
+| `escape` during any drag | cancel it: the view goes back to where the drag found it (the overview drags too) |
 
 **Overview strip**
 
@@ -93,7 +101,7 @@ describe the *target* view, so they are right immediately).
 | `m` | cycle All → Moments → Programs |
 | `d` | cycle Landmarks → Notable → All |
 | `/` | focus the search field |
-| `escape` | leave the search field; then clear the selection; then clear the search |
+| `escape` | cancel a drag in progress; else leave the search field; then clear the selection; then clear the search |
 | `r` | reset the filters, the selection and the view |
 
 **Chrome**
@@ -181,6 +189,10 @@ gives `obs_level == "year"` and `obs_zooms == 1`; `key 2` gives
   each frame, so an event can change rows as its neighbours' labels come and
   go. The move is eased, but it is a move.
 - **Marks on the rail are hard to hit**: the hit band there is ±5 px. Zoom in.
+- **A flag on the ruler hides the context label under it.** The pointer's date
+  flag and the selection's flag share the context band's row; a decade or
+  month name that would sit under one (or within 6 px of it) is dropped for
+  as long as the flag is there.
 - **A long program crossing the left edge cannot use the top row**, because
   each lane's title is reserved there like a label.
 - **`/screenshot` does not wait for `request_frame()` animation.** A capture

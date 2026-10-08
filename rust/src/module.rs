@@ -70,6 +70,12 @@ pub struct ModuleRegistry {
     /// in-memory registrations and before the filesystem search paths; the
     /// rules live in [`crate::package`].
     packages: Vec<crate::package::Package>,
+    /// Text that stands in for a file's contents on disk, keyed by canonical
+    /// path: a module that resolves to one of these files loads this source
+    /// instead. This is how a tool compiles an edit it has not written yet
+    /// (`petal apply-change` proving a multi-file rewrite before it touches
+    /// anything); which file a name resolves to is unaffected.
+    file_overrides: std::collections::HashMap<PathBuf, String>,
 }
 
 impl ModuleRegistry {
@@ -100,10 +106,43 @@ impl ModuleRegistry {
     pub fn packages(&self) -> &[crate::package::Package] {
         &self.packages
     }
+
+    /// Load `source` in place of whatever `path` holds on disk, for every
+    /// later resolution that lands on that file.
+    pub fn override_file(&mut self, path: &Path, source: &str) {
+        self.file_overrides
+            .insert(canonical_path(path), source.to_string());
+    }
+}
+
+/// `path` with symlinks and `..` resolved, so two spellings of one file
+/// compare equal. A path that cannot be canonicalized (it does not exist) is
+/// returned as written.
+pub fn canonical_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 impl ModuleResolver for ModuleRegistry {
     fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource> {
+        let mut found = self.resolve_on_disk(name, importer)?;
+        if !self.file_overrides.is_empty()
+            && let ModuleOrigin::File(path) = &found.origin
+            && let Some(source) = self.file_overrides.get(&canonical_path(path))
+        {
+            found.source = source.clone();
+        }
+        Some(found)
+    }
+}
+
+impl ModuleRegistry {
+    /// [`ModuleResolver::resolve`] before [`file_overrides`](Self::override_file)
+    /// are applied: the resolution order described in the module docs.
+    fn resolve_on_disk(
+        &self,
+        name: &str,
+        importer: Option<&ModuleOrigin>,
+    ) -> Option<ModuleSource> {
         // A path that could escape its root resolves to nothing, whatever it
         // was registered as. The walker turns the same verdict into an error.
         if module_path_error(name).is_some() {

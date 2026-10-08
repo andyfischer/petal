@@ -374,6 +374,28 @@ impl Env {
         &self.ambient_package_errors
     }
 
+    /// Compile as if the file at `path` held `source`: every import that
+    /// resolves to that file loads this text instead of the one on disk. For
+    /// tools that must prove an edit before writing it (`petal apply-change`).
+    pub fn override_file_source(&mut self, path: &std::path::Path, source: &str) {
+        self.modules.override_file(path, source);
+    }
+
+    /// The file `import name` written in the file at `importer` resolves to,
+    /// or `None` when it resolves to nothing or to a module held in memory.
+    pub fn resolve_module_file(
+        &self,
+        name: &str,
+        importer: &std::path::Path,
+    ) -> Option<std::path::PathBuf> {
+        use crate::module::{ModuleOrigin, ModuleResolver};
+        let origin = ModuleOrigin::File(importer.to_path_buf());
+        match self.modules.resolve(name, Some(&origin))?.origin {
+            ModuleOrigin::File(path) => Some(path),
+            ModuleOrigin::Memory => None,
+        }
+    }
+
     /// Declare modules that every loaded program imports implicitly, as if by
     /// a selective import of all their exports — a host prelude with zero
     /// ceremony in user scripts. A script's own bindings still win, and an

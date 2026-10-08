@@ -67,7 +67,9 @@ cp ../../games/pong/launch.sh .                      # edit the header comment a
 
 `launch.sh` resolves its own directory, finds the Garden binary at
 `garden/target/debug/garden` or `$GARDEN_BIN`, exports a default
-`GARDEN_HEADLESS_SIZE`, and `exec`s `garden --init layout.ptl "$@"`. Pick the
+`GARDEN_HEADLESS_SIZE`, and `exec`s `garden --init layout.ptl "$@"`. It
+exits 3 with a `STALE GARDEN BINARY` banner, launching nothing, when that
+binary is behind the checkout; if `log.txt` has no port in it, read it. Pick the
 viewport that suits the app (1280x850 is the headless default; Asteroids uses
 1100x780) and remember the pane is smaller than the viewport (roughly `W-12`
 by `H-72`); use `screen_width()`/`screen_height()` inside the script.

@@ -38,10 +38,14 @@ Multi-file apps may add modules next to `app.ptl` and import them. Copy an
 existing app's `launch.sh` (for example `games/pong/launch.sh`); it finds the
 Garden binary at `garden/target/debug/garden`, or wherever `GARDEN_BIN` points,
 and sets a default `GARDEN_HEADLESS_SIZE`. `launch.sh` does not rebuild, so
-build Garden first (`cd garden && cargo build`). A binary that is behind the
-checkout prints a warning to the log at startup, and
-`/state` → `identity.freshness.stale` is true; rebuild before trusting
-anything it tells you.
+build Garden first (`cd garden && cargo build`). `launch.sh` refuses to start
+a binary that is behind the checkout: it prints a `STALE GARDEN BINARY` banner
+and exits 3 without launching, so a headless launch into a log file leaves no
+debug port to find. Rebuild, or set `GARDEN_ALLOW_STALE=1` to launch it anyway
+(the banner still prints, and `/state` → `identity.freshness.stale` is true).
+The check lives in `examples/lib/garden-fresh.sh`, which every `launch.sh`
+sources; it counts committed changes under `garden/`, `petal-ui/` and `rust/`,
+not uncommitted edits.
 
 `layout(...)` is required in `layout.ptl`. A bare `panel("...")` at top level
 silently leaves you with an empty editor pane.

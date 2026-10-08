@@ -13,6 +13,11 @@ if [ ! -x "$garden" ]; then
     exit 1
 fi
 
+# Stop rather than test old code: a binary behind this checkout is refused
+# (GARDEN_ALLOW_STALE=1 launches it anyway). See examples/lib/garden-fresh.sh.
+. "$here/../../lib/garden-fresh.sh"
+garden_require_fresh "$garden"
+
 export GARDEN_HEADLESS_SIZE="${GARDEN_HEADLESS_SIZE:-1240x880}"
 
 cd -- "$here"

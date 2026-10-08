@@ -17,6 +17,11 @@
 //          friction against the discs' spin                   (impulses)
 //       d. move, then pull every rod back to its length       (positions)
 //
+//  `step` keeps the lists it writes in local `var` cells and shares them
+//  with nested helpers (kick, shift, touch_pair, touch_static, solve_pair,
+//  solve_static), so each kind of contact is written once and `step` is
+//  still a pure function of its arguments.
+//
 //  Units are pixels, seconds and "one 14 px disc" of mass.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -276,14 +281,17 @@ pub fn step(wd: record, dt: num, env: record) -> record
   if n == 0 || dt <= 0.0 then
     return {world: wd, contacts: 0, pts: [], subs: 0}
   end
-  let x = wd.x
-  let y = wd.y
-  let vx = wd.vx
-  let vy = wd.vy
+  // What the solver writes lives in cells, so the helpers below can write it
+  // (`set vx[i] = …`, in place) and read it (`get vx[i]`). The code of `step`
+  // itself reads a cell by its bare name.
+  var x = wd.x
+  var y = wd.y
+  var vx = wd.vx
+  var vy = wd.vy
+  let ang = wd.ang
+  var om = wd.om
   let r = wd.r
   let w = wd.w
-  let ang = wd.ang
-  let om = wd.om
   let links = wd.links
   let segs = wd.segs
   let gx = float(env.gx)
@@ -298,6 +306,100 @@ pub fn step(wd: record, dt: num, env: record) -> record
   let h = dt / float(subs)
   let damp = max(0.0, 1.0 - env.drag * h)
   let spin_damp = max(0.0, 1.0 - (0.25 + env.drag) * h)
+
+  // This sub-step's contacts, body/body as [i, j, nx, ny] with n pointing
+  // from i to j, body/static as [i, nx, ny] with n pointing from the body
+  // into the wall; and the contact points of the last sub-step.
+  var bc = []
+  var sc = []
+  var pts = []
+  var keep = false
+
+  // ── Helpers ──────────────────────────────────────────────────────────
+
+  // Change the velocities of a and b by s along (dx, dy), each in
+  // proportion to its inverse mass: toward each other for s > 0.
+  let kick = fn(a, b, dx, dy, s)
+    set vx[a] = get vx[a] + dx * s * w[a]
+    set vy[a] = get vy[a] + dy * s * w[a]
+    set vx[b] = get vx[b] - dx * s * w[b]
+    set vy[b] = get vy[b] - dy * s * w[b]
+  end
+
+  // The same for their positions.
+  let shift = fn(a, b, dx, dy, s)
+    set x[a] = get x[a] + dx * s * w[a]
+    set y[a] = get y[a] + dy * s * w[a]
+    set x[b] = get x[b] - dx * s * w[b]
+    set y[b] = get y[b] - dy * s * w[b]
+  end
+
+  // Remember that i and j touch, for the impulse passes.
+  let touch_pair = fn(i, j, nx, ny)
+    set bc = append(get bc, i)
+    set bc = append(get bc, j)
+    set bc = append(get bc, nx)
+    set bc = append(get bc, ny)
+    if get keep then
+      set pts = append(get pts, get x[i] + nx * r[i])
+      set pts = append(get pts, get y[i] + ny * r[i])
+    end
+  end
+
+  // Remember that i touches something fixed at (px, py).
+  let touch_static = fn(i, nx, ny, px, py)
+    set sc = append(get sc, i)
+    set sc = append(get sc, nx)
+    set sc = append(get sc, ny)
+    if get keep then
+      set pts = append(get pts, px)
+      set pts = append(get pts, py)
+    end
+  end
+
+  // One impulse between two bodies: stop them closing along n, with
+  // restitution, then Coulomb friction on the sliding speed of the two
+  // rims, which spins the discs as well as slowing them.
+  let solve_pair = fn(i, j, nx, ny)
+    let vn = (get vx[j] - get vx[i]) * nx + (get vy[j] - get vy[i]) * ny
+    if vn >= 0.0 then return nil end
+    let wi = w[i]
+    let wj = w[j]
+    let ws = wi + wj
+    let e = if vn < 0.0 - REST_V then bounce else 0.0 end
+    let jn = (0.0 - (1.0 + e) * vn) / ws
+    set vx[i] = get vx[i] - nx * jn * wi
+    set vy[i] = get vy[i] - ny * jn * wi
+    set vx[j] = get vx[j] + nx * jn * wj
+    set vy[j] = get vy[j] + ny * jn * wj
+    let tx = 0.0 - ny
+    let ty = nx
+    let vt = (get vx[j] - get vx[i]) * tx + (get vy[j] - get vy[i]) * ty - get om[j] * r[j] - get om[i] * r[i]
+    let jt = clamp((0.0 - vt) / (3.0 * ws), 0.0 - fric * jn, fric * jn)
+    set vx[i] = get vx[i] - tx * jt * wi
+    set vy[i] = get vy[i] - ty * jt * wi
+    set vx[j] = get vx[j] + tx * jt * wj
+    set vy[j] = get vy[j] + ty * jt * wj
+    set om[i] = get om[i] - jt * 2.0 * wi / r[i]
+    set om[j] = get om[j] - jt * 2.0 * wj / r[j]
+  end
+
+  // The same against something fixed.
+  let solve_static = fn(i, nx, ny)
+    let vn = get vx[i] * nx + get vy[i] * ny
+    if vn <= 0.0 then return nil end
+    let e = if vn > REST_V then bounce else 0.0 end
+    let dv = (1.0 + e) * vn
+    set vx[i] = get vx[i] - nx * dv
+    set vy[i] = get vy[i] - ny * dv
+    let tx = 0.0 - ny
+    let ty = nx
+    let slide = get vx[i] * tx + get vy[i] * ty + get om[i] * r[i]
+    let dt_v = clamp((0.0 - slide) / 3.0, 0.0 - fric * dv, fric * dv)
+    set vx[i] = get vx[i] + tx * dt_v
+    set vy[i] = get vy[i] + ty * dt_v
+    set om[i] = get om[i] + 2.0 * dt_v / r[i]
+  end
 
   // Broadphase, once per frame: sweep the bodies in x order and keep every
   // pair whose boxes could meet before the frame is over. `reach` is a
@@ -379,13 +481,13 @@ pub fn step(wd: record, dt: num, env: record) -> record
   let rf = if len(wd.tension) == nr then wd.tension else for q in range(0, nr) do 0.0 end end
 
   let contacts = 0
-  let pts = []
 
   for sub in range(0, subs) do
-    let keep = sub == subs - 1
+    set keep = sub == subs - 1
 
-    // a. Contacts. Body/body: [i, j, nx, ny] with n pointing from i to j.
-    let bc = []
+    // a. Contacts: un-overlap, and remember who touches whom.
+    set bc = []
+    set sc = []
     let k = 0
     while k < np do
       let i = pairs[k]
@@ -402,67 +504,30 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let ny = if d > 0.0001 then dy / d else 0.0 end
       let pen = rr - d
       if pen > SLOP then
-        let cor = (pen - SLOP) * PUSH / (w[i] + w[j])
-        x[i] = x[i] - nx * cor * w[i]
-        y[i] = y[i] - ny * cor * w[i]
-        x[j] = x[j] + nx * cor * w[j]
-        y[j] = y[j] + ny * cor * w[j]
+        shift(i, j, nx, ny, 0.0 - (pen - SLOP) * PUSH / (w[i] + w[j]))
       end
-      bc = append(bc, i)
-      bc = append(bc, j)
-      bc = append(bc, nx)
-      bc = append(bc, ny)
-      if keep then
-        pts = append(pts, x[i] + nx * r[i])
-        pts = append(pts, y[i] + ny * r[i])
-      end
+      touch_pair(i, j, nx, ny)
     end
-    // Body/static: [i, nx, ny] with n pointing from the body into the wall.
-    let sc = []
     for i in range(0, n) do
       if w[i] == 0.0 then continue end
       let ri = r[i]
       let edge = ri + TOUCH
       if x[i] > edge && x[i] < W - edge && y[i] > edge && y[i] < H - edge then continue end
       if x[i] - ri < TOUCH then
-        if x[i] - ri < 0.0 - SLOP then x[i] = ri - SLOP end
-        sc = append(sc, i)
-        sc = append(sc, -1.0)
-        sc = append(sc, 0.0)
-        if keep then
-          pts = append(pts, 0.0)
-          pts = append(pts, y[i])
-        end
+        if x[i] - ri < 0.0 - SLOP then set x[i] = ri - SLOP end
+        touch_static(i, -1.0, 0.0, 0.0, y[i])
       end
       if x[i] + ri > W - TOUCH then
-        if x[i] + ri > W + SLOP then x[i] = W - ri + SLOP end
-        sc = append(sc, i)
-        sc = append(sc, 1.0)
-        sc = append(sc, 0.0)
-        if keep then
-          pts = append(pts, W)
-          pts = append(pts, y[i])
-        end
+        if x[i] + ri > W + SLOP then set x[i] = W - ri + SLOP end
+        touch_static(i, 1.0, 0.0, W, y[i])
       end
       if y[i] - ri < TOUCH then
-        if y[i] - ri < 0.0 - SLOP then y[i] = ri - SLOP end
-        sc = append(sc, i)
-        sc = append(sc, 0.0)
-        sc = append(sc, -1.0)
-        if keep then
-          pts = append(pts, x[i])
-          pts = append(pts, 0.0)
-        end
+        if y[i] - ri < 0.0 - SLOP then set y[i] = ri - SLOP end
+        touch_static(i, 0.0, -1.0, x[i], 0.0)
       end
       if y[i] + ri > H - TOUCH then
-        if y[i] + ri > H + SLOP then y[i] = H - ri + SLOP end
-        sc = append(sc, i)
-        sc = append(sc, 0.0)
-        sc = append(sc, 1.0)
-        if keep then
-          pts = append(pts, x[i])
-          pts = append(pts, H)
-        end
+        if y[i] + ri > H + SLOP then set y[i] = H - ri + SLOP end
+        touch_static(i, 0.0, 1.0, x[i], H)
       end
     end
     k = 0
@@ -488,16 +553,10 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let ny = if d > 0.0001 then dy / d else 1.0 end
       let pen = rr - d
       if pen > SLOP then
-        x[i] = x[i] - nx * (pen - SLOP)
-        y[i] = y[i] - ny * (pen - SLOP)
+        set x[i] = x[i] - nx * (pen - SLOP)
+        set y[i] = y[i] - ny * (pen - SLOP)
       end
-      sc = append(sc, i)
-      sc = append(sc, nx)
-      sc = append(sc, ny)
-      if keep then
-        pts = append(pts, qx - nx * SEG_R)
-        pts = append(pts, qy - ny * SEG_R)
-      end
+      touch_static(i, nx, ny, qx - nx * SEG_R, qy - ny * SEG_R)
     end
     let nbc = len(bc)
     let nsc = len(sc)
@@ -506,9 +565,9 @@ pub fn step(wd: record, dt: num, env: record) -> record
     // b. Forces.
     for i in range(0, n) do
       if w[i] > 0.0 then
-        vx[i] = (vx[i] + gx * h) * damp
-        vy[i] = (vy[i] + gy * h) * damp
-        om[i] = om[i] * spin_damp
+        set vx[i] = (vx[i] + gx * h) * damp
+        set vy[i] = (vy[i] + gy * h) * damp
+        set om[i] = om[i] * spin_damp
       end
     end
     for L in links do
@@ -527,11 +586,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let vrel = (vx[b] - vx[a]) * nx + (vy[b] - vy[a]) * ny
       // Force over the pair's reduced mass, so every spring rings at `hz`
       // whatever it carries.
-      let imp = (omega * omega * (d - L.len) + 2.0 * SPRING_Z * omega * vrel) * h / ws
-      vx[a] = vx[a] + nx * imp * w[a]
-      vy[a] = vy[a] + ny * imp * w[a]
-      vx[b] = vx[b] - nx * imp * w[b]
-      vy[b] = vy[b] - ny * imp * w[b]
+      kick(a, b, nx, ny, (omega * omega * (d - L.len) + 2.0 * SPRING_Z * omega * vrel) * h / ws)
     end
     if grab >= 0 then
       // The mouse is a velocity servo: the grabbed disc closes most of the
@@ -540,8 +595,8 @@ pub fn step(wd: record, dt: num, env: record) -> record
       let pvy = (env.ty - y[grab]) * 22.0
       let sp = sqrt(pvx * pvx + pvy * pvy)
       let cap = if sp > MAX_V then MAX_V / sp else 1.0 end
-      vx[grab] = pvx * cap
-      vy[grab] = pvy * cap
+      set vx[grab] = pvx * cap
+      set vy[grab] = pvy * cap
     end
 
     // c. Impulses.
@@ -554,10 +609,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
       if d < 0.0001 then continue end
       let p = rf[q] * h / d
       rf[q] = rf[q] * h
-      vx[a] = vx[a] + dx * p * w[a]
-      vy[a] = vy[a] + dy * p * w[a]
-      vx[b] = vx[b] - dx * p * w[b]
-      vy[b] = vy[b] - dy * p * w[b]
+      kick(a, b, dx, dy, p)
     end
     for it in range(0, ITERS) do
       // Rods get extra passes, alternating direction: a chain converges
@@ -573,62 +625,18 @@ pub fn step(wd: record, dt: num, env: record) -> record
           if d < 0.0001 then continue end
           let lam = ((vx[b] - vx[a]) * dx + (vy[b] - vy[a]) * dy) / (d * d * (w[a] + w[b]))
           rf[ri] = rf[ri] + lam * d
-          vx[a] = vx[a] + dx * lam * w[a]
-          vy[a] = vy[a] + dy * lam * w[a]
-          vx[b] = vx[b] - dx * lam * w[b]
-          vy[b] = vy[b] - dy * lam * w[b]
+          kick(a, b, dx, dy, lam)
         end
       end
       k = 0
       while k < nbc do
-        let i = bc[k]
-        let j = bc[k + 1]
-        let nx = bc[k + 2]
-        let ny = bc[k + 3]
+        solve_pair(bc[k], bc[k + 1], bc[k + 2], bc[k + 3])
         k += 4
-        let vn = (vx[j] - vx[i]) * nx + (vy[j] - vy[i]) * ny
-        if vn >= 0.0 then continue end
-        let wi = w[i]
-        let wj = w[j]
-        let ws = wi + wj
-        let e = if vn < 0.0 - REST_V then bounce else 0.0 end
-        let jn = (0.0 - (1.0 + e) * vn) / ws
-        vx[i] = vx[i] - nx * jn * wi
-        vy[i] = vy[i] - ny * jn * wi
-        vx[j] = vx[j] + nx * jn * wj
-        vy[j] = vy[j] + ny * jn * wj
-        // Friction acts on the sliding speed of the two rims, so it spins
-        // the discs as well as slowing them.
-        let tx = 0.0 - ny
-        let ty = nx
-        let vt = (vx[j] - vx[i]) * tx + (vy[j] - vy[i]) * ty - om[j] * r[j] - om[i] * r[i]
-        let jt = clamp((0.0 - vt) / (3.0 * ws), 0.0 - fric * jn, fric * jn)
-        vx[i] = vx[i] - tx * jt * wi
-        vy[i] = vy[i] - ty * jt * wi
-        vx[j] = vx[j] + tx * jt * wj
-        vy[j] = vy[j] + ty * jt * wj
-        om[i] = om[i] - jt * 2.0 * wi / r[i]
-        om[j] = om[j] - jt * 2.0 * wj / r[j]
       end
       k = 0
       while k < nsc do
-        let i = sc[k]
-        let nx = sc[k + 1]
-        let ny = sc[k + 2]
+        solve_static(sc[k], sc[k + 1], sc[k + 2])
         k += 3
-        let vn = vx[i] * nx + vy[i] * ny
-        if vn <= 0.0 then continue end
-        let e = if vn > REST_V then bounce else 0.0 end
-        let dv = (1.0 + e) * vn
-        vx[i] = vx[i] - nx * dv
-        vy[i] = vy[i] - ny * dv
-        let tx = 0.0 - ny
-        let ty = nx
-        let slide = vx[i] * tx + vy[i] * ty + om[i] * r[i]
-        let dt_v = clamp((0.0 - slide) / 3.0, 0.0 - fric * dv, fric * dv)
-        vx[i] = vx[i] + tx * dt_v
-        vy[i] = vy[i] + ty * dt_v
-        om[i] = om[i] + 2.0 * dt_v / r[i]
       end
     end
 
@@ -639,18 +647,18 @@ pub fn step(wd: record, dt: num, env: record) -> record
     // d. Move, then put every rod back to its length.
     for i in range(0, n) do
       if w[i] == 0.0 && i != grab then
-        vx[i] = 0.0
-        vy[i] = 0.0
+        set vx[i] = 0.0
+        set vy[i] = 0.0
         continue
       end
       let sp2 = vx[i] * vx[i] + vy[i] * vy[i]
       if sp2 > MAX_V * MAX_V then
         let f = MAX_V / sqrt(sp2)
-        vx[i] = vx[i] * f
-        vy[i] = vy[i] * f
+        set vx[i] = vx[i] * f
+        set vy[i] = vy[i] * f
       end
-      x[i] = x[i] + vx[i] * h
-      y[i] = y[i] + vy[i] * h
+      set x[i] = x[i] + vx[i] * h
+      set y[i] = y[i] + vy[i] * h
       ang[i] = ang[i] + om[i] * h
     end
     for pass in range(0, ROD_PASSES * 2) do
@@ -662,11 +670,7 @@ pub fn step(wd: record, dt: num, env: record) -> record
         let dy = y[b] - y[a]
         let d = sqrt(dx * dx + dy * dy)
         if d < 0.0001 then continue end
-        let cor = (d - rl[ri]) / (d * (w[a] + w[b]))
-        x[a] = x[a] + dx * cor * w[a]
-        y[a] = y[a] + dy * cor * w[a]
-        x[b] = x[b] - dx * cor * w[b]
-        y[b] = y[b] - dy * cor * w[b]
+        shift(a, b, dx, dy, (d - rl[ri]) / (d * (w[a] + w[b])))
       end
     end
   end

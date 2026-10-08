@@ -153,17 +153,26 @@ EOF
 **Language.** A three-file program: `import physics as ph` and
 `import scenes as sc`, with `pub fn` / `pub let` drawing the line
 between the solver's surface and its internals. The world as a
-structure-of-arrays record of float lists, advanced by one long function that
-rebinds local lists by index (`vx[i] = …`) inside nested `for` and `while`
-loops, with `continue` and `break` doing the culling. Flat interleaved lists
+structure-of-arrays record of float lists, advanced by one function, `step`,
+that holds the lists it writes in local `var` cells and shares them with
+nested helpers (`kick`, `shift`, `touch_pair`, `touch_static`, `solve_pair`,
+`solve_static`): each helper reads a cell with `get` and writes one element in
+place with `set vx[i] = …`, so body/body, body/wall and body/bar contacts go
+through the same two solvers, and `step` stays a pure function of its
+arguments. Nested `for` and `while` loops, with `continue` and `break` doing
+the culling. Flat interleaved lists
 (`[i, j, nx, ny, …]`) for contacts, where a list of records would cost a
 field read per use. Immutable values doing real work: undo is
 `undo = append(undo, world)` and nothing else. Collecting `for` loops with
 `continue` as the filter (`without`, `remove_body`), spread to rebuild records,
-`config let` tunables, `state` for everything that persists, written only at
-module scope so nothing needs `var`/`set`/`get`. An intent block: keys and
-widgets set plain `let` flags (`want_scene`, `want_pin`, `want_remove`) and one
-place carries them out. `reduce`, `flat`, `split`, `slice`, `clamp`, `atan2`,
+`config let` tunables, and `state` for everything that persists: plain `state`
+where only module scope writes it, `state var` where a function does. An
+intent block: keys and widgets set plain `let` flags (`want_scene`, `want_pin`,
+`want_remove`), and once all input is read the actions carry them out
+(`load_scene`, `undo_last`, `clear_loose`, `toggle_pin`, `delete_body`, with
+`checkpoint`, `pick_tool` and `cancel_gestures` shared by the inline input
+code), each a top-level function that writes the `state var`s with `set` and
+reads them with `get`. `reduce`, `flat`, `split`, `slice`, `clamp`, `atan2`,
 `round(x, places)`, `degrees`, `index_of`, `last`, `drop_last`, and colour
 literals in lists.
 

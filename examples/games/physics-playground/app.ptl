@@ -83,61 +83,63 @@ let SPEEDS = [1.0, 0.5, 0.25]
 let SPEED_LABELS = ["1×", "½", "¼"]
 
 // ── Persistent state ─────────────────────────────────────────────────────
+// `state var` marks what a function writes (the actions, further down);
+// plain `state` is written only at module scope.
 
-state ready      = false
-state scene      = 0
-state world      = ph.empty_world()
-state emit       = {x: 0.0, y: 0.0, every: 1.0, left: 0, r: 7.0}
-state emit_t     = 0.0
-state tool       = 0
-state size_i     = 1
-state grav       = 1.0           // in g
-state grav_keep  = 1.0           // what `0` restores
-state gdir       = 1.5708        // radians; pi/2 is straight down
-state bounce     = 0.45
-state fric       = 0.4
-state drag       = 0.02
-state paused     = false
-state speed_i    = 0
-state show_vec   = false
-state show_trail = false
-state show_pts   = false
-state grab_id    = -1            // body id being dragged
-state grab_ox    = 0.0
-state grab_oy    = 0.0
-state aiming     = false         // ball tool: a launch is being drawn
-state aim_x      = 0.0
-state aim_y      = 0.0
-state linking    = false         // rod/spring tool: a link is being drawn
-state link_id    = -1            // body id it started on, or -1 for open stage
-state link_x     = 0.0
-state link_y     = 0.0
-state cutting    = false
-state cut_x      = 0.0
-state cut_y      = 0.0
-state cut_saved  = false         // this stroke already pushed its undo step
-state cut_path   = []            // the last few points of the stroke, for drawing
-state sel_id     = -1
-state ui_drag    = ""            // the slider or dial holding the mouse
-state undo       = []            // earlier {w, left} steps, oldest first
-state trail      = []            // recent {x, y} position lists
-state hist       = []            // recent {k, p} energy samples
-state sim_t      = 0.0
-state steps      = 0
-state subs       = 0
-state contacts   = 0
-state pts        = []
-state rest_t     = 0.0
-state asleep     = false
-state moved      = 0.0
-state toast      = ""
-state toast_t    = 0.0
-state last_time  = -1.0
-state n_spawned  = 0
-state n_linked   = 0
-state n_cut      = 0
-state n_thrown   = 0
-state n_removed  = 0
+state ready          = false
+state var scene      = 0
+state var world      = ph.empty_world()
+state var emit       = {x: 0.0, y: 0.0, every: 1.0, left: 0, r: 7.0}
+state var emit_t     = 0.0
+state var tool       = 0
+state size_i         = 1
+state var grav       = 1.0           // in g
+state grav_keep      = 1.0           // what `0` restores
+state var gdir       = 1.5708        // radians; pi/2 is straight down
+state var bounce     = 0.45
+state var fric       = 0.4
+state var drag       = 0.02
+state var paused     = false
+state speed_i        = 0
+state show_vec       = false
+state var show_trail = false
+state show_pts       = false
+state var grab_id    = -1            // body id being dragged
+state grab_ox        = 0.0
+state grab_oy        = 0.0
+state var aiming     = false         // ball tool: a launch is being drawn
+state aim_x          = 0.0
+state aim_y          = 0.0
+state var linking    = false         // rod/spring tool: a link is being drawn
+state link_id        = -1            // body id it started on, or -1 for open stage
+state link_x         = 0.0
+state link_y         = 0.0
+state var cutting    = false
+state cut_x          = 0.0
+state cut_y          = 0.0
+state cut_saved      = false         // this stroke already pushed its undo step
+state cut_path       = []            // the last few points of the stroke, for drawing
+state var sel_id     = -1
+state ui_drag        = ""            // the slider or dial holding the mouse
+state var undo       = []            // earlier {w, left} steps, oldest first
+state var trail      = []            // recent {x, y} position lists
+state var hist       = []            // recent {k, p} energy samples
+state var sim_t      = 0.0
+state var steps      = 0
+state subs           = 0
+state var contacts   = 0
+state var pts        = []
+state rest_t         = 0.0
+state asleep         = false
+state moved          = 0.0
+state toast          = ""
+state toast_t        = 0.0
+state last_time      = -1.0
+state n_spawned      = 0
+state n_linked       = 0
+state n_cut          = 0
+state n_thrown       = 0
+state var n_removed  = 0
 
 // ── Pure helpers ─────────────────────────────────────────────────────────
 
@@ -287,8 +289,10 @@ toast_t = max(0.0, toast_t - min(raw_dt, 0.05))
 claim_key("z", "cmd")
 
 // ── Intents ──────────────────────────────────────────────────────────────
-// Keys and widgets only say what they want; one block below carries it out,
-// so every way of asking for a thing does exactly the same thing.
+// Keys and widgets only say what they want. The edits that renumber bodies
+// are carried out once, after all input has been read, by the actions below,
+// so an index found while drawing the chrome is still good at the click, and
+// every way of asking for a thing does exactly the same thing.
 
 let want_scene  = -1
 let want_undo   = false
@@ -296,9 +300,121 @@ let want_clear  = false
 let want_step   = false
 let want_pin    = -1        // body index to pin or free
 let want_remove = -1        // body index to delete
-let wake        = false
 let obs_bins    = []
-let said        = ""
+var wake        = false     // something changed: the world may not sleep
+var said        = ""        // this frame's toast, if any
+
+// ── Actions ──────────────────────────────────────────────────────────────
+// Every state these write is a `state var`, and `wake` and `said` are `var`s:
+// a function writes a cell with `set` and reads it with `get`.
+
+// Abandon a launch, a link or a cut that is being drawn.
+fn cancel_gestures()
+  set aiming = false
+  set linking = false
+  set cutting = false
+end
+
+fn pick_tool(k: int)
+  set tool = k
+  cancel_gestures()
+end
+
+// Push an undo step: the world as it is, before an edit.
+fn checkpoint()
+  set undo = pushed(get undo, get world, get emit.left)
+end
+
+fn load_scene(k: int)
+  let built = sc.build(k, SW, SH)
+  set scene = k
+  set world = built.world
+  set emit = built.emit
+  set bounce = built.bounce
+  set fric = built.fric
+  set drag = built.drag
+  set show_trail = built.trails
+  set grav = 1.0
+  set gdir = 1.5708
+  set emit_t = 0.0
+  set undo = []
+  set trail = []
+  set hist = []
+  set pts = []
+  set contacts = 0
+  set sim_t = 0.0
+  set steps = 0
+  set sel_id = -1
+  set grab_id = -1
+  cancel_gestures()
+  set paused = false
+  set wake = true
+end
+
+fn undo_last()
+  if len(get undo) == 0 then
+    set said = "Nothing to undo"
+    return nil
+  end
+  let was = last(get undo)
+  set world = was.w
+  set emit = {...get emit, left: was.left}
+  set undo = drop_last(get undo)
+  if ph.index_of_id(get world, get sel_id) < 0 then set sel_id = -1 end
+  set trail = []
+  set grab_id = -1
+  set wake = true
+  set said = "Undone"
+end
+
+// Remove every body that is not pinned, and empty the dispenser.
+fn clear_loose()
+  let wd = get world
+  let loose = 0
+  for i in range(0, wd.n) do
+    if !wd.pin[i] then loose += 1 end
+  end
+  if loose == 0 then
+    set said = "Nothing loose to clear"
+    return nil
+  end
+  checkpoint()
+  for i in range(wd.n - 1, -1, -1) do
+    if !wd.pin[i] then wd = ph.remove_body(wd, i) end
+  end
+  set world = wd
+  set emit = {...get emit, left: 0}
+  set trail = []
+  set sel_id = -1
+  set grab_id = -1
+  set wake = true
+  set said = "{plural(loose, "loose body", "loose bodies")} cleared"
+end
+
+// Pin body i, or free it; it becomes the selection.
+fn toggle_pin(i: int)
+  if i < 0 || i >= get world.n then return nil end
+  checkpoint()
+  let was = get world.pin[i]
+  set world = ph.set_pin(get world, i, !was)
+  set sel_id = get world.id[i]
+  set wake = true
+  set said = if was then "#{get sel_id} freed" else "#{get sel_id} pinned" end
+end
+
+// Delete body i and the links on it.
+fn delete_body(i: int)
+  if i < 0 || i >= get world.n then return nil end
+  checkpoint()
+  let gone = get world.id[i]
+  set world = ph.remove_body(get world, i)
+  set trail = []
+  if get sel_id == gone then set sel_id = -1 end
+  if get grab_id == gone then set grab_id = -1 end
+  set n_removed += 1
+  set wake = true
+  set said = "#{gone} removed"
+end
 
 if !ready then
   ready = true
@@ -309,19 +425,16 @@ end
 
 for i in range(0, len(TOOLS)) do
   if key_pressed(str(i + 1)) || (key_pressed(TOOL_KEYS[i]) && !mod_cmd()) then
-    tool = i
-    aiming = false
-    linking = false
-    cutting = false
+    pick_tool(i)
   end
 end
 
 if key_pressed("space") then
-  paused = !paused
-  wake = true
+  set paused = !paused
+  set wake = true
 end
 if key_pressed("n") || key_pressed("period") || key_pressed(".") then
-  paused = true
+  set paused = true
   want_step = true
 end
 if key_pressed("r") then want_scene = scene end
@@ -331,7 +444,7 @@ end
 if key_pressed("z") || key_pressed("u") then want_undo = true end
 if key_pressed("c") then want_clear = true end
 if key_pressed("v") then show_vec = !show_vec end
-if key_pressed("t") then show_trail = !show_trail end
+if key_pressed("t") then set show_trail = !show_trail end
 if key_pressed("k") then show_pts = !show_pts end
 if key_pressed("f") then speed_i = (speed_i + 1) % len(SPEEDS) end
 if key_pressed("equals") || key_pressed("=") || key_pressed("]") then size_i = min(len(BALL_SIZES) - 1, size_i + 1) end
@@ -344,36 +457,34 @@ if key_pressed("up") then tipped = 4.7124 end
 if key_pressed("left") then tipped = 3.1416 end
 if key_pressed("right") then tipped = 0.0 end
 if tipped >= 0.0 then
-  gdir = tipped
-  if grav < 0.05 then grav = grav_keep end
-  wake = true
-  said = "Gravity points {dir_name(gdir)}"
+  set gdir = tipped
+  if grav < 0.05 then set grav = grav_keep end
+  set wake = true
+  set said = "Gravity points {dir_name(gdir)}"
 end
 if key_pressed("0") then
   if grav > 0.05 then
     grav_keep = grav
-    grav = 0.0
-    said = "Zero gravity"
+    set grav = 0.0
+    set said = "Zero gravity"
   else
-    grav = grav_keep
-    said = "Gravity back to {fixed2(grav)} g"
+    set grav = grav_keep
+    set said = "Gravity back to {fixed2(grav)} g"
   end
-  wake = true
+  set wake = true
 end
 
 if key_pressed("escape") then
   let held = ph.index_of_id(world, grab_id)
   if aiming || linking || cutting then
-    aiming = false
-    linking = false
-    cutting = false
+    cancel_gestures()
   elsif held >= 0 then
     // Let go without a throw: the body is left where it is, at rest.
-    world = ph.set_velocity(world, held, 0.0, 0.0)
-    grab_id = -1
-    wake = true
+    set world = ph.set_velocity(world, held, 0.0, 0.0)
+    set grab_id = -1
+    set wake = true
   else
-    sel_id = -1
+    set sel_id = -1
   end
 end
 
@@ -538,10 +649,7 @@ for i in range(0, len(TOOLS)) do
   tx_center(TOOLS[i], rail_x + RAIL / 2 + 1, by + 42, {...S_TINY, color: tone})
   tx(str(i + 1), rail_x + 7, by + 5, {...S_TINY, color: if on then C_ACC else C_MUTE end})
   if over && mouse_pressed(0) then
-    tool = i
-    aiming = false
-    linking = false
-    cutting = false
+    pick_tool(i)
   end
 end
 
@@ -571,26 +679,26 @@ tx("WORLD", cx1, world_y + 13, S_LABEL)
 tx_right(dir_name(gdir), side_x + card_w - 14, world_y + 12, S_HINT)
 
 let dial = ui_dial(cx1 + 30, world_y + 68, 30, gdir, grav / 2.0, ui_drag)
-if dial.ang != gdir then wake = true end
-gdir = dial.ang
+if dial.ang != gdir then set wake = true end
+set gdir = dial.ang
 ui_drag = dial.drag
 
 let g_s = ui_slider("grav", cx1 + 78, world_y + 44, inner - 78, "GRAVITY", "{fixed2(grav)} g", grav / 2.0, ui_drag)
-if g_s.frac * 2.0 != grav then wake = true end
-grav = round(g_s.frac * 2.0, 2)
+if g_s.frac * 2.0 != grav then set wake = true end
+set grav = round(g_s.frac * 2.0, 2)
 ui_drag = g_s.drag
 tx("drag the compass to aim it", cx1 + 78, world_y + 80, {...S_HINT, color: C_MUTE})
 
 let b_s = ui_slider("bounce", cx1, world_y + 112, inner, "BOUNCE", fixed2(bounce), bounce, ui_drag)
-bounce = round(b_s.frac, 2)
+set bounce = round(b_s.frac, 2)
 ui_drag = b_s.drag
 let f_s = ui_slider("fric", cx1, world_y + 150, inner, "FRICTION", fixed2(fric), fric, ui_drag)
-fric = round(f_s.frac, 2)
+set fric = round(f_s.frac, 2)
 ui_drag = f_s.drag
 let d_s = ui_slider("drag", cx1, world_y + 188, inner, "AIR DRAG", fixed2(drag), drag / 0.5, ui_drag)
-drag = round(d_s.frac * 0.5, 2)
+set drag = round(d_s.frac * 0.5, 2)
 ui_drag = d_s.drag
-if ui_drag != "" then wake = true end
+if ui_drag != "" then set wake = true end
 
 // Sidebar: time and overlays.
 let time_y = world_y + world_h + 10
@@ -599,11 +707,11 @@ card(side_x, time_y, card_w, time_h)
 tx("TIME", cx1, time_y + 13, S_LABEL)
 tx_right("{fixed2(sim_t)} s", side_x + card_w - 14, time_y + 12, S_HINT)
 if ui_btn(cx1, time_y + 34, 74, 26, if paused then "RUN" else "PAUSE" end, paused, C_ACC) then
-  paused = !paused
-  wake = true
+  set paused = !paused
+  set wake = true
 end
 if ui_btn(cx1 + 80, time_y + 34, 52, 26, "STEP", false, C_ACC) then
-  paused = true
+  set paused = true
   want_step = true
 end
 for i in range(0, len(SPEEDS)) do
@@ -611,7 +719,7 @@ for i in range(0, len(SPEEDS)) do
 end
 let tog_w = (inner - 12) / 3
 if ui_btn(cx1, time_y + 66, tog_w, 22, "VECTORS", show_vec, HUES[3]) then show_vec = !show_vec end
-if ui_btn(cx1 + tog_w + 6, time_y + 66, tog_w, 22, "TRAILS", show_trail, HUES[3]) then show_trail = !show_trail end
+if ui_btn(cx1 + tog_w + 6, time_y + 66, tog_w, 22, "TRAILS", show_trail, HUES[3]) then set show_trail = !show_trail end
 if ui_btn(cx1 + (tog_w + 6) * 2, time_y + 66, tog_w, 22, "CONTACTS", show_pts, HUES[3]) then show_pts = !show_pts end
 
 // ── Sidebar: selection, or the scene ─────────────────────────────────────
@@ -671,35 +779,33 @@ let hover_link = if in_stage && free_mouse && hover < 0 then ph.pick_link(world,
 let grab = ph.index_of_id(world, grab_id)
 
 if in_stage && free_mouse && mouse_pressed(1) then
-  wake = true
+  set wake = true
   if aiming || linking || cutting then
-    aiming = false
-    linking = false
-    cutting = false
+    cancel_gestures()
   elsif hover >= 0 then
     want_pin = hover
   else
-    sel_id = -1
+    set sel_id = -1
   end
 end
 
 if in_stage && free_mouse && mouse_pressed(0) then
-  wake = true
+  set wake = true
   if tool == 0 then
     if hover >= 0 then
-      grab_id = world.id[hover]
+      set grab_id = world.id[hover]
       grab_ox = world.x[hover] - wx
       grab_oy = world.y[hover] - wy
-      sel_id = grab_id
+      set sel_id = grab_id
     else
-      sel_id = -1
+      set sel_id = -1
     end
   elsif tool == 1 then
-    aiming = true
+    set aiming = true
     aim_x = wx
     aim_y = wy
   elsif tool == 2 || tool == 3 then
-    linking = true
+    set linking = true
     link_id = if hover >= 0 then world.id[hover] else -1 end
     link_x = wx
     link_y = wy
@@ -710,14 +816,14 @@ if in_stage && free_mouse && mouse_pressed(0) then
     if hover >= 0 then
       want_remove = hover
     elsif hover_link >= 0 then
-      undo = pushed(undo, world, emit.left)
+      checkpoint()
       cut_saved = true
-      world = ph.remove_link(world, hover_link)
-      trail = []
+      set world = ph.remove_link(world, hover_link)
+      set trail = []
       n_cut += 1
-      said = "Link cut"
+      set said = "Link cut"
     end
-    cutting = true
+    set cutting = true
     cut_x = wx
     cut_y = wy
     cut_path = [[sx + wx, sy + wy]]
@@ -734,16 +840,16 @@ if cutting && mouse_down(0) then
     let crossed = ph.links_crossing(world, cut_x, cut_y, cwx, cwy)
     if len(crossed) > 0 then
       if !cut_saved then
-        undo = pushed(undo, world, emit.left)
+        checkpoint()
         cut_saved = true
       end
       for k in crossed do
-        world = ph.remove_link(world, k)
+        set world = ph.remove_link(world, k)
       end
-      trail = []
+      set trail = []
       n_cut += len(crossed)
-      said = if len(crossed) == 1 then "Link cut" else "{len(crossed)} links cut" end
-      wake = true
+      set said = if len(crossed) == 1 then "Link cut" else "{len(crossed)} links cut" end
+      set wake = true
     end
     cut_x = cwx
     cut_y = cwy
@@ -755,15 +861,15 @@ end
 if mouse_released(0) || !mouse_down(0) then
   if grab >= 0 then
     if ph.norm(world.vx[grab], world.vy[grab]) > 240.0 then n_thrown += 1 end
-    grab_id = -1
-    wake = true
+    set grab_id = -1
+    set wake = true
   end
-  cutting = false
+  set cutting = false
 
   if aiming then
-    aiming = false
+    set aiming = false
     if world.n >= max_bodies then
-      said = "The stage is full ({max_bodies} bodies)"
+      set said = "The stage is full ({max_bodies} bodies)"
     else
       let r = BALL_SIZES[size_i]
       // The pull is measured to the stage edge, exactly as the preview draws it.
@@ -772,39 +878,39 @@ if mouse_released(0) || !mouse_down(0) then
       let lvx = clamp((aim_x - ex) * launch_gain, -1800.0, 1800.0)
       let lvy = clamp((aim_y - ey) * launch_gain, -1800.0, 1800.0)
       let still = abs(aim_x - ex) + abs(aim_y - ey) < 6.0
-      undo = pushed(undo, world, emit.left)
-      world = ph.add_body(world, clamp(aim_x, r, SW - r), clamp(aim_y, r, SH - r), r, n_spawned % 6,
+      checkpoint()
+      set world = ph.add_body(world, clamp(aim_x, r, SW - r), clamp(aim_y, r, SH - r), r, n_spawned % 6,
         false, 1.0, if still then 0.0 else lvx end, if still then 0.0 else lvy end)
-      sel_id = world.id[world.n - 1]
-      trail = []
+      set sel_id = world.id[world.n - 1]
+      set trail = []
       n_spawned += 1
-      wake = true
-      said = if still then "Ball #{sel_id} dropped" else "Ball #{sel_id} launched at {int(ph.norm(lvx, lvy))} px/s" end
+      set wake = true
+      set said = if still then "Ball #{sel_id} dropped" else "Ball #{sel_id} launched at {int(ph.norm(lvx, lvy))} px/s" end
     end
   end
 
   if linking then
-    linking = false
+    set linking = false
     let kind = if tool == 3 then ph.SPRING else ph.ROD end
     let noun = if tool == 3 then "spring" else "rod" end
     let la = ph.index_of_id(world, link_id)
     let lb = hover
     let dragged = ph.norm(wx - link_x, wy - link_y) > 14.0
     if la >= 0 && lb == la then
-      said = ""
+      set said = ""
     elsif la < 0 && lb < 0 then
-      if dragged then said = "A {noun} needs a body at one end" end
+      if dragged then set said = "A {noun} needs a body at one end" end
     elsif world.n >= max_bodies && (la < 0 || lb < 0) then
-      said = "The stage is full ({max_bodies} bodies)"
+      set said = "The stage is full ({max_bodies} bodies)"
     else
-      undo = pushed(undo, world, emit.left)
+      checkpoint()
       // An end left on open stage gets a small pinned anchor lb hold it.
       if la < 0 then
-        world = ph.add_pin(world, link_x, link_y, 5, 6)
+        set world = ph.add_pin(world, link_x, link_y, 5, 6)
         la = world.n - 1
       end
       if lb < 0 then
-        world = ph.add_pin(world, clamp(wx, 5.0, SW - 5.0), clamp(wy, 5.0, SH - 5.0), 5, 6)
+        set world = ph.add_pin(world, clamp(wx, 5.0, SW - 5.0), clamp(wy, 5.0, SH - 5.0), 5, 6)
         lb = world.n - 1
       end
       let dup = false
@@ -812,14 +918,14 @@ if mouse_released(0) || !mouse_down(0) then
         if (L.a == la && L.b == lb) || (L.a == lb && L.b == la) then dup = true end
       end
       if dup then
-        undo = drop_last(undo)
-        said = "Those two are already linked"
+        set undo = drop_last(undo)
+        set said = "Those two are already linked"
       else
-        world = ph.add_link(world, la, lb, kind, spring_hz, -1.0)
-        trail = []
+        set world = ph.add_link(world, la, lb, kind, spring_hz, -1.0)
+        set trail = []
         n_linked += 1
-        wake = true
-        said = "#{world.id[la]} and #{world.id[lb]} joined by a {noun}"
+        set wake = true
+        set said = "#{world.id[la]} and #{world.id[lb]} joined by a {noun}"
       end
     end
   end
@@ -832,90 +938,11 @@ end
 
 // ── Carry out the intents ────────────────────────────────────────────────
 
-if want_scene >= 0 then
-  let built = sc.build(want_scene, SW, SH)
-  scene = want_scene
-  world = built.world
-  emit = built.emit
-  bounce = built.bounce
-  fric = built.fric
-  drag = built.drag
-  show_trail = built.trails
-  grav = 1.0
-  gdir = 1.5708
-  emit_t = 0.0
-  undo = []
-  trail = []
-  hist = []
-  pts = []
-  contacts = 0
-  sim_t = 0.0
-  steps = 0
-  sel_id = -1
-  grab_id = -1
-  aiming = false
-  linking = false
-  cutting = false
-  paused = false
-  wake = true
-end
-
-if want_undo then
-  if len(undo) > 0 then
-    world = last(undo).w
-    emit = {...emit, left: last(undo).left}
-    undo = drop_last(undo)
-    if ph.index_of_id(world, sel_id) < 0 then sel_id = -1 end
-    trail = []
-    grab_id = -1
-    wake = true
-    said = "Undone"
-  else
-    said = "Nothing to undo"
-  end
-end
-
-if want_clear then
-  let loose = 0
-  for i in range(0, world.n) do
-    if !world.pin[i] then loose += 1 end
-  end
-  if loose > 0 then
-    undo = pushed(undo, world, emit.left)
-    for i in range(world.n - 1, -1, -1) do
-      if !world.pin[i] then world = ph.remove_body(world, i) end
-    end
-    emit = {...emit, left: 0}
-    trail = []
-    sel_id = -1
-    grab_id = -1
-    wake = true
-    said = "{plural(loose, "loose body", "loose bodies")} cleared"
-  else
-    said = "Nothing loose to clear"
-  end
-end
-
-if want_pin >= 0 && want_pin < world.n then
-  undo = pushed(undo, world, emit.left)
-  let was = world.pin[want_pin]
-  world = ph.set_pin(world, want_pin, !was)
-  sel_id = world.id[want_pin]
-  wake = true
-  said = if was then "#{sel_id} freed" else "#{sel_id} pinned" end
-end
-
-if want_remove >= 0 && want_remove < world.n then
-  undo = pushed(undo, world, emit.left)
-  let gone = world.id[want_remove]
-  world = ph.remove_body(world, want_remove)
-  trail = []
-  if sel_id == gone then sel_id = -1 end
-  if grab_id == gone then grab_id = -1 end
-  n_removed += 1
-  wake = true
-  said = "#{gone} removed"
-end
+if want_scene >= 0 then load_scene(want_scene) end
+if want_undo then undo_last() end
+if want_clear then clear_loose() end
+toggle_pin(want_pin)
+delete_body(want_remove)
 
 if said != "" then
   toast = said
@@ -946,25 +973,25 @@ let sim_dt = if want_step then 1.0 / 60.0 elsif paused || asleep then 0.0 else f
 if sim_dt > 0.0 then
   // The dispenser (Pegboard): one ball every `every` seconds until it is empty.
   if emit.left > 0 then
-    emit_t += sim_dt
+    set emit_t += sim_dt
     while emit_t >= emit.every && emit.left > 0 && world.n < max_bodies do
-      emit_t -= emit.every
-      world = ph.add_body(world, emit.x + random(-2.5, 2.5), emit.y, emit.r, emit.left % 6,
+      set emit_t -= emit.every
+      set world = ph.add_body(world, emit.x + random(-2.5, 2.5), emit.y, emit.r, emit.left % 6,
         false, 1.0, random(-14.0, 14.0), 40.0)
-      emit = {...emit, left: emit.left - 1}
-      trail = []
+      set emit = {...emit, left: emit.left - 1}
+      set trail = []
     end
   end
 
   let prev_x = world.x
   let prev_y = world.y
   let res = ph.step(world, sim_dt, env)
-  world = res.world
-  contacts = res.contacts
-  pts = res.pts
+  set world = res.world
+  set contacts = res.contacts
+  set pts = res.pts
   subs = res.subs
-  steps += res.subs
-  sim_t += sim_dt
+  set steps += res.subs
+  set sim_t += sim_dt
 
   // Rest is judged on how far things actually moved, not on the velocities
   // the solver is still juggling inside a settled pile.
@@ -985,11 +1012,11 @@ if sim_dt > 0.0 then
   if rest_t >= rest_after && !want_step then asleep = true end
 
   let en = ph.energy(world, env)
-  hist = append(hist, {k: en.ke, p: en.pe + en.se})
-  if len(hist) > 110 then hist = slice(hist, len(hist) - 110, len(hist)) end
+  set hist = append(hist, {k: en.ke, p: en.pe + en.se})
+  if len(hist) > 110 then set hist = slice(hist, len(hist) - 110, len(hist)) end
   if show_trail then
-    trail = append(trail, {x: world.x, y: world.y})
-    if len(trail) > 26 then trail = slice(trail, len(trail) - 26, len(trail)) end
+    set trail = append(trail, {x: world.x, y: world.y})
+    if len(trail) > 26 then set trail = slice(trail, len(trail) - 26, len(trail)) end
   end
 end
 

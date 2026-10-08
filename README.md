@@ -6,8 +6,9 @@ Petal is a programming language for creative coding.
 
 ### Goal: Managed state, highly introspectable runtime
 
-Petal encourages dataflow-based computation, and discourages shared mutable state. This helps
-make a Petal program highly introspectable.
+Petal is a hybrid functional & imperative language. It encourages dataflow-based computation, and discourages shared mutable state
+and effectual code, but it doesn't strictly limit those. It aims to be a practical language that is also highly introspectable
+and debuggable.
 
 This includes:
 
@@ -119,10 +120,9 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal itself — [`bloom`](petal-libs/bloom/), the UI component library |
 | [`integrations/`](integrations/) | Hosts that embed Petal for a platform: desktop SDL, web HTML, web canvas, C/C++ |
 | [`garden/`](garden/README.md) | Garden, a text editor and IDE scripted with Petal |
-| [`editor-support/`](editor-support/README.md) | Tree-sitter grammar and Vim syntax files |
-| [`ts/`](ts/) | TypeScript tooling: dev scripts, MCP servers, and the vitest integration suite |
-| [`test/`](test/README.md) | Test corpora, golden files, and benchmarks |
-| [`dist/`](dist/) | The `install.sh` and `uninstall.sh` scripts hosted at petal-lang.org |
+| [`editor-support/`](editor-support/README.md) | Files for IDEs, syntax definitions, etc. |
+| [`tools/`](tools/) | TypeScript tooling: dev scripts and MCP servers |
+| [`test/`](test/README.md) | The vitest integration suite, test corpora, golden files, and benchmarks |
 
 ## Documentation
 

@@ -1,16 +1,17 @@
 # test/
 
-Test data that lives outside the Rust and TypeScript source trees. The full
-testing picture — the vitest suite in `ts/test`, Rust unit tests, and the
-refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
+The vitest integration suite and the test data that lives outside the Rust
+source tree. The full testing picture — the vitest suite, Rust unit tests, and
+the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 
 | Path | What it is | Used by |
 |------|------------|---------|
+| `test/vitest/` | The vitest integration suite (`*.test.ts`) and its `fixtures/` | `npm test` |
 | `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd rust && cargo test --test script_cases` |
-| `test/example-golden/` | Frozen stdout for every `examples/console/*.ptl` | `ts/bin/test-examples.ts`; re-baseline with `ts/bin/gen-example-golden.ts` |
-| `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `ts/bin/verify.ts` (`--update-golden` to re-baseline) |
-| `test/verify-plans/` | Plans for `ts/bin/verify.ts` | see "Verifying a refactor" in testing.md |
-| `test/benchmarks/` | Programs timed at both optimization levels | `ts/bin/bench-opts.ts` |
+| `test/example-golden/` | Frozen stdout for every `examples/console/*.ptl` | `tools/test-examples.ts`; re-baseline with `tools/gen-example-golden.ts` |
+| `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `tools/verify.ts` (`--update-golden` to re-baseline) |
+| `test/verify-plans/` | Plans for `tools/verify.ts` | see "Verifying a refactor" in testing.md |
+| `test/benchmarks/` | Programs timed at both optimization levels | `tools/bench-opts.ts` |
 
 ## Script regression cases
 

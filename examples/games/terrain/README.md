@@ -13,6 +13,6 @@ It was written as a language stress test.
 ## Run it
 
 ```bash
-./ts/bin/run-petal.ts run examples/games/terrain/terrain.ptl
-./ts/bin/run-petal.ts check --strict examples/games/terrain/terrain.ptl
+./tools/run-petal.ts run examples/games/terrain/terrain.ptl
+./tools/run-petal.ts check --strict examples/games/terrain/terrain.ptl
 ```

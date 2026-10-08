@@ -132,7 +132,7 @@ The first host is the in-process `petal_ui::harness::Headless`.
   - vitest and scripts: `petal-ui-run --drive x.drive.ptl`.
   - Goldens: `test/ui-golden/index.json` gains `drive-<name>-s1` traces next
     to `monkey-1-s1`.
-  - Verification: `ts/bin/verify.ts` plans can name drivers.
+  - Verification: `tools/verify.ts` plans can name drivers.
   - Convention: an app keeps its drivers in `tests/*.drive.ptl` beside
     `app.ptl`.
 - **Benchmarks.** `bench_panel --drive x.drive.ptl` times a realistic
@@ -161,8 +161,8 @@ The first host is the in-process `petal_ui::harness::Headless`.
 | `petal-ui-run` | CLI: run an app headless, one JSONL record per frame | `--scenario s.json` (edge events keyed by frame: `mouse_move`, `mouse_down`, `click`, `key`, `text`, `scroll`, `modifiers`) or `monkey:<seed>`; `--seed`, `--host-data` fixtures | per frame: `commands`, `state`, `prints`, `result`, `error`; `--gate-stats`, `--memo-stats` on stderr | `petal-ui/src/bin/petal-ui-run.rs`, `petal-ui/src/scenario.rs`, `petal-ui/src/panel_stubs.rs` | `verify.ts`, UI goldens, ad hoc |
 | `bench_panel` | Per-frame timing of a panel script | frame count, `--wiggle`, `--no-gate`, `--no-memo`, `--observe`, `--profile`; `--scenario` (added 2026-09-15, uncommitted as of writing) | frame-time percentiles, run-frame percentiles, total script time, memo counters, instruction profile | `petal-ui/examples/bench_panel.rs` | performance work |
 | UI goldens | sha256 of each UI app's `petal-ui-run` trace | fixed: `monkey:1`, seed 1, 60 frames, 1280×850 | trace hash only | `test/ui-golden/index.json` | refactor verification |
-| `verify.ts` | Before/after proof for mechanical changes, cheapest check first | plans in `test/verify-plans/` (`compiler.json`, `lint-fix.json`) | IR equality, console output, `petal-ui-run` traces | `ts/bin/verify.ts`, [refactor-verification.md](../dev/refactor-verification.md) | large refactors, `lint --fix` sweeps |
-| Example golden corpus | Console examples: opts vs `--no-opt`, plus frozen output | none (non-UI programs) | stdout | `ts/bin/test-examples.ts`, `test/example-golden/` | CI |
+| `verify.ts` | Before/after proof for mechanical changes, cheapest check first | plans in `test/verify-plans/` (`compiler.json`, `lint-fix.json`) | IR equality, console output, `petal-ui-run` traces | `tools/verify.ts`, [refactor-verification.md](../dev/refactor-verification.md) | large refactors, `lint --fix` sweeps |
+| Example golden corpus | Console examples: opts vs `--no-opt`, plus frozen output | none (non-UI programs) | stdout | `tools/test-examples.ts`, `test/example-golden/` | CI |
 | Differential oracles | Gate on vs off, memo on vs off, over every panel app | monkey scenario via `Headless` | commands, state, observations frame by frame | `petal-ui/tests/gating.rs`, `petal-ui/tests/memo.rs` | CI |
 | Garden debug server | HTTP control of a running (often `--headless`) Garden | `POST /key` (taps or `op: down`/`up`), `/text`, `/mouse` (`click`, `drag`, `down`/`move`/`up`, `scroll`, window-relative logical pixels), `/command`, `/menu`, `/theme`, `/tick` (virtual time), `/seed`, `/panel/reset` | `GET /state` (editor state, `panel.values`, script output), `/scene` (primitives, per pane), `/screenshot` (PNG, per pane), `/frame`, `/buffer/<n>`, `/windows`, `/version`; no gate or memo counters | `garden/garden-app/src/debug.rs`, [garden/docs/debug-server.md](../../garden/docs/debug-server.md) | Garden integration tests, exploration, agents |
 | Garden integration tests | Launch Garden headless and assert through the debug server | TypeScript scripts over `DebugClient` | whatever the server exposes | `garden/tools/*-integration-test.ts`, `garden/tools/lib/` | Garden CI |

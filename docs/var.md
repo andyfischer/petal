@@ -164,9 +164,9 @@ at the outer level, where it can hit a prelude function of the same name
 (`std::take`), so every addition to `std` could break user code using that
 name as a local.
 
-Regression coverage: `ts/test/loop-carry-limitations.test.ts`, the walker tests
+Regression coverage: `test/vitest/loop-carry-limitations.test.ts`, the walker tests
 in `rust/src/compiler/phi.rs`, and the `_wrap_segment` shape in
-`ts/test/check-lowers.test.ts`.
+`test/vitest/check-lowers.test.ts`.
 
 ## Provenance
 

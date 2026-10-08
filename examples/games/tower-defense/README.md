@@ -60,7 +60,7 @@ To check the script without launching anything, name the Garden host so that
 `request_frame` resolves (the default profile does not know it):
 
 ```bash
-./ts/bin/run-petal.ts check --strict --host garden examples/games/tower-defense/app.ptl   # from the repo root
+./tools/run-petal.ts check --strict --host garden examples/games/tower-defense/app.ptl   # from the repo root
 ```
 
 ## Controls

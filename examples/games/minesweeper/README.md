@@ -12,6 +12,6 @@ It was written as a language stress test.
 ## Run it
 
 ```bash
-./ts/bin/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
-./ts/bin/run-petal.ts check --strict examples/games/minesweeper/minesweeper.ptl
+./tools/run-petal.ts run examples/games/minesweeper/minesweeper.ptl
+./tools/run-petal.ts check --strict examples/games/minesweeper/minesweeper.ptl
 ```

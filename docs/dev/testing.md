@@ -1,33 +1,31 @@
 # Testing
 
 Petal's tests are split between Rust unit tests (`cd rust && cargo test`) and
-a vitest integration suite in `ts/test/` that shells out to the compiled
+a vitest integration suite in `test/vitest/` that shells out to the compiled
 `petal` binary and asserts on its output. This document covers the vitest
 suite and the tooling built around it.
 
 ## Integration tests (vitest)
 
-Run from the `ts/` directory (or `npm test` at the repo root):
+Run from the repo root (`npm test` runs everything once):
 
 ```bash
-cd ts
-
 npx vitest run                     # run everything once
 npx vitest                         # watch mode
-npx vitest test/ir-basics.test.ts  # one file
+npx vitest test/vitest/ir-basics.test.ts  # one file
 npx vitest -t "emits Add"          # tests matching a name
 ```
 
-The binary is built once per test session by `ts/test/global-setup.ts`
+The binary is built once per test session by `test/vitest/global-setup.ts`
 (wired through `globalSetup` in `vitest.config.ts`).
 
-Each file in `ts/test/*.test.ts` covers one language area or one command:
+Each file in `test/vitest/*.test.ts` covers one language area or one command:
 `ir-*.test.ts` check the shape of the compiled IR (constants, control flow,
 functions, state, ...), and the rest exercise builtins, syntax, error
 formatting, modules, the dataflow query commands, and so on. Browse the
 directory for the current set.
 
-### Helpers (`ts/test/helpers.ts`)
+### Helpers (`test/vitest/helpers.ts`)
 
 The helpers export `PETAL`, the path of the built binary, and
 `petalCapture(args, input?)`, the argv-based spawn every other helper builds
@@ -49,7 +47,7 @@ on. The ones most tests use:
 
 ### Example programs
 
-`ts/test/test-samples.test.ts` runs every `examples/console/*.ptl` file and
+`test/vitest/test-samples.test.ts` runs every `examples/console/*.ptl` file and
 asserts it exits without error. It is part of the normal vitest run:
 
 ```bash
@@ -57,10 +55,10 @@ cd ts
 npx vitest test/test-samples.test.ts
 ```
 
-For a stronger check, `./ts/bin/test-examples.ts` runs each example with the
+For a stronger check, `./tools/test-examples.ts` runs each example with the
 optimizer on and off, requires identical output between the two, and requires
 both to match the golden corpus in `test/example-golden/`. Add `--full` to see
-full output instead of an 8-line preview. `./ts/bin/gen-example-golden.ts`
+full output instead of an 8-line preview. `./tools/gen-example-golden.ts`
 re-baselines the corpus; run it deliberately, since a golden update asserts
 that behavior was meant to change.
 
@@ -89,23 +87,23 @@ a refactor needs (see [refactor-verification.md](refactor-verification.md)):
   number quoted inside a message's prose (`written on line 775`); the verifier
   treats a warnings-only difference as a note rather than a failure.
 
-Covered by `ts/test/seed.test.ts`, `ts/test/error-format.test.ts`, and the
+Covered by `test/vitest/seed.test.ts`, `test/vitest/error-format.test.ts`, and the
 `env::tests::seed_tests` / `cli::tests` Rust unit tests.
 
 ## Verifying a refactor
 
 A large mechanical change — `petal lint --fix` over the tree, an optimizer
 pass, a prelude rewrite — wants proof that it preserved behavior.
-`ts/bin/verify.ts` provides it: it runs a *plan* of cheapest-first checks
+`tools/verify.ts` provides it: it runs a *plan* of cheapest-first checks
 (`compiles`, `ir-equal`, `control-run`, `run-diff`, `golden`) over a corpus of
 `.ptl` files, on two sides that differ along exactly one axis.
 
 ```sh
 # source A/B — the same binaries over two source trees
-./ts/bin/verify.ts --plan lint-fix --before ab3304a~1 --after .
+./tools/verify.ts --plan lint-fix --before ab3304a~1 --after .
 
 # binary A/B — the same sources under two `petal` builds
-./ts/bin/verify.ts --plan compiler --before-bin old/petal --after-bin rust/target/debug/petal
+./tools/verify.ts --plan compiler --before-bin old/petal --after-bin rust/target/debug/petal
 ```
 
 `--before` takes a git ref (materialized with `git archive` under the
@@ -135,7 +133,8 @@ checked in (the traces total ~72 MB), so a golden mismatch is a signal to
 re-run the app and diff locally. Re-baseline it deliberately with
 `--update-golden`.
 
-Plans live in `test/verify-plans/`. A plan's `include` list names module search
+Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
+from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the
 run — the UI driver, `petal check`, and `petal run` alike — so corpus apps that
 import a shared Petal library (`petal-libs`, which ships the `bloom` package)
@@ -154,7 +153,7 @@ by `petal lint --fix --verify`, which refuses to write a rewrite it cannot
 prove equivalent (exit 3).
 
 Its unit tests live in `rust/src/ir_equiv.rs`; the CLI and lint contracts are
-covered by `ts/test/ir-equal.test.ts`. The load-bearing tests are
+covered by `test/vitest/ir-equal.test.ts`. The load-bearing tests are
 `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` (every `.ptl` in
 the repo that compiles standalone formats to identical IR, and formatting is a
 fixed point) and `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus`

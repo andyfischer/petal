@@ -9,7 +9,7 @@
 // behavior changed. Never run it to "make the sweep pass" after an unexpected
 // bytecode diff; investigate the diff first.
 //
-// Usage:  ./ts/bin/gen-example-golden.ts
+// Usage:  ./tools/gen-example-golden.ts
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 

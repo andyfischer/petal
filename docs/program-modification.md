@@ -12,8 +12,9 @@ The ways Petal code can be changed by a program: tools, agents, and embedders.
 Both are simpler than in most languages because Petal is a dataflow language:
 rebindings lower to pure `Phi` joins rather than register writes (see
 [debugging-visibility.md](dev/debugging-visibility.md)). Runtime state is keyed
-by name so it can migrate across an edit, and source can be rewritten through a
-lossless tree without reformatting.
+by its declaration's name plus the call path that reached it, rather than by
+position in the source, so it can migrate across an edit. Source can be
+rewritten through a lossless tree without reformatting.
 
 > A third surface, constructing or transforming a program *as IR data*, exists
 > but is **experimental and unfinished**. See
@@ -145,12 +146,15 @@ into old code and are recaptured on the next run), drop state keys the new
 program no longer declares, and reset execution so the next `run` starts from
 the new root.
 
-**State matches by name, not position.** `StateKey` is a hash of the
-declaration's full name path: module qualifier, enclosing function chain,
-variable name (`"score"`, `"ui::scroll"`, `"ui::draw/row"`). The runtime key
-adds the call path that reached the declaration
-([one slot per call path](language-guide.md#one-slot-per-call-path));
-`transfer_state` matches on the declaration id only. So:
+**A slot is a declaration plus a call path, never a source position.** The
+declaration id (`StateKey`) is a hash of the declaration's full name path:
+module qualifier, enclosing function chain, variable name (`"score"`,
+`"ui::scroll"`, `"ui::draw/row"`). The runtime key adds the call path that
+reached the declaration, so each callsite and loop iteration holds its own
+value ([one slot per call path](language-guide.md#one-slot-per-call-path);
+design in [state-call-paths.md](dev/state-call-paths.md)). `transfer_state`
+matches on the declaration id only and keeps every slot under a surviving
+declaration. So:
 
 - **Added** declaration: initialized fresh on the next run.
 - **Removed** declaration: dropped.
@@ -287,9 +291,9 @@ Code: [`execution_context.rs`](../rust/src/execution_context.rs) and
 
 ## Known limitations
 
-- **Hot-reload reconciliation is by name.** Renaming a `state` variable (or
-  its function or module) drops the value; editing the call structure around a
-  callsite orphans that callsite's state.
+- **Hot-reload reconciliation is by declaration name and call path.** Renaming
+  a `state` variable (or its function or module) drops the value; editing the
+  call structure around a callsite orphans that callsite's state.
 - **Edit proposals only invert simple arithmetic.** An argument that flows
   through a call or comparison gets no proposal, and there is no reverse-mode
   AD.

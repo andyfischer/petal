@@ -45,7 +45,7 @@ evaluates it on the bytecode VM.
 
 **Round-trip guarantee:** `show-ir --json <src> | run --ir -` produces the same
 result as `run <src>`, verified across the snippet matrix in
-`ts/test/ir-roundtrip.test.ts`.
+`test/vitest/ir-roundtrip.test.ts`.
 
 ## Emitting IR from a foreign front-end
 
@@ -67,10 +67,10 @@ registration order; execution order is the block's declarative `terms` array;
 registers are omitted entirely (the loader recomputes them); `let` bindings
 emit a named `Copy` so the value stays legible in the dataflow graph.
 
-`ts/test/calc-emitter.test.ts` runs the emitted IR through `run --ir`,
+`test/vitest/calc-emitter.test.ts` runs the emitted IR through `run --ir`,
 cross-checks its output against the real Petal compiler for the equivalent
 source, and confirms the validator rejects a tampered graph. Golden IR fixtures
-live in `ts/test/fixtures/ir/` (`print_arith`, `branch_phi`, `state_counter`).
+live in `test/vitest/fixtures/ir/` (`print_arith`, `branch_phi`, `state_counter`).
 
 ## Schema
 

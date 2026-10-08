@@ -3,7 +3,7 @@
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
-    // bin/*.ts run under Node's native type stripping (see their shebangs),
+    // tools/*.ts run under Node's native type stripping (see their shebangs),
     // which resolves specifiers literally and so requires the `.ts` extension
     // that `import ... from './example-corpus.ts'` carries. Safe with noEmit.
     "allowImportingTsExtensions": true,
@@ -18,5 +18,8 @@
     "allowJs": true,
     "noEmit": true
   },
-  "include": ["bin/**/*.ts", "test/**/*.ts"]
+  "include": ["tools/*.ts", "test/vitest/**/*.ts"],
+  // The MCP servers import packages that only tools/package.json installs;
+  // `npm run tsc` in tools/ checks them.
+  "exclude": ["tools/petal-mcp.ts", "tools/petal-diagram-mcp.ts"]
 }

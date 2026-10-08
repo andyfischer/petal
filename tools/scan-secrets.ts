@@ -11,14 +11,14 @@
 // Exits non-zero if any secret is found.
 //
 // Usage:
-//   ./ts/bin/scan-secrets.ts            # scan entire history
-//   ./ts/bin/scan-secrets.ts --staged   # scan only staged changes (pre-commit)
+//   ./tools/scan-secrets.ts            # scan entire history
+//   ./tools/scan-secrets.ts --staged   # scan only staged changes (pre-commit)
 
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = join(repoRoot, '.gitleaks.toml');
 
 const staged = process.argv.slice(2).includes('--staged');

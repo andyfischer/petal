@@ -12,6 +12,6 @@ It was written as a language stress test.
 ## Run it
 
 ```bash
-./ts/bin/run-petal.ts run examples/games/2048/2048.ptl
-./ts/bin/run-petal.ts check --strict examples/games/2048/2048.ptl
+./tools/run-petal.ts run examples/games/2048/2048.ptl
+./tools/run-petal.ts check --strict examples/games/2048/2048.ptl
 ```

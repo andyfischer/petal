@@ -30,7 +30,7 @@
 // at the end.
 //
 // Usage:
-//   ./ts/bin/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
+//   ./tools/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
 //
 // Prerequisites:
 //   cd petal-ui && cargo build --release
@@ -45,7 +45,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (name: string, fallback: string) => {
   const i = args.indexOf(name);

@@ -48,7 +48,7 @@ Check the scripts with `--host garden`, which knows `text_layout` and the
 panel natives; the default host profile does not:
 
 ```bash
-./ts/bin/run-petal.ts check --strict --host garden examples/productivity/email-client/app.ptl
+./tools/run-petal.ts check --strict --host garden examples/productivity/email-client/app.ptl
 ```
 
 Nothing is persisted: the mailbox is `state`, so it survives a hot reload and

@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const examplesDir = join(repoRoot, 'examples', 'console');
 export const goldenDir = join(repoRoot, 'test', 'example-golden');
 export const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');

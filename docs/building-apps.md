@@ -17,14 +17,14 @@ the concrete mechanics of each, using the apps in this repo as worked examples.
 Petal is layered so each tier depends only on the tier above it:
 
 ```
-Petal Core  →  Integrations  →  Example Apps
+Petal Core  →  Integrations  →  Apps
 ```
 
 | Tier | What lives here | Crates / packages |
 |------|-----------------|-------------------|
 | **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`rust/`](../rust/) (`petal`), [`petal-ui/`](../petal-ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../integrations/petal-web-html/) (WASM + DOM) |
-| **Apps** | Your programs, built on top of an integration. The [`examples/`](../examples/README.md) directory holds worked examples. | [`examples/`](../examples/README.md) |
+| **Apps** | Full runnable applications that load Petal source: your programs, built on top of an integration. [`examples/custom-apps/`](../examples/custom-apps/) holds worked examples, and [Garden](../garden/README.md) is the largest app in the repo. | [`examples/custom-apps/`](../examples/custom-apps/), [`garden/`](../garden/README.md) |
 
 **The rule:** an app depends on an integration (and, through it, on Core). It
 should not re-implement host code an integration already provides, and it

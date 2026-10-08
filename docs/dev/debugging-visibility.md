@@ -45,7 +45,7 @@ options.
 | `lint [--fix\|--check]` / `lint-fix` | Formatter and source normalizer. |
 | `ir-equal <a> <b>` | Are two files the same program, ignoring layout? |
 
-`./ts/bin/run-petal.ts` rebuilds the binary before running it.
+`./tools/run-petal.ts` rebuilds the binary before running it.
 
 ### 1a. Cells stop the walk, and the walk says so
 
@@ -180,7 +180,7 @@ on macOS.
 
 ## 4. Test helpers
 
-The vitest helpers in `ts/test/helpers.ts` shell out to the compiled binary:
+The vitest helpers in `test/vitest/helpers.ts` shell out to the compiled binary:
 `runPetal`, `runPetalError`, `showIrJson`, `showAstJson`, `showTokensJson`,
 `explainJson`, `showProvenanceJson`, and the term lookups `userTerms`,
 `termByName`, `termById`, `termsByOp`. See [testing.md](testing.md#helpers-tstesthelpersts).

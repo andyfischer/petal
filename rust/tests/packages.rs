@@ -3,7 +3,7 @@
 //
 // The embedder-facing half of the feature — `Env::add_package`,
 // `Env::register_package`, `Env::packages` — which the CLI cannot reach. The
-// CLI half is covered by ts/test/packages.test.ts.
+// CLI half is covered by test/vitest/packages.test.ts.
 
 use petal::env::Env;
 use std::path::PathBuf;

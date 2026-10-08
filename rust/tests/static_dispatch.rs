@@ -7,7 +7,7 @@
 //! receiver carries. Two things ride on it: a live edit takes effect on values
 //! that predate it (`class_live_edit.rs`), and a dataflow slice gets the exact
 //! function instead of a may-edge over every method of that name
-//! (`ts/test/slicing.test.ts`).
+//! (`test/vitest/slicing.test.ts`).
 //!
 //! The interesting content of this file is the *guards*: resolving a site the
 //! two mechanisms would disagree about would change what a working program

@@ -11,7 +11,7 @@ import { readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const benchDir = join(repoRoot, 'test', 'benchmarks');
 const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
 const petal = join(repoRoot, 'rust', 'target', 'release', 'petal');

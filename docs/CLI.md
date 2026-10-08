@@ -657,7 +657,7 @@ reported:
   holds its named-argument rewrites to.
 
 When a refactor is meant to move calls, prove it with a run diff
-(`ts/bin/verify.ts`, see [dev/refactor-verification.md](dev/refactor-verification.md))
+(`tools/verify.ts`, see [dev/refactor-verification.md](dev/refactor-verification.md))
 rather than `ir-equal`.
 
 ### `lsp` — Serve the language server

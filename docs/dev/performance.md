@@ -31,7 +31,7 @@ problem far more directly than a time profile does.
 
 The "Sort by top of stack" section of the output is self time per function.
 
-**3. Time the change.** `./ts/bin/bench-opts.ts` for whole programs;
+**3. Time the change.** `./tools/bench-opts.ts` for whole programs;
 `cd petal-ui && cargo run --release --example bench_panel -- <file.ptl>` for
 per-frame cost of a panel script. Take the **minimum** of several runs, not the
 mean: on a loaded machine the minimum is much the more stable estimator. The

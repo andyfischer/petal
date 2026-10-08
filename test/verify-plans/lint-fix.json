@@ -10,6 +10,9 @@
     "~/.garden",
     "~/worlds-fair/ui/ptl"
   ],
+  "exclude": [
+    "test/vitest"
+  ],
   "steps": [
     {
       "check": "compiles"

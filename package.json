@@ -2,15 +2,25 @@
   "name": "petal",
   "version": "1.0.0",
   "private": true,
-  "description": "Petal: a custom programming language (Lexer → Parser → AST → Compiler → IR → Step Evaluator).",
   "workspaces": [
     "integrations/petal-web-canvas",
     "examples/custom-apps/diagram-canvas"
   ],
   "scripts": {
-    "test": "npm test --prefix ts",
-    "test:watch": "npm run test:watch --prefix ts",
-    "test-examples": "npm run test-examples --prefix ts",
-    "scan-secrets": "npm run scan-secrets --prefix ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test-examples": "node tools/test-examples.ts",
+    "scan-secrets": "node tools/scan-secrets.ts",
+    "petal": "node tools/run-petal.ts",
+    "stdlib:json": "node tools/extract-stdlib.ts",
+    "tsc": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "3.1.4"
   }
 }

@@ -57,7 +57,7 @@ jobs:
 
       # verify.ts aborts its whole run (exit 2) when the corpus has UI apps and
       # this driver is missing, which fails test/verify.test.ts.
-      - name: Build petal-ui-run driver (used by ts/bin/verify.ts)
+      - name: Build petal-ui-run driver (used by tools/verify.ts)
         run: cargo build --manifest-path petal-ui/Cargo.toml --bin petal-ui-run
 
       - name: Set up Node.js
@@ -65,24 +65,21 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: ts/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install Node dependencies
-        working-directory: ts
         run: npm ci
 
       - name: Check committed stdlib manifest is current
         run: |
-          npm --prefix ts run stdlib:json
+          npm run stdlib:json
           git diff --exit-code docs/stdlib.json \
-            || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' in ts/ and commit the result"; exit 1; }
+            || { echo "::error::docs/stdlib.json is stale — run 'npm run stdlib:json' and commit the result"; exit 1; }
 
       - name: Type-check TypeScript
-        working-directory: ts
         run: npx tsc --noEmit
 
       - name: Run Vitest tests
-        working-directory: ts
         run: npx vitest run
 
   rust-subprojects:

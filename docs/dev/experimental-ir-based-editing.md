@@ -68,7 +68,7 @@ without touching source text.
   `BuiltinCall`, and an ordered per-block `terms` array for execution order
   (registers omitted — the loader recomputes them). This is the model for
   programmatic construction. Golden fixtures live in
-  [`ts/test/fixtures/ir/`](../../ts/test/fixtures/ir/).
+  [`test/vitest/fixtures/ir/`](../../test/vitest/fixtures/ir/).
 - **Read/rewrite passes over the graph (Rust):**
   [`rust/src/program_analysis.rs`](../../rust/src/program_analysis.rs) —
   `trace_provenance` (backward dataflow slice), `trace_dependents` (forward

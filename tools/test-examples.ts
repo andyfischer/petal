@@ -4,7 +4,7 @@
 // via --no-opt, and all in-place opts on by default), produce byte-identical
 // stdout/stderr across the two, AND match the frozen golden in
 // test/example-golden/. The golden corpus is the absolute-correctness anchor;
-// regenerate it deliberately with ts/bin/gen-example-golden.ts.
+// regenerate it deliberately with tools/gen-example-golden.ts.
 // Usage:
 //   ./bin/test-examples.ts            # differential + golden sweep, 8-line preview
 //   ./bin/test-examples.ts --full     # same, full output
@@ -99,7 +99,7 @@ for (const name of files) {
     // Absolute: both must match the frozen graph-captured golden.
     const golden = loadGolden(name);
     if (!golden) {
-        console.log(`NO GOLDEN (run ts/bin/gen-example-golden.ts): ${name}`);
+        console.log(`NO GOLDEN (run tools/gen-example-golden.ts): ${name}`);
         missingGolden++;
         fail++;
         console.log();

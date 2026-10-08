@@ -25,7 +25,7 @@ Or build from source in this repo:
 
 ```bash
 make build                       # binary at rust/target/debug/petal
-./ts/bin/run-petal.ts run x.ptl  # wrapper: rebuilds if Rust source is newer
+./tools/run-petal.ts run x.ptl  # wrapper: rebuilds if Rust source is newer
 ```
 
 Hello world, and the one-liner form you will use constantly:

@@ -405,7 +405,7 @@ gradient stop, skip canvases) rather than drop it; see petal-ui's README.
 A scenario is petal-ui's declarative input script
 (`petal-ui/src/scenario.rs`): JSON listing input events keyed by frame, plus
 an optional window size and frame count. It is the format `petal-ui-run` and
-`ts/bin/verify.ts` use, so a repro recorded there replays in a C++ host, and
+`tools/verify.ts` use, so a repro recorded there replays in a C++ host, and
 a C++ host's headless tests can be written as data:
 
 ```json

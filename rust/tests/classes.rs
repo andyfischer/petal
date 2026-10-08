@@ -1,7 +1,7 @@
 //! The *grammar and lowering* of `class` declarations and method declarations.
 //!
 //! Runtime dispatch and the checker's behaviour are covered end-to-end by
-//! `ts/test/classes.test.ts`; this pins what the parser produces, what the
+//! `test/vitest/classes.test.ts`; this pins what the parser produces, what the
 //! prescan makes of it, and the diagnostics that reject a malformed
 //! declaration. See docs/language-guide.md#classes--methods.
 

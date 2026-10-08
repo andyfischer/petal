@@ -13,10 +13,10 @@ build: ## Build the Petal compiler (debug)
 	cd rust && cargo build
 
 test: build ## Run the full vitest suite (also runs every examples/console/*.ptl)
-	cd ts && npx vitest run
+	npx vitest run
 
 test-examples: build ## Print each example program's output for manual inspection
-	./ts/bin/test-examples.ts
+	./tools/test-examples.ts
 
 test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and run its tests
 	cmake -S integrations/petal-c-bridge -B integrations/petal-c-bridge/build -G Ninja

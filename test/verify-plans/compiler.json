@@ -9,6 +9,9 @@
     "~/.garden",
     "~/worlds-fair/ui/ptl"
   ],
+  "exclude": [
+    "test/vitest"
+  ],
   "include": [
     "petal-libs"
   ],

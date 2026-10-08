@@ -82,7 +82,7 @@ not rebuild it as part of the app work.
 Do not write the whole app blind and hope. The loop is:
 
 ```bash
-./ts/bin/run-petal.ts check --strict examples/<category>/<slug>/app.ptl   # from the repo root
+./tools/run-petal.ts check --strict examples/<category>/<slug>/app.ptl   # from the repo root
 
 (nohup tools/run-example.ts <slug> --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)

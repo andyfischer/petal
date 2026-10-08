@@ -24,16 +24,16 @@
 // found the five undeclared natives fixed before the runtime tool existed.
 //
 // Usage:
-//   ./ts/bin/native-effect-audit.ts             # summary + suspect list
-//   ./ts/bin/native-effect-audit.ts --all       # every native, one per line
-//   ./ts/bin/native-effect-audit.ts --json      # machine-readable
+//   ./tools/native-effect-audit.ts             # summary + suspect list
+//   ./tools/native-effect-audit.ts --all       # every native, one per line
+//   ./tools/native-effect-audit.ts --json      # machine-readable
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Where natives are registered, by the repo whose contract they are. */
 const REPOS: [string, string][] = [

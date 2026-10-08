@@ -1,4 +1,4 @@
-// ts/bin/verify.ts — the refactor verifier. These drive the real script over a
+// tools/verify.ts — the refactor verifier. These drive the real script over a
 // synthetic corpus in a temp dir, because what is being tested is the process
 // contract: the verdict per file, the exit code, and whether the artifact
 // bundle it leaves behind actually reproduces the diff it reported.
@@ -9,7 +9,7 @@ import { tmpdir } from "os";
 import { join, resolve } from "path";
 
 const repoRoot = resolve(__dirname, "../..");
-const VERIFY = join(repoRoot, "ts", "bin", "verify.ts");
+const VERIFY = join(repoRoot, "tools", "verify.ts");
 
 let scratch: string;
 

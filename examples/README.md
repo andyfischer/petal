@@ -24,18 +24,18 @@ and are deterministic: two runs print the same output.
 Run any one with:
 
 ```bash
-./ts/bin/run-petal.ts run examples/console/<name>.ptl
+./tools/run-petal.ts run examples/console/<name>.ptl
 ```
 
 `run-petal.ts` rebuilds the compiler if any Rust source is newer than the
 binary, then forwards its arguments to `petal`. It is the recommended way to
 run Petal locally. The console games run the same way, e.g.
-`./ts/bin/run-petal.ts run examples/games/tetris/tetris.ptl`.
+`./tools/run-petal.ts run examples/games/tetris/tetris.ptl`.
 
 Run the whole corpus with:
 
 ```bash
-./ts/bin/test-examples.ts          # add --full for complete output
+./tools/test-examples.ts          # add --full for complete output
 ```
 
 This runs every `console/*.ptl` at both optimizer levels, checks the two
@@ -83,4 +83,4 @@ example and asserts it exits cleanly.
 
 Do not add new files to `console/` casually: every file there is
 golden-tested, so a new one needs a matching entry in `test/example-golden/`
-(run `ts/bin/gen-example-golden.ts`).
+(run `tools/gen-example-golden.ts`).

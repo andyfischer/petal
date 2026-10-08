@@ -64,7 +64,7 @@ the scheduling model, not a hang. Any click, key or slider wakes it. Use
 To check the scripts without launching anything:
 
 ```bash
-./ts/bin/run-petal.ts check --strict --host garden examples/games/physics-playground/app.ptl   # from the repo root
+./tools/run-petal.ts check --strict --host garden examples/games/physics-playground/app.ptl   # from the repo root
 ```
 
 The solver also runs with no host at all, which is how it was tuned:
@@ -78,7 +78,7 @@ wd = ph.add_link(wd, 0, 1, ph.ROD, 0.0, -1.0)
 for i in range(0, 120) do wd = ph.step(wd, 0.016, env).world end
 print(wd.x[1], wd.y[1], ph.audit(wd))
 EOF
-./ts/bin/run-petal.ts run -I examples/games/physics-playground /tmp/pendulum.ptl
+./tools/run-petal.ts run -I examples/games/physics-playground /tmp/pendulum.ptl
 ```
 
 ## Controls

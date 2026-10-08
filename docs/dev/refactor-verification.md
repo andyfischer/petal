@@ -8,14 +8,14 @@ The pieces:
 
 - **Deterministic runs**: [`petal run --seed` and `--error-format bare`](testing.md#deterministic-runs).
 - **A headless UI driver**: [`petal-ui-run`](headless-ui-run.md).
-- **The verifier**: [`ts/bin/verify.ts`](../../ts/bin/verify.ts), driven by
+- **The verifier**: [`tools/verify.ts`](../../tools/verify.ts), driven by
   plans in `test/verify-plans/`.
 - **IR equality**: `petal ir-equal` ([CLI.md](../CLI.md#ir-equal--are-two-files-the-same-program)).
 
 ## The problem
 
 Before this tooling, the proof was uneven. Console examples had
-`ts/bin/test-examples.ts` (opts vs `--no-opt` differential plus a frozen
+`tools/test-examples.ts` (opts vs `--no-opt` differential plus a frozen
 golden corpus), but nothing exercised the UI apps end to end: `petal run`
 dies at `screen_width()`, and Garden panels could only be driven by hand.
 
@@ -100,11 +100,13 @@ The verifier decides how to drive each file by evidence, not a hand list:
 | unsupported | calls a native no driver registers (Garden panels, NES carts) | reported as `unsupported` |
 
 Corpus roots are listed in the plan file: this repo (`examples/`, `test/`,
-`garden/`) plus the external projects in `CLAUDE.local.md`.
+`garden/`) plus the external projects in `CLAUDE.local.md`. A plan's `exclude`
+list drops directories from those roots; both plans exclude `test/vitest`, whose
+fixtures are inputs to the vitest suite rather than programs to verify.
 
 ## 5. Plans and checks
 
-`ts/bin/verify.ts` executes a **plan**: an ordered list of checks, cheapest
+`tools/verify.ts` executes a **plan**: an ordered list of checks, cheapest
 first, that short-circuits per file.
 
 ```
@@ -122,6 +124,7 @@ A plan lists steps, each a named check with a `stop_on: pass|fail`:
 ```json
 { "name": "lint-fix",
   "corpus": ["examples", "test", "garden", "~/worlds-fair/ui/ptl"],
+  "exclude": ["test/vitest"],
   "steps": [
     {"check": "compiles"},
     {"check": "ir-equal",      "stop_on": "pass"},

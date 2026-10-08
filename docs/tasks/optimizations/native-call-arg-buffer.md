@@ -33,7 +33,7 @@ on the same path.
 microbenchmark (a `slice` or `len` loop), plus
 
 ```bash
-./ts/bin/bench-opts.ts
+./tools/bench-opts.ts
 cd petal-ui && cargo run --release --example bench_panel -- \
   ../examples/productivity/spreadsheet/app.ptl 600 \
   --scenario ../examples/productivity/spreadsheet/bench/edit.json --no-gate

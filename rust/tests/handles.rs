@@ -479,7 +479,7 @@ fn is_valid_false_for_non_handle_value() {
 
 // ── 12. Regression guard: UFCS on non-handles keeps working ──────
 // (Passes today; must still pass once the handle-dispatch arm is added.
-//  UFCS is confirmed in ts/test/method-syntax.test.ts, e.g. `[1,2,3].len()`.)
+//  UFCS is confirmed in test/vitest/method-syntax.test.ts, e.g. `[1,2,3].len()`.)
 
 fn native_double(cxt: &mut PetalCxt) -> NativeResult {
     let n = cxt.get_int(1)?;

@@ -21,6 +21,7 @@ pub mod dot_graph;
 pub mod env;
 pub mod error;
 pub mod execution_context;
+pub mod export_keyword;
 pub mod extract;
 pub mod fxhash;
 pub mod goal_based_editing;

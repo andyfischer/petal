@@ -22,6 +22,11 @@
 // `??` sits between comparison and concat, exactly where `parse_coalesce`
 // sits in the Rust parser: `count ?? 0 > 5` is `(count ?? 0) > 5` and
 // `"a" ++ b ?? "x"` is `("a" ++ b) ?? "x"`.
+// The export modifier on a declaration or an `import`: `pub`, or its
+// deprecated spelling `export`, which the real parser still accepts
+// everywhere `pub` goes (rust/src/parse.rs `parse_export`).
+const PUB = choice('pub', 'export');
+
 const PREC = {
   assign: -1,
   pipe: 1,
@@ -90,13 +95,13 @@ module.exports = grammar({
     //   import ui as u               (aliased)
     //   import bloom/menu            (a package path: `/`-joined segments)
     //   import bloom/menu: *         (the module's whole exported surface)
-    //   export import bloom/menu: *  (a re-export)
+    //   pub import bloom/menu: *     (a re-export)
     // `as` is contextual in the real parser; here it is a keyword literal,
     // which is safe because a syntax-highlighting grammar never needs `as`
     // as an ordinary identifier. The selective list requires commas between
     // names, matching the parser and stopping the list at the next statement.
     import_statement: $ => seq(
-      optional('export'),
+      optional(PUB),
       'import',
       field('module', $.module_path),
       optional(choice(
@@ -133,7 +138,7 @@ module.exports = grammar({
     // `let x = v` and its mutable twin `var x = v`, each with an optional
     // `: type` annotation.
     let_declaration: $ => seq(
-      optional('export'),
+      optional(PUB),
       // `config let x = …` marks an edit knob for propose-edit (docs/CLI.md).
       // `config` is a contextual identifier in the real lexer, recognized only
       // in this slot, so it is a literal here and stays usable as a name.
@@ -148,7 +153,7 @@ module.exports = grammar({
     // `state name = init` or keyed `state(expr) name = init`, with the same
     // optional `: type` annotation `let`/`var` take.
     state_declaration: $ => seq(
-      optional('export'),
+      optional(PUB),
       'state',
       optional(seq('(', field('key', $._expression), ')')),
       optional('var'),
@@ -163,7 +168,7 @@ module.exports = grammar({
     // Higher precedence than `lambda`: at statement start `fn name(…)` is
     // always a declaration, never an argless lambda calling `name`.
     function_declaration: $ => prec(1, seq(
-      optional('export'),
+      optional(PUB),
       'fn',
       optional(seq(field('class', $.identifier), '.')),
       field('name', $.identifier),
@@ -209,7 +214,7 @@ module.exports = grammar({
     // and as the JSX `class=` attribute); as with `as`, a highlighting grammar
     // can treat it as a literal.
     class_declaration: $ => seq(
-      optional('export'),
+      optional(PUB),
       'class',
       field('name', $.identifier),
       commaSep($.class_field),
@@ -222,7 +227,7 @@ module.exports = grammar({
     ),
 
     enum_declaration: $ => seq(
-      optional('export'),
+      optional(PUB),
       'enum',
       field('name', $.identifier),
       commaSep($.enum_variant),

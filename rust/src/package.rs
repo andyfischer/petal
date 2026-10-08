@@ -556,7 +556,7 @@ mod tests {
         let lib = root.join("lib");
         std::fs::create_dir_all(lib.join("src")).unwrap();
         std::fs::write(lib.join(MANIFEST_FILE), manifest_text).unwrap();
-        std::fs::write(lib.join("src/menu.ptl"), "export fn open() 1 end\n").unwrap();
+        std::fs::write(lib.join("src/menu.ptl"), "pub fn open() 1 end\n").unwrap();
         root
     }
 
@@ -690,7 +690,7 @@ mod tests {
     fn in_memory_packages_index_their_modules() {
         let pkg = Package::in_memory(
             "bloom",
-            [("menu.ptl", "export fn a() 1 end"), ("motion", "")],
+            [("menu.ptl", "pub fn a() 1 end"), ("motion", "")],
         )
         .unwrap();
         assert_eq!(pkg.info.modules, vec!["menu", "motion"]);

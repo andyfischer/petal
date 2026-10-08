@@ -20,6 +20,9 @@
 //! 4. **`prefer-compound-assign`** ([`compound`]) — `x = x + e` → `x += e`.
 //!    The parser desugars the compound form back to the long one, so this
 //!    rule is IR-invisible.
+//! 5. **`prefer-pub`** ([`export_to_pub`]) — the deprecated modifier
+//!    `export` → `pub`. One keyword splice per declaration; the two words
+//!    parse to the same thing, so this rule is IR-invisible too.
 //!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
@@ -55,11 +58,13 @@ use std::path::PathBuf;
 
 mod casts;
 mod compound;
+mod export_to_pub;
 mod to_match;
 mod var_to_let;
 
 use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
+use export_to_pub::plan_export_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
@@ -79,6 +84,7 @@ pub const PREFER_LET: &str = "prefer-let";
 pub const NO_REDUNDANT_CAST: &str = "no-redundant-cast";
 pub const PREFER_MATCH: &str = "prefer-match";
 pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
+pub const PREFER_PUB: &str = "prefer-pub";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
@@ -97,6 +103,10 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: PREFER_COMPOUND_ASSIGN,
         summary: "`x = x + e` should be `x += e`",
+    },
+    RuleInfo {
+        name: PREFER_PUB,
+        summary: "the deprecated `export` modifier should be `pub`",
     },
 ];
 
@@ -182,7 +192,7 @@ impl LintOutcome {
     pub fn has_semantic_rewrite(&self) -> bool {
         self.findings
             .iter()
-            .any(|f| f.rule != PREFER_COMPOUND_ASSIGN)
+            .any(|f| f.rule != PREFER_COMPOUND_ASSIGN && f.rule != PREFER_PUB)
     }
 }
 
@@ -343,6 +353,9 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (chars, stmts) = reparse(&p.text)?;
     let compound_assigns = p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars));
 
+    let (chars, stmts) = reparse(&p.text)?;
+    let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
+
     let Pipeline {
         text: rewritten,
         mut findings,
@@ -357,7 +370,12 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         });
     }
 
-    if casts_removed > 0 || chains_to_match > 0 || vars_to_let > 0 || compound_assigns > 0 {
+    if casts_removed > 0
+        || chains_to_match > 0
+        || vars_to_let > 0
+        || compound_assigns > 0
+        || exports_to_pub > 0
+    {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
         if compile_ir(source, opts).is_ok()
@@ -386,7 +404,23 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         }
     }
 
-    let output = crate::fmt::format_source(&rewritten)?;
+    if exports_to_pub > 0 {
+        // Exactly the counted modifiers were respelled, and nothing else
+        // about the declarations moved.
+        let before = count_modifiers(&crate::rewrite::parse_ast(source)?.1, source);
+        let after = count_modifiers(&reparse(&rewritten)?.1, &rewritten);
+        if before.0 != after.0 || before.1 != after.1 + exports_to_pub {
+            return Err(format!(
+                "lint bug: rewriting {exports_to_pub} `export`(s) to `pub` left {} of {} — \
+                 refusing to produce output",
+                after.1, before.1
+            ));
+        }
+    }
+
+    // Layout only: `fmt`'s own `export` → `pub` pass would apply this rule's
+    // fix to the sites a `petal-lint-ignore` or `--rules-exclude` kept.
+    let output = crate::fmt::format_layout(&rewritten)?;
     Ok(LintOutcome {
         findings,
         output,
@@ -448,6 +482,28 @@ fn count_vars(stmts: &[crate::ast::Stmt]) -> usize {
         c.visit_stmt(s);
     }
     c.0
+}
+
+/// (exported declarations, how many of them are spelled `export`) anywhere in
+/// `stmts`, parsed from `source`.
+fn count_modifiers(stmts: &[crate::ast::Stmt], source: &str) -> (usize, usize) {
+    use crate::ast::{ExprVisitor, Stmt, walk_stmt};
+    struct Counter(usize);
+    impl ExprVisitor for Counter {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if s.exported {
+                self.0 += 1;
+            }
+            walk_stmt(self, s);
+        }
+    }
+    let mut c = Counter(0);
+    for s in stmts {
+        c.visit_stmt(s);
+    }
+    let chars: Vec<char> = source.chars().collect();
+    let deprecated = crate::export_keyword::deprecated_export_spans(stmts, &chars).len();
+    (c.0, deprecated)
 }
 
 fn count_nodes(stmts: &[crate::ast::Stmt]) -> (usize, usize) {

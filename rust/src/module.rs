@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{Expr, ExprKind, ExprVisitor, ImportDecl, Stmt, StmtKind, walk_expr};
 use crate::error::{LoadError, Phase};
-use crate::source_map::{ENTRY_FILE, FileId};
+use crate::source_map::{ENTRY_FILE, FileId, SourceSpan};
 
 /// Where a module's source came from.
 #[derive(Debug, Clone, PartialEq)]
@@ -238,6 +238,10 @@ pub struct LoadedModule {
     pub stmts: Vec<Stmt>,
     pub imports: Vec<ResolvedImport>,
     pub file_id: FileId,
+    /// Where this file spells the `pub` modifier the deprecated way,
+    /// `export`. Collected here, before `imports` is split off `stmts`, so an
+    /// `export import …` is seen too; the compiler turns each into a warning.
+    pub deprecated_exports: Vec<SourceSpan>,
 }
 
 /// Load the entry source and every transitively imported module. Returns the
@@ -271,6 +275,7 @@ pub fn load_modules(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "<entry>".to_string());
     let stmts = parse_module(entry_source, ENTRY_FILE, None)?;
+    let entry_deprecated_exports = deprecated_exports(&stmts, entry_source);
     let (explicit_imports, stmts) = split_imports(stmts);
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
 
@@ -416,6 +421,7 @@ pub fn load_modules(
         stmts,
         imports: entry_imports,
         file_id: ENTRY_FILE,
+        deprecated_exports: entry_deprecated_exports,
     });
     Ok(modules)
 }
@@ -564,6 +570,7 @@ impl Walker<'_> {
         })?;
 
         let stmts = parse_module(&resolved.source, file_id, Some(&display_name))?;
+        let deprecated_exports = deprecated_exports(&stmts, &resolved.source);
         let (imports, stmts) = split_imports(stmts);
 
         self.in_progress.push(name.to_string());
@@ -584,6 +591,7 @@ impl Walker<'_> {
             stmts,
             imports,
             file_id,
+            deprecated_exports,
         });
         Ok(())
     }
@@ -609,6 +617,13 @@ fn parse_module(
         e
     })?;
     Ok(stmts)
+}
+
+/// The `export` modifiers in a freshly parsed file (see
+/// [`crate::export_keyword`]).
+pub(crate) fn deprecated_exports(stmts: &[Stmt], source: &str) -> Vec<SourceSpan> {
+    let chars: Vec<char> = source.chars().collect();
+    crate::export_keyword::deprecated_export_spans(stmts, &chars)
 }
 
 /// Split a parsed statement list into its leading imports and the rest.
@@ -659,8 +674,8 @@ mod tests {
             .to_string()
     }
 
-    const UI: &str = "export fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
-                      export let theme = { fg: 15 }";
+    const UI: &str = "pub fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
+                      pub let theme = { fg: 15 }";
 
     #[test]
     fn host_implicit_imports_reach_an_imported_module() {
@@ -669,7 +684,7 @@ mod tests {
         // entry file.
         assert_eq!(
             run(
-                &[("ui", UI), ("lib", "export fn box(l)\n  button(l)\nend")],
+                &[("ui", UI), ("lib", "pub fn box(l)\n  button(l)\nend")],
                 &["ui"],
                 "import lib\nprint(lib.box(\"z\"))",
             ),
@@ -683,8 +698,8 @@ mod tests {
             run(
                 &[
                     ("ui", UI),
-                    ("mid", "import deep\nexport fn go(l)\n  deep.go(l)\nend"),
-                    ("deep", "export fn go(l)\n  button(l) ++ str(theme.fg)\nend"),
+                    ("mid", "import deep\npub fn go(l)\n  deep.go(l)\nend"),
+                    ("deep", "pub fn go(l)\n  button(l) ++ str(theme.fg)\nend"),
                 ],
                 &["ui"],
                 "import mid\nprint(mid.go(\"z\"))",
@@ -704,7 +719,7 @@ mod tests {
                     (
                         "lib",
                         "fn button(l)\n  \"<\" ++ l ++ \">\"\nend\n\
-                         export fn box(l)\n  button(l)\nend",
+                         pub fn box(l)\n  button(l)\nend",
                     ),
                 ],
                 &["ui"],
@@ -720,10 +735,10 @@ mod tests {
             run(
                 &[
                     ("ui", UI),
-                    ("other", "export fn button(l)\n  \"(\" ++ l ++ \")\"\nend"),
+                    ("other", "pub fn button(l)\n  \"(\" ++ l ++ \")\"\nend"),
                     (
                         "lib",
-                        "import other: button\nexport fn box(l)\n  button(l)\nend",
+                        "import other: button\npub fn box(l)\n  button(l)\nend",
                     ),
                 ],
                 &["ui"],
@@ -743,7 +758,7 @@ mod tests {
                     ("ui", UI),
                     (
                         "lib",
-                        "import ui: button\nexport fn box(l)\n  button(l) ++ str(theme.fg)\nend",
+                        "import ui: button\npub fn box(l)\n  button(l) ++ str(theme.fg)\nend",
                     ),
                 ],
                 &["ui"],
@@ -761,7 +776,7 @@ mod tests {
             run(
                 &[(
                     "ui",
-                    "fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend\nexport fn button(l)\n  wrap(l)\nend",
+                    "fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend\npub fn button(l)\n  wrap(l)\nend",
                 )],
                 &["ui"],
                 "print(button(\"z\"))",
@@ -777,10 +792,10 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("core", "export fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend"),
+                    ("core", "pub fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend"),
                     (
                         "ui",
-                        "import core: wrap\nexport fn button(l)\n  wrap(l)\nend",
+                        "import core: wrap\npub fn button(l)\n  wrap(l)\nend",
                     ),
                 ],
                 &["core", "ui"],
@@ -797,8 +812,8 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("bloom/menu", "export fn open()\n  \"bloom\"\nend"),
-                    ("petal/menu", "export fn open()\n  \"petal\"\nend"),
+                    ("bloom/menu", "pub fn open()\n  \"bloom\"\nend"),
+                    ("petal/menu", "pub fn open()\n  \"petal\"\nend"),
                 ],
                 &[],
                 "import bloom/menu\nimport petal/menu as pm\nprint(menu.open())\nprint(pm.open())",
@@ -814,9 +829,9 @@ mod tests {
                 &[
                     (
                         "bloom/menu",
-                        "import bloom/motion\nexport fn open()\n  motion.ease()\nend",
+                        "import bloom/motion\npub fn open()\n  motion.ease()\nend",
                     ),
-                    ("bloom/motion", "export fn ease()\n  \"eased\"\nend"),
+                    ("bloom/motion", "pub fn ease()\n  \"eased\"\nend"),
                 ],
                 &[],
                 "import bloom/menu\nprint(menu.open())",
@@ -857,8 +872,8 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("ui", "export fn sum(xs)\n  \"host sum\"\nend"),
-                    ("lib", "export fn go()\n  sum([1, 2])\nend"),
+                    ("ui", "pub fn sum(xs)\n  \"host sum\"\nend"),
+                    ("lib", "pub fn go()\n  sum([1, 2])\nend"),
                 ],
                 &["ui"],
                 "import lib\nprint(lib.go())",
@@ -867,13 +882,13 @@ mod tests {
         );
     }
 
-    // ---- re-exports (`export import`) -------------------------------------
+    // ---- re-exports (`pub import`) -------------------------------------
 
     /// The overload set is the property the hand-written facade
-    /// (`export let f = m.f`) already had, and the one a declarative re-export
+    /// (`pub let f = m.f`) already had, and the one a declarative re-export
     /// must not lose.
-    const BUTTON: &str = "export fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
-                          export fn button(l, w)\n  \"[\" ++ l ++ str(w) ++ \"]\"\nend";
+    const BUTTON: &str = "pub fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
+                          pub fn button(l, w)\n  \"[\" ++ l ++ str(w) ++ \"]\"\nend";
 
     #[test]
     fn a_star_re_export_carries_a_whole_overload_set() {
@@ -881,7 +896,7 @@ mod tests {
             run(
                 &[
                     ("bloom/button", BUTTON),
-                    ("bloom", "export import bloom/button: *"),
+                    ("bloom", "pub import bloom/button: *"),
                 ],
                 &[],
                 "import bloom: button\nprint(button(\"a\"))\nprint(button(\"a\", 2))",
@@ -899,7 +914,7 @@ mod tests {
                     ("bloom/button", BUTTON),
                     (
                         "bloom",
-                        "export import bloom/button: *\nexport fn twice(l)\n  button(l) ++ button(l)\nend",
+                        "pub import bloom/button: *\npub fn twice(l)\n  button(l) ++ button(l)\nend",
                     ),
                 ],
                 &[],
@@ -916,9 +931,9 @@ mod tests {
                 &[
                     (
                         "impl",
-                        "export fn a()\n  \"a\"\nend\nexport fn b()\n  \"b\"\nend",
+                        "pub fn a()\n  \"a\"\nend\npub fn b()\n  \"b\"\nend",
                     ),
-                    ("facade", "export import impl: a"),
+                    ("facade", "pub import impl: a"),
                 ],
                 &[],
                 "import facade\nprint(facade.a())",
@@ -929,9 +944,9 @@ mod tests {
             &[
                 (
                     "impl",
-                    "export fn a()\n  \"a\"\nend\nexport fn b()\n  \"b\"\nend",
+                    "pub fn a()\n  \"a\"\nend\npub fn b()\n  \"b\"\nend",
                 ),
-                ("facade", "export import impl: a"),
+                ("facade", "pub import impl: a"),
             ],
             "import facade: b\nprint(b())",
         );
@@ -942,8 +957,8 @@ mod tests {
     fn re_exporting_a_name_the_module_does_not_have_is_an_error() {
         let err = load_err(
             &[
-                ("impl", "export fn a()\n  1\nend"),
-                ("facade", "export import impl: a, nope"),
+                ("impl", "pub fn a()\n  1\nend"),
+                ("facade", "pub import impl: a, nope"),
             ],
             "import facade\nprint(facade.a())",
         );
@@ -955,10 +970,10 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("impl", "export fn tag(l)\n  \"impl\" ++ l\nend"),
+                    ("impl", "pub fn tag(l)\n  \"impl\" ++ l\nend"),
                     (
                         "facade",
-                        "export import impl: *\nexport fn tag(l)\n  \"facade\" ++ l\nend",
+                        "pub import impl: *\npub fn tag(l)\n  \"facade\" ++ l\nend",
                     ),
                 ],
                 &[],
@@ -973,9 +988,9 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("one", "export fn f(a)\n  \"one\" ++ a\nend"),
-                    ("two", "export fn f(a, b)\n  \"two\" ++ a ++ b\nend"),
-                    ("facade", "export import one: *\nexport import two: *"),
+                    ("one", "pub fn f(a)\n  \"one\" ++ a\nend"),
+                    ("two", "pub fn f(a, b)\n  \"two\" ++ a ++ b\nend"),
+                    ("facade", "pub import one: *\npub import two: *"),
                 ],
                 &[],
                 "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
@@ -988,9 +1003,9 @@ mod tests {
     fn two_star_re_exports_of_one_value_name_collide() {
         let err = load_err(
             &[
-                ("one", "export let v = 1"),
-                ("two", "export let v = 2"),
-                ("facade", "export import one: *\nexport import two: *"),
+                ("one", "pub let v = 1"),
+                ("two", "pub let v = 2"),
+                ("facade", "pub import one: *\npub import two: *"),
             ],
             "import facade: v\nprint(v)",
         );
@@ -1010,7 +1025,7 @@ mod tests {
         // expression can spell).
         assert_eq!(
             run(
-                &[("bloom/menu", "export fn open()\n  \"opened\"\nend")],
+                &[("bloom/menu", "pub fn open()\n  \"opened\"\nend")],
                 &["bloom/menu"],
                 "print(open())\nprint(menu.open())",
             ),
@@ -1023,9 +1038,9 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("deep", "export fn go()\n  \"deep\"\nend"),
-                    ("mid", "export import deep: *"),
-                    ("top", "export import mid: *"),
+                    ("deep", "pub fn go()\n  \"deep\"\nend"),
+                    ("mid", "pub import deep: *"),
+                    ("top", "pub import mid: *"),
                 ],
                 &[],
                 "import top: go\nprint(go())",
@@ -1037,7 +1052,7 @@ mod tests {
     #[test]
     fn a_re_export_cycle_is_an_error_not_a_hang() {
         let err = load_err(
-            &[("a", "export import b: *"), ("b", "export import a: *")],
+            &[("a", "pub import b: *"), ("b", "pub import a: *")],
             "import a\nprint(1)",
         );
         assert!(err.contains("import cycle"), "{err}");
@@ -1045,13 +1060,13 @@ mod tests {
 
     #[test]
     fn export_import_re_exports_the_module_binding_itself() {
-        // A module name is not a value, so a bare `export import` passes the
+        // A module name is not a value, so a bare `pub import` passes the
         // *alias* on: an importer that names it gets a module alias.
         assert_eq!(
             run(
                 &[
-                    ("bloom/menu", "export fn open()\n  \"open\"\nend"),
-                    ("bloom", "export import bloom/menu"),
+                    ("bloom/menu", "pub fn open()\n  \"open\"\nend"),
+                    ("bloom", "pub import bloom/menu"),
                 ],
                 &[],
                 "import bloom: menu\nprint(menu.open())",
@@ -1064,8 +1079,8 @@ mod tests {
     fn a_star_import_without_export_binds_locally_only() {
         let err = load_err(
             &[
-                ("impl", "export fn a()\n  \"a\"\nend"),
-                ("plain", "import impl: *\nexport fn use_a()\n  a()\nend"),
+                ("impl", "pub fn a()\n  \"a\"\nend"),
+                ("plain", "import impl: *\npub fn use_a()\n  a()\nend"),
             ],
             "import plain: a\nprint(a())",
         );
@@ -1073,8 +1088,8 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("impl", "export fn a()\n  \"a\"\nend"),
-                    ("plain", "import impl: *\nexport fn use_a()\n  a()\nend"),
+                    ("impl", "pub fn a()\n  \"a\"\nend"),
+                    ("plain", "import impl: *\npub fn use_a()\n  a()\nend"),
                 ],
                 &[],
                 "import plain: use_a\nprint(use_a())",
@@ -1089,10 +1104,10 @@ mod tests {
             run(
                 &[
                     ("bloom/button", BUTTON),
-                    ("bloom/menu", "export fn open()\n  \"m\"\nend"),
+                    ("bloom/menu", "pub fn open()\n  \"m\"\nend"),
                     (
                         "bloom/all",
-                        "export import bloom/button: *\nexport import bloom/menu: *",
+                        "pub import bloom/button: *\npub import bloom/menu: *",
                     ),
                 ],
                 &[],
@@ -1110,9 +1125,9 @@ mod tests {
         assert_eq!(
             run(
                 &[
-                    ("ui", "export fn f(a)\n  \"ui\" ++ a\nend"),
-                    ("ext", "export fn f(a, b)\n  \"ext\" ++ a ++ b\nend"),
-                    ("facade", "export import ext: *"),
+                    ("ui", "pub fn f(a)\n  \"ui\" ++ a\nend"),
+                    ("ext", "pub fn f(a, b)\n  \"ext\" ++ a ++ b\nend"),
+                    ("facade", "pub import ext: *"),
                 ],
                 &["ui"],
                 "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
@@ -1128,11 +1143,11 @@ mod tests {
                 &[
                     (
                         "impl",
-                        "export class Point\n  x: int\nend\n\
-                         export var hits = 0\n\
-                         export fn bump()\n  set hits = get hits + 1\nend",
+                        "pub class Point\n  x: int\nend\n\
+                         pub var hits = 0\n\
+                         pub fn bump()\n  set hits = get hits + 1\nend",
                     ),
-                    ("facade", "export import impl: *"),
+                    ("facade", "pub import impl: *"),
                 ],
                 &[],
                 "import facade: Point, hits, bump\n\

@@ -315,6 +315,9 @@ DESCRIPTION
        strings or JSX text. Choices about which code to write belong to
        'petal lint'.
 
+       The one word it rewrites is the deprecated modifier 'export', which
+       becomes 'pub'. The two declare the same thing.
+
        Alignment is kept. A run of spaces that lines a token up with one on
        the line above or below (a table of records, a column of =), a
        repeated double space that groups arguments, a trailing comment's
@@ -322,7 +325,8 @@ DESCRIPTION
        survive, moving only as far as the code they hang from moves.
 
        Every result is checked before it is written: the formatted text must
-       lex to exactly the original tokens. A file that does not parse is
+       lex to exactly the original tokens (an 'export' modifier counting as
+       its 'pub'). A file that does not parse is
        reported and left alone.
 
        To keep lines exactly as written, put '// petal-fmt-ignore' on the
@@ -383,6 +387,8 @@ DESCRIPTION
               a match
        prefer-compound-assign
               x = x + e becomes x += e
+       prefer-pub
+              the deprecated export modifier becomes pub
 
        To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
        the line before the finding or at the end of its line; with no rule

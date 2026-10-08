@@ -67,7 +67,7 @@ impl Printer {
     }
 
     fn stmt(&mut self, stmt: &Stmt, depth: usize) {
-        let export = if stmt.exported { "export " } else { "" };
+        let export = if stmt.exported { "pub " } else { "" };
         match &stmt.kind {
             StmtKind::Let {
                 name,
@@ -432,7 +432,7 @@ fn fmt_pattern(pattern: &Pattern) -> String {
 fn fmt_import(decl: &ImportDecl) -> String {
     let mut head = String::new();
     if decl.exported {
-        head.push_str("Export ");
+        head.push_str("Pub ");
     }
     let _ = write!(head, "Import {}", decl.module);
     if let Some(alias) = &decl.alias {

@@ -6,6 +6,10 @@
 //! and copies the tokens (and comments) through verbatim, which is how a
 //! comment inside an expression survives. The passes, in order:
 //!
+//! 0. **Keywords** ([`normalize_keywords`]) — the one place a token's text
+//!    changes: the deprecated modifier `export` is written `pub`. The two
+//!    spell the same declaration, so this is layout in the sense that matters
+//!    here — the program is untouched.
 //! 1. **Spacing** ([`spacing`]) — the gaps inside a line: one space around
 //!    binary operators and after `,`/`:`, none inside brackets, and so on.
 //! 2. **Indentation** ([`reindent`]) — 2 spaces per open construct, computed
@@ -32,7 +36,8 @@
 //! **The gate.** Petal is newline-significant but not whitespace-significant,
 //! except where the lexer looks at spacing (`a < b` versus the tag `a <b`).
 //! [`format_source`] therefore re-lexes its output and refuses it unless the
-//! token stream is the one it started from (blank-line runs aside), so a
+//! token stream is the one it started from (blank-line runs aside, and
+//! `export` counted as the `pub` it was rewritten to), so a
 //! spacing rule that fused two tokens can cost a file its formatting, never
 //! its meaning. The corpus tests additionally hold every repo `.ptl` to
 //! identical compiled IR.
@@ -46,6 +51,7 @@ mod comments;
 pub mod reindent;
 mod spacing;
 
+pub(crate) use comments::trailing_comments;
 pub use reindent::reindent;
 
 use crate::lexer::{Lexer, Token};
@@ -59,12 +65,33 @@ pub const ON: &str = "petal-fmt-on";
 /// such a file) and — a formatter bug, not a user error — when the result
 /// would not lex to the same tokens.
 pub fn format_source(source: &str) -> Result<String, String> {
-    crate::rewrite::parse_ast(source)?;
+    format_with(source, true)
+}
+
+/// [`format_source`] without the keyword pass: whitespace only. `petal lint`
+/// formats its fixed text with this, because rewriting `export` is a lint
+/// rule of its own there (`prefer-pub`) and a rule the user silenced must
+/// stay silenced.
+pub(crate) fn format_layout(source: &str) -> Result<String, String> {
+    format_with(source, false)
+}
+
+fn format_with(source: &str, keywords: bool) -> Result<String, String> {
+    let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
     let directives = Directives::scan(source)?;
     if directives.ignore_file {
         return Ok(source.to_string());
     }
     let protected = &directives.protected;
+    // The keyword pass replaces a word within its line, so the line numbers
+    // `protected` is indexed by still hold for the passes below.
+    let normalized;
+    let source = if keywords {
+        normalized = normalize_keywords(source, &stmts, protected)?;
+        normalized.as_str()
+    } else {
+        source
+    };
 
     // Alignment is judged against the neighbouring lines as they currently
     // stand, and respacing one line can knock its neighbour out of line, so
@@ -99,6 +126,65 @@ pub fn format_source(source: &str) -> Result<String, String> {
         ));
     }
     Ok(output)
+}
+
+/// Rewrite every `export` modifier to `pub`, outside protected lines. The
+/// sites come from the AST ([`crate::export_keyword`]), so `export` used as a
+/// field or record key is left alone.
+///
+/// This pass changes tokens, which the gate in [`format_with`] cannot vouch
+/// for (it compares against this pass's output), so it carries its own: the
+/// result must lex to the original stream with exactly the planned `Export`
+/// tokens turned into `Pub`.
+fn normalize_keywords(
+    source: &str,
+    stmts: &[crate::ast::Stmt],
+    protected: &[bool],
+) -> Result<String, String> {
+    use crate::export_keyword::{deprecated_export_spans, plan_pub_rewrite};
+    let chars: Vec<char> = source.chars().collect();
+    let sites: Vec<_> = deprecated_export_spans(stmts, &chars)
+        .into_iter()
+        .filter(|span| {
+            !protected
+                .get(span.start.line as usize - 1)
+                .copied()
+                .unwrap_or(false)
+        })
+        .collect();
+    if sites.is_empty() {
+        return Ok(source.to_string());
+    }
+    let mut out = String::with_capacity(source.len());
+    let mut at = 0;
+    for edit in plan_pub_rewrite(source, &sites)?.into_iter().flatten() {
+        out.extend(&chars[at..edit.start]);
+        out.push_str(edit.text);
+        at = edit.end;
+    }
+    out.extend(&chars[at..]);
+
+    let before = token_signature(source)?;
+    let after = token_signature(&out)
+        .map_err(|e| format!("fmt bug: rewriting `export` broke the lexer ({e})"))?;
+    let rewritten = before
+        .iter()
+        .zip(&after)
+        .filter(|(a, b)| matches!((a, b), (Token::Export, Token::Pub)))
+        .count();
+    let same = before.len() == after.len()
+        && before
+            .iter()
+            .zip(&after)
+            .all(|(a, b)| a == b || matches!((a, b), (Token::Export, Token::Pub)));
+    if !same || rewritten != sites.len() {
+        return Err(
+            "fmt bug: rewriting `export` to `pub` changed more than the keyword — refusing to \
+             produce output"
+                .to_string(),
+        );
+    }
+    Ok(out)
 }
 
 /// The tokens of `source`, with every run of `Newline`s collapsed to one and

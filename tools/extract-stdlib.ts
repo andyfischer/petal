@@ -19,7 +19,7 @@
 //
 //   2. Core prelude — `rust/prelude/std.ptl` (module `std`), the slice of the
 //      standard library written in Petal source rather than as Rust natives.
-//      `Env::new` loads it as an implicit import; its `export fn` declarations
+//      `Env::new` loads it as an implicit import; its `pub fn` declarations
 //      become the `prelude` group / `std` category.
 //
 //   3. Canvas builtins — the shared `petal-ui` crate's `register_draw` +
@@ -496,12 +496,12 @@ function extractCore(): {
  * The core prelude (`rust/prelude/std.ptl`, module `std`) is standard library
  * written in Petal source rather than as Rust natives — `Env::new` loads it as
  * a permanent implicit import, so every program calls its helpers bare. We parse
- * its `export fn` declarations so these functions appear in the reference next
+ * its `pub fn` declarations so these functions appear in the reference next
  * to the native builtins instead of silently drifting out of the docs.
  *
  * Petal source carries no static types, so every parameter is reported as
  * `any`; arity is simply the declared parameter count (none are variadic).
- * Only `export`ed declarations are visible to importers, so private helpers
+ * Only `pub` declarations (or the deprecated `export`) are visible to importers, so private helpers
  * (were any added) are correctly skipped.
  */
 function extractPrelude(): {
@@ -510,7 +510,7 @@ function extractPrelude(): {
 } {
   const source = readFileSync(preludeStdPtl, "utf8");
   const functions: StdlibFunction[] = [];
-  const re = /^[ \t]*export\s+fn\s+(\w+)\s*\(([^)]*)\)/gm;
+  const re = /^[ \t]*(?:pub|export)\s+fn\s+(\w+)\s*\(([^)]*)\)/gm;
   for (let m; (m = re.exec(source)); ) {
     const [, name, rawParams] = m;
     const line = source.slice(0, m.index).split("\n").length;

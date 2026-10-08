@@ -289,7 +289,7 @@ impl Projector {
                     .ok_or("let binding missing its value expression")?;
                 let value = self.expr(&value_node)?;
                 // `var x = …` keeps its keyword as a direct token child, the
-                // same way `export` does, so the flag survives the round trip.
+                // same way `pub` does, so the flag survives the round trip.
                 let is_var = direct_tokens(node)
                     .iter()
                     .any(|t| matches!(t.token(), Some(Token::Var)));
@@ -419,11 +419,12 @@ impl Projector {
             SyntaxKind::ImportStmt => self.import_stmt(node)?,
             other => return Err(format!("expected a statement node, got {other:?}")),
         };
-        // A leading `export` modifier is kept as a direct token child of the
-        // decl node (fn/let/state/enum), so its presence gates module exports.
+        // A leading `pub` modifier (or its deprecated spelling `export`) is
+        // kept as a direct token child of the decl node (fn/let/state/enum),
+        // so its presence gates module exports.
         let exported = direct_tokens(node)
             .iter()
-            .any(|t| matches!(t.token(), Some(Token::Export)));
+            .any(|t| matches!(t.token(), Some(Token::Pub | Token::Export)));
         Ok(Stmt {
             kind,
             span,
@@ -541,11 +542,11 @@ impl Projector {
         // `/ identifier` pairs. Everything after it is the `as` alias or the
         // selective list — for which only the identifier leaves matter, so the
         // newlines a wrapped list swallowed need no handling here.
-        // `export import …`: the `export` token is a direct child of this node,
+        // `pub import …`: the `pub` token is a direct child of this node,
         // ahead of `import`, exactly as it is for a `let`.
         let exported = tokens
             .iter()
-            .any(|t| matches!(t.token(), Some(Token::Export)));
+            .any(|t| matches!(t.token(), Some(Token::Pub | Token::Export)));
         let mut i = tokens
             .iter()
             .position(|t| ident_value(t).is_some())
@@ -1408,16 +1409,16 @@ mod tests {
         assert_projects("state count = 0\nstate(key) slot = init()\n");
         // `var` / `set` — the mutable-cell forms. `var`-ness rides on a token
         // child of the LetStmt/StateStmt node, so the projection has to read it
-        // back the same way it reads `export`.
+        // back the same way it reads `pub`.
         assert_projects("var x = 0\nset x = 1\n");
         assert_projects("var x: int = 0\nset x += 1\n");
-        assert_projects("export var x = 0\n");
+        assert_projects("pub var x = 0\n");
         // `config` — the tuning-knob modifier, plus its non-modifier uses:
-        // as a binding name, and combined with `export`.
+        // as a binding name, and combined with `pub`.
         assert_projects("config let offset = 10\n");
         assert_projects("config let scale: float = 1.5\n");
         assert_projects("let config = 1\nprint(config)\n");
-        assert_projects("export config let margin = 4\n");
+        assert_projects("pub config let margin = 4\n");
         assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");
@@ -1461,7 +1462,7 @@ mod tests {
         assert_projects("state(1) n: string = \"a\"\n");
         assert_projects("state n = 0\n"); // un-annotated
         assert_projects("state s: banana = 0\n"); // unknown type name
-        assert_projects("export state n: int = 0\n");
+        assert_projects("pub state n: int = 0\n");
     }
 
     #[test]
@@ -1607,12 +1608,12 @@ mod tests {
 
     #[test]
     fn projects_re_export_forms() {
-        assert_projects("export import bloom/button: *\n");
-        assert_projects("export import impl: a, b\n");
-        assert_projects("export import bloom/menu\n");
+        assert_projects("pub import bloom/button: *\n");
+        assert_projects("pub import impl: a, b\n");
+        assert_projects("pub import bloom/menu\n");
         assert_projects("import impl: *\n");
 
-        let ast = projected_ast("export import bloom/button: *\n").expect("parse");
+        let ast = projected_ast("pub import bloom/button: *\n").expect("parse");
         let StmtKind::Import(decl) = &ast[0].kind else {
             panic!("expected import");
         };
@@ -1623,7 +1624,7 @@ mod tests {
         assert!(decl.exported);
         assert!(ast[0].exported);
 
-        let ast = projected_ast("export import impl: a, b\n").expect("parse");
+        let ast = projected_ast("pub import impl: a, b\n").expect("parse");
         let StmtKind::Import(decl) = &ast[0].kind else {
             panic!("expected import");
         };
@@ -1634,9 +1635,9 @@ mod tests {
             Some(["a", "b"].map(String::from).as_slice())
         );
 
-        // The `export` and the `*` live inside the ImportStmt node, so the
+        // The `pub` and the `*` live inside the ImportStmt node, so the
         // tree still round-trips byte-for-byte.
-        let src = "export import bloom/button: *\n";
+        let src = "pub import bloom/button: *\n";
         assert_eq!(parse_cst(src).expect("parse_cst").text(), src);
     }
 

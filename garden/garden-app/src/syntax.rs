@@ -758,22 +758,27 @@ mod tests {
         assert_eq!(s.kind, TokenKind::String);
     }
 
-    /// `export` is a prefix on a declaration, including on `import`. A
-    /// re-export line (`export import bloom/motion: *`) used to parse as an
-    /// ERROR node, so `export` lost its keyword color and the module path read
-    /// as ordinary variables.
+    /// `pub` is a prefix on a declaration, including on `import`. A re-export
+    /// line (`pub import bloom/motion: *`) used to parse as an ERROR node, so
+    /// the modifier lost its keyword color and the module path read as
+    /// ordinary variables. `export`, the deprecated spelling, highlights the
+    /// same way.
     #[test]
-    fn petal_export_import_highlights() {
-        let mut h = Highlighter::new();
-        let lines = h.highlight_lines(lang("init.ptl"), "export import bloom/motion: *");
-        let export = span_at(&lines, 0, 0).expect("span on `export`");
-        assert_eq!((export.start_col, export.end_col), (0, 6));
-        assert_eq!(export.kind, TokenKind::Keyword);
-        let import = span_at(&lines, 0, 7).expect("span on `import`");
-        assert_eq!(import.kind, TokenKind::Keyword);
-        // Both path segments are module names, not variables.
-        assert_eq!(span_at(&lines, 0, 14).unwrap().kind, TokenKind::Type);
-        assert_eq!(span_at(&lines, 0, 20).unwrap().kind, TokenKind::Type);
+    fn petal_pub_import_highlights() {
+        for modifier in ["pub", "export"] {
+            let mut h = Highlighter::new();
+            let line = format!("{modifier} import bloom/motion: *");
+            let lines = h.highlight_lines(lang("init.ptl"), &line);
+            let n = modifier.len();
+            let kw = span_at(&lines, 0, 0).expect("span on the modifier");
+            assert_eq!((kw.start_col, kw.end_col), (0, n), "{line}");
+            assert_eq!(kw.kind, TokenKind::Keyword);
+            let import = span_at(&lines, 0, n + 1).expect("span on `import`");
+            assert_eq!(import.kind, TokenKind::Keyword);
+            // Both path segments are module names, not variables.
+            assert_eq!(span_at(&lines, 0, n + 8).unwrap().kind, TokenKind::Type);
+            assert_eq!(span_at(&lines, 0, n + 14).unwrap().kind, TokenKind::Type);
+        }
     }
 
     /// `tree-sitter-highlight` lets the LAST pattern matching a node win, so a

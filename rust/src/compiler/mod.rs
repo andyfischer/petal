@@ -318,14 +318,14 @@ pub struct Compiler {
     // ("ui::button"), so references to them ride the ordinary scope-lookup /
     // closure-capture machinery.
     module_exports: HashMap<String, Vec<String>>,
-    // Module *aliases* a module re-exports (`export import bloom/menu`):
+    // Module *aliases* a module re-exports (`pub import bloom/menu`):
     // module name -> [(local alias, target module path)]. An importer that
     // pulls one of these names in gets a module alias, not a value binding —
     // module names are not values, so this is the only way a facade can pass
     // a submodule on. Keyed like `module_exports`, and read the same way.
     module_alias_exports: HashMap<String, Vec<(String, String)>>,
-    // Names the module being compiled re-exports (`export import m: *` /
-    // `export import m: a, b`), filled by `bind_imports` and consumed by
+    // Names the module being compiled re-exports (`pub import m: *` /
+    // `pub import m: a, b`), filled by `bind_imports` and consumed by
     // `capture_exports`. Cleared at every module boundary.
     reexported_names: HashSet<String>,
     // Module aliases the module being compiled re-exports, same lifetime.
@@ -414,6 +414,7 @@ impl Compiler {
         let entry = LoadedModule {
             name: None,
             display_name: "<entry>".to_string(),
+            deprecated_exports: crate::module::deprecated_exports(stmts, &source),
             source,
             origin: None,
             stmts: stmts.to_vec(),
@@ -683,6 +684,13 @@ impl Compiler {
         self.method_dispatch = dispatch;
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
+        // `export` is the old spelling of `pub`: still accepted, but said so.
+        for &span in &module.deprecated_exports {
+            self.warn_at(
+                span,
+                crate::export_keyword::DEPRECATION_MESSAGE.to_string(),
+            );
+        }
         // After the checker, before the file's statements: a hoisted body is
         // compiled here and wants the dispatch table the checker just built.
         self.prescan_emit(&stmts);
@@ -793,7 +801,7 @@ impl Compiler {
 
             // Selective bindings (`import ui: button, clicked`).
             let Some(names) = &import.decl.names else {
-                // `export import m` re-exports the module *binding*: an
+                // `pub import m` re-exports the module *binding*: an
                 // importer of this file that names `alias` gets a module alias
                 // pointing at `m`, since a module name is not a value and so
                 // cannot be re-exported as one.
@@ -865,7 +873,7 @@ impl Compiler {
         Ok(())
     }
 
-    /// The module aliases `m` re-exports (`export import bloom/menu` in `m`).
+    /// The module aliases `m` re-exports (`pub import bloom/menu` in `m`).
     fn alias_exports_of(&self, m: &str) -> Vec<(String, String)> {
         self.module_alias_exports
             .get(m)
@@ -908,7 +916,7 @@ impl Compiler {
     ///   the first keeps the rest — and collide loudly otherwise, since
     ///   silently picking one of two values would be a facade that lies.
     ///
-    /// `exported` (`export import m: *`) additionally makes each bound name an
+    /// `exported` (`pub import m: *`) additionally makes each bound name an
     /// export of *this* module, which is what makes re-export chains work.
     #[allow(clippy::too_many_arguments)]
     fn bind_star_import(
@@ -1005,10 +1013,10 @@ impl Compiler {
     }
 
     /// Record a finished module's exports: every top-level binding declared
-    /// with the `export` modifier that the module didn't itself import (imports
+    /// with the `pub` modifier that the module didn't itself import (imports
     /// are not re-exported). Each export is also bound in the global scope under
     /// its qualified name (`"ui::button"`), which is how alias access, later
-    /// importers, and `Env::call_function` reach it. A module with no `export`
+    /// importers, and `Env::call_function` reach it. A module with no `pub`
     /// declarations exports nothing — the default is private.
     fn capture_exports(
         &mut self,
@@ -1019,7 +1027,7 @@ impl Compiler {
     ) {
         let module_name = module.name.as_deref().expect("not the entry file");
         // A name this file merely imports is not part of its surface — unless
-        // the import said `export import`, which is exactly the point of one.
+        // the import said `pub import`, which is exactly the point of one.
         let imported: std::collections::HashSet<&str> = module
             .imports
             .iter()
@@ -1098,11 +1106,11 @@ impl Compiler {
         names
     }
 
-    /// Top-level names a module explicitly `export`s (fn, enum variants, let,
+    /// Top-level names a module explicitly marks `pub` (fn, enum variants, let,
     /// state, class) — the set that importers may see. Everything else is private.
-    /// `export` is the single privacy rule: a name is exported iff its
-    /// declaration is marked `export`, regardless of a leading underscore
-    /// (`export fn _helper` exports normally).
+    /// `pub` is the single privacy rule: a name is exported iff its
+    /// declaration is marked `pub`, regardless of a leading underscore
+    /// (`pub fn _helper` exports normally).
     fn exported_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
         for stmt in stmts {
@@ -1404,11 +1412,11 @@ impl Compiler {
     // -----------------------------------------------------------------------
 
     /// Reject overload groups (same top-level name, 2+ `fn` declarations) whose
-    /// members carry inconsistent `export` markers. Export visibility is tracked
+    /// members carry inconsistent `pub` markers. Export visibility is tracked
     /// per *name*, and all arities of an overloaded fn share one name binding, so
-    /// marking a single arity `export` would silently export the whole set (and
+    /// marking a single arity `pub` would silently export the whole set (and
     /// leak the unmarked arities). Rather than pick a winner, require the author
-    /// to be explicit: mark every overload `export`, or none.
+    /// to be explicit: mark every overload `pub`, or none.
     fn check_overload_export_consistency(stmts: &[Stmt]) -> Result<(), LoadError> {
         // name -> (any exported, any not exported), in first-seen order.
         let mut groups: Vec<String> = Vec::new();
@@ -1432,8 +1440,8 @@ impl Compiler {
                 return Err(LoadError::message(
                     Phase::Compile,
                     format!(
-                        "overloaded function '{name}' has mixed export markers: \
-                         mark all overloads 'export' or none"
+                        "overloaded function '{name}' has mixed `pub` markers: \
+                         mark all overloads `pub` or none"
                     ),
                 ));
             }
@@ -1489,7 +1497,7 @@ impl Compiler {
     /// exports. `bind_imports` has already filled `module_aliases` by the time
     /// this runs, and dependencies compile before their importers, so
     /// `module_exports` is complete for everything reachable — including the
-    /// re-exports a facade like `bloom` collects with `export import m: *`.
+    /// re-exports a facade like `bloom` collects with `pub import m: *`.
     ///
     /// This is what lets the checker treat `bloom.button(r, label)` as a call
     /// to `button` rather than as a method on an opaque value. Without it an
@@ -2729,7 +2737,7 @@ let also = spinner"
         // `spinner` collides with a prelude export, but no statement in this
         // file reads the prelude's meaning, so both functions hoist and `go`
         // binds to this file's `spinner`.
-        let src = "export fn go()
+        let src = "pub fn go()
   spinner(1)
 end
 fn spinner(n)

@@ -37,7 +37,7 @@
 //!   some other binding (or, for a hoisted `fn`, possibly of this one).
 //! - **`@x`**, and a plain `=` on the name: neither compiles against a `var`,
 //!   so either would mean the analysis misread the scope.
-//! - **`export var`** and **`state var`**: other modules, or later frames,
+//! - **`pub var`** and **`state var`**: other modules, or later frames,
 //!   may be the ones reading it. (`state var` is a different statement and
 //!   never reaches this rule; `config var` does not parse.)
 
@@ -191,7 +191,7 @@ fn plan_one(
 }
 
 /// `var` → `let` on the declaration. The statement starts at the keyword
-/// (the `export` form is filtered out before this is called).
+/// (the `pub` form is filtered out before this is called).
 fn var_keyword_splice(decl: &Stmt, chars: &[char]) -> Option<Splice> {
     let start = decl.span.start.offset as usize;
     if !is_keyword_at(chars, start, "var") {

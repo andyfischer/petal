@@ -501,10 +501,10 @@ impl Compiler {
         }
         // A non-exported name is absent from the global scope, so the two cases
         // (declared-but-private vs. never declared) look the same here; the
-        // message points at the likely cause — a missing `export`.
+        // message points at the likely cause — a missing `pub`.
         let msg = format!(
             "module '{}' has no export '{}' (declarations are private unless \
-             marked `export`)",
+             marked `pub`)",
             module, member
         );
         let msg_cid = self.constants.intern(ConstantValue::String(msg));

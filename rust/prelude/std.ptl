@@ -8,7 +8,7 @@
 //
 // Implicit bindings are weak: a program's own declaration of the same name
 // shadows the prelude silently, and these never raise collision errors. Only
-// declarations marked `export` are visible to importers.
+// declarations marked `pub` are visible to importers.
 //
 // Everything here is pure Petal built on the native builtins — no host natives
 // (a frame clock, a renderer). Timing/interaction helpers that need a host
@@ -18,32 +18,32 @@
 // ── List reductions ────────────────────────────────────────────────────────
 
 // First element, or nil when empty. The complement of the native `last`.
-export fn first(xs)
+pub fn first(xs)
   if len(xs) == 0 then nil else xs[0] end
 end
 
 // True when the list (or string) has no elements.
-export fn is_empty(xs)
+pub fn is_empty(xs)
   len(xs) == 0
 end
 
 // Sum of a list of numbers; 0 for the empty list.
-export fn sum(xs)
+pub fn sum(xs)
   reduce(xs, 0, fn(acc, x) acc + x end)
 end
 
 // Product of a list of numbers; 1 for the empty list.
-export fn product(xs)
+pub fn product(xs)
   reduce(xs, 1, fn(acc, x) acc * x end)
 end
 
 // Arithmetic mean as a float, or nil for the empty list (no divide by zero).
-export fn mean(xs)
+pub fn mean(xs)
   if len(xs) == 0 then nil else float(sum(xs)) / len(xs) end
 end
 
 // Smallest element, or nil when empty. Works for any comparable element type.
-export fn minimum(xs)
+pub fn minimum(xs)
   if len(xs) == 0 then
     nil
   else
@@ -52,7 +52,7 @@ export fn minimum(xs)
 end
 
 // Largest element, or nil when empty.
-export fn maximum(xs)
+pub fn maximum(xs)
   if len(xs) == 0 then
     nil
   else
@@ -63,22 +63,22 @@ end
 // ── Predicate queries ──────────────────────────────────────────────────────
 
 // How many elements satisfy `pred`.
-export fn count(xs, pred)
+pub fn count(xs, pred)
   len(filter(xs, pred))
 end
 
 // True when at least one element satisfies `pred` (false for the empty list).
-export fn any(xs, pred)
+pub fn any(xs, pred)
   count(xs, pred) > 0
 end
 
 // True when every element satisfies `pred` (vacuously true for the empty list).
-export fn all(xs, pred)
+pub fn all(xs, pred)
   count(xs, pred) == len(xs)
 end
 
 // The first element satisfying `pred`, or nil when none does.
-export fn find(xs, pred)
+pub fn find(xs, pred)
   for x in xs do
     if pred(x) then return x end
   end
@@ -88,12 +88,12 @@ end
 // ── Sublists ───────────────────────────────────────────────────────────────
 
 // The first `n` elements, clamped to the list bounds (never errors).
-export fn take(xs, n)
+pub fn take(xs, n)
   slice(xs, 0, max(0, min(n, len(xs))))
 end
 
 // Everything after the first `n` elements, clamped to the list bounds.
-export fn drop(xs, n)
+pub fn drop(xs, n)
   slice(xs, max(0, min(n, len(xs))), len(xs))
 end
 
@@ -106,20 +106,20 @@ end
 
 // True when `rec` carries `key` at all — including when its value is nil,
 // which is the one case `rec[key] ?? false` cannot tell apart.
-export fn has_field(rec, key)
+pub fn has_field(rec, key)
   contains(keys(rec), key)
 end
 
 // Field `key` of `rec`, or `fallback` when the record does not carry it (or
 // carries it as nil). The named spelling of `rec[key] ?? fallback`, useful
 // when the key is computed.
-export fn field(rec, key, fallback)
+pub fn field(rec, key, fallback)
   rec[key] ?? fallback
 end
 
 // ── Numbers ────────────────────────────────────────────────────────────────
 
 // Clamp a number to the 0..1 range — the common `clamp(x, 0, 1)` shorthand.
-export fn clamp01(x)
+pub fn clamp01(x)
   clamp(x, 0, 1)
 end

@@ -63,6 +63,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::Elsif => kw("elsif"),
         Token::When => kw("when"),
         Token::Import => kw("import"),
+        Token::Pub => kw("pub"),
         Token::Export => kw("export"),
         Token::Plus => op("+"),
         Token::Minus => op("-"),
@@ -536,22 +537,27 @@ impl Parser {
                 self.parse_let(start, false, false, true)
             }
             Token::Import => self.parse_import(start, false),
-            Token::Export => self.parse_export(start),
+            Token::Pub | Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
         }
     }
 
-    /// `export <decl>` — a modifier on a top-level `fn`/`let`/`state`/`enum`
+    /// `pub <decl>` — a modifier on a top-level `fn`/`let`/`state`/`enum`
     /// that makes the declared name visible to importers (see
-    /// `docs/module-system.md`). The `export` token is consumed inside the
+    /// `docs/module-system.md`). The `pub` token is consumed inside the
     /// declaration's own CST node so the tree round-trips; the resulting
-    /// [`Stmt`] carries `exported = true`. Routes on the token *after* `export`.
+    /// [`Stmt`] carries `exported = true`. Routes on the token *after* `pub`.
+    ///
+    /// `export` is the deprecated spelling of the same modifier and takes
+    /// every path here that `pub` does; only the error text below, which
+    /// quotes whichever word was written, can tell them apart. Reporting the
+    /// old spelling is [`crate::export_keyword`]'s job.
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),
             Some(Token::Let) => self.parse_let(start, true, false, false),
             Some(Token::Var) => self.parse_let(start, true, true, false),
-            // `export config let x = …` — both modifiers, export first.
+            // `pub config let x = …` — both modifiers, `pub` first.
             Some(Token::Ident(w))
                 if w == CONFIG_KEYWORD
                     && matches!(self.tokens.get(self.pos + 2), Some(Token::Let)) =>
@@ -561,21 +567,26 @@ impl Parser {
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
             Some(Token::Ident(w)) if w == CLASS_KEYWORD => self.parse_class_decl(start, true),
-            // `export import m: *` — a re-export: the names this file imports
+            // `pub import m: *` — a re-export: the names this file imports
             // become its own exports (docs/module-system.md#re-exporting).
             Some(Token::Import) => self.parse_import(start, true),
-            _ => Err(self.error_at_current(
-                "`export` must be followed by a fn, let, var, state, enum, class, or import \
-                 declaration"
-                    .to_string(),
-            )),
+            _ => {
+                let word = match self.tokens.get(self.pos) {
+                    Some(Token::Export) => "export",
+                    _ => "pub",
+                };
+                Err(self.error_at_current(format!(
+                    "`{word}` must be followed by a fn, let, var, state, enum, class, or import \
+                     declaration"
+                )))
+            }
         }
     }
 
     /// `let x = …` and its mutable twin `var x = …`, which differ only in the
     /// keyword and the `is_var` flag. The `var` token stays a direct child of
     /// the `LetStmt` node so the CST projection can recover the flag the same
-    /// way it recovers `export`.
+    /// way it recovers `pub`.
     fn parse_let(
         &mut self,
         start: usize,
@@ -585,11 +596,11 @@ impl Parser {
     ) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::LetStmt);
         if exported {
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         if is_config {
             // The `config` ident stays a direct child of the LetStmt node so
-            // the CST projection can recover the flag, like `export`/`var`.
+            // the CST projection can recover the flag, like `pub`/`var`.
             self.advance(); // consume 'config'
         }
         self.advance(); // consume 'let' / 'var'
@@ -654,7 +665,7 @@ impl Parser {
     fn parse_state(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::StateStmt);
         if exported {
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'state'
 
@@ -743,15 +754,15 @@ impl Parser {
     /// form still ends at the newline; `as` is contextual (not a keyword).
     ///
     /// `import m: *` names the module's whole exported surface instead of a
-    /// list, and `export import …` (any of the forms, `exported = true` here)
+    /// list, and `pub import …` (any of the forms, `exported = true` here)
     /// makes what this file imports part of what it exports — the declarative
     /// facade described in docs/module-system.md#re-exporting.
     fn parse_import(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
         if exported {
-            // The `export` token stays a direct child of the ImportStmt node so
+            // The `pub` token stays a direct child of the ImportStmt node so
             // the CST projection can recover the flag, as it does for `let`.
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'import'
         let mut module = self.expect_path_segment()?;
@@ -845,7 +856,7 @@ impl Parser {
     fn parse_fn_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::FnDecl);
         if exported {
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'fn'
         // `fn Rect.center_x(…)` declares a method: the name before the dot is
@@ -909,7 +920,7 @@ impl Parser {
     fn parse_class_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ClassDecl);
         if exported {
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume the contextual `class`
         let name = self.expect_ident()?;
@@ -939,7 +950,7 @@ impl Parser {
     fn parse_enum_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::EnumDecl);
         if exported {
-            self.advance(); // consume 'export'
+            self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'enum'
         let name = self.expect_ident()?;

@@ -6,7 +6,7 @@ use crate::lexer::{Lexer, Token};
 
 /// Per 0-based line: the char column where code ends and the column where its
 /// trailing `//` comment starts, for lines that have both.
-fn trailing_comments(source: &str) -> Result<Vec<Option<(usize, usize)>>, String> {
+pub(crate) fn trailing_comments(source: &str) -> Result<Vec<Option<(usize, usize)>>, String> {
     let mut lexer = Lexer::new(source);
     lexer.tokenize()?;
     let line_count = source.split('\n').count();

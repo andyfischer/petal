@@ -299,12 +299,19 @@ pub fn has_feature(name: &str) -> bool {
 ///
 /// Derived by scanning `petal_ui::prelude_source()`, so it describes the
 /// prelude compiled into *this* binary and cannot go stale. The scan is
-/// deliberately strict — a line must start with `export fn ` / `export let ` —
-/// on the principle that a missing entry is better than a wrong one.
+/// deliberately strict — a line must start with `pub fn ` / `pub let ` (or the
+/// deprecated `export` spelling of either) — on the principle that a missing
+/// entry is better than a wrong one.
 pub fn prelude_exports() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in petal_ui::prelude_source().lines() {
-        if let Some(rest) = line.strip_prefix("export fn ") {
+        let Some(decl) = line
+            .strip_prefix("pub ")
+            .or_else(|| line.strip_prefix("export "))
+        else {
+            continue;
+        };
+        if let Some(rest) = decl.strip_prefix("fn ") {
             let Some(open) = rest.find('(') else { continue };
             let name = rest[..open].trim();
             if name.is_empty() {
@@ -320,7 +327,7 @@ pub fn prelude_exports() -> Vec<String> {
                 params.matches(',').count() + 1
             };
             out.push(format!("{name}/{arity}"));
-        } else if let Some(rest) = line.strip_prefix("export let ") {
+        } else if let Some(rest) = decl.strip_prefix("let ") {
             let name = rest
                 .split(|c: char| c == '=' || c == ':' || c.is_whitespace())
                 .find(|s| !s.is_empty())

@@ -85,7 +85,7 @@ fn state_takes_an_annotation_in_all_three_spellings() {
         ("string".into(), Some(Type::String))
     );
     assert_eq!(
-        resolved(state_ty("export state var n: bool = true")),
+        resolved(state_ty("pub state var n: bool = true")),
         ("bool".into(), Some(Type::Bool))
     );
     assert_eq!(state_ty("state n = 0"), None);

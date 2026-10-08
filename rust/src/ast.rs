@@ -329,8 +329,8 @@ pub fn required_param_count(params: &[Param]) -> usize {
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: SourceSpan,
-    /// Whether this top-level declaration was written with the `export`
-    /// modifier (`export fn`, `export let`, `export state`, `export enum`).
+    /// Whether this top-level declaration was written with the `pub`
+    /// modifier (`pub fn`, `pub let`, `pub state`, `pub enum`).
     /// Only meaningful for a module's top-level `fn`/`let`/`state`/`enum`: it
     /// gates what importers can see (see `docs/module-system.md`). `false`
     /// everywhere else — nested statements and the entry file never export.
@@ -462,8 +462,8 @@ pub struct ImportDecl {
     /// Mutually exclusive with `names`.
     #[serde(skip_serializing_if = "is_false")]
     pub star: bool,
-    /// `export import ui: …` — the imported names (or, for `star`, the whole
-    /// surface; for a bare `export import m`, the module binding itself)
+    /// `pub import ui: …` — the imported names (or, for `star`, the whole
+    /// surface; for a bare `pub import m`, the module binding itself)
     /// become exports of the importing module too. This is the declarative
     /// facade: one module re-presents another's surface.
     #[serde(skip_serializing_if = "is_false")]

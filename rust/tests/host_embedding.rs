@@ -115,7 +115,7 @@ fn recompile_reports_structured_diagnostics() {
 #[test]
 fn recompile_at_an_origin_resolves_sibling_imports() {
     let dir = temp_dir("diag-origin");
-    std::fs::write(dir.join("helper.ptl"), "export fn two()\n  2\nend\n").unwrap();
+    std::fs::write(dir.join("helper.ptl"), "pub fn two()\n  2\nend\n").unwrap();
     let entry = dir.join("main.ptl");
     let src = "import helper\nhelper.two()\n";
     std::fs::write(&entry, src).unwrap();
@@ -136,11 +136,11 @@ fn recompile_at_an_origin_resolves_sibling_imports() {
 #[test]
 fn source_paths_list_the_entry_and_its_file_imports_once() {
     let dir = temp_dir("paths");
-    std::fs::write(dir.join("helper.ptl"), "export fn two()\n  2\nend\n").unwrap();
+    std::fs::write(dir.join("helper.ptl"), "pub fn two()\n  2\nend\n").unwrap();
     let entry = dir.join("main.ptl");
 
     let mut env = Env::new();
-    env.register_module("inmem", "export fn one()\n  1\nend\n");
+    env.register_module("inmem", "pub fn one()\n  1\nend\n");
     let src = "import helper\nimport inmem\nhelper.two() + inmem.one()\n";
     std::fs::write(&entry, src).unwrap();
     let pid = env.load_program_at(src, &entry).unwrap();
@@ -176,7 +176,7 @@ fn a_single_file_program_watches_just_its_entry() {
 fn a_source_watch_notices_an_edited_import() {
     let dir = temp_dir("watch");
     let helper = dir.join("helper.ptl");
-    std::fs::write(&helper, "export fn two()\n  2\nend\n").unwrap();
+    std::fs::write(&helper, "pub fn two()\n  2\nend\n").unwrap();
     let entry = dir.join("main.ptl");
     let src = "import helper\nhelper.two()\n";
     std::fs::write(&entry, src).unwrap();
@@ -188,7 +188,7 @@ fn a_source_watch_notices_an_edited_import() {
     assert!(!watch.changed());
 
     // A different length is a change even within one mtime tick.
-    std::fs::write(&helper, "export fn two()\n  1 + 1\nend\n").unwrap();
+    std::fs::write(&helper, "pub fn two()\n  1 + 1\nend\n").unwrap();
     assert!(watch.changed());
     let changed = watch.changed_paths();
     assert_eq!(changed.len(), 1);

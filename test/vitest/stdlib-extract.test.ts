@@ -174,7 +174,7 @@ describe("stdlib extractor", () => {
   });
 
   it("recovers the Petal-source std prelude (rust/prelude/std.ptl)", () => {
-    // Every `export fn` in the prelude should surface as a stdlib function.
+    // Every `pub fn` in the prelude should surface as a stdlib function.
     for (const name of [
       "first",
       "is_empty",

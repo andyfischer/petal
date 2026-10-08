@@ -31,12 +31,12 @@ fn write_library(tag: &str, manifest: &str, module_dir: &str) -> PathBuf {
     std::fs::write(lib.join("petal.toml"), manifest).unwrap();
     std::fs::write(
         modules.join("menu.ptl"),
-        "import motion\nexport fn open()\n  motion.ease(\"open\")\nend\n",
+        "import motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
     )
     .unwrap();
     std::fs::write(
         modules.join("motion.ptl"),
-        "export fn ease(x)\n  x ++ \" eased\"\nend\n",
+        "pub fn ease(x)\n  x ++ \" eased\"\nend\n",
     )
     .unwrap();
     root
@@ -121,12 +121,12 @@ fn register_package_registers_a_library_from_memory() {
             [
                 (
                     "menu.ptl",
-                    "import motion\nexport fn open()\n  motion.ease(\"open\")\nend\n",
+                    "import motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
                 ),
-                ("motion", "export fn ease(x)\n  x ++ \" eased\"\nend\n"),
+                ("motion", "pub fn ease(x)\n  x ++ \" eased\"\nend\n"),
                 (
                     "widgets/button",
-                    "import bloom/motion\nexport fn label()\n  motion.ease(\"button\")\nend\n",
+                    "import bloom/motion\npub fn label()\n  motion.ease(\"button\")\nend\n",
                 ),
             ],
         )
@@ -149,9 +149,9 @@ fn register_package_registers_a_library_from_memory() {
 fn packages_lists_what_is_available() {
     let mut env = Env::new();
     assert!(env.packages().is_empty());
-    env.register_package("bloom", [("menu", "export fn open() 1 end")])
+    env.register_package("bloom", [("menu", "pub fn open() 1 end")])
         .unwrap();
-    env.register_package("widgets", [("panel", "export fn draw() 2 end")])
+    env.register_package("widgets", [("panel", "pub fn draw() 2 end")])
         .unwrap();
     let names: Vec<String> = env.packages().iter().map(|p| p.name.clone()).collect();
     assert_eq!(names, vec!["bloom", "widgets"]);
@@ -182,7 +182,7 @@ fn a_package_module_keeps_its_state_across_importers() {
             (
                 "menu",
                 "import bloom/motion
-export fn open()
+pub fn open()
   motion.bump()
 end
 ",
@@ -190,7 +190,7 @@ end
             (
                 "motion",
                 "var n = 0
-export fn bump()
+pub fn bump()
   set n = get n + 1
   get n
 end

@@ -37,8 +37,8 @@ fn load_error(modules: &[(&str, &str)], entry: &str) -> String {
 }
 
 const UI: &str = "\
-export let palette = { fg: 15, bg: 2 }
-export fn button(label)
+pub let palette = { fg: 15, bg: 2 }
+pub fn button(label)
   \"[\" ++ label ++ \"]\"
 end
 fn _secret()
@@ -96,8 +96,8 @@ fn local_binding_shadows_module_alias() {
 
 #[test]
 fn imports_can_nest() {
-    let base = "export fn double(x)\n  x * 2\nend";
-    let mid = "import base\nexport fn quad(x)\n  base.double(base.double(x))\nend";
+    let base = "pub fn double(x)\n  x * 2\nend";
+    let mid = "import base\npub fn quad(x)\n  base.double(base.double(x))\nend";
     check_output(
         &[("base", base), ("mid", mid)],
         "import mid\nprint(mid.quad(3))",
@@ -109,9 +109,9 @@ fn imports_can_nest() {
 
 #[test]
 fn module_top_level_runs_once_before_importer_diamond() {
-    let base = "print(\"base-init\")\nexport let shared = 7";
-    let left = "import base\nexport let l = base.shared + 1";
-    let right = "import base\nexport let r = base.shared + 2";
+    let base = "print(\"base-init\")\npub let shared = 7";
+    let left = "import base\npub let l = base.shared + 1";
+    let right = "import base\npub let r = base.shared + 2";
     check_output(
         &[("base", base), ("left", left), ("right", right)],
         "import left\nimport right\nprint(left.l + right.r)",
@@ -121,7 +121,7 @@ fn module_top_level_runs_once_before_importer_diamond() {
 
 #[test]
 fn enum_variants_export_and_match_across_modules() {
-    let shapes = "export enum Shape\n  Circle(r),\n  Dot,\nend";
+    let shapes = "pub enum Shape\n  Circle(r),\n  Dot,\nend";
     check_output(
         &[("shapes", shapes)],
         "import shapes: Circle, Dot\n\
@@ -133,7 +133,7 @@ fn enum_variants_export_and_match_across_modules() {
 
 #[test]
 fn overloaded_module_fn_exports_as_one_set() {
-    let m = "export fn f(a)\n  a\nend\nexport fn f(a, b)\n  a + b\nend";
+    let m = "pub fn f(a)\n  a\nend\npub fn f(a, b)\n  a + b\nend";
     check_output(
         &[("m", m)],
         "import m: f\nprint(f(1))\nprint(f(1, 2))",
@@ -144,11 +144,11 @@ fn overloaded_module_fn_exports_as_one_set() {
 #[test]
 fn overloaded_module_fn_with_mixed_export_markers_is_a_compile_error() {
     // Export visibility is per-name and all arities share one binding, so a
-    // single `export` arity would silently leak the unmarked one. Require the
+    // single `pub` arity would silently leak the unmarked one. Require the
     // markers to be consistent across the whole overload group.
-    let m = "export fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
+    let m = "pub fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
     let err = load_error(&[("m", m)], "import m: f");
-    assert!(err.contains("mixed export markers"), "got: {err}");
+    assert!(err.contains("mixed `pub` markers"), "got: {err}");
     assert!(err.contains("'f'"), "names the function: {err}");
 }
 
@@ -186,9 +186,9 @@ fn selective_import_of_private_name_is_a_compile_error() {
 
 #[test]
 fn unexported_name_is_not_importable() {
-    // A plain `fn`/`let` with no `export` is module-private under the new
+    // A plain `fn`/`let` with no `pub` is module-private under the new
     // default (everything private unless exported).
-    let m = "export fn shown()\n  1\nend\nfn hidden()\n  2\nend";
+    let m = "pub fn shown()\n  1\nend\nfn hidden()\n  2\nend";
     let err = load_error(&[("m", m)], "import m: hidden");
     assert!(err.contains("no export 'hidden'"), "got: {err}");
     // The exports list should mention the one exported name.
@@ -197,17 +197,17 @@ fn unexported_name_is_not_importable() {
 
 #[test]
 fn export_marks_underscore_name_importable() {
-    // `export` is the single privacy rule: a leading `_` carries no special
-    // privacy meaning. An `export fn _helper` exports normally — both
+    // `pub` is the single privacy rule: a leading `_` carries no special
+    // privacy meaning. A `pub fn _helper` exports normally — both
     // selectively importable and reachable via qualified member access.
-    let m = "export fn _helper()\n  1\nend";
+    let m = "pub fn _helper()\n  1\nend";
     check_output(&[("m", m)], "import m: _helper\nprint(_helper())", &["1"]);
     check_output(&[("m", m)], "import m\nprint(m._helper())", &["1"]);
 }
 
 #[test]
 fn unexported_underscore_name_is_private() {
-    // A plain `_`-prefixed name with no `export` is private like any other
+    // A plain `_`-prefixed name with no `pub` is private like any other
     // unexported name — flagged via the ordinary "no export" path.
     let m = "fn _helper()\n  1\nend";
     let err = load_error(&[("m", m)], "import m: _helper");
@@ -227,8 +227,8 @@ fn unexported_member_access_is_a_deferred_error() {
 
 #[test]
 fn selective_collision_between_modules_is_a_compile_error() {
-    let a = "export fn draw()\n  1\nend";
-    let b = "export fn draw()\n  2\nend";
+    let a = "pub fn draw()\n  1\nend";
+    let b = "pub fn draw()\n  2\nend";
     let err = load_error(&[("a", a), ("b", b)], "import a: draw\nimport b: draw");
     assert!(
         err.contains("'draw' is imported from both 'a' and 'b'"),
@@ -284,7 +284,7 @@ fn private_member_access_is_a_deferred_error() {
 
 #[test]
 fn runtime_error_in_module_names_the_file() {
-    let bad = "export fn boom(x)\n  x + nil\nend";
+    let bad = "pub fn boom(x)\n  x + nil\nend";
     let mut env = Env::new();
     env.register_module("bad", bad);
     let pid = env.load_program("import bad\nbad.boom(1)").unwrap();
@@ -302,8 +302,8 @@ fn same_state_name_in_two_modules_gets_distinct_slots() {
     // The module qualifier is the outermost part of a declaration id
     // (`Compiler::state_key_for`); the rest of the name path is covered by
     // tests/state_decl_ids.rs.
-    let m1 = "state scroll = 0\nscroll += 1\nexport fn get1()\n  scroll\nend";
-    let m2 = "state scroll = 0\nscroll += 10\nexport fn get2()\n  scroll\nend";
+    let m1 = "state scroll = 0\nscroll += 1\npub fn get1()\n  scroll\nend";
+    let m2 = "state scroll = 0\nscroll += 10\npub fn get2()\n  scroll\nend";
     check_output(
         &[("m1", m1), ("m2", m2)],
         "import m1\nimport m2\nprint(m1.get1())\nprint(m2.get2())",
@@ -340,7 +340,7 @@ fn a_module_function_state_is_keyed_below_its_module() {
     // In-function declarations extend the qualified name with the enclosing
     // function chain, so a module's `ui::draw`-scoped `n` shares a slot with
     // neither the module's top-level `n` nor the entry file's.
-    let m = "state n = 0\nexport fn draw()\n  state n = 1000\n  n += 1\n  n\nend";
+    let m = "state n = 0\npub fn draw()\n  state n = 1000\n  n += 1\n  n\nend";
     let mut env = Env::new();
     env.register_module("m", m);
     let pid = env
@@ -377,12 +377,12 @@ fn a_module_functions_state_is_per_callsite_across_the_module_boundary() {
     // module and enclosing function they are written in, so the module's own
     // call and the entry file's cannot collide.
     let m = "\
-export fn tick()
+pub fn tick()
   state n = 0
   n += 1
   n
 end
-export fn internal()
+pub fn internal()
   tick()
 end
 ";
@@ -422,7 +422,7 @@ end
 #[test]
 fn hot_reload_of_module_preserves_its_state() {
     let mut env = Env::new();
-    env.register_module("counter", "state n = 0\nn += 1\nexport fn read()\n  n\nend");
+    env.register_module("counter", "state n = 0\nn += 1\npub fn read()\n  n\nend");
     let pid = env
         .load_program("import counter\nprint(counter.read())")
         .unwrap();
@@ -433,7 +433,7 @@ fn hot_reload_of_module_preserves_its_state() {
     // Edit the module (init unchanged, increment becomes +10) and reload.
     env.register_module(
         "counter",
-        "state n = 0\nn += 10\nexport fn read()\n  n\nend",
+        "state n = 0\nn += 10\npub fn read()\n  n\nend",
     );
     let new_program = env
         .compile_program(pid, "import counter\nprint(counter.read())")
@@ -449,7 +449,7 @@ fn hot_reload_of_module_preserves_its_state() {
 
 #[test]
 fn renaming_a_module_drops_its_state() {
-    let counter = "state n = 0\nn += 1\nexport fn read()\n  n\nend";
+    let counter = "state n = 0\nn += 1\npub fn read()\n  n\nend";
     let mut env = Env::new();
     env.register_module("counter", counter);
     env.register_module("tally", counter);
@@ -580,8 +580,8 @@ fn module_manifest_lists_all_files() {
 
 #[test]
 fn imports_are_not_reexported() {
-    let base = "export fn helper()\n  1\nend";
-    let mid = "import base: helper\nexport fn use_it()\n  helper()\nend";
+    let base = "pub fn helper()\n  1\nend";
+    let mid = "import base: helper\npub fn use_it()\n  helper()\nend";
     let err = load_error(&[("base", base), ("mid", mid)], "import mid: helper");
     assert!(err.contains("no export 'helper'"), "got: {err}");
 }
@@ -619,7 +619,7 @@ impl Drop for TempTree {
 #[test]
 fn imports_resolve_relative_to_the_importing_file() {
     let tree = TempTree::new("relative");
-    tree.write("lib/palette.ptl", "export let bg = 3");
+    tree.write("lib/palette.ptl", "pub let bg = 3");
     // panel.ptl imports its sibling, from a different working directory.
     let panel = tree.write("lib/panel.ptl", "import palette\nprint(palette.bg)");
     let source = std::fs::read_to_string(&panel).unwrap();
@@ -645,12 +645,12 @@ fn imports_resolve_relative_to_the_importing_file() {
 #[test]
 fn registered_module_beats_file_of_same_name() {
     let tree = TempTree::new("priority");
-    tree.write("dep.ptl", "export let v = \"file\"");
+    tree.write("dep.ptl", "pub let v = \"file\"");
     let entry = tree.write("main.ptl", "import dep\nprint(dep.v)");
     let source = std::fs::read_to_string(&entry).unwrap();
 
     let mut env = Env::new();
-    env.register_module("dep", "export let v = \"memory\"");
+    env.register_module("dep", "pub let v = \"memory\"");
     let pid = env.load_program_at(&source, &entry).unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
@@ -660,7 +660,7 @@ fn registered_module_beats_file_of_same_name() {
 #[test]
 fn module_search_paths_are_consulted_after_importer_dir() {
     let tree = TempTree::new("searchpath");
-    tree.write("libs/util.ptl", "export let tag = \"from-libs\"");
+    tree.write("libs/util.ptl", "pub let tag = \"from-libs\"");
 
     let mut env = Env::new();
     env.add_module_path(tree.root.join("libs"));
@@ -675,8 +675,8 @@ fn module_search_paths_are_consulted_after_importer_dir() {
 fn wasm_shaped_env_compiles_from_memory_only() {
     // No filesystem involvement at all: every module is registered.
     let mut env = Env::new();
-    env.register_module("a", "import b\nexport fn f()\n  b.g() + 1\nend");
-    env.register_module("b", "export fn g()\n  41\nend");
+    env.register_module("a", "import b\npub fn f()\n  b.g() + 1\nend");
+    env.register_module("b", "pub fn g()\n  41\nend");
     let pid = env.load_program("import a\nprint(a.f())").unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
@@ -695,7 +695,7 @@ fn core_prelude_resolves_inside_a_registered_module() {
     let mut env = Env::new();
     env.register_module(
         "hostlib",
-        "export fn probe(r)\n  if has_field(r, \"hit\") then \"yes\" else \"no\" end\nend",
+        "pub fn probe(r)\n  if has_field(r, \"hit\") then \"yes\" else \"no\" end\nend",
     );
     env.set_implicit_imports(&["hostlib"]);
     let pid = env
@@ -710,7 +710,7 @@ fn core_prelude_resolves_inside_a_registered_module() {
 fn core_prelude_resolves_inside_an_explicitly_imported_module() {
     // Same rule for a module the *script* imports, not just a host prelude.
     check_output(
-        &[("helper", "export fn total(xs)\n  sum(xs)\nend")],
+        &[("helper", "pub fn total(xs)\n  sum(xs)\nend")],
         "import helper\nprint(helper.total([1, 2, 3]))",
         &["6"],
     );
@@ -723,7 +723,7 @@ fn a_module_declaration_still_shadows_the_core_prelude() {
     check_output(
         &[(
             "shadow",
-            "fn sum(xs)\n  \"mine\"\nend\nexport fn go()\n  sum([1, 2])\nend",
+            "fn sum(xs)\n  \"mine\"\nend\npub fn go()\n  sum([1, 2])\nend",
         )],
         "import shadow\nprint(shadow.go())",
         &["mine"],
@@ -740,7 +740,7 @@ fn a_module_declaration_still_shadows_the_core_prelude() {
 /// builds from real `import` statements reaches the checker.
 #[test]
 fn a_qualified_call_into_a_module_is_type_checked() {
-    let motion = "export fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
+    let motion = "pub fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
 
     let warn_messages = |modules: &[(&str, &str)], entry: &str| -> Vec<String> {
         let mut env = Env::new();
@@ -774,7 +774,7 @@ fn a_qualified_call_into_a_module_is_type_checked() {
     // Through a facade that re-exports it — the shape `petal-libs/bloom`
     // uses, and the one a caller writing `bloom.button(...)` depends on.
     let w = warn_messages(
-        &[("motion", motion), ("bloom", "export import motion: *\n")],
+        &[("motion", motion), ("bloom", "pub import motion: *\n")],
         "import bloom\nprint(bloom.scaled(\"no\", 2))",
     );
     assert_eq!(w.len(), 1, "{w:?}");

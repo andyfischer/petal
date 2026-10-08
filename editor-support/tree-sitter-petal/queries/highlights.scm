@@ -31,6 +31,7 @@
 
 [
   "import"
+  "pub"
   "export"
   "as"
   "config"

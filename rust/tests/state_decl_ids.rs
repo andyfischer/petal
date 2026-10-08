@@ -167,7 +167,7 @@ fn a_module_function_does_not_collide_with_an_entry_function() {
     let mut env = Env::new();
     env.register_module(
         "m",
-        "export fn tick()\n  state count = 100\n  count += 1\n  count\nend",
+        "pub fn tick()\n  state count = 100\n  count += 1\n  count\nend",
     );
     let pid = env
         .load_program(

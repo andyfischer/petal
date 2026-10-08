@@ -32,6 +32,11 @@ pub enum Token {
     Elsif,
     When,
     Import,
+    /// `pub` — the export modifier.
+    Pub,
+    /// `export` — the deprecated spelling of [`Token::Pub`]. It parses to the
+    /// same declarations; `petal check` warns and `petal fmt` / `petal lint
+    /// --fix` rewrite it.
     Export,
 
     // Operators
@@ -132,6 +137,7 @@ impl Token {
             Token::Elsif => "Elsif",
             Token::When => "When",
             Token::Import => "Import",
+            Token::Pub => "Pub",
             Token::Export => "Export",
             Token::Plus => "Plus",
             Token::Minus => "Minus",
@@ -211,8 +217,8 @@ impl Token {
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
     "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for",
-    "get", "if", "import", "in", "let", "match", "nil", "return", "set", "state", "then", "true",
-    "var", "when", "while",
+    "get", "if", "import", "in", "let", "match", "nil", "pub", "return", "set", "state", "then",
+    "true", "var", "when", "while",
 ];
 
 /// Words the parser treats as keywords but the lexer emits as `Ident`.
@@ -257,6 +263,7 @@ pub fn keyword_token(text: &str) -> Option<Token> {
         "elsif" => Token::Elsif,
         "when" => Token::When,
         "import" => Token::Import,
+        "pub" => Token::Pub,
         "export" => Token::Export,
         "true" => Token::True,
         "false" => Token::False,
@@ -296,6 +303,7 @@ pub fn keyword_text(tok: &Token) -> Option<&'static str> {
         Token::Elsif => "elsif",
         Token::When => "when",
         Token::Import => "import",
+        Token::Pub => "pub",
         Token::Export => "export",
         Token::True => "true",
         Token::False => "false",

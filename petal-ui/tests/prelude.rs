@@ -2411,7 +2411,8 @@ fn prelude_signatures() -> Vec<(String, usize, usize, usize)> {
     let mut out = Vec::new();
     for (i, line) in petal_ui::prelude_source().lines().enumerate() {
         let rest = line
-            .strip_prefix("export fn ")
+            .strip_prefix("pub fn ")
+            .or_else(|| line.strip_prefix("pub fn "))
             .or_else(|| line.strip_prefix("fn "));
         let Some(rest) = rest else { continue };
         let Some((name, args)) = rest.split_once('(') else { continue };

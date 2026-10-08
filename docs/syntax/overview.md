@@ -232,7 +232,9 @@ end
 
 ### `fn` (function declaration)
 
-The last expression is the implicit return; `return` exits early. Functions may
+The last expression is the implicit return; `return` exits early. A function
+declared `-> nil` has no implicit return (see
+[Implicit Return Values](../implicit-return-values.md)). Functions may
 be overloaded by arity (see [Function Overloading](../function-overloading.md)).
 
 ```petal
@@ -353,7 +355,9 @@ end
 Iterates over a list or range with `in … do … end`. A bare `for` statement
 runs for side effects only. In value position (assigned, returned, passed as
 an argument, or the last expression of a function body or branch) the same
-loop collects the last expression of each iteration into a list:
+loop collects the last expression of each iteration into a list. The tail of
+a function declared `-> nil` is not a value position
+([Implicit Return Values](../implicit-return-values.md)):
 
 ```petal
 for item in [1, 2, 3] do print(item) end   // statement: side effects only
@@ -467,7 +471,8 @@ expression; text between tags is a string child; `<Tag />` self-closes.
 ## Types (optional annotations)
 
 Type annotations are optional and advisory: they produce warnings, not
-runtime casts. `:` annotates a binding (`let`, `var`, or `state`) or a
+runtime casts. (One return type is more than advice: `-> nil` turns off the
+function's [implicit return](../implicit-return-values.md).) `:` annotates a binding (`let`, `var`, or `state`) or a
 parameter; `->` annotates a named function's return type:
 
 ```petal

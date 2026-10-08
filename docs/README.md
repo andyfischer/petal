@@ -14,6 +14,7 @@ Start here if you are learning or writing Petal:
 | [CLI Reference](CLI.md) | Every `petal` subcommand and flag, plus the JSON output formats |
 | [Module System](module-system.md) | `import`, how modules are found, and hot reload across files |
 | [Function Overloading](function-overloading.md) | How calls pick between functions and methods with the same name |
+| [Implicit Return Values](implicit-return-values.md) | What a function yields without `return`, where a `for` loop collects a list, and how `-> nil` turns both off |
 | [Text & Fonts](text-and-fonts.md) | Drawing text in UI apps: faces, sizes, metrics, measurement |
 | [Rebind Operator](syntax/rebind-operator.md) | The `@` in-out argument operator: `f(@x)` means `x = f(x)` |
 | [Commas](syntax/commas.md) | Where commas are required, and how a leading `-` is read |

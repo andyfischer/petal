@@ -237,7 +237,11 @@ instance that is the class's own name (`"Rect"`), not `"record"`.
 Petal is dynamically typed, but you can *optionally* annotate every binding form
 (`let`, `var`, `state`), function and lambda parameters, and a named function's
 return type. Annotations are checked at compile time and are **advisory only**: a
-mismatch is a warning, never an error, and annotations have no effect at runtime.
+mismatch is a warning, never an error, and annotations have no effect at runtime
+— with two exceptions, both of which change what is compiled rather than what is
+checked: an annotation that pins a method call's receiver to one
+[class](#classes--methods), and a return type of **`-> nil`**, which turns off
+the function's [implicit return](implicit-return-values.md).
 Run `petal check <file>` to see the warnings, or `petal check --strict` to make
 them fail the exit code (see [CLI.md](CLI.md#check--compile-without-running)).
 
@@ -676,15 +680,20 @@ end
 ```
 
 A side-effect loop that happens to end a function is in tail position, so it
-does collect. Add a trailing `nil` when the caller has no use for the list and
-the allocation is worth avoiding:
+does collect. Declare the function **`-> nil`** when the caller has no use for
+the list: a `-> nil` function has no implicit return, so its tail is an ordinary
+statement and the loop builds nothing.
 
 ```petal
-fn draw_all(items)
-    for it in items do draw(it) end
-    nil               // side effects only again
+fn draw_all(items) -> nil
+    for it in items do draw(it) end     // side effects only again
 end
 ```
+
+`petal suggest` finds these: it reports every un-annotated function that ends
+in a loop and reads its call sites to propose `-> nil` or `-> list`. The full
+set of rules — what is and is not a value position, and everything `-> nil`
+changes — is in [Implicit Return Values](implicit-return-values.md).
 
 Inside a collecting loop:
 
@@ -750,6 +759,10 @@ end
 
 print(add(2, 3))  // 5
 ```
+
+The implicit return reaches into a trailing `if`, `match` or `for`, and a
+function declared `-> nil` has none at all — see
+[Implicit Return Values](implicit-return-values.md) for the whole rule.
 
 Use `return` for early exit:
 

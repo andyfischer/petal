@@ -87,12 +87,15 @@ Things to notice, because each is a rule you will meet again:
   `fn … end`. No braces, no significant indentation.
 - **The last expression is the return value.** `Task.label` has no `return`.
   An explicit `return expr` exists for early exit; a bare `return` returns
-  `nil`.
+  `nil`. A function declared `-> nil` is the exception: it has no implicit
+  return ([Implicit Return Values](implicit-return-values.md)).
 - **`{}` inside a string interpolates**, like a JS template literal but with the
   plain double quote: `"[{mark}] {t.title}"`.
 - **Type annotations are optional and advisory.** `title: string` and
   `-> string` are checked at compile time and reported as *warnings*; they have
-  no runtime effect. You can leave every one of them off.
+  no runtime effect. You can leave every one of them off. (The exception is
+  `-> nil`, which means "this function returns nothing" and is compiled that
+  way.)
 - **`t.label()` is a method call**, and a method is just a function whose first
   parameter is the receiver. There is no `self`.
 - **Commas are required** between list elements, and a trailing comma is fine.
@@ -498,14 +501,18 @@ Both keywords also work with their ordinary meanings in a plain side-effect
 `for` and in a `while`, including from inside a nested loop.
 
 The gotcha: a side-effect loop at the *end of a function body* is in tail
-position, so it collects. Add a trailing `nil` if you don't want the list:
+position, so it collects. Declare the function `-> nil` if you don't want the
+list — that turns the implicit return off, and the loop allocates nothing:
 
 ```petal
-fn draw_all(items)
+fn draw_all(items) -> nil
   for it in items do draw(it) end
-  nil
 end
 ```
+
+`petal suggest` points these out, and tells `-> nil` from `-> list` by whether
+any caller uses the result. Every position that does and does not capture a
+loop is listed in [Implicit Return Values](implicit-return-values.md).
 
 `while` is statement-only — no collecting form. A `for … end` also cannot be
 piped where it stands (`for x in xs do x end |> len()` is a parse error); bind

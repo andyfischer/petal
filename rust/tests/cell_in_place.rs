@@ -334,6 +334,34 @@ fn a_helpers_result_is_the_container_when_the_caller_reads_it() {
 }
 
 #[test]
+fn a_forwarded_result_is_read_or_dropped_per_call_not_per_function() {
+    // `g` ends on a write to its own cell and `k` forwards it, so whether the
+    // list is handed out is decided by `k`'s caller, call by call — also when
+    // the calls before it dropped the result and memoization had every reason
+    // to think it knew what `g(3)` evaluates to.
+    let code = "fn g(n)\n  var xs = [1, 2, n]\n  set xs[0] = 9\nend\nfn k(n) g(n) end\n\
+                fn use(n, keep)\n  if keep then print(k(n)) else k(n) end\n  nil\nend\n\
+                state c = 0\nc = c + 1\nuse(3, false)\nuse(3, false)\nuse(3, true)\nuse(3, c % 2 == 0)\nnil";
+    let baseline = run_frames(code, RunPolicy::BASELINE, 4);
+    assert_eq!(baseline.0, ["[9, 2, 3]"; 6]);
+    assert_eq!(run_frames(code, RunPolicy::FAST, 4), baseline);
+    assert_eq!(run_frames(code, RunPolicy::REPLAY, 4), baseline);
+}
+
+#[test]
+fn every_way_of_calling_a_writing_helper_gets_the_list_it_asked_for() {
+    // A method call, a pipe and a list literal all read their callee's
+    // result; only the plain statement calls in between drop it.
+    assert_prints(
+        "class Box\n  v: int,\nend\nvar xs = [0, 0, 0]\nfn Box.put(b: Box, i: int)\n  set xs[i] = b.v\nend\n\
+         fn put(i, v)\n  set xs[i] = v\nend\n\
+         let r1 = Box(5).put(0)\nBox(6).put(1)\nlet r2 = 2 |> put(9)\n1 |> put(4)\n\
+         let r3 = [put(0, 3), put(1, 3)]\nput(2, 2)\nprint(r1, r2, r3, xs)",
+        "[5, 0, 0] [5, 6, 9] [[3, 4, 9], [3, 3, 9]] [3, 3, 2]",
+    );
+}
+
+#[test]
 fn a_write_in_value_position_hands_its_container_out() {
     assert_prints(
         "var xs = [0, 0, 0]\nlet each = for i in range(0, 3) do\n  set xs[i] = i + 1\nend\nprint(each, xs)",

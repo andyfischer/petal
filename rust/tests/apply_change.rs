@@ -630,6 +630,53 @@ fn an_importer_that_rebinds_with_at_is_refused() {
 }
 
 #[test]
+fn an_importer_that_writes_through_the_modules_name_is_refused() {
+    // `m.x = …` has never worked (a module is not a value), but it is the
+    // importer asking to write the binding, and a `var` does not make it so.
+    let dir = Dir::new("importer-qualified-write");
+    let tally = dir.write("tally.ptl", "pub let hits = [0]\npub let name = \"t\"\n");
+    let writer_src = "import tally as t\nfn f()\n  t.hits[0] = 1\nend\nt.name = \"z\"\nset t.hits = []\n";
+    dir.write("writer.ptl", writer_src);
+
+    let err = convert(&tally, "/hits", &[]).expect_err("an importer writes it");
+    assert!(
+        err.contains("writer.ptl imports `hits` and writes it (lines 3, 6)"),
+        "{err}"
+    );
+    assert_eq!(dir.read("tally.ptl"), "pub let hits = [0]\npub let name = \"t\"\n");
+    assert_eq!(dir.read("writer.ptl"), writer_src);
+
+    // Reading through the module's name, or writing another of its names,
+    // is nobody's business.
+    let dir = Dir::new("importer-qualified-read");
+    let tally = dir.write("tally.ptl", "pub let hits = [0]\npub let name = \"t\"\n");
+    dir.write(
+        "reader.ptl",
+        "import tally\nfn f() tally.hits[0] end\nlet local = {hits: 1}\nlocal.hits = 2\nprint(f())\n",
+    );
+    let plan = convert(&tally, "/hits", &[]).unwrap();
+    let report = plan.importers.as_ref().unwrap();
+    assert_eq!(report.importers.len(), 1, "{:?}", report.importers);
+    assert!(
+        report.importers[0].detail.contains("reads it qualified"),
+        "{:?}",
+        report.importers
+    );
+}
+
+#[test]
+fn a_from_entry_that_does_not_exist_is_said_to_be_missing() {
+    let dir = Dir::new("from-missing");
+    let tally = dir.write("tally.ptl", TALLY);
+    let missing = dir.0.join("nowhere.ptl");
+    let err = convert(&tally, "/hits", &[&missing]).expect_err("no such entry");
+    assert!(err.starts_with("--from "), "{err}");
+    assert!(err.contains("nowhere.ptl"), "{err}");
+    assert!(!err.contains("would not compile"), "{err}");
+    assert_eq!(dir.read("tally.ptl"), TALLY);
+}
+
+#[test]
 fn from_names_the_programs_whose_imports_are_followed() {
     let dir = Dir::new("from");
     // The module lives in a library directory; the app that uses it does not.

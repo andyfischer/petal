@@ -174,6 +174,13 @@ impl Plan {
 /// Work out `request` against `file`. Nothing is written; see [`Plan::write`].
 /// An `Err` is a refusal or a failure, worded for the user.
 pub fn plan(file: &Path, request: &Request, opts: &ChangeOptions) -> Result<Plan, String> {
+    // A `--from` entry that is not there would otherwise surface from the
+    // gate, as a file that "would not compile after the change".
+    for from in &opts.from {
+        if let Err(e) = std::fs::metadata(from) {
+            return Err(format!("--from {}: {e}", from.display()));
+        }
+    }
     match request {
         Request::ConvertToVar { target } => convert_to_var::plan(file, target, opts),
     }

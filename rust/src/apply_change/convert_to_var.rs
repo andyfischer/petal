@@ -38,9 +38,10 @@
 //!
 //! - **`@x`** on the binding. `@` desugars to `x = f(x)` and is `let`-only;
 //!   which of the two spellings the author wants afterwards is their call.
-//! - **An importer that writes the binding** (`x = …`, `@x`), when the
-//!   binding is exported. An importer may read an exported `var` and never
-//!   write it (docs/module-system.md), so there is no rewrite to offer.
+//! - **An importer that writes the binding** (`x = …`, `@x`, or `m.x = …`
+//!   through the module's name), when the binding is exported. An importer
+//!   may read an exported `var` and never write it (docs/module-system.md),
+//!   so there is no rewrite to offer.
 //! - **`config let`**, which cannot be a `var`; a binding that is already
 //!   one; a path that names a function.
 
@@ -127,7 +128,16 @@ pub(super) fn plan(file: &Path, target: &str, opts: &ChangeOptions) -> Result<Pl
                 stmts,
                 form,
                 binds_bare,
+                aliases,
             } = importer;
+            // `m.x = …` is a write whichever way the name was imported. It
+            // has never worked (a module is not a value), and it is still
+            // the importer saying it wants to write the binding.
+            let qualified = qualified_writes(&stmts, &aliases, name);
+            if !qualified.is_empty() {
+                refusals.push(importer_write_refusal(&path, name, &qualified));
+                continue;
+            }
             let mut detail = "reads it qualified, no change needed".to_string();
             if binds_bare {
                 let chars: Vec<char> = source.chars().collect();
@@ -458,6 +468,7 @@ impl<'a> Uses<'a> {
     /// Refuse what cannot be rewritten.
     fn check(&self, file: &Path) -> Result<(), String> {
         let name = self.name;
+        let file_path = file;
         let file = file.display();
         if let Some(line) = self.lost {
             return Err(format!(
@@ -465,26 +476,12 @@ impl<'a> Uses<'a> {
                  parser reported it; nothing was changed"
             ));
         }
-        let lines = |ls: &[u32]| {
-            let mut ls = ls.to_vec();
-            ls.dedup();
-            format!(
-                "line{} {}",
-                if ls.len() == 1 { "" } else { "s" },
-                ls.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
-            )
-        };
         if self.importer {
             let mut written: Vec<u32> = self.writes.iter().map(|w| w.1).collect();
             written.extend(&self.rebinds);
             written.sort();
             if !written.is_empty() {
-                return Err(format!(
-                    "refusing: {file} imports `{name}` and writes it ({}). An importer may read \
-                     an exported `var` but never write it: export a function that does the \
-                     write from the declaring module, and call that instead",
-                    lines(&written)
-                ));
+                return Err(importer_write_refusal(file_path, name, &written));
             }
         } else if !self.rebinds.is_empty() {
             return Err(format!(
@@ -526,6 +523,84 @@ impl<'a> Uses<'a> {
             parts.join(", ")
         }
     }
+}
+
+/// `line 3`, `lines 3, 7`. Sorted input; repeats are said once.
+fn lines(ls: &[u32]) -> String {
+    let mut ls = ls.to_vec();
+    ls.dedup();
+    format!(
+        "line{} {}",
+        if ls.len() == 1 { "" } else { "s" },
+        ls.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")
+    )
+}
+
+/// The refusal for an importer that writes the binding on `written` lines.
+fn importer_write_refusal(file: &Path, name: &str, written: &[u32]) -> String {
+    format!(
+        "refusing: {} imports `{name}` and writes it ({}). An importer may read an exported \
+         `var` but never write it: export a function that does the write from the declaring \
+         module, and call that instead",
+        file.display(),
+        lines(written)
+    )
+}
+
+/// Lines of the writes spelled through the module's name: `m.x = …`,
+/// `m.x[i] = …`, `set m.x.f = …`, for any `m` in `aliases`. A local that
+/// shadows the alias is not looked for; such a write refuses too, which errs
+/// on the side of asking.
+fn qualified_writes(stmts: &[Stmt], aliases: &[String], name: &str) -> Vec<u32> {
+    struct Finder<'a> {
+        aliases: &'a [String],
+        name: &'a str,
+        lines: Vec<u32>,
+    }
+    impl Finder<'_> {
+        /// Is `e` a path that starts `m.x`?
+        fn through_module(&self, e: &Expr) -> bool {
+            match &e.kind {
+                ExprKind::FieldAccess { object, field } => match &object.kind {
+                    ExprKind::Ident(m) => field == self.name && self.aliases.contains(m),
+                    _ => self.through_module(object),
+                },
+                ExprKind::IndexAccess { object, .. } => self.through_module(object),
+                _ => false,
+            }
+        }
+    }
+    impl ExprVisitor for Finder<'_> {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::Assign { target, .. } | StmtKind::Set { target, .. } = &s.kind {
+                let written = match target {
+                    AssignTarget::Name(_) => false,
+                    AssignTarget::Field(object, field) => match &object.kind {
+                        ExprKind::Ident(m) => field == self.name && self.aliases.contains(m),
+                        _ => self.through_module(object),
+                    },
+                    AssignTarget::Index(object, _) => self.through_module(object),
+                };
+                if written {
+                    self.lines.push(s.span.start.line);
+                }
+            }
+            walk_stmt(self, s);
+        }
+    }
+    if aliases.is_empty() {
+        return Vec::new();
+    }
+    let mut finder = Finder {
+        aliases,
+        name,
+        lines: Vec::new(),
+    };
+    for s in stmts {
+        finder.visit_stmt(s);
+    }
+    finder.lines.sort();
+    finder.lines
 }
 
 /// The name a write target is rooted at.

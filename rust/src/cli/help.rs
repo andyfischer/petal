@@ -800,7 +800,8 @@ IMPORTERS
        the change follows it there. An importer may read an exported 'var'
        but never write it: a bare read inside one of the importer's functions
        gains 'get', a qualified read ('m.x') needs nothing, and an importer
-       that assigns the name stops the whole change.
+       that assigns the name ('x = e', '@x', 'm.x = e') stops the whole
+       change.
 
        Importers are looked for in one of two places, and the report says
        which, and names every importer it found:

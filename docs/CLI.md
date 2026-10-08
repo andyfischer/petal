@@ -976,7 +976,7 @@ follows it into them. An importer may read an exported `var` and
 | A bare read inside a function (`import m: x`, `import m: *`) | gains `get` |
 | A bare read at the file's top level | left alone |
 | A qualified read, `m.x` | left alone: it reads the current value wherever it is written |
-| A write, `x = …` or `@x` | **the whole change is refused** |
+| A write: `x = …`, `@x`, or `m.x = …` through the module's name | **the whole change is refused** |
 
 Importers are looked for in one of two places. The report says which, and
 names every importer it found:

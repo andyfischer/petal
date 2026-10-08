@@ -385,11 +385,24 @@ pub(super) fn handle_apply_change(args: &ApplyChangeArgs, include_dirs: &[PathBu
         }
     };
 
+    // Importers are found by canonical path. Name them the way the target
+    // was named where that is possible: relative to the working directory.
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|d| crate::module::canonical_path(&d));
+    let shown = |path: &Path| -> String {
+        cwd.as_deref()
+            .and_then(|d| path.strip_prefix(d).ok())
+            .unwrap_or(path)
+            .display()
+            .to_string()
+    };
+
     // The diff is the dry run's product, so it alone goes to stdout; the
     // account of what was done goes to stderr either way.
     eprintln!("{name}: {}", plan.summary);
     for f in &plan.files {
-        eprintln!("  {}: {}", f.path.display(), f.detail);
+        eprintln!("  {}: {}", shown(&f.path), f.detail);
     }
     match &plan.importers {
         None => eprintln!("  importers: none considered, the binding is not exported"),
@@ -400,7 +413,7 @@ pub(super) fn handle_apply_change(args: &ApplyChangeArgs, include_dirs: &[PathBu
                 report.how
             );
             for i in &report.importers {
-                eprintln!("    {} ({}): {}", i.path.display(), i.form, i.detail);
+                eprintln!("    {} ({}): {}", shown(&i.path), i.form, i.detail);
             }
         }
     }
@@ -412,7 +425,7 @@ pub(super) fn handle_apply_change(args: &ApplyChangeArgs, include_dirs: &[PathBu
         for f in &plan.files {
             print!(
                 "{}",
-                unified_diff(&f.path.display().to_string(), &f.before, &f.after, name)
+                unified_diff(&shown(&f.path), &f.before, &f.after, name)
             );
         }
         eprintln!(

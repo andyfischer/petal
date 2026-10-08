@@ -39,6 +39,9 @@ pub(super) struct Importer {
     /// Whether the import binds the name bare in this file (`import m: x`,
     /// `import m: *`). A qualified import reaches it only as `m.x`.
     pub binds_bare: bool,
+    /// The names the module itself is bound under here (`import m` → `m`,
+    /// `import m as u` → `u`), through which the binding is `m.x`.
+    pub aliases: Vec<String>,
 }
 
 pub(super) struct Discovered {
@@ -91,7 +94,7 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
     // re-export it. A facade's own importers only show up once it is known to
     // be one, so iterate to a fixed point.
     let mut sources: HashSet<PathBuf> = HashSet::from([target.clone()]);
-    let mut found: HashMap<PathBuf, (Vec<String>, bool)> = HashMap::new();
+    let mut found: HashMap<PathBuf, (Vec<String>, bool, Vec<String>)> = HashMap::new();
     loop {
         let mut grew = false;
         for path in &candidates {
@@ -103,6 +106,7 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
             };
             let mut forms = Vec::new();
             let mut bare = false;
+            let mut aliases = Vec::new();
             let mut re_exports = false;
             for decl in imports(&file.stmts) {
                 let Some(resolved) = env.resolve_module_file(&decl.module, path) else {
@@ -121,12 +125,22 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
                 let starred = decl.star && !declares(&file.stmts, name);
                 forms.push(import_text(decl));
                 bare |= named || starred;
+                // A qualified import binds the module, not the name. Only an
+                // import of the target itself counts: a facade re-exports
+                // names, and `facade.x` is not a spelling of the binding.
+                if decl.names.is_none() && !decl.star && canonical_path(&resolved) == target {
+                    let alias = decl
+                        .alias
+                        .as_deref()
+                        .unwrap_or_else(|| crate::ast::module_local_name(&decl.module));
+                    aliases.push(alias.to_string());
+                }
                 re_exports |= decl.exported && (named || decl.star);
             }
             if forms.is_empty() {
                 continue;
             }
-            found.insert(path.clone(), (forms, bare));
+            found.insert(path.clone(), (forms, bare, aliases));
             if re_exports && sources.insert(path.clone()) {
                 grew = true;
             }
@@ -138,7 +152,7 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
 
     let mut importers: Vec<Importer> = found
         .into_iter()
-        .filter_map(|(path, (forms, binds_bare))| {
+        .filter_map(|(path, (forms, binds_bare, aliases))| {
             let file = files.take(&path)?;
             Some(Importer {
                 path,
@@ -146,6 +160,7 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
                 stmts: file.stmts,
                 form: forms.join("; "),
                 binds_bare,
+                aliases,
             })
         })
         .collect();

@@ -269,12 +269,11 @@ fn build_txns() -> list
 end
 
 fn build_income() -> list
-  let out = for m in range(0, 12) do
+  for m in range(0, 12) do
     let base = if m < 6 then 5240.0 else 5615.0 end
     let bonus = if rand01(9000 + m) > 0.58 then 420.0 + rand01(9100 + m) * 1380.0 else 0.0 end
     base + bonus
   end
-  out
 end
 
 // ── Aggregation ──────────────────────────────────────────────────────────────
@@ -329,13 +328,8 @@ fn in_scope(t: record, ci: num, mi: num, mo: num)
   (ci < 0 || t.cat == ci) && (mi < 0 || t.mer == mi) && (mo < 0 || t.m == mo)
 end
 
-// A `for` is only captured where its value is *directly* consumed: bound to a
-// name, or passed as an argument. As a function's final expression, or as the
-// last expression of an `if` branch, it evaluates to nil — so every list built
-// by a loop in this file is bound to a local first.
 fn zeros(n: num) -> list
-  let out = for i in range(0, n) do 0.0 end
-  out
+  for i in range(0, n) do 0.0 end
 end
 
 fn zeros12() -> list
@@ -378,16 +372,14 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
 
   let slices = []
   if ci < 0 then
-    let cs = for c in range(0, len(CATS)) do
+    slices = for c in range(0, len(CATS)) do
       {label: CATS[c].name, value: bucket[c], color: CATS[c].color, key: c}
     end
-    slices = cs
   elsif mi < 0 then
     let ms = CATS[ci].merchants
-    let msl = for k in range(0, len(ms)) do
+    slices = for k in range(0, len(ms)) do
       {label: ms[k].name, value: bucket[k], color: shade(c: CATS[ci].color, i: k, n: len(ms)), key: k}
     end
-    slices = msl
   else
     let here = sum_of(bucket)
     slices = [

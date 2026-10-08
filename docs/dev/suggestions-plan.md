@@ -249,3 +249,23 @@ under a one-letter name, a call that would mostly echo its own arguments) —
 are in the module docs of `suggest/named_args.rs` and in CLI.md. The second
 group came out of applying the tool to the example corpus: every one of those
 rewrites was provably safe and read worse than the call it replaced.
+
+## 10. Advice: a suggestion with no rewrite
+
+Everything above ends in text to splice, behind a proof that splicing it is
+safe. That is the wrong shape for a finding like "this loop is an insertion
+sort": the detection is a heuristic, the replacement depends on intent
+(`sort` with the comparator already written? `sort_by` with a key?), and no
+equivalence check could vouch for it. `petal lint` cannot hold it either —
+every lint rule carries a verified fix.
+
+So `petal suggest` has a third kind, `advice` (`suggest/advice.rs`): a place, a
+comment, and a rule name. It carries no edit, which is what keeps the rest of
+the command's guarantees intact — `--apply` and `--verify` only ever look at
+the two rewriting kinds, and a `--json` consumer sees an empty `edits`.
+
+The bar for a rule: right often enough to be worth reading, and impossible to
+make exact enough for a lint fix. A false positive costs a line of output. The
+first rule, `hand-written-sort`, exists because two example apps wrote an
+insertion sort by hand after `sort(list, compare)` and `sort_by` had shipped;
+it fires on both originals and on nothing else in the example corpus.

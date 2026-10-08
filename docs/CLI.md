@@ -417,12 +417,13 @@ nothing here runs during an ordinary compile, nothing can fail a build, and
 nothing is written without `--apply`. See
 [suggestions-plan.md](dev/suggestions-plan.md).
 
-There are two kinds, and `--only` picks between them:
+There are three kinds, and `--only` picks between them:
 
 | Kind | What it proposes | The proof `--apply` holds it to |
 |---|---|---|
 | `types` | A type annotation the program already implies | Still compiles, and gains no type-checker warning |
 | `named-args` | Named arguments for a call that passes three or more by position | Compiles to the same IR ([`ir-equal --named-args`](#ir-equal--are-two-files-the-same-program)), and gains no warning |
+| `advice` | Nothing — a comment on code that looks like it could be simpler | None: there is no rewrite, so `--apply` never acts on it |
 
 ```
 $ petal suggest app.ptl
@@ -466,6 +467,30 @@ body keeps, so it stays precise.
 
 Suggestions **compound** — an applied annotation is evidence for the next pass
 — so re-running until it reports nothing is the intended workflow.
+
+#### Advice
+
+Some things can be noticed but not rewritten: the detection is a heuristic, the
+right replacement depends on what the code was meant to do, and nothing could
+prove the two alike. Advice says so and stops there — a place, a comment, and
+the rule that produced it. It has no `suggest:` line, `--apply` writes nothing
+for it, and `--verify` does not count it.
+
+```
+app.ptl:266:3  fn sort_tasks
+  advice: this looks like a hand-written insertion sort, which rebuilds the
+          list once per element. `sort(list, compare)` takes a comparator …
+          The test here is `task_less(t, x)`, so `sort(list, task_less)` is
+          likely the whole loop.
+  rule: hand-written-sort
+```
+
+| Rule | What it notices |
+|---|---|
+| `hand-written-sort` | A loop that inserts each element into place by rebuilding the list, where [`sort(list, compare)` or `sort_by(list, key)`](Builtins.md#sortlist-compare) is one call |
+
+In `--json`, advice is an item with `"kind": "advice"`, a `rule`, a `message`,
+and an `edits` list that is always empty.
 
 #### Named arguments
 

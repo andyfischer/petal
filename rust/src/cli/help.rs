@@ -512,7 +512,7 @@ NAMED ARGUMENTS
 ADVICE
        Advice is for what can be noticed but not rewritten. Each piece names
        a place, says what it looks like, and stops there: detection is a
-       heuristic ("looks like"), the right replacement depends on what the
+       heuristic ('looks like'), the right replacement depends on what the
        code was meant to do, and nothing could prove the two alike. So there
        is no 'suggest:' line, --apply writes nothing for it, and --verify
        does not count it. The rules:

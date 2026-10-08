@@ -20,6 +20,7 @@ fn opts(host: HostProfile) -> SuggestOptions {
         kinds: Kinds {
             types: false,
             named_args: true,
+            advice: false,
         },
         ..Default::default()
     }

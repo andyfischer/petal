@@ -167,3 +167,105 @@ fn applying_suggestions_does_not_change_the_ir() {
     let verdict = petal::ir_equiv::sources_equivalent(src, &out, &[], None).expect("both compile");
     assert!(verdict.is_ok(), "IR changed: {:?}", verdict.err());
 }
+
+// ── Advice: a comment about the code, with no rewrite ───────────────────────
+
+/// `(rule, subject, line)` for each piece of advice about `src`.
+fn advice(src: &str) -> Vec<(String, String, usize)> {
+    let out = suggest_source(src, None, &SuggestOptions::default()).expect("suggest");
+    out.advice
+        .iter()
+        .map(|a| (a.rule.to_string(), a.subject.clone(), a.line))
+        .collect()
+}
+
+const INSERTION_SORT: &str = "fn less(a, b)
+  a.k < b.k
+end
+fn sorted(rows)
+  var out = []
+  for r in rows do
+    var placed = false
+    var res = []
+    for x in out do
+      if !placed && less(r, x) then
+        set res = append(res, r)
+        set placed = true
+      end
+      set res = append(res, x)
+    end
+    if !placed then set res = append(res, r) end
+    set out = res
+  end
+  out
+end
+print(sorted([{k: 2}, {k: 1}]))
+";
+
+#[test]
+fn a_hand_written_insertion_sort_gets_advice() {
+    assert_eq!(
+        advice(INSERTION_SORT),
+        [("hand-written-sort".to_string(), "fn sorted".to_string(), 6)]
+    );
+}
+
+/// When the insertion test is `less(r, x)`, that function is the comparator
+/// `sort` wants, and the advice says so by name.
+#[test]
+fn the_advice_names_a_comparator_it_can_see() {
+    let out = suggest_source(INSERTION_SORT, None, &SuggestOptions::default()).expect("suggest");
+    let message = &out.advice[0].message;
+    assert!(message.contains("looks like"), "{message}");
+    assert!(message.contains("`sort(list, less)`"), "{message}");
+
+    // An inline test has no function to name; the advice stays general.
+    let inline = INSERTION_SORT.replace("less(r, x)", "r.k < x.k");
+    let out = suggest_source(&inline, None, &SuggestOptions::default()).expect("suggest");
+    assert_eq!(out.advice.len(), 1);
+    assert!(!out.advice[0].message.contains("is likely the whole loop"));
+}
+
+/// Advice is a comment: it is not a suggestion with an edit, so nothing about
+/// it can reach `--apply`.
+#[test]
+fn advice_carries_no_edit() {
+    let out = suggest_source(INSERTION_SORT, None, &SuggestOptions::default()).expect("suggest");
+    assert_eq!(out.advice.len(), 1);
+    let annotated = apply(INSERTION_SORT, &out.suggestions);
+    let again = suggest_source(&annotated, None, &SuggestOptions::default()).expect("suggest");
+    assert_eq!(again.advice.len(), 1, "applying the rest leaves the advice standing");
+}
+
+#[test]
+fn advice_can_be_selected_or_left_out() {
+    use petal::suggest::Kinds;
+    let only = |list: &str| SuggestOptions {
+        kinds: Kinds::parse(list).expect("kinds"),
+        ..SuggestOptions::default()
+    };
+    let out = suggest_source(INSERTION_SORT, None, &only("advice")).expect("suggest");
+    assert_eq!(out.advice.len(), 1);
+    assert!(out.suggestions.is_empty() && out.named_args.is_empty());
+    let out = suggest_source(INSERTION_SORT, None, &only("types,named-args")).expect("suggest");
+    assert!(out.advice.is_empty());
+}
+
+/// Nested loops that build a list are everywhere; only the insertion step —
+/// the outer element appended under a test against the inner one, and the
+/// inner one kept — is a sort.
+#[test]
+fn ordinary_nested_loops_get_no_advice() {
+    for src in [
+        // A cross product.
+        "var out = []\nfor a in [1, 2] do\n  for b in [3, 4] do\n    set out = append(out, a * b)\n  end\nend\nprint(out)\n",
+        // A filter against another list: appends the outer, never the inner.
+        "var out = []\nfor a in [1, 2] do\n  for b in [2, 3] do\n    if a == b then set out = append(out, a) end\n  end\nend\nprint(out)\n",
+        // A flatten: appends the inner, never tests against the outer.
+        "var out = []\nfor row in [[1], [2]] do\n  for x in row do\n    set out = append(out, x)\n  end\nend\nprint(out)\n",
+        // The builtin, which is the point.
+        "print(sort([2, 1], fn(a, b) -> a - b))\n",
+    ] {
+        assert!(advice(src).is_empty(), "{src}");
+    }
+}

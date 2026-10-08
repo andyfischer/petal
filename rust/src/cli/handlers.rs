@@ -1756,7 +1756,7 @@ pub(super) fn handle_suggest(
 
     let count = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
     let mut summary = Vec::new();
-    if !outcome.suggestions.is_empty() || !args.kinds.named_args {
+    if !outcome.suggestions.is_empty() || (args.kinds.types && !args.kinds.named_args) {
         summary.push(format!(
             "{} across {functions}",
             count(outcome.suggestions.len(), "type annotation")

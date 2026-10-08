@@ -160,6 +160,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use super::cells::CellPlan;
 use crate::program::{BlockId, Program, StateKey, Term, TermId, TermOp};
 
 /// Terms whose container input is provably unique + non-escaping, and may
@@ -171,12 +172,28 @@ pub struct InPlaceSet {
     /// not be a memoized scope (`crate::memo`): its record would keep the
     /// returned container as the cached result while the caller rewrites it.
     fresh_root_calls: HashSet<TermId>,
+    /// The cell accesses that keep their cell's ownership of its container
+    /// (`super::cells`). A separate analysis with its own flag; it rides here
+    /// because lowering consults both for the same question.
+    cells: CellPlan,
 }
 
 impl InPlaceSet {
-    /// Whether the mutation term `t` may be lowered in place.
+    /// Whether the mutation term `t` may be lowered in place: escape analysis
+    /// proved its container unique, or it sits between a cell's take and put.
     pub fn allows(&self, t: TermId) -> bool {
-        self.terms.contains(&t)
+        self.terms.contains(&t) || self.cells.mutates_in_place(t)
+    }
+
+    /// The same set, with `cells` deciding how cell reads and writes lower.
+    pub fn with_cells(mut self, cells: CellPlan) -> InPlaceSet {
+        self.cells = cells;
+        self
+    }
+
+    /// How each cell read, cell write and call lowers.
+    pub fn cells(&self) -> &CellPlan {
+        &self.cells
     }
 
     /// Whether the call term `t` may be memoized: false when the caller

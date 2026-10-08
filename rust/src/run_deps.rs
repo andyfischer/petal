@@ -365,6 +365,17 @@ pub fn fingerprint_binding(value: Option<&Value>, heap: &Heap) -> u64 {
     if fp == UNFINGERPRINTABLE { fp - 1 } else { fp }
 }
 
+/// Content fingerprint of a value, or `None` when it has none (a closure, a
+/// handle, a structure past the budget). Equal content fingerprints alike;
+/// used where a value is about to be edited in place and can no longer be
+/// compared against afterwards.
+pub fn fingerprint_contents(value: &Value, heap: &Heap) -> Option<u64> {
+    use std::hash::Hasher;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let mut budget = FINGERPRINT_BUDGET;
+    hash_content(value, heap, &mut h, &mut budget).then(|| h.finish())
+}
+
 /// Hash `v` by content. Returns false when the value is not fingerprintable
 /// (a closure, a handle, or a structure past the budget).
 fn hash_content(

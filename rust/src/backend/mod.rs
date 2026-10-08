@@ -56,6 +56,14 @@ pub struct OptFlags {
     /// bytecode (M4 route A; `bytecode::lastuse`). Independent of
     /// `in_place_mutation` so either route can be disabled to isolate a bug.
     pub in_place_straight_line: bool,
+    /// Let a write through a `var` cell (`set xs[i] = v`, `set r.f = v`,
+    /// `set xs = append(xs, v)`) mutate the cell's container instead of
+    /// copying it, whenever the cell is the container's only holder — which
+    /// the heap tracks per cell at run time (`bytecode::cells`). This is the
+    /// in-place route that works across function boundaries: the other two
+    /// prove uniqueness from an allocation in the same function, and a cell's
+    /// contents were allocated somewhere else.
+    pub in_place_cells: bool,
     /// Propagate register copies and drop the `Move`s left dead by it
     /// (`bytecode::copyprop`). Lowering emits a move per variable use and per
     /// phi edge, which is about half of a typical program's instructions.
@@ -85,6 +93,7 @@ impl OptFlags {
         OptFlags {
             in_place_mutation: false,
             in_place_straight_line: false,
+            in_place_cells: false,
             copy_propagation: false,
             preserve_observations: false,
             preserve_trace: false,
@@ -96,6 +105,7 @@ impl OptFlags {
         OptFlags {
             in_place_mutation: true,
             in_place_straight_line: true,
+            in_place_cells: true,
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,
@@ -115,6 +125,7 @@ impl OptFlags {
         OptFlags {
             in_place_mutation: true,
             in_place_straight_line: true,
+            in_place_cells: true,
             copy_propagation: true,
             preserve_observations: false,
             preserve_trace: false,

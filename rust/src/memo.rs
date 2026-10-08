@@ -153,6 +153,10 @@ pub const TINY_AFTER_FOLDS: u32 = 4;
 /// would be most of the memory the run touched.
 pub const MAX_SCOPE_DEPS: usize = 8192;
 
+/// The cells a scope created. Asked about on every `var` read and write the
+/// scope makes, so it hashes with the VM's fast hasher rather than SipHash.
+pub type CellSet = HashSet<CellId, std::hash::BuildHasherDefault<crate::fxhash::FxHasher>>;
+
 /// One thing a scope depended on or did, in execution order.
 #[derive(Debug, Clone)]
 pub enum Dep {
@@ -177,7 +181,15 @@ pub enum Dep {
     /// A `state` slot was written.
     StateWrite { key: RuntimeStateKey, value: Value },
     /// A `var` cell created outside the scope was read and held `value`.
-    CellRead { cell: CellId, value: Value },
+    /// `mutations` is the cell's in-place mutation count at the read
+    /// ([`Heap::cell_mutations`]): a read that only looked into the contents
+    /// left the cell owning them, so a later write may have changed `value`
+    /// itself, and only an unchanged count says it did not.
+    CellRead {
+        cell: CellId,
+        value: Value,
+        mutations: u64,
+    },
     /// A `var` cell created outside the scope was written.
     CellWrite { cell: CellId, value: Value },
     /// A native consulted host data outside the binding table; valid while the
@@ -255,9 +267,14 @@ pub struct OpenScope {
     pub rng_at_entry: u64,
     /// Something happened that a replay could not reproduce.
     pub effectful: bool,
+    /// The scope wrote a `var` cell's container in place (and the cell was
+    /// not its own), which is what made it effectful. A call site that does
+    /// this every time is not worth opening a scope for; see
+    /// [`MemoTable::note_unrecordable`].
+    pub wrote_in_place: bool,
     /// Cells created inside this scope. A read of one is not a dependency; a
     /// result or a write carrying one makes the scope effectful.
-    pub local_cells: HashSet<CellId>,
+    pub local_cells: CellSet,
     /// The touch capture bracketing the scope; taken when it closes.
     pub capture: Option<TouchCapture>,
     /// Re-execution during validation: on close, compare with `previous` and
@@ -450,6 +467,17 @@ impl MemoTable {
     pub fn note_folded(&mut self, fn_id: FunctionId, site: u64) {
         let t = self.tiny.entry((fn_id, site)).or_default();
         t.folds = t.folds.saturating_add(1);
+    }
+
+    /// A scope from this site wrote a cell in place and so could not be
+    /// recorded. A helper that does that on every call (`fn put(i, v) set
+    /// xs[i] = v end`, a solver's `solve_contact`) is called far too often to
+    /// open and throw away a scope each time, so it is counted with the folds:
+    /// after [`TINY_AFTER_FOLDS`] in a row the site stops opening scopes, one
+    /// probe per run aside. Not opening one changes nothing else — the write
+    /// makes whatever scope encloses the call effectful either way.
+    pub fn note_unrecordable(&mut self, fn_id: FunctionId, site: u64) {
+        self.note_folded(fn_id, site);
     }
 
     /// A scope from this site was recorded: it is worth opening again.
@@ -806,7 +834,7 @@ pub fn holds_local_cell(
     v: &Value,
     heap: &Heap,
     closures: &ClosureTable,
-    locals: &HashSet<CellId>,
+    locals: &CellSet,
 ) -> bool {
     let mut budget = LOCAL_CELL_SCAN_BUDGET;
     !locals.is_empty() && scan_for_local_cell(v, heap, closures, locals, &mut budget)
@@ -820,7 +848,7 @@ fn scan_for_local_cell(
     v: &Value,
     heap: &Heap,
     closures: &ClosureTable,
-    locals: &HashSet<CellId>,
+    locals: &CellSet,
     budget: &mut usize,
 ) -> bool {
     if *budget == 0 {
@@ -990,7 +1018,7 @@ mod tests {
         let mut m = crate::heap::RecordMap::default();
         m.insert("on_click".to_string(), Value::Closure(c));
         let rec = Value::Map(heap.alloc_map(m));
-        let mut locals = HashSet::new();
+        let mut locals = CellSet::default();
         assert!(!holds_local_cell(&rec, &heap, &closures, &locals));
         locals.insert(cell);
         assert!(holds_local_cell(&rec, &heap, &closures, &locals));

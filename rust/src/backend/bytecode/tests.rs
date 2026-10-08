@@ -2006,3 +2006,171 @@ fn prelude_field_helpers_read_ragged_records() {
     // `has_field` is the one that can see a key whose value is nil.
     assert_eq!(run(r#"has_field({a: nil}, "a")"#, all).unwrap().0, "true");
 }
+
+// ---------------------------------------------------------------------------
+// In-place writes through `var` cells (`cells.rs`)
+// ---------------------------------------------------------------------------
+//
+// Uniqueness of a cell's container is tracked at run time, so the analysis
+// only has to pick the reads and writes that can keep it. These pin what it
+// picks; `cell_fuzz.rs` and `tests/cell_in_place.rs` pin what running the
+// result does.
+
+/// The cell plan of `code`.
+fn cell_plan(code: &str) -> super::cells::CellPlan {
+    super::cells::analyze(&compile_program(code))
+}
+
+/// The disassembly of `code` lowered with everything on.
+fn disasm_all(code: &str) -> String {
+    let program = compile_program(code);
+    let bc = super::lower_with_flags(&program, OptFlags::default_on()).expect("lower");
+    super::disasm::render_text(&bc, &program)
+}
+
+#[test]
+fn a_cell_write_from_a_function_is_planned_in_place() {
+    // Indexed, field, compound and accumulator writes, each from a function
+    // that did not declare the cell.
+    for body in [
+        "set xs[i] = v",
+        "set xs[i] += v",
+        "set xs[i] = get xs[i] + v",
+        "set xs = append(get xs, v)",
+        "set g[i][0] = v",
+        "set r.a = v",
+        "set r.b.c += v",
+        "set ps[i].x = v",
+    ] {
+        let code = format!(
+            "var xs = [1, 2]\nvar g = [[1], [2]]\nvar r = {{a: 1, b: {{c: 2}}}}\nvar ps = [{{x: 1}}]\n\
+             fn f(i, v)\n  {body}\n  nil\nend\nf(0, 1)"
+        );
+        assert_eq!(cell_plan(&code).in_place_writes(), 1, "{body}");
+    }
+    // A read-modify-write keeps the cell's ownership across its read too.
+    let rmw = cell_plan("var xs = [1, 2]\nfn f(i)\n  set xs[i] = get xs[i] + 1\n  nil\nend\nf(0)");
+    assert_eq!((rmw.in_place_writes(), rmw.peeks()), (1, 1));
+}
+
+#[test]
+fn a_cell_write_in_the_declaring_scope_is_planned_in_place() {
+    let plan = cell_plan("var xs = []\nfor i in range(0, 3) do\n  set xs = append(xs, i)\n  set xs[0] = xs[0] + 1\nend");
+    assert_eq!((plan.in_place_writes(), plan.peeks()), (2, 1));
+}
+
+#[test]
+fn a_cell_write_whose_value_is_read_is_not_planned_in_place() {
+    // A collecting loop keeps every iteration's container.
+    let collected = cell_plan("var xs = [0, 0]\nlet each = for i in range(0, 2) do\n  set xs[i] = i\nend");
+    assert_eq!(collected.in_place_writes(), 0);
+    // An `if` expression's value is its arm's.
+    let bound = cell_plan("var xs = [0, 0]\nlet a = if true then\n  set xs[0] = 1\nend");
+    assert_eq!(bound.in_place_writes(), 0);
+    // …but an `if` *statement*'s is nobody's.
+    let stmt = cell_plan("var xs = [0, 0]\nif true then\n  set xs[0] = 1\nend\nnil");
+    assert_eq!(stmt.in_place_writes(), 1);
+}
+
+#[test]
+fn a_call_between_the_read_and_the_write_keeps_the_write_out() {
+    // `f()` could read `xs` — or write it — between the read of the list and
+    // the write of the new one.
+    let plan = cell_plan("var xs = []\nfn f()\n  1\nend\nfn g()\n  set xs = append(get xs, f())\n  nil\nend\ng()");
+    assert_eq!(plan.in_place_writes(), 0);
+    // Bound first, the argument is out of the way.
+    let plan = cell_plan("var xs = []\nfn f()\n  1\nend\nfn g()\n  let v = f()\n  set xs = append(get xs, v)\n  nil\nend\ng()");
+    assert_eq!(plan.in_place_writes(), 1);
+    // A list appended to itself reads the cell twice.
+    let plan = cell_plan("var xs = []\nset xs = append(xs, xs)\nnil");
+    assert_eq!(plan.in_place_writes(), 0);
+}
+
+#[test]
+fn a_read_that_keeps_the_contents_is_not_a_peek() {
+    for (body, peeks) in [
+        ("get xs[0]", 1),
+        ("len(get xs)", 1),
+        ("get r.a", 1),
+        // Kept: bound, passed on, iterated, returned.
+        ("let s = get xs\n  s[0]", 0),
+        ("print(get xs)", 0),
+        ("for x in get xs do\n    print(x)\n  end", 0),
+        ("get xs", 0),
+        // A call between the read and the index.
+        ("get xs[f(0)]", 0),
+    ] {
+        let code = format!("var xs = [1, 2]\nvar r = {{a: 1}}\nfn f(i)\n  i\nend\nfn g()\n  {body}\nend\ng()");
+        assert_eq!(cell_plan(&code).peeks(), peeks, "{body}");
+    }
+}
+
+#[test]
+fn a_write_ending_a_function_asks_the_caller() {
+    let code = "var xs = [0, 0]\nfn put(i, v)\n  set xs[i] = v\nend\nfn via(i)\n  put(i, 1)\nend\n\
+                put(0, 1)\nlet kept = put(1, 2)\nvia(0)\nprint(kept)";
+    let text = disasm_all(code);
+    assert!(text.contains("cell_put_tail"), "{text}");
+    // A statement call drops the result; a bound one reads it; a call ending
+    // a function forwards whatever that function's own caller said.
+    assert_eq!(text.matches("call_dropped").count(), 2, "{text}");
+    assert_eq!(text.matches("call_forwarded").count(), 1, "{text}");
+}
+
+#[test]
+fn the_cell_plan_is_off_with_the_trace_on_and_with_the_pass_off() {
+    let code = "var xs = [0, 0]\nfn put(i, v)\n  set xs[i] = v\n  nil\nend\nput(0, 1)";
+    let program = compile_program(code);
+    let lowered = |flags: OptFlags| {
+        let bc = super::lower_with_flags(&program, flags).expect("lower");
+        super::disasm::render_text(&bc, &program)
+    };
+    assert!(lowered(OptFlags::default_on()).contains("cell_take"));
+    assert!(!lowered(OptFlags::none()).contains("cell_take"));
+    let traced = OptFlags {
+        preserve_trace: true,
+        ..OptFlags::default_on()
+    };
+    assert!(!lowered(traced).contains("cell_take"));
+    let off = OptFlags {
+        in_place_cells: false,
+        ..OptFlags::default_on()
+    };
+    let text = lowered(off);
+    assert!(!text.contains("cell_take") && !text.contains("call_dropped"), "{text}");
+}
+
+#[test]
+fn cell_writes_match_the_baseline() {
+    // The aliasing cases: each takes a copy of a cell's contents some way and
+    // then writes the cell.
+    for code in [
+        // Snapshot before a write.
+        "var xs = [1, 2, 3]\nfn put(i, v)\n  set xs[i] = v\nend\nput(0, 9)\nlet s = xs\nput(1, 8)\nprint(s, xs)",
+        // The list stored in another container, and in another cell.
+        "var xs = [1, 2, 3]\nfn put(i, v)\n  set xs[i] = v\nend\nput(0, 9)\nlet box = {held: xs}\nput(1, 8)\nprint(box, xs)",
+        "var xs = [1, 2, 3]\nvar ys = []\nfn go()\n  set xs[0] = 9\n  set ys = get xs\n  set xs[1] = 8\n  set ys[2] = 7\nend\ngo()\nprint(xs, ys)",
+        // Captured by value in a closure made between two writes.
+        "var xs = [1, 2, 3]\nfn put(i, v)\n  set xs[i] = v\nend\nput(0, 9)\nlet s = xs\nlet f = fn()\n  s\nend\nput(1, 8)\nprint(f(), xs)",
+        // Passed to a function that writes the cell and returns its argument.
+        "var xs = [1, 2, 3]\nfn stamp(old)\n  set xs[0] = 0\n  old\nend\nset xs[1] = 5\nprint(stamp(xs), xs)",
+        // A helper's result, kept by one caller and dropped by the next.
+        "var xs = [1, 2, 3]\nfn put(i, v)\n  set xs[i] = v\nend\nlet a = put(0, 9)\nput(1, 8)\nprint(a, xs)",
+        // A nested closure over a local, and the local returned.
+        "fn go()\n  var xs = [1, 2, 3]\n  let put = fn(i, v)\n    set xs[i] = v\n  end\n  put(0, 9)\n  let s = xs\n  put(1, 8)\n  [s, xs]\nend\nprint(go())",
+        // Rows of a grid read out, then written.
+        "var g = [[1, 2], [3, 4]]\nfn go()\n  set g[0][0] = 9\n  let row = get g[0]\n  set g[0][1] = 8\n  set g[1] = row\n  set g[1][0] = 7\n  [row, get g]\nend\nprint(go())",
+        // Errors: out of range, and a write into something that is no list.
+        "var xs = [1, 2, 3]\nfn put(i, v)\n  set xs[i] = v\nend\nput(0, 9)\nput(5, 1)",
+        "var xs = 3\nfn put(i, v)\n  set xs[i] = v\nend\nput(0, 9)",
+    ] {
+        assert_parity(code);
+    }
+    for code in [
+        "state var xs = [0, 0, 0]\nfn bump(i)\n  set xs[i] += 1\nend\nbump(0)\nlet s = xs\nbump(1)\nprint(s, xs)",
+        "state var log = []\nstate var last = []\nfn note(v)\n  set last = get log\n  set log = append(get log, v)\nend\nnote(len(log))\nprint(last, log)",
+        "state var g = [[0, 0], [0, 0]]\nstate var row = []\nfn go()\n  set g[0][1] += 1\n  set row = get g[0]\n  set g[0][0] += 2\nend\ngo()\nprint(row, g)",
+    ] {
+        assert_stateful_parity(code, 4);
+    }
+}

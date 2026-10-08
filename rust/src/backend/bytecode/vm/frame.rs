@@ -56,6 +56,10 @@ pub struct VmFrame {
     /// This frame opened a memo scope, which `deliver_value` closes when the
     /// frame pops (see the `memo` submodule).
     pub memo_scope: bool,
+    /// The `Call` that pushed this frame said nothing reads its result
+    /// (`isa::ResultUse`). Consulted by a `CellWriteMode::PutTail`; clear for
+    /// the root frame and for every frame not pushed by such a call.
+    pub result_dropped: bool,
 }
 
 impl VmFrame {
@@ -76,6 +80,7 @@ impl VmFrame {
             path_inherits: false,
             call_site,
             memo_scope: false,
+            result_dropped: false,
         }
     }
 
@@ -95,6 +100,7 @@ impl VmFrame {
         self.dst_in_caller = dst_in_caller;
         self.call_site = call_site;
         self.memo_scope = false;
+        self.result_dropped = false;
         self.path_inherits = false;
     }
 

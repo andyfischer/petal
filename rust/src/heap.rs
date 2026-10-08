@@ -15,6 +15,8 @@
 //! no expression evaluates to a `Value::Cell`, so a cell id never enters a
 //! collection payload — and `fork` deep-copies the cell slab like every other,
 //! so speculative execution stays isolated.
+//! A cell may also lend its *container* to an in-place write while it is that
+//! container's only holder; see [`Heap::cell_take`].
 //!
 //! ## Ids are generational
 //!
@@ -171,6 +173,43 @@ generational_id! {
     /// dereference; only closure capture shares one. See
     /// docs/var.md (Containment).
     pub struct CellId;
+}
+
+/// Payload of a cell: the value it holds, and what the in-place write path
+/// needs to know about it (see [`Heap::cell_take`]).
+#[derive(Clone, Copy)]
+struct CellSlot {
+    value: Value,
+    /// The cell is the only holder of the container in `value`.
+    owned: bool,
+    /// Times that container was mutated under its id.
+    mutations: u64,
+    /// What the frame gate has asked to know about this cell's next in-place
+    /// mutation (see [`Heap::cell_watch`]).
+    watch: CellWatch,
+}
+
+impl Default for CellSlot {
+    fn default() -> Self {
+        CellSlot {
+            value: Value::Nil,
+            owned: false,
+            mutations: 0,
+            watch: CellWatch::Off,
+        }
+    }
+}
+
+/// A request to fingerprint a cell's contents just before they are first
+/// mutated in place, and the answer.
+#[derive(Clone, Copy)]
+enum CellWatch {
+    Off,
+    /// Asked; no in-place mutation since.
+    On,
+    /// The container `of` was about to be mutated in place, and its content
+    /// fingerprinted as `fingerprint` at that moment.
+    Before { of: Value, fingerprint: Option<u64> },
 }
 
 /// Payload of a single heap map: its entry table plus an optional **class
@@ -452,7 +491,7 @@ pub struct Heap {
     maps: Slab<MapObj>,
     elements: Slab<ElementPayload>,
     /// One-value mutable boxes behind `var` bindings. See [`CellId`].
-    cells: Slab<Value>,
+    cells: Slab<CellSlot>,
     /// String intern table: content → existing StringId
     intern_table: HashMap<String, StringId>,
     /// Estimated collector work owed by everything allocated since the last
@@ -778,7 +817,8 @@ impl Heap {
                 props: MapId::from_raw(placeholder_id),
                 children: ListId::from_raw(placeholder_id),
             });
-        self.cells.inherit_generations(&previous.cells, || Value::Nil);
+        self.cells
+            .inherit_generations(&previous.cells, CellSlot::default);
     }
 
     /// Whether every heap object `v` references directly is still live — the
@@ -1216,22 +1256,156 @@ impl Heap {
     pub fn alloc_cell(&mut self, init: Value) -> CellId {
         // One `Copy` Value: no backing store of its own beyond the slot.
         self.tick_alloc(AllocKind::Cell, 0);
-        CellId::from_raw(self.cells.alloc(init))
+        CellId::from_raw(self.cells.alloc(CellSlot {
+            value: init,
+            ..CellSlot::default()
+        }))
     }
 
-    /// Read a cell's current contents.
+    /// Look at a cell's current contents without taking a reference to them:
+    /// for a caller that compares, hashes or formats the value and lets it go,
+    /// or that reads an element out of it straight away. A caller that keeps
+    /// the value (a register that outlives the read, a record, a host) wants
+    /// [`cell_read_shared`](Self::cell_read_shared) instead.
     pub fn cell_read(&self, id: CellId) -> Value {
-        *self.cells.get(id.raw())
+        self.cells.get(id.raw()).value
     }
 
-    /// Overwrite a cell's contents in place, keeping its id. The one mutating
-    /// operation in this module — see [`CellId`] for why it is sound.
+    /// Read a cell's contents *to keep*: the value now has a holder besides
+    /// the cell, so the cell stops owning it and the next write through
+    /// [`cell_take`](Self::cell_take) copies instead of mutating.
+    pub fn cell_read_shared(&mut self, id: CellId) -> Value {
+        let slot = self.cells.get_mut(id.raw());
+        slot.owned = false;
+        slot.value
+    }
+
+    /// Overwrite a cell's contents in place, keeping its id. `val` came from
+    /// somewhere that may still hold it, so the cell does not own it.
     pub fn cell_write(&mut self, id: CellId, val: Value) {
-        debug_assert!(
-            self.cells.is_live(id.raw()),
-            "write to a collected cell"
-        );
-        *self.cells.get_mut(id.raw()) = val;
+        debug_assert!(self.cells.is_live(id.raw()), "write to a collected cell");
+        let slot = self.cells.get_mut(id.raw());
+        slot.value = val;
+        slot.owned = false;
+    }
+
+    // --- In-place writes through a cell ---
+    //
+    // `set xs[i] = v` is a read of the cell, a mutation of what it held, and a
+    // write of the result back. When the cell is the only holder of its
+    // container the three can share one backing store, and whether it is the
+    // only holder is tracked here, per cell, at run time: a write from a
+    // function cannot be proven unique statically, because the cell is shared
+    // with every other function that captured it.
+    //
+    // The invariant: **while `owned` is set, the container the cell holds (its
+    // top level, not what it contains) is referenced by the cell alone**, bar
+    // registers that are never read again and the two late readers that check
+    // [`cell_mutations`](Self::cell_mutations) first. `cell_put` establishes
+    // it, `cell_take` relies on it, and every way of handing the contents out
+    // to keep (`cell_read_shared`) or of storing a value someone else may hold
+    // (`cell_write`) clears it. See `backend::bytecode::cells` for the
+    // lowering that pairs the calls up.
+
+    /// Begin an in-place write: the cell's container, exclusively. If the cell
+    /// owns it, that is the container itself (and the mutation counter moves,
+    /// since its contents are about to change under the same id); otherwise it
+    /// is a fresh shallow copy, which is what clone-and-alloc would have made.
+    /// A non-container value is returned as is — nothing mutates one in place.
+    pub fn cell_take(&mut self, id: CellId) -> Value {
+        let slot = self.cells.get_mut(id.raw());
+        let value = slot.value;
+        if slot.owned {
+            // Only a container can change under its id; a scalar the cell
+            // "owns" is simply replaced by the put.
+            if matches!(value, Value::List(_) | Value::F64Array(_) | Value::Map(_)) {
+                slot.mutations += 1;
+            }
+            return value;
+        }
+        match value {
+            Value::List(l) => {
+                let elements = self.lists.get(l.raw()).clone();
+                self.dup_stats
+                    .record(DupKind::List, || value_slice_bytes(elements.len()));
+                Value::List(self.alloc_list(elements))
+            }
+            Value::F64Array(a) => {
+                let data = self.f64_arrays.get(a.raw()).clone();
+                self.dup_stats.record(DupKind::F64Array, || {
+                    (data.len() * std::mem::size_of::<f64>()) as u64
+                });
+                Value::F64Array(self.alloc_f64_array(data))
+            }
+            Value::Map(m) => {
+                let class = self.maps.get(m.raw()).class;
+                let entries = self.maps.get(m.raw()).entries.clone();
+                self.dup_stats
+                    .record(DupKind::Map, || map_entries_bytes(&entries));
+                Value::Map(self.alloc_map_tagged(entries, class))
+            }
+            other => other,
+        }
+    }
+
+    /// Finish an in-place write: store the mutated container back. `owned`
+    /// says whether the cell is now its only holder, which is the case unless
+    /// the write's value is also handed to the code around it.
+    pub fn cell_put(&mut self, id: CellId, val: Value, owned: bool) {
+        debug_assert!(self.cells.is_live(id.raw()), "write to a collected cell");
+        let slot = self.cells.get_mut(id.raw());
+        slot.value = val;
+        slot.owned = owned;
+    }
+
+    /// How many times this cell's container has been mutated under its id. A
+    /// holder that kept the contents without clearing ownership (a memo
+    /// record's read, the run-start snapshot of a `state var`) compares this
+    /// before trusting what it kept: an unchanged count means the value it
+    /// holds is still the value it read.
+    pub fn cell_mutations(&self, id: CellId) -> u64 {
+        self.cells.get(id.raw()).mutations
+    }
+
+    /// Ask for a fingerprint of this cell's contents as they are just before
+    /// the next in-place mutation. A holder that kept the contents across a
+    /// run (the frame gate's run-start snapshot) cannot compare them
+    /// afterwards if they were edited under it; with this it can still say
+    /// whether the edits changed anything. Re-arming discards an old answer.
+    pub fn cell_watch(&mut self, id: CellId) {
+        self.cells.get_mut(id.raw()).watch = CellWatch::On;
+    }
+
+    /// Whether the next [`cell_take`](Self::cell_take) will mutate a watched
+    /// container that has no fingerprint yet — the moment to take one.
+    #[inline]
+    pub fn cell_wants_fingerprint(&self, id: CellId) -> bool {
+        let slot = self.cells.get(id.raw());
+        slot.owned && matches!(slot.watch, CellWatch::On)
+    }
+
+    /// Record `fingerprint` as that of the cell's current contents, which are
+    /// about to be mutated in place (`None` if they cannot be fingerprinted).
+    pub fn cell_note_fingerprint(&mut self, id: CellId, fingerprint: Option<u64>) {
+        let slot = self.cells.get_mut(id.raw());
+        slot.watch = CellWatch::Before {
+            of: slot.value,
+            fingerprint,
+        };
+    }
+
+    /// The container first mutated in place since [`cell_watch`](Self::cell_watch)
+    /// and the fingerprint of what it held just before, if that has happened.
+    pub fn cell_fingerprint_before(&self, id: CellId) -> Option<(Value, Option<u64>)> {
+        match self.cells.get(id.raw()).watch {
+            CellWatch::Before { of, fingerprint } => Some((of, fingerprint)),
+            _ => None,
+        }
+    }
+
+    /// Whether the cell is the only holder of its container (tests).
+    pub fn cell_owns_contents(&self, id: CellId) -> bool {
+        self.cells.get(id.raw()).owned
     }
 
     // -----------------------------------------------------------------------
@@ -1351,7 +1525,7 @@ impl Heap {
             // A cell's contents are an ordinary value and may themselves be
             // heap-backed (a `var` holding a list). The `mark` guard makes the
             // recursion terminate even if a cell ever reached itself.
-            let contents = *self.cells.get(id.raw());
+            let contents = self.cells.get(id.raw()).value;
             self.mark_value(contents);
         }
     }
@@ -1391,7 +1565,7 @@ impl Heap {
             v.class = None;
         });
         self.elements.sweep_with(|_, _| {});
-        self.cells.sweep_with(|_, v| *v = Value::Nil);
+        self.cells.sweep_with(|_, v| *v = CellSlot::default());
 
         // Size the next collection's budget against what this collection would
         // cost to repeat (see `should_collect`). Computed here, once per cycle,
@@ -1784,6 +1958,61 @@ mod tests {
 
         assert_eq!(child.cell_read(cell), Value::Int(99));
         assert_eq!(parent.cell_read(cell), Value::Int(1));
+    }
+
+    #[test]
+    fn a_cell_lends_its_container_only_while_it_is_the_only_holder() {
+        let mut heap = Heap::new();
+        let list = heap.alloc_list(vec![Value::Int(1), Value::Int(2)]);
+        let cell = heap.alloc_cell(Value::List(list));
+        assert!(!heap.cell_owns_contents(cell), "whoever made the list may hold it");
+
+        // Not the only holder: a take is a copy, and the put makes it the cell's.
+        let Value::List(taken) = heap.cell_take(cell) else {
+            panic!("a list cell takes a list")
+        };
+        assert_ne!(taken, list);
+        assert_eq!(heap.cell_mutations(cell), 0);
+        heap.list_set_in_place(taken, 0, Value::Int(9));
+        heap.cell_put(cell, Value::List(taken), true);
+        assert_eq!(heap.get_list(list), &[Value::Int(1), Value::Int(2)]);
+
+        // The only holder: a take is the container itself, and says so.
+        assert_eq!(heap.cell_take(cell), Value::List(taken));
+        assert_eq!(heap.cell_mutations(cell), 1);
+
+        // A look does not disturb that; a read to keep, or a write, ends it.
+        assert_eq!(heap.cell_read(cell), Value::List(taken));
+        assert!(heap.cell_owns_contents(cell));
+        assert_eq!(heap.cell_read_shared(cell), Value::List(taken));
+        assert!(!heap.cell_owns_contents(cell));
+        assert_ne!(heap.cell_take(cell), Value::List(taken));
+        heap.cell_put(cell, Value::List(taken), true);
+        heap.cell_write(cell, Value::List(taken));
+        assert!(!heap.cell_owns_contents(cell));
+    }
+
+    #[test]
+    fn a_watched_cell_is_fingerprinted_once_before_it_is_edited() {
+        let mut heap = Heap::new();
+        let list = heap.alloc_list(vec![Value::Int(1)]);
+        let cell = heap.alloc_cell(Value::Nil);
+        heap.cell_put(cell, Value::List(list), true);
+        assert!(!heap.cell_wants_fingerprint(cell), "nobody asked");
+        heap.cell_watch(cell);
+        assert!(heap.cell_wants_fingerprint(cell));
+        heap.cell_note_fingerprint(cell, Some(7));
+        assert!(!heap.cell_wants_fingerprint(cell), "one answer per watch");
+        assert_eq!(
+            heap.cell_fingerprint_before(cell),
+            Some((Value::List(list), Some(7)))
+        );
+        // A container the cell does not own is copied, not edited: nothing
+        // to fingerprint.
+        heap.cell_watch(cell);
+        heap.cell_read_shared(cell);
+        assert!(!heap.cell_wants_fingerprint(cell));
+        assert_eq!(heap.cell_fingerprint_before(cell), None);
     }
 
     #[test]

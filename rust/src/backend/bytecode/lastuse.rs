@@ -488,7 +488,9 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         // cell lives, so anything written into one is retained — this is the
         // one hole in "the heap is immutable-by-construction" that route A's
         // soundness argument leans on, and closing it here is what keeps a
-        // container that ever enters a `var` out of the in-place rewrite.
+        // container that ever enters a `var` out of this pass's rewrite.
+        // (A cell's own writes go in place by a different argument
+        // altogether: `super::cells`, which this pass leaves alone.)
         Inst::CellNew { init, .. } => f(*init, RETAIN),
         Inst::CellWrite { cell, val, .. } => {
             f(*cell, RETAIN);

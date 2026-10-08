@@ -148,10 +148,13 @@ pub struct Stack {
     /// the run can tell whether a `set` changed one. Cells are written through
     /// `CellWrite`, which cannot know whether the cell it writes is persistent,
     /// so the check is made once per run over the slots instead of once per
-    /// write. Cell contents are never mutated in place (a container that enters
-    /// a `var` is kept out of the in-place rewrite), so an id-and-contents
-    /// snapshot is exact.
-    cells_at_run_start: Vec<(crate::heap::CellId, Value)>,
+    /// write. A `set xs[i] = v` may mutate the cell's container in place, which
+    /// an id-and-contents snapshot would compare equal to itself, so the
+    /// snapshot also keeps the cell's mutation count
+    /// ([`Heap::cell_mutations`]) and asks the heap to fingerprint the
+    /// contents before the first such mutation ([`Heap::cell_watch`]); see
+    /// [`cell_changed`].
+    cells_at_run_start: Vec<(crate::heap::CellId, Value, u64)>,
     /// Memoized-scope records and the scopes open right now. See
     /// [`crate::memo`].
     pub memo: crate::memo::MemoTable,
@@ -166,6 +169,43 @@ pub enum StackStatus {
     Running,
     Complete(Value),
     Error(String),
+}
+
+/// Whether a `state var` cell that held `before` when the run started, at
+/// mutation count `mutations`, holds something different now.
+///
+/// With the count unmoved nothing was edited in place, so `before` is still
+/// what the cell held and the two compare by content. Otherwise some
+/// container was edited under its id, and the heap fingerprinted the first one
+/// just beforehand: if that container is `before` itself, the fingerprint is
+/// of the run-start contents, and the cell is unchanged when today's contents
+/// fingerprint alike (a `set xs[i] = v` that stores what was already there,
+/// every frame, must still let the frame gate settle). If it is some other
+/// container, `before` was replaced rather than edited, is intact, and
+/// compares by content as usual.
+fn cell_changed(
+    id: crate::heap::CellId,
+    before: Value,
+    mutations: u64,
+    heap: &Heap,
+    closures: &ClosureTable,
+) -> bool {
+    let now = heap.cell_read(id);
+    if heap.cell_mutations(id) == mutations {
+        return state_changed(Some(before), now, heap, closures);
+    }
+    match heap.cell_fingerprint_before(id) {
+        Some((of, was)) if of == before => {
+            match (was, crate::run_deps::fingerprint_contents(&now, heap)) {
+                (Some(was), Some(is)) => was != is,
+                // Too large or not fingerprintable: assume the worst.
+                _ => true,
+            }
+        }
+        Some(_) => state_changed(Some(before), now, heap, closures),
+        // Edited in place with no fingerprint taken: assume the worst.
+        None => true,
+    }
 }
 
 impl Stack {
@@ -199,12 +239,14 @@ impl Stack {
     /// the `state var` cells. Called by `Env::run` right after
     /// [`start_run_tracking`](Self::start_run_tracking), with the heap the
     /// cells live in and the context's RNG state.
-    pub fn begin_run_deps(&mut self, heap: &Heap, rng_state: u64) {
+    pub fn begin_run_deps(&mut self, heap: &mut Heap, rng_state: u64) {
         self.run_deps.begin_run(rng_state);
         self.cells_at_run_start.clear();
         for v in self.state.values() {
             if let Value::Cell(id) = v {
-                self.cells_at_run_start.push((*id, heap.cell_read(*id)));
+                heap.cell_watch(*id);
+                self.cells_at_run_start
+                    .push((*id, heap.cell_read(*id), heap.cell_mutations(*id)));
             }
         }
     }
@@ -212,8 +254,8 @@ impl Stack {
     /// A `state var` cell was created by this run (its `state` declaration
     /// initialized), holding `contents`. Added to the run-start snapshot so a
     /// `set` later in the same run is seen as a change at run end.
-    pub fn note_cell_created(&mut self, id: crate::heap::CellId, contents: Value) {
-        self.cells_at_run_start.push((id, contents));
+    pub fn note_cell_created(&mut self, id: crate::heap::CellId, contents: Value, mutations: u64) {
+        self.cells_at_run_start.push((id, contents, mutations));
     }
 
     /// Complete the dependency record of a run that finished (or stopped on an
@@ -228,9 +270,9 @@ impl Stack {
         resources_revision: u64,
     ) {
         if !self.run_deps.state_unsettled()
-            && self.cells_at_run_start.iter().any(|(id, before)| {
+            && self.cells_at_run_start.iter().any(|(id, before, mutations)| {
                 heap.is_live(Value::Cell(*id))
-                    && state_changed(Some(*before), heap.cell_read(*id), heap, closures)
+                    && cell_changed(*id, *before, *mutations, heap, closures)
             })
         {
             self.run_deps.note_state_unsettled();
@@ -375,7 +417,7 @@ impl Stack {
         // The `state var` contents snapshotted at run start are compared at
         // run end; a cell overwritten mid-run would otherwise leave the
         // snapshot pointing at a collected object.
-        for (_, val) in &self.cells_at_run_start {
+        for (_, val, _) in &self.cells_at_run_start {
             mark(*val);
         }
         // Last pop result (used by synchronous closure calls)

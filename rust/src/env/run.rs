@@ -120,8 +120,10 @@ impl Env {
     /// Start the dependency record of a run (see [`crate::run_deps`]).
     fn begin_run_deps(&mut self, stack_id: StackKey, ck: ContextKey) {
         let rng = self.ctx(ck).rng_state;
-        if let (Some(stack), Some(ctx)) = (self.stacks.get_mut(&stack_id), self.contexts.get(&ck)) {
-            stack.begin_run_deps(&ctx.heap, rng);
+        if let (Some(stack), Some(ctx)) =
+            (self.stacks.get_mut(&stack_id), self.contexts.get_mut(&ck))
+        {
+            stack.begin_run_deps(&mut ctx.heap, rng);
         }
     }
 

@@ -378,11 +378,13 @@ impl<'p> FnLowerer<'p> {
             TermOp::CellRead => Inst::CellRead {
                 dst,
                 cell: self.flat(ins[0])?,
+                mode: self.in_place.cells().read_mode(term.id),
             },
             TermOp::CellWrite => Inst::CellWrite {
                 dst,
                 cell: self.flat(ins[0])?,
                 val: self.flat(ins[1])?,
+                mode: self.in_place.cells().write_mode(term.id),
             },
 
             TermOp::Add => Inst::Add {
@@ -545,6 +547,7 @@ impl<'p> FnLowerer<'p> {
                 args: self.regs(&ins[1..])?,
                 arg_names: term.arg_names.clone(),
                 no_memo: !self.in_place.memoizes_call(term.id),
+                result: self.in_place.cells().result_use(term.id),
             },
             TermOp::MethodCall { name, hint } => Inst::MethodCall {
                 dst,

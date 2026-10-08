@@ -144,8 +144,8 @@ Two consequences:
 ## What the optimizer does
 
 Lowering (`backend::bytecode::lower`) gives every IR term its own register, so
-the raw instruction stream is roughly half register-to-register copies. Three
-passes then run over it, each individually switchable through
+the raw instruction stream is roughly half register-to-register copies. Four
+passes then shape it, each individually switchable through
 [`OptFlags`](../../rust/src/backend/mod.rs) so any one can be turned off to
 isolate a bug. `OptFlags` is the lowering half of a run's
 [`RunPolicy`](../../rust/src/policy.rs), which also carries memoization and
@@ -155,6 +155,7 @@ frame gating:
 |---|---|
 | `escape` (route B) | Proves loop-carried accumulators unique, so mutations lower to in-place heap writes instead of clone-and-alloc. |
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
+| `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../var.md#writing-a-container-in-place). |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what

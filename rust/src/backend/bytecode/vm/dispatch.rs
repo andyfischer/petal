@@ -6,7 +6,7 @@
 
 use super::*;
 
-use super::super::isa::Inst;
+use super::super::isa::{CellReadMode, CellWriteMode, Inst, ResultUse};
 use crate::backend::{calls, ops};
 use crate::closure_table::ClosureTable;
 use crate::program::TermOp;
@@ -364,12 +364,23 @@ impl<'a> Vm<'a> {
                 args,
                 arg_names,
                 no_memo,
+                result,
             } => {
                 let callable = self.reg(fi, *callee);
                 let argv = self.take_args(fi, args);
                 let r = self.do_call(fi, *dst, callable, &argv, arg_names, origin, !*no_memo);
                 self.give_args(argv);
                 r?;
+                // A frame pushed for this call learns whether its result is
+                // read. A replayed or native call pushed none, and every
+                // other way of pushing a frame leaves the flag clear.
+                if !matches!(result, ResultUse::Read) && self.stack.vm_frames.len() == fi + 2 {
+                    let dropped = match result {
+                        ResultUse::Dropped => true,
+                        _ => self.stack.vm_frames[fi].result_dropped,
+                    };
+                    self.stack.vm_frames[fi + 1].result_dropped = dropped;
+                }
             }
             Inst::MethodCall {
                 dst,
@@ -409,13 +420,33 @@ impl<'a> Vm<'a> {
                 self.memo_note_cell_new(cell);
                 self.set(fi, *dst, Value::Cell(cell));
             }
-            Inst::CellRead { dst, cell } => {
+            Inst::CellRead { dst, cell, mode } => {
                 let v = match self.reg(fi, *cell) {
-                    Value::Cell(id) => {
-                        let v = self.heap.cell_read(id);
-                        self.memo_note_cell_read(id, v);
-                        v
-                    }
+                    Value::Cell(id) => match mode {
+                        CellReadMode::Shared => {
+                            let v = self.heap.cell_read_shared(id);
+                            self.memo_note_cell_read(id, v);
+                            v
+                        }
+                        // Looked into and let go: the cell keeps its container.
+                        CellReadMode::Peek => {
+                            let v = self.heap.cell_read(id);
+                            self.memo_note_cell_read(id, v);
+                            v
+                        }
+                        CellReadMode::Take => {
+                            self.memo_note_cell_mutation(id);
+                            // The frame gate kept this `state var`'s contents
+                            // at run start, and they are about to change
+                            // under it: leave it a fingerprint to compare.
+                            if self.heap.cell_wants_fingerprint(id) {
+                                let before = self.heap.cell_read(id);
+                                let fp = crate::run_deps::fingerprint_contents(&before, self.heap);
+                                self.heap.cell_note_fingerprint(id, fp);
+                            }
+                            self.heap.cell_take(id)
+                        }
+                    },
                     // Only the compiler emits `CellRead`, and only against a
                     // binding it declared `var` — a non-cell here means
                     // hand-written or corrupted IR, not a user error.
@@ -428,21 +459,51 @@ impl<'a> Vm<'a> {
                 };
                 self.set(fi, *dst, v);
             }
-            Inst::CellWrite { dst, cell, val } => {
+            Inst::CellWrite {
+                dst,
+                cell,
+                val,
+                mode,
+            } => {
                 let val_v = self.reg(fi, *val);
-                match self.reg(fi, *cell) {
-                    Value::Cell(id) => {
-                        self.heap.cell_write(id, val_v);
-                        self.memo_note_cell_write(id, val_v);
-                    }
+                let id = match self.reg(fi, *cell) {
+                    Value::Cell(id) => id,
                     other => {
                         return Err(format!(
                             "internal error: cell_write on a {}",
                             other.type_name()
                         ));
                     }
+                };
+                // An in-place write keeps its container to the cell when
+                // nothing reads the write's own value: never for `Shared`,
+                // always for `Put`, and for `PutTail` when this frame's caller
+                // dropped its result.
+                let keeps = match mode {
+                    CellWriteMode::Shared => false,
+                    CellWriteMode::Put => true,
+                    CellWriteMode::PutTail => self.stack.vm_frames[fi].result_dropped,
+                };
+                match mode {
+                    CellWriteMode::Shared => {
+                        self.heap.cell_write(id, val_v);
+                        self.memo_note_cell_write(id, val_v);
+                    }
+                    CellWriteMode::Put | CellWriteMode::PutTail => {
+                        self.heap.cell_put(id, val_v, keeps);
+                        self.memo_note_cell_mutation(id);
+                    }
                 }
-                self.set(fi, *dst, val_v);
+                // The mirror is the write's value. A kept container has no
+                // reader, so its register gets nothing — except under
+                // observation, where the binding's slot shows the container
+                // (as it does for every other in-place write).
+                let mirror = if keeps && !self.observations.enabled {
+                    Value::Nil
+                } else {
+                    val_v
+                };
+                self.set(fi, *dst, mirror);
             }
 
             // --- state ---
@@ -484,7 +545,9 @@ impl<'a> Vm<'a> {
                     // (see `Stack::finish_run_deps`).
                     if *init && let Value::Cell(cell) = val_v {
                         let contents = self.heap.cell_read(cell);
-                        self.stack.note_cell_created(cell, contents);
+                        let mutations = self.heap.cell_mutations(cell);
+                        self.heap.cell_watch(cell);
+                        self.stack.note_cell_created(cell, contents, mutations);
                         self.memo_note_cell_escaped(cell);
                     }
                     if *init {

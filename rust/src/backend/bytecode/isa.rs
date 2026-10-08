@@ -51,6 +51,77 @@ fn arg_names_empty(v: &ArgNames) -> bool {
     v.is_empty()
 }
 
+/// What a [`CellRead`](Inst::CellRead) is for. Chosen by
+/// `super::cells::analyze`; everything but `Shared` is an optimization that
+/// `OptFlags::in_place_cells` gates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub enum CellReadMode {
+    /// The contents may be kept by whatever reads the register, so the cell
+    /// stops owning them. Always correct.
+    #[default]
+    Shared,
+    /// The contents are only looked into (`get xs[i]`, `get r.f`, `len`) by
+    /// the instructions right after, and the register is never read again:
+    /// the cell goes on owning them.
+    Peek,
+    /// The first half of an in-place write (`set xs[i] = v`): the register
+    /// receives a container nothing else holds — the cell's own if it owns
+    /// one, a copy otherwise — for the in-place mutation that follows.
+    Take,
+}
+
+impl CellReadMode {
+    fn is_shared(&self) -> bool {
+        *self == CellReadMode::Shared
+    }
+}
+
+/// How a [`CellWrite`](Inst::CellWrite) hands its value on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub enum CellWriteMode {
+    /// `val` may be held elsewhere, and is mirrored into `dst`. Always correct.
+    #[default]
+    Shared,
+    /// The second half of an in-place write whose value nothing reads: `val`
+    /// is the container its [`Take`](CellReadMode::Take) produced, mutated,
+    /// and the cell becomes its only holder.
+    Put,
+    /// Like `Put`, but the write is the last thing its function does, so its
+    /// value is the function's result. Whether that is read is the caller's
+    /// business ([`ResultUse`]): the frame knows, and the write behaves as
+    /// `Put` when it is not and as `Shared` when it is.
+    PutTail,
+}
+
+impl CellWriteMode {
+    fn is_shared(&self) -> bool {
+        *self == CellWriteMode::Shared
+    }
+}
+
+/// Whether a [`Call`](Inst::Call)'s result is read, as far as the caller can
+/// tell statically. It reaches the callee as a flag on its frame, where a
+/// [`PutTail`](CellWriteMode::PutTail) consults it: `fn put(i, v) set xs[i] =
+/// v end` evaluates to the whole list, and a caller that drops that on the
+/// floor should not cost the cell its ownership of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub enum ResultUse {
+    /// Something may read it. Always correct.
+    #[default]
+    Read,
+    /// Nothing reads it: the call is a statement.
+    Dropped,
+    /// The call is the last thing *its* function does, so the answer is
+    /// whatever that function's own caller said.
+    Forwarded,
+}
+
+impl ResultUse {
+    fn is_read(&self) -> bool {
+        *self == ResultUse::Read
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum Inst {
     // --- constants / moves ---
@@ -249,6 +320,10 @@ pub enum Inst {
         /// record may hold that result. Serialization-skipped when false.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         no_memo: bool,
+        /// Whether anything reads this call's result (see [`ResultUse`]).
+        /// Serialization-skipped when it is the default.
+        #[serde(default, skip_serializing_if = "ResultUse::is_read")]
+        result: ResultUse,
     },
     MethodCall {
         dst: Reg,
@@ -383,16 +458,24 @@ pub enum Inst {
         dst: Reg,
         init: Reg,
     },
-    /// Dereference the cell in `cell` into `dst`.
+    /// Dereference the cell in `cell` into `dst`. `mode` says what the read
+    /// is for, which decides whether the cell goes on owning its container
+    /// (see [`CellReadMode`]). Serialization-skipped when it is the default.
     CellRead {
         dst: Reg,
         cell: Reg,
+        #[serde(default, skip_serializing_if = "CellReadMode::is_shared")]
+        mode: CellReadMode,
     },
-    /// Write `val` through the cell in `cell`, mirroring it into `dst`.
+    /// Write `val` through the cell in `cell`, mirroring it into `dst` (see
+    /// [`CellWriteMode`] for the in-place forms, which do not mirror).
+    /// Serialization-skipped when it is the default.
     CellWrite {
         dst: Reg,
         cell: Reg,
         val: Reg,
+        #[serde(default, skip_serializing_if = "CellWriteMode::is_shared")]
+        mode: CellWriteMode,
     },
 
     // --- state (slots resolved from the frame's call path; see `Vm::state_key`) ---

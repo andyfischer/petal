@@ -5,10 +5,13 @@
 //! [`vm`] executes it; [`disasm`] renders it for `show-bytecode` / `ShowBytecode`;
 //! [`escape`] supplies the in-place-mutation analysis for loop accumulators
 //! (M4 route B, graph-side, feeds lowering); [`lastuse`] rewrites straight-line
-//! mutations in place after lowering (M4 route A, bytecode-side).
+//! mutations in place after lowering (M4 route A, bytecode-side); [`cells`]
+//! picks the `var` reads and writes that can share one backing store, which
+//! is decided per cell at run time rather than proven ahead of it.
 //!
 //! See the bytecode plan for the milestone breakdown.
 
+pub mod cells;
 pub mod copyprop;
 pub mod disasm;
 pub mod escape;
@@ -34,13 +37,22 @@ use crate::program::Program;
 ///
 /// Escape analysis (M4 route B) is a pure function of the program; honoring its
 /// in-place set is gated on the flag, so "opts off" reproduces the
-/// clone-and-alloc oracle byte-for-byte. Route A's straight-line last-use
-/// rewriting runs on the lowered code, after route B's opcode selection.
+/// clone-and-alloc oracle byte-for-byte. The cell plan is likewise a pure
+/// function of the program, gated on its own flag. Route A's straight-line
+/// last-use rewriting runs on the lowered code, after route B's opcode
+/// selection.
 pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
     let in_place = if flags.in_place_mutation {
         escape::analyze(program)
     } else {
         InPlaceSet::default()
+    };
+    // Writes through a cell keep a container the trace would otherwise hold a
+    // history of, so the two do not mix (see `cells`, "Who else looks").
+    let in_place = if flags.in_place_cells && !flags.preserve_trace {
+        in_place.with_cells(cells::analyze(program))
+    } else {
+        in_place
     };
     let mut bc = lower_program_opt(program, &in_place)
         .map_err(|e| format!("bytecode lowering failed: {e}"))?;
@@ -70,6 +82,8 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
     Ok(bc)
 }
 
+#[cfg(test)]
+mod cell_fuzz;
 #[cfg(test)]
 mod fuzz;
 #[cfg(test)]

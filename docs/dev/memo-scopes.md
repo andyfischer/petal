@@ -95,7 +95,15 @@ scope, and its reads land in the enclosing one. Every other call's result is
 still a fresh container the caller may mutate. In-place mutation
 of a `state` slot inside a scope (`StateWrite.mutated`) makes the scope
 effectful, since the slot already holds the edited object and no comparison
-could tell.
+could tell. The same goes for a `var` cell written in place
+(`set xs[i] = v`, see [var.md](../var.md#writing-a-container-in-place)) by a
+scope that did not create it: there is no before-value for a replay to
+re-apply. A scope that only *reads* such a cell keeps its record, but the
+value it recorded may be the very container a later write edits, so the record
+also keeps the cell's mutation count and is invalid once that has moved. A call
+site whose scopes keep ending this way (a solver's `solve_contact`, called
+thousands of times a frame) is counted with the folded ones below and stops
+opening scopes after a few, one probe per run aside.
 
 **Cold sites.** Recording is not free, and a record only pays for itself when
 it is replayed. A site whose records keep being thrown away unreplayed —

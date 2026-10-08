@@ -4,7 +4,7 @@
 
 use serde_json::{Value as Json, json};
 
-use super::isa::{BytecodeFn, BytecodeProgram, Inst};
+use super::isa::{BytecodeFn, BytecodeProgram, CellReadMode, CellWriteMode, Inst, ResultUse};
 use crate::program::{Program, base_fn_name};
 
 /// Render a lowered program as annotated text, one function per section.
@@ -154,10 +154,16 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             args,
             arg_names,
             no_memo,
+            result,
         } => format!(
-            "r{} = {} r{} {}",
+            "r{} = {}{} r{} {}",
             dst,
             if *no_memo { "call_no_memo" } else { "call" },
+            match result {
+                ResultUse::Read => "",
+                ResultUse::Dropped => "_dropped",
+                ResultUse::Forwarded => "_forwarded",
+            },
             callee,
             arglist(program, args, arg_names)
         ),
@@ -309,8 +315,27 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             format!("r{} = set_in_place r{}[r{}] = r{}", dst, obj, idx, val)
         }
         CellNew { dst, init } => format!("r{} = cell_new r{}", dst, init),
-        CellRead { dst, cell } => format!("r{} = cell_read r{}", dst, cell),
-        CellWrite { dst, cell, val } => format!("r{} = cell_write r{} <- r{}", dst, cell, val),
+        CellRead { dst, cell, mode } => {
+            let op = match mode {
+                CellReadMode::Shared => "cell_read",
+                CellReadMode::Peek => "cell_peek",
+                CellReadMode::Take => "cell_take",
+            };
+            format!("r{} = {} r{}", dst, op, cell)
+        }
+        CellWrite {
+            dst,
+            cell,
+            val,
+            mode,
+        } => {
+            let op = match mode {
+                CellWriteMode::Shared => "cell_write",
+                CellWriteMode::Put => "cell_put",
+                CellWriteMode::PutTail => "cell_put_tail",
+            };
+            format!("r{} = {} r{} <- r{}", dst, op, cell, val)
+        }
         StateInit {
             dst,
             base,

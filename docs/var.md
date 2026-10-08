@@ -92,6 +92,59 @@ defect that presents as input lag. `get` makes the live read explicit.
 
 `get` is a keyword, so it cannot name a field, a method or an FFI host method.
 
+## Writing a container in place
+
+`set xs[i] = v` lowers to a `CellRead`, a `SetIndex` on what it read, and a
+`CellWrite` of the result. Left at that, every such write copies its whole
+container: the read hands the list to a register, so the mutation can never be
+its only holder. The two in-place routes of the optimizer do not help, because
+both prove a container unique from where it was allocated, and a cell's
+contents were allocated in some other function, on some other frame, or in an
+earlier run.
+
+So uniqueness is tracked per cell, at run time. The heap keeps an *owned* bit
+beside each cell's value, set while the cell is the only holder of its
+container, and `backend::bytecode::cells` picks the accesses that can keep it
+set:
+
+| Lowered as | Source | What it does |
+|---|---|---|
+| take, in-place mutation, put | `set xs[i] = v`, `set r.f = v`, `set xs = append(xs, v)` | mutates the cell's own container if the cell owns it, a fresh copy otherwise; either way the cell owns the result |
+| peek | `get xs[i]`, `get r.f`, `len(get xs)` | looks into the contents and lets them go; ownership is untouched |
+| shared read / write | everything else | hands the contents out, or stores a value something else may hold; clears the bit |
+
+The first write after anything else got hold of the contents pays one copy and
+the writes after it pay none, from any function that can see the cell: a
+top-level function writing a module-level `var` or `state var`, or a closure
+writing an enclosing function's local. Value semantics needs no special case.
+`let snap = get xs` is a shared read, so the write after it copies and `snap`
+keeps what it saw.
+
+Three limits, all of which fall back to copying rather than to a wrong answer:
+
+- **A call between the read and the write.** `set xs = append(xs, f(x))` reads
+  `xs`, then runs `f`, which might read or write `xs` itself. Bind the argument
+  first: `let v = f(x)` then `set xs = append(xs, v)`.
+- **Inner containers.** `set g[i][j] = v` rewrites `g` in place and copies row
+  `i`; `set ps[i].x = v` copies one record. The bit covers the cell's top-level
+  container only, since `get g[i]` hands a row out.
+- **A write whose value is read.** A `set` is an expression, and `fn put(i, v)
+  set xs[i] = v end` returns the whole list. Called as a statement, that result
+  is dropped and the write stays in place; `let ys = put(i, v)` reads it, so
+  that write hands the list out and the next one copies. The caller's answer
+  reaches the callee on its frame (`isa::ResultUse`), which is also why a
+  script whose *last* statement is such a call copies once per run: its value
+  is the program's result.
+
+The pass is `OptFlags::in_place_cells`, on by default and off under the
+`baseline` policy, and it stands down while the `explain` trace is recording,
+because the trace is a history of values that an in-place write would rewrite.
+The soundness argument and the three things outside the script that read a
+cell across a write (memo records, the frame gate, the observation buffer) are
+in the module docs of `rust/src/backend/bytecode/cells.rs`. Coverage:
+`rust/tests/cell_in_place.rs` and the differential fuzzer in
+`rust/src/backend/bytecode/cell_fuzz.rs`.
+
 ## Cross-function assignment
 
 Assignment to a name bound outside the current function is a compile error at

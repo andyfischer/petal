@@ -107,10 +107,33 @@ impl<'a> Vm<'a> {
     /// A `var` cell was read and held `value`.
     #[inline]
     pub(super) fn memo_note_cell_read(&mut self, cell: CellId, value: Value) {
+        if self.memo_recording_scope().is_none() {
+            return;
+        }
+        let mutations = self.heap.cell_mutations(cell);
+        if let Some(s) = self.stack.memo.innermost()
+            && !s.local_cells.contains(&cell)
+        {
+            s.deps.push(Dep::CellRead {
+                cell,
+                value,
+                mutations,
+            });
+        }
+    }
+
+    /// A `var` cell's container is being written in place (`set xs[i] = v`
+    /// lowered to a take/put pair). There is no value to record for a replay
+    /// to re-apply — the cell holds the edited container and no copy of what
+    /// it was — so unless the cell is the scope's own, the scope is given up
+    /// as effectful, like one that mutates a `state` slot in place.
+    #[inline]
+    pub(super) fn memo_note_cell_mutation(&mut self, cell: CellId) {
         if let Some(s) = self.memo_recording_scope()
             && !s.local_cells.contains(&cell)
         {
-            s.deps.push(Dep::CellRead { cell, value });
+            s.effectful = true;
+            s.wrote_in_place = true;
         }
     }
 
@@ -252,6 +275,7 @@ impl<'a> Vm<'a> {
             insts_at_entry: self.stack.insts,
             rng_at_entry: *self.rng_state,
             effectful: false,
+            wrote_in_place: false,
             local_cells: Default::default(),
             capture: Some(capture),
             previous,
@@ -312,6 +336,9 @@ impl<'a> Vm<'a> {
             || holds_local_cell(&result, self.heap, self.closures, &sc.local_cells);
         if effectful {
             self.stack.memo.stats.effectful += 1;
+            if sc.wrote_in_place && !detached {
+                self.stack.memo.note_unrecordable(sc.fn_id, sc.site);
+            }
             if detached {
                 self.stack.memo.last_reexec_changed = Some(true);
             } else if let Some(p) = self.stack.memo.innermost() {
@@ -556,15 +583,24 @@ impl<'a> Vm<'a> {
                     state_overlay.insert(key.clone(), *value);
                     true
                 }
-                Dep::CellRead { cell, value } => {
+                Dep::CellRead {
+                    cell,
+                    value,
+                    mutations,
+                } => {
                     if !self.heap.is_live(Value::Cell(*cell)) {
                         false
+                    } else if let Some(written) = cell_overlay.get(cell).copied() {
+                        // Read back from a write of this same record.
+                        self.memo_eq(written, *value, ARG_COMPARE_BUDGET)
                     } else {
-                        let now = cell_overlay
-                            .get(cell)
-                            .copied()
-                            .unwrap_or_else(|| self.heap.cell_read(*cell));
-                        self.memo_eq(now, *value, ARG_COMPARE_BUDGET)
+                        // The count first: once the container has been
+                        // written in place, `value` may *be* the live
+                        // container and would compare equal to itself.
+                        self.heap.cell_mutations(*cell) == *mutations && {
+                            let now = self.heap.cell_read(*cell);
+                            self.memo_eq(now, *value, ARG_COMPARE_BUDGET)
+                        }
                     }
                 }
                 Dep::CellWrite { cell, value } => {

@@ -20,8 +20,8 @@
 //   factor := INT | NAME | '(' expr ')' | '-' factor
 //
 // Usage:
-//   tsx ts/tools/calc-to-ir.ts program.calc | petal run --ir -
-//   echo 'print 1 + 2 * 3' | tsx ts/tools/calc-to-ir.ts | petal run --ir -
+//   tsx tools/calc-to-ir.ts program.calc | petal run --ir -
+//   echo 'print 1 + 2 * 3' | tsx tools/calc-to-ir.ts | petal run --ir -
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

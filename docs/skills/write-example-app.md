@@ -20,7 +20,7 @@ procedure; the guide is the detail. When they disagree, the guide wins.
 
 | Kind | Where | What it is |
 |---|---|---|
-| Panel app (the default) | `examples/<category>/<slug>/` | A Garden panel script: `app.ptl` + `layout.ptl` + `launch.sh` + `README.md` |
+| Panel app (the default) | `examples/<category>/<slug>/` | A Garden panel script: `app.ptl` + `layout.ptl` + `README.md`, launched by `tools/run-example.ts` |
 | Console program | `examples/games/<slug>/<slug>.ptl` | Prints to stdout, deterministic, terminates on its own. Used when the entry stresses the language more than the host (Tetris, 2048, Minesweeper, boids, terrain) |
 
 Categories: `games/` for the "Simple games" and "Creative / graphical
@@ -61,13 +61,13 @@ In order:
 
 ```bash
 mkdir -p examples/<category>/<slug> && cd examples/<category>/<slug>
-echo 'layout(panel("app.ptl"))' > layout.ptl        # layout(...) is required
-cp ../../games/pong/launch.sh .                      # edit the header comment and GARDEN_HEADLESS_SIZE
+printf '// headless-size: 1280x850\nlayout(panel("app.ptl"))\n' > layout.ptl   # layout(...) is required
 ```
 
-`launch.sh` resolves its own directory, finds the Garden binary at
-`garden/target/debug/garden` or `$GARDEN_BIN`, exports a default
-`GARDEN_HEADLESS_SIZE`, and `exec`s `garden --init layout.ptl "$@"`. It
+`tools/run-example.ts <slug>` finds the example's directory and the Garden
+binary at `garden/target/debug/garden` or `$GARDEN_BIN`, exports
+`GARDEN_HEADLESS_SIZE` from the `headless-size` comment in `layout.ptl`, and
+`exec`s `garden --init layout.ptl` with any further arguments. It
 exits 3 with a `STALE GARDEN BINARY` banner, launching nothing, when that
 binary is behind the checkout; if `log.txt` has no port in it, read it. Pick the
 viewport that suits the app (1280x850 is the headless default; Asteroids uses
@@ -84,8 +84,7 @@ Do not write the whole app blind and hope. The loop is:
 ```bash
 ./ts/bin/run-petal.ts check --strict examples/<category>/<slug>/app.ptl   # from the repo root
 
-cd examples/<category>/<slug>
-(nohup ./launch.sh --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
+(nohup tools/run-example.ts <slug> --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
 GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
 
@@ -155,7 +154,7 @@ Follow the shape of `examples/productivity/markdown-editor/README.md`:
 
 1. Title `# NN — <App name> (<optional codename>)` and a one-paragraph
    description of what it is.
-2. **Run it**: `./launch.sh`, the by-hand headless command, the designed
+2. **Run it**: `tools/run-example.ts <slug>`, the by-hand headless command, the designed
    viewport and the pane size it yields, any env such as
    `GARDEN_PANEL_STORE_DIR`, and a note that the panel sleeps after 10 s so a
    reviewer does not read a stopped simulation as a hang.

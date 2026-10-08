@@ -19,9 +19,9 @@ and a peek holds the board open on its own timer.
 
 ## Run it
 
-The quickest way is `./launch.sh` in this directory. It finds the `garden`
+The quickest way is `tools/run-example.ts memory` from the repo root. It finds the `garden`
 binary and sets the viewport, and passes extra arguments through, e.g.
-`./launch.sh --headless --debug-port 0`. By hand:
+`tools/run-example.ts memory --headless --debug-port 0`. By hand:
 
 ```bash
 cd examples/games/memory

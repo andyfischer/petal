@@ -35,20 +35,20 @@ one immutable record, so undo is a list of earlier worlds.
 
 ```bash
 cd examples/games/physics-playground
-./launch.sh                                  # windowed
-./launch.sh --headless --debug-port 0        # headless + debug server
+../../../tools/run-example.ts                             # windowed
+../../../tools/run-example.ts --headless --debug-port 0   # headless + debug server
 ```
 
 By hand, for the agent workflow:
 
 ```bash
-(nohup ./launch.sh --headless --debug-port 0 > /tmp/pp.log 2>&1 < /dev/null &)
+(nohup ../../../tools/run-example.ts --headless --debug-port 0 > /tmp/pp.log 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' /tmp/pp.log | cut -d: -f2)
 curl -s 127.0.0.1:$PORT/screenshot -o /tmp/pp.png
 ```
 
 Designed for a **1240 × 820** viewport (`GARDEN_HEADLESS_SIZE`, set by
-`launch.sh`), which gives the pane 1228 × 748 and the stage 828 × 604 at pane
+`run-example.ts`), which gives the pane 1228 × 748 and the stage 828 × 604 at pane
 position (104, 84). The stages are built from the stage size, so they follow a
 resize; the sidebar wants about 600 px of height. The app stores nothing, so
 no `GARDEN_PANEL_STORE_DIR` is needed.

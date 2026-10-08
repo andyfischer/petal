@@ -1,6 +1,6 @@
 # MCP Server
 
-`ts/tools/petal-mcp.ts` is an MCP server (`petal-tools`) whose tools compile
+`tools/petal-mcp.ts` is an MCP server (`petal-tools`) whose tools compile
 and run Petal code directly, so an agent can test a snippet without shelling
 out. It builds the Rust binary on first use. Each call has a 10 s timeout.
 Every tool writes the snippet to a temp `.ptl` file and runs the matching
@@ -27,7 +27,7 @@ conventions, and the omit-defaults rule are documented in
 TestSnippet({ code: 'print("hello")' })
 ```
 
-A separate server, `ts/tools/petal-diagram-mcp.ts`, exposes `Diagram*` tools
+A separate server, `tools/petal-diagram-mcp.ts`, exposes `Diagram*` tools
 that speak the debug protocol to a running diagram canvas over WebSocket. See
 [debug-protocol.md](debug-protocol.md) and
 [debugging-visibility.md](debugging-visibility.md).

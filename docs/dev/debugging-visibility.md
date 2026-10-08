@@ -137,12 +137,12 @@ for `Env::observations_mut().enable()` and `Env::get_observations_json`.
 
 ## 2. MCP tools
 
-`petal-tools` (`ts/tools/petal-mcp.ts`) wraps the CLI above for agents:
+`petal-tools` (`tools/petal-mcp.ts`) wraps the CLI above for agents:
 `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR /
 bytecode), `PendingReport`, `TraceEmits`, `ProposeEdit`. The
 tool reference is [mcp-server.md](mcp-server.md).
 
-`petal-diagram` (`ts/tools/petal-diagram-mcp.ts`) is a frame-by-frame
+`petal-diagram` (`tools/petal-diagram-mcp.ts`) is a frame-by-frame
 debugger for a running diagram canvas. It connects over WebSocket
 (`ws://localhost:4012/debug`, override with `PETAL_DEBUG_URL`). Every
 response has the shape `{ok, paused, frame, ...extras}`.

@@ -19,9 +19,9 @@ panes clip the last row.
 
 ## Run it
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts analytics-dashboard` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts analytics-dashboard --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/dashboards/analytics-dashboard

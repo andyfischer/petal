@@ -147,6 +147,17 @@ struct Checker<'a> {
     /// runtime) rather than leaking into the function around it — the same
     /// discipline [`Checker::ret_stack`] keeps.
     fn_stack: Vec<Option<infer::FnKey>>,
+    /// The types each enclosing lambda's explicit `return`s produce, innermost
+    /// last — a frame is pushed beside the lambda's `None` in
+    /// [`Checker::fn_stack`], and that `None` is what attributes a `return` to
+    /// it. Feeds [`Checker::lambda_rets`].
+    lambda_returns: Vec<Vec<Type>>,
+    /// Every type a lambda written in this module can return, by the lambda's
+    /// span: its tail expression, then its explicit `return`s. A lambda has no
+    /// return-type slot ([`FnSignature::ret`] is `None` for one), so this is
+    /// the only place a builtin that constrains its *callback's result* —
+    /// `sort_by`'s key function — can read it from.
+    lambda_rets: HashMap<SourceSpan, Vec<Type>>,
     /// The module being checked, for [`infer::Inferences::note_declaration`].
     module: String,
     /// True while walking the *access spine* on the left of a `??`. That spine
@@ -224,6 +235,8 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         inferences: infer::Inferences::default(),
         collect_inferences: opts.collect_inferences,
         fn_stack: Vec::new(),
+        lambda_returns: Vec::new(),
+        lambda_rets: HashMap::new(),
         module: opts.module.to_string(),
         tolerant_access: false,
     };
@@ -428,6 +441,36 @@ impl<'a> Checker<'a> {
                 None => self.module_signatures(name),
             },
             _ => Vec::new(),
+        }
+    }
+
+    /// Check the key function handed to `sort_by` (written argument `index`):
+    /// it must return a number or a string, the only keys `sort_by` can order
+    /// — anything else fails at runtime. Knowable for a lambda written in
+    /// place (every type it can return) and for a function whose return type
+    /// is declared; silent otherwise.
+    fn check_sort_key_fn(&mut self, key_fn: &Expr, index: usize) {
+        let rets: Vec<Type> = match &key_fn.kind {
+            ExprKind::Lambda { .. } => self.lambda_rets.get(&key_fn.span).cloned().unwrap_or_default(),
+            // The key function is called with one argument, so only that
+            // arity's signature speaks for it.
+            _ => self
+                .fn_candidates(key_fn)
+                .iter()
+                .filter(|sig| sig.params.len() == 1)
+                .filter_map(|sig| sig.ret)
+                .collect(),
+        };
+        if let Some(&bad) = rets.iter().find(|&&t| !builtin_types::sort_key_type_ok(t)) {
+            self.warn(
+                key_fn.span,
+                format!(
+                    "argument {} to `sort_by`: the key function must return a number or a \
+                     string, found `{}`",
+                    index + 1,
+                    self.spell(bad)
+                ),
+            );
         }
     }
 
@@ -951,6 +994,11 @@ impl<'a> Checker<'a> {
                     // declared return type (bare `return` → nil is left
                     // unchecked, to avoid warning on early-exit patterns).
                     self.check_return_type(ty, e.span);
+                    if let Some(None) = self.fn_stack.last()
+                        && let Some(rets) = self.lambda_returns.last_mut()
+                    {
+                        rets.push(ty);
+                    }
                     if self.collect_inferences
                         && let Some(Some(key)) = self.fn_stack.last().cloned()
                     {
@@ -1346,7 +1394,11 @@ impl<'a> Checker<'a> {
                 // and is not collected as evidence for one either.
                 self.ret_stack.push(None);
                 self.fn_stack.push(None);
-                self.check_block_body(body);
+                self.lambda_returns.push(Vec::new());
+                let (tail_ty, _) = self.check_block_body(body);
+                let mut rets = self.lambda_returns.pop().unwrap_or_default();
+                rets.insert(0, tail_ty);
+                self.lambda_rets.insert(expr.span, rets);
                 self.fn_stack.pop();
                 self.ret_stack.pop();
                 self.pop_scope();
@@ -1742,6 +1794,11 @@ impl<'a> Checker<'a> {
                             );
                         }
                     }
+                }
+                if f == "sort_by"
+                    && let Some(&i) = order.get(1)
+                {
+                    self.check_sort_key_fn(&args[i], i);
                 }
                 let slot_types: Vec<Type> = order.iter().map(|&i| arg_types[i]).collect();
                 return builtin_types::builtin_return_type(f, &slot_types).unwrap_or(Type::Any);
@@ -3099,5 +3156,67 @@ mod tests {
         assert!(w[0].contains("expected `int`"), "{w:?}");
         let w = warns_with_reqs("fn f(p)\n  p.x\nend\nfn g(f)\n  f(3)\nend");
         assert!(w.is_empty(), "{w:?}");
+    }
+
+    // ── `sort_by`'s key function must return a number or a string ───────────
+
+    #[test]
+    fn sort_by_warns_on_a_lambda_key_it_cannot_order() {
+        let w = warns("let xs = [[1, 2]]\nprint(sort_by(xs, fn(x) -> [x[0], x[1]]))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("argument 2 to `sort_by`"), "{w:?}");
+        assert!(w[0].contains("found `list`"), "{w:?}");
+        let w = warns("print(sort_by([1], fn(x) -> {k: x}))");
+        assert!(w[0].contains("found `record`"), "{w:?}");
+        let w = warns("print(sort_by([1], fn(x) -> x > 0))");
+        assert!(w[0].contains("found `bool`"), "{w:?}");
+    }
+
+    #[test]
+    fn sort_by_accepts_number_string_and_unknown_keys() {
+        for key in ["x", "x * 2", "1.5", "\"s\"", "str(x)", "x.name"] {
+            let w = warns(&format!("print(sort_by([1], fn(x) -> {key}))"));
+            assert!(w.is_empty(), "{key}: {w:?}");
+        }
+    }
+
+    #[test]
+    fn sort_by_checks_every_return_of_a_lambda_key() {
+        let w = warns(
+            "print(sort_by([1], fn(x)\n  if x > 1 then return [x] end\n  x\nend))",
+        );
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("found `list`"), "{w:?}");
+        // A `return` in a lambda nested inside the key function is not the
+        // key function's.
+        let w = warns(
+            "print(sort_by([1], fn(x)\n  let g = fn(y)\n    return [y]\n  end\n  x\nend))",
+        );
+        assert!(w.is_empty(), "{w:?}");
+    }
+
+    #[test]
+    fn sort_by_checks_a_named_key_functions_declared_return_type() {
+        let w = warns("fn pair(x) -> list\n  [x, x]\nend\nprint(sort_by([1], pair))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("found `list`"), "{w:?}");
+        assert!(warns("fn k(x) -> num\n  x\nend\nprint(sort_by([1], k))").is_empty());
+        // Undeclared: nothing is known, so nothing is said.
+        assert!(warns("fn k(x)\n  [x]\nend\nprint(sort_by([1], k))").is_empty());
+    }
+
+    #[test]
+    fn sort_by_checks_a_named_key_argument() {
+        let w = warns("print(sort_by(descending: true, key: fn(x) -> [x], list: [1]))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("found `list`"), "{w:?}");
+    }
+
+    #[test]
+    fn sort_by_wants_a_list_and_a_function() {
+        let w = warns("print(sort_by([1], 3))");
+        assert!(w[0].contains("expected a function"), "{w:?}");
+        let w = warns("print(sort_by(\"abc\", fn(c) -> c))");
+        assert!(w[0].contains("expected a list"), "{w:?}");
     }
 }

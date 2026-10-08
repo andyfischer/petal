@@ -6,9 +6,9 @@ opens a gap under the pointer, and drops the card where the gap is.
 
 ## Run it
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts kanban` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts kanban --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/productivity/kanban

@@ -766,7 +766,7 @@ guess costs a compile round-trip (`Unknown builtin: flatten`).
 | **Length** | `len(x)` — list or string. Bytes for a string; `char_len` for characters |
 | **Build a list** | `range(a, b)` — `a`..`b-1`; `range(a, b, step)` counts by `step`, down when it is negative (`range(5, 0, -1)` is 5..1). `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
 | **Read a list** | `xs[i]`, `slice(xs, start, end)` (end-exclusive, negatives allowed), `contains(xs, v)`, `index_of(xs, v)` (`-1` if absent) |
-| **Reshape** | `reverse(xs)`, `sort(xs)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
+| **Reshape** | `reverse(xs)`, `sort(xs)`, `sort_by(xs, fn(x) -> x.key)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
 | **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |
 | **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
 | **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
@@ -782,9 +782,12 @@ Three of these are shaped differently than you will expect:
   `reduce(xs, xs[0], fn(a, b) -> if a < b then a else b end)`.
 - `noise` is centered on **0** and runs roughly −1..1, not 0..1. Terrain and
   heightmap code wants `(noise(x, y) + 1.0) / 2.0`, or `map_range`.
-- `sort` takes an **optional comparator** as a second argument
-  (`sort(xs, fn(a, b) -> b - a)` for descending). Without one it orders numbers
-  and strings, and leaves records alone.
+- Do not hand-roll a sort. `sort_by(rows, fn(r) -> r.score, "desc")` sorts by
+  a key (a **number or a string** — anything else is an error) and is stable,
+  so chaining two `sort_by` calls sorts by two keys. `sort` takes an **optional
+  comparator** as a second argument (`sort(xs, fn(a, b) -> b - a)`), returning
+  a number or a bool (`true` = `a` first). Without one it orders numbers and
+  strings, and leaves records alone.
 
 ### Determinism without a command-line flag
 
@@ -967,7 +970,7 @@ a tree-sitter grammar (Neovim, Helix, Zed, Emacs) and a classic-Vim syntax file.
 
 ### MCP tools, if you use an AI assistant
 
-`ts/tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
+`tools/petal-mcp.ts` exposes the same capabilities as tools: `TestSnippet`,
 `CheckSnippet`, `ExplainTerm`, `ShowStage` (tokens / AST / IR / bytecode),
 `PendingReport`, `TraceEmits`, `ProposeEdit`. They build the
 binary automatically. See [dev/mcp-server.md](dev/mcp-server.md).

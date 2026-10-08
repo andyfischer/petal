@@ -131,7 +131,7 @@ update the client types from the sample diff.
   excluding Markdown) changed since the build commit, `stale` is true when
   that is nonzero, and `warning` is a one-line message (empty when current).
   Garden prints the same warning to stderr at startup, so it shows up in a
-  `launch.sh` log. When `stale` is true, rebuild before trusting any result.
+  `tools/run-example.ts` log. When `stale` is true, rebuild before trusting any result.
   It is null when git can't tell (no checkout).
 - `frame`: the global frame counter (see [Frame consistency](#frame-consistency)).
 - window size and scale, cell metrics, `focus` (the focused pane index), and

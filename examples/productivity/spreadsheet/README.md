@@ -6,9 +6,9 @@ A1 references and ranges, keyboard-first editing, and a live cell inspector.
 
 ## Running it
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts spreadsheet` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts spreadsheet --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/productivity/spreadsheet

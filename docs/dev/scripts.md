@@ -77,8 +77,9 @@ See [performance.md](performance.md) for how to read these numbers.
 | `npm run scan-secrets` | Scan the full git history for leaked credentials with gitleaks (mirrors the CI "Secret scan" job). Run before a push or public release. |
 | `./ts/bin/oracle-external.ts` | Run the frame-gate/memo differential oracle over worlds-fair's UI, which lives outside this repo and needs a generated bundle and fixture models. Garden's half runs in CI as part of the cargo corpus. See [declarative-effect-refactoring.md](../tasks/declarative-effect-refactoring.md). |
 | `./ts/bin/native-effect-audit.ts` | Static approximation of `--effect-audit` over the source of every registration site, including natives no corpus app calls: which bodies report what they do through `PetalCxt`, and which reach outside their arguments (the filesystem, a thread-local, the clock) without reporting anything — the natives whose rows want a second look. Exits non-zero if any does. `--all` lists every native, `--json` for machine-readable output. See [declarative-effect-refactoring.md](../tasks/declarative-effect-refactoring.md). |
-| `cd ts && npm run stdlib:json` | Extract the standard library into JSON (`ts/tools/extract-stdlib.ts`). |
-| `cd ts && npm run tsc` | Type-check the TypeScript tooling (`tsc --noEmit`). |
+| `tools/run-example.ts <slug>` | Launch an example panel app (`examples/<category>/<slug>/`) in Garden; extra arguments go to Garden, `--list` shows the examples. Refuses a Garden binary that is behind the checkout. See [examples/AUTHORING.md](../../examples/AUTHORING.md). |
+| `cd ts && npm run stdlib:json` | Extract the standard library into JSON (`tools/extract-stdlib.ts`). |
+| `cd ts && npm run tsc` | Type-check the TypeScript tooling (`tsc --noEmit`). `cd tools && npm run tsc` does the same for `tools/` (run `npm install` there once; the MCP servers need it too). |
 
 ## MCP introspection
 

@@ -219,7 +219,8 @@ impl<'a> Vm<'a> {
     /// The key function is called exactly **once per element**, before any
     /// comparison, so sorting 1,000 rows costs 1,000 calls rather than the
     /// ~10,000 a comparator would. Keys are compared with the same ordering
-    /// `sort(list)` uses (numbers, then strings, then everything else).
+    /// `sort(list)` uses (numbers, then strings). A key that is neither is an
+    /// error rather than a silent no-op.
     ///
     /// The third argument chooses the direction: `true` or `"desc"` for
     /// descending, `false`/`"asc"`/omitted for ascending. Descending is still
@@ -261,7 +262,28 @@ impl<'a> Vm<'a> {
         let mut keyed: Vec<(crate::builtins::SortKey, Value)> = Vec::with_capacity(elements.len());
         for elem in elements {
             let key = self.call_closure_sync(*func, &[elem], site)?;
-            keyed.push((crate::builtins::SortKey::of(self.heap, key), elem));
+            // Only numbers and strings have an order. Any other key used to
+            // rank as "equal to everything", which returned the list unsorted
+            // without a word — `sort_by(rows, fn(r) -> [r.a, r.b])` being the
+            // usual way to get there.
+            // A key that has not arrived yet has no order either, but that is
+            // not a mistake: the whole result is pending on it, the way
+            // `sort(list)` is pending on a pending element.
+            if matches!(key, Value::Pending(_)) {
+                return Ok(key);
+            }
+            let key = match crate::builtins::SortKey::of(self.heap, key) {
+                crate::builtins::SortKey::Other => {
+                    return Err(format!(
+                        "sort_by() key function must return a number or a string, got {} \
+                         (to sort by several keys, chain sort_by calls — it is stable — \
+                         or use sort(list, compare))",
+                        key.type_name()
+                    ));
+                }
+                k => k,
+            };
+            keyed.push((key, elem));
         }
         // `Vec::sort_by` is stable, and reversing the comparison keeps it so:
         // equal keys stay in their original relative order in both directions.

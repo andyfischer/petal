@@ -17,9 +17,9 @@ absorbs the slack — but the board is a fixed 832 × 598 px, so much below
 
 ## Run it
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts snake` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts snake --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/games/snake

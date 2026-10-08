@@ -11,7 +11,7 @@
 // The data model, the query language and every transform on the mail store
 // live in mailbox.ptl; the glyphs in icons.ptl. This file is input and paint.
 //
-// Run:  ./launch.sh   (or garden --headless --debug-port 0 --init layout.ptl)
+// Run:  tools/run-example.ts email-client   (or garden --headless --debug-port 0 --init layout.ptl)
 // ─────────────────────────────────────────────────────────────────────────
 
 import text_layout

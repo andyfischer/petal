@@ -7,7 +7,7 @@
 // field, undo/redo, keyboard navigation, and persistence through the panel
 // store.
 //
-// Run:  ./launch.sh   (or garden --headless --debug-port 0 --init layout.ptl)
+// Run:  tools/run-example.ts calendar   (or garden --headless --debug-port 0 --init layout.ptl)
 // ─────────────────────────────────────────────────────────────────────────
 
 import text_layout

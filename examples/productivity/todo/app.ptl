@@ -342,21 +342,7 @@ fn task_less(a: record, b: record) -> bool
 end
 
 fn sort_tasks(ts: list) -> list
-  var out = []
-  for t in ts do
-    var placed = false
-    var res = []
-    for x in out do
-      if !placed && task_less(t, x) then
-        set res = append(res, t)
-        set placed = true
-      end
-      set res = append(res, x)
-    end
-    if !placed then set res = append(res, t) end
-    set out = res
-  end
-  out
+  sort(ts, task_less)
 end
 
 fn matches(t: record, needle: string) -> bool

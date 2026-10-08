@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { buildManifest } from "../tools/extract-stdlib";
+import { buildManifest } from "../../tools/extract-stdlib";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..");
 const manifest = buildManifest();

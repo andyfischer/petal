@@ -59,7 +59,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
 const coreParamsRs = join(repoRoot, "rust/src/builtins/params.rs");
 const hostParamsRs = join(repoRoot, "rust/src/typecheck/globals.rs");

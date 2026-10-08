@@ -180,6 +180,8 @@ pub enum ArgSlot {
     Record,
     /// Anything `len` measures: a list, a string, an `f64_array`.
     Sized,
+    /// A callable — the closure a higher-order intrinsic drives.
+    Function,
 }
 
 impl ArgSlot {
@@ -195,6 +197,7 @@ impl ArgSlot {
             ArgSlot::List => ty == Type::List,
             ArgSlot::Record => matches!(ty, Type::Record | Type::Class(_)),
             ArgSlot::Sized => matches!(ty, Type::List | Type::String | Type::F64Array),
+            ArgSlot::Function => ty == Type::Function,
         }
     }
 
@@ -207,8 +210,26 @@ impl ArgSlot {
             ArgSlot::List => "a list",
             ArgSlot::Record => "a record",
             ArgSlot::Sized => "a list or string",
+            ArgSlot::Function => "a function",
         }
     }
+}
+
+/// Whether `sort_by` can order keys of static type `ty`: it compares numbers
+/// and strings and fails at runtime on anything else
+/// (`Vm::builtin_sort_by`). `any` is unknown rather than wrong, and a pending
+/// key makes the result pending instead of failing.
+pub fn sort_key_type_ok(ty: Type) -> bool {
+    matches!(
+        ty,
+        Type::Any
+            | Type::Pending
+            | Type::Int
+            | Type::Float
+            | Type::Num
+            | Type::Dual
+            | Type::String
+    )
 }
 
 /// For a call to builtin `name` that names some of its arguments: which
@@ -273,6 +294,10 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         ("upper" | "lower" | "chars" | "char_len", 1) => &[Str],
         ("split", 2) => &[Str, Str],
         ("join", 2) => &[List, Str],
+        // The direction is a bool or `"asc"`/`"desc"`, so it stays unchecked.
+        // What the key function *returns* is checked too, by
+        // [`sort_key_type_ok`] — a slot has no way to say it.
+        ("sort_by", 2 | 3) => &[List, Function],
         ("char_at", 2) => &[Str, Num],
         ("fixed" | "commas", 2) => &[Any, Num],
         ("pad_start" | "pad_end", 2) => &[Any, Num],

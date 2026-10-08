@@ -29,22 +29,26 @@ reference material lives elsewhere; link to it rather than guessing:
 ```
 examples/<category>/<slug>/
   app.ptl        the app itself (a Garden panel script)
-  layout.ptl     the launcher: layout(panel("app.ptl"))
-  launch.sh      starts Garden on layout.ptl; extra args are passed through
+  layout.ptl     the launcher: layout(panel("app.ptl")), under a
+                 `// headless-size: WxH` comment
   README.md      what it is, what it demonstrates, how to run it, controls
 ```
 
-Multi-file apps may add modules next to `app.ptl` and import them. Copy an
-existing app's `launch.sh` (for example `games/pong/launch.sh`); it finds the
-Garden binary at `garden/target/debug/garden`, or wherever `GARDEN_BIN` points,
-and sets a default `GARDEN_HEADLESS_SIZE`. `launch.sh` does not rebuild, so
-build Garden first (`cd garden && cargo build`). `launch.sh` refuses to start
+Multi-file apps may add modules next to `app.ptl` and import them.
+
+`tools/run-example.ts <slug>` starts Garden on an example's `layout.ptl`;
+extra arguments are passed through to Garden. `<slug>` may also be
+`<category>/<slug>` or a path to the directory, and may be left out when run
+from inside it; `--list` shows every example. It finds the Garden binary at
+`garden/target/debug/garden`, or wherever `GARDEN_BIN` points, and sets
+`GARDEN_HEADLESS_SIZE` from the `// headless-size: WxH` comment in
+`layout.ptl` (1280x850 without one) unless it is already set. It does not
+rebuild, so build Garden first (`cd garden && cargo build`). It refuses to start
 a binary that is behind the checkout: it prints a `STALE GARDEN BINARY` banner
 and exits 3 without launching, so a headless launch into a log file leaves no
 debug port to find. Rebuild, or set `GARDEN_ALLOW_STALE=1` to launch it anyway
 (the banner still prints, and `/state` → `identity.freshness.stale` is true).
-The check lives in `examples/lib/garden-fresh.sh`, which every `launch.sh`
-sources; it counts committed changes under `garden/`, `petal-ui/` and `rust/`,
+The check counts committed changes under `garden/`, `petal-ui/` and `rust/`,
 not uncommitted edits.
 
 `layout(...)` is required in `layout.ptl`. A bare `panel("...")` at top level
@@ -53,8 +57,7 @@ silently leaves you with an empty editor pane.
 ## Running it
 
 ```bash
-cd examples/<category>/<slug>
-(nohup ./launch.sh --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
+(nohup tools/run-example.ts <slug> --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
 GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
 ```
@@ -74,7 +77,8 @@ Otherwise every test run starts from whatever the last run saved, and
 `POST /panel/reset` reloads the saved document rather than the seed data.
 
 `GARDEN_HEADLESS_SIZE=WxH` sets the virtual viewport (default 1280x850). Pick a
-size that suits the app and record it in the README.
+size that suits the app and record it in `layout.ptl`'s `headless-size`
+comment and in the README.
 
 **Your pane is smaller than the viewport.** The tab strip, status bar and side
 gutters come out of it — roughly `W-12` by `H-72` for a single pane, but the
@@ -83,7 +87,7 @@ numbers are not a contract. Inside the script use `screen_width()` /
 from `/state`.
 
 To stop, `kill $GPID`. Find the pid by the debug port, as above, rather than
-by `pgrep -f`: `launch.sh` execs Garden with a relative `layout.ptl`, so the
+by `pgrep -f`: `run-example.ts` execs Garden with a relative `layout.ptl`, so the
 command line carries no path that tells your app from another one. Never
 `pkill -f garden` or `killall`: other Garden processes (someone else's
 session, an agent's harness) will die with yours.

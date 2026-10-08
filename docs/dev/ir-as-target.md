@@ -49,14 +49,14 @@ result as `run <src>`, verified across the snippet matrix in
 
 ## Emitting IR from a foreign front-end
 
-`ts/tools/calc-to-ir.ts` is a worked example: a self-contained front-end for a
+`tools/calc-to-ir.ts` is a worked example: a self-contained front-end for a
 toy "calc" language (`let`/`print` + integer arithmetic with precedence, parens,
 and unary minus). It shares **no** code with Petal's lexer/parser/compiler — its
 only contract is the schema below — and emits Petal IR JSON straight from its
 own AST:
 
 ```bash
-echo 'print 1 + 2 * 3' | npx tsx ts/tools/calc-to-ir.ts | petal run --ir -   # => 7
+echo 'print 1 + 2 * 3' | npx tsx tools/calc-to-ir.ts | petal run --ir -   # => 7
 ```
 
 It demonstrates the key conventions a foreign front-end must honour: constants

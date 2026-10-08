@@ -23,8 +23,8 @@ all Petal over `state`, immutable records and the `draw_*` natives.
 ## Run it
 
 ```bash
-./launch.sh                               # a window
-./launch.sh --headless --debug-port 0     # for the debug server
+../../../tools/run-example.ts                             # a window
+../../../tools/run-example.ts --headless --debug-port 0   # for the debug server
 ```
 
 By hand:

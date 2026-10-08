@@ -748,6 +748,31 @@ sort([3, 1, 2])           // [1, 2, 3]
 sort(["c", "a", "b"])     // ["a", "b", "c"]
 ```
 
+### `sort(list, compare)`
+
+Sorts with a comparator of two elements. `compare(a, b)` returns a number
+(negative: `a` first; positive: `b` first; zero: a tie) or a bool (`true`: `a`
+first). The sort is stable.
+
+```petal
+sort([3, 1, 2], fn(a, b) -> b - a)            // [3, 2, 1]
+sort(rows, fn(a, b) -> a.score < b.score)     // lowest score first
+```
+
+### `sort_by(list, key, descending?)`
+
+Sorts by a key read off each element; `key(element)` is called once per
+element and must return a number or a string (any other key is an error).
+`descending` is `true` or `"desc"` for descending order, and `false`,
+`"asc"`, or omitted for ascending. The sort is stable in both directions, so
+chained calls sort by several keys — least significant first.
+
+```petal
+sort_by(rows, fn(r) -> r.score)                  // lowest score first
+sort_by(rows, fn(r) -> r.score, "desc")          // highest score first
+sort_by(sort_by(rows, fn(r) -> r.name), fn(r) -> r.score, "desc")   // ties by name
+```
+
 ### `reverse(collection)`
 
 Returns a new reversed list or string.

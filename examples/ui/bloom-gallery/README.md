@@ -13,13 +13,13 @@ so a panel author can copy a block and have a working control.
 In Garden (which registers the bloom modules, so `import bloom` just works):
 
 ```bash
-./launch.sh
+../../../tools/run-example.ts
 ```
 
 Headless, for a trace or a screenshot:
 
 ```bash
-./launch.sh --headless --debug-port 0
+../../../tools/run-example.ts --headless --debug-port 0
 ```
 
 Or without Garden at all, through the headless UI driver — outside Garden the

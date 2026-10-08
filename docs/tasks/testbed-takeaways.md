@@ -68,8 +68,8 @@ Each is **S**, and each was hit by only one app:
   Garden that predated `text_advance` and `range(a, b, step)`, while
   `petal check --host garden` accepted both. `d5652ca` added the startup
   warning and `/state.identity.freshness`. Either the agent didn't see
-  them, or they didn't fire. Check which, and consider having `launch.sh`
-  rebuild when the binary is behind.
+  them, or they didn't fire. Check which, and consider having the launcher
+  (`tools/run-example.ts`) rebuild when the binary is behind.
 
 ## Follow-ups outside this repo
 

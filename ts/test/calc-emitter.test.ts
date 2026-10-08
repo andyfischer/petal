@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runIr, runIrError, runPetal } from "./helpers";
-import { compileCalcToIr, compileCalcToIrJson } from "../tools/calc-to-ir";
+import { compileCalcToIr, compileCalcToIrJson } from "../../tools/calc-to-ir";
 
 
 // The reference external emitter (M4 of idea-34b8348d): a toy "calc" language

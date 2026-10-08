@@ -16,9 +16,9 @@ proportions and the 13-row table window were tuned at this size.
 
 ## Run it
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts crm-contact-manager` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts crm-contact-manager --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/productivity/crm-contact-manager
@@ -74,8 +74,8 @@ typed.
 for per-frame dataflow, `var` / `set` for the accumulators inside helper
 functions, `for`-as-mapping-expression with `continue` as a filter (the whole
 filter pipeline is one expression), record spread (`{...c, stage: …}`) to write
-one record back into a list without mutation, a hand-written comparator +
-insertion sort (there is no `sort_by` builtin), string builtins (`lower`,
+one record back into a list without mutation, a hand-written comparator
+handed to `sort(rows, compare)`, string builtins (`lower`,
 `contains`, `split`, `join`, `slice`), `int("…")` string→int parsing, and hex
 color literals as records.
 

@@ -1193,6 +1193,48 @@ filter([1, 2, 3, 4], fn(x) -> x > 2)        // [3, 4]
 reduce([1, 2, 3], 0, fn(acc, x) -> acc + x) // 6
 ```
 
+### Sorting
+
+`sort(list)` orders numbers and strings. For anything else — records, a
+descending order, an order of your own — there are two forms, and both return a
+new list.
+
+**`sort_by(list, key, descending?)`** sorts by a key read off each element. Reach
+for this one first:
+
+```petal
+let rows = [{name: "Ada", score: 3}, {name: "Bo", score: 9}, {name: "Cy", score: 3}]
+
+sort_by(rows, fn(r) -> r.score)           // Ada, Cy, Bo
+sort_by(rows, fn(r) -> r.score, "desc")   // Bo, Ada, Cy   (`true` works too)
+sort_by(rows, fn(r) -> lower(r.name))     // by name, ignoring case
+```
+
+The key function runs once per element, and must return a **number or a
+string** — any other key is an error (`petal check` reports it ahead of time
+when it can see what the function returns).
+
+`sort_by` is stable: elements with equal keys keep the order they came in. That
+is how to sort by more than one key — sort by the *least* significant key first
+and the most significant last:
+
+```petal
+// By score, highest first; ties broken by name.
+sort_by(sort_by(rows, fn(r) -> r.name), fn(r) -> r.score, "desc")
+```
+
+**`sort(list, compare)`** takes a comparator of two elements, for an order a
+single key cannot express. It may return a number (negative: `a` first;
+positive: `b` first; zero: a tie) or a bool (`true`: `a` first):
+
+```petal
+sort([3, 1, 2], fn(a, b) -> b - a)          // [3, 2, 1]
+sort(rows, fn(a, b) -> a.score < b.score)   // lowest score first
+```
+
+It is stable too. A comparator is called about `n log n` times where a key
+function is called `n` times, so prefer `sort_by` when a key will do.
+
 ## Records
 
 Records are key-value structures with string keys:

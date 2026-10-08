@@ -31,20 +31,20 @@ The point of this entry is **paths, many entities, targeting and simulation**:
 
 ```bash
 cd examples/games/tower-defense
-./launch.sh                                  # windowed
-./launch.sh --headless --debug-port 0        # headless + debug server
+../../../tools/run-example.ts                             # windowed
+../../../tools/run-example.ts --headless --debug-port 0   # headless + debug server
 ```
 
 By hand, for the agent workflow:
 
 ```bash
-(nohup ./launch.sh --headless --debug-port 0 > /tmp/td.log 2>&1 < /dev/null &)
+(nohup ../../../tools/run-example.ts --headless --debug-port 0 > /tmp/td.log 2>&1 < /dev/null &)
 PORT=$(grep -o '127.0.0.1:[0-9]*' /tmp/td.log | cut -d: -f2)
 curl -s 127.0.0.1:$PORT/screenshot -o /tmp/td.png
 ```
 
 Designed for a **1200 × 800** viewport (`GARDEN_HEADLESS_SIZE`, set by
-`launch.sh`), which gives the pane 1188 × 728: a 21 × 14 board of 40 px cells
+`run-example.ts`), which gives the pane 1188 × 728: a 21 × 14 board of 40 px cells
 on the left and a 280 px sidebar on the right. The board scales its cell size
 to a smaller pane, but the sidebar needs about 560 px of height (see Known
 limits). The app stores nothing, so no `GARDEN_PANEL_STORE_DIR` is needed.

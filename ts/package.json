@@ -2,7 +2,7 @@
   "name": "@petal/ts",
   "version": "1.0.0",
   "private": true,
-  "description": "TypeScript code for Petal: dev wrapper, MCP servers, and integration tests.",
+  "description": "TypeScript code for Petal: dev wrapper and integration tests.",
   "engines": {
     "node": ">=24"
   },
@@ -12,17 +12,11 @@
     "test-examples": "tsx bin/test-examples.ts",
     "scan-secrets": "tsx bin/scan-secrets.ts",
     "petal": "tsx bin/run-petal.ts",
-    "stdlib:json": "tsx tools/extract-stdlib.ts",
+    "stdlib:json": "tsx ../tools/extract-stdlib.ts",
     "tsc": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.13.2",
-    "ws": "^8.19.0",
-    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/ws": "^8.5.0",
     "tsx": "4.19.4",
     "typescript": "^5.4.0",
     "vitest": "3.1.4"

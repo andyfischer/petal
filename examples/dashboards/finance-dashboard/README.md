@@ -23,9 +23,9 @@ column and a taller one lengthens the table; it is tuned for the size above.
 
 ## Run
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts finance-dashboard` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts finance-dashboard --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/dashboards/finance-dashboard
@@ -68,11 +68,9 @@ constants; string interpolation for the cache key; integer/float discipline
 
 Two techniques worth calling out:
 
-- **Sorting without a comparator.** `sort` takes no key function, so rows and
-  slices are ranked by packing `(rank, index)` into a single int
-  (`rank * 4096 + i`), sorting *that*, and unpacking — O(n log n) instead of
-  the quadratic list-copying an insertion sort in Petal would cost over 672
-  rows.
+- **Sorting by a key.** Rows and slices are ordered with
+  `sort_by(rows, fn(t) -> t.amt, "desc")`: the key function runs once per
+  element and the sort is stable, so rows that tie keep their ledger order.
 - **A one-entry view cache.** Every scope change rebuilds the aggregate once
   and stores it in `state` under a string key, so a 672-row filter/aggregate/
   sort runs on the frame the drill happens and never again.

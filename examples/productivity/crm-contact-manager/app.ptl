@@ -261,22 +261,9 @@ fn row_less(a: record, b: record, key: string, dir: num) -> bool
   end
 end
 
+// `sort` takes the comparator directly: true means `a` goes first.
 fn sort_rows(rows: list, key: string, dir: num) -> list
-  var out = []
-  for r in rows do
-    var placed = false
-    var res = []
-    for x in out do
-      if !placed && row_less(r, x, key, dir) then
-        set res = append(res, r)
-        set placed = true
-      end
-      set res = append(res, x)
-    end
-    if !placed then set res = append(res, r) end
-    set out = res
-  end
-  out
+  sort(rows, fn(a, b) -> row_less(a, b, key: key, dir: dir))
 end
 
 fn matches(c: record, needle: string) -> bool

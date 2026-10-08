@@ -22,9 +22,9 @@ widths were tuned at that size.
 
 ## Run
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts todo` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts todo --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/productivity/todo
@@ -88,7 +88,7 @@ took its place, so a burst of `space` walks down the list.
   (`{...t, done: !t.done}`), `for`-in-value-position as map/filter (including a
   nested one inside a record field, to rewrite a subtask list), `var`/`set`
   accumulators inside helpers, string interpolation, immutable list append and
-  slice for the undo stack, an insertion sort over a comparator, keyed
+  slice for the undo stack, `sort` with a comparator, keyed
   multi-way `if`/`elsif` classification.
 - **Host / petal-ui:** `state` across frames and hot reload, `ellipsize`,
   `preview`/`wrap`, `fit_parts`, `ensure_visible_px`, styled `draw_text`

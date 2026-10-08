@@ -1718,7 +1718,8 @@ pub(super) fn handle_suggest(
         outcome.functions,
         if outcome.functions == 1 { "" } else { "s" }
     );
-    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() {
+    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() && outcome.advice.is_empty()
+    {
         println!("no suggestions ({functions} examined)");
         return;
     }
@@ -1745,6 +1746,13 @@ pub(super) fn handle_suggest(
         println!("  suggest: {}", one_line(&n.after));
         println!("  because: {}", n.because);
     }
+    // Advice is a comment about the code, not a rewrite of it: there is no
+    // `suggest:` line because there is no text to write.
+    for a in &outcome.advice {
+        println!("\n{}:{}:{}  {}", name, a.line, a.column, a.subject);
+        println!("  advice: {}", a.message);
+        println!("  rule: {}", a.rule);
+    }
 
     let count = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
     let mut summary = Vec::new();
@@ -1761,8 +1769,19 @@ pub(super) fn handle_suggest(
             if outcome.named_args.len() == 1 { "its" } else { "their" }
         ));
     }
+    if !outcome.advice.is_empty() {
+        summary.push(format!(
+            "{} piece{} of advice (a comment, never applied)",
+            outcome.advice.len(),
+            if outcome.advice.len() == 1 { "" } else { "s" }
+        ));
+    }
     println!("\n{}.", summary.join("; "));
 
+    // Advice alone leaves nothing to write or to prove.
+    if outcome.suggestions.is_empty() && outcome.named_args.is_empty() {
+        return;
+    }
     if !args.apply && !args.verify {
         println!("Re-run with --apply to write them.");
         return;
@@ -1964,6 +1983,20 @@ fn print_suggest_json(outcome: &crate::suggest::SuggestOutcome) {
             "because": n.because,
         });
         (n.edits.first().map_or(0, |e| e.at), item)
+    }));
+    // Advice has a place and a comment but no rewrite, so its `edits` is
+    // empty: a consumer that applies edits blindly does nothing with it.
+    items.extend(outcome.advice.iter().map(|a| {
+        let item = serde_json::json!({
+            "kind": "advice",
+            "rule": a.rule,
+            "subject": a.subject,
+            "line": a.line,
+            "column": a.column,
+            "message": a.message,
+            "edits": [],
+        });
+        (a.at, item)
     }));
     // One list, in source order, whatever the kind.
     items.sort_by_key(|(at, _)| *at);

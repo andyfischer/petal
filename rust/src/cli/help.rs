@@ -428,7 +428,7 @@ SYNOPSIS
 
 DESCRIPTION
        Proposes changes to a file that make it say more without making it do
-       anything else, each with the reason behind it. Two kinds:
+       anything else, each with the reason behind it. Three kinds:
 
        types
               Type annotations the program already implies, read from its
@@ -438,6 +438,12 @@ DESCRIPTION
               Named arguments for calls that pass three or more arguments by
               position: 'draw_rect(0, 0, 320, 48, panel)' becomes
               'draw_rect(x: 0, y: 0, w: 320, h: 48, c: panel)'.
+
+       advice
+              Comments on code that looks like it could be something simpler,
+              where what to write instead is the author's call: a loop that
+              is a hand-written sort, say. Advice is a heuristic and carries
+              no rewrite, so --apply never acts on it.
 
        This is a suggestion channel, not a check. Nothing here runs during an
        ordinary compile, nothing here can fail a build, and nothing is
@@ -503,10 +509,23 @@ NAMED ARGUMENTS
        of the names would echo their own argument than add to it —
        'hash(ix: ix + 1, iy: iy, seed: seed)'.
 
+ADVICE
+       Advice is for what can be noticed but not rewritten. Each piece names
+       a place, says what it looks like, and stops there: detection is a
+       heuristic ("looks like"), the right replacement depends on what the
+       code was meant to do, and nothing could prove the two alike. So there
+       is no 'suggest:' line, --apply writes nothing for it, and --verify
+       does not count it. The rules:
+
+       hand-written-sort
+              A loop that inserts each element into place by rebuilding the
+              list — an insertion sort written out by hand. 'sort(list,
+              compare)' and 'sort_by(list, key)' do it in one call.
+
 OPTIONS
        --only <kind>[,<kind>]
-              Look for these kinds only: 'types', 'named-args'. Both by
-              default.
+              Look for these kinds only: 'types', 'named-args', 'advice'.
+              All three by default.
 
        --apply
               Write the suggestions into the file, each kind behind its own
@@ -538,8 +557,10 @@ OPTIONS
               Repeatable. Type annotations only.
 
        --json Emit the suggestions as JSON, in source order. Each has a
-              'kind' ('type-annotation' or 'named-args'), its reason, and its
-              'edits': the insertion offsets and the exact text to insert.
+              'kind' ('type-annotation', 'named-args' or 'advice'), its
+              reason, and its 'edits': the insertion offsets and the exact
+              text to insert. Advice has a 'rule' and a 'message' and its
+              'edits' is always empty.
 
 {COMMON}
 SEE ALSO

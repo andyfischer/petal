@@ -325,22 +325,6 @@ fn argmax_of(xs: list) -> int
   k
 end
 
-// Sorting without a comparator: pack (rank, index) into one int, let the
-// builtin `sort` do the work, then unpack. O(n log n) instead of the
-// quadratic list-copying an insertion sort written in Petal would cost.
-let SORT_SLOTS = 4096
-
-fn sorted_by_rank(items: list, ranks: list) -> list
-  let packed = for i in range(0, len(items)) do
-    ranks[i] * SORT_SLOTS + i
-  end
-  let s = sort(packed)
-  let out = for v in s do
-    items[v % SORT_SLOTS]
-  end
-  out
-end
-
 fn in_scope(t: record, ci: num, mi: num, mo: num)
   (ci < 0 || t.cat == ci) && (mi < 0 || t.mer == mi) && (mo < 0 || t.m == mo)
 end
@@ -415,13 +399,15 @@ fn build_view(txns: list, income: list, ci: num, mi: num, mo: num, sort_mode: nu
   end
 
   // Big slices first, so the donut reads clockwise by weight.
-  let sranks = for s in slices do 9999999 - int(s.value * 100.0) end
-  slices = sorted_by_rank(slices, sranks)
+  slices = sort_by(slices, fn(s) -> s.value, "desc")
 
-  let by_date = for t in rows do (11 - t.m) * 64 + (32 - t.day) end
-  let by_amt = for t in rows do 9999999 - int(t.amt * 100.0) end
-  let rranks = if sort_mode == 0 then by_date else by_amt end
-  rows = sorted_by_rank(rows, rranks)
+  // Newest first, or largest first. `sort_by` is stable, so rows that tie
+  // keep the order the ledger had them in.
+  rows = if sort_mode == 0 then
+    sort_by(rows, fn(t) -> t.m * 64 + t.day, "desc")
+  else
+    sort_by(rows, fn(t) -> t.amt, "desc")
+  end
 
   {slices: slices, months: months, all_months: all_months, rows: rows,
     total: total, grand: sum_of(all_months), cat_totals: cat_totals,

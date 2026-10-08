@@ -5,11 +5,17 @@
 //! an ordinary compile, nothing here can fail a build, and applying a
 //! suggestion is always an explicit act. See docs/dev/suggestions-plan.md.
 //!
-//! Two kinds of suggestion ([`Kinds`]), each a set of text insertions:
+//! Three kinds of suggestion ([`Kinds`]). Two are a set of text insertions,
+//! each behind a proof that `--apply` runs before writing it:
 //!
 //! - **type annotations** the program already implies (this file);
 //! - **named arguments** for calls that pass three or more arguments by
 //!   position ([`named_args`]).
+//!
+//! The third is a comment, for what can be noticed but not rewritten:
+//!
+//! - **advice** ([`advice`]) — a heuristic remark about a piece of code ("this
+//!   looks like a hand-written sort"). No edit, so nothing to apply or prove.
 //!
 //! # Type annotations
 //!
@@ -36,6 +42,7 @@
 //! lets a call to `draw_rect` resolve to the `ui` prelude's overloads rather
 //! than look like an unknown global.
 
+pub mod advice;
 pub mod named_args;
 
 use std::collections::BTreeMap;
@@ -48,6 +55,7 @@ use crate::typecheck::globals::{self, HostProfile};
 use crate::typecheck::infer::{Evidence, FnKey, Inferences, Resolved, Slot};
 use crate::types::Type;
 
+pub use advice::Advice;
 pub use named_args::NamedArgs;
 
 /// Which kinds of suggestion to look for.
@@ -57,6 +65,8 @@ pub struct Kinds {
     pub types: bool,
     /// Named arguments for calls of three or more positional ones.
     pub named_args: bool,
+    /// Heuristic comments that carry no rewrite.
+    pub advice: bool,
 }
 
 impl Default for Kinds {
@@ -64,24 +74,28 @@ impl Default for Kinds {
         Kinds {
             types: true,
             named_args: true,
+            advice: true,
         }
     }
 }
 
 impl Kinds {
     /// The `--only` spelling of each kind, with the aliases it accepts.
-    pub const NAMES: &'static str = "'types' or 'named-args'";
+    pub const NAMES: &'static str = "'types', 'named-args' or 'advice'";
 
     /// Parse an `--only` list (`types,named-args`).
     pub fn parse(list: &str) -> Result<Kinds, String> {
-        let mut kinds = Kinds {
+        const NONE: Kinds = Kinds {
             types: false,
             named_args: false,
+            advice: false,
         };
+        let mut kinds = NONE;
         for name in list.split(',').map(str::trim).filter(|n| !n.is_empty()) {
             match name {
                 "types" | "type-annotations" | "annotations" => kinds.types = true,
                 "named-args" | "named-arguments" => kinds.named_args = true,
+                "advice" | "hints" => kinds.advice = true,
                 other => {
                     return Err(format!(
                         "Unknown suggestion kind '{other}' (expected {})",
@@ -90,7 +104,7 @@ impl Kinds {
                 }
             }
         }
-        if kinds == (Kinds { types: false, named_args: false }) {
+        if kinds == NONE {
             return Err(format!("--only needs a kind: {}", Self::NAMES));
         }
         Ok(kinds)
@@ -208,6 +222,9 @@ pub struct SuggestOutcome {
     pub suggestions: Vec<Suggestion>,
     /// Calls that could name their arguments.
     pub named_args: Vec<NamedArgs>,
+    /// Heuristic comments: places worth a second look, with no rewrite to
+    /// offer. Never applied.
+    pub advice: Vec<Advice>,
     /// How many functions the target file declares, for the summary line.
     pub functions: usize,
     /// Notes worth printing above the suggestions (a `--from` that would not
@@ -262,9 +279,15 @@ pub fn suggest_source(
     } else {
         Vec::new()
     };
+    let advice = if opts.kinds.advice {
+        advice::find(&stmts)
+    } else {
+        Vec::new()
+    };
     Ok(SuggestOutcome {
         suggestions,
         named_args,
+        advice,
         functions: declared.len(),
         notes,
     })

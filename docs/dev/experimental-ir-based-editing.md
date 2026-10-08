@@ -61,7 +61,7 @@ without touching source text.
 ## Reference emitter & transform passes
 
 - **Foreign-language emitter (the canonical builder pattern):**
-  [`ts/tools/calc-to-ir.ts`](../../ts/tools/calc-to-ir.ts) is a complete
+  [`tools/calc-to-ir.ts`](../../tools/calc-to-ir.ts) is a complete
   standalone front-end for a toy "calc" language that emits Petal IR JSON
   (schema 0.2) sharing **zero code** with Petal. Its `Emitter` class shows the
   mechanics: a deduped constant table (`constId`), builtins called by name via

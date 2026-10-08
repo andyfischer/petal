@@ -44,9 +44,9 @@ at other sizes.
 
 ## Run
 
-The quickest way is `./launch.sh` in this directory (it finds the `garden`
+The quickest way is `tools/run-example.ts server-monitoring` from the repo root (it finds the `garden`
 binary and sets the viewport; extra arguments are passed through, e.g.
-`./launch.sh --headless --debug-port 0`). By hand:
+`tools/run-example.ts server-monitoring --headless --debug-port 0`). By hand:
 
 ```bash
 cd examples/dashboards/server-monitoring

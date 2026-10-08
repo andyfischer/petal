@@ -6,7 +6,7 @@
 // re-ticks from decades down to single days, filters that re-pack the lanes,
 // an overview strip with a draggable window, and an inspector.
 //
-//   Run:   ./launch.sh            (headless: ./launch.sh --headless --debug-port 0)
+//   Run:   tools/run-example.ts timeline-explorer   (add --headless --debug-port 0 for headless)
 //   Mouse: wheel zoom at the pointer · drag to pan · drag the ruler to zoom a
 //          range · click an event · double-click to zoom in
 //   Keys:  left/right pan · up/down or +/- zoom · n/p next/previous event ·

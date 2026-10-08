@@ -12,8 +12,8 @@ Runnable Petal programs, grouped by what they are:
 | [`custom-integrations/`](custom-integrations/) | Domain-specific hosts embedding Petal — [`petal-fantasy-nes`](custom-integrations/petal-fantasy-nes/), [`petal-fps`](custom-integrations/petal-fps/), [`diagram-canvas`](custom-integrations/diagram-canvas/) |
 
 The apps under `games/`, `productivity/`, `dashboards/`, and `ui/` are Garden
-panel apps: pure Petal, each with its own README, a `layout.ptl`, and a `./launch.sh`
-that starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
+panel apps: pure Petal, each with its own README and a `layout.ptl`;
+`tools/run-example.ts <slug>` starts Garden on it. See [AUTHORING.md](AUTHORING.md) for how they are
 built and tested. The exceptions are [`games/side-scroller/`](games/side-scroller/)
 and [`games/hopper/`](games/hopper/), which run on the `petal-desktop-sdl`
 integration via their own launch scripts, and the five console programs

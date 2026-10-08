@@ -509,7 +509,9 @@ un-annotated function is used exactly when *that* function's result is, and the
 analysis follows such chains. Doubt resolves toward leaving the choice to the
 author: a function that is read as a value (`map(xs, f)`) rather than called
 is reported with both options, as is one whose only caller is itself
-undetermined. A use anywhere wins over `pub`.
+undetermined, and one whose name a local binding (a `let`, a parameter, a
+nested `fn`) shadows somewhere — calls are matched by name, so a statement call
+through that name may not be a call to it. A use anywhere wins over `pub`.
 
 "Never called" usually means "called by the host" — a UI app's `draw`, an
 embedding's callback — and those callers cannot be seen, which is why that
@@ -1110,7 +1112,7 @@ default-valued fields are omitted (see below).
 
 All AST enum types use serde's externally-tagged representation. `Stmt` and
 `Expr` are serialized as `{kind: <variant>, span: SourceSpan}` (a `Stmt` also
-carries `"exported": true` when declared with the `export` modifier) —
+carries `"exported": true` when declared with the `pub` modifier) —
 `SourceSpan`
 is the same compact array encoding the IR uses
 (`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`, see

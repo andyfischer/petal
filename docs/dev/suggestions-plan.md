@@ -337,7 +337,10 @@ from where the suggestion is *withheld*:
 - a `pub` function, whose callers are in other files;
 - a function nothing in view calls — in a UI app or an embedding that is
   usually one the host calls by name, and the host is not in view either;
-- a function passed around as a value.
+- a function passed around as a value;
+- a function whose name some inner scope also binds (a `let`, a parameter, a
+  loop or pattern variable, a nested `fn`): a statement call through that name
+  may be a call to the local, and matching is by name.
 
 Those are reported with both options and never written. `--json` says so per
 item (`"preserves_ir": false`, `"usage": "unknown"`, empty `edits`).

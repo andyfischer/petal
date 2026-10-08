@@ -40,12 +40,15 @@
 //! propagated through such forwarding until nothing changes. Everything is
 //! matched by name, and every doubt resolves toward "used" or "unknown": a
 //! function that is ever read as a value (`map(xs, f)`) rather than called is
-//! unknown, since nothing here follows where the value goes.
+//! unknown, since nothing here follows where the value goes, and so is one
+//! whose name some inner scope rebinds (`let draw = …`, a parameter `draw`),
+//! since a call through that name may never reach it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, declares_nil, walk_expr, walk_stmt,
+    ElseBranch, Expr, ExprKind, ExprVisitor, Pattern, Stmt, StmtKind, declares_nil, walk_expr,
+    walk_stmt,
 };
 
 /// How the callers in view treat a function's result.
@@ -135,6 +138,11 @@ struct Evidence {
     calls: Vec<(String, Position)>,
     /// Names read as a value rather than called.
     read_as_value: BTreeSet<String>,
+    /// Names some inner scope binds for itself: a `let`/`var`/`state`, a
+    /// parameter, a loop variable, a pattern variable, a nested `fn`. A call
+    /// through such a name may be a call to the local rather than to the
+    /// top-level function it shadows, and calls are matched by name alone.
+    rebound: BTreeSet<String>,
 }
 
 /// Find every return-type suggestion for the target file's own top-level
@@ -222,6 +230,9 @@ pub fn find(source: &str, stmts: &[Stmt], extra: &[Vec<Stmt>]) -> Vec<ReturnType
                     "nothing in view calls it"
                 } else if evidence.read_as_value.contains(key) {
                     "it is passed around as a value, so its calls cannot all be seen"
+                } else if evidence.rebound.contains(key) {
+                    "its name is also bound as a local, so a call by that name may not be a \
+                     call to it"
                 } else {
                     "its result is forwarded by a function whose own callers are not in view"
                 };
@@ -261,7 +272,10 @@ fn usages<'a>(
         .iter()
         .map(|(name, (_, exported))| {
             let called = evidence.calls.iter().any(|(n, _)| n == name);
-            let open = *exported || !called || evidence.read_as_value.contains(*name);
+            let open = *exported
+                || !called
+                || evidence.read_as_value.contains(*name)
+                || evidence.rebound.contains(*name);
             (*name, if open { Usage::Unknown } else { Usage::Unused })
         })
         .collect();
@@ -438,9 +452,14 @@ impl ExprVisitor for Walker<'_> {
                 self.expr_position = position;
                 self.visit_expr(e);
             }
-            StmtKind::For { iter, body, .. } => {
+            StmtKind::For { var, iter, body } => {
+                self.evidence.rebound.insert(var.clone());
                 self.visit_expr(iter);
                 self.walk_loop_body(body, &position);
+            }
+            StmtKind::Let { name, .. } | StmtKind::State { name, .. } => {
+                self.evidence.rebound.insert(name.clone());
+                walk_stmt(self, s);
             }
             StmtKind::While { condition, body } => {
                 self.visit_expr(condition);
@@ -453,6 +472,14 @@ impl ExprVisitor for Walker<'_> {
                 body,
                 ..
             } => {
+                // A top-level `fn` is the declaration being resolved; one
+                // nested in a body is a local that can shadow it.
+                if self.depth > 0 {
+                    self.evidence.rebound.insert(bare(name).to_string());
+                }
+                for p in params {
+                    self.evidence.rebound.insert(p.name.clone());
+                }
                 for d in params.iter().filter_map(|p| p.default.as_ref()) {
                     self.visit_expr(d);
                 }
@@ -515,6 +542,7 @@ impl ExprVisitor for Walker<'_> {
             ExprKind::Match { subject, arms } => {
                 self.visit_expr(subject);
                 for arm in arms {
+                    bind_pattern(&arm.pattern, &mut self.evidence.rebound);
                     if let Some(guard) = &arm.guard {
                         self.visit_expr(guard);
                     }
@@ -523,11 +551,15 @@ impl ExprVisitor for Walker<'_> {
                 }
             }
             ExprKind::Block(stmts) => self.walk_body(stmts, position),
-            ExprKind::For { iter, body, .. } => {
+            ExprKind::For { var, iter, body } => {
+                self.evidence.rebound.insert(var.clone());
                 self.visit_expr(iter);
                 self.walk_loop_body(body, &position);
             }
             ExprKind::Lambda { params, body } => {
+                for p in params {
+                    self.evidence.rebound.insert(p.name.clone());
+                }
                 for d in params.iter().filter_map(|p| p.default.as_ref()) {
                     self.visit_expr(d);
                 }
@@ -539,6 +571,22 @@ impl ExprVisitor for Walker<'_> {
             }
             _ => walk_expr(self, e),
         }
+    }
+}
+
+/// Record every name `pattern` binds.
+fn bind_pattern(pattern: &Pattern, out: &mut BTreeSet<String>) {
+    match pattern {
+        Pattern::Wildcard | Pattern::Literal(_) => {}
+        Pattern::Variable(name) => {
+            out.insert(name.clone());
+        }
+        Pattern::Variant { fields, .. } => fields.iter().for_each(|p| bind_pattern(p, out)),
+        Pattern::List { elements, rest } => {
+            elements.iter().for_each(|p| bind_pattern(p, out));
+            out.extend(rest.clone());
+        }
+        Pattern::Record(fields) => fields.iter().for_each(|(_, p)| bind_pattern(p, out)),
     }
 }
 
@@ -596,6 +644,27 @@ mod tests {
     fn a_function_read_as_a_value_is_unknown() {
         let r = one("fn show(x)\n  for i in x do print(i) end\nend\nshow([1])\nmap([[1]], show)\n");
         assert_eq!(r.usage, Usage::Unknown);
+    }
+
+    #[test]
+    fn a_function_shadowed_by_a_local_is_unknown() {
+        // The only call by this name reaches the local, not the function.
+        let f = "fn show(xs)\n  for x in xs do print(x) end\nend\n";
+        for user in [
+            "fn user()\n  let show = fn(a) a end\n  show(1)\n  1\nend\nuser()\n",
+            "fn user(show)\n  show(1)\n  1\nend\nuser(print)\n",
+            "fn user()\n  fn show(a) a end\n  show(1)\n  1\nend\nuser()\n",
+            "let k = fn(show)\n  show(1)\n  1\nend\n",
+            "match [print]\n  when [show] -> show(1)\nend\n",
+        ] {
+            let r = one(&format!("{f}{user}"));
+            assert_eq!((r.usage, r.ty), (Usage::Unknown, None), "{user}");
+            assert!(r.because.contains("bound as a local"), "{}", r.because);
+        }
+        // A use still settles it: `-> list` is true of the function whoever
+        // the other calls reach.
+        let used = format!("{f}fn user(show)\n  show(1)\n  1\nend\nlet v = show([1])\n");
+        assert_eq!(one(&used).ty, Some("list"));
     }
 
     #[test]

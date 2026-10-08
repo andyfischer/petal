@@ -544,7 +544,8 @@ RETURN TYPES
        collected, and unused when the call is a statement. A call that is
        another un-annotated function's tail is used exactly when that
        function's result is. A function read as a value rather than called
-       ('map(xs, f)') is treated as 'never called'. --from <file> adds that
+       ('map(xs, f)') is treated as 'never called', and so is one whose
+       name a local binding shadows somewhere. --from <file> adds that
        file's calls.
 
        Only loop tails are covered. A function that also has a 'return

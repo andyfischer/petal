@@ -116,9 +116,10 @@ state cutting    = false
 state cut_x      = 0.0
 state cut_y      = 0.0
 state cut_saved  = false         // this stroke already pushed its undo step
+state cut_path   = []            // the last few points of the stroke, for drawing
 state sel_id     = -1
 state ui_drag    = ""            // the slider or dial holding the mouse
-state undo       = []            // earlier worlds, oldest first
+state undo       = []            // earlier {w, left} steps, oldest first
 state trail      = []            // recent {x, y} position lists
 state hist       = []            // recent {k, p} energy samples
 state sim_t      = 0.0
@@ -212,8 +213,9 @@ fn count_parts(wd: record) -> record
   {pins: pins, rods: rods, springs: len(wd.links) - rods}
 end
 
-fn pushed(stack: list, wd: record) -> list
-  let s = append(stack, wd)
+// One undo step: the world as it was, and what the dispenser still held.
+fn pushed(stack: list, wd: record, left: int) -> list
+  let s = append(stack, {w: wd, left: left})
   if len(s) > 24 then slice(s, len(s) - 24, len(s)) else s end
 end
 
@@ -360,10 +362,16 @@ if key_pressed("0") then
 end
 
 if key_pressed("escape") then
+  let held = ph.index_of_id(world, grab_id)
   if aiming || linking || cutting then
     aiming = false
     linking = false
     cutting = false
+  elsif held >= 0 then
+    // Let go without a throw: the body is left where it is, at rest.
+    world = ph.set_velocity(world, held, 0.0, 0.0)
+    grab_id = -1
+    wake = true
   else
     sel_id = -1
   end
@@ -702,7 +710,7 @@ if in_stage && free_mouse && mouse_pressed(0) then
     if hover >= 0 then
       want_remove = hover
     elsif hover_link >= 0 then
-      undo = pushed(undo, world)
+      undo = pushed(undo, world, emit.left)
       cut_saved = true
       world = ph.remove_link(world, hover_link)
       trail = []
@@ -712,6 +720,7 @@ if in_stage && free_mouse && mouse_pressed(0) then
     cutting = true
     cut_x = wx
     cut_y = wy
+    cut_path = [[sx + wx, sy + wy]]
   end
 end
 
@@ -725,7 +734,7 @@ if cutting && mouse_down(0) then
     let crossed = ph.links_crossing(world, cut_x, cut_y, cwx, cwy)
     if len(crossed) > 0 then
       if !cut_saved then
-        undo = pushed(undo, world)
+        undo = pushed(undo, world, emit.left)
         cut_saved = true
       end
       for k in crossed do
@@ -738,6 +747,8 @@ if cutting && mouse_down(0) then
     end
     cut_x = cwx
     cut_y = cwy
+    cut_path = append(cut_path, [sx + cwx, sy + cwy])
+    if len(cut_path) > 16 then cut_path = slice(cut_path, len(cut_path) - 16, len(cut_path)) end
   end
 end
 
@@ -755,10 +766,13 @@ if mouse_released(0) || !mouse_down(0) then
       said = "The stage is full ({max_bodies} bodies)"
     else
       let r = BALL_SIZES[size_i]
-      let lvx = clamp((aim_x - wx) * launch_gain, -1800.0, 1800.0)
-      let lvy = clamp((aim_y - wy) * launch_gain, -1800.0, 1800.0)
-      let still = abs(aim_x - wx) + abs(aim_y - wy) < 6.0
-      undo = pushed(undo, world)
+      // The pull is measured to the stage edge, exactly as the preview draws it.
+      let ex = clamp(wx, 0.0, SW)
+      let ey = clamp(wy, 0.0, SH)
+      let lvx = clamp((aim_x - ex) * launch_gain, -1800.0, 1800.0)
+      let lvy = clamp((aim_y - ey) * launch_gain, -1800.0, 1800.0)
+      let still = abs(aim_x - ex) + abs(aim_y - ey) < 6.0
+      undo = pushed(undo, world, emit.left)
       world = ph.add_body(world, clamp(aim_x, r, SW - r), clamp(aim_y, r, SH - r), r, n_spawned % 6,
         false, 1.0, if still then 0.0 else lvx end, if still then 0.0 else lvy end)
       sel_id = world.id[world.n - 1]
@@ -783,7 +797,7 @@ if mouse_released(0) || !mouse_down(0) then
     elsif world.n >= max_bodies && (la < 0 || lb < 0) then
       said = "The stage is full ({max_bodies} bodies)"
     else
-      undo = pushed(undo, world)
+      undo = pushed(undo, world, emit.left)
       // An end left on open stage gets a small pinned anchor lb hold it.
       if la < 0 then
         world = ph.add_pin(world, link_x, link_y, 5, 6)
@@ -848,8 +862,10 @@ end
 
 if want_undo then
   if len(undo) > 0 then
-    world = last(undo)
+    world = last(undo).w
+    emit = {...emit, left: last(undo).left}
     undo = drop_last(undo)
+    if ph.index_of_id(world, sel_id) < 0 then sel_id = -1 end
     trail = []
     grab_id = -1
     wake = true
@@ -865,7 +881,7 @@ if want_clear then
     if !world.pin[i] then loose += 1 end
   end
   if loose > 0 then
-    undo = pushed(undo, world)
+    undo = pushed(undo, world, emit.left)
     for i in range(world.n - 1, -1, -1) do
       if !world.pin[i] then world = ph.remove_body(world, i) end
     end
@@ -881,7 +897,7 @@ if want_clear then
 end
 
 if want_pin >= 0 && want_pin < world.n then
-  undo = pushed(undo, world)
+  undo = pushed(undo, world, emit.left)
   let was = world.pin[want_pin]
   world = ph.set_pin(world, want_pin, !was)
   sel_id = world.id[want_pin]
@@ -890,7 +906,7 @@ if want_pin >= 0 && want_pin < world.n then
 end
 
 if want_remove >= 0 && want_remove < world.n then
-  undo = pushed(undo, world)
+  undo = pushed(undo, world, emit.left)
   let gone = world.id[want_remove]
   world = ph.remove_body(world, want_remove)
   trail = []
@@ -991,7 +1007,9 @@ let last_e = if len(hist) > 0 then last(hist) else {k: 0.0, p: 0.0} end
 // bands trade height as a pendulum swings and the top edge stays level
 // when nothing is being lost.
 let p_floor = reduce(hist, last_e.p, fn(acc, e) -> min(acc, e.p))
-let e_peak = reduce(hist, 1.0, fn(acc, e) -> max(acc, e.k + e.p - p_floor))
+// The scale never drops below a small floor, so the solver's residue in a
+// settled pile reads as the sliver it is instead of filling the chart.
+let e_peak = reduce(hist, 40000.0, fn(acc, e) -> max(acc, e.k + e.p - p_floor))
 let gx0 = cx1
 let gy0 = en_y + 36
 let gw = inner
@@ -1103,7 +1121,7 @@ for k in range(0, len(world.links)) do
       // The stiff lacing inside a soft body reads better as bare thread.
       draw_line(ax, ay, bx, by, col, 150, 1)
     else
-      draw_polyline(coil_points(ax, ay, bx, by, clamp(int(L.len / 9.0), 4, 10), 5.0), col, 255, 2)
+      draw_polyline(coil_points(ax, ay, bx, by, clamp(int(L.len / 9.0), 4, 26), 5.0), col, 255, 2)
     end
   end
 end
@@ -1203,7 +1221,8 @@ if linking then
   let bx = if hover >= 0 && hover != la then X[hover] else pwx end
   let by = if hover >= 0 && hover != la then Y[hover] else pwy end
   if tool == 3 then
-    draw_polyline(coil_points(sx + ax, sy + ay, sx + bx, sy + by, 9, 5.0), C_SPRING, 200, 2)
+    let teeth = clamp(int(ph.norm(bx - ax, by - ay) / 9.0), 4, 26)
+    draw_polyline(coil_points(sx + ax, sy + ay, sx + bx, sy + by, teeth, 5.0), C_SPRING, 200, 2)
   else
     draw_line(sx + ax, sy + ay, sx + bx, sy + by, C_ROD, 200, 3)
   end
@@ -1211,6 +1230,7 @@ if linking then
   if hover < 0 || hover == la then draw_circle_outline(sx + bx, sy + by, 5, HUES[6], 255, 2) end
 end
 if cutting then
+  if len(cut_path) > 1 then draw_polyline(cut_path, C_WARN, 130, 2) end
   draw_circle_outline(sx + pwx, sy + pwy, 7, C_WARN, 255, 1)
   draw_line(sx + pwx - 4.0, sy + pwy - 4.0, sx + pwx + 4.0, sy + pwy + 4.0, C_WARN, 255, 1)
 end

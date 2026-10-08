@@ -168,10 +168,12 @@ fn wrecker(W: num, H: num) -> record
   wd = ph.add_body(wd, ax + ux * reach, ay + uy * reach, 34, 0, false, 4.0, 0.0, 0.0)
   wd = rod(wd, links, links + 1)
   // The shelf, two chocks, and a 5-4-3-2-1 pyramid. The shelf stops short
-  // of the wall, so whatever is knocked off it falls to the floor.
-  let sy = H * 0.62
-  let sx = W * 0.565
-  wd = ph.add_seg(wd, sx, sy, W * 0.87, sy)
+  // of the wall, so whatever is knocked off it falls to the floor. It sits
+  // where the ball passes the bottom of its swing level with the second
+  // row: any higher up the slope and a chocked pile just deflects the ball.
+  let sy = H * 0.662
+  let sx = W * 0.444
+  wd = ph.add_seg(wd, sx, sy, W * 0.80, sy)
   let r = 15.0
   let pitch = r * 2.0 + 0.6
   let bx = sx + 62.0

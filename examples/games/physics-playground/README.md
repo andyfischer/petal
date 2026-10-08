@@ -93,13 +93,13 @@ EOF
 | Grab | drag a body | it follows the pointer as far as its links and neighbours allow; release throws it |
 | Grab | click a body / open stage | select it (the sidebar shows radius, mass, speed, links) / deselect |
 | Ball | click | drop a ball of the chosen size |
-| Ball | press, drag back, release | launch it the opposite way at 5 px/s per pixel of pull; dots show the first 0.7 s of flight |
+| Ball | press, drag back, release | launch it the opposite way at 5 px/s per pixel of pull (measured to the stage edge if the pointer leaves it); dots show the first 0.7 s of flight |
 | Ball | wheel | change the size |
 | Rod, Spring | drag from a body to a body | join them at their current distance |
 | Rod, Spring | drag between a body and open stage | the open end gets a small pinned anchor |
 | Pin | click a body | pin it, or free it |
 | Cut | click a body or a link | remove it (a body takes its links with it) |
-| Cut | drag across links | cut every one the stroke crosses |
+| Cut | drag across links | cut every one the stroke crosses; the stroke leaves a short red trail |
 
 ### Mouse, on the chrome
 
@@ -130,12 +130,12 @@ EOF
 | `F` | cycle 1× → ½ → ¼ |
 | `←` `↑` `↓` `→` | point gravity that way |
 | `0` | zero gravity, and back |
-| `Z`, `U` or `CMD`+`Z` | undo the last edit (spawn, link, cut, pin, delete, clear), up to 24 deep |
+| `Z`, `U` or `CMD`+`Z` | undo the last edit (spawn, link, cut, pin, delete, clear), up to 24 deep. Undo restores the whole world as it was at that edit, positions and the Pegboard's dispenser included, so it also rewinds whatever has moved since |
 | `C` | clear every body that is not pinned |
 | `BACKSPACE` / `DELETE` | delete the selected body |
 | `-` `=` (or `[` `]`) | smaller / larger ball |
 | `V` `T` `K` | toggle vectors, trails, contacts |
-| `ESC` | cancel the gesture in progress, or deselect |
+| `ESC` | cancel the gesture in progress (a launch, a link or a cut is abandoned; a grabbed body is let go where it is, at rest, with no throw), or deselect |
 
 ### The scenes
 
@@ -144,7 +144,7 @@ EOF
 | Cradle | five bobs on rods, bounce 1.00, and a double pendulum | watch one bob in, one bob out; drag two bobs back; press `↑` |
 | Bridge | 19 rod planks between two pins, two sprung weights, three loads | cut a plank; drag a load across the deck |
 | Pegboard | 95 pegs, a dispenser that drops 56 balls, ten counted bins | press `←` halfway through; raise `BOUNCE` |
-| Wrecker | a dense ball on a nine-link chain, and a chocked 5-4-3-2-1 pyramid | grab the ball and swing it yourself; cut the chain mid-swing |
+| Wrecker | a dense ball on a nine-link chain, and a chocked 5-4-3-2-1 pyramid that the first swing scatters, sending ten of the fifteen to the floor | grab the ball and swing it yourself; cut the chain mid-swing |
 | Jelly | two spring-laced wheels, a six-rod truss, two ramps | squeeze a wheel against the floor; cut its spokes |
 | Sandbox | nothing | build something |
 
@@ -241,8 +241,20 @@ under the seed.
   mass ratios under 8:1.
 - **Contacts have no warm start.** A settled pile keeps about 8 px/s of
   solver velocity that never becomes motion, so `obs_ke` is small but not
-  zero at rest, discs in a deep pile overlap by up to about 1 px, and rest is
-  judged from displacement (`obs_moved`) instead.
+  zero at rest, discs in a deep pile overlap by up to about 3 px (2.7 px
+  measured in a full Pegboard bin), and rest is judged from displacement
+  (`obs_moved`) instead.
+- **Not every scene comes to rest.** Cradle and Wrecker swing on, as they
+  should. Bridge and Jelly end in a pile that keeps trembling at 5 to 20 px/s
+  (the sprung weights and the squashed wheels feed the contact solver), which
+  is above the 3 px/s rest threshold, so they never show `AT REST` and the
+  panel stays awake on them. The Pegboard does settle, 10 to 20 s after the
+  last ball drops.
+- **A chocked pile is a ramp.** A hex-packed pyramid held by two pins deflects
+  a ball that meets its slope upward instead of breaking, so the Wrecker's
+  shelf is placed to put the ball's lowest, fastest point at the second row.
+- **Undo is a snapshot, not an inverse.** It puts back the world of the moment
+  before the edit, so on a running stage it is also a rewind.
 - **Speed.** The bytecode VM runs this solver at roughly 100 instructions per
   contact per pass. On a debug Garden the 13–28 body scenes cost about 8 ms a
   frame and the Pegboard about 17 ms once all 56 balls are down (151 bodies,

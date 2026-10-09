@@ -102,6 +102,8 @@ builtin_effects![
     ("starts_with", NO_REF | PURE),
     ("ends_with", NO_REF | PURE),
     ("trim", NO_REF | PURE),
+    ("byte_len", NO_REF | PURE),
+    ("byte_slice", NO_REF | PURE),
     ("drop_last", MUTATES | PURE | LOOKS_MUT),
     ("remove", MUTATES | PURE | LOOKS_MUT),
     ("set_at", MUTATES | PURE | LOOKS_MUT),
@@ -333,6 +335,8 @@ mod tests {
         assert_eq!(
             accepted(retains_no_reference),
             [
+                "byte_len",
+                "byte_slice",
                 "char_at",
                 "char_len",
                 "char_slice",
@@ -385,6 +389,8 @@ mod tests {
                 "asin",
                 "atan",
                 "atan2",
+                "byte_len",
+                "byte_slice",
                 "ceil",
                 "char_at",
                 "char_len",

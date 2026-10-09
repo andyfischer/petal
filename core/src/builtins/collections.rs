@@ -76,8 +76,9 @@ pub(super) fn native_len(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_int(state.heap().f64_array_len(id) as i64);
             Ok(1)
         }
+        // Code points, not bytes: `len("Óscar")` is 5. See `byte_len`.
         Value::String(id) => {
-            state.push_int(state.heap().get_string(id).len() as i64);
+            state.push_int(state.heap().string_char_len(id) as i64);
             Ok(1)
         }
         _ => Err(format!("Cannot get length of {}", v.type_name())),
@@ -607,6 +608,21 @@ pub(super) fn native_zip(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// Push code points `start..end` of string `id` (negative bounds count from
+/// the end, both clamp, `end` defaults to the length). The body of `slice` on
+/// a string and of `char_slice`. O(1) for an ASCII string.
+fn push_char_slice(state: &mut PetalCxt, id: crate::heap::StringId, start: i64, end: Option<i64>) {
+    let count = state.heap().string_char_len(id);
+    let start_c = numeric::clamp_slice_bound(count, start);
+    let end_c = end.map_or(count, |e| numeric::clamp_slice_bound(count, e));
+    if start_c >= end_c {
+        state.push_str("");
+        return;
+    }
+    let (a, b) = state.heap_mut().string_char_range(id, start_c, end_c);
+    state.push_substring(id, a, b);
+}
+
 /// Largest char boundary `<= i` (clamped to the string length). Used to snap
 /// a byte index down onto a UTF-8 boundary so String slicing never panics.
 fn floor_char_boundary(s: &str, i: usize) -> usize {
@@ -651,27 +667,14 @@ pub(super) fn native_slice(state: &mut PetalCxt) -> Result<u32, String> {
             state.push_list(sliced);
             Ok(1)
         }
+        // A string is sliced by code point, like `len` counts it.
         Value::String(id) => {
-            let s = state.heap().get_string(id);
-            let len = s.len();
-            let start_idx = numeric::clamp_slice_bound(len, start);
-            let end_idx = if state.arg_count() == 3 {
-                let end = state.get_int(3)?;
-                numeric::clamp_slice_bound(len, end)
+            let end = if state.arg_count() == 3 {
+                Some(state.get_int(3)?)
             } else {
-                len
+                None
             };
-            // Indices are byte offsets (matching byte-indexed len()). A byte
-            // that lands inside a multi-byte char would panic String slicing,
-            // so snap to char boundaries: start up, end down, keeping only
-            // whole chars and never exceeding the requested range.
-            let start_idx = ceil_char_boundary(s, start_idx);
-            let end_idx = floor_char_boundary(s, end_idx);
-            if start_idx <= end_idx {
-                state.push_substring(id, start_idx, end_idx);
-            } else {
-                state.push_str("");
-            }
+            push_char_slice(state, id, start, end);
             Ok(1)
         }
         _ => Err("slice() expects a list or string".into()),
@@ -700,24 +703,61 @@ pub(super) fn native_flat(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-// ── Character-indexed string operations ─────────────────────────────────────
+// ── String offsets ──────────────────────────────────────────────────────────
 //
-// `len` and `slice` are byte-indexed, which is right for buffers and wrong for
-// text: `slice("Óscar", 0, 1)` snaps to a char boundary and yields "", so the
-// obvious "first letter" loop silently produces wrong data on any non-ASCII
-// name. The builtins below index by *character* instead, so a program that
-// means "the first letter" gets the first letter.
+// Every script-facing string offset counts **code points**: `len`, `slice`,
+// `s[i]`, `index_of`, and the older `char_len` / `char_at` / `char_slice`
+// (kept as synonyms). So `slice("Óscar", 0, 1)` is "Ó" and the offsets one
+// builtin returns can be handed to another. Strings are stored as UTF-8; the
+// heap keeps each string's code-point count, which makes these O(1) on ASCII
+// text (see `Heap::string_char_to_byte`).
+//
+// `byte_len` and `byte_slice` are the explicit byte-unit pair for wire formats
+// and size budgets.
 
-/// Byte offset of char index `i` in `s`, where `i` has already been resolved to
-/// a non-negative index; an index past the end returns `s.len()`.
-fn char_byte_offset(s: &str, i: usize) -> usize {
-    s.char_indices().nth(i).map(|(b, _)| b).unwrap_or(s.len())
+/// `byte_len(s)` — the size of the string's UTF-8 encoding in bytes.
+pub(super) fn native_byte_len(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "byte_len")?;
+    match state.get_value(1)? {
+        Value::String(id) => {
+            state.push_int(state.heap().get_string(id).len() as i64);
+            Ok(1)
+        }
+        _ => Err("byte_len() expects a string".into()),
+    }
 }
 
-/// Resolve a possibly-negative char index against a string of `count` chars,
-/// clamping into `0..=count`. `-1` is the last character.
-fn resolve_char_index(i: i64, count: usize) -> usize {
-    numeric::clamp_slice_bound(count, i)
+/// `byte_slice(s, start, end?)` — the bytes `start..end` of the string's UTF-8
+/// encoding, as a string. Negative bounds count from the end and both clamp.
+/// A bound that lands inside a character moves inward to the next boundary
+/// (start up, end down), so the result is always whole characters and never
+/// longer than the range asked for.
+pub(super) fn native_byte_slice(state: &mut PetalCxt) -> Result<u32, String> {
+    if !(2..=3).contains(&state.arg_count()) {
+        return Err("byte_slice() expects 2-3 arguments".into());
+    }
+    let start = state.get_int(2)?;
+    let end = if state.arg_count() == 3 {
+        Some(state.get_int(3)?)
+    } else {
+        None
+    };
+    match state.get_value(1)? {
+        Value::String(id) => {
+            let s = state.heap().get_string(id);
+            let len = s.len();
+            let start_idx = ceil_char_boundary(s, numeric::clamp_slice_bound(len, start));
+            let end_idx =
+                floor_char_boundary(s, end.map_or(len, |e| numeric::clamp_slice_bound(len, e)));
+            if start_idx < end_idx {
+                state.push_substring(id, start_idx, end_idx);
+            } else {
+                state.push_str("");
+            }
+            Ok(1)
+        }
+        _ => Err("byte_slice() expects a string".into()),
+    }
 }
 
 /// `chars(s)` — the string split into single-character strings.
@@ -740,12 +780,13 @@ pub(super) fn native_chars(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-/// `char_len(s)` — the number of characters, as opposed to `len`'s bytes.
+/// `char_len(s)` — the number of characters. The same as `len` on a string;
+/// kept so scripts written when `len` counted bytes keep working.
 pub(super) fn native_char_len(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 1, "char_len")?;
     match state.get_value(1)? {
         Value::String(id) => {
-            let n = state.heap().get_string(id).chars().count();
+            let n = state.heap().string_char_len(id);
             state.push_int(n as i64);
             Ok(1)
         }
@@ -755,22 +796,19 @@ pub(super) fn native_char_len(state: &mut PetalCxt) -> Result<u32, String> {
 
 /// `char_at(s, i)` — the single character at char index `i` (negative counts
 /// from the end). An out-of-range index yields `""` rather than an abort, so a
-/// loop that runs one past the end degrades instead of killing the program.
+/// loop that runs one past the end degrades instead of killing the program;
+/// `s[i]` is the strict form. O(1) on ASCII, and the result is interned
+/// straight out of `s` with no intermediate allocation.
 pub(super) fn native_char_at(state: &mut PetalCxt) -> Result<u32, String> {
     require_args(state, 2, "char_at")?;
     let i = state.get_int(2)?;
     match state.get_value(1)? {
         Value::String(id) => {
-            let s = state.heap().get_string(id);
-            let count = s.chars().count();
-            let idx = if i < 0 { count as i64 + i } else { i };
-            let ch = if idx < 0 || idx as usize >= count {
-                None
-            } else {
-                s.chars().nth(idx as usize)
-            };
+            let count = state.heap().string_char_len(id);
+            let ch = numeric::resolve_index(count, i)
+                .and_then(|k| state.heap_mut().string_char_at(id, k));
             match ch {
-                Some(c) => state.push_string(c.to_string()),
+                Some(c) => state.push_value(Value::String(c)),
                 None => state.push_str(""),
             }
             Ok(1)
@@ -779,7 +817,7 @@ pub(super) fn native_char_at(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
-/// `char_slice(s, start, end?)` — `slice`, but the indices count characters.
+/// `char_slice(s, start, end?)` — `slice` on a string, under its older name.
 /// Negative indices count from the end; both ends clamp.
 pub(super) fn native_char_slice(state: &mut PetalCxt) -> Result<u32, String> {
     if !(2..=3).contains(&state.arg_count()) {
@@ -793,20 +831,7 @@ pub(super) fn native_char_slice(state: &mut PetalCxt) -> Result<u32, String> {
     };
     match state.get_value(1)? {
         Value::String(id) => {
-            let s = state.heap().get_string(id);
-            let count = s.chars().count();
-            let start_c = resolve_char_index(start, count);
-            let end_c = match end {
-                Some(e) => resolve_char_index(e, count),
-                None => count,
-            };
-            if start_c >= end_c {
-                state.push_str("");
-                return Ok(1);
-            }
-            let start_b = char_byte_offset(s, start_c);
-            let end_b = char_byte_offset(s, end_c);
-            state.push_substring(id, start_b, end_b);
+            push_char_slice(state, id, start, end);
             Ok(1)
         }
         _ => Err("char_slice() expects a string".into()),
@@ -815,7 +840,7 @@ pub(super) fn native_char_slice(state: &mut PetalCxt) -> Result<u32, String> {
 
 /// `index_of(haystack, needle)` — the position of the first occurrence, or
 /// `-1` when absent. On a string the result is a **character** index (so it
-/// composes with `char_at`/`char_slice`); on a list it is the element index.
+/// composes with `slice` and `s[i]`); on a list it is the element index.
 /// `contains` only answers yes/no, which forces callers into hand-written
 /// scans to find out *where*.
 pub(super) fn native_index_of(state: &mut PetalCxt) -> Result<u32, String> {
@@ -837,8 +862,8 @@ pub(super) fn native_index_of(state: &mut PetalCxt) -> Result<u32, String> {
                 let sub = state.heap().get_string(sub_id);
                 let idx = match s.find(sub) {
                     // `find` reports a byte offset; report chars instead, so
-                    // the answer can be fed straight back into char_slice.
-                    Some(byte) => s[..byte].chars().count() as i64,
+                    // the answer can be fed straight back into slice.
+                    Some(byte) => state.heap().string_byte_to_char(id, byte) as i64,
                     None => -1,
                 };
                 state.push_int(idx);

@@ -213,21 +213,33 @@ fn nested_closure_captures_top_level_fn() {
 }
 
 #[test]
-fn slice_string_snaps_to_char_boundaries() {
-    // '─' (U+2500) is 3 bytes. slice()/len() are byte-indexed; a byte index
-    // that lands mid-char must snap to a char boundary rather than panic.
-    // Snap the start up and the end down so only whole chars are returned.
+fn string_slices_count_code_points_and_byte_slices_snap() {
+    // '─' (U+2500) is 3 bytes and one code point. slice()/len() count code
+    // points, so no index can land inside it.
     let (_v, out) = run(r#"print(slice("a─b", 0, 2))"#, RunPolicy::BASELINE).unwrap();
-    assert_eq!(out, vec!["a"], "end mid-char snaps down to a boundary");
+    assert_eq!(out, vec!["a─"]);
     let (_v, out) = run(r#"print(slice("a─b", 2, 5))"#, RunPolicy::BASELINE).unwrap();
+    assert_eq!(out, vec!["b"]);
+    let (_v, out) = run(r#"print(len("a─b"), "a─b"[1])"#, RunPolicy::BASELINE).unwrap();
+    assert_eq!(out, vec!["3 ─"]);
+    // byte_slice() is byte-indexed; a byte index that lands mid-char must snap
+    // to a char boundary rather than panic. The start snaps up and the end
+    // down, so only whole chars are returned.
+    let (_v, out) = run(r#"print(byte_slice("a─b", 0, 2))"#, RunPolicy::BASELINE).unwrap();
+    assert_eq!(out, vec!["a"], "end mid-char snaps down to a boundary");
+    let (_v, out) = run(r#"print(byte_slice("a─b", 2, 5))"#, RunPolicy::BASELINE).unwrap();
     assert_eq!(out, vec!["b"], "start mid-char snaps up to a boundary");
-    let (_v, out) = run(r#"print(slice("a─b", 0, 4))"#, RunPolicy::BASELINE).unwrap();
+    let (_v, out) = run(r#"print(byte_slice("a─b", 0, 4))"#, RunPolicy::BASELINE).unwrap();
     assert_eq!(out, vec!["a─"], "index on a boundary is unchanged");
     // Parity + no-panic across both backends, including out-of-range indices.
-    assert_parity(r#"print(slice("a─b", 0, 2))"#);
-    assert_parity(r#"print(slice("a─b", 2, 5))"#);
-    assert_parity(r#"print(slice("a─b", 0, 99))"#);
-    assert_parity(r#"print(slice("héllo wörld", 1, 6))"#);
+    for f in ["slice", "byte_slice"] {
+        assert_parity(&format!(r#"print({f}("a─b", 0, 2))"#));
+        assert_parity(&format!(r#"print({f}("a─b", 2, 5))"#));
+        assert_parity(&format!(r#"print({f}("a─b", 0, 99))"#));
+        assert_parity(&format!(r#"print({f}("héllo wörld", 1, 6))"#));
+    }
+    assert_parity(r#"let s = "héllo wörld"
+print(s[1], s[-4], len(s))"#);
 }
 
 #[test]

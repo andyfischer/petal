@@ -112,7 +112,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
 
     let ty = match name {
         // ── core: int results ───────────────────────────────────────────────
-        "int" | "len" | "random_int" | "char_len" | "index_of" => Type::Int,
+        "int" | "len" | "random_int" | "char_len" | "byte_len" | "index_of" => Type::Int,
         // ── core: float results ─────────────────────────────────────────────
         // `float` is `unary_float_dual` like `sqrt` above, but it is also the
         // sanctioned cast: `float(x)` is written precisely to leave the float
@@ -125,7 +125,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         // `concat` (list or string, decided by its arguments) their result is
         // known statically.
         "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" | "fixed"
-        | "commas" | "pad_start" | "pad_end" | "format" | "repeat" | "trim" => Type::String,
+        | "commas" | "pad_start" | "pad_end" | "format" | "repeat" | "trim" | "byte_slice" => Type::String,
         // ── core: bool results ──────────────────────────────────────────────
         "contains" | "includes" | "starts_with" | "ends_with" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
             Type::Bool
@@ -291,7 +291,7 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         ("range", 3) => &[Num, Num, Num],
         ("len", 1) => &[Sized],
         ("keys" | "values", 1) => &[Record],
-        ("upper" | "lower" | "chars" | "char_len", 1) => &[Str],
+        ("upper" | "lower" | "chars" | "char_len" | "byte_len", 1) => &[Str],
         ("split" | "starts_with" | "ends_with", 2) => &[Str, Str],
         ("trim", 1) => &[Str],
         ("repeat", 2) => &[Str, Num],
@@ -301,6 +301,8 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         // [`sort_key_type_ok`] — a slot has no way to say it.
         ("sort_by", 2 | 3) => &[List, Function],
         ("char_at", 2) => &[Str, Num],
+        ("byte_slice", 2) => &[Str, Num],
+        ("byte_slice", 3) => &[Str, Num, Num],
         ("fixed" | "commas", 2) => &[Any, Num],
         ("pad_start" | "pad_end", 2) => &[Any, Num],
         ("pad_start" | "pad_end", 3) => &[Any, Num, Str],

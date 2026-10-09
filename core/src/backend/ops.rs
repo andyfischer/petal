@@ -670,7 +670,7 @@ pub fn get_field(
         },
         Value::List(list_id) if field_name == "length" => Value::Int(heap.list_len(list_id) as i64),
         Value::String(str_id) if field_name == "length" => {
-            Value::Int(heap.get_string(str_id).len() as i64)
+            Value::Int(heap.string_char_len(str_id) as i64)
         }
         Value::Vec2(x, y) => match field_name {
             "x" => Value::Float(x),
@@ -757,13 +757,13 @@ fn set_field_impl(
     }
 }
 
-/// `obj[idx]` on lists (negative indices count from the end), f64 arrays, and
-/// records (string key).
+/// `obj[idx]` on lists and strings (negative indices count from the end), f64
+/// arrays, and records (string key).
 ///
 /// `opt` is the absence-tolerant form — see [`get_field`]. It softens a missing
 /// *record key* and a Nil object only; a list index out of bounds stays an
 /// error, since a list has no notion of a ragged key.
-pub fn get_index(heap: &Heap, obj: Value, idx: Value, opt: bool) -> Result<Value, String> {
+pub fn get_index(heap: &mut Heap, obj: Value, idx: Value, opt: bool) -> Result<Value, String> {
     // Pending base absorbs: `pending[i]` is the same Pending. (A resolved
     // collection *containing* a Pending is element-wise — a later chunk — so
     // only the base is handled here, not a Pending index.)
@@ -790,6 +790,16 @@ pub fn get_index(heap: &Heap, obj: Value, idx: Value, opt: bool) -> Result<Value
             match numeric::checked_index(data.len(), i) {
                 Some(k) => Ok(Value::Float(data[k])),
                 None => Err(format!("Index {} out of bounds (len {})", i, data.len())),
+            }
+        }
+        // `s[i]` is the one-character string at code point `i`, with a list's
+        // rules: a negative index counts from the end, out of bounds is an
+        // error (`char_at` is the lenient form).
+        (Value::String(str_id), Value::Int(i)) => {
+            let count = heap.string_char_len(str_id);
+            match numeric::resolve_index(count, i).and_then(|k| heap.string_char_at(str_id, k)) {
+                Some(c) => Ok(Value::String(c)),
+                None => Err(format!("Index {} out of bounds (len {})", i, count)),
             }
         }
         (Value::Map(map_id), Value::String(key_id)) => {

@@ -490,9 +490,66 @@ impl<T> Slab<T> {
 /// equality compares content whenever two ids differ (`value::values_equal`).
 pub const INTERN_MAX_LEN: usize = 512;
 
+/// A heap string and its length in code points.
+///
+/// Strings are stored as UTF-8, but `len`, `slice`, `s[i]` and `index_of`
+/// count **code points**. Keeping the count beside the text makes `len` O(1)
+/// for every string and tells an ASCII string (`chars == text.len()`) from one
+/// that needs a walk: on ASCII a code-point index *is* the byte offset.
+#[derive(Clone, Default)]
+struct StrObj {
+    text: String,
+    chars: usize,
+}
+
+impl StrObj {
+    fn new(text: String) -> Self {
+        let chars = count_chars(&text);
+        StrObj { text, chars }
+    }
+}
+
+/// Code points in `s`. The ASCII check is a word-at-a-time scan, so the common
+/// case costs far less than the copy that produced the string.
+fn count_chars(s: &str) -> usize {
+    if s.is_ascii() {
+        s.len()
+    } else {
+        s.chars().count()
+    }
+}
+
+/// Bytes in the UTF-8 sequence that starts with lead byte `b`.
+#[inline]
+fn utf8_seq_len(b: u8) -> usize {
+    if b < 0x80 {
+        1
+    } else if b < 0xE0 {
+        2
+    } else if b < 0xF0 {
+        3
+    } else {
+        4
+    }
+}
+
+/// The last code-point → byte translation done on a non-ASCII string. A
+/// scanner asks for neighbouring positions (`s[i]`, then `s[i + 1]`), so the
+/// next lookup walks from here instead of from the start of the string: a
+/// left-to-right pass over non-ASCII text stays linear overall.
+#[derive(Clone, Copy)]
+struct CharCursor {
+    id: RawId,
+    chars: usize,
+    bytes: usize,
+}
+
 #[derive(Clone)]
 pub struct Heap {
-    strings: Slab<String>,
+    strings: Slab<StrObj>,
+    /// See [`CharCursor`]. Keyed by a generational id and strings are
+    /// immutable, so a stale entry can only miss, never mislead.
+    char_cursor: Option<CharCursor>,
     lists: Slab<Vec<Value>>,
     f64_arrays: Slab<Vec<f64>>,
     /// `vec3` components, inline in the slot. See [`Vec3Id`].
@@ -572,6 +629,7 @@ impl Heap {
     pub fn new() -> Self {
         Self {
             strings: Slab::new(),
+            char_cursor: None,
             lists: Slab::new(),
             f64_arrays: Slab::new(),
             vec3s: Slab::new(),
@@ -643,7 +701,7 @@ impl Heap {
             .strings
             .slots
             .iter()
-            .map(|s| s.data.capacity() as u64)
+            .map(|s| s.data.text.capacity() as u64)
             .sum();
         let lists: u64 = self
             .lists
@@ -677,7 +735,7 @@ impl Heap {
             .slots
             .iter()
             .filter(|s| s.alive)
-            .map(|s| s.data.len() as u64)
+            .map(|s| s.data.text.len() as u64)
             .sum();
         let lists: u64 = self
             .lists
@@ -810,7 +868,7 @@ impl Heap {
             index: 0,
             generation: 0,
         };
-        self.strings.inherit_generations(&previous.strings, String::new);
+        self.strings.inherit_generations(&previous.strings, StrObj::default);
         self.lists.inherit_generations(&previous.lists, Vec::new);
         self.f64_arrays
             .inherit_generations(&previous.f64_arrays, Vec::new);
@@ -872,7 +930,7 @@ impl Heap {
 
     /// [`get_string`](Self::get_string) for a weak id: `None` once collected.
     pub fn try_get_string(&self, id: StringId) -> Option<&str> {
-        self.strings.try_get(id.raw()).map(String::as_str)
+        self.strings.try_get(id.raw()).map(|s| s.text.as_str())
     }
 
     /// [`get_list`](Self::get_list) for a weak id: `None` once collected.
@@ -914,9 +972,9 @@ impl Heap {
     fn insert_interned(&mut self, s: String) -> StringId {
         self.tick_alloc(AllocKind::String, s.len() as u64);
         if s.len() > INTERN_MAX_LEN {
-            return StringId::from_raw(self.strings.alloc(s));
+            return StringId::from_raw(self.strings.alloc(StrObj::new(s)));
         }
-        let id = StringId::from_raw(self.strings.alloc(s.clone()));
+        let id = StringId::from_raw(self.strings.alloc(StrObj::new(s.clone())));
         self.intern_table.insert(s, id);
         id
     }
@@ -954,7 +1012,7 @@ impl Heap {
     /// The caller must pass char-boundary offsets (as `slice()` does); an
     /// interior byte offset panics exactly as `&str` indexing would.
     pub fn intern_substring(&mut self, id: StringId, start: usize, end: usize) -> StringId {
-        let sub = &self.strings.get(id.raw())[start..end];
+        let sub = &self.strings.get(id.raw()).text[start..end];
         match self.interned(sub) {
             Some(existing) => existing,
             // Miss: take ownership, which ends the borrow of `strings`.
@@ -966,7 +1024,106 @@ impl Heap {
     }
 
     pub fn get_string(&self, id: StringId) -> &str {
-        self.strings.get(id.raw())
+        &self.strings.get(id.raw()).text
+    }
+
+    // --- Code-point indexing ---
+    //
+    // The script-facing string operations (`len`, `slice`, `s[i]`, `index_of`)
+    // count code points. These translate between that unit and the UTF-8 byte
+    // offsets the storage uses. All of them are O(1) on an ASCII string.
+
+    /// Length of the string in code points. O(1).
+    #[inline]
+    pub fn string_char_len(&self, id: StringId) -> usize {
+        self.strings.get(id.raw()).chars
+    }
+
+    /// Whether every code point is one byte, so that a code-point index is
+    /// also the byte offset. O(1).
+    #[inline]
+    pub fn string_is_ascii(&self, id: StringId) -> bool {
+        let s = self.strings.get(id.raw());
+        s.chars == s.text.len()
+    }
+
+    /// Byte offset of code point `index`; an index at or past the end gives
+    /// the byte length. O(1) on ASCII. Otherwise a walk from the nearest of
+    /// the string's start, its end, and the previous lookup on this string.
+    pub fn string_char_to_byte(&mut self, id: StringId, index: usize) -> usize {
+        let raw = id.raw();
+        let obj = self.strings.get(raw);
+        let (count, len) = (obj.chars, obj.text.len());
+        if index >= count {
+            return len;
+        }
+        if count == len {
+            return index;
+        }
+        let bytes = obj.text.as_bytes();
+        // Nearest known position: the start, the end, or the cursor.
+        let (mut at_char, mut at_byte) = (0usize, 0usize);
+        if count - index < index {
+            (at_char, at_byte) = (count, len);
+        }
+        if let Some(c) = self.char_cursor
+            && c.id == raw
+            && c.chars.abs_diff(index) < at_char.abs_diff(index)
+        {
+            (at_char, at_byte) = (c.chars, c.bytes);
+        }
+        while at_char < index {
+            at_byte += utf8_seq_len(bytes[at_byte]);
+            at_char += 1;
+        }
+        while at_char > index {
+            at_byte -= 1;
+            // Step over continuation bytes (0b10xx_xxxx) to the lead byte.
+            while bytes[at_byte] & 0xC0 == 0x80 {
+                at_byte -= 1;
+            }
+            at_char -= 1;
+        }
+        self.char_cursor = Some(CharCursor {
+            id: raw,
+            chars: at_char,
+            bytes: at_byte,
+        });
+        at_byte
+    }
+
+    /// The code-point index of byte offset `byte`, which must lie on a
+    /// character boundary. O(1) on ASCII, a count of the prefix otherwise.
+    pub fn string_byte_to_char(&self, id: StringId, byte: usize) -> usize {
+        let obj = self.strings.get(id.raw());
+        if obj.chars == obj.text.len() {
+            byte
+        } else {
+            obj.text[..byte].chars().count()
+        }
+    }
+
+    /// The byte range of code points `start..end` (already clamped to the
+    /// length by the caller; an inverted range comes back empty).
+    pub fn string_char_range(&mut self, id: StringId, start: usize, end: usize) -> (usize, usize) {
+        let a = self.string_char_to_byte(id, start);
+        if end <= start {
+            return (a, a);
+        }
+        // Second, so the cursor is left at `end`: a scanner's next read starts
+        // where this one stopped.
+        let b = self.string_char_to_byte(id, end);
+        (a, b)
+    }
+
+    /// The one-character string at code point `index`, or `None` past the end.
+    pub fn string_char_at(&mut self, id: StringId, index: usize) -> Option<StringId> {
+        if index >= self.string_char_len(id) {
+            return None;
+        }
+        let a = self.string_char_to_byte(id, index);
+        let b = a + utf8_seq_len(self.get_string(id).as_bytes()[a]);
+        Some(self.intern_substring(id, a, b))
     }
 
     // --- List allocation ---
@@ -1567,12 +1724,12 @@ impl Heap {
             // Remove only this id's entry. The table maps content to the one
             // live id with that content, so it should always be this one; the
             // check keeps a reclaim from ever evicting a different, live id.
-            if s.len() <= INTERN_MAX_LEN
-                && intern_table.get(s.as_str()) == Some(&StringId::from_raw(id))
+            if s.text.len() <= INTERN_MAX_LEN
+                && intern_table.get(s.text.as_str()) == Some(&StringId::from_raw(id))
             {
-                intern_table.remove(s.as_str());
+                intern_table.remove(s.text.as_str());
             }
-            *s = String::new();
+            *s = StrObj::default();
         });
 
         self.lists.sweep_with(|_, v| *v = Vec::new());
@@ -2169,6 +2326,56 @@ mod tests {
         heap.sweep();
         assert_eq!(heap.try_get_string(a), Some(long.as_str()));
         assert_eq!(heap.try_get_string(b), None);
+    }
+
+    /// Code-point → byte translation against `char_indices`, for every index
+    /// in an order that makes the cursor walk forward, backward and far, and
+    /// with lookups on another string in between.
+    #[test]
+    fn char_offsets_match_a_char_walk_in_any_order() {
+        let mut heap = Heap::new();
+        let samples = [
+            "",
+            "plain ascii",
+            "é",
+            "Óscar ✓ 😀 end",
+            "😀😀😀",
+            "aé✓😀".repeat(40).as_str().to_owned().leak(),
+        ];
+        let other = heap.intern_str("ünrelated ✓ string");
+        for text in samples {
+            let id = heap.intern_str(text);
+            let offsets: Vec<usize> = text
+                .char_indices()
+                .map(|(b, _)| b)
+                .chain([text.len()])
+                .collect();
+            let n = offsets.len() - 1;
+            assert_eq!(heap.string_char_len(id), n);
+            assert_eq!(heap.string_is_ascii(id), text.is_ascii());
+            // A stride coprime to the count visits every index, out of order.
+            let stride = [7usize, 1, n.max(1) - 1 | 1, 13];
+            for step in stride {
+                let mut k = 0;
+                for round in 0..=n {
+                    k = (k + step) % (n + 1);
+                    assert_eq!(heap.string_char_to_byte(id, k), offsets[k], "{text:?}[{k}]");
+                    assert_eq!(heap.string_byte_to_char(id, offsets[k]), k);
+                    if round % 5 == 0 {
+                        // Moves the cursor to a different string.
+                        heap.string_char_to_byte(other, round % 18);
+                    }
+                }
+            }
+            assert_eq!(heap.string_char_to_byte(id, n + 9), text.len());
+            for (k, ch) in text.chars().enumerate() {
+                let got = heap.string_char_at(id, k).map(|c| heap.get_string(c).to_string());
+                assert_eq!(got, Some(ch.to_string()));
+            }
+            assert_eq!(heap.string_char_at(id, n), None);
+            let (a, b) = heap.string_char_range(id, n / 3, n - n / 4);
+            assert_eq!(&text[a..b], text.chars().skip(n / 3).take(n - n / 4 - n / 3).collect::<String>());
+        }
     }
 
     #[test]

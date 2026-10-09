@@ -6,8 +6,9 @@
 //   • there was no failable string->number conversion, so reading user input
 //     meant either aborting or hand-rolling a digit scanner;
 //   • `round` had no places form;
-//   • `len`/`slice` are byte-indexed, so the obvious "first letter" loop
-//     silently produced wrong data for a non-ASCII name.
+//   • `len`/`slice` were byte-indexed, so the obvious "first letter" loop
+//     silently produced wrong data for a non-ASCII name. They count code
+//     points now; `byte_len`/`byte_slice` are the byte-unit pair.
 
 import { describe, it, expect } from "vitest";
 import { runPetal, runPetalError } from "./helpers";
@@ -145,8 +146,10 @@ describe("character-indexed string builtins", () => {
     expect(runPetal(`print(chars(""))`)).toBe("[]");
   });
 
-  it("char_len() counts characters where len() counts bytes", () => {
-    expect(runPetal(`print(char_len("Óscar"), len("Óscar"))`)).toBe("5 6");
+  it("len() and char_len() count characters, byte_len() counts bytes", () => {
+    expect(
+      runPetal(`print(char_len("Óscar"), len("Óscar"), "Óscar".length, byte_len("Óscar"))`)
+    ).toBe("5 5 5 6");
   });
 
   it("char_at() returns the character at a char index", () => {
@@ -163,10 +166,22 @@ describe("character-indexed string builtins", () => {
       .toBe("0 0");
   });
 
-  it("char_slice() slices by character, where slice() drops the char", () => {
-    // The bug an app shipped: initials read "D" for "Óscar Delgado".
+  it("slice() and char_slice() slice by character", () => {
+    // The bug an app shipped: initials read "D" for "Óscar Delgado", because
+    // slice() counted bytes and dropped the half character.
     expect(runPetal(`print(char_slice("Óscar Delgado", 0, 1))`)).toBe("Ó");
-    expect(runPetal(`print(slice("Óscar Delgado", 0, 1))`)).toBe("");
+    expect(runPetal(`print(slice("Óscar Delgado", 0, 1))`)).toBe("Ó");
+    expect(runPetal(`print(slice("Óscar", -3, -1), slice("Óscar", 1))`)).toBe("ca scar");
+  });
+
+  it("byte_slice() counts bytes and never splits a character", () => {
+    expect(runPetal(`print(len(byte_slice("Óscar", 0, 1)))`)).toBe("0");
+    expect(runPetal(`print(byte_slice("Óscar", 0, 2), byte_slice("Óscar", 2))`)).toBe("Ó scar");
+  });
+
+  it("s[i] is the character at a char index, strict like a list", () => {
+    expect(runPetal(`let s = "Óscar"\nprint(s[0], s[1], s[-1])`)).toBe("Ó s r");
+    expect(runPetalError(`print("Óscar"[5])`)).toContain("Index 5 out of bounds (len 5)");
   });
 
   it("char_slice() defaults end to the end of the string", () => {
@@ -224,12 +239,17 @@ describe("index_of", () => {
       .toBe("1 0");
   });
 
-  it("composes with char_slice", () => {
+  it("composes with slice and char_slice", () => {
     expect(
       runPetal(
         `let s = "key=value"\nlet i = index_of(s, "=")\nprint(char_slice(s, 0, i), char_slice(s, i + 1))`
       )
     ).toBe("key value");
+    expect(
+      runPetal(
+        `let s = "clé=valeur"\nlet i = index_of(s, "=")\nprint(slice(s, 0, i), slice(s, i + 1), s[i])`
+      )
+    ).toBe("clé valeur =");
   });
 
   it("rejects bad argument types", () => {

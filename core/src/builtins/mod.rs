@@ -446,6 +446,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::PURE,
     );
     table.register("trim", collections::native_trim, NativeEffects::PURE);
+    // The explicit byte-unit pair, for when `len`/`slice` (code points) are
+    // the wrong unit: wire formats, size budgets.
+    table.register("byte_len", collections::native_byte_len, NativeEffects::PURE);
+    table.register(
+        "byte_slice",
+        collections::native_byte_slice,
+        NativeEffects::PURE,
+    );
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

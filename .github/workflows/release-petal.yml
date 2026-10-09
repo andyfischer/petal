@@ -2,6 +2,8 @@ name: Release Petal
 
 # Cut a release by pushing a version tag, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
+# The tag must equal `version` in core/Cargo.toml (the build refuses otherwise).
+# The full ordered procedure is in docs/dev/release-checklist.md.
 #
 # This repo ships more than one package, so each has its own tag prefix: bare
 # `v*` tags belong to the `petal` CLI (this file) and `garden-v*` tags belong to
@@ -30,15 +32,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `smoke: true` marks the targets the runner can execute natively,
+          # so the built binary is run once before it is packaged.
           - target: aarch64-apple-darwin
             os: macos-14
             builder: cargo
+            smoke: true
           - target: x86_64-apple-darwin
             os: macos-14
             builder: cargo
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             builder: zigbuild
+            smoke: true
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             builder: zigbuild
@@ -49,6 +55,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # `petal --version` reports CARGO_PKG_VERSION, and the installer's
+      # PETAL_VERSION pin names the tag. Catch a forgotten version bump here
+      # rather than publishing a v1.2.3 release whose binary says something else.
+      - name: Check tag matches Cargo version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"/\1/p' core/Cargo.toml | head -1)"
+          if [ "$tag_version" != "$cargo_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $tag_version but core/Cargo.toml says $cargo_version"
+            exit 1
+          fi
 
       # cargo-zigbuild uses Zig as the cross-linker so we can build fully static
       # musl binaries (both x86_64 and aarch64) from an x86_64 Linux runner.
@@ -79,6 +100,18 @@ jobs:
       - name: Build (cargo-zigbuild)
         if: matrix.builder == 'zigbuild'
         run: cargo zigbuild --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
+
+      # The binary must work with nothing else from the checkout beside it,
+      # since the installer drops only `petal` into ~/.petal/bin.
+      - name: Smoke-test the binary
+        if: matrix.smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$PWD/core/target/${{ matrix.target }}/release/petal"
+          cd "$RUNNER_TEMP"
+          "$bin" --version
+          test "$("$bin" run -e 'print(1 + 2)')" = "3"
 
       - name: Package tarball + checksum
         shell: bash
@@ -135,3 +168,10 @@ jobs:
             artifacts/petal-*.tar.gz.sha256
           fail_on_unmatched_files: true
           generate_release_notes: true
+          # The installer fetches releases/latest/download/petal-<target>.tar.gz,
+          # so a petal release must hold the repo's "latest" slot (Garden
+          # releases opt out of it in release-garden.yml). A pre-release tag
+          # (v1.0.0-rc.1) is published as a pre-release and leaves "latest"
+          # alone; install one with PETAL_VERSION=<tag>.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}

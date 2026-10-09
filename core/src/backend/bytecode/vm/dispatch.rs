@@ -512,7 +512,7 @@ impl<'a> Vm<'a> {
                 base,
                 path_pop,
             } => {
-                let key = self.state_key(fi, *base, None, *path_pop);
+                let key = self.state_key(fi, *base, None, *path_pop)?;
                 self.stack.touch_state(&key);
                 let slot = self.stack.state.get(&key).copied();
                 self.memo_note_state_read(&key, slot);
@@ -529,7 +529,7 @@ impl<'a> Vm<'a> {
             } => {
                 let val_v = self.reg(fi, *val);
                 let explicit = key.map(|r| self.reg(fi, r));
-                let k = self.state_key(fi, *base, explicit, *path_pop);
+                let k = self.state_key(fi, *base, explicit, *path_pop)?;
                 self.stack.touch_state(&k);
                 // A pending StateInit result is not committed: leave the slot
                 // uninitialized so the init block re-runs next frame until it
@@ -581,7 +581,7 @@ impl<'a> Vm<'a> {
                 let explicit = key.map(|r| self.reg(fi, r));
                 // A `StateInit` *is* the declaration: it always resolves at the
                 // frame's own path, so nothing to pop.
-                let k = self.state_key(fi, *base, explicit, 0);
+                let k = self.state_key(fi, *base, explicit, 0)?;
                 self.stack.touch_state(&k);
                 // Cache hit: load the slot and skip the inline init block; miss:
                 // fall through to compute and commit the init value.

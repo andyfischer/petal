@@ -3,7 +3,8 @@
 // VM's heap-allocated frame stack until the OS killed the process (exit 137,
 // no output, ~2 GB after ~45 s), and one that recursed through a `map`
 // callback overflowed the native stack and aborted. See
-// `MAX_CALL_DEPTH` / `SYNC_STACK_BUDGET` in core/src/backend/bytecode/vm/mod.rs.
+// `MAX_CALL_DEPTH` / `MAX_STATE_CALL_DEPTH` / `SYNC_STACK_BUDGET` in
+// core/src/backend/bytecode/vm/mod.rs.
 
 import { describe, it, expect } from "vitest";
 import { petalCapture } from "./helpers";
@@ -16,7 +17,7 @@ describe("stack overflow", () => {
   it("stops unbounded direct recursion with an error", () => {
     const r = run("fn f(n) 1 + f(n + 1) end\nprint(f(0))");
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain("Stack overflow: more than 5000 nested calls");
+    expect(r.stderr).toContain("Stack overflow: more than 20000 nested calls");
     expect(r.stderr).toContain("[line 1, column 13]");
   });
 
@@ -53,9 +54,30 @@ describe("stack overflow", () => {
   });
 
   it("allows recursion just under the limit", () => {
-    const r = run("fn f(n) if n == 0 then 0 else 1 + f(n - 1) end end\nprint(f(4990))");
+    const r = run("fn f(n) if n == 0 then 0 else 1 + f(n - 1) end end\nprint(f(19990))");
     expect(r.code).toBe(0);
-    expect(r.stdout).toBe("4990\n");
+    expect(r.stdout).toBe("19990\n");
+  });
+
+  // A path-keyed `state` slot costs its call path's length, so state keeps
+  // the old 5,000-frame limit; an explicit key does not use the path.
+  const DOWN = "fn down(n) if n == 0 then leaf() else down(n - 1) end end\n";
+
+  it("stops path-keyed state deeper than its own limit", () => {
+    const r = run(
+      "fn leaf()\n  state c = 0\n  c += 1\n  c\nend\n" + DOWN + "print(down(4000))\nprint(down(6000))",
+    );
+    expect(r.code).toBe(1);
+    expect(r.stdout).toBe("1\n");
+    expect(r.stderr).toContain("Stack overflow: `state` used more than 5000 nested calls deep");
+  });
+
+  it("allows explicitly keyed state at any call depth", () => {
+    const r = run(
+      "fn leaf()\n  state(1) c = 0\n  c += 1\n  c\nend\n" + DOWN + "print(down(6000))",
+    );
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe("1\n");
   });
 
   it("allows callbacks nested a normal depth", () => {

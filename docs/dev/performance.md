@@ -226,6 +226,29 @@ Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from
   a cold site); `memo_stats().tiny` counts the skipped ones. On a game whose
   calls rarely replay (Cheesecake's `neon`), memo still costs a few percent
   over `--no-memo`.
+- **Memo scopes cost a recursive program most of all.** A record is as large
+  as its call path is long, and none of a recursion's records is replayed
+  within the run that made them. `petal run` therefore leaves memoization off
+  unless a policy is named, and a host that keeps it on is bounded: no scope
+  past 96 frames deep, and a table of at most 96 MB of records
+  ([memo-scopes.md](memo-scopes.md), "Bounds"). Release build, peak RSS:
+
+  | Program | before, `fast` | `petal run` now | `--policy fast` now |
+  |---|---|---|---|
+  | `fib(27)` | 541 MB, 0.45 s | 4.6 MB, 0.04 s | 131 MB, 0.25 s |
+  | `fib(30)` | not measured | 4.7 MB, 0.18 s | 133 MB, 0.96 s |
+  | linear recursion, depth 4,900 | 479 MB, 0.26 s | 7.4 MB, <0.01 s | 7.9 MB, <0.01 s |
+  | linear recursion, depth 10,000 | over the call limit | 10 MB, <0.01 s | 10.6 MB, <0.01 s |
+
+  `test/vitest/recursion-memory.test.ts` holds `fib(30)` and the depth-10,000
+  case under a memory ceiling.
+- **`state` inside a deep recursion is quadratic.** A slot is keyed by its
+  call path, so a function that declares `state` and recurses `d` deep keeps
+  `d` keys of up to `d` parts: 480 MB at depth 4,990 (about 1 GB with
+  memoization on). `MAX_STATE_CALL_DEPTH` stops path-keyed state at 5,000
+  frames for that reason, while calls without it may nest to
+  `MAX_CALL_DEPTH` (20,000). Interning paths would fix both this and the size
+  of a memo record.
 
 And one that is not the runtime's to fix: the spreadsheet's own `digit_val`
 classifies a character by slicing a 10-character string ten times, which is why

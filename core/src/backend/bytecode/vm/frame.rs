@@ -322,7 +322,11 @@ impl<'a> Vm<'a> {
         base: StateKey,
         explicit: Option<Value>,
         path_pop: u32,
-    ) -> RuntimeStateKey {
+    ) -> Result<RuntimeStateKey, String> {
+        // A path-keyed slot costs its path's length; see the constant.
+        if explicit.is_none() && fi >= super::MAX_STATE_CALL_DEPTH {
+            return Err(super::state_depth_message());
+        }
         let path = match explicit {
             Some(kv) => {
                 let mut v = SmallVec::new();
@@ -336,6 +340,6 @@ impl<'a> Vm<'a> {
                 live
             }
         };
-        RuntimeStateKey { base, path }
+        Ok(RuntimeStateKey { base, path })
     }
 }

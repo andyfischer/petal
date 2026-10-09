@@ -51,12 +51,41 @@ pub use frame::{FramePath, LoopCursor, VmFrame};
 const FRAME_POOL_MAX: usize = 1024;
 
 /// The deepest a chain of Petal calls may nest before the call fails with a
-/// stack overflow error instead of growing without bound. Frames live on the
-/// heap (`Stack::vm_frames`), so this is a memory bound, not a native-stack
-/// one. Each frame copies its caller's call path, which makes memory
-/// quadratic in depth; 5,000 frames is a few hundred MB, where 10,000 would
-/// be about 2 GB (docs/tasks/todo-bugs-20260923.md §1.2).
-pub const MAX_CALL_DEPTH: usize = 5_000;
+/// stack overflow error instead of growing without bound.
+///
+/// Frames live on the heap (`Stack::vm_frames`) and a call does not nest a
+/// step loop, so the calls themselves use no native stack and about 0.55 KB
+/// each: 20,000 frames is 11 MB over an empty program, under every policy
+/// (memo scopes stop at [`crate::memo::MAX_SCOPE_FRAME_DEPTH`], so they add
+/// nothing past it), and a runaway recursion fails in a few milliseconds.
+/// 100,000 frames measure the same way (58 MB).
+///
+/// What sets the limit is what a recursion *builds*: a function that
+/// recurses `n` deep can return a value nested `n` deep, and `str`, `==`,
+/// the collector and the drop of such a value recurse on the native stack.
+/// In a release build on an 8 MB main thread those are fine at 20,000 levels
+/// and overflow before 30,000, so the limit keeps a recursion-built value
+/// inside what the rest of the runtime can walk. (A loop can still build a
+/// deeper one; that is its own bug, not this limit's.)
+pub const MAX_CALL_DEPTH: usize = 20_000;
+
+/// The deepest frame that may use path-keyed `state`. A `state` slot is keyed
+/// by the whole call path that reached it, so a function that declares state
+/// and recurses `d` deep keeps `d` keys of up to `d` parts each: 480 MB at
+/// 5,000, which was the whole call limit until it was raised, and would be
+/// 2 GB at 10,000. An explicit `state(key)` is keyed by its value, not the
+/// path, and is not limited.
+pub const MAX_STATE_CALL_DEPTH: usize = 5_000;
+
+/// The message a `state` access too deep to key fails with.
+pub(crate) fn state_depth_message() -> String {
+    format!(
+        "Stack overflow: `state` used more than {MAX_STATE_CALL_DEPTH} nested calls deep. \
+         Every call on the way to a `state` gives it a separate slot, so a recursion \
+         this deep would keep one per level; move the state out of the recursive \
+         function, or give it an explicit key with state(key)"
+    )
+}
 
 /// How much native stack synchronous closure calls nested inside one another
 /// (a `map` callback that recurses into another `map`) may use. Each level

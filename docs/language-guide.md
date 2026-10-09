@@ -1161,18 +1161,18 @@ fn factorial(n)
 end
 ```
 
-Calls may nest 5,000 deep. A recursion that goes deeper, usually one that
-never reaches its base case, stops with an error rather than running out of
-memory:
+Calls may nest 20,000 deep (5,000 on the way to a `state` that has no
+explicit key). A recursion that goes deeper, usually one that never reaches
+its base case, stops with an error rather than running out of memory:
 
 ```
-Error: Stack overflow: more than 5000 nested calls. A recursive function that never reaches its base case causes this; if the recursion is meant to be this deep, rewrite it as a loop [line 1, column 13]
+Error: Stack overflow: more than 20000 nested calls. A recursive function that never reaches its base case causes this; if the recursion is meant to be this deep, rewrite it as a loop [line 1, column 13]
   |
 1 | fn f(n) 1 + f(n + 1) end
   |             ^^^^^^^^
 Stack trace:
   in f() [line 1, column 13]
-  ... previous line repeated 4997 more times
+  ... previous line repeated 19997 more times
   in f() [line 2, column 7]
 ```
 

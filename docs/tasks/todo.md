@@ -125,6 +125,7 @@ DONE dt() is virtual on a ticked panel (and across /panel/reset); POST /mouse ta
 
 ## 8. Missing string basics, and `++` in a loop is O(n²)
 DONE repeat/starts_with/ends_with/trim builtins; strings over 512 bytes are no longer interned, so the 100k `++` loop is 4.16 s -> 0.10 s (still quadratic in bytes copied, not amortized O(1)); guide §5 recommends repeat and join; lint rule prefer-repeat
+DEFERRED (2026-10-09) amortized O(1) `++`: too big for now; the real change is better alias checking and safe update-in-place optimizations in general, of which string append is one case
 
 `repeat`, `starts_with`, `ends_with` and `trim` are all `Unknown builtin`;
 the email client and both simulated users wrote their own. `out = out ++ "x"`
@@ -134,6 +135,7 @@ O(1) or point people at `join`. Details: todo-bugs §4.1.
 
 ## 9. CLI argument handling turns typos into file errors
 DONE unknown commands and options are named; check keeps --host ui and run explains ui names; --strict ignores the export deprecation; unclosed blocks and cross-module traces fixed (core/tests/cli_args.rs)
+FOLLOW-UP (2026-10-09) the `check` default host stays undecided: revisit the import and module system so a script's host is not a pain point, rather than flipping the default
 
 - `petal repl` and `petal test` print `Error reading file 'repl'`.
 - An unknown flag is taken as the file path: `petal run x.ptl --iter 3` gives

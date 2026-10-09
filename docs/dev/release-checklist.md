@@ -24,7 +24,11 @@ push, a tag, a deploy).
 
 ## Decisions to make first
 
-1. **The version number.** `core/Cargo.toml` says `0.1.0`. The todo item is
+1. **The version number.** DECIDED 2026-10-09: the next `0.x` number. No
+   Petal release exists yet (the repo's only release is `garden-v0.1.0`), so
+   the first one is `v0.1.0`, which `core/Cargo.toml` already says; step 2
+   needs no version bump this time. The reasoning before the decision:
+   `core/Cargo.toml` says `0.1.0`. The todo item is
    titled "nothing says 1.0", so the choice is between shipping `0.1.0` as it
    is, a `0.x` that signals more than a first draft, or `1.0.0`. A `1.0.0` is a
    stability promise that the README's status line contradicts (next item), and

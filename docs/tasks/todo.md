@@ -122,6 +122,7 @@ DONE dt() is virtual on a ticked panel (and across /panel/reset); POST /mouse ta
   add a pane-local option to `POST /mouse`.
 
 ## 8. Missing string basics, and `++` in a loop is O(n²)
+DONE repeat/starts_with/ends_with/trim builtins; strings over 512 bytes are no longer interned, so the 100k `++` loop is 4.16 s -> 0.10 s (still quadratic in bytes copied, not amortized O(1)); guide §5 recommends repeat and join; lint rule prefer-repeat
 
 `repeat`, `starts_with`, `ends_with` and `trim` are all `Unknown builtin`;
 the email client and both simulated users wrote their own. `out = out ++ "x"`

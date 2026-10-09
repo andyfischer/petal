@@ -1148,9 +1148,9 @@ end
 // Greedy word wrap: split `s` into a list of lines at most `max_chars` wide.
 // Explicit "\n"s split first (each segment wraps independently), words break
 // on single spaces, and a token longer than max_chars is hard-broken into
-// max_chars-sized pieces. Widths are bytes, like the truncate_* helpers;
-// slice snaps to UTF-8 char boundaries, so multibyte input never panics
-// (its lines may just run a little short). max_chars <= 0 returns [s].
+// max_chars-sized pieces. Widths are characters (code points), like the
+// truncate_* helpers and like len and slice themselves, so multibyte text
+// wraps at the same column as ASCII. max_chars <= 0 returns [s].
 pub fn wrap(s, max_chars)
   if max_chars <= 0 then
     [s]
@@ -1167,10 +1167,10 @@ end
 
 // Bounded-cost N-line preview: wrap `text` into at most `max_lines` lines of
 // `max_chars`, ending the last kept line with an explicit "…" when content was
-// clipped. The wrap input is pre-clipped to (max_lines+1)*max_chars bytes first,
-// so a huge string costs no more than a short one to preview (slice snaps to
-// UTF-8 char boundaries, so multibyte text never breaks). Widths are bytes, like
-// wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
+// clipped. The wrap input is pre-clipped to (max_lines+1)*max_chars characters
+// first, so a huge string costs no more than a short one to preview (slice
+// counts code points, so multibyte text never breaks). Widths are characters,
+// like wrap / truncate_*. Returns {lines: [..], truncated: bool} — `truncated` is
 // true when the last kept line carries the "…" (content was dropped).
 pub fn preview(text, max_chars, max_lines)
   let t = text
@@ -1232,11 +1232,11 @@ end
 // One walk of the host's advance table, in `text_ellipsize`. This was a
 // `text_width` call per character — a native call and a fresh string per step,
 // for something a list redraws on every row of every frame — and it had to be
-// careful about a hazard the native does not have: **len and slice are
-// byte-indexed** while text_width counts characters, and "…" is three bytes,
+// careful about a hazard the native does not have: len and slice were then
+// byte-indexed while text_width counts characters, and "…" is three bytes,
 // so a loop that trimmed bytes off a string *already ending* in an ellipsis
 // got them snapped back to the character boundary, dropping the whole ellipsis
-// and re-adding it. A fixed point, and a frame that never returned.
+// and re-adding it. (len and slice count code points now; the walk stays.)
 pub fn ellipsize(s, avail_px, size)
   text_ellipsize(s, size, float(avail_px), "tail")
 end

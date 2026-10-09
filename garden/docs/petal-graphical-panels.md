@@ -257,8 +257,10 @@ program with extra natives, not a sandboxed subset: everything in
 panel authors have hand-rolled them: `random`, `random_int`, `choose`;
 `clamp` / `min` / `max` / `round(x, places)` (int-preserving); `parse_int` /
 `parse_float` (nil on bad input rather than aborting the frame); `chars` /
-`char_len` / `char_at` / `char_slice` / `index_of` for non-ASCII text (`len`
-and `slice` are byte-indexed); and `json_parse` / `json_stringify`.
+`index_of` / `repeat` / `trim` for text (`len`, `slice` and `s[i]` count code
+points, so non-ASCII text needs no special handling; `byte_len` and
+`byte_slice` are there when a byte offset is what you have); and
+`json_parse` / `json_stringify`.
 
 Three things the prelude also covers:
 

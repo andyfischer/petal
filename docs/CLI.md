@@ -279,7 +279,9 @@ fn step  line 26
 How to read it:
 
 - **Two measurements.** Everything is measured with the optimizer on (`opt`,
-  the policy a plain `run` uses) and again with it off (`no-opt`); the last
+  the `fast` policy a host that runs a script every frame uses; a plain `run`
+  uses `fast-memo`, so its calls are never memoized where these may be) and
+  again with it off (`no-opt`); the last
   column is the optimized figure relative to the unoptimized one. Only the
   optimizer differs between the two: memoization and the rest of the
   [run policy](../core/src/policy.rs) are the same on both sides, which is why

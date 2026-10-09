@@ -29,6 +29,7 @@ with a memory ceiling, then raise `MAX_CALL_DEPTH` from 5,000. Details:
 todo-bugs §1.2, §2.
 
 ## 3. `check --strict` passes programs that are silently wrong
+DONE check warns on a leading-`-` broken continuation, a discarded bare computation, a variant declared by two enums or named like a top-level let/state/fn/class, and a call that reaches a let/var/state shadowing a builtin; an enum name is accepted as a type name (typecheck/unused.rs, typecheck/shadow.rs)
 
 - A leading `-` on a continuation line starts a new statement, so a sum
   written down the page returns its last line. No warning from `check` or

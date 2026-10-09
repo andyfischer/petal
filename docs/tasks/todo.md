@@ -148,6 +148,7 @@ DONE unknown commands and options are named; check keeps --host ui and run expla
 Details: todo-bugs §6.
 
 ## 10. Text editing is hand-rolled in every app
+DONE text_field has selection, cut/copy/paste (prelude clipboard_get/clipboard_set over a host clipboard channel) and undo/redo; text_wrap_rows, text_row_of and text_range_rects work in code-point offsets; the email client's search, To and Subject fields use text_field_update (core-libs/petal-ui/docs/components.md)
 
 `text_field` has no selection, clipboard or undo
 (`core-libs/petal-ui/prelude/ui.ptl:2264`). `text_wrap` returns strings

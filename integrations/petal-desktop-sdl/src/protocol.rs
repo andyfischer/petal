@@ -299,7 +299,10 @@ pub fn run_one_frame<H: Host>(
     bind_input(env, input);
 
     env.reset_stack(stack_id)?;
-    env.run(stack_id)?;
+    let run = env.run(stack_id);
+    // A stepped frame's `clipboard_set` lands like a live frame's.
+    petal_ui::clipboard::flush_clipboard(env);
+    run?;
     Ok(*frame_count)
 }
 

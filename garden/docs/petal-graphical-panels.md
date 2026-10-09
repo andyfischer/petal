@@ -270,9 +270,18 @@ Three things the prelude also covers:
 - **Drag and drop.** `drag_state()` plus one `drag_update(ds, id, rect)` per
   draggable item yields `{dragging, id, dx, dy, dropped}`;
   `insertion_index(rects, y)` turns a drop position into a list index.
-- **Text fields.** `text_field_update(fc, id, r, buf)` is the input half
-  (click-to-focus, typing, backspace, Return) with no pixels of its own;
-  `draw_text_field(r, text, has_focus[, style])` is the stock look.
+- **Text fields.** `text_field(fc, id, r, buf)` is a one-line field with a
+  caret, a selection, cut/copy/paste and undo. `text_field_update(fc, id, r,
+  buf)` is the input half with no pixels of its own, and
+  `draw_text_field(r, text, has_focus, caret, view[, style])` is the stock
+  look. Its Cmd shortcuts reach a panel only if the panel claims them (see
+  [`claim_key`](#claim_key-a-panels-own-command-keyspace)). `clipboard_get()`
+  / `clipboard_set(text)` go to the system clipboard, the same one the
+  editor's Cmd+C uses.
+- **Text ranges.** `text_wrap_rows(s, style, w)` is `text_wrap` with each
+  row's character range, `text_row_of(rows, at)` finds a caret's row, and
+  `text_range_rects(s, style, a, b)` returns the rectangles covering a
+  character range (a selection, a search hit).
 
 Plus small color helpers: `mix` / `lerp_color(a, b, t)`, `luma(c)`,
 `contrast_text(bg)`.

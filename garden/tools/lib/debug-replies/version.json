@@ -1,10 +1,10 @@
 {
   "build": {
-    "build_date": "2026-10-08",
-    "commit": "6b12cb8",
-    "commit_date": "2026-10-07",
+    "build_date": "2026-10-09",
+    "commit": "496659c",
+    "commit_date": "2026-10-09",
     "dirty": true,
-    "prelude_level": 7,
+    "prelude_level": 8,
     "version": "0.1.0"
   },
   "features": [
@@ -19,7 +19,7 @@
       "GRAD_LEFT",
       "GRAD_RIGHT"
     ],
-    "level": 7,
+    "level": 8,
     "ui_version": 1
   },
   "version": "0.1.0"

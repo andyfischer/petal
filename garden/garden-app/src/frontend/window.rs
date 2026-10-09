@@ -41,14 +41,29 @@ impl Frontend for WindowFrontend {
             eprintln!("garden: debug server on http://127.0.0.1:{port}");
         }
 
+        // One clipboard for the whole process: every window's `App` gets
+        // a clone, so yanks cross windows even via the in-process
+        // fallback when no OS pasteboard is reachable.
+        let clipboard = SharedClipboard::new(Box::new(SystemClipboard::new()));
+        // Panel scripts share it too: the `ui` prelude's `clipboard_get` /
+        // `clipboard_set` (and so `text_field`'s cut, copy and paste) reach
+        // this through petal-ui's clipboard channel. Panels run on this
+        // thread, which is where the provider is looked up.
+        {
+            use crate::clipboard::Clipboard;
+            let (mut reader, mut writer) = (clipboard.clone(), clipboard.clone());
+            petal_ui::clipboard::set_clipboard_provider(Some(
+                petal_ui::clipboard::ClipboardProvider {
+                    get: Box::new(move || reader.get().unwrap_or_default()),
+                    set: Box::new(move |text| writer.set(text)),
+                },
+            ));
+        }
         let mut handler = Handler {
             config: Some(config),
             windows: WindowRegistry::new(),
             next_ordinal: 1,
-            // One clipboard for the whole process: every window's `App` gets
-            // a clone, so yanks cross windows even via the in-process
-            // fallback when no OS pasteboard is reachable.
-            clipboard: SharedClipboard::new(Box::new(SystemClipboard::new())),
+            clipboard,
             menu: None,
         };
         event_loop

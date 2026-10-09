@@ -292,6 +292,7 @@ pub fn run_game<H: Host>(
     crate::input::suppress_untranslated_events();
     host.on_sdl_init(&sdl);
     let video = sdl.video()?;
+    attach_clipboard(&video);
 
     let window = video
         .window(&config.title, config.width, config.height)
@@ -546,6 +547,7 @@ pub fn run_agent<H: Host>(
     crate::input::suppress_untranslated_events();
     host.on_sdl_init(&sdl);
     let video = sdl.video()?;
+    attach_clipboard(&video);
 
     let window = video
         .window(&config.title, config.width, config.height)
@@ -927,6 +929,23 @@ fn drain_output(env: &mut Env) {
     for line in env.take_output() {
         eprintln!("{}", line);
     }
+    // What the script copied this frame (`clipboard_set`) goes to the
+    // clipboard attached below, or stays in memory when headless.
+    petal_ui::clipboard::flush_clipboard(env);
+}
+
+/// Put the system clipboard behind the `ui` prelude's `clipboard_get` /
+/// `clipboard_set`, so `text_field`'s cut, copy and paste reach other
+/// applications. Windowed modes only: a headless run keeps petal-ui's
+/// in-memory clipboard and leaves the user's alone.
+fn attach_clipboard(video: &sdl2::VideoSubsystem) {
+    let (reader, writer) = (video.clipboard(), video.clipboard());
+    petal_ui::clipboard::set_clipboard_provider(Some(petal_ui::clipboard::ClipboardProvider {
+        get: Box::new(move || reader.clipboard_text().unwrap_or_default()),
+        set: Box::new(move |text| {
+            let _ = writer.set_clipboard_text(text);
+        }),
+    }));
 }
 
 /// Dispatch one agent-protocol command. Shared by windowed-agent and headless.

@@ -172,8 +172,8 @@ caret_x(s, style, i)        // the x offset of the caret before character i
 caret_rect(s, r, style, i)  // a 1px bar spanning the line's real ink
 ```
 
-`caret_index` returns a **character** index, which is what `char_slice` takes —
-not a byte offset.
+`caret_index` returns a **character** index, which is what `slice`, `s[i]` and
+`len` use.
 
 ## What is native, and why
 

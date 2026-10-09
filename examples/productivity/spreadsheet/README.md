@@ -83,8 +83,7 @@ literals are plain, negatives are red, errors get a tinted cell.
 through `var` boxes, because a `fn` is only bound when its declaration runs);
 nested-list index assignment (`cells[r][c] = buf`); `for` in value position as a
 map; records as a tagged-union value type; `state` across frames and hot
-reloads; closures over top-level bindings; string scanning with byte-indexed
-`slice`.
+reloads; closures over top-level bindings; string scanning with `slice`.
 
 **Host:** every `draw_*` primitive except images; styled text runs with
 `spacing` and `italic`; `text_width`-exact centering, right-alignment and

@@ -402,7 +402,7 @@ fn match_at(s: string, i: num) -> record
   end
 end
 
-// Editor colouring: byte ranges {a, b, kind} covering the whole span,
+// Editor colouring: character ranges {a, b, kind} covering the whole span,
 // markers included.
 fn inline_ranges(s: string) -> list
   let out = []

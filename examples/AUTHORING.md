@@ -337,8 +337,9 @@ path, capped at 256 KiB per value. There is no file API; pair it with
 Builtins authors keep hand-rolling that already exist: `random(min,max)`,
 `random_int(lo,hi)`, `choose(list)` for seed data; `clamp`/`min`/`max`/
 `round(x, places)`; `parse_int`/`parse_float` (nil on bad input);
-`chars`/`char_len`/`char_at`/`char_slice`/`index_of` for anything non-ASCII,
-since `len`/`slice` are byte-indexed; `json_parse`/`json_stringify`;
+`chars`/`index_of` and `s[i]` for scanning text (`len`, `slice` and `s[i]`
+count characters, so non-ASCII text needs nothing special);
+`json_parse`/`json_stringify`;
 `sort_by`, `map`, `filter`.
 
 ### Text and fonts

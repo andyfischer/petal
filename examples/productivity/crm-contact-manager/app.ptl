@@ -174,16 +174,8 @@ fn initials(name: string) -> string
   var out = ""
   for part in split(name, " ") do
     if len(part) > 0 && len(out) < 2 then
-      // slice is byte-indexed and snaps DOWN to a char boundary, so a leading
-      // multi-byte letter ("Ó") makes slice(part, 0, 1) empty — widen until a
-      // whole character comes out.
-      var ch = slice(part, start: 0, end: 1)
-      var n = 1
-      while len(ch) == 0 && n < 5 do
-        set n = n + 1
-        set ch = slice(part, start: 0, end: n)
-      end
-      set out = out ++ upper(ch)
+      // slice counts characters, so the first letter of "Óscar" is "Ó".
+      set out = out ++ upper(slice(part, start: 0, end: 1))
     end
   end
   out

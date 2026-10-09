@@ -112,8 +112,8 @@ end
 // ── Carets ────────────────────────────────────────────────────────────────
 
 // The character index a click `dx` px into the run falls on, snapped to the
-// nearer character boundary. A character index, which is what `char_slice`
-// takes — not a byte offset.
+// nearer character boundary. A character index, which is what `slice` and
+// `s[i]` take.
 pub fn caret_index(s: string, style: record, dx: num) -> int
   text_index_at(s, style, float(dx))
 end

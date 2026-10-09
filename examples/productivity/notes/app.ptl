@@ -284,7 +284,7 @@ fn chars_in(lines: list) -> int
   max(0, n - 1)
 end
 
-// Byte offsets of every case-insensitive occurrence of `needle` in `hay`.
+// Character offsets of every case-insensitive occurrence of `needle` in `hay`.
 fn find_all(hay: string, needle: string) -> list
   let out = []
   if len(needle) > 0 && len(needle) <= len(hay) then
@@ -330,7 +330,7 @@ end
 
 // ── the wrap model ──────────────────────────────────────────────────────────
 // A logical line becomes one or more display rows. `wrap_starts` returns the
-// byte offset each row begins at; rows are contiguous, so the space a break
+// character offset each row begins at; rows are contiguous, so the space a break
 // consumes stays at the tail of the row above it (invisible, and it keeps the
 // column arithmetic a straight subtraction).
 fn wrap_starts(s: string, maxc: num) -> list

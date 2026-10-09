@@ -8,6 +8,7 @@ Petal can use, and that you can copy into a project wholesale.
 |---------|------------|
 | [`bloom/`](bloom/) | A UI component library: buttons, menus, controls, overlays, an animation core, and a vector icon set. Built on the `petal-ui` host layer |
 | [`text-layout/`](text-layout/) | Placing text: cap-height centring, alignment on both axes, wrapping, elision, caret hit-testing. What bloom draws every one of its labels through |
+| [`glsl/`](glsl/) | **Experimental.** Translates a Petal function to GLSL (`to_glsl(lambda)`), for hosts that take shader hooks as Petal code. Needs no host layer; built on the core `fn_info` / `fn_ast` builtins |
 
 This is deliberately separate from [`core-libs/petal-ui/`](../core-libs/petal-ui/), which is a Rust
 crate that gives a host its input and draw natives (plus the `ui` prelude that

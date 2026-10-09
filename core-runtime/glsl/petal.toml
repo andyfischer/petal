@@ -1,0 +1,6 @@
+# glsl — translate a Petal function to GLSL, written entirely in Petal.
+# EXPERIMENTAL: see docs/petal-to-glsl.md.
+[package]
+name = "glsl"
+version = "0.1.0"
+modules = "src"

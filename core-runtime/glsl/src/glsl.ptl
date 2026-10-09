@@ -1,0 +1,1224 @@
+// glsl — translate a Petal function to GLSL. EXPERIMENTAL.
+//
+//     import glsl
+//
+//     let grade = fn(fx: Fx, amount = 0.5) -> fx.color * amount
+//     let g = glsl.glsl_function(grade, ENV)   // {code, common, params, uniforms, taps, error, ...}
+//     let text = glsl.to_glsl(grade, ENV)      // the same as one GLSL string
+//
+// The translator reads the function with the core introspection builtins
+// (`fn_info`, `fn_ast`) and walks its syntax tree. It runs nothing: the code
+// only has to be in the pure numeric subset (floats, ints, bools, vec2/vec3,
+// arithmetic, the math builtins, `let`/`var`/`set`, `if`, `for i in range`,
+// `while`, `return`, calls of other translatable functions). Anything else is
+// refused with the line and column of the construct.
+//
+// The result is cached under the function's `code_hash`, so a script that
+// calls this every frame translates once, and again only after an edit that
+// changes the function (or a function it calls). See
+// docs/petal-to-glsl.md for the mapping, the environment record and the
+// limits.
+
+pub let VERSION = 1
+
+// --- Tables ----------------------------------------------------------------
+
+let VEC = {vec2: 2, vec3: 3, vec4: 4}
+let DIM_VEC = ["", "", "vec2", "vec3", "vec4"]
+let VALUE_TYPES = {float: true, int: true, bool: true, vec2: true, vec3: true, vec4: true}
+
+// Petal builtin -> GLSL name, generic over float / vecN: f(T) -> T.
+let SAME_TYPE_1 = {
+  floor: "floor", ceil: "ceil", fract: "fract", round: "round",
+  sin: "sin", cos: "cos", tan: "tan", asin: "asin", acos: "acos",
+  atan: "atan", exp: "exp", log: "log", sqrt: "sqrt",
+  radians: "radians", degrees: "degrees", normalize: "normalize",
+}
+// Also defined on int.
+let KEEP_INT_1 = {abs: "abs", sign: "sign"}
+// f(float | vecN, ...) -> the widest argument; the value is the arity.
+let WIDEST_N = {clamp: 3, lerp: 3, smoothstep: 3, step: 2, mod: 2, pow: 2}
+
+// Names a local must not take: GLSL keywords, and the functions this
+// translator emits calls to (a local of that name would hide the function).
+let RESERVED_LIST = [
+  "sample", "input", "output", "common", "filter", "active", "half", "fixed",
+  "texture", "mix", "length", "step", "mod", "min", "max", "fx", "params",
+  "in", "out", "inout", "const", "float", "int", "bool", "uniform", "main",
+  "union", "partition", "superp", "patch", "smooth", "flat", "layout",
+  "floor", "ceil", "fract", "round", "sin", "cos", "tan", "asin", "acos",
+  "atan", "exp", "log", "sqrt", "radians", "degrees", "normalize", "abs",
+  "sign", "clamp", "smoothstep", "pow", "distance", "dot", "cross", "trunc",
+  "vec2", "vec3", "vec4", "mat2", "mat3", "mat4", "true", "false", "if",
+  "else", "for", "while", "return", "break", "continue", "void", "struct",
+  "discard", "do", "switch", "case", "default", "highp", "mediump", "lowp",
+  "precision",
+]
+
+// Precedence levels, loosest first: 0 ternary, 1 ||, 2 &&, 3 == !=,
+// 4 < <= > >=, 5 + -, 6 * / %, 7 unary, 8 atom.
+let BINOPS = {
+  Add: {sym: "+", prec: 5}, Sub: {sym: "-", prec: 5},
+  Mul: {sym: "*", prec: 6}, Div: {sym: "/", prec: 6},
+  Lt: {sym: "<", prec: 4}, Le: {sym: "<=", prec: 4},
+  Gt: {sym: ">", prec: 4}, Ge: {sym: ">=", prec: 4},
+  Eq: {sym: "==", prec: 3}, Ne: {sym: "!=", prec: 3},
+  And: {sym: "&&", prec: 2}, Or: {sym: "||", prec: 1},
+}
+
+// --- Values ----------------------------------------------------------------
+
+// A translated expression: GLSL text, its type, its precedence. `lit` is the
+// value of an int literal (it can be re-printed as a float); `cv` is the value
+// of a constant int expression (for loop trip counts).
+fn _val(code, ty, prec, lit, cv)
+  {code: code, ty: ty, prec: prec, lit: lit, cv: cv}
+end
+
+fn _atom(code, ty)
+  {code: code, ty: ty, prec: 8, lit: nil, cv: nil}
+end
+
+fn _bad()
+  {code: "?", ty: "?", prec: 8, lit: nil, cv: nil}
+end
+
+fn _at(v, prec)
+  if v.prec >= prec then v.code else "(" ++ v.code ++ ")" end
+end
+
+fn _has(rec, name)
+  rec?.[name] != nil
+end
+
+fn _is_vec(ty)
+  VEC?.[ty] != nil
+end
+
+fn _is_num(ty)
+  ty == "int" || ty == "float"
+end
+
+fn _float_lit(x)
+  let text = str(float(x))
+  if index_of(text, ".") < 0 && index_of(text, "e") < 0 then text ++ ".0" else text end
+end
+
+fn _finite(x)
+  x == x && x < 1.0e300 && x > -1.0e300
+end
+
+fn _srgb_to_linear(channel)
+  let c = channel / 255.0
+  let lin = if c <= 0.04045 then c / 12.92 else pow((c + 0.055) / 1.055, 2.4) end
+  round(lin * 1000000.0) / 1000000.0
+end
+
+// {r, g, b} when `v` is a color record (what `#rrggbb` evaluates to).
+fn _is_color(v)
+  if type(v) != "record" then return false end
+  let ks = keys(v)
+  if len(ks) != 3 then return false end
+  type(v?.r) == "int" && type(v?.g) == "int" && type(v?.b) == "int"
+end
+
+fn _color_vec3(r, g, b)
+  "vec3(" ++ _float_lit(_srgb_to_linear(r)) ++ ", " ++ _float_lit(_srgb_to_linear(g)) ++ ", " ++
+    _float_lit(_srgb_to_linear(b)) ++ ")"
+end
+
+// [r, g, b] when `node` is what a color literal parses to, else nil.
+fn _color_of(node)
+  if node.tag != "Record" || len(node.fields) != 3 then return nil end
+  let out = {}
+  for f in node.fields do
+    if f.spread || f.value.tag != "Literal" || f.value.type != "int" then return nil end
+    out[f.name] = f.value.value
+  end
+  if _has(out, "r") && _has(out, "g") && _has(out, "b") then [out.r, out.g, out.b] else nil end
+end
+
+fn _join_codes(vals)
+  join(for v in vals do v.code end, ", ")
+end
+
+// --- The translation context -----------------------------------------------
+//
+// `c` is one function being translated: `c.get()` / `c.put(s)` read and write
+// its mutable half (lines, scopes, names in use, tap counts), and `c.E` is the
+// same pair for what the whole translation shares (helpers, the first error).
+
+fn _fail(c, message, node)
+  let es = c.E.get()
+  if es.err == nil then
+    let line = if node != nil then node.line else c.line end
+    let column = if node != nil then node.column else c.column end
+    es.err = {message: message, line: line, column: column}
+    c.E.put(es)
+  end
+  _bad()
+end
+
+fn _failed(c)
+  c.E.get().err != nil
+end
+
+fn _emit(c, text)
+  let s = c.get()
+  s.lines = append(s.lines, repeat("    ", s.indent) ++ text)
+  c.put(s)
+  nil
+end
+
+fn _declare(c, name, ty)
+  let s = c.get()
+  let glsl = if contains(RESERVED_LIST, name) || _has(c.env_fns, name) then name ++ "_" else name end
+  let n = 1
+  while _has(s.used, glsl) do
+    glsl = name ++ "_" ++ str(n)
+    n += 1
+  end
+  s.used[glsl] = true
+  let top = len(s.scopes) - 1
+  let scope = s.scopes[top]
+  scope[name] = {glsl: glsl, ty: ty}
+  s.scopes[top] = scope
+  c.put(s)
+  glsl
+end
+
+fn _lookup(c, name)
+  let scopes = c.get().scopes
+  let n = len(scopes)
+  for i in range(0, n) do
+    let found = scopes[n - 1 - i]?.[name]
+    if found != nil then return found end
+  end
+  nil
+end
+
+fn _push_scope(c)
+  let s = c.get()
+  s.scopes = append(s.scopes, {})
+  c.put(s)
+  nil
+end
+
+fn _pop_scope(c)
+  let s = c.get()
+  s.scopes = drop_last(s.scopes)
+  c.put(s)
+  nil
+end
+
+fn _indent(c, by)
+  let s = c.get()
+  s.indent = s.indent + by
+  c.put(s)
+  nil
+end
+
+// --- Types -----------------------------------------------------------------
+
+fn _to_float(c, v, node)
+  if v.ty == "float" then return v end
+  if v.ty == "int" then
+    if v.lit != nil then
+      return _val(_float_lit(v.lit), "float", if v.lit < 0 then 7 else 8 end, nil, nil)
+    end
+    return _atom("float(" ++ v.code ++ ")", "float")
+  end
+  _fail(c, "expected a number, found " ++ v.ty, node)
+end
+
+fn _coerce(c, v, ty, node)
+  if v.ty == ty then return v end
+  if ty == "float" then return _to_float(c, v, node) end
+  _fail(c, "expected " ++ ty ++ ", found " ++ v.ty, node)
+end
+
+// Bring two operands of an arithmetic operator to compatible GLSL types.
+fn _unify(c, a, b, node)
+  if a.ty == b.ty then return {a: a, b: b, ty: a.ty} end
+  if _is_vec(a.ty) && _is_num(b.ty) then return {a: a, b: _to_float(c, b, node), ty: a.ty} end
+  if _is_vec(b.ty) && _is_num(a.ty) then return {a: _to_float(c, a, node), b: b, ty: b.ty} end
+  if _is_num(a.ty) && _is_num(b.ty) then
+    return {a: _to_float(c, a, node), b: _to_float(c, b, node), ty: "float"}
+  end
+  _fail(c, "no GLSL operation between " ++ a.ty ++ " and " ++ b.ty, node)
+  {a: a, b: b, ty: "?"}
+end
+
+fn _floats(c, args, node)
+  for a in args do
+    if _is_vec(a.ty) then a else _to_float(c, a, node) end
+  end
+end
+
+fn _widest(c, vals, node)
+  let found = nil
+  for v in vals do
+    if _is_vec(v.ty) then
+      if found != nil && found != v.ty then
+        _fail(c, "mixed vector sizes " ++ found ++ " and " ++ v.ty, node)
+        return "?"
+      end
+      found = v.ty
+    end
+  end
+  found ?? "float"
+end
+
+// --- Expressions -----------------------------------------------------------
+
+fn _expr(c, node)
+  if _failed(c) then return _bad() end
+  match node.tag
+    when "Literal" -> _e_literal(c, node)
+    when "Ident" -> _e_ident(c, node)
+    when "CellGet" -> _e_ident(c, node)
+    when "Record" -> _e_record(c, node)
+    when "UnaryOp" -> _e_unary(c, node)
+    when "BinaryOp" -> _e_binary(c, node)
+    when "FieldAccess" -> _e_field(c, node)
+    when "If" -> _e_if(c, node)
+    when "Call" -> _e_call(c, node)
+    when "For" -> _fail(c, "a `for` used as a value builds a list, which has no GLSL form", node)
+    when "Lambda" -> _fail(c, "a function value has no GLSL form", node)
+    when other -> _fail(c, other ++ " has no GLSL form", node)
+  end
+end
+
+fn _e_literal(c, node)
+  if node.type == "float" then return _atom(_float_lit(node.value), "float") end
+  if node.type == "int" then return _val(str(node.value), "int", 8, node.value, node.value) end
+  if node.type == "bool" then return _atom(if node.value then "true" else "false" end, "bool") end
+  _fail(c, "a " ++ node.type ++ " literal has no GLSL form", node)
+end
+
+// A captured value read as an expression.
+fn _capture(c, name, value, node)
+  let t = type(value)
+  if t == "int" then
+    return _val(str(value), "int", if value < 0 then 7 else 8 end, value, value)
+  end
+  if t == "bool" then return _atom(if value then "true" else "false" end, "bool") end
+  if t == "function" then
+    return _fail(c, "`" ++ name ++ "` is a function; a function can only be called here", node)
+  end
+  let ty = if t == "float" then "float"
+    elsif t == "vec2" then "vec2"
+    elsif t == "vec3" then "vec3"
+    elsif _is_color(value) then "vec3"
+    else nil end
+  if ty == nil then
+    return _fail(c, "captured `" ++ name ++ "` is a " ++ t ++ ", which has no GLSL form", node)
+  end
+  if c.inline then
+    if t == "float" then
+      if !_finite(value) then
+        return _fail(c, "captured `" ++ name ++ "` is not a finite number", node)
+      end
+      return _val(_float_lit(value), "float", if value < 0.0 then 7 else 8 end, nil, nil)
+    end
+    if t == "vec2" then
+      return _atom("vec2(" ++ _float_lit(value.x) ++ ", " ++ _float_lit(value.y) ++ ")", "vec2")
+    end
+    if t == "vec3" then
+      return _atom("vec3(" ++ _float_lit(value.x) ++ ", " ++ _float_lit(value.y) ++ ", " ++
+        _float_lit(value.z) ++ ")", "vec3")
+    end
+    return _atom(_color_vec3(value.r, value.g, value.b), "vec3")
+  end
+  // A uniform: the text then depends on the code alone, never on the value.
+  let uname = c.uniform_prefix ++ name
+  let es = c.E.get()
+  if !contains(es.uniforms, uname) then
+    es.uniforms = append(es.uniforms, uname)
+    es.uniform_types[uname] = ty
+    c.E.put(es)
+  end
+  _atom(c.uniforms_struct ++ uname, ty)
+end
+
+fn _e_ident(c, node)
+  let found = _lookup(c, node.name)
+  if found != nil then return _atom(found.glsl, found.ty) end
+  let cap = c.captures?.[node.name]
+  if cap != nil then return _capture(c, node.name, cap.value, node) end
+  _fail(c, "`" ++ node.name ++ "` is not a local, a parameter or a captured value", node)
+end
+
+fn _e_record(c, node)
+  let rgb = _color_of(node)
+  if rgb == nil then
+    return _fail(c, "a record has no GLSL form (only a color literal does)", node)
+  end
+  _atom(_color_vec3(rgb[0], rgb[1], rgb[2]), "vec3")
+end
+
+fn _e_unary(c, node)
+  let v = _expr(c, node.operand)
+  if node.op == "Neg" then
+    if v.lit != nil then return _val(str(-v.lit), "int", 7, -v.lit, -v.lit) end
+    if !_is_num(v.ty) && !_is_vec(v.ty) then
+      return _fail(c, "cannot negate " ++ v.ty, node)
+    end
+    return _val("-" ++ _at(v, 8), v.ty, 7, nil, if v.cv != nil then -v.cv else nil end)
+  end
+  if v.ty != "bool" then
+    return _fail(c, "`!` needs a bool (GLSL has no truthiness)", node)
+  end
+  _val("!" ++ _at(v, 8), "bool", 7, nil, nil)
+end
+
+fn _e_binary(c, node)
+  let op = node.op
+  let a = _expr(c, node.left)
+  let b = _expr(c, node.right)
+  if _failed(c) then return _bad() end
+  if op == "And" || op == "Or" then
+    if a.ty != "bool" || b.ty != "bool" then
+      return _fail(c, "`" ++ lower(op) ++ "` needs bools (GLSL has no truthiness)", node)
+    end
+    let o = BINOPS[op]
+    return _val(_at(a, o.prec) ++ " " ++ o.sym ++ " " ++ _at(b, o.prec + 1), "bool", o.prec, nil, nil)
+  end
+  if op == "Mod" then
+    let u = _unify(c, a, b, node)
+    if u.ty == "int" then
+      return _val(_at(u.a, 6) ++ " % " ++ _at(u.b, 7), "int", 6, nil, nil)
+    end
+    return _atom("mod(" ++ u.a.code ++ ", " ++ u.b.code ++ ")", u.ty)
+  end
+  let o = BINOPS?.[op]
+  if o == nil then
+    return _fail(c, "operator " ++ op ++ " has no GLSL form", node)
+  end
+  let u = _unify(c, a, b, node)
+  if _failed(c) then return _bad() end
+  let ty = u.ty
+  if o.prec == 4 || o.prec == 3 then
+    if o.prec == 4 && !_is_num(ty) then
+      return _fail(c, if _is_vec(ty) then "vectors do not order" else "cannot order " ++ ty end, node)
+    end
+    ty = "bool"
+  elsif !_is_num(ty) && !_is_vec(ty) then
+    return _fail(c, "no GLSL operation `" ++ o.sym ++ "` on " ++ ty, node)
+  end
+  let cv = nil
+  if ty == "int" && a.cv != nil && b.cv != nil then
+    cv = match op
+      when "Add" -> a.cv + b.cv
+      when "Sub" -> a.cv - b.cv
+      when "Mul" -> a.cv * b.cv
+      when _ -> nil
+    end
+  end
+  _val(_at(u.a, o.prec) ++ " " ++ o.sym ++ " " ++ _at(u.b, o.prec + 1), ty, o.prec, nil, cv)
+end
+
+fn _swizzle_ok(field, dim)
+  let n = len(field)
+  if n < 1 || n > 4 then return false end
+  for names in ["xyzw", "rgba"] do
+    let allowed = slice(names, 0, dim)
+    let ok = true
+    for i in range(0, n) do
+      if index_of(allowed, field[i]) < 0 then ok = false end
+    end
+    if ok then return true end
+  end
+  false
+end
+
+fn _e_field(c, node)
+  let obj = _expr(c, node.object)
+  if _failed(c) then return _bad() end
+  let field = node.field
+  let fields = c.structs?.[obj.ty]
+  if fields != nil then
+    let fty = fields?.[field]
+    if fty == nil then
+      return _fail(c, obj.ty ++ " has no field `" ++ field ++ "`", node)
+    end
+    return _atom(_at(obj, 8) ++ "." ++ field, fty)
+  end
+  if _is_vec(obj.ty) then
+    if _swizzle_ok(field, VEC[obj.ty]) then
+      let n = len(field)
+      return _atom(_at(obj, 8) ++ "." ++ field, if n == 1 then "float" else DIM_VEC[n] end)
+    end
+    return _fail(c, obj.ty ++ " has no component(s) `" ++ field ++ "`", node)
+  end
+  _fail(c, "field access on " ++ obj.ty, node)
+end
+
+fn _cond(c, node)
+  let v = _expr(c, node)
+  if _failed(c) then return _bad() end
+  if v.ty != "bool" then
+    return _fail(c, "a condition must be a bool, found " ++ v.ty ++ " (GLSL has no truthiness)", node)
+  end
+  v
+end
+
+fn _single_expr(body)
+  len(body) == 1 && body[0].tag == "Expr"
+end
+
+// An `if` whose value is used.
+fn _e_if(c, node)
+  let then_body = node.then_body
+  let else_body = node.else_body
+  if else_body == nil then
+    return _fail(c, "an `if` used as a value needs an `else`", node)
+  end
+  if _single_expr(then_body) && _single_expr(else_body) then
+    // Two plain expressions: a ternary, unless an arm needs statements of its
+    // own (then everything it did is undone and the general form is used).
+    let saved = c.get()
+    let cv = _cond(c, node.condition)
+    let a = _expr(c, then_body[0].expr)
+    let b = _expr(c, else_body[0].expr)
+    if _failed(c) then return _bad() end
+    if len(c.get().lines) == len(saved.lines) then
+      let u = _unify(c, a, b, node)
+      if _failed(c) then return _bad() end
+      return _val(_at(cv, 1) ++ " ? " ++ _at(u.a, 1) ++ " : " ++ _at(u.b, 1), u.ty, 0, nil, nil)
+    end
+    c.put(saved)
+  end
+  // A temporary assigned in both arms.
+  let tmp = _declare(c, "pick", "?")
+  let slot = len(c.get().lines)
+  _emit(c, "")
+  let cv = _cond(c, node.condition)
+  _emit(c, "if (" ++ cv.code ++ ") \{")
+  let ty = _branch_value(c, then_body, tmp, node)
+  _emit(c, "} else \{")
+  let ty2 = _branch_value(c, else_body, tmp, node)
+  _emit(c, "}")
+  if _failed(c) then return _bad() end
+  if ty != ty2 then
+    return _fail(c, "the arms of this `if` have different types (" ++ ty ++ ", " ++ ty2 ++ ")", node)
+  end
+  let s = c.get()
+  s.lines[slot] = repeat("    ", s.indent) ++ ty ++ " " ++ tmp ++ ";"
+  c.put(s)
+  _atom(tmp, ty)
+end
+
+fn _branch_value(c, body, tmp, node)
+  if len(body) == 0 || body[len(body) - 1].tag != "Expr" then
+    _fail(c, "this arm has no value", node)
+    return "?"
+  end
+  _indent(c, 1)
+  _push_scope(c)
+  for i in range(0, len(body) - 1) do
+    _stmt(c, body[i])
+  end
+  let v = _expr(c, body[len(body) - 1].expr)
+  _emit(c, tmp ++ " = " ++ v.code ++ ";")
+  _pop_scope(c)
+  _indent(c, -1)
+  v.ty
+end
+
+fn _count(c, times)
+  let s = c.get()
+  if s.loop_factor == nil then
+    s.taps_hidden = true
+  else
+    s.taps = s.taps + times * s.loop_factor
+  end
+  c.put(s)
+  nil
+end
+
+fn _call_text(name, vals)
+  name ++ "(" ++ _join_codes(vals) ++ ")"
+end
+
+fn _e_call(c, node)
+  if node.function.tag != "Ident" then
+    return _fail(c, "only calls of named functions translate", node)
+  end
+  if len(node.arg_names) > 0 then
+    return _fail(c, "named arguments do not translate; pass them by position", node)
+  end
+  let name = node.function.name
+  let args = for a in node.args do _expr(c, a) end
+  if _failed(c) then return _bad() end
+  let n = len(args)
+
+  if _lookup(c, name) == nil then
+    let cap = c.captures?.[name]
+    if cap != nil && type(cap.value) == "function" then
+      return _call_helper(c, name, cap.value, args, node)
+    end
+  end
+  if _is_vec(name) then
+    let fl = _floats(c, args, node)
+    if _failed(c) then return _bad() end
+    let total = 0
+    for a in fl do
+      total = total + (VEC?.[a.ty] ?? 1)
+    end
+    if total != 1 && total != VEC[name] then
+      return _fail(c, name ++ "() from " ++ join(for a in fl do a.ty end, ", "), node)
+    end
+    return _atom(_call_text(name, fl), name)
+  end
+  if name == "float" && n == 1 then return _to_float(c, args[0], node) end
+  if name == "int" && n == 1 then
+    if !_is_num(args[0].ty) then return _fail(c, "int() of " ++ args[0].ty, node) end
+    return _atom(_call_text("int", args), "int")
+  end
+  let sig = c.env_fns?.[name]
+  if sig != nil then
+    if n != len(sig.args) then
+      return _fail(c, name ++ "() takes " ++ str(len(sig.args)) ++ " argument(s)", node)
+    end
+    if contains(c.counted, name) then _count(c, 1) end
+    let vals = for i in range(0, n) do _coerce(c, args[i], sig.args[i], node) end
+    if _failed(c) then return _bad() end
+    return _atom(_call_text(name, vals), sig.returns)
+  end
+  if _has(KEEP_INT_1, name) && n == 1 then
+    if !_is_num(args[0].ty) && !_is_vec(args[0].ty) then
+      return _fail(c, name ++ "() of " ++ args[0].ty, node)
+    end
+    return _atom(_call_text(KEEP_INT_1[name], args), args[0].ty)
+  end
+  if _has(SAME_TYPE_1, name) && n == 1 then
+    let fl = _floats(c, args, node)
+    if _failed(c) then return _bad() end
+    return _atom(_call_text(SAME_TYPE_1[name], fl), fl[0].ty)
+  end
+  if (name == "min" || name == "max") && n == 2 then
+    if args[0].ty == "int" && args[1].ty == "int" then
+      return _atom(_call_text(name, args), "int")
+    end
+    let fl = _floats(c, args, node)
+    let ty = _widest(c, fl, node)
+    if _failed(c) then return _bad() end
+    return _atom(_call_text(name, fl), ty)
+  end
+  if _has(WIDEST_N, name) then
+    if n != WIDEST_N[name] then
+      return _fail(c, name ++ "() takes " ++ str(WIDEST_N[name]) ++ " arguments", node)
+    end
+    let fl = _floats(c, args, node)
+    let ty = _widest(c, fl, node)
+    if _failed(c) then return _bad() end
+    if name == "pow" then
+      // GLSL's pow wants both arguments of one type.
+      fl = for a in fl do
+        if a.ty == ty then a else _atom(ty ++ "(" ++ a.code ++ ")", ty) end
+      end
+    end
+    return _atom(_call_text(if name == "lerp" then "mix" else name end, fl), ty)
+  end
+  if name == "mag" || name == "distance" || name == "dot" then
+    let fl = _floats(c, args, node)
+    if _failed(c) then return _bad() end
+    if name == "mag" && n > 1 then
+      if n > 4 then return _fail(c, "mag() takes at most 4 numbers", node) end
+      return _atom("length(" ++ DIM_VEC[n] ++ "(" ++ _join_codes(fl) ++ "))", "float")
+    end
+    return _atom(_call_text(if name == "mag" then "length" else name end, fl), "float")
+  end
+  if name == "cross" && n == 2 then return _atom(_call_text("cross", args), "vec3") end
+  if name == "atan2" && n == 2 then
+    let fl = _floats(c, args, node)
+    if _failed(c) then return _bad() end
+    return _atom(_call_text("atan", fl), "float")
+  end
+  if name == "hypot" && n == 2 then
+    let fl = _floats(c, args, node)
+    if _failed(c) then return _bad() end
+    return _atom("length(vec2(" ++ _join_codes(fl) ++ "))", "float")
+  end
+  if name == "pi" && n == 0 then return _atom("3.141592653589793", "float") end
+  if name == c.fn_name then
+    return _fail(c, "`" ++ name ++ "` calls itself; GLSL has no recursion", node)
+  end
+  _fail(c, "`" ++ name ++ "` is not a function the shader has", node)
+end
+
+fn _call_helper(c, name, value, args, node)
+  let h = _helper(c, name, value, node)
+  if h == nil then return _bad() end
+  if len(args) != len(h.params) then
+    return _fail(c, name ++ "() takes " ++ str(len(h.params)) ++ " argument(s)", node)
+  end
+  let vals = for i in range(0, len(args)) do _coerce(c, args[i], h.params[i], node) end
+  if _failed(c) then return _bad() end
+  let s = c.get()
+  s.taps = s.taps + h.taps * (s.loop_factor ?? 1)
+  if h.taps_hidden || (h.taps > 0 && s.loop_factor == nil) then s.taps_hidden = true end
+  c.put(s)
+  _atom(_call_text(h.glsl, vals), h.ret)
+end
+
+// --- Statements ------------------------------------------------------------
+
+// A function body: its statements, then the tail value (nil when the body
+// ends in a statement).
+fn _body(c, stmts)
+  let n = len(stmts)
+  if n == 0 then return nil end
+  for i in range(0, n - 1) do
+    _stmt(c, stmts[i])
+  end
+  let last = stmts[n - 1]
+  if last.tag == "Expr" then
+    let e = last.expr
+    // A loop, or an `if` with no `else`, ends the body as a statement.
+    if e.tag != "For" && !(e.tag == "If" && e.else_body == nil) then
+      return {v: _expr(c, e), node: e}
+    end
+  end
+  _stmt(c, last)
+  nil
+end
+
+fn _block(c, stmts)
+  _indent(c, 1)
+  _push_scope(c)
+  for s in stmts do
+    _stmt(c, s)
+  end
+  _pop_scope(c)
+  _indent(c, -1)
+  nil
+end
+
+fn _stmt(c, node)
+  if _failed(c) then return nil end
+  let tag = node.tag
+  if tag == "Let" then
+    let v = _expr(c, node.value)
+    if node.type != nil then v = _coerce(c, v, node.type, node) end
+    if _failed(c) then return nil end
+    if !_type_ok(c, v.ty) then
+      _fail(c, "a local cannot hold a " ++ v.ty, node)
+      return nil
+    end
+    _emit(c, v.ty ++ " " ++ _declare(c, node.name, v.ty) ++ " = " ++ v.code ++ ";")
+  elsif tag == "Set" || tag == "Assign" then
+    if node.target.kind != "Name" then
+      _fail(c, "only whole variables can be assigned (vectors are immutable in Petal)", node)
+      return nil
+    end
+    let found = _lookup(c, node.target.name)
+    if found == nil then
+      _fail(c, "`" ++ node.target.name ++ "` is not a local of this function", node)
+      return nil
+    end
+    if index_of(found.glsl, ".") >= 0 then
+      _fail(c, "`" ++ node.target.name ++ "` is a parameter; a shader cannot assign to it", node)
+      return nil
+    end
+    let v = _coerce(c, _expr(c, node.value), found.ty, node)
+    if _failed(c) then return nil end
+    _emit(c, found.glsl ++ " = " ++ v.code ++ ";")
+  elsif tag == "Expr" then
+    let e = node.expr
+    if e.tag == "If" then
+      _if_stmt(c, e)
+    elsif e.tag == "For" then
+      _for_stmt(c, e)
+    else
+      let v = _expr(c, e)
+      if !_failed(c) then _emit(c, v.code ++ ";") end
+    end
+  elsif tag == "For" then
+    _for_stmt(c, node)
+  elsif tag == "While" then
+    let cv = _cond(c, node.condition)
+    _emit(c, "while (" ++ cv.code ++ ") \{")
+    let s = c.get()
+    let saved = s.loop_factor
+    s.loop_factor = nil
+    c.put(s)
+    _block(c, node.body)
+    let s2 = c.get()
+    s2.loop_factor = saved
+    c.put(s2)
+    _emit(c, "}")
+  elsif tag == "Return" then
+    if node.value == nil then
+      _ret(c, nil, node)
+    else
+      _ret(c, _expr(c, node.value), node.value)
+    end
+  elsif tag == "Break" then
+    _emit(c, "break;")
+  elsif tag == "Continue" then
+    _emit(c, "continue;")
+  else
+    _fail(c, tag ++ " has no GLSL form", node)
+  end
+  nil
+end
+
+fn _if_stmt(c, node)
+  let cv = _cond(c, node.condition)
+  _emit(c, "if (" ++ cv.code ++ ") \{")
+  _block(c, node.then_body)
+  if node.else_body != nil then
+    _emit(c, "} else \{")
+    _block(c, node.else_body)
+  end
+  _emit(c, "}")
+  nil
+end
+
+fn _for_stmt(c, node)
+  let it = node.iter
+  let ok = it.tag == "Call" && it.function.tag == "Ident" && it.function.name == "range"
+  if !ok || len(it.args) < 1 || len(it.args) > 3 then
+    _fail(c, "only `for i in range(...)` translates (no lists in a shader)", node)
+    return nil
+  end
+  let r = for a in it.args do _expr(c, a) end
+  if _failed(c) then return nil end
+  for v in r do
+    if v.ty != "int" then
+      _fail(c, "range() bounds must be ints", node)
+      return nil
+    end
+  end
+  let zero = _val("0", "int", 8, 0, 0)
+  let one = _val("1", "int", 8, 1, 1)
+  let lo = if len(r) > 1 then r[0] else zero end
+  let hi = if len(r) > 1 then r[1] else r[0] end
+  let step = if len(r) == 3 then r[2] else one end
+  if step.lit == nil || step.lit <= 0 then
+    _fail(c, "range() step must be a positive literal", node)
+    return nil
+  end
+  let s = c.get()
+  let saved = s.loop_factor
+  if saved != nil && lo.cv != nil && hi.cv != nil then
+    let span = hi.cv - lo.cv
+    let trips = if span <= 0 then 0 else (span + step.lit - 1) / step.lit end
+    s.loop_factor = saved * trips
+  else
+    s.loop_factor = nil
+  end
+  c.put(s)
+  _push_scope(c)
+  let i = _declare(c, node.var, "int")
+  let inc = if step.lit == 1 then i ++ "++" else i ++ " += " ++ str(step.lit) end
+  _emit(c, "for (int " ++ i ++ " = " ++ lo.code ++ "; " ++ i ++ " < " ++ hi.code ++ "; " ++ inc ++ ") \{")
+  _block(c, node.body)
+  _pop_scope(c)
+  let s2 = c.get()
+  s2.loop_factor = saved
+  c.put(s2)
+  _emit(c, "}")
+  nil
+end
+
+// `return v` (v is nil for a bare `return`), or the body's tail value.
+fn _ret(c, v, node)
+  if _failed(c) then return nil end
+  if c.hook != nil then
+    if v != nil then
+      _emit(c, c.hook.target ++ " = " ++ _hook_result(c, v, node).code ++ ";")
+    end
+    _emit(c, "return;")
+    return nil
+  end
+  if v == nil then
+    _fail(c, "a helper must return a value", node)
+    return nil
+  end
+  let s = c.get()
+  if s.ret_ty == nil then
+    s.ret_ty = v.ty
+    c.put(s)
+  end
+  let out = _coerce(c, v, c.get().ret_ty, node)
+  if !_failed(c) then _emit(c, "return " ++ out.code ++ ";") end
+  nil
+end
+
+fn _hook_result(c, v, node)
+  if v.ty != c.hook.ty then
+    return _fail(c, "the function returns the new `" ++ c.hook.target ++ "` (" ++ c.hook.ty ++
+      "), found " ++ v.ty, node)
+  end
+  v
+end
+
+// --- Functions -------------------------------------------------------------
+
+fn _captures_of(info)
+  let out = {}
+  for cap in info.captures do
+    out[cap.name] = {value: cap.value}
+  end
+  out
+end
+
+// A context for translating one function. `spec` carries what differs between
+// the entry function and a helper.
+fn _context(E, shared, spec)
+  var st = {
+    lines: [], scopes: [{}], used: {}, indent: spec.indent, loop_factor: 1,
+    taps: 0, taps_hidden: false, ret_ty: spec.ret_ty,
+  }
+  let get_st = fn() -> get st
+  let put_st = fn(s)
+    set st = s
+    nil
+  end
+  {
+    get: get_st, put: put_st, E: E,
+    env_fns: shared.env_fns, structs: shared.structs, counted: shared.counted,
+    inline: shared.inline, uniforms_struct: shared.uniforms_struct, prefix: shared.prefix,
+    captures: spec.captures, uniform_prefix: spec.uniform_prefix, hook: spec.hook,
+    fn_name: spec.fn_name, line: spec.line, column: spec.column,
+  }
+end
+
+fn _type_ok(c, ty)
+  _has(VALUE_TYPES, ty) || _has(c.structs, ty)
+end
+
+// Translate `value` (a Petal function) into a GLSL function and return how to
+// call it: {glsl, params, ret, taps, taps_hidden}. Emitted once per name.
+//
+// `uprefix` prefixes the uniforms its captures become (default `<name>_`) and
+// `glsl_name` overrides the emitted name (default `<prefix><name>`); the entry
+// function of a plain-function translation passes both.
+fn _helper(c, name, value, node, uprefix = nil, glsl_name = nil)
+  let es = c.E.get()
+  let known = es.helpers?.[name]
+  if known != nil then return known end
+  if contains(es.busy, name) then
+    _fail(c, "`" ++ name ++ "` is recursive; GLSL has no recursion", node)
+    return nil
+  end
+  let info = fn_info(value)
+  let ast = fn_ast(value)
+  if info == nil || ast == nil then
+    _fail(c, "`" ++ name ++ "` has no source to translate (a builtin or an overloaded function)", node)
+    return nil
+  end
+  es.busy = append(es.busy, name)
+  c.E.put(es)
+
+  let shared = {
+    env_fns: c.env_fns, structs: c.structs, counted: c.counted, inline: c.inline,
+    uniforms_struct: c.uniforms_struct, prefix: c.prefix,
+  }
+  let h = _context(c.E, shared, {
+    indent: 1, ret_ty: ast.returns, captures: _captures_of(info), uniform_prefix: uprefix ?? (name ++ "_"),
+    hook: nil, fn_name: name, line: ast.line, column: ast.column,
+  })
+  let params = []
+  let sig = []
+  for p in ast.params do
+    if p.type == nil then
+      _fail(c, name ++ ": parameter `" ++ p.name ++ "` needs a type annotation", node)
+      return nil
+    end
+    if !_type_ok(c, p.type) then
+      _fail(c, name ++ ": parameter type `" ++ p.type ++ "` has no GLSL form", node)
+      return nil
+    end
+    params = append(params, p.type)
+    sig = append(sig, p.type ++ " " ++ _declare(h, p.name, p.type))
+  end
+  if ast.returns != nil && !_type_ok(c, ast.returns) then
+    _fail(c, name ++ ": return type `" ++ ast.returns ++ "` has no GLSL form", node)
+    return nil
+  end
+  let tail = _body(h, ast.body)
+  if tail != nil then _ret(h, tail.v, tail.node) end
+  if _failed(c) then return nil end
+  let hs = h.get()
+  if hs.ret_ty == nil then
+    _fail(c, name ++ ": cannot tell what it returns; annotate it", node)
+    return nil
+  end
+  let glsl = glsl_name ?? (c.prefix ++ name)
+  let es2 = c.E.get()
+  es2.common = concat(es2.common,
+    concat([hs.ret_ty ++ " " ++ glsl ++ "(" ++ join(sig, ", ") ++ ") \{"], concat(hs.lines, ["}"])))
+  let out = {glsl: glsl, params: params, ret: hs.ret_ty, taps: hs.taps, taps_hidden: hs.taps_hidden}
+  es2.helpers[name] = out
+  es2.busy = filter(es2.busy, fn(b) -> b != name)
+  c.E.put(es2)
+  out
+end
+
+// The GLSL type and default of an effect parameter (a uniform).
+fn _param(c, p, pinfo, node)
+  if p.default == nil then
+    return _fail(c, "param `" ++ p.name ++ "` needs a default (it is the param's default value)", node)
+  end
+  let ty = p.type
+  if ty == nil then
+    let d = p.default
+    if d.tag == "Literal" && (d.type == "float" || d.type == "int") then
+      ty = "float"
+    elsif d.tag == "UnaryOp" && d.op == "Neg" && d.operand.tag == "Literal" then
+      ty = "float"
+    elsif _color_of(d) != nil then
+      ty = "vec3"
+    elsif d.tag == "Call" && d.function.tag == "Ident" && _is_vec(d.function.name) then
+      ty = d.function.name
+    else
+      return _fail(c, "cannot tell the type of param `" ++ p.name ++ "` from its default; annotate it", d)
+    end
+  elsif !_has(VALUE_TYPES, ty) then
+    return _fail(c, "param `" ++ p.name ++ "`: type `" ++ ty ++ "` has no GLSL form", node)
+  end
+  if pinfo.default == nil then
+    return _fail(c, "param `" ++ p.name ++ "`: the default must be a literal (a number, a color, a vec2/vec3 of numbers)", p.default)
+  end
+  {ty: ty}
+end
+
+fn _empty_result(message, line, column)
+  {
+    error: {message: message, line: line, column: column},
+    kind: nil, name: nil, code: "", common: "", signature: nil,
+    params: {}, param_types: {}, uniform_names: [], uniform_types: {},
+    taps: nil, taps_in_loop: false,
+  }
+end
+
+fn _translate(f, info, env, opts)
+  let ast = fn_ast(f)
+  if ast == nil then
+    return _empty_result("this function has no source to translate", nil, nil)
+  end
+  var es = {helpers: {}, common: [], err: nil, uniforms: [], uniform_types: {}, busy: []}
+  let get_es = fn() -> get es
+  let put_es = fn(s)
+    set es = s
+    nil
+  end
+  let E = {get: get_es, put: put_es}
+
+  let structs = env?.structs ?? {}
+  let counted = env?.count ?? []
+  let base = opts?.name ?? ast.name
+  let shared = {
+    env_fns: env?.functions ?? {},
+    structs: structs,
+    counted: if type(counted) == "string" then [counted] else counted end,
+    inline: opts?.inline_captures ?? false,
+    uniforms_struct: if (env?.uniforms ?? "params") == "" then "" else (env?.uniforms ?? "params") ++ "." end,
+    prefix: if base == nil then "" else base ++ "_" end,
+  }
+  let params = ast.params
+  let first = if len(params) > 0 then params[0] else nil end
+  let is_hook = first != nil && first.type != nil && _has(structs, first.type)
+
+  if !is_hook then
+    // A plain function: the whole thing is one GLSL function definition.
+    // A named fn keeps its name (behind opts.name as a prefix, when given); a
+    // lambda is called opts.name, or `f`.
+    let name = ast.name ?? (opts?.name ?? "f")
+    shared.prefix = if opts?.name != nil then opts.name ++ "_" else "" end
+    let top = _context(E, shared, {
+      indent: 0, ret_ty: nil, captures: {}, uniform_prefix: "", hook: nil,
+      fn_name: nil, line: ast.line, column: ast.column,
+    })
+    let h = _helper(top, name, f, nil, "", if ast.name == nil then name else nil end)
+    let done = get es
+    if done.err != nil then
+      return _empty_result(done.err.message, done.err.line, done.err.column)
+    end
+    // The entry function is the last definition; everything before it is common.
+    let cut = _last_definition(done.common)
+    return {
+      error: nil, kind: "function", name: h.glsl,
+      code: join(slice(done.common, cut, len(done.common)), "\n"),
+      common: join(slice(done.common, 0, cut), "\n"),
+      signature: nil, params: {}, param_types: {},
+      uniform_names: done.uniforms, uniform_types: done.uniform_types,
+      taps: if h.taps_hidden then nil else h.taps end, taps_in_loop: false,
+    }
+  end
+
+  // A hook body: the first parameter is the host's `inout` struct, every
+  // other parameter is a uniform with a default, and the body's value is the
+  // new value of one field of the struct.
+  let self_name = env?.self ?? first.name
+  let result_field = env?.result
+  if result_field == nil || !_has(structs[first.type], result_field) then
+    return _empty_result("the environment must name the field the body's value is assigned to (env.result), a field of " ++
+      first.type, ast.line, ast.column)
+  end
+  let c = _context(E, shared, {
+    indent: 0, ret_ty: nil, captures: _captures_of(info), uniform_prefix: "",
+    hook: {target: self_name ++ "." ++ result_field, ty: structs[first.type][result_field]},
+    fn_name: nil, line: ast.line, column: ast.column,
+  })
+  let s = c.get()
+  s.used[first.name] = true
+  s.used[self_name] = true
+  let scope = s.scopes[0]
+  scope[first.name] = {glsl: self_name, ty: first.type}
+  let out_params = {}
+  let param_types = {}
+  for i in range(1, len(params)) do
+    let p = params[i]
+    let got = _param(c, p, info.params[i], nil)
+    if _failed(c) then
+      let e = get es
+      return _empty_result(e.err.message, e.err.line, e.err.column)
+    end
+    scope[p.name] = {glsl: shared.uniforms_struct ++ p.name, ty: got.ty}
+    out_params[p.name] = info.params[i].default
+    param_types[p.name] = got.ty
+  end
+  s.scopes[0] = scope
+  c.put(s)
+
+  let tail = _body(c, ast.body)
+  if tail != nil && !_failed(c) then
+    _emit(c, c.hook.target ++ " = " ++ _hook_result(c, tail.v, tail.node).code ++ ";")
+  end
+  let done = get es
+  if done.err != nil then
+    return _empty_result(done.err.message, done.err.line, done.err.column)
+  end
+  let fs = c.get()
+  let in_loop = false
+  for line in fs.lines do
+    if index_of(line, "for (") >= 0 || index_of(line, "while (") >= 0 then in_loop = true end
+  end
+  {
+    error: nil, kind: "hook", name: env?.entry ?? "apply",
+    code: join(fs.lines, "\n"), common: join(done.common, "\n"),
+    signature: "void " ++ (env?.entry ?? "apply") ++ "(inout " ++ first.type ++ " " ++ self_name ++ ")",
+    params: out_params, param_types: param_types,
+    uniform_names: done.uniforms, uniform_types: done.uniform_types,
+    taps: if fs.taps_hidden then nil else fs.taps end,
+    taps_in_loop: in_loop && fs.taps > 0,
+  }
+end
+
+// The index of the line that opens the last function definition in `lines`
+// (definitions start in column 0, their bodies are indented).
+fn _last_definition(lines)
+  let cut = 0
+  for i in range(0, len(lines)) do
+    let line = lines[i]
+    if line != "}" && !starts_with(line, " ") then cut = i end
+  end
+  cut
+end
+
+// --- Captures as of this run -----------------------------------------------
+
+// What the cached translation depends on besides the code (`key`: the values
+// that are written into the text, and the types of the ones that are not), and
+// the current value of every capture that can be a uniform (`values`).
+fn _live_captures(info, prefix, inline, depth)
+  let key = []
+  let values = {}
+  for cap in info.captures do
+    let v = cap.value
+    let t = type(v)
+    if t == "function" then
+      let inner = if depth < 6 then fn_info(v) else nil end
+      if inner != nil then
+        let sub = _live_captures(inner, cap.name ++ "_", inline, depth + 1)
+        key = concat(key, sub.key)
+        values = {...values, ...sub.values}
+      end
+    elsif t == "int" || t == "bool" || inline then
+      key = append(key, [prefix ++ cap.name, v])
+    else
+      key = append(key, [prefix ++ cap.name, t])
+      values[prefix ++ cap.name] = {value: v}
+    end
+  end
+  {key: key, values: values}
+end
+
+// --- The public surface ----------------------------------------------------
+
+// Translate the Petal function `f` to GLSL and return the parts a host needs:
+//
+//   error         nil, or {message, line, column} for code outside the subset
+//   kind          "hook" or "function"
+//   code          a hook: the statements of its body; a function: its definition
+//   common        the GLSL functions `code` calls (helpers), "" when none
+//   name          a function: its GLSL name; a hook: env.entry
+//   signature     a hook: "void <entry>(inout <Struct> <self>)"
+//   params        a hook: {name: default} for each parameter after the first
+//   param_types   {name: glsl type} for the same
+//   uniforms      {name: current value} for each captured float / vector /
+//                 color the code reads (they are uniforms, not constants)
+//   uniform_types {name: glsl type} for the same
+//   taps          how many times the functions named in env.count are called
+//                 (loops with constant bounds multiplied out), nil if unknown
+//   taps_in_loop  whether some of those calls sit in a loop
+//   code_hash     the function's code hash (what the cache is keyed on)
+//
+// `env` describes the shader side: {structs, functions, self, result,
+// uniforms, count, entry}. `opts`: {name, inline_captures}. Both are
+// documented in docs/petal-to-glsl.md.
+//
+// The translation is cached in keyed state per (code hash, structural
+// captures, environment, options), so calling this every frame is cheap: a
+// hit costs one `fn_info` per function involved and a state read.
+pub fn glsl_function(f, env = {}, opts = {})
+  if type(f) != "function" then
+    return {..._empty_result("to_glsl expects a function, got a " ++ type(f), nil, nil), uniforms: {}, code_hash: nil}
+  end
+  let info = fn_info(f)
+  if info == nil || info.code_hash == nil then
+    return {
+      ..._empty_result("to_glsl needs a Petal function with source (a lambda or a named fn), not a builtin, a constructor or an overloaded name", nil, nil),
+      uniforms: {}, code_hash: nil,
+    }
+  end
+  let live = _live_captures(info, "", opts?.inline_captures ?? false, 0)
+  state([info.code_hash, live.key, env, opts]) cached = _translate(f, info, env, opts)
+  let uniforms = {}
+  for name in cached.uniform_names do
+    let held = live.values?.[name]
+    if held != nil then uniforms[name] = held.value end
+  end
+  {...cached, uniforms: uniforms, code_hash: info.code_hash}
+end
+
+// The GLSL of `f` as one string: its helpers, then the function itself (a
+// hook body is wrapped in its signature). Code outside the subset gives a
+// `#error` line carrying the message and position, so the failure surfaces
+// where the shader is compiled; use `glsl_function` to get it as data.
+pub fn to_glsl(f, env = {}, opts = {})
+  let g = glsl_function(f, env, opts)
+  if g.error != nil then
+    return "#error to_glsl: " ++ glsl_error_text(g.error)
+  end
+  let body = if g.kind == "hook" then
+    g.signature ++ " \{\n" ++ join(for line in split(g.code, "\n") do "    " ++ line end, "\n") ++ "\n}"
+  else
+    g.code
+  end
+  if g.common == "" then body else g.common ++ "\n\n" ++ body end
+end
+
+// "message [line L, column C]" for an error record of `glsl_function`.
+pub fn glsl_error_text(err)
+  if err.line == nil then
+    err.message
+  else
+    err.message ++ " [line " ++ str(err.line) ++ ", column " ++ str(err.column) ++ "]"
+  end
+end

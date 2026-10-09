@@ -148,6 +148,14 @@ way, for code written against an earlier checkout.
   JSON, run with a step budget, and watch source files for changes.
 - `petal-c-bridge`: a C ABI and C++20 wrapper for embedding Petal, including
   native `vec3` across the boundary and source reading and editing by path.
+- Source edits keep the file's formatting. `Goal::should_set_path`,
+  `should_insert`, `should_append` and `should_remove` change one place inside
+  a binding's literal (`POST.effects[2].amount`), and `should_set_value`
+  rewrites only what differs: unchanged values keep their text and comments, a
+  changed number or color keeps its token's spelling habits, and new elements
+  are formatted like their siblings. The C bridge exposes them as
+  `pb_source_set_value`, `_insert`, `_append` and `_remove`, taking values as
+  JSON. See [docs/source-preservation.md](docs/source-preservation.md).
 - `petal-desktop-sdl`: an SDL2 desktop host with hot reload, antialiased
   drawing, audio, gamepads, procedural sound effects, and a debug protocol for
   agents (screenshots, typed input, state queries).
@@ -178,6 +186,11 @@ way, for code written against an earlier checkout.
 
 Breaking changes made during development, newest first:
 
+- A color literal reads as `StaticValue::Color`, not as an `{r, g, b}`
+  record, and `pb_source_bindings_json` writes it as `{"color": "#ff2e88"}`.
+  `Goal::should_set_value` on a list of calls in an existing binding indents
+  its elements from the binding's line (two spaces, closing bracket at the
+  margin) instead of four and two.
 - `petal run` no longer memoizes calls by default (its policy
   is `fast-memo`): a script that runs once has no later run to replay a
   record in. Output is unchanged; pass `--policy fast` for the old behavior.

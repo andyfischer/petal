@@ -64,14 +64,19 @@ module decides whether to insert or update in place.
 | Item | Purpose |
 |---|---|
 | `Goal::should_call(function, params)` | The source should contain a top-level `function(params...)` call. Updates the first existing call or appends one. |
-| `Goal::should_set_value(name, value)` | Reading `name` out of the source should yield `value`. Replaces the last top-level binding's right-hand side, or inserts `let name = value`. A goal that already holds writes nothing. |
+| `Goal::should_set_value(name, value)` | Reading `name` out of the source should yield `value`. Edits the last top-level binding's right-hand side in place (only what differs), or inserts `let name = value`. A goal that already holds writes nothing. |
+| `Goal::should_set_path(path, value)` | The value at a path inside a binding (`POST.effects[2].amount`) should read as `value`. |
+| `Goal::should_insert(path, value)` / `should_append` / `should_remove(path)` | Add or remove one list element or record field, in place, formatted like its siblings. |
 | `Goal::after(anchor)` / `Goal::before(anchor)` | Where a newly inserted statement goes. |
-| `StaticValue` | A structured value (`Str`/`Int`/`Float`/`Bool`/`Nil`/`List`/`Record`/`Call`) that always renders to well-formed Petal. |
+| `StaticValue` | A structured value (`Str`/`Int`/`Float`/`Bool`/`Nil`/`Color`/`List`/`Record`/`Call`) that always renders to well-formed Petal. |
 | `modify_source_with_goals(source, goals)` | Apply goals in order. `Ok(String)` is the rewritten source; `Err(GoalError)` a typed failure. |
 
 Goals compose (later goals see earlier insertions), and `Goal` is the place to
-add richer intents (ensure an import, remove a call, set a field).
-**Usage guide:** [goal-based-editing.md](goal-based-editing.md).
+add richer intents (ensure an import, remove a call).
+**Usage guide:** [goal-based-editing.md](goal-based-editing.md). How the value
+and path goals keep the file's formatting — minimal splices, and style
+captured from the surrounding literals for new text — is in
+[source-preservation.md](source-preservation.md).
 
 ### Reading values back (`core/src/static_value.rs`)
 
@@ -279,7 +284,8 @@ Code: [`execution_context.rs`](../core/src/execution_context.rs) and
 | Read a config value without running | yes | — | `static_value::get_static_value` / `static_values` |
 | Read a config file's bindings, comments and unreadable names | yes | — | `static_value::static_bindings` |
 | Set a config value (formatting-preserved) | — | yes | `Goal::should_set_value` |
-| Set one value inside a config record or list | — | yes | `rewrite::find_binding_path` + `splice_node`; `pb_source_set` in the C bridge |
+| Set one value inside a config record or list | — | yes | `Goal::should_set_path`; `pb_source_set_value` in the C bridge |
+| Insert or remove a list element or record field in place | — | yes | `Goal::should_insert` / `should_append` / `should_remove`; `pb_source_insert` / `_append` / `_remove` |
 | Rewrite source, formatting-preserved | — | yes | `goal_based_editing` over `rewrite.rs` |
 | Normalize source (optionally verified) | — | yes | `petal lint --fix [--verify]` |
 | Propose edits that change an emitted value | yes | proposals | `direct_manipulation::propose_edits`, `petal propose-edit` |

@@ -153,8 +153,11 @@ std::fs::write("config.ptl", updated)?;
 `value`) and the library decides how to get there:
 
 - **The name is bound:** the right-hand side of its last top-level binding is
-  replaced. The `let`, the name, comments, blank lines and every other
-  statement are untouched.
+  edited to read as the value. Only what differs is rewritten: inside a record
+  or list, unchanged fields and elements keep their text and comments, and new
+  ones are formatted like their siblings
+  ([source-preservation.md](source-preservation.md)). The `let`, the name,
+  comments, blank lines and every other statement are untouched.
 - **The name is not bound:** `let name = value` is inserted, at the end of the
   file or wherever a [placement](goal-based-editing.md#placement) says.
 - **The goal already holds:** nothing is written. The source comes back
@@ -162,10 +165,20 @@ std::fs::write("config.ptl", updated)?;
   that moved, and `let drag = 0.020000` does not become `let drag = 0.02` on a
   save that changed nothing about it.
 
-Because the *whole* right-hand side is replaced, a non-literal binding
-collapses to a literal: `let font_size = if wide_screen then 16 else 12 end`
+A binding that is not a literal of the new value's shape is replaced whole, so
+it collapses to a literal: `let font_size = if wide_screen then 16 else 12 end`
 becomes `let font_size = 14`. See
 [goal-based-editing.md](goal-based-editing.md#goalshould_set_valuename-value).
+
+To change one place inside a binding, or to add or remove one element of a
+list or one field of a record, use the
+[path goals](goal-based-editing.md#path-goals):
+
+```rust
+Goal::should_set_path("editor.tab_width", 8);
+Goal::should_append("recent", "c.rs");
+Goal::should_remove("recent[0]");
+```
 
 ---
 
@@ -180,6 +193,7 @@ The value type shared by both directions.
 | `Float` | `StaticValue::float(f)` / `1.0.into()` | `1.0` (always has a `.`) |
 | `Bool` | `StaticValue::bool(b)` / `true.into()` | `true` |
 | `Nil` | `StaticValue::nil()` | `nil` |
+| `Color` | `StaticValue::color(r, g, b)` / `color_alpha(r, g, b, a)` / `color_hex("#ff2e88")` | `#ff2e88` |
 | `List` | `StaticValue::list(items)` | `[1, 2, 3]` |
 | `Record` | `StaticValue::record(fields)` | `{ tab_width: 4 }` |
 | `Call` | `StaticValue::call(name, args)` | `rgb(255, 0, 0)` |
@@ -191,6 +205,16 @@ is deliberately no verbatim/raw-source variant.
 
 Record keys and call names are rendered **bare**, so they must be valid Petal
 identifiers; they are not validated against the grammar.
+
+A color literal (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`) reads as `Color`,
+with channels `0..=255` and `a` present only when the literal spells an alpha
+— not as the `{r, g, b}` record it becomes at run time — so writing it back
+gives a color literal. `to_source()` writes the long lowercase form; an edit
+of an existing literal keeps that literal's case and its short or long form.
+
+`petal::static_json` converts a `StaticValue` to and from JSON (`to_json`,
+`from_json`), for hosts in other languages; the format is described there and
+at `pb_source_bindings_json` in the C bridge header.
 
 ### Round-tripping
 
@@ -217,9 +241,10 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
   runs, and one declaration inside a function can be many live slots at once
   (one per [call path](language-guide.md#one-slot-per-call-path)). It reads as
   `NotStatic`.
-- **Writing flattens.** `should_set_value` replaces the whole right-hand side,
-  so a conditional binding loses its conditional, unless the goal already
-  holds, in which case nothing is written.
+- **Writing flattens what is not a literal.** `should_set_value` on a computed
+  binding replaces the whole right-hand side, so a conditional binding loses
+  its conditional, unless the goal already holds, in which case nothing is
+  written.
 - **Exact representability is the host's problem.** A consumer with a
   fixed-point grid or a bounded range rejects and rounds against its own
   arithmetic; Petal reads and writes the number it was given.
@@ -229,5 +254,7 @@ assert_eq!(get_static_value(&source, "accent")?, value);   // unchanged
 ## See also
 
 - [goal-based-editing.md](goal-based-editing.md) — the full editing API.
+- [source-preservation.md](source-preservation.md) — how an edit keeps the
+  file's formatting.
 - [program-modification.md](program-modification.md) — every way a Petal
   program can be modified programmatically.

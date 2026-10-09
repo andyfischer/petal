@@ -9,7 +9,9 @@ Comments, blank lines and everything else in the file stay as they were.
 - **Module:** [`core/src/goal_based_editing.rs`](../core/src/goal_based_editing.rs)
   (`petal::goal_based_editing`)
 - **Built on:** the lossless CST splice primitives in
-  [`core/src/rewrite.rs`](../core/src/rewrite.rs)
+  [`core/src/rewrite.rs`](../core/src/rewrite.rs), and the style-preserving
+  literal edits in [`core/src/literal_edit.rs`](../core/src/literal_edit.rs)
+  ([source-preservation.md](source-preservation.md))
 - **Reading values back out:** [config-files.md](config-files.md)
 
 ---
@@ -50,7 +52,8 @@ implements `Display` and `std::error::Error`, so it works with `?` in any
 
 ### `Goal`
 
-The intent. There are two kinds.
+The intent: a call (`should_call`), a binding's value (`should_set_value`), or
+a place inside a binding's literal (the [path goals](#path-goals)).
 
 #### `Goal::should_call(function, params)`
 
@@ -77,8 +80,8 @@ Goal::should_call("clear", Vec::<StaticValue>::new()); // clear()
 This is the write half of [Petal as a configuration format](config-files.md).
 
 - If `name` is bound at top level, the **right-hand side of its last binding**
-  is replaced. The last binding is the one that decides the program's value.
-  Both `let name = …` and a bare `name = …` count.
+  is edited to read as `value`. The last binding is the one that decides the
+  program's value. Both `let name = …` and a bare `name = …` count.
 - If `name` is not bound at top level, `let name = value` is **inserted**, at
   the end of the file or wherever a [placement](#placement) says.
 - If reading `name` already yields `value`, **nothing is written** and the
@@ -100,13 +103,17 @@ let font_size = 12 // points  →    let font_size = 14 // points
 let other = 1                      let other = 1
 ```
 
-Two things to know:
+Three things to know:
 
-- **The whole right-hand side is replaced.** A binding that is not a literal
-  today becomes one: `let font_size = if wide then 16 else 12 end` collapses
-  to `let font_size = 14`. The edit is blunt, but the goal holds by
-  construction. (A finer edit, such as changing only the branch that is taken,
-  would go in `ensure_binding`.)
+- **Only what differs is rewritten.** A record or list literal is edited in
+  place: unchanged fields and elements keep their text and comments, a changed
+  scalar is one token, and added or removed elements are inserted and removed
+  individually, formatted like their siblings. See
+  [source-preservation.md](source-preservation.md).
+- **A right-hand side that is not a literal of the new value's shape is
+  replaced whole.** A binding that is not a literal today becomes one:
+  `let font_size = if wide then 16 else 12 end` collapses to
+  `let font_size = 14`. The edit is blunt, but the goal holds by construction.
 - **Only top-level bindings count.** A binding inside a function body belongs
   to that body, so the goal appends a new top-level binding instead of editing
   it.
@@ -125,6 +132,52 @@ let drag_axial = 0.020001    →    let drag_axial = 0.02       (changed: differ
 The comparison is exact and on the value: an `Int` never equals a `Float` of
 the same magnitude, and a binding that cannot be read statically never compares
 equal, so it is collapsed to the literal.
+
+### Path goals
+
+A path names a place inside a binding's literal: a top-level name, then
+`.field` steps into record literals and `[index]` steps into list literals or
+the arguments of a call (`vec3(0.3, -1.0, 0.5)`).
+
+```rust
+Goal::should_set_path("POST.effects[2].amount", 0.7);        // one number
+Goal::should_set_path("POST.tint", StaticValue::color(0x29, 0xd9, 0xff));
+Goal::should_insert("POST.effects[0]", effect);              // new first element
+Goal::should_append("POST.effects", effect);                 // new last element
+Goal::should_insert("POST.bloom", 0.4).after("exposure");    // new field, placed
+Goal::should_remove("POST.effects[1]");
+Goal::should_remove("POST.bloom");
+```
+
+| Goal | Outcome |
+|---|---|
+| `should_set_path(path, value)` | The value at `path` reads as `value`. Only what differs is rewritten; a value that already holds writes nothing. A record field that does not exist yet is added at the end of its record. |
+| `should_insert(path, value)` | `value` becomes the element or field `path` names: `xs[1]` inserts before the current element 1 (an index equal to the length appends), `rec.key` adds a field at the end, or next to a sibling with `.after(key)` / `.before(key)`. A field that already exists is set instead. |
+| `should_append(path, value)` | `value` becomes the last element of the list (or call arguments) at `path`. |
+| `should_remove(path)` | The element or field at `path` is gone. A field that is already absent satisfies the goal. |
+
+These edit the literal where it stands, so comments and formatting inside a
+list whose shape changes survive:
+
+```text
+before                                   after should_remove("fx[0]"), should_append("fx", …)
+──────────────────────────────────       ──────────────────────────────────
+let fx = [                               let fx = [
+  {effect: "lens_dirt", amount: 0.5},      // grain goes last
+  // grain goes last                 →     {effect: "grain", amount: 0.30},
+  {effect: "grain", amount: 0.30},         {effect: "crt", amount: 0.2},
+]                                        ]
+```
+
+New text copies the formatting of its siblings (one line or several, padding,
+separators, trailing comma, indentation); a changed number or color keeps the
+spelling habits of the token it replaces. The rules, and what the edits
+guarantee, are in [source-preservation.md](source-preservation.md).
+
+A path that names nothing (`POST.effects[7].amount`, a field of a number, a
+step through a computed value) is an error, as is an edit that would leave
+source that does not parse (a record key that is not an identifier). The
+source is returned only when every goal succeeded.
 
 ### Placement
 
@@ -176,6 +229,8 @@ if a case is genuinely missing.
 
 - [config-files.md](config-files.md) — reading values out of a `.ptl` file, and
   the round-trip contract.
+- [source-preservation.md](source-preservation.md) — how an edit keeps the
+  file's formatting, and the guarantees it makes.
 - [program-modification.md](program-modification.md) — every way a Petal
   program can be modified programmatically.
 - [direct-manipulation.md](direct-manipulation.md) — goals about *emitted*

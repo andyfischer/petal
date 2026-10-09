@@ -516,11 +516,22 @@ petal::Source src(read_file("games/neon/config.ptl"));
 // it, the right-hand side as written, and its static value.
 std::optional<std::string> bindings = src.bindings_json();
 
-// Change one value where it is written. Nothing else in the file moves.
-src.set("POST.exposure", "1.2");
-src.set("POST.effects[2].amount", "0.35");
-src.set("MOON_DIR[1]", "-0.8");              // into a call's arguments: vec3(…, -0.8, …)
-src.set("NEON_PINK", "#ff2e88");
+// Change values where they are written. Nothing else in the file moves.
+// Values are JSON, in the format bindings_json() writes.
+src.set_value("POST.exposure", "1.2");
+src.set_value("POST.effects[2].amount", "0.35");
+src.set_value("MOON_DIR[1]", "-0.8");        // into a call's arguments: vec3(…, -0.8, …)
+src.set_value("NEON_PINK", R"({"color": "#ff2e88"})");
+src.set_value("DROPS", R"({"int": 500})");
+
+// Change the shape of a list or record, in place.
+src.append("POST.effects", R"({"rec": {"effect": "halftone", "amount": 0.7}})");
+src.insert("POST.effects[0]", R"({"rec": {"effect": "crt"}})");
+src.remove("POST.effects[1]");
+src.insert("POST.bloom", "0.4", "tint");     // a new field, before `tint`
+
+// Or hand over a whole value: only what differs from the file is rewritten.
+src.set_value("POST", post_as_json);
 write_file("games/neon/config.ptl", src.text());
 ```
 
@@ -528,20 +539,38 @@ write_file("games/neon/config.ptl", src.text());
   literals and `[index]` steps into list literals or call arguments. The name
   alone is the binding's whole right-hand side. A path can only see literals:
   it stops (`PB_ERR_NOT_FOUND`) at a name, a spread or a computed value.
-- `set` takes Petal source for exactly one expression and replaces exactly the
-  expression the path names, through the lossless tree
-  ([`petal::rewrite`](program-modification.md#formatting-preserving-tree-splices-coresrcrewriters)):
-  comments inside a multi-line record, alignment and the spelling of the
-  neighbouring values all survive. Setting a value to the text it already has
-  changes nothing, so a save that writes every field produces no diff.
+- **The value edits** — `set_value`, `insert`, `append`, `remove` — take a
+  value as JSON and edit the literal in place
+  ([source-preservation.md](source-preservation.md)):
+  - What already reads as the new value is not touched, so a save that writes
+    back every field, or a whole record, produces no diff beyond what changed.
+    Comments inside a multi-line record or list, alignment and the spelling of
+    the neighbouring values all survive, also when elements are added, removed
+    or reordered.
+  - A changed number or color keeps the old token's habits: `3.50` set to 4.0
+    is written `4.00`, `#F80` set to `#00ff88` is written `#0F8`. Int against
+    float is the value's say: `{"int": 2}` writes `2`, a bare `2` writes `2.0`.
+  - New elements and fields are formatted like their siblings — one line or
+    several, padding, separators, trailing comma, indentation — or like the
+    rest of the file when the container is empty.
+  - `set_value` on a record field that does not exist adds it. `insert` on a
+    field that exists sets it. `remove` of a field that is not there succeeds.
+- `set(path, text)` is the lower-level form: it takes Petal source for exactly
+  one expression and replaces exactly the expression the path names with that
+  text, for a host that wants to decide the spelling itself. Setting a value
+  to the text it already has changes nothing.
 - `bindings_json()` is [`static_bindings`](config-files.md) as JSON (the
   format is documented at `pb_source_bindings_json` in `petal_bridge.h`).
   Bindings written `config let` carry `"config": true`: those are the knobs
-  the author declared, and the ones an editor should offer. `expr(path)`
-  returns one expression as written, for showing `#ff2e88` rather than
-  `{r: 255, g: 46, b: 136}`.
-- A failed call returns false (`set`) or `nullopt` and leaves the text as it
-  was; `error()` says why. A `Source` is independent of any `Vm`.
+  the author declared, and the ones an editor should offer. Values are JSON:
+  floats are numbers, strings strings, lists arrays, `nil` is `null`, and the
+  rest are tagged — `{"int": 3}`, `{"rec": {"key": value}}` (keys in source
+  order), `{"call": "vec3", "args": [...]}` and `{"color": "#ff2e88"}`. A
+  color is always `#rrggbb` or `#rrggbbaa` in lowercase there; `expr(path)`
+  returns an expression as written (`#F80`, `0.020000`).
+- A failed call returns false (the edits) or `nullopt` and leaves the text as
+  it was; `error()` says why. The text is never left unparseable. A `Source`
+  is independent of any `Vm`.
 
 ## Modules and packages
 

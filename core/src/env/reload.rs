@@ -50,11 +50,13 @@ use crate::source_map::{FileId, SourceSpan};
 /// How a reload was carried out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReloadOutcome {
-    /// No source file's text changed. Nothing was touched.
+    /// No source file's text changed. Nothing was touched, beyond leaving
+    /// the stack ready to run from the top (as every reload does).
     Unchanged,
     /// Only whitespace, comments or layout changed. The program's recorded
     /// source text and positions were updated; nothing was recompiled, no
-    /// state, closure or memo record was dropped.
+    /// state, closure or memo record was dropped. The stack is left ready to
+    /// run from the top.
     Relocated,
     /// Only literal values changed. They were written into the running
     /// program; nothing was recompiled.
@@ -340,6 +342,7 @@ impl Env {
         let summary = change.summary();
         let changed_files: Vec<String> = change.files.iter().map(|f| f.name.clone()).collect();
         if change.files.is_empty() {
+            self.rewind(stack_id);
             return Ok(ReloadReport {
                 outcome: ReloadOutcome::Unchanged,
                 change: summary,
@@ -394,6 +397,7 @@ impl Env {
         }
 
         if !patched {
+            self.rewind(stack_id);
             return Ok(ReloadReport {
                 outcome: ReloadOutcome::Relocated,
                 change: summary,
@@ -429,6 +433,17 @@ impl Env {
             state_dropped: result.state_dropped,
             fallback: None,
         })
+    }
+
+    /// Leave the stack ready to run from the top, which is how every reload
+    /// leaves it: a host may `run` straight after reloading, without a
+    /// `reset_stack` in between, and must get a run. This rewinds execution
+    /// only; `state`, closures, memo records and the frame gate's verdict are
+    /// untouched.
+    fn rewind(&mut self, stack_id: StackKey) {
+        if let Some(stack) = self.stacks.get_mut(&stack_id) {
+            stack.reset_execution();
+        }
     }
 
     /// Set one value of a top-level binding *now*, without the file changing

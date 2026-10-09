@@ -35,6 +35,12 @@ struct World {
 /// One frame the way a host drives it: reset, run, collect.
 fn frame(w: &mut World) -> String {
     w.env.reset_stack(w.sid).unwrap();
+    run_frame(w)
+}
+
+/// A run with no reset before it: what a host that reloads and runs straight
+/// away does. Every reload leaves the stack ready for this.
+fn run_frame(w: &mut World) -> String {
     let result = match w.env.run(w.sid) {
         Ok(v) => format!("ok {}", petal::value::value_to_display_string(&v, w.env.heap())),
         Err(e) => format!("error {e}"),
@@ -158,6 +164,10 @@ impl<'a> Case<'a> {
             }
 
             assert_same_program(&mut a, &mut b, &what);
+            // The first run after a reload needs no reset, whichever path the
+            // reload took.
+            let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+            assert_eq!(fa, fb, "[{what}] the run straight after the reload");
             for i in 0..AFTER {
                 let (fa, fb) = (frame(&mut a), frame(&mut b));
                 assert_eq!(fa, fb, "[{what}] frame {i} after the reload");
@@ -516,7 +526,9 @@ fn an_unchanged_source_is_a_no_op() {
     assert_eq!(report.outcome, ReloadOutcome::Unchanged);
     assert_eq!(report.change, SourceChange::None);
     assert_eq!(w.env.work_counters(), before);
-    assert!(frame(&mut w).starts_with("3\n"));
+    // Like any reload it leaves the stack ready to run: no reset needed.
+    assert!(run_frame(&mut w).starts_with("3\n"));
+    assert!(frame(&mut w).starts_with("4\n"));
 }
 
 /// The config-only path compiles nothing and lowers nothing, and neither

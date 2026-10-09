@@ -140,7 +140,12 @@ do.
 
 ### State-preserving hot reload (`transfer_state`)
 
-The primitive is `Env::transfer_state`
+A host calls `Env::reload_program`, which recompiles only when the edit needs
+it: a layout edit moves source positions and an edit of literal values is
+written into the running program, both without compiling
+([hot-reload.md](hot-reload.md)). For every other edit, and as the definition
+of what those two must be equivalent to, the primitive is
+`Env::transfer_state`
 ([`core/src/transfer_state.rs`](../core/src/transfer_state.rs)): reshape a
 running stack onto a freshly compiled `Program`, keeping matching state values.
 

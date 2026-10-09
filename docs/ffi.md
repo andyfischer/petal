@@ -49,7 +49,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Observation | `observations_mut().enable()`, `get_observations_json` — the last value bound to every named term (see [embedding-guide.md](embedding-guide.md#reading-arbitrary-named-values-observation)) |
 | Emit tracing | `enable_emit_trace`, `take_output_origins` (see [direct-manipulation.md](direct-manipulation.md)) |
 | Speculation | `fork_execution`, `run_speculative`, `drop_fork` |
-| Hot reload | `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` |
+| Hot reload | `reload_program`, `set_config_value`, `diff_program`, `module_manifest`, `program_source_paths`, `watch_program_sources` (→ `source_watch::SourceWatch`), `transfer_state` |
 
 `run_bounded` returns `RunOutcome::Done | Yielded`, so a 60fps host can slice a
 long computation across frames. `call_function(stack, "name", args)` calls a
@@ -364,6 +364,17 @@ both, put it in a top-level `state var` and read it with `get`.
 from (name, filesystem origin, content hash). petal-sdl's file watcher watches
 those directories, so editing an imported module reloads its importer. On
 change:
+
+```rust
+let report = env.reload_program(stack, &source, Some(&path))?;
+// report.outcome: Unchanged | Relocated | Patched | Recompiled
+```
+
+`reload_program` diffs each source file against what the program was compiled
+from and takes the cheapest exact path: a layout edit only moves source
+positions, a value edit is written into the running program, and anything else
+is the recompile below ([hot-reload.md](hot-reload.md)). The recompile, which a
+host can also call directly, is:
 
 ```rust
 let new_program = env.compile_program_at(pid, &source, &path)?;

@@ -465,7 +465,8 @@ env.register_package("bloom", modules)?;           // the same, from in-memory s
 env.packages();                                    // every registered package
 env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
 env.load_program_at(&source, &path)?;              // entry file, with importer-relative resolution
-env.compile_program_at(pid, &source, &path)?;      // hot-reload recompile
+env.reload_program(stack, &source, Some(&path))?;  // hot reload: every source file diffed, the cheapest exact path taken
+env.compile_program_at(pid, &source, &path)?;      // the recompile on its own
 env.module_manifest(pid);                          // every source file: name, origin, content hash
 ```
 

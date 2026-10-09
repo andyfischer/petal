@@ -31,6 +31,7 @@ How to build on Petal from a host program, a tool, or an agent:
 | [FFI / Embedding](ffi.md) | Embedding Petal in a Rust host: native functions, values, host channels |
 | [Embedding Guide](embedding-guide.md) | Patterns for hosts: observing calls, reading named values, feeding inputs, per-run ids |
 | [Embedding from C/C++](embedding-c.md) | The petal-c-bridge C ABI and C++ wrapper: frame contract, values, host natives, petal-ui, scenarios, hot reload |
+| [Hot Reload](hot-reload.md) | Reloading a running program: what each kind of edit costs, setting a config value live, and why the result equals a recompile |
 | [Program Modification](program-modification.md) | Editing programs from code, both source text and running state |
 | [Goal-Based Editing](goal-based-editing.md) | Formatting-preserving source edits described as goals |
 | [Source Preservation](source-preservation.md) | How an edit of a literal keeps the file's formatting: minimal splices and captured style |

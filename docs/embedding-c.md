@@ -451,7 +451,7 @@ vm.load_file("games/marble/game.ptl");
 if (vm.sources_changed()) {                 // stat() of every source file
     auto edited = vm.changed_sources();     // which ones, e.g. {".../tuning.ptl"}
     try {
-        auto r = vm.reload();               // recompile + transfer_state
+        auto r = vm.reload();               // only the work the edit calls for
         log("reloaded {}: kept {} state slots, dropped {}", edited, r.state_preserved, r.state_dropped);
     } catch (const petal::Error& e) {
         overlay.show(e);                    // old program keeps running
@@ -491,15 +491,65 @@ if (vm.sources_changed()) {                 // stat() of every source file
       try { vm.reload(); } catch (const petal::Error& e) { overlay.show(e); }
   }
   ```
-- `reload()` re-reads the entry file (imports are re-resolved and re-read
-  too), compiles it once with `Env::compile_program_diag` (so a compile error
-  arrives with its structured diagnostics), and calls Petal's
-  `transfer_state`: state whose declaration
-  still exists is kept (matched by name path, so reordering is fine; renaming
-  drops it). `state_preserved` also counts the `ui` prelude's internal state
-  slots.
-- `reload_source(text)` does the same from memory (editors, tests).
+- `reload()` re-reads the entry file and its modules and calls
+  `Env::reload_program`, which does only the work the edit calls for
+  ([hot-reload.md](hot-reload.md)):
+
+  | The edit | `r.kind` | What happens |
+  |---|---|---|
+  | nothing | `PB_RELOAD_UNCHANGED` | nothing |
+  | whitespace, comments, layout | `PB_RELOAD_RELOCATED` | source positions move |
+  | literal values, each keeping its type | `PB_RELOAD_PATCHED` | the values are written into the running program |
+  | anything else | `PB_RELOAD_RECOMPILED` | recompile, then `transfer_state` |
+
+  The first three compile nothing: a value edit in a 10,000-line game takes
+  under a millisecond. Whichever path is taken, the program and its state
+  afterwards are what the full recompile would have left, and a compile error
+  arrives with its structured diagnostics while the old program keeps running.
+  After a recompile, state whose declaration still exists is kept (matched by
+  name path, so reordering is fine; renaming drops it). `state_preserved` also
+  counts the `ui` prelude's internal state slots.
+- `last_reload_json()` (`pb_vm_last_reload_json`) describes the last reload:
+  the outcome, the files that changed, each literal that changed with its
+  binding path (`{"path": "POST.bloom", "old": 0.2, "new": 0.4}`), or the
+  top-level constructs that differ (`{"kind": "fn", "name": "draw", "edit":
+  "changed"}`). The format is in `petal_bridge.h`.
+- `reload_source(text)` does the same with new text for the entry file
+  (editors, tests).
 - A new program sees natives registered since the original load.
+
+### Setting a value without writing the file
+
+A slider drag should not write a file every frame. `set_config`
+(`pb_vm_set_config`) sets one value of a top-level binding in the running
+program directly:
+
+```cpp
+// while dragging
+if (!vm.set_config("POST.effects[2].amount", "0.35")) {
+    // a different type or shape: write the file and reload instead
+}
+// on release: the running text is the file with every edit applied
+write_file(config_path, vm.source_text(config_path));
+vm.reload();                                // PB_RELOAD_UNCHANGED: nothing to do
+```
+
+- The path and the JSON are those of `pb_source_set_value` (below): a bare
+  number is a float, an integer is `{"int": 3}`. An optional third argument
+  names the source file; without it the bridge finds the one file that binds
+  the name at its top level.
+- The edit is made to the text the running program holds for that file, the
+  way `pb_source_set_value` would make it (comments and layout kept), and is
+  taken up without recompiling. The program afterwards is exactly what
+  reloading that edited file would give.
+- `source_text(file)` (`pb_vm_source_text`) returns that text. Writing it on
+  release makes the following reload a no-op; reloading without writing it
+  abandons the drag and brings the file's own values back.
+- It returns `false` (`PB_ERR_NEEDS_RELOAD`) and changes nothing when the
+  value has a different type or shape from the one written: an integer
+  literal given `0.5`, a list of another length, a field that is not there.
+- Like a reload, a successful call ends the lifetime of the last run's views,
+  and the program's functions are callable again after the next `run()`.
 
 ## Editing source: a script as a config file
 

@@ -339,6 +339,12 @@ to render a slider per knob. `config` is contextual (only special immediately
 before `let`), so it remains usable as an ordinary name, and it composes with
 `pub` as `pub config let`. A mutable `var` cell cannot be `config`.
 
+A live-editing host can change a config value without recompiling the
+program ([hot-reload.md](hot-reload.md)). To make that hold for a drag across
+zero, a negated number written as data in a `config let` (`-0.5`, also inside
+its lists, records and call arguments) is one constant rather than a negation
+of one. The value is the same either way.
+
 ## Types
 
 Petal has the following value types:

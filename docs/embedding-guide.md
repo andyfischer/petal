@@ -402,20 +402,27 @@ whenever the host side is plain data rather than a callback.
 
 ### Hot reload
 
-Recompile into the same program id and move live state across:
+Bring the running program up to date with its source files:
 
 ```rust
 let mut watch = env.watch_program_sources(pid, Some(&entry));
 // each frame:
 if watch.changed() {
     let source = std::fs::read_to_string(&entry)?;
-    match env.compile_program_diag(pid, &source, Some(&entry)) {
-        Ok(program) => { env.transfer_state(stack, program)?; }
+    match env.reload_program(stack, &source, Some(&entry)) {
+        Ok(report) => log!("reload: {}", report.outcome.label()),
         Err(e) => show_diagnostics(e.phase, &e.items), // old program keeps running
     }
     watch = env.watch_program_sources(pid, Some(&entry));
 }
 ```
+
+`reload_program` does only the work the edit calls for: a whitespace or
+comment edit moves source positions, an edit of literal values writes them
+into the running program, and anything else recompiles into the same program
+id and moves live state across with `transfer_state`. The result is the same
+on every path. [hot-reload.md](hot-reload.md) has the rules, and
+`Env::set_config_value` for changing a value without writing the file.
 
 The watch covers the entry file and every imported module that came from
 disk, so editing a helper module reloads the scripts that import it. Take a

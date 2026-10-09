@@ -71,11 +71,12 @@ when reading it:
   takes microseconds is unaffected; one that takes tens of nanoseconds reads as
   mostly overhead, and should be judged by its instruction count.
 - `ms to lower` in the header is the optimizer's own cost, paid once per
-  program. It is usually well under a millisecond, but it is not always small:
-  the physics playground's solver takes ~48 ms to lower optimized against
-  0.45 ms unoptimized, which is more than the optimizer saves over a
-  120-frame run of it. A console script that runs once pays that; a host that
-  keeps the program loaded does not.
+  program and again on each hot reload that recompiles. It is usually well
+  under a millisecond, but grows with the program: the physics playground's
+  solver (`physics.ptl`) takes 2.8 ms to lower optimized against 0.18 ms
+  unoptimized, and a 10,000-line game 69 ms. Those were 19 ms and 225 ms
+  while copy propagation solved its dataflow per instruction; see
+  [Lowering cost](#lowering-cost).
 
 `bench` runs core-host scripts, like `petal run`. For a library used by a
 panel, write a console driver that imports it and calls the function in a
@@ -104,6 +105,55 @@ Every difference is inside the run-to-run noise (about 1%).
 For the specific question "did the optimizer help", `PETAL_OPT_STATS=1` reports
 what it did to the program, and `PETAL_POLICY=baseline` (or `--policy
 baseline`, or `--no-opt`) gives the unoptimized baseline for a same-binary A/B.
+
+## Lowering cost
+
+Lowering a program to bytecode runs the optimizer passes, and a hot reload
+that recompiles pays for it before the next frame. `examples/reload_timing.rs`
+in `core/` times it on a real program (and each reload path with it):
+
+```bash
+cd core && cargo run --release --example reload_timing -- path/to/game.ptl
+```
+
+On a 10,346-line game (62,733 terms, 14 files), release build:
+
+| Lowered with | Time |
+|---|---|
+| no passes | 3.5 ms |
+| escape analysis only (`in_place_mutation`) | 24 ms |
+| last-use rewriting only (`in_place_straight_line`) | 19 ms |
+| the cell plan only (`in_place_cells`) | 8 ms |
+| copy propagation only | 29 ms (was 175 ms) |
+| all passes | 69 ms (was 225 ms) |
+
+A program's top level is a single
+function, tens of thousands of instructions long in a script this size, so a
+pass must be close to linear in a function's length. Copy propagation was not:
+it kept a hash map of copy facts per instruction, and straight-line code
+accumulates a fact per `Move`. It now solves available copies and liveness per
+basic block over bit sets and replays each block once
+(`core/src/backend/bytecode/copyprop.rs`). The per-instruction solver is kept
+in that file's tests as the oracle; `cargo test --release --lib copyprop --
+--ignored` compares the two on every `.ptl` file in the repository.
+
+The change does not alter the code produced. Measured as whole-process
+`petal run --seed 1` wall time, minimum of 15 alternating runs, before and
+after the hot-reload work (which also added the constant slots a value edit
+writes through):
+
+| Program | Before | After |
+|---|---|---|
+| `test/benchmarks/append.ptl` | 5.2 ms | 5.2 ms |
+| `test/benchmarks/arith.ptl` | 10.8 ms | 10.7 ms |
+| `test/benchmarks/audio_synth.ptl` | 104.2 ms | 102.7 ms |
+| `test/benchmarks/calls.ptl` | 27.1 ms | 27.2 ms |
+| `test/benchmarks/life.ptl` | 13.4 ms | 13.0 ms |
+| `test/benchmarks/particles.ptl` | 9.4 ms | 9.4 ms |
+| `test/benchmarks/spreadsheet.ptl` | 203.3 ms | 201.4 ms |
+
+`petal bench test/benchmarks/spreadsheet.ptl --fn evaluate` reports
+20,449,661 instructions a run on both, and 2.8 ms to lower against 5.4 ms.
 
 ## What a program costs
 

@@ -61,6 +61,20 @@ way, for code written against an earlier checkout.
   (loop accumulators, `state`-backed containers, `var` cells).
 - A generational heap with a mark-and-sweep collector paced by bytes allocated.
 - Hot reload: recompile a running program and carry its `state` over.
+- Hot reload does only the work an edit calls for. `Env::reload_program` diffs
+  each source file's syntax tree against what the program was compiled from:
+  a whitespace or comment edit only moves source positions, an edit of literal
+  values (`0.35` to `0.4`, also inside records, lists and function bodies)
+  writes the constants into the running program, and anything else recompiles
+  and transfers state as before. The result is the same on every path, which
+  `core/tests/hot_reload.rs` checks against a full recompile. On a
+  10,000-line game a value edit takes 0.8 ms where the recompile took 300 ms.
+  `Env::set_config_value` sets one value by binding path without the file
+  changing. See [docs/hot-reload.md](docs/hot-reload.md).
+- A recompile is about 2.7 times cheaper on a large program (300 ms to 110 ms
+  on the same game): copy propagation solves per basic block over bit sets
+  instead of per instruction over hash maps, and a reload re-parses only the
+  files whose text changed.
 - Forked and speculative execution: run an isolated copy of a program side by
   side, with a step budget.
 - The frame gate skips a frame whose inputs did not change, and memoized scopes
@@ -156,6 +170,12 @@ way, for code written against an earlier checkout.
   are formatted like their siblings. The C bridge exposes them as
   `pb_source_set_value`, `_insert`, `_append` and `_remove`, taking values as
   JSON. See [docs/source-preservation.md](docs/source-preservation.md).
+- `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
+  recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
+  what a reload did. `pb_vm_set_config` sets one config value in the running
+  program without a file write (`PB_ERR_NEEDS_RELOAD` when the type or shape
+  differs), and `pb_vm_source_text` returns the running text to write when a
+  drag ends.
 - `petal-desktop-sdl`: an SDL2 desktop host with hot reload, antialiased
   drawing, audio, gamepads, procedural sound effects, and a debug protocol for
   agents (screenshots, typed input, state queries).

@@ -123,6 +123,38 @@ fn a_script_measures_the_metrics_its_host_published() {
 }
 
 #[test]
+fn a_bold_variant_reports_a_published_baseline_not_the_built_in_guess() {
+    // `{font: "ui", weight: 700}` resolves to the `ui@700` entry. Published
+    // with advances alone, that entry used to carry the built-in proportions
+    // (a baseline 0.8 x the size) beside a regular cut measured at 1.05, so a
+    // name in bold and a timestamp in regular could not share a baseline.
+    let src = "let regular = text_metrics({size: 20, font: \"ui\"}).baseline\n\
+               let bold = text_metrics({size: 20, font: \"ui\", weight: 700}).baseline\n";
+    let host = |measured: Option<VerticalMetrics>| {
+        let mut host = PanelHost::from_source("text-layout-test", src).expect("compiles");
+        host.set_dimensions(W, H);
+        let ratios = vec![0.55f64; 128];
+        host.set_font_metrics_with_ui(ratios.clone(), PROBE_FACE, ratios, PROBE_FACE);
+        match measured {
+            Some(v) => host.set_font_variant_metrics("ui", 700, false, vec![0.6; 128], v),
+            None => host.set_font_variant_ratios("ui", 700, false, vec![0.6; 128]),
+        }
+        host.frame(1.0 / 60.0, 0).expect("frame");
+        Ui { host }
+    };
+
+    // Advances only: the variant sits where its family's regular cut does.
+    let ui = host(None);
+    assert!((ui.float("regular") - 21.0).abs() < 0.001);
+    assert!((ui.float("bold") - 21.0).abs() < 0.001, "got {}", ui.float("bold"));
+
+    // Measured: the variant's own numbers win.
+    let ui = host(Some(VerticalMetrics { baseline: 1.1, ..PROBE_FACE }));
+    assert!((ui.float("regular") - 21.0).abs() < 0.001);
+    assert!((ui.float("bold") - 22.0).abs() < 0.001, "got {}", ui.float("bold"));
+}
+
+#[test]
 fn a_host_that_publishes_nothing_still_answers() {
     // A bare PanelHost has bound no face. That is a supported state — an
     // embedder may have no measurements to give — and a script must get usable

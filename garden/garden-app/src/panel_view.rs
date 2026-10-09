@@ -72,6 +72,13 @@ fn measured_ui_vertical() -> petal_ui::draw::VerticalMetrics {
     *V.get_or_init(|| vertical_of(garden_render::ui_vertical_ratios()))
 }
 
+/// [`measured_ui_vertical`] for Inter Bold: `text_metrics` for a
+/// `{font: "ui", weight: 700}` style has to describe the cut that is drawn.
+fn measured_ui_bold_vertical() -> petal_ui::draw::VerticalMetrics {
+    static V: std::sync::OnceLock<petal_ui::draw::VerticalMetrics> = std::sync::OnceLock::new();
+    *V.get_or_init(|| vertical_of(garden_render::ui_bold_vertical_ratios()))
+}
+
 /// The renderer's measurement in the shape petal-ui publishes it in.
 fn vertical_of(r: garden_render::VerticalRatios) -> petal_ui::draw::VerticalMetrics {
     petal_ui::draw::VerticalMetrics {
@@ -221,7 +228,13 @@ fn adopt_font(host: &mut PanelHost) {
     );
     // Inter Bold is a real, wider cut, so `{font: "ui", weight: 700}` has to
     // measure it rather than the regular table.
-    host.set_font_variant_ratios("ui", 700, false, measured_ui_bold_advance_ratios().to_vec());
+    host.set_font_variant_metrics(
+        "ui",
+        700,
+        false,
+        measured_ui_bold_advance_ratios().to_vec(),
+        measured_ui_bold_vertical(),
+    );
     // …and the lazy half: any *other* family this machine has, resolved and
     // measured only when a script names one.
     host.set_font_source(Box::new(SystemFonts));

@@ -396,6 +396,18 @@ pub fn ui_vertical_ratios() -> VerticalRatios {
     text::measure_embedded_vertical(fonts::FontId::UI, REGULAR_WEIGHT)
 }
 
+/// [`VerticalRatios`] for Inter **Bold**, the cut a `font: "ui"` run at
+/// `weight >= 600` is shaped with.
+///
+/// A host has to publish this with [`ui_bold_ascii_advance_ratios`]. A variant
+/// published with advances alone used to answer `text_metrics` from a generic
+/// UI-sans guess (a baseline 0.8 x the size, where this renderer puts it about
+/// 1.06 x the size below `y`), so a bold run placed by its reported baseline
+/// landed a quarter of its size too high.
+pub fn ui_bold_vertical_ratios() -> VerticalRatios {
+    text::measure_embedded_vertical(fonts::FontId::UI, 700)
+}
+
 /// Advance ratio for a codepoint outside a face's measured table — the same
 /// monospace estimate `garden-script` falls back to, so a measurement here and
 /// a script's `text_width` stay in step off the table too.

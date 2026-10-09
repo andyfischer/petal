@@ -1435,13 +1435,55 @@ impl PanelHost {
         italic: bool,
         ratios: Vec<f64>,
     ) {
-        let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
+        // With no measurement of its own the variant sits where its family's
+        // regular cut does. That is how a bold or italic of the same family is
+        // drawn, and it is never the generic guess `FontMetrics` starts with:
+        // `text_metrics({font: "ui", weight: 700}).baseline` came back 0.8 x
+        // the size from that guess while the run was drawn 1.06 x below `y`.
+        let vertical = self.role_metrics.as_ref().and_then(|(mono, ui)| {
+            if font.eq_ignore_ascii_case(UI_FONT_NAME) {
+                Some(ui.vertical)
+            } else if font.eq_ignore_ascii_case(DEFAULT_FONT_NAME) {
+                Some(mono.vertical)
+            } else {
+                None
+            }
+        });
+        let mut metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO);
+        if let Some(vertical) = vertical {
+            metrics = metrics.with_vertical(vertical);
+        }
+        self.bind_variant(font, weight, italic, &metrics);
+    }
+
+    /// [`set_font_variant_ratios`](Self::set_font_variant_ratios) with the
+    /// variant's own *vertical* metrics, for a host that can measure them.
+    pub fn set_font_variant_metrics(
+        &mut self,
+        font: &str,
+        weight: u16,
+        italic: bool,
+        ratios: Vec<f64>,
+        vertical: petal_ui::draw::VerticalMetrics,
+    ) {
+        let metrics = petal_ui::draw::FontMetrics::proportional(ratios, TEXT_ADVANCE_RATIO)
+            .with_vertical(vertical);
+        self.bind_variant(font, weight, italic, &metrics);
+    }
+
+    fn bind_variant(
+        &mut self,
+        font: &str,
+        weight: u16,
+        italic: bool,
+        metrics: &petal_ui::draw::FontMetrics,
+    ) {
         petal_ui::draw::bind_font_variant_metrics(
             &mut self.core.env,
             font,
             weight,
             italic,
-            &metrics,
+            metrics,
         );
     }
 

@@ -384,6 +384,41 @@ helpers, `button`, lists and scrolling, the focus registry and text fields,
 context menus, drag and drop, tabs, modals, tables, splitters, RectCut layout,
 and theming via `ui_theme()` / `theme_set({...})`.
 
+#### Text entry: use `text_field`, not your own caret
+
+`text_field(fc, id, r, buf)` is a one-line field with a caret, a selection
+(shift+arrows, shift+click, drag, double click for a word, Cmd+A), the
+clipboard (Cmd+C/X/V) and undo (Cmd+Z, Cmd+Shift+Z). Do not write the editing
+loop again. An app with its own look calls `text_field_update(fc, id, r, buf,
+style)`, which is all of the behaviour and none of the pixels, and paints
+from what it returns: `caret`, `sel_start`, `sel_end`, `scroll`. An app with
+its own focus variable passes `{id: focus}` as `fc`.
+`examples/productivity/email-client/app.ptl` does both for its search, To and
+Subject fields.
+
+```petal
+state fc = focus_state()
+state name = ""
+claim_key("a", "cmd")                       // Garden keeps Cmd chords unless claimed
+for k in ["c", "x", "v", "z"] do claim_key(k, "cmd") end
+claim_key("z", "cmd+shift")
+
+let res = text_field(fc, "name", rect(20, 20, 240, 28), name)
+fc = res.focus
+name = res.text
+if res.submitted then … end
+```
+
+Every offset the field reports is a character offset, the unit `char_slice`
+and `char_len` use. For anything wrapped or highlighted, use the range
+helpers instead of measuring a growing prefix per character:
+`text_wrap_rows(s, style, w)` returns `{text, start, end}` per row,
+`text_row_of(rows, at)` finds a caret's row, and `text_range_rects(s, style,
+a, b)` returns the rectangles covering a character range. `clipboard_get()` /
+`clipboard_set(text)` are there for an app's own copy and paste. The
+catalogue entries are in
+[components.md](../core-libs/petal-ui/docs/components.md#text-field-caret-selection-clipboard-undo).
+
 #### `context_menu` is a draw call — make it your last one
 
 The two menu calls sit at opposite ends of the frame:

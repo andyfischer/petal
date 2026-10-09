@@ -10,9 +10,12 @@ undo, threaded conversations that expand and collapse, an inline reply
 editor, a compose dialog with recipient completion and drafts, and a
 draggable divider between the list and the reading pane.
 
-Nothing here is a host widget. The list, the text fields and their carets,
-the wrapped editors, the dialog, the toast, the tooltips and the icons are
-all Petal over `state`, immutable records and the `draw_*` natives.
+Nothing here is a host widget. The list, the wrapped editors, the dialog, the
+toast, the tooltips and the icons are all Petal over `state`, immutable
+records and the `draw_*` natives. The one-line fields (search, To, Subject)
+take their editing from the `ui` prelude's `text_field_update` (caret,
+selection, cut/copy/paste, undo) and are painted here; the wrapped editors
+lay out with `text_wrap_rows`.
 
 | File | What it holds |
 |---|---|
@@ -156,9 +159,12 @@ or contains `@`.
   move touched, as they were (`pick`); `restore` returns each to its mailbox,
   or brings it back whole if it was deleted, without rolling back a reply
   sent or a star set in between.
-- **Text editing in Petal.** One `edit_text` function serves all five fields:
-  a character-indexed caret, word delete, and for wrapped bodies a wrapper
-  that keeps character offsets so the caret can move between display rows.
+- **Text editing.** The three one-line fields are the prelude's
+  `text_field_update` under the app's own focus string and paint: selection,
+  the clipboard and undo come with it, and `text_range_rects` gives the
+  highlight. The two wrapped editors share `edit_area`: a character-indexed
+  caret, word delete, and row-wise movement over `text_wrap_rows`, which keeps
+  each row's character range.
 - **Language features.** Three modules with `import … as` and `pub`;
   `state`; collecting `for` with `continue` as filter; `match` with block
   arms; overloads by arity (`icons.icon`); spreads and field assignment on
@@ -189,13 +195,11 @@ Garden at all: `petal run -I examples/productivity/email-client test.ptl` with
   one block at the bottom of the frame applies it. The next frame paints the
   result. `/screenshot` and `/state` settle a frame first, so a test never
   sees the gap.
-- **No text selection in the editors.** There is a caret, not a range, so no
-  shift-arrows, no copy or paste and no double-click word select. Up and down
-  in a wrapped body keep the pixel column but do not remember it across
-  several rows.
-- **`text_wrap` returns strings, not offsets**, so the editors carry their own
-  greedy wrapper (`wrap_rows`) that measures one growing prefix per character.
-  That is fine for a reply and would not be for a long document.
+- **No text selection in the wrapped editors.** The reply and the compose
+  body have a caret, not a range: no shift-arrows, no copy or paste and no
+  double-click word select there (the one-line fields have all three, from
+  `text_field_update`). Up and down in a wrapped body keep the pixel column
+  but do not remember it across several rows.
 - **Baselines are placed by a constant.** Two runs of different sizes on one
   line (a 14 px name beside a 12 px timestamp) need a shared baseline. On the
   Garden binary this was built against, `text_metrics(style).baseline` did not

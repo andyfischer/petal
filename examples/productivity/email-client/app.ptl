@@ -92,7 +92,6 @@ state keep_unread = 0           // a thread just marked unread stays that way wh
 state open_msgs = []            // earlier messages expanded in the open thread
 
 state q = ""                    // the search field
-state q_c = 0
 state focus = ""                // "", q, reply, to, subj, body
 state reply = ""
 state reply_c = 0
@@ -100,9 +99,7 @@ state reply_c = 0
 state compose = false
 state c_draft = 0               // the draft being continued, 0 for a new message
 state c_to = ""
-state c_to_c = 0
 state c_subj = ""
-state c_subj_c = 0
 state c_body = ""
 state c_body_c = 0
 state modal_a = 0.0             // the dialog's fade, 0..1
@@ -146,52 +143,13 @@ fn clean_typed(s: string) -> string
   out
 end
 
-// Greedy word wrap that keeps character offsets: each row is {s, e}, the
-// half-open character range it shows. The editor needs offsets (to put the
-// caret on the right row and to move it between rows), which is why this is
-// not `text_wrap` — that returns the row strings and drops where they began.
-fn wrap_rows(t: string, style: record, w: num) -> list
-  let cs = chars(t)
-  let rows = []
-  let s = 0
-  let sp = -1
-  for i in range(0, len(cs)) do
-    let ch = cs[i]
-    if ch == "\n" then
-      rows = append(rows, {s: s, e: i})
-      s = i + 1
-      sp = -1
-      continue
-    end
-    if ch == " " then sp = i end
-    if i > s && text_width(char_slice(t, s, i + 1), style) > w then
-      if sp > s then
-        rows = append(rows, {s: s, e: sp})
-        s = sp + 1
-      else
-        rows = append(rows, {s: s, e: i})
-        s = i
-      end
-      sp = -1
-    end
-  end
-  append(rows, {s: s, e: len(cs)})
-end
-
-// The row the caret sits on. A caret at a hard break belongs to the row that
-// starts there, so the last match wins.
-fn row_of(rows: list, c: int) -> int
-  let idx = 0
-  for i in range(0, len(rows)) do
-    if c >= rows[i].s && c <= rows[i].e then idx = i end
-  end
-  idx
-end
-
-// One frame of keyboard editing applied to a buffer and its caret. `multi`
-// turns on Return-inserts-a-newline and row-wise up/down/home/end, which need
-// the wrap width the area is drawn at.
-fn edit_text(t0: string, c0: int, ev: record, multi: bool, style: record, w: num) -> record
+// One frame of keyboard editing applied to a wrapped area's buffer and caret:
+// Return inserts a newline, and up/down/home/end move by row, which needs the
+// wrap width the area is drawn at. Rows come from `text_wrap_rows`, which
+// keeps each row's character range — the caret goes on the right row and
+// moves between rows without measuring anything a character at a time. (The
+// one-line fields — search, To, Subject — are the prelude's `text_field_update`.)
+fn edit_area(t0: string, c0: int, ev: record, style: record, w: num) -> record
   let t = t0
   let c = clamp(c0, 0, char_len(t))
   if ev.back && c > 0 then
@@ -202,36 +160,31 @@ fn edit_text(t0: string, c0: int, ev: record, multi: bool, style: record, w: num
     t = char_slice(t, 0, c) ++ char_slice(t, c + 1)
   end
   let ins = clean_typed(ev.typed)
-  if multi && ev.enter && !ev.cmd then ins = ins ++ "\n" end
+  if ev.enter && !ev.cmd then ins = ins ++ "\n" end
   if char_len(ins) > 0 then
     t = char_slice(t, 0, c) ++ ins ++ char_slice(t, c)
     c = c + char_len(ins)
   end
   if ev.left && c > 0 then c = c - 1 end
   if ev.right && c < char_len(t) then c = c + 1 end
-  if multi then
-    let rows = wrap_rows(t, style, w)
-    let ri = row_of(rows, c)
-    if ev.home then c = rows[ri].s end
-    if ev.endk then c = rows[ri].e end
-    if (ev.up && ri > 0) || (ev.down && ri < len(rows) - 1) then
-      let x = text_width(char_slice(t, rows[ri].s, c), style)
-      let to = rows[if ev.up then ri - 1 else ri + 1 end]
-      c = to.s + text_layout.caret_index(char_slice(t, to.s, to.e), style, x)
-    end
-  else
-    if ev.home then c = 0 end
-    if ev.endk then c = char_len(t) end
+  let rows = text_wrap_rows(t, style, float(w))
+  let ri = text_row_of(rows, c)
+  if ev.home then c = rows[ri].start end
+  if ev.endk then c = rows[ri].end end
+  if (ev.up && ri > 0) || (ev.down && ri < len(rows) - 1) then
+    let x = text_width(char_slice(t, rows[ri].start, c), style)
+    let to = rows[if ev.up then ri - 1 else ri + 1 end]
+    c = to.start + text_layout.caret_index(to.text, style, x)
   end
   {t: t, c: c}
 end
 
 // Where a click at (px, py) puts the caret in a wrapped area drawn at (x, y).
 fn area_caret_at(t: string, style: record, w: num, x: num, y: num, step: num, px: num, py: num) -> int
-  let rows = wrap_rows(t, style, w)
+  let rows = text_wrap_rows(t, style, float(w))
   let ri = clamp(int((py - y) / step), 0, len(rows) - 1)
   let row = rows[ri]
-  row.s + text_layout.caret_index(char_slice(t, row.s, row.e), style, px - x)
+  row.start + text_layout.caret_index(row.text, style, px - x)
 end
 
 // The conversation to land on once `ids` have left the list: the open one if
@@ -384,20 +337,32 @@ fn icon_button(r: record, name: string, hot: bool, tone: record, wash: record)
   nil
 end
 
-// A single-line editable run, clipped to `r` and scrolled so the caret stays
-// in sight. Returns nothing; the caller owns the buffer.
-fn draw_field(r: record, text: string, caret: int, style: record, focused: bool, hint: string)
+// The rect a one-line field edits in: its text rect, less room for the caret
+// at the right edge.
+fn field_rect(r: record) -> Rect
+  rect(r.x, r.y, r.w - 6, r.h)
+end
+
+// A single-line editable run, clipped to `r`. `ed` is what `text_field_update`
+// returned for it: the caret, the selection, and how far the text is scrolled
+// to keep the caret in sight. Returns nothing; the caller owns the buffer.
+fn draw_field(r: record, text: string, ed: record, style: record, focused: bool, hint: string)
   clip_push(r)
   let m = text_metrics(style)
   let y = text_layout.text_line_y(r, style)
   if char_len(text) == 0 then
     draw_text(hint, {x: r.x, y: y}, {...style, color: FAINT})
   end
-  let cx = text_width(char_slice(text, 0, caret), style)
-  let shift = if focused then max(0, cx - r.w + 6) else 0 end
-  draw_text(text, {x: r.x - shift, y: y}, style)
+  let x = r.x - ed.scroll
+  let top = y + m.baseline - m.cap_height - 3
   if focused then
-    draw_rect(r.x - shift + cx, y + m.baseline - m.cap_height - 3, 2, m.cap_height + 7, ACCENT)
+    for part in text_range_rects(text, style, ed.sel_start, ed.sel_end, m.cap_height + 7) do
+      draw_rect(x + part.x, top, part.w, part.h, ACCENT_SOFT)
+    end
+  end
+  draw_text(text, {x: x, y: y}, style)
+  if focused then
+    draw_rect(x + text_width(char_slice(text, 0, ed.caret), style), top, 2, m.cap_height + 7, ACCENT)
   end
   clip_pop()
   nil
@@ -406,18 +371,18 @@ end
 // A wrapped editable block. Draws the rows and the caret; returns the row
 // count so the caller can size around it.
 fn draw_area(x: num, y: num, w: num, text: string, caret: int, style: record, step: num, focused: bool, hint: string) -> int
-  let rows = wrap_rows(text, style, w)
+  let rows = text_wrap_rows(text, style, float(w))
   let m = text_metrics(style)
   if char_len(text) == 0 then
     draw_text(hint, {x: x, y: y}, {...style, color: FAINT})
   end
   for i in range(0, len(rows)) do
     let row = rows[i]
-    draw_text(char_slice(text, row.s, row.e), {x: x, y: y + i * step}, style)
+    draw_text(row.text, {x: x, y: y + i * step}, style)
   end
   if focused then
-    let ri = row_of(rows, caret)
-    let cx = text_width(char_slice(text, rows[ri].s, caret), style)
+    let ri = text_row_of(rows, caret)
+    let cx = text_width(char_slice(text, rows[ri].start, caret), style)
     draw_rect(x + cx, y + ri * step + m.baseline - m.cap_height - 3, 2, m.cap_height + 7, ACCENT)
   end
   len(rows)
@@ -632,6 +597,18 @@ end
 
 claim_key("a", "cmd")           // select all
 claim_key("return", "cmd")      // send
+// While a one-line field has the keyboard, its editing chords are the field's
+// (see `text_field_update`): cut, copy, paste, undo and redo. Elsewhere they
+// stay Garden's.
+if focus == "q" || focus == "to" || focus == "subj" then
+  for k in ["c", "x", "v", "z", "y"] do claim_key(k, "cmd") end
+  claim_key("z", "cmd+shift")
+  for k in ["left", "right"] do
+    claim_key(k, "cmd")
+    claim_key(k, "cmd+shift")
+  end
+  claim_key("backspace", "cmd")
+end
 
 // A new selection starts the reading pane from the top with nothing expanded.
 if sel != shown then
@@ -672,6 +649,20 @@ let modal_r = rect((W - MODAL_W) / 2, (H - MODAL_H) / 2, MODAL_W, MODAL_H)
 let reply_w = DW - 112          // the reply area's wrap width
 let body_w = MODAL_W - 64       // the compose body's wrap width
 
+// The dialog rises into place as it fades in. Its fields take input before
+// anything is drawn, so where it sits this frame is settled here.
+modal_a = approach(modal_a, if compose then 1.0 else 0.0 end, 18.0)
+if modal_a > 0.0 && modal_a < 1.0 then request_frame() end
+let mr = rect(modal_r.x, modal_r.y + int((1.0 - modal_a) * 14.0), MODAL_W, MODAL_H)
+
+// The one-line fields: the row that takes the click, and the text inside it.
+let search_r = rect(LX + 16, 14, LW - 32, 40)
+let q_text_r = rect(search_r.x + 38, search_r.y, search_r.w - 38 - 40, search_r.h)
+let to_row = rect(mr.x + 32, mr.y + 66, mr.w - 64, 44)
+let to_r = rect(to_row.x + 76, to_row.y, to_row.w - 76, to_row.h)
+let subj_row = rect(mr.x + 32, mr.y + 111, mr.w - 64, 44)
+let subj_r = rect(subj_row.x + 76, subj_row.y, subj_row.w - 76, subj_row.h)
+
 // Lifetimes count down in dt() rather than against time(), so a toast expires
 // on schedule whether frames come from a display, an idle poll or POST /tick.
 if toast.left > 0.0 then toast.left = max(0.0, toast.left - dt()) end
@@ -694,25 +685,28 @@ let ev = {
   enter: key_pressed("return"), word: mod_alt() || mod_ctrl(), cmd: mod_cmd(),
 }
 
-if focus == "q" then
-  let e = edit_text(q, q_c, ev, false, Q_STYLE, 0)
-  if e.t != q then list_scroll = 0.0 end
-  q = e.t
-  q_c = e.c
-elsif focus == "reply" then
-  let e = edit_text(reply, reply_c, ev, true, REPLY_STYLE, reply_w)
+// Search, To and Subject are the prelude's field: it owns the caret, the
+// selection, the clipboard shortcuts and undo, and this file only draws what
+// it reports. Focus stays the app's own string, handed over as a focus record;
+// a click on the row outside the text gives focus further down, and the field
+// then starts at its end.
+let q_ed = text_field_update({id: focus}, "q", field_rect(q_text_r), q,
+  {text_style: Q_STYLE, inset: 0, scroll: true, pointer: m_main})
+if q_ed.text != q then list_scroll = 0.0 end
+q = q_ed.text
+let to_ed = text_field_update({id: focus}, "to", field_rect(to_r), c_to,
+  {text_style: FIELD_STYLE, inset: 0, scroll: true, pointer: m_modal})
+c_to = to_ed.text
+let subj_ed = text_field_update({id: focus}, "subj", field_rect(subj_r), c_subj,
+  {text_style: FIELD_STYLE, inset: 0, scroll: true, pointer: m_modal})
+c_subj = subj_ed.text
+
+if focus == "reply" then
+  let e = edit_area(reply, reply_c, ev, REPLY_STYLE, reply_w)
   reply = e.t
   reply_c = e.c
-elsif focus == "to" then
-  let e = edit_text(c_to, c_to_c, ev, false, FIELD_STYLE, 0)
-  c_to = e.t
-  c_to_c = e.c
-elsif focus == "subj" then
-  let e = edit_text(c_subj, c_subj_c, ev, false, FIELD_STYLE, 0)
-  c_subj = e.t
-  c_subj_c = e.c
 elsif focus == "body" then
-  let e = edit_text(c_body, c_body_c, ev, true, FIELD_STYLE, body_w)
+  let e = edit_area(c_body, c_body_c, ev, FIELD_STYLE, body_w)
   c_body = e.t
   c_body_c = e.c
 end
@@ -720,7 +714,7 @@ end
 // The recipient being typed, and the contact it would complete to.
 let to_parts = split(c_to, ",")
 let to_frag = mb.trim_spaces(to_parts[len(to_parts) - 1])
-let to_cand = if focus == "to" && c_to_c == char_len(c_to) then mb.complete_contact(to_frag) else "" end
+let to_cand = if focus == "to" && to_ed.caret == char_len(c_to) then mb.complete_contact(to_frag) else "" end
 // Nothing to offer once the address is already whole: Tab then moves on.
 let to_guess = if to_cand != "" && lower(mb.person(to_cand).email) == lower(to_frag) then "" else to_cand end
 let to_keys = mb.parse_recipients(c_to)
@@ -767,7 +761,7 @@ list_scroll = clamp(list_scroll, 0.0, list_max)
 
 let can_reply = sel_t != nil && sel_t.box != "drafts" && sel_t.box != "trash"
 let reply_open = can_reply && (focus == "reply" || char_len(reply) > 0)
-let reply_lines = if reply_open then wrap_rows(reply, REPLY_STYLE, reply_w) else [] end
+let reply_lines = if reply_open then text_wrap_rows(reply, REPLY_STYLE, float(reply_w)) else [] end
 let reply_vis = clamp(len(reply_lines), 3, 7)      // rows the editor shows before it scrolls
 let reply_h = if !can_reply then 0 elsif reply_open then 132 + reply_vis * AREA_STEP else 76 end
 let detail_view = rect(DX, TOOL_H, DW, H - TOOL_H - reply_h)
@@ -792,7 +786,6 @@ if key_pressed("escape") then
     checked = []
   elsif char_len(q) > 0 then
     q = ""
-    q_c = 0
   end
 end
 
@@ -847,10 +840,7 @@ else
     by_key = true
   end
 
-  if key_pressed("/") then
-    focus = "q"
-    q_c = char_len(q)
-  end
+  if key_pressed("/") then focus = "q" end
   if key_pressed("c") then act = "compose" end
   if key_pressed("r") && can_reply then
     focus = "reply"
@@ -1071,14 +1061,12 @@ draw_rect(LX, 0, LW, HEAD_H, LIST_BG)
 draw_scroll_shadow(rect(LX, 0, LW, HEAD_H), min(1.0, list_scroll / 24.0), {a: 34, height: 10})
 draw_rect(LX, HEAD_H - 1, LW, 1, RULE)
 
-let search_r = rect(LX + 16, 14, LW - 32, 40)
 let q_on = focus == "q"
 if q_on then draw_focus_ring(search_r, 11, {color: ACCENT, a: 70, blur: 6}) end
 draw_rect_rounded(search_r, 11, PAPER)
 draw_rect_rounded_outline(search_r, 11, if q_on then ACCENT else RULE end, 255, if q_on then 1.5 else 1 end)
 icons.icon("search", rect(search_r.x + 12, search_r.y + 12, 16, 16), if q_on then ACCENT else MUTED end, 1.6)
-let q_text_r = rect(search_r.x + 38, search_r.y, search_r.w - 38 - 40, search_r.h)
-draw_field(q_text_r, q, q_c, Q_STYLE, q_on, "Search mail")
+draw_field(q_text_r, q, q_ed, Q_STYLE, q_on, "Search mail")
 let q_clear = rect(search_r.x + search_r.w - 34, search_r.y + 7, 26, 26)
 if char_len(q) > 0 then
   icon_button(q_clear, "close", hit(q_clear, m_main), MUTED, RULE_SOFT)
@@ -1087,11 +1075,9 @@ elsif !q_on then
 end
 if press && hit(q_clear, m_main) && char_len(q) > 0 then
   q = ""
-  q_c = 0
   focus_hit = "q"
 elsif press && hit(search_r, m_main) then
   focus_hit = "q"
-  q_c = text_layout.caret_index(q, Q_STYLE, mouse_x() - q_text_r.x)
 end
 
 let title_r = rect(LX + 18, 64, LW - 36, 28)
@@ -1143,7 +1129,6 @@ else
     label_line(chip.name, cr, ts, "center")
     if hot && press then
       q = mb.toggle_token(q, chip.tok)
-      q_c = char_len(q)
       list_scroll = 0.0
     end
     chip_x = chip_x - w - 6
@@ -1313,7 +1298,7 @@ else
       let ax = box.x + 20
       let ay = box.y + 42
       // Past seven rows the editor scrolls, keeping the caret's row in sight.
-      let reply_shift = max(0, row_of(reply_lines, reply_c) - reply_vis + 1) * AREA_STEP
+      let reply_shift = max(0, text_row_of(reply_lines, reply_c) - reply_vis + 1) * AREA_STEP
       clip_push(rect(ax - 2, ay - 2, reply_w + 6, reply_vis * AREA_STEP + 4))
       draw_area(ax, ay - reply_shift, reply_w, reply, reply_c, REPLY_STYLE, AREA_STEP, focus == "reply", "Write your reply")
       clip_pop()
@@ -1382,12 +1367,8 @@ end
 
 // ── Compose ──────────────────────────────────────────────────────────────
 
-modal_a = approach(modal_a, if compose then 1.0 else 0.0 end, 18.0)
-if modal_a > 0.0 && modal_a < 1.0 then request_frame() end
-
 if compose then
   draw_rect(0, 0, W, H, #0e1220, int(120.0 * modal_a))
-  let mr = rect(modal_r.x, modal_r.y + int((1.0 - modal_a) * 14.0), MODAL_W, MODAL_H)
   draw_shadow(mr, {radius: 16, blur: 44, dy: 18, color: #0b0e1a, a: 90})
   draw_rect_rounded(mr, 16, PAPER)
 
@@ -1398,10 +1379,8 @@ if compose then
   if press && hit(close_r, m_modal) then act = "close_compose" end
 
   // To
-  let to_row = rect(mr.x + 32, mr.y + 66, mr.w - 64, 44)
   draw_text("To", {x: to_row.x, y: text_layout.text_line_y(to_row, st(13, MUTED))}, st(13, MUTED))
-  let to_r = rect(to_row.x + 76, to_row.y, to_row.w - 76, to_row.h)
-  draw_field(to_r, c_to, c_to_c, FIELD_STYLE, focus == "to", "name or address")
+  draw_field(to_r, c_to, to_ed, FIELD_STYLE, focus == "to", "name or address")
   if to_guess != "" then
     // The completion, as ghost text after the caret: the rest of the address
     // when the address is what was being typed, the whole contact otherwise.
@@ -1419,25 +1398,21 @@ if compose then
   draw_rect(to_row.x, to_row.y + to_row.h, to_row.w, 1, if focus == "to" then ACCENT else RULE end)
   if press && hit(to_row, m_modal) then
     focus_hit = "to"
-    c_to_c = text_layout.caret_index(c_to, FIELD_STYLE, mouse_x() - to_r.x)
   end
 
   // Subject
-  let subj_row = rect(mr.x + 32, mr.y + 111, mr.w - 64, 44)
   draw_text("Subject", {x: subj_row.x, y: text_layout.text_line_y(subj_row, st(13, MUTED))}, st(13, MUTED))
-  let subj_r = rect(subj_row.x + 76, subj_row.y, subj_row.w - 76, subj_row.h)
-  draw_field(subj_r, c_subj, c_subj_c, FIELD_STYLE, focus == "subj", "what is this about?")
+  draw_field(subj_r, c_subj, subj_ed, FIELD_STYLE, focus == "subj", "what is this about?")
   draw_rect(subj_row.x, subj_row.y + subj_row.h, subj_row.w, 1, if focus == "subj" then ACCENT else RULE end)
   if press && hit(subj_row, m_modal) then
     focus_hit = "subj"
-    c_subj_c = text_layout.caret_index(c_subj, FIELD_STYLE, mouse_x() - subj_r.x)
   end
 
   // Body
   let body_r = rect(mr.x + 32, mr.y + 172, body_w, MODAL_H - 172 - 76)
   clip_push(body_r)
-  let body_rows = wrap_rows(c_body, FIELD_STYLE, body_w)
-  let caret_row = row_of(body_rows, c_body_c)
+  let body_rows = text_wrap_rows(c_body, FIELD_STYLE, float(body_w))
+  let caret_row = text_row_of(body_rows, c_body_c)
   let fits = int(body_r.h / AREA_STEP)
   let body_shift = max(0, caret_row - fits + 1) * AREA_STEP
   draw_area(body_r.x, body_r.y - body_shift, body_w, c_body, c_body_c, FIELD_STYLE, AREA_STEP, focus == "body", "Write your message")
@@ -1501,10 +1476,7 @@ if act == "view" || act == "view_keep" then
   anchor = 0
   list_scroll = 0.0
   focus = ""
-  if act == "view" then
-    q = ""
-    q_c = 0
-  end
+  if act == "view" then q = "" end
 elsif act == "select" then
   sel = int(act_arg)
   anchor = sel
@@ -1607,9 +1579,7 @@ elsif act == "compose" then
   compose = true
   c_draft = 0
   c_to = ""
-  c_to_c = 0
   c_subj = ""
-  c_subj_c = 0
   c_body = ""
   c_body_c = 0
   focus = "to"
@@ -1619,9 +1589,7 @@ elsif act == "edit_draft" && sel_t != nil then
   compose = true
   c_draft = sel_t.id
   c_to = join(addrs, ", ")
-  c_to_c = char_len(c_to)
   c_subj = if sel_t.subject == NO_SUBJECT then "" else sel_t.subject end
-  c_subj_c = char_len(c_subj)
   c_body = join(m.body, "\n\n")
   c_body_c = char_len(c_body)
   focus = "body"
@@ -1629,7 +1597,6 @@ elsif act == "complete" then
   // Swap the fragment being typed for the contact's address.
   let kept = for i in range(0, len(to_parts) - 1) do mb.trim_spaces(to_parts[i]) end
   c_to = join(append(kept, mb.person(to_guess).email), ", ")
-  c_to_c = char_len(c_to)
   focus = "subj"
 elsif act == "send" then
   if !to_ready then

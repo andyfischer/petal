@@ -82,33 +82,56 @@ not rebuild it as part of the app work.
 Do not write the whole app blind and hope. The loop is:
 
 ```bash
-./tools/run-petal.ts check --strict examples/<category>/<slug>/app.ptl   # from the repo root
+# from the repo root, after every edit
+./tools/run-petal.ts check --strict --host garden examples/<category>/<slug>/app.ptl
+./tools/run-petal.ts lint examples/<category>/<slug>/app.ptl          # `lint --fix` applies the fixes
 
-(nohup tools/run-example.ts <slug> --headless --debug-port 0 > log.txt 2>&1 < /dev/null &)
-PORT=$(grep -o '127.0.0.1:[0-9]*' log.txt | cut -d: -f2)
-GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
+source tools/panel-test.sh          # or call it per command: tools/panel-test.sh click 80 30
+panel_start <slug>                  # headless Garden on a free port, written to ./log.txt
 
-curl -s 127.0.0.1:$PORT/state | jq '.status_error, .panes[0].panel.values'
-curl -s 127.0.0.1:$PORT/screenshot -o shot.png     # then OPEN shot.png and look at it
-curl -s 127.0.0.1:$PORT/scene | jq ...             # assert layout numerically
+obs                                 # every obs_* value; fails loudly on a status_error
+shot                                # shot.png of the pane. OPEN it and look at it
+click 80 30                         # pane-local pixels, the ones the script draws with
+key space; tick 60 0.016            # one keypress, then 60 frames of exactly 16 ms
+panel_reset 42                      # restart on seed 42 after changing seed data
+curl -s 127.0.0.1:$(panel_port)/scene?pane=0 | jq ...   # assert layout numerically
+panel_stop
 ```
+
+`--host garden` is not optional. Without it `check` knows only the `ui`
+natives and reports `claim_key`, `request_frame`, `palette` and the rest of
+Garden's own as unknown functions on a correct script. `petal lint` is a
+separate pass (it takes no `--host`): it reports spellings that have a better
+form, and the app is not done while it reports any.
+
+[`tools/panel-test.sh`](../../tools/panel-test.sh) is the one copy of the
+`click`/`key`/`tick`/`obs`/`shot` helpers; its header lists every command. Do
+not write your own. Each agent tool call is a new shell, so either `source` it
+at the top of each call or use the `tools/panel-test.sh <command>` form; both
+find the port again from `./log.txt` (or `$PORT`).
 
 Rules that cost the most time when broken:
 
-- `--headless --debug-port 0` always. A window steals focus; a fixed port
-  collides with another Garden. Launch inside `(nohup … < /dev/null &)` so
-  the process outlives the tool call. Always `127.0.0.1`, never `localhost`.
+- `--headless --debug-port 0` always (`panel_start` does this). A window
+  steals focus; a fixed port collides with another Garden. By hand, launch
+  inside `(nohup … < /dev/null &)` so the process outlives the tool call.
+  Always `127.0.0.1`, never `localhost`.
 - Editing `app.ptl` hot-reloads it but keeps `state`. After changing seed
   data or anything cached in `state`, `POST /panel/reset`; do not restart the
   process. A frame that raised leaves its error card up until a reset.
 - If the app uses `panel_store_*`, launch with `GARDEN_PANEL_STORE_DIR=<scratch>`
   or every run starts from the last run's save.
-- `POST /mouse` takes window coordinates; the script sees pane-local ones.
-  Read `panes[0].rect` from `/state` and add its origin.
+- `POST /mouse` takes window coordinates unless the body names a pane; the
+  script sees pane-local ones. Send `"pane": 0` with pane-local `x`/`y` (the
+  helpers do) rather than adding `panes[0].rect` yourself.
 - A headless panel is not a 60 fps loop: about one frame per injected event,
   one per ~200 ms idle poll, and sleep after 10 s of no input. Drive motion
   from `dt()`, clamp and sub-step physics, keep any polling interval well
   under 10 s, and use `request_frame()` while animating.
+- Open every test with `tick; panel_reset 42`. From the first `POST /tick`
+  the panel's `time()` and `dt()` are both virtual, and stay so across
+  resets: only ticks advance them, and the frame an injected key or click
+  runs sees `dt() == 0`.
 - Garden owns Cmd/Ctrl chords; `claim_key("z", "cmd")` near the top of every
   frame to get one back.
 - `context_menu(...)` must be the last draw call of the frame;
@@ -139,9 +162,12 @@ Before calling it done:
   `/text` and `/mouse`, and confirm both the values and the pixels change.
   Held keys are `{"key":"left","op":"down"}` … `{"op":"up"}`.
 - **Games and animations: prove the whole arc deterministically.**
-  `POST /panel/reset {"seed":42}` (the seed in the reset body, so frame 1
-  is seeded too), then `POST /tick {"n":60,"dt":0.016}` between inputs. Asteroids was driven this
-  way through a sector clear and a game over before it was committed.
+  `tick`, then `panel_reset 42` (`POST /panel/reset {"seed":42}`: the seed in
+  the reset body, so frame 1 is seeded too), then `tick 60 0.016` between
+  inputs. The
+  same script then ends on the same `obs` values every run, however long it
+  paused between commands. Asteroids was driven this way through a sector
+  clear and a game over before it was committed.
 - `status_error` is `null` at every point of that script. Check `values_stale`
   is not set; a missing key because the frame raised is not the same as a
   branch that never ran.

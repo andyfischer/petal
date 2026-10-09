@@ -418,7 +418,7 @@ clean boundary.
 | Endpoint | Body | Effect |
 |----------|------|--------|
 | `POST /tick` | `{"n": 60, "dt": 0.016}` | Advance every panel by `n` frames of exactly `dt` seconds each, ignoring the sleep/wake window. Both fields optional (`n: 1`, `dt: 1/60`); `n` is capped at 600. Replies with each panel's new `frame` and `clocks` |
-| `POST /tick` | `{"n": 60, "advance_clock": false}` | The same, leaving the panel's `time()` clock alone |
+| `POST /tick` | `{"n": 60, "advance_clock": false}` | The same, leaving the panel's clock alone: on a wall-clock panel `time()` stays on the wall clock and `dt()` is the `dt` named. On a panel an earlier tick already made virtual, these frames are zero time |
 | `POST /seed` | `{"seed": 42}` | Reseed every panel's `random()` stream, so a script that generates placeholder content draws the same content on two renders. Applies from each panel's next frame, and sticks to the panel: a later `/panel/reset` restarts it on the same seed |
 | `POST /panel/reset` | `{}` or `{"seed": 42}` | Restart every file-backed panel from its source, discarding Petal `state`. With `seed`, every panel is reseeded first, so the restarted script's **first** frame draws from that stream (see below). A panel that persists through `panel_store_*` reloads its saved store, not its seed data; launch with `GARDEN_PANEL_STORE_DIR=<scratch dir>` for a clean start. A GPP-pushed panel has no file and is skipped |
 
@@ -429,7 +429,28 @@ deterministically, with the `dt` you asked for, and no input is fabricated.
 clock, and `time()` then advances by exactly the `dt` of each driven frame.
 Frames Garden runs on its own schedule (idle repaints, settle passes before a
 capture) advance it by nothing, so two identical tick sequences draw the
-identical frame. That is what makes a golden image of a moving UI stable:
+identical frame.
+
+`dt()` is on the same clock (feature `debug.tick-dt`). On a ticked panel every
+frame's `dt()` is what the clock advanced since the frame before it: exactly
+the `dt` named for a ticked frame, and 0 for a frame Garden ran for an
+injected key or click, an idle poll or a settle pass. `dt()` and the change in
+`time()` therefore always agree, and a simulation stepped by `dt()` cannot
+drift when a test sends input between ticks or pauses between requests. A
+ticked frame's `dt()` is not clamped to the 0.1 s ceiling interactive frames
+get; name the step you want.
+
+A `POST /panel/reset` keeps a ticked panel on the virtual clock and restarts
+it at `time() == 0`, so the frames between the reset and the next tick are no
+time either. The deterministic opening of a test is therefore one warm-up
+tick, then the seeded reset:
+
+```bash
+curl -s -XPOST 127.0.0.1:8080/tick -d '{}'                  # go virtual
+curl -s -XPOST 127.0.0.1:8080/panel/reset -d '{"seed":42}'  # frame 1: time() 0, seeded
+```
+
+That is what makes a golden image of a moving UI stable:
 
 ```bash
 curl -s -XPOST 127.0.0.1:8080/panel/reset -d '{"seed":42}'
@@ -642,7 +663,8 @@ answered on the event-loop thread. In headless mode you rarely need this:
 | `POST /batch` | `[{"path": "/mouse", "op": "down", …}, …]` | Several commands in one event-loop visit, replying `{ok, results}`. See [Batching commands](#batching-commands). Feature `debug.batch` |
 
 `POST /mouse` ops (`x`/`y` in logical pixels, window-relative, the same units
-as the rects in `/state`):
+as the rects in `/state`; add `"pane": <n>` to make them relative to that
+pane's origin, below):
 
 ```jsonc
 {"op": "click", "x": 80, "y": 30}                      // press + release
@@ -660,7 +682,19 @@ as the rects in `/state`):
 {"op": "click", "x": 80, "y": 30, "button": 1}         // right click: the context-menu gesture
 {"op": "down",  "x": 80, "y": 30, "button": 1}         // its phases, for menu-open-then-choose
 {"op": "up", "button": 1}
+{"op": "click", "x": 80, "y": 30, "pane": 0}           // (80,30) in pane 0's own coordinates
+{"op": "drag", "x": 10, "y": 10, "to": {"x": 90, "y": 40}, "pane": 0}  // "to" is pane-local too
 ```
+
+`"pane": <n>` (feature `debug.mouse-pane`) takes `x`, `y` and `to` relative to
+pane *n*'s origin: the coordinates a panel script reads as
+`mouse_x()`/`mouse_y()` and draws with, and the ones `GET /scene?pane=<n>`
+reports, so a `center` from `/scene?pane=0&find=…` posts back unchanged.
+Garden adds the pane's rect, which is the step every hand-written harness got
+wrong. A pane that does not exist is a 400 and no input is delivered. An older
+build ignores the field silently, so probe the feature (or use
+`tools/panel-test.sh` from the Petal repo root, whose `click`, `move`, `drag`
+and `scroll` do, and fall back to adding `panes[n].rect`).
 
 `mods` takes the same names as `/key`, and every modifier named is delivered,
 to the editor and to a panel script's `mod_alt()` / `mod_cmd()` alike — on

@@ -65,6 +65,27 @@ GPID=$(lsof -ti tcp:$PORT -sTCP:LISTEN)    # the process holding your debug port
 Use `--headless --debug-port 0` while developing. A windowed launch steals
 focus, and a fixed port collides with any other Garden already running.
 
+[`tools/panel-test.sh`](../tools/panel-test.sh) wraps this launch and the
+`curl` calls in the rest of this guide, so a session does not write its own:
+
+```bash
+source tools/panel-test.sh    # or one command per call: tools/panel-test.sh click 80 30
+panel_start <slug>            # the launch above; waits for the port, prints it
+obs                           # obs_* values as JSON (obs score,lives / obs ui_ / obs all)
+err                           # status_error, exit 1 if there is one
+shot [file]                   # PNG of the pane (shot file window: the whole window)
+click 80 30                   # pane-local; also rclick, dclick, move, drag, scroll
+key s cmd; keydown left; keyup left; typetext "hello"
+tick 60 0.016                 # 60 frames of exactly 16 ms
+panel_reset 42                # restart on seed 42
+find_text Save                # pane-local rect and center of matching text runs
+panel_stop                    # kills the Garden on this port, and only that one
+```
+
+It reads the port from `$PORT`, or from `./log.txt` (`$PANEL_LOG`), so it works
+when every command runs in a fresh shell. `$PANE` picks the pane (default 0).
+The file's header is the full reference.
+
 Launch it with `nohup … < /dev/null` inside a subshell, as above. A plain
 `… &` dies with the shell that started it — in an agent harness every tool
 call is its own shell, so the second `curl` finds the process gone and the log
@@ -139,6 +160,7 @@ curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"left"}'
 curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"s","mods":["cmd"]}'
 curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"shift","op":"down"}'   # held until "op":"up"
 curl -sX POST 127.0.0.1:$PORT/text  -d '{"text":"hello"}'
+curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":80,"y":30,"pane":0}'   # PANE-LOCAL coords
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68}'            # WINDOW coords
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68,"button":1}' # right click
 curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":86,"y":68,"clicks":2}' # double click
@@ -152,24 +174,28 @@ Named keys: `enter`, `tab`, `space`, `backspace`, `delete`, `escape`,
 alike. The full option list is in
 [debug-server.md](../garden/docs/debug-server.md#input-injection).
 
-#### Mouse coordinates: window in, pane-local out
+#### Mouse coordinates: say which pane
 
-`POST /mouse` takes window coordinates. The script sees pane-local ones. This
-is the most expensive mistake in this harness: clicks land a few dozen pixels
-off and hit the wrong row. `mouse_x()`/`mouse_y()`, and therefore `point_in`,
-`hovered` and `clicked`, are relative to the pane's top-left, exactly like every
-coordinate you pass to `draw_*`. The `x`/`y` you POST are not.
+The script sees pane-local coordinates: `mouse_x()`/`mouse_y()`, and therefore
+`point_in`, `hovered` and `clicked`, are relative to the pane's top-left,
+exactly like every coordinate you pass to `draw_*`. `POST /mouse` takes window
+coordinates by default, which is the most expensive mistake in this harness:
+clicks land a few dozen pixels off and hit the wrong row.
 
-The offset is the pane rect's origin. Read it, do not hardcode it:
+Put `"pane": <n>` in the body and `x`/`y` (and a drag's `to`) are relative to
+that pane's origin instead. Garden adds the offset, so there is nothing to
+read or hardcode:
 
 ```bash
-read -r OX OY <<<"$(curl -s 127.0.0.1:$PORT/state | jq -r '.panes[0].rect | "\(.x) \(.y)"')"
-click() {  # click(pane_x, pane_y)
-  curl -sX POST 127.0.0.1:$PORT/mouse \
-    -d "{\"op\":\"click\",\"x\":$(($1 + ${OX%.*})),\"y\":$(($2 + ${OY%.*}))}"
-}
-click 80 30      # the pixel the script calls (80, 30)
+curl -sX POST 127.0.0.1:$PORT/mouse -d '{"op":"click","x":80,"y":30,"pane":0}'
+click 80 30      # the same, with tools/panel-test.sh: the pixel the script calls (80, 30)
 ```
+
+These are the coordinates `GET /scene?pane=0` reports, so a `center` from
+`/scene?pane=0&find=text:Save` can be posted back as it is. Without `"pane"`
+the offset is `panes[0].rect` in `/state`. (`"pane"` is feature
+`debug.mouse-pane` in `GET /version`; the helpers fall back to adding the rect
+on a Garden that lacks it.)
 
 Before trusting a click script, post a `move` to a known spot and read
 `panel.input.mouse` back from `/state`. That is the coordinate the script saw.
@@ -194,8 +220,16 @@ curl -sX POST 127.0.0.1:$PORT/panel/reset -d '{"seed":42}'           # both at o
 ```
 
 `POST /tick` runs frames on demand with the `dt` you name, ignores the sleep
-window, fabricates no input, and puts the panel's `time()` on a virtual clock
-that advances by exactly `dt` per frame. An animation or game test is a
+window, fabricates no input, and puts the panel's `time()` and `dt()` on a
+virtual clock that advances by exactly `dt` per ticked frame and by nothing
+otherwise. The frames Garden runs between your ticks (one per injected key or
+click, the idle poll, the settle before a capture) see `dt() == 0` and an
+unmoved `time()`, so a simulation stepped by `dt()` advances only when you
+tick it, however much input you send in between and however long the test
+pauses. The switch happens at a panel's first tick and lasts until the process
+exits, across resets: a reset panel restarts at `time() == 0`. So start a test
+with one warm-up `tick`, then the seeded reset, then inputs and ticks, and no
+wall-clock frame is part of the run. An animation or game test is a
 deterministic frame count, not a stream of phantom keypresses. Reset with a
 seed (`{"seed":42}`), then tick, and a screenshot of a moving UI is
 byte-identical each run. Put the seed in the reset body rather than sending
@@ -208,13 +242,19 @@ A headless panel is not a 60fps loop. Garden renders only dirty frames, and
 headless has nothing making them dirty. You get roughly one frame per injected
 event, one per ~200ms idle poll while awake, and a settle before every capture.
 `dt()` is wall-clock — 0.1–0.2s on an idle poll, and the frame after a pause
-carries the whole pause. After 10s without activity the panel sleeps and runs
+carries the whole pause — until a test takes the clock over with `POST /tick`,
+after which `dt()` is exactly what each tick names and 0 on every other frame
+(see [Stepping frames](#stepping-frames-reseeding-and-resetting-state)). After
+10s without activity the panel sleeps and runs
 no frames at all until the next input. Details:
 [The headless contract](../garden/docs/petal-graphical-panels.md#the-headless-contract).
 
 For your app this means:
 
-- Drive animation off `dt()`, never off a fixed per-frame delta.
+- Drive animation and simulation off `dt()`, never off a fixed per-frame
+  delta. It is the right clock in both worlds: a measurement when a person is
+  using the app, and the exact step a test asked for once it ticks. No
+  `time()`-delta bookkeeping is needed to make a `dt()`-stepped app testable.
 - Physics needs its own clamp and sub-stepping: `let step = min(dt(), 0.05)`,
   then integrate in fixed slices. A raw 0.2s step tunnels a ball through a
   paddle.

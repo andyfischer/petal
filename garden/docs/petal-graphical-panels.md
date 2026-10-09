@@ -96,7 +96,11 @@ pause). The 10 s sleep still applies, so a simulation with no input stops.
 
 A panel that integrates anything physical must clamp and sub-step its own
 `dt` (`let step = min(dt(), 0.05)`) rather than trust the delta it is handed.
-Drive frames explicitly with `POST /tick` instead of faking input.
+Drive frames explicitly with `POST /tick` instead of faking input. From a
+panel's first tick its `dt()` and `time()` are virtual: a ticked frame sees
+exactly the `dt` named and every other frame sees 0, so a `dt()`-stepped
+simulation is reproducible under test. See
+[Stepping frames](debug-server.md#stepping-frames-and-resetting-panels).
 
 ### `state` survives a hot reload
 

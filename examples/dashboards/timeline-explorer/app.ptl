@@ -812,9 +812,12 @@ state dbl_press = false   // this press was a double-click: its release is not a
 
 state lane_wt = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 state ev_row = for i in range(0, 200) do 0.0 end
-state ev_seen = for i in range(0, 200) do -9 end
-state tick = 0
-tick = tick + 1
+// Which events the last frame placed. Rebuilt every frame and stored once at
+// the end, so a frame that places the same events leaves it equal and the
+// frame gate can skip a quiet timeline. (It was a frame number per event
+// against a counter bumped every frame, which kept the panel running forever.)
+state ev_seen = for i in range(0, 200) do false end
+let ev_now = for i in range(0, 200) do false end
 
 // Counted edges, so a test can see that an input landed.
 state n_zooms = 0
@@ -1129,8 +1132,12 @@ end
 let wt_sum = 0.0
 for c in range(0, 6) do
   let want = if !cats_on[c] then 0.0 elsif lane_count[c] == 0 then 0.3 else 1.0 end
-  lane_wt[c] = approach(lane_wt[c], want, 14.0)
-  if lane_wt[c] != want then animating = true end
+  // Stored only when it moves: an element write into a `state` list from
+  // inside a loop counts as a change to the frame gate even when it stores the
+  // value already there, and a quiet timeline would never be skipped.
+  let wt = approach(lane_wt[c], want, 14.0)
+  if wt != lane_wt[c] then lane_wt[c] = wt end
+  if wt != want then animating = true end
   wt_sum = wt_sum + lane_wt[c]
 end
 let lanes_n = count_true(cats_on)
@@ -1157,14 +1164,17 @@ for c in range(0, 6) do
     let target = float(p.row)
     // An event that was not on screen last frame appears in place; one that
     // was there glides to its new row.
-    ev_row[p.i] = if ev_seen[p.i] == tick - 1 then approach(ev_row[p.i], target, 16.0) else target end
-    if ev_row[p.i] != target then animating = true end
-    ev_seen[p.i] = tick
+    // Stored only when it moves, as `lane_wt` is above.
+    let row = if ev_seen[p.i] then approach(ev_row[p.i], target, 16.0) else target end
+    if row != ev_row[p.i] then ev_row[p.i] = row end
+    if row != target then animating = true end
+    ev_now[p.i] = true
     if p.mode > 0 then label_n = label_n + 1 end
     if p.row >= nrows then rail_n = rail_n + 1 end
     placed = append(placed, p)
   end
 end
+ev_seen = ev_now
 // Centre line of a placed event. `rows` holds the eased row of every event;
 // past the last real row it slides down onto the rail.
 fn mark_y(i, cat, ys, hs, rhs, nrs, rows)

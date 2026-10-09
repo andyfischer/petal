@@ -306,9 +306,12 @@ impl ScriptHost {
         let source = fs::read_to_string(&self.path)
             .map_err(|e| format!("failed to read {}: {}", self.path.display(), e))?;
 
-        // Compile first: a compile error must not disturb the running program.
-        let new_program = self.env.compile_program(self.program_id, &source)?;
-        self.env.transfer_state(self.stack_id, new_program)?;
+        // A compile error does not disturb the running program, and an edit
+        // that only moves text or changes values is taken up without a
+        // recompile.
+        self.env
+            .reload_program(self.stack_id, &source, None)
+            .map_err(|e| e.to_string())?;
 
         let new_layout = self.run_and_extract()?;
         let changed = new_layout != self.layout;
@@ -355,8 +358,9 @@ impl ScriptHost {
         // all reflect the change immediately (and the generated source is
         // validated by actually running it). Watch the transient file from now
         // on so the next poll sees no spurious change.
-        let new_program = self.env.compile_program(self.program_id, &new_source)?;
-        self.env.transfer_state(self.stack_id, new_program)?;
+        self.env
+            .reload_program(self.stack_id, &new_source, None)
+            .map_err(|e| e.to_string())?;
         self.layout = self.run_and_extract()?;
 
         self.path = target.clone();

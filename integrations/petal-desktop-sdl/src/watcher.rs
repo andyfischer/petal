@@ -10,20 +10,24 @@ use petal::env::Env;
 use petal::program::ProgramId;
 use petal::stack::StackKey;
 
-/// If a watched file changed, recompile the program and transfer live state
-/// into it. Compile errors are logged and the old program keeps running.
-/// Returns `true` when a new program was installed — the signal a timeline
-/// uses to replay recorded history through the edited code.
+/// If a watched file changed, bring the program up to date with its source
+/// ([`Env::reload_program`]): a layout or comment edit only moves source
+/// positions, a value edit is written into the running program, anything
+/// else is recompiled with live state transferred into it. Compile errors are
+/// logged and the old program keeps running.
+/// Returns `true` when the program's behavior may have changed — the signal a
+/// timeline uses to replay recorded history through the edited code. A
+/// layout-only edit returns `false`.
 pub fn check_hot_reload(
     reload_rx: &mpsc::Receiver<()>,
     source_path: &str,
     env: &mut Env,
-    program_id: ProgramId,
+    _program_id: ProgramId,
     stack_id: StackKey,
 ) -> bool {
-    let mut reloaded = false;
+    use petal::env::ReloadOutcome;
     // Drain every queued notification: an editor save often fires several
-    // modify events, and each one should cost at most one recompile.
+    // modify events, and each one should cost at most one reload.
     let mut pending = false;
     while let Ok(()) = reload_rx.try_recv() {
         pending = true;
@@ -31,27 +35,29 @@ pub fn check_hot_reload(
     if !pending {
         return false;
     }
-    if let Ok(new_source) = std::fs::read_to_string(source_path) {
-        let new_program =
-            match env.compile_program_at(program_id, &new_source, Path::new(source_path)) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("[hot-reload] compile error: {}", e);
-                    return false;
-                }
-            };
-        match env.transfer_state(stack_id, new_program) {
-            Ok(result) => {
+    let Ok(new_source) = std::fs::read_to_string(source_path) else {
+        return false;
+    };
+    match env.reload_program(stack_id, &new_source, Some(Path::new(source_path))) {
+        Ok(report) => match report.outcome {
+            ReloadOutcome::Unchanged | ReloadOutcome::Relocated => false,
+            ReloadOutcome::Patched => {
+                eprintln!("[hot-reload] values updated in place");
+                true
+            }
+            ReloadOutcome::Recompiled => {
                 eprintln!(
                     "[hot-reload] preserved: {}, dropped: {}",
-                    result.state_preserved, result.state_dropped
+                    report.state_preserved, report.state_dropped
                 );
-                reloaded = true;
+                true
             }
-            Err(e) => eprintln!("[hot-reload] error: {}", e),
+        },
+        Err(e) => {
+            eprintln!("[hot-reload] compile error: {}", e);
+            false
         }
     }
-    reloaded
 }
 
 /// Watch every directory the program's source files live in — the entry

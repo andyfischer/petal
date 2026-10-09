@@ -1779,15 +1779,14 @@ impl PanelHost {
 
         let source = fs::read_to_string(&self.path)
             .map_err(|e| format!("failed to read {}: {}", self.path.display(), e))?;
-        // Recompile the same way it was loaded, so a panel that imports a
-        // sibling module still resolves it after a hot reload.
-        let new_program =
-            self.core
-                .env
-                .compile_program_at(self.core.program_id(), &source, &self.path)?;
+        // Reload the same way it was loaded, so a panel that imports a
+        // sibling module still resolves it after a hot reload. Only the work
+        // the edit calls for is done (`Env::reload_program`).
+        let path = self.path.clone();
         self.core
             .env
-            .transfer_state(self.core.stack_id(), new_program)?;
+            .reload_program(self.core.stack_id(), &source, Some(&path))
+            .map_err(|e| e.to_string())?;
         self.imports = self.watch_imports();
         Ok(true)
     }
@@ -1817,13 +1816,10 @@ impl PanelHost {
     /// later disk [`poll_reload`](Self::poll_reload) of an identical save is a
     /// harmless re-transfer, and a divergent on-disk edit still reloads.
     pub fn reload_source(&mut self, source: &str) -> Result<(), String> {
-        let new_program = self
-            .core
-            .env
-            .compile_program(self.core.program_id(), source)?;
         self.core
             .env
-            .transfer_state(self.core.stack_id(), new_program)?;
+            .reload_program(self.core.stack_id(), source, None)
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 

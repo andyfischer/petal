@@ -83,16 +83,30 @@ info "downloading $url"
 dl "$url" "$tmp/$asset" || err "download failed: $url"
 
 # --- verify checksum --------------------------------------------------------
+# Compare the hashes ourselves instead of trusting `-c`: `sha256sum -c` (and
+# macOS's) exits 0 for a checksum file with no well-formed line in it — an
+# HTML error page, an empty file — which would pass as "verified".
 if dl "${url}.sha256" "$tmp/$asset.sha256" 2>/dev/null; then
-  ( cd "$tmp"
-    if command -v sha256sum >/dev/null 2>&1; then
-      sha256sum -c "$asset.sha256" >/dev/null 2>&1 || err "checksum verification failed"
-    elif command -v shasum >/dev/null 2>&1; then
-      shasum -a 256 -c "$asset.sha256" >/dev/null 2>&1 || err "checksum verification failed"
-    else
-      warn "no sha256 tool found; skipping checksum verification"
-    fi )
-  info "checksum verified"
+  # The published file is "<hex>  <name>" or a bare "<hex>".
+  want="$(awk 'NF { print tolower($1); exit }' "$tmp/$asset.sha256")"
+  case "$want" in
+    *[!0-9a-f]*|"") want="" ;;
+  esac
+  [ "${#want}" -eq 64 ] || err "malformed checksum file: ${url}.sha256"
+  if command -v sha256sum >/dev/null 2>&1; then
+    got="$(sha256sum "$tmp/$asset" | awk '{ print tolower($1) }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    got="$(shasum -a 256 "$tmp/$asset" | awk '{ print tolower($1) }')"
+  else
+    got=""
+  fi
+  if [ -z "$got" ]; then
+    warn "no sha256 tool found; skipping checksum verification"
+  elif [ "$got" = "$want" ]; then
+    info "checksum verified"
+  else
+    err "checksum verification failed (expected $want, got $got)"
+  fi
 else
   warn "no checksum published for this asset; skipping verification"
 fi

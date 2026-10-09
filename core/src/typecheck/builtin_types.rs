@@ -134,7 +134,7 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort"
         | "sort_by" | "prepend" | "chars" => Type::List,
         // ── core: record / vector results ───────────────────────────────────
-        "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
+        "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" | "fn_info" | "fn_ast" => Type::Record,
         "vec2" | "rotate" => Type::Vec2,
         "vec3" | "cross" => Type::Vec3,
         "f64_array" => Type::F64Array,
@@ -300,6 +300,7 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         // What the key function *returns* is checked too, by
         // [`sort_key_type_ok`] — a slot has no way to say it.
         ("sort_by", 2 | 3) => &[List, Function],
+        ("fn_info" | "fn_ast", 1) => &[Function],
         ("char_at", 2) => &[Str, Num],
         ("byte_slice", 2) => &[Str, Num],
         ("byte_slice", 3) => &[Str, Num, Num],

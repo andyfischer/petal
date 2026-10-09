@@ -150,6 +150,7 @@ impl Compiler {
                 body,
                 Some(def_end),
                 tail_value,
+                Some(decl_span),
             );
             // Module functions carry a qualified display name ("ui::button")
             // so root-frame harvesting exposes them to `Env::call_function`
@@ -169,6 +170,7 @@ impl Compiler {
             body,
             Some(def_end),
             tail_value,
+            Some(decl_span),
         );
         self.record_fn_closure(closure_tid, params.len());
         // The caller locates the term this returns, which for an overloaded
@@ -339,6 +341,9 @@ impl Compiler {
     /// is compiled entirely in statement position and yields nil (see
     /// docs/implicit-return-values.md). A lambda has no return-type slot, so it
     /// always passes true.
+    ///
+    /// `span` is where the function is written (the whole declaration or
+    /// lambda), kept on its [`FunctionDef`] for `fn_info` / `fn_ast`.
     pub(super) fn compile_function(
         &mut self,
         name: Option<String>,
@@ -347,6 +352,7 @@ impl Compiler {
         body: &[Stmt],
         def_end: Option<u32>,
         tail_value: bool,
+        span: Option<SourceSpan>,
     ) -> TermId {
         self.closure_def_ends.push(def_end);
         // Names the body's `state` declarations by their enclosing functions
@@ -388,14 +394,18 @@ impl Compiler {
         self.closure_def_ends.pop();
         self.pop_fn_name_chain();
         self.loop_depth = saved_loop_depth;
-        self.end_function_scope(
+        let closure_tid = self.end_function_scope(
             name,
             params,
             optional,
             body_block,
             saved_block,
             self_ref_register,
-        )
+        );
+        if let Some(def) = self.functions.last_mut() {
+            def.span = span;
+        }
+        closure_tid
     }
 
     /// Reject a default value that reads its own parameter or one declared
@@ -560,6 +570,7 @@ impl Compiler {
             capture_registers,
             self_ref_register,
             register_count: body_reg_count,
+            span: None,
         });
 
         self.emit_term(TermOp::MakeClosure(fn_id), capture_outer_tids, name)

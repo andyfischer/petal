@@ -144,6 +144,9 @@ pub const BUILTIN_PARAMS: &[(&str, &[&str])] = &[
     ("filter", &["list, pred"]),
     ("reduce", &["list, initial, f"]),
     ("forEach", &["list, f"]),
+    // --- Function introspection (experimental) ---
+    ("fn_info", &["f"]),
+    ("fn_ast", &["f"]),
     // --- Automatic differentiation ---
     ("dual", &["value, derivative"]),
     ("value_of", &["x"]),

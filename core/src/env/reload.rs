@@ -197,6 +197,8 @@ struct Patch {
     /// (file index, new text).
     sources: Vec<(usize, String)>,
     constants: Vec<(TermId, ConstantValue)>,
+    /// (index into `Program.functions`, where that function is written now).
+    fn_spans: Vec<(usize, SourceSpan)>,
 }
 
 impl Env {
@@ -363,6 +365,11 @@ impl Env {
         for (tid, span) in patch.spans {
             program.source_map.add(tid, span);
         }
+        for (i, span) in patch.fn_spans {
+            program.functions[i].span = Some(span);
+        }
+        // What `fn_info` / `fn_ast` cached was read from the old text.
+        program.introspect.clear();
         for (i, warning) in patch.warnings {
             program.warnings[i] = warning;
         }
@@ -677,6 +684,22 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
         })?;
         if moved != *span {
             patch.spans.push((tid, moved));
+        }
+    }
+
+    for (i, def) in program.functions.iter().enumerate() {
+        let Some(span) = def.span else { continue };
+        let Some(f) = by_file.get(&span.file.0) else {
+            continue;
+        };
+        let moved = f.diff.map_span(span).ok_or_else(|| {
+            format!(
+                "a function in `{}` (line {}) has no counterpart in the new text",
+                f.name, span.start.line
+            )
+        })?;
+        if moved != span {
+            patch.fn_spans.push((i, moved));
         }
     }
 

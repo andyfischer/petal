@@ -40,6 +40,7 @@ mod dispatch;
 mod fast;
 mod frame;
 mod intrinsics;
+mod introspect;
 mod memo;
 mod native;
 

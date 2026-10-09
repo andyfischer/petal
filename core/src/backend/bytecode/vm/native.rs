@@ -170,6 +170,8 @@ impl<'a> Vm<'a> {
             || nf.intrinsic_reduce == Some(nid)
             || nf.intrinsic_for_each == Some(nid)
             || nf.intrinsic_sort_by == Some(nid)
+            || nf.intrinsic_fn_info == Some(nid)
+            || nf.intrinsic_fn_ast == Some(nid)
             || sort_with_cmp
         {
             self.profile.record_native(nid.0);
@@ -190,6 +192,10 @@ impl<'a> Vm<'a> {
             self.builtin_reduce(args, site)
         } else if nf.intrinsic_for_each == Some(nid) {
             self.builtin_for_each(args, site)
+        } else if nf.intrinsic_fn_info == Some(nid) {
+            self.builtin_fn_info(args)
+        } else if nf.intrinsic_fn_ast == Some(nid) {
+            self.builtin_fn_ast(args)
         } else {
             self.call_native_fn(nid, args, false, origin)
         }

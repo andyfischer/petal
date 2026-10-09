@@ -625,6 +625,7 @@ impl Compiler {
                 .iter()
                 .map(|(_, def)| def.name.clone())
                 .collect(),
+            introspect: Default::default(),
         }, inferences, classes))
     }
 

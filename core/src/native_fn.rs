@@ -510,6 +510,11 @@ pub struct NativeFnTable {
     /// publishes a user-declared `fn Class.method` into the running stack's
     /// method table, which no native can reach through [`PetalCxt`].
     pub intrinsic_declare_method: Option<NativeFnId>,
+    /// `fn_info(f)` / `fn_ast(f)` (experimental): they read the closure table
+    /// and the program, which no native can reach through [`PetalCxt`]. See
+    /// [`crate::fn_introspect`].
+    pub intrinsic_fn_info: Option<NativeFnId>,
+    pub intrinsic_fn_ast: Option<NativeFnId>,
     /// Built-in class methods, indexed `class -> method -> native`. The same
     /// natives are in `entries` under their qualified names (`Rect.inset`);
     /// this index exists so method dispatch is a two-hop lookup on borrowed
@@ -529,6 +534,8 @@ impl NativeFnTable {
             intrinsic_sort: None,
             intrinsic_sort_by: None,
             intrinsic_declare_method: None,
+            intrinsic_fn_info: None,
+            intrinsic_fn_ast: None,
             class_methods: HashMap::new(),
         }
     }

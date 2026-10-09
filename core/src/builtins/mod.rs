@@ -455,6 +455,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
         NativeEffects::PURE,
     );
 
+    // Function introspection (experimental; docs/function-introspection.md).
+    // VM intrinsics: they read the closure table and the program's source.
+    // Append-only, like the rest of this block.
+    let fn_info_id = table.register("fn_info", native_intrinsic_placeholder, NativeEffects::PURE);
+    let fn_ast_id = table.register("fn_ast", native_intrinsic_placeholder, NativeEffects::PURE);
+    table.intrinsic_fn_info = Some(fn_info_id);
+    table.intrinsic_fn_ast = Some(fn_ast_id);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");
     table.intrinsic_sort_by = Some(sort_by_id);

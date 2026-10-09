@@ -524,6 +524,13 @@ pub struct FunctionDef {
     pub self_ref_register: Option<RegisterIndex>,
     #[serde(default)]
     pub register_count: u16,
+    /// Where the function is written: the whole `fn ... end` of a declaration
+    /// or of a lambda. `None` for a synthesized function (a class or enum
+    /// constructor) and for a program loaded from IR. Not part of the wire
+    /// format: it is what `fn_info` / `fn_ast` use to find the function's AST
+    /// in the program's source (see [`crate::fn_introspect`]).
+    #[serde(skip)]
+    pub span: Option<crate::source_map::SourceSpan>,
 }
 
 fn is_zero_u16(n: &u16) -> bool {
@@ -656,6 +663,12 @@ pub struct Program {
     /// random.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub class_names: std::collections::BTreeSet<String>,
+    /// What `fn_info` / `fn_ast` have worked out about this program's
+    /// functions so far (parsed source, per-function metadata). Filled on
+    /// demand, never serialized, and dropped whenever the source text changes
+    /// in place. See [`crate::fn_introspect`].
+    #[serde(skip)]
+    pub introspect: crate::fn_introspect::Cache,
 }
 
 impl Program {

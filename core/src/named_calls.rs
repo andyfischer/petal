@@ -521,6 +521,7 @@ mod tests {
             capture_registers: Vec::new(),
             self_ref_register: None,
             register_count: 0,
+            span: None,
         };
         let (two, three) = (def(&["a", "b"], 0), def(&["x", "y", "z"], 1));
         let fns = [&two, &three];

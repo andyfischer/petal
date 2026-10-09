@@ -821,6 +821,7 @@ mod tests {
             warnings: Vec::new(),
             layout_deps: Vec::new(),
             class_names: Default::default(),
+            introspect: Default::default(),
         }
     }
 

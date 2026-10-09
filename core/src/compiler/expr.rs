@@ -345,7 +345,7 @@ impl Compiler {
                 let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
                 let optional = params.iter().filter(|p| p.has_default()).count();
                 // A lambda has no return-type slot: its tail is always its value.
-                self.compile_function(None, &param_names, optional, body, None, true)
+                self.compile_function(None, &param_names, optional, body, None, true, Some(span))
             }
 
             ExprKind::Element {

@@ -24,6 +24,7 @@ pub mod error;
 pub mod execution_context;
 pub mod export_keyword;
 pub mod extract;
+pub mod fn_introspect;
 pub mod fxhash;
 pub mod goal_based_editing;
 pub mod handle;

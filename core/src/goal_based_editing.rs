@@ -45,6 +45,7 @@
 //! let updated = modify_source_with_goals(&source, &goals)?;
 //! ```
 
+use crate::literal_edit;
 use crate::rewrite::{find_binding, find_call, parse_ast, splice, splice_node};
 use crate::static_value::{get_static_value, render_call_at};
 
@@ -67,6 +68,14 @@ impl std::fmt::Display for GoalError {
 }
 
 impl std::error::Error for GoalError {}
+
+impl From<literal_edit::EditError> for GoalError {
+    fn from(error: literal_edit::EditError) -> Self {
+        GoalError {
+            message: error.message,
+        }
+    }
+}
 
 impl From<String> for GoalError {
     fn from(message: String) -> Self {
@@ -116,6 +125,31 @@ pub enum Goal {
         /// where it sits.
         placement: Placement,
     },
+    /// Reading the value at `path` should yield `value`. A path is a top-level
+    /// name followed by `.field` and `[index]` steps — `POST.effects[2].amount`
+    /// — entering record literals by field, and list literals and call
+    /// arguments by position.
+    ///
+    /// Only the text that has to change does: where the old and new values
+    /// agree nothing is written, a changed scalar is one token, and a list or
+    /// record whose shape changed is edited element by element, in place (see
+    /// [`crate::literal_edit`]). A record field that is not there yet is added
+    /// at the end of its record; any other missing step is an error.
+    ShouldSetPath { path: String, value: StaticValue },
+    /// The container `path` points into should gain `value` at that place:
+    /// `effects[1]` inserts before the current element 1, `POST.bloom` adds a
+    /// field (at the end of the record, or where `placement` names a sibling
+    /// field). The new text is laid out like its siblings.
+    ShouldInsert {
+        path: String,
+        value: StaticValue,
+        placement: Placement,
+    },
+    /// The list at `path` should gain `value` as its last element.
+    ShouldAppend { path: String, value: StaticValue },
+    /// The list element or record field at `path` should be gone. A field that
+    /// is already absent satisfies the goal.
+    ShouldRemove { path: String },
 }
 
 /// Where a goal's new statement goes when one has to be inserted.
@@ -188,6 +222,63 @@ impl Goal {
         }
     }
 
+    /// Construct a [`Goal::ShouldSetPath`]: after the edit, the value at
+    /// `path` reads as `value`.
+    ///
+    /// ```ignore
+    /// Goal::should_set_path("POST.effects[2].amount", 0.7);
+    /// Goal::should_set_path("POST.tint", StaticValue::color(0x29, 0xd9, 0xff));
+    /// ```
+    pub fn should_set_path<S, V>(path: S, value: V) -> Goal
+    where
+        S: Into<String>,
+        V: Into<StaticValue>,
+    {
+        Goal::ShouldSetPath {
+            path: path.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Construct a [`Goal::ShouldInsert`]: `value` becomes the element or
+    /// field `path` names. For a field, `.after(key)` / `.before(key)` place
+    /// it next to a sibling instead of at the end.
+    ///
+    /// ```ignore
+    /// Goal::should_insert("POST.effects[0]", effect);          // new first element
+    /// Goal::should_insert("POST.bloom", 0.4).after("exposure");
+    /// ```
+    pub fn should_insert<S, V>(path: S, value: V) -> Goal
+    where
+        S: Into<String>,
+        V: Into<StaticValue>,
+    {
+        Goal::ShouldInsert {
+            path: path.into(),
+            value: value.into(),
+            placement: Placement::End,
+        }
+    }
+
+    /// Construct a [`Goal::ShouldAppend`]: `value` becomes the last element of
+    /// the list at `path`.
+    pub fn should_append<S, V>(path: S, value: V) -> Goal
+    where
+        S: Into<String>,
+        V: Into<StaticValue>,
+    {
+        Goal::ShouldAppend {
+            path: path.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Construct a [`Goal::ShouldRemove`]: the element or field at `path` is
+    /// removed.
+    pub fn should_remove(path: impl Into<String>) -> Goal {
+        Goal::ShouldRemove { path: path.into() }
+    }
+
     /// Place this goal's statement directly below `anchor` if it has to be
     /// inserted (see [`Placement::After`]).
     ///
@@ -220,6 +311,13 @@ impl Goal {
                 value,
                 placement: new,
             },
+            Goal::ShouldInsert { path, value, .. } => Goal::ShouldInsert {
+                path,
+                value,
+                placement: new,
+            },
+            // Nothing to place: these edit what is already there.
+            other => other,
         }
     }
 }
@@ -250,6 +348,14 @@ fn apply_goal(source: &str, goal: &Goal) -> Result<String, GoalError> {
             value,
             placement,
         } => ensure_binding(source, name, value, placement),
+        Goal::ShouldSetPath { path, value } => Ok(literal_edit::set_path(source, path, value)?),
+        Goal::ShouldInsert {
+            path,
+            value,
+            placement,
+        } => Ok(literal_edit::insert_path(source, path, value, placement)?),
+        Goal::ShouldAppend { path, value } => Ok(literal_edit::append_path(source, path, value)?),
+        Goal::ShouldRemove { path } => Ok(literal_edit::remove_path(source, path)?),
     }
 }
 
@@ -455,14 +561,16 @@ fn ensure_call(
     }
 }
 
-/// Ensure reading `name` out of `source` yields `value`: replace the right-hand
+/// Ensure reading `name` out of `source` yields `value`: edit the right-hand
 /// side of its last top-level binding, or append `let name = value`.
 ///
-/// Replacing the whole right-hand side (rather than patching inside it) is what
-/// makes this a *static* change for non-trivial bindings too: a `name = if …`
-/// or `name = compute(…)` collapses to the literal, which satisfies the goal by
-/// construction. Everything around the value — the `let`, the name, comments,
-/// indentation — is untouched.
+/// The edit is the smallest one that makes the goal hold (see
+/// [`crate::literal_edit`]): a literal of the same shape has only its differing
+/// parts rewritten, so the comments and spelling inside a record or list
+/// survive. A right-hand side that is not a literal of the new value's shape —
+/// `name = if …`, `name = compute(…)` — is replaced whole and collapses to the
+/// literal, which satisfies the goal by construction. Everything around the
+/// value — the `let`, the name, comments, indentation — is untouched.
 ///
 /// A goal that already holds writes nothing at all: the source is returned as
 /// it came in, down to the byte. A caller that rewrites every field of a config
@@ -478,11 +586,11 @@ fn ensure_binding(
     if get_static_value(source, name).as_ref() == Ok(value) {
         return Ok(source.to_string());
     }
-    let (tree, stmts) = parse_ast(source)?;
+    let (_, stmts) = parse_ast(source)?;
     match find_binding(&stmts, name) {
-        // The value sits after `let name = ` at depth 1, so a multi-line
-        // composite indents its elements one level in.
-        Some(span) => Ok(replace_span(&tree, source, span, &value.render(1))),
+        // Edited where it stands, touching only what differs and formatting
+        // anything new like what is already there.
+        Some(_) => Ok(literal_edit::set_binding(source, name, value)?),
         None => Ok(insert_statement(
             source,
             &format!("let {name} = {}", value.render(1)),
@@ -904,10 +1012,11 @@ layout(row([
                 ]),
             )],
         );
-        // A composite list indents its elements one level in from the binding.
+        // A list of composites goes one element per line, indented one step
+        // from the line the binding starts on.
         assert_eq!(
             out,
-            "let panes = [\n    editor(\"a.rs\"),\n    editor(\"b.rs\"),\n  ]\n"
+            "let panes = [\n  editor(\"a.rs\"),\n  editor(\"b.rs\"),\n]\n"
         );
     }
 

@@ -41,7 +41,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, Literal, RecordField, StmtKind, UnaryOp};
+use crate::ast::{AssignTarget, Expr, ExprKind, Literal, RecordField, Stmt, StmtKind, UnaryOp};
 use crate::cst::parse_source;
 use crate::source_map::ENTRY_FILE;
 
@@ -70,6 +70,16 @@ pub enum StaticValue {
     /// A record literal `{ key: value, ... }`, rendered inline. Keys are
     /// rendered bare, so they must be valid Petal identifiers.
     Record(Vec<(String, StaticValue)>),
+    /// A color literal `#rrggbb` (or `#rgb`, `#rgba`, `#rrggbbaa`): channels
+    /// `0..=255`, with `a` present only when the literal spells an alpha.
+    /// Renders as `#rrggbb` / `#rrggbbaa` in lowercase; an edit of an existing
+    /// literal keeps that literal's case and short/long form (see
+    /// [`crate::literal_edit`]).
+    ///
+    /// At run time a color literal *is* the record `{r, g, b}` (plus `a`), but
+    /// a config file that says `#ff2e88` should get `#29d9ff` written back,
+    /// not `{ r: 41, g: 217, b: 255 }` — hence its own variant.
+    Color { r: u8, g: u8, b: u8, a: Option<u8> },
     /// A call `function(args...)`, held unevaluated — the building block for
     /// declarative call trees like `layout(row([editor("a")], [1.0]))`, and how
     /// a config file names a host-interpreted constructor.
@@ -99,6 +109,42 @@ impl StaticValue {
     /// The `nil` value.
     pub fn nil() -> StaticValue {
         StaticValue::Nil
+    }
+    /// An opaque color value, rendered `#rrggbb`.
+    pub fn color(r: u8, g: u8, b: u8) -> StaticValue {
+        StaticValue::Color { r, g, b, a: None }
+    }
+    /// A color value with an alpha channel, rendered `#rrggbbaa`.
+    pub fn color_alpha(r: u8, g: u8, b: u8, a: u8) -> StaticValue {
+        StaticValue::Color {
+            r,
+            g,
+            b,
+            a: Some(a),
+        }
+    }
+    /// The color a hex literal spells — `"#ff2e88"`, `"#f80"`, `"#ff2e88cc"`,
+    /// with or without the `#`. `None` when the text is not 3, 4, 6 or 8 hex
+    /// digits.
+    pub fn color_hex(hex: &str) -> Option<StaticValue> {
+        let hex = hex.trim();
+        let hex = hex.strip_prefix('#').unwrap_or(hex);
+        if !matches!(hex.len(), 3 | 4 | 6 | 8) || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        let channels = crate::parse::parse_color_hex(hex);
+        let get = |name: &str| {
+            channels
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| *value as u8)
+        };
+        Some(StaticValue::Color {
+            r: get("r")?,
+            g: get("g")?,
+            b: get("b")?,
+            a: get("a"),
+        })
     }
     /// A list value. Elements coerce like scalars do.
     pub fn list<P, A>(items: P) -> StaticValue
@@ -158,6 +204,10 @@ impl StaticValue {
             StaticValue::Bool(true) => "true".to_string(),
             StaticValue::Bool(false) => "false".to_string(),
             StaticValue::Nil => "nil".to_string(),
+            StaticValue::Color { r, g, b, a } => match a {
+                Some(a) => format!("#{r:02x}{g:02x}{b:02x}{a:02x}"),
+                None => format!("#{r:02x}{g:02x}{b:02x}"),
+            },
             StaticValue::List(items) => render_list(items, depth),
             StaticValue::Record(fields) => render_record(fields, depth),
             StaticValue::Call { function, args } => render_call_at(function, args, depth),
@@ -166,7 +216,7 @@ impl StaticValue {
 
     /// True for the composite variants whose rendering can span lines; a list
     /// containing any of these is laid out one element per line.
-    fn is_composite(&self) -> bool {
+    pub(crate) fn is_composite(&self) -> bool {
         matches!(
             self,
             StaticValue::List(_) | StaticValue::Record(_) | StaticValue::Call { .. }
@@ -434,8 +484,15 @@ pub fn static_bindings(source: &str) -> Result<Vec<StaticBinding>, StaticValueEr
 fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> {
     let (_tree, stmts) = parse_source(source, ENTRY_FILE).map_err(StaticValueError::Parse)?;
     let chars: Vec<char> = source.chars().collect();
+    Ok(bindings_of(&stmts, &chars))
+}
+
+/// The bindings the top-level statements `stmts` establish, in source order —
+/// pass a prefix of a file's statements to get the names in scope at that
+/// point, which is what [`eval`] resolves a reference against.
+pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> {
     let mut bindings: Vec<StaticBinding> = Vec::new();
-    for stmt in &stmts {
+    for stmt in stmts {
         let (name, value, text, is_config) = match &stmt.kind {
             StmtKind::Let {
                 name,
@@ -445,7 +502,7 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
             } => (
                 name.clone(),
                 eval(value, &bindings),
-                Some(span_text(&chars, value.span)),
+                Some(span_text(chars, value.span)),
                 *is_config,
             ),
             StmtKind::Assign {
@@ -454,7 +511,7 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
             } => (
                 name.clone(),
                 eval(value, &bindings),
-                Some(span_text(&chars, value.span)),
+                Some(span_text(chars, value.span)),
                 false,
             ),
             // A `fn` declares a name too, so report it as bound-but-not-static
@@ -476,7 +533,7 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
             ),
             _ => continue,
         };
-        let comment = leading_comment(&chars, stmt.span.start.offset as usize);
+        let comment = leading_comment(chars, stmt.span.start.offset as usize);
         set_binding(
             &mut bindings,
             StaticBinding {
@@ -490,7 +547,7 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
             },
         );
     }
-    Ok(bindings)
+    bindings
 }
 
 /// The source text a span covers. Spans are **char** offsets (the lexer indexes
@@ -562,7 +619,10 @@ fn set_binding(bindings: &mut Vec<StaticBinding>, binding: StaticBinding) {
 /// Statically evaluate `expr` against the names bound above it, or explain why
 /// it has no static value. The `Err` string is a noun phrase that completes
 /// "`x` is not a static value: …".
-fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> {
+pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> {
+    if let Some(color) = color_literal(expr) {
+        return Ok(color);
+    }
     match &expr.kind {
         ExprKind::Literal(lit) => Ok(match lit {
             Literal::Nil => StaticValue::Nil,
@@ -638,6 +698,38 @@ fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> 
     }
 }
 
+/// The color `expr` spells, if it is a color literal (`#ff2e88`).
+///
+/// The parser lowers a color literal to the record of its channels, every
+/// field carrying the span of the one color token — which is what tells it
+/// apart from a record somebody wrote out (`{ r: 255, g: 46, b: 136 }`), whose
+/// values sit strictly inside its braces.
+pub(crate) fn color_literal(expr: &Expr) -> Option<StaticValue> {
+    let ExprKind::Record(fields) = &expr.kind else {
+        return None;
+    };
+    let mut channels = [None::<u8>; 4];
+    for field in fields {
+        let RecordField::Named(key, value) = field else {
+            return None;
+        };
+        let ExprKind::Literal(Literal::Int(n)) = &value.kind else {
+            return None;
+        };
+        if value.span != expr.span {
+            return None;
+        }
+        let slot = ["r", "g", "b", "a"].iter().position(|name| name == key)?;
+        channels[slot] = Some(u8::try_from(*n).ok()?);
+    }
+    Some(StaticValue::Color {
+        r: channels[0]?,
+        g: channels[1]?,
+        b: channels[2]?,
+        a: channels[3],
+    })
+}
+
 /// A noun phrase naming the shape of a non-static expression, for the error.
 fn describe_expr(kind: &ExprKind) -> &'static str {
     match kind {
@@ -664,6 +756,7 @@ fn describe_value(value: &StaticValue) -> &'static str {
         StaticValue::Float(_) => "a float",
         StaticValue::Bool(_) => "a boolean",
         StaticValue::Nil => "nil",
+        StaticValue::Color { .. } => "a color",
         StaticValue::List(_) => "a list",
         StaticValue::Record(_) => "a record",
         StaticValue::Call { .. } => "a call",
@@ -753,6 +846,25 @@ mod tests {
             get("let accent = rgb(255, 0, 0)\n", "accent"),
             StaticValue::call("rgb", [255, 0, 0])
         );
+    }
+
+    #[test]
+    fn a_color_literal_reads_as_a_color_not_a_record() {
+        let src = "let tint = #ff2e88\nlet short = #F80\nlet glass = #10203040\nlet rec = { r: 255, g: 46, b: 136 }\n";
+        assert_eq!(get(src, "tint"), StaticValue::color(0xff, 0x2e, 0x88));
+        assert_eq!(get(src, "short"), StaticValue::color(0xff, 0x88, 0x00));
+        assert_eq!(
+            get(src, "glass"),
+            StaticValue::color_alpha(0x10, 0x20, 0x30, 0x40)
+        );
+        // A record somebody wrote out stays a record.
+        assert!(matches!(get(src, "rec"), StaticValue::Record(_)));
+        // Rendering is the canonical long lowercase form, and reads back.
+        assert_eq!(get(src, "short").to_source(), "#ff8800");
+        assert_eq!(get(src, "glass").to_source(), "#10203040");
+        assert_eq!(StaticValue::color_hex("#F80"), Some(get(src, "short")));
+        assert_eq!(StaticValue::color_hex("ff2e88"), Some(get(src, "tint")));
+        assert_eq!(StaticValue::color_hex("#ff2e8"), None);
     }
 
     #[test]

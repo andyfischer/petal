@@ -142,6 +142,11 @@ pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option
         _ => None,
     })?;
     for seg in path {
+        // A color literal lowers to a record of its channels, but in the
+        // source it is one token: there is nothing inside it to name.
+        if crate::static_value::color_literal(expr).is_some() {
+            return None;
+        }
         expr = match (seg, &expr.kind) {
             (PathSeg::Field(key), ExprKind::Record(fields)) => {
                 fields.iter().rev().find_map(|field| match field {
@@ -227,6 +232,19 @@ pub fn splice_node(
     Some(splice_at(tree, &path, repl))
 }
 
+/// The deepest node under `root` whose significant range (first .. last
+/// non-trivia token) is exactly `range` — the tree node an AST span names.
+pub(crate) fn find_node(root: &SyntaxNode, range: (u32, u32)) -> Option<SyntaxNode> {
+    let mut node = root.clone();
+    for i in find_node_path(root, range)? {
+        let SyntaxElement::Node(child) = node.children().into_iter().nth(i)? else {
+            return None;
+        };
+        node = child;
+    }
+    Some(node)
+}
+
 /// Path of child indices from `node` to the deepest descendant node whose
 /// significant range (first .. last non-trivia token) is exactly `range` —
 /// the tree node an AST span identifies, since AST spans exclude trivia.
@@ -253,7 +271,7 @@ fn find_node_path(node: &SyntaxNode, range: (u32, u32)) -> Option<Vec<usize>> {
 
 /// Char range `[start, end)` of `node`'s significant tokens, or `None` for an
 /// all-trivia node.
-fn significant_range(node: &SyntaxNode) -> Option<(u32, u32)> {
+pub(crate) fn significant_range(node: &SyntaxNode) -> Option<(u32, u32)> {
     let first = edge_significant_token(node, false)?;
     let last = edge_significant_token(node, true)?;
     Some((first.offset(), last.offset() + last.text_len()))
@@ -261,7 +279,7 @@ fn significant_range(node: &SyntaxNode) -> Option<(u32, u32)> {
 
 /// First (`from_end: false`) or last (`from_end: true`) non-trivia token leaf
 /// in `node`'s subtree.
-fn edge_significant_token(node: &SyntaxNode, from_end: bool) -> Option<SyntaxToken> {
+pub(crate) fn edge_significant_token(node: &SyntaxNode, from_end: bool) -> Option<SyntaxToken> {
     let mut children = node.children();
     if from_end {
         children.reverse();
@@ -444,6 +462,7 @@ mod tests {
         assert_eq!(at("POST.bloom"), None);
         assert_eq!(at("POST.effects[2]"), None);
         assert_eq!(at("POST.exposure.x"), None);
+        assert_eq!(at("POST.tint.r"), None);
         assert_eq!(at("MISSING.x"), None);
     }
 

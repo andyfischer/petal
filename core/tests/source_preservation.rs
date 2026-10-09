@@ -530,6 +530,69 @@ export config let POST = {
             vec![set("dir", StaticValue::call("vec3", [0.35, -1.0, 0.6]))],
             "let dir = vec3(0.35,  -1.0, 0.6)   // sun\n",
         ),
+        // ── Elements that span lines ─────────────────────────────────────
+        case(
+            "a new record beside multi-line records is multi-line",
+            "let fx = [\n    {\n        effect: \"grain\",\n        amount: 0.3, // subtle\n    },\n]\n",
+            vec![Goal::should_append("fx", effect("crt", 0.2))],
+            "let fx = [\n    {\n        effect: \"grain\",\n        amount: 0.3, // subtle\n    },\n    {\n        effect: \"crt\",\n        amount: 0.2,\n    },\n]\n",
+        ),
+        case(
+            "removing a multi-line element takes all its lines",
+            "let fx = [\n    {\n        effect: \"grain\",\n    },\n    // kept\n    {\n        effect: \"crt\",\n    }, // gone\n]\n",
+            vec![remove("fx[1]")],
+            "let fx = [\n    {\n        effect: \"grain\",\n    },\n    // kept\n]\n",
+        ),
+        case(
+            "a composite value for a new field is indented from its line",
+            "let cfg = {\n    name: \"neon\",\n}\n",
+            vec![insert(
+                "cfg.effects",
+                list(&[effect("crt", 0.2), effect("grain", 0.3)]),
+            )],
+            "let cfg = {\n    name: \"neon\",\n    effects: [\n        { effect: \"crt\", amount: 0.2 },\n        { effect: \"grain\", amount: 0.3 },\n    ],\n}\n",
+        ),
+        // ── Paths through calls, spreads and awkward text ────────────────
+        case(
+            "a path through a call's arguments, and inserting one",
+            "let sun = light(vec3(0.3, -1.0, 0.5), { color: #fff })\n",
+            vec![
+                set("sun[0][2]", 0.75.into()),
+                set("sun[1].color", hex("#ffeedd")),
+                insert("sun[0][3]", 1.0.into()),
+            ],
+            "let sun = light(vec3(0.3, -1.0, 0.75, 1.0), { color: #fed })\n",
+        ),
+        case(
+            "a record with a spread is still edited field by field by path",
+            "let base = { a: 1 }\nlet r = { ...base, b: 2 }\n",
+            vec![set("r.b", 3.into()), insert("r.c", 4.into())],
+            "let base = { a: 1 }\nlet r = { ...base, b: 3, c: 4 }\n",
+        ),
+        case(
+            "strings holding commas, brackets and comment markers",
+            "let xs = [\n  \"a, b\", // one, two\n  \"// not a comment ]\",\n  \"c\",\n]\n",
+            vec![remove("xs[1]"), set("xs[1]", "d//e".into())],
+            "let xs = [\n  \"a, b\", // one, two\n  \"d//e\",\n]\n",
+        ),
+        case(
+            "a comment on the opening line stays above a new first element",
+            "let xs = [ // counts\n  1,\n]\n",
+            vec![insert("xs[0]", 0.into())],
+            "let xs = [ // counts\n  0,\n  1,\n]\n",
+        ),
+        case(
+            "a wrapped list keeps its rows",
+            "let m = [1, 2, 3,\n         4, 5, 6]\n",
+            vec![remove("m[2]"), remove("m[2]"), insert("m[4]", 7.into())],
+            "let m = [1, 2,\n         5, 6, 7]\n",
+        ),
+        case(
+            "the last binding of a name is the one edited",
+            "let v = [1]\nlet v = [1] // this one\n",
+            vec![Goal::should_append("v", 2)],
+            "let v = [1]\nlet v = [1, 2] // this one\n",
+        ),
         case(
             "a value of another shape replaces the old one whole",
             "let a = { x: 1 } // was a record\nlet b = 3\n",

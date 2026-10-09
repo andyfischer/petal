@@ -21,7 +21,9 @@
  *     pb_vm_run                          reset_stack + run the whole program
  *     pb_vm_drain / pb_vm_drain_draw     read what the script emitted
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
- *     (pb_vm_changed_sources names the edited files)
+ *     (pb_vm_changed_sources names the edited files; a value or layout
+ *     edit is taken up without recompiling)
+ *   pb_vm_set_config                     set one config value now, no file write
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
  *   pb_source_*                          read and edit source text as a config file
  *
@@ -57,7 +59,8 @@ typedef enum pb_status {
     PB_ERR_NOT_FOUND = 6,    /* no such function / state variable / package */
     PB_ERR_PANIC = 7,        /* an internal Rust panic was caught; the VM may be inconsistent */
     PB_ERR_REENTRANT = 8,    /* called from inside a native callback while the VM is running */
-    PB_ERR_LIMIT = 9         /* a fixed capacity was exhausted (reserved; nothing reports it today) */
+    PB_ERR_LIMIT = 9,        /* a fixed capacity was exhausted (reserved; nothing reports it today) */
+    PB_ERR_NEEDS_RELOAD = 10 /* pb_vm_set_config: the value cannot be set without recompiling */
 } pb_status;
 
 /* Human-readable name of a status code ("ok", "compile error", ...). Static. */
@@ -515,14 +518,97 @@ typedef struct pb_reload_result {
     uint32_t state_dropped;   /* state slots dropped */
 } pb_reload_result;
 
-/* Re-read the entry file from disk, recompile, and swap the new program in
- * with transfer_state. On PB_ERR_COMPILE the old program keeps running.
- * Only valid for programs loaded with pb_vm_load_file. After a failed
- * pb_vm_load_file it retries that load instead (fresh state; `out` counts
- * nothing preserved or dropped). */
+/* Re-read the entry file from disk and bring the running program up to date
+ * with it and with its module files, doing only the work the edit calls for
+ * (docs/hot-reload.md):
+ *
+ *   - nothing changed, or only whitespace / comments / layout: source
+ *     positions move; nothing is recompiled and nothing is dropped;
+ *   - only literal values changed (0.35 became 0.4, "red" became "blue",
+ *     #ff2e88 became #ff2e80), each keeping its type: the values are written
+ *     into the running program; nothing is recompiled;
+ *   - anything else: recompile, and swap the new program in with
+ *     transfer_state.
+ *
+ * Whichever it is, the program and its state afterwards are what the full
+ * recompile would have left. pb_vm_last_reload_kind says which path was taken.
+ * On PB_ERR_COMPILE the old program keeps running. Only valid for programs
+ * loaded with pb_vm_load_file. After a failed pb_vm_load_file it retries that
+ * load instead (fresh state; `out` counts nothing preserved or dropped). */
 pb_status pb_vm_reload(pb_vm* vm, pb_reload_result* out);
-/* The same with new source text (the program keeps its original file origin). */
+/* The same with new source text for the entry file (the program keeps its
+ * original file origin; module files are still read from where they live). */
 pb_status pb_vm_reload_source(pb_vm* vm, const char* source, pb_reload_result* out);
+
+typedef enum pb_reload_kind {
+    PB_RELOAD_UNCHANGED = 0,  /* no source text changed */
+    PB_RELOAD_RELOCATED = 1,  /* layout only: source positions moved */
+    PB_RELOAD_PATCHED = 2,    /* literal values written in place */
+    PB_RELOAD_RECOMPILED = 3  /* recompiled, state transferred */
+} pb_reload_kind;
+
+/* How the last successful pb_vm_reload / pb_vm_reload_source / pb_vm_set_config
+ * was carried out (a pb_reload_kind), or -1 before the first one. */
+int pb_vm_last_reload_kind(pb_vm* vm);
+
+/* The same in detail, as JSON; NULL before the first one:
+ *
+ *   {"outcome": "patched",          // unchanged | relocated | patched | recompiled
+ *    "change": "values",            // none | values | constructs | full
+ *    "files": ["config.ptl"],       // the source files whose text changed
+ *    "state_preserved": 12, "state_dropped": 0,
+ *    "values": [                    // change == "values": each literal that changed
+ *      {"path": "POST.bloom",       //   binding path, or null outside a top-level let
+ *       "config": true,             //   inside a `config let`
+ *       "old": 0.2, "new": 0.4, "line": 3}],
+ *    "constructs": [                // change == "constructs": what differs
+ *      {"kind": "fn",               //   fn | let | config let | var | state | enum |
+ *       "name": "draw",             //   class | import | statement (name null)
+ *       "edit": "changed",          //   added | removed | changed
+ *       "line": 40}],
+ *    "reason": "...",               // change == "full": why
+ *    "fallback": "..."}             // the edit looked incremental and was
+ *                                   // recompiled anyway: why
+ *
+ * Valid until the next call to this function. */
+const char* pb_vm_last_reload_json(pb_vm* vm);
+
+/* Set one value of a top-level binding in the running program now, without
+ * the file changing on disk: the live half of a drag.
+ *
+ *   pb_vm_set_config(vm, NULL, "POST.effects[2].amount", "0.35");
+ *
+ * `path` is a binding path as for pb_source_set_value and `value_json` a value
+ * in the same JSON (a bare number is a float; an integer is {"int": 3}, so a
+ * drag over an integer literal sends that form). `file` is the path of the
+ * source file that holds the
+ * binding; NULL finds it (exactly one source file must bind the name at its
+ * top level).
+ *
+ * The edit is the one pb_source_set_value makes, applied to the text the
+ * running program holds for that file, and taken up without recompiling. The
+ * program afterwards is exactly what reloading that edited file would give.
+ * pb_vm_source_text returns the edited text: write it to the file when the
+ * drag ends, and the reload that follows has nothing to do. To abandon the
+ * drag instead, pb_vm_reload: the file's own values come back.
+ *
+ * PB_ERR_NEEDS_RELOAD when the value has a different type or shape from the
+ * one written (10 to 10.5, a list that grew, a field that is not there):
+ * write the file and reload for those. PB_ERR_NOT_FOUND when the path or file
+ * names nothing, PB_ERR_INVALID_ARG for a malformed path or JSON, or a name
+ * bound in more than one file. A failed call changes nothing.
+ *
+ * Like a reload, a successful call ends the lifetime of views handed out by
+ * the last run, and the functions of the program are callable again only
+ * after the next pb_vm_run. */
+pb_status pb_vm_set_config(pb_vm* vm, const char* file, const char* path,
+                           const char* value_json);
+
+/* The text the running program holds for one of its source files: what it was
+ * compiled from, plus every pb_vm_set_config since. `file` is the file's path;
+ * NULL is the entry file. NULL when it is not a source file of the program.
+ * Valid until the next call to this function. */
+const char* pb_vm_source_text(pb_vm* vm, const char* file);
 
 /* ─── Input scenarios (petal-ui replay) ────────────────────────────────── */
 /*

@@ -12,7 +12,8 @@ use std::ffi::{CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
-use petal::env::Env;
+use petal::env::{ConfigSetError, Env, ReloadOutcome, ReloadReport};
+use petal::static_value::StaticValue;
 use petal::error::CallError;
 use petal::program::ProgramId;
 use petal::source_watch::SourceWatch;
@@ -94,6 +95,10 @@ pub struct Vm {
     changed_files: CStrList,
     output_lines: CStrList,
     state_json: CString,
+    /// How the last successful reload or `set_config` was carried out.
+    last_reload: Option<ReloadReport>,
+    reload_json: CString,
+    source_text: CString,
     profile_report: CString,
     /// The memo counters when profiling was last turned on: the report shows
     /// what the measured runs added.
@@ -135,6 +140,9 @@ impl Vm {
             changed_files: CStrList::default(),
             output_lines: CStrList::default(),
             state_json: CString::default(),
+            last_reload: None,
+            reload_json: CString::default(),
+            source_text: CString::default(),
             profile_report: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
@@ -231,6 +239,7 @@ impl Vm {
             watch: self.env.watch_program_sources(program_id, origin),
         });
         self.broken = None;
+        self.last_reload = None;
         Ok(())
     }
 
@@ -311,22 +320,18 @@ impl Vm {
         }
     }
 
-    /// Recompile the program from `source` (keeping its entry file origin)
-    /// and swap it in with `transfer_state`. On a compile error the old
-    /// program stays loaded.
+    /// Bring the program up to date with `source` as its entry file's text
+    /// (keeping the file origin) and with its module files as they are now.
+    /// Only the work the edit calls for is done (`Env::reload_program`): a
+    /// layout or comment edit moves source positions, a value edit writes
+    /// constants in place, anything else recompiles and swaps the program in
+    /// with `transfer_state`. [`last_reload`](Self::last_reload) says which.
+    /// On a compile error the old program stays loaded.
     pub fn reload_with(&mut self, source: &str) -> BResult<PbReloadResult> {
         let l = self.loaded()?;
-        let (pid, stack, origin, name) = (
-            l.program_id,
-            l.stack_id,
-            l.entry_path.clone(),
-            l.entry_name.clone(),
-        );
-        let compiled = self
-            .env
-            .compile_program_diag(pid, source, origin.as_deref());
-        let program = match compiled {
-            Ok(p) => p,
+        let (stack, origin, name) = (l.stack_id, l.entry_path.clone(), l.entry_name.clone());
+        let report = match self.env.reload_program(stack, source, origin.as_deref()) {
+            Ok(report) => report,
             Err(e) => {
                 // This version of the files has been looked at: don't report
                 // it as changed again until it is edited.
@@ -335,18 +340,69 @@ impl Vm {
                 return Err(BridgeError::from_load(&e, &name));
             }
         };
-        let result = self
-            .env
-            .transfer_state(stack, program)
-            .map_err(|e| BridgeError::runtime(e, &name))?;
         self.clear_views();
         // The new program may import a different set of files.
         self.refresh_watch();
         self.broken = None;
-        Ok(PbReloadResult {
-            state_preserved: result.state_preserved as u32,
-            state_dropped: result.state_dropped as u32,
-        })
+        let result = PbReloadResult {
+            state_preserved: report.state_preserved as u32,
+            state_dropped: report.state_dropped as u32,
+        };
+        self.last_reload = Some(report);
+        Ok(result)
+    }
+
+    /// What the last successful [`reload`](Self::reload) /
+    /// [`reload_with`](Self::reload_with) / [`set_config`](Self::set_config)
+    /// did. `None` before the first one.
+    pub fn last_reload(&self) -> Option<&ReloadReport> {
+        self.last_reload.as_ref()
+    }
+
+    /// Set one value of a top-level binding in the running program, without
+    /// touching the file (`Env::set_config_value`): `path` is a binding path
+    /// (`POST.effects[2].amount`), `value` what it should read, `file` the
+    /// source file holding the binding (`None` finds it). The running text
+    /// of that file ([`source_text`](Self::source_text)) takes the edit, so
+    /// writing it to disk later is a reload with nothing to do.
+    pub fn set_config(
+        &mut self,
+        file: Option<&Path>,
+        path: &str,
+        value: &StaticValue,
+    ) -> BResult<()> {
+        let stack = self.loaded()?.stack_id;
+        let report = self
+            .env
+            .set_config_value(stack, file, path, value)
+            .map_err(|e| {
+                let code = match &e {
+                    ConfigSetError::NotFound(_) => Status::NotFound,
+                    ConfigSetError::Invalid(_) => Status::InvalidArg,
+                    ConfigSetError::NeedsReload(_) => Status::NeedsReload,
+                };
+                BridgeError::new(code, e.to_string())
+            })?;
+        if report.outcome != ReloadOutcome::Unchanged {
+            self.clear_views();
+        }
+        self.last_reload = Some(report);
+        Ok(())
+    }
+
+    /// The text the running program holds for a source file (`None`: the
+    /// entry file): what it was compiled from, plus every
+    /// [`set_config`](Self::set_config) since.
+    pub fn source_text(&self, file: Option<&Path>) -> Option<&str> {
+        let l = self.loaded.as_ref()?;
+        // The entry file can be named by its path too.
+        let entry = l.entry_path.as_deref();
+        let file = file.filter(|f| {
+            entry.is_none_or(|e| {
+                petal::module::canonical_path(e) != petal::module::canonical_path(f)
+            })
+        });
+        self.env.program_source(l.program_id, file)
     }
 
     /// Re-read the entry file and [`reload_with`](Self::reload_with) it.
@@ -1246,6 +1302,149 @@ pub unsafe extern "C" fn pb_vm_reload_source(
     st
 }
 
+/// Mirrors `pb_reload_kind`.
+fn reload_kind(outcome: ReloadOutcome) -> i32 {
+    match outcome {
+        ReloadOutcome::Unchanged => 0,
+        ReloadOutcome::Relocated => 1,
+        ReloadOutcome::Patched => 2,
+        ReloadOutcome::Recompiled => 3,
+    }
+}
+
+/// The JSON `pb_vm_last_reload_json` hands out.
+fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
+    use petal::ast::Literal;
+    use petal::source_diff::{ConstructEdit, ConstructKind, SourceChange};
+    use serde_json::json;
+    let literal = |l: &Literal| match l {
+        Literal::Nil => serde_json::Value::Null,
+        Literal::Bool(b) => json!(b),
+        Literal::Int(n) => json!(n),
+        Literal::Float(f) => json!(f),
+        Literal::String(s) => json!(s),
+    };
+    let mut out = json!({
+        "outcome": report.outcome.label(),
+        "change": report.change.label(),
+        "files": report.changed_files,
+        "state_preserved": report.state_preserved,
+        "state_dropped": report.state_dropped,
+    });
+    match &report.change {
+        SourceChange::Values(values) => {
+            out["values"] = values
+                .iter()
+                .map(|v| {
+                    json!({
+                        "path": v.path,
+                        "config": v.config,
+                        "old": literal(&v.old),
+                        "new": literal(&v.new),
+                        "line": v.new_span.start.line,
+                    })
+                })
+                .collect();
+        }
+        SourceChange::Constructs(constructs) => {
+            out["constructs"] = constructs
+                .iter()
+                .map(|c| {
+                    json!({
+                        "kind": match c.kind {
+                            ConstructKind::Function => "fn",
+                            ConstructKind::Let => "let",
+                            ConstructKind::ConfigLet => "config let",
+                            ConstructKind::Var => "var",
+                            ConstructKind::State => "state",
+                            ConstructKind::Enum => "enum",
+                            ConstructKind::Class => "class",
+                            ConstructKind::Import => "import",
+                            ConstructKind::Statement => "statement",
+                        },
+                        "name": c.name,
+                        "edit": match c.edit {
+                            ConstructEdit::Added => "added",
+                            ConstructEdit::Removed => "removed",
+                            ConstructEdit::Changed => "changed",
+                        },
+                        "line": c.span.start.line,
+                    })
+                })
+                .collect();
+        }
+        SourceChange::Full(why) => out["reason"] = json!(why),
+        SourceChange::None => {}
+    }
+    if let Some(why) = &report.fallback {
+        out["fallback"] = json!(why);
+    }
+    out
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_last_reload_kind(vm: *mut VmHandle) -> i32 {
+    with_vm(vm, -1, |vm| {
+        Ok(vm.last_reload.as_ref().map_or(-1, |r| reload_kind(r.outcome)))
+    })
+    .1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_last_reload_json(vm: *mut VmHandle) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        let Some(report) = &vm.last_reload else {
+            return Ok(std::ptr::null());
+        };
+        vm.reload_json = cstring_lossy(&reload_report_json(report).to_string());
+        Ok(vm.reload_json.as_ptr())
+    })
+    .1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_config(
+    vm: *mut VmHandle,
+    file: *const c_char,
+    path: *const c_char,
+    value_json: *const c_char,
+) -> Status {
+    with_vm(vm, (), |vm| {
+        let file = if file.is_null() {
+            None
+        } else {
+            Some(PathBuf::from(unsafe { arg_str(file, "file") }?))
+        };
+        let path = unsafe { arg_str(path, "path") }?;
+        let json = unsafe { arg_str(value_json, "value_json") }?;
+        let value = petal::static_json::from_json(json)
+            .map_err(|e| BridgeError::invalid(format!("value_json: {e}")))?;
+        vm.set_config(file.as_deref(), path, &value)
+    })
+    .0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_source_text(vm: *mut VmHandle, file: *const c_char) -> *const c_char {
+    with_vm(vm, std::ptr::null(), |vm| {
+        vm.loaded()?;
+        let file = if file.is_null() {
+            None
+        } else {
+            Some(PathBuf::from(unsafe { arg_str(file, "file") }?))
+        };
+        let text = vm
+            .source_text(file.as_deref())
+            .ok_or_else(|| {
+                BridgeError::new(Status::NotFound, "not a source file of the loaded program")
+            })?
+            .to_string();
+        vm.source_text = cstring_lossy(&text);
+        Ok(vm.source_text.as_ptr())
+    })
+    .1
+}
+
 // ── State and output tooling ─────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
@@ -1552,6 +1751,94 @@ mod tests {
         assert!(vm.changed_sources().is_empty());
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![22]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A reload does only what the edit calls for, a value can be set
+    /// without the file changing, and the running text is what to write when
+    /// the drag ends.
+    #[test]
+    fn reload_takes_the_cheap_path_and_set_config_needs_no_file_write() {
+        let dir =
+            std::env::temp_dir().join(format!("petal-c-bridge-config-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        let main = dir.join("main.ptl");
+        let config = dir.join("config.ptl");
+        let entry = "import config
+state n = 0
+n += config.LOOK.step
+push_output(symbol(\"out\"), n)
+";
+        let knobs = "// knobs
+pub config let LOOK = {step: 2, fog: 0.5}
+";
+        std::fs::write(&main, entry).unwrap();
+        std::fs::write(&config, knobs).unwrap();
+        let mut vm = Vm::new();
+        vm.load_file(&main).unwrap();
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![2]);
+        assert!(vm.last_reload().is_none());
+        let work = vm.env.work_counters();
+
+        // A value edit in the module file: patched, nothing compiled.
+        std::fs::write(&config, "// knobs
+pub config let LOOK = {step: 10, fog: 0.5}
+").unwrap();
+        assert!(vm.sources_changed());
+        vm.reload().unwrap();
+        assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Patched);
+        assert!(!vm.sources_changed());
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![12]);
+
+        // A comment: relocated.
+        std::fs::write(&main, format!("// the game
+{entry}")).unwrap();
+        vm.reload().unwrap();
+        assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Relocated);
+        assert_eq!(vm.env.work_counters(), work);
+
+        // A drag: the value changes, the file does not.
+        vm.set_config(None, "LOOK.step", &StaticValue::int(100)).unwrap();
+        assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Patched);
+        assert!(!vm.sources_changed());
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![112]);
+        assert_eq!(vm.env.work_counters(), work);
+        let json = reload_report_json(vm.last_reload().unwrap());
+        assert_eq!(json["outcome"], "patched");
+        assert_eq!(json["values"][0]["path"], "LOOK.step");
+        assert_eq!(json["values"][0]["new"], 100);
+        // A different type needs the file and a reload; nothing changes.
+        let err = vm
+            .set_config(Some(&config), "LOOK.step", &StaticValue::float(1.5))
+            .unwrap_err();
+        assert_eq!(err.code, Status::NeedsReload);
+        assert_eq!(
+            vm.set_config(None, "NOPE", &StaticValue::int(1)).unwrap_err().code,
+            Status::NotFound
+        );
+
+        // The drag ends: the host writes the running text, and the reload
+        // that follows has nothing to do.
+        let text = vm.source_text(Some(&config)).unwrap().to_string();
+        assert_eq!(text, "// knobs\npub config let LOOK = {step: 100, fog: 0.5}\n");
+        std::fs::write(&config, &text).unwrap();
+        assert!(vm.sources_changed());
+        vm.reload().unwrap();
+        assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Unchanged);
+        assert_eq!(vm.env.work_counters(), work);
+        assert_eq!(vm.source_text(None).unwrap(), format!("// the game\n{entry}"));
+        assert_eq!(vm.source_text(Some(&main)).unwrap(), format!("// the game\n{entry}"));
+
+        // A structural edit recompiles.
+        std::fs::write(&main, format!("{entry}push_output(symbol(\"out\"), 7)\n")).unwrap();
+        vm.reload().unwrap();
+        assert_eq!(vm.last_reload().unwrap().outcome, ReloadOutcome::Recompiled);
+        vm.run().unwrap();
+        assert_eq!(out_ints(&mut vm), vec![212, 7]);
         std::fs::remove_dir_all(&dir).ok();
     }
 

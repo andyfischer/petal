@@ -1042,6 +1042,64 @@ TEST(hot_reload_watches_new_imports_and_deletions) {
     CHECK_EQ(run_out(vm), std::vector<double>{7});
 }
 
+// A reload does only the work the edit calls for, and a value can be set in
+// the running program without the file changing.
+TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
+    fs::path dir = scratch_dir("hot_reload_config");
+    fs::path main = dir / "game.ptl";
+    fs::path config = dir / "config.ptl";
+    write_file(config, "// knobs\npub config let POST = {bloom: 0.25, steps: [1, 2]}\n");
+    write_file(main,
+               "import config\n"
+               "state frames = 0\n"
+               "frames += 1\n"
+               "push_output(symbol(\"out\"), config.POST.bloom * 100 + config.POST.steps[1])\n");
+    petal::Vm vm;
+    vm.load_file(main.string());
+    CHECK_EQ(run_out(vm), std::vector<double>{27});
+
+    // A value edit: written in place.
+    write_file(config, "// knobs\npub config let POST = {bloom: 0.5, steps: [1, 2]}\n");
+    CHECK(vm.sources_changed());
+    petal::ReloadResult r = vm.reload();
+    CHECK_EQ(r.kind, PB_RELOAD_PATCHED);
+    CHECK_EQ(r.state_dropped, 0u);
+    CHECK(vm.last_reload_json().find("\"path\":\"POST.bloom\"") != std::string::npos);
+    CHECK_EQ(run_out(vm), std::vector<double>{52});
+
+    // A layout edit: nothing but positions.
+    write_file(config, "// knobs\n\npub config let POST = {\n  bloom: 0.5,\n  steps: [1, 2],\n}\n");
+    CHECK_EQ(vm.reload().kind, PB_RELOAD_RELOCATED);
+    CHECK_EQ(run_out(vm), std::vector<double>{52});
+
+    // A drag: no file write.
+    // (A bare JSON number is a float; an integer is {"int": n}.)
+    CHECK(vm.set_config("POST.steps[1]", "{\"int\":9}"));
+    CHECK(vm.set_config("POST.bloom", "0.75", config.string()));
+    CHECK(!vm.sources_changed());
+    CHECK_EQ(vm.last_reload_kind(), PB_RELOAD_PATCHED);
+    CHECK_EQ(run_out(vm), std::vector<double>{84});
+    // A value of another type needs the file and a reload.
+    CHECK(!vm.set_config("POST.steps[1]", "9.5"));
+    CHECK_THROWS_CODE(vm.set_config("POST.missing.deep", "1"), PB_ERR_NOT_FOUND);
+    CHECK_EQ(run_out(vm), std::vector<double>{84});
+
+    // The drag ends: write the running text; the reload finds nothing to do.
+    std::string text = vm.source_text(config.string());
+    CHECK(text.find("bloom: 0.75,") != std::string::npos);
+    CHECK(text.find("steps: [1, 9],") != std::string::npos);
+    write_file(config, text);
+    CHECK_EQ(vm.reload().kind, PB_RELOAD_UNCHANGED);
+    CHECK_EQ(run_out(vm), std::vector<double>{84});
+
+    // Anything structural is still a recompile, and state survives it.
+    write_file(config, "pub config let POST = {bloom: 0.75, steps: [1, 9, 3]}\n");
+    r = vm.reload();
+    CHECK_EQ(r.kind, PB_RELOAD_RECOMPILED);
+    CHECK_EQ(r.state_dropped, 0u);
+    CHECK_EQ(run_out(vm), std::vector<double>{84});
+}
+
 // A first load that fails leaves nothing loaded, but the VM watches for the
 // fix: the entry file and any .ptl file beside it, and reload() retries the
 // load.

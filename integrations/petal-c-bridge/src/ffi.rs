@@ -19,6 +19,7 @@ pub enum Status {
     Panic = 7,
     Reentrant = 8,
     Limit = 9,
+    NeedsReload = 10,
 }
 
 impl Status {
@@ -34,6 +35,7 @@ impl Status {
             Status::Panic => c"internal panic",
             Status::Reentrant => c"reentrant call",
             Status::Limit => c"limit exceeded",
+            Status::NeedsReload => c"needs a reload",
         }
     }
 }

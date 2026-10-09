@@ -305,6 +305,9 @@ using NativeFn = std::function<void(Call&)>;
 struct ReloadResult {
     uint32_t state_preserved = 0;
     uint32_t state_dropped = 0;
+    // How the reload was carried out: PB_RELOAD_UNCHANGED, _RELOCATED (layout
+    // only), _PATCHED (values written in place) or _RECOMPILED.
+    pb_reload_kind kind = PB_RELOAD_RECOMPILED;
 };
 
 // ─── Input scenarios ────────────────────────────────────────────────────────
@@ -607,15 +610,43 @@ public:
     }
     // Throws on compile error; the old program keeps running. After a failed
     // load_file(), retries that load (fresh state).
+    // Only the work the edit calls for is done: see pb_vm_reload.
     ReloadResult reload() {
         pb_reload_result r{};
         check(pb_vm_reload(vm_, &r));
-        return {r.state_preserved, r.state_dropped};
+        return {r.state_preserved, r.state_dropped, last_reload_kind()};
     }
     ReloadResult reload_source(const std::string& source) {
         pb_reload_result r{};
         check(pb_vm_reload_source(vm_, source.c_str(), &r));
-        return {r.state_preserved, r.state_dropped};
+        return {r.state_preserved, r.state_dropped, last_reload_kind()};
+    }
+    pb_reload_kind last_reload_kind() {
+        int k = pb_vm_last_reload_kind(vm_);
+        return k < 0 ? PB_RELOAD_RECOMPILED : static_cast<pb_reload_kind>(k);
+    }
+    // What the last reload or set_config did, as JSON ("" before the first).
+    std::string last_reload_json() {
+        const char* s = pb_vm_last_reload_json(vm_);
+        return s ? s : "";
+    }
+    // Set one config value in the running program without writing the file
+    // (pb_vm_set_config). Returns false when the value needs a reload instead
+    // (a different type or shape); throws for a bad path, file or JSON.
+    bool set_config(const std::string& path, const std::string& value_json,
+                    const std::string& file = {}) {
+        pb_status st = pb_vm_set_config(vm_, file.empty() ? nullptr : file.c_str(), path.c_str(),
+                                        value_json.c_str());
+        if (st == PB_ERR_NEEDS_RELOAD) return false;
+        check(st);
+        return true;
+    }
+    // The text the running program holds for a source file ("" = the entry
+    // file), every set_config included.
+    std::string source_text(const std::string& file = {}) {
+        const char* s = pb_vm_source_text(vm_, file.empty() ? nullptr : file.c_str());
+        if (!s) throw Error::from_vm(vm_, PB_ERR_NOT_FOUND);
+        return s;
     }
 
     // ── State / output tooling ──

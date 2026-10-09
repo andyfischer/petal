@@ -2139,7 +2139,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 470
+        "line": 478
       }
     },
     {
@@ -2172,7 +2172,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 470
+        "line": 478
       },
       "aliasOf": "map"
     },
@@ -2214,7 +2214,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 470
+        "line": 478
       },
       "aliasOf": "map"
     },
@@ -2248,7 +2248,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 470
+        "line": 478
       },
       "aliasOf": "map"
     },
@@ -3184,7 +3184,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 470
+        "line": 478
       },
       "aliasOf": "map"
     },
@@ -3927,6 +3927,58 @@
         "file": "core/src/builtins/collections.rs",
         "line": 735
       }
+    },
+    {
+      "name": "fn_info",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 478
+      },
+      "aliasOf": "map"
+    },
+    {
+      "name": "fn_ast",
+      "category": "higher-order",
+      "group": "core",
+      "arity": null,
+      "variadic": true,
+      "params": [
+        {
+          "name": "f",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "f",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/mod.rs",
+        "line": 478
+      },
+      "aliasOf": "map"
     },
     {
       "name": "Rect",

@@ -38,6 +38,8 @@ How to build on Petal from a host program, a tool, or an agent:
 | [Direct Manipulation](direct-manipulation.md) | Tracing a drawn shape or emitted value back to the call that produced it, then editing that call |
 | [Config Files](config-files.md) | Using a `.ptl` file as an app's configuration: read values without running, write them back |
 | [`var` / mutable cells](var.md) | How `var`, `set`, and `get` work, and where mutation shows up in the dataflow graph |
+| [Function Introspection](function-introspection.md) | **Experimental.** `fn_info` and `fn_ast`: reading a function's parameters, annotations, defaults, captures and syntax tree from Petal code |
+| [Petal to GLSL](petal-to-glsl.md) | **Experimental.** The `glsl` library: `to_glsl(lambda)` turns a Petal function into GLSL, cached by the function's code hash |
 
 ## Internals and design
 

@@ -1046,6 +1046,60 @@ new list.
 forEach([1, 2, 3], fn(x) -> print(x))
 ```
 
+## Function Introspection (experimental)
+
+Two builtins that let a program look at a function value: its parameters,
+annotations, defaults, captures and syntax tree, as plain records and lists.
+They exist so a library written in Petal can read code — the first one is
+[`glsl`](petal-to-glsl.md), which turns a lambda into GLSL. **Experimental:**
+the shape of what they return may change. The full description, including
+every node of the tree, is in [Function Introspection](function-introspection.md).
+
+### `fn_info(f)`
+
+A record describing the function `f` (a lambda or a named `fn`). Cheap enough
+to call every frame.
+
+```petal
+let GAIN = 1.5
+let grade = fn(c: vec3, amount = 0.5) -> c * GAIN * amount
+let info = fn_info(grade)
+print(info.params[0].name, info.params[0].type)     // c vec3
+print(info.params[1].default, info.params[1].default_source)   // 0.5 0.5
+print(info.captures[0].name, info.captures[0].value)   // GAIN 1.5
+print(len(info.code_hash))   // 16
+```
+
+| Field | |
+|---|---|
+| `name` | the declared name, `nil` for a lambda |
+| `file`, `line`, `column` | where the function is written (`file` is `nil` for the entry file when it has no name) |
+| `params` | a list of `{name, type, has_default, default, default_source}`. `type` is the annotation as written (`"vec3"`, `"Fx"`) or `nil`. `default` is the default's value when it is a literal, a color, or a `vec2`/`vec3` of numbers, else `nil`; `default_source` is its text |
+| `returns` | the declared return type's name, or `nil` (a lambda cannot declare one) |
+| `captures` | a list of `{name, value}`: each outer binding the body reads, with the value the closure holds now |
+| `code_hash` | 16 hex digits: a hash of the function's code and of the code of every function it captures. Comments, layout and captured *values* do not change it, and it is the same after a hot reload that leaves the function alone, so it can key a cache |
+
+Returns `nil` for a builtin and for an overloaded name (several functions
+under one name). A class constructor has a `name` and `params` and `nil` for
+everything that needs source.
+
+### `fn_ast(f)`
+
+The function's syntax tree: `{tag, name, params, returns, body, line, column,
+file}`, where `body` is a list of statement nodes. Every node is a record with
+a `tag` (`"Let"`, `"BinaryOp"`, `"Call"`, ...), its own fields, and `line` /
+`column`. Larger than `fn_info`; call it when a cached result is missing.
+Returns `nil` when there is no source to read (a builtin, an overloaded name,
+a class constructor, a program loaded from IR).
+
+```petal
+let double = fn(x: float) -> x * 2.0
+let tree = fn_ast(double)
+let tail = tree.body[0].expr
+print(tree.tag, tree.params[0].type)   // Lambda float
+print(tail.tag, tail.op, tail.left.name, tail.right.value)   // BinaryOp Mul x 2.0
+```
+
 ## Assertions
 
 Assertions stop the program with a message and source location when their

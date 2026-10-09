@@ -113,6 +113,16 @@ way, for code written against an earlier checkout.
 - A core prelude written in Petal, loaded only when a program refers to it.
 - Every native declares its effects (what it reads and writes), which the
   memoizer and the `--effect-audit` runtime check both use.
+- Function introspection (experimental): `fn_info(f)` describes a function
+  value (parameter names, annotations, defaults, declared return type,
+  captures, and a `code_hash` that survives reloads), and `fn_ast(f)` returns
+  its syntax tree as records and lists. See
+  [docs/function-introspection.md](docs/function-introspection.md).
+- `glsl` (experimental), a library in `core-runtime/`: `to_glsl(lambda)`
+  translates a Petal function in the pure numeric subset to GLSL, refuses
+  anything else with a line and column, and caches by code hash so a script
+  that calls it every frame translates once per change. See
+  [docs/petal-to-glsl.md](docs/petal-to-glsl.md).
 
 ### CLI
 

@@ -43,14 +43,14 @@ the worst of both. Plan:
 
 ## 2. `text_field` has no selection, clipboard or undo
 
-`core-libs/petal-ui/prelude/ui.ptl:2367`. Bloom's `text_field` doesn't have them
+`core-libs/petal-ui/prelude/ui.ptl:2264`. Bloom's `text_field` doesn't have them
 either. Every text-editing app hand-rolls its own field. The command
 palette's query box also has no caret movement at all (the caret is always
 at the end). **M.**
 
 ## 3. Draw coordinates are `i32` throughout the command format
 
-`coord_to_i32` (`core-libs/petal-ui/src/draw.rs:1546`) and every primitive's fields.
+`coord_to_i32` (`core-libs/petal-ui/src/draw.rs:1550`) and every primitive's fields.
 Rotating polygons jitter by up to a pixel per vertex (asteroids). Fixing it
 changes the draw-command format and every host (Garden, petal-sdl,
 petal-web, worlds-fair). **L.**
@@ -64,19 +64,13 @@ Each is **S**, and each was hit by only one app:
 - **Text can't be rotated.** Solar-system labels can't follow an orbit.
   Low value on its own. Worth doing if item 3 reworks the command format
   anyway.
-- **Stale binary vs `check`.** The command palette was built against a
-  Garden that predated `text_advance` and `range(a, b, step)`, while
-  `petal check --host garden` accepted both. `d5652ca` added the startup
-  warning and `/state.identity.freshness`. Either the agent didn't see
-  them, or they didn't fire. Check which, and consider having the launcher
-  (`tools/run-example.ts`) rebuild when the binary is behind.
 
 ## Follow-ups outside this repo
 
 - worlds-fair: `tools/check_petal_ui.ts` must pass `--host garden` for
   Garden bundles and `--native wf_action,wf_goto,wf_model,wf_fragments` for
   engine bundles once it re-copies Petal, or `check --strict` fails. It
-  still doesn't (checked 2026-09-22).
+  still doesn't (checked 2026-10-08).
 - Scripts for custom hosts (petal-fps, fantasy-nes, petal-web-html) need
   `--native` for their own natives. Garden config scripts (`init.ptl`,
   `layout.ptl`) are checked with `--host garden-config`.

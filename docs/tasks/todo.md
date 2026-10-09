@@ -1,66 +1,133 @@
+# Open work, ranked
 
-DONE (2026-10-08) — merged to main at 4c110ff
+Status: 2026-10-08, checked against `47d1e0e`. The ten highest-impact
+unresolved items from [todo-bugs-20260923.md](todo-bugs-20260923.md),
+[testbed-takeaways.md](testbed-takeaways.md), the follow-ups of the
+2026-10-08 `var`/`bench`/`-> nil`/`pub` work, and the 2026-10-06 testbed
+debriefs (email client, network graph, tower defense). Each was reproduced
+with a release build of HEAD unless it says otherwise.
 
-ISSUE 1 — mutable state across functions
-- `set xs[i] = ...` / `set r.f = ...` through a `var` / `state var` cell now
-  mutates in place from any function (docs/var.md "Writing a container in
-  place"). 20k helper writes: 1.64s -> 0.007s.
-- physics-playground: `step` uses nested closures over local `var`s (shape (a));
-  app.ptl's intents block is functions over `state var`. Output byte-identical.
-- Pattern documented in language-guide.md and writing-petal-guide.md.
-- `petal apply-change convert-to-var <file> --target <path>` (docs/CLI.md).
-  Importers: `--from <file>` when given, else a scan under the nearest
-  `petal.toml` directory.
+Ranked: what blocks a release, then silent wrong results, then what every
+new app or newcomer trips on.
 
-ISSUE 2 — `petal bench <file> --fn <name>` (docs/CLI.md)
-- Inclusive and self figures, opt vs no-opt delta, `--iters`, `--json`.
-- Copy/allocation counters are a runtime switch, available in release builds.
+## 1. The install path fails and nothing says 1.0
 
-ISSUE 3 — `-> nil` disables the implicit return
-- docs/implicit-return-values.md; `petal suggest` kind `return-types`
-  (loop tails only).
+`https://petal-lang.org/install.sh` and the GitHub `releases/latest` tarball
+both return 404, and the installer is the first command in the README.
+`petal --version` prints `0.1.0`, the README says "early, experimental phase",
+and there is no CHANGELOG. Cut a release with `release-petal.yml`, deploy the
+site, test the one-liner on a clean machine. Details: todo-bugs §1.1, §1.4.
 
-ISSUE 4 — `pub` replaces `export`
-- `export` still parses, with a deprecation warning; `prefer-pub` lint fix and
-  `petal fmt` rewrite it. All in-repo sources migrated.
+## 2. Recursion under the default policy uses hundreds of MB
 
-FOLLOW-UPS
+`fib(27)` takes 541 MB and 0.47 s under `fast`, against 4.5 MB and 0.04 s
+under `--policy baseline`. Linear recursion is quadratic in depth under `fast`
+(30 MB at 1,000, 100 MB at 2,000, 479 MB at 4,900). The frame-path copy is
+fixed, so what is left is the memo records. Bound the memo table or skip
+memoizing in `petal run`, add `fib(30)` and a depth-10k case to the perf suite
+with a memory ceiling, then raise `MAX_CALL_DEPTH` from 5,000. Details:
+todo-bugs §1.2, §2.
 
-From ISSUE 1:
-- A helper ending in `set xs[i] = v`, called from a `for` that is the last
-  statement of its function, copies the list per write because the loop
-  collects the results. Declaring the caller `-> nil` (or a trailing `nil`)
-  avoids it. Name this shape in the guides; consider a `suggest`/advice rule.
-- physics-playground Cradle scene is 16% slower under `--observe` after the
-  refactor.
-- `apply-change` compile gate is looser than "result compiles": a file that
-  already failed may keep the compile errors it had (one branch in
-  `compile_gate` if it should be strict).
-- `apply-change` qualified-write refusal: does not notice a local shadowing the
-  module alias, and does not follow a binding re-exported through a facade.
-  The directory scan misses importers outside the scan root (use `--from`).
-  No `--json` output.
-- Compiler quirk: in a function, reading an outer `x`, then `let x = ...`, then
-  assigning `x`, is rejected as "bound outside this function".
-- physics-playground/app.ptl has no entry in test/ui-golden/index.json.
+## 3. `check --strict` passes programs that are silently wrong
 
-From ISSUE 2:
-- `bench` accepts only `--host core`, so UI apps (physics-playground/app.ptl)
-  cannot be benched directly; `step` was measured through a console driver.
-- Unknown flags are taken as the file path (`petal bench x.ptl --iter 3` ->
-  "Error reading file '3'"); shared `parse_source_args`, affects `run` too.
-- Lowering the physics solver with the optimizer on takes ~48 ms vs 0.45 ms
-  off, so a one-shot run is slower optimized.
+- A leading `-` on a continuation line starts a new statement, so a sum
+  written down the page returns its last line. No warning from `check` or
+  `lint`.
+- Two enums that declare the same variant, and a variant that overrides a
+  `let`, compile with no diagnostic.
+- A `let`/`state` that shadows a builtin called in the same file (`state
+  split = 396`, then `split(text, ",")`) gets the "captured `state`" warning,
+  which never says a builtin is shadowed (email client).
+- An enum name as a return type warns `unknown type name`.
 
-From ISSUE 4:
-- `petal run` prints the `export` deprecation warning too, and
-  `check --strict` fails on it. Decide whether that is wanted.
+Details: todo-bugs §3.
 
-Not verified after the final integration (each passed per-branch before it):
-- vitest suite, golden corpus (`test-examples.ts`), downstream `petal check`
-  parity over ~/.garden and ~/worlds-fair/ui/ptl. Full garden-app suite and
-  the fantasy-nes tests (missing libjxl) were never run.
+## 4. `len` and `slice` count bytes and cut characters silently
 
-Pre-existing, seen along the way:
-- Six stale golden hashes in bloom-using UI apps (test/ui-golden).
-- `petal-ui` test `gating::a_quiet_corpus_mostly_idles` fails (18 of 38).
+`slice("Óscar", 0, 1)` is `""` and `len("Óscar")` is 6. Move `len`, `slice`,
+`s[i]` and `index_of` to code points, keep `byte_len`/`byte_slice`, and sweep
+the ecosystem's `.ptl` files first. It needs the ASCII fast path in
+[char-at-fast-path](optimizations/char-at-fast-path.md) to stay O(1); `char_at`
+is still two O(n) walks and an allocation per call. Details:
+testbed-takeaways §1.
+
+## 5. The guides mislead on `state`, dictionaries and errors
+
+- `state hits = 0; hits += 1; print(hits)` is still captioned "1 on the first
+  run, 2 on the second" in `writing-petal-guide.md:238` and
+  `language-guide.md:1984`. Separate `petal run` processes print 1 each time.
+  Show state working within one run and say what a "run" is.
+- Neither guide says a record is the dictionary (`r[k] = v`, string keys
+  only), how a program reports or handles an error, what is truthy, or that
+  float division by zero is an error.
+- "Method syntax reaches builtins, not your own functions" reads as "class
+  methods don't work with `.`".
+
+Details: todo-bugs §1.3, §5, §7.
+
+## 6. One test is red and the UI goldens are not trusted
+
+- `petal-ui` test `gating::a_quiet_corpus_mostly_idles` fails: 18 of 38 apps
+  idle after 90 quiet frames.
+- Six bloom-using apps have stale hashes in `test/ui-golden`, and
+  `physics-playground/app.ptl` has no entry in its index (not re-run today).
+- `garden/target/debug/garden` dates from 2026-09-24. The tower defense,
+  email client and network graph apps have only ever been run on a binary
+  that predates default parameters and named arguments. Rebuild and re-run
+  them; check on the way whether `let x = for … end` is still missing from
+  `panel.values` and whether `text_metrics(style).baseline` matches the `ui`
+  face at weight 700.
+- Not run since the 2026-10-08 merge: the golden corpus (`test-examples.ts`),
+  `petal check` parity over `~/.garden` and `~/worlds-fair/ui/ptl`, the full
+  garden-app suite, and the fantasy-nes tests (missing libjxl).
+
+The vitest suite passes at HEAD (1,403 tests) once dependencies are installed
+and `core-libs/petal-ui` has a debug `petal-ui-run`.
+
+## 7. The headless panel test loop is not deterministic or documented right
+
+- `dt()` stays on the wall clock after `POST /tick`, while `time()` goes
+  virtual. A sim stepped by `dt()` drifts whenever a test sends input between
+  ticks. AUTHORING.md still says "drive animation off `dt()`". Put `dt()` on
+  the virtual clock once a panel is ticked, or document the `time()`-delta
+  idiom and the warm-up tick.
+- `docs/skills/write-example-app.md` step 4 runs `check --strict` without
+  `--host garden`, which reports `claim_key` and `request_frame` as unknown on
+  a correct panel script. It also never runs `petal lint`. Four debriefs hit
+  this.
+- Every session rewrites the same shell helpers (`click`, `key`, `tick`,
+  `obs`, `shot`) and gets the pane offset wrong. Ship one under `tools/`, or
+  add a pane-local option to `POST /mouse`.
+
+## 8. Missing string basics, and `++` in a loop is O(n²)
+
+`repeat`, `starts_with`, `ends_with` and `trim` are all `Unknown builtin`;
+the email client and both simulated users wrote their own. `out = out ++ "x"`
+takes 3.8 s at 100k iterations, and the usage guide §5 recommends that loop.
+Add the four builtins, and make append to a uniquely held string amortized
+O(1) or point people at `join`. Details: todo-bugs §4.1.
+
+## 9. CLI argument handling turns typos into file errors
+
+- `petal repl` and `petal test` print `Error reading file 'repl'`.
+- An unknown flag is taken as the file path: `petal run x.ptl --iter 3` gives
+  `Error reading file '3'` (shared `parse_source_args`, so `bench` too).
+- `check` defaults to `--host ui` and passes a script that `run` rejects with
+  `Undefined variable: ui`.
+- `check --strict` fails on the `export` deprecation warning, and `run`
+  prints it. Decide whether that is wanted.
+- An unclosed block does not name its opener, and a cross-module stack trace
+  drops the file name of the call site.
+
+Details: todo-bugs §6.
+
+## 10. Text editing is hand-rolled in every app
+
+`text_field` has no selection, clipboard or undo
+(`core-libs/petal-ui/prelude/ui.ptl:2264`). `text_wrap` returns strings
+without offsets, and there is no "rects for this character range" call, so a
+wrapped editable area or a search highlight measures one growing prefix per
+character. The email client carries five copies of the same field plumbing.
+Add selection and clipboard to `text_field`, a `text_wrap` variant returning
+`{text, start, end}` per row, and `text_range_rects(s, style, a, b)`.
+Details: testbed-takeaways §2.

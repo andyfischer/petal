@@ -65,6 +65,24 @@ testbed-takeaways §1.
 
 Details: todo-bugs §1.3, §5, §7.
 
+AUTHOR NOTE: That syntax works correctly when talking about Petal scripts
+that are used in our interactive harnesses like petal-sdl, since
+they preserve `state` values from frame to frame. However it doesn't
+work correctly when running from the CLI because the CLI does not do that.
+
+PLAN: Let's leave the simple README and guides as-is to not overcomplicate things.
+
+Let's add support to the CLI for this. The CLI should support params like
+--state-storage <filename> which (if provided) stores all the state values
+as JSON in that file, creating the file if needed. If the CLI is called
+multiple times with the same state storage file, then the state example
+should work correctly.
+
+Additionally, if the CLI is used to execute a script that has any `state`,
+and if the --state-storage option is not used, then the tool should
+print a warning to the console that state will not work correctly,
+and they should probably re run the command with --state-storage.
+
 ## 6. One test is red and the UI goldens are not trusted
 
 - `petal-ui` test `gating::a_quiet_corpus_mostly_idles` fails: 18 of 38 apps

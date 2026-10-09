@@ -642,11 +642,14 @@ impl<'p> FnLowerer<'p> {
         self.push(Inst::ForEachInit { iter, slot });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::ForEachNext { slot, var, exit: 0 });
-        self.emit_counted_loop(body_block, slot, cont, next, collect_dst)?;
+        self.emit_counted_loop(term.id, body_block, slot, cont, next, collect_dst)?;
         let jend = self.emit_placeholder(Inst::Jump { to: 0 });
 
         let pend_label = self.here();
         self.patch(jpend, pend_label);
+        // `emit_counted_loop` left cur_origin on the loop term; say so here too,
+        // since this Move writes the loop's own register.
+        self.cur_origin = Some(term.id);
         self.push(Inst::Move { dst, src: iter });
 
         let end = self.here();
@@ -670,7 +673,7 @@ impl<'p> FnLowerer<'p> {
         self.push(Inst::RangeInit { start, end, slot });
         let cont = self.here();
         let next = self.emit_placeholder(Inst::RangeNext { slot, var, exit: 0 });
-        self.emit_counted_loop(body_block, slot, cont, next, collect_dst)
+        self.emit_counted_loop(term.id, body_block, slot, cont, next, collect_dst)
     }
 
     /// Shared tail of the counted loops (`for-each` / range): emit the body with
@@ -679,6 +682,7 @@ impl<'p> FnLowerer<'p> {
     /// patched to the loop's `LoopPop`.
     fn emit_counted_loop(
         &mut self,
+        owner: TermId,
         body_block: BlockId,
         slot: LoopSlot,
         cont: u32,
@@ -692,6 +696,12 @@ impl<'p> FnLowerer<'p> {
         });
         self.emit_block(body_block)?;
         self.emit_phi_outs(body_block)?; // normal-path carry-outs
+        // Recursion into the body moved cur_origin to its last term; restore it
+        // so the collect, the back-edge and the result write below belong to the
+        // loop term. That term carries the source name (`let x = for … end`), so
+        // a per-term reader — observation, `explain` — would otherwise credit
+        // the collected list to the body's last binding and miss `x` entirely.
+        self.cur_origin = Some(owner);
         // Collect this iteration's body result. Placed after the carry-outs and
         // before the back-edge, so `continue` (which targets `cont`) skips it —
         // that iteration contributes nothing to the resulting list.

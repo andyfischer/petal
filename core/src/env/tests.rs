@@ -3103,6 +3103,30 @@ mod observation_tests {
         assert_eq!(map.get("total"), Some(&serde_json::json!(6)));
     }
 
+    /// A value-position loop is a third control term whose value arrives late:
+    /// the collected list is written into the loop's register after the body,
+    /// by which point lowering had left the origin on the body's last term. So
+    /// `let a = for …` was never observed, and the body's last binding was
+    /// reported as holding the whole collected list.
+    #[test]
+    fn a_collecting_loop_is_observed_under_its_own_name() {
+        let map = observe(
+            "let sel = [1, 2]\n\
+             let a = for i in sel do\n\
+             \x20 let q = i * 10\n\
+             end\n\
+             let b = for i in range(0, 3) do i + 1 end\n\
+             let none = for i in [] do i end\n\
+             let waiting = for i in __pending(\"c\") do i end\n",
+        );
+        assert_eq!(map.get("a"), Some(&serde_json::json!([10, 20])));
+        assert_eq!(map.get("q"), Some(&serde_json::json!(20)));
+        assert_eq!(map.get("b"), Some(&serde_json::json!([1, 2, 3])));
+        assert_eq!(map.get("none"), Some(&serde_json::json!([])));
+        // A pending iterable skips the loop and becomes the loop's value.
+        assert!(map.contains_key("waiting"), "pending loop not observed: {map:?}");
+    }
+
     /// 4. Documented last-write-wins: a loop temp reports its final iteration.
     #[test]
     fn loop_temp_reports_its_final_iteration() {

@@ -30,4 +30,6 @@ make test-c-bridge
 That needs CMake, Ninja and a C++20 compiler. The guide is
 [docs/embedding-c.md](../../docs/embedding-c.md). It covers the frame
 contract, values and builders, host natives and emitters, petal-ui input and
-draw commands, input-scenario replay, hot reload and errors.
+draw commands, input-scenario replay, hot reload (a value or layout edit is
+taken up without recompiling, and `vm.set_config(path, json)` sets a config
+value with no file write) and errors.

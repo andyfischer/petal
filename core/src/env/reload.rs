@@ -149,6 +149,31 @@ pub struct ReloadReport {
     pub fallback: Option<String>,
 }
 
+/// Why [`Env::set_config_value`] did not set a value. Nothing was changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigSetError {
+    /// No such binding, path or source file.
+    NotFound(String),
+    /// The path is malformed or ambiguous, or the edit makes no sense there.
+    Invalid(String),
+    /// The value is settable, but not without recompiling: write the file
+    /// and reload.
+    NeedsReload(String),
+}
+
+impl std::fmt::Display for ConfigSetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigSetError::NotFound(m) | ConfigSetError::Invalid(m) => f.write_str(m),
+            ConfigSetError::NeedsReload(m) => {
+                write!(f, "{m}; write the file and reload instead")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigSetError {}
+
 fn constant_of(lit: &Literal) -> ConstantValue {
     match lit {
         Literal::Nil => ConstantValue::Nil,
@@ -165,7 +190,7 @@ fn constant_of(lit: &Literal) -> ConstantValue {
 #[derive(Default)]
 struct Patch {
     spans: Vec<(TermId, SourceSpan)>,
-    warnings: Vec<(usize, SourceSpan)>,
+    warnings: Vec<(usize, crate::diagnostic::Diagnostic)>,
     /// (file index, new text).
     sources: Vec<(usize, String)>,
     constants: Vec<(TermId, ConstantValue)>,
@@ -334,8 +359,8 @@ impl Env {
         for (tid, span) in patch.spans {
             program.source_map.add(tid, span);
         }
-        for (i, span) in patch.warnings {
-            program.warnings[i].span = span;
+        for (i, warning) in patch.warnings {
+            program.warnings[i] = warning;
         }
         for (file, text) in patch.sources {
             if file == 0 {
@@ -415,60 +440,61 @@ impl Env {
     /// edit a host makes to the file when the drag ends — and applied only if
     /// it needs no recompile. So afterwards the program is exactly what a
     /// reload of that edited file would give, and when the host does write
-    /// the file (with the same edit) the reload that follows finds nothing to
-    /// do.
+    /// the file (with the same edit, or simply
+    /// [`program_source`](Self::program_source)) the reload that follows
+    /// finds nothing to do.
     ///
     /// `file` names the source file holding the binding, as a path. `None`
     /// searches the program's files and requires exactly one to bind the
     /// name at its top level.
     ///
-    /// `Err` leaves everything as it was. It means the value cannot be set
-    /// this way: the path names no literal, or the new value has a different
-    /// type or shape from the one written (`10` to `10.5`, a list that grew).
-    /// Write the file and reload for those.
+    /// An error leaves everything as it was. [`ConfigSetError::NeedsReload`]
+    /// means the value cannot be set this way: it has a different type or
+    /// shape from the one written (`10` to `10.5`, a list that grew). Write
+    /// the file and reload for those.
     pub fn set_config_value(
         &mut self,
         stack_id: StackKey,
         file: Option<&Path>,
         path: &str,
         value: &crate::static_value::StaticValue,
-    ) -> Result<ReloadReport, String> {
+    ) -> Result<ReloadReport, ConfigSetError> {
+        use crate::literal_edit::EditErrorKind;
         let program_id = self
             .stacks
             .get(&stack_id)
             .map(|s| s.program_id)
-            .ok_or("Stack not found")?;
+            .ok_or_else(|| ConfigSetError::NotFound("Stack not found".to_string()))?;
         let (index, name, origin, old) = self.config_file(program_id, file, path)?;
-        let new = crate::literal_edit::set_path(&old, path, value).map_err(|e| e.to_string())?;
-        if new == old {
-            return self.apply_program_change(
-                stack_id,
-                &ProgramChange {
-                    files: Vec::new(),
-                    blocker: None,
-                },
-            );
-        }
-        let diff = diff_source(&old, &new, FileId(index as u16));
-        if !diff.change.is_incremental() {
-            return Err(format!(
-                "setting `{path}` changes more than a value (a different type or shape); \
-                 write the file and reload instead"
-            ));
-        }
+        let new = crate::literal_edit::set_path(&old, path, value).map_err(|e| match e.kind {
+            EditErrorKind::NotFound => ConfigSetError::NotFound(e.message),
+            EditErrorKind::Invalid | EditErrorKind::Parse => ConfigSetError::Invalid(e.message),
+        })?;
+        let files = if new == old {
+            Vec::new()
+        } else {
+            let diff = diff_source(&old, &new, FileId(index as u16));
+            if !diff.change.is_incremental() {
+                return Err(ConfigSetError::NeedsReload(format!(
+                    "setting `{path}` changes more than a value (a different type or shape)"
+                )));
+            }
+            vec![FileChange {
+                file: FileId(index as u16),
+                name,
+                origin,
+                new_source: new,
+                diff,
+            }]
+        };
         self.apply_program_change(
             stack_id,
             &ProgramChange {
-                files: vec![FileChange {
-                    file: FileId(index as u16),
-                    name,
-                    origin,
-                    new_source: new,
-                    diff,
-                }],
+                files,
                 blocker: None,
             },
         )
+        .map_err(ConfigSetError::NeedsReload)
     }
 
     /// The text the running program holds for one of its source files: what
@@ -503,10 +529,15 @@ impl Env {
         program_id: ProgramId,
         file: Option<&Path>,
         path: &str,
-    ) -> Result<(usize, String, Option<std::path::PathBuf>, String), String> {
-        let program = self.programs.get(&program_id).ok_or("Program not found")?;
+    ) -> Result<(usize, String, Option<std::path::PathBuf>, String), ConfigSetError> {
+        let program = self
+            .programs
+            .get(&program_id)
+            .ok_or_else(|| ConfigSetError::NotFound("Program not found".to_string()))?;
         let (binding, _) = crate::rewrite::parse_binding_path(path).ok_or_else(|| {
-            format!("`{path}` is not a binding path (name, then .field or [index] steps)")
+            ConfigSetError::Invalid(format!(
+                "`{path}` is not a binding path (name, then .field or [index] steps)"
+            ))
         })?;
         if program.source_map.files.is_empty() {
             return Ok((0, String::new(), None, program.source.clone()));
@@ -525,7 +556,10 @@ impl Env {
                 })
                 .map(|(i, f)| (i, f.name.clone(), f.origin.clone(), f.source.clone()))
                 .ok_or_else(|| {
-                    format!("`{}` is not a source file of this program", path.display())
+                    ConfigSetError::NotFound(format!(
+                        "`{}` is not a source file of this program",
+                        path.display()
+                    ))
                 });
         }
         let mut found = Vec::new();
@@ -546,8 +580,10 @@ impl Env {
                 let f = &program.source_map.files[i];
                 Ok((i, f.name.clone(), f.origin.clone(), f.source.clone()))
             }
-            [] => Err(format!("no source file of this program binds `{binding}` at its top level")),
-            _ => Err(format!(
+            [] => Err(ConfigSetError::NotFound(format!(
+                "no source file of this program binds `{binding}` at its top level"
+            ))),
+            _ => Err(ConfigSetError::Invalid(format!(
                 "`{binding}` is bound at the top level of more than one source file ({}); \
                  name the file",
                 found
@@ -555,7 +591,7 @@ impl Env {
                     .map(|&i| program.source_map.files[i].name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ")
-            )),
+            ))),
         }
     }
 }
@@ -604,13 +640,17 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
     }
 
     for (i, w) in program.warnings.iter().enumerate() {
-        let Some(f) = by_file.get(&w.span.file.0) else {
+        let cited_file = w.cited.as_ref().map(|c| c.span.file.0);
+        if !by_file.contains_key(&w.span.file.0)
+            && !cited_file.is_some_and(|f| by_file.contains_key(&f))
+        {
             continue;
-        };
-        // A diagnostic may quote the code it is about. One that covers a
+        }
+        // A diagnostic is about the code its span covers. One that covers a
         // changed literal could read differently after the edit, and only the
         // compiler can say how.
-        if let SourceChange::Values(values) = &f.diff.change
+        if let Some(f) = by_file.get(&w.span.file.0)
+            && let SourceChange::Values(values) = &f.diff.change
             && values.iter().any(|v| {
                 w.span.start.offset <= v.old_span.start.offset
                     && v.old_span.end.offset <= w.span.end.offset
@@ -618,11 +658,14 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
         {
             return Err("a changed value is inside code the compiler warned about".to_string());
         }
-        let moved = f
-            .diff
-            .map_span(w.span)
+        // Spans of a file that did not change stay where they are.
+        let moved = w
+            .relocated(|span| match by_file.get(&span.file.0) {
+                Some(f) => f.diff.map_span(span),
+                None => Some(span),
+            })
             .ok_or("a diagnostic's position has no counterpart in the new text")?;
-        if moved != w.span {
+        if moved != *w {
             patch.warnings.push((i, moved));
         }
     }

@@ -33,7 +33,7 @@ mod run;
 mod state_json;
 mod state_storage;
 
-pub use reload::{FileChange, ProgramChange, ReloadOutcome, ReloadReport};
+pub use reload::{ConfigSetError, FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
 
 pub struct Env {

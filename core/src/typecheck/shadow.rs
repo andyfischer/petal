@@ -74,14 +74,14 @@ pub fn check_enum_collisions(stmts: &[Stmt]) -> Vec<Diagnostic> {
             }
             variants.insert(v, enum_name);
             if let Some((what, at)) = others.get(v) {
-                diags.push(Diagnostic::new(
+                diags.push(Diagnostic::citing(
                     stmt.span,
                     format!(
                         "variant `{v}` of `enum {enum_name}` has the same name as the `{what} {v}` \
-                         on line {}. Variant names are top-level names, not members of their enum, \
-                         so one of the two silently replaces the other. Rename one of them.",
-                        at.start.line
+                         on line {{line}}. Variant names are top-level names, not members of their \
+                         enum, so one of the two silently replaces the other. Rename one of them."
                     ),
+                    *at,
                 ));
             }
         }
@@ -121,7 +121,7 @@ enum Binding {
     /// `reported` is set once a call through it has been warned about.
     Value {
         keyword: &'static str,
-        line: u32,
+        declared: SourceSpan,
         reported: bool,
     },
     /// Anything else: a parameter, a `fn`, a binding that may be callable.
@@ -152,7 +152,7 @@ impl ShadowWalker<'_> {
         let binding = if is_plain_value(init) {
             Binding::Value {
                 keyword,
-                line: at.start.line as u32,
+                declared: at,
                 reported: false,
             }
         } else {
@@ -300,7 +300,7 @@ impl ShadowWalker<'_> {
         };
         let Binding::Value {
             keyword,
-            line,
+            declared,
             reported,
         } = binding
         else {
@@ -309,13 +309,15 @@ impl ShadowWalker<'_> {
         if std::mem::replace(reported, true) {
             return;
         }
-        self.diags.push(Diagnostic::new(
+        let declared = *declared;
+        self.diags.push(Diagnostic::citing(
             at,
             format!(
-                "`{name}` here is the `{keyword} {name}` declared on line {line}, which shadows \
-                 the builtin `{name}`: this calls the value, not the builtin. Rename the \
-                 `{keyword}`."
+                "`{name}` here is the `{keyword} {name}` declared on line {{line}}, which \
+                 shadows the builtin `{name}`: this calls the value, not the builtin. Rename \
+                 the `{keyword}`."
             ),
+            declared,
         ));
     }
 }

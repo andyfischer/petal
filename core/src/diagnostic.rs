@@ -26,6 +26,19 @@ pub struct Diagnostic {
     pub span: SourceSpan,
     pub message: String,
     pub severity: Severity,
+    /// A second place in the source the message names by its line number
+    /// (`... written on line 12 ...`), when it names one. Kept so the message
+    /// can be re-rendered when the source's layout changes without a
+    /// recompile ([`Diagnostic::relocate`]); see [`Diagnostic::citing`].
+    pub cited: Option<CitedLine>,
+}
+
+/// The line a diagnostic's message cites, and the message with `{line}` where
+/// the number goes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CitedLine {
+    pub span: SourceSpan,
+    template: String,
 }
 
 /// How sure the checker is that a diagnostic describes a failure.
@@ -61,7 +74,44 @@ impl Diagnostic {
             span,
             message,
             severity: Severity::Warning,
+            cited: None,
         }
+    }
+
+    /// A warning whose message names the line of another place in the source.
+    /// `template` is the message with `{line}` standing for that line number;
+    /// it is rendered with `cited`'s line. A diagnostic that quotes a line any
+    /// other way goes stale when a layout-only edit is hot-reloaded without a
+    /// recompile.
+    pub fn citing(span: SourceSpan, template: String, cited: SourceSpan) -> Diagnostic {
+        Diagnostic {
+            span,
+            message: template.replace("{line}", &cited.start.line.to_string()),
+            severity: Severity::Warning,
+            cited: Some(CitedLine {
+                span: cited,
+                template,
+            }),
+        }
+    }
+
+    /// Move the diagnostic to where its source went: `map` gives the new
+    /// position of an old span, or `None` when it has none. Re-renders a
+    /// cited line number. Returns `None` (and changes nothing) when either
+    /// position cannot be mapped.
+    pub fn relocated(
+        &self,
+        map: impl Fn(SourceSpan) -> Option<SourceSpan>,
+    ) -> Option<Diagnostic> {
+        let mut out = self.clone();
+        out.span = map(self.span)?;
+        if let Some(cited) = &mut out.cited {
+            cited.span = map(cited.span)?;
+            out.message = cited
+                .template
+                .replace("{line}", &cited.span.start.line.to_string());
+        }
+        Some(out)
     }
 
     /// An error: the line fails whenever it runs. See [`Severity::Error`].
@@ -70,6 +120,7 @@ impl Diagnostic {
             span,
             message,
             severity: Severity::Error,
+            cited: None,
         }
     }
 

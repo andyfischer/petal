@@ -437,15 +437,15 @@ impl Compiler {
         let Some(rebind) = self.module_rebinds.lagging_rebind(name, frozen_at) else {
             return;
         };
-        self.warn_at(
+        self.warnings.push(crate::diagnostic::Diagnostic::citing(
             span,
             format!(
-                "`{name}` is a `state` binding written on line {}, after this function was \
-                 defined, so this reads the value captured at the definition — one run \
-                 behind the write. Pass it in as a parameter if you want the current value.",
-                rebind.start.line
+                "`{name}` is a `state` binding written on line {{line}}, after this function \
+                 was defined, so this reads the value captured at the definition — one run \
+                 behind the write. Pass it in as a parameter if you want the current value."
             ),
-        );
+            rebind,
+        ));
     }
 
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {

@@ -388,6 +388,23 @@ fn a_layout_edit_moves_warnings_too() {
     .check();
 }
 
+/// A warning that names another line (`... written on line 5 ...`) is
+/// re-rendered with the line that code moved to.
+#[test]
+fn a_layout_edit_rewrites_a_warning_that_cites_a_line() {
+    let old = "state grid = 1\nfn show()\n  print(grid)\nend\nshow()\ngrid = grid + 1\n";
+    let new = "state grid = 1\nfn show()\n  print(grid)\nend\nshow()\n\n// bump\n\ngrid = grid + 1\n";
+    Case::new("cited line", old, new, Relocated).check();
+    let mut w = world(old, &[], RunPolicy::FAST);
+    let cites = |w: &World, line: &str| {
+        let warnings = &w.env.get_program(w.pid).unwrap().warnings;
+        warnings.iter().any(|d| d.message.contains(line))
+    };
+    assert!(cites(&w, "written on line 6"), "the fixture no longer warns");
+    w.env.reload_program(w.sid, new, None).unwrap();
+    assert!(cites(&w, "written on line 9"));
+}
+
 #[test]
 fn a_layout_edit_inside_strings_interpolation_and_elements() {
     Case::new(

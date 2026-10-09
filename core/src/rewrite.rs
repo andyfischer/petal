@@ -22,7 +22,7 @@
 
 use std::rc::Rc;
 
-use crate::ast::{AssignTarget, Expr, ExprKind, Stmt, StmtKind};
+use crate::ast::{AssignTarget, Expr, ExprKind, RecordField, Stmt, StmtKind};
 use crate::cst::{
     GreenChild, GreenNode, SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken, parse_cst,
     parse_source,
@@ -74,6 +74,87 @@ pub fn find_binding(stmts: &[Stmt], name: &str) -> Option<SourceSpan> {
         } if bound == name => Some(value.span),
         _ => None,
     })
+}
+
+/// One step from a value into one of its parts: a record field, or an element
+/// of a list (or an argument of a call, which a config file uses as a
+/// constructor: `vec3(0.3, -1.0, 0.5)`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathSeg {
+    Field(String),
+    Index(usize),
+}
+
+/// Parse a binding path — a top-level name followed by any number of
+/// `.field` and `[index]` steps, e.g. `POST.effects[2].amount` — into the name
+/// and its steps. `None` when the text isn't of that shape.
+pub fn parse_binding_path(path: &str) -> Option<(String, Vec<PathSeg>)> {
+    fn ident_len(s: &str) -> usize {
+        s.char_indices()
+            .find(|&(i, c)| !(c == '_' || c.is_alphabetic() || (i > 0 && c.is_ascii_digit())))
+            .map_or(s.len(), |(i, _)| i)
+    }
+    let path = path.trim();
+    let n = ident_len(path);
+    if n == 0 {
+        return None;
+    }
+    let (name, mut rest) = path.split_at(n);
+    let mut segs = Vec::new();
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix('.') {
+            let n = ident_len(after);
+            if n == 0 {
+                return None;
+            }
+            segs.push(PathSeg::Field(after[..n].to_string()));
+            rest = &after[n..];
+        } else if let Some(after) = rest.strip_prefix('[') {
+            let close = after.find(']')?;
+            segs.push(PathSeg::Index(after[..close].trim().parse().ok()?));
+            rest = &after[close + 1..];
+        } else {
+            return None;
+        }
+    }
+    Some((name.to_string(), segs))
+}
+
+/// Find the expression at `path` inside the top-level binding of `name` (the
+/// **last** one, as [`find_binding`]): each step enters a record literal by
+/// field name, or a list literal or a call's arguments by position. Returns
+/// that expression's span — the whole right-hand side for an empty path — or
+/// `None` when the binding or a step doesn't exist (or the value at a step is
+/// not a literal of the right shape: a path cannot see through a name, a
+/// spread or a computation).
+///
+/// This is what lets a tool change one number inside a large config record
+/// and leave the rest of the literal, comments included, exactly as written.
+pub fn find_binding_path(stmts: &[Stmt], name: &str, path: &[PathSeg]) -> Option<SourceSpan> {
+    let mut expr = stmts.iter().rev().find_map(|stmt| match &stmt.kind {
+        StmtKind::Let {
+            name: bound, value, ..
+        } if bound == name => Some(value),
+        StmtKind::Assign {
+            target: AssignTarget::Name(bound),
+            value,
+        } if bound == name => Some(value),
+        _ => None,
+    })?;
+    for seg in path {
+        expr = match (seg, &expr.kind) {
+            (PathSeg::Field(key), ExprKind::Record(fields)) => {
+                fields.iter().rev().find_map(|field| match field {
+                    RecordField::Named(k, value) if k == key => Some(value),
+                    _ => None,
+                })?
+            }
+            (PathSeg::Index(i), ExprKind::List(items)) => items.get(*i)?,
+            (PathSeg::Index(i), ExprKind::Call { args, .. }) => args.get(*i)?,
+            _ => return None,
+        };
+    }
+    Some(expr.span)
 }
 
 /// The span of `expr` if it is a call whose callee is the bare identifier
@@ -320,6 +401,59 @@ mod tests {
         let span = find_binding(&stmts, "size").expect("size bound");
         // The span covers the value only, not the `let size = ` prefix.
         assert_eq!(text_at(src, span), "14");
+    }
+
+    #[test]
+    fn parses_binding_paths() {
+        assert_eq!(parse_binding_path("size"), Some(("size".into(), vec![])));
+        assert_eq!(
+            parse_binding_path("POST.effects[2].amount"),
+            Some((
+                "POST".into(),
+                vec![
+                    PathSeg::Field("effects".into()),
+                    PathSeg::Index(2),
+                    PathSeg::Field("amount".into()),
+                ]
+            ))
+        );
+        assert_eq!(parse_binding_path(""), None);
+        assert_eq!(parse_binding_path("a..b"), None);
+        assert_eq!(parse_binding_path("a[x]"), None);
+        assert_eq!(parse_binding_path("a b"), None);
+    }
+
+    #[test]
+    fn finds_a_value_inside_a_binding_by_path() {
+        let src = "export config let POST = {\n  exposure: 1.45,  // the night look\n  tint: #ff2e88,\n  effects: [{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}],\n}\nlet DIR = vec3(0.35, -1.0, 0.55)\n";
+        let (_, stmts) = parse_ast(src).unwrap();
+        let at = |path: &str| {
+            let (name, segs) = parse_binding_path(path).unwrap();
+            find_binding_path(&stmts, &name, &segs).map(|span| text_at(src, span))
+        };
+        assert_eq!(at("POST.exposure").as_deref(), Some("1.45"));
+        // A color literal is one value, whatever it lowers to.
+        assert_eq!(at("POST.tint").as_deref(), Some("#ff2e88"));
+        assert_eq!(at("POST.effects[0].amount").as_deref(), Some("0.3"));
+        assert_eq!(at("POST.effects[1]").as_deref(), Some("{effect: \"crt\"}"));
+        // A call's arguments are entered by position, like a list's elements.
+        assert_eq!(at("DIR[1]").as_deref(), Some("-1.0"));
+        // An empty path is the whole right-hand side.
+        assert_eq!(at("DIR").as_deref(), Some("vec3(0.35, -1.0, 0.55)"));
+        // A step that doesn't exist, or doesn't fit the value's shape, finds nothing.
+        assert_eq!(at("POST.bloom"), None);
+        assert_eq!(at("POST.effects[2]"), None);
+        assert_eq!(at("POST.exposure.x"), None);
+        assert_eq!(at("MISSING.x"), None);
+    }
+
+    #[test]
+    fn a_path_splice_changes_one_value_and_keeps_the_rest() {
+        let src = "config let GEN = {\n  half: 800.0,                // the city spans -half..half\n  lane_w: 3.4,                // one traffic lane\n}\n";
+        let (tree, stmts) = parse_ast(src).unwrap();
+        let span = find_binding_path(&stmts, "GEN", &[PathSeg::Field("lane_w".into())]).unwrap();
+        let out = splice_node(&tree, span, "3.6").unwrap().text();
+        assert_eq!(out, src.replace("3.4", "3.6"));
     }
 
     #[test]

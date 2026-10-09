@@ -23,6 +23,7 @@
  *   pb_vm_sources_changed + pb_vm_reload hot reload, keeping `state`
  *     (pb_vm_changed_sources names the edited files)
  *   pb_scenario_* + pb_vm_apply_scenario replay recorded input (headless tests)
+ *   pb_source_*                          read and edit source text as a config file
  *
  * Threading: a pb_vm is single-threaded; use it from one thread at a time.
  *
@@ -573,6 +574,72 @@ const char* pb_scenario_to_json(pb_scenario* s);
  * pb_vm_input_* calls would. Call before pb_vm_begin_frame for that frame.
  * `*out_applied` (optional) receives the number of events applied. */
 pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, size_t* out_applied);
+
+/* ─── Source text: reading and editing without running ─────────────────── */
+/*
+ * A pb_source is Petal source text plus the tools to treat it as a
+ * configuration file (docs/config-files.md, docs/program-modification.md):
+ * read every top-level binding's static value, and change one value where it
+ * is written, keeping every other character — comments, layout, the author's
+ * spelling of the numbers next to it. It is independent of any VM; the host
+ * saves the edited text, and a running program picks it up by hot reload.
+ *
+ *   pb_source* s = pb_source_new(file_text);
+ *   const char* json = pb_source_bindings_json(s);       // what the file sets
+ *   pb_source_set(s, "POST.effects[2].amount", "0.35");  // one number changes
+ *   write_file(path, pb_source_text(s));
+ *   pb_source_free(s);
+ *
+ * A path is a top-level name followed by `.field` (into a record literal) and
+ * `[index]` (into a list literal, or the arguments of a call such as
+ * `vec3(0.3, -1.0, 0.5)`) steps. The name alone is the binding's whole
+ * right-hand side; the last binding of a name is the one read and edited.
+ */
+typedef struct pb_source pb_source;
+
+/* A source holding a copy of `text` (NULL = empty). NULL only on allocation
+ * failure/panic. Text that does not parse is accepted here and reported by
+ * the calls below. */
+pb_source* pb_source_new(const char* text);
+void pb_source_free(pb_source* s);
+/* The current text. Valid until the next successful pb_source_set or the free. */
+const char* pb_source_text(const pb_source* s);
+
+/* Every top-level binding as a JSON array, in source order:
+ *
+ *   [{"name": "POST", "config": true, "exported": true, "line": 77,
+ *     "text": "{exposure: 1.45}", "comment": "The night look.",
+ *     "value": {"rec": {"exposure": 1.45}}},
+ *    {"name": "atmosphere", ..., "reason": "a function declaration"}]
+ *
+ * `config`: written `config let`. `text`: the right-hand side as written.
+ * `comment`: the comment block directly above. A binding has either `value`
+ * (its static value: literals, lists, records, calls and names bound above)
+ * or `reason` (why it has none: arithmetic, a function, state, ...). Values:
+ * floats are numbers, strings strings, lists arrays, nil null, and
+ *   {"int": 3}                        an integer
+ *   {"rec": {"key": value, ...}}      a record, keys in source order (a color
+ *                                     literal #rrggbb reads as {r, g, b} ints)
+ *   {"call": "vec3", "args": [...]}   a call, unevaluated
+ * NULL when the text does not parse (pb_source_error says why). Valid until
+ * the next call to this function on `s`. */
+const char* pb_source_bindings_json(pb_source* s);
+
+/* The text of the expression at `path` as written ("#ff2e88", "0.020000"),
+ * or NULL (pb_source_error). Valid until the next call to this function. */
+const char* pb_source_expr(pb_source* s, const char* path);
+
+/* Make the expression at `path` read `value` (Petal source for exactly one
+ * expression). Only that expression's text changes; a value already spelled
+ * that way changes nothing. PB_ERR_NOT_FOUND when the path names no literal
+ * in the source, PB_ERR_INVALID_ARG for a malformed path or a value that is
+ * not one expression (or would leave the text unparseable), PB_ERR_COMPILE
+ * when the text does not parse. A failed call leaves the text as it was. */
+pb_status pb_source_set(pb_source* s, const char* path, const char* value);
+
+/* Why the last pb_source_bindings_json / _expr / _set on `s` failed, or NULL
+ * if it succeeded. Valid until the next such call. */
+const char* pb_source_error(const pb_source* s);
 
 /* ─── State and output tooling ────────────────────────────────────────── */
 

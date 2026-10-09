@@ -47,9 +47,13 @@ Primitives in [`core/src/rewrite.rs`](../core/src/rewrite.rs):
 | `splice_node(tree, span, replacement)` | Replace a node, preserving surrounding trivia |
 | `splice(source, span, replacement)` | String-level fallback (char offsets, multi-byte safe) when the replacement is not a single parseable expression |
 
+| `find_binding_path(stmts, name, path)` | Span of one value *inside* a binding: `.field` steps into record literals, `[index]` steps into list literals and call arguments (`parse_binding_path("POST.effects[2].amount")`) |
+
 These treat the program as a live document the user is also editing: a tool
-can rewrite one `layout(...)` call and write the result back without touching
-the rest of the file.
+can rewrite one `layout(...)` call, or one number inside a commented
+multi-line record, and write the result back without touching the rest of
+the file. C and C++ hosts reach the same thing as `pb_source_set`
+([embedding-c.md](embedding-c.md#editing-source-a-script-as-a-config-file)).
 
 ### Goal-based editing (`core/src/goal_based_editing.rs`)
 
@@ -275,6 +279,7 @@ Code: [`execution_context.rs`](../core/src/execution_context.rs) and
 | Read a config value without running | yes | — | `static_value::get_static_value` / `static_values` |
 | Read a config file's bindings, comments and unreadable names | yes | — | `static_value::static_bindings` |
 | Set a config value (formatting-preserved) | — | yes | `Goal::should_set_value` |
+| Set one value inside a config record or list | — | yes | `rewrite::find_binding_path` + `splice_node`; `pb_source_set` in the C bridge |
 | Rewrite source, formatting-preserved | — | yes | `goal_based_editing` over `rewrite.rs` |
 | Normalize source (optionally verified) | — | yes | `petal lint --fix [--verify]` |
 | Propose edits that change an emitted value | yes | proposals | `direct_manipulation::propose_edits`, `petal propose-edit` |

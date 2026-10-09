@@ -375,6 +375,49 @@ private:
     pb_scenario* s_;
 };
 
+// Petal source text as a configuration file: read every top-level binding
+// and change one value where it is written, keeping the rest of the text
+// (petal_bridge.h, "Source text"). Owning, move-only, independent of any Vm.
+class Source {
+public:
+    explicit Source(const std::string& text) : s_(pb_source_new(text.c_str())) {
+        if (!s_) throw Error(PB_ERR_PANIC, "pb_source_new failed");
+    }
+    ~Source() { if (s_) pb_source_free(s_); }
+    Source(Source&& o) noexcept : s_(std::exchange(o.s_, nullptr)) {}
+    Source& operator=(Source&& o) noexcept {
+        if (this != &o) { if (s_) pb_source_free(s_); s_ = std::exchange(o.s_, nullptr); }
+        return *this;
+    }
+    Source(const Source&) = delete;
+    Source& operator=(const Source&) = delete;
+
+    pb_source* raw() const noexcept { return s_; }
+    std::string text() const { const char* t = pb_source_text(s_); return t ? t : ""; }
+    // Every top-level binding as JSON (see pb_source_bindings_json); nullopt
+    // when the text does not parse (error() says why).
+    std::optional<std::string> bindings_json() {
+        const char* j = pb_source_bindings_json(s_);
+        return j ? std::optional<std::string>(j) : std::nullopt;
+    }
+    // The expression at `path` as written, e.g. expr("POST.tint") == "#ff2e88".
+    std::optional<std::string> expr(const std::string& path) {
+        const char* t = pb_source_expr(s_, path.c_str());
+        return t ? std::optional<std::string>(t) : std::nullopt;
+    }
+    // Make the expression at `path` read `value` (one Petal expression).
+    // False, with error(), when the path names nothing or the value is
+    // malformed; the text is then unchanged.
+    bool set(const std::string& path, const std::string& value) {
+        return pb_source_set(s_, path.c_str(), value.c_str()) == PB_OK;
+    }
+    // Why the last bindings_json() / expr() / set() failed ("" if it did not).
+    std::string error() const { const char* e = pb_source_error(s_); return e ? e : ""; }
+
+private:
+    pb_source* s_;
+};
+
 // ─── The VM ─────────────────────────────────────────────────────────────────
 
 class Vm {

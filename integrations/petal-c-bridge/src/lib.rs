@@ -10,6 +10,8 @@
 //! - [`natives`]: host-registered natives (C callbacks and emitters), each a
 //!   boxed Petal native owning its callback and userdata — no globals.
 //! - [`scenario`]: petal-ui input scenarios (JSON replay keyed by frame).
+//! - [`source`]: reading and editing source text without running it (config
+//!   bindings as JSON, formatting-preserving edits by path).
 //! - [`view`]: decoding Petal values into flat `pb_value` trees.
 //! - [`builder`]: building host values (`pb_builder`).
 //! - [`draw`]: petal-ui `DrawCommand` → `pb_draw_cmd`.
@@ -36,6 +38,7 @@ pub mod draw;
 pub mod ffi;
 pub mod natives;
 pub mod scenario;
+pub mod source;
 pub mod view;
 pub mod vm;
 mod watch;

@@ -18,6 +18,7 @@ integrations/petal-c-bridge/
   src/vm.rs              pb_vm: Env + program + stack, most of the C API
   src/natives.rs         host natives: one boxed Petal native per C callback / emitter
   src/scenario.rs        pb_scenario: petal-ui JSON input replay
+  src/source.rs          pb_source: read and edit source text as a config file
   src/view.rs            Petal values -> flat pb_value trees
   src/builder.rs         pb_builder: host-built values -> Petal values
   src/draw.rs            petal-ui DrawCommand -> pb_draw_cmd
@@ -499,6 +500,48 @@ if (vm.sources_changed()) {                 // stat() of every source file
   slots.
 - `reload_source(text)` does the same from memory (editors, tests).
 - A new program sees natives registered since the original load.
+
+## Editing source: a script as a config file
+
+A host with its own editing UI — an inspector, a panel of sliders — often
+needs to write a change back into the `.ptl` file, so that the edit is real
+code and hot reload carries it into the running program. `petal::Source`
+(`pb_source_*`) does that without running anything, and without reformatting
+the file:
+
+```cpp
+petal::Source src(read_file("games/neon/config.ptl"));
+
+// What the file sets, as JSON: name, `config let` or not, the comment above
+// it, the right-hand side as written, and its static value.
+std::optional<std::string> bindings = src.bindings_json();
+
+// Change one value where it is written. Nothing else in the file moves.
+src.set("POST.exposure", "1.2");
+src.set("POST.effects[2].amount", "0.35");
+src.set("MOON_DIR[1]", "-0.8");              // into a call's arguments: vec3(…, -0.8, …)
+src.set("NEON_PINK", "#ff2e88");
+write_file("games/neon/config.ptl", src.text());
+```
+
+- A **path** is a top-level name followed by `.field` steps into record
+  literals and `[index]` steps into list literals or call arguments. The name
+  alone is the binding's whole right-hand side. A path can only see literals:
+  it stops (`PB_ERR_NOT_FOUND`) at a name, a spread or a computed value.
+- `set` takes Petal source for exactly one expression and replaces exactly the
+  expression the path names, through the lossless tree
+  ([`petal::rewrite`](program-modification.md#formatting-preserving-tree-splices-coresrcrewriters)):
+  comments inside a multi-line record, alignment and the spelling of the
+  neighbouring values all survive. Setting a value to the text it already has
+  changes nothing, so a save that writes every field produces no diff.
+- `bindings_json()` is [`static_bindings`](config-files.md) as JSON (the
+  format is documented at `pb_source_bindings_json` in `petal_bridge.h`).
+  Bindings written `config let` carry `"config": true`: those are the knobs
+  the author declared, and the ones an editor should offer. `expr(path)`
+  returns one expression as written, for showing `#ff2e88` rather than
+  `{r: 255, g: 46, b: 136}`.
+- A failed call returns false (`set`) or `nullopt` and leaves the text as it
+  was; `error()` says why. A `Source` is independent of any `Vm`.
 
 ## Modules and packages
 

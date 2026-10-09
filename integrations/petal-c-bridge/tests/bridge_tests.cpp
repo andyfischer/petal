@@ -1130,6 +1130,47 @@ TEST(reload_from_source) {
 
 // ─── Input scenarios ────────────────────────────────────────────────────────
 
+TEST(source_reads_bindings_and_edits_by_path) {
+    const std::string text =
+        "// The look.\n"
+        "config let POST = {\n"
+        "  exposure: 1.45,   // brighter than day\n"
+        "  effects: [{effect: \"grain\", amount: 0.3}],\n"
+        "}\n"
+        "let TINT = #ff2e88\n";
+    petal::Source src(text);
+    const std::optional<std::string> json = src.bindings_json();
+    REQUIRE(json.has_value());
+    CHECK_CONTAINS(*json, "\"name\":\"POST\",\"config\":true");
+    CHECK_CONTAINS(*json, "\"comment\":\"The look.\"");
+    CHECK_CONTAINS(*json, "\"exposure\":1.45");
+    CHECK_EQ(src.expr("TINT").value_or(""), std::string("#ff2e88"));
+    CHECK_EQ(src.expr("POST.effects[0].amount").value_or(""), std::string("0.3"));
+
+    CHECK(src.set("POST.exposure", "1.2"));
+    CHECK(src.set("POST.effects[0].amount", "0.55"));
+    CHECK(src.set("TINT", "#29d9ff"));
+    CHECK_EQ(src.text(), std::string("// The look.\n"
+                                     "config let POST = {\n"
+                                     "  exposure: 1.2,   // brighter than day\n"
+                                     "  effects: [{effect: \"grain\", amount: 0.55}],\n"
+                                     "}\n"
+                                     "let TINT = #29d9ff\n"));
+
+    // A refused edit reports why and changes nothing.
+    const std::string before = src.text();
+    CHECK(!src.set("POST.bloom", "1.0"));
+    CHECK_CONTAINS(src.error(), "POST.bloom");
+    CHECK(!src.set("POST.exposure", "1 +"));
+    CHECK_EQ(src.text(), before);
+    CHECK(!src.expr("NOPE").has_value());
+
+    // Text that does not parse is reported, not thrown.
+    petal::Source broken("let x = (\n");
+    CHECK(!broken.bindings_json().has_value());
+    CHECK(!broken.error().empty());
+}
+
 TEST(scenario_parses_and_reports) {
     petal::Scenario sc = petal::Scenario::from_json(R"({
         "size": [320, 200], "frames": 12,

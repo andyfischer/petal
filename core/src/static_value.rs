@@ -394,6 +394,15 @@ pub struct StaticBinding {
     /// a file header does not attach itself to the first binding. `None` when
     /// there is no such comment.
     pub comment: Option<String>,
+    /// Written `config let …`: the author declared the binding a tuning knob
+    /// (see docs/direct-manipulation.md). A host showing a file's settings
+    /// can offer exactly these for editing. Always `false` for a bare
+    /// `name = …` rebinding, a `fn` and a `state`.
+    pub is_config: bool,
+    /// Written with `pub` (or `export`): other modules can import it.
+    pub exported: bool,
+    /// The 1-based line the binding's statement starts on.
+    pub line: u32,
 }
 
 /// Every top-level name `source` binds, in source order, each carrying either
@@ -427,11 +436,17 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
     let chars: Vec<char> = source.chars().collect();
     let mut bindings: Vec<StaticBinding> = Vec::new();
     for stmt in &stmts {
-        let (name, value, text) = match &stmt.kind {
-            StmtKind::Let { name, value, .. } => (
+        let (name, value, text, is_config) = match &stmt.kind {
+            StmtKind::Let {
+                name,
+                value,
+                is_config,
+                ..
+            } => (
                 name.clone(),
                 eval(value, &bindings),
                 Some(span_text(&chars, value.span)),
+                *is_config,
             ),
             StmtKind::Assign {
                 target: AssignTarget::Name(name),
@@ -440,19 +455,24 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
                 name.clone(),
                 eval(value, &bindings),
                 Some(span_text(&chars, value.span)),
+                false,
             ),
             // A `fn` declares a name too, so report it as bound-but-not-static
             // rather than letting a lookup say "not found" about a name that is
             // plainly there in the file.
-            StmtKind::FnDecl { name, .. } => {
-                (name.clone(), Err("a function declaration".into()), None)
-            }
+            StmtKind::FnDecl { name, .. } => (
+                name.clone(),
+                Err("a function declaration".into()),
+                None,
+                false,
+            ),
             // `state` is runtime state, not configuration: its value only exists
             // once the program runs, and it changes as the program runs.
             StmtKind::State { name, .. } => (
                 name.clone(),
                 Err("a `state` declaration, whose value only exists at run time".into()),
                 None,
+                false,
             ),
             _ => continue,
         };
@@ -464,6 +484,9 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
                 value,
                 text,
                 comment,
+                is_config,
+                exported: stmt.exported,
+                line: stmt.span.start.line,
             },
         );
     }
@@ -961,6 +984,22 @@ let drag = 0.02
     #[test]
     fn a_binding_without_a_comment_has_none() {
         assert_eq!(binding("let a = 1\n", "a").comment, None);
+    }
+
+    #[test]
+    fn static_bindings_reports_config_and_line() {
+        let src = "// knobs\nconfig let gain = 0.5\nlet scale = 2\n\nfn f() 1 end\n";
+        let all = static_bindings(src).unwrap();
+        let flags: Vec<(&str, bool, u32)> = all
+            .iter()
+            .map(|b| (b.name.as_str(), b.is_config, b.line))
+            .collect();
+        assert_eq!(
+            flags,
+            vec![("gain", true, 2), ("scale", false, 3), ("f", false, 5)]
+        );
+        // The entry file never exports; `exported` is a module's `pub`.
+        assert!(all.iter().all(|b| !b.exported));
     }
 
     #[test]

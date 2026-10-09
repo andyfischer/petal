@@ -13,6 +13,7 @@
 //! annotation (source snippet / stack trace).
 
 
+use crate::closure_table::ClosureTable;
 use crate::constant_table::{ConstantId, ConstantValue};
 use crate::heap::Heap;
 use crate::numeric::{self, IntArithError, IntOp};
@@ -816,6 +817,76 @@ pub fn get_index(heap: &mut Heap, obj: Value, idx: Value, opt: bool) -> Result<V
             idx.type_name()
         )),
     }
+}
+
+/// Whether `obj[idx]` already holds `val`, so that storing it changes nothing.
+///
+/// Asked just before an in-place store, which leaves no before-value to
+/// compare afterwards: the frame gate uses the answer to tell a `state`
+/// container that was re-stored as it stood from one that was edited (see
+/// `RunDeps::note_in_place_store`). `false` whenever the store would fail or
+/// the comparison is not cheap to settle — "changed" is the safe answer.
+pub fn index_store_keeps(
+    heap: &Heap,
+    closures: &ClosureTable,
+    obj: Value,
+    idx: Value,
+    val: Value,
+) -> bool {
+    match (obj, idx) {
+        (Value::List(list_id), Value::Int(i)) => {
+            let list = heap.get_list(list_id);
+            numeric::resolve_index(list.len(), i)
+                .is_some_and(|k| element_unchanged(heap, closures, list[k], val))
+        }
+        (Value::F64Array(arr_id), Value::Int(i)) => {
+            let new = match val {
+                Value::Float(f) => f,
+                Value::Int(n) => n as f64,
+                _ => return false,
+            };
+            let data = heap.get_f64_array(arr_id);
+            numeric::checked_index(data.len(), i)
+                .is_some_and(|k| data[k].to_bits() == new.to_bits())
+        }
+        (Value::Map(map_id), Value::String(key_id)) => heap
+            .get_map(map_id)
+            .get(heap.get_string(key_id))
+            .is_some_and(|old| element_unchanged(heap, closures, *old, val)),
+        _ => false,
+    }
+}
+
+/// [`index_store_keeps`] for `obj.field = val`.
+pub fn field_store_keeps(
+    program: &Program,
+    heap: &Heap,
+    closures: &ClosureTable,
+    field_cid: ConstantId,
+    obj: Value,
+    val: Value,
+) -> bool {
+    let (Value::Map(map_id), Some(field)) = (obj, program.get_string_constant(field_cid)) else {
+        return false;
+    };
+    heap.get_map(map_id)
+        .get(field)
+        .is_some_and(|old| element_unchanged(heap, closures, *old, val))
+}
+
+/// One stored element against its replacement, as the frame gate compares a
+/// whole `state` value (`run_deps::state_changed`), with the common cases —
+/// the very same value, or two different scalars — settled without a walk.
+fn element_unchanged(heap: &Heap, closures: &ClosureTable, old: Value, new: Value) -> bool {
+    if old == new {
+        return true;
+    }
+    if matches!(old, Value::Int(_) | Value::Bool(_) | Value::Nil)
+        || matches!(new, Value::Int(_) | Value::Bool(_) | Value::Nil)
+    {
+        return false;
+    }
+    !crate::run_deps::state_changed(Some(old), new, heap, closures)
 }
 
 /// `obj[idx] = val` — value semantics: produces a *new* container.

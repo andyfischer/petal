@@ -96,6 +96,9 @@ impl<'a> Vm<'a> {
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
         // in-place flag can go straight to the leaf.
         let v = if in_place {
+            // An in-place producer that does not say whether it changed its
+            // container: the frame gate assumes it did.
+            self.stack.run_deps.note_in_place_store(None);
             self.call_native_fn(nid, args, true, origin)?
         } else {
             self.call_native_or_intrinsic(nid, args, origin)?

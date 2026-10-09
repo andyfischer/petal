@@ -736,3 +736,68 @@ fn a_host_write_to_a_state_var_is_not_written_through() {
     env.run(sid).unwrap();
     assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[41,7]");
 }
+
+#[test]
+fn the_frame_gate_settles_on_equal_element_writes_inside_a_loop() {
+    // The same store, issued from a loop body rather than straight-line code,
+    // has to read the same way to the gate: equal values, no change.
+    for code in [
+        "state var xs = [0, 0]\nfor i in range(0, 2) do\n  set xs[i] = i + 7\nend\nnil",
+        "state xs = [0, 0]\nfor i in range(0, 2) do\n  xs[i] = i + 7\nend\nnil",
+        "state var xs = [0, 0]\nfn fill()\n  for i in range(0, 2) do\n    set xs[i] = i + 7\n  end\nend\nfill()\nnil",
+        "state var xs = [0, 0]\nvar i = 0\nwhile i < 2 do\n  set xs[i] = i + 7\n  set i = i + 1\nend\nnil",
+    ] {
+        let mut env = Env::new();
+        let pid = env.load_program(code).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert!(env.run_needed(sid), "the first frame changed the list");
+        for frame in 1..4 {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap();
+            assert!(
+                !env.run_needed(sid),
+                "frame {frame} of {code:?}: equal writes read as a change: {:?}",
+                env.run_needed_reason(sid)
+            );
+        }
+        assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[7,8]");
+    }
+    // A record field stored from a loop settles the same way.
+    let code = "state r = { n: 0 }\nfor i in range(0, 2) do\n  r.n = 5\nend\nnil";
+    let mut env = Env::new();
+    let pid = env.load_program(code).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert!(!env.run_needed(sid), "{:?}", env.run_needed_reason(sid));
+    // And a loop whose stores do change something is still seen to: on every
+    // frame, and on the one frame that differs after frames that did not.
+    let code = "state xs = [0, 0]\nfor i in range(0, 2) do\n  xs[i] = xs[i] + 1\nend\nnil";
+    let pid = env.load_program(code).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    for frame in 0..3 {
+        if frame > 0 {
+            env.reset_stack(sid).unwrap();
+        }
+        env.run(sid).unwrap();
+        assert!(env.run_needed(sid), "frame {frame}: a changed list settled");
+    }
+    assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[3,3]");
+    let code = "state xs = [0, 0]\nstate tick = 0\ntick = min(tick + 1, 4)\n\
+                for i in range(0, 2) do\n  xs[i] = if tick == 4 then 9 else 7 end\nend\nnil";
+    let pid = env.load_program(code).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let mut needed = Vec::new();
+    for frame in 0..6 {
+        if frame > 0 {
+            env.reset_stack(sid).unwrap();
+        }
+        env.run(sid).unwrap();
+        needed.push(env.run_needed(sid));
+    }
+    // Frames 0-3 move `tick`; frame 3 also rewrites the list; 4 and 5 are quiet.
+    assert_eq!(needed, [true, true, true, true, false, false]);
+    assert_eq!(env.get_state_json(pid, sid)["xs"].to_string(), "[9,9]");
+}

@@ -78,6 +78,8 @@ impl<'a> Vm<'a> {
         let loops = &mut frame.loops;
         let path = &mut frame.path;
         let heap = &mut *self.heap;
+        let closures = &*self.closures;
+        let run_deps = &mut self.stack.run_deps;
         let mut n: u64 = 0;
 
         // Registers are read as `Nil` past the end of the file, like
@@ -345,11 +347,21 @@ impl<'a> Vm<'a> {
                     if dst as usize >= regs.len() {
                         break StraightStop::Slow;
                     }
+                    let (obj_v, idx_v, val_v) = (get!(obj), get!(idx), get!(val));
+                    // The frame gate's question, asked before the store (see
+                    // `RunDeps::note_in_place_store`); nothing once the run is
+                    // already unsettled.
+                    let keeps = run_deps.wants_in_place_stores()
+                        && ops::index_store_keeps(heap, closures, obj_v, idx_v, val_v);
+                    run_deps.note_in_place_store(None);
                     // Writing the same element twice is harmless, so an error
                     // here (reported by the general executor, which runs the
                     // instruction again) has nothing to undo.
-                    match ops::set_index_in_place(heap, get!(obj), get!(idx), get!(val)) {
-                        Ok(v) => put!(dst, v),
+                    match ops::set_index_in_place(heap, obj_v, idx_v, val_v) {
+                        Ok(v) => {
+                            run_deps.note_in_place_store(keeps.then_some(v));
+                            put!(dst, v)
+                        }
                         Err(_) => break StraightStop::Slow,
                     }
                 }

@@ -117,6 +117,11 @@ pub struct RunDeps {
     /// when off.
     logging: bool,
     binding_log: Vec<SymbolId>,
+    /// The container the latest in-place store left exactly as it found it,
+    /// if that store changed nothing (see
+    /// [`note_in_place_store`](Self::note_in_place_store)). Compared by
+    /// identity only, never looked into.
+    in_place_kept: Option<Value>,
 }
 
 impl RunDeps {
@@ -207,10 +212,35 @@ impl RunDeps {
         self.state_unsettled = true;
     }
 
+    /// Whether the run still needs to know if an in-place store changes its
+    /// container. Once the run is unsettled the answer cannot matter.
+    #[inline]
+    pub fn wants_in_place_stores(&self) -> bool {
+        !self.state_unsettled
+    }
+
+    /// Record the outcome of an in-place producer (`set_in_place`, an
+    /// in-place `append`, …): `Some(container)` if it stored what was already
+    /// there, `None` if it changed the container or did not look.
+    ///
+    /// An in-place edit of a `state` slot's container reaches the gate as a
+    /// `mutated` write of the id the slot already holds, with nothing left to
+    /// compare. Without this, every such write counted as a change, so a loop
+    /// that re-stores the same elements each frame (`xs[i] = f(i)`) never
+    /// settled although the same stores issued straight-line — which copy,
+    /// and so compare by content — did. Every in-place producer reports here
+    /// and each `state` write consumes the report, so it only ever describes
+    /// the producer that fed that write.
+    #[inline]
+    pub fn note_in_place_store(&mut self, kept: Option<Value>) {
+        self.in_place_kept = kept;
+    }
+
     /// Record a write that replaced `old` with `new` in a `state` slot, and
     /// mark the run unsettled if that changed the slot (see
     /// [`state_changed`]). `mutated` means an in-place producer already
-    /// edited the slot's object, which counts as a change without comparing.
+    /// edited the slot's object, which counts as a change without comparing
+    /// unless that producer reported storing what was already there.
     pub fn note_state_write(
         &mut self,
         old: Option<Value>,
@@ -219,7 +249,16 @@ impl RunDeps {
         heap: &Heap,
         closures: &ClosureTable,
     ) {
-        if !self.state_unsettled && (mutated || state_changed(old, new, heap, closures)) {
+        let kept = self.in_place_kept.take() == Some(new);
+        if self.state_unsettled {
+            return;
+        }
+        // The slot already held this very container and the store into it
+        // changed nothing: no walk needed, whatever its size.
+        if mutated && kept && old == Some(new) {
+            return;
+        }
+        if (mutated && !kept) || state_changed(old, new, heap, closures) {
             self.state_unsettled = true;
         }
     }
@@ -270,6 +309,7 @@ impl RunDeps {
         }
         self.host_read = false;
         self.state_unsettled = false;
+        self.in_place_kept = None;
         self.rng_consumed = false;
         self.rng_at_start = rng_state;
         self.valid = false;

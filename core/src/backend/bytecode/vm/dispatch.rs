@@ -318,22 +318,30 @@ impl<'a> Vm<'a> {
                 field,
                 val,
             } => {
-                let v = ops::set_field_in_place(
-                    self.program,
-                    self.heap,
-                    *field,
-                    self.reg(fi, *obj),
-                    self.reg(fi, *val),
-                )?;
+                let (obj_v, val_v) = (self.reg(fi, *obj), self.reg(fi, *val));
+                // Asked before the store, which leaves nothing to compare.
+                let keeps = self.stack.run_deps.wants_in_place_stores()
+                    && ops::field_store_keeps(
+                        self.program,
+                        self.heap,
+                        self.closures,
+                        *field,
+                        obj_v,
+                        val_v,
+                    );
+                self.stack.run_deps.note_in_place_store(None);
+                let v = ops::set_field_in_place(self.program, self.heap, *field, obj_v, val_v)?;
+                self.stack.run_deps.note_in_place_store(keeps.then_some(v));
                 self.set(fi, *dst, v);
             }
             Inst::SetIndexInPlace { dst, obj, idx, val } => {
-                let v = ops::set_index_in_place(
-                    self.heap,
-                    self.reg(fi, *obj),
-                    self.reg(fi, *idx),
-                    self.reg(fi, *val),
-                )?;
+                let (obj_v, idx_v, val_v) =
+                    (self.reg(fi, *obj), self.reg(fi, *idx), self.reg(fi, *val));
+                let keeps = self.stack.run_deps.wants_in_place_stores()
+                    && ops::index_store_keeps(self.heap, self.closures, obj_v, idx_v, val_v);
+                self.stack.run_deps.note_in_place_store(None);
+                let v = ops::set_index_in_place(self.heap, obj_v, idx_v, val_v)?;
+                self.stack.run_deps.note_in_place_store(keeps.then_some(v));
                 self.set(fi, *dst, v);
             }
 

@@ -193,6 +193,7 @@ fn constant_of(lit: &Literal) -> ConstantValue {
 struct Patch {
     spans: Vec<(TermId, SourceSpan)>,
     warnings: Vec<(usize, crate::diagnostic::Diagnostic)>,
+    layout_deps: Vec<(usize, crate::diagnostic::LayoutDep)>,
     /// (file index, new text).
     sources: Vec<(usize, String)>,
     constants: Vec<(TermId, ConstantValue)>,
@@ -364,6 +365,9 @@ impl Env {
         }
         for (i, warning) in patch.warnings {
             program.warnings[i] = warning;
+        }
+        for (i, dep) in patch.layout_deps {
+            program.layout_deps[i] = dep;
         }
         for (file, text) in patch.sources {
             if file == 0 {
@@ -682,6 +686,30 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
             .ok_or("a diagnostic's position has no counterpart in the new text")?;
         if moved != *w {
             patch.warnings.push((i, moved));
+        }
+    }
+
+    // A check that compared the layout of two places must read the same at
+    // their new positions, or the edit added or removed a warning.
+    for (i, dep) in program.layout_deps.iter().enumerate() {
+        let Some(f) = by_file.get(&dep.prev.file.0) else {
+            continue;
+        };
+        let moved = (|| {
+            Some(crate::diagnostic::LayoutDep {
+                prev: f.diff.map_span(dep.prev)?,
+                next: f.diff.map_span(dep.next)?,
+            })
+        })()
+        .ok_or("a position a layout check compared has no counterpart in the new text")?;
+        if moved.reading() != dep.reading() {
+            return Err(format!(
+                "the layout change at line {} of `{}` changes what the compiler warns about",
+                moved.next.start.line, f.name
+            ));
+        }
+        if moved != *dep {
+            patch.layout_deps.push((i, moved));
         }
     }
 

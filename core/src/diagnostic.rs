@@ -21,6 +21,33 @@
 //! carries the extra detail. See `typecheck::Checker::check_named_args`.
 use crate::source_map::SourceSpan;
 
+/// Two places whose *layout* a compile-time check compared: whether one is on
+/// a later line than the other, and whether it is indented deeper.
+///
+/// A check that looks at layout makes the compiler's output depend on
+/// whitespace, which a hot reload otherwise treats as changing nothing
+/// (`Env::reload_program`). So every such check records what it compared, the
+/// program keeps the list ([`Program::layout_deps`](crate::program::Program::layout_deps)),
+/// and a layout-only reload re-reads each pair at its new position: if any
+/// reading changed, the edit may have added or removed a warning, and the
+/// program is recompiled instead.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LayoutDep {
+    pub prev: SourceSpan,
+    pub next: SourceSpan,
+}
+
+impl LayoutDep {
+    /// The layout facts a check may read: `next` does not start on a later
+    /// line than `prev`, and `next` starts in a later column.
+    pub fn reading(&self) -> (bool, bool) {
+        (
+            self.next.start.line <= self.prev.start.line,
+            self.next.start.column > self.prev.start.column,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
     pub span: SourceSpan,

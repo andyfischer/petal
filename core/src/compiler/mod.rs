@@ -219,6 +219,9 @@ pub struct Compiler {
     /// of one value: what lets a running program take the edit without a
     /// recompile (see `crate::source_diff`).
     config_folds: HashSet<SourceSpan>,
+    /// Layout the checks compared while compiling (see
+    /// [`crate::diagnostic::LayoutDep`]).
+    layout_deps: Vec<crate::diagnostic::LayoutDep>,
 
     // Imported `var`s visible in the file being compiled, bare name → (owning
     // module, the term that holds the cell). Populated by `bind_imports` for
@@ -391,6 +394,7 @@ impl Compiler {
             fn_cell_scopes: Vec::new(),
             hoisted_decls: HashSet::new(),
             config_folds: HashSet::new(),
+            layout_deps: Vec::new(),
             imported_vars: HashMap::new(),
             errors: Vec::new(),
             state_inits: HashMap::new(),
@@ -615,6 +619,7 @@ impl Compiler {
             match_arms: self.match_arms,
             block_terms,
             warnings: self.warnings,
+            layout_deps: self.layout_deps,
             class_names: self
                 .classes
                 .iter()
@@ -699,8 +704,9 @@ impl Compiler {
         // Spans are file-local, so this must be *replaced* per module rather
         // than accumulated — two modules' spans collide freely.
         self.method_dispatch = dispatch;
-        self.warnings
-            .extend(crate::typecheck::unused::check_unused(&stmts));
+        let (unused, layout) = crate::typecheck::unused::check_unused_with_layout(&stmts);
+        self.warnings.extend(unused);
+        self.layout_deps.extend(layout);
         self.warnings
             .extend(crate::typecheck::shadow::check_enum_collisions(&stmts));
         let shadowed = crate::typecheck::shadow::check_shadowed_builtins(&stmts, &|name| {

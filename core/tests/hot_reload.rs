@@ -97,6 +97,7 @@ fn assert_same_program(a: &mut World, b: &mut World, what: &str) {
         );
     }
     assert_eq!(pa.warnings, pb.warnings, "[{what}] warnings");
+    assert_eq!(pa.layout_deps, pb.layout_deps, "[{what}] layout the checks read");
 }
 
 struct Case<'a> {
@@ -413,6 +414,27 @@ fn a_layout_edit_rewrites_a_warning_that_cites_a_line() {
     assert!(cites(&w, "written on line 6"), "the fixture no longer warns");
     w.env.reload_program(w.sid, new, None).unwrap();
     assert!(cites(&w, "written on line 9"));
+}
+
+/// One warning depends on layout itself: a line starting with `-`, indented
+/// under an unfinished-looking line, is reported as a broken continuation.
+/// An edit that changes that reading is not a layout-only edit to the
+/// compiler, and is recompiled; one that keeps it is relocated.
+#[test]
+fn a_layout_edit_that_changes_a_warning_is_recompiled() {
+    let flat = "fn f(a, d)\n  let x = a * 2\n  -d\nend\nprint(f(1, 2))\n";
+    let indented = "fn f(a, d)\n  let x = a * 2\n    -d\nend\nprint(f(1, 2))\n";
+    let warns = |src: &str| {
+        let w = world(src, &[], RunPolicy::FAST);
+        w.env.get_program(w.pid).unwrap().warnings.len()
+    };
+    assert!(warns(indented) > warns(flat), "the fixture no longer warns on the indent");
+    Case::new("indent adds a warning", flat, indented, Recompiled).check();
+    Case::new("dedent removes a warning", indented, flat, Recompiled).check();
+    // The same statements moved without changing how they sit relative to
+    // each other.
+    let shifted = "// moved\n\nfn f(a, d)\n  let x = a * 2\n\n    -d\nend\nprint(f(1, 2))\n";
+    Case::new("indent kept", indented, shifted, Relocated).check();
 }
 
 #[test]
@@ -868,6 +890,13 @@ fn relayout(source: &str) -> String {
     out
 }
 
+/// `source` with every line's indentation removed: the layout edit most
+/// likely to change something a check reads (and, inside a multi-line string,
+/// a value).
+fn flatten(source: &str) -> String {
+    source.lines().map(|l| format!("{}\n", l.trim_start())).collect()
+}
+
 /// `source` with a few of its number literals changed.
 fn retune(source: &str) -> Option<String> {
     use petal::lexer::{Lexer, Token};
@@ -925,6 +954,9 @@ fn sweep_one(path: &std::path::Path, old: &str, new: &str) -> Option<ReloadOutco
     };
     b.env.transfer_state(b.sid, program).unwrap();
     assert_same_program(&mut a, &mut b, &what);
+    if report.outcome == Recompiled && std::env::var("PETAL_RELOAD_VERBOSE").is_ok() {
+        eprintln!("recompiled {what}: {} ({:?})", report.change.label(), report.fallback);
+    }
     Some(report.outcome)
 }
 
@@ -941,6 +973,7 @@ fn sweep(files: &[std::path::PathBuf]) -> [usize; 3] {
             continue;
         };
         count(sweep_one(path, &old, &relayout(&old)));
+        count(sweep_one(path, &old, &flatten(&old)));
         if let Some(new) = retune(&old) {
             count(sweep_one(path, &old, &new));
         }

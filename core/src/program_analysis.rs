@@ -819,6 +819,7 @@ mod tests {
             match_arms: HashMap::new(),
             block_terms: HashMap::new(),
             warnings: Vec::new(),
+            layout_deps: Vec::new(),
             class_names: Default::default(),
         }
     }

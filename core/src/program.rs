@@ -636,6 +636,11 @@ pub struct Program {
     /// artifact, NOT part of the portable IR — skipped in (de)serialization.
     #[serde(skip)]
     pub warnings: Vec<crate::diagnostic::Diagnostic>,
+    /// The pairs of source positions whose layout a compile-time check
+    /// compared (see [`crate::diagnostic::LayoutDep`]). Like `warnings`, a
+    /// compile-time artifact and not part of the portable IR.
+    #[serde(skip)]
+    pub layout_deps: Vec<crate::diagnostic::LayoutDep>,
     /// Every class name this program declares, built-ins included.
     ///
     /// The class *table* is compile-time only, but the VM needs one question

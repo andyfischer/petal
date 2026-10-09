@@ -38,14 +38,22 @@ use std::collections::HashSet;
 
 use crate::ast::{self, AssignTarget, ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind};
 use crate::builtins::{is_pure_builtin, looks_mutating};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, LayoutDep};
 
 /// Walk a module's statements and report each discarded pure-builtin call.
 pub fn check_unused(stmts: &[Stmt]) -> Vec<Diagnostic> {
+    check_unused_with_layout(stmts).0
+}
+
+/// [`check_unused`], plus every pair of statements whose layout the
+/// broken-continuation rule compared (see [`LayoutDep`]): the one check here
+/// whose answer depends on whitespace.
+pub fn check_unused_with_layout(stmts: &[Stmt]) -> (Vec<Diagnostic>, Vec<LayoutDep>) {
     let mut w = Walker {
         user_fns: HashSet::new(),
         scopes: vec![HashSet::new()],
         diags: Vec::new(),
+        layout: Vec::new(),
     };
     collect_fn_names(stmts, &mut w.user_fns);
     // The top-level program's final expression is its result value — treat the
@@ -54,7 +62,7 @@ pub fn check_unused(stmts: &[Stmt]) -> Vec<Diagnostic> {
     // collect inside a function body, a used branch or a collecting loop, never
     // at module level, so the module's tail loop still runs for side effects.
     w.walk_block_tail(stmts, true, false);
-    w.diags
+    (w.diags, w.layout)
 }
 
 struct Walker {
@@ -66,6 +74,8 @@ struct Walker {
     /// A bound name shadows a builtin of the same name.
     scopes: Vec<HashSet<String>>,
     diags: Vec<Diagnostic>,
+    /// Statement pairs [`is_broken_continuation`] read the layout of.
+    layout: Vec<LayoutDep>,
 }
 
 impl Walker {
@@ -116,9 +126,17 @@ impl Walker {
             // A line that starts with `-` under an unfinished-looking line:
             // report the `-` line once, and say nothing more about the line
             // above it (its discarded value is the same mistake).
-            let continued = stmts
-                .get(i + 1)
-                .is_some_and(|next| is_broken_continuation(stmt, next));
+            let continued = stmts.get(i + 1).is_some_and(|next| {
+                // The rule compares the two statements' lines and columns
+                // exactly when the second starts with a negation.
+                if matches!(&next.kind, StmtKind::Expr(e) if starts_with_negation(e)) {
+                    self.layout.push(LayoutDep {
+                        prev: stmt.span,
+                        next: next.span,
+                    });
+                }
+                is_broken_continuation(stmt, next)
+            });
             if continued {
                 self.warn_broken_continuation(&stmts[i + 1]);
                 reported = true;

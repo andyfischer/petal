@@ -5,5 +5,6 @@ export default defineConfig({
     include: ["test/vitest/**/*.test.ts"],
     testTimeout: 30000,
     globalSetup: ["test/vitest/global-setup.ts"],
+    setupFiles: ["test/vitest/setup-yield.ts"],
   },
 });

@@ -109,3 +109,42 @@ pub fn assert_corpus_is_live(app: &Path, frames: &[String]) {
         app.display()
     );
 }
+
+/// Run `drive` over every corpus app on all cores and return the results in
+/// corpus order. Each app is its own `Env`, so the sweeps are independent per
+/// app, and fanning them out is what lets every oracle keep the whole corpus
+/// rather than a sample of it. A panic in `drive` is re-raised on the calling
+/// thread with its original message.
+#[allow(dead_code)]
+pub fn par_corpus<T: Send>(drive: impl Fn(&Path, &[PathBuf]) -> T + Sync) -> Vec<(PathBuf, T)> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let apps = corpus();
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(apps.len());
+    let mut indexed: Vec<(usize, T)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some((app, includes)) = apps.get(i) else { break };
+                        done.push((i, drive(app, includes)));
+                    }
+                    done
+                })
+            })
+            .collect();
+        let mut all = Vec::with_capacity(apps.len());
+        for handle in handles {
+            match handle.join() {
+                Ok(done) => all.extend(done),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+        all
+    });
+    indexed.sort_by_key(|(i, _)| *i);
+    indexed.into_iter().map(|(i, value)| (apps[i].0.clone(), value)).collect()
+}

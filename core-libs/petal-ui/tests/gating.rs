@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{assert_corpus_is_live, corpus};
+use common::{assert_corpus_is_live, par_corpus};
 
 use petal::policy::RunPolicy;
 use petal::run_deps::RunReason;
@@ -313,27 +313,25 @@ fn drive(app: &Path, includes: &[PathBuf], gate: bool, seed: u64, frames: usize)
 
 #[test]
 fn gated_frames_reproduce_ungated_frames_across_the_corpus() {
-    // One monkey seed over 45 frames: ~15 apps × 2 drives is already the
-    // longest test in the crate under a debug build.
+    // One monkey seed over 45 frames, every app on its own core.
     let frames = 45;
-    let mut skipped_total = 0;
-    for (app, includes) in corpus() {
-        for seed in [1u64] {
-            let (full, _) = drive(&app, &includes, false, seed, frames);
-            let (gated, skipped) = drive(&app, &includes, true, seed, frames);
-            assert_corpus_is_live(&app, &full);
-            skipped_total += skipped;
-            for (i, (a, b)) in full.iter().zip(&gated).enumerate() {
-                assert!(
-                    a == b,
-                    "{} seed {seed}: frame {i} differs under the gate\nfull:  {}\ngated: {}",
-                    app.display(),
-                    &a[..a.len().min(400)],
-                    &b[..b.len().min(400)],
-                );
-            }
+    let seed = 1u64;
+    let skipped = par_corpus(|app, includes| {
+        let (full, _) = drive(app, includes, false, seed, frames);
+        let (gated, skipped) = drive(app, includes, true, seed, frames);
+        assert_corpus_is_live(app, &full);
+        for (i, (a, b)) in full.iter().zip(&gated).enumerate() {
+            assert!(
+                a == b,
+                "{} seed {seed}: frame {i} differs under the gate\nfull:  {}\ngated: {}",
+                app.display(),
+                &a[..a.len().min(400)],
+                &b[..b.len().min(400)],
+            );
         }
-    }
+        skipped
+    });
+    let skipped_total: u64 = skipped.iter().map(|(_, skipped)| skipped).sum();
     assert!(skipped_total > 0, "the gate never skipped a frame across the corpus");
 }
 
@@ -374,11 +372,14 @@ fn a_quiet_corpus_idles_unless_it_reads_the_clock() {
     // `screens-demo` drawers idle here. So the floor below is on the idle
     // count: a library that starts reading the clock on every frame takes the
     // apps built on it out of the first assertion and into the second.
-    let mut idle = 0;
-    let mut clock_driven = Vec::new();
-    let mut restless = Vec::new();
-    for (app, includes) in corpus() {
-        let mut ui = Headless::from_file_with_paths(&app, 800, 600, &includes)
+    /// How one app behaved once left alone.
+    enum Quiet {
+        Idle,
+        ClockDriven(String),
+        Restless(String),
+    }
+    let settled = par_corpus(|app, includes| {
+        let mut ui = Headless::from_file_with_paths(app, 800, 600, includes)
             .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
         petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
         ui.env.set_echo(false);
@@ -391,14 +392,23 @@ fn a_quiet_corpus_idles_unless_it_reads_the_clock() {
             let _ = ui.frame();
         }
         if ui.frames_run == before {
-            idle += 1;
-            continue;
+            return Quiet::Idle;
         }
         let clocks = clock_reads(&ui);
         if clocks.is_empty() {
-            restless.push(format!("{} ({:?})", app.display(), ui.last_run_reason));
+            Quiet::Restless(format!("{} ({:?})", app.display(), ui.last_run_reason))
         } else {
-            clock_driven.push(format!("{} ({})", app.display(), clocks.join(", ")));
+            Quiet::ClockDriven(format!("{} ({})", app.display(), clocks.join(", ")))
+        }
+    });
+    let mut idle = 0;
+    let mut clock_driven = Vec::new();
+    let mut restless = Vec::new();
+    for (_, quiet) in settled {
+        match quiet {
+            Quiet::Idle => idle += 1,
+            Quiet::ClockDriven(app) => clock_driven.push(app),
+            Quiet::Restless(app) => restless.push(app),
         }
     }
     eprintln!("{idle} idle; {} read the clock and cannot:", clock_driven.len());

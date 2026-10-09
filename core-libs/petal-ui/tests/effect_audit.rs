@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::corpus;
+use common::par_corpus;
 
 use petal::effect_audit::{FindingKind, Report};
 use petal::policy::RunPolicy;
@@ -46,8 +46,7 @@ fn no_native_does_more_than_it_declares_across_the_corpus() {
     // name → (facets, apps that called it)
     let mut over: BTreeMap<String, (Vec<String>, usize)> = BTreeMap::new();
     let mut called_total = 0;
-    for (app, includes) in corpus() {
-        let report = audit(&app, &includes, 1, frames);
+    for (app, report) in par_corpus(|app, includes| audit(app, includes, 1, frames)) {
         called_total += report.called;
         for f in &report.findings {
             match f.kind {

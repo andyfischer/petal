@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{assert_corpus_is_live, corpus};
+use common::{assert_corpus_is_live, par_corpus};
 
 use petal::policy::RunPolicy;
 use petal_ui::draw::DrawCommand;
@@ -306,22 +306,21 @@ fn first_difference(a: &str, b: &str) -> String {
 #[test]
 fn memoized_frames_reproduce_unmemoized_frames_across_the_corpus() {
     let frames = 45;
-    let mut hits_total = 0;
-    for (app, includes) in corpus() {
-        for seed in [1u64] {
-            let (full, _) = drive(&app, &includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
-            let (memoized, hits) = drive(&app, &includes, RunPolicy::REPLAY, seed, frames);
-            assert_corpus_is_live(&app, &full);
-            hits_total += hits;
-            for (i, (a, b)) in full.iter().zip(&memoized).enumerate() {
-                assert!(
-                    a == b,
-                    "{} seed {seed}: frame {i} differs under replay: {}",
-                    app.display(),
-                    first_difference(a, b),
-                );
-            }
+    let seed = 1u64;
+    let hits = par_corpus(|app, includes| {
+        let (full, _) = drive(app, includes, RunPolicy::REPLAY.with_memo(false), seed, frames);
+        let (memoized, hits) = drive(app, includes, RunPolicy::REPLAY, seed, frames);
+        assert_corpus_is_live(app, &full);
+        for (i, (a, b)) in full.iter().zip(&memoized).enumerate() {
+            assert!(
+                a == b,
+                "{} seed {seed}: frame {i} differs under replay: {}",
+                app.display(),
+                first_difference(a, b),
+            );
         }
-    }
+        hits
+    });
+    let hits_total: u64 = hits.iter().map(|(_, hits)| hits).sum();
     assert!(hits_total > 0, "no scope was ever replayed across the corpus");
 }

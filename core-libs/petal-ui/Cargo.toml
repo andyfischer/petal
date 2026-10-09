@@ -18,3 +18,12 @@ serde_json = "1"
 inherits = "release"
 debug = true
 strip = false
+
+# Dependencies (the `petal` VM and compiler above all) are optimized in dev
+# and test builds; this crate itself is not, so it still rebuilds quickly.
+# The integration tests drive whole apps for dozens of frames each, and an
+# unoptimized VM made the suite a quarter of an hour: the corpus oracles in
+# tests/{gating,memo,effect_audit}.rs alone ran ~13 minutes, and run in well
+# under one with this. Debug assertions and overflow checks stay on.
+[profile.dev.package."*"]
+opt-level = 2

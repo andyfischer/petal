@@ -31,11 +31,47 @@ fn draw(call: &str) -> Vec<DrawCommand> {
         .to_vec()
 }
 
+/// Drawn after each call of a batch, to cut the frame's commands back into
+/// what each call drew.
+const MARK: &str = "@@named-draw-mark";
+
+/// Run every call in one script and return what each drew, in order. `None`
+/// when the batch does not compile or run, or does not cut cleanly: the
+/// caller then runs the calls one script each, which names the one at fault.
+///
+/// A script per call is what this file did throughout, and compiling the
+/// prelude several hundred times over was all of its 70 seconds.
+fn draw_each(calls: &[&str]) -> Option<Vec<Vec<DrawCommand>>> {
+    let mark = format!("draw_text(\"{MARK}\", vec2(0, 0), 1, C)\n");
+    let mut src = format!("{PROLOGUE}{mark}");
+    for call in calls {
+        src.push_str(call);
+        src.push('\n');
+        src.push_str(&mark);
+    }
+    let mut ui = Headless::new(&src).ok()?;
+    let commands = ui.frame().ok()?.to_vec();
+    let is_mark = |c: &DrawCommand| matches!(c, DrawCommand::Text { text, .. } if text == MARK);
+    // The prologue's own output, then one piece per call, then the tail.
+    let pieces: Vec<Vec<DrawCommand>> = commands.split(is_mark).map(|p| p.to_vec()).collect();
+    (pieces.len() == calls.len() + 2).then(|| pieces[1..=calls.len()].to_vec())
+}
+
 /// Each `(named, positional)` pair draws the same thing, and draws something.
-fn same(pairs: &[(&str, &str)]) {
+fn same<S: AsRef<str>>(pairs: &[(S, S)]) {
+    let named: Vec<&str> = pairs.iter().map(|(n, _)| n.as_ref()).collect();
+    let positional: Vec<&str> = pairs.iter().map(|(_, p)| p.as_ref()).collect();
+    if let (Some(got), Some(want)) = (draw_each(&named), draw_each(&positional)) {
+        for (((named, positional), got), want) in named.iter().zip(&positional).zip(&got).zip(&want) {
+            assert!(!want.is_empty(), "`{positional}` drew nothing");
+            assert_eq!(got, want, "`{named}` vs `{positional}`");
+        }
+        return;
+    }
+    eprintln!("named_draw: batch fell back to a script per call");
     // What the prologue alone emits (its `canvas`).
     let idle = draw("").len();
-    for (named, positional) in pairs {
+    for (named, positional) in named.iter().zip(&positional) {
         let want = draw(positional);
         assert!(want.len() > idle, "`{positional}` drew nothing");
         assert_eq!(draw(named), want, "`{named}` vs `{positional}`");
@@ -571,9 +607,7 @@ fn polylines_by_name() {
             ("(points: PTS, c: C, a: 4, width: 5)", "(PTS, C, 4, 5)"),
             ("(PTS, C, width: 5)", "(PTS, C, 255, 5)"),
         ];
-        for (named, positional) in pairs {
-            same(&[(&format!("{f}{named}"), &format!("{f}{positional}"))]);
-        }
+        same(&pairs.map(|(named, positional)| (format!("{f}{named}"), format!("{f}{positional}"))));
     }
 }
 
@@ -628,9 +662,7 @@ fn clips_by_name() {
             ("(rect: R)", "(R)"),
             ("(rect: R, radius: 5)", "(R, 5)"),
         ];
-        for (named, positional) in pairs {
-            same(&[(&format!("{f}{named}"), &format!("{f}{positional}"))]);
-        }
+        same(&pairs.map(|(named, positional)| (format!("{f}{named}"), format!("{f}{positional}"))));
     }
 }
 

@@ -1,0 +1,688 @@
+//! Hot reload that does only the work an edit calls for.
+//!
+//! [`Env::reload_program`] is the entry point a host calls when a source file
+//! changed. It compares every source file the running program was compiled
+//! from with the text that file holds now ([`crate::source_diff`]) and takes
+//! the cheapest path that is still exact:
+//!
+//! | The edit                                   | What happens                                   |
+//! |--------------------------------------------|------------------------------------------------|
+//! | nothing, or whitespace / comments / layout | source positions move; nothing else is touched |
+//! | literal values (`0.35` to `0.4`)           | the constants are written in place             |
+//! | anything else                              | recompile, then [`Env::transfer_state`]        |
+//!
+//! The first two never compile and never lower. The contract for all three is
+//! the same: afterwards the program, and the stack, are what a full recompile
+//! of the new source followed by `transfer_state` would have left — same
+//! terms, same constants by value, same spans, same warnings, same state.
+//! `core/tests/hot_reload.rs` holds that to a corpus of edits.
+//!
+//! # Late binding
+//!
+//! A literal compiles to a `Constant` term, lowered to one `LoadConst`
+//! instruction that reads the program's constant table *each time it runs*.
+//! Nothing downstream bakes the value in: the optimizer passes look at
+//! instruction kinds and registers, never at constant values. So changing a
+//! literal's value is: give its term a constant-table slot of its own
+//! ([`ConstantTable::alloc_slot`](crate::constant_table::ConstantTable::alloc_slot))
+//! the first time, point the one instruction at it, and from then on write
+//! the slot.
+//!
+//! What a run *derived* from the old value is dropped the same way a full
+//! reload drops it — closures (which captured it), the captured function
+//! table, memo records (a function body that loads the constant is an input
+//! no record lists), and the frame gate's verdict — by running the same
+//! [`transfer_stack_state`](crate::transfer_state::transfer_stack_state) a
+//! full reload runs. `state` is kept, exactly as there: a `state` slot that
+//! was initialized from the old value keeps its value under both.
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+use super::*;
+use crate::ast::Literal;
+use crate::backend::bytecode::Inst;
+use crate::constant_table::{ConstantId, ConstantValue};
+use crate::program::{TermId, TermOp};
+use crate::source_diff::{FileDiff, SourceChange, diff_source};
+use crate::source_map::{FileId, SourceSpan};
+
+/// How a reload was carried out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReloadOutcome {
+    /// No source file's text changed. Nothing was touched.
+    Unchanged,
+    /// Only whitespace, comments or layout changed. The program's recorded
+    /// source text and positions were updated; nothing was recompiled, no
+    /// state, closure or memo record was dropped.
+    Relocated,
+    /// Only literal values changed. They were written into the running
+    /// program; nothing was recompiled.
+    Patched,
+    /// The program was recompiled and swapped in with `transfer_state`.
+    Recompiled,
+}
+
+impl ReloadOutcome {
+    /// `unchanged`, `relocated`, `patched` or `recompiled`.
+    pub fn label(self) -> &'static str {
+        match self {
+            ReloadOutcome::Unchanged => "unchanged",
+            ReloadOutcome::Relocated => "relocated",
+            ReloadOutcome::Patched => "patched",
+            ReloadOutcome::Recompiled => "recompiled",
+        }
+    }
+}
+
+/// One source file of a program, and how its text changed.
+#[derive(Debug, Clone)]
+pub struct FileChange {
+    /// The file's index in the program's file table (0 is the entry file).
+    pub file: FileId,
+    /// Its display name (`config.ptl`; empty for an entry file with no table).
+    pub name: String,
+    /// Where it was read from, when it came from disk.
+    pub origin: Option<std::path::PathBuf>,
+    /// The text the file holds now.
+    pub new_source: String,
+    pub diff: FileDiff,
+}
+
+/// What changed across every source file of a loaded program: the input of
+/// [`Env::apply_program_change`], made by [`Env::diff_program`].
+#[derive(Debug, Clone)]
+pub struct ProgramChange {
+    /// The files whose text changed. Files that are byte-identical are not
+    /// listed.
+    pub files: Vec<FileChange>,
+    /// Why no incremental path exists regardless of the diffs: a source file
+    /// that can no longer be read, say.
+    pub blocker: Option<String>,
+}
+
+impl ProgramChange {
+    /// The change as one classification: the broadest of the files'.
+    pub fn summary(&self) -> SourceChange {
+        if let Some(why) = &self.blocker {
+            return SourceChange::Full(why.clone());
+        }
+        let mut values = Vec::new();
+        let mut constructs = Vec::new();
+        for f in &self.files {
+            match &f.diff.change {
+                SourceChange::None => {}
+                SourceChange::Values(v) => values.extend(v.iter().cloned()),
+                SourceChange::Constructs(c) => constructs.extend(c.iter().cloned()),
+                SourceChange::Full(why) => return SourceChange::Full(why.clone()),
+            }
+        }
+        if !constructs.is_empty() {
+            SourceChange::Constructs(constructs)
+        } else if !values.is_empty() {
+            SourceChange::Values(values)
+        } else {
+            SourceChange::None
+        }
+    }
+
+    /// Whether [`Env::apply_program_change`] can take it without recompiling.
+    pub fn is_incremental(&self) -> bool {
+        self.blocker.is_none() && self.files.iter().all(|f| f.diff.change.is_incremental())
+    }
+}
+
+/// What a reload did.
+#[derive(Debug, Clone)]
+pub struct ReloadReport {
+    pub outcome: ReloadOutcome,
+    /// The classification of the edit (see [`ProgramChange::summary`]).
+    pub change: SourceChange,
+    /// The files whose text changed, by display name.
+    pub changed_files: Vec<String>,
+    /// State entries kept and dropped, as [`Env::transfer_state`] counts
+    /// them. An incremental reload drops none.
+    pub state_preserved: usize,
+    pub state_dropped: usize,
+    /// When the edit was incremental by classification but the program was
+    /// recompiled anyway, why.
+    pub fallback: Option<String>,
+}
+
+fn constant_of(lit: &Literal) -> ConstantValue {
+    match lit {
+        Literal::Nil => ConstantValue::Nil,
+        Literal::Bool(b) => ConstantValue::Bool(*b),
+        Literal::Int(n) => ConstantValue::Int(*n),
+        Literal::Float(f) => ConstantValue::from_f64(*f),
+        Literal::String(s) => ConstantValue::String(s.clone()),
+    }
+}
+
+/// Everything one incremental apply will write, computed before any of it is
+/// written so a change that turns out not to be applicable leaves the program
+/// untouched.
+#[derive(Default)]
+struct Patch {
+    spans: Vec<(TermId, SourceSpan)>,
+    warnings: Vec<(usize, SourceSpan)>,
+    /// (file index, new text).
+    sources: Vec<(usize, String)>,
+    constants: Vec<(TermId, ConstantValue)>,
+}
+
+impl Env {
+    /// Compare every source file `program_id` was compiled from with what
+    /// that file holds now. The entry file's current text is
+    /// `new_entry_source`; module files are read from where they were loaded
+    /// (disk, an [`override_file_source`](Self::override_file_source), or the
+    /// in-memory registration).
+    ///
+    /// Read-only: this is the question "what kind of edit was that?", for a
+    /// host that wants to report it or decide for itself.
+    pub fn diff_program(&self, program_id: ProgramId, new_entry_source: &str) -> ProgramChange {
+        let mut change = ProgramChange {
+            files: Vec::new(),
+            blocker: None,
+        };
+        let Some(program) = self.programs.get(&program_id) else {
+            change.blocker = Some("Program not found".to_string());
+            return change;
+        };
+        let mut consider = |file: usize, name: &str, origin: Option<&Path>, old: &str, new: String| {
+            if old == new {
+                return;
+            }
+            let diff = diff_source(old, &new, FileId(file as u16));
+            change.files.push(FileChange {
+                file: FileId(file as u16),
+                name: name.to_string(),
+                origin: origin.map(Path::to_path_buf),
+                new_source: new,
+                diff,
+            });
+        };
+        if program.source_map.files.is_empty() {
+            consider(0, "", None, &program.source, new_entry_source.to_string());
+            return change;
+        }
+        let mut unreadable = None;
+        for (i, f) in program.source_map.files.iter().enumerate() {
+            let new = if i == 0 {
+                Some(new_entry_source.to_string())
+            } else {
+                self.modules.current_source(&f.name, f.origin.as_deref())
+            };
+            match new {
+                Some(new) => consider(i, &f.name, f.origin.as_deref(), &f.source, new),
+                None => {
+                    unreadable.get_or_insert_with(|| {
+                        format!("source file `{}` can no longer be read", f.name)
+                    });
+                }
+            }
+        }
+        change.blocker = unreadable;
+        change
+    }
+
+    /// Bring the program `stack_id` runs up to date with its source files,
+    /// doing only the work the edit calls for (see the module docs). The
+    /// replacement for the recompile-and-`transfer_state` pair a hot-reloading
+    /// host used to write:
+    ///
+    /// ```no_run
+    /// # let mut env = petal::env::Env::new();
+    /// # let pid = env.load_program("").unwrap();
+    /// # let stack = env.create_stack(pid).unwrap();
+    /// # let path = std::path::Path::new("game.ptl");
+    /// let source = std::fs::read_to_string(path).unwrap();
+    /// match env.reload_program(stack, &source, Some(path)) {
+    ///     Ok(report) => println!("reload: {}", report.outcome.label()),
+    ///     Err(e) => eprintln!("{e}"), // the old program keeps running
+    /// }
+    /// ```
+    ///
+    /// `new_entry_source` is the entry file's text and `origin` its path
+    /// (imports resolve next to it), as for
+    /// [`compile_program_diag`](Self::compile_program_diag). On a compile
+    /// error the old program stays loaded and untouched.
+    pub fn reload_program(
+        &mut self,
+        stack_id: StackKey,
+        new_entry_source: &str,
+        origin: Option<&Path>,
+    ) -> Result<ReloadReport, crate::error::LoadError> {
+        let program_id = self
+            .stacks
+            .get(&stack_id)
+            .map(|s| s.program_id)
+            .ok_or_else(|| {
+                crate::error::LoadError::message(crate::error::Phase::Module, "Stack not found")
+            })?;
+        let change = self.diff_program(program_id, new_entry_source);
+        let fallback = match self.apply_program_change(stack_id, &change) {
+            Ok(report) => return Ok(report),
+            Err(why) => why,
+        };
+        let summary = change.summary();
+        let program = self.compile_program_diag(program_id, new_entry_source, origin)?;
+        let result = self.transfer_state(stack_id, program).map_err(|e| {
+            crate::error::LoadError::message(crate::error::Phase::Module, e)
+        })?;
+        Ok(ReloadReport {
+            outcome: ReloadOutcome::Recompiled,
+            // An edit that classified as incremental and still had to be
+            // recompiled says why; one that was never incremental needs no
+            // excuse.
+            fallback: summary.is_incremental().then_some(fallback),
+            change: summary,
+            changed_files: change.files.iter().map(|f| f.name.clone()).collect(),
+            state_preserved: result.state_preserved,
+            state_dropped: result.state_dropped,
+        })
+    }
+
+    /// Apply a change that needs no recompile ([`ProgramChange::is_incremental`]):
+    /// move source positions, and write changed literal values into the
+    /// running program.
+    ///
+    /// All or nothing. `Err` says why the change cannot be applied this way —
+    /// it is not incremental, or the running program does not have the shape
+    /// the diff assumes — and leaves the program and the stack exactly as
+    /// they were; the caller recompiles (which is what
+    /// [`reload_program`](Self::reload_program) does).
+    pub fn apply_program_change(
+        &mut self,
+        stack_id: StackKey,
+        change: &ProgramChange,
+    ) -> Result<ReloadReport, String> {
+        let program_id = self
+            .stacks
+            .get(&stack_id)
+            .map(|s| s.program_id)
+            .ok_or("Stack not found")?;
+        if let Some(why) = &change.blocker {
+            return Err(why.clone());
+        }
+        if let Some(f) = change.files.iter().find(|f| !f.diff.change.is_incremental()) {
+            return Err(match &f.diff.change {
+                SourceChange::Full(why) => why.clone(),
+                _ => "the edit changes the program's structure".to_string(),
+            });
+        }
+        let state_count = self.stacks.get(&stack_id).map_or(0, |s| s.state.len());
+        let summary = change.summary();
+        let changed_files: Vec<String> = change.files.iter().map(|f| f.name.clone()).collect();
+        if change.files.is_empty() {
+            return Ok(ReloadReport {
+                outcome: ReloadOutcome::Unchanged,
+                change: summary,
+                changed_files,
+                state_preserved: state_count,
+                state_dropped: 0,
+                fallback: None,
+            });
+        }
+
+        let program = self.programs.get(&program_id).ok_or("Program not found")?;
+        let patch = plan_patch(program, change)?;
+        let patched = !patch.constants.is_empty();
+
+        // Nothing below can fail.
+        let program = self.programs.get_mut(&program_id).expect("program found above");
+        for (tid, span) in patch.spans {
+            program.source_map.add(tid, span);
+        }
+        for (i, span) in patch.warnings {
+            program.warnings[i].span = span;
+        }
+        for (file, text) in patch.sources {
+            if file == 0 {
+                program.source = text.clone();
+            }
+            if let Some(f) = program.source_map.files.get_mut(file) {
+                f.source = text;
+            }
+        }
+        let mut retarget: Vec<(TermId, ConstantId, ConstantId)> = Vec::new();
+        for (tid, value) in patch.constants {
+            let term = &mut program.terms[tid.0 as usize];
+            let TermOp::Constant(old) = term.op else {
+                unreachable!("plan_patch only lists constant terms");
+            };
+            if program.constants.is_slot(old) {
+                program.constants.set_slot(old, value);
+            } else {
+                let slot = program.constants.alloc_slot(value);
+                term.op = TermOp::Constant(slot);
+                retarget.push((tid, old, slot));
+            }
+        }
+        if !retarget.is_empty()
+            && let Some((_, bc)) = self.bytecode.get_mut(&program_id)
+            && !retarget_constants(bc, &retarget)
+        {
+            // The lowering is not the shape this expects of it: drop it, and
+            // the next run lowers the patched program from scratch.
+            self.bytecode.remove(&program_id);
+        }
+
+        if !patched {
+            return Ok(ReloadReport {
+                outcome: ReloadOutcome::Relocated,
+                change: summary,
+                changed_files,
+                state_preserved: state_count,
+                state_dropped: 0,
+                fallback: None,
+            });
+        }
+
+        // The stack-side half of a reload, unchanged: whatever the last run
+        // derived from the old values goes, `state` stays.
+        let state_keys: HashSet<StateKey> = self.programs[&program_id]
+            .state_terms()
+            .map(|(k, _)| k)
+            .collect();
+        self.clear_closures();
+        for (key, stack) in self.stacks.iter_mut() {
+            if stack.program_id == program_id && *key != stack_id {
+                // Another stack on the same program: its memo records and its
+                // gate verdict are as stale as this one's.
+                stack.memo.clear();
+                stack.run_deps.force();
+            }
+        }
+        let stack = self.stacks.get_mut(&stack_id).expect("stack found above");
+        let result = crate::transfer_state::transfer_stack_state(stack, &state_keys);
+        Ok(ReloadReport {
+            outcome: ReloadOutcome::Patched,
+            change: summary,
+            changed_files,
+            state_preserved: result.state_preserved,
+            state_dropped: result.state_dropped,
+            fallback: None,
+        })
+    }
+
+    /// Set one value of a top-level binding *now*, without the file changing
+    /// on disk: the live half of a drag. `path` is a binding path
+    /// (`SPEED`, `POST.effects[2].amount`) and `value` what it should read.
+    ///
+    /// The edit is made to the text the running program holds for that file —
+    /// by [`literal_edit::set_path`](crate::literal_edit::set_path), the same
+    /// edit a host makes to the file when the drag ends — and applied only if
+    /// it needs no recompile. So afterwards the program is exactly what a
+    /// reload of that edited file would give, and when the host does write
+    /// the file (with the same edit) the reload that follows finds nothing to
+    /// do.
+    ///
+    /// `file` names the source file holding the binding, as a path. `None`
+    /// searches the program's files and requires exactly one to bind the
+    /// name at its top level.
+    ///
+    /// `Err` leaves everything as it was. It means the value cannot be set
+    /// this way: the path names no literal, or the new value has a different
+    /// type or shape from the one written (`10` to `10.5`, a list that grew).
+    /// Write the file and reload for those.
+    pub fn set_config_value(
+        &mut self,
+        stack_id: StackKey,
+        file: Option<&Path>,
+        path: &str,
+        value: &crate::static_value::StaticValue,
+    ) -> Result<ReloadReport, String> {
+        let program_id = self
+            .stacks
+            .get(&stack_id)
+            .map(|s| s.program_id)
+            .ok_or("Stack not found")?;
+        let (index, name, origin, old) = self.config_file(program_id, file, path)?;
+        let new = crate::literal_edit::set_path(&old, path, value).map_err(|e| e.to_string())?;
+        if new == old {
+            return self.apply_program_change(
+                stack_id,
+                &ProgramChange {
+                    files: Vec::new(),
+                    blocker: None,
+                },
+            );
+        }
+        let diff = diff_source(&old, &new, FileId(index as u16));
+        if !diff.change.is_incremental() {
+            return Err(format!(
+                "setting `{path}` changes more than a value (a different type or shape); \
+                 write the file and reload instead"
+            ));
+        }
+        self.apply_program_change(
+            stack_id,
+            &ProgramChange {
+                files: vec![FileChange {
+                    file: FileId(index as u16),
+                    name,
+                    origin,
+                    new_source: new,
+                    diff,
+                }],
+                blocker: None,
+            },
+        )
+    }
+
+    /// The text the running program holds for one of its source files: what
+    /// it was compiled from, plus every value set since with
+    /// [`set_config_value`](Self::set_config_value). `file` is the file's
+    /// path; `None` is the entry file.
+    pub fn program_source(&self, program_id: ProgramId, file: Option<&Path>) -> Option<&str> {
+        let program = self.programs.get(&program_id)?;
+        match file {
+            None => Some(&program.source),
+            Some(path) => {
+                let want = crate::module::canonical_path(path);
+                program
+                    .source_map
+                    .files
+                    .iter()
+                    .find(|f| {
+                        f.origin
+                            .as_deref()
+                            .is_some_and(|o| crate::module::canonical_path(o) == want)
+                    })
+                    .map(|f| f.source.as_str())
+            }
+        }
+    }
+
+    /// Which source file `path`'s binding lives in: (file index, display
+    /// name, origin, current text).
+    #[allow(clippy::type_complexity)]
+    fn config_file(
+        &self,
+        program_id: ProgramId,
+        file: Option<&Path>,
+        path: &str,
+    ) -> Result<(usize, String, Option<std::path::PathBuf>, String), String> {
+        let program = self.programs.get(&program_id).ok_or("Program not found")?;
+        let (binding, _) = crate::rewrite::parse_binding_path(path).ok_or_else(|| {
+            format!("`{path}` is not a binding path (name, then .field or [index] steps)")
+        })?;
+        if program.source_map.files.is_empty() {
+            return Ok((0, String::new(), None, program.source.clone()));
+        }
+        if let Some(path) = file {
+            let want = crate::module::canonical_path(path);
+            return program
+                .source_map
+                .files
+                .iter()
+                .enumerate()
+                .find(|(_, f)| {
+                    f.origin
+                        .as_deref()
+                        .is_some_and(|o| crate::module::canonical_path(o) == want)
+                })
+                .map(|(i, f)| (i, f.name.clone(), f.origin.clone(), f.source.clone()))
+                .ok_or_else(|| {
+                    format!("`{}` is not a source file of this program", path.display())
+                });
+        }
+        let mut found = Vec::new();
+        for (i, f) in program.source_map.files.iter().enumerate() {
+            // Cheap filter before parsing: the name has to appear at all.
+            if !f.source.contains(binding.as_str()) {
+                continue;
+            }
+            let Ok((_, stmts)) = crate::rewrite::parse_ast(&f.source) else {
+                continue;
+            };
+            if crate::rewrite::find_binding(&stmts, &binding).is_some() {
+                found.push(i);
+            }
+        }
+        match found[..] {
+            [i] => {
+                let f = &program.source_map.files[i];
+                Ok((i, f.name.clone(), f.origin.clone(), f.source.clone()))
+            }
+            [] => Err(format!("no source file of this program binds `{binding}` at its top level")),
+            _ => Err(format!(
+                "`{binding}` is bound at the top level of more than one source file ({}); \
+                 name the file",
+                found
+                    .iter()
+                    .map(|&i| program.source_map.files[i].name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
+    }
+}
+
+/// Work out everything an incremental change writes, or why it cannot be
+/// applied to this program.
+fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String> {
+    let mut patch = Patch::default();
+    let by_file: HashMap<u16, &FileChange> = change.files.iter().map(|f| (f.file.0, f)).collect();
+    for f in &change.files {
+        patch.sources.push((f.file.0 as usize, f.new_source.clone()));
+    }
+
+    // The literals to find, as (file, span) -> the constant terms written at
+    // that span.
+    let mut wanted: HashMap<(u16, u32, u32), Vec<TermId>> = HashMap::new();
+    for f in &change.files {
+        if let SourceChange::Values(values) = &f.diff.change {
+            for v in values {
+                wanted
+                    .entry((f.file.0, v.old_span.start.offset, v.old_span.end.offset))
+                    .or_default();
+            }
+        }
+    }
+
+    for (tid, span) in program.source_map.iter() {
+        let Some(f) = by_file.get(&span.file.0) else {
+            continue;
+        };
+        if !wanted.is_empty()
+            && let Some(terms) = wanted.get_mut(&(span.file.0, span.start.offset, span.end.offset))
+            && matches!(program.terms[tid.0 as usize].op, TermOp::Constant(_))
+        {
+            terms.push(tid);
+        }
+        let moved = f.diff.map_span(*span).ok_or_else(|| {
+            format!(
+                "a source position in `{}` (line {}) has no counterpart in the new text",
+                f.name, span.start.line
+            )
+        })?;
+        if moved != *span {
+            patch.spans.push((tid, moved));
+        }
+    }
+
+    for (i, w) in program.warnings.iter().enumerate() {
+        let Some(f) = by_file.get(&w.span.file.0) else {
+            continue;
+        };
+        // A diagnostic may quote the code it is about. One that covers a
+        // changed literal could read differently after the edit, and only the
+        // compiler can say how.
+        if let SourceChange::Values(values) = &f.diff.change
+            && values.iter().any(|v| {
+                w.span.start.offset <= v.old_span.start.offset
+                    && v.old_span.end.offset <= w.span.end.offset
+            })
+        {
+            return Err("a changed value is inside code the compiler warned about".to_string());
+        }
+        let moved = f
+            .diff
+            .map_span(w.span)
+            .ok_or("a diagnostic's position has no counterpart in the new text")?;
+        if moved != w.span {
+            patch.warnings.push((i, moved));
+        }
+    }
+
+    for f in &change.files {
+        let SourceChange::Values(values) = &f.diff.change else {
+            continue;
+        };
+        for v in values {
+            let terms = wanted
+                .get_mut(&(f.file.0, v.old_span.start.offset, v.old_span.end.offset))
+                .expect("every value change was registered above");
+            // Terms are numbered in the order they were compiled, which for
+            // the literals of one span (a color's components) is source order.
+            terms.sort_by_key(|t| t.0);
+            if terms.len() != v.span_count as usize {
+                return Err(format!(
+                    "the literal at line {} of `{}` is compiled to {} constant(s), expected {}",
+                    v.old_span.start.line,
+                    f.name,
+                    terms.len(),
+                    v.span_count
+                ));
+            }
+            let tid = terms[v.ordinal as usize];
+            let TermOp::Constant(cid) = program.terms[tid.0 as usize].op else {
+                unreachable!("only constant terms were collected");
+            };
+            if *program.constants.get(cid) != constant_of(&v.old) {
+                return Err(format!(
+                    "the literal at line {} of `{}` does not hold the value its source gives",
+                    v.old_span.start.line, f.name
+                ));
+            }
+            patch.constants.push((tid, constant_of(&v.new)));
+        }
+    }
+    Ok(patch)
+}
+
+/// Point each listed term's `LoadConst` at its new constant. Returns false
+/// when an instruction lowered from one of the terms is not the `LoadConst`
+/// of the old constant it should be (the caller then discards the lowering).
+/// A term with no instruction at all is fine: its load was dead and removed.
+fn retarget_constants(
+    bc: &mut BytecodeProgram,
+    retarget: &[(TermId, ConstantId, ConstantId)],
+) -> bool {
+    let by_term: HashMap<TermId, (ConstantId, ConstantId)> =
+        retarget.iter().map(|&(t, old, new)| (t, (old, new))).collect();
+    for f in std::iter::once(&mut bc.root).chain(bc.fns.iter_mut()) {
+        for (inst, origin) in f.code.iter_mut().zip(&f.origins) {
+            let Some((old, new)) = origin.and_then(|t| by_term.get(&t)) else {
+                continue;
+            };
+            match inst {
+                Inst::LoadConst { k, .. } if k == old => *k = *new,
+                _ => return false,
+            }
+        }
+    }
+    true
+}

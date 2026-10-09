@@ -58,6 +58,7 @@ pub mod named_calls;
 pub mod suggest;
 pub mod rewrite;
 pub mod run_deps;
+pub mod source_diff;
 pub mod source_map;
 pub mod source_watch;
 pub mod stack;

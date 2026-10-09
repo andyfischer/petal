@@ -115,6 +115,40 @@ impl ModuleRegistry {
     }
 }
 
+impl ModuleRegistry {
+    /// The text a source file of a loaded program holds *now*: `origin`'s
+    /// contents (or its [override](Self::override_file)) for a module that
+    /// came from disk, the current registration of `name` for one held in
+    /// memory. `None` when it can no longer be read or is no longer
+    /// registered. What a reload compares against the text a program was
+    /// compiled from.
+    pub fn current_source(&self, name: &str, origin: Option<&Path>) -> Option<String> {
+        match origin {
+            Some(path) => {
+                if !self.file_overrides.is_empty()
+                    && let Some(source) = self.file_overrides.get(&canonical_path(path))
+                {
+                    return Some(source.clone());
+                }
+                // A package registered from memory stamps its modules with a
+                // path that names no file.
+                if let Some(source) = self
+                    .packages
+                    .iter()
+                    .find_map(|p| p.memory_source_at(path))
+                {
+                    return Some(source.to_string());
+                }
+                std::fs::read_to_string(path).ok()
+            }
+            None => {
+                let found = self.resolve(name, None)?;
+                (found.origin == ModuleOrigin::Memory).then_some(found.source)
+            }
+        }
+    }
+}
+
 /// `path` with symlinks and `..` resolved, so two spellings of one file
 /// compare equal. A path that cannot be canonicalized (it does not exist) is
 /// returned as written.

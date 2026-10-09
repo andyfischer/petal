@@ -6,6 +6,23 @@ use super::*;
 impl Compiler {
     pub(super) fn compile_expr(&mut self, expr: &Expr) -> TermId {
         let span = expr.span;
+        // A negated number in a `config let`'s data: one constant holding the
+        // signed value (see `Compiler::config_folds`).
+        if !self.config_folds.is_empty()
+            && self.config_folds.contains(&span)
+            && let Some(lit) = crate::source_diff::signed_number(expr)
+        {
+            self.value_used = true;
+            let cv = match lit {
+                Literal::Int(n) => ConstantValue::Int(n),
+                Literal::Float(f) => ConstantValue::from_f64(f),
+                _ => unreachable!("signed_number yields a number"),
+            };
+            let cid = self.constants.intern(cv);
+            let tid = self.emit_term(TermOp::Constant(cid), smallvec![], None);
+            self.source_map.add(tid, span);
+            return tid;
+        }
         let tid = self.compile_expr_kind(&expr.kind, span);
         // Record source span for the primary term emitted by this expression
         self.source_map.add(tid, span);

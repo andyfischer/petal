@@ -230,6 +230,17 @@ impl Package {
         }
     }
 
+    /// The source of the in-memory module whose synthetic origin is `path`
+    /// (the one [`load`](Self::load) stamps on it). `None` for a package read
+    /// from disk, whose modules are simply files.
+    pub(crate) fn memory_source_at(&self, path: &Path) -> Option<&str> {
+        let sources = self.sources.as_ref()?;
+        sources
+            .iter()
+            .find(|(module, _)| module_file_path(&self.info.module_dir, module) == path)
+            .map(|(_, source)| source.as_str())
+    }
+
     /// The module name an importing file inside this package would mean by a
     /// flat `import <name>`: the sibling directory it sits in, plus the name.
     /// `None` when the importer is not inside this package.

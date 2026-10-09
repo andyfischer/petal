@@ -198,6 +198,11 @@ impl SourceMap {
         self.term_spans.get(&term_id)
     }
 
+    /// Every recorded span, in no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = (TermId, &SourceSpan)> {
+        self.term_spans.iter().map(|(t, s)| (*t, s))
+    }
+
     /// The file table entry for a file id, if the table has one.
     pub fn file(&self, id: FileId) -> Option<&SourceFile> {
         self.files.get(id.0 as usize)

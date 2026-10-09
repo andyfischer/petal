@@ -52,6 +52,11 @@ pub struct ConstantTable {
     values: Vec<ConstantValue>,
     #[serde(skip)]
     dedup: HashMap<ConstantValue, ConstantId>,
+    /// Ids handed out by [`alloc_slot`](Self::alloc_slot): entries one term
+    /// owns, whose value may be replaced while the program is loaded. Never
+    /// in `dedup`, so `intern` cannot hand one to a second term.
+    #[serde(skip)]
+    slots: std::collections::HashSet<u32>,
 }
 
 impl ConstantTable {
@@ -59,7 +64,33 @@ impl ConstantTable {
         Self {
             values: Vec::new(),
             dedup: HashMap::new(),
+            slots: std::collections::HashSet::new(),
         }
+    }
+
+    /// Append an entry that is *not* deduplicated: a slot one term reads, so
+    /// its value can be replaced in place ([`set_slot`](Self::set_slot))
+    /// without touching any other term that happens to hold an equal
+    /// constant. This is the late binding behind value-only hot reload: the
+    /// VM reads a constant through the table on every load, so writing the
+    /// slot is the whole update (see `Env::apply_program_change`).
+    pub fn alloc_slot(&mut self, value: ConstantValue) -> ConstantId {
+        let id = ConstantId(self.values.len() as u32);
+        self.values.push(value);
+        self.slots.insert(id.0);
+        id
+    }
+
+    /// Whether `id` came from [`alloc_slot`](Self::alloc_slot).
+    pub fn is_slot(&self, id: ConstantId) -> bool {
+        self.slots.contains(&id.0)
+    }
+
+    /// Replace a slot's value. Panics if `id` is not a slot: overwriting an
+    /// interned entry would change every term that shares it.
+    pub fn set_slot(&mut self, id: ConstantId, value: ConstantValue) {
+        assert!(self.is_slot(id), "constant {} is not a slot", id.0);
+        self.values[id.0 as usize] = value;
     }
 
     /// Intern a constant value, returning its ID. Deduplicates identical values.

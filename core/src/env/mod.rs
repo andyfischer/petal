@@ -28,10 +28,12 @@ mod fork;
 mod gc;
 mod host_io;
 mod observations_json;
+mod reload;
 mod run;
 mod state_json;
 mod state_storage;
 
+pub use reload::{FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
 
 pub struct Env {
@@ -71,6 +73,11 @@ pub struct Env {
     /// Module resolution: in-memory registrations, search paths, and implicit
     /// imports. See docs/module-system.md.
     modules: ModuleRegistry,
+    /// How many times this env compiled a program and lowered one to
+    /// bytecode (see [`Env::work_counters`]). `Cell`s because compiling takes
+    /// `&self`.
+    compile_count: std::cell::Cell<u64>,
+    lower_count: std::cell::Cell<u64>,
     /// Host-registered foreign-object classes, indexed by `HandleClassId`.
     handle_classes: Vec<HandleClass>,
     /// Manifests that looked like packages and would not load, collected by
@@ -149,6 +156,8 @@ impl Env {
             policy: RunPolicy::from_env(),
             bytecode: HashMap::new(),
             modules,
+            compile_count: std::cell::Cell::new(0),
+            lower_count: std::cell::Cell::new(0),
             handle_classes: Vec::new(),
             package_errors: Vec::new(),
             ambient_package_errors,
@@ -179,6 +188,7 @@ impl Env {
             return Ok(());
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
+        self.lower_count.set(self.lower_count.get() + 1);
         let mut bc = crate::backend::bytecode::lower_with_flags(program, flags)?;
         // Bind builtin names to native ids now, once, rather than per call.
         bc.resolve_builtin_names(&program.constants, |name| {
@@ -186,6 +196,30 @@ impl Env {
         });
         self.bytecode.insert(pid, (flags, bc));
         Ok(())
+    }
+
+    /// How much front-end and lowering work this env has done since it was
+    /// created: the number of source compiles (every `load_program*` and
+    /// `compile_program*`, successful or not) and the number of bytecode
+    /// lowerings. A host or a test reads the difference across a reload to
+    /// see what the reload cost: an incremental one
+    /// ([`reload_program`](Self::reload_program) reporting `relocated` or
+    /// `patched`) adds nothing to either.
+    pub fn work_counters(&self) -> WorkCounters {
+        WorkCounters {
+            compiles: self.compile_count.get(),
+            lowerings: self.lower_count.get(),
+        }
+    }
+
+    /// The bytecode `pid` runs, disassembled: the cached lowering itself
+    /// (lowering first if the program has not run yet), not a fresh one. The
+    /// text `petal show-bytecode` prints for the same program and policy.
+    pub fn bytecode_text(&mut self, pid: ProgramId) -> Result<String, String> {
+        self.ensure_bytecode(pid)?;
+        let program = self.programs.get(&pid).ok_or("Program not found")?;
+        let (_, bc) = self.bytecode.get(&pid).ok_or("Program not lowered")?;
+        Ok(crate::backend::bytecode::disasm::render_text(bc, program))
     }
 
     /// The configured flags plus the ones the *current* debug facilities
@@ -417,6 +451,7 @@ impl Env {
         source: &str,
         origin: Option<&std::path::Path>,
     ) -> Result<Program, crate::error::LoadError> {
+        self.compile_count.set(self.compile_count.get() + 1);
         let modules = crate::module::load_modules(
             source,
             origin,
@@ -1178,6 +1213,16 @@ impl Env {
         let ctx = self.ctx_mut(ck);
         ctx.closures.clear();
     }
+}
+
+/// Counts of the expensive work an [`Env`] has done (see
+/// [`Env::work_counters`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct WorkCounters {
+    /// Source compiles: parse, check and compile to the term graph.
+    pub compiles: u64,
+    /// Lowerings of a program to bytecode, optimizer passes included.
+    pub lowerings: u64,
 }
 
 /// Outcome of a bounded run (see [`Env::run_bounded`]).

@@ -48,6 +48,16 @@ impl Compiler {
                 if self.hoisted_decls.contains(&stmt_span) {
                     return;
                 }
+                // A `config let` is data a person tunes: a negated number
+                // in it compiles to one constant, so a drag across zero
+                // changes a value and not the program's shape (see
+                // `crate::source_diff`, "Signed numbers in config data").
+                if *is_config && !*is_var {
+                    let folds = &mut self.config_folds;
+                    crate::source_diff::config_folded_numbers(value, &mut |e| {
+                        folds.insert(e.span);
+                    });
+                }
                 let val_tid = self.compile_bound_expr(name, value);
                 self.note_shadow(name);
                 if *is_var {

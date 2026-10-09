@@ -481,6 +481,15 @@ impl<T> Slab<T> {
     }
 }
 
+/// Strings longer than this many bytes are not interned. Interning hashes the
+/// whole string and keeps a second copy as the table key, which pays for
+/// itself on the short strings a program repeats (field names, labels, single
+/// characters) and is pure overhead on a long one that is almost never built
+/// twice: a loop growing a buffer with `out = out ++ piece` would hash and
+/// copy every intermediate. Nothing depends on a long string being interned —
+/// equality compares content whenever two ids differ (`value::values_equal`).
+pub const INTERN_MAX_LEN: usize = 512;
+
 #[derive(Clone)]
 pub struct Heap {
     strings: Slab<String>,
@@ -892,14 +901,21 @@ impl Heap {
     /// entry (the string was collected) reads as a miss and is overwritten by
     /// the next [`insert_interned`](Self::insert_interned).
     fn interned(&self, s: &str) -> Option<StringId> {
+        if s.len() > INTERN_MAX_LEN {
+            return None;
+        }
         let id = *self.intern_table.get(s)?;
         self.strings.is_live(id.raw()).then_some(id)
     }
 
-    /// Allocate `s` and index it in the intern table. The caller must have
-    /// missed [`interned`](Self::interned) first — this always allocates.
+    /// Allocate `s` and index it in the intern table (unless it is longer
+    /// than [`INTERN_MAX_LEN`]). The caller must have missed
+    /// [`interned`](Self::interned) first — this always allocates.
     fn insert_interned(&mut self, s: String) -> StringId {
         self.tick_alloc(AllocKind::String, s.len() as u64);
+        if s.len() > INTERN_MAX_LEN {
+            return StringId::from_raw(self.strings.alloc(s));
+        }
         let id = StringId::from_raw(self.strings.alloc(s.clone()));
         self.intern_table.insert(s, id);
         id
@@ -1551,7 +1567,9 @@ impl Heap {
             // Remove only this id's entry. The table maps content to the one
             // live id with that content, so it should always be this one; the
             // check keeps a reclaim from ever evicting a different, live id.
-            if intern_table.get(s.as_str()) == Some(&StringId::from_raw(id)) {
+            if s.len() <= INTERN_MAX_LEN
+                && intern_table.get(s.as_str()) == Some(&StringId::from_raw(id))
+            {
                 intern_table.remove(s.as_str());
             }
             *s = String::new();
@@ -2126,6 +2144,31 @@ mod tests {
         assert_eq!(allocs.get(AllocKind::F64Array), 1);
         assert_eq!(allocs.get(AllocKind::Map), 0);
         assert_eq!(allocs.total(), 4);
+    }
+
+    /// A string past [`INTERN_MAX_LEN`] is allocated without touching the
+    /// intern table: equal content gets two ids, still compares equal, and is
+    /// reclaimed like any other string.
+    #[test]
+    fn long_strings_are_not_interned() {
+        let mut heap = Heap::new();
+        let long = "x".repeat(INTERN_MAX_LEN + 1);
+        let a = heap.alloc_string(long.clone());
+        let b = heap.intern_str(&long);
+        assert_ne!(a, b);
+        assert!(heap.intern_table.is_empty());
+        assert!(crate::value::values_equal(
+            &Value::String(a),
+            &Value::String(b),
+            &heap
+        ));
+        // At the limit a string is still interned.
+        let edge = "y".repeat(INTERN_MAX_LEN);
+        assert_eq!(heap.alloc_string(edge.clone()), heap.intern_str(&edge));
+        heap.mark_value(Value::String(a));
+        heap.sweep();
+        assert_eq!(heap.try_get_string(a), Some(long.as_str()));
+        assert_eq!(heap.try_get_string(b), None);
     }
 
     #[test]

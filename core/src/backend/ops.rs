@@ -444,6 +444,15 @@ pub fn concat(a: Value, b: Value, heap: &mut Heap) -> Result<Value, String> {
             combined.extend_from_slice(heap.get_list(y));
             Ok(Value::List(heap.alloc_list(combined)))
         }
+        // The common case, and the one a string-building loop runs every
+        // pass: copy both sides once, straight into a buffer of the final size.
+        (Value::String(x), Value::String(y)) => {
+            let (l, r) = (heap.get_string(x), heap.get_string(y));
+            let mut out = String::with_capacity(l.len() + r.len());
+            out.push_str(l);
+            out.push_str(r);
+            Ok(Value::String(heap.alloc_string(out)))
+        }
         _ => {
             let l = value::value_to_display_string(&a, heap);
             let r = value::value_to_display_string(&b, heap);

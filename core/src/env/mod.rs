@@ -212,6 +212,15 @@ impl Env {
         }
     }
 
+    /// Lower `pid` to bytecode now, under the current policy, instead of on
+    /// its first run. A host that wants the cost of a reload paid at the
+    /// reload (not as a hitch in the next frame) calls this after
+    /// [`reload_program`](Self::reload_program); it is a no-op when the
+    /// lowering is already cached.
+    pub fn lower_program(&mut self, pid: ProgramId) -> Result<(), String> {
+        self.ensure_bytecode(pid)
+    }
+
     /// The bytecode `pid` runs, disassembled: the cached lowering itself
     /// (lowering first if the program has not run yet), not a fresh one. The
     /// text `petal show-bytecode` prints for the same program and policy.

@@ -794,6 +794,63 @@ fn setting_a_value_in_a_module_finds_its_file() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+// ── Timing ───────────────────────────────────────────────────────────────
+
+/// A value edit in a large program costs a small fraction of the recompile it
+/// replaces. The program is 150 functions and a config record; the numbers
+/// are printed (`--nocapture`), and the bound asserted is deliberately loose,
+/// since a debug build on a loaded machine is what usually runs this.
+/// `examples/reload_timing.rs` measures a real program in release.
+#[test]
+fn a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile() {
+    use std::fmt::Write;
+    let mut src = String::from("config let TUNE = {gain: 0.5, steps: 4}\n");
+    for i in 0..150 {
+        writeln!(
+            src,
+            "fn f{i}(x)\n  let a = x * TUNE.gain + {i}\n  let b = if a > 10 then a - 1 else a + 1 end\n  let total = 0\n  for k in range(0, TUNE.steps) do\n    total = total + k\n  end\n  a + b + total\nend"
+        )
+        .unwrap();
+    }
+    src.push_str("print(f0(1) + f149(2))\n");
+    let edited = src.replace("gain: 0.5", "gain: 0.75");
+
+    let mut w = world(&src, &[], RunPolicy::FAST);
+    let time = |w: &mut World, text: &str| {
+        let t = std::time::Instant::now();
+        let report = w.env.reload_program(w.sid, text, None).unwrap();
+        // Lowering is part of what a reload costs before the next frame.
+        w.env.lower_program(w.pid).unwrap();
+        (report.outcome, t.elapsed().as_secs_f64() * 1e3)
+    };
+    let best = |w: &mut World, a: &str, b: &str| {
+        let mut best = (ReloadOutcome::Unchanged, f64::MAX);
+        for _ in 0..3 {
+            let (outcome, ms) = time(w, a);
+            if ms < best.1 {
+                best = (outcome, ms);
+            }
+            time(w, b);
+        }
+        best
+    };
+    let (outcome, patched) = best(&mut w, &edited, &src);
+    assert_eq!(outcome, Patched);
+    let (outcome, relocated) = best(&mut w, &format!("// c\n{src}"), &src);
+    assert_eq!(outcome, Relocated);
+    let (outcome, recompiled) = best(&mut w, &format!("{src}print(1)\n"), &src);
+    assert_eq!(outcome, Recompiled);
+    eprintln!(
+        "{} lines: value edit {patched:.3} ms, layout edit {relocated:.3} ms, recompile {recompiled:.3} ms",
+        src.lines().count()
+    );
+    assert!(
+        patched * 5.0 < recompiled,
+        "a value edit ({patched:.3} ms) should be far cheaper than a recompile ({recompiled:.3} ms)"
+    );
+    assert!(relocated * 5.0 < recompiled);
+}
+
 // ── A corpus of real programs ────────────────────────────────────────────
 
 /// A layout-only rewrite of `source`: a leading comment, trailing spaces on

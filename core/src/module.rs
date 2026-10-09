@@ -49,6 +49,42 @@ pub struct ModuleSource {
 /// implementation used by `Env`.
 pub trait ModuleResolver {
     fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource>;
+
+    /// Where the loader may keep the parse of each source file between loads
+    /// (see [`ParseCache`]). `None`, the default, parses everything every
+    /// time.
+    fn parse_cache(&self) -> Option<&ParseCache> {
+        None
+    }
+}
+
+/// The last parse of each source file a resolver's programs were loaded
+/// from, so a reload re-parses only the files whose text changed.
+///
+/// A parse is a function of the source text and the file id stamped on its
+/// spans, and nothing else; an entry is reused only when both are identical,
+/// so a hit returns exactly what parsing again would. One entry is kept per
+/// file (keyed by the module's name and file id), replaced when its text
+/// changes. Parsing is about half of what compiling a program costs, and an
+/// edit usually touches one file of many.
+#[derive(Default)]
+pub struct ParseCache {
+    #[allow(clippy::type_complexity)]
+    entries: std::cell::RefCell<std::collections::HashMap<(String, u16), (String, Vec<Stmt>)>>,
+}
+
+impl ParseCache {
+    fn get(&self, key: &str, file: FileId, source: &str) -> Option<Vec<Stmt>> {
+        let entries = self.entries.borrow();
+        let (cached, stmts) = entries.get(&(key.to_string(), file.0))?;
+        (cached == source).then(|| stmts.clone())
+    }
+
+    fn put(&self, key: &str, file: FileId, source: &str, stmts: &[Stmt]) {
+        self.entries
+            .borrow_mut()
+            .insert((key.to_string(), file.0), (source.to_string(), stmts.to_vec()));
+    }
 }
 
 /// The built-in resolver held by `Env`. See the module docs for the
@@ -76,6 +112,8 @@ pub struct ModuleRegistry {
     /// (`petal apply-change` proving a multi-file rewrite before it touches
     /// anything); which file a name resolves to is unaffected.
     file_overrides: std::collections::HashMap<PathBuf, String>,
+    /// Parses of the files loaded through this registry (see [`ParseCache`]).
+    parse_cache: ParseCache,
 }
 
 impl ModuleRegistry {
@@ -157,6 +195,10 @@ pub fn canonical_path(path: &Path) -> PathBuf {
 }
 
 impl ModuleResolver for ModuleRegistry {
+    fn parse_cache(&self) -> Option<&ParseCache> {
+        Some(&self.parse_cache)
+    }
+
     fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource> {
         let mut found = self.resolve_on_disk(name, importer)?;
         if !self.file_overrides.is_empty()
@@ -351,7 +393,7 @@ pub fn load_modules(
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| INLINE_ENTRY_NAME.to_string());
-    let stmts = parse_module(entry_source, ENTRY_FILE, None)?;
+    let stmts = parse_module(entry_source, ENTRY_FILE, None, resolver.parse_cache(), "")?;
     let entry_deprecated_exports = deprecated_exports(&stmts, entry_source);
     let (explicit_imports, stmts) = split_imports(stmts);
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
@@ -543,7 +585,15 @@ fn scan_gated_module(
         )
     })?;
     let display = display_name_for(name, &resolved.origin);
-    let stmts = parse_module(&resolved.source, ENTRY_FILE, Some(&display))?;
+    // Keyed apart from the load of the same module (`visit`), which stamps
+    // its spans with the module's own file id.
+    let stmts = parse_module(
+        &resolved.source,
+        ENTRY_FILE,
+        Some(&display),
+        resolver.parse_cache(),
+        &format!("scan {name}"),
+    )?;
     let (_imports, stmts) = split_imports(stmts);
     let exports = stmts
         .iter()
@@ -646,7 +696,13 @@ impl Walker<'_> {
             )
         })?;
 
-        let stmts = parse_module(&resolved.source, file_id, Some(&display_name))?;
+        let stmts = parse_module(
+            &resolved.source,
+            file_id,
+            Some(&display_name),
+            self.resolver.parse_cache(),
+            &format!("module {name}"),
+        )?;
         let deprecated_exports = deprecated_exports(&stmts, &resolved.source);
         let (imports, stmts) = split_imports(stmts);
 
@@ -678,6 +734,23 @@ impl Walker<'_> {
 /// non-entry modules are prefixed with the module's display name (entry-file
 /// errors keep today's format).
 fn parse_module(
+    source: &str,
+    file_id: FileId,
+    display_name: Option<&str>,
+    cache: Option<&ParseCache>,
+    cache_key: &str,
+) -> Result<Vec<Stmt>, LoadError> {
+    if let Some(stmts) = cache.and_then(|c| c.get(cache_key, file_id, source)) {
+        return Ok(stmts);
+    }
+    let stmts = parse_module_uncached(source, file_id, display_name)?;
+    if let Some(cache) = cache {
+        cache.put(cache_key, file_id, source, &stmts);
+    }
+    Ok(stmts)
+}
+
+fn parse_module_uncached(
     source: &str,
     file_id: FileId,
     display_name: Option<&str>,

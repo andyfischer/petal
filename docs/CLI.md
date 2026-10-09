@@ -14,6 +14,21 @@ petal help <command>              # the manual page for one command
 petal --version
 ```
 
+A first word that is neither a command nor a file is reported as an unknown
+command, with the nearest real one when there is one (`petal chek x.ptl` →
+`Did you mean 'petal check'?`). A word ending in `.ptl`, or naming a file
+that exists, is always the `petal <file>` shorthand.
+
+A source-taking command takes exactly one source — one file or one `-e` —
+and refuses an option it does not know, rather than reading it as the file:
+
+```
+$ petal run app.ptl --iter 3
+Unknown option '--iter'
+Usage: petal run [--json] [--trace] ... <file>
+See 'petal help run'.
+```
+
 ### Common options
 
 Every command that compiles a program accepts these:
@@ -314,7 +329,10 @@ Options:
   `{message, line, column, phase, errors, ...}` — see
   [Error phases](#error-phases).
 - `--strict` — exit 1 when there are warnings too. Plain `check` exits 0 for a
-  program that only has warnings.
+  program that only has warnings. The `export` deprecation warning is printed
+  but does not count: the old spelling still works with no removal planned,
+  and `petal lint` (rule `prefer-pub`) is the gate for a codebase that wants
+  it gone.
 - `--lenient` — report checker errors but exit 0 unless the program fails to
   compile or lower. For a sweep that only asks "does this compile?" over
   scripts written for several hosts.
@@ -324,6 +342,15 @@ Options:
   `garden` adds Garden's panel natives and the packages Garden registers;
   `garden-config` is Garden's config host (`init.ptl`, layout scripts);
   `sdl` is petal-desktop-sdl's; `core` is the core builtins alone.
+
+  The default is `ui` because most scripts checked are written for a
+  petal-ui host, and `suggest`, `apply-change` and `ir-equal` share it.
+  `petal run` is the **core** host, so the two disagree on a UI script:
+  `check` passes it and `run` stops at `Undefined variable: ui` (or
+  `Unknown builtin: draw_rect`), with a note saying the name comes from the
+  petal-ui host. `petal check --host core` is the check that agrees with
+  `petal run`; a UI script runs in a petal-ui runner such as `petal-sdl`
+  ([building-apps.md](building-apps.md)).
 - `--native a,b` — names your own host registers, on top of `--host`'s.
 - `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
   with `run --ir`. The IR is validated, then lowered, so a third-party IR

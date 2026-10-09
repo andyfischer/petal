@@ -596,6 +596,29 @@ pub fn ui_prelude_source() -> Option<&'static str> {
     }
 }
 
+/// Whether `name` is something only a petal-ui host provides: the `ui` module
+/// itself, one of its natives, or (when this build can see the prelude) a
+/// name the `ui` prelude exports. Used to explain a `petal run` failure on a
+/// script `petal check` accepts under its default `--host ui`.
+pub fn ui_host_provides(name: &str) -> bool {
+    if name == UI_MODULE || PETAL_UI_NATIVES.contains(&name) {
+        return true;
+    }
+    let Some(prelude) = ui_prelude_source() else {
+        return false;
+    };
+    // A line scan is enough: exports are top-level `pub <keyword> <name>`
+    // declarations, and a false "no" only costs the note.
+    prelude.lines().any(|line| {
+        let mut words = line.split_whitespace();
+        matches!(words.next(), Some("pub" | "export"))
+            && words.next().is_some()
+            && words.next().is_some_and(|w| {
+                w.split(|c: char| !(c.is_alphanumeric() || c == '_')).next() == Some(name)
+            })
+    })
+}
+
 /// The checkout's `core-runtime/` directory, holding the packages Garden
 /// registers for every panel (`bloom`, `text_layout`). `None` when this build
 /// could not see it.

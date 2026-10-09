@@ -283,6 +283,10 @@ pub struct LoadedModule {
     pub deprecated_exports: Vec<SourceSpan>,
 }
 
+/// The display name of an entry "file" that has no path (`-e` code, a host
+/// string).
+pub const INLINE_ENTRY_NAME: &str = "<entry>";
+
 /// Load the entry source and every transitively imported module. Returns the
 /// modules in dependency post-order with the entry file **last** — the order
 /// the compiler emits them into the merged root block, so each module's
@@ -312,7 +316,7 @@ pub fn load_modules(
     let entry_display = entry_origin
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "<entry>".to_string());
+        .unwrap_or_else(|| INLINE_ENTRY_NAME.to_string());
     let stmts = parse_module(entry_source, ENTRY_FILE, None)?;
     let entry_deprecated_exports = deprecated_exports(&stmts, entry_source);
     let (explicit_imports, stmts) = split_imports(stmts);

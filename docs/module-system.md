@@ -349,7 +349,18 @@ Cannot add int and nil [bad.ptl line 2, column 3]
 ```
 
 Source snippets, `Caused by:` provenance and stack traces all show the
-right file.
+right file. A stack trace that crosses into a module names the entry file on
+its own frames too, so no frame is left bare beside a named one:
+
+```
+Stack trace:
+  in boom() [m.ptl line 6, column 3]
+  in go() [main.ptl line 3, column 3]
+  in outer() [main.ptl line 5, column 1]
+```
+
+(A trace that stays in the entry file, and `-e` code, which has no file
+name, keep the bare `[line N, column M]`.)
 
 ## Not supported
 

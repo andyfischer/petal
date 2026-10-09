@@ -6,7 +6,7 @@
 //! the formatting lives here.
 
 use crate::program::{Program, TermId, base_fn_name};
-use crate::source_map::SourceSpan;
+use crate::source_map::{ENTRY_FILE, SourceSpan};
 
 /// One call frame's contribution to a stack trace: the function name and the
 /// call-site term in the caller (used to locate the call's source position).
@@ -177,21 +177,49 @@ fn shorten_stack_trace(trace: Vec<String>) -> Vec<String> {
 }
 
 fn full_stack_trace(program: &Program, frames: &[TraceFrame]) -> Vec<String> {
-    let mut trace = Vec::new();
-    for frame in frames.iter().rev() {
-        let Some(ref name) = frame.name else {
-            continue;
-        };
-        let call_site = frame
-            .call_site
-            .and_then(|tid| program.source_map.get(tid))
-            .filter(|span| span.start.line > 0);
-        match call_site {
-            Some(span) => trace.push(format!("in {}() {}", name, format_position(program, span))),
-            None => trace.push(format!("in {}()", name)),
-        }
-    }
-    trace
+    let call_sites: Vec<(&str, Option<&SourceSpan>)> = frames
+        .iter()
+        .rev()
+        .filter_map(|frame| {
+            let name = frame.name.as_deref()?;
+            let span = frame
+                .call_site
+                .and_then(|tid| program.source_map.get(tid))
+                .filter(|span| span.start.line > 0);
+            Some((name, span))
+        })
+        .collect();
+    // An entry-file position is written bare (`[line N, column M]`), which
+    // reads fine until a trace crosses into a module: next to
+    // `[m.ptl line 6, column 3]`, a bare `[line 3, column 3]` does not say
+    // which file it is in. So once any frame is in a module, the entry-file
+    // frames name their file too.
+    let crosses_modules = call_sites
+        .iter()
+        .any(|(_, span)| span.is_some_and(|s| s.file != ENTRY_FILE));
+    let entry_name = crosses_modules.then(|| entry_file_name(program)).flatten();
+    call_sites
+        .into_iter()
+        .map(|(name, span)| match (span, entry_name) {
+            (Some(span), Some(entry)) if span.file == ENTRY_FILE => format!(
+                "in {}() [{} line {}, column {}]",
+                name, entry, span.start.line, span.start.column
+            ),
+            (Some(span), _) => format!("in {}() {}", name, format_position(program, span)),
+            (None, _) => format!("in {}()", name),
+        })
+        .collect()
+}
+
+/// The entry file's display name (`main.ptl`), when the program was loaded
+/// from a file. Inline (`-e`) code has no name worth printing, so its frames
+/// stay bare.
+fn entry_file_name(program: &Program) -> Option<&str> {
+    program
+        .source_map
+        .file(ENTRY_FILE)
+        .map(|f| f.name.as_str())
+        .filter(|n| !n.is_empty() && *n != crate::module::INLINE_ENTRY_NAME)
 }
 
 /// Render a 3-line source snippet for a given span: the source line it points

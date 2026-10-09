@@ -362,13 +362,17 @@ impl Parser {
     /// Consume the `end` that closes a block opened by the token at
     /// `opener_pos`. When it is missing, name where the unclosed construct
     /// *started* — the token the parser stopped on is usually a comma or a
-    /// paren many lines later, which tells the reader nothing:
+    /// paren many lines later (or the end of the file), which tells the
+    /// reader nothing:
     ///
     /// ```text
     /// f(1, if q then a else b, 2)
     ///                        ^ "an `if` expression started at line 1 column 6
     ///                           is unclosed; expected `end`"
     /// ```
+    ///
+    /// `what` is the construct with its article: ``an `if` expression``,
+    /// ``a `fn` declaration``.
     fn expect_block_end(&mut self, opener_pos: usize, what: &str) -> Result<(), String> {
         if matches!(self.peek(), Token::End) {
             self.advance();
@@ -380,7 +384,7 @@ impl Parser {
             .map(|s| s.start)
             .unwrap_or(ZERO_SPAN.start);
         Err(self.error_at_current(format!(
-            "an `{what}` expression started at line {} column {} is unclosed; expected `end`",
+            "{what} started at line {} column {} is unclosed; expected `end`",
             start.line, start.column
         )))
     }
@@ -881,7 +885,7 @@ impl Parser {
         let ret = self.parse_return_type()?;
         self.skip_newlines();
         let body = self.parse_block_until(&[Token::End])?;
-        self.expect(&Token::End)?;
+        self.expect_block_end(start, &format!("the function `{name}`"))?;
         self.ev_close(); // FnDecl
         let mut stmt = self.mk_stmt(
             StmtKind::FnDecl {
@@ -940,7 +944,7 @@ impl Parser {
             });
             self.expect_element_separator_of(&Token::End, "class fields", Some(&closes))?;
         }
-        self.expect(&Token::End)?;
+        self.expect_block_end(start, "a `class` declaration")?;
         self.ev_close(); // ClassDecl
         let mut stmt = self.mk_stmt(StmtKind::ClassDecl { name, fields }, start);
         stmt.exported = exported;
@@ -977,7 +981,7 @@ impl Parser {
             });
             self.expect_element_separator_of(&Token::End, "enum variants", Some(&closes))?;
         }
-        self.expect(&Token::End)?;
+        self.expect_block_end(start, "an `enum` declaration")?;
         self.ev_close();
         let mut stmt = self.mk_stmt(StmtKind::EnumDecl { name, variants }, start);
         stmt.exported = exported;
@@ -1013,6 +1017,7 @@ impl Parser {
     /// Shared body of the statement and expression `for` forms: consumes
     /// `for <var> in <iter> do <body> end` and returns its parts.
     fn parse_for_inner(&mut self) -> Result<(String, Expr, Vec<Stmt>), String> {
+        let for_pos = self.pos;
         self.advance(); // consume 'for'
         let var = self.expect_ident()?;
         self.expect(&Token::In)?;
@@ -1020,7 +1025,7 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
-        self.expect(&Token::End)?;
+        self.expect_block_end(for_pos, "a `for` loop")?;
         Ok((var, iter, body))
     }
 
@@ -1032,7 +1037,7 @@ impl Parser {
         self.skip_newlines();
         self.expect(&Token::Do)?;
         let body = self.parse_block_until(&[Token::End])?;
-        self.expect(&Token::End)?;
+        self.expect_block_end(start, "a `while` loop")?;
         self.ev_close();
         Ok(self.mk_stmt(StmtKind::While { condition, body }, start))
     }
@@ -2016,12 +2021,12 @@ impl Parser {
                 self.ev_open(SyntaxKind::ElseBranch);
                 self.advance(); // consume 'else'
                 let body = self.parse_block_until(&[Token::End])?;
-                self.expect_block_end(if_pos, "if")?;
+                self.expect_block_end(if_pos, "an `if` expression")?;
                 self.ev_close();
                 Ok(Some(ElseBranch::Block(body)))
             }
             _ => {
-                self.expect_block_end(if_pos, "if")?;
+                self.expect_block_end(if_pos, "an `if` expression")?;
                 Ok(None)
             }
         }
@@ -2039,7 +2044,7 @@ impl Parser {
             arms.push(arm);
             self.skip_newlines();
         }
-        self.expect(&Token::End)?;
+        self.expect_block_end(start, "a `match` expression")?;
         self.ev_close();
         Ok(self.mk_expr(
             ExprKind::Match {
@@ -2064,7 +2069,7 @@ impl Parser {
             let start = self.pos;
             self.advance(); // consume 'do'
             let stmts = self.parse_block_until(&[Token::End])?;
-            self.expect(&Token::End)?;
+            self.expect_block_end(start, "a `do` block")?;
             self.mk_expr(ExprKind::Block(stmts), start)
         } else {
             self.expect(&Token::Arrow)?;
@@ -2229,7 +2234,7 @@ impl Parser {
         } else {
             self.skip_newlines();
             let body = self.parse_block_until(&[Token::End])?;
-            self.expect(&Token::End)?;
+            self.expect_block_end(start, "a `fn` expression")?;
             self.ev_close(); // LambdaExpr
             Ok(self.mk_expr(ExprKind::Lambda { params, body }, start))
         }

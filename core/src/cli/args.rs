@@ -56,11 +56,31 @@ fn take<'a>(args: &'a [String], i: &mut usize, expected: &str) -> &'a str {
     &args[*i]
 }
 
+/// The command being parsed, for the "see 'petal help <command>'" pointer in
+/// [`parse_source_args`]'s errors. Set once by [`dispatch_args`]; `run` when
+/// the command line used the `petal <file>` shorthand.
+static COMMAND: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// Exit over an argument no parser recognized, with the command's usage line
+/// (when it has one) and a pointer to its help page.
+fn reject_argument(problem: String, usage: &str) -> ! {
+    let command = COMMAND.get().copied().unwrap_or("run");
+    eprintln!("{problem}");
+    if usage.starts_with("Usage:") {
+        eprintln!("{usage}");
+    }
+    eprintln!("See 'petal help {command}'.");
+    process::exit(1);
+}
+
 /// The argument loop shared by every source-taking command: `-e <code>`
 /// becomes an inline source, and every other token is offered to `on_flag`,
 /// which returns whether it recognized `args[*i]` (advancing `i` past a
-/// flag's value via [`take`]). An unrecognized token falls through as a file
-/// path — the historical contract of every per-command loop this replaced.
+/// flag's value via [`take`]). An unrecognized token is the file path —
+/// unless it looks like an option, or a source was already given. Both used
+/// to be taken as the path, so `petal run x.ptl --iter 3` answered
+/// `Error reading file '3'`; now the first stray token is named. A lone `-`
+/// is still a path (stdin).
 /// Exits with `usage` when no source was given.
 fn parse_source_args(
     args: &[String],
@@ -72,9 +92,29 @@ fn parse_source_args(
     while i < args.len() {
         if args[i] == "-e" {
             let code = take(args, &mut i, "Expected code after -e");
+            if source.is_some() {
+                reject_argument(
+                    "Unexpected '-e': a source was already given (one file or one -e <code>)"
+                        .to_string(),
+                    usage,
+                );
+            }
             source = Some(SourceInput::Inline(code.to_string()));
         } else if !on_flag(args, &mut i) {
-            source = Some(SourceInput::File(args[i].clone()));
+            let arg = &args[i];
+            if arg.starts_with('-') && arg != "-" {
+                reject_argument(format!("Unknown option '{arg}'"), usage);
+            }
+            if source.is_some() {
+                reject_argument(
+                    format!(
+                        "Unexpected argument '{arg}': a source was already given (one file or \
+                         one -e <code>)"
+                    ),
+                    usage,
+                );
+            }
+            source = Some(SourceInput::File(arg.clone()));
         }
         i += 1;
     }
@@ -84,8 +124,44 @@ fn parse_source_args(
     })
 }
 
+/// What to say about a first word that is neither a command nor a file:
+/// `None` when it should be run as a file after all. A word that names an
+/// existing path, ends in `.ptl`, or is an option (`-e`, `--json`, `-`) keeps
+/// the `petal <file>` shorthand, so a missing `script.ptl` is still reported
+/// as a missing file.
+fn unknown_command_message(word: &str) -> Option<String> {
+    if word.starts_with('-') || word.ends_with(".ptl") || std::path::Path::new(word).exists() {
+        return None;
+    }
+    let mut msg = format!("petal: '{word}' is not a petal command or a file.");
+    // Commands people reach for from other toolchains, which have no namesake
+    // here but do have an answer.
+    let pointer = match word {
+        "repl" | "eval" | "exec" => {
+            Some("petal has no REPL; 'petal run -e <code>' runs a snippet.".to_string())
+        }
+        "test" => Some(
+            "petal has no test runner; 'petal check <file>' compiles a file without running \
+             it, and 'petal run <file>' runs it."
+                .to_string(),
+        ),
+        "build" | "compile" => {
+            Some("Did you mean 'petal check' (compile without running)?".to_string())
+        }
+        "format" => Some("Did you mean 'petal fmt'?".to_string()),
+        _ => help::closest_command(word).map(|c| format!("Did you mean 'petal {c}'?")),
+    };
+    if let Some(pointer) = pointer {
+        msg.push(' ');
+        msg.push_str(&pointer);
+    }
+    msg.push_str(" See 'petal help'.");
+    Some(msg)
+}
+
 pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
     let first = &args[0];
+    let _ = COMMAND.set(help::command_name(first).unwrap_or("run"));
 
     // `petal <command> --help` reads as a request for that command's page,
     // wherever the flag sits — the parsers below would otherwise take it for
@@ -137,7 +213,13 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         _ => {
             // Shorthand: `petal <file> [flags]` runs the file (same as
             // `petal run <file> [flags]`). Parse the full arg list so flags
-            // like `--no-opt` are honored, not silently dropped.
+            // like `--no-opt` are honored, not silently dropped. A word that
+            // is no file either is a mistyped command, and says so rather
+            // than failing later with "Error reading file 'repl'".
+            if let Some(msg) = unknown_command_message(first) {
+                eprintln!("{msg}");
+                process::exit(1);
+            }
             parse_run_args(args)
         }
     }

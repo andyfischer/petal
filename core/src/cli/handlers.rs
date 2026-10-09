@@ -164,10 +164,40 @@ pub(super) fn handle_run(
                 print_observations(json, &map);
             }
             if let Err(e) = run_result {
+                // `check` passes this script (it checks against `--host ui`
+                // unless told otherwise), so say why `run` could not.
+                if !json
+                    && !super::bare_errors()
+                    && let Some(note) = ui_host_note(&e)
+                {
+                    eprintln!("Error: {e}\n{note}");
+                    process::exit(1);
+                }
                 die(json, &e, "runtime");
             }
         }
     }
+}
+
+/// When a run died on a name the petal-ui host provides (`ui`, a `ui` prelude
+/// function, a petal-ui native), the note explaining that `petal run` is the
+/// core host — otherwise a newcomer sees `petal check` accept a script and
+/// `petal run` reject it with no reason given for the difference.
+fn ui_host_note(err: &str) -> Option<String> {
+    let first = err.lines().next()?;
+    let name = first
+        .strip_prefix("Undefined variable: ")
+        .or_else(|| first.strip_prefix("Unknown builtin: "))?;
+    let name = name.split(" [").next()?.trim();
+    if !crate::typecheck::globals::ui_host_provides(name) {
+        return None;
+    }
+    Some(format!(
+        "note: `{name}` comes from the petal-ui host. 'petal run' provides the core builtins \
+         only, so this script needs a petal-ui runner (such as petal-sdl; see \
+         docs/building-apps.md). 'petal check' accepted it because it checks against \
+         '--host ui' by default; 'petal check --host core' checks what 'petal run' can run."
+    ))
 }
 
 /// Print the `--observe` dump: a JSON object under `--json`, otherwise a blank
@@ -908,7 +938,16 @@ pub(super) fn handle_check(
         }
         die_with(json, &e, "lower", warnings_json(program));
     }
-    let warning_count = program.map_or(0, |p| p.warnings.len());
+    // What `--strict` counts. The `export` deprecation is left out: the old
+    // spelling still works with no removal planned (docs/module-system.md), so
+    // it is printed as advice but is no reason to fail CI — `petal lint`'s
+    // `prefer-pub` rule is the gate for a codebase that wants it gone.
+    let warning_count = program.map_or(0, |p| {
+        p.warnings
+            .iter()
+            .filter(|d| d.message != crate::export_keyword::DEPRECATION_MESSAGE)
+            .count()
+    });
     let error_count = program.map_or(0, |p| p.warnings.iter().filter(|d| d.is_error()).count());
     // A checker error is a line that fails whenever it runs, so the program
     // does not pass `check` — unless `--lenient` asks only "does it compile?".

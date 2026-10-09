@@ -106,7 +106,12 @@ pub(super) fn print_command_help(name: &str) -> ! {
             process::exit(0);
         }
         None => {
-            eprintln!("petal: '{name}' is not a petal command. See 'petal help'.");
+            match closest_command(name) {
+                Some(c) => eprintln!(
+                    "petal: '{name}' is not a petal command. Did you mean '{c}'? See 'petal help'."
+                ),
+                None => eprintln!("petal: '{name}' is not a petal command. See 'petal help'."),
+            }
             process::exit(1);
         }
     }
@@ -232,6 +237,54 @@ OPTIONS
 
 {COMMON}";
 
+/// The canonical `&'static` spelling of a command name, for messages that
+/// outlive the argument vector. `None` when `name` is not a command.
+pub(super) fn command_name(name: &str) -> Option<&'static str> {
+    command_names().find(|c| *c == name)
+}
+
+/// Every command in the index, in index order.
+fn command_names() -> impl Iterator<Item = &'static str> {
+    GROUPS
+        .iter()
+        .flat_map(|(_, commands)| commands.iter().map(|(name, _)| *name))
+}
+
+/// The command `word` is most plausibly a typo of: the nearest by edit
+/// distance, when it is near enough (a third of the word, at least one edit)
+/// to be a slip rather than a different word. A unique command that `word` is
+/// a prefix of counts too (`show-prov`).
+pub(super) fn closest_command(word: &str) -> Option<&'static str> {
+    let mut prefixed = command_names().filter(|c| word.len() >= 3 && c.starts_with(word));
+    if let (Some(only), None) = (prefixed.next(), prefixed.next()) {
+        return Some(only);
+    }
+    let budget = (word.chars().count() / 3).max(1);
+    command_names()
+        .map(|c| (edit_distance(word, c), c))
+        .filter(|(d, _)| *d <= budget)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, c)| c)
+}
+
+/// Levenshtein distance over chars.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diag = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let next = (diag + usize::from(ca != *cb))
+                .min(row[j] + 1)
+                .min(row[j + 1] + 1);
+            diag = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
+}
+
 const RUN: &str = "\
 NAME
        petal-run - Execute a program
@@ -336,7 +389,9 @@ OPTIONS
 
        --strict
               Exit non-zero when type-checker warnings exist. Plain 'check'
-              exits 0 for a program that only has warnings.
+              exits 0 for a program that only has warnings. The 'export'
+              deprecation is printed but not counted: the old spelling
+              still works, and 'petal lint' is the gate for it.
 
        --lenient
               Report checker errors but exit 0 unless the program fails to
@@ -358,7 +413,9 @@ OPTIONS
               petal-desktop-sdl's; 'garden-config' is Garden's config host
               (init.ptl, layout scripts): core plus the layout builders,
               without petal-ui or its prelude; 'core' is the core builtins
-              alone.
+              alone. 'petal run' is the core host, so a script that passes
+              here under the default can still fail there with 'Undefined
+              variable: ui'; '--host core' checks what 'petal run' can run.
 
        --native <name>[,<name>...]
               Further natives the host registers, on top of --host's.

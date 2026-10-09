@@ -1590,6 +1590,9 @@ impl PanelView {
     /// gets a wall-clock `dt` it did not choose); this advances panel time
     /// deterministically instead. Activity is stamped so the panel also stays
     /// awake for the ordinary tick path afterwards.
+    ///
+    /// On a panel whose clock is virtual the script's `dt()` is the clock's
+    /// advance rather than this `dt` (see [`PanelHost::use_virtual_clock`]).
     pub fn tick_with_dt(&mut self, now: Instant, dt: f64, rect: Rect, cell: (f32, f32)) {
         self.note_activity(now);
         self.last_frame = Some(now);

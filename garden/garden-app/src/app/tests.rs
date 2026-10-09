@@ -1831,6 +1831,7 @@ fn debug_mouse_click_carries_the_click_count() {
             x,
             y,
             to: None,
+            pane: None,
             lines: 0.0,
             cols: 0.0,
             mods: Mods::default(),

@@ -126,6 +126,12 @@ pub struct FrameCore {
     program_id: ProgramId,
     stack_id: StackKey,
     clock: Clock,
+    /// Seconds [`advance_clock`](Self::advance_clock) has added since the last
+    /// frame, while the clock is the *advanced* virtual clock: the `dt()` the
+    /// next frame publishes, so `dt()` and `time()` cannot disagree. `None` on
+    /// the wall clock and after [`set_clock`](Self::set_clock), where the
+    /// caller's `dt` is published as given.
+    pending_dt: Option<f64>,
     /// Value returned by the most recent run (`Nil` until one completes).
     pub result: Value,
     /// Host data source for the `host_data` native, swapped into the
@@ -153,6 +159,7 @@ impl FrameCore {
             program_id,
             stack_id,
             clock: Clock::Wall(Instant::now()),
+            pending_dt: None,
             result: Value::Nil,
             provider: None,
             fonts: None,
@@ -184,22 +191,38 @@ impl FrameCore {
 
     /// Switch `time()` to a virtual clock starting where the clock stands now,
     /// so nothing jumps backwards. Idempotent.
+    ///
+    /// From here on `dt()` is virtual too: each frame publishes exactly what
+    /// [`advance_clock`](Self::advance_clock) added since the frame before it,
+    /// whatever `dt` the frame was handed. A frame the host runs on its own
+    /// schedule (an input event, a repaint, a settle pass) therefore sees
+    /// `dt() == 0` and an unmoved `time()`, so a simulation stepped by `dt()`
+    /// advances only when the host says so.
     pub fn use_virtual_clock(&mut self) {
         if let Clock::Wall(_) = self.clock {
             self.clock = Clock::Virtual(self.clock());
+            self.pending_dt = Some(0.0);
         }
     }
 
     /// Advance the virtual clock by `dt` seconds; a no-op on the wall clock.
+    /// The next frame publishes the sum of the advances since the last one as
+    /// `dt()`.
     pub fn advance_clock(&mut self, dt: f64) {
         if let Clock::Virtual(t) = &mut self.clock {
             *t += dt;
+            if let Some(pending) = &mut self.pending_dt {
+                *pending += dt;
+            }
         }
     }
 
-    /// Set the clock to exactly `t` seconds, making it virtual.
+    /// Set the clock to exactly `t` seconds, making it virtual. A host that
+    /// places the clock itself also owns `dt()`: frames publish the `dt` they
+    /// are handed.
     pub fn set_clock(&mut self, t: f64) {
         self.clock = Clock::Virtual(t);
+        self.pending_dt = None;
     }
 
     /// Whether `time()` is currently the virtual clock.
@@ -279,6 +302,12 @@ impl FrameCore {
         frame_count: i64,
         hooks: &mut dyn FrameHooks,
     ) -> Result<FrameRun, String> {
+        // On an advanced virtual clock `dt` is whatever the clock moved by
+        // since the last frame, not what this call measured.
+        let dt = match &mut self.pending_dt {
+            Some(advanced) => std::mem::take(advanced),
+            None => dt,
+        };
         self.input.begin_frame(dt);
         input::bind_frame_info(&mut self.env, dt, frame_count);
         let now = self.clock();

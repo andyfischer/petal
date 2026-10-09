@@ -310,6 +310,7 @@ impl App {
                 x,
                 y,
                 to,
+                pane,
                 lines,
                 cols,
                 mods,
@@ -317,6 +318,17 @@ impl App {
                 button,
                 hover_first,
             } => {
+                // `"pane": n`: the point is relative to that pane's origin, the
+                // same rebasing `GET /scene?pane=n` applies in the other
+                // direction. A bad index is an error before any input lands.
+                let (x, y, to) = match self.pane_capture_rect(pane)? {
+                    Some(rect) => (
+                        x + rect.x,
+                        y + rect.y,
+                        to.map(|(tx, ty)| (tx + rect.x, ty + rect.y)),
+                    ),
+                    None => (x, y, to),
+                };
                 // Button 1 is the right button — the context gesture, which has
                 // its own (much smaller) routing: panels only, no drag, no
                 // cursor placement. See `App::mouse_down_right`.
@@ -2394,6 +2406,91 @@ mod tests {
             "time() advanced by {} over 60 ticks of 0.016",
             after - before
         );
+    }
+
+    /// A simulation stepped by `dt()` must not drift when a test sends input
+    /// between ticks. The frames those events run used to hand the script a
+    /// wall-clock `dt()` while `time()` stood still; on a ticked panel `dt()`
+    /// is now the virtual clock's advance, so only the ticks count.
+    #[test]
+    fn dt_is_virtual_once_a_panel_is_ticked() {
+        let (mut app, _f) = panel_app(
+            "state acc = 0.0\nacc = acc + dt()\nlet obs_acc = acc\nlet obs_t = time()\n\
+             draw_rect(0, 0, 1, 1, 1, 2, 3)\n",
+        );
+        let tick = |app: &mut App, n: u32| {
+            app.handle_debug(DebugCmd::Tick { n, dt: 0.016, advance_clock: true })
+                .expect("tick");
+        };
+        let read = |app: &mut App| {
+            let s = state_with(app, "/state?values_prefix=obs_");
+            let v = &panel_of(&s)["values"];
+            (v["obs_acc"].as_f64().unwrap(), v["obs_t"].as_f64().unwrap())
+        };
+        // The warm-up tick: whatever wall-clock frames ran before it are in
+        // the baseline, and everything after it is virtual.
+        tick(&mut app, 1);
+        let (acc0, t0) = read(&mut app);
+        tick(&mut app, 10);
+        // Real time passes, and input runs frames of its own between ticks.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        for key in ["a", "b"] {
+            let body = format!(r#"{{"key":"{key}"}}"#);
+            let cmd = debug::route_for_test("POST", "/key", body.as_bytes()).expect("routes");
+            app.handle_debug(cmd).expect("key");
+            app.settle_panels();
+        }
+        let cmd = debug::route_for_test("POST", "/mouse", br#"{"op":"click","x":100,"y":100}"#)
+            .expect("routes");
+        app.handle_debug(cmd).expect("click");
+        app.settle_panels();
+        tick(&mut app, 10);
+        let (acc, t) = read(&mut app);
+        assert!(
+            (acc - acc0 - 0.32).abs() < 1e-9,
+            "20 ticks of 0.016 summed dt() to {}, not 0.32",
+            acc - acc0
+        );
+        assert!((t - t0 - 0.32).abs() < 1e-9, "time() moved {}", t - t0);
+    }
+
+    /// `POST /mouse {"pane": n}` takes the point relative to the pane's origin,
+    /// which is what the script reads back as `mouse_x()`/`mouse_y()`. Every
+    /// harness used to add `panes[n].rect` by hand, and got it wrong.
+    #[test]
+    fn mouse_takes_pane_local_coordinates() {
+        let (mut app, _f) = panel_app("let obs_x = mouse_x()\nlet obs_y = mouse_y()\n");
+        let post = |app: &mut App, body: &str| {
+            let cmd = debug::route_for_test("POST", "/mouse", body.as_bytes()).expect("routes");
+            let reply = app.handle_debug(cmd);
+            app.settle_panels();
+            reply
+        };
+        let seen = |app: &mut App| {
+            let s = state_with(app, "/state?values_prefix=obs_");
+            let v = &panel_of(&s)["values"];
+            (v["obs_x"].as_f64().unwrap(), v["obs_y"].as_f64().unwrap())
+        };
+        let rect = app.panes[0].rect;
+        assert!(rect.y > 0.0, "the pane sits below the chrome, so the offset matters");
+
+        post(&mut app, r#"{"op":"move","x":30,"y":40,"pane":0}"#).expect("moves");
+        assert_eq!(seen(&mut app), (30.0, 40.0));
+        // The same point in window coordinates is the pane origin further on.
+        let window = format!(r#"{{"op":"move","x":{},"y":{}}}"#, 50.0 + rect.x, 60.0 + rect.y);
+        post(&mut app, &window).expect("moves");
+        assert_eq!(seen(&mut app), (50.0, 60.0));
+        // A drag's destination is rebased with its start.
+        post(&mut app, r#"{"op":"drag","x":10,"y":10,"to":{"x":70,"y":80},"pane":0}"#)
+            .expect("drags");
+        assert_eq!(seen(&mut app), (70.0, 80.0));
+
+        let err = post(&mut app, r#"{"op":"move","x":1,"y":1,"pane":9}"#)
+            .err()
+            .expect("a pane that does not exist is an error");
+        assert!(err.contains("no pane 9"), "{err}");
+        assert_eq!(seen(&mut app), (70.0, 80.0), "and nothing moved");
+        assert!(debug::route_for_test("POST", "/mouse", br#"{"op":"move","pane":"x"}"#).is_err());
     }
 
     /// `{"advance_clock": false}` keeps the wall clock, for a caller that wants

@@ -1372,6 +1372,11 @@ impl PanelHost {
     /// frame, so an animation is steppable and two identical tick sequences
     /// draw identical frames. Interactive ticking keeps the wall clock, where
     /// `dt` is a measurement rather than an instruction.
+    ///
+    /// `dt()` goes virtual with it: every later frame publishes what
+    /// [`advance_clock`](Self::advance_clock) added since the frame before,
+    /// and the `dt` passed to [`frame`](Self::frame) is ignored. A frame run
+    /// for an input event between two ticks therefore sees `dt() == 0`.
     pub fn use_virtual_clock(&mut self) {
         self.core.use_virtual_clock();
     }
@@ -3435,6 +3440,33 @@ mod tests {
         let held = host.clock();
         host.frame(0.25, 2).unwrap();
         assert_eq!(host.clock(), held);
+    }
+
+    /// Once a host drives the clock, `dt()` is the clock's advance and nothing
+    /// else: a frame run for an input event between two ticks is no time at
+    /// all, so a simulation stepped by `dt()` cannot drift on the wall clock.
+    #[test]
+    fn dt_follows_the_virtual_clock_once_a_panel_is_ticked() {
+        let f = write_script("print(str(dt()))\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        // Wall clock: `dt()` is the host's measurement, as given.
+        host.frame(0.033, 0).unwrap();
+        host.use_virtual_clock();
+        // A driven frame publishes exactly the advance…
+        host.advance_clock(0.016);
+        host.frame(0.016, 1).unwrap();
+        // …a frame the host ran by itself publishes none, whatever it measured…
+        host.frame(0.05, 2).unwrap();
+        // …and two advances before one frame add up.
+        host.advance_clock(0.25);
+        host.advance_clock(0.25);
+        host.frame(0.1, 3).unwrap();
+        let seen: Vec<f64> = host
+            .take_output()
+            .iter()
+            .map(|line| line.trim().parse().unwrap())
+            .collect();
+        assert_eq!(seen, vec![0.033, 0.016, 0.0, 0.5]);
     }
 
     /// Seeding is what makes generated placeholder content comparable between

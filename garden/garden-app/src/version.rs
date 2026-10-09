@@ -223,6 +223,12 @@ pub const HOST_FEATURES: &[&str] = &[
     // `POST /tick` drives a virtual clock: `time()` advances by exactly the
     // `dt` given, so a `time()`-driven animation is steppable and reproducible.
     "debug.tick-clock",
+    // …and `dt()` with it: a ticked panel's `dt()` is the virtual clock's
+    // advance since the previous frame, so a frame run for an injected event
+    // between two ticks sees 0 rather than a wall-clock measurement.
+    "debug.tick-dt",
+    // `POST /mouse {"pane": n}`: `x`/`y`/`to` relative to that pane's origin.
+    "debug.mouse-pane",
     // `POST /seed` reseeds every panel's `random()` stream.
     "debug.seed",
     // `POST /panel/reset {"seed": N}` reseeds before restarting, so the

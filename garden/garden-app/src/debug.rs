@@ -32,7 +32,10 @@
 //!                    (see [`DebugCmd::changes_state`])
 //! POST /tick         {"n": 60, "dt": 0.016} — advance every panel by n frames
 //!                    of exactly dt seconds, ignoring the sleep/wake window. The
-//!                    way to drive an animation or a game without faking input
+//!                    way to drive an animation or a game without faking input.
+//!                    A ticked panel's `time()` *and* `dt()` are virtual from
+//!                    then on: only ticks move them, and a frame run for an
+//!                    injected event in between sees `dt() == 0`
 //! POST /panel/reset  restart every file-backed panel from source, discarding
 //!                    Petal `state` — what to call after editing seeded data,
 //!                    which hot reload deliberately preserves
@@ -74,6 +77,10 @@
 //!                     "lines": 3,                    scroll amount
 //!                     "shift": true,                 extend selection
 //!                     "clicks": 2,                   double-click (click_count)
+//!                     "pane": 0,                     x/y/to are relative to
+//!                                                    that pane's origin (what
+//!                                                    its script sees), not
+//!                                                    the window
 //!                     "mods": ["cmd", "alt"]}        every modifier is
 //!                                                    delivered, not just shift
 //! POST /theme        {"scheme": "light"}              switch built-in scheme
@@ -487,6 +494,11 @@ pub enum DebugCmd {
         x: f32,
         y: f32,
         to: Option<(f32, f32)>,
+        /// `"pane": <n>`: `x`, `y` and `to` are relative to pane `n`'s origin —
+        /// the coordinates the pane's script sees as `mouse_x()`/`mouse_y()`
+        /// and `GET /scene?pane=<n>` reports — rather than to the window. The
+        /// host adds the pane's rect, so a client cannot get the offset wrong.
+        pane: Option<usize>,
         /// Vertical wheel amount for `scroll`, in lines (positive = down).
         /// Fractional: `0.5` is half a line, the sub-cell motion a trackpad
         /// produces, so smooth scrolling is drivable from a test.
@@ -1040,7 +1052,9 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
             // the whole point of naming `dt` is that sixty frames of 0.016 are
             // 0.96 seconds of script time, however long the batch took to run.
             // `{"advance_clock": false}` keeps the wall clock for a caller that
-            // wants ticks to be extra frames of real time.
+            // wants ticks to be extra frames of real time. (On a panel an
+            // earlier tick already made virtual, such a frame is no time at
+            // all: `dt()` follows the clock.)
             let advance_clock = v["advance_clock"].as_bool().unwrap_or(true);
             Ok(DebugCmd::Tick {
                 n: n as u32,
@@ -1139,11 +1153,20 @@ fn route(method: &str, path: &str, body: &[u8]) -> Result<DebugCmd, (u16, String
             let to = v
                 .get("to")
                 .and_then(|t| Some((t["x"].as_f64()? as f32, t["y"].as_f64()? as f32)));
+            let pane = match v.get("pane") {
+                None | Some(Value::Null) => None,
+                Some(p) => Some(
+                    p.as_u64()
+                        .ok_or((400, format!("bad \"pane\" {p}: expected a pane index")))?
+                        as usize,
+                ),
+            };
             Ok(DebugCmd::Mouse {
                 op,
                 x: v["x"].as_f64().unwrap_or(0.0) as f32,
                 y: v["y"].as_f64().unwrap_or(0.0) as f32,
                 to,
+                pane,
                 lines: v["lines"].as_f64().unwrap_or(0.0) as f32,
                 cols: v["cols"].as_f64().unwrap_or(0.0) as f32,
                 mods: mouse_mods(&v),

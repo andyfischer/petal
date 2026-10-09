@@ -628,6 +628,13 @@ impl App {
     /// so: a session that drives frames explicitly is a harness, and mixing
     /// wall-clock and virtual time in one panel is worse than either. An
     /// interactive run never calls this and keeps the wall clock.
+    ///
+    /// `dt()` moves with it. Once a panel is on the virtual clock every frame
+    /// publishes the clock's advance since the frame before as `dt()`: the
+    /// ticked frames see exactly `dt`, and the frames in between — one per
+    /// injected key or click, the idle poll, the settle passes — see 0. A
+    /// simulation stepped by `dt()` is then as reproducible as one stepped by
+    /// `time()` deltas, whatever input a test sends between ticks.
     pub fn advance_panels(&mut self, n: u32, dt: f64, advance_clock: bool) -> u64 {
         let cell = self.viewport.cell;
         let panel_theme = self.theme.to_panel_theme();

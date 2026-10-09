@@ -42,7 +42,6 @@ How to build on Petal from a host program, a tool, or an agent:
 | Document | Description |
 |----------|-------------|
 | [Architecture](dev/Architecture.md) | How the implementation works: IR term graph, evaluator, state, provenance |
-| [Goals](dev/goals.md) | The vision and the remaining unfinished work |
 | [IR as a Target](dev/ir-as-target.md) | The IR import format for external emitters (`run --ir`) |
 | [Call-path keyed `state`](dev/state-call-paths.md) | The rules for how `state` slots are keyed, and the decisions behind them |
 | [Debugging & Visibility](dev/debugging-visibility.md) | The three ways to look inside a running program: CLI, MCP, and tests |
@@ -67,6 +66,7 @@ working documents and may contain point-in-time status.
 | [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library (`core-runtime/bloom`) needs from the language and from hosts |
 | [Refactor Verification](dev/refactor-verification.md) | Proving a large mechanical change was behavior-preserving |
 | [Releasing](dev/releasing.md) | How prebuilt `petal` binaries are built, published, and installed |
+| [Release checklist](dev/release-checklist.md) | The ordered commands to cut a release, deploy the site, and test the installer |
 | [Releasing Garden](dev/releasing-garden.md) | How the Garden Homebrew formula is updated |
 | [Type Declarations](dev/type-declarations-plan.md) | Design record for optional, warning-only type annotations (shipped) |
 | [Typography](dev/typography-plan.md) | Design for fonts, measurement, and flow layout (partly shipped) |

@@ -1,7 +1,9 @@
 # Releasing Petal
 
 This describes how prebuilt `petal` binaries are built and published, and how
-the one-line installer works end to end.
+the one-line installer works end to end. For the ordered commands to cut a
+release, deploy the site and test the installer, see
+[release-checklist.md](release-checklist.md).
 
 ## The pieces
 
@@ -27,8 +29,11 @@ extracts, installs to ~/.petal/bin/petal, adds it to PATH
 
 ## Cutting a release
 
-1. Bump the version in `core/Cargo.toml` (`version = "x.y.z"`) and commit.
-2. Tag and push:
+1. Bump the version in `core/Cargo.toml` (`version = "x.y.z"`), refresh the
+   `Cargo.lock` files that record it (the checklist has the loop), add the
+   release to `CHANGELOG.md`, and commit.
+2. Tag and push. The tag must be the Cargo version with a `v` prefix; the
+   build fails if they disagree, so `petal --version` always matches the tag:
 
    ```bash
    git tag v0.1.0
@@ -45,6 +50,8 @@ extracts, installs to ~/.petal/bin/petal, adds it to PATH
    | `x86_64-unknown-linux-musl` | `ubuntu-latest` | `cargo-zigbuild` (static) |
    | `aarch64-unknown-linux-musl` | `ubuntu-latest` | `cargo-zigbuild` (static) |
 
+   The two targets the runners can execute (`aarch64-apple-darwin`,
+   `x86_64-unknown-linux-musl`) run the built binary once as a smoke test.
    Each build is packaged as `petal-<target>.tar.gz` (containing
    `petal-<target>/petal`) plus a `.tar.gz.sha256` checksum.
 
@@ -52,7 +59,10 @@ extracts, installs to ~/.petal/bin/petal, adds it to PATH
    Release for the tag (with auto-generated notes). Because the asset names are
    version-independent, `releases/latest/download/petal-<target>.tar.gz`
    always resolves to the newest release — which is exactly what the installer
-   requests when no `PETAL_VERSION` is set.
+   requests when no `PETAL_VERSION` is set. The job publishes with
+   `make_latest: true` to claim that slot (Garden releases publish with
+   `make_latest: false`). A tag with a hyphen, such as `v1.0.0-rc.1`, is
+   published as a pre-release and leaves "latest" alone.
 
 You can trigger the workflow from the Actions tab (`workflow_dispatch`) to
 **dry-run the builds** without publishing — the `release` job only runs on a
@@ -99,8 +109,8 @@ serves copies at `frontend/public/`. After editing either script here, copy it
 into the website repo and redeploy:
 
 ```bash
-cp dist/install.sh   ../petal-lang.org/frontend/public/install.sh
-cp dist/uninstall.sh ../petal-lang.org/frontend/public/uninstall.sh
+cp dist/install.sh   ~/biz/petal-lang.org/frontend/public/install.sh
+cp dist/uninstall.sh ~/biz/petal-lang.org/frontend/public/uninstall.sh
 # then, in the petal-lang.org repo:  deploy run deploy-frontend.qc
 ```
 

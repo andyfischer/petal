@@ -116,7 +116,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [CLI Reference](docs/CLI.md) | Every `petal` subcommand and flag |
 | [Module System](docs/module-system.md) | `import` and module resolution |
 | [Architecture](docs/dev/Architecture.md) | How the implementation works |
-| [Goals](docs/dev/goals.md) | The vision and the remaining work |
+| [Changelog](CHANGELOG.md) | What each release contains |
 
 ## Building a full app with Petal
 

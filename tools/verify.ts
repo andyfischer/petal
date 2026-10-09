@@ -521,6 +521,8 @@ interface Ctx {
     irEqualAvailable: boolean;
     golden: Record<string, string>;
     goldenDirty: boolean;
+    /** In-repo UI apps the golden step ran that have no entry to compare with. */
+    goldenMissing: string[];
 }
 
 function bundleDir(ctx: Ctx, t: Target): string {
@@ -785,6 +787,13 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             const got = await traceHash(kind, ctx.after, t.after, seed, sc, frames, size);
             const g = driverGuard(t.rel, kind, steps, [got]);
             if (g) return g;
+            // Exit 2 is the driver refusing the app before frame 0 (a module it
+            // cannot find): there is no trace, and the hash of no output must
+            // not be frozen as the app's golden.
+            if (got.code === 2) {
+                return { rel: t.rel, kind: 'unsupported', verdict: 'unsupported', steps,
+                         detail: `the UI driver could not load it: ${got.stderr.trim().split('\n')[0]}` };
+            }
             // A corpus entry outside the repo (`~/.garden`, `~/worlds-fair`)
             // is checked but never baselined: its key is an absolute path on
             // one developer's machine, so writing it would check in a hash
@@ -796,6 +805,11 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
             } else if (ctx.golden[key] && ctx.golden[key] !== got.hash) {
                 verdict = 'changed';
                 detail = `golden mismatch for ${key} (rerun with --update-golden to re-baseline)`;
+            } else if (!ctx.golden[key] && !t.rel.startsWith('/')) {
+                // Not a failure, but not a pass either: nothing was compared.
+                // Left silent, an app added after the last re-baseline is
+                // never checked and nobody is told.
+                ctx.goldenMissing.push(key);
             }
         }
     }
@@ -885,6 +899,7 @@ async function main() {
 
     const ctx: Ctx = {
         plan, opts, before, after, outDir, irEqualAvailable, golden, goldenDirty: false,
+        goldenMissing: [],
     };
 
     writeFileSync(join(outDir, 'plan.json'), JSON.stringify({
@@ -928,6 +943,13 @@ async function main() {
             traces: Object.fromEntries(Object.entries(golden).sort()),
         }, null, 2)}\n`);
         console.log(`\nwrote ${relative(repoRoot, goldenPath)} (${Object.keys(golden).length} traces)`);
+    }
+
+    if (ctx.goldenMissing.length > 0) {
+        console.log(`\n${ctx.goldenMissing.length} UI app(s) have no entry in test/ui-golden/index.json `
+            + `and were not compared:`);
+        for (const key of ctx.goldenMissing.sort()) console.log(`  ${key}`);
+        console.log('  (add them with --update-golden, giving the same binary as both sides)');
     }
 
     const counts = new Map<Verdict, number>();

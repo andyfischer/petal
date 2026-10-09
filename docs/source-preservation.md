@@ -143,7 +143,7 @@ run before removes, so an insertion always has a sibling to copy.
 
 So changing one parameter, removing one effect and adding another in
 
-```petal
+```petal ignore
 effects: [
   {effect: "lens_dirt", amount: 0.5, scale: 3.0},
   // grain goes last
@@ -153,7 +153,7 @@ effects: [
 
 by setting the whole list to `[crt 0.2, grain 0.35, halftone 0.7]` gives
 
-```petal
+```petal ignore
 effects: [
   {effect: "crt", amount: 0.2},
   // grain goes last

@@ -1,6 +1,6 @@
 // bloom gallery — every component in the bloom library, live.
 //
-// bloom (petal-libs/bloom) is a component library written entirely in Petal.
+// bloom (core-runtime/bloom) is a component library written entirely in Petal.
 // This app is its showcase and its usage reference: each section below is the
 // shortest honest example of the components it names, so a panel author can
 // copy a block and have a working control.
@@ -209,7 +209,7 @@ if section == 3 then
 end
 
 // ── Text ──────────────────────────────────────────────────────────────────
-// Everything here is text_layout (petal-libs/text-layout), the placement
+// Everything here is text_layout (core-runtime/text-layout), the placement
 // library bloom draws every one of its own labels through. The point of the
 // section is the red centre line: a label is centred when the line splits its
 // capitals — which is not where "the run is `size` px tall and starts at `y`"
@@ -258,7 +258,7 @@ if section == 4 then
   // The three ends an ellipsis can eat.
   var ey = base + 34.0
   for pair in [["head", "a label longer than the box it is in"],
-    ["tail", "petal-libs/text-layout/src/place.ptl"],
+    ["tail", "core-runtime/text-layout/src/place.ptl"],
     ["both", "commit 9f2a1c3 payload identifier"]] do
     let row = rect(x, ey, 170, 24)
     draw_rect_rounded(row, radius: 4, c: mix(T.bg, T.panel, t: 0.7))

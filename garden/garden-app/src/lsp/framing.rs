@@ -10,7 +10,7 @@
 //! `Content-Length` bytes — rather than accumulating into a string buffer and
 //! slicing. `Content-Length` counts *bytes*, so a buffer-and-slice reader
 //! desyncs the moment a body carries multi-byte UTF-8 and the length is read as
-//! a character count. This mirrors `petal`'s own `rust/src/lsp/stdio.rs`.
+//! a character count. This mirrors `petal`'s own `core/src/lsp/stdio.rs`.
 
 use std::io::{self, BufRead};
 

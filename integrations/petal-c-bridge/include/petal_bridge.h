@@ -219,7 +219,7 @@ pb_status pb_vm_set_echo(pb_vm* vm, bool on);
 pb_status pb_vm_add_module_path(pb_vm* vm, const char* dir);
 /* Register an in-memory module: `import name` resolves to `source`. */
 pb_status pb_vm_register_module(pb_vm* vm, const char* name, const char* source);
-/* Register a package directory (containing petal.toml), e.g. ".../petal-libs/bloom".
+/* Register a package directory (containing petal.toml), e.g. ".../core-runtime/bloom".
  * On success, `*out_name` (optional) receives the package name, valid until the next call. */
 pb_status pb_vm_add_package(pb_vm* vm, const char* root, const char** out_name);
 /* Add a module to the implicit-import list (initially just "ui"). Affects later loads. */
@@ -533,7 +533,7 @@ pb_status pb_vm_reload_source(pb_vm* vm, const char* source, pb_reload_result* o
  *                 {"at": 12, "text": "hi"}, {"at": 20, "scroll": [0, -3]} ] }
  *
  * (Also mouse_move, mouse_down/up, key_down/up, mouse_relative, modifiers;
- * see petal-ui/src/scenario.rs.) It is the same format petal-ui-run and the
+ * see core-libs/petal-ui/src/scenario.rs.) It is the same format petal-ui-run and the
  * verify tooling use, so a repro recorded there replays here. A scenario is
  * independent of any VM. Replay loop:
  *

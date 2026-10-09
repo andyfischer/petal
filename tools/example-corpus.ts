@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const examplesDir = join(repoRoot, 'examples', 'console');
 export const goldenDir = join(repoRoot, 'test', 'example-golden');
-export const petal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
+export const petal = join(repoRoot, 'core', 'target', 'debug', 'petal');
 
 /** One captured run; also the golden JSON shape (minus the `example` tag). */
 export interface RunResult {
@@ -23,7 +23,7 @@ export interface RunResult {
 export function buildPetal(): void {
     const build = spawnSync(
         'cargo',
-        ['build', '--quiet', '--manifest-path', join(repoRoot, 'rust', 'Cargo.toml')],
+        ['build', '--quiet', '--manifest-path', join(repoRoot, 'core', 'Cargo.toml')],
         { stdio: 'inherit' },
     );
     if (build.status !== 0) process.exit(build.status ?? 1);

@@ -100,10 +100,10 @@ See [docs/dev/releasing.md](docs/dev/releasing.md) for how the binaries are buil
 make build
 
 # Hello world
-rust/target/debug/petal run -e 'print("hello, world!")'
+core/target/debug/petal run -e 'print("hello, world!")'
 
 # Run an example
-rust/target/debug/petal run examples/console/fizzbuzz.ptl
+core/target/debug/petal run examples/console/fizzbuzz.ptl
 ```
 
 For the full list of developer commands, see [Developer Scripts & Commands](docs/dev/scripts.md).
@@ -112,14 +112,14 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 
 | Directory | Description |
 |-----------|-------------|
-| [`rust/`](rust/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
+| [`core/`](core/) | The language implementation: lexer, parser, compiler, IR, evaluator, bytecode VM |
+| [`core-libs/petal-ui/`](core-libs/petal-ui/README.md) | Helper library that implements user-interaction primitives |
+| [`core-libs/petal-query/`](core-libs/petal-query/README.md) | Helper library that implements asynchronous data fetching |
+| [`core-runtime/`](core-runtime/README.md) | Shared libraries written in Petal |
 | [`integrations/`](integrations/) | Native bindings for Petal |
 | [`garden/`](garden/README.md) | Text editor and IDE built for Petal |
 | [`examples/`](examples/README.md) | Collection of runnable examples |
 | [`docs/`](docs/README.md) | Documentation |
-| [`petal-ui/`](petal-ui/README.md) | Helper library that implements user-interaction primitives |
-| [`petal-query/`](petal-query/README.md) | Helper library that implements asynchronous data fetching |
-| [`petal-libs/`](petal-libs/README.md) | Shared libraries written in Petal |
 | [`editor-support/`](editor-support/README.md) | Files for IDEs, syntax definitions, etc. |
 | [`tools/`](tools/) | Scripts and tooling for development |
 | [`test/`](test/README.md) | Test suite |
@@ -146,7 +146,7 @@ Petal Core  →  Integrations  →  Apps
 
 ### Core
 
-"Petal Core" is the core Rust based language implementation in `rust/` which includes the compiler, runtime, type checker, and more.
+"Petal Core" is the core Rust based language implementation in `core/` which includes the compiler, runtime, type checker, and more.
 
 ### Integrations
 

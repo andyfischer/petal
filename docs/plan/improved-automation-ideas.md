@@ -128,7 +128,7 @@ The first host is the in-process `petal_ui::harness::Headless`.
 
 - **Tests.**
   - Rust: `petal_ui::drive::run(app, driver)` returns the check results, for
-    `cargo test` beside `petal-ui/tests/*.rs`.
+    `cargo test` beside `core-libs/petal-ui/tests/*.rs`.
   - vitest and scripts: `petal-ui-run --drive x.drive.ptl`.
   - Goldens: `test/ui-golden/index.json` gains `drive-<name>-s1` traces next
     to `monkey-1-s1`.
@@ -157,13 +157,13 @@ The first host is the in-process `petal_ui::harness::Headless`.
 
 | System | What it does | Input | What it can observe | Where | Used by |
 |---|---|---|---|---|---|
-| `Headless` harness | In-process frame loop for a petal-ui script | Rust calls: `event(InputEvent)`, `mouse_move`, `mouse_down`/`up`, `scroll`, `key`, `text`, `click`, `frame`, `frames` | `commands`, `state()`, `state_int`/`float`/`string`, `memo_stats`, `frames_run`/`frames_skipped`, `last_run_reason`; the `Env` directly (observations, profile, emit origins) | `petal-ui/src/harness.rs` | petal-ui tests (`gating.rs`, `memo.rs`, `widgets.rs`, …), `petal-ui-run`, `bench_panel` |
-| `petal-ui-run` | CLI: run an app headless, one JSONL record per frame | `--scenario s.json` (edge events keyed by frame: `mouse_move`, `mouse_down`, `click`, `key`, `text`, `scroll`, `modifiers`) or `monkey:<seed>`; `--seed`, `--host-data` fixtures | per frame: `commands`, `state`, `prints`, `result`, `error`; `--gate-stats`, `--memo-stats` on stderr | `petal-ui/src/bin/petal-ui-run.rs`, `petal-ui/src/scenario.rs`, `petal-ui/src/panel_stubs.rs` | `verify.ts`, UI goldens, ad hoc |
-| `bench_panel` | Per-frame timing of a panel script | frame count, `--wiggle`, `--no-gate`, `--no-memo`, `--observe`, `--profile`; `--scenario` (added 2026-09-15, uncommitted as of writing) | frame-time percentiles, run-frame percentiles, total script time, memo counters, instruction profile | `petal-ui/examples/bench_panel.rs` | performance work |
+| `Headless` harness | In-process frame loop for a petal-ui script | Rust calls: `event(InputEvent)`, `mouse_move`, `mouse_down`/`up`, `scroll`, `key`, `text`, `click`, `frame`, `frames` | `commands`, `state()`, `state_int`/`float`/`string`, `memo_stats`, `frames_run`/`frames_skipped`, `last_run_reason`; the `Env` directly (observations, profile, emit origins) | `core-libs/petal-ui/src/harness.rs` | petal-ui tests (`gating.rs`, `memo.rs`, `widgets.rs`, …), `petal-ui-run`, `bench_panel` |
+| `petal-ui-run` | CLI: run an app headless, one JSONL record per frame | `--scenario s.json` (edge events keyed by frame: `mouse_move`, `mouse_down`, `click`, `key`, `text`, `scroll`, `modifiers`) or `monkey:<seed>`; `--seed`, `--host-data` fixtures | per frame: `commands`, `state`, `prints`, `result`, `error`; `--gate-stats`, `--memo-stats` on stderr | `core-libs/petal-ui/src/bin/petal-ui-run.rs`, `core-libs/petal-ui/src/scenario.rs`, `core-libs/petal-ui/src/panel_stubs.rs` | `verify.ts`, UI goldens, ad hoc |
+| `bench_panel` | Per-frame timing of a panel script | frame count, `--wiggle`, `--no-gate`, `--no-memo`, `--observe`, `--profile`; `--scenario` (added 2026-09-15, uncommitted as of writing) | frame-time percentiles, run-frame percentiles, total script time, memo counters, instruction profile | `core-libs/petal-ui/examples/bench_panel.rs` | performance work |
 | UI goldens | sha256 of each UI app's `petal-ui-run` trace | fixed: `monkey:1`, seed 1, 60 frames, 1280×850 | trace hash only | `test/ui-golden/index.json` | refactor verification |
 | `verify.ts` | Before/after proof for mechanical changes, cheapest check first | plans in `test/verify-plans/` (`compiler.json`, `lint-fix.json`) | IR equality, console output, `petal-ui-run` traces | `tools/verify.ts`, [refactor-verification.md](../dev/refactor-verification.md) | large refactors, `lint --fix` sweeps |
 | Example golden corpus | Console examples: opts vs `--no-opt`, plus frozen output | none (non-UI programs) | stdout | `tools/test-examples.ts`, `test/example-golden/` | CI |
-| Differential oracles | Gate on vs off, memo on vs off, over every panel app | monkey scenario via `Headless` | commands, state, observations frame by frame | `petal-ui/tests/gating.rs`, `petal-ui/tests/memo.rs` | CI |
+| Differential oracles | Gate on vs off, memo on vs off, over every panel app | monkey scenario via `Headless` | commands, state, observations frame by frame | `core-libs/petal-ui/tests/gating.rs`, `core-libs/petal-ui/tests/memo.rs` | CI |
 | Garden debug server | HTTP control of a running (often `--headless`) Garden | `POST /key` (taps or `op: down`/`up`), `/text`, `/mouse` (`click`, `drag`, `down`/`move`/`up`, `scroll`, window-relative logical pixels), `/command`, `/menu`, `/theme`, `/tick` (virtual time), `/seed`, `/panel/reset` | `GET /state` (editor state, `panel.values`, script output), `/scene` (primitives, per pane), `/screenshot` (PNG, per pane), `/frame`, `/buffer/<n>`, `/windows`, `/version`; no gate or memo counters | `garden/garden-app/src/debug.rs`, [garden/docs/debug-server.md](../../garden/docs/debug-server.md) | Garden integration tests, exploration, agents |
 | Garden integration tests | Launch Garden headless and assert through the debug server | TypeScript scripts over `DebugClient` | whatever the server exposes | `garden/tools/*-integration-test.ts`, `garden/tools/lib/` | Garden CI |
 | Vim-parity fuzzer | Differential keystroke fuzzing of Garden's editor against real `nvim` | generated keystroke programs over the debug server | buffer, cursor, mode; delta-debugs failures | `garden/tools/vim-parity/` | Garden editor |
@@ -174,7 +174,7 @@ The first host is the in-process `petal_ui::harness::Headless`.
 | SDL timeline | Records every frame's input and a heap fork; rewind, and replay recorded input through an edited program | live input, recorded in memory | trails of one draw call across frames | `integrations/petal-desktop-sdl/src/timeline.rs` | live coding (hopper) |
 | MCP `petal-tools` | Compile and run **snippets**: `TestSnippet`, `CheckSnippet`, `ExplainTerm`, `TraceEmits`, `ProposeEdit`, `PendingReport`, `Show*` | code strings, one run | stdout, trace, emits, IR | `tools/petal-mcp.ts`, [mcp-server.md](../dev/mcp-server.md) | agents |
 | MCP `petal-diagram` | `DiagramInput`, `DiagramStep`, `DiagramState`, `DiagramCaptureDrawCommands`, `DiagramScreenshot`, `DiagramPause`/`Resume`, `DiagramSetState` | the debug protocol | the debug protocol | `tools/petal-diagram-mcp.ts` | agents on diagram-canvas |
-| `petal run` introspection | `--observe`, `--trace-emits`, `--record-trace`, `explain` | none (console programs) | bindings, emit attributions, trace | `rust/src/cli/` | debugging |
+| `petal run` introspection | `--observe`, `--trace-emits`, `--record-trace`, `explain` | none (console programs) | bindings, emit attributions, trace | `core/src/cli/` | debugging |
 | Web hosts | petal-web-canvas, petal-web-html | real DOM events only; no injection or stepping API beyond runtime hooks | none exported | `integrations/petal-web-canvas`, `integrations/petal-web-html` | — (browser automation would have to go through a generic tool such as Playwright) |
 
 ### Overlap and gaps

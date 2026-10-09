@@ -339,7 +339,7 @@ split across files — registers the whole thing in **one call** rather than a
 loop of `register_module`s. From disk:
 
 ```rust
-let info = env.add_package("petal-libs/bloom")?;   // reads petal-libs/bloom/petal.toml
+let info = env.add_package("core-runtime/bloom")?;   // reads core-runtime/bloom/petal.toml
 // info.name == "bloom", info.modules == ["button", "menu", "motion", ...]
 ```
 
@@ -348,8 +348,8 @@ wasm host with no filesystem):
 
 ```rust
 env.register_package("bloom", [
-    ("menu",   include_str!("../petal-libs/bloom/src/menu.ptl")),
-    ("motion", include_str!("../petal-libs/bloom/src/motion.ptl")),
+    ("menu",   include_str!("../core-runtime/bloom/src/menu.ptl")),
+    ("motion", include_str!("../core-runtime/bloom/src/motion.ptl")),
 ])?;
 ```
 

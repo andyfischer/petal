@@ -21,7 +21,7 @@ together are a visible slice of samples under `native_slice`.
 ## The change
 
 1. Hash the intern table with a fast, non-DoS-resistant hasher. `FastHasher`
-   in `rust/src/memo.rs:74` already exists for exactly this reason (with
+   in `core/src/memo.rs:74` already exists for exactly this reason (with
    `FastMap`); either reuse it or lift it somewhere both modules can share.
    The table's keys are program text, not attacker-chosen network input, so
    SipHash's guarantee is not worth its cost here.
@@ -39,9 +39,9 @@ comparison (`crate::memo`) and the frame gate's binding fingerprints.
 Before/after on the commit frame:
 
 ```bash
-cd petal-ui && cargo run --release --example bench_panel -- \
-  ../examples/productivity/spreadsheet/app.ptl 600 \
-  --scenario ../examples/productivity/spreadsheet/bench/edit.json --no-gate
+cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+  ../../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../../examples/productivity/spreadsheet/bench/edit.json --no-gate
 ```
 
 Watch `max` (the commit frame) and `total script ms`. A microbenchmark of a

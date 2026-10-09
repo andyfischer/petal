@@ -13,7 +13,7 @@ implemented from it alone in any language. Related:
 - The Rust wire definition is the `gpp` crate (`gpp/src/lib.rs`). The host
   side is `garden-app/src/process_pane.rs`, `script_client.rs`, and
   `panel_view.rs`.
-- The Rust client library is [petal-query](../../petal-query/README.md)
+- The Rust client library is [petal-query](../../core-libs/petal-query/README.md)
   (`Provider` plus `gpp::serve`), which every in-tree app uses. The
   step-by-step guide is [writing-gpp-apps.md](writing-gpp-apps.md); the
   Python client is [writing-gpp-apps-python.md](writing-gpp-apps-python.md).

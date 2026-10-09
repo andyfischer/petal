@@ -12,7 +12,7 @@ panels whose data comes from a subprocess instead of local Rust. Everything
 here applies to both. For the subprocess side see
 [writing-gpp-apps.md](writing-gpp-apps.md) and [gpp.md](gpp.md).
 
-Panels are built on the shared [petal-ui](../../petal-ui/README.md) crate,
+Panels are built on the shared [petal-ui](../../core-libs/petal-ui/README.md) crate,
 which every Petal embedder uses for input and draw natives and the `ui`
 widget prelude. Garden adds a handful of natives of its own (`emit`, `mutate`,
 `navigate`, `text_view`, `edit_view`, `palette`, `claim_key`,
@@ -206,12 +206,12 @@ layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
 `toggle`, `radio_group`, `slider`, `tab_bar`, `splitter`, `table`, `modal`,
 `tooltip`, `spinner`, `progress_bar`, `badge` / `pill`, `card`,
 `empty_state`, `hint_bar`, the `load_state` family). The reference is
-[petal-ui/docs/components.md](../../petal-ui/docs/components.md); the
+[core-libs/petal-ui/docs/components.md](../../core-libs/petal-ui/docs/components.md); the
 showcase panel is `examples/panels/gallery.ptl`.
 
 ### `import bloom`
 
-Garden also registers [bloom](../../petal-libs/bloom/README.md), the component
+Garden also registers [bloom](../../core-runtime/bloom/README.md), the component
 library written in Petal itself, as an importable *package* — buttons, menus,
 controls and overlays that animate by default and that hold their own
 animation state per callsite:
@@ -228,7 +228,7 @@ end
 package paths when a drawer wants a slice rather than the whole surface
 (`import bloom/motion: spring`, `import bloom/icon as icons`).
 
-[text_layout](../../petal-libs/text-layout/README.md) is registered the same
+[text_layout](../../core-runtime/text-layout/README.md) is registered the same
 way and on the same terms. bloom places every one of its labels through it, so
 it is not optional here — and a panel that draws text of its own should reach
 for it directly rather than computing a `y`.
@@ -240,7 +240,7 @@ and pays nothing otherwise. The package is registered in memory rather than
 looked up on disk, so a panel-mode GPP drawer pushed as source can import it
 too. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
 app use it; the full reference is
-[petal-libs/bloom/docs/components.md](../../petal-libs/bloom/docs/components.md)
+[core-runtime/bloom/docs/components.md](../../core-runtime/bloom/docs/components.md)
 and the showcase is `examples/ui/bloom-gallery`.
 
 A panel script on disk can also `import` a module sitting next to it: imports

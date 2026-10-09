@@ -5,12 +5,12 @@ over the narrowest code to weakest guarantee over the widest:
 
 | Layer | What it covers | Guarantee | Where |
 |---|---|---|---|
-| **Kani proofs** | The pure numeric kernels every operator and builtin delegates to | Holds for **every** input (bit-precise, 64-bit ints and IEEE floats) | `rust/src/numeric.rs`, `rust/src/proofs/` |
-| **Exhaustive value laws** | `==`, hashing and ordering over containers (lists, records, class instances, enums) | Holds for every pair and triple in a bounded universe of values | `value::tests` in `rust/src/value.rs` |
-| **Small-scope exhaustive programs** | Lexer, parser, compiler, type checker, optimizer and VM end to end | Holds for every program in a bounded space (every token sequence up to length N; every expression up to depth D) | `rust/tests/small_scope.rs` |
+| **Kani proofs** | The pure numeric kernels every operator and builtin delegates to | Holds for **every** input (bit-precise, 64-bit ints and IEEE floats) | `core/src/numeric.rs`, `core/src/proofs/` |
+| **Exhaustive value laws** | `==`, hashing and ordering over containers (lists, records, class instances, enums) | Holds for every pair and triple in a bounded universe of values | `value::tests` in `core/src/value.rs` |
+| **Small-scope exhaustive programs** | Lexer, parser, compiler, type checker, optimizer and VM end to end | Holds for every program in a bounded space (every token sequence up to length N; every expression up to depth D) | `core/tests/small_scope.rs` |
 
 Each bug fixed along the way also has an end-to-end regression test, a Petal
-program and its expected output, in `rust/tests/core_semantics.rs`.
+program and its expected output, in `core/tests/core_semantics.rs`.
 
 This sits on top of the existing randomized nets: the differential fuzzer
 (`backend/bytecode/fuzz.rs`), which checks that the optimizer never changes a
@@ -108,7 +108,7 @@ cargo install --locked kani-verifier
 cargo kani setup
 ```
 
-Then, from `rust/`:
+Then, from `core/`:
 
 ```bash
 cargo kani --solver cadical                                  # every harness (the division proofs dominate)

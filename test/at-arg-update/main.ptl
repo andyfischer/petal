@@ -1,5 +1,5 @@
 // `@`-argument: `f(@x)` updates `x` in place with the call's result.
-// See rust/src/desugar.rs.
+// See core/src/desugar.rs.
 fn double(x)
   x * 2
 end

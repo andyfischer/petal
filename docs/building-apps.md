@@ -22,7 +22,7 @@ Petal Core  →  Integrations  →  Apps
 
 | Tier | What lives here | Crates / packages |
 |------|-----------------|-------------------|
-| **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`rust/`](../rust/) (`petal`), [`petal-ui/`](../petal-ui/) (`petal-ui`) |
+| **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`core/`](../core/) (`petal`), [`core-libs/petal-ui/`](../core-libs/petal-ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../integrations/petal-web-html/) (WASM + DOM) |
 | **Apps** | Full runnable applications that load Petal source: your programs, built on top of an integration. [`examples/custom-apps/`](../examples/custom-apps/) holds worked examples, and [Garden](../garden/README.md) is the largest app in the repo. | [`examples/custom-apps/`](../examples/custom-apps/), [`garden/`](../garden/README.md) |
 
@@ -283,7 +283,7 @@ three default to inert, and gamepad support arrives for free in every
   not a Cargo workspace. A Shape B app carries a path (or git) dependency on
   the integration — e.g. `petal-fps` declares
   `petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }` and
-  `petal-ui = { path = "../../../petal-ui" }` — and building the app builds the
+  `petal-ui = { path = "../../../core-libs/petal-ui" }` — and building the app builds the
   library transitively.
 - Building either crate needs SDL2; on Homebrew macOS, set
   `LIBRARY_PATH=/opt/homebrew/lib` for the linker (see the petal-sdl notes).
@@ -301,7 +301,7 @@ three default to inert, and gamepad support arrives for free in every
      values, host channels, the per-frame contract).
 2. **Is a capability you need generally useful?** Add it to the integration
    (or to `petal-ui`, if it's cross-platform — e.g. a new draw command belongs
-   in `petal-ui/src/draw.rs`, not one host). Don't special-case it in the app.
+   in `core-libs/petal-ui/src/draw.rs`, not one host). Don't special-case it in the app.
 3. **Can the app's influence on the host be an inert hook?** If yes, add the
    hook to the integration. If no, the capability probably belongs in the
    integration for all consumers.
@@ -331,6 +331,6 @@ it from your app — and when you find a bug there, fix it in the integration
 
 - [FFI / Embedding](ffi.md) — the Rust embedding API: registering natives, the value model, host channels.
 - [Architecture](dev/Architecture.md) — Core internals (IR, evaluator, state).
-- [petal-ui](../petal-ui/) — the shared input/draw/prelude contract every host implements.
+- [petal-ui](../core-libs/petal-ui/) — the shared input/draw/prelude contract every host implements.
 - [petal-desktop-sdl agent protocol](../integrations/petal-desktop-sdl/docs/agent-protocol.md) and [game-dev guide](../integrations/petal-desktop-sdl/docs/game-dev-guide.md).
 - [Debug protocol](dev/debug-protocol.md) — shared by petal-sdl and petal-diagram-canvas.

@@ -1,6 +1,6 @@
 # Testing
 
-Petal's tests are split between Rust unit tests (`cd rust && cargo test`) and
+Petal's tests are split between Rust unit tests (`cd core && cargo test`) and
 a vitest integration suite in `test/vitest/` that shells out to the compiled
 `petal` binary and asserts on its output. This document covers the vitest
 suite and the tooling built around it.
@@ -66,7 +66,7 @@ that behavior was meant to change.
 
 The core numeric semantics (checked arithmetic, `==` and `<` across int and
 float, the `sort` order, state-key hashing, index and slice resolution) are
-proven for every input with the Kani model checker, and `rust/tests/small_scope.rs`
+proven for every input with the Kani model checker, and `core/tests/small_scope.rs`
 checks every small program end to end. See
 [formal-verification.md](formal-verification.md).
 
@@ -103,7 +103,7 @@ pass, a prelude rewrite — wants proof that it preserved behavior.
 ./tools/verify.ts --plan lint-fix --before ab3304a~1 --after .
 
 # binary A/B — the same sources under two `petal` builds
-./tools/verify.ts --plan compiler --before-bin old/petal --after-bin rust/target/debug/petal
+./tools/verify.ts --plan compiler --before-bin old/petal --after-bin core/target/debug/petal
 ```
 
 `--before` takes a git ref (materialized with `git archive` under the
@@ -118,7 +118,7 @@ process exits non-zero if anything is `changed`, `compile-error`, or
 and failing. It is reported separately because both sides of a spawn failure
 emit the same empty output, which compares equal; without it a missing
 `petal-ui-run` would report every UI app as `identical-trace` and exit 0. A UI
-corpus checks for the driver up front (`cd petal-ui && cargo build --bin
+corpus checks for the driver up front (`cd core-libs/petal-ui && cargo build --bin
 petal-ui-run`).
 
 A failure leaves a replay bundle under
@@ -137,7 +137,7 @@ Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the
 run — the UI driver, `petal check`, and `petal run` alike — so corpus apps that
-import a shared Petal library (`petal-libs`, which ships the `bloom` package)
+import a shared Petal library (`core-runtime`, which ships the `bloom` package)
 still compile. A step that dropped the `-I` would write such an app off as
 `unsupported` and silently skip its golden hash. The design is in
 [refactor-verification.md](refactor-verification.md).
@@ -152,7 +152,7 @@ and constants (constants compare by value). It is exposed as `petal ir-equal
 by `petal lint --fix --verify`, which refuses to write a rewrite it cannot
 prove equivalent (exit 3).
 
-Its unit tests live in `rust/src/ir_equiv.rs`; the CLI and lint contracts are
+Its unit tests live in `core/src/ir_equiv.rs`; the CLI and lint contracts are
 covered by `test/vitest/ir-equal.test.ts`. The load-bearing tests are
 `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` (every `.ptl` in
 the repo that compiles standalone formats to identical IR, and formatting is a
@@ -164,7 +164,7 @@ whole corpus.
 ## The C/C++ bridge
 
 `integrations/petal-c-bridge` (see [embedding-c.md](../embedding-c.md)) is
-built against the in-repo `rust/`, `petal-ui/` and `petal-query/` crates, so
+built against the in-repo `core/`, `core-libs/petal-ui/` and `core-libs/petal-query/` crates, so
 it is the first thing to break when an `Env` or petal-ui API it uses changes
 shape. `make test-c-bridge` configures it with CMake + Ninja under
 `integrations/petal-c-bridge/build/` and runs `ctest`: the C++ suite

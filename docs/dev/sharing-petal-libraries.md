@@ -1,7 +1,7 @@
 # Sharing Petal libraries
 
-Notes from writing [bloom](../../petal-libs/bloom/), the first library in
-`petal-libs/`: what a pure-Petal library can already do, what it has to work
+Notes from writing [bloom](../../core-runtime/bloom/), the first library in
+`core-runtime/`: what a pure-Petal library can already do, what it has to work
 around, and which of those are language- or host-level gaps worth closing.
 
 Everything below was hit while building a real library — a ~2,300-line UI
@@ -216,7 +216,7 @@ Two details worth knowing, both of which bloom leans on:
   namespaced modules and every existing `import bloom` kept working untouched.
 - `-I` now points at the library root (or at a directory of libraries), not at
   its `src/`. Everything in the repo that drove bloom with
-  `-I petal-libs/bloom/src` says `-I petal-libs` now.
+  `-I core-runtime/bloom/src` says `-I core-runtime` now.
 
 Deliberately absent: registry, fetching, dependency resolution, lockfile,
 version constraints. `version` is metadata. See

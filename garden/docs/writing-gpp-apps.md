@@ -5,7 +5,7 @@ script to Garden once, then answers that script's data requests over stdio
 using the Garden Pane Protocol ([gpp.md](gpp.md)).
 
 This guide builds a Rust app on the `petal-query` crate
-(`../../petal-query`), which runs the whole protocol loop for you. You write
+(`../../core-libs/petal-query`), which runs the whole protocol loop for you. You write
 a handler per query kind and a `.ptl` drawer; nothing else. For Python, see
 [writing-gpp-apps-python.md](writing-gpp-apps-python.md). Any other language
 implements the loop from the wire spec directly; it is small.
@@ -15,7 +15,7 @@ Related docs:
 - [gpp.md](gpp.md): the wire protocol.
 - [petal-graphical-panels.md](petal-graphical-panels.md): the drawer's draw,
   input, and text vocabulary.
-- [petal-query/README.md](../../petal-query/README.md): the provider API.
+- [core-libs/petal-query/README.md](../../core-libs/petal-query/README.md): the provider API.
 
 Reference apps under `gpp-apps/`:
 

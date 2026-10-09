@@ -18,7 +18,7 @@
 //
 // So the gate builds the edge itself: take a real program's IR, repoint one
 // root-block term's input at a term inside a function body, and feed it to
-// `check --ir -`. `Program::validate` (rust/src/ir_validate.rs) only
+// `check --ir -`. `Program::validate` (core/src/ir_validate.rs) only
 // range-checks ids and arities — it does not check function-boundary edges —
 // so the corrupted IR imports fine and dies in lowering, which is precisely
 // what the gate needs to observe. The IR is built here rather than checked in

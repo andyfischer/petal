@@ -5,7 +5,7 @@ Status: **proposed**, 2026-09-15. Measured but not started.
 ## The observation
 
 Petal already has character-indexed string ops (`chars`, `char_len`,
-`char_at`, `char_slice`, `index_of` — `rust/src/builtins/collections.rs`), so
+`char_at`, `char_slice`, `index_of` — `core/src/builtins/collections.rs`), so
 a scanner does not have to go through `slice`. But `char_at` is currently the
 *slower* choice:
 
@@ -44,9 +44,9 @@ A microbenchmark of both forms over the same string, then the app that
 motivated it:
 
 ```bash
-cd petal-ui && cargo run --release --example bench_panel -- \
-  ../examples/productivity/spreadsheet/app.ptl 600 \
-  --scenario ../examples/productivity/spreadsheet/bench/edit.json --no-gate
+cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+  ../../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../../examples/productivity/spreadsheet/bench/edit.json --no-gate
 ```
 
 Multi-byte behavior is the risk: `char_at` is character-indexed and `slice` is

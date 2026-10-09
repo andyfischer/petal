@@ -1,10 +1,10 @@
 # A suggestion channel (`petal suggest`)
 
-Status: **shipped** for type annotations (`rust/src/typecheck/infer.rs` holds
-the analysis), for named arguments (`rust/src/suggest/named_args.rs`, over
-the callee resolution in `rust/src/named_calls.rs`), for loop-tail return
-types (`rust/src/suggest/return_types.rs`) and for advice
-(`rust/src/suggest/advice.rs`); `rust/src/suggest/` is the command. The
+Status: **shipped** for type annotations (`core/src/typecheck/infer.rs` holds
+the analysis), for named arguments (`core/src/suggest/named_args.rs`, over
+the callee resolution in `core/src/named_calls.rs`), for loop-tail return
+types (`core/src/suggest/return_types.rs`) and for advice
+(`core/src/suggest/advice.rs`); `core/src/suggest/` is the command. The
 catalogue of further suggestion rules in §8 is not scheduled.
 
 The command reference is in [CLI.md](../CLI.md#suggest--suggest-safe-refactors-for-a-file),
@@ -109,7 +109,7 @@ a class whose fields are `num`.)
 ## 5. Suggestions compound
 
 An applied annotation is evidence for the next pass, through the flows-into
-source. On `petal-libs/bloom/src/motion.ptl` the first pass finds 16
+source. On `core-runtime/bloom/src/motion.ptl` the first pass finds 16
 annotations, and those 16 make 6 more visible on the second:
 
 ```
@@ -151,7 +151,7 @@ corrupted file. Comments and layout inside a parameter list survive.
 ### Verified over the corpus
 
 `suggest --apply` was run over every `.ptl` in `examples/`,
-`garden/examples/` and `petal-ui/`:
+`garden/examples/` and `core-libs/petal-ui/`:
 
 - 57 files annotated, 0 refused;
 - all 57 have **IR byte-identical** to the original under `petal ir-equal`,
@@ -210,12 +210,12 @@ repeated pure subexpression to a `let`" is a judgement call about naming.
 ## 9. Verification recipe
 
 ```bash
-cd rust && cargo test --lib typecheck::infer::   # the evidence rules
+cd core && cargo test --lib typecheck::infer::   # the evidence rules
 cargo test --test suggest                        # the command, end to end
 cargo test --test suggest_return_types           # loop-tail return types
 
-B=rust/target/debug/petal
-$B suggest -I petal-libs petal-libs/bloom/src/motion.ptl
+B=core/target/debug/petal
+$B suggest -I core-runtime core-runtime/bloom/src/motion.ptl
 $B suggest --json -e 'fn f(a)
   len(a)
 end
@@ -363,5 +363,5 @@ types are proven after annotations and before named arguments, and each kept
 edit becomes the baseline for the next.
 
 Tests: `suggest::return_types::tests` (the analysis) and
-`rust/tests/suggest_return_types.rs` (the command, including that an applied
+`core/tests/suggest_return_types.rs` (the command, including that an applied
 `-> nil` is a different program under `petal ir-equal` and prints the same).

@@ -108,7 +108,7 @@ the compilation's class table.
 
 ## 3. What was built
 
-### Type representation — `rust/src/types.rs`
+### Type representation — `core/src/types.rs`
 
 `Type` is an enum with one variant per vocabulary entry plus
 `Class(ClassId)`. `Type::from_name` parses the fixed vocabulary;
@@ -131,7 +131,7 @@ compile-time side tables only, and codegen drops annotations to plain names.
 - The tree-sitter grammar (`editor-support/tree-sitter-petal`) and the vim
   syntax file model the same syntax.
 
-### The checker — `rust/src/typecheck/`
+### The checker — `core/src/typecheck/`
 
 `check_module` runs from `compile_module` after the declaration pre-scan. It
 keeps a scoped environment, infers bottom-up, and warns at these sites:
@@ -197,7 +197,7 @@ two mechanisms could disagree — a field of the same name (data beats
 declarations), a method the class does not declare (a global native could
 still answer), an arity no overload accepts, or a declaration written *below*
 the call (nothing in Petal hoists). Each guard has a test in
-`rust/tests/static_dispatch.rs`.
+`core/tests/static_dispatch.rs`.
 
 For an un-annotated `state`/`var` (typed `any`, so never pinned), the call
 carries its declaration's class as a *hint*, consulted only when the
@@ -260,13 +260,13 @@ believes about a type is by construction what the checker believes. See
 ## 5. Verification recipe
 
 ```bash
-cd rust && cargo test --lib typecheck::        # checker unit tests
+cd core && cargo test --lib typecheck::        # checker unit tests
 cargo test --test type_annotations             # the annotation grammar
 cargo test --test static_dispatch              # dispatch pinning and its guards
 cd ts && npx vitest run test/type-annotations.test.ts test/type-warnings.test.ts
 cd editor-support/tree-sitter-petal && npx tree-sitter generate && npx tree-sitter test
 
-B=rust/target/debug/petal
+B=core/target/debug/petal
 $B run examples/console/typed.ptl                  # clean, no warnings
 $B check --json -e 'let x: int = "hi"'             # {"ok":true,"warnings":[…]}
 $B check --strict -e 'let x: int = "hi"'; echo $?  # exit 1

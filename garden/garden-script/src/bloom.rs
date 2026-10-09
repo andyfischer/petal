@@ -1,6 +1,6 @@
 //! The `bloom` component library, embedded.
 //!
-//! bloom (`petal-libs/bloom/`) is a component library written entirely in
+//! bloom (`core-runtime/bloom/`) is a component library written entirely in
 //! Petal — buttons, menus, controls, overlays, and the animation core under
 //! them. It is *source*, so a host makes it available the way it makes any
 //! Petal module available: by registering it.
@@ -13,7 +13,7 @@
 //! is reachable from every panel however its source arrived.
 //!
 //! It is registered as a *package* — one [`Env::register_package`] call whose
-//! name (`bloom`) is the one in `petal-libs/bloom/petal.toml`. That is what
+//! name (`bloom`) is the one in `core-runtime/bloom/petal.toml`. That is what
 //! makes `import bloom/menu` resolve, and what makes `import bloom` find the
 //! facade module named like its package. Before packages this was nine
 //! `register_module` calls whose flat names the library had to prefix by hand.
@@ -39,33 +39,33 @@ pub const PACKAGE: &str = "bloom";
 pub const MODULES: &[(&str, &str)] = &[
     (
         "motion",
-        include_str!("../../../petal-libs/bloom/src/motion.ptl"),
+        include_str!("../../../core-runtime/bloom/src/motion.ptl"),
     ),
     (
         "theme",
-        include_str!("../../../petal-libs/bloom/src/theme.ptl"),
+        include_str!("../../../core-runtime/bloom/src/theme.ptl"),
     ),
-    ("icon", include_str!("../../../petal-libs/bloom/src/icon.ptl")),
+    ("icon", include_str!("../../../core-runtime/bloom/src/icon.ptl")),
     (
         "interact",
-        include_str!("../../../petal-libs/bloom/src/interact.ptl"),
+        include_str!("../../../core-runtime/bloom/src/interact.ptl"),
     ),
     (
         "button",
-        include_str!("../../../petal-libs/bloom/src/button.ptl"),
+        include_str!("../../../core-runtime/bloom/src/button.ptl"),
     ),
     (
         "controls",
-        include_str!("../../../petal-libs/bloom/src/controls.ptl"),
+        include_str!("../../../core-runtime/bloom/src/controls.ptl"),
     ),
-    ("menu", include_str!("../../../petal-libs/bloom/src/menu.ptl")),
+    ("menu", include_str!("../../../core-runtime/bloom/src/menu.ptl")),
     (
         "overlay",
-        include_str!("../../../petal-libs/bloom/src/overlay.ptl"),
+        include_str!("../../../core-runtime/bloom/src/overlay.ptl"),
     ),
     (
         "bloom",
-        include_str!("../../../petal-libs/bloom/src/bloom.ptl"),
+        include_str!("../../../core-runtime/bloom/src/bloom.ptl"),
     ),
 ];
 

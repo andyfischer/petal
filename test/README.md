@@ -7,7 +7,7 @@ the refactor verifier — is in [docs/dev/testing.md](../docs/dev/testing.md).
 | Path | What it is | Used by |
 |------|------------|---------|
 | `test/vitest/` | The vitest integration suite (`*.test.ts`) and its `fixtures/` | `npm test` |
-| `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd rust && cargo test --test script_cases` |
+| `test/<case>/` | Script regression cases: a `main.ptl` plus an `expects` file (below) | `cd core && cargo test --test script_cases` |
 | `test/example-golden/` | Frozen stdout for every `examples/console/*.ptl` | `tools/test-examples.ts`; re-baseline with `tools/gen-example-golden.ts` |
 | `test/ui-golden/` | Hashes of each UI app's 60-frame headless trace | `tools/verify.ts` (`--update-golden` to re-baseline) |
 | `test/verify-plans/` | Plans for `tools/verify.ts` | see "Verifying a refactor" in testing.md |
@@ -23,7 +23,7 @@ test/<case>/
   expects     # expected output + performance ceilings
 ```
 
-The harness, [`rust/tests/script_cases.rs`](../rust/tests/script_cases.rs),
+The harness, [`core/tests/script_cases.rs`](../core/tests/script_cases.rs),
 runs as part of `cargo test`. It picks up every `test/*/` directory that
 contains a `main.ptl`, runs the program through the embedded interpreter, and
 checks the result against `expects`.
@@ -53,7 +53,7 @@ max alloc.<kind>.count: <N>      # allocation ceiling: the run must not exceed N
 ### Why the ceilings exist
 
 Petal values are immutable, so every "mutation" and every speculative fork
-copies the underlying heap payload (see [`rust/src/stats.rs`](../rust/src/stats.rs)).
+copies the underlying heap payload (see [`core/src/stats.rs`](../core/src/stats.rs)).
 The ceilings pin how much copying a known scenario does today. When the runtime
 learns to reuse a payload instead of copying it, the numbers fall and the
 ceilings get tightened to lock the win in. A change that copies more than the
@@ -66,6 +66,6 @@ always run.
 ### Adding a case
 
 1. `mkdir test/my-case` and write `test/my-case/main.ptl`.
-2. Capture the current numbers: `cd rust && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
+2. Capture the current numbers: `cd core && cargo run -- run --dup-stats ../test/my-case/main.ptl`.
 3. Write `test/my-case/expects` with the `out:` lines and `max` ceilings.
-4. `cd rust && cargo test --test script_cases`.
+4. `cd core && cargo test --test script_cases`.

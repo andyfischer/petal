@@ -1,0 +1,512 @@
+//! Declared result types for the builtin functions.
+//!
+//! The runtime registers builtins as plain natives with no static signature, so
+//! this table is the only place the checker learns that `len(xs)` is an `int`
+//! and `sqrt(x)` is a `float`. It is consulted *last* — after a local binding,
+//! after a `class` constructor of that name, and after the module's own `fn`
+//! signatures — so a user function or class named `len` shadows the entry here,
+//! the same precedence the runtime uses. (The `int`/`float`/`str` casts that
+//! [`super::Checker::check_call`] answers ahead of all of that are safe from a
+//! class: those are built-in *type* names, which a class may not take — see
+//! [`crate::classes::ClassTable::declare`].)
+//!
+//! Two rules govern what may be listed:
+//!
+//! 1. **Only certainties.** A wrong entry becomes a false type warning, or —
+//!    via [`crate::lint`]'s redundant-cast rule — a wrong rewrite. Builtins
+//!    whose result type depends on the argument's *runtime* type (`reverse`
+//!    and `slice` return a list or a string; `choose`, `get`, `last` return an
+//!    element) are deliberately absent, so they infer `Any`.
+//! 2. **Argument-dependent results are computed, not assumed.** `abs`, `floor`,
+//!    `ceil`, `round` and `sign` preserve int-ness (`core/src/builtins/math.rs`,
+//!    `unary_num_preserving`); `min`/`max` return one of their operands
+//!    unchanged, and `clamp` is int for an all-int call. Those are handled by
+//!    the match arms below rather than a fixed type.
+//!
+//! Host builtins registered by an embedding (the `petal-ui` drawing/input set)
+//! are listed too. They are not part of the core runtime, so an embedder
+//! *could* register a different `screen_width` — but every consumer of this
+//! table is advisory (warnings) or gated (lint re-compiles its output), and the
+//! UI set is the one every sample app and editor script is written against.
+
+use crate::types::Type;
+
+/// The result type of a call to builtin `name` with arguments of type
+/// `args`, or `None` when the builtin is unknown or its result type isn't
+/// statically decidable (which callers read as [`Type::Any`]).
+pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
+    // Argument-dependent results first.
+    match name {
+        // `unary_num_preserving`: Int -> Int, Float -> Float, Dual -> Dual.
+        "abs" | "floor" | "ceil" | "sign" => {
+            return match args {
+                [Type::Int] => Some(Type::Int),
+                [Type::Float] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        // `round` is int-preserving in both its arities: `round(x, places)`
+        // rounds to `places` decimals and keeps the argument's kind.
+        "round" => {
+            return match args {
+                [Type::Int] | [Type::Int, _] => Some(Type::Int),
+                [Type::Float] | [Type::Float, _] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        // `clamp` returns one of its three arguments' kinds: all-int stays int
+        // (so a clamped index or `range` bound is still usable as one), and any
+        // float argument makes the result float, as `+` does.
+        "clamp" => {
+            return match args {
+                [a, b, c] if [a, b, c].iter().all(|t| **t == Type::Int) => Some(Type::Int),
+                [a, b, c]
+                    if [a, b, c]
+                        .iter()
+                        .all(|t| matches!(t, Type::Int | Type::Float)) =>
+                {
+                    Some(Type::Float)
+                }
+                _ => None,
+            };
+        }
+        // Return whichever operand compares smaller/larger, unchanged — so the
+        // result type is known only when both operands agree.
+        "min" | "max" => {
+            return match args {
+                [a, b] if a == b && *a != Type::Any => Some(*a),
+                _ => None,
+            };
+        }
+        // `unary_float_dual`: a Dual argument propagates as a Dual, so these
+        // are only known-Float for a statically numeric argument.
+        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
+            return match args {
+                [Type::Int | Type::Float] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        // The vector natives take a vec2 or a vec3 and hand back the same
+        // kind (`core/src/builtins/vec2.rs`).
+        "normalize" | "limit" => {
+            return match args.first() {
+                Some(Type::Vec2) => Some(Type::Vec2),
+                Some(Type::Vec3) => Some(Type::Vec3),
+                _ => None,
+            };
+        }
+        // `lerp` interpolates numbers, or two vectors, colors or number lists
+        // of the same kind.
+        "lerp" => {
+            return match args {
+                [Type::Vec2, Type::Vec2, _] => Some(Type::Vec2),
+                [Type::Vec3, Type::Vec3, _] => Some(Type::Vec3),
+                [Type::Record, Type::Record, _] => Some(Type::Record),
+                [Type::List, Type::List, _] => Some(Type::List),
+                [Type::Int | Type::Float, Type::Int | Type::Float, _] => Some(Type::Float),
+                _ => None,
+            };
+        }
+        _ => {}
+    }
+
+    let ty = match name {
+        // ── core: int results ───────────────────────────────────────────────
+        "int" | "len" | "random_int" | "char_len" | "index_of" => Type::Int,
+        // ── core: float results ─────────────────────────────────────────────
+        // `float` is `unary_float_dual` like `sqrt` above, but it is also the
+        // sanctioned cast: `float(x)` is written precisely to leave the float
+        // domain, and treating it as anything but `float` would defeat every
+        // annotation that uses it.
+        "float" | "atan2" | "hypot" | "pi" | "random" | "map_range" | "distance" | "mag" | "pow"
+        | "fract" | "smoothstep" | "radians" | "degrees" | "exp" | "log" | "dot" => Type::Float,
+        // ── core: string results ────────────────────────────────────────────
+        // `format`/`fixed`/`commas`/`pad_*` render *into* a string, so unlike
+        // `concat` (list or string, decided by its arguments) their result is
+        // known statically.
+        "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" | "fixed"
+        | "commas" | "pad_start" | "pad_end" | "format" => Type::String,
+        // ── core: bool results ──────────────────────────────────────────────
+        "contains" | "includes" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
+            Type::Bool
+        }
+        // ── core: list results ──────────────────────────────────────────────
+        "range" | "keys" | "values" | "split" | "enumerate" | "zip" | "flat" | "sort"
+        | "sort_by" | "prepend" | "chars" => Type::List,
+        // ── core: record / vector results ───────────────────────────────────
+        "hsv" | "hsl" | "hsv_deg" | "hsl_deg" | "color_lerp" => Type::Record,
+        "vec2" | "rotate" => Type::Vec2,
+        "vec3" | "cross" => Type::Vec3,
+        "f64_array" => Type::F64Array,
+        "symbol" => Type::Symbol,
+
+        // ── host (petal-ui): int results ────────────────────────────────────
+        "screen_width" | "screen_height" | "mouse_x" | "mouse_y" | "mouse_dx" | "mouse_dy"
+        | "scroll_x" | "scroll_y" | "drag_start_x" | "drag_start_y" | "click_count"
+        | "frame_count" | "text_width" | "ui_version" => Type::Int,
+        // ── host (petal-ui): float results ──────────────────────────────────
+        "dt" | "time" | "text_advance" => Type::Float,
+        // ── host (petal-ui): bool results ───────────────────────────────────
+        "mouse_down" | "mouse_pressed" | "mouse_released" | "key_down" | "key_pressed"
+        | "key_released" | "mod_shift" | "mod_ctrl" | "mod_alt" | "mod_cmd" | "drag_active" => {
+            Type::Bool
+        }
+        // ── host (petal-ui): string results ─────────────────────────────────
+        "text_input" => Type::String,
+
+        _ => return None,
+    };
+    Some(ty)
+}
+
+/// What one argument position of a builtin accepts, for the call-site check
+/// in [`super::Checker::check_call`]. Every slot also accepts [`Type::Any`]
+/// (nothing is known) and [`Type::Pending`] (the native-call boundary absorbs
+/// a pending argument before the native sees it), so only a statically known,
+/// definitely-wrong type ever warns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArgSlot {
+    /// Unchecked.
+    Any,
+    /// `PetalCxt::get_float`/`get_int`: an int, a float, or a dual number.
+    /// (`get_int` refuses a dual, but a dual is never inferred, and accepting
+    /// one keeps the slot sound.)
+    Num,
+    /// `PetalCxt::get_string`.
+    Str,
+    /// A list.
+    List,
+    /// A record, which a class instance is at runtime.
+    Record,
+    /// Anything `len` measures: a list, a string, an `f64_array`.
+    Sized,
+    /// A callable — the closure a higher-order intrinsic drives.
+    Function,
+}
+
+impl ArgSlot {
+    /// Whether an argument of static type `ty` can fill this slot.
+    pub fn accepts(self, ty: Type) -> bool {
+        if matches!(ty, Type::Any | Type::Pending) {
+            return true;
+        }
+        match self {
+            ArgSlot::Any => true,
+            ArgSlot::Num => matches!(ty, Type::Int | Type::Float | Type::Num | Type::Dual),
+            ArgSlot::Str => ty == Type::String,
+            ArgSlot::List => ty == Type::List,
+            ArgSlot::Record => matches!(ty, Type::Record | Type::Class(_)),
+            ArgSlot::Sized => matches!(ty, Type::List | Type::String | Type::F64Array),
+            ArgSlot::Function => ty == Type::Function,
+        }
+    }
+
+    /// How the slot reads in a diagnostic.
+    pub fn describe(self) -> &'static str {
+        match self {
+            ArgSlot::Any => "any",
+            ArgSlot::Num => "a number",
+            ArgSlot::Str => "a string",
+            ArgSlot::List => "a list",
+            ArgSlot::Record => "a record",
+            ArgSlot::Sized => "a list or string",
+            ArgSlot::Function => "a function",
+        }
+    }
+}
+
+/// Whether `sort_by` can order keys of static type `ty`: it compares numbers
+/// and strings and fails at runtime on anything else
+/// (`Vm::builtin_sort_by`). `any` is unknown rather than wrong, and a pending
+/// key makes the result pending instead of failing.
+pub fn sort_key_type_ok(ty: Type) -> bool {
+    matches!(
+        ty,
+        Type::Any
+            | Type::Pending
+            | Type::Int
+            | Type::Float
+            | Type::Num
+            | Type::Dual
+            | Type::String
+    )
+}
+
+/// For a call to builtin `name` that names some of its arguments: which
+/// written argument fills each parameter slot, in slot order, per the
+/// parameters the native declares — a core builtin's
+/// ([`crate::builtins::BUILTIN_PARAMS`]) or a petal-ui native's
+/// ([`super::globals::PETAL_UI_NATIVE_PARAMS`]), the two sets this table
+/// covers. `None` when it declares none or the names do not bind.
+pub fn builtin_arg_order(name: &str, arg_names: &[Option<String>]) -> Option<Vec<usize>> {
+    use crate::native_fn::{NativeSignature, bind_native_args};
+    let (_, specs) = crate::builtins::BUILTIN_PARAMS
+        .iter()
+        .chain(super::globals::PETAL_UI_NATIVE_PARAMS)
+        .find(|(n, _)| *n == name)?;
+    let sigs: Vec<NativeSignature> = specs
+        .iter()
+        .map(|s| NativeSignature::parse(s).ok())
+        .collect::<Option<_>>()?;
+    let names: Vec<Option<&str>> = arg_names.iter().map(|n| n.as_deref()).collect();
+    let indices: Vec<usize> = (0..arg_names.len()).collect();
+    bind_native_args(name, &sigs, &indices, &names)
+        .ok()
+        .map(|order| order.into_vec())
+}
+
+/// The argument slots of a call to builtin `name` with `arity` arguments, or
+/// `None` when nothing is declared. A shorter slice than `arity` leaves the
+/// remaining positions unchecked.
+///
+/// The same rule as the result table governs this one, more strictly: an entry
+/// is a claim that the native **fails at runtime** on any other type, so each
+/// row below was read off the native's body (`core/src/builtins/`,
+/// `core-libs/petal-ui/src/`). A native that coerces (`fixed` takes a bool), dispatches
+/// on its argument's type (`min`, `distance`, `mag`), or is shadowed by a
+/// prelude overload set (`draw_rect`, which the checker resolves to the
+/// overloads instead) is left out or marked [`ArgSlot::Any`].
+pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot]> {
+    use ArgSlot::*;
+    const NUMS: [ArgSlot; 16] = [Num; 16];
+    let slots: &'static [ArgSlot] = match (name, arity) {
+        // ── core math: `unary_float_dual`, `unary_num_preserving`, get_float ──
+        (
+            "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "abs" | "floor" | "ceil" | "sign" | "round" | "fract"
+            | "radians" | "degrees" | "exp",
+            1,
+        ) => &[Num],
+        ("round", 2) => &[Num, Num],
+        ("atan2" | "hypot" | "pow" | "random" | "random_int", 2) => &[Num, Num],
+        ("random", 1) => &[Num],
+        ("smoothstep" | "clamp" | "hsv" | "hsl" | "hsv_deg" | "hsl_deg", 3) => {
+            &[Num, Num, Num]
+        }
+        // `lerp` also blends two vectors; only the fraction must be a number.
+        ("lerp", 3) => &[Any, Any, Num],
+        ("map_range", 5) => &[Num, Num, Num, Num, Num],
+        // ── core collections and strings ──────────────────────────────────────
+        ("range", 1) => &[Num],
+        ("range", 2) => &[Num, Num],
+        ("range", 3) => &[Num, Num, Num],
+        ("len", 1) => &[Sized],
+        ("keys" | "values", 1) => &[Record],
+        ("upper" | "lower" | "chars" | "char_len", 1) => &[Str],
+        ("split", 2) => &[Str, Str],
+        ("join", 2) => &[List, Str],
+        // The direction is a bool or `"asc"`/`"desc"`, so it stays unchecked.
+        // What the key function *returns* is checked too, by
+        // [`sort_key_type_ok`] — a slot has no way to say it.
+        ("sort_by", 2 | 3) => &[List, Function],
+        ("char_at", 2) => &[Str, Num],
+        ("fixed" | "commas", 2) => &[Any, Num],
+        ("pad_start" | "pad_end", 2) => &[Any, Num],
+        ("pad_start" | "pad_end", 3) => &[Any, Num, Str],
+        ("format", n) if n >= 1 => &[Str],
+        // ── host (petal-ui) ───────────────────────────────────────────────────
+        ("key_down" | "key_pressed" | "key_released", 1) => &[Str],
+        ("mouse_down" | "mouse_pressed" | "mouse_released", 1) => &[Num],
+        // The style argument is a record or a size (optionally with a face
+        // name after it), so only the text itself is checked.
+        ("text_width" | "text_advance" | "text_wrap" | "text_ellipsize" | "text_index_at", n)
+            if n >= 2 =>
+        {
+            &[Str]
+        }
+        ("create_canvas", 2) => &[Num, Num],
+        ("clear", 3 | 4) => &[Num, Num, Num],
+        // The flat draw natives read every argument with `get_int` (or a
+        // numeric `get_num`), up to their optional trailing alpha / width.
+        // A script's bare `draw_rect(...)` resolves to the ui prelude's
+        // overloads instead, so these rows matter where the native itself is
+        // called: through the prelude's `_native_*` aliases, which is how
+        // [`super::param_reqs`] learns what each overload's parameters must
+        // be, and under a host with no prelude.
+        (
+            "draw_rect"
+            | "draw_line"
+            | "draw_ellipse"
+            | "draw_rect_outline"
+            | "draw_ellipse_outline",
+            7..=8,
+        )
+        | ("draw_rect_outline" | "draw_line" | "draw_ellipse_outline", 9)
+        | ("draw_rect_rounded", 8..=9)
+        | ("draw_rect_rounded_outline", 8..=10)
+        | ("draw_circle", 6..=7)
+        | ("draw_circle_outline", 6..=8)
+        | ("fill_triangle", 9..=10)
+        | ("fill_arc", 9..=10)
+        | ("draw_circle_gradient", 11)
+        | ("draw_shadow", 12..=13) => &NUMS[..arity],
+        _ => return None,
+    };
+    Some(slots)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::builtin_return_type;
+    use crate::types::Type;
+
+    #[test]
+    fn fixed_results() {
+        assert_eq!(builtin_return_type("len", &[Type::List]), Some(Type::Int));
+        assert_eq!(builtin_return_type("str", &[Type::Int]), Some(Type::String));
+        assert_eq!(builtin_return_type("range", &[Type::Int]), Some(Type::List));
+        assert_eq!(builtin_return_type("banana", &[]), None);
+        // text_width rounds; text_advance is the same measurement unrounded.
+        assert_eq!(builtin_return_type("text_width", &[]), Some(Type::Int));
+        assert_eq!(builtin_return_type("text_advance", &[]), Some(Type::Float));
+        assert_eq!(
+            builtin_return_type("rotate", &[Type::Vec2, Type::Float]),
+            Some(Type::Vec2)
+        );
+        assert_eq!(
+            builtin_return_type("vec3", &[Type::Float, Type::Float, Type::Float]),
+            Some(Type::Vec3)
+        );
+        assert_eq!(
+            builtin_return_type("cross", &[Type::Vec3, Type::Vec3]),
+            Some(Type::Vec3)
+        );
+    }
+
+    /// The vector natives answer in the kind they were given.
+    #[test]
+    fn vector_natives_follow_their_argument() {
+        for v in [Type::Vec2, Type::Vec3] {
+            assert_eq!(builtin_return_type("normalize", &[v]), Some(v));
+            assert_eq!(builtin_return_type("limit", &[v, Type::Float]), Some(v));
+            assert_eq!(builtin_return_type("lerp", &[v, v, Type::Float]), Some(v));
+        }
+        assert_eq!(builtin_return_type("normalize", &[Type::Any]), None);
+        assert_eq!(
+            builtin_return_type("lerp", &[Type::Float, Type::Int, Type::Float]),
+            Some(Type::Float)
+        );
+        assert_eq!(builtin_return_type("lerp", &[Type::Any, Type::Any, Type::Float]), None);
+    }
+
+    /// `clamp` preserves int-ness the way `min`/`max` do: an all-int clamp is
+    /// still an int, so `xs[clamp(i, 0, len(xs) - 1)]` type-checks as an index.
+    #[test]
+    fn clamp_preserves_int_ness() {
+        assert_eq!(
+            builtin_return_type("clamp", &[Type::Int, Type::Int, Type::Int]),
+            Some(Type::Int)
+        );
+        assert_eq!(
+            builtin_return_type("clamp", &[Type::Float, Type::Int, Type::Int]),
+            Some(Type::Float)
+        );
+        assert_eq!(
+            builtin_return_type("clamp", &[Type::Any, Type::Int, Type::Int]),
+            None
+        );
+    }
+
+    /// The two-argument `round(x, places)` keeps its argument's kind too.
+    #[test]
+    fn round_with_places_follows_its_argument() {
+        assert_eq!(
+            builtin_return_type("round", &[Type::Float, Type::Int]),
+            Some(Type::Float)
+        );
+        assert_eq!(
+            builtin_return_type("round", &[Type::Int, Type::Int]),
+            Some(Type::Int)
+        );
+    }
+
+    /// `parse_float`/`parse_int` answer `nil` on bad input, so their result is
+    /// not statically a number and they must stay unlisted.
+    #[test]
+    fn failable_parsers_are_absent() {
+        assert_eq!(builtin_return_type("parse_float", &[Type::String]), None);
+        assert_eq!(builtin_return_type("parse_int", &[Type::String]), None);
+    }
+
+    #[test]
+    fn character_indexed_string_ops() {
+        assert_eq!(
+            builtin_return_type("char_len", &[Type::String]),
+            Some(Type::Int)
+        );
+        assert_eq!(
+            builtin_return_type("chars", &[Type::String]),
+            Some(Type::List)
+        );
+        assert_eq!(
+            builtin_return_type("char_at", &[Type::String, Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("index_of", &[Type::String, Type::String]),
+            Some(Type::Int)
+        );
+    }
+
+    #[test]
+    fn int_preserving_unaries_follow_their_argument() {
+        assert_eq!(builtin_return_type("round", &[Type::Int]), Some(Type::Int));
+        assert_eq!(
+            builtin_return_type("round", &[Type::Float]),
+            Some(Type::Float)
+        );
+        // An unknown argument could be a dual number: infer nothing.
+        assert_eq!(builtin_return_type("round", &[Type::Any]), None);
+    }
+
+    #[test]
+    fn min_max_need_agreeing_operands() {
+        assert_eq!(
+            builtin_return_type("max", &[Type::Int, Type::Int]),
+            Some(Type::Int)
+        );
+        assert_eq!(builtin_return_type("max", &[Type::Int, Type::Float]), None);
+        assert_eq!(builtin_return_type("max", &[Type::Any, Type::Any]), None);
+    }
+
+    #[test]
+    fn dual_capable_floats_need_a_numeric_argument() {
+        assert_eq!(
+            builtin_return_type("sqrt", &[Type::Float]),
+            Some(Type::Float)
+        );
+        assert_eq!(builtin_return_type("sqrt", &[Type::Any]), None);
+    }
+
+    /// The formatting builtins all answer a string, and `sort_by` a list.
+    #[test]
+    fn formatting_and_sorting_results() {
+        assert_eq!(
+            builtin_return_type("fixed", &[Type::Float, Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("commas", &[Type::Int]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("format", &[Type::String, Type::Float]),
+            Some(Type::String)
+        );
+        assert_eq!(
+            builtin_return_type("sort_by", &[Type::List, Type::Any]),
+            Some(Type::List)
+        );
+    }
+
+    /// Builtins whose result type is decided at runtime must stay unlisted.
+    /// `concat` joins two lists *or* two strings, and `safe_div` answers nil on
+    /// a zero divisor, so neither has a static result type.
+    #[test]
+    fn runtime_dependent_builtins_are_absent() {
+        for name in [
+            "reverse", "slice", "choose", "last", "first", "sum", "concat", "safe_div",
+        ] {
+            assert_eq!(builtin_return_type(name, &[Type::List]), None, "{name}");
+        }
+    }
+}

@@ -42,7 +42,7 @@ From this directory:
 cargo build --release
 ```
 
-The first build compiles the Petal compiler in `../../../rust` and is slow.
+The first build compiles the Petal compiler in `../../../core` and is slow.
 Later builds are quick.
 
 ## Run

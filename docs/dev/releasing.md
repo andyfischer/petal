@@ -27,7 +27,7 @@ extracts, installs to ~/.petal/bin/petal, adds it to PATH
 
 ## Cutting a release
 
-1. Bump the version in `rust/Cargo.toml` (`version = "x.y.z"`) and commit.
+1. Bump the version in `core/Cargo.toml` (`version = "x.y.z"`) and commit.
 2. Tag and push:
 
    ```bash
@@ -75,10 +75,10 @@ base:
 
 ```bash
 # 1. build + package like the workflow does
-cargo build --release --manifest-path rust/Cargo.toml
+cargo build --release --manifest-path core/Cargo.toml
 target=$(rustc -vV | sed -n 's/host: //p')
 mkdir -p /tmp/rel/download/v0.0.0/pkg/petal-$target
-cp rust/target/release/petal /tmp/rel/download/v0.0.0/pkg/petal-$target/petal
+cp core/target/release/petal /tmp/rel/download/v0.0.0/pkg/petal-$target/petal
 ( cd /tmp/rel/download/v0.0.0/pkg && tar -czf ../petal-$target.tar.gz petal-$target )
 ( cd /tmp/rel/download/v0.0.0 && shasum -a 256 petal-$target.tar.gz > petal-$target.tar.gz.sha256 )
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { runPetal, runPetalError, checkJson } from "./helpers";
 
 // The native vec3 (docs/dev/vec3.md): a heap-allocated three-f64 vector with
-// vec2's operator rules. Rust-side coverage is rust/tests/vec3.rs; these pin
+// vec2's operator rules. Rust-side coverage is core/tests/vec3.rs; these pin
 // the CLI-visible behavior end to end.
 
 describe("vec3 construction and printing", () => {

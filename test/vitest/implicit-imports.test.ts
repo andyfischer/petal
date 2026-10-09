@@ -10,7 +10,7 @@
 //
 // These run the real petal-ui host through its headless driver, since that is
 // the only place in the tree where a host prelude is registered; the precedence
-// and cycle cases live beside the implementation in `rust/src/module.rs`.
+// and cycle cases live beside the implementation in `core/src/module.rs`.
 
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
@@ -18,7 +18,7 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 
 const ROOT = resolve(__dirname, "../..");
-const UI_RUN = resolve(ROOT, "petal-ui/target/debug/petal-ui-run");
+const UI_RUN = resolve(ROOT, "core-libs/petal-ui/target/debug/petal-ui-run");
 const FIXTURES = resolve(__dirname, "fixtures/implicit-imports");
 
 interface Frame {

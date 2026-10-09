@@ -22,15 +22,15 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
-          key: cargo-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+            core/target
+          key: cargo-core-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
           restore-keys: cargo-core-${{ runner.os }}-
 
       - name: Build Rust
-        run: cargo build --manifest-path rust/Cargo.toml
+        run: cargo build --manifest-path core/Cargo.toml
 
       - name: Run Rust tests
-        run: cargo test --manifest-path rust/Cargo.toml
+        run: cargo test --manifest-path core/Cargo.toml
 
   ts-tests:
     name: TypeScript (tsc + vitest)
@@ -47,18 +47,18 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
-            petal-ui/target
-          key: cargo-ts-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'petal-ui/Cargo.lock') }}
+            core/target
+            core-libs/petal-ui/target
+          key: cargo-ts-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'core-libs/petal-ui/Cargo.lock') }}
           restore-keys: cargo-ts-${{ runner.os }}-
 
       - name: Build petal binary (used by vitest)
-        run: cargo build --manifest-path rust/Cargo.toml
+        run: cargo build --manifest-path core/Cargo.toml
 
       # verify.ts aborts its whole run (exit 2) when the corpus has UI apps and
       # this driver is missing, which fails test/verify.test.ts.
       - name: Build petal-ui-run driver (used by tools/verify.ts)
-        run: cargo build --manifest-path petal-ui/Cargo.toml --bin petal-ui-run
+        run: cargo build --manifest-path core-libs/petal-ui/Cargo.toml --bin petal-ui-run
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -114,8 +114,8 @@ jobs:
       - name: Build petal-fps
         run: cargo build --manifest-path examples/custom-apps/petal-fps/Cargo.toml
 
-  # The C/C++ embedding bridge. Builds against the in-repo rust/, petal-ui/
-  # and petal-query/ crates, so a Rust API change that breaks it fails here.
+  # The C/C++ embedding bridge. Builds against the in-repo core/, core-libs/petal-ui/
+  # and core-libs/petal-query/ crates, so a Rust API change that breaks it fails here.
   c-bridge:
     name: C bridge (petal-c-bridge, CMake + ctest)
     runs-on: ubuntu-latest
@@ -179,9 +179,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
+            core/target
             integrations/petal-web-canvas/rust/target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock') }}
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('core/Cargo.lock', 'integrations/petal-web-canvas/rust/Cargo.lock') }}
           restore-keys: cargo-wasm-${{ runner.os }}-
 
       - name: Set up Node.js

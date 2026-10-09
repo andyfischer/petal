@@ -3,7 +3,7 @@
 Status: **the language half is shipped; the data layer shipped in a
 different shape than planned.** `Value::Pending`, the strict/non-strict
 semantics, the `state` no-commit rule and the observability surfaces are all
-in. `petal-query/` exists as a Provider/Cache library over the Garden Pane
+in. `core-libs/petal-query/` exists as a Provider/Cache library over the Garden Pane
 Protocol rather than the host-fetcher design sketched here. See
 [Status](#status) at the end.
 
@@ -191,7 +191,7 @@ mid-frame**, so every frame sees a consistent snapshot; a `Ready` entry that
 goes stale refetches in the background while still serving its value
 (stale-while-revalidate); fetchers are idempotent reads.
 
-What was built instead (see [petal-query/README.md](../../petal-query/README.md)):
+What was built instead (see [core-libs/petal-query/README.md](../../core-libs/petal-query/README.md)):
 the `petal-query` crate provides `Provider` / `Reply` / `CachePolicy` for the
 data-serving side and a generic `Cache` for hosts, running over the Garden
 Pane Protocol. A panel script calls `query(kind, arg)` and reads the result

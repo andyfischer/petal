@@ -3,7 +3,7 @@
 // VM's heap-allocated frame stack until the OS killed the process (exit 137,
 // no output, ~2 GB after ~45 s), and one that recursed through a `map`
 // callback overflowed the native stack and aborted. See
-// `MAX_CALL_DEPTH` / `SYNC_STACK_BUDGET` in rust/src/backend/bytecode/vm/mod.rs.
+// `MAX_CALL_DEPTH` / `SYNC_STACK_BUDGET` in core/src/backend/bytecode/vm/mod.rs.
 
 import { describe, it, expect } from "vitest";
 import { petalCapture } from "./helpers";

@@ -12,7 +12,7 @@
 //! This module is the language-side glue: the `query`/`invalidate` natives and
 //! the [`QueryProvider`] trait a host implements. The **cache/fetch policy** it
 //! used to carry has graduated into the upstream `petal-query` crate
-//! (`../petal-query`) — the same path `host_data` took into `petal-ui`.
+//! (`../core-libs/petal-query`) — the same path `host_data` took into `petal-ui`.
 //! Garden's pipe-backed provider (`garden-app/src/script_client.rs`) now wraps a
 //! `petal_query::Cache`, which honors the `petal_query::CachePolicy` each answer
 //! carries (fresh / stale-while-revalidate / expired). What remains here is only

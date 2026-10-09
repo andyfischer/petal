@@ -9,7 +9,7 @@ In a symbolized profile of a tight `slice()` loop (5M iterations,
 under the native-call path is **argument-vector growth**, not string or list
 data: `RawVec::grow_one` and `RawVec::finish_grow` appear alongside
 `_xzm_xzone_malloc` / `_xzm_free`, under `call_native_fn` / `do_builtin_call`
-(`rust/src/backend/bytecode/vm/native.rs`).
+(`core/src/backend/bytecode/vm/native.rs`).
 
 Every builtin call pays this, so it is spread across every script rather than
 concentrated in one app. The spreadsheet's formula commit issues ~441k native
@@ -34,9 +34,9 @@ microbenchmark (a `slice` or `len` loop), plus
 
 ```bash
 ./tools/bench-opts.ts
-cd petal-ui && cargo run --release --example bench_panel -- \
-  ../examples/productivity/spreadsheet/app.ptl 600 \
-  --scenario ../examples/productivity/spreadsheet/bench/edit.json --no-gate
+cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+  ../../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../../examples/productivity/spreadsheet/bench/edit.json --no-gate
 ```
 
 Take the minimum of several runs. The corpus goldens and the differential

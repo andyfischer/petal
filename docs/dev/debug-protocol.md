@@ -158,7 +158,7 @@ Every colored primitive takes an optional `a` (alpha, 0–255, default 255).
 `rect` also takes a corner `radius`; `line` and `rect_outline` take a stroke
 `width`. The full vocabulary (ellipses, polygons, arcs, gradients, clipping,
 offscreen canvases, images, ...) is the `DrawCommand` enum in
-`petal-ui/src/draw.rs`, which is the reference for field names.
+`core-libs/petal-ui/src/draw.rs`, which is the reference for field names.
 
 ## Transport differences
 

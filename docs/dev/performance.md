@@ -22,17 +22,17 @@ all instructions being `Move`; 83% of builtin calls being `slice`) points at the
 problem far more directly than a time profile does.
 
 **2. Attribute the time.** A count is not a cost. Build with symbols —
-`cd rust && cargo build --profile profiling` — and sample the binary:
+`cd core && cargo build --profile profiling` — and sample the binary:
 
 ```bash
-./rust/target/profiling/petal run test/benchmarks/spreadsheet.ptl & \
+./core/target/profiling/petal run test/benchmarks/spreadsheet.ptl & \
   sleep 0.3 && sample $(pgrep -n petal) 2 -mayDie -f /tmp/prof.txt
 ```
 
 The "Sort by top of stack" section of the output is self time per function.
 
 **3. Time the change.** `./tools/bench-opts.ts` for whole programs;
-`cd petal-ui && cargo run --release --example bench_panel -- <file.ptl>` for
+`cd core-libs/petal-ui && cargo run --release --example bench_panel -- <file.ptl>` for
 per-frame cost of a panel script. Take the **minimum** of several runs, not the
 mean: on a loaded machine the minimum is much the more stable estimator. The
 bench runs under the frame gate: a quiet script is skipped after its first
@@ -57,7 +57,7 @@ when reading it:
 
 - It is not a per-instruction hook. The VM consults the bench only where a
   user-function frame is pushed and popped (`CallBench` in
-  `rust/src/profile.rs`), so a benched run stays on the fast dispatch loop and
+  `core/src/profile.rs`), so a benched run stays on the fast dispatch loop and
   retires exactly the instructions a plain run does — unlike `--profile`,
   which takes the general path for every instruction and so is no use for
   timing.
@@ -82,7 +82,7 @@ panel, write a console driver that imports it and calls the function in a
 loop; for the panel itself, `bench_panel` above.
 
 The allocation and copy counters behind `bench` and `run --dup-stats`
-(`rust/src/stats.rs`) are a runtime switch on the heap, off until one of those
+(`core/src/stats.rs`) are a runtime switch on the heap, off until one of those
 turns it on, so a release binary has them without the `dup-stats` cargo
 feature (which now only sets the default, as a debug build does). Off, each
 recording site is one branch on a flag in the heap. Measured as whole-process
@@ -146,9 +146,9 @@ Two consequences:
 Lowering (`backend::bytecode::lower`) gives every IR term its own register, so
 the raw instruction stream is roughly half register-to-register copies. Four
 passes then shape it, each individually switchable through
-[`OptFlags`](../../rust/src/backend/mod.rs) so any one can be turned off to
+[`OptFlags`](../../core/src/backend/mod.rs) so any one can be turned off to
 isolate a bug. `OptFlags` is the lowering half of a run's
-[`RunPolicy`](../../rust/src/policy.rs), which also carries memoization and
+[`RunPolicy`](../../core/src/policy.rs), which also carries memoization and
 frame gating:
 
 | Pass | What it does |

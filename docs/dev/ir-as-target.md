@@ -23,7 +23,7 @@ petal run --ir -                                            # read IR JSON from 
 ```
 
 `petal show-ir --json` serializes a compiled `Program` to JSON IR
-(`rust/src/ir_serialize.rs`). `petal run --ir <file>` (or `-` for stdin) is the
+(`core/src/ir_serialize.rs`). `petal run --ir <file>` (or `-` for stdin) is the
 inverse: it deserializes the JSON back into a `Program`, validates it, and
 evaluates it on the bytecode VM.
 
@@ -31,8 +31,8 @@ evaluates it on the bytecode VM.
 
 `run --ir` goes JSON → `Program` → evaluate:
 
-- **Deserialize** via `Program::from_json` (`rust/src/ir_validate.rs`) and
-  `Env::load_program_ir` (`rust/src/env/mod.rs`). The IR types carry `Deserialize`
+- **Deserialize** via `Program::from_json` (`core/src/ir_validate.rs`) and
+  `Env::load_program_ir` (`core/src/env/mod.rs`). The IR types carry `Deserialize`
   derives; the loader then normalizes the wire form back into the in-memory
   one: it rebuilds the intra-block execution linked list from each block's
   ordered `terms` array, reconstructs the `#[serde(skip)]` indexes
@@ -75,7 +75,7 @@ live in `test/vitest/fixtures/ir/` (`print_arith`, `branch_phi`, `state_counter`
 ## Schema
 
 This is the import contract. It is derived from the live types in
-`rust/src/program.rs`, `rust/src/constant_table.rs`, and `rust/src/ast.rs`, and
+`core/src/program.rs`, `core/src/constant_table.rs`, and `core/src/ast.rs`, and
 matches `petal show-ir --json` output (the serde derive). The current shape is
 **schema 0.2**, declared by a top-level `"schema": "0.2"` field. The loader
 accepts documents with no `schema` field at all — the pre-0.2 "v0"/"v0.1"

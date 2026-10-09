@@ -193,10 +193,10 @@ The vitest helpers in `test/vitest/helpers.ts` shell out to the compiled binary:
   location. `assert_eq(a, b)` aborts with `assert_eq: left=X right=Y`.
 - Runtime errors carry `"<msg> [line N, column M]"`, a `Caused by:` block of
   the nearest named ancestors in the dataflow graph, and a stack trace (see
-  `build_stack_trace` / `format_provenance` in `rust/src/backend/errors.rs`).
+  `build_stack_trace` / `format_provenance` in `core/src/backend/errors.rs`).
   Under `petal run --json` these surface as
   `{message, line, column, caused_by[], stack[]}`.
-- The trace buffer (`rust/src/trace.rs`) records every term execution (inputs
+- The trace buffer (`core/src/trace.rs`) records every term execution (inputs
   and result) into a ring buffer of 200,000 events; the oldest are dropped
   once it is full. Enable it with `--trace`, `--record-trace`, or
   `PETAL_DEBUG=1`. Query it after the run through `Env::trace().explain(...)`

@@ -11,13 +11,13 @@
 //
 // Three registration sources are parsed:
 //
-//   1. Core builtins — `rust/src/builtins/mod.rs`'s `register_builtins()`,
+//   1. Core builtins — `core/src/builtins/mod.rs`'s `register_builtins()`,
 //      which is the canonical, append-only list of `table.register("name", …)`
 //      calls. Each entry points at a `native_*` fn in a topic submodule
 //      (math.rs, collections.rs, …); the submodule it lives in becomes the
 //      function's category.
 //
-//   2. Core prelude — `rust/prelude/std.ptl` (module `std`), the slice of the
+//   2. Core prelude — `core/prelude/std.ptl` (module `std`), the slice of the
 //      standard library written in Petal source rather than as Rust natives.
 //      `Env::new` loads it as an implicit import; its `pub fn` declarations
 //      become the `prelude` group / `std` category.
@@ -29,9 +29,9 @@
 //
 // For each registered function we read:
 //   • parameters — the names the native *declares* for named arguments:
-//                  `BUILTIN_PARAMS` (rust/src/builtins/params.rs) for the core
+//                  `BUILTIN_PARAMS` (core/src/builtins/params.rs) for the core
 //                  builtins, `PETAL_UI_NATIVE_PARAMS`
-//                  (rust/src/typecheck/globals.rs) for the canvas ones. These
+//                  (core/src/typecheck/globals.rs) for the canvas ones. These
 //                  are call syntax, not just documentation — the registry
 //                  binds `clamp(value: v, lo: 0, hi: 1)` against them — so
 //                  they are the source of truth for every name in the
@@ -60,13 +60,13 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const coreModRs = join(repoRoot, "rust/src/builtins/mod.rs");
-const coreParamsRs = join(repoRoot, "rust/src/builtins/params.rs");
-const hostParamsRs = join(repoRoot, "rust/src/typecheck/globals.rs");
-const petalUiDrawRs = join(repoRoot, "petal-ui/src/draw.rs");
-const petalUiTextRs = join(repoRoot, "petal-ui/src/text.rs");
-const petalUiInputRs = join(repoRoot, "petal-ui/src/input.rs");
-const preludeStdPtl = join(repoRoot, "rust/prelude/std.ptl");
+const coreModRs = join(repoRoot, "core/src/builtins/mod.rs");
+const coreParamsRs = join(repoRoot, "core/src/builtins/params.rs");
+const hostParamsRs = join(repoRoot, "core/src/typecheck/globals.rs");
+const petalUiDrawRs = join(repoRoot, "core-libs/petal-ui/src/draw.rs");
+const petalUiTextRs = join(repoRoot, "core-libs/petal-ui/src/text.rs");
+const petalUiInputRs = join(repoRoot, "core-libs/petal-ui/src/input.rs");
+const preludeStdPtl = join(repoRoot, "core/prelude/std.ptl");
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -389,7 +389,7 @@ function parseCoreRegistrations(modSource: string): Registration[] {
 const moduleSourceCache = new Map<string, string>();
 function moduleSource(module: string): string {
   if (!moduleSourceCache.has(module)) {
-    const path = join(repoRoot, `rust/src/builtins/${module}.rs`);
+    const path = join(repoRoot, `core/src/builtins/${module}.rs`);
     moduleSourceCache.set(module, readFileSync(path, "utf8"));
   }
   return moduleSourceCache.get(module)!;
@@ -432,7 +432,7 @@ function extractCore(): {
     const isIntrinsic = reg.module === null;
     const category = isIntrinsic ? "higher-order" : reg.module!;
     let parsed = { arity: null as number | null, variadic: false, params: [] as Param[] };
-    let source = { file: "rust/src/builtins/mod.rs", line: 0 };
+    let source = { file: "core/src/builtins/mod.rs", line: 0 };
 
     if (!isIntrinsic) {
       usedModules.add(reg.module!);
@@ -440,11 +440,11 @@ function extractCore(): {
       const fn = findFn(src, reg.fnName);
       if (fn) {
         parsed = parseFnBody(fn.body);
-        source = { file: `rust/src/builtins/${reg.module}.rs`, line: fn.line };
+        source = { file: `core/src/builtins/${reg.module}.rs`, line: fn.line };
       }
     } else {
       const fn = findFn(modSource, reg.fnName);
-      if (fn) source = { file: "rust/src/builtins/mod.rs", line: fn.line };
+      if (fn) source = { file: "core/src/builtins/mod.rs", line: fn.line };
       // Intrinsics (map/filter/reduce/forEach) take a list + a function. The
       // VM drives them, so there is no body to read an arity from; their
       // parameters come from the declaration alone.
@@ -493,7 +493,7 @@ function extractCore(): {
 // ── Prelude (Petal-source std) ───────────────────────────────────────────────
 
 /**
- * The core prelude (`rust/prelude/std.ptl`, module `std`) is standard library
+ * The core prelude (`core/prelude/std.ptl`, module `std`) is standard library
  * written in Petal source rather than as Rust natives — `Env::new` loads it as
  * a permanent implicit import, so every program calls its helpers bare. We parse
  * its `pub fn` declarations so these functions appear in the reference next
@@ -528,7 +528,7 @@ function extractPrelude(): {
       params,
       // A Petal `fn` takes named arguments under its own parameter names.
       signatures: [params],
-      source: { file: "rust/prelude/std.ptl", line },
+      source: { file: "core/prelude/std.ptl", line },
     });
   }
 
@@ -623,7 +623,7 @@ function bufferedDrawSignature(
 /**
  * Parse the registrations in a register block: `register(env, "name",
  * native_fn, <effects>)` — petal-ui's wrapper, which also declares the
- * native's parameters (`petal-ui/src/params.rs`) — or a bare
+ * native's parameters (`core-libs/petal-ui/src/params.rs`) — or a bare
  * `env.register_native("name", native_fn, <effects>)`.
  */
 function parseNativeRegistrations(block: string): Array<{ name: string; fnName: string }> {
@@ -682,8 +682,8 @@ function extractCanvas(): {
   };
 
   const drawFiles = [
-    { file: "petal-ui/src/draw.rs", source: drawSource },
-    { file: "petal-ui/src/text.rs", source: textSource },
+    { file: "core-libs/petal-ui/src/draw.rs", source: drawSource },
+    { file: "core-libs/petal-ui/src/text.rs", source: textSource },
   ];
 
   // Drawing: register_draw + the offscreen-canvas register_canvas.
@@ -697,7 +697,7 @@ function extractCanvas(): {
     extractBlock(inputSource, /pub fn register_input\s*\(/),
   )) {
     addCanvasFn(reg.name, reg.fnName, "input", [
-      { file: "petal-ui/src/input.rs", source: inputSource },
+      { file: "core-libs/petal-ui/src/input.rs", source: inputSource },
     ]);
   }
 
@@ -736,13 +736,13 @@ export function buildManifest(): StdlibManifest {
   ].sort((a, b) => CATEGORY_ORDER.indexOf(a.id) - CATEGORY_ORDER.indexOf(b.id));
   return {
     generatedFrom: [
-      "rust/src/builtins/mod.rs",
-      "rust/src/builtins/*.rs",
-      "rust/src/typecheck/globals.rs",
-      "rust/prelude/std.ptl",
-      "petal-ui/src/draw.rs",
-      "petal-ui/src/text.rs",
-      "petal-ui/src/input.rs",
+      "core/src/builtins/mod.rs",
+      "core/src/builtins/*.rs",
+      "core/src/typecheck/globals.rs",
+      "core/prelude/std.ptl",
+      "core-libs/petal-ui/src/draw.rs",
+      "core-libs/petal-ui/src/text.rs",
+      "core-libs/petal-ui/src/input.rs",
     ],
     categories,
     functions,

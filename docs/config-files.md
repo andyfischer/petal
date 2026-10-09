@@ -23,8 +23,8 @@ Two APIs cover the round trip:
 
 | Direction | API | Module |
 |---|---|---|
-| **Read** | `get_static_value(source, name)` / `static_values(source)` / `static_bindings(source)` | [`rust/src/static_value.rs`](../rust/src/static_value.rs) |
-| **Write** | `Goal::should_set_value(name, value)` | [`rust/src/goal_based_editing.rs`](../rust/src/goal_based_editing.rs) |
+| **Read** | `get_static_value(source, name)` / `static_values(source)` / `static_bindings(source)` | [`core/src/static_value.rs`](../core/src/static_value.rs) |
+| **Write** | `Goal::should_set_value(name, value)` | [`core/src/goal_based_editing.rs`](../core/src/goal_based_editing.rs) |
 
 Both use the same type, [`StaticValue`](#staticvalue), so a value read out of a
 file can be adjusted and written straight back.

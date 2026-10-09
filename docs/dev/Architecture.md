@@ -8,13 +8,13 @@ this if you're working on the compiler or debugging IR behavior.
 Source Code → Lexer → Parser → AST → Compiler → IR (Term Graph) → Bytecode VM
 ```
 
-All of the above lives in `rust/src/` as a single crate. The binary entry
-point is `rust/src/main.rs`, which delegates to the CLI dispatcher in
+All of the above lives in `core/src/` as a single crate. The binary entry
+point is `core/src/main.rs`, which delegates to the CLI dispatcher in
 `cli/`.
 
 The term graph is the canonical, introspectable IR — provenance, slicing,
 autodiff, `explain`, hot-reload, and the IR-as-target contract all reason about
-it. It is executed by the **bytecode VM** (`rust/src/backend/bytecode/`), a
+it. It is executed by the **bytecode VM** (`core/src/backend/bytecode/`), a
 register machine that runs a linear *lowering* of the graph, with
 escape-analysis-driven in-place mutation gated by `backend::OptFlags`. The VM
 populates the trace buffer that the graph-level introspection reads. See
@@ -24,7 +24,7 @@ populates the trace buffer that the graph-level introspection reads. See
 
 ## Source File Map
 
-The main files and directories under `rust/src/`, grouped by pipeline stage.
+The main files and directories under `core/src/`, grouped by pipeline stage.
 
 **Front end**
 

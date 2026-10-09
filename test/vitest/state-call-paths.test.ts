@@ -3,7 +3,7 @@
 //
 // A slot is `(declaration id, path)` — the chain of callsites and loop
 // iterations that reached the declaration. The Rust suite
-// (`rust/tests/state_call_paths.rs`) pins the key *shapes* and the
+// (`core/tests/state_call_paths.rs`) pins the key *shapes* and the
 // across-runs/hot-reload behaviour that needs an `Env`; these are the
 // single-run behaviours a script author actually sees, plus the IR fields the
 // scheme rests on.

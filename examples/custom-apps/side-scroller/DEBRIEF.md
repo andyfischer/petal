@@ -65,7 +65,7 @@ section).
 source line.
 
 **No float formatting beyond `str(x)` — shipped.** `format("%.2f", t)`
-and `fixed(t, 2)` exist (see `rust/src/builtins/format.rs`), so a
+and `fixed(t, 2)` exist (see `core/src/builtins/format.rs`), so a
 "1:23.05" timer no longer needs hand-rolled arithmetic.
 
 **No way to index a record by string key — shipped.** `r["x"]` and

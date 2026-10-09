@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const benchDir = join(repoRoot, 'test', 'benchmarks');
-const cargoToml = join(repoRoot, 'rust', 'Cargo.toml');
-const petal = join(repoRoot, 'rust', 'target', 'release', 'petal');
+const cargoToml = join(repoRoot, 'core', 'Cargo.toml');
+const petal = join(repoRoot, 'core', 'target', 'release', 'petal');
 
 // The two optimization levels: clone-and-alloc baseline vs all opts on.
 const LEVELS = [

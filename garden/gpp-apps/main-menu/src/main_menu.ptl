@@ -36,10 +36,10 @@
 // test drives this screen by — the script publishes nothing.
 //
 // Visually this is built on two layers. The host layer is petal-ui (prelude
-// level 3, petal-ui/docs/components.md): `ui_theme()` mirrors Garden's palette
+// level 3, core-libs/petal-ui/docs/components.md): `ui_theme()` mirrors Garden's palette
 // automatically, the hint bar and the text helpers come from the prelude, and
 // hierarchy uses the theme's type scale. On top of it sits **bloom**
-// (petal-libs/bloom), the pure-Petal component library Garden registers as
+// (core-runtime/bloom), the pure-Petal component library Garden registers as
 // importable modules — the two buttons, the section count chips, the loading
 // skeletons and the row highlight's fade all come from there, and every one of
 // them animates without this file holding any animation state.

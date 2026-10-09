@@ -24,7 +24,7 @@ curl -fsSL https://petal-lang.org/install.sh | sh    # installs to ~/.petal/bin
 Or build from source in this repo:
 
 ```bash
-make build                       # binary at rust/target/debug/petal
+make build                       # binary at core/target/debug/petal
 ./tools/run-petal.ts run x.ptl  # wrapper: rebuilds if Rust source is newer
 ```
 
@@ -772,7 +772,7 @@ out_hi: b)`, `xs.slice(start: 1, end: 3)`). The `ui` prelude's draw calls name
 every shape they take, and the names pick the shape:
 `draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`,
 `draw_circle(center: p, radius: 6, c: red)` — see the
-[signature table](../petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
+[signature table](../core-libs/petal-ui/docs/components.md#draw-primitives--fills-and-strokes).
 Only the variadic builtins, `print` and `format`, take no names. Every parameter without a default still needs a
 value, and a wrong name is an error `petal check` catches. See
 [Named Arguments](language-guide.md#named-arguments).
@@ -954,7 +954,7 @@ What counts as
 defined depends on the host: `--host ui` (the default) is the core builtins,
 the petal-ui natives and the `ui` prelude; `--host garden` adds Garden's panel
 and config natives and the packages Garden registers (`bloom`,
-`text_layout`, so no `-I petal-libs`), `--host garden-config` is Garden's config host (`init.ptl`,
+`text_layout`, so no `-I core-runtime`), `--host garden-config` is Garden's config host (`init.ptl`,
 layout scripts: core plus `layout`/`row`/`column`/…, no `ui` prelude),
 `--host sdl` petal-desktop-sdl's, `--host core` is core only, and
 `--native name,name` adds any others your host registers.

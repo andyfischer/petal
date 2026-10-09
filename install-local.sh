@@ -1,2 +1,2 @@
 
-cargo install --path rust
+cargo install --path core

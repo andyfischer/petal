@@ -127,7 +127,7 @@ update the client types from the sample diff.
   panel scripts running. Check it first when more than one Garden is running.
   `identity.freshness` (feature `state.identity-freshness`) says whether the
   binary is behind the checkout it was built from: `head` is the checkout's
-  HEAD, `changed` the number of source files (`garden/`, `petal-ui/`, `rust/`,
+  HEAD, `changed` the number of source files (`garden/`, `core-libs/petal-ui/`, `core/`,
   excluding Markdown) changed since the build commit, `stale` is true when
   that is nonzero, and `warning` is a one-line message (empty when current).
   Garden prints the same warning to stderr at startup, so it shows up in a

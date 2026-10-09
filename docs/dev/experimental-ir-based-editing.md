@@ -17,7 +17,7 @@ Petal front-end entirely.
 
 ## The term graph as a data structure
 
-A `Program` ([`rust/src/program.rs`](../../rust/src/program.rs)) owns the whole
+A `Program` ([`core/src/program.rs`](../../core/src/program.rs)) owns the whole
 graph:
 
 - `terms: Vec<Term>` — nodes, indexed so `terms[i].id == i`.
@@ -31,7 +31,7 @@ array, from which the links are rebuilt on load). Other fields: `op: TermOp`,
 `block_id`, `name` (binding label), `register`, `state_key`, `child_blocks`,
 `path_pop`, `call_site`.
 
-`TermOp` ([`program.rs`](../../rust/src/program.rs)) is the operation vocabulary:
+`TermOp` ([`program.rs`](../../core/src/program.rs)) is the operation vocabulary:
 arithmetic/comparison, `Copy`, `Phi`, `Branch`, `Return`, `Constant(id)`,
 `MethodCall(id)`, `MakeClosure(fn)`, `AllocMap`, `AllocElement`,
 `MakeEnumVariant`, etc. There is **no register-mutation op** — cross-block
@@ -45,14 +45,14 @@ Serialization is **JSON via serde derives** — the wire shape is the derived
 serialization of `Program`, matching `show-ir --json` byte-for-byte.
 
 - **Emit:** `petal show-ir --json` →
-  [`cli/handlers.rs`](../../rust/src/cli/handlers.rs) (`serde_json::to_string_pretty`).
-- **Load:** `Program::from_json` ([`ir_validate.rs`](../../rust/src/ir_validate.rs))
+  [`cli/handlers.rs`](../../core/src/cli/handlers.rs) (`serde_json::to_string_pretty`).
+- **Load:** `Program::from_json` ([`ir_validate.rs`](../../core/src/ir_validate.rs))
   → relink the intra-block linked list from the blocks' `terms` arrays →
   `rebuild_indexes()` (rebuilds the `block_terms` index + constant dedup) →
   recompute registers when the document omits them →
   `validate()` (structural invariants).
 - **Run:** `petal run --ir <file|->` → `env.load_program_ir`
-  ([`env/mod.rs`](../../rust/src/env/mod.rs)) → same bytecode-VM path as a
+  ([`env/mod.rs`](../../core/src/env/mod.rs)) → same bytecode-VM path as a
   compiled program. Guarantee: `show-ir --json | run --ir -` equals `run`.
 
 So a program can be **built or rewritten as JSON, validated, and executed**
@@ -70,7 +70,7 @@ without touching source text.
   programmatic construction. Golden fixtures live in
   [`test/vitest/fixtures/ir/`](../../test/vitest/fixtures/ir/).
 - **Read/rewrite passes over the graph (Rust):**
-  [`rust/src/program_analysis.rs`](../../rust/src/program_analysis.rs) —
+  [`core/src/program_analysis.rs`](../../core/src/program_analysis.rs) —
   `trace_provenance` (backward dataflow slice), `trace_dependents` (forward
   slice), `slice(targets)` (minimal connecting subgraph), `find_term`,
   `named_terms`. Exposed on the CLI as `show-provenance`, `show-dependents`,
@@ -79,7 +79,7 @@ without touching source text.
   influence this output, then rewrite them").
 
 There is **no dedicated `IrBuilder` API in Rust** — the "builder" is either the
-compiler (internal, [`rust/src/compiler/`](../../rust/src/compiler/)) or a foreign
+compiler (internal, [`core/src/compiler/`](../../core/src/compiler/)) or a foreign
 emitter following the JSON contract.
 
 ## Capabilities

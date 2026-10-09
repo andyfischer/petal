@@ -7,7 +7,7 @@ task-oriented patterns built on these primitives, see
 Rust, see [embedding-c.md](embedding-c.md).
 
 The design is Lua-inspired. Native functions are registered by name against a
-stack-style calling convention (`rust/src/native_fn.rs`). Everything crosses
+stack-style calling convention (`core/src/native_fn.rs`). Everything crosses
 the boundary **by value**, except for [handles](#handles), which are opaque
 references to host-owned objects.
 
@@ -33,7 +33,7 @@ loop {                                                        // per frame / tic
 }
 ```
 
-Entry points, all on `Env` (`rust/src/env/`):
+Entry points, all on `Env` (`core/src/env/`):
 
 | Concern | API |
 |---|---|
@@ -85,7 +85,7 @@ of `program_source_paths` instead (petal-desktop-sdl's `watcher.rs`).
 ## Native functions
 
 ```rust
-pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;   // rust/src/native_fn.rs
+pub type NativeFn = fn(&mut PetalCxt) -> NativeResult;   // core/src/native_fn.rs
 pub type NativeResult = Result<u32, String>;             // Ok(count of pushed results)
 ```
 
@@ -219,14 +219,14 @@ nothing, and `AllowPending` runs normally. Emitters should be `Effectful`
 (`NativeEffects::EMITS` is). `env.set_native_class(id, ..)` changes it after
 registration.
 
-The compiled-in builtins (`rust/src/builtins/`) go through the same table.
+The compiled-in builtins (`core/src/builtins/`) go through the same table.
 `map`/`filter`/`reduce`/`forEach` register placeholders and are dispatched
 specially by the VM because they call back into closures; ordinary natives
 **cannot call Petal closures**.
 
 ## Values and the heap
 
-`Value` (`rust/src/value.rs`) is a `Copy` enum; anything bigger than a machine
+`Value` (`core/src/value.rs`) is a `Copy` enum; anything bigger than a machine
 word lives in the `Heap` behind a typed u32 id:
 
 ```
@@ -247,7 +247,7 @@ Notes for embedders:
   read dereferences it (see [var.md](var.md#containment)).
 - `Pending` is an unresolved resource (loading or errored). Ordinary operations
   absorb it and return it.
-- The heap (`rust/src/heap.rs`) is mark-and-sweep, triggered by allocation
+- The heap (`core/src/heap.rs`) is mark-and-sweep, triggered by allocation
   count. GC roots include stack registers, persistent state, closure captures,
   **bindings and output buffers**, so values parked in the host channels stay
   alive.
@@ -507,7 +507,7 @@ playing.
 
 The effect audit brackets every native call with activity snapshots and holds
 what each native was observed doing against its row
-(`rust/src/effect_audit.rs`). `petal run --effect-audit` and
+(`core/src/effect_audit.rs`). `petal run --effect-audit` and
 `petal-ui-run --effect-audit` cover the builtins and the `petal-ui` natives;
 an embedder audits its own natives by turning it on in the host:
 
@@ -559,7 +559,7 @@ check the host saw every call" catches the next one.
   `draw_commands`, rasterize. Hot reload via `module_manifest` +
   `transfer_state`. Its JSON protocol (pause/step/state/screenshot over
   stdin/stdout) drives the same contract headlessly for agents and tests.
-- **petal-ui** (`petal-ui/`) — the reusable layer: the input vocabulary
+- **petal-ui** (`core-libs/petal-ui/`) — the reusable layer: the input vocabulary
   (`InputEvent`, `InputState`), the `DrawCommand` enum (with a
   `Host { tag, data }` pass-through so embedder-specific natives keep their
   place in the command stream), the Petal-source `ui` prelude registered as an

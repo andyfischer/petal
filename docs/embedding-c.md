@@ -1,7 +1,7 @@
 # Embedding Petal in C and C++
 
 `integrations/petal-c-bridge/` embeds Petal in a C or C++ host: a Rust static
-library that owns the Petal VM (with [petal-ui](../petal-ui/) for input and
+library that owns the Petal VM (with [petal-ui](../core-libs/petal-ui/) for input and
 drawing), a hand-written C ABI over it (`petal_bridge.h`), and a header-only
 C++20 wrapper (`petal.hpp`). It was built for the Cheesecake C++ game engine,
 which scripts its game logic in Petal, and moved here so that changes to the
@@ -46,7 +46,7 @@ target_link_libraries(my_engine PRIVATE petal::bridge)
 
 Cargo runs on every build (it is incremental, so an up-to-date build costs a
 fraction of a second) with `CARGO_TARGET_DIR=<build>/cargo-target`. The crate
-depends on the in-repo `rust/`, `petal-ui/` and `petal-query/` crates by path,
+depends on the in-repo `core/`, `core-libs/petal-ui/` and `core-libs/petal-query/` crates by path,
 so a host that adds this directory always builds against the Petal checkout
 it lives in.
 
@@ -403,7 +403,7 @@ gradient stop, skip canvases) rather than drop it; see petal-ui's README.
 ### Input scenarios (replay)
 
 A scenario is petal-ui's declarative input script
-(`petal-ui/src/scenario.rs`): JSON listing input events keyed by frame, plus
+(`core-libs/petal-ui/src/scenario.rs`): JSON listing input events keyed by frame, plus
 an optional window size and frame count. It is the format `petal-ui-run` and
 `tools/verify.ts` use, so a repro recorded there replays in a C++ host, and
 a C++ host's headless tests can be written as data:
@@ -506,7 +506,7 @@ if (vm.sources_changed()) {                 // stat() of every source file
 vm.register_module("engine", engine_prelude_source);  // `import engine`
 vm.add_implicit_import("engine");                      // ...or no import at all
 vm.add_module_path("games/marble/lib");                // search path (+ package discovery)
-vm.add_package("path/to/petal/petal-libs/bloom");     // `import bloom/menu`
+vm.add_package("path/to/petal/core-runtime/bloom");     // `import bloom/menu`
 ```
 
 The implicit-import list starts as `["ui"]`; `add_implicit_import` appends.

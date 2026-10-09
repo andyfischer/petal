@@ -53,9 +53,9 @@ While there: give the scans an early exit, and prefer `char_at` once
 ## How to check it
 
 ```bash
-cd petal-ui && cargo run --release --example bench_panel -- \
-  ../examples/productivity/spreadsheet/app.ptl 600 \
-  --scenario ../examples/productivity/spreadsheet/bench/edit.json --no-gate
+cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+  ../../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../../examples/productivity/spreadsheet/bench/edit.json --no-gate
 ```
 
 The commit frame (`max`) is the number to watch. The app's behavior must not

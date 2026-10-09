@@ -7,7 +7,7 @@
 //
 //   ./tools/verify.ts --plan test/verify-plans/lint-fix.json --before ab3304a~1 --after .
 //   ./tools/verify.ts --plan test/verify-plans/compiler.json \
-//        --before-bin old/petal --after-bin rust/target/debug/petal
+//        --before-bin old/petal --after-bin core/target/debug/petal
 //
 // A plan is an ordered list of checks, cheapest first, that short-circuits per
 // file (see docs/dev/refactor-verification.md §4-6). Each file gets one table
@@ -70,7 +70,7 @@ interface Plan {
     /**
      * Extra module search directories for UI apps, relative to each side's
      * root (passed to `petal-ui-run -I`). An app that imports a shared Petal
-     * library — `petal-libs/bloom/src`, say — cannot compile without them, and
+     * library — `core-runtime/bloom/src`, say — cannot compile without them, and
      * they are per-side so a source A/B resolves each side's own copy.
      */
     include?: string[];
@@ -348,8 +348,8 @@ function pairSides(files: string[], before: Side, after: Side, notes: string[]):
 // ── Classification (§4) ──────────────────────────────────────────────────
 
 /**
- * Natives only a petal-ui host registers (petal-ui/src/{input,draw}.rs) plus the
- * distinctive helpers in petal-ui/prelude/ui.ptl. `time` and `clear` are left
+ * Natives only a petal-ui host registers (core-libs/petal-ui/src/{input,draw}.rs) plus the
+ * distinctive helpers in core-libs/petal-ui/prelude/ui.ptl. `time` and `clear` are left
  * out deliberately: they collide with names a console script legitimately uses,
  * and a false `ui` is worse than a false `console` (the console driver reports
  * the missing native by name, so the probe below recovers).
@@ -568,7 +568,7 @@ function writeRepro(dir: string, kind: Kind, ctx: Ctx, t: Target, seed: number,
  */
 async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
     // The plan's `include` dirs reach `check` too, not just the UI driver: a
-    // corpus app that imports a shared library (petal-libs) must not be
+    // corpus app that imports a shared library (core-runtime) must not be
     // written off as `unsupported` merely because this step forgot its -I.
     const one = (s: Side, p: string) =>
         exec(s.petal, ['check', '--lenient', '--error-format', 'bare', ...s.includeArgs, p]);
@@ -815,8 +815,8 @@ async function main() {
     const outDir = opts.out ?? join(repoRoot, '.temp', 'verify-runs', `${plan.name}-${stamp}`);
     mkdirSync(outDir, { recursive: true });
 
-    const defaultPetal = join(repoRoot, 'rust', 'target', 'debug', 'petal');
-    const defaultUi = join(repoRoot, 'petal-ui', 'target', 'debug', 'petal-ui-run');
+    const defaultPetal = join(repoRoot, 'core', 'target', 'debug', 'petal');
+    const defaultUi = join(repoRoot, 'core-libs', 'petal-ui', 'target', 'debug', 'petal-ui-run');
 
     /** `-I <dir>` pairs for one side, from the plan's `include` list. */
     const includeFor = (root: string): string[] =>
@@ -839,7 +839,7 @@ async function main() {
                   uiRun: opts.afterUiBin ?? defaultUi, includeArgs: includeFor(opts.after), gateArgs: [] };
     }
     for (const s of [before, after]) {
-        if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd rust && cargo build)`);
+        if (!existsSync(s.petal)) fail(`no petal binary at ${s.petal} (cd core && cargo build)`);
     }
 
     const notes: string[] = [];
@@ -863,7 +863,7 @@ async function main() {
         for (const s of [before, after]) {
             if (!existsSync(s.uiRun)) {
                 fail(`no petal-ui-run binary at ${s.uiRun}, and the corpus has UI apps `
-                    + `(cd petal-ui && cargo build --bin petal-ui-run)`);
+                    + `(cd core-libs/petal-ui && cargo build --bin petal-ui-run)`);
             }
             // Ask the driver whether it knows `--no-gate` (its usage line lists
             // every flag) rather than assume: an older driver rejects the flag.

@@ -11,8 +11,8 @@ name = "fantasy-nes"
 path = "src/main.rs"
 
 [dependencies]
-petal = { path = "../../../rust" }
-petal-ui = { path = "../../../petal-ui" }
+petal = { path = "../../../core" }
+petal-ui = { path = "../../../core-libs/petal-ui" }
 petal-sdl = { path = "../../../integrations/petal-desktop-sdl" }
 sdl2 = { version = "0.37", features = ["image", "ttf"] }
 serde = { version = "1", features = ["derive"] }

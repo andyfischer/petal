@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")/../../rust"
+cd "$(dirname "$0")/../../core"
 wasm-pack build --target web --features wasm
 # Copy pkg to petal-web-html
 rm -rf ../integrations/petal-web-html/pkg

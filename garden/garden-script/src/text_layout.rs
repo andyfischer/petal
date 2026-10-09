@@ -1,6 +1,6 @@
 //! The `text_layout` placement library, embedded.
 //!
-//! text_layout (`petal-libs/text-layout/`) turns the host's font metrics into
+//! text_layout (`core-runtime/text-layout/`) turns the host's font metrics into
 //! the `y` a run should be drawn at: cap-height centring, wrapping, elision,
 //! caret hit-testing. Like [`crate::bloom`] it is *source*, and Garden makes it
 //! available the same way and for the same reason — a panel-mode GPP drawer
@@ -29,19 +29,19 @@ pub const PACKAGE: &str = "text_layout";
 pub const MODULES: &[(&str, &str)] = &[
     (
         "place",
-        include_str!("../../../petal-libs/text-layout/src/place.ptl"),
+        include_str!("../../../core-runtime/text-layout/src/place.ptl"),
     ),
     (
         "fit",
-        include_str!("../../../petal-libs/text-layout/src/fit.ptl"),
+        include_str!("../../../core-runtime/text-layout/src/fit.ptl"),
     ),
     (
         "block",
-        include_str!("../../../petal-libs/text-layout/src/block.ptl"),
+        include_str!("../../../core-runtime/text-layout/src/block.ptl"),
     ),
     (
         "text_layout",
-        include_str!("../../../petal-libs/text-layout/src/text_layout.ptl"),
+        include_str!("../../../core-runtime/text-layout/src/text_layout.ptl"),
     ),
 ];
 

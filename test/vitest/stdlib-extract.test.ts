@@ -22,7 +22,7 @@ const required = (name: string) => byName.get(name)!.params.filter((p) => !p.opt
 describe("stdlib extractor", () => {
   it("recovers every name registered in register_builtins", () => {
     const modRs = readFileSync(
-      join(repoRoot, "rust/src/builtins/mod.rs"),
+      join(repoRoot, "core/src/builtins/mod.rs"),
       "utf8",
     );
     const block = modRs.slice(modRs.indexOf("pub fn register_builtins"));
@@ -173,7 +173,7 @@ describe("stdlib extractor", () => {
     expect(byName.get("includes")!.aliasOf).toBe("contains");
   });
 
-  it("recovers the Petal-source std prelude (rust/prelude/std.ptl)", () => {
+  it("recovers the Petal-source std prelude (core/prelude/std.ptl)", () => {
     // Every `pub fn` in the prelude should surface as a stdlib function.
     for (const name of [
       "first",
@@ -195,7 +195,7 @@ describe("stdlib extractor", () => {
       expect(fn, `missing prelude fn: ${name}`).toBeDefined();
       expect(fn!.group).toBe("prelude");
       expect(fn!.category).toBe("std");
-      expect(fn!.source.file).toBe("rust/prelude/std.ptl");
+      expect(fn!.source.file).toBe("core/prelude/std.ptl");
       expect(fn!.source.line).toBeGreaterThan(0);
     }
   });

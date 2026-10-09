@@ -6,10 +6,10 @@ as "the file should call `set_color_scheme("dracula")`" and the library
 finds the existing call and updates it, or appends one if there is none.
 Comments, blank lines and everything else in the file stay as they were.
 
-- **Module:** [`rust/src/goal_based_editing.rs`](../rust/src/goal_based_editing.rs)
+- **Module:** [`core/src/goal_based_editing.rs`](../core/src/goal_based_editing.rs)
   (`petal::goal_based_editing`)
 - **Built on:** the lossless CST splice primitives in
-  [`rust/src/rewrite.rs`](../rust/src/rewrite.rs)
+  [`core/src/rewrite.rs`](../core/src/rewrite.rs)
 - **Reading values back out:** [config-files.md](config-files.md)
 
 ---
@@ -161,7 +161,7 @@ Values are **structured**, not pre-rendered source. The library renders each
 one into a valid Petal literal, so quoting and escaping are handled for you and
 untrusted input can never break out of a string or inject interpolation.
 
-The type lives in [`rust/src/static_value.rs`](../rust/src/static_value.rs) and
+The type lives in [`core/src/static_value.rs`](../core/src/static_value.rs) and
 is re-exported from `goal_based_editing`. It is the same type
 [`get_static_value`](config-files.md#reading) returns when reading, so a value
 round-trips: read it, adjust it, write it back. The variant table and rendering

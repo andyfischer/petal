@@ -6,7 +6,7 @@
 //   panel("examples/panels/gallery.ptl")                      // in a layout
 //   petal-ui-run examples/panels/gallery.ptl --frames 60      // headless
 //
-// See petal-ui/docs/components.md for the API of everything shown here.
+// See core-libs/petal-ui/docs/components.md for the API of everything shown here.
 // (Sections are written inline rather than as functions: top-level `state`
 // is assigned all over, and assigning to a captured outer variable from
 // inside a function is an error by design.)

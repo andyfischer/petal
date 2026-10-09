@@ -51,8 +51,8 @@ pub const SOURCE_ROOT: &str = env!("GARDEN_SOURCE_ROOT");
 /// Markdown is excluded, so a docs-only commit does not flag a binary stale.
 const SOURCE_PATHSPECS: &[&str] = &[
     ":(top)garden",
-    ":(top)petal-ui",
-    ":(top)rust",
+    ":(top)core-libs/petal-ui",
+    ":(top)core",
     ":(top,exclude,glob)**/*.md",
     ":(top,exclude)garden/tools",
 ];

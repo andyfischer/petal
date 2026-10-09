@@ -19,7 +19,7 @@ import { resolve } from "path";
 import { petalCapture, runPetalFile } from "./helpers";
 
 const ROOT = resolve(__dirname, "../..");
-const UI_RUN = resolve(ROOT, "petal-ui/target/debug/petal-ui-run");
+const UI_RUN = resolve(ROOT, "core-libs/petal-ui/target/debug/petal-ui-run");
 const FIXTURES = resolve(__dirname, "fixtures/overload-merge");
 
 const fixture = (name: string) => resolve(FIXTURES, name);

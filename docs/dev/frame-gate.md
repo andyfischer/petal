@@ -16,7 +16,7 @@ the last event); every other host had none.
 ## The mechanism
 
 The runtime records, per stack, what its most recent run *depended on*
-(`rust/src/run_deps.rs`, held on the `Stack` as `run_deps`):
+(`core/src/run_deps.rs`, held on the `Stack` as `run_deps`):
 
 | Recorded | How | Why it matters |
 |---|---|---|
@@ -74,7 +74,7 @@ number; it now caches on the palette record. `approach` no longer reads
 
 ## Checking it
 
-`petal-ui/tests/gating.rs` pins the semantics on small scripts and runs the
+`core-libs/petal-ui/tests/gating.rs` pins the semantics on small scripts and runs the
 differential oracle: every panel app in `examples/`, driven by a monkey
 scenario, must produce identical commands and state frame-for-frame with the
 gate on and off. `petal-ui-run --gate-stats` prints frames run vs skipped and

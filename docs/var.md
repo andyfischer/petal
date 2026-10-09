@@ -21,7 +21,7 @@ that genuinely wants a mutable slot. One keyword per operation, none implicit:
 
 ## Cells
 
-`var x = e` allocates a `Value::Cell` (`rust/src/value.rs`), a one-value box in
+`var x = e` allocates a `Value::Cell` (`core/src/value.rs`), a one-value box in
 a heap slab, via a `CellNew` term. Every source-level read of the name lowers
 to `CellRead`, every `set` to `CellWrite`.
 
@@ -69,7 +69,7 @@ binding, so the owning module exports a function instead. A first-class shared
 cell (an OCaml-style `ref` escaping into records and arguments) would give up
 the containment invariant and would be its own feature.
 
-Enforcement is `Compiler::check_write_keyword` (`rust/src/compiler/stmt.rs`).
+Enforcement is `Compiler::check_write_keyword` (`core/src/compiler/stmt.rs`).
 
 ## Reading a cell: `get`
 
@@ -148,9 +148,9 @@ The pass is `OptFlags::in_place_cells`, on by default and off under the
 because the trace is a history of values that an in-place write would rewrite.
 The soundness argument and the three things outside the script that read a
 cell across a write (memo records, the frame gate, the observation buffer) are
-in the module docs of `rust/src/backend/bytecode/cells.rs`. Coverage:
-`rust/tests/cell_in_place.rs` and the differential fuzzer in
-`rust/src/backend/bytecode/cell_fuzz.rs`.
+in the module docs of `core/src/backend/bytecode/cells.rs`. Coverage:
+`core/tests/cell_in_place.rs` and the differential fuzzer in
+`core/src/backend/bytecode/cell_fuzz.rs`.
 
 ## Cross-function assignment
 
@@ -176,7 +176,7 @@ conversion mechanically: the declaration, every `=` (to `set`) and every read
 across a function boundary (to `get`), following a `pub` binding into its
 importers. It resolves mentions lexically, by the shadowing rules below. See
 [CLI.md](CLI.md#apply-change--refactors-that-change-behaviour) and
-`rust/src/apply_change/`.
+`core/src/apply_change/`.
 
 ## Capture lag
 
@@ -201,7 +201,7 @@ Two deliberate under-approximations: inline lambdas are exempt (a
 the author does not control a callback's parameter list, so a warning would be
 unfixable), and only module bindings are scanned.
 
-Coverage: `rust/tests/capture_lag.rs`.
+Coverage: `core/tests/capture_lag.rs`.
 
 ## Lexical shadowing
 
@@ -220,7 +220,7 @@ print(x)             // 5
 ```
 
 Two halves make this work and both are required: the phi pre-scan
-(`AssignedNames` in `rust/src/compiler/phi.rs`) is scope-aware, and
+(`AssignedNames` in `core/src/compiler/phi.rs`) is scope-aware, and
 `Compiler::note_shadow` freezes the value the block carries out at the
 declaration. Making the pre-scan lexical alone is worse than no fix at all,
 because `wire_phi_outs` reads the block's final binding, so the shadowed
@@ -232,7 +232,7 @@ at the outer level, where it can hit a prelude function of the same name
 name as a local.
 
 Regression coverage: `test/vitest/loop-carry-limitations.test.ts`, the walker tests
-in `rust/src/compiler/phi.rs`, and the `_wrap_segment` shape in
+in `core/src/compiler/phi.rs`, and the `_wrap_segment` shape in
 `test/vitest/check-lowers.test.ts`.
 
 ## Provenance
@@ -240,7 +240,7 @@ in `rust/src/compiler/phi.rs`, and the `_wrap_segment` shape in
 A cell operand (of a `CellRead`, a `CellWrite`, or a `MakeClosure` capture)
 names *which box*, not which value. The backward walk is defined over value
 edges only, so it stops at every `CellRead` and reports a `CellFrontier`
-(`rust/src/program_analysis.rs`) carrying the var name, the declaration, the
+(`core/src/program_analysis.rs`) carrying the var name, the declaration, the
 complete static write set, and `host_writable`. A result with a non-empty
 frontier is by definition incomplete, and the return type says so.
 

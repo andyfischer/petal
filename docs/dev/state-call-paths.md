@@ -96,7 +96,7 @@ The hot-reload contract is "the name hash survives the edit". Nothing
 positional survives a reload: `TermId`/`BlockId`/`ClosureId` are dense indexes
 rebuilt per compile, source spans shift on any edit above them, and CST nodes
 have no persistent ids. So both identity components are derived from names
-and structure. Both live in `rust/src/compiler/state_ids.rs`.
+and structure. Both live in `core/src/compiler/state_ids.rs`.
 
 **Declaration id** (`Compiler::state_key_for`; a `u64` in the `StateKey`
 newtype):
@@ -133,7 +133,7 @@ enum PathPart { Call(u64), Index(usize), Key(u64) }
 struct RuntimeStateKey { base: StateKey /* decl id */, path: SmallVec<[PathPart; 4]> }
 ```
 
-(`rust/src/stack.rs`.) Explicit-key slots are `{base, path: [Key(h)]}`
+(`core/src/stack.rs`.) Explicit-key slots are `{base, path: [Key(h)]}`
 (absolute, §2.2); top-level slots have an empty path.
 
 Recursion makes paths grow with depth; `SmallVec<[_; 4]>` covers typical UI
@@ -212,7 +212,7 @@ What a caller must still get right:
 
 ### 3.5 Hot reload
 
-`transfer_stack_state` (`rust/src/transfer_state.rs`) matches on `base` only
+`transfer_stack_state` (`core/src/transfer_state.rs`) matches on `base` only
 and treats the rest of the key as opaque.
 
 - Decl survives the edit ⇒ entries retained. Paths that no longer occur are

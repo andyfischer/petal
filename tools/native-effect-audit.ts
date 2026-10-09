@@ -18,7 +18,7 @@
 //
 // This is a *static* approximation. The real tool is the runtime audit —
 // `petal-ui-run --effect-audit`, `petal run --effect-audit`, and the corpus
-// test petal-ui/tests/effect_audit.rs — which reports what each native was
+// test core-libs/petal-ui/tests/effect_audit.rs — which reports what each native was
 // *observed* doing against the effect row it declared. This script still has a
 // use the runtime one does not: it covers natives no corpus app calls, and it
 // found the five undeclared natives fixed before the runtime tool existed.
@@ -37,16 +37,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Where natives are registered, by the repo whose contract they are. */
 const REPOS: [string, string][] = [
-  ['core', 'rust/src'],
-  ['petal-ui', 'petal-ui/src'],
-  ['petal-query', 'petal-query/src'],
+  ['core', 'core/src'],
+  ['petal-ui', 'core-libs/petal-ui/src'],
+  ['petal-query', 'core-libs/petal-query/src'],
   ['garden', 'garden'],
   ['integrations', 'integrations'],
 ];
 
 /**
  * `PetalCxt` methods that move the activity counters, and the class each one
- * moves. Keep in step with rust/src/native_fn.rs — a method that starts
+ * moves. Keep in step with core/src/native_fn.rs — a method that starts
  * instrumenting itself and is not listed here shows up as a false SILENT.
  */
 const INSTRUMENTED: Record<string, string> = {

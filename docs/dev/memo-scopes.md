@@ -21,7 +21,7 @@ addressed by the call path its frame runs on: the same
 `[Call(site) | Index(i)]` chain that keys `state`
 ([state-call-paths.md](state-call-paths.md)). While a scope runs, the VM
 records, in execution order, what it depended on and what it did
-(`rust/src/memo.rs` holds the model, `backend/bytecode/vm/memo.rs` the VM
+(`core/src/memo.rs` holds the model, `backend/bytecode/vm/memo.rs` the VM
 half):
 
 | Recorded | How | Validated by |
@@ -67,16 +67,16 @@ the same box still holding last frame's increments). A scope with more than
 about what running it does.
 
 **How a native is classified.** From the effect row it registered with
-(`Env::register_native` takes one; `NativeEffects` in `rust/src/native_fn.rs`):
+(`Env::register_native` takes one; `NativeEffects` in `core/src/native_fn.rs`):
 `effect` makes the scope effectful, `HOST_DATA` and `RESOURCES` reads become
 the host-data / resource flags, any other read is a probe when the row says
 the call is re-evaluable. The row is taken at its word — the VM does not
 look at the activity counters around the call — so a row that says less than
 the native does is a silent staleness bug. What checks the rows is the effect
-audit: `petal-ui-run --effect-audit` (and `petal-ui/tests/effect_audit.rs`
+audit: `petal-ui-run --effect-audit` (and `core-libs/petal-ui/tests/effect_audit.rs`
 over the corpus) brackets every call with activity snapshots and reports
 each native seen doing a facet its row lacks, and on which facet
-(`rust/src/effect_audit.rs`). A `Pending` *result* makes the scope effectful
+(`core/src/effect_audit.rs`). A `Pending` *result* makes the scope effectful
 whatever the row says. See
 [the declarative-effect task](../tasks/declarative-effect-refactoring.md).
 
@@ -142,10 +142,10 @@ benefits.
 
 ## Checking it
 
-`petal-ui/tests/memo.rs` pins the semantics on small scripts and runs the
+`core-libs/petal-ui/tests/memo.rs` pins the semantics on small scripts and runs the
 differential oracle: every panel app in `examples/`, driven by a monkey
 scenario with the frame gate off, must produce identical commands, state and
-observations frame for frame with memoization on and off. `rust/src/memo.rs`
+observations frame for frame with memoization on and off. `core/src/memo.rs`
 has the model's unit tests and end-to-end checks through `Env::run`.
 `petal-ui-run --memo-stats` prints hits, misses, records, inlined, effectful,
 re-executions, cutoffs, cold-site skips and evictions — the first thing to

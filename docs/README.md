@@ -64,7 +64,7 @@ working documents and may contain point-in-time status.
 | [Memoized scopes](dev/memo-scopes.md) | How a frame that runs replays the calls whose inputs have not changed, and what makes a call replayable |
 | [Reactive Rendering](dev/reactive-rendering-plan.md) | The incremental-rendering roadmap: status of each layer (gate and memo shipped; dependency classes, keyed collections next), hazards, measurements |
 | [Headless UI Runner](dev/headless-ui-run.md) | `petal-ui-run`: driving a UI app without a window and recording a frame trace |
-| [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library (`petal-libs/bloom`) needs from the language and from hosts |
+| [Sharing Petal Libraries](dev/sharing-petal-libraries.md) | What writing a pure-Petal library (`core-runtime/bloom`) needs from the language and from hosts |
 | [Refactor Verification](dev/refactor-verification.md) | Proving a large mechanical change was behavior-preserving |
 | [Releasing](dev/releasing.md) | How prebuilt `petal` binaries are built, published, and installed |
 | [Releasing Garden](dev/releasing-garden.md) | How the Garden Homebrew formula is updated |

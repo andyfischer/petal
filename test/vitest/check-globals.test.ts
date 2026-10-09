@@ -4,7 +4,7 @@
 // misspelled function passed `check --strict` and died with "Unknown builtin"
 // on first run. The host's natives decide what is known: `--host` picks a set
 // (default `ui`: core + petal-ui + the `ui` prelude), `--native` adds names.
-// See rust/src/typecheck/globals.rs.
+// See core/src/typecheck/globals.rs.
 
 import { describe, it, expect } from "vitest";
 import { petalCapture, checkStrict } from "./helpers";
@@ -122,7 +122,7 @@ print(g(fn(x) -> x + 1))`);
 // Natives declare argument slots, and the ui prelude's un-annotated draw
 // overloads are held to what their bodies do with each parameter, so a call
 // whose argument count selects the wrong overload is caught by `check`
-// instead of failing inside the prelude. See rust/src/typecheck/param_reqs.rs.
+// instead of failing inside the prelude. See core/src/typecheck/param_reqs.rs.
 describe("check: native arguments and prelude overloads", () => {
   it("flags a native argument of the wrong type", () => {
     expect(checkWith([], 'print(sqrt("x"), range({r: 1}))')).toEqual([

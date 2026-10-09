@@ -2,7 +2,7 @@
 
 Desktop host for Petal programs. It opens an SDL2 window, runs your `.ptl`
 script once per frame, and draws the result. Graphics, input, and audio come
-from SDL2; the draw and input vocabulary comes from [`petal-ui`](../../petal-ui/).
+from SDL2; the draw and input vocabulary comes from [`petal-ui`](../../core-libs/petal-ui/).
 
 The directory is `integrations/petal-desktop-sdl`, but the crate and binary are
 still named `petal-sdl`.

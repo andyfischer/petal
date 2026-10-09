@@ -59,7 +59,7 @@ LIBRARY_PATH=/opt/homebrew/lib cargo build --release
 **The `LIBRARY_PATH=/opt/homebrew/lib` prefix is required on Homebrew macOS**
 for every cargo invocation of this crate (`build`, `run`, `test`); it is where
 the linker finds SDL2. On Linux, drop it. The first build is slow because it
-compiles the Petal interpreter in `../../../rust`; later builds are quick.
+compiles the Petal interpreter in `../../../core`; later builds are quick.
 
 A plain `cargo run` (debug) is fine for development: `Cargo.toml` builds the
 `petal` dependency optimized even in debug, so carts stay inside the frame

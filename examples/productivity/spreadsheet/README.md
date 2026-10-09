@@ -108,9 +108,9 @@ what [the reactive-rendering plan](../../../docs/dev/reactive-rendering-plan.md)
 measures this app with:
 
 ```bash
-cd petal-ui && cargo run --release --example bench_panel -- \
-  ../examples/productivity/spreadsheet/app.ptl 600 \
-  --scenario ../examples/productivity/spreadsheet/bench/session.json
+cd core-libs/petal-ui && cargo run --release --example bench_panel -- \
+  ../../examples/productivity/spreadsheet/app.ptl 600 \
+  --scenario ../../examples/productivity/spreadsheet/bench/session.json
 ```
 
 Add `--no-gate` / `--no-memo` for the same session without the incremental

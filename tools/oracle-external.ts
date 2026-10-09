@@ -3,7 +3,7 @@
 // lives outside this repo — today, worlds-fair's UI (`~/worlds-fair/ui/ptl`).
 //
 // Garden is in-tree, so its panels and GPP apps are part of the cargo corpus
-// (petal-ui/tests/common/mod.rs) and run in CI. worlds-fair is not, and it
+// (core-libs/petal-ui/tests/common/mod.rs) and run in CI. worlds-fair is not, and it
 // needs two things this repo cannot generate:
 //
 //   - a *bundle*. A worlds-fair fragment is delivered as one flat source
@@ -33,7 +33,7 @@
 //   ./tools/oracle-external.ts [--wf <dir>] [--frames N] [--seed N]
 //
 // Prerequisites:
-//   cd petal-ui && cargo build --release
+//   cd core-libs/petal-ui && cargo build --release
 //   cd ~/worlds-fair/ui && cargo build --release -p wf-ui-garden
 //
 // Exits non-zero if any fragment's frames differ, if any ran vacuously, or if
@@ -55,7 +55,7 @@ const flag = (name: string, fallback: string) => {
 const wfRoot = resolve(flag('--wf', join(process.env.HOME ?? '', 'worlds-fair')));
 const frames = Number(flag('--frames', '45'));
 const seed = flag('--seed', '1');
-const runner = join(root, 'petal-ui/target/release/petal-ui-run');
+const runner = join(root, 'core-libs/petal-ui/target/release/petal-ui-run');
 const wfBin = join(wfRoot, 'ui/target/release/wf-ui');
 const ptl = join(wfRoot, 'ui/ptl');
 
@@ -113,7 +113,7 @@ const normalize = (trace: string) =>
       return JSON.stringify({ c: f.commands, s: f.state, e: f.error });
     });
 
-/** Run policies (see rust/src/policy.rs), each compared against `baseline`. */
+/** Run policies (see core/src/policy.rs), each compared against `baseline`. */
 const VARIANTS = ['fast-memo', 'replay', 'fast'] as const;
 
 function runnerArgs(app: string, policy: string, extra: string[] = []): string[] {

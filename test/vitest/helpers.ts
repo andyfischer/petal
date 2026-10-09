@@ -2,7 +2,7 @@ import { execFile, spawnSync } from "child_process";
 import { resolve } from "path";
 
 /** Absolute path of the built debug binary (built once in global-setup.ts). */
-export const PETAL = resolve(__dirname, "../../rust/target/debug/petal");
+export const PETAL = resolve(__dirname, "../../core/target/debug/petal");
 
 /** stdout/stderr/exit-code triple of one CLI invocation. */
 export interface CliResult {

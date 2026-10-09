@@ -17,7 +17,7 @@ node_modules
 temp
 
 # WASM build output
-rust/pkg/
+core/pkg/
 apps/petal-diagram-canvas/pkg/
 apps/petal-diagram-canvas/dist/
 

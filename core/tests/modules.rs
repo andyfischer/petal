@@ -1,0 +1,788 @@
+// Integration tests for the module / import system (docs/module-system.md).
+//
+// Most cases use in-memory modules (`Env::register_module`) — which doubles
+// as coverage for the wasm-shaped "no filesystem" embedding. Filesystem
+// resolution (importer-relative and search-path) gets its own temp-dir cases
+// at the bottom.
+
+use petal::compiler::Compiler;
+use petal::env::Env;
+use petal::program::StateKey;
+
+/// Run `entry` with the given in-memory modules and return its print output.
+fn run_with_modules(modules: &[(&str, &str)], entry: &str) -> Vec<String> {
+    let mut env = Env::new();
+    for (name, source) in modules {
+        env.register_module(name, source);
+    }
+    let pid = env.load_program(entry).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    env.take_output()
+}
+
+/// Assert `entry` produces the expected output.
+fn check_output(modules: &[(&str, &str)], entry: &str, expect: &[&str]) {
+    let out = run_with_modules(modules, entry);
+    assert_eq!(out, expect);
+}
+
+/// Load `entry` expecting a compile-time error; return the message.
+fn load_error(modules: &[(&str, &str)], entry: &str) -> String {
+    let mut env = Env::new();
+    for (name, source) in modules {
+        env.register_module(name, source);
+    }
+    env.load_program(entry).unwrap_err()
+}
+
+const UI: &str = "\
+pub let palette = { fg: 15, bg: 2 }
+pub fn button(label)
+  \"[\" ++ label ++ \"]\"
+end
+fn _secret()
+  42
+end
+";
+
+// ── Binding forms ────────────────────────────────────────────────
+
+#[test]
+fn qualified_access_through_module_alias() {
+    check_output(
+        &[("ui", UI)],
+        "import ui\nprint(ui.button(\"go\"))\nprint(ui.palette.bg)",
+        &["[go]", "2"],
+    );
+}
+
+#[test]
+fn selective_import_binds_bare_names() {
+    check_output(
+        &[("ui", UI)],
+        "import ui: button\nprint(button(\"x\"))",
+        &["[x]"],
+    );
+}
+
+#[test]
+fn alias_import() {
+    check_output(
+        &[("ui", UI)],
+        "import ui as u\nprint(u.button(\"y\"))",
+        &["[y]"],
+    );
+}
+
+#[test]
+fn module_member_used_inside_function_is_captured() {
+    check_output(
+        &[("ui", UI)],
+        "import ui\nimport ui: button\nfn both(l)\n  ui.button(l) ++ button(l)\nend\nprint(both(\"a\"))",
+        &["[a][a]"],
+    );
+}
+
+#[test]
+fn local_binding_shadows_module_alias() {
+    // Once `ui` is an ordinary value, `ui.fg` is plain field access.
+    check_output(
+        &[("ui", UI)],
+        "import ui\nlet ui = { fg: 9 }\nprint(ui.fg)",
+        &["9"],
+    );
+}
+
+#[test]
+fn imports_can_nest() {
+    let base = "pub fn double(x)\n  x * 2\nend";
+    let mid = "import base\npub fn quad(x)\n  base.double(base.double(x))\nend";
+    check_output(
+        &[("base", base), ("mid", mid)],
+        "import mid\nprint(mid.quad(3))",
+        &["12"],
+    );
+}
+
+// ── Execution semantics ──────────────────────────────────────────
+
+#[test]
+fn module_top_level_runs_once_before_importer_diamond() {
+    let base = "print(\"base-init\")\npub let shared = 7";
+    let left = "import base\npub let l = base.shared + 1";
+    let right = "import base\npub let r = base.shared + 2";
+    check_output(
+        &[("base", base), ("left", left), ("right", right)],
+        "import left\nimport right\nprint(left.l + right.r)",
+        &["base-init", "17"],
+    );
+}
+
+#[test]
+fn enum_variants_export_and_match_across_modules() {
+    let shapes = "pub enum Shape\n  Circle(r),\n  Dot,\nend";
+    check_output(
+        &[("shapes", shapes)],
+        "import shapes: Circle, Dot\n\
+         let c = Circle(5)\n\
+         print(match c\n  when Circle(r) -> r\n  when Dot -> 0\nend)",
+        &["5"],
+    );
+}
+
+#[test]
+fn overloaded_module_fn_exports_as_one_set() {
+    let m = "pub fn f(a)\n  a\nend\npub fn f(a, b)\n  a + b\nend";
+    check_output(
+        &[("m", m)],
+        "import m: f\nprint(f(1))\nprint(f(1, 2))",
+        &["1", "3"],
+    );
+}
+
+#[test]
+fn overloaded_module_fn_with_mixed_export_markers_is_a_compile_error() {
+    // Export visibility is per-name and all arities share one binding, so a
+    // single `pub` arity would silently leak the unmarked one. Require the
+    // markers to be consistent across the whole overload group.
+    let m = "pub fn f(a)\n  a\nend\nfn f(a, b)\n  a + b\nend";
+    let err = load_error(&[("m", m)], "import m: f");
+    assert!(err.contains("mixed `pub` markers"), "got: {err}");
+    assert!(err.contains("'f'"), "names the function: {err}");
+}
+
+// ── Errors ───────────────────────────────────────────────────────
+
+#[test]
+fn import_cycle_is_a_compile_error() {
+    let err = load_error(
+        &[("a", "import b\nlet x = 1"), ("b", "import a\nlet y = 1")],
+        "import a",
+    );
+    assert!(err.contains("import cycle: a -> b -> a"), "got: {err}");
+}
+
+#[test]
+fn missing_module_is_a_compile_error() {
+    let err = load_error(&[], "import nope");
+    assert!(err.contains("cannot find module 'nope'"), "got: {err}");
+}
+
+#[test]
+fn unknown_selective_name_is_a_compile_error() {
+    let err = load_error(&[("ui", UI)], "import ui: knob");
+    assert!(err.contains("no export 'knob'"), "got: {err}");
+    assert!(err.contains("button"), "error lists exports: {err}");
+}
+
+#[test]
+fn selective_import_of_private_name_is_a_compile_error() {
+    // `_secret` is an unexported `fn`; under the single export rule it is
+    // private like any other, reported via the ordinary "no export" path.
+    let err = load_error(&[("ui", UI)], "import ui: _secret");
+    assert!(err.contains("no export '_secret'"), "got: {err}");
+}
+
+#[test]
+fn unexported_name_is_not_importable() {
+    // A plain `fn`/`let` with no `pub` is module-private under the new
+    // default (everything private unless exported).
+    let m = "pub fn shown()\n  1\nend\nfn hidden()\n  2\nend";
+    let err = load_error(&[("m", m)], "import m: hidden");
+    assert!(err.contains("no export 'hidden'"), "got: {err}");
+    // The exports list should mention the one exported name.
+    assert!(err.contains("shown"), "error lists exports: {err}");
+}
+
+#[test]
+fn export_marks_underscore_name_importable() {
+    // `pub` is the single privacy rule: a leading `_` carries no special
+    // privacy meaning. A `pub fn _helper` exports normally — both
+    // selectively importable and reachable via qualified member access.
+    let m = "pub fn _helper()\n  1\nend";
+    check_output(&[("m", m)], "import m: _helper\nprint(_helper())", &["1"]);
+    check_output(&[("m", m)], "import m\nprint(m._helper())", &["1"]);
+}
+
+#[test]
+fn unexported_underscore_name_is_private() {
+    // A plain `_`-prefixed name with no `pub` is private like any other
+    // unexported name — flagged via the ordinary "no export" path.
+    let m = "fn _helper()\n  1\nend";
+    let err = load_error(&[("m", m)], "import m: _helper");
+    assert!(err.contains("no export '_helper'"), "got: {err}");
+}
+
+#[test]
+fn unexported_member_access_is_a_deferred_error() {
+    let m = "fn hidden()\n  99\nend";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env.load_program("import m\nprint(m.hidden())").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err();
+    assert!(err.contains("no export 'hidden'"), "got: {err}");
+}
+
+#[test]
+fn selective_collision_between_modules_is_a_compile_error() {
+    let a = "pub fn draw()\n  1\nend";
+    let b = "pub fn draw()\n  2\nend";
+    let err = load_error(&[("a", a), ("b", b)], "import a: draw\nimport b: draw");
+    assert!(
+        err.contains("'draw' is imported from both 'a' and 'b'"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn selective_collision_with_local_decl_is_a_compile_error() {
+    let err = load_error(&[("ui", UI)], "import ui: button\nfn button(x)\n  x\nend");
+    assert!(err.contains("also declared in this file"), "got: {err}");
+}
+
+#[test]
+fn conflicting_aliases_are_a_compile_error() {
+    let err = load_error(
+        &[("a", "let x = 1"), ("b", "let y = 1")],
+        "import a as m\nimport b as m",
+    );
+    assert!(err.contains("already an alias"), "got: {err}");
+}
+
+#[test]
+fn import_after_statement_is_a_parse_error() {
+    let err = load_error(&[("ui", UI)], "let x = 1\nimport ui");
+    assert!(
+        err.contains("import statements must appear before any other statement"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn module_alias_as_value_is_a_deferred_error() {
+    // Consistent with undefined variables: the error fires at runtime, only
+    // if the expression actually executes.
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    let pid = env.load_program("import ui\nprint(ui)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err();
+    assert!(err.contains("'ui' is a module"), "got: {err}");
+}
+
+#[test]
+fn private_member_access_is_a_deferred_error() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    let pid = env.load_program("import ui\nprint(ui._secret())").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err();
+    assert!(err.contains("private"), "got: {err}");
+}
+
+#[test]
+fn runtime_error_in_module_names_the_file() {
+    let bad = "pub fn boom(x)\n  x + nil\nend";
+    let mut env = Env::new();
+    env.register_module("bad", bad);
+    let pid = env.load_program("import bad\nbad.boom(1)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let err = env.run(sid).unwrap_err();
+    // Module positions carry the module's display name; entry-file errors
+    // keep the bare [line N, column M] format.
+    assert!(err.contains("[bad line 2"), "got: {err}");
+}
+
+// ── State keys ───────────────────────────────────────────────────
+
+#[test]
+fn same_state_name_in_two_modules_gets_distinct_slots() {
+    // The module qualifier is the outermost part of a declaration id
+    // (`Compiler::state_key_for`); the rest of the name path is covered by
+    // tests/state_decl_ids.rs.
+    let m1 = "state scroll = 0\nscroll += 1\npub fn get1()\n  scroll\nend";
+    let m2 = "state scroll = 0\nscroll += 10\npub fn get2()\n  scroll\nend";
+    check_output(
+        &[("m1", m1), ("m2", m2)],
+        "import m1\nimport m2\nprint(m1.get1())\nprint(m2.get2())",
+        &["1", "10"],
+    );
+}
+
+#[test]
+fn top_level_state_keys_hash_the_qualified_name() {
+    // A top-level declaration id is the hash of its qualified name and
+    // nothing else — bare in the entry file, `module::name` in a module — so
+    // host code that computes keys via `hash_state_name` keeps working and
+    // hot-reload state survives across builds.
+    let mut env = Env::new();
+    env.register_module("m", "state n = 0\nn += 5");
+    let pid = env.load_program("import m\nstate n = 100\nn += 1").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let entry_key = StateKey(Compiler::hash_state_name("n"));
+    let module_key = StateKey(Compiler::hash_state_name("m::n"));
+    assert_eq!(
+        format!("{:?}", env.get_state(sid, entry_key).unwrap()),
+        "Int(101)"
+    );
+    assert_eq!(
+        format!("{:?}", env.get_state(sid, module_key).unwrap()),
+        "Int(5)"
+    );
+}
+
+#[test]
+fn a_module_function_state_is_keyed_below_its_module() {
+    // In-function declarations extend the qualified name with the enclosing
+    // function chain, so a module's `ui::draw`-scoped `n` shares a slot with
+    // neither the module's top-level `n` nor the entry file's.
+    let m = "state n = 0\npub fn draw()\n  state n = 1000\n  n += 1\n  n\nend";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env
+        .load_program("import m\nstate n = 0\nn += 1\nprint(m.draw())\nprint(n)")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1001", "1"]);
+
+    assert!(
+        env.get_state(sid, StateKey(Compiler::hash_state_name("m::n")))
+            .is_some(),
+        "the module's top-level `n` keeps its qualified-name key"
+    );
+    // `m::draw/n` is reached through a call, so its slot sits on a call path
+    // rather than at the empty path `get_state` addresses — find it by base id.
+    let by_base = |name: &str| -> Vec<String> {
+        let base = StateKey(Compiler::hash_state_name(name));
+        env.get_all_state(sid)
+            .unwrap()
+            .iter()
+            .filter(|(k, _)| k.base == base)
+            .map(|(_, v)| format!("{v:?}"))
+            .collect()
+    };
+    assert_eq!(by_base("m::draw/n"), ["Int(1001)"]);
+}
+
+#[test]
+fn a_module_functions_state_is_per_callsite_across_the_module_boundary() {
+    // Call paths cross module boundaries like any other call: an exported
+    // helper called twice from the entry file and once from inside its own
+    // module holds three independent values. Callsite ids are qualified by the
+    // module and enclosing function they are written in, so the module's own
+    // call and the entry file's cannot collide.
+    let m = "\
+pub fn tick()
+  state n = 0
+  n += 1
+  n
+end
+pub fn internal()
+  tick()
+end
+";
+    let mut env = Env::new();
+    env.register_module("m", m);
+    let pid = env
+        .load_program("import m\nprint(m.tick())\nprint(m.tick())\nprint(m.internal())")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["1", "1", "1"]);
+
+    let base = StateKey(Compiler::hash_state_name("m::tick/n"));
+    let slots = env
+        .get_all_state(sid)
+        .unwrap()
+        .keys()
+        .filter(|k| k.base == base)
+        .count();
+    assert_eq!(slots, 3, "three callsites, three slots");
+
+    // A second run finds each of the three where it left it.
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["2", "2", "2"]);
+    assert_eq!(
+        env.get_all_state(sid)
+            .unwrap()
+            .keys()
+            .filter(|k| k.base == base)
+            .count(),
+        3,
+        "and no fourth slot appeared"
+    );
+}
+
+#[test]
+fn hot_reload_of_module_preserves_its_state() {
+    let mut env = Env::new();
+    env.register_module("counter", "state n = 0\nn += 1\npub fn read()\n  n\nend");
+    let pid = env
+        .load_program("import counter\nprint(counter.read())")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["1"]);
+
+    // Edit the module (init unchanged, increment becomes +10) and reload.
+    env.register_module(
+        "counter",
+        "state n = 0\nn += 10\npub fn read()\n  n\nend",
+    );
+    let new_program = env
+        .compile_program(pid, "import counter\nprint(counter.read())")
+        .unwrap();
+    let result = env.transfer_state(sid, new_program).unwrap();
+    assert_eq!(result.state_preserved, 1);
+    assert_eq!(result.state_dropped, 0);
+
+    env.run(sid).unwrap();
+    // Preserved n=1, then += 10 → 11.
+    assert_eq!(env.take_output(), vec!["11"]);
+}
+
+#[test]
+fn renaming_a_module_drops_its_state() {
+    let counter = "state n = 0\nn += 1\npub fn read()\n  n\nend";
+    let mut env = Env::new();
+    env.register_module("counter", counter);
+    env.register_module("tally", counter);
+    let pid = env
+        .load_program("import counter\nprint(counter.read())")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    env.take_output();
+
+    // Same state decl, different module name → different key → dropped.
+    let new_program = env
+        .compile_program(pid, "import tally\nprint(tally.read())")
+        .unwrap();
+    let result = env.transfer_state(sid, new_program).unwrap();
+    assert_eq!(result.state_preserved, 0);
+    assert_eq!(result.state_dropped, 1);
+}
+
+// ── Implicit imports ─────────────────────────────────────────────
+
+#[test]
+fn implicit_imports_bind_exports_bare() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    env.set_implicit_imports(&["ui"]);
+    let pid = env.load_program("print(button(\"z\"))").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["[z]"]);
+}
+
+#[test]
+fn script_bindings_win_over_implicit_imports() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    env.set_implicit_imports(&["ui"]);
+    let pid = env
+        .load_program("fn button(l)\n  \"<\" ++ l ++ \">\"\nend\nprint(button(\"z\"))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["<z>"]);
+}
+
+#[test]
+fn explicit_import_of_implicit_module_is_a_noop() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    env.set_implicit_imports(&["ui"]);
+    let pid = env
+        .load_program("import ui\nprint(button(\"z\"))\nprint(ui.button(\"q\"))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["[z]", "[q]"]);
+}
+
+// ── Core prelude (std) ───────────────────────────────────────────
+
+#[test]
+fn core_prelude_is_implicit_with_no_host() {
+    // A bare Env — no host, no register_module, no set_implicit_imports —
+    // still binds the `std` prelude helpers.
+    let mut env = Env::new();
+    let pid = env.load_program("print(sum([1, 2, 3, 4]))").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["10"]);
+}
+
+#[test]
+fn core_prelude_survives_host_implicit_imports() {
+    // A host replacing the implicit-import list for its own prelude must not
+    // drop `std`: both the host's `ui` and the core `std` bind bare.
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    env.set_implicit_imports(&["ui"]);
+    let pid = env
+        .load_program("print(button(\"z\"))\nprint(first([9, 8]))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["[z]", "9"]);
+}
+
+#[test]
+fn core_prelude_is_reference_gated_in_the_manifest() {
+    // Naming a `std` export pulls the prelude in; it then appears in the
+    // manifest ahead of the entry. (A program that names none — see
+    // `module_manifest_lists_all_files` — leaves it out entirely.)
+    let mut env = Env::new();
+    let pid = env.load_program("let x = sum([1, 2, 3])").unwrap();
+    let manifest = env.module_manifest(pid);
+    let names: Vec<&str> = manifest.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, vec!["<entry>", "std"]);
+}
+
+// ── Host-facing surfaces ─────────────────────────────────────────
+
+#[test]
+fn call_function_reaches_module_fns_by_qualified_name() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    let pid = env.load_program("import ui\nlet _ = 0").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+
+    let arg = petal::value::Value::String(env.heap_mut().alloc_string("hi".to_string()));
+    let result = env.call_function(sid, "ui::button", &[arg]).unwrap();
+    let rendered = petal::value::value_to_json(&result, env.heap());
+    assert_eq!(rendered, serde_json::json!("[hi]"));
+}
+
+#[test]
+fn module_manifest_lists_all_files() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    let pid = env.load_program("import ui\nlet x = 1").unwrap();
+    let manifest = env.module_manifest(pid);
+    let names: Vec<&str> = manifest.iter().map(|e| e.name.as_str()).collect();
+    // The core `std` prelude is reference-gated: this entry names no `std`
+    // export, so it isn't merged and doesn't appear in the manifest.
+    assert_eq!(names, vec!["<entry>", "ui"]);
+    // In-memory modules have no filesystem origin.
+    assert!(manifest.iter().all(|e| e.origin.is_none()));
+}
+
+#[test]
+fn imports_are_not_reexported() {
+    let base = "pub fn helper()\n  1\nend";
+    let mid = "import base: helper\npub fn use_it()\n  helper()\nend";
+    let err = load_error(&[("base", base), ("mid", mid)], "import mid: helper");
+    assert!(err.contains("no export 'helper'"), "got: {err}");
+}
+
+// ── Filesystem resolution ────────────────────────────────────────
+
+/// Create a unique temp directory tree for a filesystem test.
+struct TempTree {
+    root: std::path::PathBuf,
+}
+
+impl TempTree {
+    fn new(tag: &str) -> Self {
+        let root =
+            std::env::temp_dir().join(format!("petal-modtest-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        Self { root }
+    }
+
+    fn write(&self, rel: &str, content: &str) -> std::path::PathBuf {
+        let path = self.root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+}
+
+impl Drop for TempTree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+#[test]
+fn imports_resolve_relative_to_the_importing_file() {
+    let tree = TempTree::new("relative");
+    tree.write("lib/palette.ptl", "pub let bg = 3");
+    // panel.ptl imports its sibling, from a different working directory.
+    let panel = tree.write("lib/panel.ptl", "import palette\nprint(palette.bg)");
+    let source = std::fs::read_to_string(&panel).unwrap();
+
+    let mut env = Env::new();
+    let pid = env.load_program_at(&source, &panel).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["3"]);
+
+    // The manifest records where the module came from.
+    let manifest = env.module_manifest(pid);
+    let module_entry = manifest.iter().find(|e| e.name == "palette.ptl").unwrap();
+    assert!(
+        module_entry
+            .origin
+            .as_ref()
+            .unwrap()
+            .ends_with("lib/palette.ptl")
+    );
+}
+
+#[test]
+fn registered_module_beats_file_of_same_name() {
+    let tree = TempTree::new("priority");
+    tree.write("dep.ptl", "pub let v = \"file\"");
+    let entry = tree.write("main.ptl", "import dep\nprint(dep.v)");
+    let source = std::fs::read_to_string(&entry).unwrap();
+
+    let mut env = Env::new();
+    env.register_module("dep", "pub let v = \"memory\"");
+    let pid = env.load_program_at(&source, &entry).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["memory"]);
+}
+
+#[test]
+fn module_search_paths_are_consulted_after_importer_dir() {
+    let tree = TempTree::new("searchpath");
+    tree.write("libs/util.ptl", "pub let tag = \"from-libs\"");
+
+    let mut env = Env::new();
+    env.add_module_path(tree.root.join("libs"));
+    // Entry loaded with no origin (inline) — only the search path can hit.
+    let pid = env.load_program("import util\nprint(util.tag)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["from-libs"]);
+}
+
+#[test]
+fn wasm_shaped_env_compiles_from_memory_only() {
+    // No filesystem involvement at all: every module is registered.
+    let mut env = Env::new();
+    env.register_module("a", "import b\npub fn f()\n  b.g() + 1\nend");
+    env.register_module("b", "pub fn g()\n  41\nend");
+    let pid = env.load_program("import a\nprint(a.f())").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["42"]);
+}
+
+// The core prelude (`std`) is a *gated* implicit import: it merges only when
+// something references one of its exports. It used to merge into the entry file
+// alone, so a host prelude module registered by an embedder — petal-ui's `ui`,
+// the fantasy console's `nes_sound` — compiled cleanly and then died with
+// "Unknown builtin: has_field" the first time the line actually ran. These pin
+// the fix: the prelude resolves inside every module, at lowest precedence.
+
+#[test]
+fn core_prelude_resolves_inside_a_registered_module() {
+    let mut env = Env::new();
+    env.register_module(
+        "hostlib",
+        "pub fn probe(r)\n  if has_field(r, \"hit\") then \"yes\" else \"no\" end\nend",
+    );
+    env.set_implicit_imports(&["hostlib"]);
+    let pid = env
+        .load_program("print(probe({hit: 1}))\nprint(probe({miss: 1}))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["yes", "no"]);
+}
+
+#[test]
+fn core_prelude_resolves_inside_an_explicitly_imported_module() {
+    // Same rule for a module the *script* imports, not just a host prelude.
+    check_output(
+        &[("helper", "pub fn total(xs)\n  sum(xs)\nend")],
+        "import helper\nprint(helper.total([1, 2, 3]))",
+        &["6"],
+    );
+}
+
+#[test]
+fn a_module_declaration_still_shadows_the_core_prelude() {
+    // Gated imports stay lowest-precedence: a module that defines its own `sum`
+    // gets its own, not std's.
+    check_output(
+        &[(
+            "shadow",
+            "fn sum(xs)\n  \"mine\"\nend\npub fn go()\n  sum([1, 2])\nend",
+        )],
+        "import shadow\nprint(shadow.go())",
+        &["mine"],
+    );
+}
+
+/// A call through a module namespace (`m.f(x)`) is checked against `m`'s
+/// declared signature, the same as the bare-name call a selective import
+/// gives. Most callers of a library reach it through its namespace, so
+/// without this an annotation on a library is checked almost nowhere.
+///
+/// The unit tests in `src/typecheck` cover the rule's guards against a
+/// hand-built namespace map; this one proves the map the compiler actually
+/// builds from real `import` statements reaches the checker.
+#[test]
+fn a_qualified_call_into_a_module_is_type_checked() {
+    let motion = "pub fn scaled(r: Rect, s: num) -> Rect\n  r\nend\n";
+
+    let warn_messages = |modules: &[(&str, &str)], entry: &str| -> Vec<String> {
+        let mut env = Env::new();
+        for (name, source) in modules {
+            env.register_module(name, source);
+        }
+        let pid = env.load_program(entry).unwrap();
+        env.get_program(pid)
+            .expect("program")
+            .warnings
+            .iter()
+            .map(|d| d.message.clone())
+            .collect()
+    };
+
+    // Through an alias.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion as m\nprint(m.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert!(w[0].contains("expected `Rect`, found `string`"), "{w:?}");
+
+    // Through the module's own name.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion\nprint(motion.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+
+    // Through a facade that re-exports it — the shape `core-runtime/bloom`
+    // uses, and the one a caller writing `bloom.button(...)` depends on.
+    let w = warn_messages(
+        &[("motion", motion), ("bloom", "pub import motion: *\n")],
+        "import bloom\nprint(bloom.scaled(\"no\", 2))",
+    );
+    assert_eq!(w.len(), 1, "{w:?}");
+
+    // A correct call stays silent.
+    let w = warn_messages(
+        &[("motion", motion)],
+        "import motion as m\nprint(m.scaled(Rect(0, 0, 1, 1), 2))",
+    );
+    assert!(w.is_empty(), "{w:?}");
+}

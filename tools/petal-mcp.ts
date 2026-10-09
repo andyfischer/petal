@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 
 const projectRoot = resolve(import.meta.dirname, "..");
-const petalBin = join(projectRoot, "rust/target/debug/petal");
+const petalBin = join(projectRoot, "core/target/debug/petal");
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -24,7 +24,7 @@ function runCommand(cmd: string, args: string[]): Promise<{ stdout: string; stde
 
 async function ensureBuild(): Promise<ToolResult | null> {
   const build = await runCommand("cargo", [
-    "build", "--quiet", "--manifest-path", join(projectRoot, "rust/Cargo.toml"),
+    "build", "--quiet", "--manifest-path", join(projectRoot, "core/Cargo.toml"),
   ]);
   if (build.exitCode !== 0) {
     return { content: [{ type: "text", text: `Build failed:\n${build.stderr}` }], isError: true };

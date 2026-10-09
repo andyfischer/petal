@@ -40,7 +40,7 @@ P0 underlies everything, P2 and P3 make P1 cheaper.
 
 ### P0 — what is left
 
-Shipped (c2032ad, d90bc35): the read-set gate (`rust/src/run_deps.rs`,
+Shipped (c2032ad, d90bc35): the read-set gate (`core/src/run_deps.rs`,
 `Env::run_needed`) in `Headless`, Garden panels, petal-desktop-sdl and
 petal-web-canvas; keyed DOM patching in petal-web-html in place of
 `innerHTML`.
@@ -184,13 +184,13 @@ The proposal's hazard list, with where each stands.
 | **Aliasing a replayed result** | Handled (a327d8c): a call whose result the caller mutates in place is not a scope. |
 | **Memory growth** | Records of unvisited scopes are evicted each run; `MAX_SLOTS` caps the table; `MAX_SCOPE_DEPS` caps a record. No cap yet on retained output per scope. Persistent collections (P3) will add structure overhead. |
 | **Tooling fidelity** (`explain`, `--observe`, provenance) | Observations are re-recorded on replay. Memoization is off while the `explain` trace is on. The `baseline` run policy (`PETAL_POLICY=baseline`) disables it for differential testing. |
-| **Correctness: a missed dependency is a stale pixel** | Differential oracles (`petal-ui/tests/gating.rs`, `petal-ui/tests/memo.rs`) over the examples corpus. **Not yet run over Garden (`~/garden`, `~/.garden`) or worlds-fair (`~/worlds-fair/ui/ptl`) scripts**, which the proposal called for. Every new layer needs the same incremental-vs-full oracle before it lands. |
+| **Correctness: a missed dependency is a stale pixel** | Differential oracles (`core-libs/petal-ui/tests/gating.rs`, `core-libs/petal-ui/tests/memo.rs`) over the examples corpus. **Not yet run over Garden (`~/garden`, `~/.garden`) or worlds-fair (`~/worlds-fair/ui/ptl`) scripts**, which the proposal called for. Every new layer needs the same incremental-vs-full oracle before it lands. |
 | **Nearly every widget reads the mouse** | Why `hovered` is a native probe with early cutoff. Any other per-widget input read written in Petal (two pointer reads instead of one probe) will make every row re-run on every move; check `--memo-stats` when adding one. |
 | **Prelude reads that defeat gating** | Found twice (`_host_theme` cached on `frame_count()`, `approach` reading `dt()` after landing). Expect more in Garden/bloom code; `--gate-stats` shows run reasons. |
 
 ## Measurements
 
-Release build, Apple Silicon, `petal-ui/examples/bench_panel`, 1200×800.
+Release build, Apple Silicon, `core-libs/petal-ui/examples/bench_panel`, 1200×800.
 
 **Baseline before P0 (2026-09-14, min / p50, every frame runs):**
 

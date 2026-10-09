@@ -68,24 +68,24 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/target
-          key: cargo-release-${{ matrix.target }}-${{ hashFiles('rust/Cargo.lock') }}
+            core/target
+          key: cargo-release-${{ matrix.target }}-${{ hashFiles('core/Cargo.lock') }}
           restore-keys: cargo-release-${{ matrix.target }}-
 
       - name: Build (cargo)
         if: matrix.builder == 'cargo'
-        run: cargo build --release --locked --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+        run: cargo build --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
 
       - name: Build (cargo-zigbuild)
         if: matrix.builder == 'zigbuild'
-        run: cargo zigbuild --release --locked --manifest-path rust/Cargo.toml --target ${{ matrix.target }}
+        run: cargo zigbuild --release --locked --manifest-path core/Cargo.toml --target ${{ matrix.target }}
 
       - name: Package tarball + checksum
         shell: bash
         run: |
           set -euo pipefail
           target="${{ matrix.target }}"
-          bin="rust/target/${target}/release/petal"
+          bin="core/target/${target}/release/petal"
           dist="petal-${target}"
           mkdir -p "dist/${dist}"
           cp "$bin" "dist/${dist}/petal"

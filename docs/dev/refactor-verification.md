@@ -81,7 +81,7 @@ Two sources:
   (`examples/games/snake/scenarios/*.json`). These reach deep state: start a
   game, lose a life, open a dialog. The verifier's `"checked-in"` scenario
   source looks for them; none exist yet.
-- **Generated "monkey" scenarios** from a seed (`petal-ui/src/scenario.rs`):
+- **Generated "monkey" scenarios** from a seed (`core-libs/petal-ui/src/scenario.rs`):
   random clicks inside the window, random keys, random text. Deterministic
   by seed, so a failing run is replayable by `(app, seed, scenario-seed)`.
 
@@ -166,7 +166,7 @@ The checks:
    Re-baseline deliberately: name the field that moved before running
    `--update-golden`, because a hash that hides a behavior change looks
    exactly like one that does not. A worked example: inserting a block into
-   `petal-ui/prelude/ui.ptl` shifted the ordinal in the display label a
+   `core-libs/petal-ui/prelude/ui.ptl` shifted the ordinal in the display label a
    state dump puts on an unnamed callsite (`ui::button#1/<expr>#63/…` became
    `…/<expr>#78/…`). The argument that this was cosmetic: `state` was the
    only field that differed and the `commands` arrays were identical;
@@ -217,7 +217,7 @@ equality of the whole rewrite. See `petal lint --help`.
 - **Hand-written scenarios** beside the apps; everything is monkey-driven
   breadth today.
 - **CI plan for compiler changes**: `--plan compiler` on PRs touching
-  `rust/src/backend` or `rust/src/compiler`, before-bin = a `main` build.
+  `core/src/backend` or `core/src/compiler`, before-bin = a `main` build.
 - **Handle id masking** in `--json` output. No corpus file prints a handle,
   so no run has produced a spurious `slot#serial` diff.
 

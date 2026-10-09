@@ -350,9 +350,9 @@ See [`petal suggest`](CLI.md#suggest--suggest-safe-refactors-for-a-file).
 ## Where this lives
 
 The compiler threads one flag — "is this statement's value used?" — through
-`compile_stmts` (`rust/src/compiler/stmt.rs`), `compile_if` / `compile_match`
+`compile_stmts` (`core/src/compiler/stmt.rs`), `compile_if` / `compile_match`
 (`compiler/expr.rs`) and `compile_loop_body` (`compiler/phi.rs`);
 `compile_function` (`compiler/function.rs`) starts it at true, or at false for
 a `-> nil` declaration. A `for` records the answer as the `collect` flag on its
 loop term, which is what the bytecode lowers to `loop_collect`. The behaviour
-is pinned by `rust/tests/implicit_return.rs`.
+is pinned by `core/tests/implicit_return.rs`.

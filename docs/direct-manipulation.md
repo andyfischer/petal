@@ -211,7 +211,7 @@ pub struct Literal {
 
 Resolution is not number-only: a string, bool, or `nil` written in the call (or
 behind a binding) resolves too, reported through `value` as a
-[`StaticValue`](../rust/src/static_value.rs) — the same type goal-based editing
+[`StaticValue`](../core/src/static_value.rs) — the same type goal-based editing
 renders back into source. `literal` stays the numeric view, carrying the
 spelling data (`is_int`, `negated`) a live drag needs.
 

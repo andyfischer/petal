@@ -30,7 +30,7 @@ the wire spec is [`../docs/gpp.md`](../docs/gpp.md).
 
 Each app is a directory holding `app.py` (the provider) and a colocated
 `.ptl` drawer (the UI, built on the petal-ui component library; see
-[`../../petal-ui/docs/components.md`](../../petal-ui/docs/components.md)).
+[`../../core-libs/petal-ui/docs/components.md`](../../core-libs/petal-ui/docs/components.md)).
 
 - **`sysmon/`**: live process/CPU/memory monitor from `ps aux`. Clicking a
   table header re-keys `query("procs", "<field>:<dir>")`, so sorting happens

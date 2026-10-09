@@ -10,7 +10,7 @@ help: ## Show this help
 		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build the Petal compiler (debug)
-	cd rust && cargo build
+	cd core && cargo build
 
 test: build ## Run the full vitest suite (also runs every examples/console/*.ptl)
 	npx vitest run
@@ -24,7 +24,7 @@ test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and 
 	ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
 
 prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
-	cd rust && cargo kani --solver cadical
+	cd core && cargo kani --solver cadical
 
 clean: ## Remove Rust build artifacts
-	cd rust && cargo clean
+	cd core && cargo clean

@@ -1,5 +1,5 @@
 // Packages: a `petal.toml` manifest makes a directory of modules a library
-// with a name (docs/module-system.md#packages, rust/src/package.rs).
+// with a name (docs/module-system.md#packages, core/src/package.rs).
 //
 // fixtures/packages/libs holds two of them — `bloom` (in a directory of the
 // same name, with a modules = "src" and a nested module) and `widgets` (in a
@@ -7,7 +7,7 @@
 // fixtures/packages/broken holds a manifest that does not parse.
 //
 // The embedder API (Env::add_package / register_package) is covered by
-// rust/tests/packages.rs; this file covers what the CLI does with -I.
+// core/tests/packages.rs; this file covers what the CLI does with -I.
 
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";

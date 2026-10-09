@@ -417,7 +417,7 @@ the line — a library the user pointed at never goes quietly missing.
 From a host, a package is one call (see [Embedding](#embedding)):
 
 ```rust
-env.add_package("petal-libs/bloom")?;                 // from disk
+env.add_package("core-runtime/bloom")?;                 // from disk
 env.register_package("bloom", [("menu", MENU_SRC)])?; // from memory
 env.packages();                                       // what is available
 ```
@@ -437,7 +437,7 @@ reach it through `-I`, `PETAL_PATH`, `env.add_package`, or (with no manifest)
 a copy beside their script or a host's `register_module`.
 Put the directory under a namespace and its modules import as
 `bloom/menu`, `bloom/motion` — no filename prefixes, and no collision with
-another library's `menu`. [`petal-libs/`](../petal-libs/README.md) is where
+another library's `menu`. [`core-runtime/`](../core-runtime/README.md) is where
 this repo's own live, and [Sharing Petal
 libraries](dev/sharing-petal-libraries.md) covers what works and what a
 library author still has to work around.
@@ -449,7 +449,7 @@ Hosts that embed Petal manage modules through `Env`:
 ```rust
 env.register_module("ui", include_str!("ui.ptl")); // in-memory module; wins over files
 env.add_module_path(dir);                          // filesystem search path (+ packages under it)
-env.add_package("petal-libs/bloom")?;              // a whole petal.toml library, one call
+env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources
 env.packages();                                    // every registered package
 env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
@@ -472,6 +472,6 @@ preserved. Module functions are addressable by qualified name
 appears in state JSON under `ui::scroll`-style names.
 
 Custom resolvers implement the `ModuleResolver` trait in
-`rust/src/module.rs`. The wasm bindings expose `register_module` and
+`core/src/module.rs`. The wasm bindings expose `register_module` and
 `set_implicit_imports`. See the [Embedding guide](embedding-guide.md) for
 the rest of the host API.

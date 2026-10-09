@@ -9,7 +9,7 @@
 //   host_data("stages", "")        → [ { label } … ]   (the menu tabs)
 //   host_data("inspect", <label>)  → { text, error }    (one field empty)
 //
-// The stage menu is the prelude `tab_bar` (petal-ui/docs/components.md);
+// The stage menu is the prelude `tab_bar` (core-libs/petal-ui/docs/components.md);
 // click a tab to switch what the body shows. The body is a native, selectable,
 // scrollable text_view region. The source is re-published (and the cache
 // cleared) by the app as you type, so the IR/bytecode/AST update live — and

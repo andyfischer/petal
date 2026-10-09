@@ -232,7 +232,7 @@ print(dot(center: {x: 1, y: 2}, radius: 5))
 ```
 
 The `ui` prelude's draw calls are written this way
-(`petal-ui/prelude/ui.ptl`). Where a call passes the *second* shape's leading
+(`core-libs/petal-ui/prelude/ui.ptl`). Where a call passes the *second* shape's leading
 arguments positionally and then skips one of its parameters with a name the
 exact-count variant also has — `draw_circle_outline(cx, cy, radius, c,
 width: 2)`, whose count and `width` also fit `(center, radius, c, a, width)`

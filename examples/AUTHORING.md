@@ -12,13 +12,13 @@ reference material lives elsewhere; link to it rather than guessing:
   [docs/writing-petal-guide.md](../docs/writing-petal-guide.md).
 - Builtins: [docs/Builtins.md](../docs/Builtins.md).
 - The `ui` prelude (widgets, theme, layout, text and color helpers):
-  [petal-ui/docs/components.md](../petal-ui/docs/components.md), with
-  [petal-ui/prelude/ui.ptl](../petal-ui/prelude/ui.ptl) as the source of truth.
+  [core-libs/petal-ui/docs/components.md](../core-libs/petal-ui/docs/components.md), with
+  [core-libs/petal-ui/prelude/ui.ptl](../core-libs/petal-ui/prelude/ui.ptl) as the source of truth.
 - The `bloom` component library (buttons, menus, controls and overlays that
   animate by default, in pure Petal):
-  [petal-libs/bloom/docs/components.md](../petal-libs/bloom/docs/components.md).
+  [core-runtime/bloom/docs/components.md](../core-runtime/bloom/docs/components.md).
   Garden registers its modules, so a panel app can `import bloom` with no
-  setup; outside Garden, add `-I petal-libs`.
+  setup; outside Garden, add `-I core-runtime`.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):
   [garden/docs/petal-graphical-panels.md](../garden/docs/petal-graphical-panels.md).
 - The debug server (every endpoint):
@@ -48,7 +48,7 @@ a binary that is behind the checkout: it prints a `STALE GARDEN BINARY` banner
 and exits 3 without launching, so a headless launch into a log file leaves no
 debug port to find. Rebuild, or set `GARDEN_ALLOW_STALE=1` to launch it anyway
 (the banner still prints, and `/state` → `identity.freshness.stale` is true).
-The check counts committed changes under `garden/`, `petal-ui/` and `rust/`,
+The check counts committed changes under `garden/`, `core-libs/petal-ui/` and `core/`,
 not uncommitted edits.
 
 `layout(...)` is required in `layout.ptl`. A bare `panel("...")` at top level
@@ -330,12 +330,12 @@ Alpha blends in sRGB, the way CSS and design tools do: `a: 128` over white is
 fills read 75% — so for a tint that must survive being drawn twice, compute an
 opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 `hairline` helpers. See
-[Compositing flat tints](../petal-ui/docs/components.md#compositing-flat-tints).
+[Compositing flat tints](../core-libs/petal-ui/docs/components.md#compositing-flat-tints).
 
 ### The `ui` prelude
 
-`petal-ui/prelude/ui.ptl` is an implicit import; call its functions bare. The
-catalogue is in [components.md](../petal-ui/docs/components.md): `rect`
+`core-libs/petal-ui/prelude/ui.ptl` is an implicit import; call its functions bare. The
+catalogue is in [components.md](../core-libs/petal-ui/docs/components.md): `rect`
 (the built-in `Rect` under the prelude's name), `point_in`, `hovered`,
 `clicked`, record overloads of every `draw_*` (each callable by name:
 `draw_rect_outline(rect: r, c: red, width: 2)`), alignment and ellipsizing

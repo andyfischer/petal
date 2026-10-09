@@ -13,7 +13,7 @@
     "test/vitest"
   ],
   "include": [
-    "petal-libs"
+    "core-runtime"
   ],
   "steps": [
     {

@@ -43,14 +43,14 @@ the worst of both. Plan:
 
 ## 2. `text_field` has no selection, clipboard or undo
 
-`petal-ui/prelude/ui.ptl:2367`. Bloom's `text_field` doesn't have them
+`core-libs/petal-ui/prelude/ui.ptl:2367`. Bloom's `text_field` doesn't have them
 either. Every text-editing app hand-rolls its own field. The command
 palette's query box also has no caret movement at all (the caret is always
 at the end). **M.**
 
 ## 3. Draw coordinates are `i32` throughout the command format
 
-`coord_to_i32` (`petal-ui/src/draw.rs:1546`) and every primitive's fields.
+`coord_to_i32` (`core-libs/petal-ui/src/draw.rs:1546`) and every primitive's fields.
 Rotating polygons jitter by up to a pixel per vertex (asteroids). Fixing it
 changes the draw-command format and every host (Garden, petal-sdl,
 petal-web, worlds-fair). **L.**
@@ -81,4 +81,4 @@ Each is **S**, and each was hit by only one app:
   `--native` for their own natives. Garden config scripts (`init.ptl`,
   `layout.ptl`) are checked with `--host garden-config`.
 - `~/.cargo/bin/petal` isn't kept fresh. Re-run
-  `cargo install --path rust --locked` after language changes.
+  `cargo install --path core --locked` after language changes.

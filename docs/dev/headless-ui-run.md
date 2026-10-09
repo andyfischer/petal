@@ -17,8 +17,8 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--effect-audit]
 ```
 
-Build it with `cd petal-ui && cargo build`; the binary lands at
-`petal-ui/target/debug/petal-ui-run`.
+Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
+`core-libs/petal-ui/target/debug/petal-ui-run`.
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -29,8 +29,8 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
 | `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
-| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I petal-libs`). |
-| `--policy <name>` | `fast` (or `PETAL_POLICY`) | The [run policy](../../rust/src/policy.rs): `fast` (optimizer, memo and gate on), `baseline` (all off — the reference trace), `explain`, or `replay` (memo on, gate off), optionally with modifiers such as `fast-memo` (the gate alone) or `baseline+gate`. Every policy must produce the same trace, so a differential is the same command with two names. |
+| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I core-runtime`). |
+| `--policy <name>` | `fast` (or `PETAL_POLICY`) | The [run policy](../../core/src/policy.rs): `fast` (optimizer, memo and gate on), `baseline` (all off — the reference trace), `explain`, or `replay` (memo on, gate off), optionally with modifiers such as `fast-memo` (the gate alone) or `baseline+gate`. Every policy must produce the same trace, so a differential is the same command with two names. |
 | `--no-gate` | gated | Run the script on every frame. By default frames run under the [frame gate](frame-gate.md), as in every real host: a frame whose inputs are what the last run read is skipped, and its record carries the retained `commands` and `state` with empty `prints`. |
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
 | `--no-memo` | memoized | Run every user-function call. Like `--no-gate`, it switches one layer off in whichever policy is in effect. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
@@ -40,10 +40,10 @@ Build it with `cd petal-ui && cargo build`; the binary lands at
 Imports resolve relative to the app's own directory, so an app that imports a
 sibling module (`examples/games/snake/`-style layouts) runs from any working
 directory. A library that lives elsewhere — one of the
-[`petal-libs/`](../../petal-libs/README.md) — comes in through `-I`:
+[`core-runtime/`](../../core-runtime/README.md) — comes in through `-I`:
 
 ```
-petal-ui-run examples/ui/bloom-gallery/app.ptl -I petal-libs --frames 120
+petal-ui-run examples/ui/bloom-gallery/app.ptl -I core-runtime --frames 120
 ```
 
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is
@@ -127,7 +127,7 @@ same events on every platform, and a failing run is replayable from
 `(app, --seed, monkey seed)` alone.
 
 The generator is `Scenario::monkey(seed, frames, size)` in
-`petal-ui/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
+`core-libs/petal-ui/src/scenario.rs`; `Scenario::to_json` writes a generated scenario back
 out in the format above, for a repro bundle.
 
 ## Determinism

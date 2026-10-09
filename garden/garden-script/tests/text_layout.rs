@@ -290,7 +290,7 @@ fn elision_fits_including_its_own_ellipsis() {
     let ui = Ui::new(
         "import text_layout: elide\n\
          let st = {size: 12}\n\
-         let src = \"petal-libs/text-layout/src/place.ptl\"\n\
+         let src = \"core-runtime/text-layout/src/place.ptl\"\n\
          let head = elide(src, st, 90)\n\
          let tail = elide(src, st, 90, \"tail\")\n\
          let both = elide(src, st, 90, \"both\")\n\
@@ -306,7 +306,7 @@ fn elision_fits_including_its_own_ellipsis() {
         );
         assert!(ui.string(name).contains('…'), "{name} marks the cut");
     }
-    let src = "petal-libs/text-layout/src/place.ptl";
+    let src = "core-runtime/text-layout/src/place.ptl";
     assert!(
         src.starts_with(ui.string("head").trim_end_matches('…')),
         "the default keeps the head: {:?}",

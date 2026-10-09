@@ -27,17 +27,17 @@ rewritten through a lossless tree without reformatting.
 Rewrites the `.ptl` source text. The output is new source you can write to
 disk, compile, or diff.
 
-### Formatting-preserving tree splices (`rust/src/rewrite.rs`)
+### Formatting-preserving tree splices (`core/src/rewrite.rs`)
 
 The AST is lossy: it carries spans but drops comments and whitespace, so
 rewriting through it would reformat the whole file. Source edits instead go
-through the **lossless green tree** (the CST, [`rust/src/cst/`](../rust/src/cst/)):
+through the **lossless green tree** (the CST, [`core/src/cst/`](../core/src/cst/)):
 find the node covering the construct, splice in a subtree parsed from the
 replacement snippet, keep the old node's surrounding trivia, and re-emit.
 Everything outside the replaced node is untouched. The invariant
 `build_lossless(src).text() == src` holds for every source.
 
-Primitives in [`rust/src/rewrite.rs`](../rust/src/rewrite.rs):
+Primitives in [`core/src/rewrite.rs`](../core/src/rewrite.rs):
 
 | Function | Purpose |
 |---|---|
@@ -51,7 +51,7 @@ These treat the program as a live document the user is also editing: a tool
 can rewrite one `layout(...)` call and write the result back without touching
 the rest of the file.
 
-### Goal-based editing (`rust/src/goal_based_editing.rs`)
+### Goal-based editing (`core/src/goal_based_editing.rs`)
 
 A declarative layer over those primitives. Instead of "replace this span" the
 caller states **goals**, properties the edited source should satisfy, and the
@@ -69,7 +69,7 @@ Goals compose (later goals see earlier insertions), and `Goal` is the place to
 add richer intents (ensure an import, remove a call, set a field).
 **Usage guide:** [goal-based-editing.md](goal-based-editing.md).
 
-### Reading values back (`rust/src/static_value.rs`)
+### Reading values back (`core/src/static_value.rs`)
 
 The read counterpart, with no `Env`, heap, or side effects:
 
@@ -100,12 +100,12 @@ This inverts arithmetic against the values the traced run actually saw. It is
 not a general solver: an argument that flows through a call or a comparison
 gets no proposal. There is still no reverse-mode AD; Petal ships forward-mode
 sensitivity only (`dual`/`value_of`/`deriv_of` in
-[`builtins/autodiff.rs`](../rust/src/builtins/autodiff.rs)). See
+[`builtins/autodiff.rs`](../core/src/builtins/autodiff.rs)). See
 [dev/goals.md](dev/goals.md) for the direction.
 
 ### `petal lint` (normalize source in place)
 
-[`rust/src/lint/`](../rust/src/lint/) is the one agent-usable command that
+[`core/src/lint/`](../core/src/lint/) is the one agent-usable command that
 rewrites program source on disk. `lint_source` applies three passes:
 
 - **Reindent** — token-driven 2-space re-indentation; only leading whitespace
@@ -132,7 +132,7 @@ do.
 ### State-preserving hot reload (`transfer_state`)
 
 The primitive is `Env::transfer_state`
-([`rust/src/transfer_state.rs`](../rust/src/transfer_state.rs)): reshape a
+([`core/src/transfer_state.rs`](../core/src/transfer_state.rs)): reshape a
 running stack onto a freshly compiled `Program`, keeping matching state values.
 
 ```rust
@@ -191,7 +191,7 @@ Method calls on such a value resolve against the new code:
   the label names no class in the running program.
 
 See [Classes & Methods](language-guide.md#when-the-call-is-resolved-at-compile-time)
-and `rust/tests/class_live_edit.rs`.
+and `core/tests/class_live_edit.rs`.
 
 ### Hosts that trigger reload
 
@@ -262,8 +262,8 @@ construction, so a fork shares no mutable state with its source.
   `DiagramScreenshot`: they run a fork of one frame and discard it, so
   inspecting a canvas never perturbs it.
 
-Code: [`execution_context.rs`](../rust/src/execution_context.rs) and
-[`env/fork.rs`](../rust/src/env/fork.rs).
+Code: [`execution_context.rs`](../core/src/execution_context.rs) and
+[`env/fork.rs`](../core/src/env/fork.rs).
 
 ---
 

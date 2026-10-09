@@ -1,4 +1,4 @@
-# `@`-argument desugaring (rust/src/desugar.rs). All values are ints, so the
+# `@`-argument desugaring (core/src/desugar.rs). All values are ints, so the
 # rewrite introduces no heap duplication or allocation.
 out: 10
 out: 6

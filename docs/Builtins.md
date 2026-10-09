@@ -4,7 +4,7 @@ The built-in functions available in every Petal program. For language syntax
 (variables, control flow, functions, state, pattern matching), see the
 [Language Guide](language-guide.md). The drawing and input builtins used by
 `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
-[petal-ui README](../petal-ui/README.md).
+[petal-ui README](../core-libs/petal-ui/README.md).
 
 **The parameter names in this reference are real.** Every builtin with a
 fixed parameter list takes [named arguments](language-guide.md#named-arguments)

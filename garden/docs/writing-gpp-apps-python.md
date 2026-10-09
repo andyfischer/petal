@@ -57,7 +57,7 @@ serve(provider, ui, watch="--dev" in sys.argv)
 
 And a drawer that reads it (see
 [petal-graphical-panels.md](petal-graphical-panels.md) for the draw and
-input API and [petal-ui/docs/components.md](../../petal-ui/docs/components.md)
+input API and [core-libs/petal-ui/docs/components.md](../../core-libs/petal-ui/docs/components.md)
 for the widgets):
 
 ```petal

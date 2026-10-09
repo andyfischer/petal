@@ -1,6 +1,6 @@
 # Formatter and linter (`petal fmt`, `petal lint`)
 
-Status: **shipped.** `rust/src/fmt/` is the formatter; `rust/src/lint/` holds
+Status: **shipped.** `core/src/fmt/` is the formatter; `core/src/lint/` holds
 the rules. The command reference is in [CLI.md](../CLI.md#fmt--canonical-layout).
 The catalogue of further rules in §7 is not scheduled.
 

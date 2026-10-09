@@ -188,7 +188,7 @@ How to read it:
   the policy a plain `run` uses) and again with it off (`no-opt`); the last
   column is the optimized figure relative to the unoptimized one. Only the
   optimizer differs between the two: memoization and the rest of the
-  [run policy](../rust/src/policy.rs) are the same on both sides, which is why
+  [run policy](../core/src/policy.rs) are the same on both sides, which is why
   the second policy reads `baseline+memo+gate` rather than `baseline`. The
   rest of the policy follows `PETAL_POLICY` as it does for `run`, except that
   an environment that turns the optimizer off (`PETAL_OPT=off`,
@@ -1106,8 +1106,8 @@ see [module-system.md](module-system.md#packages). This command prints what
 was found, so a user can check what a script can reach:
 
 ```
-$ petal packages -I petal-libs
-bloom 0.1.0  /Users/me/petal/petal-libs/bloom
+$ petal packages -I core-runtime
+bloom 0.1.0  /Users/me/petal/core-runtime/bloom
     bloom/button
     bloom/menu
     bloom/motion
@@ -1121,7 +1121,7 @@ here and in every command that takes `-I`, because a library the user pointed
 at should say why it failed rather than go quietly missing:
 
 ```
-Error: petal-libs/bloom/petal.toml: line 2: the value of 'name' must be a quoted string, found 'bloom'
+Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quoted string, found 'bloom'
 ```
 
 This command takes no source file.
@@ -1454,7 +1454,7 @@ is the same compact array encoding the IR uses
 (`[startLine, startCol, startOffset, endLine, endCol, endOffset, file?]`, see
 [Dump format conventions](#dump-format-conventions)), and the `<variant>`
 shapes are listed in the `StmtKind` and `ExprKind` tables below.
-The canonical definitions live in `rust/src/ast.rs`; the tables below cover
+The canonical definitions live in `core/src/ast.rs`; the tables below cover
 the common variants but are not exhaustive.
 
 **Defaults are omitted** (the shared rule — see
@@ -1922,7 +1922,7 @@ Operand encoding:
   has a fixed field set — the one exception to the shared
   [omit-defaults rule](#dump-format-conventions).
 
-The full instruction set is documented in `rust/src/backend/bytecode/isa.rs`.
+The full instruction set is documented in `core/src/backend/bytecode/isa.rs`.
 
 ## Dataflow query commands
 
@@ -2082,7 +2082,7 @@ white) so the output stays readable on mid-sized programs.
 Every **compiled** program starts with one phantom term per registered
 built-in function (`t0`, `t1`, …) in the root block. These are `Copy` terms
 with no inputs; their `name` field holds the builtin name. The IDs follow
-the registration order in `rust/src/builtins/mod.rs`.
+the registration order in `core/src/builtins/mod.rs`.
 
 The phantoms exist for name resolution and for using a builtin as a
 first-class *value*; a direct call like `print(x)` compiles to a

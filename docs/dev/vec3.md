@@ -10,7 +10,7 @@ one design decision that is not visible from there: the representation.
 ## The constraint
 
 `Value` is `Copy` and 24 bytes — a tag plus a 16-byte payload — and
-`rust/src/value.rs` asserts it stays that way: every register, list slot,
+`core/src/value.rs` asserts it stays that way: every register, list slot,
 record entry and closure capture is a `Value`, so widening it costs memory
 bandwidth everywhere, for every program, whether it uses vectors or not.
 `Vec2(f64, f64)` fills the 16 bytes exactly. Three `f64`s (24 bytes) do not

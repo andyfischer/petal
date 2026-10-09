@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
 // Runs the Petal binary, rebuilding it first if any Rust source is newer
 // than the binary. Forwards all command-line args. Use this instead of
-// calling rust/target/debug/petal directly — it keeps the binary in sync
+// calling core/target/debug/petal directly — it keeps the binary in sync
 // with source while avoiding a full `cargo build` on every call.
 
 import { spawnSync } from 'node:child_process';
@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const rustDir = join(repoRoot, 'rust');
+const rustDir = join(repoRoot, 'core');
 const binary = join(rustDir, 'target', 'debug', 'petal');
 const srcDir = join(rustDir, 'src');
 const cargoToml = join(rustDir, 'Cargo.toml');

@@ -5,7 +5,7 @@ import { join } from "path";
 import { petalCapture, checkJson, checkStrict, showAstJson } from "./helpers";
 
 // `pub` and its deprecated spelling `export`, at the CLI (the library-level
-// contract is in rust/tests/pub_keyword.rs). `export` keeps working; `check`
+// contract is in core/tests/pub_keyword.rs). `export` keeps working; `check`
 // warns about it, `lint --fix` and `fmt` rewrite it, and `ir-equal` cannot
 // tell the two apart.
 

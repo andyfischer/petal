@@ -36,7 +36,7 @@ The draw functions (`draw_rect`, `draw_text`, offscreen canvases, ...) and
 input functions (`key_down`, `mouse_x`, ...) are not defined here. They come
 from `petal-ui`, which every graphical Petal host shares, so scripts written
 for `petal-sdl` run unchanged under `petal-web-canvas`. See
-[`petal-ui/README.md`](../../../petal-ui/README.md).
+[`core-libs/petal-ui/README.md`](../../../core-libs/petal-ui/README.md).
 
 ## Run modes
 

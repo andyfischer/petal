@@ -1,5 +1,5 @@
 // Errors that name the fix for a habit from another language, end to end
-// (the parser-level cases are unit-tested in rust/tests/parse_hints.rs).
+// (the parser-level cases are unit-tested in core/tests/parse_hints.rs).
 // See docs/tasks/testbed-takeaways.md (#8).
 import { describe, it, expect } from "vitest";
 import { runPetalError } from "./helpers";

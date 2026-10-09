@@ -125,9 +125,9 @@ pub fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
         // `concat` (list or string, decided by its arguments) their result is
         // known statically.
         "str" | "type" | "join" | "upper" | "lower" | "char_at" | "char_slice" | "fixed"
-        | "commas" | "pad_start" | "pad_end" | "format" => Type::String,
+        | "commas" | "pad_start" | "pad_end" | "format" | "repeat" | "trim" => Type::String,
         // ── core: bool results ──────────────────────────────────────────────
-        "contains" | "includes" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
+        "contains" | "includes" | "starts_with" | "ends_with" | "is_loading" | "is_error" | "is_pending" | "is_ready" => {
             Type::Bool
         }
         // ── core: list results ──────────────────────────────────────────────
@@ -292,7 +292,9 @@ pub fn builtin_param_slots(name: &str, arity: usize) -> Option<&'static [ArgSlot
         ("len", 1) => &[Sized],
         ("keys" | "values", 1) => &[Record],
         ("upper" | "lower" | "chars" | "char_len", 1) => &[Str],
-        ("split", 2) => &[Str, Str],
+        ("split" | "starts_with" | "ends_with", 2) => &[Str, Str],
+        ("trim", 1) => &[Str],
+        ("repeat", 2) => &[Str, Num],
         ("join", 2) => &[List, Str],
         // The direction is a bool or `"asc"`/`"desc"`, so it stays unchecked.
         // What the key function *returns* is checked too, by

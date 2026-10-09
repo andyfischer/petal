@@ -126,6 +126,10 @@ pub const BUILTIN_PARAMS: &[(&str, &[&str])] = &[
     ("char_len", &["string"]),
     ("char_at", &["string, index"]),
     ("char_slice", &["string, start, end?"]),
+    ("repeat", &["string, count"]),
+    ("starts_with", &["string, prefix"]),
+    ("ends_with", &["string, suffix"]),
+    ("trim", &["string"]),
     // --- Formatting & JSON ---
     ("fixed", &["value, places?"]),
     ("commas", &["value, places?"]),

@@ -2139,7 +2139,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 448
+        "line": 462
       }
     },
     {
@@ -2172,7 +2172,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 448
+        "line": 462
       },
       "aliasOf": "map"
     },
@@ -2214,7 +2214,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 448
+        "line": 462
       },
       "aliasOf": "map"
     },
@@ -2248,7 +2248,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 448
+        "line": 462
       },
       "aliasOf": "map"
     },
@@ -3184,7 +3184,7 @@
       ],
       "source": {
         "file": "core/src/builtins/mod.rs",
-        "line": 448
+        "line": 462
       },
       "aliasOf": "map"
     },
@@ -3734,6 +3734,130 @@
       "source": {
         "file": "core/src/builtins/math.rs",
         "line": 321
+      }
+    },
+    {
+      "name": "repeat",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        },
+        {
+          "name": "count",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "count",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 856
+      }
+    },
+    {
+      "name": "starts_with",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        },
+        {
+          "name": "prefix",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "prefix",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 892
+      }
+    },
+    {
+      "name": "ends_with",
+      "category": "collections",
+      "group": "core",
+      "arity": 2,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        },
+        {
+          "name": "suffix",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          },
+          {
+            "name": "suffix",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 901
+      }
+    },
+    {
+      "name": "trim",
+      "category": "collections",
+      "group": "core",
+      "arity": 1,
+      "variadic": false,
+      "params": [
+        {
+          "name": "string",
+          "type": "any"
+        }
+      ],
+      "signatures": [
+        [
+          {
+            "name": "string",
+            "type": "any"
+          }
+        ]
+      ],
+      "source": {
+        "file": "core/src/builtins/collections.rs",
+        "line": 911
       }
     },
     {

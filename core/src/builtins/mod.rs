@@ -432,6 +432,20 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("acos", math::native_acos, NativeEffects::PURE);
     table.register("atan", math::native_atan, NativeEffects::PURE);
     table.register("hypot", math::native_hypot, NativeEffects::PURE);
+    // The string helpers every text-handling script was writing by hand.
+    // Append-only, like the rest of this block.
+    table.register("repeat", collections::native_repeat, NativeEffects::PURE);
+    table.register(
+        "starts_with",
+        collections::native_starts_with,
+        NativeEffects::PURE,
+    );
+    table.register(
+        "ends_with",
+        collections::native_ends_with,
+        NativeEffects::PURE,
+    );
+    table.register("trim", collections::native_trim, NativeEffects::PURE);
 
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");

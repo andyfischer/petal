@@ -811,6 +811,44 @@ lower("ÉCLAIR")           // "éclair"
 lower(a) == lower(b)      // case-insensitive compare
 ```
 
+### `trim(string)`
+
+The string without its leading and trailing whitespace — spaces, tabs, line
+breaks, and the other Unicode whitespace characters. Whitespace inside the
+text stays.
+
+```petal
+trim("  hello world \n")   // "hello world"
+trim("   ")                // ""
+```
+
+### `starts_with(string, prefix)` / `ends_with(string, suffix)`
+
+Whether the string begins (or ends) with the given text. Every string starts
+and ends with `""`.
+
+```petal
+starts_with("hello.ptl", "hello")   // true
+ends_with("hello.ptl", ".ptl")      // true
+starts_with("hello", "Hello")       // false (case matters; compare `lower` of both)
+```
+
+### `repeat(string, count)`
+
+The string written `count` times in a row. A `count` of zero or less gives
+`""`; `count` must be an int.
+
+```petal
+repeat("-", 20)      // "--------------------"
+repeat("ab", 3)      // "ababab"
+repeat("x", 0)       // ""
+```
+
+Use it instead of appending in a loop. `out = out ++ s` copies everything
+written so far on every pass, so a loop of `n` appends does work proportional
+to `n²`; `repeat` allocates the result once. When the pieces differ, collect
+them in a list and [`join`](#joinlist-separator) it at the end.
+
 ### `enumerate(list)`
 
 Returns a list of `[index, value]` pairs.

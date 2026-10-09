@@ -849,3 +849,77 @@ pub(super) fn native_index_of(state: &mut PetalCxt) -> Result<u32, String> {
         _ => Err("index_of() expects a list or string".into()),
     }
 }
+
+/// `repeat(s, n)` — `s` written `n` times in a row; `""` when `n` is zero or
+/// negative. One allocation of the final size, where the loop it replaces
+/// (`out = out ++ s`, `n` times) copies the whole string every pass.
+pub(super) fn native_repeat(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "repeat")?;
+    match (state.get_value(1)?, state.get_value(2)?) {
+        (Value::String(id), Value::Int(n)) => {
+            let s = state.heap().get_string(id);
+            let n = n.max(0) as usize;
+            // Refuse a result no machine could hold rather than abort in the
+            // allocator: 1 GiB is far past any text a program builds on purpose.
+            const LIMIT: usize = 1 << 30;
+            if s.len().checked_mul(n).is_none_or(|bytes| bytes > LIMIT) {
+                return Err(format!(
+                    "repeat() result would be too large ({} bytes x {})",
+                    s.len(),
+                    n
+                ));
+            }
+            let out = s.repeat(n);
+            state.push_string(out);
+            Ok(1)
+        }
+        _ => Err("repeat() expects (string, int)".into()),
+    }
+}
+
+/// The two string operands of `starts_with` / `ends_with`.
+fn two_strings<'a>(state: &'a PetalCxt, name: &str) -> Result<(&'a str, &'a str), String> {
+    match (state.get_value(1)?, state.get_value(2)?) {
+        (Value::String(a), Value::String(b)) => {
+            Ok((state.heap().get_string(a), state.heap().get_string(b)))
+        }
+        _ => Err(format!("{name}() expects (string, string)")),
+    }
+}
+
+/// `starts_with(s, prefix)` — does `s` begin with `prefix`? Every string
+/// starts with `""`.
+pub(super) fn native_starts_with(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "starts_with")?;
+    let (s, prefix) = two_strings(state, "starts_with")?;
+    let hit = s.starts_with(prefix);
+    state.push_bool(hit);
+    Ok(1)
+}
+
+/// `ends_with(s, suffix)` — does `s` end with `suffix`?
+pub(super) fn native_ends_with(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 2, "ends_with")?;
+    let (s, suffix) = two_strings(state, "ends_with")?;
+    let hit = s.ends_with(suffix);
+    state.push_bool(hit);
+    Ok(1)
+}
+
+/// `trim(s)` — `s` without its leading and trailing whitespace (Unicode
+/// whitespace, so tabs, newlines and no-break spaces go too).
+pub(super) fn native_trim(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "trim")?;
+    match state.get_value(1)? {
+        Value::String(id) => {
+            let s = state.heap().get_string(id);
+            let trimmed = s.trim();
+            // `trim` returns a subslice, so its offsets into `s` are exact.
+            let start = trimmed.as_ptr() as usize - s.as_ptr() as usize;
+            let end = start + trimmed.len();
+            state.push_substring(id, start, end);
+            Ok(1)
+        }
+        _ => Err("trim() expects a string".into()),
+    }
+}

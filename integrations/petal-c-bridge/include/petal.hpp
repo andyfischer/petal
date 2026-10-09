@@ -376,7 +376,7 @@ private:
 };
 
 // Petal source text as a configuration file: read every top-level binding
-// and change one value where it is written, keeping the rest of the text
+// and change values where they are written, keeping the rest of the text
 // (petal_bridge.h, "Source text"). Owning, move-only, independent of any Vm.
 class Source {
 public:
@@ -411,7 +411,28 @@ public:
     bool set(const std::string& path, const std::string& value) {
         return pb_source_set(s_, path.c_str(), value.c_str()) == PB_OK;
     }
-    // Why the last bindings_json() / expr() / set() failed ("" if it did not).
+    // The value edits: `value_json` is a value in the bindings_json() format
+    // ({"int": 3}, {"rec": {...}}, {"color": "#ff2e88"}, ...). Only what
+    // differs is rewritten and new text is formatted like what is already
+    // there (pb_source_set_value and friends in petal_bridge.h). False, with
+    // error(), when the edit cannot be made; the text is then unchanged.
+    //
+    // Make the value at `path` read as `value_json`.
+    bool set_value(const std::string& path, const std::string& value_json) {
+        return pb_source_set_value(s_, path.c_str(), value_json.c_str()) == PB_OK;
+    }
+    // Insert so that `path` names the new value: a list index ("xs[0]"), or a
+    // record field ("POST.bloom"), placed before the field `before` or last.
+    bool insert(const std::string& path, const std::string& value_json, const std::string& before = {}) {
+        return pb_source_insert(s_, path.c_str(), value_json.c_str(), before.empty() ? nullptr : before.c_str()) == PB_OK;
+    }
+    // Append to the list at `path`.
+    bool append(const std::string& path, const std::string& value_json) {
+        return pb_source_append(s_, path.c_str(), value_json.c_str()) == PB_OK;
+    }
+    // Remove the list element or record field at `path`.
+    bool remove(const std::string& path) { return pb_source_remove(s_, path.c_str()) == PB_OK; }
+    // Why the last call that can fail did ("" if it did not).
     std::string error() const { const char* e = pb_source_error(s_); return e ? e : ""; }
 
 private:

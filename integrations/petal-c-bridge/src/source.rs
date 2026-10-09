@@ -4,18 +4,25 @@
 //! This is the bridge's window onto Petal as a **configuration format** (see
 //! `docs/config-files.md` and `docs/program-modification.md`): a host that
 //! shows a script's settings — an editor panel of sliders, say — reads them
-//! with [`pb_source_bindings_json`], and writes one back with
-//! [`pb_source_set`], which changes exactly the expression a path names
-//! (`POST.effects[2].amount`) and leaves every other character of the file,
-//! comments and layout included, as the author wrote it. The edited text is
-//! then the host's to save; a running program picks it up by hot reload.
+//! with [`pb_source_bindings_json`], and writes them back by path
+//! (`POST.effects[2].amount`): [`pb_source_set_value`], [`pb_source_insert`],
+//! [`pb_source_append`] and [`pb_source_remove`] take values (as JSON) and
+//! edit the literal in place through `petal::literal_edit` — only what differs
+//! is rewritten, and new text is formatted like what is already there — while
+//! [`pb_source_set`] splices in source text the host wrote itself. Either way
+//! every other character of the file, comments and layout included, stays as
+//! the author wrote it. The edited text is then the host's to save; a running
+//! program picks it up by hot reload.
 //!
 //! A source is independent of any VM: it is text plus a parse.
 
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use petal::goal_based_editing::Placement;
+use petal::literal_edit::{self, EditError, EditErrorKind};
 use petal::rewrite::{find_binding_path, parse_ast, parse_binding_path, splice, splice_node};
+use petal::static_json;
 use petal::static_value::{StaticValue, static_bindings};
 
 use crate::ffi::{Status, arg_str, cstring_lossy, guard, panic_message};
@@ -115,66 +122,60 @@ impl PbSource {
         self.error = None;
         Status::Ok
     }
-}
 
-/// A static value as JSON. Floats are JSON numbers and strings JSON strings;
-/// the shapes JSON cannot tell apart are tagged objects: `{"int": 3}`,
-/// `{"rec": {"key": value, ...}}` (keys in source order) and
-/// `{"call": "vec3", "args": [...]}`. Lists are arrays; `nil` is `null`.
-fn value_json(value: &StaticValue, out: &mut String) {
-    match value {
-        StaticValue::Nil => out.push_str("null"),
-        StaticValue::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        StaticValue::Int(n) => out.push_str(&format!("{{\"int\":{n}}}")),
-        StaticValue::Float(f) if f.is_finite() => out.push_str(&format!("{f:?}")),
-        StaticValue::Float(_) => out.push_str("null"),
-        StaticValue::Str(s) => out.push_str(&serde_json::Value::from(s.as_str()).to_string()),
-        StaticValue::List(items) => {
-            out.push('[');
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
+    /// Run a value edit on the text; keep its result, or its error and the
+    /// text as it was.
+    fn edit(
+        &mut self,
+        value_json: Option<&str>,
+        f: impl FnOnce(&str, &StaticValue) -> Result<String, EditError>,
+    ) -> Status {
+        let value = match value_json.map(static_json::from_json) {
+            Some(Ok(value)) => value,
+            Some(Err(e)) => return self.fail(Status::InvalidArg, e),
+            None => StaticValue::Nil,
+        };
+        match f(&self.text, &value) {
+            Ok(edited) => {
+                if edited != self.text {
+                    self.text = edited;
+                    self.text_c = cstring_lossy(&self.text);
                 }
-                value_json(item, out);
+                self.error = None;
+                Status::Ok
             }
-            out.push(']');
-        }
-        StaticValue::Record(fields) => {
-            out.push_str("{\"rec\":{");
-            let mut seen: Vec<&str> = Vec::new();
-            for (key, field) in fields {
-                // A key written twice keeps its first position (JSON objects
-                // cannot repeat one); the later value is what the program reads.
-                if seen.contains(&key.as_str()) {
-                    continue;
-                }
-                if !seen.is_empty() {
-                    out.push(',');
-                }
-                seen.push(key);
-                out.push_str(&serde_json::Value::from(key.as_str()).to_string());
-                out.push(':');
-                let last = fields
-                    .iter()
-                    .rev()
-                    .find(|(k, _)| k == key)
-                    .map_or(field, |(_, v)| v);
-                value_json(last, out);
+            Err(e) => {
+                let code = match e.kind {
+                    EditErrorKind::Parse => Status::Compile,
+                    EditErrorKind::Invalid => Status::InvalidArg,
+                    EditErrorKind::NotFound => Status::NotFound,
+                };
+                self.fail(code, e.message)
             }
-            out.push_str("}}");
         }
-        StaticValue::Call { function, args } => {
-            out.push_str("{\"call\":");
-            out.push_str(&serde_json::Value::from(function.as_str()).to_string());
-            out.push_str(",\"args\":[");
-            for (i, arg) in args.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                value_json(arg, out);
-            }
-            out.push_str("]}");
-        }
+    }
+
+    fn set_value(&mut self, path: &str, value_json: &str) -> Status {
+        self.edit(Some(value_json), |text, value| {
+            literal_edit::set_path(text, path, value)
+        })
+    }
+
+    fn insert(&mut self, path: &str, value_json: &str, before: Option<&str>) -> Status {
+        let placement = before.map_or(Placement::End, |key| Placement::Before(key.to_string()));
+        self.edit(Some(value_json), |text, value| {
+            literal_edit::insert_path(text, path, value, &placement)
+        })
+    }
+
+    fn append(&mut self, path: &str, value_json: &str) -> Status {
+        self.edit(Some(value_json), |text, value| {
+            literal_edit::append_path(text, path, value)
+        })
+    }
+
+    fn remove(&mut self, path: &str) -> Status {
+        self.edit(None, |text, _| literal_edit::remove_path(text, path))
     }
 }
 
@@ -203,7 +204,7 @@ pub fn bindings_json(source: &str) -> Result<String, String> {
         match &b.value {
             Ok(value) => {
                 out.push_str(",\"value\":");
-                value_json(value, &mut out);
+                out.push_str(&static_json::to_json(value));
             }
             Err(reason) => out.push_str(&format!(",\"reason\":{}", string(reason))),
         }
@@ -321,6 +322,88 @@ pub unsafe extern "C" fn pb_source_set(
     if s.is_null() { Status::InvalidArg } else { st }
 }
 
+/// The shared shape of the value-edit entry points: decode the string
+/// arguments (`optional` ones may be NULL), then run `f`.
+unsafe fn edit_call<const N: usize>(
+    s: *mut PbSource,
+    args: [(*const c_char, &'static str, bool); N],
+    f: impl FnOnce(&mut PbSource, [Option<&str>; N]) -> Status,
+) -> Status {
+    let st = with_source(s, Status::Panic, |s| {
+        let mut decoded = [None; N];
+        for (slot, (ptr, name, optional)) in decoded.iter_mut().zip(args) {
+            if ptr.is_null() && optional {
+                continue;
+            }
+            match unsafe { arg_str(ptr, name) } {
+                Ok(text) => *slot = Some(text),
+                Err(e) => return s.fail(e.code, e.message),
+            }
+        }
+        f(s, decoded)
+    });
+    if s.is_null() { Status::InvalidArg } else { st }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_set_value(
+    s: *mut PbSource,
+    path: *const c_char,
+    value_json: *const c_char,
+) -> Status {
+    unsafe {
+        edit_call(
+            s,
+            [(path, "path", false), (value_json, "value_json", false)],
+            |s, [path, value]| s.set_value(path.unwrap_or(""), value.unwrap_or("")),
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_insert(
+    s: *mut PbSource,
+    path: *const c_char,
+    value_json: *const c_char,
+    before: *const c_char,
+) -> Status {
+    unsafe {
+        edit_call(
+            s,
+            [
+                (path, "path", false),
+                (value_json, "value_json", false),
+                (before, "before", true),
+            ],
+            |s, [path, value, before]| s.insert(path.unwrap_or(""), value.unwrap_or(""), before),
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_append(
+    s: *mut PbSource,
+    path: *const c_char,
+    value_json: *const c_char,
+) -> Status {
+    unsafe {
+        edit_call(
+            s,
+            [(path, "path", false), (value_json, "value_json", false)],
+            |s, [path, value]| s.append(path.unwrap_or(""), value.unwrap_or("")),
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_source_remove(s: *mut PbSource, path: *const c_char) -> Status {
+    unsafe {
+        edit_call(s, [(path, "path", false)], |s, [path]| {
+            s.remove(path.unwrap_or(""))
+        })
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pb_source_error(s: *const PbSource) -> *const c_char {
     if s.is_null() {
@@ -348,8 +431,8 @@ mod tests {
         assert_eq!(post["line"], 2);
         assert_eq!(post["comment"], "The night look.");
         assert_eq!(post["value"]["rec"]["exposure"], 1.45);
-        // A color literal reads as the record it is.
-        assert_eq!(post["value"]["rec"]["tint"]["rec"]["r"]["int"], 255);
+        // A color literal reads as a color, not as the record it lowers to.
+        assert_eq!(post["value"]["rec"]["tint"]["color"], "#ff2e88");
         assert_eq!(post["value"]["rec"]["effects"][0]["rec"]["effect"], "grain");
         assert_eq!(json[1]["value"]["int"], 450);
         assert_eq!(json[1]["config"], false);
@@ -421,5 +504,70 @@ mod tests {
         assert_eq!(s.set("POST.exposure", "1\nlet x = 2"), Status::InvalidArg);
         assert_eq!(s.text, SRC, "a refused edit changes nothing");
         assert!(s.error.is_some());
+    }
+
+    #[test]
+    fn value_edits_change_only_what_differs() {
+        let mut s = PbSource::new(SRC);
+        assert_eq!(s.set_value("POST.exposure", "1.2"), Status::Ok);
+        assert_eq!(
+            s.set_value("POST.tint", r##"{"color":"#29d9ff"}"##),
+            Status::Ok
+        );
+        assert_eq!(s.set_value("DROPS", r#"{"int":500}"#), Status::Ok);
+        // A whole list written back with one element changed and one added:
+        // the unchanged element is not touched, the new one copies its style.
+        assert_eq!(
+            s.set_value(
+                "POST.effects",
+                r#"[{"rec":{"effect":"grain","amount":0.3}},{"rec":{"effect":"crt","curve":0.2}},{"rec":{"effect":"halftone","amount":0.7}}]"#
+            ),
+            Status::Ok
+        );
+        assert_eq!(s.remove("POST.effects[0]"), Status::Ok);
+        assert_eq!(s.append("DIR", "1.0"), Status::Ok);
+        assert_eq!(s.insert("POST.bloom", "0.4", Some("tint")), Status::Ok);
+        assert_eq!(
+            s.insert("POST.effects[0]", r#"{"rec":{"effect":"a"}}"#, None),
+            Status::Ok
+        );
+        let expected = SRC
+            .replace("1.45", "1.2")
+            .replace("  tint: #ff2e88,", "  bloom: 0.4,\n  tint: #29d9ff,")
+            .replace("450", "500")
+            .replace(
+                "[{effect: \"grain\", amount: 0.3}, {effect: \"crt\"}]",
+                "[{effect: \"a\"}, {effect: \"crt\", curve: 0.2}, {effect: \"halftone\", amount: 0.7}]",
+            )
+            .replace("0.55)", "0.55, 1.0)");
+        assert_eq!(s.text, expected);
+        // Writing what is already there changes nothing.
+        let before = s.text.clone();
+        assert_eq!(s.set_value("POST.exposure", "1.2"), Status::Ok);
+        assert_eq!(s.remove("POST.absent"), Status::Ok);
+        assert_eq!(s.text, before);
+    }
+
+    #[test]
+    fn value_edits_refuse_what_cannot_be_done() {
+        let mut s = PbSource::new(SRC);
+        assert_eq!(
+            s.set_value("POST.effects[5].amount", "1.0"),
+            Status::NotFound
+        );
+        assert_eq!(s.set_value("NOPE", "1.0"), Status::NotFound);
+        assert_eq!(
+            s.set_value("POST.exposure", "{\"oops\": 1}"),
+            Status::InvalidArg
+        );
+        assert_eq!(s.set_value("POST.exposure", "1 +"), Status::InvalidArg);
+        assert_eq!(s.insert("POST.effects[9]", "1.0", None), Status::InvalidArg);
+        assert_eq!(s.append("POST.exposure", "1.0"), Status::InvalidArg);
+        assert_eq!(s.remove("POST.effects[2]"), Status::NotFound);
+        assert_eq!(s.remove("POST"), Status::InvalidArg);
+        assert_eq!(s.text, SRC, "a refused edit changes nothing");
+        assert!(s.error.is_some());
+        let mut broken = PbSource::new("let x = (\n");
+        assert_eq!(broken.set_value("x", "1.0"), Status::Compile);
     }
 }

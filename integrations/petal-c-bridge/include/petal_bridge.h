@@ -578,15 +578,17 @@ pb_status pb_vm_apply_scenario(pb_vm* vm, const pb_scenario* s, size_t frame, si
 /* ─── Source text: reading and editing without running ─────────────────── */
 /*
  * A pb_source is Petal source text plus the tools to treat it as a
- * configuration file (docs/config-files.md, docs/program-modification.md):
- * read every top-level binding's static value, and change one value where it
- * is written, keeping every other character — comments, layout, the author's
+ * configuration file (docs/config-files.md, docs/source-preservation.md):
+ * read every top-level binding's static value, and change values where they
+ * are written, keeping every other character — comments, layout, the author's
  * spelling of the numbers next to it. It is independent of any VM; the host
  * saves the edited text, and a running program picks it up by hot reload.
  *
  *   pb_source* s = pb_source_new(file_text);
- *   const char* json = pb_source_bindings_json(s);       // what the file sets
- *   pb_source_set(s, "POST.effects[2].amount", "0.35");  // one number changes
+ *   const char* json = pb_source_bindings_json(s);             // what the file sets
+ *   pb_source_set_value(s, "POST.effects[2].amount", "0.35");  // one number changes
+ *   pb_source_append(s, "POST.effects", "{\"rec\":{\"effect\":\"crt\"}}");
+ *   pb_source_remove(s, "POST.effects[0]");
  *   write_file(path, pb_source_text(s));
  *   pb_source_free(s);
  *
@@ -602,7 +604,7 @@ typedef struct pb_source pb_source;
  * the calls below. */
 pb_source* pb_source_new(const char* text);
 void pb_source_free(pb_source* s);
-/* The current text. Valid until the next successful pb_source_set or the free. */
+/* The current text. Valid until the next successful edit of `s` or the free. */
 const char* pb_source_text(const pb_source* s);
 
 /* Every top-level binding as a JSON array, in source order:
@@ -618,9 +620,11 @@ const char* pb_source_text(const pb_source* s);
  * or `reason` (why it has none: arithmetic, a function, state, ...). Values:
  * floats are numbers, strings strings, lists arrays, nil null, and
  *   {"int": 3}                        an integer
- *   {"rec": {"key": value, ...}}      a record, keys in source order (a color
- *                                     literal #rrggbb reads as {r, g, b} ints)
+ *   {"rec": {"key": value, ...}}      a record, keys in source order
  *   {"call": "vec3", "args": [...]}   a call, unevaluated
+ *   {"color": "#ff2e88"}              a color literal, as #rrggbb or #rrggbbaa
+ *                                     in lowercase (pb_source_expr gives the
+ *                                     spelling in the file)
  * NULL when the text does not parse (pb_source_error says why). Valid until
  * the next call to this function on `s`. */
 const char* pb_source_bindings_json(pb_source* s);
@@ -637,8 +641,45 @@ const char* pb_source_expr(pb_source* s, const char* path);
  * when the text does not parse. A failed call leaves the text as it was. */
 pb_status pb_source_set(pb_source* s, const char* path, const char* value);
 
-/* Why the last pb_source_bindings_json / _expr / _set on `s` failed, or NULL
- * if it succeeded. Valid until the next such call. */
+/* The value edits. Each takes a value as JSON — the format
+ * pb_source_bindings_json writes, so a value read can be changed and handed
+ * straight back — and edits the literal in place:
+ *
+ *   - what already reads as the new value is not touched: unchanged elements
+ *     and fields keep their text, comments and alignment, and writing a value
+ *     that already holds changes nothing at all;
+ *   - a changed number or color keeps the old token's habits (`3.50` becomes
+ *     `4.00`, `#F80` becomes `#0F8`); whether a number is an int or a float is
+ *     the value's say ({"int": 2} against 2.0);
+ *   - new elements and fields are formatted like their siblings (one line or
+ *     several, padding, separators, trailing comma, indentation), or like the
+ *     rest of the file when the container is empty.
+ *
+ * All four return PB_ERR_NOT_FOUND when the path names nothing,
+ * PB_ERR_INVALID_ARG for a malformed path or JSON or an edit that makes no
+ * sense there (an index past the end, a field of a number), and
+ * PB_ERR_COMPILE when the text does not parse. A failed call leaves the text
+ * as it was; the text is never left unparseable. */
+
+/* Make the value at `path` read as `value_json`. A list or record whose shape
+ * changed is edited element by element (inserts, removes, moves), not
+ * rewritten. A record field that does not exist yet is added to its record. */
+pb_status pb_source_set_value(pb_source* s, const char* path, const char* value_json);
+/* Insert a value so that `path` names it afterwards: "effects[1]" inserts
+ * before the current element 1 of a list (or call), "POST.bloom" adds a field
+ * to a record — before the sibling field `before`, or last when `before` is
+ * NULL (or names no field). A field that already exists is set instead. */
+pb_status pb_source_insert(pb_source* s, const char* path, const char* value_json,
+                           const char* before);
+/* Append a value to the list (or call arguments) at `path`. */
+pb_status pb_source_append(pb_source* s, const char* path, const char* value_json);
+/* Remove the list element or record field at `path`. An element on its own
+ * line takes the line with it; comments on other lines stay. Removing a field
+ * that is not there succeeds and changes nothing. */
+pb_status pb_source_remove(pb_source* s, const char* path);
+
+/* Why the last pb_source_bindings_json / _expr / _set / value edit on `s`
+ * failed, or NULL if it succeeded. Valid until the next such call. */
 const char* pb_source_error(const pb_source* s);
 
 /* ─── State and output tooling ────────────────────────────────────────── */

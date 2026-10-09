@@ -1171,6 +1171,73 @@ TEST(source_reads_bindings_and_edits_by_path) {
     CHECK(!broken.error().empty());
 }
 
+TEST(source_edits_values_in_place_keeping_style) {
+    const std::string text =
+        "// The look.\n"
+        "config let POST = {\n"
+        "  exposure: 1.450,   // brighter than day\n"
+        "  tint: #FF2E88,\n"
+        "  effects: [\n"
+        "    {effect: \"grain\", amount: 0.3},\n"
+        "    // curved glass\n"
+        "    {effect: \"crt\"},\n"
+        "  ],\n"
+        "}\n"
+        "let DROPS = 450\n";
+    petal::Source src(text);
+    const std::optional<std::string> json = src.bindings_json();
+    REQUIRE(json.has_value());
+    // A color literal reads as a color.
+    CHECK_CONTAINS(*json, "\"tint\":{\"color\":\"#ff2e88\"}");
+
+    // Writing back what is there moves nothing.
+    CHECK(src.set_value("POST.exposure", "1.45"));
+    CHECK(src.set_value("POST.tint", "{\"color\":\"#ff2e88\"}"));
+    CHECK(src.set_value("POST.effects", "[{\"rec\":{\"effect\":\"grain\",\"amount\":0.3}},{\"rec\":{\"effect\":\"crt\"}}]"));
+    CHECK(src.remove("POST.absent"));
+    CHECK_EQ(src.text(), text);
+
+    // Scalars keep the old token's habits; new elements copy their siblings.
+    CHECK(src.set_value("POST.exposure", "1.2"));
+    CHECK(src.set_value("POST.tint", "{\"color\":\"#29d9ff\"}"));
+    CHECK(src.set_value("DROPS", "{\"int\":500}"));
+    CHECK(src.append("POST.effects", "{\"rec\":{\"effect\":\"halftone\",\"ink\":{\"color\":\"#101018\"}}}"));
+    CHECK(src.remove("POST.effects[0]"));
+    CHECK(src.insert("POST.bloom", "0.4", "tint"));
+    CHECK_EQ(src.text(), std::string("// The look.\n"
+                                     "config let POST = {\n"
+                                     "  exposure: 1.200,   // brighter than day\n"
+                                     "  bloom: 0.4,\n"
+                                     "  tint: #29D9FF,\n"
+                                     "  effects: [\n"
+                                     "    // curved glass\n"
+                                     "    {effect: \"crt\"},\n"
+                                     "    {effect: \"halftone\", ink: #101018},\n"
+                                     "  ],\n"
+                                     "}\n"
+                                     "let DROPS = 500\n"));
+
+    // The inverse edits restore the original bytes.
+    CHECK(src.remove("POST.bloom"));
+    CHECK(src.remove("POST.effects[1]"));
+    CHECK(src.insert("POST.effects[0]", "{\"rec\":{\"effect\":\"grain\",\"amount\":0.3}}"));
+    CHECK(src.set_value("POST.exposure", "1.45"));
+    CHECK(src.set_value("POST.tint", "{\"color\":\"#ff2e88\"}"));
+    CHECK(src.set_value("DROPS", "{\"int\":450}"));
+    CHECK_EQ(src.text(), text);
+
+    // A refused edit reports why and changes nothing.
+    CHECK(!src.set_value("POST.effects[7].amount", "1.0"));
+    CHECK_CONTAINS(src.error(), "POST.effects[7].amount");
+    CHECK(!src.set_value("POST.exposure", "{\"oops\":1}"));
+    CHECK(!src.insert("POST.effects[9]", "1.0"));
+    CHECK(!src.append("DROPS", "1.0"));
+    CHECK(!src.remove("POST.effects[2]"));
+    CHECK_EQ(src.text(), text);
+    CHECK_EQ(pb_source_set_value(src.raw(), nullptr, "1"), PB_ERR_INVALID_ARG);
+    CHECK_EQ(pb_source_remove(nullptr, "x"), PB_ERR_INVALID_ARG);
+}
+
 TEST(scenario_parses_and_reports) {
     petal::Scenario sc = petal::Scenario::from_json(R"({
         "size": [320, 200], "frames": 12,

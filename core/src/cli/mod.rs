@@ -83,6 +83,11 @@ pub struct RunOpts {
     pub seed: Option<u64>,
     /// How errors are printed (`--error-format full|bare`).
     pub error_format: ErrorFormat,
+    /// `--state-storage <file>`: load every `state` value from this JSON file
+    /// before the run and save them back after it, so state carries from one
+    /// `petal run` to the next. Without it each run starts from the initial
+    /// values (see `handlers::state_storage`).
+    pub state_storage: Option<String>,
 }
 
 /// The arguments of one `petal bench` invocation (see [`Command::Bench`]).

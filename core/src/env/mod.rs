@@ -30,6 +30,9 @@ mod host_io;
 mod observations_json;
 mod run;
 mod state_json;
+mod state_storage;
+
+pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
 
 pub struct Env {
     programs: HashMap<ProgramId, Program>,

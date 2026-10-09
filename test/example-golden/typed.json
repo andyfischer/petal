@@ -2,5 +2,5 @@
   "example": "typed.ptl",
   "status": 0,
   "stdout": "Hello, Petal!\n3\n12.56636\n4.5\n6\n3\n",
-  "stderr": ""
+  "stderr": "warning: this script declares `state` (`hits`), and 'petal run' does not keep state between runs: every run starts from the initial values. Re-run with --state-storage <file> to save state to a file and load it on the next run.\n"
 }

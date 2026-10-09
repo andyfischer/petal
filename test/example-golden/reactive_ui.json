@@ -2,5 +2,5 @@
   "example": "reactive_ui.ptl",
   "status": 0,
   "stdout": "Reactive UI Demo\n=================\n\nFrame 1:\n  Todo App (3 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [Add (0)]  [Clear (0)]\n\nFrame 2:\n  Todo App (4 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [ ] Water plants\n  [Add (1)]  [Clear (0)]\n\nFrame 3:\n  Todo App (5 items)\n  --------\n  [ ] Buy groceries\n  [ ] Write code\n  [ ] Read a book\n  [ ] Water plants\n  [ ] Call Alex\n  [Add (2)]  [Clear (0)]\n\nFrame 4:\n  Todo App (0 items)\n  --------\n  [Add (2)]  [Clear (1)]\n\nFrame 5:\n  Todo App (1 items)\n  --------\n  [ ] Start over\n  [Add (3)]  [Clear (1)]\n\n",
-  "stderr": ""
+  "stderr": "warning: this script declares `state` (`click_count`, `items`), and 'petal run' does not keep state between runs: every run starts from the initial values. Re-run with --state-storage <file> to save state to a file and load it on the next run.\n"
 }

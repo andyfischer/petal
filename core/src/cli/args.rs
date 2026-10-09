@@ -226,7 +226,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--seed <n>] [--policy <name>] [--error-format full|bare] <file>";
+    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--seed <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
     let mut o = RunOpts::default();
     let source = parse_source_args(args, usage, |args, i| {
         match args[*i].as_str() {
@@ -252,6 +252,10 @@ fn parse_run_args(args: &[String]) -> CliArgs {
                     Some(take(args, i, "Expected path after --record-trace").to_string())
             }
             "--seed" => o.seed = Some(parse_seed(take(args, i, "Expected a number after --seed"))),
+            "--state-storage" => {
+                o.state_storage =
+                    Some(take(args, i, "Expected a file path after --state-storage").to_string())
+            }
             "--error-format" => {
                 o.error_format = parse_error_format(take(
                     args,

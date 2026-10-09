@@ -115,6 +115,81 @@ Options:
   a difference is a bug in the layer the two differ by. `PETAL_POLICY=<name>`
   does the same for every command and embedder; the flag wins.
 - `--no-opt` — same as `--policy baseline`. `PETAL_OPT=off` does the same.
+- `--state-storage <file>` — keep `state` between runs in `<file>`. See
+  [State between runs](#state-between-runs).
+
+#### State between runs
+
+A `state` value lasts as long as the host that runs the script keeps it. A
+frame-loop host (petal-sdl, Garden) runs the script again every frame and keeps
+its state from frame to frame. `petal run` is one run in one process, so by
+default every invocation starts from the initial values:
+
+```
+$ cat counter.ptl
+state hits = 0
+hits += 1
+print(hits)
+$ petal run counter.ptl
+warning: this script declares `state` (`hits`), and 'petal run' does not keep state between runs: every run starts from the initial values. Re-run with --state-storage <file> to save state to a file and load it on the next run.
+1
+```
+
+The warning goes to stderr, whenever the script declares any `state` and
+`--state-storage` was not given. With the flag, every state value is loaded
+from the file before the run and saved to it after:
+
+```
+$ petal run --state-storage counter.json counter.ptl
+1
+$ petal run --state-storage counter.json counter.ptl
+2
+```
+
+The file is created if it does not exist, and a missing or empty file is a
+first run. It holds every slot: top-level state, and the slots a declaration
+inside a function, a loop or a `state(key)` group owns (one per call path). It
+is JSON:
+
+```json
+{
+  "format": "petal-state",
+  "slots": [
+    {
+      "key": "28008301391528919",
+      "name": "hits",
+      "value": 2
+    }
+  ],
+  "version": 1
+}
+```
+
+`key` is the declaration's id and identifies the slot; `name` is for reading. A
+slot reached through calls or loops also has a `path`. A top-level slot may be
+written by hand with only `name` and `value`. Values that JSON has no spelling
+for are objects tagged `"$petal"`: enum variants, class instances, records
+whose fields are not in sorted order, `vec2`/`vec3`, f64 arrays, and
+non-finite floats.
+
+- **A value that cannot be stored** — a function, a host handle, a pending
+  value, a UI element, or a list or record holding one — is left out with a
+  warning naming the `state`. That declaration starts from its initial value on
+  the next run.
+- **A file that cannot be used** stops the command before the script runs
+  (exit 1, phase `state-storage` under `--json`) and is left as it was: it is
+  not valid JSON, not a state storage file, a version this `petal` does not
+  read, or none of the state in it is declared by this script (it was written
+  by a different script).
+- **State the script no longer declares** — a renamed or deleted `state` —
+  is not loaded and is dropped from the file on save, with a warning, as long
+  as some other slot in the file still belongs to the script.
+- **A run that fails** does not write the file, so it keeps what the last
+  successful run left.
+
+A slot is matched by the same ids a hot reload uses, so the edits that keep
+state across a reload keep it across runs, and the ones that drop it there
+(renaming the variable, its enclosing function or its module) drop it here.
 
 Tracing and inspection options:
 
@@ -437,6 +512,7 @@ the program:
 | `compile` | The program parses but is not well-formed — writing a `var` with `=`, assigning to a binding from an outer function, importing a name a module does not export. |
 | `lower` | The term graph could not be lowered to bytecode. Only `check` reaches this. |
 | `runtime` | The program compiled and ran, and failed during execution (`run` only). |
+| `state-storage` | The `--state-storage` file could not be loaded or written (`run` only). |
 
 `message` is the whole human-readable error and `line`/`column` locate its last
 diagnostic. Front-end failures also carry `errors`, one entry per diagnostic;

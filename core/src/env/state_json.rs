@@ -151,7 +151,7 @@ impl Env {
 /// name it — hand-written IR, or a slot left behind by an edit that removed the
 /// callsite. The label is for reading, not for addressing: nothing resolves a
 /// name back to a slot (see [`Env::set_state_map_from_json`]).
-fn render_state_key(base_name: &str, path: &[PathPart], labels: &HashMap<u64, String>) -> String {
+pub(super) fn render_state_key(base_name: &str, path: &[PathPart], labels: &HashMap<u64, String>) -> String {
     if path.is_empty() {
         return base_name.to_string();
     }
@@ -181,7 +181,7 @@ fn render_state_key(base_name: &str, path: &[PathPart], labels: &HashMap<u64, St
 /// close to, but not derived from, the compiler's own per-function ordinal.
 /// Nothing addresses a slot by these names, so a label that shifts costs a
 /// changed string in a dump, never a changed slot.
-fn call_site_labels(program: &crate::program::Program) -> HashMap<u64, String> {
+pub(super) fn call_site_labels(program: &crate::program::Program) -> HashMap<u64, String> {
     let mut labels: HashMap<u64, String> = HashMap::new();
     let mut seen: HashMap<String, u32> = HashMap::new();
     for term in &program.terms {

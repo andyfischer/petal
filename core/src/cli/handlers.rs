@@ -98,6 +98,10 @@ pub(super) fn handle_run(
         eprint_warnings(program);
     }
     let sid = stack_or_die(&mut env, json, pid);
+    match opts.state_storage.as_deref() {
+        Some(path) => load_state_storage(&mut env, json, pid, sid, path),
+        None => warn_state_not_stored(&env, pid),
+    }
     if trace_pending {
         env.enable_pending_trace(sid);
     }
@@ -147,6 +151,14 @@ pub(super) fn handle_run(
         }
     }
 
+    // Only a run that finished is saved: one that died stopped partway through
+    // its updates, and the file keeps what the last good run left.
+    if let Some(path) = opts.state_storage.as_deref()
+        && run_result.is_ok()
+    {
+        save_state_storage(&env, json, pid, sid, path);
+    }
+
     // The dump comes before the error report, in both modes and for the same
     // reason: the values are what the run *did*, the error is how it ended.
     // Reading them in that order is reading the program's story forward.
@@ -176,6 +188,88 @@ pub(super) fn handle_run(
                 die(json, &e, "runtime");
             }
         }
+    }
+}
+
+/// `petal run` without `--state-storage`, on a script that declares `state`:
+/// say on stderr that it will not carry over. Every other host of a Petal
+/// script (petal-sdl, garden) keeps `state` from frame to frame, and the guides
+/// introduce it as "1 on the first run, 2 on the second" — which, from the
+/// command line, is only true with a storage file.
+fn warn_state_not_stored(env: &Env, pid: ProgramId) {
+    let names = env.declared_state_names(pid);
+    if names.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: this script declares `state` ({}), and 'petal run' does not keep state \
+         between runs: every run starts from the initial values. Re-run with \
+         --state-storage <file> to save state to a file and load it on the next run.",
+        crate::env::state_name_list(&names)
+    );
+}
+
+/// `--state-storage <file>`, before the run: put the file's state into the
+/// stack. A file that does not exist yet, or is empty, is a first run. One that
+/// cannot be used ends the command before the script runs, so a bad file is
+/// never run past and then overwritten.
+fn load_state_storage(env: &mut Env, json: bool, pid: ProgramId, sid: StackKey, path: &str) {
+    let fail = |why: String| -> ! {
+        die(
+            json,
+            &format!(
+                "Cannot load state storage '{path}': {why}. Use a different file, or delete \
+                 this one to start from the script's initial values."
+            ),
+            "state-storage",
+        )
+    };
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => fail(format!("it cannot be read ({e})")),
+    };
+    if text.trim().is_empty() {
+        return;
+    }
+    let document: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(document) => document,
+        Err(e) => fail(format!("it is not valid JSON ({e})")),
+    };
+    match env.load_state_storage(pid, sid, &document) {
+        Ok(load) => {
+            if !load.dropped.is_empty() {
+                eprintln!(
+                    "warning: state storage '{path}' holds state this script does not declare \
+                     ({}); it is not loaded and will be removed from the file.",
+                    crate::env::state_name_list(&load.dropped)
+                );
+            }
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// `--state-storage <file>`, after a run that finished: write every state slot
+/// back, creating the file. A value JSON cannot hold (a function, a host
+/// handle) is warned about and left out, so its `state` starts from its initial
+/// value next run.
+fn save_state_storage(env: &Env, json: bool, pid: ProgramId, sid: StackKey, path: &str) {
+    let save = env.save_state_storage(pid, sid);
+    for (name, what) in &save.skipped {
+        eprintln!(
+            "warning: state `{name}` holds {what}, which cannot be saved to state storage; it \
+             will start from its initial value on the next run."
+        );
+    }
+    let mut text = serde_json::to_string_pretty(&save.document).unwrap_or_default();
+    text.push('\n');
+    if let Err(e) = fs::write(path, text) {
+        die(
+            json,
+            &format!("Cannot write state storage '{path}': {e}"),
+            "state-storage",
+        );
     }
 }
 

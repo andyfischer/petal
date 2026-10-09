@@ -2,5 +2,5 @@
   "example": "state.ptl",
   "status": 0,
   "stdout": "Accumulator\n===========\nAfter adding 1 -> total: 1\nAfter adding 2 -> total: 3\nAfter adding 3 -> total: 6\nAfter adding 4 -> total: 10\nAfter adding 5 -> total: 15\n\nPer-entity counters\n===================\n  goblin hit 1x\n  orc hit 1x\n  goblin hit 2x\n  goblin hit 3x\n  orc hit 2x\n\nPer-use-site state\n==================\n  Todo (render 1)\n  v1.0 (render 1)\n",
-  "stderr": ""
+  "stderr": "warning: this script declares `state` (`count`, `renders`, `total`), and 'petal run' does not keep state between runs: every run starts from the initial values. Re-run with --state-storage <file> to save state to a file and load it on the next run.\n"
 }

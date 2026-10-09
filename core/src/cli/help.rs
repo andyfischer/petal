@@ -355,6 +355,20 @@ OPTIONS
               Seed the PRNG so random() replays. Decimal or 0x-hex.
               PETAL_SEED=<n> does the same for every command; the flag wins.
 
+       --state-storage <file>
+              Keep 'state' between runs: load every state value from <file>
+              before the run and save them to it after, creating the file if
+              needed. Run 'state hits = 0; hits += 1; print(hits)' twice with
+              the same file and it prints 1, then 2. The file is JSON. A value
+              that cannot be stored (a function, a host handle) is left out
+              with a warning; a file that is not valid state storage, or that
+              another script wrote, is an error and is left untouched. A run
+              that fails does not write the file.
+
+              Without this option every run starts from the initial values,
+              and a script that declares any 'state' gets a warning on stderr
+              saying so.
+
        --error-format full|bare
               'bare' prints only the error message on stderr, with no
               [line N, column M] suffix and no echoed source line or caret,

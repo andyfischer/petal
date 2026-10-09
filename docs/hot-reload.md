@@ -252,6 +252,12 @@ silicon, minimum of 9):
 | a comment added | relocated | 0.75 ms |
 | one number changed | patched | 0.79 ms |
 | a statement added | recompiled | 110 ms |
+| `set_config_value`, file named | patched | 1.3 ms |
+| `set_config_value`, file searched for | patched | 2.9 ms |
+
+`set_config_value` costs more than a reload of the same edit because it also
+makes the edit: it parses the file's text to find the literal and rewrite it
+in place. Name the file when the host knows it.
 
 The recompile itself went from about 300 ms to 110 ms in the same work:
 

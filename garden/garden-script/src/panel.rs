@@ -1887,10 +1887,17 @@ impl PanelHost {
     ///   source map is dropped too. A script that binds the same name itself
     ///   keeps the key (its term is in the entry file, and later wins).
     ///
+    /// - **a local of a function defined only by an imported module** — it
+    ///   keys as `function.local`, and the prelude's draw wrappers carry no
+    ///   `ui::` (they are implicit-import aliases), so `draw_rect.a` would
+    ///   otherwise reach every panel that draws a rect and leaves the alpha to
+    ///   the declaration's default.
+    ///
     /// This is Garden policy, not Petal's; the unfiltered map is a call to
     /// `Env::get_observations_json` away.
     pub fn observed_json(&self) -> serde_json::Map<String, serde_json::Value> {
         let imported_only = self.imported_only_names();
+        let imported_fns = self.imported_only_functions();
         self.core
             .env
             .get_observations_json(self.core.program_id(), self.core.stack_id())
@@ -1900,8 +1907,40 @@ impl PanelHost {
                     && !k.starts_with('_')
                     && !is_callable_json(v)
                     && !imported_only.contains(k.as_str())
+                    // A local of an imported function keys as `function.local`.
+                    && !k.split_once('.').is_some_and(|(f, _)| imported_fns.contains(f))
             })
             .collect()
+    }
+
+    /// Names of functions defined only outside the entry file. A binding inside
+    /// one keys as `function.local`, and the prelude's draw wrappers are
+    /// implicit-import aliases with no `ui::` in their name, so none of the
+    /// other rules of [`observed_json`](Self::observed_json) sees
+    /// `draw_rect.a`, the default a call left to the declaration.
+    fn imported_only_functions(&self) -> std::collections::HashSet<String> {
+        use petal::program::{TermOp, base_fn_name};
+        use petal::source_map::ENTRY_FILE;
+        let env = &self.core.env;
+        let Some(program) = env.get_program(self.core.program_id()) else {
+            return Default::default();
+        };
+        let mut imported = std::collections::HashSet::new();
+        let mut own = std::collections::HashSet::new();
+        for term in &program.terms {
+            let TermOp::MakeClosure(fid) = term.op else { continue };
+            let Some(name) = program.functions.get(fid.0 as usize).and_then(|f| f.name.as_deref())
+            else {
+                continue;
+            };
+            let name = base_fn_name(name).to_string();
+            match program.source_map.get(term.id) {
+                Some(span) if span.file != ENTRY_FILE => imported.insert(name),
+                _ => own.insert(name),
+            };
+        }
+        imported.retain(|n| !own.contains(n));
+        imported
     }
 
     /// Names of observed terms bound only outside the entry file — by an
@@ -4966,8 +5005,23 @@ mod tests {
         // `GRAD_*` angles) survive rules 1-3 by name, so they are dropped by
         // where they were bound: only in an imported module's file.
         assert!(raw.contains_key("theme") && raw.contains_key("GRAD_RIGHT"));
+        // Rule 5: a local of an imported function. The wrapper's default
+        // alpha is bound inside `draw_rect`, which has no `ui::` to catch it.
+        assert!(raw.contains_key("draw_rect.a"));
         let keys: Vec<&String> = obs.keys().collect();
         assert_eq!(keys, ["name", "sel"], "only the script's own bindings");
+    }
+
+    /// The same key shape from the script's own function is the script's.
+    #[test]
+    fn a_local_of_the_scripts_own_function_is_still_observed() {
+        let f = write_script("fn pick(n)\n  let twice = n * 2\n  twice\nend\nlet got = pick(4)\n");
+        let mut host = PanelHost::load(f.path()).unwrap();
+        host.set_dimensions(10, 10);
+        host.frame(0.0, 0).unwrap();
+        let obs = host.observed_json();
+        assert_eq!(obs["pick.twice"], 8);
+        assert_eq!(obs["got"], 8);
     }
 
     /// A script that binds a name the prelude also exported keeps the key: its

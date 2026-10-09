@@ -57,6 +57,7 @@
 //! [`petal::env::Env::invalidate_run`]). [`harness::Headless`] shows the
 //! sequence.
 
+pub mod clipboard;
 pub mod draw;
 pub mod frame_core;
 pub mod harness;
@@ -130,7 +131,14 @@ pub const UI_VERSION: i64 = 1;
 ///   into a canvas and composited back — group opacity, a blurred glow),
 ///   `snapshot(rect)`, `draw_backdrop_blur` and `draw_material` (the
 ///   translucent background-sampling surface behind an iOS bar) on those.
-pub const PRELUDE_LEVEL: u32 = 7;
+/// - 8 — text editing (2026-10-09): `text_field` gained a selection, the
+///   clipboard and undo (its result adds `changed`, `anchor`, `sel_start`,
+///   `sel_end`, `scroll`, `overflow`; `draw_text_field` a 6-argument form
+///   taking that result); `clipboard_get` / `clipboard_set` over the
+///   [`clipboard`] channel; `text_wrap_rows` (rows with their character
+///   ranges), `text_row_of` and `text_range_rects`. `text_wrap` no longer
+///   collapses a run of spaces inside a row.
+pub const PRELUDE_LEVEL: u32 = 8;
 
 /// Name of the Petal-source prelude module: `import ui`.
 pub const MODULE_NAME: &str = "ui";

@@ -1015,7 +1015,13 @@ fn wrap_lines(metrics: &FontMetrics, style: &TextStyle, text: &str, max_width: f
         let mut gap_w = 0.0f64;
         for c in paragraph.chars() {
             if c == ' ' || c == '\t' {
-                line.take(&mut word, &mut word_w, &mut gap, &mut gap_w, metrics, style, &mut out);
+                // Only a finished word is placed here. A second blank in a
+                // row joins the gap already open (`take` would discard it),
+                // so a run of spaces inside a line survives the wrap and each
+                // row stays a contiguous run of the source.
+                if !word.is_empty() {
+                    line.take(&mut word, &mut word_w, &mut gap, &mut gap_w, metrics, style, &mut out);
+                }
                 gap.push(c);
                 gap_w += char_width(metrics, style, c);
             } else {
@@ -1132,10 +1138,30 @@ impl Line {
 /// `style` is the argument `text_width` takes — a style record, or a bare size
 /// (a face name may follow it, before `max_width`). Measure and draw with the
 /// same one and the wrap is the one you see.
+///
+/// A style record carrying `offsets: true` asks for `{text, start, end}` rows
+/// instead of strings (see [`wrap_rows`]); the prelude's `text_wrap_rows` is
+/// the spelling scripts use.
 pub(crate) fn native_text_wrap(state: &mut PetalCxt) -> NativeResult {
     let text = state.get_string(1)?;
     let (style, metrics) = style_and_metrics(state, 2)?;
     let max_width = state.get_float(state.arg_count())?;
+    if wants_row_offsets(state, 2)? {
+        let rows = wrap_rows(&metrics, &style, &text, max_width);
+        let items: Vec<Value> = rows
+            .into_iter()
+            .map(|row| {
+                let mut fields = petal::heap::RecordMap::default();
+                let text = Value::String(state.heap_mut().alloc_string(row.text));
+                fields.insert("text".to_string(), text);
+                fields.insert("start".to_string(), Value::Int(row.start as i64));
+                fields.insert("end".to_string(), Value::Int(row.end as i64));
+                Value::Map(state.heap_mut().alloc_map(fields))
+            })
+            .collect();
+        state.push_list(items);
+        return Ok(1);
+    }
     let lines = wrap_lines(&metrics, &style, &text, max_width);
     let items: Vec<Value> = lines
         .into_iter()
@@ -1143,6 +1169,78 @@ pub(crate) fn native_text_wrap(state: &mut PetalCxt) -> NativeResult {
         .collect();
     state.push_list(items);
     Ok(1)
+}
+
+/// Whether the style record at `index` carries `offsets: true`: the request
+/// for rows with their character ranges rather than bare strings. It rides on
+/// the style record because that is the one argument of `text_wrap` that is
+/// already open-ended; scripts reach it through the prelude's
+/// `text_wrap_rows(s, style, max_width)` and never spell the key.
+fn wants_row_offsets(state: &PetalCxt, index: usize) -> Result<bool, String> {
+    Ok(match state.get_value(index)? {
+        Value::Map(id) => matches!(state.heap().get_map(id).get("offsets"), Some(Value::Bool(true))),
+        _ => false,
+    })
+}
+
+/// One wrapped row and the half-open **code point** range of the source text
+/// it shows: `char_slice(s, start, end) == text`.
+///
+/// The ranges do not tile the source. What a wrap drops — the spaces a soft
+/// break lands on, the newline of a hard one — sits between one row's `end`
+/// and the next row's `start`, so a caret offset in such a gap belongs to the
+/// end of the earlier row.
+#[derive(Debug, PartialEq)]
+pub(crate) struct WrapRow {
+    pub text: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// [`wrap_lines`], with each row's position in `text`.
+///
+/// The rows are found again in the paragraph they came from instead of being
+/// tracked through the wrap: a row is a contiguous run of its paragraph, rows
+/// come in order, and the only characters a wrap removes between two of them
+/// are spaces and tabs. So the row after a soft break starts at the first
+/// non-blank character after the previous row's end, and the first row of a
+/// paragraph (which keeps its leading blanks) starts at the paragraph's start.
+pub(crate) fn wrap_rows(
+    metrics: &FontMetrics,
+    style: &TextStyle,
+    text: &str,
+    max_width: f64,
+) -> Vec<WrapRow> {
+    let mut out = Vec::new();
+    // Code point offset of the paragraph being wrapped.
+    let mut base = 0usize;
+    for raw in text.split('\n') {
+        let paragraph = raw.strip_suffix('\r').unwrap_or(raw);
+        let chars: Vec<char> = paragraph.chars().collect();
+        let mut at = 0usize;
+        for (i, line) in wrap_lines(metrics, style, paragraph, max_width)
+            .into_iter()
+            .enumerate()
+        {
+            let n = line.chars().count();
+            if i > 0 {
+                while at < chars.len() && (chars[at] == ' ' || chars[at] == '\t') {
+                    at += 1;
+                }
+            }
+            // A paragraph of blanks alone wraps to one empty row, at its start.
+            let start = at.min(chars.len());
+            let end = (start + n).min(chars.len());
+            out.push(WrapRow {
+                text: line,
+                start: base + start,
+                end: base + end,
+            });
+            at = end;
+        }
+        base += raw.chars().count() + 1;
+    }
+    out
 }
 
 /// Which end of an over-long string an ellipsis eats.
@@ -1472,6 +1570,25 @@ mod tests {
             .run_source("text_wrap(\"aaaaaaaaa\", 10, 20.0) |> join(\"|\")")
             .expect("run");
         assert_eq!(as_string(&env, &v), "aaaa|aaaa|a");
+    }
+
+    #[test]
+    fn text_wrap_offsets_are_code_point_ranges_of_the_source() {
+        let mut env = half_width_env();
+        // 5 px glyphs, 30 px box: six per row. The space a soft break lands
+        // on and the newline of a hard one fall between the ranges.
+        let src = "text_wrap(\"h\u{e9}llo w\u{f6}rld\\n\\n  \u{65e5}\u{672c}\", {size: 10, offsets: true}, 30.0) \
+                   |> map(fn(r) \"{r.text}@{r.start}-{r.end}\" end) |> join(\"|\")";
+        let v = env.run_source(src).expect("run");
+        assert_eq!(
+            as_string(&env, &v),
+            "h\u{e9}llo@0-5|w\u{f6}rld@6-11|@12-12|  \u{65e5}\u{672c}@13-17"
+        );
+        // Every range reads back as its row.
+        let src = "let s = \"aaa  bbb ccccccccc d\"\n\
+                   text_wrap(s, {size: 10, offsets: true}, 20.0) \
+                   |> filter(fn(r) char_slice(s, r.start, r.end) != r.text end) |> len";
+        assert_eq!(env.run_source(src).expect("run"), Value::Int(0));
     }
 
     #[test]

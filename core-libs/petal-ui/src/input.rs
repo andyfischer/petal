@@ -518,6 +518,8 @@ pub fn bind_input(env: &mut Env, input: &InputState) {
     let text = Value::String(env.heap_mut().alloc_string(input.frame_text.clone()));
     let s = env.intern_symbol(SYM_TEXT_INPUT);
     env.set_binding(s, text);
+    // The clipboard is an input too (the prelude's `clipboard_get()`).
+    crate::clipboard::bind_clipboard(env, input);
 }
 
 /// Bind the per-frame dt (seconds) + frame_count uniforms.

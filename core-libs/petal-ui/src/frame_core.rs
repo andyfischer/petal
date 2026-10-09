@@ -353,6 +353,9 @@ impl FrameCore {
         hooks.exit(&mut self.env);
         self.fonts = draw::swap_font_provider(saved_fonts);
         self.provider = host_data::swap_data_provider(saved);
+        // What the script copied goes to the clipboard whether or not the
+        // run finished: the push happened.
+        crate::clipboard::flush_clipboard(&mut self.env);
         self.result = run?;
         Ok(FrameRun::Ran)
     }

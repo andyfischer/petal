@@ -2114,36 +2114,127 @@ pub fn section_label(label, x, y, active, style)
   end
 end
 
+// ── Clipboard ───────────────────────────────────────────────────────────────
+// Plain text to and from the host's clipboard. `clipboard_set` takes effect
+// when the frame ends, so the text reads back from the next frame on. A host
+// with no system clipboard keeps the text in memory, which still carries a
+// copy from one field to another. `text_field` calls both; an app only needs
+// them for its own copy/paste commands.
+
+pub fn clipboard_get()
+  binding(symbol("clipboard")) ?? ""
+end
+
+pub fn clipboard_set(text)
+  push_output(symbol("clipboard_write"), text)
+end
+
+// ── Text ranges ─────────────────────────────────────────────────────────────
+// Every offset here is a character (code point) offset, the unit `char_slice`
+// and `char_len` use, so non-ASCII text needs no special care.
+
+// `text_wrap` with each row's place in the source: a list of
+// {text, start, end}, where `char_slice(s, start, end) == text`. What the wrap
+// drops (the space a soft break lands on, the newline of a hard one) lies
+// between one row's `end` and the next row's `start`, so an offset in such a
+// gap belongs to the end of the earlier row. One walk of the advance table,
+// like `text_wrap`; a wrapped editable area needs no per-character measuring.
+pub fn text_wrap_rows(s, style, max_width)
+  let st = if type(style) == "record" then {...style, offsets: true} else {size: style, offsets: true} end
+  text_wrap(s, st, max_width)
+end
+
+// The rows of unwrapped text: one per hard newline, in the shape
+// `text_wrap_rows` returns.
+fn _line_rows(s)
+  let rows = []
+  let at = 0
+  for line in split(s, "\n") do
+    let n = char_len(line)
+    rows = append(rows, {text: line, start: at, end: at + n})
+    at = at + n + 1
+  end
+  rows
+end
+
+// The index of the row a caret at character `at` sits on: the last row that
+// starts at or before it. A caret in the gap after a soft break (on the
+// trailing space that was dropped) stays on the row it was typed on, and one
+// at a hard break belongs to the row that starts there.
+pub fn text_row_of(rows, at)
+  let idx = 0
+  for i in range(0, len(rows)) do
+    if at >= rows[i].start then idx = i end
+  end
+  idx
+end
+
+// The rectangles covering characters [a, b) of `s` drawn in `style`: one
+// {x, y, w, h} per row the range touches, relative to the text's top-left
+// (add the position you draw at). `s` is a string, laid out one row per hard
+// newline, or the rows from `text_wrap_rows` for wrapped text. A selection, a
+// search hit or a spelling underline is then two `text_width` calls per row
+// instead of one per character. Rows are `line_height` apart unless `line_h`
+// says otherwise; a range that runs past a row's end covers a sliver for the
+// line break, so a selected empty line still shows.
+pub fn text_range_rects(s, style, a, b)
+  text_range_rects(s, style, a, b, text_metrics(style).line_height)
+end
+
+pub fn text_range_rects(s, style, a, b, line_h)
+  let rows = if type(s) == "string" then _line_rows(s) else s end
+  let lo = min(a, b)
+  let hi = max(a, b)
+  let out = []
+  for i in range(0, len(rows)) do
+    let row = rows[i]
+    let from = max(lo, row.start)
+    let to = min(hi, row.end)
+    let past = hi > row.end && lo <= row.end && i < len(rows) - 1
+    if from < to || past then
+      let x0 = text_width(char_slice(row.text, 0, from - row.start), style)
+      let x1 = if to > from then text_width(char_slice(row.text, 0, to - row.start), style) else x0 end
+      let pad = if past then max(2, int(line_h / 4)) else 0 end
+      out = append(out, {x: x0, y: i * line_h, w: x1 - x0 + pad, h: line_h})
+    end
+  end
+  out
+end
+
 // ── Text field (immediate-mode, focus-aware) ────────────────────────────────
-// Single-line editable text with a real caret. Clicking focuses the field and
-// places the caret at the clicked character; while focused, typing inserts at
-// the caret, left/right/home/end move it, backspace deletes before it
-// (alt/ctrl+backspace deletes back to the start of the word), delete removes
-// the char after it, and Return sets `submitted`. State is the plain string
-// `buf` (keep it in `state`); focus lives in a separate focus record; the
-// caret lives in widget-internal `state`, keyed per callsite like every other
-// in-function state. Returns {focus, text, caret, submitted}:
+// Single-line editable text with a caret, a selection, the clipboard and
+// undo. State is the plain string `buf` (keep it in `state`); focus lives in
+// a separate focus record; the caret, the selection and the history live in
+// widget-internal `state`, keyed per callsite like every other in-function
+// state.
+//
 //   let res = text_field(fc, "name", r, buf)
 //   fc = res.focus  buf = res.text
 //   if res.submitted then ... end
-// (Selection is not modeled — the field is for names, paths and filters, not
-// prose.)
-
-// Char index of the caret slot nearest pixel offset `px` into `text`, measured
-// in the style `ts` the field draws in.
-fn _caret_from_x(text, px, ts)
-  let n = char_len(text)
-  let best = 0
-  let best_d = abs(px)
-  for i in range(1, n + 1) do
-    let d = abs(text_width(char_slice(text, 0, i), ts) - px)
-    if d < best_d then
-      best = i
-      best_d = d
-    end
-  end
-  best
-end
+//
+// Mouse: a click focuses the field and places the caret, shift+click extends
+// the selection to the click, a drag selects, a double click selects the
+// word and a triple click everything.
+//
+// Keys, while focused (cmd and ctrl are interchangeable for the shortcuts):
+//   left / right / home / end     move the caret; with shift, extend the selection
+//   alt or ctrl + left / right    by word;  cmd + left / right  to either end
+//   backspace / delete            the selection, else one character
+//   alt or ctrl + backspace       back to the start of the word
+//   cmd + backspace               back to the start of the field
+//   cmd + a                       select all
+//   cmd + c / x / v               copy, cut, paste (`clipboard_get` / `clipboard_set`)
+//   cmd + z,  cmd + shift + z or cmd + y     undo, redo
+//   return                        sets `submitted`
+// Typing replaces the selection. A run of typing undoes as one step, a word
+// at a time. Pasted text loses its line breaks (the field is one line).
+//
+// Returns {focus, text, caret, submitted, changed, anchor, sel_start, sel_end,
+// scroll, overflow}. `caret` and the selection are character offsets;
+// `sel_start == sel_end` means nothing is selected, and `anchor` is the end of
+// the selection that is not the caret. When `buf` is not what the field last
+// returned (the app cleared or replaced it), the history is dropped: it
+// described a different string.
 
 // Char index where the word before `caret` starts (for word-backspace):
 // skip the run of spaces just left of the caret, then the word before it.
@@ -2158,106 +2249,344 @@ fn _word_start(text, caret)
   i
 end
 
-// The input half, with no pixels of its own: click-to-focus, caret movement,
-// editing and Return, returning the same {focus, text, caret, submitted} the
-// full widget does. An app with its own palette keeps the editing logic —
-// which is the fiddly part — and draws the box itself:
+// Its mirror: where the word after `caret` ends.
+fn _word_end(text, caret)
+  let n = char_len(text)
+  let i = caret
+  while i < n && char_slice(text, i, i + 1) == " " do
+    i = i + 1
+  end
+  while i < n && char_slice(text, i, i + 1) != " " do
+    i = i + 1
+  end
+  i
+end
+
+// The word a double click at char index `at` selects, as {a, b}.
+fn _word_at(text, at)
+  let n = char_len(text)
+  let a = min(at, n)
+  let b = a
+  while a > 0 && char_slice(text, a - 1, a) != " " do
+    a = a - 1
+  end
+  while b < n && char_slice(text, b, b + 1) != " " do
+    b = b + 1
+  end
+  {a: a, b: b}
+end
+
+// An editing state {text, caret, anchor} with characters [lo, hi) replaced by
+// `ins`, the caret after it and nothing selected.
+fn _field_splice(st, lo, hi, ins)
+  let c = lo + char_len(ins)
+  {text: char_slice(st.text, 0, lo) ++ ins ++ char_slice(st.text, hi, char_len(st.text)), caret: c, anchor: c}
+end
+
+// The style a field measures with. `style.text_style`, when given, is the
+// whole record (an app with its own type ramp passes the one it draws with);
+// otherwise it is built from {size, font} over the theme.
+fn _field_measure(t, style)
+  _get(style, "text_style", _tm(_face(t, style), _get(style, "size", t.font_md)))
+end
+
+// How many undo steps a field keeps.
+let _FIELD_UNDO_MAX = 100
+
+// The input half, with no pixels of its own: focus, caret, selection,
+// clipboard, undo and Return, returning the same record the full widget does.
+// An app with its own palette keeps the editing logic — which is the fiddly
+// part — and draws the box itself:
 //
 //   let res = text_field_update(fc, "name", r, buf)
 //   fc = res.focus  buf = res.text
-//   ...my own box, my own caret (at char index res.caret)...
+//   ...my own box, my own caret (at char index res.caret), my own selection
+//   (text_range_rects(res.text, style, res.sel_start, res.sel_end))...
 //
-// Pair it with `draw_text_field(r, buf, focused(fc, "name"), res.caret, style)`
-// to get the stock look back.
+// Pair it with `draw_text_field(r, res.text, focused(fc, "name"), res.caret,
+// res, style)` to get the stock look back.
 pub fn text_field_update(fc, id, r, buf)
   text_field_update(fc, id, r, buf, {})
 end
 
-// The update half reads only {size, font, inset} from `style` — they must
-// match what the draw half uses, or click-to-place lands the caret a few
-// pixels off. The face matters as much as the size: measuring monospace
-// advances against a proportionally-drawn run puts the caret several
-// characters away by the end of a long field.
+// The update half reads {size, font, inset, text_style, pointer, scroll} from
+// `style`. The type keys must match what the draw half uses, or click-to-place
+// lands the caret a few pixels off. The face matters as much as the size:
+// measuring monospace advances against a proportionally-drawn run puts the
+// caret several characters away by the end of a long field.
+//
+// `pointer: false` keeps the mouse out for this frame (the field is under a
+// modal, or another layer owns the click). `scroll: true` turns on horizontal
+// scrolling: the result's `scroll` is how far the text is shifted left to
+// keep the caret inside the box, and the draw half must shift by it too.
+// `text_field` turns it on; a caller that draws for itself opts in.
 pub fn text_field_update(fc, id, r, buf, style)
   let t = _palette()
-  let size = _get(style, "size", t.font_md)
-  let ts = _tm(_face(t, style), size)
+  let ts = _field_measure(t, style)
   let inset = _get(style, "inset", 6)
-  // The caret, in characters. -1 means "end of text" until first placed, and
-  // any external change to `buf` that leaves the caret past the end clamps it.
+  // The caret and the selection's other end, in characters. -1 means "end of
+  // text" until first placed, and any external change to `buf` that leaves
+  // either past the end clamps it.
   state caret = -1
+  state anchor = -1
+  state scroll = 0
+  state dragging = false
+  state had_focus = false
+  // History: {text, caret, anchor} snapshots. `typing` is whether the last
+  // edit was typed text, which the next typed character joins.
+  state undo = []
+  state redo = []
+  state typing = false
+  state last_text = ""
   let f = fc
   let text = buf
   let n = char_len(text)
+  if text != last_text then
+    undo = []
+    redo = []
+    typing = false
+  end
   if caret < 0 || caret > n then
     caret = n
   end
-  if mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r) then
+  if anchor < 0 || anchor > n then
+    anchor = caret
+  end
+  let pressed = _get(style, "pointer", true) && mouse_pressed(0) && point_in(mouse_x(), mouse_y(), r)
+  if pressed then
     f = focus_set(fc, id)
-    caret = _caret_from_x(text, mouse_x() - (r.x + inset), ts)
+    let at = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
+    let clicks = click_count()
+    if clicks >= 3 then
+      anchor = 0
+      caret = n
+    elsif clicks == 2 then
+      let w = _word_at(text, at)
+      anchor = w.a
+      caret = w.b
+    elsif mod_shift() then
+      caret = at
+    else
+      caret = at
+      anchor = at
+    end
+    dragging = clicks < 2
+    typing = false
+  elsif dragging then
+    if mouse_down(0) then
+      caret = text_index_at(text, ts, float(mouse_x() - (r.x + inset) + scroll))
+    else
+      dragging = false
+    end
   end
   let has = focused(f, id)
   let submitted = false
+  if has && !had_focus && !pressed then
+    // Focus arrived by keyboard (Tab, a shortcut): start at the end.
+    caret = n
+    anchor = n
+  end
+  had_focus = has
   if has then
-    if key_pressed("left") then caret = max(0, caret - 1) end
-    if key_pressed("right") then caret = min(n, caret + 1) end
-    if key_pressed("home") then caret = 0 end
-    if key_pressed("end") then caret = n end
-    if key_pressed("backspace") && caret > 0 then
-      let cut = caret - 1
-      if mod_alt() || mod_ctrl() then
-        cut = _word_start(text, caret)
+    let shift = mod_shift()
+    let cmd = mod_cmd() || mod_ctrl()
+    let word = mod_alt() || mod_ctrl()
+    let lo = min(caret, anchor)
+    let hi = max(caret, anchor)
+
+    // Movement. Without shift a selection collapses to the side moved toward.
+    let to = -1
+    if key_pressed("left") then
+      to = if mod_cmd() then 0 elsif word then _word_start(text, caret) elsif lo < hi && !shift then lo else max(0, caret - 1) end
+    end
+    if key_pressed("right") then
+      to = if mod_cmd() then n elsif word then _word_end(text, caret) elsif lo < hi && !shift then hi else min(n, caret + 1) end
+    end
+    if key_pressed("home") then to = 0 end
+    if key_pressed("end") then to = n end
+    if to >= 0 then
+      caret = to
+      if !shift then anchor = to end
+      typing = false
+    end
+    if cmd && key_pressed("a") then
+      anchor = 0
+      caret = n
+      typing = false
+    end
+
+    // History moves replace the whole editing state, and nothing else edits
+    // on the same frame.
+    let st = {text: text, caret: caret, anchor: anchor}
+    let stepped = false
+    if cmd && key_pressed("z") && !shift then
+      stepped = true
+      if len(undo) > 0 then
+        redo = append(redo, st)
+        st = last(undo)
+        undo = slice(undo, 0, len(undo) - 1)
       end
-      text = char_slice(text, 0, cut) ++ char_slice(text, caret, n)
-      caret = cut
+    elsif cmd && (key_pressed("y") || (key_pressed("z") && shift)) then
+      stepped = true
+      if len(redo) > 0 then
+        undo = append(undo, st)
+        st = last(redo)
+        redo = slice(redo, 0, len(redo) - 1)
+      end
     end
-    if key_pressed("delete") && caret < char_len(text) then
-      text = char_slice(text, 0, caret) ++ char_slice(text, caret + 1, char_len(text))
+
+    if stepped then
+      typing = false
+    else
+      let before = st
+      let typed_only = true
+      lo = min(st.caret, st.anchor)
+      hi = max(st.caret, st.anchor)
+      if cmd && lo < hi && (key_pressed("c") || key_pressed("x")) then
+        clipboard_set(char_slice(st.text, lo, hi))
+        if key_pressed("x") then
+          st = _field_splice(st, lo, hi, "")
+          typed_only = false
+        end
+      end
+      if key_pressed("backspace") then
+        lo = min(st.caret, st.anchor)
+        hi = max(st.caret, st.anchor)
+        if lo == hi && lo > 0 then
+          lo = if mod_cmd() then 0 elsif word then _word_start(st.text, hi) else hi - 1 end
+        end
+        if lo < hi then
+          st = _field_splice(st, lo, hi, "")
+          typed_only = false
+        end
+      end
+      if key_pressed("delete") then
+        lo = min(st.caret, st.anchor)
+        hi = max(st.caret, st.anchor)
+        if lo == hi && hi < char_len(st.text) then
+          hi = hi + 1
+        end
+        if lo < hi then
+          st = _field_splice(st, lo, hi, "")
+          typed_only = false
+        end
+      end
+      if (cmd && key_pressed("v")) || (shift && key_pressed("insert")) then
+        // One line: a pasted paragraph break becomes a space.
+        let clip = join(split(clipboard_get(), "\n"), " ")
+        if char_len(clip) > 0 then
+          st = _field_splice(st, min(st.caret, st.anchor), max(st.caret, st.anchor), clip)
+          typed_only = false
+        end
+      end
+      // A shortcut's own letter is not text. (ctrl+alt is AltGr, which is.)
+      let typed = if mod_cmd() || (mod_ctrl() && !mod_alt()) then "" else text_input() end
+      if char_len(typed) > 0 then
+        st = _field_splice(st, min(st.caret, st.anchor), max(st.caret, st.anchor), typed)
+      end
+      if st.text != before.text then
+        // A run of typing is one undo step; anything else is its own.
+        if !(typed_only && typing) then
+          undo = append(undo, before)
+          if len(undo) > _FIELD_UNDO_MAX then
+            undo = slice(undo, len(undo) - _FIELD_UNDO_MAX, len(undo))
+          end
+        end
+        redo = []
+        // The step ends with the word, so undo takes a word at a time.
+        typing = typed_only && char_slice(typed, char_len(typed) - 1, char_len(typed)) != " "
+      end
     end
-    let typed = text_input()
-    if len(typed) > 0 then
-      text = char_slice(text, 0, caret) ++ typed ++ char_slice(text, caret, char_len(text))
-      caret = caret + char_len(typed)
-    end
+    text = st.text
+    caret = st.caret
+    anchor = st.anchor
     if key_pressed("return") then
       submitted = true
     end
   end
-  {focus: f, text: text, caret: caret, submitted: submitted}
+  // Keep the caret inside the box. Unfocused, a field shows its start.
+  let overflow = false
+  if _get(style, "scroll", false) then
+    let inner = r.w - 2 * inset
+    let total = text_width(text, ts)
+    overflow = total > inner
+    if !has || !overflow then
+      scroll = 0
+    else
+      let cx = text_width(char_slice(text, 0, caret), ts)
+      if cx - scroll > inner then scroll = cx - inner end
+      if cx < scroll then scroll = cx end
+      scroll = clamp(scroll, 0, total - inner)
+    end
+  end
+  let changed = text != buf
+  last_text = text
+  {focus: f, text: text, caret: caret, submitted: submitted, changed: changed, anchor: anchor,
+   sel_start: min(caret, anchor), sel_end: max(caret, anchor), scroll: scroll, overflow: overflow}
 end
 
 // The draw half. `has` is whether the field holds focus (draws the accent
 // border and the caret). Without an explicit caret the bar sits at the end of
 // the text, which is what the pre-caret prelude always drew.
 pub fn draw_text_field(r, text, has)
-  draw_text_field(r, text, has, char_len(text), {})
+  draw_text_field(r, text, has, char_len(text), {}, {})
 end
 
-// `style` overrides any of {bg, fg, outline, focus, caret, size, font, inset};
-// omitted keys come from `ui_theme()`.
+// `style` overrides any of {bg, fg, outline, focus, caret, selection, size,
+// font, inset, text_style, placeholder}; omitted keys come from `ui_theme()`.
+// `placeholder` is drawn dim while the field is empty.
 pub fn draw_text_field(r, text, has, style)
-  draw_text_field(r, text, has, char_len(text), style)
+  draw_text_field(r, text, has, char_len(text), {}, style)
 end
 
-// Full form: `caret` is the char index the caret bar is drawn at (clamped).
+// `caret` is the char index the caret bar is drawn at (clamped).
 pub fn draw_text_field(r, text, has, caret, style)
+  draw_text_field(r, text, has, caret, {}, style)
+end
+
+// Full form. `view` carries what `text_field_update` returned beyond the
+// caret — any of {sel_start, sel_end, scroll, overflow} — so passing its whole
+// result works: the selection is painted behind the text, and a field whose
+// text overflows is clipped and shifted by `scroll`.
+pub fn draw_text_field(r, text, has, caret, view, style)
   let t = _palette()
   let accent = _get(style, "focus", t.accent)
-  draw_rect(r, _get(style, "bg", t.panel))
+  let bg = _get(style, "bg", t.panel)
+  draw_rect(r, bg)
   let border = if has then accent else _get(style, "outline", t.outline) end
   draw_rect_outline(r, border)
   let size = _get(style, "size", t.font_md)
-  let ts = _ts(_face(t, style), size, _get(style, "fg", t.text))
-  let tx = r.x + _get(style, "inset", 6)
-  let ty = r.y + (r.h - size) / 2
+  let ts = _get(style, "text_style", _ts(_face(t, style), size, _get(style, "fg", t.text)))
+  let tsize = _get(ts, "size", size)
+  let tx = r.x + _get(style, "inset", 6) - _get(view, "scroll", 0)
+  let ty = r.y + (r.h - tsize) / 2
+  let clipped = _get(view, "overflow", false)
+  if clipped then
+    clip_push({x: r.x + 1, y: r.y, w: r.w - 2, h: r.h})
+  end
+  let n = char_len(text)
+  let s0 = clamp(_get(view, "sel_start", 0), 0, n)
+  let s1 = clamp(_get(view, "sel_end", 0), 0, n)
+  if has && s0 < s1 then
+    let x0 = text_width(char_slice(text, 0, s0), ts)
+    let x1 = text_width(char_slice(text, 0, s1), ts)
+    draw_rect({x: tx + x0, y: ty - 2, w: x1 - x0, h: tsize + 4}, _get(style, "selection", tint(bg, accent, 35)))
+  end
+  let placeholder = _get(style, "placeholder", "")
+  if n == 0 && placeholder != "" then
+    draw_text(placeholder, {x: tx, y: ty}, {...ts, color: t.dim})
+  end
   draw_text(text, {x: tx, y: ty}, ts)
   if has then
     // The caret sits where the drawn run actually ends, so it measures the
     // same style — this is the one place a face mismatch is visible as a
     // caret drifting away from the text it is inside.
-    let c = clamp(caret, 0, char_len(text))
+    let c = clamp(caret, 0, n)
     let cx = tx + text_width(char_slice(text, 0, c), ts)
-    draw_line({x: cx, y: ty}, {x: cx, y: ty + size}, _get(style, "caret", accent))
+    draw_line({x: cx, y: ty}, {x: cx, y: ty + tsize}, _get(style, "caret", accent))
+  end
+  if clipped then
+    clip_pop()
   end
 end
 
@@ -2266,8 +2595,8 @@ pub fn text_field(fc, id, r, buf)
 end
 
 pub fn text_field(fc, id, r, buf, style)
-  let res = text_field_update(fc, id, r, buf, style)
-  draw_text_field(r, res.text, focused(res.focus, id), res.caret, style)
+  let res = text_field_update(fc, id, r, buf, {...style, scroll: true})
+  draw_text_field(r, res.text, focused(res.focus, id), res.caret, res, style)
   res
 end
 

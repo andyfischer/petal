@@ -138,15 +138,94 @@ hover-scoped; page keys gated on `active`).
 ids)`, `focus_update(fc, ids)` (Tab / Shift+Tab over the ring).
 `section_label(label, x, y, active, style)` marks the focused region.
 
-### Text field (with caret)
-`text_field(fc, id, r, buf, style)` → `{focus, text, caret, submitted}`.
-Click focuses and places the caret at the clicked character; left/right/
-home/end move it; backspace deletes before it (alt/ctrl+backspace to word
-start); delete removes after it; typing inserts at it; Return sets
-`submitted`. Split forms: `text_field_update(fc, id, r, buf, style)` (logic
-only; `style.size`/`inset` must match the draw half) and
-`draw_text_field(r, text, has, caret, style)` (the 3- and 4-arg forms without
-`caret` draw it at the end). There is no selection model.
+### Text field (caret, selection, clipboard, undo)
+`text_field(fc, id, r, buf, style)` → `{focus, text, caret, submitted,
+changed, anchor, sel_start, sel_end, scroll, overflow}`. `buf` is a plain
+string kept in the caller's `state`; the caret, the selection and the undo
+history are widget-internal state, per callsite. `caret`, `anchor`,
+`sel_start` and `sel_end` are **character** offsets (what `char_slice` takes),
+so non-ASCII text needs no care; `sel_start == sel_end` means no selection.
+
+| Input | Does |
+|---|---|
+| click / shift+click / drag | focus and place the caret / extend the selection / select |
+| double click / triple click | select the word / everything |
+| left, right, home, end | move the caret; with shift, extend the selection |
+| alt or ctrl + left/right | by word; cmd + left/right goes to either end |
+| backspace, delete | the selection, else one character (alt/ctrl+backspace: back to the word start; cmd+backspace: to the start) |
+| cmd+A | select all |
+| cmd+C / cmd+X / cmd+V | copy, cut, paste through the host clipboard |
+| cmd+Z, cmd+shift+Z or cmd+Y | undo, redo |
+| return | sets `submitted` |
+
+Cmd and Ctrl are interchangeable for the shortcuts. Typing replaces the
+selection; a run of typing is one undo step, a word at a time. A paste loses
+its line breaks. When `buf` is not what the field last returned (the app
+cleared or replaced it), the history is dropped. Text wider than the box
+scrolls to keep the caret in view and is clipped.
+
+Under Garden a panel does not see Cmd/Ctrl chords unless it claims them, so a
+panel with a text field states, near the top of the frame, the ones it wants:
+`for k in ["a", "c", "x", "v", "z", "y"] do claim_key(k, "cmd") end`.
+
+Split forms, for an app that draws its own box:
+`text_field_update(fc, id, r, buf, style)` is the logic alone and returns the
+same record. It reads `{size, font, inset, text_style, pointer, scroll}` from
+`style`: the type keys must match what is drawn (`text_style` is a whole style
+record, for an app with its own type ramp); `pointer: false` keeps the mouse
+out for a frame (the field is under a modal); `scroll: true` turns on the
+horizontal scroll, which the caller then honours by drawing the text
+`res.scroll` px to the left. `draw_text_field(r, text, has, caret, view,
+style)` is the stock look; `view` is the update's result (it reads
+`sel_start`, `sel_end`, `scroll`, `overflow`), and the shorter forms without
+it draw a caret only. Style adds `selection` (the highlight colour) and
+`placeholder` (dim text while empty).
+
+```petal
+let res = text_field_update(fc, "name", r, buf, {text_style: MY_STYLE, inset: 0})
+fc = res.focus
+buf = res.text
+for q in text_range_rects(buf, MY_STYLE, res.sel_start, res.sel_end) do
+  draw_rect(r.x + q.x, r.y + q.y, q.w, q.h, MY_HIGHLIGHT)
+end
+draw_text(buf, {x: r.x, y: r.y}, MY_STYLE)
+```
+
+### Clipboard
+`clipboard_get()` → the clipboard's text (`""` when it has none);
+`clipboard_set(text)` replaces it. A write lands when the frame ends, so it
+reads back from the next frame. Line breaks arrive as `\n`. With a host
+clipboard attached, the text is refreshed on frames where `v` or `insert`
+went down, which is when a paste happens; a host with none keeps the text in
+memory, so copies still carry between fields. `text_field` calls both; an app
+needs them only for its own copy and paste commands. Host side:
+`petal_ui::clipboard` (`set_clipboard_provider`, and `flush_clipboard` after
+the run for a host that does not use `FrameCore`).
+
+### Text ranges
+For a wrapped editable area, a search highlight or a selection. Offsets are
+character offsets throughout.
+
+- `text_wrap_rows(s, style, max_width)` → `[{text, start, end}]`: `text_wrap`
+  with each row's range in `s` (`char_slice(s, start, end) == text`). The
+  space a soft break lands on and the newline of a hard one fall between one
+  row's `end` and the next row's `start`.
+- `text_row_of(rows, at)` → the index of the row a caret at offset `at` is on.
+- `text_range_rects(s, style, a, b)` → `[{x, y, w, h}]`, one per row that
+  characters `[a, b)` touch, relative to the text's top-left. `s` is a string
+  (one row per hard newline) or the rows from `text_wrap_rows`. Rows are the
+  face's `line_height` apart; a fifth argument sets the row step for text
+  drawn at another one.
+
+```petal
+let rows = text_wrap_rows(body, style, 320.0)
+for q in text_range_rects(rows, style, hit_start, hit_end, 21) do
+  draw_rect(x + q.x, y + q.y, q.w, q.h, MARK)
+end
+for i in range(0, len(rows)) do
+  draw_text(rows[i].text, {x: x, y: y + i * 21}, style)
+end
+```
 
 ### Spinner + progress
 `spinner(cx, cy, radius, style)` — rotating arc off `time()`;

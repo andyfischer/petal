@@ -1,5 +1,5 @@
 {
-  "note": "sha256 of each UI app trace; see docs/dev/refactor-verification.md \u00a75",
+  "note": "sha256 of each UI app trace; see docs/dev/refactor-verification.md §5",
   "config": {
     "frames": 60,
     "scenario": "monkey:1",

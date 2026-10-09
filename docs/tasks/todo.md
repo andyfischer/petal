@@ -52,6 +52,7 @@ is still two O(n) walks and an allocation per call. Details:
 testbed-takeaways §1.
 
 ## 5. The guides mislead on `state`, dictionaries and errors
+DONE petal run --state-storage <file> keeps state between runs as JSON, and a script with state warns on stderr without it (docs/CLI.md "State between runs"); guides left as-is per the PLAN
 
 - `state hits = 0; hits += 1; print(hits)` is still captioned "1 on the first
   run, 2 on the second" in `writing-petal-guide.md:238` and

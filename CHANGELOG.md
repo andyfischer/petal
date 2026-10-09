@@ -142,6 +142,10 @@ way, for code written against an earlier checkout.
 
 Breaking changes made during development, newest first:
 
+- String offsets count characters (Unicode code points) instead of UTF-8
+  bytes: `len("Óscar")` is 5 and `slice("Óscar", 0, 1)` is `"Ó"`. `s[i]` now
+  indexes a string. `byte_len` and `byte_slice` keep the byte unit. See
+  [docs/tasks/code-point-migration.md](docs/tasks/code-point-migration.md).
 - `pub` replaces `export`. `export` still parses as a deprecated spelling.
 - Assigning to a binding from an outer function is a compile error. Use `var`
   and `set` for a slot that several functions write.

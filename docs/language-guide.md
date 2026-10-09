@@ -661,7 +661,32 @@ join(["a", "b"], ",")  // "a,b"
 contains("hello", "ell")  // true
 reverse("hello")       // "olleh"
 slice("hello", 1, 3)   // "el"
+index_of("hello", "l") // 2
 ```
+
+### Characters and Offsets
+
+A string position counts **characters** (Unicode code points), never bytes.
+`len`, `slice`, `index_of` and indexing all use that one unit, so they compose:
+
+```petal
+let name = "Óscar Delgado"
+print(len(name))                         // 13
+print(name[0])                           // Ó
+print(name[-1])                          // o
+print(slice(name, 0, index_of(name, " ")))  // Óscar
+```
+
+`s[i]` gives a one-character string. As with a list, a negative index counts
+from the end and an index out of range is an error; `char_at(s, i)` gives `""`
+instead. `for c in chars(s)` visits each character in turn.
+
+These are constant-time on ASCII text. On a string with non-ASCII characters
+they walk to the position, resuming from the previous one, so reading a string
+front to back stays linear.
+
+When you do need the encoded size, for a wire format or a storage limit,
+`byte_len(s)` and `byte_slice(s, start, end)` count UTF-8 bytes.
 
 ## Comparison and Logical Operators
 

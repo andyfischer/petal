@@ -619,11 +619,14 @@ type(nil)         // "nil"
 
 ### `len(collection)`
 
-Returns the length of a list, string, or `f64_array`.
+Returns the length of a list, string, or `f64_array`. A string's length is its
+number of **characters** (Unicode code points), not bytes; see
+[String offsets](#string-offsets).
 
 ```petal
 len([1, 2, 3])      // 3
 len("hello")        // 5
+len("Óscar")        // 5
 len([])             // 0
 len(f64_array(4))   // 4
 ```
@@ -868,12 +871,14 @@ zip([1, 2], ["a", "b"])   // [[1, "a"], [2, "b"]]
 ### `slice(collection, start, end?)`
 
 Returns a slice of a list or string. Supports negative indices. `end` defaults to the
-length of the collection.
+length of the collection. On a string the indices count **characters**, so a
+slice never cuts one in half.
 
 ```petal
 slice([1, 2, 3, 4], 1, 3)    // [2, 3]
 slice([1, 2, 3, 4], -2)      // [3, 4]
 slice("hello", 1, 3)         // "el"
+slice("Óscar Delgado", 0, 1) // "Ó"
 ```
 
 ### `flat(list)`
@@ -889,7 +894,7 @@ flat([[1, [2]], [3]])         // [1, [2], 3]
 
 Position of the first occurrence, or `-1` when absent. On a list this is the
 element index; on a string it is a **character** index, ready to pass to
-[`char_at`](#char_ats-i) or [`char_slice`](#char_slices-start-end).
+`slice` or to index with `s[i]`.
 
 ```petal
 index_of([10, 20, 30], 20)     // 1
@@ -901,16 +906,66 @@ index_of("abc", "z")           // -1
 ```petal ignore
 let i = index_of(line, "=")
 if i >= 0 then
-  let key = char_slice(line, 0, i)
-  let value = char_slice(line, i + 1)
+  let key = slice(line, 0, i)
+  let value = slice(line, i + 1)
 end
 ```
 
-## Text (character-indexed)
+## String offsets
 
-`len` and `slice` count **bytes**. That is wrong for text: in `"Óscar"` the
-first character is two bytes, so `slice("Óscar", 0, 1)` is `""`. The builtins
-here count **characters** instead.
+Every string position counts **characters** (Unicode code points): `len(s)`,
+`s.length`, `slice(s, a, b)`, `s[i]` and `index_of(s, needle)` all use the same
+unit, so an offset one of them returns can be handed to another. In `"Óscar"`
+the first character takes two bytes of storage, and `len("Óscar")` is still 5.
+
+```petal
+let s = "Óscar"
+print(len(s))            // 5
+print(s[0])              // Ó
+print(s[-1])             // r
+print(slice(s, 0, 2))    // Ós
+print(index_of(s, "c"))  // 2
+```
+
+`s[i]` is the one-character string at index `i`. Like a list index it counts
+from the end when negative and is an error when out of range; use
+[`char_at`](#char_atstring-index) where an out-of-range read should give `""`.
+
+These are constant-time on a string that is all ASCII, however long. A string
+containing a non-ASCII character is walked to find the position; reading it in
+order (`s[i]`, then `s[i + 1]`) resumes from the last position, so a pass over
+the whole string is still linear. To visit every character, `for c in chars(s)`
+is the simplest form.
+
+A code point is not always what a reader sees as one character: `"é"` written
+as `e` plus a combining accent is two, and so is a flag emoji.
+
+`chars`, `char_len`, `char_at` and `char_slice` date from when `len` and `slice`
+counted bytes. `char_len` and `char_slice` now do exactly what `len` and `slice`
+do on a string, and remain for existing scripts.
+
+### `byte_len(string)`
+
+Size of the string's UTF-8 encoding in bytes. For size limits and wire formats;
+use `len` for anything about the text.
+
+```petal
+byte_len("Óscar")   // 6
+byte_len("hello")   // 5
+```
+
+### `byte_slice(string, start, end?)`
+
+`slice` with **byte** offsets into the UTF-8 encoding. Negative indices count
+from the end and both ends clamp. A bound that falls inside a character moves
+inward to the next character boundary, so the result is always whole characters
+and never longer than the range asked for.
+
+```petal
+byte_slice("Óscar", 0, 2)   // "Ó"
+byte_slice("Óscar", 0, 1)   // ""  (half of "Ó" is dropped)
+byte_slice("hello", 1, 3)   // "el"
+```
 
 ### `chars(string)`
 
@@ -923,11 +978,11 @@ chars("")        // []
 
 ### `char_len(string)`
 
-Number of characters, as opposed to `len`'s bytes.
+Number of characters. The same as `len` on a string.
 
 ```petal
 char_len("Óscar")   // 5
-len("Óscar")        // 6
+len("Óscar")        // 5
 ```
 
 ### `char_at(string, index)`
@@ -943,8 +998,8 @@ char_at("Óscar", 99)   // ""
 
 ### `char_slice(string, start, end?)`
 
-`slice` for text: the indices count characters. Negative indices count from the
-end, both ends clamp, and `end` defaults to the end of the string.
+The same as `slice` on a string: the indices count characters. Negative indices
+count from the end, both ends clamp, and `end` defaults to the end of the string.
 
 ```petal
 char_slice("Óscar Delgado", 0, 1)   // "Ó"

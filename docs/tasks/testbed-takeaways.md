@@ -12,34 +12,12 @@ first, then anything more than one app hit.
 
 ## 1. `slice`/`len` are byte-indexed
 
-`slice("Óscar", 0, 1)` is `""` and `len("Óscar")` is 6 (checked at HEAD).
-The char-aware builtins exist (`chars`, `char_len`, `char_at`,
-`char_slice`), but the obvious names give silently wrong results: this is
-the CRM app's wrong-initials bug.
-
-**Direction: code points, as in Python 3.** Most scripting languages
-(Python, Ruby, Perl) make `len`, indexing and slicing count code points.
-JS, Java and C# count UTF-16 units, Swift counts grapheme clusters, and
-Rust and Go count bytes but keep you from silently cutting a character
-in half. Petal counts bytes *and* lets the cut happen silently, which is
-the worst of both. Plan:
-
-- `len`, `slice` and string `s[i]` count code points, which makes them
-  agree with the `char_*` builtins. `index_of` and any other offset-returning
-  builtin switch units in the same change, so offsets stay composable.
-- The byte versions stay available under explicit names (`byte_len`,
-  `byte_slice`) for parsers and wire formats.
-- Speed: strings are stored as UTF-8, so code-point indexing needs the
-  per-string ASCII flag from
-  [char-at-fast-path](optimizations/char-at-fast-path.md). The common case
-  stays O(1), which gets most of what PEP 393 gives CPython.
-- Grapheme clusters are out of scope for `len`. They belong in a caret
-  helper for `text_field` (#2).
-- Before switching: sweep the `.ptl` files in the examples, `~/garden`,
-  `~/.garden` and `~/worlds-fair/ui/ptl` for code that relies on byte
-  offsets, and add differential tests over non-ASCII input.
-
-**M.**
+**Landed 2026-10-09** (the number is kept because other files cite §2 and §3).
+`len`, `slice`, `s[i]` and `index_of` count code points, as in Python 3;
+`byte_len`/`byte_slice` keep the byte unit; ASCII strings stay O(1). Grapheme
+clusters remain out of scope and belong in a caret helper for `text_field`
+(#2). What each downstream project has to check is in
+[code-point-migration.md](code-point-migration.md).
 
 ## 2. `text_field` has no selection, clipboard or undo
 

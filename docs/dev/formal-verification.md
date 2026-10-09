@@ -58,8 +58,8 @@ extremes against the exact characterization).
 | `num_total_cmp_is_antisymmetric`, `num_total_cmp_is_transitive` | The `sort` order is a total order (the precondition of `slice::sort_by`, which panics otherwise). |
 | `num_total_cmp_agrees_with_lt` | The `sort` order agrees with `<` wherever `<` is defined. |
 | `num_key_matches_eq` | The hash key of a number agrees with `==` in both directions, so `state(key)` treats `==` keys as one key. |
-| `resolve_index_is_exact`, `checked_index_is_exact` | `xs[i]` and `xs[i] = v` address slot `i` (or `len + i` for negative `i`) exactly when it exists, with no truncating `i64 → usize` cast on 32-bit (wasm) targets. |
-| `clamp_slice_bound_is_exact` | `slice` bounds are the resolved index clamped into `0..=len`. |
+| `resolve_index_is_exact`, `checked_index_is_exact` | `xs[i]` and `xs[i] = v` address slot `i` (or `len + i` for negative `i`) exactly when it exists, with no truncating `i64 → usize` cast on 32-bit (wasm) targets. A string index `s[i]` goes through the same kernel with `len` as the code-point count. |
+| `clamp_slice_bound_is_exact` | `slice` bounds are the resolved index clamped into `0..=len`, for a list and (in code points) for a string. |
 | `range_nth_is_exact` | Every element of `range(start, end, step)` is computed without wraparound. (The length, `range_len`, is checked exhaustively; see above.) |
 | `scale_unit_to_range_stays_in_range` | `random_int(lo, hi)` is always in `[lo, hi)`, for every generator output, including spans wider than `i64::MAX`. |
 
@@ -91,7 +91,7 @@ fails if the bug comes back.
 | `range(n)` for huge `n` aborts the process | `range_len` exhaustive test; `core_semantics` (the length is exact, so the reservation can be refused) | Capacity-overflow abort, or an unbounded loop for `step > 1` | Runtime error |
 | `f64_array(n)`, `pad_start`/`pad_end`/`format` widths abort on a huge size | Fallible reservation (no proof) | Allocation-failure abort | Runtime error |
 | `match x when 2` does not match `2.0`, though `2.0 == 2` | Uses the proven `num_eq` | Literal patterns compared int to int, float to float | A numeric literal matches what it is `==` to |
-| `xs[i]`, `slice`, and char-indexed string builtins truncate `i` on wasm32 | Kani `resolve_index_is_exact`, `clamp_slice_bound_is_exact`, `checked_index_is_exact` | `xs[2^32 + 1]` reads `xs[1]` in the browser | Checked conversion |
+| `xs[i]`, `s[i]`, `slice`, and the string-offset builtins truncate `i` on wasm32 | Kani `resolve_index_is_exact`, `clamp_slice_bound_is_exact`, `checked_index_is_exact` | `xs[2^32 + 1]` reads `xs[1]` in the browser | Checked conversion |
 
 Semantic choices made along the way (documented in the language guide):
 `2 == 2.0`, so the two share a `state` slot; a dual number compares by its

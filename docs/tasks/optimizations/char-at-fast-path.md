@@ -1,6 +1,21 @@
 # Make `char_at` the fast way to scan a string
 
-Status: **proposed**, 2026-09-15. Measured but not started.
+Status: **done**, 2026-10-09. Items 1 and 2 landed with the move of string
+offsets to code points; the lint rewrite in item 3 is moot, since `slice` and
+`char_slice` are now the same operation.
+
+What was built: each heap string stores its code-point count
+(`core/src/heap.rs`, `StrObj`), so `len` is O(1) for every string and an ASCII
+string is recognised without a scan. `Heap::string_char_to_byte` returns the
+index itself on ASCII and otherwise walks from the nearest of the start, the
+end and the previous lookup on that string. `char_at`, `s[i]` and `slice`
+intern their result straight out of the source string. Measured with a release
+build: a 90,000-character ASCII scan by `slice` and `char_at`, ten times, went
+from 4.1 s to 0.20 s; a 94,000-character non-ASCII scan by `char_at` and
+`char_slice` went from 6.6 s to 0.02 s. Tests:
+`core/tests/string_code_points.rs`.
+
+The rest of this file is the original proposal.
 
 ## The observation
 

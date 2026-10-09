@@ -890,7 +890,7 @@ guess costs a compile round-trip (`Unknown builtin: flatten`).
 | | |
 |---|---|
 | **Output** | `print(a, b, …)` — space-separated, newline at the end |
-| **Length** | `len(x)` — list or string. Bytes for a string; `char_len` for characters |
+| **Length** | `len(x)` — list or string. A string counts characters (code points), as do `slice`, `s[i]` and `index_of`; `byte_len` for the UTF-8 size |
 | **Build a list** | `range(a, b)` — `a`..`b-1`; `range(a, b, step)` counts by `step`, down when it is negative (`range(5, 0, -1)` is 5..1). `append(xs, v)`, `drop_last(xs)`, `last(xs)` |
 | **Read a list** | `xs[i]`, `slice(xs, start, end)` (end-exclusive, negatives allowed), `contains(xs, v)`, `index_of(xs, v)` (`-1` if absent) |
 | **Reshape** | `reverse(xs)`, `sort(xs)`, `sort_by(xs, fn(x) -> x.key)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |

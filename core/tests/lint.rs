@@ -12,7 +12,7 @@
 
 use petal::lint::{
     LintOptions, LintOutcome, NO_REDUNDANT_CAST, PREFER_COMPOUND_ASSIGN, PREFER_LET,
-    PREFER_MATCH, lint_source,
+    PREFER_MATCH, PREFER_REPEAT, lint_source,
 };
 
 fn lint_outcome(src: &str) -> LintOutcome {
@@ -1293,6 +1293,54 @@ fn hit()
 end
 hit()
 print(hits)
+",
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A string-building loop to `repeat`
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// The hand-written `rep` helper the usage guide used to recommend, and a
+/// literal padding loop: both become one `repeat` call. A loop whose piece
+/// changes per pass is left for `prefer-compound-assign` alone.
+#[test]
+fn string_building_loop_becomes_repeat() {
+    let src = "\
+fn rep(s: string, n: int) -> string
+  let out = \"\"
+  for i in range(0, n) do out = out ++ s end
+  out
+end
+let bar = \"[\"
+for i in range(4) do
+  bar = bar ++ \"=\"
+end
+let digits = \"\"
+for i in range(0, 3) do
+  digits = digits ++ i
+end
+print(rep(\"ab\", 2) ++ bar ++ digits)
+";
+    let outcome = lint_outcome(src);
+    assert_eq!(outcome.count(PREFER_REPEAT), 2);
+    assert_eq!(outcome.count(PREFER_COMPOUND_ASSIGN), 1);
+    assert!(outcome.has_semantic_rewrite());
+    assert_lints_to(
+        src,
+        "\
+fn rep(s: string, n: int) -> string
+  let out = \"\"
+  out ++= repeat(s, n)
+  out
+end
+let bar = \"[\"
+bar ++= repeat(\"=\", 4)
+let digits = \"\"
+for i in range(0, 3) do
+  digits ++= i
+end
+print(rep(\"ab\", 2) ++ bar ++ digits)
 ",
     );
 }

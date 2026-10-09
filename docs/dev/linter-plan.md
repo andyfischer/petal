@@ -54,7 +54,7 @@ Go keeps unused variables in the compiler. Judgement calls ("hoist this into a
 - `export` → `pub` (the exception above; not whitespace).
 
 **lint** (token-changing, each with a fix): `prefer-let`, `no-redundant-cast`,
-`prefer-match`, `prefer-compound-assign`, `prefer-pub` (§5).
+`prefer-match`, `prefer-repeat`, `prefer-compound-assign`, `prefer-pub` (§5).
 
 ## 2. CLI
 
@@ -206,6 +206,23 @@ repo (29 chains across 12 files) plus `~/worlds-fair/ui/ptl`.
 Still to revisit: if `==` on a `Pending` becomes strict, the safe-literal set
 needs re-deriving. Numeric chains could be admitted where the type checker
 proves the subject is an `int`.
+
+### `prefer-repeat` — the string-building loop
+
+`for i in range(0, n) do out = out ++ s end` → `out ++= repeat(s, n)`. `++`
+builds a new string, so the loop copies `out` on every pass (O(n²) bytes);
+this was also the workaround the usage guide recommended before `repeat`
+existed. The rewrite is an identity only when the piece is known to be a
+string (a literal, or a `string`-annotated parameter the function never
+rebinds — `++` stringifies a number, `repeat` rejects one), the accumulator is
+known to start as one (the nearest earlier write in the block, looking past
+plain appends, is `let out = "…"`, so a zero-pass loop and `out ++ ""` agree), the loop is not
+the tail of its block (a tail `for` is a list), the file has no `range` or
+`repeat` of its own and no `import m: *`, and the loop holds no comment.
+Anything else is left alone — in particular the general "appending *different*
+pieces in a loop" shape, which has no mechanical fix (the answer is a list and
+`join`) and is far too common in short loops to report. See
+`core/src/lint/repeat.rs`.
 
 ### The rebind rule (removed)
 

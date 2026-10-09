@@ -614,6 +614,7 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `prefer-let` | a `var` whose every read and write stays in its function | `var` → `let`, `set x = …` → `x = …`, `get x` → `x` |
 | `no-redundant-cast` | `int(n)` where `n` is provably an `int` (likewise `float`, `str`) | delete the call; parentheses follow the slot (`2 * int(a + 1)` → `2 * (a + 1)`) |
 | `prefer-match` | an `if`/`elsif` chain testing one subject against string, bool or nil literals | rewrite as a `match` |
+| `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
 
@@ -641,7 +642,7 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match` and `var` rules change it by design. On such a file the default mode proves
+The cast, `match`, `var` and `repeat` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 

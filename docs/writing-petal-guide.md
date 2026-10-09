@@ -537,21 +537,29 @@ print("\{\"a\": 1}")     // {"a": 1}
 shorthand for the common "or a default" case, and `?.` for reading a field of
 something that may be nil.
 
-There is **no string-repeat builtin** (no `repeat`, no `"-" * 20`), which every
-ASCII-rendering program wants. Build one:
+**Repeat a string with `repeat(s, n)`**, which every ASCII-rendering program
+wants (there is no `"-" * 20`):
 
 ```petal
-fn rep(s: string, n: int) -> string
-  let out = ""
-  for i in range(0, n) do out = out ++ s end
-  out
-end
-print(rep("-", 20))
+print(repeat("-", 20))
+print("[" ++ repeat("#", 3) ++ repeat(".", 7) ++ "]")   // [###.......]
 ```
 
-`pad_start(s, width)` does exist for right-aligning a column, and
-`join(xs, sep)` turns a list of strings into one — between them most table and
-board rendering is a one-liner.
+**Do not build a long string by appending in a loop.** `out = out ++ piece`
+makes a new string each time, copying everything written so far, so `n` appends
+cost on the order of `n²` bytes — unnoticeable for a 40-column row, seconds for
+a 1 MB report. Collect the pieces in a list and `join` them once:
+
+```petal
+let rows = for i in range(0, 3) do "row {i}" end
+print(join(rows, "\n"))
+```
+
+`petal lint` rewrites the plain repeat loop (`for … do out = out ++ s end`) to
+`repeat` for you. `pad_start(s, width)` / `pad_end` right- and left-align a
+column, and `trim(s)`, `starts_with(s, prefix)` and `ends_with(s, suffix)` cover
+the usual line parsing — between them most table and board rendering is a
+one-liner.
 
 **The operator set is small, and the boolean ones are symbols.** There is no
 `not` / `and` / `or` — those parse as identifiers and produce a confusing
@@ -888,7 +896,7 @@ guess costs a compile round-trip (`Unknown builtin: flatten`).
 | **Reshape** | `reverse(xs)`, `sort(xs)`, `sort_by(xs, fn(x) -> x.key)`, `sort(xs, fn(a, b) -> a - b)`, `flat(xs)` (**`flat`**, not `flatten`; one level), `zip(a, b)`, `enumerate(xs)` |
 | **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |
 | **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
-| **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
+| **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `repeat(s, n)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, p)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
 | **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `lerp(a, b, t)` (numbers, vectors, colors, number lists), `map_range(v, a, b, c, d)`, `safe_div(a, b)` (`nil` instead of aborting on a zero divisor) |
 | **Trig** | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2(y, x)`, `hypot(x, y)`, `pi()`, `radians`, `degrees` |
 | **Convert** | `str(v)`, `int(v)`, `float(v)`, `parse_int(s)`, `parse_float(s)`, `type(v)`. `parse_*` return `nil` on bad text, so `parse_float(s) ?? 0.0` reads user input with a default |

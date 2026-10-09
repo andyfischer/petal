@@ -17,10 +17,14 @@
 //!    subject against string/bool/nil literals becomes a `match`. The splices
 //!    only ever cover the glue between the arms, so every pattern and body
 //!    survives verbatim.
-//! 4. **`prefer-compound-assign`** ([`compound`]) — `x = x + e` → `x += e`.
+//! 4. **`prefer-repeat`** ([`repeat`]) — a `for` over `range(n)` whose whole
+//!    body appends one fixed string to an accumulator becomes
+//!    `x ++= repeat(s, n)`: the loop copies the string on every pass. It runs
+//!    before the compound rule so that such a loop is reported once.
+//! 5. **`prefer-compound-assign`** ([`compound`]) — `x = x + e` → `x += e`.
 //!    The parser desugars the compound form back to the long one, so this
 //!    rule is IR-invisible.
-//! 5. **`prefer-pub`** ([`export_to_pub`]) — the deprecated modifier
+//! 6. **`prefer-pub`** ([`export_to_pub`]) — the deprecated modifier
 //!    `export` → `pub`. One keyword splice per declaration; the two words
 //!    parse to the same thing, so this rule is IR-invisible too.
 //!
@@ -59,12 +63,14 @@ use std::path::PathBuf;
 mod casts;
 mod compound;
 mod export_to_pub;
+mod repeat;
 mod to_match;
 mod var_to_let;
 
 use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
 use export_to_pub::plan_export_fixes;
+use repeat::plan_repeat_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
@@ -84,6 +90,7 @@ pub const PREFER_LET: &str = "prefer-let";
 pub const NO_REDUNDANT_CAST: &str = "no-redundant-cast";
 pub const PREFER_MATCH: &str = "prefer-match";
 pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
+pub const PREFER_REPEAT: &str = "prefer-repeat";
 pub const PREFER_PUB: &str = "prefer-pub";
 
 /// Every rule, in the order it runs.
@@ -99,6 +106,10 @@ pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: PREFER_MATCH,
         summary: "an if/elsif chain testing one value against literals should be a `match`",
+    },
+    RuleInfo {
+        name: PREFER_REPEAT,
+        summary: "a loop appending one string `n` times should be `repeat(s, n)`",
     },
     RuleInfo {
         name: PREFER_COMPOUND_ASSIGN,
@@ -351,6 +362,9 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let chains_to_match = p.apply(PREFER_MATCH, plan_match_fixes(&match_stmts, &chars));
 
     let (chars, stmts) = reparse(&p.text)?;
+    let loops_to_repeat = p.apply(PREFER_REPEAT, plan_repeat_fixes(&stmts, &chars));
+
+    let (chars, stmts) = reparse(&p.text)?;
     let compound_assigns = p.apply(PREFER_COMPOUND_ASSIGN, plan_compound_fixes(&stmts, &chars));
 
     let (chars, stmts) = reparse(&p.text)?;
@@ -374,6 +388,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         || chains_to_match > 0
         || vars_to_let > 0
         || compound_assigns > 0
+        || loops_to_repeat > 0
         || exports_to_pub > 0
     {
         // Only meaningful when the original compiles here at all; a file whose

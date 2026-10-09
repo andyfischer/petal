@@ -537,6 +537,8 @@ DESCRIPTION
        prefer-match
               an if/elsif chain testing one value against literals becomes
               a match
+       prefer-repeat
+              a loop appending one string n times becomes repeat(s, n)
        prefer-compound-assign
               x = x + e becomes x += e
        prefer-pub

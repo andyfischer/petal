@@ -112,4 +112,28 @@ fn main() {
         measure("one number changed", &|i| retuned(&original, i).unwrap());
     }
     measure("statement added", &|i| format!("{original}\nlet reload_timing_probe_{i} = {i}\n"));
+
+    // The live half of a drag: one number of a top-level binding set by path,
+    // no file involved.
+    use petal::static_value::{StaticValue, static_bindings};
+    let knob = static_bindings(&original).ok().and_then(|bindings| {
+        bindings.into_iter().find_map(|b| match b.value {
+            Ok(StaticValue::Float(f)) => Some((b.name, f)),
+            _ => None,
+        })
+    });
+    if let Some((name, value)) = knob {
+        println!("\nset_config_value(`{name}`) (min of {ROUNDS}):");
+        for (label, file) in [("file named", Some(edited.as_path())), ("file searched for", None)] {
+            let mut best = f64::MAX;
+            for round in 0..ROUNDS {
+                let next = StaticValue::float(value + 1.0 + round as f64);
+                let t = Instant::now();
+                env.set_config_value(sid, file, &name, &next)
+                    .unwrap_or_else(|e| panic!("{e}"));
+                best = best.min(t.elapsed().as_secs_f64() * 1e3);
+            }
+            println!("{label:<34} {:<11} {best:>9.3} ms", "patched");
+        }
+    }
 }

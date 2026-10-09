@@ -583,14 +583,7 @@ impl Env {
         }
         let mut found = Vec::new();
         for (i, f) in program.source_map.files.iter().enumerate() {
-            // Cheap filter before parsing: the name has to appear at all.
-            if !f.source.contains(binding.as_str()) {
-                continue;
-            }
-            let Ok((_, stmts)) = crate::rewrite::parse_ast(&f.source) else {
-                continue;
-            };
-            if crate::rewrite::find_binding(&stmts, &binding).is_some() {
+            if binds_at_top_level(&f.source, &binding) {
                 found.push(i);
             }
         }
@@ -613,6 +606,35 @@ impl Env {
             ))),
         }
     }
+}
+
+/// Whether `source` binds `name` at its top level (`let name = …`, or a bare
+/// `name = …`), the test [`crate::rewrite::find_binding`] makes. Asked of
+/// every file of a program on each `set_config_value` that names no file, so
+/// it avoids parsing where it can: a file that never spells the name, or
+/// never writes it after `let`/`var` or before `=`, is ruled out from its text and
+/// tokens alone.
+fn binds_at_top_level(source: &str, name: &str) -> bool {
+    use crate::lexer::{Lexer, Token};
+    if !source.contains(name) {
+        return false;
+    }
+    let mut lexer = Lexer::new(source);
+    if lexer.tokenize().is_err() {
+        return false;
+    }
+    let is_name = |t: &Token| matches!(t, Token::Ident(n) if n == name);
+    let may_bind = lexer.tokens.windows(2).any(|w| {
+        (matches!(w[0], Token::Let | Token::Var) && is_name(&w[1]))
+            || (is_name(&w[0]) && matches!(w[1], Token::Assign))
+    });
+    if !may_bind {
+        return false;
+    }
+    let mut parser = crate::parse::Parser::new(lexer.tokens.clone(), lexer.token_spans.clone());
+    parser
+        .parse_program()
+        .is_ok_and(|stmts| crate::rewrite::find_binding(&stmts, name).is_some())
 }
 
 /// Work out everything an incremental change writes, or why it cannot be

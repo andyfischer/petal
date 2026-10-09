@@ -2,38 +2,20 @@
 
 Petal is a programming language for creative coding.
 
-## Design Goals
+## Goals
 
-### Goal: Managed state, highly introspectable runtime
+The language goals are: Easy to use, supports live coding, good introspection & debuggability, and
+supports goal-based program manipulation.
 
-Petal is a hybrid functional & imperative language. It encourages dataflow-based computation, and discourages shared mutable state
-and effectual code, but it doesn't strictly limit those. It aims to be a practical language that is also highly introspectable
-and debuggable.
+## Design decisions
 
-This includes:
+For those goals, the language has these design decisions:
 
- - Two kinds of variable binding - `let` (preferred, for dataflow expressions) and `var` (slot-based variable, only used when needed).
- - First-class persistent state support with the `state` keyword. Easily build stateful programs including UIs, animations, games, etc.
-
-### Goal: Live editing - programs are editable at runtime
-
-Petal includes a lot of features to modify a running program. These work in combination with language features like `state`.
-
- - **Live editing.** Change the source while a program runs, existing program state is preserved.
- - **Speculative execution.** Re-run a program safely in exploration modes to safely experiment with a variation.
- - **Differentiable.** Forward-mode automatic differentiation is built in (dual numbers), and `petal propose-edit` can work backward from an observed output to the source edit that would produce it.
- - **Goal-based editing.** Tools can rewrite source programmatically by specifying a desired outcome.
-
-### Goal: Simple to complex
-
-Petal programs can start simple and grow to be complex applications.
-
- - **Optional type annotations.** Comes with an optional type annotation system. Programs can be written as typed or typeless.
-
-### Goal: Agent friendly
-
-Petal aims to be easy for coding agents. This mainly comes in the form of tooling, with a variety of tools to check and
-improve a Petal program.
+ - Hybrid functional and imperative. Encourages dataflow based computation with immutable values.
+ - Does allows mutable state for practicality. Limited effects.
+ - First-class persistent state support with the `state` keyword.
+ - Type system with optional type annotations.
+ - The runtime VM supports introspection & live editing features including: time-travel debugging, differentiation, provenance tracing, safe speculative execution, and more.
 
 ## Project status
 

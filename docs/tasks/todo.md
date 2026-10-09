@@ -19,6 +19,7 @@ and there is no CHANGELOG. Cut a release with `release-petal.yml`, deploy the
 site, test the one-liner on a clean machine. Details: todo-bugs §1.1, §1.4.
 
 ## 2. Recursion under the default policy uses hundreds of MB
+DONE petal run leaves memoization off unless a policy is named; memo scopes stop 96 frames deep and the table is bounded at 96 MB of records; MAX_CALL_DEPTH is 20,000 (path-keyed state keeps 5,000); fib(30) and depth-10k under an RSS ceiling in test/vitest/recursion-memory.test.ts
 
 `fib(27)` takes 541 MB and 0.47 s under `fast`, against 4.5 MB and 0.04 s
 under `--policy baseline`. Linear recursion is quadratic in depth under `fast`

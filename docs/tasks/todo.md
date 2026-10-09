@@ -86,6 +86,7 @@ print a warning to the console that state will not work correctly,
 and they should probably re run the command with --state-storage.
 
 ## 6. One test is red and the UI goldens are not trusted
+DONE gate was right, the test misread clock-driven apps (renamed a_quiet_corpus_idles_unless_it_reads_the_clock); bloom focus ring off frame_count(); 6 stale goldens were state-label ordinals only, 14 missing entries added; bold ui text_metrics fixed; left for core: `let x = for … end` is not observed (lower.rs emit_counted_loop leaves cur_origin on the body)
 
 - `petal-ui` test `gating::a_quiet_corpus_mostly_idles` fails: 18 of 38 apps
   idle after 90 quiet frames.

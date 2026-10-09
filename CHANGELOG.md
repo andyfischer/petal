@@ -69,7 +69,15 @@ way, for code written against an earlier checkout.
 - Forward-mode automatic differentiation with dual numbers, through the
   arithmetic operators and the math builtins.
 - Runaway recursion stops with a `Stack overflow` error and a collapsed stack
-  trace instead of exhausting memory.
+  trace instead of exhausting memory. The call depth limit is 20,000 frames
+  (5,000 for a function that declares path-keyed `state`; `state(key)` is not
+  limited).
+- Memoization is bounded: no memo scope opens deeper than 96 frames, and the
+  table is capped at 96 MB of records, so recursion no longer fills memory
+  with records (naive `fib(27)` went from 541 MB to under 5 MB).
+- The frame gate settles when a loop stores the values a `state` list or
+  record already holds (`xs[i] = v` with an equal `v`), as it already did for
+  the same stores outside a loop.
 - Integer overflow and modulo by zero are reported as errors.
 - Runtime errors print the source line with a caret.
 
@@ -78,8 +86,10 @@ way, for code written against an earlier checkout.
 - Collections: `map`, `filter`, `reduce`, `sort`, `sort_by`, `reverse`,
   `enumerate`, `zip`, `slice`, `flat`, `prepend`, `concat`, `last`,
   `drop_last`, and `range(a, b, step)` with negative steps.
-- Strings: `split`, `join`, `upper`, `lower`, formatting helpers, and failable
-  number parsing.
+- Strings: `split`, `join`, `upper`, `lower`, `repeat`, `starts_with`,
+  `ends_with`, `trim`, formatting helpers, and failable number parsing.
+  `len`, `slice` and `s[i]` count characters (code points); `byte_len` and
+  `byte_slice` work in UTF-8 bytes.
 - Math: `lerp` on numbers, colors and number lists, `clamp` and `round` that
   keep ints as ints, `asin`/`acos`/`atan`/`hypot`, `safe_div`, `random()` in
   several arities, and `rotate(v, angle)` on `vec2`.
@@ -94,12 +104,25 @@ way, for code written against an earlier checkout.
 
 - `petal run`, with `--trace`, `--observe` (dump every named value the run
   bound), `--profile`, `--policy`, `--seed`/`PETAL_SEED`, and `--ir` to run a
-  serialized IR file.
+  serialized IR file. `--observe` reports a value-position loop
+  (`let xs = for … end`) under its own name.
+- `petal run --state-storage <file>` keeps `state` between runs in a JSON
+  file. Without it, a script that declares `state` gets a warning on stderr,
+  since its state lasts one process.
 - `petal check` type-checks and lowers a program without running it. Unknown
   names and impossible calls are errors; `--strict` also fails on type
   warnings. `--host garden` resolves the packages Garden registers.
+- `petal check` warns on four programs that compile but are silently wrong: a
+  line starting with `-` under the line it was meant to continue, a bare
+  operator expression whose value is discarded (`n + 1`), an enum variant
+  declared twice or sharing a top-level name, and a call to a builtin's name
+  that reaches a plain value. An enum's name is accepted as a type name.
+- Argument errors name the problem: a mistyped command gets a suggestion
+  instead of "Error reading file", an unclosed block names its opener, and a
+  stack trace that crosses modules names the entry file.
 - `petal fmt` formats source. `petal lint` reports rule-based findings and can
-  fix them, with `--verify` proving a rewrite left the IR equivalent.
+  fix them, with `--verify` proving a rewrite left the IR equivalent. The
+  `prefer-repeat` rule rewrites a string-repeat loop to `repeat(s, n)`.
 - `petal suggest` proposes the type annotations and safe refactors a program
   implies.
 - `petal bench` reports the per-call cost of named functions.
@@ -115,6 +138,8 @@ way, for code written against an earlier checkout.
 - Per-command help pages (`petal <command> --help`).
 - Prebuilt binaries for macOS (arm64, x86_64) and Linux (x86_64, arm64, static
   musl), installed by `curl -fsSL https://petal-lang.org/install.sh | sh`.
+  The installer compares the archive's sha256 with the published one itself,
+  and refuses a checksum file that does not hold a hash.
 
 ### Embedding and integrations
 
@@ -132,6 +157,17 @@ way, for code written against an earlier checkout.
   library, text measurement from real font metrics, gradients, shadows, clips,
   offscreen canvases, and a headless driver (`petal-ui-run`) with scenario
   files.
+- `petal-ui` text editing: `text_field` and `text_field_update` have a
+  selection (shift+arrows, drag, double- and triple-click, select all),
+  cut/copy/paste through `clipboard_get()` / `clipboard_set(text)`, undo and
+  redo, word and line movement, and horizontal scrolling.
+  `text_wrap_rows(s, style, w)` returns each wrapped row with its character
+  range, and `text_range_rects(s, style, a, b)` the rects covering a range.
+  Garden and the SDL host connect the system clipboard.
+- Headless Garden panels: `POST /tick` puts a panel on a virtual clock, so
+  `dt()` and `time()` advance by the ticks sent rather than by wall time (and
+  stay virtual across `/panel/reset`); `POST /mouse` takes `"pane": <n>` for
+  coordinates local to a pane.
 - `petal-query`: a data-fetching layer for panels (queries, mutations,
   navigation).
 - `bloom`, a UI component library written in Petal, and `text_layout`, text
@@ -142,6 +178,23 @@ way, for code written against an earlier checkout.
 
 Breaking changes made during development, newest first:
 
+- `petal run` no longer memoizes calls by default (its policy
+  is `fast-memo`): a script that runs once has no later run to replay a
+  record in. Output is unchanged; pass `--policy fast` for the old behavior.
+  Hosts that run a script every frame still default to `fast`.
+- `petal run`, `bench`, `check` and the `show-*` and query
+  commands reject an unknown option or a second source file instead of taking
+  it as the file to run.
+- Path-keyed `state` declared more than 5,000 calls deep is an
+  error with its own message. Plain recursion may now go 20,000 deep (was
+  5,000).
+- `petal check --strict` fails on the four new warnings listed
+  under CLI, and no longer fails on the `export` deprecation alone.
+- petal-ui's `text_wrap` no longer collapses a run of spaces
+  inside a row, so every row is a contiguous run of its source.
+- The prelude's `wrap`, `preview` and `truncate_*` measure
+  `max_chars` in characters, following `len` and `slice` (next item), so text
+  with multibyte characters breaks at a different column than before.
 - String offsets count characters (Unicode code points) instead of UTF-8
   bytes: `len("Óscar")` is 5 and `slice("Óscar", 0, 1)` is `"Ó"`. `s[i]` now
   indexes a string. `byte_len` and `byte_slice` keep the byte unit. See

@@ -44,6 +44,7 @@ DONE check warns on a leading-`-` broken continuation, a discarded bare computat
 Details: todo-bugs §3.
 
 ## 4. `len` and `slice` count bytes and cut characters silently
+DONE len/slice/s[i]/.length count code points (index_of already did); byte_len/byte_slice added; heap strings carry a code-point count so ASCII is O(1) and a non-ASCII scan is linear; downstream notes in code-point-migration.md
 
 `slice("Óscar", 0, 1)` is `""` and `len("Óscar")` is 6. Move `len`, `slice`,
 `s[i]` and `index_of` to code points, keep `byte_len`/`byte_slice`, and sweep

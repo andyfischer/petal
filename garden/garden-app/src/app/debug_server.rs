@@ -2454,6 +2454,34 @@ mod tests {
         assert!((t - t0 - 0.32).abs() < 1e-9, "time() moved {}", t - t0);
     }
 
+    /// A reset must not hand a driven panel back to the wall clock: the
+    /// restarted script's frames before the next tick would then step a
+    /// `dt()` simulation by however long the harness took to send it.
+    #[test]
+    fn a_ticked_panel_stays_virtual_across_a_reset() {
+        let (mut app, _f) = panel_app(
+            "state acc = 0.0\nacc = acc + dt()\nlet obs_acc = acc\nlet obs_t = time()\n",
+        );
+        app.handle_debug(DebugCmd::Tick { n: 1, dt: 0.016, advance_clock: true })
+            .expect("tick");
+        app.handle_debug(DebugCmd::PanelReset { seed: Some(7) }).expect("reset");
+        app.settle_panels();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        app.settle_panels();
+        let reply = match app
+            .handle_debug(DebugCmd::Tick { n: 5, dt: 0.016, advance_clock: true })
+            .expect("tick")
+        {
+            Reply::Json(v) => v,
+            _ => panic!("/tick answers JSON"),
+        };
+        assert_eq!(reply["clocks"][0]["virtual"], true);
+        let s = state_with(&mut app, "/state?values_prefix=obs_");
+        let v = &panel_of(&s)["values"];
+        assert!((v["obs_t"].as_f64().unwrap() - 0.08).abs() < 1e-12, "{}", v["obs_t"]);
+        assert!((v["obs_acc"].as_f64().unwrap() - 0.08).abs() < 1e-12, "{}", v["obs_acc"]);
+    }
+
     /// `POST /mouse {"pane": n}` takes the point relative to the pane's origin,
     /// which is what the script reads back as `mouse_x()`/`mouse_y()`. Every
     /// harness used to add `panes[n].rect` by hand, and got it wrong.

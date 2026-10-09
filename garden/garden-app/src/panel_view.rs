@@ -2397,6 +2397,7 @@ impl PanelView {
     /// `live_source_hash` makes the next live-binding tick re-apply the editor's
     /// (possibly unsaved) buffer onto the fresh state, so unsaved edits are kept
     /// but their animation clock/counters start over. Keeps running on failure.
+    /// A panel `POST /tick` put on the virtual clock restarts on it, at 0.
     pub fn restart(&mut self, now: Instant) -> bool {
         let path = self.host.path().to_path_buf();
         match PanelHost::load(&path) {
@@ -2404,6 +2405,13 @@ impl PanelView {
                 adopt_font(&mut host);
                 if let Some(seed) = self.seed {
                     host.set_seed(seed);
+                }
+                // A driven panel stays driven, like its seed: the restarted
+                // script starts at `time() == 0` on the virtual clock, so the
+                // frames between a reset and the next tick are no time at all
+                // rather than a stretch of wall clock.
+                if self.host.is_virtual_clock() {
+                    host.use_virtual_clock_from(0.0);
                 }
                 self.host = host;
                 self.reload_error = None;

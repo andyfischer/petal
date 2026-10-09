@@ -1381,6 +1381,13 @@ impl PanelHost {
         self.core.use_virtual_clock();
     }
 
+    /// Go virtual at exactly `t` seconds — what a host does to the fresh
+    /// `PanelHost` that replaces a driven one (`POST /panel/reset`), so the
+    /// restarted script starts at a repeatable `time()` and stays driven.
+    pub fn use_virtual_clock_from(&mut self, t: f64) {
+        self.core.use_virtual_clock_from(t);
+    }
+
     /// Advance the virtual clock by `dt` seconds; a no-op while the clock is
     /// the wall clock.
     ///

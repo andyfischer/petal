@@ -205,6 +205,15 @@ impl FrameCore {
         }
     }
 
+    /// [`use_virtual_clock`](Self::use_virtual_clock), but starting at exactly
+    /// `t` seconds whatever the clock read before — for a host restarting an
+    /// app that was already being driven, where "where the wall clock stood"
+    /// would be a few unrepeatable microseconds.
+    pub fn use_virtual_clock_from(&mut self, t: f64) {
+        self.clock = Clock::Virtual(t);
+        self.pending_dt = Some(0.0);
+    }
+
     /// Advance the virtual clock by `dt` seconds; a no-op on the wall clock.
     /// The next frame publishes the sum of the advances since the last one as
     /// `dt()`.

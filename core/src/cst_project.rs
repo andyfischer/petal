@@ -1729,14 +1729,12 @@ mod tests {
     #[test]
     fn projected_ast_matches_parser_over_repo_corpus() {
         let files = crate::test_corpus::repo_ptl_files();
-
-        let mut checked = 0;
-        for path in &files {
+        let checked = crate::test_corpus::par_map(&files, |path| {
             let Ok(src) = std::fs::read_to_string(path) else {
-                continue;
+                return false;
             };
             let Ok(direct) = direct_ast(&src) else {
-                continue;
+                return false;
             };
             let projected = projected_ast(&src)
                 .unwrap_or_else(|e| panic!("projection failed for {}: {e}", path.display()));
@@ -1746,8 +1744,9 @@ mod tests {
                 "projected AST differs from parser AST for {}",
                 path.display()
             );
-            checked += 1;
-        }
+            true
+        });
+        let checked = checked.into_iter().filter(|c| *c).count();
         assert!(checked > 50, "expected a real corpus, checked {checked}");
     }
 }

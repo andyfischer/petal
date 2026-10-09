@@ -680,21 +680,27 @@ mod tests {
     #[test]
     fn lint_preserves_compilation_over_repo_corpus() {
         let files = crate::test_corpus::repo_ptl_files();
-        let mut checked = 0;
-        for path in &files {
+        // One file per worker: each file lint touches compiles twice (and
+        // twice more inside `lint_source`'s own gate), which is the whole cost.
+        let checked = crate::test_corpus::par_map(&files, |path| {
             let Ok(src) = std::fs::read_to_string(path) else {
-                continue;
+                return None;
             };
             let opts = LintOptions {
                 include_dirs: vec![],
-                origin: Some(path.clone()),
+                origin: Some(path.to_path_buf()),
                 ..Default::default()
             };
             let Ok(outcome) = lint_source(&src, &opts) else {
-                continue;
+                return None;
             };
+            if outcome.output == src && outcome.findings.is_empty() {
+                // Nothing to fix and nothing rewritten: both properties
+                // would be checked of a text against itself.
+                return Some(false);
+            }
             let Ok(src_ir) = compile_ir(&src, &opts) else {
-                continue; // doesn't compile standalone; nothing to compare
+                return None; // doesn't compile standalone; nothing to compare
             };
             let out_ir = match compile_ir(&outcome.output, &opts) {
                 Ok(ir) => ir,
@@ -722,9 +728,19 @@ mod tests {
                 path.display(),
                 again.findings
             );
-            checked += 1;
-        }
-        assert!(checked > 50, "expected a real corpus, checked {checked}");
+            Some(true)
+        });
+        // `Some(true)`: lint had something to say and the result was
+        // compiled and compared. `Some(false)`: lint ran and left it alone.
+        let linted = checked.iter().flatten().count();
+        let compared = checked.iter().filter(|c| **c == Some(true)).count();
+        eprintln!("linted {linted}, compared {compared}");
+        assert!(linted > 150, "expected a real corpus, linted {linted}");
+        assert!(
+            compared >= 10,
+            "only {compared} files had anything for lint to fix; if the repo has \
+             been lint-fixed wholesale, feed this test unfixed fixtures"
+        );
     }
 
     #[test]

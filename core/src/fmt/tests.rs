@@ -79,20 +79,21 @@ fn directive_word_reads_the_first_word() {
 /// whitespace-significant), and formatting is a fixed point.
 #[test]
 fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
-    use crate::ir_equiv::sources_equivalent;
+    use crate::ir_equiv::{compile_for_compare, ir_equivalent};
 
     let files = crate::test_corpus::repo_ptl_files();
-    let mut checked = 0;
-    for path in &files {
+    // One file per worker: each file fmt changes compiles twice, which is
+    // the whole cost.
+    let checked = crate::test_corpus::par_map(&files, |path| {
         let Ok(src) = std::fs::read_to_string(path) else {
-            continue;
+            return Swept::Skipped;
         };
         let formatted = match format_source(&src) {
             Ok(t) => t,
             // A file that does not parse (a negative test) is refused, which
             // is the correct outcome. Any other refusal is a formatter bug.
             Err(e) if e.starts_with("fmt bug") => panic!("{}: {}", path.display(), e),
-            Err(_) => continue,
+            Err(_) => return Swept::Skipped,
         };
         assert_eq!(
             format_source(&formatted).unwrap(),
@@ -100,17 +101,44 @@ fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
             "fmt not idempotent for {}",
             path.display()
         );
-        if crate::ir_equiv::compile_for_compare(&src, &[], Some(path)).is_err() {
-            continue; // doesn't compile standalone; nothing to compare
+        if formatted == src {
+            // Already canonical: the IR comparison would be of a text with
+            // itself. Most of the repo is, so this is most of the sweep.
+            return Swept::Unchanged;
         }
-        match sources_equivalent(&src, &formatted, &[], Some(path)) {
-            Ok(Ok(())) => {}
-            Ok(Err(diff)) => panic!("fmt changed IR for {}:\n{}", path.display(), diff),
-            Err(e) => panic!("fmt broke compilation for {}: {}", path.display(), e),
+        let Ok((env_a, pid_a)) = compile_for_compare(&src, &[], Some(path)) else {
+            return Swept::Skipped; // doesn't compile standalone; nothing to compare
+        };
+        let (env_b, pid_b) = compile_for_compare(&formatted, &[], Some(path))
+            .unwrap_or_else(|e| panic!("fmt broke compilation for {}: {}", path.display(), e));
+        let (a, b) = (
+            env_a.get_program(pid_a).expect("original program"),
+            env_b.get_program(pid_b).expect("formatted program"),
+        );
+        if let Err(diff) = ir_equivalent(a, b) {
+            panic!("fmt changed IR for {}:\n{}", path.display(), diff);
         }
-        checked += 1;
-    }
-    assert!(checked > 150, "expected a real corpus, checked {checked}");
+        Swept::Compared
+    });
+    let formatted = checked.iter().filter(|c| **c != Swept::Skipped).count();
+    let compared = checked.iter().filter(|c| **c == Swept::Compared).count();
+    assert!(formatted > 150, "expected a real corpus, formatted {formatted}");
+    assert!(
+        compared >= 10,
+        "only {compared} files were changed by fmt and compared by IR; if the repo \
+         has been formatted wholesale, feed this test unformatted fixtures"
+    );
+}
+
+/// What the corpus sweep did with one file.
+#[derive(PartialEq)]
+enum Swept {
+    /// Unreadable, unparseable, or does not compile on its own.
+    Skipped,
+    /// Formatting is a fixed point and changed nothing.
+    Unchanged,
+    /// Formatting changed the text, and the IR of both was compared.
+    Compared,
 }
 
 /// Re-indentation must undo any indentation, not just leave clean files alone:
@@ -121,19 +149,18 @@ fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
 #[test]
 fn fmt_undoes_mangled_indentation_over_repo_corpus() {
     let files = crate::test_corpus::repo_ptl_files();
-    let mut checked = 0;
-    for path in &files {
+    let checked = crate::test_corpus::par_map(&files, |path| {
         let Ok(src) = std::fs::read_to_string(path) else {
-            continue;
+            return false;
         };
         let Ok(formatted) = format_source(&src) else {
-            continue;
+            return false;
         };
         let Some(mangled) = mangle_indentation(&src) else {
-            continue;
+            return false;
         };
         if mangled.contains(OFF) || mangled.contains(IGNORE_NEXT) {
-            continue; // fenced lines keep the mangle, by design
+            return false; // fenced lines keep the mangle, by design
         }
         let remangled = format_source(&mangled)
             .unwrap_or_else(|e| panic!("fmt failed on mangled {}: {}", path.display(), e));
@@ -143,8 +170,9 @@ fn fmt_undoes_mangled_indentation_over_repo_corpus() {
             "fmt did not undo the mangle for {}",
             path.display()
         );
-        checked += 1;
-    }
+        true
+    });
+    let checked = checked.into_iter().filter(|c| *c).count();
     assert!(
         checked > 150,
         "expected most of the corpus to be manglable, got {checked}"

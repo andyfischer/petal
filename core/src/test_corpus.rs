@@ -35,3 +35,42 @@ fn collect_ptl(dir: &Path, out: &mut Vec<PathBuf>) {
         }
     }
 }
+
+/// Run `check` over every corpus file on all cores and return the results in
+/// corpus order. The corpus sweeps that compile each file are minutes of
+/// single-threaded work in a debug build and independent per file, so they
+/// fan out here rather than sample the corpus. A panic in `check` is
+/// re-raised on the calling thread with its original message.
+pub fn par_map<T: Send>(files: &[PathBuf], check: impl Fn(&Path) -> T + Sync) -> Vec<T> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism()
+        .map_or(4, |n| n.get())
+        .min(files.len().max(1));
+    let mut indexed: Vec<(usize, T)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(path) = files.get(i) else { break };
+                        done.push((i, check(path)));
+                    }
+                    done
+                })
+            })
+            .collect();
+        let mut all = Vec::with_capacity(files.len());
+        for handle in handles {
+            match handle.join() {
+                Ok(done) => all.extend(done),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+        all
+    });
+    indexed.sort_by_key(|(i, _)| *i);
+    indexed.into_iter().map(|(_, value)| value).collect()
+}

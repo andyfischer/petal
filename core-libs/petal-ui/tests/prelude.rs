@@ -469,8 +469,8 @@ fn wrap_hard_breaks_long_tokens() {
 
 #[test]
 fn wrap_unicode_multibyte_is_safe() {
-    // len/slice are byte-based; slice snaps to UTF-8 char boundaries so
-    // multibyte input must not panic (lines may run short in chars).
+    // len/slice count characters, so multibyte text wraps at the same
+    // column ASCII does: "ünïcödé" is seven characters and fits in eight.
     let src = "state uni = \"\"\n\
                state glued = \"\"\n\
                let lines = wrap(\"héllo wörld ünïcödé\", 8)\n\
@@ -479,7 +479,7 @@ fn wrap_unicode_multibyte_is_safe() {
     run_headless(src, |ui| {
         ui.frame().unwrap();
         let st = ui.state();
-        assert_eq!(st["uni"], "héllo|wörld|ünïcö|dé");
+        assert_eq!(st["uni"], "héllo|wörld|ünïcödé");
         // No content lost: lines minus the breaks reconstruct the input
         // minus its (consumed) word separators.
         assert_eq!(st["glued"], "héllowörldünïcödé");

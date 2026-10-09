@@ -55,6 +55,8 @@
 
 use std::collections::HashMap;
 
+use smallvec::SmallVec;
+
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, Reg};
 use crate::program::{Program, TermId};
 
@@ -148,13 +150,22 @@ fn apply_fn(
 // ---------------------------------------------------------------------------
 // CFG
 // ---------------------------------------------------------------------------
+//
+// Both analyses below are solved per basic block over bit sets, and only then
+// replayed instruction by instruction inside each block. Solving them per
+// instruction over hash maps (as this pass first did; `reference` in the tests
+// keeps that formulation as the oracle) costs time quadratic in the length of
+// a function, because straight-line code accumulates a fact per `Move` and
+// every instruction copied and filtered the whole set. A program's top level
+// is one function, tens of thousands of instructions long in a large script,
+// and this pass was most of the time a hot reload took.
 
 /// Successor instruction indices of `j`. `code.len()` is the exit pseudo-node
 /// (running off the end of the function), which is also where an out-of-range
 /// branch target lands.
-fn succs(code: &[Inst], j: usize) -> Vec<usize> {
+fn succs(code: &[Inst], j: usize) -> SmallVec<[usize; 2]> {
     let exit = code.len();
-    let mut out = Vec::with_capacity(2);
+    let mut out = SmallVec::new();
     if code[j].falls_through() {
         out.push((j + 1).min(exit));
     }
@@ -164,133 +175,308 @@ fn succs(code: &[Inst], j: usize) -> Vec<usize> {
     out
 }
 
-/// Predecessor lists, indexed by instruction (entry `code.len()` is the exit
-/// node and is not itself a predecessor of anything).
-fn preds(code: &[Inst]) -> Vec<Vec<usize>> {
-    let mut p = vec![Vec::new(); code.len() + 1];
-    for j in 0..code.len() {
-        for s in succs(code, j) {
-            p[s].push(j);
+/// The basic blocks of a function: maximal runs of instructions entered only
+/// at the top and left only at the bottom.
+struct Blocks {
+    /// First instruction of each block, plus `code.len()` as a sentinel, so
+    /// block `b` is `starts[b]..starts[b + 1]`.
+    starts: Vec<usize>,
+    /// Successor blocks of each block; `EXIT` for running off the end.
+    succs: Vec<SmallVec<[usize; 2]>>,
+    /// Predecessor blocks of each block.
+    preds: Vec<Vec<usize>>,
+}
+
+/// The exit pseudo-block.
+const EXIT: usize = usize::MAX;
+
+impl Blocks {
+    fn new(code: &[Inst]) -> Blocks {
+        let n = code.len();
+        let mut leader = vec![false; n + 1];
+        leader[0] = true;
+        for (j, inst) in code.iter().enumerate() {
+            let target = inst.branch_target();
+            if let Some(to) = target {
+                leader[(to as usize).min(n)] = true;
+            }
+            if target.is_some() || !inst.falls_through() {
+                leader[j + 1] = true;
+            }
+        }
+        let mut starts: Vec<usize> = (0..n).filter(|&j| leader[j]).collect();
+        let mut block_of = vec![0usize; n];
+        for (b, &start) in starts.iter().enumerate() {
+            let end = starts.get(b + 1).copied().unwrap_or(n);
+            block_of[start..end].fill(b);
+        }
+        let count = starts.len();
+        starts.push(n);
+        let mut succ_blocks: Vec<SmallVec<[usize; 2]>> = Vec::with_capacity(count);
+        let mut preds = vec![Vec::new(); count];
+        for b in 0..count {
+            let last = starts[b + 1] - 1;
+            let mut out: SmallVec<[usize; 2]> = SmallVec::new();
+            for s in succs(code, last) {
+                let sb = if s >= n { EXIT } else { block_of[s] };
+                if !out.contains(&sb) {
+                    out.push(sb);
+                }
+                if sb != EXIT {
+                    preds[sb].push(b);
+                }
+            }
+            succ_blocks.push(out);
+        }
+        Blocks {
+            starts,
+            succs: succ_blocks,
+            preds,
         }
     }
-    p
+
+    fn len(&self) -> usize {
+        self.succs.len()
+    }
+
+    fn range(&self, b: usize) -> std::ops::Range<usize> {
+        self.starts[b]..self.starts[b + 1]
+    }
+}
+
+/// A fixed-size bit set.
+#[derive(Clone, PartialEq, Eq)]
+struct Bits(Vec<u64>);
+
+impl Bits {
+    fn new(len: usize) -> Bits {
+        Bits(vec![0; len.div_ceil(64)])
+    }
+    #[inline]
+    fn set(&mut self, i: usize) {
+        self.0[i / 64] |= 1 << (i % 64);
+    }
+    #[inline]
+    fn clear(&mut self, i: usize) {
+        self.0[i / 64] &= !(1 << (i % 64));
+    }
+    #[inline]
+    fn test(&self, i: usize) -> bool {
+        self.0[i / 64] & (1 << (i % 64)) != 0
+    }
+    fn zero(&mut self) {
+        self.0.fill(0);
+    }
+    fn ones(&self) -> impl Iterator<Item = usize> + '_ {
+        self.0.iter().enumerate().flat_map(|(w, &word)| {
+            let mut word = word;
+            std::iter::from_fn(move || {
+                if word == 0 {
+                    return None;
+                }
+                let bit = word.trailing_zeros() as usize;
+                word &= word - 1;
+                Some(w * 64 + bit)
+            })
+        })
+    }
+}
+
+/// One past the highest register the function mentions.
+fn reg_space(f: &mut BytecodeFn, binds: &Binds) -> usize {
+    let mut top = f.reg_count as usize;
+    let mut see = |r: Reg| top = top.max(r as usize + 1);
+    for inst in f.code.iter_mut() {
+        inst.for_each_write(binds, &mut see);
+        inst.for_each_read_mut(|r| see(*r));
+    }
+    if let Some(r) = f.result_reg {
+        see(r);
+    }
+    top
 }
 
 // ---------------------------------------------------------------------------
 // 1. Copy propagation
 // ---------------------------------------------------------------------------
 
-/// The copy facts holding at a program point: `map[d] == Some(s)` means "`d`
-/// currently holds the same value as `s`". `None` for the not-yet-computed
-/// (bottom) state of an unreached point.
-type Facts = HashMap<Reg, Reg>;
+/// "No copy": the value of [`propagate`]'s `d -> s` table for a register that
+/// is not currently known to equal another.
+const NO_COPY: u32 = u32::MAX;
+
+/// How many sweeps the block-level fixpoints may take. Each converges in about
+/// as many sweeps as loops are nested; the bound exists so a pathological CFG
+/// degrades to "optimize nothing" rather than to a hang.
+const MAX_SWEEPS: usize = 4096;
 
 /// Rewrite operand reads to their propagated sources. Returns how many reads
 /// were rewritten.
+///
+/// The facts are *available copies*: `d ≡ s` holds at a point when every path
+/// to it passes a `Move d <- s` with no later write to either register. Each
+/// distinct `(d, s)` pair a `Move` establishes is one bit; a block's effect on
+/// the set is a kill mask (every pair mentioning a register it writes) and a
+/// gen mask (the pairs still standing at its end), and the meet over
+/// predecessors is intersection.
 fn propagate(f: &mut BytecodeFn, binds: &Binds) -> usize {
-    let n = f.code.len();
-    let preds = preds(&f.code);
-    // `in_facts[j]` is the meet of every predecessor's out-facts.
-    let mut in_facts: Vec<Option<Facts>> = vec![None; n];
-    in_facts[0] = Some(Facts::new());
+    // The distinct copies the function can establish.
+    let mut pair_ids: HashMap<(Reg, Reg), u32> = HashMap::new();
+    let mut pairs: Vec<(Reg, Reg)> = Vec::new();
+    for inst in &f.code {
+        if let Inst::Move { dst, src } = *inst
+            && dst != src
+        {
+            pair_ids.entry((dst, src)).or_insert_with(|| {
+                pairs.push((dst, src));
+                pairs.len() as u32 - 1
+            });
+        }
+    }
+    if pairs.is_empty() {
+        return 0;
+    }
+    let regs = reg_space(f, binds);
+    // The pairs each register takes part in: what a write to it kills.
+    let mut mentions: Vec<Vec<u32>> = vec![Vec::new(); regs];
+    for (id, &(d, s)) in pairs.iter().enumerate() {
+        mentions[d as usize].push(id as u32);
+        mentions[s as usize].push(id as u32);
+    }
 
-    // Forward fixpoint. Bounded: facts only ever shrink after the first visit
-    // (meet is intersection), so a worklist over instructions converges in a
-    // few passes for the shapes lowering produces.
-    let mut changed = true;
-    let mut rounds = 0;
-    while changed && rounds < MAX_ROUNDS {
-        changed = false;
-        rounds += 1;
-        for j in 0..n {
-            let entry = match meet(&preds[j], &in_facts, &f.code, binds, j == 0) {
-                Some(e) => e,
-                None => continue, // unreachable so far
-            };
-            if in_facts[j].as_ref() != Some(&entry) {
-                in_facts[j] = Some(entry);
-                changed = true;
+    let blocks = Blocks::new(&f.code);
+    let count = blocks.len();
+    let mut kill: Vec<Bits> = Vec::with_capacity(count);
+    let mut generate: Vec<Bits> = Vec::with_capacity(count);
+    for b in 0..count {
+        let (mut k, mut g) = (Bits::new(pairs.len()), Bits::new(pairs.len()));
+        for inst in &f.code[blocks.range(b)] {
+            inst.for_each_write(binds, |w| {
+                for &id in &mentions[w as usize] {
+                    k.set(id as usize);
+                    g.clear(id as usize);
+                }
+            });
+            if let Inst::Move { dst, src } = *inst
+                && dst != src
+            {
+                g.set(pair_ids[&(dst, src)] as usize);
             }
+        }
+        kill.push(k);
+        generate.push(g);
+    }
+
+    // Forward fixpoint. `None` is a block no reached path enters yet; the
+    // entry starts with nothing known. Facts only shrink once a block has
+    // been reached, so this is the greatest fixpoint whatever the order.
+    let mut entry: Vec<Option<Bits>> = vec![None; count];
+    let mut exit: Vec<Option<Bits>> = vec![None; count];
+    let mut changed = true;
+    let mut sweeps = 0;
+    while changed {
+        sweeps += 1;
+        if sweeps > MAX_SWEEPS {
+            return 0;
+        }
+        changed = false;
+        for b in 0..count {
+            let mut acc: Option<Bits> = (b == 0).then(|| Bits::new(pairs.len()));
+            for &p in &blocks.preds[b] {
+                let Some(out) = &exit[p] else { continue };
+                match &mut acc {
+                    None => acc = Some(out.clone()),
+                    Some(a) => {
+                        for (x, y) in a.0.iter_mut().zip(&out.0) {
+                            *x &= *y;
+                        }
+                    }
+                }
+            }
+            let Some(acc) = acc else { continue };
+            if entry[b].as_ref() == Some(&acc) {
+                continue;
+            }
+            let mut out = acc.clone();
+            for ((x, k), g) in out.0.iter_mut().zip(&kill[b].0).zip(&generate[b].0) {
+                *x = (*x & !*k) | *g;
+            }
+            entry[b] = Some(acc);
+            exit[b] = Some(out);
+            changed = true;
         }
     }
 
+    // Replay each block from its entry facts, rewriting as it goes. `copy_of`
+    // is the current facts as a `d -> s` table (at most one copy per `d`
+    // stands at a time: establishing one kills every other pair mentioning
+    // `d`).
     let mut rewritten = 0;
-    for j in 0..n {
-        let Some(facts) = &in_facts[j] else { continue };
-        if facts.is_empty() {
-            continue;
+    let mut copy_of: Vec<u32> = vec![NO_COPY; regs];
+    for b in 0..count {
+        let Some(facts) = &entry[b] else { continue };
+        let mut live = facts.clone();
+        let mut standing = 0usize;
+        for id in live.ones() {
+            let (d, s) = pairs[id];
+            copy_of[d as usize] = s as u32;
+            standing += 1;
         }
-        // Every read — including a `Move`'s own source — follows the fact chain
-        // to its root, so a chain of copies collapses to reads of one register
-        // in a single pass and the intermediate links fall out as dead.
-        f.code[j].for_each_read_mut(|r| {
-            if let Some(root) = resolve(facts, *r) {
-                if root != *r {
-                    *r = root;
-                    rewritten += 1;
-                }
+        for j in blocks.range(b) {
+            // The copy this instruction establishes, read before its source
+            // operand is rewritten: the facts describe the code as it was.
+            let own = match f.code[j] {
+                Inst::Move { dst, src } if dst != src => Some((dst, src)),
+                _ => None,
+            };
+            if standing > 0 {
+                // Every read — including a `Move`'s own source — follows the
+                // fact chain to its root, so a chain of copies collapses to
+                // reads of one register in a single pass and the intermediate
+                // links fall out as dead.
+                f.code[j].for_each_read_mut(|r| {
+                    if let Some(root) = resolve(&copy_of, *r) {
+                        if root != *r {
+                            *r = root;
+                            rewritten += 1;
+                        }
+                    }
+                });
             }
-        });
+            f.code[j].for_each_write(binds, |w| {
+                for &id in &mentions[w as usize] {
+                    if live.test(id as usize) {
+                        live.clear(id as usize);
+                        copy_of[pairs[id as usize].0 as usize] = NO_COPY;
+                        standing -= 1;
+                    }
+                }
+            });
+            if let Some((d, s)) = own {
+                live.set(pair_ids[&(d, s)] as usize);
+                copy_of[d as usize] = s as u32;
+                standing += 1;
+            }
+        }
+        for id in live.ones() {
+            copy_of[pairs[id].0 as usize] = NO_COPY;
+        }
     }
     rewritten
 }
 
-/// Cap on dataflow iterations. Each round is O(instructions); the bound exists
-/// so a pathological CFG degrades to "optimize less" rather than to a hang.
-const MAX_ROUNDS: usize = 16;
-
 /// Follow `d ≡ s` links to the end of the chain. Cycles cannot arise (a fact is
 /// killed when its destination is rewritten) but the hop budget makes that
 /// structural rather than assumed.
-fn resolve(facts: &Facts, mut r: Reg) -> Option<Reg> {
+fn resolve(copy_of: &[u32], mut r: Reg) -> Option<Reg> {
     let mut out = None;
     for _ in 0..8 {
-        match facts.get(&r) {
-            Some(&s) if s != r => {
-                r = s;
-                out = Some(s);
+        match copy_of[r as usize] {
+            NO_COPY => break,
+            s if s as Reg != r => {
+                r = s as Reg;
+                out = Some(r);
             }
             _ => break,
-        }
-    }
-    out
-}
-
-/// Facts entering instruction `j`: the intersection of every predecessor's
-/// out-facts, or an empty set for the function entry.
-fn meet(
-    preds: &[usize],
-    in_facts: &[Option<Facts>],
-    code: &[Inst],
-    binds: &Binds,
-    is_entry: bool,
-) -> Option<Facts> {
-    let mut acc: Option<Facts> = if is_entry { Some(Facts::new()) } else { None };
-    for &p in preds {
-        let Some(pin) = &in_facts[p] else { continue };
-        let out = transfer(pin, &code[p], binds);
-        acc = Some(match acc {
-            None => out,
-            Some(a) => a
-                .into_iter()
-                .filter(|(d, s)| out.get(d) == Some(s))
-                .collect(),
-        });
-    }
-    acc
-}
-
-/// Facts leaving instruction `i`, given the facts entering it: kill anything
-/// mentioning a register `i` writes, then generate the copy `i` establishes.
-fn transfer(facts: &Facts, inst: &Inst, binds: &Binds) -> Facts {
-    let mut out = facts.clone();
-    inst.for_each_write(binds, |w| {
-        out.remove(&w);
-        out.retain(|_, s| *s != w);
-    });
-    if let Inst::Move { dst, src } = inst {
-        if dst != src {
-            out.insert(*dst, *src);
         }
     }
     out
@@ -304,37 +490,37 @@ fn transfer(facts: &Facts, inst: &Inst, binds: &Binds) -> Facts {
 /// compact the code, and remap branch targets. Returns how many were deleted.
 fn eliminate(f: &mut BytecodeFn, program: &Program, binds: &Binds, preserve: Preserve) -> usize {
     let n = f.code.len();
-    let live_out = liveness(f, binds);
-
     let mut drop_it = vec![false; n];
     let mut removed = 0;
-    for j in 0..n {
-        let origin = f.origins.get(j).copied().flatten();
+    let origins = std::mem::take(&mut f.origins);
+    for_each_live_out(f, binds, |j, inst, live_out| {
+        let origin = origins.get(j).copied().flatten();
         // A self-move is unobservable even when its origin term is named: the
         // register already holds the value an observation would record, and the
         // VM reads `dst` *after* the instruction to record it. It is not
         // *untraceable*, though — the trace keys on the origin term, and with
         // the move gone no event is ever pushed for that term.
-        if let Inst::Move { dst, src } = f.code[j] {
+        if let Inst::Move { dst, src } = *inst {
             if dst == src && !(preserve.trace && origin.is_some()) {
                 drop_it[j] = true;
                 removed += 1;
-                continue;
+                return;
             }
         }
-        if !is_pure(&f.code[j]) {
-            continue;
+        if !is_pure(inst) {
+            return;
         }
-        let Some(dst) = f.code[j].dst() else { continue };
-        if live_out[j].contains(&dst) {
-            continue;
+        let Some(dst) = inst.dst() else { return };
+        if live_out.test(dst as usize) {
+            return;
         }
         if preserve.keeps(program, origin) {
-            continue;
+            return;
         }
         drop_it[j] = true;
         removed += 1;
-    }
+    });
+    f.origins = origins;
     if removed > 0 {
         compact(f, &drop_it);
     }
@@ -361,58 +547,126 @@ fn is_observable(program: &Program, origin: Option<TermId>) -> bool {
     term.name.is_some() && !crate::ir_display::is_phantom(program, term)
 }
 
-/// Registers live *after* each instruction. Backward fixpoint over the CFG:
-/// `live_out[j] = ⋃ live_in[s]` over successors, `live_in[j] = reads(j) ∪
-/// (live_out[j] \ writes(j))`. The exit node starts with the function's result
-/// register live, since a frame that runs off the end delivers it.
-fn liveness(f: &BytecodeFn, binds: &Binds) -> Vec<Vec<Reg>> {
-    let n = f.code.len();
-    let mut live_in: Vec<Vec<Reg>> = vec![Vec::new(); n + 1];
-    if let Some(r) = f.result_reg {
-        live_in[n].push(r);
+/// Call `visit(j, instruction, live_out)` for every instruction, where
+/// `live_out` holds the registers live *after* it.
+///
+/// Backward fixpoint over the blocks: `live_out[b] = ⋃ live_in[s]` over
+/// successors, `live_in[b] = use[b] ∪ (live_out[b] \ def[b])`. The exit starts
+/// with the function's result register live, since a frame that runs off the
+/// end delivers it. Only registers some block reads before writing can be
+/// live across a block boundary, so the block-level sets are indexed by those
+/// alone; each block is then walked backward once with a full-width set.
+fn for_each_live_out(
+    f: &mut BytecodeFn,
+    binds: &Binds,
+    mut visit: impl FnMut(usize, &Inst, &Bits),
+) {
+    let regs = reg_space(f, binds);
+    let blocks = Blocks::new(&f.code);
+    let count = blocks.len();
+
+    // Registers read in a block before the block writes them, and registers
+    // the block writes, in block order.
+    let mut exposed: Vec<Vec<Reg>> = Vec::with_capacity(count);
+    let mut written: Vec<Vec<Reg>> = Vec::with_capacity(count);
+    let mut seen_def = Bits::new(regs);
+    let mut seen_use = Bits::new(regs);
+    for b in 0..count {
+        let (mut uses, mut defs) = (Vec::new(), Vec::new());
+        for j in blocks.range(b) {
+            f.code[j].for_each_read_mut(|r| {
+                let r = *r;
+                if !seen_def.test(r as usize) && !seen_use.test(r as usize) {
+                    seen_use.set(r as usize);
+                    uses.push(r);
+                }
+            });
+            f.code[j].for_each_write(binds, |w| {
+                if !seen_def.test(w as usize) {
+                    seen_def.set(w as usize);
+                    defs.push(w);
+                }
+            });
+        }
+        for &r in &uses {
+            seen_use.clear(r as usize);
+        }
+        for &r in &defs {
+            seen_def.clear(r as usize);
+        }
+        exposed.push(uses);
+        written.push(defs);
     }
-    let mut changed = true;
-    let mut rounds = 0;
-    while changed && rounds < MAX_ROUNDS * 4 {
-        changed = false;
-        rounds += 1;
-        for j in (0..n).rev() {
-            let mut out: Vec<Reg> = Vec::new();
-            for s in succs(&f.code, j) {
-                for &r in &live_in[s] {
-                    if !out.contains(&r) {
-                        out.push(r);
-                    }
-                }
-            }
-            let mut new_in = out;
-            f.code[j].for_each_write(binds, |w| new_in.retain(|&r| r != w));
-            for r in f.code[j].read_regs() {
-                if !new_in.contains(&r) {
-                    new_in.push(r);
-                }
-            }
-            new_in.sort_unstable();
-            if new_in != live_in[j] {
-                live_in[j] = new_in;
-                changed = true;
-            }
+
+    // The registers that can cross a block boundary, numbered densely.
+    let mut global_of: Vec<u32> = vec![u32::MAX; regs];
+    let mut globals: Vec<Reg> = Vec::new();
+    for &r in exposed.iter().flatten().chain(f.result_reg.iter()) {
+        if global_of[r as usize] == u32::MAX {
+            global_of[r as usize] = globals.len() as u32;
+            globals.push(r);
         }
     }
-    // Re-derive live-out from the converged live-in sets.
-    (0..n)
-        .map(|j| {
-            let mut out: Vec<Reg> = Vec::new();
-            for s in succs(&f.code, j) {
-                for &r in &live_in[s] {
-                    if !out.contains(&r) {
-                        out.push(r);
-                    }
+    let width = globals.len();
+    let narrow = |list: &[Reg]| {
+        let mut bits = Bits::new(width);
+        for &r in list {
+            let g = global_of[r as usize];
+            if g != u32::MAX {
+                bits.set(g as usize);
+            }
+        }
+        bits
+    };
+    let uses: Vec<Bits> = exposed.iter().map(|u| narrow(u)).collect();
+    let defs: Vec<Bits> = written.iter().map(|d| narrow(d)).collect();
+    let exit_in = narrow(f.result_reg.as_slice());
+
+    let mut live_in: Vec<Bits> = vec![Bits::new(width); count];
+    let mut live_out: Vec<Bits> = vec![Bits::new(width); count];
+    let mut changed = true;
+    let mut sweeps = 0;
+    while changed && sweeps < MAX_SWEEPS {
+        changed = false;
+        sweeps += 1;
+        for b in (0..count).rev() {
+            let mut out = Bits::new(width);
+            for &s in &blocks.succs[b] {
+                let from = if s == EXIT { &exit_in } else { &live_in[s] };
+                for (x, y) in out.0.iter_mut().zip(&from.0) {
+                    *x |= *y;
                 }
             }
-            out
-        })
-        .collect()
+            let mut inn = out.clone();
+            for ((x, d), u) in inn.0.iter_mut().zip(&defs[b].0).zip(&uses[b].0) {
+                *x = (*x & !*d) | *u;
+            }
+            if inn != live_in[b] {
+                live_in[b] = inn;
+                changed = true;
+            }
+            live_out[b] = out;
+        }
+    }
+    if changed {
+        // Not converged: the sets under-approximate what is live, and acting
+        // on them could delete a move something reads. Visit nothing.
+        return;
+    }
+
+    // Walk each block backward from its live-out set.
+    let mut live = Bits::new(regs);
+    for b in 0..count {
+        live.zero();
+        for g in live_out[b].ones() {
+            live.set(globals[g] as usize);
+        }
+        for j in blocks.range(b).rev() {
+            visit(j, &f.code[j], &live);
+            f.code[j].for_each_write(binds, |w| live.clear(w as usize));
+            f.code[j].for_each_read_mut(|r| live.set(*r as usize));
+        }
+    }
 }
 
 /// Drop the marked instructions and renumber every branch target. A target that
@@ -497,6 +751,283 @@ fn thread_jumps(f: &mut BytecodeFn) -> usize {
         compact(f, &drop_it);
     }
     threaded
+}
+
+/// The pass as it was first written: both analyses solved per instruction over
+/// hash maps and vectors. Quadratic in the length of a function, and exactly
+/// the specification the block-level solver above has to reproduce — kept
+/// here as the oracle for [`tests::the_block_solver_reproduces_the_reference`].
+#[cfg(test)]
+mod reference {
+    use super::{Binds, Preserve, compact, is_pure, thread_jumps};
+    use crate::backend::bytecode::isa::{BytecodeFn, Inst, Reg};
+    use crate::program::Program;
+    use std::collections::HashMap;
+
+    pub fn apply_fn(f: &mut BytecodeFn, program: &Program, binds: &Binds, preserve: Preserve) {
+        for _ in 0..super::PASSES {
+            if f.code.is_empty() {
+                break;
+            }
+            propagate(f, binds);
+            if eliminate(f, program, binds, preserve) == 0 {
+                break;
+            }
+        }
+        thread_jumps(f);
+    }
+
+    // ---------------------------------------------------------------------------
+    // CFG
+    // ---------------------------------------------------------------------------
+
+    /// Successor instruction indices of `j`. `code.len()` is the exit pseudo-node
+    /// (running off the end of the function), which is also where an out-of-range
+    /// branch target lands.
+    fn succs(code: &[Inst], j: usize) -> Vec<usize> {
+        let exit = code.len();
+        let mut out = Vec::with_capacity(2);
+        if code[j].falls_through() {
+            out.push((j + 1).min(exit));
+        }
+        if let Some(to) = code[j].branch_target() {
+            out.push((to as usize).min(exit));
+        }
+        out
+    }
+
+    /// Predecessor lists, indexed by instruction (entry `code.len()` is the exit
+    /// node and is not itself a predecessor of anything).
+    fn preds(code: &[Inst]) -> Vec<Vec<usize>> {
+        let mut p = vec![Vec::new(); code.len() + 1];
+        for j in 0..code.len() {
+            for s in succs(code, j) {
+                p[s].push(j);
+            }
+        }
+        p
+    }
+
+    // ---------------------------------------------------------------------------
+    // 1. Copy propagation
+    // ---------------------------------------------------------------------------
+
+    /// The copy facts holding at a program point: `map[d] == Some(s)` means "`d`
+    /// currently holds the same value as `s`". `None` for the not-yet-computed
+    /// (bottom) state of an unreached point.
+    type Facts = HashMap<Reg, Reg>;
+
+    /// Rewrite operand reads to their propagated sources. Returns how many reads
+    /// were rewritten.
+    fn propagate(f: &mut BytecodeFn, binds: &Binds) -> usize {
+        let n = f.code.len();
+        let preds = preds(&f.code);
+        // `in_facts[j]` is the meet of every predecessor's out-facts.
+        let mut in_facts: Vec<Option<Facts>> = vec![None; n];
+        in_facts[0] = Some(Facts::new());
+
+        // Forward fixpoint. Bounded: facts only ever shrink after the first visit
+        // (meet is intersection), so a worklist over instructions converges in a
+        // few passes for the shapes lowering produces.
+        let mut changed = true;
+        let mut rounds = 0;
+        while changed && rounds < MAX_ROUNDS {
+            changed = false;
+            rounds += 1;
+            for j in 0..n {
+                let entry = match meet(&preds[j], &in_facts, &f.code, binds, j == 0) {
+                    Some(e) => e,
+                    None => continue, // unreachable so far
+                };
+                if in_facts[j].as_ref() != Some(&entry) {
+                    in_facts[j] = Some(entry);
+                    changed = true;
+                }
+            }
+        }
+
+        let mut rewritten = 0;
+        for j in 0..n {
+            let Some(facts) = &in_facts[j] else { continue };
+            if facts.is_empty() {
+                continue;
+            }
+            // Every read — including a `Move`'s own source — follows the fact chain
+            // to its root, so a chain of copies collapses to reads of one register
+            // in a single pass and the intermediate links fall out as dead.
+            f.code[j].for_each_read_mut(|r| {
+                if let Some(root) = resolve(facts, *r) {
+                    if root != *r {
+                        *r = root;
+                        rewritten += 1;
+                    }
+                }
+            });
+        }
+        rewritten
+    }
+
+    /// Cap on dataflow iterations. Each round is O(instructions); the bound exists
+    /// so a pathological CFG degrades to "optimize less" rather than to a hang.
+    const MAX_ROUNDS: usize = 16;
+
+    /// Follow `d ≡ s` links to the end of the chain. Cycles cannot arise (a fact is
+    /// killed when its destination is rewritten) but the hop budget makes that
+    /// structural rather than assumed.
+    fn resolve(facts: &Facts, mut r: Reg) -> Option<Reg> {
+        let mut out = None;
+        for _ in 0..8 {
+            match facts.get(&r) {
+                Some(&s) if s != r => {
+                    r = s;
+                    out = Some(s);
+                }
+                _ => break,
+            }
+        }
+        out
+    }
+
+    /// Facts entering instruction `j`: the intersection of every predecessor's
+    /// out-facts, or an empty set for the function entry.
+    fn meet(
+        preds: &[usize],
+        in_facts: &[Option<Facts>],
+        code: &[Inst],
+        binds: &Binds,
+        is_entry: bool,
+    ) -> Option<Facts> {
+        let mut acc: Option<Facts> = if is_entry { Some(Facts::new()) } else { None };
+        for &p in preds {
+            let Some(pin) = &in_facts[p] else { continue };
+            let out = transfer(pin, &code[p], binds);
+            acc = Some(match acc {
+                None => out,
+                Some(a) => a
+                    .into_iter()
+                    .filter(|(d, s)| out.get(d) == Some(s))
+                    .collect(),
+            });
+        }
+        acc
+    }
+
+    /// Facts leaving instruction `i`, given the facts entering it: kill anything
+    /// mentioning a register `i` writes, then generate the copy `i` establishes.
+    fn transfer(facts: &Facts, inst: &Inst, binds: &Binds) -> Facts {
+        let mut out = facts.clone();
+        inst.for_each_write(binds, |w| {
+            out.remove(&w);
+            out.retain(|_, s| *s != w);
+        });
+        if let Inst::Move { dst, src } = inst {
+            if dst != src {
+                out.insert(*dst, *src);
+            }
+        }
+        out
+    }
+
+    // ---------------------------------------------------------------------------
+    // 2. Dead-move elimination
+    // ---------------------------------------------------------------------------
+
+    /// Delete moves whose destination is dead afterwards (plus every self-move),
+    /// compact the code, and remap branch targets. Returns how many were deleted.
+    fn eliminate(f: &mut BytecodeFn, program: &Program, binds: &Binds, preserve: Preserve) -> usize {
+        let n = f.code.len();
+        let live_out = liveness(f, binds);
+
+        let mut drop_it = vec![false; n];
+        let mut removed = 0;
+        for j in 0..n {
+            let origin = f.origins.get(j).copied().flatten();
+            // A self-move is unobservable even when its origin term is named: the
+            // register already holds the value an observation would record, and the
+            // VM reads `dst` *after* the instruction to record it. It is not
+            // *untraceable*, though — the trace keys on the origin term, and with
+            // the move gone no event is ever pushed for that term.
+            if let Inst::Move { dst, src } = f.code[j] {
+                if dst == src && !(preserve.trace && origin.is_some()) {
+                    drop_it[j] = true;
+                    removed += 1;
+                    continue;
+                }
+            }
+            if !is_pure(&f.code[j]) {
+                continue;
+            }
+            let Some(dst) = f.code[j].dst() else { continue };
+            if live_out[j].contains(&dst) {
+                continue;
+            }
+            if preserve.keeps(program, origin) {
+                continue;
+            }
+            drop_it[j] = true;
+            removed += 1;
+        }
+        if removed > 0 {
+            compact(f, &drop_it);
+        }
+        removed
+    }
+
+    /// Registers live *after* each instruction. Backward fixpoint over the CFG:
+    /// `live_out[j] = ⋃ live_in[s]` over successors, `live_in[j] = reads(j) ∪
+    /// (live_out[j] \ writes(j))`. The exit node starts with the function's result
+    /// register live, since a frame that runs off the end delivers it.
+    fn liveness(f: &BytecodeFn, binds: &Binds) -> Vec<Vec<Reg>> {
+        let n = f.code.len();
+        let mut live_in: Vec<Vec<Reg>> = vec![Vec::new(); n + 1];
+        if let Some(r) = f.result_reg {
+            live_in[n].push(r);
+        }
+        let mut changed = true;
+        let mut rounds = 0;
+        while changed && rounds < MAX_ROUNDS * 4 {
+            changed = false;
+            rounds += 1;
+            for j in (0..n).rev() {
+                let mut out: Vec<Reg> = Vec::new();
+                for s in succs(&f.code, j) {
+                    for &r in &live_in[s] {
+                        if !out.contains(&r) {
+                            out.push(r);
+                        }
+                    }
+                }
+                let mut new_in = out;
+                f.code[j].for_each_write(binds, |w| new_in.retain(|&r| r != w));
+                for r in f.code[j].read_regs() {
+                    if !new_in.contains(&r) {
+                        new_in.push(r);
+                    }
+                }
+                new_in.sort_unstable();
+                if new_in != live_in[j] {
+                    live_in[j] = new_in;
+                    changed = true;
+                }
+            }
+        }
+        // Re-derive live-out from the converged live-in sets.
+        (0..n)
+            .map(|j| {
+                let mut out: Vec<Reg> = Vec::new();
+                for s in succs(&f.code, j) {
+                    for &r in &live_in[s] {
+                        if !out.contains(&r) {
+                            out.push(r);
+                        }
+                    }
+                }
+                out
+            })
+            .collect()
+    }
+
+
 }
 
 #[cfg(test)]
@@ -688,5 +1219,129 @@ mod tests {
         let mut bc = super::super::lower_program(program).expect("lowers");
         let stats = apply(&mut bc, program, OBSERVED);
         assert_eq!(stats.before - stats.removed, stats.after);
+    }
+
+    /// Every function of every program below, optimized by the block-level
+    /// solver and by the per-instruction reference: the same instructions,
+    /// the same origins.
+    fn assert_matches_reference(src: &str, what: &str) {
+        let mut env = Env::new();
+        let Ok(pid) = env.load_program(src) else {
+            return;
+        };
+        let program = env.get_program(pid).expect("program");
+        let flags = crate::backend::OptFlags {
+            copy_propagation: false,
+            ..crate::backend::OptFlags::default_on()
+        };
+        let Ok(plain) = super::super::lower_with_flags(program, flags) else {
+            return;
+        };
+        for preserve in [Preserve::default(), OBSERVED] {
+            let mut new = plain.clone();
+            apply(&mut new, program, preserve);
+            let mut old = plain.clone();
+            let binds = std::mem::take(&mut old.match_binds);
+            for f in std::iter::once(&mut old.root).chain(old.fns.iter_mut()) {
+                reference::apply_fn(f, program, &binds, preserve);
+            }
+            for (a, b) in std::iter::once(&new.root)
+                .chain(new.fns.iter())
+                .zip(std::iter::once(&old.root).chain(old.fns.iter()))
+            {
+                assert_eq!(
+                    format!("{:?}", a.code),
+                    format!("{:?}", b.code),
+                    "{what}: function {:?} ({preserve:?})",
+                    a.name
+                );
+                assert_eq!(a.origins, b.origins, "{what}: origins of {:?}", a.name);
+            }
+        }
+    }
+
+    fn corpus(dirs: &[&str]) -> Vec<std::path::PathBuf> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let mut files: Vec<std::path::PathBuf> = crate::test_corpus::repo_ptl_files()
+            .into_iter()
+            .filter(|p| {
+                let rel = p.strip_prefix(root).unwrap_or(p);
+                dirs.iter().any(|d| rel.starts_with(d))
+            })
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn the_block_solver_reproduces_the_reference() {
+        let files = corpus(&["examples/console", "test/benchmarks"]);
+        assert!(files.len() > 20, "the corpus moved");
+        for path in files {
+            let src = std::fs::read_to_string(&path).unwrap();
+            assert_matches_reference(&src, &path.display().to_string());
+        }
+    }
+
+    /// The same over every `.ptl` file in the repository (and any directories
+    /// in `PETAL_COPYPROP_CORPUS`). The reference is quadratic, so run it in
+    /// release: `cargo test --release --lib copyprop -- --ignored`.
+    #[test]
+    #[ignore]
+    fn the_block_solver_reproduces_the_reference_everywhere() {
+        let mut files = crate::test_corpus::repo_ptl_files();
+        if let Ok(extra) = std::env::var("PETAL_COPYPROP_CORPUS") {
+            for dir in extra.split(':').filter(|d| !d.is_empty()) {
+                let mut stack = vec![std::path::PathBuf::from(dir)];
+                while let Some(d) = stack.pop() {
+                    for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                        let p = e.path();
+                        if p.is_dir() {
+                            stack.push(p);
+                        } else if p.extension().is_some_and(|x| x == "ptl") {
+                            files.push(p);
+                        }
+                    }
+                }
+            }
+        }
+        for path in files {
+            let Ok(src) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            // Compile where the file lives, so its imports resolve.
+            let mut env = Env::new();
+            let Ok(pid) = env.load_program_at(&src, &path) else {
+                continue;
+            };
+            let program = env.get_program(pid).expect("program");
+            let flags = crate::backend::OptFlags {
+                copy_propagation: false,
+                ..crate::backend::OptFlags::default_on()
+            };
+            let Ok(plain) = super::super::lower_with_flags(program, flags) else {
+                continue;
+            };
+            let mut new = plain.clone();
+            apply(&mut new, program, Preserve::default());
+            let mut old = plain.clone();
+            let binds = std::mem::take(&mut old.match_binds);
+            for f in std::iter::once(&mut old.root).chain(old.fns.iter_mut()) {
+                reference::apply_fn(f, program, &binds, Preserve::default());
+            }
+            for (a, b) in std::iter::once(&new.root)
+                .chain(new.fns.iter())
+                .zip(std::iter::once(&old.root).chain(old.fns.iter()))
+            {
+                assert_eq!(
+                    format!("{:?}", a.code),
+                    format!("{:?}", b.code),
+                    "{}: function {:?}",
+                    path.display(),
+                    a.name
+                );
+                assert_eq!(a.origins, b.origins, "{}", path.display());
+            }
+        }
     }
 }

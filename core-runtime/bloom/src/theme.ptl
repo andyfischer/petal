@@ -108,12 +108,15 @@ end
 // an improvement to opt into, never a way to lose a menu.
 
 state var _late = []
-state var _late_frame = -1
+// Whether a paint has been deferred yet this frame. A plain module `var`, so
+// it is false again on every run with no `frame_count()` read to keep the
+// frame gate from skipping a quiet panel (see `_building` in bloom/interact).
+var _late_begun = false
 
 pub fn defer_paint(f: function)
-  if (get _late_frame) != frame_count() then
+  if !(get _late_begun) then
+    set _late_begun = true
     overlays()
-    set _late_frame = frame_count()
   end
   set _late = append(get _late, f)
 end

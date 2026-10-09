@@ -133,25 +133,32 @@ end
 // control disappears.
 
 state var _focus = ""
+// The last complete ring: it is rewritten as this frame's ring grows, so at
+// the top of a frame it still holds what the previous frame built.
 state var _ring = []
-state var _ring_frame = -1
 state var _pending = 0
+// This frame's ring so far. A plain module `var` starts over on every run, so
+// "empty" is how the first `focusable` of a frame knows it is first. It used
+// to compare a stored `frame_count()`, which wrote a `state` slot every frame
+// and read a binding that moves every frame, so no panel with a focusable
+// control in it could ever be skipped by the frame gate.
+var _building = []
 
 // Announce `id` as focusable this frame and report whether it has focus.
 // Every focusable bloom component calls this; an app only calls it when it
 // builds a focusable control of its own.
 pub fn focusable(id: string) -> bool
-  if frame_count() != get _ring_frame then
+  if len(get _building) == 0 then
     _begin_frame()
   end
-  set _ring = append(get _ring, id)
+  set _building = append(get _building, id)
+  set _ring = get _building
   (get _focus) == id
 end
 
 // Tab / Shift+Tab are applied at the top of the next frame, against the ring
 // the *last* frame built — the only complete ring that exists at that moment.
 fn _begin_frame()
-  set _ring_frame = frame_count()
   let ring = get _ring
   let step = get _pending
   if step != 0 && len(ring) > 0 then
@@ -165,7 +172,6 @@ fn _begin_frame()
     set _focus = ring[next]
   end
   set _pending = 0
-  set _ring = []
   if key_pressed("tab") then
     set _pending = if mod_shift() then -1 else 1 end
   end

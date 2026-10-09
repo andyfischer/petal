@@ -15,7 +15,7 @@ const DT: f64 = 1.0 / 60.0;
 
 /// A panel driven the way the app drives one: frames advance one at a time and
 /// the frame counter is the driver's, never the test's. bloom reads
-/// `frame_count()` (for its input capture and its focus ring), so a test that
+/// `frame_count()` (for its input capture and its menus), so a test that
 /// skipped a number would be testing a frame sequence no host produces.
 struct Ui {
     host: PanelHost,

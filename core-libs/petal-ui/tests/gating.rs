@@ -337,25 +337,46 @@ fn gated_frames_reproduce_ungated_frames_across_the_corpus() {
     assert!(skipped_total > 0, "the gate never skipped a frame across the corpus");
 }
 
+/// The clock bindings a script read on its last run. Reading one obliges the
+/// gate to re-run every frame: they move on their own.
+fn clock_reads(ui: &Headless) -> Vec<&str> {
+    let Some(deps) = ui.env.run_deps(ui.stack_id()) else { return Vec::new() };
+    let mut names: Vec<&str> = deps
+        .bindings_read()
+        .filter_map(|sym| ui.env.symbol_name(sym))
+        .filter(|name| matches!(*name, "time" | "frame_count" | "dt"))
+        .collect();
+    names.sort_unstable();
+    names
+}
+
 #[test]
-fn a_quiet_corpus_mostly_idles() {
-    // With no input at all, an app that is not driven by the clock should
-    // settle within a few dozen frames and then skip.
+fn a_quiet_corpus_idles_unless_it_reads_the_clock() {
+    // With no input at all, an app that does not read the clock must settle
+    // within a few dozen frames and then skip. All of them, not most: an app
+    // that keeps running with nothing moving is asking for frames it does not
+    // need, and each one found so far was a few lines to fix.
     //
-    // The ratio is taken over the apps that *can* idle. An app that reads
-    // `time()` or `frame_count()` cannot: those bindings move on their own
-    // every frame, so the gate is obliged to re-run and correctly reports
-    // `BindingChanged`. Counting them as failures-to-idle would measure how
-    // much of the corpus animates, not whether the gate settles.
+    // An app that reads `time()`, `dt()` or `frame_count()` cannot idle, and
+    // is set aside. What decides that is the bindings the last run *read*, not
+    // the reason the gate gave for running it. `run_needed` reports
+    // `StateUnsettled` ahead of `BindingChanged`, so an app that integrates
+    // the clock into `state` (`pulse = pulse + dt()`, every game here) names
+    // no binding in its reason. Sorting by reason counted those 16 apps as
+    // able to idle and failing to, which is how this test read "18 of 38"
+    // while the gate was doing exactly what it should.
     //
-    // That exclusion is not a technicality — it is the finding. Four Garden
-    // GPP apps and every worlds-fair screen read `frame_count()`, usually as
-    // a once-per-frame cache key, and it costs them the frame gate entirely.
-    // The in-tree `examples/` tree contains none of that idiom, which is why
-    // it took running this corpus over Garden to see it.
-    let mut settled = 0;
-    let mut total = 0;
+    // Setting the clock readers aside is not a technicality — some of them
+    // read it for no good reason, and that costs them the gate entirely. Four
+    // Garden GPP apps and every worlds-fair screen read `frame_count()` as a
+    // once-per-frame cache key. `bloom`'s focus ring did the same until it was
+    // changed to a module `var`, which is what lets `bloom-gallery` and both
+    // `screens-demo` drawers idle here. So the floor below is on the idle
+    // count: a library that starts reading the clock on every frame takes the
+    // apps built on it out of the first assertion and into the second.
+    let mut idle = 0;
     let mut clock_driven = Vec::new();
+    let mut restless = Vec::new();
     for (app, includes) in corpus() {
         let mut ui = Headless::from_file_with_paths(&app, 800, 600, &includes)
             .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
@@ -370,30 +391,28 @@ fn a_quiet_corpus_mostly_idles() {
             let _ = ui.frame();
         }
         if ui.frames_run == before {
-            settled += 1;
-            total += 1;
+            idle += 1;
             continue;
         }
-        // Name the binding: `BindingChanged(SymbolId(4))` says nothing, and
-        // which binding it is — the clock, or real input — is the whole
-        // difference between an app that animates and a bug.
-        let sym = match ui.last_run_reason {
-            Some(RunReason::BindingChanged(sym)) => ui.env.symbol_name(sym).unwrap_or("?"),
-            _ => "",
-        };
-        if matches!(sym, "time" | "frame_count" | "dt") {
-            clock_driven.push(format!("{} ({sym})", app.display()));
-            continue;
+        let clocks = clock_reads(&ui);
+        if clocks.is_empty() {
+            restless.push(format!("{} ({:?})", app.display(), ui.last_run_reason));
+        } else {
+            clock_driven.push(format!("{} ({})", app.display(), clocks.join(", ")));
         }
-        total += 1;
-        eprintln!("{} keeps running: {:?}", app.display(), ui.last_run_reason);
     }
-    eprintln!("clock-driven, cannot idle by construction:");
+    eprintln!("{idle} idle; {} read the clock and cannot:", clock_driven.len());
     for app in &clock_driven {
         eprintln!("  {app}");
     }
     assert!(
-        settled * 2 >= total,
-        "only {settled} of {total} non-clock-driven apps idle after 90 quiet frames"
+        restless.is_empty(),
+        "these apps read no clock yet still run after 90 quiet frames:\n  {}",
+        restless.join("\n  ")
+    );
+    assert!(
+        idle >= 20,
+        "only {idle} apps idle after 90 quiet frames (22 did when this was written); \
+         something shared has started reading the clock every frame"
     );
 }

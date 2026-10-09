@@ -127,6 +127,7 @@ Add the four builtins, and make append to a uniquely held string amortized
 O(1) or point people at `join`. Details: todo-bugs §4.1.
 
 ## 9. CLI argument handling turns typos into file errors
+DONE unknown commands and options are named; check keeps --host ui and run explains ui names; --strict ignores the export deprecation; unclosed blocks and cross-module traces fixed (core/tests/cli_args.rs)
 
 - `petal repl` and `petal test` print `Error reading file 'repl'`.
 - An unknown flag is taken as the file path: `petal run x.ptl --iter 3` gives

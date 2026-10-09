@@ -103,6 +103,7 @@ The vitest suite passes at HEAD (1,403 tests) once dependencies are installed
 and `core-libs/petal-ui` has a debug `petal-ui-run`.
 
 ## 7. The headless panel test loop is not deterministic or documented right
+DONE dt() is virtual on a ticked panel (and across /panel/reset); POST /mouse takes "pane"; tools/panel-test.sh; skill step 4 runs check --host garden and lint
 
 - `dt()` stays on the wall clock after `POST /tick`, while `time()` goes
   virtual. A sim stepped by `dt()` drifts whenever a test sends input between

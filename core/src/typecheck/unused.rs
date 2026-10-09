@@ -7,6 +7,14 @@
 //! nothing — a list-building loop stays empty with no error. This pass turns
 //! that into a compile-time warning pointing at the exact call.
 //!
+//! Two more findings ride on the same used/discarded walk, both about a line
+//! whose value silently goes nowhere:
+//! - a **bare computation** in statement position (`n + 1`, `x == 5`), see
+//!   [`is_bare_computation`];
+//! - a line that **starts with `-`** under a line it was meant to continue, see
+//!   [`is_broken_continuation`]. A leading `-` starts a new statement, so a sum
+//!   written down the page returns only its last line.
+//!
 //! Precision over recall, by construction:
 //! - Only calls to a fixed set of **known-pure builtins**
 //!   ([`crate::builtins::is_pure_builtin`]) warn. Effectful natives (`print`,
@@ -100,10 +108,24 @@ impl Walker {
     fn walk_block_tail(&mut self, stmts: &[Stmt], block_used: bool, for_collects: bool) {
         self.push_scope();
         let last = stmts.len().wrapping_sub(1);
+        let mut reported = false;
         for (i, stmt) in stmts.iter().enumerate() {
             let tail = i == last;
+            // The `-` line itself was reported on the previous turn.
+            let was_reported = std::mem::take(&mut reported);
+            // A line that starts with `-` under an unfinished-looking line:
+            // report the `-` line once, and say nothing more about the line
+            // above it (its discarded value is the same mistake).
+            let continued = stmts
+                .get(i + 1)
+                .is_some_and(|next| is_broken_continuation(stmt, next));
+            if continued {
+                self.warn_broken_continuation(&stmts[i + 1]);
+                reported = true;
+            }
+            let quiet = continued || was_reported;
             match &stmt.kind {
-                StmtKind::Expr(e) => self.walk_expr(e, tail && block_used),
+                StmtKind::Expr(e) => self.walk_expr(e, quiet || (tail && block_used)),
                 // A `for` in the tail of a collecting block collects, exactly
                 // as the expression form does: the loop parses as a statement
                 // (`fn f() for x in xs do g(x) end end`), but tail position
@@ -200,6 +222,14 @@ impl Walker {
                     }
                 }
             }
+            if is_bare_computation(expr) {
+                self.diags.push(Diagnostic::new(
+                    expr.span,
+                    "the value of this expression is discarded, so the line has no effect. \
+                     Bind it (`let x = …`), or remove the line."
+                        .to_string(),
+                ));
+            }
         }
         // Descend into children, tracking used-ness so nested discarded pure
         // calls are caught too. Only the nodes that propagate used-ness or open
@@ -253,6 +283,16 @@ impl Walker {
         }
     }
 
+    fn warn_broken_continuation(&mut self, stmt: &Stmt) {
+        self.diags.push(Diagnostic::new(
+            stmt.span,
+            "a line that starts with `-` is a new statement (a negation), not a continuation \
+             of the line above, so the two are not subtracted. To continue the expression, end \
+             the line above with the `-`."
+                .to_string(),
+        ));
+    }
+
     fn warn_discarded(&mut self, call: &Expr, name: &str) {
         let message = if looks_mutating(name) {
             format!(
@@ -264,6 +304,107 @@ impl Walker {
             format!("result of `{name}` is discarded, so this call has no effect.")
         };
         self.diags.push(Diagnostic::new(call.span, message));
+    }
+}
+
+/// An operator expression with nothing in it that could do work: arithmetic,
+/// comparison, `++` or a negation over operands that are themselves bare
+/// (names, literals, field and index reads). In statement position its value
+/// goes nowhere, so the line is dead — `x == 5` meant as `x = 5`, `n + 1` meant
+/// as `n += 1`.
+///
+/// The short-circuit operators are left out because `ok and report()` is
+/// control flow, and anything containing a call is left out because the call
+/// may be the point of the line.
+fn is_bare_computation(expr: &Expr) -> bool {
+    fn bare(e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::CellGet(_) => true,
+            ExprKind::FieldAccess { object, .. } => bare(object),
+            ExprKind::IndexAccess { object, index } => bare(object) && bare(index),
+            ExprKind::UnaryOp { operand, .. } => bare(operand),
+            ExprKind::BinaryOp { op, left, right } => {
+                !is_short_circuit(*op) && bare(left) && bare(right)
+            }
+            _ => false,
+        }
+    }
+    match &expr.kind {
+        ExprKind::BinaryOp { .. } | ExprKind::UnaryOp { .. } => bare(expr),
+        _ => false,
+    }
+}
+
+fn is_short_circuit(op: ast::BinOp) -> bool {
+    matches!(op, ast::BinOp::And | ast::BinOp::Or | ast::BinOp::Coalesce)
+}
+
+/// Does the first token of `expr` negate? True for `-x`, and for anything whose
+/// leftmost operand is one: `-c * 4`, `-v.x`, `-f(x) + 1`.
+fn starts_with_negation(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::UnaryOp {
+            op: ast::UnaryOp::Neg,
+            ..
+        } => true,
+        ExprKind::BinaryOp { left, .. } => starts_with_negation(left),
+        ExprKind::Call { function, .. } => starts_with_negation(function),
+        ExprKind::FieldAccess { object, .. } | ExprKind::IndexAccess { object, .. } => {
+            starts_with_negation(object)
+        }
+        ExprKind::OptionalAccess(inner) => starts_with_negation(inner),
+        _ => false,
+    }
+}
+
+/// Could a `-` on the next line have been meant to continue `expr`? Not when
+/// it closes with its own `end` (or is a lambda or element): nobody subtracts
+/// from an `if … end` by accident.
+fn can_be_continued(expr: &Expr) -> bool {
+    !matches!(
+        expr.kind,
+        ExprKind::If { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::For { .. }
+            | ExprKind::Block(_)
+            | ExprKind::Lambda { .. }
+            | ExprKind::Element { .. }
+    )
+}
+
+/// Is `next` a line that starts with `-` where the author almost certainly
+/// meant to go on subtracting from `prev`?
+///
+/// Every other binary operator continues the line above when it leads a line;
+/// `-` cannot, because `-x` is also a whole expression, so the parser starts a
+/// new statement and the sum written down the page silently loses its top.
+/// Two shapes give the mistake away:
+///
+/// - the line above is an expression statement that does nothing by itself (a
+///   name, a product, a field read): its value is thrown away, and only a
+///   continuation would have used it;
+/// - the `-` line is indented deeper than the statement above it, which is how
+///   a continuation is laid out and never how a new statement is. This is the
+///   only evidence accepted under a `let`, an assignment, a `return` or a call,
+///   where `let d = a - b` followed by `-d` is an ordinary function body.
+fn is_broken_continuation(prev: &Stmt, next: &Stmt) -> bool {
+    let StmtKind::Expr(e) = &next.kind else {
+        return false;
+    };
+    if !starts_with_negation(e) || next.span.start.line <= prev.span.start.line {
+        return false;
+    }
+    let indented = next.span.start.column > prev.span.start.column;
+    match &prev.kind {
+        StmtKind::Expr(p) => {
+            can_be_continued(p) && (indented || !matches!(p.kind, ExprKind::Call { .. }))
+        }
+        StmtKind::Let { value, .. }
+        | StmtKind::State { init: value, .. }
+        | StmtKind::Assign { value, .. }
+        | StmtKind::Set { value, .. }
+        | StmtKind::Return(Some(value)) => indented && can_be_continued(value),
+        _ => false,
     }
 }
 
@@ -317,6 +458,47 @@ mod tests {
             .into_iter()
             .map(|d| d.message)
             .collect()
+    }
+
+    #[test]
+    fn leading_minus_continuation_warns_once_on_the_minus_line() {
+        let m = messages("fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))");
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert!(m[0].contains("starts with `-`"), "{m:?}");
+        // Under a bare name, with no extra indentation.
+        let m = messages("fn f(a, b)\n  a\n  - b\nend\nprint(f(1, 2))");
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert!(m[0].contains("starts with `-`"), "{m:?}");
+    }
+
+    #[test]
+    fn leading_minus_under_a_let_or_call_needs_deeper_indentation() {
+        let w = "a line that starts with `-`";
+        let m = messages("fn f(a, b)\n  let x = a\n    - b\n  x\nend\nprint(f(1, 2))");
+        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
+        let m = messages("fn f(a, b)\n  return a\n    - b\nend\nprint(f(1, 2))");
+        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
+        let m = messages("fn f(a, b)\n  g(a)\n    - g(b)\nend\nfn g(x)\n  x\nend\nprint(f(1, 2))");
+        assert!(m.len() == 1 && m[0].contains(w), "{m:?}");
+        // The ordinary shapes: a negated tail after a `let`, a call, a block.
+        assert!(messages("fn f(a, b)\n  let d = a - b\n  -d\nend\nprint(f(1, 2))").is_empty());
+        assert!(messages("fn f(a)\n  print(a)\n  -a\nend\nprint(f(1))").is_empty());
+        assert!(
+            messages("fn f(a)\n  if a > 0 then\n    print(a)\n  end\n  -a\nend\nprint(f(1))")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn discarded_bare_computation_warns() {
+        let m = messages("let n = 1\nn + 1\nprint(n)");
+        assert!(m.len() == 1 && m[0].contains("value of this expression is discarded"), "{m:?}");
+        assert_eq!(messages("fn f(x)\n  x == 5\n  x\nend\nprint(f(1))").len(), 1);
+        // A value that is used, a short-circuit, and a line with a call in it.
+        assert!(messages("let n = 1\nn + 1").is_empty());
+        assert!(messages("fn f(x)\n  x + 1\nend\nprint(f(1))").is_empty());
+        assert!(messages("let ok = true\nok and print(1)\nprint(2)").is_empty());
+        assert!(messages("fn g()\n  1\nend\ng() + 1\nprint(2)").is_empty());
     }
 
     #[test]

@@ -300,6 +300,9 @@ pub struct Compiler {
     // `compile()`. Used at call sites to detect a bare, unshadowed builtin call
     // and compile it to a static `BuiltinCall` instead of a dynamic `Call`.
     builtin_phantoms: HashMap<String, TermId>,
+    /// Every enum name declared by a module compiled so far, for type
+    /// annotations (`fn f() -> Shape`). See `typecheck::CheckContext`.
+    enum_type_names: HashSet<String>,
 
     // ── Module system state (see docs/module-system.md) ──────────────
     //
@@ -391,6 +394,7 @@ impl Compiler {
             call_site_ordinals: HashMap::new(),
             pending_lambda_name: None,
             builtin_phantoms: HashMap::new(),
+            enum_type_names: HashSet::new(),
             current_module: None,
             error_file: None,
             module_aliases: HashMap::new(),
@@ -662,6 +666,10 @@ impl Compiler {
         })?;
         self.prescan_declarations(module, &stmts);
         let namespaces = self.visible_namespaces();
+        // Modules compile dependencies-first, so by the time a module is
+        // checked every enum it could import has been seen.
+        self.enum_type_names
+            .extend(crate::typecheck::enum_names(&stmts));
         let (diags, dispatch, inferences) = crate::typecheck::check_module(
             &stmts,
             &crate::typecheck::CheckContext {
@@ -672,6 +680,7 @@ impl Compiler {
                 module: &module_identity(module),
                 collect_inferences: self.collect_inferences,
                 param_reqs: Some(&self.fn_param_reqs),
+                enum_names: Some(&self.enum_type_names),
             },
         );
         self.warnings.extend(diags);
@@ -684,6 +693,12 @@ impl Compiler {
         self.method_dispatch = dispatch;
         self.warnings
             .extend(crate::typecheck::unused::check_unused(&stmts));
+        self.warnings
+            .extend(crate::typecheck::shadow::check_enum_collisions(&stmts));
+        let shadowed = crate::typecheck::shadow::check_shadowed_builtins(&stmts, &|name| {
+            self.builtin_phantoms.contains_key(name)
+        });
+        self.warnings.extend(shadowed);
         // `export` is the old spelling of `pub`: still accepted, but said so.
         for &span in &module.deprecated_exports {
             self.warn_at(

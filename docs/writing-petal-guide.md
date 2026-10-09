@@ -803,7 +803,7 @@ takes an int or a float — that is most arithmetic.
 The vocabulary is closed, and every name is a **single bare word**: `int`,
 `float`, `num` (int *or* float), `bool`, `string` (alias `str`), `list`,
 `record`, `function`, `nil`, `enum`, `vec2`, `vec3`, `element`, `any` — plus the name of
-any class. There are no parameterized types: `list<int>` and record shapes are
+any class or enum. (An enum's name documents the slot and is checked as `any`.) There are no parameterized types: `list<int>` and record shapes are
 not expressible, so `list` and `record` are opaque and their elements are never
 checked. An unknown name warns (`unknown type name \`banana\``) rather than
 failing. An `int` satisfies a `float` slot; the reverse needs an explicit
@@ -841,8 +841,9 @@ search paths, what `pub` covers, how modules share state — is in the
 next one with it.** This is the guide's one genuine footgun, because getting it
 wrong is silent. Most operators (`+`, `|>`, `&&`, `??`) continue a line from
 either end — but `-` does not, since a leading `-` is a valid unary minus
-starting a fresh statement. So this compiles, passes `check --strict`, and
-returns the wrong number:
+starting a fresh statement. So this compiles and returns the wrong number.
+`petal check` warns on the `-` line (and `check --strict` fails on it), but
+`petal run` goes ahead:
 
 ```petal
 fn score(a, b, c)
@@ -1156,6 +1157,10 @@ tell you the fix in the message. A sample:
 | bare `n` inside a fn, `n` is a `var` | ``` write `get n` to read the cell's current value ``` |
 | `el.title` where there is no `title` | ``No field 'title' on record``, plus the source of `el` |
 | `f(1)` where every `f` takes 2 | ``` `f` expects 2 arguments, got 1 ``` — from `check`, before you run |
+| a line starting with `-` under the line it should continue | ``` a line that starts with `-` is a new statement (a negation), not a continuation of the line above ``` — from `check` |
+| `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `check` |
+| `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `check` |
+| `enum A None end` and `enum B None end` | ``` variant `None` is declared by both `enum A` and `enum B` ``` — from `check` |
 
 ---
 

@@ -313,3 +313,52 @@ describe("statically-known arity errors", () => {
     expect(stderr).toMatch(/expects 2 arguments/);
   });
 });
+
+// Programs that compile and run but compute the wrong thing: each must fail
+// `check --strict` with a warning that names the mistake.
+describe("silently wrong programs warn", () => {
+  it("a leading `-` under a line it was meant to continue", () => {
+    const sum = "fn score(a, b, c)\n  a * 2\n    + b * 3\n    - c * 4\nend\nprint(score(1, 2, 3))";
+    const out = checkJson(sum);
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/starts with `-` is a new statement/);
+    expect(out.warnings[0].line).toBe(4);
+    expect(checkStrict(sum).code).toBe(1);
+    // The fix the guide gives: end the line with the operator.
+    const fixed = "fn score(a, b, c)\n  a * 2 +\n    b * 3 -\n    c * 4\nend\nprint(score(1, 2, 3))";
+    expect(checkJson(fixed).warnings).toEqual([]);
+    // A negated tail after a `let` is an ordinary function body.
+    expect(checkJson("fn f(a, b)\n  let d = a - b\n  -d\nend\nprint(f(1, 2))").warnings).toEqual([]);
+  });
+
+  it("a bare computation whose value is discarded", () => {
+    const out = checkJson("let n = 1\nn + 1\nprint(n)");
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/value of this expression is discarded/);
+  });
+
+  it("a variant two enums declare, and a variant named like a `let`", () => {
+    const two = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(None)");
+    expect(two.warnings).toHaveLength(1);
+    expect(two.warnings[0].message).toMatch(/declared by both `enum A` and `enum B`/);
+    const over = checkJson("let Red = 5\nenum Color\n  Red,\nend\nprint(Red)");
+    expect(over.warnings).toHaveLength(1);
+    expect(over.warnings[0].message).toMatch(/same name as the `let Red` on line 1/);
+  });
+
+  it("a `state` that shadows a builtin called in the same file", () => {
+    const out = checkJson('state split = 396\nfn parts(text)\n  split(text, ",")\nend\nprint(split)');
+    expect(out.warnings).toHaveLength(1);
+    expect(out.warnings[0].message).toMatch(/`state split` declared on line 1, which shadows the builtin `split`/);
+    expect(out.warnings[0].line).toBe(3);
+    // Not called, or declared below the caller: the builtin is still reached.
+    expect(checkJson("let len = 3\nprint(len)").warnings).toEqual([]);
+    expect(checkJson('fn parts(t)\n  split(t, ",")\nend\nlet split = 1\nprint(parts("a,b"), split)').warnings).toEqual([]);
+  });
+
+  it("an enum name is a type name", () => {
+    const src = "enum Shape\n  Circle(r),\n  Dot,\nend\nfn f(s: Shape) -> Shape\n  s\nend\nprint(f(Dot))";
+    expect(checkStrict(src).code).toBe(0);
+    expect(checkJson("fn f() -> Shapee\n  1\nend").warnings[0].message).toMatch(/unknown type name `Shapee`/);
+  });
+});

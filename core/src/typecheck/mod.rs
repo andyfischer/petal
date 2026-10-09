@@ -12,6 +12,7 @@ pub mod builtin_types;
 pub mod globals;
 pub mod infer;
 pub mod param_reqs;
+pub mod shadow;
 pub mod unused;
 
 use crate::ast::{
@@ -166,6 +167,17 @@ struct Checker<'a> {
     /// warn about. Set immediately before entering the spine and consumed on
     /// entry to each expression, like [`Checker::slot`].
     tolerant_access: bool,
+    /// Every enum name an annotation in this module may use. See
+    /// [`Checker::resolve_ann`].
+    enum_names: HashSet<String>,
+}
+
+/// The names of the enums `stmts` declares at its top level.
+pub fn enum_names(stmts: &[Stmt]) -> impl Iterator<Item = String> + '_ {
+    stmts.iter().filter_map(|s| match &s.kind {
+        StmtKind::EnumDecl { name, .. } => Some(name.clone()),
+        _ => None,
+    })
 }
 
 /// Everything one walk of a module needs to know about the compilation around
@@ -193,6 +205,10 @@ pub struct CheckContext<'a> {
     /// parameters ([`param_reqs`]), keyed like `fn_signatures`. `None` checks
     /// only declared types.
     pub param_reqs: Option<&'a param_reqs::ParamReqs>,
+    /// Enum names declared by the modules compiled before this one, which an
+    /// annotation here may name (`fn f() -> Shape`). The module's own enums
+    /// are always accepted; `None` accepts only those.
+    pub enum_names: Option<&'a HashSet<String>>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -212,6 +228,7 @@ impl<'a> CheckContext<'a> {
             module: "",
             collect_inferences: false,
             param_reqs: None,
+            enum_names: None,
         }
     }
 }
@@ -239,6 +256,9 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         lambda_rets: HashMap::new(),
         module: opts.module.to_string(),
         tolerant_access: false,
+        enum_names: enum_names(stmts)
+            .chain(opts.enum_names.into_iter().flatten().cloned())
+            .collect(),
     };
     checker.bind_enum_variants(stmts);
     for stmt in stmts {
@@ -694,9 +714,15 @@ impl<'a> Checker<'a> {
     /// The type an annotation denotes here. The parser resolves the built-in
     /// vocabulary without context; a class name can only be resolved against
     /// this module's [`ClassTable`], which is what this adds.
+    ///
+    /// An enum's name is accepted too, as `any`: the pass has no type for an
+    /// enum value (a variant is a bare name or a constructor, see
+    /// [`Checker::bind_enum_variants`]), so the annotation documents the
+    /// function without constraining it. A class of the same name wins.
     fn resolve_ann(&self, ann: &TypeAnn) -> Option<Type> {
         ann.resolved
             .or_else(|| self.classes.lookup(&ann.name).map(Type::Class))
+            .or_else(|| self.enum_names.contains(&ann.name).then_some(Type::Any))
     }
 
     /// How a type is spelled in a diagnostic — the class's own name for a
@@ -2265,6 +2291,18 @@ mod tests {
         let w = warns("let x: banana = 5");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("banana"));
+    }
+
+    #[test]
+    fn enum_name_is_accepted_as_a_type() {
+        let e = "enum Shape\n  Circle(r),\n  Dot,\nend\n";
+        assert!(warns(&format!("{e}fn f() -> Shape\n  Circle(1)\nend")).is_empty());
+        assert!(warns(&format!("{e}fn g(s: Shape)\n  s\nend\nlet d: Shape = Dot\ng(d)")).is_empty());
+        // Declared below its first use, like a class.
+        assert!(warns(&format!("fn f() -> Shape\n  Dot\nend\n{e}")).is_empty());
+        // A variant is a value, not a type.
+        let w = warns(&format!("{e}fn f() -> Dot\n  Dot\nend"));
+        assert!(w.iter().any(|m| m.contains("unknown type name `Dot`")), "{w:?}");
     }
 
     #[test]

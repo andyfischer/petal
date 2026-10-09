@@ -1566,6 +1566,15 @@ let c = Red
 let pink = Custom(255, 192, 203)
 ```
 
+A variant is a top-level name, not a member of its enum: you write `Red`, not
+`Color.Red`. So variant names share one namespace with every other top-level
+name, and `petal check` warns when two enums declare the same variant, or when
+a variant has the same name as a top-level `let`, `state`, `fn` or `class` —
+one of the two would silently replace the other.
+
+The enum's own name is a type name: `fn area(s: Shape) -> float`. The checker
+reads it as `any`, so it documents the slot without constraining it.
+
 ## Classes & Methods
 
 A `class` declares a **named record type**: fields with optional types, and a

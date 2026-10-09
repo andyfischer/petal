@@ -341,9 +341,11 @@ OPTIONS
               over-declared. See docs/tasks/declarative-effect-refactoring.md.
 
        --policy <name>
-              Run under a named run policy: fast (the default), baseline
-              (no optimizer, no memoization), explain, or replay, optionally
-              followed by modifiers such as -memo or +gate. Output must be
+              Run under a named run policy: fast, baseline (no optimizer,
+              no memoization), explain, or replay, optionally followed by
+              modifiers such as -memo or +gate. Without the flag, run uses
+              fast-memo: a script that runs once and exits has no later run
+              for a memoized call to be replayed in. Output must be
               identical under every policy, so a difference is a bug in the
               layer the two policies differ by. PETAL_POLICY=<name> does the
               same for every command and embedder; the flag wins.

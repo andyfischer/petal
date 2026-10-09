@@ -108,10 +108,14 @@ Options:
   and `choose` replay identically. Decimal or `0x`-hex. Without it the seed
   comes from the clock. `PETAL_SEED=<n>` does the same for every command; the
   flag wins when both are set.
-- `--policy <name>` — run under a named run policy: `fast` (the default),
-  `baseline` (no optimizer, no memoization), `explain` (keeps every traced
-  instruction, no memoization) or `replay`, optionally followed by modifiers
-  such as `-memo` or `+gate`. Output must be identical under every policy, so
+- `--policy <name>` — run under a named run policy: `fast`, `baseline` (no
+  optimizer, no memoization), `explain` (keeps every traced instruction, no
+  memoization) or `replay`, optionally followed by modifiers such as `-memo`
+  or `+gate`. Without the flag (and without `PETAL_POLICY`), `run` uses
+  `fast-memo`: the script runs once and exits, so a memoized call has no later
+  run to be replayed in, and recording it would only cost time and memory. A
+  host that runs a script every frame defaults to `fast`, memoization
+  included. Output must be identical under every policy, so
   a difference is a bug in the layer the two differ by. `PETAL_POLICY=<name>`
   does the same for every command and embedder; the flag wins.
 - `--no-opt` — same as `--policy baseline`. `PETAL_OPT=off` does the same.

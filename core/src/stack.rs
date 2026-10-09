@@ -312,7 +312,9 @@ impl Stack {
     /// Record that `key` was read or written this run, so the end-of-run sweep
     /// keeps its slot. Every state instruction goes through here.
     pub fn touch_state(&mut self, key: &RuntimeStateKey) {
-        if self.open_touch_captures > 0 {
+        // A slot read and then written is touched twice running; the journal
+        // only has to name it once (a capture returns distinct keys anyway).
+        if self.open_touch_captures > 0 && self.touch_journal.last() != Some(key) {
             self.touch_journal.push(key.clone());
         }
         // Check before inserting: a slot touched many times in one run (a
@@ -362,6 +364,19 @@ impl Stack {
             self.touch_journal.clear();
         }
         StateTouches(keys)
+    }
+
+    /// End a capture whose keys nobody wants: a memo scope that turned out
+    /// not to be recordable. [`end_touch_capture`](Self::end_touch_capture)
+    /// copies every key touched since the capture began, which a scope
+    /// enclosing a long run pays for each time one of its ancestors closes.
+    pub fn discard_touch_capture(&mut self, capture: TouchCapture) {
+        debug_assert!(self.open_touch_captures > 0, "no touch capture is open");
+        let _ = capture;
+        self.open_touch_captures = self.open_touch_captures.saturating_sub(1);
+        if self.open_touch_captures == 0 {
+            self.touch_journal.clear();
+        }
     }
 
     /// Mark every key in `touches` as touched this run, as if the section that

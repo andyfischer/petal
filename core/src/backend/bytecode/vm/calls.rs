@@ -558,6 +558,12 @@ impl<'a> Vm<'a> {
             }
             !tiny
         };
+        // Nor does a call nested too deep: a record costs its path's length
+        // to make and keep, so recursion that opened a scope per level paid
+        // quadratically in depth (`MAX_SCOPE_FRAME_DEPTH`). Tested before the
+        // path is built, which is itself a walk of the frames.
+        let mut scope =
+            scope && self.stack.vm_frames.len() <= crate::memo::MAX_SCOPE_FRAME_DEPTH;
         if scope {
             // The scope's path: the callee frame's, which is the caller's
             // full path plus this call's part (see `push_frame`).
@@ -565,7 +571,13 @@ impl<'a> Vm<'a> {
             let mut path = FramePath::new();
             self.full_path_into(caller, &mut path);
             path.push(crate::stack::PathPart::Call(site));
-            if let Some(value) = self.memo_try(&path, fn_id, cid, args) {
+            // A full table records nothing more this run, so a call with no
+            // record to replay has nothing to gain from a scope: it would be
+            // opened, tracked and folded into its parent on the way out.
+            if !self.stack.memo.has_room() && !self.stack.memo.contains(&path) {
+                self.stack.memo.stats.inlined += 1;
+                scope = false;
+            } else if let Some(value) = self.memo_try(&path, fn_id, cid, args) {
                 self.profile.bench.note_replay(fn_id);
                 if let Some(dst) = dst {
                     self.set(caller, dst, value);

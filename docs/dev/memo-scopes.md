@@ -119,6 +119,28 @@ it runs: the spreadsheet's formula evaluator records ~30k scopes on the frame
 that commits an edit and the next run evicts all of them, which cost more than
 memoization saved on the rest of that app.
 
+**Bounds.** A record is keyed by its whole call path and names each child by
+the child's, so it costs the depth it was made at, and three limits keep the
+table from growing with the program instead of with the UI (`core/src/memo.rs`):
+
+- No scope opens deeper than `MAX_SCOPE_FRAME_DEPTH` (96) frames. A deeper
+  call runs normally and its reads land in the enclosing scope, as a folded
+  scope's do. Without it, recursion `d` deep kept `d` records of `d` parts
+  each: 479 MB at depth 4,900, now 8 MB.
+- The table holds at most `MAX_SLOTS` (200,000) records and `MAX_TABLE_BYTES`
+  (96 MB by its own estimate; the process sees about 130 MB) of them. Past
+  either it records nothing more for the run; a call with no record to replay
+  then opens no scope at all. Records already there still validate and
+  replay. Naive `fib(27)` filled the table by count alone at 541 MB.
+- A scope stops collecting dependencies at `MAX_SCOPE_DEPS` rather than at its
+  close, and a scope that will not be recorded does not copy out the state
+  keys it touched.
+
+What this gives up: a call nested more than 96 frames deep is never replayed
+on its own, only as part of the scope 96 frames up, and a script that makes
+more than about 40,000 records in one run memoizes only the first of them.
+No UI in `examples/` comes near either.
+
 **Lifecycle.** Records are evicted when a run completes without visiting
 them, the rule the state sweep applies. A program transfer (hot reload)
 clears the table, since records name the old program's functions. Forcing a
@@ -130,6 +152,7 @@ special: the validation reads the live slots.
 | | |
 |---|---|
 | Switch | `RunPolicy::memo` (on under `fast` and `replay`, the default being `fast`; off under `baseline` and `explain`), set with `Env::set_policy`, `Headless::set_policy`, `PETAL_POLICY` or `--policy`. |
+| `petal run` | off unless `--policy` or `PETAL_POLICY` names a policy: the script runs once and exits, so no record would ever be replayed, and recording cost a recursive program 10x in time (`fib(27)`: 0.45 s against 0.04 s) |
 | Off regardless | while the `explain` trace is on (`Env::memo_enabled`): a trace of a replayed scope would have no instructions in it |
 | Host calls | `Env::call_function` runs outside any frame's run and is never a scope |
 | Counters | `Env::memo_stats` / `memo_slots`; `petal-ui-run --memo-stats`; `bench_panel` prints them |

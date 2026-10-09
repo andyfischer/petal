@@ -65,8 +65,17 @@ pub(super) fn handle_run(
     if let Some(seed) = seed {
         env.set_seed(seed);
     }
-    if let Some(policy) = opts.policy {
-        env.set_policy(policy);
+    match opts.policy {
+        Some(policy) => env.set_policy(policy),
+        // `petal run` runs the script once and exits, so a memo record made
+        // here is never replayed: recording is all cost, and for a recursive
+        // program a large one. Unless a policy was asked for by name, the
+        // run keeps the rest of the default policy and leaves memoization
+        // off. A host that runs a script every frame keeps it on.
+        None if std::env::var_os("PETAL_POLICY").is_none() => {
+            env.set_policy(env.policy().with_memo(false));
+        }
+        None => {}
     }
     if record_trace.is_some() {
         env.trace_mut().enable();

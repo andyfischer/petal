@@ -40,7 +40,7 @@ impl<'a> Vm<'a> {
     #[inline]
     pub(super) fn memo_note_observation(&mut self, term: TermId, value: Value) {
         if let Some(s) = self.memo_recording_scope() {
-            s.deps.push(Dep::Observed { term, value });
+            s.note(|| Dep::Observed { term, value });
         }
     }
 
@@ -48,7 +48,7 @@ impl<'a> Vm<'a> {
     #[inline]
     pub(super) fn memo_note_state_read(&mut self, key: &RuntimeStateKey, value: Option<Value>) {
         if let Some(s) = self.memo_recording_scope() {
-            s.deps.push(Dep::StateRead {
+            s.note(|| Dep::StateRead {
                 key: key.clone(),
                 value,
             });
@@ -70,7 +70,7 @@ impl<'a> Vm<'a> {
         if mutated || self.memo_value_escapes_local_cell(value) {
             self.stack.memo.note_effect();
         } else if let Some(s) = self.stack.memo.innermost() {
-            s.deps.push(Dep::StateWrite {
+            s.note(|| Dep::StateWrite {
                 key: key.clone(),
                 value,
             });
@@ -114,7 +114,7 @@ impl<'a> Vm<'a> {
         if let Some(s) = self.stack.memo.innermost()
             && !s.local_cells.contains(&cell)
         {
-            s.deps.push(Dep::CellRead {
+            s.note(|| Dep::CellRead {
                 cell,
                 value,
                 mutations,
@@ -148,7 +148,7 @@ impl<'a> Vm<'a> {
         } else if let Some(s) = self.stack.memo.innermost()
             && !s.local_cells.contains(&cell)
         {
-            s.deps.push(Dep::CellWrite { cell, value });
+            s.note(|| Dep::CellWrite { cell, value });
         }
     }
 
@@ -188,12 +188,12 @@ impl<'a> Vm<'a> {
         }
         if effects.reads.contains(InputClasses::HOST_DATA) {
             if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::HostRead);
+                s.note(|| Dep::HostRead);
             }
         }
         if effects.reads.contains(InputClasses::RESOURCES) {
             if let Some(s) = self.stack.memo.innermost() {
-                s.deps.push(Dep::ResourcesRead);
+                s.note(|| Dep::ResourcesRead);
             }
         }
         let probed = InputClasses(
@@ -228,7 +228,7 @@ impl<'a> Vm<'a> {
         }
         let args_fp = container_args_fingerprint(args, self.heap);
         if let Some(s) = self.stack.memo.innermost() {
-            s.deps.push(Dep::Probe {
+            s.note(|| Dep::Probe {
                 native: nid,
                 args: args.into(),
                 args_fp,
@@ -293,10 +293,9 @@ impl<'a> Vm<'a> {
             self.stack.vm_frames.len(),
             "memo scope closed off its frame"
         );
-        let touches = match sc.capture.take() {
-            Some(c) => self.stack.end_touch_capture(c),
-            None => Default::default(),
-        };
+        // Ended below, once it is known whether the record is kept: the keys
+        // are copied out only for a record that will hold them.
+        let capture = sc.capture.take();
         let detached = sc.previous.is_some();
         let insts = self.stack.insts.saturating_sub(sc.insts_at_entry);
 
@@ -335,6 +334,9 @@ impl<'a> Vm<'a> {
             || sc.deps.len() > MAX_SCOPE_DEPS
             || holds_local_cell(&result, self.heap, self.closures, &sc.local_cells);
         if effectful {
+            if let Some(c) = capture {
+                self.stack.discard_touch_capture(c);
+            }
             self.stack.memo.stats.effectful += 1;
             if sc.wrote_in_place && !detached {
                 self.stack.memo.note_unrecordable(sc.fn_id, sc.site);
@@ -361,12 +363,15 @@ impl<'a> Vm<'a> {
             // Fold into the parent: its record covers this call's reads,
             // observations and output range, and inherits its cells so a
             // later escape through the parent's result is still caught.
+            if let Some(c) = capture {
+                self.stack.discard_touch_capture(c);
+            }
             self.stack.memo.stats.inlined += 1;
             if !worth {
                 self.stack.memo.note_folded(sc.fn_id, sc.site);
             }
             if let Some(p) = self.stack.memo.innermost() {
-                p.deps.append(&mut sc.deps);
+                p.absorb(&mut sc.deps);
                 p.local_cells.extend(sc.local_cells.drain());
             }
             return;
@@ -377,7 +382,14 @@ impl<'a> Vm<'a> {
             Dep::Child { path, .. } => self.stack.memo.get(path).is_some_and(|c| c.pure),
             _ => true,
         });
+        let touches = match capture {
+            Some(c) => self.stack.end_touch_capture(c),
+            None => Default::default(),
+        };
         self.stack.memo.note_recorded(sc.fn_id, sc.site);
+        // The record keeps these for as long as it lives; the slack a
+        // growing `Vec` leaves is most of a small record.
+        sc.deps.shrink_to_fit();
         let serial = self.stack.memo.next_serial();
         let slot = MemoSlot {
             serial,
@@ -394,6 +406,7 @@ impl<'a> Vm<'a> {
             host_revision: self.stack.run_deps.host_data_now(),
             resources_revision: self.resources.revision(),
             pure,
+            bytes: 0,
         };
         if let Some(previous) = sc.previous {
             let changed = !self.memo_same_effects(&previous, &slot);
@@ -402,7 +415,7 @@ impl<'a> Vm<'a> {
             }
             self.stack.memo.last_reexec_changed = Some(changed);
         } else if let Some(p) = self.stack.memo.innermost() {
-            p.deps.push(Dep::Child {
+            p.note(|| Dep::Child {
                 path: sc.path.clone(),
                 serial,
             });
@@ -761,7 +774,7 @@ impl<'a> Vm<'a> {
             {
                 let mut sc = self.stack.memo.open.pop().unwrap();
                 if let Some(c) = sc.capture.take() {
-                    let _ = self.stack.end_touch_capture(c);
+                    self.stack.discard_touch_capture(c);
                 }
             }
             self.stack.memo.poisoned = true;
@@ -829,7 +842,7 @@ impl<'a> Vm<'a> {
         if self.stack.memo.recording() {
             let serial = slot.serial;
             if let Some(p) = self.stack.memo.innermost() {
-                p.deps.push(Dep::Child {
+                p.note(|| Dep::Child {
                     path: path.clone(),
                     serial,
                 });

@@ -121,6 +121,26 @@ pub const MIN_SCOPE_INSTS: u64 = 32;
 /// a pathological call graph bounds its own memory.
 pub const MAX_SLOTS: usize = 200_000;
 
+/// The memory the table's records may hold, by [`MemoTable::bytes`]'s
+/// estimate. The other half of the bound: a record's size is not fixed — it
+/// carries its own path, a path per child, and whatever it emitted — so a
+/// count alone let a naive `fib(27)` reach [`MAX_SLOTS`] at about 2.7 KB a
+/// record (541 MB). Past this the table stops recording for the run, exactly
+/// as it does past `MAX_SLOTS`. A record costs 1.5 to 3 KB, so this is room
+/// for 30,000 to 60,000 of them: several scopes for each row of a 5,000-row
+/// list, which is the largest UI the memo has been measured on.
+pub const MAX_TABLE_BYTES: usize = 96 * 1024 * 1024;
+
+/// The deepest frame a memo scope opens at. A scope's record is keyed by its
+/// whole call path and names each child by the child's, so a record `d` calls
+/// deep costs `O(d)` to make and to keep, and recursion `d` deep cost
+/// `O(d^2)`: 479 MB at depth 4,900. A call nested deeper than this runs
+/// without a scope and its reads land in the enclosing one, as a folded
+/// scope's do. UI nesting (panel, column, row, widget, prelude helper) and
+/// a tree view's recursion stay well inside it; what crosses it is a
+/// recursive algorithm, whose levels differ every run anyway.
+pub const MAX_SCOPE_FRAME_DEPTH: usize = 96;
+
 /// Node budget for one argument comparison. A row record, a style record, a
 /// short list of points compare in full; a large structure passed by a fresh
 /// allocation every frame is deemed different, which costs a re-run.
@@ -247,6 +267,50 @@ pub struct MemoSlot {
     /// scope is re-executed during a parent's validation: a re-execution's
     /// writes would land before the parent's own re-run applied them again.
     pub pure: bool,
+    /// What the table charged for this record ([`MemoTable::bytes`]); set by
+    /// [`MemoTable::insert`], whatever the caller put here.
+    pub bytes: usize,
+}
+
+impl MemoSlot {
+    /// An estimate of the memory this record keeps, stored under `path`: its
+    /// table entry, plus what its path, values, dependencies and output hold
+    /// on the heap. The entry is charged at 7/4 of its size, the middle of
+    /// what a hash table that doubles when 7/8 full spends per entry.
+    fn approx_bytes(&self, path: &ScopePath) -> usize {
+        use std::mem::size_of;
+        fn spilled<A: smallvec::Array>(v: &SmallVec<A>) -> usize {
+            if v.spilled() {
+                v.capacity() * size_of::<A::Item>()
+            } else {
+                0
+            }
+        }
+        let mut n = size_of::<(ScopePath, MemoSlot)>() * 7 / 4 + spilled(path);
+        n += spilled(&self.captures) + spilled(&self.args);
+        n += self.deps.capacity() * size_of::<Dep>();
+        for d in &self.deps {
+            n += match d {
+                Dep::Child { path, .. } => spilled(path),
+                Dep::Probe { args, .. } => spilled(args),
+                Dep::StateRead { key, .. } | Dep::StateWrite { key, .. } => spilled(&key.path),
+                _ => 0,
+            };
+        }
+        for o in &self.outputs {
+            n += size_of::<OutputSegment>() + o.values.len() * size_of::<Value>();
+            n += o
+                .origins
+                .as_ref()
+                .map_or(0, |v| v.len() * size_of::<EmitSite>());
+        }
+        n += self
+            .touches
+            .iter()
+            .map(|k| size_of::<RuntimeStateKey>() + spilled(&k.path))
+            .sum::<usize>();
+        n
+    }
 }
 
 /// A scope that is executing right now.
@@ -350,6 +414,8 @@ struct TinySite {
 #[derive(Debug, Clone, Default)]
 pub struct MemoTable {
     slots: FastMap<ScopePath, MemoSlot>,
+    /// The sum of the records' [`MemoSlot::bytes`].
+    bytes: usize,
     pub open: Vec<OpenScope>,
     run: u64,
     serial: u64,
@@ -370,6 +436,44 @@ pub struct MemoTable {
     /// Top-level functions are re-created every run and capture one another,
     /// so the same pairs come up for every scope that takes a callback.
     eq_cache: FastMap<(ClosureId, ClosureId), bool>,
+}
+
+impl OpenScope {
+    /// Record a dependency, unless the scope is already past recording: one
+    /// that is effectful, or that has more than [`MAX_SCOPE_DEPS`] entries
+    /// (which makes it effectful here rather than when it closes, so a scope
+    /// around a long loop does not keep a list it is going to throw away).
+    /// `dep` is only built when it is kept — a `state` dependency clones its
+    /// key, whose path is as long as the call is deep.
+    #[inline]
+    pub fn note(&mut self, dep: impl FnOnce() -> Dep) {
+        if self.effectful {
+            return;
+        }
+        if self.deps.len() > MAX_SCOPE_DEPS {
+            self.give_up();
+            return;
+        }
+        self.deps.push(dep());
+    }
+
+    /// Take over the dependencies of a scope folded into this one, under the
+    /// same bound as [`note`](Self::note).
+    pub fn absorb(&mut self, deps: &mut Vec<Dep>) {
+        if self.effectful {
+            deps.clear();
+        } else if self.deps.len() + deps.len() > MAX_SCOPE_DEPS {
+            self.give_up();
+            deps.clear();
+        } else {
+            self.deps.append(deps);
+        }
+    }
+
+    fn give_up(&mut self) {
+        self.effectful = true;
+        self.deps = Vec::new();
+    }
 }
 
 impl Clone for OpenScope {
@@ -404,13 +508,22 @@ impl MemoTable {
         let run = self.run;
         let before = self.slots.len();
         let mut unhit: Vec<(FunctionId, u64)> = Vec::new();
+        let mut freed = 0;
         self.slots.retain(|_, s| {
             let keep = s.visited == run;
-            if !keep && !s.hit {
-                unhit.push((s.fn_id, s.site));
+            if !keep {
+                freed += s.bytes;
+                if !s.hit {
+                    unhit.push((s.fn_id, s.site));
+                }
             }
             keep
         });
+        self.bytes = self.bytes.saturating_sub(freed);
+        // A run that left few records gives back what a larger one grew.
+        if self.slots.capacity() > 1024 && self.slots.len() < self.slots.capacity() / 4 {
+            self.slots.shrink_to_fit();
+        }
         // A site whose records die unused is charged once per record: a
         // recompute that makes thousands of them goes cold on its first run,
         // while a widget that misses one frame in three does not.
@@ -499,7 +612,8 @@ impl MemoTable {
 
     /// Forget everything: the program changed under the records.
     pub fn clear(&mut self) {
-        self.slots.clear();
+        self.slots = Default::default();
+        self.bytes = 0;
         self.open.clear();
         self.eq_cache.clear();
         self.cold.clear();
@@ -528,27 +642,45 @@ impl MemoTable {
         self.serial
     }
 
-    /// Whether the table has room for another record.
+    /// The memory the records hold, as estimated when each was stored.
+    pub fn bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// Whether the table has room for another record: under both the record
+    /// count and the memory bound.
+    #[inline]
     pub fn has_room(&self) -> bool {
-        self.slots.len() < MAX_SLOTS
+        self.slots.len() < MAX_SLOTS && self.bytes < MAX_TABLE_BYTES
+    }
+
+    /// Whether a record is stored at `path`.
+    #[inline]
+    pub fn contains(&self, path: &ScopePath) -> bool {
+        self.slots.contains_key(path)
     }
 
     /// Store a record, replacing any at the same path. A record replaced
     /// without ever having been replayed charges its site the same way an
     /// eviction does: a scope that misses validation every run is paying for
     /// records it never gets anything back from.
-    pub fn insert(&mut self, path: ScopePath, slot: MemoSlot) {
+    pub fn insert(&mut self, path: ScopePath, mut slot: MemoSlot) {
         let key = (slot.fn_id, slot.site);
-        if let Some(old) = self.slots.insert(path, slot)
-            && !old.hit
-        {
-            self.cold.entry(key).or_default().unhit_evictions += 1;
+        slot.bytes = slot.approx_bytes(&path);
+        self.bytes += slot.bytes;
+        if let Some(old) = self.slots.insert(path, slot) {
+            self.bytes = self.bytes.saturating_sub(old.bytes);
+            if !old.hit {
+                self.cold.entry(key).or_default().unhit_evictions += 1;
+            }
         }
     }
 
     /// Remove and return a record.
     pub fn take(&mut self, path: &ScopePath) -> Option<MemoSlot> {
-        self.slots.remove(path)
+        let slot = self.slots.remove(path)?;
+        self.bytes = self.bytes.saturating_sub(slot.bytes);
+        Some(slot)
     }
 
     /// Mark a slot visited this run.
@@ -1042,6 +1174,7 @@ mod tests {
             host_revision: 0,
             resources_revision: 0,
             pure: true,
+            bytes: 0,
         };
         table.begin_run();
         let run = table.run();
@@ -1060,6 +1193,7 @@ mod tests {
 /// frame loop exercises the memo.
 #[cfg(test)]
 mod env_tests {
+    use super::*;
     use crate::env::Env;
     use crate::value::Value;
 
@@ -1289,5 +1423,106 @@ r"
             "square's record went with its branch"
         );
         assert_eq!(env.memo_stats(sid).unwrap().evicted, 1);
+    }
+    #[test]
+    fn deep_recursion_opens_no_scope_past_the_depth_bound() {
+        // Each level's record would carry a path as long as the level is
+        // deep, so only the top `MAX_SCOPE_FRAME_DEPTH` levels get one.
+        let src = "fn down(n)\n  if n == 0 then 0 else 1 + down(n - 1) end\nend\ndown(3000)";
+        let (mut env, sid) = env(src);
+        assert_eq!(env.run(sid).unwrap(), Value::Int(3000));
+        let slots = env.memo_slots(sid);
+        assert!(
+            slots > 0 && slots <= MAX_SCOPE_FRAME_DEPTH,
+            "{slots} records for 3000 levels"
+        );
+        // The top record still replays the whole recursion.
+        let hits = env.memo_stats(sid).unwrap().hits;
+        env.reset_stack(sid).unwrap();
+        assert_eq!(env.run(sid).unwrap(), Value::Int(3000));
+        assert_eq!(env.memo_stats(sid).unwrap().hits, hits + 1);
+    }
+
+    #[test]
+    fn the_table_counts_its_records_bytes_and_stops_at_the_bound() {
+        let mut table = MemoTable::default();
+        let slot = |values: usize| MemoSlot {
+            serial: 1,
+            visited: 0,
+            fn_id: FunctionId(0),
+            site: 0,
+            hit: false,
+            captures: ScopeValues::new(),
+            args: ScopeValues::new(),
+            result: Value::Nil,
+            deps: vec![],
+            outputs: vec![OutputSegment {
+                sym: SymbolId(0),
+                values: vec![Value::Nil; values],
+                origins: None,
+            }],
+            touches: StateTouches::default(),
+            host_revision: 0,
+            resources_revision: 0,
+            pure: true,
+            bytes: 0,
+        };
+        table.begin_run();
+        let p1: ScopePath = SmallVec::from_slice(&[PathPart::Call(1)]);
+        let p2: ScopePath = SmallVec::from_slice(&[PathPart::Call(2)]);
+        table.insert(p1.clone(), slot(10));
+        let one = table.bytes();
+        assert!(one >= 10 * std::mem::size_of::<Value>());
+        // Replacing a record charges the new one and refunds the old.
+        table.insert(p1.clone(), slot(10));
+        assert_eq!(table.bytes(), one);
+        assert!(table.has_room());
+        // One record past the byte bound: no room, long before MAX_SLOTS.
+        table.insert(
+            p2.clone(),
+            slot(MAX_TABLE_BYTES / std::mem::size_of::<Value>()),
+        );
+        assert!(!table.has_room());
+        assert!(table.take(&p2).is_some());
+        assert_eq!(table.bytes(), one);
+        assert!(table.has_room());
+        // Neither record was visited by a later run: the sweep refunds both.
+        table.begin_run();
+        table.sweep();
+        assert_eq!((table.len(), table.bytes()), (0, 0));
+    }
+
+    #[test]
+    fn a_scope_past_the_dependency_bound_stops_keeping_them() {
+        let mut scope = OpenScope {
+            path: ScopePath::new(),
+            depth: 1,
+            fn_id: FunctionId(0),
+            site: 0,
+            captures: ScopeValues::new(),
+            args: ScopeValues::new(),
+            deps: Vec::new(),
+            out_start: SmallVec::new(),
+            insts_at_entry: 0,
+            rng_at_entry: 0,
+            effectful: false,
+            wrote_in_place: false,
+            local_cells: Default::default(),
+            capture: None,
+            previous: None,
+        };
+        for _ in 0..=MAX_SCOPE_DEPS {
+            scope.note(|| Dep::HostRead);
+        }
+        assert!(!scope.effectful);
+        assert_eq!(scope.deps.len(), MAX_SCOPE_DEPS + 1);
+        scope.note(|| Dep::HostRead);
+        assert!(scope.effectful, "one more gives the scope up");
+        assert!(scope.deps.is_empty());
+        scope.note(|| panic!("an effectful scope builds no dependency"));
+        // A folded child's dependencies are dropped the same way.
+        let mut child = vec![Dep::HostRead];
+        scope.absorb(&mut child);
+        assert!(child.is_empty() && scope.deps.is_empty());
     }
 }

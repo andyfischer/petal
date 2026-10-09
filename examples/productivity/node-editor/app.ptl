@@ -1232,6 +1232,10 @@ let iw = insp.w - 44
 let iy = insp.y + 18
 
 let one = if len(sel) == 1 then idx_of(nodes, sel[0]) else -1 end
+// `vals` was evaluated before this frame's edits. A node is selected on the
+// frame it is added, so the inspector would index one past the end of `vals`;
+// evaluate again when the graph has grown or shrunk since.
+let now_vals = if len(vals) == len(nodes) then vals else eval_all(nodes, links, t: clock) end
 
 if one >= 0 then
   let n = nodes[one]
@@ -1280,7 +1284,7 @@ if one >= 0 then
     iy = iy + 4
     caps("INPUTS", x: ix, y: iy, c: FAINT)
     iy = iy + 22
-    let ivals = input_values(nodes, links, vals, n)
+    let ivals = input_values(nodes, links, now_vals, n)
     for i in range(0, len(k.ins)) do
       let p = k.ins[i]
       let li = link_into(links, id: n.id, port_i: i)
@@ -1333,7 +1337,7 @@ if one >= 0 then
   iy = iy + 16
   caps("OUTPUT", x: ix, y: iy, c: FAINT)
   iy = iy + 20
-  draw_text(fmt(vals[one]), pos: {x: ix, y: iy}, style: mono(26, c))
+  draw_text(fmt(now_vals[one]), pos: {x: ix, y: iy}, style: mono(26, c))
   iy = iy + 40
   let fanout = filter(links, fn(l) -> l.from == n.id)
   let fo = "feeds " ++ str(len(fanout)) ++ (if len(fanout) == 1 then " input" else " inputs" end)

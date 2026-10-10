@@ -141,6 +141,25 @@ describe("petal fix-imports", () => {
     expect(r.stdout).toBe("// header\n\nimport kit\n\nprint(open())\n");
   });
 
+  it("adds the import of a builtin that moved into a package, method syntax included", () => {
+    // `lerp`, `vec2` and friends are declared by bundled packages now; a
+    // script written when they were global says nothing about them.
+    const src = "let v = vec2(3, 4)\nprint(lerp(0, 10, 0.5), v.mag())\nprint(clamp(2, 0, 1))\n";
+    const before = petalCapture(["run", "-e", src]);
+    expect(before.code).not.toBe(0);
+    expect(before.stderr).toContain("add `import vec2`");
+
+    const r = petalCapture(["fix-imports", "-e", src], undefined, dir);
+    expect(r.stdout).toBe(`import creative\nimport vec2\n\n${src}`);
+    expect(petalCapture(["run", "-e", r.stdout]).stdout).toBe("5.0 5.0\n1\n");
+    // Idempotent.
+    expect(petalCapture(["fix-imports", "-e", r.stdout], undefined, dir).stdout).toBe(r.stdout);
+
+    // Only method syntax, which compiles either way and fails when it runs.
+    const m = petalCapture(["fix-imports", "-e", "print([3, 4].mag())\n"], undefined, dir);
+    expect(m.stdout).toBe("import creative\n\nprint([3, 4].mag())\n");
+  });
+
   it("-e rewrites a star import with no file to resolve against", () => {
     const r = petalCapture(["fix-imports", "-e", "pub import kit: *\n", "-I", join(dir, "libs")]);
     expect(r.stdout).toBe("pub import kit\n");

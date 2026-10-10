@@ -434,7 +434,10 @@ Options:
 
 No host is consulted, and the old host-profile flags are gone. A name exists
 because the file declares it, an import binds it, or it is a `core`/`std`
-builtin. A script written for a host imports the host's **interface package**,
+builtin. The domain builtins (`lerp`, `noise`, `vec2`, `hsv`, `json_parse`, …)
+are behind imports of their own (`import creative`, `import noise`, …; see
+[Builtins](Builtins.md#which-builtins-need-an-import)); an unimported one is
+an error that names the import to add. A script written for a host imports the host's **interface package**,
 whose `native fn` declarations ([ffi.md](ffi.md#native-interfaces-native-fn))
 make each native known, with its parameters, whether or not this process
 registers it:
@@ -631,6 +634,8 @@ nothing else:
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
+| *(nothing)* | adds `import creative`, `import vec2`, `import noise`, … | the same, for a builtin that now lives in a bundled package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
+| *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax, which fails only when the line runs: added when nothing in the program defines a function, class method or record field of that name |
 | *(nothing)* | adds `import ui` | the same, for a host's names: a script written for an implicit prelude gets its `import ui` (with the host's package on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
 "Available" is the packages bundled in the binary plus the ones under `-I`
@@ -1363,6 +1368,7 @@ the edits that mean it. See [direct-manipulation.md](direct-manipulation.md).
 Use `run --trace-emits` first to find the emit's address. For this file:
 
 ```petal
+import io
 let x = 10
 let offset = 5
 push_output(symbol("shapes"), x + offset)

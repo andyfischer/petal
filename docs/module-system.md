@@ -94,13 +94,18 @@ legal, and worth knowing about: `check` warns once per name per file, at the
 first bare use.
 
 ```
-warning: `lerp` here is the one module 'tween' exports, which hides the builtin `lerp` —
-write `tween.lerp` to say so, or `import ./tween: lerp` to take it on purpose
+warning: `clamp` here is the one module 'tween' exports, which hides the builtin `clamp` —
+write `tween.clamp` to say so, or `import ./tween: clamp` to take it on purpose
 ```
 
 Qualifying the use or importing the name selectively says it was meant, and
 the warning goes. First-party packages that redefine builtin names by design
 (the packages bundled in the binary: `ui`, `bloom`, …) do not raise it.
+
+The warning is about the names that are in scope with no import (`core` and
+`std`). A domain builtin such as `lerp` arrives through a plain import of its
+own (`import creative`), so a second module exporting `lerp` is two plain
+imports offering one name: the ambiguity error above, at each bare use.
 
 ### Import paths
 
@@ -381,7 +386,8 @@ this order, and the first place that has a package of that name wins:
 
    | Package | What it is |
    | --- | --- |
-   | `core` | the declarations of the builtins (`import core` binds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed) |
+   | `core` | the declarations of the global builtins (`import core` binds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed) |
+   | `noise`, `color`, `vec2`, `autodiff`, `json`, `io`, `creative` | the domain builtins: natives every runtime registers, in scope only where the package is imported. See [Builtins](Builtins.md#which-builtins-need-an-import) for which names each one declares |
    | `ui` | the petal-ui interface — the `native fn` declarations of every petal-ui native and the widget library written over them. `ui/input` is its input, timing and frame half alone |
    | `bloom` | the component library ([core-runtime/bloom](../core-runtime/bloom)) |
    | `text_layout` | text placement ([core-runtime/text-layout](../core-runtime/text-layout)) |
@@ -525,6 +531,8 @@ It changes import lines and nothing else:
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | `import m: a` + `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | `import kit` | the file uses a bare name nothing in it provides, and exactly one available package exports it |
+| *(nothing)* | `import creative`, `import vec2`, … | the same, for a builtin that moved into a package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, …) |
+| *(nothing)* | `import vec2` (for `.normalize()`) | the file calls a moved builtin with method syntax and nothing in the program defines a function, method or record field of that name |
 
 A path that already resolves as a package is left alone, so a file written
 for the current rules is unchanged and running the command twice does

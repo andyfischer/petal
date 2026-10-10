@@ -1,4 +1,8 @@
-// Package `core` — Color constructors and blending (core/src/builtins/color.rs).
+// Package `color` — Color constructors and blending (core/src/builtins/color.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import color` puts them in scope — bare (`hsv(…)`), qualified
+// (`color.hsv(…)`) and as methods (`x.hsv(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

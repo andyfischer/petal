@@ -7,7 +7,7 @@ import { runPetal, runPetalError, checkJson } from "./helpers";
 
 describe("vec3 construction and printing", () => {
   it("prints as vec3(x, y, z) and reports its type", () => {
-    const out = runPetal(`
+    const out = runPetal(`import vec2
       let v = vec3(1, 2.5, -3)
       print(v)
       print(type(v))
@@ -19,7 +19,7 @@ describe("vec3 construction and printing", () => {
   });
 
   it("reads components as fields", () => {
-    const out = runPetal(`
+    const out = runPetal(`import vec2
       let v = vec3(1, 2, 3)
       print(v.x)
       print(v.y)
@@ -29,7 +29,7 @@ describe("vec3 construction and printing", () => {
   });
 
   it("names the available fields on a bad one", () => {
-    expect(runPetalError("print(vec3(1, 2, 3).w)")).toContain(
+    expect(runPetalError("import vec2; print(vec3(1, 2, 3).w)")).toContain(
       "No field 'w' on vec3 (available: x, y, z)"
     );
   });
@@ -37,7 +37,7 @@ describe("vec3 construction and printing", () => {
 
 describe("vec3 operators", () => {
   it("adds, subtracts, scales, divides and negates", () => {
-    const out = runPetal(`
+    const out = runPetal(`import vec2
       let a = vec3(1, 2, 3)
       let b = vec3(4, 5, 6)
       print(a + b)
@@ -62,7 +62,7 @@ describe("vec3 operators", () => {
   });
 
   it("compares by components", () => {
-    const out = runPetal(`
+    const out = runPetal(`import vec2
       print(vec3(1, 2, 3) == vec3(1.0, 2.0, 3.0))
       print(vec3(1, 2, 3) == vec3(1, 2, 4))
       print(vec3(1, 2, 3) != vec3(1, 2, 4))
@@ -72,7 +72,7 @@ describe("vec3 operators", () => {
   });
 
   it("rejects mixing with a vec2", () => {
-    expect(runPetalError("print(vec3(1, 2, 3) + vec2(1, 2))")).toMatch(
+    expect(runPetalError("import vec2; print(vec3(1, 2, 3) + vec2(1, 2))")).toMatch(
       /vec3.*vec2/
     );
   });
@@ -80,7 +80,7 @@ describe("vec3 operators", () => {
 
 describe("vec3 builtins", () => {
   it("mag, distance, dot, cross, normalize, limit, lerp", () => {
-    const out = runPetal(`
+    const out = runPetal(`import creative; import vec2
       print(mag(vec3(2, 3, 6)))
       print(distance(vec3(1, 1, 1), vec3(3, 4, 7)))
       print(dot(vec3(1, 2, 3), vec3(4, 5, 6)))
@@ -103,7 +103,7 @@ describe("vec3 builtins", () => {
   });
 
   it("cross is 3D only", () => {
-    expect(runPetalError("print(cross(vec2(1, 0), vec2(0, 1)))")).toContain(
+    expect(runPetalError("import vec2; print(cross(vec2(1, 0), vec2(0, 1)))")).toContain(
       "cross() expects two vec3 values"
     );
   });
@@ -111,7 +111,7 @@ describe("vec3 builtins", () => {
 
 describe("vec3 JSON round trip", () => {
   it("json_parse(json_stringify(v)) is a vec3 again", () => {
-    const out = runPetal(`
+    const out = runPetal(`import json; import vec2
       let s = json_stringify({p: vec3(1, 2, 3)})
       print(s)
       let back = json_parse(s)
@@ -125,7 +125,7 @@ describe("vec3 JSON round trip", () => {
 
 describe("vec3 type annotations", () => {
   it("accepts vec3 as a type name and warns on a mismatch", () => {
-    const ok = checkJson(`
+    const ok = checkJson(`import vec2
       fn up() -> vec3
         vec3(0, 1, 0)
       end
@@ -133,7 +133,7 @@ describe("vec3 type annotations", () => {
       print(p)
     `);
     expect(ok.warnings).toEqual([]);
-    const bad = checkJson(`
+    const bad = checkJson(`import vec2
       let p: vec2 = vec3(0, 1, 0)
       print(p)
     `);

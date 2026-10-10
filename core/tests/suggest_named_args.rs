@@ -99,7 +99,7 @@ fn constructors_lambdas_and_later_declarations_resolve() {
 
 #[test]
 fn a_builtin_that_declares_its_parameters_is_named() {
-    let src = "print(map_range(5, 0, 10, 0, 100))\nprint(hsv(0.5, 1.0, 1.0))\n";
+    let src = "import creative\nimport color\nprint(map_range(5, 0, 10, 0, 100))\nprint(hsv(0.5, 1.0, 1.0))\n";
     assert_eq!(
         rewrites(src),
         [
@@ -217,7 +217,7 @@ fn the_subject_stays_positional() {
 fn placeholder_parameters_stay_positional() {
     // `a, b` only count; `t` means something.
     assert_eq!(
-        rewrites("print(lerp(0, 10, 0.5))\n"),
+        rewrites("import creative\nprint(lerp(0, 10, 0.5))\n"),
         ["lerp(0, 10, t: 0.5)"]
     );
     // Nothing but placeholders: nothing to name.
@@ -335,7 +335,7 @@ fn applying_keeps_comments_layout_and_everything_outside_the_arguments() {
 #[test]
 fn applying_is_idempotent() {
     let src = format!(
-        "{BOX}let x = 1\nprint(box(x, 2, 3, 4))\nprint(lerp(0, 10, 0.5))\nprint(slice([1, 2, 3], 0, 2))\n"
+        "import creative\n{BOX}let x = 1\nprint(box(x, 2, 3, 4))\nprint(lerp(0, 10, 0.5))\nprint(slice([1, 2, 3], 0, 2))\n"
     );
     let once = applied(&src);
     assert_ne!(once, src);

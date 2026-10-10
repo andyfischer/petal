@@ -38,6 +38,7 @@
 
 import ui
 import garden
+import creative
 
 // ── Chrome palette ───────────────────────────────────────────────────────
 

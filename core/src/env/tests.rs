@@ -114,7 +114,7 @@ mod call_function_tests {
     fn push_output_buffer_round_trips_and_drains() {
         let mut env = Env::new();
         env.run_source(
-            "let s = symbol(\"draw\")\n\
+            "import io; let s = symbol(\"draw\")\n\
              push_output(s, 1)\n\
              push_output(s, 2)\n\
              push_output(s, 3)\n",
@@ -137,7 +137,7 @@ mod call_function_tests {
         env.enable_emit_trace(true);
         let pid = env
             .load_program(
-                "let s = symbol(\"draw\")\n\
+                "import io; let s = symbol(\"draw\")\n\
                  push_output(s, 1)\n\
                  push_output(s, 2)\n\
                  push_output(s, 3)\n",
@@ -180,7 +180,7 @@ mod call_function_tests {
         env.enable_emit_trace(true);
         let pid = env
             .load_program(
-                "let s = symbol(\"draw\")\n\
+                "import io; let s = symbol(\"draw\")\n\
                  fn shape()\n\
                    push_output(s, 1)\n\
                  end\n\
@@ -217,7 +217,7 @@ mod call_function_tests {
     #[test]
     fn emit_trace_records_nothing_when_disabled() {
         let mut env = Env::new();
-        env.run_source("let s = symbol(\"draw\")\npush_output(s, 1)\n")
+        env.run_source("import io; let s = symbol(\"draw\")\npush_output(s, 1)\n")
             .unwrap();
         let sym = env.intern_symbol("draw");
         assert_eq!(env.take_output_buffer(sym).len(), 1);
@@ -230,7 +230,7 @@ mod call_function_tests {
     fn clearing_a_buffer_clears_its_origins() {
         let mut env = Env::new();
         env.enable_emit_trace(true);
-        env.run_source("let s = symbol(\"draw\")\npush_output(s, 1)\n")
+        env.run_source("import io; let s = symbol(\"draw\")\npush_output(s, 1)\n")
             .unwrap();
         let sym = env.intern_symbol("draw");
         env.clear_output_buffer(sym);
@@ -245,7 +245,7 @@ mod call_function_tests {
         // the string would be swept and its contents corrupted.
         let mut env = Env::new();
         env.run_source(
-            "let s = symbol(\"out\")\n\
+            "import io; let s = symbol(\"out\")\n\
              push_output(s, \"keep-me\")\n\
              let acc = 0\n\
              for i in range(0, 5000) do\n\
@@ -336,7 +336,7 @@ mod call_function_tests {
         let mut env = Env::new();
         let sym = env.intern_symbol("dt");
         env.set_binding(sym, Value::Float(0.016));
-        let result = env.run_source("binding(symbol(\"dt\"))").unwrap();
+        let result = env.run_source("import io; binding(symbol(\"dt\"))").unwrap();
         assert_eq!(result, Value::Float(0.016));
     }
 

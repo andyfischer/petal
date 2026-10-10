@@ -1,0 +1,6 @@
+# creative — the creative-coding set: interpolation, ranges, shaping, vector lengths, random picks. A bundled builtin package: the natives are
+# registered by the petal runtime in every Env (core/src/builtins/creative_coding.rs); this
+# package is their interface, and `import creative` is what puts them in scope.
+[package]
+name = "creative"
+version = "0.1.0"

@@ -300,6 +300,15 @@ impl ModuleRegistry {
     /// memory. `None` when it can no longer be read or is no longer
     /// registered. What a reload compares against the text a program was
     /// compiled from.
+    /// Whether `path` is the synthetic origin of a module of a package held
+    /// in memory (host-registered or bundled in the binary) rather than a
+    /// file on disk: nothing a host can watch for changes.
+    pub fn is_memory_origin(&self, path: &Path) -> bool {
+        self.all_packages()
+            .chain(bundled_packages().iter())
+            .any(|p| p.memory_source_at(path).is_some())
+    }
+
     pub fn current_source(&self, name: &str, origin: Option<&Path>) -> Option<String> {
         match origin {
             Some(path) => {
@@ -1726,17 +1735,17 @@ mod tests {
 
     #[test]
     fn a_plain_import_hiding_a_builtin_warns_once_where_it_is_used() {
-        let tween = [("tween", "pub fn lerp(a)\n  a\nend\npub fn other()\n  1\nend")];
-        let w = warnings(&tween, "import tween\nprint(lerp(1))\nprint(lerp(2))");
+        let tween = [("tween", "pub fn clamp(a)\n  a\nend\npub fn other()\n  1\nend")];
+        let w = warnings(&tween, "import tween\nprint(clamp(1))\nprint(clamp(2))");
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(
-            w[0].contains("`lerp` here is the one module 'tween' exports, which hides the builtin"),
+            w[0].contains("`clamp` here is the one module 'tween' exports, which hides the builtin"),
             "{w:?}"
         );
         // Not used bare: nothing to say. Qualified, selective: on purpose.
         assert!(warnings(&tween, "import tween\nprint(other())").is_empty());
-        assert!(warnings(&tween, "import tween\nprint(tween.lerp(1))").is_empty());
-        assert!(warnings(&tween, "import tween: lerp\nprint(lerp(1))").is_empty());
+        assert!(warnings(&tween, "import tween\nprint(tween.clamp(1))").is_empty());
+        assert!(warnings(&tween, "import tween: clamp\nprint(clamp(1))").is_empty());
         // A std name counts as a builtin too.
         let w = warnings(&[("m", "pub fn sum(xs)\n  0\nend")], "import m\nprint(sum([1]))");
         assert_eq!(w.len(), 1, "{w:?}");
@@ -1745,8 +1754,8 @@ mod tests {
     #[test]
     fn a_first_party_package_hides_a_builtin_without_a_warning() {
         let w = warnings(
-            &[("ui", "pub fn lerp(a)\n  a\nend")],
-            "import ui\nprint(lerp(1))",
+            &[("ui", "pub fn clamp(a)\n  a\nend")],
+            "import ui\nprint(clamp(1))",
         );
         assert!(w.is_empty(), "{w:?}");
     }
@@ -1765,22 +1774,22 @@ mod tests {
 
     #[test]
     fn a_qualifier_spelled_like_a_builtin_still_reaches_its_module() {
-        // `noise` is a builtin; a module of that name that exports no `noise`
+        // `random` is a builtin; a module of that name that exports no `random`
         // leaves the bare name to the builtin and the qualifier to itself.
-        let modules = [("noise", "pub fn fbm(x)\n  \"fbm\"\nend")];
+        let modules = [("random", "pub fn fbm(x)\n  \"fbm\"\nend")];
         assert_eq!(
-            run(&modules, "import noise\nprint(noise.fbm(1))\nprint(type(noise(0.5, 0.5)))"),
+            run(&modules, "import random\nprint(random.fbm(1))\nprint(type(random()))"),
             vec!["fbm", "float"]
         );
         // A binding of the file's own takes the name back, as ever.
         assert_eq!(
-            run(&modules, "import noise\nlet noise = {fbm: 3}\nprint(noise.fbm)"),
+            run(&modules, "import random\nlet random = {fbm: 3}\nprint(random.fbm)"),
             vec!["3"]
         );
         assert_eq!(
             run(
                 &modules,
-                "import noise\nfn f(noise)\n  noise.fbm\nend\nprint(f({fbm: 4}))\nprint(noise.fbm(1))",
+                "import random\nfn f(random)\n  random.fbm\nend\nprint(f({fbm: 4}))\nprint(random.fbm(1))",
             ),
             vec!["4", "fbm"]
         );

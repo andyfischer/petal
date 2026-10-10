@@ -4,6 +4,8 @@
 // dual numbers automatically propagates derivatives. `deriv_of` then pulls
 // out df/dx for whichever input was "seeded" with derivative 1.
 
+import autodiff
+
 // f(x) = (x - 3)^2 — minimum at x = 3, minimum value 0.
 fn f(x)
   (x - 3.0) * (x - 3.0)

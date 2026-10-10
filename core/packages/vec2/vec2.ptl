@@ -1,4 +1,8 @@
-// Package `core` — 2D and 3D vectors (core/src/builtins/vec2.rs).
+// Package `vec2` — 2D and 3D vectors (core/src/builtins/vec2.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import vec2` puts them in scope — bare (`vec2(…)`), qualified
+// (`vec2.vec2(…)`) and as methods (`x.vec2(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

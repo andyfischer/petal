@@ -1,3 +1,7 @@
+import autodiff
+import color
+import creative
+
 // `lerp` on colors (alpha too) and number lists, the inverse trig
 // functions and `hypot`, and `random` with 0, 1 or 2 arguments.
 print(lerp(#6a5a48, #ffd08a, 0.5))

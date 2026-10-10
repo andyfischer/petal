@@ -297,7 +297,9 @@ print(if g_{name}.common != "" then "// common\n" ++ g_{name}.common ++ "\n\n" e
 #[test]
 fn code_outside_the_subset_is_refused_with_a_position() {
     let source = read("tests/unsupported.ptl");
-    let mut src = format!("import glsl\n{source}{POST_ENV}");
+    // `vec3` at the fixture's top level is Petal's own, from the `vec2`
+    // package; on the import line, so the fixture's lines stay put.
+    let mut src = format!("import glsl; import vec2\n{source}{POST_ENV}");
     let names = ["uses_list", "truthy", "stringy", "untyped", "wrong_result", "mismatch", "dynamic_capture"];
     for name in names {
         src.push_str(&format!(

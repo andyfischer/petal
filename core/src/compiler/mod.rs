@@ -662,9 +662,11 @@ impl Compiler {
         // Every registered native gets a phantom term, in registration order
         // (the phantom indices are part of the IR's shape). Only the ones the
         // bundled `core` package declares are *bound*: those are the builtins
-        // in scope everywhere. A host's native is reachable only through a
-        // `native fn` declaration in scope, which binds its name to the
-        // phantom made here (`bind_native_decl`).
+        // in scope everywhere. A host's native — and a domain builtin, which
+        // every Env registers but only its bundled package (`noise`,
+        // `vec2`, …) declares — is reachable only through a `native fn`
+        // declaration in scope, which binds its name to the phantom made
+        // here (`bind_native_decl`).
         let core = crate::native_decl::core_host_names();
         for i in 0..native_fns.count() {
             let name = native_fns

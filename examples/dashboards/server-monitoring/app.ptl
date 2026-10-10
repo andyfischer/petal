@@ -18,6 +18,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import ui
+import color
+import creative
+import noise
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 // A single blue-black ground with three surfaces above it. The hairline is the

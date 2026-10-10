@@ -51,7 +51,7 @@ int main(void) {
 
     /* Native vec3s cross the boundary as PB_VEC3 in both directions. */
     REQUIRE(pb_vm_set_vec3(vm, "v", 1.0, 2.0, 3.0) == PB_OK);
-    REQUIRE(pb_vm_load_source(vm, "import host\nnote(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);
+    REQUIRE(pb_vm_load_source(vm, "import io; import host\nnote(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);
     REQUIRE(pb_vm_run(vm) == PB_OK);
     REQUIRE(pb_vm_drain(vm, "notes", &notes) == PB_OK);
     REQUIRE(notes.count == 1);

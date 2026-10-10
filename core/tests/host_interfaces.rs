@@ -33,9 +33,19 @@ fn run(env: &mut Env, src: &str) -> Result<Vec<String>, String> {
 // ── Bundled packages ─────────────────────────────────────────────────────
 
 #[test]
-fn the_bundled_set_is_core_ui_bloom_text_layout_and_glsl() {
+fn the_bundled_set_is_core_the_domain_builtins_ui_bloom_text_layout_and_glsl() {
     let names: Vec<&str> = petal::bundled::BUNDLED_PACKAGES.iter().map(|p| p.name).collect();
-    assert_eq!(names, ["core", "ui", "bloom", "text_layout", "glsl"]);
+    assert_eq!(
+        names,
+        [
+            "core", "noise", "color", "vec2", "autodiff", "json", "io", "creative", "ui", "bloom",
+            "text_layout", "glsl"
+        ]
+    );
+    // The domain builtins are bundled packages, each importable by name.
+    for name in petal::bundled::BUILTIN_PACKAGES {
+        assert!(names.contains(name), "{name} is not bundled");
+    }
     for package in petal::bundled::BUNDLED_PACKAGES {
         assert!(
             package.files.iter().any(|(path, _)| *path == "petal.toml"),

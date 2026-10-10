@@ -13,6 +13,15 @@ use std::path::Path;
 /// compile every script against an empty set of builtins.
 const BUNDLED_PACKAGES: &[(&str, &str)] = &[
     ("core", "packages/core"),
+    // The domain builtins: natives every Env registers, in scope only where
+    // imported (`petal::bundled::BUILTIN_PACKAGES`).
+    ("noise", "packages/noise"),
+    ("color", "packages/color"),
+    ("vec2", "packages/vec2"),
+    ("autodiff", "packages/autodiff"),
+    ("json", "packages/json"),
+    ("io", "packages/io"),
+    ("creative", "packages/creative"),
     ("ui", "../core-libs/petal-ui/prelude"),
     ("bloom", "../core-runtime/bloom"),
     ("text_layout", "../core-runtime/text-layout"),

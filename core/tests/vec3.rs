@@ -11,17 +11,21 @@ use petal::heap::Heap;
 use petal::value::{value_to_display_string, value_to_json, Value};
 
 /// Run `src` and render its final value the way `print` would.
+/// The vector builtins live in packages (`vec2` declares `vec3` too); every
+/// snippet here gets them, on its first line so positions do not move.
+const IMPORTS: &str = "import vec2; import creative; import json; ";
+
 fn eval(src: &str) -> String {
     let mut env = Env::new();
     let v = env
-        .run_source(src)
+        .run_source(&format!("{IMPORTS}{src}"))
         .unwrap_or_else(|e| panic!("{src:?} failed: {e}"));
     value_to_display_string(&v, env.heap())
 }
 
 fn eval_err(src: &str) -> String {
     let mut env = Env::new();
-    match env.run_source(src) {
+    match env.run_source(&format!("{IMPORTS}{src}")) {
         Ok(v) => panic!("{src:?} succeeded with {}", value_to_display_string(&v, env.heap())),
         Err(e) => e,
     }
@@ -154,7 +158,7 @@ fn state_json_round_trips_as_a_vec3() {
     let src = "state p = vec3(1, 2, 3)\np = p + vec3(1, 1, 1)\n";
 
     let mut env = Env::new();
-    let pid = env.load_program(src).unwrap();
+    let pid = env.load_program(&format!("{IMPORTS}{src}")).unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     let saved = env.get_state_json(pid, sid)["p"].clone();
@@ -166,7 +170,7 @@ fn state_json_round_trips_as_a_vec3() {
     // Restore into a fresh environment: the slot must come back as a vec3,
     // or the `+` on the next run would fail on a record.
     let mut env = Env::new();
-    let pid = env.load_program(src).unwrap();
+    let pid = env.load_program(&format!("{IMPORTS}{src}")).unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.set_state_from_json(pid, sid, "p", &saved).unwrap();
     env.run(sid).unwrap();

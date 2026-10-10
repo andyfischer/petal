@@ -3,6 +3,8 @@
 // inside the braces is evaluated and stringified. Use `\{` and `\}` to
 // include literal braces.
 
+import creative
+
 let name = "Ada"
 let age = 36
 print("Hello, {name}! You are {age} years old.")

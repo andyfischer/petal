@@ -441,7 +441,19 @@ impl<'a> Vm<'a> {
                     _ => format!("type {}", recv.type_name()),
                 },
             };
-            Err(no_method(method_name, &what))
+            let mut message = no_method(method_name, &what);
+            // A domain builtin of this name exists and the file has not
+            // imported its package: say so, unless the receiver is a class
+            // instance (then it was asking for a method of its class).
+            if class.is_none()
+                && let Some(package) = crate::native_decl::builtin_package_of(method_name)
+            {
+                message.push_str(&format!(
+                    " — `{method_name}` is a builtin of the `{package}` package: \
+                     add `import {package}` to call it as a method"
+                ));
+            }
+            Err(message)
         }
     }
 

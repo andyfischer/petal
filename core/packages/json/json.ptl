@@ -1,4 +1,8 @@
-// Package `core` — The JSON string codec (core/src/builtins/json.rs).
+// Package `json` — The JSON string codec (core/src/builtins/json.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import json` puts them in scope — bare (`json_stringify(…)`), qualified
+// (`json.json_stringify(…)`) and as methods (`x.json_stringify(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

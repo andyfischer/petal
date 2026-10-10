@@ -2,6 +2,9 @@
 // Shows off the first-class vec2 type and its operator overloads.
 // Simulates a single "boid" chasing a moving target with a velocity cap.
 
+import creative
+import vec2
+
 let target = vec2(10.0, 5.0)
 let pos = vec2(0.0, 0.0)
 let vel = vec2(0.0, 0.0)

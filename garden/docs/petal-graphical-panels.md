@@ -529,6 +529,7 @@ file API in the panel vocabulary, so a panel that must remember something
 across a restart uses the store:
 
 ```petal
+import json
 state todos = json_parse(panel_store_get("todos") ?? "[]")
 # …after an edit…
 panel_store_set("todos", json_stringify(todos))

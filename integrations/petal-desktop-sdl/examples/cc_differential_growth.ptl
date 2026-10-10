@@ -13,6 +13,7 @@
 //   c       clear attractors
 
 import ui
+import color
 
 state nodes = []
 state attractors = []

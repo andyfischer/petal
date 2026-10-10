@@ -1,4 +1,4 @@
 // Exports a name that is also a builtin.
-pub fn lerp(a, b, t)
+pub fn clamp(a, b, t)
   "tween"
 end

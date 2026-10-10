@@ -2181,7 +2181,9 @@ mod tests {
                 .is_err()
         );
         // vec2 points are the other accepted spelling.
-        env.run_source(&crate::script_for(&env, "draw_polyline([vec2(1, 2), vec2(3, 4)], 1, 2, 3)"))
+        // `import vec2` goes ahead of whatever `script_for` leads with.
+        let script = crate::script_for(&env, "draw_polyline([vec2(1, 2), vec2(3, 4)], 1, 2, 3)");
+        env.run_source(&format!("import vec2; {script}"))
             .expect("vec2 points");
         assert_eq!(
             take_draw_commands(&mut env),

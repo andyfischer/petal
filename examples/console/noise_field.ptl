@@ -2,6 +2,9 @@
 // Samples Perlin noise on a grid and renders it as ASCII. `map_range` turns
 // the raw [-1, 1] noise values into indices into a density ramp.
 
+import creative
+import noise
+
 noise_seed(42)
 
 let width = 48

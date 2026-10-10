@@ -1,4 +1,8 @@
-// Package `core` — Symbols, buffered output and host bindings (core/src/builtins/output.rs).
+// Package `io` — Host I/O: symbols, output buffers and host bindings (core/src/builtins/output.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import io` puts them in scope — bare (`symbol(…)`), qualified
+// (`io.symbol(…)`) and as methods (`x.symbol(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

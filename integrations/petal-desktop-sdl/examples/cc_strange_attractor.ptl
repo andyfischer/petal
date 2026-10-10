@@ -12,6 +12,7 @@
 //   space           toggle live-tune mode
 
 import ui
+import color
 
 state preset = 0
 state mouse_tune = false

@@ -5,9 +5,12 @@
 //! there with no filesystem (wasm) and wherever the binary is copied. The
 //! build fails if a bundled package's directory is missing.
 //!
-//! Today that is `core`: the declarations of the builtins every program can
-//! call without an import (`core/packages/core`). Its declarations are bound
-//! in every file's global scope; see [`crate::native_decl::core_decls`].
+//! `core` holds the declarations of the builtins every program can call
+//! without an import (`core/packages/core`); they are bound in every file's
+//! global scope, see [`crate::native_decl::core_decls`]. The domain builtins
+//! ([`BUILTIN_PACKAGES`]: `noise`, `color`, …) are registered in every Env
+//! too but are in scope only where imported. The rest (`ui`, `bloom`,
+//! `text_layout`, `glsl`) are first-party libraries.
 
 /// One embedded package: its name and every file it is made of.
 #[derive(Debug)]
@@ -50,6 +53,15 @@ pub fn package(name: &str) -> Option<&'static BundledPackage> {
 
 /// The name of the package that declares the always-in-scope builtins.
 pub const CORE_PACKAGE: &str = "core";
+
+/// The bundled packages that declare the *domain* builtins: natives the
+/// runtime registers in every Env ([`crate::builtins::register_builtins`]),
+/// but which are in scope only in a file that imports the package
+/// (`import noise`). One per group of `core/src/builtins/`; `io` is the
+/// host-I/O set of `output.rs`, `creative` the creative-coding set.
+pub const BUILTIN_PACKAGES: &[&str] = &[
+    "noise", "color", "vec2", "autodiff", "json", "io", "creative",
+];
 
 #[cfg(test)]
 mod tests {

@@ -126,7 +126,7 @@ describe("JS idiom error hints", () => {
 
 describe("rotate(v, angle) on vec2", () => {
   it("turns in the same sense as vec2(cos(a), sin(a))", () => {
-    const out = runPetal(`
+    const out = runPetal(`import creative; import vec2
       let v = rotate(vec2(1.0, 0.0), pi() / 2)
       print(round(v.x * 1000.0) / 1000.0)
       print(round(v.y * 1000.0) / 1000.0)
@@ -137,7 +137,7 @@ describe("rotate(v, angle) on vec2", () => {
   });
 
   it("rejects a non-vec2", () => {
-    expect(runPetalError("print(rotate({x: 1, y: 0}, 1.0))")).toContain(
+    expect(runPetalError("import vec2; print(rotate({x: 1, y: 0}, 1.0))")).toContain(
       "rotate() expects a vec2"
     );
   });

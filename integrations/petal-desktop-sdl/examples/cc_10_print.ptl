@@ -17,6 +17,7 @@
 //   m       toggle mutations
 
 import ui
+import color
 
 state grid = []
 state cols = 0

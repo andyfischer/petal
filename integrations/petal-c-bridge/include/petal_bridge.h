@@ -353,8 +353,8 @@ pb_status pb_vm_load_source(pb_vm* vm, const char* source, const char* name);
 bool pb_vm_is_loaded(const pb_vm* vm);
 
 /* ─── Bindings (host → script) ────────────────────────────────────────── */
-/* Scripts read them with `binding(symbol("name"))`. Bindings persist until
- * overwritten or cleared; values are copied into the VM. */
+/* Scripts read them with `binding(symbol("name"))`, after `import io`.
+ * Bindings persist until overwritten or cleared; values are copied into the VM. */
 pb_status pb_vm_set_float(pb_vm* vm, const char* name, double v);
 pb_status pb_vm_set_int(pb_vm* vm, const char* name, int64_t v);
 pb_status pb_vm_set_bool(pb_vm* vm, const char* name, bool v);
@@ -442,7 +442,8 @@ void pb_vm_clear_views(pb_vm* vm);
 /* ─── Output buffers (script → host) ─────────────────────────────────── */
 
 /* Drain the output buffer `buffer` (values pushed by emitters or
- * push_output(symbol(buffer), v)) and decode it. The views stay valid until
+ * push_output(symbol(buffer), v), which a script reaches with `import io`)
+ * and decode it. The views stay valid until
  * the next run/call/clear, so several buffers can be drained per frame. */
 pb_status pb_vm_drain(pb_vm* vm, const char* buffer, pb_values* out);
 

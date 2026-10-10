@@ -1,4 +1,8 @@
-// Package `core` — Forward-mode automatic differentiation: dual numbers (core/src/builtins/autodiff.rs).
+// Package `autodiff` — Forward-mode automatic differentiation: dual numbers (core/src/builtins/autodiff.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import autodiff` puts them in scope — bare (`dual(…)`), qualified
+// (`autodiff.dual(…)`) and as methods (`x.dual(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

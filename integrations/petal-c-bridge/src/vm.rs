@@ -1690,7 +1690,7 @@ mod tests {
         let cb = HostCallback::new("add_base", 0, add_one, ud, Some(free_i64));
         natives::register_callback(&mut vm.env, cb);
         vm.load(
-            "native fn add_base(n)\npush_output(symbol(\"out\"), add_base(5))\n",
+            "import io; native fn add_base(n)\npush_output(symbol(\"out\"), add_base(5))\n",
             None,
             "t".into(),
         )
@@ -1698,7 +1698,7 @@ mod tests {
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![105]);
         // A reload keeps the same closure (and userdata).
-        vm.reload_with("native fn add_base(n)\npush_output(symbol(\"out\"), add_base(7))\n")
+        vm.reload_with("import io; native fn add_base(n)\npush_output(symbol(\"out\"), add_base(7))\n")
             .unwrap();
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![107]);
@@ -1714,7 +1714,7 @@ mod tests {
     fn a_rust_owned_vm_is_shared_with_c() {
         let mut vm = Vm::new();
         vm.load(
-            "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n",
+            "import io; state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n",
             None,
             "t".into(),
         )
@@ -1747,7 +1747,7 @@ mod tests {
         let mut vm = Vm::new();
         vm.bind("v", HostValue::Vec3(1.0, 2.0, 3.0));
         vm.load(
-            "let v = binding(symbol(\"v\"))\npush_output(symbol(\"out\"), v + vec3(0.5, 0, -1))\n",
+            "import io; import vec2; let v = binding(symbol(\"v\"))\npush_output(symbol(\"out\"), v + vec3(0.5, 0, -1))\n",
             None,
             "t".into(),
         )
@@ -1767,7 +1767,7 @@ mod tests {
     fn reload_compile_errors_are_structured_without_recompiling() {
         let mut vm = Vm::new();
         vm.load(
-            "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n",
+            "import io; state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n",
             None,
             "main.ptl".into(),
         )
@@ -1811,7 +1811,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("petal-c-bridge-watch-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let main = dir.join("main.ptl");
-        std::fs::write(&main, "push_output(symbol(\"out\"), 1)\n").unwrap();
+        std::fs::write(&main, "import io; push_output(symbol(\"out\"), 1)\n").unwrap();
         let mut vm = Vm::new();
         let src = std::fs::read_to_string(&main).unwrap();
         vm.load(&src, Some(&main), main.display().to_string())
@@ -1820,7 +1820,7 @@ mod tests {
         assert!(!vm.sources_changed());
         assert!(vm.changed_sources().is_empty());
         // A length change is detected even within one mtime tick.
-        std::fs::write(&main, "push_output(symbol(\"out\"), 22)\n").unwrap();
+        std::fs::write(&main, "import io; push_output(symbol(\"out\"), 22)\n").unwrap();
         assert!(vm.sources_changed());
         assert_eq!(vm.changed_sources(), vec![main.clone()]);
         vm.reload().unwrap();
@@ -1842,7 +1842,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let main = dir.join("main.ptl");
         let config = dir.join("config.ptl");
-        let entry = "import ./config
+        let entry = "import io; import ./config
 state n = 0
 n += config.LOOK.step
 push_output(symbol(\"out\"), n)
@@ -1927,7 +1927,7 @@ pub config let LOOK = {step: 10, fog: 0.5}
         .unwrap();
         let mut vm = Vm::new();
         vm.load(
-            "import ui; push_output(symbol(\"out\"), if key_pressed(\"space\") then 1 else 0 end)\n\
+            "import io; import ui; push_output(symbol(\"out\"), if key_pressed(\"space\") then 1 else 0 end)\n\
              push_output(symbol(\"out\"), mouse_x())\n",
             None,
             "t".into(),

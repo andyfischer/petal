@@ -102,7 +102,7 @@ fn hover_probes_run_only_when_the_pointer_moves() {
 
 #[test]
 fn a_state_write_that_changes_the_slot_keeps_the_frame_running() {
-    let mut ui = ui("state n = 0\n\
+    let mut ui = ui("import vec2; state n = 0\n\
                      n = n + 1\n\
                      draw_text(\"{n}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -114,7 +114,7 @@ fn a_state_write_that_changes_the_slot_keeps_the_frame_running() {
 #[test]
 fn a_state_write_of_an_equal_value_settles() {
     // Rewritten every frame, but with the value it already holds.
-    let mut ui = ui("state n = 0\n\
+    let mut ui = ui("import vec2; state n = 0\n\
                      n = mouse_x() * 0\n\
                      draw_text(\"{n}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -125,7 +125,7 @@ fn a_state_write_of_an_equal_value_settles() {
 
 #[test]
 fn a_record_rebuilt_with_equal_contents_settles() {
-    let mut ui = ui("state r = {a: 1, b: \"x\"}\n\
+    let mut ui = ui("import vec2; state r = {a: 1, b: \"x\"}\n\
                      r = {a: 1, b: \"x\"}\n\
                      draw_text(\"{r.a}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -135,7 +135,7 @@ fn a_record_rebuilt_with_equal_contents_settles() {
 
 #[test]
 fn a_state_var_set_is_seen_through_the_cell() {
-    let mut ui = ui("state var n = 0\n\
+    let mut ui = ui("import vec2; state var n = 0\n\
                      if mouse_pressed(0) then set n = get n + 1 end\n\
                      draw_text(\"{get n}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -153,7 +153,7 @@ fn a_state_var_set_is_seen_through_the_cell() {
 
 #[test]
 fn a_state_var_written_every_frame_never_settles() {
-    let mut ui = ui("state var n = 0\n\
+    let mut ui = ui("import vec2; state var n = 0\n\
                      set n = get n + 1\n\
                      draw_text(\"{get n}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -166,7 +166,7 @@ fn an_in_place_accumulator_is_a_change() {
     // The top-level `state xs = []` + `xs = append(xs, …)` idiom is rewritten
     // to mutate the slot's list in place, so old and new share a heap id; the
     // gate must still see the write as a change.
-    let mut ui = ui("state xs = []\n\
+    let mut ui = ui("import vec2; state xs = []\n\
                      if key_pressed(\"a\") then xs = append(xs, len(xs)) end\n\
                      draw_text(\"{len(xs)}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
@@ -179,7 +179,7 @@ fn an_in_place_accumulator_is_a_change() {
     ui.frame().unwrap();
     assert_eq!(quiet_runs(&mut ui, 3), 0);
 
-    let mut acc = self::ui("state xs = []\n\
+    let mut acc = self::ui("import vec2; state xs = []\n\
                      xs = append(xs, 1)\n\
                      draw_text(\"{len(xs)}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     acc.frame().unwrap();
@@ -189,13 +189,13 @@ fn an_in_place_accumulator_is_a_change() {
 
 #[test]
 fn the_clock_and_randomness_keep_a_frame_running() {
-    let mut ui = ui("draw_text(\"{time()}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
+    let mut ui = ui("import vec2; draw_text(\"{time()}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
     assert_eq!(quiet_runs(&mut ui, 3), 3);
     let sym = ui.env.intern_symbol("time");
     assert_eq!(ui.last_run_reason, Some(RunReason::BindingChanged(sym)));
 
-    let mut rng = self::ui("draw_text(\"{random(0, 1)}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
+    let mut rng = self::ui("import vec2; draw_text(\"{random(0, 1)}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     rng.env.set_seed(1);
     rng.frame().unwrap();
     assert_eq!(quiet_runs(&mut rng, 3), 3);
@@ -204,7 +204,7 @@ fn the_clock_and_randomness_keep_a_frame_running() {
 
 #[test]
 fn host_data_reads_re_run_when_the_host_reports_a_change() {
-    let mut ui = ui("let d = host_data(\"n\", \"\")\n\
+    let mut ui = ui("import vec2; let d = host_data(\"n\", \"\")\n\
                      draw_text(\"{d}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     let fixtures = |n: i64| {
         fixture_provider(&serde_json::json!([{ "kind": "n", "arg": "", "value": n }])).unwrap()
@@ -234,7 +234,7 @@ fn invalidate_forces_exactly_one_run() {
 
 #[test]
 fn setting_state_from_the_host_forces_a_run() {
-    let mut ui = ui("state n = 0\n\
+    let mut ui = ui("import vec2; state n = 0\n\
                      draw_text(\"{n}\", vec2(0, 0), 12, {r: 1, g: 1, b: 1, a: 255})");
     ui.frame().unwrap();
     ui.frame().unwrap();

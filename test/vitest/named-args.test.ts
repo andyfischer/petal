@@ -116,7 +116,7 @@ print(p.shift(p: 1))`;
     expect(runPetalError("print(clamp(5, value: 0, hi: 3))")).toContain(
       "clamp() got multiple values for parameter 'value'",
     );
-    expect(runPetalError("print(noise(x: 1, z: 2))")).toContain(
+    expect(runPetalError("import noise; print(noise(x: 1, z: 2))")).toContain(
       "noise() is missing a value for parameter 'y'",
     );
   });

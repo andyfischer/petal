@@ -321,7 +321,9 @@ impl NativeDecls {
 }
 
 /// Look `name` up through `layers` (most specific first), then in the bundled
-/// `core` package, which is in scope everywhere.
+/// `core` package, which is in scope everywhere. A domain builtin (`lerp`,
+/// `noise`, …) is not found here by itself: it is in `layers` when a module
+/// of the program imports its package ([`builtin_decls`]).
 pub fn lookup<'a>(name: &str, layers: &[&'a NativeDecls]) -> Option<&'a NativeDecl> {
     layers
         .iter()
@@ -362,6 +364,86 @@ pub fn core_decls() -> &'static NativeDecls {
 pub fn core_host_names() -> &'static std::collections::HashSet<String> {
     static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     NAMES.get_or_init(|| core_decls().host_names().into_iter().collect())
+}
+
+/// The declarations of every builtin the runtime registers in every Env:
+/// the `core` package and the domain builtin packages
+/// ([`crate::bundled::BUILTIN_PACKAGES`] — `noise`, `color`, …), keyed by
+/// declared name. The first are in scope everywhere, the second only where
+/// imported; this is the set a host never has to declare or register.
+pub fn builtin_decls() -> &'static NativeDecls {
+    static ALL: OnceLock<NativeDecls> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut decls = NativeDecls::new();
+        decls.absorb(core_decls());
+        for name in crate::bundled::BUILTIN_PACKAGES {
+            let package = crate::bundled::package(name)
+                .unwrap_or_else(|| panic!("the `{name}` package is bundled (core/build.rs)"));
+            for (path, source) in package.sources() {
+                let parsed = NativeDecls::parse(source)
+                    .unwrap_or_else(|e| panic!("bundled package {name}, {path}: {e}"));
+                for (decl_name, decl) in parsed.by_name {
+                    if decls.by_name.insert(decl_name.clone(), decl).is_some() {
+                        panic!("bundled package {name}, {path}: `{decl_name}` is declared twice among the builtins");
+                    }
+                }
+            }
+        }
+        decls
+    })
+}
+
+/// The bundled domain builtin package ([`crate::bundled::BUILTIN_PACKAGES`])
+/// that declares `name`, if one does: what a file has to import before
+/// `name` — bare, or as method syntax `x.name()` — means that builtin.
+/// `None` for a `core` builtin, which needs no import.
+pub fn builtin_package_of(name: &str) -> Option<&'static str> {
+    static OWNERS: OnceLock<std::collections::HashMap<String, &'static str>> = OnceLock::new();
+    OWNERS
+        .get_or_init(|| {
+            let mut owners = std::collections::HashMap::new();
+            for package in crate::bundled::BUILTIN_PACKAGES {
+                let Some(bundled) = crate::bundled::package(package) else {
+                    continue;
+                };
+                for (_, source) in bundled.sources() {
+                    if let Ok(decls) = NativeDecls::parse(source) {
+                        for (declared, _) in decls.iter() {
+                            owners.insert(declared.to_string(), *package);
+                        }
+                    }
+                }
+            }
+            owners
+        })
+        .get(name)
+        .copied()
+}
+
+/// The domain builtin package the canonical module name `module` belongs
+/// to (`noise`, or `noise/x`), if it is one.
+pub fn builtin_package_of_module(module: &str) -> Option<&'static str> {
+    let package = module.split('/').next().unwrap_or(module);
+    crate::bundled::BUILTIN_PACKAGES
+        .iter()
+        .copied()
+        .find(|p| *p == package)
+}
+
+/// The words appended to an unknown-name error when the name is a domain
+/// builtin the file has not imported.
+pub fn missing_builtin_import_hint(name: &str) -> Option<String> {
+    let package = builtin_package_of(name)?;
+    Some(format!(
+        "`{name}` is a builtin of the `{package}` package: add `import {package}`"
+    ))
+}
+
+/// The host natives [`builtin_decls`] covers: every native the runtime
+/// itself registers.
+pub fn builtin_host_names() -> &'static std::collections::HashSet<String> {
+    static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| builtin_decls().host_names().into_iter().collect())
 }
 
 /// One host native a compiled program needs registered before it can run:

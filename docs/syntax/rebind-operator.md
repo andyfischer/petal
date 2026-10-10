@@ -45,6 +45,7 @@ The assignment is inserted just before the statement that contains the `@`,
 and the call site becomes a plain reference to the variable:
 
 ```petal
+import vec2
 let a = 3
 if ready() then
     normalize(@a)   // a = normalize(a), inside this branch

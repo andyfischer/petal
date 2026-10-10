@@ -13,7 +13,7 @@
 use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 
-const PROLOGUE: &str = "let C = {r: 11, g: 22, b: 33}\n\
+const PROLOGUE: &str = "import vec2; let C = {r: 11, g: 22, b: 33}\n\
                         let D = {r: 44, g: 55, b: 66, a: 77}\n\
                         let R = {x: 1, y: 2, w: 30, h: 40}\n\
                         let P = {x: 5, y: 6}\n\

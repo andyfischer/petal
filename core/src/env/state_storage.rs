@@ -658,6 +658,7 @@ end
         // The first run builds the values; the second prints what was loaded
         // (the `if` keeps the first run from printing).
         let src = "\
+import vec2
 enum Shape
   Circle(r),
   Dot,

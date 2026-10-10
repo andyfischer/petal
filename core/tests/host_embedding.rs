@@ -160,6 +160,22 @@ fn source_paths_list_the_entry_and_its_file_imports_once() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A bundled package (`io`, `vec2`, `ui`, …) or one a host registered from
+/// memory has no file to watch, however its modules are stamped.
+#[test]
+fn source_paths_leave_out_bundled_and_in_memory_packages() {
+    let dir = temp_dir("paths-bundled");
+    let entry = dir.join("main.ptl");
+    let mut env = Env::new();
+    env.set_check_only(true);
+    env.register_package("kit", [("kit", "pub fn one()\n  1\nend\n")]).unwrap();
+    let src = "import io\nimport vec2\nimport ui\nimport kit\nlet s = symbol(\"a\")\nvec2(1, 2).x + one()\n";
+    std::fs::write(&entry, src).unwrap();
+    let pid = env.load_program_at(src, &entry).unwrap();
+    assert_eq!(env.program_source_paths(pid, Some(&entry)), vec![entry.clone()]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_single_file_program_watches_just_its_entry() {
     let dir = temp_dir("single");

@@ -248,6 +248,7 @@ vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
 ```
 
 ```petal
+import vec2
 let hit = raycast(pos, vec3(0, -1, 0), 2.0)
 let grounded = hit != nil && hit.dist < 0.6
 ```
@@ -291,6 +292,7 @@ vm.emitter("body", "physics", "declare_body");    // custom tag
 ```
 
 ```petal
+import vec2
 draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: #cc3333})
 sfx("jump", {volume: 0.8})
 ```

@@ -1,6 +1,6 @@
 // Lambdas outside the numeric subset. petal2glsl.py should refuse each one
 // with a message that names the construct and where it is:
-//
+// petal-fix-imports-ignore
 //     python3 petal2glsl.py unsupported.ptl --out out/unsupported   (exits 1)
 
 class Fx

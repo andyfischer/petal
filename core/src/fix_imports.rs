@@ -217,9 +217,6 @@ impl ImportFixer {
             return unchanged(Vec::new());
         }
         let missing = unresolved_names(&program);
-        if missing.is_empty() {
-            return unchanged(Vec::new());
-        }
         // What the file already imports is never added again, and a name a
         // module the file imports would provide is not this rewrite's job.
         let already: HashSet<String> = program
@@ -228,10 +225,24 @@ impl ImportFixer {
             .iter()
             .map(|i| i.module.clone())
             .collect();
-        self.export_index();
-        let index = self.index.as_ref().expect("just built");
         let mut add: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut notes = Vec::new();
+        // `x.name()` used to fall back to any builtin `name(x)`; for a
+        // builtin that now lives in a package it does so only where the
+        // package is imported, and nothing fails until the line runs.
+        for (name, package) in builtin_method_calls(source, &program) {
+            if already.contains(package) {
+                continue;
+            }
+            add.entry(package.to_string())
+                .or_default()
+                .push(format!(".{name}()"));
+        }
+        if missing.is_empty() && add.is_empty() {
+            return unchanged(Vec::new());
+        }
+        self.export_index();
+        let index = self.index.as_ref().expect("just built");
         let mut unprovided = false;
         // Names with one provider first: the import one of them adds may be
         // what a name with several providers is waiting for.
@@ -384,6 +395,84 @@ pub fn unresolved_names(program: &Program) -> BTreeSet<String> {
         }
     }
     out
+}
+
+/// Method calls in the entry file that can only mean a domain builtin
+/// (`v.normalize()` → the `vec2` package's `normalize`): `(method, package)`,
+/// sorted, one per method name.
+///
+/// "Can only mean" is a judgement made from the outside, so it is a careful
+/// one: the name must be declared by a bundled builtin package, not be bound
+/// in the file already (then the call reaches it today), and nothing in the
+/// program may define something else it could be — a function or a class
+/// method of that name exported by a module the file imports, or a `fn`, a
+/// class method or a record field of that name written in the file itself.
+fn builtin_method_calls(source: &str, program: &Program) -> Vec<(String, &'static str)> {
+    use crate::ast::{Expr, ExprKind, ExprVisitor, walk_expr};
+    #[derive(Default)]
+    struct Scan {
+        methods: BTreeSet<String>,
+        /// Names the file gives a meaning of its own: record fields,
+        /// functions and class methods.
+        own: HashSet<String>,
+    }
+    impl ExprVisitor for Scan {
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::Call { function, .. } => {
+                    if let ExprKind::FieldAccess { field, .. } = &function.kind {
+                        self.methods.insert(field.clone());
+                    }
+                }
+                ExprKind::Record(fields) => {
+                    for field in fields {
+                        if let crate::ast::RecordField::Named(name, _) = field {
+                            self.own.insert(name.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+            walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::FnDecl { name, .. } = &s.kind {
+                let method = name.rsplit('.').next().unwrap_or(name);
+                self.own.insert(method.to_string());
+            }
+            crate::ast::walk_stmt(self, s);
+        }
+    }
+    let Ok((_, stmts)) = crate::cst::parse_source(source, ENTRY_FILE) else {
+        return Vec::new();
+    };
+    let mut scan = Scan::default();
+    for stmt in &stmts {
+        scan.visit_stmt(stmt);
+    }
+    // What the modules the program loads export, bare or as `Class.method`.
+    let exported: HashSet<&str> = program
+        .imports
+        .exports
+        .iter()
+        .filter(|(module, _)| {
+            crate::native_decl::builtin_package_of_module(module).is_none()
+        })
+        .flat_map(|(_, names)| names.iter())
+        .map(|name| name.rsplit('.').next().unwrap_or(name))
+        .collect();
+    let unresolved = unresolved_names(program);
+    scan.methods
+        .iter()
+        .filter(|name| !scan.own.contains(*name) && !exported.contains(name.as_str()))
+        // A name the file also uses bare and unresolved is handled, with its
+        // import, by the bare-name rewrite.
+        .filter(|name| !unresolved.contains(*name))
+        .filter_map(|name| {
+            let package = crate::native_decl::builtin_package_of(name)?;
+            Some((name.clone(), package))
+        })
+        .collect()
 }
 
 /// The qualifier an import statement binds — or, for a selective import,
@@ -819,6 +908,66 @@ mod tests {
         let again = fixer.add_missing_imports(&fixed.source, None);
         assert_eq!(again.source, fixed.source);
         assert!(again.changes.is_empty());
+    }
+
+    // ---- builtins that moved into packages ------------------------------
+
+    #[test]
+    fn a_moved_builtin_gets_the_import_of_its_package() {
+        let mut fixer = ImportFixer::new(&[]);
+        let src = "print(lerp(0, 10, 0.5))\nlet v = vec3(1, 2, 3)\nprint(noise(0.5), hsv(0, 1, 1))\n\
+                   print(json_stringify(dual(1, 1)))\npush_output(symbol(\"out\"), 1)\nprint(clamp(5, 0, 1))\n";
+        let fixed = fixer.add_missing_imports(src, None);
+        assert_eq!(
+            fixed.source,
+            format!(
+                "import autodiff\nimport color\nimport creative\nimport io\nimport json\n\
+                 import noise\nimport vec2\n\n{src}"
+            )
+        );
+        // Idempotent, and a file that already imports is left alone.
+        let again = fixer.add_missing_imports(&fixed.source, None);
+        assert_eq!(again.source, fixed.source);
+        assert!(again.changes.is_empty(), "{:?}", again.changes);
+    }
+
+    #[test]
+    fn a_name_the_file_defines_is_not_a_moved_builtin() {
+        let mut fixer = ImportFixer::new(&[]);
+        let src = "fn lerp(a, b)\n  a + b\nend\nprint(lerp(1, 2))\n";
+        let fixed = fixer.add_missing_imports(src, None);
+        assert_eq!(fixed.source, src);
+    }
+
+    #[test]
+    fn a_method_call_that_can_only_be_a_moved_builtin_gets_the_import() {
+        let mut fixer = ImportFixer::new(&[]);
+        // Nothing fails to compile here: `v.mag()` only fails when it runs.
+        let src = "let v = [3, 4]\nprint(v.mag())\n";
+        let fixed = fixer.add_missing_imports(src, None);
+        assert_eq!(fixed.source, format!("import creative\n\n{src}"));
+        assert_eq!(fixed.changes, ["added `import creative` (for `.mag()`)"]);
+        assert!(fixer.add_missing_imports(&fixed.source, None).changes.is_empty());
+    }
+
+    #[test]
+    fn a_method_call_something_else_may_answer_adds_nothing() {
+        let mut fixer = ImportFixer::new(&[]);
+        // A record field, a function and a class method of the name.
+        for src in [
+            "let r = {limit: fn(x) x end}\nprint(r.limit(1))\n",
+            "fn rotate(shape, by)\n  shape\nend\nprint([1].rotate(2))\n",
+            "class Body\n  x: num,\nend\nfn Body.normalize(b)\n  b\nend\nprint(Body(1).normalize())\n",
+        ] {
+            assert_eq!(fixer.add_missing_imports(src, None).source, src, "{src}");
+        }
+        // … or a module the file imports exports it.
+        let mut env = Env::new();
+        env.register_package("phys", [("phys", "pub fn limit(v, m)\n  v\nend\n")])
+            .unwrap();
+        let mut fixer = ImportFixer::with_env(env, &[]);
+        let src = "import phys\nprint([1].limit(2))\n";
+        assert_eq!(fixer.add_missing_imports(src, None).source, src);
     }
 
     #[test]

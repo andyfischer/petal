@@ -12,6 +12,8 @@
 
 import ui
 import garden
+import creative
+import noise
 
 let TAU = 6.28318530718
 

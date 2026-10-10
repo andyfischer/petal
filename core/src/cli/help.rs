@@ -452,7 +452,7 @@ DESCRIPTION
        Migrates every .ptl file under the given paths (directories are
        searched recursively, skipping dot-directories, node_modules and
        target; the default is the current directory) and rewrites them in
-       place. It makes four changes, and only to import lines:
+       place. It makes these changes, and only to import lines:
 
        A sibling file imported by a bare name becomes a relative import.
               'import level' -> 'import ./level', when level.ptl sits beside
@@ -480,6 +480,16 @@ DESCRIPTION
               packages export the name and all but one are built on that
               one (bloom's 'button' over ui's), the one underneath is
               imported; otherwise the name is reported and left alone.
+
+       A builtin that moved into a package gets its import.
+              The domain builtins are declared by bundled packages now:
+              creative (lerp, map_range, distance, mag, smoothstep, choose),
+              noise, color (hsv, hsl, ...), vec2 (vec2, vec3, normalize,
+              dot, ...), autodiff, json and io (symbol, push_output,
+              binding). A bare use is a missing import like any other. A
+              method call ('v.normalize()') fails only when its line runs,
+              so the import is added when nothing in the program defines a
+              function, a class method or a record field of that name.
 
        'Available' means the packages bundled in this binary plus the ones
        under each -I <dir> and PETAL_PATH. A path that already resolves as a

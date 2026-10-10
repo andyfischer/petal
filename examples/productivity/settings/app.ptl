@@ -21,6 +21,7 @@ import ./icons: glyph
 import ./preview as pv
 import ui
 import garden
+import json
 
 let SECTIONS = sc.SECTIONS
 let GROUPS = sc.GROUPS

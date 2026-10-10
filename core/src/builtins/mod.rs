@@ -471,14 +471,14 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_for_each = Some(for_each_id);
 
     // Parameter names, for named arguments: read off the builtins' `native fn`
-    // declarations in the bundled `core` package, the one place they are
-    // written (`core/packages/core`, `crate::native_decl`). Applied last and
+    // declarations in the bundled `core` and domain builtin packages, the
+    // one place they are written (`core/packages/`, `crate::native_decl`). Applied last and
     // by name, so the registration order above — which is load-bearing — is
     // not disturbed.
-    let undeclared = crate::native_decl::core_decls().apply_to(table);
+    let undeclared = crate::native_decl::builtin_decls().apply_to(table);
     debug_assert!(
         undeclared.is_empty(),
-        "the core package declares natives that are not registered: {undeclared:?}"
+        "the builtin packages declare natives that are not registered: {undeclared:?}"
     );
 }
 

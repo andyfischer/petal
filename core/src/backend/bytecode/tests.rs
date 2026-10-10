@@ -591,14 +591,10 @@ fn assert_inplace_parity(code: &str) {
 
 /// Compile `code` to a `Program` (the front half of the run pipeline).
 fn compile_program(code: &str) -> crate::program::Program {
-    use crate::compiler::Compiler;
-    use crate::native_fn::NativeFnTable;
-    use crate::program::ProgramId;
-    use crate::source_map::ENTRY_FILE;
-    let (_, stmts) = crate::cst::parse_source(code, ENTRY_FILE).expect("parse");
-    let mut natives = NativeFnTable::new();
-    crate::builtins::register_builtins(&mut natives);
-    Compiler::new().compile(&stmts, code.to_string(), ProgramId(0), &natives)
+    // Through an `Env`, so a snippet's imports (`import io`) resolve.
+    crate::env::Env::new()
+        .compile_program_diag(crate::program::ProgramId(0), code, None)
+        .expect("compile")
 }
 
 /// Count of in-place-eligible mutation terms the analysis finds in `code`.
@@ -727,10 +723,10 @@ fn inplace_does_not_fire_on_two_state_slots_sharing_an_id() {
 fn inplace_does_not_fire_when_the_state_container_is_emitted() {
     // The output buffer is drained by the host *after* the run, so the id
     // outlives the run with a live reader — in the loop or after it.
-    let code = "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])";
+    let code = "import io; state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])";
     assert_stateful_parity(code, 3);
     assert_eq!(inplace_count(code), 0, "emitted mid-loop must not fire");
-    let code = "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\nend\npush_output(s, xs)\nprint(xs[0])";
+    let code = "import io; state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\nend\npush_output(s, xs)\nprint(xs[0])";
     assert_stateful_parity(code, 3);
     assert_eq!(
         inplace_count(code),
@@ -864,7 +860,7 @@ fn state_shapes_agree_across_repeated_runs() {
         "state xs = [9]\nlet old = xs\nprint(len(old))\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(xs))",
         "state xs = [9]\nlet old = xs\nfor i in range(0, 3) do xs = append(xs, i) end\nprint(len(old), len(xs))",
         // Retention forms that must keep copying.
-        "state xs = [0, 0, 0]\nlet s = symbol(\"p\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
+        "import io; state xs = [0, 0, 0]\nlet s = symbol(\"p\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
         "state xs = []\nlet log = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  log = append(log, xs)\nend\nprint(len(log[0]), len(xs))",
         "state xs = []\nfor i in range(0, 3) do xs = append(xs, i) end\nlet peek = fn() -> len(xs)\nprint(peek())",
         "fn probe(v)\n  len(v)\nend\nstate xs = []\nfor i in range(0, 3) do\n  xs = append(xs, i)\n  print(probe(xs))\nend",
@@ -1496,7 +1492,7 @@ fn inplace_does_not_fire_when_a_guarded_state_container_escapes() {
     // The guard's continuation phi is where the container leaves the construct;
     // anything retaining it from there outlives the run just as it would from
     // inside the region.
-    let code = "state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])";
+    let code = "import io; state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0, 4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])";
     assert_stateful_parity(code, 3);
     assert_eq!(
         inplace_count(code),
@@ -1557,7 +1553,7 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
         "let go = 2\nlet a = f64_array(4)\nlet r = match go\n  when 1 -> for i in range(0,4) do a[i] = a[i] + 1.0 end\n  when _ -> a\nend\nprint(a[0], len(r))",
         "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  if go > 0 then\n    for i in range(0,4) do a[i] = a[i] + 1.0 end\n  end\nend\nprint(a[0])",
         "let go = 1\nlet xs = []\nfor k in range(0,3) do\n  if k > 0 then\n    for i in range(0,2) do xs = append(xs, i) end\n  end\nend\nprint(len(xs))",
-        "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlet s = symbol(\"p\")\npush_output(s, a)\nprint(a[0])",
+        "import io; let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlet s = symbol(\"p\")\npush_output(s, a)\nprint(a[0])",
         "let go = 1\nlet a = f64_array(4)\nlet log = []\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  log = append(log, a)\nend\nprint(a[0], len(log))",
         "let go = 1\nlet a = f64_array(4)\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlet peek = fn() -> a[0]\nprint(peek())",
         "let go = 1\nlet a = f64_array(4)\nlet r = if go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  a\nelse\n  a\nend\nprint(r[0], a[0])",
@@ -1581,7 +1577,7 @@ fn guarded_shapes_agree_with_clone_and_alloc() {
         "state v = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do\n    if i > 0 then v[i] = v[i] + 1.0 end\n  end\n  for i in range(0,4) do v[i] = v[i] * 2.0 end\nend\nprint(v[0])",
         "state a = f64_array(4)\nstate keep = []\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nelse\n  keep = a\nend\nprint(a[0], len(keep))",
         "state a = f64_array(4)\nstate log = []\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\nlog = append(log, a[0])\nprint(a[0], len(log))",
-        "state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])",
+        "import io; state a = f64_array(4)\nstate go = 1\nlet s = symbol(\"p\")\nif go == 1 then\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\nend\npush_output(s, a)\nprint(a[0])",
         "state a = f64_array(1)\nstate n = 0\nstate other = []\nif n == 0 then\n  a = f64_array(4)\n  other = a\n  for i in range(0,4) do a[i] = a[i] + 1.0 end\n  n = 1\nend\nprint(a[0], len(other))",
         "state px = f64_array(4)\nstate vx = f64_array(4)\nstate go = 1\nif go == 1 then\n  for i in range(0,4) do vx[i] = vx[i] + 1.0 end\n  for i in range(0,4) do px[i] = px[i] + vx[i] end\nend\nprint(px[0], vx[0])",
         "state xs = []\nstate go = 1\nif go == 1 then\n  for i in range(0,3) do\n    if i % 2 == 0 then xs = append(xs, i) end\n  end\nend\nprint(len(xs))",

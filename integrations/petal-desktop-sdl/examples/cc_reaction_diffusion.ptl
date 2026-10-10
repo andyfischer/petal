@@ -18,6 +18,7 @@
 //   space         pause / resume
 
 import ui
+import color
 
 state grid_a = []
 state grid_b = []

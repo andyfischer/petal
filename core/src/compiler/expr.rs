@@ -267,10 +267,16 @@ impl Compiler {
                                 for arg in args {
                                     self.compile_expr(arg);
                                 }
-                                let msg = format!(
+                                let mut msg = format!(
                                     "{}{name}",
                                     crate::typecheck::globals::UNKNOWN_FUNCTION_PREFIX
                                 );
+                                if let Some(hint) =
+                                    crate::native_decl::missing_builtin_import_hint(name)
+                                {
+                                    msg.push_str(" — ");
+                                    msg.push_str(&hint);
+                                }
                                 let msg_cid = self.constants.intern(ConstantValue::String(msg));
                                 return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
                             }
@@ -536,6 +542,8 @@ impl Compiler {
                 "not" => Some("Petal spells logical not as `!`"),
                 _ => None,
             };
+            let builtin_hint = crate::native_decl::missing_builtin_import_hint(name);
+            let hint = hint.or(builtin_hint.as_deref());
             let msg = match hint {
                 Some(hint) => format!("Undefined variable: {} — {}", name, hint),
                 None => format!("Undefined variable: {}", name),

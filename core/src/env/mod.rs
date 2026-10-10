@@ -562,8 +562,9 @@ impl Env {
         }
         // A host may register a native under a builtin's name (its own
         // `log`), replacing it: declared and registered, so not missing —
-        // and, being a `core` name, not something a package has to declare.
-        let core = crate::native_decl::core_host_names();
+        // and, being a builtin's name (`core` or a domain builtin package),
+        // not something a host's package has to declare.
+        let core = crate::native_decl::builtin_host_names();
         let all: std::collections::HashSet<String> = self.native_fn_names().into_iter().collect();
         mismatch.unregistered = declared.difference(&all).cloned().collect();
         mismatch.undeclared = all
@@ -884,8 +885,9 @@ impl Env {
     /// [`module_manifest`](Self::module_manifest) that has a filesystem
     /// origin. Deduped by filesystem identity (two spellings of one file
     /// collapse, the first spelling kept). Modules registered in memory
-    /// ([`register_module`](Self::register_module), the `std` prelude) have
-    /// no file and are not listed. These are the files a hot-reloading host
+    /// ([`register_module`](Self::register_module), the `std` prelude) and
+    /// modules of in-memory or bundled packages (`ui`, `io`, …) have no file
+    /// and are not listed. These are the files a hot-reloading host
     /// watches; [`watch_program_sources`](Self::watch_program_sources)
     /// snapshots them.
     pub fn program_source_paths(
@@ -896,7 +898,10 @@ impl Env {
         let origins = self
             .module_manifest(program_id)
             .into_iter()
-            .filter_map(|m| m.origin);
+            .filter_map(|m| m.origin)
+            // A module of a package held in memory (bundled: `ui`, `io`, …;
+            // or host-registered) carries a path that names no file.
+            .filter(|path| !self.modules.is_memory_origin(path));
         crate::source_watch::dedup_paths(entry.map(|p| p.to_path_buf()).into_iter().chain(origins))
     }
 

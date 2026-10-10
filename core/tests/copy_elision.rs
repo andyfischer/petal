@@ -309,7 +309,7 @@ fn state_container_emitted_as_output_still_copies() {
     // live reader. (Buffered output values are GC roots for this reason.)
     assert_copies(
         "state container pushed to output",
-        "state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
+        "import io; state xs = [0, 0, 0]\nlet s = symbol(\"pts\")\nfor i in range(0, 3) do\n  xs[i] = xs[i] + 1\n  push_output(s, xs)\nend\nprint(xs[0])",
     );
 }
 

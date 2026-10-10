@@ -533,7 +533,7 @@ public:
     }
     bool loaded() const noexcept { return pb_vm_is_loaded(vm_); }
 
-    // ── Bindings (script: binding(symbol("name"))) ──
+    // ── Bindings (script: `import io`, then binding(symbol("name"))) ──
     void set_float(const std::string& n, double v) { check(pb_vm_set_float(vm_, n.c_str(), v)); }
     void set_int(const std::string& n, int64_t v) { check(pb_vm_set_int(vm_, n.c_str(), v)); }
     void set_bool(const std::string& n, bool v) { check(pb_vm_set_bool(vm_, n.c_str(), v)); }

@@ -3,6 +3,8 @@
 // range and produce the corresponding value in another. Combined with `clamp`
 // it's the workhorse of UI layout, color mapping, and response curves.
 
+import creative
+
 print("Temperature -> progress bar")
 print("===========================")
 let temperatures = [32.0, 50.0, 68.0, 86.0, 104.0]

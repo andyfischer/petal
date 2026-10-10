@@ -499,7 +499,7 @@ fn trailing_optional_parameters_may_be_left_off() {
 /// native has no value to read in between.
 #[test]
 fn a_hole_before_a_supplied_optional_is_reported() {
-    let e = err("print(noise(x: 1, z: 2))");
+    let e = err("import noise; print(noise(x: 1, z: 2))");
     assert!(
         e.contains("noise() is missing a value for parameter 'y'"),
         "unexpected error: {e}"
@@ -534,10 +534,10 @@ fn a_builtin_reports_an_unknown_or_repeated_name() {
 /// the names pick the form.
 #[test]
 fn a_builtin_with_several_forms_binds_the_one_the_names_fit() {
-    assert_eq!(out("print(distance(x1: 0, y1: 0, x2: 3, y2: 4))"), "5.0");
-    assert_eq!(out("print(distance(v2: vec2(3, 4), v1: vec2(0, 0)))"), "5.0");
-    assert_eq!(out("print(mag(y: 4, x: 3))"), "5.0");
-    assert_eq!(out("print(mag(v: vec2(3, 4)))"), "5.0");
+    assert_eq!(out("import creative; print(distance(x1: 0, y1: 0, x2: 3, y2: 4))"), "5.0");
+    assert_eq!(out("import creative; import vec2; print(distance(v2: vec2(3, 4), v1: vec2(0, 0)))"), "5.0");
+    assert_eq!(out("import creative; print(mag(y: 4, x: 3))"), "5.0");
+    assert_eq!(out("import creative; import vec2; print(mag(v: vec2(3, 4)))"), "5.0");
     assert_eq!(out("print(range(end: 3))"), "[0, 1, 2]");
     assert_eq!(out("print(range(start: 1, end: 3))"), "[1, 2]");
     assert_eq!(out("print(range(step: 2, start: 0, end: 5))"), "[0, 2, 4]");

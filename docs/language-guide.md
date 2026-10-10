@@ -561,6 +561,7 @@ two vectors of the same kind is component-wise, a number on either side of
 Components read as fields.
 
 ```petal
+import vec2
 let p = vec3(1.0, 2.0, 3.0)
 let v = vec3(0.5, 0.0, -1.0)
 print(p + v * 2)     // vec3(2.0, 2.0, 1.0)
@@ -2256,6 +2257,7 @@ Both are built-ins — no import needed.
 Petal has built-in support for forward-mode automatic differentiation using dual numbers:
 
 ```petal
+import autodiff
 // Create a dual number: dual(value, derivative)
 let x = dual(3.0, 1.0)  // x = 3, dx/dx = 1
 

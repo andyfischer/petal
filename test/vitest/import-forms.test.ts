@@ -62,8 +62,8 @@ describe("import forms", () => {
     expect(r.code).toBe(0);
     const warnings = r.stderr.split("\n").filter((l) => l.startsWith("warning:"));
     expect(warnings.length).toBe(1);
-    expect(warnings[0]).toContain("which hides the builtin `lerp`");
-    expect(warnings[0]).toContain("`import ./tween: lerp`");
+    expect(warnings[0]).toContain("which hides the builtin `clamp`");
+    expect(warnings[0]).toContain("`import ./tween: clamp`");
     expect(r.stderr).toContain("[line 3, column 7]");
   });
 

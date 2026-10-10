@@ -1,4 +1,8 @@
-// Package `core` — Perlin noise (core/src/builtins/noise.rs).
+// Package `noise` — Perlin noise (core/src/builtins/noise.rs).
+//
+// A bundled builtin package: the petal runtime registers these natives in
+// every Env, and `import noise` puts them in scope — bare (`noise(…)`), qualified
+// (`noise.noise(…)`) and as methods (`x.noise(…)`).
 //
 // Native interface declarations: each `native fn` binds a name to the host
 // native of the same name and gives the checker its parameter names, arity

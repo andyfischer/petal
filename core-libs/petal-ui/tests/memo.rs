@@ -32,7 +32,7 @@ fn ui(src: &str) -> Headless {
 
 fn rows(n: usize) -> String {
     format!(
-        "fn row(i)\n\
+        "import vec2; fn row(i)\n\
            let r = {{x: 0, y: i * 20, w: 100, h: 20}}\n\
            let c = if hovered(r) then {{r: 9, g: 9, b: 9, a: 255}} else {{r: 1, g: 1, b: 1, a: 255}} end\n\
            draw_rect(r, c)\n\
@@ -91,7 +91,7 @@ fn a_probe_that_keeps_its_answer_is_a_cutoff() {
 #[test]
 fn state_inside_a_replayed_widget_survives_and_keeps_counting() {
     let src = format!(
-        "fn counter(i)\n\
+        "import vec2; fn counter(i)\n\
            state n = 0\n\
            if clicked({{x: i * 30, y: 0, w: 25, h: 20}}) then n = n + 1 end\n\
            draw_text(\"{{n}}\", vec2(i * 30, 0), 12, {WHITE})\n\
@@ -117,7 +117,7 @@ fn state_inside_a_replayed_widget_survives_and_keeps_counting() {
 #[test]
 fn a_scope_that_prints_is_never_replayed() {
     let src = format!(
-        "fn noisy(i)\n\
+        "import vec2; fn noisy(i)\n\
            print(\"row {{i}}\")\n\
            draw_text(\"{{i}}\", vec2(0, i * 20), 12, {WHITE})\n\
          end\n\
@@ -134,7 +134,7 @@ fn a_scope_that_prints_is_never_replayed() {
 #[test]
 fn a_callback_recreated_each_frame_still_matches() {
     let src = format!(
-        "state var n = 0\n\
+        "import vec2; state var n = 0\n\
          fn btn(r, on_click)\n\
            if clicked(r) then on_click() end\n\
            draw_rect(r, {WHITE})\n\
@@ -159,7 +159,7 @@ fn a_scope_whose_own_cell_escapes_is_not_replayed() {
     // `make` hands out a closure over its own `var`; replaying `make` would
     // hand out the *same* cell, still holding last frame's increments.
     let src = format!(
-        "fn make()\n\
+        "import vec2; fn make()\n\
            var k = 0\n\
            let bump = fn()\n\
              set k = get k + 1\n\
@@ -185,7 +185,7 @@ fn a_call_result_is_never_mutated_in_place_by_its_caller() {
     // the append must copy rather than grow it in place; otherwise the cached
     // list would grow by one every frame.
     let src = format!(
-        "fn mk() [1, 2] end\n\
+        "import vec2; fn mk() [1, 2] end\n\
          let xs = mk()\n\
          xs = append(xs, 3)\n\
          draw_text(\"{{len(xs)}}\", vec2(0, 0), 12, {WHITE})\n"
@@ -200,7 +200,7 @@ fn a_call_result_is_never_mutated_in_place_by_its_caller() {
 #[test]
 fn a_replayed_scope_reports_its_observations() {
     let src = format!(
-        "fn row(i)\n\
+        "import vec2; fn row(i)\n\
            let y = i * 20\n\
            draw_text(\"{{i}}\", vec2(0, y), 12, {WHITE})\n\
          end\n\

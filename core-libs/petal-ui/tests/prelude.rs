@@ -2485,7 +2485,7 @@ fn prelude_has_no_ambiguous_positional_count() {
 /// repeated at the end, in every argument shape `draw_polyline` takes.
 #[test]
 fn draw_polygon_outline_closes_the_polyline() {
-    let src = "let P = [{x: 0, y: 0}, {x: 10, y: 0}, {x: 5, y: 8}]\n\
+    let src = "import vec2; let P = [{x: 0, y: 0}, {x: 10, y: 0}, {x: 5, y: 8}]\n\
                let C = {r: 10, g: 20, b: 30}\n\
                draw_polygon_outline(P, C)\n\
                draw_polygon_outline(P, C, 99)\n\

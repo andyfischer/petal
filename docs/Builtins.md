@@ -1,6 +1,7 @@
 # Builtins Reference
 
-The built-in functions available in every Petal program. For language syntax
+The built-in functions of the Petal runtime: the ones in scope in every
+program, and the domain sets a file imports ([which is which](#which-builtins-need-an-import)). For language syntax
 (variables, control flow, functions, state, pattern matching), see the
 [Language Guide](language-guide.md). The drawing and input builtins used by
 `petal-ui` apps (`draw_rect`, `mouse_x`, ...) are covered in the
@@ -11,6 +12,7 @@ fixed parameter list takes [named arguments](language-guide.md#named-arguments)
 under the names its heading shows, in any order after the positional ones:
 
 ```petal
+import creative
 print(clamp(15, lo: 0, hi: 10))                        // 10
 print(map_range(value: 5, in_lo: 0, in_hi: 10, out_lo: 0, out_hi: 100))  // 50.0
 print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
@@ -34,11 +36,40 @@ print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
 A wrong name is an error when the line runs (`clamp() has no parameter named
 'low'`), and from `petal check` before that.
 
-Each builtin's signature is written once, as a `native fn` declaration in the
-`core` package (`core/packages/core/src/`, compiled into the binary and in
-scope everywhere): parameter names, which are optional, the argument types the
-checker holds a call to, and the result type. See
-[ffi.md](ffi.md#native-interfaces-native-fn) for the declaration syntax.
+Each builtin's signature is written once, as a `native fn` declaration in a
+package compiled into the binary (`core/packages/`): parameter names, which
+are optional, the argument types the checker holds a call to, and the result
+type. See [ffi.md](ffi.md#native-interfaces-native-fn) for the declaration
+syntax.
+
+### Which builtins need an import
+
+What reads as language is **global**: it is declared by the `core` package and
+in scope in every file with no import — `print`, `len`, `str`, `type`,
+`range`, the casts, assertions, the collection, string and record functions,
+the higher-order functions, formatting, and the plain math of the
+[Math](#math) section (plus `clamp` and `random_int`).
+
+The **domain builtins** live in bundled packages and are in scope only in a
+file that imports the package:
+
+| Import | Names |
+|---|---|
+| `import creative` | `lerp`, `map_range`, `distance`, `mag`, `smoothstep`, `choose` |
+| `import noise` | `noise`, `noise_seed` |
+| `import color` | `hsv`, `hsl`, `hsv_deg`, `hsl_deg`, `color_lerp` |
+| `import vec2` | `vec2`, `vec3`, `normalize`, `dot`, `cross`, `limit`, `rotate` |
+| `import autodiff` | `dual`, `value_of`, `deriv_of` |
+| `import json` | `json_stringify`, `json_parse` |
+| `import io` | `symbol`, `push_output`, `binding` |
+
+After `import noise` the names work bare (`noise(x)`), qualified
+(`noise.noise_seed(1)`) and as methods (`x.noise()`); `import noise: noise_seed`
+takes just the names listed. Without the import, a call is an error that says
+which import to add (`petal check` reports it, and `petal fix-imports` adds
+it). Method syntax follows the same rule: `v.normalize()` reaches the `vec2`
+builtin only in a file that imports `vec2`. The values themselves need no
+import: a `vec2` a function was handed still has `.x`, arithmetic and `==`.
 
 ## I/O
 
@@ -256,6 +287,8 @@ degrees(pi())      // 180.0
 
 ## Creative Coding Math
 
+`clamp` is global; the rest of this section needs `import creative`.
+
 Processing-style helpers for animation, layout, and generative code.
 
 ### `clamp(value, lo, hi)`
@@ -284,6 +317,8 @@ numbers, interpolated component-wise. Colors blend like `color_lerp`: per
 channel, alpha included, rounded to int channels.
 
 ```petal
+import creative
+import vec2
 lerp(0.0, 100.0, 0.3)   // 30.0
 lerp(10.0, 20.0, 0.5)   // 15.0
 lerp(vec3(0.0, 0.0, 0.0), vec3(10.0, 20.0, 30.0), 0.5)   // vec3(5.0, 10.0, 15.0)
@@ -297,6 +332,7 @@ Remap a value from one range to another — for example a pixel coordinate in
 `[0, width]` to an angle in `[0, 2π]`.
 
 ```petal
+import creative
 map_range(5.0, 0.0, 10.0, 100.0, 200.0)   // 150.0
 map_range(0.5, 0.0, 1.0, -1.0, 1.0)       //   0.0
 ```
@@ -307,6 +343,8 @@ Euclidean distance. Accepts either four scalars, two `vec2` values, or two
 `vec3` values.
 
 ```petal
+import creative
+import vec2
 distance(0.0, 0.0, 3.0, 4.0)                // 5.0
 distance(vec2(0.0, 0.0), vec2(3.0, 4.0))    // 5.0
 distance(vec3(1.0, 1.0, 1.0), vec3(3.0, 4.0, 7.0))    // 7.0
@@ -318,6 +356,8 @@ Vector magnitude (length). Accepts 2D or 3D scalars, or a single `vec2` or
 `vec3`.
 
 ```petal
+import creative
+import vec2
 mag(3.0, 4.0)          // 5.0
 mag(vec2(3.0, 4.0))    // 5.0
 mag(vec3(2.0, 3.0, 6.0))    // 7.0
@@ -329,11 +369,14 @@ Hermite interpolation between two edges — produces a smooth S-curve from 0 to 
 Equivalent to GLSL's `smoothstep`.
 
 ```petal
+import creative
 smoothstep(0.0, 1.0, 0.5)   // 0.5
 smoothstep(0.0, 1.0, 0.25)  // 0.15625
 ```
 
 ## Noise
+
+Needs `import noise`.
 
 ### `noise(x)` / `noise(x, y)` / `noise(x, y, z)`
 
@@ -341,6 +384,7 @@ Perlin noise in 1D, 2D, or 3D. Returns a smooth value centered around 0. Ideal
 for organic motion, terrain, clouds, and flow fields.
 
 ```petal
+import noise
 noise(0.5)                  // smooth 1D value
 noise(0.3, 0.7)             // smooth 2D value
 noise(0.1, 0.2, 0.3)        // smooth 3D value
@@ -351,10 +395,13 @@ noise(0.1, 0.2, 0.3)        // smooth 3D value
 Sets the global noise seed for reproducibility. Takes an integer.
 
 ```petal
+import noise
 noise_seed(42)
 ```
 
 ## Extended Randomness
+
+`random_int` is global; `choose` needs `import creative`.
 
 ### `random_int(lo, hi)`
 
@@ -369,11 +416,14 @@ random_int(0, 10)    // 0..9
 Returns a random element from a list, or `nil` for an empty list.
 
 ```petal
+import creative
 choose([1, 2, 3])             // one of 1, 2, or 3
 choose(["red", "green"])      // "red" or "green"
 ```
 
 ## Color
+
+Needs `import color`.
 
 All color builtins return an RGB record `{r: int, g: int, b: int}` with channels
 in 0..255 — the same shape produced by the `#rrggbb` color literal.
@@ -385,6 +435,7 @@ Create an RGB color from Hue-Saturation-Value. All three arguments are in
 `hsv_deg`.
 
 ```petal
+import color
 hsv(0.0, 1.0, 1.0)          // { r: 255, g: 0, b: 0 }   (red)
 hsv(1.0 / 3.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }   (green)
 ```
@@ -395,6 +446,7 @@ Create an RGB color from Hue-Saturation-Lightness. Same argument ranges as
 `hsv`. For hue in degrees, use `hsl_deg`.
 
 ```petal
+import color
 hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
 ```
 
@@ -403,6 +455,7 @@ hsl(0.0, 1.0, 0.5)      // { r: 255, g: 0, b: 0 }
 Like `hsv` / `hsl` but with hue in **degrees** `[0, 360)`.
 
 ```petal
+import color
 hsv_deg(120.0, 1.0, 1.0)    // { r: 0, g: 255, b: 0 }
 hsl_deg(120.0, 1.0, 0.5)    // { r: 0, g: 255, b: 0 }
 ```
@@ -414,12 +467,15 @@ Interpolate between two RGB color records. `t=0` returns `c1`, `t=1` returns
 one counts as opaque, 255). `lerp` does the same on two colors.
 
 ```petal
+import color
 let red = hsv_deg(0.0, 1.0, 1.0)
 let blue = hsv_deg(240.0, 1.0, 1.0)
 color_lerp(red, blue, 0.5)   // { r: 128, g: 0, b: 128 }
 ```
 
 ## Vectors (2D and 3D)
+
+Needs `import vec2` (which declares `vec3` and the shared helpers too).
 
 Petal has built-in `vec2` and `vec3` types, backed by two and three f64s. Both
 work with the usual arithmetic operators and share the helpers below
@@ -449,6 +505,8 @@ an `if`, while every `vec3` is truthy, like a record — compare against
 Construct a 2D vector.
 
 ```petal
+import creative
+import vec2
 let v = vec2(3.0, 4.0)
 print(mag(v))    // 5.0
 ```
@@ -458,6 +516,8 @@ print(mag(v))    // 5.0
 Construct a 3D vector.
 
 ```petal
+import creative
+import vec2
 let p = vec3(1.0, 2.0, 2.0)
 print(mag(p))    // 3.0
 print(p * 2)     // vec3(2.0, 4.0, 4.0)
@@ -470,6 +530,7 @@ Return a vector pointing in the same direction as `v` with magnitude 1. The
 zero vector normalizes to the zero vector (`vec2(0, 0)` / `vec3(0, 0, 0)`).
 
 ```petal
+import vec2
 normalize(vec2(3.0, 4.0))    // vec2(0.6, 0.8)
 normalize(vec3(0.0, 0.0, 5.0))    // vec3(0.0, 0.0, 1.0)
 ```
@@ -479,6 +540,7 @@ normalize(vec3(0.0, 0.0, 5.0))    // vec3(0.0, 0.0, 1.0)
 Dot product of two `vec2` or two `vec3` values.
 
 ```petal
+import vec2
 dot(vec2(1.0, 0.0), vec2(0.0, 1.0))   // 0.0
 dot(vec2(2.0, 3.0), vec2(4.0, 5.0))   // 23.0
 dot(vec3(1.0, 2.0, 3.0), vec3(4.0, 5.0, 6.0))   // 32.0
@@ -490,6 +552,7 @@ Cross product of two `vec3` values: a vector perpendicular to both, following
 the right-hand rule.
 
 ```petal
+import vec2
 cross(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0))   // vec3(0.0, 0.0, 1.0)
 ```
 
@@ -499,6 +562,7 @@ Return `v` if its magnitude is at most `max_mag`, otherwise a vector in the same
 direction scaled to that magnitude. Useful for capping velocities.
 
 ```petal
+import vec2
 limit(vec2(6.0, 8.0), 5.0)    // vec2(3.0, 4.0)
 limit(vec2(1.0, 0.0), 5.0)    // vec2(1.0, 0.0)
 limit(vec3(0.0, 0.0, 10.0), 2.0)    // vec3(0.0, 0.0, 2.0)
@@ -511,6 +575,7 @@ Return `v` turned by `angle` radians, in the same sense as
 clockwise. Useful for ship headings and polygon outlines.
 
 ```petal
+import vec2
 rotate(vec2(1.0, 0.0), pi() / 2)   // vec2(~0.0, 1.0)
 rotate(vec2(2.0, 1.0), pi())       // vec2(-2.0, ~-1.0)
 ```
@@ -585,6 +650,7 @@ encodes as its display string. This is the codec for `panel_store_set` and
 any other string-only channel.
 
 ```petal
+import json
 json_stringify({a: 1, b: [true, nil]})   // {"a":1,"b":[true,null]}
 json_stringify("q\"uote")                // "q\"uote"
 ```
@@ -597,12 +663,14 @@ or returns `nil` when the text is not JSON, so a corrupt store entry is a
 `nil`.)
 
 ```petal
+import json
 json_parse("[1, 2.5, \"x\"]")        // [1, 2.5, "x"]
 json_parse("\{\"a\": \{\"b\": 2}}").a.b   // 2  (`\{` — a bare `{` interpolates)
 json_parse("not json")             // nil
 ```
 
 ```petal ignore
+import json
 state todos = json_parse(panel_store_get("todos") ?? "[]") ?? []
 panel_store_set("todos", json_stringify(todos))
 ```
@@ -1133,6 +1201,8 @@ assert_eq(sort([3, 1, 2]), [1, 2, 3])
 
 ## Automatic Differentiation
 
+Needs `import autodiff`.
+
 These functions support forward-mode automatic differentiation with dual numbers.
 
 ### `dual(value, derivative)`
@@ -1140,6 +1210,7 @@ These functions support forward-mode automatic differentiation with dual numbers
 Creates a dual number with the given primal value and derivative.
 
 ```petal
+import autodiff
 let x = dual(3.0, 1.0)   // value = 3.0, derivative = 1.0
 ```
 
@@ -1148,6 +1219,7 @@ let x = dual(3.0, 1.0)   // value = 3.0, derivative = 1.0
 Extracts the primal value from a dual number. Returns a float for regular numbers.
 
 ```petal
+import autodiff
 value_of(dual(3.0, 1.0))   // 3.0
 value_of(42)                // 42.0
 ```
@@ -1157,6 +1229,7 @@ value_of(42)                // 42.0
 Extracts the derivative from a dual number. Returns `0.0` for regular numbers.
 
 ```petal
+import autodiff
 deriv_of(dual(3.0, 1.0))   // 1.0
 deriv_of(42)                // 0.0
 ```

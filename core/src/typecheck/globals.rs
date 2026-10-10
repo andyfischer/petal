@@ -173,11 +173,19 @@ pub fn unresolved_globals<'a>(
                 let Some(msg) = program.get_string_constant(cid) else {
                     continue;
                 };
-                if let Some(name) = msg.strip_prefix(UNKNOWN_FUNCTION_PREFIX) {
-                    format!(
-                        "unknown function `{name}`: nothing by that name is in scope, and it is not \
-                         a builtin (running this line fails with \"{UNKNOWN_FUNCTION_PREFIX}{name}\")"
-                    )
+                if let Some(rest) = msg.strip_prefix(UNKNOWN_FUNCTION_PREFIX) {
+                    // A domain builtin the file has not imported carries the
+                    // import to add after an em dash.
+                    let name = rest.split(' ').next().unwrap_or(rest);
+                    match rest[name.len()..].trim_start().strip_prefix("— ") {
+                        Some(hint) => format!(
+                            "unknown function `{name}`: nothing by that name is in scope — {hint}"
+                        ),
+                        None => format!(
+                            "unknown function `{name}`: nothing by that name is in scope, and it is not \
+                             a builtin (running this line fails with \"{UNKNOWN_FUNCTION_PREFIX}{name}\")"
+                        ),
+                    }
                 } else if let Some(rest) = msg.strip_prefix(UNDEFINED_VARIABLE_PREFIX) {
                     // The compiler appends a hint after an em dash for common
                     // slips from other languages (`null`, `elif`, …).
@@ -313,7 +321,7 @@ mod tests {
 
     #[test]
     fn a_builtin_with_several_forms_takes_any_of_them() {
-        let ok = "print(random(max: 2), random(min: 1, max: 2), distance(v1: vec2(0, 0), v2: vec2(1, 1)))";
+        let ok = "import creative; import vec2; print(random(max: 2), random(min: 1, max: 2), distance(v1: vec2(0, 0), v2: vec2(1, 1)))";
         assert!(unresolved(ok).is_empty());
         let got = unresolved("if false then random(lo: 1, hi: 2) end");
         assert_eq!(

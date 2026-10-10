@@ -289,6 +289,29 @@ way, for code written against an earlier checkout.
 
 Breaking changes made during development, newest first:
 
+- The domain builtins are behind imports. What reads as language stays global
+  (`print`, `len`, `str`, `range`, the casts, the collection and string
+  functions, the plain math including `clamp`, `pow`, `fract`, `radians`,
+  `random_int`); the rest is declared by packages bundled in the binary, and a
+  file names the one it uses:
+  - `import creative`: `lerp`, `map_range`, `distance`, `mag`, `smoothstep`,
+    `choose`.
+  - `import noise`: `noise`, `noise_seed`.
+  - `import color`: `hsv`, `hsl`, `hsv_deg`, `hsl_deg`, `color_lerp`.
+  - `import vec2`: `vec2`, `vec3`, `normalize`, `dot`, `cross`, `limit`,
+    `rotate`.
+  - `import autodiff`: `dual`, `value_of`, `deriv_of`.
+  - `import json`: `json_stringify`, `json_parse`.
+  - `import io`: `symbol`, `push_output`, `binding`.
+
+  After the import the names work bare, qualified (`noise.noise_seed(1)`) and
+  with method syntax (`v.normalize()`). Without it a call is an error that
+  names the import (`Unknown function: lerp — … add \`import creative\``),
+  from `petal check` and at run time alike. `petal fix-imports` adds the
+  imports, method-syntax uses included. The natives themselves are registered
+  in every Env as before, in the same order; a host needs no change beyond
+  its scripts. A host module or package registered under one of these names
+  (`color`, `io`, …) replaces the bundled one.
 - Hosts have no implicit imports and no global natives. Run
   `petal fix-imports` over old scripts, with `-I` for the directory of any
   host package that is not bundled (`-I garden/garden-script/packages`,

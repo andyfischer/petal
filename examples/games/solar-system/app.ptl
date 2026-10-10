@@ -17,6 +17,8 @@
 
 import ui
 import garden
+import creative
+import vec2
 
 // ── Palette ──────────────────────────────────────────────────────────────
 

@@ -27,6 +27,9 @@
 // The input, timing and frame natives are declared in `./input` (module
 // `ui/input`) and re-exported here: `import ui` binds them all.
 pub import ./input
+import color
+import creative
+import io
 
 // Drawing that needs no overloads (core-libs/petal-ui/src/draw.rs).
 pub native fn clear(r: num, g: num, b: num)

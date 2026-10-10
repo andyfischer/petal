@@ -29,3 +29,15 @@ pub native fn asin(x: num)
 pub native fn acos(x: num)
 pub native fn atan(x: num)
 pub native fn hypot(x: num, y: num) -> float
+
+// The functions of core/src/builtins/creative_coding.rs that read as plain
+// arithmetic; the rest of that set is the `creative` package.
+pub native fn clamp(value: num, lo: num, hi: num)
+pub native fn pow(base: num, exp: num) -> float
+pub native fn sign(x: num)
+pub native fn exp(x: num) -> float
+pub native fn log(x) -> float
+pub native fn fract(x: num) -> float
+pub native fn radians(degrees: num) -> float
+pub native fn degrees(radians: num) -> float
+pub native fn random_int(lo: num, hi: num) -> int

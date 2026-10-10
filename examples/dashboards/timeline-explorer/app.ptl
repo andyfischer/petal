@@ -15,6 +15,7 @@
 
 import ui
 import garden
+import creative
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 // A near-black blue ground with two surface steps. Six lane hues of matched

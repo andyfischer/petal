@@ -83,7 +83,7 @@ TEST(run_without_program_fails) {
 
 TEST(load_file_from_disk) {
     fs::path dir = scratch_dir("load_file");
-    write_file(dir / "main.ptl", "push_output(symbol(\"out\"), 42)\n");
+    write_file(dir / "main.ptl", "import io; push_output(symbol(\"out\"), 42)\n");
     petal::Vm vm;
     vm.load_file((dir / "main.ptl").string());
     CHECK_EQ(run_out(vm), std::vector<double>{42});
@@ -93,7 +93,7 @@ TEST(load_file_from_disk) {
 TEST(state_persists_across_frames) {
     petal::Vm vm;
     vm.load_source(
-        "state n = 0\n"
+        "import io; state n = 0\n"
         "n += 1\n"
         "state total = 0.0\n"
         "total = total + 0.5\n"
@@ -107,14 +107,14 @@ TEST(state_persists_across_frames) {
     CHECK_THROWS_CODE(vm.state("nope"), PB_ERR_NOT_FOUND);
 
     // Loading again starts over with a fresh stack.
-    vm.load_source("state n = 100\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    vm.load_source("import io; state n = 100\nn += 1\npush_output(symbol(\"out\"), n)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{101});
 }
 
 TEST(memo_switch_keeps_output_and_state) {
     petal::Vm vm;
     vm.load_source(
-        "fn counter(step)\n"
+        "import io; fn counter(step)\n"
         "  state n = 0\n"
         "  n += step\n"
         "  n\n"
@@ -137,7 +137,7 @@ TEST(memo_switch_keeps_output_and_state) {
 TEST(profiler_reports_functions_and_natives) {
     petal::Vm vm;
     vm.load_source(
-        "fn spin(n)\n"
+        "import io; fn spin(n)\n"
         "  let acc = 0.0\n"
         "  for i in range(0, n) do acc = acc + sqrt(float(i)) end\n"
         "  acc\n"
@@ -158,7 +158,7 @@ TEST(profiler_reports_functions_and_natives) {
 TEST(restart_starts_state_over_without_recompiling) {
     petal::Vm vm;
     CHECK_THROWS_CODE(vm.restart(), PB_ERR_NOT_LOADED);
-    vm.load_source("state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    vm.load_source("import io; state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{1});
     CHECK_EQ(run_out(vm), std::vector<double>{2});
     vm.restart();
@@ -167,7 +167,7 @@ TEST(restart_starts_state_over_without_recompiling) {
 
 TEST(buffers_are_cleared_each_run) {
     petal::Vm vm;
-    vm.load_source("push_output(symbol(\"out\"), 1)\n");
+    vm.load_source("import io; push_output(symbol(\"out\"), 1)\n");
     vm.run();
     vm.run();  // the first run's value was never drained
     CHECK_EQ(vm.drain("out").size(), size_t(1));
@@ -179,7 +179,7 @@ TEST(buffers_are_cleared_each_run) {
 TEST(bindings_reach_the_script) {
     petal::Vm vm;
     vm.load_source(
-        "fn b(name) binding(symbol(name)) end\n"
+        "import io; fn b(name) binding(symbol(name)) end\n"
         "push_output(symbol(\"out\"), b(\"f\"))\n"
         "push_output(symbol(\"out\"), b(\"i\"))\n"
         "push_output(symbol(\"out\"), b(\"flag\"))\n"
@@ -239,7 +239,7 @@ TEST(vec3_is_native_both_ways) {
     });
     vm.set_vec3("sun", 0.5, -1, 0.25);
     vm.load_source(
-        "native fn host_up(...args)\nlet out = symbol(\"out\")\n"
+        "import io; import vec2; native fn host_up(...args)\nlet out = symbol(\"out\")\n"
         "let sun = binding(symbol(\"sun\"))\n"
         "push_output(out, sun)\n"
         "push_output(out, sun + vec3(1, 1, 1))\n"               // operators work: it is a real vec3
@@ -296,7 +296,7 @@ TEST(builder_misuse_is_reported) {
 TEST(buffers_decode_nested_values) {
     petal::Vm vm;
     vm.load_source(
-        "enum Shape\n"
+        "import io; import vec2; enum Shape\n"
         "  Circle(radius),\n"
         "  Box(w, h),\n"
         "  Empty,\n"
@@ -356,7 +356,7 @@ TEST(buffers_decode_nested_values) {
 TEST(views_survive_multiple_drains_in_one_frame) {
     petal::Vm vm;
     vm.load_source(
-        "push_output(symbol(\"a\"), {k: \"first\"})\n"
+        "import io; push_output(symbol(\"a\"), {k: \"first\"})\n"
         "push_output(symbol(\"b\"), {k: \"second\"})\n");
     vm.run();
     petal::Values a = vm.drain("a");
@@ -395,7 +395,7 @@ TEST(host_callback_returns_values) {
     });
     vm.native("nothing", [](petal::Call&) {});
     vm.load_source(
-        "native fn host_add(...args); native fn raycast(...args); native fn names(...args); native fn nothing()\nlet out = symbol(\"out\")\n"
+        "import io; native fn host_add(...args); native fn raycast(...args); native fn names(...args); native fn nothing()\nlet out = symbol(\"out\")\n"
         "push_output(out, host_add(2, 3.5))\n"
         "let hit = raycast({x: 1, y: 10, z: 0}, {x: 0, y: -1, z: 0.5}, 50)\n"
         "push_output(out, hit.dist)\n"
@@ -437,7 +437,7 @@ TEST(natives_are_per_vm) {
     a.native("who", [](petal::Call& c) { c.result().value("a"); });
     b.native("filler", [](petal::Call&) {});  // b registers more natives than a
     b.native("who", [](petal::Call& c) { c.result().value("b"); });
-    const char* src = "native fn who()\npush_output(symbol(\"out\"), who())\n";
+    const char* src = "import io; native fn who()\npush_output(symbol(\"out\"), who())\n";
     a.load_source(src);
     b.load_source(src);
     a.run();
@@ -479,7 +479,7 @@ TEST(emitters_push_tagged_commands) {
     vm.emitter("light", "scene", "point_light");
     vm.emitter("sfx", "audio");
     vm.load_source(
-        "native fn spawn(...args); native fn light(...args); native fn sfx(...args)\nlet r = spawn(\"cube\", {x: 1, y: 2, z: 3}, 0.5)\n"
+        "import io; native fn spawn(...args); native fn light(...args); native fn sfx(...args)\nlet r = spawn(\"cube\", {x: 1, y: 2, z: 3}, 0.5)\n"
         "light({x: 0, y: 5, z: 0}, #ffcc00, 2.0)\n"
         "sfx(\"jump\")\n"
         "spawn(\"sphere\")\n"
@@ -512,7 +512,7 @@ TEST(many_natives_register) {
         else vm.native("c" + std::to_string(i), [i](petal::Call& c) { c.result().value(i); });
     }
     vm.load_source(
-        "native fn e2999(...args); native fn c0(); native fn c2998()\ne2999(1)\n"
+        "import io; native fn e2999(...args); native fn c0(); native fn c2998()\ne2999(1)\n"
         "push_output(symbol(\"out\"), c0() + c2998())\n");
     vm.run();
     CHECK_EQ(vm.drain("buf").size(), size_t(1));
@@ -535,10 +535,10 @@ TEST(native_userdata_outlives_reload) {
         };
         auto fr = [](void* ud) { ++freed; delete static_cast<int*>(ud); };
         CHECK_EQ(pb_vm_register_native(vm, "answer", cb, new int(42), fr, PB_FX_PURE), PB_OK);
-        CHECK_EQ(pb_vm_load_source(vm, "native fn answer()\npush_output(symbol(\"out\"), answer())\n", nullptr), PB_OK);
+        CHECK_EQ(pb_vm_load_source(vm, "import io; native fn answer()\npush_output(symbol(\"out\"), answer())\n", nullptr), PB_OK);
         CHECK_EQ(pb_vm_run(vm), PB_OK);
         pb_reload_result r;
-        CHECK_EQ(pb_vm_reload_source(vm, "native fn answer()\npush_output(symbol(\"out\"), answer() + 1)\n", &r), PB_OK);
+        CHECK_EQ(pb_vm_reload_source(vm, "import io; native fn answer()\npush_output(symbol(\"out\"), answer() + 1)\n", &r), PB_OK);
         CHECK_EQ(pb_vm_run(vm), PB_OK);
         pb_values out;
         CHECK_EQ(pb_vm_drain(vm, "out", &out), PB_OK);
@@ -565,7 +565,7 @@ TEST(native_takes_named_arguments_once_declared) {
     CHECK_EQ(pb_vm_declare_native_params(vm, "nope", "a"), PB_ERR_INVALID_ARG);
     CHECK_EQ(pb_vm_declare_native_params(vm, "sub", "a?, b"), PB_ERR_INVALID_ARG);
     CHECK_EQ(pb_vm_load_source(vm,
-                               "native fn sub(...args)\npush_output(symbol(\"out\"), sub(b: 1, a: 10))\n"
+                               "import io; native fn sub(...args)\npush_output(symbol(\"out\"), sub(b: 1, a: 10))\n"
                                "push_output(symbol(\"out\"), sub(10, c: 5, b: 1))\n",
                                nullptr),
              PB_OK);
@@ -722,7 +722,7 @@ TEST(ui_prelude_widgets_draw) {
 TEST(ui_keyboard_and_relative_mouse) {
     petal::Vm vm;
     vm.load_source(
-        "import ui\nlet out = symbol(\"out\")\n"
+        "import io; import ui\nlet out = symbol(\"out\")\n"
         "push_output(out, if key_down(\"space\") then 1 else 0 end)\n"
         "push_output(out, if key_pressed(\"w\") then 1 else 0 end)\n"
         "push_output(out, mouse_dx())\n"
@@ -782,7 +782,7 @@ TEST(ui_draw_full_vocabulary) {
     vm.emitter("draw_sprite", "draw_commands", "sprite");
     vm.set_text_metrics(0.5);
     vm.load_source(
-        "import ui\n"
+        "import io; import ui\n"
         "native fn draw_sprite(...args)\n"
         "draw_rect_outline(1, 2, 3, 4, 10, 20, 30, 200, 3)\n"
         "draw_rect_gradient({x: 0, y: 0, w: 50, h: 10}, #ff0000, #0000ff, 0.5)\n"
@@ -842,7 +842,7 @@ TEST(text_advance_table_measures_per_glyph) {
     advances[97] = 0.2;
     advances[98] = 1.0;
     vm.set_text_advances(advances);
-    vm.load_source("import ui\npush_output(symbol(\"out\"), text_width(\"abc\", 10))\n");
+    vm.load_source("import io; import ui\npush_output(symbol(\"out\"), text_width(\"abc\", 10))\n");
     CHECK_EQ(run_out(vm), std::vector<double>{2.0 + 10.0 + 5.0});
     // An empty table is uniform again.
     vm.set_text_advances({});
@@ -853,7 +853,7 @@ TEST(seeded_random_is_reproducible) {
     auto sample = [] {
         petal::Vm vm;
         vm.set_seed(1234);
-        vm.load_source("push_output(symbol(\"out\"), random(0, 1000000))\n");
+        vm.load_source("import io; push_output(symbol(\"out\"), random(0, 1000000))\n");
         std::vector<double> v;
         for (int i = 0; i < 3; ++i) v.push_back(run_out(vm)[0]);
         return v;
@@ -867,7 +867,7 @@ TEST(seeded_random_is_reproducible) {
 
 TEST(compile_errors_are_structured) {
     petal::Vm vm;
-    vm.load_source("push_output(symbol(\"out\"), 1)\n");
+    vm.load_source("import io; push_output(symbol(\"out\"), 1)\n");
     petal::Error e = CHECK_THROWS_CODE(vm.load_source("let x = 1\nlet y = (2 +\n", "broken.ptl"), PB_ERR_COMPILE);
     CHECK_EQ(e.file(), std::string("broken.ptl"));
     CHECK(e.line() >= 2);
@@ -889,7 +889,7 @@ TEST(compile_errors_are_structured) {
 TEST(runtime_errors_are_reported) {
     petal::Vm vm;
     vm.load_source(
-        "state frames = 0\n"
+        "import io; state frames = 0\n"
         "frames += 1\n"
         "push_output(symbol(\"out\"), frames)\n"
         "if frames == 2 then\n"
@@ -915,7 +915,7 @@ TEST(registered_modules_are_reached_by_import) {
     vm.register_module("engine", "pub fn twice(x)\n  x * 2\nend\n");
     vm.register_module("util", "pub fn inc(x)\n  x + 1\nend\n");
     vm.load_source(
-        "import ui\n"
+        "import io; import ui\n"
         "import engine\n"
         "import util\n"
         "push_output(symbol(\"out\"), twice(util.inc(20)))\n"
@@ -923,7 +923,7 @@ TEST(registered_modules_are_reached_by_import) {
     CHECK_EQ(run_out(vm), std::vector<double>{42});
 
     // Nothing is imported implicitly: without the import the name is unknown.
-    vm.load_source("push_output(symbol(\"out\"), twice(1))\n");
+    vm.load_source("import io; push_output(symbol(\"out\"), twice(1))\n");
     CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
 }
 
@@ -934,7 +934,7 @@ TEST(a_package_registers_from_memory) {
         {"shapes", "pub fn area(w, h)\n  w * h\nend\n"},
     });
     vm.load_source(
-        "import kit\n"
+        "import io; import kit\n"
         "import kit/shapes as s\n"
         "push_output(symbol(\"out\"), area(two(), 3) + s.area(1, 1))\n");
     CHECK_EQ(run_out(vm), std::vector<double>{7});
@@ -947,13 +947,13 @@ TEST(a_host_interface_package_declares_its_natives) {
     vm.native("gravity_at", [](petal::Call& call) { call.result().value(-10.0 * call[0].number()); });
     // Registered but not declared: no script can reach it, and the check says so.
     CHECK(vm.verify_interface({"ui"}).find("gravity_at") != std::string::npos);
-    vm.load_source("push_output(symbol(\"out\"), gravity_at(2))\n");
+    vm.load_source("import io; push_output(symbol(\"out\"), gravity_at(2))\n");
     CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
 
     // The interface package declares it; scripts import the package.
     vm.register_package("game", {{"game", "pub native fn gravity_at(frame: num) -> float\n"}});
     CHECK_EQ(vm.verify_interface({"ui", "game"}), std::string());
-    vm.load_source("import game\npush_output(symbol(\"out\"), gravity_at(frame: 2))\n");
+    vm.load_source("import io; import game\npush_output(symbol(\"out\"), gravity_at(frame: 2))\n");
     CHECK_EQ(run_out(vm), std::vector<double>{-20});
 
     // A declared native the host does not register is reported, and a script
@@ -979,7 +979,7 @@ TEST(hot_reload_preserves_state) {
     fs::path dir = scratch_dir("hot_reload");
     fs::path main = dir / "game.ptl";
     write_file(main,
-               "state count = 0\n"
+               "import io; state count = 0\n"
                "count += 1\n"
                "push_output(symbol(\"out\"), count * 1)\n");
     petal::Vm vm;
@@ -990,7 +990,7 @@ TEST(hot_reload_preserves_state) {
 
     // Edit a constant while "running".
     write_file(main,
-               "state count = 0\n"
+               "import io; state count = 0\n"
                "state extra = 5\n"
                "count += 1\n"
                "push_output(symbol(\"out\"), count * 100 + extra)\n");
@@ -1013,7 +1013,7 @@ TEST(hot_reload_preserves_state) {
     CHECK_EQ(run_out(vm), std::vector<double>{405});
 
     // Fixing it resumes with state intact; removed state is dropped.
-    write_file(main, "state count = 0\ncount += 1\npush_output(symbol(\"out\"), count)\n");
+    write_file(main, "import io; state count = 0\ncount += 1\npush_output(symbol(\"out\"), count)\n");
     r = vm.reload();
     CHECK(r.state_preserved >= 1u);
     CHECK_EQ(r.state_dropped, 1u);  // `extra`
@@ -1024,7 +1024,7 @@ TEST(hot_reload_tracks_imported_modules) {
     fs::path dir = scratch_dir("hot_reload_imports");
     write_file(dir / "tuning.ptl", "pub let SPEED = 2\n");
     write_file(dir / "main.ptl",
-               "import ./tuning\n"
+               "import io; import ./tuning\n"
                "state pos = 0\n"
                "pos += tuning.SPEED\n"
                "push_output(symbol(\"out\"), pos)\n");
@@ -1048,7 +1048,7 @@ TEST(hot_reload_tracks_imported_modules) {
     // Both files edited: named in source_files() order.
     write_file(dir / "tuning.ptl", "pub let SPEED = 1\n");
     write_file(dir / "main.ptl",
-               "import ./tuning\n"
+               "import io; import ./tuning\n"
                "state pos = 0\n"
                "pos += tuning.SPEED * 2\n"
                "push_output(symbol(\"out\"), pos)\n");
@@ -1057,14 +1057,14 @@ TEST(hot_reload_tracks_imported_modules) {
 
 TEST(hot_reload_watches_new_imports_and_deletions) {
     fs::path dir = scratch_dir("hot_reload_watch");
-    write_file(dir / "main.ptl", "push_output(symbol(\"out\"), 1)\n");
+    write_file(dir / "main.ptl", "import io; push_output(symbol(\"out\"), 1)\n");
     write_file(dir / "extra.ptl", "pub let BONUS = 5\n");
     petal::Vm vm;
     vm.load_file((dir / "main.ptl").string());
     CHECK_EQ(vm.source_files().size(), size_t(1));
 
     // The reloaded program imports a new module: it is watched from then on.
-    write_file(dir / "main.ptl", "import ./extra\npush_output(symbol(\"out\"), extra.BONUS)\n");
+    write_file(dir / "main.ptl", "import io; import ./extra\npush_output(symbol(\"out\"), extra.BONUS)\n");
     CHECK(vm.sources_changed());
     vm.reload();
     CHECK_EQ(vm.source_files().size(), size_t(2));
@@ -1097,7 +1097,7 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
     fs::path config = dir / "config.ptl";
     write_file(config, "// knobs\npub config let POST = {bloom: 0.25, steps: [1, 2]}\n");
     write_file(main,
-               "import ./config\n"
+               "import io; import ./config\n"
                "state frames = 0\n"
                "frames += 1\n"
                "push_output(symbol(\"out\"), config.POST.bloom * 100 + config.POST.steps[1])\n");
@@ -1153,7 +1153,7 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
 TEST(failed_load_file_is_watched_and_retried) {
     fs::path dir = scratch_dir("failed_load");
     fs::path main = dir / "main.ptl";
-    write_file(main, "import ./helper\npush_output(symbol(\"out\"), helper.N)\n");
+    write_file(main, "import io; import ./helper\npush_output(symbol(\"out\"), helper.N)\n");
     petal::Vm vm;
     CHECK_THROWS_CODE(vm.load_file(main.string()), PB_ERR_COMPILE);  // no helper.ptl yet
     CHECK(!vm.loaded());
@@ -1176,7 +1176,7 @@ TEST(failed_load_file_is_watched_and_retried) {
     petal::Vm vm2;
     CHECK_THROWS_CODE(vm2.load_file(later.string()), PB_ERR_IO);
     CHECK(!vm2.sources_changed());
-    write_file(later, "push_output(symbol(\"out\"), 9)\n");
+    write_file(later, "import io; push_output(symbol(\"out\"), 9)\n");
     CHECK(vm2.sources_changed());
     vm2.reload();
     CHECK_EQ(run_out(vm2), std::vector<double>{9});
@@ -1190,7 +1190,7 @@ TEST(failed_reload_watches_the_script_directory) {
     fs::path main = dir / "main.ptl";
     fs::create_directories(dir / "lib");
     write_file(dir / "lib" / "shapes.ptl", "pub let SIDES = (\n");  // broken, not imported yet
-    write_file(main, "state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    write_file(main, "import io; state n = 0\nn += 1\npush_output(symbol(\"out\"), n)\n");
     petal::Vm vm;
     vm.load_file(main.string());
     CHECK_EQ(run_out(vm), std::vector<double>{1});
@@ -1199,7 +1199,7 @@ TEST(failed_reload_watches_the_script_directory) {
     CHECK(!vm.sources_changed());
 
     // The edit imports the broken module: the reload fails.
-    write_file(main, "import ./lib/shapes\nstate n = 0\nn += shapes.SIDES\npush_output(symbol(\"out\"), n)\n");
+    write_file(main, "import io; import ./lib/shapes\nstate n = 0\nn += shapes.SIDES\npush_output(symbol(\"out\"), n)\n");
     CHECK(vm.sources_changed());
     CHECK_THROWS_CODE(vm.reload(), PB_ERR_COMPILE);
     CHECK(!vm.sources_changed());  // this version was looked at
@@ -1223,9 +1223,9 @@ TEST(failed_reload_watches_the_script_directory) {
 TEST(reload_from_source) {
     petal::Vm vm;
     vm.native("host_scale", [](petal::Call& c) { c.result().value(c[0].number() * 10); });
-    vm.load_source("state n = 1\nn += 1\npush_output(symbol(\"out\"), n)\n");
+    vm.load_source("import io; state n = 1\nn += 1\npush_output(symbol(\"out\"), n)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{2});
-    petal::ReloadResult r = vm.reload_source("native fn host_scale(n)\nstate n = 1\nn += 1\npush_output(symbol(\"out\"), host_scale(n))\n");
+    petal::ReloadResult r = vm.reload_source("import io; native fn host_scale(n)\nstate n = 1\nn += 1\npush_output(symbol(\"out\"), host_scale(n))\n");
     CHECK(r.state_preserved >= 1u);
     CHECK_EQ(r.state_dropped, 0u);
     CHECK_EQ(run_out(vm), std::vector<double>{30});

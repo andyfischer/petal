@@ -1,0 +1,6 @@
+# autodiff — forward-mode automatic differentiation: dual numbers. A bundled builtin package: the natives are
+# registered by the petal runtime in every Env (core/src/builtins/autodiff.rs); this
+# package is their interface, and `import autodiff` is what puts them in scope.
+[package]
+name = "autodiff"
+version = "0.1.0"

@@ -16,6 +16,8 @@ import bloom
 import text_layout
 import ui
 import garden
+import creative
+import json
 
 // ── Palette ──────────────────────────────────────────────────────────────
 

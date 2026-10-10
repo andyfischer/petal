@@ -24,6 +24,9 @@
 
 import ui
 import garden
+import color
+import creative
+import noise
 
 // ── Palette ──────────────────────────────────────────────────────────────
 

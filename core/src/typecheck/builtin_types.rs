@@ -227,12 +227,13 @@ pub fn sort_key_type_ok(ty: Type) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{ArgSlot, intrinsic_return_type, native_param_slots, native_return_type};
-    use crate::native_decl::{NativeDecls, core_decls};
+    use crate::native_decl::{NativeDecls, builtin_decls, core_decls};
     use crate::types::Type;
 
-    /// What the checker concludes for a call to core builtin `name`.
+    /// What the checker concludes for a call to builtin `name` (`core`'s, or
+    /// a domain builtin package's where it is imported).
     fn builtin_return_type(name: &str, args: &[Type]) -> Option<Type> {
-        native_return_type(core_decls().get(name)?, args)
+        native_return_type(builtin_decls().get(name)?, args)
     }
 
     #[test]

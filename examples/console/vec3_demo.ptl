@@ -4,6 +4,9 @@
 // Simulates a ball thrown across a room, bouncing off the floor, then
 // builds a camera basis with cross products.
 
+import creative
+import vec2
+
 let gravity = vec3(x: 0.0, y: -9.8, z: 0.0)
 let dt = 0.1
 var pos = vec3(x: 0.0, y: 1.0, z: 0.0)

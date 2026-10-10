@@ -3,6 +3,7 @@
     "core/src/builtins/mod.rs",
     "core/src/builtins/*.rs",
     "core/packages/core/src/*.ptl",
+    "core/packages/*/*.ptl",
     "core-libs/petal-ui/prelude/*.ptl",
     "core/prelude/std.ptl",
     "core-libs/petal-ui/src/draw.rs",
@@ -753,7 +754,8 @@
       "source": {
         "file": "core/src/builtins/autodiff.rs",
         "line": 8
-      }
+      },
+      "import": "autodiff"
     },
     {
       "name": "value_of",
@@ -778,7 +780,8 @@
       "source": {
         "file": "core/src/builtins/autodiff.rs",
         "line": 24
-      }
+      },
+      "import": "autodiff"
     },
     {
       "name": "deriv_of",
@@ -803,7 +806,8 @@
       "source": {
         "file": "core/src/builtins/autodiff.rs",
         "line": 43
-      }
+      },
+      "import": "autodiff"
     },
     {
       "name": "sort",
@@ -1344,7 +1348,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 36
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "map_range",
@@ -1401,7 +1406,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 110
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "distance",
@@ -1460,7 +1466,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 126
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "mag",
@@ -1509,7 +1516,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 165
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "pow",
@@ -1633,7 +1641,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 246
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "radians",
@@ -1778,7 +1787,8 @@
       "source": {
         "file": "core/src/builtins/noise.rs",
         "line": 130
-      }
+      },
+      "import": "noise"
     },
     {
       "name": "noise_seed",
@@ -1803,7 +1813,8 @@
       "source": {
         "file": "core/src/builtins/noise.rs",
         "line": 157
-      }
+      },
+      "import": "noise"
     },
     {
       "name": "random_int",
@@ -1861,7 +1872,8 @@
       "source": {
         "file": "core/src/builtins/creative_coding.rs",
         "line": 299
-      }
+      },
+      "import": "creative"
     },
     {
       "name": "hsv",
@@ -1902,7 +1914,8 @@
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 57
-      }
+      },
+      "import": "color"
     },
     {
       "name": "hsl",
@@ -1943,7 +1956,8 @@
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 70
-      }
+      },
+      "import": "color"
     },
     {
       "name": "color_lerp",
@@ -1984,7 +1998,8 @@
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 103
-      }
+      },
+      "import": "color"
     },
     {
       "name": "vec2",
@@ -2017,7 +2032,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 13
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "normalize",
@@ -2042,7 +2058,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 53
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "dot",
@@ -2075,7 +2092,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 82
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "limit",
@@ -2108,7 +2126,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 117
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "map",
@@ -2467,7 +2486,8 @@
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 82
-      }
+      },
+      "import": "color"
     },
     {
       "name": "hsl_deg",
@@ -2508,7 +2528,8 @@
       "source": {
         "file": "core/src/builtins/color.rs",
         "line": 93
-      }
+      },
+      "import": "color"
     },
     {
       "name": "symbol",
@@ -2533,7 +2554,8 @@
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 12
-      }
+      },
+      "import": "io"
     },
     {
       "name": "push_output",
@@ -2566,7 +2588,8 @@
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 20
-      }
+      },
+      "import": "io"
     },
     {
       "name": "binding",
@@ -2591,7 +2614,8 @@
       "source": {
         "file": "core/src/builtins/output.rs",
         "line": 31
-      }
+      },
+      "import": "io"
     },
     {
       "name": "last",
@@ -3495,7 +3519,8 @@
       "source": {
         "file": "core/src/builtins/json.rs",
         "line": 28
-      }
+      },
+      "import": "json"
     },
     {
       "name": "json_parse",
@@ -3520,7 +3545,8 @@
       "source": {
         "file": "core/src/builtins/json.rs",
         "line": 60
-      }
+      },
+      "import": "json"
     },
     {
       "name": "rotate",
@@ -3553,7 +3579,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 150
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "vec3",
@@ -3594,7 +3621,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 21
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "cross",
@@ -3627,7 +3655,8 @@
       "source": {
         "file": "core/src/builtins/vec2.rs",
         "line": 102
-      }
+      },
+      "import": "vec2"
     },
     {
       "name": "asin",

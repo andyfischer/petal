@@ -623,6 +623,7 @@ did not push into a Petal buffer at all: they wrote the engine's per-frame
 declaration lists. The script
 
 ```petal
+import vec2
 fn crate(id, at)
   body(id, {size: 1.0, pos: at})
 end

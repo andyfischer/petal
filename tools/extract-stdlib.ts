@@ -30,7 +30,8 @@
 // For each registered function we read:
 //   • parameters — the names the native *declares* for named arguments, in
 //                  its `native fn` declaration: the bundled `core` package
-//                  (core/packages/core/src/*.ptl) for the core builtins, the
+//                  (core/packages/core/src/*.ptl, and core/packages/<name>/<name>.ptl for
+//                  the domain builtins behind an import) for the core builtins, the
 //                  `ui` module (core-libs/petal-ui/prelude/ui.ptl) for the
 //                  canvas ones. These are call syntax, not just documentation
 //                  — the registry binds `clamp(value: v, lo: 0, hi: 1)`
@@ -110,6 +111,11 @@ export interface StdlibFunction {
   source: { file: string; line: number };
   /** When set, this name is an alias for another builtin. */
   aliasOf?: string;
+  /**
+   * The package a script imports before it can use this name (`import
+   * noise`): set for the domain builtins, absent for what is global.
+   */
+  import?: string;
   /**
    * Internal builtins the public reference hides — `__`-prefixed names the
    * runtime uses for tests/plumbing (e.g. `__pending`), not part of the
@@ -295,6 +301,29 @@ function parseNativeDecls(source: string): Map<string, DeclaredForm[]> {
   return out;
 }
 
+/**
+ * The bundled packages that declare the domain builtins: natives the runtime
+ * registers everywhere but that are in scope only where the package is
+ * imported (`import noise`). Mirrors `petal::bundled::BUILTIN_PACKAGES`.
+ */
+const BUILTIN_PACKAGES = ["noise", "color", "vec2", "autodiff", "json", "io", "creative"];
+const builtinPackagePtl = (name: string) =>
+  join(repoRoot, "core/packages", name, `${name}.ptl`);
+
+let builtinPackageOfCache: Map<string, string> | null = null;
+/** Host native name → the package a script imports to reach it. */
+function builtinPackageOf(name: string): string | undefined {
+  if (!builtinPackageOfCache) {
+    builtinPackageOfCache = new Map();
+    for (const pkg of BUILTIN_PACKAGES) {
+      for (const host of parseNativeDecls(readFileSync(builtinPackagePtl(pkg), "utf8")).keys()) {
+        builtinPackageOfCache.set(host, pkg);
+      }
+    }
+  }
+  return builtinPackageOfCache.get(name);
+}
+
 let declaredParamsCache: Map<string, DeclaredForm[]> | null = null;
 /** The declared call forms of every native, core and canvas, by host name. */
 function declaredParams(): Map<string, DeclaredForm[]> {
@@ -303,6 +332,7 @@ function declaredParams(): Map<string, DeclaredForm[]> {
       .filter((f) => f.endsWith(".ptl"))
       .sort()
       .map((f) => join(corePackageSrc, f));
+    sources.push(...BUILTIN_PACKAGES.map(builtinPackagePtl));
     sources.push(uiInputPtl, uiPreludePtl);
     declaredParamsCache = new Map(
       sources.flatMap((path) => [...parseNativeDecls(readFileSync(path, "utf8"))]),
@@ -475,6 +505,7 @@ function extractCore(): {
       ...withDeclaredParams(reg.name, parsed.params),
       source,
       ...(aliasOf ? { aliasOf } : {}),
+      ...(builtinPackageOf(reg.name) ? { import: builtinPackageOf(reg.name) } : {}),
       ...(reg.name.startsWith("__") ? { internal: true } : {}),
     });
   }
@@ -748,6 +779,7 @@ export function buildManifest(): StdlibManifest {
       "core/src/builtins/mod.rs",
       "core/src/builtins/*.rs",
       "core/packages/core/src/*.ptl",
+      "core/packages/*/*.ptl",
       "core-libs/petal-ui/prelude/*.ptl",
       "core/prelude/std.ptl",
       "core-libs/petal-ui/src/draw.rs",

@@ -107,7 +107,7 @@ fn make_handle_returns_handle_value_with_fields() {
 fn handle_round_trips_through_script() {
     let (mut env, class) = env_with_test_class();
     let pid = env
-        .load_program("let h = binding(symbol(\"h\"))\nh")
+        .load_program("import io; let h = binding(symbol(\"h\"))\nh")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     let handle = env.make_handle(class, 3, 9);
@@ -123,7 +123,7 @@ fn handle_round_trips_through_script() {
 fn type_of_handle_is_handle() {
     check_output(
         &[("h", 1, 1)],
-        "let h = binding(symbol(\"h\"))\nprint(type(h))",
+        "import io; let h = binding(symbol(\"h\"))\nprint(type(h))",
         &["handle"],
     );
 }
@@ -135,7 +135,7 @@ fn handles_with_same_triple_are_equal_in_script() {
     // a and b are minted separately with the same (class, slot, serial).
     check_result(
         &[("a", 5, 8), ("b", 5, 8)],
-        "binding(symbol(\"a\")) == binding(symbol(\"b\"))",
+        "import io; binding(symbol(\"a\")) == binding(symbol(\"b\"))",
         Value::Bool(true),
     );
 }
@@ -144,7 +144,7 @@ fn handles_with_same_triple_are_equal_in_script() {
 fn handles_with_different_serial_are_not_equal_in_script() {
     check_result(
         &[("a", 5, 8), ("b", 5, 9)],
-        "binding(symbol(\"a\")) == binding(symbol(\"b\"))",
+        "import io; binding(symbol(\"a\")) == binding(symbol(\"b\"))",
         Value::Bool(false),
     );
 }
@@ -165,7 +165,7 @@ fn handle_is_truthy_host_side() {
 fn handle_is_truthy_in_script() {
     check_result(
         &[("h", 2, 2)],
-        "let h = binding(symbol(\"h\"))\nif h then \"truthy\" else \"falsy\" end == \"truthy\"",
+        "import io; let h = binding(symbol(\"h\"))\nif h then \"truthy\" else \"falsy\" end == \"truthy\"",
         Value::Bool(true),
     );
 }
@@ -174,7 +174,7 @@ fn handle_is_truthy_in_script() {
 fn handle_is_not_equal_to_nil() {
     check_result(
         &[("h", 2, 2)],
-        "binding(symbol(\"h\")) == nil",
+        "import io; binding(symbol(\"h\")) == nil",
         Value::Bool(false),
     );
 }
@@ -325,7 +325,7 @@ fn handle_method_dispatch_add_then_value() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.add(5)\nh.value()",
+        "import io; let h = binding(symbol(\"h\"))\nh.add(5)\nh.value()",
     );
     assert_eq!(
         result,
@@ -342,7 +342,7 @@ fn handle_method_add_returns_new_value() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.add(7)",
+        "import io; let h = binding(symbol(\"h\"))\nh.add(7)",
     );
     assert_eq!(
         result,
@@ -360,7 +360,7 @@ fn stale_handle_method_errors_with_describe_and_skips_call_method() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.value()",
+        "import io; let h = binding(symbol(\"h\"))\nh.value()",
     );
     let err = result.expect_err(&format!(
         "calling a method on a stale handle must be a runtime error"
@@ -387,7 +387,7 @@ fn unknown_handle_method_surfaces_call_method_error() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "let h = binding(symbol(\"h\"))\nh.frobnicate()",
+        "import io; let h = binding(symbol(\"h\"))\nh.frobnicate()",
     );
     let err = result.expect_err(&format!("unknown handle method must be a runtime error"));
     assert!(
@@ -423,7 +423,7 @@ fn handle_class_method_shadows_ufcs_native() {
     let result = run_with_class(
         counter_class(&state),
         &[("value", native_get_999)], // global native `value` would return 999
-        "let h = binding(symbol(\"h\"))\nh.value()",
+        "import io; let h = binding(symbol(\"h\"))\nh.value()",
     );
     assert_eq!(
         result,
@@ -440,7 +440,7 @@ fn is_valid_true_for_live_handle() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "is_valid(binding(symbol(\"h\")))",
+        "import io; is_valid(binding(symbol(\"h\")))",
     );
     assert_eq!(result, Ok(Value::Bool(true)), "live handle is valid");
 }
@@ -452,7 +452,7 @@ fn is_valid_false_for_stale_handle_without_error() {
     let result = run_with_class(
         counter_class(&state),
         &[],
-        "is_valid(binding(symbol(\"h\")))",
+        "import io; is_valid(binding(symbol(\"h\")))",
     );
     assert_eq!(
         result,

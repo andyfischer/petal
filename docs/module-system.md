@@ -7,16 +7,19 @@ separate compilation and no runtime linker.
 
 ## Importing
 
-A module name is a *path* of one or more identifier segments joined by `/`,
-and it names the file `<path>.ptl` — each leading segment a directory.
-There are four forms:
+There are three forms:
 
 ```petal ignore
-import ui                       // qualified: ui.button(...), ui.palette
-import ui: button, clicked      // selective: button(...), clicked
-import ui as u                  // alias: u.button(...)
-import ui: *                    // every export, bound weakly (see Re-exporting)
+import hud                      // every export bare, plus the qualifier: draw_score(), hud.draw_score()
+import hud as h                 // the same, with the qualifier renamed: draw_score(), h.draw_score()
+import hud: draw_score, margin  // only these names, and no qualifier
 ```
+
+A **plain import** is the default. It binds every name the module exports,
+bare, and it binds the module's *qualifier* — the last segment of the path —
+so both `draw_score()` and `hud.draw_score()` work. `as` renames the
+qualifier. A **selective import** names exactly what it wants and binds
+nothing else, the qualifier included.
 
 Import statements must come before every other statement in the file.
 Putting one later is an error:
@@ -25,46 +28,141 @@ Putting one later is an error:
 Error: import statements must appear before any other statement
 ```
 
-A module name is only usable through `.`: writing `ui` on its own
-(`let x = ui`, `print(ui)`) is an error suggesting `ui.<name>` or a
-selective import.
+A qualifier is only usable through `.`: writing `hud` on its own
+(`let x = hud`, `print(hud)`) is an error suggesting `hud.<name>` or a
+selective import — unless the module exports a name spelled like itself
+(`import noise` where `noise` exports `fn noise`), in which case the bare
+name is that export and `noise.fbm(…)` still reaches the module's others.
 
-### Namespaced paths
+`import m: *` used to be the spelling of "every export, bare". The plain
+form means that now, and the star form is an error that says so; [`petal
+fix-imports`](#migrating-with-petal-fix-imports) rewrites it.
 
-A path groups a library's modules under a directory, so two libraries that
-both ship a `menu.ptl` can be used in one program:
+### Which name wins
+
+A bare name is looked up in four tiers, strongest first:
+
+1. a declaration in the file,
+2. a name imported selectively,
+3. a name from a plain import,
+4. the implicit prelude — the core builtins and [`std`](#the-standard-prelude).
+
+A higher tier shadows a lower one silently, as shadowing always has in
+Petal: a file that declares `fn draw` and imports a module exporting `draw`
+gets its own.
+
+**Two plain imports that offer the same name are not an error at the
+import.** Nothing is wrong until the file uses the name bare; then it is an
+error at each such use, naming both modules:
 
 ```petal ignore
-import bloom/menu                // binds `menu`: menu.open(...)
-import petal/menu as pmenu       // binds `pmenu`: pmenu.open(...)
-import bloom/menu: open, close   // selective, as usual
+import ./hud       // exports draw
+import ./level     // exports draw
+
+hud.draw()         // fine — qualified access always works
+level.draw()
+draw()             // Error: `draw` is ambiguous: 'hud' and 'level' export it — write
+                   //        `hud.draw` or `level.draw`, or pin one with `import ./hud: draw`
 ```
 
-The **local name is the last segment** — qualified access always goes
-through it (`menu.open`), never through the path. `as` overrides it, and
-two paths ending in the same segment need one: importing both `bloom/menu`
-and `petal/menu` bare is the ordinary alias collision.
+So a game whose modules all export `draw`, `step` and `reset` imports them
+all plainly and calls each through its qualifier, exactly as before, and a
+module growing a new export can never break a file that does not use that
+name bare. Fix an ambiguity by qualifying the use, or by pinning the name
+with a selective import beside the plain ones (`import ./level: draw`).
+
+Three refinements:
+
+- **An importer's export shadows the export of a module it imports.** If
+  `kit` (directly or through other modules) imports `base`, and both export
+  `button`, a file that plainly imports both gets `kit`'s — `kit` is built on
+  `base` and redeclared the name on purpose. Import order never matters.
+- **The same declaration reached by two routes is one name.** Importing a
+  module and a facade that re-exports it is not an ambiguity.
+- **Function sets with different parameter counts merge.** If `hud` exports
+  `score(points)` and `level` exports `score(points, bonus)`, both are
+  callable bare — with a `check` warning on each call through the merged
+  name, since which module answers depends on how many arguments were
+  written. The same parameter count from two unrelated modules is the
+  ambiguity error above, at the call.
+
+A plain import that takes a name away from a builtin or a `std` function is
+legal, and worth knowing about: `check` warns once per name per file, at the
+first bare use.
+
+```
+warning: `lerp` here is the one module 'tween' exports, which hides the builtin `lerp` —
+write `tween.lerp` to say so, or `import ./tween: lerp` to take it on purpose
+```
+
+Qualifying the use or importing the name selectively says it was meant, and
+the warning goes. First-party packages that redefine builtin names by design
+(`ui`, `bloom`, the packages bundled in the binary) do not raise it.
+
+### Import paths
+
+What follows `import` says where the module comes from, and there are
+exactly two kinds of path:
+
+```petal ignore
+import ./level            // a file beside this one: level.ptl
+import ./ui/hud           // a file below it: ui/hud.ptl
+import ../shared/rng      // a file above it
+import bloom              // a package
+import bloom/menu         // a module of a package
+```
+
+- **A relative path** starts with `./` or one or more `../`. It names a
+  `.ptl` file relative to the *importing file*, each further segment a
+  directory. Inside a [package](#packages) it may not leave the package root
+  (the directory holding `petal.toml`); a loose script has no such limit.
+- **Anything else starts with a package name.** A bare first segment is
+  *never* a sibling file: `import level` does not find `level.ptl`, it looks
+  for a package called `level`. The error says what to write instead:
+
+  ```
+  Error: cannot find module 'level' (imported by main.ptl): there is no package named
+  'level' — a bare name is always a package. The file beside this one is `import ./level`
+  (`petal fix-imports` rewrites these)
+  ```
+
+  [Where packages are found](#where-packages-are-found) lists the places a
+  package name is looked up.
+
+The **qualifier is the last segment** of either kind of path
+(`import ./ui/hud` binds `hud`, `import bloom/menu` binds `menu`). Two plain
+imports ending in the same segment need an `as`:
 
 ```
 Error: 'menu' is already an alias for module 'bloom/menu' and cannot also alias 'petal/menu'
 ```
 
-The **full path is the module's identity** — for deduplication, cycle
-detection, `state` keys, qualified export names (`bloom/menu::open`), and
-`module_manifest`. `bloom/menu` and `petal/menu` are two modules with two
-sets of top-level state, and each loads once. A nested module's own imports
-resolve against *its* directory, so `bloom/menu.ptl` reaches its sibling
-with a flat `import motion`.
-
-A segment is an identifier, which leaves no way to write a path that climbs
-out of the directory it resolves against:
+After a relative prefix every segment is an identifier, so a path cannot
+wander mid-way:
 
 ```
-Error: a module path segment must be an identifier ('.' and '..' are not allowed in an import path)
+Error: a module path segment must be an identifier ('.' and '..' are only allowed at the
+start of an import path: `./name`, `../name`)
 ```
 
-Errors from a nested module name it by path (`bloom/menu.ptl line 2`),
-since two namespaces may well ship the same file name.
+### Module identity
+
+A module is identified by *what it is*, not by how an importer spelled it:
+
+- a file under a package's module directory is `<package>/<path>` —
+  `bloom/menu`, and plain `bloom` for the module named after its package;
+- a module a host registered in memory is the name it was registered under;
+- any other file (a *loose* file) is its canonical path on disk, and is
+  *named* — in diagnostics, `state` keys, qualified function names and
+  `module_manifest` — by its path from the entry file's directory: `level`,
+  `ui/hud`, `../shared/rng`.
+
+So `import ./motion` inside `bloom` and `import bloom/motion` from outside
+it are **one module**: it loads once, its top-level code runs once, and
+there is one set of its `state` and `var`s. The same holds for one loose
+file reached by two different relative paths. Deduplication and cycle
+detection work on that identity. Errors from a module name it the same way
+(`bloom/menu.ptl line 2`).
 
 ## Exporting
 
@@ -76,7 +174,7 @@ exports `mouse_x` like any other name, which is how a host's interface module
 
 ```petal ignore
 // ui.ptl
-pub fn button(label)         // importable: ui.button, `import ui: button`
+pub fn button(label)         // importable: button, ui.button, `import ui: button`
   "[" ++ label ++ "]"
 end
 
@@ -121,59 +219,57 @@ implementation module needs no edit here:
 
 ```petal ignore
 // bloom.ptl — the whole facade
-pub import bloom/button: *        // every export of bloom/button
-pub import bloom/theme: accent    // just these
-pub import bloom/menu             // the module binding itself
+pub import ./button               // every export of bloom/button
+pub import ./menu
+pub import ./theme: accent        // just these
 ```
 
 An importer of `bloom` sees those names as if `bloom` had declared them:
 
 ```petal ignore
-import bloom: button, accent, menu
+import bloom
 button("ok")        // bloom/button's, whole overload set and all
-menu.open()         // a module alias, passed on by the bare form
+bloom.open()        // bloom/menu's
 ```
 
-The three forms:
+The two forms:
 
-- **`pub import m: *`** re-exports every export of `m` under its own
-  name, *and* binds it locally, so the facade can use what it passes on.
-  Whole overload sets travel: a `button` with two arities arrives with both.
+- **`pub import m`** re-exports every export of `m` under its own name,
+  *and* binds it locally like any plain import, so the facade can use what
+  it passes on. Whole overload sets travel: a `button` with two arities
+  arrives with both.
 - **`pub import m: a, b`** re-exports exactly those names. Naming
   something `m` does not export is the usual compile error —
   `module 'bloom/menu' has no export 'nope' (exports: close, open)` — which
   is the check a hand-written facade could not give you.
-- **`pub import m`** re-exports the module *binding*. A module name is
-  not a value, so what travels is the alias: an importer that names it
-  (`import bloom: menu`) gets a module alias of its own and writes
-  `menu.open()`. `bloom.menu.open()` does **not** work — there is no
-  value to reach through.
 
-`*` and `pub` are independent. A plain `import m: *` binds the whole
-surface locally without re-exporting it, and a nested path works in every
-form (`pub import bloom/button: *`).
+What a facade passes on is names, never the module itself: the qualifier a
+plain `pub import` binds is local to the facade, so `bloom.menu.open()` does
+not work. Import `bloom/menu` when you want the `menu` qualifier.
 
-**A star is the weakest explicit binding in the file.** It never fights:
+The facade's own imports follow [the usual tiers](#which-name-wins):
 
-- a top-level declaration in the facade wins over a star, silently, and so
-  does a name the file imports by hand — whichever order the statements
-  appear in;
-- a star composes with [overload
-  merging](function-overloading.md#sets-merge-across-modules): a star over a
-  name a host prelude already provides merges by arity rather than replacing
-  the set;
-- but **two stars offering the same name** is a genuine ambiguity. They
-  merge when both are function sets (the later star wins each arity it
-  defines); otherwise it is an error naming both modules:
+- a top-level declaration in the facade wins over a re-exported name,
+  silently — a `pub fn` of its own is what gets exported, and a private
+  declaration keeps the name out of the facade's surface;
+- a re-export over a name a lower tier already provides composes with
+  [overload merging](function-overloading.md#sets-merge-across-modules);
+- **two `pub import`s offering the same name** follow the plain-import
+  rules. Function sets with different parameter counts merge. Otherwise the
+  name is ambiguous — which is *not* an error in the facade, where nobody
+  used it. The error belongs to the file that finally uses the name, bare or
+  as `facade.name`, and names the two original modules:
 
 ```
-Error: bloom.ptl: 'shared' is re-exported by both 'a' and 'b' — name one of them explicitly, or drop it from one side
+Error: `shared` is ambiguous: 'a' and 'b' export it — write `a.shared` or `b.shared`, or
+pin one with `import ./a: shared`
 ```
 
 Chains work — a facade over a facade re-exports what it received — and a
 re-export cycle is caught by the ordinary cycle check
 (`import cycle: a -> b -> a`) rather than hanging. Re-exporting does not
-widen privacy: a star only ever carries names the target marked `pub`.
+widen privacy: a `pub import` only ever carries names the target marked
+`pub`.
 
 ### Classes and methods
 
@@ -196,7 +292,7 @@ pub class Circle
 end
 
 // app.ptl
-import shapes
+import ./shapes
 fn f(c: Circle) c.radius end   // fine — `Circle` is exported
 fn g(h: Hidden) h.a end        // warning: unknown type name `Hidden`
 ```
@@ -214,7 +310,7 @@ Importers can read an exported `var` but not write it. The cell belongs to
 the module that declared it:
 
 ```petal ignore
-import tally: hits
+import ./tally: hits
 set hits = 5     // Error: `hits` is a `var` exported by module `tally`;
                  //        only `tally` can write it — call a function it exports instead
 ```
@@ -224,7 +320,7 @@ inside a function still needs [`get`](language-guide.md#get), because it is
 still a cell read and the importer sees the owner's writes as they happen:
 
 ```petal ignore
-import tally: hits, bump
+import ./tally: hits, bump
 
 bump()
 bump()
@@ -248,41 +344,60 @@ error:
 Error: overloaded function 'f' has mixed `pub` markers: mark all overloads `pub` or none
 ```
 
-Importing `f` from two modules by hand is a collision like any other. Sets
-declared in different modules do merge by arity where one binding lands on
-another — see [Sets merge across
+Selectively importing `f` from two modules is a collision like any other.
+Sets declared in different modules do merge by arity where one binding lands
+on another in a lower tier, and where two plain imports offer different
+arities — see [Which name wins](#which-name-wins) and [Sets merge across
 modules](function-overloading.md#sets-merge-across-modules).
 
-## Where modules are found
+## Where packages are found
 
-`import name` looks for the module in this order. The first hit wins.
+A [relative path](#import-paths) needs no search: it is a file, relative to
+the importing one. A path that starts with a package name is looked up in
+this order, and the first place that has a package of that name wins:
 
-1. **Modules registered by the host** in memory (`env.register_module`),
-   keyed by the full path — `register_module("bloom/menu", …)` is what
-   `import bloom/menu` finds. This is how an embedding app ships a Petal
+1. **What the host registered in memory**: a module registered under the
+   full path (`env.register_module("bloom/menu", …)` is what
+   `import bloom/menu` finds; `register_module("ui", …)` is the one-module
+   package `ui`), then the packages it registered (`env.add_package`,
+   `env.register_package`). This is how an embedding app ships a Petal
    prelude, and how a browser host with no filesystem works.
-2. **The importing file's directory** — `<dir>/<path>.ptl`, each leading
-   segment a directory (`<dir>/bloom/menu.ptl`). Two scripts side by side
-   can share a `palette.ptl` next to them.
-3. **A registered package** — a library with a `petal.toml`, whose modules
-   answer to `<package name>/<module>` wherever the library sits. See
-   [Packages](#packages).
-4. **Search directories** added with `petal run -I <dir>` (repeatable, and
-   accepted by every command that compiles) or `env.add_module_path`.
-5. **`PETAL_PATH`** — colon-separated directories from the environment.
+2. **The package the importing file belongs to** — the one whose
+   `petal.toml` is nearest at or above the file — when the name is that
+   package's own. A library's modules and its examples can say
+   `import bloom/menu` with nothing configured.
+3. **The search path**: packages under the directories given with
+   `petal run -I <dir>` (repeatable, and accepted by every command that
+   compiles) or `env.add_module_path`, then under the `PETAL_PATH`
+   directories. A search directory offers the package it *is* (when it holds
+   a `petal.toml`) and each package directly under it. It is a place to find
+   packages, not loose files: `-I lib` does not make `lib/util.ptl`
+   importable as `util`.
+4. **The packages bundled in the `petal` binary** — today `core`, the
+   declarations of the builtins (`import core` binds the qualifier
+   `core`, so `core.len(xs)` reaches a builtin a declaration of yours has
+   shadowed).
 
-Note that `petal run -e '...'` has no importing file, so step 2 finds
-nothing; add `-I .` to import from the current directory.
+Within the package, the rest of the path names the module:
+`import bloom/widgets/button` is `widgets/button.ptl` under the package's
+module directory, and a bare `import bloom` is the module named after the
+package (`bloom.ptl`).
 
-A missing module is an error naming the importer and the places searched:
+`petal run -e '...'` and code piped on stdin have no importing file;
+`import ./x` there means `x.ptl` in the current directory.
+
+A missing module is an error naming the importer and why:
 
 ```
-Error: cannot find module 'geom' (imported by g.ptl): not registered, and no geom.ptl in the importing file's directory, module paths, or PETAL_PATH
+Error: cannot find module 'geom' (imported by g.ptl): there is no package named 'geom':
+not registered by the host, not the importing file's own package, not on a search path
+(-I, PETAL_PATH), and not bundled. A file beside this one is imported as `./geom`
 ```
 
-Each module is loaded at most once per program. If `a` and `b` both import
-`base`, there is one `base`, and its top-level code runs once. Import cycles
-are an error that shows the path:
+Each module is loaded at most once per program, [whatever it was imported
+as](#module-identity). If `a` and `b` both import `base`, there is one
+`base`, and its top-level code runs once. Import cycles are an error that
+shows the path, and so is importing the program's entry file:
 
 ```
 Error: import cycle: cyc1 -> cyc2 -> cyc1
@@ -298,7 +413,8 @@ silently. `std` is only merged into a program that uses one of its names,
 so it costs nothing otherwise.
 
 An embedding host can add its own implicit imports the same way; see
-[Embedding](#embedding) below.
+[Embedding](#embedding) below. They sit between `std` and the file's own
+plain imports.
 
 ## How a multi-file program runs
 
@@ -313,18 +429,21 @@ An embedding host can add its own implicit imports the same way; see
 
 ### Collisions are loud, shadowing is quiet
 
-A selective import is an explicit request, so a conflict is a compile
-error naming both sides:
+A selective import is an explicit request, so a conflict with another
+explicit request is a compile error naming both sides:
 
-- `import a: draw` and `import b: draw` —
+- `import ./a: draw` and `import ./b: draw` —
   `'draw' is imported from both 'a' and 'b'`.
-- `import a: draw` plus a top-level `fn draw` in the same file —
+- `import ./a: draw` plus a top-level `fn draw` in the same file —
   `'draw' is imported from 'a' but is also declared in this file`.
-- `import a as x` and `import b as x` —
+- `import ./a as x` and `import ./b as x` —
   `'x' is already an alias for module 'a' and cannot also alias 'b'`.
 
-Ordinary shadowing stays silent, as everywhere in Petal: `let m1 = 5` after
-`import m1` just rebinds the name.
+Everything else is [the tier order](#which-name-wins), and it is silent: a
+declaration over a plain import, a selective import over a plain one, any
+of them over the prelude. `let m1 = 5` after `import ./m1` just rebinds the
+name. Two plain imports that offer one name are neither: they are an error
+only where the name is used bare.
 
 ### `state` in modules
 
@@ -336,7 +455,11 @@ hot-reload state is unaffected.
 
 Moving a `state` declaration to another file, or renaming a module, changes
 its key and drops that state on the next reload — the same as renaming the
-variable.
+variable. The module half of the key is the module's [canonical
+name](#module-identity), so it does not depend on how any importer spelled
+the path — but a loose file's name is its path from the entry file, and
+moving a directory of modules into a package (giving it a `petal.toml`)
+renames them from `level` to `<package>/level`.
 
 ## Errors name the file
 
@@ -366,13 +489,49 @@ Stack trace:
 (A trace that stays in the entry file, and `-e` code, which has no file
 name, keep the bare `[line N, column M]`.)
 
+## Migrating with `petal fix-imports`
+
+Code written before these rules — sibling files imported by bare name,
+`import m: *` — does not load. `petal fix-imports` rewrites it:
+
+```bash
+petal fix-imports .                 # every .ptl file under the directory, in place
+petal fix-imports --check .         # list what would change, exit 1 if anything would
+petal fix-imports --diff src/       # show the rewrite as a diff
+petal fix-imports -I libs game/     # with the packages under libs/ known
+```
+
+It changes import lines and nothing else:
+
+| Before | After | When |
+|---|---|---|
+| `import level` | `import ./level` | `level.ptl` sits beside the file, and no package is called `level` |
+| `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed to `fix-imports` |
+| `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
+| `import m: a` … `m.b` | `import m: a` + `import m` | the file reaches through `m.`, which a selective import no longer binds |
+| *(nothing)* | `import kit` | the file uses a bare name nothing in it provides, and exactly one available package exports it |
+
+A path that already resolves as a package is left alone, so a file written
+for the current rules is unchanged and running the command twice does
+nothing more. "Available" means the packages bundled in the binary plus the
+ones under `-I` and `PETAL_PATH`. The last rewrite is how a script gains the
+import for a name that used to arrive with no import at all; a name that
+several packages export is reported and left for you to choose.
+
+What it cannot do for you is decide an [ambiguity](#which-name-wins) the
+new bare binding introduced: qualify the use, or pin the name with a
+selective import.
+
 ## Not supported
 
 - Dotted module names (`import lib.geom`) and path strings. Nesting is
-  spelled with `/`; use `-I` or `PETAL_PATH` to reach other directories.
+  spelled with `/`, and a file is reached with `./` or `../`.
+- Absolute paths, and a bare name for a sibling file.
+- `import m: *` — a plain `import m` is that form.
 - Imports anywhere but the top of a file, including conditional imports.
-- Reaching a re-exported module through the facade as a value
-  (`bloom.menu.open()`); module names are not values.
+- Reaching a module through a facade's qualifier
+  (`bloom.menu.open()`); module names are not values, and a facade passes on
+  names, not qualifiers.
 - Registries, fetching, version constraints and lockfiles. A `petal.toml`
   names a *local* library and lists nothing but itself (see
   [Packages](#packages)); its `version` is metadata that nothing resolves on.
@@ -408,17 +567,20 @@ by where they were unpacked. A module whose name matches the package
 (`src/bloom.ptl`) is reachable as a bare `import bloom`, which is where a
 facade goes.
 
-Inside the library, modules reach each other by their plain flat names —
-`bloom/menu.ptl` says `import motion` — or by the package-qualified path,
-`import bloom/motion`. Pick one spelling per library and keep to it: a module
-imported both ways in one program is two modules, because a module's identity
-is the path the importing file wrote (see [How a multi-file program
-runs](#how-a-multi-file-program-runs)).
+Inside the library, modules reach each other with a relative import —
+`bloom/menu.ptl` says `import ./motion` — or by the package's own name,
+`import bloom/motion`, which works from anywhere under the package root
+(its examples and tests included) with nothing registered. The two are the
+same module: [a module's identity](#module-identity) is the package and the
+path within it, not the spelling. A relative import cannot leave the package
+root.
 
-**Making a package reachable.** From the command line, `-I` finds packages:
-a directory holding a `petal.toml`, and every directory directly under one,
-is registered as a package. `PETAL_PATH` directories are searched the same
-way.
+**Making a package reachable.** A file inside the package reaches it by
+name already. From outside, on the command line, `-I` finds packages: a
+directory holding a `petal.toml`, and every directory directly under one,
+is offered as a package. `PETAL_PATH` directories are searched the same
+way. See [Where packages are found](#where-packages-are-found) for the
+whole order.
 
 ```bash
 petal run app.ptl -I ~/petal-libs      # ~/petal-libs/bloom/petal.toml → `bloom`
@@ -444,15 +606,14 @@ still a matter of `-I`, `PETAL_PATH`, or a host call.
 ## Shipping a library
 
 A library written in Petal is a directory of modules plus, usually, a facade
-module that re-exports them — `pub import bloom/button: *` per
-implementation module, which carries whole overload sets and errors on a name
-that is not there (see [Re-exporting](#re-exporting)). Give it a
-[`petal.toml`](#packages) and the directory becomes a named package: users
-reach it through `-I`, `PETAL_PATH`, `env.add_package`, or (with no manifest)
-a copy beside their script or a host's `register_module`.
-Put the directory under a namespace and its modules import as
-`bloom/menu`, `bloom/motion` — no filename prefixes, and no collision with
-another library's `menu`. [`core-runtime/`](../core-runtime/README.md) is where
+module that re-exports them — `pub import ./button` per implementation
+module, which carries whole overload sets (see [Re-exporting](#re-exporting)).
+Give it a [`petal.toml`](#packages) and the directory becomes a named
+package: users reach it through `-I`, `PETAL_PATH`, `env.add_package`, or
+(with no manifest) a copy below their script, imported relatively
+(`import ./bloom/menu`), or a host's `register_module`. Its modules import
+as `bloom/menu`, `bloom/motion` — no filename prefixes, and no collision
+with another library's `menu`. [`core-runtime/`](../core-runtime/README.md) is where
 this repo's own live, and [Sharing Petal
 libraries](dev/sharing-petal-libraries.md) covers what works and what a
 library author still has to work around.
@@ -462,21 +623,30 @@ library author still has to work around.
 Hosts that embed Petal manage modules through `Env`:
 
 ```rust
-env.register_module("ui", include_str!("ui.ptl")); // in-memory module; wins over files
-env.add_module_path(dir);                          // filesystem search path (+ packages under it)
+env.register_module("ui", include_str!("ui.ptl")); // in-memory module: the package name `ui`
+env.add_module_path(dir);                          // a directory of packages (or a package)
 env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources
 env.packages();                                    // every registered package
 env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
-env.load_program_at(&source, &path)?;              // entry file, with importer-relative resolution
+env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
+env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
+env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
 env.reload_program(stack, &source, Some(&path))?;  // hot reload: every source file diffed, the cheapest exact path taken
 env.compile_program_at(pid, &source, &path)?;      // the recompile on its own
 env.module_manifest(pid);                          // every source file: name, origin, content hash
 ```
 
+A program loaded from a string (`load_program(source)`) has no file:
+`import ./x` in it reaches a module registered in memory as `x`, and
+nothing on disk unless the host opts in with `set_inline_import_dir`. A
+relative import *between* in-memory modules resolves against the importer's
+registered name — `register_module("bloom/menu", …)` saying
+`import ./motion` finds `bloom/motion`.
+
 Implicit imports give user scripts a host's prelude with no ceremony:
-they call `button(...)` directly, their own declarations shadow it
-silently, and an explicit `import ui` on top is a no-op. `std` is kept in a
+they call `button(...)` directly, their own declarations and imports shadow
+it silently, and an explicit `import ui` on top adds the qualifier. `std` is kept in a
 separate list, so `set_implicit_imports` cannot drop it; both the host
 prelude and user code shadow `std`.
 
@@ -488,6 +658,8 @@ preserved. Module functions are addressable by qualified name
 appears in state JSON under `ui::scroll`-style names.
 
 Custom resolvers implement the `ModuleResolver` trait in
-`core/src/module.rs`. The wasm bindings expose `register_module` and
+`core/src/module.rs`: `resolve(path, importer)` is handed the path as
+written and the importing module's name and origin, and returns the source
+with the module's canonical name. The wasm bindings expose `register_module` and
 `set_implicit_imports`. See the [Embedding guide](embedding-guide.md) for
 the rest of the host API.

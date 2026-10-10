@@ -76,7 +76,9 @@ Garden does exactly this in
   naming the library; its modules are then `bloom/menu`, `bloom/motion`, and
   cannot collide with the app's own `menu.ptl`. Add a facade module named like
   the package (`src/bloom.ptl`) that re-exports the surface with
-  `pub import bloom/menu: *`, so users import one name.
+  `pub import ./menu`, so users import one name. Inside the library, reach a
+  sibling module with a relative import (`import ./motion`) or by the
+  package's own name (`import bloom/motion`); the two are the same module.
 - **Take the host's prelude bare.** A host's implicit imports (`ui`) now reach
   every module of a program, so a library module writes `draw_rect(r, c)` with
   no `import ui` at all. The one catch: if your library exports a name the

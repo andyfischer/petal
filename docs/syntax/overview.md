@@ -138,13 +138,18 @@ statements, if any, must come first.
 Only valid before any other statement in a file:
 
 ```petal ignore
-import ui                    // qualified:  ui.button(...)
-import ui: button, clicked   // selective:  button(...)
-import ui as u               // alias:      u.button(...)
+import ui                    // plain: every export bare, plus ui.button(...)
+import ui as u               // the same, with the qualifier renamed: u.button(...)
+import ui: button, clicked   // selective: only button(...) and clicked
+import ./level               // a file beside this one
+import ../shared/rng         // a file above it
+pub import ./menu            // re-export every export of the module
 ```
 
-See the [Module System](../module-system.md) for resolution, exports, and hot
-reload.
+A path is relative (`./`, or one or more `../`, then `/`-joined identifiers)
+or starts with a package name (`ui`, `bloom/menu`). `as` is contextual. See
+the [Module System](../module-system.md) for name resolution, exports, and
+hot reload.
 
 ### `let` and assignment
 

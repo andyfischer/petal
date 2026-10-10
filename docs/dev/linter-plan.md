@@ -220,7 +220,8 @@ rebinds — `++` stringifies a number, `repeat` rejects one), the accumulator is
 known to start as one (the nearest earlier write in the block, looking past
 plain appends, is `let out = "…"`, so a zero-pass loop and `out ++ ""` agree), the loop is not
 the tail of its block (a tail `for` is a list), the file has no `range` or
-`repeat` of its own and no `import m: *`, and the loop holds no comment.
+`repeat` of its own and no plain import (which binds every export of a module
+bare, `repeat` possibly among them), and the loop holds no comment.
 Anything else is left alone — in particular the general "appending *different*
 pieces in a loop" shape, which has no mechanical fix (the answer is a list and
 `join`) and is far too common in short loops to report. See

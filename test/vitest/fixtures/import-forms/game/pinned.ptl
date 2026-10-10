@@ -1,0 +1,7 @@
+// A selective import settles which `draw` the bare name means.
+import ./hud
+import ./level
+import ./level: draw
+
+print(draw())
+print(hud.draw())

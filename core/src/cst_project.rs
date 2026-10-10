@@ -650,7 +650,7 @@ impl Projector {
         let mut alias = None;
         let mut names = None;
         let has_colon = rest.iter().any(|t| matches!(t.token(), Some(Token::Colon)));
-        // `: *` — the whole exported surface, and the only thing in its list.
+        // `: *` — the removed spelling of a plain import (see `ImportDecl::star`).
         let star = rest.iter().any(|t| matches!(t.token(), Some(Token::Star)));
         let mut idents = rest.iter().filter_map(ident_value);
         if star {

@@ -1,0 +1,3 @@
+// The package's own module: what `import kit` loads.
+pub import ./menu
+pub import kit/counter

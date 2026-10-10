@@ -464,7 +464,7 @@ DESCRIPTION
        Migrates every .ptl file under the given paths (directories are
        searched recursively, skipping dot-directories, node_modules and
        target; the default is the current directory) and rewrites them in
-       place. It makes three changes, and only to import lines:
+       place. It makes four changes, and only to import lines:
 
        A sibling file imported by a bare name becomes a relative import.
               'import level' -> 'import ./level', when level.ptl sits beside
@@ -476,6 +476,11 @@ DESCRIPTION
        'import m: *' becomes 'import m'.
               A plain import binds every export of the module; the star form
               no longer exists. 'pub import m: *' becomes 'pub import m'.
+
+       A selective import whose qualifier is still used gains a plain one.
+              'import m: a' used to bind the qualifier 'm' as well. A file
+              that writes 'm.b' beside it gets the 'import m' line it now
+              needs.
 
        A missing import is added.
               A bare name that no declaration or import in the file provides,

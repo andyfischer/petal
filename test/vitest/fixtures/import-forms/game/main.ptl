@@ -1,0 +1,13 @@
+// A plain import binds every export bare *and* the qualifier. `draw` is
+// offered by both modules, which is fine as long as it is used qualified.
+import ./hud
+import ./level
+import ./ui/panel as p
+import ../shared/rng: seed
+
+print(hud.draw())
+print(level.draw())
+print(hud_only)
+print(p.title())
+print(title())
+print(seed)

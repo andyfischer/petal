@@ -582,7 +582,7 @@ impl Parser {
             Some(Token::Ident(w)) if w == NATIVE_KEYWORD && self.starts_native_decl(1) => {
                 self.parse_native_fn_decl(start, true)
             }
-            // `pub import m: *` — a re-export: the names this file imports
+            // `pub import m` — a re-export: the names this file imports
             // become its own exports (docs/module-system.md#re-exporting).
             Some(Token::Import) => self.parse_import(start, true),
             _ => {
@@ -768,10 +768,11 @@ impl Parser {
     /// and after each `,`, and a trailing comma is allowed. Every other import
     /// form still ends at the newline; `as` is contextual (not a keyword).
     ///
-    /// `import m: *` names the module's whole exported surface instead of a
-    /// list, and `pub import …` (any of the forms, `exported = true` here)
-    /// makes what this file imports part of what it exports — the declarative
-    /// facade described in docs/module-system.md#re-exporting.
+    /// `pub import …` (`exported = true` here) makes what this file imports
+    /// part of what it exports — the declarative facade described in
+    /// docs/module-system.md#re-exporting. `import m: *` is a form that no
+    /// longer exists; it is still parsed (`star`) so the loader can say so
+    /// and `petal fix-imports` can rewrite it.
     fn parse_import(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
         self.ev_open(SyntaxKind::ImportStmt);
         if exported {
@@ -826,8 +827,8 @@ impl Parser {
                 if matches!(self.peek(), Token::Newline) && self.import_list_continues() {
                     self.skip_newlines();
                 }
-                // `: *` stands in for the whole exported surface, and is the
-                // only thing in its list.
+                // `: *` — the removed spelling of a plain import; kept in
+                // the AST for the loader's error and for `fix-imports`.
                 if matches!(self.peek(), Token::Star) {
                     self.advance(); // consume '*'
                     star = true;

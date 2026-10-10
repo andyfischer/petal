@@ -1,0 +1,7 @@
+// `score` has one parameter in hud and two in level: the sets merge, and
+// each call through the merged name is worth a warning.
+import ./hud
+import ./level
+
+print(score(1))
+print(score(1, 2))

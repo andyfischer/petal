@@ -40,7 +40,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
 | Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
-| Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
+| Modules / prelude | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_implicit_imports` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |

@@ -34,7 +34,7 @@ on this problem. (See [state-call-paths.md](state-call-paths.md).)
 
 **A facade module re-exports cleanly.** It used to be 130 hand-written lines of
 `pub let button = bloom_button.button`; it is now eight lines of
-`pub import bloom/button: *` (gap 3). Either way a library can present one
+`pub import bloom/button` (gap 3). Either way a library can present one
 import surface (`import bloom`) over many implementation modules, and — the
 property that matters — a re-export carries a whole overload set, so
 `bloom.button` has both of `bloom/button`'s arities.
@@ -110,11 +110,12 @@ import petal/menu as pmenu       // the two coexist; `as` names the second
 import bloom/menu: open, close   // selective, and it may wrap across lines
 ```
 
-The last segment is the local name (`menu.open`), `as` overrides it, and the
-whole path is the module's identity — its dedupe key, its `state` key prefix,
-its qualified export names. A library is a directory now, not a naming
-convention; a flat `import palette` is unchanged. See
-[module-system.md](../module-system.md#namespaced-paths).
+The last segment is the qualifier (`menu.open`), `as` overrides it, and the
+module's canonical name — `<package>/<path>` — is its identity: its dedupe
+key, its `state` key prefix, its qualified export names. A library is a
+directory now, not a naming convention. A first segment is always a package
+name; a file beside the importer is `import ./palette`. See
+[module-system.md](../module-system.md#import-paths).
 
 Above that sits a manifest (gap 5), which lets a library declare its own name
 rather than inheriting whatever directory a user dropped it in. bloom took the
@@ -122,10 +123,13 @@ manifest route: its files are plain `motion.ptl`, `theme.ptl`, `menu.ptl`, and
 the `bloom/` in `import bloom/menu` comes from `petal.toml`, not from a
 directory the user happens to have arranged.
 
-**Pick one spelling per library.** A module reached as `motion` from inside the
-package and as `bloom/motion` from outside is *two* modules with two copies of
-its module-level `var`s and `state`. bloom uses the full path everywhere,
-internal imports included.
+**One module, however it is spelled — fixed.** A module reached as `motion`
+from inside the package and as `bloom/motion` from outside *used to be* two
+modules with two copies of its module-level `var`s and `state`, so a library
+had to pick one spelling and keep to it. Identity is canonical now:
+`import ./motion` inside bloom and `import bloom/motion` from an app are the
+same module ([module identity](../module-system.md#module-identity)). bloom
+still writes the full path everywhere; it no longer has to.
 
 ### 3. There is no re-export form — fixed
 
@@ -134,30 +138,31 @@ overload sets, but it was a list to keep in sync by hand that said nothing when
 an export was forgotten. `pub import` makes it declarative:
 
 ```petal ignore
-pub import bloom/button: *        // every export, whole overload sets
+pub import bloom/button           // every export, whole overload sets
 pub import bloom/theme: accent    // a selection — a missing name is an error
-pub import bloom/menu             // the module binding itself
 ```
 
-A star also binds the names locally (the facade can use them), is the weakest
-explicit binding in the file (a local declaration wins silently, and it merges
-with an overload set rather than replacing it), and errors when two stars offer
-the same non-function name. Chains work, cycles are the ordinary cycle error.
-See [module-system.md](../module-system.md#re-exporting).
+A plain `pub import` also binds the names locally (the facade can use them),
+sits below the file's own declarations (a local declaration wins silently,
+and it merges with an overload set rather than replacing it), and leaves a
+name two of them offer ambiguous for whoever uses it. Chains work, cycles are
+the ordinary cycle error. (This form was first spelled `pub import m: *`; a
+plain import now means "every export", and the star is gone.) See
+[module-system.md](../module-system.md#re-exporting).
 
 What it did to bloom: `src/bloom.ptl` went from 147 lines to 50, of which eight
-are the stars. The two names the facade deliberately spells differently — `on`
+are the re-exports. The two names the facade deliberately spells differently — `on`
 becomes `ink_on`, `NAMES` becomes `ICONS` — are ordinary declarations layered
-over what the stars bound locally:
+over what the re-exports bound locally:
 
 ```petal ignore
-pub import bloom/theme: *
+pub import bloom/theme
 pub let ink_on = on
 ```
 
 The immediate payoff was the thing the hand-written list could not do: two
 exports (`motion.step` and `interact.capture_owner`) had been added to modules
-and never added to the facade. The stars published them without an edit, which
+and never added to the facade. The re-exports published them without an edit, which
 is what the `VERSION` bump to 2 records.
 
 ### 4. A selective import list must fit on one line — fixed

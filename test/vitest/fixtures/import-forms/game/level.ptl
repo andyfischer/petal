@@ -1,0 +1,7 @@
+pub fn draw()
+  "level"
+end
+
+pub fn score(points, bonus)
+  "score " ++ str(points + bonus)
+end

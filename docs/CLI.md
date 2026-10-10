@@ -34,12 +34,17 @@ See 'petal help run'.
 Every command that compiles a program accepts these:
 
 - `-e '<code>'` — read the program from the command line instead of a file.
-- `-I <dir>` — add a module search directory. Repeatable. `import util` also
-  looks in the importing file's directory and in the directories listed in
-  the `PETAL_PATH` environment variable. `-I` also picks up *packages*: a
-  directory holding a `petal.toml`, and each directory directly under one,
-  becomes importable by its manifest name (`import bloom/menu`). See
+- `-I <dir>` — add a directory of *packages*. Repeatable. A directory
+  holding a `petal.toml`, and each directory directly under one, becomes
+  importable by its manifest name (`import bloom/menu`); the directories in
+  the `PETAL_PATH` environment variable are searched the same way. It is not
+  a place loose files are found: a file is imported relative to the importer
+  (`import ./util`), and a bare name is always a package. A file inside a
+  package reaches that package by name with no `-I`. See
+  [module-system.md](module-system.md#where-packages-are-found) and
   [`packages`](#packages--list-available-libraries).
+- With `-e` or stdin there is no importing file, so `import ./x` means
+  `x.ptl` in the current directory.
 
 ### Commands at a glance
 
@@ -52,6 +57,7 @@ Every command that compiles a program accepts these:
 | `packages` | List the libraries the search path makes available |
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
+| `fix-imports` | Rewrite imports written for the old module rules |
 | `lint-fix` | `lint --fix` under its own name |
 | `suggest` | Suggest safe refactors for a file |
 | `apply-change` | Carry out a refactor that changes behaviour |
@@ -69,7 +75,7 @@ Every command that compiles a program accepts these:
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
-Every command except `lsp`, `fmt`, `apply-change` and `show-graph` accepts
+Every command except `lsp`, `fmt`, `fix-imports`, `apply-change` and `show-graph` accepts
 `--json` for machine-readable output.
 
 ## Commands
@@ -598,6 +604,48 @@ tokens (an `export` modifier counting as its `pub`), or the file is refused with
 Opt out with `// petal-fmt-ignore` (the next line stays as written),
 `// petal-fmt-off` … `// petal-fmt-on` (a region), or `// petal-fmt-ignore-file`.
 
+### `fix-imports` — Migrate imports
+
+```
+petal fix-imports [-I <dir>]... [<path>...]   # rewrite in place; directories recurse; default "."
+petal fix-imports --check [<path>...]         # write nothing; list files that would change; exit 1 if any
+petal fix-imports --diff [<path>...]          # write nothing; print a unified diff (also -d)
+petal fix-imports -e '<code>'                 # print the fixed code
+petal fix-imports -                           # stdin to stdout
+```
+
+Rewrites code written for the earlier import rules, where a bare name could
+be a sibling file and `import m: *` existed. It edits import lines and
+nothing else:
+
+| Before | After | When |
+|---|---|---|
+| `import level` | `import ./level` | `level.ptl` sits beside the file and no package is called `level` |
+| `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed here |
+| `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
+| `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
+| *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
+
+"Available" is the packages bundled in the binary plus the ones under `-I`
+and `PETAL_PATH`. A path that already resolves as a package is never
+rewritten, so the command is safe on migrated code and running it twice
+changes nothing more. It prints each file it rewrote with one line per edit.
+
+The import lines of every file are rewritten first, and only then is each
+file compiled to look for missing imports, so the order files are given in
+does not matter and `--check` sees what a real run would. A file that does
+not parse is reported and skipped. A file that does not compile still has
+its import lines fixed, and gets no imports added; a name that several
+packages export is reported and left for you to choose. A package that does
+not load yet (it is itself unmigrated) is named when a file is still
+missing a name it might have provided.
+
+It does not resolve an [ambiguity](module-system.md#which-name-wins) that
+the new bare binding of plain imports introduces; the compiler reports those
+where the name is used. It is a command of its own rather than a `lint`
+rule: a lint fix starts from a file that compiles, and an old-style file
+does not.
+
 ### `lint` — Rules with fixes
 
 ```
@@ -1092,7 +1140,7 @@ follows it into them. An importer may read an exported `var` and
 
 | In the importing file | What happens |
 |---|---|
-| A bare read inside a function (`import m: x`, `import m: *`) | gains `get` |
+| A bare read inside a function (`import m: x`, or a plain `import m`) | gains `get` |
 | A bare read at the file's top level | left alone |
 | A qualified read, `m.x` | left alone: it reads the current value wherever it is written |
 | A write: `x = …`, `@x`, or `m.x = …` through the module's name | **the whole change is refused** |
@@ -1221,7 +1269,9 @@ modules = "src"      # optional; defaults to src/, else the manifest's dir
 Every `-I` directory is searched for such libraries — the directory itself,
 and each directory directly under it — as are the `PETAL_PATH` directories.
 A library named `bloom` makes its modules importable as `import bloom/menu`;
-see [module-system.md](module-system.md#packages). This command prints what
+see [module-system.md](module-system.md#packages). The packages bundled in
+the binary (`core`) and the package a script itself sits in are importable
+too, and are not listed here. This command prints what
 was found, so a user can check what a script can reach:
 
 ```

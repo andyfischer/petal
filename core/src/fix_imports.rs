@@ -11,6 +11,9 @@
 //!    to it.
 //! 2. **`import m: *` becomes `import m`.** The plain form binds every export
 //!    now; the star form is gone.
+//!    A selective import used to bind the module's qualifier as well
+//!    (`import m: a` allowed `m.b`); a file that relies on that gains the
+//!    plain `import m` it now needs.
 //! 3. **A missing import is added.** A bare name that nothing in the file
 //!    declares or imports, and that exactly one available package (or one
 //!    module of a package with no module of its own name) exports, gets the
@@ -52,6 +55,9 @@ pub struct ImportFixer {
     include_dirs: Vec<PathBuf>,
     /// Bare name → the import paths that export it. Built on first use.
     index: Option<HashMap<String, Vec<String>>>,
+    /// Import paths whose exports could not be read while building `index`,
+    /// each with the first line of why.
+    unreadable: Vec<String>,
 }
 
 impl ImportFixer {
@@ -73,6 +79,7 @@ impl ImportFixer {
             env,
             include_dirs: include_dirs.to_vec(),
             index: None,
+            unreadable: Vec::new(),
         }
     }
 
@@ -85,6 +92,10 @@ impl ImportFixer {
         // (start, end, replacement) in char offsets, in source order.
         let mut edits: Vec<(usize, usize, String)> = Vec::new();
         let mut changes = Vec::new();
+        // Qualifiers a selective import used to bind and no longer does,
+        // that the file still reaches through.
+        let lost = lost_qualifiers(&stmts);
+        let mut restored: HashSet<&str> = HashSet::new();
         for stmt in &stmts {
             let StmtKind::Import(decl) = &stmt.kind else {
                 continue;
@@ -93,7 +104,23 @@ impl ImportFixer {
                 continue;
             };
             let line = stmt.span.start.line;
-            if let Some(new_path) = file.and_then(|f| self.relative_spelling(&decl.module, f)) {
+            let new_path = file.and_then(|f| self.relative_spelling(&decl.module, f));
+            let qualifier = import_qualifier(decl);
+            if decl.names.is_some() && lost.contains(qualifier) && restored.insert(qualifier) {
+                let path = new_path.as_deref().unwrap_or(&decl.module);
+                let alias = if qualifier == crate::ast::module_local_name(&decl.module) {
+                    String::new()
+                } else {
+                    format!(" as {qualifier}")
+                };
+                changes.push(format!(
+                    "line {line}: added `import {path}{alias}` — `{qualifier}.` is used, and a \
+                     selective import no longer binds it"
+                ));
+                let end = (stmt.span.end.offset as usize).min(chars.len());
+                edits.push((end, end, format!("\nimport {path}{alias}")));
+            }
+            if let Some(new_path) = new_path {
                 changes.push(format!(
                     "line {line}: `import {}` -> `import {new_path}`",
                     decl.module
@@ -182,20 +209,30 @@ impl ImportFixer {
             .iter()
             .map(|i| i.module.clone())
             .collect();
-        let index = self.export_index();
+        self.export_index();
+        let index = self.index.as_ref().expect("just built");
         let mut add: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut notes = Vec::new();
+        let mut unprovided = false;
         for name in &missing {
             match index.get(name).map(Vec::as_slice) {
                 Some([only]) if !already.contains(only) => {
                     add.entry(only.clone()).or_default().push(name.clone());
                 }
-                Some([_]) | None => {}
+                Some([_]) => {}
+                None => unprovided = true,
                 Some(several) => notes.push(format!(
                     "`{name}` is exported by {} — no import added; write the one you mean",
                     several.join(", ")
                 )),
             }
+        }
+        // A package that would not load may be the one a still-missing name
+        // is waiting for.
+        if unprovided {
+            notes.extend(self.unreadable.iter().map(|problem| {
+                format!("{problem} — its exports were not considered")
+            }));
         }
         if add.is_empty() {
             return unchanged(notes);
@@ -245,12 +282,18 @@ impl ImportFixer {
     /// module of its own name is offered as `import <package>`; one without,
     /// module by module. `core` and `std` are in scope already and are left
     /// out.
-    fn export_index(&mut self) -> &HashMap<String, Vec<String>> {
+    fn export_index(&mut self) {
         if self.index.is_none() {
             let mut index: HashMap<String, Vec<String>> = HashMap::new();
             for path in self.env.importable_paths() {
-                let Ok(exports) = self.env.exports_of(&path) else {
-                    continue;
+                let exports = match self.env.exports_of(&path) {
+                    Ok(exports) => exports,
+                    Err(e) => {
+                        let first = e.to_string().lines().next().unwrap_or_default().to_string();
+                        self.unreadable
+                            .push(format!("`import {path}` does not load ({first})"));
+                        continue;
+                    }
                 };
                 for name in exports {
                     index.entry(name).or_default().push(path.clone());
@@ -262,7 +305,6 @@ impl ImportFixer {
             }
             self.index = Some(index);
         }
-        self.index.as_ref().expect("just built")
     }
 }
 
@@ -311,6 +353,92 @@ pub fn unresolved_names(program: &Program, env: &Env) -> BTreeSet<String> {
         }
     }
     out
+}
+
+/// The qualifier an import statement binds — or, for a selective import,
+/// used to bind.
+fn import_qualifier(decl: &ImportDecl) -> &str {
+    decl.alias
+        .as_deref()
+        .unwrap_or_else(|| crate::ast::module_local_name(&decl.module))
+}
+
+/// The qualifiers of the file's selective imports that the file uses as
+/// `q.member` while nothing else — a plain import, a declaration, a
+/// parameter — binds `q`. Under the old rules a selective import bound its
+/// module's qualifier too.
+fn lost_qualifiers(stmts: &[Stmt]) -> HashSet<String> {
+    use crate::ast::{Expr, ExprKind, ExprVisitor, walk_expr, walk_stmt};
+    #[derive(Default)]
+    struct Scan {
+        /// Names used as the object of a field access or method call.
+        reached_through: HashSet<String>,
+        /// Names the file binds as values, anywhere.
+        bound: HashSet<String>,
+    }
+    impl ExprVisitor for Scan {
+        fn visit_expr(&mut self, e: &Expr) {
+            match &e.kind {
+                ExprKind::FieldAccess { object, .. } => {
+                    if let ExprKind::Ident(name) = &object.kind {
+                        self.reached_through.insert(name.clone());
+                    }
+                }
+                ExprKind::Lambda { params, .. } => {
+                    self.bound.extend(params.iter().map(|p| p.name.clone()));
+                }
+                ExprKind::For { var, .. } => {
+                    self.bound.insert(var.clone());
+                }
+                _ => {}
+            }
+            walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            match &s.kind {
+                StmtKind::Let { name, .. }
+                | StmtKind::State { name, .. }
+                | StmtKind::ClassDecl { name, .. } => {
+                    self.bound.insert(name.clone());
+                }
+                StmtKind::For { var, .. } => {
+                    self.bound.insert(var.clone());
+                }
+                StmtKind::FnDecl { name, params, .. } => {
+                    self.bound.insert(name.clone());
+                    self.bound.extend(params.iter().map(|p| p.name.clone()));
+                }
+                StmtKind::Import(decl) => {
+                    // A selectively imported *name* is a value binding.
+                    self.bound.extend(decl.names.iter().flatten().cloned());
+                }
+                _ => {}
+            }
+            walk_stmt(self, s);
+        }
+    }
+    let mut scan = Scan::default();
+    for stmt in stmts {
+        scan.visit_stmt(stmt);
+    }
+    let imports = || {
+        stmts.iter().filter_map(|s| match &s.kind {
+            StmtKind::Import(decl) => Some(decl),
+            _ => None,
+        })
+    };
+    let plain: HashSet<&str> = imports()
+        .filter(|d| d.names.is_none())
+        .map(import_qualifier)
+        .collect();
+    imports()
+        .filter(|d| d.names.is_some())
+        .map(import_qualifier)
+        .filter(|q| {
+            scan.reached_through.contains(*q) && !scan.bound.contains(*q) && !plain.contains(q)
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 /// Where the pieces of one import statement sit in the file, in char
@@ -544,6 +672,33 @@ mod tests {
     }
 
     #[test]
+    fn a_selective_import_whose_qualifier_is_still_used_gains_a_plain_import() {
+        let dir = Dir::new("lost-qualifier", &[("tally.ptl", "pub let hits = 1\npub let n = 2\n")]);
+        let fixer = ImportFixer::new(&[]);
+        let main = dir.path("main.ptl");
+        // `tally.n` only ever worked because the selective import also bound
+        // the qualifier.
+        let once = lines(&fixer, "import tally: hits\nprint(hits + tally.n)\n", &main);
+        assert_eq!(once, "import ./tally: hits\nimport ./tally\nprint(hits + tally.n)\n");
+        assert_eq!(lines(&fixer, &once, &main), once);
+        // Not when the name is a value of the file's own, or a plain import
+        // already binds it, or nothing reaches through it.
+        for src in [
+            "import ./tally: hits\nlet tally = {n: 1}\nprint(hits + tally.n)\n",
+            "import ./tally: hits\nfn f(tally)\n  tally.n\nend\nprint(hits)\n",
+            "import ./tally: hits\nimport ./tally\nprint(hits + tally.n)\n",
+            "import ./tally: hits\nprint(hits)\n",
+        ] {
+            assert_eq!(lines(&fixer, src, &main), src);
+        }
+        // A wrapped list: the new line goes after the whole statement.
+        assert_eq!(
+            lines(&fixer, "import ./tally: hits,\n  n\nprint(tally.n)\n", &main),
+            "import ./tally: hits,\n  n\nimport ./tally\nprint(tally.n)\n"
+        );
+    }
+
+    #[test]
     fn a_package_path_and_an_unknown_name_are_left_alone() {
         let dir = Dir::new(
             "package",
@@ -678,6 +833,23 @@ mod tests {
             "{:?}",
             fixed.notes
         );
+    }
+
+    #[test]
+    fn a_package_that_does_not_load_is_named_when_a_name_is_still_missing() {
+        let mut env = Env::new();
+        env.register_package("old", [("old", "pub import nowhere: *\n")]).unwrap();
+        let mut fixer = ImportFixer::with_env(env, &[]);
+        let fixed = fixer.add_missing_imports("print(knob(1))\n", None);
+        assert_eq!(fixed.source, "print(knob(1))\n");
+        assert_eq!(fixed.notes.len(), 1, "{:?}", fixed.notes);
+        assert!(
+            fixed.notes[0].contains("`import old` does not load"),
+            "{:?}",
+            fixed.notes
+        );
+        // Nothing missing, nothing to say.
+        assert!(fixer.add_missing_imports("print(1)\n", None).notes.is_empty());
     }
 
     #[test]

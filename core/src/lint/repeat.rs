@@ -27,8 +27,9 @@
 //!   past plain appends (`x ++= e`, and loops of one). When the loop runs
 //!   zero times `x` must come out untouched, and `x ++ ""` only leaves a
 //!   string alone.
-//! - Nothing in the file declares its own `range` or `repeat`, and no
-//!   `import m: *` could be supplying one.
+//! - Nothing in the file declares its own `range` or `repeat`, and the file
+//!   has no plain import — which binds every export of a module bare, and
+//!   could be supplying one.
 //! - The loop holds no comment, which the one-line replacement would drop.
 
 use std::collections::HashSet;

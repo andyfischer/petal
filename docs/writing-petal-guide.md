@@ -837,13 +837,14 @@ pub fn Circle.area(c: Circle) -> num
 end
 
 // app.ptl
-import shapes: Circle          // or: import shapes  /  import shapes as s
-print(Circle(2).area())
+import ./shapes                // every export bare, plus the qualifier `shapes`
+print(Circle(2).area())        // or: import ./shapes: Circle  /  import ./shapes as s
 ```
 
-`import shapes` finds `shapes.ptl` next to the importing file. The rest —
-search paths, what `pub` covers, how modules share state — is in the
-[Module System](module-system.md).
+`import ./shapes` is `shapes.ptl` next to the importing file; a path with no
+`./` or `../` in front names a *package* (`import bloom`). The rest — what
+happens when two modules export the same name, what `pub` covers, how
+modules share state — is in the [Module System](module-system.md).
 
 **Wrap long expressions by ending the line with the operator, not starting the
 next one with it.** This is the guide's one genuine footgun, because getting it

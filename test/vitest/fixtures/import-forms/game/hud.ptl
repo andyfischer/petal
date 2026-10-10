@@ -1,0 +1,11 @@
+// Two modules of one game that both export `draw` and `score`, as game
+// modules do.
+pub fn draw()
+  "hud"
+end
+
+pub fn score(points)
+  "score " ++ str(points)
+end
+
+pub let hud_only = "only hud has this"

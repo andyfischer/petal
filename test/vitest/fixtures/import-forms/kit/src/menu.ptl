@@ -1,0 +1,6 @@
+// Reaches its sibling relatively...
+import ./counter
+
+pub fn open()
+  "menu " ++ str(counter.bump())
+end

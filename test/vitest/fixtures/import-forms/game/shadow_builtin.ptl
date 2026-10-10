@@ -1,0 +1,4 @@
+import ./tween
+
+print(lerp(0, 10, 0.5))
+print(lerp(0, 10, 0.25))

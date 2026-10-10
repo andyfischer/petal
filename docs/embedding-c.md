@@ -627,7 +627,7 @@ write_file("games/neon/config.ptl", src.text());
 ```cpp
 vm.register_module("engine", engine_prelude_source);  // `import engine`
 vm.add_implicit_import("engine");                      // ...or no import at all
-vm.add_module_path("games/marble/lib");                // search path (+ package discovery)
+vm.add_module_path("games/marble/lib");                // a directory of packages
 vm.add_package("path/to/petal/core-runtime/bloom");     // `import bloom/menu`
 ```
 

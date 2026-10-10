@@ -354,9 +354,13 @@ env.register_package("bloom", [
 ```
 
 Either way the library's modules answer to `import bloom/menu`, its internal
-imports keep working, and `env.packages()` lists what a host can tell the user
-is available. `env.add_module_path(dir)` also registers any package it finds
-in `dir` or one level under it; that discovery is best-effort, and a manifest
+relative imports (`import ./motion`) keep working, and `env.packages()` lists
+what a host can tell the user is available. A host registration is the first
+place a package name is looked up — ahead of the importing file's own
+package, the search path, and the packages bundled in the binary.
+`env.add_module_path(dir)` offers any package it finds in `dir` or one level
+under it (packages only: a loose `.ptl` file is imported relatively, never
+through a search directory); that discovery is best-effort, and a manifest
 that would not load is collected into `env.package_errors()` rather than
 returned. Every failure is a `LoadError` naming the `petal.toml`. See
 [module-system.md](module-system.md#packages) for the manifest format and the

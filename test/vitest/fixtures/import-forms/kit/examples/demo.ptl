@@ -1,0 +1,8 @@
+// ...and a file outside the module directory reaches the same module by the
+// package's name. One module, one counter, loaded once.
+import kit
+import kit/counter
+
+print(open())
+print(counter.bump())
+print(bump())

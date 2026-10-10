@@ -384,24 +384,30 @@ impl Env {
     /// without touching the filesystem. This is how an embedder ships a
     /// Petal-source library (e.g. `env.register_module("ui", include_str!(
     /// "ui.ptl"))`) and how wasm hosts with no filesystem provide modules.
-    /// Takes priority over file resolution. Call before `load_program`.
+    /// `name` is a package path (`ui`, `bloom/menu`) and is the first place
+    /// that path is looked up. A relative import in `source` resolves against
+    /// `name` (`./motion` in `bloom/menu` is `bloom/motion`). Call before
+    /// `load_program`.
     pub fn register_module(&mut self, name: &str, source: &str) {
         self.modules.register(name, source);
     }
 
-    /// Append a directory to the module search path (searched after the
-    /// importing file's own directory). The CLI's `-I <dir>` lands here;
-    /// `PETAL_PATH` directories are searched after these.
+    /// Add a directory to the package search path. The CLI's `-I <dir>`
+    /// lands here; `PETAL_PATH` directories are searched after these.
     ///
-    /// Also picks up packages: `dir` itself, and each directory directly
-    /// under it, is registered as a package when it holds a `petal.toml`
-    /// (see [`crate::package`]), so dropping a library beside a search path
-    /// makes it importable as `<package>/<module>`. That half is best-effort
-    /// — a manifest that will not load is collected into
-    /// [`package_errors`](Self::package_errors) rather than thrown, because a
-    /// search directory is allowed to contain things that are not packages.
-    /// Use [`add_package`](Self::add_package) when the caller knows the
-    /// directory *is* a library and wants the error.
+    /// `dir` itself, and each directory directly under it, is offered as a
+    /// package when it holds a `petal.toml` (see [`crate::package`]), so
+    /// dropping a library beside a search path makes it importable as
+    /// `<package>/<module>`. A search path finds packages only: a loose
+    /// `.ptl` file is imported relative to its importer (`import ./x`).
+    /// Packages found here rank below the host's own registrations and the
+    /// importing file's own package, and above the bundled ones.
+    ///
+    /// Discovery is best-effort — a manifest that will not load is collected
+    /// into [`package_errors`](Self::package_errors) rather than thrown,
+    /// because a search directory is allowed to contain things that are not
+    /// packages. Use [`add_package`](Self::add_package) when the caller
+    /// knows the directory *is* a library and wants the error.
     pub fn add_module_path(&mut self, dir: std::path::PathBuf) {
         let (packages, errors) = crate::package::discover_packages(&dir);
         for package in packages {
@@ -443,7 +449,7 @@ impl Env {
     ///
     /// Module names are package-relative (`menu`, `ui/menu`); a `.ptl` suffix
     /// is stripped if present. The modules are then importable as
-    /// `bloom/menu`, and reach each other with a flat `import motion`.
+    /// `bloom/menu`, and reach each other with `import ./motion`.
     pub fn register_package<'a, N: AsRef<str>, S: AsRef<str>>(
         &mut self,
         name: &str,

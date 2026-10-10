@@ -377,9 +377,8 @@ pub struct Compiler {
     // compiled: set term → (name, the modules it joins).
     merged_imports: HashMap<TermId, (String, Vec<String>)>,
     // Names of the file being compiled whose plain import hides a core/std
-    // name: name → (the term bound, the exporting module, its qualifier).
-    // An entry is dropped once warned about.
-    prelude_shadows: HashMap<String, (TermId, String, String)>,
+    // name. An entry is dropped once warned about.
+    prelude_shadows: HashMap<String, PreludeShadow>,
     // What the imports of the file being compiled bound each bare name to.
     // A name still bound to this term has not been shadowed by the file.
     import_bound: HashMap<String, TermId>,
@@ -391,6 +390,19 @@ struct AmbiguousImport {
     name: String,
     /// `(module, the qualifier it is reachable through)`, in import order.
     offers: Vec<(String, String)>,
+    /// The first offering module's path as the importing file wrote it.
+    pin: String,
+}
+
+/// A plain import that took a core/std name (see `Compiler::prelude_shadows`).
+struct PreludeShadow {
+    /// The term the name is bound to through the import.
+    bound: TermId,
+    /// The exporting module, its qualifier in this file, and its path as
+    /// this file wrote it.
+    module: String,
+    qualifier: String,
+    written: String,
 }
 
 impl AmbiguousImport {
@@ -407,7 +419,7 @@ impl AmbiguousImport {
             name = self.name,
             modules = join_quoted(&modules),
             qualified = qualified.join(" or "),
-            first = self.offers[0].0,
+            first = self.pin,
         )
     }
 }
@@ -961,6 +973,9 @@ impl Compiler {
         let mut offered: Vec<(String, Vec<(String, TermId)>)> = Vec::new();
         let mut offered_at: HashMap<String, usize> = HashMap::new();
         let mut qualifier_of: HashMap<String, String> = HashMap::new();
+        // How this file spelled each module's path, for messages that suggest
+        // an import line.
+        let mut written_of: HashMap<String, String> = HashMap::new();
         for import in module.imports.iter().filter(|i| !i.implicit) {
             if import.decl.names.is_some() {
                 continue;
@@ -988,6 +1003,9 @@ impl Compiler {
             self.module_aliases.insert(alias.clone(), m.clone());
             self.explicit_aliases.insert(alias.clone());
             qualifier_of.entry(m.clone()).or_insert(alias);
+            written_of
+                .entry(m.clone())
+                .or_insert_with(|| import.written.clone());
 
             for name in &exports {
                 let tid = self
@@ -1039,6 +1057,10 @@ impl Compiler {
                             // Ambiguous. Nothing is wrong until the file
                             // uses the name bare.
                             let marker = self.emit_phantom_term(name.clone());
+                            let pin = written_of
+                                .get(&modules[0])
+                                .cloned()
+                                .unwrap_or_else(|| modules[0].clone());
                             let offers = modules
                                 .into_iter()
                                 .map(|m| {
@@ -1053,6 +1075,7 @@ impl Compiler {
                                 AmbiguousImport {
                                     name: name.clone(),
                                     offers,
+                                    pin,
                                 },
                             );
                             self.scope_bind(name.clone(), marker);
@@ -1076,7 +1099,16 @@ impl Compiler {
                         .get(&owner)
                         .cloned()
                         .unwrap_or_else(|| crate::ast::module_local_name(&owner).to_string());
-                    self.prelude_shadows.insert(name.clone(), (bound, owner, q));
+                    let written = written_of.get(&owner).cloned().unwrap_or(owner.clone());
+                    self.prelude_shadows.insert(
+                        name.clone(),
+                        PreludeShadow {
+                            bound,
+                            module: owner,
+                            qualifier: q,
+                            written,
+                        },
+                    );
                 }
             }
         }
@@ -1215,13 +1247,14 @@ impl Compiler {
             self.error_at(span, message);
             return;
         }
-        if let Some((bound, module, qualifier)) = self.prelude_shadows.get(name)
-            && *bound == tid
+        if let Some(shadow) = self.prelude_shadows.get(name)
+            && shadow.bound == tid
         {
             let message = format!(
-                "`{name}` here is the one module '{module}' exports, which hides the builtin \
-                 `{name}` — write `{qualifier}.{name}` to say so, or `import {module}: {name}` \
-                 to take it on purpose"
+                "`{name}` here is the one module '{}' exports, which hides the builtin \
+                 `{name}` — write `{}.{name}` to say so, or `import {}: {name}` to take it on \
+                 purpose",
+                shadow.module, shadow.qualifier, shadow.written
             );
             self.prelude_shadows.remove(name);
             self.warn_at(span, message);
@@ -1769,7 +1802,7 @@ impl Compiler {
     /// exports. `bind_imports` has already filled `module_aliases` by the time
     /// this runs, and dependencies compile before their importers, so
     /// `module_exports` is complete for everything reachable — including the
-    /// re-exports a facade like `bloom` collects with `pub import m: *`.
+    /// re-exports a facade like `bloom` collects with `pub import m`.
     ///
     /// This is what lets the checker treat `bloom.button(r, label)` as a call
     /// to `button` rather than as a method on an opaque value. Without it an

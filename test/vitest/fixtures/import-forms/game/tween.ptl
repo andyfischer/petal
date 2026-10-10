@@ -1,0 +1,4 @@
+// Exports a name that is also a builtin.
+pub fn lerp(a, b, t)
+  "tween"
+end

@@ -266,8 +266,9 @@ counts the arguments written at the call site, without the receiver.
 An overloaded name is one binding, so either every variant is `pub` or
 none is; a mixed group is a compile error. Importing `f` from two modules by
 name is still a collision — a selective import is an explicit request, and two
-of them for one name are ambiguous. See
-[Module system](module-system.md#exporting).
+of them for one name are ambiguous. Two *plain* imports that both export `f`
+are not a collision at the import: see [Which name
+wins](module-system.md#which-name-wins) and the merge rules below.
 
 ### Sets merge across modules
 
@@ -297,8 +298,15 @@ The rules:
   `var`, a record, a builtin native — shadows the whole set as it always did.
 - **An arity both sides define goes to the higher-precedence binding**, and the
   lower one is simply unreachable at that arity. It is not an error. The
-  precedence order is unchanged: the core prelude (`std`) < a host's implicit
-  imports < the file's own `import`s < the file's own declarations.
+  precedence order is [the tier order](module-system.md#which-name-wins): the
+  core prelude (`std`) < a host's implicit imports < the file's plain imports
+  < its selective imports < its own declarations.
+- **Two plain imports are the same tier**, so neither outranks the other.
+  Their sets merge when no arity is defined by both — with a `check` warning
+  at each call through the merged name — and a shared arity makes the bare
+  name ambiguous, an error where it is called. A module that itself imports
+  the other one wins outright instead: its set already merged the other's
+  arities where it was declared.
 - **Only across module boundaries.** Two declarations of the same arity in one
   file still replace each other, and a nested `fn` still shadows the whole set
   inside its enclosing function.

@@ -221,7 +221,7 @@ pub(super) fn handle_fix_imports(
         // when the file was touched or asked for by name: a directory sweep
         // would otherwise repeat every host-only script's first error.
         let touched = fixed.source != input.source;
-        if touched || paths.iter().any(|p| *p == input.name) {
+        if touched || input.path.is_none() || paths.iter().any(|p| *p == input.name) {
             for note in &fixed.notes {
                 eprintln!("note: {}: {note}", input.name);
             }

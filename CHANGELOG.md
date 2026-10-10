@@ -48,9 +48,17 @@ way, for code written against an earlier checkout.
 - Pending values: a value that is not ready yet (a fetch, a resource) flows
   through operators, conditions, loops and `match` without special handling.
 - JSX-like element syntax for hosts that render a tree.
-- Modules: `import`, namespaced paths (`import bloom/menu`), selective import
-  lists, `pub` to make a symbol visible to importers, re-exports
-  (`pub import m: *`), and `petal.toml` packages.
+- Modules: a plain `import m` binds every export of the module bare and the
+  qualifier `m` (`import m as x` renames it); `import m: a, b` binds only
+  those names. Import paths are relative to the importing file (`./level`,
+  `../shared/rng`) or start with a package name (`bloom/menu`); `pub` makes
+  a symbol visible to importers, `pub import m` re-exports a module's
+  surface, and a `petal.toml` makes a directory a package. A module's
+  identity is canonical, so one file reached by two spellings is one module.
+- A bare name is resolved in tiers: a declaration in the file, a selective
+  import, a plain import, the builtins. Two plain imports offering the same
+  name are an error only where the name is used bare; qualified access
+  always works.
 
 ### Runtime
 
@@ -126,6 +134,16 @@ way, for code written against an earlier checkout.
 
 ### CLI
 
+- `petal fix-imports [--check] [--diff] <paths…>` migrates code written for
+  the earlier import rules: a sibling file imported by a bare name becomes
+  `./name`, `import m: *` becomes `import m`, a selective import whose
+  qualifier is still used gains a plain import, and a bare name that exactly
+  one available package exports gets its `import` line. Idempotent, and safe
+  on migrated files.
+- The language server resolves a document's imports from its own path (and
+  from other open documents' unsaved text), and offers completion, hover and
+  go-to-definition for imported names, `qualifier.` members and import
+  paths.
 - `petal run`, with `--trace`, `--observe` (dump every named value the run
   bound), `--profile`, `--policy`, `--seed`/`PETAL_SEED`, and `--ir` to run a
   serialized IR file. `--observe` reports a value-position loop
@@ -166,6 +184,16 @@ way, for code written against an earlier checkout.
   and refuses a checksum file that does not hold a hash.
 
 ### Embedding and integrations
+
+- `Env::resolve_import(path, importer)` (the canonical name an import
+  resolves to), `Env::exports_of(path)`, `Env::importable_paths()`, and
+  `Env::set_inline_import_dir(dir)` (where `./x` leads for a program loaded
+  with no path). `Program::imports` records every module's exports and the
+  entry file's imports for tools. `petal::fix_imports::ImportFixer` is the
+  migration as a library, for a host that wants its own packages known.
+- Packages compiled into the binary are importable by name with nothing
+  registered, after everything the host and the search path offer: today
+  `core` (`import core` binds the qualifier, `core.len(xs)`).
 
 - Native interfaces: `native fn name(a: int, b?, ...rest) -> type = "host_name"`
   declares a function the host implements — its parameter names, arity,
@@ -229,6 +257,26 @@ way, for code written against an earlier checkout.
 ### Changed
 
 Breaking changes made during development, newest first:
+
+- Imports changed meaning. Run `petal fix-imports` over old code.
+  - A plain `import m` binds every export of `m` bare, as well as the
+    qualifier. A file's own declarations and selective imports still win;
+    two plain imports that offer one name make it an error to use that name
+    bare (`m.name` always works).
+  - `import m: a, b` no longer binds the qualifier `m`.
+  - `import m: *` is removed; `pub import m` re-exports every export of `m`
+    (it used to re-export the qualifier, which nothing does now).
+  - A bare first path segment is always a package: `import level` no longer
+    finds `level.ptl` beside the importer (write `import ./level`), and
+    `-I`/`PETAL_PATH`/`Env::add_module_path` find packages only, not loose
+    files.
+  - A module's name is canonical. A file under a package's module directory
+    is `<package>/<path>` however it was imported, so `state` keys and
+    qualified function names of a module that used to be imported flat
+    (`motion::x`) are now package-qualified (`bloom/motion::x`).
+  - `ModuleResolver::resolve` takes the path as written and an `Importer`
+    and returns a `Result`; `ModuleSource.name` is the canonical name.
+    `ImportDecl.star` is still parsed, but only so the loader can reject it.
 
 - The hand-kept signature tables are gone: `builtins::BUILTIN_PARAMS`,
   `typecheck::globals::PETAL_UI_NATIVE_PARAMS` and `host_native_signatures`,

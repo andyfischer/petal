@@ -60,7 +60,7 @@ describe("namespaced module paths", () => {
   });
 
   it("'..' in a path is a clean error, not a traversal", () => {
-    const err = runFileError(["run", resolve(FIXTURES, "bad_path.ptl")]);
+    const err = runFileError(["run", "-e", "import bloom/../petal/menu\nprint(1)"], FIXTURES);
     expect(err).toContain("a module path segment must be an identifier");
     expect(err).toContain("'.' and '..' are only allowed at the start of an import path");
   });

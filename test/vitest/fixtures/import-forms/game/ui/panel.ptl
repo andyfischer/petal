@@ -1,0 +1,8 @@
+// Reaches up a directory for a sibling of its parent, and out of the game
+// for a shared file.
+import ../hud
+import ../../shared/rng
+
+pub fn title()
+  hud.draw() ++ " panel " ++ str(rng.seed)
+end

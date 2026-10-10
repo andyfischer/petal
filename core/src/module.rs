@@ -695,8 +695,12 @@ fn module_path_error(name: &str) -> Option<String> {
 /// errors (mirroring how builtins behave).
 #[derive(Clone)]
 pub struct ResolvedImport {
+    /// The statement, with `module` replaced by the module's canonical name.
     pub decl: ImportDecl,
     pub implicit: bool,
+    /// The path as the file wrote it (`./hud`, `bloom/menu`): what a
+    /// diagnostic that suggests an import line should spell.
+    pub written: String,
 }
 
 /// One parsed source file, ready for compilation. `name` is `None` for the
@@ -792,6 +796,7 @@ pub fn load_modules(
         .map(|name| ResolvedImport {
             decl: import_all(name),
             implicit: true,
+            written: name.clone(),
         })
         .collect();
 
@@ -859,6 +864,7 @@ pub fn load_modules(
         gated_decls.push(ResolvedImport {
             decl: import_all(&canonical),
             implicit: true,
+            written: name.clone(),
         });
     }
     let gated_modules = std::mem::take(&mut walker.out);
@@ -1241,6 +1247,7 @@ fn split_imports(stmts: Vec<Stmt>) -> (Vec<ResolvedImport>, Vec<Stmt>) {
     for stmt in stmts {
         match stmt.kind {
             StmtKind::Import(decl) => imports.push(ResolvedImport {
+                written: decl.module.clone(),
                 decl,
                 implicit: false,
             }),

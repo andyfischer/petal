@@ -18,6 +18,9 @@
 // this frame, which is why sweeping a value with the d-pad bends the pitch
 // instead of restarting it.
 
+import nes
+import nes_sound
+
 set_backdrop(black)
 palette(0, white, gray, dark_gray)     // labels
 palette(1, yellow, orange, brown)      // the selected row / channel

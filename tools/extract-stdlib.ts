@@ -63,6 +63,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreModRs = join(repoRoot, "core/src/builtins/mod.rs");
 const corePackageSrc = join(repoRoot, "core/packages/core/src");
 const uiPreludePtl = join(repoRoot, "core-libs/petal-ui/prelude/ui.ptl");
+// The input half of the `ui` package (`ui/input`), which `ui` re-exports.
+const uiInputPtl = join(repoRoot, "core-libs/petal-ui/prelude/input.ptl");
 const petalUiDrawRs = join(repoRoot, "core-libs/petal-ui/src/draw.rs");
 const petalUiTextRs = join(repoRoot, "core-libs/petal-ui/src/text.rs");
 const petalUiInputRs = join(repoRoot, "core-libs/petal-ui/src/input.rs");
@@ -301,7 +303,7 @@ function declaredParams(): Map<string, DeclaredForm[]> {
       .filter((f) => f.endsWith(".ptl"))
       .sort()
       .map((f) => join(corePackageSrc, f));
-    sources.push(uiPreludePtl);
+    sources.push(uiInputPtl, uiPreludePtl);
     declaredParamsCache = new Map(
       sources.flatMap((path) => [...parseNativeDecls(readFileSync(path, "utf8"))]),
     );
@@ -745,7 +747,8 @@ export function buildManifest(): StdlibManifest {
     generatedFrom: [
       "core/src/builtins/mod.rs",
       "core/src/builtins/*.rs",
-      "core/src/typecheck/globals.rs",
+      "core/packages/core/src/*.ptl",
+      "core-libs/petal-ui/prelude/*.ptl",
       "core/prelude/std.ptl",
       "core-libs/petal-ui/src/draw.rs",
       "core-libs/petal-ui/src/text.rs",

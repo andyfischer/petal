@@ -1,7 +1,9 @@
-// The precedence check: implicit imports are *weak*. This module declares its
-// own `screen_width`, which must silently shadow the host prelude's — no
+// The precedence check: a plain import is *weak*. This module declares its
+// own `screen_width`, which must silently shadow the one `ui` exports — no
 // collision error — while an unshadowed prelude name (`draw_rect`'s record
 // overload) still resolves here.
+
+import ui
 
 fn screen_width()
   42

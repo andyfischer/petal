@@ -995,7 +995,7 @@ drum_kick drum_snare drum_hat drum_instruments`; `pcm_time pcm_render osc_sine
 osc_saw osc_tri osc_square osc_noise env_decay env_ad env_adsr pcm_scale
 pcm_mix pcm_clip`; `standard_instruments song_title song_gameplay`.
 
-Both preludes are implicit imports, so call everything bare. They are ordinary
+Start a cart with `import nes` (and `import nes_sound` for sound), then call everything bare. They are ordinary
 Petal, readable at [`prelude/nes.ptl`](../prelude/nes.ptl) and
 [`prelude/nes_sound.ptl`](../prelude/nes_sound.ptl); every export carries a
 comment explaining why it exists.

@@ -326,10 +326,10 @@ to host state, so the `fx::` flags must say that.
 
 ## petal-ui: input and draw commands
 
-Each VM registers every petal-ui native and makes the `ui` prelude an
-implicit import, so scripts use `mouse_x()`, `key_pressed("space")`,
-`mouse_dx()`, `grab_mouse()`, `draw_rect(...)`, `button(...)` etc. with no
-imports.
+Each VM registers every petal-ui native and the `ui` package that declares
+them. A script starts with `import ui` and then uses `mouse_x()`,
+`key_pressed("space")`, `mouse_dx()`, `grab_mouse()`, `draw_rect(...)`,
+`button(...)` etc. bare (or as `ui.button`). Nothing is imported implicitly.
 
 Input goes in as events; `begin_frame` promotes edges (so `key_pressed` is
 true for exactly one frame) and binds `dt()`, `frame_count()` and `time()`.
@@ -626,13 +626,56 @@ write_file("games/neon/config.ptl", src.text());
 
 ```cpp
 vm.register_module("engine", engine_prelude_source);  // `import engine`
-vm.add_implicit_import("engine");                      // ...or no import at all
+vm.register_package("kit", {{"kit", kit_src},          // a package from memory:
+                            {"shapes", shapes_src}});  // `import kit`, `import kit/shapes`
 vm.add_module_path("games/marble/lib");                // a directory of packages
-vm.add_package("path/to/petal/core-runtime/bloom");     // `import bloom/menu`
+vm.add_package("path/to/petal/core-runtime/bloom");     // a package directory
 ```
 
-The implicit-import list starts as `["ui"]`; `add_implicit_import` appends.
-All of these affect later loads.
+All of these affect later loads. There are no implicit imports: a script
+names what it uses (`import ui`, `import engine`). `bloom`, `text_layout`
+and `glsl` are bundled in the runtime, so `import bloom` needs no
+registration; a package registered here wins over the bundled copy.
+
+### Your natives need an interface package
+
+A script reaches a native only through a `native fn` declaration in scope
+([ffi.md](ffi.md#native-interfaces-native-fn)). So a host that registers
+natives also registers the package that declares them, and its scripts
+import it:
+
+```cpp
+vm.native("gravity_at", [](petal::Call& c) { c.result().value(-9.81 * c[0].number()); });
+vm.emitter("spawn", "scene");
+// Natives first, then the package: registering it gives them their
+// declared parameter names (`gravity_at(frame: 3)`).
+vm.register_package("game", {{"game", R"(
+pub native fn gravity_at(frame: num) -> float
+pub native fn spawn(kind: string, props: record)
+)"}});
+// The drift check, for a test: "" when every registered native is declared
+// and every declared native is registered. Name every interface package the
+// VM answers for; `ui` is petal-ui's.
+assert(vm.verify_interface({"ui", "game"}).empty());
+```
+
+```petal ignore
+import game
+spawn("ball", {y: gravity_at(frame: 3)})
+```
+
+Keep the same source in a directory with a `petal.toml`
+(`packages/game/petal.toml`, `packages/game/game.ptl`) and
+`petal check -I packages script.ptl` checks your scripts with the stock CLI.
+`pb_vm_add_package(vm, "packages/game", …)` registers it from that directory
+instead of from memory. In C: `pb_vm_register_package`,
+`pb_vm_verify_interface`, `pb_vm_set_check_only` (compile without linking,
+to check a script written for another host) and
+`pb_vm_set_inline_import_dir` (where `import ./x` leads for a program loaded
+from a string).
+
+A script that uses a declared native the VM does not register fails at
+`load_*` with `PB_ERR_COMPILE`, phase `link`, before any line runs.
 
 ## Other tooling
 

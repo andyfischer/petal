@@ -1,8 +1,8 @@
 // fantasy-nes prelude — module `nes_sound`
 //
 // Music and sound-effect vocabulary over the `apu_*` natives, kept separate
-// from `nes` so a cart that makes no sound never pays to compile it. Also an
-// implicit import, so carts call these bare; `import nes_sound` also works.
+// from `nes` so a cart that makes no sound never pays to compile it. A cart
+// that does writes `import nes_sound` and calls these bare.
 //
 // The shape of this module is FamiTracker's, because that is the shape the
 // hardware suggests and the shape a composer already knows: **instruments are
@@ -26,6 +26,9 @@
 // frame; a `music_play` that restarted unconditionally would play row 0
 // forever. The song *data* is still taken fresh on every call, so editing a
 // pattern and saving is audible on the next row without losing the playhead.
+
+import nes_host
+import ui/input
 
 // ── Note vocabulary ───────────────────────────────────────────────────────
 // Notes are MIDI semitones so a pitch bend is just a fractional value: 60 is

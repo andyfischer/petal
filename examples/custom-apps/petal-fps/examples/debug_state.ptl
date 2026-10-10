@@ -1,3 +1,6 @@
+import fps
+import ui/input
+
 state counter = 0
 state marker = false
 

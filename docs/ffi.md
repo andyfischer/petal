@@ -19,8 +19,7 @@ follows the same shape:
 ```rust
 let mut env = Env::new();
 env.register_native("spawn_particle", native_spawn_particle, NativeEffects::EMITS); // host functions
-env.register_module("ui", include_str!("ui.ptl"));            // Petal-source prelude
-env.set_implicit_imports(&["ui"]);
+env.register_package("game", [("game", include_str!("game.ptl"))])?; // the interface package: declares the natives
 let pid = env.load_program_at(&source, &path)?;               // compile (walks imports)
 let stack = env.create_stack(pid)?;
 
@@ -40,7 +39,7 @@ Entry points, all on `Env` (`core/src/env/`):
 | Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
 | Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
-| Modules / prelude | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_implicit_imports` |
+| Modules / prelude | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `verify_interface` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
@@ -699,8 +698,8 @@ check the host saw every call" catches the next one.
 - **petal-ui** (`core-libs/petal-ui/`) — the reusable layer: the input vocabulary
   (`InputEvent`, `InputState`), the `DrawCommand` enum (with a
   `Host { tag, data }` pass-through so embedder-specific natives keep their
-  place in the command stream), the Petal-source `ui` prelude registered as an
-  implicit import, and a `Headless` harness that mirrors the frame contract
+  place in the command stream), the `ui` interface package (scripts write
+  `import ui`), and a `Headless` harness that mirrors the frame contract
   for tests.
 - **petal-c-bridge** (`integrations/petal-c-bridge/`) — the C ABI and C++
   wrapper ([embedding-c.md](embedding-c.md)). One `Env` + program + stack per

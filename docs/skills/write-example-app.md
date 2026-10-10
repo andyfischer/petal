@@ -83,7 +83,7 @@ Do not write the whole app blind and hope. The loop is:
 
 ```bash
 # from the repo root, after every edit
-./tools/run-petal.ts check --strict --host garden examples/<category>/<slug>/app.ptl
+./tools/run-petal.ts check --strict -I garden/garden-script/packages examples/<category>/<slug>/app.ptl
 ./tools/run-petal.ts lint examples/<category>/<slug>/app.ptl          # `lint --fix` applies the fixes
 
 source tools/panel-test.sh          # or call it per command: tools/panel-test.sh click 80 30
@@ -98,10 +98,10 @@ curl -s 127.0.0.1:$(panel_port)/scene?pane=0 | jq ...   # assert layout numerica
 panel_stop
 ```
 
-`--host garden` is not optional. Without it `check` knows only the `ui`
-natives and reports `claim_key`, `request_frame`, `palette` and the rest of
-Garden's own as unknown functions on a correct script. `petal lint` is a
-separate pass (it takes no `--host`): it reports spellings that have a better
+The app starts with `import ui` and `import garden` (and `import bloom` if it
+uses bloom); nothing is implicit. `-I garden/garden-script/packages` is how `check` finds the
+`garden` package — without it the import does not resolve. `petal lint` is a
+separate pass: it reports spellings that have a better
 form, and the app is not done while it reports any.
 
 [`tools/panel-test.sh`](../../tools/panel-test.sh) is the one copy of the

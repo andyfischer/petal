@@ -51,8 +51,8 @@ Petal costs 0.32 ms with an `f64_array`, 0.59 ms appending to a list. The typed
 array is the difference between a toy and a channel you can ship. Measurements
 are in [design.md](docs/design.md#the-dsp-budget).
 
-**Modules and implicit imports gave a real prelude.** `nes.ptl` and
-`nes_sound.ptl` are ordinary Petal registered as implicit imports, so carts call
+**Modules gave a real prelude.** `nes.ptl` and
+`nes_sound.ptl` are ordinary Petal that a cart imports (`import nes`), so carts call
 `draw_meta` and `music_play` bare and can read the implementation when a helper
 does not do what they want.
 

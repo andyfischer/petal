@@ -1,3 +1,6 @@
+import fps
+import ui/input
+
 state a = 0
 state b = 0
 state c = 0

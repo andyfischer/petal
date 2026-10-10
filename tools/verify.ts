@@ -369,8 +369,10 @@ const UI_NATIVES = [
 ];
 const UI_RE = new RegExp(`\\b(${UI_NATIVES.join('|')})\\s*\\(`);
 
-/** `import foo`, `import foo as f`, `import foo: a, b` — the imported module name. */
-const IMPORT_RE = /^\s*import\s+([A-Za-z_][A-Za-z0-9_./]*)/gm;
+/** `import ./foo`, `import ../lib/foo as f`, `pub import ./foo: a, b` — the
+ *  imported path as written. A bare first segment names a package, which is
+ *  never a sibling file, so it resolves to no corpus file below. */
+const IMPORT_RE = /^\s*(?:pub\s+)?import\s+((?:\.\.?\/)*[A-Za-z_][A-Za-z0-9_./]*)/gm;
 
 /** Read a file (memoized — classification reads each corpus file twice). */
 const readCache = new Map<string, string>();
@@ -404,7 +406,8 @@ function moduleSet(targets: Target[]): Set<string> {
 function staticKind(t: Target, mods: Set<string>): Kind {
     if (mods.has(t.after)) return 'module';
     const text = read(t.after);
-    if (UI_RE.test(text)) return 'ui';
+    // A ui name called, or one of the packages only a petal-ui host can run.
+    if (UI_RE.test(text) || /^\s*import\s+(ui|bloom|garden|sdl)\b/m.test(text)) return 'ui';
     // A panel app is driven by the layout beside it, even if the entry file
     // itself only delegates.
     const layout = join(t.dir, 'layout.ptl');
@@ -412,7 +415,16 @@ function staticKind(t: Target, mods: Set<string>): Kind {
     return 'console';
 }
 
-const UNKNOWN_BUILTIN_RE = /Unknown builtin: ([A-Za-z_][A-Za-z0-9_]*)/;
+// A name nothing in scope provides (a run-time "Unknown function"), or a
+// declared native the driver does not register (the load-time link error).
+const UNKNOWN_NATIVE_RE =
+    /(?:Unknown function|Unknown builtin): ([A-Za-z_][A-Za-z0-9_]*)|needs (?:a native fn|native fns) this host does not register: ([A-Za-z_][A-Za-z0-9_]*)/;
+
+/** The name `UNKNOWN_NATIVE_RE` found in `text`, if any. */
+function unknownNative(text: string): string | null {
+    const m = UNKNOWN_NATIVE_RE.exec(text);
+    return m ? (m[1] ?? m[2]) : null;
+}
 
 // ── Drivers ──────────────────────────────────────────────────────────────
 
@@ -578,8 +590,8 @@ async function checkCompiles(ctx: Ctx, t: Target): Promise<CompileCheck> {
     // Checker findings, and the summary lines that follow them. An `error:`
     // finding (an unknown name, a bad arity) is still a finding about the
     // source, not a failure to compile: `--lenient` keeps the exit code 0, and
-    // a corpus app written for Garden or an NES cart names natives the default
-    // `--host ui` profile cannot know.
+    // a corpus app written for a host whose interface package is not on the
+    // search path names natives nothing here declares.
     const isDiagnostic = (l: string) =>
         /^(warning|error): /.test(l) || l.startsWith('note: ') || / errors? found by check$/.test(l);
     const split = (r: Run) => {
@@ -673,10 +685,10 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
     const probeBin = kind === 'ui' ? ctx.after.uiRun : ctx.after.petal;
     const probeFailed = driverGuard(t.rel, kind, steps, [{ ...probe, bin: probeBin }]);
     if (probeFailed) return probeFailed;
-    const missing = UNKNOWN_BUILTIN_RE.exec(probe.stdout + probe.stderr);
+    const missing = unknownNative(probe.stdout + probe.stderr);
     if (missing) {
         return { rel: t.rel, kind: 'unsupported', verdict: 'unsupported', steps,
-                 detail: `no driver provides \`${missing[1]}\`` };
+                 detail: `no driver provides \`${missing}\`` };
     }
 
     let verdict: Verdict = 'identical-trace';
@@ -746,10 +758,10 @@ async function runFile(ctx: Ctx, t: Target, mods: Set<string>): Promise<Outcome>
                     if (b.hash === a.hash) {
                         // Identical *and* both failed on a native nobody provides:
                         // the file is unsupported, not verified.
-                        const m = UNKNOWN_BUILTIN_RE.exec(a.stderr);
+                        const m = unknownNative(a.stderr);
                         if (m) {
                             return { rel: t.rel, kind: 'unsupported', verdict: 'unsupported', steps,
-                                     detail: `no driver provides \`${m[1]}\`` };
+                                     detail: `no driver provides \`${m}\`` };
                         }
                         continue;
                     }

@@ -15,6 +15,25 @@ pub fn repo_ptl_files() -> Vec<PathBuf> {
     files
 }
 
+/// The directories holding the interface packages of the in-repo hosts
+/// (`garden`, `garden_config`, `sdl`, `web`): what a sweep over the corpus
+/// passes as its package search path, so a panel that says `import garden`
+/// compiles here as it does under `petal check -I`.
+pub fn host_package_dirs() -> Vec<PathBuf> {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root");
+    [
+        "garden/garden-script/packages",
+        "integrations/petal-desktop-sdl/packages",
+        "core/packages/web",
+    ]
+    .iter()
+    .map(|dir| repo_root.join(dir))
+    .filter(|dir| dir.is_dir())
+    .collect()
+}
+
 fn collect_ptl(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;

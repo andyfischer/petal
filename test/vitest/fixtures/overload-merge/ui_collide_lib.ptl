@@ -1,8 +1,10 @@
-// The arity-collision case. The host prelude's `draw_rect` set takes 2, 3, 7
+// The arity-collision case. The `ui` package's `draw_rect` set takes 2, 3, 7
 // or 8 arguments; this module declares the 2-argument arity itself. Its own
 // declaration is the higher-precedence one and wins for that arity (it shifts
 // the rect right by 1 so the trace shows which ran); the arities it does not
 // declare — here the 3-argument alpha form — stay reachable.
+import ui
+
 pub fn draw_rect(r, c)
   ui.draw_rect({ x: r.x + 1, y: r.y, w: r.w, h: r.h }, c)
 end

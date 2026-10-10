@@ -47,6 +47,28 @@ impl FpsHost {
     }
 }
 
+/// The interface package of this host: `import fps`.
+pub const FPS_PACKAGE: &str = "fps";
+const FPS_INTERFACE: &str = include_str!("../packages/fps/fps.ptl");
+
+#[cfg(test)]
+mod interface_tests {
+    /// The drift test: the natives this host registers are exactly the ones
+    /// `fps` and `ui/input` declare.
+    #[test]
+    fn the_host_natives_agree_with_their_interface() {
+        let mut env = petal::env::Env::new();
+        petal_ui::input::register_input(&mut env);
+        crate::native_fns::register_draw(&mut env);
+        petal_ui::register_prelude(&mut env);
+        env.register_package(super::FPS_PACKAGE, [(super::FPS_PACKAGE, super::FPS_INTERFACE)])
+            .unwrap();
+        if let Err(mismatch) = env.verify_interface(&[super::FPS_PACKAGE, "ui/input"]) {
+            panic!("the host's natives and its interface disagree: {mismatch}");
+        }
+    }
+}
+
 impl Host for FpsHost {
     fn register(&mut self, env: &mut Env) {
         // Input, timing, dimensions, mouselook (relative mouse + grab) — all the
@@ -54,6 +76,13 @@ impl Host for FpsHost {
         // vocabulary is ours.
         petal_ui::input::register_input(env);
         crate::native_fns::register_draw(env);
+        // The interface packages that declare them: a script writes
+        // `import fps` for the draw natives and `import ui/input` for
+        // petal-ui's input half (this host registers no `ui` draw native, so
+        // a plain `import ui` would not load).
+        petal_ui::register_prelude(env);
+        env.register_package(FPS_PACKAGE, [(FPS_PACKAGE, FPS_INTERFACE)])
+            .expect("the fps interface package registers");
     }
 
     fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String> {

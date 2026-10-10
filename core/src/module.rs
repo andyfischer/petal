@@ -238,8 +238,9 @@ impl ModuleRegistry {
     /// `(canonical module name, source)` for every module of the package
     /// `name`, found the way an import finds it — host registrations, then
     /// the search path, then the bundled packages — or of the modules
-    /// registered in memory as `name` and `name/…`. `None` when nothing
-    /// answers to the name.
+    /// registered in memory as `name` and `name/…`. A `pkg/module` name is
+    /// that one module of the package. `None` when nothing answers to the
+    /// name.
     pub fn package_sources(&self, name: &str) -> Option<Vec<(String, String)>> {
         let memory: Vec<(String, String)> = self
             .memory
@@ -252,6 +253,18 @@ impl ModuleRegistry {
             })
             .map(|(module, source)| (module.clone(), source.clone()))
             .collect();
+        // `pkg/module` names one module of a package (`ui/input`): what a
+        // host that registers only part of an interface answers for.
+        if memory.is_empty()
+            && let Some((package_name, module)) = name.split_once('/')
+        {
+            let package = self
+                .all_packages()
+                .chain(bundled_packages().iter())
+                .find(|p| p.info.name == package_name)?;
+            let loaded = package.load(module)?;
+            return Some(vec![(name.to_string(), loaded.source)]);
+        }
         let package = self
             .all_packages()
             .chain(bundled_packages().iter())

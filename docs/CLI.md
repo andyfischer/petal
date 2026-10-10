@@ -344,7 +344,7 @@ on the same dispatch loop as an ordinary one.
 another host (a petal-ui panel, a Garden pane) needs that host's own runner:
 see `bench_panel` in [dev/performance.md](dev/performance.md). To bench a
 library such a script uses, write a small console driver that imports it and
-calls the function. `--host core` is accepted and any other value refused.
+calls the function.
 
 With `--json` the report is one object (this one is from a separate run of
 the same command, so its timings differ a little from the text above):
@@ -397,8 +397,8 @@ usual JSON error object, with `"phase": "bench"` for a bad `--fn`.
 ### `check` — Compile without running
 
 ```
-petal check [--json] [--strict | --lenient] [--ir] [--host <profile>] [--native <names>] [--error-format full|bare] <file.ptl>
-petal check [--json] [--strict | --lenient] [--host <profile>] [--native <names>] [--error-format full|bare] -e '<code>'
+petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file.ptl>
+petal check [--json] [--strict | --lenient] [--error-format full|bare] -e '<code>'
 ```
 
 Lexes, parses, compiles and lowers the program to bytecode, then stops. Exits 1
@@ -423,37 +423,46 @@ Options:
 - `--lenient` — report checker errors but exit 0 unless the program fails to
   compile or lower. For a sweep that only asks "does this compile?" over
   scripts written for several hosts.
-- `--host core|ui|garden|garden-config|sdl` — the host the script runs in,
-  which decides which names exist beyond the core builtins. `ui` (the
-  default) is the core builtins, the petal-ui natives and the `ui` prelude;
-  `garden` adds Garden's panel natives and the packages Garden registers;
-  `garden-config` is Garden's config host (`init.ptl`, layout scripts);
-  `sdl` is petal-desktop-sdl's; `core` is the core builtins alone.
-
-  The default is `ui` because most scripts checked are written for a
-  petal-ui host, and `suggest`, `apply-change` and `ir-equal` share it.
-  `petal run` is the **core** host, so the two disagree on a UI script:
-  `check` passes it and `run` stops at `Undefined variable: ui` (or
-  `Unknown builtin: draw_rect`), with a note saying the name comes from the
-  petal-ui host. `petal check --host core` is the check that agrees with
-  `petal run`; a UI script runs in a petal-ui runner such as `petal-sdl`
-  ([building-apps.md](building-apps.md)).
-- `--native a,b` — names your own host registers, on top of `--host`'s.
-
-  A native that a module of the program *declares* (`native fn`, see
-  [ffi.md](ffi.md#native-interfaces-native-fn)) needs neither flag: the
-  declaration makes the name known, with its parameters, whether or not this
-  process registers it. That is how the petal-ui natives are known under
-  `--host ui` — the `ui` prelude declares them. `check` never links, so such
-  a script checks clean; `petal run` of it stops at load, before any line
-  runs, with the natives the core host lacks
-  (`module 'ui' needs native fns this host does not register: …`).
 - `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
   with `run --ir`. The IR is validated, then lowered, so a third-party IR
   emitter can be checked without running its output:
   `emit-my-ir | petal check --json --ir -`. A load failure is reported with
   `"phase": "parse"`; IR that loads but cannot be lowered gets `"phase": "lower"`.
 - `--error-format full|bare` — as on [`run`](#run--execute-a-program).
+
+#### Which names exist
+
+No host is consulted, and the old host-profile flags are gone. A name exists
+because the file declares it, an import binds it, or it is a `core`/`std`
+builtin. A script written for a host imports the host's **interface package**,
+whose `native fn` declarations ([ffi.md](ffi.md#native-interfaces-native-fn))
+make each native known, with its parameters, whether or not this process
+registers it:
+
+| The script is for | It writes | `check` finds the package |
+| --- | --- | --- |
+| any petal-ui host | `import ui` | bundled in the binary |
+| a host with only petal-ui's input half | `import ui/input` | bundled |
+| the bloom / text_layout / glsl libraries | `import bloom`, … | bundled |
+| a Garden panel | `import ui`, `import garden` | `-I garden/garden-script/packages` |
+| Garden's config host (`init.ptl`) | `import garden_config` | `-I garden/garden-script/packages` |
+| petal-desktop-sdl's extras | `import sdl` | `-I integrations/petal-desktop-sdl/packages` |
+| your own host | `import <its package>` | `-I <the directory holding it>` |
+
+`check` and `run` agree on every script. `check` never links, so a script that
+imports `ui` checks clean; `petal run` of it stops at load, before any line
+runs, because `run` registers the core builtins only:
+
+```
+$ petal run -e 'import ui
+clear(0, 0, 0)'
+Error: module 'ui/input' needs native fns this host does not register: mouse_x, mouse_y, hovered, mouse_down, +14 more; module 'ui' needs native fns this host does not register: clear, text_width, text_metrics, text_wrap, +32 more — the program cannot run here; run it with a host that provides them (`ui` is the petal-ui interface: use a petal-ui runner such as petal-sdl; `petal run` provides the core builtins only)
+```
+
+A UI script runs in a petal-ui runner such as `petal-sdl`
+([building-apps.md](building-apps.md)). Old scripts that relied on a host's
+implicit prelude get their imports from
+[`petal fix-imports`](#fix-imports--migrate-imports).
 
 #### Errors and warnings
 
@@ -465,9 +474,9 @@ Each has a severity.
 
 An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
 
-- a call to, or read of, a name that neither the program nor the host defines
+- a call to, or read of, a name that nothing defines
   (`unknown function \`frob\``, `undefined variable \`nope\``) — it would
-  fail with `Unknown builtin` or `Undefined variable`;
+  fail with `Unknown function` or `Undefined variable`;
 - a call whose argument count no overload accepts (`f(1)` where every `f`
   takes two arguments);
 - a named argument no parameter has, or one that fills a slot twice — on a
@@ -478,10 +487,8 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   overload's default parameter values could accept;
 - a named argument to a builtin that declares none (`print(1, sep: 2)`).
 
-A host native is held to its declared names when the checker knows them: the
-petal-ui set always, anything the running `Env` registers. A native known only
-by name — Garden's, the SDL runner's, a `--native` — has its named arguments
-left to the run, since its host may declare parameters `check` cannot see.
+A host native is held to the parameter names its interface package declares,
+like a builtin.
 
 ```
 $ petal check -e 'print(nope)'
@@ -490,16 +497,15 @@ error: undefined variable `nope`
   |
 1 | print(nope)
   |       ^^^^
-note: names were checked against `--host ui`; if your host provides them, pass its profile (`--host core|ui|garden|garden-config|sdl`) or name them with `--native a,b`
 1 error found by check
 $ echo $?
 1
 ```
 
-Which names exist depends on the host, so an unknown-name error can mean the
-script was checked against the wrong one: pass `--host` or `--native`, as the
-note says. `run` reports these too, before running, and still runs the
-program — the failing line may never execute.
+An unknown-name error on a host's name means the script does not import the
+host's interface package (or `check` was not given the `-I` that finds it).
+`run` reports these too, before running, and still runs the program — the
+failing line may never execute.
 
 Everything else is a **warning**, and does not change the exit code unless
 `--strict` is set:
@@ -625,6 +631,7 @@ nothing else:
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
+| *(nothing)* | adds `import ui` | the same, for a host's names: a script written for an implicit prelude gets its `import ui` (with the host's package on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
 "Available" is the packages bundled in the binary plus the ones under `-I`
 and `PETAL_PATH`. A path that already resolves as a package is never
@@ -725,7 +732,7 @@ and refuses to write, whatever the mode.
 ### `suggest` — Suggest safe refactors for a file
 
 ```
-petal suggest [--only <kind>[,<kind>]] [--apply | --verify] [--host <host>]
+petal suggest [--only <kind>[,<kind>]] [--apply | --verify]
               [--json] [--from <file>]... <file>
 petal suggest [<options>] -e <code>
 ```
@@ -955,11 +962,8 @@ only repeat what the call already says:
 - **mostly echoes** — a call where more of the names would repeat their own
   argument than add to it: `hash(ix: ix + 1, iy: iy, seed: seed)`.
 
-**`--host` matters here.** A bare `draw_rect` is the `ui` prelude's function
-under `--host ui` (the default) and an unknown global under `--host core`.
-Suggest for the host the script actually runs in: a script for an embedding
-with natives of its own (`examples/custom-apps/`) should say `--host
-core`, which leaves that host's natives alone.
+A host's functions are named like any other imported module's: with
+`import ui` in the file, a bare `draw_rect` is the `ui` package's function.
 
 #### Options
 
@@ -982,9 +986,6 @@ core`, which leaves that host's natives alone.
   ```
 - `--verify` — run the `--apply` proofs and report, writing nothing. Exit 3 if
   any suggestion fails its proof.
-- `--host <host>` — the host the script runs in, as for
-  [`check`](#check--compile-without-running): `core`, `ui` (default), `garden`,
-  `garden-config` or `sdl`. It decides which prelude is imported implicitly.
 - `--from <file>` — also compile `<file>` for its call sites. A library module
   compiled on its own has no callers, so its parameters have no call-site
   evidence; point this at an app that uses the library. Repeatable. Type
@@ -1003,7 +1004,7 @@ core`, which leaves that host's natives alone.
 ```
 petal apply-change <operation> <file> [<options>]
 petal apply-change convert-to-var <file> --target <path> [--from <file>]...
-                   [--dry-run] [--host <host>]
+                   [--dry-run]
 petal apply-change                      # list the operations
 ```
 
@@ -1173,7 +1174,7 @@ that does not compile yet: a file that already failed may keep the compile
 errors it had, and gain none. A file with three bindings to convert gets there
 one conversion at a time, and each run names it in a `note:`. A file that
 failed for another reason (an import that does not resolve here, say) is a
-refusal; pass `-I <dir>` or `--host <name>` so it can be compiled.
+refusal; pass `-I <dir>` so it can be compiled.
 
 #### Options
 
@@ -1182,7 +1183,7 @@ refusal; pass `-I <dir>` or `--host <name>` so it can be compiled.
 - `--from <file>` — see [importers](#importers). Repeatable.
 - `--dry-run` — print the change as a unified diff on stdout and write
   nothing. Everything else, the gate included, runs as usual.
-- `--host <host>` — the host the scripts run in, as for
+
   [`check`](#check--compile-without-running). It decides which prelude the
   gate imports implicitly.
 
@@ -1191,7 +1192,7 @@ refusal; pass `-I <dir>` or `--host <name>` so it can be compiled.
 ```
 petal ir-equal <a.ptl> <b.ptl>          # exit 0 equal, 1 different, 2 can't tell
 petal ir-equal --json <a.ptl> <b.ptl>   # {"equal": bool, "diff"?: {...}}
-petal ir-equal --named-args [--host <host>] <a.ptl> <b.ptl>
+petal ir-equal --named-args <a.ptl> <b.ptl>
 ```
 
 Compiles both files and compares their IR, ignoring everything positional:
@@ -1228,8 +1229,7 @@ reported:
   put every argument in the same parameter. Arguments are still paired in the
   order written, so a rewrite that reorders them is a difference however they
   are named; and a callee that cannot be pinned down (a parameter, a method
-  dispatched at runtime) is a difference as before. `--host` (default `ui`)
-  says which prelude both files are compiled against, as for `check`. This is
+  dispatched at runtime) is a difference as before. This is
   the proof [`suggest --apply`](#suggest--suggest-safe-refactors-for-a-file)
   holds its named-argument rewrites to.
 

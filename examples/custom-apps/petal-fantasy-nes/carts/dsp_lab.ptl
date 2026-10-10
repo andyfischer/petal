@@ -33,6 +33,9 @@
 // screen functions, because `set` on a `var` declared outside a function is
 // deliberately not allowed — the screens draw, the top level decides.
 
+import nes
+import nes_sound
+
 set_backdrop(black)
 palette(0, white, gray, dark_gray)      // labels
 palette(1, yellow, orange, brown)       // selection, and "expensive"

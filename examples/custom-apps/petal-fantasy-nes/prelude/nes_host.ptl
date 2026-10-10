@@ -1,0 +1,51 @@
+// fantasy-nes host interface — module `nes_host`
+//
+// The declaration of every native the console registers (src/natives/*.rs).
+// A cart reaches a native only through a declaration, and gets these through
+// `import nes`, which re-exports this module beside the helpers written over
+// it. The input, timing and frame natives are petal-ui's; they are declared
+// by `ui/input`, which `nes` re-exports as well.
+//
+// Each native is declared with a rest parameter: the console checks its own
+// arguments and reports a bad call by name, so nothing here repeats the
+// parameter lists (docs/cart-authoring.md has them). Three natives the `nes`
+// prelude wraps under their own names — `set_backdrop`, `set_map_size`,
+// `set_scroll` — are declared there instead, under private names.
+
+// src/natives/audio.rs
+pub native fn apu_pulse(...args)
+pub native fn apu_triangle(...args)
+pub native fn apu_noise(...args)
+pub native fn apu_mute(...args)
+pub native fn register_sound(...args)
+pub native fn play_sound(...args)
+pub native fn stop_sound(...args)
+pub native fn enable_dsp(...args)
+pub native fn dsp_cost_ms(...args)
+
+// src/natives/system.rs
+pub native fn nes_version(...args)
+pub native fn log(...args)
+pub native fn set_scale(...args)
+pub native fn set_crt(...args)
+pub native fn cart_count(...args)
+pub native fn cart_name(...args)
+pub native fn cart_path(...args)
+pub native fn launch_cart(...args)
+pub native fn pad_down(...args)
+pub native fn pad_pressed(...args)
+pub native fn pad_released(...args)
+
+// src/natives/video.rs
+pub native fn set_palette(...args)
+pub native fn master_rgb(...args)
+pub native fn define_tile(...args)
+pub native fn define_tiles(...args)
+pub native fn load_tiles_png(...args)
+pub native fn set_tile(...args)
+pub native fn get_tile(...args)
+pub native fn fill_map(...args)
+pub native fn set_scroll_at(...args)
+pub native fn sprite(...args)
+pub native fn sprite_meta(...args)
+pub native fn set_sprite_limit(...args)

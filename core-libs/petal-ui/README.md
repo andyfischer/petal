@@ -48,10 +48,13 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   (`petal_ui::interface()`). A script that uses the prelude loads only into an
   `Env` that registers the natives it refers to; a test holds the declarations
   to `register_all`, both ways.
-- **The `ui` prelude** (`prelude/ui.ptl`). Registered as an implicit import,
-  so scripts call `button(...)`, `list_update(...)`, `checkbox(...)` bare.
-  Implicit bindings are weak: a script's own `fn button` shadows the
-  prelude's. It also wraps every draw native in record overloads
+- **The `ui` package** (`prelude/ui.ptl`, `prelude/input.ptl`). A script
+  writes `import ui` and calls `button(...)`, `list_update(...)`,
+  `checkbox(...)` bare (or `ui.button`). Nothing is imported implicitly. A
+  plain import is weak: a script's own `fn button` shadows the package's.
+  `import ui/input` is the input, timing and frame half alone, for a host
+  that registers only `petal_ui::input::register_input`. The `petal` binary
+  bundles the package, so `petal check` resolves `import ui` with no host. It also wraps every draw native in record overloads
   (`draw_rect(rect, c)`, `draw_line(p1, p2, c, a, width)`), and each shape's
   parameters carry plain names — `x, y, w, h` / `rect`, `cx, cy` / `center`,
   `radius`, `r, g, b` / `c`, `a`, `width` — so a call can be written by name:
@@ -71,7 +74,8 @@ compose in one script.
 
 ```rust
 petal_ui::register_all(&mut env);        // input + draw + canvas + host_data natives
-petal_ui::register_prelude(&mut env);    // the `ui` module, as an implicit import
+// (register_all includes register_prelude: the `ui` package, `import ui`)
+assert!(env.verify_interface(petal_ui::INTERFACE_PACKAGES).is_ok()); // drift test
 
 // each frame:
 petal_ui::input::bind_frame_info(&mut env, dt, frame);

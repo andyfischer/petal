@@ -1,0 +1,9 @@
+# fps — the interface of the petal-fps host: the `native fn` declarations of
+# the 3D and HUD draw natives it registers. Scripts write `import fps`; the
+# input, timing and frame natives are petal-ui's (`import ui/input`).
+#
+# The host registers this package in memory. The stock CLI finds it by path:
+# `petal check -I examples/custom-apps/petal-fps/packages <script>`.
+[package]
+name = "fps"
+version = "0.1.0"

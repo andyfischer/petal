@@ -9,6 +9,9 @@
 //
 // Controls: mouse looks, WASD moves, Esc releases the mouse grab.
 
+import fps
+import ui/input
+
 // ---------- persistent state ----------
 state player_x = 0.0
 state player_y = 1.7

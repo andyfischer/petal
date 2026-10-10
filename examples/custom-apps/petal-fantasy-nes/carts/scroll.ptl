@@ -21,6 +21,8 @@
 // what makes the status bar free: the top two map rows are left blank, so the
 // backdrop shows through as a black bar with nothing drawn into it.
 
+import nes
+
 set_backdrop(black)
 palette(0, white, gray, red)             // status bar text
 palette(1, light_blue, purple, indigo)   // sky + distant mountains

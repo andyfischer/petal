@@ -886,7 +886,7 @@ wrap the whole expression in parentheses, or check the value with
 There is no import and no namespace — every name here is just in scope. This is
 the working set, not the full list; [Builtins.md](Builtins.md) has the rest with
 exact signatures. Reach for this table before you guess a name, because a wrong
-guess costs a compile round-trip (`Unknown builtin: flatten`).
+guess costs a compile round-trip (`unknown function \`flatten\``).
 
 | | |
 |---|---|
@@ -950,7 +950,7 @@ petal check --json app.ptl       # {"ok": true, "warnings": [...]} or a structur
 
 `check` sorts what it finds into errors and warnings. An **error** is a line
 that fails whenever it runs, and `check` exits 1 on it: a call to, or read of, a
-name nothing defines (it would fail with `Unknown builtin` or
+name nothing defines (it would fail with `Unknown function` or
 `Undefined variable`), a call whose argument count no overload accepts, and a
 named argument no parameter has (a builtin's parameters included).
 
@@ -960,14 +960,13 @@ annotations, unknown type names, a builtin handed a type it refuses
 take those arguments, a discarded pure call, a function capturing a module
 `state` that is rebound below it. `--strict` is what you want in CI.
 
-What counts as
-defined depends on the host: `--host ui` (the default) is the core builtins,
-the petal-ui natives and the `ui` prelude; `--host garden` adds Garden's panel
-and config natives and the packages Garden registers (`bloom`,
-`text_layout`, so no `-I core-runtime`), `--host garden-config` is Garden's config host (`init.ptl`,
-layout scripts: core plus `layout`/`row`/`column`/…, no `ui` prelude),
-`--host sdl` petal-desktop-sdl's, `--host core` is core only, and
-`--native name,name` adds any others your host registers.
+What counts as defined does not depend on a host: a name is declared in the
+file, bound by an import, or a core builtin. A script for a petal-ui host
+starts with `import ui`; `bloom`, `text_layout` and `glsl` are bundled too.
+A Garden panel adds `import garden` (config scripts: `import garden_config`)
+and is checked with `-I garden/garden-script/packages`; petal-desktop-sdl's
+extras are `import sdl` with `-I integrations/petal-desktop-sdl/packages`.
+`petal fix-imports` adds the import lines an older script is missing.
 
 Every `--json` error carries a `phase` (`lex` / `parse` / `module` / `compile` /
 `lower` / `runtime`) telling you exactly which stage rejected the program, and
@@ -1006,7 +1005,7 @@ every argument lands in the same parameter, in the same order). It leaves a
 call alone rather than guess — an unknown callee, a method dispatched at
 runtime, a count two overload shapes share — and it keeps the subject and
 placeholder parameters positional (`clamp(t, lo: 0, hi: 1)`,
-`lerp(a, b, t: 0.5)`). Pass the `--host` your script runs in, as for `check`.
+`lerp(a, b, t: 0.5)`).
 
 A third kind, **advice**, is a comment rather than a rewrite: a heuristic
 remark such as "this looks like a hand-written insertion sort — use `sort` or

@@ -146,14 +146,14 @@ the last frame cost.
 
 ### Driving it
 
-`petal check --strict --host garden app.ptl` resolves the `ui` prelude without
-Garden, and the packages Garden registers for panels (`bloom`,
-`text_layout`), with no `-I`. It
+`petal check --strict -I garden/garden-script/packages app.ptl` checks the app without
+Garden: `ui`, `bloom` and `text_layout` are bundled in the `petal` binary, and
+the `-I` is where it finds the `garden` package the app imports. It
 catches arity and type slips on known functions, a misspelled global
 (`totally_bogus_fn(1)`), a native handed the wrong type (`sqrt("x")`), a call
 whose argument count selects a prelude overload that cannot take its arguments,
-captured-`state` reads and hoisting order. `--host garden` adds Garden's own
-natives (`palette`, `emit`, `query`, …) to the petal-ui set the default knows.
+captured-`state` reads and hoisting order. Garden's own natives (`palette`,
+`emit`, `query`, …) come from `import garden`; petal-ui's from `import ui`.
 
 ```bash
 curl -sX POST 127.0.0.1:$PORT/key   -d '{"key":"left"}'
@@ -375,7 +375,7 @@ opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 
 ### The `ui` prelude
 
-`core-libs/petal-ui/prelude/ui.ptl` is an implicit import; call its functions bare. The
+Start the app with `import ui` (`core-libs/petal-ui/prelude/ui.ptl`) and call its functions bare. The
 catalogue is in [components.md](../core-libs/petal-ui/docs/components.md): `rect`
 (the built-in `Rect` under the prelude's name), `point_in`, `hovered`,
 `clicked`, record overloads of every `draw_*` (each callable by name:
@@ -432,6 +432,8 @@ The two menu calls sit at opposite ends of the frame:
   background over it, and the menu vanishes with no error.
 
 ```petal
+import ui
+
 state menu = menu_state()
 
 // top — input:
@@ -470,7 +472,7 @@ These are showpieces, not smoke tests. Aim for:
   level included; only module scope reads it bare. `petal check` flags the
   slip (see the [writing guide](../docs/writing-petal-guide.md)).
 - No script error at any point in the interaction you exercise. `petal check
-  --strict --host garden app.ptl` (see [Driving it](#driving-it)) confirms the
+  --strict -I garden/garden-script/packages app.ptl` (see [Driving it](#driving-it)) confirms the
   script compiles and has no warnings before you launch anything;
   `status_error` in `/state` reports anything that breaks after.
 

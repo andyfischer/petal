@@ -677,6 +677,13 @@ pub struct Program {
     /// an imported program is linked by name when a call runs, as before.
     #[serde(skip)]
     pub native_links: Vec<crate::native_decl::NativeLink>,
+    /// The host natives a method call in this program may fall back to
+    /// (`x.name(…)` meaning `name(x, …)`): the ones a `native fn` declares
+    /// under their own name where some method call of that name is written.
+    /// The `core` builtins need no entry. `None` for a program loaded from
+    /// serialized IR, which is linked by name when a call runs, as before.
+    #[serde(skip)]
+    pub method_natives: Option<std::collections::HashSet<String>>,
     /// How the program's modules name each other: every module's exports and
     /// the entry file's imports as they resolved. For tools (the language
     /// server, `petal fix-imports`); never serialized, and empty for a

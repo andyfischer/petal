@@ -399,8 +399,16 @@ impl<'a> Vm<'a> {
             _ => None,
         };
 
-        // 5) Native function with `recv` prepended.
-        if let Some(nid) = self.native_fns.lookup_name(method_name) {
+        // 5) Native function with `recv` prepended: a `core` builtin, or a
+        //    host native the program declares where a method call of that
+        //    name is written (`Program::method_natives`). An undeclared
+        //    native is not reachable this way either.
+        let reachable = crate::native_decl::core_host_names().contains(method_name)
+            || program
+                .method_natives
+                .as_ref()
+                .is_none_or(|declared| declared.contains(method_name));
+        if reachable && let Some(nid) = self.native_fns.lookup_name(method_name) {
             // `xs.slice(start: 1, end: 3)`: the receiver fills the builtin's
             // first parameter, and the names bind against the rest.
             let full = with_receiver(recv, args);

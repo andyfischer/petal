@@ -79,9 +79,9 @@ Garden does exactly this in
   `pub import ./menu`, so users import one name. Inside the library, reach a
   sibling module with a relative import (`import ./motion`) or by the
   package's own name (`import bloom/motion`); the two are the same module.
-- **Take the host's prelude bare.** A host's implicit imports (`ui`) now reach
-  every module of a program, so a library module writes `draw_rect(r, c)` with
-  no `import ui` at all. The one catch: if your library exports a name the
+- **Import the host's package in every module that uses it.** Nothing is
+  implicit: a library module that calls `draw_rect(r, c)` says `import ui`
+  at its top, like bloom's modules do. The one catch: if your library exports a name the
   prelude also has *and* one arity of it calls another, route both through a
   private implementation — inside a variant's own body the name cannot see its
   siblings and escapes outward to the prelude's set. See

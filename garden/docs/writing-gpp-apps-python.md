@@ -61,6 +61,9 @@ input API and [core-libs/petal-ui/docs/components.md](../../core-libs/petal-ui/d
 for the widgets):
 
 ```petal
+import ui
+import garden
+
 state ls = load_state()
 let T = ui_theme()
 clear(T.bg.r, T.bg.g, T.bg.b)

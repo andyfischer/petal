@@ -10,6 +10,8 @@
 // has no hex integer literals, so they are written in decimal (33 == $21 in the
 // hardware numbering every NES palette chart uses).
 
+import nes
+
 set_backdrop(33)                            // sky blue, the universal color 0
 set_palette(0, 15, 26, 42, 48)              // background: greens + white
 set_palette(4, 15, 22, 39, 48)              // sprites: reds + skin + white

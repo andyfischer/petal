@@ -55,7 +55,12 @@ imported files (see the host section below).
 
 ## Language-level gaps
 
-### 1. A host's implicit imports do not reach imported modules — fixed
+### 1. A host's implicit imports do not reach imported modules — superseded
+
+> **Now:** hosts have no implicit imports. Every module that uses a host's
+> names imports the host's package itself (`import ui`), entry file and
+> library alike, so the gap below cannot arise. The rest of this section is
+> the history.
 
 The biggest one. A host registers its prelude as an implicit import
 (`env.set_implicit_imports(&["ui"])`), and every name in it *was* available
@@ -257,7 +262,7 @@ the style record, which is where the host looks for it.
 **Edge two, and this one bites: inside one variant's body, the name cannot see
 its siblings.** A variant's own name is bound to that variant (the
 self-recursion binding), so a call at another arity falls *outward* — and now
-that implicit imports reach every module (gap 1), outward is the host prelude.
+that a library imports `ui` plainly, outward is `ui`'s function of that name.
 The classic two-line default-argument idiom silently changes meaning:
 
 ```petal ignore

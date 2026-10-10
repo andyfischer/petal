@@ -46,8 +46,15 @@ use crate::natives::system::{self, CartEntry};
 use crate::natives::{audio as audio_natives, video as video_natives};
 use crate::ppu::{FRAME_BYTES, Ppu, SCREEN_H, SCREEN_W};
 
-/// The Petal-source prelude modules, both implicit imports for every cart.
+/// The Petal-source prelude modules a cart imports (`import nes`,
+/// `import nes_sound`).
 pub const NES_MODULE: &str = "nes";
+/// The interface module: a `native fn` declaration for each console native.
+pub const NES_HOST_MODULE: &str = "nes_host";
+const NES_HOST_INTERFACE: &str = include_str!("../prelude/nes_host.ptl");
+/// What [`petal::env::Env::verify_interface`] is given for this host: the
+/// console's own natives, and the input half of petal-ui it registers.
+pub const INTERFACE_MODULES: &[&str] = &[NES_HOST_MODULE, NES_MODULE, "ui/input"];
 pub const NES_SOUND_MODULE: &str = "nes_sound";
 const NES_PRELUDE: &str = include_str!("../prelude/nes.ptl");
 const NES_SOUND_PRELUDE: &str = include_str!("../prelude/nes_sound.ptl");
@@ -176,21 +183,43 @@ fn scan_carts(dir: &Path) -> Vec<CartEntry> {
     carts
 }
 
+/// Register everything a cart can reach: the natives, and the modules that
+/// declare them.
+fn register_console(env: &mut Env) {
+    petal_ui::input::register_input(env);
+    crate::natives::register_all(env);
+
+    // The console's interface: `nes_host` declares every native registered
+    // above; `nes` and `nes_sound` are the vocabulary written over it.
+    // Nothing is implicit: a cart writes `import nes` (which re-exports
+    // `nes_host` and petal-ui's `ui/input`) and, for sound,
+    // `import nes_sound`.
+    petal_ui::register_prelude(env);
+    env.register_module(NES_HOST_MODULE, NES_HOST_INTERFACE);
+    env.register_module(NES_MODULE, NES_PRELUDE);
+    env.register_module(NES_SOUND_MODULE, NES_SOUND_PRELUDE);
+}
+
+#[cfg(test)]
+mod interface_tests {
+    /// The drift test: every native the console registers is declared by its
+    /// interface modules, and nothing is declared that it does not register.
+    #[test]
+    fn the_console_natives_agree_with_their_interface() {
+        let mut env = petal::env::Env::new();
+        super::register_console(&mut env);
+        if let Err(mismatch) = env.verify_interface(super::INTERFACE_MODULES) {
+            panic!("the console's natives and its interface disagree: {mismatch}");
+        }
+    }
+}
+
 impl Host for NesHost {
     fn register(&mut self, env: &mut Env) {
         // Input/timing/dimensions come from petal-ui, so pads, `dt`, and
         // `frame_count` behave identically to every other Petal host. The
         // draw vocabulary does not: a cart talks to the PPU, not to a canvas.
-        petal_ui::input::register_input(env);
-        crate::natives::register_all(env);
-
-        // Both prelude modules are implicit, so a cart writes `note("c4")` and
-        // `tile_row(...)` bare. `set_implicit_imports` replaces the whole list,
-        // which is why this is composed here rather than calling each module's
-        // own registration helper.
-        env.register_module(NES_MODULE, NES_PRELUDE);
-        env.register_module(NES_SOUND_MODULE, NES_SOUND_PRELUDE);
-        env.set_implicit_imports(&[NES_MODULE, NES_SOUND_MODULE]);
+        register_console(env);
     }
 
     fn on_sdl_init(&mut self, sdl: &sdl2::Sdl) {

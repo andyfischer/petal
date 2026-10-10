@@ -28,6 +28,15 @@ Your `.ptl` file runs every frame (about 60 fps). The engine runs the whole
 script top to bottom each time. Use `state` variables to keep data between
 frames.
 
+Start the file with `import ui`: that is what brings in the drawing and input
+functions (`clear`, `draw_rect`, `key_down`, …). Nothing is imported
+implicitly, and the shorter snippets below leave the line out. petal-sdl's own
+extras — `sfx`, `synth`, `load_text_file`, `save_text_file`, `file_exists`,
+the example browser — come with `import sdl`. Check a script without the
+runner with `petal check -I integrations/petal-desktop-sdl/packages game.ptl`;
+an older script gets its import lines from `petal fix-imports` with the same
+`-I`.
+
 ```petal
 state x = 100.0          // initialized once, persists across frames
 x += 100.0 * dt()        // move 100 pixels per second
@@ -90,6 +99,8 @@ Coordinates are in pixels with the origin at the top-left. Colors are RGB
 integers 0-255.
 
 ```petal
+import ui
+
 clear(r, g, b)                              // fill the background
 draw_rect(x, y, width, height, r, g, b)     // filled rectangle
 draw_rect_outline(x, y, w, h, r, g, b)      // rectangle outline
@@ -115,6 +126,8 @@ every frame. Clear once on the first frame, guarded by a `state` flag, then
 let the image build up:
 
 ```petal
+import ui
+
 state started = false
 if !started then
   clear(0, 0, 0)   // paint the background once
@@ -258,6 +271,8 @@ Just enough syntax to read the examples. The
 [language guide](../../../docs/language-guide.md) has the rest.
 
 ```petal
+import ui
+
 // Variables
 let speed = 200.0         // local, recomputed every frame
 state score = 0           // persists across frames
@@ -320,6 +335,8 @@ end
 ### Game loop structure
 
 ```petal
+import ui
+
 // 1. State
 state x = 400.0
 state y = 300.0
@@ -358,6 +375,8 @@ if x < 0.0 then x += float(screen_width()) end
 ### Spawning entities with lists
 
 ```petal
+import ui
+
 state enemies = []
 state spawn_timer = 0.0
 
@@ -377,6 +396,8 @@ enemies = filter(enemies, fn(e) -> e.y < 600.0)
 ### Blinking text
 
 ```petal
+import ui
+
 state frame = 0
 frame += 1
 

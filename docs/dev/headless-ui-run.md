@@ -184,8 +184,8 @@ A Garden panel drawer calls host natives beyond the petal-ui contract —
 `navigate` family, `panel_store_get/set`, and the `text_view`/`edit_view`
 regions. The driver registers inert, deterministic stand-ins for all of them
 (`petal_ui::panel_stubs`), so the drawers under `garden/examples/panels/` and
-`garden/gpp-apps/*/src/` run headlessly instead of dying at
-`Unknown builtin: palette` on frame 0:
+`garden/gpp-apps/*/src/` run headlessly. It registers the `garden` interface
+package with them, so a drawer's `import garden` resolves and links:
 
 | Native | Stubbed answer |
 |---|---|
@@ -213,8 +213,11 @@ panel-native stubs above, the drawers under `garden/examples/panels/` and
 `garden/gpp-apps/*/src/`.
 
 What does not, and why. Each fails as a *runtime* error on the frame that
-first reaches a native no host registered (`Unknown builtin: <name>`), so
+first reaches a name nothing declares (`Unknown function: <name>`), so
 the frame record carries the name; the driver writes that record and exits 1.
+A script that *imports* an interface whose natives the driver lacks
+(`import garden_config`, `import sdl`) is refused earlier, at load, with the
+link error naming them.
 
 | Corpus | Missing |
 |---|---|

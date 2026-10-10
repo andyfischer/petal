@@ -1,8 +1,8 @@
 # The `ui` component library
 
 The `ui` prelude module (`core-libs/petal-ui/prelude/ui.ptl`) is the standard widget
-library for Petal UIs. Embedders register it as an implicit import, so scripts
-call everything here bare. This document is the reference for the widgets,
+library for Petal UIs. Embedders register it as the package `ui`; a script
+writes `import ui` and calls everything here bare. This document is the reference for the widgets,
 the helpers around them, and the conventions they all follow. The worked
 example showing all of it is `garden/examples/panels/gallery.ptl`:
 
@@ -555,7 +555,7 @@ is the tint alone.
 
 Prelude levels are additive: every existing export keeps its signature, and
 apps that shadow prelude names with their own (`fn spinner`,
-`fn draw_scrollbar`, ...) keep working, because implicit-import bindings are
+`fn draw_scrollbar`, ...) keep working, because a plain import's bindings are
 weak. Check a binary's surface with `garden --version --json`
 (`prelude.exports`) or `petal_ui::PRELUDE_LEVEL`.
 

@@ -1,0 +1,18 @@
+// The petal-fps host interface (src/native_fns.rs). Each native is declared
+// with a rest parameter: the host checks its own arguments.
+
+// 3D drawing
+pub native fn clear3d(...args)
+pub native fn sky_gradient(...args)
+pub native fn triangle3d(...args)
+pub native fn triangle3d_shaded(...args)
+pub native fn line3d(...args)
+
+// 2D (HUD) drawing
+pub native fn rect2d(...args)
+pub native fn line2d(...args)
+pub native fn circle2d(...args)
+pub native fn text2d(...args)
+
+// Write a line to stderr.
+pub native fn log(...args)

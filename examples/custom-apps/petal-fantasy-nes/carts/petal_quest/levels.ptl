@@ -33,6 +33,7 @@
 // worlds share one slot layout, so the level format never mentions a tileset.
 
 // (One line: an `import` list may not be wrapped across lines.)
+import nes
 import nes: light_blue, black, navy, brown, peach, light_green, maroon, gray, light_gray, white, dark_green, green, pale_green, indigo, violet, pink, red, orange, purple, magenta, blue, cyan, pale_cyan
 
 // Rows dull enough to deserve a name. Everything else is drawn in place.

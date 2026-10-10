@@ -235,11 +235,6 @@ OPTIONS
               Seed every run's PRNG, so a script that calls random() makes
               the same calls on each run. Decimal or 0x-hex.
 
-       --host core
-              Accepted for symmetry with 'check'. bench runs what 'run'
-              runs, which is the core host; a script written for another
-              host needs that host's own runner.
-
 {COMMON}";
 
 /// The canonical `&'static` spelling of a command name, for messages that
@@ -404,6 +399,18 @@ DESCRIPTION
        --strict is given. Exits 0 otherwise, so it is the cheap gate for
        editors and CI.
 
+       A call to, or read of, a name that nothing defines is an error (the
+       line fails with 'Unknown function' or 'Undefined variable' when it
+       runs). A name is defined by a declaration in the file, by an import,
+       or by being a core builtin; no host is consulted. A script written
+       for a host imports the host's interface package ('import ui'), whose
+       'native fn' declarations are all a check needs: 'ui', 'bloom',
+       'text_layout' and 'glsl' are bundled in this binary, and any other
+       host's package is found with -I (for Garden:
+       -I garden/garden-script/packages). 'petal run' agrees with 'check'
+       on every script; a script that imports 'ui' is refused by 'run' when
+       it loads, because 'run' registers the core builtins only.
+
 OPTIONS
        --json
               Emit errors and warnings as structured JSON.
@@ -422,25 +429,6 @@ OPTIONS
 
        --ir   Check <file> as JSON IR ('show-ir --json' output) rather than
               source. Use '-' to read the IR from stdin.
-
-       --host core|ui|garden|garden-config|sdl
-              The host the script runs in, which decides the natives a call
-              may name. A call to, or read of, a name that neither the
-              program nor the host defines is an error (it fails with
-              'Unknown builtin' or 'Undefined variable' when the line runs).
-              'ui' (the default) is the core builtins, the petal-ui natives
-              and the 'ui' prelude as an implicit import; 'garden' adds
-              Garden's panel and config natives; 'sdl' adds
-              petal-desktop-sdl's; 'garden-config' is Garden's config host
-              (init.ptl, layout scripts): core plus the layout builders,
-              without petal-ui or its prelude; 'core' is the core builtins
-              alone. 'petal run' is the core host, so a script that passes
-              here under the default can still fail there with 'Undefined
-              variable: ui'; '--host core' checks what 'petal run' can run.
-
-       --native <name>[,<name>...]
-              Further natives the host registers, on top of --host's.
-              Repeatable.
 
        --error-format full|bare
               'bare' prints only the error message, with no position suffix
@@ -485,8 +473,13 @@ DESCRIPTION
        A missing import is added.
               A bare name that no declaration or import in the file provides,
               and that exactly one available package exports, gets its
-              'import <package>' line, after the imports already there. A
-              name several packages export is reported and left alone.
+              'import <package>' line, after the imports already there.
+              This is how a script written for a host's old implicit
+              prelude gets its 'import ui' (and, with the host's package on
+              -I, its 'import garden', 'import sdl', ...). When several
+              packages export the name and all but one are built on that
+              one (bloom's 'button' over ui's), the one underneath is
+              imported; otherwise the name is reported and left alone.
 
        'Available' means the packages bundled in this binary plus the ones
        under each -I <dir> and PETAL_PATH. A path that already resolves as a
@@ -521,6 +514,7 @@ EXAMPLES
        petal fix-imports .
        petal fix-imports --diff src/
        petal fix-imports -I libs game/
+       petal fix-imports -I garden/garden-script/packages panels/ init.ptl
 
 SEE ALSO
        petal help fmt, petal help packages, docs/module-system.md
@@ -665,7 +659,7 @@ NAME
 
 SYNOPSIS
        petal suggest [--only <kind>[,<kind>]] [--apply | --verify]
-                     [--host <host>] [--json] [--from <file>]... <file>
+                     [--json] [--from <file>]... <file>
        petal suggest [<options>] -e <code>
 
 DESCRIPTION
@@ -720,8 +714,8 @@ TYPE ANNOTATIONS
 NAMED ARGUMENTS
        A call is rewritten only where its callee is known for certain and
        accepts names: a fn (each overload variant by itself), a lambda held
-       in a let, a class constructor, a function of an imported module or of
-       the host's prelude, a method call the checker pinned to one class, and
+       in a let, a class constructor, a function of an imported module
+       (a host's interface package included), a method call the checker pinned to one class, and
        a builtin that declares its parameter names. A parameter or any other
        value that merely holds a function, a method dispatched at runtime,
        and a variadic builtin (print) are left alone.
@@ -828,13 +822,6 @@ OPTIONS
               Run the --apply proofs and report, writing nothing. Exit 3 if
               any suggestion fails its proof.
 
-       --host <host>
-              The host the script runs in, as for 'petal check': 'core',
-              'ui' (the default), 'garden', 'garden-config' or 'sdl'. It
-              decides which prelude is imported implicitly, and so what a
-              bare 'draw_rect' is. A script for an embedding with natives of
-              its own should say 'core'.
-
        --from <file>
               Also compile <file> for its call sites. A library module
               compiled on its own has no callers, so its parameters have no
@@ -878,7 +865,7 @@ NAME
 SYNOPSIS
        petal apply-change <operation> <file> [<options>]
        petal apply-change convert-to-var <file> --target <path>
-                          [--from <file>]... [--dry-run] [--host <host>]
+                          [--from <file>]... [--dry-run]
        petal apply-change
 
 DESCRIPTION
@@ -984,11 +971,6 @@ OPTIONS
               Print the change as a unified diff on stdout and write nothing.
               Everything else, the gate included, runs as usual.
 
-       --host <host>
-              The host the scripts are written for, as for 'petal check'
-              ('core', 'ui' — the default — 'garden', 'garden-config',
-              'sdl'). It decides which prelude the gate imports implicitly.
-
        -I <dir>
               Add a module search directory. Repeatable.
 
@@ -1012,7 +994,7 @@ NAME
        petal-ir-equal - Compare two files' compiled IR for equivalence
 
 SYNOPSIS
-       petal ir-equal [--json] [--named-args [--host <host>]] <a.ptl> <b.ptl>
+       petal ir-equal [--json] [--named-args] <a.ptl> <b.ptl>
 
 DESCRIPTION
        Compiles both files and compares their IR, ignoring everything
@@ -1039,12 +1021,6 @@ OPTIONS
               that cannot be pinned down (a parameter, a method dispatched at
               runtime) is still a difference. This is the proof 'petal
               suggest --apply' holds its named-argument rewrites to.
-
-       --host <host>
-              With --named-args: the host both files are written for, as for
-              'petal check' ('core', 'ui' — the default — 'garden',
-              'garden-config', 'sdl'). It decides which prelude is imported
-              implicitly.
 
        -I <dir>
               Add a module search directory. Repeatable.

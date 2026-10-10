@@ -1,6 +1,9 @@
 // Minimal test: one coloured triangle + a floor quad on a cyan→pink gradient
 // sky. No camera movement — just verifies the 3D pipeline.
 
+import fps
+import ui/input
+
 sky_gradient(20, 10, 60, 240, 100, 200)
 
 let w = float(screen_width())

@@ -53,6 +53,8 @@
 // still by `lock_top(32)`, so the play area is y 32..240 — which is why level
 // data row `r` is map row `r + 4`. There is no vertical scrolling.
 
+import nes
+import nes_sound
 import ./art as gfx
 import ./levels as maps
 

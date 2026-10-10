@@ -27,6 +27,9 @@
 //     is why the recolor button changes the palette register and never touches
 //     a single pixel of the art.
 
+import nes
+import nes_sound
+
 set_backdrop(black)
 
 // ── State ─────────────────────────────────────────────────────────────────

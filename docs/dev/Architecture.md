@@ -614,8 +614,9 @@ emits terms. Key responsibilities:
 `Env` and adds the element-tree natives petal-web needs. The JS host calls
 `load_program(source)`, `create_stack(program_id)`, then `run(stack_id)` or
 `reset_and_run(stack_id)` once per frame, and reads printed output with
-`take_output()`. `register_module` and `set_implicit_imports` set up module
-resolution before loading. State is round-tripped as JSON so the JS host can
+`take_output()`. `register_module` and `register_package` set up module
+resolution before loading; the runtime's own natives are declared by the
+`web` package, which a script imports. State is round-tripped as JSON so the JS host can
 keep it across reloads.
 
 The host side lives in `integrations/petal-web-html/src/runtime.ts` and

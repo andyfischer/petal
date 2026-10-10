@@ -334,6 +334,9 @@ pub struct Compiler {
     /// (`used_native_terms`) are what the `Env` must have registered before
     /// the program runs.
     native_links: Vec<crate::native_decl::NativeLink>,
+    /// Host natives a method call of this program may fall back to; see
+    /// [`Program::method_natives`].
+    method_natives: HashSet<String>,
     /// The native terms some call or read in the program resolved to. Only
     /// tracked once a module has declared a native, which is the only way a
     /// native the `Env` lacks can be named at all.
@@ -510,6 +513,7 @@ impl Compiler {
             native_decls: crate::native_decl::NativeDecls::new(),
             declared_native_sigs: HashMap::new(),
             native_links: Vec::new(),
+            method_natives: HashSet::new(),
             used_native_terms: HashSet::new(),
             enum_type_names: HashSet::new(),
             current_module: None,
@@ -766,6 +770,7 @@ impl Compiler {
                 .collect(),
             introspect: Default::default(),
             native_links,
+            method_natives: Some(std::mem::take(&mut self.method_natives)),
             imports: crate::program::ImportTable {
                 exports: self.module_exports,
                 files: modules

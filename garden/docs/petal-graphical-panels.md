@@ -202,7 +202,8 @@ Input and timing reads: `dt`, `time`, `frame_count`, `screen_width`,
 `scroll_y`, `text_input`, `text_width`, `text_advance`, `text_metrics`, `text_wrap`,
 `text_ellipsize`, `text_index_at`.
 
-The `ui` prelude is an implicit import, so scripts call its widgets bare:
+A panel starts with `import ui` (and `import garden` for the host channels
+below); nothing is imported implicitly. Then it calls the widgets bare:
 `rect` / `point_in` / `hovered`, `button`, `list_update`, `scroll_update`,
 `truncate_tail`, `wrap`, `draw_text_right`, the `context_menu` family, RectCut
 layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
@@ -237,9 +238,7 @@ way and on the same terms. bloom places every one of its labels through it, so
 it is not optional here — and a panel that draws text of its own should reach
 for it directly rather than computing a `y`.
 
-Unlike `ui` it is *not* an implicit import — a library that silently occupied a
-hundred names would collide with panels that define their own `button` or
-`switch` — so a drawer says `import bloom` (or `import bloom: button, dropdown`)
+Like `ui`, it is imported explicitly: a drawer says `import bloom` (or `import bloom: button, dropdown`)
 and pays nothing otherwise. The package is registered in memory rather than
 looked up on disk, so a panel-mode GPP drawer pushed as source can import it
 too. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
@@ -290,7 +289,7 @@ Plus small color helpers: `mix` / `lerp_color(a, b, t)`, `luma(c)`,
 
 `garden --version --json` lists every prelude export as `name/arity`
 (`prelude.exports`), so you can check whether a binary has a helper before
-writing against it; an older binary fails at runtime with `Unknown builtin`.
+writing against it; an older binary refuses the script at load, naming the natives it lacks.
 
 ### Context menus
 
@@ -306,6 +305,8 @@ click must be claimed before the widgets underneath react to the same press.
   the menu vanishes with no error.
 
 ```petal
+import ui
+
 state menu = menu_state()
 
 // input, near the top, before the panel's own click handling:
@@ -583,6 +584,9 @@ The round trip does not block a redraw, so the frame that makes the request
 never sees its own answer. Keep the handle in `state` and read it later:
 
 ```petal
+import ui
+import garden
+
 state saving = 0
 if key_down("ctrl") && key_pressed("s") then
   saving = mutate("save", { text: edit_view_text(1) })

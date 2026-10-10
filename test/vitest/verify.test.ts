@@ -69,7 +69,8 @@ function verify(
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, results, byPath, out };
 }
 
-const UI_APP = `state n = 0
+const UI_APP = `import ui
+state n = 0
 n = n + 1
 draw_rect(10, 10, 40, 20, 255, 0, 0)
 print("n={n}")

@@ -327,6 +327,9 @@ move a selection with the keyboard, and show a selectable, styled detail on
 the right.
 
 ```petal
+import ui
+import garden
+
 state sel = 0
 state loaded = false
 state commits = []

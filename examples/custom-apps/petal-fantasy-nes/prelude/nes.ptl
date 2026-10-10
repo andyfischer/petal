@@ -2,8 +2,8 @@
 //
 // The vocabulary a cart is actually written in: artwork from string art, a
 // built-in font, the background map, pads, scenes, menus, tile collision and
-// animation. Registered by the host as an implicit import, so carts call these
-// bare; `import nes` and `import nes: btn, scene` also work. Only `pub`
+// animation. A cart writes `import nes` and calls these bare (or
+// `import nes: btn, scene`); nothing is imported implicitly. Only `pub`
 // declarations are visible to carts — everything else (and any name starting
 // with `_`) is module-private.
 //
@@ -31,6 +31,12 @@
 // reported to the host under its module-qualified name, so the prefix is what
 // makes `nes::_nes_scroll` read as the console's own bookkeeping next to a
 // cart's `scroll` in a state dump.
+
+// ── What a cart gets with `import nes` ────────────────────────────────────
+// The console's natives (`nes_host`) and petal-ui's input, timing and frame
+// natives (`ui/input`), re-exported so one import brings the whole machine.
+pub import nes_host
+pub import ui/input
 
 // ── Screen geometry ───────────────────────────────────────────────────────
 // The console's fixed dimensions. `screen_width()`/`screen_height()` come from
@@ -107,7 +113,7 @@ pub let pale_cyan = 60        // $3C
 // all eight calls is noise, and getting one of them wrong is a bug you find by
 // staring at a screenshot.
 
-let _native_set_backdrop = set_backdrop
+native fn _native_set_backdrop(...args) = "set_backdrop"
 
 state var _nes_backdrop = 15
 
@@ -676,8 +682,8 @@ end
 // — for camera clamping, for wrapping, for "is this cell on screen" — and the
 // natives are write-only.
 
-let _native_set_map_size = set_map_size
-let _native_set_scroll = set_scroll
+native fn _native_set_map_size(...args) = "set_map_size"
+native fn _native_set_scroll(...args) = "set_scroll"
 
 state var _nes_map = {w: 32, h: 30}
 state var _nes_scroll = {x: 0, y: 0}

@@ -82,6 +82,7 @@ fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
     use crate::ir_equiv::{compile_for_compare, ir_equivalent};
 
     let files = crate::test_corpus::repo_ptl_files();
+    let includes = crate::test_corpus::host_package_dirs();
     // One file per worker: each file fmt changes compiles twice, which is
     // the whole cost.
     let checked = crate::test_corpus::par_map(&files, |path| {
@@ -106,10 +107,10 @@ fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
             // itself. Most of the repo is, so this is most of the sweep.
             return Swept::Unchanged;
         }
-        let Ok((env_a, pid_a)) = compile_for_compare(&src, &[], Some(path)) else {
+        let Ok((env_a, pid_a)) = compile_for_compare(&src, &includes, Some(path)) else {
             return Swept::Skipped; // doesn't compile standalone; nothing to compare
         };
-        let (env_b, pid_b) = compile_for_compare(&formatted, &[], Some(path))
+        let (env_b, pid_b) = compile_for_compare(&formatted, &includes, Some(path))
             .unwrap_or_else(|e| panic!("fmt broke compilation for {}: {}", path.display(), e));
         let (a, b) = (
             env_a.get_program(pid_a).expect("original program"),

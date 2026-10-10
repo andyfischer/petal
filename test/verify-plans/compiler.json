@@ -13,7 +13,11 @@
     "test/vitest"
   ],
   "include": [
-    "core-runtime"
+    "core-runtime",
+    "garden/garden-script/packages",
+    "integrations/petal-desktop-sdl/packages",
+    "core/packages/web",
+    "examples/custom-apps/petal-fps/packages"
   ],
   "steps": [
     {

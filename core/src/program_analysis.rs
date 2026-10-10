@@ -822,6 +822,7 @@ mod tests {
             layout_deps: Vec::new(),
             class_names: Default::default(),
             native_links: Vec::new(),
+            method_natives: None,
             imports: Default::default(),
             introspect: Default::default(),
         }

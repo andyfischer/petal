@@ -279,7 +279,9 @@ prelude's `draw_rect` takes a record and a color and the library wants a
 one-argument default-colored form:
 
 ```petal ignore
-// lib.ptl — no `import ui` needed; `ui` is the host's implicit import
+// lib.ptl
+import ui
+
 pub fn draw_rect(r)
   ui.draw_rect(r, { r: 9, g: 9, b: 9 })
 end
@@ -299,7 +301,7 @@ The rules:
 - **An arity both sides define goes to the higher-precedence binding**, and the
   lower one is simply unreachable at that arity. It is not an error. The
   precedence order is [the tier order](module-system.md#which-name-wins): the
-  core prelude (`std`) < a host's implicit imports < the file's plain imports
+  core prelude (`std`) < the file's plain imports
   < its selective imports < its own declarations.
 - **Two plain imports are the same tier**, so neither outranks the other.
   Their sets merge when no arity is defined by both — with a `check` warning

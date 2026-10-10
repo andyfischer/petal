@@ -10,6 +10,8 @@
 // spend the sprite budget deliberately — a HUD made of sprites would eat into
 // the number under test and make the demo lie.
 
+import nes
+
 set_backdrop(navy)
 palette(0, white, gray, dark_gray)     // labels
 palette(1, brown, orange, black)       // the wall the priority band hides behind

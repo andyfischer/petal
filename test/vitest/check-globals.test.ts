@@ -1,10 +1,11 @@
-// `petal check` reports a call to, or read of, a global that nothing defines.
-// The compiler lets both through (a call becomes a static builtin call that is
-// resolved when it runs, a read becomes a deferred error), so before this a
-// misspelled function passed `check --strict` and died with "Unknown builtin"
-// on first run. The host's natives decide what is known: `--host` picks a set
-// (default `ui`: core + petal-ui + the `ui` prelude), `--native` adds names.
-// See core/src/typecheck/globals.rs.
+// `petal check` reports a call to, or read of, a name that nothing defines.
+// The compiler lets both through (each becomes a deferred error that fires if
+// the line runs), so before this a misspelled function passed
+// `check --strict` and died on first run. A name is known because the file
+// declares it, an import binds it, or it is a core/std builtin — and for no
+// other reason: a host's names come from the interface package the script
+// imports (`import ui`), bundled in the binary or found with `-I`. There is
+// no `--host`. See core/src/typecheck/globals.rs.
 
 import { describe, it, expect } from "vitest";
 import { petalCapture, checkStrict } from "./helpers";
@@ -19,9 +20,8 @@ describe("check: unknown globals", () => {
     const r = petalCapture(["check", "-e", "print(nope)"]);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("error: undefined variable `nope`");
-    // Names the host profile it checked against, since a host-provided
-    // native would look the same.
-    expect(r.stderr).toContain("note: names were checked against `--host ui`");
+    // No host profile is involved, so there is nothing to say about one.
+    expect(r.stderr).not.toContain("--host");
     expect(r.stderr).toContain("1 error found by check");
   });
 
@@ -58,13 +58,18 @@ describe("check: unknown globals", () => {
     ]);
   });
 
-  it("accepts core builtins, petal-ui natives and the ui prelude by default", () => {
-    const r = checkStrict(`draw_rect(0, 0, 4, 4, 255, 0, 0)
+  it("accepts core builtins bare, and the ui package through its import", () => {
+    const body = `draw_rect(0, 0, 4, 4, 255, 0, 0)
 let f = mouse_x
 let b = button({x: 0, y: 0, w: 40, h: 20}, "ok")
-print(len([1]), theme)`);
+print(len([1]), theme)`;
+    const r = checkStrict(`import ui\n${body}`);
     expect(r.stderr).toBe("");
     expect(r.code).toBe(0);
+    // Without the import the ui names are unknown: nothing is implicit.
+    const msgs = checkWith([], body);
+    expect(msgs.some((m) => m.includes("unknown function `draw_rect`"))).toBe(true);
+    expect(msgs.some((m) => m.includes("undefined variable `mouse_x`"))).toBe(true);
   });
 
   it("accepts a declared function called through a parameter", () => {
@@ -74,48 +79,57 @@ print(g(fn(x) -> x + 1))`);
     expect(r.code).toBe(0);
   });
 
-  it("--host core does not know the petal-ui natives", () => {
-    expect(checkWith(["--host", "core"], "draw_rect(0, 0, 4, 4, 255, 0, 0)")).toEqual([
-      expect.stringContaining("unknown function `draw_rect`"),
-    ]);
+  it("check and run agree on a ui script: check passes, run refuses it at load", () => {
+    const src = 'import ui\nprint("ran")\ndraw_rect(0, 0, 4, 4, 255, 0, 0)';
+    expect(checkWith([], src)).toEqual([]);
+    const r = petalCapture(["run", "-e", src]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).not.toContain("ran");
+    expect(r.stderr).toContain("module 'ui' needs native fns this host does not register");
+    expect(r.stderr).toContain("petal-ui runner");
   });
 
-  it("--host garden adds Garden's natives, which the ui default lacks", () => {
-    expect(checkWith([], "print(palette())")).toEqual([
+  it("finds Garden's natives through its interface package on -I", () => {
+    const garden = ["-I", "garden/garden-script/packages"];
+    expect(checkWith(garden, "print(palette())")).toEqual([
       expect.stringContaining("unknown function `palette`"),
     ]);
-    expect(checkWith(["--host", "garden"], "print(palette())")).toEqual([]);
-  });
-
-  it("--host garden resolves the packages Garden registers, with no -I", () => {
-    const src = "import text_layout\nimport bloom\nprint(text_layout.line_step({size: 12}))";
-    expect(checkWith(["--host", "garden"], src)).toEqual([]);
-    const r = petalCapture(["check", "-e", "import text_layout"]);
+    expect(checkWith(garden, "import garden\nprint(palette())")).toEqual([]);
+    // With no -I the package is not found: core knows nothing about Garden.
+    const r = petalCapture(["check", "-e", "import garden\nprint(palette())"]);
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain("cannot find module 'text_layout'");
+    expect(r.stderr).toContain("garden");
   });
 
-  it("--host garden-config checks a layout script without the ui prelude", () => {
-    // Garden's config host registers `row(children)`; the ui prelude's
-    // 3-argument `row` must not shadow it.
+  it("resolves the bundled libraries with no -I", () => {
+    const src = "import text_layout\nimport bloom\nprint(text_layout.line_step({size: 12}))";
+    expect(checkWith([], src)).toEqual([]);
+  });
+
+  it("checks a Garden layout script against garden_config alone", () => {
+    // The config host registers `row(children)`; the ui package's `row` is
+    // not in scope unless the script imports it.
+    const garden = ["-I", "garden/garden-script/packages"];
     const layout = `layout(column([row([editor("a"), editor("b")]), editor("c")], [0.7, 0.3]))`;
-    expect(checkWith(["--host", "garden"], layout)).toEqual([
-      expect.stringContaining("`row` expects 3 arguments"),
-    ]);
-    expect(checkWith(["--host", "garden-config"], layout)).toEqual([]);
-    expect(checkWith(["--host", "garden-config"], "button(1)")).toEqual([
+    expect(checkWith(garden, `import garden_config\n${layout}`)).toEqual([]);
+    expect(checkWith(garden, "import garden_config\nbutton(1)")).toEqual([
       expect.stringContaining("unknown function `button`"),
     ]);
   });
 
-  it("--native names extra host natives", () => {
-    expect(checkWith(["--native", "wf_action,wf_goto"], "wf_action(1)\nwf_goto(2)")).toEqual([]);
+  it("a host native is known through a declaration in the file", () => {
+    const decls = "native fn wf_action(n)\nnative fn wf_goto(n)\n";
+    expect(checkWith([], `${decls}wf_action(1)\nwf_goto(2)`)).toEqual([]);
+    expect(checkWith([], "wf_action(1)")).toEqual([
+      expect.stringContaining("unknown function `wf_action`"),
+    ]);
   });
 
-  it("rejects an unknown --host", () => {
-    const r = petalCapture(["check", "--host", "nope", "-e", "1"]);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain("Unknown --host 'nope'");
+  it("--host and --native are gone", () => {
+    for (const flag of [["--host", "ui"], ["--native", "a,b"]]) {
+      const r = petalCapture(["check", ...flag, "-e", "1"]);
+      expect(r.code).not.toBe(0);
+    }
   });
 });
 
@@ -132,7 +146,7 @@ describe("check: native arguments and prelude overloads", () => {
   });
 
   it("flags a prelude overload that cannot take its arguments", () => {
-    const msgs = checkWith([], "draw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)");
+    const msgs = checkWith([], "import ui\ndraw_rect(0, 0, {r: 1}, 4, 1, 2, 3)\ndraw_rect(0, 0, 10, 10, 5)");
     expect(msgs).toHaveLength(2);
     expect(msgs[0]).toContain(
       "argument 3 to `draw_rect`: the 7-8-argument `draw_rect` uses it as a number, found `record`",
@@ -141,13 +155,14 @@ describe("check: native arguments and prelude overloads", () => {
       "argument 5 to `draw_rect`: the 5-6-argument `draw_rect` reads field `r` from it, found `int`",
     );
     // An optional trailing argument is held to its use as well.
-    expect(checkWith([], "draw_rect({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})")[0]).toContain(
+    expect(checkWith([], "import ui\ndraw_rect({x: 0, y: 0, w: 1, h: 1}, {r: 1, g: 2, b: 3}, {r: 1})")[0]).toContain(
       "argument 3 to `draw_rect`: the 2-3-argument `draw_rect` uses it as a number, found `record`",
     );
   });
 
   it("accepts every shape the prelude really takes", () => {
-    const r = checkStrict(`let C = {r: 255, g: 0, b: 0}
+    const r = checkStrict(`import ui
+let C = {r: 255, g: 0, b: 0}
 let R = {x: 0, y: 0, w: 10, h: 10}
 draw_rect(0, 0, 10, 10, C)
 draw_rect(0, 0, 10, 10, 255, 0, 0)

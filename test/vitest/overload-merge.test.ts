@@ -9,8 +9,8 @@
 // it defines, and the arities only the outgoing binding had stay callable.
 //
 // Two lower-precedence sets are exercised: the core prelude `std`, reachable
-// through the plain CLI, and the *host* prelude `ui`, which needs petal-ui's
-// headless driver since that is the only place a host prelude is registered.
+// through the plain CLI, and a plainly imported package, `ui`, which needs
+// petal-ui's headless driver to run.
 
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
@@ -79,11 +79,11 @@ describe("overload sets merge across modules", () => {
 // petal-ui skips rather than failing.
 const maybe = existsSync(UI_RUN) ? describe : describe.skip;
 
-maybe("overload sets merge with a host prelude", () => {
-  it("a library module adds an arity to the host prelude's `draw_rect`", () => {
-    // No `import ui` anywhere in the library: the host's implicit import is the
-    // lower-precedence binding, and the module's 1-argument `draw_rect` joins
-    // it. Both the added arity and the prelude's record form draw.
+maybe("overload sets merge with a plainly imported package", () => {
+  it("a library module adds an arity to ui's `draw_rect`", () => {
+    // The library's plain `import ui` is the lower-precedence binding, and
+    // the module's 1-argument `draw_rect` joins it. Both the added arity and
+    // the package's record form draw.
     const frame = runUiApp("ui_extend_app.ptl");
     expect(frame.error).toBe(null);
     expect(frame.commands).toEqual([
@@ -92,7 +92,7 @@ maybe("overload sets merge with a host prelude", () => {
     ]);
   });
 
-  it("a redeclared arity wins while the prelude's others stay reachable", () => {
+  it("a redeclared arity wins while the package's others stay reachable", () => {
     const frame = runUiApp("ui_collide_app.ptl");
     expect(frame.error).toBe(null);
     // x: 1 — the module's own 2-argument variant ran, not the prelude's.

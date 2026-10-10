@@ -22,6 +22,9 @@
 // so this is an independent reading of what should be sounding, which is
 // exactly what makes it useful as a check.
 
+import nes
+import nes_sound
+
 set_backdrop(black)
 palette(0, white, gray, dark_gray)      // the grid
 palette(1, yellow, orange, red)         // the playhead row

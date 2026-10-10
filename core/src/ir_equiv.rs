@@ -743,6 +743,9 @@ pub fn compile_for_compare(
     origin: Option<&std::path::Path>,
 ) -> Result<(crate::env::Env, crate::program::ProgramId), String> {
     let mut env = crate::env::Env::new();
+    // The program is compared, never run: a script written for a host whose
+    // natives this process does not register compiles all the same.
+    env.set_check_only(true);
     for dir in include_dirs {
         env.add_module_path(dir.clone());
     }

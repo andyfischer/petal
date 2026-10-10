@@ -29,6 +29,8 @@
 //  12 cloud-right 13 pole       14 spikes      15 banner
 // Slots 1-7 are the solid ones; 14 hurts; everything else is scenery.
 
+import nes
+
 let EMPTY = [
   "........",
   "........",

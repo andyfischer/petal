@@ -491,7 +491,7 @@ fn native_double(cxt: &mut PetalCxt) -> NativeResult {
 fn ufcs_on_non_handle_receiver_still_works() {
     let mut env = Env::new();
     env.register_native("double", native_double, NativeEffects::PURE);
-    let pid = env.load_program("let x = 4\nx.double()").unwrap();
+    let pid = env.load_program("native fn double(n)\nlet x = 4\nx.double()").unwrap();
     let sid = env.create_stack(pid).unwrap();
     let result = env.run(sid);
     assert_eq!(

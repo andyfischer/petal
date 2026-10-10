@@ -203,6 +203,16 @@ impl Compiler {
                             shift_arg_names(names),
                         );
                     }
+                    // `x.name(…)` falls back to the native `name(x, …)` when
+                    // nothing else answers — but a host's native is reachable
+                    // only through a declaration in scope, and this is where
+                    // the scope is known. A `core` builtin needs no entry.
+                    if let Some(tid) = self.scope_lookup(field)
+                        && self.native_terms.get(&tid).is_some_and(|host| host == field)
+                    {
+                        self.note_native_use(tid);
+                        self.method_natives.insert(field.clone());
+                    }
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
                         inputs.push(self.compile_expr(arg));

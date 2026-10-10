@@ -538,8 +538,9 @@ impl Env {
     /// with no native is a load error for every script that uses it, and
     /// this reports both before a user does.
     ///
-    /// Each name is a package (host-registered, on a search path, or bundled)
-    /// or a module registered in memory under that name. Passing all of a
+    /// Each name is a package (host-registered, on a search path, or bundled),
+    /// one module of a package (`ui/input`, for a host that registers only
+    /// that half), or a module registered in memory under that name. Passing all of a
     /// host's packages in one call is what makes the "registered but not
     /// declared" half meaningful.
     pub fn verify_interface(&self, packages: &[&str]) -> Result<(), InterfaceMismatch> {
@@ -559,14 +560,17 @@ impl Env {
                 }
             }
         }
+        // A host may register a native under a builtin's name (its own
+        // `log`), replacing it: declared and registered, so not missing —
+        // and, being a `core` name, not something a package has to declare.
         let core = crate::native_decl::core_host_names();
-        let registered: std::collections::HashSet<String> = self
-            .native_fn_names()
-            .into_iter()
-            .filter(|name| !core.contains(name))
+        let all: std::collections::HashSet<String> = self.native_fn_names().into_iter().collect();
+        mismatch.unregistered = declared.difference(&all).cloned().collect();
+        mismatch.undeclared = all
+            .iter()
+            .filter(|name| !core.contains(*name) && !declared.contains(*name))
+            .cloned()
             .collect();
-        mismatch.unregistered = declared.difference(&registered).cloned().collect();
-        mismatch.undeclared = registered.difference(&declared).cloned().collect();
         mismatch.unregistered.sort();
         mismatch.undeclared.sort();
         if mismatch.is_empty() {

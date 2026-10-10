@@ -1,9 +1,9 @@
-// A library module with no `import ui` of its own. Every name it calls —
-// `draw_rect`'s record overload, `screen_width`, `print` — has to arrive
-// through the host's implicit imports for this to compile and run correctly.
-// Before implicit imports reached imported modules, `draw_rect(r, c)` here
-// resolved to the raw native's int-arity overload and died at runtime with
-// "Expected int at arg 1, got record".
+// A library module. The host names it calls — `draw_rect`'s record overload,
+// `screen_width` — arrive through its own `import ui`; nothing is implicit.
+// `draw_rect(r, c)` here must reach the package's record overload, not the
+// raw native's int arity ("Expected int at arg 1, got record").
+
+import ui
 
 fn margin()
   8

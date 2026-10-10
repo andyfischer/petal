@@ -227,6 +227,6 @@ petal-fantasy-nes/
     └── design.md         how the host is built
 ```
 
-Both prelude modules are implicit imports, so a cart calls everything in them
+A cart imports the prelude modules (`import nes`, `import nes_sound`) and calls everything in them
 bare. They are ordinary Petal, and worth reading when a helper does not do
 quite what you want: the answer is usually one native call underneath.

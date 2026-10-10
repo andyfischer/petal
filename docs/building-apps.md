@@ -181,7 +181,7 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   integration tier** — an NES-style fantasy console whose "carts" are `.ptl`
   scripts. Its delta is two emulated chips (a PPU-shaped tile/sprite rasterizer
   and an APU-shaped sound chip), the natives that feed them, and a Petal-source
-  prelude registered as an implicit import; the window, loop, timing, input,
+  prelude its carts import (`import nes`); the window, loop, timing, input,
   hot reload and agent/headless/screenshot modes are all inherited. It is a
   *reusable host for many scripts* rather than one app, and it is the example
   to read for two things `petal-fps` does not exercise: a host that owns

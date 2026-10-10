@@ -13,6 +13,9 @@
 // Controls: mouse looks, WASD moves, left-click / Space shoots, R reloads,
 // Esc releases the mouse grab.
 
+import fps
+import ui/input
+
 // =========================================================================
 // Persistent state (survives hot reload thanks to name-based state keys)
 // =========================================================================

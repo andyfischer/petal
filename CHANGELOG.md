@@ -192,8 +192,34 @@ way, for code written against an earlier checkout.
   entry file's imports for tools. `petal::fix_imports::ImportFixer` is the
   migration as a library, for a host that wants its own packages known.
 - Packages compiled into the binary are importable by name with nothing
-  registered, after everything the host and the search path offer: today
-  `core` (`import core` binds the qualifier, `core.len(xs)`).
+  registered, after everything the host and the search path offer: `core`
+  (`import core` binds the qualifier, `core.len(xs)`), `ui` (the petal-ui
+  interface; `ui/input` is its input half), `bloom`, `text_layout` and `glsl`.
+  `core/build.rs` embeds them and fails the build if a source directory is
+  missing. `petal check` therefore resolves `import ui` and `import bloom`
+  with no host and no `-I`.
+- Host interface packages: each host ships the `native fn` declarations of its
+  natives as a package beside its Rust code and registers it in memory —
+  petal-ui `ui`, Garden panels `garden`, Garden's config host `garden_config`,
+  petal-desktop-sdl `sdl`, the wasm element-tree runtime `web`. The stock CLI
+  checks a host's scripts through `-I <the package's directory>`, with no
+  knowledge of the host in `core/`. Registering a package gives the natives
+  already registered the parameter names it declares.
+- `Env::verify_interface(packages) -> Result<(), InterfaceMismatch>`: every
+  native the named packages declare is registered and every native registered
+  beyond the builtins is declared. Each host's drift test is this one call. A
+  name may be a package, one module of it (`ui/input`), or an in-memory module.
+- C bridge: `pb_vm_register_package` (a package from memory),
+  `pb_vm_verify_interface`, `pb_vm_set_check_only`,
+  `pb_vm_set_inline_import_dir`, and their `petal::Vm` methods. wasm:
+  `register_package(name, modules_json)`, `verify_interface(packages)`,
+  `set_check_only(on)`; the web-canvas runtime gained `register_module`,
+  `register_package` and `verify_interface`.
+- petal-ui: `Headless::with_ui(body)` (a script behind `import ui`),
+  `Headless::panel_from_file_with_paths` (the Garden panel stubs and the
+  `garden` package registered before the load), `petal_ui::raw_declarations()`
+  and `script_for(env, source)` for tests that call the raw natives,
+  `package_modules()`, `input_source()`, `INTERFACE_PACKAGES`.
 
 - Native interfaces: `native fn name(a: int, b?, ...rest) -> type = "host_name"`
   declares a function the host implements — its parameter names, arity,
@@ -258,6 +284,37 @@ way, for code written against an earlier checkout.
 
 Breaking changes made during development, newest first:
 
+- Hosts have no implicit imports and no global natives. Run
+  `petal fix-imports` over old scripts, with `-I` for the directory of any
+  host package that is not bundled (`-I garden/garden-script/packages`,
+  `-I integrations/petal-desktop-sdl/packages`).
+  - A script that uses petal-ui names starts with `import ui`; a Garden
+    panel adds `import garden`; `init.ptl` and layout scripts say
+    `import garden_config`; petal-desktop-sdl's extras are `import sdl`.
+    bloom's and text_layout's modules import `ui` themselves.
+  - A native is reachable only through a `native fn` declaration in scope.
+    A native a host registers and nothing declares cannot be called, by name
+    or by method syntax; an unknown callee is `Unknown function: x` (it used
+    to be looked up among the host's natives and fail with
+    `Unknown builtin: x`). An embedder that calls `register_native` also
+    registers a package (or module) declaring it, and its scripts import it.
+  - `Env::set_implicit_imports`, `pb_vm_add_implicit_import`,
+    `petal::Vm::add_implicit_import` and the wasm `set_implicit_imports` are
+    removed.
+  - `petal check --host`, `--native`, and `--host` on `suggest`,
+    `apply-change`, `ir-equal` and `bench` are removed, with
+    `typecheck::globals::HostProfile` and its name lists. `check` and `run`
+    agree on every script: `petal run` of a script that imports `ui` fails at
+    load with the natives it lacks and the advice to use a petal-ui runner.
+  - `petal_ui::register_prelude` registers the package `ui` (modules `ui` and
+    `ui/input`) instead of a module plus an implicit import; the input,
+    timing and frame declarations moved from `prelude/ui.ptl` to
+    `prelude/input.ptl`, which `ui` re-exports. `Headless::new` takes a
+    script with its own `import ui`.
+  - Garden: an `init.ptl` without `import garden_config` no longer loads;
+    saving a layout or a setting adds the import when it is missing.
+  - `petal ir-equal`, `suggest` and `apply-change` compile check-only, so
+    they work on a script written for a host this process does not provide.
 - Imports changed meaning. Run `petal fix-imports` over old code.
   - A plain `import m` binds every export of `m` bare, as well as the
     qualifier. A file's own declarations and selective imports still win;

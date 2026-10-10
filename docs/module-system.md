@@ -100,7 +100,7 @@ write `tween.lerp` to say so, or `import ./tween: lerp` to take it on purpose
 
 Qualifying the use or importing the name selectively says it was meant, and
 the warning goes. First-party packages that redefine builtin names by design
-(`ui`, `bloom`, the packages bundled in the binary) do not raise it.
+(the packages bundled in the binary: `ui`, `bloom`, …) do not raise it.
 
 ### Import paths
 
@@ -376,10 +376,22 @@ this order, and the first place that has a package of that name wins:
    a `petal.toml`) and each package directly under it. It is a place to find
    packages, not loose files: `-I lib` does not make `lib/util.ptl`
    importable as `util`.
-4. **The packages bundled in the `petal` binary** — today `core`, the
-   declarations of the builtins (`import core` binds the qualifier
-   `core`, so `core.len(xs)` reaches a builtin a declaration of yours has
-   shadowed).
+4. **The packages bundled in the `petal` binary**, which every embedding
+   of the runtime carries as well:
+
+   | Package | What it is |
+   | --- | --- |
+   | `core` | the declarations of the builtins (`import core` binds the qualifier `core`, so `core.len(xs)` reaches a builtin a declaration of yours has shadowed) |
+   | `ui` | the petal-ui interface — the `native fn` declarations of every petal-ui native and the widget library written over them. `ui/input` is its input, timing and frame half alone |
+   | `bloom` | the component library ([core-runtime/bloom](../core-runtime/bloom)) |
+   | `text_layout` | text placement ([core-runtime/text-layout](../core-runtime/text-layout)) |
+   | `glsl` | Petal to GLSL, experimental ([core-runtime/glsl](../core-runtime/glsl)) |
+
+   A bundled package is Petal source and `native fn` declarations only, so
+   `petal check` resolves `import ui` with no host. *Running* a script that
+   uses a declared native needs a host that registers it; see
+   [Host interface packages](#host-interface-packages). A package of the
+   same name found at an earlier step wins over the bundled copy.
 
 Within the package, the rest of the path names the module:
 `import bloom/widgets/button` is `widgets/button.ptl` under the package's
@@ -415,9 +427,9 @@ weak bindings: a declaration of your own with the same name shadows them
 silently. `std` is only merged into a program that uses one of its names,
 so it costs nothing otherwise.
 
-An embedding host can add its own implicit imports the same way; see
-[Embedding](#embedding) below. They sit between `std` and the file's own
-plain imports.
+`std` and the builtins are the only implicit names. A host has no implicit
+imports: a script that uses a host's names imports the host's package
+(`import ui`), like any other library.
 
 ## How a multi-file program runs
 
@@ -631,7 +643,7 @@ env.add_module_path(dir);                          // a directory of packages (o
 env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
 env.register_package("bloom", modules)?;           // the same, from in-memory sources
 env.packages();                                    // every registered package
-env.set_implicit_imports(&["ui"]);                 // every program imports ui's exports bare
+env.verify_interface(&["ui", "game"])?;            // registered natives == what these packages declare
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
 env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
 env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
@@ -647,11 +659,51 @@ relative import *between* in-memory modules resolves against the importer's
 registered name — `register_module("bloom/menu", …)` saying
 `import ./motion` finds `bloom/motion`.
 
-Implicit imports give user scripts a host's prelude with no ceremony:
-they call `button(...)` directly, their own declarations and imports shadow
-it silently, and an explicit `import ui` on top adds the qualifier. `std` is kept in a
-separate list, so `set_implicit_imports` cannot drop it; both the host
-prelude and user code shadow `std`.
+### Host interface packages
+
+A host has no implicit imports and no global natives. A native is reachable
+from a script only through a `native fn` declaration in scope
+([ffi.md](ffi.md#native-interfaces-native-fn)), so a host ships an
+**interface package** — the declarations of its natives, plus whatever it
+writes in Petal over them — registers it, and its scripts import it:
+
+```rust
+env.register_native("spawn", native_spawn, NativeEffects::EMITS);
+env.register_package("game", [("game", include_str!("../packages/game/game.ptl"))])?;
+// game.ptl:   pub native fn spawn(kind: string, props: record)
+// a script:   import game
+//             spawn("ball", {x: 1})
+```
+
+Register the natives first: registering a package gives the natives already
+registered the parameter names it declares, so `spawn(kind: "ball", …)` binds
+by name. Keep the package in a directory with a `petal.toml` beside the Rust
+code, and the stock CLI checks the host's scripts with
+`petal check -I <that directory>` and no knowledge of the host.
+
+| Host | Package | Where it lives |
+| --- | --- | --- |
+| petal-ui (`petal_ui::register_all`) | `ui`, `ui/input` | `core-libs/petal-ui/prelude/` (bundled) |
+| Garden panels | `garden` | `garden/garden-script/packages/garden/` |
+| Garden's config host | `garden_config` | `garden/garden-script/packages/garden_config/` |
+| petal-desktop-sdl | `sdl` | `integrations/petal-desktop-sdl/packages/sdl/` |
+| the wasm element-tree runtime | `web` | `core/packages/web/` |
+
+`Env::verify_interface(packages)` is the host's drift test: every native the
+named packages declare is registered in the `Env`, and every native registered
+beyond the builtins is declared by one of them. It returns an
+`InterfaceMismatch { unregistered, undeclared, problems }`. A name may be a
+package, one module of a package (`ui/input`, for a host that registers only
+that half), or a module registered in memory. Each host in this repository
+asserts it in a test.
+
+Loading a program into an `Env` to run *links* it: every declared native the
+program's code refers to must be registered, or the load fails before any
+line runs, naming the module and the missing natives. A check
+(`env.set_check_only(true)`, `petal check`, the language server) does not
+link. Method-call syntax follows the same rule: `x.name(…)` falls back to the
+native `name(x, …)` for a builtin, or for a host native declared (under its
+own name) in the file that writes the call.
 
 `module_manifest` lists every file a program was compiled from, so a host
 can watch all of them and hot-reload when an imported file changes.
@@ -663,6 +715,8 @@ appears in state JSON under `ui::scroll`-style names.
 Custom resolvers implement the `ModuleResolver` trait in
 `core/src/module.rs`: `resolve(path, importer)` is handed the path as
 written and the importing module's name and origin, and returns the source
-with the module's canonical name. The wasm bindings expose `register_module` and
-`set_implicit_imports`. See the [Embedding guide](embedding-guide.md) for
+with the module's canonical name. The wasm bindings expose `register_module`,
+`register_package` (a JSON object of module name to source) and
+`verify_interface`; the C bridge has `pb_vm_register_module`,
+`pb_vm_register_package`, `pb_vm_add_package` and `pb_vm_verify_interface`. See the [Embedding guide](embedding-guide.md) for
 the rest of the host API.

@@ -1,16 +1,13 @@
-// A host's implicit imports (`Env::set_implicit_imports`) reach every module of
-// a program, not just the entry file.
+// A library module reaches a host's names the way an entry file does: by
+// importing the host's interface package (`import ui`).
 //
-// The gap these pin (docs/dev/sharing-petal-libraries.md, "Language-level gaps"
-// §1): a host registers a prelude — petal-ui registers `ui` — and promises that
-// scripts get its names bare. That promise used to stop at the entry file, so a
-// library module calling `draw_rect(rect, color)` resolved to the raw native's
-// int-arity overload and died at runtime with "Expected int at arg 1, got
-// record". Every library therefore had to hard-code `import ui: …` in each file.
+// There are no implicit imports. These pin what a module that imports `ui`
+// gets: the package's overloads (not the raw natives under them), at the
+// plain-import tier — so the module's own declarations shadow them silently,
+// wherever in the file they are written.
 //
-// These run the real petal-ui host through its headless driver, since that is
-// the only place in the tree where a host prelude is registered; the precedence
-// and cycle cases live beside the implementation in `core/src/module.rs`.
+// These run the real petal-ui host through its headless driver; the
+// precedence cases live beside the implementation in `core/src/module.rs`.
 
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "child_process";
@@ -45,8 +42,8 @@ function runUiApp(file: string): Frame {
 // petal-ui skips rather than failing.
 const maybe = existsSync(UI_RUN) ? describe : describe.skip;
 
-maybe("host implicit imports in imported modules", () => {
-  it("a prelude name resolves inside an imported module", () => {
+maybe("a module that imports ui", () => {
+  it("a ui name resolves inside an imported module", () => {
     const frame = runUiApp("app.ptl");
     expect(frame.error).toBe(null);
     // The prelude's record overload ran (not the native's int arity), so the
@@ -57,9 +54,9 @@ maybe("host implicit imports in imported modules", () => {
     expect(frame.prints).toEqual(["banner 8"]);
   });
 
-  it("a module's own declaration shadows the implicit import, silently", () => {
+  it("a module's own declaration shadows the plain import, silently", () => {
     const frame = runUiApp("shadow_app.ptl");
-    // No collision error: implicit imports stay weak. Inside the module its own
+    // No collision error: a plain import is weaker than a declaration. Inside the module its own
     // `screen_width` wins; in the entry the prelude's still does.
     expect(frame.error).toBe(null);
     expect(frame.prints).toEqual(["width 42", "entry width 800"]);
@@ -69,10 +66,10 @@ maybe("host implicit imports in imported modules", () => {
   });
 
   it("a module's own declaration wins even when it is written below its use", () => {
-    // The trap that reaching every module armed: a top-level `fn` whose name
-    // was already in scope used to be left where it stands, so that a read of
-    // the pre-shadow meaning above it still worked. With a ~261-name host
-    // prelude bound in every module, that rule fired on any library function
+    // The trap a ~261-name import arms: a top-level `fn` whose name was
+    // already in scope used to be left where it stands, so that a read of
+    // the pre-shadow meaning above it still worked. With `ui` bound bare in
+    // the module, that rule fired on any library function
     // whose name happened to collide — here `spinner`, which `ui` exports with
     // 3 or 4 parameters. `banner` called it with 1 and died on arity, with no
     // warning. Only a read that actually captures the old meaning holds a

@@ -2,7 +2,8 @@
   "generatedFrom": [
     "core/src/builtins/mod.rs",
     "core/src/builtins/*.rs",
-    "core/src/typecheck/globals.rs",
+    "core/packages/core/src/*.ptl",
+    "core-libs/petal-ui/prelude/*.ptl",
     "core/prelude/std.ptl",
     "core-libs/petal-ui/src/draw.rs",
     "core-libs/petal-ui/src/text.rs",

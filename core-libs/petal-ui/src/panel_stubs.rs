@@ -137,6 +137,9 @@ pub fn register_panel_stubs(env: &mut Env) {
     // resolves here as it does inside Garden.
     env.register_package(GARDEN_PACKAGE, [(GARDEN_PACKAGE, GARDEN_INTERFACE)])
         .expect("the garden interface package registers");
+    // Stand in for Garden as a provider of the interface too.
+    env.provides(GARDEN_PACKAGE, "0.1.0")
+        .expect("a version");
 }
 
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {

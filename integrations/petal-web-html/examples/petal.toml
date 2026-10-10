@@ -1,0 +1,9 @@
+# petal-web's example scripts. The manifest lets every tool resolve
+# `import web` (the element-tree interface, core/packages/web) with no -I
+# flag; the wasm runtime registers the package in memory.
+[package]
+name = "web_examples"
+version = "0.1.0"
+
+[dependencies]
+web = { path = "../../../core/packages/web" }

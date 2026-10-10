@@ -684,6 +684,13 @@ pub struct Program {
     /// serialized IR, which is linked by name when a call runs, as before.
     #[serde(skip)]
     pub method_natives: Option<std::collections::HashSet<String>>,
+    /// The host interfaces this program's packages require: the `[requires]`
+    /// of every package a loaded file belongs to (the entry's project
+    /// included), sorted by interface then package. Checked against what the
+    /// host [provides](crate::env::Env::provides) when the program is loaded
+    /// to run; `petal check` reports it. Not serialized.
+    #[serde(skip)]
+    pub requires: Vec<crate::package::RequiredInterface>,
     /// How the program's modules name each other: every module's exports and
     /// the entry file's imports as they resolved. For tools (the language
     /// server, `petal fix-imports`); never serialized, and empty for a

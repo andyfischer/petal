@@ -478,7 +478,13 @@ pub fn import_path_completions(prefix: &str, uri: &str) -> Vec<String> {
         }
     } else {
         let env = crate::env::Env::new();
-        let mut paths = env.importable_paths();
+        // The document's project (the nearest petal.toml above it) names
+        // dependencies no flag or environment variable has to repeat.
+        let doc = uri_to_path(uri);
+        let mut paths = match &doc {
+            Some(doc) => env.importable_paths_at(doc),
+            None => env.importable_paths(),
+        };
         // A package with a module of its own name lists only that name, but
         // its other modules can be imported too.
         for package in env.packages() {
@@ -488,6 +494,13 @@ pub fn import_path_completions(prefix: &str, uri: &str) -> Vec<String> {
                     .iter()
                     .map(|m| format!("{}/{m}", package.name)),
             );
+        }
+        if let Some(doc) = &doc {
+            for (name, package) in env.project_dependencies(doc) {
+                if let Ok(package) = package {
+                    paths.extend(package.modules.iter().map(|m| format!("{name}/{m}")));
+                }
+            }
         }
         for path in paths {
             if let Some(rest) = path.strip_prefix(dir_part) {

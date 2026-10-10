@@ -301,6 +301,19 @@ a declared native they do not register is still a known name with known
 parameters. (`Env::link_program(&program)` runs the check by hand, and
 `Program::native_links` lists what a program needs.)
 
+**Providing an interface.** A package states the host interfaces it needs in
+its manifest (`[requires] myhost = ">=0.2"`,
+[module-system.md](module-system.md#required-host-interfaces)); the host
+announces what it provides where it registers the natives —
+`env.provides("myhost", "0.2.0")`, or `env.provides_package("myhost")` to take
+the version from the interface package's own `petal.toml` (registered with the
+package as a source named `petal.toml`). Loading a program to run checks each
+requirement before linking: an interface the host does not provide, or
+provides at a version the requirement rejects, is a load error (phase
+`link`). A check-only `Env` skips it, and `Program::requires` lists what the
+program needs; `Env::check_requires(&program)` runs the check by hand. Every
+`Env` provides `core`.
+
 **Verifying an interface.** `Env::verify_interface(&["ui", "myhost"])` checks
 the whole table against the packages that declare it, both ways — every
 declared native is registered, every native registered beyond the builtins is

@@ -2864,11 +2864,21 @@ fn register_panel_natives(env: &mut Env) {
     // Petal's pending values (a future upstream `petal-query`), see [`crate::query`].
     query::register_query(env);
     petal_ui::register_prelude(env);
+    petal_ui::provide_interface(env);
     // The interface package that declares the Garden natives above: a panel
     // reaches them with `import garden`, as it reaches petal-ui's with
-    // `import ui`.
-    env.register_package(GARDEN_PACKAGE, [(GARDEN_PACKAGE, GARDEN_INTERFACE)])
-        .expect("the garden interface package registers");
+    // `import ui`. Its manifest rides along, so the interface is provided
+    // at the package's version.
+    env.register_package(
+        GARDEN_PACKAGE,
+        [
+            (GARDEN_PACKAGE, GARDEN_INTERFACE),
+            (petal::package::MANIFEST_FILE, GARDEN_MANIFEST),
+        ],
+    )
+    .expect("the garden interface package registers");
+    env.provides_package(GARDEN_PACKAGE)
+        .expect("the garden interface has a version");
 }
 
 /// The interface package of a Garden panel: `import garden`.
@@ -2876,6 +2886,8 @@ pub const GARDEN_PACKAGE: &str = "garden";
 
 /// Its source: the `native fn` declarations of every Garden panel native.
 pub const GARDEN_INTERFACE: &str = include_str!("../packages/garden/garden.ptl");
+/// Its manifest: the version there is the version of the `garden` interface.
+pub const GARDEN_MANIFEST: &str = include_str!("../packages/garden/petal.toml");
 
 /// The interface packages a panel env answers for — what
 /// [`Env::verify_interface`] is given.

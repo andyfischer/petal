@@ -738,6 +738,34 @@ pub unsafe extern "C" fn pb_vm_register_package(
     })
 }
 
+/// Announce that this VM provides the host interface `name` at `version`
+/// (`Env::provides`): a package whose `petal.toml` says `[requires] name =
+/// ">=…"` loads only in a VM that provides it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_provides(
+    vm: *mut VmHandle,
+    name: *const c_char,
+    version: *const c_char,
+) -> Status {
+    status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        let version = unsafe { arg_str(version, "version") }?;
+        vm.env.provides(name, version).map_err(BridgeError::invalid)
+    })
+}
+
+/// [`pb_vm_provides`] for a package registered in this VM, at the version
+/// its manifest gives (`Env::provides_package`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_provides_package(vm: *mut VmHandle, name: *const c_char) -> Status {
+    status(vm, |vm| {
+        let name = unsafe { arg_str(name, "name") }?;
+        vm.env
+            .provides_package(name)
+            .map_err(|e| BridgeError::new(Status::NotFound, e))
+    })
+}
+
 /// Check the VM's registered natives against the interface packages that
 /// declare them (`Env::verify_interface`). `*out_report` receives an empty
 /// string when they agree, else what differs.

@@ -477,7 +477,7 @@ public:
         return name ? name : "";
     }
     // Register a package from memory: {package-relative module name, source}
-    // pairs. An interface package (one that declares `native fn`s) goes in
+    // pairs ({"petal.toml", manifest} may ride along as the package manifest). An interface package (one that declares `native fn`s) goes in
     // after the natives it declares.
     void register_package(const std::string& name,
                           const std::vector<std::pair<std::string, std::string>>& modules) {
@@ -501,6 +501,15 @@ public:
         pb_status st = pb_vm_verify_interface(vm_, names.data(), names.size(), &report);
         if (st != PB_OK && st != PB_ERR_NOT_FOUND) check(st);
         return report ? report : "";
+    }
+    // Announce a host interface this VM provides, for packages whose
+    // petal.toml says `[requires] name = ">=…"`.
+    void provides(const std::string& name, const std::string& version) {
+        check(pb_vm_provides(vm_, name.c_str(), version.c_str()));
+    }
+    // The same, at the version of a registered package's manifest.
+    void provides_package(const std::string& name) {
+        check(pb_vm_provides_package(vm_, name.c_str()));
     }
     void set_check_only(bool on) { check(pb_vm_set_check_only(vm_, on)); }
     // Where `import ./x` resolves for a program loaded from a string; "" for

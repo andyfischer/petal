@@ -1,0 +1,20 @@
+# The example apps, as one project.
+#
+# Most of them need nothing from here: `ui`, `bloom` and `text_layout` are
+# bundled in the petal binary. The manifest is what lets every tool resolve
+# the host interface packages some of them import — `import garden` (a Garden
+# panel's channels), `import garden_config` (the layout a `layout.ptl`
+# describes), `import sdl` (petal-sdl's file I/O and sound) — with no -I flag:
+# `petal check examples/games/flappy/app.ptl` just works, and so does the
+# language server.
+#
+# A host that registers one of these packages itself (Garden, petal-sdl) uses
+# its own copy; these paths are for tools that are not that host.
+[package]
+name = "examples"
+version = "0.1.0"
+
+[dependencies]
+garden        = { path = "../garden/garden-script/packages/garden" }
+garden_config = { path = "../garden/garden-script/packages/garden_config" }
+sdl           = { path = "../integrations/petal-desktop-sdl/packages/sdl" }

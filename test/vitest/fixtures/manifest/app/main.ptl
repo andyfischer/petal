@@ -1,0 +1,3 @@
+import tw
+
+print(tw.go(), go())

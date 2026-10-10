@@ -41,13 +41,23 @@ pub(crate) fn register_all(env: &mut Env) {
     env.register_native("color_scheme", native_color_scheme, NativeEffects::EMITS);
     // The interface package that declares them: a config script reaches
     // them with `import garden_config`.
-    env.register_package(CONFIG_PACKAGE, [(CONFIG_PACKAGE, CONFIG_INTERFACE)])
-        .expect("the garden_config interface package registers");
+    env.register_package(
+        CONFIG_PACKAGE,
+        [
+            (CONFIG_PACKAGE, CONFIG_INTERFACE),
+            (petal::package::MANIFEST_FILE, CONFIG_MANIFEST),
+        ],
+    )
+    .expect("the garden_config interface package registers");
+    env.provides_package(CONFIG_PACKAGE)
+        .expect("the garden_config interface has a version");
 }
 
 /// The interface package of the config host: `import garden_config`.
 pub const CONFIG_PACKAGE: &str = "garden_config";
 
+/// Its manifest: the version there is the version of the interface.
+pub const CONFIG_MANIFEST: &str = include_str!("../packages/garden_config/petal.toml");
 /// Its source: the `native fn` declarations of every config native.
 pub const CONFIG_INTERFACE: &str =
     include_str!("../packages/garden_config/garden_config.ptl");

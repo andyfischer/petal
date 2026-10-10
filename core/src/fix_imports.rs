@@ -60,6 +60,10 @@ pub struct ImportFixer {
     unreadable: Vec<String>,
     /// Import path → every module importing it loads, itself included.
     loads: HashMap<String, HashSet<String>>,
+    /// The project (manifest root) `index` was built for: a project's
+    /// `[dependencies]` are importable only from its own files, so the index
+    /// is rebuilt when a file of another project comes along.
+    index_project: Option<PathBuf>,
 }
 
 /// The opt-out comment: a file carrying `// petal-fix-imports-ignore` on a
@@ -88,6 +92,7 @@ impl ImportFixer {
             index: None,
             unreadable: Vec::new(),
             loads: HashMap::new(),
+            index_project: None,
         }
     }
 
@@ -241,7 +246,7 @@ impl ImportFixer {
         if missing.is_empty() && add.is_empty() {
             return unchanged(Vec::new());
         }
-        self.export_index();
+        self.export_index(file);
         let index = self.index.as_ref().expect("just built");
         let mut unprovided = false;
         // Names with one provider first: the import one of them adds may be
@@ -340,11 +345,24 @@ impl ImportFixer {
     /// module of its own name is offered as `import <package>`; one without,
     /// module by module. `core` and `std` are in scope already and are left
     /// out.
-    fn export_index(&mut self) {
+    fn export_index(&mut self, file: Option<&Path>) {
+        let project = file
+            .and_then(|f| self.env.project_of(f).ok().flatten())
+            .map(|p| p.root);
+        if self.index.is_some() && self.index_project != project {
+            self.index = None;
+            self.loads.clear();
+            self.unreadable.clear();
+        }
         if self.index.is_none() {
+            self.index_project = project;
             let mut index: HashMap<String, Vec<String>> = HashMap::new();
-            for path in self.env.importable_paths() {
-                let exports = match self.env.exports_and_modules_of(&path) {
+            let paths = match file {
+                Some(file) => self.env.importable_paths_at(file),
+                None => self.env.importable_paths(),
+            };
+            for path in paths {
+                let exports = match self.env.exports_and_modules_of_at(&path, file) {
                     Ok((exports, loaded)) => {
                         self.loads.insert(path.clone(), loaded.into_iter().collect());
                         exports

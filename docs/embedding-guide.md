@@ -118,9 +118,14 @@ env.register_package("myhost", [("myhost", include_str!("../packages/myhost/myho
 
 The declarations carry the parameter names (so arguments can be passed by
 name), optional parameters and types; registering the package after the
-natives applies them. Keep the package in a directory with a `petal.toml`
-and `petal check -I packages script.ptl` checks your scripts with the stock
-CLI. Assert `env.verify_interface(&["myhost"])` in a test: it fails when a
+natives applies them. Keep the package in a directory with a `petal.toml`:
+a project that lists it under `[dependencies]`
+(`myhost = { path = "…/packages/myhost" }`) is checked by the stock CLI and
+the language server with no flag, and `petal check -I packages script.ptl`
+does the same for a loose script. Announce the interface with
+`env.provides_package("myhost")` (register the `petal.toml` with the package)
+or `env.provides("myhost", "0.1.0")`, so a package whose manifest says
+`[requires] myhost = ">=0.1"` loads here and fails cleanly elsewhere. Assert `env.verify_interface(&["myhost"])` in a test: it fails when a
 native is registered without a declaration or declared without being
 registered. There are no implicit imports — a script for a petal-ui host
 says `import ui` — and the details are in

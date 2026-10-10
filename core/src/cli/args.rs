@@ -420,12 +420,14 @@ fn parse_lsp_args(args: &[String]) -> CliArgs {
 
 fn parse_packages_args(args: &[String]) -> CliArgs {
     let mut json = false;
+    let mut path: Option<String> = None;
     for arg in args {
         match arg.as_str() {
             "--json" => json = true,
+            other if !other.starts_with('-') && path.is_none() => path = Some(other.to_string()),
             other => {
                 eprintln!(
-                    "Unexpected argument '{}'. Usage: petal packages [--json] [-I <dir>]...",
+                    "Unexpected argument '{}'. Usage: petal packages [--json] [-I <dir>]... [path]",
                     other
                 );
                 process::exit(1);
@@ -434,7 +436,7 @@ fn parse_packages_args(args: &[String]) -> CliArgs {
     }
 
     CliArgs {
-        command: Command::Packages { json },
+        command: Command::Packages { json, path },
         source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }

@@ -1,0 +1,6 @@
+import base
+import ./ease
+
+pub fn go()
+  two() + ease.one()
+end

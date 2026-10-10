@@ -72,6 +72,7 @@ impl PetalRuntime {
         petal_ui::draw::register_canvas(&mut env);
         petal_ui::host_data::register_host_data(&mut env);
         petal_ui::register_prelude(&mut env);
+        petal_ui::provide_interface(&mut env);
         PetalRuntime {
             env,
             active_program: None,
@@ -117,6 +118,24 @@ impl PetalRuntime {
             .register_package(name, modules.iter())
             .map(|_| ())
             .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Announce that this runtime provides the host interface `name` at
+    /// `version` (`"0.4.0"`). A package whose `petal.toml` says
+    /// `[requires] name = ">=…"` loads only in a runtime that provides it.
+    /// Call it where the natives of that interface are registered.
+    pub fn provides(&mut self, name: &str, version: &str) -> Result<(), JsValue> {
+        self.env
+            .provides(name, version)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// The interfaces this runtime provides, as a JSON object of name to
+    /// version. Always includes `core`.
+    pub fn provided_interfaces(&self) -> String {
+        let map: std::collections::BTreeMap<String, String> =
+            self.env.provided_interfaces().into_iter().collect();
+        serde_json::to_string(&map).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Check this runtime's registered natives against its interface

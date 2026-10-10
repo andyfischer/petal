@@ -89,7 +89,17 @@ pub trait ModuleResolver {
 
     /// Called once at the start of every load, before the first `resolve`:
     /// the point to drop anything remembered about the filesystem.
-    fn begin_load(&self) {}
+    ///
+    /// `entry` is the program's entry file when it has one: the anchor for
+    /// the project manifest (the nearest `petal.toml` above it).
+    fn begin_load(&self, _entry: Option<&Path>) {}
+
+    /// The host interfaces the package owning a loaded source requires (its
+    /// manifest's `[requires]`). `origin` is the source's file; `None` for
+    /// an entry with no path. See [`crate::package::RequiredInterface`].
+    fn requires_of(&self, _origin: Option<&Path>) -> Vec<crate::package::RequiredInterface> {
+        Vec::new()
+    }
 }
 
 /// The last parse of each source file a resolver's programs were loaded
@@ -152,6 +162,12 @@ pub struct ModuleRegistry {
     /// The package each directory belongs to (the nearest `petal.toml` at or
     /// above it), remembered for the length of one load.
     enclosing: std::cell::RefCell<HashMap<PathBuf, Option<std::sync::Arc<crate::package::Package>>>>,
+    /// Path dependencies loaded so far in this load, by canonical root.
+    dependency_packages: std::cell::RefCell<HashMap<PathBuf, std::sync::Arc<crate::package::Package>>>,
+    /// The directory of the entry file of the load in progress: what the
+    /// *project* manifest (the nearest `petal.toml` above the entry) is
+    /// found from. `None` for an entry with no path and no inline directory.
+    entry_dir: std::cell::RefCell<Option<PathBuf>>,
 }
 
 impl ModuleRegistry {
@@ -400,13 +416,54 @@ fn bundled_packages() -> &'static [crate::package::Package] {
         })
 }
 
+/// What each bundled package is, for listings.
+pub fn bundled_package_infos() -> Vec<crate::package::PackageInfo> {
+    bundled_packages().iter().map(|p| p.info.clone()).collect()
+}
+
 impl ModuleResolver for ModuleRegistry {
     fn parse_cache(&self) -> Option<&ParseCache> {
         Some(&self.parse_cache)
     }
 
-    fn begin_load(&self) {
+    fn begin_load(&self, entry: Option<&Path>) {
         self.enclosing.borrow_mut().clear();
+        self.dependency_packages.borrow_mut().clear();
+        *self.entry_dir.borrow_mut() = entry
+            .and_then(Path::parent)
+            .map(|dir| if dir.as_os_str().is_empty() { Path::new(".") } else { dir })
+            .or(self.inline_import_dir.as_deref())
+            .map(canonical_path);
+    }
+
+    fn requires_of(&self, origin: Option<&Path>) -> Vec<crate::package::RequiredInterface> {
+        let of = |pkg: &crate::package::Package| {
+            pkg.info
+                .requires
+                .iter()
+                .map(|r| crate::package::RequiredInterface {
+                    interface: r.interface.clone(),
+                    version: r.version.clone(),
+                    package: pkg.info.name.clone(),
+                })
+                .collect()
+        };
+        match origin {
+            Some(file) => {
+                if let Some(pkg) = self.memory_package_of(file) {
+                    return of(pkg);
+                }
+                let dir = canonical_path(file.parent().unwrap_or(Path::new(".")));
+                match self.enclosing_package(&dir) {
+                    Ok(Some(pkg)) => of(&pkg),
+                    _ => Vec::new(),
+                }
+            }
+            None => match self.project_package() {
+                Ok(Some(pkg)) => of(&pkg),
+                _ => Vec::new(),
+            },
+        }
     }
 
     fn resolve(&self, path: &str, importer: &Importer) -> Result<ModuleSource, String> {
@@ -449,6 +506,86 @@ impl ModuleRegistry {
             .borrow_mut()
             .insert(dir.to_path_buf(), found.clone());
         Ok(found)
+    }
+
+    /// The project: the package the entry file of the load in progress
+    /// belongs to (the nearest `petal.toml` at or above it).
+    fn project_package(&self) -> Result<Option<std::sync::Arc<crate::package::Package>>, String> {
+        let dir = self.entry_dir.borrow().clone();
+        match dir {
+            Some(dir) => self.enclosing_package(&dir),
+            None => Ok(None),
+        }
+    }
+
+    /// The package the dependency `dep` of `owner` names. A `path` is
+    /// resolved against the owner's root; a `git` or registry dependency is
+    /// an error saying what is missing.
+    fn dependency_package(
+        &self,
+        owner: &crate::package::Package,
+        dep: &crate::package::Dependency,
+    ) -> Result<std::sync::Arc<crate::package::Package>, String> {
+        use crate::package::DependencySource;
+        match &dep.source {
+            DependencySource::Path(rel) => {
+                let root = canonical_path(&owner.info.root.join(rel));
+                if let Some(hit) = self.dependency_packages.borrow().get(&root) {
+                    return Ok(hit.clone());
+                }
+                let pkg = crate::package::Package::from_dir(&root).map_err(|e| {
+                    format!(
+                        "dependency '{}' of package '{}' (path = \"{rel}\") does not load: {e}",
+                        dep.name, owner.info.name
+                    )
+                })?;
+                let pkg = std::sync::Arc::new(pkg);
+                self.dependency_packages
+                    .borrow_mut()
+                    .insert(root, pkg.clone());
+                Ok(pkg)
+            }
+            DependencySource::Git { url, .. } => Err(format!(
+                "dependency '{}' of package '{}' is a git dependency ({url}), and git \
+                 dependencies are not fetched yet — use {{ path = \"…\" }} to a checkout for now",
+                dep.name, owner.info.name
+            )),
+            DependencySource::Registry(version) => Err(format!(
+                "dependency '{} = \"{version}\"' of package '{}' names a registry version, and \
+                 registries are not supported yet — use {{ path = \"…\" }} or {{ git = \"…\", \
+                 tag = \"…\" }}",
+                dep.name, owner.info.name
+            )),
+        }
+    }
+
+    /// Every package a file of the project can name through the project
+    /// manifest's `[dependencies]`, for the project the file at `file`
+    /// belongs to: `(import name, the package or why it does not load)`.
+    /// Empty when no `petal.toml` is above the file.
+    pub fn project_dependencies(
+        &self,
+        file: &Path,
+    ) -> Vec<(String, Result<std::sync::Arc<crate::package::Package>, String>)> {
+        let dir = canonical_path(file.parent().unwrap_or(Path::new(".")));
+        let Ok(Some(owner)) = self.enclosing_package(&dir) else {
+            return Vec::new();
+        };
+        owner
+            .info
+            .dependencies
+            .iter()
+            .map(|dep| (dep.name.clone(), self.dependency_package(&owner, dep)))
+            .collect()
+    }
+
+    /// The package the file at `file` belongs to: the nearest `petal.toml`
+    /// at or above it.
+    pub fn package_of_file(
+        &self,
+        file: &Path,
+    ) -> Result<Option<std::sync::Arc<crate::package::Package>>, String> {
+        self.enclosing_package(&canonical_path(file.parent().unwrap_or(Path::new("."))))
     }
 
     /// The package an in-memory module file (one stamped with a synthetic
@@ -620,14 +757,34 @@ impl ModuleRegistry {
         if let Some(pkg) = self.packages.iter().find(|p| p.info.name == package) {
             return load(pkg);
         }
-        // 2. The package the importing file is part of, by its own name.
-        if let Some(ModuleOrigin::File(file)) = importer.origin
-            && self.memory_package_of(file).is_none()
-            && let Some(dir) = file.parent()
-            && let Some(pkg) = self.enclosing_package(&canonical_path(dir))?
-            && pkg.info.name == package
-        {
-            return load(&pkg);
+        // 2. The manifest: the package the importing file is part of, by its
+        //    own name, and the dependencies its `petal.toml` lists — then the
+        //    project's (the entry file's manifest), which also answers for
+        //    code that has no manifest of its own to ask: `-e` code, and the
+        //    modules of in-memory and bundled packages.
+        let own = match importer.origin {
+            Some(ModuleOrigin::File(file)) if self.memory_package_of(file).is_none() => {
+                match file.parent() {
+                    Some(dir) => self.enclosing_package(&canonical_path(dir))?,
+                    None => None,
+                }
+            }
+            _ => None,
+        };
+        let project = self.project_package()?;
+        let mut asked: Option<&std::sync::Arc<crate::package::Package>> = None;
+        for owner in own.iter().chain(project.iter()) {
+            if asked.is_some_and(|a| std::sync::Arc::ptr_eq(a, owner)) {
+                continue;
+            }
+            asked = Some(owner);
+            if owner.info.name == package {
+                return load(owner);
+            }
+            if let Some(dep) = owner.info.dependency(package) {
+                let pkg = self.dependency_package(owner, dep)?;
+                return load(&pkg);
+            }
         }
         // 3. The search path, 4. the binary.
         if let Some(pkg) = self
@@ -657,8 +814,9 @@ impl ModuleRegistry {
         }
         Err(format!(
             "there is no package named '{package}': not registered by the host, not the \
-             importing file's own package, not on a search path (-I, PETAL_PATH), and not \
-             bundled. A file beside this one is imported as `./{path}`"
+             importing file's own package or a [dependencies] entry of its petal.toml, not on \
+             a search path (-I, PETAL_PATH), and not bundled. A file beside this one is \
+             imported as `./{path}`"
         ))
     }
 }
@@ -777,6 +935,9 @@ pub struct LoadedModule {
     /// `export`. Collected here, before `imports` is split off `stmts`, so an
     /// `export import …` is seen too; the compiler turns each into a warning.
     pub deprecated_exports: Vec<SourceSpan>,
+    /// The host interfaces the package this file belongs to requires (its
+    /// manifest's `[requires]`); empty for a file of no package.
+    pub requires: Vec<crate::package::RequiredInterface>,
 }
 
 /// The display name of an entry "file" that has no path (`-e` code, a host
@@ -816,7 +977,7 @@ pub fn load_modules(
         reject_star(&import.decl, &entry_display)?;
     }
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
-    resolver.begin_load();
+    resolver.begin_load(entry_origin);
 
     // Loose files are named by their path from the entry file's directory.
     let entry_canonical = entry_origin.map(canonical_path);
@@ -845,6 +1006,7 @@ pub fn load_modules(
     for import in &mut explicit_imports {
         import.decl.module =
             walker.visit(&import.decl.module, &entry_importer, &entry_display)?;
+        keep_written_qualifier(import);
     }
     let mut imported_modules = std::mem::take(&mut walker.out);
     let ungated = explicit_imports;
@@ -922,8 +1084,23 @@ pub fn load_modules(
         imports: entry_imports,
         file_id: ENTRY_FILE,
         deprecated_exports: entry_deprecated_exports,
+        requires: resolver.requires_of(entry_origin),
     });
     Ok(modules)
+}
+
+/// A plain import's qualifier is the last segment *as written*. It differs
+/// from the canonical name's only for a dependency whose manifest key is not
+/// the package's own name (`tw = { path = "../tween" }`: `import tw` loads the
+/// module `tween` and binds the qualifier `tw`).
+fn keep_written_qualifier(import: &mut ResolvedImport) {
+    if import.decl.alias.is_some() || import.decl.names.is_some() {
+        return;
+    }
+    let written = crate::ast::module_local_name(&import.written);
+    if written != crate::ast::module_local_name(&import.decl.module) {
+        import.decl.alias = Some(written.to_string());
+    }
 }
 
 /// `import m: *` no longer exists: a plain `import m` is that form now.
@@ -1156,10 +1333,15 @@ impl Walker<'_> {
                 },
                 &display_name,
             )?;
+            keep_written_qualifier(import);
         }
         self.in_progress.pop();
 
         self.loaded.insert(name.clone(), resolved.origin.clone());
+        let requires = match &resolved.origin {
+            ModuleOrigin::File(path) => self.resolver.requires_of(Some(path)),
+            ModuleOrigin::Memory => Vec::new(),
+        };
         self.out.push(LoadedModule {
             name: Some(name.clone()),
             display_name,
@@ -1172,6 +1354,7 @@ impl Walker<'_> {
             imports,
             file_id,
             deprecated_exports,
+            requires,
         });
         Ok(name)
     }

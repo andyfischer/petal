@@ -1,0 +1,9 @@
+# The petal-fps example scripts. The manifest lets every tool resolve
+# `import fps` (this host's interface package) with no -I flag; the host
+# registers the package in memory.
+[package]
+name = "fps_examples"
+version = "0.1.0"
+
+[dependencies]
+fps = { path = "../packages/fps" }

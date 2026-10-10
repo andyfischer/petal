@@ -288,3 +288,29 @@ fn petal_ui_natives_take_named_arguments() {
         "{err}"
     );
 }
+
+/// A petal-ui host provides the `ui` interface at the version of the `ui`
+/// package, so a package whose manifest requires it (bloom) loads; a host
+/// that registers only the package, not the natives behind it, does not.
+#[test]
+fn register_all_provides_the_ui_interface_at_the_package_version() {
+    let manifest = petal::package::Manifest::parse(
+        petal_ui::MANIFEST,
+        std::path::Path::new("prelude/petal.toml"),
+    )
+    .unwrap();
+    let mut env = petal::env::Env::new();
+    petal_ui::register_all(&mut env);
+    assert_eq!(env.provided_version("ui"), manifest.version);
+    env.load_program("import ui\nimport bloom\nprint(1)\n")
+        .expect("bloom requires ui, which this host provides");
+
+    let mut partial = petal::env::Env::new();
+    petal_ui::input::register_input(&mut partial);
+    petal_ui::register_prelude(&mut partial);
+    assert_eq!(partial.provided_version("ui"), None);
+    let err = partial
+        .load_program("import ui/input\nimport bloom\nprint(1)\n")
+        .unwrap_err();
+    assert!(err.contains("requires the host interface `ui`"), "{err}");
+}

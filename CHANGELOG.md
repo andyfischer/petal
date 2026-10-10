@@ -198,6 +198,27 @@ way, for code written against an earlier checkout.
   `core/build.rs` embeds them and fails the build if a source directory is
   missing. `petal check` therefore resolves `import ui` and `import bloom`
   with no host and no `-I`.
+- `petal.toml` names dependencies and required host interfaces.
+  `[dependencies]` maps an import name to `{ path = "…" }`, `{ git = "…", tag
+  = "…" }` / `{ git, rev }` or a registry version string; path dependencies
+  resolve now, git ones are parsed and listed, and a registry version is a
+  "registries are not supported yet" error where it is imported. `[requires]`
+  names host interfaces with a version range (`ui = ">=0.1"`).
+- Every command that compiles, and the language server, finds the nearest
+  `petal.toml` by walking up from the file: a project needs no `-I`. The
+  example trees carry manifests naming the host interface packages they
+  import (`garden`, `garden_config`, `sdl`, `web`, `fps`, `nes`).
+- Hosts announce what they provide: `Env::provides(name, version)` and
+  `Env::provides_package(name)` (`pb_vm_provides`, `pb_vm_provides_package`,
+  `Vm::provides`; `provides` on the wasm runtimes). Loading a program whose
+  packages require an interface the host lacks, or has at an incompatible
+  version, is a load error. `petal check` reports the required interfaces and
+  does not fail on them. bloom and text_layout require `ui`.
+- `petal packages [path]` shows the project's resolved dependency graph, the
+  host interfaces it requires, and the bundled packages, as well as the
+  search path.
+- `petal fix-imports` adds the import of a `[dependencies]` package of the
+  file's project, and the language server completes and resolves them.
 - `petal fix-imports` adds `import ui` (and, with a host's package on `-I`,
   `import garden`, `import sdl`, …) for names a script used through a host's
   implicit prelude, picking the package the others are built on when several

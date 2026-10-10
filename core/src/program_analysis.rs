@@ -823,6 +823,7 @@ mod tests {
             class_names: Default::default(),
             native_links: Vec::new(),
             method_natives: None,
+            requires: Vec::new(),
             imports: Default::default(),
             introspect: Default::default(),
         }

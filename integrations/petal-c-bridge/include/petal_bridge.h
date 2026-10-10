@@ -237,7 +237,11 @@ pb_status pb_vm_add_package(pb_vm* vm, const char* root, const char** out_name);
  * A package whose modules declare natives (`native fn`) is an *interface
  * package*: it is how a script reaches this host's natives (`import name`),
  * and registering it gives the natives registered so far the parameter names
- * it declares. Register natives first, then the package. */
+ * it declares. Register natives first, then the package.
+ *
+ * A module named "petal.toml" is the package's manifest rather than a module:
+ * it carries the version, [dependencies] and [requires] (the host interfaces
+ * the package needs; see pb_vm_provides). */
 pb_status pb_vm_register_package(pb_vm* vm, const char* name, const char* const* module_names,
                                  const char* const* sources, size_t count);
 /* A host's drift check: every native the named packages declare is
@@ -249,6 +253,19 @@ pb_status pb_vm_register_package(pb_vm* vm, const char* name, const char* const*
  * "" on success). */
 pb_status pb_vm_verify_interface(pb_vm* vm, const char* const* packages, size_t count,
                                  const char** out_report);
+/* Announce that this VM provides the host interface `name` at `version`
+ * ("0.4.0"). A package states what it needs in its petal.toml
+ * (`[requires] name = ">=0.4"`); loading a program whose packages require an
+ * interface the VM does not provide, or provides at a version the requirement
+ * rejects, fails before any line runs. Call it where the interface's natives
+ * are registered. A pb_vm_create VM already provides "ui" (petal-ui) and
+ * "core". PB_ERR_INVALID_ARG when `version` is not a dotted number. */
+pb_status pb_vm_provides(pb_vm* vm, const char* name, const char* version);
+/* pb_vm_provides for a package registered in this VM (pb_vm_register_package
+ * with its "petal.toml", or pb_vm_add_package), at the version its manifest
+ * gives — so the announcement cannot drift from the package.
+ * PB_ERR_NOT_FOUND when there is no such package or it has no version. */
+pb_status pb_vm_provides_package(pb_vm* vm, const char* name);
 /* Check-only mode: programs loaded afterwards are compiled but not linked
  * against this VM's natives, so a script written for another host can be
  * checked here. Default: off. */

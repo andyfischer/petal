@@ -1,0 +1,10 @@
+# Garden scripts under this directory, as one project: the manifest lets every
+# tool resolve `import garden` and `import garden_config` (Garden's interface
+# packages) with no -I flag. Garden itself registers them in memory.
+[package]
+name = "garden_gpp_python"
+version = "0.1.0"
+
+[dependencies]
+garden        = { path = "../garden-script/packages/garden" }
+garden_config = { path = "../garden-script/packages/garden_config" }

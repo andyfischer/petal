@@ -994,6 +994,11 @@ pub(super) fn handle_check(
             .map(warnings_json)
             .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
         let mut obj = serde_json::json!({ "ok": !failed, "warnings": warnings });
+        if let Some(program) = program
+            && !program.requires.is_empty()
+        {
+            obj["requires"] = requires_json(&program.requires);
+        }
         if is_empty {
             obj["warning"] = serde_json::json!("empty program");
         }
@@ -1012,7 +1017,22 @@ pub(super) fn handle_check(
                 if error_count == 1 { "" } else { "s" }
             );
         }
-        // Otherwise silent on success, like most linters
+        // Otherwise silent on success, like most linters — but for one line
+        // saying which host interfaces the program's packages require, since
+        // a check passes with no host present and a run will need them.
+        if let Some(program) = program
+            && !program.requires.is_empty()
+        {
+            println!(
+                "requires host interfaces: {}",
+                program
+                    .requires
+                    .iter()
+                    .map(|r| r.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
     }
     // Checker errors fail `check`; `--strict` extends that to warnings (for
     // CI). Output above is unchanged either way.
@@ -1541,8 +1561,171 @@ pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
     env
 }
 
-/// `petal packages [--json]`: what the `-I` directories make available.
-pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
+/// One node of the project's dependency graph, as `petal packages` shows it.
+struct DepNode {
+    /// The import name (the `[dependencies]` key).
+    name: String,
+    /// How the manifest says to get it.
+    source: String,
+    /// The package it resolved to, or why it did not.
+    package: Result<crate::package::PackageInfo, String>,
+    /// Its own dependencies; empty when this package was already shown.
+    children: Vec<DepNode>,
+    /// True when the package appears earlier in the graph (shown once).
+    repeated: bool,
+}
+
+fn dependency_graph(
+    env: &Env,
+    owner: &crate::package::PackageInfo,
+    seen: &mut Vec<PathBuf>,
+) -> Vec<DepNode> {
+    let manifest = owner.root.join(crate::package::MANIFEST_FILE);
+    env.project_dependencies(&manifest)
+        .into_iter()
+        .map(|(name, package)| {
+            let source = owner
+                .dependency(&name)
+                .map(|d| d.source.to_string())
+                .unwrap_or_default();
+            let (children, repeated) = match &package {
+                Ok(info) if seen.contains(&info.root) => (Vec::new(), true),
+                Ok(info) => {
+                    seen.push(info.root.clone());
+                    (dependency_graph(env, info, seen), false)
+                }
+                Err(_) => (Vec::new(), false),
+            };
+            DepNode {
+                name,
+                source,
+                package,
+                children,
+                repeated,
+            }
+        })
+        .collect()
+}
+
+/// Every `[requires]` of the project and of each package of its graph.
+fn graph_requires(
+    project: &crate::package::PackageInfo,
+    graph: &[DepNode],
+) -> Vec<crate::package::RequiredInterface> {
+    fn add(info: &crate::package::PackageInfo, out: &mut Vec<crate::package::RequiredInterface>) {
+        for r in &info.requires {
+            let req = crate::package::RequiredInterface {
+                interface: r.interface.clone(),
+                version: r.version.clone(),
+                package: info.name.clone(),
+            };
+            if !out.contains(&req) {
+                out.push(req);
+            }
+        }
+    }
+    fn walk(nodes: &[DepNode], out: &mut Vec<crate::package::RequiredInterface>) {
+        for node in nodes {
+            if let Ok(info) = &node.package {
+                add(info, out);
+            }
+            walk(&node.children, out);
+        }
+    }
+    let mut out = Vec::new();
+    add(project, &mut out);
+    walk(graph, &mut out);
+    out.sort_by(|a, b| (&a.interface, &a.package).cmp(&(&b.interface, &b.package)));
+    out
+}
+
+fn requires_json(requires: &[crate::package::RequiredInterface]) -> serde_json::Value {
+    serde_json::Value::Array(
+        requires
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "interface": r.interface,
+                    "version": r.version.to_string(),
+                    "package": r.package,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn own_requires_json(info: &crate::package::PackageInfo) -> serde_json::Value {
+    serde_json::Value::Array(
+        info.requires
+            .iter()
+            .map(|r| serde_json::json!({ "interface": r.interface, "version": r.version.to_string() }))
+            .collect(),
+    )
+}
+
+fn dep_nodes_json(nodes: &[DepNode]) -> serde_json::Value {
+    serde_json::Value::Array(
+        nodes
+            .iter()
+            .map(|n| match &n.package {
+                Ok(info) => serde_json::json!({
+                    "name": n.name,
+                    "source": n.source,
+                    "package": info.name,
+                    "version": info.version,
+                    "root": info.root.display().to_string(),
+                    "requires": own_requires_json(info),
+                    "repeated": n.repeated,
+                    "dependencies": dep_nodes_json(&n.children),
+                }),
+                Err(e) => serde_json::json!({
+                    "name": n.name,
+                    "source": n.source,
+                    "error": e,
+                }),
+            })
+            .collect(),
+    )
+}
+
+fn print_dep_nodes(nodes: &[DepNode], depth: usize) {
+    let pad = "    ".repeat(depth);
+    for n in nodes {
+        match &n.package {
+            Ok(info) => {
+                let renamed = if info.name == n.name {
+                    String::new()
+                } else {
+                    format!(" = {}", info.name)
+                };
+                println!(
+                    "{pad}{}{renamed}{}  ({}){}",
+                    n.name,
+                    info.version.as_deref().map(|v| format!(" {v}")).unwrap_or_default(),
+                    n.source,
+                    if n.repeated { "  (shown above)" } else { "" },
+                );
+                if !n.repeated && !info.requires.is_empty() {
+                    println!(
+                        "{pad}    requires: {}",
+                        info.requires
+                            .iter()
+                            .map(|r| format!("{} {}", r.interface, r.version))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+            }
+            Err(e) => println!("{pad}{}  ({})  UNRESOLVED: {e}", n.name, n.source),
+        }
+        print_dep_nodes(&n.children, depth + 1);
+    }
+}
+
+/// `petal packages [--json] [path]`: the project's resolved dependency graph
+/// and required host interfaces, what the `-I` directories make available,
+/// and the packages bundled in the binary.
+pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf]) {
     let env = make_env(include_dirs);
     let packages = env.packages();
     // Manifests that looked like packages and would not load. A `-I` one is
@@ -1550,12 +1733,45 @@ pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
     // which are deliberately non-fatal — but this is the command whose whole
     // job is to say what is available, so a library missing because its
     // manifest is malformed has to be reported rather than simply absent.
-    let problems: Vec<String> = env
+    let mut problems: Vec<String> = env
         .package_errors()
         .iter()
         .chain(env.ambient_package_errors())
         .map(|e| e.to_string())
         .collect();
+
+    // The project: the nearest petal.toml at or above the path given (a file
+    // or a directory), or the working directory.
+    let start = path
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default();
+    let probe = if start.is_dir() {
+        start.join(crate::package::MANIFEST_FILE)
+    } else {
+        start
+    };
+    let project = match env.project_of(&probe) {
+        Ok(project) => project,
+        Err(e) => {
+            problems.push(e);
+            None
+        }
+    };
+    let graph = project.as_ref().map(|p| {
+        let mut seen = vec![p.root.clone()];
+        dependency_graph(&env, p, &mut seen)
+    });
+    let requires = project
+        .as_ref()
+        .zip(graph.as_ref())
+        .map(|(p, g)| graph_requires(p, g))
+        .unwrap_or_default();
+    let bundled = Env::bundled_packages();
+    let is_builtin = |name: &str| {
+        name == crate::bundled::CORE_PACKAGE || crate::bundled::BUILTIN_PACKAGES.contains(&name)
+    };
+
     if json {
         let rows: Vec<serde_json::Value> = packages
             .iter()
@@ -1566,25 +1782,99 @@ pub fn handle_packages(json: bool, include_dirs: &[PathBuf]) {
                     "root": p.root.display().to_string(),
                     "module_dir": p.module_dir.display().to_string(),
                     "modules": p.modules,
+                    "requires": own_requires_json(p),
                 })
             })
             .collect();
-        print_json(&serde_json::json!({ "packages": rows, "errors": problems }));
+        let bundled_rows: Vec<serde_json::Value> = bundled
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "version": p.version,
+                    "modules": p.modules,
+                    "builtin": is_builtin(&p.name),
+                    "requires": own_requires_json(p),
+                })
+            })
+            .collect();
+        let project_json = match (&project, &graph) {
+            (Some(p), Some(g)) => serde_json::json!({
+                "name": p.name,
+                "version": p.version,
+                "root": p.root.display().to_string(),
+                "module_dir": p.module_dir.display().to_string(),
+                "modules": p.modules,
+                "requires": own_requires_json(p),
+                "dependencies": dep_nodes_json(g),
+                "required_interfaces": requires_json(&requires),
+            }),
+            _ => serde_json::Value::Null,
+        };
+        print_json(&serde_json::json!({
+            "project": project_json,
+            "packages": rows,
+            "bundled": bundled_rows,
+            "errors": problems,
+        }));
         return;
     }
     for problem in &problems {
         eprintln!("warning: {problem}");
     }
+    if let (Some(p), Some(graph)) = (&project, &graph) {
+        println!("project {}  {}", p.label(), p.root.display());
+        if graph.is_empty() {
+            println!("    (no dependencies)");
+        }
+        print_dep_nodes(graph, 1);
+        if requires.is_empty() {
+            println!("requires no host interfaces");
+        } else {
+            println!("requires host interfaces:");
+            for r in &requires {
+                println!("    {} {}  (package {})", r.interface, r.version, r.package);
+            }
+        }
+        println!();
+    }
     if packages.is_empty() {
-        println!("No packages found. Point -I at a directory holding a petal.toml, or at a");
-        println!("directory of such libraries.");
-        return;
+        println!("No packages found on the search path. Point -I at a directory holding a");
+        println!("petal.toml, or at a directory of such libraries.");
     }
     for package in &packages {
         println!("{}  {}", package.label(), package.root.display());
         for module in &package.modules {
             println!("    {}/{}", package.name, module);
         }
+    }
+    println!();
+    println!("bundled in this binary:");
+    for package in &bundled {
+        let mut notes: Vec<String> = Vec::new();
+        if is_builtin(&package.name) {
+            notes.push("builtins".to_string());
+        }
+        if !package.requires.is_empty() {
+            notes.push(format!(
+                "requires {}",
+                package
+                    .requires
+                    .iter()
+                    .map(|r| format!("{} {}", r.interface, r.version))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        println!(
+            "    {}{}",
+            package.label(),
+            if notes.is_empty() {
+                String::new()
+            } else {
+                format!("  ({})", notes.join("; "))
+            }
+        );
     }
 }
 

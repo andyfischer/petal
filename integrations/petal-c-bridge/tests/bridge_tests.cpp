@@ -966,6 +966,37 @@ TEST(a_host_interface_package_declares_its_natives) {
     vm.set_check_only(false);
 }
 
+TEST(a_package_requires_an_interface_the_vm_provides) {
+    petal::Vm vm;
+    // The manifest rides along with the sources and says what the package needs.
+    vm.register_package("kit", {{"kit", "pub fn two()\n  2\nend\n"},
+                                {"petal.toml", "[package]\nname = \"kit\"\nversion = \"1.0.0\"\n"
+                                               "[requires]\ngame = \">=0.2\"\n"}});
+    const char* script = "import io; import kit\npush_output(symbol(\"out\"), two())\n";
+    // Not provided: a load error before any line runs.
+    CHECK_THROWS_CODE(vm.load_source(script), PB_ERR_COMPILE);
+    // Provided too old: still refused.
+    vm.provides("game", "0.1");
+    CHECK_THROWS_CODE(vm.load_source(script), PB_ERR_COMPILE);
+    vm.provides("game", "0.2.0");
+    vm.load_source(script);
+    CHECK_EQ(run_out(vm), std::vector<double>{2});
+    CHECK_THROWS_CODE(vm.provides("game", "soon"), PB_ERR_INVALID_ARG);
+
+    // An interface package provides itself at its manifest's version.
+    petal::Vm other;
+    other.register_package("game", {{"game", ""},
+                                    {"petal.toml", "[package]\nname = \"game\"\nversion = \"0.3.0\"\n"}});
+    other.provides_package("game");
+    other.register_package("kit", {{"kit", "pub fn two()\n  2\nend\n"},
+                                   {"petal.toml", "[package]\nname = \"kit\"\n[requires]\ngame = \"^0.3\"\n"
+                                                  "ui = \">=0.1\"\n"}});
+    // A pb_vm_create VM provides `ui` already.
+    other.load_source(script);
+    CHECK_EQ(run_out(other), std::vector<double>{2});
+    CHECK_THROWS_CODE(other.provides_package("nope"), PB_ERR_NOT_FOUND);
+}
+
 TEST(packages_register) {
     petal::Vm vm;
     std::string name = vm.add_package(std::string(PETAL_LIBS_DIR) + "/bloom");

@@ -406,10 +406,19 @@ DESCRIPTION
        for a host imports the host's interface package ('import ui'), whose
        'native fn' declarations are all a check needs: 'ui', 'bloom',
        'text_layout' and 'glsl' are bundled in this binary, and any other
-       host's package is found with -I (for Garden:
+       host's package is found through the project's petal.toml (a path
+       under [dependencies]) or with -I (for Garden:
        -I garden/garden-script/packages). 'petal run' agrees with 'check'
        on every script; a script that imports 'ui' is refused by 'run' when
        it loads, because 'run' registers the core builtins only.
+
+       The nearest petal.toml is found by walking up from the script, as in
+       every command that compiles: its [dependencies] are importable by
+       their keys with no flag. When the packages the program loads state
+       [requires], a passing check prints one line naming those host
+       interfaces ('requires host interfaces: ui >=0.1 (bloom)'; a
+       'requires' array with --json). It never fails on them: it has no
+       host. A run in a host that does not provide one fails at load.
 
 OPTIONS
        --json
@@ -1391,23 +1400,47 @@ SEE ALSO
 
 const PACKAGES: &str = "\
 NAME
-       petal-packages - List the libraries the search path makes available
+       petal-packages - Show the project's dependencies and required host
+       interfaces, and the libraries available to it
 
 SYNOPSIS
-       petal packages [--json] [-I <dir>]...
+       petal packages [--json] [-I <dir>]... [path]
 
 DESCRIPTION
-       A Petal library is a directory holding a petal.toml manifest:
+       A Petal package is a directory holding a petal.toml manifest:
 
            [package]
-           name = \"bloom\"
+           name = \"marble\"
            version = \"0.1.0\"
-           modules = \"src\"      # optional; defaults to src/
+           modules = \"src\"      # optional; defaults to src/ when it exists
 
-       Every -I directory is searched for such libraries: the directory
-       itself, and each directory directly under it. A library named N makes
-       its modules importable as `import N/<module>`, and this command prints
-       what was found, one library per line with its modules under it.
+           [dependencies.text_layout]   # the name is the import name
+           path = \"../text-layout\"
+
+           [dependencies.tween]
+           git = \"https://example.org/tween\"
+           tag = \"v1.2.0\"
+
+           [requires]             # host interfaces the runner must provide
+           ui = \">=0.1\"
+
+       Every command that compiles, and the language server, finds the
+       nearest petal.toml by walking up from the file it is given; no flag is
+       needed inside a project. This command prints what that manifest
+       resolves to:
+
+       - the project (the nearest petal.toml at or above <path>, or above the
+         working directory), its dependency graph as it resolves, and the
+         host interfaces the project and its dependencies require;
+       - the libraries the -I directories and PETAL_PATH make available (each
+         directory itself, and each directory directly under it);
+       - the packages bundled in this binary.
+
+       A dependency may also be written on one line as an inline table
+       (name = path/git/tag/rev pairs in braces; see docs/module-system.md).
+       A path dependency is resolved against the manifest's directory. A git
+       dependency is listed as unresolved until the package manager fetches
+       it; a registry version (name = \"0.3\") is not supported yet.
 
        A petal.toml that will not parse is an error here, and in every
        command that takes -I — a library the user pointed at and that failed
@@ -1415,13 +1448,14 @@ DESCRIPTION
 
 OPTIONS
        --json
-              Emit the list as structured JSON.
+              Emit the report as structured JSON: project (with dependencies
+              and required_interfaces), packages, bundled, errors.
 
        -I <dir>
               A directory to search for libraries. Repeatable.
 
 SEE ALSO
-       petal help run
+       petal help run, petal help check, docs/module-system.md
 ";
 
 #[cfg(test)]

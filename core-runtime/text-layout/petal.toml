@@ -9,3 +9,7 @@
 name = "text_layout"
 version = "0.1.0"
 modules = "src"
+
+# Measuring and drawing text goes through the petal-ui interface (`import ui`).
+[requires]
+ui = ">=0.1"

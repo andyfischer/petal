@@ -245,10 +245,14 @@ pub enum Command {
     /// Serve the language server over stdio. Takes no source file — documents
     /// arrive over the protocol.
     Lsp,
-    /// List the packages the `-I` directories and `PETAL_PATH` make available
-    /// (see `crate::package`). Takes no source file.
+    /// Show the project (the nearest `petal.toml`) with its dependency graph
+    /// and required host interfaces, the packages the `-I` directories and
+    /// `PETAL_PATH` make available, and the bundled ones (see
+    /// `crate::package`). `path` is a file or directory of the project;
+    /// the working directory when absent.
     Packages {
         json: bool,
+        path: Option<String>,
     },
 }
 
@@ -548,8 +552,8 @@ pub fn execute(cli: CliArgs) {
         return;
     }
     // `packages` reports on the search path itself; there is no program.
-    if let Command::Packages { json } = command {
-        handlers::handle_packages(json, &include_dirs);
+    if let Command::Packages { json, path } = command {
+        handlers::handle_packages(json, path.as_deref(), &include_dirs);
         return;
     }
 

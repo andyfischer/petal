@@ -1,0 +1,12 @@
+# A project: its manifest names what its files import and what host it needs.
+[package]
+name = "marble"
+version = "0.1.0"
+
+[dependencies]
+tw     = { path = "../libs/tween" }      # the package calls itself `tween`
+shapes = { git = "https://example.org/shapes", tag = "v1.2.0" }
+grid   = "0.3"
+
+[requires]
+gfx = ">=0.2"

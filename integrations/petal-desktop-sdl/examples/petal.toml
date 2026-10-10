@@ -1,0 +1,12 @@
+# petal-sdl's own example scripts. The manifest lets every tool resolve
+# `import sdl` (this runner's interface package, beside this directory) with
+# no -I flag; petal-sdl itself registers the package in memory.
+[package]
+name = "sdl_examples"
+version = "0.1.0"
+
+[dependencies]
+sdl = { path = "../packages/sdl" }
+
+[requires]
+ui = ">=0.1"

@@ -1,0 +1,3 @@
+pub fn two()
+  2
+end

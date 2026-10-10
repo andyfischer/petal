@@ -679,6 +679,27 @@ from a string).
 A script that uses a declared native the VM does not register fails at
 `load_*` with `PB_ERR_COMPILE`, phase `link`, before any line runs.
 
+**Manifests and required interfaces.** Script loaded from a file finds the
+nearest `petal.toml` by walking up from it, and a `[dependencies]` entry there
+(`game = { path = "../engine/packages/game" }`) is importable by its key with
+no call on the VM — the same lookup the stock CLI and the language server do,
+so they check the project's scripts with no flag. A package states the host
+interfaces it needs under `[requires]` (`game = ">=0.2"`), and the VM says
+what it provides:
+
+```cpp
+vm.register_package("game", {{"game", game_src},
+                             {"petal.toml", game_manifest}});  // the manifest rides along
+vm.provides_package("game");        // at the version in that manifest
+// or: vm.provides("game", "0.2.0");
+```
+
+In C: `pb_vm_provides(vm, name, version)` and
+`pb_vm_provides_package(vm, name)`. A `pb_vm_create` VM already provides `ui`
+and `core`. Loading a program whose packages require an interface the VM
+does not provide, or provides at a version the requirement rejects, fails
+with `PB_ERR_COMPILE`, phase `link`, before any line runs.
+
 ## Other tooling
 
 - `call("fn_name", args)` calls a top-level Petal function after at least one

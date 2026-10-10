@@ -25,9 +25,23 @@
 //! `import ./motion` — or by the package's own name, `import bloom/motion`.
 //! Both name the same module (see [`Package::canonical_name`]).
 //!
-//! Scope, deliberately: this is a manifest and a reachability rule. There is
-//! no registry, no fetching, no dependency resolution, no lockfile, and no
-//! version constraints — `version` is metadata a host can print.
+//! A manifest also names what the package is built on:
+//!
+//! ```toml
+//! [dependencies]            # the KEY is the import name
+//! text_layout = { path = "../text-layout" }
+//! tween       = { git = "https://example.org/tween", tag = "v1.2.0" }
+//! shapes      = "0.3"       # a registry version: parsed, not supported yet
+//!
+//! [requires]                # host interfaces: provided by the runner
+//! ui = ">=0.1"
+//! ```
+//!
+//! A `path` dependency is resolved when a file of the package imports it. A
+//! `git` dependency is parsed here and fetched by the package manager; a
+//! registry version is a clear "not supported yet" error where it is
+//! imported. `[requires]` names host interfaces — what a host announces with
+//! `Env::provides` — and is checked when a program is loaded to run.
 //!
 //! [`Env`]: crate::env::Env
 
@@ -50,6 +64,9 @@ const DEFAULT_MODULE_DIR: &str = "src";
 /// from turning registration into a hang.
 const MAX_SCAN_DEPTH: usize = 8;
 
+/// Directories the module scan never enters: build output, never Petal source.
+const SKIPPED_DIRS: &[&str] = &["target", "node_modules"];
+
 /// What a package is, as a host or a script should see it. Returned by
 /// `Env::add_package` / `Env::register_package` and listed by `Env::packages`.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,6 +87,10 @@ pub struct PackageInfo {
     /// True when the sources were handed over in memory rather than read
     /// from disk (`Env::register_package`).
     pub in_memory: bool,
+    /// The manifest's `[dependencies]`, in the order written.
+    pub dependencies: Vec<Dependency>,
+    /// The manifest's `[requires]`: the host interfaces this package needs.
+    pub requires: Vec<Requirement>,
 }
 
 impl PackageInfo {
@@ -80,6 +101,227 @@ impl PackageInfo {
             None => self.name.clone(),
         }
     }
+
+    /// The `[dependencies]` entry whose key (the import name) is `name`.
+    pub fn dependency(&self, name: &str) -> Option<&Dependency> {
+        self.dependencies.iter().find(|d| d.name == name)
+    }
+}
+
+/// One `[dependencies]` entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dependency {
+    /// The key: the first segment a script writes after `import`, whatever
+    /// the package calls itself.
+    pub name: String,
+    pub source: DependencySource,
+}
+
+/// Where a dependency comes from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DependencySource {
+    /// `{ path = "../lib" }`, relative to the manifest's directory.
+    Path(String),
+    /// `{ git = "url", tag = "v1" }` or `{ git = "url", rev = "abc123" }`.
+    Git {
+        url: String,
+        tag: Option<String>,
+        rev: Option<String>,
+    },
+    /// `"0.3"`: a registry version. Parsed; registries are not supported yet.
+    Registry(String),
+}
+
+impl std::fmt::Display for DependencySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DependencySource::Path(path) => write!(f, "path {path}"),
+            DependencySource::Git { url, tag: Some(tag), .. } => write!(f, "git {url} tag {tag}"),
+            DependencySource::Git { url, rev: Some(rev), .. } => write!(f, "git {url} rev {rev}"),
+            DependencySource::Git { url, .. } => write!(f, "git {url}"),
+            DependencySource::Registry(version) => write!(f, "registry {version}"),
+        }
+    }
+}
+
+/// One `[requires]` entry: a host interface and the versions of it that do.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Requirement {
+    pub interface: String,
+    pub version: VersionReq,
+}
+
+/// A dotted numeric version (`0.4`, `1.2.3`). Missing components count as
+/// zero, so `0.4` and `0.4.0` are equal.
+#[derive(Debug, Clone)]
+pub struct Version {
+    parts: Vec<u64>,
+    text: String,
+}
+
+impl Version {
+    /// `1.2.3`, `0.4`, `v2`. A pre-release or build suffix (`-rc1`, `+x`) is
+    /// accepted and ignored. `None` when no leading number is there.
+    pub fn parse(text: &str) -> Option<Version> {
+        let trimmed = text.trim();
+        let body = trimmed.strip_prefix('v').unwrap_or(trimmed);
+        let body = body.split(['-', '+']).next().unwrap_or(body);
+        let parts: Option<Vec<u64>> = body.split('.').map(|p| p.parse().ok()).collect();
+        let parts = parts?;
+        Some(Version {
+            parts,
+            text: trimmed.to_string(),
+        })
+    }
+
+    fn part(&self, i: usize) -> u64 {
+        self.parts.get(i).copied().unwrap_or(0)
+    }
+}
+
+impl PartialEq for Version {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+impl Eq for Version {}
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let n = self.parts.len().max(other.parts.len());
+        (0..n)
+            .map(|i| self.part(i).cmp(&other.part(i)))
+            .find(|o| o.is_ne())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+/// Which versions satisfy a requirement.
+///
+/// - `">=0.4"`, or a bare `"0.4"`: that version or any later one.
+/// - `"^1.2"`: at least 1.2, and the same major version.
+/// - `"=1.2.0"`: exactly that version.
+/// - `"*"`: any version.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionReq {
+    op: VersionOp,
+    /// The floor (or the exact version). `None` for `*`.
+    version: Option<Version>,
+    text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum VersionOp {
+    Any,
+    AtLeast,
+    Compatible,
+    Exact,
+}
+
+impl VersionReq {
+    pub fn parse(text: &str) -> Result<VersionReq, String> {
+        let trimmed = text.trim();
+        let (op, rest) = if trimmed == "*" {
+            return Ok(VersionReq {
+                op: VersionOp::Any,
+                version: None,
+                text: "*".to_string(),
+            });
+        } else if let Some(rest) = trimmed.strip_prefix(">=") {
+            (VersionOp::AtLeast, rest)
+        } else if let Some(rest) = trimmed.strip_prefix('^') {
+            (VersionOp::Compatible, rest)
+        } else if let Some(rest) = trimmed.strip_prefix('=') {
+            (VersionOp::Exact, rest)
+        } else {
+            (VersionOp::AtLeast, trimmed)
+        };
+        let version = Version::parse(rest).ok_or_else(|| {
+            format!(
+                "'{trimmed}' is not a version requirement — write \">=0.4\", \"^1.2\", \
+                 \"=1.2.0\" or \"*\""
+            )
+        })?;
+        Ok(VersionReq {
+            op,
+            version: Some(version),
+            text: if op == VersionOp::AtLeast && !trimmed.starts_with(">=") {
+                format!(">={trimmed}")
+            } else {
+                trimmed.to_string()
+            },
+        })
+    }
+
+    /// Does `version` satisfy this requirement?
+    pub fn matches(&self, version: &Version) -> bool {
+        let Some(floor) = &self.version else {
+            return true;
+        };
+        match self.op {
+            VersionOp::Any => true,
+            VersionOp::AtLeast => version >= floor,
+            VersionOp::Compatible => version >= floor && version.part(0) == floor.part(0),
+            VersionOp::Exact => version == floor,
+        }
+    }
+
+    /// The lowest version that satisfies this (`None` for `*`).
+    pub fn minimum(&self) -> Option<&Version> {
+        self.version.as_ref()
+    }
+}
+
+impl std::fmt::Display for VersionReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+/// A host interface some package of a program requires, and which one asked.
+/// Collected onto [`crate::program::Program::requires`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct RequiredInterface {
+    pub interface: String,
+    pub version: VersionReq,
+    /// The package whose manifest says so.
+    pub package: String,
+}
+
+impl std::fmt::Display for RequiredInterface {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} ({})", self.interface, self.version, self.package)
+    }
+}
+
+/// The nearest `petal.toml` at or above `start` (a directory, or a file whose
+/// directory is the first one tried): the manifest every command and the
+/// language server use for the file. `None` when no directory up to the
+/// filesystem root holds one.
+pub fn find_manifest(start: &Path) -> Option<PathBuf> {
+    let start = crate::module::canonical_path(start);
+    let mut dir: Option<&Path> = if start.is_dir() {
+        Some(&start)
+    } else {
+        start.parent()
+    };
+    while let Some(d) = dir {
+        let candidate = d.join(MANIFEST_FILE);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        dir = d.parent();
+    }
+    None
 }
 
 /// A registered package: its manifest facts plus, for an in-memory package,
@@ -106,7 +348,7 @@ impl Package {
                 format!("cannot read package manifest: {}", e),
             )
         })?;
-        let manifest = parse_manifest(&text, &manifest_path)?;
+        let manifest = Manifest::parse(&text, &manifest_path)?;
 
         let module_dir = match &manifest.modules {
             Some(rel) => {
@@ -159,6 +401,8 @@ impl Package {
                 module_dir,
                 modules,
                 in_memory: false,
+                dependencies: manifest.dependencies,
+                requires: manifest.requires,
             },
             sources: None,
         })
@@ -174,9 +418,27 @@ impl Package {
     ) -> Result<Package, LoadError> {
         check_package_name(name, &PathBuf::from(format!("<package:{name}>")))?;
         let root = PathBuf::from(format!("<package:{name}>"));
+        let modules = modules.into_iter();
         let mut sources = BTreeMap::new();
+        let mut manifest: Option<Manifest> = None;
         for (module, source) in modules {
             let module = module.as_ref();
+            // The manifest may ride along with the sources, under its file
+            // name: it carries the version, `[dependencies]` and `[requires]`.
+            if module == MANIFEST_FILE {
+                let parsed = Manifest::parse(source.as_ref(), &root.join(MANIFEST_FILE))?;
+                if parsed.name != name {
+                    return Err(LoadError::message(
+                        Phase::Module,
+                        format!(
+                            "package '{name}': its {MANIFEST_FILE} names the package '{}'",
+                            parsed.name
+                        ),
+                    ));
+                }
+                manifest = Some(parsed);
+                continue;
+            }
             let module = module.strip_suffix(".ptl").unwrap_or(module);
             if let Some(problem) = relative_module_error(module) {
                 return Err(LoadError::message(
@@ -187,14 +449,20 @@ impl Package {
             sources.insert(module.to_string(), source.as_ref().to_string());
         }
         let names: Vec<String> = sources.keys().cloned().collect();
+        let (version, dependencies, requires) = match manifest {
+            Some(m) => (m.version, m.dependencies, m.requires),
+            None => (None, Vec::new(), Vec::new()),
+        };
         Ok(Package {
             info: PackageInfo {
                 name: name.to_string(),
-                version: None,
+                version,
                 module_dir: root.clone(),
                 root,
                 modules: names,
                 in_memory: true,
+                dependencies,
+                requires,
             },
             sources: Some(sources),
         })
@@ -253,7 +521,7 @@ impl Package {
     /// A package compiled into the binary (see [`crate::bundled`]).
     pub fn bundled(bundled: &crate::bundled::BundledPackage) -> Result<Package, LoadError> {
         let marker = PathBuf::from(format!("<bundled:{}>", bundled.name));
-        let manifest = parse_manifest(bundled.manifest(), &marker.join(MANIFEST_FILE))?;
+        let manifest = Manifest::parse(bundled.manifest(), &marker.join(MANIFEST_FILE))?;
         let prefix = match &manifest.modules {
             Some(dir) => format!("{}/", dir.trim_matches('/')),
             None if bundled.sources().any(|(p, _)| p.starts_with("src/")) => "src/".to_string(),
@@ -266,6 +534,8 @@ impl Package {
                 .filter_map(|(path, source)| Some((path.strip_prefix(prefix.as_str())?, source))),
         )?;
         package.info.version = manifest.version;
+        package.info.dependencies = manifest.dependencies;
+        package.info.requires = manifest.requires;
         package.info.root = marker.clone();
         package.info.module_dir = marker;
         Ok(package)
@@ -308,89 +578,322 @@ pub fn discover_packages(dir: &Path) -> (Vec<Package>, Vec<LoadError>) {
 
 // ── manifest parsing ─────────────────────────────────────────────
 
-#[derive(Debug)]
-struct Manifest {
-    name: String,
-    version: Option<String>,
-    modules: Option<String>,
+/// A parsed `petal.toml`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Manifest {
+    pub name: String,
+    pub version: Option<String>,
+    pub modules: Option<String>,
+    pub dependencies: Vec<Dependency>,
+    pub requires: Vec<Requirement>,
 }
 
-/// Parse the sliver of TOML a manifest needs: `[section]` headers, `key =
-/// "string"` pairs, `#` comments, blank lines. Anything else is an error
-/// naming the line — better a clear complaint than a silently ignored key.
-/// (Petal has no TOML dependency and this is not the place to grow one.)
-fn parse_manifest(text: &str, path: &Path) -> Result<Manifest, LoadError> {
-    // A Windows editor may have written a UTF-8 BOM. It is invisible, so
-    // leaving it in makes the first line fail with an error the author cannot
-    // see the cause of ("found '\u{feff}[package]'").
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut section = String::new();
-    let mut name: Option<String> = None;
-    let mut version: Option<String> = None;
-    let mut modules: Option<String> = None;
-    let mut saw_package_section = false;
+/// A manifest value: a quoted string, or an inline table of them.
+enum TomlValue {
+    Str(String),
+    Table(Vec<(String, String)>),
+}
 
-    for (index, raw) in text.lines().enumerate() {
-        let line_no = index + 1;
-        let line = strip_comment(raw).trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(header) = line.strip_prefix('[') {
-            let Some(header) = header.strip_suffix(']') else {
+impl Manifest {
+    /// Read and parse `<dir>/petal.toml`.
+    pub fn load(dir: &Path) -> Result<Manifest, LoadError> {
+        let path = dir.join(MANIFEST_FILE);
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| manifest_error(&path, format!("cannot read package manifest: {e}")))?;
+        Manifest::parse(&text, &path)
+    }
+
+    /// Parse the sliver of TOML a manifest needs: `[section]` headers, `key =
+    /// "string"` pairs, `key = { k = "v", … }` inline tables, `#` comments,
+    /// blank lines. Anything else is an error naming the line — better a
+    /// clear complaint than a silently ignored key. (Petal has no TOML
+    /// dependency and this is not the place to grow one.) `path` is only for
+    /// error messages.
+    pub fn parse(text: &str, path: &Path) -> Result<Manifest, LoadError> {
+        // A Windows editor may have written a UTF-8 BOM. It is invisible, so
+        // leaving it in makes the first line fail with an error the author
+        // cannot see the cause of ("found '\u{feff}[package]'").
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+        let mut section = String::new();
+        let mut name: Option<String> = None;
+        let mut version: Option<String> = None;
+        let mut modules: Option<String> = None;
+        let mut saw_package_section = false;
+        // Dependencies in the order written; each is the keys seen so far
+        // (an inline table arrives whole, a `[dependencies.x]` section key by
+        // key) or a bare version string.
+        let mut deps: Vec<(String, usize, Result<Vec<(String, String)>, String>)> = Vec::new();
+        let mut requires: Vec<Requirement> = Vec::new();
+
+        for (index, raw) in text.lines().enumerate() {
+            let line_no = index + 1;
+            let line = strip_comment(raw).trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(header) = line.strip_prefix('[') {
+                let Some(header) = header.strip_suffix(']') else {
+                    return Err(manifest_error(
+                        path,
+                        format!("line {line_no}: unterminated section header '{line}'"),
+                    ));
+                };
+                section = header.trim().to_string();
+                if section == "package" {
+                    saw_package_section = true;
+                }
+                if let Some(dep) = section.strip_prefix("dependencies.") {
+                    let dep = dep.trim().to_string();
+                    check_import_name(&dep, "dependency", path, line_no)?;
+                    if deps.iter().any(|(n, _, _)| *n == dep) {
+                        return Err(manifest_error(
+                            path,
+                            format!("line {line_no}: dependency '{dep}' is listed twice"),
+                        ));
+                    }
+                    deps.push((dep, line_no, Ok(Vec::new())));
+                }
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
                 return Err(manifest_error(
                     path,
-                    format!("line {line_no}: unterminated section header '{line}'"),
+                    format!("line {line_no}: expected 'key = \"value\"', found '{line}'"),
                 ));
             };
-            section = header.trim().to_string();
-            if section == "package" {
-                saw_package_section = true;
+            let key = key.trim();
+            let value = parse_value(value.trim()).ok_or_else(|| {
+                manifest_error(
+                    path,
+                    format!(
+                        "line {line_no}: the value of '{key}' must be a quoted string or an \
+                         inline table of them ({{ path = \"…\" }}), found '{}'",
+                        value.trim()
+                    ),
+                )
+            })?;
+            let string_only = |value: TomlValue| match value {
+                TomlValue::Str(s) => Ok(s),
+                TomlValue::Table(_) => Err(manifest_error(
+                    path,
+                    format!("line {line_no}: the value of '{key}' must be a quoted string"),
+                )),
+            };
+            match section.as_str() {
+                "package" => match key {
+                    "name" => name = Some(string_only(value)?),
+                    "version" => version = Some(string_only(value)?),
+                    "modules" => modules = Some(string_only(value)?),
+                    // Somebody else's metadata; keep it legal so a manifest
+                    // can carry more than this version understands.
+                    _ => {}
+                },
+                "dependencies" => {
+                    check_import_name(key, "dependency", path, line_no)?;
+                    if deps.iter().any(|(n, _, _)| n == key) {
+                        return Err(manifest_error(
+                            path,
+                            format!("line {line_no}: dependency '{key}' is listed twice"),
+                        ));
+                    }
+                    deps.push((
+                        key.to_string(),
+                        line_no,
+                        match value {
+                            TomlValue::Str(version) => Err(version),
+                            TomlValue::Table(pairs) => Ok(pairs),
+                        },
+                    ));
+                }
+                "requires" => {
+                    check_import_name(key, "interface", path, line_no)?;
+                    let text = string_only(value)?;
+                    let req = VersionReq::parse(&text).map_err(|e| {
+                        manifest_error(path, format!("line {line_no}: [requires] {key}: {e}"))
+                    })?;
+                    if requires.iter().any(|r| r.interface == key) {
+                        return Err(manifest_error(
+                            path,
+                            format!("line {line_no}: interface '{key}' is required twice"),
+                        ));
+                    }
+                    requires.push(Requirement {
+                        interface: key.to_string(),
+                        version: req,
+                    });
+                }
+                other if other.starts_with("dependencies.") => {
+                    let text = string_only(value)?;
+                    if let Some((_, _, Ok(pairs))) = deps.last_mut() {
+                        pairs.push((key.to_string(), text));
+                    }
+                }
+                // Other tables are somebody else's metadata.
+                _ => {}
             }
-            continue;
         }
-        let Some((key, value)) = line.split_once('=') else {
-            return Err(manifest_error(
-                path,
-                format!("line {line_no}: expected 'key = \"value\"', found '{line}'"),
-            ));
-        };
-        let key = key.trim();
-        let value = parse_string_value(value.trim()).ok_or_else(|| {
-            manifest_error(
-                path,
-                format!(
-                    "line {line_no}: the value of '{key}' must be a quoted string, found '{}'",
-                    value.trim()
-                ),
-            )
-        })?;
-        if section != "package" {
-            // Other tables are somebody else's metadata; keep them legal so a
-            // manifest can carry more than this version understands.
-            continue;
-        }
-        match key {
-            "name" => name = Some(value),
-            "version" => version = Some(value),
-            "modules" => modules = Some(value),
-            // Same reasoning as above, one level down.
-            _ => {}
-        }
-    }
 
-    if !saw_package_section {
-        return Err(manifest_error(path, "missing the [package] section"));
+        if !saw_package_section {
+            return Err(manifest_error(path, "missing the [package] section"));
+        }
+        let Some(name) = name else {
+            return Err(manifest_error(path, "[package] has no 'name'"));
+        };
+        check_package_name(&name, path)?;
+        let dependencies = deps
+            .into_iter()
+            .map(|(dep, line_no, spec)| {
+                let source = dependency_source(&dep, spec)
+                    .map_err(|e| manifest_error(path, format!("line {line_no}: {e}")))?;
+                Ok(Dependency { name: dep, source })
+            })
+            .collect::<Result<Vec<_>, LoadError>>()?;
+        Ok(Manifest {
+            name,
+            version,
+            modules,
+            dependencies,
+            requires,
+        })
     }
-    let Some(name) = name else {
-        return Err(manifest_error(path, "[package] has no 'name'"));
+}
+
+/// Turn a dependency's keys (or its bare version string) into a source.
+fn dependency_source(
+    name: &str,
+    spec: Result<Vec<(String, String)>, String>,
+) -> Result<DependencySource, String> {
+    let pairs = match spec {
+        Err(version) => {
+            VersionReq::parse(&version).map_err(|e| format!("dependency '{name}': {e}"))?;
+            return Ok(DependencySource::Registry(version));
+        }
+        Ok(pairs) => pairs,
     };
-    check_package_name(&name, path)?;
-    Ok(Manifest {
-        name,
-        version,
-        modules,
-    })
+    let mut path = None;
+    let mut git = None;
+    let mut tag = None;
+    let mut rev = None;
+    let mut version = None;
+    for (key, value) in pairs {
+        let slot = match key.as_str() {
+            "path" => &mut path,
+            "git" => &mut git,
+            "tag" => &mut tag,
+            "rev" => &mut rev,
+            "version" => &mut version,
+            other => {
+                return Err(format!(
+                    "dependency '{name}' has an unknown key '{other}' — a dependency is \
+                     {{ path = \"…\" }}, {{ git = \"…\", tag = \"…\" }}, {{ git = \"…\", rev = \
+                     \"…\" }} or a version string"
+                ));
+            }
+        };
+        if slot.replace(value).is_some() {
+            return Err(format!("dependency '{name}' gives '{key}' twice"));
+        }
+    }
+    match (path, git, version) {
+        (Some(path), None, _) => {
+            if tag.is_some() || rev.is_some() {
+                return Err(format!(
+                    "dependency '{name}': 'tag' and 'rev' belong to a git dependency, not a path"
+                ));
+            }
+            if path.is_empty() {
+                return Err(format!("dependency '{name}' has an empty path"));
+            }
+            Ok(DependencySource::Path(path))
+        }
+        (None, Some(url), _) => match (&tag, &rev) {
+            (Some(_), Some(_)) => Err(format!(
+                "dependency '{name}' gives both 'tag' and 'rev' — pin a git dependency with one"
+            )),
+            (None, None) => Err(format!(
+                "git dependency '{name}' needs a 'tag' or a 'rev' to pin it"
+            )),
+            _ => Ok(DependencySource::Git { url, tag, rev }),
+        },
+        (Some(_), Some(_), _) => Err(format!(
+            "dependency '{name}' gives both 'path' and 'git' — it comes from one place"
+        )),
+        (None, None, Some(version)) => {
+            VersionReq::parse(&version).map_err(|e| format!("dependency '{name}': {e}"))?;
+            Ok(DependencySource::Registry(version))
+        }
+        (None, None, None) => Err(format!(
+            "dependency '{name}' says nothing about where it comes from — give it a 'path', a \
+             'git' url with a 'tag' or 'rev', or a version string"
+        )),
+    }
+}
+
+/// A string, or `{ k = "v", k2 = "v2" }`.
+fn parse_value(text: &str) -> Option<TomlValue> {
+    if let Some(s) = parse_string_value(text) {
+        return Some(TomlValue::Str(s));
+    }
+    let inner = text.strip_prefix('{')?.strip_suffix('}')?.trim();
+    let mut pairs = Vec::new();
+    if inner.is_empty() {
+        return Some(TomlValue::Table(pairs));
+    }
+    for part in split_outside_quotes(inner, ',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (key, value) = part.split_once('=')?;
+        pairs.push((key.trim().to_string(), parse_string_value(value.trim())?));
+    }
+    Some(TomlValue::Table(pairs))
+}
+
+/// Split on `sep` wherever it is not inside a quoted string.
+fn split_outside_quotes(text: &str, sep: char) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut start = 0;
+    for (i, c) in text.char_indices() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == sep => {
+                out.push(&text[start..i]);
+                start = i + c.len_utf8();
+            }
+            None => {}
+        }
+    }
+    out.push(&text[start..]);
+    out
+}
+
+/// A dependency key or an interface name is the first segment of an import
+/// path (or names a package), so it must be an identifier.
+fn check_import_name(name: &str, what: &str, path: &Path, line_no: usize) -> Result<(), LoadError> {
+    if is_identifier(name) {
+        Ok(())
+    } else {
+        Err(manifest_error(
+            path,
+            format!(
+                "line {line_no}: {what} name '{name}' is not an identifier (letters, digits \
+                 and '_', not starting with a digit)"
+            ),
+        ))
+    }
+}
+
+fn is_identifier(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Drop a trailing `#` comment, respecting quotes.
@@ -425,13 +928,7 @@ fn parse_string_value(text: &str) -> Option<String> {
 /// A package name becomes the first segment of an import path, so it must be
 /// spellable as an identifier.
 fn check_package_name(name: &str, path: &Path) -> Result<(), LoadError> {
-    let ok = !name.is_empty()
-        && name
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if ok {
+    if is_identifier(name) {
         Ok(())
     } else {
         Err(manifest_error(
@@ -507,6 +1004,12 @@ fn scan_modules(dir: &Path, prefix: &str, depth: usize, out: &mut Vec<String>) {
             continue;
         }
         if path.is_dir() {
+            // Build output is not source, and a directory with a manifest of
+            // its own is another package: its files are its modules, not
+            // this one's.
+            if SKIPPED_DIRS.contains(&name.as_str()) || path.join(MANIFEST_FILE).is_file() {
+                continue;
+            }
             let inner = if prefix.is_empty() {
                 name
             } else {
@@ -528,7 +1031,7 @@ mod tests {
     use super::*;
 
     fn manifest(text: &str) -> Result<Manifest, LoadError> {
-        parse_manifest(text, Path::new("petal.toml"))
+        Manifest::parse(text, Path::new("petal.toml"))
     }
 
     /// A throwaway package directory: `<tmp>/petal-pkg-<tag>/lib/`, with the
@@ -647,6 +1150,115 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("unterminated section header"), "{err}");
+    }
+
+    #[test]
+    fn dependencies_come_in_three_forms() {
+        let m = manifest(
+            "[package]\nname = \"marble\"\n\n[dependencies]\n\
+             bloom = \"0.3\"  # registry, later\n\
+             text_layout = { path = \"../text-layout\" }\n\
+             tween = { git = \"https://example.org/tween\", tag = \"v1.2.0\" }\n\
+             pinned = { git = \"https://example.org/p#x\", rev = 'abc123' }\n",
+        )
+        .unwrap();
+        let names: Vec<&str> = m.dependencies.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["bloom", "text_layout", "tween", "pinned"]);
+        assert_eq!(m.dependencies[0].source, DependencySource::Registry("0.3".into()));
+        assert_eq!(
+            m.dependencies[1].source,
+            DependencySource::Path("../text-layout".into())
+        );
+        assert_eq!(
+            m.dependencies[2].source,
+            DependencySource::Git {
+                url: "https://example.org/tween".into(),
+                tag: Some("v1.2.0".into()),
+                rev: None,
+            }
+        );
+        assert_eq!(
+            m.dependencies[3].source,
+            DependencySource::Git {
+                url: "https://example.org/p#x".into(),
+                tag: None,
+                rev: Some("abc123".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_dependency_may_be_a_table_section() {
+        let m = manifest(
+            "[package]\nname = \"marble\"\n[dependencies.tween]\n\
+             git = \"https://example.org/tween\"\nrev = \"abc\"\n\
+             [dependencies.kit]\npath = \"../kit\"\n",
+        )
+        .unwrap();
+        assert_eq!(m.dependencies.len(), 2);
+        assert_eq!(m.dependencies[1].source, DependencySource::Path("../kit".into()));
+    }
+
+    #[test]
+    fn a_malformed_dependency_is_named_with_its_line() {
+        let dep = |line: &str| {
+            manifest(&format!("[package]\nname = \"m\"\n[dependencies]\n{line}\n"))
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(dep("x = { git = \"u\" }").contains("needs a 'tag' or a 'rev'"));
+        assert!(dep("x = { git = \"u\", tag = \"a\", rev = \"b\" }").contains("both 'tag' and 'rev'"));
+        assert!(dep("x = { path = \"p\", git = \"u\", tag = \"t\" }").contains("both 'path' and 'git'"));
+        assert!(dep("x = { path = \"p\", tag = \"t\" }").contains("belong to a git dependency"));
+        assert!(dep("x = { branch = \"main\" }").contains("unknown key 'branch'"));
+        assert!(dep("x = {}").contains("says nothing about where it comes from"));
+        assert!(dep("x = \"latest\"").contains("is not a version requirement"));
+        assert!(dep("my-lib = { path = \"p\" }").contains("is not an identifier"));
+        assert!(dep("x = { path = \"a\" }\nx = { path = \"b\" }").contains("listed twice"));
+        let err = dep("x = { path = 3 }");
+        assert!(err.contains("line 4"), "{err}");
+        assert!(err.contains("must be a quoted string"), "{err}");
+    }
+
+    #[test]
+    fn requires_names_host_interfaces_and_version_ranges() {
+        let m = manifest(
+            "[package]\nname = \"bloom\"\n[requires]\nui = \">=0.4\"\nsdl = \"^1.2\"\nany = \"*\"\n",
+        )
+        .unwrap();
+        let shown: Vec<String> = m
+            .requires
+            .iter()
+            .map(|r| format!("{} {}", r.interface, r.version))
+            .collect();
+        assert_eq!(shown, ["ui >=0.4", "sdl ^1.2", "any *"]);
+        let err = manifest("[package]\nname = \"b\"\n[requires]\nui = \"new\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[requires] ui"), "{err}");
+        assert!(manifest("[package]\nname = \"b\"\n[requires]\nui = { path = \"x\" }\n").is_err());
+    }
+
+    #[test]
+    fn version_requirements_compare_numerically() {
+        let v = |s: &str| Version::parse(s).unwrap();
+        let req = |s: &str| VersionReq::parse(s).unwrap();
+        assert!(v("0.10") > v("0.9"));
+        assert_eq!(v("0.4"), v("0.4.0"));
+        assert_eq!(v("v1.2.3-rc1"), v("1.2.3"));
+        assert!(Version::parse("soon").is_none());
+        assert!(req(">=0.4").matches(&v("0.4.0")));
+        assert!(req(">=0.4").matches(&v("2")));
+        assert!(!req(">=0.4").matches(&v("0.3.9")));
+        // A bare version is a floor.
+        assert!(req("0.4").matches(&v("0.5")));
+        assert_eq!(req("0.4").to_string(), ">=0.4");
+        assert!(req("^1.2").matches(&v("1.9")));
+        assert!(!req("^1.2").matches(&v("2.0")));
+        assert!(!req("^1.2").matches(&v("1.1")));
+        assert!(req("=1.2.0").matches(&v("1.2")));
+        assert!(!req("=1.2.0").matches(&v("1.2.1")));
+        assert!(req("*").matches(&v("0")));
     }
 
     #[test]

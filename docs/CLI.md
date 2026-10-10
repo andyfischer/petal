@@ -54,7 +54,7 @@ Every command that compiles a program accepts these:
 | `check` | Compile without executing |
 | `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
-| `packages` | List the libraries the search path makes available |
+| `packages` | Show the project's dependencies and required host interfaces, and the libraries available |
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
 | `fix-imports` | Rewrite imports written for the old module rules |
@@ -447,10 +447,22 @@ registers it:
 | any petal-ui host | `import ui` | bundled in the binary |
 | a host with only petal-ui's input half | `import ui/input` | bundled |
 | the bloom / text_layout / glsl libraries | `import bloom`, … | bundled |
-| a Garden panel | `import ui`, `import garden` | `-I garden/garden-script/packages` |
-| Garden's config host (`init.ptl`) | `import garden_config` | `-I garden/garden-script/packages` |
-| petal-desktop-sdl's extras | `import sdl` | `-I integrations/petal-desktop-sdl/packages` |
-| your own host | `import <its package>` | `-I <the directory holding it>` |
+| a Garden panel | `import ui`, `import garden` | a path dependency in the project's `petal.toml`, or `-I garden/garden-script/packages` |
+| Garden's config host (`init.ptl`) | `import garden_config` | the same |
+| petal-desktop-sdl's extras | `import sdl` | a path dependency, or `-I integrations/petal-desktop-sdl/packages` |
+| your own host | `import <its package>` | `<name> = { path = "…" }` under `[dependencies]`, or `-I <the directory holding it>` |
+
+`check` finds the nearest `petal.toml` by walking up from the script, as every
+command that compiles does, so inside a project no flag is needed. The
+example trees in this repository carry such a manifest (`examples/petal.toml`
+and others), which is why `petal check examples/games/flappy/app.ptl` resolves
+`import garden` by itself.
+
+When the packages a script loads state `[requires]`, a passing `check` ends
+with one line naming them — `requires host interfaces: ui >=0.1 (bloom)` —
+and `--json` carries a `requires` array of `{interface, version, package}`.
+`check` never fails on them; a run in a host that does not provide one does
+([module-system.md](module-system.md#required-host-interfaces)).
 
 `check` and `run` agree on every script. `check` never links, so a script that
 imports `ui` checks clean; `petal run` of it stops at load, before any line
@@ -1261,46 +1273,78 @@ It provides full-text document sync, diagnostics on open and change, hover,
 go-to-definition, and completion. The loop exits on an `exit` notification or
 at EOF.
 
-### `packages` — List available libraries
+### `packages` — Show the project and the libraries available
 
 ```
-petal packages [--json] [-I <dir>]...
+petal packages [--json] [-I <dir>]... [path]
 ```
 
-A Petal library is a directory with a `petal.toml` manifest:
+A Petal package is a directory with a `petal.toml` manifest:
 
 ```toml
 [package]
-name = "bloom"
+name = "marble"
 version = "0.1.0"
 modules = "src"      # optional; defaults to src/, else the manifest's dir
+
+[dependencies]       # the key is the import name
+tween = { path = "../libs/tween" }
+
+[requires]           # host interfaces the runner must provide
+ui = ">=0.1"
 ```
 
-Every `-I` directory is searched for such libraries — the directory itself,
-and each directory directly under it — as are the `PETAL_PATH` directories.
-A library named `bloom` makes its modules importable as `import bloom/menu`;
-see [module-system.md](module-system.md#packages). The packages bundled in
-the binary (`core`) and the package a script itself sits in are importable
-too, and are not listed here. This command prints what
-was found, so a user can check what a script can reach:
+See [module-system.md](module-system.md#packages) for the manifest. This
+command prints what a script here can reach:
+
+- **the project** — the nearest `petal.toml` at or above `path` (a file or a
+  directory; the working directory when absent) — with its dependency graph
+  as it resolves and the host interfaces the project and its dependencies
+  require;
+- **the search path**: the libraries under each `-I` directory (the
+  directory itself, and each directory directly under it) and under the
+  `PETAL_PATH` directories;
+- **the packages bundled in the binary**, with the builtin ones marked.
 
 ```
-$ petal packages -I core-runtime
-bloom 0.1.0  /Users/me/petal/core-runtime/bloom
-    bloom/button
-    bloom/menu
-    bloom/motion
+$ petal packages app
+project marble 0.1.0  /Users/me/marble/app
+    tween 1.2.0  (path ../libs/tween)
+        requires: audio ^1.0
+        base  (path ../base)
+    shapes  (git https://example.org/shapes tag v1.2.0)  UNRESOLVED: … git dependencies are not fetched yet …
+requires host interfaces:
+    audio ^1.0  (package tween)
+    ui >=0.1  (package marble)
+
+No packages found on the search path. Point -I at a directory holding a
+petal.toml, or at a directory of such libraries.
+
+bundled in this binary:
+    core 0.1.0  (builtins)
+    …
+    bloom 0.1.0  (requires ui >=0.1)
 ```
 
-`--json` emits the same thing as `{ "packages": [ … ] }`, each entry with
-`name`, `version`, `root`, `module_dir` and `modules`.
+A dependency whose key differs from the package's own name is shown as
+`key = name`. A package reached twice is expanded once.
+
+`--json` emits `{ "project": …, "packages": [ … ], "bundled": [ … ],
+"errors": [ … ] }`. `project` is `null` outside a project; otherwise it has
+`name`, `version`, `root`, `module_dir`, `modules`, `requires`,
+`dependencies` (each with `name`, `source`, and either `package`, `version`,
+`root`, `requires`, `repeated`, `dependencies` or an `error`) and
+`required_interfaces` (`{interface, version, package}` across the graph).
+Each `packages` entry has `name`, `version`, `root`, `module_dir`, `modules`
+and `requires`; each `bundled` entry `name`, `version`, `modules`, `builtin`
+and `requires`.
 
 A `petal.toml` that will not parse is an error naming the file and the line —
 here and in every command that takes `-I`, because a library the user pointed
 at should say why it failed rather than go quietly missing:
 
 ```
-Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quoted string, found 'bloom'
+Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quoted string or an inline table of them ({ path = "…" }), found 'bloom'
 ```
 
 This command takes no source file.

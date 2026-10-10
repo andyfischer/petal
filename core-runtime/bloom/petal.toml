@@ -7,3 +7,15 @@
 name = "bloom"
 version = "0.1.0"
 modules = "src"
+
+# The key is the import name: bloom's modules write `import text_layout`.
+# Checked out beside this directory it is found by path; bundled in the petal
+# binary, or registered in memory by a host, the name finds its neighbour the
+# same way.
+[dependencies]
+text_layout = { path = "../text-layout" }
+
+# bloom draws through the petal-ui interface (`import ui`): it runs only in a
+# host that provides it.
+[requires]
+ui = ">=0.1"

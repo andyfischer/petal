@@ -175,8 +175,29 @@ pub fn package_modules() -> [(&'static str, &'static str); 2] {
 /// The `petal` binary bundles the same source, so `petal check` resolves
 /// `import ui` with no host; this registration takes precedence over it.
 pub fn register_prelude(env: &mut petal::env::Env) {
-    env.register_package(MODULE_NAME, package_modules())
-        .expect("the ui package registers");
+    env.register_package(
+        MODULE_NAME,
+        package_modules()
+            .into_iter()
+            .chain([(petal::package::MANIFEST_FILE, MANIFEST)]),
+    )
+    .expect("the ui package registers");
+}
+
+/// The `ui` package's manifest (`prelude/petal.toml`): its version is the
+/// version of the interface a petal-ui host provides.
+pub const MANIFEST: &str = include_str!("../prelude/petal.toml");
+
+/// Announce that `env` provides the `ui` interface, at the version of the
+/// `ui` package ([`MANIFEST`]): a package whose `petal.toml` says
+/// `[requires] ui = ">=…"` (bloom does) then loads here. Call it after
+/// [`register_prelude`], in a host that registers the whole interface —
+/// input, draw and `host_data` — as [`register_all`] does. A host that
+/// registers only part of it (the input natives, for `import ui/input`)
+/// does not provide `ui`.
+pub fn provide_interface(env: &mut petal::env::Env) {
+    env.provides_package(MODULE_NAME)
+        .expect("the ui package is registered with its manifest");
 }
 
 /// The interface packages a host built on [`register_all`] answers for —
@@ -191,4 +212,5 @@ pub fn register_all(env: &mut petal::env::Env) {
     draw::register_draw(env);
     host_data::register_host_data(env);
     register_prelude(env);
+    provide_interface(env);
 }

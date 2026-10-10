@@ -370,10 +370,14 @@ this order, and the first place that has a package of that name wins:
    package `ui`), then the packages it registered (`env.add_package`,
    `env.register_package`). This is how an embedding app ships a Petal
    prelude, and how a browser host with no filesystem works.
-2. **The package the importing file belongs to** — the one whose
-   `petal.toml` is nearest at or above the file — when the name is that
-   package's own. A library's modules and its examples can say
-   `import bloom/menu` with nothing configured.
+2. **The manifest.** The package the importing file belongs to — the one
+   whose `petal.toml` is nearest at or above the file — answers for its own
+   name (a library's modules and its examples can say `import bloom/menu`
+   with nothing configured) and for every key of its
+   [`[dependencies]`](#dependencies). The *project's* manifest — the one
+   nearest the program's entry file — is asked next, which is how code with
+   no manifest of its own (`-e` code run inside a project, the modules of a
+   bundled or in-memory package) picks up the project's choice of a package.
 3. **The search path**: packages under the directories given with
    `petal run -I <dir>` (repeatable, and accepted by every command that
    compiles) or `env.add_module_path`, then under the `PETAL_PATH`
@@ -397,7 +401,11 @@ this order, and the first place that has a package of that name wins:
    `petal check` resolves `import ui` with no host. *Running* a script that
    uses a declared native needs a host that registers it; see
    [Host interface packages](#host-interface-packages). A package of the
-   same name found at an earlier step wins over the bundled copy.
+   same name found at an earlier step — a host registration, a
+   `[dependencies]` entry of the project — wins over the bundled copy.
+
+Every command that compiles, and the language server, finds the manifest by
+walking up from the file it is given. Inside a project nothing needs a flag.
 
 Within the package, the rest of the path names the module:
 `import bloom/widgets/button` is `widgets/button.ptl` under the package's
@@ -411,8 +419,9 @@ A missing module is an error naming the importer and why:
 
 ```
 Error: cannot find module 'geom' (imported by g.ptl): there is no package named 'geom':
-not registered by the host, not the importing file's own package, not on a search path
-(-I, PETAL_PATH), and not bundled. A file beside this one is imported as `./geom`
+not registered by the host, not the importing file's own package or a [dependencies]
+entry of its petal.toml, not on a search path (-I, PETAL_PATH), and not bundled. A file
+beside this one is imported as `./geom`
 ```
 
 Each module is loaded at most once per program, [whatever it was imported
@@ -555,9 +564,10 @@ selective import.
 - Reaching a module through a facade's qualifier
   (`bloom.menu.open()`); module names are not values, and a facade passes on
   names, not qualifiers.
-- Registries, fetching, version constraints and lockfiles. A `petal.toml`
-  names a *local* library and lists nothing but itself (see
-  [Packages](#packages)); its `version` is metadata that nothing resolves on.
+- Fetching, lockfiles and registries. A `petal.toml` lists
+  [dependencies](#dependencies) in all three forms, but only `path` ones
+  resolve yet; a package's `version` is what a host announces for an
+  interface package and is otherwise metadata.
 - Distributing a module as compiled IR. Programs always compile from
   source.
 
@@ -598,21 +608,104 @@ same module: [a module's identity](#module-identity) is the package and the
 path within it, not the spelling. A relative import cannot leave the package
 root.
 
-**Making a package reachable.** A file inside the package reaches it by
-name already. From outside, on the command line, `-I` finds packages: a
-directory holding a `petal.toml`, and every directory directly under one,
-is offered as a package. `PETAL_PATH` directories are searched the same
-way. See [Where packages are found](#where-packages-are-found) for the
-whole order.
+A directory with its own `petal.toml` below a package is a different
+package: its files are not modules of the one around it. `target/` and
+`node_modules/` are never scanned for modules.
 
-```bash
-petal run app.ptl -I ~/petal-libs      # ~/petal-libs/bloom/petal.toml → `bloom`
-petal packages -I ~/petal-libs         # what that made available
+### Dependencies
+
+A manifest names the packages its own files import:
+
+```toml
+[package]
+name = "marble"
+version = "0.1.0"
+
+[dependencies]
+text_layout = { path = "../third_party/text-layout" }
+tw          = { path = "../libs/tween" }                  # the package calls itself `tween`
+shapes      = { git = "https://example.org/shapes", tag = "v1.2.0" }
+pinned      = { git = "https://example.org/pinned", rev = "9f3c2ab" }
+grid        = "0.3"                                       # a registry version
+
+[requires]
+ui = ">=0.1"
 ```
 
-`petal packages` lists each library with its version, its directory, and its
-modules. A `petal.toml` that will not parse is an error naming the file and
-the line — a library the user pointed at never goes quietly missing.
+**The key is the import name.** `tw = { … }` means the package's files write
+`import tw` and `import tw/ease`, whatever the package calls itself. The
+qualifier follows the spelling (`tw.go()`); the module's
+[identity](#module-identity) is the package's own name (`tween`,
+`tween/ease`), so a package reached under two keys is still loaded once.
+
+| Form | Meaning |
+| --- | --- |
+| `{ path = "…" }` | a package directory, relative to this manifest. Resolved when a file imports it |
+| `{ git = "…", tag = "…" }`, `{ git = "…", rev = "…" }` | a git repository pinned to a tag or a commit. Parsed and listed; importing one is an error until the package manager fetches it |
+| `"0.3"` | a registry version. Parsed; importing one is the error "registries are not supported yet" |
+
+A dependency is declared where it is used: a package resolves its imports
+from its *own* manifest, so `tween`'s `import base` is answered by
+`tween/petal.toml`. The project's manifest is the fallback (step 2 above).
+`[dependencies.name]` sections are accepted as well as inline tables. A
+malformed entry (an unknown key, `git` with no `tag` or `rev`, both `path`
+and `git`) is an error naming the line.
+
+### Required host interfaces
+
+`[requires]` names the [host interfaces](#host-interface-packages) a package
+needs and which versions will do. They are provided by the runner, never
+fetched as code:
+
+| Requirement | Accepts |
+| --- | --- |
+| `">=0.4"` or a bare `"0.4"` | that version or any later one |
+| `"^1.2"` | 1.2 or later within major version 1 |
+| `"=1.2.0"` | exactly that version |
+| `"*"` | any version |
+
+Versions are dotted numbers compared numerically; `0.4` and `0.4.0` are the
+same. A program requires what the packages of its loaded files require: the
+project's own `[requires]`, plus those of every package one of whose modules
+the program imports, however deep. bloom requires `ui`, so an app that imports
+bloom requires it too.
+
+A host says what it provides with `Env::provides(name, version)`
+([Embedding](#embedding)). When a program is loaded to *run*, each
+requirement is checked, and one the host does not meet is a load error before
+any line runs:
+
+```
+Error: package 'bloom' requires the host interface `ui` >=0.1, which this host does not
+provide — the program cannot run here; run it with a host that provides it
+```
+
+`petal check` does not fail on requirements — it has no host — and reports
+them instead: one line, `requires host interfaces: ui >=0.1 (bloom)`, and a
+`requires` array in `--json`. Every runtime provides `core` at the version
+of the petal crate, so a package can ask for a new enough runtime with
+`core = ">=0.1"`.
+
+### Making a package reachable
+
+A file inside the package reaches it by name already, and a `[dependencies]`
+entry reaches anything else with no flag. `-I` and `PETAL_PATH` remain as an
+escape hatch for ad-hoc use: a directory holding a `petal.toml`, and every
+directory directly under one, is offered as a package. See [Where packages
+are found](#where-packages-are-found) for the whole order.
+
+```bash
+petal run app.ptl                      # app's petal.toml names its dependencies
+petal run app.ptl -I ~/petal-libs      # ad hoc: ~/petal-libs/bloom/petal.toml → `bloom`
+petal packages                         # the project's graph, and what else is available
+```
+
+`petal packages` prints the project (the nearest `petal.toml` above the
+working directory, or above a path you give it), its dependency graph as it
+resolves, the host interfaces the graph requires, the libraries on the search
+path, and the packages bundled in the binary. A `petal.toml` that will not
+parse is an error naming the file and the line — a library the user pointed
+at never goes quietly missing.
 
 From a host, a package is one call (see [Embedding](#embedding)):
 
@@ -622,9 +715,12 @@ env.register_package("bloom", [("menu", MENU_SRC)])?; // from memory
 env.packages();                                       // what is available
 ```
 
-There is no registry, no fetching, no dependency resolution and no version
-solving. A manifest records a library's identity; making it reachable is
-still a matter of `-I`, `PETAL_PATH`, or a host call.
+An in-memory package may carry its manifest: a source named `petal.toml`
+among the modules is the manifest, not a module, and gives the package its
+version and `[requires]`.
+
+There is no registry and no fetching yet: `path` dependencies resolve, `git`
+ones wait for the package manager.
 
 ## Shipping a library
 
@@ -652,6 +748,10 @@ env.add_package("core-runtime/bloom")?;              // a whole petal.toml libra
 env.register_package("bloom", modules)?;           // the same, from in-memory sources
 env.packages();                                    // every registered package
 env.verify_interface(&["ui", "game"])?;            // registered natives == what these packages declare
+env.provides("game", "0.2.0")?;                    // this host provides the interface `game`
+env.provides_package("game")?;                     // the same, at the registered package's manifest version
+env.project_of(&path)?;                            // the package whose petal.toml is nearest above a file
+env.project_dependencies(&path);                   // that manifest's [dependencies], as they resolve
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
 env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
 env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
@@ -686,8 +786,29 @@ env.register_package("game", [("game", include_str!("../packages/game/game.ptl")
 Register the natives first: registering a package gives the natives already
 registered the parameter names it declares, so `spawn(kind: "ball", …)` binds
 by name. Keep the package in a directory with a `petal.toml` beside the Rust
-code, and the stock CLI checks the host's scripts with
-`petal check -I <that directory>` and no knowledge of the host.
+code. A project whose manifest lists it as a path dependency
+(`game = { path = "../host/packages/game" }`) is then checked by the stock
+CLI and the language server with no flag and no knowledge of the host;
+`petal check -I <that directory>` does the same for a loose script.
+
+**Say what you provide.** A package that needs the host says so in its
+manifest (`[requires] game = ">=0.2"`), and the host announces the interface
+where it registers the natives:
+
+```rust
+env.register_package("game", [
+    ("game", include_str!("../packages/game/game.ptl")),
+    ("petal.toml", include_str!("../packages/game/petal.toml")),
+])?;
+env.provides_package("game")?;       // at the version in that petal.toml
+// or: env.provides("game", "0.2.0")?;
+```
+
+The interface version is the interface package's version.
+`petal_ui::register_all` provides `ui`; a host that registers petal-ui's
+pieces itself calls `petal_ui::provide_interface(env)` once it has registered
+all of them. A host that registers only part of an interface (the input half,
+for `import ui/input`) does not provide it.
 
 | Host | Package | Where it lives |
 | --- | --- | --- |

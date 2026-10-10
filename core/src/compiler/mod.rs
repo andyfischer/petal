@@ -549,6 +549,7 @@ impl Compiler {
             stmts: stmts.to_vec(),
             imports: Vec::new(),
             file_id: ENTRY_FILE,
+            requires: Vec::new(),
         };
         self.compile_modules(&[entry], program_id, native_fns)
             .expect("import-free compilation cannot fail")
@@ -773,6 +774,18 @@ impl Compiler {
             introspect: Default::default(),
             native_links,
             method_natives: Some(std::mem::take(&mut self.method_natives)),
+            requires: {
+                let mut requires: Vec<crate::package::RequiredInterface> = Vec::new();
+                for r in modules.iter().flat_map(|m| &m.requires) {
+                    if !requires.contains(r) {
+                        requires.push(r.clone());
+                    }
+                }
+                requires.sort_by(|a, b| {
+                    (&a.interface, &a.package).cmp(&(&b.interface, &b.package))
+                });
+                requires
+            },
             imports: crate::program::ImportTable {
                 exports: self.module_exports,
                 files: modules

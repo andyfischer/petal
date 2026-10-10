@@ -28,6 +28,7 @@ pub fn register_all(env: &mut Env) {
     // provider attached it answers a pending value.
     petal_ui::host_data::register_host_data(env);
     petal_ui::register_prelude(env);
+    petal_ui::provide_interface(env);
     crate::sound::register_natives(env);
     // The browser natives read the bound example list; `launch_script`
     // pushes a request the host drains; the file natives reach the
@@ -53,8 +54,16 @@ pub fn register_all(env: &mut Env) {
     // The interface package that declares this host's own natives: a script
     // reaches them with `import sdl`, as it reaches petal-ui's with
     // `import ui`.
-    env.register_package(SDL_PACKAGE, [(SDL_PACKAGE, SDL_INTERFACE)])
-        .expect("the sdl interface package registers");
+    env.register_package(
+        SDL_PACKAGE,
+        [
+            (SDL_PACKAGE, SDL_INTERFACE),
+            (petal::package::MANIFEST_FILE, SDL_MANIFEST),
+        ],
+    )
+    .expect("the sdl interface package registers");
+    env.provides_package(SDL_PACKAGE)
+        .expect("the sdl interface has a version");
 }
 
 /// The interface package of this host: `import sdl`.
@@ -62,6 +71,8 @@ pub const SDL_PACKAGE: &str = "sdl";
 
 /// Its source: the `native fn` declarations of every petal-sdl native.
 pub const SDL_INTERFACE: &str = include_str!("../packages/sdl/sdl.ptl");
+/// Its manifest: the version there is the version of the `sdl` interface.
+pub const SDL_MANIFEST: &str = include_str!("../packages/sdl/petal.toml");
 
 /// The interface packages a petal-sdl env answers for — what
 /// [`Env::verify_interface`] is given.
@@ -284,6 +295,18 @@ mod tests {
         if let Err(mismatch) = env.verify_interface(INTERFACE_PACKAGES) {
             panic!("petal-sdl's natives and its interface packages disagree: {mismatch}");
         }
+    }
+
+    /// The runner provides the interfaces it registers, at the versions of
+    /// their packages, so a package that requires `ui` (bloom) or `sdl` loads.
+    #[test]
+    fn the_runner_provides_ui_and_sdl() {
+        let mut env = Env::new();
+        register_all(&mut env);
+        assert_eq!(env.provided_version("sdl").as_deref(), Some("0.1.0"));
+        assert!(env.provided_version("ui").is_some());
+        env.load_program("import ui\nimport bloom\nprint(1)\n")
+            .expect("bloom requires ui, which petal-sdl provides");
     }
 
     /// A script reaches this host's own natives through `import sdl`, and

@@ -1,0 +1,9 @@
+# The fantasy-nes carts. The manifest lets every tool resolve `import nes`
+# (the console's interface package, ../prelude) with no -I flag; the console
+# registers the package in memory.
+[package]
+name = "carts"
+version = "0.1.0"
+
+[dependencies]
+nes = { path = "../prelude" }

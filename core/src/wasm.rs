@@ -25,6 +25,7 @@ const CLICKED_ID_BINDING: &str = "clicked_id";
 /// check scripts against it (`petal check -I core/packages`).
 pub const WEB_PACKAGE: &str = "web";
 const WEB_INTERFACE: &str = include_str!("../packages/web/src/web.ptl");
+const WEB_MANIFEST: &str = include_str!("../packages/web/petal.toml");
 
 // ---------------------------------------------------------------------------
 // Native functions — element tree
@@ -73,8 +74,18 @@ impl PetalRuntime {
         );
 
         // The interface package that declares them: scripts `import web`.
-        env.register_package(WEB_PACKAGE, [(WEB_PACKAGE, WEB_INTERFACE)])
-            .expect("the web interface package registers");
+        // Its manifest rides along, so the interface is provided at the
+        // package's version.
+        env.register_package(
+            WEB_PACKAGE,
+            [
+                (WEB_PACKAGE, WEB_INTERFACE),
+                (crate::package::MANIFEST_FILE, WEB_MANIFEST),
+            ],
+        )
+        .expect("the web interface package registers");
+        env.provides_package(WEB_PACKAGE)
+            .expect("the web interface has a version");
 
         PetalRuntime {
             env,
@@ -130,6 +141,24 @@ impl PetalRuntime {
             Ok(()) => String::new(),
             Err(mismatch) => mismatch.to_string(),
         }
+    }
+
+    /// Announce that this runtime provides the host interface `name` at
+    /// `version` (`"0.4.0"`). A package whose `petal.toml` says
+    /// `[requires] name = ">=…"` loads only in a runtime that provides it.
+    /// Call it where the natives of that interface are registered.
+    pub fn provides(&mut self, name: &str, version: &str) -> Result<(), JsValue> {
+        self.env
+            .provides(name, version)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// The interfaces this runtime provides, as a JSON object of name to
+    /// version. Always includes `core`.
+    pub fn provided_interfaces(&self) -> String {
+        let map: std::collections::BTreeMap<String, String> =
+            self.env.provided_interfaces().into_iter().collect();
+        serde_json::to_string(&map).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Compile-only mode: programs loaded afterwards are checked but not

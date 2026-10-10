@@ -94,7 +94,14 @@ pub struct Env {
     ambient_package_errors: Vec<crate::error::LoadError>,
     /// Compile without linking; see [`Env::set_check_only`].
     check_only: bool,
+    /// The host interfaces this `Env` provides, by name; see
+    /// [`Env::provides`].
+    provided: std::collections::BTreeMap<String, crate::package::Version>,
 }
+
+/// The interface every `Env` provides: the builtins, at the version of this
+/// crate. A package that needs a newer core says `[requires] core = ">=x.y"`.
+pub const CORE_INTERFACE: &str = crate::bundled::CORE_PACKAGE;
 
 /// How a host's registered natives and its interface packages disagree; see
 /// [`Env::verify_interface`].
@@ -204,7 +211,114 @@ impl Env {
             package_errors: Vec::new(),
             ambient_package_errors,
             check_only: false,
+            provided: [(
+                CORE_INTERFACE.to_string(),
+                crate::package::Version::parse(env!("CARGO_PKG_VERSION"))
+                    .expect("the crate version is a version"),
+            )]
+            .into_iter()
+            .collect(),
         }
+    }
+
+    /// Announce that this host provides the interface `name` at `version`
+    /// (`"0.4.0"`): it registers the natives the interface package of that
+    /// name declares. A package states what it needs in its `petal.toml`
+    /// (`[requires] ui = ">=0.4"`), and loading a program whose packages
+    /// require an interface this `Env` does not provide — or provides at a
+    /// version the requirement rejects — is a load error before any line
+    /// runs. Call it where the host registers the natives; announcing a name
+    /// again replaces its version.
+    ///
+    /// Errors when `version` is not a dotted number (`1`, `0.4`, `1.2.3`).
+    pub fn provides(&mut self, name: &str, version: &str) -> Result<(), String> {
+        let parsed = crate::package::Version::parse(version).ok_or_else(|| {
+            format!("'{version}' is not a version (expected digits and dots, like 0.4.0)")
+        })?;
+        self.provided.insert(name.to_string(), parsed);
+        Ok(())
+    }
+
+    /// [`provides`](Self::provides) for an interface package this host has
+    /// registered ([`register_package`](Self::register_package) with its
+    /// `petal.toml` among the sources, or [`add_package`](Self::add_package)):
+    /// the interface is announced under the package's name at the version its
+    /// manifest gives, so the two cannot drift apart. Errors when no such
+    /// package is registered or its manifest has no (numeric) version.
+    pub fn provides_package(&mut self, name: &str) -> Result<(), String> {
+        let version = self
+            .modules
+            .packages()
+            .into_iter()
+            .find(|p| p.info.name == name)
+            .ok_or_else(|| format!("no package named '{name}' is registered"))?
+            .info
+            .version
+            .clone()
+            .ok_or_else(|| {
+                format!(
+                    "package '{name}' has no version to provide — register its petal.toml \
+                     with it (a source named \"petal.toml\"), or call provides(name, version)"
+                )
+            })?;
+        self.provides(name, &version)
+    }
+
+    /// The interfaces this `Env` provides, `(name, version)`, sorted by name.
+    /// Always includes `core`.
+    pub fn provided_interfaces(&self) -> Vec<(String, String)> {
+        self.provided
+            .iter()
+            .map(|(name, version)| (name.clone(), version.to_string()))
+            .collect()
+    }
+
+    /// The version of the interface `name` this `Env` provides, if any.
+    pub fn provided_version(&self, name: &str) -> Option<String> {
+        self.provided.get(name).map(|v| v.to_string())
+    }
+
+    /// Check `program`'s required host interfaces
+    /// ([`Program::requires`](crate::program::Program::requires)) against
+    /// what this `Env` [provides](Self::provides). Every compile that is not
+    /// [check-only](Self::set_check_only) runs this, before linking.
+    pub fn check_requires(&self, program: &Program) -> Result<(), crate::error::LoadError> {
+        let mut problems: Vec<String> = Vec::new();
+        for req in &program.requires {
+            match self.provided.get(&req.interface) {
+                None => problems.push(format!(
+                    "package '{}' requires the host interface `{}` {}, which this host does \
+                     not provide",
+                    req.package, req.interface, req.version
+                )),
+                Some(have) if !req.version.matches(have) => problems.push(format!(
+                    "package '{}' requires the host interface `{}` {}, and this host provides \
+                     `{}` {have}",
+                    req.package, req.interface, req.version, req.interface
+                )),
+                Some(_) => {}
+            }
+        }
+        if problems.is_empty() {
+            return Ok(());
+        }
+        let ui_hint = if program
+            .requires
+            .iter()
+            .any(|r| r.interface == "ui" && !self.provided.contains_key("ui"))
+        {
+            crate::native_decl::UI_RUNNER_HINT
+        } else {
+            ""
+        };
+        Err(crate::error::LoadError::message(
+            crate::error::Phase::Link,
+            format!(
+                "{} — the program cannot run here; run it with a host that provides {}{ui_hint}",
+                problems.join("; "),
+                if problems.len() == 1 { "it" } else { "them" }
+            ),
+        ))
     }
 
     /// Compile without linking: a program may declare (`native fn`) natives
@@ -591,6 +705,38 @@ impl Env {
             .collect()
     }
 
+    /// The project the file at `file` belongs to — the package whose
+    /// `petal.toml` is nearest at or above it — or `None` when there is no
+    /// manifest above the file. `Err` when that manifest does not load.
+    pub fn project_of(
+        &self,
+        file: &std::path::Path,
+    ) -> Result<Option<crate::package::PackageInfo>, String> {
+        use crate::module::ModuleResolver;
+        self.modules.begin_load(Some(file));
+        Ok(self.modules.package_of_file(file)?.map(|p| p.info.clone()))
+    }
+
+    /// The `[dependencies]` of the project the file at `file` belongs to, as
+    /// they resolve: `(import name, the package or why it does not load)`.
+    pub fn project_dependencies(
+        &self,
+        file: &std::path::Path,
+    ) -> Vec<(String, Result<crate::package::PackageInfo, String>)> {
+        use crate::module::ModuleResolver;
+        self.modules.begin_load(Some(file));
+        self.modules
+            .project_dependencies(file)
+            .into_iter()
+            .map(|(name, pkg)| (name, pkg.map(|p| p.info.clone())))
+            .collect()
+    }
+
+    /// The packages compiled into the binary, in bundling order.
+    pub fn bundled_packages() -> Vec<crate::package::PackageInfo> {
+        crate::module::bundled_package_infos()
+    }
+
     /// Manifests that failed to load during the best-effort package discovery
     /// of [`add_module_path`](Self::add_module_path).
     pub fn package_errors(&self) -> &[crate::error::LoadError] {
@@ -621,11 +767,11 @@ impl Env {
         use crate::module::{Importer, ModuleOrigin, ModuleResolver};
         let origin = ModuleOrigin::File(importer.to_path_buf());
         let importer_name = self.modules.module_name_of_file(importer);
+        self.modules.begin_load(Some(importer));
         let importer = Importer {
             name: importer_name.as_deref(),
             origin: Some(&origin),
         };
-        self.modules.begin_load();
         match self.modules.resolve(name, &importer).ok()?.origin {
             ModuleOrigin::File(path) => Some(path),
             ModuleOrigin::Memory => None,
@@ -649,8 +795,8 @@ impl Env {
     ) -> Result<String, String> {
         use crate::module::{Importer, ModuleOrigin, ModuleResolver};
         let origin = ModuleOrigin::File(importer.to_path_buf());
+        self.modules.begin_load(Some(importer));
         let importer_name = self.modules.module_name_of_file(importer);
-        self.modules.begin_load();
         let found = self.modules.resolve(
             path,
             &Importer {
@@ -674,9 +820,20 @@ impl Env {
         &self,
         path: &str,
     ) -> Result<(Vec<String>, Vec<String>), crate::error::LoadError> {
+        self.exports_and_modules_of_at(path, None)
+    }
+
+    /// [`exports_and_modules_of`](Self::exports_and_modules_of) as the file
+    /// at `importer` would see it: a `[dependencies]` entry of that file's
+    /// project resolves.
+    pub fn exports_and_modules_of_at(
+        &self,
+        path: &str,
+        importer: Option<&std::path::Path>,
+    ) -> Result<(Vec<String>, Vec<String>), crate::error::LoadError> {
         let modules = crate::module::load_modules(
             &format!("import {path}\n"),
-            None,
+            importer,
             &self.modules,
             &[],
         )?;
@@ -701,6 +858,26 @@ impl Env {
         self.modules.importable_paths()
     }
 
+    /// [`importable_paths`](Self::importable_paths) for the file at `file`:
+    /// the `[dependencies]` of its project (the nearest `petal.toml` above
+    /// it) that resolve are importable too, under their manifest keys.
+    pub fn importable_paths_at(&self, file: &std::path::Path) -> Vec<String> {
+        let mut paths = self.importable_paths();
+        for (name, package) in self.project_dependencies(file) {
+            let Ok(package) = package else { continue };
+            // The manifest's package of this name replaces any other.
+            paths.retain(|p| p.split('/').next() != Some(name.as_str()));
+            if package.modules.iter().any(|m| *m == package.name) {
+                paths.push(name);
+            } else {
+                paths.extend(package.modules.iter().map(|m| format!("{name}/{m}")));
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        paths
+    }
+
     /// Resolve imports and compile: the shared back half of
     /// [`load_program`](Self::load_program) / [`compile_program`](Self::compile_program).
     /// `origin` is the entry source's file path when it has one — the anchor
@@ -720,6 +897,7 @@ impl Env {
         )?;
         let program = Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
         if !self.check_only {
+            self.check_requires(&program)?;
             self.link_program(&program)?;
         }
         Ok(program)

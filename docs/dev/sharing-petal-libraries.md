@@ -228,8 +228,12 @@ Two details worth knowing, both of which bloom leans on:
   its `src/`. Everything in the repo that drove bloom with
   `-I core-runtime/bloom/src` says `-I core-runtime` now.
 
-Deliberately absent: registry, fetching, dependency resolution, lockfile,
-version constraints. `version` is metadata. See
+The manifest has since grown `[dependencies]` (path, git and registry forms;
+the key is the import name) and `[requires]` (the host interfaces a package
+needs, checked against `Env::provides` at load), and every tool finds the
+nearest manifest by walking up from the file. bloom's manifest now says what
+was only implied: it depends on `text_layout` and requires `ui`. Still absent:
+fetching git dependencies, a lockfile, a registry. See
 [module-system.md](../module-system.md#packages).
 
 ### 6. Overload sets do not merge across modules — fixed, with two edges

@@ -30,9 +30,12 @@ Error: import statements must appear before any other statement
 
 A qualifier is only usable through `.`: writing `hud` on its own
 (`let x = hud`, `print(hud)`) is an error suggesting `hud.<name>` or a
-selective import — unless the module exports a name spelled like itself
-(`import noise` where `noise` exports `fn noise`), in which case the bare
-name is that export and `noise.fbm(…)` still reaches the module's others.
+selective import — unless the name is also a value: the module exports a
+name spelled like itself (`import noise` where `noise` exports `fn noise`),
+or a builtin is called that. Then the bare name is the value, and
+`noise.fbm(…)` still reaches the module's exports. A declaration of the
+file's own (`let noise = …`, a parameter called `noise`) takes the name
+back entirely, as shadowing always does.
 
 `import m: *` used to be the spelling of "every export, bare". The plain
 form means that now, and the star form is an error that says so; [`petal

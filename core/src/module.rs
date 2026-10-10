@@ -1948,6 +1948,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_qualifier_spelled_like_a_builtin_still_reaches_its_module() {
+        // `noise` is a builtin; a module of that name that exports no `noise`
+        // leaves the bare name to the builtin and the qualifier to itself.
+        let modules = [("noise", "pub fn fbm(x)\n  \"fbm\"\nend")];
+        assert_eq!(
+            run(&modules, &[], "import noise\nprint(noise.fbm(1))\nprint(type(noise(0.5, 0.5)))"),
+            vec!["fbm", "float"]
+        );
+        // A binding of the file's own takes the name back, as ever.
+        assert_eq!(
+            run(&modules, &[], "import noise\nlet noise = {fbm: 3}\nprint(noise.fbm)"),
+            vec!["3"]
+        );
+        assert_eq!(
+            run(
+                &modules,
+                &[],
+                "import noise\nfn f(noise)\n  noise.fbm\nend\nprint(f({fbm: 4}))\nprint(noise.fbm(1))",
+            ),
+            vec!["4", "fbm"]
+        );
+    }
+
     // ---- relative paths and canonical identity --------------------------
 
     #[test]

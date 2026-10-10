@@ -532,15 +532,16 @@ impl Compiler {
         };
         let module = self.module_aliases.get(name)?.clone();
         let qualified = format!("{module}::{member}");
-        // A term binding (local, param, capture, builtin) shadows the alias:
-        // `ui` is then an ordinary value and `.member` is field access. The
-        // exception is a binding the file's *imports* made — `import noise`
-        // binds both the qualifier `noise` and, bare, the function `noise`
-        // the module exports — where the module member wins when there is
-        // one, and the value is what is left otherwise.
+        // A binding of the file's own (a local, a parameter, a declaration)
+        // shadows the qualifier: `ui` is then an ordinary value and `.member`
+        // is field access. A value the name had *before* the file declared
+        // anything does not — a builtin called `noise` beside `import
+        // ./noise`, or the function `noise` that `import noise` itself binds
+        // bare. There the module's member wins when it has one, and the value
+        // is what is left otherwise.
         if let Some(bound) = self.scope_lookup(name) {
-            let from_import = self.import_bound.get(name) == Some(&bound);
-            if !from_import || self.scope_lookup(&qualified).is_none() {
+            let unshadowed = self.alias_floor.get(name) == Some(&Some(bound));
+            if !unshadowed || self.scope_lookup(&qualified).is_none() {
                 return None;
             }
         }

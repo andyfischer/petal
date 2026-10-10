@@ -379,9 +379,11 @@ pub struct Compiler {
     // Names of the file being compiled whose plain import hides a core/std
     // name. An entry is dropped once warned about.
     prelude_shadows: HashMap<String, PreludeShadow>,
-    // What the imports of the file being compiled bound each bare name to.
-    // A name still bound to this term has not been shadowed by the file.
-    import_bound: HashMap<String, TermId>,
+    // For each qualifier an explicit import of the file being compiled
+    // bound: what the same name meant as a *value* once the imports were in
+    // (a builtin, an export spelled like its module, nothing). While the name
+    // still means that, the file has not shadowed the qualifier.
+    pub(super) alias_floor: HashMap<String, Option<TermId>>,
 }
 
 /// A bare name two plain imports both offer, with nothing to choose between
@@ -523,7 +525,7 @@ impl Compiler {
             ambiguous_imports: HashMap::new(),
             merged_imports: HashMap::new(),
             prelude_shadows: HashMap::new(),
-            import_bound: HashMap::new(),
+            alias_floor: HashMap::new(),
         }
     }
 
@@ -822,7 +824,7 @@ impl Compiler {
         self.explicit_aliases.clear();
         self.merged_imports.clear();
         self.prelude_shadows.clear();
-        self.import_bound.clear();
+        self.alias_floor.clear();
         for diag in native_errors
             .into_iter()
             .chain(native::misplaced_native_decls(&stmts))
@@ -1050,7 +1052,6 @@ impl Compiler {
                         Some(set) => {
                             self.merged_imports.insert(set, (name.clone(), modules));
                             self.scope_bind(name.clone(), set);
-                            self.import_bound.insert(name.clone(), set);
                             continue;
                         }
                         None => {
@@ -1079,7 +1080,6 @@ impl Compiler {
                                 },
                             );
                             self.scope_bind(name.clone(), marker);
-                            self.import_bound.insert(name.clone(), marker);
                             continue;
                         }
                     }
@@ -1087,7 +1087,6 @@ impl Compiler {
             };
             self.bind_imported_name(&owner, &name, tid);
             if let Some(bound) = self.scope_lookup(&name) {
-                self.import_bound.insert(name.clone(), bound);
                 // A plain import that takes a core/std name away is worth a
                 // word where the file uses it — unless it is the same thing,
                 // or a first-party package doing it on purpose.
@@ -1175,15 +1174,22 @@ impl Compiler {
                 }
                 self.bind_imported_name(m, name, tid);
                 self.prelude_shadows.remove(name);
-                if let Some(bound) = self.scope_lookup(name) {
-                    self.import_bound.insert(name.clone(), bound);
-                }
                 selective.insert(name.clone(), m.clone());
                 if import.decl.exported {
                     self.reexported_names.insert(name.clone());
                 }
             }
         }
+
+        // What each qualifier's own name means now, before the file declares
+        // anything: `q.member` is the module's member for as long as the
+        // file has not rebound `q` (see `try_module_member`).
+        let floors: Vec<(String, Option<TermId>)> = self
+            .explicit_aliases
+            .iter()
+            .map(|alias| (alias.clone(), self.scope_lookup(alias)))
+            .collect();
+        self.alias_floor.extend(floors);
         Ok(())
     }
 

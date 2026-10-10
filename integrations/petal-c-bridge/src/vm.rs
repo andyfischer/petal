@@ -78,7 +78,6 @@ impl CStrList {
 /// directly through its `pub` methods instead of the C entry points.
 pub struct Vm {
     env: Env,
-    implicit_imports: Vec<String>,
     loaded: Option<Loaded>,
     /// Set by a failed `load_file` or a failed reload of a file-loaded
     /// program, cleared by the next successful one: while it is set, it is
@@ -104,6 +103,8 @@ pub struct Vm {
     /// what the measured runs added.
     profile_memo_start: Option<petal::memo::MemoStats>,
     package_name: CString,
+    /// The last `pb_vm_verify_interface` report.
+    interface_report: CString,
 }
 
 /// The allocation behind `pb_vm*`. The busy flag lives outside the
@@ -121,7 +122,8 @@ impl Default for Vm {
 }
 
 impl Vm {
-    /// A VM with the petal-ui natives registered and `ui` implicitly imported.
+    /// A VM with the petal-ui natives and the `ui` package registered; a
+    /// script reaches them with `import ui`.
     pub fn new() -> Vm {
         let mut env = Env::new();
         // Scripts print through take_output; the host decides where it goes.
@@ -129,7 +131,6 @@ impl Vm {
         petal_ui::register_all(&mut env);
         Vm {
             env,
-            implicit_imports: vec![petal_ui::MODULE_NAME.to_string()],
             loaded: None,
             broken: None,
             input: InputState::new(),
@@ -146,6 +147,7 @@ impl Vm {
             profile_report: CString::default(),
             profile_memo_start: None,
             package_name: CString::default(),
+            interface_report: CString::default(),
         }
     }
 
@@ -703,18 +705,93 @@ pub unsafe extern "C" fn pb_vm_add_package(
     })
 }
 
+/// Register a package from memory: `count` modules, `names[i]` the module's
+/// package-relative name and `sources[i]` its source.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn pb_vm_add_implicit_import(
+pub unsafe extern "C" fn pb_vm_register_package(
     vm: *mut VmHandle,
-    module: *const c_char,
+    name: *const c_char,
+    names: *const *const c_char,
+    sources: *const *const c_char,
+    count: usize,
 ) -> Status {
     status(vm, |vm| {
-        let module = unsafe { arg_str(module, "module_name") }?;
-        if !vm.implicit_imports.iter().any(|m| m == module) {
-            vm.implicit_imports.push(module.to_string());
+        let name = unsafe { arg_str(name, "name") }?;
+        if count > 0 && (names.is_null() || sources.is_null()) {
+            return Err(BridgeError::invalid("module_names or sources is NULL"));
         }
-        let names: Vec<&str> = vm.implicit_imports.iter().map(String::as_str).collect();
-        vm.env.set_implicit_imports(&names);
+        let mut modules = Vec::with_capacity(count);
+        for i in 0..count {
+            // SAFETY: the caller passes `count` entries in each array.
+            let (module, source) = unsafe { (*names.add(i), *sources.add(i)) };
+            modules.push((
+                unsafe { arg_str(module, "module_names[i]") }?,
+                unsafe { arg_str(source, "sources[i]") }?,
+            ));
+        }
+        vm.env.register_package(name, modules).map_err(|e| {
+            let mut err = BridgeError::from_load(&e, name);
+            err.code = Status::InvalidArg;
+            err
+        })?;
+        Ok(())
+    })
+}
+
+/// Check the VM's registered natives against the interface packages that
+/// declare them (`Env::verify_interface`). `*out_report` receives an empty
+/// string when they agree, else what differs.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_verify_interface(
+    vm: *mut VmHandle,
+    packages: *const *const c_char,
+    count: usize,
+    out_report: *mut *const c_char,
+) -> Status {
+    status(vm, |vm| {
+        if count > 0 && packages.is_null() {
+            return Err(BridgeError::invalid("packages is NULL"));
+        }
+        let mut names = Vec::with_capacity(count);
+        for i in 0..count {
+            // SAFETY: the caller passes `count` entries.
+            names.push(unsafe { arg_str(*packages.add(i), "packages[i]") }?);
+        }
+        let result = vm.env.verify_interface(&names);
+        let report = result.as_ref().err().map(|m| m.to_string()).unwrap_or_default();
+        vm.interface_report = cstring_lossy(&report);
+        put(out_report, vm.interface_report.as_ptr());
+        match result {
+            Ok(()) => Ok(()),
+            Err(_) => Err(BridgeError::new(Status::NotFound, report)),
+        }
+    })
+}
+
+/// Check-only mode: programs loaded afterwards compile without being linked
+/// against the VM's natives.
+#[unsafe(no_mangle)]
+pub extern "C" fn pb_vm_set_check_only(vm: *mut VmHandle, on: bool) -> Status {
+    status(vm, |vm| {
+        vm.env.set_check_only(on);
+        Ok(())
+    })
+}
+
+/// Where `import ./x` resolves for a program loaded from a string (NULL:
+/// against registered modules only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_set_inline_import_dir(
+    vm: *mut VmHandle,
+    dir: *const c_char,
+) -> Status {
+    status(vm, |vm| {
+        let dir = if dir.is_null() {
+            None
+        } else {
+            Some(PathBuf::from(unsafe { arg_str(dir, "dir") }?))
+        };
+        vm.env.set_inline_import_dir(dir);
         Ok(())
     })
 }
@@ -1613,7 +1690,7 @@ mod tests {
         let cb = HostCallback::new("add_base", 0, add_one, ud, Some(free_i64));
         natives::register_callback(&mut vm.env, cb);
         vm.load(
-            "push_output(symbol(\"out\"), add_base(5))\n",
+            "native fn add_base(n)\npush_output(symbol(\"out\"), add_base(5))\n",
             None,
             "t".into(),
         )
@@ -1621,7 +1698,7 @@ mod tests {
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![105]);
         // A reload keeps the same closure (and userdata).
-        vm.reload_with("push_output(symbol(\"out\"), add_base(7))\n")
+        vm.reload_with("native fn add_base(n)\npush_output(symbol(\"out\"), add_base(7))\n")
             .unwrap();
         vm.run().unwrap();
         assert_eq!(out_ints(&mut vm), vec![107]);
@@ -1850,7 +1927,7 @@ pub config let LOOK = {step: 10, fog: 0.5}
         .unwrap();
         let mut vm = Vm::new();
         vm.load(
-            "push_output(symbol(\"out\"), if key_pressed(\"space\") then 1 else 0 end)\n\
+            "import ui; push_output(symbol(\"out\"), if key_pressed(\"space\") then 1 else 0 end)\n\
              push_output(symbol(\"out\"), mouse_x())\n",
             None,
             "t".into(),

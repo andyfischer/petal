@@ -6,7 +6,22 @@
 
 #include <cstdio>
 
+// The host's interface package: a declaration for each native it registers.
+// A script reaches a native only through a declaration, so this is what
+// `import hello` binds — and what `petal check` reads when the same source
+// sits in a package directory on its search path.
+static const char* kInterface = R"petal(
+// Gravity at a frame, in m/s².
+pub native fn gravity_at(frame: num) -> float
+
+// Push `spawn(kind, props)` into the host's "scene" buffer.
+pub native fn spawn(kind: string, props: record)
+)petal";
+
 static const char* kScript = R"petal(
+import ui
+import hello
+
 state frames = 0
 frames += 1
 
@@ -28,6 +43,12 @@ int main() {
             call.result().value(-9.81 * call[0].number());
         });
         vm.emitter("spawn", "scene");
+        // Natives first, then the package that declares them.
+        vm.register_package("hello", {{"hello", kInterface}});
+        if (std::string drift = vm.verify_interface({"ui", "hello"}); !drift.empty()) {
+            std::fprintf(stderr, "interface drift: %s\n", drift.c_str());
+            return 1;
+        }
         vm.load_source(kScript, "hello.ptl");
         vm.set_dimensions(640, 480);
 

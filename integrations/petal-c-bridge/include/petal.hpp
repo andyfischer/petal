@@ -476,8 +476,37 @@ public:
         check(pb_vm_add_package(vm_, root.c_str(), &name));
         return name ? name : "";
     }
-    void add_implicit_import(const std::string& module) {
-        check(pb_vm_add_implicit_import(vm_, module.c_str()));
+    // Register a package from memory: {package-relative module name, source}
+    // pairs. An interface package (one that declares `native fn`s) goes in
+    // after the natives it declares.
+    void register_package(const std::string& name,
+                          const std::vector<std::pair<std::string, std::string>>& modules) {
+        std::vector<const char*> names, sources;
+        names.reserve(modules.size());
+        sources.reserve(modules.size());
+        for (const auto& m : modules) {
+            names.push_back(m.first.c_str());
+            sources.push_back(m.second.c_str());
+        }
+        check(pb_vm_register_package(vm_, name.c_str(), names.data(), sources.data(),
+                                     modules.size()));
+    }
+    // "" when the VM's natives and the named interface packages agree, else
+    // what differs. Does not throw on a mismatch.
+    std::string verify_interface(const std::vector<std::string>& packages) {
+        std::vector<const char*> names;
+        names.reserve(packages.size());
+        for (const auto& p : packages) names.push_back(p.c_str());
+        const char* report = nullptr;
+        pb_status st = pb_vm_verify_interface(vm_, names.data(), names.size(), &report);
+        if (st != PB_OK && st != PB_ERR_NOT_FOUND) check(st);
+        return report ? report : "";
+    }
+    void set_check_only(bool on) { check(pb_vm_set_check_only(vm_, on)); }
+    // Where `import ./x` resolves for a program loaded from a string; "" for
+    // registered modules only.
+    void set_inline_import_dir(const std::string& dir) {
+        check(pb_vm_set_inline_import_dir(vm_, dir.empty() ? nullptr : dir.c_str()));
     }
 
     // ── Host natives (register before the load that uses them) ──

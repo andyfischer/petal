@@ -18,7 +18,16 @@ int main(void) {
     pb_vm* vm = pb_vm_create();
     REQUIRE(vm != NULL);
     REQUIRE(pb_vm_register_emitter(vm, "note", "notes", NULL) == PB_OK);
-    REQUIRE(pb_vm_load_source(vm, "note(\"hi\", {n: 2})\nprint(\"from c\")", "smoke.ptl") == PB_OK);
+    /* The host's interface package declares its natives; scripts import it.
+     * Registered from memory here; pb_vm_add_package takes a directory. */
+    const char* const names[] = {"host"};
+    const char* const sources[] = {"pub native fn note(...args)\n"};
+    REQUIRE(pb_vm_register_package(vm, "host", names, sources, 1) == PB_OK);
+    const char* const answers_for[] = {"ui", "host"};
+    const char* report = NULL;
+    REQUIRE(pb_vm_verify_interface(vm, answers_for, 2, &report) == PB_OK);
+    REQUIRE(report != NULL && report[0] == '\0');
+    REQUIRE(pb_vm_load_source(vm, "import host\nnote(\"hi\", {n: 2})\nprint(\"from c\")", "smoke.ptl") == PB_OK);
     REQUIRE(pb_vm_run(vm) == PB_OK);
 
     pb_values notes;
@@ -42,7 +51,7 @@ int main(void) {
 
     /* Native vec3s cross the boundary as PB_VEC3 in both directions. */
     REQUIRE(pb_vm_set_vec3(vm, "v", 1.0, 2.0, 3.0) == PB_OK);
-    REQUIRE(pb_vm_load_source(vm, "note(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);
+    REQUIRE(pb_vm_load_source(vm, "import host\nnote(binding(symbol(\"v\")) * 2)", "vec3.ptl") == PB_OK);
     REQUIRE(pb_vm_run(vm) == PB_OK);
     REQUIRE(pb_vm_drain(vm, "notes", &notes) == PB_OK);
     REQUIRE(notes.count == 1);

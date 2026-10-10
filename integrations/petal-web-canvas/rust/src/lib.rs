@@ -66,7 +66,7 @@ impl PetalRuntime {
         let mut env = Env::new();
         // The standard petal-ui set: input natives, the 2D draw vocabulary,
         // offscreen canvas ops, the `host_data` pull channel, and the `ui`
-        // prelude as an implicit import.
+        // package, which a script reaches with `import ui`.
         petal_ui::input::register_input(&mut env);
         petal_ui::draw::register_draw(&mut env);
         petal_ui::draw::register_canvas(&mut env);
@@ -95,6 +95,43 @@ impl PetalRuntime {
         bind_time(&mut self.env, self.time);
         bind_dimensions(&mut self.env, self.width, self.height);
         bind_input(&mut self.env, &self.input);
+    }
+
+    /// Register an in-memory module: later programs can `import name`.
+    pub fn register_module(&mut self, name: &str, source: &str) {
+        self.env.register_module(name, source);
+    }
+
+    /// Register a whole package from memory. `modules_json` is a JSON object
+    /// of package-relative module name (`menu`, `ui/menu`) to source text —
+    /// the form `petal bundle` emits. The page has no filesystem, so this is
+    /// how a library (or a host's own interface package) reaches a script.
+    pub fn register_package(&mut self, name: &str, modules_json: &str) -> Result<(), JsValue> {
+        let modules: std::collections::BTreeMap<String, String> = serde_json::from_str(modules_json)
+            .map_err(|e| {
+                JsValue::from_str(&format!(
+                    "register_package: expected a JSON object of module name to source: {e}"
+                ))
+            })?;
+        self.env
+            .register_package(name, modules.iter())
+            .map(|_| ())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Check this runtime's registered natives against its interface
+    /// packages (comma-separated; `"ui"` for the stock runtime). Returns an
+    /// empty string when they agree, else what differs.
+    pub fn verify_interface(&self, packages: &str) -> String {
+        let list: Vec<&str> = packages
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        match self.env.verify_interface(&list) {
+            Ok(()) => String::new(),
+            Err(mismatch) => mismatch.to_string(),
+        }
     }
 
     pub fn load_program(&mut self, source: &str) -> Result<u32, JsValue> {

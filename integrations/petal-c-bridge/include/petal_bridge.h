@@ -209,8 +209,9 @@ void pb_builder_end_enum(pb_builder* b);
 
 /* ─── VM lifecycle and modules ────────────────────────────────────────── */
 
-/* A new VM with the petal-ui natives registered and the `ui` prelude as an
- * implicit import. Never returns NULL except on allocation failure/panic.
+/* A new VM with the petal-ui natives and the `ui` package registered. Nothing
+ * is imported implicitly: a script that uses them starts with `import ui`.
+ * Never returns NULL except on allocation failure/panic.
  * Script print() output is captured (read it with pb_vm_take_output) and not
  * echoed to stdout; see pb_vm_set_echo. */
 pb_vm* pb_vm_create(void);
@@ -226,8 +227,35 @@ pb_status pb_vm_register_module(pb_vm* vm, const char* name, const char* source)
 /* Register a package directory (containing petal.toml), e.g. ".../core-runtime/bloom".
  * On success, `*out_name` (optional) receives the package name, valid until the next call. */
 pb_status pb_vm_add_package(pb_vm* vm, const char* root, const char** out_name);
-/* Add a module to the implicit-import list (initially just "ui"). Affects later loads. */
-pb_status pb_vm_add_implicit_import(pb_vm* vm, const char* module_name);
+/* Register a package from memory — for a host with no filesystem, or one that
+ * compiles its interface in. `module_names[i]` is package-relative ("menu",
+ * "ui/menu"; a ".ptl" suffix is stripped) and `sources[i]` its source; the
+ * module named like the package is the one `import name` loads. This is the
+ * form `petal bundle` emits. A registration here wins over a package of the
+ * same name on the search path or bundled in the runtime.
+ *
+ * A package whose modules declare natives (`native fn`) is an *interface
+ * package*: it is how a script reaches this host's natives (`import name`),
+ * and registering it gives the natives registered so far the parameter names
+ * it declares. Register natives first, then the package. */
+pb_status pb_vm_register_package(pb_vm* vm, const char* name, const char* const* module_names,
+                                 const char* const* sources, size_t count);
+/* A host's drift check: every native the named packages declare is
+ * registered in this VM, and every native registered beyond the builtins is
+ * declared by one of them. Name every interface package the host answers for
+ * in one call (a pb_vm_create VM answers for "ui" plus the host's own).
+ * PB_OK when they agree; PB_ERR_NOT_FOUND otherwise, with the differences in the
+ * error message and in `*out_report` (optional, valid until the next call;
+ * "" on success). */
+pb_status pb_vm_verify_interface(pb_vm* vm, const char* const* packages, size_t count,
+                                 const char** out_report);
+/* Check-only mode: programs loaded afterwards are compiled but not linked
+ * against this VM's natives, so a script written for another host can be
+ * checked here. Default: off. */
+pb_status pb_vm_set_check_only(pb_vm* vm, bool on);
+/* Where `import ./x` resolves for a program loaded from a string
+ * (pb_vm_load_source): a directory, or NULL for registered modules only. */
+pb_status pb_vm_set_inline_import_dir(pb_vm* vm, const char* dir);
 
 /* ─── Host natives ────────────────────────────────────────────────────── */
 

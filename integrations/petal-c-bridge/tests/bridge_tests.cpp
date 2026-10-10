@@ -239,7 +239,7 @@ TEST(vec3_is_native_both_ways) {
     });
     vm.set_vec3("sun", 0.5, -1, 0.25);
     vm.load_source(
-        "let out = symbol(\"out\")\n"
+        "native fn host_up(...args)\nlet out = symbol(\"out\")\n"
         "let sun = binding(symbol(\"sun\"))\n"
         "push_output(out, sun)\n"
         "push_output(out, sun + vec3(1, 1, 1))\n"               // operators work: it is a real vec3
@@ -395,7 +395,7 @@ TEST(host_callback_returns_values) {
     });
     vm.native("nothing", [](petal::Call&) {});
     vm.load_source(
-        "let out = symbol(\"out\")\n"
+        "native fn host_add(...args); native fn raycast(...args); native fn names(...args); native fn nothing()\nlet out = symbol(\"out\")\n"
         "push_output(out, host_add(2, 3.5))\n"
         "let hit = raycast({x: 1, y: 10, z: 0}, {x: 0, y: -1, z: 0.5}, 50)\n"
         "push_output(out, hit.dist)\n"
@@ -424,7 +424,7 @@ TEST(host_callback_returns_values) {
 TEST(host_callback_errors_fail_the_run) {
     petal::Vm vm;
     vm.native("explode", [](petal::Call&) { throw std::runtime_error("kaboom from C++"); });
-    vm.load_source("state n = 0\nn += 1\nexplode()\n");
+    vm.load_source("native fn explode()\nstate n = 0\nn += 1\nexplode()\n");
     petal::Error e = CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
     CHECK(std::string(e.what()).find("kaboom from C++") != std::string::npos);
     CHECK_EQ(e.phase(), std::string("runtime"));
@@ -437,7 +437,7 @@ TEST(natives_are_per_vm) {
     a.native("who", [](petal::Call& c) { c.result().value("a"); });
     b.native("filler", [](petal::Call&) {});  // b registers more natives than a
     b.native("who", [](petal::Call& c) { c.result().value("b"); });
-    const char* src = "push_output(symbol(\"out\"), who())\n";
+    const char* src = "native fn who()\npush_output(symbol(\"out\"), who())\n";
     a.load_source(src);
     b.load_source(src);
     a.run();
@@ -468,7 +468,7 @@ TEST(reentrant_calls_are_rejected) {
     pb_status inner = PB_OK;
     pb_vm* raw = vm.raw();
     vm.native("sneaky", [&](petal::Call&) { inner = pb_vm_run(raw); });
-    vm.load_source("sneaky()\n");
+    vm.load_source("native fn sneaky()\nsneaky()\n");
     vm.run();
     CHECK_EQ(inner, PB_ERR_REENTRANT);
 }
@@ -479,7 +479,7 @@ TEST(emitters_push_tagged_commands) {
     vm.emitter("light", "scene", "point_light");
     vm.emitter("sfx", "audio");
     vm.load_source(
-        "let r = spawn(\"cube\", {x: 1, y: 2, z: 3}, 0.5)\n"
+        "native fn spawn(...args); native fn light(...args); native fn sfx(...args)\nlet r = spawn(\"cube\", {x: 1, y: 2, z: 3}, 0.5)\n"
         "light({x: 0, y: 5, z: 0}, #ffcc00, 2.0)\n"
         "sfx(\"jump\")\n"
         "spawn(\"sphere\")\n"
@@ -512,7 +512,7 @@ TEST(many_natives_register) {
         else vm.native("c" + std::to_string(i), [i](petal::Call& c) { c.result().value(i); });
     }
     vm.load_source(
-        "e2999(1)\n"
+        "native fn e2999(...args); native fn c0(); native fn c2998()\ne2999(1)\n"
         "push_output(symbol(\"out\"), c0() + c2998())\n");
     vm.run();
     CHECK_EQ(vm.drain("buf").size(), size_t(1));
@@ -535,10 +535,10 @@ TEST(native_userdata_outlives_reload) {
         };
         auto fr = [](void* ud) { ++freed; delete static_cast<int*>(ud); };
         CHECK_EQ(pb_vm_register_native(vm, "answer", cb, new int(42), fr, PB_FX_PURE), PB_OK);
-        CHECK_EQ(pb_vm_load_source(vm, "push_output(symbol(\"out\"), answer())\n", nullptr), PB_OK);
+        CHECK_EQ(pb_vm_load_source(vm, "native fn answer()\npush_output(symbol(\"out\"), answer())\n", nullptr), PB_OK);
         CHECK_EQ(pb_vm_run(vm), PB_OK);
         pb_reload_result r;
-        CHECK_EQ(pb_vm_reload_source(vm, "push_output(symbol(\"out\"), answer() + 1)\n", &r), PB_OK);
+        CHECK_EQ(pb_vm_reload_source(vm, "native fn answer()\npush_output(symbol(\"out\"), answer() + 1)\n", &r), PB_OK);
         CHECK_EQ(pb_vm_run(vm), PB_OK);
         pb_values out;
         CHECK_EQ(pb_vm_drain(vm, "out", &out), PB_OK);
@@ -565,7 +565,7 @@ TEST(native_takes_named_arguments_once_declared) {
     CHECK_EQ(pb_vm_declare_native_params(vm, "nope", "a"), PB_ERR_INVALID_ARG);
     CHECK_EQ(pb_vm_declare_native_params(vm, "sub", "a?, b"), PB_ERR_INVALID_ARG);
     CHECK_EQ(pb_vm_load_source(vm,
-                               "push_output(symbol(\"out\"), sub(b: 1, a: 10))\n"
+                               "native fn sub(...args)\npush_output(symbol(\"out\"), sub(b: 1, a: 10))\n"
                                "push_output(symbol(\"out\"), sub(10, c: 5, b: 1))\n",
                                nullptr),
              PB_OK);
@@ -631,7 +631,7 @@ TEST(ui_draw_follows_mouse) {
     petal::Vm vm;
     vm.set_dimensions(800, 600);
     vm.load_source(
-        "clear(10, 20, 30)\n"
+        "import ui\nclear(10, 20, 30)\n"
         "draw_rect(mouse_x(), mouse_y(), 20, 30, 255, 0, 0)\n"
         "draw_rect_rounded(1, 2, 3, 4, 5, 6, 7, 8, 128)\n"
         "draw_line(0, 0, screen_width(), screen_height(), 1, 2, 3)\n"
@@ -694,10 +694,11 @@ TEST(ui_draw_follows_mouse) {
 }
 
 TEST(ui_prelude_widgets_draw) {
-    // The `ui` prelude is an implicit import: button() works with no import.
+    // The `ui` package is registered: `import ui` brings in button().
     petal::Vm vm;
     vm.set_dimensions(400, 300);
     vm.load_source(
+        "import ui\n"
         "state clicks = 0\n"
         "if button({x: 10, y: 10, w: 100, h: 30}, \"Press\") then clicks += 1 end\n");
     vm.begin_frame(0.016, 0, 0);
@@ -721,7 +722,7 @@ TEST(ui_prelude_widgets_draw) {
 TEST(ui_keyboard_and_relative_mouse) {
     petal::Vm vm;
     vm.load_source(
-        "let out = symbol(\"out\")\n"
+        "import ui\nlet out = symbol(\"out\")\n"
         "push_output(out, if key_down(\"space\") then 1 else 0 end)\n"
         "push_output(out, if key_pressed(\"w\") then 1 else 0 end)\n"
         "push_output(out, mouse_dx())\n"
@@ -781,6 +782,8 @@ TEST(ui_draw_full_vocabulary) {
     vm.emitter("draw_sprite", "draw_commands", "sprite");
     vm.set_text_metrics(0.5);
     vm.load_source(
+        "import ui\n"
+        "native fn draw_sprite(...args)\n"
         "draw_rect_outline(1, 2, 3, 4, 10, 20, 30, 200, 3)\n"
         "draw_rect_gradient({x: 0, y: 0, w: 50, h: 10}, #ff0000, #0000ff, 0.5)\n"
         "draw_circle_gradient(5, 6, 7, 1, 2, 3, 255, 4, 5, 6, 0)\n"
@@ -839,7 +842,7 @@ TEST(text_advance_table_measures_per_glyph) {
     advances[97] = 0.2;
     advances[98] = 1.0;
     vm.set_text_advances(advances);
-    vm.load_source("push_output(symbol(\"out\"), text_width(\"abc\", 10))\n");
+    vm.load_source("import ui\npush_output(symbol(\"out\"), text_width(\"abc\", 10))\n");
     CHECK_EQ(run_out(vm), std::vector<double>{2.0 + 10.0 + 5.0});
     // An empty table is uniform again.
     vm.set_text_advances({});
@@ -905,18 +908,62 @@ TEST(runtime_errors_are_reported) {
     CHECK_EQ(run_out(vm), std::vector<double>{3});
 }
 
-// ─── Modules, packages, implicit imports ───────────────────────────────────
+// ─── Modules, packages, host interfaces ─────────────────────────────────────
 
-TEST(registered_modules_and_implicit_imports) {
+TEST(registered_modules_are_reached_by_import) {
     petal::Vm vm;
     vm.register_module("engine", "pub fn twice(x)\n  x * 2\nend\n");
-    vm.add_implicit_import("engine");
     vm.register_module("util", "pub fn inc(x)\n  x + 1\nend\n");
     vm.load_source(
+        "import ui\n"
+        "import engine\n"
         "import util\n"
         "push_output(symbol(\"out\"), twice(util.inc(20)))\n"
-        "draw_rect(1, 2, 3, 4, 5, 6, 7)\n");  // `ui` natives still present
+        "draw_rect(1, 2, 3, 4, 5, 6, 7)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{42});
+
+    // Nothing is imported implicitly: without the import the name is unknown.
+    vm.load_source("push_output(symbol(\"out\"), twice(1))\n");
+    CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
+}
+
+TEST(a_package_registers_from_memory) {
+    petal::Vm vm;
+    vm.register_package("kit", {
+        {"kit", "pub import ./shapes\npub fn two()\n  2\nend\n"},
+        {"shapes", "pub fn area(w, h)\n  w * h\nend\n"},
+    });
+    vm.load_source(
+        "import kit\n"
+        "import kit/shapes as s\n"
+        "push_output(symbol(\"out\"), area(two(), 3) + s.area(1, 1))\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{7});
+    // A name that is not an identifier is refused.
+    CHECK_THROWS_CODE(vm.register_package("not a name", {}), PB_ERR_INVALID_ARG);
+}
+
+TEST(a_host_interface_package_declares_its_natives) {
+    petal::Vm vm;
+    vm.native("gravity_at", [](petal::Call& call) { call.result().value(-10.0 * call[0].number()); });
+    // Registered but not declared: no script can reach it, and the check says so.
+    CHECK(vm.verify_interface({"ui"}).find("gravity_at") != std::string::npos);
+    vm.load_source("push_output(symbol(\"out\"), gravity_at(2))\n");
+    CHECK_THROWS_CODE(vm.run(), PB_ERR_RUNTIME);
+
+    // The interface package declares it; scripts import the package.
+    vm.register_package("game", {{"game", "pub native fn gravity_at(frame: num) -> float\n"}});
+    CHECK_EQ(vm.verify_interface({"ui", "game"}), std::string());
+    vm.load_source("import game\npush_output(symbol(\"out\"), gravity_at(frame: 2))\n");
+    CHECK_EQ(run_out(vm), std::vector<double>{-20});
+
+    // A declared native the host does not register is reported, and a script
+    // that uses it does not load — unless the VM is only checking.
+    vm.register_package("extra", {{"extra", "pub native fn missing_one()\n"}});
+    CHECK(vm.verify_interface({"ui", "game", "extra"}).find("missing_one") != std::string::npos);
+    CHECK_THROWS_CODE(vm.load_source("import extra\nmissing_one()\n"), PB_ERR_COMPILE);
+    vm.set_check_only(true);
+    vm.load_source("import extra\nmissing_one()\n");
+    vm.set_check_only(false);
 }
 
 TEST(packages_register) {
@@ -1178,7 +1225,7 @@ TEST(reload_from_source) {
     vm.native("host_scale", [](petal::Call& c) { c.result().value(c[0].number() * 10); });
     vm.load_source("state n = 1\nn += 1\npush_output(symbol(\"out\"), n)\n");
     CHECK_EQ(run_out(vm), std::vector<double>{2});
-    petal::ReloadResult r = vm.reload_source("state n = 1\nn += 1\npush_output(symbol(\"out\"), host_scale(n))\n");
+    petal::ReloadResult r = vm.reload_source("native fn host_scale(n)\nstate n = 1\nn += 1\npush_output(symbol(\"out\"), host_scale(n))\n");
     CHECK(r.state_preserved >= 1u);
     CHECK_EQ(r.state_dropped, 0u);
     CHECK_EQ(run_out(vm), std::vector<double>{30});
@@ -1345,7 +1392,7 @@ TEST(scenario_drives_the_ui) {
     petal::Vm vm;
     auto [w, h] = *sc.size();
     vm.set_dimensions(w, h);
-    vm.load_source(R"petal(
+    vm.load_source(R"petal(import ui
 state clicks = 0
 state spaces = 0
 state typed = ""
@@ -1376,7 +1423,7 @@ TEST(scenario_monkey_is_deterministic) {
     // Replaying it runs a UI script without error.
     petal::Vm vm;
     vm.set_dimensions(400, 300);
-    vm.load_source(R"petal(
+    vm.load_source(R"petal(import ui
 state n = 0
 if mouse_pressed(0) then n += 1 end
 button({x: 0, y: 0, w: 200, h: 100}, "B")

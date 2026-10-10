@@ -4,6 +4,9 @@
 //
 // Use it from a layout script:   panel("examples/panels/shapes.ptl")
 
+import garden
+import ui
+
 let w = screen_width()
 let h = screen_height()
 

@@ -13,6 +13,8 @@
 //
 // Designed for a 1280x850 panel.
 
+import ui
+
 // ── palette ─────────────────────────────────────────────────────────────────
 let RAIL_BG   = #e7e1d5
 let LIST_BG   = #f1ece2

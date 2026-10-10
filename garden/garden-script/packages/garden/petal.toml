@@ -1,0 +1,9 @@
+# garden — the interface of a Garden panel: the `native fn` declarations of
+# the host channels Garden registers on a panel script, beyond petal-ui's
+# (`import ui`). Panel scripts write `import garden`.
+#
+# Garden registers this package in memory (garden-script/src/panel.rs). The
+# stock CLI finds it by path: `petal check -I garden/garden-script/packages`.
+[package]
+name = "garden"
+version = "0.1.0"

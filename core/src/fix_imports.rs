@@ -58,6 +58,8 @@ pub struct ImportFixer {
     /// Import paths whose exports could not be read while building `index`,
     /// each with the first line of why.
     unreadable: Vec<String>,
+    /// Import path → every module importing it loads, itself included.
+    loads: HashMap<String, HashSet<String>>,
 }
 
 impl ImportFixer {
@@ -80,6 +82,7 @@ impl ImportFixer {
             include_dirs: include_dirs.to_vec(),
             index: None,
             unreadable: Vec::new(),
+            loads: HashMap::new(),
         }
     }
 
@@ -197,7 +200,7 @@ impl ImportFixer {
                 )]);
             }
         };
-        let missing = unresolved_names(&program, &self.env);
+        let missing = unresolved_names(&program);
         if missing.is_empty() {
             return unchanged(Vec::new());
         }
@@ -214,6 +217,9 @@ impl ImportFixer {
         let mut add: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let mut notes = Vec::new();
         let mut unprovided = false;
+        // Names with one provider first: the import one of them adds may be
+        // what a name with several providers is waiting for.
+        let mut contested: Vec<(&String, &[String])> = Vec::new();
         for name in &missing {
             match index.get(name).map(Vec::as_slice) {
                 Some([only]) if !already.contains(only) => {
@@ -221,7 +227,32 @@ impl ImportFixer {
                 }
                 Some([_]) => {}
                 None => unprovided = true,
-                Some(several) => notes.push(format!(
+                Some(several) => contested.push((name, several)),
+            }
+        }
+        for (name, several) in contested {
+            // One of the providers is on its way in already.
+            if several.iter().any(|path| add.contains_key(path)) {
+                continue;
+            }
+            // Several packages export the name, but all the others are built
+            // on one of them (bloom's `button` over ui's): the file had no
+            // import of the others, so the base is the one it meant.
+            let base = several.iter().find(|base| {
+                several.iter().all(|other| {
+                    other == *base
+                        || self
+                            .loads
+                            .get(other)
+                            .is_some_and(|loaded| loaded.contains(*base))
+                })
+            });
+            match base {
+                Some(base) if !already.contains(base) => {
+                    add.entry(base.clone()).or_default().push(name.clone());
+                }
+                Some(_) => {}
+                None => notes.push(format!(
                     "`{name}` is exported by {} — no import added; write the one you mean",
                     several.join(", ")
                 )),
@@ -286,8 +317,11 @@ impl ImportFixer {
         if self.index.is_none() {
             let mut index: HashMap<String, Vec<String>> = HashMap::new();
             for path in self.env.importable_paths() {
-                let exports = match self.env.exports_of(&path) {
-                    Ok(exports) => exports,
+                let exports = match self.env.exports_and_modules_of(&path) {
+                    Ok((exports, loaded)) => {
+                        self.loads.insert(path.clone(), loaded.into_iter().collect());
+                        exports
+                    }
                     Err(e) => {
                         let first = e.to_string().lines().next().unwrap_or_default().to_string();
                         self.unreadable
@@ -308,17 +342,10 @@ impl ImportFixer {
     }
 }
 
-/// The names `program` calls or reads that nothing defines: not a
-/// declaration, not an import, not a native `env` registers or the program
-/// declares.
-pub fn unresolved_names(program: &Program, env: &Env) -> BTreeSet<String> {
-    let declared: HashSet<&str> = program
-        .native_links
-        .iter()
-        .map(|link| link.host.as_str())
-        .collect();
-    let known =
-        |name: &str| env.native_signatures(name).is_some() || declared.contains(name);
+/// The bare names the entry file of `program` calls or reads that nothing
+/// defines: not a declaration, not an import, not a `core`/`std` builtin.
+pub fn unresolved_names(program: &Program) -> BTreeSet<String> {
+    use crate::typecheck::globals::{UNDEFINED_VARIABLE_PREFIX, UNKNOWN_FUNCTION_PREFIX};
     let mut out = BTreeSet::new();
     for term in &program.terms {
         // Only what the file itself wrote: a module's own gaps are that
@@ -330,26 +357,14 @@ pub fn unresolved_names(program: &Program, env: &Env) -> BTreeSet<String> {
         {
             continue;
         }
-        match term.op {
-            TermOp::BuiltinCall(cid) => {
-                if let Some(name) = program.get_string_constant(cid)
-                    && !known(name)
-                {
-                    out.insert(name.to_string());
-                }
-            }
-            TermOp::Error(cid) => {
-                if let Some(rest) = program
-                    .get_string_constant(cid)
-                    .and_then(|m| m.strip_prefix("Undefined variable: "))
-                {
-                    let name = rest.split(' ').next().unwrap_or(rest);
-                    if !known(name) {
-                        out.insert(name.to_string());
-                    }
-                }
-            }
-            _ => {}
+        let TermOp::Error(cid) = term.op else {
+            continue;
+        };
+        if let Some(rest) = program.get_string_constant(cid).and_then(|m| {
+            m.strip_prefix(UNKNOWN_FUNCTION_PREFIX)
+                .or_else(|| m.strip_prefix(UNDEFINED_VARIABLE_PREFIX))
+        }) {
+            out.insert(rest.split(' ').next().unwrap_or(rest).to_string());
         }
     }
     out

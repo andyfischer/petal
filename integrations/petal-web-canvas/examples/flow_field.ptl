@@ -3,6 +3,8 @@
 // motion reads as flowing strands of light. Trails are reset when a particle
 // wraps to a new spot, so a dot never streaks a line across the screen.
 
+import ui
+
 state particles = []
 state field_time = 0.0
 

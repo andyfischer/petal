@@ -435,16 +435,13 @@ fn join_quoted(names: &[String]) -> String {
     }
 }
 
-/// First-party packages whose modules redefine core/std names on purpose
-/// (`ui`'s `clamp`-style helpers, bloom's widgets): every package bundled in
-/// the binary, plus the two that are first-party but not bundled yet.
-const FIRST_PARTY_PACKAGES: &[&str] = &["ui", "bloom"];
-
-/// Is `module` (a canonical module name) part of a first-party package, whose
-/// shadowing of a core/std name is deliberate and not worth a warning?
+/// Is `module` (a canonical module name) part of a package bundled in the
+/// binary (`ui`, `bloom`, …)? Those redefine core/std names on purpose
+/// (`ui`'s `clamp`-style helpers, bloom's widgets), which is not worth a
+/// warning.
 fn deliberately_shadows_prelude(module: &str) -> bool {
     let package = module.split('/').next().unwrap_or(module);
-    FIRST_PARTY_PACKAGES.contains(&package) || crate::bundled::package(package).is_some()
+    crate::bundled::package(package).is_some()
 }
 
 impl Default for Compiler {
@@ -658,8 +655,13 @@ impl Compiler {
         // Push global scope
         self.push_scope(false);
 
-        // Register native functions (including builtins) as phantom terms.
-        // Natives are global: visible in every module scope.
+        // Every registered native gets a phantom term, in registration order
+        // (the phantom indices are part of the IR's shape). Only the ones the
+        // bundled `core` package declares are *bound*: those are the builtins
+        // in scope everywhere. A host's native is reachable only through a
+        // `native fn` declaration in scope, which binds its name to the
+        // phantom made here (`bind_native_decl`).
+        let core = crate::native_decl::core_host_names();
         for i in 0..native_fns.count() {
             let name = native_fns
                 .get_name(crate::native_fn::NativeFnId(i as u32))
@@ -667,7 +669,9 @@ impl Compiler {
             let tid = self.emit_phantom_term(name.clone());
             self.builtin_phantoms.insert(name.clone(), tid);
             self.native_terms.insert(tid, name.clone());
-            self.scope_bind(name, tid);
+            if core.contains(&name) {
+                self.scope_bind(name, tid);
+            }
         }
 
         for module in modules {

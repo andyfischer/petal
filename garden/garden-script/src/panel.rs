@@ -2864,7 +2864,22 @@ fn register_panel_natives(env: &mut Env) {
     // Petal's pending values (a future upstream `petal-query`), see [`crate::query`].
     query::register_query(env);
     petal_ui::register_prelude(env);
+    // The interface package that declares the Garden natives above: a panel
+    // reaches them with `import garden`, as it reaches petal-ui's with
+    // `import ui`.
+    env.register_package(GARDEN_PACKAGE, [(GARDEN_PACKAGE, GARDEN_INTERFACE)])
+        .expect("the garden interface package registers");
 }
+
+/// The interface package of a Garden panel: `import garden`.
+pub const GARDEN_PACKAGE: &str = "garden";
+
+/// Its source: the `native fn` declarations of every Garden panel native.
+pub const GARDEN_INTERFACE: &str = include_str!("../packages/garden/garden.ptl");
+
+/// The interface packages a panel env answers for — what
+/// [`Env::verify_interface`] is given.
+pub const PANEL_INTERFACE_PACKAGES: &[&str] = &[petal_ui::MODULE_NAME, GARDEN_PACKAGE];
 
 /// Bind the current host [`PanelTheme`] into the env as the record
 /// `panel_theme()` returns: `{ key: { r, g, b, a }, … }`, each channel an int

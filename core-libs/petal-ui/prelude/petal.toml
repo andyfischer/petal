@@ -1,0 +1,11 @@
+# ui — the petal-ui interface: the `native fn` declarations of every native a
+# petal-ui host registers, plus the widget prelude written in Petal over them.
+# Scripts write `import ui`.
+#
+# petal-ui registers this package in memory (`petal_ui::register_prelude`), and
+# the petal binary bundles the same files (core/build.rs) so `petal check`
+# resolves `import ui` with no host present. Running a script that imports it
+# needs a host that registers the natives.
+[package]
+name = "ui"
+version = "0.1.0"

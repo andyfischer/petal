@@ -1,2 +1,4 @@
+import garden_config
+
 // headless-size: 1040x720
 layout(panel("app.ptl"))

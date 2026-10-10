@@ -17,7 +17,8 @@
 //! use petal_ui::harness::Headless;
 //!
 //! let mut ui = Headless::new(
-//!     "state hits = 0\n\
+//!     "import ui\n\
+//!      state hits = 0\n\
 //!      if clicked({x: 10, y: 10, w: 80, h: 24}) then hits = hits + 1 end",
 //! )
 //! .unwrap();
@@ -83,13 +84,36 @@ impl DerefMut for Headless {
 
 impl Headless {
     /// Compile `source` in a fresh `Env` with the standard input + draw
-    /// natives and the `ui` prelude module (implicit import), sized 800×600.
+    /// natives and the `ui` package (the script writes `import ui`), sized 800×600.
     pub fn new(source: &str) -> Result<Self, String> {
         Self::with_size(source, 800, 600)
     }
 
     pub fn with_size(source: &str, width: i32, height: i32) -> Result<Self, String> {
-        Self::build(source, None, width, height, &[])
+        Self::build(source, None, width, height, &[], false)
+    }
+
+    /// [`new`](Self::new) for a script body that leaves out its `import ui`:
+    /// the import is written in front of it, on the body's first line, so the
+    /// line numbers in an error are the body's own. What nearly every test of
+    /// the prelude wants.
+    pub fn with_ui(body: &str) -> Result<Self, String> {
+        Self::new(&format!("import ui; {body}"))
+    }
+
+    /// Load a Garden panel script: [`from_file_with_paths`](Self::from_file_with_paths)
+    /// in an `Env` that also registers the Garden panel stubs and the
+    /// `garden` interface package ([`crate::panel_stubs`]) — before the
+    /// script loads, because loading links the natives it uses.
+    pub fn panel_from_file_with_paths(
+        path: &std::path::Path,
+        width: i32,
+        height: i32,
+        module_paths: &[std::path::PathBuf],
+    ) -> Result<Self, String> {
+        let source =
+            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        Self::build(&source, Some(path), width, height, module_paths, true)
     }
 
     /// Load a script from a file at an explicit drawable size. Imports resolve
@@ -116,7 +140,7 @@ impl Headless {
     ) -> Result<Self, String> {
         let source =
             std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Self::build(&source, Some(path), width, height, module_paths)
+        Self::build(&source, Some(path), width, height, module_paths, false)
     }
 
     fn build(
@@ -125,9 +149,13 @@ impl Headless {
         width: i32,
         height: i32,
         module_paths: &[std::path::PathBuf],
+        panel_stubs: bool,
     ) -> Result<Self, String> {
         let mut env = Env::new();
         crate::register_all(&mut env);
+        if panel_stubs {
+            crate::panel_stubs::register_panel_stubs(&mut env);
+        }
         input::bind_dimensions(&mut env, width, height);
         input::bind_frame_info(&mut env, 0.0, 0);
         if let Some(dir) = origin.and_then(|p| p.parent())

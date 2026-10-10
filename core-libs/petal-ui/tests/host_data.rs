@@ -12,7 +12,7 @@ fn host_data_without_a_provider_answers_nil() {
     // A script that pulls host data still runs under a host that attaches none.
     let src = "state got_nil = 0\n\
                if host_data(\"anything\", \"x\") == nil then got_nil = 1 end";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
     ui.frame().unwrap();
     assert_eq!(ui.state_int("got_nil"), Some(1));
 }
@@ -21,7 +21,7 @@ fn host_data_without_a_provider_answers_nil() {
 fn host_data_provider_receives_kind_and_arg_and_returns_a_value_tree() {
     let calls = Rc::new(RefCell::new(Vec::new()));
     let seen = calls.clone();
-    let mut ui = Headless::new(
+    let mut ui = Headless::with_ui(
         "state title = \"\"\n\
          state n = 0\n\
          state tags = 0\n\
@@ -66,7 +66,7 @@ fn host_data_provider_receives_kind_and_arg_and_returns_a_value_tree() {
 fn host_data_answers_vary_by_arg_for_lazy_fetch() {
     // The lazy-data pattern: same kind, different arg → different answer, so a
     // script can bake an index and fetch one item's detail on demand.
-    let mut ui = Headless::new(
+    let mut ui = Headless::with_ui(
         "state a = 0\n\
          state b = 0\n\
          state flag = 0\n\
@@ -96,7 +96,7 @@ fn host_data_floats_arrive_as_floats_not_rounded_ints() {
     // survive the crossing: a host answering with a ratio must not hand the
     // script a 0. Scripts scale by these (meters, progress bars, gauges), so a
     // truncation here reads as "the value was zero", not "the value was coarse".
-    let mut ui = Headless::new(
+    let mut ui = Headless::with_ui(
         "state fill = 0\n\
          state scaled = 0\n\
          state whole = 0\n\
@@ -121,7 +121,7 @@ fn host_data_floats_arrive_as_floats_not_rounded_ints() {
 fn provider_survives_across_frames_so_it_can_cache() {
     // The harness swaps the provider back out after each run, so its FnMut state
     // (a cache, a counter) persists — proving the swap round-trips ownership.
-    let mut ui = Headless::new("state count = 0\ncount = host_data(\"tick\", \"\")").unwrap();
+    let mut ui = Headless::with_ui("state count = 0\ncount = host_data(\"tick\", \"\")").unwrap();
     let mut calls = 0i64;
     ui.set_data_provider(Box::new(move |_kind, _arg| {
         calls += 1;

@@ -65,7 +65,7 @@ pub mod host_data;
 pub mod input;
 pub mod panel_stubs;
 mod params;
-pub use params::interface;
+pub use params::{interface, raw_declarations, script_for};
 pub mod pending;
 pub mod scenario;
 pub mod tess;
@@ -149,23 +149,43 @@ pub fn prelude_source() -> &'static str {
     include_str!("../prelude/ui.ptl")
 }
 
-/// Register the `ui` Petal module and make it an implicit import, so scripts
-/// call `button(...)`, `clicked(...)`, `list_update(...)` with zero ceremony
-/// (implicit bindings are weak — a script's own declarations shadow them, and
-/// an explicit `import ui` is a no-op).
-///
-/// Hosts with their own implicit imports should instead call
-/// `env.register_module(petal_ui::MODULE_NAME, petal_ui::prelude_source())`
-/// and compose `set_implicit_imports` themselves — it replaces the whole
-/// list.
-pub fn register_prelude(env: &mut petal::env::Env) {
-    env.register_module(MODULE_NAME, prelude_source());
-    env.set_implicit_imports(&[MODULE_NAME]);
+/// Name of the input half of the interface: `import ui/input`.
+pub const INPUT_MODULE_NAME: &str = "ui/input";
+
+/// The Petal source of the `ui/input` module: the declarations of the input,
+/// timing and frame natives, which `ui` re-exports.
+pub fn input_source() -> &'static str {
+    include_str!("../prelude/input.ptl")
 }
 
+/// Every module of the `ui` package, as `(package-relative name, source)` —
+/// what [`petal::env::Env::register_package`] takes.
+pub fn package_modules() -> [(&'static str, &'static str); 2] {
+    [("input", input_source()), (MODULE_NAME, prelude_source())]
+}
+
+/// Register the `ui` interface package in memory: the `native fn`
+/// declarations of every petal-ui native plus the widget prelude written in
+/// Petal over them. A script reaches all of it with `import ui` — there is
+/// no implicit import — and a host that registers only the input natives has
+/// its scripts write `import ui/input`. Registering also gives the petal-ui natives already
+/// registered in `env` their declared parameter names, so call this after
+/// the `register_*` functions (as [`register_all`] does).
+///
+/// The `petal` binary bundles the same source, so `petal check` resolves
+/// `import ui` with no host; this registration takes precedence over it.
+pub fn register_prelude(env: &mut petal::env::Env) {
+    env.register_package(MODULE_NAME, package_modules())
+        .expect("the ui package registers");
+}
+
+/// The interface packages a host built on [`register_all`] answers for —
+/// what it passes to [`petal::env::Env::verify_interface`], together with
+/// the packages declaring its own natives.
+pub const INTERFACE_PACKAGES: &[&str] = &[MODULE_NAME];
+
 /// Register everything a typical host wants in one call: the input natives,
-/// the draw natives (canvas ops included), and the `ui` module as an implicit
-/// import.
+/// the draw natives (canvas ops included), and the `ui` package (`import ui`).
 pub fn register_all(env: &mut petal::env::Env) {
     input::register_input(env);
     draw::register_draw(env);

@@ -163,7 +163,7 @@ mod tests {
     fn without_a_provider_the_clipboard_is_in_memory() {
         set_clipboard_provider(None);
         set_clipboard_text("staged");
-        let mut ui = Headless::new(SRC).unwrap();
+        let mut ui = Headless::with_ui(SRC).unwrap();
         ui.frame().unwrap();
         assert_eq!(ui.state_string("seen").as_deref(), Some("staged"));
         // Frame 2 writes; the write lands after the run, so frame 3 reads it.
@@ -185,7 +185,7 @@ mod tests {
             }),
             set: Box::new(move |t| *s.borrow_mut() = t.to_string()),
         }));
-        let mut ui = Headless::new(SRC).unwrap();
+        let mut ui = Headless::with_ui(SRC).unwrap();
         ui.frames(3).unwrap();
         assert_eq!(*held.borrow(), "caf\u{e9} \u{65e5}\u{672c}", "the write reached the host");
         assert_eq!(*reads.borrow(), 0, "no paste key, so the host was never asked");

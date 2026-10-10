@@ -11,6 +11,8 @@
 //   mouse           live-tune parameters (a = mouse_x, b = mouse_y)
 //   space           toggle live-tune mode
 
+import ui
+
 state preset = 0
 state mouse_tune = false
 state seed_x = 0.1

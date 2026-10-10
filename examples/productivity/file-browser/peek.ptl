@@ -8,6 +8,7 @@
 
 import text_layout as tl
 import ./icons as ic
+import ui
 
 fn frac(h: int, salt: int) -> float
   ((h / salt) % 1000) / 1000.0

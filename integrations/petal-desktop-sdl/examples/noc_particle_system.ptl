@@ -2,6 +2,8 @@
 // Inspired by Chapter 4: Particle Systems
 // Multiple emitters with different behaviors: fountain, fire, snow
 
+import ui
+
 state fountain = []
 state fire = []
 state snow = []

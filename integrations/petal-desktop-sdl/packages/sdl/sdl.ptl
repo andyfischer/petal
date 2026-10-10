@@ -1,0 +1,24 @@
+// The petal-desktop-sdl host interface (src/native_fns.rs, src/sound.rs).
+
+// ── The example browser ──────────────────────────────────────────────────
+
+pub native fn example_count() -> int
+pub native fn example_name(index: int) -> string
+pub native fn example_path(index: int) -> string
+
+// Ask the host to launch the script at `path`.
+pub native fn launch_script(path: string)
+
+// ── Sandboxed file I/O ───────────────────────────────────────────────────
+
+pub native fn load_text_file(path: string)
+pub native fn save_text_file(path: string, content: string)
+pub native fn file_exists(path: string) -> bool
+
+// ── Sound ────────────────────────────────────────────────────────────────
+
+// Play a named effect. `opts` takes the playback options and a variant.
+pub native fn sfx(name, opts?)
+
+// Synthesize and play a sound from a parameter record.
+pub native fn synth(params)

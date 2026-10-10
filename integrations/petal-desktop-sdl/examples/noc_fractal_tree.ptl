@@ -2,6 +2,8 @@
 // Inspired by Chapter 8: Fractals
 // A recursive tree that sways in the wind
 
+import ui
+
 state branches = []
 state leaves = []
 state wind_angle = 0.0

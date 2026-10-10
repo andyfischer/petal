@@ -17,6 +17,8 @@
 import text_layout
 import ./mailbox as mb
 import ./icons
+import ui
+import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
 // A dark rail against light paper: navigation recedes, mail reads like print.

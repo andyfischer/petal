@@ -6,7 +6,7 @@ use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 
 fn cmds(source: &str) -> Vec<DrawCommand> {
-    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.frame().unwrap().to_vec()
 }
 
@@ -243,7 +243,7 @@ fn a_backdrop_blur_snapshots_the_rect_and_draws_it_back_in_place() {
 
 #[test]
 fn canvas_ids_and_the_target_reset_every_frame() {
-    let mut ui = Headless::new(
+    let mut ui = Headless::with_ui(
         "let c = create_canvas(4, 4)\n\
          draw_to(c)\n\
          draw_rect(0, 0, 1, 1, 0, 0, 0)",

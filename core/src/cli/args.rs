@@ -276,15 +276,10 @@ fn parse_run_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `bench --fn <name> [--fn <name>]... [--iters N] [--host core] [--seed <n>]
+/// `bench --fn <name> [--fn <name>]... [--iters N] [--seed <n>]
 /// [--json] <file>` — measure what a call of each named function costs.
-///
-/// `--host` is accepted for symmetry with the checking commands, but `bench`
-/// runs the script the way `run` does, and this binary provides the core host
-/// only: any other value is refused here rather than failing later with an
-/// unknown native.
 fn parse_bench_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal bench --fn <name> [--fn <name>]... [--iters <n>] [--host core] \
+    let usage = "Usage: petal bench --fn <name> [--fn <name>]... [--iters <n>] \
                  [--seed <n>] [--json] <file>";
     let mut o = super::BenchOpts::default();
     let source = parse_source_args(args, usage, |args, i| {
@@ -304,18 +299,6 @@ fn parse_bench_args(args: &[String]) -> CliArgs {
                 }
             }
             "--seed" => o.seed = Some(parse_seed(take(args, i, "Expected a number after --seed"))),
-            "--host" => {
-                let host = parse_host(take(args, i, HOST_EXPECTED));
-                if host != crate::typecheck::globals::HostProfile::Core {
-                    eprintln!(
-                        "petal bench runs a script the way 'petal run' does, which provides \
-                         the core host only; '--host {}' scripts need their host's own runner \
-                         (for a petal-ui panel: bench_panel, see docs/dev/performance.md)",
-                        host.name()
-                    );
-                    process::exit(1);
-                }
-            }
             _ => return false,
         }
         true
@@ -457,7 +440,7 @@ fn parse_packages_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `suggest [--only <kinds>] [--apply | --verify] [--host <h>] [--json]
+/// `suggest [--only <kinds>] [--apply | --verify] [--json]
 /// [--from <file>]... <file>` — suggest safe refactors. `--from` is
 /// repeatable: each names another entry point to compile for its call sites,
 /// which is how a library module (whose own compile has no callers) learns
@@ -467,7 +450,7 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
     let source = parse_source_args(
         args,
         "Usage: petal suggest [--only types|named-args|return-types|advice] [--apply | --verify] \
-         [--host core|ui|garden|garden-config|sdl] [--json] [--from <file>]... <file>  |  \
+         [--json] [--from <file>]... <file>  |  \
          petal suggest -e <code>",
         |args, i| {
             match args[*i].as_str() {
@@ -492,7 +475,6 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
                         process::exit(1);
                     });
                 }
-                "--host" => opts.host = parse_host(take(args, i, HOST_EXPECTED)),
                 _ => return false,
             }
             true
@@ -507,7 +489,7 @@ fn parse_suggest_args(args: &[String]) -> CliArgs {
 }
 
 /// `apply-change <operation> <file> [--target <path>] [--from <file>]...
-/// [--dry-run] [--host <h>]` — a refactor that changes behaviour. The first
+/// [--dry-run]` — a refactor that changes behaviour. The first
 /// bare word is the operation and the second the file; which flags an
 /// operation needs is its own business (`handle_apply_change`).
 fn parse_apply_change_args(args: &[String]) -> CliArgs {
@@ -526,7 +508,6 @@ fn parse_apply_change_args(args: &[String]) -> CliArgs {
                     "--from needs a file path",
                 )));
             }
-            "--host" => opts.host = parse_host(take(args, &mut i, HOST_EXPECTED)),
             flag if flag.starts_with("--") => {
                 eprintln!("Unknown option '{flag}'. See 'petal help apply-change'.");
                 process::exit(1);
@@ -546,19 +527,6 @@ fn parse_apply_change_args(args: &[String]) -> CliArgs {
         source: SourceInput::Inline(String::new()),
         include_dirs: Vec::new(),
     }
-}
-
-/// What `--host` takes, for the message when it is missing or unknown.
-const HOST_EXPECTED: &str = "Expected 'core', 'ui', 'garden', 'garden-config' or 'sdl' after --host";
-
-/// Parse a `--host` value, or exit naming the ones there are.
-fn parse_host(name: &str) -> crate::typecheck::globals::HostProfile {
-    crate::typecheck::globals::HostProfile::from_name(name).unwrap_or_else(|| {
-        eprintln!(
-            "Unknown --host '{name}' (expected 'core', 'ui', 'garden', 'garden-config' or 'sdl')"
-        );
-        process::exit(1);
-    })
 }
 
 /// Split a `--flag=a,b` / `--flag a,b` list value.
@@ -710,21 +678,19 @@ fn parse_lint_args(args: &[String]) -> CliArgs {
     }
 }
 
-/// `ir-equal [--json] [--named-args [--host <h>]] <a.ptl> <b.ptl>` — the
+/// `ir-equal [--json] [--named-args] <a.ptl> <b.ptl>` — the
 /// two-file IR comparison. The first path is the original (its spans are what
 /// diffs point at), the second the rewritten side.
 fn parse_ir_equal_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal ir-equal [--json] [--named-args [--host <host>]] <a.ptl> <b.ptl>";
+    let usage = "Usage: petal ir-equal [--json] [--named-args] <a.ptl> <b.ptl>";
     let mut json = false;
     let mut named_args = false;
-    let mut host = crate::typecheck::globals::HostProfile::default();
     let mut paths: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--json" => json = true,
             "--named-args" => named_args = true,
-            "--host" => host = parse_host(take(args, &mut i, HOST_EXPECTED)),
             other if other.starts_with("--") => {
                 eprintln!("Unexpected option '{}'. {}", other, usage);
                 process::exit(1);
@@ -742,7 +708,6 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
             json,
             other: paths[1].clone(),
             named_args,
-            host,
         },
         source: SourceInput::File(paths[0].clone()),
         include_dirs: Vec::new(),
@@ -766,36 +731,15 @@ fn parse_check_args(args: &[String]) -> CliArgs {
     let mut lenient = false;
     let mut ir = false;
     let mut error_format = ErrorFormat::Full;
-    let mut host = crate::typecheck::globals::HostProfile::default();
-    let mut natives: Vec<String> = Vec::new();
     let source = parse_source_args(
         args,
-        "Usage: petal check [--json] [--strict | --lenient] [--ir] [--host core|ui|garden|garden-config|sdl] [--native <names>] [--error-format full|bare] <file>  |  petal check -e <code>",
+        "Usage: petal check [--json] [--strict | --lenient] [--ir] [--error-format full|bare] <file>  |  petal check -e <code>",
         |args, i| {
             match args[*i].as_str() {
                 "--json" => json = true,
                 "--strict" => strict = true,
                 "--lenient" => lenient = true,
                 "--ir" => ir = true,
-                "--host" => {
-                    let name = take(args, i, "Expected 'core', 'ui', 'garden', 'garden-config' or 'sdl' after --host");
-                    host = match crate::typecheck::globals::HostProfile::from_name(name) {
-                        Some(h) => h,
-                        None => {
-                            eprintln!("Unknown --host '{name}' (expected 'core', 'ui', 'garden', 'garden-config' or 'sdl')");
-                            process::exit(2);
-                        }
-                    };
-                }
-                "--native" => {
-                    let list = take(args, i, "Expected a comma-separated list of names after --native");
-                    natives.extend(
-                        list.split(',')
-                            .map(str::trim)
-                            .filter(|n| !n.is_empty())
-                            .map(str::to_string),
-                    );
-                }
                 "--error-format" => {
                     error_format = parse_error_format(take(
                         args,
@@ -816,8 +760,6 @@ fn parse_check_args(args: &[String]) -> CliArgs {
             lenient,
             ir,
             error_format,
-            host,
-            natives,
         },
         source,
         include_dirs: Vec::new(),

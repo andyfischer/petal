@@ -148,19 +148,14 @@ pub enum Command {
         /// `check` exits non-zero only for checker errors.
         strict: bool,
         /// Exit 0 despite checker errors: only a program that fails to
-        /// compile or lower fails. For tools that ask "does it compile?"
-        /// about a script written for a host `--host` cannot name.
+        /// compile or lower fails. For tools that ask only "does it
+        /// compile?".
         lenient: bool,
         /// Load the input as JSON IR (`show-ir --json` output) instead of
         /// source, then check it lowers — same flag as `run --ir`.
         ir: bool,
         /// How errors are printed (`--error-format full|bare`).
         error_format: ErrorFormat,
-        /// The host the script is written for (`--host`), which decides the
-        /// natives a call may name beyond the core builtins.
-        host: crate::typecheck::globals::HostProfile,
-        /// Extra host natives (`--native a,b`), on top of `host`'s.
-        natives: Vec<String>,
     },
     /// `suggest` — suggest safe refactors for a file: type annotations the
     /// program already implies, and named arguments for long positional
@@ -200,9 +195,6 @@ pub enum Command {
         /// argument by name instead of by position, where both provably bind
         /// alike.
         named_args: bool,
-        /// The host both files are written for (`--host`), read only with
-        /// `--named-args`.
-        host: crate::typecheck::globals::HostProfile,
     },
     Explain {
         json: bool,
@@ -272,8 +264,6 @@ pub struct SuggestArgs {
     /// Extra entry points to compile purely for their call sites — a
     /// library module compiled alone has no callers.
     pub from: Vec<PathBuf>,
-    /// The host the script is written for (`--host`).
-    pub host: crate::typecheck::globals::HostProfile,
     /// Which kinds of suggestion to look for (`--only`).
     pub kinds: crate::suggest::Kinds,
 }
@@ -293,8 +283,6 @@ pub struct ApplyChangeArgs {
     pub from: Vec<PathBuf>,
     /// Print the diff and write nothing.
     pub dry_run: bool,
-    /// The host the scripts are written for (`--host`).
-    pub host: crate::typecheck::globals::HostProfile,
 }
 
 /// Every flag `petal lint` accepts.
@@ -590,8 +578,6 @@ pub fn execute(cli: CliArgs) {
             lenient,
             ir,
             error_format,
-            host,
-            natives,
         } => {
             set_error_format(error_format);
             handlers::handle_check(
@@ -599,8 +585,6 @@ pub fn execute(cli: CliArgs) {
                 strict,
                 lenient,
                 ir,
-                host,
-                &natives,
                 &source,
                 &source_input,
                 &include_dirs,
@@ -619,12 +603,11 @@ pub fn execute(cli: CliArgs) {
             json,
             other,
             named_args,
-            host,
         } => {
             handlers::handle_ir_equal(
                 json,
                 &other,
-                named_args.then_some(host),
+                named_args,
                 &source,
                 &source_input,
                 &include_dirs,

@@ -357,6 +357,13 @@ pub fn core_decls() -> &'static NativeDecls {
     })
 }
 
+/// The host natives the bundled `core` package declares: the builtins bound
+/// in every file's scope with no import.
+pub fn core_host_names() -> &'static std::collections::HashSet<String> {
+    static NAMES: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| core_decls().host_names().into_iter().collect())
+}
+
 /// One host native a compiled program needs registered before it can run:
 /// a native some module of the program declares with `native fn` *and* the
 /// program's code refers to — a call or a read anywhere in it, a function
@@ -423,8 +430,19 @@ pub fn missing_natives_message(
             )
         })
         .collect();
+    // `ui` is the one interface the binary knows a runner for: say so, since
+    // `petal check` accepts the script this run refuses.
+    let ui_hint = if by_module
+        .iter()
+        .any(|(module, _)| module.split('/').next() == Some("ui"))
+    {
+        " (`ui` is the petal-ui interface: use a petal-ui runner such as petal-sdl; \
+         `petal run` provides the core builtins only)"
+    } else {
+        ""
+    };
     Some(format!(
-        "{} — the program cannot run here; run it with a host that provides {}",
+        "{} — the program cannot run here; run it with a host that provides {}{ui_hint}",
         parts.join("; "),
         if by_module.iter().map(|(_, n)| n.len()).sum::<usize>() == 1 {
             "it"

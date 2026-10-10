@@ -126,13 +126,9 @@ impl ParseCache {
 #[derive(Default)]
 pub struct ModuleRegistry {
     memory: HashMap<String, String>,
-    /// Modules every loaded entry file imports as if by a plain `import m`,
-    /// without ceremony, at the lowest precedence above the core prelude.
-    pub implicit_imports: Vec<String>,
-    /// Implicit imports that come *before* [`implicit_imports`] and are not
-    /// touched by `set_implicit_imports`. The core prelude (`std`) lives here
-    /// so a host that replaces its own implicit imports can't drop it. Lowest
-    /// precedence of all, so both host preludes and user code shadow it.
+    /// The modules every program imports implicitly, reference-gated: the
+    /// core prelude (`std`). Lowest precedence of all, so every import and
+    /// declaration shadows it. Hosts have no implicit imports.
     pub base_implicit_imports: Vec<String>,
     /// Packages the host registered (`Env::add_package`,
     /// `Env::register_package`): the first place a package name is looked up.
@@ -237,6 +233,45 @@ impl ModuleRegistry {
         }
         out.sort();
         out
+    }
+
+    /// `(canonical module name, source)` for every module of the package
+    /// `name`, found the way an import finds it — host registrations, then
+    /// the search path, then the bundled packages — or of the modules
+    /// registered in memory as `name` and `name/…`. `None` when nothing
+    /// answers to the name.
+    pub fn package_sources(&self, name: &str) -> Option<Vec<(String, String)>> {
+        let memory: Vec<(String, String)> = self
+            .memory
+            .iter()
+            .filter(|(module, _)| {
+                *module == name
+                    || module
+                        .strip_prefix(name)
+                        .is_some_and(|rest| rest.starts_with('/'))
+            })
+            .map(|(module, source)| (module.clone(), source.clone()))
+            .collect();
+        let package = self
+            .all_packages()
+            .chain(bundled_packages().iter())
+            .find(|p| p.info.name == name);
+        if package.is_none() && memory.is_empty() {
+            return None;
+        }
+        let mut out = memory;
+        if let Some(package) = package {
+            for module in &package.info.modules {
+                if let Some(loaded) = package.load(module) {
+                    let canonical = loaded.name.unwrap_or_else(|| module.clone());
+                    if !out.iter().any(|(m, _)| *m == canonical) {
+                        out.push((canonical, loaded.source));
+                    }
+                }
+            }
+        }
+        out.sort();
+        Some(out)
     }
 
     /// The source registered in memory under `name`.
@@ -734,22 +769,17 @@ pub const INLINE_ENTRY_NAME: &str = "<entry>";
 /// A module name resolves at most once per load (diamond imports dedupe).
 /// Cycles and unresolvable names are errors.
 ///
-/// Two flavours of implicit import compose here, both binding every export bare
-/// and weakly (the entry's own declarations shadow them):
-/// - `implicit_imports` — host preludes (e.g. `ui`), always merged, and bound
-///   inside every module of the program, not just the entry (a prelude module
-///   and its own dependencies excepted — see below).
-/// - `gated_imports` — the core prelude (`std`), merged *only when the program
-///   references one of its exports*. This keeps the prelude zero-cost: a script
-///   that never calls `sum`/`first`/… compiles byte-for-byte as if `std` didn't
-///   exist, so the standard library can grow without bloating every program.
-///   Gated modules sit at the lowest precedence (a host prelude and user code
-///   both shadow them).
+/// The one implicit import is the core prelude: `gated_imports` (`std`) is
+/// merged *only when the program references one of its exports*, and then
+/// binds every export bare and weakly at the lowest precedence, in every
+/// module. This keeps the prelude zero-cost: a script that never calls
+/// `sum`/`first`/… compiles byte-for-byte as if `std` didn't exist. A host has
+/// no implicit imports of its own: a script that uses a host's names imports
+/// the host's interface package (`import ui`).
 pub fn load_modules(
     entry_source: &str,
     entry_origin: Option<&Path>,
     resolver: &dyn ModuleResolver,
-    implicit_imports: &[String],
     gated_imports: &[String],
 ) -> Result<Vec<LoadedModule>, LoadError> {
     let entry_display = entry_origin
@@ -789,38 +819,13 @@ pub fn load_modules(
         origin: entry_module_origin.as_ref(),
     };
 
-    // The always-merged imports, in precedence order (host implicit first, then
-    // the entry's explicit imports). The entry's own bindings land on top.
-    let mut implicit_decls: Vec<ResolvedImport> = implicit_imports
-        .iter()
-        .map(|name| ResolvedImport {
-            decl: import_all(name),
-            implicit: true,
-            written: name.clone(),
-        })
-        .collect();
-
-    // Walk the host preludes first, and keep them (plus whatever *they* import)
-    // in their own list: those modules are emitted before every other module, so
-    // they are exactly the ones that must not receive an implicit import back —
-    // that would be a self-import, or a forward reference to a module that has
-    // not run yet.
-    for import in &mut implicit_decls {
-        import.decl.module =
-            walker.visit(&import.decl.module, &entry_importer, &entry_display)?;
-    }
-    let prelude_modules = std::mem::take(&mut walker.out);
-
-    // Then the entry's own explicit imports. A module reached only from here can
-    // safely see the host prelude bare.
+    // The entry's explicit imports, each walked depth-first.
     for import in &mut explicit_imports {
         import.decl.module =
             walker.visit(&import.decl.module, &entry_importer, &entry_display)?;
     }
-    let imported_modules = std::mem::take(&mut walker.out);
-
-    let mut ungated: Vec<ResolvedImport> = implicit_decls.clone();
-    ungated.extend(explicit_imports);
+    let mut imported_modules = std::mem::take(&mut walker.out);
+    let ungated = explicit_imports;
 
     // Reference-gate the core prelude: include a gated module only when the
     // entry or one of the always-merged modules names one of its exports. An
@@ -828,7 +833,7 @@ pub fn load_modules(
     // iterate to a fixpoint.
     let mut refs: HashSet<String> = HashSet::new();
     collect_module_refs(&stmts, &mut refs);
-    for m in prelude_modules.iter().chain(imported_modules.iter()) {
+    for m in imported_modules.iter() {
         collect_module_refs(&m.stmts, &mut refs);
     }
     let scanned: Vec<(String, Vec<String>, HashSet<String>)> = gated_imports
@@ -869,44 +874,20 @@ pub fn load_modules(
     }
     let gated_modules = std::mem::take(&mut walker.out);
 
-    // The gated prelude binds inside *every* module, not just the entry. A host
-    // that registers its own prelude module (petal-ui's `ui`, the fantasy
-    // console's `nes_sound`) writes ordinary Petal in it and reasonably expects
-    // `has_field`/`sum`/… to resolve there exactly as they do in a script; when
-    // they only reached the entry, such a module compiled fine and then raised
-    // "Unknown builtin" the first time the offending line ran, which is both
-    // late and confusing. Gated decls stay lowest-precedence, so a module's own
-    // declarations still shadow them.
-    //
-    // The host's own implicit imports (`Env::set_implicit_imports`, e.g.
-    // petal-ui's `ui`) reach every module for the same reason: a host promises
-    // "scripts get this prelude for free", and that promise used to stop at the
-    // entry file — the moment a script grew a second file, a bare `draw_rect`
-    // there silently meant the raw native instead of the prelude's overload.
-    // They bind just above the gated prelude and below the module's own
-    // explicit imports and declarations, and stay weak (shadowed silently,
-    // never a collision error). Only modules reached from the entry's own
-    // imports get them: the prelude modules themselves, and anything they
-    // import, are emitted first and would be importing themselves or a module
-    // that has not run yet.
-    let mut prelude_modules = prelude_modules;
-    for m in &mut prelude_modules {
-        let mut imports = gated_decls.clone();
-        imports.extend(std::mem::take(&mut m.imports));
-        m.imports = imports;
-    }
-    let mut imported_modules = imported_modules;
+    // The gated prelude binds inside *every* module, not just the entry: a
+    // library module is ordinary Petal and expects `has_field`/`sum`/… to
+    // resolve there exactly as they do in a script. Gated decls stay
+    // lowest-precedence, so a module's own imports and declarations shadow
+    // them.
     for m in &mut imported_modules {
         let mut imports = gated_decls.clone();
-        imports.extend(implicit_decls.iter().cloned());
         imports.extend(std::mem::take(&mut m.imports));
         m.imports = imports;
     }
 
-    // Assemble: prelude modules run first, then the always-merged modules, then
-    // the entry. The entry's import list mirrors that precedence order.
+    // Assemble: the prelude runs first, then the imported modules, then the
+    // entry. The entry's import list mirrors that precedence order.
     let mut modules = gated_modules;
-    modules.extend(prelude_modules);
     modules.extend(imported_modules);
     let mut entry_imports = gated_decls;
     entry_imports.extend(ungated);
@@ -1262,14 +1243,13 @@ mod tests {
     use super::module_path_error;
     use crate::env::Env;
 
-    /// Run `entry` against a set of in-memory modules with `implicit` registered
-    /// as the host's implicit imports, returning its print output.
-    fn run(modules: &[(&str, &str)], implicit: &[&str], entry: &str) -> Vec<String> {
+    /// Run `entry` against a set of in-memory modules, returning its print
+    /// output.
+    fn run(modules: &[(&str, &str)], entry: &str) -> Vec<String> {
         let mut env = Env::new();
         for (name, source) in modules {
             env.register_module(name, source);
         }
-        env.set_implicit_imports(implicit);
         let pid = env.load_program(entry).unwrap();
         let sid = env.create_stack(pid).unwrap();
         env.run(sid).unwrap();
@@ -1288,137 +1268,6 @@ mod tests {
             .to_string()
     }
 
-    const UI: &str = "pub fn button(l)\n  \"[\" ++ l ++ \"]\"\nend\n\
-                      pub let theme = { fg: 15 }";
-
-    #[test]
-    fn host_implicit_imports_reach_an_imported_module() {
-        // The gap: a library module calling a host prelude function bare used to
-        // see the raw builtin (or nothing) — implicit imports stopped at the
-        // entry file.
-        assert_eq!(
-            run(
-                &[("ui", UI), ("lib", "pub fn box(l)\n  button(l)\nend")],
-                &["ui"],
-                "import lib\nprint(lib.box(\"z\"))",
-            ),
-            vec!["[z]"]
-        );
-    }
-
-    #[test]
-    fn host_implicit_imports_reach_a_transitively_imported_module() {
-        assert_eq!(
-            run(
-                &[
-                    ("ui", UI),
-                    ("mid", "import deep\npub fn go(l)\n  deep.go(l)\nend"),
-                    ("deep", "pub fn go(l)\n  button(l) ++ str(theme.fg)\nend"),
-                ],
-                &["ui"],
-                "import mid\nprint(mid.go(\"z\"))",
-            ),
-            vec!["[z]15"]
-        );
-    }
-
-    #[test]
-    fn a_module_declaration_shadows_a_host_implicit_import() {
-        // Implicit imports are the weakest binding above the core prelude: the
-        // module's own declaration wins, silently, with no collision error.
-        assert_eq!(
-            run(
-                &[
-                    ("ui", UI),
-                    (
-                        "lib",
-                        "fn button(l)\n  \"<\" ++ l ++ \">\"\nend\n\
-                         pub fn box(l)\n  button(l)\nend",
-                    ),
-                ],
-                &["ui"],
-                "import lib\nprint(lib.box(\"z\"))",
-            ),
-            vec!["<z>"]
-        );
-    }
-
-    #[test]
-    fn a_modules_explicit_import_wins_over_a_host_implicit_import() {
-        assert_eq!(
-            run(
-                &[
-                    ("ui", UI),
-                    ("other", "pub fn button(l)\n  \"(\" ++ l ++ \")\"\nend"),
-                    (
-                        "lib",
-                        "import other: button\npub fn box(l)\n  button(l)\nend",
-                    ),
-                ],
-                &["ui"],
-                "import lib\nprint(lib.box(\"z\"))",
-            ),
-            vec!["(z)"]
-        );
-    }
-
-    #[test]
-    fn an_imported_module_may_also_import_the_prelude_explicitly() {
-        // Belt and braces (what bloom does today): the explicit import is a
-        // no-op on top of the implicit one, not a redefinition error.
-        assert_eq!(
-            run(
-                &[
-                    ("ui", UI),
-                    (
-                        "lib",
-                        "import ui: button\npub fn box(l)\n  button(l) ++ str(theme.fg)\nend",
-                    ),
-                ],
-                &["ui"],
-                "import lib\nprint(lib.box(\"z\"))",
-            ),
-            vec!["[z]15"]
-        );
-    }
-
-    #[test]
-    fn a_prelude_module_does_not_implicitly_import_itself() {
-        // `ui` declares `button` and also calls it; injecting an implicit import
-        // of `ui` into `ui` would be a self-reference before it has run.
-        assert_eq!(
-            run(
-                &[(
-                    "ui",
-                    "fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend\npub fn button(l)\n  wrap(l)\nend",
-                )],
-                &["ui"],
-                "print(button(\"z\"))",
-            ),
-            vec!["[z]"]
-        );
-    }
-
-    #[test]
-    fn several_prelude_modules_do_not_import_each_other_implicitly() {
-        // Two host preludes, one explicitly importing the other: neither gets an
-        // implicit import back, so there is no cycle and no forward reference.
-        assert_eq!(
-            run(
-                &[
-                    ("core", "pub fn wrap(l)\n  \"[\" ++ l ++ \"]\"\nend"),
-                    (
-                        "ui",
-                        "import core: wrap\npub fn button(l)\n  wrap(l)\nend",
-                    ),
-                ],
-                &["core", "ui"],
-                "print(button(wrap(\"z\")))",
-            ),
-            vec!["[[z]]"]
-        );
-    }
-
     #[test]
     fn a_memory_module_registers_under_its_full_path() {
         // The path is the module's identity, so two namespaces may ship the
@@ -1429,7 +1278,6 @@ mod tests {
                     ("bloom/menu", "pub fn open()\n  \"bloom\"\nend"),
                     ("petal/menu", "pub fn open()\n  \"petal\"\nend"),
                 ],
-                &[],
                 "import bloom/menu\nimport petal/menu as pm\nprint(menu.open())\nprint(pm.open())",
             ),
             vec!["bloom", "petal"]
@@ -1447,7 +1295,6 @@ mod tests {
                     ),
                     ("bloom/motion", "pub fn ease()\n  \"eased\"\nend"),
                 ],
-                &[],
                 "import bloom/menu\nprint(menu.open())",
             ),
             vec!["eased"]
@@ -1478,24 +1325,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_core_prelude_stays_below_a_host_implicit_import() {
-        // Precedence inside an imported module: std < host implicit < the
-        // module's own declarations. A host prelude that redefines a `std` name
-        // wins there just as it does in the entry file.
-        assert_eq!(
-            run(
-                &[
-                    ("ui", "pub fn sum(xs)\n  \"host sum\"\nend"),
-                    ("lib", "pub fn go()\n  sum([1, 2])\nend"),
-                ],
-                &["ui"],
-                "import lib\nprint(lib.go())",
-            ),
-            vec!["host sum"]
-        );
-    }
-
     // ---- re-exports (`pub import`) -------------------------------------
 
     /// The overload set is the property the hand-written facade
@@ -1512,7 +1341,6 @@ mod tests {
                     ("bloom/button", BUTTON),
                     ("bloom", "pub import bloom/button"),
                 ],
-                &[],
                 "import bloom: button\nprint(button(\"a\"))\nprint(button(\"a\", 2))",
             ),
             vec!["[a]", "[a2]"]
@@ -1531,7 +1359,6 @@ mod tests {
                         "pub import bloom/button\npub fn twice(l)\n  button(l) ++ button(l)\nend",
                     ),
                 ],
-                &[],
                 "import bloom: twice\nprint(twice(\"a\"))",
             ),
             vec!["[a][a]"]
@@ -1549,7 +1376,6 @@ mod tests {
                     ),
                     ("facade", "pub import impl: a"),
                 ],
-                &[],
                 "import facade\nprint(facade.a())",
             ),
             vec!["a"]
@@ -1590,7 +1416,6 @@ mod tests {
                         "pub import impl\npub fn tag(l)\n  \"facade\" ++ l\nend",
                     ),
                 ],
-                &[],
                 "import facade: tag\nprint(tag(\"!\"))",
             ),
             vec!["facade!"]
@@ -1606,7 +1431,6 @@ mod tests {
                     ("two", "pub fn f(a, b)\n  \"two\" ++ a ++ b\nend"),
                     ("facade", "pub import one\npub import two"),
                 ],
-                &[],
                 "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
             ),
             vec!["onex", "twoxy"]
@@ -1622,7 +1446,7 @@ mod tests {
         ];
         // Nothing is wrong until someone uses the name.
         assert_eq!(
-            run(&modules, &[], "import facade\nprint(only_one)"),
+            run(&modules, "import facade\nprint(only_one)"),
             vec!["10"]
         );
         let err = load_err(&modules, "import facade: v\nprint(v)");
@@ -1635,21 +1459,6 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_path_prelude_binds_its_alias_by_its_last_segment() {
-        // An implicit import binds the module alias the way an explicit
-        // `import bloom/menu` would: `menu`, not the whole path (which no
-        // expression can spell).
-        assert_eq!(
-            run(
-                &[("bloom/menu", "pub fn open()\n  \"opened\"\nend")],
-                &["bloom/menu"],
-                "print(open())\nprint(menu.open())",
-            ),
-            vec!["opened", "opened"]
-        );
-    }
-
-    #[test]
     fn a_re_export_chain_passes_a_name_along() {
         assert_eq!(
             run(
@@ -1658,7 +1467,6 @@ mod tests {
                     ("mid", "pub import deep"),
                     ("top", "pub import mid"),
                 ],
-                &[],
                 "import top: go\nprint(go())",
             ),
             vec!["deep"]
@@ -1681,7 +1489,7 @@ mod tests {
             ("bloom", "pub import ./bloom/menu"),
         ];
         assert_eq!(
-            run(&modules, &[], "import bloom\nprint(open())\nprint(bloom.open())"),
+            run(&modules, "import bloom\nprint(open())\nprint(bloom.open())"),
             vec!["open", "open"]
         );
         let err = load_err(&modules, "import bloom: menu\nprint(menu.open())");
@@ -1700,7 +1508,6 @@ mod tests {
         assert_eq!(
             run(
                 &[("hud", HUD)],
-                &[],
                 "import hud\nprint(draw())\nprint(hud.draw())\nprint(hud_only)",
             ),
             vec!["hud", "hud", "1"]
@@ -1710,7 +1517,7 @@ mod tests {
     #[test]
     fn an_alias_import_binds_bare_names_and_renames_the_qualifier() {
         assert_eq!(
-            run(&[("hud", HUD)], &[], "import hud as h\nprint(draw())\nprint(h.draw())"),
+            run(&[("hud", HUD)], "import hud as h\nprint(draw())\nprint(h.draw())"),
             vec!["hud", "hud"]
         );
         // The module's own name is no longer a qualifier.
@@ -1754,7 +1561,6 @@ mod tests {
         assert_eq!(
             run(
                 &modules,
-                &[],
                 "import hud\nimport level\nprint(hud.draw())\nprint(level.draw())\nprint(hud_only)",
             ),
             vec!["hud", "level", "1"]
@@ -1777,7 +1583,6 @@ mod tests {
         assert_eq!(
             run(
                 &modules,
-                &[],
                 "import hud\nimport level\nimport level: draw\nprint(draw())",
             ),
             vec!["level"]
@@ -1785,7 +1590,6 @@ mod tests {
         assert_eq!(
             run(
                 &modules,
-                &[],
                 "import hud\nimport level\nfn draw()\n  \"mine\"\nend\nprint(draw())",
             ),
             vec!["mine"]
@@ -1800,16 +1604,15 @@ mod tests {
             ("a", "pub fn sum(xs)\n  \"a\"\nend"),
             ("b", "pub fn sum(xs)\n  \"b\"\nend"),
         ];
-        assert_eq!(run(&modules, &[], "print(sum([1, 2]))"), vec!["3"]);
-        assert_eq!(run(&modules, &[], "import a\nprint(sum([1, 2]))"), vec!["a"]);
+        assert_eq!(run(&modules, "print(sum([1, 2]))"), vec!["3"]);
+        assert_eq!(run(&modules, "import a\nprint(sum([1, 2]))"), vec!["a"]);
         assert_eq!(
-            run(&modules, &[], "import a\nimport b: sum\nprint(sum([1, 2]))"),
+            run(&modules, "import a\nimport b: sum\nprint(sum([1, 2]))"),
             vec!["b"]
         );
         assert_eq!(
             run(
                 &modules,
-                &[],
                 "import a\nprint(sum([1, 2]))\nlet sum = fn(xs) \"mine\" end\nprint(sum([1]))",
             ),
             vec!["a", "mine"]
@@ -1831,13 +1634,13 @@ mod tests {
         ];
         for order in ["import base\nimport kit\n", "import kit\nimport base\n"] {
             assert_eq!(
-                run(&modules, &[], &format!("{order}print(button(1))\nprint(base_only)")),
+                run(&modules, &format!("{order}print(button(1))\nprint(base_only)")),
                 vec!["kit", "1"]
             );
         }
         // Transitively too.
         assert_eq!(
-            run(&modules, &[], "import base\nimport deep\nprint(button(1))"),
+            run(&modules, "import base\nimport deep\nprint(button(1))"),
             vec!["deep"]
         );
     }
@@ -1849,7 +1652,7 @@ mod tests {
             ("facade", "pub import impl"),
         ];
         assert_eq!(
-            run(&modules, &[], "import impl\nimport facade\nprint(go())"),
+            run(&modules, "import impl\nimport facade\nprint(go())"),
             vec!["go"]
         );
     }
@@ -1941,7 +1744,6 @@ mod tests {
         assert_eq!(
             run(
                 &[("noise", "pub fn noise(x)\n  \"n\"\nend\npub fn fbm(x)\n  \"f\"\nend")],
-                &[],
                 "import noise\nprint(noise(1))\nprint(noise.fbm(1))\nprint(noise.noise(1))",
             ),
             vec!["n", "f", "n"]
@@ -1954,18 +1756,17 @@ mod tests {
         // leaves the bare name to the builtin and the qualifier to itself.
         let modules = [("noise", "pub fn fbm(x)\n  \"fbm\"\nend")];
         assert_eq!(
-            run(&modules, &[], "import noise\nprint(noise.fbm(1))\nprint(type(noise(0.5, 0.5)))"),
+            run(&modules, "import noise\nprint(noise.fbm(1))\nprint(type(noise(0.5, 0.5)))"),
             vec!["fbm", "float"]
         );
         // A binding of the file's own takes the name back, as ever.
         assert_eq!(
-            run(&modules, &[], "import noise\nlet noise = {fbm: 3}\nprint(noise.fbm)"),
+            run(&modules, "import noise\nlet noise = {fbm: 3}\nprint(noise.fbm)"),
             vec!["3"]
         );
         assert_eq!(
             run(
                 &modules,
-                &[],
                 "import noise\nfn f(noise)\n  noise.fbm\nend\nprint(f({fbm: 4}))\nprint(noise.fbm(1))",
             ),
             vec!["4", "fbm"]
@@ -1983,7 +1784,6 @@ mod tests {
                     ("bloom/motion", "pub fn ease()\n  \"eased\"\nend"),
                     ("bloom/widgets/button", "import ../motion\npub fn b()\n  motion.ease()\nend"),
                 ],
-                &[],
                 "import bloom/menu\nimport bloom/widgets/button\nprint(open())\nprint(b())",
             ),
             vec!["eased", "eased"]
@@ -1998,7 +1798,7 @@ mod tests {
     #[test]
     fn a_relative_import_from_a_program_with_no_path_names_a_registered_module() {
         assert_eq!(
-            run(&[("hud", HUD)], &[], "import ./hud\nprint(draw())"),
+            run(&[("hud", HUD)], "import ./hud\nprint(draw())"),
             vec!["hud"]
         );
         let err = load_err(&[], "import ./nope\nprint(1)");
@@ -2056,11 +1856,10 @@ mod tests {
     #[test]
     fn a_bundled_package_is_the_last_place_a_name_is_looked_up() {
         // `core/math` is bundled; a host registration of the same path wins.
-        assert_eq!(run(&[], &[], "import core/math\nprint(abs(-2))"), vec!["2"]);
+        assert_eq!(run(&[], "import core/math\nprint(abs(-2))"), vec!["2"]);
         assert_eq!(
             run(
                 &[("core/math", "pub fn mine()\n  \"host\"\nend")],
-                &[],
                 "import core/math\nprint(mine())",
             ),
             vec!["host"]
@@ -2101,7 +1900,6 @@ mod tests {
                     ("impl", "pub fn a()\n  \"a\"\nend"),
                     ("plain", "import impl\npub fn use_a()\n  a()\nend"),
                 ],
-                &[],
                 "import plain: use_a\nprint(use_a())",
             ),
             vec!["a"]
@@ -2120,7 +1918,6 @@ mod tests {
                         "pub import bloom/button\npub import bloom/menu",
                     ),
                 ],
-                &[],
                 "import bloom/all: button, open\nprint(button(\"a\"))\nprint(open())",
             ),
             vec!["[a]", "m"]
@@ -2129,9 +1926,10 @@ mod tests {
 
     #[test]
     fn a_plain_re_export_composes_with_cross_module_overload_merging() {
-        // The host prelude has `f(a)`; a library adds `f(a, b)`; the facade
-        // star-re-exports the library. Both arities have to survive the two
-        // hops — the merge inside the facade, and the merge at the importer.
+        // A plainly imported `ui` has `f(a)`; a library adds `f(a, b)`; the
+        // facade re-exports the library and the entry pins `f` from it. Both
+        // arities have to survive the two hops — the merge inside the
+        // facade, and the cross-tier merge at the importer.
         assert_eq!(
             run(
                 &[
@@ -2139,8 +1937,7 @@ mod tests {
                     ("ext", "pub fn f(a, b)\n  \"ext\" ++ a ++ b\nend"),
                     ("facade", "pub import ext"),
                 ],
-                &["ui"],
-                "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
+                "import ui\nimport facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
             ),
             vec!["uix", "extxy"]
         );
@@ -2159,7 +1956,6 @@ mod tests {
                     ),
                     ("facade", "pub import impl"),
                 ],
-                &[],
                 "import facade: Point, hits, bump\n\
                  bump()\nlet p = Point(3)\nprint(str(p.x) ++ \"/\" ++ str(hits))",
             ),

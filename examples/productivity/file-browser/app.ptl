@@ -17,6 +17,8 @@ import text_layout as tl
 import ./fsdata as fs
 import ./icons as ic
 import ./peek as pk
+import ui
+import garden
 
 // ── palette and type ────────────────────────────────────────────────────────
 

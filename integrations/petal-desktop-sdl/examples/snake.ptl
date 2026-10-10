@@ -1,6 +1,8 @@
 // Snake Game
 // Arrow keys to move. Eat food to grow. Don't hit walls or yourself.
 
+import ui
+
 let grid_size = 20
 let cols = screen_width() / grid_size
 let rows = screen_height() / grid_size

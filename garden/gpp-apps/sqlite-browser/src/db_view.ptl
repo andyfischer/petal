@@ -36,6 +36,9 @@
 // without pixels by reading `selected`, `detail_scroll`, `focus_id`, `cat_ready`
 // and friends straight off their `let`/`state` names.
 
+import garden
+import ui
+
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state fc = focus_set(focus_state(), "catalog")
 state cat_lst = list_state()

@@ -20,6 +20,7 @@ import bloom/interact: probe, probe_over, capture, capture_release,
 import bloom/icon: icon
 import text_layout: draw_text_line, draw_text_block, text_size
 import bloom/button: icon_button
+import ui
 
 // ── Tooltip ───────────────────────────────────────────────────────────────
 

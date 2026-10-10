@@ -12,6 +12,7 @@
 
 import text_layout/place: text_baseline, text_align_x
 import text_layout/fit: wrap_text, elide, clamp_lines, line_step, lines_width
+import ui
 
 // Lay `s` out in `r`. Returns
 //

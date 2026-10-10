@@ -51,6 +51,9 @@
 // and text_width here uses size 14 — hierarchy comes from color, not size, and
 // long file names wrap across two lines rather than shrinking.
 
+import garden
+import ui
+
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state fc = focus_set(focus_state(), "commits")
 state commits_lst = list_state()

@@ -1,0 +1,25 @@
+// The Garden config host interface (garden-script/src/native_fns.rs): what
+// `init.ptl` describes the window with.
+
+// `{ kind: "editor", file, line_numbers, wrap }`. `config` recognizes
+// `line_numbers` (default false) and `wrap` (default true).
+pub native fn editor(path?, config?) -> record
+
+// `{ kind: "process", command, args }`.
+pub native fn process(command, args?) -> record
+
+// `{ kind: "panel", script, screens }`. `config` recognizes `screens`.
+pub native fn panel(script, config?) -> record
+
+// Containers: `ratios`, when given, has one entry per child.
+pub native fn row(children, ratios?) -> record
+pub native fn column(children, ratios?) -> record
+
+// Emit the layout tree for the window.
+pub native fn layout(node)
+
+// Emit a record of `field: "#hexcolor"` overrides.
+pub native fn color_theme(theme)
+
+// Emit the base scheme name ("dark", "light").
+pub native fn color_scheme(name)

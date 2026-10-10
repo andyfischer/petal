@@ -10,6 +10,8 @@
 // and draws. See garden/docs/petal-graphical-panels.md § Any font on the
 // machine.
 
+import ui
+
 state selected = 0
 state scroll = 0
 state families = []

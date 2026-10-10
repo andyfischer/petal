@@ -1863,7 +1863,7 @@ mod tests {
             },
             DRAW,
         );
-        env.run_source("clip(1, 2, 30, 40)\nhost_marker()\nclip_none()")
+        env.run_source(&crate::script_for(&env, "native fn host_marker()\nclip(1, 2, 30, 40)\nhost_marker()\nclip_none()"))
             .expect("run_source");
         let cmds = take_draw_commands(&mut env);
         assert_eq!(cmds.len(), 3);
@@ -1892,8 +1892,8 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         env.run_source(
-            "draw_image(\"assets/gauge.png\", 1, 2, 30, 40)\n\
-             draw_image(\"assets/glow.png\", 5, 6, 70, 80, 128)",
+            &crate::script_for(&env, "draw_image(\"assets/gauge.png\", 1, 2, 30, 40)\n\
+             draw_image(\"assets/glow.png\", 5, 6, 70, 80, 128)"),
         )
         .expect("run");
         assert_eq!(
@@ -1926,13 +1926,13 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         // Opaque short form: no alpha, square corners.
-        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3)")
+        env.run_source(&crate::script_for(&env, "draw_rect(0, 0, 10, 10, 1, 2, 3)"))
             .expect("run");
         // Translucent long form.
-        env.run_source("draw_rect(0, 0, 10, 10, 1, 2, 3, 128)")
+        env.run_source(&crate::script_for(&env, "draw_rect(0, 0, 10, 10, 1, 2, 3, 128)"))
             .expect("run");
         // Rounded via the convenience native (radius 6, alpha 200).
-        env.run_source("draw_rect_rounded(0, 0, 10, 10, 6, 1, 2, 3, 200)")
+        env.run_source(&crate::script_for(&env, "draw_rect_rounded(0, 0, 10, 10, 6, 1, 2, 3, 200)"))
             .expect("run");
         let cmds = take_draw_commands(&mut env);
         assert_eq!(
@@ -1983,7 +1983,7 @@ mod tests {
     fn polyline_decodes_points_alpha_and_width() {
         let mut env = Env::new();
         register_draw(&mut env);
-        env.run_source("draw_polyline([[0, 0], [10, 5], [20, 0]], 1, 2, 3, 128, 6)")
+        env.run_source(&crate::script_for(&env, "draw_polyline([[0, 0], [10, 5], [20, 0]], 1, 2, 3, 128, 6)"))
             .expect("run");
         assert_eq!(
             take_draw_commands(&mut env),
@@ -1997,7 +1997,7 @@ mod tests {
             }]
         );
         // Short form: opaque hairline, the same defaults draw_line has.
-        env.run_source("draw_polyline([[0, 0], [1, 1]], 4, 5, 6)")
+        env.run_source(&crate::script_for(&env, "draw_polyline([[0, 0], [1, 1]], 4, 5, 6)"))
             .expect("run");
         assert!(matches!(
             take_draw_commands(&mut env)[0],
@@ -2014,10 +2014,10 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         env.run_source(
-            "draw_ellipse(50, 40, 30, 10, 200, 100, 50)\n\
+            &crate::script_for(&env, "draw_ellipse(50, 40, 30, 10, 200, 100, 50)\n\
              draw_ellipse_outline(50, 40, 30, 10, 200, 100, 50, 128, 4)\n\
              draw_circle_outline(8, 9, 7, 1, 2, 3)\n\
-             fill_arc(60, 60, 20.0, 40.0, 0.0, 1.5, 9, 8, 7, 200)",
+             fill_arc(60, 60, 20.0, 40.0, 0.0, 1.5, 9, 8, 7, 200)"),
         )
         .expect("run");
         let cmds = take_draw_commands(&mut env);
@@ -2086,7 +2086,7 @@ mod tests {
         // truncating it would quantize every pie chart to whole radians.
         let mut env = Env::new();
         register_draw(&mut env);
-        env.run_source("fill_arc(0, 0, 0, 10, 0.25, 2.75, 1, 2, 3)")
+        env.run_source(&crate::script_for(&env, "fill_arc(0, 0, 0, 10, 0.25, 2.75, 1, 2, 3)"))
             .expect("run");
         match take_draw_commands(&mut env)[0] {
             DrawCommand::Arc { a0, a1, r_in, .. } => {
@@ -2103,8 +2103,8 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         env.run_source(
-            "draw_rect_outline(0, 0, 10, 10, 1, 2, 3, 128, 2)\n\
-             draw_rect_rounded_outline(0, 0, 10, 10, 4, 1, 2, 3, 128, 2)",
+            &crate::script_for(&env, "draw_rect_outline(0, 0, 10, 10, 1, 2, 3, 128, 2)\n\
+             draw_rect_rounded_outline(0, 0, 10, 10, 4, 1, 2, 3, 128, 2)"),
         )
         .expect("run");
         let cmds = take_draw_commands(&mut env);
@@ -2136,8 +2136,8 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         env.run_source(
-            "fill_polygon([[0, 0], [10, 10], [20, 0], [10, 30]], 1, 2, 3, 90)\n\
-             fill_fan(5, 5, [[0, 0], [10, 0], [10, 10]], 4, 5, 6)",
+            &crate::script_for(&env, "fill_polygon([[0, 0], [10, 10], [20, 0], [10, 30]], 1, 2, 3, 90)\n\
+             fill_fan(5, 5, [[0, 0], [10, 0], [10, 10]], 4, 5, 6)"),
         )
         .expect("run");
         let cmds = take_draw_commands(&mut env);
@@ -2171,17 +2171,17 @@ mod tests {
         register_draw(&mut env);
         // A non-list, a too-short list, and a malformed point each fail at the
         // call rather than being silently dropped when the host decodes.
-        assert!(env.run_source("fill_polygon(7, 1, 2, 3)").is_err());
+        assert!(env.run_source(&crate::script_for(&env, "fill_polygon(7, 1, 2, 3)")).is_err());
         assert!(
-            env.run_source("fill_polygon([[0, 0], [1, 1]], 1, 2, 3)")
+            env.run_source(&crate::script_for(&env, "fill_polygon([[0, 0], [1, 1]], 1, 2, 3)"))
                 .is_err()
         );
         assert!(
-            env.run_source("draw_polyline([[0, 0, 0]], 1, 2, 3)")
+            env.run_source(&crate::script_for(&env, "draw_polyline([[0, 0, 0]], 1, 2, 3)"))
                 .is_err()
         );
         // vec2 points are the other accepted spelling.
-        env.run_source("draw_polyline([vec2(1, 2), vec2(3, 4)], 1, 2, 3)")
+        env.run_source(&crate::script_for(&env, "draw_polyline([vec2(1, 2), vec2(3, 4)], 1, 2, 3)"))
             .expect("vec2 points");
         assert_eq!(
             take_draw_commands(&mut env),

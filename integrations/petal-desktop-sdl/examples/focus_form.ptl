@@ -6,6 +6,8 @@
 // All widgets share one panel-global focus record so exactly one holds the
 // keyboard at a time. State lives in `state` so it survives hot reload.
 
+import ui
+
 state name = ""
 state email = ""
 state fc = focus_state()

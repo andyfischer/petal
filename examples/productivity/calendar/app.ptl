@@ -11,6 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import text_layout
+import ui
+import garden
 
 // An event is a plain record (it round-trips through json_parse, which would
 // drop a class tag anyway):

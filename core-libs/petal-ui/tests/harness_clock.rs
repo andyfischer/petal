@@ -21,7 +21,7 @@ fn time_advances_by_dt_each_frame_and_equals_the_accumulated_dt() {
                state t = 0.0\n\
                t = time()\n\
                acc = acc + dt()";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
 
     assert_eq!(ui.time, 0.0, "the harness starts at a deterministic t0 = 0");
     for frame in 0..30 {
@@ -41,7 +41,7 @@ fn elapsed_measures_real_progress_without_the_driver_touching_the_clock() {
     // Before this, `elapsed()` returned 0.0 for every frame of every headless
     // run, so nothing written against the clock could be tested at all.
     let src = "state e = 0.0\ne = elapsed()";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
     ui.frames(60).unwrap();
     close(
         ui.state_float("e").unwrap(),
@@ -55,7 +55,7 @@ fn the_clock_is_exactly_the_frame_count_times_dt() {
     // Not approximately: computed, not accumulated. Adding `FRAME_DT` 60 times
     // lands on 1.0000000000000013, and 3600 times on 59.999999999997875, which
     // would make the documented identity false.
-    let mut ui = Headless::new("state t = 0.0\nt = time()").unwrap();
+    let mut ui = Headless::with_ui("state t = 0.0\nt = time()").unwrap();
     for frames in 1..=3600 {
         ui.frame().unwrap();
         assert_eq!(
@@ -72,7 +72,7 @@ fn assigning_the_clock_still_wins_for_the_next_frame() {
     // assignment is what the next frame publishes, and the automatic advance
     // resumes from there.
     let src = "state t = 0.0\nt = time()";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
     ui.time = 10.0;
     ui.frame().unwrap();
     close(ui.state_float("t").unwrap(), 10.0, "assigned clock");
@@ -92,7 +92,7 @@ fn two_runs_of_a_clock_driven_app_produce_identical_traces() {
     let app = dir.join("app.ptl");
     std::fs::write(
         &app,
-        "state t = 0.0\nstate e = 0.0\nt = time()\ne = elapsed()\n\
+        "import ui\nstate t = 0.0\nstate e = 0.0\nt = time()\ne = elapsed()\n\
          draw_rect(10 + floor(time() * 60.0), 10, 20, 20, 255, 0, 0)\n",
     )
     .unwrap();

@@ -23,6 +23,9 @@
 // self-contained script, exactly as game.ptl does.
 // =====================================================================
 
+import sdl
+import ui
+
 let SCREEN_W = 960
 let SCREEN_H = 600
 

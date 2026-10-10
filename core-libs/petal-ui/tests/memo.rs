@@ -23,7 +23,7 @@ use petal_ui::scenario::Scenario;
 const WHITE: &str = "{r: 255, g: 255, b: 255, a: 255}";
 
 fn ui(src: &str) -> Headless {
-    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.env.set_echo(false);
     // Every frame runs: the memo is what is under test, not the gate.
     ui.set_policy(RunPolicy::REPLAY);
@@ -237,9 +237,8 @@ fn the_baseline_policy_disables_memoization_with_the_other_optimizations() {
 
 fn drive(app: &Path, includes: &[PathBuf], policy: RunPolicy, seed: u64, frames: usize) -> (Vec<String>, u64) {
     let size = (800, 600);
-    let mut ui = Headless::from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
     ui.env.set_echo(false);
     ui.env.set_seed(seed);
     // Garden panels observe every frame; a replayed scope must report the

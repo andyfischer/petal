@@ -13,6 +13,9 @@
 //  Designed for a 1200x800 viewport.  See README.md.
 // ─────────────────────────────────────────────────────────────────────────
 
+import ui
+import garden
+
 // ── Palette: a greenhouse at night ───────────────────────────────────────
 
 let C_BG     = #0a0f0c

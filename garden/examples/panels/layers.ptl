@@ -5,6 +5,8 @@
 //
 // Use it from a layout script:   panel("examples/panels/layers.ptl")
 
+import ui
+
 let w = screen_width()
 let h = screen_height()
 let t = time()

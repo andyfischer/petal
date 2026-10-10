@@ -7,6 +7,8 @@
 // State lives in app() to avoid the positional-state-key limitation
 // (two calls to the same function would share state).
 
+import web
+
 // ── Dropdown (stateless) ────────────────────────────────
 
 fn dropdown(label, items, open, btn_id, backdrop_id)

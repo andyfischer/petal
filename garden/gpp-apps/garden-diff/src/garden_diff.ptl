@@ -98,6 +98,9 @@
 //                  `git log` per launch is pure cost for the reviewers who never
 //                  open it.
 
+import garden
+import ui
+
 // The pre-load placeholder. Each editable view's `projection` starts empty: the
 // host reads every field of a projection spec with a default, so an empty record
 // declares a region with no provenance yet — which is exactly true of one that

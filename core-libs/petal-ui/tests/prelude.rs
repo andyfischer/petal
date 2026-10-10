@@ -6,7 +6,7 @@ use petal_ui::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers};
 
 fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
-    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
     check(&mut ui);
 }
 
@@ -17,7 +17,7 @@ fn time_and_elapsed() {
                state e = 0.0\n\
                t = time()\n\
                e = elapsed()";
-    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
 
     ui.time = 10.0;
     ui.frame().unwrap();
@@ -59,7 +59,7 @@ fn each_elapsed_callsite_is_its_own_timer() {
                if time() > 11.0 then\n\
                  b = elapsed()\n\
                end";
-    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
 
     ui.time = 10.0;
     ui.frame().unwrap();
@@ -863,7 +863,7 @@ fn focus_set_focused_and_clear() {
         assert_eq!(ui.state()["b"], false);
 
         // Clearing focus un-focuses everything (survives across frames via state).
-        let mut ui2 = Headless::new(
+        let mut ui2 = Headless::with_ui(
             "state fc = focus_set(focus_state(), \"a\")\n\
              state cleared = true\n\
              fc = focus_clear(fc)\n\
@@ -1326,12 +1326,12 @@ fn rect_constructs_the_builtin_class() {
 /// leaves the author reading library source for a typo in their own file.
 #[test]
 fn a_bad_rect_argument_is_reported_at_the_call_site() {
-    let mut ui = Headless::new("let r = rect(\"a\", 0, 0, 0)").expect("compiles");
+    let mut ui = Headless::new("import ui\nlet r = rect(\"a\", 0, 0, 0)").expect("compiles");
     let err = ui.frame().unwrap_err();
     let head = err.lines().next().unwrap_or_default().to_string();
     assert!(head.contains("field `x`"), "{err}");
     assert!(
-        head.contains("[line 1, column 9]"),
+        head.contains("[line 2, column 9]"),
         "the caret should sit on the caller's own rect(...): {err}"
     );
 }
@@ -2388,7 +2388,7 @@ fn flat_coordinates_with_a_colour_record_match_the_packed_form() {
     // than once per pair.
     let draw = |calls: Vec<&str>| {
         let src = format!("{prefix}{}", calls.join("\n"));
-        let mut ui = Headless::new(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+        let mut ui = Headless::with_ui(&src).unwrap_or_else(|e| panic!("compile failed: {e}"));
         let cmds = ui.frame().unwrap_or_else(|e| panic!("frame failed: {e}")).to_vec();
         cmds.iter().map(|c| format!("{c:?}")).collect::<Vec<_>>()
     };

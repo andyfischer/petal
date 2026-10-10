@@ -1,6 +1,8 @@
 // Breakout / Brick Breaker — Neon Edition
 // Mouse controls the paddle horizontally. Ball bounces off walls, paddle, and bricks.
 
+import ui
+
 // --- Constants ---
 let paddle_w = 120
 let paddle_h = 14

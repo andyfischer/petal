@@ -2,6 +2,8 @@
 // Arrow keys: left/right to move, up to rotate, down for soft drop
 // 10-wide, 20-tall grid. 7 tetromino shapes. Line clearing with score.
 
+import ui
+
 let grid_w = 10
 let grid_h = 20
 let cell_size = 28

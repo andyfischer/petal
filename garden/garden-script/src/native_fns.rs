@@ -39,7 +39,18 @@ pub(crate) fn register_all(env: &mut Env) {
     env.register_native("layout", native_layout, NativeEffects::EMITS);
     env.register_native("color_theme", native_color_theme, NativeEffects::EMITS);
     env.register_native("color_scheme", native_color_scheme, NativeEffects::EMITS);
+    // The interface package that declares them: a config script reaches
+    // them with `import garden_config`.
+    env.register_package(CONFIG_PACKAGE, [(CONFIG_PACKAGE, CONFIG_INTERFACE)])
+        .expect("the garden_config interface package registers");
 }
+
+/// The interface package of the config host: `import garden_config`.
+pub const CONFIG_PACKAGE: &str = "garden_config";
+
+/// Its source: the `native fn` declarations of every config native.
+pub const CONFIG_INTERFACE: &str =
+    include_str!("../packages/garden_config/garden_config.ptl");
 
 /// `editor()` / `editor(path)` / `editor(path, { line_numbers: true, wrap: false })`
 /// → `{ kind: "editor", file: path|nil, line_numbers: bool, wrap: bool }`.

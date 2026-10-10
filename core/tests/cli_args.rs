@@ -105,18 +105,19 @@ fn strict_check_does_not_fail_on_the_export_deprecation_alone() {
 }
 
 #[test]
-fn run_explains_a_name_only_the_ui_host_provides() {
-    let src = "ui.label(\"x\")";
-    // `check` defaults to `--host ui` and accepts it…
+fn run_refuses_a_ui_script_at_load_and_says_which_runner_takes_it() {
+    let src = "import ui\nprint(\"ran\")\nui.label(\"x\", 0, 0)";
+    // `check` accepts it: the bundled `ui` package declares the natives…
     assert_eq!(petal(&["check", "-e", src]).2, 0);
-    // …`check --host core` is what agrees with `run`…
-    assert_eq!(petal(&["check", "--host", "core", "-e", src]).2, 1);
-    // …and `run` says why it cannot.
-    let (_, err, code) = petal(&["run", "-e", src]);
+    // …and `run` refuses it before any line runs, naming what is missing.
+    let (out, err, code) = petal(&["run", "-e", src]);
     assert_eq!(code, 1);
-    assert!(err.contains("Undefined variable: ui"), "{err}");
-    assert!(err.contains("comes from the petal-ui host"), "{err}");
-    assert!(err.contains("check --host core"), "{err}");
+    assert!(!out.contains("ran"), "{out}");
+    assert!(err.contains("module 'ui' needs native fns"), "{err}");
+    assert!(err.contains("petal-ui runner"), "{err}");
+    // Without the import the two agree as well: the name is unknown.
+    assert_eq!(petal(&["check", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);
+    assert_eq!(petal(&["run", "-e", "ui.label(\"x\", 0, 0)"]).2, 1);
 
     // A name nobody provides gets no such note.
     let (_, err, _) = petal(&["run", "-e", "frob()"]);

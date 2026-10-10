@@ -8,6 +8,8 @@
 // runs headlessly too — with `-I core-runtime` so that the bloom
 // modules resolve outside Garden.
 import bloom
+import garden
+import ui
 
 let T = ui_theme()
 let w = screen_width()

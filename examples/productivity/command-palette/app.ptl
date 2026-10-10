@@ -16,6 +16,9 @@
 //  Designed for a 1100x760 viewport.  See README.md.
 // ─────────────────────────────────────────────────────────────────────────
 
+import ui
+import garden
+
 // ── Themes ───────────────────────────────────────────────────────────────
 
 fn theme_for(name: string) -> record

@@ -2,6 +2,8 @@
 // Keys 1-9: color palette, +/- to change brush size, C to clear
 // D: toggle demo mode, Space: regenerate demo art
 
+import ui
+
 // ── Precomputed trig lookup (32 directions around a circle) ──
 // cos and sin values * 1000 (integer math, divide by 1000 later)
 let cos_tab = [1000, 981, 924, 831, 707, 556, 383, 195, 0, -195, -383, -556, -707, -831, -924, -981, -1000, -981, -924, -831, -707, -556, -383, -195, 0, 195, 383, 556, 707, 831, 924, 981]

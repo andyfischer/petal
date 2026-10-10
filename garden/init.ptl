@@ -1,5 +1,7 @@
 // Garden layout script — edit while Garden is running and the layout hot-reloads.
 
+import garden_config
+
 layout(
   column([
     row([

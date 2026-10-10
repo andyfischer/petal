@@ -10,6 +10,8 @@
 // bindings below are how this sketch tells it which variables
 // are its tuning knobs — everything else stays pinned.
 
+import ui
+
 config let edge = 300
 config let spacing = 78
 

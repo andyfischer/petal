@@ -12,7 +12,6 @@ use std::process::Command;
 
 use petal::apply_change::{ChangeOptions, Plan, Request, plan};
 use petal::env::Env;
-use petal::typecheck::globals::HostProfile;
 
 /// Path to the freshly built `petal` binary for this test run.
 const PETAL: &str = env!("CARGO_BIN_EXE_petal");
@@ -52,7 +51,6 @@ fn options(from: &[&Path]) -> ChangeOptions {
     ChangeOptions {
         include_dirs: Vec::new(),
         from: from.iter().map(|p| p.to_path_buf()).collect(),
-        host: HostProfile::Core,
     }
 }
 
@@ -857,8 +855,6 @@ fn dry_run_prints_a_diff_and_writes_nothing() {
         "--target",
         "/n",
         "--dry-run",
-        "--host",
-        "core",
     ]);
     assert!(ok, "{stderr}");
     assert!(
@@ -885,8 +881,6 @@ fn without_dry_run_the_file_is_rewritten_in_place() {
         path,
         "--target",
         "/n",
-        "--host",
-        "core",
     ]);
     assert!(ok, "{stderr}");
     assert_eq!(stdout, "", "the diff is only printed for a dry run");

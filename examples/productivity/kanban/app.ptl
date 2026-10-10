@@ -9,6 +9,8 @@
 // Run:  garden --headless --debug-port 0 --init layout.ptl
 // ─────────────────────────────────────────────────────────────────────────
 
+import ui
+
 class Card
   id: string,
   title: string,

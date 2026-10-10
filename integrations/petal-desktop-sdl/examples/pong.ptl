@@ -1,5 +1,7 @@
 // === NEON PONG ===
 
+import ui
+
 state ball_x = 400.0
 state ball_y = 300.0
 state ball_dx = 250.0

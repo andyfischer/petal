@@ -14,6 +14,8 @@
 
 import bloom
 import text_layout
+import ui
+import garden
 
 // ── Palette ──────────────────────────────────────────────────────────────
 

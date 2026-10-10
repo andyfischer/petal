@@ -1,0 +1,9 @@
+# sdl — the interface of petal-desktop-sdl: the `native fn` declarations of
+# the natives this runner registers beyond petal-ui's (`import ui`) — the
+# example browser, sandboxed file I/O and sound. Scripts write `import sdl`.
+#
+# petal-sdl registers this package in memory (src/native_fns.rs). The stock
+# CLI finds it by path: `petal check -I integrations/petal-desktop-sdl/packages`.
+[package]
+name = "sdl"
+version = "0.1.0"

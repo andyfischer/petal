@@ -12,6 +12,8 @@
 //         n / p  step the month filter    a  clear it    t  re-sort the table
 // ─────────────────────────────────────────────────────────────────────────────
 
+import ui
+
 // ── Palette ──────────────────────────────────────────────────────────────────
 // One near-black ground, two surface steps, a hairline that separates cards
 // without boxing them in, and eight categorical hues for the breakdown.

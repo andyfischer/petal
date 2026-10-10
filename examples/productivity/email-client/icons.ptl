@@ -8,6 +8,8 @@
 // run of `draw_line`s leaves behind.
 // ─────────────────────────────────────────────────────────────────────────
 
+import ui
+
 // Unit points, given flat as [x0, y0, x1, y1, …], placed in the box at
 // (cx, cy) with side s.
 fn pts(cx: num, cy: num, s: num, flat: list) -> list

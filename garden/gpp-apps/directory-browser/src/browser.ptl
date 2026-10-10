@@ -31,6 +31,9 @@
 // `last_action` are the handles the integration test drives this screen by —
 // the script publishes nothing.
 
+import garden
+import ui
+
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state dir = ""          // "" = the launch dir; latched to the canonical path
 state selected = 0

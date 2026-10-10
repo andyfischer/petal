@@ -1,31 +1,19 @@
 //! Unknown globals: names a program calls or reads that nothing defines.
 //!
-//! The compiler does not reject an unresolved name. A call to one becomes a
-//! static `BuiltinCall` that is resolved against the native table at run time
-//! ("Unknown builtin: x"), and a read becomes a deferred `Error` term
-//! ("Undefined variable: x"). Both are deliberate: a host registers its natives
-//! on its own `Env`, and a line that never runs should not stop the rest of a
-//! script. But it means `petal check` used to pass a program that is certain
-//! to fail the moment the line runs.
+//! The compiler does not reject an unresolved name: a call to one and a read
+//! of one both become a deferred `Error` term ("Unknown function: x",
+//! "Undefined variable: x") that fires only if the line runs. That is
+//! deliberate — a line that never runs should not stop the rest of a script —
+//! but it means a program that is certain to fail the moment the line runs
+//! would otherwise pass `petal check`.
 //!
 //! [`unresolved_globals`] closes that hole after the compile, by scanning the
-//! program's IR for those two term shapes and reporting each name the host
-//! does not provide. The host's set is the `Env`'s native table plus a
-//! [`HostProfile`]: the core `petal` CLI registers only the core builtins, so
-//! it cannot see a host's natives and has to be told which host the script is
-//! written for. The default is [`HostProfile::Ui`], the petal-ui set every
-//! sample app and panel script draws with.
-//!
-//! A native a module of the program *declares* (`native fn`, see
-//! [`crate::native_decl`]) is known whether or not this process registers it:
-//! that is how a host's natives are answered for from its interface module
-//! (petal-ui's `ui`), parameter names included.
-//!
-//! The name lists below are the older mechanism, still consulted for hosts
-//! whose interface is not declared yet (Garden's, the SDL runner's) and for a
-//! petal-ui script checked in a build that cannot see the `ui` prelude. They
-//! are checked against the real registrations by tests in the embedding
-//! crates (`core-libs/petal-ui/tests/host_natives.rs`).
+//! program's IR for those terms. No host is consulted: a name is in scope
+//! because the file declares it, an import binds it, or it is a `core`/`std`
+//! builtin, and for no other reason. A host's natives are answered for by its
+//! interface package (`import ui`), whose `native fn` declarations carry the
+//! parameter lists a named call is checked against, whether or not this
+//! process registers the natives.
 
 use std::collections::HashSet;
 
@@ -33,84 +21,12 @@ use crate::diagnostic::Diagnostic;
 use crate::native_fn::NativeSignature;
 use crate::program::{Program, TermOp};
 
-/// The natives `petal_ui::register_all` adds on top of the core builtins:
-/// input, timing, drawing (canvas ops included) and `host_data`.
-pub const PETAL_UI_NATIVES: &[&str] = &[
-    // input.rs
-    "mouse_x",
-    "mouse_y",
-    "hovered",
-    "mouse_dx",
-    "mouse_dy",
-    "mouse_down",
-    "mouse_pressed",
-    "mouse_released",
-    "scroll_x",
-    "scroll_y",
-    "key_down",
-    "key_pressed",
-    "key_released",
-    "mod_shift",
-    "mod_ctrl",
-    "mod_alt",
-    "mod_cmd",
-    "drag_active",
-    "drag_start_x",
-    "drag_start_y",
-    "click_count",
-    "text_input",
-    "grab_mouse",
-    "release_mouse",
-    "dt",
-    "time",
-    "frame_count",
-    "screen_width",
-    "screen_height",
-    "ui_version",
-    // draw.rs
-    "draw_image",
-    "clear",
-    "draw_rect",
-    "draw_rect_rounded",
-    "draw_rect_outline",
-    "draw_rect_rounded_outline",
-    "draw_rect_gradient",
-    "draw_rect_gradient_rounded",
-    "draw_circle_gradient",
-    "draw_shadow",
-    "draw_line",
-    "draw_polyline",
-    "draw_circle",
-    "draw_circle_outline",
-    "draw_ellipse",
-    "draw_ellipse_outline",
-    "fill_arc",
-    "fill_triangle",
-    "fill_poly",
-    "fill_polygon",
-    "fill_fan",
-    "draw_text",
-    "clip",
-    "clip_none",
-    "clip_push",
-    "clip_pop",
-    "text_width",
-    "text_advance",
-    "text_metrics",
-    "text_wrap",
-    "text_ellipsize",
-    "text_index_at",
-    "font",
-    "fonts",
-    "create_canvas",
-    "draw_to",
-    "draw_to_screen",
-    "draw_canvas",
-    "snapshot_to",
-    "blur_canvas",
-    // host_data.rs
-    "host_data",
-];
+/// How the deferred error for a call to a name nothing binds starts; the
+/// name follows.
+pub const UNKNOWN_FUNCTION_PREFIX: &str = "Unknown function: ";
+
+/// How the deferred error for a read of a name nothing binds starts.
+pub const UNDEFINED_VARIABLE_PREFIX: &str = "Undefined variable: ";
 
 /// Check the names a call to native `name` writes against the parameter lists
 /// it declares, and say what is wrong — `None` when some form takes the call.
@@ -178,166 +94,20 @@ pub fn named_native_call_error(
     sig.bind(name, &indices, names).err()
 }
 
-/// The natives Garden adds for its scripts: the panel host's channels (theme,
-/// `emit`/`mutate`/`navigate`, the text-view regions, the panel store, the
-/// `query` cache) and the config host's layout builders (`init.ptl`). The two
-/// hosts are separate `Env`s, but a checker that accepts the union misses only
-/// a config-only native called from a panel, which the run still reports.
+/// Report every call to, or read of, a name that nothing defines, and every
+/// named argument a native cannot take.
 ///
-/// `petal_ui::panel_stubs` registers the panel half as inert stand-ins, so
-/// the petal-ui test that checks [`PETAL_UI_NATIVES`] checks this too.
-pub const GARDEN_NATIVES: &[&str] = &[
-    // garden-script/src/panel.rs (and petal-ui's panel_stubs.rs)
-    "panel_theme",
-    "palette",
-    "emit",
-    "mutate",
-    "mutate_result",
-    "claim_key",
-    "request_frame",
-    "animating",
-    "navigate",
-    "nav_arg",
-    "navigate_replace",
-    "navigate_back",
-    "navigate_forward",
-    "text_view",
-    "edit_view",
-    "edit_view_text",
-    "edit_view_projection",
-    "edit_view_edits",
-    "text_view_line_styles",
-    "text_view_scroll_to",
-    "text_view_wrap",
-    // garden-script/src/panel_store.rs
-    "panel_store_get",
-    "panel_store_set",
-    // garden-script/src/query.rs
-    "query",
-    "invalidate",
-    // garden-script/src/native_fns.rs (the config host)
-    "editor",
-    "process",
-    "panel",
-    "row",
-    "column",
-    "layout",
-    "color_theme",
-    "color_scheme",
-];
-
-/// The natives Garden's config host (`init.ptl`, a layout script) registers:
-/// the layout builders and the theme setters. That host is its own `Env`, with
-/// the core builtins and these alone: no petal-ui natives and no `ui` prelude.
-/// Checking such a script as `garden` would resolve `row(children)` against
-/// the prelude's 3-argument `row` and warn about a call that runs fine.
-pub const GARDEN_CONFIG_NATIVES: &[&str] = &[
-    "editor",
-    "process",
-    "panel",
-    "row",
-    "column",
-    "layout",
-    "color_theme",
-    "color_scheme",
-];
-
-/// The natives petal-desktop-sdl (`integrations/petal-desktop-sdl`) adds on
-/// top of the petal-ui set: the example launcher and plain-text file I/O.
-pub const SDL_NATIVES: &[&str] = &[
-    "example_count",
-    "example_name",
-    "example_path",
-    "launch_script",
-    "load_text_file",
-    "save_text_file",
-    "file_exists",
-];
-
-/// Which host a script is written for, and so which natives beyond the `Env`'s
-/// own table it may call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum HostProfile {
-    /// The core builtins only.
-    Core,
-    /// Core plus the petal-ui set ([`PETAL_UI_NATIVES`]).
-    #[default]
-    Ui,
-    /// Core, petal-ui, and Garden's extras ([`GARDEN_NATIVES`]).
-    Garden,
-    /// Core, petal-ui, and the desktop SDL runner's extras ([`SDL_NATIVES`]).
-    Sdl,
-    /// Garden's config host (`init.ptl`, layout scripts): core plus
-    /// [`GARDEN_CONFIG_NATIVES`], without petal-ui or its prelude.
-    GardenConfig,
-}
-
-impl HostProfile {
-    /// Parse a `--host` value.
-    pub fn from_name(name: &str) -> Option<HostProfile> {
-        match name {
-            "core" | "none" => Some(HostProfile::Core),
-            "ui" | "petal-ui" => Some(HostProfile::Ui),
-            "garden" => Some(HostProfile::Garden),
-            "sdl" | "desktop" => Some(HostProfile::Sdl),
-            "garden-config" => Some(HostProfile::GardenConfig),
-            _ => None,
-        }
-    }
-
-    /// The canonical `--host` value for this profile.
-    pub fn name(self) -> &'static str {
-        match self {
-            HostProfile::Core => "core",
-            HostProfile::Ui => "ui",
-            HostProfile::Garden => "garden",
-            HostProfile::Sdl => "sdl",
-            HostProfile::GardenConfig => "garden-config",
-        }
-    }
-
-    /// Whether this host imports the petal-ui `ui` prelude implicitly.
-    pub fn uses_ui_prelude(self) -> bool {
-        !matches!(self, HostProfile::Core | HostProfile::GardenConfig)
-    }
-
-    /// The natives this host adds to the core table.
-    pub fn natives(self) -> impl Iterator<Item = &'static str> {
-        let (ui, garden): (&[&str], &[&str]) = match self {
-            HostProfile::Core => (&[], &[]),
-            HostProfile::Ui => (PETAL_UI_NATIVES, &[]),
-            HostProfile::Garden => (PETAL_UI_NATIVES, GARDEN_NATIVES),
-            HostProfile::Sdl => (PETAL_UI_NATIVES, SDL_NATIVES),
-            HostProfile::GardenConfig => (&[], GARDEN_CONFIG_NATIVES),
-        };
-        ui.iter().chain(garden.iter()).copied()
-    }
-}
-
-/// The names a host provides beyond what the program's own table resolved:
-/// the profile's natives plus any the caller names (`--native`).
-pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
-    profile
-        .natives()
-        .map(str::to_string)
-        .chain(extra.iter().cloned())
-        .collect()
-}
-
-/// Report every call to, or read of, a global that nothing defines, and
-/// every named argument a native cannot take.
+/// `native_signatures` answers for the `Env` the program was compiled in:
+/// `None` when it registers no native of that name, else the parameter lists
+/// that native declares
+/// ([`Env::native_signatures`](crate::env::Env::native_signatures)).
 ///
-/// `native_signatures` answers for the running `Env`: `None` when it registers
-/// no native of that name, else the parameter lists that native declares
-/// ([`Env::native_signatures`](crate::env::Env::native_signatures)). `host` is
-/// the set the target host adds (see [`host_names`]). A `BuiltinCall` naming
-/// neither is a call that fails with "Unknown builtin"; an `Undefined
-/// variable` error term naming neither is a read that fails. A read of a host
-/// native (`let f = draw_rect`) compiles to that same error term under a table
-/// that lacks it, which is why reads are filtered by the host set too.
+/// A call to an unbound name and a read of one are the compiler's deferred
+/// `Error` terms ([`UNKNOWN_FUNCTION_PREFIX`], [`UNDEFINED_VARIABLE_PREFIX`]).
 ///
-/// A `BuiltinCall` that *does* resolve is reported when it still carries
-/// argument names — the compiler strips them from every call whose names bind
+/// A `BuiltinCall` — a call the compiler bound to a native, a `core` builtin
+/// or one a `native fn` in scope declares — is reported when it still carries
+/// argument names: the compiler strips them from every call whose names bind
 /// (`Compiler::normalize_named_builtin_calls`), so what is left fails when it
 /// runs:
 ///
@@ -347,13 +117,8 @@ pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
 ///   filled twice, a required parameter left out — in the words the checker
 ///   uses for a Petal `fn` ([`named_native_call_error`]).
 ///
-/// A native this process does not register is checked when a module of the
-/// program declares it (`native fn`): the declaration carries its parameter
-/// lists ([`Program::native_links`]). One known only by name (the host set —
-/// Garden's, the SDL runner's, a `--native` name) is given the benefit of the
-/// doubt: its host may well declare parameters this process cannot see, and
-/// reporting an error on a call that runs is worse than leaving a bad name to
-/// the run.
+/// A native this process does not register is checked against the parameter
+/// lists its declaration carries ([`Program::native_links`]).
 ///
 /// One diagnostic per source position, in term order. Each is an error
 /// ([`Severity::Error`](crate::diagnostic::Severity::Error)): the line fails
@@ -361,7 +126,6 @@ pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
 pub fn unresolved_globals<'a>(
     program: &Program,
     native_signatures: impl Fn(&str) -> Option<&'a [NativeSignature]>,
-    host: &HashSet<String>,
 ) -> Vec<Diagnostic> {
     // Natives the program declares, with the parameter lists declared.
     let declared: std::collections::HashMap<&str, &[NativeSignature]> = program
@@ -369,9 +133,6 @@ pub fn unresolved_globals<'a>(
         .iter()
         .map(|link| (link.host.as_str(), link.signatures.as_slice()))
         .collect();
-    let known = |name: &str| {
-        native_signatures(name).is_some() || declared.contains_key(name) || host.contains(name)
-    };
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for term in &program.terms {
@@ -380,40 +141,31 @@ pub fn unresolved_globals<'a>(
                 let Some(name) = program.get_string_constant(cid) else {
                     continue;
                 };
-                if !known(name) {
+                if term.arg_names.iter().all(Option::is_none) {
+                    continue;
+                }
+                let names: Vec<Option<&str>> = term
+                    .arg_names
+                    .iter()
+                    .map(|n| n.and_then(|c| program.get_string_constant(c)))
+                    .collect();
+                let sigs: &[NativeSignature] = match native_signatures(name) {
+                    Some(sigs) => sigs,
+                    None => match declared.get(name) {
+                        Some(sigs) => sigs,
+                        None => continue,
+                    },
+                };
+                if sigs.is_empty() {
+                    // Same wording as the VM's refusal, like the
+                    // checker's other named-argument errors.
                     format!(
-                        "unknown function `{name}`: nothing by that name is in scope, and it is not \
-                         a builtin (running this line fails with \"Unknown builtin: {name}\")"
+                        "builtin '{name}' does not accept named arguments (pass them by position)"
                     )
                 } else {
-                    if term.arg_names.iter().all(Option::is_none) {
-                        continue;
-                    }
-                    let names: Vec<Option<&str>> = term
-                        .arg_names
-                        .iter()
-                        .map(|n| n.and_then(|c| program.get_string_constant(c)))
-                        .collect();
-                    let sigs: &[NativeSignature] = match native_signatures(name) {
-                        Some(sigs) => sigs,
-                        None => match declared.get(name) {
-                            Some(sigs) => sigs,
-                            // A host native whose declaration is out of
-                            // sight: not ours to refuse.
-                            None => continue,
-                        },
-                    };
-                    if sigs.is_empty() {
-                        // Same wording as the VM's refusal, like the
-                        // checker's other named-argument errors.
-                        format!(
-                            "builtin '{name}' does not accept named arguments (pass them by position)"
-                        )
-                    } else {
-                        match named_native_call_error(name, sigs, &names) {
-                            Some(message) => message,
-                            None => continue,
-                        }
+                    match named_native_call_error(name, sigs, &names) {
+                        Some(message) => message,
+                        None => continue,
                     }
                 }
             }
@@ -421,20 +173,23 @@ pub fn unresolved_globals<'a>(
                 let Some(msg) = program.get_string_constant(cid) else {
                     continue;
                 };
-                let Some(rest) = msg.strip_prefix("Undefined variable: ") else {
-                    continue;
-                };
-                // The compiler appends a hint after an em dash for common
-                // slips from other languages (`null`, `elif`, …).
-                let name = rest.split(' ').next().unwrap_or(rest);
-                if known(name) {
-                    continue;
-                }
-                let hint = rest[name.len()..].trim_start();
-                if hint.is_empty() {
-                    format!("undefined variable `{name}`")
+                if let Some(name) = msg.strip_prefix(UNKNOWN_FUNCTION_PREFIX) {
+                    format!(
+                        "unknown function `{name}`: nothing by that name is in scope, and it is not \
+                         a builtin (running this line fails with \"{UNKNOWN_FUNCTION_PREFIX}{name}\")"
+                    )
+                } else if let Some(rest) = msg.strip_prefix(UNDEFINED_VARIABLE_PREFIX) {
+                    // The compiler appends a hint after an em dash for common
+                    // slips from other languages (`null`, `elif`, …).
+                    let name = rest.split(' ').next().unwrap_or(rest);
+                    let hint = rest[name.len()..].trim_start();
+                    if hint.is_empty() {
+                        format!("undefined variable `{name}`")
+                    } else {
+                        format!("undefined variable `{name}` {hint}")
+                    }
                 } else {
-                    format!("undefined variable `{name}` {hint}")
+                    continue;
                 }
             }
             _ => continue,
@@ -454,76 +209,18 @@ pub fn unresolved_globals<'a>(
     out
 }
 
-/// The petal-ui prelude's source (`import ui`), embedded when this crate is
-/// built inside the Petal monorepo (see `build.rs`). A petal-ui host makes it
-/// an implicit import, so `petal check` must too: without it every widget
-/// call (`button(...)`) and every prelude binding (`theme`) would be an
-/// unknown global. `None` in a build that cannot see `core-libs/petal-ui/`.
-pub fn ui_prelude_source() -> Option<&'static str> {
-    #[cfg(all(petal_ui_prelude, not(target_arch = "wasm32")))]
-    {
-        Some(include_str!(env!("PETAL_UI_PRELUDE_PATH")))
-    }
-    #[cfg(not(all(petal_ui_prelude, not(target_arch = "wasm32"))))]
-    {
-        None
-    }
-}
-
-/// Whether `name` is something only a petal-ui host provides: the `ui` module
-/// itself, one of its natives, or (when this build can see the prelude) a
-/// name the `ui` prelude exports. Used to explain a `petal run` failure on a
-/// script `petal check` accepts under its default `--host ui`.
-pub fn ui_host_provides(name: &str) -> bool {
-    if name == UI_MODULE || PETAL_UI_NATIVES.contains(&name) {
-        return true;
-    }
-    let Some(prelude) = ui_prelude_source() else {
-        return false;
-    };
-    // A line scan is enough: exports are top-level `pub <keyword> <name>`
-    // declarations, and a false "no" only costs the note.
-    prelude.lines().any(|line| {
-        let mut words = line.split_whitespace();
-        matches!(words.next(), Some("pub" | "export"))
-            && words.next().is_some()
-            && words.next().is_some_and(|w| {
-                w.split(|c: char| !(c.is_alphanumeric() || c == '_')).next() == Some(name)
-            })
-    })
-}
-
-/// The checkout's `core-runtime/` directory, holding the packages Garden
-/// registers for every panel (`bloom`, `text_layout`). `None` when this build
-/// could not see it.
-pub fn garden_packages_dir() -> Option<std::path::PathBuf> {
-    #[cfg(all(petal_libs_dir, not(target_arch = "wasm32")))]
-    {
-        Some(std::path::PathBuf::from(env!("PETAL_LIBS_DIR")))
-    }
-    #[cfg(not(all(petal_libs_dir, not(target_arch = "wasm32"))))]
-    {
-        None
-    }
-}
-
-/// Name of the petal-ui prelude module (`petal_ui::MODULE_NAME`).
-pub const UI_MODULE: &str = "ui";
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::env::Env;
 
-    fn unresolved(src: &str, profile: HostProfile, extra: &[&str]) -> Vec<String> {
+    fn unresolved(src: &str) -> Vec<String> {
         let mut env = Env::new();
         // A check, not a run: the natives a test declares are not registered.
         env.set_check_only(true);
         let pid = env.load_program(src).expect("compiles");
-        let extra: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
-        let host = host_names(profile, &extra);
         let program = env.get_program(pid).unwrap();
-        unresolved_globals(program, |n| env.native_signatures(n), &host)
+        unresolved_globals(program, |n| env.native_signatures(n))
             .into_iter()
             .map(|d| {
                 format!(
@@ -536,11 +233,7 @@ mod tests {
 
     #[test]
     fn unknown_call_and_read_are_reported() {
-        let got = unresolved(
-            "totally_bogus_fn(1)\nlet y = nope + 1",
-            HostProfile::Ui,
-            &[],
-        );
+        let got = unresolved("totally_bogus_fn(1)\nlet y = nope + 1");
         assert_eq!(got.len(), 2, "{got:?}");
         assert!(
             got[0].starts_with("1:1 unknown function `totally_bogus_fn`"),
@@ -552,43 +245,60 @@ mod tests {
     #[test]
     fn builtins_bindings_and_declared_fns_are_known() {
         let src = "fn f(x) sqrt(x) end\nlet g = f\nprint(g(4), len([1]), f(9))";
-        assert!(unresolved(src, HostProfile::Core, &[]).is_empty());
+        assert!(unresolved(src).is_empty());
     }
 
     #[test]
-    fn host_profile_decides_host_natives() {
-        let src = "draw_rect(0, 0, 1, 1, 0, 0, 0)\nlet p = palette";
-        assert_eq!(unresolved(src, HostProfile::Core, &[]).len(), 2);
-        assert_eq!(unresolved(src, HostProfile::Ui, &[]).len(), 1);
-        assert!(unresolved(src, HostProfile::Garden, &[]).is_empty());
-        assert!(unresolved(src, HostProfile::Ui, &["palette"]).is_empty());
+    fn a_host_native_is_known_only_through_an_import_of_its_interface() {
+        let src = "draw_rect(0, 0, 1, 1, 0, 0, 0)\nlet k = key_down";
+        let got = unresolved(src);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(got[0].starts_with("1:1 unknown function `draw_rect`"), "{got:?}");
+        assert_eq!(got[1], "2:9 undefined variable `key_down`");
+        assert!(unresolved(&format!("import ui\n{src}")).is_empty());
+    }
+
+    #[test]
+    fn a_registered_native_nothing_declares_is_still_unknown() {
+        let mut env = Env::new();
+        env.register_native(
+            "host_only",
+            |_| Ok(0),
+            crate::native_fn::NativeEffects::PURE,
+        );
+        env.set_check_only(true);
+        let pid = env.load_program("host_only()\nlet f = host_only").unwrap();
+        let program = env.get_program(pid).unwrap();
+        assert_eq!(
+            unresolved_globals(program, |n| env.native_signatures(n)).len(),
+            2
+        );
+        let pid = env
+            .load_program("native fn host_only()\nhost_only()\nlet f = host_only")
+            .unwrap();
+        let program = env.get_program(pid).unwrap();
+        assert!(unresolved_globals(program, |n| env.native_signatures(n)).is_empty());
     }
 
     #[test]
     fn a_named_argument_to_an_undeclared_builtin_is_reported() {
-        let got = unresolved(
-            "if false then print(1, sep: 2) end\nprint(1, 2)",
-            HostProfile::Core,
-            &[],
-        );
+        let got = unresolved("if false then print(1, sep: 2) end\nprint(1, 2)");
         assert_eq!(
             got,
             ["1:15 builtin 'print' does not accept named arguments (pass them by position)"]
         );
         // A Petal `fn` of the same call shape is not a native at all.
         let src = "fn f(a, b) a - b end\nprint(f(b: 1, a: 2), sum(xs: [1]))";
-        assert!(unresolved(src, HostProfile::Core, &[]).is_empty());
+        assert!(unresolved(src).is_empty());
     }
 
     #[test]
     fn names_a_builtin_declares_are_accepted_and_checked() {
         let ok = "print(clamp(5, lo: 0, hi: 3), clamp(hi: 3, value: 5, lo: 0), [1, 2, 3].slice(start: 1))";
-        assert!(unresolved(ok, HostProfile::Core, &[]).is_empty());
+        assert!(unresolved(ok).is_empty());
         // Inside an untaken branch, so only this pass ever reports them.
         let got = unresolved(
             "if false then\n  clamp(5, low: 0, hi: 3)\n  clamp(5, value: 0, hi: 3)\n  clamp(5, hi: 3)\n  slice([1], end: 1)\nend",
-            HostProfile::Core,
-            &[],
         );
         assert_eq!(
             got,
@@ -604,8 +314,8 @@ mod tests {
     #[test]
     fn a_builtin_with_several_forms_takes_any_of_them() {
         let ok = "print(random(max: 2), random(min: 1, max: 2), distance(v1: vec2(0, 0), v2: vec2(1, 1)))";
-        assert!(unresolved(ok, HostProfile::Core, &[]).is_empty());
-        let got = unresolved("if false then random(lo: 1, hi: 2) end", HostProfile::Core, &[]);
+        assert!(unresolved(ok).is_empty());
+        let got = unresolved("if false then random(lo: 1, hi: 2) end");
         assert_eq!(
             got,
             ["1:15 random() has no parameter named 'lo' (parameters: 'min', 'max')"]
@@ -615,11 +325,11 @@ mod tests {
     #[test]
     fn declared_host_natives_are_checked_against_their_declaration() {
         // A host's parameters are declared by its interface module, so they
-        // are checked without the host's `Env`…
+        // are checked without the host's `Env`.
         let iface = "native fn mouse_down(button: num) -> bool\n\
                      native fn mouse_x() -> int\n\
                      native fn clip(x, y, w, h, radius?)\n";
-        let check = |call: &str| unresolved(&format!("{iface}{call}"), HostProfile::Core, &[]);
+        let check = |call: &str| unresolved(&format!("{iface}{call}"));
         assert!(check("mouse_down(button: 0)").is_empty());
         assert!(check("clip(x: 0, y: 0, w: 4, h: 4, radius: 2)").is_empty());
         assert_eq!(
@@ -630,17 +340,13 @@ mod tests {
             check("mouse_x(button: 0)"),
             ["4:1 mouse_x() has no parameter named 'button' (parameters: none)"]
         );
-        // A declared native is known with no host profile naming it, by call
-        // and by read.
+        // A declared native is known by call and by read.
         assert!(check("let f = mouse_x\nprint(f, mouse_x())").is_empty());
-        // …and a host native known only by name is left to the run.
-        assert!(unresolved("navigate(to: 1)", HostProfile::Garden, &[]).is_empty());
-        assert!(unresolved("mine(a: 1)", HostProfile::Core, &["mine"]).is_empty());
     }
 
     #[test]
     fn a_hint_after_the_name_is_kept() {
-        let got = unresolved("print(null)", HostProfile::Ui, &[]);
+        let got = unresolved("print(null)");
         assert_eq!(
             got,
             ["1:7 undefined variable `null` — use 'nil' for null/empty values in Petal"]
@@ -649,34 +355,7 @@ mod tests {
 
     #[test]
     fn repeated_calls_on_one_line_each_report() {
-        let got = unresolved("zz(1)\nzz(2)", HostProfile::Ui, &[]);
+        let got = unresolved("zz(1)\nzz(2)");
         assert_eq!(got.len(), 2, "{got:?}");
-    }
-
-    #[test]
-    fn host_lists_do_not_shadow_core_builtins() {
-        // A host list naming a core builtin would be harmless but would hide
-        // a real drift in the petal-ui sync test, which subtracts the core set.
-        let env = Env::new();
-        for name in PETAL_UI_NATIVES
-            .iter()
-            .chain(GARDEN_NATIVES)
-            .chain(SDL_NATIVES)
-        {
-            assert!(!env.has_native(name), "{name} is a core builtin");
-        }
-    }
-
-    #[test]
-    fn profile_names_parse() {
-        assert_eq!(HostProfile::from_name("ui"), Some(HostProfile::Ui));
-        assert_eq!(HostProfile::from_name("garden"), Some(HostProfile::Garden));
-        assert_eq!(HostProfile::from_name("sdl"), Some(HostProfile::Sdl));
-        assert_eq!(HostProfile::from_name("core"), Some(HostProfile::Core));
-        assert_eq!(
-            HostProfile::from_name("garden-config"),
-            Some(HostProfile::GardenConfig)
-        );
-        assert_eq!(HostProfile::from_name("x"), None);
     }
 }

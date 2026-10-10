@@ -39,12 +39,12 @@
 //! cover before it is accepted, the way `lint`'s cast rule validates its
 //! spans: a scan that goes wrong costs a suggestion, never a corrupted file.
 //!
-//! # Which host
+//! # Host names
 //!
-//! A script is compiled the way `petal check` compiles it: for a host
-//! ([`HostEnv`]), with that host's prelude imported implicitly. That is what
-//! lets a call to `draw_rect` resolve to the `ui` prelude's overloads rather
-//! than look like an unknown global.
+//! A script is compiled the way `petal check` compiles it ([`HostEnv`]): a
+//! host's names come from the interface package the script imports
+//! (`import ui`), so a call to `draw_rect` resolves to the `ui` package's
+//! overloads with no host present.
 
 pub mod advice;
 pub mod named_args;
@@ -56,7 +56,6 @@ use std::path::{Path, PathBuf};
 use crate::ast::{Stmt, StmtKind};
 use crate::classes::ClassTable;
 use crate::native_fn::NativeSignature;
-use crate::typecheck::globals::{self, HostProfile};
 use crate::typecheck::infer::{Evidence, FnKey, Inferences, Resolved, Slot};
 use crate::types::Type;
 
@@ -122,80 +121,45 @@ impl Kinds {
     }
 }
 
-/// An [`Env`](crate::env::Env) set up the way a host sets its own up, as far
-/// as this process can: the module search path, and the host's implicit
-/// prelude. Every compile `petal suggest` does — the analysis and the
-/// `--apply` proofs alike — goes through one of these, so they agree on what
-/// each name means.
+/// An [`Env`](crate::env::Env) set up for the static tools: check-only, with
+/// the package search path. Every compile `petal suggest` does — the analysis
+/// and the `--apply` proofs alike — goes through one of these, so they agree
+/// on what each name means. A host's names come from the interface package
+/// the script imports (`import ui`), found like any other package.
 pub struct HostEnv {
     pub env: crate::env::Env,
-    host: HostProfile,
-    /// Whether the host's natives can be trusted to be what a bare call
-    /// reaches: false when the host has a prelude this build cannot see, since
-    /// a prelude function of the same name would have shadowed the native.
-    host_natives: bool,
-    /// Host native → the parameter lists the host's interface module declares
-    /// for it (`native fn` in the `ui` prelude).
-    declared: std::collections::HashMap<String, Vec<NativeSignature>>,
 }
 
 impl HostEnv {
-    pub fn new(include_dirs: &[PathBuf], host: HostProfile) -> Self {
+    pub fn new(include_dirs: &[PathBuf]) -> Self {
         let mut env = crate::env::Env::new();
         // Nothing compiled here is run: a host's natives are answered for by
-        // the `native fn` declarations of its interface module, registered
+        // the `native fn` declarations of its interface package, registered
         // or not.
         env.set_check_only(true);
         for dir in include_dirs {
             env.add_module_path(dir.clone());
         }
-        // Garden registers its packages for every panel; see `petal check`.
-        if host == HostProfile::Garden
-            && let Some(libs) = globals::garden_packages_dir()
-            && libs.is_dir()
-            && !include_dirs.contains(&libs)
-        {
-            env.add_module_path(libs);
-        }
-        let mut host_natives = true;
-        let mut declared: std::collections::HashMap<String, Vec<NativeSignature>> =
-            std::collections::HashMap::new();
-        if host.uses_ui_prelude() {
-            match globals::ui_prelude_source() {
-                Some(src) => {
-                    env.register_module(globals::UI_MODULE, src);
-                    env.set_implicit_imports(&[globals::UI_MODULE]);
-                    if let Ok(decls) = crate::native_decl::NativeDecls::parse(src) {
-                        for (_, decl) in decls.iter() {
-                            declared
-                                .entry(decl.host.clone())
-                                .or_default()
-                                .extend(decl.signatures());
-                        }
-                    }
-                }
-                None => host_natives = false,
-            }
-        }
-        HostEnv {
-            env,
-            host,
-            host_natives,
-            declared,
-        }
+        HostEnv { env }
     }
 
     /// The parameter lists native `name` declares: the `Env`'s own when it
-    /// registers one, else the ones the host's interface module declares (the
-    /// petal-ui set, from the `ui` prelude's `native fn`s). `None` for a name that is not a known native.
-    pub fn native_signatures(&self, name: &str) -> Option<Vec<NativeSignature>> {
+    /// registers one (the builtins), else the ones `program` declares for it
+    /// with `native fn` (a host's interface package). `None` for a name that
+    /// is not a known native.
+    pub fn native_signatures(
+        &self,
+        program: &crate::program::Program,
+        name: &str,
+    ) -> Option<Vec<NativeSignature>> {
         if let Some(sigs) = self.env.native_signatures(name) {
             return Some(sigs.to_vec());
         }
-        if self.host_natives && self.host.natives().any(|n| n == name) {
-            return self.declared.get(name).cloned();
-        }
-        None
+        program
+            .native_links
+            .iter()
+            .find(|link| link.host == name)
+            .map(|link| link.signatures.clone())
     }
 }
 
@@ -208,8 +172,6 @@ pub struct SuggestOptions {
     /// module compiled on its own has no callers, so its parameters have no
     /// call-site evidence; pointing at an app that uses it supplies them.
     pub from: Vec<PathBuf>,
-    /// The host the script is written for, as `petal check --host` names it.
-    pub host: HostProfile,
     /// Which kinds of suggestion to produce.
     pub kinds: Kinds,
 }
@@ -275,7 +237,7 @@ pub fn suggest_source(
 ) -> Result<SuggestOutcome, String> {
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;
     let mut notes = Vec::new();
-    let host = HostEnv::new(&opts.include_dirs, opts.host);
+    let host = HostEnv::new(&opts.include_dirs);
     let (program, mut inferences, classes) = host
         .env
         .compile_collecting_program(source, origin)
@@ -307,7 +269,7 @@ pub fn suggest_source(
 
     let named_args = if opts.kinds.named_args {
         named_args::find(source, &stmts, &program, &|name| {
-            host.native_signatures(name)
+            host.native_signatures(&program, name)
         })
     } else {
         Vec::new()
@@ -666,10 +628,10 @@ pub struct Compiled {
 }
 
 impl Compiled {
-    /// Compile `source` the way a run for `opts.host` would. `Err` is the
+    /// Compile `source` the way `petal check` does. `Err` is the
     /// compile error.
     pub fn new(source: &str, origin: Option<&Path>, opts: &SuggestOptions) -> Result<Self, String> {
-        let mut host = HostEnv::new(&opts.include_dirs, opts.host);
+        let mut host = HostEnv::new(&opts.include_dirs);
         let pid = match origin {
             Some(path) => host.env.load_program_at(source, path),
             None => host.env.load_program(source),
@@ -731,7 +693,7 @@ impl Compiled {
         crate::ir_equiv::ir_equivalent_modulo_named_args(
             self.program(),
             rewritten.program(),
-            &|name| rewritten.host.native_signatures(name),
+            &|name| rewritten.host.native_signatures(rewritten.program(), name),
         )
     }
 }
@@ -760,7 +722,7 @@ pub fn not_the_same_program(diff: &crate::ir_equiv::IrDiff) -> String {
     )
 }
 
-/// Compile both texts for `opts.host` and compare them, accepting calls that
+/// Compile both texts and compare them, accepting calls that
 /// differ only in how their arguments are written. Shaped like
 /// [`crate::ir_equiv::sources_equivalent`]: `Ok(Err(diff))` is "compiled, not
 /// equivalent"; `Err(msg)` is "one of them didn't compile".

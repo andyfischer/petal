@@ -16,6 +16,7 @@ import bloom/interact: probe, drag, focusable, focused, focus_set,
                        is_captured
 import bloom/icon: icon
 import text_layout: text_baseline, text_top, draw_text_line, caret_index, caret_x
+import ui
 
 // ── Switch ────────────────────────────────────────────────────────────────
 

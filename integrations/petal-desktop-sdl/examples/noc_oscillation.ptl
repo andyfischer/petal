@@ -2,6 +2,8 @@
 // Inspired by Chapter 3: Oscillation
 // Pendulums, springs, and wave patterns
 
+import ui
+
 state pendulums = []
 state wave_offset = 0.0
 state time = 0.0

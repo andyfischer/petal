@@ -12,6 +12,7 @@
 
 import bloom
 import text_layout as tl
+import ui
 
 // This frame's theme: colors, the corner radius, the type scale and the motion
 // speed. A plain module `var`, set by the app before it draws anything.

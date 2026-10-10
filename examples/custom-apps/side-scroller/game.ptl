@@ -10,6 +10,9 @@
 // Press ENTER on the title to start, R to restart a level, ESC to pause.
 // =====================================================================
 
+import sdl
+import ui
+
 // ----------------------------- TUNING ---------------------------------
 
 let GRAVITY        = 1500.0

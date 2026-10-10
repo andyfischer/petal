@@ -5,6 +5,8 @@
 // it lights up here. Cmd-click it to put the cursor there.
 // Nothing in this file opts in: the tracing is the runtime's.
 
+import ui
+
 let w = screen_width()
 let h = screen_height()
 

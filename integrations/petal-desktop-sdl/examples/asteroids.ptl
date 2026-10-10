@@ -1,6 +1,8 @@
 // Asteroids - Simplified with 8-directional movement
 // Arrow keys to move, Space to shoot
 
+import ui
+
 // Ship state
 state ship_x = 400.0
 state ship_y = 300.0

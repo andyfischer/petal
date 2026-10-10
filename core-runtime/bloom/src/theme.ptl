@@ -19,6 +19,7 @@
 // through it, which is what keeps them on the centre line they claim to be on.
 import text_layout: draw_text_line, draw_text_block, text_baseline, text_top,
                     text_align_x, elide, text_size
+import ui
 
 // bloom's own layer over the host palette. Numbers only — every color comes
 // from the host, so these stay right in a light theme and a dark one.

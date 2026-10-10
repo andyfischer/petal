@@ -17,6 +17,8 @@
 //          crosshair readout; wheel over the fleet column or the alert feed.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import ui
+
 // ── Palette ──────────────────────────────────────────────────────────────────
 // A single blue-black ground with three surfaces above it. The hairline is the
 // only border in the design — cards are separated by tone and space, not boxes.

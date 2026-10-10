@@ -1,6 +1,8 @@
 // Starfield — warp drive.
 // 3D star projection with motion trails.
 
+import ui
+
 state stars = []
 state initialized = false
 

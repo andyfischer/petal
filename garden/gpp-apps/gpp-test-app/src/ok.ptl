@@ -1,3 +1,6 @@
+import garden
+import ui
+
 // gpp-test-app — mode `ok`: a healthy panel that just paints. The baseline the
 // other modes deviate from; proves the app wires up and the pane renders.
 //

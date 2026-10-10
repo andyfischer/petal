@@ -13,6 +13,9 @@
 //  Designed for a 1280x850 viewport. See README.md.
 // ─────────────────────────────────────────────────────────────────────────
 
+import ui
+import garden
+
 // ── Palette ──────────────────────────────────────────────────────────────
 // Editor side: ink on slate. Preview side: type on paper.
 let SLATE      = #171a23

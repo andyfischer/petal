@@ -2,6 +2,8 @@
 // Inspired by Chapter 6: Autonomous Agents
 // Vehicles that seek, flee, and wander
 
+import ui
+
 state vehicles = []
 state target_x = 400.0
 state target_y = 300.0

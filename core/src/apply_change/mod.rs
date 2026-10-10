@@ -41,7 +41,6 @@ use std::path::{Path, PathBuf};
 
 use crate::rewrite::{Splice, apply_splices};
 use crate::suggest::HostEnv;
-use crate::typecheck::globals::HostProfile;
 
 pub use importers::ptl_files_under;
 
@@ -81,15 +80,13 @@ pub struct ChangeOptions {
     /// gate. Empty means "scan the target's project directory instead"; see
     /// [`importers`].
     pub from: Vec<PathBuf>,
-    /// The host the scripts are written for, as `petal check --host` names it.
-    pub host: HostProfile,
 }
 
 impl ChangeOptions {
     /// An `Env` set up the way `petal check` and `petal suggest` set theirs
     /// up, so the gate agrees with them on what compiles.
     fn host_env(&self) -> HostEnv {
-        HostEnv::new(&self.include_dirs, self.host)
+        HostEnv::new(&self.include_dirs)
     }
 }
 
@@ -296,8 +293,8 @@ fn compile_gate(files: &[FileChange], opts: &ChangeOptions) -> Result<Vec<String
         if !nothing_new {
             return refuse(
                 "It did not compile before the change either, and this is not simply an error \
-                 it already had. If its imports or host natives are not found here, pass \
-                 `-I <dir>` or `--host <name>`.",
+                 it already had. If its imports are not found here, pass \
+                 `-I <dir>`.",
             );
         }
         notes.push(format!(
@@ -340,10 +337,7 @@ mod tests {
             after: "var x = 1\nx = 2\nprint(x)\n".to_string(),
             detail: String::new(),
         };
-        let opts = ChangeOptions {
-            host: HostProfile::Core,
-            ..ChangeOptions::default()
-        };
+        let opts = ChangeOptions::default();
         let err = compile_gate(&[broken], &opts).expect_err("must refuse");
         assert!(err.contains("use `set x = ...` to write it"), "{err}");
         assert!(err.contains("the rewrite is at fault"), "{err}");

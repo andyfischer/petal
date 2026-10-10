@@ -773,8 +773,8 @@ mod tests {
         }
     }
 
-    const FRAME: &str = "config let STEP = 1\nstate var n = 0\nset n = n + STEP\ndraw_rect(n, 0, 10, 10, 255, 0, 0)\n";
-    const EDITED: &str = "config let STEP = 10\nstate var n = 0\nset n = n + STEP\ndraw_rect(n, 0, 10, 10, 255, 0, 0)\n";
+    const FRAME: &str = "import ui\nconfig let STEP = 1\nstate var n = 0\nset n = n + STEP\ndraw_rect(n, 0, 10, 10, 255, 0, 0)\n";
+    const EDITED: &str = "import ui\nconfig let STEP = 10\nstate var n = 0\nset n = n + STEP\ndraw_rect(n, 0, 10, 10, 255, 0, 0)\n";
 
     /// One committed frame the way the loop runs it, recorded into `tl`.
     fn run_frame(env: &mut Env, live: StackKey, tl: &mut Timeline, host: &mut TestHost, frame: &mut i64) {

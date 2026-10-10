@@ -16,6 +16,8 @@
 // `time()` so that every callsite sharing a period stays in phase; a headless
 // run holds that clock still, and they hold their value with it.
 
+import ui
+
 // The frame delta, clamped. A pause, a breakpoint or a slow first frame
 // otherwise arrives as one enormous `dt` that flings every spring across the
 // screen; capping it at ~3 frames turns a hitch into a slightly slow frame.

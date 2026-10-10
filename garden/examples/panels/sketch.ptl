@@ -7,6 +7,8 @@
 // Use it from a layout script:   panel("examples/panels/sketch.ptl")
 // See docs/petal-graphical-panels.md.
 
+import ui
+
 // `state` persists across frames; everything else re-runs each frame.
 state t = 0.0
 t = t + dt()

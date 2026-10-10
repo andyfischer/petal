@@ -11,6 +11,8 @@
 // is assigned all over, and assigning to a captured outer variable from
 // inside a function is an error by design.)
 
+import ui
+
 // ── State ─────────────────────────────────────────────────────────────────
 state tab = 0
 state fc = focus_state()

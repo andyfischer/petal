@@ -2,6 +2,8 @@
 // Inspired by Perlin Noise concepts from Chapter 0
 // A flowing 2D terrain using layered sine waves to simulate noise
 
+import ui
+
 state time = 0.0
 state mountains = []
 state stars = []

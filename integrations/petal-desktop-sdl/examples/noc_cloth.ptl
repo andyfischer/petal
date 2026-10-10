@@ -2,6 +2,8 @@
 // Inspired by Chapter 3 & 5: Springs + Physics Libraries
 // Verlet integration cloth that responds to mouse and wind
 
+import ui
+
 state points = []
 state cols = 0
 state rows_count = 0

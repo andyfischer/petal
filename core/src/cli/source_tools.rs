@@ -500,7 +500,6 @@ pub(super) fn handle_apply_change(args: &ApplyChangeArgs, include_dirs: &[PathBu
     let opts = ChangeOptions {
         include_dirs: include_dirs.to_vec(),
         from: args.from.clone(),
-        host: args.host,
     };
     let plan = match apply_change::plan(Path::new(file), &request, &opts) {
         Ok(plan) => plan,

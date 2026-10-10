@@ -5,6 +5,8 @@
 // Like home.ptl this paints with `ui_theme()` and bloom, so it also runs under
 // a bare `petal-ui-run -I core-runtime`.
 import bloom
+import garden
+import ui
 
 let T = ui_theme()
 let w = screen_width()

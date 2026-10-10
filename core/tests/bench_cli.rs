@@ -365,8 +365,6 @@ print(b.area() + shapes.double(sum_to(4)))
         "--json",
         "--iters",
         "1",
-        "--host",
-        "core",
         main.to_str().unwrap(),
         "--fn",
         "area",
@@ -396,11 +394,7 @@ print(b.area() + shapes.double(sum_to(4)))
 }
 
 #[test]
-fn only_the_core_host_is_accepted() {
-    let (_, stderr, ok) = run(&["bench", "--host", "ui", "-e", NESTED, "--fn", "outer"]);
-    assert!(!ok);
-    assert!(stderr.contains("core host only"), "{stderr}");
-
+fn a_bench_needs_a_function_to_measure() {
     let (_, stderr, ok) = run(&["bench", "-e", NESTED]);
     assert!(!ok);
     assert!(stderr.contains("--fn"), "{stderr}");

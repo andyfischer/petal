@@ -35,7 +35,7 @@ fn petal_multi_type(state: &mut PetalCxt) -> NativeResult {
 fn native_string_repeat() {
     let mut env = Env::new();
     env.register_native("string_repeat", petal_string_repeat, NativeEffects::PURE);
-    let result = env.run_source(r#"print(string_repeat("abc", 3))"#);
+    let result = env.run_source("native fn string_repeat(s, n)\nprint(string_repeat(\"abc\", 3))");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -43,7 +43,7 @@ fn native_string_repeat() {
 fn native_add_ints() {
     let mut env = Env::new();
     env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
-    let result = env.run_source("print(add_ints(10, 20))");
+    let result = env.run_source("native fn add_ints(a, b)\nprint(add_ints(10, 20))");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -51,7 +51,7 @@ fn native_add_ints() {
 fn native_greet_with_output() {
     let mut env = Env::new();
     env.register_native("greet", petal_greet, NativeEffects::EFFECT);
-    let result = env.run_source(r#"greet("World")"#);
+    let result = env.run_source("native fn greet(name)\ngreet(\"World\")");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -59,7 +59,7 @@ fn native_greet_with_output() {
 fn native_no_args_returns_nil() {
     let mut env = Env::new();
     env.register_native("noop", petal_no_args, NativeEffects::PURE);
-    let result = env.run_source("let x = noop()\nprint(x)");
+    let result = env.run_source("native fn noop()\nlet x = noop()\nprint(x)");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -67,7 +67,7 @@ fn native_no_args_returns_nil() {
 fn native_arg_count() {
     let mut env = Env::new();
     env.register_native("count_args", petal_multi_type, NativeEffects::PURE);
-    let result = env.run_source(r#"print(count_args(1, "two", true))"#);
+    let result = env.run_source("native fn count_args(...args)\nprint(count_args(1, \"two\", true))");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -75,7 +75,7 @@ fn native_arg_count() {
 fn native_used_in_expression() {
     let mut env = Env::new();
     env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
-    let result = env.run_source("let x = add_ints(3, 4) + 1\nprint(x)");
+    let result = env.run_source("native fn add_ints(a, b)\nlet x = add_ints(3, 4) + 1\nprint(x)");
     assert!(result.is_ok(), "Error: {:?}", result.err());
 }
 
@@ -83,8 +83,9 @@ fn native_used_in_expression() {
 fn native_error_on_wrong_type() {
     let mut env = Env::new();
     env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
-    let result = env.run_source(r#"add_ints("not", "ints")"#);
-    assert!(result.is_err());
+    let result = env.run_source("native fn add_ints(a, b)\nadd_ints(\"not\", \"ints\")");
+    let err = result.unwrap_err();
+    assert!(!err.contains("Unknown function"), "{err}");
 }
 
 #[test]
@@ -94,6 +95,8 @@ fn native_multiple_registrations() {
     env.register_native("add_ints", petal_add_ints, NativeEffects::PURE);
     let result = env.run_source(
         r#"
+        native fn string_repeat(s, n)
+        native fn add_ints(a, b)
         let s = string_repeat("x", add_ints(2, 3))
         print(s)
     "#,
@@ -127,7 +130,7 @@ fn boxed_native_owns_captured_state() {
         },
         NativeEffects::EFFECT,
     );
-    let result = env.run_source("tick()\ntick()\ntick()").unwrap();
+    let result = env.run_source("native fn tick()\ntick()\ntick()\ntick()").unwrap();
     assert_eq!(result, Value::Int(3));
     assert_eq!(calls.get(), 3);
 }
@@ -148,7 +151,12 @@ fn one_closure_body_serves_many_natives() {
     for scale in 1..=50 {
         env.register_native_boxed(&format!("times{scale}"), make(scale), NativeEffects::PURE);
     }
-    let result = env.run_source("times3(2) + times50(1) + times1(7)").unwrap();
+    let result = env
+        .run_source(
+            "native fn times1(x)\nnative fn times3(x)\nnative fn times50(x)\n\
+             times3(2) + times50(1) + times1(7)",
+        )
+        .unwrap();
     assert_eq!(result, Value::Int(6 + 50 + 7));
 }
 
@@ -170,7 +178,7 @@ fn boxed_and_bare_natives_coexist() {
     assert_ne!(bare, boxed);
     assert_eq!(env.native_fn_name(boxed.0), "add_offset");
     assert!(env.has_native("add_offset"));
-    let result = env.run_source("add_offset(add_ints(1, 2))").unwrap();
+    let result = env.run_source("native fn add_ints(a, b)\nnative fn add_offset(x)\nadd_offset(add_ints(1, 2))").unwrap();
     assert_eq!(result, Value::Int(103));
 }
 
@@ -184,7 +192,7 @@ fn boxed_native_error_is_a_runtime_error() {
         move |_cxt: &mut PetalCxt| Err(label.clone()),
         NativeEffects::PURE,
     );
-    let err = env.run_source("refuse()").unwrap_err();
+    let err = env.run_source("native fn refuse()\nrefuse()").unwrap_err();
     assert!(err.contains("host says no"), "got: {err}");
 }
 
@@ -207,7 +215,7 @@ fn boxed_native_respects_its_pending_class() {
     env.set_native_class(id, NativeClass::Effectful);
     assert_eq!(env.native_effects(id).pending, NativeClass::Effectful);
     let result = env
-        .run_source("let p = __pending(\"k\")\nemit_it(p)\nemit_it(1)\n7")
+        .run_source("native fn emit_it(x)\nlet p = __pending(\"k\")\nemit_it(p)\nemit_it(1)\n7")
         .unwrap();
     assert_eq!(result, Value::Int(7));
     assert_eq!(calls.get(), 1, "the Pending call must not reach the closure");
@@ -228,7 +236,7 @@ fn effect_audit_covers_boxed_natives() {
         },
         NativeEffects::PURE,
     );
-    env.run_source("shout()").unwrap();
+    env.run_source("native fn shout()\nshout()").unwrap();
     let report = env.effect_audit_report();
     let finding = report
         .findings
@@ -254,7 +262,7 @@ fn forked_executions_share_a_boxed_natives_captures() {
         },
         NativeEffects::EFFECT,
     );
-    let pid = env.load_program("record(1)").unwrap();
+    let pid = env.load_program("native fn record(x)\nrecord(1)").unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     env.run_speculative(sid).unwrap();

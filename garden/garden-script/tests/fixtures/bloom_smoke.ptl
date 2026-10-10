@@ -2,6 +2,7 @@
 // draws; the gallery in examples/ui/bloom-gallery is the readable version.
 import bloom
 import bloom/icon as icons
+import ui
 
 state on = true
 state chk = false

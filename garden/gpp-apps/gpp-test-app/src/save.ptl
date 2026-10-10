@@ -1,3 +1,6 @@
+import garden
+import ui
+
 // save mode — exercises the editable-panel write-back path (Phase 2):
 // an `edit_view` region plus a `mutate("save", …)` triggered by the `s` key.
 // Focus the region and edit with vim; press Escape twice to release focus, then

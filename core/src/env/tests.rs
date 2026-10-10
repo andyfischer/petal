@@ -752,7 +752,8 @@ mod host_surface_tests {
         Ok(1)
     }
 
-    const FRAME: &str = "state n = 0\nn = n + 1\nprint(\"hi\")\nemit_rect()\n";
+    const FRAME: &str =
+        "native fn emit_rect()\nstate n = 0\nn = n + 1\nprint(\"hi\")\nemit_rect()\n";
 
     /// The regression Step 7 fixes: a forked run's print output and draw-command
     /// buffer live in the fork's own context. `run_speculative` discards them

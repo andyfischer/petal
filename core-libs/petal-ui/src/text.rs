@@ -1483,7 +1483,7 @@ mod tests {
             ("cap_height", 14.0),
         ] {
             let v = env
-                .run_source(&format!("text_metrics(20).{field}"))
+                .run_source(&crate::script_for(&env, &format!("text_metrics(20).{field}")))
                 .expect("run");
             assert!(
                 (as_float(&v) - want).abs() < 1e-9,
@@ -1506,13 +1506,13 @@ mod tests {
                 x_height: 0.5,
             },
         );
-        let v = env.run_source("text_metrics(10).baseline").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_metrics(10).baseline")).expect("run");
         assert_eq!(v, Value::Float(9.0));
-        let v = env.run_source("text_metrics(10).line_height").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_metrics(10).line_height")).expect("run");
         assert_eq!(v, Value::Float(14.0));
         // A style record measures the same as a bare size.
         let v = env
-            .run_source("text_metrics({size: 10, color: {r: 1, g: 2, b: 3}}).cap_height")
+            .run_source(&crate::script_for(&env, "text_metrics({size: 10, color: {r: 1, g: 2, b: 3}}).cap_height"))
             .expect("run");
         assert!((as_float(&v) - 7.2).abs() < 1e-9, "{v:?}");
     }
@@ -1525,7 +1525,7 @@ mod tests {
         // Registered with advances only, the way every host did before
         // vertical metrics existed.
         bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
-        let v = env.run_source("text_metrics({size: 10, font: \"mono\"}).baseline").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_metrics({size: 10, font: \"mono\"}).baseline")).expect("run");
         assert_eq!(v, Value::Float(8.0));
         // And a face that publishes its own is measured with those.
         bind_font_metrics(
@@ -1535,7 +1535,7 @@ mod tests {
                 VerticalMetrics::default().with_heights(0.75, 0.55),
             ),
         );
-        let v = env.run_source("text_metrics({size: 10, font: \"tall\"}).cap_height").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_metrics({size: 10, font: \"tall\"}).cap_height")).expect("run");
         assert_eq!(v, Value::Float(7.5));
     }
 
@@ -1545,17 +1545,17 @@ mod tests {
         // 30 px = six glyphs. "aaa bbb ccc" breaks after each 3-letter word
         // (3 + 1 + 3 = 7 glyphs would be 35 px).
         let v = env
-            .run_source("text_wrap(\"aaa bbb ccc\", 10, 30.0) |> join(\"|\")")
+            .run_source(&crate::script_for(&env, "text_wrap(\"aaa bbb ccc\", 10, 30.0) |> join(\"|\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "aaa|bbb|ccc");
         // 40 px = eight glyphs: "aaa bbb" is seven and fits.
         let v = env
-            .run_source("text_wrap(\"aaa bbb ccc\", 10, 40.0) |> join(\"|\")")
+            .run_source(&crate::script_for(&env, "text_wrap(\"aaa bbb ccc\", 10, 40.0) |> join(\"|\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "aaa bbb|ccc");
         // An author's own newline is a break wherever it falls.
         let v = env
-            .run_source("text_wrap(\"a\\nb\", 10, 500.0) |> join(\"|\")")
+            .run_source(&crate::script_for(&env, "text_wrap(\"a\\nb\", 10, 500.0) |> join(\"|\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "a|b");
     }
@@ -1567,7 +1567,7 @@ mod tests {
         // overflowing — and the loop terminates, which the naive version
         // ("find a space; there is none") does not.
         let v = env
-            .run_source("text_wrap(\"aaaaaaaaa\", 10, 20.0) |> join(\"|\")")
+            .run_source(&crate::script_for(&env, "text_wrap(\"aaaaaaaaa\", 10, 20.0) |> join(\"|\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "aaaa|aaaa|a");
     }
@@ -1579,7 +1579,7 @@ mod tests {
         // on and the newline of a hard one fall between the ranges.
         let src = "text_wrap(\"h\u{e9}llo w\u{f6}rld\\n\\n  \u{65e5}\u{672c}\", {size: 10, offsets: true}, 30.0) \
                    |> map(fn(r) \"{r.text}@{r.start}-{r.end}\" end) |> join(\"|\")";
-        let v = env.run_source(src).expect("run");
+        let v = env.run_source(&crate::script_for(&env, src)).expect("run");
         assert_eq!(
             as_string(&env, &v),
             "h\u{e9}llo@0-5|w\u{f6}rld@6-11|@12-12|  \u{65e5}\u{672c}@13-17"
@@ -1588,17 +1588,17 @@ mod tests {
         let src = "let s = \"aaa  bbb ccccccccc d\"\n\
                    text_wrap(s, {size: 10, offsets: true}, 20.0) \
                    |> filter(fn(r) char_slice(s, r.start, r.end) != r.text end) |> len";
-        assert_eq!(env.run_source(src).expect("run"), Value::Int(0));
+        assert_eq!(env.run_source(&crate::script_for(&env, src)).expect("run"), Value::Int(0));
     }
 
     #[test]
     fn text_wrap_always_returns_a_line() {
         let mut env = half_width_env();
-        let v = env.run_source("len(text_wrap(\"\", 10, 100.0))").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "len(text_wrap(\"\", 10, 100.0))")).expect("run");
         assert_eq!(v, Value::Int(1));
         // A zero-width box passes text through rather than looping forever.
         let v = env
-            .run_source("text_wrap(\"abc\", 10, 0.0) |> join(\"|\")")
+            .run_source(&crate::script_for(&env, "text_wrap(\"abc\", 10, 0.0) |> join(\"|\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "abc");
     }
@@ -1607,17 +1607,17 @@ mod tests {
     fn text_ellipsize_fits_the_box_including_its_ellipsis() {
         let mut env = half_width_env();
         // Fits already: untouched.
-        let v = env.run_source("text_ellipsize(\"abc\", 10, 100.0)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_ellipsize(\"abc\", 10, 100.0)")).expect("run");
         assert_eq!(as_string(&env, &v), "abc");
         // 30 px = six glyphs, one of which the ellipsis takes.
         let v = env
-            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0)")
+            .run_source(&crate::script_for(&env, "text_ellipsize(\"abcdefghij\", 10, 30.0)"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "abcde…");
         // The result really fits: this is the property the prelude's
         // byte-trimming version had to be careful to keep.
         let v = env
-            .run_source("text_width(text_ellipsize(\"abcdefghij\", 10, 30.0), 10) <= 30")
+            .run_source(&crate::script_for(&env, "text_width(text_ellipsize(\"abcdefghij\", 10, 30.0), 10) <= 30"))
             .expect("run");
         assert_eq!(v, Value::Bool(true));
     }
@@ -1626,18 +1626,18 @@ mod tests {
     fn text_ellipsize_can_keep_the_tail_or_both_ends() {
         let mut env = half_width_env();
         let v = env
-            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0, \"head\")")
+            .run_source(&crate::script_for(&env, "text_ellipsize(\"abcdefghij\", 10, 30.0, \"head\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "…fghij");
         let v = env
-            .run_source("text_ellipsize(\"abcdefghij\", 10, 30.0, \"middle\")")
+            .run_source(&crate::script_for(&env, "text_ellipsize(\"abcdefghij\", 10, 30.0, \"middle\")"))
             .expect("run");
         assert_eq!(as_string(&env, &v), "abc…ij");
         // A box with no room even for the ellipsis keeps the marker: "…" says
         // there is text here, where "" would say there is not.
-        let v = env.run_source("text_ellipsize(\"abcdef\", 10, 3.0)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_ellipsize(\"abcdef\", 10, 3.0)")).expect("run");
         assert_eq!(as_string(&env, &v), "…");
-        let v = env.run_source("text_ellipsize(\"abcdef\", 10, 0.0)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_ellipsize(\"abcdef\", 10, 0.0)")).expect("run");
         assert_eq!(as_string(&env, &v), "…");
     }
 
@@ -1645,12 +1645,12 @@ mod tests {
     fn text_index_at_snaps_to_the_nearer_boundary() {
         let mut env = half_width_env();
         // Glyphs are 5 px: boundaries at 0, 5, 10, 15.
-        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 0.0)").expect("run"), Value::Int(0));
-        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 2.0)").expect("run"), Value::Int(0));
-        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 3.0)").expect("run"), Value::Int(1));
-        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 7.0)").expect("run"), Value::Int(1));
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_index_at(\"abc\", 10, 0.0)")).expect("run"), Value::Int(0));
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_index_at(\"abc\", 10, 2.0)")).expect("run"), Value::Int(0));
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_index_at(\"abc\", 10, 3.0)")).expect("run"), Value::Int(1));
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_index_at(\"abc\", 10, 7.0)")).expect("run"), Value::Int(1));
         // Past the end clamps to the end, not past it.
-        assert_eq!(env.run_source("text_index_at(\"abc\", 10, 900.0)").expect("run"), Value::Int(3));
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_index_at(\"abc\", 10, 900.0)")).expect("run"), Value::Int(3));
     }
 
     #[test]
@@ -1658,11 +1658,11 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         // Default ratio 0.6: 5 chars at size 10 → 30.
-        let v = env.run_source("text_width(\"hello\", 10)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_width(\"hello\", 10)")).expect("run");
         assert_eq!(v, Value::Int(30));
         // Typical monospace metric: ratio 0.6 at size 14 → 8.4 px/char.
         bind_text_metrics(&mut env, 0.6);
-        let v = env.run_source("text_width(\"abc\", 14)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_width(\"abc\", 14)")).expect("run");
         assert_eq!(v, Value::Int(25)); // 3 × 14 × 0.6 = 25.2 → 25
     }
 
@@ -1673,14 +1673,14 @@ mod tests {
         bind_text_metrics(&mut env, 0.6);
         // 13 × 0.6 = 7.8: text_width rounds to 8, which drifts a whole glyph
         // by column 30; text_advance keeps the fraction.
-        assert_eq!(env.run_source("text_width(\"m\", {size: 13})").expect("run"), Value::Int(8));
-        let v = env.run_source("text_advance(\"m\", {size: 13})").expect("run");
+        assert_eq!(env.run_source(&crate::script_for(&env, "text_width(\"m\", {size: 13})")).expect("run"), Value::Int(8));
+        let v = env.run_source(&crate::script_for(&env, "text_advance(\"m\", {size: 13})")).expect("run");
         assert!(matches!(v, Value::Float(_)), "a float, not a rounded int: {v:?}");
         assert!((as_float(&v) - 7.8).abs() < 1e-9, "{v:?}");
         // Same style argument forms as text_width, spacing included.
-        let v = env.run_source("text_advance(\"abc\", 10)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_advance(\"abc\", 10)")).expect("run");
         assert!((as_float(&v) - 18.0).abs() < 1e-9, "{v:?}");
-        let v = env.run_source("text_advance(\"abc\", {size: 10, spacing: 0.5})").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_advance(\"abc\", {size: 10, spacing: 0.5})")).expect("run");
         assert!((as_float(&v) - 19.5).abs() < 1e-9, "{v:?}");
     }
 
@@ -1695,8 +1695,8 @@ mod tests {
         bind_text_advance_table(&mut env, &ratios);
 
         // Per-glyph sum, not chars × uniform: 3 × 10 × 0.2 = 6, 3 × 10 × 0.9 = 27.
-        let narrow = env.run_source("text_width(\"iii\", 10)").expect("run");
-        let wide = env.run_source("text_width(\"WWW\", 10)").expect("run");
+        let narrow = env.run_source(&crate::script_for(&env, "text_width(\"iii\", 10)")).expect("run");
+        let wide = env.run_source(&crate::script_for(&env, "text_width(\"WWW\", 10)")).expect("run");
         assert_eq!(narrow, Value::Int(6));
         assert_eq!(wide, Value::Int(27));
         assert!(
@@ -1717,21 +1717,21 @@ mod tests {
         bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
 
         // Two args → default (proportional) font: 3 × 10 × 0.2 = 6.
-        let v = env.run_source("text_width(\"iii\", 10)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_width(\"iii\", 10)")).expect("run");
         assert_eq!(v, Value::Int(6));
         // Three args → the named face: 3 × 10 × 0.5 = 15.
         let v = env
-            .run_source("text_width(\"iii\", 10, \"mono\")")
+            .run_source(&crate::script_for(&env, "text_width(\"iii\", 10, \"mono\")"))
             .expect("run");
         assert_eq!(v, Value::Int(15));
         // A fallback list picks the first registered name.
         let v = env
-            .run_source("text_width(\"iii\", 10, \"Inter, mono\")")
+            .run_source(&crate::script_for(&env, "text_width(\"iii\", 10, \"Inter, mono\")"))
             .expect("run");
         assert_eq!(v, Value::Int(15));
         // A face this host never bound degrades to the default font.
         let v = env
-            .run_source("text_width(\"iii\", 10, \"serif\")")
+            .run_source(&crate::script_for(&env, "text_width(\"iii\", 10, \"serif\")"))
             .expect("run");
         assert_eq!(v, Value::Int(6));
     }
@@ -1790,7 +1790,7 @@ mod tests {
         let v = with_test_fonts(&mut env, r#"text_advance("⌘", {size: 10})"#);
         assert_eq!(v, Value::Float(10.0));
         // Without a source, the guess is unchanged.
-        let v = env.run_source(r#"text_advance("⌘", {size: 10})"#).expect("run");
+        let v = env.run_source(&crate::script_for(&env, r#"text_advance("⌘", {size: 10})"#)).expect("run");
         assert_eq!(v, Value::Float(6.0));
     }
 
@@ -1799,7 +1799,7 @@ mod tests {
     fn with_test_fonts(env: &mut Env, source: &str) -> Value {
         clear_font_cache();
         let saved = swap_font_provider(Some(Box::new(TestFonts)));
-        let out = env.run_source(source);
+        let out = env.run_source(&crate::script_for(&env, source));
         swap_font_provider(saved);
         clear_font_cache();
         out.expect("run")
@@ -1953,7 +1953,7 @@ mod tests {
         assert_eq!(names, vec!["Courier".to_string(), "Helvetica".to_string()]);
 
         // A host with no font source offers none — not an error.
-        let v = env.run_source("fonts()").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "fonts()")).expect("run");
         let Value::List(id) = v else {
             panic!("fonts() must return a list even with no source");
         };
@@ -1967,7 +1967,7 @@ mod tests {
         // defaults, and serializes without a single new key.
         let mut env = Env::new();
         register_draw(&mut env);
-        env.run_source("draw_text(\"hi\", 1, 2, 14, 10, 20, 30)")
+        env.run_source(&crate::script_for(&env, "draw_text(\"hi\", 1, 2, 14, 10, 20, 30)"))
             .expect("run");
         let cmds = take_draw_commands(&mut env);
         assert_eq!(
@@ -1998,13 +1998,13 @@ mod tests {
         let mut env = Env::new();
         register_draw(&mut env);
         env.run_source(
-            "draw_text(\"bold\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3, a: 128}, \
-             font: \"ui\", weight: 700, italic: true, spacing: 1.5})",
+            &crate::script_for(&env, "draw_text(\"bold\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3, a: 128}, \
+             font: \"ui\", weight: 700, italic: true, spacing: 1.5})"),
         )
         .expect("run");
         // A style that names no typography at all is plain text: same command,
         // same JSON, so styles are safe to use for ordinary labels too.
-        env.run_source("draw_text(\"plain\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3}})")
+        env.run_source(&crate::script_for(&env, "draw_text(\"plain\", 4, 8, {size: 20, color: {r: 1, g: 2, b: 3}})"))
             .expect("run");
         let cmds = take_draw_commands(&mut env);
         assert_eq!(
@@ -2039,7 +2039,7 @@ mod tests {
         bind_font_variant_metrics(&mut env, "ui", 400, true, &FontMetrics::monospace(0.55));
         bind_font_variant_metrics(&mut env, "ui", 700, true, &FontMetrics::monospace(0.7));
 
-        let mut width = |src: &str| env.run_source(src).expect("run");
+        let mut width = |src: &str| env.run_source(&crate::script_for(&env, src)).expect("run");
         // Each variant measures its own metrics: 4 chars × 10 px × ratio.
         assert_eq!(
             width("text_width(\"abcd\", {size: 10, font: \"ui\"})"),
@@ -2077,18 +2077,18 @@ mod tests {
 
         const BOLD: &str = "text_width(\"ab\", {size: 10, weight: 700})";
         assert_eq!(
-            env.run_source(BOLD).expect("run"),
+            env.run_source(&crate::script_for(&env, BOLD)).expect("run"),
             Value::Int(10),
             "until the host says which face is the default, bold measures regular"
         );
         bind_default_font_name(&mut env, "ui");
         assert_eq!(
-            env.run_source(BOLD).expect("run"),
+            env.run_source(&crate::script_for(&env, BOLD)).expect("run"),
             Value::Int(16),
             "with the default face named, a font-less bold finds ui@700"
         );
         assert_eq!(
-            env.run_source("text_width(\"ab\", {size: 10})")
+            env.run_source(&crate::script_for(&env, "text_width(\"ab\", {size: 10})"))
                 .expect("run"),
             Value::Int(10),
             "regular text still measures the plain default metrics"
@@ -2106,7 +2106,7 @@ mod tests {
         bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.5));
         bind_font_variant_metrics(&mut env, "mono", 700, false, &FontMetrics::monospace(0.8));
 
-        let mut width = |src: &str| env.run_source(src).expect("run");
+        let mut width = |src: &str| env.run_source(&crate::script_for(&env, src)).expect("run");
         assert_eq!(
             width("text_width(\"ab\", {size: 10, font: \"ui\", weight: 700})"),
             Value::Int(10),
@@ -2135,11 +2135,11 @@ mod tests {
         bind_font_metrics(&mut env, "mono", &FontMetrics::monospace(0.5));
 
         let v = env
-            .run_source("text_width(\"WW\", 10, \"ui\")")
+            .run_source(&crate::script_for(&env, "text_width(\"WW\", 10, \"ui\")"))
             .expect("run");
         assert_eq!(v, Value::Int(20));
         let v = env
-            .run_source("text_width(\"WW\", 10, \"mono\")")
+            .run_source(&crate::script_for(&env, "text_width(\"WW\", 10, \"mono\")"))
             .expect("run");
         assert_eq!(v, Value::Int(10));
     }
@@ -2153,7 +2153,7 @@ mod tests {
         let ratios = vec![0.3f64; 65]; // covers up to 'A' - 1
         bind_text_advance_table(&mut env, &ratios);
         // 'Z' (0x5A) is past the table → uniform 0.6: 2 × 10 × 0.6 = 12.
-        let v = env.run_source("text_width(\"ZZ\", 10)").expect("run");
+        let v = env.run_source(&crate::script_for(&env, "text_width(\"ZZ\", 10)")).expect("run");
         assert_eq!(v, Value::Int(12));
     }
 }

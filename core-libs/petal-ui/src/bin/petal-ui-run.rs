@@ -205,11 +205,11 @@ fn run() -> Result<i32, String> {
         .or_else(|| scenario.as_ref().and_then(|s| s.frames))
         .unwrap_or(DEFAULT_FRAMES);
 
-    let mut ui = Headless::from_file_with_paths(&args.app, size.0, size.1, &args.module_paths)?;
     // Garden-panel host natives (`palette`, `query`, `text_view`, …) answer
-    // as inert, deterministic stubs, so panel drawers run headlessly instead
-    // of dying at `Unknown builtin` (see [`petal_ui::panel_stubs`]).
-    petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
+    // as inert, deterministic stubs and `import garden` resolves, so panel
+    // drawers run headlessly (see [`petal_ui::panel_stubs`]).
+    let mut ui = Headless::panel_from_file_with_paths(&args.app, size.0, size.1, &args.module_paths)?;
+
     // Prints belong in the trace's `prints` field and nowhere else: echoing
     // them to stdout as well would interleave them with the JSONL.
     ui.env.set_echo(false);

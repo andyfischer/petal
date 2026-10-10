@@ -9,6 +9,8 @@
 //
 // Designed for a 1280x850 panel.
 
+import ui
+
 // ── palette ─────────────────────────────────────────────────────────────────
 let BG      = #14181e   // table / page ground
 let RAIL    = #0f1319   // left rail, one step darker

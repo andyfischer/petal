@@ -2,6 +2,8 @@
 // Click anywhere to spawn a burst of colorful particles
 // Multiple auto-emitters create a self-running visual spectacle
 
+import ui
+
 state particles = []
 state click_was_down = false
 state stars = []

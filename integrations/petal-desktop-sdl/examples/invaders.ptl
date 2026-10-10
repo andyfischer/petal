@@ -1,6 +1,8 @@
 // Space Invaders
 // Controls: Left/Right to move, Space to shoot
 
+import ui
+
 // --- State ---
 state player_x = 380.0
 // var: all three are written from inside a collision callback — `lives` and

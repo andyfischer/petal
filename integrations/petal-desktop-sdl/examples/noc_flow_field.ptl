@@ -2,6 +2,8 @@
 // Inspired by Chapter 6: Autonomous Agents - Flow Fields
 // Particles follow a vector field defined by layered sine functions
 
+import ui
+
 state particles = []
 state time = 0.0
 state field_time = 0.0

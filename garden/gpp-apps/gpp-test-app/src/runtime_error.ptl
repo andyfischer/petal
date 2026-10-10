@@ -1,3 +1,6 @@
+import garden
+import ui
+
 // gpp-test-app — mode `runtime-error`: reproduces the exact pr-browser crash the
 // error card must display well. The panel first paints some real content (so the
 // error card is seen overlapping a live frame, as in the wild), then calls

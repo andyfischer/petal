@@ -691,7 +691,9 @@ fn a_host_native_binds_named_arguments_once_declared() {
         if declare {
             env.declare_native_params(id, "a, b, extra?")?;
         }
-        let pid = env.load_program(src)?;
+        // The script reaches the native through a declaration; a rest
+        // form names no parameters, so the names come from the host's table.
+        let pid = env.load_program(&format!("native fn hsub(...args)\n{src}"))?;
         let sid = env.create_stack(pid)?;
         env.run(sid)?;
         Ok(env.take_output().join("\n").trim().to_string())
@@ -736,7 +738,7 @@ fn a_host_native_may_declare_several_forms() {
     env.declare_native_params(id, "side").unwrap();
     env.declare_native_params(id, "w, h").unwrap();
     let pid = env
-        .load_program("print(area(side: 3), area(h: 2, w: 5))")
+        .load_program("native fn area(...args)\nprint(area(side: 3), area(h: 2, w: 5))")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();

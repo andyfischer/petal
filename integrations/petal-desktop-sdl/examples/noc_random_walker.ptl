@@ -2,6 +2,8 @@
 // Inspired by Chapter 0: Randomness
 // A walker that moves randomly, leaving a colorful trail
 
+import ui
+
 state walkers = []
 state trail = []
 state time = 0.0

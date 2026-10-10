@@ -19,6 +19,8 @@ import ./schema as sc
 import ./widgets as wd
 import ./icons: glyph
 import ./preview as pv
+import ui
+import garden
 
 let SECTIONS = sc.SECTIONS
 let GROUPS = sc.GROUPS

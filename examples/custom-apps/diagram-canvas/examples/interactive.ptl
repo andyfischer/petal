@@ -2,6 +2,8 @@
 //
 // Demonstrates state, mouse input, and drawing that follows the data.
 
+import ui
+
 state nodes = [
   {x: 150, y: 150, label: "Alpha",   active: true},
   {x: 400, y: 100, label: "Beta",    active: false},

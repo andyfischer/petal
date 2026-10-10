@@ -19,12 +19,14 @@ pub struct ExampleEntry {
 }
 
 /// Register everything a petal-sdl script can call: the petal-ui standard
-/// set (input, draw, offscreen canvases, the `ui` prelude as an implicit
-/// import) plus the browser/file natives and the sound natives.
+/// set (input, draw, offscreen canvases, the `ui` package) plus the browser/file natives and the sound natives.
 pub fn register_all(env: &mut Env) {
     petal_ui::input::register_input(env);
     petal_ui::draw::register_draw(env);
     petal_ui::draw::register_canvas(env);
+    // `ui` declares the `host_data` pull channel, so register it: with no
+    // provider attached it answers a pending value.
+    petal_ui::host_data::register_host_data(env);
     petal_ui::register_prelude(env);
     crate::sound::register_natives(env);
     // The browser natives read the bound example list; `launch_script`
@@ -48,7 +50,22 @@ pub fn register_all(env: &mut Env) {
         NativeEffects::EFFECT,
     );
     env.register_native("file_exists", native_file_exists, FILE_READ);
+    // The interface package that declares this host's own natives: a script
+    // reaches them with `import sdl`, as it reaches petal-ui's with
+    // `import ui`.
+    env.register_package(SDL_PACKAGE, [(SDL_PACKAGE, SDL_INTERFACE)])
+        .expect("the sdl interface package registers");
 }
+
+/// The interface package of this host: `import sdl`.
+pub const SDL_PACKAGE: &str = "sdl";
+
+/// Its source: the `native fn` declarations of every petal-sdl native.
+pub const SDL_INTERFACE: &str = include_str!("../packages/sdl/sdl.ptl");
+
+/// The interface packages a petal-sdl env answers for — what
+/// [`Env::verify_interface`] is given.
+pub const INTERFACE_PACKAGES: &[&str] = &[petal_ui::MODULE_NAME, SDL_PACKAGE];
 
 // ── Host-side helpers ─────────────────────────────────────────────────────
 
@@ -198,7 +215,8 @@ mod tests {
         reset_canvas_ids(&mut env);
         // create_canvas returns id 1; redirect to it, draw, then blit onto main.
         env.run_source(
-            "let c = create_canvas(32, 32)\n\
+            "import ui\n\
+             let c = create_canvas(32, 32)\n\
              draw_to(c)\n\
              draw_rect(0, 0, 4, 4, 255, 255, 255)\n\
              draw_to_screen()\n\
@@ -246,10 +264,10 @@ mod tests {
         register_all(&mut env);
 
         reset_canvas_ids(&mut env);
-        let a = env.run_source("create_canvas(8, 8)").expect("run ok");
+        let a = env.run_source("import ui\ncreate_canvas(8, 8)").expect("run ok");
         let _ = take_draw_commands(&mut env);
         reset_canvas_ids(&mut env);
-        let b = env.run_source("create_canvas(8, 8)").expect("run ok");
+        let b = env.run_source("import ui\ncreate_canvas(8, 8)").expect("run ok");
         let _ = take_draw_commands(&mut env);
 
         // After a per-frame reset, the same call site yields the same id.
@@ -257,13 +275,37 @@ mod tests {
         assert_eq!(b, Value::Int(1));
     }
 
+    /// The drift test: what `register_all` registers is exactly what the
+    /// `ui` and `sdl` interface packages declare.
+    #[test]
+    fn register_all_agrees_with_the_interface_packages() {
+        let mut env = Env::new();
+        register_all(&mut env);
+        if let Err(mismatch) = env.verify_interface(INTERFACE_PACKAGES) {
+            panic!("petal-sdl's natives and its interface packages disagree: {mismatch}");
+        }
+    }
+
+    /// A script reaches this host's own natives through `import sdl`, and
+    /// not without it.
+    #[test]
+    fn sdl_natives_are_reached_through_the_import() {
+        let mut env = Env::new();
+        register_all(&mut env);
+        bind_examples(&mut env, &[]);
+        let v = env.run_source("import sdl\nexample_count()").expect("runs");
+        assert_eq!(v, Value::Int(0));
+        let err = env.run_source("example_count()").unwrap_err();
+        assert!(err.contains("Unknown function: example_count"), "{err}");
+    }
+
     #[test]
     fn prelude_widgets_are_available_to_sketches() {
         let mut env = Env::new();
         register_all(&mut env);
         let v = env
-            .run_source("point_in(5, 5, rect(0, 0, 10, 10))")
-            .expect("prelude fns resolve via implicit import");
+            .run_source("import ui\npoint_in(5, 5, rect(0, 0, 10, 10))")
+            .expect("prelude fns resolve through `import ui`");
         assert_eq!(v, Value::Bool(true));
     }
 }

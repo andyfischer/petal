@@ -26,6 +26,7 @@ import bloom/motion: ease_flag, ease_to, spring, impulse, scale_rect,
 import bloom/interact: probe, focusable, focused, focus_set, is_captured
 import bloom/icon: icon
 import text_layout: text_baseline, text_top, draw_text_line, draw_text_baseline
+import ui
 
 pub fn button(r: record, label: string) -> bool
   button_impl(r, label, {})

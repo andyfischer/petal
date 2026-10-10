@@ -14,7 +14,6 @@ use std::process::Command;
 
 use petal::env::Env;
 use petal::suggest::{Kinds, SuggestOptions, apply_all, suggest_source};
-use petal::typecheck::globals::HostProfile;
 
 const SRC: &str = "\
 fn draw_all(items)
@@ -35,7 +34,6 @@ print(squares([1, 2, 3]))
 
 fn only_returns() -> SuggestOptions {
     SuggestOptions {
-        host: HostProfile::Core,
         kinds: Kinds::parse("return-types").unwrap(),
         ..Default::default()
     }
@@ -73,11 +71,10 @@ impl Drop for Scratch {
     }
 }
 
-/// `petal suggest --host core <args> <file>`: exit code, stdout, stderr.
+/// `petal suggest <args> <file>`: exit code, stdout, stderr.
 fn suggest(args: &[&str], file: &Scratch) -> (i32, String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_petal"))
         .arg("suggest")
-        .args(["--host", "core"])
         .args(args)
         .arg(&file.0)
         .output()
@@ -112,12 +109,10 @@ fn each_function_gets_the_type_its_callers_imply() {
 #[test]
 fn the_kind_is_on_by_default_and_off_when_another_is_named() {
     let all = SuggestOptions {
-        host: HostProfile::Core,
         ..Default::default()
     };
     assert_eq!(suggest_source(SRC, None, &all).unwrap().return_types.len(), 3);
     let types = SuggestOptions {
-        host: HostProfile::Core,
         kinds: Kinds::parse("types,advice").unwrap(),
         ..Default::default()
     };
@@ -143,7 +138,6 @@ fn a_return_type_sits_beside_a_parameter_annotation_on_the_same_line() {
     // Both kinds write into `fn draw_all(items)`: one inside the parentheses,
     // one just past them.
     let all = SuggestOptions {
-        host: HostProfile::Core,
         ..Default::default()
     };
     let out = suggest_source(SRC, None, &all).expect("suggest");

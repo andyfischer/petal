@@ -2,6 +2,8 @@
 // Inspired by Chapter 3: Oscillation - Spring Forces
 // A soft-body mesh connected by springs, with mouse interaction
 
+import ui
+
 state nodes = []
 state springs = []
 state dragging = -1

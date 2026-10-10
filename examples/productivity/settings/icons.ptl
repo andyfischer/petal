@@ -3,6 +3,8 @@
 // Each icon is a few strokes inside the rect it is given, so it scales with
 // the interface and takes whatever color the row is in. No font, no image.
 
+import ui
+
 fn at(r: record, fx: num, fy: num) -> record
   {x: r.x + r.w * fx, y: r.y + r.h * fy}
 end

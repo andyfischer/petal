@@ -2,6 +2,8 @@
 //
 // Nodes and edges are plain records; the whole diagram is redrawn each frame.
 
+import ui
+
 fn mouse_over(rect: record) -> bool
   let mx = mouse_x()
   let my = mouse_y()

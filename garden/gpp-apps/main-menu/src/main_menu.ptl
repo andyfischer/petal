@@ -45,6 +45,8 @@
 // them animates without this file holding any animation state.
 
 import bloom
+import garden
+import ui
 
 // ── panel-local UI state ─────────────────────────────────────────────────────
 state selected = 0

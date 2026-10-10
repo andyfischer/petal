@@ -11,6 +11,8 @@
 //
 // Designed for a 1200x800 pane. See README.md.
 
+import ui
+
 // ══ 1. formula engine ═════════════════════════════════════════════════════
 
 let DIGITS = "0123456789"

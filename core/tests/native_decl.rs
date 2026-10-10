@@ -7,7 +7,7 @@ use petal::ast::{Stmt, StmtKind};
 use petal::env::Env;
 use petal::error::Phase;
 use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
-use petal::typecheck::globals::{self, HostProfile};
+use petal::typecheck::globals;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -73,12 +73,9 @@ fn unresolved(src: &str) -> Vec<String> {
     let mut env = Env::new();
     env.set_check_only(true);
     let pid = env.load_program(src).expect("compiles");
-    let host = globals::host_names(HostProfile::Core, &[]);
-    globals::unresolved_globals(
-        env.get_program(pid).unwrap(),
-        |n| env.native_signatures(n),
-        &host,
-    )
+    globals::unresolved_globals(env.get_program(pid).unwrap(), |n| {
+        env.native_signatures(n)
+    })
     .into_iter()
     .map(|d| d.message)
     .collect()
@@ -422,8 +419,10 @@ fn an_exported_declaration_is_reached_through_every_import_form() {
         run_in(&mut env, "import iface as i\nlet f = i.root\nprint(f(16))"),
         ["4.0"]
     );
-    env.set_implicit_imports(&["iface"]);
-    assert_eq!(run_in(&mut env, "print(root(25), area(1, 2))"), ["5.0 2"]);
+    assert_eq!(
+        run_in(&mut env, "import iface\nprint(root(25), area(1, 2))"),
+        ["5.0 2"]
+    );
 }
 
 #[test]
@@ -619,7 +618,10 @@ fn declare_natives_gives_registered_natives_their_parameter_names() {
     assert_eq!(sigs[0].required(), 1);
     // A call the compiler cannot resolve statically binds by them at run time.
     assert_eq!(
-        run_in(&mut env, "let f = host_add\nprint(f(b: 2, a: 1))"),
+        run_in(
+            &mut env,
+            "native fn host_add(...args)\nlet f = host_add\nprint(f(b: 2, a: 1))"
+        ),
         ["3"]
     );
     // Applying it again changes nothing.

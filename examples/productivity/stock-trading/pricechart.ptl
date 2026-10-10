@@ -9,6 +9,7 @@
 import text_layout as tl
 import ./look as lk
 import ./numfmt as nf
+import ui
 
 let AXIS_W = 66
 let TIME_H = 24

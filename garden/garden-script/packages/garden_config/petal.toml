@@ -1,0 +1,9 @@
+# garden_config — the interface of Garden's config host: the `native fn`
+# declarations of the natives `init.ptl` builds a layout with. A config
+# script writes `import garden_config`.
+#
+# Garden registers this package in memory (garden-script/src/lib.rs). The
+# stock CLI finds it by path: `petal check -I garden/garden-script/packages`.
+[package]
+name = "garden_config"
+version = "0.1.0"

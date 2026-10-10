@@ -1,0 +1,7 @@
+// The element-tree natives of the wasm host (core/src/wasm.rs).
+
+// A unique id per element per render; ids restart at 1 every render.
+pub native fn next_id() -> int
+
+// Was the element with this id clicked since the last render?
+pub native fn clicked(id: int) -> bool

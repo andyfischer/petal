@@ -6,7 +6,7 @@ use petal_ui::draw::DrawCommand;
 use petal_ui::harness::Headless;
 
 fn cmds(source: &str) -> Vec<DrawCommand> {
-    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.frame().unwrap().to_vec()
 }
 
@@ -297,7 +297,7 @@ fn the_new_commands_serialize_without_their_defaults() {
 fn a_native_still_rejects_a_bad_argument() {
     // Wrapping in the prelude must not turn a type error into a silent
     // no-draw: the native's own check still fires, at the script's call site.
-    let mut ui = Headless::new("draw_shadow({x: 0, y: 0, w: 1, h: 1}, \"nope\")").unwrap();
+    let mut ui = Headless::with_ui("draw_shadow({x: 0, y: 0, w: 1, h: 1}, \"nope\")").unwrap();
     assert!(
         ui.frame().is_err(),
         "a string where the options record goes must be an error"

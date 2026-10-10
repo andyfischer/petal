@@ -16,6 +16,9 @@
 // Test handles (via /state → panel.values): `ready`, `commit_count`,
 // `author_count`, `week_count`.
 
+import garden
+import ui
+
 state ls = load_state()
 
 let T = ui_theme()

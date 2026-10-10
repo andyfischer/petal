@@ -1,6 +1,8 @@
 // Dodge / Bullet Hell
 // Avoid falling enemies with the mouse. Survive as long as you can!
 
+import ui
+
 let SW = screen_width()
 let SH = screen_height()
 let PLAYER_RADIUS = 10

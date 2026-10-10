@@ -16,6 +16,8 @@
 //   1-4     palette
 //   m       toggle mutations
 
+import ui
+
 state grid = []
 state cols = 0
 state rows = 0

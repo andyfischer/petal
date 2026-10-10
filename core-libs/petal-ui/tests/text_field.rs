@@ -35,7 +35,7 @@ fn slot(i: usize) -> i32 {
 fn field() -> Headless {
     // Each test thread starts from an empty in-memory clipboard.
     set_clipboard_provider(None);
-    let mut ui = Headless::new(SRC).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(SRC).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.frame().unwrap();
     ui
 }
@@ -242,7 +242,7 @@ fn wrap_rows_and_range_rects_work_in_characters() {
                let fmt = fn(q) \"{q.x},{q.y},{q.w},{q.h}\" end\n\
                rects = text_range_rects(rs, {size: 10}, 8, 18, 12) |> map(fmt) |> join(\"|\")\n\
                lines = text_range_rects(\"\u{e9}\u{e9}\\nabc\", 10, 1, 4, 12) |> map(fmt) |> join(\"|\")";
-    let mut ui = Headless::new(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(src).unwrap_or_else(|e| panic!("compile failed: {e}"));
     ui.frame().unwrap();
     assert_eq!(
         ui.state_string("rows").as_deref(),
@@ -266,9 +266,8 @@ fn the_email_client_search_field_selects_copies_and_undoes() {
     set_clipboard_provider(None);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let app = root.join("examples/productivity/email-client/app.ptl");
-    let mut ui = Headless::from_file_with_paths(&app, 1268, 778, &[root.join("core-runtime")])
+    let mut ui = Headless::panel_from_file_with_paths(&app, 1268, 778, &[root.join("core-runtime")])
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
     let q = |ui: &Headless| ui.state_string("q").unwrap();
     ui.frame().unwrap();
     ui.key("/").unwrap();

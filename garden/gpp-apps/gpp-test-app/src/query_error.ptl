@@ -1,3 +1,6 @@
+import garden
+import ui
+
 // gpp-test-app — mode `query-error`: the panel stays healthy but a `query(...)`
 // fails, so the drawer surfaces the error itself (via `error_of`) rather than
 // aborting the frame. This is the soft/async error path — distinct from a

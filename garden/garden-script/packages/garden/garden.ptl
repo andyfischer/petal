@@ -1,0 +1,79 @@
+// The Garden panel host interface (garden-script/src/panel.rs, query.rs,
+// panel_store.rs). Every native here is registered by Garden on a panel
+// script; petal-ui's `panel_stubs` registers inert stand-ins for a bare
+// runner.
+
+// ── Theme ────────────────────────────────────────────────────────────────
+
+// The host UI theme injected this frame: `{ key: { r, g, b, a }, … }`, or `{}`.
+pub native fn panel_theme() -> record
+
+// The full active palette: the host theme overlaid on a built-in fallback.
+pub native fn palette() -> record
+
+// ── Push channels to the pane's subprocess ───────────────────────────────
+
+// Fire-and-forget event to the pane's subprocess.
+pub native fn emit(event: string, arg)
+
+// Request an effectful action; returns a handle for `mutate_result`.
+pub native fn mutate(name: string, arg) -> int
+
+// What the mutation identified by `handle` resolved to, or nil.
+pub native fn mutate_result(handle)
+
+// ── Keys and frames ──────────────────────────────────────────────────────
+
+// Claim a chord for the panel: the host forwards it instead of consuming it.
+// `mods` is a modifier string or bitmask.
+pub native fn claim_key(key: string, mods?)
+
+// This frame is part of an animation: keep the panel ticking.
+pub native fn request_frame()
+pub native fn animating()
+
+// ── Navigation (per-pane history) ────────────────────────────────────────
+
+pub native fn navigate(screen: string, arg?)
+pub native fn navigate_replace(screen: string, arg?)
+pub native fn navigate_back()
+pub native fn navigate_forward()
+
+// The argument the navigation that opened this screen carried.
+pub native fn nav_arg()
+
+// ── Host-rendered text regions ───────────────────────────────────────────
+
+// A read-only, natively selectable text region. `id` is a stable key.
+pub native fn text_view(id, x, y, w, h, text: string)
+
+// The editable sibling: the host routes vim keystrokes into it.
+pub native fn edit_view(id, x, y, w, h, text: string)
+
+// Region `id`'s live (post-edit) text, or "" when there is no such region.
+pub native fn edit_view_text(id) -> string
+
+// Where each line of an `edit_view` came from, so edits fold back to sources.
+pub native fn edit_view_projection(id, spec)
+
+// What the user's edits currently resolve to.
+pub native fn edit_view_edits(id) -> list
+
+pub native fn text_view_line_styles(id, styles)
+pub native fn text_view_scroll_to(id, line)
+pub native fn text_view_wrap(id, wrap)
+
+// ── The panel's own persistent store ─────────────────────────────────────
+
+// The stored string, or nil.
+pub native fn panel_store_get(key: string)
+
+// Store a string; nil deletes the key.
+pub native fn panel_store_set(key: string, value)
+
+// ── Async queries ────────────────────────────────────────────────────────
+
+// Answers from the host's cache; a pending value while loading.
+pub native fn query(kind: string, arg)
+
+pub native fn invalidate(kind: string, arg)

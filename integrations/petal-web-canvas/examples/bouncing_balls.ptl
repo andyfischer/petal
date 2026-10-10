@@ -1,6 +1,8 @@
 // Bouncing Balls — click to add more balls.
 // Demonstrates state, frame timing, mouse input, and the drawing API.
 
+import ui
+
 state balls = []
 
 let sw = float(screen_width())

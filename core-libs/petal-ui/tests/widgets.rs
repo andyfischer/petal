@@ -10,7 +10,7 @@ use petal_ui::harness::Headless;
 use petal_ui::input::{InputEvent, Modifiers};
 
 fn run_headless(source: &str, check: impl Fn(&mut Headless)) {
-    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
     check(&mut ui);
 }
 
@@ -132,7 +132,7 @@ fn host_palette_defaults_the_theme_and_theme_set_outranks_it() {
                if n == 4 then theme_reset() end\n\
                accent_r = ui_theme().accent.r\n\
                button({x: 200, y: 200, w: 80, h: 24}, \"Go\")";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
 
     // Frame 1: no host palette bound → built-in default (accent #3c8cff).
     let cmds = ui.frame().unwrap().to_vec();
@@ -904,7 +904,7 @@ fn draw_text_field_places_the_caret_bar_at_the_index() {
 #[test]
 fn tooltip_waits_for_the_hover_delay_then_fades_in() {
     let src = "tooltip({x: 0, y: 0, w: 100, h: 40}, \"tip!\")";
-    let mut ui = Headless::new(src).unwrap();
+    let mut ui = Headless::with_ui(src).unwrap();
     ui.time = 0.0;
     ui.mouse_move(50, 20);
     ui.frame().unwrap();
@@ -939,7 +939,7 @@ fn tooltip_waits_for_the_hover_delay_then_fades_in() {
 fn gallery_runs_headlessly_across_all_tabs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../garden/examples/panels/gallery.ptl");
-    let mut ui = Headless::from_file_with_size(&path, 900, 700)
+    let mut ui = Headless::panel_from_file_with_paths(&path, 900, 700, &[])
         .unwrap_or_else(|e| panic!("gallery failed to load: {e}"));
     ui.frame()
         .unwrap_or_else(|e| panic!("gallery frame 1: {e}"));
@@ -979,7 +979,7 @@ fn gallery_runs_headlessly_across_all_tabs() {
 /// harness uses (the default table is 0.6), so a width measured *in it* is
 /// unmistakably distinguishable from the default ruler.
 fn with_ui_face(source: &str) -> Headless {
-    let mut ui = Headless::new(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
+    let mut ui = Headless::with_ui(source).unwrap_or_else(|e| panic!("compile failed: {e}"));
     petal_ui::draw::bind_font_metrics(
         &mut ui.env,
         "ui",

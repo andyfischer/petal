@@ -20,6 +20,12 @@ const ELEMENT_ID_COUNTER: &str = "element_id";
 /// Host→script binding: the element id that was clicked (0 = none).
 const CLICKED_ID_BINDING: &str = "clicked_id";
 
+/// The interface package of this host: `import web` binds the element-tree
+/// natives. Its source lives in `core/packages/web` so the stock CLI can
+/// check scripts against it (`petal check -I core/packages`).
+pub const WEB_PACKAGE: &str = "web";
+const WEB_INTERFACE: &str = include_str!("../packages/web/src/web.ptl");
+
 // ---------------------------------------------------------------------------
 // Native functions — element tree
 // ---------------------------------------------------------------------------
@@ -66,6 +72,10 @@ impl PetalRuntime {
             NativeEffects::probe(InputClasses::POINTER),
         );
 
+        // The interface package that declares them: scripts `import web`.
+        env.register_package(WEB_PACKAGE, [(WEB_PACKAGE, WEB_INTERFACE)])
+            .expect("the web interface package registers");
+
         PetalRuntime {
             env,
             active_program: None,
@@ -86,15 +96,47 @@ impl PetalRuntime {
         self.env.register_module(name, source);
     }
 
-    /// Declare modules every loaded program imports implicitly (a host
-    /// prelude). Pass a comma-separated list of registered module names.
-    pub fn set_implicit_imports(&mut self, names: &str) {
-        let list: Vec<&str> = names
+    /// Register a whole package from memory. `modules_json` is a JSON object
+    /// of module name (package-relative: `menu`, `ui/menu`) to source text —
+    /// the form `petal bundle` emits. The modules are then importable as
+    /// `name/<module>`, and `import name` loads the module named like the
+    /// package. A package that declares natives (`native fn`) is an
+    /// interface package: its declarations give this runtime's registered
+    /// natives their parameter names.
+    pub fn register_package(&mut self, name: &str, modules_json: &str) -> Result<(), JsValue> {
+        let modules: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(modules_json).map_err(|e| {
+                JsValue::from_str(&format!(
+                    "register_package: expected a JSON object of module name to source: {e}"
+                ))
+            })?;
+        self.env
+            .register_package(name, modules.iter())
+            .map(|_| ())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Check this runtime's registered natives against its interface
+    /// packages (a comma-separated list of package names): every declared
+    /// native is registered and every registered native is declared. Returns
+    /// an empty string when they agree, else what differs.
+    pub fn verify_interface(&self, packages: &str) -> String {
+        let list: Vec<&str> = packages
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();
-        self.env.set_implicit_imports(&list);
+        match self.env.verify_interface(&list) {
+            Ok(()) => String::new(),
+            Err(mismatch) => mismatch.to_string(),
+        }
+    }
+
+    /// Compile-only mode: programs loaded afterwards are checked but not
+    /// linked against this runtime's natives, so a script written for
+    /// another host can be checked here.
+    pub fn set_check_only(&mut self, on: bool) {
+        self.env.set_check_only(on);
     }
 
     /// Compile source code and return a program ID.

@@ -23,6 +23,13 @@ impl Scratch {
 
     fn write(&self, name: &str, contents: &str) -> PathBuf {
         let p = self.0.join(name);
+        // Every app here is a petal-ui script: give it its `import ui`
+        // (on its own first line, so line numbers are the body's).
+        let contents = if name.ends_with(".ptl") {
+            format!("import ui; {contents}")
+        } else {
+            contents.to_string()
+        };
         std::fs::write(&p, contents).unwrap();
         p
     }
@@ -418,13 +425,14 @@ fn example_apps_run_headlessly() {
 
 /// The driver registers `petal_ui::panel_stubs`, so a Garden panel drawer's
 /// host natives (`palette`, `query`, `mutate`, the stores and text-view
-/// regions) answer deterministically instead of `Unknown builtin`.
+/// regions) answer deterministically, and `import garden` resolves.
 #[test]
 fn garden_panel_natives_answer_as_deterministic_stubs() {
     let s = Scratch::new("panel-stubs");
     let app = s.write(
         "app.ptl",
-        "state loading = 0\n\
+        "import garden\n\
+         state loading = 0\n\
          state handle = 0\n\
          state stored = \"\"\n\
          state no_nav = 0\n\

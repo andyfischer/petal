@@ -2,6 +2,8 @@
 // Inspired by Chapter 7: Cellular Automata
 // Wolfram's 1D cellular automata - generates all rules over time
 
+import ui
+
 state cells = []
 state next_row = 0
 state rule_num = 30

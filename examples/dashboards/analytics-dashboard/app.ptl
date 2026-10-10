@@ -10,6 +10,8 @@
 //         t  area <-> bars                 h  hide/show the hover readout
 // ─────────────────────────────────────────────────────────────────────────────
 
+import ui
+
 // ── Palette ──────────────────────────────────────────────────────────────────
 // One ink-blue ground, three surface steps above it, and a hairline that is
 // just visible enough to separate cards without drawing a box around them.

@@ -22,9 +22,8 @@ use petal_ui::scenario::Scenario;
 
 fn audit(app: &Path, includes: &[PathBuf], seed: u64, frames: usize) -> Report {
     let size = (800, 600);
-    let mut ui = Headless::from_file_with_paths(app, size.0, size.1, includes)
+    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
         .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
-    petal_ui::panel_stubs::register_panel_stubs(&mut ui.env);
     ui.env.set_echo(false);
     ui.env.set_seed(seed);
     // Every frame runs, and scopes replay: the same shape as the memo

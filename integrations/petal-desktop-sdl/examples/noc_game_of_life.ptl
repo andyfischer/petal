@@ -2,6 +2,8 @@
 // Inspired by Chapter 7: Cellular Automata
 // Conway's Game of Life with colorful visualization
 
+import ui
+
 state grid = []
 state next_grid = []
 state cols = 0

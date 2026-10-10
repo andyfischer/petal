@@ -20,6 +20,8 @@
 // program, so `text_width`, `text_metrics` and `draw_text` are named bare here
 // with no `import ui`.
 
+import ui
+
 // ── Vertical placement ────────────────────────────────────────────────────
 
 // The baseline y for text set in `r`, vertically aligned by `valign`:

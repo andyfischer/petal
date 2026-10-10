@@ -3,6 +3,8 @@
 //
 // A port of a 2008 Flash toy (andyfischer/plant_test).
 
+import ui
+
 config let wiggle_factor = 0.5             // how much a segment veers off straight
 config let max_segment_angle = 0.5         // veer ceiling, in multiples of pi
 config let max_segment_radius = 3.0        // trunk half-thickness at the base

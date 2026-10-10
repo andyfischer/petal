@@ -18,6 +18,9 @@
 // Colors come from `ui_theme()`, which mirrors Garden's palette automatically
 // (the host binds it every frame).
 
+import garden
+import ui
+
 let T = ui_theme()
 let FS = T.font_md
 let w = screen_width()

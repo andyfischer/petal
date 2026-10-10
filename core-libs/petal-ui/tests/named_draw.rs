@@ -25,7 +25,7 @@ const PROLOGUE: &str = "let C = {r: 11, g: 22, b: 33}\n\
 
 fn draw(call: &str) -> Vec<DrawCommand> {
     let src = format!("{PROLOGUE}{call}\n");
-    let mut ui = Headless::new(&src).unwrap_or_else(|e| panic!("`{call}` failed to compile: {e}"));
+    let mut ui = Headless::with_ui(&src).unwrap_or_else(|e| panic!("`{call}` failed to compile: {e}"));
     ui.frame()
         .unwrap_or_else(|e| panic!("`{call}` failed: {e}"))
         .to_vec()
@@ -49,7 +49,7 @@ fn draw_each(calls: &[&str]) -> Option<Vec<Vec<DrawCommand>>> {
         src.push('\n');
         src.push_str(&mark);
     }
-    let mut ui = Headless::new(&src).ok()?;
+    let mut ui = Headless::with_ui(&src).ok()?;
     let commands = ui.frame().ok()?.to_vec();
     let is_mark = |c: &DrawCommand| matches!(c, DrawCommand::Text { text, .. } if text == MARK);
     // The prologue's own output, then one piece per call, then the tail.
@@ -80,7 +80,7 @@ fn same<S: AsRef<str>>(pairs: &[(S, S)]) {
 
 fn error(call: &str) -> String {
     let src = format!("{PROLOGUE}{call}\n");
-    match Headless::new(&src) {
+    match Headless::with_ui(&src) {
         Err(e) => e,
         Ok(mut ui) => ui
             .frame()

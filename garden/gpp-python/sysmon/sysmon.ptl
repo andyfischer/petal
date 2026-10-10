@@ -19,6 +19,9 @@
 // The integration test drives this drawer via /state → panel.values:
 // `ready`, `row_count`, `proc_count` and `sort_spec` are its handles.
 
+import garden
+import ui
+
 state tbl = table_state()
 state sort_seeded = false
 state ls = load_state()

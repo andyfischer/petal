@@ -232,12 +232,17 @@ impl Compiler {
                     // later user binding) compiles to a static BuiltinCall.
                     //
                     // "The builtin" is whatever host native the name is bound
-                    // to: a registered native's own name, or the name a
+                    // to: a core builtin's own name, or the name a
                     // `native fn` declaration gave one (`_native_rect` for
                     // `draw_rect`) — the call names the *host* native either
-                    // way. A name nothing binds compiles the same way and is
-                    // looked up when the line runs ("Unknown builtin"), which
-                    // `petal check` reports first (`typecheck::globals`).
+                    // way.
+                    //
+                    // A name nothing binds is not looked up among the host's
+                    // natives: a native is reachable only through a
+                    // declaration in scope. The call compiles to a deferred
+                    // error that fires if the line runs ("Unknown function"),
+                    // which `petal check` reports first
+                    // (`typecheck::globals`).
                     if let ExprKind::Ident(name) = &function.kind {
                         self.check_import_call(name, args.len(), span);
                     }
@@ -247,7 +252,18 @@ impl Compiler {
                                 self.note_native_use(tid);
                                 self.native_terms.get(&tid).cloned()
                             }
-                            None => Some(name.clone()),
+                            None if self.module_aliases.contains_key(name) => None,
+                            None => {
+                                for arg in args {
+                                    self.compile_expr(arg);
+                                }
+                                let msg = format!(
+                                    "{}{name}",
+                                    crate::typecheck::globals::UNKNOWN_FUNCTION_PREFIX
+                                );
+                                let msg_cid = self.constants.intern(ConstantValue::String(msg));
+                                return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
+                            }
                         },
                         _ => None,
                     };

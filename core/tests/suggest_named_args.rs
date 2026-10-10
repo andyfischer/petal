@@ -10,13 +10,11 @@
 use std::process::Command;
 
 use petal::suggest::{Kinds, SuggestOptions, apply_all, suggest_source, verify_named_args};
-use petal::typecheck::globals::HostProfile;
 
 const PETAL: &str = env!("CARGO_BIN_EXE_petal");
 
-fn opts(host: HostProfile) -> SuggestOptions {
+fn opts() -> SuggestOptions {
     SuggestOptions {
-        host,
         kinds: Kinds {
             types: false,
             named_args: true,
@@ -28,29 +26,21 @@ fn opts(host: HostProfile) -> SuggestOptions {
 }
 
 /// Each suggested call in `src`, as it would read.
-fn rewrites_for(src: &str, host: HostProfile) -> Vec<String> {
-    let out = suggest_source(src, None, &opts(host)).expect("suggest");
-    out.named_args.iter().map(|n| n.after.clone()).collect()
-}
-
 fn rewrites(src: &str) -> Vec<String> {
-    rewrites_for(src, HostProfile::Core)
+    let out = suggest_source(src, None, &opts()).expect("suggest");
+    out.named_args.iter().map(|n| n.after.clone()).collect()
 }
 
 /// `src` with every named-argument suggestion applied — after checking that
 /// the result is provably the same program, as `--apply` does.
-fn applied_for(src: &str, host: HostProfile) -> String {
-    let out = suggest_source(src, None, &opts(host)).expect("suggest");
+fn applied(src: &str) -> String {
+    let out = suggest_source(src, None, &opts()).expect("suggest");
     let rewritten = apply_all(src, &[], &[], &out.named_args);
     if rewritten != src {
-        verify_named_args(src, &rewritten, None, &opts(host))
+        verify_named_args(src, &rewritten, None, &opts())
             .unwrap_or_else(|e| panic!("{e}\n--- rewritten ---\n{rewritten}"));
     }
     rewritten
-}
-
-fn applied(src: &str) -> String {
-    applied_for(src, HostProfile::Core)
 }
 
 const BOX: &str = "fn box(x, y, w, h)\n  x + y + w + h\nend\n";
@@ -201,13 +191,13 @@ fn a_piped_call_names_only_the_arguments_in_its_parentheses() {
 }
 
 #[test]
-fn a_prelude_function_is_named_through_the_implicit_import() {
+fn a_ui_function_is_named_through_the_import_of_its_package() {
     let src = "draw_rect(0, 0, 320, 48, 20, 24, 32)\n";
     assert_eq!(
-        rewrites_for(src, HostProfile::Ui),
+        rewrites(&format!("import ui\n{src}")),
         ["draw_rect(x: 0, y: 0, w: 320, h: 48, r: 20, g: 24, b: 32)"]
     );
-    // Without the host's prelude the name is an unknown global: nothing to
+    // Without the import the name is an unknown global: nothing to
     // resolve, nothing suggested.
     assert!(rewrites(src).is_empty());
 }
@@ -311,12 +301,12 @@ fn two_shapes_on_one_count_are_left_alone() {
     assert_eq!(rewrites(src), ["mark(x: 1, y: 2, size: 3)"]);
     // The `ui` prelude's `draw_line` is the case this exists for: seven
     // arguments are the flat form *and* `(x1, y1, x2, y2, c, a, width)`.
-    let flat = "draw_line(0, 0, 10, 10, 255, 0, 0)\n";
-    assert!(rewrites_for(flat, HostProfile::Ui).is_empty());
+    let flat = "import ui\ndraw_line(0, 0, 10, 10, 255, 0, 0)\n";
+    assert!(rewrites(flat).is_empty());
     // Eight are only the flat form.
-    let with_alpha = "draw_line(0, 0, 10, 10, 255, 0, 0, 128)\n";
+    let with_alpha = "import ui\ndraw_line(0, 0, 10, 10, 255, 0, 0, 128)\n";
     assert_eq!(
-        rewrites_for(with_alpha, HostProfile::Ui),
+        rewrites(with_alpha),
         ["draw_line(x1: 0, y1: 0, x2: 10, y2: 10, r: 255, g: 0, b: 0, a: 128)"]
     );
 }
@@ -385,7 +375,7 @@ fn a_rewritten_program_runs_as_it_did() {
 
 #[test]
 fn the_proof_rejects_a_rewrite_that_binds_differently() {
-    let o = opts(HostProfile::Core);
+    let o = opts();
     let before = format!("{BOX}print(box(1, 2, 3, 4))\n");
     // The right names in the wrong slots.
     let swapped = format!("{BOX}print(box(y: 1, x: 2, w: 3, h: 4))\n");
@@ -406,7 +396,7 @@ fn the_proof_rejects_a_rewrite_that_binds_differently() {
 
 #[test]
 fn the_proof_refuses_a_callee_it_cannot_resolve() {
-    let o = opts(HostProfile::Core);
+    let o = opts();
     let a = format!("{BOX}fn apply(f)\n  f(1, 2, 3, 4)\nend\nprint(apply(box))\n");
     let b = format!("{BOX}fn apply(f)\n  f(x: 1, y: 2, w: 3, h: 4)\nend\nprint(apply(box))\n");
     // True of this program as it stands, but only because of what `apply` is

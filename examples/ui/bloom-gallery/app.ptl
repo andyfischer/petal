@@ -17,6 +17,7 @@
 import bloom
 import bloom/icon as icons
 import text_layout as tl
+import ui
 
 let T = ui_theme()
 let w = screen_width()

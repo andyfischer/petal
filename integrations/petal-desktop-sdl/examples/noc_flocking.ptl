@@ -2,6 +2,8 @@
 // Inspired by Chapter 6: Autonomous Agents - Flocking
 // Craig Reynolds' boids algorithm: separation, alignment, cohesion
 
+import ui
+
 state boids = []
 state time = 0.0
 

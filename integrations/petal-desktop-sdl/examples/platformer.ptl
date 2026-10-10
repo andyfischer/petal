@@ -2,6 +2,8 @@
 // Arrow keys to move, space to jump
 // Collect coins to score points!
 
+import ui
+
 // Player state
 state px = 100.0
 state py = 400.0

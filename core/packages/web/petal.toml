@@ -1,0 +1,11 @@
+# web — the interface of the wasm element-tree host (`PetalRuntime` in
+# core/src/wasm.rs, used by integrations/petal-web-html): the `native fn`
+# declarations of the two natives it registers. Scripts write `import web`.
+#
+# The wasm runtime registers this package in memory. It is not bundled in the
+# `petal` binary: check a script written for this host with
+# `petal check -I core/packages <file>`.
+[package]
+name = "web"
+version = "0.1.0"
+modules = "src"

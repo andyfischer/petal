@@ -13,6 +13,7 @@
 // `text_index_at` exist at all.
 
 import text_layout/place: text_baseline
+import ui
 
 // The lines `s` breaks into to fit `max_w` px. Existing newlines are honoured;
 // a word wider than the box is broken rather than allowed to overflow. Always

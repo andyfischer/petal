@@ -1,8 +1,8 @@
-//! Build script: locate the petal-ui prelude, when this crate is built inside
-//! the Petal monorepo, so `petal check` can resolve the `ui` module a panel
-//! script imports implicitly (see `typecheck::globals::ui_prelude_source`).
-//! Built anywhere else (a vendored copy without `core-libs/petal-ui/`), the cfg is left
-//! off and `check` falls back to accepting the prelude's names unresolved.
+//! Build script: embed the bundled packages (`petal::bundled`) in the binary.
+//!
+//! A bundled package is Petal source and `native fn` declarations only. Each
+//! one is read from its home in the repository; a missing directory fails the
+//! build rather than producing a binary that silently lacks a package.
 
 use std::path::Path;
 
@@ -11,7 +11,17 @@ use std::path::Path;
 /// `native fn` declarations; `petal::bundled` serves them. A directory that
 /// is missing fails the build — a binary that silently lacks `core` would
 /// compile every script against an empty set of builtins.
-const BUNDLED_PACKAGES: &[(&str, &str)] = &[("core", "packages/core")];
+const BUNDLED_PACKAGES: &[(&str, &str)] = &[
+    ("core", "packages/core"),
+    ("ui", "../core-libs/petal-ui/prelude"),
+    ("bloom", "../core-runtime/bloom"),
+    ("text_layout", "../core-runtime/text-layout"),
+    ("glsl", "../core-runtime/glsl"),
+];
+
+/// Directories of a package that are not part of what it exports: its tests
+/// and examples are loose scripts beside the modules.
+const SKIPPED_DIRS: &[&str] = &["tests", "examples", "docs", "target"];
 
 /// Every file under `dir` a package is made of (`petal.toml`, `*.ptl`),
 /// as `/`-joined paths relative to `dir`, sorted.
@@ -30,6 +40,9 @@ fn package_files(dir: &Path, rel: &str, out: &mut Vec<String>) {
             format!("{rel}/{name}")
         };
         if path.is_dir() {
+            if name.starts_with('.') || SKIPPED_DIRS.contains(&name.as_str()) {
+                continue;
+            }
             package_files(&path, &rel_path, out);
         } else if name == "petal.toml" || name.ends_with(".ptl") {
             out.push(rel_path);
@@ -82,24 +95,7 @@ fn embed_bundled_packages(manifest: &str) {
 }
 
 fn main() {
-    println!("cargo::rustc-check-cfg=cfg(petal_ui_prelude)");
+    println!("cargo::rerun-if-changed=build.rs");
     let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     embed_bundled_packages(&manifest);
-    let prelude = Path::new(&manifest).join("../core-libs/petal-ui/prelude/ui.ptl");
-    if let Ok(path) = prelude.canonicalize() {
-        println!("cargo::rerun-if-changed={}", path.display());
-        println!("cargo::rustc-cfg=petal_ui_prelude");
-        println!("cargo::rustc-env=PETAL_UI_PRELUDE_PATH={}", path.display());
-    } else {
-        println!("cargo::rerun-if-changed=build.rs");
-    }
-    // The packages Garden registers for its panels (bloom, text_layout) live
-    // here; `petal check --host garden` puts it on the module path so a panel
-    // script's `import text_layout` resolves the way it does inside Garden.
-    println!("cargo::rustc-check-cfg=cfg(petal_libs_dir)");
-    let libs = Path::new(&manifest).join("../core-runtime");
-    if let Ok(path) = libs.canonicalize() {
-        println!("cargo::rustc-cfg=petal_libs_dir");
-        println!("cargo::rustc-env=PETAL_LIBS_DIR={}", path.display());
-    }
 }

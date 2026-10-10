@@ -469,37 +469,19 @@ fn renaming_a_module_drops_its_state() {
     assert_eq!(result.state_dropped, 1);
 }
 
-// ── Implicit imports ─────────────────────────────────────────────
+// ── No host implicit imports ─────────────────────────────────────
 
 #[test]
-fn implicit_imports_bind_exports_bare() {
+fn a_registered_module_is_bound_only_by_an_import() {
+    // A host has no implicit imports: registering `ui` makes it importable,
+    // and nothing more.
     let mut env = Env::new();
     env.register_module("ui", UI);
-    env.set_implicit_imports(&["ui"]);
     let pid = env.load_program("print(button(\"z\"))").unwrap();
     let sid = env.create_stack(pid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(env.take_output(), vec!["[z]"]);
-}
+    let err = env.run(sid).unwrap_err();
+    assert!(err.contains("Unknown function: button"), "{err}");
 
-#[test]
-fn script_bindings_win_over_implicit_imports() {
-    let mut env = Env::new();
-    env.register_module("ui", UI);
-    env.set_implicit_imports(&["ui"]);
-    let pid = env
-        .load_program("fn button(l)\n  \"<\" ++ l ++ \">\"\nend\nprint(button(\"z\"))")
-        .unwrap();
-    let sid = env.create_stack(pid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(env.take_output(), vec!["<z>"]);
-}
-
-#[test]
-fn explicit_import_of_implicit_module_is_a_noop() {
-    let mut env = Env::new();
-    env.register_module("ui", UI);
-    env.set_implicit_imports(&["ui"]);
     let pid = env
         .load_program("import ui\nprint(button(\"z\"))\nprint(ui.button(\"q\"))")
         .unwrap();
@@ -508,11 +490,23 @@ fn explicit_import_of_implicit_module_is_a_noop() {
     assert_eq!(env.take_output(), vec!["[z]", "[q]"]);
 }
 
+#[test]
+fn script_bindings_win_over_a_plain_import() {
+    let mut env = Env::new();
+    env.register_module("ui", UI);
+    let pid = env
+        .load_program("import ui\nfn button(l)\n  \"<\" ++ l ++ \">\"\nend\nprint(button(\"z\"))")
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["<z>"]);
+}
+
 // ── Core prelude (std) ───────────────────────────────────────────
 
 #[test]
 fn core_prelude_is_implicit_with_no_host() {
-    // A bare Env — no host, no register_module, no set_implicit_imports —
+    // A bare Env — no host, no register_module —
     // still binds the `std` prelude helpers.
     let mut env = Env::new();
     let pid = env.load_program("print(sum([1, 2, 3, 4]))").unwrap();
@@ -522,14 +516,11 @@ fn core_prelude_is_implicit_with_no_host() {
 }
 
 #[test]
-fn core_prelude_survives_host_implicit_imports() {
-    // A host replacing the implicit-import list for its own prelude must not
-    // drop `std`: both the host's `ui` and the core `std` bind bare.
+fn core_prelude_binds_beside_a_host_package() {
     let mut env = Env::new();
     env.register_module("ui", UI);
-    env.set_implicit_imports(&["ui"]);
     let pid = env
-        .load_program("print(button(\"z\"))\nprint(first([9, 8]))")
+        .load_program("import ui\nprint(button(\"z\"))\nprint(first([9, 8]))")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
@@ -867,9 +858,8 @@ fn core_prelude_resolves_inside_a_registered_module() {
         "hostlib",
         "pub fn probe(r)\n  if has_field(r, \"hit\") then \"yes\" else \"no\" end\nend",
     );
-    env.set_implicit_imports(&["hostlib"]);
     let pid = env
-        .load_program("print(probe({hit: 1}))\nprint(probe({miss: 1}))")
+        .load_program("import hostlib\nprint(probe({hit: 1}))\nprint(probe({miss: 1}))")
         .unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();

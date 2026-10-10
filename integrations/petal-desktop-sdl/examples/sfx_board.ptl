@@ -3,6 +3,9 @@
 // press R for a random synth() zap. Every sound is synthesized on the host,
 // sfxr-style; nothing is loaded from disk.
 
+import sdl
+import ui
+
 state last = ""
 state flash = 0.0
 state zaps = 0

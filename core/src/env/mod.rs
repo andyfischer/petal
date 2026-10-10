@@ -96,6 +96,50 @@ pub struct Env {
     check_only: bool,
 }
 
+/// How a host's registered natives and its interface packages disagree; see
+/// [`Env::verify_interface`].
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct InterfaceMismatch {
+    /// Host natives a package declares (`native fn`) that the `Env` does not
+    /// register, sorted. A script that uses one fails to load.
+    pub unregistered: Vec<String>,
+    /// Natives the `Env` registers, beyond the builtins, that no package
+    /// declares, sorted. No script can reach one.
+    pub undeclared: Vec<String>,
+    /// Packages that could not be found, and modules that do not parse.
+    pub problems: Vec<String>,
+}
+
+impl InterfaceMismatch {
+    /// Nothing is wrong.
+    pub fn is_empty(&self) -> bool {
+        self.unregistered.is_empty() && self.undeclared.is_empty() && self.problems.is_empty()
+    }
+}
+
+impl std::fmt::Display for InterfaceMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+        if !self.unregistered.is_empty() {
+            parts.push(format!(
+                "declared by the interface but not registered by the host: {}",
+                self.unregistered.join(", ")
+            ));
+        }
+        if !self.undeclared.is_empty() {
+            parts.push(format!(
+                "registered by the host but declared by no interface package (add a \
+                 `native fn` for each): {}",
+                self.undeclared.join(", ")
+            ));
+        }
+        parts.extend(self.problems.iter().cloned());
+        write!(f, "{}", parts.join("; "))
+    }
+}
+
+impl std::error::Error for InterfaceMismatch {}
+
 /// Name of the core prelude module: `import std`.
 pub const STD_MODULE: &str = "std";
 
@@ -114,10 +158,8 @@ impl Env {
         let mut contexts = HashMap::new();
         contexts.insert(default_context, ExecutionContext::new());
         let mut modules = ModuleRegistry::default();
-        // The core prelude ships in every program as an always-on implicit
-        // import. It lives in `base_implicit_imports` (not `implicit_imports`)
-        // so a host calling `set_implicit_imports` for its own prelude can't
-        // accidentally drop it.
+        // The core prelude ships in every program as the one implicit
+        // import.
         modules.register(STD_MODULE, STD_PRELUDE);
         modules.base_implicit_imports = vec![STD_MODULE.to_string()];
         // Libraries sitting on PETAL_PATH are available by package name, the
@@ -390,6 +432,27 @@ impl Env {
     /// `load_program`.
     pub fn register_module(&mut self, name: &str, source: &str) {
         self.modules.register(name, source);
+        self.apply_interface(source);
+    }
+
+    /// Give the natives registered so far the parameter lists the `native fn`
+    /// declarations of `source` give them (see
+    /// [`declare_natives`](Self::declare_natives)). Best-effort: a source
+    /// that does not parse is reported when a program imports it.
+    fn apply_interface(&mut self, source: &str) {
+        if source.contains("native fn")
+            && let Ok(decls) = crate::native_decl::NativeDecls::parse(source)
+        {
+            decls.apply_to(&mut self.native_fns);
+        }
+    }
+
+    /// Apply the interface every module of the registered package `name`
+    /// declares.
+    fn apply_package_interface(&mut self, name: &str) {
+        for (_, source) in self.modules.package_sources(name).unwrap_or_default() {
+            self.apply_interface(&source);
+        }
     }
 
     /// Add a directory to the package search path. The CLI's `-I <dir>`
@@ -432,6 +495,7 @@ impl Env {
         let package = crate::package::Package::from_dir(root.as_ref())?;
         let info = package.info.clone();
         self.modules.add_package(package);
+        self.apply_package_interface(&info.name);
         Ok(info)
     }
 
@@ -458,7 +522,58 @@ impl Env {
         let package = crate::package::Package::in_memory(name, modules)?;
         let info = package.info.clone();
         self.modules.add_package(package);
+        self.apply_package_interface(&info.name);
         Ok(info)
+    }
+
+    /// Check this `Env`'s registered natives against the interface packages
+    /// that declare them: every `native fn` a module of `packages` declares
+    /// must be registered here, and every native registered here beyond the
+    /// builtins must be declared by one of them.
+    ///
+    /// This is a host's drift test. A host registers its natives and its
+    /// interface package(s), then asserts
+    /// `env.verify_interface(&["ui", "sdl"]).is_ok()`: a native added in Rust
+    /// with no declaration is unreachable from script, and a declaration
+    /// with no native is a load error for every script that uses it, and
+    /// this reports both before a user does.
+    ///
+    /// Each name is a package (host-registered, on a search path, or bundled)
+    /// or a module registered in memory under that name. Passing all of a
+    /// host's packages in one call is what makes the "registered but not
+    /// declared" half meaningful.
+    pub fn verify_interface(&self, packages: &[&str]) -> Result<(), InterfaceMismatch> {
+        let mut mismatch = InterfaceMismatch::default();
+        let mut declared: std::collections::HashSet<String> = Default::default();
+        for name in packages {
+            let Some(sources) = self.modules.package_sources(name) else {
+                mismatch
+                    .problems
+                    .push(format!("no package or module named '{name}' is available"));
+                continue;
+            };
+            for (module, source) in sources {
+                match crate::native_decl::NativeDecls::parse(&source) {
+                    Ok(decls) => declared.extend(decls.host_names()),
+                    Err(e) => mismatch.problems.push(format!("{module}: {e}")),
+                }
+            }
+        }
+        let core = crate::native_decl::core_host_names();
+        let registered: std::collections::HashSet<String> = self
+            .native_fn_names()
+            .into_iter()
+            .filter(|name| !core.contains(name))
+            .collect();
+        mismatch.unregistered = declared.difference(&registered).cloned().collect();
+        mismatch.undeclared = registered.difference(&declared).cloned().collect();
+        mismatch.unregistered.sort();
+        mismatch.undeclared.sort();
+        if mismatch.is_empty() {
+            Ok(())
+        } else {
+            Err(mismatch)
+        }
     }
 
     /// Every registered package — what a host prints, or tells a script, when
@@ -544,21 +659,32 @@ impl Env {
     /// The names the module at the package path `path` exports — what a
     /// plain `import path` binds bare.
     pub fn exports_of(&self, path: &str) -> Result<Vec<String>, crate::error::LoadError> {
+        self.exports_and_modules_of(path).map(|(exports, _)| exports)
+    }
+
+    /// [`exports_of`](Self::exports_of), plus the canonical name of every
+    /// module `import path` loads (the module itself and everything it
+    /// imports, transitively).
+    pub fn exports_and_modules_of(
+        &self,
+        path: &str,
+    ) -> Result<(Vec<String>, Vec<String>), crate::error::LoadError> {
         let modules = crate::module::load_modules(
             &format!("import {path}\n"),
             None,
             &self.modules,
             &[],
-            &[],
         )?;
         let program = Compiler::new().compile_modules(&modules, ProgramId(0), &self.native_fns)?;
-        Ok(program
+        let exports = program
             .imports
             .entry
             .first()
             .and_then(|import| program.imports.exports.get(&import.module))
             .cloned()
-            .unwrap_or_default())
+            .unwrap_or_default();
+        let loaded = modules.iter().filter_map(|m| m.name.clone()).collect();
+        Ok((exports, loaded))
     }
 
     /// Every package path a script could write after `import` to reach a
@@ -568,14 +694,6 @@ impl Env {
     /// package and `std` are left out.
     pub fn importable_paths(&self) -> Vec<String> {
         self.modules.importable_paths()
-    }
-
-    /// Declare modules that every loaded program imports implicitly, as if by
-    /// a selective import of all their exports — a host prelude with zero
-    /// ceremony in user scripts. A script's own bindings still win, and an
-    /// explicit `import` of the same module is a no-op on top of this.
-    pub fn set_implicit_imports(&mut self, names: &[&str]) {
-        self.modules.implicit_imports = names.iter().map(|s| s.to_string()).collect();
     }
 
     /// Resolve imports and compile: the shared back half of
@@ -593,7 +711,6 @@ impl Env {
             source,
             origin,
             &self.modules,
-            &self.modules.implicit_imports,
             &self.modules.base_implicit_imports,
         )?;
         let program = Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
@@ -645,7 +762,6 @@ impl Env {
             source,
             origin,
             &self.modules,
-            &self.modules.implicit_imports,
             &self.modules.base_implicit_imports,
         )?;
         Compiler::new()

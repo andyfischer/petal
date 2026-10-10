@@ -1,5 +1,7 @@
 // Flappy Bird clone — visually enhanced
 
+import ui
+
 // Game constants
 let GRAVITY = 800.0
 let FLAP_STRENGTH = -300.0

@@ -12,6 +12,8 @@
 //   c       clear extra balls
 //   space   pause/resume motion
 
+import ui
+
 state balls = []
 state extras = []
 state paused = false

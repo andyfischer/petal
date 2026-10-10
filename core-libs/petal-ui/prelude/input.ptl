@@ -1,0 +1,42 @@
+// petal-ui input — module `ui/input`
+//
+// The input half of the petal-ui interface: the declarations of the input,
+// timing and frame natives (`petal_ui::input::register_input`). The `ui`
+// module re-exports every name here, so a script that writes `import ui` has
+// them all. A host that registers only this half — a console with its own
+// video, say — has its scripts write `import ui/input`, and loading them
+// needs none of the draw natives.
+
+// Input (core-libs/petal-ui/src/input.rs). Button 0 is the left mouse button.
+pub native fn mouse_x() -> int
+pub native fn mouse_y() -> int
+pub native fn hovered(rect)
+pub native fn mouse_dx() -> int
+pub native fn mouse_dy() -> int
+pub native fn mouse_down(button: num) -> bool
+pub native fn mouse_pressed(button: num) -> bool
+pub native fn mouse_released(button: num) -> bool
+pub native fn scroll_x() -> int
+pub native fn scroll_y() -> int
+pub native fn key_down(key: string) -> bool
+pub native fn key_pressed(key: string) -> bool
+pub native fn key_released(key: string) -> bool
+pub native fn mod_shift() -> bool
+pub native fn mod_ctrl() -> bool
+pub native fn mod_alt() -> bool
+pub native fn mod_cmd() -> bool
+pub native fn drag_active() -> bool
+pub native fn drag_start_x() -> int
+pub native fn drag_start_y() -> int
+pub native fn click_count() -> int
+pub native fn text_input() -> string
+pub native fn grab_mouse()
+pub native fn release_mouse()
+
+// Timing and the frame (input.rs).
+pub native fn dt() -> float
+pub native fn time() -> float
+pub native fn frame_count() -> int
+pub native fn screen_width() -> int
+pub native fn screen_height() -> int
+pub native fn ui_version() -> int

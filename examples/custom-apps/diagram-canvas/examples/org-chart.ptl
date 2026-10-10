@@ -3,6 +3,8 @@
 // Demonstrates nested data (each person names its children by index) and
 // rendering a tree from it.
 
+import ui
+
 fn mouse_over(rect: record) -> bool
   let mx = mouse_x()
   let my = mouse_y()

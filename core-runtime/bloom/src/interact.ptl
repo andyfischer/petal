@@ -15,6 +15,7 @@
 // module of a program, not just the entry file, so bloom names `rect` and
 // `point_in` bare — no `import ui` needed.
 import bloom/motion: ease_flag, ease_to
+import ui
 
 // ── Input capture ─────────────────────────────────────────────────────────
 // Immediate mode draws overlays last, so an open menu's rect is not known

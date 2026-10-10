@@ -185,15 +185,6 @@ pub(super) fn handle_run(
                 print_observations(json, &map);
             }
             if let Err(e) = run_result {
-                // `check` passes this script (it checks against `--host ui`
-                // unless told otherwise), so say why `run` could not.
-                if !json
-                    && !super::bare_errors()
-                    && let Some(note) = ui_host_note(&e)
-                {
-                    eprintln!("Error: {e}\n{note}");
-                    process::exit(1);
-                }
                 die(json, &e, "runtime");
             }
         }
@@ -280,27 +271,6 @@ fn save_state_storage(env: &Env, json: bool, pid: ProgramId, sid: StackKey, path
             "state-storage",
         );
     }
-}
-
-/// When a run died on a name the petal-ui host provides (`ui`, a `ui` prelude
-/// function, a petal-ui native), the note explaining that `petal run` is the
-/// core host — otherwise a newcomer sees `petal check` accept a script and
-/// `petal run` reject it with no reason given for the difference.
-fn ui_host_note(err: &str) -> Option<String> {
-    let first = err.lines().next()?;
-    let name = first
-        .strip_prefix("Undefined variable: ")
-        .or_else(|| first.strip_prefix("Unknown builtin: "))?;
-    let name = name.split(" [").next()?.trim();
-    if !crate::typecheck::globals::ui_host_provides(name) {
-        return None;
-    }
-    Some(format!(
-        "note: `{name}` comes from the petal-ui host. 'petal run' provides the core builtins \
-         only, so this script needs a petal-ui runner (such as petal-sdl; see \
-         docs/building-apps.md). 'petal check' accepted it because it checks against \
-         '--host ui' by default; 'petal check --host core' checks what 'petal run' can run."
-    ))
 }
 
 /// Print the `--observe` dump: a JSON object under `--json`, otherwise a blank
@@ -961,44 +931,17 @@ pub(super) fn handle_check(
     strict: bool,
     lenient: bool,
     ir: bool,
-    host: crate::typecheck::globals::HostProfile,
-    natives: &[String],
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
     use crate::typecheck::globals;
-    // Garden registers bloom and text_layout for every panel, so a panel
-    // script imports them with no `-I`; check sees the same packages.
-    let mut dirs = include_dirs.to_vec();
-    if host == globals::HostProfile::Garden
-        && let Some(libs) = globals::garden_packages_dir()
-        && libs.is_dir()
-        && !dirs.contains(&libs)
-    {
-        dirs.push(libs);
-    }
-    let mut env = make_env(&dirs);
+    let mut env = make_env(include_dirs);
     // A check, not a run: the script may be written for a host whose natives
-    // this process does not register. Its interface module declares them
-    // (`native fn`), which is all a check needs — so compile without linking.
+    // this process does not register. The interface package it imports
+    // declares them (`native fn`), which is all a check needs — so compile
+    // without linking.
     env.set_check_only(true);
-    // A petal-ui host imports its `ui` prelude implicitly, so a script calls
-    // `button(...)` bare; check against the same module, or every widget call
-    // would look like an unknown global. When this build cannot see the
-    // prelude, unknown globals go unreported for these hosts rather than
-    // flagging every prelude name.
-    let mut check_globals = true;
-    if host.uses_ui_prelude() {
-        match globals::ui_prelude_source() {
-            Some(src) => {
-                env.register_module(globals::UI_MODULE, src);
-                env.set_implicit_imports(&[globals::UI_MODULE]);
-            }
-            None => check_globals = false,
-        }
-    }
-    let host_natives = globals::host_names(host, natives);
     let is_empty = source.trim().is_empty();
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below
@@ -1006,23 +949,10 @@ pub(super) fn handle_check(
     let pid = load_or_die(&mut env, json, ir, source, source_input);
     // A call or read of a name nothing defines compiles (it is resolved, or
     // fails, when the line runs), so the compile alone cannot answer "will
-    // this run?". Report each one the target host does not provide.
+    // this run?". Report each one.
     let unresolved = env
         .get_program(pid)
-        .filter(|_| check_globals)
-        .map(|p| globals::unresolved_globals(p, |n| env.native_signatures(n), &host_natives));
-    // Counted for the host-profile note below, which is about names nothing
-    // defines: a bad named argument to a builtin that *did* resolve is not
-    // something `--host` fixes.
-    let unresolved_count = unresolved.as_ref().map_or(0, |diags| {
-        diags
-            .iter()
-            .filter(|d| {
-                d.message.starts_with("unknown function")
-                    || d.message.starts_with("undefined variable")
-            })
-            .count()
-    });
+        .map(|p| globals::unresolved_globals(p, |n| env.native_signatures(n)));
     if let (Some(diags), Some(p)) = (unresolved, env.get_program_mut(pid)) {
         p.warnings.extend(diags);
     }
@@ -1075,16 +1005,6 @@ pub(super) fn handle_check(
         if is_empty {
             eprintln!("warning: empty program");
         }
-        // An unknown name is only unknown to the host profile `check` used,
-        // so say which one, and how to name the real host.
-        if check_globals && unresolved_count > 0 {
-            eprintln!(
-                "note: names were checked against `--host {}`; if your host provides them, \
-                 pass its profile (`--host core|ui|garden|garden-config|sdl`) or name them \
-                 with `--native a,b`",
-                host.name()
-            );
-        }
         if error_count > 0 {
             eprintln!(
                 "{} error{} found by check",
@@ -1107,14 +1027,13 @@ pub(super) fn handle_check(
 /// don't, 2 when a side fails to compile (an answer of "can't tell", which
 /// must not be mistaken for "not equal").
 ///
-/// `named_args` is `--named-args`, with the host both files are written for:
-/// calls may then differ in writing an argument by name instead of position,
+/// `named_args` is `--named-args`: calls may then differ in writing an argument by name instead of position,
 /// wherever both provably bind alike — the comparison `petal suggest --apply`
 /// proves its named-argument rewrites with.
 pub(super) fn handle_ir_equal(
     json: bool,
     other_path: &str,
-    named_args: Option<crate::typecheck::globals::HostProfile>,
+    named_args: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -1128,11 +1047,10 @@ pub(super) fn handle_ir_equal(
     };
     let origin = source_origin(source_input);
     let result = match named_args {
-        None => crate::ir_equiv::sources_equivalent(source, &other, include_dirs, origin.as_deref()),
-        Some(host) => {
+        false => crate::ir_equiv::sources_equivalent(source, &other, include_dirs, origin.as_deref()),
+        true => {
             let opts = crate::suggest::SuggestOptions {
                 include_dirs: include_dirs.to_vec(),
-                host,
                 ..Default::default()
             };
             crate::suggest::sources_equivalent_modulo_named_args(
@@ -1863,7 +1781,6 @@ pub(super) fn handle_suggest(
     let opts = crate::suggest::SuggestOptions {
         include_dirs: include_dirs.to_vec(),
         from: args.from.clone(),
-        host: args.host,
         kinds: args.kinds,
     };
     let outcome = match crate::suggest::suggest_source(source, origin.as_deref(), &opts) {

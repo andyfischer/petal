@@ -2,6 +2,8 @@
 // Inspired by Chapter 2: Forces
 // Objects with gravity, wind, and friction - click to add wind
 
+import ui
+
 state objects = []
 state wind_x = 0.0
 state wind_timer = 0.0

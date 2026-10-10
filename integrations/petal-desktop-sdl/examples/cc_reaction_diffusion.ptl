@@ -17,6 +17,8 @@
 //   r             reset to a single central seed
 //   space         pause / resume
 
+import ui
+
 state grid_a = []
 state grid_b = []
 state cols = 0

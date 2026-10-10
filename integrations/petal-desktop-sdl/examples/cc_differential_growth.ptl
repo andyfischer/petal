@@ -12,6 +12,8 @@
 //   click   add an attractor at the cursor (pulls the curve)
 //   c       clear attractors
 
+import ui
+
 state nodes = []
 state attractors = []
 state paused = false

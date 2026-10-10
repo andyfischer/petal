@@ -556,11 +556,15 @@ mod tests {
     use super::*;
     use crate::sfx::{preset_params, render_sfx};
 
+    /// The sound natives' declarations as the `sdl` package writes them, on
+    /// one line so a script appended to it keeps its own line numbers.
+    const DECLS: &str = "native fn sfx(name, opts?); native fn synth(params); ";
+
     fn run_script(src: &str) -> (Env, Result<(), String>) {
         let mut env = Env::new();
         register_natives(&mut env);
         let result = (|| {
-            let pid = env.load_program(src)?;
+            let pid = env.load_program(&format!("{DECLS}{src}"))?;
             let stack = env.create_stack(pid)?;
             env.run(stack).map(|_| ())
         })();
@@ -648,7 +652,7 @@ land(7.0)
 "#;
         let mut env = Env::new();
         register_natives(&mut env);
-        let pid = env.load_program(src).unwrap();
+        let pid = env.load_program(&format!("{DECLS}{src}")).unwrap();
         let stack = env.create_stack(pid).unwrap();
         for frame in 0..3 {
             env.reset_stack(stack).unwrap();
@@ -691,7 +695,9 @@ helper(2)
         let mut env = Env::new();
         env.register_native("queue_on_host", native_queue_on_host, row);
         env.set_effect_audit(true);
-        let pid = env.load_program(src).unwrap();
+        let pid = env
+            .load_program(&format!("native fn queue_on_host(n); {src}"))
+            .unwrap();
         let stack = env.create_stack(pid).unwrap();
         for _ in 0..4 {
             env.reset_stack(stack).unwrap();

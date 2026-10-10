@@ -2,6 +2,9 @@
 // Record-arg draw overloads, rect(), point_in()/hovered() come from the
 // implicit `ui` module (the petal-ui prelude).
 
+import sdl
+import ui
+
 state selected = 0
 state scroll_y = 0.0
 

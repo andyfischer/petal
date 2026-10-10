@@ -83,9 +83,17 @@ const STUB_PALETTE: &[(&str, [u8; 4])] = &[
 /// polls `mutate_result` later behaves sanely (the reply is just always nil).
 const STUB_MUTATE_HANDLES: &str = "__stub_mutate_handles";
 
-/// Register the whole stubbed Garden-panel vocabulary. Call after building
-/// the env (natives resolve by name at call time, so order relative to
-/// program loading does not matter).
+/// Register the whole stubbed Garden-panel vocabulary and the `garden`
+/// interface package that declares it. Call before loading a program that
+/// imports `garden`: loading links its natives.
+/// The interface package of a Garden panel: `import garden`.
+pub const GARDEN_PACKAGE: &str = "garden";
+
+/// The source of the `garden` interface package — Garden's own file, so the
+/// stubs here answer to exactly the declarations Garden ships.
+pub const GARDEN_INTERFACE: &str =
+    include_str!("../../../garden/garden-script/packages/garden/garden.ptl");
+
 pub fn register_panel_stubs(env: &mut Env) {
     // Each stub declares what *it* does, which is at most what Garden's
     // native does. Where Garden's reaches host state (the query cache, the
@@ -125,6 +133,10 @@ pub fn register_panel_stubs(env: &mut Env) {
     env.register_native("text_view_line_styles", native_text_view_line_styles, EMITS);
     env.register_native("text_view_scroll_to", native_text_view_scroll_to, EMITS);
     env.register_native("text_view_wrap", native_text_view_wrap, EMITS);
+    // The interface package that declares them, so a panel's `import garden`
+    // resolves here as it does inside Garden.
+    env.register_package(GARDEN_PACKAGE, [(GARDEN_PACKAGE, GARDEN_INTERFACE)])
+        .expect("the garden interface package registers");
 }
 
 fn native_palette(cxt: &mut PetalCxt) -> NativeResult {

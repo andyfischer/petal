@@ -2,6 +2,8 @@
 // Inspired by Chapter 1: Vectors
 // Balls with velocity and acceleration, attracted to the mouse
 
+import ui
+
 state movers = []
 state time = 0.0
 

@@ -37,7 +37,8 @@ Entry points, all on `Env` (`core/src/env/`):
 
 | Concern | API |
 |---|---|
-| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `native_signatures(name)` |
+| Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
+| Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
 | Modules / prelude | `register_module`, `add_module_path`, `set_implicit_imports` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
@@ -160,12 +161,137 @@ env.declare_native_params(id, "v1, v2")?;           // distance(v1: a, v2: b)
 `declare_native_params_by_name(name, spec)` does the same by registered name,
 and `native_signatures(name)` reads the declarations back. Declare before
 `load_program`. A genuinely variadic native (`print`) has no roles to name and
-should declare nothing. The core builtins' declarations are
-`builtins::BUILTIN_PARAMS`; petal-ui's are
-`typecheck::globals::PETAL_UI_NATIVE_PARAMS`, kept in the core crate so that
-`petal check` can hold a script to them without the host's `Env` — a host
-whose natives `check` should verify needs its names there too, and any other
-host native's named arguments are left to the run.
+should declare nothing.
+
+These calls are the low-level form. The usual way to give a host's natives
+their parameter names — and the only way `petal check` learns them, since it
+never sees the host's `Env` — is to *declare* the natives in Petal source, as
+the next section describes, and hand that source to `Env::declare_natives`.
+
+## Native interfaces: `native fn`
+
+A native registered in the table is a bare function pointer: a name and an
+effect row. What it *takes* is written in a declaration, in Petal source:
+
+```petal ignore
+native fn sqrt(x: num) -> float
+native fn slice(collection, start, end?)
+native fn print(...values)
+pub native fn mouse_x() -> int
+native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = "draw_rect"
+```
+
+`native fn name(params) -> type` has no body and no `end`. It binds `name`,
+in the module that declares it, to the host native of the same name — or, with
+a trailing `= "host_name"`, to the native registered under that other name.
+`pub native fn` exports the name like any other declaration, so importers
+reach it bare, selectively (`import ui: mouse_x`) or qualified (`ui.mouse_x()`).
+`native` is a contextual keyword: it is one only directly before `fn`, and an
+ordinary name everywhere else. A declaration belongs at the top level of a
+file and is in scope throughout it, whatever line it is on.
+
+**Parameters.** Each is `name` or `name: type`, with the type vocabulary of
+any other annotation. `name?` (`name?: type`) marks a trailing parameter a
+call may leave off — the native counterpart of a default value, minus the
+expression, since the host fills the gap itself. The list may end in a rest
+parameter, `...name`, for a native that takes any number of further arguments
+(`print`, `format(template, ...args)`); such a native takes arguments by
+position only. A parameter name is only ever a call's argument label, so a
+keyword works (`end`).
+
+**Several declarations of one name are call forms.** A native that reads its
+arguments differently by count or by kind declares each reading:
+
+```petal ignore
+native fn random() -> float
+native fn random(max: num) -> float
+native fn random(min: num, max: num) -> float
+native fn text_width(text: string, style) -> int
+native fn text_width(text: string, size, font?) -> int
+```
+
+Unlike the overloads of a Petal `fn`, the forms may take the same number of
+arguments: they are one native, and a named call uses the first form its names
+fit (the rule above). Where forms overlap, the checker holds an argument only
+to the type every form taking that count agrees on. All declarations of a name
+must bind the same host native.
+
+**A native can share an overload set with Petal `fn`s** of other arities,
+which is how a module wraps a native in more convenient shapes:
+
+```petal ignore
+native fn clear(r: num, g: num, b: num)
+fn clear(c) clear(c.r, c.g, c.b) end
+```
+
+`clear(0, 0, 0)` reaches the native and `clear(color)` the `fn`. The two may
+not take the same number of arguments, and a rest-parameter native cannot be
+part of such a set (an overload is chosen by argument count). Under the hood
+the native becomes forwarding `fn`s of that name, so the set behaves exactly
+as any overloaded function does — hoisting, exports, values, named arguments.
+
+**What a declaration is used for.**
+
+- *Binding.* A bare call through a declared name compiles to a static call of
+  the host native, whatever the script calls it.
+- *Checking.* The checker takes parameter names, arity, parameter types and
+  the result type from the declaration: `sqrt("x")` warns that argument 1
+  expects a number, `let s: string = mouse_x()` that an `int` is not a
+  `string`, `mouse_down(btn: 0)` that there is no parameter `btn`. Annotate
+  only certainties — a parameter type is a claim that the native fails on
+  anything else. A `num` parameter also takes a dual number, a `record` one a
+  class instance. A handful of builtins whose *result* depends on their
+  arguments (`abs`, `floor`, `ceil`, `round`, `sign`, `min`, `max`, `clamp`,
+  the float functions on a dual, the vector natives, `lerp`) are worked out by
+  the checker itself and declare no result type; so is `len`'s argument (a
+  list, a string or an `f64_array`, which no one type name says).
+- *Named arguments at run time.* `Env::declare_natives(source)` gives every
+  registered native that `source` declares the parameter lists declared for
+  it, replacing any it had, and returns the declared natives that are *not*
+  registered. A host calls it once, after registering its natives, with the
+  source of its interface module:
+
+  ```rust
+  host::register_natives(&mut env);
+  let missing = env.declare_natives(INTERFACE_PTL)?;   // [] when the host provides it all
+  env.register_module("myhost", INTERFACE_PTL);
+  ```
+
+  (A direct call is put in positional order at compile time from the
+  declaration alone; this is what makes `let f = spawn` then `f(kind: "x")`,
+  and method-call syntax, bind by the same names.)
+
+**Linking.** Loading a program into an `Env` — `load_program*`,
+`compile_program*`, a hot reload — checks that every native the program
+*refers to* through a `native fn` declaration is registered there. If one is
+not, the load fails, before any line runs, with a `Phase::Link` error naming
+each declaring module and its missing natives (a few, then a count):
+
+```text
+module 'ui' needs native fns this host does not register: mouse_x, mouse_y, hovered,
+mouse_dx, +38 more — the program cannot run here; run it with a host that provides them
+```
+
+"Refers to" is static: a call or read anywhere in the program's modules
+counts, inside a function that never runs included. A declaration nothing
+refers to links nothing, so a host may provide part of an interface to
+scripts that use only that part.
+
+A tool that only *checks* a program must not need the natives:
+`Env::set_check_only(true)` compiles without linking. `petal check`, the LSP,
+`petal suggest`, `petal apply-change` and the static `show-*` tools do this;
+a declared native they do not register is still a known name with known
+parameters. (`Env::link_program(&program)` runs the check by hand, and
+`Program::native_links` lists what a program needs.)
+
+**The core builtins are declared the same way**, by the `core` package
+(`core/packages/core/src/*.ptl`, one file per group of builtins). It is
+compiled into the binary by `core/build.rs` — the build fails if the directory
+is missing — and its declarations are in scope in every file with no import.
+A test (`core/src/builtins/decls.rs`) holds the package to exactly the natives
+`register_builtins` registers, and every declared form to the argument counts
+the native really takes. petal-ui's natives are declared at the top of its
+`ui` module (`core-libs/petal-ui/prelude/ui.ptl`), which `petal check` reads.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,

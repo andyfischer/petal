@@ -34,6 +34,12 @@ print([1, 2, 3, 4].slice(start: 1, end: 3))            // [2, 3]
 A wrong name is an error when the line runs (`clamp() has no parameter named
 'low'`), and from `petal check` before that.
 
+Each builtin's signature is written once, as a `native fn` declaration in the
+`core` package (`core/packages/core/src/`, compiled into the binary and in
+scope everywhere): parameter names, which are optional, the argument types the
+checker holds a call to, and the result type. See
+[ffi.md](ffi.md#native-interfaces-native-fn) for the declaration syntax.
+
 ## I/O
 
 ### `print(args...)`

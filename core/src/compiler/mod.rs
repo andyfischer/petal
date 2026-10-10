@@ -524,14 +524,16 @@ impl Compiler {
             let ConstantValue::String(name) = self.constants.get(name_cid) else {
                 continue;
             };
-            // The registered native's parameter lists (an `Env` declares
-            // them from the same `native fn` declarations); for a native this
-            // `Env` does not register — a check-only compile — the lists the
-            // declaration itself gives.
-            let sigs = match native_fns.lookup_name(name) {
-                Some(nid) => native_fns.signatures(nid),
-                None => match self.declared_native_sigs.get(name) {
-                    Some(sigs) => sigs.as_slice(),
+            // The parameter lists a `native fn` of this program declares for
+            // the native — the program's own word for it, there whether or
+            // not this `Env` registers the native (a check-only compile) or
+            // was given the interface (`Env::declare_natives`). Failing that,
+            // the registered native's own lists: every core builtin's, from
+            // the bundled `core` package.
+            let sigs = match self.declared_native_sigs.get(name) {
+                Some(sigs) => sigs.as_slice(),
+                None => match native_fns.lookup_name(name) {
+                    Some(nid) => native_fns.signatures(nid),
                     None => continue,
                 },
             };

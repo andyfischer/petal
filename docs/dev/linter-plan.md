@@ -146,11 +146,13 @@ on a float and `str()` on a string. The rule deletes them.
 - **Detection** is the type checker's (`typecheck::find_redundant_casts`),
   so it inherits that pass's conservatism: anything it cannot prove infers
   `any` and is left alone. Almost no real Petal source carries annotations,
-  so the builtin result-type table (`typecheck/builtin_types.rs`) is what
-  makes the rule find anything. It lists only certainties (`len` is an
-  `int`; `round`/`floor`/`abs`/`clamp` preserve int-ness) and deliberately
-  omits builtins whose result type is a runtime question (`reverse`, `slice`,
-  `get`). Any addition to that table is a correctness change for this rule.
+  so the builtins' declared result types (their `native fn` declarations
+  in `core/packages/core/src/`, and the argument-dependent rules in
+  `typecheck/builtin_types.rs`) are what make the rule find anything. They
+  state only certainties (`len` is an `int`; `round`/`floor`/`abs`/`clamp`
+  preserve int-ness) and deliberately leave out builtins whose result type is
+  a runtime question (`reverse`, `slice`, `get`). A result type added to a
+  declaration is a correctness change for this rule.
 - **The rewrite** is two span splices per cast, so comments and layout
   inside the argument survive.
 - **Parenthesization** depends on the cast's slot:

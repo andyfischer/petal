@@ -165,11 +165,12 @@ to a false positive. Notes that follow from that:
   can retype the cell from anywhere and this pass cannot see it. An annotated
   cell types every read and checks every write.
 - Match-arm variables, loop variables and lambda parameters bind as `any`.
-- `typecheck/builtin_types.rs` lists builtin result types, but only
-  certainties: `len` is `int`; `abs`/`min`/`clamp`/`round` preserve
-  int-ness; `reverse`/`slice`/`get` are absent because their result is a
-  runtime question. **Treat additions to this table as correctness
-  changes**: `lint --fix` deletes identity casts based on it, so a wrong
+- Builtin result types come from the builtins' `native fn` declarations
+  (`core/packages/core/src/`), plus the argument-dependent rules in
+  `typecheck/builtin_types.rs` — but only certainties: `len` is `int`;
+  `abs`/`min`/`clamp`/`round` preserve int-ness; `reverse`/`slice`/`get`
+  declare no result because theirs is a runtime question. **Treat a result
+  type added to a declaration as a correctness change**: `lint --fix` deletes identity casts based on it, so a wrong
   entry becomes a wrong source rewrite, not just a spurious warning.
 - Field and index writes (`set r.a = …`) are unchecked, because `record` and
   `list` are opaque.

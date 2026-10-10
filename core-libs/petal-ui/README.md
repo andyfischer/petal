@@ -39,6 +39,15 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   `shadow_mesh` turns a shadow command into one non-overlapping triangle
   list, because a translucent shadow built from overlapping pieces shows
   every seam.
+- **The native interface** (the top of `prelude/ui.ptl`). Every native this
+  crate registers is declared there — `pub native fn mouse_x() -> int`,
+  `native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
+  its parameter names, optional parameters, argument types and result type
+  come from: `petal check` reads the declarations without registering
+  anything, and the natives bind named arguments by them
+  (`petal_ui::interface()`). A script that uses the prelude loads only into an
+  `Env` that registers the natives it refers to; a test holds the declarations
+  to `register_all`, both ways.
 - **The `ui` prelude** (`prelude/ui.ptl`). Registered as an implicit import,
   so scripts call `button(...)`, `list_update(...)`, `checkbox(...)` bare.
   Implicit bindings are weak: a script's own `fn button` shadows the

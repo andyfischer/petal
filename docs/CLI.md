@@ -433,6 +433,15 @@ Options:
   `petal run`; a UI script runs in a petal-ui runner such as `petal-sdl`
   ([building-apps.md](building-apps.md)).
 - `--native a,b` — names your own host registers, on top of `--host`'s.
+
+  A native that a module of the program *declares* (`native fn`, see
+  [ffi.md](ffi.md#native-interfaces-native-fn)) needs neither flag: the
+  declaration makes the name known, with its parameters, whether or not this
+  process registers it. That is how the petal-ui natives are known under
+  `--host ui` — the `ui` prelude declares them. `check` never links, so such
+  a script checks clean; `petal run` of it stops at load, before any line
+  runs, with the natives the core host lacks
+  (`module 'ui' needs native fns this host does not register: …`).
 - `--ir` — check `<file>` as JSON IR instead of source; `-` reads stdin, as
   with `run --ir`. The IR is validated, then lowered, so a third-party IR
   emitter can be checked without running its output:

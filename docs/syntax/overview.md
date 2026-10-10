@@ -38,9 +38,11 @@ end  return  break  continue  state  enum  import  pub  export  true  false  nil
 `export` is the deprecated spelling of `pub`; it stays reserved and keeps
 working.
 
-`as` (in `import ui as u`), `class` (in `class Rect … end`), and `config` (in
-`config let x = …`) are **contextual** — recognised only in those positions,
-not globally reserved. `class` in particular stays usable as an ordinary
+`as` (in `import ui as u`), `class` (in `class Rect … end`), `config` (in
+`config let x = …`) and `native` (in `native fn sqrt(x: num) -> float`, the
+declaration of a function the host implements — see
+[ffi.md](../ffi.md#native-interfaces-native-fn)) are **contextual** —
+recognised only in those positions, not globally reserved. `class` in particular stays usable as an ordinary
 identifier and as the JSX attribute `<div class="…">`.
 
 A reserved keyword is still usable as a **member name**, where nothing else

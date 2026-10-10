@@ -167,6 +167,20 @@ way, for code written against an earlier checkout.
 
 ### Embedding and integrations
 
+- Native interfaces: `native fn name(a: int, b?, ...rest) -> type = "host_name"`
+  declares a function the host implements — its parameter names, arity,
+  parameter types and result type — in Petal source. A declared name binds to
+  the host native (the same name, or the one after `=`), can be exported with
+  `pub`, and can share an overload set with Petal `fn`s of other arities. The
+  checker reads its signatures from these declarations; the builtins' live in
+  the `core` package compiled into the binary (`core/packages/core`), and
+  petal-ui's at the top of its `ui` module. `Env::declare_natives(source)`
+  gives a host's registered natives the declared parameter names.
+- Linking: loading a program into an `Env` fails before any line runs when a
+  declared native the program refers to is not registered there
+  (`module 'ui' needs native fns this host does not register: mouse_x, …, +38
+  more`). `Env::set_check_only(true)` compiles without linking, which is what
+  `petal check`, the LSP and `petal suggest` do.
 - A Rust embedding API on `Env`: call a named Petal function, register native
   functions and host classes, pass opaque handles, read and restore state as
   JSON, run with a step budget, and watch source files for changes.
@@ -215,6 +229,19 @@ way, for code written against an earlier checkout.
 ### Changed
 
 Breaking changes made during development, newest first:
+
+- The hand-kept signature tables are gone: `builtins::BUILTIN_PARAMS`,
+  `typecheck::globals::PETAL_UI_NATIVE_PARAMS` and `host_native_signatures`,
+  and `typecheck::builtin_types::{builtin_return_type, builtin_param_slots,
+  builtin_arg_order}`. Signatures come from `native fn` declarations
+  (`petal::native_decl`). The checker no longer knows a petal-ui native by
+  name alone: it knows the ones a module of the program declares.
+- A script that uses the `ui` prelude no longer loads into an `Env` that
+  lacks a petal-ui native the prelude or the script refers to; it used to
+  load and fail at the first call (`Unknown builtin`). A host that composes
+  its own registration has to register the input natives as well as the draw
+  ones before `register_prelude`.
+- `native` is a keyword directly before `fn`.
 
 - A color literal reads as `StaticValue::Color`, not as an `{r, g, b}`
   record, and `pb_source_bindings_json` writes it as `{"color": "#ff2e88"}`.

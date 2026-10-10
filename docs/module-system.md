@@ -68,7 +68,11 @@ since two namespaces may well ship the same file name.
 
 ## Exporting
 
-A module's top-level declarations are private unless marked `pub`:
+A module's top-level declarations are private unless marked `pub`. That
+includes a `native fn` — the declaration of a function the host implements
+([ffi.md](ffi.md#native-interfaces-native-fn)): `pub native fn mouse_x() -> int`
+exports `mouse_x` like any other name, which is how a host's interface module
+(petal-ui's `ui`) hands its natives to scripts.
 
 ```petal ignore
 // ui.ptl

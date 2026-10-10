@@ -1,0 +1,301 @@
+// Meridian: the simulated market.
+//
+// Everything here is a pure function of a market record. `seed()` builds one
+// (four market days of history for twelve fictional listings, then a short
+// live warm-up), `step(m)` advances it by five market seconds, and `book(...)`
+// derives a depth ladder from a quote. Nothing reads the clock, the pointer or
+// the host's random stream: the feed draws from its own generator, carried in
+// the record, so the same number of steps always lands on the same prices.
+//
+// Prices are integer cents throughout. A float price would drift a cent the
+// first time a fill multiplied it by a share count.
+
+pub let STEP = 5            // market seconds per simulation step
+pub let HISTORY_5M = 924    // five-minute bars of seeded history ...
+pub let HISTORY_1M = 180    // ... followed by this many one-minute bars
+pub let KEEP_1M = 360       // one-minute bars kept per listing
+pub let KEEP_5M = 1400      // five-minute bars kept per listing
+pub let TAPE_ROWS = 30      // prints kept per listing
+let SEED = 20261009
+// The feed opens on Friday 9 October at 10:30, counted in seconds from
+// midnight on the 1st.
+let T_OPEN = 8 * 86400 + 10 * 3600 + 30 * 60
+let WARMUP_STEPS = 96
+
+// `sig` is one standard deviation of a minute's return, in basis points;
+// `act` the chance a listing trades on any one step; `lot` its typical print
+// size; `beta` how much of the shared market move it carries.
+pub let UNIVERSE = [
+  {tk: "HLXR", name: "Helix Robotics",        sector: "Industrials", px: 142.30, sig: 9.0,  act: 0.78, lot: 140, beta: 0.70},
+  {tk: "NMBS", name: "Nimbus Cloudworks",     sector: "Software",    px: 214.60, sig: 11.0, act: 0.86, lot: 110, beta: 0.80},
+  {tk: "QRTZ", name: "Quartzline Semi",       sector: "Chips",       px: 312.44, sig: 13.0, act: 0.90, lot: 90,  beta: 0.85},
+  {tk: "VNTB", name: "Vanta Biolabs",         sector: "Biotech",     px: 86.15,  sig: 16.0, act: 0.62, lot: 160, beta: 0.35},
+  {tk: "EMBR", name: "Ember Grid Storage",    sector: "Energy",      px: 27.48,  sig: 14.0, act: 0.70, lot: 420, beta: 0.55},
+  {tk: "ORCM", name: "Orca Maritime",         sector: "Shipping",    px: 38.72,  sig: 8.0,  act: 0.48, lot: 300, beta: 0.45},
+  {tk: "TLLY", name: "Tallyho Payments",      sector: "Fintech",     px: 64.90,  sig: 10.0, act: 0.74, lot: 210, beta: 0.75},
+  {tk: "PRSM", name: "Prism Optics",          sector: "Hardware",    px: 118.25, sig: 9.5,  act: 0.58, lot: 130, beta: 0.65},
+  {tk: "KSTL", name: "Kestrel Aerospace",     sector: "Aerospace",   px: 189.05, sig: 7.5,  act: 0.52, lot: 100, beta: 0.50},
+  {tk: "MOSF", name: "Mossfield Foods",       sector: "Staples",     px: 52.36,  sig: 5.0,  act: 0.44, lot: 260, beta: 0.25},
+  {tk: "DRFT", name: "Driftwood Outdoor",     sector: "Retail",      px: 19.84,  sig: 12.0, act: 0.50, lot: 520, beta: 0.60},
+  {tk: "AURM", name: "Aurum Ridge Mines",     sector: "Materials",   px: 73.58,  sig: 12.5, act: 0.60, lot: 180, beta: 0.10},
+]
+
+// ── Small numerics ──────────────────────────────────────────────────────────
+
+// Half the quoted spread, in cents: a cent for the cheap names, wider as the
+// price climbs.
+pub fn half_spread(cents: num) -> int
+  max(1, int(float(cents) * 0.00012 + 0.5))
+end
+
+// An integer hash to [0, 1), for values that must be stable for a (listing,
+// price, epoch) rather than drawn fresh every frame: resting book sizes.
+fn hash01(a: num, b: num, c: num) -> float
+  let x = (a * 73856093 + b * 19349663 + c * 83492791 + 668265263) % 2147483647
+  let y = (x * 1103515245 + 12345) % 2147483647
+  float(y % 65521 * 31 % 100003) / 100003.0
+end
+
+fn round_lot(n: num) -> int
+  let v = int(n)
+  if v >= 1000 then v / 100 * 100
+  elsif v >= 150 then v / 10 * 10
+  else max(1, v)
+  end
+end
+
+fn bar_open(t: num, px: num) -> record
+  {t: t, o: px, h: px, l: px, c: px, v: 0}
+end
+
+fn bar_add(b: record, px: num, size: num) -> record
+  {t: b.t, o: b.o, h: max(b.h, px), l: min(b.l, px), c: px, v: b.v + size}
+end
+
+fn keep_tail(xs: list, keep: num) -> list
+  if len(xs) > keep + 40 then slice(xs, len(xs) - keep) else xs end
+end
+
+// ── Seeding ─────────────────────────────────────────────────────────────────
+
+// One listing's history: a volatility-clustered random walk at five-minute
+// resolution, finishing with three hours at one-minute resolution, scaled so
+// that it ends exactly on the listing's reference price.
+fn seed_history(u: record, start: num) -> record
+  var rng = start
+  let rnd = fn()
+    set rng = (get rng * 1103515245 + 12345) % 2147483648
+    float(get rng / 65536 % 32768) / 32768.0
+  end
+  let gauss = fn() -> (rnd() + rnd() + rnd() - 1.5) * 2.0
+
+  let total = HISTORY_5M + HISTORY_1M
+  let raw = []
+  let p = 1.0
+  let lv = 0.0
+  let tr = 0.0
+  for k in range(0, total) do
+    let coarse = k < HISTORY_5M
+    let span = if coarse then 5.0 else 1.0 end
+    // History runs at a calmer pace than the live tape, so a day's change
+    // reads as a day's change and not as a crash.
+    let sig = u.sig * 0.000042 * sqrt(span)
+    lv = 0.96 * lv + 0.16 * gauss()
+    tr = 0.985 * tr + 0.05 * gauss()
+    let vm = exp(lv * 0.55)
+    let z = gauss()
+    let ret = sig * vm * z + sig * 0.22 * tr
+    let o = p
+    p = p * (1.0 + ret)
+    let wick_up = abs(gauss()) * sig * vm * 0.45
+    let wick_dn = abs(gauss()) * sig * vm * 0.45
+    let prints = 12.0 * span * u.act
+    let size = prints * u.lot * 1.3 * (0.35 + 0.9 * rnd() + 0.5 * vm) * (1.0 + 1.6 * abs(z))
+    raw = append(raw, {o: o, c: p, h: max(o, p) * (1.0 + wick_up), l: min(o, p) * (1.0 - wick_dn), v: size})
+  end
+
+  let scale = u.px * 100.0 / p
+  let t0 = T_OPEN - HISTORY_1M * 60 - HISTORY_5M * 300
+  let five = []
+  let one = []
+  let pending = nil
+  for k in range(0, total) do
+    let r = raw[k]
+    let o = int(round(r.o * scale))
+    let c = int(round(r.c * scale))
+    let bar = {t: 0, o: o, c: c, h: max(max(o, c), int(round(r.h * scale))),
+      l: min(min(o, c), int(round(r.l * scale))), v: round_lot(r.v)}
+    if k < HISTORY_5M then
+      bar.t = t0 + k * 300
+      five = append(five, bar)
+    else
+      let j = k - HISTORY_5M
+      bar.t = T_OPEN - (HISTORY_1M - j) * 60
+      one = append(one, bar)
+      // Fold the minute bars into five-minute ones as they complete.
+      pending = if pending == nil then
+        {t: bar.t - bar.t % 300, o: bar.o, h: bar.h, l: bar.l, c: bar.c, v: bar.v}
+      else
+        {t: pending.t, o: pending.o, h: max(pending.h, bar.h), l: min(pending.l, bar.l), c: bar.c,
+          v: pending.v + bar.v}
+      end
+      if j % 5 == 4 then
+        five = append(five, pending)
+        pending = nil
+      end
+    end
+  end
+  {five: five, one: one, rng: rng}
+end
+
+// The whole market at the open: history for every listing, then a few minutes
+// of the live feed so the tapes and the forming bars are already populated.
+pub fn seed() -> record
+  let quotes = []
+  let done1 = []
+  let done5 = []
+  let tapes = []
+  for i in range(0, len(UNIVERSE)) do
+    let u = UNIVERSE[i]
+    let h = seed_history(u, SEED + i * 7919)
+    let px = last(h.one).c
+    let hs = half_spread(px)
+    done1 = append(done1, h.one)
+    done5 = append(done5, h.five)
+    tapes = append(tapes, [])
+    quotes = append(quotes, {mf: float(px) / 100.0, bid: px - hs, ask: px + hs, last: px, side: 1,
+      lv: 0.0, tr: 0.0, b1: bar_open(T_OPEN, px), b5: bar_open(T_OPEN, px), prints: 0})
+  end
+  let m = {rng: SEED, clock: T_OPEN, steps: 0, q: quotes, done1: done1, done5: done5, tape: tapes}
+  for k in range(0, WARMUP_STEPS) do
+    m = step(m)
+  end
+  m
+end
+
+// ── The live feed ───────────────────────────────────────────────────────────
+
+// Advance the market by STEP seconds. Each listing either trades once or sits
+// still; a trade moves its quote and prints at the bid or the ask. Bars roll
+// on the minute whether or not anything traded.
+pub fn step(m: record) -> record
+  var rng = m.rng
+  let rnd = fn()
+    set rng = (get rng * 1103515245 + 12345) % 2147483648
+    float(get rng / 65536 % 32768) / 32768.0
+  end
+  let gauss = fn() -> (rnd() + rnd() + rnd() - 1.5) * 2.0
+
+  let t = m.clock + STEP
+  let t1 = t - t % 60
+  let t5 = t - t % 300
+  let shared = gauss()
+  let done1 = m.done1
+  let done5 = m.done5
+  let tapes = m.tape
+  let quotes = []
+
+  for i in range(0, len(UNIVERSE)) do
+    let u = UNIVERSE[i]
+    let q = m.q[i]
+
+    // Roll the forming bars first, so a trade lands in the right one.
+    if q.b1.t != t1 then
+      done1[i] = keep_tail(append(done1[i], q.b1), KEEP_1M)
+      q.b1 = bar_open(t1, q.b1.c)
+    end
+    if q.b5.t != t5 then
+      done5[i] = keep_tail(append(done5[i], q.b5), KEEP_5M)
+      q.b5 = bar_open(t5, q.b5.c)
+    end
+
+    if rnd() < u.act then
+      // A minute's variance spread over the steps this listing trades on.
+      let sig = u.sig * 0.0001 / sqrt(12.0 * u.act)
+      q.lv = 0.985 * q.lv + 0.06 * gauss()
+      q.tr = 0.992 * q.tr + 0.03 * gauss()
+      let vm = exp(q.lv)
+      let own = gauss()
+      let z = u.beta * shared + sqrt(1.0 - u.beta * u.beta) * own
+      // The last term leans gently back toward the reference price, so a
+      // session left running for hours stays in a plausible range.
+      let ret = sig * vm * z + sig * 0.2 * q.tr - 0.0006 * log(q.mf / u.px) * sig * 100.0
+      q.mf = max(0.5, q.mf * (1.0 + ret))
+      let mid = int(round(q.mf * 100.0))
+      let hs = half_spread(mid)
+      q.bid = mid - hs
+      q.ask = mid + hs
+      // Buyers lift the offer on the way up, sellers hit the bid on the way
+      // down, and a quiet tape mostly repeats its last side.
+      let lean = if ret > 0.0 then 0.72 elsif ret < 0.0 then 0.28 else 0.5 end
+      let pick = if rnd() < 0.55 then (if q.side > 0 then 0.85 else 0.15 end) else lean end
+      q.side = if rnd() < pick then 1 else -1 end
+      q.last = if q.side > 0 then q.ask else q.bid end
+      let size = round_lot(float(u.lot) * (0.15 - log(1.0 - rnd() * 0.999)) * (1.0 + 1.2 * abs(z) * vm))
+      q.b1 = bar_add(q.b1, q.last, size)
+      q.b5 = bar_add(q.b5, q.last, size)
+      q.prints = q.prints + 1
+      let pr = {t: t, p: q.last, sz: size, side: q.side}
+      tapes[i] = slice([pr] ++ tapes[i], 0, TAPE_ROWS)
+    end
+    quotes = append(quotes, q)
+  end
+
+  {rng: rng, clock: t, steps: m.steps + 1, q: quotes, done1: done1, done5: done5, tape: tapes}
+end
+
+// ── Depth ───────────────────────────────────────────────────────────────────
+
+// The spacing between ladder levels, in cents.
+pub fn level_step(cents: num) -> int
+  half_spread(cents)
+end
+
+// A depth ladder around a quote: `depth` levels a side, best first, each
+// `{p, sz, cum}`. Sizes are a hash of the listing, the price and a slow
+// epoch, so a level keeps its size while the quote sits still and the whole
+// book reshuffles a few times a minute, instead of flickering every frame.
+pub fn book(i: num, bid: num, ask: num, clock: num, depth: num) -> record
+  let u = UNIVERSE[i]
+  let ls = level_step(bid)
+  let epoch = clock / 20
+  let side = fn(best, dir)
+    let out = []
+    let cum = 0
+    for k in range(0, depth) do
+      let p = best + dir * k * ls
+      let r = hash01(i + 3, p, epoch + k / 3)
+      let sz = round_lot(float(u.lot) * (1.1 + 0.85 * float(k)) * (0.35 + 1.5 * r))
+      cum += sz
+      out = append(out, {p: p, sz: sz, cum: cum})
+    end
+    out
+  end
+  {bids: side(bid, -1), asks: side(ask, 1)}
+end
+
+// What a marketable order for `qty` shares would pay (side > 0) or receive:
+// the ladder is walked best-first, and `limit` (0 for none) stops the walk at
+// that price. Returns the shares it could take and what they cost, in cents.
+pub fn sweep(i: num, bid: num, ask: num, clock: num, side: num, qty: num, limit: num) -> record
+  let levels = book(i, bid, ask, clock, 24)
+  let ladder = if side > 0 then levels.asks else levels.bids end
+  let left = qty
+  let cost = 0
+  let worst = 0
+  for lv in ladder do
+    if left <= 0 then break end
+    if limit > 0 && ((side > 0 && lv.p > limit) || (side < 0 && lv.p < limit)) then break end
+    let take = min(left, lv.sz)
+    cost += take * lv.p
+    left -= take
+    worst = lv.p
+  end
+  // Past the visible ladder the rest goes at its last price: the book is
+  // deeper than the 24 levels modelled here.
+  if left > 0 && worst > 0 && len(ladder) > 0 && worst == last(ladder).p then
+    cost += left * worst
+    left = 0
+  end
+  {filled: qty - left, cost: cost, worst: worst}
+end

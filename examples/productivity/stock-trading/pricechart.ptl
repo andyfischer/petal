@@ -1,0 +1,393 @@
+// Meridian: the price chart.
+//
+// `fold` and `with_tail` build a timeframe's bars out of finer ones; `chart`
+// draws a window of them (candles or a line, volume underneath, a moving
+// average, order and position lines, the last-price tag) and handles the
+// pointer inside it: a crosshair on hover, the wheel to zoom, a drag to pan,
+// and a plain click that reports the price under it.
+
+import text_layout as tl
+import look as lk
+import numfmt as nf
+
+let AXIS_W = 66
+let TIME_H = 24
+let LEGEND_H = 26
+let RIGHT_PAD = 3          // empty candle slots kept right of the live edge
+let MA_LEN = 20
+pub let MIN_VIS = 24
+pub let MAX_VIS = 200
+
+// ── Building a timeframe ────────────────────────────────────────────────────
+
+// Group bars into buckets `secs` wide. The input is in time order, so each
+// bucket is a run.
+pub fn fold(bars: list, secs: num) -> list
+  let out = []
+  let cur = nil
+  for b in bars do
+    let g = b.t - b.t % secs
+    if cur != nil && cur.t == g then
+      cur = {t: g, o: cur.o, h: max(cur.h, b.h), l: min(cur.l, b.l), c: b.c, v: cur.v + b.v}
+    else
+      if cur != nil then
+        out = append(out, cur)
+      end
+      cur = {t: g, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v}
+    end
+  end
+  if cur != nil then
+    out = append(out, cur)
+  end
+  out
+end
+
+// The completed bars plus the one still forming, which either extends the
+// last bucket or opens the next.
+pub fn with_tail(bars: list, cur: record, secs: num) -> list
+  let g = cur.t - cur.t % secs
+  let tail = last(bars)
+  if tail != nil && tail.t == g then
+    append(drop_last(bars), {t: g, o: tail.o, h: max(tail.h, cur.h), l: min(tail.l, cur.l), c: cur.c,
+      v: tail.v + cur.v})
+  else
+    append(bars, {t: g, o: cur.o, h: cur.h, l: cur.l, c: cur.c, v: cur.v})
+  end
+end
+
+// ── Axes ────────────────────────────────────────────────────────────────────
+
+// The smallest 1 / 2 / 5 x 10^k step, in cents, that is at least `raw`.
+pub fn nice_step(raw: num) -> int
+  let step = 1
+  while true do
+    for m in [1, 2, 5] do
+      if step * m >= raw then
+        return step * m
+      end
+    end
+    step *= 10
+  end
+  step
+end
+
+let TIME_STEPS = [300, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800, 345600]
+
+fn time_step(secs: num, slot: num) -> int
+  for s in TIME_STEPS do
+    if float(s) / float(secs) * slot >= 84.0 then
+      return s
+    end
+  end
+  last(TIME_STEPS)
+end
+
+fn time_label(t: num, step: num) -> string
+  if step >= 86400 || t % 86400 == 0 then nf.day(t) else nf.hhmm(t) end
+end
+
+// The wash under a line: three-pixel columns from the line down to `base`,
+// each fading out at the same rate. The columns sit on whole pixels, because
+// a rect's x and width are truncated separately and fractional ones leave
+// hairline gaps. (The prelude's `draw_area_fill` also weights each column by
+// its height, which bands visibly under a series this jagged.)
+fn area_under(pts: list, base: num, c: record) -> nil
+  let stop = int(last(pts).x)
+  let i = 0
+  let x = int(pts[0].x)
+  while x < stop do
+    let w = min(3, stop - x)
+    let mid = float(x) + float(w) / 2.0
+    while i < len(pts) - 2 && pts[i + 1].x <= mid do
+      i += 1
+    end
+    let a = pts[i]
+    let b = pts[i + 1]
+    let y = int(a.y + (b.y - a.y) * clamp((mid - a.x) / max(0.001, b.x - a.x), lo: 0.0, hi: 1.0))
+    if base > y then
+      draw_rect_gradient({x: x, y: y, w: w, h: int(base) - y}, c, c, 1.5707963, 52, 0)
+    end
+    x += w
+  end
+end
+
+// A value tag on the right-hand price axis.
+fn axis_tag(x: num, y: num, text: string, face: record, ink: record) -> nil
+  let r = Rect(x + 1, y - 9, AXIS_W - 5, 18)
+  draw_rect_rounded(r, 4, face)
+  tl.draw_text_line(text, Rect(r.x + 7, r.y, r.w - 12, r.h), lk.mono(11, ink))
+end
+
+// ── The chart ───────────────────────────────────────────────────────────────
+
+// `series` is every bar of the timeframe, oldest first. `o` carries the view
+// (`vis` bars shown, `pan` bars back from the live edge, `mode`), the bar
+// width `secs`, the market `clock`, `marks` (horizontal price lines, as
+// `{p, label, color}`) and `fills` (executions to flag, as `{t, side}`). Returns the view after this frame's input, the bar and
+// price under the crosshair, and `clicked` (a price in cents, or 0).
+pub fn chart(r: record, series: list, o: record) -> record
+  let plot = Rect(r.x + 1, r.y, r.w - AXIS_W - 2, r.h - TIME_H)
+  let vol_h = min(70.0, plot.h * 0.2)
+  let pz = Rect(plot.x, plot.y + LEGEND_H, plot.w, plot.h - LEGEND_H - vol_h - 10)
+  let n = len(series)
+  let inside = hovered(plot)
+  let mx = float(mouse_x())
+  let my = float(mouse_y())
+
+  // Zoom about the live edge.
+  let vis = int(o.vis)
+  if inside && scroll_y() != 0 then
+    let f = if scroll_y() > 0 then 1.15 else 0.87 end
+    vis = clamp(int(round(float(vis) * f)), lo: MIN_VIS, hi: MAX_VIS)
+  end
+  let nv = min(vis, n)
+  let max_pan = n - nv
+  let pan = clamp(int(o.pan), lo: 0, hi: max_pan)
+  let slot = plot.w / float(nv + RIGHT_PAD)
+
+  // Drag to pan; a press that never moves is a click.
+  state drag_on = false
+  state drag_x = 0.0
+  state drag_pan = 0
+  state drag_moved = false
+  let clicked = 0
+  let released = false
+  if mouse_pressed(0) && inside then
+    drag_on = true
+    drag_x = mx
+    drag_pan = pan
+    drag_moved = false
+  end
+  if drag_on && mouse_down(0) then
+    if abs(mx - drag_x) > 4.0 then
+      drag_moved = true
+    end
+    if drag_moved then
+      pan = clamp(drag_pan + int(round((mx - drag_x) / slot)), lo: 0, hi: max_pan)
+    end
+  end
+  if drag_on && (mouse_released(0) || !mouse_down(0)) then
+    released = !drag_moved && inside
+    drag_on = false
+  end
+
+  let stop = n - pan
+  let start = stop - nv
+
+  // The price range of what is on screen.
+  let lo = series[start].l
+  let hi = series[start].h
+  let vmax = 1
+  for k in range(start, stop) do
+    let b = series[k]
+    if o.mode == "line" then
+      lo = min(lo, b.c)
+      hi = max(hi, b.c)
+    else
+      lo = min(lo, b.l)
+      hi = max(hi, b.h)
+    end
+    vmax = max(vmax, b.v)
+  end
+  let room = max(4.0, float(hi - lo) * 0.09)
+  let top = float(hi) + room
+  let bot = float(lo) - room
+  let span = top - bot
+  let y_of = fn(p) -> pz.y + (top - float(p)) / span * pz.h
+  let x_of = fn(k) -> plot.x + (float(k - start) + 0.5) * slot
+  let cursor_px = int(round(top - (my - pz.y) / pz.h * span))
+  if released then
+    clicked = max(1, cursor_px)
+  end
+
+  // The last trade, which the axis labels step aside for.
+  let tail = series[n - 1]
+  let live_c = if tail.c >= tail.o then lk.UP else lk.DOWN end
+  let live_y = y_of(tail.c)
+  let live_on = float(tail.c) < top && float(tail.c) > bot
+
+  // ── Grid and axes ──
+  clip_push(Rect(r.x, r.y, r.w, r.h))
+  let pstep = nice_step(span / 6.0)
+  let p = int(ceil(bot / float(pstep))) * pstep
+  while float(p) < top do
+    let y = y_of(p)
+    if y > pz.y - 6.0 then
+      lk.hline(plot.x, y, plot.w, lk.GRID)
+      if !live_on || y < live_y - 15.0 || y > live_y + 28.0 then
+        tl.draw_text_line(nf.px(p), Rect(plot.x + plot.w + 9, y - 9, AXIS_W - 12, 18), lk.mono(11, lk.DIM))
+      end
+    end
+    p += pstep
+  end
+  lk.hline(plot.x, plot.y + plot.h, plot.w + AXIS_W, lk.LINE)
+  draw_rect(plot.x + plot.w, plot.y, 1, plot.h, lk.LINE)
+
+  let tstep = time_step(o.secs, slot)
+  for k in range(start, stop) do
+    let b = series[k]
+    if b.t % tstep == 0 then
+      let x = x_of(k)
+      draw_rect(x, plot.y + LEGEND_H, 1, plot.h - LEGEND_H, lk.GRID)
+      let day_mark = tstep < 86400 && b.t % 86400 == 0
+      tl.draw_text_line(time_label(b.t, tstep), Rect(x - 40, plot.y + plot.h + 2, 80, TIME_H - 4),
+        lk.mono(11, if day_mark then lk.MUTED else lk.DIM end), "center")
+    end
+  end
+
+  // ── Volume ──
+  clip_push(plot)
+  let body = clamp(slot * 0.68, lo: 1.0, hi: 15.0)
+  let vbase = plot.y + plot.h
+  for k in range(start, stop) do
+    let b = series[k]
+    let h = max(1.0, float(b.v) / float(vmax) * vol_h)
+    draw_rect(x_of(k) - body / 2.0, vbase - h, body, h, if b.c >= b.o then lk.UP else lk.DOWN end, 70)
+  end
+
+  // The column under the pointer.
+  let hover_k = -1
+  if inside && !drag_moved then
+    hover_k = clamp(start + int((mx - plot.x) / slot), lo: start, hi: stop - 1)
+    draw_rect(x_of(hover_k) - slot / 2.0, plot.y + LEGEND_H, slot, plot.h - LEGEND_H, lk.TEXT, 9)
+  end
+
+  // ── Price ──
+  if o.mode == "line" then
+    let pts = for k in range(start, stop) do
+      {x: x_of(k), y: y_of(series[k].c)}
+    end
+    area_under(pts, pz.y + pz.h + vol_h + 10.0, lk.ACCENT)
+    draw_polyline(pts, lk.ACCENT, 255, 1.8)
+  else
+    for k in range(start, stop) do
+      let b = series[k]
+      let c = if b.c >= b.o then lk.UP else lk.DOWN end
+      let x = x_of(k)
+      let yh = y_of(b.h)
+      draw_rect(x - 0.5, yh, 1, max(1.0, y_of(b.l) - yh), c)
+      let yo = y_of(b.o)
+      let yc = y_of(b.c)
+      draw_rect(x - body / 2.0, min(yo, yc), body, max(1.0, abs(yc - yo)), c)
+    end
+  end
+
+  // The account's own executions: a wedge under the bar it bought in, over
+  // the bar it sold in. Bars are contiguous, so the bar is an index away.
+  for f in o.fills do
+    let k = start + (f.t - f.t % o.secs - series[start].t) / o.secs
+    if k >= start && k < stop then
+      let b = series[k]
+      let x = x_of(k)
+      let c = if f.side > 0 then lk.UP else lk.DOWN end
+      if f.side > 0 then
+        let y = y_of(if o.mode == "line" then b.c else b.l end) + 6.0
+        fill_triangle(x - 6.0, y + 9.0, x + 6.0, y + 9.0, x, y, lk.PANEL)
+        fill_triangle(x - 4.0, y + 7.5, x + 4.0, y + 7.5, x, y + 2.0, c)
+      else
+        let y = y_of(if o.mode == "line" then b.c else b.h end) - 6.0
+        fill_triangle(x - 6.0, y - 9.0, x + 6.0, y - 9.0, x, y, lk.PANEL)
+        fill_triangle(x - 4.0, y - 7.5, x + 4.0, y - 7.5, x, y - 2.0, c)
+      end
+    end
+  end
+
+  // The moving average, from a running sum.
+  let ma_pts = []
+  let ma_at = {}
+  let sum = 0
+  let first = max(0, start - MA_LEN + 1)
+  for k in range(first, stop) do
+    sum += series[k].c
+    if k - first >= MA_LEN then
+      sum -= series[k - MA_LEN].c
+    end
+    if k >= start && k >= MA_LEN - 1 then
+      let v = float(sum) / float(MA_LEN)
+      ma_pts = append(ma_pts, {x: x_of(k), y: y_of(v)})
+      if k == hover_k || (hover_k < 0 && k == stop - 1) then
+        ma_at = {v: v}
+      end
+    end
+  end
+  if len(ma_pts) >= 2 then
+    draw_polyline(ma_pts, lk.VIOLET, 210, 1.4)
+  end
+
+  // Working orders and the position's average cost.
+  for mk in o.marks do
+    if float(mk.p) < top && float(mk.p) > bot then
+      let y = y_of(mk.p)
+      lk.dashed(plot.x, plot.x + plot.w, y, mk.color, 200, 6, 4)
+      let style = lk.uib(10, mk.color)
+      let w = text_width(mk.label, style) + 14
+      let tag = Rect(plot.x + 8, y - 9, w, 18)
+      draw_rect_rounded(tag, 4, mix(lk.PANEL, mk.color, 0.16))
+      draw_rect_rounded_outline(tag, 4, mix(lk.PANEL, mk.color, 0.6))
+      tl.draw_text_line(mk.label, tag, style, "center")
+    end
+  end
+
+  // The last price: a rule across the plot, a pulse at the live edge.
+  if live_on then
+    lk.dashed(plot.x, plot.x + plot.w, live_y, live_c, 150, 2, 3)
+    if pan == 0 then
+      let px = x_of(n - 1)
+      let beat = fract(float(o.pulse))
+      draw_circle({x: px, y: live_y}, 3.0 + 7.0 * beat, live_c, int(90.0 * (1.0 - beat)))
+      draw_circle({x: px, y: live_y}, 3.0, live_c)
+    end
+  end
+  clip_pop()
+
+  if live_on then
+    axis_tag(plot.x + plot.w, live_y, nf.px(tail.c), live_c, lk.INK)
+    // How long the forming bar has left.
+    let left = max(0, o.secs - (o.clock - tail.t))
+    let cd = if left >= 3600 then "{left / 3600}h {left % 3600 / 60}m"
+    else "{left / 60}:{pad_start(str(left % 60), 2, "0")}" end
+    if live_y + 26.0 < plot.y + plot.h then
+      tl.draw_text_line(cd, Rect(plot.x + plot.w + 9, live_y + 9, AXIS_W - 12, 16), lk.mono(10, lk.DIM))
+    end
+  end
+
+  // ── Crosshair ──
+  if hover_k >= 0 then
+    let x = x_of(hover_k)
+    lk.vdashed(x, plot.y + LEGEND_H, plot.y + plot.h, lk.MUTED, 150)
+    lk.dashed(plot.x, plot.x + plot.w, my, lk.MUTED, 150)
+    axis_tag(plot.x + plot.w, my, nf.px(cursor_px), lk.RAISED, lk.TEXT)
+    draw_rect_rounded_outline(Rect(plot.x + plot.w + 1, my - 9, AXIS_W - 5, 18), 4, lk.DIM)
+    let b = series[hover_k]
+    let stamp = "{nf.day(b.t)}  {nf.hhmm(b.t)}"
+    let st = lk.mono(11, lk.TEXT)
+    let w = text_width(stamp, st) + 16
+    let tx = clamp(x - w / 2.0, lo: plot.x, hi: plot.x + plot.w - w)
+    let tag = Rect(tx, plot.y + plot.h + 3, w, TIME_H - 6)
+    draw_rect_rounded(tag, 4, lk.RAISED)
+    draw_rect_rounded_outline(tag, 4, lk.DIM)
+    tl.draw_text_line(stamp, tag, st, "center")
+  end
+
+  // ── Legend: the bar under the crosshair, or the forming one ──
+  let lb = if hover_k >= 0 then series[hover_k] else tail end
+  let lc = if lb.c >= lb.o then lk.UP else lk.DOWN end
+  let cells = [["O", nf.px(lb.o), lc], ["H", nf.px(lb.h), lc], ["L", nf.px(lb.l), lc], ["C", nf.px(lb.c), lc],
+    ["", nf.pct(float(lb.c - lb.o) / float(max(1, lb.o))), lc], ["Vol", nf.compact(lb.v), lk.TEXT]]
+  if has_field(ma_at, "v") then
+    cells = append(cells, ["MA{MA_LEN}", nf.px(ma_at.v), lk.VIOLET])
+  end
+  let lx = plot.x + 10.0
+  let row = Rect(lx, plot.y + 2, 10, LEGEND_H - 4)
+  for cell in cells do
+    if cell[0] != "" then
+      lx += tl.draw_text_line(cell[0], Rect(lx, row.y, 10, row.h), lk.ui(11, lk.DIM)) + 5.0
+    end
+    lx += tl.draw_text_line(cell[1], Rect(lx, row.y, 10, row.h), lk.mono(11, cell[2])) + 12.0
+  end
+  clip_pop()
+
+  {vis: vis, pan: pan, hover_t: if hover_k >= 0 then series[hover_k].t else -1 end,
+    cursor_px: if inside then cursor_px else 0 end, clicked: clicked, shown: nv, dragging: drag_on && drag_moved,
+    lo: int(bot), hi: int(top)}
+end

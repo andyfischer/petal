@@ -4,11 +4,11 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-37 of the 50 exist. Thirty-two are panel apps under the category directories
+38 of the 50 exist. Thirty-three are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
 game, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
-client, the settings screen, the command palette, the music sequencer, the node-based editor, the
+client, the settings screen, the stock trading screen, the command palette, the music sequencer, the node-based editor, the
 Markdown editor, the network graph explorer, the timeline explorer, the
 solar system and the fractal explorer), and five more
 were written as headless console programs under `examples/games/`, which
@@ -16,8 +16,8 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-third panel app that was not on
-this list. The remaining 13 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-fourth panel app that was not on
+this list. The remaining 12 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -55,7 +55,7 @@ this list. The remaining 13 have not been attempted.
 | 29 | **Inventory warehouse UI** | Tables, scanning-style workflows, status |  |
 | 30 | **E-commerce storefront** | Product grids, cart, filters, responsive layout |  |
 | 31 | **Banking app** | Account cards, transaction feeds, money formatting |  |
-| 32 | **Stock trading screen** | Streaming-ish data, charts, order forms |  |
+| 32 | **Stock trading screen** | Streaming-ish data, charts, order forms | built — `examples/productivity/stock-trading/` |
 | **Media & creative tools** | | | |
 | 33 | **Drawing / paint app** | Pointer input, canvas rendering, tools | built — `examples/productivity/paint/` |
 | 34 | **Vector graphics editor** | Selection, handles, transforms, layering | built — `examples/productivity/vector-editor/` |

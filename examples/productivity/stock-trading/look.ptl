@@ -1,0 +1,272 @@
+// Meridian: palette, type and the small controls.
+//
+// One dark ground with two surface steps, a single hairline, and two data
+// hues (up, down) that are never used for anything but direction. Controls
+// are functions from the current value to the new one; none of them holds
+// the app's data.
+
+import text_layout as tl
+
+// ── Palette ─────────────────────────────────────────────────────────────────
+
+pub let BG      = #090c12
+pub let PANEL   = #10141c
+pub let RAISED  = #171c27
+pub let WELL    = #0b0f16
+pub let LINE    = #212838
+pub let SOFT    = #181e2a
+pub let GRID    = #161b26
+pub let TEXT    = #e7ecf3
+pub let MUTED   = #8d98aa
+pub let DIM     = #566072
+pub let UP      = #2ec48d
+pub let DOWN    = #f2606f
+pub let ACCENT  = #5b9dff
+pub let AMBER   = #f1b455
+pub let VIOLET  = #a98ff5
+pub let INK     = #06110c      // text on a filled up/down face
+
+// One hue per listing, for the allocation bar. Neither the up green nor the
+// down red is among them.
+pub let HUES = [#5b9dff, #a98ff5, #f1b455, #4fc3d9, #f08fc4, #8fd0a8, #c9a27a, #7f8cf0, #e0d06a, #58b7a6, #d38be0,
+  #9aa7bd]
+
+// ── Type ────────────────────────────────────────────────────────────────────
+// Labels are set in the interface face, every number in the monospace one, so
+// a ticking price never shifts the digits beside it. Six sizes in all: the
+// host rasterizes one glyph per (character, size, face) into a fixed atlas.
+
+pub fn ui(size: num, color: record) -> record
+  {size: size, font: "ui", color: color}
+end
+
+pub fn uib(size: num, color: record) -> record
+  {size: size, font: "ui", color: color, weight: 600}
+end
+
+pub fn mono(size: num, color: record) -> record
+  {size: size, font: "mono", color: color}
+end
+
+// A small-caps section label: 10 px, tracked out.
+pub fn caps(color: record) -> record
+  {size: 10, font: "ui", color: color, weight: 600, spacing: 1.1}
+end
+
+pub fn dir_color(v: num) -> record
+  if v > 0 then UP elsif v < 0 then DOWN else MUTED end
+end
+
+// ── Frame bookkeeping ───────────────────────────────────────────────────────
+// Whether any control is still easing, so the app knows to ask for a frame.
+
+var _busy = false
+
+pub fn begin() -> nil
+  set _busy = false
+end
+
+pub fn busy() -> bool
+  get _busy
+end
+
+// `cur` eased toward `goal`. A frame with no time in it (one the debug server
+// ran for an injected click, on a ticked panel) lands on the goal outright, so
+// a screenshot taken straight after an input shows the control where it is
+// going, not where it was.
+pub fn glide(cur: num, goal: num, rate: num) -> float
+  let next = if dt() <= 0.0 then float(goal) else approach(float(cur), float(goal), rate) end
+  if next != float(goal) then
+    set _busy = true
+  end
+  next
+end
+
+// A 0..1 value easing toward `on`, one per callsite (and per loop iteration).
+pub fn ease_flag(on: bool, rate: num = 18.0) -> float
+  let goal = if on then 1.0 else 0.0 end
+  state v = goal
+  v = glide(v, goal, rate)
+  v
+end
+
+pub fn press(r: record) -> bool
+  mouse_pressed(0) && hovered(r)
+end
+
+// ── Chrome ──────────────────────────────────────────────────────────────────
+
+pub fn card(r: record) -> nil
+  draw_shadow(r, {radius: 10, blur: 14, dy: 3, a: 70})
+  draw_rect_rounded(r, 10, PANEL)
+  draw_rect_rounded_outline(r, 10, LINE)
+end
+
+// A card's title row. Returns the rect under it.
+pub fn card_head(r: record, title: string) -> Rect
+  tl.draw_text_line(title, Rect(r.x + 14, r.y, r.w - 28, 38), caps(MUTED))
+  Rect(r.x, r.y + 38, r.w, r.h - 38)
+end
+
+pub fn hline(x: num, y: num, w: num, c: record) -> nil
+  draw_rect(x, y, w, 1, c)
+end
+
+// A horizontal dashed rule, drawn as short rects so it stays crisp.
+pub fn dashed(x0: num, x1: num, y: num, c: record, a: num, on: num = 4, off: num = 4) -> nil
+  let x = float(x0)
+  while x < x1 do
+    draw_rect(x, y, min(float(on), x1 - x), 1, c, a)
+    x = x + on + off
+  end
+end
+
+pub fn vdashed(x: num, y0: num, y1: num, c: record, a: num) -> nil
+  let y = float(y0)
+  while y < y1 do
+    draw_rect(x, y, 1, min(4.0, y1 - y), c, a)
+    y += 8.0
+  end
+end
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+// A segmented control with a sliding thumb. `tones` optionally gives each
+// cell the color its thumb takes (the Buy / Sell switch); `enabled: false`
+// dims it and ignores the pointer.
+pub fn segmented(r: record, labels: list, index: num, o: record = {}) -> int
+  let n = max(1, len(labels))
+  let tones = field(o, "tones", [])
+  let size = field(o, "size", 12)
+  let enabled = field(o, "enabled", true)
+  let radius = min(7, int(r.h / 2))
+  draw_rect_rounded(r, radius, WELL)
+  draw_rect_rounded_outline(r, radius, LINE)
+  let inset = 3.0
+  let cell = (r.w - inset * 2.0) / float(n)
+  state pos = float(index)
+  pos = glide(pos, index, 26.0)
+  let tone = if int(index) < len(tones) then tones[int(index)] else RAISED end
+  let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
+  draw_rect_rounded(thumb, max(0, radius - 2), if enabled then tone else mix(WELL, tone, 0.4) end)
+  let toned = int(index) < len(tones)
+  let chosen = int(index)
+  for i in range(0, n) do
+    let cr = Rect(r.x + inset + float(i) * cell, r.y + inset, cell, r.h - inset * 2.0)
+    let hot = ease_flag(enabled && hovered(cr))
+    if enabled && press(cr) then
+      chosen = i
+    end
+    let near = clamp(1.0 - abs(pos - float(i)), lo: 0.0, hi: 1.0)
+    let on_ink = if toned then INK else TEXT end
+    let ink = mix(mix(MUTED, TEXT, 0.7 * hot), on_ink, near)
+    let style = if near > 0.5 then uib(size, ink) else ui(size, ink) end
+    tl.draw_text_line(labels[i], cr, if enabled then style else ui(size, DIM) end, "center")
+  end
+  chosen
+end
+
+// A filled button. Returns true on the frame it is pressed.
+pub fn button(r: record, label: string, tone: record, enabled: bool) -> bool
+  let hot = ease_flag(enabled && hovered(r))
+  let down = enabled && hovered(r) && mouse_down(0)
+  let face = if enabled then mix(mix(tone, #ffffff, 0.10 * hot), #000000, if down then 0.12 else 0.0 end)
+  else mix(RAISED, tone, 0.10) end
+  if enabled then
+    draw_shadow(r, {radius: 8, blur: 12, dy: 3, color: tone, a: int(40 + 40 * hot)})
+  end
+  draw_rect_rounded(r, 8, face)
+  if !enabled then
+    draw_rect_rounded_outline(r, 8, LINE)
+  end
+  tl.draw_text_line(label, r, uib(13, if enabled then INK else DIM end), "center")
+  enabled && press(r)
+end
+
+// A quiet outlined button: chips, Cancel, Close.
+pub fn ghost(r: record, label: string, tone: record, enabled: bool = true) -> bool
+  let hot = ease_flag(enabled && hovered(r))
+  draw_rect_rounded(r, 6, mix(WELL, tone, 0.06 + 0.16 * hot))
+  draw_rect_rounded_outline(r, 6, mix(LINE, tone, 0.25 + 0.45 * hot))
+  tl.draw_text_line(label, r, ui(11, if enabled then mix(MUTED, tone, 0.35 + 0.65 * hot) else DIM end), "center")
+  enabled && press(r)
+end
+
+// A square − / + stepper cell inside a field.
+pub fn step_cell(r: record, plus: bool, enabled: bool) -> bool
+  let hot = ease_flag(enabled && hovered(r))
+  if hot > 0.01 then
+    draw_rect_rounded(Rect(r.x + 3, r.y + 3, r.w - 6, r.h - 6), 5, mix(WELL, TEXT, 0.10 * hot))
+  end
+  let ink = if enabled then mix(MUTED, TEXT, hot) else mix(DIM, WELL, 0.5) end
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  draw_line({x: cx - 4.5, y: cy}, {x: cx + 4.5, y: cy}, ink, 255, 1.6)
+  if plus then
+    draw_line({x: cx, y: cy - 4.5}, {x: cx, y: cy + 4.5}, ink, 255, 1.6)
+  end
+  enabled && press(r)
+end
+
+// A one-line number field. The editing (caret, selection, clipboard, undo)
+// is the `ui` prelude's `text_field_update`; the paint is ours. `focus` is
+// the id of the field holding the keyboard ("" for none). `o` carries
+// `prefix` (drawn dim before the text), `hint`, `bad`, `enabled` and `trail`
+// (px reserved on the right for the stepper cells).
+pub fn num_field(key: string, r: record, buf: string, focus: string, o: record) -> record
+  let enabled = field(o, "enabled", true)
+  let bad = field(o, "bad", false)
+  let prefix = field(o, "prefix", "")
+  let trail = field(o, "trail", 0)
+  let style = mono(15, TEXT)
+  let lead = if prefix == "" then 0 else text_width(prefix, style) + 4 end
+  let inset = 12 + lead
+  let box = Rect(r.x, r.y, r.w - trail, r.h)
+  let res = text_field_update({id: focus}, key, box, buf,
+    {text_style: style, inset: inset, scroll: true, pointer: enabled})
+  let has = enabled && res.focus.id == key
+  let k = ease_flag(has, 24.0)
+  let b = ease_flag(bad && enabled, 20.0)
+  let hot = ease_flag(enabled && hovered(r))
+  let edge = mix(mix(mix(LINE, TEXT, 0.18 * hot), ACCENT, k), DOWN, b)
+  if k > 0.02 then
+    let g = 3.0 * k
+    draw_rect_rounded(Rect(r.x - g, r.y - g, r.w + g * 2.0, r.h + g * 2.0), 8 + int(g),
+      mix(ACCENT, DOWN, b), int(60 * k))
+  end
+  draw_rect_rounded(r, 8, WELL)
+  draw_rect_rounded_outline(r, 8, edge)
+  let m = text_metrics(style)
+  let base = tl.text_baseline(r, style)
+  let ty = base - m.baseline
+  if prefix != "" then
+    draw_text(prefix, {x: r.x + 12, y: ty}, mono(15, DIM))
+  end
+  let tx = r.x + inset - res.scroll
+  clip_push(Rect(r.x + 2 + lead, r.y + 1, r.w - 4 - lead - trail, r.h - 2))
+  if has && res.sel_start < res.sel_end then
+    for q in text_range_rects(res.text, style, res.sel_start, res.sel_end) do
+      draw_rect_rounded(Rect(tx + q.x, base - m.cap_height - 4.0, q.w, m.cap_height + m.descent + 6.0), 2,
+        mix(WELL, ACCENT, 0.4))
+    end
+  end
+  if !enabled || res.text == "" then
+    draw_text(field(o, "hint", ""), {x: tx, y: ty}, mono(15, DIM))
+  else
+    draw_text(res.text, {x: tx, y: ty}, style)
+  end
+  if has then
+    // The caret holds steady while typing and blinks once the keys stop.
+    state rest = 0.0
+    rest = if res.changed || text_input() != "" then 0.0 else rest + min(dt(), 0.05) end
+    if fract(rest * 0.9) < 0.58 then
+      let cx = tx + tl.caret_x(res.text, style, res.caret)
+      draw_line({x: cx, y: base - m.cap_height - 3.0}, {x: cx, y: base + m.descent + 1.0},
+        mix(ACCENT, DOWN, b), 255, 1.6)
+    end
+    set _busy = true
+  end
+  clip_pop()
+  {text: res.text, focus: if enabled then res.focus.id else focus end, has: has, submitted: has && res.submitted,
+    changed: res.changed}
+end

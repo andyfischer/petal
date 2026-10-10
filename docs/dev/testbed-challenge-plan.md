@@ -4,11 +4,11 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-38 of the 50 exist. Thirty-three are panel apps under the category directories
+39 of the 50 exist. Thirty-four are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
 game, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
-client, the settings screen, the stock trading screen, the command palette, the music sequencer, the node-based editor, the
+client, the file browser, the settings screen, the stock trading screen, the command palette, the music sequencer, the node-based editor, the
 Markdown editor, the network graph explorer, the timeline explorer, the
 solar system and the fractal explorer), and five more
 were written as headless console programs under `examples/games/`, which
@@ -16,8 +16,8 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-fourth panel app that was not on
-this list. The remaining 12 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-fifth panel app that was not on
+this list. The remaining 11 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -41,7 +41,7 @@ this list. The remaining 12 have not been attempted.
 | 16 | **Calendar** | Dense layout, dates, navigation, drag/drop | built — `examples/productivity/calendar/` |
 | 17 | **Email client** | Master/detail UI, lists, search, selection | built — `examples/productivity/email-client/` |
 | 18 | **Chat / Slack clone** | Scrolling feeds, composer, async messages |  |
-| 19 | **File browser** | Trees, icons, selection, context menus |  |
+| 19 | **File browser** | Trees, icons, selection, context menus | built — `examples/productivity/file-browser/` |
 | 20 | **Settings screen** | Forms, toggles, sliders, nested sections | built — `examples/productivity/settings/` |
 | 21 | **Login + signup flow** | Forms, validation, focus, errors |  |
 | 22 | **Command palette** | Keyboard handling, fuzzy search, overlays | built — `examples/productivity/command-palette/` |

@@ -1,0 +1,292 @@
+// Burrow: icons.
+//
+// Two families. `file_icon` draws a file or folder the way a desktop does: a
+// coloured object with its own palette, the same at 16 px in a list row and
+// at 96 px in the info pane. `glyph` draws a one-colour stroke icon for the
+// chrome (toolbar, sidebar, column headers) in whatever ink the caller is
+// using. No font and no image: every one is a few fills and strokes inside
+// the rect it is given.
+
+fn at(r: record, fx: num, fy: num) -> record
+  {x: r.x + r.w * fx, y: r.y + r.h * fy}
+end
+
+fn sub(r: record, fx: num, fy: num, fw: num, fh: num) -> Rect
+  Rect(r.x + r.w * fx, r.y + r.h * fy, r.w * fw, r.h * fh)
+end
+
+// ── Files and folders ───────────────────────────────────────────────────────
+
+let PAPER = #f1f3f7
+let PAPER_FOLD = #c3c9d6
+let PAPER_LINE = #aab1c0
+
+// The accent each kind of file wears.
+pub fn kind_color(key: string) -> record
+  match key
+    when "folder" -> #4f9ef5
+    when "image" -> #2fb38a
+    when "text" -> #8c95a6
+    when "doc" -> #4a8fe8
+    when "pdf" -> #e5544b
+    when "sheet" -> #35a965
+    when "audio" -> #e8589b
+    when "video" -> #f08a3c
+    when "archive" -> #c1975a
+    when "disk" -> #8e9bb3
+    when "code" -> #8f74ee
+    when _ -> #9aa1b0
+  end
+end
+
+// `pale` is the folder on a selected row: the same shape in near-white, so it
+// does not vanish into the accent behind it.
+pub fn folder(r: record, open: bool = false, pale: bool = false) -> nil
+  let rad = max(1.0, r.w * 0.09)
+  let back = if pale then #cfe2ff else #2f7fdc end
+  // The tab and the back wall.
+  draw_rect_rounded(sub(r, 0.05, 0.15, 0.40, 0.22), rad, back)
+  draw_rect_rounded(sub(r, 0.05, 0.24, 0.90, 0.62), rad, back)
+  // The front panel, a shade lighter, dropped a little when the folder is open.
+  let front = if open then sub(r, 0.05, 0.42, 0.90, 0.44) else sub(r, 0.05, 0.33, 0.90, 0.53) end
+  if pale then
+    draw_rect_rounded(front, rad, #ffffff)
+  else
+    draw_rect_gradient_rounded(front, rad, #6db8fb, #4a9df2, pi() / 2.0)
+  end
+  if r.w >= 40 then
+    draw_line(at(r, 0.09, 0.345), at(r, 0.91, 0.345), #a9d6ff, 150, 1)
+  end
+end
+
+pub fn trash(r: record, full: bool) -> nil
+  let c = #9aa3b5
+  let w = max(1.2, r.w * 0.075)
+  draw_line(at(r, 0.16, 0.26), at(r, 0.84, 0.26), c, 255, w)
+  draw_polyline([at(r, 0.38, 0.26), at(r, 0.42, 0.13), at(r, 0.58, 0.13), at(r, 0.62, 0.26)], c, 255, w)
+  let body = [at(r, 0.24, 0.26), at(r, 0.30, 0.88), at(r, 0.70, 0.88), at(r, 0.76, 0.26)]
+  if full then
+    fill_polygon(body, #9aa3b5, 70)
+  end
+  draw_polyline(body, c, 255, w)
+  if r.w >= 28 then
+    draw_line(at(r, 0.42, 0.40), at(r, 0.43, 0.74), c, 255, w * 0.8)
+    draw_line(at(r, 0.58, 0.40), at(r, 0.57, 0.74), c, 255, w * 0.8)
+  end
+end
+
+// The sheet of paper every document icon starts from.
+fn page(r: record, tint: record) -> nil
+  fill_polygon([at(r, 0.19, 0.05), at(r, 0.61, 0.05), at(r, 0.81, 0.25), at(r, 0.81, 0.95), at(r, 0.19, 0.95)], tint)
+  fill_polygon([at(r, 0.61, 0.05), at(r, 0.61, 0.25), at(r, 0.81, 0.25)], PAPER_FOLD)
+  if r.w >= 30 then
+    // A hairline, so two sheets that overlap still read as two.
+    draw_polyline([at(r, 0.19, 0.05), at(r, 0.61, 0.05), at(r, 0.81, 0.25), at(r, 0.81, 0.95), at(r, 0.19, 0.95),
+      at(r, 0.19, 0.05)], #7c8598, 120, 1)
+  end
+end
+
+fn text_lines(r: record, c: record, rows: list) -> nil
+  let w = max(1.0, r.h * 0.045)
+  for i in range(0, len(rows)) do
+    let y = 0.40 + i * 0.125
+    draw_line(at(r, 0.29, y), at(r, 0.29 + 0.42 * rows[i], y), c, 255, w)
+  end
+end
+
+// A file of kind `key` (see fsdata.kind_of), or a folder.
+pub fn file_icon(key: string, r: record) -> nil
+  if key == "folder" then
+    folder(r)
+    return nil
+  end
+  let c = kind_color(key)
+  let small = r.w < 26
+  let w = max(1.1, r.h * 0.05)
+  if small && (key == "code" || key == "doc" || key == "audio" || key == "archive") then
+    // At list size there is no room for the drawing: a band of the kind's
+    // colour says the same thing.
+    page(r, PAPER)
+    draw_rect(sub(r, 0.19, 0.58, 0.62, 0.26), c)
+    return nil
+  end
+  match key
+    when "image" do
+      page(r, PAPER)
+      let f = sub(r, 0.27, 0.40, 0.46, 0.40)
+      draw_rect(f, mix(c, #ffffff, 0.55))
+      fill_polygon([{x: f.x, y: f.y + f.h}, {x: f.x + f.w * 0.36, y: f.y + f.h * 0.38},
+        {x: f.x + f.w * 0.60, y: f.y + f.h * 0.72}, {x: f.x + f.w * 0.76, y: f.y + f.h * 0.52},
+        {x: f.x + f.w, y: f.y + f.h}], c)
+      if !small then
+        draw_circle({x: f.x + f.w * 0.76, y: f.y + f.h * 0.24}, f.w * 0.09, #f7c948)
+      end
+    end
+    when "text" do
+      page(r, PAPER)
+      text_lines(r, PAPER_LINE, [1.0, 0.82, 1.0, 0.56])
+    end
+    when "doc" do
+      page(r, PAPER)
+      draw_line(at(r, 0.29, 0.40), at(r, 0.56, 0.40), c, 255, w * 1.5)
+      text_lines(r, mix(c, PAPER, 0.45), [0.0, 1.0, 0.86, 1.0])
+    end
+    when "pdf" do
+      page(r, PAPER)
+      draw_rect(sub(r, 0.19, 0.60, 0.62, 0.24), c)
+      if !small then
+        draw_text_center("PDF", r.x + r.w * 0.5, r.y + r.h * 0.63,
+          {size: max(7.0, r.h * 0.15), font: "ui", weight: 700, color: #ffffff})
+        text_lines(r, PAPER_LINE, [0.6])
+      end
+    end
+    when "sheet" do
+      page(r, PAPER)
+      let g = sub(r, 0.27, 0.40, 0.46, 0.42)
+      draw_rect(Rect(g.x, g.y, g.w, g.h / 3.0), c)
+      draw_rect_outline(g, c, 255, max(1.0, w * 0.8))
+      draw_line({x: g.x + g.w * 0.4, y: g.y}, {x: g.x + g.w * 0.4, y: g.y + g.h}, c, 255, max(1.0, w * 0.7))
+      draw_line({x: g.x, y: g.y + g.h * 2.0 / 3.0}, {x: g.x + g.w, y: g.y + g.h * 2.0 / 3.0}, c, 255, max(1.0, w * 0.7))
+    end
+    when "audio" do
+      page(r, PAPER)
+      let hs = [0.34, 0.74, 1.0, 0.52, 0.82, 0.30]
+      for i in range(0, len(hs)) do
+        let x = 0.30 + i * 0.08
+        let half = 0.17 * hs[i]
+        draw_line(at(r, x, 0.62 - half), at(r, x, 0.62 + half), c, 255, max(1.2, r.w * 0.045))
+      end
+    end
+    when "video" do
+      page(r, PAPER)
+      let f = sub(r, 0.27, 0.42, 0.46, 0.36)
+      draw_rect_rounded(f, max(1.0, r.w * 0.04), c)
+      fill_triangle({x: f.x + f.w * 0.38, y: f.y + f.h * 0.26}, {x: f.x + f.w * 0.38, y: f.y + f.h * 0.74},
+        {x: f.x + f.w * 0.70, y: f.y + f.h * 0.5}, #ffffff)
+    end
+    when "archive" do
+      page(r, mix(PAPER, c, 0.30))
+      // A zip running down the middle.
+      for i in range(0, 6) do
+        let y = 0.14 + i * 0.105
+        let x = if i % 2 == 0 then 0.44 else 0.50 end
+        draw_rect(sub(r, x, y, 0.07, 0.07), mix(c, #000000, 0.25))
+      end
+      draw_rect_rounded(sub(r, 0.42, 0.76, 0.17, 0.11), max(1.0, r.w * 0.02), mix(c, #000000, 0.25))
+    end
+    when "disk" do
+      draw_rect_rounded(sub(r, 0.12, 0.20, 0.76, 0.62), max(1.5, r.w * 0.09), #d6dbe6)
+      draw_rect_rounded(sub(r, 0.12, 0.60, 0.76, 0.22), max(1.5, r.w * 0.09), #aeb6c6)
+      draw_rect(sub(r, 0.12, 0.60, 0.76, 0.08), #aeb6c6)
+      draw_circle(at(r, 0.74, 0.71), max(1.0, r.w * 0.035), #58d68d)
+      draw_circle_outline(at(r, 0.42, 0.40), r.w * 0.12, #8e9bb3, 255, w)
+    end
+    when "code" do
+      page(r, PAPER)
+      draw_polyline([at(r, 0.42, 0.48), at(r, 0.31, 0.62), at(r, 0.42, 0.76)], c, 255, w * 1.25)
+      draw_polyline([at(r, 0.58, 0.48), at(r, 0.69, 0.62), at(r, 0.58, 0.76)], c, 255, w * 1.25)
+    end
+    when _ do
+      page(r, PAPER)
+    end
+  end
+  nil
+end
+
+// ── Chrome glyphs ───────────────────────────────────────────────────────────
+
+pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  let u = min(r.w, r.h) / 2.0
+  match name
+    when "back" do
+      draw_polyline([at(r, 0.60, 0.20), at(r, 0.30, 0.50), at(r, 0.60, 0.80)], c, 255, w)
+    end
+    when "forward" do
+      draw_polyline([at(r, 0.40, 0.20), at(r, 0.70, 0.50), at(r, 0.40, 0.80)], c, 255, w)
+    end
+    when "up" do
+      draw_polyline([at(r, 0.22, 0.50), at(r, 0.50, 0.22), at(r, 0.78, 0.50)], c, 255, w)
+      draw_line(at(r, 0.50, 0.24), at(r, 0.50, 0.82), c, 255, w)
+    end
+    when "chevron_right" do
+      draw_polyline([at(r, 0.38, 0.24), at(r, 0.66, 0.50), at(r, 0.38, 0.76)], c, 255, w)
+    end
+    when "chevron_down" do
+      draw_polyline([at(r, 0.24, 0.38), at(r, 0.50, 0.66), at(r, 0.76, 0.38)], c, 255, w)
+    end
+    when "sort_up" do
+      fill_triangle(at(r, 0.50, 0.30), at(r, 0.80, 0.70), at(r, 0.20, 0.70), c)
+    end
+    when "sort_down" do
+      fill_triangle(at(r, 0.20, 0.30), at(r, 0.80, 0.30), at(r, 0.50, 0.70), c)
+    end
+    when "list" do
+      for i in range(0, 3) do
+        let y = 0.24 + 0.26 * i
+        draw_circle(at(r, 0.14, y), max(1.0, u * 0.13), c)
+        draw_line(at(r, 0.32, y), at(r, 0.92, y), c, 255, w)
+      end
+    end
+    when "grid" do
+      for i in range(0, 4) do
+        draw_rect_rounded(sub(r, 0.12 + 0.44 * (i % 2), 0.12 + 0.44 * (i / 2), 0.32, 0.32), 1.5, c)
+      end
+    end
+    when "search" do
+      draw_circle_outline({x: r.x + r.w * 0.43, y: r.y + r.h * 0.43}, u * 0.56, c, 255, w)
+      draw_line(at(r, 0.64, 0.64), at(r, 0.92, 0.92), c, 255, w)
+    end
+    when "close" do
+      draw_line(at(r, 0.24, 0.24), at(r, 0.76, 0.76), c, 255, w)
+      draw_line(at(r, 0.76, 0.24), at(r, 0.24, 0.76), c, 255, w)
+    end
+    when "info" do
+      // A sidebar on the right: the info pane's toggle.
+      draw_rect_rounded_outline(sub(r, 0.08, 0.16, 0.84, 0.68), 2.5, c, 255, w)
+      draw_line(at(r, 0.62, 0.18), at(r, 0.62, 0.82), c, 255, w)
+    end
+    when "home" do
+      draw_polyline([at(r, 0.10, 0.52), at(r, 0.50, 0.14), at(r, 0.90, 0.52)], c, 255, w)
+      draw_polyline([at(r, 0.22, 0.44), at(r, 0.22, 0.86), at(r, 0.78, 0.86), at(r, 0.78, 0.44)], c, 255, w)
+    end
+    when "desktop" do
+      draw_rect_rounded_outline(sub(r, 0.08, 0.14, 0.84, 0.56), 2, c, 255, w)
+      draw_line(at(r, 0.34, 0.88), at(r, 0.66, 0.88), c, 255, w)
+      draw_line(at(r, 0.50, 0.70), at(r, 0.50, 0.88), c, 255, w)
+    end
+    when "documents" do
+      draw_polyline([at(r, 0.22, 0.08), at(r, 0.60, 0.08), at(r, 0.80, 0.30), at(r, 0.80, 0.92),
+        at(r, 0.22, 0.92), at(r, 0.22, 0.08)], c, 255, w)
+      draw_line(at(r, 0.36, 0.52), at(r, 0.66, 0.52), c, 255, w)
+      draw_line(at(r, 0.36, 0.70), at(r, 0.66, 0.70), c, 255, w)
+    end
+    when "downloads" do
+      draw_line(at(r, 0.50, 0.10), at(r, 0.50, 0.62), c, 255, w)
+      draw_polyline([at(r, 0.26, 0.40), at(r, 0.50, 0.64), at(r, 0.74, 0.40)], c, 255, w)
+      draw_polyline([at(r, 0.14, 0.70), at(r, 0.14, 0.88), at(r, 0.86, 0.88), at(r, 0.86, 0.70)], c, 255, w)
+    end
+    when "pictures" do
+      draw_rect_rounded_outline(sub(r, 0.08, 0.16, 0.84, 0.68), 2, c, 255, w)
+      draw_polyline([at(r, 0.14, 0.76), at(r, 0.40, 0.48), at(r, 0.58, 0.66), at(r, 0.70, 0.54), at(r, 0.88, 0.74)], c, 255, w)
+      draw_circle(at(r, 0.68, 0.34), max(1.0, u * 0.13), c)
+    end
+    when "music" do
+      draw_polyline([at(r, 0.36, 0.76), at(r, 0.36, 0.20), at(r, 0.80, 0.12), at(r, 0.80, 0.66)], c, 255, w)
+      draw_circle(at(r, 0.26, 0.78), u * 0.22, c)
+      draw_circle(at(r, 0.70, 0.68), u * 0.22, c)
+    end
+    when "code" do
+      draw_polyline([at(r, 0.32, 0.24), at(r, 0.08, 0.50), at(r, 0.32, 0.76)], c, 255, w)
+      draw_polyline([at(r, 0.68, 0.24), at(r, 0.92, 0.50), at(r, 0.68, 0.76)], c, 255, w)
+    end
+    when "burrow" do
+      // The app's mark: a den with a way in.
+      fill_arc({x: cx, y: r.y + r.h * 0.84}, 0, u * 1.24, pi(), 2.0 * pi(), c)
+    end
+    when _ do
+      draw_circle({x: cx, y: cy}, u * 0.3, c)
+    end
+  end
+end

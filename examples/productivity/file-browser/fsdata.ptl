@@ -1,0 +1,602 @@
+// Burrow: the virtual filesystem's seed data and the pure helpers over it.
+//
+// Nothing here touches a disk. The whole tree is a flat list of node records,
+// built once from the SEED lines below, and a node's id is its index in that
+// list for the life of the session:
+//
+//   {id, name, parent, dir, size, mt, from, doc}
+//
+// `parent` is another node's id (-1 for the two roots, GONE once deleted for
+// good), `mt` is minutes since 2024-01-01, `from` is where a trashed node
+// came from, and `doc` names the entry in DOCS that holds its text, if any.
+
+pub let HOME = 0
+pub let TRASH = 1
+pub let GONE = -9
+
+// "Now" is fixed, so the dates on screen are the same on every run:
+// Friday 9 October 2026, 2:30 PM.
+pub let TODAY = 1012
+pub let NOW = 1012 * 1440 + 14 * 60 + 30
+
+// path | size | days ago | time of day. A folder is made the first time a
+// path walks through it. Lines under "Trash/" carry a fifth field: the
+// folder they were thrown away from.
+let SEED = [
+  "Desktop/Screenshot 2026-10-08 at 09.41.12.png|1.8M|1|0941",
+  "Desktop/Screenshot 2026-10-06 at 17.03.55.png|2.1M|3|1703",
+  "Desktop/standup-notes.txt|2K|0|0912",
+  "Desktop/Q4 roadmap.pdf|824K|2|1548",
+  "Desktop/todo.md|1K|0|1341",
+  "Documents/Projects/Tidewater Rebrand/brief.md|6K|34|1012",
+  "Documents/Projects/Tidewater Rebrand/moodboard.png|14.2M|29|1630",
+  "Documents/Projects/Tidewater Rebrand/logo-v3.svg|48K|6|1122",
+  "Documents/Projects/Tidewater Rebrand/palette.json|1K|6|1140",
+  "Documents/Projects/Tidewater Rebrand/kickoff-notes.txt|4K|36|0955",
+  "Documents/Projects/Tidewater Rebrand/invoice-0042.pdf|96K|4|0830",
+  "Documents/Projects/Tidewater Rebrand/client-feedback.docx|212K|8|1415",
+  "Documents/Projects/Tidewater Rebrand/Exports/logo-dark.png|184K|5|1701",
+  "Documents/Projects/Tidewater Rebrand/Exports/logo-light.png|179K|5|1701",
+  "Documents/Projects/Tidewater Rebrand/Exports/wordmark.svg|22K|5|1658",
+  "Documents/Projects/Tidewater Rebrand/Exports/favicon.png|9K|5|1702",
+  "Documents/Projects/Cabin Build/budget.xlsx|58K|1|2105",
+  "Documents/Projects/Cabin Build/floor-plan.pdf|2.6M|47|1118",
+  "Documents/Projects/Cabin Build/materials.csv|7K|12|1944",
+  "Documents/Projects/Cabin Build/permit-application.pdf|1.1M|21|0902",
+  "Documents/Projects/Cabin Build/site-photos.zip|86.4M|40|1532",
+  "Documents/Projects/Cabin Build/contractor-quotes.docx|340K|15|1027",
+  "Documents/Projects/Field Recorder App/README.md|3K|9|1816",
+  "Documents/Projects/Field Recorder App/spec.md|11K|10|1433",
+  "Documents/Projects/Field Recorder App/wireframes.pdf|4.8M|13|1109",
+  "Documents/Projects/Field Recorder App/app-icon.png|412K|11|1250",
+  "Documents/Taxes/2025/1040-draft.pdf|482K|18|2012",
+  "Documents/Taxes/2025/w2-saltmarsh-studio.pdf|74K|250|0900",
+  "Documents/Taxes/2025/receipts.zip|31.7M|19|1955",
+  "Documents/Taxes/2025/deductions.xlsx|44K|18|2030",
+  "Documents/Taxes/2024/return-final.pdf|511K|544|1114",
+  "Documents/Taxes/2024/receipts.zip|27.9M|546|1040",
+  "Documents/Letters/cover-letter.docx|28K|72|1502",
+  "Documents/Letters/landlord-notice.pdf|133K|101|0841",
+  "Documents/Letters/recommendation-ines.docx|31K|64|1917",
+  "Documents/Reading/a-pattern-language-notes.md|14K|3|2241",
+  "Documents/Reading/designing-data-intensive.pdf|18.3M|212|1320",
+  "Documents/Reading/shape-up.pdf|6.2M|140|0817",
+  "Documents/resume-2026.pdf|188K|27|1105",
+  "Documents/packing-list.txt|1K|2|0734",
+  "Documents/household-budget.xlsx|92K|7|2118",
+  "Downloads/Garden-0.9.2.dmg|48.3M|1|1022",
+  "Downloads/petal-lang-handbook.pdf|3.4M|1|1024",
+  "Downloads/boarding-pass-LIS.pdf|212K|16|0605",
+  "Downloads/IMG_4821.HEIC|3.1M|14|1811",
+  "Downloads/typeface-trial.zip|12.0M|5|1339",
+  "Downloads/invoice-october.pdf|64K|0|1108",
+  "Downloads/dataset-tides-2025.csv|8.8M|22|1647",
+  "Downloads/podcast-ep-112.mp3|64.2M|4|0750",
+  "Downloads/meeting-recording.mov|412M|2|1601",
+  "Pictures/2026 Lisbon/tram-28.jpg|4.2M|15|1042",
+  "Pictures/2026 Lisbon/alfama-rooftops.jpg|5.1M|15|1217",
+  "Pictures/2026 Lisbon/pasteis-de-nata.jpg|3.3M|14|0926",
+  "Pictures/2026 Lisbon/sunset-miradouro.jpg|6.0M|14|1958",
+  "Pictures/2026 Lisbon/azulejo-detail.jpg|3.9M|13|1131",
+  "Pictures/2026 Lisbon/ocean-cliff.heic|2.7M|12|1604",
+  "Pictures/2026 Lisbon/time-out-market.jpg|4.4M|13|1322",
+  "Pictures/2026 Lisbon/lisbon-edit.mov|238M|9|2210",
+  "Pictures/2025 Cabin Weekend/lake-morning.jpg|4.8M|371|0652",
+  "Pictures/2025 Cabin Weekend/woodstove.jpg|3.6M|371|2014",
+  "Pictures/2025 Cabin Weekend/trail-map.png|1.2M|373|1100",
+  "Pictures/2025 Cabin Weekend/group-photo.jpg|5.5M|370|1245",
+  "Pictures/2025 Cabin Weekend/stars-long-exposure.jpg|7.1M|371|2331",
+  "Pictures/Wallpapers/dunes.png|9.4M|88|1410",
+  "Pictures/Wallpapers/fog-forest.jpg|6.8M|88|1411",
+  "Pictures/Wallpapers/gradient-mesh.png|2.2M|60|0958",
+  "Pictures/profile-photo.jpg|820K|120|1533",
+  "Pictures/scan-passport.png|3.0M|30|0848",
+  "Music/Field Recordings/harbor-dawn.wav|52.4M|44|0611",
+  "Music/Field Recordings/rain-on-tin-roof.wav|38.9M|58|2302",
+  "Music/Field Recordings/market-ambience.flac|27.3M|13|1340",
+  "Music/Field Recordings/tram-interior.wav|19.6M|15|1055",
+  "Music/Mixes/autumn-2026.mp3|88.1M|10|2140",
+  "Music/Mixes/focus-loop.mp3|41.5M|95|0903",
+  "Music/Mixes/sunday-kitchen.mp3|73.0M|33|1127",
+  "Music/demo-take-3.m4a|6.4M|20|2255",
+  "Code/tidewater-site/src/main.ptl|4K|0|1402",
+  "Code/tidewater-site/src/layout.ptl|6K|1|1731",
+  "Code/tidewater-site/src/theme.ptl|2K|3|1115",
+  "Code/tidewater-site/src/routes.ptl|3K|1|1640",
+  "Code/tidewater-site/assets/hero.jpg|1.9M|6|1203",
+  "Code/tidewater-site/assets/logo.svg|18K|6|1125",
+  "Code/tidewater-site/README.md|2K|3|1049",
+  "Code/tidewater-site/package.json|1K|6|0933",
+  "Code/tidewater-site/petal.toml|1K|6|0934",
+  "Code/dotfiles/install.sh|2K|130|2212",
+  "Code/dotfiles/aliases.sh|3K|41|0759",
+  "Code/dotfiles/init.ptl|5K|8|2301",
+  "Code/scratch/tide-chart.py|3K|22|1702",
+  "Code/scratch/parse-receipts.rs|7K|19|2144",
+  "Code/scratch/notes.md|2K|5|0827",
+  "Trash/old-logo-v1.png|201K|31|1001|Documents/Projects/Tidewater Rebrand",
+  "Trash/draft-email.txt|1K|6|2350|Desktop",
+  "Trash/Untitled.docx|12K|3|1619|Documents",
+]
+
+// Text for the files that have something to read. Keyed by the file's
+// original name; a node points here through `doc`, so a renamed or
+// duplicated file keeps its contents.
+let DOCS = [
+  ["todo.md", """# This week
+
+- [x] Send Tidewater invoice 0042
+- [x] Book the surveyor for the cabin lot
+- [ ] Export logo set (dark, light, favicon)
+- [ ] Reply to Ines about the reference
+- [ ] Back up the Lisbon photos
+- [ ] Renew passport before December
+
+## Later
+
+- Field recorder: decide on the waveform view
+- Clean out Downloads (again)"""],
+  ["standup-notes.txt", """Fri 9 Oct
+
+Yesterday
+  - wordmark spacing pass, sent v3 to the client
+  - routes for the case-study pages
+
+Today
+  - hero image crop, 3 breakpoints
+  - favicon export
+  - cabin: call about the permit
+
+Blocked
+  - waiting on copy for the About page"""],
+  ["packing-list.txt", """Cabin weekend, 17 to 19 Oct
+
+  headlamp + spare batteries
+  wool socks x3
+  rain shell
+  field recorder, wind muff, 2 cards
+  coffee, grinder, the small kettle
+  trail map (printed, it is in Pictures)
+  firestarter
+  cards
+  the long novel"""],
+  ["brief.md", """# Tidewater: brand refresh
+
+**Client:** Tidewater Kayak & Sail
+**Due:** first week of November
+
+Tidewater has outgrown the clip-art wave they opened with in 2011.
+They want a mark that works stitched on a cap, cut in vinyl on a
+hull, and at 16 pixels in a browser tab.
+
+## Must keep
+
+- The name, set in one line
+- Some nod to the estuary: they launch from a tidal creek
+
+## Must lose
+
+- The gradient
+- The swoosh
+
+## Deliverables
+
+1. Primary mark, light and dark
+2. Wordmark
+3. Favicon
+4. A one-page usage sheet"""],
+  ["kickoff-notes.txt", """Kickoff call, 3 Sept
+
+Attending: Dara (owner), Paul (shop), me
+
+- Dara likes the old hand-painted sign more than the current logo
+- Paul needs something he can cut on the vinyl plotter: no thin strokes
+- Colours: they repaint the fleet every spring, deep green hulls
+- Budget fixed, two rounds of revisions
+- They will send photos of the sign and the creek at low tide"""],
+  ["palette.json", """{
+  "name": "Tidewater",
+  "colors": {
+    "hull":     "#1f4d3f",
+    "estuary":  "#5fa8a0",
+    "sandbar":  "#e8dcc0",
+    "buoy":     "#e2573a",
+    "ink":      "#14201c"
+  },
+  "pairs": [["hull", "sandbar"], ["ink", "estuary"]]
+}"""],
+  ["README.md", """# Field Recorder
+
+A pocket recorder for ambient sound. One big button, a level
+meter you can read in sunlight, and files named for where you
+were standing.
+
+## Status
+
+Wireframes are done. The waveform view is still an open question:
+see spec.md, section 4.
+
+## Layout
+
+    spec.md          what it does
+    wireframes.pdf   what it looks like
+    app-icon.png     the icon, 1024 px"""],
+  ["spec.md", """# Field Recorder: spec
+
+## 1. Recording
+
+One tap starts, one tap stops. Nothing else is on the first screen.
+A take is saved the moment it stops; there is no Save button and
+no way to lose one.
+
+## 2. Naming
+
+Takes are named for the nearest place name and the time of day:
+"harbor-dawn", "market-ambience". The name can be edited later.
+
+## 3. Levels
+
+A single horizontal meter with a peak hold. It turns from green to
+amber at -12 dB and to red at -3 dB.
+
+## 4. Waveform (open)
+
+Either a scrolling waveform while recording, or nothing until the
+take is finished. The scrolling one costs battery."""],
+  ["a-pattern-language-notes.md", """# A Pattern Language: notes
+
+## 159. Light on two sides of every room
+
+People gravitate to rooms lit from two sides and leave the
+others empty. Check the cabin plan: the loft has one window.
+
+## 180. Window place
+
+A window seat, a bay, a low sill. Somewhere to sit *in* the
+light, not just near it.
+
+## 112. Entrance transition
+
+A change of light, surface and direction between the road and
+the door. The path from the gravel should turn once."""],
+  ["materials.csv", """item,qty,unit,each,total
+Douglas fir 2x6,84,board,11.40,957.60
+Plywood sheathing,38,sheet,34.00,1292.00
+Standing seam roof,62,sq m,41.50,2573.00
+Rockwool batts,26,bag,58.00,1508.00
+Woodstove,1,unit,1890.00,1890.00
+Windows (double),7,unit,412.00,2884.00
+Deck screws,12,box,18.50,222.00"""],
+  ["main.ptl", """import layout
+import theme: palette, type_scale
+import routes
+
+// The site is one script: a route picks the page, the page draws.
+state path = "/"
+state scroll = 0.0
+
+let page = routes.find(path)
+let p = palette(page.tone)
+
+clear(p.bg.r, p.bg.g, p.bg.b)
+let body = layout.shell(page.title, p)
+
+for block in page.blocks do
+  match block.kind
+    when "hero" -> layout.hero(body, block, p)
+    when "text" -> layout.prose(body, block, type_scale())
+    when _ -> layout.figure(body, block)
+  end
+end"""],
+  ["theme.ptl", """// Tidewater's colours, straight from the palette file.
+pub fn palette(tone)
+  if tone == "dark" then
+    {bg: #14201c, ink: #e8dcc0, accent: #5fa8a0}
+  else
+    {bg: #e8dcc0, ink: #14201c, accent: #1f4d3f}
+  end
+end
+
+pub fn type_scale()
+  {body: 17, lead: 22, h2: 28, h1: 44}
+end"""],
+  ["routes.ptl", """let PAGES = [
+  {path: "/", title: "Tidewater", tone: "dark"},
+  {path: "/fleet", title: "The fleet", tone: "light"},
+  {path: "/lessons", title: "Lessons", tone: "light"},
+  {path: "/tides", title: "Today's tides", tone: "dark"},
+]
+
+pub fn find(path)
+  for p in PAGES do
+    if p.path == path then return p end
+  end
+  PAGES[0]
+end"""],
+  ["package.json", """{
+  "name": "tidewater-site",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "dev": "petal serve src/main.ptl",
+    "build": "petal bundle src/main.ptl -o dist"
+  }
+}"""],
+  ["petal.toml", """[package]
+name = "tidewater_site"
+entry = "src/main.ptl"
+
+[build]
+target = "web-canvas"
+assets = "assets"
+"""],
+  ["aliases.sh", """# navigation
+alias ..='cd ..'
+alias ll='ls -lah'
+alias proj='cd ~/Documents/Projects'
+
+# git
+alias gs='git status -sb'
+alias gl='git log --oneline --graph -20'
+alias gd='git diff'
+
+# petal
+alias pc='petal check --strict'
+alias pr='petal run'"""],
+  ["install.sh", """#!/bin/sh
+set -eu
+
+here="$(cd "$(dirname "$0")" && pwd)"
+
+link() {
+  ln -sfn "$here/$1" "$HOME/$2"
+  echo "linked $2"
+}
+
+link aliases.sh .aliases
+link init.ptl .garden/init.ptl"""],
+  ["tide-chart.py", """import csv
+from datetime import datetime
+
+def read_tides(path):
+    with open(path) as f:
+        for row in csv.DictReader(f):
+            yield datetime.fromisoformat(row["time"]), float(row["height_m"])
+
+def highs(tides):
+    prev, rising = None, False
+    for t, h in tides:
+        if prev and h < prev[1] and rising:
+            yield prev
+        rising = prev is not None and h > prev[1]
+        prev = (t, h)
+
+for when, height in highs(read_tides("dataset-tides-2025.csv")):
+    print(f"{when:%d %b %H:%M}  {height:.2f} m")"""],
+  ["notes.md", """# Scratch
+
+- tide-chart.py: works, but the CSV has two rows per timestamp
+  in March (DST?). Dedupe before finding highs.
+- parse-receipts.rs: totals are off by the tip line. Fix regex.
+- Try the Petal port of the tide chart once the site ships."""],
+  ["draft-email.txt", """Hi Dara,
+
+Attached is the third round. I pulled the wave back to a single
+line and opened up the spacing in the wordmark, which should cut
+cleanly in vinyl now.
+
+Let me know if"""],
+]
+
+fn has_doc(name: string) -> bool
+  for d in DOCS do
+    if d[0] == name then
+      return true
+    end
+  end
+  false
+end
+
+// ── Building the tree ───────────────────────────────────────────────────────
+
+fn parse_size(s: string) -> int
+  let unit = slice(s, -1)
+  let n = parse_float(slice(s, 0, len(s) - 1)) ?? 0.0
+  let mul = if unit == "G" then 1000000000 elsif unit == "M" then 1000000 else 1000 end
+  // A size that is not a round number of kilobytes reads as a real file's.
+  int(n * mul) + (len(s) * 137) % 911
+end
+
+// A camera roll long enough to scroll: forty shots over a fortnight, mostly
+// photos, the odd HEIC and clip.
+fn camera_roll() -> list
+  for i in range(0, 40) do
+    let n = 4780 + i
+    let ext = if i % 9 == 4 then "mov" elsif i % 5 == 2 then "heic" else "jpg" end
+    let size = if ext == "mov" then "{38 + (i * 17) % 90}.{i % 10}M" else "{2 + (i * 7) % 5}.{(i * 3) % 10}M" end
+    let hm = 700 + ((i * 37) % 13) * 100 + (i * 23) % 60
+    "Pictures/Camera Roll/IMG_{n}.{ext}|{size}|{17 - i / 3}|{pad_start(str(hm), 4, "0")}"
+  end
+end
+
+pub fn seed() -> list
+  let out = [
+    {id: 0, name: "Home", parent: -1, dir: true, size: 0, mt: NOW, from: -1, doc: ""},
+    {id: 1, name: "Trash", parent: -1, dir: true, size: 0, mt: NOW, from: -1, doc: ""},
+  ]
+  let by_path = {Trash: 1}
+  for line in camera_roll() ++ SEED do
+    let f = split(line, "|")
+    let parts = split(f[0], "/")
+    let hm = parse_int(f[3]) ?? 0
+    let mt = (TODAY - (parse_int(f[2]) ?? 0)) * 1440 + (hm / 100) * 60 + hm % 100
+    let parent = 0
+    let path = ""
+    for i in range(0, len(parts) - 1) do
+      path = if path == "" then parts[i] else path ++ "/" ++ parts[i] end
+      let known = field(by_path, path, -1)
+      if known < 0 then
+        known = len(out)
+        out = append(out, {id: known, name: parts[i], parent: parent, dir: true, size: 0, mt: 0, from: -1, doc: ""})
+        by_path[path] = known
+      end
+      parent = known
+      // A folder was last touched when the newest thing in it was.
+      if out[parent].mt < mt && parent > 1 then
+        out[parent].mt = mt
+      end
+    end
+    let name = last(parts)
+    let from = if len(f) > 4 then field(by_path, f[4], 0) else -1 end
+    out = append(out, {id: len(out), name: name, parent: parent, dir: false, size: parse_size(f[1]),
+      mt: mt, from: from, doc: if has_doc(name) then name else "" end})
+  end
+  out
+end
+
+// The id of the node at a path under Home ("Documents/Taxes"), or -1.
+pub fn find(nodes: list, path: string) -> int
+  let at = 0
+  for part in split(path, "/") do
+    let next = -1
+    for n in nodes do
+      if n.parent == at && n.name == part then
+        next = n.id
+        break
+      end
+    end
+    if next < 0 then
+      return -1
+    end
+    at = next
+  end
+  at
+end
+
+// ── Names and kinds ─────────────────────────────────────────────────────────
+
+// "report.final.pdf" → {stem: "report.final", ext: "pdf"}. A leading dot is
+// part of the name, not an extension.
+pub fn split_name(name: string) -> record
+  let cs = chars(name)
+  let dot = -1
+  for i in range(1, len(cs)) do
+    if cs[i] == "." then
+      dot = i
+    end
+  end
+  if dot < 0 || dot == len(cs) - 1 then
+    {stem: name, ext: ""}
+  else
+    {stem: slice(name, 0, dot), ext: slice(name, dot + 1)}
+  end
+end
+
+let KIND_BY_EXT = {
+  png: ["image", "PNG image"], jpg: ["image", "JPEG image"], jpeg: ["image", "JPEG image"],
+  heic: ["image", "HEIC image"], svg: ["image", "SVG image"],
+  txt: ["text", "Plain text"], md: ["text", "Markdown"],
+  pdf: ["pdf", "PDF document"],
+  docx: ["doc", "Word document"],
+  xlsx: ["sheet", "Spreadsheet"], csv: ["sheet", "CSV table"],
+  mp3: ["audio", "MP3 audio"], wav: ["audio", "WAV audio"], flac: ["audio", "FLAC audio"], m4a: ["audio", "AAC audio"],
+  mov: ["video", "QuickTime movie"], mp4: ["video", "MPEG-4 movie"],
+  zip: ["archive", "ZIP archive"],
+  dmg: ["disk", "Disk image"],
+  ptl: ["code", "Petal source"], py: ["code", "Python source"], rs: ["code", "Rust source"],
+  sh: ["code", "Shell script"], json: ["code", "JSON"], toml: ["code", "TOML"],
+}
+
+// {key, label}: `key` picks the icon and the preview, `label` is the Kind
+// column.
+pub fn kind_of(n: record) -> record
+  if n.dir then
+    return {key: "folder", label: "Folder"}
+  end
+  let k = field(KIND_BY_EXT, lower(split_name(n.name).ext), nil)
+  if k == nil then
+    {key: "file", label: "Document"}
+  else
+    {key: k[0], label: k[1]}
+  end
+end
+
+// ── Formatting ──────────────────────────────────────────────────────────────
+
+pub fn fmt_size(bytes: num) -> string
+  if bytes < 1000 then
+    "{int(bytes)} bytes"
+  elsif bytes < 1000000 then
+    "{int(round(bytes / 1000.0))} KB"
+  elsif bytes < 1000000000 then
+    let mb = bytes / 1000000.0
+    if mb < 100.0 then "{round(mb, 1)} MB" else "{int(round(mb))} MB" end
+  else
+    "{round(bytes / 1000000000.0, 2)} GB"
+  end
+end
+
+let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+let MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+// Day number (0 = 1 Jan 2024) to {y, m, d}.
+fn civil(day: int) -> record
+  let y = 2024
+  let d = day
+  while d >= (if y % 4 == 0 then 366 else 365 end) do
+    d = d - (if y % 4 == 0 then 366 else 365 end)
+    y += 1
+  end
+  let m = 0
+  while true do
+    let dm = if m == 1 && y % 4 == 0 then 29 else MONTH_DAYS[m] end
+    if d < dm then
+      break
+    end
+    d -= dm
+    m += 1
+  end
+  {y: y, m: m, d: d + 1}
+end
+
+fn clock(minute: int) -> string
+  let h = minute / 60
+  let h12 = if h % 12 == 0 then 12 else h % 12 end
+  "{h12}:{pad_start(str(minute % 60), 2, "0")} {if h < 12 then "AM" else "PM" end}"
+end
+
+// The list column: "Today, 2:02 PM", "Yesterday, 9:41 AM", "Oct 3, 2026".
+// `long` adds the time to an older date, for the info pane.
+pub fn fmt_date(mt: int, long: bool = false) -> string
+  let day = mt / 1440
+  let at = clock(mt % 1440)
+  if day == TODAY then
+    "Today, {at}"
+  elsif day == TODAY - 1 then
+    "Yesterday, {at}"
+  else
+    let c = civil(day)
+    let date = "{MONTHS[c.m]} {c.d}, {c.y}"
+    if long then "{date} at {at}" else date end
+  end
+end
+
+// A small stable number from a name, for the procedural previews.
+let HASH_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-_. "
+pub fn hash(s: string) -> int
+  let h = 7
+  for c in chars(lower(s)) do
+    h = (h * 31 + index_of(HASH_CHARS, c) + 2) % 1000003
+  end
+  h
+end
+
+// The text behind a node, or "" when it has none.
+pub fn doc_text(n: record) -> string
+  for d in DOCS do
+    if d[0] == n.doc then
+      return trim(d[1])
+    end
+  end
+  ""
+end

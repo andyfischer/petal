@@ -1,14 +1,16 @@
 //! `petal check` cannot see this crate's registrations (the core CLI does not
-//! depend on petal-ui), so it carries static lists of the natives each host
-//! adds (`petal::typecheck::globals`). These tests hold the lists to the real
-//! registrations: a native added here without being listed there would make
+//! depend on petal-ui). What it reads instead is the `ui` module's `native fn`
+//! declarations (`prelude/ui.ptl`) — and, until every host declares its
+//! interface that way, static lists of the natives each host adds
+//! (`petal::typecheck::globals`). These tests hold both to the real
+//! registrations: a native added here without being declared there would make
 //! `check` report every call to it as an unknown function.
 
 use std::collections::BTreeSet;
 
 use petal::env::Env;
 use petal::native_fn::NativeSignature;
-use petal::typecheck::globals::{GARDEN_NATIVES, PETAL_UI_NATIVE_PARAMS, PETAL_UI_NATIVES};
+use petal::typecheck::globals::{GARDEN_NATIVES, PETAL_UI_NATIVES};
 
 /// The names `register` adds to a bare `Env`, beyond the core builtins.
 fn added_by(register: impl FnOnce(&mut Env)) -> BTreeSet<String> {
@@ -38,6 +40,58 @@ fn petal_ui_list_matches_register_all() {
     );
 }
 
+/// The `ui` module declares exactly the natives `register_all` registers:
+/// every registered native has a `native fn`, and nothing is declared that no
+/// host provides.
+#[test]
+fn the_ui_interface_declares_exactly_what_register_all_registers() {
+    let registered = added_by(petal_ui::register_all);
+    let declared: BTreeSet<String> = petal_ui::interface().host_names().into_iter().collect();
+    let undeclared: Vec<_> = registered.difference(&declared).collect();
+    let unregistered: Vec<_> = declared.difference(&registered).collect();
+    assert!(
+        undeclared.is_empty() && unregistered.is_empty(),
+        "prelude/ui.ptl's native fn declarations are out of date.\n  \
+         registered but not declared: {undeclared:?}\n  declared but not registered: {unregistered:?}"
+    );
+}
+
+/// `Env::declare_natives` agrees: handed the module, a full petal-ui host is
+/// missing nothing, and a bare `Env` is missing all of it.
+#[test]
+fn declare_natives_reports_what_a_host_lacks() {
+    let mut env = Env::new();
+    petal_ui::register_all(&mut env);
+    assert_eq!(
+        env.declare_natives(petal_ui::prelude_source()).unwrap(),
+        Vec::<String>::new()
+    );
+    let mut bare = Env::new();
+    let mut missing = bare.declare_natives(petal_ui::prelude_source()).unwrap();
+    missing.sort();
+    assert_eq!(missing, petal_ui::interface().host_names());
+}
+
+/// A script that uses the prelude does not load into an `Env` that lacks the
+/// natives it reaches: the error comes before any line runs and names them.
+#[test]
+fn a_ui_script_does_not_load_without_the_natives() {
+    let mut env = Env::new();
+    petal_ui::register_prelude(&mut env);
+    let err = env
+        .load_program("print(\"ran\")\ndraw_rect(0, 0, 4, 4, 255, 0, 0)")
+        .unwrap_err();
+    assert!(
+        err.starts_with("module 'ui' needs native fns this host does not register: "),
+        "{err}"
+    );
+    assert!(err.contains(" more"), "{err}");
+    // Check-only compilation does not link.
+    env.set_check_only(true);
+    env.load_program("draw_rect(0, 0, 4, 4, 255, 0, 0)")
+        .expect("checks without the natives");
+}
+
 /// The panel stubs stand in for Garden's panel natives, so every one of them
 /// must be in Garden's list.
 #[test]
@@ -55,10 +109,10 @@ fn panel_stubs_are_in_the_garden_list() {
 // Parameter names (named arguments)
 // ---------------------------------------------------------------------------
 //
-// `PETAL_UI_NATIVE_PARAMS` is declared onto the natives as they register
-// (`petal_ui::params`), so the table and the registry cannot disagree about a
-// name. What can still go wrong is the table disagreeing with a native's
-// *body* — a parameter the native never reads, an optional one it requires —
+// The `ui` module's `native fn` declarations are given to the natives as they
+// register (`petal_ui::params`), so the module and the registry cannot
+// disagree about a name. What can still go wrong is a declaration disagreeing
+// with a native's *body* — a parameter the native never reads, an optional one it requires —
 // which is what these hold.
 
 /// The natives alone, without the `ui` prelude whose overloads shadow most of
@@ -71,23 +125,29 @@ fn natives_only() -> Env {
     env
 }
 
-fn signatures(specs: &[&str]) -> Vec<NativeSignature> {
-    specs
-        .iter()
-        .map(|s| NativeSignature::parse(s).expect("spec parses"))
-        .collect()
+/// Host native → the parameter lists `ui.ptl` declares for it, sorted.
+fn declared_signatures() -> Vec<(String, Vec<NativeSignature>)> {
+    let mut all: Vec<_> = petal_ui::interface()
+        .signatures_by_host()
+        .into_iter()
+        .collect();
+    all.sort_by(|a, b| a.0.cmp(&b.0));
+    all
 }
 
-/// Every petal-ui native has a row, and the registry holds exactly that row.
+/// Every petal-ui native is declared, and the registry holds exactly the
+/// declared parameter lists.
 #[test]
 fn every_petal_ui_native_declares_its_parameters() {
     let env = natives_only();
+    let declared = declared_signatures();
     for name in PETAL_UI_NATIVES {
-        let Some((_, specs)) = PETAL_UI_NATIVE_PARAMS.iter().find(|(n, _)| n == name) else {
-            panic!("PETAL_UI_NATIVE_PARAMS has no row for {name}");
+        let Some((_, sigs)) = declared.iter().find(|(n, _)| n == name) else {
+            panic!("prelude/ui.ptl has no native fn for {name}");
         };
-        let declared = env.native_signatures(name).expect("registered");
-        assert_eq!(declared, signatures(specs), "{name}");
+        assert!(!sigs.is_empty(), "{name} declares no parameter list");
+        let registered = env.native_signatures(name).expect("registered");
+        assert_eq!(registered, sigs.as_slice(), "{name}");
     }
 }
 
@@ -112,8 +172,9 @@ fn declared_signatures_agree_with_what_the_natives_read() {
     // These find their last argument (a width, an offset) by counting back
     // from the end, so a call one short reads the size as that too and runs.
     const COUNTS_BACK: &[&str] = &["text_wrap", "text_ellipsize", "text_index_at"];
-    for (name, specs) in PETAL_UI_NATIVE_PARAMS {
-        for sig in signatures(specs) {
+    for (name, sigs) in &declared_signatures() {
+        let name = name.as_str();
+        for sig in sigs {
             let params = sig.params();
             let call = |count: usize| {
                 let args: Vec<&str> = params[..count].iter().map(|p| sample(p)).collect();
@@ -124,7 +185,7 @@ fn declared_signatures_agree_with_what_the_natives_read() {
                 let (result, src) = call(count);
                 assert!(result.is_ok(), "`{src}` should run: {result:?}");
             }
-            if sig.required() > 0 && !COUNTS_BACK.contains(name) {
+            if sig.required() > 0 && !COUNTS_BACK.contains(&name) {
                 let (result, src) = call(sig.required() - 1);
                 let err = result.expect_err(&format!("`{src}` is one argument short"));
                 assert!(err.contains("out of range"), "`{src}`: {err}");

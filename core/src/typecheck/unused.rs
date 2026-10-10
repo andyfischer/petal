@@ -225,6 +225,7 @@ impl Walker {
             | StmtKind::ClassDecl { .. }
             | StmtKind::Break
             | StmtKind::Continue
+            | StmtKind::NativeFn(_)
             | StmtKind::Import(_) => {}
         }
     }

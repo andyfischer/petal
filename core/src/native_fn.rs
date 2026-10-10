@@ -240,6 +240,17 @@ pub struct NativeSignature {
 }
 
 impl NativeSignature {
+    /// A parameter list from its parts: the names in the order the native
+    /// reads its arguments, and how many of the leading ones are required.
+    /// What a `native fn` declaration builds
+    /// ([`crate::native_decl::NativeForm::signature`]); the parser has
+    /// already refused a repeated name or a required parameter after an
+    /// optional one.
+    pub fn new(params: Vec<String>, required: usize) -> NativeSignature {
+        let required = required.min(params.len());
+        NativeSignature { params, required }
+    }
+
     /// Parse a spec: parameter names separated by commas, a trailing `?` on
     /// each optional one. The empty spec is a native of no parameters.
     /// Refused: an empty or repeated name, a name that is not an identifier,
@@ -623,6 +634,14 @@ impl NativeFnTable {
         let sig = NativeSignature::parse(spec)?;
         self.entries[id.0 as usize].signatures.push(sig);
         Ok(())
+    }
+
+    /// Replace every parameter list of a native with `signatures` — what
+    /// applying a `native fn` declaration does
+    /// ([`Env::declare_natives`](crate::env::Env::declare_natives)), so
+    /// applying the same interface twice is harmless.
+    pub fn set_signatures(&mut self, id: NativeFnId, signatures: Vec<NativeSignature>) {
+        self.entries[id.0 as usize].signatures = signatures;
     }
 
     /// The parameter lists a native declares; empty when it declares none.

@@ -495,6 +495,14 @@ fn stmt_json(s: &Stmt) -> J {
                        "key": key.as_ref().map(expr_json), "is_var": is_var}),
             );
         }
+        StmtKind::NativeFn(decl) => {
+            return node(
+                "NativeFn",
+                s.span,
+                json!({"name": decl.name, "class": decl.class, "params": params_json(&decl.params),
+                       "rest": decl.rest, "ret": ty_json(decl.ret.as_ref()), "host": decl.host}),
+            );
+        }
         StmtKind::Import(decl) => {
             return node(
                 "Import",

@@ -979,6 +979,10 @@ pub(super) fn handle_check(
         dirs.push(libs);
     }
     let mut env = make_env(&dirs);
+    // A check, not a run: the script may be written for a host whose natives
+    // this process does not register. Its interface module declares them
+    // (`native fn`), which is all a check needs — so compile without linking.
+    env.set_check_only(true);
     // A petal-ui host imports its `ui` prelude implicitly, so a script calls
     // `button(...)` bare; check against the same module, or every widget call
     // would look like an unknown global. When this build cannot see the
@@ -1670,7 +1674,9 @@ fn compile_source(
     input: &SourceInput,
     include_dirs: &[PathBuf],
 ) -> crate::program::Program {
-    let env = make_env(include_dirs);
+    let mut env = make_env(include_dirs);
+    // Static tools read the compiled program and never run it.
+    env.set_check_only(true);
     let result = match source_origin(input) {
         Some(path) => env.compile_program_at(ProgramId(0), source, &path),
         None => env.compile_program(ProgramId(0), source),

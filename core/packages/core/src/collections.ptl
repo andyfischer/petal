@@ -1,0 +1,54 @@
+// Package `core` — Lists, records and strings (core/src/builtins/collections.rs), and the
+// higher-order functions the VM drives itself.
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn range(end: num) -> list
+pub native fn range(start: num, end: num, step?: num) -> list
+pub native fn len(collection) -> int
+pub native fn push(list, value)
+pub native fn append(list, value)
+pub native fn pop(list)
+pub native fn keys(record: record) -> list
+pub native fn values(record: record) -> list
+pub native fn contains(collection, needle) -> bool
+pub native fn sort(list, compare?) -> list
+pub native fn reverse(collection)
+pub native fn join(list: list, separator: string) -> string
+pub native fn split(string: string, separator: string) -> list
+pub native fn upper(string: string) -> string
+pub native fn lower(string: string) -> string
+pub native fn enumerate(list) -> list
+pub native fn zip(list_a, list_b) -> list
+pub native fn slice(collection, start, end?)
+pub native fn flat(list) -> list
+pub native fn includes(collection, needle) -> bool
+pub native fn f64_array(length) -> f64_array
+pub native fn set_at(array, index, value)
+pub native fn swap(array, i, j)
+pub native fn last(list)
+pub native fn drop_last(list)
+pub native fn remove(record, key)
+pub native fn chars(string: string) -> list
+pub native fn char_len(string: string) -> int
+pub native fn char_at(string: string, index: num) -> string
+pub native fn char_slice(string, start, end?) -> string
+pub native fn index_of(collection, needle) -> int
+pub native fn prepend(list, value) -> list
+pub native fn concat(a, b)
+pub native fn repeat(string: string, count: num) -> string
+pub native fn starts_with(string: string, prefix: string) -> bool
+pub native fn ends_with(string: string, suffix: string) -> bool
+pub native fn trim(string: string) -> string
+pub native fn byte_len(string: string) -> int
+pub native fn byte_slice(string: string, start: num, end?: num) -> string
+
+// Higher-order: these call back into script code, so the VM runs them itself.
+pub native fn map(list, f)
+pub native fn filter(list, pred)
+pub native fn reduce(list, initial, f)
+pub native fn forEach(list, f)
+pub native fn sort_by(list: list, key: function, descending?) -> list

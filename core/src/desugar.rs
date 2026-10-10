@@ -279,6 +279,7 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
         | StmtKind::ClassDecl { .. }
         | StmtKind::Break
         | StmtKind::Continue
+        | StmtKind::NativeFn(_)
         | StmtKind::Import(_) => {}
     }
 }

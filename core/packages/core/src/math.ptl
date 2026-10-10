@@ -1,0 +1,31 @@
+// Package `core` — Arithmetic, rounding, trigonometry and the numeric casts (core/src/builtins/math.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn abs(x: num)
+pub native fn sqrt(x: num)
+pub native fn floor(x: num)
+pub native fn ceil(x: num)
+pub native fn float(value) -> float
+pub native fn int(value) -> int
+pub native fn random() -> float
+pub native fn random(max: num) -> float
+pub native fn random(min: num, max: num) -> float
+pub native fn min(a, b)
+pub native fn max(a, b)
+pub native fn round(x: num, places?: num)
+pub native fn sin(x: num)
+pub native fn cos(x: num)
+pub native fn tan(x: num)
+pub native fn atan2(y: num, x: num) -> float
+pub native fn pi() -> float
+pub native fn parse_float(string)
+pub native fn parse_int(string)
+pub native fn safe_div(a, b)
+pub native fn asin(x: num)
+pub native fn acos(x: num)
+pub native fn atan(x: num)
+pub native fn hypot(x: num, y: num) -> float

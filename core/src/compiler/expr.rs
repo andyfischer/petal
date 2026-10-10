@@ -229,13 +229,22 @@ impl Compiler {
                     // A bare identifier that currently resolves in scope to
                     // exactly the builtin's phantom term (i.e. not shadowed by a
                     // later user binding) compiles to a static BuiltinCall.
+                    //
+                    // "The builtin" is whatever host native the name is bound
+                    // to: a registered native's own name, or the name a
+                    // `native fn` declaration gave one (`_native_rect` for
+                    // `draw_rect`) — the call names the *host* native either
+                    // way. A name nothing binds compiles the same way and is
+                    // looked up when the line runs ("Unknown builtin"), which
+                    // `petal check` reports first (`typecheck::globals`).
                     let builtin_name: Option<String> = match &function.kind {
-                        ExprKind::Ident(name)
-                            if self.builtin_phantoms.get(name)
-                                == self.scope_lookup(name).as_ref() =>
-                        {
-                            Some(name.clone())
-                        }
+                        ExprKind::Ident(name) => match self.scope_lookup(name) {
+                            Some(tid) => {
+                                self.note_native_use(tid);
+                                self.native_terms.get(&tid).cloned()
+                            }
+                            None => Some(name.clone()),
+                        },
                         _ => None,
                     };
 
@@ -449,6 +458,9 @@ impl Compiler {
     }
 
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
+        if let Some(tid) = self.scope_lookup(name) {
+            self.note_native_use(tid);
+        }
         if let Some(local_tid) = self.resolve_local_term(name) {
             // A `var` binds the *cell*, so reading the name dereferences it.
             // This is the only place reads of a var are turned into `CellRead`,

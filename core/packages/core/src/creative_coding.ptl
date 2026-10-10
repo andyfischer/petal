@@ -1,0 +1,25 @@
+// Package `core` — The creative-coding math set: interpolation, ranges, shaping, random picks
+// (core/src/builtins/creative_coding.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn clamp(value: num, lo: num, hi: num)
+pub native fn lerp(a, b, t: num)
+pub native fn map_range(value: num, in_lo: num, in_hi: num, out_lo: num, out_hi: num) -> float
+pub native fn distance(x1, y1, x2, y2) -> float
+pub native fn distance(v1, v2) -> float
+pub native fn mag(x, y, z?) -> float
+pub native fn mag(v) -> float
+pub native fn pow(base: num, exp: num) -> float
+pub native fn sign(x: num)
+pub native fn fract(x: num) -> float
+pub native fn smoothstep(edge0: num, edge1: num, x: num) -> float
+pub native fn radians(degrees: num) -> float
+pub native fn degrees(radians: num) -> float
+pub native fn exp(x: num) -> float
+pub native fn log(x) -> float
+pub native fn random_int(lo: num, hi: num) -> int
+pub native fn choose(list)

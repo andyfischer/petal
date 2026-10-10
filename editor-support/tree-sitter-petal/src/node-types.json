@@ -699,6 +699,10 @@
           "named": true
         },
         {
+          "type": "native_function_declaration",
+          "named": true
+        },
+        {
           "type": "nil",
           "named": true
         },
@@ -2301,6 +2305,11 @@
     }
   },
   {
+    "type": "keyword_name",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "lambda",
     "named": true,
     "fields": {
@@ -3076,6 +3085,111 @@
     }
   },
   {
+    "type": "native_function_declaration",
+    "named": true,
+    "fields": {
+      "class": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "host": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "parameters": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "native_parameter_list",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "return_type",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "native_parameter",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "keyword_name",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_annotation",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "native_parameter_list",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "native_parameter",
+          "named": true
+        },
+        {
+          "type": "rest_parameter",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "nil",
     "named": true,
     "fields": {}
@@ -3695,6 +3809,22 @@
     }
   },
   {
+    "type": "rest_parameter",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "rest_pattern",
     "named": true,
     "fields": {},
@@ -4159,6 +4289,10 @@
         },
         {
           "type": "match_expression",
+          "named": true
+        },
+        {
+          "type": "native_function_declaration",
           "named": true
         },
         {
@@ -5100,6 +5234,10 @@
   },
   {
     "type": "match",
+    "named": false
+  },
+  {
+    "type": "native",
     "named": false
   },
   {

@@ -1778,6 +1778,9 @@ mod tests {
     fn an_off_table_glyph_measures_at_the_hosts_shaped_width() {
         let mut env = Env::new();
         register_draw(&mut env);
+        // The prelude's own functions use the input natives; a script only
+        // loads into an `Env` that registers what it reaches.
+        crate::input::register_input(&mut env);
         crate::register_prelude(&mut env);
         // Named face: ⌘ is 1.0 × 20; `x` and the unanswered `—` stay 0.5 × 20.
         let v = with_test_fonts(&mut env, r#"text_advance("x⌘—", {size: 20, font: "Helvetica"})"#);
@@ -1806,6 +1809,9 @@ mod tests {
     fn font_returns_a_style_record_naming_the_canonical_family() {
         let mut env = Env::new();
         register_draw(&mut env);
+        // The prelude's own functions use the input natives; a script only
+        // loads into an `Env` that registers what it reaches.
+        crate::input::register_input(&mut env);
         crate::register_prelude(&mut env);
         // However it was spelled, the object carries the host's spelling — the
         // one the rasterizer will match.
@@ -1820,6 +1826,9 @@ mod tests {
     fn a_font_this_host_cannot_draw_keeps_its_name() {
         let mut env = Env::new();
         register_draw(&mut env);
+        // The prelude's own functions use the input natives; a script only
+        // loads into an `Env` that registers what it reaches.
+        crate::input::register_input(&mut env);
         crate::register_prelude(&mut env);
         let v = with_test_fonts(&mut env, r#"font("Papyrus").font"#);
         let Value::String(id) = v else {
@@ -1834,6 +1843,9 @@ mod tests {
     fn a_font_object_carries_size_and_decorations_into_measuring_and_drawing() {
         let mut env = Env::new();
         register_draw(&mut env);
+        // The prelude's own functions use the input natives; a script only
+        // loads into an `Env` that registers what it reaches.
+        crate::input::register_input(&mut env);
         crate::register_prelude(&mut env);
 
         // Regular: 4 chars × 20 × 0.5 = 40. Bold is a real, wider cut in this
@@ -1876,6 +1888,9 @@ mod tests {
     fn the_decorations_do_not_mutate_the_font_they_are_given() {
         let mut env = Env::new();
         register_draw(&mut env);
+        // The prelude's own functions use the input natives; a script only
+        // loads into an `Env` that registers what it reaches.
+        crate::input::register_input(&mut env);
         crate::register_prelude(&mut env);
         let v = with_test_fonts(
             &mut env,

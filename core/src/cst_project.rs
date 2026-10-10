@@ -332,6 +332,77 @@ impl Projector {
                     body,
                 }
             }
+            SyntaxKind::NativeFnDecl => {
+                // Direct identifier tokens: the contextual `native`, then the
+                // name (two around a `.` for a method).
+                let idents: Vec<String> = direct_tokens(node)
+                    .iter()
+                    .filter_map(ident_value)
+                    .skip(1)
+                    .collect();
+                let (class, name) = match idents.as_slice() {
+                    [only] => (None, only.clone()),
+                    [class, method, ..] => (
+                        Some(class.clone()),
+                        crate::classes::qualified_method_name(class, method),
+                    ),
+                    [] => return Err("native fn declaration missing its name".to_string()),
+                };
+                let list = child_nodes(node)
+                    .into_iter()
+                    .find(|n| n.kind() == SyntaxKind::ParamList)
+                    .ok_or("native fn declaration missing its ParamList child")?;
+                // A parameter name is a member name (a keyword works: `end`),
+                // and a trailing `?` on it marks the parameter optional.
+                let mut params: Vec<Param> = Vec::new();
+                let mut rest = None;
+                for el in list.children() {
+                    match el {
+                        SyntaxElement::Token(t) => {
+                            if let Some(written) = field_name_value(&t) {
+                                let mut param = Param::plain(written);
+                                if let Some(base) = param.name.strip_suffix('?')
+                                    && !base.is_empty()
+                                {
+                                    param.name = base.to_string();
+                                    param.optional = true;
+                                }
+                                params.push(param);
+                            }
+                        }
+                        SyntaxElement::Node(n) if n.kind() == SyntaxKind::TypeAnnotation => {
+                            if let Some(last) = params.last_mut() {
+                                last.ty = self.type_from_annotation_node(&n);
+                            }
+                        }
+                        SyntaxElement::Node(n) if n.kind() == SyntaxKind::RestParam => {
+                            rest = direct_tokens(&n).iter().find_map(ident_value);
+                        }
+                        SyntaxElement::Node(_) => {}
+                    }
+                }
+                let ret = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::ReturnType)
+                    .and_then(|n| self.type_from_annotation_node(n));
+                let host = child_nodes(node)
+                    .iter()
+                    .find(|n| n.kind() == SyntaxKind::NativeBinding)
+                    .and_then(|n| {
+                        direct_tokens(n).iter().find_map(|t| match t.token() {
+                            Some(Token::String(s)) => Some(s.clone()),
+                            _ => None,
+                        })
+                    });
+                StmtKind::NativeFn(crate::ast::NativeFnDecl {
+                    name,
+                    class,
+                    params,
+                    rest,
+                    ret,
+                    host,
+                })
+            }
             SyntaxKind::EnumDecl => self.enum_decl(node)?,
             SyntaxKind::ClassDecl => {
                 // `class` is contextual, so it is an `Ident` token like the

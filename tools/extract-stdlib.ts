@@ -28,22 +28,22 @@
 //      to sketches.
 //
 // For each registered function we read:
-//   • parameters — the names the native *declares* for named arguments:
-//                  `BUILTIN_PARAMS` (core/src/builtins/params.rs) for the core
-//                  builtins, `PETAL_UI_NATIVE_PARAMS`
-//                  (core/src/typecheck/globals.rs) for the canvas ones. These
-//                  are call syntax, not just documentation — the registry
-//                  binds `clamp(value: v, lo: 0, hi: 1)` against them — so
-//                  they are the source of truth for every name in the
-//                  manifest. A builtin that declares several call forms
+//   • parameters — the names the native *declares* for named arguments, in
+//                  its `native fn` declaration: the bundled `core` package
+//                  (core/packages/core/src/*.ptl) for the core builtins, the
+//                  `ui` module (core-libs/petal-ui/prelude/ui.ptl) for the
+//                  canvas ones. These are call syntax, not just documentation
+//                  — the registry binds `clamp(value: v, lo: 0, hi: 1)`
+//                  against them — so they are the source of truth for every
+//                  name in the manifest. A builtin that declares several call forms
 //                  (`random`, `distance`) lists them all in `signatures`.
 //   • arity      — from `require_args(state, N, "name")` in the implementation
 //   • types      — from `let <name> = state.get_<type>(<index>)` bindings in
 //                  the implementation, matched onto the declared parameters
 //   • source     — file + line, so docs can point back at the implementation
 //
-// A native with no declaration (the variadic `print` / `format`, the `__`
-// internals) refuses named arguments at runtime; for those the names fall back
+// A native declared with a rest parameter (the variadic `print` / `format`, the
+// `__` internals) refuses named arguments at runtime; for those the names fall back
 // to what the body's bindings suggest, and `signatures` is empty.
 //
 // Functions that dispatch on `arg_count()` (overloaded arities like `noise`,
@@ -55,14 +55,14 @@
 //   tsx tools/extract-stdlib.ts --stdout   # print JSON to stdout
 //   tsx tools/extract-stdlib.ts -o path    # write to an explicit path
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const coreModRs = join(repoRoot, "core/src/builtins/mod.rs");
-const coreParamsRs = join(repoRoot, "core/src/builtins/params.rs");
-const hostParamsRs = join(repoRoot, "core/src/typecheck/globals.rs");
+const corePackageSrc = join(repoRoot, "core/packages/core/src");
+const uiPreludePtl = join(repoRoot, "core-libs/petal-ui/prelude/ui.ptl");
 const petalUiDrawRs = join(repoRoot, "core-libs/petal-ui/src/draw.rs");
 const petalUiTextRs = join(repoRoot, "core-libs/petal-ui/src/text.rs");
 const petalUiInputRs = join(repoRoot, "core-libs/petal-ui/src/input.rs");
@@ -261,43 +261,50 @@ function parseFnBody(body: string): {
 type DeclaredForm = Array<{ name: string; optional: boolean }>;
 
 /**
- * Parse a `pub const <NAME>: &[(&str, &[&str])] = &[ ("fn", &["a, b?"]), … ];`
- * table: each entry is a native's name and one spec per call form, a spec being
- * comma-separated parameter names with `?` on a trailing optional one (the
- * format `NativeSignature::parse` reads).
+ * Parse the `native fn` declarations of a Petal source file: each is one call
+ * form of the host native it binds — the native of the same name, or the one
+ * a `= "host_name"` suffix names. A parameter written `name?` is optional; a
+ * `: type` annotation is dropped (the manifest reads types off the Rust
+ * bodies). A form with a `...rest` parameter declares no names to bind, so it
+ * is left out, which is what makes the native refuse named arguments.
  */
-function parseParamTable(source: string, constName: string): Map<string, DeclaredForm[]> {
-  const start = source.indexOf(`pub const ${constName}:`);
-  if (start < 0) throw new Error(`could not find ${constName}`);
-  const end = source.indexOf("\n];", start);
-  if (end < 0) throw new Error(`unterminated ${constName}`);
-  const body = source.slice(source.indexOf("= &[", start) + 4, end);
+function parseNativeDecls(source: string): Map<string, DeclaredForm[]> {
   const out = new Map<string, DeclaredForm[]>();
-  const entryRe = /\(\s*"([^"]+)"\s*,\s*&\[([^\]]*)\]\s*,?\s*\)/g;
-  for (let m; (m = entryRe.exec(body)); ) {
-    const forms: DeclaredForm[] = [];
-    for (const spec of m[2].matchAll(/"([^"]*)"/g)) {
-      forms.push(
-        spec[1]
-          .split(",")
-          .map((p) => p.trim())
-          .filter((p) => p.length > 0)
-          .map((p) => ({ name: p.replace(/\?$/, ""), optional: p.endsWith("?") })),
-      );
+  const declRe =
+    /^(?:pub\s+)?native\s+fn\s+([A-Za-z_][\w.?]*)\s*\(([^)]*)\)(?:\s*->\s*\w+)?(?:\s*=\s*"([^"]+)")?\s*$/gm;
+  for (let m; (m = declRe.exec(source)); ) {
+    const host = m[3] ?? m[1];
+    const parts = m[2]
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (parts.some((p) => p.startsWith("..."))) {
+      if (!out.has(host)) out.set(host, []);
+      continue;
     }
-    out.set(m[1], forms);
+    const form: DeclaredForm = parts.map((p) => {
+      const name = p.split(":")[0].trim();
+      return { name: name.replace(/\?$/, ""), optional: name.endsWith("?") };
+    });
+    out.set(host, [...(out.get(host) ?? []), form]);
   }
+  // A native every form of which is variadic declares nothing to bind.
+  for (const [host, forms] of out) if (forms.length === 0) out.delete(host);
   return out;
 }
 
 let declaredParamsCache: Map<string, DeclaredForm[]> | null = null;
-/** The declared call forms of every native, core and canvas, by name. */
+/** The declared call forms of every native, core and canvas, by host name. */
 function declaredParams(): Map<string, DeclaredForm[]> {
   if (!declaredParamsCache) {
-    declaredParamsCache = new Map([
-      ...parseParamTable(readFileSync(coreParamsRs, "utf8"), "BUILTIN_PARAMS"),
-      ...parseParamTable(readFileSync(hostParamsRs, "utf8"), "PETAL_UI_NATIVE_PARAMS"),
-    ]);
+    const sources = readdirSync(corePackageSrc)
+      .filter((f) => f.endsWith(".ptl"))
+      .sort()
+      .map((f) => join(corePackageSrc, f));
+    sources.push(uiPreludePtl);
+    declaredParamsCache = new Map(
+      sources.flatMap((path) => [...parseNativeDecls(readFileSync(path, "utf8"))]),
+    );
   }
   return declaredParamsCache;
 }

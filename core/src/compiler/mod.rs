@@ -14,6 +14,7 @@
 mod capture_lag;
 mod expr;
 mod function;
+mod native;
 mod phi;
 mod state_ids;
 mod stmt;
@@ -310,6 +311,33 @@ pub struct Compiler {
     // `compile()`. Used at call sites to detect a bare, unshadowed builtin call
     // and compile it to a static `BuiltinCall` instead of a dynamic `Call`.
     builtin_phantoms: HashMap<String, TermId>,
+    /// Every term that *is* a host native — each registered native's phantom,
+    /// and the phantom a `native fn` declaration made for a native this
+    /// `Env` does not register — with the name the host knows it by. A bare
+    /// call whose callee resolves to one of these compiles to a static
+    /// `BuiltinCall` of that host name, whatever the script calls it
+    /// (`native fn _native_rect(...) = "draw_rect"`).
+    native_terms: HashMap<TermId, String>,
+    /// Host name → the phantom of a declared native the table does not
+    /// register (a check-only compile of a host's interface module).
+    declared_native_terms: HashMap<String, TermId>,
+    /// What `native fn` declarations say, by declared name, accumulated
+    /// across the modules compiled so far (like `fn_signatures`). The bundled
+    /// `core` package's are consulted behind these. See [`crate::native_decl`].
+    native_decls: crate::native_decl::NativeDecls,
+    /// Host name → the parameter lists declarations give it, for putting a
+    /// named call to a native the table does not register in positional
+    /// order.
+    declared_native_sigs: HashMap<String, Vec<crate::native_fn::NativeSignature>>,
+    /// Every native a module of this program declares (the bundled `core`
+    /// package's excepted). The ones the program's code goes on to refer to
+    /// (`used_native_terms`) are what the `Env` must have registered before
+    /// the program runs.
+    native_links: Vec<crate::native_decl::NativeLink>,
+    /// The native terms some call or read in the program resolved to. Only
+    /// tracked once a module has declared a native, which is the only way a
+    /// native the `Env` lacks can be named at all.
+    used_native_terms: HashSet<TermId>,
     /// Every enum name declared by a module compiled so far, for type
     /// annotations (`fn f() -> Shape`). See `typecheck::CheckContext`.
     enum_type_names: HashSet<String>,
@@ -406,6 +434,12 @@ impl Compiler {
             call_site_ordinals: HashMap::new(),
             pending_lambda_name: None,
             builtin_phantoms: HashMap::new(),
+            native_terms: HashMap::new(),
+            declared_native_terms: HashMap::new(),
+            native_decls: crate::native_decl::NativeDecls::new(),
+            declared_native_sigs: HashMap::new(),
+            native_links: Vec::new(),
+            used_native_terms: HashSet::new(),
             enum_type_names: HashSet::new(),
             current_module: None,
             error_file: None,
@@ -490,10 +524,17 @@ impl Compiler {
             let ConstantValue::String(name) = self.constants.get(name_cid) else {
                 continue;
             };
-            let Some(nid) = native_fns.lookup_name(name) else {
-                continue;
+            // The registered native's parameter lists (an `Env` declares
+            // them from the same `native fn` declarations); for a native this
+            // `Env` does not register — a check-only compile — the lists the
+            // declaration itself gives.
+            let sigs = match native_fns.lookup_name(name) {
+                Some(nid) => native_fns.signatures(nid),
+                None => match self.declared_native_sigs.get(name) {
+                    Some(sigs) => sigs.as_slice(),
+                    None => continue,
+                },
             };
-            let sigs = native_fns.signatures(nid);
             if sigs.is_empty() {
                 continue;
             }
@@ -545,6 +586,7 @@ impl Compiler {
                 .to_string();
             let tid = self.emit_phantom_term(name.clone());
             self.builtin_phantoms.insert(name.clone(), tid);
+            self.native_terms.insert(tid, name.clone());
             self.scope_bind(name, tid);
         }
 
@@ -603,6 +645,19 @@ impl Compiler {
             self.source_map.files = files;
         }
 
+        // A declared native the program never refers to needs no host: only
+        // the ones some call or read reached are linked.
+        let native_links: Vec<crate::native_decl::NativeLink> =
+            std::mem::take(&mut self.native_links)
+                .into_iter()
+                .filter(|link| {
+                    self.builtin_phantoms
+                        .get(&link.host)
+                        .or_else(|| self.declared_native_terms.get(&link.host))
+                        .is_some_and(|tid| self.used_native_terms.contains(tid))
+                })
+                .collect();
+
         let inferences = std::mem::take(&mut self.inferences);
         let classes = std::mem::replace(&mut self.classes, crate::classes::ClassTable::new());
         Ok((Program {
@@ -626,6 +681,7 @@ impl Compiler {
                 .map(|(_, def)| def.name.clone())
                 .collect(),
             introspect: Default::default(),
+            native_links,
         }, inferences, classes))
     }
 
@@ -645,6 +701,10 @@ impl Compiler {
         // prescan and compilation only ever see the desugared form.
         let mut stmts = module.stmts.to_vec();
         crate::desugar::desugar(&mut stmts);
+        // A `native fn` sharing its name with Petal `fn`s becomes ordinary
+        // overloads that forward to it, so the overload machinery below sees
+        // nothing new.
+        let native_errors = native::lower_native_overloads(&mut stmts);
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
@@ -661,6 +721,13 @@ impl Compiler {
         self.own_fn_cells.clear();
         self.reexported_names.clear();
         self.reexported_aliases.clear();
+        for diag in native_errors
+            .into_iter()
+            .chain(native::misplaced_native_decls(&stmts))
+            .chain(native::conflicting_native_decls(&stmts))
+        {
+            self.errors.push((diag, self.error_file.clone()));
+        }
 
         if !is_entry {
             self.push_scope(false); // module scope frame
@@ -695,6 +762,7 @@ impl Compiler {
                 collect_inferences: self.collect_inferences,
                 param_reqs: Some(&self.fn_param_reqs),
                 enum_names: Some(&self.enum_type_names),
+                natives: Some(&self.native_decls),
             },
         );
         self.warnings.extend(diags);
@@ -1120,6 +1188,7 @@ impl Compiler {
         for stmt in stmts {
             match &stmt.kind {
                 StmtKind::FnDecl { name, .. }
+                | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. })
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
                 | StmtKind::ClassDecl { name, .. } => {
@@ -1149,6 +1218,7 @@ impl Compiler {
             }
             match &stmt.kind {
                 StmtKind::FnDecl { name, .. }
+                | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. })
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
                 // A class exports *one* name covering both of its positions:
@@ -1459,7 +1529,9 @@ impl Compiler {
         let mut groups: Vec<String> = Vec::new();
         let mut seen: HashMap<String, (bool, bool)> = HashMap::new();
         for stmt in stmts {
-            if let StmtKind::FnDecl { name, .. } = &stmt.kind {
+            if let StmtKind::FnDecl { name, .. }
+            | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. }) = &stmt.kind
+            {
                 let entry = seen.entry(name.clone()).or_insert_with(|| {
                     groups.push(name.clone());
                     (false, false)
@@ -1550,6 +1622,73 @@ impl Compiler {
             .collect()
     }
 
+    /// Take this module's `native fn` declarations into the compile-wide
+    /// tables: what the checker reads, the parameter lists a named call binds
+    /// against, and the natives the program needs registered to run.
+    fn record_native_decls(&mut self, module: &LoadedModule, stmts: &[Stmt]) {
+        let own = crate::native_decl::NativeDecls::collect(stmts);
+        if own.is_empty() {
+            return;
+        }
+        let module_name = module
+            .name
+            .clone()
+            .unwrap_or_else(|| module.display_name.clone());
+        // In declaration order, one link per host native.
+        let mut linked: HashSet<&str> = HashSet::new();
+        for stmt in stmts {
+            let StmtKind::NativeFn(decl) = &stmt.kind else {
+                continue;
+            };
+            let Some(info) = own.get(&decl.name) else {
+                continue;
+            };
+            if !linked.insert(info.host.as_str()) {
+                continue;
+            }
+            let signatures = info.signatures();
+            self.declared_native_sigs
+                .insert(info.host.clone(), signatures.clone());
+            self.native_links.push(crate::native_decl::NativeLink {
+                host: info.host.clone(),
+                module: module_name.clone(),
+                signatures,
+            });
+        }
+        self.native_decls.absorb(&own);
+    }
+
+    /// Record that the program refers to the native term `tid` (a call, a
+    /// read, a capture): see `used_native_terms`.
+    pub(super) fn note_native_use(&mut self, tid: TermId) {
+        if !self.native_links.is_empty() && self.native_terms.contains_key(&tid) {
+            self.used_native_terms.insert(tid);
+        }
+    }
+
+    /// Bind the name a `native fn` declares to the host native's term: the
+    /// phantom the native already has when this `Env` registers it, else a
+    /// phantom made here (named after the host native, so a run under an
+    /// `Env` that *does* register it seeds the value by name, the way every
+    /// native's is — see `Vm::push_root_frame`).
+    fn bind_native_decl(&mut self, decl: &crate::ast::NativeFnDecl) {
+        let host = decl.host_name();
+        let tid = match self
+            .builtin_phantoms
+            .get(host)
+            .or_else(|| self.declared_native_terms.get(host))
+        {
+            Some(&tid) => tid,
+            None => {
+                let tid = self.emit_phantom_term(host.to_string());
+                self.declared_native_terms.insert(host.to_string(), tid);
+                self.native_terms.insert(tid, host.to_string());
+                tid
+            }
+        };
+        self.scope_bind(decl.name.clone(), tid);
+    }
+
     fn prescan_declarations(&mut self, module: &LoadedModule, stmts: &[Stmt]) {
         // Scope first: `collect_classes` resolves `fn Circle.diameter(...)`
         // against what this file can see, so a method on another module's
@@ -1565,8 +1704,16 @@ impl Compiler {
         // What un-annotated parameters must be, read off the bodies. Computed
         // before this module's signatures join the map, so "declared by some
         // other module" means exactly that.
+        // This module's `native fn` declarations join the compile-wide set
+        // first: they are where a native's argument slots come from, and a
+        // later module's declarations of a name stand in for an earlier one's.
+        self.record_native_decls(module, stmts);
         let other_fns: HashSet<&str> = self.fn_signatures.keys().map(|(n, _)| n.as_str()).collect();
-        let reqs = crate::typecheck::param_reqs::collect(stmts, &|n| other_fns.contains(n));
+        let reqs = crate::typecheck::param_reqs::collect(
+            stmts,
+            &|n| other_fns.contains(n),
+            &self.native_decls,
+        );
         // This module's declarations replace any earlier module's of the same
         // `(name, arity)` — including one with no requirements, which must
         // not inherit the earlier one's.
@@ -1691,6 +1838,10 @@ impl Compiler {
                         self.scope_bind(name.clone(), tid);
                     }
                 }
+                // A native declaration is file-wide like a class: the name
+                // is bound here, ahead of every statement, to the native's
+                // term. Nothing is emitted for a native the `Env` registers.
+                StmtKind::NativeFn(decl) => self.bind_native_decl(decl),
                 StmtKind::EnumDecl { variants, .. } => {
                     for variant in variants {
                         self.enum_variants

@@ -40,7 +40,7 @@ use crate::ast::{
 use crate::desugar::as_param_default;
 use crate::types::Type;
 
-use super::builtin_types::{ArgSlot, builtin_param_slots};
+use super::builtin_types::{ArgSlot, native_param_slots};
 
 /// A requirement a function's body imposes on one parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,7 +94,17 @@ pub type ParamReqs = HashMap<(String, usize), Vec<Option<ParamReq>>>;
 /// declares: such a name may reach this module through an import (the ui
 /// prelude's `draw_rect` does, implicitly), so a call to it is not a call to
 /// the native of that name.
-pub fn collect(stmts: &[Stmt], imported_fn: &dyn Fn(&str) -> bool) -> ParamReqs {
+///
+/// `natives` is what earlier modules declared with `native fn`
+/// ([`crate::native_decl`]); this module's own declarations and the bundled
+/// `core` package's are consulted too. They are where a native's argument
+/// slots come from.
+pub fn collect(
+    stmts: &[Stmt],
+    imported_fn: &dyn Fn(&str) -> bool,
+    natives: &crate::native_decl::NativeDecls,
+) -> ParamReqs {
+    let own_natives = crate::native_decl::NativeDecls::collect(stmts);
     // Top-level functions by name: a call to one of these names means the
     // module's own function, never a native.
     let fn_names: HashSet<&str> = stmts
@@ -197,6 +207,8 @@ pub fn collect(stmts: &[Stmt], imported_fn: &dyn Fn(&str) -> bool) -> ParamReqs 
                 top_values: &top_values,
                 imported_fn,
                 reqs: &reqs,
+                natives,
+                own_natives: &own_natives,
             };
             let found = infer_one(params, body, &ctx);
             if found.iter().all(Option::is_none) {
@@ -221,6 +233,8 @@ struct Ctx<'a> {
     top_values: &'a HashSet<&'a str>,
     imported_fn: &'a dyn Fn(&str) -> bool,
     reqs: &'a ParamReqs,
+    natives: &'a crate::native_decl::NativeDecls,
+    own_natives: &'a crate::native_decl::NativeDecls,
 }
 
 /// The requirements one function body imposes on its parameters.
@@ -390,7 +404,11 @@ impl Walker<'_> {
             }
             None => callee,
         };
-        let slots = builtin_param_slots(native, arity)?;
+        let decl = crate::native_decl::lookup(native, &[self.ctx.own_natives, self.ctx.natives])?;
+        if !decl.accepts_count(arity) {
+            return None;
+        }
+        let slots = native_param_slots(decl, arity);
         Some(
             slots
                 .iter()
@@ -431,6 +449,7 @@ impl Walker<'_> {
             | StmtKind::Return(_)
             | StmtKind::Break
             | StmtKind::Continue
+            | StmtKind::NativeFn(_)
             | StmtKind::Import(_) => {}
         }
     }
@@ -531,7 +550,7 @@ mod tests {
     fn reqs_with(src: &str, imported: &dyn Fn(&str) -> bool) -> ParamReqs {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
-        collect(&stmts, imported)
+        collect(&stmts, imported, &crate::native_decl::NativeDecls::new())
     }
 
     fn get(r: &ParamReqs, name: &str, arity: usize) -> Option<Vec<Option<ParamReq>>> {
@@ -555,7 +574,7 @@ mod tests {
     fn a_default_value_is_not_a_rebinding() {
         // The default is lowered to an assignment at the head of the body; a
         // passed argument never runs it, so the parameter stays tracked.
-        let src = "let _native_rect = draw_rect\n\
+        let src = "native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = \"draw_rect\"\n\
                    fn box(rect, c, a = 255)\n  \
                    _native_rect(rect.x, rect.y, rect.w, rect.h, c.r, c.g, c.b, a)\nend";
         assert_eq!(
@@ -571,9 +590,12 @@ mod tests {
         assert_eq!(get(&r, "f", 2), Some(vec![field("r"), None]));
     }
 
+    /// A native declared under a private name (`= "draw_rect"`) carries the
+    /// slots its declaration gives, which is how a prelude's overloads learn
+    /// what their parameters must be.
     #[test]
-    fn alias_of_a_native_carries_its_slots() {
-        let src = "let _native_rect = draw_rect\n\
+    fn a_declared_native_carries_its_slots() {
+        let src = "native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = \"draw_rect\"\n\
                    fn draw_rect(x, y, w, h, c)\n  _native_rect(x, y, w, h, c.r, c.g, c.b)\nend";
         let r = reqs_of(src);
         let n = Some(ParamReq::Num);
@@ -581,6 +603,17 @@ mod tests {
             get(&r, "draw_rect", 5),
             Some(vec![n.clone(), n.clone(), n.clone(), n, field("r")])
         );
+        // A count no form of the native takes imposes nothing.
+        let src = "native fn two(a: num, b: num)\nfn f(x)\n  two(x)\nend";
+        assert_eq!(get(&reqs_of(src), "f", 1), None);
+    }
+
+    /// A module-level alias of a native (`let root = sqrt`) carries the
+    /// native's slots too.
+    #[test]
+    fn alias_of_a_native_carries_its_slots() {
+        let r = reqs_of("let _root = sqrt\nfn f(x, y)\n  _root(x) + y.z\nend");
+        assert_eq!(get(&r, "f", 2), Some(vec![Some(ParamReq::Num), field("z")]));
     }
 
     /// An alias written after the module's own declaration of that name

@@ -70,6 +70,10 @@ pub enum SyntaxKind {
     SetStmt,
     ExprStmt,
     FnDecl,
+    /// `native fn name(…) -> type = "host"` — a host-implemented function's
+    /// declaration: a `ParamList`, an optional `ReturnType` and an optional
+    /// `NativeBinding`, with no body.
+    NativeFnDecl,
     EnumDecl,
     /// `class Name … end` — a named record type declaration.
     ClassDecl,
@@ -121,6 +125,10 @@ pub enum SyntaxKind {
     /// An optional `-> type` return-type annotation on a named `fn`
     /// declaration. Wraps the `->` token and the type-name identifier.
     ReturnType,
+    /// The `...name` rest parameter of a [`SyntaxKind::NativeFnDecl`].
+    RestParam,
+    /// The `= "host_name"` suffix of a [`SyntaxKind::NativeFnDecl`].
+    NativeBinding,
     /// One `when pattern [if guard] -> body` arm of a `match`.
     MatchArm,
     /// A pattern in a `match` arm.

@@ -1,0 +1,201 @@
+//! Tests holding the bundled `core` package (`core/packages/core`) to the
+//! natives [`super::register_builtins`] registers.
+//!
+//! The package is where each builtin's parameter names, arity, parameter
+//! types and result type are written (`native fn …`); the natives read their
+//! arguments by index and know none of it. These tests are what keeps the
+//! two from drifting: every registered native is declared exactly once,
+//! nothing is declared that is not registered, and every declared form is one
+//! the native really takes.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::env::Env;
+use crate::native_decl::{NativeDecl, core_decls};
+use crate::native_fn::NativeFnTable;
+
+/// The core table alone: what `register_builtins` registers, no host.
+fn core_table() -> NativeFnTable {
+    let mut table = NativeFnTable::new();
+    super::register_builtins(&mut table);
+    table
+}
+
+fn registered_names() -> BTreeSet<String> {
+    let table = core_table();
+    (0..table.count())
+        .map(|i| table.get_name(crate::native_fn::NativeFnId(i as u32)).to_string())
+        .collect()
+}
+
+/// Every core-registered native has exactly one declaration in the `core`
+/// package, and the package declares nothing else.
+#[test]
+fn every_core_native_is_declared_exactly_once_and_vice_versa() {
+    let registered = registered_names();
+    // Host name → the names declared for it.
+    let mut declared: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (name, decl) in core_decls().iter() {
+        declared
+            .entry(decl.host.clone())
+            .or_default()
+            .push(name.to_string());
+    }
+    let undeclared: Vec<&String> = registered
+        .iter()
+        .filter(|n| !declared.contains_key(*n))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "registered by register_builtins but not declared in core/packages/core: {undeclared:?}"
+    );
+    let unregistered: Vec<&String> = declared
+        .keys()
+        .filter(|n| !registered.contains(*n))
+        .collect();
+    assert!(
+        unregistered.is_empty(),
+        "declared in core/packages/core but not registered by register_builtins: {unregistered:?}"
+    );
+    for (host, names) in &declared {
+        assert_eq!(
+            names.len(),
+            1,
+            "core native `{host}` is declared under more than one name: {names:?}"
+        );
+        // A core builtin is declared under the name it is registered as: the
+        // global scope binds the registered name.
+        assert_eq!(&names[0], host, "core native `{host}` is declared as `{}`", names[0]);
+    }
+    assert_eq!(core_decls().len(), registered.len());
+}
+
+/// No native is declared in two files of the package (the loader panics on
+/// that), and each file declares at least one.
+#[test]
+fn every_core_module_declares_something() {
+    let package = crate::bundled::package(crate::bundled::CORE_PACKAGE).unwrap();
+    for (path, source) in package.sources() {
+        let decls = crate::native_decl::NativeDecls::parse(source)
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
+        assert!(!decls.is_empty(), "{path} declares no native fn");
+    }
+}
+
+/// Whether `err` is a complaint about how many arguments arrived, as
+/// opposed to what they were. Every arity message in `builtins/` says
+/// `expects <count…>`; a type message says `expects a list` and the like.
+fn is_arity_error(err: &str) -> bool {
+    err.split("expects ").skip(1).any(|rest| {
+        let rest = rest.trim_start_matches("at least ");
+        rest.starts_with(|c: char| c.is_ascii_digit()) || rest.starts_with("no arguments")
+    })
+}
+
+/// Call `name` with `count` arguments and return the error, if any. A
+/// method (`Rect.inset`) is called on a receiver, which is its first
+/// argument.
+fn call_with(name: &str, count: usize) -> Option<String> {
+    let args = |n: usize| vec!["1"; n].join(", ");
+    let src = match name.split_once('.') {
+        Some((class, method)) => {
+            format!("{class}(0, 0, 4, 4).{method}({})", args(count - 1))
+        }
+        None => format!("{name}({})", args(count)),
+    };
+    Env::new().run_source(&src).err()
+}
+
+/// The declarations with a fixed parameter list: everything but the variadic
+/// natives and the `__` internals.
+fn fixed_decls() -> Vec<(&'static str, &'static NativeDecl)> {
+    let mut decls: Vec<_> = core_decls()
+        .iter()
+        .filter(|(_, d)| d.forms.iter().all(|f| !f.rest))
+        .collect();
+    decls.sort_by_key(|(name, _)| *name);
+    decls
+}
+
+/// Every declared form is one the native really takes: called with any
+/// argument count the form allows, it does not complain about the count —
+/// and one argument past the longest form, or one short of the shortest,
+/// it does. (The arguments are all `1`, so a type error is expected and
+/// fine; only an arity error is evidence against the declaration.)
+#[test]
+fn declared_forms_agree_with_the_natives_arity() {
+    // Natives that read the arguments they want and never count them, so
+    // a wrong count is not refused and cannot be checked from outside.
+    const UNCOUNTED: &[&str] = &["is_valid"];
+    for (name, decl) in fixed_decls() {
+        let longest = decl.forms.iter().map(|f| f.params.len()).max().unwrap();
+        // A method call always supplies its receiver.
+        let fewest = usize::from(name.contains('.'));
+        for count in fewest..=longest + 1 {
+            let err = call_with(name, count);
+            let arity = err.as_deref().is_some_and(is_arity_error);
+            if decl.accepts_count(count) {
+                assert!(
+                    !arity,
+                    "{name}: declared to take {count} argument(s), but the native refuses \
+                     that count: {err:?}"
+                );
+            } else if !UNCOUNTED.contains(&name) {
+                assert!(
+                    arity,
+                    "{name}: not declared to take {count} argument(s), but the native did \
+                     not refuse that count: {err:?}"
+                );
+            }
+        }
+    }
+}
+
+/// The declarations reach the registry, and every parameter name is one a
+/// call site can write as an argument label (a keyword included: `end:`).
+#[test]
+fn every_declaration_reaches_the_registry_with_writable_names() {
+    let env = Env::new();
+    for (name, decl) in fixed_decls() {
+        let sigs = env.native_signatures(name).expect("registered");
+        assert_eq!(sigs, decl.signatures().as_slice(), "{name}");
+        assert_eq!(sigs.len(), decl.forms.len(), "{name}");
+        for sig in sigs {
+            for param in sig.params() {
+                let src = format!("f({param}: 1)\n");
+                let mut lexer = crate::lexer::Lexer::new(&src);
+                lexer.tokenize().expect("lexes");
+                let parsed =
+                    crate::parse::Parser::new(lexer.tokens, lexer.token_spans).parse_program();
+                assert!(
+                    parsed.is_ok(),
+                    "{name}: `{param}: …` is not a writable argument label: {parsed:?}"
+                );
+            }
+        }
+    }
+}
+
+/// What takes no names is left so deliberately: a builtin declared with a
+/// rest parameter shows up in this list and has to be decided.
+#[test]
+fn the_natives_that_refuse_names_are_the_variadic_and_internal_ones() {
+    let env = Env::new();
+    let mut undeclared: Vec<String> = env
+        .native_fn_names()
+        .into_iter()
+        .filter(|n| env.native_signatures(n).is_some_and(|s| s.is_empty()))
+        .collect();
+    undeclared.sort();
+    assert_eq!(
+        undeclared,
+        [
+            "__declare_method",
+            "__pending",
+            "__reject",
+            "__resolve",
+            "format",
+            "print"
+        ]
+    );
+}

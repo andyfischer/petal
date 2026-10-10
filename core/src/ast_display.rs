@@ -108,6 +108,22 @@ impl Printer {
                 self.param_defaults(params, depth + 1);
                 self.stmts(body, depth + 1);
             }
+            StmtKind::NativeFn(decl) => {
+                let ret = match &decl.ret {
+                    Some(t) => format!(" -> {}", t.name),
+                    None => String::new(),
+                };
+                let host = match &decl.host {
+                    Some(h) => format!(" = {h:?}"),
+                    None => String::new(),
+                };
+                let head = format!(
+                    "NativeFn {export}{} {}{ret}{host}",
+                    decl.name,
+                    fmt_native_params(decl)
+                );
+                self.line(depth, &head, Some(&stmt.span));
+            }
             StmtKind::EnumDecl { name, variants } => {
                 self.line(depth, &format!("EnumDecl {export}{name}"), Some(&stmt.span));
                 for v in variants {
@@ -386,6 +402,22 @@ fn fmt_params(params: &[Param]) -> String {
             format!("{}{}{default}", p.name, fmt_ty_suffix(&p.ty))
         })
         .collect();
+    format!("({})", rendered.join(", "))
+}
+
+/// A `native fn`'s parameters as written: `(x: num, places?: num, ...rest)`.
+fn fmt_native_params(decl: &crate::ast::NativeFnDecl) -> String {
+    let mut rendered: Vec<String> = decl
+        .params
+        .iter()
+        .map(|p| {
+            let opt = if p.optional { "?" } else { "" };
+            format!("{}{opt}{}", p.name, fmt_ty_suffix(&p.ty))
+        })
+        .collect();
+    if let Some(rest) = &decl.rest {
+        rendered.push(format!("...{rest}"));
+    }
     format!("({})", rendered.join(", "))
 }
 

@@ -1,0 +1,63 @@
+==================
+Native fn declarations
+==================
+
+native fn sqrt(x: num) -> float
+pub native fn mouse_x() -> int
+native fn slice(collection, start, end?: num)
+native fn print(...values)
+native fn format(template: string, ...args) -> string
+native fn _native_rect(x, y, a?) = "draw_rect"
+native fn Rect.inset(r, n)
+let native = 1
+
+---
+
+(source_file
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter
+        name: (identifier)
+        type: (type_annotation type: (type_name (identifier)))))
+    return_type: (return_type type: (type_name (identifier))))
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list)
+    return_type: (return_type type: (type_name (identifier))))
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter name: (identifier))
+      (native_parameter name: (identifier))
+      (native_parameter
+        name: (keyword_name)
+        type: (type_annotation type: (type_name (identifier))))))
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list
+      (rest_parameter name: (identifier))))
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter
+        name: (identifier)
+        type: (type_annotation type: (type_name (identifier))))
+      (rest_parameter name: (identifier)))
+    return_type: (return_type type: (type_name (identifier))))
+  (native_function_declaration
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter name: (identifier))
+      (native_parameter name: (identifier))
+      (native_parameter name: (identifier)))
+    host: (string (string_content)))
+  (native_function_declaration
+    class: (identifier)
+    name: (identifier)
+    parameters: (native_parameter_list
+      (native_parameter name: (identifier))
+      (native_parameter name: (identifier))))
+  (let_declaration
+    name: (identifier)
+    value: (integer)))

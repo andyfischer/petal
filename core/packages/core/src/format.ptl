@@ -1,0 +1,12 @@
+// Package `core` — Number and text formatting (core/src/builtins/format.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn fixed(value, places?: num) -> string
+pub native fn commas(value, places?: num) -> string
+pub native fn pad_start(value, width: num, fill?: string) -> string
+pub native fn pad_end(value, width: num, fill?: string) -> string
+pub native fn format(template: string, ...args) -> string

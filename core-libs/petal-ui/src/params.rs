@@ -2,20 +2,38 @@
 //! arguments by name: `clip(x: 0, y: 0, w: 320, h: 200)`,
 //! `mouse_pressed(button: 0)`.
 //!
-//! The names themselves are `petal::typecheck::globals::PETAL_UI_NATIVE_PARAMS`.
-//! They live in the core crate because `petal check` must answer for these
-//! natives without ever registering them; this module is what makes that table
-//! the one this host actually binds against. [`register`] is how every native
-//! in this crate is registered, and it declares the native's parameters from
-//! the table in the same step, so the two cannot drift apart.
+//! The names are written once, in the `native fn` declarations of the `ui`
+//! module (`prelude/ui.ptl`) — the interface `petal check` reads without ever
+//! registering these natives. This module is what makes those declarations
+//! the ones this host actually binds against: [`register`] is how every
+//! native in this crate is registered, and it gives the native the parameter
+//! lists its declaration has in the same step, so the two cannot drift apart.
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use petal::env::Env;
-use petal::native_fn::{NativeEffects, NativeFn, NativeFnId};
-use petal::typecheck::globals::PETAL_UI_NATIVE_PARAMS;
+use petal::native_decl::NativeDecls;
+use petal::native_fn::{NativeEffects, NativeFn, NativeFnId, NativeSignature};
+
+/// The `native fn` declarations of the `ui` module.
+pub fn interface() -> &'static NativeDecls {
+    static DECLS: OnceLock<NativeDecls> = OnceLock::new();
+    DECLS.get_or_init(|| {
+        NativeDecls::parse(crate::prelude_source())
+            .unwrap_or_else(|e| panic!("prelude/ui.ptl: {e}"))
+    })
+}
+
+/// Host native → the parameter lists `ui.ptl` declares for it.
+fn declared() -> &'static HashMap<String, Vec<NativeSignature>> {
+    static BY_HOST: OnceLock<HashMap<String, Vec<NativeSignature>>> = OnceLock::new();
+    BY_HOST.get_or_init(|| interface().signatures_by_host())
+}
 
 /// `Env::register_native`, plus the native's declared parameters when the
-/// table lists it. A native the table leaves out is registered all the same,
-/// and takes its arguments by position only.
+/// `ui` module declares it. A native the module leaves out is registered all
+/// the same, and takes its arguments by position only.
 pub(crate) fn register(
     env: &mut Env,
     name: &str,
@@ -23,11 +41,8 @@ pub(crate) fn register(
     effects: NativeEffects,
 ) -> NativeFnId {
     let id = env.register_native(name, func, effects);
-    if let Some((_, specs)) = PETAL_UI_NATIVE_PARAMS.iter().find(|(n, _)| *n == name) {
-        for spec in *specs {
-            env.declare_native_params(id, spec)
-                .unwrap_or_else(|e| panic!("PETAL_UI_NATIVE_PARAMS[{name}]: {e}"));
-        }
+    if let Some(signatures) = declared().get(name) {
+        env.set_native_signatures(id, signatures.clone());
     }
     id
 }

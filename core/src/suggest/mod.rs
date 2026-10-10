@@ -134,11 +134,18 @@ pub struct HostEnv {
     /// reaches: false when the host has a prelude this build cannot see, since
     /// a prelude function of the same name would have shadowed the native.
     host_natives: bool,
+    /// Host native → the parameter lists the host's interface module declares
+    /// for it (`native fn` in the `ui` prelude).
+    declared: std::collections::HashMap<String, Vec<NativeSignature>>,
 }
 
 impl HostEnv {
     pub fn new(include_dirs: &[PathBuf], host: HostProfile) -> Self {
         let mut env = crate::env::Env::new();
+        // Nothing compiled here is run: a host's natives are answered for by
+        // the `native fn` declarations of its interface module, registered
+        // or not.
+        env.set_check_only(true);
         for dir in include_dirs {
             env.add_module_path(dir.clone());
         }
@@ -151,11 +158,21 @@ impl HostEnv {
             env.add_module_path(libs);
         }
         let mut host_natives = true;
+        let mut declared: std::collections::HashMap<String, Vec<NativeSignature>> =
+            std::collections::HashMap::new();
         if host.uses_ui_prelude() {
             match globals::ui_prelude_source() {
                 Some(src) => {
                     env.register_module(globals::UI_MODULE, src);
                     env.set_implicit_imports(&[globals::UI_MODULE]);
+                    if let Ok(decls) = crate::native_decl::NativeDecls::parse(src) {
+                        for (_, decl) in decls.iter() {
+                            declared
+                                .entry(decl.host.clone())
+                                .or_default()
+                                .extend(decl.signatures());
+                        }
+                    }
                 }
                 None => host_natives = false,
             }
@@ -164,18 +181,19 @@ impl HostEnv {
             env,
             host,
             host_natives,
+            declared,
         }
     }
 
     /// The parameter lists native `name` declares: the `Env`'s own when it
-    /// registers one, else the host's when this process carries them (the
-    /// petal-ui set). `None` for a name that is not a known native.
+    /// registers one, else the ones the host's interface module declares (the
+    /// petal-ui set, from the `ui` prelude's `native fn`s). `None` for a name that is not a known native.
     pub fn native_signatures(&self, name: &str) -> Option<Vec<NativeSignature>> {
         if let Some(sigs) = self.env.native_signatures(name) {
             return Some(sigs.to_vec());
         }
         if self.host_natives && self.host.natives().any(|n| n == name) {
-            return globals::host_native_signatures(name);
+            return self.declared.get(name).cloned();
         }
         None
     }

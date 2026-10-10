@@ -218,6 +218,9 @@ impl Compiler {
             // compilation (see `Compiler::bind_imports`); one reaching here
             // (legacy single-file `compile`) has nothing left to do.
             StmtKind::Import(_) => {}
+            // Bound by the prescan (`Compiler::bind_native_decl`); a
+            // declaration emits nothing where it is written.
+            StmtKind::NativeFn(_) => {}
         }
     }
 

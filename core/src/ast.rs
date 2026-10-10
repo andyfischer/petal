@@ -300,6 +300,12 @@ pub struct Param {
     /// field.
     #[serde(skip)]
     pub default_in_body: bool,
+    /// Written `name?` in a `native fn` declaration: a trailing parameter a
+    /// call may leave off. A native has no default *expression* (the host
+    /// fills the gap itself), so this is a flag rather than a `default`.
+    /// Always `false` on a Petal `fn` or lambda parameter.
+    #[serde(skip_serializing_if = "is_false")]
+    pub optional: bool,
 }
 
 impl Param {
@@ -310,6 +316,7 @@ impl Param {
             ty: None,
             default: None,
             default_in_body: false,
+            optional: false,
         }
     }
 
@@ -439,11 +446,64 @@ pub enum StmtKind {
         #[serde(skip_serializing_if = "is_false")]
         is_var: bool,
     },
+    /// `native fn name(a: int, b?) -> type` — the declaration of a function
+    /// the *host* implements. No body and no `end`. See [`NativeFnDecl`] and
+    /// docs/ffi.md (Native interfaces).
+    NativeFn(NativeFnDecl),
     /// `import m` / `import m as u` / `import m: a, b`. Only allowed before
     /// any other statement in a file (the parser enforces this); consumed by
     /// the module loader (`crate::module`) before compilation — the compiler
     /// itself receives imports pre-resolved.
     Import(ImportDecl),
+}
+
+/// One parsed `native fn` declaration: a module-scoped name bound to an entry
+/// in the host's native table.
+///
+/// ```petal ignore
+/// native fn sqrt(x: num) -> float
+/// native fn slice(collection, start: num, end?: num)
+/// native fn print(...values)
+/// pub native fn mouse_x() -> int
+/// native fn _native_rect(x, y, w, h, r, g, b, a?) = "draw_rect"
+/// ```
+///
+/// Several declarations of one name that bind the same host native are that
+/// native's *call forms* (`random()`, `random(max)`, `random(min, max)`).
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeFnDecl {
+    /// The name the declaration binds in the module. For a method this is the
+    /// qualified `Class.method`, as on [`StmtKind::FnDecl`].
+    pub name: String,
+    /// `Some("Rect")` for `native fn Rect.inset(r, n)`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    /// The fixed parameters. A trailing run may be [`Param::optional`]; none
+    /// carries a default expression.
+    pub params: Vec<Param>,
+    /// `...name` — the native takes any number of further arguments. Such a
+    /// native refuses named arguments, as a variadic one always has.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rest: Option<String>,
+    /// The declared result type (`-> int`); `None` leaves it `any`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ret: Option<TypeAnn>,
+    /// `= "host_name"` — the host native this binds, when it is registered
+    /// under a different name. `None` binds the native of the same name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+impl NativeFnDecl {
+    /// The name the host registered the native under.
+    pub fn host_name(&self) -> &str {
+        self.host.as_deref().unwrap_or(&self.name)
+    }
+
+    /// How many leading parameters every call must fill.
+    pub fn required(&self) -> usize {
+        self.params.iter().take_while(|p| !p.optional).count()
+    }
 }
 
 /// One parsed `import` statement.
@@ -663,7 +723,7 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
                 v.visit_expr(k);
             }
         }
-        StmtKind::Import(_) => {}
+        StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
     }
 }
 
@@ -826,7 +886,7 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_expr(k);
             }
         }
-        StmtKind::Import(_) => {}
+        StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
     }
 }
 

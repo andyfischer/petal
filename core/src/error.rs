@@ -54,6 +54,9 @@ pub enum Phase {
     Compile,
     /// Lowering the term graph to bytecode (`crate::backend::bytecode`).
     Lower,
+    /// Linking: a `native fn` the program declares is not registered in the
+    /// `Env` it is being loaded into to run (`Env::link_program`).
+    Link,
 }
 
 impl Phase {
@@ -65,6 +68,7 @@ impl Phase {
             Phase::Module => "module",
             Phase::Compile => "compile",
             Phase::Lower => "lower",
+            Phase::Link => "link",
         }
     }
 }

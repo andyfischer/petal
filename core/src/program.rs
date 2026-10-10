@@ -669,6 +669,14 @@ pub struct Program {
     /// in place. See [`crate::fn_introspect`].
     #[serde(skip)]
     pub introspect: crate::fn_introspect::Cache,
+    /// Every host native a module of this program declares with `native fn`
+    /// and its code refers to (the bundled `core` package's excepted): what
+    /// an `Env` must have registered before the program can run in it. Checked when the program
+    /// is loaded ([`crate::env::Env`], "linking"); a check-only compile reads
+    /// it to know which names are declared. Not part of the serialized IR —
+    /// an imported program is linked by name when a call runs, as before.
+    #[serde(skip)]
+    pub native_links: Vec<crate::native_decl::NativeLink>,
 }
 
 impl Program {

@@ -1,0 +1,16 @@
+// Package `core` — The built-in classes: constructors, methods, and the method-declaration
+// internal (core/src/builtins/classes.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn Rect(x, y, w, h)
+pub native fn Rect.center_x(r)
+pub native fn Rect.center_y(r)
+pub native fn Rect.right(r)
+pub native fn Rect.bottom(r)
+pub native fn Rect.inset(r, n)
+pub native fn Rect.offset(r, dx, dy)
+pub native fn __declare_method(...args)

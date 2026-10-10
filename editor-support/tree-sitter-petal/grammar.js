@@ -77,6 +77,7 @@ module.exports = grammar({
       $.let_declaration,
       $.state_declaration,
       $.function_declaration,
+      $.native_function_declaration,
       $.enum_declaration,
       $.class_declaration,
       $.for_statement,
@@ -177,6 +178,42 @@ module.exports = grammar({
       optional(field('body', $.block)),
       'end',
     )),
+
+    // `native fn name(params) -> type = "host_name"` — the declaration of a
+    // function the host implements (rust/src/parse.rs `parse_native_fn_decl`,
+    // docs/ffi.md). No body and no `end`. `native` is a *contextual* keyword
+    // in the real lexer (a keyword only directly before `fn`); as with `as`
+    // and `class`, a highlighting grammar can treat it as a literal.
+    native_function_declaration: $ => prec(2, seq(
+      optional(PUB),
+      'native',
+      'fn',
+      optional(seq(field('class', $.identifier), '.')),
+      field('name', $.identifier),
+      field('parameters', $.native_parameter_list),
+      optional(field('return_type', $.return_type)),
+      optional(seq('=', field('host', $.string))),
+    )),
+
+    native_parameter_list: $ => seq(
+      '(',
+      commaSep(choice($.native_parameter, $.rest_parameter)),
+      ')',
+    ),
+
+    // `name`, `name: type`, and the optional forms `name?` / `name?: type`
+    // (the `?` is part of the identifier, as everywhere). The real parser
+    // takes any keyword as a parameter name, since the name is only ever an
+    // argument label; this rule models the one the builtins use, `end`.
+    native_parameter: $ => seq(
+      field('name', choice($.identifier, $.keyword_name)),
+      optional(field('type', $.type_annotation)),
+    ),
+
+    keyword_name: _ => seq('end', optional(token.immediate('?'))),
+
+    // `...name` — any number of further arguments (`native fn print(...values)`).
+    rest_parameter: $ => seq('...', field('name', $.identifier)),
 
     // Optional static type declarations (docs/syntax/types.md). Type names are
     // *contextual* — `int`/`float`/`str` stay callable builtins elsewhere — so

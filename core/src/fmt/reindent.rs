@@ -311,7 +311,10 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     }
                 }
                 Token::Fn => {
-                    if fn_takes_end(tokens, k) {
+                    // `native fn name(…)` is a bodiless declaration.
+                    let native = k > 0
+                        && matches!(&tokens[k - 1], Token::Ident(w) if w == crate::parse::NATIVE_KEYWORD);
+                    if !native && fn_takes_end(tokens, k) {
                         stack.push(Open::block(content));
                     }
                 }

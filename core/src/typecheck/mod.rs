@@ -170,6 +170,10 @@ struct Checker<'a> {
     /// Every enum name an annotation in this module may use. See
     /// [`Checker::resolve_ann`].
     enum_names: HashSet<String>,
+    /// See [`CheckContext::natives`].
+    natives: Option<&'a crate::native_decl::NativeDecls>,
+    /// This module's own `native fn` declarations.
+    own_natives: crate::native_decl::NativeDecls,
 }
 
 /// The names of the enums `stmts` declares at its top level.
@@ -209,6 +213,11 @@ pub struct CheckContext<'a> {
     /// annotation here may name (`fn f() -> Shape`). The module's own enums
     /// are always accepted; `None` accepts only those.
     pub enum_names: Option<&'a HashSet<String>>,
+    /// The `native fn` declarations of the modules compiled before this one
+    /// (a host's interface module, say). The module's own declarations and
+    /// the bundled `core` package's are always consulted; `None` consults
+    /// only those. See [`crate::native_decl`].
+    pub natives: Option<&'a crate::native_decl::NativeDecls>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -229,6 +238,7 @@ impl<'a> CheckContext<'a> {
             collect_inferences: false,
             param_reqs: None,
             enum_names: None,
+            natives: None,
         }
     }
 }
@@ -259,6 +269,8 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         enum_names: enum_names(stmts)
             .chain(opts.enum_names.into_iter().flatten().cloned())
             .collect(),
+        natives: opts.natives,
+        own_natives: crate::native_decl::NativeDecls::collect(stmts),
     };
     checker.bind_enum_variants(stmts);
     for stmt in stmts {
@@ -491,6 +503,16 @@ impl<'a> Checker<'a> {
                     self.spell(bad)
                 ),
             );
+        }
+    }
+
+    /// What `name` is declared as by a `native fn` this module can see: its
+    /// own, an earlier module's (the compiler's accumulated set), or the
+    /// bundled `core` package's.
+    fn native_decl(&self, name: &str) -> Option<&crate::native_decl::NativeDecl> {
+        match self.natives {
+            Some(earlier) => crate::native_decl::lookup(name, &[&self.own_natives, earlier]),
+            None => crate::native_decl::lookup(name, &[&self.own_natives]),
         }
     }
 
@@ -1070,7 +1092,7 @@ impl<'a> Checker<'a> {
                 // stale label after a live edit reshapes the class.
                 self.set_class_hint(name, Some(inferred));
             }
-            StmtKind::Import(_) => {}
+            StmtKind::Import(_) | StmtKind::NativeFn(_) => {}
         }
     }
 
@@ -1786,54 +1808,63 @@ impl<'a> Checker<'a> {
         // every builtin, every parameter, and every value that merely happens
         // to hold a function.
         let candidates = self.fn_candidates(function);
-        if candidates.is_empty() {
-            if let ExprKind::Ident(f) = &function.kind
-                && self.lookup(f).is_none()
-            {
-                // Not a module function: fall back to the builtin tables —
-                // the argument slots the native is known to insist on, then
-                // its result type.
-                // The tables speak of parameter slots, so a call that names
-                // its arguments is first put in the order the builtin declares
-                // (`builtins::BUILTIN_PARAMS`): `order[slot]` is the written
-                // argument filling that slot. Names that do not bind leave
-                // nothing to check here — `globals::unresolved_globals`
-                // reports them after the compile.
-                let order: Vec<usize> = if arg_names.iter().all(Option::is_none) {
-                    (0..args.len()).collect()
-                } else {
-                    match builtin_types::builtin_arg_order(f, arg_names) {
-                        Some(order) => order,
-                        None => return Type::Any,
-                    }
-                };
-                // `order` has put every argument in its slot, so the types
-                // erased above for a named call are good again here.
-                let arg_types = real_types;
-                if let Some(slots) = builtin_types::builtin_param_slots(f, args.len()) {
-                    for (slot, &i) in slots.iter().zip(&order) {
-                        let at = arg_types[i];
-                        if !slot.accepts(at) {
-                            self.warn(
-                                args[i].span,
-                                format!(
-                                    "argument {} to `{f}`: expected {}, found `{}`",
-                                    i + 1,
-                                    slot.describe(),
-                                    self.spell(at)
-                                ),
-                            );
-                        }
-                    }
-                }
-                if f == "sort_by"
-                    && let Some(&i) = order.get(1)
-                {
-                    self.check_sort_key_fn(&args[i], i);
-                }
-                let slot_types: Vec<Type> = order.iter().map(|&i| arg_types[i]).collect();
-                return builtin_types::builtin_return_type(f, &slot_types).unwrap_or(Type::Any);
+        // A `native fn` the callee names — directly, with no local binding
+        // or `fn` of that name in the way (a `fn` shadows a native; one that
+        // shares an overload set with a native was rewritten into `fn`s
+        // before this pass, see `compiler::native::lower_native_overloads`).
+        let native = match &function.kind {
+            ExprKind::Ident(f) if candidates.is_empty() && self.lookup(f).is_none() => {
+                self.native_decl(f).cloned()
             }
+            _ => None,
+        };
+        if let (Some(decl), ExprKind::Ident(f)) = (&native, &function.kind) {
+            // The declaration speaks of parameter slots, so a call that names
+            // its arguments is first put in the order the native declares:
+            // `order[slot]` is the written argument filling that slot. Names
+            // that do not bind leave nothing to check here —
+            // `globals::unresolved_globals` reports them after the compile.
+            let order: Vec<usize> = if arg_names.iter().all(Option::is_none) {
+                (0..args.len()).collect()
+            } else {
+                let sigs = decl.signatures();
+                let names: Vec<Option<&str>> = arg_names.iter().map(|n| n.as_deref()).collect();
+                let indices: Vec<usize> = (0..arg_names.len()).collect();
+                if sigs.is_empty() {
+                    return Type::Any;
+                }
+                match crate::native_fn::bind_native_args(f, &sigs, &indices, &names) {
+                    Ok(order) => order.into_vec(),
+                    Err(_) => return Type::Any,
+                }
+            };
+            // `order` has put every argument in its slot, so the types
+            // erased above for a named call are good again here.
+            let arg_types = real_types;
+            let slots = builtin_types::native_param_slots(decl, args.len());
+            for (slot, &i) in slots.iter().zip(&order) {
+                let at = arg_types[i];
+                if !slot.accepts(at) {
+                    self.warn(
+                        args[i].span,
+                        format!(
+                            "argument {} to `{f}`: expected {}, found `{}`",
+                            i + 1,
+                            slot.describe(),
+                            self.spell(at)
+                        ),
+                    );
+                }
+            }
+            if decl.host == "sort_by"
+                && let Some(&i) = order.get(1)
+            {
+                self.check_sort_key_fn(&args[i], i);
+            }
+            let slot_types: Vec<Type> = order.iter().map(|&i| arg_types[i]).collect();
+            return builtin_types::native_return_type(decl, &slot_types).unwrap_or(Type::Any);
+        }
+        if candidates.is_empty() {
             return Type::Any;
         }
         // Select the variant the way the runtime does
@@ -3071,10 +3102,17 @@ mod tests {
                 "argument 2 to `join`: expected a string, found `list`",
             ]
         );
-        let w = warns("print(key_down(1), len(3))");
+        // A host's natives are held to the declarations of its interface
+        // module, the same way.
+        let iface = "native fn key_down(key: string) -> bool\n\
+                     native fn text_width(text: string, style) -> int\n\
+                     native fn text_width(text: string, size, font?) -> int\n";
+        let w = warns(&format!("{iface}print(key_down(1), len(3))"));
         assert_eq!(w.len(), 2, "{w:?}");
-        let w = warns("print(text_width(12, {size: 13}))");
+        let w = warns(&format!("{iface}print(text_width(12, {{size: 13}}))"));
         assert_eq!(w, ["argument 1 to `text_width`: expected a string, found `int`"]);
+        // An undeclared name is not a native at all: nothing is assumed.
+        assert!(warns("print(key_down(1))").is_empty());
     }
 
     /// A named call is checked the same way: the names are bound to the
@@ -3106,7 +3144,9 @@ mod tests {
             "fn f(x) sqrt(x) end\nprint(f(1))",
             "class P\n  x: int\nend\nprint(keys(P(1)), values({a: 1}))",
             "print(len([1]), len(\"ab\"), upper(\"a\"), split(\"a,b\", \",\"))",
-            "print(text_width(\"a\", 13), text_width(\"a\", {size: 13}), text_width(\"a\", 13, \"ui\"))",
+            "native fn text_width(text: string, style) -> int\n\
+             native fn text_width(text: string, size, font?) -> int\n\
+             print(text_width(\"a\", 13), text_width(\"a\", {size: 13}), text_width(\"a\", 13, \"ui\"))",
             // Coercing or type-dispatching natives are unlisted.
             "print(fixed(true), min(\"a\", \"b\"), mag(vec2(1, 2)), str([1]))",
             // A user function of the same name shadows the native.
@@ -3128,7 +3168,11 @@ mod tests {
         crate::compiler::collect_classes(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         let names = crate::compiler::collect_fn_param_names(&stmts);
-        let reqs = super::param_reqs::collect(&stmts, &|_| false);
+        let reqs = super::param_reqs::collect(
+            &stmts,
+            &|_| false,
+            &crate::native_decl::NativeDecls::new(),
+        );
         let namespaces = HashMap::new();
         let mut ctx = CheckContext::new(&sigs, &names, &classes, &namespaces);
         ctx.param_reqs = Some(&reqs);
@@ -3143,7 +3187,7 @@ mod tests {
     /// and held to its body for the arguments a call does pass.
     #[test]
     fn overload_with_defaults_is_held_to_its_body() {
-        let src = "let _native_rect = draw_rect\n\
+        let src = "native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = \"draw_rect\"\n\
                    fn box(r, c, a = 255)\n  \
                    _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b, a)\nend\n\
                    fn box(x, y, w, h, c, a = 255)\n  \
@@ -3167,7 +3211,7 @@ mod tests {
     /// arguments warns at the argument, naming what the overload does with it.
     #[test]
     fn overload_selected_by_arity_is_held_to_its_body() {
-        let src = "let _native_rect = draw_rect\n\
+        let src = "native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = \"draw_rect\"\n\
                    fn box(r, c)\n  _native_rect(r.x, r.y, r.w, r.h, c.r, c.g, c.b)\nend\n\
                    fn box(x, y, w, h, c)\n  _native_rect(x, y, w, h, c.r, c.g, c.b)\nend\n";
         let w = warns_with_reqs(&format!("{src}box(0, 0, 4, 4, 9)"));

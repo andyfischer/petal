@@ -1,13 +1,95 @@
 // petal-ui prelude — module `ui`
 //
-// Standard interaction primitives over the Layer-0 input natives and the
-// Layer-2 draw natives. Registered by embedders as an implicit import, so
-// scripts call these bare; `import ui` / `import ui: button` also work.
+// The petal-ui interface: the declarations of the natives a petal-ui host
+// provides, and the standard interaction primitives written in Petal over the
+// Layer-0 input natives and the Layer-2 draw natives. Registered by embedders
+// as an implicit import, so scripts call these bare; `import ui` /
+// `import ui: button` also work.
 // Only declarations marked `pub` are visible to importers; everything else
 // (and any name starting with `_`) is module-private.
 //
 // Rects are records: {x, y, w, h}. Colors are records: {r, g, b} (hex
 // literals like #3c8cff work). Button 0 is the left mouse button.
+
+// ── The native interface ──────────────────────────────────────────────────
+// What a petal-ui host implements in Rust (core-libs/petal-ui/src), declared
+// here so scripts and `petal check` know each native's parameter names, arity
+// and types: `native fn name(params) -> type`. A parameter written `name?`
+// may be left off; several declarations of one name are that native's call
+// forms. A host registers the natives (`petal_ui::register_all`); loading a
+// script into an `Env` that lacks one it uses is an error before any line
+// runs.
+//
+// The natives the prelude wraps in record overloads (`draw_rect`, `clip`, …)
+// are declared further down under private `_native_*` names, next to the
+// overloads that call them: `native fn _native_rect(…) = "draw_rect"`.
+
+// Input (core-libs/petal-ui/src/input.rs). Button 0 is the left mouse button.
+pub native fn mouse_x() -> int
+pub native fn mouse_y() -> int
+pub native fn hovered(rect)
+pub native fn mouse_dx() -> int
+pub native fn mouse_dy() -> int
+pub native fn mouse_down(button: num) -> bool
+pub native fn mouse_pressed(button: num) -> bool
+pub native fn mouse_released(button: num) -> bool
+pub native fn scroll_x() -> int
+pub native fn scroll_y() -> int
+pub native fn key_down(key: string) -> bool
+pub native fn key_pressed(key: string) -> bool
+pub native fn key_released(key: string) -> bool
+pub native fn mod_shift() -> bool
+pub native fn mod_ctrl() -> bool
+pub native fn mod_alt() -> bool
+pub native fn mod_cmd() -> bool
+pub native fn drag_active() -> bool
+pub native fn drag_start_x() -> int
+pub native fn drag_start_y() -> int
+pub native fn click_count() -> int
+pub native fn text_input() -> string
+pub native fn grab_mouse()
+pub native fn release_mouse()
+
+// Timing and the frame (input.rs).
+pub native fn dt() -> float
+pub native fn time() -> float
+pub native fn frame_count() -> int
+pub native fn screen_width() -> int
+pub native fn screen_height() -> int
+pub native fn ui_version() -> int
+
+// Drawing that needs no overloads (core-libs/petal-ui/src/draw.rs).
+pub native fn clear(r: num, g: num, b: num)
+pub native fn clip_none()
+
+// Text measurement (draw.rs, text.rs). The style is a record, or a bare size
+// with an optional face name after it — each shape is its own form.
+pub native fn text_width(text: string, style) -> int
+pub native fn text_width(text: string, size, font?) -> int
+pub native fn text_advance(text: string, style) -> float
+pub native fn text_advance(text: string, size, font?) -> float
+pub native fn text_metrics(style)
+pub native fn text_metrics(size, font?)
+pub native fn text_wrap(text: string, style, max_width)
+pub native fn text_wrap(text: string, size, max_width)
+pub native fn text_wrap(text: string, size, font, max_width)
+pub native fn text_ellipsize(text: string, style, max_width, where?)
+pub native fn text_ellipsize(text: string, size, max_width, where?)
+pub native fn text_ellipsize(text: string, size, font, max_width, where?)
+pub native fn text_index_at(text: string, style, dx)
+pub native fn text_index_at(text: string, size, dx)
+pub native fn text_index_at(text: string, size, font, dx)
+pub native fn fonts()
+
+// Offscreen canvases (draw.rs).
+pub native fn create_canvas(w: num, h: num)
+pub native fn draw_to(id)
+pub native fn draw_to_screen()
+pub native fn snapshot_to(id, x, y)
+pub native fn blur_canvas(id, radius)
+
+// The host-data pull channel (core-libs/petal-ui/src/host_data.rs).
+pub native fn host_data(kind, arg)
 
 // ── Geometry + hit testing ────────────────────────────────────────────────
 
@@ -56,27 +138,29 @@ pub fn elapsed()
 end
 
 // ── Record overloads over the flat draw natives ───────────────────────────
-// The flat-int arities delegate to the captured natives, so scripts that use
-// the classic signatures keep working when these shadow the builtins.
+// The flat-int arities delegate to the natives, declared here under private
+// names (`= "draw_rect"` binds the host native of that name), so scripts that
+// use the classic signatures keep working when these overloads take the name.
 
-let _native_image = draw_image
-let _native_rect = draw_rect
-let _native_rect_rounded = draw_rect_rounded
-let _native_rect_outline = draw_rect_outline
-let _native_line = draw_line
-let _native_circle = draw_circle
-let _native_rect_rounded_outline = draw_rect_rounded_outline
-let _native_circle_outline = draw_circle_outline
-let _native_ellipse = draw_ellipse
-let _native_ellipse_outline = draw_ellipse_outline
-let _native_arc = fill_arc
-let _native_triangle = fill_triangle
-let _native_poly = fill_poly
-let _native_polygon = fill_polygon
-let _native_fan = fill_fan
-let _native_polyline = draw_polyline
-let _native_text = draw_text
-let _native_font = font
+native fn _native_image(source, x, y, w, h, a?, radius?) = "draw_image"
+native fn _native_rect(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num) = "draw_rect"
+native fn _native_rect_rounded(x: num, y: num, w: num, h: num, radius: num, r: num, g: num, b: num, a?: num) = "draw_rect_rounded"
+native fn _native_rect_outline(x: num, y: num, w: num, h: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_rect_outline"
+native fn _native_line(x1: num, y1: num, x2: num, y2: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_line"
+native fn _native_circle(cx: num, cy: num, radius: num, r: num, g: num, b: num, a?: num) = "draw_circle"
+native fn _native_rect_rounded_outline(x: num, y: num, w: num, h: num, radius: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_rect_rounded_outline"
+native fn _native_circle_outline(cx: num, cy: num, radius: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_circle_outline"
+native fn _native_ellipse(cx: num, cy: num, rx: num, ry: num, r: num, g: num, b: num, a?: num) = "draw_ellipse"
+native fn _native_ellipse_outline(cx: num, cy: num, rx: num, ry: num, r: num, g: num, b: num, a?: num, width?: num) = "draw_ellipse_outline"
+native fn _native_arc(cx: num, cy: num, r_in: num, r_out: num, a0: num, a1: num, r: num, g: num, b: num, a?: num) = "fill_arc"
+native fn _native_triangle(x1: num, y1: num, x2: num, y2: num, x3: num, y3: num, r: num, g: num, b: num, a?: num) = "fill_triangle"
+native fn _native_poly(points, r, g, b, a?) = "fill_poly"
+native fn _native_polygon(points, r, g, b, a?) = "fill_polygon"
+native fn _native_fan(cx, cy, points, r, g, b, a?) = "fill_fan"
+native fn _native_polyline(points, r, g, b, a?, width?) = "draw_polyline"
+native fn _native_text(text, x, y, style) = "draw_text"
+native fn _native_text(text, x, y, size, r, g, b, a?) = "draw_text"
+native fn _native_font(name) = "font"
 
 // Every primitive takes an optional trailing alpha `a` (0–255, 255 = opaque).
 // Lines and outlines also take an optional trailing stroke `width`. Rounded
@@ -502,9 +586,9 @@ end
 // its content to its own rounded shape. A host that can only scissor a
 // rectangle ignores it and clips square.
 
-let _native_clip = clip
-let _native_clip_push = clip_push
-let _native_clip_pop = clip_pop
+native fn _native_clip(x, y, w, h, radius?) = "clip"
+native fn _native_clip_push(x, y, w, h, radius?) = "clip_push"
+native fn _native_clip_pop() = "clip_pop"
 
 pub fn clip(x, y, w, h, radius = 0)
   _native_clip(x, y, w, h, radius)
@@ -542,9 +626,9 @@ end
 
 // Captured like the other primitives' natives, so the record overloads below
 // can shadow the builtin names without cutting off the flat arities.
-let _native_rect_gradient = draw_rect_gradient
-let _native_rect_gradient_rounded = draw_rect_gradient_rounded
-let _native_circle_gradient = draw_circle_gradient
+native fn _native_rect_gradient(x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle) = "draw_rect_gradient"
+native fn _native_rect_gradient_rounded(x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle) = "draw_rect_gradient_rounded"
+native fn _native_circle_gradient(cx: num, cy: num, radius: num, r0: num, g0: num, b0: num, a0: num, r1: num, g1: num, b1: num, a1: num) = "draw_circle_gradient"
 
 pub fn draw_rect_gradient(rect, c0, c1, angle, a0 = _stop_a(c0), a1 = _stop_a(c1))
   _native_rect_gradient(rect.x, rect.y, rect.w, rect.h, c0.r, c0.g, c0.b, a0,
@@ -779,7 +863,7 @@ end
 //
 //   draw_shadow(card, {radius: 8, blur: 16, dy: 4, a: 60})
 //   draw_rect_rounded(card, 8, t.panel)
-let _native_shadow = draw_shadow
+native fn _native_shadow(x: num, y: num, w: num, h: num, radius: num, blur: num, spread: num, dx: num, dy: num, r: num, g: num, b: num, a?: num) = "draw_shadow"
 
 pub fn draw_shadow(rect, opts)
   let c = opts["color"] ?? #000000
@@ -911,7 +995,7 @@ end
 // so a helper that must stay legible everywhere paints its flat fallback
 // *outside* the layer — `draw_material` draws its tint after the blurred
 // snapshot, which on such a host is the tint alone: right in aggregate.
-let _native_draw_canvas = draw_canvas
+native fn _native_draw_canvas(id, x, y, a?, w?, h?) = "draw_canvas"
 
 // An offscreen canvas, transparent until drawn into, recreated each frame.
 pub fn canvas(w, h)

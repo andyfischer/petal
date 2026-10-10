@@ -178,7 +178,9 @@ fn pub_and_export_remain_usable_as_field_names() {
 fn a_dangling_modifier_names_the_word_that_was_written() {
     let err = Env::new().load_program("pub 1 + 2").unwrap_err();
     assert!(
-        err.contains("`pub` must be followed by a fn, let, var, state, enum, class, or import"),
+        err.contains(
+            "`pub` must be followed by a fn, native fn, let, var, state, enum, class, or import"
+        ),
         "got: {err}"
     );
     let err = Env::new().load_program("export 1 + 2").unwrap_err();

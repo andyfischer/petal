@@ -92,6 +92,8 @@ pub struct Env {
     /// not fail every command — `petal packages` reports it instead of
     /// swallowing it.
     ambient_package_errors: Vec<crate::error::LoadError>,
+    /// Compile without linking; see [`Env::set_check_only`].
+    check_only: bool,
 }
 
 /// Name of the core prelude module: `import std`.
@@ -108,7 +110,7 @@ impl Env {
     pub fn new() -> Self {
         let mut native_fns = NativeFnTable::new();
         crate::builtins::register_builtins(&mut native_fns);
-        let default_context = ContextKey(1);
+                let default_context = ContextKey(1);
         let mut contexts = HashMap::new();
         contexts.insert(default_context, ExecutionContext::new());
         let mut modules = ModuleRegistry::default();
@@ -161,7 +163,68 @@ impl Env {
             handle_classes: Vec::new(),
             package_errors: Vec::new(),
             ambient_package_errors,
+            check_only: false,
         }
+    }
+
+    /// Compile without linking: a program may declare (`native fn`) natives
+    /// this `Env` does not register. For tools that only *check* a program —
+    /// `petal check`, the LSP, lint, suggest — which answer for a host's
+    /// natives from the host's interface module without being that host.
+    /// Running such a program still fails, at the first call to a native
+    /// that is not there ("Unknown builtin").
+    ///
+    /// Off by default: loading a program into an `Env` means it is about to
+    /// run, and a missing native is then a load error before any line does.
+    pub fn set_check_only(&mut self, on: bool) {
+        self.check_only = on;
+    }
+
+    /// Whether this `Env` compiles without linking
+    /// ([`set_check_only`](Self::set_check_only)).
+    pub fn is_check_only(&self) -> bool {
+        self.check_only
+    }
+
+    /// Linking: every native a module of `program` declares with `native fn`
+    /// and the program's code refers to must be registered here. The error names each declaring module and its
+    /// missing natives — a few, then "+N more".
+    ///
+    /// Every compile this `Env` does runs this (unless it is
+    /// [check-only](Self::set_check_only)), so a host normally never calls
+    /// it; it is public for a host that builds a `Program` some other way.
+    pub fn link_program(&self, program: &Program) -> Result<(), crate::error::LoadError> {
+        match crate::native_decl::missing_natives_message(&program.native_links, |name| {
+            self.native_fns.lookup_name(name).is_some()
+        }) {
+            Some(message) => Err(crate::error::LoadError::message(
+                crate::error::Phase::Link,
+                message,
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// Apply a native interface to this `Env`'s registered natives: every
+    /// `native fn` declared in `source` gives the native it binds its
+    /// parameter lists, so a call may pass that native's arguments by name
+    /// (`fill(x: 0, y: 0, w: 10, h: 10)`). This is how a host's natives get
+    /// the parameter names its interface module declares — call it after
+    /// registering the natives, with the same source the host registers as
+    /// the module. The builtins get theirs from the bundled `core` package
+    /// without being asked.
+    ///
+    /// A declaration replaces whatever parameter lists the native had
+    /// ([`declare_native_params`](Self::declare_native_params) included), so
+    /// applying an interface twice is harmless.
+    ///
+    /// Returns the host names `source` declares that are *not* registered
+    /// here, in no particular order — empty when the host provides its whole
+    /// interface. Errors when `source` does not parse, or declares one name
+    /// for two host natives.
+    pub fn declare_natives(&mut self, source: &str) -> Result<Vec<String>, String> {
+        let decls = crate::native_decl::NativeDecls::parse(source)?;
+        Ok(decls.apply_to(&mut self.native_fns))
     }
 
     /// Set how subsequent runs execute (see [`RunPolicy`]). Changing the
@@ -468,7 +531,11 @@ impl Env {
             &self.modules.implicit_imports,
             &self.modules.base_implicit_imports,
         )?;
-        Compiler::new().compile_modules(&modules, program_id, &self.native_fns)
+        let program = Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
+        if !self.check_only {
+            self.link_program(&program)?;
+        }
+        Ok(program)
     }
 
     /// Compile for `petal suggest`: the evidence every module's type checker
@@ -985,6 +1052,20 @@ impl Env {
             .lookup_name(name)
             .ok_or_else(|| format!("no native named '{name}' is registered"))?;
         self.native_fns.declare_params(id, spec)
+    }
+
+    /// Give a native, by the id [`register_native`](Self::register_native)
+    /// returned, exactly these parameter lists — the form
+    /// [`declare_natives`](Self::declare_natives) takes for one native, for a
+    /// host that reads its interface module once and applies it as it
+    /// registers each native
+    /// ([`NativeDecls::signatures_by_host`](crate::native_decl::NativeDecls::signatures_by_host)).
+    pub fn set_native_signatures(
+        &mut self,
+        id: NativeFnId,
+        signatures: Vec<crate::native_fn::NativeSignature>,
+    ) {
+        self.native_fns.set_signatures(id, signatures);
     }
 
     /// The parameter lists the native of this name declares. `None` when no

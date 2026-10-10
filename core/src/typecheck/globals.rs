@@ -16,9 +16,16 @@
 //! written for. The default is [`HostProfile::Ui`], the petal-ui set every
 //! sample app and panel script draws with.
 //!
-//! The name lists below are checked against the real registrations by tests in
-//! the embedding crates (`core-libs/petal-ui/tests/host_natives.rs`), which is what keeps
-//! them from drifting when a host grows a native.
+//! A native a module of the program *declares* (`native fn`, see
+//! [`crate::native_decl`]) is known whether or not this process registers it:
+//! that is how a host's natives are answered for from its interface module
+//! (petal-ui's `ui`), parameter names included.
+//!
+//! The name lists below are the older mechanism, still consulted for hosts
+//! whose interface is not declared yet (Garden's, the SDL runner's) and for a
+//! petal-ui script checked in a build that cannot see the `ui` prelude. They
+//! are checked against the real registrations by tests in the embedding
+//! crates (`core-libs/petal-ui/tests/host_natives.rs`).
 
 use std::collections::HashSet;
 
@@ -104,144 +111,6 @@ pub const PETAL_UI_NATIVES: &[&str] = &[
     // host_data.rs
     "host_data",
 ];
-
-/// The parameter names of the petal-ui natives, for named arguments: each
-/// native's name and one spec per call form
-/// ([`NativeSignature::parse`]; the core builtins' twin is
-/// [`crate::builtins::BUILTIN_PARAMS`]).
-///
-/// It lives here, beside [`PETAL_UI_NATIVES`], for the same reason that list
-/// does: `petal check` has to answer for a native it never registers. But
-/// this table is not a copy to keep in sync — petal-ui declares its natives'
-/// parameters *from* it as it registers them (`petal_ui::params`), so what the
-/// checker accepts is what the host binds.
-///
-/// The colour channels and alpha are `r`, `g`, `b`, `a`, as the `ui` prelude's
-/// overloads spell them, so a call reads the same whether it lands on a
-/// prelude `fn` or on the bare native. The text natives take their style as a
-/// record or as a bare size with an optional face name; each shape is its own
-/// form, told apart by the names used (`style:` or `size:`).
-pub const PETAL_UI_NATIVE_PARAMS: &[(&str, &[&str])] = &[
-    // input.rs
-    ("mouse_x", &[""]),
-    ("mouse_y", &[""]),
-    ("hovered", &["rect"]),
-    ("mouse_dx", &[""]),
-    ("mouse_dy", &[""]),
-    ("mouse_down", &["button"]),
-    ("mouse_pressed", &["button"]),
-    ("mouse_released", &["button"]),
-    ("scroll_x", &[""]),
-    ("scroll_y", &[""]),
-    ("key_down", &["key"]),
-    ("key_pressed", &["key"]),
-    ("key_released", &["key"]),
-    ("mod_shift", &[""]),
-    ("mod_ctrl", &[""]),
-    ("mod_alt", &[""]),
-    ("mod_cmd", &[""]),
-    ("drag_active", &[""]),
-    ("drag_start_x", &[""]),
-    ("drag_start_y", &[""]),
-    ("click_count", &[""]),
-    ("text_input", &[""]),
-    ("grab_mouse", &[""]),
-    ("release_mouse", &[""]),
-    ("dt", &[""]),
-    ("time", &[""]),
-    ("frame_count", &[""]),
-    ("screen_width", &[""]),
-    ("screen_height", &[""]),
-    ("ui_version", &[""]),
-    // draw.rs
-    ("draw_image", &["source, x, y, w, h, a?, radius?"]),
-    ("clear", &["r, g, b"]),
-    ("draw_rect", &["x, y, w, h, r, g, b, a?"]),
-    ("draw_rect_rounded", &["x, y, w, h, radius, r, g, b, a?"]),
-    ("draw_rect_outline", &["x, y, w, h, r, g, b, a?, width?"]),
-    (
-        "draw_rect_rounded_outline",
-        &["x, y, w, h, radius, r, g, b, a?, width?"],
-    ),
-    (
-        "draw_rect_gradient",
-        &["x, y, w, h, r0, g0, b0, a0, r1, g1, b1, a1, angle"],
-    ),
-    (
-        "draw_rect_gradient_rounded",
-        &["x, y, w, h, radius, r0, g0, b0, a0, r1, g1, b1, a1, angle"],
-    ),
-    (
-        "draw_circle_gradient",
-        &["cx, cy, radius, r0, g0, b0, a0, r1, g1, b1, a1"],
-    ),
-    (
-        "draw_shadow",
-        &["x, y, w, h, radius, blur, spread, dx, dy, r, g, b, a?"],
-    ),
-    ("draw_line", &["x1, y1, x2, y2, r, g, b, a?, width?"]),
-    ("draw_polyline", &["points, r, g, b, a?, width?"]),
-    ("draw_circle", &["cx, cy, radius, r, g, b, a?"]),
-    ("draw_circle_outline", &["cx, cy, radius, r, g, b, a?, width?"]),
-    ("draw_ellipse", &["cx, cy, rx, ry, r, g, b, a?"]),
-    ("draw_ellipse_outline", &["cx, cy, rx, ry, r, g, b, a?, width?"]),
-    ("fill_arc", &["cx, cy, r_in, r_out, a0, a1, r, g, b, a?"]),
-    ("fill_triangle", &["x1, y1, x2, y2, x3, y3, r, g, b, a?"]),
-    ("fill_poly", &["points, r, g, b, a?"]),
-    ("fill_polygon", &["points, r, g, b, a?"]),
-    ("fill_fan", &["cx, cy, points, r, g, b, a?"]),
-    (
-        "draw_text",
-        &["text, x, y, style", "text, x, y, size, r, g, b, a?"],
-    ),
-    ("clip", &["x, y, w, h, radius?"]),
-    ("clip_none", &[""]),
-    ("clip_push", &["x, y, w, h, radius?"]),
-    ("clip_pop", &[""]),
-    ("text_width", &["text, style", "text, size, font?"]),
-    ("text_advance", &["text, style", "text, size, font?"]),
-    ("text_metrics", &["style", "size, font?"]),
-    (
-        "text_wrap",
-        &[
-            "text, style, max_width",
-            "text, size, max_width",
-            "text, size, font, max_width",
-        ],
-    ),
-    (
-        "text_ellipsize",
-        &[
-            "text, style, max_width, where?",
-            "text, size, max_width, where?",
-            "text, size, font, max_width, where?",
-        ],
-    ),
-    (
-        "text_index_at",
-        &["text, style, dx", "text, size, dx", "text, size, font, dx"],
-    ),
-    ("font", &["name"]),
-    ("fonts", &[""]),
-    ("create_canvas", &["w, h"]),
-    ("draw_to", &["id"]),
-    ("draw_to_screen", &[""]),
-    ("draw_canvas", &["id, x, y, a?, w?, h?"]),
-    ("snapshot_to", &["id, x, y"]),
-    ("blur_canvas", &["id, radius"]),
-    // host_data.rs
-    ("host_data", &["kind, arg"]),
-];
-
-/// The parameter lists a host native is known to declare, when the checker
-/// can say without the host's `Env`: the petal-ui natives, from
-/// [`PETAL_UI_NATIVE_PARAMS`]. `None` for any other host native (Garden's, the
-/// SDL runner's, a `--native` name), whose registration this process never
-/// sees.
-pub fn host_native_signatures(name: &str) -> Option<Vec<NativeSignature>> {
-    let (_, specs) = PETAL_UI_NATIVE_PARAMS.iter().find(|(n, _)| *n == name)?;
-    specs.iter().map(|s| NativeSignature::parse(s).ok()).collect()
-}
 
 /// Check the names a call to native `name` writes against the parameter lists
 /// it declares, and say what is wrong — `None` when some form takes the call.
@@ -478,12 +347,13 @@ pub fn host_names(profile: HostProfile, extra: &[String]) -> HashSet<String> {
 ///   filled twice, a required parameter left out — in the words the checker
 ///   uses for a Petal `fn` ([`named_native_call_error`]).
 ///
-/// A native this process only knows by name (the host set) is checked when it
-/// is a petal-ui one, whose parameters core carries
-/// ([`host_native_signatures`]). Any other — Garden's, the SDL runner's, a
-/// `--native` name — is given the benefit of the doubt: its host may well
-/// declare parameters this process cannot see, and reporting an error on a
-/// call that runs is worse than leaving a bad name to the run.
+/// A native this process does not register is checked when a module of the
+/// program declares it (`native fn`): the declaration carries its parameter
+/// lists ([`Program::native_links`]). One known only by name (the host set —
+/// Garden's, the SDL runner's, a `--native` name) is given the benefit of the
+/// doubt: its host may well declare parameters this process cannot see, and
+/// reporting an error on a call that runs is worse than leaving a bad name to
+/// the run.
 ///
 /// One diagnostic per source position, in term order. Each is an error
 /// ([`Severity::Error`](crate::diagnostic::Severity::Error)): the line fails
@@ -493,7 +363,15 @@ pub fn unresolved_globals<'a>(
     native_signatures: impl Fn(&str) -> Option<&'a [NativeSignature]>,
     host: &HashSet<String>,
 ) -> Vec<Diagnostic> {
-    let known = |name: &str| native_signatures(name).is_some() || host.contains(name);
+    // Natives the program declares, with the parameter lists declared.
+    let declared: std::collections::HashMap<&str, &[NativeSignature]> = program
+        .native_links
+        .iter()
+        .map(|link| (link.host.as_str(), link.signatures.as_slice()))
+        .collect();
+    let known = |name: &str| {
+        native_signatures(name).is_some() || declared.contains_key(name) || host.contains(name)
+    };
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for term in &program.terms {
@@ -516,15 +394,11 @@ pub fn unresolved_globals<'a>(
                         .iter()
                         .map(|n| n.and_then(|c| program.get_string_constant(c)))
                         .collect();
-                    let host_sigs;
                     let sigs: &[NativeSignature] = match native_signatures(name) {
                         Some(sigs) => sigs,
-                        None => match host_native_signatures(name) {
-                            Some(sigs) => {
-                                host_sigs = sigs;
-                                &host_sigs
-                            }
-                            // A host native whose registration is out of
+                        None => match declared.get(name) {
+                            Some(sigs) => sigs,
+                            // A host native whose declaration is out of
                             // sight: not ours to refuse.
                             None => continue,
                         },
@@ -643,6 +517,8 @@ mod tests {
 
     fn unresolved(src: &str, profile: HostProfile, extra: &[&str]) -> Vec<String> {
         let mut env = Env::new();
+        // A check, not a run: the natives a test declares are not registered.
+        env.set_check_only(true);
         let pid = env.load_program(src).expect("compiles");
         let extra: Vec<String> = extra.iter().map(|s| s.to_string()).collect();
         let host = host_names(profile, &extra);
@@ -737,35 +613,29 @@ mod tests {
     }
 
     #[test]
-    fn host_natives_are_checked_when_core_knows_their_parameters() {
-        // petal-ui's parameters are carried here, so they are checked without
-        // the host's `Env`…
-        assert!(unresolved("mouse_down(button: 0)", HostProfile::Ui, &[]).is_empty());
-        assert!(
-            unresolved("clip(x: 0, y: 0, w: 4, h: 4, radius: 2)", HostProfile::Ui, &[]).is_empty()
+    fn declared_host_natives_are_checked_against_their_declaration() {
+        // A host's parameters are declared by its interface module, so they
+        // are checked without the host's `Env`…
+        let iface = "native fn mouse_down(button: num) -> bool\n\
+                     native fn mouse_x() -> int\n\
+                     native fn clip(x, y, w, h, radius?)\n";
+        let check = |call: &str| unresolved(&format!("{iface}{call}"), HostProfile::Core, &[]);
+        assert!(check("mouse_down(button: 0)").is_empty());
+        assert!(check("clip(x: 0, y: 0, w: 4, h: 4, radius: 2)").is_empty());
+        assert_eq!(
+            check("mouse_down(btn: 0)"),
+            ["4:1 mouse_down() has no parameter named 'btn' (parameters: 'button')"]
         );
         assert_eq!(
-            unresolved("mouse_down(btn: 0)", HostProfile::Ui, &[]),
-            ["1:1 mouse_down() has no parameter named 'btn' (parameters: 'button')"]
+            check("mouse_x(button: 0)"),
+            ["4:1 mouse_x() has no parameter named 'button' (parameters: none)"]
         );
-        assert_eq!(
-            unresolved("mouse_x(button: 0)", HostProfile::Ui, &[]),
-            ["1:1 mouse_x() has no parameter named 'button' (parameters: none)"]
-        );
-        // …and any other host native's names are left to the run.
+        // A declared native is known with no host profile naming it, by call
+        // and by read.
+        assert!(check("let f = mouse_x\nprint(f, mouse_x())").is_empty());
+        // …and a host native known only by name is left to the run.
         assert!(unresolved("navigate(to: 1)", HostProfile::Garden, &[]).is_empty());
         assert!(unresolved("mine(a: 1)", HostProfile::Core, &["mine"]).is_empty());
-    }
-
-    #[test]
-    fn every_host_parameter_table_entry_is_listed_and_parses() {
-        for (name, specs) in PETAL_UI_NATIVE_PARAMS {
-            assert!(PETAL_UI_NATIVES.contains(name), "{name} is not a petal-ui native");
-            assert!(!specs.is_empty(), "{name}");
-            for spec in *specs {
-                NativeSignature::parse(spec).unwrap_or_else(|e| panic!("{name}: {e}"));
-            }
-        }
     }
 
     #[test]

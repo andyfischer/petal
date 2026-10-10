@@ -1,0 +1,12 @@
+// Package `core` — Color constructors and blending (core/src/builtins/color.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn hsv(h: num, s: num, v: num) -> record
+pub native fn hsl(h: num, s: num, l: num) -> record
+pub native fn color_lerp(c1, c2, t) -> record
+pub native fn hsv_deg(h: num, s: num, v: num) -> record
+pub native fn hsl_deg(h: num, s: num, l: num) -> record

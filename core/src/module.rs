@@ -562,6 +562,7 @@ fn declared_name(kind: &StmtKind) -> Option<&str> {
     match kind {
         StmtKind::Let { name, .. }
         | StmtKind::FnDecl { name, .. }
+        | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. })
         | StmtKind::State { name, .. }
         | StmtKind::EnumDecl { name, .. } => Some(name),
         _ => None,

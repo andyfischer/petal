@@ -1,0 +1,9 @@
+# core — the declarations of the builtins every Petal program can call
+# without an import. The natives themselves are registered by the runtime
+# (core/src/builtins/); this package is their interface: names, parameters
+# and types. It is compiled into the petal binary (core/build.rs) and is in
+# scope in every file.
+[package]
+name = "core"
+version = "0.1.0"
+modules = "src"

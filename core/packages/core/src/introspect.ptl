@@ -1,0 +1,9 @@
+// Package `core` — Function introspection, experimental (docs/function-introspection.md).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn fn_info(f: function) -> record
+pub native fn fn_ast(f: function) -> record

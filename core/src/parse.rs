@@ -16,6 +16,10 @@ pub const CLASS_KEYWORD: &str = "class";
 /// highlights it.
 pub const CONFIG_KEYWORD: &str = "config";
 
+/// The contextual keyword that opens a native interface declaration
+/// (`native fn name(...)`): a keyword only directly before `fn`.
+pub const NATIVE_KEYWORD: &str = "native";
+
 /// How a token is spelled in a diagnostic: the source text a reader would
 /// recognize (`','`, `']'`, `` `end` ``), never the Rust variant name. Parse
 /// errors used to leak `Debug` output — "Expected RBracket, got Comma" names
@@ -540,6 +544,10 @@ impl Parser {
                 }
                 self.parse_let(start, false, false, true)
             }
+            // `native` is contextual: only a keyword directly before `fn`.
+            Token::Ident(ref w) if w == NATIVE_KEYWORD && self.starts_native_decl(0) => {
+                self.parse_native_fn_decl(start, false)
+            }
             Token::Import => self.parse_import(start, false),
             Token::Pub | Token::Export => self.parse_export(start),
             _ => self.parse_expr_or_assign(start),
@@ -571,6 +579,9 @@ impl Parser {
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
             Some(Token::Ident(w)) if w == CLASS_KEYWORD => self.parse_class_decl(start, true),
+            Some(Token::Ident(w)) if w == NATIVE_KEYWORD && self.starts_native_decl(1) => {
+                self.parse_native_fn_decl(start, true)
+            }
             // `pub import m: *` — a re-export: the names this file imports
             // become its own exports (docs/module-system.md#re-exporting).
             Some(Token::Import) => self.parse_import(start, true),
@@ -580,8 +591,8 @@ impl Parser {
                     _ => "pub",
                 };
                 Err(self.error_at_current(format!(
-                    "`{word}` must be followed by a fn, let, var, state, enum, class, or import \
-                     declaration"
+                    "`{word}` must be followed by a fn, native fn, let, var, state, enum, class, \
+                     or import declaration"
                 )))
             }
         }
@@ -901,6 +912,142 @@ impl Parser {
         Ok(stmt)
     }
 
+    /// Whether the `native` identifier `offset` tokens ahead opens a
+    /// declaration — i.e. `fn` follows it. `native` anywhere else is a name.
+    fn starts_native_decl(&self, offset: usize) -> bool {
+        matches!(self.tokens.get(self.pos + offset + 1), Some(Token::Fn))
+    }
+
+    /// `native fn name(a: int, b?, ...rest) -> type = "host_name"` — the
+    /// declaration of a function the host implements. It has no body and no
+    /// `end`: everything after the signature is the next statement.
+    ///
+    /// The parameter grammar is a `fn`'s with two differences, both because a
+    /// native has no body to put an expression in: an optional parameter is
+    /// written `name?` rather than `name = expr`, and the list may end in a
+    /// rest parameter `...name`.
+    fn parse_native_fn_decl(&mut self, start: usize, exported: bool) -> Result<Stmt, String> {
+        self.ev_open(SyntaxKind::NativeFnDecl);
+        if exported {
+            self.advance(); // consume 'pub' / 'export'
+        }
+        self.advance(); // consume the contextual `native`
+        self.advance(); // consume 'fn'
+        let first = self.expect_ident()?;
+        let (class, name) = if matches!(self.peek(), Token::Dot) {
+            self.advance(); // consume '.'
+            let method = self.expect_ident()?;
+            (
+                Some(first.clone()),
+                crate::classes::qualified_method_name(&first, &method),
+            )
+        } else {
+            (None, first)
+        };
+        self.ev_open(SyntaxKind::ParamList);
+        self.expect(&Token::LParen)?;
+        let mut params: Vec<Param> = Vec::new();
+        let mut rest: Option<String> = None;
+        self.skip_newlines();
+        while !matches!(self.peek(), Token::RParen | Token::Eof) {
+            if let Some(rest) = &rest {
+                return Err(self.error_at_current(format!(
+                    "The rest parameter '...{rest}' must be the last parameter"
+                )));
+            }
+            if matches!(self.peek(), Token::DotDotDot) {
+                self.ev_open(SyntaxKind::RestParam);
+                self.advance(); // consume '...'
+                rest = Some(self.expect_ident()?);
+                self.ev_close();
+                self.expect_element_separator(&Token::RParen, "parameters")?;
+                continue;
+            }
+            self.expect_element_start("a parameter name")?;
+            let name_pos = self.pos;
+            // A member name, so a keyword works (`end`): the name is only
+            // ever a call's argument label, which takes keywords too.
+            let written = self.expect_field_name()?;
+            let (pname, optional) = match written.strip_suffix('?') {
+                Some(base) if !base.is_empty() => (base.to_string(), true),
+                _ => (written, false),
+            };
+            let ty = self.parse_type_annotation()?;
+            if matches!(self.peek(), Token::Assign) {
+                return Err(self.error_at_current(format!(
+                    "A native fn parameter cannot have a default value — write '{pname}?' for \
+                     one a call may leave off"
+                )));
+            }
+            if !optional && let Some(prev) = params.iter().rev().find(|p| p.optional) {
+                let msg = format!(
+                    "Parameter '{pname}' is required but follows '{}?', which is optional — \
+                     optional parameters must come after all required parameters",
+                    prev.name
+                );
+                return Err(self.error_at(name_pos, msg));
+            }
+            if params.iter().any(|p| p.name == pname) {
+                return Err(self.error_at(
+                    name_pos,
+                    format!("Parameter '{pname}' is declared twice"),
+                ));
+            }
+            params.push(Param {
+                name: pname,
+                ty,
+                default: None,
+                default_in_body: false,
+                optional,
+            });
+            self.expect_element_separator(&Token::RParen, "parameters")?;
+        }
+        self.expect(&Token::RParen)?;
+        self.ev_close(); // ParamList
+        let ret = self.parse_return_type()?;
+        let host = if matches!(self.peek(), Token::Assign) {
+            self.ev_open(SyntaxKind::NativeBinding);
+            self.advance(); // consume '='
+            let host = match self.peek().clone() {
+                Token::String(s) => {
+                    self.advance();
+                    s
+                }
+                _ => {
+                    return Err(self.error_at_current(
+                        "Expected the host native's name as a string after '=' \
+                         (native fn local_name(...) = \"host_name\")"
+                            .to_string(),
+                    ));
+                }
+            };
+            self.ev_close();
+            Some(host)
+        } else {
+            None
+        };
+        if !matches!(self.peek(), Token::Newline | Token::Eof) {
+            return Err(self.error_at_current(format!(
+                "A native fn declaration has no body: expected the end of the line after \
+                 the signature of `{name}`"
+            )));
+        }
+        self.ev_close(); // NativeFnDecl
+        let mut stmt = self.mk_stmt(
+            StmtKind::NativeFn(crate::ast::NativeFnDecl {
+                name,
+                class,
+                params,
+                rest,
+                ret,
+                host,
+            }),
+            start,
+        );
+        stmt.exported = exported;
+        Ok(stmt)
+    }
+
     /// Whether the `class` identifier at the cursor opens a declaration —
     /// i.e. the next token is a name. `class` alone (a variable called `class`,
     /// a JSX `class=` attribute, `class.foo`) is left to expression parsing.
@@ -1146,6 +1293,7 @@ impl Parser {
                 ty,
                 default,
                 default_in_body: false,
+                optional: false,
             });
             self.expect_element_separator(&Token::RParen, "parameters")?;
         }

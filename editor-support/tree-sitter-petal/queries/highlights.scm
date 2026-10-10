@@ -35,6 +35,7 @@
   "export"
   "as"
   "config"
+  "native"
   "let"
   "var"
   "set"

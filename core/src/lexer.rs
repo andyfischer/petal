@@ -229,9 +229,10 @@ pub const KEYWORDS: &[&str] = &[
 /// ordinary identifier and — the sharper constraint — as the JSX attribute
 /// `<div class="…">`. `config` is a modifier the parser reads only in the one
 /// slot immediately before a binding keyword (`config let x = …`), so it too
-/// stays an ordinary name everywhere else. Downstream tooling (highlighting,
-/// completion) should still treat these as keywords.
-pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config"];
+/// stays an ordinary name everywhere else. `native` is a keyword only directly
+/// before `fn` (`native fn sqrt(x: num) -> float`). Downstream tooling
+/// (highlighting, completion) should still treat these as keywords.
+pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "native"];
 
 /// Map an identifier-shaped word to its keyword token, or `None` if it is an
 /// ordinary identifier.

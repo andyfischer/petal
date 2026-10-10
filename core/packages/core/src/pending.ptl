@@ -1,0 +1,18 @@
+// Package `core` — Pending values: the inspectors, and the test-only resource natives
+// (core/src/builtins/pending.rs).
+//
+// Native interface declarations: each `native fn` binds a name to the host
+// native of the same name and gives the checker its parameter names, arity
+// and types. Several declarations of one name are that native's call forms.
+// See docs/ffi.md (Native interfaces).
+
+pub native fn __pending(...args)
+pub native fn __resolve(...args)
+pub native fn __reject(...args)
+pub native fn is_loading(value) -> bool
+pub native fn is_error(value) -> bool
+pub native fn is_pending(value) -> bool
+pub native fn is_ready(value) -> bool
+pub native fn error_of(value)
+pub native fn or_else(value, fallback)
+pub native fn resource_key(value)

@@ -116,6 +116,9 @@ pub fn analyze(source: &str) -> Analysis {
     };
 
     let mut env = crate::env::Env::new();
+    // Diagnostics only: the document may declare natives of a host this
+    // process is not.
+    env.set_check_only(true);
     let diagnostics = match env.load_program_diag(source, None) {
         Ok(pid) => env
             .get_program(pid)
@@ -276,6 +279,35 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 collect_definitions_from_stmt(s, src, defs);
             }
         }
+        // A native declaration is a function definition with no body: hover
+        // and go-to-definition show its signature as written.
+        StmtKind::NativeFn(decl) => {
+            let mut parts: Vec<String> = decl
+                .params
+                .iter()
+                .map(|p| {
+                    let opt = if p.optional { "?" } else { "" };
+                    match &p.ty {
+                        Some(ty) => format!("{}{opt}: {}", p.name, ty.name),
+                        None => format!("{}{opt}", p.name),
+                    }
+                })
+                .collect();
+            if let Some(rest) = &decl.rest {
+                parts.push(format!("...{rest}"));
+            }
+            let ret_str = decl
+                .ret
+                .as_ref()
+                .map(|r| format!(" -> {}", r.name))
+                .unwrap_or_default();
+            defs.push(Definition {
+                name: decl.name.clone(),
+                kind: DefinitionKind::Function,
+                span: stmt.span,
+                detail: Some(format!("native fn({}){ret_str}", parts.join(", "))),
+            });
+        }
         StmtKind::EnumDecl { name, variants } => {
             let detail = Some(
                 variants
@@ -414,10 +446,11 @@ fn is_ident_char(c: char) -> bool {
 // ---------------------------------------------------------------------------
 
 /// The lexer's hard keywords plus the contextual ones (`as`, `class`,
-/// `config`), which completion should still offer. Checked against `petal::lexer::KEYWORDS` by
+/// `config`, `native`), which completion should still offer. Checked against
+/// `petal::lexer::KEYWORDS` by
 /// `core/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
     "let", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
     "while", "match", "when", "return", "break", "continue", "state", "import", "pub", "export",
-    "as", "true", "false", "nil", "enum", "class", "config",
+    "as", "true", "false", "nil", "enum", "class", "config", "native",
 ];

@@ -65,6 +65,7 @@ pub mod host_data;
 pub mod input;
 pub mod panel_stubs;
 mod params;
+pub use params::interface;
 pub mod pending;
 pub mod scenario;
 pub mod tess;

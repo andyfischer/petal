@@ -46,16 +46,14 @@ use crate::natives::system::{self, CartEntry};
 use crate::natives::{audio as audio_natives, video as video_natives};
 use crate::ppu::{FRAME_BYTES, Ppu, SCREEN_H, SCREEN_W};
 
-/// The Petal-source prelude modules a cart imports (`import nes`,
-/// `import nes_sound`).
-pub const NES_MODULE: &str = "nes";
-/// The interface module: a `native fn` declaration for each console native.
-pub const NES_HOST_MODULE: &str = "nes_host";
+/// The console's interface package (`prelude/`): `nes` is the cart
+/// vocabulary, `nes/nes_host` the `native fn` declaration of every console
+/// native, `nes/nes_sound` the music and sound module.
+pub const NES_PACKAGE: &str = "nes";
 const NES_HOST_INTERFACE: &str = include_str!("../prelude/nes_host.ptl");
 /// What [`petal::env::Env::verify_interface`] is given for this host: the
-/// console's own natives, and the input half of petal-ui it registers.
-pub const INTERFACE_MODULES: &[&str] = &[NES_HOST_MODULE, NES_MODULE, "ui/input"];
-pub const NES_SOUND_MODULE: &str = "nes_sound";
+/// console's own package, and the input half of petal-ui it registers.
+pub const INTERFACE_MODULES: &[&str] = &[NES_PACKAGE, "ui/input"];
 const NES_PRELUDE: &str = include_str!("../prelude/nes.ptl");
 const NES_SOUND_PRELUDE: &str = include_str!("../prelude/nes_sound.ptl");
 
@@ -190,14 +188,20 @@ fn register_console(env: &mut Env) {
     crate::natives::register_all(env);
 
     // The console's interface: `nes_host` declares every native registered
-    // above; `nes` and `nes_sound` are the vocabulary written over it.
+    // above; `nes` and `nes/nes_sound` are the vocabulary written over it.
     // Nothing is implicit: a cart writes `import nes` (which re-exports
-    // `nes_host` and petal-ui's `ui/input`) and, for sound,
-    // `import nes_sound`.
+    // `nes/nes_host` and petal-ui's `ui/input`) and, for sound,
+    // `import nes/nes_sound`.
     petal_ui::register_prelude(env);
-    env.register_module(NES_HOST_MODULE, NES_HOST_INTERFACE);
-    env.register_module(NES_MODULE, NES_PRELUDE);
-    env.register_module(NES_SOUND_MODULE, NES_SOUND_PRELUDE);
+    env.register_package(
+        NES_PACKAGE,
+        [
+            ("nes_host", NES_HOST_INTERFACE),
+            ("nes", NES_PRELUDE),
+            ("nes_sound", NES_SOUND_PRELUDE),
+        ],
+    )
+    .expect("the nes package registers");
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 // of this demo; it is the hardware, and every cart lives inside it.
 
 import nes
-import nes_sound
+import nes/nes_sound
 
 set_backdrop(black)
 

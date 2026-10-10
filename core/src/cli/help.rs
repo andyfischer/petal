@@ -485,6 +485,10 @@ DESCRIPTION
        under each -I <dir> and PETAL_PATH. A path that already resolves as a
        package is never rewritten.
 
+       A file with the comment '// petal-fix-imports-ignore' on a line of its
+       own gets no import added (its import lines are still rewritten): for
+       a file whose unknown names are not meant to come from a package.
+
        Running it again changes nothing, and a file already written for the
        current module system is left as it is. A file that does not parse is
        reported and skipped. A file that does not compile still has its

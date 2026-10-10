@@ -198,6 +198,11 @@ way, for code written against an earlier checkout.
   `core/build.rs` embeds them and fails the build if a source directory is
   missing. `petal check` therefore resolves `import ui` and `import bloom`
   with no host and no `-I`.
+- `petal fix-imports` adds `import ui` (and, with a host's package on `-I`,
+  `import garden`, `import sdl`, …) for names a script used through a host's
+  implicit prelude, picking the package the others are built on when several
+  export a name. `// petal-fix-imports-ignore` in a file keeps imports from
+  being added to it.
 - Host interface packages: each host ships the `native fn` declarations of its
   natives as a package beside its Rust code and registers it in memory —
   petal-ui `ui`, Garden panels `garden`, Garden's config host `garden_config`,

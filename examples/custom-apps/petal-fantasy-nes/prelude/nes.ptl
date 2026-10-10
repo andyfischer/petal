@@ -33,9 +33,9 @@
 // cart's `scroll` in a state dump.
 
 // ── What a cart gets with `import nes` ────────────────────────────────────
-// The console's natives (`nes_host`) and petal-ui's input, timing and frame
+// The console's natives (`nes/nes_host`) and petal-ui's input, timing and frame
 // natives (`ui/input`), re-exported so one import brings the whole machine.
-pub import nes_host
+pub import ./nes_host
 pub import ui/input
 
 // ── Screen geometry ───────────────────────────────────────────────────────

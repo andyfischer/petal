@@ -1,0 +1,10 @@
+# nes — the fantasy console's interface package: the `native fn` declarations
+# of its natives (`nes/nes_host`), the cart vocabulary written over them
+# (`nes`), and the music and sound module (`nes/nes_sound`).
+#
+# The console registers this package in memory (src/host.rs). The stock CLI
+# finds it by path:
+#   petal check -I examples/custom-apps/petal-fantasy-nes/prelude carts/hello.ptl
+[package]
+name = "nes"
+version = "0.1.0"

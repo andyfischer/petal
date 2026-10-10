@@ -58,7 +58,7 @@ examples/custom-apps/petal-fantasy-nes/
   tests/carts.rs           runs every cart headless for 120 frames
 ```
 
-A cart imports the prelude modules (`import nes`, `import nes_sound`), so carts call their
+A cart imports the prelude modules (`import nes`, `import nes/nes_sound`), so carts call their
 exports bare.
 
 ## Frame flow

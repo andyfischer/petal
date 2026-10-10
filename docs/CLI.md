@@ -653,6 +653,11 @@ where the name is used. It is a command of its own rather than a `lint`
 rule: a lint fix starts from a file that compiles, and an old-style file
 does not.
 
+A file with the comment `// petal-fix-imports-ignore` on a line of its own
+gets no import *added* (its import lines are still rewritten). It is for a
+file whose unknown names are not meant to come from a package — a shader
+written as Petal lambdas, whose `step` is GLSL's and not bloom's.
+
 ### `lint` — Rules with fixes
 
 ```

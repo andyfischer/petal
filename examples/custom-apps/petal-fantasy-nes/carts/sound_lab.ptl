@@ -19,7 +19,7 @@
 // instead of restarting it.
 
 import nes
-import nes_sound
+import nes/nes_sound
 
 set_backdrop(black)
 palette(0, white, gray, dark_gray)     // labels

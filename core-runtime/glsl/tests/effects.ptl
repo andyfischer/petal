@@ -13,6 +13,10 @@
 //   - src, fx_luma, hash33, ... are the shader environment (not Petal builtins).
 //
 // This file compiles and runs (nothing here calls the lambdas).
+//
+// The shader environment is not something to import, so `petal fix-imports`
+// is told not to look for a package that happens to export one of its names:
+// petal-fix-imports-ignore
 
 class Fx
   color: vec3,

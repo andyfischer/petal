@@ -1,4 +1,4 @@
-// fantasy-nes host interface — module `nes_host`
+// fantasy-nes host interface — module `nes/nes_host`
 //
 // The declaration of every native the console registers (src/natives/*.rs).
 // A cart reaches a native only through a declaration, and gets these through

@@ -20,7 +20,7 @@
 // (four each) start at 64. Nothing here comes close to the 512-tile table.
 
 import nes
-import nes_sound
+import nes/nes_sound
 
 let TILE_BLANK = 0
 let TILE_BAR = 1

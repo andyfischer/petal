@@ -54,7 +54,7 @@
 // data row `r` is map row `r + 4`. There is no vertical scrolling.
 
 import nes
-import nes_sound
+import nes/nes_sound
 import ./art as gfx
 import ./levels as maps
 

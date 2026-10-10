@@ -34,7 +34,7 @@
 // deliberately not allowed — the screens draw, the top level decides.
 
 import nes
-import nes_sound
+import nes/nes_sound
 
 set_backdrop(black)
 palette(0, white, gray, dark_gray)      // labels

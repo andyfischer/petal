@@ -62,6 +62,11 @@ pub struct ImportFixer {
     loads: HashMap<String, HashSet<String>>,
 }
 
+/// The opt-out comment: a file carrying `// petal-fix-imports-ignore` on a
+/// line of its own has its import lines rewritten like any other, but gets no
+/// import *added* for a name nothing in it provides.
+pub const IGNORE_FILE: &str = "petal-fix-imports-ignore";
+
 impl ImportFixer {
     /// A fixer that knows the bundled packages and the packages under
     /// `include_dirs`.
@@ -200,6 +205,17 @@ impl ImportFixer {
                 )]);
             }
         };
+        // `// petal-fix-imports-ignore` on a line of its own: the file names
+        // things no package is meant to provide (a shader's environment, a
+        // host this tool cannot see), so a package that happens to export
+        // one of them is not what it meant.
+        if source.lines().any(|line| {
+            line.trim()
+                .strip_prefix("//")
+                .is_some_and(|rest| rest.trim() == IGNORE_FILE)
+        }) {
+            return unchanged(Vec::new());
+        }
         let missing = unresolved_names(&program);
         if missing.is_empty() {
             return unchanged(Vec::new());
@@ -874,5 +890,17 @@ mod tests {
         let fixed = fixer.add_missing_imports(src, None);
         assert_eq!(fixed.source, src);
         assert!(fixed.notes[0].contains("does not compile"), "{:?}", fixed.notes);
+    }
+    #[test]
+    fn the_ignore_comment_keeps_added_imports_out_of_a_file() {
+        let mut fixer = ImportFixer::new(&[]);
+        // `clear` is exported by `ui`, but this file says not to guess.
+        let src = "// petal-fix-imports-ignore\nlet f = fn() clear(0, 0, 0) end\n";
+        let fixed = fixer.fix(src, None).unwrap();
+        assert_eq!(fixed.source, src);
+        assert!(fixed.changes.is_empty(), "{:?}", fixed.changes);
+        // Without the comment the import is added.
+        let fixed = fixer.fix("let f = fn() clear(0, 0, 0) end\n", None).unwrap();
+        assert!(fixed.source.starts_with("import ui\n"), "{}", fixed.source);
     }
 }

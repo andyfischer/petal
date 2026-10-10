@@ -17,7 +17,8 @@
     "garden/garden-script/packages",
     "integrations/petal-desktop-sdl/packages",
     "core/packages/web",
-    "examples/custom-apps/petal-fps/packages"
+    "examples/custom-apps/petal-fps/packages",
+    "examples/custom-apps/petal-fantasy-nes/prelude"
   ],
   "steps": [
     {

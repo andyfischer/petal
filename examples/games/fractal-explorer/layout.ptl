@@ -1,0 +1,2 @@
+// headless-size: 1320x900
+layout(panel("app.ptl"))

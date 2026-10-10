@@ -4,20 +4,20 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-36 of the 50 exist. Thirty-one are panel apps under the category directories
+37 of the 50 exist. Thirty-two are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
 game, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
 client, the settings screen, the command palette, the music sequencer, the node-based editor, the
-Markdown editor, the network graph explorer, the timeline explorer and the
-solar system), and five more
+Markdown editor, the network graph explorer, the timeline explorer, the
+solar system and the fractal explorer), and five more
 were written as headless console programs under `examples/games/`, which
 stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirty-second panel app that was not on
-this list. The remaining 14 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-third panel app that was not on
+this list. The remaining 13 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -74,6 +74,6 @@ this list. The remaining 14 have not been attempted.
 | 46 | **Timeline explorer** | Zooming time axis, events, filtering | built — `examples/dashboards/timeline-explorer/` |
 | **Creative / graphical experiments** | | | |
 | 47 | **Boids / flocking simulation** | Real-time simulation, many animated entities | console — `examples/games/boids/boids.ptl` |
-| 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation |  |
+| 48 | **Fractal explorer** | Custom rendering, zoom/pan, computation | built — `examples/games/fractal-explorer/` |
 | 49 | **Procedural terrain generator** | Noise, parameters, realtime graphical updates | console — `examples/games/terrain/terrain.ptl` |
 | 50 | **Interactive solar system** | Hierarchical transforms, animation, zoom, labels | built — `examples/games/solar-system/` |

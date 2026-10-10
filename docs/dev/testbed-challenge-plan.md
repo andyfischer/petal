@@ -4,10 +4,10 @@ The original list of 50 target apps for the Garden panel-app testbed, drawn up
 when the testbed was started (Aug 2026). Each app exercises a different slice
 of the language and host; see the "What it tests" column.
 
-34 of the 50 exist. Twenty-nine are panel apps under the category directories
+35 of the 50 exist. Thirty are panel apps under the category directories
 described in [examples/README.md](../../examples/README.md) (the first three
 of each of the first five categories, plus Asteroids, Flappy Bird, the memory
-game, the tower defense mini-game, the physics playground, the calendar, the email
+game, the tower defense mini-game, the particle sandbox, the physics playground, the calendar, the email
 client, the command palette, the music sequencer, the node-based editor, the
 Markdown editor, the network graph explorer, the timeline explorer and the
 solar system), and five more
@@ -16,8 +16,8 @@ stress the language rather than the host.
 The Status column gives each one's current path. See
 [examples/AUTHORING.md](../../examples/AUTHORING.md) for how to write one.
 
-`examples/custom-apps/side-scroller` is a thirtieth panel app that was not on
-this list. The remaining 16 have not been attempted.
+`examples/custom-apps/side-scroller` is a thirty-first panel app that was not on
+this list. The remaining 15 have not been attempted.
 
 | # | App | What it tests | Status |
 |---|---|---|---|
@@ -32,7 +32,7 @@ this list. The remaining 16 have not been attempted.
 | 8 | **Minesweeper** | Dynamic grids, recursive behavior, right-click | console — `examples/games/minesweeper/minesweeper.ptl` |
 | 9 | **Memory matching game** | Card components, animation, delayed state changes | built — `examples/games/memory/` |
 | 10 | **Tower Defense mini-game** | Paths, many entities, targeting, simulation | built — `examples/games/tower-defense/` |
-| 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance |  |
+| 11 | **Particle sandbox** | Thousands of objects, mouse interaction, performance | built — `examples/games/particle-sandbox/` |
 | 12 | **Physics playground** | Dragging, gravity, collisions, constraints | built — `examples/games/physics-playground/` |
 | **Everyday UI** | | | |
 | 13 | **Calculator** | Buttons, layout, expression/state handling | built — `examples/productivity/calculator/` |

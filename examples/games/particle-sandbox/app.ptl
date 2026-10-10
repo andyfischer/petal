@@ -1,0 +1,981 @@
+// ─────────────────────────────────────────────────────────────────────────
+//  PARTICLE SANDBOX — a Garden panel app written in Petal.
+//
+//  Up to twelve thousand point particles in one fused integrate-and-draw
+//  loop, pushed around by the mouse: attract, repel, swirl, grab and carry,
+//  spray, erase, and drop gravity wells that keep pulling after you let go.
+//
+//  Exercises: thousands of live objects, mouse interaction, per-frame cost.
+//
+//  How the frame stays cheap:
+//    - structure-of-arrays in five `f64_array`s (x, y, vx, vy, hue), written
+//      in place through `state var` cells; no record per particle
+//    - one pass per frame: forces, integration, walls, statistics and the
+//      draw call for a particle all happen in the same loop iteration
+//    - every force (each well, and the mouse while a force tool is held) is
+//      one row of the same small table, so the inner loop has no branches
+//    - colour is a lookup into a precomputed 3 x 64 ramp of ints, and the
+//      draw call is the flat native form (no record, no prelude overload)
+//    - a fixed pool: spraying into a full pool overwrites the oldest slot,
+//      erasing swap-removes, so nothing is ever reallocated or compacted
+//
+//  Designed for a 1280x850 viewport.  See README.md.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Palette ──────────────────────────────────────────────────────────────
+
+let C_BG     = #06070d
+let C_STAGE  = #090b15
+let C_PANEL  = #0e111c
+let C_CHIP   = #151a2a
+let C_LINE   = #1d2233
+let C_EDGE   = #2a3147
+let C_TEXT   = #e8ecf8
+let C_DIM    = #7d869e
+let C_MUTE   = #4a5166
+let C_ACCENT = #6fd3ff
+let C_WARM   = #ff8a5c
+let C_GOLD   = #ffd166
+
+// ── Type scale: 10 / 11 / 13 / 20 / 28 ───────────────────────────────────
+
+let S_TITLE = {size: 28, color: C_TEXT, spacing: 8}
+let S_KICK  = {size: 10, color: C_MUTE, spacing: 4}
+let S_LABEL = {size: 10, color: C_DIM,  spacing: 3}
+let S_STAT  = {size: 20, color: C_TEXT}
+let S_CAP   = {size: 11, color: C_TEXT}
+let S_KEY   = {size: 10, color: C_DIM}
+let S_HINT  = {size: 11, color: C_DIM}
+let S_UI    = {size: 13, font: "ui", color: C_TEXT}
+let S_UI_M  = {size: 13, font: "ui", color: C_DIM}
+let S_UI_B  = {size: 13, font: "ui", color: C_TEXT, weight: 700}
+let S_BIG   = {size: 18, font: "ui", color: C_TEXT, weight: 700}
+
+// ── Tunables ─────────────────────────────────────────────────────────────
+
+config let gravity_accel = 520.0     // px/s^2 when gravity is on
+config let drag_rate     = 0.9       // 1/s velocity decay when drag is on
+config let restitution   = 0.78      // speed kept by a bounce off a wall
+config let flow_accel    = 150.0     // px/s^2 of the noise flow field
+config let brush_gain    = 1100.0    // mouse force per px^2 of brush area
+config let well_strength = 3000000.0 // GM of a dropped well, px^3/s^2
+config let emit_rate     = 1800.0    // particles per second from the Emit tool
+config let blast_speed   = 360.0     // peak kick of a blast, px/s
+config let speed_limit   = 1400.0    // px/s
+config let speed_ref     = 190.0     // speed that maps to the middle of a ramp
+config let streak_len    = 0.028     // seconds of travel a streak covers
+config let streak_max    = 13.0      // longest streak, px
+
+let MAXP      = 12000                // the pool
+let MAX_WELLS = 6
+let WELL_SOFT2 = 1600.0              // softening of a well, px^2
+let LN        = 64                   // entries per colour ramp
+let COUNTS    = [1000, 2000, 4000, 6000, 8000, 12000]
+
+let PAD    = 24
+let HEAD   = 76
+let SIDE_W = 248
+
+let TOOLS = [
+  {name: "Attract", key: "1", color: #6fd3ff, hint: "pull particles in"},
+  {name: "Repel",   key: "2", color: #ff7a6b, hint: "push particles away"},
+  {name: "Vortex",  key: "3", color: #b99cff, hint: "swirl around the cursor"},
+  {name: "Grab",    key: "4", color: #ffd166, hint: "carry what the brush holds"},
+  {name: "Emit",    key: "5", color: #7ff0b0, hint: "spray new particles"},
+  {name: "Erase",   key: "6", color: #ff5fa2, hint: "delete under the brush"},
+  {name: "Well",    key: "7", color: #9fb4ff, hint: "drop or remove a gravity well"},
+]
+let T_ATTRACT = 0
+let T_REPEL   = 1
+let T_VORTEX  = 2
+let T_GRAB    = 3
+let T_EMIT    = 4
+let T_ERASE   = 5
+let T_WELL    = 6
+
+let SCENES = ["Galaxy", "Binary", "Currents", "Burst"]
+let CMODES = ["Ice", "Ember", "Prism"]
+
+// ── Colour ramps ─────────────────────────────────────────────────────────
+// Three ramps of LN colours, flattened into parallel int lists so the hot
+// loop reads three ints and never builds a colour record.
+
+fn ramp(stops: list, count: int) -> list
+  let segs = len(stops) - 1
+  for i in range(0, count) do
+    let t = float(i) / float(count - 1) * float(segs)
+    let k = min(int(floor(t)), segs - 1)
+    lerp(stops[k], stops[k + 1], t - float(k))
+  end
+end
+
+fn build_lut() -> record
+  let ice = ramp([#2c3aa6, #3f74ff, #4fd2ff, #d9fbff, #ffffff], LN)
+  let ember = ramp([#8a2a1c, #e8482a, #ff8a3c, #ffd166, #fff6d6], LN)
+  let spectrum = for i in range(0, LN) do hsv(float(i) / float(LN), 0.58, 1.0) end
+  let cols = []
+  for c in ice do cols = append(cols, c) end
+  for c in ember do cols = append(cols, c) end
+  for c in spectrum do cols = append(cols, c) end
+  {r: map(cols, fn(c) -> c.r), g: map(cols, fn(c) -> c.g), b: map(cols, fn(c) -> c.b)}
+end
+
+// ── Persistent state ─────────────────────────────────────────────────────
+
+state lut = build_lut()
+
+// The pool: index i is the same particle in every array; [0, n) are alive.
+state var px = f64_array(MAXP)
+state var py = f64_array(MAXP)
+state var vx = f64_array(MAXP)
+state var vy = f64_array(MAXP)
+state var hu = f64_array(MAXP)       // ramp index 0..LN-1 given at spawn
+state var n = 0
+state var ring = 0                   // next slot to overwrite once the pool is full
+
+// Wells: parallel lists of position and signed strength.
+state var wxs = []
+state var wys = []
+state var wss = []
+
+state var scene = 0
+state var gravity = false
+state var flow = false
+state var wrap = false
+state var drag = false
+state var cmode = 0
+
+state ready = false
+state tool = 0
+state radius = 90.0
+state streaks = true
+state paused = false
+state count_i = 3
+state acting = false                 // a stage press is being held
+state brush_drag = false             // the brush slider is being dragged
+state pmx = 0.0                      // last frame's cursor, stage-local
+state pmy = 0.0
+state pend_dx = 0.0                  // cursor travel not yet consumed by a sim frame
+state pend_dy = 0.0
+state emit_acc = 0.0
+state emit_hue = 0.0
+state flow_t = 0.0
+state rings = []                     // blast shockwaves: {x, y, t}
+state hist = []                      // recent frame intervals, ms
+state emitted = 0
+state erased = 0
+state blasts = 0
+state sim_frames = 0
+
+// ── Pure helpers ─────────────────────────────────────────────────────────
+
+fn tx(s: string, x: num, y: num, style: record) -> nil
+  draw_text(s, pos: {x: int(x), y: int(y)}, style: style)
+end
+
+fn tx_right(s: string, right_x: num, y: num, style: record) -> nil
+  draw_text(s, pos: {x: int(right_x) - text_width(s, style), y: int(y)}, style: style)
+end
+
+fn tx_center(s: string, cx: num, y: num, style: record) -> nil
+  draw_text(s, pos: {x: int(cx) - text_width(s, style) / 2, y: int(y)}, style: style)
+end
+
+// 12000 -> "12,000"
+fn fmt_int(v: num) -> string
+  let cs = chars(str(int(v)))
+  let out = ""
+  for i in range(0, len(cs)) do
+    if i > 0 && (len(cs) - i) % 3 == 0 then out ++= "," end
+    out ++= cs[i]
+  end
+  out
+end
+
+// Speed of a circular orbit at distance r from one well.
+fn orbit_speed(r: num) -> num
+  sqrt(well_strength * r * r / pow(r * r + WELL_SOFT2, 1.5))
+end
+
+// ── Pool edits ───────────────────────────────────────────────────────────
+
+// Add one particle. A full pool overwrites its oldest slot instead of growing.
+fn spawn(x: num, y: num, u: num, v: num, hue: num) -> nil
+  let i = get n
+  if i >= MAXP then
+    i = get ring
+    set ring = (i + 1) % MAXP
+  else
+    set n = i + 1
+  end
+  set px[i] = x
+  set py[i] = y
+  set vx[i] = u
+  set vy[i] = v
+  set hu[i] = clamp(hue, lo: 0.0, hi: float(LN - 1))
+end
+
+fn add_well(x: num, y: num, s: num) -> nil
+  if len(get wxs) >= MAX_WELLS then return nil end
+  set wxs = append(get wxs, x)
+  set wys = append(get wys, y)
+  set wss = append(get wss, s)
+end
+
+fn remove_well(k: int) -> nil
+  let count = len(get wxs)
+  set wxs = for i in range(0, count) do
+    if i == k then continue end
+    get wxs[i]
+  end
+  set wys = for i in range(0, count) do
+    if i == k then continue end
+    get wys[i]
+  end
+  set wss = for i in range(0, count) do
+    if i == k then continue end
+    get wss[i]
+  end
+end
+
+fn clear_wells() -> nil
+  set wxs = []
+  set wys = []
+  set wss = []
+end
+
+// Index of the well within `reach` px of (x, y), or -1.
+fn well_at(x: num, y: num, reach: num) -> int
+  let found = -1
+  for i in range(0, len(get wxs)) do
+    let dx = get wxs[i] - x
+    let dy = get wys[i] - y
+    if dx * dx + dy * dy < reach * reach then found = i end
+  end
+  found
+end
+
+// Rebuild the stage as scene k with `count` particles in a sw x sh box.
+fn load_scene(k: int, count: int, sw: num, sh: num) -> nil
+  set n = 0
+  set ring = 0
+  clear_wells()
+  set scene = k
+  set gravity = false
+  set flow = false
+  set wrap = false
+  set drag = false
+  set cmode = [0, 2, 2, 1][k]
+  let cx = sw / 2.0
+  let cy = sh / 2.0
+  if k == 0 then
+    // Galaxy: one well, a two-armed spiral of particles on circular orbits.
+    add_well(cx, cy, well_strength)
+    let reach = min(sw, sh) * 0.44
+    for i in range(0, count) do
+      let r = 26.0 + pow(random(), 0.72) * reach
+      let arm = if i % 3 == 0 then 0.0 else pi() end
+      let a = if i % 3 == 2 then random(0.0, 6.2832)
+      else arm + r * 0.015 + (random() + random() - 1.0) * 0.75 end
+      let s = orbit_speed(r) * random(0.96, 1.04)
+      spawn(cx + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
+        hue: 4.0 + r / reach * 40.0 + random(-3.0, 3.0))
+    end
+  elsif k == 1 then
+    // Binary: two wells, a disc of particles in orbit around each.
+    let sep = min(sw * 0.2, 190.0)
+    add_well(cx - sep, cy, well_strength)
+    add_well(cx + sep, cy, well_strength)
+    for i in range(0, count) do
+      let left = i % 2 == 0
+      let ox = if left then cx - sep else cx + sep end
+      let r = 20.0 + sqrt(random()) * sep * 0.72
+      let a = random(0.0, 6.2832)
+      let s = orbit_speed(r) * random(0.97, 1.03)
+      spawn(ox + cos(a) * r, cy + sin(a) * r, -sin(a) * s, cos(a) * s,
+        hue: (if left then 34.0 else 2.0 end) + r / sep * 14.0)
+    end
+  elsif k == 2 then
+    // Currents: a gas at rest in a wrapping box, stirred by the flow field.
+    set flow = true
+    set drag = true
+    set wrap = true
+    for i in range(0, count) do
+      let x = random(0.0, sw)
+      spawn(x, random(0.0, sh), 0.0, 0.0, hue: x / sw * 63.0)
+    end
+  else
+    // Burst: everything thrown from one point, under gravity, in a closed box.
+    set gravity = true
+    set drag = true
+    for i in range(0, count) do
+      let a = random(0.0, 6.2832)
+      let s = 40.0 + sqrt(random()) * 520.0
+      let r = random(0.0, 10.0)
+      spawn(cx + cos(a) * r, sh * 0.42 + sin(a) * r, cos(a) * s, sin(a) * s - 120.0,
+        hue: a / 6.2832 * 63.0)
+    end
+  end
+end
+
+// ── Layout ───────────────────────────────────────────────────────────────
+
+let W = screen_width()
+let H = screen_height()
+let stage = rect(PAD, HEAD, W - PAD * 2 - SIDE_W - 16, H - HEAD - 62)
+let side = rect(stage.x + stage.w + 16, HEAD, SIDE_W, stage.h)
+let SW = float(stage.w)
+let SH = float(stage.h)
+let OX = float(stage.x)
+let OY = float(stage.y)
+
+// Sidebar geometry, shared by the input pass and the draw pass.
+let ROW_H = 25
+let tools_y = side.y + 36
+let brush_y = tools_y + len(TOOLS) * ROW_H + 14
+let brush_track = rect(side.x + 16, brush_y + 26, side.w - 32, 6)
+let forces_y = brush_y + 54
+let CHIP_W = (side.w - 28) / 2
+let CHIP_H = 26
+let scene_y = forces_y + 20 + 3 * (CHIP_H + 4) + 12
+let dens_y = scene_y + 20 + 2 * (CHIP_H + 4) + 4
+let frame_y = dens_y + 44
+
+fn tool_row(i: int) -> Rect
+  rect(side.x + 8, tools_y + i * ROW_H, side.w - 16, ROW_H)
+end
+
+fn chip_rect(top: int, i: int) -> Rect
+  rect(side.x + 10 + (i % 2) * (CHIP_W + 8), top + (i / 2) * (CHIP_H + 4), CHIP_W, CHIP_H)
+end
+
+let dens_minus = rect(side.x + 10, dens_y, 30, CHIP_H)
+let dens_plus = rect(side.x + side.w - 40, dens_y, 30, CHIP_H)
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+
+if !ready then
+  ready = true
+  load_scene(0, COUNTS[count_i], SW, SH)
+  pmx = SW / 2.0
+  pmy = SH / 2.0
+end
+
+// ── Input ────────────────────────────────────────────────────────────────
+
+let h = min(dt(), 1.0 / 30.0)
+let mx = mouse_x()
+let my = mouse_y()
+let in_stage = point_in(px: mx, py: my, r: stage)
+let smx = float(mx) - OX             // cursor in stage space
+let smy = float(my) - OY
+let invert = mod_shift()
+let pressed = mouse_pressed(0)
+
+pend_dx += smx - pmx
+pend_dy += smy - pmy
+pmx = smx
+pmy = smy
+
+for i in range(0, len(TOOLS)) do
+  if key_pressed(TOOLS[i].key) then tool = i end
+end
+if key_pressed("space") then paused = !paused end
+if key_pressed("g") then set gravity = !gravity end
+if key_pressed("f") then set flow = !flow end
+if key_pressed("w") then set wrap = !wrap end
+if key_pressed("d") then set drag = !drag end
+if key_pressed("t") then streaks = !streaks end
+if key_pressed("c") then set cmode = (cmode + 1) % len(CMODES) end
+if key_pressed("x") then set n = 0 end
+if key_pressed("z") then clear_wells() end
+if key_pressed("[") then radius = max(radius / 1.2, 24.0) end
+if key_pressed("]") then radius = min(radius * 1.2, 220.0) end
+if in_stage && scroll_y() != 0.0 then
+  radius = clamp(radius * pow(1.1, -scroll_y()), lo: 24.0, hi: 220.0)
+end
+
+let reload = -1
+if key_pressed("r") then reload = scene end
+if key_pressed("tab") then
+  reload = (scene + (if invert then len(SCENES) - 1 else 1 end)) % len(SCENES)
+end
+if key_pressed("=") || key_pressed("+") then
+  count_i = min(count_i + 1, len(COUNTS) - 1)
+  reload = scene
+end
+if key_pressed("-") then
+  count_i = max(count_i - 1, 0)
+  reload = scene
+end
+
+// Sidebar clicks.
+if pressed && point_in(px: mx, py: my, r: side) then
+  for i in range(0, len(TOOLS)) do
+    if point_in(px: mx, py: my, r: tool_row(i)) then tool = i end
+  end
+  if point_in(px: mx, py: my, r: brush_track.inset(-8)) then brush_drag = true end
+  let ftop = forces_y + 20
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 0)) then set gravity = !gravity end
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 1)) then set flow = !flow end
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 2)) then set drag = !drag end
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 3)) then set wrap = !wrap end
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 4)) then streaks = !streaks end
+  if point_in(px: mx, py: my, r: chip_rect(ftop, 5)) then set cmode = (cmode + 1) % len(CMODES) end
+  for i in range(0, len(SCENES)) do
+    if point_in(px: mx, py: my, r: chip_rect(scene_y + 20, i)) then reload = i end
+  end
+  if point_in(px: mx, py: my, r: dens_minus) then
+    count_i = max(count_i - 1, 0)
+    reload = scene
+  end
+  if point_in(px: mx, py: my, r: dens_plus) then
+    count_i = min(count_i + 1, len(COUNTS) - 1)
+    reload = scene
+  end
+end
+if !mouse_down(0) then brush_drag = false end
+if brush_drag then
+  let t = clamp(float(mx - brush_track.x) / float(brush_track.w), lo: 0.0, hi: 1.0)
+  radius = 24.0 + t * 196.0
+end
+
+if reload >= 0 then load_scene(reload, COUNTS[count_i], SW, SH) end
+
+// Stage press: the tool acts for as long as the button that started on the
+// stage stays down.
+if pressed && in_stage then acting = true end
+if !mouse_down(0) && !pressed then acting = false end
+
+let r2 = radius * radius
+let tool_color = TOOLS[tool].color
+
+// Well tool: a click drops a well, or removes the one under the pointer.
+if pressed && in_stage && tool == T_WELL then
+  let hit = well_at(smx, smy, 18.0)
+  if hit >= 0 then
+    remove_well(hit)
+  else
+    add_well(smx, smy, if invert then -well_strength * 0.6 else well_strength end)
+  end
+end
+
+// Erase: swap-remove everything under the brush.
+if acting && tool == T_ERASE then
+  let i = 0
+  while i < n do
+    let ex = px[i] - smx
+    let ey = py[i] - smy
+    if ex * ex + ey * ey < r2 then
+      let l = n - 1
+      set px[i] = px[l]
+      set py[i] = py[l]
+      set vx[i] = vx[l]
+      set vy[i] = vy[l]
+      set hu[i] = hu[l]
+      set n = l
+      erased += 1
+    else
+      i += 1
+    end
+  end
+  if ring >= n then set ring = 0 end
+end
+
+// Emit: a puff on the press, then a steady spray along the cursor's travel.
+if acting && tool == T_EMIT then
+  let cvx = if h > 0.0 then clamp(pend_dx / h, lo: -900.0, hi: 900.0) else 0.0 end
+  let cvy = if h > 0.0 then clamp(pend_dy / h, lo: -900.0, hi: 900.0) else 0.0 end
+  emit_acc += emit_rate * h
+  if pressed then emit_acc += 80.0 end
+  let burst = int(emit_acc)
+  emit_acc -= float(burst)
+  for k in range(0, burst) do
+    let a = random(0.0, 6.2832)
+    let s = random(20.0, 150.0)
+    let r = sqrt(random()) * radius * 0.22
+    spawn(smx + cos(a) * r, smy + sin(a) * r, cvx * 0.3 + cos(a) * s, cvy * 0.3 + sin(a) * s,
+      hue: emit_hue + random(-2.0, 2.0))
+  end
+  emitted += burst
+  emit_hue = (emit_hue + h * 14.0 + (if pressed then 5.0 else 0.0 end)) % float(LN)
+end
+
+// Blast: right click (or B) kicks everything outward from the cursor. It is
+// an impulse, so it does not wait for a simulated frame.
+if in_stage && (mouse_pressed(1) || key_pressed("b")) then
+  let reach2 = 170.0 * 170.0
+  for i in range(0, n) do
+    let bx = px[i] - smx
+    let by = py[i] - smy
+    let d2 = bx * bx + by * by + 64.0
+    let kick = blast_speed * reach2 / (d2 + reach2) / sqrt(d2)
+    set vx[i] = vx[i] + bx * kick
+    set vy[i] = vy[i] + by * kick
+  end
+  rings = append(rings, {x: smx, y: smy, t: 0.0})
+  blasts += 1
+end
+
+// ── Forces for this frame ────────────────────────────────────────────────
+// One row per well, plus one for the mouse while a force tool is held. A
+// row pulls along the line to its centre with `fr` and across it with `ft`,
+// both falling off as 1 / (d^2 + soft^2)^(3/2).
+
+let fxs = wxs
+let fys = wys
+let frs = wss
+let fts = for s in wss do 0.0 end
+let fss = for s in wss do WELL_SOFT2 end
+let force_tool = acting && tool <= T_VORTEX
+if force_tool then
+  let ms = brush_gain * r2 * (if invert then -1.0 else 1.0 end)
+  fxs = append(fxs, smx)
+  fys = append(fys, smy)
+  fss = append(fss, r2)
+  if tool == T_ATTRACT then
+    frs = append(frs, ms)
+    fts = append(fts, 0.0)
+  elsif tool == T_REPEL then
+    frs = append(frs, -ms)
+    fts = append(fts, 0.0)
+  else
+    frs = append(frs, abs(ms) * 0.3)
+    fts = append(fts, ms * 0.9)
+  end
+end
+let ks = range(0, len(fxs))
+
+let do_sim = !paused && h > 0.0
+let grav_a = if gravity then gravity_accel else 0.0 end
+let damp = if drag then exp(-drag_rate * h) else 1.0 end
+let grabbing = acting && tool == T_GRAB
+let gdx = pend_dx                    // cursor travel since the last sim frame
+let gdy = pend_dy
+let gox = smx - gdx                  // where the cursor was then
+let goy = smy - gdy
+let gvx = if h > 0.0 then clamp(gdx / h, lo: -1200.0, hi: 1200.0) else 0.0 end
+let gvy = if h > 0.0 then clamp(gdy / h, lo: -1200.0, hi: 1200.0) else 0.0 end
+let vmax2 = speed_limit * speed_limit
+let streak_cap = streak_max / streak_len
+let bounce = -restitution
+let SW2 = SW * 2.0
+let SH2 = SH * 2.0
+if do_sim then
+  flow_t += h * 0.12
+  pend_dx = 0.0
+  pend_dy = 0.0
+  sim_frames += 1
+end
+
+// ── Draw: chrome behind the stage ────────────────────────────────────────
+
+clear(C_BG.r, C_BG.g, C_BG.b)
+draw_rect_rounded(stage, radius: 14, c: C_STAGE)
+clip_push(stage, 14)
+
+// A faint grid, so motion has something to move against.
+let gx0 = stage.x + stage.w / 2 % 64
+for gx in range(gx0, stage.x + stage.w, 64) do
+  draw_rect(gx, stage.y, 1, stage.h, 255, 255, 255, 5)
+end
+let gy0 = stage.y + stage.h / 2 % 64
+for gy in range(gy0, stage.y + stage.h, 64) do
+  draw_rect(stage.x, gy, stage.w, 1, 255, 255, 255, 5)
+end
+
+// Wells sit under the particles: a soft halo, a ring and a core.
+for k in range(0, len(wxs)) do
+  let p = {x: int(OX + wxs[k]), y: int(OY + wys[k])}
+  let c = if wss[k] > 0.0 then C_GOLD else C_WARM end
+  draw_circle_gradient(p, 70, c, c, 46, 0)
+  draw_circle_gradient(p, 22, c, c, 110, 0)
+  draw_circle_outline(p, 11, c, 150, 1)
+  draw_circle(p, 3, C_TEXT, 230)
+end
+
+// ── The hot loop: integrate and draw every particle ──────────────────────
+
+let LR = lut.r
+let LG = lut.g
+let LB = lut.b
+let pal = cmode * LN
+let by_hue = cmode == 2
+let top_i = float(LN - 1)
+let sum_speed = 0.0
+let sum_x = 0.0
+let sum_y = 0.0
+let in_brush = 0
+
+for i in range(0, n) do
+  let x = px[i]
+  let y = py[i]
+  let u = vx[i]
+  let v = vy[i]
+  if do_sim then
+    let ax = 0.0
+    let ay = grav_a
+    for k in ks do
+      let dx = fxs[k] - x
+      let dy = fys[k] - y
+      let d2 = dx * dx + dy * dy + fss[k]
+      let f = 1.0 / (d2 * sqrt(d2))
+      ax += (dx * frs[k] - dy * fts[k]) * f
+      ay += (dy * frs[k] + dx * fts[k]) * f
+    end
+    if flow then
+      let a = noise(x * 0.0034, y * 0.0034, flow_t) * 7.0
+      ax += cos(a) * flow_accel
+      ay += sin(a) * flow_accel
+    end
+    u = (u + ax * h) * damp
+    v = (v + ay * h) * damp
+    if grabbing then
+      let qx = x - gox
+      let qy = y - goy
+      if qx * qx + qy * qy < r2 then
+        u += (gvx - u) * 0.35
+        v += (gvy - v) * 0.35
+        x += gdx
+        y += gdy
+      end
+    end
+    let s2 = u * u + v * v
+    if s2 > vmax2 then
+      let sc = speed_limit / sqrt(s2)
+      u *= sc
+      v *= sc
+    end
+    x += u * h
+    y += v * h
+    if wrap then
+      if x < 0.0 then x += SW elsif x >= SW then x -= SW end
+      if y < 0.0 then y += SH elsif y >= SH then y -= SH end
+    else
+      if x < 0.0 then
+        x = min(-x, SW)
+        u *= bounce
+      elsif x > SW then
+        x = max(SW2 - x, 0.0)
+        u *= bounce
+      end
+      if y < 0.0 then
+        y = min(-y, SH)
+        v *= bounce
+      elsif y > SH then
+        y = max(SH2 - y, 0.0)
+        v *= bounce
+        u *= 0.985
+      end
+    end
+    set px[i] = x
+    set py[i] = y
+    set vx[i] = u
+    set vy[i] = v
+  end
+
+  let sp = sqrt(u * u + v * v)
+  sum_speed += sp
+  sum_x += x
+  sum_y += y
+  let bx = x - smx
+  let by = y - smy
+  if bx * bx + by * by < r2 then in_brush += 1 end
+
+  let ci = pal + int(if by_hue then hu[i] else top_i * sp / (sp + speed_ref) end)
+  let sx = OX + x
+  let sy = OY + y
+  if streaks && sp > 45.0 then
+    let sl = if sp > streak_cap then streak_max / sp else streak_len end
+    draw_line(sx - u * sl, sy - v * sl, sx, sy, LR[ci], LG[ci], LB[ci], 225, 1.5)
+  else
+    draw_rect(sx - 1.0, sy - 1.0, 2, 2, LR[ci], LG[ci], LB[ci], 235)
+  end
+end
+
+// ── Draw: stage overlays ─────────────────────────────────────────────────
+
+// Blast shockwaves.
+rings = for q in rings do
+  let t = q.t + h
+  if t > 0.55 then continue end
+  let k = t / 0.55
+  draw_circle_outline({x: int(OX + q.x), y: int(OY + q.y)}, int(12.0 + 220.0 * ease_out(k)),
+    C_TEXT, int(170.0 * (1.0 - k)), 2)
+  {...q, t: t}
+end
+
+// The brush.
+if in_stage then
+  let p = {x: mx, y: my}
+  if tool == T_WELL then
+    let hit = well_at(smx, smy, 18.0)
+    let c = if hit >= 0 then C_WARM elsif invert then C_WARM else C_GOLD end
+    draw_circle_outline(p, 16, c, 220, 1)
+    draw_rect(mx - 5, my, 11, 1, c.r, c.g, c.b, 230)
+    if hit < 0 && !invert then draw_rect(mx, my - 5, 1, 11, c.r, c.g, c.b, 230) end
+  else
+    let live = acting
+    if live then draw_circle(p, int(radius), tool_color, 16) end
+    draw_circle_outline(p, int(radius), tool_color, if live then 230 else 110 end, if live then 2 else 1 end)
+    draw_circle(p, 2, tool_color, 240)
+    if tool == T_VORTEX then
+      let spin = if invert then -1.0 else 1.0 end
+      let a0 = time() * 2.4 * spin
+      for q in range(0, 3) do
+        let a = a0 + float(q) * 2.0944
+        fill_arc(p, int(radius * 0.5), int(radius * 0.5) + 2, a, a + 1.1, tool_color, 150)
+      end
+    end
+  end
+end
+
+if paused then
+  let pill = rect(stage.x + 16, stage.y + 16, 78, 24)
+  draw_rect_rounded(pill, radius: 12, c: C_CHIP, a: 235)
+  draw_rect_rounded_outline(pill, radius: 12, c: C_EDGE, a: 255, width: 1)
+  draw_rect(pill.x + 12, pill.y + 8, 3, 8, C_GOLD.r, C_GOLD.g, C_GOLD.b)
+  draw_rect(pill.x + 18, pill.y + 8, 3, 8, C_GOLD.r, C_GOLD.g, C_GOLD.b)
+  tx("PAUSED", x: pill.x + 28, y: pill.y + 6, style: {...S_KEY, color: C_TEXT, spacing: 1})
+end
+
+if n == 0 then
+  tx_center("The stage is empty", cx: stage.x + stage.w / 2, y: stage.y + stage.h / 2 - 24, style: S_BIG)
+  tx_center("Pick Emit (5) and drag to paint particles, or press R to reload the scene.",
+    cx: stage.x + stage.w / 2, y: stage.y + stage.h / 2 + 4, style: S_UI_M)
+end
+
+// What the colours mean, bottom-right of the stage.
+let leg_tail = if by_hue then 0 else text_width("FAST", S_LABEL) + 10 end
+let leg = rect(stage.x + stage.w - 18 - leg_tail - 96, stage.y + stage.h - 23, 96, 4)
+let leg_head = text_width(if by_hue then "HUE BY ORIGIN" else "SLOW" end, S_LABEL)
+draw_rect_rounded(rect(leg.x - leg_head - 20, leg.y - 11, leg_head + leg.w + leg_tail + 30, 26), radius: 8, c: C_STAGE, a: 215)
+for q in range(0, 16) do
+  let ci = pal + q * 4 + 2
+  draw_rect(leg.x + q * 6, leg.y, 6, leg.h, LR[ci], LG[ci], LB[ci], 220)
+end
+tx_right(if by_hue then "HUE BY ORIGIN" else "SLOW" end, right_x: leg.x - 10, y: leg.y - 5, style: S_LABEL)
+if !by_hue then tx("FAST", x: leg.x + leg.w + 10, y: leg.y - 5, style: S_LABEL) end
+
+// Scene tag, bottom-left of the stage.
+let tag = upper(SCENES[scene])
+draw_rect_rounded(rect(stage.x + 8, leg.y - 11, text_width(tag, S_LABEL) + 20, 26), radius: 8, c: C_STAGE, a: 215)
+tx(tag, x: stage.x + 18, y: leg.y - 5, style: {...S_LABEL, color: C_DIM})
+
+clip_pop()
+draw_rect_rounded_outline(stage, radius: 14, c: C_EDGE, a: 255, width: 1)
+
+// ── Draw: header ─────────────────────────────────────────────────────────
+
+tx("PARTICLE SANDBOX", x: PAD, y: 16, style: S_TITLE)
+tx("PETAL / GARDEN TESTBED 11", x: PAD + 2, y: 52, style: S_KICK)
+
+if dt() > 0.0 then
+  hist = append(hist, dt() * 1000.0)
+  if len(hist) > 72 then hist = slice(hist, len(hist) - 72) end
+end
+let frame_ms = if len(hist) > 0 then reduce(hist, 0.0, fn(acc, v) -> acc + v) / float(len(hist)) else 0.0 end
+let mean_speed = if n > 0 then sum_speed / float(n) else 0.0 end
+
+let cell3 = W - PAD
+let cell2 = cell3 - 140
+let cell1 = cell2 - 140
+let cell0 = cell1 - 140
+tx_right("PARTICLES", right_x: cell0, y: 18, style: S_LABEL)
+tx_right(fmt_int(n), right_x: cell0, y: 34, style: S_STAT)
+tx_right("IN BRUSH", right_x: cell1, y: 18, style: S_LABEL)
+tx_right(if in_stage then fmt_int(in_brush) else "-" end, right_x: cell1, y: 34,
+  style: {...S_STAT, color: if in_stage then tool_color else C_MUTE end})
+tx_right("MEAN SPEED", right_x: cell2, y: 18, style: S_LABEL)
+tx_right("{int(mean_speed)} px/s", right_x: cell2, y: 34, style: S_STAT)
+tx_right("FRAME", right_x: cell3, y: 18, style: S_LABEL)
+tx_right("{round(frame_ms, 1)} ms", right_x: cell3, y: 34,
+  style: {...S_STAT, color: if frame_ms > 34.0 then C_WARM else C_TEXT end})
+
+// ── Draw: sidebar ────────────────────────────────────────────────────────
+
+draw_rect_rounded(side, radius: 14, c: C_PANEL)
+draw_rect_rounded_outline(side, radius: 14, c: C_EDGE, a: 255, width: 1)
+
+fn key_cap(label: string, right_x: num, y: num, lit: bool) -> nil
+  let w = max(text_width(label, S_KEY) + 10, 18)
+  let box = rect(right_x - w, y, w, 16)
+  draw_rect_rounded(box, radius: 4, c: if lit then C_EDGE else C_CHIP end)
+  tx_center(label, cx: box.x + box.w / 2, y: y + 1, style: if lit then {...S_KEY, color: C_TEXT} else S_KEY end)
+end
+
+// A 14 px glyph per tool, drawn from primitives.
+fn tool_glyph(i: int, cx: num, cy: num, c: record, a: int) -> nil
+  let p = {x: cx, y: cy}
+  if i == T_ATTRACT then
+    draw_circle_outline(p, 6, c, a, 1)
+    draw_circle(p, 2, c, a)
+  elsif i == T_REPEL then
+    draw_circle(p, 2, c, a)
+    for q in range(0, 4) do
+      let ang = float(q) * 1.5708 + 0.7854
+      draw_line(cx + cos(ang) * 4.0, cy + sin(ang) * 4.0, cx + cos(ang) * 7.5, cy + sin(ang) * 7.5, c, a, 1)
+    end
+  elsif i == T_VORTEX then
+    fill_arc(p, 5, 7, 0.3, 2.6, c, a)
+    fill_arc(p, 5, 7, 3.44, 5.74, c, a)
+    draw_circle(p, 1, c, a)
+  elsif i == T_GRAB then
+    draw_rect_rounded_outline(rect(cx - 6, cy - 6, 12, 12), 3, c, a, 1)
+    draw_rect_rounded(rect(cx - 2, cy - 2, 5, 5), radius: 1, c: c, a: a)
+  elsif i == T_EMIT then
+    draw_circle({x: cx - 5, y: cy}, 2, c, a)
+    draw_circle({x: cx + 1, y: cy - 4}, 1, c, a)
+    draw_circle({x: cx + 2, y: cy + 4}, 1, c, a)
+    draw_circle({x: cx + 6, y: cy}, 1, c, a)
+  elsif i == T_ERASE then
+    draw_circle_outline(p, 6, c, a, 1)
+    draw_line(cx - 4, cy + 4, cx + 4, cy - 4, c, a, 1)
+  else
+    draw_circle_gradient(p, 8, c, c, a / 2, 0)
+    draw_circle(p, 2, c, a)
+  end
+end
+
+fn toggle_chip(r: Rect, label: string, key: string, on: bool, mx: int, my: int) -> nil
+  let hov = point_in(px: mx, py: my, r: r)
+  draw_rect_rounded(r, radius: 7, c: if hov then C_EDGE else C_CHIP end, a: if hov then 150 else 255 end)
+  if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 120, width: 1) end
+  draw_circle({x: r.x + 13, y: r.y + r.h / 2}, 3, if on then C_ACCENT else C_MUTE end, 255)
+  tx(label, x: r.x + 24, y: r.y + 5, style: if on then S_UI else S_UI_M end)
+  key_cap(key, right_x: r.x + r.w - 6, y: r.y + 5, lit: false)
+end
+
+fn plain_chip(r: Rect, label: string, on: bool, mx: int, my: int) -> nil
+  let hov = point_in(px: mx, py: my, r: r)
+  draw_rect_rounded(r, radius: 7, c: if on then C_ACCENT elsif hov then C_EDGE else C_CHIP end,
+    a: if on then 38 elsif hov then 150 else 255 end)
+  if on then draw_rect_rounded_outline(r, radius: 7, c: C_ACCENT, a: 150, width: 1) end
+  tx_center(label, cx: r.x + r.w / 2, y: r.y + 5, style: if on then {...S_UI, color: C_ACCENT} else S_UI_M end)
+end
+
+tx("TOOLS", x: side.x + 16, y: side.y + 16, style: S_LABEL)
+tx_right(TOOLS[tool].hint, right_x: side.x + side.w - 16, y: side.y + 15, style: {...S_HINT, font: "ui"})
+for i in range(0, len(TOOLS)) do
+  let r = tool_row(i)
+  let t = TOOLS[i]
+  let on = tool == i
+  let hov = point_in(px: mx, py: my, r: r)
+  if on then
+    draw_rect_rounded(r, radius: 7, c: t.color, a: 30)
+    draw_rect_rounded(rect(r.x, r.y + 6, 3, r.h - 12), radius: 2, c: t.color)
+  elsif hov then
+    draw_rect_rounded(r, radius: 7, c: C_CHIP)
+  end
+  tool_glyph(i, cx: r.x + 20, cy: r.y + r.h / 2, c: if on then t.color else C_DIM end, a: 255)
+  tx(t.name, x: r.x + 38, y: r.y + 4, style: if on then S_UI_B elsif hov then S_UI else S_UI_M end)
+  key_cap(t.key, right_x: r.x + r.w - 8, y: r.y + 5, lit: on)
+end
+
+// Brush radius.
+tx("BRUSH", x: side.x + 16, y: brush_y, style: S_LABEL)
+tx_right("{int(radius)} px", right_x: side.x + side.w - 16, y: brush_y - 1, style: S_HINT)
+let fill_w = int((radius - 24.0) / 196.0 * float(brush_track.w))
+draw_rect_rounded(brush_track, radius: 3, c: C_CHIP)
+draw_rect_rounded(rect(brush_track.x, brush_track.y, max(fill_w, 6), brush_track.h), radius: 3, c: tool_color, a: 200)
+draw_circle({x: brush_track.x + fill_w, y: brush_track.y + 3}, 7, C_PANEL, 255)
+draw_circle({x: brush_track.x + fill_w, y: brush_track.y + 3}, 5, tool_color, 255)
+
+// Forces and look.
+tx("WORLD", x: side.x + 16, y: forces_y, style: S_LABEL)
+let ftop2 = forces_y + 20
+toggle_chip(chip_rect(ftop2, 0), "Gravity", "G", gravity, mx, my)
+toggle_chip(chip_rect(ftop2, 1), "Flow", "F", flow, mx, my)
+toggle_chip(chip_rect(ftop2, 2), "Drag", "D", drag, mx, my)
+toggle_chip(chip_rect(ftop2, 3), "Wrap", "W", wrap, mx, my)
+toggle_chip(chip_rect(ftop2, 4), "Streaks", "T", streaks, mx, my)
+let cm = chip_rect(ftop2, 5)
+let cm_hov = point_in(px: mx, py: my, r: cm)
+draw_rect_rounded(cm, radius: 7, c: if cm_hov then C_EDGE else C_CHIP end, a: if cm_hov then 150 else 255 end)
+for q in range(0, 4) do
+  let ci = cmode * LN + 8 + q * 16
+  draw_rect(cm.x + 9 + q * 4, cm.y + 9, 4, 8, LR[ci], LG[ci], LB[ci])
+end
+tx(CMODES[cmode], x: cm.x + 31, y: cm.y + 5, style: S_UI)
+key_cap("C", right_x: cm.x + cm.w - 6, y: cm.y + 5, lit: false)
+
+// Scenes and density.
+tx("SCENE", x: side.x + 16, y: scene_y, style: S_LABEL)
+tx_right("TAB", right_x: side.x + side.w - 16, y: scene_y, style: {...S_LABEL, color: C_MUTE})
+for i in range(0, len(SCENES)) do
+  plain_chip(chip_rect(scene_y + 20, i), SCENES[i], scene == i, mx, my)
+end
+plain_chip(dens_minus, "-", false, mx, my)
+plain_chip(dens_plus, "+", false, mx, my)
+tx_center("{fmt_int(COUNTS[count_i])} particles", cx: side.x + side.w / 2, y: dens_y + 5, style: S_UI)
+
+// Frame interval sparkline, against the 16.7 ms line.
+tx("FRAME INTERVAL", x: side.x + 16, y: frame_y, style: S_LABEL)
+tx_right("{int(if frame_ms > 0.0 then 1000.0 / frame_ms else 0.0 end)} fps", right_x: side.x + side.w - 16,
+  y: frame_y - 1, style: S_HINT)
+let spark = rect(side.x + 16, frame_y + 20, side.w - 32, side.y + side.h - frame_y - 36)
+let ms_top = 50.0
+let budget_y = spark.y + spark.h - int(16.7 / ms_top * float(spark.h))
+draw_rect(spark.x, budget_y, spark.w, 1, C_EDGE.r, C_EDGE.g, C_EDGE.b)
+draw_rect(spark.x, spark.y + spark.h, spark.w, 1, C_LINE.r, C_LINE.g, C_LINE.b)
+if len(hist) > 1 then
+  let pts = for i in range(0, len(hist)) do
+    let v = min(hist[i], ms_top) / ms_top
+    {x: spark.x + i * spark.w / 71, y: spark.y + spark.h - int(v * float(spark.h))}
+  end
+  draw_polyline(pts, c: C_ACCENT, a: 230, width: 1)
+end
+
+// ── Draw: footer ─────────────────────────────────────────────────────────
+
+fn chip(x: num, y: num, cap: string, desc: string) -> int
+  let cw = text_width(cap, S_CAP) + 18
+  let box = rect(int(x), int(y), cw, 24)
+  draw_rect_rounded(box, radius: 7, c: C_CHIP)
+  draw_rect_rounded_outline(box, radius: 7, c: C_LINE, a: 255, width: 1)
+  tx(cap, x: x + 9, y: y + 5, style: S_CAP)
+  tx(desc, x: x + cw + 8, y: y + 5, style: S_HINT)
+  cw + 8 + text_width(desc, S_HINT) + 16
+end
+
+let fy = stage.y + stage.h + 16
+let fx = PAD
+fx += chip(x: fx, y: fy, cap: "DRAG", desc: "use tool")
+fx += chip(x: fx, y: fy, cap: "SHIFT", desc: "invert")
+fx += chip(x: fx, y: fy, cap: "RIGHT / B", desc: "blast")
+fx += chip(x: fx, y: fy, cap: "SCROLL", desc: "brush")
+fx += chip(x: fx, y: fy, cap: "SPACE", desc: "pause")
+fx += chip(x: fx, y: fy, cap: "X", desc: "clear")
+fx += chip(x: fx, y: fy, cap: "Z", desc: "no wells")
+fx += chip(x: fx, y: fy, cap: "R", desc: "reload")
+fx += chip(x: fx, y: fy, cap: "- / +", desc: "density")
+
+if !paused then request_frame() end
+
+// ── Observation mirrors (readable in /state → panel.values) ──────────────
+
+let obs_n = n
+let obs_tool = TOOLS[tool].name
+let obs_radius = round(radius, 1)
+let obs_acting = acting
+let obs_invert = invert
+let obs_in_brush = in_brush
+let obs_wells = len(wxs)
+let obs_well_signs = for s in wss do if s > 0.0 then 1 else -1 end end
+let obs_scene = SCENES[scene]
+let obs_target = COUNTS[count_i]
+let obs_gravity = gravity
+let obs_flow = flow
+let obs_drag = drag
+let obs_wrap = wrap
+let obs_streaks = streaks
+let obs_cmode = CMODES[cmode]
+let obs_paused = paused
+let obs_mean_speed = round(mean_speed, 1)
+let obs_centroid = if n > 0 then [round(sum_x / float(n), 1), round(sum_y / float(n), 1)] else [0.0, 0.0] end
+let obs_emitted = emitted
+let obs_erased = erased
+let obs_blasts = blasts
+let obs_sim_frames = sim_frames
+let obs_cursor = [round(smx, 1), round(smy, 1)]
+let obs_stage = [stage.x, stage.y, stage.w, stage.h]

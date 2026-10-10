@@ -1,0 +1,328 @@
+// Fern preferences: the schema.
+//
+// Every setting the app shows is one record in SETTINGS. The app is a loop
+// over this list: layout, search, the modified markers, reset, undo, the
+// "Changes" list and persistence all read it, and nothing about a setting is
+// written anywhere else. Adding a preference is adding a line here.
+
+pub let SECTIONS = [
+  {key: "general", label: "General", icon: "gear",
+    blurb: "Startup behaviour, your profile and how Fern keeps itself current."},
+  {key: "appearance", label: "Appearance", icon: "palette",
+    blurb: "Colors, density and motion. These restyle this window as you change them."},
+  {key: "editor", label: "Editor", icon: "code",
+    blurb: "Type, layout and formatting for every buffer. The preview follows along."},
+  {key: "notifications", label: "Notifications", icon: "bell",
+    blurb: "What Fern interrupts you for, where the alert appears and when it stays quiet."},
+  {key: "privacy", label: "Privacy & data", icon: "shield",
+    blurb: "What leaves this machine, and what is kept on it."},
+]
+
+// A group is a titled card of rows inside a section: the nested sub-sections
+// the sidebar lists under the open section.
+pub let GROUPS = [
+  {sec: 0, name: "Startup", note: ""},
+  {sec: 0, name: "Profile", note: "Used to sign commits and to label you in shared sessions."},
+  {sec: 0, name: "Updates", note: ""},
+  {sec: 1, name: "Theme", note: ""},
+  {sec: 1, name: "Interface", note: ""},
+  {sec: 1, name: "Motion", note: ""},
+  {sec: 2, name: "Font", note: ""},
+  {sec: 2, name: "Display", note: ""},
+  {sec: 2, name: "Formatting", note: ""},
+  {sec: 3, name: "Alerts", note: ""},
+  {sec: 3, name: "Events", note: "Choose which events raise an alert."},
+  {sec: 3, name: "Quiet hours", note: ""},
+  {sec: 4, name: "Telemetry", note: ""},
+  {sec: 4, name: "Storage", note: ""},
+]
+
+pub let ACCENTS = [
+  {name: "Indigo", c: #6c7bff},
+  {name: "Azure", c: #3a9bf5},
+  {name: "Teal", c: #17b3a3},
+  {name: "Moss", c: #4cae5b},
+  {name: "Amber", c: #e2a336},
+  {name: "Ember", c: #ee7440},
+  {name: "Rose", c: #e6557e},
+  {name: "Violet", c: #a274f0},
+]
+
+pub let FONTS = ["JetBrains Mono", "Menlo", "Monaco", "Courier New"]
+
+// One setting. `kind` picks the control:
+//   toggle  check  seg  select  slider  stepper  text  swatch  radio  action
+// `parent` + `need` make a row depend on another: it is live only while the
+// parent holds `need` (and the parent is itself live, so chains work).
+// `reveal` rows fold away while their parent is off; the others stay visible
+// and go inert.
+fn S(id: string, g: int, kind: string, label: string, desc: string, def, x: record = {}) -> record
+  {id: id, g: g, kind: kind, label: label, desc: desc, def: def,
+    opts: field(x, "opts", []), notes: field(x, "notes", []),
+    lo: field(x, "lo", 0), hi: field(x, "hi", 1), step: field(x, "step", 1),
+    unit: field(x, "unit", ""), places: field(x, "places", 0), fmt: field(x, "fmt", ""),
+    parent: field(x, "parent", ""), need: field(x, "need", true),
+    reveal: field(x, "reveal", false), tags: field(x, "tags", ""),
+    hint: field(x, "hint", ""), tone: field(x, "tone", "default")}
+end
+
+pub let SETTINGS = [
+  // ── General ▸ Startup ────────────────────────────────────────────────────
+  S("start_restore", 0, "toggle", "Reopen last workspace",
+    "Pick up where you left off, unsaved buffers included.", true, {tags: "session launch resume"}),
+  S("start_screen", 0, "select", "With no workspace open",
+    "What a fresh window shows.", 0,
+    {opts: ["Welcome screen", "Empty buffer", "File picker"], tags: "launch new window"}),
+  S("start_lang", 0, "select", "Language",
+    "Menus and messages. Applies to new windows.", 0,
+    {opts: ["English", "Deutsch", "Español", "Français", "Italiano"], tags: "locale translation"}),
+
+  // ── General ▸ Profile ────────────────────────────────────────────────────
+  S("me_name", 1, "text", "Display name", "Shown on commits and to collaborators.", "Robin Vale",
+    {hint: "Your name", tags: "author user identity"}),
+  S("me_email", 1, "text", "Email", "Used for commit authorship. Never shared.", "robin@fern.dev",
+    {hint: "name@example.com", tags: "author address identity", fmt: "email"}),
+  S("me_signoff", 1, "toggle", "Sign off commits",
+    "Append a Signed-off-by line with the name and email above.", false, {tags: "git dco"}),
+
+  // ── General ▸ Updates ────────────────────────────────────────────────────
+  S("up_auto", 2, "toggle", "Check for updates automatically",
+    "Fern looks once a day and never restarts on its own.", true, {tags: "upgrade version"}),
+  S("up_channel", 2, "seg", "Release channel", "Nightly builds may lose settings.", 0,
+    {opts: ["Stable", "Beta", "Nightly"], parent: "up_auto", tags: "upgrade version preview"}),
+  S("up_background", 2, "toggle", "Download in the background",
+    "Fetch the update while you work and install on quit.", true,
+    {parent: "up_auto", tags: "upgrade install"}),
+
+  // ── Appearance ▸ Theme ───────────────────────────────────────────────────
+  S("th_mode", 3, "seg", "Color mode", "Auto follows the host editor's theme.", 1,
+    {opts: ["Light", "Dark", "Auto"], tags: "theme dark light night day scheme"}),
+  S("th_accent", 3, "swatch", "Accent color", "Selection, focus rings and primary buttons.", 0,
+    {tags: "theme colour tint highlight"}),
+  S("th_contrast", 3, "toggle", "Increase contrast",
+    "Stronger borders and text, for bright rooms or tired eyes.", false,
+    {tags: "accessibility a11y high contrast"}),
+
+  // ── Appearance ▸ Interface ───────────────────────────────────────────────
+  S("ui_density", 4, "seg", "Density", "How much air each row gets.", 1,
+    {opts: ["Compact", "Comfortable", "Spacious"], tags: "spacing padding size rows"}),
+  S("ui_scale", 4, "slider", "Interface scale", "Text size across the whole window.", 100,
+    {lo: 85, hi: 125, step: 5, unit: "%", tags: "zoom size font text"}),
+  S("ui_radius", 4, "slider", "Corner radius", "From square to soft.", 8,
+    {lo: 0, hi: 14, step: 1, unit: " px", tags: "rounded corners shape"}),
+  S("ui_sidebar", 4, "seg", "Sidebar position", "Where the file tree sits in the editor.", 0,
+    {opts: ["Left", "Right"], tags: "file tree explorer layout"}),
+
+  // ── Appearance ▸ Motion ──────────────────────────────────────────────────
+  S("mo_reduce", 5, "toggle", "Reduce motion",
+    "Swap slides and springs for instant changes.", false,
+    {tags: "animation accessibility a11y"}),
+  S("mo_speed", 5, "slider", "Animation speed", "How fast slides, folds and fades run.", 1.0,
+    {lo: 0.5, hi: 2.0, step: 0.25, unit: "×", places: 2, parent: "mo_reduce", need: false,
+      tags: "animation duration fast slow"}),
+
+  // ── Editor ▸ Font ────────────────────────────────────────────────────────
+  S("ed_font", 6, "select", "Font family", "Any monospaced face installed on this machine.", 0,
+    {opts: FONTS, tags: "typeface mono type"}),
+  S("ed_size", 6, "slider", "Font size", "", 13,
+    {lo: 10, hi: 20, step: 1, unit: " px", tags: "text zoom type"}),
+  S("ed_leading", 6, "slider", "Line height", "As a multiple of the font size.", 1.5,
+    {lo: 1.1, hi: 2.0, step: 0.1, unit: "×", places: 1, tags: "leading spacing type"}),
+  S("ed_tracking", 6, "slider", "Letter spacing", "Extra space between glyphs.", 0.0,
+    {lo: 0.0, hi: 2.0, step: 0.5, unit: " px", places: 1, tags: "tracking kerning type"}),
+
+  // ── Editor ▸ Display ─────────────────────────────────────────────────────
+  S("ed_numbers", 7, "seg", "Line numbers", "Relative counts from the cursor line.", 1,
+    {opts: ["Off", "On", "Relative"], tags: "gutter margin"}),
+  S("ed_current", 7, "toggle", "Highlight current line", "", true, {tags: "cursor row"}),
+  S("ed_cursor", 7, "seg", "Cursor style", "", 0,
+    {opts: ["Bar", "Block", "Underline"], tags: "caret"}),
+  S("ed_blink", 7, "toggle", "Blink cursor", "", true, {tags: "caret animation"}),
+  S("ed_minimap", 7, "toggle", "Minimap", "A zoomed-out overview beside the text.", true,
+    {tags: "overview scroll map"}),
+  S("ed_minimap_side", 7, "seg", "Minimap side", "", 1,
+    {opts: ["Left", "Right"], parent: "ed_minimap", reveal: true, tags: "overview"}),
+  S("ed_minimap_w", 7, "slider", "Minimap width", "", 56,
+    {lo: 32, hi: 88, step: 8, unit: " px", parent: "ed_minimap", reveal: true, tags: "overview size"}),
+  S("ed_wrap", 7, "toggle", "Wrap long lines", "Break lines at the window edge instead of scrolling.", false,
+    {tags: "word wrap soft"}),
+  S("ed_wrap_indent", 7, "seg", "Continuation indent", "How far wrapped rows are pushed in.", 1,
+    {opts: ["None", "Same", "Deeper"], parent: "ed_wrap", reveal: true, tags: "word wrap hanging"}),
+
+  // ── Editor ▸ Formatting ──────────────────────────────────────────────────
+  S("fm_tab", 8, "stepper", "Tab size", "Columns per indent level.", 2,
+    {lo: 1, hi: 8, step: 1, tags: "indent width"}),
+  S("fm_spaces", 8, "toggle", "Indent using spaces", "Off inserts a tab character instead.", true,
+    {tags: "tabs indent soft"}),
+  S("fm_whitespace", 8, "toggle", "Show whitespace", "Draw indentation as dots or arrows.", false,
+    {tags: "invisibles render indent"}),
+  S("fm_onsave", 8, "toggle", "Format on save", "Run the formatter each time a buffer is written.", true,
+    {tags: "prettier lint fix"}),
+  S("fm_trim", 8, "check", "Trim trailing whitespace", "", true,
+    {parent: "fm_onsave", tags: "format save strip"}),
+  S("fm_newline", 8, "check", "End files with a newline", "", true,
+    {parent: "fm_onsave", tags: "format save final eol"}),
+
+  // ── Notifications ▸ Alerts ───────────────────────────────────────────────
+  S("nt_on", 9, "toggle", "Show notifications",
+    "The master switch. Everything on this page depends on it.", true, {tags: "alerts toast banner"}),
+  S("nt_position", 9, "select", "Position", "The corner alerts slide in from.", 1,
+    {opts: ["Top right", "Bottom right", "Bottom left", "Top left"], parent: "nt_on",
+      tags: "alerts corner placement"}),
+  S("nt_duration", 9, "slider", "Stay on screen for", "", 5,
+    {lo: 2, hi: 12, step: 1, unit: " s", parent: "nt_on", tags: "alerts timeout seconds dismiss"}),
+  S("nt_sound", 9, "toggle", "Play a sound", "", true, {parent: "nt_on", tags: "alerts audio chime"}),
+  S("nt_volume", 9, "slider", "Volume", "", 60,
+    {lo: 0, hi: 100, step: 5, unit: "%", parent: "nt_sound", tags: "alerts audio loud quiet"}),
+
+  // ── Notifications ▸ Events ───────────────────────────────────────────────
+  S("ev_build", 10, "check", "Build finished", "After any task that ran longer than ten seconds.", true,
+    {parent: "nt_on", tags: "alerts compile task"}),
+  S("ev_tests", 10, "check", "Tests failed", "", true, {parent: "nt_on", tags: "alerts test suite"}),
+  S("ev_git", 10, "check", "Git push and pull", "", false, {parent: "nt_on", tags: "alerts remote sync"}),
+  S("ev_ext", 10, "check", "Extension updates", "", false, {parent: "nt_on", tags: "alerts plugins"}),
+  S("ev_mention", 10, "check", "Mentions in shared sessions", "", true,
+    {parent: "nt_on", tags: "alerts collaboration"}),
+
+  // ── Notifications ▸ Quiet hours ──────────────────────────────────────────
+  S("qt_on", 11, "toggle", "Quiet hours", "Hold alerts during a daily window and deliver them after.", false,
+    {tags: "do not disturb dnd focus mute schedule"}),
+  S("qt_from", 11, "stepper", "From", "", 22,
+    {lo: 0, hi: 23, step: 1, fmt: "hour", parent: "qt_on", reveal: true, tags: "do not disturb schedule start"}),
+  S("qt_to", 11, "stepper", "Until", "", 7,
+    {lo: 0, hi: 23, step: 1, fmt: "hour", parent: "qt_on", reveal: true, tags: "do not disturb schedule end"}),
+  S("qt_urgent", 11, "check", "Let failed tests through", "", true,
+    {parent: "qt_on", reveal: true, tags: "do not disturb exception urgent"}),
+
+  // ── Privacy ▸ Telemetry ──────────────────────────────────────────────────
+  S("pv_share", 12, "toggle", "Share anonymous diagnostics",
+    "Helps find crashes. Never includes file names or contents.", false, {tags: "telemetry analytics usage data"}),
+  S("pv_level", 12, "radio", "What to send", "", 0,
+    {opts: ["Crash reports", "Crashes and performance", "Everything"],
+      notes: ["A stack trace when Fern stops unexpectedly.",
+        "Adds startup time, frame time and memory high-water marks.",
+        "Adds which commands and settings you use. No text you type."],
+      parent: "pv_share", reveal: true, tags: "telemetry analytics usage data"}),
+  S("pv_history", 12, "select", "Keep local history for", "Per-file undo snapshots stored on this machine.", 1,
+    {opts: ["1 week", "1 month", "3 months", "Forever"], tags: "undo snapshots retention"}),
+
+  // ── Privacy ▸ Storage ────────────────────────────────────────────────────
+  S("act_cache", 13, "action", "Clear cache", "Search indexes, thumbnails and compiled grammars.", "Clear",
+    {tags: "disk space delete storage"}),
+  S("act_export", 13, "action", "Export settings", "Copy every changed setting to the clipboard as JSON.", "Copy JSON",
+    {tags: "backup share json clipboard"}),
+  S("act_reset", 13, "action", "Restore all defaults", "Return every setting on every page to its default.", "Restore…",
+    {tone: "danger", tags: "reset factory defaults"}),
+]
+
+// id → position in SETTINGS.
+pub fn build_index() -> record
+  let idx = {}
+  for i in range(0, len(SETTINGS)) do
+    idx[SETTINGS[i].id] = i
+  end
+  idx
+end
+
+// The default value of every setting that holds one (actions do not).
+pub fn defaults() -> record
+  let d = {}
+  for s in SETTINGS do
+    if s.kind != "action" then
+      d[s.id] = s.def
+    end
+  end
+  d
+end
+
+// Stored values over the defaults: a key the schema no longer has is dropped,
+// and one the store never saw takes its default.
+pub fn merged(stored: record) -> record
+  let d = defaults()
+  for k in keys(d) do
+    let v = field(stored, k, nil)
+    if v != nil && type(v) == type(d[k]) then
+      d[k] = v
+    elsif v != nil && (type(v) == "int" || type(v) == "float") && (type(d[k]) == "int" || type(d[k]) == "float") then
+      d[k] = v
+    end
+  end
+  d
+end
+
+fn two(n: num) -> string
+  pad_start(str(int(n)), 2, "0")
+end
+
+// A number the way its row shows it: "13 px", "1.5×", "22:00".
+pub fn show_num(s: record, v: num) -> string
+  if s.fmt == "hour" then
+    "{two(v)}:00"
+  elsif s.places > 0 then
+    let scaled = int(round(float(v) * pow(10.0, float(s.places))))
+    let unit_n = int(pow(10.0, float(s.places)))
+    let whole = scaled / unit_n
+    let frac = pad_start(str(scaled % unit_n), s.places, "0")
+    // Trailing zeros carry no information on a ×0.25 scale.
+    let trimmed = if s.places == 2 && ends_with(frac, "0") then slice(frac, 0, 1) else frac end
+    "{whole}.{trimmed}{s.unit}"
+  else
+    "{int(round(float(v)))}{s.unit}"
+  end
+end
+
+// Any value, for the Changes list and for search: "On", "Dark", "13 px".
+pub fn show_value(s: record, v) -> string
+  match s.kind
+    when "toggle" -> if v then "On" else "Off" end
+    when "check" -> if v then "On" else "Off" end
+    when "seg" -> s.opts[int(v)]
+    when "select" -> s.opts[int(v)]
+    when "radio" -> s.opts[int(v)]
+    when "swatch" -> ACCENTS[int(v)].name
+    when "text" -> if v == "" then "empty" else v end
+    when "action" -> ""
+    when _ -> show_num(s, v)
+  end
+end
+
+// Snap a slider or stepper value to its step, inside its range. Ints stay
+// ints, so a stored "13" compares equal to the default 13.
+pub fn snap(s: record, v: num)
+  let lo = float(s.lo)
+  let stepped = lo + round((float(v) - lo) / float(s.step)) * float(s.step)
+  let c = clamp(stepped, lo, float(s.hi))
+  if s.places == 0 then int(round(c)) else round(c, s.places) end
+end
+
+// Why a text value is not acceptable, or "" when it is.
+pub fn problem(s: record, v: string) -> string
+  let t = trim(v)
+  if s.fmt == "email" then
+    let at = index_of(t, "@")
+    let domain = if at >= 0 then slice(t, at + 1) else "" end
+    if t == "" then "An email address is required."
+    elsif contains(t, " ") then "Addresses cannot contain spaces."
+    elsif at < 1 || domain == "" then "Add an @ and a domain."
+    elsif contains(domain, "@") then "Only one @ is allowed."
+    elsif index_of(domain, ".") < 1 || ends_with(domain, ".") then "The domain needs a dot, like fern.dev."
+    else ""
+    end
+  elsif t == "" then
+    "This cannot be empty."
+  else
+    ""
+  end
+end
+
+// Whether a setting answers a search. Every word of the query must appear
+// somewhere in its label, description, tags, group or section name.
+pub fn matches(s: record, words: list) -> bool
+  let g = GROUPS[s.g]
+  let hay = lower("{s.label} {s.desc} {s.tags} {g.name} {SECTIONS[g.sec].label} {join(s.opts, " ")}")
+  let ok = true
+  for w in words do
+    if !contains(hay, w) then ok = false end
+  end
+  ok
+end

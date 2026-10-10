@@ -1,0 +1,102 @@
+// Fern preferences: glyphs.
+//
+// Each icon is a few strokes inside the rect it is given, so it scales with
+// the interface and takes whatever color the row is in. No font, no image.
+
+fn at(r: record, fx: num, fy: num) -> record
+  {x: r.x + r.w * fx, y: r.y + r.h * fy}
+end
+
+// A circular arrow: most of a ring, open at the upper left (or right), with
+// the head at the top pointing into the gap. `dir` 1 turns back, -1 forward.
+fn turn(cx: num, cy: num, u: num, dir: num, c: record, w: num) -> nil
+  let rad = u * 0.66
+  let oy = cy + u * 0.12
+  let pts = for i in range(0, 17) do
+    let a = 0.0 - pi() / 2.0 + pi() * 1.5 * i / 16.0
+    {x: cx + dir * cos(a) * rad, y: oy + sin(a) * rad}
+  end
+  draw_polyline(pts, c, 255, w)
+  let tip = pts[0]
+  let head = u * 0.46
+  draw_polyline([{x: tip.x + dir * head * 0.72, y: tip.y - head * 0.7}, tip,
+    {x: tip.x + dir * head * 0.72, y: tip.y + head * 0.7}], c, 255, w)
+end
+
+pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  let u = min(r.w, r.h) / 2.0
+  match name
+    when "gear" do
+      // Three sliders: the honest picture of "general settings".
+      for i in range(0, 3) do
+        let y = r.y + r.h * (0.22 + 0.28 * i)
+        let kx = r.x + r.w * [0.68, 0.32, 0.56][i]
+        draw_line({x: r.x + r.w * 0.08, y: y}, {x: r.x + r.w * 0.92, y: y}, c, 255, w)
+        draw_circle({x: kx, y: y}, u * 0.3, c)
+      end
+    end
+    when "palette" do
+      // A disc, half filled: light and dark.
+      draw_circle_outline({x: cx, y: cy}, u * 0.84, c, 255, w)
+      fill_arc({x: cx, y: cy}, 0, u * 0.84, 0.0 - pi() / 2.0, pi() / 2.0, c)
+    end
+    when "code" do
+      draw_polyline([at(r, 0.32, 0.24), at(r, 0.06, 0.5), at(r, 0.32, 0.76)], c, 255, w)
+      draw_polyline([at(r, 0.68, 0.24), at(r, 0.94, 0.5), at(r, 0.68, 0.76)], c, 255, w)
+      draw_line(at(r, 0.57, 0.14), at(r, 0.43, 0.86), c, 255, w)
+    end
+    when "bell" do
+      draw_polyline([at(r, 0.1, 0.74), at(r, 0.24, 0.6), at(r, 0.24, 0.42), at(r, 0.32, 0.22),
+        at(r, 0.5, 0.13), at(r, 0.68, 0.22), at(r, 0.76, 0.42), at(r, 0.76, 0.6), at(r, 0.9, 0.74),
+        at(r, 0.1, 0.74)], c, 255, w)
+      draw_line(at(r, 0.4, 0.9), at(r, 0.6, 0.9), c, 255, w)
+    end
+    when "shield" do
+      draw_polyline([at(r, 0.5, 0.06), at(r, 0.86, 0.2), at(r, 0.86, 0.5), at(r, 0.72, 0.76),
+        at(r, 0.5, 0.94), at(r, 0.28, 0.76), at(r, 0.14, 0.5), at(r, 0.14, 0.2), at(r, 0.5, 0.06)], c, 255, w)
+      draw_polyline([at(r, 0.36, 0.5), at(r, 0.47, 0.62), at(r, 0.66, 0.38)], c, 255, w)
+    end
+    when "undo" do
+      turn(cx, cy, u, 1.0, c, w)
+    end
+    when "redo" do
+      turn(cx, cy, u, -1.0, c, w)
+    end
+    when "search" do
+      draw_circle_outline({x: r.x + r.w * 0.43, y: r.y + r.h * 0.43}, u * 0.56, c, 255, w)
+      draw_line(at(r, 0.64, 0.64), at(r, 0.92, 0.92), c, 255, w)
+    end
+    when "close" do
+      draw_line(at(r, 0.22, 0.22), at(r, 0.78, 0.78), c, 255, w)
+      draw_line(at(r, 0.78, 0.22), at(r, 0.22, 0.78), c, 255, w)
+    end
+    when "check" do
+      draw_polyline([at(r, 0.16, 0.54), at(r, 0.4, 0.76), at(r, 0.84, 0.26)], c, 255, w)
+    end
+    when "leaf" do
+      // The Fern mark: a blade and its midrib.
+      fill_polygon([at(r, 0.16, 0.86), at(r, 0.2, 0.46), at(r, 0.42, 0.2), at(r, 0.86, 0.12),
+        at(r, 0.8, 0.56), at(r, 0.56, 0.8)], c)
+    end
+    when "moon" do
+      draw_circle({x: cx, y: cy}, u * 0.8, c)
+    end
+    when "file" do
+      draw_polyline([at(r, 0.22, 0.08), at(r, 0.6, 0.08), at(r, 0.8, 0.3), at(r, 0.8, 0.92),
+        at(r, 0.22, 0.92), at(r, 0.22, 0.08)], c, 255, w)
+    end
+    when "folder" do
+      draw_polyline([at(r, 0.08, 0.2), at(r, 0.4, 0.2), at(r, 0.5, 0.34), at(r, 0.92, 0.34),
+        at(r, 0.92, 0.84), at(r, 0.08, 0.84), at(r, 0.08, 0.2)], c, 255, w)
+    end
+    when "arrow" do
+      draw_line(at(r, 0.1, 0.5), at(r, 0.86, 0.5), c, 255, w)
+      draw_polyline([at(r, 0.58, 0.24), at(r, 0.88, 0.5), at(r, 0.58, 0.76)], c, 255, w)
+    end
+    when _ do
+      draw_circle({x: cx, y: cy}, u * 0.3, c)
+    end
+  end
+end

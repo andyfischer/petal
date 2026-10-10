@@ -1,0 +1,324 @@
+// Fern preferences: the live preview.
+//
+// A small mock of the editor the settings are for, drawn from the same values
+// record the page edits. Nothing here is stored: change a setting and the
+// next frame is simply drawn from the new value. It is the proof that the
+// controls are wired to something.
+
+import widgets as wd
+import text_layout as tl
+import schema as sc
+import icons: glyph
+
+// The buffer on show. `ind` is the indent depth, so Tab size has something to
+// act on; each token is [kind, text].
+let CODE = [
+  {ind: 0, toks: [["com", "// Water each bed once."]]},
+  {ind: 0, toks: [["kw", "fn "], ["fn", "water"], ["id", "(bed, n)"]]},
+  {ind: 1, toks: [["kw", "let "], ["id", "wet = bed.wet + n"]]},
+  {ind: 1, toks: [["kw", "if "], ["id", "wet > "], ["num", "1.0"], ["kw", " then"]]},
+  {ind: 2, toks: [["fn", "drain"], ["id", "(bed, wet - "], ["num", "1.0"], ["id", ")"]]},
+  {ind: 1, toks: [["kw", "end"]]},
+  {ind: 1, toks: [["fn", "log"], ["id", "("], ["str", "\"wet: \{bed.name}\""], ["id", ")"]]},
+  {ind: 1, toks: [["id", "\{...bed, wet: "], ["fn", "min"], ["id", "(wet, "], ["num", "1"], ["id", ")}"]]},
+  {ind: 0, toks: [["kw", "end"]]},
+  {ind: 0, toks: []},
+  {ind: 0, toks: [["kw", "for "], ["id", "bed "], ["kw", "in "], ["id", "garden.beds "], ["kw", "do"]]},
+  {ind: 1, toks: [["fn", "water"], ["id", "(bed, "], ["num", "0.25"], ["id", ")  "], ["com", "// a quarter litre each"]]},
+  {ind: 0, toks: [["kw", "end"]]},
+]
+let CURSOR_LINE = 4
+let CURSOR_COL = 11          // columns past the indent
+
+let WORDS = [
+  {files: "FILES", line: "Ln", col: "Col", spaces: "Spaces", tab: "Tab size", built: "Build finished", held: "Held until"},
+  {files: "DATEIEN", line: "Zl", col: "Sp", spaces: "Leerzeichen", tab: "Tabbreite", built: "Build fertig", held: "Pausiert bis"},
+  {files: "ARCHIVOS", line: "Lín", col: "Col", spaces: "Espacios", tab: "Tabulación", built: "Compilación lista", held: "En pausa hasta"},
+  {files: "FICHIERS", line: "Li", col: "Col", spaces: "Espaces", tab: "Tabulation", built: "Compilation finie", held: "En pause jusqu'à"},
+  {files: "FILE", line: "Ri", col: "Col", spaces: "Spazi", tab: "Tabulazione", built: "Build completata", held: "In pausa fino alle"},
+]
+
+let EVENTS = [
+  {id: "ev_build", title: "", body: "garden · 2.4 s"},
+  {id: "ev_tests", title: "Tests failed", body: "3 of 128 in soil.ptl"},
+  {id: "ev_git", title: "Pushed to origin", body: "main · 2 commits"},
+  {id: "ev_ext", title: "Extension updated", body: "Petal tools 1.8"},
+  {id: "ev_mention", title: "Mira mentioned you", body: "“can you look at drain?”"},
+]
+
+fn ink_of(t: record, kind: string) -> record
+  match kind
+    when "kw" -> t.syn_kw
+    when "fn" -> t.syn_fn
+    when "str" -> t.syn_str
+    when "num" -> t.syn_num
+    when "com" -> t.dim
+    when _ -> t.text
+  end
+end
+
+// Lay a line out as rows of [kind, text, column] runs, breaking at `cols`
+// when wrapping is on. A break lands between tokens where it can, and inside
+// one only when the token alone is wider than the row.
+fn rows_of(line: record, lead: num, cols: num, wrap: bool, hang: num) -> list
+  let rows = []
+  let cur = []
+  let col = lead
+  for tok in line.toks do
+    let text = tok[1]
+    if wrap && col + len(text) > cols && col > hang && len(text) <= cols - hang then
+      rows = append(rows, cur)
+      cur = []
+      col = hang
+      // A row never starts with the space that used to separate two words.
+      if starts_with(text, " ") then
+        text = slice(text, 1)
+      end
+    end
+    while wrap && col + len(text) > cols && cols - col > 0 do
+      let room = cols - col
+      // Prefer the last space that fits.
+      let cut = room
+      for i in range(room, 0, -1) do
+        if char_at(text, i) == " " && cut == room then
+          cut = i
+        end
+      end
+      cur = append(cur, [tok[0], slice(text, 0, cut), col])
+      rows = append(rows, cur)
+      cur = []
+      col = hang
+      text = trim(slice(text, cut))
+    end
+    cur = append(cur, [tok[0], text, col])
+    col += len(text)
+  end
+  append(rows, cur)
+end
+
+fn initials(name: string) -> string
+  let out = ""
+  for part in split(trim(name), " ") do
+    if part != "" && len(out) < 2 then
+      out ++= upper(slice(part, 0, 1))
+    end
+  end
+  if out == "" then "?" else out end
+end
+
+fn draw_editor(r: record, t: record, v: record, x: record) -> nil
+  let size = v.ed_size
+  let family = if v.ed_font == 0 then "mono" else sc.FONTS[v.ed_font] ++ ", mono" end
+  let base_style = {size: size, font: family, color: t.text, spacing: v.ed_tracking}
+  let cw = text_advance("mmmmmmmmmm", base_style) / 10.0
+  let lh = round(size * v.ed_leading)
+  let tab = v.fm_tab
+
+  // Gutter and minimap take their columns first.
+  let gutter_w = if v.ed_numbers == 0 then 10.0 else cw * 2.0 + 18.0 end
+  let map_w = wd.anim("pv:map", if v.ed_minimap then v.ed_minimap_w * 0.72 else 0.0 end, 20.0)
+  let map_left = v.ed_minimap_side == 0
+  let text_x = r.x + gutter_w + (if map_left then map_w else 0.0 end)
+  let text_w = r.w - gutter_w - map_w - 6.0
+  let cols = max(8, int(text_w / cw))
+  let hang_extra = [0, 0, tab][v.ed_wrap_indent]
+
+  clip_push(r)
+  let y = r.y + 8.0
+  let map_rows = []
+  for i in range(0, len(CODE)) do
+    let line = CODE[i]
+    let lead = line.ind * tab
+    let hang = if v.ed_wrap_indent == 0 then 0 else lead + hang_extra end
+    let rows = rows_of(line, lead, cols, v.ed_wrap, min(hang, cols - 8))
+    if i == CURSOR_LINE && v.ed_current then
+      draw_rect(Rect(r.x, y, r.w, lh * len(rows)), mix(t.paper, t.text, 0.055))
+    end
+    // Line number, on the first row only.
+    if v.ed_numbers != 0 then
+      let n = if v.ed_numbers == 2 && i != CURSOR_LINE then abs(i - CURSOR_LINE) else i + 1 end
+      let ns = {...base_style, color: if i == CURSOR_LINE then t.muted else mix(t.dim, t.paper, 0.25) end}
+      tl.draw_text_line(str(n), Rect(text_x - gutter_w, y, gutter_w - 10.0, lh), ns, "right")
+    end
+    for k in range(0, len(rows)) do
+      let ry = y + k * lh
+      let band = Rect(text_x, ry, text_w, lh)
+      if v.fm_whitespace && len(line.toks) > 0 then
+        // Indentation made visible: a dot per space, an arrow per tab.
+        let ws = {...base_style, color: mix(t.dim, t.paper, 0.35)}
+        let depth_cols = if k == 0 then lead else 0 end
+        if v.fm_spaces then
+          tl.draw_text_line(repeat("·", depth_cols), band, ws)
+        else
+          for d in range(0, if k == 0 then line.ind else 0 end) do
+            tl.draw_text_line("→", Rect(text_x + d * tab * cw, ry, tab * cw, lh), ws)
+          end
+        end
+      end
+      for run in rows[k] do
+        tl.draw_text_line(run[1], Rect(text_x + run[2] * cw, ry, text_w, lh), {...base_style, color: ink_of(t, run[0])})
+      end
+      map_rows = append(map_rows, rows[k])
+      if i == CURSOR_LINE && k == 0 then
+        let cx = text_x + (lead + CURSOR_COL) * cw
+        if x.cursor_on then
+          if v.ed_cursor == 0 then
+            draw_rect(Rect(cx, ry + 2, 2, lh - 4), t.accent)
+          elsif v.ed_cursor == 1 then
+            draw_rect_rounded(Rect(cx, ry + 2, cw, lh - 4), 1, t.accent, 150)
+          else
+            draw_rect(Rect(cx, ry + lh - 4, cw, 2), t.accent)
+          end
+        end
+      end
+    end
+    y += lh * len(rows)
+  end
+
+  // Minimap: every run as a bar a few px long.
+  if map_w > 1.0 then
+    let mr = Rect(if map_left then r.x + gutter_w - 4.0 else r.x + r.w - map_w end, r.y, map_w, r.h)
+    clip_push(mr)
+    draw_rect(mr, mix(t.paper, t.text, 0.03))
+    draw_line({x: if map_left then mr.x + mr.w else mr.x end, y: mr.y}, {x: if map_left then mr.x + mr.w else mr.x end, y: mr.y + mr.h}, t.line_soft)
+    draw_rect(Rect(mr.x, mr.y + 4, mr.w, min(mr.h - 8.0, len(map_rows) * 4.0 + 6.0)), t.text, 14)
+    for j in range(0, len(map_rows)) do
+      for run in map_rows[j] do
+        let bw = len(trim(run[1])) * 1.35
+        if bw > 0.0 then
+          draw_rect(Rect(mr.x + 6.0 + run[2] * 1.35, mr.y + 8.0 + j * 4.0, bw, 2), ink_of(t, run[0]), 150)
+        end
+      end
+    end
+    clip_pop()
+  end
+  clip_pop()
+end
+
+// The alert, parked in whichever corner Notifications asks for.
+fn draw_alert(area: record, t: record, v: record, words: record) -> nil
+  let show = wd.anim("pv:alert", if v.nt_on then 1.0 else 0.0 end, 16.0)
+  if show < 0.01 then
+    return nil
+  end
+  let event = nil
+  for ev in EVENTS do
+    if v[ev.id] && event == nil then
+      event = ev
+    end
+  end
+  let w = 172.0
+  let h = 46.0
+  let right = v.nt_position == 0 || v.nt_position == 1
+  let top = v.nt_position == 0 || v.nt_position == 3
+  let ax = wd.anim("pv:alert-x", if right then area.x + area.w - w - 10.0 else area.x + 10.0 end, 14.0)
+  let ay = wd.anim("pv:alert-y", if top then area.y + 10.0 else area.y + area.h - h - 10.0 end, 14.0)
+  let quiet = wd.anim("pv:quiet", if v.qt_on then 1.0 else 0.0 end, 16.0)
+  let slide = (1.0 - show) * (if right then 24.0 else -24.0 end)
+  let r = Rect(ax + slide, ay, w, h)
+  let a = int(255 * show)
+  draw_shadow(r, {radius: t.radius, blur: 16, spread: 0, dx: 0, dy: 5, color: #000000, a: int(t.shadow * 0.7 * show)})
+  draw_rect_rounded(r, t.radius, t.raised, a)
+  draw_rect_rounded_outline(r, t.radius, t.line, a)
+  // Held alerts go grey: still there, not asking for attention.
+  let live_c = if event == nil then t.dim elsif event.id == "ev_tests" then t.danger else t.accent end
+  let tone_c = mix(live_c, t.dim, quiet)
+  glyph("bell", Rect(r.x + 10, r.y + 9, 14, 14), tone_c, 1.4)
+  let title = if event == nil then "No events selected"
+    elsif event.title == "" then words.built
+    else event.title
+    end
+  let body = if v.qt_on then "{words.held} {sc.show_num({fmt: "hour", places: 0, unit: ""}, v.qt_to)}"
+    elsif event == nil then "Nothing will alert you"
+    else event.body
+    end
+  let ts_t = {size: 11.5, font: "ui", color: {...mix(t.text, t.muted, quiet), a: a}, weight: 600}
+  let ts_b = {size: 10.5, font: "ui", color: {...mix(t.muted, t.dim, quiet), a: a}}
+  tl.draw_text_line(tl.elide(title, ts_t, w - 62), Rect(r.x + 32, r.y + 6, w - 62, 16), ts_t)
+  tl.draw_text_line(tl.elide(body, ts_b, w - 42), Rect(r.x + 32, r.y + 22, w - 42, 15), ts_b)
+  // Sound: three bars, lit to the volume.
+  if v.nt_sound then
+    for i in range(0, 3) do
+      let lit = v.nt_volume > i * 34
+      let bh = 4.0 + i * 3.0
+      draw_rect_rounded(Rect(r.x + w - 24 + i * 5, r.y + 19 - bh, 3, bh), 1,
+        if lit then tone_c else t.track end, a)
+    end
+  end
+  // How long it stays: a bar draining along the bottom edge.
+  let life = (v.nt_duration - 2.0) / 10.0
+  draw_rect_rounded(Rect(r.x + 10, r.y + h - 5, (w - 20) * (0.18 + 0.82 * life), 2), 1, tone_c, int(a * 0.8))
+end
+
+pub fn draw(r: record, t0: record, v: record, x: record) -> nil
+  // The mock has two surfaces, the page the code sits on and the chrome
+  // around it. Dark themes put the code on the darker one, light themes on
+  // the lighter one, so the roles swap rather than the names.
+  let t = {...t0, paper: if t0.dark then t0.well else t0.card end, chrome: if t0.dark then t0.card else t0.well end}
+  let words = WORDS[v.start_lang]
+  let radius = t.radius + 2
+  draw_shadow(r, {radius: radius, blur: 26, spread: 0, dx: 0, dy: 9, color: #000000, a: int(t.shadow * 0.7)})
+  draw_rect_rounded(r, radius, t.paper)
+  clip_push(r, radius)
+
+  // Title bar.
+  let bar_h = 30.0
+  let bar = Rect(r.x, r.y, r.w, bar_h)
+  draw_rect(bar, t.chrome)
+  draw_line({x: r.x, y: r.y + bar_h}, {x: r.x + r.w, y: r.y + bar_h}, t.line_soft)
+  for i in range(0, 3) do
+    draw_circle({x: r.x + 16.0 + i * 15.0, y: r.y + bar_h / 2.0}, 4.5, [#ee6a5f, #f5bd4f, #61c454][i], if t.dark then 215 else 255 end)
+  end
+  tl.draw_text_line("garden.ptl", bar, {size: 11.5, font: "ui", color: t.muted}, "center")
+  // Whoever the Profile page says you are.
+  let who = initials(v.me_name)
+  let av = {x: r.x + r.w - 18.0, y: r.y + bar_h / 2.0}
+  draw_circle(av, 9, t.accent)
+  tl.draw_text_line(who, Rect(av.x - 9, av.y - 9, 18, 18), {size: 8.5, font: "ui", color: t.accent_ink, weight: 700}, "center")
+  let name_s = {size: 10.5, font: "ui", color: t.dim}
+  tl.draw_text_line(tl.elide(trim(v.me_name), name_s, 96), Rect(av.x - 112, r.y, 96, bar_h), name_s, "right")
+
+  // Status bar.
+  let st_h = 22.0
+  let st = Rect(r.x, r.y + r.h - st_h, r.w, st_h)
+  draw_rect(st, t.accent)
+  let ss = {size: 10.5, font: "ui", color: t.accent_ink}
+  let indent = if v.fm_spaces then "{words.spaces}: {v.fm_tab}" else "{words.tab}: {v.fm_tab}" end
+  tl.draw_text_line("main", Rect(st.x + 12, st.y, 60, st_h), {...ss, weight: 600})
+  let right_text = "{words.line} {CURSOR_LINE + 1}, {words.col} {CURSOR_COL + 2 * v.fm_tab + 1}     {indent}     {["Stable", "Beta", "Nightly"][v.up_channel]}"
+  tl.draw_text_line(right_text, Rect(st.x, st.y, st.w - 12, st_h), ss, "right")
+  if v.qt_on then
+    draw_circle({x: st.x + 52, y: st.y + st_h / 2.0}, 4, t.accent_ink)
+    draw_circle({x: st.x + 54.5, y: st.y + st_h / 2.0 - 1.5}, 3.6, t.accent)
+  end
+
+  // File tree, on whichever side Appearance puts it.
+  let body = Rect(r.x, r.y + bar_h + 1, r.w, r.h - bar_h - st_h - 1)
+  let tree_w = 96.0
+  let side = wd.anim("pv:side", if v.ui_sidebar == 0 then 0.0 else 1.0 end, 14.0)
+  let tree = Rect(body.x + (body.w - tree_w) * side, body.y, tree_w, body.h)
+  let code = Rect(body.x + tree_w * (1.0 - side), body.y, body.w - tree_w, body.h)
+  draw_editor(code, t, v, x)
+  draw_alert(code, t, v, words)
+
+  draw_rect(tree, t.chrome)
+  let edge_x = if side < 0.5 then tree.x + tree.w else tree.x end
+  draw_line({x: edge_x, y: tree.y}, {x: edge_x, y: tree.y + tree.h}, t.line_soft)
+  tl.draw_text_line(words.files, Rect(tree.x + 10, tree.y + 6, tree.w, 16), {size: 9, font: "ui", color: t.dim, weight: 700, spacing: 0.8})
+  let rh = [17.0, 20.0, 24.0][v.ui_density]
+  let entries = [["folder", "beds", 0], ["file", "garden.ptl", 1], ["file", "soil.ptl", 1], ["file", "weather.ptl", 1], ["folder", "tools", 0], ["file", "README.md", 0]]
+  for i in range(0, len(entries)) do
+    let en = entries[i]
+    let er = Rect(tree.x + 4, tree.y + 26 + i * rh, tree.w - 8, rh)
+    let sel = en[1] == "garden.ptl"
+    if sel then
+      draw_rect_rounded(er, max(0, t.radius - 4), t.accent_soft)
+    end
+    let ex = er.x + 6 + en[2] * 9
+    glyph(en[0], Rect(ex, er.y + rh / 2.0 - 5, 10, 10), if sel then t.accent else t.dim end, 1.2)
+    let es = {size: 10.5, font: "ui", color: if sel then t.text else t.muted end}
+    tl.draw_text_line(tl.elide(en[1], es, er.w - 24 - en[2] * 9), Rect(ex + 15, er.y, er.w, rh), es)
+  end
+  clip_pop()
+  draw_rect_rounded_outline(r, radius, t.line)
+end

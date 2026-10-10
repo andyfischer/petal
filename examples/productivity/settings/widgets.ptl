@@ -1,0 +1,491 @@
+// Fern preferences: the form controls.
+//
+// Every control here is a function from the current value to the new one:
+// `toggle(key, r, on, enabled)` returns the bool to store. None of them holds
+// the app's data, so undo, reset and persistence stay in one place.
+//
+// Pointer handling is bloom's `probe` (press-and-release clicks, eased hover
+// and press, inert under an open menu or dialog). Everything a control
+// animates for itself goes through `anim`, which is keyed by the setting id,
+// not by where the row happens to be drawn, so a knob keeps its motion when a
+// search reorders the page.
+
+import bloom
+import text_layout as tl
+
+// This frame's theme: colors, the corner radius, the type scale and the motion
+// speed. A plain module `var`, set by the app before it draws anything.
+var _t = {}
+// Whether any animator is still moving, so the app knows to ask for a frame.
+var _busy = false
+
+pub fn begin(t: record)
+  set _t = t
+  set _busy = false
+end
+
+pub fn busy() -> bool
+  get _busy
+end
+
+// ── Type ───────────────────────────────────────────────────────────────────
+// One record to measure and draw with, at the interface scale.
+
+pub fn ts(size: num, color: record) -> record
+  {size: round(size * (get _t).scale, 1), font: "ui", color: color}
+end
+
+pub fn tsb(size: num, color: record) -> record
+  {size: round(size * (get _t).scale, 1), font: "ui", color: color, weight: 600}
+end
+
+pub fn mono(size: num, color: record) -> record
+  {size: round(size * (get _t).scale, 1), font: "mono", color: color}
+end
+
+// ── Motion ─────────────────────────────────────────────────────────────────
+
+// A value easing toward `target`, one animator per `key`. It starts at the
+// target, so nothing slides in from zero when a page first appears, and an
+// animator that goes a frame without being asked starts over the same way.
+// "Reduce motion" sets the theme's speed to 0, which makes every one of these
+// a plain assignment.
+pub fn anim(key: string, target: num, rate: num = 22.0) -> float
+  let t = get _t
+  let goal = float(target)
+  state(key) v = goal
+  if t.speed <= 0.0 then
+    v = goal
+  else
+    let k = 1.0 - pow(2.718281828459045, -rate * t.speed * min(dt(), 0.05))
+    v = v + (goal - v) * k
+    if abs(goal - v) < 0.002 then
+      v = goal
+    end
+  end
+  if v != goal then
+    set _busy = true
+  end
+  v
+end
+
+fn flag(on: bool) -> float
+  if on then 1.0 else 0.0 end
+end
+
+// A color at the strength a disabled control shows it: `e` is 1 for live.
+fn fade(c: record, e: num) -> record
+  mix(mix(c, (get _t).card, 0.62), c, e)
+end
+
+fn knob_shadow(r: record, radius: num, e: num) -> nil
+  draw_shadow(r, {radius: radius, blur: 5, spread: 0, dx: 0, dy: 1, color: #000000,
+    a: int((get _t).shadow * 0.9 * e)})
+end
+
+// ── Toggle ─────────────────────────────────────────────────────────────────
+
+pub fn toggle(key: string, r: record, on: bool, enabled: bool) -> bool
+  let t = get _t
+  let p = bloom.probe(r, enabled)
+  let out = if p.click then !on else on end
+  let k = anim(key ++ ":k", flag(out), 26.0)
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let face = mix(mix(t.track, t.text, 0.08 * p.hot), mix(t.accent, t.accent_ink, 0.10 * p.hot), k)
+  draw_rect_rounded(r, int(r.h / 2), fade(face, e))
+  let inset = 2.0
+  let d = r.h - inset * 2.0
+  // A held knob stretches toward where it is about to go.
+  let stretch = 5.0 * p.active
+  let x = r.x + inset + k * (r.w - d - inset * 2.0) - stretch * k
+  let knob = Rect(x, r.y + inset, d + stretch, d)
+  knob_shadow(knob, d / 2.0, e)
+  draw_rect_rounded(knob, int(d / 2), mix(mix(t.knob, t.card, 0.45), t.knob, e))
+  out
+end
+
+// ── Checkbox ───────────────────────────────────────────────────────────────
+
+// `box` is where the square is drawn, `hit` what a click lands on (usually
+// the whole row, so the label is part of the target).
+pub fn checkbox(key: string, box: record, hit: record, on: bool, enabled: bool) -> bool
+  let t = get _t
+  let p = bloom.probe(hit, enabled)
+  let out = if p.click then !on else on end
+  let k = anim(key ++ ":k", flag(out), 30.0)
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let s = 1.0 - 0.08 * p.active
+  let sq = Rect(box.x + box.w * (1.0 - s) / 2.0, box.y + box.h * (1.0 - s) / 2.0, box.w * s, box.h * s)
+  let radius = min(5, int(t.radius * 0.6) + 1)
+  let border = mix(mix(t.track, t.text, 0.25 + 0.2 * p.hot), t.accent, k)
+  draw_rect_rounded(sq, radius, fade(border, e))
+  if k < 0.98 then
+    let inner = Rect(sq.x + 1.5, sq.y + 1.5, sq.w - 3.0, sq.h - 3.0)
+    draw_rect_rounded(inner, max(0, radius - 1), mix(t.well, fade(t.accent, e), k))
+  end
+  if k > 0.05 then
+    // The tick is drawn in: the short stroke first, then the long one.
+    let a = {x: sq.x + sq.w * 0.26, y: sq.y + sq.h * 0.53}
+    let b = {x: sq.x + sq.w * 0.43, y: sq.y + sq.h * 0.70}
+    let c = {x: sq.x + sq.w * 0.75, y: sq.y + sq.h * 0.31}
+    let g1 = clamp(k / 0.4, lo: 0.0, hi: 1.0)
+    let g2 = clamp((k - 0.4) / 0.6, lo: 0.0, hi: 1.0)
+    let pts = if g2 > 0.0 then
+      [a, b, {x: b.x + (c.x - b.x) * g2, y: b.y + (c.y - b.y) * g2}]
+    else
+      [a, {x: a.x + (b.x - a.x) * g1, y: a.y + (b.y - a.y) * g1}]
+    end
+    draw_polyline(pts, t.accent_ink, int(255 * (0.55 + 0.45 * e)), 1.8)
+  end
+  out
+end
+
+// ── Segmented control ──────────────────────────────────────────────────────
+
+pub fn seg_width(labels: list) -> num
+  let t = get _t
+  let style = ts(12.5, t.text)
+  let widest = 0
+  for label in labels do
+    widest = max(widest, text_width(label, style))
+  end
+  len(labels) * (widest + 26) + 6
+end
+
+pub fn segmented(key: string, r: record, labels: list, index: num, enabled: bool) -> int
+  let t = get _t
+  let n = max(1, len(labels))
+  let radius = min(int(t.radius), int(r.h / 2))
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  draw_rect_rounded(r, radius, t.well)
+  draw_rect_rounded_outline(r, radius, t.line_soft)
+  let inset = 3.0
+  let cell = (r.w - inset * 2.0) / float(n)
+  let pos = anim(key ++ ":p", float(index), 24.0)
+  let thumb = Rect(r.x + inset + pos * cell, r.y + inset, cell, r.h - inset * 2.0)
+  knob_shadow(thumb, max(0, radius - 2), e)
+  draw_rect_rounded(thumb, max(0, radius - 2), mix(t.well, t.raised, 0.35 + 0.65 * e))
+  let chosen = int(index)
+  for i in range(0, n) do
+    let cr = Rect(r.x + inset + float(i) * cell, r.y + inset, cell, r.h - inset * 2.0)
+    let p = bloom.probe(cr, enabled)
+    if p.click then
+      chosen = i
+    end
+    // The label warms as the thumb arrives, not on the frame of the click.
+    let near = clamp(1.0 - abs(pos - float(i)), lo: 0.0, hi: 1.0)
+    let ink = mix(mix(t.muted, t.text, 0.6 * p.hot), t.text, near)
+    tl.draw_text_line(labels[i], cr, ts(12.5, fade(ink, e)), "center")
+  end
+  chosen
+end
+
+// ── Select ─────────────────────────────────────────────────────────────────
+
+// The menu id a select uses, so the app can open it from the keyboard.
+pub fn select_id(key: string) -> string
+  "select:" ++ key
+end
+
+pub fn select(key: string, r: record, options: list, index: num, enabled: bool) -> int
+  let t = get _t
+  let id = select_id(key)
+  let p = bloom.probe(r, enabled)
+  let open = bloom.menu_is_open(id)
+  if p.click then
+    if open then bloom.menu_close() else bloom.menu_open(id) end
+  end
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let k = anim(key ++ ":o", flag(open), 24.0)
+  let radius = min(int(t.radius), int(r.h / 2))
+  draw_rect_rounded(r, radius, mix(t.well, t.text, 0.04 * p.hot + 0.05 * p.active))
+  draw_rect_rounded_outline(r, radius, mix(mix(t.line, t.text, 0.18 * p.hot), t.accent, k))
+  let label = if index >= 0 && index < len(options) then options[int(index)] else "Choose…" end
+  let style = ts(13, fade(t.text, e))
+  tl.draw_text_line(tl.elide(label, style, r.w - 40), Rect(r.x + 12, r.y, r.w - 40, r.h), style)
+  // The chevron turns over while the menu is open.
+  let cx = r.x + r.w - 17.0
+  let cy = r.y + r.h / 2.0
+  let dy = 2.5 * (1.0 - 2.0 * k)
+  draw_polyline([{x: cx - 4.5, y: cy - dy}, {x: cx, y: cy + dy}, {x: cx + 4.5, y: cy - dy}],
+    fade(mix(t.muted, t.text, p.hot), e), 255, 1.6)
+  let picked = bloom.menu(id, r, options, {min_width: r.w, size: round(13 * t.scale, 1)})
+  if picked >= 0 then picked else int(index) end
+end
+
+// ── Slider ─────────────────────────────────────────────────────────────────
+
+// Returns the raw position as a float; the caller snaps it to the setting's
+// step. Press anywhere to jump there, and the drag keeps tracking after the
+// pointer leaves the track.
+pub fn slider(key: string, r: record, value: num, lo: num, hi: num, step: num, enabled: bool) -> float
+  let t = get _t
+  let p = bloom.probe(r, enabled)
+  let d = bloom.drag(r)
+  let dragging = enabled && d.active
+  let edge = 9.0
+  let x0 = r.x + edge
+  let span = max(1.0, r.w - edge * 2.0)
+  let range_w = max(0.0001, float(hi) - float(lo))
+  let v = float(value)
+  if dragging then
+    let f = clamp((float(mouse_x()) - x0) / span, lo: 0.0, hi: 1.0)
+    v = float(lo) + f * range_w
+  end
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  // The knob eases to the snapped value, so a stepped slider clicks into
+  // place instead of teleporting between detents.
+  let shown = anim(key ++ ":v", clamp((float(value) - float(lo)) / range_w, lo: 0.0, hi: 1.0), 34.0)
+  let grow = anim(key ++ ":g", if dragging then 1.0 else 0.45 * p.hot end, 26.0)
+  let cy = r.y + r.h / 2.0
+  let th = 4.0
+  draw_rect_rounded(Rect(x0, cy - th / 2.0, span, th), 2, fade(t.track, e))
+  let steps = int(round(range_w / max(0.0001, float(step))))
+  if steps > 1 && steps <= 16 then
+    for i in range(0, steps + 1) do
+      let tx = x0 + span * float(i) / float(steps)
+      let done = float(i) / float(steps) <= shown + 0.001
+      draw_circle({x: tx, y: cy}, 1.5,
+        if done then mix(t.accent, t.accent_ink, 0.45) else fade(mix(t.track, t.text, 0.28), e) end)
+    end
+  end
+  let kx = x0 + span * shown
+  draw_rect_rounded(Rect(x0, cy - th / 2.0, kx - x0, th), 2, fade(t.accent, e))
+  let kr = 7.5 + 1.5 * grow
+  if grow > 0.02 then
+    draw_circle({x: kx, y: cy}, kr + 6.0 * grow, t.accent, int(46.0 * grow))
+  end
+  knob_shadow(Rect(kx - kr, cy - kr, kr * 2.0, kr * 2.0), kr, e)
+  draw_circle({x: kx, y: cy}, kr, mix(mix(t.knob, t.card, 0.45), t.knob, e))
+  draw_circle({x: kx, y: cy}, 2.5, fade(t.accent, e))
+  v
+end
+
+// ── Stepper ────────────────────────────────────────────────────────────────
+
+fn step_button(r: record, name: string, enabled: bool) -> bool
+  let t = get _t
+  let p = bloom.probe(r, enabled)
+  // Hold to repeat: after a pause, then steadily.
+  state held = 0.0
+  state fired = 0
+  let rep = false
+  if p.down && enabled then
+    held += min(dt(), 0.05)
+    let due = if held < 0.42 then 0 else 1 + int((held - 0.42) / 0.09) end
+    if due > fired then
+      rep = true
+      fired = due
+    end
+  else
+    held = 0.0
+    fired = 0
+  end
+  if p.hot + p.active > 0.01 then
+    draw_rect_rounded(Rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4), max(0, int(t.radius) - 3),
+      mix(t.well, t.text, 0.08 * p.hot + 0.10 * p.active))
+  end
+  let ink = if enabled then mix(t.muted, t.text, p.hot) else mix(t.dim, t.well, 0.5) end
+  let cx = r.x + r.w / 2.0
+  let cy = r.y + r.h / 2.0
+  draw_line({x: cx - 4.5, y: cy}, {x: cx + 4.5, y: cy}, ink, 255, 1.6)
+  if name == "plus" then
+    draw_line({x: cx, y: cy - 4.5}, {x: cx, y: cy + 4.5}, ink, 255, 1.6)
+  end
+  p.click || rep
+end
+
+// Returns -1, 0 or +1: which way to step. The number in the middle rolls in
+// the direction it changed.
+pub fn stepper(key: string, r: record, label: string, value: num, can_down: bool, can_up: bool, enabled: bool) -> int
+  let t = get _t
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let radius = min(int(t.radius), int(r.h / 2))
+  draw_rect_rounded(r, radius, t.well)
+  draw_rect_rounded_outline(r, radius, t.line)
+  let bw = r.h
+  let delta = 0
+  if step_button(Rect(r.x, r.y, bw, r.h), "minus", enabled && can_down) then
+    delta = -1
+  end
+  if step_button(Rect(r.x + r.w - bw, r.y, bw, r.h), "plus", enabled && can_up) then
+    delta = 1
+  end
+  let mid = Rect(r.x + bw, r.y, r.w - bw * 2.0, r.h)
+  draw_line({x: mid.x, y: r.y + 6}, {x: mid.x, y: r.y + r.h - 6}, t.line_soft)
+  draw_line({x: mid.x + mid.w, y: r.y + 6}, {x: mid.x + mid.w, y: r.y + r.h - 6}, t.line_soft)
+  let roll = anim(key ++ ":r", float(value), 26.0)
+  let slide = clamp((roll - float(value)) * 9.0, lo: -9.0, hi: 9.0)
+  clip_push(mid)
+  tl.draw_text_line(label, Rect(mid.x, mid.y - slide, mid.w, mid.h), mono(13, fade(t.text, e)), "center")
+  clip_pop()
+  delta
+end
+
+// ── Swatches ───────────────────────────────────────────────────────────────
+
+pub fn swatch_width(n: num) -> num
+  n * 24 + (n - 1) * 8
+end
+
+pub fn swatches(key: string, r: record, colors: list, index: num, enabled: bool) -> int
+  let t = get _t
+  let chosen = int(index)
+  let cy = r.y + r.h / 2.0
+  for i in range(0, len(colors)) do
+    let cx = r.x + 12.0 + float(i) * 32.0
+    let hit = Rect(cx - 14.0, cy - 14.0, 28, 28)
+    let p = bloom.probe(hit, enabled)
+    if p.click then
+      chosen = i
+    end
+    let k = anim("{key}:{i}", flag(i == index), 26.0)
+    let c = colors[i].c
+    let rad = 9.0 + 1.5 * p.hot - 1.0 * p.active + 1.0 * k
+    if k > 0.02 then
+      draw_circle_outline({x: cx, y: cy}, rad + 3.5, c, int(255 * k), 2)
+    end
+    draw_circle({x: cx, y: cy}, rad, c)
+    if k > 0.3 then
+      let ink = contrast_text(c)
+      draw_polyline([{x: cx - 4.0, y: cy + 0.3}, {x: cx - 1.2, y: cy + 3.0}, {x: cx + 4.2, y: cy - 3.2}],
+        ink, int(255 * k), 1.8)
+    end
+  end
+  chosen
+end
+
+// ── Radio list ─────────────────────────────────────────────────────────────
+
+pub fn radio_height(n: num) -> num
+  n * 44 * (get _t).scale
+end
+
+// One row per option, each with a line of explanation.
+pub fn radios(key: string, r: record, labels: list, notes: list, index: num, enabled: bool) -> int
+  let t = get _t
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let row_h = r.h / float(max(1, len(labels)))
+  let chosen = int(index)
+  for i in range(0, len(labels)) do
+    let row = Rect(r.x, r.y + float(i) * row_h, r.w, row_h)
+    let p = bloom.probe(row, enabled)
+    if p.click then
+      chosen = i
+    end
+    let k = anim("{key}:{i}", flag(i == index), 26.0)
+    if p.hot + k > 0.01 then
+      draw_rect_rounded(Rect(row.x, row.y + 2, row.w, row.h - 4), max(0, int(t.radius) - 2),
+        mix(mix(t.card, t.text, 0.035 * p.hot), t.accent, 0.07 * k))
+    end
+    let cx = row.x + 19.0
+    let cy = row.y + row.h / 2.0
+    draw_circle({x: cx, y: cy}, 8.5, fade(mix(mix(t.track, t.text, 0.25 + 0.2 * p.hot), t.accent, k), e))
+    draw_circle({x: cx, y: cy}, 7.0, t.well)
+    if k > 0.02 then
+      draw_circle({x: cx, y: cy}, 4.2 * k, fade(t.accent, e))
+    end
+    let has_note = i < len(notes) && notes[i] != ""
+    let lr = Rect(row.x + 38, row.y + (if has_note then row.h / 2.0 - 17.0 * t.scale else 0.0 end),
+      row.w - 48, if has_note then 18.0 * t.scale else row.h end)
+    tl.draw_text_line(labels[i], lr, ts(13.5, fade(t.text, e)))
+    if has_note then
+      let ns = ts(12, fade(t.muted, e))
+      tl.draw_text_line(tl.elide(notes[i], ns, row.w - 52),
+        Rect(row.x + 38, lr.y + lr.h, row.w - 48, 17.0 * t.scale), ns)
+    end
+  end
+  chosen
+end
+
+// ── Text input ─────────────────────────────────────────────────────────────
+
+// The editing is the `ui` prelude's `text_field_update`: caret, selection,
+// clipboard, word movement and undo. The paint is ours. `focus` is the id of
+// the field holding the keyboard ("" for none); the result's `focus` is the
+// id that holds it afterwards.
+pub fn input(key: string, r: record, buf: string, focus: string, o: record) -> record
+  let t = get _t
+  let enabled = field(o, "enabled", true)
+  let bad = field(o, "bad", false)
+  let lead = field(o, "lead", 0)
+  let style = ts(13, t.text)
+  let inset = 11 + lead
+  let res = text_field_update({id: focus}, key, r, buf,
+    {text_style: style, inset: inset, scroll: true, pointer: enabled && field(o, "pointer", true)})
+  let has = res.focus.id == key
+  let p = bloom.probe(r, enabled)
+  let k = anim(key ++ ":f", flag(has), 24.0)
+  let b = anim(key ++ ":b", flag(bad), 20.0)
+  let e = anim(key ++ ":e", flag(enabled), 16.0)
+  let radius = min(int(t.radius), int(r.h / 2))
+  let edge = mix(mix(mix(t.line, t.text, 0.16 * p.hot), t.accent, k), t.danger, b)
+  if k > 0.02 then
+    // The focus ring blooms outside the box, so focus never resizes it.
+    let g = 3.0 * k
+    draw_rect_rounded(Rect(r.x - g, r.y - g, r.w + g * 2.0, r.h + g * 2.0), radius + int(g),
+      mix(t.accent, t.danger, b), int(70 * k))
+  end
+  draw_rect_rounded(r, radius, t.well)
+  draw_rect_rounded_outline(r, radius, edge)
+  let m = text_metrics(style)
+  let base = tl.text_baseline(r, style)
+  let ty = base - m.baseline
+  let tx = r.x + inset - res.scroll
+  clip_push(Rect(r.x + 2 + lead, r.y + 1, r.w - 4 - lead - field(o, "trail", 0), r.h - 2))
+  if has && res.sel_start < res.sel_end then
+    for q in text_range_rects(res.text, style, res.sel_start, res.sel_end) do
+      draw_rect_rounded(Rect(tx + q.x, base - m.cap_height - 4.0, q.w, m.cap_height + m.descent + 6.0), 2,
+        mix(t.well, t.accent, 0.38))
+    end
+  end
+  if res.text == "" then
+    draw_text(field(o, "hint", ""), {x: tx, y: ty}, ts(13, t.dim))
+  else
+    draw_text(res.text, {x: tx, y: ty}, ts(13, fade(t.text, e)))
+  end
+  if has then
+    // The caret holds steady while you type, blinks once you stop, and after
+    // a few seconds comes to rest lit.
+    state(key ++ ":blink") rest = 0.0
+    rest = if res.changed || text_input() != "" then 0.0 else rest + min(dt(), 0.05) end
+    if rest > 6.0 || fract(rest * 0.9) < 0.58 then
+      let cx = tx + tl.caret_x(res.text, style, res.caret)
+      draw_line({x: cx, y: base - m.cap_height - 3.0}, {x: cx, y: base + m.descent + 1.0},
+        mix(t.accent, t.danger, b), 255, 1.6)
+    end
+    // Keep ticking while it blinks, then let the panel sleep on a lit caret.
+    if rest < 6.5 then
+      set _busy = true
+    end
+  end
+  clip_pop()
+  {text: res.text, focus: res.focus.id, has: has, submitted: res.submitted, changed: res.changed}
+end
+
+// ── Small buttons ──────────────────────────────────────────────────────────
+
+// A borderless icon button that shows a face only while hovered. `draw` is
+// the glyph: a function of (rect, color).
+pub fn icon_button(r: record, draw: function, enabled: bool) -> bool
+  let t = get _t
+  let p = bloom.probe(r, enabled)
+  if p.hot + p.active > 0.01 then
+    draw_rect_rounded(r, max(0, int(t.radius) - 2), t.text, int(26 * p.hot + 22 * p.active))
+  end
+  draw(Rect(r.x + 4, r.y + 4, r.w - 8, r.h - 8),
+    if enabled then mix(t.muted, t.text, p.hot) else mix(t.dim, t.card, 0.5) end)
+  p.click
+end
+
+// A key cap, for the hint bar. Returns the x after it.
+pub fn keycap(x: num, y: num, label: string) -> num
+  let t = get _t
+  let style = ts(11, t.muted)
+  let w = max(20, text_width(label, style) + 12)
+  let r = Rect(x, y, w, 20)
+  draw_rect_rounded(r, 5, mix(t.bg, t.text, 0.07))
+  draw_rect_rounded_outline(r, 5, t.line)
+  tl.draw_text_line(label, r, style, "center")
+  x + w
+end

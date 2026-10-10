@@ -1765,7 +1765,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let main = dir.join("main.ptl");
         let config = dir.join("config.ptl");
-        let entry = "import config
+        let entry = "import ./config
 state n = 0
 n += config.LOOK.step
 push_output(symbol(\"out\"), n)

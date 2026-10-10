@@ -1,1 +1,1 @@
-pub import widgets/menu: open, nope
+pub import ./widgets/menu: open, nope

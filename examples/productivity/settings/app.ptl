@@ -15,10 +15,10 @@
 
 import bloom
 import text_layout as tl
-import schema as sc
-import widgets as wd
-import icons: glyph
-import preview as pv
+import ./schema as sc
+import ./widgets as wd
+import ./icons: glyph
+import ./preview as pv
 
 let SECTIONS = sc.SECTIONS
 let GROUPS = sc.GROUPS

@@ -88,7 +88,9 @@ impl ExprVisitor for Declared {
                 }
             }
             StmtKind::Import(decl) => {
-                if decl.star {
+                // A plain import binds every export of the module bare, and
+                // this rule cannot see what those are: `repeat` may be one.
+                if decl.names.is_none() {
                     self.shadows_builtin = true;
                 }
                 for n in decl.names.iter().flatten() {

@@ -1,5 +1,5 @@
 // `Secret` is private to secret.ptl, so its name is not a type here either.
-import secret
+import ./secret
 
 fn unwrap(s: Secret) -> int
   secret.peek(s)

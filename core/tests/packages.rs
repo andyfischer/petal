@@ -31,7 +31,7 @@ fn write_library(tag: &str, manifest: &str, module_dir: &str) -> PathBuf {
     std::fs::write(lib.join("petal.toml"), manifest).unwrap();
     std::fs::write(
         modules.join("menu.ptl"),
-        "import motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
+        "import ./motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
     )
     .unwrap();
     std::fs::write(
@@ -121,7 +121,7 @@ fn register_package_registers_a_library_from_memory() {
             [
                 (
                     "menu.ptl",
-                    "import motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
+                    "import ./motion\npub fn open()\n  motion.ease(\"open\")\nend\n",
                 ),
                 ("motion", "pub fn ease(x)\n  x ++ \" eased\"\nend\n"),
                 (
@@ -170,18 +170,17 @@ fn a_package_name_that_is_not_an_identifier_is_rejected() {
 
 #[test]
 fn a_package_module_keeps_its_state_across_importers() {
-    // One spelling, two importers: the ordinary module dedupe, which the
-    // package rules must not disturb. (Two *different* spellings of one file
-    // — flat `motion` inside the library and `bloom/motion` outside it — are
-    // still two modules; a module's identity is the path it was imported by.
-    // See docs/module-system.md#packages.)
+    // Two spellings of one file — `./motion` inside the library and
+    // `bloom/motion` outside it — are one module with one set of state: a
+    // module's identity is canonical, not the path an importer wrote.
+    // See docs/module-system.md#packages.
     let mut env = Env::new();
     env.register_package(
         "bloom",
         [
             (
                 "menu",
-                "import bloom/motion
+                "import ./motion
 pub fn open()
   motion.bump()
 end

@@ -505,7 +505,7 @@ fn an_exported_binding_is_followed_into_the_files_that_read_it() {
     let dir = Dir::new("importers");
     let tally = dir.write("tally.ptl", TALLY);
     let main_src = "\
-import tally: hits, bump
+import ./tally: hits, bump
 fn describe()
   \"hits: {hits}\"
 end
@@ -516,16 +516,16 @@ print(describe())
 ";
     let main = dir.write("main.ptl", main_src);
     // A qualified read is live wherever it is written, so it needs nothing.
-    let qualified_src = "import tally\nfn n() tally.hits end\ntally.bump()\nprint(n())\n";
+    let qualified_src = "import ./tally\nfn n() tally.hits end\ntally.bump()\nprint(n())\n";
     let qualified = dir.write("qualified.ptl", qualified_src);
     // Not importers: from `sub/` the name `tally` resolves to nothing, and
     // from `other/` it resolves to a different file.
     let stray = dir.write(
         "sub/stray.ptl",
-        "import tally: *\nfn n() hits + 1 end\nprint(n())\n",
+        "import ./tally\nfn n() hits + 1 end\nprint(n())\n",
     );
     dir.write("other/tally.ptl", "pub let hits = 5\n");
-    let stranger = dir.write("other/app.ptl", "import tally: hits\nfn n() hits end\n");
+    let stranger = dir.write("other/app.ptl", "import ./tally: hits\nfn n() hits end\n");
 
     let plan = convert(&tally, "/hits", &[]).unwrap();
     assert_eq!(
@@ -559,8 +559,8 @@ print(describe())
     assert_eq!(
         found,
         [
-            ("main.ptl".to_string(), "import tally: hits, bump"),
-            ("qualified.ptl".to_string(), "import tally")
+            ("main.ptl".to_string(), "import ./tally: hits, bump"),
+            ("qualified.ptl".to_string(), "import ./tally")
         ]
     );
 
@@ -575,15 +575,15 @@ fn a_star_import_binds_the_name_unless_the_file_declares_it() {
     let tally = dir.write("tally.ptl", TALLY);
     let star = dir.write(
         "star.ptl",
-        "import tally: *\nfn n() hits + 1 end\nprint(n())\n",
+        "import ./tally\nfn n() hits + 1 end\nprint(n())\n",
     );
-    let own_src = "import tally: *\nfn n() 0 end\nlet hits = 7\nfn m() hits end\nprint(m())\n";
+    let own_src = "import ./tally\nfn n() 0 end\nlet hits = 7\nfn m() hits end\nprint(m())\n";
     let own = dir.write("own.ptl", own_src);
 
     let plan = convert(&tally, "hits", &[]).unwrap();
     assert_eq!(
         plan.after(&star).unwrap(),
-        "import tally: *\nfn n() get hits + 1 end\nprint(n())\n"
+        "import ./tally\nfn n() get hits + 1 end\nprint(n())\n"
     );
     assert_eq!(plan.after(&own), None, "its own `hits` wins over the star");
 }
@@ -594,9 +594,9 @@ fn an_importer_that_writes_the_binding_is_refused() {
     let tally = dir.write("tally.ptl", "pub let name = \"t\"\n");
     let reader = dir.write(
         "reader.ptl",
-        "import tally: name\nfn f() name end\nprint(f())\n",
+        "import ./tally: name\nfn f() name end\nprint(f())\n",
     );
-    let writer_src = "import tally: name\nprint(name)\nname = \"z\"\nprint(name)\n";
+    let writer_src = "import ./tally: name\nprint(name)\nname = \"z\"\nprint(name)\n";
     dir.write("writer.ptl", writer_src);
 
     let err = convert(&tally, "/name", &[]).expect_err("an importer writes it");
@@ -610,7 +610,7 @@ fn an_importer_that_writes_the_binding_is_refused() {
     assert_eq!(dir.read("writer.ptl"), writer_src);
     assert_eq!(
         std::fs::read_to_string(&reader).unwrap(),
-        "import tally: name\nfn f() name end\nprint(f())\n"
+        "import ./tally: name\nfn f() name end\nprint(f())\n"
     );
 }
 
@@ -620,7 +620,7 @@ fn an_importer_that_rebinds_with_at_is_refused() {
     let tally = dir.write("tally.ptl", "pub let names = [\"t\"]\n");
     dir.write(
         "writer.ptl",
-        "import tally: names\nappend(@names, \"z\")\nprint(names)\n",
+        "import ./tally: names\nappend(@names, \"z\")\nprint(names)\n",
     );
     let err = convert(&tally, "/names", &[]).expect_err("an importer rebinds it");
     assert!(
@@ -635,7 +635,7 @@ fn an_importer_that_writes_through_the_modules_name_is_refused() {
     // importer asking to write the binding, and a `var` does not make it so.
     let dir = Dir::new("importer-qualified-write");
     let tally = dir.write("tally.ptl", "pub let hits = [0]\npub let name = \"t\"\n");
-    let writer_src = "import tally as t\nfn f()\n  t.hits[0] = 1\nend\nt.name = \"z\"\nset t.hits = []\n";
+    let writer_src = "import ./tally as t\nfn f()\n  t.hits[0] = 1\nend\nt.name = \"z\"\nset t.hits = []\n";
     dir.write("writer.ptl", writer_src);
 
     let err = convert(&tally, "/hits", &[]).expect_err("an importer writes it");
@@ -652,7 +652,7 @@ fn an_importer_that_writes_through_the_modules_name_is_refused() {
     let tally = dir.write("tally.ptl", "pub let hits = [0]\npub let name = \"t\"\n");
     dir.write(
         "reader.ptl",
-        "import tally\nfn f() tally.hits[0] end\nlet local = {hits: 1}\nlocal.hits = 2\nprint(f())\n",
+        "import ./tally\nfn f() tally.hits[0] end\nlet local = {hits: 1}\nlocal.hits = 2\nprint(f())\n",
     );
     let plan = convert(&tally, "/hits", &[]).unwrap();
     let report = plan.importers.as_ref().unwrap();
@@ -681,10 +681,10 @@ fn from_names_the_programs_whose_imports_are_followed() {
     let dir = Dir::new("from");
     // The module lives in a library directory; the app that uses it does not.
     let tally = dir.write("lib/tally.ptl", TALLY);
-    let facade = dir.write("lib/facade.ptl", "pub import tally: hits, bump\n");
-    let app_src = "import facade: hits, bump\nfn n() hits end\nbump()\nprint(n())\n";
+    let facade = dir.write("lib/facade.ptl", "pub import ./tally: hits, bump\n");
+    let app_src = "import ./facade: hits, bump\nfn n() hits end\nbump()\nprint(n())\n";
     let app = dir.write("lib/app.ptl", app_src);
-    let unrelated = dir.write("lib/unrelated.ptl", "import tally: hits\nfn n() hits end\n");
+    let unrelated = dir.write("lib/unrelated.ptl", "import ./tally: hits\nfn n() hits end\n");
 
     let plan = convert(&tally, "/hits", &[&app]).unwrap();
     let report = plan.importers.as_ref().unwrap();
@@ -716,7 +716,7 @@ fn a_scan_stops_at_the_package_root() {
     );
     let tally = dir.write("pkg/src/tally.ptl", TALLY);
     // A sibling under the package root, outside the module directory.
-    let demo_src = "import src/tally: hits\nfn n() hits end\nprint(n())\n";
+    let demo_src = "import ./src/tally: hits\nfn n() hits end\nprint(n())\n";
     let demo = dir.write("pkg/demo.ptl", demo_src);
 
     let plan = convert(&tally, "/hits", &[]).unwrap();
@@ -733,7 +733,7 @@ fn a_scan_stops_at_the_package_root() {
 fn a_binding_that_is_not_exported_has_no_importers() {
     let dir = Dir::new("private");
     let file = dir.write("m.ptl", "let n = 1\nn = 2\npub fn f() 1 end\n");
-    dir.write("user.ptl", "import m\nprint(m.f())\n");
+    dir.write("user.ptl", "import ./m\nprint(m.f())\n");
     let plan = convert(&file, "/n", &[]).unwrap();
     assert!(plan.importers.is_none());
     assert_eq!(plan.files.len(), 1);
@@ -745,7 +745,7 @@ fn the_deprecated_export_spelling_is_an_exported_binding_too() {
     let tally = dir.write("tally.ptl", "export let hits = 0\n");
     let user = dir.write(
         "user.ptl",
-        "import tally: hits\nfn n() hits end\nprint(n())\n",
+        "import ./tally: hits\nfn n() hits end\nprint(n())\n",
     );
     let plan = convert(&tally, "/hits", &[]).unwrap();
     assert_eq!(plan.after(&tally).unwrap(), "export var hits = 0\n");
@@ -791,7 +791,7 @@ print(a + b)
 fn nothing_is_written_when_a_from_entry_cannot_be_compiled() {
     let dir = Dir::new("gate-refuse");
     let tally = dir.write("tally.ptl", TALLY);
-    let app_src = "import tally: hits\nimport nowhere\nfn n() hits end\nprint(n())\n";
+    let app_src = "import ./tally: hits\nimport nowhere\nfn n() hits end\nprint(n())\n";
     let app = dir.write("app.ptl", app_src);
     let err = convert(&tally, "/hits", &[&app]).expect_err("the entry does not compile");
     assert!(err.contains("refusing to write"), "{err}");

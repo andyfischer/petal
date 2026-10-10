@@ -759,7 +759,7 @@ mod tests {
     }
 
     /// `pub` is a prefix on a declaration, including on `import`. A re-export
-    /// line (`pub import bloom/motion: *`) used to parse as an ERROR node, so
+    /// line (`pub import bloom/motion`) used to parse as an ERROR node, so
     /// the modifier lost its keyword color and the module path read as
     /// ordinary variables. `export`, the deprecated spelling, highlights the
     /// same way.
@@ -767,7 +767,7 @@ mod tests {
     fn petal_pub_import_highlights() {
         for modifier in ["pub", "export"] {
             let mut h = Highlighter::new();
-            let line = format!("{modifier} import bloom/motion: *");
+            let line = format!("{modifier} import bloom/motion");
             let lines = h.highlight_lines(lang("init.ptl"), &line);
             let n = modifier.len();
             let kw = span_at(&lines, 0, 0).expect("span on the modifier");
@@ -778,6 +778,13 @@ mod tests {
             // Both path segments are module names, not variables.
             assert_eq!(span_at(&lines, 0, n + 8).unwrap().kind, TokenKind::Type);
             assert_eq!(span_at(&lines, 0, n + 14).unwrap().kind, TokenKind::Type);
+
+            // A relative path: the segments are still module names.
+            let line = format!("{modifier} import ../kit/motion: ease");
+            let lines = h.highlight_lines(lang("init.ptl"), &line);
+            assert_eq!(span_at(&lines, 0, n + 1).unwrap().kind, TokenKind::Keyword);
+            assert_eq!(span_at(&lines, 0, n + 11).unwrap().kind, TokenKind::Type, "{line}");
+            assert_eq!(span_at(&lines, 0, n + 15).unwrap().kind, TokenKind::Type, "{line}");
         }
     }
 

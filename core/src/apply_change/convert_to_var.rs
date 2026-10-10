@@ -147,8 +147,14 @@ pub(super) fn plan(file: &Path, target: &str, opts: &ChangeOptions) -> Result<Pl
                     refusals.push(e);
                     continue;
                 }
-                detail = uses.detail();
                 let splices = uses.splices();
+                // A plain import binds the name bare *and* the qualifier; a
+                // file that never writes the bare name is one that reads it
+                // qualified, if at all.
+                if !(splices.is_empty() && !aliases.is_empty() && uses.detail() == "no other mention")
+                {
+                    detail = uses.detail();
+                }
                 if !splices.is_empty() {
                     edited.push(Edited {
                         path: path.clone(),

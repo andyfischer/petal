@@ -622,7 +622,17 @@ impl Projector {
             .iter()
             .position(|t| ident_value(t).is_some())
             .ok_or("import missing module name")?;
-        let mut module = ident_value(&tokens[i]).expect("just matched an identifier");
+        // A relative prefix (`./`, `../../`) sits between `import` and the
+        // first identifier.
+        let mut module = String::new();
+        for t in &tokens[..i] {
+            match t.token() {
+                Some(Token::Dot) => module.push_str("./"),
+                Some(Token::DotDot) => module.push_str("../"),
+                _ => {}
+            }
+        }
+        module.push_str(&ident_value(&tokens[i]).expect("just matched an identifier"));
         while matches!(
             tokens.get(i + 1).and_then(|t| t.token()),
             Some(Token::Slash)

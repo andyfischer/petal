@@ -91,12 +91,13 @@ module.exports = grammar({
     ),
 
     // The module-import forms (see docs/module-system.md):
-    //   import ui                    (qualified)
+    //   import ui                    (every export bare, plus the qualifier `ui`)
+    //   import ui as u               (the same, the qualifier renamed)
     //   import ui: button, clicked   (selective, comma-separated names)
-    //   import ui as u               (aliased)
     //   import bloom/menu            (a package path: `/`-joined segments)
-    //   import bloom/menu: *         (the module's whole exported surface)
-    //   pub import bloom/menu: *     (a re-export)
+    //   import ./level               (a file beside the importing one)
+    //   import ../shared/rng         (a file above it)
+    //   pub import ./menu            (a re-export)
     // `as` is contextual in the real parser; here it is a keyword literal,
     // which is safe because a syntax-highlighting grammar never needs `as`
     // as an ordinary identifier. The selective list requires commas between
@@ -109,24 +110,24 @@ module.exports = grammar({
         seq('as', field('alias', $.identifier)),
         seq(
           ':',
-          choice(
-            field('wildcard', '*'),
-            seq(
-              field('name', $.identifier),
-              repeat(seq(',', field('name', $.identifier))),
-            ),
-          ),
+          field('name', $.identifier),
+          repeat(seq(',', field('name', $.identifier))),
         ),
       )),
     ),
 
-    // A module's identity: one or more identifier segments joined by `/`
-    // (rust/src/parse.rs `expect_path_segment`). A flat name is the one-segment
-    // case, so this node covers `import ui` too.
+    // What an import names: an optional relative prefix — `./`, or one or
+    // more `../` — then one or more identifier segments joined by `/`
+    // (core/src/parse.rs `parse_import`). Without a prefix the first segment
+    // is a package name. A flat name is the one-segment case, so this node
+    // covers `import ui` too.
     module_path: $ => seq(
+      optional(field('relative', $.relative_prefix)),
       field('segment', $.identifier),
       repeat(seq('/', field('segment', $.identifier))),
     ),
+
+    relative_prefix: _ => token(choice('./', /(\.\.\/)+/)),
 
     // `export` is a prefix on a declaration, not a wrapper node: the real
     // parser (rust/src/parse.rs `parse_export`) dispatches straight into

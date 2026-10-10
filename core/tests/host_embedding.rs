@@ -117,7 +117,7 @@ fn recompile_at_an_origin_resolves_sibling_imports() {
     let dir = temp_dir("diag-origin");
     std::fs::write(dir.join("helper.ptl"), "pub fn two()\n  2\nend\n").unwrap();
     let entry = dir.join("main.ptl");
-    let src = "import helper\nhelper.two()\n";
+    let src = "import ./helper\nhelper.two()\n";
     std::fs::write(&entry, src).unwrap();
     let mut env = Env::new();
     let pid = env.load_program_at(src, &entry).unwrap();
@@ -141,7 +141,7 @@ fn source_paths_list_the_entry_and_its_file_imports_once() {
 
     let mut env = Env::new();
     env.register_module("inmem", "pub fn one()\n  1\nend\n");
-    let src = "import helper\nimport inmem\nhelper.two() + inmem.one()\n";
+    let src = "import ./helper\nimport inmem\nhelper.two() + inmem.one()\n";
     std::fs::write(&entry, src).unwrap();
     let pid = env.load_program_at(src, &entry).unwrap();
 
@@ -178,7 +178,7 @@ fn a_source_watch_notices_an_edited_import() {
     let helper = dir.join("helper.ptl");
     std::fs::write(&helper, "pub fn two()\n  2\nend\n").unwrap();
     let entry = dir.join("main.ptl");
-    let src = "import helper\nhelper.two()\n";
+    let src = "import ./helper\nhelper.two()\n";
     std::fs::write(&entry, src).unwrap();
     let mut env = Env::new();
     let pid = env.load_program_at(src, &entry).unwrap();

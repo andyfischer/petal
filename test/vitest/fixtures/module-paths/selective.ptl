@@ -1,4 +1,4 @@
-import bloom/menu: open,
+import ./bloom/menu: open,
                    close
 
 print(open())

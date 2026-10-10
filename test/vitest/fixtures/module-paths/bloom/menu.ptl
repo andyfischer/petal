@@ -1,4 +1,4 @@
-import motion
+import ./motion
 
 pub fn open()
   "bloom open " ++ motion.ease()

@@ -19,7 +19,7 @@
 //!   own directory when there is none.
 //!
 //! A facade is followed too: a file that re-exports the name
-//! (`pub import tally: hits`, `pub import tally: *`) hands it on to its own
+//! (`pub import ./tally: hits`, `pub import ./tally`) hands it on to its own
 //! importers, so they are importers of the binding as well.
 
 use std::collections::{HashMap, HashSet};
@@ -37,7 +37,7 @@ pub(super) struct Importer {
     /// The import(s) that reach the binding, as written.
     pub form: String,
     /// Whether the import binds the name bare in this file (`import m: x`,
-    /// `import m: *`). A qualified import reaches it only as `m.x`.
+    /// or a plain `import m` the file's own declarations do not shadow).
     pub binds_bare: bool,
     /// The names the module itself is bound under here (`import m` → `m`,
     /// `import m as u` → `u`), through which the binding is `m.x`.
@@ -119,23 +119,25 @@ pub(super) fn discover(env: &Env, target: &Path, name: &str, from: &[PathBuf]) -
                     .names
                     .as_ref()
                     .is_some_and(|n| n.iter().any(|n| n == name));
-                // A star import binds weakly: a top-level declaration of the
-                // same name anywhere in the file wins, and the star binds
-                // nothing under that name.
-                let starred = decl.star && !declares(&file.stmts, name);
+                // A plain import binds every export bare, below the file's
+                // own declarations: a top-level declaration of the same name
+                // anywhere in the file wins, and the import binds nothing
+                // under that name.
+                let plain = decl.names.is_none();
+                let through_plain = plain && !declares(&file.stmts, name);
                 forms.push(import_text(decl));
-                bare |= named || starred;
-                // A qualified import binds the module, not the name. Only an
+                bare |= named || through_plain;
+                // A plain import binds the module's qualifier too. Only an
                 // import of the target itself counts: a facade re-exports
                 // names, and `facade.x` is not a spelling of the binding.
-                if decl.names.is_none() && !decl.star && canonical_path(&resolved) == target {
+                if plain && canonical_path(&resolved) == target {
                     let alias = decl
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| crate::ast::module_local_name(&decl.module));
                     aliases.push(alias.to_string());
                 }
-                re_exports |= decl.exported && (named || decl.star);
+                re_exports |= decl.exported && (named || plain);
             }
             if forms.is_empty() {
                 continue;
@@ -276,8 +278,6 @@ fn import_text(decl: &ImportDecl) -> String {
     if let Some(names) = &decl.names {
         out.push_str(": ");
         out.push_str(&names.join(", "));
-    } else if decl.star {
-        out.push_str(": *");
     } else if let Some(alias) = &decl.alias
         && alias != crate::ast::module_local_name(&decl.module)
     {

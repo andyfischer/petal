@@ -34,7 +34,7 @@ impl Compiler {
     }
 
     /// Note an emitted overload set and the variants it joins.
-    fn record_fn_set(&mut self, tid: TermId, members: Vec<TermId>) {
+    pub(super) fn record_fn_set(&mut self, tid: TermId, members: Vec<TermId>) {
         self.overload_index.members.insert(tid, members);
         self.overload_index
             .module

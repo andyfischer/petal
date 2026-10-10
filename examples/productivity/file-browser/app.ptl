@@ -14,9 +14,9 @@
 // Designed for a 1280x850 window (a 1268x778 pane).
 
 import text_layout as tl
-import fsdata as fs
-import icons as ic
-import peek as pk
+import ./fsdata as fs
+import ./icons as ic
+import ./peek as pk
 
 // ── palette and type ────────────────────────────────────────────────────────
 

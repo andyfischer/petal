@@ -109,6 +109,9 @@ import ui: button, clicked
 import ui as u
 import bloom/menu
 import bloom/menu: open, close
+import ./level
+import ../../shared/rng as r
+import ./ui/hud: draw
 
 ---
 
@@ -130,6 +133,22 @@ import bloom/menu: open, close
       segment: (identifier)
       segment: (identifier))
     name: (identifier)
+    name: (identifier))
+  (import_statement
+    module: (module_path
+      relative: (relative_prefix)
+      segment: (identifier)))
+  (import_statement
+    module: (module_path
+      relative: (relative_prefix)
+      segment: (identifier)
+      segment: (identifier))
+    alias: (identifier))
+  (import_statement
+    module: (module_path
+      relative: (relative_prefix)
+      segment: (identifier)
+      segment: (identifier))
     name: (identifier)))
 
 ==================
@@ -181,7 +200,7 @@ end
 
 pub config let knob = 3
 
-pub import bloom/menu: *
+pub import bloom/menu
 
 ---
 
@@ -221,7 +240,7 @@ end
 
 export let a = 1
 
-export import bloom/menu: *
+export import bloom/menu
 
 ---
 

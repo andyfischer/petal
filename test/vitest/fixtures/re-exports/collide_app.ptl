@@ -1,2 +1,2 @@
-import collide: shared
+import ./collide: shared
 print(shared)

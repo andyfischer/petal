@@ -751,8 +751,8 @@ impl Parser {
             Token::Dot | Token::DotDot | Token::DotDotDot | Token::Slash
         ) {
             return Err(self.error_at_current(
-                "a module path segment must be an identifier ('.' and '..' are not allowed \
-                 in an import path)"
+                "a module path segment must be an identifier ('.' and '..' are only allowed \
+                 at the start of an import path: `./name`, `../name`)"
                     .to_string(),
             ));
         }
@@ -780,7 +780,32 @@ impl Parser {
             self.advance(); // consume 'pub' / 'export'
         }
         self.advance(); // consume 'import'
-        let mut module = self.expect_path_segment()?;
+        // A relative path starts with `./` (beside the importing file) or
+        // one or more `../` (above it); anything else starts with a package
+        // name. The prefix is kept in the path as written.
+        let mut module = String::new();
+        if matches!(self.peek(), Token::Dot) {
+            self.advance(); // consume '.'
+            if !matches!(self.peek(), Token::Slash) {
+                return Err(self.error_at_current(
+                    "a relative import is written `./name` or `../name`".to_string(),
+                ));
+            }
+            self.advance(); // consume '/'
+            module.push_str("./");
+        } else {
+            while matches!(self.peek(), Token::DotDot) {
+                self.advance(); // consume '..'
+                if !matches!(self.peek(), Token::Slash) {
+                    return Err(self.error_at_current(
+                        "a relative import is written `./name` or `../name`".to_string(),
+                    ));
+                }
+                self.advance(); // consume '/'
+                module.push_str("../");
+            }
+        }
+        module.push_str(&self.expect_path_segment()?);
         while matches!(self.peek(), Token::Slash) {
             self.advance(); // consume '/'
             let segment = self.expect_path_segment()?;

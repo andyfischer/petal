@@ -7,7 +7,7 @@
 // thumbnails in the icon grid are `picture` on its own.
 
 import text_layout as tl
-import icons as ic
+import ./icons as ic
 
 fn frac(h: int, salt: int) -> float
   ((h / salt) % 1000) / 1000.0

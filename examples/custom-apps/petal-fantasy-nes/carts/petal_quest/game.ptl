@@ -53,8 +53,8 @@
 // still by `lock_top(32)`, so the play area is y 32..240 — which is why level
 // data row `r` is map row `r + 4`. There is no vertical scrolling.
 
-import art as gfx
-import levels as maps
+import ./art as gfx
+import ./levels as maps
 
 // ── Tunables ──────────────────────────────────────────────────────────────
 // The numbers that decide how the game feels, in one place, in the order you

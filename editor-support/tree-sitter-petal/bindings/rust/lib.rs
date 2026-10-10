@@ -69,7 +69,11 @@ mod tests {
             // Package paths and the re-export form (docs/module-system.md).
             "import bloom/menu\n",
             "import bloom/menu: open, close\n",
-            "pub import bloom/motion: *\n",
+            "pub import bloom/motion\n",
+            // Relative paths.
+            "import ./level\n",
+            "import ../shared/rng as r\n",
+            "pub import ../../kit/menu: open, close\n",
         );
         let tree = parser.parse(code, None).unwrap();
         assert!(
@@ -95,7 +99,8 @@ mod tests {
                 "state d = 4",
                 "enum E A, B end",
                 "class R x: num end",
-                "import bloom/menu: *",
+                "import bloom/menu",
+                "import ./menu: open",
             ] {
                 let code = format!("{modifier} {decl}");
                 let tree = parser.parse(&code, None).unwrap();

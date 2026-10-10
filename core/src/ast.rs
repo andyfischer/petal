@@ -509,39 +509,41 @@ impl NativeFnDecl {
 /// One parsed `import` statement.
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportDecl {
-    /// The module *path* as written, segments joined by `/`
-    /// (`import ui` → "ui", `import bloom/menu` → "bloom/menu"). The whole
-    /// path is the module's identity: `bloom/menu` and `petal/menu` are two
-    /// different modules that can coexist in one program.
+    /// The import path as written: a package path (`ui`, `bloom/menu`) or a
+    /// relative one (`./level`, `../shared/rng`). The loader replaces it with
+    /// the module's canonical name once it has resolved the path (see
+    /// [`crate::module`]), so two spellings of one module compare equal from
+    /// there on.
     pub module: String,
-    /// `import ui as u` → Some("u"). A nested path defaults its local name to
-    /// the last segment (`import bloom/menu` → Some("menu")), which the parser
-    /// fills in; a single-segment path leaves this `None` and binds under the
-    /// module name itself.
+    /// `import ui as u` → Some("u"): the qualifier the module is reachable
+    /// through. A path of several segments defaults it to the last one
+    /// (`import bloom/menu` → Some("menu")), which the parser fills in; a
+    /// single-segment path leaves this `None` and the qualifier is the module
+    /// name itself. A selective import binds no qualifier, whatever this is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
-    /// `import ui: button, clicked` → Some(["button", "clicked"]).
-    /// `None` means qualified-only (`ui.button(...)`) or, with `star` set, the
-    /// whole exported surface.
+    /// `import ui: button, clicked` → Some(["button", "clicked"]): the only
+    /// names bound. `None` is a plain import, which binds every export of
+    /// the module bare, and the qualifier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>,
-    /// `import ui: *` — bind *every* export of the module under its own name,
-    /// weakly: the file's own declarations win silently, and two stars that
-    /// provide the same name merge their overload sets or collide loudly.
-    /// Mutually exclusive with `names`.
+    /// `import ui: *` — a form that no longer exists (a plain `import ui` is
+    /// what it meant). Still parsed, so that the loader can reject it with
+    /// an error that says so and `petal fix-imports` can rewrite it.
     #[serde(skip_serializing_if = "is_false")]
     pub star: bool,
-    /// `pub import ui: …` — the imported names (or, for `star`, the whole
-    /// surface; for a bare `pub import m`, the module binding itself)
-    /// become exports of the importing module too. This is the declarative
+    /// `pub import …` — what this import binds becomes part of what the
+    /// importing module exports: every export of the target for a plain
+    /// import, the listed names for a selective one. This is the declarative
     /// facade: one module re-presents another's surface.
     #[serde(skip_serializing_if = "is_false")]
     pub exported: bool,
 }
 
-/// The local name a module path binds by default: its last segment
-/// (`"bloom/menu"` → `"menu"`, `"ui"` → `"ui"`). Qualified access always goes
-/// through this name (`menu.open`), never the path.
+/// The qualifier a module path binds by default: its last segment
+/// (`"bloom/menu"` → `"menu"`, `"./ui/hud"` → `"hud"`, `"ui"` → `"ui"`).
+/// Qualified access always goes through this name (`menu.open`), never the
+/// path.
 pub fn module_local_name(module: &str) -> &str {
     module.rsplit('/').next().unwrap_or(module)
 }

@@ -5,10 +5,10 @@
 // next frame is simply drawn from the new value. It is the proof that the
 // controls are wired to something.
 
-import widgets as wd
+import ./widgets as wd
 import text_layout as tl
-import schema as sc
-import icons: glyph
+import ./schema as sc
+import ./icons: glyph
 
 // The buffer on show. `ind` is the indent depth, so Tab size has something to
 // act on; each token is [kind, text].

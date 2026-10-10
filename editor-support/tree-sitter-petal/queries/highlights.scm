@@ -68,6 +68,7 @@
 ; `import bloom/menu` names one module, spelled in two segments.
 
 (module_path segment: (identifier) @module)
+(relative_prefix) @punctuation.special
 
 ; ---- Functions ----
 

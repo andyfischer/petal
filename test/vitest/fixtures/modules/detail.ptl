@@ -1,4 +1,4 @@
-import palette as p
+import ./palette as p
 
 fn frame(c)
   "<" ++ p.brighten(c) ++ ">"

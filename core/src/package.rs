@@ -21,11 +21,9 @@
 //! import bloom/menu: open, close
 //! ```
 //!
-//! A package's *internal* imports keep working with plain flat names — a
-//! module in `bloom` reaches its sibling with `import motion`, because the
-//! sibling sits in the same directory (and, for an in-memory package, because
-//! [`resolve_in_packages`] looks in the importer's own package first). The
-//! `bloom/`-prefixed spelling works too.
+//! Inside a package, modules reach each other with a relative import —
+//! `import ./motion` — or by the package's own name, `import bloom/motion`.
+//! Both name the same module (see [`Package::canonical_name`]).
 //!
 //! Scope, deliberately: this is a manifest and a reachability rule. There is
 //! no registry, no fetching, no dependency resolution, no lockfile, and no
@@ -204,17 +202,17 @@ impl Package {
 
     /// Load one module of this package by its package-relative name, or
     /// `None` when the package has no such module.
-    fn load(&self, module: &str) -> Option<ModuleSource> {
+    pub(crate) fn load(&self, module: &str) -> Option<ModuleSource> {
         if relative_module_error(module).is_some() {
             return None;
         }
-        let full_name = format!("{}/{}", self.info.name, module);
+        let full_name = Some(self.canonical_name(module));
         match &self.sources {
             Some(sources) => sources.get(module).map(|source| ModuleSource {
                 name: full_name,
                 source: source.clone(),
-                // A synthetic path, so a flat sibling import from this module
-                // lands back in this package (see `resolve_in_packages`).
+                // A synthetic path, so a relative import from this module
+                // lands back in this package.
                 origin: ModuleOrigin::File(module_file_path(&self.info.module_dir, module)),
             }),
             None => {
@@ -241,63 +239,37 @@ impl Package {
             .map(|(_, source)| source.as_str())
     }
 
-    /// The module name an importing file inside this package would mean by a
-    /// flat `import <name>`: the sibling directory it sits in, plus the name.
-    /// `None` when the importer is not inside this package.
-    fn sibling_of(&self, importer: &ModuleOrigin, name: &str) -> Option<String> {
-        let ModuleOrigin::File(path) = importer else {
-            return None;
-        };
-        let dir = path.parent()?;
-        let rel = dir.strip_prefix(&self.info.module_dir).ok()?;
-        let mut parts: Vec<String> = rel
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .filter(|s| !s.is_empty())
-            .collect();
-        parts.push(name.to_string());
-        Some(parts.join("/"))
-    }
-}
-
-/// Resolve `name` against the registered packages, or `None`. Consulted by
-/// `ModuleRegistry::resolve` after in-memory registrations and before the
-/// filesystem search paths.
-///
-/// Three shapes resolve here:
-/// 1. `bloom/menu` — a leading segment naming a package.
-/// 2. `menu`, from a module of a package — its own package first, so a
-///    library's internal flat imports keep working with no filesystem at all.
-///    (An on-disk package would find the same file anyway, one step later,
-///    through the importer-directory search.) Note this does not *rename* the
-///    import: a module's identity is still the path the importing file wrote,
-///    so a file reached as both `motion` and `bloom/motion` in one program is
-///    two modules — a library should pick one spelling for itself.
-/// 3. `bloom` — a package's facade module, `<module_dir>/bloom.ptl`.
-pub fn resolve_in_packages(
-    packages: &[Package],
-    name: &str,
-    importer: Option<&ModuleOrigin>,
-) -> Option<ModuleSource> {
-    if let Some((head, rest)) = name.split_once('/') {
-        let pkg = packages.iter().find(|p| p.info.name == head)?;
-        return pkg.load(rest);
-    }
-
-    if let Some(importer) = importer {
-        for pkg in packages {
-            if let Some(module) = pkg.sibling_of(importer, name)
-                && let Some(found) = pkg.load(&module)
-            {
-                return Some(found);
-            }
+    /// The canonical name of this package's module `module` (its path under
+    /// the module directory): `bloom/menu`, and plain `bloom` for the module
+    /// named after the package — the one `import bloom` loads.
+    pub fn canonical_name(&self, module: &str) -> String {
+        if module == self.info.name {
+            module.to_string()
+        } else {
+            format!("{}/{}", self.info.name, module)
         }
     }
 
-    packages
-        .iter()
-        .find(|p| p.info.name == name)
-        .and_then(|pkg| pkg.load(name))
+    /// A package compiled into the binary (see [`crate::bundled`]).
+    pub fn bundled(bundled: &crate::bundled::BundledPackage) -> Result<Package, LoadError> {
+        let marker = PathBuf::from(format!("<bundled:{}>", bundled.name));
+        let manifest = parse_manifest(bundled.manifest(), &marker.join(MANIFEST_FILE))?;
+        let prefix = match &manifest.modules {
+            Some(dir) => format!("{}/", dir.trim_matches('/')),
+            None if bundled.sources().any(|(p, _)| p.starts_with("src/")) => "src/".to_string(),
+            None => String::new(),
+        };
+        let mut package = Package::in_memory(
+            &manifest.name,
+            bundled
+                .sources()
+                .filter_map(|(path, source)| Some((path.strip_prefix(prefix.as_str())?, source))),
+        )?;
+        package.info.version = manifest.version;
+        package.info.root = marker.clone();
+        package.info.module_dir = marker;
+        Ok(package)
+    }
 }
 
 /// Every package directly under `dir`, plus `dir` itself when it is a package
@@ -591,7 +563,7 @@ mod tests {
         assert_eq!(pkg.info.version.as_deref(), Some("0.1.0"));
         assert_eq!(pkg.info.modules, vec!["menu"]);
         assert_eq!(pkg.info.module_dir, root.join("lib/src"));
-        assert_eq!(pkg.load("menu").unwrap().name, "bloom/menu");
+        assert_eq!(pkg.load("menu").unwrap().name.as_deref(), Some("bloom/menu"));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -707,21 +679,31 @@ mod tests {
         assert_eq!(pkg.info.modules, vec!["menu", "motion"]);
         assert!(pkg.load("menu").is_some());
         assert!(pkg.load("nope").is_none());
-        assert_eq!(pkg.load("menu").unwrap().name, "bloom/menu");
+        assert_eq!(pkg.load("menu").unwrap().name.as_deref(), Some("bloom/menu"));
     }
 
     #[test]
-    fn an_in_memory_module_finds_its_sibling_flat() {
-        let pkg = Package::in_memory("bloom", [("menu", "a"), ("motion", "b")]).unwrap();
-        let importer = pkg.load("menu").unwrap().origin;
-        let found = resolve_in_packages(std::slice::from_ref(&pkg), "motion", Some(&importer));
-        assert_eq!(found.map(|m| m.name), Some("bloom/motion".to_string()));
+    fn the_module_named_after_the_package_is_the_package_itself() {
+        let pkg = Package::in_memory("bloom", [("bloom", "a"), ("menu", "b")]).unwrap();
+        assert_eq!(pkg.canonical_name("bloom"), "bloom");
+        assert_eq!(pkg.canonical_name("menu"), "bloom/menu");
+        assert_eq!(pkg.load("bloom").unwrap().name.as_deref(), Some("bloom"));
     }
 
     #[test]
     fn a_traversing_module_name_resolves_to_nothing() {
         let pkg = Package::in_memory("bloom", [("menu", "a")]).unwrap();
-        assert!(resolve_in_packages(std::slice::from_ref(&pkg), "bloom/../x", None).is_none());
+        assert!(pkg.load("../x").is_none());
         assert!(Package::in_memory("bloom", [("../x", "a")]).is_err());
+    }
+
+    #[test]
+    fn a_bundled_package_is_an_in_memory_package() {
+        let core = crate::bundled::package(crate::bundled::CORE_PACKAGE).unwrap();
+        let pkg = Package::bundled(core).unwrap();
+        assert_eq!(pkg.info.name, "core");
+        assert!(pkg.info.in_memory);
+        assert!(pkg.info.modules.contains(&"math".to_string()), "{:?}", pkg.info.modules);
+        assert!(pkg.load("math").is_some());
     }
 }

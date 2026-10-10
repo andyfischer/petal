@@ -1,4 +1,4 @@
-// Namespaced module paths: `import bloom/menu` (docs/module-system.md).
+// Namespaced module paths: `import ./bloom/menu` (docs/module-system.md).
 //
 // A module path is one or more identifier segments joined by '/'. The path is
 // the module's identity — bloom/menu and petal/menu are two modules — while the
@@ -14,15 +14,15 @@ import { PETAL, petalCapture, runPetalFile } from "./helpers";
 const FIXTURES = resolve(__dirname, "fixtures/module-paths");
 
 /** Run `petal <args>` (argv form, no shell) expecting failure; return stderr. */
-function runFileError(args: string[]): string {
-  const r = petalCapture(args);
+function runFileError(args: string[], cwd?: string): string {
+  const r = petalCapture(args, undefined, cwd);
   if (r.code === 0) throw new Error("Expected petal to fail but it succeeded");
   return r.stderr.trim();
 }
 
 describe("namespaced module paths", () => {
   it("binds the last segment, and two namespaces coexist", () => {
-    // app.ptl: `import bloom/menu` + `import petal/menu as pmenu`.
+    // app.ptl: `import ./bloom/menu` + `import ./petal/menu as pmenu`.
     const out = runPetalFile(resolve(FIXTURES, "app.ptl"));
     expect(out).toBe("bloom open eased\npetal open");
   });
@@ -33,18 +33,18 @@ describe("namespaced module paths", () => {
   });
 
   it("a nested module's own imports resolve beside it", () => {
-    // bloom/menu.ptl says `import motion`, which is bloom/motion.ptl.
+    // bloom/menu.ptl says `import ./motion`, which is bloom/motion.ptl.
     const out = execSync(
-      `${PETAL} run -e 'import bloom/menu\nprint(menu.open())' -I ${FIXTURES}`,
-      { encoding: "utf-8", timeout: 10000 }
+      `${PETAL} run -e 'import ./bloom/menu\nprint(menu.open())'`,
+      { encoding: "utf-8", timeout: 10000, cwd: FIXTURES }
     ).trim();
     expect(out).toBe("bloom open eased");
   });
 
   it("`as` overrides the default local name", () => {
     const out = execSync(
-      `${PETAL} run -e 'import bloom/menu as m\nprint(m.close())' -I ${FIXTURES}`,
-      { encoding: "utf-8", timeout: 10000 }
+      `${PETAL} run -e 'import ./bloom/menu as m\nprint(m.close())'`,
+      { encoding: "utf-8", timeout: 10000, cwd: FIXTURES }
     ).trim();
     expect(out).toBe("bloom close");
   });
@@ -53,10 +53,7 @@ describe("namespaced module paths", () => {
     const err = runFileError([
       "run",
       "-e",
-      "import bloom/menu\nimport petal/menu\nprint(1)",
-      "-I",
-      FIXTURES,
-    ]);
+      "import ./bloom/menu\nimport ./petal/menu\nprint(1)"], FIXTURES);
     expect(err).toContain(
       "'menu' is already an alias for module 'bloom/menu' and cannot also alias 'petal/menu'"
     );
@@ -65,13 +62,13 @@ describe("namespaced module paths", () => {
   it("'..' in a path is a clean error, not a traversal", () => {
     const err = runFileError(["run", resolve(FIXTURES, "bad_path.ptl")]);
     expect(err).toContain("a module path segment must be an identifier");
-    expect(err).toContain("'.' and '..' are not allowed");
+    expect(err).toContain("'.' and '..' are only allowed at the start of an import path");
   });
 
   it("a missing nested module names the path it looked for", () => {
-    const err = runFileError(["run", "-e", "import bloom/nope", "-I", FIXTURES]);
-    expect(err).toContain("cannot find module 'bloom/nope'");
-    expect(err).toContain("no bloom/nope.ptl");
+    const err = runFileError(["run", "-e", "import ./bloom/nope"], FIXTURES);
+    expect(err).toContain("cannot find module './bloom/nope'");
+    expect(err).toContain("bloom/nope.ptl");
   });
 
   it("diagnostics name a nested module by its path", () => {
@@ -81,19 +78,17 @@ describe("namespaced module paths", () => {
     });
     const names = JSON.parse(ir).source_map.files.map((f: any) => f.name);
     // bloom/menu.ptl and petal/menu.ptl would be indistinguishable as bare
-    // file names; motion.ptl was imported flat and keeps its bare name.
+    // file names; each is named by its path from the entry file.
     expect(names).toContain("bloom/menu.ptl");
     expect(names).toContain("petal/menu.ptl");
   });
 
-  it("a flat import is unchanged", () => {
-    const out = execSync(
-      `${PETAL} run -e 'import palette\nprint(palette.colors.bg)' -I ${resolve(
-        __dirname,
-        "fixtures/modules"
-      )}`,
-      { encoding: "utf-8", timeout: 10000 }
-    ).trim();
+  it("a relative import from -e code is against the working directory", () => {
+    const out = execSync(`${PETAL} run -e 'import ./palette\nprint(palette.colors.bg)'`, {
+      encoding: "utf-8",
+      timeout: 10000,
+      cwd: resolve(__dirname, "fixtures/modules"),
+    }).trim();
     expect(out).toBe("2");
   });
 });

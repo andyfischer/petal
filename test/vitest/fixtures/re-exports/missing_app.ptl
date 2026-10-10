@@ -1,2 +1,2 @@
-import missing: open
+import ./missing: open
 print(open())

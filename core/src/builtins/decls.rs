@@ -78,6 +78,17 @@ fn every_core_module_declares_something() {
     for (path, source) in package.sources() {
         let decls = crate::native_decl::NativeDecls::parse(source)
             .unwrap_or_else(|e| panic!("{path}: {e}"));
+        // `core.ptl` is the package's own module: it re-exports the others
+        // (`import core`) and declares nothing itself.
+        if path == "src/core.ptl" {
+            assert!(decls.is_empty(), "{path} is the facade; declarations go in a module");
+            assert_eq!(
+                source.lines().filter(|l| l.starts_with("pub import ./")).count(),
+                package.sources().count() - 1,
+                "{path} re-exports every other module of the package"
+            );
+            continue;
+        }
         assert!(!decls.is_empty(), "{path} declares no native fn");
     }
 }

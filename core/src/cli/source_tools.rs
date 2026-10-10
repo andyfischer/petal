@@ -162,6 +162,131 @@ pub(super) fn handle_fmt(paths: &[String], inline: Option<&str>, check: bool, di
 }
 
 // ---------------------------------------------------------------------------
+// fix-imports
+// ---------------------------------------------------------------------------
+
+pub(super) fn handle_fix_imports(
+    paths: &[String],
+    inline: Option<&str>,
+    check: bool,
+    diff: bool,
+    include_dirs: &[PathBuf],
+) {
+    let mut errors = 0usize;
+    let inputs = collect_inputs(paths, inline, &mut errors);
+    let include_dirs: Vec<PathBuf> = include_dirs
+        .iter()
+        .map(|d| crate::module::canonical_path(d))
+        .collect();
+    let mut fixer = crate::fix_imports::ImportFixer::new(&include_dirs);
+
+    // The import lines of every file first, staged in memory, so that the
+    // compile that looks for missing imports sees every sibling migrated —
+    // whatever order the files come in, and whether or not anything is
+    // written.
+    let mut staged: Vec<Option<crate::fix_imports::Fixed>> = Vec::new();
+    for input in &inputs {
+        let file = input.path.as_deref().map(crate::module::canonical_path);
+        match fixer.rewrite_import_lines(&input.source, file.as_deref()) {
+            Ok(fixed) => {
+                if let Some(file) = &file {
+                    fixer.stage(file, &fixed.source);
+                }
+                staged.push(Some(fixed));
+            }
+            Err(e) => {
+                eprintln!("error: {}: {}", input.name, e);
+                errors += 1;
+                staged.push(None);
+            }
+        }
+    }
+
+    let mut changed = 0usize;
+    let mut written = 0usize;
+    for (input, first) in inputs.iter().zip(staged) {
+        let Some(mut fixed) = first else {
+            continue;
+        };
+        let file = input.path.as_deref().map(crate::module::canonical_path);
+        let second = fixer.add_missing_imports(&fixed.source, file.as_deref());
+        if let Some(file) = &file {
+            fixer.stage(file, &second.source);
+        }
+        fixed.source = second.source;
+        fixed.changes.extend(second.changes);
+        fixed.notes.extend(second.notes);
+
+        // A note about a file that does not compile is only worth printing
+        // when the file was touched or asked for by name: a directory sweep
+        // would otherwise repeat every host-only script's first error.
+        let touched = fixed.source != input.source;
+        if touched || paths.iter().any(|p| *p == input.name) {
+            for note in &fixed.notes {
+                eprintln!("note: {}: {note}", input.name);
+            }
+        }
+        let Some(path) = &input.path else {
+            if check || diff {
+                if touched {
+                    changed += 1;
+                    if diff {
+                        print!("{}", unified_diff(&input.name, &input.source, &fixed.source, "fixed"));
+                    } else {
+                        println!("{}", input.name);
+                    }
+                }
+            } else {
+                print!("{}", fixed.source);
+            }
+            continue;
+        };
+        if !touched {
+            continue;
+        }
+        changed += 1;
+        if diff {
+            print!("{}", unified_diff(&input.name, &input.source, &fixed.source, "fixed"));
+        } else if check {
+            println!("{}", input.name);
+        } else {
+            if let Err(e) = fs::write(path, &fixed.source) {
+                eprintln!("error: writing {}: {e}", input.name);
+                errors += 1;
+                continue;
+            }
+            written += 1;
+            println!("{}", input.name);
+            for change in &fixed.changes {
+                println!("  {change}");
+            }
+        }
+    }
+
+    let files = inputs.iter().filter(|i| i.path.is_some()).count();
+    if check || diff {
+        if files > 0 {
+            eprintln!(
+                "{changed} of {files} file(s) need their imports fixed{}",
+                if changed > 0 {
+                    " (run `petal fix-imports`)"
+                } else {
+                    ""
+                }
+            );
+        }
+        if changed > 0 || errors > 0 {
+            process::exit(1);
+        }
+    } else if files > 0 {
+        eprintln!("fixed imports in {written} of {files} file(s)");
+    }
+    if errors > 0 {
+        process::exit(1);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // lint
 // ---------------------------------------------------------------------------
 

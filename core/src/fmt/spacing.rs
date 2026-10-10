@@ -343,6 +343,10 @@ fn gap_rule(g: GapCtx) -> Gap {
     if matches!(a, Comma | Colon) {
         return Gap::One;
     }
+    // `import ./x`, `import ../x`: the relative prefix is part of the path.
+    if g.in_import && matches!(a, Import) {
+        return Gap::One;
+    }
     if matches!(a, Dot | QuestionDot | DotDot | DotDotDot | At)
         || matches!(b, Dot | QuestionDot | DotDot)
     {
@@ -516,6 +520,9 @@ mod tests {
     fn import_paths_stay_joined() {
         assert_eq!(sp("import bloom/menu: a,b\n"), "import bloom/menu: a, b\n");
         assert_eq!(sp("import m: *\n"), "import m: *\n");
+        assert_eq!(sp("import  ./level\n"), "import ./level\n");
+        assert_eq!(sp("import ../shared/rng as r\n"), "import ../shared/rng as r\n");
+        assert_eq!(sp("pub import ../../a/b: c,d\n"), "pub import ../../a/b: c, d\n");
     }
 
     #[test]

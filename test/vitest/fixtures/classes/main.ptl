@@ -1,4 +1,4 @@
-import shapes: Circle
+import ./shapes: Circle
 
 // A method declared in the module dispatches here, on a built-in class...
 print(Rect(0, 0, 10, 4).area())

@@ -2,7 +2,10 @@
 
 use serde_json::Value;
 
-use crate::lsp::document::{self, DefinitionKind, DocumentStore, KEYWORDS, identifier_at_position};
+use crate::lsp::document::{
+    self, Definition, DefinitionKind, DocumentStore, KEYWORDS, identifier_at_position,
+    qualifier_at_position,
+};
 use crate::lsp::lsp_types::*;
 use crate::lsp::protocol::*;
 
@@ -122,7 +125,7 @@ impl Server {
                 hover_provider: Some(true),
                 definition_provider: Some(true),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string()]),
+                    trigger_characters: Some(vec![".".to_string(), "/".to_string()]),
                 }),
             },
         };
@@ -220,7 +223,7 @@ impl Server {
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
 
-        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
+        let describe = |def: &Definition| {
             let kind_str = match def.kind {
                 DefinitionKind::Variable => "variable",
                 DefinitionKind::Function => "function",
@@ -228,17 +231,64 @@ impl Server {
                 DefinitionKind::Parameter => "parameter",
             };
             let detail = def.detail.as_deref().unwrap_or("");
-            let value = if detail.is_empty() {
+            if detail.is_empty() {
                 format!("({kind_str}) {}", def.name)
             } else {
                 format!("({kind_str}) {} {detail}", def.name)
+            }
+        };
+        // `m.name`: the module's export, and nothing else by that name.
+        let qualified = qualifier_at_position(&doc.text, p.position.line, p.position.character)
+            .and_then(|q| doc.analysis.qualifier(&q));
+        if let Some(module) = qualified {
+            let value = match module.export(&ident) {
+                Some(found) => format!("{}\n// from module {}", describe(&found.def), module.module),
+                None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
             };
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),
                     value: format!("```petal\n{value}\n```"),
                 },
+                range: None,
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
+
+        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
+            let value = describe(def);
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: format!("```petal\n{value}\n```"),
+                },
                 range: Some(document::span_to_range(&def.span)),
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
+
+        // A name an import brought in: say which module it is from, since
+        // nothing on the line does.
+        if let Some(found) = doc.analysis.imported(&ident) {
+            let from = doc
+                .analysis
+                .imports
+                .iter()
+                .find(|m| m.binds_bare(&ident) && m.export(&ident).is_some())
+                .map(|m| m.module.as_str())
+                .unwrap_or("");
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: format!("```petal\n{}\n// from module {from}\n```", describe(&found.def)),
+                },
+                range: None,
             };
             return vec![OutgoingMessage::Response(RpcResponse::ok(
                 id,
@@ -284,23 +334,63 @@ impl Server {
             None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
         };
 
-        let ident = match identifier_at_position(&doc.text, p.position.line, p.position.character) {
-            Some(i) => i,
-            None => return vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))],
+        let located = |uri: String, range: Range| {
+            vec![OutgoingMessage::Response(RpcResponse::ok(
+                id.clone(),
+                serde_json::to_value(Location { uri, range }).unwrap(),
+            ))]
         };
+        let nothing = || vec![OutgoingMessage::Response(RpcResponse::ok(id.clone(), Value::Null))];
 
-        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
-            let loc = Location {
-                uri: p.text_document.uri.clone(),
-                range: document::span_to_range(&def.span),
+        // On an import's path: the file the path names.
+        if let Some(path) =
+            document::import_path_at_position(&doc.text, p.position.line, p.position.character)
+        {
+            return match document::import_target_uri(&path, &p.text_document.uri) {
+                Some(uri) => located(uri, Range::default()),
+                None => nothing(),
             };
-            return vec![OutgoingMessage::Response(RpcResponse::ok(
-                id,
-                serde_json::to_value(loc).unwrap(),
-            ))];
         }
 
-        vec![OutgoingMessage::Response(RpcResponse::ok(id, Value::Null))]
+        let ident = match identifier_at_position(&doc.text, p.position.line, p.position.character) {
+            Some(i) => i,
+            None => return nothing(),
+        };
+
+        // `m.name`: the declaration in the module `m` stands for.
+        if let Some(module) =
+            qualifier_at_position(&doc.text, p.position.line, p.position.character)
+                .and_then(|q| doc.analysis.qualifier(&q))
+        {
+            return match module.export(&ident) {
+                Some(found) => match &found.uri {
+                    Some(uri) => located(uri.clone(), document::span_to_range(&found.def.span)),
+                    None => nothing(),
+                },
+                None => nothing(),
+            };
+        }
+
+        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
+            return located(
+                p.text_document.uri.clone(),
+                document::span_to_range(&def.span),
+            );
+        }
+
+        // A qualifier itself (`hud` in `hud.draw`): the module's file.
+        if let Some(uri) = doc.analysis.qualifier(&ident).and_then(|m| m.uri.clone()) {
+            return located(uri, Range::default());
+        }
+
+        // A bare name an import brought in: its declaration, in its own file.
+        if let Some(found) = doc.analysis.imported(&ident)
+            && let Some(uri) = &found.uri
+        {
+            return located(uri.clone(), document::span_to_range(&found.def.span));
+        }
+
+        nothing()
     }
 
     // -----------------------------------------------------------------------
@@ -333,10 +423,101 @@ impl Server {
             }
         };
 
+        // The identifier under the cursor, or — the usual case while typing,
+        // with the cursor just past its last character — the one ending there.
         let prefix = identifier_at_position(&doc.text, p.position.line, p.position.character)
+            .or_else(|| {
+                let before = p.position.character.checked_sub(1)?;
+                identifier_at_position(&doc.text, p.position.line, before)
+            })
             .unwrap_or_default();
+        let item_for = |def: &Definition, detail: Option<String>| CompletionItem {
+            label: def.name.clone(),
+            kind: Some(match def.kind {
+                DefinitionKind::Function => CompletionItemKind::Function,
+                _ => CompletionItemKind::Variable,
+            }),
+            detail,
+        };
+        let respond = |items: Vec<CompletionItem>| {
+            vec![OutgoingMessage::Response(RpcResponse::ok(
+                id.clone(),
+                serde_json::to_value(CompletionList {
+                    is_incomplete: false,
+                    items,
+                })
+                .unwrap(),
+            ))]
+        };
+
+        // On an import line: the modules that could be named there.
+        if let Some(path) =
+            document::import_path_prefix(&doc.text, p.position.line, p.position.character)
+        {
+            return respond(
+                document::import_path_completions(&path, &p.text_document.uri)
+                    .into_iter()
+                    .map(|label| CompletionItem {
+                        label,
+                        kind: Some(CompletionItemKind::Variable),
+                        detail: Some("module".to_string()),
+                    })
+                    .collect(),
+            );
+        }
+
+        // After `m.`: what the module exports, and only that.
+        if let Some(module) =
+            qualifier_at_position(&doc.text, p.position.line, p.position.character)
+                .and_then(|q| doc.analysis.qualifier(&q))
+        {
+            return respond(
+                module
+                    .exports
+                    .iter()
+                    .filter(|e| e.def.name.starts_with(&prefix))
+                    .map(|e| item_for(&e.def, e.def.detail.clone()))
+                    .collect(),
+            );
+        }
 
         let mut items: Vec<CompletionItem> = Vec::new();
+
+        // Names the imports bind bare, and the qualifiers themselves. The
+        // implicit prelude is left out of an empty-prefix list: it is every
+        // `std` function, on every keystroke.
+        let mut seen: std::collections::HashSet<&str> = doc
+            .analysis
+            .definitions
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        for module in doc.analysis.imports.iter().rev() {
+            if module.implicit && prefix.is_empty() {
+                continue;
+            }
+            if let Some(q) = &module.qualifier
+                && !module.implicit
+                && q.starts_with(&prefix)
+                && seen.insert(q.as_str())
+            {
+                items.push(CompletionItem {
+                    label: q.clone(),
+                    kind: Some(CompletionItemKind::Variable),
+                    detail: Some(format!("module {}", module.module)),
+                });
+            }
+            for export in &module.exports {
+                let name = export.def.name.as_str();
+                if module.binds_bare(name) && name.starts_with(&prefix) && seen.insert(name) {
+                    let detail = match &export.def.detail {
+                        Some(d) => format!("{d} — {}", module.module),
+                        None => module.module.clone(),
+                    };
+                    items.push(item_for(&export.def, Some(detail)));
+                }
+            }
+        }
 
         for def in &doc.analysis.definitions {
             if !prefix.is_empty() && !def.name.starts_with(&prefix) {

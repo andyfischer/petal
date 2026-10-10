@@ -333,7 +333,7 @@ fn methods_nested_functions_and_imports_are_all_nameable() {
     std::fs::write(
         &main,
         "\
-import shapes
+import ./shapes
 
 class Box
   w: int,

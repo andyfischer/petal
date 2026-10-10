@@ -55,6 +55,7 @@ impl Compiler {
                 // is not a user-written read.
                 self.check_cell_read_says_get(name, span);
                 self.check_capture_is_not_rebound(name, span);
+                self.check_import_use(name, span);
                 self.compile_ident(name)
             }
 
@@ -237,6 +238,9 @@ impl Compiler {
                     // way. A name nothing binds compiles the same way and is
                     // looked up when the line runs ("Unknown builtin"), which
                     // `petal check` reports first (`typecheck::globals`).
+                    if let ExprKind::Ident(name) = &function.kind {
+                        self.check_import_call(name, args.len(), span);
+                    }
                     let builtin_name: Option<String> = match &function.kind {
                         ExprKind::Ident(name) => match self.scope_lookup(name) {
                             Some(tid) => {
@@ -383,6 +387,7 @@ impl Compiler {
             // fires if the expression actually runs.
             return self.compile_ident(name);
         }
+        self.check_import_use(name, span);
         if !self.binding_is_var(name) {
             self.error_at(
                 span,
@@ -525,15 +530,25 @@ impl Compiler {
         let ExprKind::Ident(name) = &object.kind else {
             return None;
         };
-        // A term binding (local, param, capture, builtin) shadows the alias:
-        // `ui` is then an ordinary value and `.member` is field access.
-        if self.scope_lookup(name).is_some() {
-            return None;
-        }
         let module = self.module_aliases.get(name)?.clone();
-
         let qualified = format!("{module}::{member}");
-        if self.scope_lookup(&qualified).is_some() {
+        // A term binding (local, param, capture, builtin) shadows the alias:
+        // `ui` is then an ordinary value and `.member` is field access. The
+        // exception is a binding the file's *imports* made — `import noise`
+        // binds both the qualifier `noise` and, bare, the function `noise`
+        // the module exports — where the module member wins when there is
+        // one, and the value is what is left otherwise.
+        if let Some(bound) = self.scope_lookup(name) {
+            let from_import = self.import_bound.get(name) == Some(&bound);
+            if !from_import || self.scope_lookup(&qualified).is_none() {
+                return None;
+            }
+        }
+        if let Some(tid) = self.scope_lookup(&qualified) {
+            if let Some(ambiguous) = self.ambiguous_imports.get(&tid) {
+                let message = ambiguous.message();
+                self.error_at(object.span, message);
+            }
             return Some(self.compile_ident(&qualified));
         }
         // A non-exported name is absent from the global scope, so the two cases

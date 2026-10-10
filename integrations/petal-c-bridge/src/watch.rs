@@ -140,7 +140,7 @@ mod tests {
     fn a_broken_watch_sees_siblings_new_files_and_skips_hidden_dirs() {
         let dir = scratch("broken-watch");
         let main = dir.join("main.ptl");
-        std::fs::write(&main, "import util\n").unwrap();
+        std::fs::write(&main, "import ./util\n").unwrap();
         std::fs::create_dir_all(dir.join("lib")).unwrap();
         std::fs::write(dir.join("lib/deep.ptl"), "pub let A = 1\n").unwrap();
         std::fs::create_dir_all(dir.join(".git")).unwrap();

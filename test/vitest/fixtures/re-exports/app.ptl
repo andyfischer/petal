@@ -1,7 +1,7 @@
-import widgets: button, accent, menu, labelled
+import ./widgets: button, accent, open, labelled
 
 print(button("ok"))
 print(button("ok", 4))
 print(accent)
-print(menu.open())
+print(open())
 print(labelled("x"))

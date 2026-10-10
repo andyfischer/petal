@@ -136,9 +136,7 @@ impl Env {
             let (packages, errors) = crate::package::discover_packages(std::path::Path::new(dir));
             ambient_package_errors.extend(errors);
             for package in packages {
-                if !modules.has_package(&package.info.name) {
-                    modules.add_package(package);
-                }
+                modules.add_search_package(package);
             }
         }
         Self {
@@ -408,12 +406,9 @@ impl Env {
         let (packages, errors) = crate::package::discover_packages(&dir);
         for package in packages {
             // First search directory wins, matching search-path precedence.
-            if !self.modules.has_package(&package.info.name) {
-                self.modules.add_package(package);
-            }
+            self.modules.add_search_package(package);
         }
         self.package_errors.extend(errors);
-        self.modules.add_path(dir);
     }
 
     /// Register a whole library from its root directory — the one call that
@@ -465,7 +460,7 @@ impl Env {
     pub fn packages(&self) -> Vec<crate::package::PackageInfo> {
         self.modules
             .packages()
-            .iter()
+            .into_iter()
             .map(|p| p.info.clone())
             .collect()
     }
@@ -497,12 +492,76 @@ impl Env {
         name: &str,
         importer: &std::path::Path,
     ) -> Option<std::path::PathBuf> {
-        use crate::module::{ModuleOrigin, ModuleResolver};
+        use crate::module::{Importer, ModuleOrigin, ModuleResolver};
         let origin = ModuleOrigin::File(importer.to_path_buf());
-        match self.modules.resolve(name, Some(&origin))?.origin {
+        let importer_name = self.modules.module_name_of_file(importer);
+        let importer = Importer {
+            name: importer_name.as_deref(),
+            origin: Some(&origin),
+        };
+        self.modules.begin_load();
+        match self.modules.resolve(name, &importer).ok()?.origin {
             ModuleOrigin::File(path) => Some(path),
             ModuleOrigin::Memory => None,
         }
+    }
+
+    /// Let a program loaded with no file path (`load_program(source)`)
+    /// resolve `import ./x` against `dir`, after the in-memory modules. The
+    /// CLI points this at the working directory for `-e` code and stdin; a
+    /// host that never calls it keeps such programs to in-memory modules.
+    pub fn set_inline_import_dir(&mut self, dir: Option<std::path::PathBuf>) {
+        self.modules.inline_import_dir = dir;
+    }
+
+    /// What `import path`, written in the file at `importer`, resolves to:
+    /// the module's canonical name. `Err` is why it resolves to nothing.
+    pub fn resolve_import(
+        &self,
+        path: &str,
+        importer: &std::path::Path,
+    ) -> Result<String, String> {
+        use crate::module::{Importer, ModuleOrigin, ModuleResolver};
+        let origin = ModuleOrigin::File(importer.to_path_buf());
+        let importer_name = self.modules.module_name_of_file(importer);
+        self.modules.begin_load();
+        let found = self.modules.resolve(
+            path,
+            &Importer {
+                name: importer_name.as_deref(),
+                origin: Some(&origin),
+            },
+        )?;
+        Ok(found.name.unwrap_or_else(|| path.to_string()))
+    }
+
+    /// The names the module at the package path `path` exports — what a
+    /// plain `import path` binds bare.
+    pub fn exports_of(&self, path: &str) -> Result<Vec<String>, crate::error::LoadError> {
+        let modules = crate::module::load_modules(
+            &format!("import {path}\n"),
+            None,
+            &self.modules,
+            &[],
+            &[],
+        )?;
+        let program = Compiler::new().compile_modules(&modules, ProgramId(0), &self.native_fns)?;
+        Ok(program
+            .imports
+            .entry
+            .first()
+            .and_then(|import| program.imports.exports.get(&import.module))
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// Every package path a script could write after `import` to reach a
+    /// module that is not already in scope: each registered, search-path and
+    /// bundled package by its own name when it has a module of that name,
+    /// else each of its modules (`pkg/module`). The always-in-scope `core`
+    /// package and `std` are left out.
+    pub fn importable_paths(&self) -> Vec<String> {
+        self.modules.importable_paths()
     }
 
     /// Declare modules that every loaded program imports implicitly, as if by

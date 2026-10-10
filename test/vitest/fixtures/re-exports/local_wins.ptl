@@ -1,6 +1,6 @@
-pub import widgets/button: *
+pub import ./widgets/button
 
-// A declaration of this file's own beats the star, silently.
+// A declaration of this file's own beats the re-export, silently.
 pub fn button(label)
   "<" ++ label ++ ">"
 end

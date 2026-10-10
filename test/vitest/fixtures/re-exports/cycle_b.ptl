@@ -1,1 +1,1 @@
-pub import cycle_a: *
+pub import ./cycle_a

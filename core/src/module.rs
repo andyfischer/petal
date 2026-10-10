@@ -5,23 +5,26 @@
 //! of that pipeline: turning an entry source plus a resolver into the flat,
 //! dependency-ordered list of parsed modules the compiler consumes.
 //!
-//! The language does not know about files — a module name is a path of one or
-//! more identifier segments joined by `/` (`ui`, `bloom/menu`), and what it
-//! resolves *to* is the resolver's business. The whole path is the module's
-//! identity, so `bloom/menu` and `petal/menu` are distinct modules. The
-//! built-in [`ModuleRegistry`] resolves, in order:
-//! 1. embedder-registered in-memory modules (`Env::register_module`, keyed by
-//!    the full path) — how a prelude ships and how wasm hosts with no
-//!    filesystem work,
-//! 2. registered packages — a `petal.toml` library, whose modules answer to
-//!    `<package name>/<module>` wherever the library sits (see
-//!    [`crate::package`]),
-//! 3. the importing file's directory, with each leading segment a directory
-//!    under it (`<dir>/bloom/menu.ptl`),
-//! 4. registered search paths (`Env::add_module_path`, CLI `-I`), then the
-//!    directories in the `PETAL_PATH` environment variable.
+//! An import path is either *relative* — `./level`, `../shared/rng`, resolved
+//! against the importing file — or starts with a *package name* (`ui`,
+//! `bloom/menu`). A bare first segment is never a sibling file. The built-in
+//! [`ModuleRegistry`] looks a package name up in this order:
+//! 1. what the host registered in memory (`Env::register_module`, keyed by
+//!    the full path, and `Env::register_package` / `Env::add_package`),
+//! 2. the package the importing file belongs to — the nearest `petal.toml`
+//!    above it — when the name is that package's own,
+//! 3. packages found on the search path (`Env::add_module_path`, CLI `-I`,
+//!    `PETAL_PATH`),
+//! 4. packages bundled in the binary ([`crate::bundled`]).
+//!
+//! A module's *identity* is canonical, not the spelling an importer used:
+//! `<package>/<path within it>` for a file under a package's module
+//! directory, the registered name for an in-memory module, and the canonical
+//! file path for a loose file (named, for diagnostics and state keys, by its
+//! path relative to the entry file). `./motion` inside `bloom` and
+//! `bloom/motion` from outside are one module with one set of state.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{Expr, ExprKind, ExprVisitor, ImportDecl, Stmt, StmtKind, walk_expr};
@@ -39,16 +42,43 @@ pub enum ModuleOrigin {
 
 /// A resolved module source, before parsing.
 pub struct ModuleSource {
-    pub name: String,
+    /// The module's canonical name (`bloom/menu`, `ui`), or `None` for a
+    /// loose file — one that belongs to no package — which the loader names
+    /// by its path relative to the entry file.
+    pub name: Option<String>,
     pub source: String,
     pub origin: ModuleOrigin,
 }
 
-/// Pluggable module resolution: given a module name and the origin of the
-/// importing file, produce source. [`ModuleRegistry`] is the built-in
-/// implementation used by `Env`.
+/// The file an import statement was written in.
+#[derive(Clone, Copy)]
+pub struct Importer<'a> {
+    /// Its canonical module name; `None` for the entry file.
+    pub name: Option<&'a str>,
+    /// Where its source came from; `None` for an entry with no path.
+    pub origin: Option<&'a ModuleOrigin>,
+}
+
+impl Importer<'_> {
+    /// An entry file with no path: nothing to resolve a relative import
+    /// against but the host's in-memory modules.
+    pub const NONE: Importer<'static> = Importer {
+        name: None,
+        origin: None,
+    };
+}
+
+/// Is `path` a relative import path (`./x`, `../x`)?
+pub fn is_relative_import(path: &str) -> bool {
+    path.starts_with("./") || path.starts_with("../")
+}
+
+/// Pluggable module resolution: given an import path as written and the file
+/// that wrote it, produce source. [`ModuleRegistry`] is the built-in
+/// implementation used by `Env`. An `Err` is the reason nothing was found,
+/// ready to follow "cannot find module 'x' (imported by y): ".
 pub trait ModuleResolver {
-    fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource>;
+    fn resolve(&self, path: &str, importer: &Importer) -> Result<ModuleSource, String>;
 
     /// Where the loader may keep the parse of each source file between loads
     /// (see [`ParseCache`]). `None`, the default, parses everything every
@@ -56,6 +86,10 @@ pub trait ModuleResolver {
     fn parse_cache(&self) -> Option<&ParseCache> {
         None
     }
+
+    /// Called once at the start of every load, before the first `resolve`:
+    /// the point to drop anything remembered about the filesystem.
+    fn begin_load(&self) {}
 }
 
 /// The last parse of each source file a resolver's programs were loaded
@@ -91,29 +125,37 @@ impl ParseCache {
 /// resolution order.
 #[derive(Default)]
 pub struct ModuleRegistry {
-    memory: std::collections::HashMap<String, String>,
-    paths: Vec<PathBuf>,
-    /// Modules every loaded entry file imports as if by `import m: <all>`,
-    /// without ceremony. The entry file's own bindings still win, and an
-    /// explicit `import m` is a no-op on top of this.
+    memory: HashMap<String, String>,
+    /// Modules every loaded entry file imports as if by a plain `import m`,
+    /// without ceremony, at the lowest precedence above the core prelude.
     pub implicit_imports: Vec<String>,
     /// Implicit imports that come *before* [`implicit_imports`] and are not
     /// touched by `set_implicit_imports`. The core prelude (`std`) lives here
     /// so a host that replaces its own implicit imports can't drop it. Lowest
     /// precedence of all, so both host preludes and user code shadow it.
     pub base_implicit_imports: Vec<String>,
-    /// Registered packages (`petal.toml` libraries). Consulted after the
-    /// in-memory registrations and before the filesystem search paths; the
-    /// rules live in [`crate::package`].
+    /// Packages the host registered (`Env::add_package`,
+    /// `Env::register_package`): the first place a package name is looked up.
     packages: Vec<crate::package::Package>,
+    /// Packages discovered on a search path (`-I`, `PETAL_PATH`): consulted
+    /// after the importing file's own package.
+    search_packages: Vec<crate::package::Package>,
     /// Text that stands in for a file's contents on disk, keyed by canonical
     /// path: a module that resolves to one of these files loads this source
     /// instead. This is how a tool compiles an edit it has not written yet
     /// (`petal apply-change` proving a multi-file rewrite before it touches
     /// anything); which file a name resolves to is unaffected.
-    file_overrides: std::collections::HashMap<PathBuf, String>,
+    file_overrides: HashMap<PathBuf, String>,
     /// Parses of the files loaded through this registry (see [`ParseCache`]).
     parse_cache: ParseCache,
+    /// The directory a program with no file path of its own (`petal run -e`,
+    /// stdin) resolves `./x` against, once the in-memory modules have been
+    /// tried. `None` — the default, and what an embedding host gets — leaves
+    /// such a program with in-memory modules only.
+    pub inline_import_dir: Option<PathBuf>,
+    /// The package each directory belongs to (the nearest `petal.toml` at or
+    /// above it), remembered for the length of one load.
+    enclosing: std::cell::RefCell<HashMap<PathBuf, Option<std::sync::Arc<crate::package::Package>>>>,
 }
 
 impl ModuleRegistry {
@@ -122,27 +164,44 @@ impl ModuleRegistry {
         self.memory.insert(name.to_string(), source.to_string());
     }
 
-    /// Append a directory to the module search path.
-    pub fn add_path(&mut self, dir: PathBuf) {
-        self.paths.push(dir);
-    }
-
-    /// Register a package. A package with the same name is replaced — the
-    /// most recent registration of a name wins.
+    /// Register a package the host named. A package with the same name is
+    /// replaced — the most recent registration of a name wins.
     pub fn add_package(&mut self, package: crate::package::Package) {
         let name = package.info.name.clone();
         self.packages.retain(|p| p.info.name != name);
         self.packages.push(package);
     }
 
-    /// Is a package with this name already registered?
-    pub fn has_package(&self, name: &str) -> bool {
-        self.packages.iter().any(|p| p.info.name == name)
+    /// Register a package found on a search path. The first one found under a
+    /// name wins, matching search-path precedence.
+    pub fn add_search_package(&mut self, package: crate::package::Package) {
+        if !self
+            .search_packages
+            .iter()
+            .any(|p| p.info.name == package.info.name)
+        {
+            self.search_packages.push(package);
+        }
     }
 
-    /// Every registered package, in registration order.
-    pub fn packages(&self) -> &[crate::package::Package] {
-        &self.packages
+    /// Is a package with this name registered or on a search path?
+    pub fn has_package(&self, name: &str) -> bool {
+        self.all_packages().any(|p| p.info.name == name)
+    }
+
+    /// Every package a program can name, host registrations first, then the
+    /// search path. A search-path package a host registration shadows is left
+    /// out. Bundled packages are not listed.
+    pub fn packages(&self) -> Vec<&crate::package::Package> {
+        self.all_packages().collect()
+    }
+
+    fn all_packages(&self) -> impl Iterator<Item = &crate::package::Package> {
+        self.packages.iter().chain(
+            self.search_packages
+                .iter()
+                .filter(|s| !self.packages.iter().any(|p| p.info.name == s.info.name)),
+        )
     }
 
     /// Load `source` in place of whatever `path` holds on disk, for every
@@ -150,6 +209,39 @@ impl ModuleRegistry {
     pub fn override_file(&mut self, path: &Path, source: &str) {
         self.file_overrides
             .insert(canonical_path(path), source.to_string());
+    }
+
+    /// See [`crate::env::Env::importable_paths`].
+    pub fn importable_paths(&self) -> Vec<String> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut out = Vec::new();
+        for pkg in self.all_packages().chain(bundled_packages().iter()) {
+            let name = pkg.info.name.as_str();
+            if name == crate::bundled::CORE_PACKAGE || !seen.insert(name) {
+                continue;
+            }
+            if pkg.info.modules.iter().any(|m| m == name) {
+                out.push(name.to_string());
+            } else {
+                out.extend(pkg.info.modules.iter().map(|m| format!("{name}/{m}")));
+            }
+        }
+        for name in self.memory.keys() {
+            let package = name.split('/').next().unwrap_or(name);
+            if name != crate::env::STD_MODULE
+                && package != crate::bundled::CORE_PACKAGE
+                && !seen.contains(package)
+            {
+                out.push(name.clone());
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// The source registered in memory under `name`.
+    pub fn memory_module(&self, name: &str) -> Option<&str> {
+        self.memory.get(name).map(String::as_str)
     }
 }
 
@@ -171,18 +263,15 @@ impl ModuleRegistry {
                 // A package registered from memory stamps its modules with a
                 // path that names no file.
                 if let Some(source) = self
-                    .packages
-                    .iter()
+                    .all_packages()
+                    .chain(bundled_packages().iter())
                     .find_map(|p| p.memory_source_at(path))
                 {
                     return Some(source.to_string());
                 }
                 std::fs::read_to_string(path).ok()
             }
-            None => {
-                let found = self.resolve(name, None)?;
-                (found.origin == ModuleOrigin::Memory).then_some(found.source)
-            }
+            None => self.memory.get(name).cloned(),
         }
     }
 }
@@ -194,86 +283,356 @@ pub fn canonical_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// `path` with `.` and `..` components folded away without touching the
+/// filesystem. `None` when a `..` would climb above the path's root.
+fn normalize_lexical(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    let mut depth = 0usize;
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return None;
+                }
+                out.pop();
+                depth -= 1;
+            }
+            Component::Normal(seg) => {
+                out.push(seg);
+                depth += 1;
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    Some(out)
+}
+
+/// `target` as a `/`-joined path relative to the directory `base`, without
+/// its `.ptl` suffix: `level`, `ui/hud`, `../shared/rng`. How a loose file is
+/// named. Both paths are expected canonical.
+fn relative_module_name(base: &Path, target: &Path) -> String {
+    let target = target.with_extension("");
+    let base_parts: Vec<_> = base.components().collect();
+    let target_parts: Vec<_> = target.components().collect();
+    let common = base_parts
+        .iter()
+        .zip(&target_parts)
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut parts: Vec<String> = vec!["..".to_string(); base_parts.len() - common];
+    parts.extend(
+        target_parts[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    parts.join("/")
+}
+
+/// The packages compiled into the binary, in the form the registry resolves
+/// against.
+fn bundled_packages() -> &'static [crate::package::Package] {
+    static BUNDLED: std::sync::OnceLock<Vec<crate::package::Package>> = std::sync::OnceLock::new();
+    BUNDLED
+        .get_or_init(|| {
+            crate::bundled::BUNDLED_PACKAGES
+                .iter()
+                .filter_map(|b| crate::package::Package::bundled(b).ok())
+                .collect()
+        })
+}
+
 impl ModuleResolver for ModuleRegistry {
     fn parse_cache(&self) -> Option<&ParseCache> {
         Some(&self.parse_cache)
     }
 
-    fn resolve(&self, name: &str, importer: Option<&ModuleOrigin>) -> Option<ModuleSource> {
-        let mut found = self.resolve_on_disk(name, importer)?;
+    fn begin_load(&self) {
+        self.enclosing.borrow_mut().clear();
+    }
+
+    fn resolve(&self, path: &str, importer: &Importer) -> Result<ModuleSource, String> {
+        let mut found = if is_relative_import(path) {
+            self.resolve_relative(path, importer)?
+        } else {
+            self.resolve_package_path(path, importer)?
+        };
         if !self.file_overrides.is_empty()
             && let ModuleOrigin::File(path) = &found.origin
             && let Some(source) = self.file_overrides.get(&canonical_path(path))
         {
             found.source = source.clone();
         }
-        Some(found)
+        Ok(found)
     }
 }
 
 impl ModuleRegistry {
-    /// [`ModuleResolver::resolve`] before [`file_overrides`](Self::override_file)
-    /// are applied: the resolution order described in the module docs.
-    fn resolve_on_disk(
+    /// The package the directory `dir` belongs to: the one whose `petal.toml`
+    /// is nearest at or above it. `Err` when that manifest will not load.
+    fn enclosing_package(
         &self,
-        name: &str,
-        importer: Option<&ModuleOrigin>,
-    ) -> Option<ModuleSource> {
-        // A path that could escape its root resolves to nothing, whatever it
-        // was registered as. The walker turns the same verdict into an error.
-        if module_path_error(name).is_some() {
-            return None;
+        dir: &Path,
+    ) -> Result<Option<std::sync::Arc<crate::package::Package>>, String> {
+        if let Some(hit) = self.enclosing.borrow().get(dir) {
+            return Ok(hit.clone());
         }
+        let found = if dir.join(crate::package::MANIFEST_FILE).is_file() {
+            Some(std::sync::Arc::new(
+                crate::package::Package::from_dir(dir).map_err(|e| e.to_string())?,
+            ))
+        } else {
+            match dir.parent() {
+                Some(parent) if parent != dir => self.enclosing_package(parent)?,
+                _ => None,
+            }
+        };
+        self.enclosing
+            .borrow_mut()
+            .insert(dir.to_path_buf(), found.clone());
+        Ok(found)
+    }
 
-        // 1. In-memory registrations, keyed by the full path.
-        if let Some(source) = self.memory.get(name) {
-            return Some(ModuleSource {
-                name: name.to_string(),
+    /// The package an in-memory module file (one stamped with a synthetic
+    /// path) belongs to.
+    fn memory_package_of(&self, path: &Path) -> Option<&crate::package::Package> {
+        self.all_packages()
+            .chain(bundled_packages().iter())
+            .find(|p| p.info.in_memory && path.starts_with(&p.info.module_dir))
+    }
+
+    /// `./x` / `../x`: against the importing file.
+    fn resolve_relative(&self, path: &str, importer: &Importer) -> Result<ModuleSource, String> {
+        let rel = Path::new(path);
+        match importer.origin {
+            Some(ModuleOrigin::File(file)) => {
+                let dir = file.parent().unwrap_or(Path::new(""));
+                // A module of an in-memory package: its "directory" is the
+                // package itself.
+                if let Some(pkg) = self.memory_package_of(file) {
+                    let leaves = || {
+                        format!(
+                            "the path leaves the package '{}' — a relative import may not \
+                             climb out of its package",
+                            pkg.info.name
+                        )
+                    };
+                    let target = normalize_lexical(&dir.join(rel)).ok_or_else(leaves)?;
+                    let inside = target
+                        .strip_prefix(&pkg.info.module_dir)
+                        .map_err(|_| leaves())?;
+                    let module = path_to_module(inside);
+                    return pkg.load(&module).ok_or_else(|| {
+                        format!("package '{}' has no module '{module}'", pkg.info.name)
+                    });
+                }
+                let dir = canonical_path(dir);
+                let target = normalize_lexical(&dir.join(format!("{path}.ptl")))
+                    .ok_or_else(|| "the path climbs above the filesystem root".to_string())?;
+                // A file inside a package may not reach outside it.
+                if let Some(pkg) = self.enclosing_package(&dir)? {
+                    let root = canonical_path(&pkg.info.root);
+                    if !target.starts_with(&root) {
+                        return Err(format!(
+                            "the path leaves the package '{}' (rooted at {}) — a relative \
+                             import may not climb out of its package",
+                            pkg.info.name,
+                            root.display()
+                        ));
+                    }
+                }
+                let source = match self.file_overrides.get(&target) {
+                    Some(source) => source.clone(),
+                    None => std::fs::read_to_string(&target)
+                        .map_err(|_| format!("no file {}", target.display()))?,
+                };
+                let target = canonical_path(&target);
+                Ok(ModuleSource {
+                    name: self.package_name_of(&target)?,
+                    source,
+                    origin: ModuleOrigin::File(target),
+                })
+            }
+            // An in-memory module, or an entry with no path: the path is
+            // resolved against the importer's own registered name.
+            Some(ModuleOrigin::Memory) | None => {
+                let mut segments: Vec<&str> = importer
+                    .name
+                    .map(|n| n.split('/').collect())
+                    .unwrap_or_default();
+                segments.pop();
+                for seg in path.split('/') {
+                    match seg {
+                        "." => {}
+                        ".." => {
+                            if segments.pop().is_none() {
+                                return Err(
+                                    "the path climbs above the modules the host registered"
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        seg => segments.push(seg),
+                    }
+                }
+                let name = segments.join("/");
+                match self.memory.get(&name) {
+                    Some(source) => Ok(ModuleSource {
+                        name: Some(name),
+                        source: source.clone(),
+                        origin: ModuleOrigin::Memory,
+                    }),
+                    None if importer.origin.is_none() && self.inline_import_dir.is_some() => {
+                        let dir = self.inline_import_dir.as_deref().expect("just checked");
+                        let stand_in = ModuleOrigin::File(dir.join(INLINE_ENTRY_NAME));
+                        self.resolve_relative(
+                            path,
+                            &Importer {
+                                name: None,
+                                origin: Some(&stand_in),
+                            },
+                        )
+                    }
+                    None if importer.origin.is_none() => Err(format!(
+                        "the importing program has no file path, and no module '{name}' is \
+                         registered in memory"
+                    )),
+                    None => Err(format!("no module '{name}' is registered in memory")),
+                }
+            }
+        }
+    }
+
+    /// The canonical name of the module at `file` (a canonical path) when it
+    /// sits under a package's module directory; `None` for a loose file.
+    fn package_name_of(&self, file: &Path) -> Result<Option<String>, String> {
+        let Some(dir) = file.parent() else {
+            return Ok(None);
+        };
+        let Some(pkg) = self.enclosing_package(dir)? else {
+            return Ok(None);
+        };
+        let module_dir = canonical_path(&pkg.info.module_dir);
+        Ok(file
+            .strip_prefix(&module_dir)
+            .ok()
+            .map(|inside| pkg.canonical_name(&path_to_module(inside))))
+    }
+
+    /// The canonical name the *entry* file would have as a module, when it is
+    /// part of a package. What stops a package's own modules importing the
+    /// entry back.
+    pub fn module_name_of_file(&self, file: &Path) -> Option<String> {
+        self.package_name_of(&canonical_path(file)).ok().flatten()
+    }
+
+    /// A path whose first segment is a package name.
+    fn resolve_package_path(
+        &self,
+        path: &str,
+        importer: &Importer,
+    ) -> Result<ModuleSource, String> {
+        if let Some(problem) = module_path_error(path) {
+            return Err(problem);
+        }
+        // 1. What the host registered in memory, by full path…
+        if let Some(source) = self.memory.get(path) {
+            return Ok(ModuleSource {
+                name: Some(path.to_string()),
                 source: source.clone(),
                 origin: ModuleOrigin::Memory,
             });
         }
-
-        // 1b. Registered packages: `bloom/menu` names a module of the package
-        // `bloom`, wherever that package's directory sits (see
-        // `crate::package`).
-        if let Some(found) = crate::package::resolve_in_packages(&self.packages, name, importer) {
-            return Some(found);
-        }
-
-        // 2. The importing file's directory, 3. search paths, 4. PETAL_PATH.
-        let importer_dir = match importer {
-            Some(ModuleOrigin::File(path)) => path.parent().map(Path::to_path_buf),
-            _ => None,
+        let (package, rest) = match path.split_once('/') {
+            Some((head, rest)) => (head, Some(rest)),
+            None => (path, None),
         };
-        let petal_path = std::env::var("PETAL_PATH").unwrap_or_default();
-        let candidates = importer_dir
-            .into_iter()
-            .chain(self.paths.iter().cloned())
-            .chain(
-                petal_path
-                    .split(':')
-                    .filter(|s| !s.is_empty())
-                    .map(PathBuf::from),
-            );
-        for dir in candidates {
-            let path = module_file_path(&dir, name);
-            if let Ok(source) = std::fs::read_to_string(&path) {
-                return Some(ModuleSource {
-                    name: name.to_string(),
-                    source,
-                    origin: ModuleOrigin::File(path),
-                });
-            }
+        let load = |pkg: &crate::package::Package| -> Result<ModuleSource, String> {
+            let module = rest.unwrap_or(&pkg.info.name);
+            pkg.load(module).ok_or_else(|| match rest {
+                Some(rest) => format!("package '{package}' has no module '{rest}'"),
+                None => format!(
+                    "package '{package}' has no module of its own name ({package}.ptl) to \
+                     import as `{package}` — import one of its modules: {}",
+                    list_some(&pkg.info.modules, package)
+                ),
+            })
+        };
+        // …and the packages it registered.
+        if let Some(pkg) = self.packages.iter().find(|p| p.info.name == package) {
+            return load(pkg);
         }
-        None
+        // 2. The package the importing file is part of, by its own name.
+        if let Some(ModuleOrigin::File(file)) = importer.origin
+            && self.memory_package_of(file).is_none()
+            && let Some(dir) = file.parent()
+            && let Some(pkg) = self.enclosing_package(&canonical_path(dir))?
+            && pkg.info.name == package
+        {
+            return load(&pkg);
+        }
+        // 3. The search path, 4. the binary.
+        if let Some(pkg) = self
+            .search_packages
+            .iter()
+            .chain(bundled_packages().iter())
+            .find(|p| p.info.name == package)
+        {
+            return load(pkg);
+        }
+
+        // Nothing by that name. The commonest cause is a sibling file
+        // imported the old way.
+        let beside = match importer.origin {
+            Some(ModuleOrigin::File(file)) => file.parent(),
+            Some(ModuleOrigin::Memory) => None,
+            None => self.inline_import_dir.as_deref(),
+        };
+        if let Some(dir) = beside
+            && module_file_path(dir, path).is_file()
+        {
+            return Err(format!(
+                "there is no package named '{package}' — a bare name is always a package. \
+                 The file beside this one is `import ./{path}` (`petal fix-imports` rewrites \
+                 these)"
+            ));
+        }
+        Err(format!(
+            "there is no package named '{package}': not registered by the host, not the \
+             importing file's own package, not on a search path (-I, PETAL_PATH), and not \
+             bundled. A file beside this one is imported as `./{path}`"
+        ))
     }
 }
 
+/// `a, b, c, +N more`, each prefixed with the package name.
+fn list_some(modules: &[String], package: &str) -> String {
+    if modules.is_empty() {
+        return "(it has none)".to_string();
+    }
+    let mut out: Vec<String> = modules
+        .iter()
+        .take(4)
+        .map(|m| format!("{package}/{m}"))
+        .collect();
+    if modules.len() > 4 {
+        out.push(format!("+{} more", modules.len() - 4));
+    }
+    out.join(", ")
+}
+
+/// `a/b.ptl` → `a/b`.
+fn path_to_module(path: &Path) -> String {
+    path.with_extension("")
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// The file a module path names under `dir`: each segment is a directory, the
-/// last one the `.ptl` file (`bloom/menu` → `<dir>/bloom/menu.ptl`). Pushing
-/// segment by segment keeps the separator platform-correct and, together with
-/// [`module_path_error`], keeps the result inside `dir`.
+/// last one the `.ptl` file (`bloom/menu` → `<dir>/bloom/menu.ptl`).
 fn module_file_path(dir: &Path, name: &str) -> PathBuf {
     let mut path = dir.to_path_buf();
     let mut segments = name.split('/').peekable();
@@ -396,19 +755,39 @@ pub fn load_modules(
     let stmts = parse_module(entry_source, ENTRY_FILE, None, resolver.parse_cache(), "")?;
     let entry_deprecated_exports = deprecated_exports(&stmts, entry_source);
     let (explicit_imports, stmts) = split_imports(stmts);
+    let (mut explicit_imports, stmts) = (explicit_imports, stmts);
+    for import in &explicit_imports {
+        reject_star(&import.decl, &entry_display)?;
+    }
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
+    resolver.begin_load();
 
+    // Loose files are named by their path from the entry file's directory.
+    let entry_canonical = entry_origin.map(canonical_path);
+    let base_dir = entry_canonical
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::current_dir().ok().map(|d| canonical_path(&d)))
+        .unwrap_or_default();
     let mut walker = Walker {
         resolver,
-        loaded: HashSet::new(),
+        loaded: HashMap::new(),
         in_progress: Vec::new(),
         out: Vec::new(),
         next_file: 1,
+        resolved: HashMap::new(),
+        base_dir,
+        entry_file: entry_canonical,
+    };
+    let entry_importer = Importer {
+        name: None,
+        origin: entry_module_origin.as_ref(),
     };
 
     // The always-merged imports, in precedence order (host implicit first, then
     // the entry's explicit imports). The entry's own bindings land on top.
-    let implicit_decls: Vec<ResolvedImport> = implicit_imports
+    let mut implicit_decls: Vec<ResolvedImport> = implicit_imports
         .iter()
         .map(|name| ResolvedImport {
             decl: import_all(name),
@@ -421,23 +800,17 @@ pub fn load_modules(
     // they are exactly the ones that must not receive an implicit import back —
     // that would be a self-import, or a forward reference to a module that has
     // not run yet.
-    for import in &implicit_decls {
-        walker.visit(
-            &import.decl.module,
-            entry_module_origin.as_ref(),
-            &entry_display,
-        )?;
+    for import in &mut implicit_decls {
+        import.decl.module =
+            walker.visit(&import.decl.module, &entry_importer, &entry_display)?;
     }
     let prelude_modules = std::mem::take(&mut walker.out);
 
     // Then the entry's own explicit imports. A module reached only from here can
     // safely see the host prelude bare.
-    for import in &explicit_imports {
-        walker.visit(
-            &import.decl.module,
-            entry_module_origin.as_ref(),
-            &entry_display,
-        )?;
+    for import in &mut explicit_imports {
+        import.decl.module =
+            walker.visit(&import.decl.module, &entry_importer, &entry_display)?;
     }
     let imported_modules = std::mem::take(&mut walker.out);
 
@@ -456,8 +829,7 @@ pub fn load_modules(
     let scanned: Vec<(String, Vec<String>, HashSet<String>)> = gated_imports
         .iter()
         .map(|name| {
-            let (exports, idents) =
-                scan_gated_module(resolver, name, entry_module_origin.as_ref())?;
+            let (exports, idents) = scan_gated_module(resolver, name, &entry_importer)?;
             Ok((name.clone(), exports, idents))
         })
         .collect::<Result<_, LoadError>>()?;
@@ -483,9 +855,9 @@ pub fn load_modules(
     // (lowest precedence). Preserve the caller's order for determinism.
     let mut gated_decls: Vec<ResolvedImport> = Vec::new();
     for name in gated_imports.iter().filter(|n| included.contains(*n)) {
-        walker.visit(name, entry_module_origin.as_ref(), &entry_display)?;
+        let canonical = walker.visit(name, &entry_importer, &entry_display)?;
         gated_decls.push(ResolvedImport {
-            decl: import_all(name),
+            decl: import_all(&canonical),
             implicit: true,
         });
     }
@@ -545,6 +917,22 @@ pub fn load_modules(
     Ok(modules)
 }
 
+/// `import m: *` no longer exists: a plain `import m` is that form now.
+fn reject_star(decl: &ImportDecl, display: &str) -> Result<(), LoadError> {
+    if !decl.star {
+        return Ok(());
+    }
+    let keyword = if decl.exported { "pub import" } else { "import" };
+    Err(LoadError::message(
+        Phase::Module,
+        format!(
+            "{display}: `{keyword} {m}: *` is no longer a form — a plain `{keyword} {m}` \
+             binds every export of the module (`petal fix-imports` rewrites these)",
+            m = decl.module
+        ),
+    ))
+}
+
 /// `import <name>` binding all of the module's exports (no alias, no selection).
 fn import_all(name: &str) -> ImportDecl {
     ImportDecl {
@@ -575,14 +963,12 @@ fn declared_name(kind: &StmtKind) -> Option<&str> {
 fn scan_gated_module(
     resolver: &dyn ModuleResolver,
     name: &str,
-    importer: Option<&ModuleOrigin>,
+    importer: &Importer,
 ) -> Result<(Vec<String>, HashSet<String>), LoadError> {
-    let resolved = resolver.resolve(name, importer).ok_or_else(|| {
+    let resolved = resolver.resolve(name, importer).map_err(|why| {
         LoadError::message(
             Phase::Module,
-            format!(
-                "cannot find implicit prelude module '{name}': not registered or on a search path"
-            ),
+            format!("cannot find implicit prelude module '{name}': {why}"),
         )
     })?;
     let display = display_name_for(name, &resolved.origin);
@@ -641,54 +1027,97 @@ fn collect_module_refs(stmts: &[Stmt], refs: &mut HashSet<String>) {
 
 struct Walker<'a> {
     resolver: &'a dyn ModuleResolver,
-    loaded: HashSet<String>,
-    /// DFS stack of module names currently being loaded, for cycle reporting.
+    /// Canonical name → where the module loaded under it came from.
+    loaded: HashMap<String, ModuleOrigin>,
+    /// DFS stack of canonical module names currently being loaded, for cycle
+    /// reporting.
     in_progress: Vec<String>,
     /// Finished modules in dependency post-order.
     out: Vec<LoadedModule>,
     next_file: u16,
+    /// (import path as written, the importing module or directory) → the
+    /// canonical name it resolved to, so a module imported from many files is
+    /// read once.
+    resolved: HashMap<(String, String), String>,
+    /// The directory loose files are named relative to: the entry file's.
+    base_dir: PathBuf,
+    /// The entry file's canonical path, which nothing may import.
+    entry_file: Option<PathBuf>,
 }
 
 impl Walker<'_> {
+    /// Load the module `path` names when written in `importer`, and everything
+    /// it imports. Returns the module's canonical name.
     fn visit(
         &mut self,
-        name: &str,
-        importer_origin: Option<&ModuleOrigin>,
+        path: &str,
+        importer: &Importer,
         importer_display: &str,
-    ) -> Result<(), LoadError> {
-        if self.loaded.contains(name) {
-            return Ok(());
-        }
-        if let Some(problem) = module_path_error(name) {
-            return Err(LoadError::message(
-                Phase::Module,
-                format!("{problem} (imported by {importer_display})"),
-            ));
-        }
-        if let Some(pos) = self.in_progress.iter().position(|n| n == name) {
-            let mut cycle: Vec<&str> = self.in_progress[pos..].iter().map(String::as_str).collect();
-            cycle.push(name);
-            return Err(LoadError::message(
-                Phase::Module,
-                format!("import cycle: {}", cycle.join(" -> ")),
-            ));
+    ) -> Result<String, LoadError> {
+        // What the same spelling resolved to from the same place before.
+        let memo_key = (
+            path.to_string(),
+            match importer.origin {
+                Some(ModuleOrigin::File(file)) => file
+                    .parent()
+                    .map(|d| d.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                _ => format!("<{}>", importer.name.unwrap_or("")),
+            },
+        );
+        if let Some(name) = self.resolved.get(&memo_key) {
+            let name = name.clone();
+            self.check_cycle(&name)?;
+            return Ok(name);
         }
 
-        let resolved = self
-            .resolver
-            .resolve(name, importer_origin)
-            .ok_or_else(|| {
-                LoadError::message(
+        let resolved = self.resolver.resolve(path, importer).map_err(|why| {
+            LoadError::message(
+                Phase::Module,
+                format!("cannot find module '{path}' (imported by {importer_display}): {why}"),
+            )
+        })?;
+        if let (ModuleOrigin::File(file), Some(entry)) = (&resolved.origin, &self.entry_file)
+            && (file == entry || canonical_path(file) == *entry)
+        {
+            return Err(LoadError::message(
+                Phase::Module,
+                format!(
+                    "import cycle: '{path}' (imported by {importer_display}) is the program's \
+                     entry file"
+                ),
+            ));
+        }
+        let name = match (&resolved.name, &resolved.origin) {
+            (Some(name), _) => name.clone(),
+            (None, ModuleOrigin::File(file)) => relative_module_name(&self.base_dir, file),
+            (None, ModuleOrigin::Memory) => path.to_string(),
+        };
+        self.resolved.insert(memo_key, name.clone());
+
+        if let Some(origin) = self.loaded.get(&name) {
+            let same = match (origin, &resolved.origin) {
+                (ModuleOrigin::File(a), ModuleOrigin::File(b)) => {
+                    a == b || canonical_path(a) == canonical_path(b)
+                }
+                (a, b) => a == b,
+            };
+            if !same {
+                return Err(LoadError::message(
                     Phase::Module,
                     format!(
-                        "cannot find module '{}' (imported by {}): not registered, and no \
-                 {}.ptl in the importing file's directory, module paths, or PETAL_PATH",
-                        name, importer_display, name
+                        "two different sources are both the module '{name}': {} and {} \
+                         (imported by {importer_display})",
+                        describe_origin(origin),
+                        describe_origin(&resolved.origin)
                     ),
-                )
-            })?;
+                ));
+            }
+            return Ok(name);
+        }
+        self.check_cycle(&name)?;
 
-        let display_name = display_name_for(name, &resolved.origin);
+        let display_name = display_name_for(&name, &resolved.origin);
         let file_id = FileId(self.next_file);
         self.next_file = self.next_file.checked_add(1).ok_or_else(|| {
             LoadError::message(
@@ -705,17 +1134,25 @@ impl Walker<'_> {
             &format!("module {name}"),
         )?;
         let deprecated_exports = deprecated_exports(&stmts, &resolved.source);
-        let (imports, stmts) = split_imports(stmts);
+        let (mut imports, stmts) = split_imports(stmts);
 
-        self.in_progress.push(name.to_string());
-        for import in &imports {
-            self.visit(&import.decl.module, Some(&resolved.origin), &display_name)?;
+        self.in_progress.push(name.clone());
+        for import in &mut imports {
+            reject_star(&import.decl, &display_name)?;
+            import.decl.module = self.visit(
+                &import.decl.module,
+                &Importer {
+                    name: Some(&name),
+                    origin: Some(&resolved.origin),
+                },
+                &display_name,
+            )?;
         }
         self.in_progress.pop();
 
-        self.loaded.insert(name.to_string());
+        self.loaded.insert(name.clone(), resolved.origin.clone());
         self.out.push(LoadedModule {
-            name: Some(name.to_string()),
+            name: Some(name.clone()),
             display_name,
             source: resolved.source,
             origin: match resolved.origin {
@@ -727,7 +1164,26 @@ impl Walker<'_> {
             file_id,
             deprecated_exports,
         });
+        Ok(name)
+    }
+
+    fn check_cycle(&self, name: &str) -> Result<(), LoadError> {
+        if let Some(pos) = self.in_progress.iter().position(|n| n == name) {
+            let mut cycle: Vec<&str> = self.in_progress[pos..].iter().map(String::as_str).collect();
+            cycle.push(name);
+            return Err(LoadError::message(
+                Phase::Module,
+                format!("import cycle: {}", cycle.join(" -> ")),
+            ));
+        }
         Ok(())
+    }
+}
+
+fn describe_origin(origin: &ModuleOrigin) -> String {
+    match origin {
+        ModuleOrigin::File(path) => path.display().to_string(),
+        ModuleOrigin::Memory => "a module registered in memory".to_string(),
     }
 }
 
@@ -1042,12 +1498,12 @@ mod tests {
                           pub fn button(l, w)\n  \"[\" ++ l ++ str(w) ++ \"]\"\nend";
 
     #[test]
-    fn a_star_re_export_carries_a_whole_overload_set() {
+    fn a_plain_re_export_carries_a_whole_overload_set() {
         assert_eq!(
             run(
                 &[
                     ("bloom/button", BUTTON),
-                    ("bloom", "pub import bloom/button: *"),
+                    ("bloom", "pub import bloom/button"),
                 ],
                 &[],
                 "import bloom: button\nprint(button(\"a\"))\nprint(button(\"a\", 2))",
@@ -1057,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn a_star_re_export_also_binds_the_names_locally() {
+    fn a_plain_re_export_also_binds_the_names_locally() {
         // The facade can use what it re-exports.
         assert_eq!(
             run(
@@ -1065,7 +1521,7 @@ mod tests {
                     ("bloom/button", BUTTON),
                     (
                         "bloom",
-                        "pub import bloom/button: *\npub fn twice(l)\n  button(l) ++ button(l)\nend",
+                        "pub import bloom/button\npub fn twice(l)\n  button(l) ++ button(l)\nend",
                     ),
                 ],
                 &[],
@@ -1117,14 +1573,14 @@ mod tests {
     }
 
     #[test]
-    fn a_local_declaration_wins_over_a_star_re_export() {
+    fn a_local_declaration_wins_over_a_plain_re_export() {
         assert_eq!(
             run(
                 &[
                     ("impl", "pub fn tag(l)\n  \"impl\" ++ l\nend"),
                     (
                         "facade",
-                        "pub import impl: *\npub fn tag(l)\n  \"facade\" ++ l\nend",
+                        "pub import impl\npub fn tag(l)\n  \"facade\" ++ l\nend",
                     ),
                 ],
                 &[],
@@ -1135,13 +1591,13 @@ mod tests {
     }
 
     #[test]
-    fn two_star_re_exports_of_one_function_name_merge_by_arity() {
+    fn two_plain_re_exports_of_one_function_name_merge_by_arity() {
         assert_eq!(
             run(
                 &[
                     ("one", "pub fn f(a)\n  \"one\" ++ a\nend"),
                     ("two", "pub fn f(a, b)\n  \"two\" ++ a ++ b\nend"),
-                    ("facade", "pub import one: *\npub import two: *"),
+                    ("facade", "pub import one\npub import two"),
                 ],
                 &[],
                 "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
@@ -1151,22 +1607,24 @@ mod tests {
     }
 
     #[test]
-    fn two_star_re_exports_of_one_value_name_collide() {
-        let err = load_err(
-            &[
-                ("one", "pub let v = 1"),
-                ("two", "pub let v = 2"),
-                ("facade", "pub import one: *\npub import two: *"),
-            ],
-            "import facade: v\nprint(v)",
+    fn two_plain_re_exports_of_one_value_name_are_ambiguous_where_used() {
+        let modules = [
+            ("one", "pub let v = 1\npub let only_one = 10"),
+            ("two", "pub let v = 2"),
+            ("facade", "pub import one\npub import two"),
+        ];
+        // Nothing is wrong until someone uses the name.
+        assert_eq!(
+            run(&modules, &[], "import facade\nprint(only_one)"),
+            vec!["10"]
         );
+        let err = load_err(&modules, "import facade: v\nprint(v)");
         assert!(
-            err.contains(
-                "'v' is re-exported by both 'one' and 'two' — name one of them explicitly, \
-                 or drop it from one side"
-            ),
+            err.contains("`v` is ambiguous: 'one' and 'two' export it"),
             "{err}"
         );
+        let err = load_err(&modules, "import facade\nprint(facade.v)");
+        assert!(err.contains("`v` is ambiguous"), "{err}");
     }
 
     #[test]
@@ -1190,8 +1648,8 @@ mod tests {
             run(
                 &[
                     ("deep", "pub fn go()\n  \"deep\"\nend"),
-                    ("mid", "pub import deep: *"),
-                    ("top", "pub import mid: *"),
+                    ("mid", "pub import deep"),
+                    ("top", "pub import mid"),
                 ],
                 &[],
                 "import top: go\nprint(go())",
@@ -1203,35 +1661,405 @@ mod tests {
     #[test]
     fn a_re_export_cycle_is_an_error_not_a_hang() {
         let err = load_err(
-            &[("a", "pub import b: *"), ("b", "pub import a: *")],
+            &[("a", "pub import b"), ("b", "pub import a")],
             "import a\nprint(1)",
         );
         assert!(err.contains("import cycle"), "{err}");
     }
 
     #[test]
-    fn export_import_re_exports_the_module_binding_itself() {
-        // A module name is not a value, so a bare `pub import` passes the
-        // *alias* on: an importer that names it gets a module alias.
+    fn a_plain_pub_import_re_exports_every_export_not_the_qualifier() {
+        let modules = [
+            ("bloom/menu", "pub fn open()\n  \"open\"\nend"),
+            ("bloom", "pub import ./bloom/menu"),
+        ];
+        assert_eq!(
+            run(&modules, &[], "import bloom\nprint(open())\nprint(bloom.open())"),
+            vec!["open", "open"]
+        );
+        let err = load_err(&modules, "import bloom: menu\nprint(menu.open())");
+        assert!(err.contains("module 'bloom' has no export 'menu'"), "{err}");
+    }
+
+    // ---- the new import forms ------------------------------------------
+
+    const HUD: &str = "pub fn draw()\n  \"hud\"\nend\npub fn score(a)\n  \"hud1\"\nend\n\
+                       pub let hud_only = 1";
+    const LEVEL: &str = "pub fn draw()\n  \"level\"\nend\n\
+                         pub fn score(a, b)\n  \"level2\"\nend";
+
+    #[test]
+    fn a_plain_import_binds_every_export_bare_and_the_qualifier() {
         assert_eq!(
             run(
-                &[
-                    ("bloom/menu", "pub fn open()\n  \"open\"\nend"),
-                    ("bloom", "pub import bloom/menu"),
-                ],
+                &[("hud", HUD)],
                 &[],
-                "import bloom: menu\nprint(menu.open())",
+                "import hud\nprint(draw())\nprint(hud.draw())\nprint(hud_only)",
             ),
-            vec!["open"]
+            vec!["hud", "hud", "1"]
         );
     }
 
     #[test]
-    fn a_star_import_without_export_binds_locally_only() {
+    fn an_alias_import_binds_bare_names_and_renames_the_qualifier() {
+        assert_eq!(
+            run(&[("hud", HUD)], &[], "import hud as h\nprint(draw())\nprint(h.draw())"),
+            vec!["hud", "hud"]
+        );
+        // The module's own name is no longer a qualifier.
+        let mut env = Env::new();
+        env.register_module("hud", HUD);
+        let pid = env.load_program("import hud as h\nprint(hud.draw())").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let err = format!("{:?}", env.run(sid));
+        assert!(err.contains("Undefined variable: hud"), "{err}");
+    }
+
+    #[test]
+    fn a_selective_import_binds_only_its_names_and_no_qualifier() {
+        let mut env = Env::new();
+        env.register_module("hud", HUD);
+        // The qualifier is not bound: `hud` is an undefined name at run time.
+        let pid = env.load_program("import hud: draw\nprint(draw())\nprint(hud.draw())").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let err = format!("{:?}", env.run(sid));
+        assert!(err.contains("Undefined variable: hud"), "{err}");
+        assert_eq!(env.take_output(), vec!["hud"]);
+        let pid = env.load_program("import hud: draw\nprint(hud_only)").unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        assert!(env.run(sid).is_err());
+    }
+
+    #[test]
+    fn a_star_import_is_an_error_pointing_at_the_plain_form() {
+        let err = load_err(&[("hud", HUD)], "import hud: *\nprint(draw())");
+        assert!(err.contains("`import hud: *` is no longer a form"), "{err}");
+        let err = load_err(
+            &[("hud", HUD), ("f", "pub import hud: *")],
+            "import f\nprint(1)",
+        );
+        assert!(err.contains("`pub import hud: *` is no longer a form"), "{err}");
+    }
+
+    #[test]
+    fn two_plain_imports_offering_one_name_are_fine_until_it_is_used_bare() {
+        let modules = [("hud", HUD), ("level", LEVEL)];
+        assert_eq!(
+            run(
+                &modules,
+                &[],
+                "import hud\nimport level\nprint(hud.draw())\nprint(level.draw())\nprint(hud_only)",
+            ),
+            vec!["hud", "level", "1"]
+        );
+        let err = load_err(&modules, "import hud\nimport level\nprint(draw())\nlet d = draw");
+        assert!(
+            err.contains(
+                "`draw` is ambiguous: 'hud' and 'level' export it — write `hud.draw` or \
+                 `level.draw`, or pin one with `import hud: draw` [line 3, column 7]"
+            ),
+            "{err}"
+        );
+        // Each bare use is its own error.
+        assert!(err.contains("[line 4, column 9]"), "{err}");
+    }
+
+    #[test]
+    fn a_selective_import_or_a_declaration_settles_an_ambiguity() {
+        let modules = [("hud", HUD), ("level", LEVEL)];
+        assert_eq!(
+            run(
+                &modules,
+                &[],
+                "import hud\nimport level\nimport level: draw\nprint(draw())",
+            ),
+            vec!["level"]
+        );
+        assert_eq!(
+            run(
+                &modules,
+                &[],
+                "import hud\nimport level\nfn draw()\n  \"mine\"\nend\nprint(draw())",
+            ),
+            vec!["mine"]
+        );
+    }
+
+    #[test]
+    fn precedence_is_declaration_then_selective_then_plain_then_prelude() {
+        // `sum` is std's; a plain import hides it, a selective import hides
+        // that, a declaration hides them all.
+        let modules = [
+            ("a", "pub fn sum(xs)\n  \"a\"\nend"),
+            ("b", "pub fn sum(xs)\n  \"b\"\nend"),
+        ];
+        assert_eq!(run(&modules, &[], "print(sum([1, 2]))"), vec!["3"]);
+        assert_eq!(run(&modules, &[], "import a\nprint(sum([1, 2]))"), vec!["a"]);
+        assert_eq!(
+            run(&modules, &[], "import a\nimport b: sum\nprint(sum([1, 2]))"),
+            vec!["b"]
+        );
+        assert_eq!(
+            run(
+                &modules,
+                &[],
+                "import a\nprint(sum([1, 2]))\nlet sum = fn(xs) \"mine\" end\nprint(sum([1]))",
+            ),
+            vec!["a", "mine"]
+        );
+        // A selective import and a declaration of one name is still the loud
+        // collision it always was: both are explicit.
+        let err = load_err(&modules, "import b: sum\nfn sum(xs)\n  1\nend\nprint(sum([1]))");
+        assert!(err.contains("is imported from 'b' but is also declared"), "{err}");
+    }
+
+    #[test]
+    fn an_importers_export_shadows_the_export_of_what_it_imports() {
+        // `kit` is built on `base` and redeclares `button` on purpose; a file
+        // importing both gets kit's, whichever order it imports them in.
+        let modules = [
+            ("base", "pub fn button(l)\n  \"base\"\nend\npub let base_only = 1"),
+            ("kit", "import base\npub fn button(l)\n  \"kit\"\nend"),
+            ("deep", "import kit\npub fn button(l)\n  \"deep\"\nend"),
+        ];
+        for order in ["import base\nimport kit\n", "import kit\nimport base\n"] {
+            assert_eq!(
+                run(&modules, &[], &format!("{order}print(button(1))\nprint(base_only)")),
+                vec!["kit", "1"]
+            );
+        }
+        // Transitively too.
+        assert_eq!(
+            run(&modules, &[], "import base\nimport deep\nprint(button(1))"),
+            vec!["deep"]
+        );
+    }
+
+    #[test]
+    fn one_declaration_reached_by_two_routes_is_not_ambiguous() {
+        let modules = [
+            ("impl", "pub fn go()\n  \"go\"\nend"),
+            ("facade", "pub import impl"),
+        ];
+        assert_eq!(
+            run(&modules, &[], "import impl\nimport facade\nprint(go())"),
+            vec!["go"]
+        );
+    }
+
+    #[test]
+    fn disjoint_overload_sets_from_two_plain_imports_merge_with_a_warning() {
+        let mut env = Env::new();
+        env.register_module("hud", HUD);
+        env.register_module("level", LEVEL);
+        let pid = env
+            .load_program("import hud\nimport level\nprint(score(1))\nprint(score(1, 2))")
+            .unwrap();
+        let warnings: Vec<String> = env
+            .get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|w| w.message.clone())
+            .collect();
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(
+            warnings[0].contains(
+                "`score` is exported by 'hud' and 'level' with different parameter counts"
+            ),
+            "{warnings:?}"
+        );
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), vec!["hud1", "level2"]);
+    }
+
+    #[test]
+    fn the_same_arity_from_two_unrelated_modules_is_ambiguous_at_the_call() {
+        let err = load_err(
+            &[
+                ("a", "pub fn f(x)\n  1\nend\npub fn f(x, y)\n  2\nend"),
+                ("b", "pub fn f(x)\n  3\nend"),
+            ],
+            "import a\nimport b\nprint(f(1))",
+        );
+        assert!(err.contains("`f` is ambiguous: 'a' and 'b' export it"), "{err}");
+    }
+
+    /// The warnings of a program that loads.
+    fn warnings(modules: &[(&str, &str)], entry: &str) -> Vec<String> {
+        let mut env = Env::new();
+        for (name, source) in modules {
+            env.register_module(name, source);
+        }
+        let pid = env.load_program(entry).unwrap();
+        env.get_program(pid)
+            .unwrap()
+            .warnings
+            .iter()
+            .map(|w| w.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_plain_import_hiding_a_builtin_warns_once_where_it_is_used() {
+        let tween = [("tween", "pub fn lerp(a)\n  a\nend\npub fn other()\n  1\nend")];
+        let w = warnings(&tween, "import tween\nprint(lerp(1))\nprint(lerp(2))");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("`lerp` here is the one module 'tween' exports, which hides the builtin"),
+            "{w:?}"
+        );
+        // Not used bare: nothing to say. Qualified, selective: on purpose.
+        assert!(warnings(&tween, "import tween\nprint(other())").is_empty());
+        assert!(warnings(&tween, "import tween\nprint(tween.lerp(1))").is_empty());
+        assert!(warnings(&tween, "import tween: lerp\nprint(lerp(1))").is_empty());
+        // A std name counts as a builtin too.
+        let w = warnings(&[("m", "pub fn sum(xs)\n  0\nend")], "import m\nprint(sum([1]))");
+        assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    #[test]
+    fn a_first_party_package_hides_a_builtin_without_a_warning() {
+        let w = warnings(
+            &[("ui", "pub fn lerp(a)\n  a\nend")],
+            "import ui\nprint(lerp(1))",
+        );
+        assert!(w.is_empty(), "{w:?}");
+    }
+
+    #[test]
+    fn a_module_that_exports_its_own_name_is_still_a_qualifier() {
+        // `import noise` binds the qualifier and, bare, the function.
+        assert_eq!(
+            run(
+                &[("noise", "pub fn noise(x)\n  \"n\"\nend\npub fn fbm(x)\n  \"f\"\nend")],
+                &[],
+                "import noise\nprint(noise(1))\nprint(noise.fbm(1))\nprint(noise.noise(1))",
+            ),
+            vec!["n", "f", "n"]
+        );
+    }
+
+    // ---- relative paths and canonical identity --------------------------
+
+    #[test]
+    fn a_relative_import_between_memory_modules_resolves_against_the_importers_name() {
+        assert_eq!(
+            run(
+                &[
+                    ("bloom/menu", "import ./motion\npub fn open()\n  ease()\nend"),
+                    ("bloom/motion", "pub fn ease()\n  \"eased\"\nend"),
+                    ("bloom/widgets/button", "import ../motion\npub fn b()\n  motion.ease()\nend"),
+                ],
+                &[],
+                "import bloom/menu\nimport bloom/widgets/button\nprint(open())\nprint(b())",
+            ),
+            vec!["eased", "eased"]
+        );
+        let err = load_err(
+            &[("a", "import ../x\npub let v = 1")],
+            "import a\nprint(1)",
+        );
+        assert!(err.contains("climbs above"), "{err}");
+    }
+
+    #[test]
+    fn a_relative_import_from_a_program_with_no_path_names_a_registered_module() {
+        assert_eq!(
+            run(&[("hud", HUD)], &[], "import ./hud\nprint(draw())"),
+            vec!["hud"]
+        );
+        let err = load_err(&[], "import ./nope\nprint(1)");
+        assert!(err.contains("has no file path"), "{err}");
+    }
+
+    #[test]
+    fn a_package_module_is_one_module_however_it_is_reached() {
+        // `./motion` inside the package and `bloom/motion` from outside: one
+        // module, so its top-level code runs once and its state is shared.
+        let mut env = Env::new();
+        env.register_package(
+            "bloom",
+            [
+                ("motion", "print(\"motion loaded\")\npub var n = 0\npub fn bump()\n  set n = get n + 1\n  get n\nend"),
+                ("menu", "import ./motion\npub fn open()\n  motion.bump()\nend"),
+                ("bar", "import bloom/motion\npub fn tick()\n  motion.bump()\nend"),
+            ],
+        )
+        .unwrap();
+        let pid = env
+            .load_program(
+                "import bloom/menu\nimport bloom/bar\nimport bloom/motion\n\
+                 print(menu.open())\nprint(bar.tick())\nprint(motion.bump())",
+            )
+            .unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), vec!["motion loaded", "1", "2", "3"]);
+        let names: Vec<String> = env
+            .module_manifest(pid)
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert_eq!(names.iter().filter(|n| n.contains("motion")).count(), 1, "{names:?}");
+        assert!(names.contains(&"bloom/motion.ptl".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn a_relative_import_may_not_leave_an_in_memory_package() {
+        let mut env = Env::new();
+        env.register_module("secret", "pub let v = 1");
+        env.register_package("bloom", [("menu", "import ../secret\npub let m = 1")])
+            .unwrap();
+        let err = env.load_program("import bloom/menu\nprint(1)").unwrap_err();
+        assert!(err.contains("leaves the package 'bloom'"), "{err}");
+    }
+
+    #[test]
+    fn a_bare_name_is_a_package_never_a_missing_file() {
+        let err = load_err(&[], "import nope\nprint(1)");
+        assert!(err.contains("there is no package named 'nope'"), "{err}");
+    }
+
+    #[test]
+    fn a_bundled_package_is_the_last_place_a_name_is_looked_up() {
+        // `core/math` is bundled; a host registration of the same path wins.
+        assert_eq!(run(&[], &[], "import core/math\nprint(abs(-2))"), vec!["2"]);
+        assert_eq!(
+            run(
+                &[("core/math", "pub fn mine()\n  \"host\"\nend")],
+                &[],
+                "import core/math\nprint(mine())",
+            ),
+            vec!["host"]
+        );
+    }
+
+    #[test]
+    fn normalizing_a_path_folds_dots_without_the_filesystem() {
+        use std::path::Path;
+        assert_eq!(
+            super::normalize_lexical(Path::new("/a/b/./c/../d.ptl")),
+            Some(Path::new("/a/b/d.ptl").to_path_buf())
+        );
+        assert_eq!(super::normalize_lexical(Path::new("a/../../x")), None);
+        assert_eq!(
+            super::relative_module_name(Path::new("/p/game"), Path::new("/p/game/ui/hud.ptl")),
+            "ui/hud"
+        );
+        assert_eq!(
+            super::relative_module_name(Path::new("/p/game"), Path::new("/p/shared/rng.ptl")),
+            "../shared/rng"
+        );
+    }
+
+    #[test]
+    fn a_plain_import_without_pub_binds_locally_only() {
         let err = load_err(
             &[
                 ("impl", "pub fn a()\n  \"a\"\nend"),
-                ("plain", "import impl: *\npub fn use_a()\n  a()\nend"),
+                ("plain", "import impl\npub fn use_a()\n  a()\nend"),
             ],
             "import plain: a\nprint(a())",
         );
@@ -1240,7 +2068,7 @@ mod tests {
             run(
                 &[
                     ("impl", "pub fn a()\n  \"a\"\nend"),
-                    ("plain", "import impl: *\npub fn use_a()\n  a()\nend"),
+                    ("plain", "import impl\npub fn use_a()\n  a()\nend"),
                 ],
                 &[],
                 "import plain: use_a\nprint(use_a())",
@@ -1258,7 +2086,7 @@ mod tests {
                     ("bloom/menu", "pub fn open()\n  \"m\"\nend"),
                     (
                         "bloom/all",
-                        "pub import bloom/button: *\npub import bloom/menu: *",
+                        "pub import bloom/button\npub import bloom/menu",
                     ),
                 ],
                 &[],
@@ -1269,7 +2097,7 @@ mod tests {
     }
 
     #[test]
-    fn a_star_re_export_composes_with_cross_module_overload_merging() {
+    fn a_plain_re_export_composes_with_cross_module_overload_merging() {
         // The host prelude has `f(a)`; a library adds `f(a, b)`; the facade
         // star-re-exports the library. Both arities have to survive the two
         // hops — the merge inside the facade, and the merge at the importer.
@@ -1278,7 +2106,7 @@ mod tests {
                 &[
                     ("ui", "pub fn f(a)\n  \"ui\" ++ a\nend"),
                     ("ext", "pub fn f(a, b)\n  \"ext\" ++ a ++ b\nend"),
-                    ("facade", "pub import ext: *"),
+                    ("facade", "pub import ext"),
                 ],
                 &["ui"],
                 "import facade: f\nprint(f(\"x\"))\nprint(f(\"x\", \"y\"))",
@@ -1288,7 +2116,7 @@ mod tests {
     }
 
     #[test]
-    fn a_star_re_export_carries_classes_and_vars() {
+    fn a_plain_re_export_carries_classes_and_vars() {
         assert_eq!(
             run(
                 &[
@@ -1298,7 +2126,7 @@ mod tests {
                          pub var hits = 0\n\
                          pub fn bump()\n  set hits = get hits + 1\nend",
                     ),
-                    ("facade", "pub import impl: *"),
+                    ("facade", "pub import impl"),
                 ],
                 &[],
                 "import facade: Point, hits, bump\n\

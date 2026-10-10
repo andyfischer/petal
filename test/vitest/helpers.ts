@@ -18,10 +18,11 @@ export interface CliResult {
  * (`ir-equal`, `lint --verify`), and the base of every helper below.
  *
  * Arguments are passed as an argv (no shell), so code snippets need no
- * escaping.
+ * escaping. `cwd` is the directory to run in — what `-e` code resolves
+ * `import ./x` against.
  */
-export function petalCapture(args: string[], input?: string): CliResult {
-  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000, input });
+export function petalCapture(args: string[], input?: string, cwd?: string): CliResult {
+  const r = spawnSync(PETAL, args, { encoding: "utf-8", timeout: 10000, input, cwd });
   return {
     stdout: (r.stdout || "").toString(),
     stderr: (r.stderr || "").toString(),

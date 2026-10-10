@@ -1,4 +1,4 @@
-// Re-exports: `pub import m: * and friends (docs/module-system.md).
+// Re-exports: `pub import m` and `pub import m: a, b` (docs/module-system.md).
 //
 // A library's facade used to be a hand-maintained list of
 // `pub let button = widgets_button.button` lines — correct, but silent when
@@ -22,7 +22,7 @@ function runFileError(file: string): string {
 }
 
 describe("re-exports", () => {
-  it("a star re-export carries a whole overload set through the facade", () => {
+  it("a plain re-export carries a whole overload set through the facade", () => {
     // Both arities of `button` reach the app through widgets.ptl, which never
     // names `button` at all.
     const out = runPetalFile(fixture("app.ptl"));
@@ -30,13 +30,13 @@ describe("re-exports", () => {
   });
 
   it("a re-export chain passes names along", () => {
-    // chain_top.ptl star-re-exports widgets.ptl, which star-re-exports
+    // chain_top.ptl re-exports widgets.ptl, which re-exports
     // widgets/button.ptl — and the overload set survives both hops.
     const out = runPetalFile(fixture("chain_app.ptl"));
     expect(out).toBe("[chain]\n[chain|1]\ncyan");
   });
 
-  it("a local declaration wins over a star re-export, silently", () => {
+  it("a local declaration wins over a re-export, silently", () => {
     const out = runPetalFile(fixture("local_wins_app.ptl"));
     expect(out).toBe("<a>");
   });
@@ -47,11 +47,12 @@ describe("re-exports", () => {
     expect(err).toContain("close, open");
   });
 
-  it("two star re-exports of one value name collide loudly", () => {
+  it("two re-exports of one value name are ambiguous where the name is used", () => {
+    // The facade itself is fine — nothing in it uses `shared` bare. The error
+    // belongs to the file that finally does, and names both sources.
     const err = runFileError("collide_app.ptl");
-    expect(err).toContain(
-      "'shared' is re-exported by both 'collide_a' and 'collide_b'"
-    );
+    expect(err).toContain("`shared` is ambiguous: 'collide_a' and 'collide_b' export it");
+    expect(err).toContain("[line 2, column 7]");
   });
 
   it("a re-export cycle is an error, not a hang", () => {
@@ -59,9 +60,9 @@ describe("re-exports", () => {
     expect(err).toContain("import cycle");
   });
 
-  it("a star re-export does not widen the module's privacy rule", () => {
-    // widgets/theme.ptl's `private_helper` has no `pub`, so no star can
-    // pick it up.
+  it("a re-export does not widen the module's privacy rule", () => {
+    // widgets/theme.ptl's `private_helper` has no `pub`, so no re-export
+    // can pick it up.
     const err = runFileError("private_app.ptl");
     expect(err).toContain("module 'widgets' has no export 'private_helper'");
   });

@@ -1614,6 +1614,9 @@ pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
     for dir in include_dirs {
         env.add_module_path(dir.clone());
     }
+    // `-e` code and stdin have no file: `import ./x` means the working
+    // directory.
+    env.set_inline_import_dir(std::env::current_dir().ok());
     if let Some(err) = env.package_errors().first() {
         die_plain(&err.to_string());
     }

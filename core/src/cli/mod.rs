@@ -180,6 +180,15 @@ pub enum Command {
         diff: bool,
     },
     Lint(LintArgs),
+    /// `fix-imports` — rewrite old-style imports (`crate::fix_imports`).
+    /// Rewrites files in place; `--check` only lists the ones that would
+    /// change.
+    FixImports {
+        paths: Vec<String>,
+        inline: Option<String>,
+        check: bool,
+        diff: bool,
+    },
     /// Compare two source files' compiled IR, ignoring everything positional
     /// (spans, comments, whitespace). Exit 0 when equivalent, 1 when not,
     /// 2 when a side fails to compile. The `<file>` in `CliArgs::source` is
@@ -535,6 +544,16 @@ pub fn execute(cli: CliArgs) {
         source_tools::handle_lint(opts, &include_dirs);
         return;
     }
+    if let Command::FixImports {
+        paths,
+        inline,
+        check,
+        diff,
+    } = &command
+    {
+        source_tools::handle_fix_imports(paths, inline.as_deref(), *check, *diff, &include_dirs);
+        return;
+    }
     // `apply-change` reads (and writes) its files itself.
     if let Command::ApplyChange(opts) = &command {
         source_tools::handle_apply_change(opts, &include_dirs);
@@ -587,7 +606,10 @@ pub fn execute(cli: CliArgs) {
                 &include_dirs,
             );
         }
-        Command::Fmt { .. } | Command::Lint(_) | Command::ApplyChange(_) => {
+        Command::Fmt { .. }
+        | Command::Lint(_)
+        | Command::ApplyChange(_)
+        | Command::FixImports { .. } => {
             unreachable!("dispatched above")
         }
         Command::Suggest(args) => {

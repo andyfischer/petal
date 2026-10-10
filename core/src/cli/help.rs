@@ -31,6 +31,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("fmt", "Rewrite files in the canonical layout"),
             ("lint", "Report code that has a better spelling, and fix it"),
+            (
+                "fix-imports",
+                "Rewrite imports for the current module system",
+            ),
             ("suggest", "Suggest safe refactors for a file"),
             ("lint-fix", "The same as 'lint --fix'"),
             (
@@ -130,6 +134,7 @@ fn page(name: &str) -> Option<&'static str> {
         "bench" => BENCH,
         "fmt" => FMT,
         "lint" => LINT,
+        "fix-imports" => FIX_IMPORTS,
         "suggest" => SUGGEST,
         "lint-fix" => LINT_FIX,
         "apply-change" => APPLY_CHANGE,
@@ -444,6 +449,76 @@ OPTIONS
 {COMMON}
 SEE ALSO
        petal help run, petal help lint
+";
+
+const FIX_IMPORTS: &str = "\
+NAME
+       petal-fix-imports - Rewrite imports for the current module system
+
+SYNOPSIS
+       petal fix-imports [--check] [--diff] [-I <dir>]... [<path>...]
+       petal fix-imports -e <code>
+       petal fix-imports -
+
+DESCRIPTION
+       Migrates every .ptl file under the given paths (directories are
+       searched recursively, skipping dot-directories, node_modules and
+       target; the default is the current directory) and rewrites them in
+       place. It makes three changes, and only to import lines:
+
+       A sibling file imported by a bare name becomes a relative import.
+              'import level' -> 'import ./level', when level.ptl sits beside
+              the importing file and no package is called 'level'. A bare
+              first segment always names a package now. A loose file that
+              used to be found through -I <dir> becomes the relative path to
+              it ('import ../shared/rng').
+
+       'import m: *' becomes 'import m'.
+              A plain import binds every export of the module; the star form
+              no longer exists. 'pub import m: *' becomes 'pub import m'.
+
+       A missing import is added.
+              A bare name that no declaration or import in the file provides,
+              and that exactly one available package exports, gets its
+              'import <package>' line, after the imports already there. A
+              name several packages export is reported and left alone.
+
+       'Available' means the packages bundled in this binary plus the ones
+       under each -I <dir> and PETAL_PATH. A path that already resolves as a
+       package is never rewritten.
+
+       Running it again changes nothing, and a file already written for the
+       current module system is left as it is. A file that does not parse is
+       reported and skipped. A file that does not compile still has its
+       import lines rewritten, but no imports are added to it.
+
+OPTIONS
+       --check
+              Write nothing. List the files that would change and exit 1 if
+              there are any.
+
+       --diff, -d
+              Write nothing. Print what would change as a unified diff.
+
+       -I <dir>
+              A directory of packages (or a package), as for 'petal run'.
+
+       -e <code>
+              Fix the given code and print the result. With no file there is
+              nothing to resolve a sibling against, so only the star rewrite
+              and added imports apply.
+
+EXIT STATUS
+       0 on success; 1 when a file could not be read or parsed, or, with
+       --check or --diff, when a file would change.
+
+EXAMPLES
+       petal fix-imports .
+       petal fix-imports --diff src/
+       petal fix-imports -I libs game/
+
+SEE ALSO
+       petal help fmt, petal help packages, docs/module-system.md
 ";
 
 const FMT: &str = "\
@@ -1393,6 +1468,7 @@ mod tests {
         "check",
         "fmt",
         "lint",
+        "fix-imports",
         "lint-fix",
         "ir-equal",
         "explain",

@@ -192,6 +192,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "check" => parse_check_args(&args[1..]),
         "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),
+        "fix-imports" => parse_fix_imports_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
         "apply-change" => parse_apply_change_args(&args[1..]),
         "lint-fix" => parse_lint_fix_args(&args[1..]),
@@ -629,6 +630,32 @@ fn parse_fmt_args(args: &[String]) -> CliArgs {
     });
     CliArgs {
         command: Command::Fmt {
+            paths: p.paths,
+            inline: p.inline,
+            check,
+            diff,
+        },
+        source: SourceInput::Inline(String::new()),
+        include_dirs: Vec::new(),
+    }
+}
+
+/// `fix-imports [--check] [--diff] [<path>…]` — shaped like `fmt`.
+fn parse_fix_imports_args(args: &[String]) -> CliArgs {
+    let usage = "Usage: petal fix-imports [--check] [--diff] [-I <dir>]... [<path>...]  |  \
+                 petal fix-imports -e <code>";
+    let mut check = false;
+    let mut diff = false;
+    let p = parse_path_args(args, usage, |args, i| {
+        match args[*i].as_str() {
+            "--check" => check = true,
+            "--diff" | "-d" => diff = true,
+            _ => return false,
+        }
+        true
+    });
+    CliArgs {
+        command: Command::FixImports {
             paths: p.paths,
             inline: p.inline,
             check,

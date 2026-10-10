@@ -621,7 +621,7 @@ fn imports_resolve_relative_to_the_importing_file() {
     let tree = TempTree::new("relative");
     tree.write("lib/palette.ptl", "pub let bg = 3");
     // panel.ptl imports its sibling, from a different working directory.
-    let panel = tree.write("lib/panel.ptl", "import palette\nprint(palette.bg)");
+    let panel = tree.write("lib/panel.ptl", "import ./palette\nprint(palette.bg)");
     let source = std::fs::read_to_string(&panel).unwrap();
 
     let mut env = Env::new();
@@ -658,17 +658,187 @@ fn registered_module_beats_file_of_same_name() {
 }
 
 #[test]
-fn module_search_paths_are_consulted_after_importer_dir() {
+fn a_search_path_finds_packages_not_loose_files() {
     let tree = TempTree::new("searchpath");
-    tree.write("libs/util.ptl", "pub let tag = \"from-libs\"");
+    tree.write("libs/util.ptl", "pub let tag = \"loose\"");
+    tree.write("libs/kit/petal.toml", "[package]\nname = \"kit\"\n");
+    tree.write("libs/kit/src/kit.ptl", "pub let tag = \"from-kit\"");
 
     let mut env = Env::new();
     env.add_module_path(tree.root.join("libs"));
-    // Entry loaded with no origin (inline) — only the search path can hit.
-    let pid = env.load_program("import util\nprint(util.tag)").unwrap();
+    let pid = env.load_program("import kit\nprint(kit.tag)\nprint(tag)").unwrap();
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
-    assert_eq!(env.take_output(), vec!["from-libs"]);
+    assert_eq!(env.take_output(), vec!["from-kit", "from-kit"]);
+    // A bare name is a package, so the loose file on the path is not it.
+    let err = env.load_program("import util\nprint(util.tag)").unwrap_err();
+    assert!(err.contains("there is no package named 'util'"), "{err}");
+}
+
+/// Load the file at `path` and run it, returning what it printed.
+fn run_file(env: &mut Env, path: &std::path::Path) -> Result<Vec<String>, String> {
+    let source = std::fs::read_to_string(path).unwrap();
+    let pid = env.load_program_at(&source, path)?;
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).map_err(|e| format!("{e:?}"))?;
+    Ok(env.take_output())
+}
+
+#[test]
+fn relative_imports_reach_beside_below_and_above_the_importing_file() {
+    let tree = TempTree::new("rel-forms");
+    tree.write("game/level.ptl", "pub let here = \"beside\"");
+    tree.write("game/ui/hud.ptl", "import ../level\npub let hud = \"below+\" ++ level.here");
+    tree.write("shared/rng.ptl", "pub let seed = \"above\"");
+    let main = tree.write(
+        "game/main.ptl",
+        "import ./level\nimport ./ui/hud\nimport ../shared/rng\nprint(here)\nprint(hud.hud)\nprint(rng.seed)",
+    );
+    let mut env = Env::new();
+    assert_eq!(
+        run_file(&mut env, &main).unwrap(),
+        vec!["beside", "below+beside", "above"]
+    );
+}
+
+#[test]
+fn a_bare_sibling_import_is_an_error_that_says_what_to_write() {
+    let tree = TempTree::new("bare-sibling");
+    tree.write("level.ptl", "pub let v = 1");
+    let main = tree.write("main.ptl", "import level\nprint(level.v)");
+    let err = run_file(&mut Env::new(), &main).unwrap_err();
+    assert!(
+        err.contains("cannot find module 'level' (imported by main.ptl)"),
+        "{err}"
+    );
+    assert!(err.contains("there is no package named 'level'"), "{err}");
+    assert!(err.contains("`import ./level`"), "{err}");
+    assert!(err.contains("petal fix-imports"), "{err}");
+}
+
+#[test]
+fn a_loose_file_is_one_module_however_it_is_spelled_and_is_named_from_the_entry() {
+    // `./lib/counter` from the entry and `./counter` from its sibling are
+    // one file: one module, one `var`, loaded once.
+    let tree = TempTree::new("loose-identity");
+    tree.write(
+        "lib/counter.ptl",
+        "print(\"loaded\")\nvar n = 0\npub fn bump()\n  set n = get n + 1\n  get n\nend",
+    );
+    tree.write("lib/other.ptl", "import ./counter\npub fn go()\n  counter.bump()\nend");
+    let main = tree.write(
+        "main.ptl",
+        "import ./lib/counter\nimport ./lib/other\nprint(counter.bump())\nprint(other.go())",
+    );
+    let mut env = Env::new();
+    let source = std::fs::read_to_string(&main).unwrap();
+    let pid = env.load_program_at(&source, &main).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["loaded", "1", "2"]);
+    // Named by its path from the entry file's directory.
+    let names: Vec<String> = env.module_manifest(pid).into_iter().map(|m| m.name).collect();
+    assert_eq!(names, ["main.ptl", "lib/counter.ptl", "lib/other.ptl"]);
+    assert!(
+        env.call_function(sid, "lib/counter::bump", &[]).is_ok(),
+        "a loose module's functions are addressed by that name"
+    );
+}
+
+/// A package `kit` on disk under `<tree>/kit`, with a facade and two modules
+/// that reach each other both ways.
+fn write_kit(tree: &TempTree) {
+    tree.write("kit/petal.toml", "[package]\nname = \"kit\"\n");
+    tree.write(
+        "kit/src/motion.ptl",
+        "print(\"motion loaded\")\nvar n = 0\npub fn bump()\n  set n = get n + 1\n  get n\nend",
+    );
+    tree.write("kit/src/menu.ptl", "import ./motion\npub fn open()\n  motion.bump()\nend");
+    tree.write("kit/src/bar.ptl", "import kit/motion\npub fn tick()\n  motion.bump()\nend");
+    tree.write("kit/src/kit.ptl", "pub import ./menu\npub import kit/bar");
+}
+
+#[test]
+fn a_package_file_is_one_module_whether_reached_relatively_or_by_package_name() {
+    let tree = TempTree::new("pkg-identity");
+    write_kit(&tree);
+    let main = tree.write(
+        "app/main.ptl",
+        "import kit\nimport kit/motion\nprint(open())\nprint(tick())\nprint(motion.bump())",
+    );
+    let mut env = Env::new();
+    env.add_module_path(tree.root.clone());
+    let source = std::fs::read_to_string(&main).unwrap();
+    let pid = env.load_program_at(&source, &main).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["motion loaded", "1", "2", "3"]);
+    let mut names: Vec<String> = env.module_manifest(pid).into_iter().map(|m| m.name).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["kit.ptl", "kit/bar.ptl", "kit/menu.ptl", "kit/motion.ptl", "main.ptl"]
+    );
+}
+
+#[test]
+fn a_file_inside_a_package_reaches_it_by_name_with_no_search_path() {
+    // The nearest petal.toml above the importing file is its package: its
+    // own name resolves with nothing registered, and a file under the module
+    // directory has the package's identity even when it is the one run.
+    let tree = TempTree::new("pkg-own-name");
+    write_kit(&tree);
+    let demo = tree.write(
+        "kit/examples/demo.ptl",
+        "import kit/menu\nimport ../src/motion\nprint(menu.open())\nprint(motion.bump())",
+    );
+    assert_eq!(
+        run_file(&mut Env::new(), &demo).unwrap(),
+        vec!["motion loaded", "1", "2"]
+    );
+}
+
+#[test]
+fn a_relative_import_may_not_leave_its_package() {
+    let tree = TempTree::new("pkg-escape");
+    write_kit(&tree);
+    tree.write("outside.ptl", "pub let v = 1");
+    tree.write("kit/src/leak.ptl", "import ../../outside\npub let l = outside.v");
+    let main = tree.write("kit/examples/demo.ptl", "import kit/leak\nprint(leak.l)");
+    let err = run_file(&mut Env::new(), &main).unwrap_err();
+    assert!(err.contains("leaves the package 'kit'"), "{err}");
+    // A loose script has no such limit.
+    let loose = tree.write("scripts/deep/run.ptl", "import ../../outside\nprint(outside.v)");
+    assert_eq!(run_file(&mut Env::new(), &loose).unwrap(), vec!["1"]);
+}
+
+#[test]
+fn a_host_registration_wins_over_the_search_path_and_the_search_path_over_bundled() {
+    let tree = TempTree::new("pkg-order");
+    tree.write("libs/core/petal.toml", "[package]\nname = \"core\"\n");
+    tree.write("libs/core/src/math.ptl", "pub let who = \"search path\"");
+    let mut env = Env::new();
+    env.add_module_path(tree.root.join("libs"));
+    let pid = env.load_program("import core/math\nprint(math.who)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["search path"]);
+
+    env.register_package("core", [("math", "pub let who = \"host\"")]).unwrap();
+    let pid = env.load_program("import core/math\nprint(math.who)").unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), vec!["host"]);
+}
+
+#[test]
+fn importing_the_entry_file_is_a_cycle() {
+    let tree = TempTree::new("entry-cycle");
+    tree.write("helper.ptl", "import ./main\npub let h = 1");
+    let main = tree.write("main.ptl", "import ./helper\nprint(helper.h)");
+    let err = run_file(&mut Env::new(), &main).unwrap_err();
+    assert!(err.contains("import cycle"), "{err}");
+    assert!(err.contains("entry file"), "{err}");
 }
 
 #[test]
@@ -774,7 +944,7 @@ fn a_qualified_call_into_a_module_is_type_checked() {
     // Through a facade that re-exports it — the shape `core-runtime/bloom`
     // uses, and the one a caller writing `bloom.button(...)` depends on.
     let w = warn_messages(
-        &[("motion", motion), ("bloom", "pub import motion: *\n")],
+        &[("motion", motion), ("bloom", "pub import motion\n")],
         "import bloom\nprint(bloom.scaled(\"no\", 2))",
     );
     assert_eq!(w.len(), 1, "{w:?}");
@@ -785,4 +955,19 @@ fn a_qualified_call_into_a_module_is_type_checked() {
         "import motion as m\nprint(m.scaled(Rect(0, 0, 1, 1), 2))",
     );
     assert!(w.is_empty(), "{w:?}");
+}
+
+#[test]
+fn import_core_binds_a_qualifier_over_the_builtins() {
+    // Every builtin is in scope without an import; `import core` adds the
+    // qualifier, for reaching one a declaration has taken the bare name of.
+    check_output(
+        &[],
+        "import core\nfn len(x)\n  \"mine\"\nend\n\
+         print(len([1, 2]))\nprint(core.len([1, 2, 3]))\nprint(core.abs(-4))\n\
+         let f = core.max\nprint(f(1, 9))",
+        &["mine", "3", "4", "9"],
+    );
+    // A single module of it works the same way.
+    check_output(&[], "import core/math\nprint(math.floor(2.5))\nprint(floor(2.5))", &["2.0", "2.0"]);
 }

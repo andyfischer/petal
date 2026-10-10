@@ -977,7 +977,7 @@ TEST(hot_reload_tracks_imported_modules) {
     fs::path dir = scratch_dir("hot_reload_imports");
     write_file(dir / "tuning.ptl", "pub let SPEED = 2\n");
     write_file(dir / "main.ptl",
-               "import tuning\n"
+               "import ./tuning\n"
                "state pos = 0\n"
                "pos += tuning.SPEED\n"
                "push_output(symbol(\"out\"), pos)\n");
@@ -1001,7 +1001,7 @@ TEST(hot_reload_tracks_imported_modules) {
     // Both files edited: named in source_files() order.
     write_file(dir / "tuning.ptl", "pub let SPEED = 1\n");
     write_file(dir / "main.ptl",
-               "import tuning\n"
+               "import ./tuning\n"
                "state pos = 0\n"
                "pos += tuning.SPEED * 2\n"
                "push_output(symbol(\"out\"), pos)\n");
@@ -1017,7 +1017,7 @@ TEST(hot_reload_watches_new_imports_and_deletions) {
     CHECK_EQ(vm.source_files().size(), size_t(1));
 
     // The reloaded program imports a new module: it is watched from then on.
-    write_file(dir / "main.ptl", "import extra\npush_output(symbol(\"out\"), extra.BONUS)\n");
+    write_file(dir / "main.ptl", "import ./extra\npush_output(symbol(\"out\"), extra.BONUS)\n");
     CHECK(vm.sources_changed());
     vm.reload();
     CHECK_EQ(vm.source_files().size(), size_t(2));
@@ -1050,7 +1050,7 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
     fs::path config = dir / "config.ptl";
     write_file(config, "// knobs\npub config let POST = {bloom: 0.25, steps: [1, 2]}\n");
     write_file(main,
-               "import config\n"
+               "import ./config\n"
                "state frames = 0\n"
                "frames += 1\n"
                "push_output(symbol(\"out\"), config.POST.bloom * 100 + config.POST.steps[1])\n");
@@ -1106,7 +1106,7 @@ TEST(hot_reload_patches_values_and_set_config_writes_no_file) {
 TEST(failed_load_file_is_watched_and_retried) {
     fs::path dir = scratch_dir("failed_load");
     fs::path main = dir / "main.ptl";
-    write_file(main, "import helper\npush_output(symbol(\"out\"), helper.N)\n");
+    write_file(main, "import ./helper\npush_output(symbol(\"out\"), helper.N)\n");
     petal::Vm vm;
     CHECK_THROWS_CODE(vm.load_file(main.string()), PB_ERR_COMPILE);  // no helper.ptl yet
     CHECK(!vm.loaded());
@@ -1152,7 +1152,7 @@ TEST(failed_reload_watches_the_script_directory) {
     CHECK(!vm.sources_changed());
 
     // The edit imports the broken module: the reload fails.
-    write_file(main, "import lib/shapes\nstate n = 0\nn += shapes.SIDES\npush_output(symbol(\"out\"), n)\n");
+    write_file(main, "import ./lib/shapes\nstate n = 0\nn += shapes.SIDES\npush_output(symbol(\"out\"), n)\n");
     CHECK(vm.sources_changed());
     CHECK_THROWS_CODE(vm.reload(), PB_ERR_COMPILE);
     CHECK(!vm.sources_changed());  // this version was looked at

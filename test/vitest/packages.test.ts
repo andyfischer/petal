@@ -113,7 +113,7 @@ describe("packages", () => {
 
   it("an import path can't climb out of a package", () => {
     const err = runError(["run", "-e", "import bloom/../secrets", "-I", LIBS]);
-    expect(err).toContain("not allowed in an import path");
+    expect(err).toContain("only allowed at the start of an import path");
   });
 
   it("PETAL_PATH picks up packages too", () => {

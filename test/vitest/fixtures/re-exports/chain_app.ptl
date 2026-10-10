@@ -1,4 +1,4 @@
-import chain_top: button, accent
+import ./chain_top: button, accent
 
 print(button("chain"))
 print(button("chain", 1))

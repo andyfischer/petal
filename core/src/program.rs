@@ -677,6 +677,36 @@ pub struct Program {
     /// an imported program is linked by name when a call runs, as before.
     #[serde(skip)]
     pub native_links: Vec<crate::native_decl::NativeLink>,
+    /// How the program's modules name each other: every module's exports and
+    /// the entry file's imports as they resolved. For tools (the language
+    /// server, `petal fix-imports`); never serialized, and empty for a
+    /// program loaded from IR.
+    #[serde(skip)]
+    pub imports: ImportTable,
+}
+
+/// See [`Program::imports`].
+#[derive(Debug, Clone, Default)]
+pub struct ImportTable {
+    /// Canonical module name → the names it exports, sorted.
+    pub exports: HashMap<String, Vec<String>>,
+    /// Canonical module name → its index in the program's file table.
+    pub files: HashMap<String, u16>,
+    /// The entry file's imports, lowest precedence first.
+    pub entry: Vec<EntryImport>,
+}
+
+/// One import of the entry file, resolved.
+#[derive(Debug, Clone)]
+pub struct EntryImport {
+    /// The module's canonical name.
+    pub module: String,
+    /// The qualifier it is reachable through (`m.name`), when it has one.
+    pub qualifier: Option<String>,
+    /// `Some` for a selective import: the names it binds.
+    pub names: Option<Vec<String>>,
+    /// An import the file did not write (the core prelude, a host's).
+    pub implicit: bool,
 }
 
 impl Program {

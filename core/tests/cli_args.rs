@@ -144,7 +144,7 @@ fn a_cross_module_stack_trace_names_the_entry_file() {
         "trace",
         &[
             ("m.ptl", "fn boom(x)\n  x.foo\nend\npub fn go(v)\n  boom(v)\nend\n"),
-            ("main.ptl", "import m\nfn outer(v)\n  m.go(v)\nend\nouter([1][0])\n"),
+            ("main.ptl", "import ./m\nfn outer(v)\n  m.go(v)\nend\nouter([1][0])\n"),
         ],
     );
     let (_, err, code) = petal_in(&dir, &["run", "main.ptl"]);

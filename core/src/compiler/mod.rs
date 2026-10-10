@@ -359,18 +359,78 @@ pub struct Compiler {
     // ("ui::button"), so references to them ride the ordinary scope-lookup /
     // closure-capture machinery.
     module_exports: HashMap<String, Vec<String>>,
-    // Module *aliases* a module re-exports (`pub import bloom/menu`):
-    // module name -> [(local alias, target module path)]. An importer that
-    // pulls one of these names in gets a module alias, not a value binding —
-    // module names are not values, so this is the only way a facade can pass
-    // a submodule on. Keyed like `module_exports`, and read the same way.
-    module_alias_exports: HashMap<String, Vec<(String, String)>>,
-    // Names the module being compiled re-exports (`pub import m: *` /
+    // Names the module being compiled re-exports (`pub import m` /
     // `pub import m: a, b`), filled by `bind_imports` and consumed by
     // `capture_exports`. Cleared at every module boundary.
     reexported_names: HashSet<String>,
-    // Module aliases the module being compiled re-exports, same lifetime.
-    reexported_aliases: Vec<(String, String)>,
+    // Qualifiers an explicit import of the file being compiled bound (as
+    // opposed to an implicit one, which an explicit import may take over).
+    explicit_aliases: HashSet<String>,
+    // Module → every module it imports, directly or not. Decides which of
+    // two plain imports offering one name wins: the importer's.
+    import_closure: HashMap<String, HashSet<String>>,
+    // Marker terms bound in place of a name two plain imports both offer.
+    // Not cleared per module: a facade re-exports the marker, and the error
+    // belongs to whoever finally uses the name.
+    ambiguous_imports: HashMap<TermId, AmbiguousImport>,
+    // Overload sets stitched from several plain imports of the file being
+    // compiled: set term → (name, the modules it joins).
+    merged_imports: HashMap<TermId, (String, Vec<String>)>,
+    // Names of the file being compiled whose plain import hides a core/std
+    // name: name → (the term bound, the exporting module, its qualifier).
+    // An entry is dropped once warned about.
+    prelude_shadows: HashMap<String, (TermId, String, String)>,
+    // What the imports of the file being compiled bound each bare name to.
+    // A name still bound to this term has not been shadowed by the file.
+    import_bound: HashMap<String, TermId>,
+}
+
+/// A bare name two plain imports both offer, with nothing to choose between
+/// them.
+struct AmbiguousImport {
+    name: String,
+    /// `(module, the qualifier it is reachable through)`, in import order.
+    offers: Vec<(String, String)>,
+}
+
+impl AmbiguousImport {
+    fn message(&self) -> String {
+        let modules: Vec<String> = self.offers.iter().map(|(m, _)| m.clone()).collect();
+        let qualified: Vec<String> = self
+            .offers
+            .iter()
+            .map(|(_, q)| format!("`{q}.{}`", self.name))
+            .collect();
+        format!(
+            "`{name}` is ambiguous: {modules} export it — write {qualified}, or pin one with \
+             `import {first}: {name}`",
+            name = self.name,
+            modules = join_quoted(&modules),
+            qualified = qualified.join(" or "),
+            first = self.offers[0].0,
+        )
+    }
+}
+
+/// `'a' and 'b'` / `'a', 'b' and 'c'`.
+fn join_quoted(names: &[String]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("'{n}'")).collect();
+    match quoted.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => quoted.join(""),
+    }
+}
+
+/// First-party packages whose modules redefine core/std names on purpose
+/// (`ui`'s `clamp`-style helpers, bloom's widgets): every package bundled in
+/// the binary, plus the two that are first-party but not bundled yet.
+const FIRST_PARTY_PACKAGES: &[&str] = &["ui", "bloom"];
+
+/// Is `module` (a canonical module name) part of a first-party package, whose
+/// shadowing of a core/std name is deliberate and not worth a warning?
+fn deliberately_shadows_prelude(module: &str) -> bool {
+    let package = module.split('/').next().unwrap_or(module);
+    FIRST_PARTY_PACKAGES.contains(&package) || crate::bundled::package(package).is_some()
 }
 
 impl Default for Compiler {
@@ -445,9 +505,13 @@ impl Compiler {
             error_file: None,
             module_aliases: HashMap::new(),
             module_exports: HashMap::new(),
-            module_alias_exports: HashMap::new(),
             reexported_names: HashSet::new(),
-            reexported_aliases: Vec::new(),
+            explicit_aliases: HashSet::new(),
+            import_closure: HashMap::new(),
+            ambiguous_imports: HashMap::new(),
+            merged_imports: HashMap::new(),
+            prelude_shadows: HashMap::new(),
+            import_bound: HashMap::new(),
         }
     }
 
@@ -684,6 +748,27 @@ impl Compiler {
                 .collect(),
             introspect: Default::default(),
             native_links,
+            imports: crate::program::ImportTable {
+                exports: self.module_exports,
+                files: modules
+                    .iter()
+                    .filter_map(|m| Some((m.name.clone()?, m.file_id.0)))
+                    .collect(),
+                entry: entry
+                    .imports
+                    .iter()
+                    .map(|i| crate::program::EntryImport {
+                        module: i.decl.module.clone(),
+                        qualifier: i.decl.names.is_none().then(|| {
+                            i.decl.alias.clone().unwrap_or_else(|| {
+                                crate::ast::module_local_name(&i.decl.module).to_string()
+                            })
+                        }),
+                        names: i.decl.names.clone(),
+                        implicit: i.implicit,
+                    })
+                    .collect(),
+            },
         }, inferences, classes))
     }
 
@@ -722,7 +807,10 @@ impl Compiler {
         self.overload_variants.clear();
         self.own_fn_cells.clear();
         self.reexported_names.clear();
-        self.reexported_aliases.clear();
+        self.explicit_aliases.clear();
+        self.merged_imports.clear();
+        self.prelude_shadows.clear();
+        self.import_bound.clear();
         for diag in native_errors
             .into_iter()
             .chain(native::misplaced_native_decls(&stmts))
@@ -815,64 +903,78 @@ impl Compiler {
         Ok(())
     }
 
-    /// Materialize a module's resolved imports into the current scope:
-    /// aliases become compile-time alias bindings, selective names become
-    /// direct term bindings (loud on collision), implicit imports bind every
-    /// export bare but weakly (the file's own bindings win, like builtins).
+    /// Materialize a module's resolved imports into the current scope, lowest
+    /// precedence first so each tier lands on top of the one below it:
+    ///
+    /// 1. implicit imports (the core prelude, then a host's),
+    /// 2. plain imports — `import m` / `import m as x` — which bind every
+    ///    export bare, plus the qualifier,
+    /// 3. selective imports — `import m: a, b` — which bind exactly those
+    ///    names and no qualifier.
+    ///
+    /// The file's own declarations are compiled afterwards and shadow all of
+    /// them. Two plain imports that offer one name are not an error here: the
+    /// name is bound to a marker and the error is raised where (and only if)
+    /// the file uses it bare — see [`Self::check_import_use`].
     fn bind_imports(&mut self, module: &LoadedModule, stmts: &[Stmt]) -> Result<(), LoadError> {
         let declared = Self::declared_top_level_names(stmts);
-        // Selectively-imported name → module it came from, for collision
-        // provenance within this one file.
-        let mut selective: HashMap<String, String> = HashMap::new();
-        // Every name this file names in a selective list, in any statement: a
-        // `*` import never binds over one of them, whichever order the two
-        // statements happen to appear in.
-        let named_by_hand: HashSet<String> = module
-            .imports
-            .iter()
-            .filter(|i| !i.implicit)
-            .flat_map(|i| i.decl.names.iter().flatten())
-            .cloned()
-            .collect();
-        // Star-bound name → the module that provided it, for the collision
-        // error when two stars disagree.
-        let mut starred: HashMap<String, String> = HashMap::new();
+        let missing = |m: &str| {
+            // load_modules compiles dependencies first; a miss is a bug.
+            LoadError::message(
+                Phase::Compile,
+                format!("internal error: module '{m}' was not compiled before its importer"),
+            )
+        };
 
-        for import in &module.imports {
+        // What this module (transitively) imports, for the rule that an
+        // importer's export shadows the export of what it imports.
+        if let Some(name) = &module.name {
+            let mut reach: HashSet<String> = HashSet::new();
+            for import in &module.imports {
+                let m = &import.decl.module;
+                reach.insert(m.clone());
+                if let Some(deeper) = self.import_closure.get(m) {
+                    reach.extend(deeper.iter().cloned());
+                }
+            }
+            self.import_closure.insert(name.clone(), reach);
+        }
+
+        // ── 1. implicit imports ──────────────────────────────────────────
+        for import in module.imports.iter().filter(|i| i.implicit) {
             let m = &import.decl.module;
-            let Some(exports) = self.module_exports.get(m).cloned() else {
-                // load_modules compiles dependencies first; a miss is a bug.
-                return Err(LoadError::message(
-                    Phase::Compile,
-                    format!("internal error: module '{m}' was not compiled before its importer"),
-                ));
-            };
+            let exports = self.module_exports.get(m).cloned().ok_or_else(|| missing(m))?;
+            for name in &exports {
+                let tid = self
+                    .scope_lookup(&format!("{m}::{name}"))
+                    .expect("export is bound under its qualified name");
+                self.bind_imported_name(m, name, tid);
+            }
+            // A host prelude registered under a nested path is reached as
+            // `menu.open()`, not by a path no expression can spell.
+            self.module_aliases
+                .insert(crate::ast::module_local_name(m).to_string(), m.clone());
+        }
 
-            if import.implicit {
-                // Bind every export bare, silently — the file's own imports
-                // and declarations land on top of these.
-                for name in &exports {
-                    let tid = self
-                        .scope_lookup(&format!("{m}::{name}"))
-                        .expect("export is bound under its qualified name");
-                    self.bind_imported_name(m, name, tid);
-                }
-                // The alias is the module's *local* name, exactly as an
-                // explicit `import bloom/menu` would bind it — a host prelude
-                // registered under a nested path is reached as `menu.open()`,
-                // not by a path no expression can spell.
-                self.module_aliases
-                    .insert(crate::ast::module_local_name(m).to_string(), m.clone());
-                for (alias, target) in self.alias_exports_of(m) {
-                    self.module_aliases.entry(alias).or_insert(target);
-                }
+        // ── 2. plain imports ─────────────────────────────────────────────
+        // Qualifiers first, then every offered name with who offers it.
+        let mut offered: Vec<(String, Vec<(String, TermId)>)> = Vec::new();
+        let mut offered_at: HashMap<String, usize> = HashMap::new();
+        let mut qualifier_of: HashMap<String, String> = HashMap::new();
+        for import in module.imports.iter().filter(|i| !i.implicit) {
+            if import.decl.names.is_some() {
                 continue;
             }
-
-            // Alias binding (`import ui` / `import ui as u`).
-            let alias = import.decl.alias.clone().unwrap_or_else(|| m.clone());
+            let m = &import.decl.module;
+            let exports = self.module_exports.get(m).cloned().ok_or_else(|| missing(m))?;
+            let alias = import
+                .decl
+                .alias
+                .clone()
+                .unwrap_or_else(|| crate::ast::module_local_name(m).to_string());
             if let Some(existing) = self.module_aliases.get(&alias)
                 && existing != m
+                && self.explicit_aliases.contains(&alias)
             {
                 return Err(LoadError::message(
                     Phase::Compile,
@@ -884,48 +986,113 @@ impl Compiler {
                 ));
             }
             self.module_aliases.insert(alias.clone(), m.clone());
+            self.explicit_aliases.insert(alias.clone());
+            qualifier_of.entry(m.clone()).or_insert(alias);
 
-            // `import m: *` — every export of `m`, bound weakly.
-            if import.decl.star {
-                self.bind_star_import(
-                    module,
-                    m,
-                    &exports,
-                    &declared,
-                    &named_by_hand,
-                    &mut starred,
-                    import.decl.exported,
-                )?;
-                continue;
-            }
-
-            // Selective bindings (`import ui: button, clicked`).
-            let Some(names) = &import.decl.names else {
-                // `pub import m` re-exports the module *binding*: an
-                // importer of this file that names `alias` gets a module alias
-                // pointing at `m`, since a module name is not a value and so
-                // cannot be re-exported as one.
-                if import.decl.exported {
-                    self.reexported_aliases.push((alias, m.clone()));
+            for name in &exports {
+                let tid = self
+                    .scope_lookup(&format!("{m}::{name}"))
+                    .expect("export is bound under its qualified name");
+                let at = *offered_at.entry(name.clone()).or_insert_with(|| {
+                    offered.push((name.clone(), Vec::new()));
+                    offered.len() - 1
+                });
+                let from = &mut offered[at].1;
+                // The same declaration reached by two routes (a re-export,
+                // or the module imported twice) is one offer.
+                if !from.iter().any(|(om, otid)| om == m || *otid == tid) {
+                    from.push((m.clone(), tid));
                 }
+                if import.decl.exported && !declared.contains(name) {
+                    self.reexported_names.insert(name.clone());
+                }
+            }
+        }
+        for (name, mut from) in offered {
+            // An importer's export shadows the export of a module it imports:
+            // `bloom` is built on `ui` and redeclares `button` on purpose.
+            if from.len() > 1 {
+                let modules: Vec<String> = from.iter().map(|(m, _)| m.clone()).collect();
+                from.retain(|(m, _)| {
+                    !modules.iter().any(|other| {
+                        other != m
+                            && self
+                                .import_closure
+                                .get(other)
+                                .is_some_and(|reach| reach.contains(m))
+                    })
+                });
+            }
+            let prelude = self.prelude_binding(&name);
+            let (owner, tid) = match from.as_slice() {
+                [(m, tid)] => (m.clone(), *tid),
+                _ => {
+                    let modules: Vec<String> = from.iter().map(|(m, _)| m.clone()).collect();
+                    match self.merge_disjoint_sets(&name, &from) {
+                        Some(set) => {
+                            self.merged_imports.insert(set, (name.clone(), modules));
+                            self.scope_bind(name.clone(), set);
+                            self.import_bound.insert(name.clone(), set);
+                            continue;
+                        }
+                        None => {
+                            // Ambiguous. Nothing is wrong until the file
+                            // uses the name bare.
+                            let marker = self.emit_phantom_term(name.clone());
+                            let offers = modules
+                                .into_iter()
+                                .map(|m| {
+                                    let q = qualifier_of.get(&m).cloned().unwrap_or_else(|| {
+                                        crate::ast::module_local_name(&m).to_string()
+                                    });
+                                    (m, q)
+                                })
+                                .collect();
+                            self.ambiguous_imports.insert(
+                                marker,
+                                AmbiguousImport {
+                                    name: name.clone(),
+                                    offers,
+                                },
+                            );
+                            self.scope_bind(name.clone(), marker);
+                            self.import_bound.insert(name.clone(), marker);
+                            continue;
+                        }
+                    }
+                }
+            };
+            self.bind_imported_name(&owner, &name, tid);
+            if let Some(bound) = self.scope_lookup(&name) {
+                self.import_bound.insert(name.clone(), bound);
+                // A plain import that takes a core/std name away is worth a
+                // word where the file uses it — unless it is the same thing,
+                // or a first-party package doing it on purpose.
+                if let Some(prelude) = prelude
+                    && prelude != tid
+                    && !deliberately_shadows_prelude(&owner)
+                {
+                    let q = qualifier_of
+                        .get(&owner)
+                        .cloned()
+                        .unwrap_or_else(|| crate::ast::module_local_name(&owner).to_string());
+                    self.prelude_shadows.insert(name.clone(), (bound, owner, q));
+                }
+            }
+        }
+
+        // ── 3. selective imports ─────────────────────────────────────────
+        // Selectively-imported name → module it came from, for collision
+        // provenance within this one file.
+        let mut selective: HashMap<String, String> = HashMap::new();
+        for import in module.imports.iter().filter(|i| !i.implicit) {
+            let Some(names) = &import.decl.names else {
                 continue;
             };
+            let m = &import.decl.module;
+            let exports = self.module_exports.get(m).cloned().ok_or_else(|| missing(m))?;
             for name in names {
                 if !exports.contains(name) {
-                    // A name the target re-exported as a *module* (`export
-                    // import bloom/menu` over there) binds here as a module
-                    // alias, not as a value.
-                    if let Some((_, target)) = self
-                        .alias_exports_of(m)
-                        .into_iter()
-                        .find(|(alias, _)| alias == name)
-                    {
-                        self.bind_module_alias(module, name.clone(), target.clone())?;
-                        if import.decl.exported {
-                            self.reexported_aliases.push((name.clone(), target));
-                        }
-                        continue;
-                    }
                     return Err(LoadError::message(
                         Phase::Compile,
                         format!(
@@ -942,6 +1109,9 @@ impl Compiler {
                     ));
                 }
                 if let Some(other) = selective.get(name) {
+                    if other == m {
+                        continue;
+                    }
                     return Err(LoadError::message(
                         Phase::Compile,
                         format!(
@@ -963,7 +1133,19 @@ impl Compiler {
                 let tid = self
                     .scope_lookup(&format!("{m}::{name}"))
                     .expect("export is bound under its qualified name");
+                // A selective import pins the name: it replaces an ambiguity
+                // marker outright, and otherwise lands like any binding.
+                if self
+                    .scope_lookup(name)
+                    .is_some_and(|t| self.ambiguous_imports.contains_key(&t))
+                {
+                    self.scope_unbind(name);
+                }
                 self.bind_imported_name(m, name, tid);
+                self.prelude_shadows.remove(name);
+                if let Some(bound) = self.scope_lookup(name) {
+                    self.import_bound.insert(name.clone(), bound);
+                }
                 selective.insert(name.clone(), m.clone());
                 if import.decl.exported {
                     self.reexported_names.insert(name.clone());
@@ -973,111 +1155,97 @@ impl Compiler {
         Ok(())
     }
 
-    /// The module aliases `m` re-exports (`pub import bloom/menu` in `m`).
-    fn alias_exports_of(&self, m: &str) -> Vec<(String, String)> {
-        self.module_alias_exports
-            .get(m)
-            .cloned()
-            .unwrap_or_default()
+    /// What `name` means with no import at all, when that is a core builtin
+    /// or a `std` export: the binding a plain import of the same name hides.
+    fn prelude_binding(&self, name: &str) -> Option<TermId> {
+        if crate::native_decl::core_decls().get(name).is_some() {
+            return self.builtin_phantoms.get(name).copied();
+        }
+        self.scopes
+            .first()
+            .and_then(|global| global.get(&format!("{}::{name}", crate::env::STD_MODULE)))
+            .copied()
     }
 
-    /// Bind one module alias, loud when the name already aliases another
-    /// module — the same rule (and message) `import m as x` twice gets.
-    fn bind_module_alias(
-        &mut self,
-        module: &LoadedModule,
-        alias: String,
-        target: String,
-    ) -> Result<(), LoadError> {
-        if let Some(existing) = self.module_aliases.get(&alias)
-            && *existing != target
+    /// One overload set over every offer, when all of them are function sets
+    /// and no two define the same arity. `None` otherwise.
+    fn merge_disjoint_sets(&mut self, name: &str, from: &[(String, TermId)]) -> Option<TermId> {
+        let mut by_arity: std::collections::BTreeMap<usize, TermId> = Default::default();
+        for (_, tid) in from {
+            let (_, variants) = self.overload_view(*tid)?;
+            for (arity, variant) in variants {
+                if by_arity.insert(arity, variant).is_some() {
+                    return None;
+                }
+            }
+        }
+        let members: Vec<TermId> = by_arity.values().copied().collect();
+        let inputs: SmallVec<[TermId; 4]> = members.iter().copied().collect();
+        let display = self.qualified_name(name);
+        let set = self.emit_term(TermOp::MakeOverloadSet, inputs, Some(display));
+        self.record_fn_set(set, members);
+        Some(set)
+    }
+
+    /// Remove `name` from the innermost scope.
+    fn scope_unbind(&mut self, name: &str) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.remove(name);
+        }
+        if let Some(vars) = self.var_scopes.last_mut() {
+            vars.remove(name);
+        }
+        if let Some(cells) = self.fn_cell_scopes.last_mut() {
+            cells.remove(name);
+        }
+    }
+
+    /// The checks a *bare* use of `name` owes its imports, at `span`:
+    ///
+    /// - an error when two plain imports both offer the name and nothing
+    ///   higher (a declaration, a selective import) decides between them;
+    /// - a warning, once per name per file, when a plain import took the name
+    ///   from a core builtin or a `std` function.
+    pub(super) fn check_import_use(&mut self, name: &str, span: SourceSpan) {
+        let Some(tid) = self.scope_lookup(name) else {
+            return;
+        };
+        if let Some(ambiguous) = self.ambiguous_imports.get(&tid) {
+            let message = ambiguous.message();
+            self.error_at(span, message);
+            return;
+        }
+        if let Some((bound, module, qualifier)) = self.prelude_shadows.get(name)
+            && *bound == tid
         {
-            return Err(LoadError::message(
-                Phase::Compile,
-                format!(
-                    "{}: '{}' is already an alias for module '{}' and cannot also alias '{}'",
-                    module.display_name, alias, existing, target
-                ),
-            ));
+            let message = format!(
+                "`{name}` here is the one module '{module}' exports, which hides the builtin \
+                 `{name}` — write `{qualifier}.{name}` to say so, or `import {module}: {name}` \
+                 to take it on purpose"
+            );
+            self.prelude_shadows.remove(name);
+            self.warn_at(span, message);
         }
-        self.module_aliases.insert(alias, target);
-        Ok(())
     }
 
-    /// `import m: *` — bind every export of `m` under its own name, weakly.
-    ///
-    /// A star is the declarative facade's engine: it takes whatever `m`
-    /// exports *now*, so a name added over there needs no edit here. It is
-    /// deliberately the weakest explicit binding in the file:
-    /// - a top-level declaration in this file, or a name it selectively
-    ///   imports by hand, wins silently (order of statements does not matter);
-    /// - two stars that offer the same name merge their overload sets when
-    ///   both are function sets — the second star wins each arity it defines,
-    ///   the first keeps the rest — and collide loudly otherwise, since
-    ///   silently picking one of two values would be a facade that lies.
-    ///
-    /// `exported` (`pub import m: *`) additionally makes each bound name an
-    /// export of *this* module, which is what makes re-export chains work.
-    #[allow(clippy::too_many_arguments)]
-    fn bind_star_import(
-        &mut self,
-        module: &LoadedModule,
-        m: &str,
-        exports: &[String],
-        declared: &HashSet<String>,
-        named_by_hand: &HashSet<String>,
-        starred: &mut HashMap<String, String>,
-        exported: bool,
-    ) -> Result<(), LoadError> {
-        for name in exports {
-            if declared.contains(name) || named_by_hand.contains(name) {
-                continue;
-            }
-            let tid = self
-                .scope_lookup(&format!("{m}::{name}"))
-                .expect("export is bound under its qualified name");
-            if let Some(other) = starred.get(name).cloned()
-                && other != m
-                && !self.both_are_function_sets(name, tid)
-            {
-                return Err(LoadError::message(
-                    Phase::Compile,
-                    format!(
-                        "{}: '{}' is re-exported by both '{}' and '{}' — name one of them \
-                         explicitly, or drop it from one side",
-                        module.display_name, name, other, m
-                    ),
-                ));
-            }
-            // Merging (a set that another module already put in scope) rides
-            // the ordinary import path, so a star composes with it for free.
-            self.bind_imported_name(m, name, tid);
-            starred.insert(name.clone(), m.to_string());
-            if exported {
-                self.reexported_names.insert(name.clone());
-            }
-        }
-        // A star carries the module aliases `m` itself re-exports, so a facade
-        // over a facade passes submodules along too.
-        for (alias, target) in self.alias_exports_of(m) {
-            if declared.contains(&alias) || named_by_hand.contains(&alias) {
-                continue;
-            }
-            self.bind_module_alias(module, alias.clone(), target.clone())?;
-            if exported {
-                self.reexported_aliases.push((alias, target));
-            }
-        }
-        Ok(())
-    }
-
-    /// Whether the name's current binding and the incoming term are *both*
-    /// function sets this compiler built — the condition under which two
-    /// stars offering one name merge instead of colliding.
-    fn both_are_function_sets(&self, name: &str, incoming: TermId) -> bool {
-        self.scope_lookup(name)
-            .is_some_and(|existing| self.overload_view(existing).is_some())
-            && self.overload_view(incoming).is_some()
+    /// The warning a *call* through a bare name owes its imports: the name is
+    /// an overload set stitched together from unrelated plain imports, so
+    /// which module answers depends on how many arguments were written.
+    pub(super) fn check_import_call(&mut self, name: &str, argc: usize, span: SourceSpan) {
+        let Some(tid) = self.scope_lookup(name) else {
+            return;
+        };
+        let Some((name, modules)) = self.merged_imports.get(&tid) else {
+            return;
+        };
+        let message = format!(
+            "`{name}` is exported by {} with different parameter counts; this call picks one \
+             by its {argc} argument{} — qualify it (`{}.{name}`) to say which",
+            join_quoted(modules),
+            if argc == 1 { "" } else { "s" },
+            crate::ast::module_local_name(&modules[0]),
+        );
+        self.warn_at(span, message);
     }
 
     /// Bind an import under its bare name, carrying the binding kind over from
@@ -1174,13 +1342,6 @@ impl Compiler {
             }
         }
         self.module_exports.insert(module_name.to_string(), names);
-        if !self.reexported_aliases.is_empty() {
-            let mut aliases = std::mem::take(&mut self.reexported_aliases);
-            aliases.sort();
-            aliases.dedup();
-            self.module_alias_exports
-                .insert(module_name.to_string(), aliases);
-        }
     }
 
     /// Top-level names a module declares (fn, enum variants, let, state, and a

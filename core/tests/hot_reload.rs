@@ -676,7 +676,7 @@ fn a_config_file_on_disk_is_patched_and_a_missing_one_falls_back() {
     let dir = scratch("disk");
     let main = dir.join("main.ptl");
     let config = dir.join("config.ptl");
-    let entry = "import config\nstate x = 0\nx += config.SPEED\nprint(x)\n";
+    let entry = "import ./config\nstate x = 0\nx += config.SPEED\nprint(x)\n";
     std::fs::write(&main, entry).unwrap();
     std::fs::write(&config, "pub config let SPEED = 2\n").unwrap();
 
@@ -786,7 +786,7 @@ fn setting_a_value_in_a_module_finds_its_file() {
     let dir = scratch("set-module");
     let main = dir.join("main.ptl");
     let config = dir.join("config.ptl");
-    let entry = "import config\nprint(config.LOOK.fog)\n";
+    let entry = "import ./config\nprint(config.LOOK.fog)\n";
     std::fs::write(&main, entry).unwrap();
     std::fs::write(&config, "pub config let LOOK = {fog: 0.5}\n").unwrap();
     let mut env = Env::new();

@@ -1756,16 +1756,6 @@
             "named": true
           }
         ]
-      },
-      "wildcard": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "*",
-            "named": false
-          }
-        ]
       }
     }
   },
@@ -2962,6 +2952,16 @@
     "type": "module_path",
     "named": true,
     "fields": {
+      "relative": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "relative_prefix",
+            "named": true
+          }
+        ]
+      },
       "segment": {
         "multiple": true,
         "required": true,
@@ -5250,6 +5250,10 @@
   },
   {
     "type": "raw_string",
+    "named": true
+  },
+  {
+    "type": "relative_prefix",
     "named": true
   },
   {

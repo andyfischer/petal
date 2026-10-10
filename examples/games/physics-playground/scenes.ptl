@@ -11,7 +11,7 @@
 //  4 violet, 5 rose, 6 steel (fixtures).
 // ─────────────────────────────────────────────────────────────────────────
 
-import physics as ph
+import ./physics as ph
 
 pub let NAMES = ["Cradle", "Bridge", "Pegboard", "Wrecker", "Jelly", "Sandbox"]
 

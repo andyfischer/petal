@@ -1,5 +1,5 @@
 // A flat internal import: the sibling module of the same package.
-import motion
+import ./motion
 
 pub fn open()
   motion.ease("bloom open")

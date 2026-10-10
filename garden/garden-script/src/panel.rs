@@ -4610,7 +4610,7 @@ mod tests {
         let helper = dir.path().join("helper.ptl");
         fs::write(&helper, "pub fn word()\n  \"one\"\nend\n").unwrap();
         let entry = dir.path().join("main.ptl");
-        fs::write(&entry, "import helper\nprint(helper.word())\n").unwrap();
+        fs::write(&entry, "import ./helper\nprint(helper.word())\n").unwrap();
 
         let mut host = PanelHost::load(&entry).unwrap();
         host.set_dimensions(100, 80);

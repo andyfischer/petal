@@ -1,0 +1,20 @@
+// Package `core` — the package's own module: `import core` binds the
+// qualifier `core` over every builtin the package declares, so a script can
+// write `core.len(xs)` where a declaration or an import of its own has taken
+// the bare name. Nothing needs this import to *use* a builtin: every name
+// below is in scope in every file already.
+pub import ./autodiff
+pub import ./classes
+pub import ./collections
+pub import ./color
+pub import ./creative_coding
+pub import ./format
+pub import ./handle
+pub import ./introspect
+pub import ./io
+pub import ./json
+pub import ./math
+pub import ./noise
+pub import ./output
+pub import ./pending
+pub import ./vec2

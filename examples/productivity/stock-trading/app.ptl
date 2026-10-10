@@ -18,10 +18,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import text_layout as tl
-import market as mk
-import numfmt as nf
-import look as lk
-import pricechart as pc
+import ./market as mk
+import ./numfmt as nf
+import ./look as lk
+import ./pricechart as pc
 
 let N = 12                       // listings: len(mk.UNIVERSE)
 let SPEEDS = [1, 4, 16]

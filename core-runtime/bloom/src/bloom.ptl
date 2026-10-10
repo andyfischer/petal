@@ -23,18 +23,18 @@
 // the directory sits, and this file — named like its package — is what a bare
 // `import bloom` finds.
 
-// `pub import m: * re-exports every export of `m` under its own name, and
+// `pub import m` re-exports every export of `m` under its own name, and
 // carries whole overload sets across, so `bloom.button` has both of
 // bloom/button's arities. This replaced 130 hand-written `pub let x = m.x`
 // lines; adding an export to a module now publishes it here with no edit.
-pub import bloom/motion: *
-pub import bloom/theme: *
-pub import bloom/icon: *
-pub import bloom/interact: *
-pub import bloom/button: *
-pub import bloom/controls: *
-pub import bloom/menu: *
-pub import bloom/overlay: *
+pub import bloom/motion
+pub import bloom/theme
+pub import bloom/icon
+pub import bloom/interact
+pub import bloom/button
+pub import bloom/controls
+pub import bloom/menu
+pub import bloom/overlay
 
 // Two names the facade spells differently from the module that defines them:
 // `on` and `NAMES` are clear inside `bloom/theme` and `bloom/icon`, and much

@@ -15,9 +15,9 @@
 // Everything here is placement: what to hand `draw_text`. Nothing holds state
 // and nothing draws anything but the text it was given.
 
-pub import text_layout/place: *
-pub import text_layout/fit: *
-pub import text_layout/block: *
+pub import text_layout/place
+pub import text_layout/fit
+pub import text_layout/block
 
 // Counts additions to the export surface. Levels are additive: every existing
 // export keeps its signature, so a script written against an older one keeps

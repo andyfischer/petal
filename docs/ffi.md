@@ -91,9 +91,11 @@ pub type NativeResult = Result<u32, String>;             // Ok(count of pushed r
 
 A native is a plain, non-capturing `fn` pointer. `Env::register_native`
 appends it to the native table (the id is the table index) and **must be
-called before `load_program`**: at load time every native becomes a
-`Value::NativeFunction(id)` in the root frame, so scripts resolve natives
-through ordinary scope lookup and can shadow them.
+called before `load_program`**. Registering makes the native *exist*; it does
+not put its name in scope. A script reaches it through a `native fn`
+declaration ([below](#native-interfaces-native-fn)) — in practice, by
+importing the interface package the host registers beside it — and from there
+the name resolves through ordinary scope lookup and can be shadowed.
 
 **Natives with captured state.** `Env::register_native_boxed(name, closure,
 effects)` registers a closure (`impl Fn(&mut PetalCxt) -> NativeResult +
@@ -229,6 +231,16 @@ part of such a set (an overload is chosen by argument count). Under the hood
 the native becomes forwarding `fn`s of that name, so the set behaves exactly
 as any overloaded function does — hoisting, exports, values, named arguments.
 
+**A declaration is the only way to a native.** A script reaches a native
+through a `native fn` in scope — one written in the file, or one an imported
+module exports — and through nothing else. Registering a native in the `Env`
+does not put its name in any script's scope: a call to an undeclared name is
+`Unknown function: x`, a read of one `Undefined variable: x`, whether or not
+the host registers a native called `x`. The builtins are the one set in scope
+everywhere, because the bundled `core` package declares them. So a host ships
+its declarations as an **interface package**, registers it, and its scripts
+import it ([module-system.md](module-system.md#host-interface-packages)).
+
 **What a declaration is used for.**
 
 - *Binding.* A bare call through a declared name compiles to a static call of
@@ -244,17 +256,19 @@ as any overloaded function does — hoisting, exports, values, named arguments.
   the float functions on a dual, the vector natives, `lerp`) are worked out by
   the checker itself and declare no result type; so is `len`'s argument (a
   list, a string or an `f64_array`, which no one type name says).
-- *Named arguments at run time.* `Env::declare_natives(source)` gives every
-  registered native that `source` declares the parameter lists declared for
-  it, replacing any it had, and returns the declared natives that are *not*
-  registered. A host calls it once, after registering its natives, with the
-  source of its interface module:
+- *Named arguments at run time.* Registering an interface — `register_module`,
+  `register_package`, `add_package` — gives every native already registered
+  the parameter lists the interface declares for it, replacing any it had. So
+  a host registers its natives first and its interface package after:
 
   ```rust
   host::register_natives(&mut env);
-  let missing = env.declare_natives(INTERFACE_PTL)?;   // [] when the host provides it all
-  env.register_module("myhost", INTERFACE_PTL);
+  env.register_package("myhost", [("myhost", INTERFACE_PTL)])?;
+  env.verify_interface(&["myhost"])?;   // the drift test: declared == registered
   ```
+
+  `Env::declare_natives(source)` is the same step by hand, and returns the
+  declared natives that are *not* registered.
 
   (A direct call is put in positional order at compile time from the
   declaration alone; this is what makes `let f = spawn` then `f(kind: "x")`,
@@ -267,9 +281,13 @@ not, the load fails, before any line runs, with a `Phase::Link` error naming
 each declaring module and its missing natives (a few, then a count):
 
 ```text
-module 'ui' needs native fns this host does not register: mouse_x, mouse_y, hovered,
-mouse_dx, +38 more — the program cannot run here; run it with a host that provides them
+module 'game' needs native fns this host does not register: spawn, despawn, raycast,
+set_camera, +9 more — the program cannot run here; run it with a host that provides them
 ```
+
+For the `ui` package the message also says which kind of host does:
+`petal run` registers the builtins only, so a script that imports `ui` is
+refused there and told to use a petal-ui runner.
 
 "Refers to" is static: a call or read anywhere in the program's modules
 counts, inside a function that never runs included. A declaration nothing
@@ -283,14 +301,27 @@ a declared native they do not register is still a known name with known
 parameters. (`Env::link_program(&program)` runs the check by hand, and
 `Program::native_links` lists what a program needs.)
 
+**Verifying an interface.** `Env::verify_interface(&["ui", "myhost"])` checks
+the whole table against the packages that declare it, both ways — every
+declared native is registered, every native registered beyond the builtins is
+declared — and returns an `InterfaceMismatch { unregistered, undeclared,
+problems }` otherwise. Name every interface package the `Env` answers for in
+the one call; a name may also be one module of a package (`ui/input`). It is
+stricter than linking on purpose: linking asks what one program needs, this
+asks whether the host and its interface have drifted apart. Each host in this
+repository asserts it in a test (`register_all_agrees_with_the_ui_interface_package`
+in petal-ui, and the like in garden-script, petal-desktop-sdl and the example
+hosts).
+
 **The core builtins are declared the same way**, by the `core` package
 (`core/packages/core/src/*.ptl`, one file per group of builtins). It is
 compiled into the binary by `core/build.rs` — the build fails if the directory
 is missing — and its declarations are in scope in every file with no import.
 A test (`core/src/builtins/decls.rs`) holds the package to exactly the natives
 `register_builtins` registers, and every declared form to the argument counts
-the native really takes. petal-ui's natives are declared at the top of its
-`ui` module (`core-libs/petal-ui/prelude/ui.ptl`), which `petal check` reads.
+the native really takes. petal-ui's natives are declared by its `ui` package
+(`core-libs/petal-ui/prelude/ui.ptl` and `input.ptl`), which is bundled in the
+binary too, so `petal check` reads it with no host.
 
 **Every native declares what it does.** The third argument is its
 `NativeEffects` row: what it reads (`InputClasses`: `POINTER`, `KEYBOARD`,
@@ -332,10 +363,14 @@ and the `in_place` flag (see [Immutability](#immutability-and-the-in-place-gate)
 **Method-call syntax reaches natives.** `obj.method(args)` resolves, in order:
 a callable field on a record receiver; a handle class's own `call_method`
 dispatcher for a handle receiver (which also rejects stale handles); otherwise
-**UFCS fallback**, where the method name is looked up in the native table and
-called with the receiver prepended. So registering `set_location` makes both
-`set_location(obj, p)` and `obj.set_location(p)` work. The namespace is flat:
-one native table for all receiver types.
+**UFCS fallback**, where the method name names a native that is called with
+the receiver prepended. The fallback follows the same rule as a bare call: it
+reaches a builtin anywhere, and a host native where a `native fn` of that name
+(declared under the native's own name) is in scope in the file that writes
+the call. So with `set_location` registered and declared, a script that
+imports the interface may write `set_location(obj, p)` or
+`obj.set_location(p)`. The namespace is flat: one native table for all
+receiver types.
 
 **Native classes.** The row's `pending` field (`NativeClass`) says how the
 native treats a `Value::Pending` argument: `Strict` (the default) absorbs and

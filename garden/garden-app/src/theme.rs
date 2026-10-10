@@ -592,7 +592,7 @@ mod tests {
         // Override only window_bg; leave every other field at its default.
         std::fs::write(
             &path,
-            "color_theme({ window_bg: \"#112233\" })\nlayout(editor(\"a\"))\n",
+            "import garden_config\ncolor_theme({ window_bg: \"#112233\" })\nlayout(editor(\"a\"))\n",
         )
         .unwrap();
 

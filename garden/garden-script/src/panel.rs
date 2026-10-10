@@ -3474,10 +3474,47 @@ mod tests {
     use std::cell::RefCell;
     use std::io::Write;
 
+    /// The drift test: what a panel env registers is exactly what the `ui`
+    /// and `garden` interface packages declare.
+    #[test]
+    fn panel_natives_agree_with_the_interface_packages() {
+        let env = new_panel_env();
+        if let Err(mismatch) = env.verify_interface(PANEL_INTERFACE_PACKAGES) {
+            panic!("the panel natives and their interface packages disagree: {mismatch}");
+        }
+    }
+
+    /// The copy of the `garden` package petal-ui's panel stubs register is
+    /// this crate's file.
+    #[test]
+    fn the_panel_stubs_register_this_crates_garden_package() {
+        assert_eq!(petal_ui::panel_stubs::GARDEN_INTERFACE, GARDEN_INTERFACE);
+    }
+
+    /// A panel reaches Garden's natives through `import garden`, and not
+    /// without it.
+    #[test]
+    fn garden_natives_are_reached_through_the_import() {
+        let mut host =
+            PanelHost::from_source("import-test", "import garden\nprint(str(nav_arg()))\n").unwrap();
+        host.frame(0.0, 0).unwrap();
+        let mut host = PanelHost::from_source("no-import", "print(str(nav_arg()))\n").unwrap();
+        let err = host.frame(0.0, 0).unwrap_err();
+        assert!(err.contains("Unknown function: nav_arg"), "{err}");
+    }
+
+    /// A panel script on disk. Every script here is a Garden panel, so it is
+    /// given the two imports one starts with ([`panel_src`]).
     fn write_script(src: &str) -> tempfile::NamedTempFile {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "{src}").unwrap();
+        write!(f, "{}", panel_src(src)).unwrap();
         f
+    }
+
+    /// `src` behind `import ui` and `import garden`, on its own first line so
+    /// the line numbers in an error are the body's.
+    fn panel_src(src: &str) -> String {
+        format!("import ui; import garden; {src}")
     }
 
     /// The virtual clock is the whole point of naming `dt`: sixty frames of
@@ -4611,7 +4648,7 @@ mod tests {
         assert_eq!(host.take_output()[0].trim(), "25");
 
         std::thread::sleep(std::time::Duration::from_millis(10));
-        fs::write(f.path(), "print(str(text_width(\"aa\", 100)))\n").unwrap();
+        fs::write(f.path(), "import ui; print(str(text_width(\"aa\", 100)))\n").unwrap();
         assert!(host.poll_reload().unwrap(), "the edit should reload");
         host.frame(0.0, 0).unwrap();
         assert_eq!(host.take_output()[0].trim(), "50");
@@ -4651,7 +4688,7 @@ mod tests {
         bin.flush().unwrap();
 
         let name = bin.path().to_str().unwrap().to_string();
-        let mut host = PanelHost::from_source(&name, "draw_rect(0, 0, 1, 1, 1, 1, 1)\n").unwrap();
+        let mut host = PanelHost::from_source(&name, "import ui; draw_rect(0, 0, 1, 1, 1, 1, 1)\n").unwrap();
         assert_eq!(
             host.poll_reload(),
             Ok(false),
@@ -5506,7 +5543,8 @@ mod tests {
         // Live-reload from a NEW source (draws the counter at height instead of
         // width, and doubles it). `state n` must survive the swap.
         host.reload_source(
-            "state n = 0\n\
+            "import ui\n\
+             state n = 0\n\
              n = n + 1\n\
              draw_rect(0, 0, 1, n * 10, 0, 0, 0)\n",
         )
@@ -5763,7 +5801,7 @@ mod trace_tests {
 
     /// Line 1 clears, line 2 draws a circle on the left, line 3 a rect on the
     /// right. Line numbers are what the assertions below check, so keep them.
-    const SKETCH: &str = "clear(10, 10, 10)\n\
+    const SKETCH: &str = "import ui; clear(10, 10, 10)\n\
                           draw_circle(100, 100, 40, 200, 80, 80)\n\
                           draw_rect(300, 50, 80, 60, 80, 200, 120)\n";
 
@@ -5820,7 +5858,7 @@ mod trace_tests {
     #[test]
     fn an_argument_from_a_binding_points_at_its_definition() {
         let mut host = traced_host(
-            "let radius = 40\n\
+            "import ui; let radius = 40\n\
              draw_circle(100, 100, radius, 200, 80, 80)\n",
         );
         let cmds = host.frame(0.016, 1).unwrap();

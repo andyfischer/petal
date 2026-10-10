@@ -21,7 +21,9 @@ fn write_script(source: &str) -> PathBuf {
         std::env::temp_dir().join(format!("garden-script-test-{}-{}", std::process::id(), id));
     fs::create_dir_all(&dir).expect("create temp dir");
     let path = dir.join("init.ptl");
-    fs::write(&path, source).expect("write script");
+    // Every script here is a config script: give it its import, on its own
+    // first line so line numbers in errors are the body's.
+    fs::write(&path, format!("import garden_config; {source}")).expect("write script");
     path
 }
 
@@ -239,7 +241,7 @@ fn hot_reload_picks_up_layout_change() {
     // Rewrite with a different layout (and different byte length).
     fs::write(
         &path,
-        r#"layout(column([ editor("second.rs"), editor() ], [0.8, 0.2]))"#,
+        r#"import garden_config; layout(column([ editor("second.rs"), editor() ], [0.8, 0.2]))"#,
     )
     .expect("rewrite script");
 
@@ -281,7 +283,7 @@ fn hot_reload_error_keeps_old_layout_and_reports_once() {
     assert_eq!(host.poll_reload(), Ok(false));
 
     // Fix the file: reload succeeds again.
-    fs::write(&path, r#"layout(editor("fixed.rs"))"#).expect("rewrite script");
+    fs::write(&path, r#"import garden_config; layout(editor("fixed.rs"))"#).expect("rewrite script");
     assert_eq!(host.poll_reload(), Ok(true));
     assert_eq!(host.layout(), &editor("fixed.rs"));
 }
@@ -292,7 +294,7 @@ fn hot_reload_preserves_petal_state() {
     // reload that bumps the counter, the preserved state is incremented
     // rather than reinitialized.
     let path = write_script(
-        r#"
+        r#"import garden_config
 state runs = 0
 runs = runs + 1
 layout(editor("run-{runs}.txt"))
@@ -304,7 +306,7 @@ layout(editor("run-{runs}.txt"))
     // Rewrite with trailing comment to change the file size; same logic.
     fs::write(
         &path,
-        r#"
+        r#"import garden_config
 state runs = 0
 runs = runs + 1
 layout(editor("run-{runs}.txt"))
@@ -362,7 +364,7 @@ layout(editor("a.rs"))
     // Edit only the colors; the layout is byte-for-byte the same node.
     fs::write(
         &path,
-        r##"
+        r##"import garden_config
 color_theme({ window_bg: "#405060" })
 layout(editor("a.rs"))
 "##,

@@ -36,7 +36,7 @@ impl Ui {
     }
 
     fn build(source: &str, vertical: Option<VerticalMetrics>) -> Ui {
-        let mut host = PanelHost::from_source("text-layout-test", source).expect("compiles");
+        let mut host = PanelHost::from_source("text-layout-test", &format!("import ui; {source}")).expect("compiles");
         host.set_dimensions(W, H);
         if let Some(v) = vertical {
             // A plausible proportional table, so the advances move with the
@@ -131,7 +131,7 @@ fn a_bold_variant_reports_a_published_baseline_not_the_built_in_guess() {
     let src = "let regular = text_metrics({size: 20, font: \"ui\"}).baseline\n\
                let bold = text_metrics({size: 20, font: \"ui\", weight: 700}).baseline\n";
     let host = |measured: Option<VerticalMetrics>| {
-        let mut host = PanelHost::from_source("text-layout-test", src).expect("compiles");
+        let mut host = PanelHost::from_source("text-layout-test", &format!("import ui; {src}")).expect("compiles");
         host.set_dimensions(W, H);
         let ratios = vec![0.55f64; 128];
         host.set_font_metrics_with_ui(ratios.clone(), PROBE_FACE, ratios, PROBE_FACE);

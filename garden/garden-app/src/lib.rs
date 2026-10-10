@@ -1098,7 +1098,7 @@ mod tests {
         std::fs::create_dir_all(init.parent().unwrap()).unwrap();
         // The returned node stays the empty-editor fallback either way — a
         // layout-owning script is consulted for its panes later, by App::layout.
-        std::fs::write(&init, "layout(editor(\"a.rs\"))\n").unwrap();
+        std::fs::write(&init, "import garden_config\nlayout(editor(\"a.rs\"))\n").unwrap();
         for (menu, override_path) in [(false, None), (true, Some(init.as_path()))] {
             let (script, layout, owns) = resolve_layout(&[], override_path, menu);
             assert!(script.is_some(), "menu={menu}");

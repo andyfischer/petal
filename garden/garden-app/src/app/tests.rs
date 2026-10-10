@@ -18,10 +18,19 @@ fn temp_dir(test: &str) -> PathBuf {
     dir
 }
 
+/// The imports every panel script in these tests starts with.
+const PANEL_IMPORTS: &str = "import ui; import garden; ";
+
 fn file_with(dir: &Path, name: &str, text: &str) -> String {
     let path = dir.join(name);
     fs::write(&path, text).unwrap();
     path.to_string_lossy().into_owned()
+}
+
+/// [`file_with`] for a panel script: `body` behind the imports a panel
+/// starts with, which share its first line so its line numbers do not move.
+fn panel_file(dir: &Path, name: &str, body: &str) -> String {
+    file_with(dir, name, &format!("{PANEL_IMPORTS}{body}"))
 }
 
 /// An `App` with one editor pane per entry (`None` = pathless buffer).
@@ -181,7 +190,7 @@ fn petal_ide_flags_the_error_line_in_the_paired_editor() {
 fn pointing_at_a_shape_highlights_the_code_that_drew_it() {
     let dir = temp_dir("petal-ide-trace");
     // Line 1 clears; line 2 draws a circle at the top-left of the canvas.
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "canvas.ptl",
         "clear(10, 10, 10)\ndraw_circle(60, 60, 40, 200, 90, 90)\n",
@@ -248,7 +257,7 @@ fn pointing_at_a_shape_highlights_the_code_that_drew_it() {
 /// direct-manipulation tests below assert against.
 fn traced_pair(name: &str, source: &str) -> (App, usize, usize, PathBuf) {
     let dir = temp_dir(name);
-    let script = file_with(&dir, "canvas.ptl", source);
+    let script = panel_file(&dir, "canvas.ptl", source);
     let mut app = App::new(
         None,
         LayoutNode::Row {
@@ -363,7 +372,7 @@ fn a_drifted_buffer_highlights_nothing_rather_than_the_wrong_line() {
 
     // Fixing it brings the highlight back, at the call's NEW line.
     app.panes[editor].view.buffer = garden_core::Buffer::from_str(
-        "clear(10, 10, 10)\n\
+        "import ui; clear(10, 10, 10)\n\
          // inserted\n\
          draw_circle(60, 60, 40, 200, 90, 90)\n",
     );
@@ -515,7 +524,7 @@ fn a_drag_solves_a_computed_position_into_the_config_knob() {
 
     assert_eq!(
         app.panes[editor].view.buffer.line(0),
-        "config let spacing = 60",
+        "import ui; import garden; config let spacing = 60",
         "the knob moved, not the pinned origin"
     );
     assert_eq!(
@@ -565,7 +574,7 @@ fn a_looping_call_solves_its_last_shape_and_declines_the_rest() {
     );
     assert_eq!(
         app.panes[editor].view.buffer.text(),
-        source,
+        format!("{PANEL_IMPORTS}{source}"),
         "and nothing was rewritten"
     );
 }
@@ -612,7 +621,7 @@ fn a_drag_with_nothing_to_move_reports_rather_than_guesses() {
 #[test]
 fn a_panel_without_a_paired_editor_does_not_trace() {
     let dir = temp_dir("petal-ide-untraced");
-    let script = file_with(&dir, "solo.ptl", "draw_circle(60, 60, 40, 200, 90, 90)\n");
+    let script = panel_file(&dir, "solo.ptl", "draw_circle(60, 60, 40, 200, 90, 90)\n");
     let mut app = App::new(
         None,
         LayoutNode::Panel {
@@ -1204,7 +1213,7 @@ fn menu_back_on_an_editor_reports_no_history() {
 fn set_theme_persists_scheme_to_init_ptl() {
     let dir = temp_dir("set-theme-persist");
     let base = dir.join("init.ptl");
-    fs::write(&base, "// my config\nlayout(editor(\"a\"))\n").unwrap();
+    fs::write(&base, "import garden_config\n// my config\nlayout(editor(\"a\"))\n").unwrap();
     let host = ScriptHost::load(&base).unwrap();
     let mut app = App::new(
         Some(host),
@@ -1253,7 +1262,7 @@ fn set_theme_persists_scheme_to_init_ptl() {
 fn startup_reads_scheme_from_init_ptl() {
     let dir = temp_dir("startup-scheme");
     let base = dir.join("init.ptl");
-    fs::write(&base, "color_scheme(\"amiga\")\nlayout(editor(\"a\"))\n").unwrap();
+    fs::write(&base, "import garden_config\ncolor_scheme(\"amiga\")\nlayout(editor(\"a\"))\n").unwrap();
     let host = ScriptHost::load(&base).unwrap();
     let app = App::new(
         Some(host),
@@ -2322,7 +2331,7 @@ fn ctrl_w_o_persists_to_transient_script() {
     let base = dir.join("init.ptl");
     fs::write(
         &base,
-        "// my layout\nlayout(row([editor(\"left.rs\"), editor(\"right.rs\")], [0.5, 0.5]))\n",
+        "import garden_config\n// my layout\nlayout(row([editor(\"left.rs\"), editor(\"right.rs\")], [0.5, 0.5]))\n",
     )
     .unwrap();
     let host = ScriptHost::load(&base).unwrap();
@@ -2454,7 +2463,7 @@ fn ctrl_w_v_splits_only_the_focused_pane_of_a_row() {
 fn ctrl_w_s_persists_to_transient_script() {
     let dir = temp_dir("ctrl-w-s-transient");
     let base = dir.join("init.ptl");
-    fs::write(&base, "// my layout\nlayout(editor(\"only.rs\"))\n").unwrap();
+    fs::write(&base, "import garden_config\n// my layout\nlayout(editor(\"only.rs\"))\n").unwrap();
     let mut host = ScriptHost::load(&base).unwrap();
     // Mirror the app wiring: the overlay goes into a per-window state dir, here
     // under a temp dir so the test never touches the real ~/.garden.
@@ -2496,7 +2505,7 @@ fn ctrl_w_s_persists_to_transient_script() {
     // Base file untouched.
     assert_eq!(
         fs::read_to_string(&base).unwrap(),
-        "// my layout\nlayout(editor(\"only.rs\"))\n"
+        "import garden_config\n// my layout\nlayout(editor(\"only.rs\"))\n"
     );
 }
 
@@ -2953,7 +2962,7 @@ fn navigate_intent_is_drained_by_the_real_tick_loop() {
     let base = temp_dir("g5-nav-ticked");
     let screens = base.join("screens");
     fs::create_dir_all(&screens).unwrap();
-    let home = file_with(
+    let home = panel_file(
         &screens,
         "home.ptl",
         "state gone = false\nlet s = 1\nif !gone then\n  navigate(\"detail.ptl\")\n  gone = true\nend\n",
@@ -3932,7 +3941,7 @@ fn one_server_is_shared_by_two_panes_on_the_same_language() {
 #[test]
 fn the_status_bar_follows_a_panels_focused_region() {
     let dir = temp_dir("status-region");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "edit.ptl",
         "edit_view(1, 0, 0, 400, 300, \"alpha\\nbeta\\ngamma\")\n",
@@ -4020,7 +4029,7 @@ if mouse_pressed(0) then lefts = lefts + 1 end
 #[test]
 fn a_right_click_reaches_a_panel_as_button_one() {
     let dir = temp_dir("right-click-panel");
-    let script = file_with(&dir, "probe.ptl", BUTTON_PROBE);
+    let script = panel_file(&dir, "probe.ptl", BUTTON_PROBE);
     let mut app = app_with_panel(&script);
 
     app.mouse_down_right(120.0, 80.0);
@@ -4044,7 +4053,7 @@ fn a_right_click_reaches_a_panel_as_button_one() {
 #[test]
 fn a_right_release_follows_the_pane_that_took_the_press() {
     let dir = temp_dir("right-release-follows");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         "state downs = 0\nstate ups = 0\n\
@@ -4071,7 +4080,7 @@ fn a_right_release_follows_the_pane_that_took_the_press() {
 #[test]
 fn a_right_click_leaves_a_focused_region_alone() {
     let dir = temp_dir("right-click-keeps-focus");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         "edit_view(1, 0, 0, 400, 200, \"one\\ntwo\\nthree\")\n",
@@ -4106,7 +4115,7 @@ fn a_right_click_leaves_a_focused_region_alone() {
 #[test]
 fn slash_searches_the_focused_panel_region() {
     let dir = temp_dir("region-search");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         "edit_view(1, 0, 0, 600, 400, \"alpha\\nbeta\\ngamma\\nbeta again\\n\")\n",
@@ -4170,7 +4179,7 @@ fn app_with_focused_region(name: &str, lines: usize) -> (App, usize) {
         .map(|i| format!("line {i}\\n"))
         .collect::<Vec<_>>()
         .concat();
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         &format!("edit_view(1, 0, 0, 600, 400, \"{text}\")\n"),
@@ -4299,7 +4308,7 @@ fn a_focused_region_does_not_swallow_the_reserved_chords() {
 #[test]
 fn a_region_search_that_misses_says_so() {
     let dir = temp_dir("region-search-miss");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         "edit_view(1, 0, 0, 600, 400, \"alpha\\nbeta\\n\")\n",
@@ -4331,7 +4340,7 @@ fn a_region_search_that_misses_says_so() {
 fn a_panel_that_does_not_compile_reports_the_error() {
     let dir = temp_dir("panel-broken");
     // Unbalanced parens: a parse error, not a runtime one.
-    let script = file_with(&dir, "broken.ptl", "clear(0,0,0)\nlet x = (((\n");
+    let script = panel_file(&dir, "broken.ptl", "clear(0,0,0)\nlet x = (((\n");
     let app = app_with_panel(&script);
 
     // The pane is still a panel, so it can come back to life on a fixed save.
@@ -4378,7 +4387,7 @@ fn a_panel_with_a_missing_script_reports_the_error() {
 #[test]
 fn a_panel_broken_at_load_recovers_when_the_script_is_fixed() {
     let dir = temp_dir("panel-load-recover");
-    let script = file_with(&dir, "recover.ptl", "let x = (((\n");
+    let script = panel_file(&dir, "recover.ptl", "let x = (((\n");
     let mut app = app_with_panel(&script);
     assert!(app.panel_error.is_some(), "starts broken");
 
@@ -4465,7 +4474,7 @@ fn a_runtime_error_reaches_status_error_and_recovers() {
 #[test]
 fn panel_print_output_reaches_the_debug_state() {
     let dir = temp_dir("panel-print");
-    let script = file_with(&dir, "printer.ptl", "print(\"DBG hello\")\n");
+    let script = panel_file(&dir, "printer.ptl", "print(\"DBG hello\")\n");
     let mut app = app_with_panel(&script);
 
     let state = app.state_json();
@@ -4502,7 +4511,7 @@ fn panel_print_output_reaches_the_debug_state() {
 /// A panel over a script that records everything the input contract delivers.
 fn app_with_input_probe(test: &str, prelude: &str) -> App {
     let dir = temp_dir(test);
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "probe.ptl",
         &format!(
@@ -4847,7 +4856,7 @@ fn a_panel_mutation_can_open_a_file_in_the_focused_pane() {
 #[test]
 fn a_panel_mutation_reports_its_outcome_back_under_its_handle() {
     let dir = temp_dir("mutate-handle");
-    let script = file_with(
+    let script = panel_file(
         &dir,
         "p.ptl",
         "state h = 0\n\
@@ -4912,7 +4921,7 @@ fn a_panel_mutation_reports_its_outcome_back_under_its_handle() {
 #[test]
 fn an_unknown_panel_mutation_still_goes_to_the_client() {
     let dir = temp_dir("mutate-unknown");
-    let script = file_with(&dir, "p.ptl", "draw_rect(0, 0, 1, 1, 255, 255, 255)\n");
+    let script = panel_file(&dir, "p.ptl", "draw_rect(0, 0, 1, 1, 255, 255, 255)\n");
     let mut app = App::new(
         None,
         LayoutNode::Panel {

@@ -62,6 +62,8 @@ mod query;
 mod theme;
 pub mod text_layout;
 
+pub use native_fns::{CONFIG_INTERFACE, CONFIG_PACKAGE};
+pub use panel::{GARDEN_INTERFACE, GARDEN_PACKAGE, PANEL_INTERFACE_PACKAGES};
 pub use panel::{
     buttons, mutation_reply, DataProvider, DecorSpec, InputEvent, Modifiers, NavIntent, PanelCmd,
     PanelData, PanelHost, PanelInput, PanelTheme, ProjectionSpec, KEY_NAMES,
@@ -342,6 +344,7 @@ impl ScriptHost {
         let goal = Goal::should_call("layout", [convert::layout_to_static_value(node)]);
         let new_source = petal::goal_based_editing::modify_source_with_goals(&source, &[goal])
             .map_err(|e| e.to_string())?;
+        let new_source = with_config_import(new_source);
 
         let target = self
             .transient_target
@@ -392,6 +395,7 @@ impl ScriptHost {
             .map_err(|e| format!("failed to read {}: {}", self.config_path.display(), e))?;
         let new_source = petal::goal_based_editing::modify_source_with_goals(&source, goals)
             .map_err(|e| e.to_string())?;
+        let new_source = with_config_import(new_source);
         fs::write(&self.config_path, &new_source)
             .map_err(|e| format!("failed to write {}: {}", self.config_path.display(), e))?;
         if self.config_path == self.path {
@@ -495,6 +499,28 @@ fn stat_sig(path: &Path) -> Option<FileSig> {
     Some((mtime, meta.len()))
 }
 
+/// `source` with `import garden_config` in front when it does not import the
+/// package already. The config natives (`layout`, `editor`, …) are reachable
+/// only through that import, so a call this host writes into a script that
+/// had none of them — and so no reason to import — needs it added.
+fn with_config_import(source: String) -> String {
+    let imports = source.lines().map(str::trim_start).any(|line| {
+        line.strip_prefix("pub ")
+            .unwrap_or(line)
+            .strip_prefix("import ")
+            .map(|rest| rest.trim_start())
+            .and_then(|rest| rest.strip_prefix(native_fns::CONFIG_PACKAGE))
+            .is_some_and(|rest| {
+                rest.is_empty() || rest.starts_with([' ', ':', ';', '\t', '/'])
+            })
+    });
+    if imports {
+        source
+    } else {
+        format!("import {}\n{source}", native_fns::CONFIG_PACKAGE)
+    }
+}
+
 /// The fallback transient-overlay sibling of a base script path: the same
 /// directory and stem with a `.transient.ptl` extension (`init.ptl` →
 /// `init.transient.ptl`); a path that is already a `.transient.ptl` maps to
@@ -528,6 +554,35 @@ mod tests {
         );
     }
 
+    /// The drift test: what the config host registers is exactly what the
+    /// `garden_config` interface package declares.
+    #[test]
+    fn config_natives_agree_with_the_interface_package() {
+        let mut env = Env::new();
+        native_fns::register_all(&mut env);
+        if let Err(mismatch) = env.verify_interface(&[native_fns::CONFIG_PACKAGE]) {
+            panic!("the config natives and garden_config disagree: {mismatch}");
+        }
+    }
+
+    #[test]
+    fn a_save_adds_the_config_import_only_when_it_is_missing() {
+        assert_eq!(
+            with_config_import("layout(editor())\n".into()),
+            "import garden_config\nlayout(editor())\n"
+        );
+        for has in [
+            "import garden_config\nlayout(editor())\n",
+            "import garden_config: layout, editor\nlayout(editor())\n",
+            "import garden_config as g\ng.layout(g.editor())\n",
+        ] {
+            assert_eq!(with_config_import(has.into()), has);
+        }
+        // Another package whose name merely starts the same is not it.
+        assert!(with_config_import("import garden_configs\n".into())
+            .starts_with("import garden_config\nimport garden_configs"));
+    }
+
     #[test]
     fn transient_of_transient_is_itself() {
         let p = Path::new("/x/init.transient.ptl");
@@ -548,7 +603,7 @@ mod tests {
         let base = dir.path().join("init.ptl");
         fs::write(
             &base,
-            "// my config\ncolor_theme({ text: \"#fff\" })\n\nlayout(editor())\n\n// end\n",
+            "import garden_config\n// my config\ncolor_theme({ text: \"#fff\" })\n\nlayout(editor())\n\n// end\n",
         )
         .unwrap();
 
@@ -562,7 +617,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fs::read_to_string(&written).unwrap(),
-            "// my config\ncolor_theme({ text: \"#fff\" })\n\nlayout(editor(\"x.rs\"))\n\n// end\n"
+            "import garden_config\n// my config\ncolor_theme({ text: \"#fff\" })\n\nlayout(editor(\"x.rs\"))\n\n// end\n"
         );
     }
 
@@ -570,6 +625,7 @@ mod tests {
     fn save_layout_appends_when_no_layout_call() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
+        // No config call yet, so no import either: the save adds both.
         fs::write(&base, "x = 1\n").unwrap();
 
         let mut host = ScriptHost::load(&base).unwrap();
@@ -582,7 +638,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fs::read_to_string(&written).unwrap(),
-            "x = 1\n\nlayout(editor())\n"
+            "import garden_config\nx = 1\n\nlayout(editor())\n"
         );
     }
 
@@ -592,7 +648,7 @@ mod tests {
     fn save_layout_round_trips_nested_layout() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         let node = LayoutNode::Column {
             children: vec![
@@ -630,7 +686,7 @@ mod tests {
         assert_eq!(host.layout(), &node);
 
         let text = fs::read_to_string(&written).unwrap();
-        let expected = "\
+        let expected = "import garden_config\n\
 layout(column([
     row([
       editor(\"x.rs\", { line_numbers: true }),
@@ -646,7 +702,7 @@ layout(column([
     fn save_layout_round_trips_wrap_disabled() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         // wrap off (non-default) emits a config record; line_numbers stays off so
         // `wrap` is the only key. A file-less pane still gets a positional `nil`
@@ -672,7 +728,7 @@ layout(column([
         assert_eq!(host.layout(), &node); // full load path re-derived the node
 
         let text = fs::read_to_string(&written).unwrap();
-        let expected = "\
+        let expected = "import garden_config\n\
 layout(row([
     editor(\"x.rs\", { wrap: false }),
     editor(nil, { wrap: false }),
@@ -689,7 +745,7 @@ layout(row([
         let base = dir.path().join("init.ptl");
         fs::write(
             &base,
-            "layout(panel(\"sketch.ptl\", { screens: [\"a.ptl\", \"b.ptl\"] }))\n",
+            "import garden_config\nlayout(panel(\"sketch.ptl\", { screens: [\"a.ptl\", \"b.ptl\"] }))\n",
         )
         .unwrap();
 
@@ -714,7 +770,7 @@ layout(row([
         let text = fs::read_to_string(&written).unwrap();
         assert_eq!(
             text,
-            "layout(panel(\"sketch.ptl\", { screens: [\"a.ptl\", \"b.ptl\"] }))\n"
+            "import garden_config\nlayout(panel(\"sketch.ptl\", { screens: [\"a.ptl\", \"b.ptl\"] }))\n"
         );
     }
 
@@ -724,7 +780,7 @@ layout(row([
     fn panel_without_screens_serializes_bare() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         let mut host = ScriptHost::load(&base).unwrap();
         let node = LayoutNode::Panel {
@@ -734,7 +790,7 @@ layout(row([
         let written = host.save_layout(&node).unwrap();
         assert_eq!(host.layout(), &node);
         let text = fs::read_to_string(&written).unwrap();
-        assert_eq!(text, "layout(panel(\"sketch.ptl\"))\n");
+        assert_eq!(text, "import garden_config\nlayout(panel(\"sketch.ptl\"))\n");
     }
 
     /// Layout paths with quotes/backslashes are escaped by the goal engine and
@@ -743,7 +799,7 @@ layout(row([
     fn save_layout_escapes_special_characters() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         let node = LayoutNode::Editor {
             file: Some("a\"b\\c".into()),
@@ -783,7 +839,7 @@ layout(row([
             let mut f = fs::File::create(&base).unwrap();
             write!(
                 f,
-                "// keep this comment\nlayout(column([editor(\"a\"), editor(\"b\")], [0.5, 0.5]))\n"
+                "import garden_config\n// keep this comment\nlayout(column([editor(\"a\"), editor(\"b\")], [0.5, 0.5]))\n"
             )
             .unwrap();
         }
@@ -832,7 +888,7 @@ layout(row([
     fn save_layout_honors_transient_path_override() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor(\"a\"))\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor(\"a\"))\n").unwrap();
 
         // Point the overlay at a path in a not-yet-existing dir — save creates
         // the parent directory on demand, mirroring the per-window overlay.
@@ -866,7 +922,7 @@ layout(row([
     fn captures_color_scheme_name() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "color_scheme(\"light\")\nlayout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\ncolor_scheme(\"light\")\nlayout(editor())\n").unwrap();
 
         let host = ScriptHost::load(&base).unwrap();
         assert_eq!(host.scheme(), Some("light"));
@@ -876,7 +932,7 @@ layout(row([
     fn no_color_scheme_call_leaves_scheme_unset() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         let host = ScriptHost::load(&base).unwrap();
         assert_eq!(host.scheme(), None);
@@ -888,7 +944,7 @@ layout(row([
         let base = dir.path().join("init.ptl");
         fs::write(
             &base,
-            "// my config\ncolor_scheme(\"dark\")\nlayout(editor(\"a\"))\n",
+            "import garden_config\n// my config\ncolor_scheme(\"dark\")\nlayout(editor(\"a\"))\n",
         )
         .unwrap();
 
@@ -911,7 +967,7 @@ layout(row([
     fn save_setting_appends_when_absent() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "layout(editor())\n").unwrap();
+        fs::write(&base, "import garden_config\nlayout(editor())\n").unwrap();
 
         let mut host = ScriptHost::load(&base).unwrap();
         host.save_setting(&[Goal::should_call("color_scheme", ["brown"])])
@@ -928,7 +984,7 @@ layout(row([
         // overlay; a later permanent setting must still land in the base config.
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("init.ptl");
-        fs::write(&base, "color_scheme(\"dark\")\nlayout(editor(\"a\"))\n").unwrap();
+        fs::write(&base, "import garden_config\ncolor_scheme(\"dark\")\nlayout(editor(\"a\"))\n").unwrap();
 
         let mut host = ScriptHost::load(&base).unwrap();
         let overlay = dir.path().join("window.ptl");

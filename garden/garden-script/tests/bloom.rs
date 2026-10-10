@@ -24,7 +24,7 @@ struct Ui {
 
 impl Ui {
     fn new(source: &str) -> Ui {
-        let mut host = PanelHost::from_source("bloom-test", source).expect("compiles");
+        let mut host = PanelHost::from_source("bloom-test", &format!("import ui; {source}")).expect("compiles");
         host.set_dimensions(W, H);
         let mut ui = Ui { host, frame: 0 };
         ui.tick(1);

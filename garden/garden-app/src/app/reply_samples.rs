@@ -45,7 +45,8 @@ fn sample_app() -> (App, Vec<tempfile::NamedTempFile>) {
     let mut script = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
     write!(
         script,
-        "state hits = 0\n\
+        "import ui\n\
+         state hits = 0\n\
          if key_pressed(\"space\") then hits = hits + 1 end\n\
          let seen = hits\n\
          let label = \"Save\"\n\

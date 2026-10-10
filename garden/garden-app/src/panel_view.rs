@@ -3385,7 +3385,7 @@ mod tests {
     /// alongside the panel and dropped by the caller at end of test.
     fn text_view_panel(text: &str) -> (PanelView, tempfile::NamedTempFile) {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "text_view(1, 0, 0, 200, 100, \"{text}\")\n").unwrap();
+        write!(f, "import ui; import garden; text_view(1, 0, 0, 200, 100, \"{text}\")\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -3393,9 +3393,14 @@ mod tests {
     }
 
     /// A panel from `src`, ticked once. The temp file must outlive `load`.
+    /// What every panel script in these tests starts with: the two imports a
+    /// Garden panel reaches its host through, sharing the body's first line
+    /// so line numbers are the body's own.
+    const PANEL_IMPORTS: &str = "import ui; import garden; ";
+
     fn panel_of(src: &str, start: Instant) -> (PanelView, tempfile::NamedTempFile) {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "{src}").unwrap();
+        write!(f, "{PANEL_IMPORTS}{src}").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let pv = PanelView::new(host, "test.ptl".into(), start);
         (pv, f)
@@ -3451,7 +3456,7 @@ mod tests {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "text_view(1, 0, 0, 200, 100, \"+ added line\\n- removed line\")\n\
+            "import ui; import garden; text_view(1, 0, 0, 200, 100, \"+ added line\\n- removed line\")\n\
              text_view_line_styles(1, [\"added\", \"removed\"])\n"
         )
         .unwrap();
@@ -3479,7 +3484,7 @@ mod tests {
         let lines = (1..=40).map(|i| format!("line {i}")).collect::<Vec<_>>();
         write!(
             f,
-            "edit_view(1, 0, 0, 200, 100, \"{}\")\n",
+            "import ui; import garden; edit_view(1, 0, 0, 200, 100, \"{}\")\n",
             lines.join("\\n")
         )
         .unwrap();
@@ -3515,7 +3520,7 @@ mod tests {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            r#"
+            r#"import ui; import garden; 
 let seed = "@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three"
 edit_view(1, 0, 0, 400, 200, seed)
 edit_view_projection(1, {{
@@ -3565,7 +3570,7 @@ edit_view_projection(1, {{
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            r#"
+            r#"import ui; import garden; 
 let seed = "@@ -1,3 +1,3 @@\none\ntwo\nTWO\nthree"
 edit_view(1, 0, 0, 400, 200, seed)
 edit_view_projection(1, {{
@@ -3805,7 +3810,7 @@ edit_view_projection(1, {{
             };
             write!(
                 f,
-                "text_view(1, 0, 0, 200, 100, \"{}\")\n{wrap_call}",
+                "import ui; import garden; text_view(1, 0, 0, 200, 100, \"{}\")\n{wrap_call}",
                 long.join(" ")
             )
             .unwrap();
@@ -3835,7 +3840,7 @@ edit_view_projection(1, {{
     /// Build a panel from `source` and return the primitives it renders.
     fn scene_of(source: &str) -> (Vec<Primitive>, tempfile::NamedTempFile) {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "{source}").unwrap();
+        write!(f, "{PANEL_IMPORTS}{source}").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -3944,7 +3949,7 @@ edit_view_projection(1, {{
     #[test]
     fn canvas_ids_are_offset_by_the_pane_base() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "layer(rect(0, 0, 10, 10), fn() end)\n").unwrap();
+        write!(f, "import ui; import garden; layer(rect(0, 0, 10, 10), fn() end)\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4149,7 +4154,7 @@ edit_view_projection(1, {{
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "draw_text(\"Title\", 4, 4, 28, 255, 255, 255)\n\
+            "import ui; import garden; draw_text(\"Title\", 4, 4, 28, 255, 255, 255)\n\
              draw_text(\"caption\", 4, 40, 10, 200, 200, 200)\n"
         )
         .unwrap();
@@ -4177,7 +4182,7 @@ edit_view_projection(1, {{
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "draw_text(\"heading\", {{x: 4, y: 4}}, {{size: 20, weight: 700}})\n\
+            "import ui; import garden; draw_text(\"heading\", {{x: 4, y: 4}}, {{size: 20, weight: 700}})\n\
              draw_text(\"aside\", {{x: 4, y: 30}}, {{size: 12, italic: true}})\n\
              draw_text(\"plain\", {{x: 4, y: 50}}, {{size: 12}})\n"
         )
@@ -4230,7 +4235,7 @@ edit_view_projection(1, {{
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "let S = {{size: 20, spacing: 5}}\n\
+            "import ui; import garden; let S = {{size: 20, spacing: 5}}\n\
              draw_text(\"abc\", {{x: 10, y: 4}}, S)\n\
              let width = text_width(\"abc\", S)\n"
         )
@@ -4281,7 +4286,7 @@ edit_view_projection(1, {{
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "draw_text(\"⌘x—x·x\", {{x: 0, y: 4}}, {{size: 32, spacing: 2, font: \"ui\"}})\n"
+            "import ui; import garden; draw_text(\"⌘x—x·x\", {{x: 0, y: 4}}, {{size: 32, spacing: 2, font: \"ui\"}})\n"
         )
         .unwrap();
         let host = PanelHost::load(f.path()).unwrap();
@@ -4335,7 +4340,7 @@ edit_view_projection(1, {{
         let src = "let cmd_ui = text_width(\"\u{2318}\", {size: 100, font: \"ui\"})\n\
                    let dash_ui = text_width(\"\u{2014}\", {size: 100, font: \"ui\"})\n";
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "{src}").unwrap();
+        write!(f, "{PANEL_IMPORTS}{src}").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4362,7 +4367,7 @@ edit_view_projection(1, {{
         );
         let src = "let tab = text_width(\"\\t\", 100)\n";
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "{src}").unwrap();
+        write!(f, "{PANEL_IMPORTS}{src}").unwrap();
 
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
@@ -4487,7 +4492,7 @@ done
     #[test]
     fn script_emit_reaches_the_client_over_the_pipe() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "emit(\"divider\", 42)\n").unwrap();
+        write!(f, "import ui; import garden; emit(\"divider\", 42)\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
 
@@ -4551,7 +4556,7 @@ done
     #[test]
     fn subprocess_navigation_fetches_source_via_navigate_request() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "state marker = 1\n").unwrap();
+        write!(f, "import ui; import garden; state marker = 1\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "home".into(), Instant::now());
         let client = ProcessPane::spawn(
@@ -4610,7 +4615,7 @@ done
     /// boundary, so a panel could never see a double click.
     #[test]
     fn a_multi_click_press_reaches_the_script_as_its_count() {
-        let host = PanelHost::from_source("p", "let cc = click_count()\n").unwrap();
+        let host = PanelHost::from_source("p", "import ui; import garden; let cc = click_count()\n").unwrap();
         let mut pv = PanelView::new(host, "p".into(), Instant::now());
         pv.set_mouse(5, 5);
         pv.mouse_down_clicks(0, 2);
@@ -4632,7 +4637,7 @@ done
     fn modifiers_are_also_readable_as_held_keys() {
         let host = PanelHost::from_source(
             "p",
-            "let s = if key_down(\"shift\") then 1 else 0 end\n             let a = if key_down(\"alt\") then 1 else 0 end\n",
+            "import ui; import garden; let s = if key_down(\"shift\") then 1 else 0 end\n             let a = if key_down(\"alt\") then 1 else 0 end\n",
         )
         .unwrap();
         let mut pv = PanelView::new(host, "p".into(), Instant::now());
@@ -4657,7 +4662,7 @@ done
     #[test]
     fn claimed_chords_are_matched_by_key_and_modifier_bits() {
         let host =
-            PanelHost::from_source("p", "claim_key(\"z\", \"cmd\")\nclaim_key(\"escape\")\n")
+            PanelHost::from_source("p", "import ui; import garden; claim_key(\"z\", \"cmd\")\nclaim_key(\"escape\")\n")
                 .unwrap();
         let mut pv = PanelView::new(host, "p".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4679,7 +4684,7 @@ done
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "state n = 0\nn = n + 1\ntext_view(1, 0, 0, 200, 100, \"{}\")\n\
+            "import ui; import garden; state n = 0\nn = n + 1\ntext_view(1, 0, 0, 200, 100, \"{}\")\n\
              if n == 1 then text_view_scroll_to(1, 30) end\n",
             body.trim_end().replace('\n', "\\n")
         )
@@ -4708,7 +4713,7 @@ done
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "state n = 0\nn = n + 1\ntext_view(1, 0, 0, 200, 100, \"{}\")\n\
+            "import ui; import garden; state n = 0\nn = n + 1\ntext_view(1, 0, 0, 200, 100, \"{}\")\n\
              if n == 1 then text_view_scroll_to(1, 18) end\n",
             body.trim_end().replace('\n', "\\n")
         )
@@ -4732,7 +4737,7 @@ done
         // A panel that binds a "size", plus a live `state` counter — both
         // observable by name without the script doing anything about it.
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "state n = 0\nn = n + 1\nlet size = 1\n").unwrap();
+        write!(f, "import ui; import garden; state n = 0\nn = n + 1\nlet size = 1\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4754,7 +4759,7 @@ done
     #[test]
     fn reload_from_editor_keeps_last_render_on_compile_error() {
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(f, "let size = 5\n").unwrap();
+        write!(f, "import ui; import garden; let size = 5\n").unwrap();
         let host = PanelHost::load(f.path()).unwrap();
         let mut pv = PanelView::new(host, "test.ptl".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4837,7 +4842,7 @@ done
     /// return false and leave the cursor unmoved).
     #[test]
     fn history_back_past_start_and_forward_past_end_are_no_ops() {
-        let host = PanelHost::from_source("a", "state n = 0\n").unwrap();
+        let host = PanelHost::from_source("a", "import ui; import garden; state n = 0\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
         // At the seed with no forward entries, both directions are no-ops.
         assert!(!pv.nav_back());
@@ -4863,7 +4868,7 @@ done
     #[test]
     fn a_navigation_argument_survives_back_and_forward() {
         // Each screen simply reports the id it was navigated with (nil at home).
-        const SCREEN: &str = "let subject = nav_arg() ?? {id: 0}\nlet id = subject.id\n";
+        const SCREEN: &str = "import garden; let subject = nav_arg() ?? {id: 0}\nlet id = subject.id\n";
         let host = PanelHost::from_source("home", SCREEN).unwrap();
         let mut pv = PanelView::new(host, "home".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
@@ -4907,7 +4912,7 @@ done
     /// `nav_replace` swaps the current screen in place without growing history.
     #[test]
     fn history_replace_keeps_length() {
-        let host = PanelHost::from_source("a", "state n = 0\n").unwrap();
+        let host = PanelHost::from_source("a", "import ui; import garden; state n = 0\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
         pv.nav_replace("b".into(), "state n = 0\n".into(), serde_json::Value::Null);
         assert_eq!(pv.history_len(), 1);
@@ -4925,7 +4930,7 @@ done
     fn back_to_origin_rebuilds_the_home_program_not_just_state() {
         // Home is file-backed, like a real `panel(...)` layout node.
         let mut home = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(home, "state n = 0\nn = n + 1\nlet screen = 1\n").unwrap();
+        write!(home, "import ui; import garden; state n = 0\nn = n + 1\nlet screen = 1\n").unwrap();
         let host = PanelHost::load(home.path()).unwrap();
         let mut pv = PanelView::new(host, "home.ptl".into(), Instant::now());
 
@@ -4962,7 +4967,7 @@ done
     /// editor→panel binding can skip a navigated panel.
     #[test]
     fn is_navigated_tracks_the_cursor() {
-        let host = PanelHost::from_source("a", "state n = 0\n").unwrap();
+        let host = PanelHost::from_source("a", "import ui; import garden; state n = 0\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
         assert!(!pv.is_navigated());
         pv.nav_push("b".into(), "state n = 0\n".into(), serde_json::Value::Null);
@@ -4975,7 +4980,7 @@ done
     /// `tick`, drainable once via `take_nav_events`.
     #[test]
     fn navigate_native_surfaces_client_event() {
-        let host = PanelHost::from_source("a", "navigate(\"detail\")\n").unwrap();
+        let host = PanelHost::from_source("a", "import ui; import garden; navigate(\"detail\")\n").unwrap();
         let mut pv = PanelView::new(host, "a".into(), Instant::now());
         pv.tick(Instant::now(), RECT, CELL);
         let events = pv.take_nav_events();
@@ -4996,7 +5001,7 @@ done
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "if frame_count() == 0 then text_view(1, 0, 0, 200, 100, \"hi\") end\n"
+            "import ui; import garden; if frame_count() == 0 then text_view(1, 0, 0, 200, 100, \"hi\") end\n"
         )
         .unwrap();
         let host = PanelHost::load(f.path()).unwrap();
@@ -5127,7 +5132,7 @@ done
         let mut f = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
         write!(
             f,
-            "clip(0, 0, 300, 40)\n\
+            "import ui; import garden; clip(0, 0, 300, 40)\n\
              draw_text(\"inside\", 0, 4, 16, 255, 255, 255)\n\
              draw_text(\"straddle\", 0, 32, 16, 255, 255, 255)\n\
              draw_text(\"below\", 0, 60, 16, 255, 255, 255)\n\
@@ -5174,7 +5179,7 @@ done
         let lines = (1..=20).map(|i| format!("line {i}")).collect::<Vec<_>>();
         write!(
             f,
-            "clip(0, 0, 300, 40)\n\
+            "import ui; import garden; clip(0, 0, 300, 40)\n\
              text_view(1, 0, 0, 200, 300, \"{}\")\n",
             lines.join("\\n")
         )

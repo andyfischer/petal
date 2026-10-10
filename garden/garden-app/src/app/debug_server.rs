@@ -1370,7 +1370,8 @@ mod tests {
     /// The temp file is returned because it must outlive the app that reads it.
     fn panel_app(source: &str) -> (App, tempfile::NamedTempFile) {
         let mut file = tempfile::NamedTempFile::with_suffix(".ptl").unwrap();
-        write!(file, "{source}").unwrap();
+        // A panel script: give it the imports one starts with.
+        write!(file, "import ui; import garden; {source}").unwrap();
         let mut app = App::new(
             None,
             LayoutNode::Panel {

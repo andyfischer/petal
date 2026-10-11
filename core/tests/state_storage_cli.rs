@@ -124,7 +124,7 @@ fn a_failed_run_keeps_the_last_good_file_and_stale_slots_are_dropped() {
     let run = |src: &str| petal_in(&d, &["run", "--state-storage", "s.json", "-e", src]);
     assert_eq!(run("state hits = 0\nstate old = 7\nhits += 1\nprint(hits)").0, "1\n");
 
-    let (out, _, code) = run("state hits = 0\nstate old = 7\nhits += 100\nprint(hits)\nprint(nope)");
+    let (out, _, code) = run("state hits = 0\nstate old = 7\nhits += 100\nprint(hits)\nassert(false)");
     assert_eq!((out.as_str(), code), ("101\n", 1));
 
     // `old` is gone from the script: named, dropped, and `hits` is still 1.

@@ -109,6 +109,7 @@ impl ImportFixer {
         // that the file still reaches through.
         let lost = lost_qualifiers(&stmts);
         let mut restored: HashSet<&str> = HashSet::new();
+        let mut notes = Vec::new();
         for stmt in &stmts {
             let StmtKind::Import(decl) = &stmt.kind else {
                 continue;
@@ -117,8 +118,26 @@ impl ImportFixer {
                 continue;
             };
             let line = stmt.span.start.line;
-            let new_path = file.and_then(|f| self.relative_spelling(&decl.module, f));
             let qualifier = import_qualifier(decl);
+            let mut new_path = file.and_then(|f| self.relative_spelling(&decl.module, f));
+            // A bare path that names a package *and* a file beside this one
+            // (`import color` next to `color.ptl`, with the bundled `color`
+            // package). Before, the sibling won; now the package does. Which
+            // one the line means is read off what the file takes from it.
+            if new_path.is_none()
+                && let Some(f) = file
+                && self.package_shadows_sibling(&decl.module, f)
+            {
+                match self.sibling_was_meant(decl, qualifier, &stmts, f) {
+                    Some(true) => new_path = Some(format!("./{}", decl.module)),
+                    Some(false) => {}
+                    None => notes.push(format!(
+                        "line {line}: `import {m}` is the package `{m}`, and a file {m}.ptl sits \
+                         beside this one — write `import ./{m}` if the file is meant",
+                        m = decl.module
+                    )),
+                }
+            }
             if decl.names.is_some() && lost.contains(qualifier) && restored.insert(qualifier) {
                 let path = new_path.as_deref().unwrap_or(&decl.module);
                 let alias = if qualifier == crate::ast::module_local_name(&decl.module) {
@@ -153,8 +172,54 @@ impl ImportFixer {
         Ok(Fixed {
             source: apply_edits(&chars, edits),
             changes,
-            notes: Vec::new(),
+            notes,
         })
+    }
+
+    /// Whether the bare `import <path>` in `file` resolves to a package while
+    /// a file of that name sits beside `file` — and the two are not the same
+    /// module (a package's own module, imported by its package name).
+    fn package_shadows_sibling(&self, path: &str, file: &Path) -> bool {
+        if is_relative_import(path) {
+            return false;
+        }
+        let Some(dir) = file.parent() else {
+            return false;
+        };
+        let sibling = module_file(dir, path);
+        if !sibling.is_file() || self.env.resolve_import(path, file).is_err() {
+            return false;
+        }
+        self.env.resolve_module_file(path, file).map(|p| crate::module::canonical_path(&p))
+            != Some(crate::module::canonical_path(&sibling))
+    }
+
+    /// For an import whose path names both a package and a sibling file:
+    /// `Some(true)` when the file takes something from it the package does
+    /// not export, or writes the old `: *` — it was written for the sibling;
+    /// `Some(false)` when everything it takes is the package's; `None` when
+    /// it takes nothing by name and there is no telling.
+    fn sibling_was_meant(
+        &self,
+        decl: &ImportDecl,
+        qualifier: &str,
+        stmts: &[Stmt],
+        file: &Path,
+    ) -> Option<bool> {
+        if decl.star {
+            return Some(true);
+        }
+        let mut taken: BTreeSet<String> = decl.names.iter().flatten().cloned().collect();
+        if decl.names.is_none() {
+            taken.extend(members_reached_through(stmts, qualifier));
+        }
+        if taken.is_empty() {
+            return None;
+        }
+        let Ok((exports, _)) = self.env.exports_and_modules_of_at(&decl.module, Some(file)) else {
+            return None;
+        };
+        Some(taken.iter().any(|name| !exports.contains(name)))
     }
 
     /// The relative path `import <path>` in `file` should be written as, when
@@ -491,6 +556,37 @@ fn builtin_method_calls(source: &str, program: &Program) -> Vec<(String, &'stati
             Some((name.clone(), package))
         })
         .collect()
+}
+
+/// Every `member` the file writes as `qualifier.member`.
+fn members_reached_through(stmts: &[Stmt], qualifier: &str) -> BTreeSet<String> {
+    use crate::ast::{Expr, ExprKind, ExprVisitor, walk_expr, walk_stmt};
+    struct Scan<'a> {
+        qualifier: &'a str,
+        members: BTreeSet<String>,
+    }
+    impl ExprVisitor for Scan<'_> {
+        fn visit_expr(&mut self, e: &Expr) {
+            if let ExprKind::FieldAccess { object, field } = &e.kind
+                && let ExprKind::Ident(name) = &object.kind
+                && name == self.qualifier
+            {
+                self.members.insert(field.clone());
+            }
+            walk_expr(self, e);
+        }
+        fn visit_stmt(&mut self, s: &Stmt) {
+            walk_stmt(self, s);
+        }
+    }
+    let mut scan = Scan {
+        qualifier,
+        members: BTreeSet::new(),
+    };
+    for stmt in stmts {
+        scan.visit_stmt(stmt);
+    }
+    scan.members
 }
 
 /// The qualifier an import statement binds — or, for a selective import,

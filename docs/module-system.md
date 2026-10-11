@@ -551,6 +551,7 @@ It changes import lines and nothing else:
 | Before | After | When |
 |---|---|---|
 | `import level` | `import ./level` | `level.ptl` sits beside the file, and no package is called `level` |
+| `import color` (with `color.ptl` beside the file) | `import ./color` | a package is also called that, and the file takes a name from it the package does not export (or writes `: *`). Left alone when everything it takes is the package's; a note when it takes nothing by name |
 | `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed to `fix-imports` |
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | `import m: a` + `import m` | the file reaches through `m.`, which a selective import no longer binds |
@@ -737,7 +738,9 @@ line runs, naming the module and the missing natives. A check
 (`env.set_check_only(true)`, `petal check`, the language server) does not
 link. Method-call syntax follows the same rule: `x.name(…)` falls back to the
 native `name(x, …)` for a builtin, or for a host native declared (under its
-own name) in the file that writes the call.
+own name) in the file that writes the call — that file, not some other file
+of the program. A program loaded from serialized IR is linked too, by the
+natives its calls name.
 
 `module_manifest` lists every file a program was compiled from, so a host
 can watch all of them and hot-reload when an imported file changes.

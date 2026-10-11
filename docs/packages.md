@@ -408,6 +408,11 @@ moved, and verify what they fetch, and every cached or vendored tree already
 present, against the locked hash. A mismatch is an error; `petal update
 <name>` re-pins when the change is expected.
 
+The hash is checked by `petal install`, `petal update` and `petal vendor`,
+not on every load: `petal run`, `petal check` and a host read a cached or
+vendored tree as it is on disk. Run `petal install --locked` (in CI, say) to
+confirm that nothing under the cache or `vendor/` has drifted from the lock.
+
 A `path` package is recorded by its path, relative to the project root, and
 is not hashed: it is live source on your disk. A path package inside a
 fetched repository is recorded with `within = "<the git package>"`.

@@ -139,7 +139,7 @@ pub struct ModuleRegistry {
     /// The modules every program imports implicitly, reference-gated: the
     /// core prelude (`std`). Lowest precedence of all, so every import and
     /// declaration shadows it. Hosts have no implicit imports.
-    pub base_implicit_imports: Vec<String>,
+    pub(crate) base_implicit_imports: Vec<String>,
     /// Packages the host registered (`Env::add_package`,
     /// `Env::register_package`): the first place a package name is looked up.
     packages: Vec<crate::package::Package>,
@@ -360,6 +360,9 @@ impl ModuleRegistry {
 /// compare equal. A path that cannot be canonicalized (it does not exist) is
 /// returned as written.
 pub fn canonical_path(path: &Path) -> PathBuf {
+    // The parent of a bare file name (`esc.ptl`) is the empty path, which
+    // means the working directory, not the filesystem root.
+    let path = if path.as_os_str().is_empty() { Path::new(".") } else { path };
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -2028,12 +2031,39 @@ mod tests {
     }
 
     #[test]
-    fn a_first_party_package_hides_a_builtin_without_a_warning() {
+    fn only_the_bundled_copy_of_a_first_party_package_is_exempt() {
+        // The exemption is for the first-party source itself, not for the
+        // name: a package that merely takes a bundled package's name (a
+        // manifest dependency, `vendor/`, `-I`, a host registration of
+        // something else) warns like any other.
         let w = warnings(
             &[("ui", "pub fn clamp(a)\n  a\nend")],
             "import ui\nprint(clamp(1))",
         );
-        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("module 'ui' exports, which hides the builtin"), "{w:?}");
+        // The bundled text, registered in memory the way petal-ui does it,
+        // is still the first-party package.
+        let bundled = crate::bundled::package("bloom").expect("bloom is bundled");
+        let (path, source) = bundled.sources().next().expect("bloom has sources");
+        let name = format!("bloom/{}", path.trim_end_matches(".ptl").trim_start_matches("src/"));
+        let module = super::LoadedModule {
+            name: Some(name),
+            display_name: path.to_string(),
+            source: source.to_string(),
+            origin: None,
+            stmts: Vec::new(),
+            imports: Vec::new(),
+            file_id: crate::source_map::FileId(1),
+            deprecated_exports: Vec::new(),
+            requires: Vec::new(),
+        };
+        assert!(crate::compiler::is_bundled_copy(&module));
+        let edited = super::LoadedModule {
+            source: format!("{source}\n// patched"),
+            ..module
+        };
+        assert!(!crate::compiler::is_bundled_copy(&edited));
     }
 
     #[test]

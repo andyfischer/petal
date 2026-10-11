@@ -115,12 +115,12 @@ fn observe_json_emits_a_parseable_object() {
 /// fails.
 #[test]
 fn observe_dumps_bindings_made_before_a_runtime_error() {
-    let code = "let a = 1\nfn f(x)\n  let inner = x * 2\n  return inner + nope\nend\nprint(f(a))\n";
+    let code = "let a = 1\nfn f(x)\n  let inner = x * 2\n  return inner + assert(false, \"boom\")\nend\nprint(f(a))\n";
     let (stdout, stderr, ok) = run(&["run", "--observe", "-e", code]);
 
     assert!(!ok, "a failing program must still exit non-zero");
     assert!(
-        stderr.contains("Undefined variable: nope"),
+        stderr.contains("assertion failed: boom"),
         "the error is still reported:\n{stderr}"
     );
     assert!(
@@ -133,7 +133,7 @@ fn observe_dumps_bindings_made_before_a_runtime_error() {
 /// stays a single JSON document that a tool can parse.
 #[test]
 fn observe_json_attaches_observations_to_a_runtime_error() {
-    let code = "let a = 1\nfn f(x)\n  let inner = x * 2\n  return inner + nope\nend\nprint(f(a))\n";
+    let code = "let a = 1\nfn f(x)\n  let inner = x * 2\n  return inner + assert(false, \"boom\")\nend\nprint(f(a))\n";
     let (stdout, _, ok) = run(&["run", "--observe", "--json", "-e", code]);
 
     assert!(!ok, "a failing program must still exit non-zero");

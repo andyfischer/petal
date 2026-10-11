@@ -439,6 +439,23 @@ impl Compiler {
         if !self.check_assign_to_outer_function_binding(target, span) {
             return;
         }
+        // `hud.score = 5` where `hud` is an import's qualifier: a module is
+        // not a value, and what it exports is read-only to its importers.
+        if let AssignTarget::Field(object, _) | AssignTarget::Index(object, _) = target
+            && let Some((root, _)) = Self::resolve_assign_target(object)
+            && self.scope_lookup(root).is_none()
+            && self.module_aliases.contains_key(root)
+        {
+            self.error_at(
+                span,
+                format!(
+                    "cannot assign through '{root}': it is a module, and what a module \
+                     exports is read-only to the files that import it — change it from \
+                     inside the module (a `pub fn` that does the write)"
+                ),
+            );
+            return;
+        }
         let prev_assign_span = self.assign_span.replace(span);
         match target {
             AssignTarget::Name(name) => self.compile_assign_name(name, value),

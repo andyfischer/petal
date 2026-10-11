@@ -1109,6 +1109,43 @@ impl Env {
     /// ProgramId. See `docs/ir-as-target.md`.
     pub fn load_program_ir(&mut self, json: &str) -> Result<ProgramId, String> {
         let mut program = Program::from_json(json)?;
+        // Serialized IR does not carry the program's `native fn` links, so
+        // they are read back off its calls: every native a `BuiltinCall`
+        // names must be registered here, or the load fails before any line
+        // runs — the same linking a compile from source does.
+        if !self.check_only {
+            let mut seen = std::collections::HashSet::new();
+            let mut links = Vec::new();
+            for term in &program.terms {
+                let crate::program::TermOp::BuiltinCall(cid) = term.op else {
+                    continue;
+                };
+                let Some(name) = program.get_string_constant(cid) else {
+                    continue;
+                };
+                if !seen.insert(name) {
+                    continue;
+                }
+                let module = program
+                    .source_map
+                    .get(term.id)
+                    .and_then(|span| program.source_map.file_name_for_span(span))
+                    .map(|file| file.trim_end_matches(".ptl"))
+                    .unwrap_or(crate::module::INLINE_ENTRY_NAME)
+                    .to_string();
+                links.push(crate::native_decl::NativeLink {
+                    host: name.to_string(),
+                    module,
+                    signatures: Vec::new(),
+                });
+            }
+            let missing = crate::native_decl::missing_natives_message(&links, |name| {
+                self.native_fns.lookup_name(name).is_some()
+            });
+            if let Some(message) = missing {
+                return Err(message);
+            }
+        }
         let id = ProgramId(self.next_program_id);
         self.next_program_id += 1;
         program.id = id;

@@ -211,7 +211,26 @@ impl Compiler {
                         && self.native_terms.get(&tid).is_some_and(|host| host == field)
                     {
                         self.note_native_use(tid);
-                        self.method_natives.insert(field.clone());
+                        let files = self.method_natives.entry(field.clone()).or_default();
+                        if !files.contains(&span.file) {
+                            files.push(span.file);
+                        }
+                    }
+                    // A plain value (a number, a list, a vector) has nothing
+                    // else to answer with, so a packaged builtin the file has
+                    // not imported is a line that fails whenever it runs.
+                    else if self.scope_lookup(field).is_none()
+                        && let Some(what) = self.method_dispatch.plain.get(&span)
+                        && let Some(package) = crate::native_decl::builtin_package_of(field)
+                    {
+                        self.warnings.push(crate::diagnostic::Diagnostic::error(
+                            span,
+                            format!(
+                                "no method `{field}` on a `{what}` here — `{field}` is a builtin \
+                                 of the `{package}` package: add `import {package}` to call it \
+                                 as a method"
+                            ),
+                        ));
                     }
                     let mut inputs: SmallVec<[TermId; 4]> = smallvec![obj_tid];
                     for arg in args {
@@ -254,7 +273,12 @@ impl Compiler {
                     // which `petal check` reports first
                     // (`typecheck::globals`).
                     if let ExprKind::Ident(name) = &function.kind {
-                        self.check_import_call(name, args.len(), span);
+                        self.check_import_call(
+                            name,
+                            args.len(),
+                            arg_names.iter().all(Option::is_none),
+                            span,
+                        );
                     }
                     let builtin_name: Option<String> = match &function.kind {
                         ExprKind::Ident(name) => match self.scope_lookup(name) {
@@ -516,10 +540,11 @@ impl Compiler {
             self.emit_term(op, smallvec![local_tid], None)
         } else if let Some(module) = self.module_aliases.get(name) {
             // A module alias is not a runtime value.
+            let written = self.alias_written.get(name).unwrap_or(module);
             let msg = format!(
                 "'{}' is a module, not a value — use {}.<name>, or `import {}: <name>` \
                  to bind a member directly",
-                name, name, module
+                name, name, written
             );
             let msg_cid = self.constants.intern(ConstantValue::String(msg));
             self.emit_term(TermOp::Error(msg_cid), smallvec![], None)

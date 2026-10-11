@@ -105,6 +105,21 @@ pub(super) fn handle_run(
     // stderr even in --json mode, so JSON consumers of stdout are unaffected.
     if let Some(program) = env.get_program(pid) {
         eprint_warnings(program);
+        // A name nothing defines is not left to fail when its line runs:
+        // `petal check` rejects the script, so `petal run` does too, before
+        // the first line — the two agree on every script.
+        let deferred = crate::typecheck::globals::deferred_errors(program);
+        if !deferred.is_empty() {
+            die_error(
+                json,
+                &crate::error::LoadError::from_attributed_diagnostics(
+                    crate::error::Phase::Compile,
+                    &deferred,
+                ),
+                serde_json::Value::Null,
+                source,
+            );
+        }
     }
     let sid = stack_or_die(&mut env, json, pid);
     match opts.state_storage.as_deref() {

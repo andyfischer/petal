@@ -2776,8 +2776,8 @@ fn new_panel_env() -> Env {
 // ── Panel natives ─────────────────────────────────────────────────────────
 // The drawing surface + input a panel script sees comes wholesale from
 // `petal-ui`: the standard input/timing natives, the draw-command vocabulary,
-// and the `ui` prelude module (widgets, hit-testing, `text_width`) as an
-// implicit import. Garden adds only its own host channels (theme/palette,
+// and the `ui` package (widgets, hit-testing, `text_width`), which a panel
+// reaches with `import ui`. Garden adds only its own host channels (theme/palette,
 // `emit`/`mutate`/`navigate`, the text-view regions) and binds its monospace
 // text metric; introspection needs no native at all, since the host reads the
 // script's bindings straight out of the observation buffer. The offscreen
@@ -4719,8 +4719,8 @@ mod tests {
 
     #[test]
     fn prelude_widgets_are_available() {
-        // The `ui` prelude ships as an implicit import: hit-testing, the record
-        // draw overloads, and `text_width` resolve with no ceremony.
+        // The `ui` package is registered by the host: hit-testing, the record
+        // draw overloads, and `text_width` resolve once the panel imports it.
         let f = write_script(
             "let r = rect(0, 0, 10, 10)\n\
              if point_in(5, 5, r) then draw_rect(r, {r: 1, g: 2, b: 3}) end\n\

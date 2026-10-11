@@ -521,8 +521,17 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
 - a call to, or read of, a name that nothing defines
   (`unknown function \`frob\``, `undefined variable \`nope\``) — it would
   fail with `Unknown function` or `Undefined variable`;
+- a qualifier read as a value, or a member a module does not export
+  (`'hud' is a module, not a value`, `module 'hud' has no export 'nope'`);
 - a call whose argument count no overload accepts (`f(1)` where every `f`
-  takes two arguments);
+  takes two arguments) — for a function a plain import bound, counted
+  against the module the name resolved to;
+- a call to a builtin or a host native with a count its `native fn`
+  declaration does not take (`len(1, 2)`, `mouse_x(3)`); a native declared
+  with a rest parameter takes any count above its fixed ones;
+- method syntax on a plain value (a number, a string, a list, a vector)
+  that needs a packaged builtin the file has not imported (`v.mag()` with no
+  `import creative`);
 - a named argument no parameter has, or one that fills a slot twice — on a
   `fn`, or on a builtin, which is checked against the parameter names it
   declares (`clamp(v, low: 0, hi: 1)` is `clamp() has no parameter named
@@ -531,8 +540,14 @@ An **error** is a line that fails whenever it runs, so `check` exits 1 on it:
   overload's default parameter values could accept;
 - a named argument to a builtin that declares none (`print(1, sep: 2)`).
 
-A host native is held to the parameter names its interface package declares,
-like a builtin.
+A host native is held to the parameter names and counts its interface
+package declares, like a builtin.
+
+`petal run` refuses the first two kinds before the first line runs, with the
+message the line would have failed with (`Unknown function: frob`, phase
+`compile`), whether or not the line would have been reached: a script `check`
+rejects for a name nothing defines does not start. The other errors are
+printed and the run goes on until the line is reached.
 
 ```
 $ petal check -e 'print(nope)'
@@ -672,12 +687,13 @@ else:
 | Before | After | When |
 |---|---|---|
 | `import level` | `import ./level` | `level.ptl` sits beside the file and no package is called `level` |
+| `import color` (with `color.ptl` beside the file) | `import ./color` | a package is *also* called that (the bundled `color`), and the file takes a name from it that the package does not export, or writes `: *` — it was written for the sibling. When every name it takes is the package's the line is left alone; when it takes nothing by name, a note says both exist |
 | `import rng` (found through `-I shared`) | `import ../shared/rng` | the same `-I` is passed here |
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | adds `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
 | *(nothing)* | adds `import creative`, `import vec2`, `import noise`, … | the same, for a builtin that now lives in a bundled package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
-| *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax, which fails only when the line runs: added when nothing in the program defines a function, class method or record field of that name |
+| *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax (a `check` error on a plain value, otherwise a failure when the line runs): added when nothing in the program defines a function, class method or record field of that name |
 | *(nothing)* | adds `import ui` | the same, for a host's names: a script that used petal-ui names with no import gets its `import ui` (and, with the host's package a dependency of the project or on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
 "Available" is the packages bundled in the binary, the `[dependencies]` of

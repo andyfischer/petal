@@ -403,11 +403,17 @@ impl<'a> Vm<'a> {
         //    host native the program declares where a method call of that
         //    name is written (`Program::method_natives`). An undeclared
         //    native is not reachable this way either.
+        //    The declaration must be in scope in the file the call is
+        //    written in, exactly as for a bare call.
         let reachable = crate::native_decl::core_host_names().contains(method_name)
-            || program
-                .method_natives
-                .as_ref()
-                .is_none_or(|declared| declared.contains(method_name));
+            || program.method_natives.as_ref().is_none_or(|declared| {
+                declared.get(method_name).is_some_and(|files| {
+                    match call_site.and_then(|t| program.source_map.get(t)) {
+                        Some(span) => files.contains(&span.file),
+                        None => true,
+                    }
+                })
+            });
         if reachable && let Some(nid) = self.native_fns.lookup_name(method_name) {
             // `xs.slice(start: 1, end: 3)`: the receiver fills the builtin's
             // first parameter, and the names bind against the rest.

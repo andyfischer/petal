@@ -14,6 +14,8 @@ use super::*;
 pub(super) struct OverloadIndex {
     /// Closure term → its parameter count.
     arity: HashMap<TermId, usize>,
+    /// Closure term → how many of its trailing parameters have defaults.
+    optional: HashMap<TermId, usize>,
     /// `MakeOverloadSet` term → the variant closure terms it joins.
     members: HashMap<TermId, Vec<TermId>>,
     /// Function value term (closure or set) → the module that declared it
@@ -26,8 +28,9 @@ pub(super) struct OverloadIndex {
 
 impl Compiler {
     /// Note a compiled `fn` closure and the module it belongs to.
-    fn record_fn_closure(&mut self, tid: TermId, arity: usize) {
+    fn record_fn_closure(&mut self, tid: TermId, arity: usize, optional: usize) {
         self.overload_index.arity.insert(tid, arity);
+        self.overload_index.optional.insert(tid, optional);
         self.overload_index
             .module
             .insert(tid, self.current_module.clone());
@@ -66,6 +69,28 @@ impl Compiler {
             None => vec![(*self.overload_index.arity.get(&tid)?, tid)],
         };
         Some((module, variants))
+    }
+
+    /// The argument counts a call through the binding `tid` can be written
+    /// with, as `(fewest, most)` per variant — when `tid` is a function set
+    /// **another module** declared. Those are complete by the time an
+    /// importer compiles, so a count none of them takes fails whenever the
+    /// line runs. `None` for the file's own functions (the checker's pass
+    /// over the file answers for them) and for anything not a `fn`.
+    pub(super) fn imported_arities(&self, tid: TermId) -> Option<Vec<(usize, usize)>> {
+        let (module, variants) = self.overload_view(tid)?;
+        if module == self.current_module || variants.is_empty() {
+            return None;
+        }
+        Some(
+            variants
+                .into_iter()
+                .map(|(arity, variant)| {
+                    let optional = self.overload_index.optional.get(&variant).copied().unwrap_or(0);
+                    (arity.saturating_sub(optional), arity)
+                })
+                .collect(),
+        )
     }
 
     /// Merge the overload set a name already has in scope with the one about to
@@ -157,7 +182,7 @@ impl Compiler {
             // without colliding with the entry file's names. The scope
             // binding stays bare — in-module references are unqualified.
             self.terms[closure_tid.0 as usize].name = Some(self.qualified_name(name));
-            self.record_fn_closure(closure_tid, params.len());
+            self.record_fn_closure(closure_tid, params.len(), optional);
             return Some(self.bind_fn_result(name, closure_tid));
         };
 
@@ -172,7 +197,7 @@ impl Compiler {
             tail_value,
             Some(decl_span),
         );
-        self.record_fn_closure(closure_tid, params.len());
+        self.record_fn_closure(closure_tid, params.len(), optional);
         // The caller locates the term this returns, which for an overloaded
         // name is the set (and only once it is complete). Each variant is
         // written somewhere too, and that is where a tool reporting on one of

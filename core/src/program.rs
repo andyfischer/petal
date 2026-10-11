@@ -680,10 +680,13 @@ pub struct Program {
     /// The host natives a method call in this program may fall back to
     /// (`x.name(…)` meaning `name(x, …)`): the ones a `native fn` declares
     /// under their own name where some method call of that name is written.
-    /// The `core` builtins need no entry. `None` for a program loaded from
-    /// serialized IR, which is linked by name when a call runs, as before.
+    /// Keyed by name, with the files whose method calls may reach it: the
+    /// declaration must be in scope in the *calling* file, as for a bare
+    /// call. The `core` builtins need no entry. `None` for a program loaded
+    /// from serialized IR, which is linked by name when a call runs.
     #[serde(skip)]
-    pub method_natives: Option<std::collections::HashSet<String>>,
+    pub method_natives:
+        Option<std::collections::HashMap<String, Vec<crate::source_map::FileId>>>,
     /// The host interfaces this program's packages require: the `[requires]`
     /// of every package a loaded file belongs to (the entry's project
     /// included), sorted by interface then package. Checked against what the

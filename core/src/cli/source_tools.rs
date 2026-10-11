@@ -184,13 +184,32 @@ pub(super) fn handle_fix_imports(
     // compile that looks for missing imports sees every sibling migrated —
     // whatever order the files come in, and whether or not anything is
     // written.
+    // `-e` code and stdin have no file. They are fixed as a file in the
+    // working directory would be, so `./x` and the project's `[dependencies]`
+    // (the nearest petal.toml) mean what they mean to `petal run -e`.
+    let inline_file = std::env::current_dir()
+        .ok()
+        .map(|dir| crate::module::canonical_path(&dir).join(crate::module::INLINE_ENTRY_NAME));
+    let file_of = |input: &Input| -> Option<PathBuf> {
+        match input.path.as_deref() {
+            Some(path) => Some(crate::module::canonical_path(path)),
+            None => inline_file.clone(),
+        }
+    };
     let mut staged: Vec<Option<crate::fix_imports::Fixed>> = Vec::new();
     for input in &inputs {
-        let file = input.path.as_deref().map(crate::module::canonical_path);
+        let file = file_of(input);
         match fixer.rewrite_import_lines(&input.source, file.as_deref()) {
-            Ok(fixed) => {
-                if let Some(file) = &file {
+            Ok(mut fixed) => {
+                if input.path.is_some()
+                    && let Some(file) = &file
+                {
                     fixer.stage(file, &fixed.source);
+                }
+                // What this stage could not decide is always worth a line,
+                // sweep or not: the import may mean something else now.
+                for note in fixed.notes.drain(..) {
+                    eprintln!("note: {}: {note}", input.name);
                 }
                 staged.push(Some(fixed));
             }
@@ -208,9 +227,11 @@ pub(super) fn handle_fix_imports(
         let Some(mut fixed) = first else {
             continue;
         };
-        let file = input.path.as_deref().map(crate::module::canonical_path);
+        let file = file_of(input);
         let second = fixer.add_missing_imports(&fixed.source, file.as_deref());
-        if let Some(file) = &file {
+        if input.path.is_some()
+            && let Some(file) = &file
+        {
             fixer.stage(file, &second.source);
         }
         fixed.source = second.source;

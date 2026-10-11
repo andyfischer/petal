@@ -1,0 +1,12 @@
+# The loose Garden scripts in this workspace (init.ptl, the Petal IDE's
+# panels under garden-app/src), as one project: the manifest lets every tool
+# resolve `import garden` and `import garden_config` (Garden's interface
+# packages) with no -I flag. Garden itself registers them in memory. The
+# example and app trees below have their own manifests.
+[package]
+name = "garden_workspace"
+version = "0.1.0"
+
+[dependencies]
+garden        = { path = "garden-script/packages/garden" }
+garden_config = { path = "garden-script/packages/garden_config" }

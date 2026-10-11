@@ -336,7 +336,13 @@ pub struct Compiler {
     native_links: Vec<crate::native_decl::NativeLink>,
     /// Host natives a method call of this program may fall back to; see
     /// [`Program::method_natives`].
-    method_natives: HashSet<String>,
+    method_natives: HashMap<String, Vec<crate::source_map::FileId>>,
+    /// Qualifier → the import path as this file wrote it (`./hud`), for
+    /// messages that suggest an import line. Per module.
+    alias_written: HashMap<String, String>,
+    /// The modules compiled so far that are the bundled copy of a
+    /// first-party package ([`is_bundled_copy`]).
+    first_party_modules: HashSet<String>,
     /// The native terms some call or read in the program resolved to. Only
     /// tracked once a module has declared a native, which is the only way a
     /// native the `Env` lacks can be named at all.
@@ -438,13 +444,20 @@ fn join_quoted(names: &[String]) -> String {
     }
 }
 
-/// Is `module` (a canonical module name) part of a package bundled in the
+/// Is this module the copy of a first-party package that is bundled in the
 /// binary (`ui`, `bloom`, …)? Those redefine core/std names on purpose
 /// (`ui`'s `clamp`-style helpers, bloom's widgets), which is not worth a
-/// warning.
-fn deliberately_shadows_prelude(module: &str) -> bool {
-    let package = module.split('/').next().unwrap_or(module);
-    crate::bundled::package(package).is_some()
+/// warning. The test is on the *source*, not the name: a user's package that
+/// takes a bundled package's name (through a manifest, `vendor/` or `-I`) is
+/// not first-party, while a host that registers the bundled text in memory
+/// (petal-ui registers `ui`) is.
+pub(crate) fn is_bundled_copy(module: &LoadedModule) -> bool {
+    let Some(name) = module.name.as_deref() else {
+        return false;
+    };
+    let package = name.split('/').next().unwrap_or(name);
+    crate::bundled::package(package)
+        .is_some_and(|p| p.sources().any(|(_, source)| source == module.source))
 }
 
 impl Default for Compiler {
@@ -513,7 +526,9 @@ impl Compiler {
             native_decls: crate::native_decl::NativeDecls::new(),
             declared_native_sigs: HashMap::new(),
             native_links: Vec::new(),
-            method_natives: HashSet::new(),
+            method_natives: HashMap::new(),
+            alias_written: HashMap::new(),
+            first_party_modules: HashSet::new(),
             used_native_terms: HashSet::new(),
             enum_type_names: HashSet::new(),
             current_module: None,
@@ -833,6 +848,11 @@ impl Compiler {
 
         let is_entry = module.name.is_none();
         self.current_module = module.name.clone();
+        if is_bundled_copy(module)
+            && let Some(name) = &module.name
+        {
+            self.first_party_modules.insert(name.clone());
+        }
         // Attribute this module's errors to it, so the caret is drawn against
         // its own source rather than the entry file's.
         self.error_file = (!is_entry).then(|| module.display_name.clone());
@@ -849,6 +869,7 @@ impl Compiler {
         self.merged_imports.clear();
         self.prelude_shadows.clear();
         self.alias_floor.clear();
+        self.alias_written.clear();
         for diag in native_errors
             .into_iter()
             .chain(native::misplaced_native_decls(&stmts))
@@ -1028,6 +1049,8 @@ impl Compiler {
             }
             self.module_aliases.insert(alias.clone(), m.clone());
             self.explicit_aliases.insert(alias.clone());
+            self.alias_written
+                .insert(alias.clone(), import.written.clone());
             qualifier_of.entry(m.clone()).or_insert(alias);
             written_of
                 .entry(m.clone())
@@ -1116,7 +1139,7 @@ impl Compiler {
                 // or a first-party package doing it on purpose.
                 if let Some(prelude) = prelude
                     && prelude != tid
-                    && !deliberately_shadows_prelude(&owner)
+                    && !self.first_party_modules.contains(&owner)
                 {
                     let q = qualifier_of
                         .get(&owner)
@@ -1294,11 +1317,37 @@ impl Compiler {
     /// The warning a *call* through a bare name owes its imports: the name is
     /// an overload set stitched together from unrelated plain imports, so
     /// which module answers depends on how many arguments were written.
-    pub(super) fn check_import_call(&mut self, name: &str, argc: usize, span: SourceSpan) {
+    pub(super) fn check_import_call(
+        &mut self,
+        name: &str,
+        argc: usize,
+        positional: bool,
+        span: SourceSpan,
+    ) {
         let Some(tid) = self.scope_lookup(name) else {
             return;
         };
         let Some((name, modules)) = self.merged_imports.get(&tid) else {
+            // The function set an import bound, held to the counts *it*
+            // takes. The checker's own pass knows functions by bare name
+            // across the whole program, so it cannot tell which module's
+            // `score` this file's imports resolved to; this is where that is
+            // known. A call that names its arguments is left to the run.
+            if positional
+                && let Some(ranges) = self.imported_arities(tid)
+                && !ranges.iter().any(|&(lo, hi)| lo <= argc && argc <= hi)
+                && !self.arity_reported_at(span)
+            {
+                let expected = crate::backend::calls::arity_ranges(ranges);
+                self.warnings.push(crate::diagnostic::Diagnostic::error(
+                    span,
+                    format!(
+                        "`{name}` expects {} argument{}, got {argc}",
+                        expected.join(" or "),
+                        if expected == ["1"] { "" } else { "s" },
+                    ),
+                ));
+            }
             return;
         };
         let message = format!(
@@ -1309,6 +1358,15 @@ impl Compiler {
             crate::ast::module_local_name(&modules[0]),
         );
         self.warn_at(span, message);
+    }
+
+    /// Whether the checker already reported an error for the call at `span`.
+    fn arity_reported_at(&self, span: SourceSpan) -> bool {
+        self.warnings.iter().any(|d| {
+            d.severity == crate::diagnostic::Severity::Error
+                && d.span.file == span.file
+                && d.span.start.offset == span.start.offset
+        })
     }
 
     /// Bind an import under its bare name, carrying the binding kind over from

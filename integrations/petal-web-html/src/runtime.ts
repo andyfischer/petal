@@ -13,6 +13,65 @@ export class PetalWeb {
     this.runtime = new PetalRuntime();
   }
 
+  // --- Packages and host interfaces -------------------------------------
+  //
+  // The page has no filesystem, so libraries reach a script from memory.
+  // Call these after `init()` and before `load()`. See docs/packages.md
+  // ("Bundles") and docs/module-system.md ("Host interface packages").
+
+  /** Register one in-memory module: later programs can `import <name>`. */
+  registerModule(name: string, source: string): void {
+    if (!this.runtime) throw new Error("Not initialized");
+    this.runtime.register_module(name, source);
+  }
+
+  /**
+   * Register a whole package from memory. `modules` maps package-relative
+   * module names (`menu`, `ui/menu`) to source text; a `"petal.toml"` entry
+   * is the package's manifest. This is the shape of each
+   * `packages[i].modules` object `petal bundle` emits.
+   */
+  registerPackage(name: string, modules: Record<string, string>): void {
+    if (!this.runtime) throw new Error("Not initialized");
+    this.runtime.register_package(name, JSON.stringify(modules));
+  }
+
+  /**
+   * Register every package of a `petal bundle` output (the parsed JSON), so
+   * its entry can then be passed to `load()`.
+   */
+  registerBundle(bundle: {
+    packages: { name: string; modules: Record<string, string> }[];
+  }): void {
+    for (const pkg of bundle.packages) this.registerPackage(pkg.name, pkg.modules);
+  }
+
+  /**
+   * Announce that this page provides the host interface `name` at `version`
+   * (`"0.4.0"`). A package whose manifest says `[requires] name = ">=…"`
+   * loads only where the interface is provided.
+   */
+  provides(name: string, version: string): void {
+    if (!this.runtime) throw new Error("Not initialized");
+    this.runtime.provides(name, version);
+  }
+
+  /** The interfaces this runtime provides, name to version (always `core`). */
+  providedInterfaces(): Record<string, string> {
+    if (!this.runtime) return {};
+    return JSON.parse(this.runtime.provided_interfaces());
+  }
+
+  /**
+   * Check the runtime's registered natives against its interface packages:
+   * every declared native is registered and vice versa. Returns `""` when
+   * they agree, else a description of what differs.
+   */
+  verifyInterface(packages: string[]): string {
+    if (!this.runtime) throw new Error("Not initialized");
+    return this.runtime.verify_interface(packages.join(","));
+  }
+
   load(source: string): void {
     if (!this.runtime) throw new Error("Not initialized");
     this.programId = this.runtime.load_program(source);

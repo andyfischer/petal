@@ -143,6 +143,32 @@ way, for code written against an earlier checkout.
 
 ### CLI
 
+- `petal check` and `petal run` agree on more scripts. `check` now reports a
+  call to a builtin or host native with an argument count its `native fn`
+  declaration does not take, a call through a plain import with a count the
+  module it resolved to does not take, method syntax on a plain value that
+  needs a packaged builtin the file has not imported, and every deferred
+  compile error (a qualifier read as a value, a member a module does not
+  export). `petal run` refuses a script with a name nothing defines before
+  the first line runs, instead of failing if and when the line is reached.
+  Assigning through a module qualifier (`hud.score = 5`) is a compile error.
+- Method syntax reaches a packaged builtin or a host native only in a file
+  that has it in scope; another file's import no longer enables it
+  program-wide.
+- `import ../x` works when the entry file is named with no directory
+  (`petal run esc.ptl`); it used to fail with "climbs above the filesystem
+  root".
+- `petal fix-imports` rewrites `import color` to `import ./color` when a
+  `color.ptl` sits beside the file and the file takes names the `color`
+  package does not export; `-e` code sees the working directory's project
+  dependencies.
+- `petal run --ir` links the program (every native its calls name must be
+  registered) before any line runs.
+- The prelude-shadow warning is skipped only for the bundled copy of a
+  first-party package, not for any package that takes a bundled name.
+- The web runtimes' TypeScript wrappers (`PetalCanvas`, `PetalWeb`) expose
+  `registerModule`, `registerPackage`, `registerBundle`, `provides`,
+  `providedInterfaces` and `verifyInterface`.
 - `petal fix-imports [--check] [--diff] <paths…>` migrates code written for
   the earlier import rules: a sibling file imported by a bare name becomes
   `./name`, `import m: *` becomes `import m`, a selective import whose

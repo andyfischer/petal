@@ -68,7 +68,9 @@ After `import noise` the names work bare (`noise(x)`), qualified
 takes just the names listed. Without the import, a call is an error that says
 which import to add (`petal check` reports it, and `petal fix-imports` adds
 it). Method syntax follows the same rule: `v.normalize()` reaches the `vec2`
-builtin only in a file that imports `vec2`. The values themselves need no
+builtin only in a file that imports `vec2` — the import of some other file of
+the program does not count, and `petal check` reports the call when the
+receiver is plainly a number, string, list or vector. The values themselves need no
 import: a `vec2` a function was handed still has `.x`, arithmetic and `==`.
 
 ## I/O

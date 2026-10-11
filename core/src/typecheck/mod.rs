@@ -305,6 +305,12 @@ pub struct MethodDispatch {
     /// last resort, for when the label the receiver carries names nothing in
     /// the program now running. See `core/src/backend/bytecode/vm/calls.rs`.
     pub hints: HashMap<SourceSpan, String>,
+    /// Sites whose receiver is known to be a plain value — a number, a
+    /// string, a list, a vector — with the type's name. Such a receiver has
+    /// no fields and no class, so only a native in scope can answer the
+    /// call: the compiler, which knows the file's scope, reports a call to a
+    /// packaged builtin whose import is missing.
+    pub plain: HashMap<SourceSpan, String>,
 }
 
 impl MethodDispatch {
@@ -1266,6 +1272,21 @@ impl<'a> Checker<'a> {
                     ExprKind::FieldAccess { object, field } => {
                         let recv = self.check_expr(object);
                         method_sig = self.check_method_call(recv, field, args.len(), expr.span);
+                        if matches!(
+                            recv,
+                            Type::Bool
+                                | Type::Int
+                                | Type::Float
+                                | Type::Num
+                                | Type::String
+                                | Type::List
+                                | Type::Vec2
+                                | Type::Vec3
+                                | Type::F64Array
+                        ) {
+                            let spelled = self.spell(recv);
+                            self.dispatch.plain.insert(expr.span, spelled);
+                        }
                         // The receiver has no knowable type, but its declaration
                         // named a class. Not enough to bind the call — the slot
                         // may legitimately hold another class by now — but
@@ -1824,6 +1845,30 @@ impl<'a> Checker<'a> {
             // `order[slot]` is the written argument filling that slot. Names
             // that do not bind leave nothing to check here —
             // `globals::unresolved_globals` reports them after the compile.
+            // The declared forms are the native's arity: a count none of them
+            // takes fails whenever the line runs. A form with a rest
+            // parameter takes any count above its fixed ones.
+            if !decl.accepts_count(args.len()) {
+                if let Some(least) =
+                    decl.forms.iter().filter(|form| form.rest).map(|form| form.required).min()
+                {
+                    self.error(
+                        call_span,
+                        format!(
+                            "`{f}` expects at least {least} argument{}, got {}",
+                            if least == 1 { "" } else { "s" },
+                            args.len()
+                        ),
+                    );
+                } else {
+                    let expected = crate::backend::calls::arity_ranges(
+                        decl.forms.iter().map(|form| (form.required, form.params.len())),
+                    );
+                    let what = format!("`{f}`");
+                    self.warn_arity(call_span, &what, &expected, args.len());
+                }
+                return Type::Any;
+            }
             let order: Vec<usize> = if arg_names.iter().all(Option::is_none) {
                 (0..args.len()).collect()
             } else {

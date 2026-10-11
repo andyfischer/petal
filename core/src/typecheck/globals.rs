@@ -2,18 +2,20 @@
 //!
 //! The compiler does not reject an unresolved name: a call to one and a read
 //! of one both become a deferred `Error` term ("Unknown function: x",
-//! "Undefined variable: x") that fires only if the line runs. That is
-//! deliberate — a line that never runs should not stop the rest of a script —
-//! but it means a program that is certain to fail the moment the line runs
-//! would otherwise pass `petal check`.
+//! "Undefined variable: x") that fires only if the line runs. A host that
+//! reloads a script while it is being edited relies on that — a half-typed
+//! line must not take the frame down — but a program that is certain to fail
+//! the moment the line runs must not pass `petal check`, nor start under
+//! `petal run`.
 //!
 //! [`unresolved_globals`] closes that hole after the compile, by scanning the
-//! program's IR for those terms. No host is consulted: a name is in scope
-//! because the file declares it, an import binds it, or it is a `core`/`std`
-//! builtin, and for no other reason. A host's natives are answered for by its
-//! interface package (`import ui`), whose `native fn` declarations carry the
-//! parameter lists a named call is checked against, whether or not this
-//! process registers the natives.
+//! program's IR for those terms; [`deferred_errors`] is the same scan in the
+//! run's own words, which `petal run` refuses to start on. No host is
+//! consulted: a name is in scope because the file declares it, an import
+//! binds it, or it is a `core`/`std` builtin, and for no other reason. A
+//! host's natives are answered for by its interface package (`import ui`),
+//! whose `native fn` declarations carry the parameter lists a named call is
+//! checked against, whether or not this process registers the natives.
 
 use std::collections::HashSet;
 
@@ -92,6 +94,36 @@ pub fn named_native_call_error(
     // optional one, or too many arguments. The binder's own sentence says
     // which.
     sig.bind(name, &indices, names).err()
+}
+
+/// The compiler's deferred errors, in the words the run would fail with:
+/// every `Error` term of the program, with its position and the module it is
+/// in (`None` for the entry file). Each is a line that fails whenever it
+/// runs — an unbound name, a qualifier read as a value, a member a module
+/// does not export. `petal check` reports them
+/// ([`unresolved_globals`]); `petal run` refuses to start on them, so the two
+/// agree on a script whether or not the line would have been reached.
+pub fn deferred_errors(program: &Program) -> Vec<(Diagnostic, Option<String>)> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for term in &program.terms {
+        let TermOp::Error(cid) = term.op else {
+            continue;
+        };
+        let (Some(msg), Some(span)) = (
+            program.get_string_constant(cid),
+            program.source_map.get(term.id),
+        ) else {
+            continue;
+        };
+        if seen.insert((span.file, span.start.offset, msg)) {
+            out.push((
+                Diagnostic::error(*span, msg.to_string()),
+                program.source_map.file_name_for_span(span).map(str::to_string),
+            ));
+        }
+    }
+    out
 }
 
 /// Report every call to, or read of, a name that nothing defines, and every
@@ -197,7 +229,11 @@ pub fn unresolved_globals<'a>(
                         format!("undefined variable `{name}` {hint}")
                     }
                 } else {
-                    continue;
+                    // Every other deferred error the compiler writes (a
+                    // qualifier read as a value, a member a module does not
+                    // export, an assignment into a temporary): the line
+                    // fails whenever it runs, in these words.
+                    msg.to_string()
                 }
             }
             _ => continue,

@@ -201,7 +201,7 @@ way, for code written against an earlier checkout.
 - `petal.toml` names dependencies and required host interfaces.
   `[dependencies]` maps an import name to `{ path = "…" }`, `{ git = "…", tag
   = "…" }` / `{ git, rev }` or a registry version string; path dependencies
-  resolve now, git ones are parsed and listed, and a registry version is a
+  and git dependencies resolve, and a registry version is a
   "registries are not supported yet" error where it is imported. `[requires]`
   names host interfaces with a version range (`ui = ">=0.1"`).
 - Every command that compiles, and the language server, finds the nearest
@@ -214,6 +214,19 @@ way, for code written against an earlier checkout.
   packages require an interface the host lacks, or has at an incompatible
   version, is a load error. `petal check` reports the required interfaces and
   does not fail on them. bloom and text_layout require `ui`.
+- A package manager. `petal init`, `add`, `remove`, `install`, `update`,
+  `vendor` and `bundle` manage a project's `[dependencies]`. Git dependencies
+  are fetched (with `git`) into a content-addressed cache under
+  `~/.petal/cache` (`PETAL_HOME`); `petal.lock` pins each package's source,
+  commit and tree hash, and fetches are verified against it. A program holds
+  exactly one version of each package, chosen by minimal version selection
+  (the highest tag anyone asks for; no solver), with a conflict error for
+  pins that cannot be ordered. `vendor/<name>` at the project root is used in
+  preference to the cache. `petal bundle <entry>` emits the whole graph in
+  the in-memory form `register_package` accepts. `check` and `run` install on
+  demand when a program imports a git dependency (`PETAL_OFFLINE=1` forbids
+  it); hosts and the language server never fetch
+  (`Env::set_install_on_demand`).
 - `petal packages [path]` shows the project's resolved dependency graph, the
   host interfaces it requires, and the bundled packages, as well as the
   search path.

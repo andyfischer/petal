@@ -232,9 +232,10 @@ The manifest has since grown `[dependencies]` (path, git and registry forms;
 the key is the import name) and `[requires]` (the host interfaces a package
 needs, checked against `Env::provides` at load), and every tool finds the
 nearest manifest by walking up from the file. bloom's manifest now says what
-was only implied: it depends on `text_layout` and requires `ui`. Still absent:
-fetching git dependencies, a lockfile, a registry. See
-[module-system.md](../module-system.md#packages).
+was only implied: it depends on `text_layout` and requires `ui`. Git
+dependencies are now fetched, locked (`petal.lock`) and vendored by the
+package manager (`petal install`, `petal vendor`, `petal bundle`); a registry
+is still absent. See [module-system.md](../module-system.md#the-package-manager).
 
 ### 6. Overload sets do not merge across modules — fixed, with two edges
 

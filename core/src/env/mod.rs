@@ -732,6 +732,14 @@ impl Env {
             .collect()
     }
 
+    /// Let a load run `petal install` for its project when it imports a git
+    /// dependency that is not installed (fetching with `git`; see
+    /// [`crate::pkgman`]). Off by default — a host decides when the network
+    /// is touched. The `petal` CLI turns it on for the commands that compile.
+    pub fn set_install_on_demand(&mut self, on: bool) {
+        self.modules.install_on_demand = on;
+    }
+
     /// The packages compiled into the binary, in bundling order.
     pub fn bundled_packages() -> Vec<crate::package::PackageInfo> {
         crate::module::bundled_package_infos()

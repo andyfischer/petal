@@ -168,6 +168,13 @@ pub struct ModuleRegistry {
     /// *project* manifest (the nearest `petal.toml` above the entry) is
     /// found from. `None` for an entry with no path and no inline directory.
     entry_dir: std::cell::RefCell<Option<PathBuf>>,
+    /// Run `petal install` for the project the first time a load imports a
+    /// git dependency that is not installed (see [`crate::pkgman`]). Off by
+    /// default: a host, and the language server, never shell out to git on
+    /// their own. The CLI turns it on.
+    pub install_on_demand: bool,
+    /// Projects an on-demand install was already tried for in this load.
+    install_tried: std::cell::RefCell<HashSet<PathBuf>>,
 }
 
 impl ModuleRegistry {
@@ -358,7 +365,7 @@ pub fn canonical_path(path: &Path) -> PathBuf {
 
 /// `path` with `.` and `..` components folded away without touching the
 /// filesystem. `None` when a `..` would climb above the path's root.
-fn normalize_lexical(path: &Path) -> Option<PathBuf> {
+pub(crate) fn normalize_lexical(path: &Path) -> Option<PathBuf> {
     use std::path::Component;
     let mut out = PathBuf::new();
     let mut depth = 0usize;
@@ -429,6 +436,7 @@ impl ModuleResolver for ModuleRegistry {
     fn begin_load(&self, entry: Option<&Path>) {
         self.enclosing.borrow_mut().clear();
         self.dependency_packages.borrow_mut().clear();
+        self.install_tried.borrow_mut().clear();
         *self.entry_dir.borrow_mut() = entry
             .and_then(Path::parent)
             .map(|dir| if dir.as_os_str().is_empty() { Path::new(".") } else { dir })
@@ -527,29 +535,87 @@ impl ModuleRegistry {
         dep: &crate::package::Dependency,
     ) -> Result<std::sync::Arc<crate::package::Package>, String> {
         use crate::package::DependencySource;
+        let load = |root: PathBuf, how: String| {
+            if let Some(hit) = self.dependency_packages.borrow().get(&root) {
+                return Ok(hit.clone());
+            }
+            let pkg = crate::package::Package::from_dir(&root).map_err(|e| {
+                format!(
+                    "dependency '{}' of package '{}' ({how}) does not load: {e}",
+                    dep.name, owner.info.name
+                )
+            })?;
+            let pkg = std::sync::Arc::new(pkg);
+            self.dependency_packages
+                .borrow_mut()
+                .insert(root, pkg.clone());
+            Ok(pkg)
+        };
+        // The project whose petal.lock and vendor/ answer for fetched
+        // packages: the entry file's, or the owner itself when there is none.
+        let project_root = || match self.project_package() {
+            Ok(Some(project)) => canonical_path(&project.info.root),
+            _ => canonical_path(&owner.info.root),
+        };
         match &dep.source {
             DependencySource::Path(rel) => {
-                let root = canonical_path(&owner.info.root.join(rel));
-                if let Some(hit) = self.dependency_packages.borrow().get(&root) {
-                    return Ok(hit.clone());
+                let owner_root = canonical_path(&owner.info.root);
+                let joined = owner_root.join(rel);
+                let root = canonical_path(&normalize_lexical(&joined).unwrap_or(joined));
+                // A package that was fetched may not reach outside what was
+                // fetched with it.
+                if let Some(tree) = crate::pkgman::fetched_tree_of(&project_root(), &owner_root)
+                    && !root.starts_with(&tree)
+                {
+                    return Err(format!(
+                        "dependency '{}' of package '{}' (path = \"{rel}\") leaves the \
+                         repository the package was fetched from — a path dependency of a git \
+                         package must stay inside it",
+                        dep.name, owner.info.name
+                    ));
                 }
-                let pkg = crate::package::Package::from_dir(&root).map_err(|e| {
+                load(root, format!("path = \"{rel}\""))
+            }
+            DependencySource::Git { url, tag, rev } => {
+                let project = project_root();
+                let owner_root = canonical_path(&owner.info.root);
+                let locate = |trust: bool| {
+                    crate::pkgman::locate_git(&project, &owner_root, url, tag, rev, trust)
+                };
+                // The first git dependency a load meets checks the whole
+                // graph against the lockfile, before any fetched package is
+                // loaded: a manifest that has moved past petal.lock is
+                // installed once, up front, so every importer then sees the
+                // same single version.
+                if self.install_on_demand
+                    && self.install_tried.borrow_mut().insert(project.clone())
+                    && let Err(crate::pkgman::ResolveError::NotInstalled(_)) =
+                        crate::pkgman::installed_graph(&project)
+                {
+                    eprintln!("Installing the dependencies of {}", project.display());
+                    crate::pkgman::install_with(
+                        &project,
+                        &crate::pkgman::InstallOptions {
+                            announce: true,
+                            ..Default::default()
+                        },
+                    )
+                    .map_err(|e| {
+                        format!(
+                            "dependency '{}' of package '{}' ({url}) could not be installed: {e}",
+                            dep.name, owner.info.name
+                        )
+                    })?;
+                }
+                let root = locate(false).map_err(|e| {
                     format!(
-                        "dependency '{}' of package '{}' (path = \"{rel}\") does not load: {e}",
+                        "dependency '{}' of package '{}' is a git dependency ({url}) that is \
+                         not installed: {e} — run `petal install`",
                         dep.name, owner.info.name
                     )
                 })?;
-                let pkg = std::sync::Arc::new(pkg);
-                self.dependency_packages
-                    .borrow_mut()
-                    .insert(root, pkg.clone());
-                Ok(pkg)
+                load(canonical_path(&root), format!("git = \"{url}\""))
             }
-            DependencySource::Git { url, .. } => Err(format!(
-                "dependency '{}' of package '{}' is a git dependency ({url}), and git \
-                 dependencies are not fetched yet — use {{ path = \"…\" }} to a checkout for now",
-                dep.name, owner.info.name
-            )),
             DependencySource::Registry(version) => Err(format!(
                 "dependency '{} = \"{version}\"' of package '{}' names a registry version, and \
                  registries are not supported yet — use {{ path = \"…\" }} or {{ git = \"…\", \
@@ -783,6 +849,33 @@ impl ModuleRegistry {
             }
             if let Some(dep) = owner.info.dependency(package) {
                 let pkg = self.dependency_package(owner, dep)?;
+                return load(&pkg);
+            }
+        }
+        // A package the project vendored by hand: `vendor/<name>` answers
+        // for a name no manifest lists, ahead of the search path and the
+        // bundled copy.
+        if let Some(project) = &project {
+            let vendored = project
+                .info
+                .root
+                .join(crate::pkgman::VENDOR_DIR)
+                .join(package);
+            if vendored.join(crate::package::MANIFEST_FILE).is_file() {
+                let root = canonical_path(&vendored);
+                let hit = self.dependency_packages.borrow().get(&root).cloned();
+                let pkg = match hit {
+                    Some(pkg) => pkg,
+                    None => {
+                        let pkg = std::sync::Arc::new(
+                            crate::package::Package::from_dir(&root).map_err(|e| e.to_string())?,
+                        );
+                        self.dependency_packages
+                            .borrow_mut()
+                            .insert(root, pkg.clone());
+                        pkg
+                    }
+                };
                 return load(&pkg);
             }
         }

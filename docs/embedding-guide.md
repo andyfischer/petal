@@ -379,6 +379,19 @@ env.register_package("bloom", [
 ])?;
 ```
 
+A host with no filesystem does not have to list the sources by hand:
+`petal bundle <entry>` emits a project's whole installed dependency graph as
+one JSON document whose `packages[i].modules` is exactly what
+`register_package` takes, manifests included (see
+[module-system.md](module-system.md#bundles)). Register each package, then
+load `entry.source` at `entry.path`.
+
+A host never fetches a dependency by itself. A project's `git` dependencies
+are found through its `petal.lock` in `vendor/` or the cache
+(`~/.petal/cache`); if they are not installed the load fails with an error
+naming `petal install`. `env.set_install_on_demand(true)` makes the load run
+the install (shelling out to `git`), as the `petal` CLI does.
+
 Either way the library's modules answer to `import bloom/menu`, its internal
 relative imports (`import ./motion`) keep working, and `env.packages()` lists
 what a host can tell the user is available. A host registration is the first

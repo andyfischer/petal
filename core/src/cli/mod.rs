@@ -13,6 +13,7 @@ mod args;
 mod bench;
 mod handlers;
 mod help;
+mod pm;
 mod source_tools;
 
 /// How human-readable (non-`--json`) errors are printed.
@@ -254,6 +255,9 @@ pub enum Command {
         json: bool,
         path: Option<String>,
     },
+    /// The package-manager commands (`init`, `add`, `remove`, `install`,
+    /// `update`, `vendor`, `bundle`); see `crate::pkgman`.
+    Pm(pm::PmCommand),
 }
 
 /// Every flag `petal suggest` accepts.
@@ -551,6 +555,10 @@ pub fn execute(cli: CliArgs) {
         source_tools::handle_apply_change(opts, &include_dirs);
         return;
     }
+    if let Command::Pm(pm) = &command {
+        pm::handle(pm);
+        return;
+    }
     // `packages` reports on the search path itself; there is no program.
     if let Command::Packages { json, path } = command {
         handlers::handle_packages(json, path.as_deref(), &include_dirs);
@@ -653,7 +661,7 @@ pub fn execute(cli: CliArgs) {
             handlers::handle_show_graph(all, &source, &source_input, &include_dirs);
         }
         // Handled above, before the source read.
-        Command::Lsp | Command::Packages { .. } => unreachable!(),
+        Command::Lsp | Command::Packages { .. } | Command::Pm(_) => unreachable!(),
     }
 }
 

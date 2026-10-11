@@ -20,9 +20,21 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("check", "Compile a program without executing it"),
             ("bench", "Measure what a call of a named function costs"),
             ("lsp", "Serve the language server over stdio"),
+        ],
+    ),
+    (
+        "manage a project's packages",
+        &[
+            ("init", "Start a project: write a petal.toml"),
+            ("add", "Add a dependency and install it"),
+            ("remove", "Remove a dependency"),
+            ("install", "Fetch dependencies and write petal.lock"),
+            ("update", "Re-resolve locked dependencies"),
+            ("vendor", "Copy git dependencies into vendor/"),
+            ("bundle", "Emit a program's packages as one JSON document"),
             (
                 "packages",
-                "List the libraries the search path makes available",
+                "Show the project's dependency graph and available libraries",
             ),
         ],
     ),
@@ -153,6 +165,13 @@ fn page(name: &str) -> Option<&'static str> {
         "propose-edit" => PROPOSE_EDIT,
         "lsp" => LSP,
         "packages" => PACKAGES,
+        "init" => super::pm::INIT,
+        "add" => super::pm::ADD,
+        "remove" => super::pm::REMOVE,
+        "install" => super::pm::INSTALL,
+        "update" => super::pm::UPDATE,
+        "vendor" => super::pm::VENDOR,
+        "bundle" => super::pm::BUNDLE,
         _ => return None,
     })
 }
@@ -414,7 +433,10 @@ DESCRIPTION
 
        The nearest petal.toml is found by walking up from the script, as in
        every command that compiles: its [dependencies] are importable by
-       their keys with no flag. When the packages the program loads state
+       their keys with no flag. A git dependency the program imports is
+       installed first if it is missing or petal.lock is out of date (see
+       'petal help install'; PETAL_OFFLINE=1 forbids it). When the packages
+       the program loads state
        [requires], a passing check prints one line naming those host
        interfaces ('requires host interfaces: ui >=0.1 (bloom)'; a
        'requires' array with --json). It never fails on them: it has no
@@ -1439,8 +1461,10 @@ DESCRIPTION
        A dependency may also be written on one line as an inline table
        (name = path/git/tag/rev pairs in braces; see docs/module-system.md).
        A path dependency is resolved against the manifest's directory. A git
-       dependency is listed as unresolved until the package manager fetches
-       it; a registry version (name = \"0.3\") is not supported yet.
+       dependency is shown at the commit petal.lock pins it to, and marked
+       when it comes from vendor/; one that is not installed is listed as
+       unresolved ('petal install' fetches it - this command never does). A
+       registry version (name = \"0.3\") is not supported yet.
 
        A petal.toml that will not parse is an error here, and in every
        command that takes -I — a library the user pointed at and that failed
@@ -1448,14 +1472,16 @@ DESCRIPTION
 
 OPTIONS
        --json
-              Emit the report as structured JSON: project (with dependencies
+              Emit the report as structured JSON: project (with locked,
+              dependencies - each git one with commit, tree and vendored -
               and required_interfaces), packages, bundled, errors.
 
        -I <dir>
               A directory to search for libraries. Repeatable.
 
 SEE ALSO
-       petal help run, petal help check, docs/module-system.md
+       petal help install, petal help run, petal help check,
+       docs/module-system.md
 ";
 
 #[cfg(test)]
@@ -1514,5 +1540,12 @@ mod tests {
         "propose-edit",
         "lsp",
         "packages",
+        "init",
+        "add",
+        "remove",
+        "install",
+        "update",
+        "vendor",
+        "bundle",
     ];
 }

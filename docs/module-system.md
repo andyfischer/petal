@@ -378,6 +378,10 @@ this order, and the first place that has a package of that name wins:
    nearest the program's entry file — is asked next, which is how code with
    no manifest of its own (`-e` code run inside a project, the modules of a
    bundled or in-memory package) picks up the project's choice of a package.
+   A `git` dependency is found where [the package manager](#the-package-manager)
+   put it: `vendor/<name>` at the project root, else the cache, as
+   `petal.lock` pins it. A `vendor/<name>` directory also answers for a name
+   no manifest lists.
 3. **The search path**: packages under the directories given with
    `petal run -I <dir>` (repeatable, and accepted by every command that
    compiles) or `env.add_module_path`, then under the `PETAL_PATH`
@@ -641,7 +645,7 @@ qualifier follows the spelling (`tw.go()`); the module's
 | Form | Meaning |
 | --- | --- |
 | `{ path = "…" }` | a package directory, relative to this manifest. Resolved when a file imports it |
-| `{ git = "…", tag = "…" }`, `{ git = "…", rev = "…" }` | a git repository pinned to a tag or a commit. Parsed and listed; importing one is an error until the package manager fetches it |
+| `{ git = "…", tag = "…" }`, `{ git = "…", rev = "…" }` | a git repository with a `petal.toml` at its root, pinned to a tag or a commit. Fetched and locked by [the package manager](#the-package-manager) |
 | `"0.3"` | a registry version. Parsed; importing one is the error "registries are not supported yet" |
 
 A dependency is declared where it is used: a package resolves its imports
@@ -719,8 +723,162 @@ An in-memory package may carry its manifest: a source named `petal.toml`
 among the modules is the manifest, not a module, and gives the package its
 version and `[requires]`.
 
-There is no registry and no fetching yet: `path` dependencies resolve, `git`
-ones wait for the package manager.
+There is no registry yet: `path` and `git` dependencies resolve, and a
+version string is the error "registries are not supported yet".
+
+## The package manager
+
+`petal install` turns a project's `[dependencies]` — and those of every
+package they reach — into **exactly one version of each package**, fetches
+what is not on disk, and records the result in `petal.lock`.
+
+```bash
+petal init                                   # write a petal.toml here
+petal add tween --git https://example.org/tween --tag v1.2.0
+petal add util --path ../libs/util
+petal install                                # fetch, verify, write petal.lock
+petal run main.ptl                           # no flags: the manifest is found from the file
+```
+
+| Command | What it does |
+| --- | --- |
+| `petal init [dir] [--name n]` | write a `petal.toml` with a `[package]` section; never overwrites one |
+| `petal add <name> --path p` / `--git url --tag t` / `--git url --rev r` | set the dependency `name` in `[dependencies]` and install; a manifest the install rejects is put back |
+| `petal remove <name>…` | delete the entry and install again, which prunes `petal.lock` |
+| `petal install [--locked]` | resolve, fetch what is missing, verify, write `petal.lock`. `--locked` fails rather than change it |
+| `petal update [name…]` | resolve the named packages (all of them when none is named) afresh instead of from `petal.lock` |
+| `petal vendor` | install, then copy every git package into `vendor/<name>` |
+| `petal bundle <entry> [-o file]` | emit every module of the graph as one JSON document for a host with no filesystem |
+| `petal packages [path]` | show the resolved graph, the locked commits, and the required host interfaces |
+
+All of them work on the project of the working directory: the nearest
+`petal.toml` at or above it.
+
+### One version of each package
+
+A program holds one copy of each package, so every importer of `ease` sees
+the same module and the same state ([Module identity](#module-identity)).
+When two packages depend on the same repository at different tags, the
+**higher tag wins** — *minimal version selection*: the version used is the
+highest minimum anyone in the graph asks for. No solver runs, and nothing is
+ever upgraded past what some manifest names. Tags are compared as dotted
+versions (`v1.2.0`, `1.10`).
+
+What cannot be ordered is an error, not a guess:
+
+- two different `rev`s of one repository, or a tag and a `rev` that are
+  different commits (the same commit under two spellings is fine);
+- two different sources — two repositories, or a repository and a directory —
+  whose packages have the same name.
+
+```
+Error: /src/ease is wanted at rev '9f3c2ab' (by 'game') and at tag 'v1.1.0' (by 'tween'),
+and those are different commits that cannot be ordered — a program holds exactly one
+version of each package; pin both to the same tag or rev
+```
+
+A git dependency's package is the repository's root. Such a package may have
+`path` dependencies of its own, as long as they stay inside the repository.
+
+### `petal.lock`
+
+`petal install` writes `petal.lock` beside the project's `petal.toml`. Commit
+it. Each package of the graph has an entry:
+
+```toml
+[[package]]
+name = "ease"
+version = "1.1.0"
+git = "https://example.org/ease"
+tag = "v1.1.0"
+commit = "13ba65e49a5c8051a689cfc696d993005d5cd44b"
+tree = "sha256:ef8db77f80682cf69005e60ce6924ed495bd0fd0385b21e57afc06008140305b"
+
+[[package]]
+name = "util"
+path = "../libs/util"
+```
+
+A git package is pinned to the commit its tag or rev resolved to and to a
+hash of its checked-out tree. Later installs use the locked commit even if
+the tag has since moved, and verify what they fetch — and every cached or
+vendored tree already present — against the locked hash; a mismatch is an
+error (`petal update <name>` re-pins when the change is expected). A `path`
+package is recorded by its path and not hashed: it is live source on your
+disk. A path package inside a fetched repository is recorded with `within =
+"<the git package>"`.
+
+A locked higher tag stands only while something in the graph still asks for
+it: lower the pin in every manifest and the next install follows.
+
+### The cache and `vendor/`
+
+Git repositories are fetched with `git` into `~/.petal/cache` (`PETAL_HOME`
+replaces `~/.petal`). A checked-out tree lives at `cache/trees/<sha256>`, so
+the cache is content-addressed: two projects locking the same tree share it,
+and a tree is never modified once written.
+
+`petal vendor` copies each git package into `vendor/<name>` at the project
+root. **`vendor/<name>` is used in preference to the cache** by every
+command, so a project with `vendor/` checked in builds with no network and
+no cache. While `vendor/` exists, `petal install` keeps the packages in it in
+step with `petal.lock`. A vendored tree edited by hand still loads, but
+fails `petal install`'s verification until `petal vendor` rewrites it.
+
+`vendor/<name>` also answers `import <name>` for a name no manifest lists,
+ahead of the search path and the bundled copy — the way to pin a patched
+`bloom` for one project.
+
+### Install on demand
+
+`petal check`, `petal run` and the other commands that compile install on
+demand: the first time a program imports a git dependency, the project's
+graph is checked against `petal.lock`, and if something is missing or the
+manifest has moved past the lockfile, `petal install` runs before the
+package is loaded. A script that imports no git dependency never triggers
+it. `PETAL_OFFLINE=1` forbids fetching: the missing install is then an error
+naming `petal install`.
+
+A host embedding the runtime, and the language server, never fetch. They
+read `petal.lock` and open the vendored or cached tree, and report an
+uninstalled dependency as an error (`Env::set_install_on_demand(true)` opts
+in).
+
+### Bundles
+
+`petal bundle <entry>` prints the installed graph — the project's own
+package included — in the in-memory form `register_package` accepts:
+
+```json
+{
+  "format": 1,
+  "entry": { "file": "main.ptl", "path": "<package:game>/main.ptl", "source": "…" },
+  "packages": [
+    { "name": "game",  "version": "0.1.0", "modules": { "petal.toml": "…", "main": "…", "level": "…" } },
+    { "name": "tween", "version": "1.2.0", "modules": { "petal.toml": "…", "tween": "…" } }
+  ],
+  "requires": [ { "interface": "ui", "version": ">=0.1", "package": "tween" } ]
+}
+```
+
+A host registers each package and loads the entry at `entry.path`, which
+places it inside the project's in-memory package so its `./x` imports
+resolve:
+
+```rust
+for package in &bundle.packages {
+    env.register_package(&package.name, package.modules.iter())?;
+}
+let program = env.load_program_at(&bundle.entry.source, Path::new(&bundle.entry.path))?;
+```
+
+`modules` is exactly what the wasm `register_package(name, json)` and
+`pb_vm_register_package` take; each package's `petal.toml` rides along, so
+its `[requires]` are checked against what the host `provides`. `entry.path`
+is null when the entry file is not under the project's module directory.
+Packages bundled in the binary (`ui`, `bloom`, the builtin packages) are not
+repeated. A dependency whose key renames its package (`tw = …` for `tween`)
+cannot be bundled: an in-memory package is registered under its own name.
 
 ## Shipping a library
 

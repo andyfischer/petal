@@ -189,6 +189,9 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "bench" => parse_bench_args(&args[1..]),
         "lsp" => parse_lsp_args(&args[1..]),
         "packages" => parse_packages_args(&args[1..]),
+        "init" | "add" | "remove" | "install" | "update" | "vendor" | "bundle" => {
+            super::pm::parse(first, &args[1..])
+        }
         "check" => parse_check_args(&args[1..]),
         "fmt" => parse_fmt_args(&args[1..]),
         "lint" => parse_lint_args(&args[1..]),

@@ -39,11 +39,17 @@ describe("manifest dependencies", () => {
     expect(r.status).toBe(0);
   });
 
-  it("a git dependency is a clear error where it is imported", () => {
-    const r = petalCapture(["check", resolve(APP, "uses_git.ptl")]);
-    expect(r.code).not.toBe(0);
+  it("a git dependency that is not installed is a clear error where it is imported", () => {
+    // PETAL_OFFLINE: the CLI would otherwise try to install it (fetching the
+    // url). The package manager itself is covered by core/tests/pkgman.rs.
+    const r = spawnSync(PETAL, ["check", resolve(APP, "uses_git.ptl")], {
+      encoding: "utf-8",
+      env: { ...process.env, PETAL_OFFLINE: "1" },
+    });
+    expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("dependency 'shapes' of package 'marble' is a git dependency");
-    expect(r.stderr).toContain("not fetched yet");
+    expect(r.stderr).toContain("is not installed");
+    expect(r.stderr).toContain("run `petal install`");
   });
 
   it("a registry version is a clear error where it is imported", () => {

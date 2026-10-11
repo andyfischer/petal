@@ -1555,6 +1555,8 @@ pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
     // `-e` code and stdin have no file: `import ./x` means the working
     // directory.
     env.set_inline_import_dir(std::env::current_dir().ok());
+    // A git dependency that is not there yet is fetched when it is imported.
+    env.set_install_on_demand(std::env::var_os("PETAL_OFFLINE").is_none());
     if let Some(err) = env.package_errors().first() {
         die_plain(&err.to_string());
     }
@@ -1565,16 +1567,104 @@ pub(super) fn make_env(include_dirs: &[PathBuf]) -> Env {
 struct DepNode {
     /// The import name (the `[dependencies]` key).
     name: String,
-    /// How the manifest says to get it.
+    /// How the manifest says to get it — and, for an installed git package,
+    /// the commit it is locked to.
     source: String,
     /// The package it resolved to, or why it did not.
-    package: Result<crate::package::PackageInfo, String>,
+    package: Result<DepPackage, String>,
     /// Its own dependencies; empty when this package was already shown.
     children: Vec<DepNode>,
     /// True when the package appears earlier in the graph (shown once).
     repeated: bool,
 }
 
+/// What a resolved dependency is.
+struct DepPackage {
+    name: String,
+    version: Option<String>,
+    root: PathBuf,
+    requires: Vec<crate::package::Requirement>,
+    /// `(commit, tree hash, vendored)` for a git package.
+    locked: Option<(String, String, bool)>,
+}
+
+impl DepPackage {
+    fn of(info: &crate::package::PackageInfo) -> DepPackage {
+        DepPackage {
+            name: info.name.clone(),
+            version: info.version.clone(),
+            root: info.root.clone(),
+            requires: info.requires.clone(),
+            locked: None,
+        }
+    }
+}
+
+/// The graph as the package manager resolves it from what is installed:
+/// one version of each package, git packages at their locked commits.
+fn installed_dependency_graph(
+    graph: &crate::pkgman::Graph,
+    owner: &crate::pkgman::Node,
+    seen: &mut Vec<String>,
+) -> Vec<DepNode> {
+    let manifest = crate::package::Manifest::load(&owner.root).ok();
+    owner
+        .dependencies
+        .iter()
+        .map(|(key, package_name)| {
+            let Some(node) = graph.package(package_name) else {
+                return DepNode {
+                    name: key.clone(),
+                    source: String::new(),
+                    package: Err(format!("package '{package_name}' is not in the graph")),
+                    children: Vec::new(),
+                    repeated: false,
+                };
+            };
+            let source = match &node.source {
+                // A path reads best as the owner's manifest writes it.
+                crate::pkgman::NodeSource::Path { .. } => manifest
+                    .as_ref()
+                    .and_then(|m| m.dependencies.iter().find(|d| d.name == *key))
+                    .map(|d| d.source.to_string())
+                    .unwrap_or_else(|| node.source.to_string()),
+                other => other.to_string(),
+            };
+            let repeated = seen.contains(&node.name);
+            let children = if repeated {
+                Vec::new()
+            } else {
+                seen.push(node.name.clone());
+                installed_dependency_graph(graph, node, seen)
+            };
+            DepNode {
+                name: key.clone(),
+                source,
+                package: Ok(DepPackage {
+                    name: node.name.clone(),
+                    version: node.version.clone(),
+                    root: node.root.clone(),
+                    requires: node.requires.clone(),
+                    locked: match &node.source {
+                        crate::pkgman::NodeSource::Git {
+                            commit,
+                            tree,
+                            vendored,
+                            ..
+                        } => Some((commit.clone(), tree.clone(), *vendored)),
+                        _ => None,
+                    },
+                }),
+                children,
+                repeated,
+            }
+        })
+        .collect()
+}
+
+/// The graph manifest by manifest, for a project whose graph does not
+/// resolve as a whole (something is not installed, or two packages
+/// conflict): each dependency that does load is shown, the rest say why not.
 fn dependency_graph(
     env: &Env,
     owner: &crate::package::PackageInfo,
@@ -1599,7 +1689,7 @@ fn dependency_graph(
             DepNode {
                 name,
                 source,
-                package,
+                package: package.map(|info| DepPackage::of(&info)),
                 children,
                 repeated,
             }
@@ -1612,12 +1702,16 @@ fn graph_requires(
     project: &crate::package::PackageInfo,
     graph: &[DepNode],
 ) -> Vec<crate::package::RequiredInterface> {
-    fn add(info: &crate::package::PackageInfo, out: &mut Vec<crate::package::RequiredInterface>) {
-        for r in &info.requires {
+    fn add(
+        name: &str,
+        requires: &[crate::package::Requirement],
+        out: &mut Vec<crate::package::RequiredInterface>,
+    ) {
+        for r in requires {
             let req = crate::package::RequiredInterface {
                 interface: r.interface.clone(),
                 version: r.version.clone(),
-                package: info.name.clone(),
+                package: name.to_string(),
             };
             if !out.contains(&req) {
                 out.push(req);
@@ -1626,14 +1720,14 @@ fn graph_requires(
     }
     fn walk(nodes: &[DepNode], out: &mut Vec<crate::package::RequiredInterface>) {
         for node in nodes {
-            if let Ok(info) = &node.package {
-                add(info, out);
+            if let Ok(package) = &node.package {
+                add(&package.name, &package.requires, out);
             }
             walk(&node.children, out);
         }
     }
     let mut out = Vec::new();
-    add(project, &mut out);
+    add(&project.name, &project.requires, &mut out);
     walk(graph, &mut out);
     out.sort_by(|a, b| (&a.interface, &a.package).cmp(&(&b.interface, &b.package)));
     out
@@ -1654,13 +1748,17 @@ fn requires_json(requires: &[crate::package::RequiredInterface]) -> serde_json::
     )
 }
 
-fn own_requires_json(info: &crate::package::PackageInfo) -> serde_json::Value {
+fn requirements_json(requires: &[crate::package::Requirement]) -> serde_json::Value {
     serde_json::Value::Array(
-        info.requires
+        requires
             .iter()
             .map(|r| serde_json::json!({ "interface": r.interface, "version": r.version.to_string() }))
             .collect(),
     )
+}
+
+fn own_requires_json(info: &crate::package::PackageInfo) -> serde_json::Value {
+    requirements_json(&info.requires)
 }
 
 fn dep_nodes_json(nodes: &[DepNode]) -> serde_json::Value {
@@ -1668,16 +1766,24 @@ fn dep_nodes_json(nodes: &[DepNode]) -> serde_json::Value {
         nodes
             .iter()
             .map(|n| match &n.package {
-                Ok(info) => serde_json::json!({
-                    "name": n.name,
-                    "source": n.source,
-                    "package": info.name,
-                    "version": info.version,
-                    "root": info.root.display().to_string(),
-                    "requires": own_requires_json(info),
-                    "repeated": n.repeated,
-                    "dependencies": dep_nodes_json(&n.children),
-                }),
+                Ok(package) => {
+                    let mut row = serde_json::json!({
+                        "name": n.name,
+                        "source": n.source,
+                        "package": package.name,
+                        "version": package.version,
+                        "root": package.root.display().to_string(),
+                        "requires": requirements_json(&package.requires),
+                        "repeated": n.repeated,
+                        "dependencies": dep_nodes_json(&n.children),
+                    });
+                    if let Some((commit, tree, vendored)) = &package.locked {
+                        row["commit"] = commit.clone().into();
+                        row["tree"] = tree.clone().into();
+                        row["vendored"] = (*vendored).into();
+                    }
+                    row
+                }
                 Err(e) => serde_json::json!({
                     "name": n.name,
                     "source": n.source,
@@ -1692,23 +1798,24 @@ fn print_dep_nodes(nodes: &[DepNode], depth: usize) {
     let pad = "    ".repeat(depth);
     for n in nodes {
         match &n.package {
-            Ok(info) => {
-                let renamed = if info.name == n.name {
+            Ok(package) => {
+                let renamed = if package.name == n.name {
                     String::new()
                 } else {
-                    format!(" = {}", info.name)
+                    format!(" = {}", package.name)
                 };
                 println!(
                     "{pad}{}{renamed}{}  ({}){}",
                     n.name,
-                    info.version.as_deref().map(|v| format!(" {v}")).unwrap_or_default(),
+                    package.version.as_deref().map(|v| format!(" {v}")).unwrap_or_default(),
                     n.source,
                     if n.repeated { "  (shown above)" } else { "" },
                 );
-                if !n.repeated && !info.requires.is_empty() {
+                if !n.repeated && !package.requires.is_empty() {
                     println!(
                         "{pad}    requires: {}",
-                        info.requires
+                        package
+                            .requires
                             .iter()
                             .map(|r| format!("{} {}", r.interface, r.version))
                             .collect::<Vec<_>>()
@@ -1726,7 +1833,9 @@ fn print_dep_nodes(nodes: &[DepNode], depth: usize) {
 /// and required host interfaces, what the `-I` directories make available,
 /// and the packages bundled in the binary.
 pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf]) {
-    let env = make_env(include_dirs);
+    let mut env = make_env(include_dirs);
+    // This command reports what is there; it fetches nothing.
+    env.set_install_on_demand(false);
     let packages = env.packages();
     // Manifests that looked like packages and would not load. A `-I` one is
     // already fatal in `make_env`; these are the ambient `PETAL_PATH` ones,
@@ -1759,9 +1868,21 @@ pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf])
         }
     };
     let graph = project.as_ref().map(|p| {
-        let mut seen = vec![p.root.clone()];
-        dependency_graph(&env, p, &mut seen)
+        match crate::pkgman::installed_graph(&p.root) {
+            Ok(resolved) => {
+                let mut seen = vec![resolved.project().name.clone()];
+                installed_dependency_graph(&resolved, resolved.project(), &mut seen)
+            }
+            Err(e) => {
+                problems.push(format!("the dependency graph does not resolve: {e}"));
+                let mut seen = vec![p.root.clone()];
+                dependency_graph(&env, p, &mut seen)
+            }
+        }
     });
+    let locked = project
+        .as_ref()
+        .is_some_and(|p| p.root.join(crate::pkgman::LOCK_FILE).is_file());
     let requires = project
         .as_ref()
         .zip(graph.as_ref())
@@ -1807,6 +1928,7 @@ pub fn handle_packages(json: bool, path: Option<&str>, include_dirs: &[PathBuf])
                 "modules": p.modules,
                 "requires": own_requires_json(p),
                 "dependencies": dep_nodes_json(g),
+                "locked": locked,
                 "required_interfaces": requires_json(&requires),
             }),
             _ => serde_json::Value::Null,

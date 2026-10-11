@@ -639,6 +639,15 @@ names what it uses (`import ui`, `import engine`). `bloom`, `text_layout`
 and `glsl` are bundled in the runtime, so `import bloom` needs no
 registration; a package registered here wins over the bundled copy.
 
+For an engine that ships scripts without a filesystem, `petal bundle <entry>`
+writes a project's installed dependency graph as JSON: each
+`packages[i].modules` object is the name/source list `register_package`
+takes, with the package's `petal.toml` among them
+([module-system.md](module-system.md#bundles)). Scripts loaded from disk find
+their project's git dependencies in `vendor/` or the package cache, as
+`petal.lock` pins them; the bridge never fetches, so run `petal install` (or
+check `vendor/` in) before shipping.
+
 ### Your natives need an interface package
 
 A script reaches a native only through a `native fn` declaration in scope

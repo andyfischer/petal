@@ -55,6 +55,12 @@ Every command that compiles a program accepts these:
 | `bench` | Measure what a call of a named function costs |
 | `lsp` | Serve the language server over stdio |
 | `packages` | Show the project's dependencies and required host interfaces, and the libraries available |
+| `init` | Start a project: write a `petal.toml` |
+| `add` / `remove` | Add or remove a dependency, then install |
+| `install` | Fetch the project's dependencies and write `petal.lock` |
+| `update` | Re-resolve locked dependencies from their sources |
+| `vendor` | Copy the project's git dependencies into `vendor/` |
+| `bundle` | Emit a program's packages as one JSON document |
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
 | `fix-imports` | Rewrite imports written for the old module rules |
@@ -75,8 +81,8 @@ Every command that compiles a program accepts these:
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
-Every command except `lsp`, `fmt`, `fix-imports`, `apply-change` and `show-graph` accepts
-`--json` for machine-readable output.
+Every command except `lsp`, `fmt`, `fix-imports`, `apply-change`, `show-graph` and the
+package-manager commands (`init` … `bundle`) accepts `--json` for machine-readable output.
 
 ## Commands
 
@@ -1312,7 +1318,7 @@ project marble 0.1.0  /Users/me/marble/app
     tween 1.2.0  (path ../libs/tween)
         requires: audio ^1.0
         base  (path ../base)
-    shapes  (git https://example.org/shapes tag v1.2.0)  UNRESOLVED: … git dependencies are not fetched yet …
+    shapes 1.2.0  (git https://example.org/shapes tag v1.2.0 @ 9f3c2ab41d)
 requires host interfaces:
     audio ^1.0  (package tween)
     ui >=0.1  (package marble)
@@ -1348,6 +1354,57 @@ Error: core-runtime/bloom/petal.toml: line 2: the value of 'name' must be a quot
 ```
 
 This command takes no source file.
+
+### `init`, `add`, `remove`, `install`, `update`, `vendor`, `bundle` — The package manager
+
+```
+petal init [<dir>] [--name <name>]
+petal add <name> (--path <dir> | --git <url> (--tag <tag> | --rev <rev>))
+petal remove <name>...
+petal install [--locked]
+petal update [<name>...]
+petal vendor
+petal bundle <entry> [-o <file>]
+```
+
+These work on the project of the working directory (the nearest `petal.toml`
+at or above it). [module-system.md](module-system.md#the-package-manager) has
+the model; in short:
+
+- `init` writes a `petal.toml` (`[package] name`, `version = "0.1.0"`). The
+  name is `--name` or the directory's name bent into an identifier.
+- `add` sets a `[dependencies]` entry — `<name>` is the import name — and
+  installs. If the install fails, `petal.toml` is put back. `remove` deletes
+  entries and installs again.
+- `install` resolves the graph to one version of each package (the higher
+  tag wins when two packages ask for one repository; pins that cannot be
+  ordered are an error), fetches git dependencies into `~/.petal/cache`
+  (`PETAL_HOME` moves `~/.petal`), verifies cached and vendored trees against
+  `petal.lock`, and writes `petal.lock`. `--locked` fails instead of changing
+  the lockfile.
+- `update` does the same but resolves the named packages (or all) from their
+  sources again instead of from the lockfile.
+- `vendor` installs and copies each git package into `vendor/<name>`, which
+  every command then uses in preference to the cache.
+- `bundle` prints the graph as JSON in the form `register_package` accepts
+  (`format`, `entry`, `packages`, `requires`), for hosts with no filesystem.
+
+```
+$ petal add tween --git https://example.org/tween --tag v0.3.0
+    Fetching https://example.org/tween
+    Fetching https://example.org/ease
+Added tween to petal.toml
+Locked 2 packages in petal.lock
+    ease 1.1.0  git https://example.org/ease tag v1.1.0 @ 13ba65e49a
+    tween 0.3.0  git https://example.org/tween tag v0.3.0 @ 2e7a2664d1
+```
+
+`check`, `run` and the other compiling commands **install on demand**: the
+first import of a git dependency checks the graph against `petal.lock` and
+runs the install if something is missing or out of date (progress goes to
+stderr). `PETAL_OFFLINE=1` forbids fetching. `petal packages` never fetches;
+it shows the graph as installed, with each git package's locked commit, and
+`"locked"`, `"commit"`, `"tree"` and `"vendored"` in `--json`.
 
 ### `explain` — Show the value chain that produced a term
 

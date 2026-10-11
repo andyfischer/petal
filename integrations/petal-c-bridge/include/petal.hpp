@@ -517,6 +517,12 @@ public:
     void set_inline_import_dir(const std::string& dir) {
         check(pb_vm_set_inline_import_dir(vm_, dir.empty() ? nullptr : dir.c_str()));
     }
+    // Compile as if the file at `path` held `source`: imports that resolve to
+    // that file read this text instead of the one on disk (not the entry
+    // file: use load_source / reload_source for that).
+    void override_file(const std::string& path, const std::string& source) {
+        check(pb_vm_override_file(vm_, path.c_str(), source.c_str()));
+    }
 
     // ── Host natives (register before the load that uses them) ──
     void native(const std::string& name, uint32_t effects, NativeFn fn) {

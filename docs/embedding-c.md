@@ -693,6 +693,15 @@ to check a script written for another host) and
 `pb_vm_set_inline_import_dir` (where `import ./x` leads for a program loaded
 from a string).
 
+`vm.override_file(path, source)` (`pb_vm_override_file`) compiles as if the
+file at `path` held `source`: every later import that resolves to that file
+reads the text given instead of the one on disk. A relative import is a file,
+so a module registered in memory cannot stand in for it; this can. It is how
+an engine applies a `--set NAME=VALUE` to a `config let` in an imported module
+without writing the file. A reload compiles the override again, so edits to
+the file itself do not reach the program while it stands. The entry file is
+not an import: `load_source` / `reload_source` run other text in its place.
+
 A script that uses a declared native the VM does not register fails at
 `load_*` with `PB_ERR_COMPILE`, phase `link`, before any line runs.
 

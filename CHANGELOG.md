@@ -287,6 +287,9 @@ way, for code written against an earlier checkout.
   native the named packages declare is registered and every native registered
   beyond the builtins is declared. Each host's drift test is this one call. A
   name may be a package, one module of it (`ui/input`), or an in-memory module.
+- C bridge: `pb_vm_override_file` (`vm.override_file` in C++) compiles as if
+  a file on disk held other text, wherever an import resolves to it. A
+  relative import is a file, so a registered module cannot replace one.
 - C bridge: `pb_vm_register_package` (a package from memory),
   `pb_vm_verify_interface`, `pb_vm_set_check_only`,
   `pb_vm_set_inline_import_dir`, and their `petal::Vm` methods. wasm:

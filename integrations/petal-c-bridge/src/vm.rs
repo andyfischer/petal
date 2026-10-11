@@ -705,6 +705,28 @@ pub unsafe extern "C" fn pb_vm_add_package(
     })
 }
 
+/// Compile as if the file at `path` held `source` (`Env::override_file_source`):
+/// every later import that resolves to that file reads this text instead of
+/// the one on disk, and a reload compiles it again, so edits to the file
+/// itself do not reach the program while the override stands. The entry file
+/// is not an import: load it with `pb_vm_load_source` / `pb_vm_reload_source`
+/// to run other text in its place. For a host that rewrites a script before
+/// running it (a `--set NAME=VALUE` that replaces a `config let` in an
+/// imported module) without touching the file.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pb_vm_override_file(
+    vm: *mut VmHandle,
+    path: *const c_char,
+    source: *const c_char,
+) -> Status {
+    status(vm, |vm| {
+        let path = unsafe { arg_str(path, "path") }?;
+        let source = unsafe { arg_str(source, "source") }?;
+        vm.env.override_file_source(Path::new(path), source);
+        Ok(())
+    })
+}
+
 /// Register a package from memory: `count` modules, `names[i]` the module's
 /// package-relative name and `sources[i]` its source.
 #[unsafe(no_mangle)]

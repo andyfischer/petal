@@ -273,6 +273,14 @@ pb_status pb_vm_set_check_only(pb_vm* vm, bool on);
 /* Where `import ./x` resolves for a program loaded from a string
  * (pb_vm_load_source): a directory, or NULL for registered modules only. */
 pb_status pb_vm_set_inline_import_dir(pb_vm* vm, const char* dir);
+/* Compile as if the file at `path` held `source`: every later import that
+ * resolves to that file reads this text instead of the one on disk (a
+ * relative import is a file, so a module registered in memory cannot stand in
+ * for it). A reload compiles the override again, so edits to the file itself
+ * do not reach the program while it stands. The entry file is not an import:
+ * pb_vm_load_source / pb_vm_reload_source run other text in its place. For a
+ * host that rewrites a script before running it without touching the file. */
+pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
 
 /* ─── Host natives ────────────────────────────────────────────────────── */
 

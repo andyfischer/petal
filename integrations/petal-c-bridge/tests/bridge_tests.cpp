@@ -1051,6 +1051,39 @@ TEST(hot_reload_preserves_state) {
     CHECK_EQ(run_out(vm), std::vector<double>{5});
 }
 
+// A file override stands in for a file on disk wherever an import resolves to
+// it: a relative import is a file, so a registered module cannot replace it.
+TEST(a_file_override_replaces_an_imported_file) {
+    fs::path dir = scratch_dir("file_override");
+    write_file(dir / "tuning.ptl", "pub let SPEED = 2\n");
+    write_file(dir / "main.ptl",
+               "import io; import ./tuning\n"
+               "push_output(symbol(\"out\"), tuning.SPEED)\n");
+    {
+        petal::Vm vm;
+        vm.load_file((dir / "main.ptl").string());
+        CHECK_EQ(run_out(vm), std::vector<double>{2});
+    }
+    petal::Vm vm;
+    // A module registered in memory under the same name is not what `./tuning` means...
+    vm.register_module("tuning", "pub let SPEED = 5\n");
+    vm.load_file((dir / "main.ptl").string());
+    CHECK_EQ(run_out(vm), std::vector<double>{2});
+    // ...the override is, from the next load on.
+    vm.override_file((dir / "tuning.ptl").string(), "pub let SPEED = 7\n");
+    vm.load_file((dir / "main.ptl").string());
+    CHECK_EQ(run_out(vm), std::vector<double>{7});
+    // The file on disk is untouched, and its text is not what runs while the
+    // override stands: a reload after an edit still compiles the override.
+    write_file(dir / "tuning.ptl", "pub let SPEED = 100\n");
+    vm.reload();
+    CHECK_EQ(run_out(vm), std::vector<double>{7});
+    // A later override replaces the earlier one, at the next load or reload.
+    vm.override_file((dir / "tuning.ptl").string(), "pub let SPEED = 9\n");
+    vm.reload();
+    CHECK_EQ(run_out(vm), std::vector<double>{9});
+}
+
 TEST(hot_reload_tracks_imported_modules) {
     fs::path dir = scratch_dir("hot_reload_imports");
     write_file(dir / "tuning.ptl", "pub let SPEED = 2\n");

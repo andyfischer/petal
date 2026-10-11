@@ -42,9 +42,9 @@ about 40 such frames; once `obs_animating` is false the screenshot is
 byte-identical from run to run. Frames captured mid-ease are not, because the
 frame an injected event runs on uses wall-clock `dt()`.
 
-Check the script with `petal check --strict --host garden app.ptl`. Without
-`--host garden` the checker does not know `request_frame` and reports it as
-an unknown function.
+Check the script with `petal check --strict app.ptl`. `request_frame` and
+the other panel natives come from `import garden`, which the checker resolves
+through `examples/petal.toml`.
 
 ## Reading it
 

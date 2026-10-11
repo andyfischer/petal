@@ -74,11 +74,44 @@ petal explain --term total app.ptl # where the value of `total` came from, step 
 Every subcommand has built-in help: `petal help`, `petal help run`,
 `petal help check`.
 
+## Imports and projects
+
+`print`, `len`, `range`, the collection and string functions and plain math
+are always in scope. Everything else is one `import` away, at the top of the
+file:
+
+```petal
+import creative                 // lerp, map_range, distance, …
+
+print(lerp(0, 10, 0.5))         // 5.0
+```
+
+```petal ignore
+import ./level                  // level.ptl beside this file
+import vec2                     // vec2, vec3, normalize, dot, …
+import ui                       // drawing and input, for a graphical host
+```
+
+`petal check` names the import a script is missing, and `petal fix-imports
+app.ptl` adds it. To depend on a library, make the directory a project and
+add it; every command then finds the project from the file it is given:
+
+```bash
+petal init                                            # writes petal.toml
+petal add tween --git https://example.org/tween --tag v1.2.0
+petal run app.ptl                                     # `import tween` now resolves
+```
+
+See [Module System](module-system.md) for the import rules and
+[Packages](packages.md) for `petal.toml`, the lockfile and the package
+commands.
+
 ## Editor support
 
 - **LSP:** `petal lsp` speaks the Language Server Protocol over stdio, with
   diagnostics, hover, go-to-definition and completion. Point your editor's LSP
-  client at it.
+  client at it. It finds a file's project (the nearest `petal.toml`) by
+  itself, so imports of the project's dependencies resolve with no setup.
 - **Syntax highlighting:** a tree-sitter grammar (Neovim, Helix, Zed, Emacs)
   and a classic Vim syntax file are in
   [`editor-support/`](../editor-support/README.md).

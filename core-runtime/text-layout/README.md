@@ -6,6 +6,7 @@ five host natives, and not one line of Rust.
 
 ```petal
 import text_layout
+import ui
 
 // One line, centred the way a designer means centred.
 text_layout.draw_text_line("Save", r, style, "center")
@@ -23,6 +24,8 @@ Every `draw_text` in every Petal UI has had to answer the same question, and
 almost all of them answered it the same wrong way:
 
 ```petal ignore
+import ui
+
 draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)
 ```
 
@@ -56,10 +59,13 @@ centring the cap height is what a designer means by "centred in the button".
 
 ## Requirements
 
-A host that embeds [`petal-ui`](../../core-libs/petal-ui/) — Garden panels,
-`petal-desktop-sdl`, `petal-web-canvas`, the `petal-ui-run` driver, or your own
-embedder calling `petal_ui::register_all`. It asks for no natives of its own,
-no fonts and no files at runtime.
+A host that provides the `ui` interface — one that embeds
+[`petal-ui`](../../core-libs/petal-ui/): Garden panels, `petal-desktop-sdl`,
+`petal-web-canvas`, the `petal-ui-run` driver, or your own embedder calling
+`petal_ui::register_all`. The manifest says so (`[requires] ui = ">=0.1"`),
+so a script that imports `text_layout` is refused at load anywhere else, and
+`petal check` reports the requirement. It asks for no natives of its own, no
+fonts and no files at runtime.
 
 A host that publishes no vertical metrics is not an error: `text_metrics`
 answers with typical UI-sans proportions, which are much closer than the
@@ -68,27 +74,23 @@ assumption they replace. A host that measures its own face publishes it with
 
 ## Installing it in a project
 
-It is a *package*: `petal.toml` names it, so its modules answer to
-`text_layout/…` wherever this directory lands. The directory is `text-layout`
-and the package is `text_layout` — a package name is the first segment of an
-import path, so it has to be spellable as an identifier.
+There is nothing to install: the library is bundled in the runtime, so
+`import text_layout` works in the `petal` CLI and in every host that embeds
+Petal. The directory is `text-layout` and the package is `text_layout` — a
+package name is the first segment of an import path, so it has to be
+spellable as an identifier.
 
 ```bash
-# on the module path — point -I at the library root, or at a directory of them
-petal-ui-run myapp/app.ptl -I core-runtime
-petal packages -I core-runtime            # check what that made importable
+petal check myapp/app.ptl                 # requires host interfaces: ui >=0.1 (text_layout)
+petal-ui-run myapp/app.ptl --frames 60
 ```
 
-```rust
-// or registered by the host, which also covers scripts pushed as source
-env.add_package("core-runtime/text-layout")?;
-env.register_package("text_layout", MODULES)?;   // include_str! each .ptl
-```
-
-Garden ships the second form in
-[`garden/garden-script/src/text_layout.rs`](../../garden/garden-script/src/text_layout.rs),
-so `import text_layout` works in every Garden panel with no setup — and has to,
-because [bloom](../bloom/) draws every one of its labels through it.
+To use a different copy, copy this directory (manifest included) into the
+project and name it under `[dependencies]` in the project's `petal.toml`
+(`text_layout = { path = "third_party/text-layout" }`), or drop it at
+`vendor/text_layout`. A host that registers its own copy
+(`env.add_package(dir)`, `env.register_package("text_layout", MODULES)`) wins
+over both. See [docs/packages.md](../../docs/packages.md).
 
 ## The modules
 
@@ -107,6 +109,8 @@ Import the facade, or one module when you want a slice of it
 ### One line
 
 ```petal ignore
+import text_layout
+
 draw_text_line(s, r, style)                    // left, centred vertically
 draw_text_line(s, r, style, "center")          // "left" | "center" | "right"
 draw_text_line(s, r, style, "right", "top")    // valign: "top" | "middle" | "bottom" | "baseline"
@@ -126,6 +130,8 @@ one line.
 ### A paragraph
 
 ```petal ignore
+import text_layout
+
 let b = draw_text_block(body, r, style, {
   align: "left",      // "left" | "center" | "right"
   valign: "top",      // "top" | "middle" | "bottom"
@@ -157,6 +163,8 @@ to *that* looks bottom-heavy.
 ### Fitting
 
 ```petal ignore
+import text_layout
+
 wrap_text(s, style, max_w)               // -> [line]; honours newlines, breaks long words
 elide(s, style, max_w)                   // -> "a long lab…"
 elide(s, style, max_w, "tail")           // -> "…/src/place.ptl"
@@ -167,6 +175,8 @@ clamp_lines(s, style, max_w, 2)          // wrap, stop at 2, elide the second
 ### Carets
 
 ```petal ignore
+import text_layout
+
 caret_index(s, style, dx)   // the character index a click dx px in falls on
 caret_x(s, style, i)        // the x offset of the caret before character i
 caret_rect(s, r, style, i)  // a 1px bar spanning the line's real ink
@@ -188,11 +198,11 @@ this library composes:
 | `text_ellipsize(s, style, w, end)` | it, cut, with "…" |
 | `text_index_at(s, style, dx)` | the character a click lands on |
 
-The last three could be written in Petal, and were: the `ui` prelude's
+The last three could be written in Petal, and were: the `ui` package's
 `ellipsize` was a `text_width` call per character — a native call and a fresh
 string per step, over a string the user is typing, on every frame. In Rust each
 is one walk of the host's advance table, which is what makes wrapping a
-paragraph cost about what drawing a label costs. The prelude's `ellipsize` and
+paragraph cost about what drawing a label costs. `ui`'s `ellipsize` and
 `ellipsize_tail` now delegate to `text_ellipsize` and keep their signatures.
 
 ## Versioning

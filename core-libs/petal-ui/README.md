@@ -4,8 +4,9 @@ The standard UI layer for Petal programs. It is two things:
 
 - a small Rust crate that every graphical host embeds, providing the input and
   draw natives, and
-- the `ui` prelude module (`prelude/ui.ptl`), the widget library that Petal
-  scripts build interfaces with.
+- the `ui` package (`prelude/`), which declares those natives and holds the
+  widget library that Petal scripts build interfaces with. A script writes
+  `import ui`.
 
 Hosts that embed it: Garden panels (`garden/garden-script`),
 `integrations/petal-desktop-sdl` (crate and binary still named `petal-sdl`),
@@ -39,22 +40,27 @@ input events → bind_frame_info / bind_input → clear_draw_commands
   `shadow_mesh` turns a shadow command into one non-overlapping triangle
   list, because a translucent shadow built from overlapping pieces shows
   every seam.
-- **The native interface** (the top of `prelude/ui.ptl`). Every native this
+- **The native interface** (the top of `prelude/ui.ptl`, and
+  `prelude/input.ptl`). Every native this
   crate registers is declared there — `pub native fn mouse_x() -> int`,
   `native fn _native_rect(x: num, …, a?: num) = "draw_rect"` — which is where
   its parameter names, optional parameters, argument types and result type
   come from: `petal check` reads the declarations without registering
   anything, and the natives bind named arguments by them
-  (`petal_ui::interface()`). A script that uses the prelude loads only into an
+  (`petal_ui::interface()`). A script that imports `ui` loads only into an
   `Env` that registers the natives it refers to; a test holds the declarations
   to `register_all`, both ways.
 - **The `ui` package** (`prelude/ui.ptl`, `prelude/input.ptl`). A script
   writes `import ui` and calls `button(...)`, `list_update(...)`,
-  `checkbox(...)` bare (or `ui.button`). Nothing is imported implicitly. A
-  plain import is weak: a script's own `fn button` shadows the package's.
+  `checkbox(...)` bare (or `ui.button`). Without the import none of these
+  names exist. A plain import is weak: a script's own `fn button` shadows
+  the package's.
   `import ui/input` is the input, timing and frame half alone, for a host
   that registers only `petal_ui::input::register_input`. The `petal` binary
-  bundles the package, so `petal check` resolves `import ui` with no host. It also wraps every draw native in record overloads
+  bundles the package, so `petal check` resolves `import ui` with no host;
+  `petal run` refuses such a script at load, because it registers none of
+  these natives. The package's own source imports the builtin packages it
+  uses (`color`, `creative`, `io`). It also wraps every draw native in record overloads
   (`draw_rect(rect, c)`, `draw_line(p1, p2, c, a, width)`), and each shape's
   parameters carry plain names — `x, y, w, h` / `rect`, `cx, cy` / `center`,
   `radius`, `r, g, b` / `c`, `a`, `width` — so a call can be written by name:
@@ -76,6 +82,10 @@ compose in one script.
 petal_ui::register_all(&mut env);        // input + draw + canvas + host_data natives
 // (register_all includes register_prelude: the `ui` package, `import ui`)
 assert!(env.verify_interface(petal_ui::INTERFACE_PACKAGES).is_ok()); // drift test
+// register_all also announces the interface: env.provides("ui", <the package's version>),
+// which is what lets packages that state `[requires] ui = ">=0.1"` (bloom, text_layout) load.
+// A host that registers the pieces itself calls petal_ui::provide_interface(&mut env)
+// once all of them are in; a host with only the input natives (`import ui/input`) does not.
 
 // each frame:
 petal_ui::input::bind_frame_info(&mut env, dt, frame);
@@ -100,7 +110,7 @@ petal_ui::input::bind_host_palette(&mut env, &[
 
 `ui_theme()` then resolves in this order: an explicit `theme_set` in the
 script, then the host palette, then the built-in dark default. Garden binds
-its full palette, so prelude widgets look native there with no script-side
+its full palette, so the widgets look native there with no script-side
 setup.
 
 ## Running scripts headlessly
@@ -117,8 +127,12 @@ headlessly and as a Garden panel.
 
 ## Versioning
 
+- The **interface version** is the `ui` package's version
+  (`prelude/petal.toml`, currently 0.1.0). It is what a host provides and
+  what a package's `[requires] ui = "…"` is matched against.
 - `UI_VERSION` counts incompatible changes to the input/draw native contract.
-  Scripts can read it with `ui_version()`.
+  Scripts can read it with `ui_version()`. It is a separate integer and not
+  what `[requires]` compares.
 - `PRELUDE_LEVEL` counts additions to the prelude's export surface. Levels
   are additive, so a script written against an older level keeps working.
   `garden --version --json` lists the exact exports compiled into a binary

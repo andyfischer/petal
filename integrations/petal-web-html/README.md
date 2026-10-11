@@ -44,3 +44,13 @@ The dev server loads `examples/menu.ptl` by default.
    into the runtime, and the program reads it on the next run with
    `clicked(id)`; `next_id()` hands out a unique id per element per frame.
    `examples/menu.ptl` shows the pattern.
+
+`clicked` and `next_id` are this host's two natives. They are declared by the
+`web` interface package ([`core/packages/web`](../../core/packages/web/)),
+which the runtime registers in memory and provides, so a script starts with
+`import web`. `examples/petal.toml` lists the package as a path dependency,
+which is what lets the stock CLI check the examples with no flag:
+
+```bash
+petal check integrations/petal-web-html/examples/menu.ptl
+```

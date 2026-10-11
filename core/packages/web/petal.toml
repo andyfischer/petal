@@ -2,9 +2,11 @@
 # core/src/wasm.rs, used by integrations/petal-web-html): the `native fn`
 # declarations of the two natives it registers. Scripts write `import web`.
 #
-# The wasm runtime registers this package in memory. It is not bundled in the
-# `petal` binary: check a script written for this host with
-# `petal check -I core/packages <file>`.
+# The wasm runtime registers this package in memory and provides the interface
+# `web`. It is not bundled in the `petal` binary: a project lists it as a path
+# dependency (`web = { path = "…/core/packages/web" }`, as
+# integrations/petal-web-html/examples/petal.toml does), or check a loose
+# script with `petal check -I core/packages/web <file>`.
 [package]
 name = "web"
 version = "0.1.0"

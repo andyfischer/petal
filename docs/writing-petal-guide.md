@@ -773,10 +773,10 @@ positional ones. Reach for it when a call is a row of same-typed literals —
 than two or three fields. Names bind to the callee's parameter slots directly;
 no record is built, so it costs nothing a positional call doesn't beyond the
 name lookup. The names are the callee's own — your `fn`s, lambdas, methods,
-constructors and prelude functions use the names they declare, and **builtins
+constructors and imported functions use the names they declare, and **builtins
 use the names in the [Builtins Reference](Builtins.md)**
 (`clamp(v, lo: 0, hi: 1)`, `map_range(value: t, in_lo: 0, in_hi: 1, out_lo: a,
-out_hi: b)`, `xs.slice(start: 1, end: 3)`). The `ui` prelude's draw calls name
+out_hi: b)`, `xs.slice(start: 1, end: 3)`). The `ui` package's draw calls name
 every shape they take, and the names pick the shape:
 `draw_rect_outline(x: 0, y: 0, w: 10, h: 4, c: red, width: 2)`,
 `draw_circle(center: p, radius: 6, c: red)` — see the
@@ -842,9 +842,11 @@ print(Circle(2).area())        // or: import ./shapes: Circle  /  import ./shape
 ```
 
 `import ./shapes` is `shapes.ptl` next to the importing file; a path with no
-`./` or `../` in front names a *package* (`import bloom`). The rest — what
-happens when two modules export the same name, what `pub` covers, how
-modules share state — is in the [Module System](module-system.md).
+`./` or `../` in front names a *package* (`import bloom`, `import creative`).
+A package is bundled with the runtime, or is a dependency listed in the
+project's `petal.toml` ([Packages](packages.md)). The rest — what happens
+when two modules export the same name, what `pub` covers, how modules share
+state — is in the [Module System](module-system.md).
 
 **Wrap long expressions by ending the line with the operator, not starting the
 next one with it.** This is the guide's one genuine footgun, because getting it
@@ -883,7 +885,9 @@ wrap the whole expression in parentheses, or check the value with
 
 ## 9. The builtins you will actually use
 
-There is no import and no namespace — every name here is just in scope. This is
+Most of these are in scope with no import. The ones that are not say which
+package to import, and `petal check` names the import when you forget it
+(``unknown function `lerp` … add `import creative` ``). This is
 the working set, not the full list; [Builtins.md](Builtins.md) has the rest with
 exact signatures. Reach for this table before you guess a name, because a wrong
 guess costs a compile round-trip (`unknown function \`flatten\``).
@@ -898,10 +902,13 @@ guess costs a compile round-trip (`unknown function \`flatten\``).
 | **Higher-order** | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, init, f)`, `forEach(xs, f)` — the list comes **first** |
 | **Records** | `keys(r)`, `values(r)`, `has_field(r, k)`, `field(r, k, fallback)`, `remove(r, k)` |
 | **Strings** | `++`, `join(xs, sep)`, `split(s, sep)`, `repeat(s, n)`, `trim(s)`, `starts_with(s, p)`, `ends_with(s, p)`, `upper`/`lower`, `pad_start(s, w)`, `char_at(s, i)`, `chars(s)` |
-| **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `lerp(a, b, t)` (numbers, vectors, colors, number lists), `map_range(v, a, b, c, d)`, `safe_div(a, b)` (`nil` instead of aborting on a zero divisor) |
+| **Numbers** | `abs`, `min(a, b)`, `max(a, b)` — **two arguments, not a list** — `floor`, `ceil`, `round(x)`, `round(x, places)`, `sqrt`, `pow`, `sign`, `clamp(v, lo, hi)`, `safe_div(a, b)` (`nil` instead of aborting on a zero divisor) |
+| **Interpolate** (`import creative`) | `lerp(a, b, t)` (numbers, vectors, colors, number lists), `map_range(v, a, b, c, d)`, `smoothstep(e0, e1, x)`, `distance(…)`, `mag(…)`, `choose(xs)` |
 | **Trig** | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2(y, x)`, `hypot(x, y)`, `pi()`, `radians`, `degrees` |
 | **Convert** | `str(v)`, `int(v)`, `float(v)`, `parse_int(s)`, `parse_float(s)`, `type(v)`. `parse_*` return `nil` on bad text, so `parse_float(s) ?? 0.0` reads user input with a default |
-| **Random** | `random()` (in [0, 1)), `random(hi)`, `random(lo, hi)`, `random_int(lo, hi)` (half-open), `choose(xs)`, `noise(x[, y[, z]])`, `noise_seed(n)` |
+| **Random** | `random()` (in [0, 1)), `random(hi)`, `random(lo, hi)`, `random_int(lo, hi)` (half-open) |
+| **Noise** (`import noise`) | `noise(x[, y[, z]])`, `noise_seed(n)` |
+| **Vectors, color, JSON** | `import vec2` (`vec2`, `vec3`, `normalize`, `dot`, …), `import color` (`hsv`, `hsl`, `color_lerp`), `import json` (`json_parse`, `json_stringify`) |
 | **Checks** | `assert(cond, msg)`, `assert_eq(actual, expected)` |
 
 Three of these are shaped differently than you will expect:
@@ -962,11 +969,15 @@ take those arguments, a discarded pure call, a function capturing a module
 
 What counts as defined does not depend on a host: a name is declared in the
 file, bound by an import, or a core builtin. A script for a petal-ui host
-starts with `import ui`; `bloom`, `text_layout` and `glsl` are bundled too.
-A Garden panel adds `import garden` (config scripts: `import garden_config`)
-and is checked with `-I garden/garden-script/packages`; petal-desktop-sdl's
-extras are `import sdl` with `-I integrations/petal-desktop-sdl/packages`.
-`petal fix-imports` adds the import lines an older script is missing.
+starts with `import ui`; `bloom`, `text_layout` and `glsl` are bundled too,
+and so are the builtin packages (`import creative`, `import vec2`, …). A
+Garden panel adds `import garden` (config scripts: `import garden_config`)
+and petal-desktop-sdl's extras are `import sdl`. Those host packages are not
+bundled: `check` finds them when the nearest `petal.toml` above the script
+lists them under `[dependencies]` (see [packages.md](packages.md)), or ad hoc
+with `-I garden/garden-script/packages` /
+`-I integrations/petal-desktop-sdl/packages`. `petal fix-imports` adds the
+import lines a script is missing.
 
 Every `--json` error carries a `phase` (`lex` / `parse` / `module` / `compile` /
 `lower` / `runtime`) telling you exactly which stage rejected the program, and
@@ -1182,6 +1193,7 @@ tell you the fix in the message. A sample:
 | Every CLI flag and JSON schema | [CLI Reference](CLI.md) |
 | Runnable programs to imitate | [`examples/console/`](../examples/README.md) |
 | Multi-file programs | [Module System](module-system.md) |
+| Dependencies, `petal.toml`, the package commands | [Packages](packages.md) |
 | Building an app or a game on Petal | [Building Apps](building-apps.md) |
 | Why the language is shaped this way | [Goals](dev/goals.md) |
 

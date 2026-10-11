@@ -21,6 +21,8 @@ its measurements into the environment, and the script reads them back through
 ## Script side
 
 ```petal
+import ui
+
 draw_text("hello", x, y, size, r, g, b, [a])   // emits a `text` draw command
 text_width("hello", size)                       // px width, default font
 text_width("hello", size, "mono")               // px width, a named face
@@ -46,6 +48,8 @@ per character — which is what a script otherwise writes, on every frame.
 lands, in **pixels** at that style's size:
 
 ```petal
+import ui
+
 let m = text_metrics(style)
 // m.baseline    the y draw_text was given -> the baseline
 // m.descent     the baseline -> the bottom of the line box
@@ -57,6 +61,8 @@ let m = text_metrics(style)
 Without this a script has to guess, and the guess every script made was
 
 ```petal ignore
+import ui
+
 draw_text(label, {x: x, y: r.y + (r.h - size) / 2}, style)   // wrong
 ```
 
@@ -69,6 +75,8 @@ Centre a UI label on its **cap height** — a label with no descender looks high
 when its line box is centred:
 
 ```petal ignore
+import ui
+
 let m = text_metrics(style)
 let baseline = r.y + r.h / 2 + m.cap_height / 2
 draw_text(label, {x: x, y: baseline - m.baseline}, style)
@@ -89,6 +97,8 @@ Anything beyond size and color is a **style record**, which both `draw_text`
 and `text_width` accept — so what you measure is what you draw:
 
 ```petal
+import ui
+
 let BODY = {size: 15, color: #d8d8d8}
 draw_text("Merge pull request ", {x: 10, y: 20}, BODY)
 draw_text("#482", {x: 170, y: 20}, {...BODY, weight: 700})
@@ -137,6 +147,8 @@ other family's bold.
 `font(name)` returns the face as a **value** rather than a string:
 
 ```petal
+import ui
+
 let body = font("Helvetica Neue", 15)
 let title = font_size(font_bold(body), 28)
 

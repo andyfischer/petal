@@ -14,9 +14,10 @@ here applies to both. For the subprocess side see
 
 Panels are built on the shared [petal-ui](../../core-libs/petal-ui/README.md) crate,
 which every Petal embedder uses for input and draw natives and the `ui`
-widget prelude. Garden adds a handful of natives of its own (`emit`, `mutate`,
-`navigate`, `text_view`, `edit_view`, `palette`, `claim_key`,
-`request_frame`, `panel_store_*`), all described below. Example scripts live
+widget package (`import ui`). Garden adds a handful of natives of its own
+(`emit`, `mutate`, `navigate`, `text_view`, `edit_view`, `palette`,
+`claim_key`, `request_frame`, `panel_store_*`), all described below and all
+declared by the `garden` interface package (`import garden`). Example scripts live
 in `examples/panels/`.
 
 ## The model
@@ -193,7 +194,7 @@ Relative image sources resolve from Garden's working directory. RGB and RGBA
 PNGs are supported; a missing or invalid file is logged and skipped without
 aborting the frame.
 
-### Input, timing, and the `ui` prelude
+### Input, timing, and the `ui` package
 
 Input and timing reads: `dt`, `time`, `frame_count`, `screen_width`,
 `screen_height`, `mouse_x`, `mouse_y`, `mouse_down`, `mouse_pressed`,
@@ -203,7 +204,8 @@ Input and timing reads: `dt`, `time`, `frame_count`, `screen_width`,
 `text_ellipsize`, `text_index_at`.
 
 A panel starts with `import ui` (and `import garden` for the host channels
-below); nothing is imported implicitly. Then it calls the widgets bare:
+below); without the import the names do not exist. Then it calls the widgets
+bare:
 `rect` / `point_in` / `hovered`, `button`, `list_update`, `scroll_update`,
 `truncate_tail`, `wrap`, `draw_text_right`, the `context_menu` family, RectCut
 layout (`cut_left` / `cut_right` / `cut_top` / `cut_bottom`, `split_h` /
@@ -216,13 +218,15 @@ showcase panel is `examples/panels/gallery.ptl`.
 
 ### `import bloom`
 
-Garden also registers [bloom](../../core-runtime/bloom/README.md), the component
-library written in Petal itself, as an importable *package* — buttons, menus,
+[bloom](../../core-runtime/bloom/README.md), the component
+library written in Petal itself, is an importable *package* bundled in the
+runtime — buttons, menus,
 controls and overlays that animate by default and that hold their own
 animation state per callsite:
 
 ```petal
 import bloom
+import ui
 
 if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
   bloom.toast("Saved", "success")
@@ -233,26 +237,40 @@ end
 package paths when a drawer wants a slice rather than the whole surface
 (`import bloom/motion: spring`, `import bloom/icon as icons`).
 
-[text_layout](../../core-runtime/text-layout/README.md) is registered the same
+[text_layout](../../core-runtime/text-layout/README.md) is available the same
 way and on the same terms. bloom places every one of its labels through it, so
 it is not optional here — and a panel that draws text of its own should reach
 for it directly rather than computing a `y`.
 
 Like `ui`, it is imported explicitly: a drawer says `import bloom` (or `import bloom: button, dropdown`)
-and pays nothing otherwise. The package is registered in memory rather than
-looked up on disk, so a panel-mode GPP drawer pushed as source can import it
-too. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
+and pays nothing otherwise. The package lives in memory rather than
+on disk, so a panel-mode GPP drawer pushed as source can import it
+too. Both packages require the `ui` interface, which Garden provides. Garden's own start screen (`gpp-apps/main-menu`) and the `screens-demo`
 app use it; the full reference is
 [core-runtime/bloom/docs/components.md](../../core-runtime/bloom/docs/components.md)
 and the showcase is `examples/ui/bloom-gallery`.
 
-A panel script on disk can also `import` a module sitting next to it: imports
-resolve relative to the script's own directory, and editing an imported module
-hot-reloads the panel exactly as editing the script does.
+A panel script on disk can also import a module sitting next to it with a
+relative import (`import ./rows`), and editing an imported module hot-reloads
+the panel exactly as editing the script does. A panel inside a project (a
+directory with a `petal.toml` above it) can import that project's
+dependencies too.
+
+**Checking a panel without Garden.** `petal check panel.ptl` resolves `ui`,
+`bloom` and `text_layout` by itself. `garden` is not bundled in the `petal`
+binary: list it in the project's `petal.toml`
+(`garden = { path = "…/garden/garden-script/packages/garden" }` under
+`[dependencies]`, as `garden/examples/petal.toml` and
+`garden/gpp-apps/petal.toml` do), or pass
+`-I garden/garden-script/packages`. A panel written before imports were
+required gets them from `petal fix-imports -I garden/garden-script/packages
+panel.ptl`.
 
 The whole Petal builtin table is available too. A panel is an ordinary Petal
 program with extra natives, not a sandboxed subset: everything in
-[docs/Builtins.md](../../docs/Builtins.md) is callable. Worth naming because
+[docs/Builtins.md](../../docs/Builtins.md) is callable, the core set with no
+import and the domain sets (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, …)
+after importing their package. Worth naming because
 panel authors have hand-rolled them: `random`, `random_int`, `choose`;
 `clamp` / `min` / `max` / `round(x, places)` (int-preserving); `parse_int` /
 `parse_float` (nil on bad input rather than aborting the frame); `chars` /
@@ -261,7 +279,7 @@ points, so non-ASCII text needs no special handling; `byte_len` and
 `byte_slice` are there when a byte offset is what you have); and
 `json_parse` / `json_stringify`.
 
-Three things the prelude also covers:
+Three things `ui` also covers:
 
 - **Theming.** `ui_theme()` is the live palette every widget paints with. In
   Garden it defaults to the host palette automatically, so prelude widgets
@@ -448,6 +466,8 @@ wrapping a paragraph or hit-testing a caret is one call rather than a
 with it:
 
 ```petal
+import ui
+
 let body = font("Helvetica Neue", 15)
 let title = font_size(font_bold(body), 28)
 
@@ -482,6 +502,9 @@ on the embedded advances.
 record:
 
 ```petal
+import garden
+import ui
+
 let BODY = {size: 15, color: palette().text}
 draw_text("Merge pull request ", {x: 10, y: 20}, BODY)
 draw_text("#482", {x: 170, y: 20}, {...BODY, weight: 700})
@@ -506,6 +529,9 @@ wrong while the drawing looks fine. Passing the same font object to both
 `draw_text` and `text_width` avoids this:
 
 ```petal
+import garden
+import ui
+
 let TITLE = {size: 22, weight: 700, font: "ui", color: palette().text}
 let w = text_width("Pick your handle", 22, "ui")   // not text_width(s, 22)
 draw_text("Pick your handle", {x: (screen_width() - w) / 2, y: 40}, TITLE)
@@ -612,6 +638,8 @@ The two-argument form carries the subject the target screen is for, and the
 target reads it back with `nav_arg()`:
 
 ```petal
+import garden
+
 // list.ptl
 if clicked then
   navigate("detail.ptl", { id: rows[sel].id })
@@ -654,6 +682,8 @@ still drawer and wrong for ambient motion: a spinner or a pulsing live dot
 freezes and reads as a hang.
 
 ```petal
+import garden
+
 request_frame()   // this frame is part of an animation; keep ticking
 animating()       // the same native, under a name that reads better in a loop
 ```
@@ -663,6 +693,9 @@ it, so a script asks while its motion runs and stops asking when it settles.
 Calling it every frame is free.
 
 ```petal
+import garden
+import ui
+
 if loading() then
   request_frame()
 end
@@ -676,6 +709,8 @@ bare letters are content (a spreadsheet, a console), `claim_key` asks for a
 chord back:
 
 ```petal
+import garden
+
 claim_key("z", "cmd")          // Cmd+Z reaches this panel, not Garden's Undo
 claim_key("s", "cmd+shift")    // one exact chord
 claim_key("escape")            // this key under any modifier combination

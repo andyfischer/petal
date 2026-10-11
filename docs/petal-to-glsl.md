@@ -40,9 +40,9 @@ construct.
 
 ## Using it
 
-Make the package importable (`petal run -I core-runtime app.ptl`,
-`env.add_package("core-runtime/glsl")`, or `register_package` for a host
-without a filesystem; see [core-runtime](../core-runtime/README.md)), then:
+The `glsl` package is bundled in the runtime, so `import glsl` works in the
+`petal` CLI and in every host with nothing registered (see
+[core-runtime](../core-runtime/README.md)). Then:
 
 | | |
 |---|---|
@@ -95,9 +95,11 @@ let ENV = {
 ```
 
 A call of a name in `functions` is emitted as written, with its arguments
-checked against the signature. Petal's checker does not know these names, so
-the host should register them (or the script is checked with
-`petal check --native src ...`).
+checked against the signature. Petal's checker does not know these names
+unless something declares them, so the host declares them as `native fn`s in
+a package the script imports; a file of shader lambdas that is only ever
+translated, never run, is checked with `petal check --lenient`, which reports
+the unknown names without failing.
 
 ## Hooks and plain functions
 

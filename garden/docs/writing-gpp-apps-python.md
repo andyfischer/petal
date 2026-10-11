@@ -272,6 +272,8 @@ garden --subprocess python3 gpp-python/sysmon/app.py
 ```
 
 ```petal
+import garden_config
+
 layout(process("python3", ["/abs/path/to/app.py", "/repo/to/serve"]))
 ```
 

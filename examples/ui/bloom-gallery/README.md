@@ -22,13 +22,13 @@ Headless, for a trace or a screenshot:
 ../../../tools/run-example.ts --headless --debug-port 0
 ```
 
-Or without Garden at all, through the headless UI driver — outside Garden the
-library is found on the module path, which is what `-I` is for:
+Or without Garden at all, through the headless UI driver (bloom is bundled
+in the runtime, so nothing has to be put on a search path):
 
 ```bash
 cd core-libs/petal-ui
 cargo run --bin petal-ui-run -- ../../examples/ui/bloom-gallery/app.ptl \
-    --frames 120 --size 1100x760 -I ../../core-runtime
+    --frames 120 --size 1100x760
 ```
 
 `-I` points at `core-runtime`, not at `core-runtime/bloom`: the app imports bloom

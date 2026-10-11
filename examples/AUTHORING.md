@@ -11,14 +11,14 @@ reference material lives elsewhere; link to it rather than guessing:
 - Language: [docs/language-guide.md](../docs/language-guide.md) and
   [docs/writing-petal-guide.md](../docs/writing-petal-guide.md).
 - Builtins: [docs/Builtins.md](../docs/Builtins.md).
-- The `ui` prelude (widgets, theme, layout, text and color helpers):
+- The `ui` package (widgets, theme, layout, text and color helpers; `import ui`):
   [core-libs/petal-ui/docs/components.md](../core-libs/petal-ui/docs/components.md), with
   [core-libs/petal-ui/prelude/ui.ptl](../core-libs/petal-ui/prelude/ui.ptl) as the source of truth.
 - The `bloom` component library (buttons, menus, controls and overlays that
   animate by default, in pure Petal):
   [core-runtime/bloom/docs/components.md](../core-runtime/bloom/docs/components.md).
-  Garden registers its modules, so a panel app can `import bloom` with no
-  setup; outside Garden, add `-I core-runtime`.
+  It is bundled in the runtime, so `import bloom` works in Garden, in
+  `petal check` and in every other host with no setup.
 - The panel host (draw surface, input, fonts, sleep/wake, persistence):
   [garden/docs/petal-graphical-panels.md](../garden/docs/petal-graphical-panels.md).
 - The debug server (every endpoint):
@@ -34,7 +34,21 @@ examples/<category>/<slug>/
   README.md      what it is, what it demonstrates, how to run it, controls
 ```
 
-Multi-file apps may add modules next to `app.ptl` and import them.
+Multi-file apps may add modules next to `app.ptl` and import them relatively
+(`import ./layout`).
+
+Every import is explicit. A panel app typically starts with `import ui` and
+`import garden`, adds `import bloom` or `import text_layout` when it uses
+them, and imports the builtin packages whose names it calls
+(`import creative` for `lerp` and `distance`, `import vec2`, `import color`,
+`import noise`, `import json`). `petal check` names any import that is
+missing, and `petal fix-imports app.ptl` adds them.
+
+[`examples/petal.toml`](petal.toml) makes the whole tree one project and
+lists Garden's and petal-sdl's interface packages as path dependencies, so
+the `petal` CLI and the language server resolve `import garden` here with no
+flag. Because of it, a module beside an app is named by its path in the
+project: `examples/games/flappy/layout`, not `layout`.
 
 `tools/run-example.ts <slug>` starts Garden on an example's `layout.ptl`;
 extra arguments are passed through to Garden. `<slug>` may also be
@@ -146,12 +160,16 @@ the last frame cost.
 
 ### Driving it
 
-`petal check --strict -I garden/garden-script/packages app.ptl` checks the app without
+`petal check --strict app.ptl` checks the app without
 Garden: `ui`, `bloom` and `text_layout` are bundled in the `petal` binary, and
-the `-I` is where it finds the `garden` package the app imports. It
+the `garden` package the app imports is a dependency in `examples/petal.toml`.
+(An app outside this tree passes `-I garden/garden-script/packages`, or lists
+the package in a `petal.toml` of its own.) A passing check of an app that
+imports `bloom` or `text_layout` ends with a `requires host interfaces: ui …`
+line, which is information, not a warning. It
 catches arity and type slips on known functions, a misspelled global
 (`totally_bogus_fn(1)`), a native handed the wrong type (`sqrt("x")`), a call
-whose argument count selects a prelude overload that cannot take its arguments,
+whose argument count selects a `ui` overload that cannot take its arguments,
 captured-`state` reads and hoisting order. Garden's own natives (`palette`,
 `emit`, `query`, …) come from `import garden`; petal-ui's from `import ui`.
 
@@ -373,11 +391,11 @@ opaque color with `mix`/`lerp_color`, or use the prelude's `over`/`tint`/
 `hairline` helpers. See
 [Compositing flat tints](../core-libs/petal-ui/docs/components.md#compositing-flat-tints).
 
-### The `ui` prelude
+### The `ui` package
 
 Start the app with `import ui` (`core-libs/petal-ui/prelude/ui.ptl`) and call its functions bare. The
 catalogue is in [components.md](../core-libs/petal-ui/docs/components.md): `rect`
-(the built-in `Rect` under the prelude's name), `point_in`, `hovered`,
+(the built-in `Rect` under `ui`'s name), `point_in`, `hovered`,
 `clicked`, record overloads of every `draw_*` (each callable by name:
 `draw_rect_outline(rect: r, c: red, width: 2)`), alignment and ellipsizing
 helpers, `button`, lists and scrolling, the focus registry and text fields,
@@ -472,7 +490,7 @@ These are showpieces, not smoke tests. Aim for:
   level included; only module scope reads it bare. `petal check` flags the
   slip (see the [writing guide](../docs/writing-petal-guide.md)).
 - No script error at any point in the interaction you exercise. `petal check
-  --strict -I garden/garden-script/packages app.ptl` (see [Driving it](#driving-it)) confirms the
+  --strict app.ptl` (see [Driving it](#driving-it)) confirms the
   script compiles and has no warnings before you launch anything;
   `status_error` in `/state` reports anything that breaks after.
 

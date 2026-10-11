@@ -48,7 +48,7 @@ gpp-python/    a Python GPP client library and two sample apps
 Dependency direction: `garden-app` depends on `garden-core`, `garden-render`,
 `garden-script`, and `gpp`; those four do not depend on each other.
 `garden-script` also depends on the `petal` and `petal-ui` crates one level
-up in this repo (the language, and the shared input/draw/`ui`-prelude
+up in this repo (the language, and the shared input/draw/`ui`-package
 contract every Petal embedder uses). The GPP clients depend only on
 `petal-query`, which builds on `gpp`.
 
@@ -167,6 +167,17 @@ Owns the `petal::env::Env`. Loads `init.ptl`, registers natives, runs the
 program, and extracts the declared layout. Watches the file and hot-reloads,
 preserving Petal `state`.
 
+Scripts reach Garden's natives through two interface packages that
+garden-script registers in memory and provides, with their `petal.toml`s, from
+`garden-script/packages/`: `garden_config` declares the config host's natives
+(`layout`, `row`, `editor`, `color_scheme`, …; `init.ptl` starts with
+`import garden_config`) and `garden` declares the panel channels (a panel
+starts with `import ui` and `import garden`). A test holds each package to
+exactly the natives registered (`Env::verify_interface`). A config script
+with no `import garden_config` does not load; `petal fix-imports -I
+garden/garden-script/packages ~/.garden/init.ptl` adds the line to one
+written before imports were required.
+
 ```rust
 pub enum LayoutNode {
     Row { children, ratios },      // side by side, left to right
@@ -185,6 +196,8 @@ several hosts (one per OS window) coexist with no shared capture slot.
 ### The script API
 
 ```petal
+import garden_config
+
 // init.ptl: declarative layout, re-evaluated on every hot reload
 layout(
     row([
@@ -269,7 +282,8 @@ scheme today) are durable and belong in the user's hand-edited
 `~/.garden/init.ptl`. `ScriptHost::save_setting(&[Goal])` reads the base
 config, applies goals such as `Goal::should_call("color_scheme", ["light"])`
 (updating an existing call or appending one, never duplicating), and writes
-it back with everything else preserved.
+it back with everything else preserved. When it writes a config call into a
+script that lacks `import garden_config`, it adds the import.
 
 ## garden-app: app core and frontends
 

@@ -11,11 +11,33 @@ Petal can use, and that you can copy into a project wholesale.
 | [`glsl/`](glsl/) | **Experimental.** Translates a Petal function to GLSL (`to_glsl(lambda)`), for hosts that take shader hooks as Petal code. Needs no host layer; built on the core `fn_info` / `fn_ast` builtins |
 
 This is deliberately separate from [`core-libs/petal-ui/`](../core-libs/petal-ui/), which is a Rust
-crate that gives a host its input and draw natives (plus the `ui` prelude that
-wraps them). Everything in `core-runtime` is downstream of that: ordinary Petal
+crate that gives a host its input and draw natives (plus the `ui` package that
+declares and wraps them). Everything in `core-runtime` is downstream of that: ordinary Petal
 source, importable by an ordinary `import`.
 
 ## Using one
+
+All three are **bundled in the runtime**: the `petal` binary and every host
+that embeds Petal carry their source, so a script imports them with nothing
+installed, registered or passed on the command line.
+
+```petal ignore
+import bloom              // the facade module, named like its package
+import bloom/menu         // one implementation module
+import text_layout        // another package, by its manifest name
+import ui                 // the host interface bloom and text_layout draw through
+```
+
+```bash
+petal check app.ptl                    # prints: requires host interfaces: ui >=0.1 (bloom), …
+petal-ui-run app.ptl --frames 60       # runs it; petal-ui-run provides `ui`
+petal packages                         # lists the bundled packages
+```
+
+`bloom` and `text_layout` state `[requires] ui = ">=0.1"` in their manifests,
+so a program that imports them loads only in a host that provides the `ui`
+interface (a petal-ui runner such as petal-sdl, Garden, `petal-ui-run`).
+Plain `petal run` refuses it at load and says so. `glsl` requires no host.
 
 Every library here carries a `petal.toml`, so it is a *package*: its manifest
 name is what its modules answer to, wherever the directory sits.
@@ -25,6 +47,12 @@ name is what its modules answer to, wherever the directory sits.
 name = "bloom"
 version = "0.1.0"
 modules = "src"
+
+[dependencies]
+text_layout = { path = "../text-layout" }
+
+[requires]
+ui = ">=0.1"
 ```
 
 A package name is the first segment of an import path, so it has to be
@@ -32,43 +60,15 @@ spellable as an identifier. Where a directory name is not (`text-layout`), the
 manifest names the package (`text_layout`) and that is what `import` answers
 to; the directory can be called whatever reads best.
 
-There are two ways to make a package reachable, and which one you want depends
-on where your script's source comes from.
-
-**On the module path** — for scripts that live on disk. Point `-I` at this
-directory (or at a library root); a manifest one level down is found either
-way:
-
-```bash
-petal run -I core-runtime app.ptl
-petal-ui-run app.ptl -I core-runtime --frames 60
-petal packages -I core-runtime          # what that made importable
-```
-
-or `PETAL_PATH=core-runtime`. Then:
-
-```petal ignore
-import bloom              // the facade module, named like its package
-import bloom/menu         // one implementation module
-import text_layout        // another package, by its manifest name
-```
-
-**One library may import another.** bloom imports `text_layout`, so a host that
-registers bloom in memory has to register text_layout too — the module path
-form needs nothing extra, since one `-I core-runtime` finds both.
-
-**Registered in memory** — for a host, and the only option for a script whose
-source did not come from a file it sits beside (a pushed panel drawer, a
-browser host with no filesystem). One call registers the whole library:
-
-```rust
-env.register_package("bloom", MODULES)?;   // include_str! each .ptl
-// or, from disk:  env.add_package("core-runtime/bloom")?;
-```
-
-Garden does exactly this in
-[`garden/garden-script/src/bloom.rs`](../garden/garden-script/src/bloom.rs), so
-`import bloom` works in every Garden panel with no setup.
+**Using a different copy.** The bundled copy is the last place a package name
+is looked up, so a project can swap in its own: copy the directory and name
+it in the project's `petal.toml` (`bloom = { path = "third_party/bloom" }`),
+or drop it at `vendor/bloom`. A host can register its own copy too
+(`env.add_package(dir)` or `env.register_package("bloom", MODULES)`), which
+wins over everything. bloom imports `text_layout`, which resolves through
+bloom's own manifest when the two directories sit side by side and falls
+back to the project's choice or the bundled copy otherwise. See
+[docs/packages.md](../docs/packages.md).
 
 ## Writing one
 
@@ -79,12 +79,16 @@ Garden does exactly this in
   `pub import ./menu`, so users import one name. Inside the library, reach a
   sibling module with a relative import (`import ./motion`) or by the
   package's own name (`import bloom/motion`); the two are the same module.
-- **Import the host's package in every module that uses it.** Nothing is
-  implicit: a library module that calls `draw_rect(r, c)` says `import ui`
-  at its top, like bloom's modules do. The one catch: if your library exports a name the
-  prelude also has *and* one arity of it calls another, route both through a
-  private implementation — inside a variant's own body the name cannot see its
-  siblings and escapes outward to the prelude's set. See
+- **State what you need in the manifest.** List the packages your modules
+  import under `[dependencies]` and the host interfaces they need under
+  `[requires]`.
+- **Import the host's package in every module that uses it.** An import
+  reaches only the file it is written in: a library module that calls
+  `draw_rect(r, c)` says `import ui` at its top, like bloom's modules do, and
+  one that calls `lerp` says `import creative`. The one catch: if your library
+  exports a name `ui` also has *and* one arity of it calls another, route both
+  through a private implementation — inside a variant's own body the name
+  cannot see its siblings and escapes outward to `ui`'s set. See
   [Sharing Petal libraries](../docs/dev/sharing-petal-libraries.md) for this and
   the rest of the sharp edges.
 - **Keep state per callsite.** `state` inside a library function is keyed by the

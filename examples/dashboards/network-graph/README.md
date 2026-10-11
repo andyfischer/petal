@@ -200,7 +200,7 @@ could not be driven from the debug server and are untested: middle-drag pan
 - **Named arguments to builtins fail on the checked-in Garden binary.** The
   binary at `garden/target/debug/garden` was built from `f02edf9` and the
   checkout is ahead of it; `clamp(v, lo: 0, hi: 1)` passes
-  `petal check --strict --host garden` and then fails in the panel with
+  `petal check --strict` and then fails in the panel with
   `builtin 'clamp' does not accept named arguments`. The script passes
   builtin arguments by position, which works on both.
 - **A `let` bound to a collecting `for` is missing from `panel.values`** on

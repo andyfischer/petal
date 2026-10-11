@@ -10,7 +10,11 @@ and `include/petal.hpp` a header-only C++20 wrapper over it.
 petal::Vm vm;
 vm.native("gravity_at", [](petal::Call& c) { c.result().value(-9.81 * c[0].number()); });
 vm.emitter("spawn", "scene");          // spawn(...) pushes into the "scene" buffer
-vm.load_file("game.ptl");
+vm.register_package("game", {{"game", R"(   // the interface package: declares the natives
+pub native fn gravity_at(frame: num) -> float
+pub native fn spawn(kind: string, props: record)
+)"}});
+vm.load_file("game.ptl");              // the script says `import game` (and `import ui`)
 for (int frame = 0;; ++frame) {
     vm.begin_frame(dt, frame, t);
     vm.run();
@@ -30,6 +34,7 @@ make test-c-bridge
 That needs CMake, Ninja and a C++20 compiler. The guide is
 [docs/embedding-c.md](../../docs/embedding-c.md). It covers the frame
 contract, values and builders, host natives and emitters, petal-ui input and
-draw commands, input-scenario replay, hot reload (a value or layout edit is
+draw commands, modules and packages (interface packages, `[requires]` and
+`provides`, bundles for hosts with no filesystem), input-scenario replay, hot reload (a value or layout edit is
 taken up without recompiling, and `vm.set_config(path, json)` sets a config
 value with no file write) and errors.

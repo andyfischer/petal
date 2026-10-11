@@ -370,6 +370,8 @@ Everything above lets the *host* decide which variables are tunable. The
 language can also say it in the source:
 
 ```petal
+import ui
+
 config let offset = 10
 let x = 20
 draw_circle(x + offset, 110, 60)
@@ -529,6 +531,8 @@ Things worth getting right in `contains`, learned from Garden's implementation:
 A sketch with a helper and a loop:
 
 ```petal
+import ui
+
 let radius = 40
 
 fn swatch(x, y, r, g, b)

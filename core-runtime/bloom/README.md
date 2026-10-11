@@ -6,6 +6,7 @@ overlays, an animation core, and a vector icon set — about 2,000 lines of
 
 ```petal
 import bloom
+import ui
 
 if bloom.button(rect(20, 20, 120, 32), "Save", {variant: "primary", icon: "check"}) then
   bloom.toast("Saved", "success")
@@ -31,14 +32,14 @@ reference is [docs/components.md](docs/components.md).
 ## Why it exists next to `ui`
 
 [`petal-ui`](../../core-libs/petal-ui/) is the **host layer**: a Rust crate that gives an
-embedder the input and draw natives, plus the `ui` prelude of primitives and
+embedder the input and draw natives, plus the `ui` package of primitives and
 widgets over them. bloom is a **component layer** on top of that, in pure
 Petal, with opinions `ui` deliberately does not take:
 
-| | `ui` prelude | bloom |
+| | `ui` | bloom |
 |---|---|---|
 | Label placement | you compute a `y` | cap-height centred, through [text-layout](../text-layout/) |
-| Lives in | a Rust crate, registered by the host | `.ptl` files you drop in |
+| Lives in | a Rust crate, registered by the host | `.ptl` files, bundled in the runtime |
 | Cross-frame state | explicit records you keep (`list_state()`) | per-callsite `state` inside the component |
 | Click | on press | on **release inside**, so sliding off cancels |
 | Overlays | you guard your own input (`menu_blocking`) | the overlay **captures** input; callers need no guard |
@@ -51,49 +52,49 @@ script freely.
 
 ## Requirements
 
-A host that embeds `petal-ui` (Garden panels, `petal-desktop-sdl`,
-`petal-web-canvas`, the `petal-ui-run` driver, or your own embedder calling
-`petal_ui::register_all`), and one other library from this directory:
-[`text-layout`](../text-layout/), which bloom places every label with. That is
-all — bloom asks for no natives of its own, no fonts, and no files at runtime.
+A host that provides the `ui` interface — one that embeds `petal-ui` (Garden
+panels, `petal-desktop-sdl`, `petal-web-canvas`, the `petal-ui-run` driver, or
+your own embedder calling `petal_ui::register_all`). bloom's manifest says so
+(`[requires] ui = ">=0.1"`), so loading a bloom script anywhere else is a
+load error naming the interface, and `petal check` reports the requirement.
+bloom asks for no natives of its own, no fonts, and no files at runtime. It
+imports one other library, [`text-layout`](../text-layout/), which it places
+every label with.
 
 ## Installing it in a project
 
-bloom is a *package*: `petal.toml` at this directory's root names it, so its
-modules answer to `bloom/…` wherever the directory lands. Copy the whole
-directory (manifest included) into your project and make it reachable one of
-two ways:
+There is nothing to install: bloom and text-layout are bundled in the runtime,
+so `import bloom` works in the `petal` CLI and in every host that embeds
+Petal.
 
 ```bash
-# 1. on the module path — point -I at a directory of libraries, so bloom and
-#    the text-layout it imports are both found
-petal-ui-run myapp/app.ptl -I core-runtime
-petal packages -I core-runtime            # check what that made importable
+petal check myapp/app.ptl                 # requires host interfaces: ui >=0.1 (bloom), ui >=0.1 (text_layout)
+petal-ui-run myapp/app.ptl --frames 60
 ```
+
+To use a different copy — a patched one, or a newer one than your host
+carries — copy this directory (manifest included) into the project and name
+it in the project's `petal.toml`, or drop it at `vendor/bloom`:
+
+```toml
+[dependencies]
+bloom = { path = "third_party/bloom" }
+```
+
+A host can also register its own copy, which wins over the bundled one:
 
 ```rust
-// 2. registered by the host, which also covers scripts pushed as source
-env.add_package("core-runtime/text-layout")?;       // from disk
-env.add_package("core-runtime/bloom")?;
-env.register_package("text_layout", TL_MODULES)?; // from include_str!
-env.register_package("bloom", MODULES)?;
+env.add_package("third_party/bloom")?;            // from disk
+env.register_package("bloom", MODULES)?;          // from include_str!
 ```
 
-Either way, **register text-layout too**: bloom imports it, and a host that
-registers bloom alone fails to load it. Pointing `-I` at `core-runtime` (rather
-than at `core-runtime/bloom`) covers both in one flag.
-
-Garden ships (2) in
-[`garden/garden-script/src/bloom.rs`](../../garden/garden-script/src/bloom.rs)
-and [`text_layout.rs`](../../garden/garden-script/src/text_layout.rs) beside it —
-two `register_package` calls over `include_str!`s — so every Garden panel can
-`import bloom`.
+See [docs/packages.md](../../docs/packages.md) for the lookup order.
 
 ## The modules
 
 | Module | Contents |
 |--------|----------|
-| `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `pub import bloom/…` |
+| `bloom` (`src/bloom.ptl`) | The facade. Named like the package, so a bare `import bloom` finds it; re-exports everything below with `pub import ./…` |
 | `bloom/motion` | The animation core: `ease_to`, `ease_flag`, `spring`, `enter`, `impulse`, `stagger`, `shake`, easings, rect interpolation |
 | `bloom/theme` | Tokens derived from the host palette, plus the shared painting: `surface`, `stroke`, `wash`, `focus_ring`, `text_in`, `text_block_in`, `text_cut`, `ts` |
 | `bloom/icon` | 22 vector glyphs, drawn as strokes in a unit box |
@@ -123,8 +124,7 @@ Headlessly, without Garden:
 
 ```bash
 cd core-libs/petal-ui && cargo run --bin petal-ui-run -- \
-    ../../examples/ui/bloom-gallery/app.ptl --frames 120 --scenario monkey:7 \
-    -I ../../core-runtime
+    ../../examples/ui/bloom-gallery/app.ptl --frames 120 --scenario monkey:7
 ```
 
 ## Versioning

@@ -43,8 +43,8 @@ The three channels, all keyed by an interned **symbol** (`env.intern_symbol(name
 
 | Direction | Channel | Host API | Script/native API |
 |-----------|---------|----------|-------------------|
-| host → script | **binding** (a uniform) | `set_binding` / `binding` / `clear_binding` | `binding(sym)` builtin, `cxt.binding_named` |
-| script → host | **output buffer** (a stream) | `take_output_buffer` / `output_buffer` / `clear_output_buffer` | `push_output(sym, v)` builtin, `cxt.push_output` / `cxt.emit` |
+| host → script | **binding** (a uniform) | `set_binding` / `binding` / `clear_binding` | `binding(sym)` builtin (`import io`), `cxt.binding_named` |
+| script → host | **output buffer** (a stream) | `take_output_buffer` / `output_buffer` / `clear_output_buffer` | `push_output(sym, v)` builtin (`import io`), `cxt.push_output` / `cxt.emit` |
 | per-run ids | **counter** | `reset_counter` / `next_counter` | `cxt.next_counter` |
 
 ---
@@ -127,8 +127,9 @@ does the same for a loose script. Announce the interface with
 or `env.provides("myhost", "0.1.0")`, so a package whose manifest says
 `[requires] myhost = ">=0.1"` loads here and fails cleanly elsewhere. Assert `env.verify_interface(&["myhost"])` in a test: it fails when a
 native is registered without a declaration or declared without being
-registered. There are no implicit imports — a script for a petal-ui host
-says `import ui` — and the details are in
+registered. A host puts no names in a script's scope by itself — a script
+for a petal-ui host says `import ui`, and one for your host says
+`import myhost` — and the details are in
 [module-system.md](module-system.md#host-interface-packages) and
 [ffi.md](ffi.md#native-interfaces-native-fn).
 
@@ -354,15 +355,17 @@ examples.
 petal-ui hosts also publish an **absolute clock** each frame via
 `petal_ui::input::bind_time(env, seconds)` — a monotonic value read straight
 from the host's clock (e.g. `start.elapsed().as_secs_f64()`), *never* a running
-sum of `dt`. Scripts read it as `time()`, and the `ui` prelude's `elapsed()`
+sum of `dt`. Scripts read it as `time()`, and the `ui` package's `elapsed()`
 captures it once into `state` to report seconds since its first call without the
 rounding drift of accumulating `dt` every frame.
 
 ### Shipping a Petal library with the host
 
-A host that ships a library of Petal modules — a component set, a prelude
-split across files — registers the whole thing in **one call** rather than a
-loop of `register_module`s. From disk:
+The runtime already carries the bundled packages (`ui`, `bloom`,
+`text_layout`, `glsl` and the builtin packages), so a host registers nothing
+for scripts to import those. A host that ships a library of its own — a
+component set, an interface package split across files — registers the whole
+thing in **one call** rather than a loop of `register_module`s. From disk:
 
 ```rust
 let info = env.add_package("core-runtime/bloom")?;   // reads core-runtime/bloom/petal.toml
@@ -383,7 +386,7 @@ A host with no filesystem does not have to list the sources by hand:
 `petal bundle <entry>` emits a project's whole installed dependency graph as
 one JSON document whose `packages[i].modules` is exactly what
 `register_package` takes, manifests included (see
-[module-system.md](module-system.md#bundles)). Register each package, then
+[packages.md](packages.md#bundles)). Register each package, then
 load `entry.source` at `entry.path`.
 
 A host never fetches a dependency by itself. A project's `git` dependencies
@@ -396,13 +399,16 @@ Either way the library's modules answer to `import bloom/menu`, its internal
 relative imports (`import ./motion`) keep working, and `env.packages()` lists
 what a host can tell the user is available. A host registration is the first
 place a package name is looked up — ahead of the importing file's own
-package, the search path, and the packages bundled in the binary.
+package and its `[dependencies]`, the search path, and the packages bundled
+in the binary — so a host can also replace a bundled package with its own
+copy.
 `env.add_module_path(dir)` offers any package it finds in `dir` or one level
 under it (packages only: a loose `.ptl` file is imported relatively, never
 through a search directory); that discovery is best-effort, and a manifest
 that would not load is collected into `env.package_errors()` rather than
 returned. Every failure is a `LoadError` naming the `petal.toml`. See
-[module-system.md](module-system.md#packages) for the manifest format and the
+[packages.md](packages.md) for the manifest format and
+[module-system.md](module-system.md#where-packages-are-found) for the lookup
 rules.
 
 ### Allocating stable per-run ids

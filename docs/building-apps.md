@@ -22,7 +22,7 @@ Petal Core  →  Integrations  →  Apps
 
 | Tier | What lives here | Crates / packages |
 |------|-----------------|-------------------|
-| **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` prelude). | [`core/`](../core/) (`petal`), [`core-libs/petal-ui/`](../core-libs/petal-ui/) (`petal-ui`) |
+| **Petal Core** | The language (compiler, IR, evaluator, bytecode VM) and the shared interactivity layer (normalized input, the draw-command vocabulary, the `ui` package scripts import). | [`core/`](../core/) (`petal`), [`core-libs/petal-ui/`](../core-libs/petal-ui/) (`petal-ui`) |
 | **Integrations** | Reusable *hosts* that embed Petal Core for one platform. Own platform *policy* (windowing, event loop, rasterization, file IO). | [`integrations/petal-desktop-sdl`](../integrations/petal-desktop-sdl/) (native SDL2), [`integrations/petal-web-canvas`](../integrations/petal-web-canvas/) (WASM + canvas), [`integrations/petal-web-html`](../integrations/petal-web-html/) (WASM + DOM) |
 | **Apps** | Full runnable applications that load Petal source: your programs, built on top of an integration. [`examples/custom-apps/`](../examples/custom-apps/) holds worked examples, and [Garden](../garden/README.md) is the largest app in the repo. | [`examples/custom-apps/`](../examples/custom-apps/), [`garden/`](../garden/README.md) |
 
@@ -57,6 +57,15 @@ exec "$BIN" side-scroller/game.ptl --width 960 --height 600 --title "Petal Runne
 needs (drawing, input, timing, and whatever app-specific natives it registers).
 Most 2D games and canvas sketches fit here.
 
+The script says what it uses with imports: `import ui` for drawing and input,
+the integration's own package for its extras (`import sdl` on petal-sdl,
+`import garden` in a Garden panel), bundled libraries such as `import bloom`,
+and the builtin packages (`import creative`, `import vec2`, …). Give the app
+directory a `petal.toml` that lists the integration's interface package as a
+path dependency and the stock `petal check` and the language server check the
+scripts with no flag ([packages.md](packages.md)); `petal run` itself cannot
+run a script that imports a host interface.
+
 ### Shape B — App that extends an integration (thin host delta)
 
 Your app needs host capabilities the integration doesn't provide — a different
@@ -70,6 +79,14 @@ and adds only a CodeMirror editor and a pause/step debug protocol.
 
 **Choose Shape B when** you need custom host code, but design it so the *shared*
 part stays in the integration and only the *specific* part lives in the app.
+
+Natives the app adds are reachable from scripts only through a declaration,
+so the delta includes an **interface package**: a directory with a
+`petal.toml` and a `.ptl` file of `pub native fn` declarations (plus anything
+the host writes in Petal over them), registered after the natives and
+announced with `env.provides_package(name)`. `petal-fps` keeps its in
+`packages/fps/`; scripts write `import fps`. See
+[Host interface packages](module-system.md#host-interface-packages).
 
 ## Mechanism: Web (WASM + TypeScript)
 
@@ -181,13 +198,13 @@ hook, that's a signal the capability belongs *in* the integration for everyone.
   integration tier** — an NES-style fantasy console whose "carts" are `.ptl`
   scripts. Its delta is two emulated chips (a PPU-shaped tile/sprite rasterizer
   and an APU-shaped sound chip), the natives that feed them, and a Petal-source
-  prelude its carts import (`import nes`); the window, loop, timing, input,
+  package its carts import (`import nes`); the window, loop, timing, input,
   hot reload and agent/headless/screenshot modes are all inherited. It is a
   *reusable host for many scripts* rather than one app, and it is the example
   to read for two things `petal-fps` does not exercise: a host that owns
   **audio** (`on_sdl_init` to open the device, `end_frame` to fill it, and
   Petal functions called *by* the host to synthesize samples), and a host that
-  ships a **prelude written in Petal** rather than in Rust. See its
+  ships a **library written in Petal** rather than in Rust. See its
   [design](../examples/custom-apps/petal-fantasy-nes/docs/design.md) and
   [LANGUAGE_NOTES](../examples/custom-apps/petal-fantasy-nes/LANGUAGE_NOTES.md).
 
@@ -217,7 +234,7 @@ defaults for the rest (browser hooks, per-frame prep, draw stats):
 
 ```rust
 pub trait Host {
-    fn register(&mut self, env: &mut Env);                       // natives + prelude
+    fn register(&mut self, env: &mut Env);                       // natives + their interface package
     fn present(&mut self, canvas: &mut Canvas<Window>, env: &mut Env) -> Result<(), String>;
     fn render_image(&mut self, env: &mut Env, stack: StackKey, w: u32, h: u32)
         -> Result<RgbImage, String>;                             // screenshot/record/agent
@@ -331,6 +348,7 @@ it from your app — and when you find a bug there, fix it in the integration
 
 - [FFI / Embedding](ffi.md) — the Rust embedding API: registering natives, the value model, host channels.
 - [Architecture](dev/Architecture.md) — Core internals (IR, evaluator, state).
-- [petal-ui](../core-libs/petal-ui/) — the shared input/draw/prelude contract every host implements.
+- [petal-ui](../core-libs/petal-ui/) — the shared input and draw contract every host implements, and the `ui` package scripts import.
+- [Module System](module-system.md) and [Packages](packages.md) — imports, interface packages, `petal.toml` and dependencies.
 - [petal-desktop-sdl agent protocol](../integrations/petal-desktop-sdl/docs/agent-protocol.md) and [game-dev guide](../integrations/petal-desktop-sdl/docs/game-dev-guide.md).
 - [Debug protocol](dev/debug-protocol.md) — shared by petal-sdl and petal-diagram-canvas.

@@ -195,8 +195,8 @@ note.
   The first `/tick` after a reset still jumps the clock once (the switch from
   wall time), which is why the recipe above ticks once before pressing play.
 - **Named arguments to builtins passed `check` and failed at run time.**
-  `clamp(v, lo: 0, hi: 1)` is accepted by `petal check --strict --host
-  garden` at this checkout, but the Garden binary this was built against is
+  `clamp(v, lo: 0, hi: 1)` is accepted by `petal check --strict`
+  at this checkout, but the Garden binary this was built against is
   older and raised `builtin 'clamp' does not accept named arguments`. Every
   builtin call here is positional.
 - **A one-line collecting `for` read back as null.** `let obs_mute = for mr
@@ -215,9 +215,6 @@ note.
   the panel clock, which stands still between ticks, so a screenshot taken
   after a pause shows the meters and scope where the last tick left them.
   Stop clears them.
-- **`petal check` needs `--host garden`.** The script imports `text_layout`,
-  which only the Garden host registers; without the flag the check stops at
-  `cannot find module 'text_layout'`.
 - **A note gesture holds a list index.** If a queued pattern lands mid-drag
   the gesture is dropped, since the index would point into another lane.
 - **Fixed length, no zoom.** Every pattern is 32 sixteenths and the timeline

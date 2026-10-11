@@ -29,7 +29,7 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--host-data` | none | Fixture answers for the `host_data(kind, arg)` native. |
 | `--out` | stdout | Where the JSONL trace goes. `-` also means stdout. Safe even for a printing app: `print` does not echo. |
 | `--error-format` | `full` | `bare` strips positions and echoed source lines from runtime errors. |
-| `-I <dir>` | none | An extra module search directory, repeatable — the CLI's `-I`. For an app that imports a shared library from outside its own directory (`-I core-runtime`). |
+| `-I <dir>` | none | A directory to search for packages, repeatable — the CLI's `-I`. For an app that imports a package which is neither bundled nor a dependency in its project's `petal.toml`. |
 | `--policy <name>` | `fast` (or `PETAL_POLICY`) | The [run policy](../../core/src/policy.rs): `fast` (optimizer, memo and gate on), `baseline` (all off — the reference trace), `explain`, or `replay` (memo on, gate off), optionally with modifiers such as `fast-memo` (the gate alone) or `baseline+gate`. Every policy must produce the same trace, so a differential is the same command with two names. |
 | `--no-gate` | gated | Run the script on every frame. By default frames run under the [frame gate](frame-gate.md), as in every real host: a frame whose inputs are what the last run read is skipped, and its record carries the retained `commands` and `state` with empty `prints`. |
 | `--gate-stats` | off | Report frames run vs skipped, and a histogram of run reasons, on stderr. |
@@ -37,13 +37,15 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
 | `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
 
-Imports resolve relative to the app's own directory, so an app that imports a
-sibling module (`examples/games/snake/`-style layouts) runs from any working
-directory. A library that lives elsewhere — one of the
-[`core-runtime/`](../../core-runtime/README.md) — comes in through `-I`:
+A relative import (`import ./level`) resolves against the importing file, so
+an app that imports a sibling module runs from any working directory. A
+package is found as it is by the `petal` CLI: `ui`, `bloom`, `text_layout`
+and the builtin packages are bundled, a dependency comes from the nearest
+`petal.toml` above the app, and `-I` adds a directory of packages ad hoc. The
+driver provides the `ui` interface, so packages that require it load:
 
 ```
-petal-ui-run examples/ui/bloom-gallery/app.ptl -I core-runtime --frames 120
+petal-ui-run examples/ui/bloom-gallery/app.ptl --frames 120
 ```
 
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is

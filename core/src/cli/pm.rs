@@ -330,7 +330,7 @@ DESCRIPTION
        the project's dependencies with no flag.
 
 SEE ALSO
-       petal help add, petal help install, docs/module-system.md
+       petal help add, petal help install, docs/packages.md
 ";
 
 pub(super) const ADD: &str = "\
@@ -361,7 +361,8 @@ DESCRIPTION
        supported yet.
 
 SEE ALSO
-       petal help remove, petal help install, petal help packages
+       petal help remove, petal help install, petal help packages,
+       docs/packages.md
 ";
 
 pub(super) const REMOVE: &str = "\
@@ -421,7 +422,8 @@ OPTIONS
               lockfile in the repository is the truth.
 
 SEE ALSO
-       petal help update, petal help vendor, petal help packages
+       petal help update, petal help vendor, petal help packages,
+       docs/packages.md
 ";
 
 pub(super) const UPDATE: &str = "\
@@ -500,5 +502,5 @@ OPTIONS
               Write the document to <file> instead of stdout.
 
 SEE ALSO
-       petal help vendor, docs/module-system.md, docs/embedding-guide.md
+       petal help vendor, docs/packages.md, docs/embedding-guide.md
 ";

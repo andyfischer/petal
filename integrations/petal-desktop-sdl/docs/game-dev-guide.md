@@ -29,13 +29,21 @@ script top to bottom each time. Use `state` variables to keep data between
 frames.
 
 Start the file with `import ui`: that is what brings in the drawing and input
-functions (`clear`, `draw_rect`, `key_down`, …). Nothing is imported
-implicitly, and the shorter snippets below leave the line out. petal-sdl's own
+functions (`clear`, `draw_rect`, `key_down`, …). Without it those names do
+not exist; the shorter snippets below leave the line out. petal-sdl's own
 extras — `sfx`, `synth`, `load_text_file`, `save_text_file`, `file_exists`,
-the example browser — come with `import sdl`. Check a script without the
-runner with `petal check -I integrations/petal-desktop-sdl/packages game.ptl`;
-an older script gets its import lines from `petal fix-imports` with the same
-`-I`.
+the example browser — come with `import sdl`. The math and color helpers
+that are not plain math are behind imports too: `import creative` (`lerp`,
+`distance`, `map_range`, …), `import vec2`, `import noise`, `import color`
+(`hsv`, …). `petal check` names the import a script is missing.
+
+Check a script without the runner with `petal check game.ptl`. `import ui`
+resolves anywhere; `import sdl` resolves when the script's project lists the
+package (`sdl = { path = "…/integrations/petal-desktop-sdl/packages/sdl" }`
+under `[dependencies]` in the nearest `petal.toml`, as this repository's
+`examples/petal.toml` does), or with
+`-I integrations/petal-desktop-sdl/packages`. A script written before
+imports were required gets its import lines from `petal fix-imports`.
 
 ```petal
 state x = 100.0          // initialized once, persists across frames

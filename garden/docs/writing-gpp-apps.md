@@ -246,6 +246,8 @@ even outside Garden (it overlays the host theme on a built-in fallback), so
 read `P.<key>` directly with no guard:
 
 ```petal
+import garden
+
 let P = palette()
 let BG = P.window_bg   let TEXT = P.text   let ADDBG = P.added_bg
 ```
@@ -271,7 +273,7 @@ record when nothing is); prefer `palette()`.
 
 **Input**, delivered to the focused pane: `key_pressed("j")`, `mouse_x()`,
 `mouse_pressed(0)`, `click_count()`, `drag_active()`, `scroll_y()`,
-`text_input()`, `mod_shift()`, plus the `ui` prelude (`button`,
+`text_input()`, `mod_shift()`, plus the `ui` widgets (`button`,
 `list_update`, focus helpers). The `:` command line and global chords stay
 with Garden. Return is spelled `"return"`, never `"enter"`.
 
@@ -286,6 +288,9 @@ the call with an edge (a key press, a drag end); an unconditional `emit`
 re-fires every frame:
 
 ```petal
+import garden
+import ui
+
 if divider_drag && mouse_released(0) then
   emit("divider", { pos: divider_x })
 end
@@ -517,6 +522,8 @@ Declare a projection instead: say where each line came from, once, and Garden
 tracks it through every edit and hands you the resulting write-backs.
 
 ```petal
+import garden
+
 edit_view(5, x, y, w, h, doc.unified.text)
 edit_view_projection(5, doc.unified.projection)
 ```
@@ -566,6 +573,9 @@ region needs no `text_view_line_styles`.
 Then save the edits rather than the text:
 
 ```petal
+import garden
+import ui
+
 if mod_ctrl() && key_pressed("s") then
   mutate("apply", { edits: edit_view_edits(5) })
   invalidate("doc", "")
@@ -593,6 +603,8 @@ and rebuilds only when it genuinely changes.
 A `process` node in a layout script spawns the app:
 
 ```petal
+import garden_config
+
 layout(process("/abs/path/to/target/debug/my-app", ["/some/dir"]))
 ```
 

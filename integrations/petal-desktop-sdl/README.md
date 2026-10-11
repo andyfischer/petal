@@ -83,10 +83,20 @@ data between frames. Edit the file while it runs and it reloads in place,
 keeping `state` values.
 
 ```petal
+import ui
+
 state x = 100.0
 x += 100.0 * dt()
 draw_rect(int(x), 100, 20, 20, 255, 0, 0)
 ```
+
+`import ui` brings in the drawing and input functions; it is petal-ui's
+interface, which this runner provides. The runner's own extras (`sfx`,
+`synth`, sandboxed file I/O, the example browser) are declared by the `sdl`
+interface package in [`packages/sdl/`](packages/sdl/), which the runner
+registers and provides: a script that uses them adds `import sdl`. Plain
+`petal run` provides neither interface and refuses such a script at load;
+`petal check` checks it without running.
 
 See [`docs/game-dev-guide.md`](docs/game-dev-guide.md) for the API and common
 patterns, and [`docs/design.md`](docs/design.md) for how the host is built.

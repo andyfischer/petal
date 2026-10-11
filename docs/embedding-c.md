@@ -194,7 +194,8 @@ you need to keep.
 ### Host → script: bindings and builders
 
 Bindings are host-set values the script reads with
-`binding(symbol("name"))` (a host prelude usually wraps these in nicer names).
+`binding(symbol("name"))` after `import io` (a host's interface package
+usually wraps these in nicer names, so only it needs the import).
 They persist until overwritten or cleared.
 
 ```cpp
@@ -293,6 +294,7 @@ vm.emitter("body", "physics", "declare_body");    // custom tag
 
 ```petal
 import vec2
+import sdl
 draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: #cc3333})
 sfx("jump", {volume: 0.8})
 ```
@@ -510,7 +512,7 @@ if (vm.sources_changed()) {                 // stat() of every source file
   arrives with its structured diagnostics while the old program keeps running.
   After a recompile, state whose declaration still exists is kept (matched by
   name path, so reordering is fine; renaming drops it). `state_preserved` also
-  counts the `ui` prelude's internal state slots.
+  counts the `ui` package's internal state slots.
 - `last_reload_json()` (`pb_vm_last_reload_json`) describes the last reload:
   the outcome, the files that changed, each literal that changed with its
   binding path (`{"path": "POST.bloom", "old": 0.2, "new": 0.4}`), or the
@@ -634,8 +636,9 @@ vm.add_module_path("games/marble/lib");                // a directory of package
 vm.add_package("path/to/petal/core-runtime/bloom");     // a package directory
 ```
 
-All of these affect later loads. There are no implicit imports: a script
-names what it uses (`import ui`, `import engine`). `bloom`, `text_layout`
+All of these affect later loads. Nothing is in a script's scope but the core
+builtins: a script names what it uses (`import ui`, `import engine`, and
+`import io` or `import vec2` for those builtins). `bloom`, `text_layout`
 and `glsl` are bundled in the runtime, so `import bloom` needs no
 registration; a package registered here wins over the bundled copy.
 
@@ -643,7 +646,7 @@ For an engine that ships scripts without a filesystem, `petal bundle <entry>`
 writes a project's installed dependency graph as JSON: each
 `packages[i].modules` object is the name/source list `register_package`
 takes, with the package's `petal.toml` among them
-([module-system.md](module-system.md#bundles)). Scripts loaded from disk find
+([packages.md](packages.md#bundles)). Scripts loaded from disk find
 their project's git dependencies in `vendor/` or the package cache, as
 `petal.lock` pins them; the bridge never fetches, so run `petal install` (or
 check `vendor/` in) before shipping.
@@ -813,7 +816,7 @@ Measured on an M-series Mac, release build, in Cheesecake: a frame that makes
 everything, costs about 0.4 ms. Each host-callback native reuses its own
 argument, view and result buffers from call to call, so a call allocates
 nothing on the bridge side beyond its result. Loading or reloading a program takes about
-0.1 s, most of it compiling the `ui` prelude.
+0.1 s, most of it compiling the `ui` package.
 
 ## Limitations
 

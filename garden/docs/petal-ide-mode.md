@@ -191,6 +191,8 @@ So a hand-written layout gets the same as-you-type canvas by putting an
 editor and a panel on the same file:
 
 ```petal
+import garden_config
+
 // init.ptl: a permanent Petal-IDE-style workspace
 layout(
     row([ editor("sketch.ptl"), panel("sketch.ptl") ], [0.5, 0.5])
@@ -314,6 +316,8 @@ than one variable could satisfy the goal. Say which one means something with
 `config let`:
 
 ```petal
+import ui
+
 config let spacing = 78
 let x0 = 46
 for i in range(0, 4) do

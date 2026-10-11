@@ -40,9 +40,11 @@ Every command that compiles a program accepts these:
   the `PETAL_PATH` environment variable are searched the same way. It is not
   a place loose files are found: a file is imported relative to the importer
   (`import ./util`), and a bare name is always a package. A file inside a
-  package reaches that package by name with no `-I`. See
-  [module-system.md](module-system.md#where-packages-are-found) and
-  [`packages`](#packages--list-available-libraries).
+  package reaches that package by name with no `-I`, and so does a file in
+  a project whose `petal.toml` lists the package under `[dependencies]`: the
+  nearest `petal.toml` is found by walking up from the file. See
+  [packages.md](packages.md) and
+  [`packages`](#packages--show-the-project-and-the-libraries-available).
 - With `-e` or stdin there is no importing file, so `import ./x` means
   `x.ptl` in the current directory.
 
@@ -63,7 +65,7 @@ Every command that compiles a program accepts these:
 | `bundle` | Emit a program's packages as one JSON document |
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
-| `fix-imports` | Rewrite imports written for the old module rules |
+| `fix-imports` | Migrate older code: rewrite its import lines and add the imports it is missing |
 | `lint-fix` | `lint --fix` under its own name |
 | `suggest` | Suggest safe refactors for a file |
 | `apply-change` | Carry out a refactor that changes behaviour |
@@ -438,7 +440,7 @@ Options:
 
 #### Which names exist
 
-No host is consulted, and the old host-profile flags are gone. A name exists
+No host is consulted. A name exists
 because the file declares it, an import binds it, or it is a `core`/`std`
 builtin. The domain builtins (`lerp`, `noise`, `vec2`, `hsv`, `json_parse`, …)
 are behind imports of their own (`import creative`, `import noise`, …; see
@@ -468,7 +470,7 @@ When the packages a script loads state `[requires]`, a passing `check` ends
 with one line naming them — `requires host interfaces: ui >=0.1 (bloom)` —
 and `--json` carries a `requires` array of `{interface, version, package}`.
 `check` never fails on them; a run in a host that does not provide one does
-([module-system.md](module-system.md#required-host-interfaces)).
+([packages.md](packages.md#requires)).
 
 `check` and `run` agree on every script. `check` never links, so a script that
 imports `ui` checks clean; `petal run` of it stops at load, before any line
@@ -481,8 +483,8 @@ Error: module 'ui/input' needs native fns this host does not register: mouse_x, 
 ```
 
 A UI script runs in a petal-ui runner such as `petal-sdl`
-([building-apps.md](building-apps.md)). Old scripts that relied on a host's
-implicit prelude get their imports from
+([building-apps.md](building-apps.md)). A script that uses petal-ui names with
+no `import ui` gets the line from
 [`petal fix-imports`](#fix-imports--migrate-imports).
 
 #### Errors and warnings
@@ -641,9 +643,10 @@ petal fix-imports -e '<code>'                 # print the fixed code
 petal fix-imports -                           # stdin to stdout
 ```
 
-Rewrites code written for the earlier import rules, where a bare name could
-be a sibling file and `import m: *` existed. It edits import lines and
-nothing else:
+Migrates code written before the current module system, where a bare name
+could be a sibling file, `import m: *` existed, and a host's names and every
+builtin were in scope with no import. It edits import lines and nothing
+else:
 
 | Before | After | When |
 |---|---|---|
@@ -654,10 +657,12 @@ nothing else:
 | *(nothing)* | adds `import kit` | a bare name nothing in the file provides is exported by exactly one available package |
 | *(nothing)* | adds `import creative`, `import vec2`, `import noise`, … | the same, for a builtin that now lives in a bundled package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, `symbol`, …; [the list](Builtins.md#which-builtins-need-an-import)) |
 | *(nothing)* | adds `import vec2` for `v.normalize()` | a moved builtin called with method syntax, which fails only when the line runs: added when nothing in the program defines a function, class method or record field of that name |
-| *(nothing)* | adds `import ui` | the same, for a host's names: a script written for an implicit prelude gets its `import ui` (with the host's package on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
+| *(nothing)* | adds `import ui` | the same, for a host's names: a script that used petal-ui names with no import gets its `import ui` (and, with the host's package a dependency of the project or on `-I`: `import garden`, `import sdl`, …). When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 
-"Available" is the packages bundled in the binary plus the ones under `-I`
-and `PETAL_PATH`. A path that already resolves as a package is never
+"Available" is the packages bundled in the binary, the `[dependencies]` of
+the project the file is in (the nearest `petal.toml` above it), and the
+packages under `-I` and `PETAL_PATH`. With `-e` or stdin there is no file and
+so no project. A path that already resolves as a package is never
 rewritten, so the command is safe on migrated code and running it twice
 changes nothing more. It prints each file it rewrote with one line per edit.
 
@@ -927,9 +932,9 @@ followed too.
 | a `fn`, each overload variant by itself | a parameter, or any value that merely holds a function |
 | a lambda held in a `let` | a function read out of a record or a list |
 | a class constructor | a name rebound under a branch or in a loop |
-| a function of an imported module (`shapes.area(…)`) or of the host's prelude | a method dispatched on its receiver at runtime (`xs.slice(…)`) |
+| a function of an imported module (`shapes.area(…)`) or of a host's interface package (`ui`) | a method dispatched on its receiver at runtime (`xs.slice(…)`) |
 | a method call the checker pinned to one class | a variadic builtin (`print`) |
-| a builtin that declares its parameter names ([Builtins.md](Builtins.md)) | a native whose host this build cannot see |
+| a builtin that declares its parameter names ([Builtins.md](Builtins.md)) | a native declared with a rest parameter (`...args`), which has no parameter names |
 
 **The rewritten call must be the same call.** It selects the same overload
 variant under the [name-aware rule](function-overloading.md), every argument
@@ -940,7 +945,7 @@ were written — so they are evaluated in the same order.
 is not the same as proving the names are true. When two variants of an overload
 set both take a call of that many arguments and call them different things,
 only one of the two readings could be written down, so neither is. The `ui`
-prelude's `draw_line` takes seven arguments as the flat `(x1, y1, x2, y2, r, g,
+package's `draw_line` takes seven arguments as the flat `(x1, y1, x2, y2, r, g,
 b)` and as `(x1, y1, x2, y2, c, a, width)`; a seven-argument `draw_line` gets
 no suggestion, an eight-argument one (flat only) does. Variants that agree on
 the names — one shape declared at several lengths — are named. A *single*
@@ -1212,9 +1217,6 @@ refusal; pass `-I <dir>` so it can be compiled.
 - `--dry-run` — print the change as a unified diff on stdout and write
   nothing. Everything else, the gate included, runs as usual.
 
-  [`check`](#check--compile-without-running). It decides which prelude the
-  gate imports implicitly.
-
 ### `ir-equal` — Are two files the same program?
 
 ```
@@ -1300,7 +1302,7 @@ tween = { path = "../libs/tween" }
 ui = ">=0.1"
 ```
 
-See [module-system.md](module-system.md#packages) for the manifest. This
+See [packages.md](packages.md#the-manifest) for the manifest. This
 command prints what a script here can reach:
 
 - **the project** — the nearest `petal.toml` at or above `path` (a file or a
@@ -1337,9 +1339,10 @@ A dependency whose key differs from the package's own name is shown as
 
 `--json` emits `{ "project": …, "packages": [ … ], "bundled": [ … ],
 "errors": [ … ] }`. `project` is `null` outside a project; otherwise it has
-`name`, `version`, `root`, `module_dir`, `modules`, `requires`,
+`name`, `version`, `root`, `module_dir`, `modules`, `locked`, `requires`,
 `dependencies` (each with `name`, `source`, and either `package`, `version`,
-`root`, `requires`, `repeated`, `dependencies` or an `error`) and
+`root`, `requires`, `repeated`, `dependencies` — plus `commit`, `tree` and
+`vendored` for a git package — or an `error`) and
 `required_interfaces` (`{interface, version, package}` across the graph).
 Each `packages` entry has `name`, `version`, `root`, `module_dir`, `modules`
 and `requires`; each `bundled` entry `name`, `version`, `modules`, `builtin`
@@ -1368,8 +1371,8 @@ petal bundle <entry> [-o <file>]
 ```
 
 These work on the project of the working directory (the nearest `petal.toml`
-at or above it). [module-system.md](module-system.md#the-package-manager) has
-the model; in short:
+at or above it). [packages.md](packages.md#the-package-manager) describes
+each command, the lockfile, the cache and `vendor/`; in short:
 
 - `init` writes a `petal.toml` (`[package] name`, `version = "0.1.0"`). The
   name is `--name` or the directory's name bent into an identifier.

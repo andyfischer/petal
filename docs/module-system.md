@@ -5,6 +5,16 @@ pulls another module's exported names into the current file. All the
 modules of a program are compiled together into one program — there is no
 separate compilation and no runtime linker.
 
+This page covers the `import` forms, which name wins, how a module is
+identified and found, and what a host does to offer its own modules.
+[Packages](packages.md) covers the `petal.toml` manifest, dependencies, the
+lockfile and the package commands.
+
+Nothing arrives without an import except the core builtins and
+[`std`](#the-standard-prelude). A UI script says `import ui`; a script that
+calls `lerp` says `import creative`; a host's own functions come from the
+host's package.
+
 ## Importing
 
 There are three forms:
@@ -37,10 +47,6 @@ or a builtin is called that. Then the bare name is the value, and
 file's own (`let noise = …`, a parameter called `noise`) takes the name
 back entirely, as shadowing always does.
 
-`import m: *` used to be the spelling of "every export, bare". The plain
-form means that now, and the star form is an error that says so; [`petal
-fix-imports`](#migrating-with-petal-fix-imports) rewrites it.
-
 ### Which name wins
 
 A bare name is looked up in four tiers, strongest first:
@@ -50,7 +56,7 @@ A bare name is looked up in four tiers, strongest first:
 3. a name from a plain import,
 4. the implicit prelude — the core builtins and [`std`](#the-standard-prelude).
 
-A higher tier shadows a lower one silently, as shadowing always has in
+A higher tier shadows a lower one silently, like any other shadowing in
 Petal: a file that declares `fn draw` and imports a module exporting `draw`
 gets its own.
 
@@ -69,7 +75,7 @@ draw()             // Error: `draw` is ambiguous: 'hud' and 'level' export it �
 ```
 
 So a game whose modules all export `draw`, `step` and `reset` imports them
-all plainly and calls each through its qualifier, exactly as before, and a
+all plainly and calls each through its qualifier, and a
 module growing a new export can never break a file that does not use that
 name bare. Fix an ambiguity by qualifying the use, or by pinning the name
 with a selective import beside the plain ones (`import ./level: draw`).
@@ -374,11 +380,11 @@ this order, and the first place that has a package of that name wins:
    whose `petal.toml` is nearest at or above the file — answers for its own
    name (a library's modules and its examples can say `import bloom/menu`
    with nothing configured) and for every key of its
-   [`[dependencies]`](#dependencies). The *project's* manifest — the one
+   [`[dependencies]`](packages.md#dependencies). The *project's* manifest — the one
    nearest the program's entry file — is asked next, which is how code with
    no manifest of its own (`-e` code run inside a project, the modules of a
    bundled or in-memory package) picks up the project's choice of a package.
-   A `git` dependency is found where [the package manager](#the-package-manager)
+   A `git` dependency is found where [the package manager](packages.md#the-package-manager)
    put it: `vendor/<name>` at the project root, else the cache, as
    `petal.lock` pins it. A `vendor/<name>` directory also answers for a name
    no manifest lists.
@@ -446,9 +452,11 @@ weak bindings: a declaration of your own with the same name shadows them
 silently. `std` is only merged into a program that uses one of its names,
 so it costs nothing otherwise.
 
-`std` and the builtins are the only implicit names. A host has no implicit
-imports: a script that uses a host's names imports the host's package
-(`import ui`), like any other library.
+`std` and the `core` builtins are the only names in scope with no import. A
+script that uses a host's names imports the host's package (`import ui`),
+like any other library, and the domain builtins are behind imports too
+(`import creative`, `import vec2`, …; see
+[Builtins](Builtins.md#which-builtins-need-an-import)).
 
 ## How a multi-file program runs
 
@@ -457,7 +465,9 @@ imports: a script that uses a host's names imports the host's package
   file. So `let palette = {...}` at a module's top level is computed before
   any importer touches `palette`. Keep top-level side effects small; the
   language does not forbid them.
-- Builtins are visible in every file.
+- The `core` builtins and `std` are visible in every file. Every other name
+  is visible only in a file that imports it: an import in one module does
+  not reach the files that import that module.
 - Each file has its own scope. A `let x` in one module never collides with
   a `let x` in another.
 
@@ -525,8 +535,9 @@ name, keep the bare `[line N, column M]`.)
 
 ## Migrating with `petal fix-imports`
 
-Code written before these rules — sibling files imported by bare name,
-`import m: *` — does not load. `petal fix-imports` rewrites it:
+Code written before these rules does not load: it imports sibling files by
+bare name, writes `import m: *`, or uses a host's names and the domain
+builtins with no import at all. `petal fix-imports` rewrites it:
 
 ```bash
 petal fix-imports .                 # every .ptl file under the directory, in place
@@ -544,15 +555,17 @@ It changes import lines and nothing else:
 | `import m: *`, `pub import m: *` | `import m`, `pub import m` | always |
 | `import m: a` … `m.b` | `import m: a` + `import m` | the file reaches through `m.`, which a selective import no longer binds |
 | *(nothing)* | `import kit` | the file uses a bare name nothing in it provides, and exactly one available package exports it |
+| *(nothing)* | `import ui`, `import garden`, … | the same, for a host's names. When several packages export the name and all but one are built on that one (bloom's `button` over ui's), the one underneath is imported |
 | *(nothing)* | `import creative`, `import vec2`, … | the same, for a builtin that moved into a package (`lerp`, `vec2`, `noise`, `hsv`, `json_parse`, …) |
 | *(nothing)* | `import vec2` (for `.normalize()`) | the file calls a moved builtin with method syntax and nothing in the program defines a function, method or record field of that name |
 
 A path that already resolves as a package is left alone, so a file written
 for the current rules is unchanged and running the command twice does
-nothing more. "Available" means the packages bundled in the binary plus the
-ones under `-I` and `PETAL_PATH`. The last rewrite is how a script gains the
-import for a name that used to arrive with no import at all; a name that
-several packages export is reported and left for you to choose.
+nothing more. "Available" means the packages bundled in the binary, the
+`[dependencies]` of the file's project, and the packages under `-I` and
+`PETAL_PATH`. A name that several unrelated packages export is reported and
+left for you to choose. A file carrying the comment
+`// petal-fix-imports-ignore` on a line of its own gets no import added.
 
 What it cannot do for you is decide an [ambiguity](#which-name-wins) the
 new bare binding introduced: qualify the use, or pin the name with a
@@ -563,337 +576,63 @@ selective import.
 - Dotted module names (`import lib.geom`) and path strings. Nesting is
   spelled with `/`, and a file is reached with `./` or `../`.
 - Absolute paths, and a bare name for a sibling file.
-- `import m: *` — a plain `import m` is that form.
+- A star import (`import m: *`). A plain `import m` binds every export.
 - Imports anywhere but the top of a file, including conditional imports.
 - Reaching a module through a facade's qualifier
   (`bloom.menu.open()`); module names are not values, and a facade passes on
   names, not qualifiers.
-- Fetching, lockfiles and registries. A `petal.toml` lists
-  [dependencies](#dependencies) in all three forms, but only `path` ones
-  resolve yet; a package's `version` is what a host announces for an
-  interface package and is otherwise metadata.
+- A package registry. `path` and `git` [dependencies](packages.md#dependencies)
+  resolve; a version string is the error "registries are not supported yet".
 - Distributing a module as compiled IR. Programs always compile from
   source.
 
 ## Packages
 
 A `petal.toml` at the root of a directory turns it from "some `.ptl` files"
-into a library with a name:
+into a package with a name:
 
 ```toml
 [package]
 name = "bloom"
 version = "0.1.0"
-modules = "src"      # optional: where the modules are.
-                     # Defaults to src/ when it exists, else the manifest's
-                     # own directory.
+modules = "src"      # optional: defaults to src/ when it exists, else the manifest's directory
+
+[dependencies]
+text_layout = { path = "../text-layout" }      # the key is the import name
+
+[requires]
+ui = ">=0.1"                                   # a host interface the runner must provide
 ```
 
-Every `.ptl` file under the module directory is then importable as
-`<name>/<module>`, nested directories included:
+Every `.ptl` file under the module directory is importable as
+`<name>/<module>`, nested directories included, and the module named after
+the package (`src/bloom.ptl`) is a bare `import bloom`:
 
 ```petal ignore
+import bloom
 import bloom/menu
-import bloom/widgets/button
 import bloom/menu: open, close
 ```
 
-The **manifest name is the package name**, not the directory name — a library
-keeps its name wherever a user drops it, and two copies cannot be told apart
-by where they were unpacked. A module whose name matches the package
-(`src/bloom.ptl`) is reachable as a bare `import bloom`, which is where a
-facade goes.
-
-Inside the library, modules reach each other with a relative import —
+Inside the package, modules reach each other with a relative import —
 `bloom/menu.ptl` says `import ./motion` — or by the package's own name,
-`import bloom/motion`, which works from anywhere under the package root
-(its examples and tests included) with nothing registered. The two are the
-same module: [a module's identity](#module-identity) is the package and the
-path within it, not the spelling. A relative import cannot leave the package
-root.
+`import bloom/motion`, which works from anywhere under the package root (its
+examples and tests included). The two are [the same module](#module-identity).
+A relative import cannot leave the package root.
 
-A directory with its own `petal.toml` below a package is a different
-package: its files are not modules of the one around it. `target/` and
-`node_modules/` are never scanned for modules.
+[packages.md](packages.md) is the reference for all of it: the manifest keys,
+the three dependency forms, `[requires]` and what a host provides, and how a
+library is shipped.
 
-### Dependencies
+### The package manager
 
-A manifest names the packages its own files import:
-
-```toml
-[package]
-name = "marble"
-version = "0.1.0"
-
-[dependencies]
-text_layout = { path = "../third_party/text-layout" }
-tw          = { path = "../libs/tween" }                  # the package calls itself `tween`
-shapes      = { git = "https://example.org/shapes", tag = "v1.2.0" }
-pinned      = { git = "https://example.org/pinned", rev = "9f3c2ab" }
-grid        = "0.3"                                       # a registry version
-
-[requires]
-ui = ">=0.1"
-```
-
-**The key is the import name.** `tw = { … }` means the package's files write
-`import tw` and `import tw/ease`, whatever the package calls itself. The
-qualifier follows the spelling (`tw.go()`); the module's
-[identity](#module-identity) is the package's own name (`tween`,
-`tween/ease`), so a package reached under two keys is still loaded once.
-
-| Form | Meaning |
-| --- | --- |
-| `{ path = "…" }` | a package directory, relative to this manifest. Resolved when a file imports it |
-| `{ git = "…", tag = "…" }`, `{ git = "…", rev = "…" }` | a git repository with a `petal.toml` at its root, pinned to a tag or a commit. Fetched and locked by [the package manager](#the-package-manager) |
-| `"0.3"` | a registry version. Parsed; importing one is the error "registries are not supported yet" |
-
-A dependency is declared where it is used: a package resolves its imports
-from its *own* manifest, so `tween`'s `import base` is answered by
-`tween/petal.toml`. The project's manifest is the fallback (step 2 above).
-`[dependencies.name]` sections are accepted as well as inline tables. A
-malformed entry (an unknown key, `git` with no `tag` or `rev`, both `path`
-and `git`) is an error naming the line.
-
-### Required host interfaces
-
-`[requires]` names the [host interfaces](#host-interface-packages) a package
-needs and which versions will do. They are provided by the runner, never
-fetched as code:
-
-| Requirement | Accepts |
-| --- | --- |
-| `">=0.4"` or a bare `"0.4"` | that version or any later one |
-| `"^1.2"` | 1.2 or later within major version 1 |
-| `"=1.2.0"` | exactly that version |
-| `"*"` | any version |
-
-Versions are dotted numbers compared numerically; `0.4` and `0.4.0` are the
-same. A program requires what the packages of its loaded files require: the
-project's own `[requires]`, plus those of every package one of whose modules
-the program imports, however deep. bloom requires `ui`, so an app that imports
-bloom requires it too.
-
-A host says what it provides with `Env::provides(name, version)`
-([Embedding](#embedding)). When a program is loaded to *run*, each
-requirement is checked, and one the host does not meet is a load error before
-any line runs:
-
-```
-Error: package 'bloom' requires the host interface `ui` >=0.1, which this host does not
-provide — the program cannot run here; run it with a host that provides it
-```
-
-`petal check` does not fail on requirements — it has no host — and reports
-them instead: one line, `requires host interfaces: ui >=0.1 (bloom)`, and a
-`requires` array in `--json`. Every runtime provides `core` at the version
-of the petal crate, so a package can ask for a new enough runtime with
-`core = ">=0.1"`.
-
-### Making a package reachable
-
-A file inside the package reaches it by name already, and a `[dependencies]`
-entry reaches anything else with no flag. `-I` and `PETAL_PATH` remain as an
-escape hatch for ad-hoc use: a directory holding a `petal.toml`, and every
-directory directly under one, is offered as a package. See [Where packages
-are found](#where-packages-are-found) for the whole order.
-
-```bash
-petal run app.ptl                      # app's petal.toml names its dependencies
-petal run app.ptl -I ~/petal-libs      # ad hoc: ~/petal-libs/bloom/petal.toml → `bloom`
-petal packages                         # the project's graph, and what else is available
-```
-
-`petal packages` prints the project (the nearest `petal.toml` above the
-working directory, or above a path you give it), its dependency graph as it
-resolves, the host interfaces the graph requires, the libraries on the search
-path, and the packages bundled in the binary. A `petal.toml` that will not
-parse is an error naming the file and the line — a library the user pointed
-at never goes quietly missing.
-
-From a host, a package is one call (see [Embedding](#embedding)):
-
-```rust
-env.add_package("core-runtime/bloom")?;                 // from disk
-env.register_package("bloom", [("menu", MENU_SRC)])?; // from memory
-env.packages();                                       // what is available
-```
-
-An in-memory package may carry its manifest: a source named `petal.toml`
-among the modules is the manifest, not a module, and gives the package its
-version and `[requires]`.
-
-There is no registry yet: `path` and `git` dependencies resolve, and a
-version string is the error "registries are not supported yet".
-
-## The package manager
-
-`petal install` turns a project's `[dependencies]` — and those of every
-package they reach — into **exactly one version of each package**, fetches
-what is not on disk, and records the result in `petal.lock`.
-
-```bash
-petal init                                   # write a petal.toml here
-petal add tween --git https://example.org/tween --tag v1.2.0
-petal add util --path ../libs/util
-petal install                                # fetch, verify, write petal.lock
-petal run main.ptl                           # no flags: the manifest is found from the file
-```
-
-| Command | What it does |
-| --- | --- |
-| `petal init [dir] [--name n]` | write a `petal.toml` with a `[package]` section; never overwrites one |
-| `petal add <name> --path p` / `--git url --tag t` / `--git url --rev r` | set the dependency `name` in `[dependencies]` and install; a manifest the install rejects is put back |
-| `petal remove <name>…` | delete the entry and install again, which prunes `petal.lock` |
-| `petal install [--locked]` | resolve, fetch what is missing, verify, write `petal.lock`. `--locked` fails rather than change it |
-| `petal update [name…]` | resolve the named packages (all of them when none is named) afresh instead of from `petal.lock` |
-| `petal vendor` | install, then copy every git package into `vendor/<name>` |
-| `petal bundle <entry> [-o file]` | emit every module of the graph as one JSON document for a host with no filesystem |
-| `petal packages [path]` | show the resolved graph, the locked commits, and the required host interfaces |
-
-All of them work on the project of the working directory: the nearest
-`petal.toml` at or above it.
-
-### One version of each package
-
-A program holds one copy of each package, so every importer of `ease` sees
-the same module and the same state ([Module identity](#module-identity)).
-When two packages depend on the same repository at different tags, the
-**higher tag wins** — *minimal version selection*: the version used is the
-highest minimum anyone in the graph asks for. No solver runs, and nothing is
-ever upgraded past what some manifest names. Tags are compared as dotted
-versions (`v1.2.0`, `1.10`).
-
-What cannot be ordered is an error, not a guess:
-
-- two different `rev`s of one repository, or a tag and a `rev` that are
-  different commits (the same commit under two spellings is fine);
-- two different sources — two repositories, or a repository and a directory —
-  whose packages have the same name.
-
-```
-Error: /src/ease is wanted at rev '9f3c2ab' (by 'game') and at tag 'v1.1.0' (by 'tween'),
-and those are different commits that cannot be ordered — a program holds exactly one
-version of each package; pin both to the same tag or rev
-```
-
-A git dependency's package is the repository's root. Such a package may have
-`path` dependencies of its own, as long as they stay inside the repository.
-
-### `petal.lock`
-
-`petal install` writes `petal.lock` beside the project's `petal.toml`. Commit
-it. Each package of the graph has an entry:
-
-```toml
-[[package]]
-name = "ease"
-version = "1.1.0"
-git = "https://example.org/ease"
-tag = "v1.1.0"
-commit = "13ba65e49a5c8051a689cfc696d993005d5cd44b"
-tree = "sha256:ef8db77f80682cf69005e60ce6924ed495bd0fd0385b21e57afc06008140305b"
-
-[[package]]
-name = "util"
-path = "../libs/util"
-```
-
-A git package is pinned to the commit its tag or rev resolved to and to a
-hash of its checked-out tree. Later installs use the locked commit even if
-the tag has since moved, and verify what they fetch — and every cached or
-vendored tree already present — against the locked hash; a mismatch is an
-error (`petal update <name>` re-pins when the change is expected). A `path`
-package is recorded by its path and not hashed: it is live source on your
-disk. A path package inside a fetched repository is recorded with `within =
-"<the git package>"`.
-
-A locked higher tag stands only while something in the graph still asks for
-it: lower the pin in every manifest and the next install follows.
-
-### The cache and `vendor/`
-
-Git repositories are fetched with `git` into `~/.petal/cache` (`PETAL_HOME`
-replaces `~/.petal`). A checked-out tree lives at `cache/trees/<sha256>`, so
-the cache is content-addressed: two projects locking the same tree share it,
-and a tree is never modified once written.
-
-`petal vendor` copies each git package into `vendor/<name>` at the project
-root. **`vendor/<name>` is used in preference to the cache** by every
-command, so a project with `vendor/` checked in builds with no network and
-no cache. While `vendor/` exists, `petal install` keeps the packages in it in
-step with `petal.lock`. A vendored tree edited by hand still loads, but
-fails `petal install`'s verification until `petal vendor` rewrites it.
-
-`vendor/<name>` also answers `import <name>` for a name no manifest lists,
-ahead of the search path and the bundled copy — the way to pin a patched
-`bloom` for one project.
-
-### Install on demand
-
-`petal check`, `petal run` and the other commands that compile install on
-demand: the first time a program imports a git dependency, the project's
-graph is checked against `petal.lock`, and if something is missing or the
-manifest has moved past the lockfile, `petal install` runs before the
-package is loaded. A script that imports no git dependency never triggers
-it. `PETAL_OFFLINE=1` forbids fetching: the missing install is then an error
-naming `petal install`.
-
-A host embedding the runtime, and the language server, never fetch. They
-read `petal.lock` and open the vendored or cached tree, and report an
-uninstalled dependency as an error (`Env::set_install_on_demand(true)` opts
-in).
-
-### Bundles
-
-`petal bundle <entry>` prints the installed graph — the project's own
-package included — in the in-memory form `register_package` accepts:
-
-```json
-{
-  "format": 1,
-  "entry": { "file": "main.ptl", "path": "<package:game>/main.ptl", "source": "…" },
-  "packages": [
-    { "name": "game",  "version": "0.1.0", "modules": { "petal.toml": "…", "main": "…", "level": "…" } },
-    { "name": "tween", "version": "1.2.0", "modules": { "petal.toml": "…", "tween": "…" } }
-  ],
-  "requires": [ { "interface": "ui", "version": ">=0.1", "package": "tween" } ]
-}
-```
-
-A host registers each package and loads the entry at `entry.path`, which
-places it inside the project's in-memory package so its `./x` imports
-resolve:
-
-```rust
-for package in &bundle.packages {
-    env.register_package(&package.name, package.modules.iter())?;
-}
-let program = env.load_program_at(&bundle.entry.source, Path::new(&bundle.entry.path))?;
-```
-
-`modules` is exactly what the wasm `register_package(name, json)` and
-`pb_vm_register_package` take; each package's `petal.toml` rides along, so
-its `[requires]` are checked against what the host `provides`. `entry.path`
-is null when the entry file is not under the project's module directory.
-Packages bundled in the binary (`ui`, `bloom`, the builtin packages) are not
-repeated. A dependency whose key renames its package (`tw = …` for `tween`)
-cannot be bundled: an in-memory package is registered under its own name.
-
-## Shipping a library
-
-A library written in Petal is a directory of modules plus, usually, a facade
-module that re-exports them — `pub import ./button` per implementation
-module, which carries whole overload sets (see [Re-exporting](#re-exporting)).
-Give it a [`petal.toml`](#packages) and the directory becomes a named
-package: users reach it through `-I`, `PETAL_PATH`, `env.add_package`, or
-(with no manifest) a copy below their script, imported relatively
-(`import ./bloom/menu`), or a host's `register_module`. Its modules import
-as `bloom/menu`, `bloom/motion` — no filename prefixes, and no collision
-with another library's `menu`. [`core-runtime/`](../core-runtime/README.md) is where
-this repo's own live, and [Sharing Petal
-libraries](dev/sharing-petal-libraries.md) covers what works and what a
-library author still has to work around.
+`petal init`, `add`, `remove`, `install`, `update`, `vendor` and `bundle`
+manage a project's dependencies: they resolve the graph to exactly one
+version of each package, fetch git dependencies into a cache, pin them in
+`petal.lock`, and can copy them into `vendor/` or emit them as one JSON
+bundle for a host with no filesystem. `petal packages` shows the result.
+`petal run` and `petal check` install on demand. See
+[packages.md](packages.md#the-package-manager).
 
 ## Embedding
 
@@ -903,13 +642,15 @@ Hosts that embed Petal manage modules through `Env`:
 env.register_module("ui", include_str!("ui.ptl")); // in-memory module: the package name `ui`
 env.add_module_path(dir);                          // a directory of packages (or a package)
 env.add_package("core-runtime/bloom")?;              // a whole petal.toml library, one call
-env.register_package("bloom", modules)?;           // the same, from in-memory sources
+env.register_package("bloom", modules)?;           // the same, from in-memory sources; a source named
+                                                   // "petal.toml" is the package's manifest
 env.packages();                                    // every registered package
 env.verify_interface(&["ui", "game"])?;            // registered natives == what these packages declare
 env.provides("game", "0.2.0")?;                    // this host provides the interface `game`
 env.provides_package("game")?;                     // the same, at the registered package's manifest version
 env.project_of(&path)?;                            // the package whose petal.toml is nearest above a file
 env.project_dependencies(&path);                   // that manifest's [dependencies], as they resolve
+env.set_install_on_demand(true);                   // fetch a missing git dependency at load (off by default)
 env.set_inline_import_dir(Some(dir));              // where `./x` leads for a program with no path
 env.resolve_import("./level", &path)?;             // the canonical module name an import resolves to
 env.load_program_at(&source, &path)?;              // entry file: `./x` resolves against `path`
@@ -927,7 +668,7 @@ registered name — `register_module("bloom/menu", …)` saying
 
 ### Host interface packages
 
-A host has no implicit imports and no global natives. A native is reachable
+A host adds no names to a script's scope by itself. A native is reachable
 from a script only through a `native fn` declaration in scope
 ([ffi.md](ffi.md#native-interfaces-native-fn)), so a host ships an
 **interface package** — the declarations of its natives, plus whatever it

@@ -2,8 +2,10 @@
 # the host channels Garden registers on a panel script, beyond petal-ui's
 # (`import ui`). Panel scripts write `import garden`.
 #
-# Garden registers this package in memory (garden-script/src/panel.rs). The
-# stock CLI finds it by path: `petal check -I garden/garden-script/packages`.
+# Garden registers this package in memory (garden-script/src/panel.rs) and
+# provides the interface `garden` at this version. The stock CLI finds it as a
+# path dependency of the script's project (`garden = { path = "…" }` under
+# [dependencies]), or ad hoc with `petal check -I garden/garden-script/packages`.
 [package]
 name = "garden"
 version = "0.1.0"

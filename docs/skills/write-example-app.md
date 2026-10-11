@@ -83,7 +83,7 @@ Do not write the whole app blind and hope. The loop is:
 
 ```bash
 # from the repo root, after every edit
-./tools/run-petal.ts check --strict -I garden/garden-script/packages examples/<category>/<slug>/app.ptl
+./tools/run-petal.ts check --strict examples/<category>/<slug>/app.ptl
 ./tools/run-petal.ts lint examples/<category>/<slug>/app.ptl          # `lint --fix` applies the fixes
 
 source tools/panel-test.sh          # or call it per command: tools/panel-test.sh click 80 30
@@ -99,8 +99,10 @@ panel_stop
 ```
 
 The app starts with `import ui` and `import garden` (and `import bloom` if it
-uses bloom); nothing is implicit. `-I garden/garden-script/packages` is how `check` finds the
-`garden` package — without it the import does not resolve. `petal lint` is a
+uses bloom), plus the builtin packages whose names it calls (`import
+creative`, `import vec2`, `import color`, …); `check` names a missing one and
+`petal fix-imports` adds it. `check` finds the `garden` package through
+`examples/petal.toml`, so no flag is needed under `examples/`. `petal lint` is a
 separate pass: it reports spellings that have a better
 form, and the app is not done while it reports any.
 

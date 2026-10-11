@@ -64,7 +64,7 @@ the scheduling model, not a hang. Any click, key or slider wakes it. Use
 To check the scripts without launching anything:
 
 ```bash
-./tools/run-petal.ts check --strict --host garden examples/games/physics-playground/app.ptl   # from the repo root
+./tools/run-petal.ts check --strict examples/games/physics-playground/app.ptl   # from the repo root
 ```
 
 The solver also runs with no host at all, which is how it was tuned:
@@ -285,6 +285,6 @@ under the seed.
   was built from `82aee56` and warns that it is 112 source files behind the
   checkout. That build has no default parameter values and no `hypot`, so the
   modules pass every argument explicitly and carry their own `norm`. Both
-  compile cleanly on the current `petal check --strict --host garden` too.
+  compile cleanly on the current `petal check --strict` too.
 - **Fixed chrome.** The sidebar and rail are laid out for the designed pane.
   Nothing is saved between runs, and there is no sound.

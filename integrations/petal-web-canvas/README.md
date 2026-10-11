@@ -13,8 +13,10 @@ frame the host:
 
 The runtime shares the standard interactivity layer, [petal-ui](../../core-libs/petal-ui/),
 with [petal-desktop-sdl](../petal-desktop-sdl/) and Garden: the same input
-contract, draw-command vocabulary, offscreen canvases, and `ui` prelude, so
-petal-sdl sample scripts run unchanged. Browser events are translated to
+contract, draw-command vocabulary, offscreen canvases, and `ui` package, so
+petal-sdl sample scripts run unchanged. A script starts with `import ui`; the
+runtime registers every petal-ui native and provides the `ui` interface, so
+`bloom` and `text_layout` (bundled in the runtime) load too. Browser events are translated to
 `InputEvent`s as they arrive and latched by `InputState`, so a press edge
 (`mouse_pressed`, `key_pressed`) fires even for a click that goes down and up
 between two frames.
@@ -60,7 +62,7 @@ draw_canvas(c, x, y, a)       # at opacity a (0–255): group opacity for the wh
 snapshot_to(c, x, y)          # copy the current target's pixels under the canvas rect into c
 blur_canvas(c, radius)        # Gaussian-blur c in place (CSS blur() semantics)
 
-# The prelude's layer helpers built on them
+# `ui`'s layer helpers built on them
 layer(rect, fn() ... end)                 # draw the body into a canvas, composite it at rect
 layer(rect, {a: 128, blur: 4}, fn() ... end)
 draw_backdrop_blur(rect, radius)          # blur what is already under rect

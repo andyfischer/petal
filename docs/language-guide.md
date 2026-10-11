@@ -5,7 +5,9 @@ types, operators, and features with examples.
 
 For a compact, reference-style map of the whole surface syntax, see
 [Syntax Overview](syntax/overview.md). For built-in functions (math,
-collections, color, vectors, autodiff, etc.) see [Builtins.md](Builtins.md). For
+collections, color, vectors, autodiff, etc.) see [Builtins.md](Builtins.md);
+the everyday ones are in scope everywhere and the domain sets are one
+`import` away ([Modules and imports](#modules-and-imports)). For
 the `petal` CLI and the IR JSON schema, see [CLI.md](CLI.md). For the design
 philosophy behind the language, see [goals.md](dev/goals.md).
 
@@ -326,6 +328,8 @@ A `config` modifier marks a `let` binding as the value a person is *meant* to
 adjust:
 
 ```petal
+import ui
+
 config let offset = 10
 let x = 20
 draw_circle(x + offset, 40, 12)
@@ -1214,9 +1218,9 @@ change what it captures. A top-level `fn` stays exactly where it is written when
   `fn max` still reads the builtin.
 
 The second rule needs the read. A name simply being in scope is not enough: a
-host prelude (petal-ui's `ui`) binds hundreds of bare names in every module, and
+plain import such as `import ui` binds hundreds of bare names in a module, and
 a library's own `fn spinner` must still win for the calls in that module even
-though `spinner` is also a prelude export. Only a read that captures the older
+though `spinner` is also a `ui` export. Only a read that captures the older
 meaning holds a declaration back.
 
 For the one case that leaves — a top-level *call* to a declaration below it that
@@ -1543,7 +1547,7 @@ print([1, 2]?.[9])              // error (Index 9 out of bounds)
 
 It is a read, not a write: `a?.b = v` is not an assignment target.
 
-When the key is computed, the prelude spells the same rule as a function —
+When the key is computed, a builtin spells the same rule as a function —
 `field(rec, key, fallback)`, plus `has_field(rec, key)` for the one question
 `??` cannot answer (a key that is present but nil):
 
@@ -1747,10 +1751,13 @@ floats), while `inset` and `offset` return a `Rect`, so they chain.
 4. **The declaring slot's class**, when the label the receiver carries means
    nothing here — see [stale labels](#when-a-label-outlives-its-class) below.
    This is a last resort, reached only after 2 and 3 have found nothing.
-5. **A global builtin**, with the receiver passed as its first argument — this
+5. **A builtin**, with the receiver passed as its first argument — this
    is the [method syntax](#method-syntax) that makes `[1,2,3].len()` work.
    `p.str()` and `p.keys()` reach a class instance this way too, since an
-   instance is a record.
+   instance is a record. A core builtin is reached from any file; a builtin
+   that lives in a package (`normalize`, `mag`, `lerp`, …) or a host's native
+   is reached only in a file that imports it, so `v.normalize()` needs
+   `import vec2` in the file that writes the call.
 
 Calling something none of these resolve reports the class by name:
 `No method 'nope' on class Rect`. So does step 5 *failing* on a class
@@ -1907,8 +1914,8 @@ no implicit casting in Petal, so the constructor never truncates. A method's
 result follows the same arithmetic the language does — `Rect(0, 0, 101, 40)`
 centers at `50` (int division), `Rect(0.0, 0.0, 101.0, 40.0)` at `50.5`.
 
-In `petal-ui`, `rect` is this same constructor exported under the prelude's own
-name, so every rect an app already passes around gains the methods.
+In `petal-ui`, `rect` is this same constructor exported by the `ui` package
+under that name, so every rect an app already passes around gains the methods.
 
 ### Classes across files
 
@@ -2240,6 +2247,40 @@ fn greet(a, b)   print("hi", a, b) end
 ```
 
 See [function-overloading.md](function-overloading.md) for the full rules.
+
+## Modules and imports
+
+A program can be split across files, and everything beyond the core builtins
+arrives through an `import` at the top of the file:
+
+```petal ignore
+import ./level              // level.ptl beside this file: go(), level.go()
+import ./level as lv        // the same, with the qualifier renamed
+import ./level: go, reset   // only these names, and no qualifier
+import creative             // a package: lerp(a, b, t), creative.lerp(a, b, t)
+import ui                   // the petal-ui interface, for a UI script
+```
+
+- A path that starts with `./` or `../` is a file relative to the importing
+  one. Anything else starts with a **package** name: one bundled with the
+  runtime (`ui`, `bloom`, `creative`, `vec2`, `noise`, `color`, `json`, `io`,
+  `autodiff`, …) or a dependency named in the project's `petal.toml`.
+- A plain `import m` binds every export of `m` bare and binds the qualifier
+  `m`. Two plain imports may export the same name; that is an error only
+  where the name is used bare, and `m.name` always works.
+- A file's own declarations win over imported names, selective imports win
+  over plain ones, and all of them win over the core builtins and `std`.
+- Declarations are private to their file unless marked `pub`.
+- `native fn name(params) -> type` declares a function the host implements;
+  it is how a host's interface package hands its natives to scripts
+  ([ffi.md](ffi.md#native-interfaces-native-fn)).
+
+In scope with no import: the `core` builtins (`print`, `len`, `str`, `range`,
+the casts, collections, strings, records, plain math including `clamp` and
+`random`, assertions) and `std`, the part of the standard library written in
+Petal (`sum`, `first`, `mean`, …). The [Module System](module-system.md) has
+the full rules and [Packages](packages.md) covers `petal.toml`, dependencies
+and the package commands.
 
 ## Assertions
 

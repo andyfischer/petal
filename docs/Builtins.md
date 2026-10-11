@@ -632,6 +632,8 @@ parse_int("3.5")       // nil
 ```
 
 ```petal ignore
+import ui
+
 let n = parse_float(text_input())
 if n == nil then
   show_error("Enter a number")
@@ -671,6 +673,7 @@ json_parse("not json")             // nil
 
 ```petal ignore
 import json
+import garden
 state todos = json_parse(panel_store_get("todos") ?? "[]") ?? []
 panel_store_set("todos", json_stringify(todos))
 ```

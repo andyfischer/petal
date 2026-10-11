@@ -103,7 +103,8 @@ pub(super) fn print_usage(to_stdout: bool) {
         "\n\
          'petal <file>' is shorthand for 'petal run <file>', and every command\n\
          that compiles also takes '-e <code>' in place of a file and '-I <dir>'\n\
-         to add a module search directory.\n\n\
+         to add a directory of packages. The nearest petal.toml above a file\n\
+         is found without a flag.\n\n\
          See 'petal help <command>' to read about a specific command.",
     );
     if to_stdout {
@@ -183,8 +184,12 @@ COMMON OPTIONS
               Read the program from the command line instead of a file.
 
        -I <dir>
-              Add a module search directory. Repeatable. Imports also
-              resolve from the importing file's directory and PETAL_PATH.
+              Add a directory to search for packages: a directory holding a
+              petal.toml, or a directory of such packages. Repeatable; the
+              PETAL_PATH directories are searched the same way. No flag is
+              needed for a dependency named in the nearest petal.toml above
+              the file, for a bundled package (ui, bloom, creative, ...), or
+              for a file imported relatively ('import ./x').
 ";
 
 const BENCH: &str = "\
@@ -317,6 +322,18 @@ DESCRIPTION
        Compiles <file> and runs it. 'petal <file>' with no subcommand is
        shorthand for this command, and accepts the same options.
 
+       This command provides the core builtins and the builtin packages
+       (creative, vec2, noise, color, json, io, autodiff) only. A script that
+       imports a host's interface, such as 'ui', checks clean but is refused
+       here when it loads, naming the natives or the interface this host
+       lacks: run it with that host's runner (petal-sdl for 'ui').
+
+       The nearest petal.toml is found by walking up from <file>, and its
+       [dependencies] are importable by their keys with no flag. A git
+       dependency the program imports is installed first if it is missing
+       or petal.lock is out of date (see 'petal help install';
+       PETAL_OFFLINE=1 forbids it).
+
 OPTIONS
        --json
               Emit errors as structured JSON. With --observe or
@@ -397,7 +414,8 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help check, petal help show-ir, petal help pending-report
+       petal help check, petal help install, petal help show-ir,
+       petal help pending-report, docs/module-system.md
 ";
 
 const CHECK: &str = "\
@@ -505,9 +523,10 @@ DESCRIPTION
               A bare name that no declaration or import in the file provides,
               and that exactly one available package exports, gets its
               'import <package>' line, after the imports already there.
-              This is how a script written for a host's old implicit
-              prelude gets its 'import ui' (and, with the host's package on
-              -I, its 'import garden', 'import sdl', ...). When several
+              This is how a script that used a host's names with no
+              import gets its 'import ui' (and, with the host's package a
+              dependency of the project or on -I, its 'import garden',
+              'import sdl', ...). When several
               packages export the name and all but one are built on that
               one (bloom's 'button' over ui's), the one underneath is
               imported; otherwise the name is reported and left alone.
@@ -522,9 +541,12 @@ DESCRIPTION
               so the import is added when nothing in the program defines a
               function, a class method or a record field of that name.
 
-       'Available' means the packages bundled in this binary plus the ones
-       under each -I <dir> and PETAL_PATH. A path that already resolves as a
-       package is never rewritten.
+       'Available' means the packages bundled in this binary, the
+       [dependencies] of the project a file is in (the nearest petal.toml
+       above it), and the packages under each -I <dir> and PETAL_PATH. A
+       path that already resolves as a package is never rewritten. A git
+       dependency that is not installed is not fetched: run 'petal install'
+       first.
 
        A file with the comment '// petal-fix-imports-ignore' on a line of its
        own gets no import added (its import lines are still rewritten): for
@@ -562,7 +584,8 @@ EXAMPLES
        petal fix-imports -I garden/garden-script/packages panels/ init.ptl
 
 SEE ALSO
-       petal help fmt, petal help packages, docs/module-system.md
+       petal help fmt, petal help packages, docs/module-system.md,
+       docs/packages.md
 ";
 
 const FMT: &str = "\
@@ -1017,7 +1040,7 @@ OPTIONS
               Everything else, the gate included, runs as usual.
 
        -I <dir>
-              Add a module search directory. Repeatable.
+              Add a directory to search for packages. Repeatable.
 
 THE GATE
        Before anything is written, every file that would change and every
@@ -1068,7 +1091,7 @@ OPTIONS
               suggest --apply' holds its named-argument rewrites to.
 
        -I <dir>
-              Add a module search directory. Repeatable.
+              Add a directory to search for packages. Repeatable.
 
 SEE ALSO
        petal help lint, petal help suggest, petal help show-ir
@@ -1459,7 +1482,7 @@ DESCRIPTION
        - the packages bundled in this binary.
 
        A dependency may also be written on one line as an inline table
-       (name = path/git/tag/rev pairs in braces; see docs/module-system.md).
+       (name = path/git/tag/rev pairs in braces; see docs/packages.md).
        A path dependency is resolved against the manifest's directory. A git
        dependency is shown at the commit petal.lock pins it to, and marked
        when it comes from vendor/; one that is not installed is listed as
@@ -1481,7 +1504,7 @@ OPTIONS
 
 SEE ALSO
        petal help install, petal help run, petal help check,
-       docs/module-system.md
+       docs/packages.md
 ";
 
 #[cfg(test)]

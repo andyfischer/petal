@@ -39,7 +39,8 @@ Entry points, all on `Env` (`core/src/env/`):
 | Native functions | `register_native(name, func, effects) -> NativeFnId`, `register_native_boxed(name, closure, effects) -> NativeFnId`, `native_effects`, `set_native_class`, `declare_natives(source)`, `declare_native_params(id, spec)`, `declare_native_params_by_name(name, spec)`, `set_native_signatures(id, sigs)`, `native_signatures(name)` |
 | Linking | `set_check_only(bool)`, `is_check_only()`, `link_program(&program)` |
 | Handles | `register_handle_class`, `make_handle` |
-| Modules / prelude | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `verify_interface` |
+| Modules and packages | `register_module`, `add_package`, `register_package`, `add_module_path` (a directory of packages), `set_inline_import_dir`, `set_install_on_demand`, `packages`, `verify_interface` |
+| Host interfaces | `provides(name, version)`, `provides_package(name)`, `provided_interfaces`, `check_requires(&program)` |
 | Programs | `load_program`, `load_program_at`, `load_program_diag`, `compile_program`, `compile_program_at`, `compile_program_diag`, `load_program_ir` |
 | Execution | `create_stack`, `run`, `run_bounded`, `reset_stack`, `call_function`, `call_function_diag`, `has_function` |
 | Host→script data | `intern_symbol`, `set_binding`, `clear_binding` |
@@ -236,8 +237,11 @@ through a `native fn` in scope — one written in the file, or one an imported
 module exports — and through nothing else. Registering a native in the `Env`
 does not put its name in any script's scope: a call to an undeclared name is
 `Unknown function: x`, a read of one `Undefined variable: x`, whether or not
-the host registers a native called `x`. The builtins are the one set in scope
-everywhere, because the bundled `core` package declares them. So a host ships
+the host registers a native called `x`. The core builtins are the one set in
+scope everywhere, because the bundled `core` package declares them and is
+imported implicitly; the domain builtins (`lerp`, `vec2`, `noise`, …) follow
+the general rule and are in scope where their package is imported
+([Builtins](Builtins.md#which-builtins-need-an-import)). So a host ships
 its declarations as an **interface package**, registers it, and its scripts
 import it ([module-system.md](module-system.md#host-interface-packages)).
 
@@ -303,7 +307,7 @@ parameters. (`Env::link_program(&program)` runs the check by hand, and
 
 **Providing an interface.** A package states the host interfaces it needs in
 its manifest (`[requires] myhost = ">=0.2"`,
-[module-system.md](module-system.md#required-host-interfaces)); the host
+[packages.md](packages.md#requires)); the host
 announces what it provides where it registers the natives —
 `env.provides("myhost", "0.2.0")`, or `env.provides_package("myhost")` to take
 the version from the interface package's own `petal.toml` (registered with the
@@ -326,12 +330,17 @@ repository asserts it in a test (`register_all_agrees_with_the_ui_interface_pack
 in petal-ui, and the like in garden-script, petal-desktop-sdl and the example
 hosts).
 
-**The core builtins are declared the same way**, by the `core` package
-(`core/packages/core/src/*.ptl`, one file per group of builtins). It is
-compiled into the binary by `core/build.rs` — the build fails if the directory
-is missing — and its declarations are in scope in every file with no import.
-A test (`core/src/builtins/decls.rs`) holds the package to exactly the natives
-`register_builtins` registers, and every declared form to the argument counts
+**The builtins are declared the same way.** The global ones are declared by
+the `core` package (`core/packages/core/src/*.ptl`: `basics`, `collections`,
+`math`, `format`, `introspect`, `handle`, `pending`, `classes`), whose
+declarations are in scope in every file with no import. The domain builtins
+are declared by one package each — `noise`, `color`, `vec2`, `autodiff`,
+`json`, `io`, `creative` (`core/packages/<name>/<name>.ptl`) — and are in
+scope where the package is imported. All of them are compiled into the binary
+by `core/build.rs`, which fails the build if a directory is missing, and every
+`Env` registers every one of these natives, so importing a builtin package
+always links. A test (`core/src/builtins/decls.rs`) holds the packages to
+exactly the natives `register_builtins` registers, and every declared form to the argument counts
 the native really takes. petal-ui's natives are declared by its `ui` package
 (`core-libs/petal-ui/prelude/ui.ptl` and `input.ptl`), which is bundled in the
 binary too, so `petal check` reads it with no host.
@@ -378,7 +387,7 @@ a callable field on a record receiver; a handle class's own `call_method`
 dispatcher for a handle receiver (which also rejects stale handles); otherwise
 **UFCS fallback**, where the method name names a native that is called with
 the receiver prepended. The fallback follows the same rule as a bare call: it
-reaches a builtin anywhere, and a host native where a `native fn` of that name
+reaches a core builtin anywhere, and a domain builtin or a host native where a `native fn` of that name
 (declared under the native's own name) is in scope in the file that writes
 the call. So with `set_location` registered and declared, a script that
 imports the interface may write `set_location(obj, p)` or
@@ -435,7 +444,7 @@ a `SymbolId`; the host and the script share an id by interning the same name.
 
 1. **Bindings** — host→script values, like GLSL uniforms. The host calls
    `env.set_binding(sym, value)` before a run; scripts read them with the
-   `binding` builtin, natives with `PetalCxt::binding_named`. Used for input
+   `binding` builtin (`import io`; `binding(symbol("dt"))`), natives with `PetalCxt::binding_named`. Used for input
    snapshots, `dt`, `frame_count`, screen dimensions.
 2. **Output buffers** — script→host command streams. A native calls
    `cxt.emit(sym, tag, data)`, which appends `EnumVariant { tag, data }` to the

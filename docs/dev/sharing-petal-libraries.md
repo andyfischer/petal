@@ -8,11 +8,9 @@ Everything below was hit while building a real library — a ~2,300-line UI
 component set used by Garden panels and by an app in `examples/` — rather than
 imagined at a whiteboard.
 
-All seven gaps in the first draft of this document have since been closed, and
-bloom has been migrated onto the result. That migration is the honest test of
-the fixes, so each section below says both what the new form is and what it
-actually did to the library. Two rough edges turned up on the way; they are in
-gap 6, because that is where they live.
+The gaps the first draft of this document listed are closed, and bloom is
+written against the result. This page describes how a library is written and
+shared now, and the edges an author still meets.
 
 ## What already works, and works well
 
@@ -32,12 +30,11 @@ Two callsites of `button` never share their hover fade; a `button` inside a
 record threaded through the app. Every other UI toolkit spends its API budget
 on this problem. (See [state-call-paths.md](state-call-paths.md).)
 
-**A facade module re-exports cleanly.** It used to be 130 hand-written lines of
-`pub let button = bloom_button.button`; it is now eight lines of
-`pub import bloom/button` (gap 3). Either way a library can present one
-import surface (`import bloom`) over many implementation modules, and — the
-property that matters — a re-export carries a whole overload set, so
-`bloom.button` has both of `bloom/button`'s arities.
+**A facade module re-exports cleanly.** bloom's is eight lines of
+`pub import ./button`. A library presents one import surface
+(`import bloom`) over many implementation modules, and — the property that
+matters — a re-export carries a whole overload set, so `bloom.button` has
+both of `bloom/button`'s arities.
 
 **Closures make a z-order possible.** Immediate mode has no layering, so bloom
 keeps a queue of paint closures (`defer_paint(fn() … end)`) that an app flushes
@@ -53,226 +50,130 @@ somewhere to keep genuinely global facts — bloom's "which menu is open" and
 **Hot reload across files works** once the host resolves and watches the
 imported files (see the host section below).
 
-## Language-level gaps
+## How a library is put together
 
-### 1. A host's implicit imports do not reach imported modules — superseded
+### Every module imports what it uses
 
-> **Now:** hosts have no implicit imports. Every module that uses a host's
-> names imports the host's package itself (`import ui`), entry file and
-> library alike, so the gap below cannot arise. The rest of this section is
-> the history.
+Nothing reaches a module without an import except the core builtins and
+`std`. A library module that draws says `import ui` at its top; one that
+calls `lerp` says `import creative`. An import reaches only the file it is
+written in, so each of bloom's implementation modules carries its own.
+[Which name wins](../module-system.md#which-name-wins) has the precedence: a
+module's own declarations, then selective imports, then plain imports, then
+`core` and `std`.
 
-The biggest one. A host registers its prelude as an implicit import
-(`env.set_implicit_imports(&["ui"])`), and every name in it *was* available
-bare — in the entry file only. In an imported module the same call resolved to
-the raw native, or to nothing:
+Because bloom's modules import `ui`, bloom's exports shadow `ui`'s for a
+script that plainly imports both: an importer's export beats the export of a
+module it is built on, whatever order the imports are written in. A script
+with `import ui` and `import bloom` gets bloom's `button`, and `ui.button`
+is still there by its qualifier.
 
-```petal ignore
-// lib.ptl
-pub fn box(r, c)
-  draw_rect(r, c)     // Error: Expected int at arg 1, got record
-end                   // — the *native*, not the prelude's record overload
-```
+### Modules are paths; identity is canonical
 
-Implicit imports now bind inside **every** module of a program. A library
-module writes `draw_rect(r, c)`, `screen_width()`, `ui_theme()` bare, and the
-host's "scripts get this for free" contract no longer stops at file one.
-Precedence inside a module, weakest first: the gated core prelude (`std`), the
-host's implicit imports, the module's own explicit imports, the module's own
-declarations. Implicit binding is weak and silent — it never raises a
-collision.
-
-The one deliberate exception: a prelude module itself, and anything it imports,
-does not receive the host implicit imports (it is emitted before everything
-else, so that would be a self-import). A prelude that spans two modules still
-imports its sibling explicitly.
-
-Reaching every module also armed a trap in hoisting, since fixed: a top-level
-`fn` used to be left where it stands whenever its name was already in scope, so
-that `let _draw_line = draw_line` above `fn draw_line` still read the native.
-With a ~261-name prelude bound in every module, that rule fired on any library
-function whose name merely *collided* with a prelude export — a call written
-above the declaration silently reached the prelude's function, at its arity.
-The rule now needs the read, not just the collision (see the language guide,
-"Declaration order").
-
-What it did to bloom: every implementation module lost its `import ui: …`
-header — twelve statements across seven files, a list that had to name every
-primitive the file used and be kept in sync by hand. The library no longer
-hard-codes the name the host registered its prelude under.
-
-### 2. Module names are flat and global — fixed
-
-Module names *were* one identifier in one global namespace, so a library had to
-prefix its files by hand — `bloom_menu.ptl`, `bloom_motion.ptl` — and two
-libraries that both shipped a `menu.ptl` could not be used together at all.
-
-A module name is now a path of identifier segments joined by `/`:
+A module name is a path of identifier segments joined by `/`:
 
 ```petal ignore
 import bloom/menu                // binds `menu`
 import petal/menu as pmenu       // the two coexist; `as` names the second
 import bloom/menu: open, close   // selective, and it may wrap across lines
+import ./palette                 // a file beside the importer
 ```
 
-The last segment is the qualifier (`menu.open`), `as` overrides it, and the
-module's canonical name — `<package>/<path>` — is its identity: its dedupe
-key, its `state` key prefix, its qualified export names. A library is a
-directory now, not a naming convention. A first segment is always a package
-name; a file beside the importer is `import ./palette`. See
-[module-system.md](../module-system.md#import-paths).
+The last segment is the qualifier, `as` overrides it, and the module's
+canonical name — `<package>/<path>` — is its identity: its dedupe key, its
+`state` key prefix, its qualified export names. `import ./motion` inside
+bloom and `import bloom/motion` from an app are the same module, with one
+set of module-level `var`s and `state`. See
+[module-system.md](../module-system.md#module-identity).
 
-Above that sits a manifest (gap 5), which lets a library declare its own name
-rather than inheriting whatever directory a user dropped it in. bloom took the
-manifest route: its files are plain `motion.ptl`, `theme.ptl`, `menu.ptl`, and
-the `bloom/` in `import bloom/menu` comes from `petal.toml`, not from a
-directory the user happens to have arranged.
-
-**One module, however it is spelled — fixed.** A module reached as `motion`
-from inside the package and as `bloom/motion` from outside *used to be* two
-modules with two copies of its module-level `var`s and `state`, so a library
-had to pick one spelling and keep to it. Identity is canonical now:
-`import ./motion` inside bloom and `import bloom/motion` from an app are the
-same module ([module identity](../module-system.md#module-identity)). bloom
-still writes the full path everywhere; it no longer has to.
-
-### 3. There is no re-export form — fixed
-
-The facade *was* 130 lines of `pub let x = mod.x`: correct, and it did carry
-overload sets, but it was a list to keep in sync by hand that said nothing when
-an export was forgotten. `pub import` makes it declarative:
+### The facade is `pub import`
 
 ```petal ignore
-pub import bloom/button           // every export, whole overload sets
-pub import bloom/theme: accent    // a selection — a missing name is an error
+pub import ./button               // every export, whole overload sets
+pub import ./theme: accent        // a selection — a missing name is an error
 ```
 
 A plain `pub import` also binds the names locally (the facade can use them),
 sits below the file's own declarations (a local declaration wins silently,
 and it merges with an overload set rather than replacing it), and leaves a
 name two of them offer ambiguous for whoever uses it. Chains work, cycles are
-the ordinary cycle error. (This form was first spelled `pub import m: *`; a
-plain import now means "every export", and the star is gone.) See
-[module-system.md](../module-system.md#re-exporting).
-
-What it did to bloom: `src/bloom.ptl` went from 147 lines to 50, of which eight
-are the re-exports. The two names the facade deliberately spells differently — `on`
-becomes `ink_on`, `NAMES` becomes `ICONS` — are ordinary declarations layered
-over what the re-exports bound locally:
+the ordinary cycle error. The two names bloom's facade spells differently are
+ordinary declarations layered over what the re-exports bound locally:
 
 ```petal ignore
-pub import bloom/theme
+pub import ./theme
 pub let ink_on = on
 ```
 
-The immediate payoff was the thing the hand-written list could not do: two
-exports (`motion.step` and `interact.capture_owner`) had been added to modules
-and never added to the facade. The re-exports published them without an edit, which
-is what the `VERSION` bump to 2 records.
+A name added to an implementation module is published without an edit to the
+facade. See [module-system.md](../module-system.md#re-exporting).
 
-### 4. A selective import list must fit on one line — fixed
+### Selective import lists wrap
 
-A line break is now allowed after the `:` of a selective import and after each
+A line break is allowed after the `:` of a selective import and after each
 `,`, and a trailing comma is legal:
 
 ```petal ignore
-import ui: mix, over, contrast_text, ui_theme, pad,
-           draw_rect_rounded, draw_text
-
 import bloom/theme:
   theme, ts, tone,
   hair, stroke,
 ```
 
 The list continues onto a later line only when that line starts with an
-identifier followed by `,` or the end of the line, so a trailing comma cannot
-swallow the statement after it. `import m` and `import m as u` end at their
-newline as before.
+identifier followed by `,` or the end of the line. One caveat: `petal lint`
+re-indents continuation lines to the statement's own indent, so it offers to
+flatten a hanging indent.
 
-bloom used to repeat the statement (`import bloom_theme: …` twice) to fit; the
-repeats are gone. One caveat: `petal lint` is token-driven and re-indents
-continuation lines to the statement's own indent, so it will offer to flatten a
-hanging indent. bloom keeps the hanging indent and does not run lint over
-itself; the two forms parse and run identically.
-
-### 5. There is no package or manifest concept — fixed
-
-Distribution *was* "copy a directory, then make it reachable" (`-I`,
-`PETAL_PATH`, beside the script, or `register_module` per file), with nothing
-recording a library's name, version, module list, or that its modules belong
-together. A `petal.toml` at a library's root now does:
+### The manifest names it and says what it needs
 
 ```toml
 [package]
 name = "bloom"
 version = "0.1.0"
-modules = "src"      # optional; defaults to src/, else the manifest's dir
+modules = "src"
+
+[dependencies]
+text_layout = { path = "../text-layout" }
+
+[requires]
+ui = ">=0.1"
 ```
 
-Its modules are then importable as `bloom/menu`, wherever the directory sits —
-the *manifest* name is the package name, so a library keeps its identity
-rather than inheriting whatever directory a user dropped it in. `-I` and
-`PETAL_PATH` pick up packages (a directory with a manifest, or one directory
-of them), `petal packages` lists what that made available, and a host
-registers a whole library in one call — `env.add_package(root)` from disk,
-`env.register_package(name, sources)` from `include_str!` — which is what
-bloom's nine-`include_str!` Garden integration was waiting for. Manifest
-errors name the file and the line.
+The *manifest* name is the package name, so a library keeps its identity
+wherever its directory lands. A module named like its package
+(`src/bloom.ptl`) is the facade slot: what a bare `import bloom` finds.
+`[dependencies]` names the packages its modules import (the key is the import
+name) and `[requires]` the host interfaces it needs, which a host must
+provide for the program to load. Users reach a library through a
+`[dependencies]` entry of their own — a path, or a git repository pinned to
+a tag and fetched, locked and optionally vendored by the package manager.
+bloom, text_layout and glsl are also bundled in the runtime. See
+[packages.md](../packages.md).
 
-Two details worth knowing, both of which bloom leans on:
+### Overload sets merge across modules, with two edges
 
-- A module named like its package is the **facade slot**. `src/bloom.ptl` is
-  what a bare `import bloom` finds, so the front door survives the move to
-  namespaced modules and every existing `import bloom` kept working untouched.
-- `-I` now points at the library root (or at a directory of libraries), not at
-  its `src/`. Everything in the repo that drove bloom with
-  `-I core-runtime/bloom/src` says `-I core-runtime` now.
-
-The manifest has since grown `[dependencies]` (path, git and registry forms;
-the key is the import name) and `[requires]` (the host interfaces a package
-needs, checked against `Env::provides` at load), and every tool finds the
-nearest manifest by walking up from the file. bloom's manifest now says what
-was only implied: it depends on `text_layout` and requires `ui`. Git
-dependencies are now fetched, locked (`petal.lock`) and vendored by the
-package manager (`petal install`, `petal vendor`, `petal bundle`); a registry
-is still absent. See [module-system.md](../module-system.md#the-package-manager).
-
-### 6. Overload sets do not merge across modules — fixed, with two edges
-
-A library *could* not add an overload to a name another module owned — it could
-only shadow the whole set. Now a binding that lands on a name another module
-already put in scope joins its set by arity:
-
-```petal ignore
-// lib.ptl — no `import ui` anywhere
-pub fn draw_rect(r)               // adds arity 1 to the prelude's set
-  ui.draw_rect(r, {r: 9, g: 9, b: 9})
-end
-```
-
-Merging happens only between function sets the compiler built; a `let`, a
-record or a builtin native still shadows wholesale. The higher-precedence side
-wins a colliding arity, silently. See
+A binding that lands on a name a lower tier already put in scope joins its
+set by arity. Merging happens only between function sets the compiler built;
+a `let`, a record or a builtin native still shadows wholesale. The
+higher-precedence side wins a colliding arity, silently. See
 [function-overloading.md](../function-overloading.md).
 
-**Edge one: arity is the only dispatch key, so bloom still exports `ts_a`.**
-The motivating case was `draw_text(s, pos, style, alpha)` — but that is arity
-4, and `ui` already defines arity 4 as `draw_text(text, pos, size, c)`. Adding
-bloom's would not extend the set, it would take that slot over and break every
-call to the prelude's. Merging is a real fix for *adding* an arity; it does
-nothing for wanting a second meaning of one you already have. `ts_a(t, size,
-color, a)` stays, and it is arguably the better API anyway: the alpha rides on
-the style record, which is where the host looks for it.
+**Edge one: arity is the only dispatch key, so bloom exports `ts_a`.**
+`draw_text(s, pos, style, alpha)` would be arity 4, and `ui` already defines
+arity 4 as `draw_text(text, pos, size, c)`. Adding bloom's would not extend
+the set, it would take that slot over. Merging adds an arity; it does nothing
+for wanting a second meaning of one that exists. `ts_a(t, size, color, a)`
+carries the alpha on the style record instead.
 
 **Edge two, and this one bites: inside one variant's body, the name cannot see
 its siblings.** A variant's own name is bound to that variant (the
-self-recursion binding), so a call at another arity falls *outward* — and now
-that a library imports `ui` plainly, outward is `ui`'s function of that name.
-The classic two-line default-argument idiom silently changes meaning:
+self-recursion binding), so a call at another arity falls *outward* — and
+since a library imports `ui` plainly, outward is `ui`'s function of that name.
+The two-line default-argument idiom silently changes meaning:
 
 ```petal ignore
 pub fn context_menu(area, items)
-  context_menu(area, items, {})   // ← the *prelude's* arity 3, not this file's
+  context_menu(area, items, {})   // ← `ui`'s arity 3, not this file's
 end
 
 pub fn context_menu(area, items, opts)
@@ -280,15 +181,11 @@ pub fn context_menu(area, items, opts)
 end
 ```
 
-That is only a problem when the library and the prelude share a name, but a
-component library shares a lot of them: bloom collides with `ui` on `button`,
-`checkbox`, `radio_group`, `slider`, `text_field`, `context_menu` and
-`tooltip`. All seven are the two-arity default-argument shape, so all seven
-broke — silently, drawing the host's flat widget instead of bloom's, no error
-except where the argument shapes happened to disagree.
-
-The library-side fix is to route both arities through a private implementation
-the prelude cannot reach:
+That is only a problem when the library and the package under it share a
+name, but a component library shares a lot of them: bloom collides with `ui`
+on `button`, `checkbox`, `radio_group`, `slider`, `text_field`,
+`context_menu` and `tooltip`. The library-side fix is to route both arities
+through a private implementation `ui` cannot reach:
 
 ```petal ignore
 pub fn context_menu(area, items)
@@ -304,13 +201,10 @@ fn context_menu_impl(area, items, opts)
 end
 ```
 
-bloom does that for its seven, and the Garden panel tests that had started
-failing pass again. But it is a workaround for something a library author will
-not see coming, and the real fix is in the compiler: a variant's body should
-resolve its own name to its module's complete set, not to the one closure. Any
-library that defines an overload of a prelude name is exposed until then.
+bloom does that for its seven. The real fix belongs in the compiler: a
+variant's body should resolve its own name to its module's complete set.
 
-### 7. Small syntax edges
+### Small syntax edges
 
 - `match` has no `else` arm; the catch-all is `when _ ->`.
 - An `if` used as an expression still needs its `end`:
@@ -318,34 +212,26 @@ library that defines an overload of a prelude name is exposed until then.
 
 Neither is a gap so much as a thing every library author will hit once.
 
-## Host-level gaps (all fixed here)
+## What a host does
 
-**A panel host that compiles with `env.load_program(&source)` has no importing
-directory, so *no* import of a sibling file can resolve.** Garden's panel host
-did exactly that, which meant a Petal panel could not be split into two files.
-Fixed: `PanelHost::load` now uses `load_program_at`, and `poll_reload` uses
-`compile_program_at`. The shorter, path-less API being the obvious one to reach
-for is worth a second look.
-
-**Hot reload watched only the entry file.** A panel that imports a module never
-noticed that module changing. Fixed with `env.module_manifest(program_id)`,
-which lists every file a program compiled from — the host now stats all of them.
-That loop is small enough that `Env` could offer it directly.
-
-**The headless driver had no `-I`.** `petal-ui-run` could only import from the
-app's own directory, so a UI app that used a shared library could not be run
-headlessly without copying the library next to it. Fixed:
-`petal-ui-run … -I <dir>` (and `Headless::from_file_with_paths`), plus an
-`include` list in a verify plan so the refactor verifier can drive such apps.
-
-**Registering a whole directory of modules in one call** — bloom's Garden
-integration was nine `include_str!`s and a loop — and **telling a script which
-libraries are available** are both covered by packages now:
-`env.add_package(root)` / `env.register_package(name, sources)` register a
-library in one call, and `env.packages()` (or `petal packages`) lists what is
-there. Garden's `garden-script/src/bloom.rs` is one `register_package` call
-over the same `include_str!` table, and it is what makes `import bloom/menu`
-resolve in a drawer pushed over a socket, which has no directory of its own.
+- **Load with a path.** `env.load_program_at(source, path)` gives relative
+  imports a file to resolve against and finds the project's `petal.toml`.
+  A program loaded from a string resolves `./x` against in-memory modules
+  only, unless the host sets `env.set_inline_import_dir`.
+- **Watch every file.** `env.module_manifest(program_id)` and
+  `env.program_source_paths` list every file a program compiled from, so a
+  host hot-reloads when an imported module changes.
+- **Register a library in one call**, when it ships one that is not bundled:
+  `env.add_package(root)` from disk, `env.register_package(name, sources)`
+  from `include_str!`. `env.packages()` (or `petal packages`) lists what is
+  there. A registration wins over the bundled copy of the same name.
+- **Provide the interfaces libraries require.** `petal_ui::register_all`
+  provides `ui`; a host with natives of its own ships an interface package
+  and calls `env.provides_package(name)`. See
+  [Host interface packages](../module-system.md#host-interface-packages).
+- **The headless driver** `petal-ui-run` resolves packages the way the CLI
+  does and takes `-I <dir>` for anything else
+  (`Headless::from_file_with_paths` in tests).
 
 ## Testing notes
 
@@ -353,24 +239,14 @@ resolve in a drawer pushed over a socket, which has no directory of its own.
 1/60 s after every frame from a deterministic t0 = 0, so frame *N* sees
 `time() == N/60` and `time()` tracks the `dt` the harness was already
 publishing. It never reads the system clock, so traces stay byte-identical run
-to run, and an animation written against `time()` (the `ui` prelude's
-`spinner`, `elapsed`) is finally testable. Assigning `ui.time` still wins for
+to run, and an animation written against `time()` (`ui`'s
+`spinner`, `elapsed`) is testable. Assigning `ui.time` still wins for
 the next frame, and the advance resumes from there.
 
-**A `state` key contains the import path that reached it,** and both halves of
-that path moved in this migration. bloom's animators used to key as
-`switch#1/switch/spring#2/…` (through the facade) and
-`bloom_controls::switch/switch/spring#1/…` (through the module); they now key as
-`bloom/controls::switch/…` and `bloom/motion::v`, because a namespaced module's
-identity is its path and a star re-export routes through the defining module
-rather than through a per-callsite `let`. Tests and tools that key on state
-paths should match on the animator's own variable, not the whole path — the
-Garden panel tests do, and needed a one-word change rather than a rewrite.
-
-**Renaming a library's modules changes every trace that uses it, but only in
-the `state` keys.** Migrating bloom left all four bloom-driven apps
-byte-identical in `commands`, `prints`, `result` and `error` on all 60 frames,
-and identical in state *values*; only key spellings moved. That made it easy to
-see the one place where something really did change — a control in the gallery
-that had been drawn by `ui`'s flat overload and is drawn by bloom's rounded one
-again (gap 6, edge two).
+**A `state` key contains the module that declares it,** by canonical name:
+bloom's animators key as `bloom/controls::switch/…` and `bloom/motion::v`,
+whichever way a script imported them, because a re-export routes through the
+defining module. Tests and tools that key on state paths should still match
+on the animator's own variable rather than the whole path: renaming a module,
+or giving a directory of loose modules a `petal.toml`, changes the prefix and
+nothing else.

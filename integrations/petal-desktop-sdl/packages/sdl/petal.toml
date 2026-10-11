@@ -2,8 +2,11 @@
 # the natives this runner registers beyond petal-ui's (`import ui`) — the
 # example browser, sandboxed file I/O and sound. Scripts write `import sdl`.
 #
-# petal-sdl registers this package in memory (src/native_fns.rs). The stock
-# CLI finds it by path: `petal check -I integrations/petal-desktop-sdl/packages`.
+# petal-sdl registers this package in memory (src/native_fns.rs) and provides
+# the interface `sdl` at this version. The stock CLI finds it as a path
+# dependency of the script's project (`sdl = { path = "…/packages/sdl" }`
+# under [dependencies], as examples/petal.toml has), or ad hoc with
+# `petal check -I integrations/petal-desktop-sdl/packages`.
 [package]
 name = "sdl"
 version = "0.1.0"

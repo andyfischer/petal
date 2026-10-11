@@ -16,6 +16,7 @@ mod expr;
 mod function;
 mod native;
 mod phi;
+pub(crate) use phi::assigned_names;
 mod state_ids;
 mod stmt;
 
@@ -125,6 +126,13 @@ pub struct Compiler {
     // the same way; see `crate::typecheck::param_reqs`. Accumulates across
     // modules like `fn_signatures`.
     fn_param_reqs: crate::typecheck::param_reqs::ParamReqs,
+    // The same three tables, per declaring module (keyed by module name, ""
+    // for the entry file), and the module each exported `fn`'s term was
+    // declared by. Together they let the checker hold `player.place(...)` to
+    // `player`'s `place` instead of to whichever module last declared a
+    // `place` of that arity.
+    module_fns: HashMap<String, crate::typecheck::ModuleFns>,
+    fn_homes: HashMap<TermId, String>,
 
     // Classes visible to this compilation: the built-ins, plus every `class`
     // declaration found by `prescan_declarations` (so a `fn f(p: Point)` above
@@ -483,6 +491,8 @@ impl Compiler {
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
             fn_param_reqs: HashMap::new(),
+            module_fns: HashMap::new(),
+            fn_homes: HashMap::new(),
             collect_inferences: false,
             inferences: crate::typecheck::infer::Inferences::default(),
             fn_param_names: HashMap::new(),
@@ -936,6 +946,29 @@ impl Compiler {
             .filter(|name| is_native_here(name))
             .map(str::to_string)
             .collect();
+        let module_key = module.name.clone().unwrap_or_default();
+        let resolve_callee = |ns: Option<&str>, name: &str| {
+            use crate::typecheck::Callee;
+            let fns_of = |m: &str| self.module_fns.get(m).map_or(Callee::Unknown, Callee::Fns);
+            let tid = match ns {
+                None if own_fns.contains(name) => return fns_of(&module_key),
+                None => self.scope_lookup(name),
+                Some(ns) => self
+                    .module_aliases
+                    .get(ns)
+                    .and_then(|m| self.scope_lookup(&format!("{m}::{name}"))),
+            };
+            let Some(tid) = tid else {
+                return Callee::Unknown;
+            };
+            if let Some(home) = self.fn_homes.get(&tid) {
+                fns_of(home)
+            } else if self.native_terms.contains_key(&tid) {
+                Callee::Native
+            } else {
+                Callee::Value
+            }
+        };
         let (diags, dispatch, inferences) = crate::typecheck::check_module(
             &stmts,
             &crate::typecheck::CheckContext {
@@ -949,6 +982,7 @@ impl Compiler {
                 enum_names: Some(&self.enum_type_names),
                 natives: Some(&self.native_decls),
                 native_names: Some(&native_names),
+                callee: Some(&resolve_callee),
             },
         );
         self.warnings.extend(diags);
@@ -1475,8 +1509,19 @@ impl Compiler {
             .collect();
         names.sort_unstable(); // deterministic export order for messages
 
+        let own_fns: HashSet<&str> = module
+            .stmts
+            .iter()
+            .filter_map(|stmt| match &stmt.kind {
+                StmtKind::FnDecl { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
         for name in &names {
             let tid = scope[name];
+            if own_fns.contains(name.as_str()) {
+                self.fn_homes.insert(tid, module_name.to_string());
+            }
             let qualified = format!("{module_name}::{name}");
             if let Some(global) = self.scopes.first_mut() {
                 global.insert(qualified.clone(), tid);
@@ -2043,13 +2088,19 @@ impl Compiler {
                 self.fn_param_reqs.remove(&(name.clone(), params.len()));
             }
         }
-        self.fn_param_reqs.extend(reqs);
-
         // Record declared signatures so the checker can verify call sites even
-        // across forward references. Accumulates across modules.
-        self.fn_signatures
-            .extend(collect_fn_signatures(stmts, &self.classes));
-        self.fn_param_names.extend(collect_fn_param_names(stmts));
+        // across forward references. Accumulates across modules, and is kept
+        // per module too (see `module_fns`).
+        let own = crate::typecheck::ModuleFns {
+            signatures: collect_fn_signatures(stmts, &self.classes),
+            param_names: collect_fn_param_names(stmts),
+            param_reqs: reqs,
+        };
+        self.fn_param_reqs.extend(own.param_reqs.clone());
+        self.fn_signatures.extend(own.signatures.clone());
+        self.fn_param_names.extend(own.param_names.clone());
+        self.module_fns
+            .insert(module.name.clone().unwrap_or_default(), own);
 
         // Detect overloaded function names (same name, different arities)
         let mut fn_arities: HashMap<String, std::collections::HashSet<usize>> = HashMap::new();

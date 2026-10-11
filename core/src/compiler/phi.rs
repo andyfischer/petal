@@ -381,6 +381,15 @@ impl Compiler {
     }
 }
 
+/// The enclosing-scope names `stmts` assigns: what a loop running them can
+/// have changed by the time any line of the body runs again. The scan the
+/// compiler's own phi placement uses, for the type checker.
+pub(crate) fn assigned_names(stmts: &[Stmt]) -> Vec<String> {
+    let mut out = Vec::new();
+    Compiler::collect_assigned_names_stmts(stmts, &mut out);
+    out
+}
+
 /// Collects the names an assignment binds — plain reassignments and the *root*
 /// variable of a field/index write — for loop-carry / rebind detection. Uses
 /// the shared total traversal but overrides two nodes: `fn` declarations and

@@ -9,6 +9,8 @@
 //! - method syntax reaching a native only in a file that has it in scope;
 //! - a name nothing defines, in a line that would never have run;
 //! - a call through a plain import, held to the module the name resolved to;
+//! - a qualified call, held to the module its qualifier names and no other;
+//! - a `let` that starts as `nil` and is assigned later, passed on;
 //! - assigning through a module qualifier;
 //! - serialized IR linked like source;
 //! - `fix-imports` on a sibling file that shares a bundled package's name.
@@ -232,10 +234,13 @@ fn a_call_through_an_import_is_held_to_the_module_it_resolved_to() {
     );
     let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
     assert_eq!(code, 1, "{err}");
-    assert!(err.contains("`score` expects 2-3 arguments, got 1"), "{err}");
+    // Held to top's `score` alone, so check says what run says.
+    assert!(err.contains("score() is missing a value for parameter 'b'"), "{err}");
+    assert!(err.contains("[line 6, column 7]"), "{err}");
     assert!(err.contains("1 error found by check"), "{err}");
-    let (out, _, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    let (out, run_err, code) = petal_in(&t.root, &["run", "main.ptl"]);
     assert_eq!((out.as_str(), code), ("3\n6\n1\n", 1));
+    assert!(run_err.contains("score() is missing a value for parameter 'b'"), "{run_err}");
 }
 
 /// A module that calls a native it imported is held to that native's
@@ -347,6 +352,94 @@ fn another_modules_function_does_not_take_a_builtin_from_this_one() {
     assert_eq!(code, 1, "{err}");
     assert!(err.contains("expects 2 arguments, got 1"), "{err}");
     assert!(err.contains("models.ptl"), "{err}");
+}
+
+/// `m.f(...)` is a call to module `m`'s `f`. Check holds it to that
+/// function: not to another module's `f` of the same arity (a private one
+/// included), and not to whatever a bare `f` means in the calling file.
+#[test]
+fn a_qualified_call_is_held_to_the_module_its_qualifier_names() {
+    let t = Tree::new("qualified");
+    // Another module's private fn of the same name, one more parameter.
+    t.write(
+        "projects.ptl",
+        "pub fn shares(d, extra = nil)\n  return d.n\nend\n\
+         pub fn place(pos, yaw)\n  return pos + yaw\nend\n",
+    );
+    t.write(
+        "people.ptl",
+        "fn shares(ctx, yf)\n  return ctx.total * yf\nend\n\
+         fn place(role, ctx)\n  return ctx.sys.x + role\nend\n\
+         pub fn count(c)\n  return shares(c, 2) + place(1, {sys: {x: 1}})\nend\n",
+    );
+    t.write(
+        "main.ptl",
+        "import ./projects\nimport ./people\n\
+         print(projects.shares({n: 3}), projects.place(1.0, 2.0), people.count({total: 2}))\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), err.as_str(), code), ("3 3.0 6\n", "", 0));
+
+    // A builtin through its package's qualifier, with a sibling's export of
+    // the same name plainly imported — and the sibling's through its own.
+    t.write("ev.ptl", "pub fn log()\n  return \"ev\"\nend\n");
+    t.write("main.ptl", "import ./ev\nimport core\nprint(core.log(1.0), ev.log())\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, _, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), code), ("0.0 ev\n", 0));
+    t.write("main.ptl", "import ./ev\nimport core: log\nprint(log(1.0), ev.log())\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, _, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), code), ("0.0 ev\n", 0));
+
+    // Each is still held to its own declaration.
+    t.write("main.ptl", "import ./ev\nimport core\nfn f()\n  return [core.log(), ev.log(1)]\nend\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`log` expects 1 argument, got 0"), "{err}");
+    assert!(err.contains("`log` expects 0 arguments, got 1"), "{err}");
+    t.write(
+        "main.ptl",
+        "import ./projects\nimport ./people\nfn f()\n  return projects.shares()\nend\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("shares() is missing a value for parameter 'd'"), "{err}");
+}
+
+/// `let found = nil`, assigned in a branch or a loop and then passed on, is
+/// the ordinary way to search for something. Check must not go on calling
+/// the name `nil` after the assignment — nor on a line of a loop body above
+/// it, which the next iteration reaches with the assigned value. A `let`
+/// nothing ever assigns is still what its initializer says.
+#[test]
+fn a_reassigned_let_is_not_held_to_the_nil_it_started_as() {
+    let t = Tree::new("reassigned");
+    let id = "fn id_of(x)\n  x.id\nend\n";
+    t.write(
+        "main.ptl",
+        &format!(
+            "{id}fn find(xs)\n  let g = nil\n  for b in xs do\n    if b.id == 2 then g = b end\n  end\n  \
+             if g == nil then return nil end\n  return id_of(g)\nend\n\
+             fn carried(xs)\n  let prev = nil\n  let n = 0\n  for x in xs do\n    \
+             if prev != nil then n = n + id_of(prev) end\n    prev = x\n  end\n  return n\nend\n\
+             fn counted(xs)\n  let prev = nil\n  let i = 0\n  while i < len(xs) do\n    \
+             if prev != nil then id_of(prev) end\n    prev = xs[i]\n    i = i + 1\n  end\n  return i\nend\n\
+             let xs = [{{id: 1}}, {{id: 2}}]\nprint(find(xs), carried(xs), counted(xs))\n"
+        ),
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), err.as_str(), code), ("2 1 2\n", "", 0));
+
+    t.write("main.ptl", &format!("{id}let g = nil\nprint(id_of(g))\n"));
+    let (_, err, _) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert!(err.contains("reads field `id` from it, found `nil`"), "{err}");
 }
 
 #[test]

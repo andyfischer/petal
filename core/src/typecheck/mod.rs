@@ -174,9 +174,46 @@ struct Checker<'a> {
     natives: Option<&'a crate::native_decl::NativeDecls>,
     /// See [`CheckContext::native_names`].
     native_names: Option<&'a HashSet<String>>,
+    /// See [`CheckContext::callee`].
+    callee: Option<CalleeResolver<'a>>,
+    /// The call being checked is `ns.f(...)` through a module namespace: the
+    /// span of the stand-in callee [`Checker::namespace_call`] built, and
+    /// `ns`. Matched by span, so only that callee is resolved through the
+    /// namespace — not a function named among its arguments.
+    namespace_callee: Option<(SourceSpan, String)>,
     /// This module's own `native fn` declarations.
     own_natives: crate::native_decl::NativeDecls,
 }
+
+/// What one module's own top-level `fn` declarations say, keyed by
+/// `(name, arity)`: the three tables the checker reads at a call site.
+#[derive(Default, Clone)]
+pub struct ModuleFns {
+    pub signatures: HashMap<(String, usize), FnSignature>,
+    pub param_names: HashMap<(String, usize), Vec<String>>,
+    pub param_reqs: param_reqs::ParamReqs,
+}
+
+/// What a callee name resolves to in the module being checked.
+pub enum Callee<'a> {
+    /// A `fn` declared by this module: its tables, and only its tables,
+    /// speak for the call — another module's function of the same name and
+    /// arity does not.
+    Fns(&'a ModuleFns),
+    /// A `native fn`: the declaration speaks for the call.
+    Native,
+    /// Something else the module exports under that name (a `let` holding a
+    /// lambda, a merged overload set): nothing is statically known.
+    Value,
+    /// The resolver cannot say; the compilation-wide tables answer, as they
+    /// do when there is no resolver.
+    Unknown,
+}
+
+/// Resolves a callee for [`CheckContext::callee`]: `(qualifier, name)`, the
+/// qualifier being the module namespace of `m.f(...)` and `None` for a bare
+/// `f(...)`.
+pub type CalleeResolver<'a> = &'a dyn Fn(Option<&str>, &str) -> Callee<'a>;
 
 /// The names of the enums `stmts` declares at its top level.
 pub fn enum_names(stmts: &[Stmt]) -> impl Iterator<Item = String> + '_ {
@@ -228,6 +265,13 @@ pub struct CheckContext<'a> {
     /// `None` when the caller has no scope to ask: a same-named module
     /// function then answers first, as a `fn` of this module would.
     pub native_names: Option<&'a HashSet<String>>,
+    /// Which module's function a callee is, as this module's imports resolve
+    /// it. The compilation-wide tables above are keyed by bare name, so two
+    /// modules declaring the same `(name, arity)` share one entry; with a
+    /// resolver, `player.place(...)` is checked against `player`'s `place`
+    /// and nothing else's. `None` leaves the compilation-wide tables as the
+    /// only answer.
+    pub callee: Option<CalleeResolver<'a>>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -250,6 +294,7 @@ impl<'a> CheckContext<'a> {
             enum_names: None,
             natives: None,
             native_names: None,
+            callee: None,
         }
     }
 }
@@ -282,6 +327,8 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
             .collect(),
         natives: opts.natives,
         native_names: opts.native_names,
+        callee: opts.callee,
+        namespace_callee: None,
         own_natives: crate::native_decl::NativeDecls::collect(stmts),
     };
     checker.bind_enum_variants(stmts);
@@ -467,6 +514,31 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// A reassignment of `name` to a value of type `ty`: its inferred type
+    /// becomes what both the old and the new value are (`any` when they
+    /// differ). `let g = nil` followed by `g = found` is not `nil` any more.
+    /// A declared type is untouched — the assignment was checked against it.
+    fn widen(&mut self, name: &str, ty: Type) {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(vt) = scope.get_mut(name) {
+                if vt.declared.is_none() {
+                    vt.inferred = join(vt.inferred, ty);
+                }
+                return;
+            }
+        }
+    }
+
+    /// Entering a loop: every outer name its body assigns may hold the
+    /// assigned value on any line of the body — a read above the assignment
+    /// sees the previous iteration's — so none of them keeps the type it had
+    /// on the way in.
+    fn widen_assigned(&mut self, body: &[Stmt]) {
+        for name in crate::compiler::assigned_names(body) {
+            self.widen(&name, Type::Any);
+        }
+    }
+
     /// The signatures a callee expression may be invoked with, or empty when
     /// nothing is known — which suppresses every call-site check. Three things
     /// are knowable: a lambda written in place, a name bound to a function
@@ -488,10 +560,18 @@ impl<'a> Checker<'a> {
             // checked on its own path, against the class's fields.
             ExprKind::Ident(name) => match self.lookup(name) {
                 Some(vt) => vt.fns.clone(),
-                // The name is a native here: another module's function of
-                // the same name says nothing about this call.
-                None if self.native_names.is_some_and(|names| names.contains(name)) => Vec::new(),
-                None => self.module_signatures(name),
+                None => match self.resolve_callee(expr) {
+                    Callee::Fns(module) => Self::signatures_in(&module.signatures, name),
+                    Callee::Native | Callee::Value => Vec::new(),
+                    // The name is a native here: another module's function of
+                    // the same name says nothing about this call.
+                    Callee::Unknown
+                        if self.native_names.is_some_and(|names| names.contains(name)) =>
+                    {
+                        Vec::new()
+                    }
+                    Callee::Unknown => self.module_signatures(name),
+                },
             },
             _ => Vec::new(),
         }
@@ -537,10 +617,35 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// What the callee expression `expr` — a bare name, or the stand-in for a
+    /// namespace call — resolves to. [`Callee::Unknown`] without a resolver.
+    fn resolve_callee(&self, expr: &Expr) -> Callee<'a> {
+        let (Some(resolve), ExprKind::Ident(name)) = (self.callee, &expr.kind) else {
+            return Callee::Unknown;
+        };
+        match &self.namespace_callee {
+            Some((span, ns)) if *span == expr.span => match resolve(Some(ns), name) {
+                // Through a namespace the name is that module's export and
+                // nothing else; what the compilation-wide table holds under
+                // it may be any module's.
+                Callee::Unknown => Callee::Value,
+                known => known,
+            },
+            _ => match resolve(None, name) {
+                Callee::Value => Callee::Unknown,
+                known => known,
+            },
+        }
+    }
+
     /// Every declared overload of a module-level function, by arity.
     fn module_signatures(&self, name: &str) -> Vec<FnSignature> {
-        let mut sigs: Vec<FnSignature> = self
-            .fn_signatures
+        Self::signatures_in(self.fn_signatures, name)
+    }
+
+    /// The overloads of `name` in one signature table, by arity.
+    fn signatures_in(table: &HashMap<(String, usize), FnSignature>, name: &str) -> Vec<FnSignature> {
+        let mut sigs: Vec<FnSignature> = table
             .iter()
             .filter(|((n, _), _)| n == name)
             .map(|(_, sig)| sig.clone())
@@ -561,12 +666,18 @@ impl<'a> Checker<'a> {
             }
             ExprKind::Ident(name) => match self.lookup(name) {
                 Some(vt) => vt.param_names.clone(),
-                None => self
-                    .fn_param_names
-                    .iter()
-                    .filter(|((n, _), _)| n == name)
-                    .map(|(_, names)| names.clone())
-                    .collect(),
+                None => {
+                    let table = match self.resolve_callee(expr) {
+                        Callee::Fns(module) => &module.param_names,
+                        Callee::Native | Callee::Value => return Vec::new(),
+                        Callee::Unknown => self.fn_param_names,
+                    };
+                    table
+                        .iter()
+                        .filter(|((n, _), _)| n == name)
+                        .map(|(_, names)| names.clone())
+                        .collect()
+                }
             },
             _ => Vec::new(),
         }
@@ -955,6 +1066,9 @@ impl<'a> Checker<'a> {
                     let vt = self.check_expr(value);
                     let declared = self.lookup(n).and_then(|v| v.declared);
                     self.check_assignment(value.span, n, declared, vt);
+                    // From here the name holds this value or — past a branch
+                    // that did not run — the old one.
+                    self.widen(n, vt);
                     // The slot holds a different value now: whatever signature
                     // the old one had says nothing about the new one.
                     let fns = self.fn_candidates(value);
@@ -1049,12 +1163,14 @@ impl<'a> Checker<'a> {
             }
             StmtKind::For { var, iter, body } => {
                 self.check_expr(iter);
+                self.widen_assigned(body);
                 self.push_scope();
                 self.bind(var.clone(), None, Type::Any);
                 self.check_block_body(body);
                 self.pop_scope();
             }
             StmtKind::While { condition, body } => {
+                self.widen_assigned(body);
                 self.check_expr(condition);
                 self.push_scope();
                 self.check_block_body(body);
@@ -1360,7 +1476,16 @@ impl<'a> Checker<'a> {
                     return self.check_method_args(&sig, &name, args, &positional_types);
                 }
                 let callee = namespace_callee.as_ref().unwrap_or(function);
-                self.check_call(callee, args, arg_names, &arg_types, expr.span)
+                let outer = self.namespace_callee.take();
+                if namespace_callee.is_some()
+                    && let ExprKind::FieldAccess { object, .. } = &function.kind
+                    && let ExprKind::Ident(ns) = &object.kind
+                {
+                    self.namespace_callee = Some((callee.span, ns.clone()));
+                }
+                let result = self.check_call(callee, args, arg_names, &arg_types, expr.span);
+                self.namespace_callee = outer;
+                result
             }
             ExprKind::If {
                 condition,
@@ -1401,6 +1526,7 @@ impl<'a> Checker<'a> {
             }
             ExprKind::For { var, iter, body } => {
                 self.check_expr(iter);
+                self.widen_assigned(body);
                 self.push_scope();
                 self.bind(var.clone(), None, Type::Any);
                 self.check_block_body(body);
@@ -1849,7 +1975,11 @@ impl<'a> Checker<'a> {
         // shares an overload set with a native was rewritten into `fn`s
         // before this pass, see `compiler::native::lower_native_overloads`).
         let native = match &function.kind {
-            ExprKind::Ident(f) if candidates.is_empty() && self.lookup(f).is_none() => {
+            ExprKind::Ident(f)
+                if candidates.is_empty()
+                    && self.lookup(f).is_none()
+                    && !matches!(self.resolve_callee(function), Callee::Value | Callee::Fns(_)) =>
+            {
                 self.native_decl(f).cloned()
             }
             _ => None,
@@ -2124,14 +2254,19 @@ impl<'a> Checker<'a> {
         if self.lookup(f).is_some() || !arg_names.iter().all(Option::is_none) {
             return;
         }
+        // The module the callee resolved to answers for its own body; the
+        // compilation-wide tables only when nothing says whose function it is.
+        let (all, overloads) = match self.resolve_callee(function) {
+            Callee::Fns(module) => (&module.param_reqs, Self::signatures_in(&module.signatures, f)),
+            Callee::Native | Callee::Value => return,
+            Callee::Unknown => (all, self.module_signatures(f)),
+        };
         let Some(reqs) = all.get(&(f.clone(), sig.params.len())) else {
             return;
         };
-        let variants = self.module_signatures(f).len();
+        let variants = overloads.len();
         let arities = crate::backend::calls::arity_ranges(
-            self.module_signatures(f)
-                .iter()
-                .map(|s| (s.required(), s.params.len())),
+            overloads.iter().map(|s| (s.required(), s.params.len())),
         );
         for (i, req) in reqs.iter().enumerate() {
             let (Some(req), Some(&at)) = (req, arg_types.get(i)) else {

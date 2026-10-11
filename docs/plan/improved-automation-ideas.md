@@ -47,7 +47,7 @@ coordinates, and it keeps working after a layout change.
 
 ```petal ignore
 // examples/productivity/spreadsheet/tests/edit-formula.drive.ptl
-import auto: *
+import auto
 
 let user = persona({seed: 7, pointer: "trackpad", wpm: 55, think: [0.3, 1.2]})
 

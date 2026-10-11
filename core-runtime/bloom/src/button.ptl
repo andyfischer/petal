@@ -36,8 +36,8 @@ pub fn button(r: record, label: string, opts: record) -> bool
   button_impl(r, label, opts)
 end
 
-// `button` is also a name in the `ui` prelude, which the host implicitly imports
-// into every module. Inside one variant's own body the name means only that
+// `button` is also a name in the `ui` package, which this module imports plainly
+// (`import ui`). Inside one variant's own body the name means only that
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.

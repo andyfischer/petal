@@ -70,15 +70,15 @@ To check the scripts without launching anything:
 The solver also runs with no host at all, which is how it was tuned:
 
 ```bash
-cat > /tmp/pendulum.ptl <<'EOF'
-import physics as ph
+cd examples/games/physics-playground      # `./physics` is the file beside the script
+../../../tools/run-petal.ts run - <<'EOF'
+import ./physics as ph
 let env = {gx: 0.0, gy: 980.0, bounce: 0.5, fric: 0.4, drag: 0.0, w: 800.0, h: 600.0, grab: -1, tx: 0.0, ty: 0.0}
 let wd = ph.add_ball(ph.add_pin(ph.empty_world(), 400, 100, 5, 6), 600, 100, 20, 0)
 wd = ph.add_link(wd, 0, 1, ph.ROD, 0.0, -1.0)
 for i in range(0, 120) do wd = ph.step(wd, 0.016, env).world end
 print(wd.x[1], wd.y[1], ph.audit(wd))
 EOF
-./tools/run-petal.ts run -I examples/games/physics-playground /tmp/pendulum.ptl
 ```
 
 ## Controls
@@ -150,8 +150,8 @@ EOF
 
 ## What it exercises
 
-**Language.** A three-file program: `import physics as ph` and
-`import scenes as sc`, with `pub fn` / `pub let` drawing the line
+**Language.** A three-file program: `import ./physics as ph` and
+`import ./scenes as sc`, with `pub fn` / `pub let` drawing the line
 between the solver's surface and its internals. The world as a
 structure-of-arrays record of float lists, advanced by one function, `step`,
 that holds the lists it writes in local `var` cells and shares them with

@@ -121,8 +121,8 @@ Checked in `core-libs/petal-ui/src`, `core-libs/petal-query/src`,
 
 | Native | Unit | Agrees |
 |---|---|---|
-| `text_index_at(s, style, dx)` (`petal-ui/src/text.rs`) and `text_layout.caret_index` over it | code points | yes |
-| `text_wrap(s, {offsets: true}, w)` rows `{text, start, end}` (in progress in `petal-ui/src/text.rs`) | code points | yes |
+| `text_index_at(s, style, dx)` (`core-libs/petal-ui/src/text.rs`) and `text_layout.caret_index` over it | code points | yes |
+| `text_wrap(s, {offsets: true}, w)` rows `{text, start, end}` (in progress in `core-libs/petal-ui/src/text.rs`) | code points | yes |
 | `text_width`, `text_advance`, `text_metrics`, `text_ellipsize`, `text_input` | take or return text, no offsets | n/a |
 | `edit_view_edits`, `text_view_line_styles`, `text_view_scroll_to` (garden) | line numbers | n/a |
 | `petal-c-bridge` source spans (`src/source.rs`) | character offsets | yes |

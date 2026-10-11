@@ -63,8 +63,8 @@ pub fn checkbox(r: record, label: string, on: bool, opts: record) -> bool
   checkbox_impl(r, label, on, opts)
 end
 
-// `checkbox` is also a name in the `ui` prelude, which the host implicitly imports
-// into every module. Inside one variant's own body the name means only that
+// `checkbox` is also a name in the `ui` package, which this module imports plainly
+// (`import ui`). Inside one variant's own body the name means only that
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
@@ -112,8 +112,8 @@ pub fn radio_group(r: record, labels: list, index: num, opts: record)
   radio_group_impl(r, labels, index, opts)
 end
 
-// `radio_group` is also a name in the `ui` prelude, which the host implicitly imports
-// into every module. Inside one variant's own body the name means only that
+// `radio_group` is also a name in the `ui` package, which this module imports plainly
+// (`import ui`). Inside one variant's own body the name means only that
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
@@ -156,8 +156,8 @@ pub fn slider(r: record, value: num, lo: num, hi: num, opts: record)
   slider_impl(r, value, lo, hi, opts)
 end
 
-// `slider` is also a name in the `ui` prelude, which the host implicitly imports
-// into every module. Inside one variant's own body the name means only that
+// `slider` is also a name in the `ui` package, which this module imports plainly
+// (`import ui`). Inside one variant's own body the name means only that
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.
@@ -272,8 +272,8 @@ pub fn text_field(r: record, buf: string, opts: record) -> record
   text_field_impl(r, buf, opts)
 end
 
-// `text_field` is also a name in the `ui` prelude, which the host implicitly imports
-// into every module. Inside one variant's own body the name means only that
+// `text_field` is also a name in the `ui` package, which this module imports plainly
+// (`import ui`). Inside one variant's own body the name means only that
 // variant, so the short form cannot reach the long one directly — it would
 // escape outward to `ui`'s set. Both forms go through this private
 // implementation instead, which no other module can shadow.

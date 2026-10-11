@@ -185,8 +185,8 @@ Values a test can assert on (`GET /state` → `panes[0].panel.values`, or
 `q_c`, `reply`, `reply_c`, `c_to`, `keep_unread`, …).
 
 `mailbox.ptl` has no panel calls in it, so its logic can be exercised with no
-Garden at all: `petal run -I examples/productivity/email-client test.ptl` with
-`import mailbox as mb` in `test.ptl`.
+Garden at all: a `test.ptl` beside it that says `import ./mailbox as mb` runs
+with a plain `petal run test.ptl`.
 
 ## Known limits
 

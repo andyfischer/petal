@@ -48,6 +48,14 @@ Every command that compiles a program accepts these:
 - With `-e` or stdin there is no importing file, so `import ./x` means
   `x.ptl` in the current directory.
 
+Environment variables that affect how packages are found:
+
+| Variable | Effect |
+|---|---|
+| `PETAL_PATH` | Directories to search for packages, as with `-I` |
+| `PETAL_HOME` | Replaces `~/.petal`, which holds the package cache (`cache/`) |
+| `PETAL_OFFLINE` | `1` forbids fetching git dependencies and on-demand installs |
+
 ### Commands at a glance
 
 | Command | Purpose |
@@ -102,6 +110,19 @@ Compiles the program and runs it. Output goes to stdout. Exits 1 on error.
 $ petal run -e 'print(1 + 2)'
 3
 ```
+
+`run` provides the core builtins and the builtin packages (`creative`, `vec2`,
+`noise`, `color`, `json`, `io`, `autodiff`) and nothing else. A script that
+imports a host's interface — `import ui`, or a package that requires it such
+as `bloom` — is refused when it loads, before any line runs, with a message
+naming what this host lacks; run it with that host's runner (petal-sdl,
+`petal-ui-run`, Garden). [`check`](#check--compile-without-running) checks
+such a script without running it.
+
+The nearest `petal.toml` above the file is the script's project: its
+`[dependencies]` are importable by their keys with no flag, and a git
+dependency the script imports is [installed on
+demand](packages.md#install-on-demand).
 
 Options:
 
@@ -1187,7 +1208,7 @@ names every importer it found:
   same flag, with the same meaning, as [`suggest --from`](#options).
 - **Otherwise, a directory scan** — every `.ptl` file under the target's
   project root: the nearest directory at or above the target that holds a
-  [`petal.toml`](#packages--list-available-libraries), or the target's own
+  [`petal.toml`](#packages--show-the-project-and-the-libraries-available), or the target's own
   directory when there is none. An importer that lives outside that directory
   is not found, and is not rewritten; name its program with `--from`.
 

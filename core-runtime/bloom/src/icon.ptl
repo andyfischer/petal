@@ -11,9 +11,9 @@
 
 import ui
 
-// The `ui` prelude is the host's implicit import and now reaches every
-// module of a program, not just the entry file, so bloom names `draw_line`,
-// `draw_circle` and `draw_rect_rounded` bare — no `import ui` needed.
+// The drawing and input names used below (`rect`, `draw_rect_rounded`,
+// `mix` and friends) come from the `ui` package. This module imports it
+// itself: an import reaches only the file it is written in.
 
 // A point in the glyph box `(cx, cy, s)`.
 fn _p(box: record, ux: num, uy: num) -> record

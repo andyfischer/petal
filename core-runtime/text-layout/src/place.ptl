@@ -16,9 +16,9 @@
 // and how far apart to set two lines. This module turns those into the answer
 // a caller actually wants — a `y` to draw at.
 //
-// The `ui` prelude is the host's implicit import and reaches every module of a
-// program, so `text_width`, `text_metrics` and `draw_text` are named bare here
-// with no `import ui`.
+// `text_width`, `text_metrics` and `draw_text` come from the `ui` package,
+// which this module imports itself: an import reaches only the file it is
+// written in.
 
 import ui
 

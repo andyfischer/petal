@@ -16,9 +16,9 @@
 //   id        makes it focusable: Tab reaches it, Return/Space fires it
 //   ripple    false to switch the click ripple off
 
-// The `ui` prelude is the host's implicit import and now reaches every
-// module of a program, not just the entry file, so bloom names `rect`,
-// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+// The drawing and input names used below (`rect`, `draw_rect_rounded`,
+// `mix` and friends) come from the `ui` package. This module imports it
+// itself: an import reaches only the file it is written in.
 import bloom/theme: theme, ts, tone, hair, stroke, wash, focus_ring,
                     variant_fill, variant_ink, variant_solid, rate, dur
 import bloom/motion: ease_flag, ease_to, spring, impulse, scale_rect,

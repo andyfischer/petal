@@ -12,7 +12,8 @@ Start here if you are learning or writing Petal:
 | [Syntax Overview](syntax/overview.md) | A compact map of every lexical form, statement, expression, and operator |
 | [Builtins Reference](Builtins.md) | Every built-in function, with signatures and examples |
 | [CLI Reference](CLI.md) | Every `petal` subcommand and flag, plus the JSON output formats |
-| [Module System](module-system.md) | `import`, how modules are found, and hot reload across files |
+| [Module System](module-system.md) | `import`, which name wins, how modules are identified and found, and what a host does to offer its own |
+| [Packages](packages.md) | `petal.toml`, dependencies, required host interfaces, `petal.lock`, the cache, `vendor/`, and the package commands (`init`, `add`, `install`, `vendor`, `bundle`, …) |
 | [Function Overloading](function-overloading.md) | How calls pick between functions and methods with the same name |
 | [Implicit Return Values](implicit-return-values.md) | What a function yields without `return`, where a `for` loop collects a list, and how `-> nil` turns both off |
 | [Text & Fonts](text-and-fonts.md) | Drawing text in UI apps: faces, sizes, metrics, measurement |

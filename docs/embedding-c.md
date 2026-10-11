@@ -248,14 +248,19 @@ vm.native("raycast", petal::fx::ReadsHostData, [&](petal::Call& c) {
 });
 ```
 
-```petal
+```petal ignore
 import vec2
+import engine        // your interface package: it declares raycast
 let hit = raycast(pos, vec3(0, -1, 0), 2.0)
 let grounded = hit != nil && hit.dist < 0.6
 ```
 
-- Register **before the load that uses the native** (natives are resolved by
-  name at compile time; a later reload also sees natives registered since).
+- A script reaches the native through a `native fn` declaration, so register
+  [an interface package](#your-natives-need-an-interface-package) that
+  declares it, and have the script import that package.
+- Register **before the load that uses the native** (a load links every
+  declared native the program refers to; a later reload also sees natives
+  registered since).
 - `Call` gives `name()`, `size()`, `c[i]` (views valid during the call), and
   `result()`, a builder for at most one value (empty = `nil`).
 - Throw any `std::exception` to fail the script call; it becomes a
@@ -292,9 +297,9 @@ vm.emitter("sfx", "audio");
 vm.emitter("body", "physics", "declare_body");    // custom tag
 ```
 
-```petal
+```petal ignore
 import vec2
-import sdl
+import engine        // your interface package: it declares draw_mesh and sfx
 draw_mesh("cube", vec3(0, 1, 0), rot, 1.0, {color: #cc3333})
 sfx("jump", {volume: 0.8})
 ```

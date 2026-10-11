@@ -231,7 +231,7 @@ print(dot(cx: 1, cy: 2))               // at 1,2 r=1    told apart by name
 print(dot(center: {x: 1, y: 2}, radius: 5))
 ```
 
-The `ui` prelude's draw calls are written this way
+The `ui` package's draw calls are written this way
 (`core-libs/petal-ui/prelude/ui.ptl`). Where a call passes the *second* shape's leading
 arguments positionally and then skips one of its parameters with a name the
 exact-count variant also has — `draw_circle_outline(cx, cy, radius, c,
@@ -274,8 +274,8 @@ wins](module-system.md#which-name-wins) and the merge rules below.
 
 A binding that lands on a name **another module** already put in scope *joins*
 its overload set instead of replacing it. So a library can add an arity to a
-name it does not own — the thing a component library wants when the host
-prelude's `draw_rect` takes a record and a color and the library wants a
+name it does not own — the thing a component library wants when the `ui`
+package's `draw_rect` takes a record and a color and the library wants a
 one-argument default-colored form:
 
 ```petal ignore
@@ -287,7 +287,7 @@ pub fn draw_rect(r)
 end
 
 // every arity is callable here: the one this file added, and the
-// prelude's 2, 3, 7 and 8-argument forms
+// `ui`'s 2, 3, 7 and 8-argument forms
 pub fn paint()
   draw_rect({ x: 0, y: 0, w: 10, h: 10 })
   draw_rect({ x: 20, y: 0, w: 10, h: 10 }, { r: 1, g: 2, b: 3 })

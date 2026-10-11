@@ -55,8 +55,13 @@ way, for code written against an earlier checkout.
   a symbol visible to importers, `pub import m` re-exports a module's
   surface, and a `petal.toml` makes a directory a package. A module's
   identity is canonical, so one file reached by two spellings is one module.
+- Projects and packages: a `petal.toml` names a package, its
+  `[dependencies]` (path or git; the key is the import name) and the host
+  interfaces it `[requires]`. Every command and the language server find the
+  nearest one from the file they are given. See
+  [docs/packages.md](docs/packages.md).
 - A bare name is resolved in tiers: a declaration in the file, a selective
-  import, a plain import, the builtins. Two plain imports offering the same
+  import, a plain import, the core builtins and `std`. Two plain imports offering the same
   name are an error only where the name is used bare; qualified access
   always works.
 
@@ -112,6 +117,10 @@ way, for code written against an earlier checkout.
   `ends_with`, `trim`, formatting helpers, and failable number parsing.
   `len`, `slice` and `s[i]` count characters (code points); `byte_len` and
   `byte_slice` work in UTF-8 bytes.
+- The everyday builtins are in scope everywhere; the domain sets are
+  bundled packages a file imports (`import creative`, `noise`, `color`,
+  `vec2`, `autodiff`, `json`, `io`). See
+  [docs/Builtins.md](docs/Builtins.md#which-builtins-need-an-import).
 - Math: `lerp` on numbers, colors and number lists, `clamp` and `round` that
   keep ints as ints, `asin`/`acos`/`atan`/`hypot`, `safe_div`, `random()` in
   several arities, and `rotate(v, angle)` on `vec2`.
@@ -153,7 +162,9 @@ way, for code written against an earlier checkout.
   since its state lasts one process.
 - `petal check` type-checks and lowers a program without running it. Unknown
   names and impossible calls are errors; `--strict` also fails on type
-  warnings. `--host garden` resolves the packages Garden registers.
+  warnings. It consults no host: a script for a host imports the host's
+  interface package, found bundled, through the project's `petal.toml`, or
+  with `-I`.
 - `petal check` warns on four programs that compile but are silently wrong: a
   line starting with `-` under the line it was meant to continue, a bare
   operator expression whose value is discarded (`n + 1`), an enum variant
@@ -193,8 +204,10 @@ way, for code written against an earlier checkout.
   migration as a library, for a host that wants its own packages known.
 - Packages compiled into the binary are importable by name with nothing
   registered, after everything the host and the search path offer: `core`
-  (`import core` binds the qualifier, `core.len(xs)`), `ui` (the petal-ui
-  interface; `ui/input` is its input half), `bloom`, `text_layout` and `glsl`.
+  (`import core` binds the qualifier, `core.len(xs)`), the builtin packages
+  (`noise`, `color`, `vec2`, `autodiff`, `json`, `io`, `creative`), `ui` (the
+  petal-ui interface; `ui/input` is its input half), `bloom`, `text_layout`
+  and `glsl`.
   `core/build.rs` embeds them and fails the build if a source directory is
   missing. `petal check` therefore resolves `import ui` and `import bloom`
   with no host and no `-I`.
@@ -321,7 +334,9 @@ way, for code written against an earlier checkout.
 
 ### Changed
 
-Breaking changes made during development, newest first:
+Breaking changes made during development, newest first. For the import and
+package changes below, `petal fix-imports` does the rewriting and
+[docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
 - The domain builtins are behind imports. What reads as language stays global
   (`print`, `len`, `str`, `range`, the casts, the collection and string

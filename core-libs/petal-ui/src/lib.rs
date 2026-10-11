@@ -21,8 +21,8 @@
 //!   (`hovered`, `clicked`, `button`, `list_update`, …), a panel-global focus
 //!   registry (`focus_state`/`focused`/`focus_set`, `focus_next`/`focus_prev`,
 //!   `focus_update`) and the focus-aware `text_field` widget + gated
-//!   `list_update` built on it, registered with [`register_prelude`] and
-//!   delivered through the module system as an implicit import.
+//!   `list_update` built on it, registered with [`register_prelude`] as the
+//!   package `ui`, which a script reaches with `import ui`.
 //! - [`tess`]: shared CPU tessellation for the commands a host can't fill in
 //!   one go — currently the soft shadow, whose non-overlapping mesh every
 //!   host needs and none should re-derive.

@@ -158,7 +158,7 @@ the parentheses.
 
 The innermost call site is usually not the one a person means. In `petal-ui`
 every `draw_*` name is a *Petal function* wrapping a native, so the leaf of the
-chain is a line inside the prelude — true, and useless to someone looking at
+chain is a line inside the `ui` package — true, and useless to someone looking at
 their own sketch.
 
 `pick_frame` walks outward to the innermost frame whose span belongs to the file
@@ -172,7 +172,7 @@ This gets both cases right at once:
 
 | The script | What the leaf says | What `pick_frame` says |
 | --- | --- | --- |
-| `draw_circle(120, 110, 60, …)` | a line in the `ui` prelude | the user's line |
+| `draw_circle(120, 110, 60, …)` | a line in the `ui` package | the user's line |
 | a `draw_rect` inside `fn swatch(…)` the user wrote | the `draw_rect` in `swatch` | the same — it's their file |
 
 The second row is the point: it does not blindly walk to the outermost frame. It
@@ -565,7 +565,7 @@ args[0]: Computed    (`x` is a parameter — no literal to edit)
 args[2]: Literal, value 46, is_int  -> edit `46` on line 4
 ```
 
-`pick_frame` walked out of the `petal-ui` prelude but stopped at `swatch`,
+`pick_frame` walked out of the `ui` package but stopped at `swatch`,
 because `swatch` is in the file being edited. And the size argument is directly
 editable while the position isn't — which is exactly right: dragging this swatch
 somewhere else would have to edit the *call* on line 8, and the trace says so by

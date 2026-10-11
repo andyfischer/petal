@@ -10,9 +10,9 @@
 // frame with no setup, and an app that wants a look of its own overrides one
 // key rather than a palette.
 
-// The `ui` prelude is the host's implicit import and now reaches every
-// module of a program, not just the entry file, so bloom names `rect`,
-// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+// The drawing and input names used below (`rect`, `draw_rect_rounded`,
+// `mix` and friends) come from the `ui` package. This module imports it
+// itself: an import reaches only the file it is written in.
 
 // Placement, on the other hand, is a library: text_layout turns the host's
 // font metrics into the `y` a run should be drawn at. bloom draws every label

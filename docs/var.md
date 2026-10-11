@@ -227,7 +227,7 @@ because `wire_phi_outs` reads the block's final binding, so the shadowed
 local's value would carry out to the outer name.
 
 Without this, a phi hoisted past the block that owns a `let` resolves the name
-at the outer level, where it can hit a prelude function of the same name
+at the outer level, where it can hit an imported function of the same name
 (`std::take`), so every addition to `std` could break user code using that
 name as a local.
 

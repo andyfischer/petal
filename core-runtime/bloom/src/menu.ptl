@@ -14,9 +14,9 @@
 //   {label, hint, icon, disabled, sep, danger}
 // `sep: true` draws a divider and cannot be chosen.
 
-// The `ui` prelude is the host's implicit import and now reaches every
-// module of a program, not just the entry file, so bloom names `rect`,
-// `draw_rect_rounded`, `mix` and friends bare — no `import ui` needed.
+// The drawing and input names used below (`rect`, `draw_rect_rounded`,
+// `mix` and friends) come from the `ui` package. This module imports it
+// itself: an import reaches only the file it is written in.
 import bloom/theme: theme, ts, ts_a, tone, hair, stroke, surface, wash,
                     dur, rate, text_in, divider, defer_paint
 import bloom/motion: ease_to, ease_flag, enter, ease_out, ease_back,

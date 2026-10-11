@@ -716,6 +716,12 @@ for `import ui/input`) does not provide it.
 | Garden's config host | `garden_config` | `garden/garden-script/packages/garden_config/` |
 | petal-desktop-sdl | `sdl` | `integrations/petal-desktop-sdl/packages/sdl/` |
 | the wasm element-tree runtime | `web` | `core/packages/web/` |
+| the `petal-fps` example host | `fps` | `examples/custom-apps/petal-fps/packages/fps/` |
+| the `petal-fantasy-nes` example host | `nes`, `nes/nes_host`, `nes/nes_sound` | `examples/custom-apps/petal-fantasy-nes/prelude/` |
+
+Only `ui` is bundled in the `petal` binary. The others are found by the stock
+CLI as path dependencies of the script's project (the example trees in this
+repository carry a `petal.toml` that lists them) or with `-I`.
 
 `Env::verify_interface(packages)` is the host's drift test: every native the
 named packages declare is registered in the `Env`, and every native registered
@@ -746,5 +752,9 @@ written and the importing module's name and origin, and returns the source
 with the module's canonical name. The wasm bindings expose `register_module`,
 `register_package` (a JSON object of module name to source) and
 `verify_interface`; the C bridge has `pb_vm_register_module`,
-`pb_vm_register_package`, `pb_vm_add_package` and `pb_vm_verify_interface`. See the [Embedding guide](embedding-guide.md) for
-the rest of the host API.
+`pb_vm_register_package`, `pb_vm_add_package`, `pb_vm_verify_interface`,
+`pb_vm_provides` and `pb_vm_provides_package`; the wasm bindings have
+`provides` and `provided_interfaces` too. A host with no filesystem loads a
+whole project from the output of [`petal bundle`](packages.md#bundles). See
+the [Embedding guide](embedding-guide.md) and
+[Embedding from C/C++](embedding-c.md) for the rest of the host API.

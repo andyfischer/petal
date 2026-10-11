@@ -115,6 +115,7 @@ For the full list of developer commands, see [Developer Scripts & Commands](docs
 | [Builtins Reference](docs/Builtins.md) | Every built-in function |
 | [CLI Reference](docs/CLI.md) | Every `petal` subcommand and flag |
 | [Module System](docs/module-system.md) | `import` and module resolution |
+| [Packages](docs/packages.md) | `petal.toml`, dependencies, the lockfile and the package commands |
 | [Architecture](docs/dev/Architecture.md) | How the implementation works |
 | [Changelog](CHANGELOG.md) | What each release contains |
 

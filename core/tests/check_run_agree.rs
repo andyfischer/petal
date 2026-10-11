@@ -286,6 +286,69 @@ fn a_native_call_in_a_package_is_not_held_to_another_modules_function() {
     assert!(err.contains("expects 2 arguments, got 1"), "{err}");
 }
 
+/// The other side of the rule above: a `fn` of the module's own — top-level,
+/// nested, or a parameter or local holding a function — takes a name from an
+/// imported native, and its calls are held to *it*.
+#[test]
+fn a_modules_own_function_takes_the_name_of_an_imported_native() {
+    let t = Tree::new("ownfn");
+    t.write(
+        "widgets.ptl",
+        "import ui\n\
+         pub fn hovered(x, y, w, h)\n  return x + y + w + h\nend\n\
+         pub fn inside()\n  return hovered(1, 2, 3, 4)\nend\n",
+    );
+    t.write(
+        "main.ptl",
+        "import ./widgets\n\
+         import ui\n\
+         fn outer()\n  fn mouse_x(a, b)\n    return a + b\n  end\n  return mouse_x(1, 2)\nend\n\
+         fn through(mouse_y)\n  return mouse_y(5)\nend\n\
+         let scroll_x = fn(a) -> a * 2\n\
+         print(inside(), outer(), through(fn(a) -> a), scroll_x(4))\n",
+    );
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    // The import's native is still held to its declaration where nothing of
+    // the module's own is in the way.
+    t.write("bad.ptl", "import ./widgets\nimport ui\nfn f()\n  return mouse_dx(1)\nend\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "bad.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`mouse_dx` expects 0 arguments, got 1"), "{err}");
+}
+
+/// A core builtin is held to its own declaration in every module that has
+/// not taken the name: a function another module declares under it — private
+/// to that module, even — is not what the call reaches, so check must not
+/// hold the call to it (run never did).
+#[test]
+fn another_modules_function_does_not_take_a_builtin_from_this_one() {
+    let t = Tree::new("builtinname");
+    t.write(
+        "models.ptl",
+        "fn keys(a, b)\n  return a + b\nend\npub fn sum2()\n  return keys(1, 2)\nend\n",
+    );
+    t.write("main.ptl", "import ./models\nprint(keys({q: 1}), sum2())\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!((err.as_str(), code), ("", 0));
+    let (out, err, code) = petal_in(&t.root, &["run", "main.ptl"]);
+    assert_eq!((out.as_str(), code), ("[\"q\"] 3\n", 0), "{err}");
+    // The builtin's own arity is still held here, and the function's there.
+    t.write("main.ptl", "import ./models\nfn f()\n  return keys()\nend\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("`keys` expects 1 argument, got 0"), "{err}");
+    t.write(
+        "models.ptl",
+        "fn keys(a, b)\n  return a + b\nend\npub fn sum2()\n  return keys(1)\nend\n",
+    );
+    t.write("main.ptl", "import ./models\nprint(keys({q: 1}))\n");
+    let (_, err, code) = petal_in(&t.root, &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("expects 2 arguments, got 1"), "{err}");
+    assert!(err.contains("models.ptl"), "{err}");
+}
+
 #[test]
 fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
     let t = Tree::new("assign");

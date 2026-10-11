@@ -903,15 +903,37 @@ impl Compiler {
         // The names this module's scope resolves to a native: the checker
         // knows functions by bare name across the whole program, and must not
         // hold a call to an imported native to some other module's function
-        // of the same name.
+        // of the same name. A `fn` of this module's own takes the name from
+        // any import (its declaration is not in scope yet at this point, so
+        // the scope still answers with the import).
+        let own_fns: HashSet<&str> = stmts
+            .iter()
+            .filter_map(|stmt| match &stmt.kind {
+                StmtKind::FnDecl { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        let is_native_here = |name: &str| {
+            !own_fns.contains(name)
+                && self
+                    .scope_lookup(name)
+                    .is_some_and(|tid| self.native_terms.contains_key(&tid))
+        };
+        // A host's natives, and the core builtins another module's function
+        // shares a name with: that module's `fn keys(a, b)` — private to it,
+        // even — is not what `keys(record)` calls here.
+        let core = crate::native_decl::core_decls();
         let native_names: HashSet<String> = self
             .native_decls
             .iter()
             .map(|(name, _)| name)
-            .filter(|name| {
-                self.scope_lookup(name)
-                    .is_some_and(|tid| self.native_terms.contains_key(&tid))
-            })
+            .chain(
+                self.fn_signatures
+                    .keys()
+                    .map(|(name, _)| name.as_str())
+                    .filter(|name| core.get(name).is_some()),
+            )
+            .filter(|name| is_native_here(name))
             .map(str::to_string)
             .collect();
         let (diags, dispatch, inferences) = crate::typecheck::check_module(

@@ -172,6 +172,8 @@ struct Checker<'a> {
     enum_names: HashSet<String>,
     /// See [`CheckContext::natives`].
     natives: Option<&'a crate::native_decl::NativeDecls>,
+    /// See [`CheckContext::native_names`].
+    native_names: Option<&'a HashSet<String>>,
     /// This module's own `native fn` declarations.
     own_natives: crate::native_decl::NativeDecls,
 }
@@ -218,6 +220,14 @@ pub struct CheckContext<'a> {
     /// the bundled `core` package's are always consulted; `None` consults
     /// only those. See [`crate::native_decl`].
     pub natives: Option<&'a crate::native_decl::NativeDecls>,
+    /// The bare names this module's scope binds to a `native fn` — its own
+    /// declaration or one an import brought in. A call through one of them
+    /// is checked against the native's declaration, whatever functions other
+    /// modules of the program happen to declare under the same name
+    /// (`fn_signatures` is keyed by bare name across the whole program).
+    /// `None` when the caller has no scope to ask: a same-named module
+    /// function then answers first, as a `fn` of this module would.
+    pub native_names: Option<&'a HashSet<String>>,
 }
 
 impl<'a> CheckContext<'a> {
@@ -239,6 +249,7 @@ impl<'a> CheckContext<'a> {
             param_reqs: None,
             enum_names: None,
             natives: None,
+            native_names: None,
         }
     }
 }
@@ -270,6 +281,7 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
             .chain(opts.enum_names.into_iter().flatten().cloned())
             .collect(),
         natives: opts.natives,
+        native_names: opts.native_names,
         own_natives: crate::native_decl::NativeDecls::collect(stmts),
     };
     checker.bind_enum_variants(stmts);
@@ -476,6 +488,9 @@ impl<'a> Checker<'a> {
             // checked on its own path, against the class's fields.
             ExprKind::Ident(name) => match self.lookup(name) {
                 Some(vt) => vt.fns.clone(),
+                // The name is a native here: another module's function of
+                // the same name says nothing about this call.
+                None if self.native_names.is_some_and(|names| names.contains(name)) => Vec::new(),
                 None => self.module_signatures(name),
             },
             _ => Vec::new(),

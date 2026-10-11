@@ -238,6 +238,54 @@ fn a_call_through_an_import_is_held_to_the_module_it_resolved_to() {
     assert_eq!((out.as_str(), code), ("3\n6\n1\n", 1));
 }
 
+/// A module that calls a native it imported is held to that native's
+/// declaration — not to a function some unrelated module, compiled earlier,
+/// happens to declare under the same name. (The checker's table is keyed by
+/// bare name across the program; found by a game whose `universe.body(id)`
+/// made the host package's own `body(id, opts)` call an arity error, but only
+/// when the game file imported `./universe` before the host package.)
+#[test]
+fn a_native_call_in_a_package_is_not_held_to_another_modules_function() {
+    let t = Tree::new("nativename");
+    t.write("host/petal.toml", "[package]\nname = \"host\"\nversion = \"0.1.0\"\n");
+    t.write("host/host.ptl", "pub import ./natives\npub import ./helpers\n");
+    // Bound to builtins, so the program also runs under `petal run`.
+    t.write(
+        "host/natives.ptl",
+        "pub native fn body(id, opts) = \"concat\"\npub native fn show(...values) = \"print\"\n",
+    );
+    t.write(
+        "host/helpers.ptl",
+        "import ./natives\npub fn build(id)\n  return body([id], [\"built\"])\nend\n",
+    );
+    t.write(
+        "game/petal.toml",
+        "[package]\nname = \"game\"\nversion = \"0.1.0\"\n[dependencies]\nhost = { path = \"../host\" }\n",
+    );
+    t.write("game/universe.ptl", "pub fn body(only)\n  return \"universe\"\nend\n");
+    // Either import order: `universe` compiles first in one, `host` in the other.
+    for imports in ["import ./universe\nimport host\n", "import host\nimport ./universe\n"] {
+        t.write(
+            "game/main.ptl",
+            &format!("{imports}show(build(1))\nshow(universe.body(2))\n"),
+        );
+        let (_, err, code) = petal_in(&t.dir("game"), &["check", "main.ptl"]);
+        assert_eq!((err.as_str(), code), ("", 0), "{imports}");
+        let (out, err, code) = petal_in(&t.dir("game"), &["run", "main.ptl"]);
+        assert_eq!((out.as_str(), code), ("[1, \"built\"]\nuniverse\n", 0), "{imports}{err}");
+    }
+    // The native's own arity is still held where the name is the native: a
+    // selective import pins `body` to the host's, with `universe` compiled
+    // first and its one-argument `body` in the checker's table.
+    t.write(
+        "game/main.ptl",
+        "import ./universe\nimport host\nimport host: body\nshow(body(1))\n",
+    );
+    let (_, err, code) = petal_in(&t.dir("game"), &["check", "main.ptl"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("expects 2 arguments, got 1"), "{err}");
+}
+
 #[test]
 fn assigning_through_a_qualifier_is_the_same_error_for_check_and_run() {
     let t = Tree::new("assign");

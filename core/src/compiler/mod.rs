@@ -900,6 +900,20 @@ impl Compiler {
         // checked every enum it could import has been seen.
         self.enum_type_names
             .extend(crate::typecheck::enum_names(&stmts));
+        // The names this module's scope resolves to a native: the checker
+        // knows functions by bare name across the whole program, and must not
+        // hold a call to an imported native to some other module's function
+        // of the same name.
+        let native_names: HashSet<String> = self
+            .native_decls
+            .iter()
+            .map(|(name, _)| name)
+            .filter(|name| {
+                self.scope_lookup(name)
+                    .is_some_and(|tid| self.native_terms.contains_key(&tid))
+            })
+            .map(str::to_string)
+            .collect();
         let (diags, dispatch, inferences) = crate::typecheck::check_module(
             &stmts,
             &crate::typecheck::CheckContext {
@@ -912,6 +926,7 @@ impl Compiler {
                 param_reqs: Some(&self.fn_param_reqs),
                 enum_names: Some(&self.enum_type_names),
                 natives: Some(&self.native_decls),
+                native_names: Some(&native_names),
             },
         );
         self.warnings.extend(diags);

@@ -282,6 +282,19 @@ fn install_lock_vendor_bundle_run() {
     assert!(installed.stdout.contains("(vendored)"), "{}", installed.stdout);
     assert!(!w.path("home").exists(), "a vendored project needs no cache");
 
+    // A host (or the language server) reads the same lockfile and vendor/
+    // directory, with no package manager involved.
+    let main = w.path("app/main.ptl");
+    let mut host = Env::new();
+    let pid = host
+        .load_program_at(&std::fs::read_to_string(&main).unwrap(), &main)
+        .unwrap();
+    let sid = host.create_stack(pid).unwrap();
+    host.run(sid).unwrap();
+    assert_eq!(host.take_output(), ["12 9 8 one"]);
+    assert_eq!(host.resolve_import("tween", &main).unwrap(), "tween");
+    assert_eq!(host.resolve_import("ease", &main).unwrap(), "ease");
+
     // bundle: every module of the graph, in the form register_package takes.
     let bundle: serde_json::Value =
         serde_json::from_str(&w.ok("app", &["bundle", "main.ptl"])).unwrap();

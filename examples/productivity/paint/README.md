@@ -113,5 +113,6 @@ with `append` / `drop_last` / `last` / `slice`, `continue` as a filter inside a
 - A panel sleeps 10 s after the last input. This app is event-driven, not
   animated, so sleeping costs nothing — but if you are driving it from the debug
   server, inject any event to wake it.
-- `panel.values` exposes the whole logical state by name: `tool`, `ink`,
+- `panel.values` exposes the whole logical state by name: `tool` (a `Tool`
+  variant), `ink`,
   `brush`, `opacity`, `grid`, `sel`, `ops`, `strokes`, `hist`, `fut`.

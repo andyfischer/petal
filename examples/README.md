@@ -58,6 +58,7 @@ example and asserts it exits cleanly.
 | `lists.ptl` | List operations | List literals, indexing, `push`, destructuring |
 | `records.ptl` | Record manipulation | Record literals, field access, nested records |
 | `enums.ptl` | Enum types | Enum variants, associated data, pattern matching |
+| `enums_and_match.ptl` | A small city ledger on enums and `match` | Payload fields, constant data, `all`/`from`, block arms, or-patterns, exhaustive matches |
 | `classes.ptl` | Classes and methods | `class … end`, typed fields, `fn Class.method`, the built-in `Rect` |
 | `pattern_matching.ptl` | Match expressions | Guards, list destructuring, nested patterns |
 | `closures.ptl` | Closures and HOFs | Closures, lambdas, `map`, `filter`, `reduce` |

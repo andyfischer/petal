@@ -87,7 +87,7 @@ in expression position, and function overload-free helpers (`cell_x`,
 for exact pill sizing, and `fit_parts` for the degrading footer hint line.
 
 **Debug server:** every piece of logical state is observable by name in
-`/state`'s `panes[0].panel.values` — `phase`, `body`, `score`, `apples`,
+`/state`'s `panes[0].panel.values` — `phase` (a `Phase` variant), `body`, `score`, `apples`,
 `lvl`, `bonus`, `bonus_left`, `wrap`, `pause_label` — so an agent can play the
 game (read `body[0]` and `food`, steer, assert the score) without decoding a
 single pixel.

@@ -74,7 +74,7 @@ spread inside collecting `for` loops (`continue` filters expired feathers); a
 `filter` + `reduce` with lambdas to recycle the column that scrolled off and
 spawn its replacement at the far end; `state var` for everything that
 persists, read with `get` from the helpers (`make_pipe`, `hills`); `config let`
-for the tunables; `match` on the phase string as a value expression; a
+for the tunables; `match` on the `Phase` enum as a value expression; a
 function declared after the top-level `let`s it reads (`rot`, `hills`) so it
 is not hoisted above them.
 

@@ -6,7 +6,7 @@ projection, provenance tracing, live editing, self-metaprogramming) should
 feel to use once implemented. Each references APIs the current runtime does
 not expose, so running one fails.
 
-See [`dev/goals.md`](../../dev/goals.md) for the motivation behind each
+See the [README](../../README.md#goals) for the goals behind each
 feature. When a feature lands, rewrite its sketch against the real API and
 move it into [`/examples/`](../../../examples/) so it runs under the test
 suite.

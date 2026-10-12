@@ -9,7 +9,7 @@ collections, color, vectors, autodiff, etc.) see [Builtins.md](Builtins.md);
 the everyday ones are in scope everywhere and the domain sets are one
 `import` away ([Modules and imports](#modules-and-imports)). For
 the `petal` CLI and the IR JSON schema, see [CLI.md](CLI.md). For the design
-philosophy behind the language, see [goals.md](dev/goals.md).
+philosophy behind the language, see the [README](../README.md#goals).
 
 ## Hello World
 

@@ -110,7 +110,7 @@ not a general solver: an argument that flows through a call or a comparison
 gets no proposal. There is still no reverse-mode AD; Petal ships forward-mode
 sensitivity only (`dual`/`value_of`/`deriv_of` in
 [`builtins/autodiff.rs`](../core/src/builtins/autodiff.rs)). See
-[dev/goals.md](dev/goals.md) for the direction.
+the [README](../README.md#goals) for the project goals.
 
 ### `petal lint` (normalize source in place)
 
@@ -316,4 +316,4 @@ Code: [`execution_context.rs`](../core/src/execution_context.rs) and
 - **IR editing is experimental.** The graph-query passes are read-only and
   there is no in-place IR rewrite API.
 
-For where these are headed, see [goals.md](dev/goals.md).
+For the project goals behind these, see the [README](../README.md#goals).

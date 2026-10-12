@@ -26,7 +26,7 @@ Petal stays dynamically typed at runtime. Annotations add a compile-time
 
 | Question | Decision |
 |---|---|
-| What happens on a mismatch | A **warning**. The program still compiles and runs. This matches the "forgiving types" line in [goals.md](goals.md). |
+| What happens on a mismatch | A **warning**. The program still compiles and runs. This matches the optional-annotations design decision in the [README](../../README.md#design-decisions). |
 | Inference depth | Shallow and local: literals, called function signatures, and a table of builtin result types. Anything unclear is `any`. |
 | Runtime checks | None. A dynamic value flowing into a typed slot is trusted. |
 | Implicit casts | None. The checker never inserts a conversion; the programmer writes `int()`, `float()` or `str()`, which the checker treats as the sanctioned way to satisfy a type. |

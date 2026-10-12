@@ -220,9 +220,8 @@ Still open:
   `import preview` "did not give a module" because `preview` is also a
   prelude function. A qualifier outranks a prelude value since 1739d5c, so
   the note is probably obsolete.
-- Broken links unrelated to modules: `dev/goals.md` (linked from
-  language-guide.md, program-modification.md, writing-petal-guide.md and
-  others) and `docs/tasks/declarative-effect-refactoring.md` do not exist;
+- Broken links unrelated to modules:
+  `docs/tasks/declarative-effect-refactoring.md` does not exist;
   `docs/README.md:23` links `examples/README.md` where `../examples/README.md`
   is meant.
 

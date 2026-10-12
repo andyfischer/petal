@@ -427,6 +427,6 @@ language-interop layer. Deliberately outside it:
   is only a reference; building real foreign front-ends is downstream work that
   lives against this contract, not inside it.
 - **Bidirectional editing** — mapping edits on a projection back to foreign
-  source. See Goal 3 in [goals.md](goals.md).
+  source. See the goal-based program manipulation goal in the [README](../../README.md#goals).
 - **A binary/compact IR format.** The contract is JSON; a denser encoding would
   only be worth adding if a real emitter needs it.

@@ -581,8 +581,8 @@ the primal only and drop the derivative. See
 `examples/console/differentiation.ptl`.
 
 Reverse-mode (back-propagation through the dataflow graph) is a design
-goal but not yet implemented — see [goals.md](goals.md) for the vision,
-remaining work, and roadmap.
+goal but not yet implemented — see the [README](../../README.md#goals) for the
+project goals.
 
 ---
 
@@ -634,4 +634,4 @@ The host side lives in `integrations/petal-web-html/src/runtime.ts` and
 - [Function Overloading](../function-overloading.md) — multi-arity dispatch
 - [Debug Protocol](debug-protocol.md) — SDL / canvas agent protocol
 - [Debugging & Visibility](debugging-visibility.md) — observability stack
-- [Goals](goals.md) — vision, remaining work, and sequencing
+- [Goals](../../README.md#goals) — the project goals and design decisions

@@ -1195,7 +1195,7 @@ tell you the fix in the message. A sample:
 | Multi-file programs | [Module System](module-system.md) |
 | Dependencies, `petal.toml`, the package commands | [Packages](packages.md) |
 | Building an app or a game on Petal | [Building Apps](building-apps.md) |
-| Why the language is shaped this way | [Goals](dev/goals.md) |
+| Why the language is shaped this way | [README](../README.md#goals) |
 
 The single most useful next step is to read `examples/console/` end to end —
 each file is a commented treatment of one feature, and they are all covered by

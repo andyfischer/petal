@@ -218,8 +218,11 @@ fn native_rect_offset(state: &mut PetalCxt) -> Result<u32, String> {
 /// Register the built-in classes' constructors and methods. Called from
 /// [`super::register_builtins`]; append-only, like every other registration
 /// there (phantom term indices are positional).
+///
+/// All `CONST`: the constructor and every method are arithmetic on their
+/// arguments.
 pub(super) fn register(table: &mut NativeFnTable) {
-    table.register("Rect", native_rect, NativeEffects::PURE);
+    table.register("Rect", native_rect, NativeEffects::CONST);
     for (name, func) in [
         (
             "center_x",
@@ -234,7 +237,7 @@ pub(super) fn register(table: &mut NativeFnTable) {
         let id = table.register(
             &qualified_method_name("Rect", name),
             func,
-            NativeEffects::PURE,
+            NativeEffects::CONST,
         );
         table.register_class_method("Rect", name, id);
     }

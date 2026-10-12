@@ -288,3 +288,94 @@ fn dropping_the_env_drops_boxed_captures() {
     drop(env);
     assert_eq!(Rc::strong_count(&token), 1);
 }
+
+// ── CONST: the opt-in "constant function" declaration ─────────────────────
+
+/// A host native is a constant function only if its row says `CONST`. `PURE`
+/// — the row most natives register with — stays dynamic, and so does a name
+/// nothing registered.
+#[test]
+fn a_host_native_is_constant_only_when_it_says_so() {
+    use petal::native_fn::NativeConstness;
+    let mut env = Env::new();
+    let pure = env.register_native("h_pure", petal_add_ints, NativeEffects::PURE);
+    let constant = env.register_native("h_const", petal_add_ints, NativeEffects::CONST);
+    let boxed = env.register_native_boxed(
+        "h_boxed_const",
+        |cxt: &mut PetalCxt| {
+            cxt.push_int(7);
+            Ok(1)
+        },
+        NativeEffects::CONST,
+    );
+    assert_eq!(env.native_constness(pure), NativeConstness::Dynamic);
+    assert_eq!(env.native_constness(constant), NativeConstness::Const);
+    assert_eq!(env.native_constness(boxed), NativeConstness::Const);
+    assert_eq!(env.native_constness_of_name("h_const"), NativeConstness::Const);
+    assert_eq!(env.native_constness_of_name("h_pure"), NativeConstness::Dynamic);
+    assert_eq!(
+        env.native_constness_of_name("declared_but_not_registered"),
+        NativeConstness::Dynamic
+    );
+    assert!(env.native_effects(constant).is_const());
+    assert!(!env.native_effects(pure).is_const());
+}
+
+/// `CONST` differs from `PURE` in the one bit and nothing else, so declaring
+/// it changes nothing about how the native is called, memoized or audited.
+#[test]
+fn const_is_pure_plus_one_bit() {
+    use petal::native_fn::{InputClasses, NativeClass};
+    assert_eq!(
+        NativeEffects {
+            constant: false,
+            ..NativeEffects::CONST
+        },
+        NativeEffects::PURE
+    );
+    assert!(NativeEffects::CONST.is_const());
+    assert!(!NativeEffects::PURE.is_const());
+    // The Pending policy is orthogonal.
+    assert!(NativeEffects::CONST.with_pending(NativeClass::AllowPending).is_const());
+    // No row built from the other constructors is constant…
+    for row in [
+        NativeEffects::EFFECT,
+        NativeEffects::EMITS,
+        NativeEffects::probe(InputClasses::CLOCK),
+        NativeEffects::reads(InputClasses::HOST_DATA),
+        NativeEffects::reads(InputClasses::NONE),
+        NativeEffects::PURE.with_emits(),
+    ] {
+        assert!(!row.is_const(), "{row:?}");
+    }
+    // …and a row that claims to be constant while reading, emitting or
+    // having an effect contradicts itself and is treated as dynamic.
+    for row in [
+        NativeEffects::CONST.with_effect(),
+        NativeEffects::CONST.with_emits(),
+        NativeEffects {
+            reads: InputClasses::RNG,
+            ..NativeEffects::CONST
+        },
+        NativeEffects {
+            probe: true,
+            ..NativeEffects::CONST
+        },
+    ] {
+        assert!(!row.is_const(), "{row:?}");
+    }
+}
+
+/// Declaring a native `CONST` changes no behaviour today: the script calls
+/// it and gets its result exactly as with `PURE`.
+#[test]
+fn a_const_native_runs_like_any_other() {
+    for row in [NativeEffects::CONST, NativeEffects::PURE] {
+        let mut env = Env::new();
+        env.register_native("add_ints", petal_add_ints, row);
+        let result = env.run_source(
+            "native fn add_ints(a, b)\nlet T = [add_ints(1, 2), add_ints(3, 4)]\nassert_eq(T, [3, 7])",
+        );
+        assert!(result.is_ok(), "{row:?}: {:?}", result.err());
+    }
+}

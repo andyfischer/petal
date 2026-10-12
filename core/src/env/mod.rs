@@ -1556,6 +1556,23 @@ impl Env {
         self.native_fns.effects(id)
     }
 
+    /// Whether a call to this native can be part of a static value
+    /// ([`NativeConstness`](crate::native_fn::NativeConstness)): `Const` only
+    /// for a native registered with
+    /// [`NativeEffects::CONST`](crate::native_fn::NativeEffects::CONST),
+    /// `ConstIfCallbacksAre` for the higher-order builtins, `Dynamic` for
+    /// everything else.
+    pub fn native_constness(&self, id: NativeFnId) -> crate::native_fn::NativeConstness {
+        self.native_fns.constness(id)
+    }
+
+    /// [`native_constness`](Self::native_constness) by name. A name nothing
+    /// registered — a `native fn` declared by an interface module whose host
+    /// is not present, as under `petal check` — is `Dynamic`.
+    pub fn native_constness_of_name(&self, name: &str) -> crate::native_fn::NativeConstness {
+        self.native_fns.constness_of_name(name)
+    }
+
     /// Override the [`NativeClass`] of an already-registered native (by the id
     /// [`register_native`](Self::register_native) returned). Registration stays
     /// append-only — indices are stable — so an embedding classifies its natives

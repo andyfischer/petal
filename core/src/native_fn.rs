@@ -144,6 +144,27 @@ pub struct NativeEffects {
     /// What to do with a `Pending` argument ([`NativeFnTable::set_class`]
     /// can still change it after registration).
     pub pending: NativeClass,
+    /// The native is a **constant function**: the same arguments give the
+    /// same result for the life of the program, on any path through it. It
+    /// reads no dynamic input at all — not the tracked classes in `reads`,
+    /// and not the untracked ones either (the noise seed, a font provider, a
+    /// theme, the program's source, the validity of a handle) — and does
+    /// nothing observable besides returning (raising on bad arguments is
+    /// fine: the same arguments raise the same way every time).
+    ///
+    /// This is stronger than [`PURE`](Self::PURE), which only says "reads no
+    /// *tracked* input and has no effect" and is what a memoized scope needs.
+    /// A static value (`docs/proposals/static-values.md`) built from a call
+    /// to this native is computed once and kept until the source changes, so
+    /// a wrong `true` here is a stale value forever, where a wrong `PURE`
+    /// costs a missed replay. It is therefore opt-in: every row is dynamic
+    /// unless it says otherwise ([`CONST`](Self::CONST)), and when in doubt
+    /// a native stays dynamic.
+    ///
+    /// Ask through [`is_const`](Self::is_const), not this field: a row that
+    /// sets it alongside a read, an emit or an effect contradicts itself and
+    /// is treated as dynamic.
+    pub constant: bool,
 }
 
 impl NativeEffects {
@@ -156,6 +177,21 @@ impl NativeEffects {
         emits: false,
         effect: false,
         pending: NativeClass::Strict,
+        constant: false,
+    };
+
+    /// [`PURE`](Self::PURE), and a constant function besides: same arguments,
+    /// same result, for the life of the program, reading no dynamic input of
+    /// any kind (see [`constant`](Self::constant)). A call with static
+    /// arguments may be evaluated once and its result kept.
+    ///
+    /// Not the default, and not implied by `PURE` — `noise` (the noise seed),
+    /// `is_valid` (a handle's liveness) and a text-measuring native (the
+    /// host's fonts) are all pure and none is constant. Declare it only for a
+    /// native whose body you have read.
+    pub const CONST: NativeEffects = NativeEffects {
+        constant: true,
+        ..NativeEffects::PURE
     };
 
     /// Something a replay cannot reproduce (`print`, `noise_seed`).
@@ -212,6 +248,38 @@ impl NativeEffects {
     pub const fn with_pending(self, pending: NativeClass) -> NativeEffects {
         NativeEffects { pending, ..self }
     }
+
+    /// Whether a call to this native with constant arguments is itself a
+    /// constant: the row opted in ([`CONST`](Self::CONST)) and declares no
+    /// read, probe, emit or effect. The last part makes a self-contradicting
+    /// row (`CONST.with_effect()`, a C host passing `PB_FX_CONST |
+    /// PB_FX_EFFECT`) dynamic, which is the safe reading.
+    ///
+    /// This is the one question the static-value classifier asks of a native
+    /// row; [`NativeFnTable::constness`] is the same question asked of a
+    /// registered native, and also knows about the higher-order builtins.
+    pub const fn is_const(self) -> bool {
+        self.constant && self.reads.is_empty() && !self.probe && !self.emits && !self.effect
+    }
+}
+
+/// Whether a call to a registered native can be part of a static value — the
+/// answer [`NativeFnTable::constness`] gives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeConstness {
+    /// Not known to be constant. The default for every native, and the
+    /// answer for a name that is not registered at all (a `native fn`
+    /// compiled without its host, as `petal check` and the LSP do).
+    Dynamic,
+    /// A constant function of its arguments ([`NativeEffects::is_const`]).
+    Const,
+    /// A higher-order builtin the VM drives (`map`, `filter`, `reduce`,
+    /// `sort_by`, and `sort` for its comparator form): the native adds
+    /// nothing dynamic of its own, so the call is constant exactly when
+    /// every function it is handed is one that reads and does nothing
+    /// dynamic when called (the proposal's *static-pure*). With no function
+    /// argument at all (`sort(xs)`) that condition is vacuous.
+    ConstIfCallbacksAre,
 }
 
 /// How a registered native is invoked: a bare function pointer (every
@@ -659,6 +727,41 @@ impl NativeFnTable {
     /// The declared effect row of a native.
     pub fn effects(&self, id: NativeFnId) -> NativeEffects {
         self.entries[id.0 as usize].effects
+    }
+
+    /// Whether a call to this native can be part of a static value. See
+    /// [`NativeConstness`]; `Dynamic` unless the native's row opted in with
+    /// [`NativeEffects::CONST`], or it is one of the higher-order builtins,
+    /// whose answer depends on the functions they are handed.
+    pub fn constness(&self, id: NativeFnId) -> NativeConstness {
+        let Some(entry) = self.entries.get(id.0 as usize) else {
+            return NativeConstness::Dynamic;
+        };
+        let id = Some(id);
+        // `forEach` is deliberately absent: it exists for its callback's
+        // effects and returns nothing worth keeping.
+        if id == self.intrinsic_map
+            || id == self.intrinsic_filter
+            || id == self.intrinsic_reduce
+            || id == self.intrinsic_sort
+            || id == self.intrinsic_sort_by
+        {
+            return NativeConstness::ConstIfCallbacksAre;
+        }
+        if entry.effects.is_const() {
+            NativeConstness::Const
+        } else {
+            NativeConstness::Dynamic
+        }
+    }
+
+    /// [`constness`](Self::constness) by name; `Dynamic` for a name nothing
+    /// registered.
+    pub fn constness_of_name(&self, name: &str) -> NativeConstness {
+        match self.lookup_name(name) {
+            Some(id) => self.constness(id),
+            None => NativeConstness::Dynamic,
+        }
     }
 
     /// The Pending-handling class of a native (defaults to `Strict`).

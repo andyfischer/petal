@@ -341,6 +341,7 @@ Pattern := "Wildcard"
          | {"Variant": {"name": "Circle", "fields": [Pattern, ...]}}
          | {"List": {"elements": [Pattern, ...], "rest": "tail"}}
          | {"Record": [["field", Pattern], ...]}
+         | {"Or": [Pattern, ...]}          // `a | b`; every alternative binds the same names
 ```
 
 `Variant.fields` and `List.rest` follow the omit-defaults rule: dumps skip an

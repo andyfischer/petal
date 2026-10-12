@@ -660,11 +660,32 @@ end
 ```
 
 Patterns cover literals, bindings, enum variants (`when Shape.circle(r) ->`), list
-destructuring (`when [head, ...tail] ->`) and guards (`when x if x > 100 ->`).
-An arm whose body is several statements uses `do … end` instead of `->`.
+destructuring (`when [head, ...tail] ->`), alternatives (`when "a" | "b" ->`) and
+guards (`when x if x > 100 ->`).
+
+An arm's body is a statement list, like an `if` branch: write the statements on
+the lines under `->`, and the last expression is the arm's value. `break`,
+`continue` and `return` work in it as they do in an `if`.
+
+```petal
+fn apply(cmd, pos)
+  match cmd
+    when "left" | "right" ->
+      let dx = if cmd == "left" then -1 else 1 end
+      pos + dx
+    when "home" -> 0
+    when _ -> pos
+  end
+end
+```
 
 The catch-all is `when _ ->` (or `when name ->` if you want the value bound).
 There is no `else` arm — `else -> …` is a parse error.
+
+Leave the catch-all out and a value no arm matches is a runtime error, not a
+`nil`. When every arm is a variant of one enum, leaving a variant out is a
+compile error instead, so prefer no catch-all there: adding a variant to the
+enum then points at every match that has to learn about it.
 
 ---
 

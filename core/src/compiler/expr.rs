@@ -397,26 +397,17 @@ impl Compiler {
             // gets, requested explicitly.
             ExprKind::OptionalAccess(inner) => self.compile_expr_optional(inner),
 
+            // A block is a match arm's body. A non-empty one is compiled as
+            // the arm's statement list (`compile_arm_body`); this is what is
+            // left: the empty `do end`, and a block reached any other way.
             ExprKind::Block(stmts) => {
-                // Compile in a new scope but same block (inline block)
                 self.push_scope(false);
                 let nil_cid = self.constants.intern(ConstantValue::Nil);
-                let mut last_tid = self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
-                for (i, s) in stmts.iter().enumerate() {
-                    let is_last = i + 1 == stmts.len();
-                    match &s.kind {
-                        StmtKind::Expr(e) => {
-                            self.value_used = value_used && is_last;
-                            last_tid = self.compile_expr(e);
-                        }
-                        _ => {
-                            self.stmt_value_used = value_used && is_last;
-                            self.compile_stmt(s);
-                        }
-                    }
-                }
+                let nil = self.emit_term(TermOp::Constant(nil_cid), smallvec![], None);
+                self.compile_stmts(stmts, value_used);
                 self.pop_scope();
-                last_tid
+                let last = self.last_term_in_block.get(&self.current_block);
+                last.copied().unwrap_or(nil)
             }
 
             ExprKind::Lambda { params, body } => {
@@ -775,10 +766,10 @@ impl Compiler {
 
             // Resolve each variant pattern (`Kind.park`) to the tag its value
             // carries; a pattern naming no variant is reported here.
-            let pattern = self.resolve_pattern(&arm.pattern, arm.body.span);
+            let pattern = self.resolve_pattern(&arm.pattern, arm.pattern_span);
 
             // The names the pattern binds.
-            let pattern_vars = Self::extract_pattern_vars(&pattern);
+            let pattern_vars = pattern.bound_names();
 
             // Compile guard if present (with pattern vars in scope)
             let guard_block = arm.guard.as_ref().map(|guard_expr| {
@@ -802,8 +793,7 @@ impl Compiler {
                     c.scope_bind(var_name.clone(), phantom);
                 }
                 c.seed_arm_entry_copies(body_block, &phis);
-                c.value_used = value_used;
-                c.compile_expr(&arm.body);
+                c.compile_arm_body(&arm.body, value_used);
                 c.carry_slots.pop();
             });
 
@@ -813,6 +803,17 @@ impl Compiler {
                 body_block,
             });
         }
+
+        let checked: Vec<match_check::CheckedArm> = arms
+            .iter()
+            .zip(&arm_metas)
+            .map(|(arm, meta)| match_check::CheckedArm {
+                pattern: &meta.pattern,
+                guarded: arm.guard.is_some(),
+                span: arm.pattern_span,
+            })
+            .collect();
+        self.check_match(span, &checked);
 
         let match_tid =
             self.emit_term_with_children(TermOp::Match, smallvec![subj_tid], None, child_blocks);
@@ -832,6 +833,19 @@ impl Compiler {
             self.wire_phi_outs(*body_block, &phis);
         }
         match_tid
+    }
+
+    /// Compile a match arm's body into the current block. A block body is a
+    /// statement list in the arm's own block and scope, exactly as an `if`
+    /// branch is ([`Self::compile_if`]): its last statement is the arm's value.
+    fn compile_arm_body(&mut self, body: &Expr, value_used: bool) {
+        match &body.kind {
+            ExprKind::Block(stmts) if !stmts.is_empty() => self.compile_stmts(stmts, value_used),
+            _ => {
+                self.value_used = value_used;
+                self.compile_expr(body);
+            }
+        }
     }
 
     fn compile_record(&mut self, fields: &[RecordField]) -> TermId {
@@ -1012,29 +1026,6 @@ impl Compiler {
         tid
     }
 
-    fn extract_pattern_vars(pattern: &Pattern) -> Vec<String> {
-        match pattern {
-            Pattern::Wildcard | Pattern::Literal(_) => vec![],
-            Pattern::Variable(name) => vec![name.clone()],
-            Pattern::Variant { fields, .. } => {
-                fields.iter().flat_map(Self::extract_pattern_vars).collect()
-            }
-            Pattern::List { elements, rest } => {
-                let mut vars: Vec<String> = elements
-                    .iter()
-                    .flat_map(Self::extract_pattern_vars)
-                    .collect();
-                if let Some(rest_name) = rest {
-                    vars.push(rest_name.clone());
-                }
-                vars
-            }
-            Pattern::Record(fields) => fields
-                .iter()
-                .flat_map(|(_, p)| Self::extract_pattern_vars(p))
-                .collect(),
-        }
-    }
 }
 
 /// Does this access chain already carry a written `?.` to its left?

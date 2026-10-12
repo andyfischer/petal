@@ -169,7 +169,7 @@ fn succs(code: &[Inst], j: usize) -> SmallVec<[usize; 2]> {
     if code[j].falls_through() {
         out.push((j + 1).min(exit));
     }
-    if let Some(to) = code[j].branch_target() {
+    for to in code[j].targets() {
         out.push((to as usize).min(exit));
     }
     out
@@ -196,11 +196,11 @@ impl Blocks {
         let mut leader = vec![false; n + 1];
         leader[0] = true;
         for (j, inst) in code.iter().enumerate() {
-            let target = inst.branch_target();
-            if let Some(to) = target {
-                leader[(to as usize).min(n)] = true;
+            let targets = inst.targets();
+            for to in &targets {
+                leader[(*to as usize).min(n)] = true;
             }
-            if target.is_some() || !inst.falls_through() {
+            if !targets.is_empty() || !inst.falls_through() {
                 leader[j + 1] = true;
             }
         }
@@ -694,10 +694,10 @@ fn compact(f: &mut BytecodeFn, drop_it: &[bool]) {
             continue;
         }
         let mut inst = f.code[j].clone();
-        if let Some(t) = inst.branch_target_mut() {
+        inst.for_each_target_mut(|t| {
             let old = (*t as usize).min(n);
             *t = new_index[old];
-        }
+        });
         code.push(inst);
         origins.push(f.origins.get(j).copied().flatten());
     }
@@ -729,13 +729,13 @@ fn thread_jumps(f: &mut BytecodeFn) -> usize {
 
     let mut threaded = 0;
     for j in 0..n {
-        if let Some(t) = f.code[j].branch_target_mut() {
+        f.code[j].for_each_target_mut(|t| {
             let resolved = dest[(*t as usize).min(n)];
             if resolved != *t {
                 *t = resolved;
                 threaded += 1;
             }
-        }
+        });
     }
 
     let mut drop_it = vec![false; n];
@@ -790,7 +790,7 @@ mod reference {
         if code[j].falls_through() {
             out.push((j + 1).min(exit));
         }
-        if let Some(to) = code[j].branch_target() {
+        for to in code[j].targets() {
             out.push((to as usize).min(exit));
         }
         out

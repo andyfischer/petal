@@ -28,7 +28,7 @@
 use crate::ast::*;
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
-use crate::parse::{expr_to_assign_target, parse_color_hex};
+use crate::parse::{arrow_arm_body, expr_to_assign_target, parse_color_hex};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
@@ -1148,25 +1148,32 @@ impl Projector {
             None => None,
         };
 
-        let body = if body_node.kind() == SyntaxKind::Block {
+        if body_node.kind() != SyntaxKind::Block {
+            return Err(format!(
+                "match arm body is a {:?}, not a Block",
+                body_node.kind()
+            ));
+        }
+        let stmts = self.block_stmts(body_node)?;
+        let do_tok = direct_tokens(node)
+            .into_iter()
+            .find(|t| matches!(t.token(), Some(Token::Do)));
+        let body = match do_tok {
             // `when pat do … end` — a block expression spanning `do` .. `end`.
-            let do_tok = direct_tokens(node)
-                .into_iter()
-                .find(|t| matches!(t.token(), Some(Token::Do)))
-                .ok_or("match arm block body missing `do`")?;
-            Expr {
-                kind: ExprKind::Block(self.block_stmts(body_node)?),
+            Some(do_tok) => Expr {
+                kind: ExprKind::Block(stmts),
                 span: SourceSpan {
                     start: self.pos_at(do_tok.offset()),
                     end: self.end_of(node)?,
                     file: self.file,
                 },
-            }
-        } else {
-            self.expr(body_node)?
+            },
+            // `when pat -> …` — the statements up to the next arm.
+            None => arrow_arm_body(stmts),
         };
         Ok(MatchArm {
             pattern,
+            pattern_span: self.node_span(pattern_node)?,
             guard,
             body,
         })
@@ -1177,6 +1184,15 @@ impl Projector {
             return Err(format!("expected Pattern node, got {:?}", node.kind()));
         }
         let tokens = direct_tokens(node);
+        // `a | b`: the alternatives are child Pattern nodes, the bars direct
+        // tokens. (No other pattern has a direct `|`.)
+        if tokens.iter().any(|t| matches!(t.token(), Some(Token::Bar))) {
+            let alternatives = child_nodes(node)
+                .iter()
+                .map(|n| self.pattern(n))
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Pattern::Or(alternatives));
+        }
         let first = tokens.first().and_then(|t| t.token().cloned());
         match first {
             Some(Token::Ident(name)) if name == "_" => Ok(Pattern::Wildcard),

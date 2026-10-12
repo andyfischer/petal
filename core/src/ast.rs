@@ -175,6 +175,10 @@ pub enum ElseBranch {
 #[derive(Debug, Clone, Serialize)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    /// Where the pattern is written — what a diagnostic about the pattern
+    /// (an unknown variant, an unreachable arm) points at.
+    #[serde(skip)]
+    pub pattern_span: SourceSpan,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guard: Option<Expr>,
     pub body: Expr,
@@ -196,6 +200,62 @@ pub enum Pattern {
         rest: Option<String>,
     },
     Record(Vec<(String, Pattern)>),
+    /// `a | b | c`: matches what any alternative matches, trying them left to
+    /// right. Every alternative binds the same names (the compiler checks),
+    /// so the names an or-pattern binds are those of its first alternative.
+    Or(Vec<Pattern>),
+}
+
+impl Pattern {
+    /// The names this pattern binds, in the order they are written. An
+    /// or-pattern contributes its first alternative's names: the others bind
+    /// the same set.
+    pub fn bound_names(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.collect_bound_names(&mut out);
+        out
+    }
+
+    fn collect_bound_names(&self, out: &mut Vec<String>) {
+        match self {
+            Pattern::Wildcard | Pattern::Literal(_) => {}
+            Pattern::Variable(name) => out.push(name.clone()),
+            Pattern::Variant { fields, .. } => {
+                fields.iter().for_each(|f| f.collect_bound_names(out));
+            }
+            Pattern::List { elements, rest } => {
+                elements.iter().for_each(|e| e.collect_bound_names(out));
+                out.extend(rest.iter().cloned());
+            }
+            Pattern::Record(fields) => {
+                fields.iter().for_each(|(_, p)| p.collect_bound_names(out));
+            }
+            Pattern::Or(alts) => {
+                if let Some(first) = alts.first() {
+                    first.collect_bound_names(out);
+                }
+            }
+        }
+    }
+
+    /// The alternatives of the pattern's top level: the pattern itself, or
+    /// the members of an or-pattern, flattened.
+    pub fn alternatives(&self) -> Vec<&Pattern> {
+        match self {
+            Pattern::Or(alts) => alts.iter().flat_map(Pattern::alternatives).collect(),
+            other => vec![other],
+        }
+    }
+
+    /// Whether the pattern matches every value: `_`, a binding, or an
+    /// or-pattern with such an alternative.
+    pub fn is_irrefutable(&self) -> bool {
+        match self {
+            Pattern::Wildcard | Pattern::Variable(_) => true,
+            Pattern::Or(alts) => alts.iter().any(Pattern::is_irrefutable),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1850,9 +1850,9 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **ElseBranch**: `{"Block": Stmt[]}`, `{"ElseIf": Expr}`
 
-**MatchArm**: `{"pattern": Pattern, "guard": Expr (omitted when unguarded), "body": Expr}`
+**MatchArm**: `{"pattern": Pattern, "guard": Expr (omitted when unguarded), "body": Expr}` — `body` is the arm's expression, or a `Block` of its statements when it has more than one
 
-**Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[] (omitted when empty)}}`, `{"List": {"elements": Pattern[], "rest": string (omitted when there is no `...rest`)}}`, `{"Record": [string, Pattern][]}` — the same encoding the IR JSON's `match_arms` uses (see [ir-as-target.md](dev/ir-as-target.md))
+**Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[] (omitted when empty)}}`, `{"List": {"elements": Pattern[], "rest": string (omitted when there is no `...rest`)}}`, `{"Record": [string, Pattern][]}`, `{"Or": Pattern[]}` — the same encoding the IR JSON's `match_arms` uses (see [ir-as-target.md](dev/ir-as-target.md))
 
 **EnumVariant**: `{"name": string, "fields": string[] (omitted when empty)}`
 

@@ -24,9 +24,12 @@ use std::sync::Arc;
 use smallvec::SmallVec;
 
 use super::escape::InPlaceSet;
-use super::isa::{BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg};
+use super::isa::{
+    BytecodeFn, BytecodeProgram, Inst, LoopSlot, Reg, SwitchCase, SwitchKey, SwitchTable,
+};
+use crate::ast::{Literal, Pattern};
 use crate::constant_table::ConstantId;
-use crate::program::{BlockId, FunctionDef, Program, Term, TermId, TermOp};
+use crate::program::{BlockId, FunctionDef, MatchArmMeta, Program, Term, TermId, TermOp};
 use crate::record::{FieldCache, Key, Shape};
 
 /// Record literal shapes by field-name list, so literals with the same
@@ -52,7 +55,7 @@ struct LoopCtx {
 /// baseline / oracle). Equivalent to `lower_program_opt` with an empty
 /// in-place set.
 pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
-    lower_program_opt(program, &InPlaceSet::default())
+    lower_program_opt(program, &InPlaceSet::default(), false)
 }
 
 /// Lower a whole program to bytecode, emitting in-place mutation opcodes for the
@@ -60,18 +63,25 @@ pub fn lower_program(program: &Program) -> Result<BytecodeProgram, String> {
 /// the first op that cannot yet be lowered (so `ShowBytecode` surfaces progress
 /// honestly). With `InPlaceSet::default()` (empty) the output is identical to
 /// the un-optimized backend, so "bytecode with opts off" stays a clean oracle.
+///
+/// `match_dispatch` enters runs of literal and variant `match` arms through a
+/// jump table ([`Inst::MatchSwitch`]); off, every arm is tested in turn.
 pub fn lower_program_opt(
     program: &Program,
     in_place: &InPlaceSet,
+    match_dispatch: bool,
 ) -> Result<BytecodeProgram, String> {
     let mut match_binds = HashMap::new();
     let shapes = RefCell::new(ShapeTable::default());
-    let (root, root_binds) =
-        FnLowerer::new(program, None, program.root_block, in_place, &shapes).lower()?;
+    let mut root = FnLowerer::new(program, None, program.root_block, in_place, &shapes);
+    root.match_dispatch = match_dispatch;
+    let (root, root_binds) = root.lower()?;
     match_binds.extend(root_binds);
     let mut fns = Vec::with_capacity(program.functions.len());
     for func in &program.functions {
-        let (bf, binds) = FnLowerer::for_function(program, func, in_place, &shapes).lower()?;
+        let mut lowerer = FnLowerer::for_function(program, func, in_place, &shapes);
+        lowerer.match_dispatch = match_dispatch;
+        let (bf, binds) = lowerer.lower()?;
         match_binds.extend(binds);
         fns.push(bf);
     }
@@ -91,6 +101,8 @@ struct FnLowerer<'p> {
     func: Option<&'p FunctionDef>,
     /// Mutation terms escape analysis proved safe to lower in place (M4).
     in_place: &'p InPlaceSet,
+    /// Whether runs of keyed match arms get a jump table (`emit_match`).
+    match_dispatch: bool,
     /// Record literal shapes, shared by every function of the program.
     shapes: &'p RefCell<ShapeTable>,
     /// The function's entry block (root block, or the def's `body_block`).
@@ -133,6 +145,7 @@ impl<'p> FnLowerer<'p> {
             program,
             func,
             in_place,
+            match_dispatch: false,
             shapes,
             entry_block,
             blocks: Vec::new(),
@@ -789,6 +802,7 @@ impl<'p> FnLowerer<'p> {
 
     /// `match subject when P1 -> B1 … end` →
     /// ```text
+    ///       [match_switch subject, {key -> arm/body, …}, miss=<after the run>]
     /// arm0: match_arm subject, term, 0, next=arm1   // bind on match, else -> arm1
     ///       [<guard0>; jump_if_false gres -> arm1]
     ///       <B0>; <B0.phi_outs>; dst = <B0 result>; jump -> end
@@ -799,6 +813,10 @@ impl<'p> FnLowerer<'p> {
     /// `MatchArm` runs the shared `match_pattern` and writes captures into the
     /// precomputed flat registers; a present guard block is emitted inline and
     /// its result drives a `JumpIfFalse` to the next arm.
+    ///
+    /// A run of arms keyed on literals and variants is entered through a
+    /// `MatchSwitch` ([`switch_runs`]). The arms themselves are emitted as
+    /// always: the switch only chooses where in them to start.
     fn emit_match(&mut self, term: &Term) -> Result<(), String> {
         let subject = self.flat(term.inputs[0])?;
         let dst = self.flat(term.id)?;
@@ -808,25 +826,48 @@ impl<'p> FnLowerer<'p> {
             cond: subject,
             to: 0,
         });
-        let arms: Vec<(BlockId, Option<BlockId>)> = self
-            .program
+        let program: &'p Program = self.program;
+        let metas = program
             .match_arms
             .get(&term.id)
-            .ok_or("Match: no arm metadata")?
-            .iter()
-            .map(|a| (a.body_block, a.guard_block))
-            .collect();
+            .ok_or("Match: no arm metadata")?;
+        let arms: Vec<(BlockId, Option<BlockId>)> =
+            metas.iter().map(|a| (a.body_block, a.guard_block)).collect();
+        let runs = if self.match_dispatch {
+            switch_runs(metas)
+        } else {
+            Vec::new()
+        };
 
         // Jumps to the *next* arm (from a failed pattern test or guard) awaiting
         // the next arm's label; and jumps to `end` from each taken arm.
         let mut to_next: Vec<usize> = Vec::new();
         let mut to_end: Vec<usize> = Vec::new();
+        // The switch of the run being emitted, and each emitted arm's labels:
+        // its `MatchArm`, and the first instruction of its body.
+        let mut open_switch: Option<(usize, &SwitchRun)> = None;
+        let mut labels: Vec<(u32, u32)> = Vec::with_capacity(arms.len());
 
         for (k, (body_block, guard_block)) in arms.iter().enumerate() {
+            if let Some((at, run)) = open_switch.take_if(|(_, run)| run.arms.end == k) {
+                let table = run.table(&labels, self.here());
+                self.code[at] = Inst::MatchSwitch { subject, table };
+            }
+            // A switch stands where the arm before the run sends a subject it
+            // did not match, so it is that arm's `next`.
             let arm_label = self.here();
             for j in to_next.drain(..) {
                 self.patch(j, arm_label);
             }
+            if let Some(run) = runs.iter().find(|run| run.arms.start == k) {
+                self.cur_origin = Some(term.id);
+                let at = self.push(Inst::MatchSwitch {
+                    subject,
+                    table: Box::new(SwitchTable::new(Vec::new(), 0)),
+                });
+                open_switch = Some((at, run));
+            }
+            let test_label = self.here();
             let ma = self.emit_placeholder(Inst::MatchArm {
                 subject,
                 term: term.id,
@@ -835,6 +876,7 @@ impl<'p> FnLowerer<'p> {
                 dst,
             });
             to_next.push(ma);
+            labels.push((test_label, self.here()));
             // Bindings must reach both the guard block and the body block —
             // each has its own registers for the captured names (the graph
             // engine applies bindings to each block separately).
@@ -861,6 +903,10 @@ impl<'p> FnLowerer<'p> {
         let fail_label = self.here();
         for j in to_next.drain(..) {
             self.patch(j, fail_label);
+        }
+        if let Some((at, run)) = open_switch {
+            let table = run.table(&labels, fail_label);
+            self.code[at] = Inst::MatchSwitch { subject, table };
         }
         // Recursion into arm bodies moved cur_origin; restore it so a no-match
         // error points at the match term.
@@ -1164,6 +1210,88 @@ impl<'p> FnLowerer<'p> {
     }
 }
 
+/// A run of consecutive match arms a [`Inst::MatchSwitch`] can enter: every
+/// alternative of every arm is a string literal, an int literal or an enum
+/// variant.
+struct SwitchRun {
+    arms: std::ops::Range<usize>,
+    /// `(arm, key, whole)` for each alternative, in source order. `whole`
+    /// says the key alone decides the arm (see [`SwitchCase::whole`]).
+    keys: Vec<(usize, SwitchKey, bool)>,
+}
+
+/// Fewer keys than this and the run is left as a chain of tests.
+const MIN_SWITCH_KEYS: usize = 2;
+
+impl SwitchRun {
+    /// The run's jump table, given each arm's `(test, body)` labels and the
+    /// label of whatever follows the run.
+    fn table(&self, labels: &[(u32, u32)], miss: u32) -> Box<SwitchTable> {
+        let cases = self
+            .keys
+            .iter()
+            .map(|(arm, key, whole)| {
+                let (test, body) = labels[*arm];
+                SwitchCase {
+                    key: key.clone(),
+                    to: if *whole { body } else { test },
+                    whole: *whole,
+                }
+            })
+            .collect();
+        Box::new(SwitchTable::new(cases, miss))
+    }
+}
+
+/// The key one pattern alternative is switched on, and whether a subject
+/// with that key is certain to match the alternative.
+fn switch_key(alternative: &Pattern) -> Option<(SwitchKey, bool)> {
+    match alternative {
+        Pattern::Literal(Literal::String(s)) => Some((SwitchKey::Str(s.clone()), true)),
+        Pattern::Literal(Literal::Int(n)) => Some((SwitchKey::Int(*n), true)),
+        Pattern::Variant { name, fields } => {
+            Some((SwitchKey::Variant(name.clone()), fields.is_empty()))
+        }
+        _ => None,
+    }
+}
+
+/// Split a match's arms into the runs worth a jump table. An arm with any
+/// other kind of pattern — a binding, a float, a list — ends a run: it has to
+/// be tried in its place, between the arms before it and the arms after.
+fn switch_runs(arms: &[MatchArmMeta]) -> Vec<SwitchRun> {
+    let mut runs: Vec<SwitchRun> = Vec::new();
+    let mut open: Option<SwitchRun> = None;
+    for (k, arm) in arms.iter().enumerate() {
+        let keys: Option<Vec<(SwitchKey, bool)>> =
+            arm.pattern.alternatives().into_iter().map(switch_key).collect();
+        match keys {
+            Some(keys) => {
+                let run = open.get_or_insert(SwitchRun {
+                    arms: k..k,
+                    keys: Vec::new(),
+                });
+                run.arms.end = k + 1;
+                let unguarded = arm.guard_block.is_none();
+                run.keys
+                    .extend(keys.into_iter().map(|(key, sure)| (k, key, sure && unguarded)));
+            }
+            None => runs.extend(open.take()),
+        }
+    }
+    runs.extend(open);
+    runs.retain(|run| {
+        let mut distinct: Vec<&SwitchKey> = Vec::new();
+        for (_, key, _) in &run.keys {
+            if !distinct.contains(&key) {
+                distinct.push(key);
+            }
+        }
+        distinct.len() >= MIN_SWITCH_KEYS
+    });
+    runs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1250,6 +1378,103 @@ mod tests {
                 .any(|i| matches!(i, Inst::MatchArm { .. })),
             "expected MatchArm ops in the lowered match"
         );
+    }
+
+    /// The switch of the program's one match, lowered with dispatch on.
+    fn switch_of(src: &str) -> (Vec<Inst>, SwitchTable) {
+        let program = compile(src);
+        let bc = lower_program_opt(&program, &InPlaceSet::default(), true).expect("lower");
+        let table = bc
+            .root
+            .code
+            .iter()
+            .find_map(|i| match i {
+                Inst::MatchSwitch { table, .. } => Some((**table).clone()),
+                _ => None,
+            })
+            .expect("expected a MatchSwitch in the lowered match");
+        (bc.root.code, table)
+    }
+
+    #[test]
+    fn literal_arms_lower_to_a_switch_over_the_same_arms() {
+        let src = "let x = match \"b\"\n  when \"a\" -> 1\n  when \"b\" | \"c\" -> 2\n  \
+                   when \"a\" -> 3\n  when 7 if false -> 4\n  when _ -> 5\nend";
+        let (code, table) = switch_of(src);
+        // One case per distinct key, each pointing at the first arm naming it.
+        let keys: Vec<&SwitchKey> = table.cases.iter().map(|c| &c.key).collect();
+        assert_eq!(
+            keys,
+            [
+                &SwitchKey::Str("a".into()),
+                &SwitchKey::Str("b".into()),
+                &SwitchKey::Str("c".into()),
+                &SwitchKey::Int(7),
+            ]
+        );
+        let arm_at = |label: u32| match &code[label as usize] {
+            Inst::MatchArm { arm, .. } => Some(*arm),
+            _ => None,
+        };
+        // An unguarded literal lands in its arm's body, just past the test; a
+        // guarded one on the test itself, which still has the guard to run.
+        assert!(table.cases[0].whole && arm_at(table.cases[0].to - 1) == Some(0));
+        assert!(table.cases[1].whole && arm_at(table.cases[1].to - 1) == Some(1));
+        assert_eq!(table.cases[1].to, table.cases[2].to);
+        assert!(!table.cases[3].whole && arm_at(table.cases[3].to) == Some(3));
+        // A miss goes to the arm after the run: the wildcard.
+        assert_eq!(arm_at(table.miss), Some(4));
+        assert_eq!(table.str_target("zz"), table.miss);
+        assert_eq!(table.int_target(8), table.miss);
+        assert_eq!(table.str_target("c"), table.cases[2].to);
+        // The arms are all still there, in order, behind the switch.
+        let arms: Vec<u16> = code
+            .iter()
+            .filter_map(|i| match i {
+                Inst::MatchArm { arm, .. } => Some(*arm),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(arms, [0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn a_variant_case_that_skips_its_test_wants_an_empty_payload() {
+        let src = "enum K\n  a,\n  b(n),\nend\nlet x = match K.a\n  when K.a -> 1\n  \
+                   when K.b(n) -> n\nend";
+        let (_, table) = switch_of(src);
+        let a = table.cases[0].to;
+        let b = table.cases[1].to;
+        assert_eq!(table.variant_target("K.a", true), Some(a));
+        // A host-built `K.a` with a payload is not what `when K.a` describes:
+        // the arms decide.
+        assert_eq!(table.variant_target("K.a", false), None);
+        // The payload arm tests for itself, whatever the payload.
+        assert_eq!(table.variant_target("K.b", false), Some(b));
+        assert_eq!(table.variant_target("K.c", true), Some(table.miss));
+    }
+
+    #[test]
+    fn dispatch_is_off_unless_asked_for_and_needs_two_keys() {
+        let two = "let x = match 1\n  when 1 -> \"a\"\n  when 2 -> \"b\"\n  when _ -> \"c\"\nend";
+        let has_switch = |bc: &BytecodeProgram| {
+            bc.root
+                .code
+                .iter()
+                .any(|i| matches!(i, Inst::MatchSwitch { .. }))
+        };
+        assert!(!has_switch(&lower_program(&compile(two)).expect("lower")));
+        let on = |src: &str| {
+            lower_program_opt(&compile(src), &InPlaceSet::default(), true).expect("lower")
+        };
+        assert!(has_switch(&on(two)));
+        let one = "let x = match 1\n  when 1 -> \"a\"\n  when _ -> \"c\"\nend";
+        assert!(!has_switch(&on(one)));
+        // A float literal or a binding is not keyed, and splits the arms
+        // around it into runs too short to be worth a table.
+        let split = "let x = match 1\n  when 1 -> \"a\"\n  when 2.5 -> \"b\"\n  \
+                     when 2 -> \"c\"\n  when n -> \"d\"\nend";
+        assert!(!has_switch(&on(split)));
     }
 
     #[test]

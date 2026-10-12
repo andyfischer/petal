@@ -576,18 +576,7 @@ impl ExprVisitor for Walker<'_> {
 
 /// Record every name `pattern` binds.
 fn bind_pattern(pattern: &Pattern, out: &mut BTreeSet<String>) {
-    match pattern {
-        Pattern::Wildcard | Pattern::Literal(_) => {}
-        Pattern::Variable(name) => {
-            out.insert(name.clone());
-        }
-        Pattern::Variant { fields, .. } => fields.iter().for_each(|p| bind_pattern(p, out)),
-        Pattern::List { elements, rest } => {
-            elements.iter().for_each(|p| bind_pattern(p, out));
-            out.extend(rest.clone());
-        }
-        Pattern::Record(fields) => fields.iter().for_each(|(_, p)| bind_pattern(p, out)),
-    }
+    out.extend(pattern.bound_names());
 }
 
 #[cfg(test)]

@@ -105,6 +105,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::Colon => op(":"),
         Token::At => op("@"),
         Token::Pipe => op("|>"),
+        Token::Bar => op("|"),
         Token::Arrow => op("->"),
         Token::DotDot => op(".."),
         Token::DotDotDot => op("..."),
@@ -338,6 +339,7 @@ impl Parser {
                 | Token::Or
                 | Token::DoubleQuestion
                 | Token::Pipe
+                | Token::Bar
         )
     }
 
@@ -360,6 +362,7 @@ impl Parser {
                 | Token::Do
                 | Token::In
                 | Token::Pipe
+                | Token::Bar
         )
     }
 
@@ -2250,8 +2253,17 @@ impl Parser {
 
     fn parse_match_arm(&mut self) -> Result<MatchArm, String> {
         self.ev_open(SyntaxKind::MatchArm);
+        if matches!(self.peek(), Token::Else | Token::Elsif) {
+            return Err(self.error_at_current(format!(
+                "Expected `when`, got {} — a `match` has no `else` arm; the arm for \
+                 everything else is `when _ -> …`",
+                token_desc(self.peek())
+            )));
+        }
         self.expect(&Token::When)?;
+        let pattern_start = self.pos;
         let pattern = self.parse_pattern()?;
+        let pattern_span = self.span_from(pattern_start);
         let guard = if matches!(self.peek(), Token::If) {
             self.advance();
             Some(self.parse_expr()?)
@@ -2266,19 +2278,50 @@ impl Parser {
             self.mk_expr(ExprKind::Block(stmts), start)
         } else {
             self.expect(&Token::Arrow)?;
-            self.skip_newlines();
-            self.parse_expr()?
+            // The body is a statement list, like an `if` branch: it runs to
+            // the next `when` of this match or to the match's `end`. A nested
+            // construct consumes its own `when`s and `end`.
+            let stmts =
+                self.parse_block_until(&[Token::When, Token::End, Token::Else, Token::Elsif])?;
+            if stmts.is_empty() {
+                return Err(self.error_at_current(format!(
+                    "Expected the arm's body after '->', got {} (an arm that does nothing \
+                     is written `-> nil`)",
+                    token_desc(self.peek())
+                )));
+            }
+            arrow_arm_body(stmts)
         };
-        self.ev_close(); // MatchArm — before the trailing newlines between arms
+        self.ev_close(); // MatchArm
         self.skip_newlines();
         Ok(MatchArm {
             pattern,
+            pattern_span,
             guard,
             body,
         })
     }
 
+    /// A pattern: one alternative, or several separated by `|`.
     fn parse_pattern(&mut self) -> Result<Pattern, String> {
+        let cp = self.ev_checkpoint();
+        let first = self.parse_pattern_alternative()?;
+        // Like any binary operator, `|` may end a line or begin the next.
+        if !self.at_binary_op(&[Token::Bar]) {
+            return Ok(first);
+        }
+        let mut alternatives = vec![first];
+        while self.at_binary_op(&[Token::Bar]) {
+            self.advance();
+            self.skip_newlines();
+            alternatives.push(self.parse_pattern_alternative()?);
+        }
+        // An or-pattern is a Pattern node whose children are its alternatives.
+        self.ev_wrap(cp, SyntaxKind::Pattern);
+        Ok(Pattern::Or(alternatives))
+    }
+
+    fn parse_pattern_alternative(&mut self) -> Result<Pattern, String> {
         self.ev_open(SyntaxKind::Pattern);
         let pattern = self.parse_pattern_inner()?;
         self.ev_close();
@@ -2727,6 +2770,29 @@ pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
             ("a", parse2(b[6], b[7])),
         ],
         _ => unreachable!("lexer validates hex length"),
+    }
+}
+
+/// The body of a `when pattern -> …` arm, from the statements written after
+/// the arrow. One expression is the arm's body as it stands; anything else is
+/// a block, spanning its first statement through its last.
+///
+/// Shared by the parser and the CST projection, which must agree.
+pub(crate) fn arrow_arm_body(mut stmts: Vec<Stmt>) -> Expr {
+    if stmts.len() == 1 && matches!(stmts[0].kind, StmtKind::Expr(_)) {
+        let StmtKind::Expr(expr) = stmts.remove(0).kind else {
+            unreachable!("just matched an expression statement");
+        };
+        return expr;
+    }
+    let (first, last) = (stmts[0].span, stmts[stmts.len() - 1].span);
+    Expr {
+        kind: ExprKind::Block(stmts),
+        span: SourceSpan {
+            start: first.start,
+            end: last.end,
+            file: first.file,
+        },
     }
 }
 

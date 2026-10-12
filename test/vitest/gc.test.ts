@@ -62,6 +62,7 @@ for i in range(0, 2000) do
 end
 match c
   when Color.Green -> print("green")
+  when _ -> print("not green")
 end`;
     const out = runPetal(code);
     expect(out).toBe("green");

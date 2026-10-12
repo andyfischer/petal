@@ -410,15 +410,7 @@ impl<'a> Uses<'a> {
     }
 
     fn binds(&self, p: &Pattern) -> bool {
-        match p {
-            Pattern::Wildcard | Pattern::Literal(_) => false,
-            Pattern::Variable(v) => v == self.name,
-            Pattern::Variant { fields, .. } => fields.iter().any(|f| self.binds(f)),
-            Pattern::List { elements, rest } => {
-                elements.iter().any(|e| self.binds(e)) || rest.as_deref() == Some(self.name)
-            }
-            Pattern::Record(fields) => fields.iter().any(|(_, f)| self.binds(f)),
-        }
+        p.bound_names().iter().any(|n| n == self.name)
     }
 
     /// Is the name written as a whole word at char offset `at`?

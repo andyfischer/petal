@@ -78,6 +78,7 @@ pub enum Token {
     Colon,
     At,        // @ — in-out argument marker (see ast::ExprKind::AtVar)
     Pipe,      // |>
+    Bar,       // | — separates the alternatives of an or-pattern
     Arrow,     // ->
     DotDot,    // ..
     DotDotDot, // ...
@@ -175,6 +176,7 @@ impl Token {
             Token::Colon => "Colon",
             Token::At => "At",
             Token::Pipe => "Pipe",
+            Token::Bar => "Bar",
             Token::Arrow => "Arrow",
             Token::DotDot => "DotDot",
             Token::DotDotDot => "DotDotDot",
@@ -758,10 +760,8 @@ impl Lexer {
                     self.advance_n(2);
                     self.push_token(Token::Pipe, start);
                 } else {
-                    return Err(format!(
-                        "Unexpected character '|' [line {}, column {}]",
-                        self.line, self.col
-                    ));
+                    self.advance_n(1);
+                    self.push_token(Token::Bar, start);
                 }
             }
             '?' => {
@@ -1567,6 +1567,23 @@ mod tests {
     fn lex_arrow_and_pipe() {
         let tokens = tokenize("-> |>");
         assert_eq!(tokens, vec![Token::Arrow, Token::Pipe]);
+    }
+
+    #[test]
+    fn lex_bar() {
+        let tokens = tokenize("a | b || c |> d");
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Ident("a".into()),
+                Token::Bar,
+                Token::Ident("b".into()),
+                Token::Or,
+                Token::Ident("c".into()),
+                Token::Pipe,
+                Token::Ident("d".into()),
+            ]
+        );
     }
 
     #[test]

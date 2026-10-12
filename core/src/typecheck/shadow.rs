@@ -101,17 +101,8 @@ impl ShadowWalker<'_> {
     }
 
     fn bind_pattern(&mut self, pattern: &Pattern) {
-        match pattern {
-            Pattern::Wildcard | Pattern::Literal(_) => {}
-            Pattern::Variable(name) => self.bind_other(name),
-            Pattern::Variant { fields, .. } => fields.iter().for_each(|p| self.bind_pattern(p)),
-            Pattern::List { elements, rest } => {
-                elements.iter().for_each(|p| self.bind_pattern(p));
-                if let Some(rest) = rest {
-                    self.bind_other(rest);
-                }
-            }
-            Pattern::Record(fields) => fields.iter().for_each(|(_, p)| self.bind_pattern(p)),
+        for name in pattern.bound_names() {
+            self.bind_other(&name);
         }
     }
 

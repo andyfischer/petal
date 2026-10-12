@@ -68,6 +68,11 @@ pub struct OptFlags {
     /// (`bytecode::copyprop`). Lowering emits a move per variable use and per
     /// phi edge, which is about half of a typical program's instructions.
     pub copy_propagation: bool,
+    /// Enter a run of `match` arms keyed on string literals, int literals or
+    /// enum variants through a jump table (`Inst::MatchSwitch`) instead of
+    /// testing them one after another. With it off the arms are the plain
+    /// chain of tests, which is the oracle the table is held to.
+    pub match_dispatch: bool,
     /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
     /// **named**, so the observation buffer still reports that binding. Set by
     /// `Env` when the observation buffer or the `explain` trace is enabled;
@@ -95,6 +100,7 @@ impl OptFlags {
             in_place_straight_line: false,
             in_place_cells: false,
             copy_propagation: false,
+            match_dispatch: false,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -107,6 +113,7 @@ impl OptFlags {
             in_place_straight_line: true,
             in_place_cells: true,
             copy_propagation: true,
+            match_dispatch: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -127,6 +134,7 @@ impl OptFlags {
             in_place_straight_line: true,
             in_place_cells: true,
             copy_propagation: true,
+            match_dispatch: true,
             preserve_observations: false,
             preserve_trace: false,
         }

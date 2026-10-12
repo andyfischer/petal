@@ -464,27 +464,8 @@ impl<'a> AssignedNames<'a> {
 
     /// Declare every name a match pattern binds.
     fn bind_pattern(&mut self, p: &Pattern) {
-        match p {
-            Pattern::Variable(n) => self.bind(n),
-            Pattern::Variant { fields, .. } => {
-                for f in fields {
-                    self.bind_pattern(f);
-                }
-            }
-            Pattern::List { elements, rest } => {
-                for e in elements {
-                    self.bind_pattern(e);
-                }
-                if let Some(r) = rest {
-                    self.bind(r);
-                }
-            }
-            Pattern::Record(fields) => {
-                for (_, p) in fields {
-                    self.bind_pattern(p);
-                }
-            }
-            Pattern::Wildcard | Pattern::Literal(_) => {}
+        for name in p.bound_names() {
+            self.bind(&name);
         }
     }
 }

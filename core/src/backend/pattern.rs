@@ -34,6 +34,16 @@ pub fn match_pattern(
             _ => false,
         },
 
+        Pattern::Or(alternatives) => {
+            // First alternative that matches wins; a failed one leaves no
+            // captures behind.
+            let mark = bindings.len();
+            alternatives.iter().any(|alt| {
+                bindings.truncate(mark);
+                match_pattern(alt, value, heap, bindings)
+            })
+        }
+
         Pattern::Variable(name) => {
             // Pure variable binding — always matches and captures the value.
             // (Known enum variant names are resolved to Pattern::Variant by the

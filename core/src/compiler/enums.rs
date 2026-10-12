@@ -395,6 +395,12 @@ impl Compiler {
         }
     }
 
+    /// The variant names of the enum `enum_name`, in declaration order.
+    pub(super) fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
+        let info = self.enum_defs.get(enum_name)?;
+        Some(info.def.variants.iter().map(|v| v.name.clone()).collect())
+    }
+
     fn enum_variant_def(&self, enum_name: &str, variant: &str) -> Option<EnumVariantDef> {
         self.enum_defs.get(enum_name)?.def.variant(variant).cloned()
     }
@@ -501,6 +507,12 @@ impl Compiler {
                 fields
                     .iter()
                     .map(|(k, p)| (k.clone(), self.resolve_pattern(p, span)))
+                    .collect(),
+            ),
+            Pattern::Or(alternatives) => Pattern::Or(
+                alternatives
+                    .iter()
+                    .map(|a| self.resolve_pattern(a, span))
                     .collect(),
             ),
             Pattern::Wildcard | Pattern::Literal(_) | Pattern::Variable(_) => pattern.clone(),

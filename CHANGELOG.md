@@ -45,6 +45,11 @@ way, for code written against an earlier checkout.
   `Color.custom(1, 2, 3)`, `when Color.red ->`), may carry payload fields and
   `key: expr` constant data (`park(shape: "area")`, read as `k.shape`), and
   answer `k.name`, `type(k)`, `Kind.all` and `Kind.from("park")`.
+- `match` is the control-flow statement as well as an expression: an arm's
+  body after `->` is a statement list (to the next `when` or the match's
+  `end`), `when a | b ->` matches either alternative, a match over the
+  variants of one enum must cover them all or it does not compile, and
+  `petal check` warns about an arm that can never run.
 - Optional type annotations on `let`, `state`, parameters and return values,
   including `num` (int or float). Programs can be typed, untyped or mixed.
 - Native value types for creative coding: `vec2`, `vec3`, colors, and a flat
@@ -74,6 +79,9 @@ way, for code written against an earlier checkout.
 - A bytecode VM is the only execution engine. It has a frame pool, copy
   propagation, record shapes with an inline cache for field reads, and a
   straight-line fast path for the hot instructions.
+- A `match` on string literals, int literals or enum variants is entered
+  through a jump table, so its cost does not grow with the number of arms
+  (a 40-arm match in a loop runs about five times faster).
 - Escape and last-use analyses turn value-semantic updates into in-place writes
   (loop accumulators, `state`-backed containers, `var` cells).
 - A generational heap with a mark-and-sweep collector paced by bytes allocated.
@@ -378,6 +386,12 @@ Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
 
+- A `match` whose arms are all variants of one enum is now a compile error
+  unless it has an arm for every variant or a catch-all (`when _ ->`). A
+  guarded arm, or one whose payload patterns can fail, does not cover its
+  variant. Add the missing arms or the catch-all. A single `|` is now a token
+  (the or-pattern separator) and a `when … ->` arm with nothing after the
+  arrow is a parse error.
 - Enum variants are no longer top-level names. Write `Color.red` where a bare
   `red` used to resolve, in expressions and in `match` patterns
   (`when Color.custom(r, g, b) ->`); a bare name is now undefined, and the

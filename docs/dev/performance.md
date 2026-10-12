@@ -194,7 +194,7 @@ Two consequences:
 ## What the optimizer does
 
 Lowering (`backend::bytecode::lower`) gives every IR term its own register, so
-the raw instruction stream is roughly half register-to-register copies. Four
+the raw instruction stream is roughly half register-to-register copies. Five
 passes then shape it, each individually switchable through
 [`OptFlags`](../../core/src/backend/mod.rs) so any one can be turned off to
 isolate a bug. `OptFlags` is the lowering half of a run's
@@ -207,6 +207,7 @@ frame gating:
 | `lastuse` (route A) | The same for straight-line mutation of a freshly allocated, dead-after container. |
 | `cells` | Lets a write through a `var` cell (`set xs[i] = v`, including from a function that did not declare the cell) mutate the cell's container whenever the cell is its only holder, which the heap tracks per cell at run time. See [var.md](../var.md#writing-a-container-in-place). |
 | `copyprop` | Copy propagation, dead-move elimination, and jump threading. Removes ~25% of the instruction stream. |
+| `match_dispatch` | Enters a run of `match` arms keyed on string literals, int literals or enum variants through a jump table (`MatchSwitch`) instead of testing each arm in turn. See below. |
 
 `copyprop` has two deliberate limitations, both of them "do not delete what
 something is reading".
@@ -229,6 +230,36 @@ Both are part of the bytecode cache key, so switching a facility on re-lowers
 rather than reusing code compiled without the guard. Observation costs about 15%
 on top of its own recording overhead, and the trace guard more, since it saves
 strictly more instructions. Toggle them between runs, never inside one.
+
+
+### Match dispatch
+
+A `match` lowers to one `MatchArm` test per arm, tried in order. For a run of
+consecutive arms whose every alternative is a string literal, an int literal
+or an enum variant, lowering puts a `MatchSwitch` in front of the run: a hash
+table from each key to the first arm of the run that names it. A string, int
+or variant subject jumps straight there, or past the run when no arm names it.
+An arm that still has something to decide (a guard, a payload pattern) is
+entered at its own test, which falls through to the following arms as before.
+Any other subject (a float that an int literal may equal, say) skips the table
+and takes the arms in order. An arm with any other pattern ends the run. The
+chain of tests stays in the code, so the table changes where a match starts
+and never what it finds: first match wins either way. With the optimizer off
+there is no table, which is what the differential tests compare against.
+
+`test/benchmarks/match_dispatch.ptl` runs a 40-arm match a million times on
+each kind of key (release build, this machine, median of 5):
+
+| | chain of tests | jump table |
+|---|---|---|
+| 40 string arms, 1M matches | 0.48 s | 0.10 s |
+| 40 int arms, 1M matches | 0.47 s | 0.09 s |
+| 40 payload-free variant arms, 1M matches | 0.49 s | 0.10 s |
+| the same loop and call with no match | 0.07 s | 0.07 s |
+| `match_dispatch.ptl` (all three) | 1.45 s | 0.30 s |
+
+Per match that is about 410 ns down to about 30 ns, and it no longer grows
+with the number of arms.
 
 ## Where the remaining headroom is
 

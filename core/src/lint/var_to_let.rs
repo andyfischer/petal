@@ -291,17 +291,8 @@ impl<'a> Uses<'a> {
     }
 
     fn pattern(&mut self, p: &Pattern) {
-        match p {
-            Pattern::Wildcard | Pattern::Literal(_) => {}
-            Pattern::Variable(v) => self.rebinds(v),
-            Pattern::Variant { fields, .. } => fields.iter().for_each(|f| self.pattern(f)),
-            Pattern::List { elements, rest } => {
-                elements.iter().for_each(|e| self.pattern(e));
-                if let Some(r) = rest {
-                    self.rebinds(r);
-                }
-            }
-            Pattern::Record(fields) => fields.iter().for_each(|(_, f)| self.pattern(f)),
+        for name in p.bound_names() {
+            self.rebinds(&name);
         }
     }
 

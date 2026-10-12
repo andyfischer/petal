@@ -326,7 +326,7 @@ fn push_succs(inst: &Inst, j: usize, exit: usize, out: &mut Vec<usize>) {
     if inst.falls_through() {
         out.push((j + 1).min(exit));
     }
-    if let Some(to) = inst.branch_target() {
+    for to in inst.targets() {
         out.push(to as usize);
     }
 }
@@ -506,6 +506,7 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         }
         Inst::MatchArm { subject, .. } => f(*subject, RETAIN), // bindings may bind it
         Inst::MatchFail { subject } => f(*subject, PURE),      // formats + raises
+        Inst::MatchSwitch { subject, .. } => f(*subject, PURE), // compares, keeps nothing
         Inst::LoopCollect { src, .. } => f(*src, RETAIN),      // appended into the result list
         Inst::LoadConst { .. }
         | Inst::LoadNil { .. }

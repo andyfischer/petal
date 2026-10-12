@@ -12,7 +12,9 @@ use crate::lexer::{Lexer, Token};
 /// Constructs and their closers: `end` closes fn/enum/class/if/for/while/match,
 /// block lambdas, and `when … do` arms; `)` `]` `}` close their delimiters;
 /// `</tag>` closes a JSX element's children. Closers just pop the innermost
-/// entry — lint runs on parseable source, so they always correspond.
+/// entry — lint runs on parseable source, so they always correspond. The one
+/// construct without a closer is the body of a `when … ->` arm, which the next
+/// `when` or the match's own `end` ends ([`Open::arm_body`]).
 ///
 /// A construct that *hangs* ([`Hang`]) — `draw(a, b,` with `c)` wrapped
 /// below — is a visual continuation: the author lined the wrapped lines up
@@ -31,6 +33,10 @@ struct Open {
     content: usize,
     /// Set when the construct *hangs* off its opening line.
     hang: Option<Hang>,
+    /// The body of a `when … ->` match arm written on the lines below the
+    /// arrow. It has no closer of its own: the next `when`, or the match's
+    /// `end`, ends it.
+    arm_body: bool,
 }
 
 /// A construct whose contents the author may have aligned by eye: a delimiter
@@ -50,6 +56,7 @@ impl Open {
         Open {
             content,
             hang: None,
+            arm_body: false,
         }
     }
 }
@@ -87,6 +94,7 @@ fn is_continuation_op(t: &Token) -> bool {
             | Or
             | DoubleQuestion
             | Pipe
+            | Bar
             | Dot
             | QuestionDot
             | Eq
@@ -192,6 +200,15 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
             .clone()
             .filter(|&k| !matches!(tokens[k], Token::Newline | Token::Eof))
             .collect();
+        // A line opening with `when` or `end` ends the arm body above it, so
+        // it is laid out as a line of the match, not of that body.
+        if let Some(&k) = sig.first()
+            && matches!(tokens[k], Token::When | Token::End)
+            && !is_label(tokens, k)
+            && stack.last().is_some_and(|o| o.arm_body)
+        {
+            stack.pop();
+        }
         let mut dedent = 0usize;
         let mut si = 0usize;
         while si < sig.len() {
@@ -277,9 +294,30 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
         for k in line_tokens {
             match &tokens[k] {
                 _ if is_label(tokens, k) => {}
-                Token::Newline => when_header = false,
-                Token::When => when_header = true,
-                Token::Arrow => when_header = false,
+                // An or-pattern may run over several lines, each ending or
+                // beginning with `|`; any other line break ends the header.
+                Token::Newline => {
+                    let next = tokens[k + 1..].iter().find(|t| !matches!(t, Token::Newline));
+                    let in_pattern = matches!(next, Some(Token::Bar))
+                        || (k > 0 && matches!(tokens[k - 1], Token::Bar));
+                    when_header = when_header && in_pattern;
+                }
+                Token::When => {
+                    if stack.last().is_some_and(|o| o.arm_body) {
+                        stack.pop(); // the arm before this one, on the same line
+                    }
+                    when_header = true;
+                }
+                Token::Arrow => {
+                    // `when pattern ->` with the body on the lines below.
+                    if when_header && matches!(tokens.get(k + 1), Some(Token::Newline)) {
+                        stack.push(Open {
+                            arm_body: true,
+                            ..Open::block(content)
+                        });
+                    }
+                    when_header = false;
+                }
                 Token::Do => {
                     when_header = false;
                     if pending_do {
@@ -298,6 +336,7 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                         stack.push(Open {
                             content,
                             hang: mid_line.then_some(this_line),
+                            arm_body: false,
                         });
                     }
                 }
@@ -325,9 +364,16 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     stack.push(Open {
                         content,
                         hang: hanging.then_some(this_line),
+                        arm_body: false,
                     });
                 }
-                Token::End | Token::RParen | Token::RBracket | Token::RBrace => {
+                Token::End => {
+                    if stack.last().is_some_and(|o| o.arm_body) {
+                        stack.pop(); // the last arm's body ends with its match
+                    }
+                    stack.pop();
+                }
+                Token::RParen | Token::RBracket | Token::RBrace => {
                     stack.pop();
                 }
                 Token::JsxOpenStart => open_tags.push(stack.len()),
@@ -411,6 +457,24 @@ mod tests {
             out,
             "fn f(a)\n  if a > 1 then\n    return a\n  end\n  for i in [1, 2] do\n    print(i)\n  end\nend\n"
         );
+    }
+
+    #[test]
+    fn a_match_arm_body_sits_under_its_arm() {
+        let src = "match k\nwhen 1 ->\nlet a = 1\nif a > 0 then\nprint(a)\nend\nwhen 2\n| 3 ->\nmatch a\nwhen 0 -> x\nwhen _ ->\ny\nend\nwhen _ -> nil\nend\nafter()\n";
+        let out = reindent(src).unwrap();
+        assert_eq!(
+            out,
+            "match k\n  when 1 ->\n    let a = 1\n    if a > 0 then\n      print(a)\n    end\n  when 2\n  | 3 ->\n    match a\n      when 0 -> x\n      when _ ->\n        y\n    end\n  when _ -> nil\nend\nafter()\n"
+        );
+        // Already laid out: nothing moves.
+        assert_eq!(reindent(&out).unwrap(), out);
+    }
+
+    #[test]
+    fn a_one_line_arm_and_a_do_arm_open_nothing_past_their_line() {
+        let src = "match k\n  when 1 -> a\n  when 2 do\n    b\n  end\n  when _ -> fn(x) -> x\nend\nafter()\n";
+        assert_eq!(reindent(src).unwrap(), src);
     }
 
     #[test]

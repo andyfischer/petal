@@ -413,7 +413,7 @@ fn is_binary_op(t: &Token, after_operand: bool) -> bool {
         Minus | Plus => after_operand,
         Star | Slash | Percent | PlusPlus | Eq | Ne | Lt | Le | Gt | Ge | And | Or
         | DoubleQuestion | Assign | PlusAssign | MinusAssign | StarAssign | SlashAssign
-        | PercentAssign | ConcatAssign | CoalesceAssign | Pipe | Arrow => true,
+        | PercentAssign | ConcatAssign | CoalesceAssign | Pipe | Bar | Arrow => true,
         _ => false,
     }
 }

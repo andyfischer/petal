@@ -15,6 +15,7 @@ mod capture_lag;
 mod enums;
 mod expr;
 mod function;
+mod match_check;
 mod native;
 mod phi;
 pub(crate) use phi::assigned_names;

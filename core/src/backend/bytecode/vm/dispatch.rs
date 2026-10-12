@@ -644,6 +644,22 @@ impl<'a> Vm<'a> {
                     }
                 }
             }
+            Inst::MatchSwitch { subject, table } => {
+                let to = match self.reg(fi, *subject) {
+                    Value::String(s) => Some(table.str_target(self.heap.get_string(s))),
+                    Value::Int(n) => Some(table.int_target(n)),
+                    Value::EnumVariant { tag, data } => table.variant_target(
+                        self.heap.get_string(tag),
+                        self.heap.get_list(data).is_empty(),
+                    ),
+                    // Anything else — a float an int literal may equal, for
+                    // one — is tested against the arms in order.
+                    _ => None,
+                };
+                if let Some(to) = to {
+                    self.stack.vm_frames[fi].ip = to as usize;
+                }
+            }
             Inst::MatchFail { subject } => {
                 let v = self.reg(fi, *subject);
                 return Err(format!(

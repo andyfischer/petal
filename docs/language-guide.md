@@ -2045,7 +2045,9 @@ a naming and dispatch feature over records, not an object system.
 
 ## Pattern Matching
 
-The `match` expression tests a value against patterns:
+`match` tests a value against patterns, top to bottom, and runs the first arm
+whose pattern matches. It is an expression, and it is also how control flow
+branches on a value:
 
 ```petal
 fn describe(x)
@@ -2056,6 +2058,44 @@ fn describe(x)
     end
 end
 ```
+
+### Arm bodies
+
+After `->` an arm's body is a statement list, like an `if` branch. It runs
+until the next `when` of the same match, or the match's `end`, and its last
+expression is the arm's value. A one-expression arm is the short form of the
+same thing.
+
+```petal
+enum Cmd
+    quit,
+    move(dx, dy),
+    say(text),
+end
+
+var x = 0
+var y = 0
+
+fn step(cmd)
+    match cmd
+        when Cmd.quit -> "bye"
+        when Cmd.move(dx, dy) ->
+            set x += dx
+            set y += dy
+            "moved to {get x}, {get y}"
+        when Cmd.say(text) ->
+            let loud = text ++ "!"
+            loud
+    end
+end
+```
+
+A name bound in a body is local to its arm. `break`, `continue` and `return`
+inside a body do what they do inside an `if` branch, and a `match` may be
+nested in a body: the inner one takes its own `when`s and its own `end`.
+
+An arm must have a body. One that does nothing is written `when _ -> nil`.
+The older `when pattern do … end` form is still accepted.
 
 ### Enum Patterns
 
@@ -2083,6 +2123,77 @@ a pattern is always a binding, so `when unit ->` matches anything and names it
 `unit`. A pattern must list every payload field: use `_` for the ones it
 ignores (`when Shape.rect(w, _)`).
 
+### Or-patterns
+
+`a | b` matches what either alternative matches. Alternatives may be
+literals, variants or any other pattern, and may be nested inside one.
+
+```petal
+enum Kind
+    park,
+    plaza,
+    road(lanes),
+    lane(lanes),
+end
+
+fn surface(kind)
+    match kind
+        when Kind.park | Kind.plaza -> "open"
+        when Kind.road(n) | Kind.lane(n) -> "paved, {n} wide"
+    end
+end
+
+fn is_vowel(ch)
+    match ch
+        when "a" | "e" | "i" | "o" | "u" -> true
+        when _ -> false
+    end
+end
+```
+
+Every alternative must bind the same names, so the body can use them
+whichever one matched. `when Kind.road(n) | Kind.park` is a compile error.
+A long pattern may continue on the next line, which then begins with `|`.
+
+### Exhaustiveness
+
+A match whose arms are all variants of one enum must have an arm for every
+variant of that enum, or an arm that takes everything else (`when _ ->` or
+`when name ->`). Leaving one out is a compile error that lists the missing
+variants:
+
+```text
+this match does not cover every variant of `Kind`: no arm for `Kind.lane`
+```
+
+Two kinds of arm do not count towards covering a variant: an arm with an `if`
+guard, and an arm whose payload patterns can fail (`when Kind.road(2)`).
+A payload of bindings and `_` cannot fail, so `when Kind.road(n)` covers
+`Kind.road`.
+
+Only such a match is checked. A match on strings, numbers or lists, or one
+mixing variants with other patterns, is not held to covering anything.
+
+`petal check` also warns about an arm that can never run: one that repeats a
+literal or a variant an earlier arm already matched, and any arm after one
+that matches every value.
+
+### When no arm matches
+
+A match that reaches its `end` without any arm matching is a runtime error
+naming the value and the match's line. It does not evaluate to `nil`. To get
+`nil`, say so:
+
+```petal
+fn rank(name)
+    match name
+        when "gold" -> 1
+        when "silver" -> 2
+        when _ -> nil
+    end
+end
+```
+
 ### List Destructuring
 
 ```petal
@@ -2108,6 +2219,18 @@ fn classify(n)
     end
 end
 ```
+
+A guard applies to the whole pattern, so with an or-pattern it is tested
+whichever alternative matched.
+
+### How a match is compiled
+
+Arms are tried in order, and the first match wins. Consecutive arms whose
+patterns are string literals, int literals or enum variants are entered
+through a jump table: one hash of the value instead of a comparison per arm,
+so a forty-arm match on a command name costs the same as a four-arm one. The
+result is the same as trying the arms in order. `--no-opt` turns the table
+off.
 
 ## State
 

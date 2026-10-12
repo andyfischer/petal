@@ -56,3 +56,53 @@ end
 // (2 + 3) * 4 = 20
 let expression = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print("(2 + 3) * 4 = {eval(expression)}")
+
+// Or-patterns, and arms whose body is several statements
+enum Command
+  left,
+  right,
+  jump(height),
+  say(text),
+  quit,
+end
+
+fn run_commands(commands)
+  var x = 0
+  var log = []
+  for command in commands do
+    match command
+      when Command.left | Command.right ->
+        let step = if command == Command.left then -1 else 1 end
+        set x += step
+      when Command.jump(height) ->
+        if height > 3 then
+          set log = push(get log, "too high")
+          continue
+        end
+        set log = push(get log, "jumped {height}")
+      when Command.say(text) -> set log = push(get log, text)
+      when Command.quit -> break
+    end
+    set log = push(get log, "x={get x}")
+  end
+  join(get log, ", ")
+end
+
+print(run_commands([
+  Command.right, Command.right, Command.jump(2), Command.jump(9),
+  Command.say("hi"), Command.left, Command.quit, Command.right,
+]))
+
+// Many literal arms cost one lookup, not one comparison per arm
+fn key_action(key: string) -> string
+  match key
+    when "w" | "up" -> "north"
+    when "s" | "down" -> "south"
+    when "a" | "left" -> "west"
+    when "d" | "right" -> "east"
+    when "space" -> "jump"
+    when "escape" | "q" -> "quit"
+    when _ -> "nothing"
+  end
+end
+print(map(["w", "left", "space", "q", "tab"], key_action))

@@ -13,8 +13,10 @@
 //! this same type.
 
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 use crate::constant_table::ConstantId;
+use crate::fxhash::FxBuildHasher;
 use crate::program::{FunctionId, MapSpreadEntry, StateKey, TermId};
 
 /// A flat register index within a [`BytecodeFn`]'s register file.
@@ -536,6 +538,17 @@ pub enum Inst {
         dst: Reg,
     },
 
+    /// Jump table over a run of match arms keyed on string literals, int
+    /// literals and enum variants (see [`SwitchTable`]). A string, int or
+    /// variant subject jumps to the first arm of the run that can match it,
+    /// or past the run when none can. Any other subject falls through to the
+    /// run's first [`MatchArm`](Inst::MatchArm), which tests the arms in
+    /// order as if the switch were not there.
+    MatchSwitch {
+        subject: Reg,
+        table: Box<SwitchTable>,
+    },
+
     /// No match arm matched the subject — raise the same runtime error the graph
     /// engine does (`No matching pattern for value: …`), formatting `subject`.
     MatchFail {
@@ -648,6 +661,7 @@ define_opcodes!(
     StateRead,
     StateWrite,
     MatchArm,
+    MatchSwitch,
     MatchFail,
     Error,
 );
@@ -738,6 +752,7 @@ impl Inst {
             | Inst::LoopCollect { .. }
             | Inst::Return { .. }
             | Inst::MatchArm { .. }
+            | Inst::MatchSwitch { .. }
             | Inst::MatchFail { .. }
             | Inst::Error { .. } => None,
         }
@@ -809,6 +824,7 @@ impl Inst {
             | Inst::CellRead { cell: src, .. }
             | Inst::LoopCollect { src, .. }
             | Inst::MatchArm { subject: src, .. }
+            | Inst::MatchSwitch { subject: src, .. }
             | Inst::MatchFail { subject: src } => f(src),
             Inst::Add { a, b, .. }
             | Inst::Sub { a, b, .. }
@@ -919,12 +935,39 @@ impl Inst {
         )
     }
 
-    /// This instruction's explicit branch target label, if any — the CFG's
-    /// non-fall-through successor. Every branching op carries at most one; the
-    /// variant list lives in the `branch_target_of!` macro, shared with
-    /// [`branch_target_mut`](Inst::branch_target_mut).
+    /// This instruction's single explicit branch target label, if it is a
+    /// one-target branch. The variant list lives in the `branch_target_of!`
+    /// macro, shared with [`branch_target_mut`](Inst::branch_target_mut).
+    ///
+    /// A [`MatchSwitch`](Inst::MatchSwitch) has many targets and answers
+    /// `None`: a pass that needs the CFG's edges uses
+    /// [`targets`](Inst::targets) and
+    /// [`for_each_target_mut`](Inst::for_each_target_mut) instead.
     pub fn branch_target(&self) -> Option<Label> {
         branch_target_of!(self).copied()
+    }
+
+    /// Every label this instruction can jump to — the CFG's non-fall-through
+    /// successors. One for an ordinary branch, the whole table for a
+    /// [`MatchSwitch`](Inst::MatchSwitch), none for anything else.
+    pub fn targets(&self) -> SmallVec<[Label; 2]> {
+        match self {
+            Inst::MatchSwitch { table, .. } => table.targets().collect(),
+            other => other.branch_target().into_iter().collect(),
+        }
+    }
+
+    /// Mutable view of every label in [`targets`](Inst::targets), for a pass
+    /// that moves code and has to retarget the jumps into it.
+    pub fn for_each_target_mut(&mut self, mut f: impl FnMut(&mut Label)) {
+        match self {
+            Inst::MatchSwitch { table, .. } => table.targets_mut().for_each(f),
+            other => {
+                if let Some(to) = other.branch_target_mut() {
+                    f(to);
+                }
+            }
+        }
     }
 
     /// Mutable view of the single backpatchable branch-target label — the write
@@ -932,6 +975,128 @@ impl Inst {
     /// a placeholder block-id to a code offset through this.
     pub fn branch_target_mut(&mut self) -> Option<&mut Label> {
         branch_target_of!(self)
+    }
+}
+
+/// What a [`SwitchCase`] is keyed on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum SwitchKey {
+    /// A string literal pattern.
+    Str(String),
+    /// An int literal pattern.
+    Int(i64),
+    /// A variant pattern, by its tag (`Kind.park`).
+    Variant(String),
+}
+
+/// One entry of a [`SwitchTable`]: subjects with this key jump to `to`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SwitchCase {
+    pub key: SwitchKey,
+    pub to: Label,
+    /// The key decides the arm, so `to` is the arm's body: an unguarded
+    /// literal, or an unguarded variant without payload. Otherwise `to` is the
+    /// arm's own [`MatchArm`](Inst::MatchArm), which still tests the payload,
+    /// binds, and runs the guard, and goes on down the arms when that fails.
+    pub whole: bool,
+}
+
+/// The jump table of a [`Inst::MatchSwitch`], over a run of consecutive match
+/// arms whose every alternative is a string literal, an int literal or an
+/// enum variant.
+///
+/// Each key maps to the *first* arm of the run that names it. No earlier arm
+/// of the run can match a subject with that key — their keys differ — so
+/// jumping there is what testing the arms in order would have arrived at.
+/// A subject of a keyed kind that no case names matches nothing in the run
+/// and goes to `miss`, the instruction after the run.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SwitchTable {
+    /// The cases, in arm order.
+    pub cases: Vec<SwitchCase>,
+    pub miss: Label,
+    // Index into `cases`, by key. Labels live in `cases` only, so retargeting
+    // them (`targets_mut`) cannot leave the lookup behind.
+    #[serde(skip)]
+    strs: HashMap<Box<str>, u32, FxBuildHasher>,
+    #[serde(skip)]
+    ints: HashMap<i64, u32, FxBuildHasher>,
+    #[serde(skip)]
+    variants: HashMap<Box<str>, u32, FxBuildHasher>,
+}
+
+impl SwitchTable {
+    /// Build the table. A key listed twice keeps its first case.
+    pub fn new(mut cases: Vec<SwitchCase>, miss: Label) -> SwitchTable {
+        let mut seen: Vec<SwitchKey> = Vec::new();
+        cases.retain(|c| {
+            let first = !seen.contains(&c.key);
+            if first {
+                seen.push(c.key.clone());
+            }
+            first
+        });
+        let mut table = SwitchTable {
+            cases,
+            miss,
+            strs: HashMap::default(),
+            ints: HashMap::default(),
+            variants: HashMap::default(),
+        };
+        for (i, case) in table.cases.iter().enumerate() {
+            let i = i as u32;
+            match &case.key {
+                SwitchKey::Str(s) => table.strs.insert(s.as_str().into(), i),
+                SwitchKey::Int(n) => table.ints.insert(*n, i),
+                SwitchKey::Variant(tag) => table.variants.insert(tag.as_str().into(), i),
+            };
+        }
+        table
+    }
+
+    fn targets(&self) -> impl Iterator<Item = Label> + '_ {
+        self.cases
+            .iter()
+            .map(|c| c.to)
+            .chain(std::iter::once(self.miss))
+    }
+
+    fn targets_mut(&mut self) -> impl Iterator<Item = &mut Label> + '_ {
+        self.cases
+            .iter_mut()
+            .map(|c| &mut c.to)
+            .chain(std::iter::once(&mut self.miss))
+    }
+
+    /// Where a string subject goes.
+    #[inline]
+    pub fn str_target(&self, s: &str) -> Label {
+        self.strs
+            .get(s)
+            .map_or(self.miss, |&i| self.cases[i as usize].to)
+    }
+
+    /// Where an int subject goes.
+    #[inline]
+    pub fn int_target(&self, n: i64) -> Label {
+        self.ints
+            .get(&n)
+            .map_or(self.miss, |&i| self.cases[i as usize].to)
+    }
+
+    /// Where a variant subject goes, or `None` to test the arms in order: a
+    /// case that skips its arm's test is only right for the payload-free
+    /// value its pattern describes, and a host may build a variant with any
+    /// payload under any tag.
+    #[inline]
+    pub fn variant_target(&self, tag: &str, payload_free: bool) -> Option<Label> {
+        match self.variants.get(tag) {
+            None => Some(self.miss),
+            Some(&i) => {
+                let case = &self.cases[i as usize];
+                (payload_free || !case.whole).then_some(case.to)
+            }
+        }
     }
 }
 

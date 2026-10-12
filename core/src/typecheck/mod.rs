@@ -967,27 +967,8 @@ impl<'a> Checker<'a> {
     /// Bind every variable a pattern introduces as `Any`, so pattern names
     /// shadow any outer typed binding (never a false positive from an arm body).
     fn bind_pattern(&mut self, pattern: &Pattern) {
-        match pattern {
-            Pattern::Wildcard | Pattern::Literal(_) => {}
-            Pattern::Variable(n) => self.bind(n.clone(), None, Type::Any),
-            Pattern::Variant { fields, .. } => {
-                for f in fields {
-                    self.bind_pattern(f);
-                }
-            }
-            Pattern::List { elements, rest } => {
-                for e in elements {
-                    self.bind_pattern(e);
-                }
-                if let Some(r) = rest {
-                    self.bind(r.clone(), None, Type::Any);
-                }
-            }
-            Pattern::Record(fields) => {
-                for (_, p) in fields {
-                    self.bind_pattern(p);
-                }
-            }
+        for name in pattern.bound_names() {
+            self.bind(name, None, Type::Any);
         }
     }
 

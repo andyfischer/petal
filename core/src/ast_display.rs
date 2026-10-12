@@ -462,6 +462,10 @@ fn fmt_pattern(pattern: &Pattern) -> String {
                 .collect();
             format!("{{{}}}", inner.join(", "))
         }
+        Pattern::Or(alternatives) => {
+            let parts: Vec<String> = alternatives.iter().map(fmt_pattern).collect();
+            parts.join(" | ")
+        }
     }
 }
 

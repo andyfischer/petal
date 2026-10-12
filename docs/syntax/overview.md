@@ -323,9 +323,10 @@ let color = if line.kind == "add" then GREEN
 ### `match` (pattern matching)
 
 Petal has a full pattern-matching `match` expression. It tests a subject against
-`when` arms in order and evaluates the first whose pattern matches. Each arm body
-is **either** a single-expression `-> expr` **or** a multi-statement `do … end`
-block (the two forms are alternatives — do not combine them):
+`when` arms in order and evaluates the first whose pattern matches. After `->`
+an arm's body is a statement list, like an `if` branch: it runs to the next
+`when` of the same match or to the match's `end`, and its last expression is
+the arm's value. A one-expression arm fits on the `when` line:
 
 ```petal
 enum Shape
@@ -336,13 +337,21 @@ end
 
 match shape
     when Shape.circle(r)  -> 3.14159 * r * r
-    when Shape.rect(w, h) -> w * h
-    when _ do
-        log("unknown")
-        0
-    end
+    when Shape.rect(w, h) ->
+        let area = w * h
+        log("rect of {area}")
+        area
+    when Shape.unit -> 1
 end
 ```
+
+An arm must have a body (`-> nil` for one that does nothing). `break`,
+`continue` and `return` in a body behave as in an `if` branch. The older
+`when pattern do … end` arm is still accepted.
+
+A match that ends without any arm matching is a runtime error, not `nil`. A
+match whose arms are all variants of one enum must cover every variant or have
+a catch-all arm, or it does not compile.
 
 **Patterns** the parser accepts:
 
@@ -354,6 +363,7 @@ end
 | enum variant | `Shape.unit`, `Shape.circle(r)`, `mod.Shape.rect(w, h)` | that variant, binding its payload fields |
 | list | `[head, ...tail]`, `[]`, `[a, b]` | list shape, `...rest` captures the tail |
 | record | `{x: a, y: b}` | record with those keys, binding values |
+| alternatives | `"a" \| "b"`, `Shape.unit \| Shape.circle(_)` | what any alternative matches; each binds the same names |
 
 **Guards** add a boolean condition with `if`:
 

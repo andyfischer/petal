@@ -4,7 +4,9 @@
 
 use serde_json::{Value as Json, json};
 
-use super::isa::{BytecodeFn, BytecodeProgram, CellReadMode, CellWriteMode, Inst, ResultUse};
+use super::isa::{
+    BytecodeFn, BytecodeProgram, CellReadMode, CellWriteMode, Inst, ResultUse, SwitchKey,
+};
 use crate::program::{Program, base_fn_name};
 
 /// Render a lowered program as annotated text, one function per section.
@@ -381,6 +383,27 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
             "match_arm r{} t{} arm{} -> r{} else -> {}",
             subject, term.0, arm, dst, next
         ),
+        MatchSwitch { subject, table } => {
+            let cases: Vec<String> = table
+                .cases
+                .iter()
+                .map(|c| {
+                    let key = match &c.key {
+                        SwitchKey::Str(s) => format!("{s:?}"),
+                        SwitchKey::Int(n) => n.to_string(),
+                        SwitchKey::Variant(tag) => tag.clone(),
+                    };
+                    // `=>` lands in the arm's body, `->` on the arm's own test.
+                    format!("{key} {} {}", if c.whole { "=>" } else { "->" }, c.to)
+                })
+                .collect();
+            format!(
+                "match_switch r{} [{}] else -> {}",
+                subject,
+                cases.join(", "),
+                table.miss
+            )
+        }
         MatchFail { subject } => format!("match_fail r{}", subject),
         Error { msg } => format!("error {}", kconst(program, *msg)),
     }

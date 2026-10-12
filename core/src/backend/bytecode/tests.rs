@@ -1626,7 +1626,7 @@ fn assert_route_a_parity(code: &str) {
 fn route_a_count(code: &str) -> usize {
     let program = compile_program(code);
     let in_place = escape::analyze(&program);
-    let mut bc = crate::backend::bytecode::lower_program_opt(&program, &in_place).expect("lower");
+    let mut bc = crate::backend::bytecode::lower_program_opt(&program, &in_place, false).expect("lower");
     crate::backend::bytecode::lastuse::apply(&mut bc, &program)
 }
 

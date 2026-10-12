@@ -220,6 +220,10 @@ pub fn format_pattern(pattern: &Pattern) -> String {
                 .collect();
             format!("{{{}}}", parts.join(", "))
         }
+        Pattern::Or(alternatives) => {
+            let parts: Vec<String> = alternatives.iter().map(format_pattern).collect();
+            parts.join(" | ")
+        }
     }
 }
 

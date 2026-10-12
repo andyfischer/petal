@@ -54,7 +54,7 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
     } else {
         in_place
     };
-    let mut bc = lower_program_opt(program, &in_place)
+    let mut bc = lower_program_opt(program, &in_place, flags.match_dispatch)
         .map_err(|e| format!("bytecode lowering failed: {e}"))?;
     if flags.in_place_straight_line {
         apply_last_use(&mut bc, program);

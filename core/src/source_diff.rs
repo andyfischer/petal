@@ -1019,6 +1019,9 @@ fn same_pattern(a: &Pattern, b: &Pattern) -> bool {
                     .zip(y)
                     .all(|((k1, p1), (k2, p2))| k1 == k2 && same_pattern(p1, p2))
         }
+        (Pattern::Or(x), Pattern::Or(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_pattern(p, q))
+        }
         _ => false,
     }
 }

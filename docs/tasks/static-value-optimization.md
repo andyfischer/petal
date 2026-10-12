@@ -102,7 +102,8 @@ nanoseconds over the empty loop):
 
 The baselines below (66 / 41 / 173 ns, 13.6 µs) were taken with a different
 script on a quieter machine; the "Before" column is the recreated benchmark
-on the binary built from `7e7a7c5`.
+on a binary built when this work started (`7e7a7c5` plus whatever the other
+tracks had in the tree at that minute, none of it on the enum path).
 
 Not done, and why:
 

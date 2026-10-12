@@ -120,14 +120,23 @@ fn module_top_level_runs_once_before_importer_diamond() {
 }
 
 #[test]
-fn enum_variants_export_and_match_across_modules() {
+fn an_enum_exports_its_name_and_its_variants_are_members_across_modules() {
     let shapes = "pub enum Shape\n  Circle(r),\n  Dot,\nend";
     check_output(
         &[("shapes", shapes)],
-        "import shapes: Circle, Dot\n\
-         let c = Circle(5)\n\
-         print(match c\n  when Circle(r) -> r\n  when Dot -> 0\nend)",
+        "import shapes: Shape\n\
+         let c = Shape.Circle(5)\n\
+         print(match c\n  when Shape.Circle(r) -> r\n  when Shape.Dot -> 0\nend)",
         &["5"],
+    );
+    // Through the module's qualifier, in expressions and in patterns.
+    check_output(
+        &[("shapes", shapes)],
+        "import shapes as s\n\
+         let c = s.Shape.Dot\n\
+         print(c == Shape.Dot, s.Shape.all)\n\
+         print(match c\n  when s.Shape.Circle(r) -> r\n  when s.Shape.Dot -> 0\nend)",
+        &["true [Shape.Dot]", "0"],
     );
 }
 

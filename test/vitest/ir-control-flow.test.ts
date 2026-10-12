@@ -94,8 +94,8 @@ describe("match", () => {
       end
       let v = "hello"
       let result = match v
-        when Red -> "matched Red"
-        when Blue -> "matched Blue"
+        when Color.Red -> "matched Red"
+        when Color.Blue -> "matched Blue"
         when x -> "other: " ++ x
       end
       print(result)
@@ -110,11 +110,11 @@ describe("match", () => {
         Blue,
         Green,
       end
-      let v = Blue
+      let v = Color.Blue
       let result = match v
-        when Red -> "red"
-        when Blue -> "blue"
-        when Green -> "green"
+        when Color.Red -> "red"
+        when Color.Blue -> "blue"
+        when Color.Green -> "green"
       end
       print(result)
     `);

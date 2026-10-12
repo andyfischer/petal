@@ -423,11 +423,11 @@ mod tests {
     #[test]
     fn reindents_match_with_do_arms_house_style() {
         // `when` at match+1, do-arm bodies one deeper, arm `end` back at `when`.
-        let src = "let r = match e\nwhen Add(t) do\nitems = append(items, t)\ntrue\nend\nwhen None() -> false\nend\n";
+        let src = "let r = match e\nwhen Event.Add(t) do\nitems = append(items, t)\ntrue\nend\nwhen Event.None() -> false\nend\n";
         let out = reindent(src).unwrap();
         assert_eq!(
             out,
-            "let r = match e\n  when Add(t) do\n    items = append(items, t)\n    true\n  end\n  when None() -> false\nend\n"
+            "let r = match e\n  when Event.Add(t) do\n    items = append(items, t)\n    true\n  end\n  when Event.None() -> false\nend\n"
         );
     }
 

@@ -40,15 +40,15 @@ end
 fn todo_app(event)
   // Handle this frame's event (a real UI runtime would feed these from input).
   let pressed = match event
-    when Add(text) do
+    when Event.Add(text) do
       set items = append(get items, text)
       "add"
     end
-    when Clear() do
+    when Event.Clear() do
       set items = []
       "clear"
     end
-    when None() -> ""
+    when Event.None() -> ""
   end
 
   let add_btn = button(id: "add", label: "Add", clicked: pressed == "add")
@@ -70,11 +70,11 @@ print("")
 
 // Simulate render frames, one event each.
 let events = [
-  None(),
-  Add("Water plants"),
-  Add("Call Alex"),
-  Clear(),
-  Add("Start over"),
+  Event.None(),
+  Event.Add("Water plants"),
+  Event.Add("Call Alex"),
+  Event.Clear(),
+  Event.Add("Start over"),
 ]
 
 for frame in range(0, len(events)) do

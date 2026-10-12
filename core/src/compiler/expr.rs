@@ -128,6 +128,11 @@ impl Compiler {
                 let names = self.intern_arg_names(arg_names);
                 // Detect method syntax: obj.method(args...)
                 if let ExprKind::FieldAccess { object, field } = &function.kind {
+                    // `Color.custom(1, 2, 3)` where `Color` is an enum:
+                    // construct the variant in place.
+                    if let Some(enum_name) = self.static_enum(object) {
+                        return self.compile_enum_call(&enum_name, field, args, names, span);
+                    }
                     // `ui.button(...)` where `ui` is an unshadowed module
                     // alias is not a method call: the callee resolves
                     // statically in the module's exports.
@@ -295,9 +300,9 @@ impl Compiler {
                                     "{}{name}",
                                     crate::typecheck::globals::UNKNOWN_FUNCTION_PREFIX
                                 );
-                                if let Some(hint) =
+                                if let Some(hint) = self.bare_variant_hint(name).or_else(|| {
                                     crate::native_decl::missing_builtin_import_hint(name)
-                                {
+                                }) {
                                     msg.push_str(" — ");
                                     msg.push_str(&hint);
                                 }
@@ -358,6 +363,10 @@ impl Compiler {
             ExprKind::Record(fields) => self.compile_record(fields),
 
             ExprKind::FieldAccess { object, field } => {
+                // `Color.red` where `Color` is an enum is the variant itself.
+                if let Some(enum_name) = self.static_enum(object) {
+                    return self.compile_enum_member(&enum_name, field, span);
+                }
                 // `ui.palette` where `ui` is an unshadowed module alias
                 // resolves statically in the module's exports.
                 if let Some(tid) = self.try_module_member(object, field) {
@@ -519,6 +528,10 @@ impl Compiler {
     }
 
     pub(super) fn compile_ident(&mut self, name: &str) -> TermId {
+        // An enum's name read as a value is the record of its members.
+        if let Some(enum_name) = self.enum_bound_to(name) {
+            return self.emit_enum_record(&enum_name);
+        }
         if let Some(tid) = self.scope_lookup(name) {
             self.note_native_use(tid);
         }
@@ -567,8 +580,23 @@ impl Compiler {
                 "not" => Some("Petal spells logical not as `!`"),
                 _ => None,
             };
+            if self
+                .enum_data_unavailable
+                .as_ref()
+                .is_some_and(|names| names.contains(name))
+            {
+                let msg = format!(
+                    "`{name}` cannot be used in an enum's constant data: the data is evaluated \
+                     before the file's statements run, so it may use literals, enum variants, \
+                     constant `let`s and functions, but not a `let`, `var` or `state` the file \
+                     computes as it runs"
+                );
+                let msg_cid = self.constants.intern(ConstantValue::String(msg));
+                return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
+            }
             let builtin_hint = crate::native_decl::missing_builtin_import_hint(name);
-            let hint = hint.or(builtin_hint.as_deref());
+            let variant_hint = self.bare_variant_hint(name);
+            let hint = hint.or(variant_hint.as_deref()).or(builtin_hint.as_deref());
             let msg = match hint {
                 Some(hint) => format!("Undefined variable: {} — {}", name, hint),
                 None => format!("Undefined variable: {}", name),
@@ -576,6 +604,24 @@ impl Compiler {
             let msg_cid = self.constants.intern(ConstantValue::String(msg));
             self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
         }
+    }
+
+    /// The term `alias.member` resolves to, when `alias` is a module alias
+    /// that no binding of the file's own shadows and the module exports
+    /// `member`. The non-emitting half of [`Self::try_module_member`], with
+    /// the same shadowing rule.
+    pub(super) fn module_member_term(&self, object: &Expr, member: &str) -> Option<TermId> {
+        let ExprKind::Ident(name) = &object.kind else {
+            return None;
+        };
+        let module = self.module_aliases.get(name)?;
+        let tid = self.scope_lookup(&format!("{module}::{member}"))?;
+        if let Some(bound) = self.scope_lookup(name)
+            && self.alias_floor.get(name) != Some(&Some(bound))
+        {
+            return None;
+        }
+        Some(tid)
     }
 
     /// Resolve `alias.member` when `alias` is a module alias that no term
@@ -727,10 +773,11 @@ impl Compiler {
             let body_block = self.new_block(None);
             child_blocks.push(body_block);
 
-            // Resolve pattern: convert known enum variant names to Variant patterns
-            let pattern = self.resolve_pattern(&arm.pattern);
+            // Resolve each variant pattern (`Kind.park`) to the tag its value
+            // carries; a pattern naming no variant is reported here.
+            let pattern = self.resolve_pattern(&arm.pattern, arm.body.span);
 
-            // Extract pattern variables (after resolution, so enum names aren't bindings)
+            // The names the pattern binds.
             let pattern_vars = Self::extract_pattern_vars(&pattern);
 
             // Compile guard if present (with pattern vars in scope)
@@ -963,41 +1010,6 @@ impl Compiler {
         );
         self.blocks[rhs_block.0 as usize].parent_term_id = Some(tid);
         tid
-    }
-
-    // -----------------------------------------------------------------------
-    // Pattern resolution
-    // -----------------------------------------------------------------------
-
-    /// Convert Pattern::Variable to Pattern::Variant for known enum variant names.
-    /// This ensures pattern matching only matches the actual variant, not any value.
-    fn resolve_pattern(&self, pattern: &Pattern) -> Pattern {
-        match pattern {
-            Pattern::Variable(name) => {
-                if self.enum_variants.get(name) == Some(&0) {
-                    return Pattern::Variant {
-                        name: name.clone(),
-                        fields: vec![],
-                    };
-                }
-                pattern.clone()
-            }
-            Pattern::Variant { name, fields } => Pattern::Variant {
-                name: name.clone(),
-                fields: fields.iter().map(|f| self.resolve_pattern(f)).collect(),
-            },
-            Pattern::List { elements, rest } => Pattern::List {
-                elements: elements.iter().map(|e| self.resolve_pattern(e)).collect(),
-                rest: rest.clone(),
-            },
-            Pattern::Record(fields) => Pattern::Record(
-                fields
-                    .iter()
-                    .map(|(k, p)| (k.clone(), self.resolve_pattern(p)))
-                    .collect(),
-            ),
-            _ => pattern.clone(),
-        }
     }
 
     fn extract_pattern_vars(pattern: &Pattern) -> Vec<String> {

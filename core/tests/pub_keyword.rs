@@ -48,7 +48,7 @@ print(lib.double(lib.limit))
 print(lib.area({w: 2, h: 3}))
 print(lib.margin)
 print(lib.hits)
-print(lib.Green == lib.Green)
+print(lib.Color.Green == lib.Color.Green)
 print(lib.Point(1, 2).y)
 ";
 

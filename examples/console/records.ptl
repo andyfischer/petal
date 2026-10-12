@@ -32,10 +32,10 @@ end
 
 let account = {
   user: user,
-  role: Admin,
+  role: Role.Admin,
   active: true,
 }
-print(account.user.name, "is an", account.role)
+print(account.user.name, "is an", account.role.name)
 
 // Pattern matching on records
 fn describe(person: record)

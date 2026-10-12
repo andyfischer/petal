@@ -93,6 +93,13 @@ impl<'a> Vm<'a> {
             self.set(fi, dst, v);
             return Ok(());
         }
+        // `__enum_data` publishes a variant's constant data the same way.
+        if self.native_fns.intrinsic_enum_data == Some(nid) {
+            let v = self.declare_enum_data(args)?;
+            self.memo_note_effect();
+            self.set(fi, dst, v);
+            return Ok(());
+        }
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
         // in-place flag can go straight to the leaf.
         let v = if in_place {
@@ -172,6 +179,7 @@ impl<'a> Vm<'a> {
             || nf.intrinsic_sort_by == Some(nid)
             || nf.intrinsic_fn_info == Some(nid)
             || nf.intrinsic_fn_ast == Some(nid)
+            || nf.intrinsic_enum_from == Some(nid)
             || sort_with_cmp
         {
             self.profile.record_native(nid.0);
@@ -192,6 +200,8 @@ impl<'a> Vm<'a> {
             self.builtin_reduce(args, site)
         } else if nf.intrinsic_for_each == Some(nid) {
             self.builtin_for_each(args, site)
+        } else if nf.intrinsic_enum_from == Some(nid) {
+            self.enum_from(args)
         } else if nf.intrinsic_fn_info == Some(nid) {
             self.builtin_fn_info(args)
         } else if nf.intrinsic_fn_ast == Some(nid) {
@@ -218,6 +228,43 @@ impl<'a> Vm<'a> {
             .or_default()
             .insert(method, *func);
         Ok(Value::Nil)
+    }
+
+    /// Record a variant's constant data in the stack's per-run enum table.
+    /// `args` is `[variant tag, record]`, both emitted by the compiler.
+    fn declare_enum_data(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [Value::String(tag), Value::Map(record)] = args else {
+            return Err("internal error: __enum_data expects (tag, record)".into());
+        };
+        let tag = self.heap.get_string(*tag).to_string();
+        self.stack.enum_data.insert(tag, *record);
+        Ok(Value::Nil)
+    }
+
+    /// `Enum.from(name)`: the payload-free variant of that name, or nil.
+    /// `args` is `[enum name, name]`; the first is emitted by the compiler.
+    fn enum_from(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [Value::String(enum_name), name] = args else {
+            return Err("internal error: __enum_from expects (enum, name)".into());
+        };
+        let Value::String(name) = name else {
+            return Ok(Value::Nil);
+        };
+        let enum_name = self.heap.get_string(*enum_name);
+        let name = self.heap.get_string(*name);
+        let declared = self
+            .program
+            .enums
+            .get(enum_name)
+            .and_then(|def| def.variant(name))
+            .is_some_and(|v| v.fields.is_empty());
+        if !declared {
+            return Ok(Value::Nil);
+        }
+        let tag = crate::program::enum_variant_tag(enum_name, name);
+        let tag = self.heap.intern_str(&tag);
+        let data = self.heap.empty_payload();
+        Ok(Value::EnumVariant { tag, data })
     }
 
     /// Build the `PetalCxt` a native call runs against: this `Vm`'s borrows of

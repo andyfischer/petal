@@ -80,6 +80,7 @@ impl<'a> Vm<'a> {
         let heap = &mut *self.heap;
         let closures = &*self.closures;
         let run_deps = &mut self.stack.run_deps;
+        let enum_data = &self.stack.enum_data;
         let mut n: u64 = 0;
 
         // Registers are read as `Nil` past the end of the file, like
@@ -327,7 +328,7 @@ impl<'a> Vm<'a> {
                     if is_pending(base) {
                         break StraightStop::Slow;
                     }
-                    match ops::get_field(program, heap, field, base, opt) {
+                    match ops::get_field(program, heap, enum_data, field, base, opt) {
                         Ok(v) => put!(dst, v),
                         Err(_) => break StraightStop::Slow,
                     }

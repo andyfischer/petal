@@ -588,14 +588,45 @@ pub fn make_enum_variant(
     name_cid: ConstantId,
     inputs: &[Value],
 ) -> Result<Value, String> {
-    let name_str = match program.get_string_constant(name_cid) {
-        Some(s) => s.to_string(),
-        None => return Err("MakeEnumVariant: invalid name".into()),
+    let Some(name) = program.get_string_constant(name_cid) else {
+        return Err("MakeEnumVariant: invalid name".into());
     };
-    let tag = heap.alloc_string(name_str);
-    let data = heap.alloc_list(inputs.to_vec());
+    let tag = heap.intern_str(name);
+    let data = heap.alloc_payload(inputs);
     Ok(Value::EnumVariant { tag, data })
 }
+
+/// A field read on an enum variant value: `k.name` (the variant's own name),
+/// a payload field by its declared name (`op.place`), or constant data the
+/// declaration attached (`k.shape`), in that order. `None` when the variant
+/// has no such field.
+fn enum_variant_field(
+    program: &Program,
+    heap: &mut Heap,
+    enum_data: &EnumData,
+    tag: crate::heap::StringId,
+    data: crate::heap::ListId,
+    field: &str,
+) -> Option<Value> {
+    if field == "name" {
+        let name = crate::program::split_enum_tag(heap.get_string(tag)).1.to_string();
+        return Some(Value::String(heap.intern_str(&name)));
+    }
+    let tag = heap.get_string(tag);
+    if let Some(i) = program
+        .enum_variant(tag)
+        .and_then(|def| def.fields.iter().position(|f| f == field))
+    {
+        // A variant built before an edit reshaped its enum may be shorter
+        // than the declaration now says.
+        return heap.get_list(data).get(i).copied();
+    }
+    let record = *enum_data.get(tag)?;
+    heap.get_map(record).get(field).copied()
+}
+
+/// The constant data of enum variants, by tag — [`crate::stack::Stack::enum_data`].
+pub type EnumData = std::collections::HashMap<String, crate::heap::MapId>;
 
 // ---------------------------------------------------------------------------
 // Field / index access
@@ -630,7 +661,8 @@ pub fn cached_field(
 /// program rather than a missing key in ragged data.
 pub fn get_field(
     program: &Program,
-    heap: &Heap,
+    heap: &mut Heap,
+    enum_data: &EnumData,
     field_cid: ConstantId,
     obj: Value,
     opt: bool,
@@ -669,6 +701,18 @@ pub fn get_field(
             "children" => Value::List(heap.get_element_children(elem_id)),
             _ => return Err(format!("No field '{}' on element", field_name)),
         },
+        Value::EnumVariant { tag, data } => {
+            match enum_variant_field(program, heap, enum_data, tag, data, field_name) {
+                Some(v) => v,
+                None if opt => Value::Nil,
+                None => {
+                    return Err(format!(
+                        "No field '{field_name}' on enum variant {}",
+                        heap.get_string(tag)
+                    ));
+                }
+            }
+        }
         Value::List(list_id) if field_name == "length" => Value::Int(heap.list_len(list_id) as i64),
         Value::String(str_id) if field_name == "length" => {
             Value::Int(heap.string_char_len(str_id) as i64)

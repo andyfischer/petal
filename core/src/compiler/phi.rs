@@ -702,7 +702,7 @@ mod walker_tests {
         // (An arm body is an expression, so the assignments sit inside `if`s.)
         assert_eq!(
             assigned(
-                "match v\n  when Ok(n) -> if c then n = f(n) end\n  when Error(e) -> if c then outer = g(e) end\nend\n"
+                "match v\n  when Res.Ok(n) -> if c then n = f(n) end\n  when Res.Error(e) -> if c then outer = g(e) end\nend\n"
             ),
             vec!["outer"]
         );

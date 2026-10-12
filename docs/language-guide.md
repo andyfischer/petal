@@ -1588,27 +1588,107 @@ In the short 3/4-digit forms, each digit is doubled (e.g. `f` → `ff` = 255).
 
 ## Enums
 
-Enums define named variants, optionally with associated data:
+An enum is a named set of variants. A variant is a member of its enum and is
+always written through it: `Color.red`, never a bare `red`.
 
 ```petal
 enum Color
-    Red,
-    Green,
-    Blue,
-    Custom(r, g, b),
+    red,
+    green,
+    custom(r, g, b),            // payload fields: supplied at construction
 end
 
-let c = Red
-let pink = Custom(255, 192, 203)
+let c = Color.red
+let pink = Color.custom(255, 192, 203)
+let make = Color.custom         // uncalled, the constructor function
 ```
 
-A variant is a top-level name, not a member of its enum: you write `Red`, not
-`Color.Red`. So variant names share one namespace with every other top-level
-name, and `petal check` warns when two enums declare the same variant, or when
-a variant has the same name as a top-level `let`, `state`, `fn` or `class` —
-one of the two would silently replace the other.
+A variant name is any identifier, lowercase or uppercase. Two enums may
+declare the same variant name: `Kind.park` and `Use.park` are different
+values. Two variants are equal when they belong to the same enum, are the same
+variant, and carry equal payloads.
 
-The enum's own name is a type name: `fn area(s: Shape) -> float`. The checker
+A bare variant name does not resolve. `print(red)` is an undefined name, and
+the error says `did you mean Color.red?`. `Color.rde` is a compile error.
+
+### Constant data
+
+Inside a variant's parens, a bare identifier is a payload field and
+`key: expr` is constant data attached to the variant. The two may be mixed.
+
+```petal
+enum Use
+    road,
+    green,
+end
+
+enum Kind
+    parkway(shape: "route", use: Use.road),
+    park(shape: "area", use: Use.green),
+end
+
+enum Op
+    fight(place, won, tone: "bad"),
+    gift(amount, tone: "good"),
+end
+
+print(Kind.park.shape)                 // area
+print(Kind.parkway.use == Use.road)    // true
+print(Op.fight("bridge", true).tone)   // bad
+```
+
+Every variant of one enum declares the same data keys; a missing or extra key
+is a compile error. A data expression may name a variant of any enum,
+whichever is declared first, and may use literals, constant `let`s and
+functions. It is evaluated once, before the file's statements run, so it
+cannot read a `let`, `var` or `state` the file computes as it runs.
+
+### Reading a variant
+
+```petal
+enum Op
+    fight(place, won, tone: "bad"),
+    gift(amount, tone: "good"),
+end
+
+let op = Op.fight("bridge", true)
+print(op.place)    // bridge    a payload field, by name
+print(op.tone)     // bad       constant data
+print(op.name)     // fight     the variant's name, as a string
+print(type(op))    // Op
+print(op)          // Op.fight("bridge", true)
+```
+
+Reading a field the variant does not have is an error, as it is on a record.
+Because `.name` is every variant's own name, a payload field or data key may
+not be called `name`.
+
+### `all` and `from`
+
+```petal
+enum Kind
+    parkway(shape: "route"),
+    park(shape: "area"),
+end
+
+print(Kind.all)            // [Kind.parkway, Kind.park]
+print(Kind.from("park"))   // Kind.park
+print(Kind.from("lake"))   // nil
+```
+
+`Kind.all` lists the enum's payload-free variants in declaration order.
+`Kind.from(name)` is the payload-free variant with that name, or `nil`. A
+variant may not be named `all` or `from`.
+
+### Declaration rules
+
+`enum` is a top-level declaration and is hoisted, like `class`: code above the
+declaration can use it. The enum's name is an ordinary binding. `pub enum`
+exports it, an importer writes `Color.red` after `import ./palette: Color` or
+`palette.Color.red` after `import ./palette`, and one name can be declared as
+an enum only once in a program.
+
+The enum's name is also a type name: `fn area(s: Shape) -> float`. The checker
 reads it as `any`, so it documents the slot without constraining it.
 
 ## Classes & Methods
@@ -1979,19 +2059,29 @@ end
 
 ### Enum Patterns
 
+A variant pattern is written through its enum, like the variant itself. Its
+sub-patterns match the payload fields in order.
+
 ```petal
 enum Shape
-    Circle(radius),
-    Rect(w, h),
+    circle(radius),
+    rect(w, h),
+    unit,
 end
 
 fn area(shape)
     match shape
-        when Circle(r)  -> 3.14159 * r * r
-        when Rect(w, h) -> w * h
+        when Shape.circle(r)  -> 3.14159 * r * r
+        when Shape.rect(w, h) -> w * h
+        when Shape.unit       -> 1
     end
 end
 ```
+
+Through a module the pattern is `when shapes.Shape.unit`. A bare identifier in
+a pattern is always a binding, so `when unit ->` matches anything and names it
+`unit`. A pattern must list every payload field: use `_` for the ones it
+ignores (`when Shape.rect(w, _)`).
 
 ### List Destructuring
 

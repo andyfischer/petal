@@ -423,18 +423,8 @@ fn top_level_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
             }
             _ => collect_definitions_from_stmt(stmt, &src, &mut defs),
         }
-        if let Some(first) = defs.into_iter().next() {
-            // An enum's variants are what importers use.
-            if let StmtKind::EnumDecl { variants, .. } = &stmt.kind {
-                out.extend(variants.iter().map(|v| Definition {
-                    name: v.name.clone(),
-                    kind: DefinitionKind::Enum,
-                    span: stmt.span,
-                    detail: Some(format!("variant of {}", first.name)),
-                }));
-            }
-            out.push(first);
-        }
+        // An enum declares one name; its variants are members of it.
+        out.extend(defs.into_iter().next());
     }
     out
 }

@@ -154,7 +154,7 @@ Statements:
 | `State` | `name`, `type`, `init`, `key`, `is_var` |
 | `FnDecl` | `name`, `class`, `params`, `returns`, `body` |
 | `ClassDecl` | `name`, `fields` (a list of `{name, type}`) |
-| `EnumDecl` | `name`, `variants` (a list of `{name, fields}`) |
+| `EnumDecl` | `name`, `variants` (a list of `{name, fields, data}`, `data` being the `{key, value}` constant-data entries) |
 | `Import` | `module`, `alias`, `names`, `star` |
 
 Expressions:

@@ -59,7 +59,7 @@ Error: Expected ',' between list elements [line 3, column 5]
 | Record literals       | `{ x: 1, y: 2 }`       |
 | Record patterns       | `{ x: a, y: b }`       |
 | List patterns         | `[a, b, ...rest]`      |
-| Enum variant patterns | `Point(x, y)`          |
+| Enum variant patterns | `Shape.rect(w, h)`      |
 | Enum declarations     | `enum E A, B, C end`   |
 | Class declarations    | `class P x: int, end`  |
 
@@ -67,9 +67,9 @@ Multi-line `enum` and `class` bodies carry their commas too:
 
 ```petal
 enum Shape
-    Circle(radius),
-    Rect(w, h),
-    Unit,
+    circle(radius),
+    rect(w, h),
+    unit,
 end
 
 class Point

@@ -331,7 +331,7 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         namespace_callee: None,
         own_natives: crate::native_decl::NativeDecls::collect(stmts),
     };
-    checker.bind_enum_variants(stmts);
+    checker.bind_enum_names(stmts);
     for stmt in stmts {
         checker.check_stmt(stmt);
     }
@@ -870,8 +870,8 @@ impl<'a> Checker<'a> {
     /// this module's [`ClassTable`], which is what this adds.
     ///
     /// An enum's name is accepted too, as `any`: the pass has no type for an
-    /// enum value (a variant is a bare name or a constructor, see
-    /// [`Checker::bind_enum_variants`]), so the annotation documents the
+    /// enum value (a variant is a member of its enum, see
+    /// [`Checker::bind_enum_names`]), so the annotation documents the
     /// function without constraining it. A class of the same name wins.
     fn resolve_ann(&self, ann: &TypeAnn) -> Option<Type> {
         ann.resolved
@@ -1149,7 +1149,13 @@ impl<'a> Checker<'a> {
                 self.ret_stack.pop();
                 self.pop_scope();
             }
-            StmtKind::EnumDecl { .. } => {}
+            // An enum declares no code either, but its constant data is
+            // ordinary expressions.
+            StmtKind::EnumDecl { variants, .. } => {
+                for d in variants.iter().flat_map(|v| &v.data) {
+                    self.check_expr(&d.value);
+                }
+            }
             // A class body declares no code — only field annotations, which
             // get the same unknown-name check as a parameter's. Everything
             // structural (duplicate fields, the class's own name) is the
@@ -1262,7 +1268,7 @@ impl<'a> Checker<'a> {
     /// Method declarations are excluded — their name is qualified, so they are
     /// never called as a bare identifier.
     fn bind_nested_fns(&mut self, stmts: &[Stmt]) {
-        self.bind_enum_variants(stmts);
+        self.bind_enum_names(stmts);
         let mut sigs: HashMap<&str, Vec<FnSignature>> = HashMap::new();
         // The parameter names of the same declarations, matched by arity where
         // they are read back (see `param_name_candidates`).
@@ -1302,23 +1308,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Bind every variant an `enum` in these statements declares, as an
-    /// unknown value. A variant name is an ordinary binding at runtime, and it
-    /// shadows anything else of that name — including a class constructor, which
-    /// `enum Shape … Rect(w, h) … end` really does shadow. Binding it is what
-    /// stops the class's fields being checked against `Rect(3, 4)`. Nothing is
-    /// inferred: a fieldless variant is a value and a variant with fields is a
-    /// constructor, and the pass has no type for either.
-    fn bind_enum_variants(&mut self, stmts: &[Stmt]) {
-        let names: Vec<String> = stmts
-            .iter()
-            .filter_map(|s| match &s.kind {
-                StmtKind::EnumDecl { variants, .. } => Some(variants),
-                _ => None,
-            })
-            .flatten()
-            .map(|v| v.name.clone())
-            .collect();
+    /// Bind the name of every `enum` these statements declare, as an unknown
+    /// value. The name is an ordinary binding — it shadows anything else of
+    /// that name, a class constructor included — and its variants are members
+    /// of it (`Shape.circle(1)`), which the pass has no type for.
+    fn bind_enum_names(&mut self, stmts: &[Stmt]) {
+        let names: Vec<String> = enum_names(stmts).collect();
         for name in names {
             self.bind(name, None, Type::Any);
         }
@@ -2522,12 +2517,12 @@ mod tests {
     #[test]
     fn enum_name_is_accepted_as_a_type() {
         let e = "enum Shape\n  Circle(r),\n  Dot,\nend\n";
-        assert!(warns(&format!("{e}fn f() -> Shape\n  Circle(1)\nend")).is_empty());
-        assert!(warns(&format!("{e}fn g(s: Shape)\n  s\nend\nlet d: Shape = Dot\ng(d)")).is_empty());
+        assert!(warns(&format!("{e}fn f() -> Shape\n  Shape.Circle(1)\nend")).is_empty());
+        assert!(warns(&format!("{e}fn g(s: Shape)\n  s\nend\nlet d: Shape = Shape.Dot\ng(d)")).is_empty());
         // Declared below its first use, like a class.
-        assert!(warns(&format!("fn f() -> Shape\n  Dot\nend\n{e}")).is_empty());
+        assert!(warns(&format!("fn f() -> Shape\n  Shape.Dot\nend\n{e}")).is_empty());
         // A variant is a value, not a type.
-        let w = warns(&format!("{e}fn f() -> Dot\n  Dot\nend"));
+        let w = warns(&format!("{e}fn f() -> Dot\n  Shape.Dot\nend"));
         assert!(w.iter().any(|m| m.contains("unknown type name `Dot`")), "{w:?}");
     }
 
@@ -3047,15 +3042,17 @@ mod tests {
     }
 
     #[test]
-    fn an_enum_variant_shadowing_a_class_name_is_not_a_constructor() {
-        // `enum Shape … Rect(w, h) … end` shadows the built-in `Rect`, so its
-        // four fields say nothing about `Rect(3, 4)`.
+    fn a_variant_named_like_a_class_is_not_its_constructor() {
+        // A variant is a member of its enum, so `Shape.Rect(3, 4)` says
+        // nothing about the built-in `Rect` and its four fields…
         let src = "enum Shape\n  Circle(radius),\n  Rect(w, h),\nend\n";
-        assert!(warns(&format!("{src}print(Rect(3, 4))")).is_empty());
-        assert!(warns(&format!("{src}print(Circle(1))")).is_empty());
-        // Inside a function body too, where the walk binds the block's own
-        // declarations.
-        assert!(warns(&format!("fn f()\n  {src}  Rect(3, 4)\nend\nprint(f())")).is_empty());
+        assert!(warns(&format!("{src}print(Shape.Rect(3, 4))")).is_empty());
+        assert!(warns(&format!("{src}print(Shape.Circle(1))")).is_empty());
+        // …and no longer takes the bare name away from the class.
+        let w = warns(&format!("{src}print(Rect(3, 4))"));
+        assert_eq!(w.len(), 1, "{w:?}");
+        // An enum *named* `Rect` does: the name is the enum's.
+        assert!(warns("enum Rect\n  unit(w, h),\nend\nprint(Rect.unit(3, 4))").is_empty());
     }
 
     #[test]

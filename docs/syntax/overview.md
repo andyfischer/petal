@@ -62,7 +62,7 @@ patterns.
 | color | `#f80`, `#ff8800`, `#f80a`, `#ff8800aa` (desugar to `{r,g,b[,a]}` records) |
 | list | `[1, 2, 3]` |
 | record | `{name: "Alice", age: 30}` |
-| enum variant | `Red`, `Custom(255, 0, 0)` |
+| enum variant | `Color.red`, `Color.custom(255, 0, 0)` |
 
 **String interpolation.** Ordinary double-quoted strings interpolate `{expr}`
 holes: `"2 + 2 = {2 + 2}"`. Triple-quoted **raw** strings capture their contents
@@ -282,13 +282,15 @@ let p = Point(1, 2).shifted(10, 0)   // an instance is a record with a class tag
 
 ### `enum` (declaration)
 
-Named variants, optionally carrying positional data:
+Named variants, optionally carrying positional payload fields and `key: expr`
+constant data. A variant is a member of its enum: `Shape.unit`,
+`Shape.circle(2)`. See [Enums](../language-guide.md#enums).
 
 ```petal
 enum Shape
-    Circle(radius),
-    Rect(w, h),
-    Unit,
+    circle(radius, sides: 0),
+    rect(w, h, sides: 4),
+    unit(sides: 4),
 end
 ```
 
@@ -326,9 +328,15 @@ is **either** a single-expression `-> expr` **or** a multi-statement `do … end
 block (the two forms are alternatives — do not combine them):
 
 ```petal
+enum Shape
+    circle(radius),
+    rect(w, h),
+    unit,
+end
+
 match shape
-    when Circle(r)  -> 3.14159 * r * r
-    when Rect(w, h) -> w * h
+    when Shape.circle(r)  -> 3.14159 * r * r
+    when Shape.rect(w, h) -> w * h
     when _ do
         log("unknown")
         0
@@ -343,7 +351,7 @@ end
 | wildcard | `_` | anything (no binding) |
 | variable | `n` | anything, binds `n` |
 | literal | `0`, `-1`, `"hi"`, `true`, `nil` | that exact value |
-| enum variant | `Circle(r)`, `Rect(w, h)` | that variant, binding fields |
+| enum variant | `Shape.unit`, `Shape.circle(r)`, `mod.Shape.rect(w, h)` | that variant, binding its payload fields |
 | list | `[head, ...tail]`, `[]`, `[a, b]` | list shape, `...rest` captures the tail |
 | record | `{x: a, y: b}` | record with those keys, binding values |
 

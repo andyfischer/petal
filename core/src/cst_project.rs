@@ -565,42 +565,49 @@ impl Projector {
     }
 
     fn enum_decl(&mut self, node: &SyntaxNode) -> Result<StmtKind, String> {
-        let mut name = None;
+        // The enum's name is the one direct identifier; each variant is its
+        // own node.
+        let name = self.only_ident(node)?;
         let mut variants: Vec<EnumVariant> = Vec::new();
-        for el in node.children() {
-            match el {
-                SyntaxElement::Token(t) => {
-                    if let Some(ident) = ident_value(&t) {
-                        // First identifier is the enum's name; the rest start variants.
-                        if name.is_none() {
-                            name = Some(ident);
-                        } else {
-                            variants.push(EnumVariant {
-                                name: ident,
-                                fields: Vec::new(),
+        for n in child_nodes(node) {
+            if n.kind() != SyntaxKind::EnumVariant {
+                return Err(format!(
+                    "unexpected {:?} node in enum declaration",
+                    n.kind()
+                ));
+            }
+            let mut fields = Vec::new();
+            let mut data = Vec::new();
+            if let Some(list) = child_nodes(&n)
+                .into_iter()
+                .find(|c| c.kind() == SyntaxKind::ParamList)
+            {
+                for el in list.children() {
+                    match el {
+                        SyntaxElement::Token(t) => fields.extend(ident_value(&t)),
+                        SyntaxElement::Node(d) if d.kind() == SyntaxKind::EnumData => {
+                            data.push(EnumData {
+                                key: self.only_ident(&d)?,
+                                value: self.only_expr(&d)?,
                             });
+                        }
+                        SyntaxElement::Node(d) => {
+                            return Err(format!(
+                                "unexpected {:?} node in enum variant",
+                                d.kind()
+                            ));
                         }
                     }
                 }
-                SyntaxElement::Node(n) if n.kind() == SyntaxKind::ParamList => {
-                    let fields = param_names(&n);
-                    variants
-                        .last_mut()
-                        .ok_or("enum field list before any variant")?
-                        .fields = fields;
-                }
-                SyntaxElement::Node(n) => {
-                    return Err(format!(
-                        "unexpected {:?} node in enum declaration",
-                        n.kind()
-                    ));
-                }
             }
+            variants.push(EnumVariant {
+                name: self.only_ident(&n)?,
+                fields,
+                data,
+                span: self.node_span(&n)?,
+            });
         }
-        Ok(StmtKind::EnumDecl {
-            name: name.ok_or("enum declaration missing name")?,
-            variants,
-        })
+        Ok(StmtKind::EnumDecl { name, variants })
     }
 
     /// `import m` / `import m as u` / `import m: a, b`. A selective list may
@@ -1173,18 +1180,28 @@ impl Projector {
         let first = tokens.first().and_then(|t| t.token().cloned());
         match first {
             Some(Token::Ident(name)) if name == "_" => Ok(Pattern::Wildcard),
-            Some(Token::Ident(name)) => {
+            Some(Token::Ident(_)) => {
+                // The dotted path before any `(`: its identifiers are direct
+                // tokens, while a field pattern's live in child nodes.
+                let path: Vec<String> = tokens
+                    .iter()
+                    .take_while(|t| !matches!(t.token(), Some(Token::LParen)))
+                    .filter_map(ident_value)
+                    .collect();
                 let has_parens = tokens
                     .iter()
                     .any(|t| matches!(t.token(), Some(Token::LParen)));
-                if has_parens {
+                if has_parens || path.len() > 1 {
                     let fields = child_nodes(node)
                         .iter()
                         .map(|n| self.pattern(n))
                         .collect::<Result<Vec<_>, _>>()?;
-                    Ok(Pattern::Variant { name, fields })
+                    Ok(Pattern::Variant {
+                        name: path.join("."),
+                        fields,
+                    })
                 } else {
-                    Ok(Pattern::Variable(name))
+                    Ok(Pattern::Variable(path.into_iter().next().unwrap_or_default()))
                 }
             }
             Some(Token::Int(n)) => Ok(Pattern::Literal(Literal::Int(n))),
@@ -1383,13 +1400,6 @@ fn bin_op(tok: &Token) -> Option<BinOp> {
     })
 }
 
-fn param_names(param_list: &SyntaxNode) -> Vec<String> {
-    direct_tokens(param_list)
-        .iter()
-        .filter_map(ident_value)
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1503,6 +1513,27 @@ mod tests {
         assert_projects("state var hits = 0\nstate(key) var slot = 0\n");
         assert_projects("var r = {}\nset r.a = 1\nset r.a.b[0] += 2\n");
         assert_projects("enum Shape\n  Circle(r),\n  Point,\n  Rect(w, h),\nend\n");
+    }
+
+    /// Enum variants with constant data, and qualified variant patterns.
+    /// Payload fields and `key: expr` data share one parenthesized list, so
+    /// the projection has to tell a bare name from a data entry; a variant
+    /// pattern is a dotted path whose identifiers are direct tokens while a
+    /// field pattern's sit in child nodes.
+    #[test]
+    fn projects_enum_data_and_qualified_variant_patterns() {
+        assert_projects("enum Color\n  red,\n  green,\n  custom(r, g, b),\nend\n");
+        assert_projects(
+            "enum Kind\n  parkway(shape: \"route\", use: Use.road),\n  park(shape: \"area\", use: Use.green),\nend\n",
+        );
+        assert_projects(
+            "enum Op\n  fight(place, won, tone: \"bad\"),\n  gift(amount, tone: \"good\"),\nend\n",
+        );
+        // Data before payload, a multi-line list, an empty list, `pub`.
+        assert_projects("pub enum E\n  a(k: [1,\n    2], p),\n  b(),\n  c(\n    k: f(1, 2),\n  ),\nend\n");
+        assert_projects(
+            "match k\n  when Kind.park -> 1\n  when Op.fight(place, won) -> 2\n  when mod.Kind.park -> 3\n  when mod.Op.gift(Kind.park) -> 4\n  when [Kind.park, x] -> 5\n  when {k: Kind.park} -> 6\n  when park -> 7\nend\n",
+        );
     }
 
     /// `class` declarations and the method form of `fn`. Both introduce new
@@ -1755,7 +1786,7 @@ mod tests {
         assert_projects("if a then\n  1\nelsif b then\n  2\nelsif c then\n  3\nelse\n  4\nend\n");
         assert_projects("if a then\n  1\nelsif b then\n  2\nend\n");
         assert_projects("let x = if c then\n  1\nelse\n  2\nend\n");
-        assert_projects("match v\nwhen Some(x) -> x\nwhen _ -> 0\nend\n");
+        assert_projects("match v\nwhen Opt.Some(x) -> x\nwhen _ -> 0\nend\n");
         assert_projects("match v\nwhen x if x > 1 -> x\nwhen _ do\n  print(1)\n  2\nend\nend\n");
         assert_projects(
             "match v\nwhen [a, b, ...rest] -> a\nwhen { x: 1, y: p } -> p\nwhen -1 -> 0\nwhen -1.5 -> 0\nwhen \"s\" -> 1\nwhen true -> 2\nwhen nil -> 3\nend\n",

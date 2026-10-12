@@ -133,6 +133,10 @@ impl Printer {
                         format!("Variant {}({})", v.name, v.fields.join(", "))
                     };
                     self.line(depth + 1, &head, None);
+                    for d in &v.data {
+                        self.line(depth + 2, &format!("Data {}", d.key), None);
+                        self.expr(&d.value, depth + 3);
+                    }
                 }
             }
             StmtKind::ClassDecl { name, fields } => {

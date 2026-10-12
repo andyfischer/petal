@@ -528,8 +528,8 @@ end
 
 fn area(shape)
   match shape
-    when Circle(r) -> 3 * r * r
-    when Square(s) -> s * s
+    when Shape.Circle(r) -> 3 * r * r
+    when Shape.Square(s) -> s * s
   end
 end
 
@@ -539,7 +539,7 @@ fn describe(shapes)
   end
 end
 
-describe([Circle(1), Square(2)])
+describe([Shape.Circle(1), Shape.Square(2)])
 ",
     );
 }
@@ -554,10 +554,10 @@ Dec,
 end
 fn apply(op, n)
     match op
-   when Inc do
+   when Op.Inc do
   n + 1
      end
-     when Dec -> n - 1
+     when Op.Dec -> n - 1
       end
 end
 fn run(ops)
@@ -567,8 +567,8 @@ print(apply(op, n))
 end
 end
 run([
-Inc,
-Dec
+Op.Inc,
+Op.Dec
 ])
 ",
         "\
@@ -578,10 +578,10 @@ enum Op
 end
 fn apply(op, n)
   match op
-    when Inc do
+    when Op.Inc do
       n + 1
     end
-    when Dec -> n - 1
+    when Op.Dec -> n - 1
   end
 end
 fn run(ops)
@@ -591,8 +591,8 @@ fn run(ops)
   end
 end
 run([
-  Inc,
-  Dec
+  Op.Inc,
+  Op.Dec
 ])
 ",
     );

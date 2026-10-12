@@ -497,9 +497,15 @@ impl Compiler {
         }
     }
 
-    /// An enum variant with fields compiles to a constructor function whose
-    /// body emits the variant from its parameters.
-    pub(super) fn compile_enum_constructor(&mut self, variant: &EnumVariant) -> TermId {
+    /// An enum variant with a payload compiles to a constructor function whose
+    /// body emits the variant from its parameters. This is `Enum.variant` as
+    /// a value; a direct `Enum.variant(a, b)` emits the variant in place.
+    pub(super) fn compile_enum_constructor(
+        &mut self,
+        enum_name: &str,
+        variant: &EnumVariantDef,
+    ) -> TermId {
+        let tag = enum_variant_tag(enum_name, &variant.name);
         let (body_block, saved_block) = self.begin_function_scope(&variant.fields, 0);
 
         // Collect phantom term IDs for the fields (already created by begin_function_scope)
@@ -510,13 +516,11 @@ impl Compiler {
             .collect();
 
         // Emit MakeEnumVariant
-        let name_const = self
-            .constants
-            .intern(ConstantValue::String(variant.name.clone()));
+        let name_const = self.constants.intern(ConstantValue::String(tag.clone()));
         self.emit_term(TermOp::MakeEnumVariant(name_const), field_tids, None);
 
         self.end_function_scope(
-            Some(variant.name.clone()),
+            Some(tag),
             &variant.fields,
             0,
             body_block,
@@ -531,7 +535,7 @@ impl Compiler {
     /// The last `optional` parameters have defaults: each gets a hidden
     /// was-it-passed flag, bound as `name#given` and seated in the registers
     /// straight after the parameters, where the call writes it.
-    fn begin_function_scope(&mut self, params: &[String], optional: usize) -> (BlockId, BlockId) {
+    pub(super) fn begin_function_scope(&mut self, params: &[String], optional: usize) -> (BlockId, BlockId) {
         let body_block = self.new_block(None);
         let flags: Vec<String> = params[params.len() - optional.min(params.len())..]
             .iter()
@@ -556,7 +560,7 @@ impl Compiler {
 
     /// End a function scope, collect captures, create FunctionDef, and emit
     /// MakeClosure. Returns the TermId of the MakeClosure term.
-    fn end_function_scope(
+    pub(super) fn end_function_scope(
         &mut self,
         name: Option<String>,
         params: &[String],
@@ -738,6 +742,7 @@ impl Compiler {
             local_phantom: phantom,
             name: name.to_string(),
         });
+
         // Bind in this function's boundary scope so later references (and
         // deeper captures) resolve to the local phantom rather than
         // re-reaching the outer term.

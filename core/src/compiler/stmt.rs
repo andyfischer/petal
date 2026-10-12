@@ -150,27 +150,10 @@ impl Compiler {
                 // so a provenance chain still points at the `class` line.
             }
 
-            StmtKind::EnumDecl { name: _, variants } => {
-                for variant in variants {
-                    if variant.fields.is_empty() {
-                        // Fieldless variant — store as a constant enum value
-                        let name_const = self
-                            .constants
-                            .intern(ConstantValue::String(variant.name.clone()));
-                        let tid = self.emit_term(
-                            TermOp::MakeEnumVariant(name_const),
-                            smallvec![],
-                            Some(variant.name.clone()),
-                        );
-                        self.source_map.add(tid, stmt_span);
-                        self.scope_bind(variant.name.clone(), tid);
-                    } else {
-                        // Variant with fields — create a constructor function
-                        let constructor_tid = self.compile_enum_constructor(variant);
-                        self.source_map.add(constructor_tid, stmt_span);
-                        self.scope_bind(variant.name.clone(), constructor_tid);
-                    }
-                }
+            StmtKind::EnumDecl { .. } => {
+                // Nothing to emit: like a class, an enum is hoisted. The
+                // prescan bound its name and published its constant data
+                // ahead of the file's first statement (see `enums.rs`).
             }
 
             StmtKind::For { var, iter, body } => {

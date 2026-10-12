@@ -41,6 +41,10 @@ way, for code written against an earlier checkout.
   `for x in range(a, b)` runs without allocating the range.
 - Enums and pattern matching, records with spread syntax, and classes with
   user-defined methods (plus a built-in `Rect`).
+- Enum variants are members of their enum (`Color.red`,
+  `Color.custom(1, 2, 3)`, `when Color.red ->`), may carry payload fields and
+  `key: expr` constant data (`park(shape: "area")`, read as `k.shape`), and
+  answer `k.name`, `type(k)`, `Kind.all` and `Kind.from("park")`.
 - Optional type annotations on `let`, `state`, parameters and return values,
   including `num` (int or float). Programs can be typed, untyped or mixed.
 - Native value types for creative coding: `vec2`, `vec3`, colors, and a flat
@@ -191,11 +195,10 @@ way, for code written against an earlier checkout.
   warnings. It consults no host: a script for a host imports the host's
   interface package, found bundled, through the project's `petal.toml`, or
   with `-I`.
-- `petal check` warns on four programs that compile but are silently wrong: a
+- `petal check` warns on three programs that compile but are silently wrong: a
   line starting with `-` under the line it was meant to continue, a bare
-  operator expression whose value is discarded (`n + 1`), an enum variant
-  declared twice or sharing a top-level name, and a call to a builtin's name
-  that reaches a plain value. An enum's name is accepted as a type name.
+  operator expression whose value is discarded (`n + 1`), and a call to a
+  builtin's name that reaches a plain value. An enum's name is accepted as a type name.
 - Argument errors name the problem: a mistyped command gets a suggestion
   instead of "Error reading file", an unclosed block names its opener, and a
   stack trace that crosses modules names the entry file.
@@ -374,6 +377,19 @@ way, for code written against an earlier checkout.
 Breaking changes made during development, newest first. For the import and
 package changes below, `petal fix-imports` does the rewriting and
 [docs/packages.md](docs/packages.md#migrating-older-code) is the short guide.
+
+- Enum variants are no longer top-level names. Write `Color.red` where a bare
+  `red` used to resolve, in expressions and in `match` patterns
+  (`when Color.custom(r, g, b) ->`); a bare name is now undefined, and the
+  error says which enum declares it. A bare identifier in a pattern is always
+  a binding. `pub enum` exports the enum's name instead of its variants, so
+  `import ./shapes: Circle` becomes `import ./shapes: Shape`. A variant prints
+  as `Color.red` and `type()` of one is its enum's name (`"Color"`) instead of
+  `"enum"`. `enum` is top-level only, an enum name may be declared once in a
+  program, and inside a variant's parens `key: expr` is now constant data, not
+  a type annotation. The `petal check` warnings about a variant declared by
+  two enums, or named like another top-level declaration, are gone with the
+  collisions they described.
 
 - The domain builtins are behind imports. What reads as language stays global
   (`print`, `len`, `str`, `range`, the casts, the collection and string

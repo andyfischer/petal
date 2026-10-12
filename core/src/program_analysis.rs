@@ -821,6 +821,7 @@ mod tests {
             warnings: Vec::new(),
             layout_deps: Vec::new(),
             class_names: Default::default(),
+            enums: Default::default(),
             native_links: Vec::new(),
             method_natives: None,
             requires: Vec::new(),

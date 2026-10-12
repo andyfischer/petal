@@ -1,19 +1,15 @@
 //! Names that silently replace one another.
 //!
 //! Petal has one namespace for values: a `let`, a `fn`, a class constructor,
-//! an enum variant and a builtin are all just names in scope, and the later
-//! binding wins without a word. Two of those collisions are almost never what
-//! the author meant, and both compile and then compute the wrong thing:
+//! an enum and a builtin are all just names in scope, and the later binding
+//! wins without a word. One of those collisions is almost never what the
+//! author meant, and it compiles and then computes the wrong thing:
 //!
-//! - **Enum variants** ([`check_enum_collisions`]). A variant is a top-level
-//!   name, not a member of its enum, so two enums that both declare `None`
-//!   leave one `None`, and `enum Color Red end` takes `Red` away from a
-//!   `let Red = 5` above it.
 //! - **A value over a builtin** ([`check_shadowed_builtins`]). `state split =
 //!   396` makes every later `split(text, ",")` in that scope a call to the
 //!   number.
 //!
-//! Both are warnings, in the house style of the rest of `typecheck/`.
+//! A warning, in the house style of the rest of `typecheck/`.
 
 use std::collections::HashMap;
 
@@ -22,72 +18,6 @@ use crate::ast::{
 };
 use crate::diagnostic::Diagnostic;
 use crate::source_map::SourceSpan;
-
-/// Report a variant name that two top-level declarations both claim: declared
-/// by two enums (or twice by one), or shared with a top-level `let`, `state`,
-/// `fn` or `class`.
-///
-/// Only the module's top level is read, which is where an enum's variants are
-/// bound. One diagnostic per colliding variant, on the enum that declares it.
-pub fn check_enum_collisions(stmts: &[Stmt]) -> Vec<Diagnostic> {
-    // The other top-level declarations of each name: what it is, and where.
-    let mut others: HashMap<&str, (&'static str, SourceSpan)> = HashMap::new();
-    for stmt in stmts {
-        let (what, name) = match &stmt.kind {
-            StmtKind::Let { name, is_var, .. } => (if *is_var { "var" } else { "let" }, name),
-            StmtKind::State { name, .. } => ("state", name),
-            StmtKind::FnDecl {
-                name, class: None, ..
-            } => ("fn", name),
-            StmtKind::ClassDecl { name, .. } => ("class", name),
-            _ => continue,
-        };
-        others.entry(name.as_str()).or_insert((what, stmt.span));
-    }
-
-    let mut diags = Vec::new();
-    // Variant name → the enum that first declared it.
-    let mut variants: HashMap<&str, &str> = HashMap::new();
-    for stmt in stmts {
-        let StmtKind::EnumDecl {
-            name: enum_name,
-            variants: declared,
-        } = &stmt.kind
-        else {
-            continue;
-        };
-        for variant in declared {
-            let v = variant.name.as_str();
-            if let Some(first) = variants.get(v) {
-                let message = if first == enum_name {
-                    format!("enum `{enum_name}` declares the variant `{v}` twice")
-                } else {
-                    format!(
-                        "variant `{v}` is declared by both `enum {first}` and `enum {enum_name}`. \
-                         Variant names are top-level names, not members of their enum, so there \
-                         is only one `{v}` and the later declaration replaces the earlier one. \
-                         Rename one of them."
-                    )
-                };
-                diags.push(Diagnostic::new(stmt.span, message));
-                continue;
-            }
-            variants.insert(v, enum_name);
-            if let Some((what, at)) = others.get(v) {
-                diags.push(Diagnostic::citing(
-                    stmt.span,
-                    format!(
-                        "variant `{v}` of `enum {enum_name}` has the same name as the `{what} {v}` \
-                         on line {{line}}. Variant names are top-level names, not members of their \
-                         enum, so one of the two silently replaces the other. Rename one of them."
-                    ),
-                    *at,
-                ));
-            }
-        }
-    }
-    diags
-}
 
 /// Report a call to a builtin's name that reaches a `let`/`var`/`state` of
 /// that name instead, when the binding plainly holds a value that cannot be
@@ -358,47 +288,12 @@ mod tests {
         stmts
     }
 
-    fn enum_msgs(src: &str) -> Vec<String> {
-        check_enum_collisions(&parse(src))
-            .into_iter()
-            .map(|d| d.message)
-            .collect()
-    }
-
     fn shadow_msgs(src: &str) -> Vec<String> {
         let builtin = |n: &str| matches!(n, "split" | "len" | "map" | "print");
         check_shadowed_builtins(&parse(src), &builtin)
             .into_iter()
             .map(|d| d.message)
             .collect()
-    }
-
-    #[test]
-    fn two_enums_declaring_one_variant_warn() {
-        let m = enum_msgs("enum A\n  None,\n  One,\nend\nenum B\n  None,\n  Two,\nend\nprint(None)");
-        assert_eq!(m.len(), 1, "{m:?}");
-        assert!(m[0].contains("declared by both `enum A` and `enum B`"), "{m:?}");
-        let twice = enum_msgs("enum A\n  X,\n  X,\nend");
-        assert!(twice.len() == 1 && twice[0].contains("twice"), "{twice:?}");
-    }
-
-    #[test]
-    fn variant_sharing_a_name_with_a_binding_warns() {
-        let m = enum_msgs("let Red = 5\nenum Color\n  Red,\n  Green,\nend\nprint(Red)");
-        assert_eq!(m.len(), 1, "{m:?}");
-        assert!(m[0].contains("`let Red` on line 1"), "{m:?}");
-        assert_eq!(enum_msgs("enum C\n  Blue,\nend\nfn Blue()\n  1\nend").len(), 1);
-        assert_eq!(enum_msgs("class Rect\n  w: int\nend\nenum S\n  Rect(w, h),\nend").len(), 1);
-    }
-
-    #[test]
-    fn distinct_enums_and_methods_are_silent() {
-        assert!(enum_msgs("enum A\n  X,\nend\nenum B\n  Y,\nend\nlet z = 1").is_empty());
-        // A method is `Class.name`, never the bare name a variant takes.
-        assert!(
-            enum_msgs("class P\n  x: int\nend\nfn P.Go(p)\n  p.x\nend\nenum E\n  Go,\nend")
-                .is_empty()
-        );
     }
 
     #[test]

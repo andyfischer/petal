@@ -205,11 +205,29 @@ pub enum AssignTarget {
     Index(Box<Expr>, Box<Expr>),
 }
 
+/// One variant of an `enum` declaration: `red`, `custom(r, g, b)`,
+/// `park(shape: "area")`, `fight(place, won, tone: "bad")`.
 #[derive(Debug, Clone, Serialize)]
 pub struct EnumVariant {
     pub name: String,
+    /// Payload fields: the bare identifiers inside the parens, in order. They
+    /// are the variant constructor's positional parameters.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// Constant data: the `key: expr` entries inside the parens, in order.
+    /// Evaluated once per declaration and read back as `variant.key`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub data: Vec<EnumData>,
+    /// The whole variant as written, for a diagnostic about this variant.
+    #[serde(skip)]
+    pub span: SourceSpan,
+}
+
+/// One `key: expr` constant-data entry of an [`EnumVariant`].
+#[derive(Debug, Clone, Serialize)]
+pub struct EnumData {
+    pub key: String,
+    pub value: Expr,
 }
 
 /// A written type annotation: the source name plus its resolution.
@@ -700,7 +718,12 @@ pub fn walk_stmt<V: ExprVisitor + ?Sized>(v: &mut V, s: &Stmt) {
                 v.visit_stmt(s);
             }
         }
-        StmtKind::EnumDecl { .. } | StmtKind::ClassDecl { .. } => {}
+        StmtKind::EnumDecl { variants, .. } => {
+            for d in variants.iter().flat_map(|variant| &variant.data) {
+                v.visit_expr(&d.value);
+            }
+        }
+        StmtKind::ClassDecl { .. } => {}
         StmtKind::For { iter, body, .. } => {
             v.visit_expr(iter);
             for s in body {
@@ -863,7 +886,12 @@ pub fn walk_stmt_mut<V: ExprVisitorMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_stmt(s);
             }
         }
-        StmtKind::EnumDecl { .. } | StmtKind::ClassDecl { .. } => {}
+        StmtKind::EnumDecl { variants, .. } => {
+            for d in variants.iter_mut().flat_map(|variant| &mut variant.data) {
+                v.visit_expr(&mut d.value);
+            }
+        }
+        StmtKind::ClassDecl { .. } => {}
         StmtKind::For { iter, body, .. } => {
             v.visit_expr(iter);
             for s in body.iter_mut() {

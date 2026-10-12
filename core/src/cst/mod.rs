@@ -139,6 +139,12 @@ pub enum SyntaxKind {
     NamedArg,
     /// One `name: type` field of a [`SyntaxKind::ClassDecl`].
     ClassField,
+    /// One variant of a [`SyntaxKind::EnumDecl`]: its name and, when it has
+    /// parens, a [`SyntaxKind::ParamList`] of payload names and
+    /// [`SyntaxKind::EnumData`] entries.
+    EnumVariant,
+    /// One `key: expr` constant-data entry of a [`SyntaxKind::EnumVariant`].
+    EnumData,
     /// An `elsif …` / `else …` tail of an if-expression.
     ElseBranch,
     /// One `name="value"` / `name={expr}` attribute of a JSX element.
@@ -427,7 +433,7 @@ mod tests {
         assert_parse_round_trips("let x = 1 // keep me\nlet y = 2\n");
         assert_parse_round_trips("fn add(a, b)\n    a + b // sum\nend\n");
         assert_parse_round_trips("if x > 1 then\n  y\nelsif x > 0 then\n  z\nelse\n  w\nend\n");
-        assert_parse_round_trips("match v\nwhen Some(x) -> x\nwhen _ -> 0\nend\n");
+        assert_parse_round_trips("match v\nwhen Opt.Some(x) -> x\nwhen _ -> 0\nend\n");
         assert_parse_round_trips("let r = { a: 1, ...rest }\nlet l = [1, -2, 3]\n");
         assert_parse_round_trips("state count = 0\ncount += 1\n");
         assert_parse_round_trips("xs |> map(fn(x) -> x * 2) |> sum\n");

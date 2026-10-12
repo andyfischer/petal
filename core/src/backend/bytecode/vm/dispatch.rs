@@ -268,7 +268,14 @@ impl<'a> Vm<'a> {
                 let base = self.reg(fi, *obj);
                 let v = match ops::cached_field(self.program, self.heap, cache, *field, base) {
                     Some(v) => v,
-                    None => ops::get_field(self.program, self.heap, *field, base, *opt)?,
+                    None => ops::get_field(
+                        self.program,
+                        self.heap,
+                        &self.stack.enum_data,
+                        *field,
+                        base,
+                        *opt,
+                    )?,
                 };
                 // Absorption gates on the BASE: `pending.field` yields that same
                 // Pending. A resolved record that merely holds a Pending field is

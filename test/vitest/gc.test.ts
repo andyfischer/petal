@@ -56,12 +56,12 @@ print(data.items)`;
   Green,
   Blue,
 end
-let c = Green
+let c = Color.Green
 for i in range(0, 2000) do
   let tmp = "garbage_" ++ str(i)
 end
 match c
-  when Green -> print("green")
+  when Color.Green -> print("green")
 end`;
     const out = runPetal(code);
     expect(out).toBe("green");

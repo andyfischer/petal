@@ -329,12 +329,12 @@ enum GameState
     Paused,
     GameOver,
 end
-state current = Playing
+state current = GameState.Playing
 
 match current
-    when Playing  -> update_game()
-    when Paused   -> draw_text("PAUSED", 350, 300, 32, 255, 255, 255)
-    when GameOver -> draw_text("GAME OVER", 300, 300, 32, 255, 0, 0)
+    when GameState.Playing  -> update_game()
+    when GameState.Paused   -> draw_text("PAUSED", 350, 300, 32, 255, 255, 255)
+    when GameState.GameOver -> draw_text("GAME OVER", 300, 300, 32, 255, 0, 0)
 end
 ```
 

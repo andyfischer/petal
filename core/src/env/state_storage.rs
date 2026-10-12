@@ -672,7 +672,7 @@ state whole = 2
 state frac = 2.0
 state big = 1.0e308 * 10.0
 state rec = {b: 1, a: [nil, true, \"s\"]}
-state shape = Circle(1.5)
+state shape = Shape.Circle(1.5)
 state inst = P(3, 4)
 state v2 = vec2(1, 2)
 state v3 = vec3(1, 2, 3)
@@ -682,8 +682,8 @@ if runs == 2 then
   print(whole, frac, big, rec, keys(rec), shape, inst.x + inst.y, v2, v3, arr)
   print(type(whole), type(frac), type(shape), type(inst), type(v2), type(v3), type(arr))
   match shape
-    when Circle(r) -> print(\"circle\", r)
-    when Dot -> print(\"dot\")
+    when Shape.Circle(r) -> print(\"circle\", r)
+    when Shape.Dot -> print(\"dot\")
   end
 end
 ";

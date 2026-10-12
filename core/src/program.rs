@@ -663,6 +663,13 @@ pub struct Program {
     /// random.
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     pub class_names: std::collections::BTreeSet<String>,
+    /// The enums this program declares, by name. A variant value carries only
+    /// its tag (`"Kind.park"`) and its payload, so this is where a field read
+    /// finds the payload's field names (`op.place`), and where `Kind.from`
+    /// finds the variants. A `BTreeMap` for the same reason `class_names` is a
+    /// `BTreeSet`: it is part of the serialized IR.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub enums: std::collections::BTreeMap<String, EnumDef>,
     /// What `fn_info` / `fn_ast` have worked out about this program's
     /// functions so far (parsed source, per-function metadata). Filled on
     /// demand, never serialized, and dropped whenever the source text changes
@@ -726,7 +733,67 @@ pub struct EntryImport {
     pub implicit: bool,
 }
 
+/// The builtin a variant's constant data is published through:
+/// `__enum_data(tag, record)`, emitted once per variant that declares
+/// `key: expr` data. Intercepted by the VM, which keeps the record in the
+/// running stack's table ([`crate::stack::Stack::enum_data`]) where a field
+/// read on a variant value finds it.
+pub const ENUM_DATA_BUILTIN: &str = "__enum_data";
+
+/// The builtin behind `Enum.from(name)`: `__enum_from(enum name, name)` yields
+/// the payload-free variant of that name, or nil. Intercepted by the VM, which
+/// answers from [`Program::enums`].
+pub const ENUM_FROM_BUILTIN: &str = "__enum_from";
+
+/// The tag a variant value carries: `"Kind.park"`. An enum name is unique in
+/// a compilation, so the tag names one variant of one enum.
+pub fn enum_variant_tag(enum_name: &str, variant: &str) -> String {
+    format!("{enum_name}.{variant}")
+}
+
+/// Split a variant value's tag into its enum's name and the variant's own.
+/// A tag with no `.` is a variant a host built by hand, which belongs to no
+/// declared enum.
+pub fn split_enum_tag(tag: &str) -> (Option<&str>, &str) {
+    match tag.rsplit_once('.') {
+        Some((enum_name, variant)) => (Some(enum_name), variant),
+        None => (None, tag),
+    }
+}
+
+/// One declared `enum`: its variants in declaration order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumDef {
+    pub variants: Vec<EnumVariantDef>,
+}
+
+impl EnumDef {
+    pub fn variant(&self, name: &str) -> Option<&EnumVariantDef> {
+        self.variants.iter().find(|v| v.name == name)
+    }
+}
+
+/// One variant of an [`EnumDef`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumVariantDef {
+    pub name: String,
+    /// Payload field names, in constructor-argument order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    /// Constant-data keys, in declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data: Vec<String>,
+}
+
 impl Program {
+    /// The declaration behind a variant value's tag, if this program declares
+    /// one. A value can outlive the program that built it (state kept across a
+    /// reload), so a tag is not proof that its enum is still here.
+    pub fn enum_variant(&self, tag: &str) -> Option<&EnumVariantDef> {
+        let (enum_name, variant) = split_enum_tag(tag);
+        self.enums.get(enum_name?)?.variant(variant)
+    }
+
     pub fn get_term(&self, id: TermId) -> &Term {
         &self.terms[id.0 as usize]
     }

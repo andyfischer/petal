@@ -116,6 +116,14 @@ pub struct Stack {
     /// Rebuilt by every run (the declarations re-execute), and cleared with
     /// `functions` on hot reload, whose new program invalidates the closure ids.
     pub methods: HashMap<String, HashMap<String, Value>>,
+    /// The constant data of enum variants, indexed by variant tag
+    /// (`"Kind.park"`): the record of `key: expr` values its declaration
+    /// attached. Populated as the root block runs — an `enum` whose variants
+    /// carry data compiles to one `__enum_data` builtin call per variant — and
+    /// read by a field access on a variant value (`k.shape`). Rebuilt by every
+    /// run and cleared with `methods` on hot reload, so a variant kept in
+    /// `state` across an edit reads the data its enum declares *now*.
+    pub enum_data: HashMap<String, crate::heap::MapId>,
     /// Activation records for the bytecode VM. Stored on the stack (not on the
     /// VM, which is rebuilt per step) so execution state survives across steps
     /// and is reachable as GC roots.
@@ -222,6 +230,7 @@ impl Stack {
             open_touch_captures: 0,
             functions: HashMap::new(),
             methods: HashMap::new(),
+            enum_data: HashMap::new(),
             vm_frames: Vec::new(),
             vm_started: false,
             vm_frame_pool: Vec::new(),
@@ -439,6 +448,10 @@ impl Stack {
         // Last pop result (used by synchronous closure calls)
         if let Some(val) = self.last_pop_result {
             mark(val);
+        }
+        // Enum constant data is read by any later field access on a variant.
+        for &rec in self.enum_data.values() {
+            mark(Value::Map(rec));
         }
         // Memo records replay their values and compare against them across
         // runs; open scopes hold what they have recorded so far.

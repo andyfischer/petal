@@ -50,7 +50,7 @@ end
 // a local shadow instead. The rest are plain `state`, rebound with `=` by the
 // frame body below, where the rebind is a real dataflow edge.
 
-state phase            = Title
+state phase            = Phase.Title
 state level_idx        = 0
 state var level_loaded = -1
 state var level        = nil
@@ -265,18 +265,18 @@ title_t += dts
 set toast_t = max(0.0, toast_t - dts)
 
 // Lazy-load the level on the way into Playing.
-if phase == Playing && level_loaded != level_idx then
+if phase == Phase.Playing && level_loaded != level_idx then
   restart_level()
 end
 
 // ===================== TITLE SCREEN ==================================
 
-if phase == Title then
+if phase == Phase.Title then
   if key_pressed("up")    then menu_idx = max(0, menu_idx - 1) end
   if key_pressed("down")  then menu_idx = min(len(level_files) - 1, menu_idx + 1) end
   if key_pressed("return") || key_pressed("space") then
     level_idx = menu_idx
-    phase = Playing
+    phase = Phase.Playing
     phase_t = 0.0
     restart_level()
   end
@@ -284,7 +284,7 @@ end
 
 // ===================== PLAYING =======================================
 
-if phase == Playing then
+if phase == Phase.Playing then
   set level_timer += dts
 
   // --- input ---
@@ -531,7 +531,7 @@ if phase == Playing then
   let gx = level.goal.x
   let gy = level.goal.y
   if aabb(ax: px, ay: py, aw: pw, ah: ph, bx: gx - 6.0, by: gy - 60.0, bw: 24.0, bh: 80.0) then
-    phase = Complete
+    phase = Phase.Complete
     phase_t = 0.0
     if level_timer < best_times[level_idx] then
       best_times[level_idx] = level_timer
@@ -542,7 +542,7 @@ if phase == Playing then
   end
 
   // --- fall off world ---
-  if py > 700.0 && phase == Playing then
+  if py > 700.0 && phase == Phase.Playing then
     set invul = INVUL_MAX
     lives = lives - 1
     set shake = 14.0
@@ -550,8 +550,8 @@ if phase == Playing then
   end
 
   // --- check death ---
-  if lives <= 0 && phase == Playing then
-    phase = GameOver
+  if lives <= 0 && phase == Phase.Playing then
+    phase = Phase.GameOver
     phase_t = 0.0
   end
 
@@ -562,7 +562,7 @@ if phase == Playing then
     restart_level()
   end
   if key_pressed("escape") || key_pressed("p") then
-    phase = Paused
+    phase = Phase.Paused
     phase_t = 0.0
   end
 
@@ -579,52 +579,52 @@ end
 
 // ===================== PAUSE / COMPLETE / OVER =======================
 
-if phase == Paused then
+if phase == Phase.Paused then
   if key_pressed("escape") || key_pressed("p") then
-    phase = Playing
+    phase = Phase.Playing
     phase_t = 0.0
   end
-  if key_pressed("r") then phase = Playing; restart_level() end
-  if key_pressed("q") then phase = Title; phase_t = 0.0 end
+  if key_pressed("r") then phase = Phase.Playing; restart_level() end
+  if key_pressed("q") then phase = Phase.Title; phase_t = 0.0 end
 end
 
-if phase == Complete then
+if phase == Phase.Complete then
   if phase_t > 0.6 then
     if key_pressed("return") || key_pressed("space") then
       if level_idx + 1 < len(level_files) then
         level_idx = level_idx + 1
-        phase = Playing
+        phase = Phase.Playing
         phase_t = 0.0
         restart_level()
       else
-        phase = AllDone
+        phase = Phase.AllDone
         phase_t = 0.0
       end
     end
-    if key_pressed("q") then phase = Title; phase_t = 0.0 end
+    if key_pressed("q") then phase = Phase.Title; phase_t = 0.0 end
   end
 end
 
-if phase == GameOver then
+if phase == Phase.GameOver then
   if phase_t > 0.6 then
     if key_pressed("return") || key_pressed("space") then
       lives = 3
-      phase = Playing
+      phase = Phase.Playing
       phase_t = 0.0
       set checkpoint = nil
       restart_level()
     end
     if key_pressed("q") then
       lives = 3
-      phase = Title
+      phase = Phase.Title
       phase_t = 0.0
     end
   end
 end
 
-if phase == AllDone then
+if phase == Phase.AllDone then
   if key_pressed("return") || key_pressed("q") then
-    phase = Title
+    phase = Phase.Title
     lives = 3
     phase_t = 0.0
   end
@@ -1057,9 +1057,9 @@ end
 //                              FRAME OUTPUT
 // =====================================================================
 
-if phase == Title then
+if phase == Phase.Title then
   draw_title()
-elsif phase == AllDone then
+elsif phase == Phase.AllDone then
   draw_alldone_overlay()
 else
   clear(level.bg_r, level.bg_g, level.bg_b)
@@ -1076,7 +1076,7 @@ else
   draw_particles()
   draw_floats()
   draw_hud()
-  if phase == Paused then draw_pause_overlay() end
-  if phase == Complete then draw_complete_overlay() end
-  if phase == GameOver then draw_gameover_overlay() end
+  if phase == Phase.Paused then draw_pause_overlay() end
+  if phase == Phase.Complete then draw_complete_overlay() end
+  if phase == Phase.GameOver then draw_gameover_overlay() end
 end

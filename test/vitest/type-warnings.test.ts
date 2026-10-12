@@ -337,13 +337,12 @@ describe("silently wrong programs warn", () => {
     expect(out.warnings[0].message).toMatch(/value of this expression is discarded/);
   });
 
-  it("a variant two enums declare, and a variant named like a `let`", () => {
-    const two = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(None)");
-    expect(two.warnings).toHaveLength(1);
-    expect(two.warnings[0].message).toMatch(/declared by both `enum A` and `enum B`/);
-    const over = checkJson("let Red = 5\nenum Color\n  Red,\nend\nprint(Red)");
-    expect(over.warnings).toHaveLength(1);
-    expect(over.warnings[0].message).toMatch(/same name as the `let Red` on line 1/);
+  it("a variant two enums declare, or one named like a `let`, collides with nothing", () => {
+    // Variants are members of their enum, so neither shape is a collision.
+    const two = checkJson("enum A\n  None,\nend\nenum B\n  None,\nend\nprint(A.None == B.None)");
+    expect(two.warnings).toEqual([]);
+    const over = checkJson("let Red = 5\nenum Color\n  Red,\nend\nprint(Red, Color.Red)");
+    expect(over.warnings).toEqual([]);
   });
 
   it("a `state` that shadows a builtin called in the same file", () => {
@@ -357,7 +356,7 @@ describe("silently wrong programs warn", () => {
   });
 
   it("an enum name is a type name", () => {
-    const src = "enum Shape\n  Circle(r),\n  Dot,\nend\nfn f(s: Shape) -> Shape\n  s\nend\nprint(f(Dot))";
+    const src = "enum Shape\n  Circle(r),\n  Dot,\nend\nfn f(s: Shape) -> Shape\n  s\nend\nprint(f(Shape.Dot))";
     expect(checkStrict(src).code).toBe(0);
     expect(checkJson("fn f() -> Shapee\n  1\nend").warnings[0].message).toMatch(/unknown type name `Shapee`/);
   });

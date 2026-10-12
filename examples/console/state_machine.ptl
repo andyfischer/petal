@@ -13,7 +13,7 @@ enum Light
   Green,
 end
 
-state var current = Red
+state var current = Light.Red
 state var ticks_in_state = 0
 
 fn traffic_light()
@@ -21,17 +21,17 @@ fn traffic_light()
 
   // Transition rules
   let next = match get current
-    when Red if get ticks_in_state >= 5 do
+    when Light.Red if get ticks_in_state >= 5 do
       set ticks_in_state = 0
-      Green
+      Light.Green
     end
-    when Green if get ticks_in_state >= 4 do
+    when Light.Green if get ticks_in_state >= 4 do
       set ticks_in_state = 0
-      Yellow
+      Light.Yellow
     end
-    when Yellow if get ticks_in_state >= 2 do
+    when Light.Yellow if get ticks_in_state >= 2 do
       set ticks_in_state = 0
-      Red
+      Light.Red
     end
     when other -> other
   end
@@ -42,9 +42,9 @@ end
 
 fn light_symbol(light) -> string
   match light
-    when Red -> "[R] .  . "
-    when Yellow -> " . [Y] . "
-    when Green -> " .  . [G]"
+    when Light.Red -> "[R] .  . "
+    when Light.Yellow -> " . [Y] . "
+    when Light.Green -> " .  . [G]"
   end
 end
 

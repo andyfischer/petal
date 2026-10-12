@@ -110,7 +110,7 @@ fn juxtaposed_list_pattern_elements_are_an_error() {
 
 #[test]
 fn juxtaposed_variant_pattern_fields_are_an_error() {
-    let err = parse_err("match p\n  when Point(x y) -> x\nend");
+    let err = parse_err("match p\n  when P.Point(x y) -> x\nend");
     assert!(
         err.contains("Expected ',' between variant fields"),
         "unexpected message: {err}"
@@ -272,7 +272,7 @@ fn commas_may_be_wrapped_across_lines() {
 #[test]
 fn patterns_accept_commas_and_trailing_commas() {
     let stmts = parse(
-        "match p\n  when [a, b,] -> a\n  when { x: q, y: r, } -> q\n  when Point(x, y,) -> x\nend",
+        "match p\n  when [a, b,] -> a\n  when { x: q, y: r, } -> q\n  when P.Point(x, y,) -> x\nend",
     );
     assert_eq!(stmts.len(), 1);
 }

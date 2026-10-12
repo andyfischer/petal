@@ -451,7 +451,10 @@ fn stmt_json(s: &Stmt) -> J {
                 "EnumDecl",
                 s.span,
                 json!({"name": name, "variants": variants.iter()
-                    .map(|v| json!({"name": v.name, "fields": v.fields})).collect::<Vec<J>>()}),
+                    .map(|v| json!({"name": v.name, "fields": v.fields,
+                        "data": v.data.iter()
+                            .map(|d| json!({"key": d.key, "value": expr_json(&d.value)}))
+                            .collect::<Vec<J>>()})).collect::<Vec<J>>()}),
             );
         }
         StmtKind::ClassDecl { name, fields } => {

@@ -913,7 +913,7 @@ mod tests {
                when n if n > 10 -> \"big\"\n\
                when [a, ...rest] -> \"list\"\n\
                when {x: xx} -> \"rec\"\n\
-               when Circle(r) -> \"circle\"\n\
+               when Shape.Circle(r) -> \"circle\"\n\
                when _ -> \"other\"\n\
              end\n\
              print(msg)",
@@ -923,7 +923,7 @@ mod tests {
         assert!(text.contains("if block"), "{}", text);
         assert!(text.contains("when [a, ...rest] -> block"), "{}", text);
         assert!(text.contains("when {x: xx} -> block"), "{}", text);
-        assert!(text.contains("when Circle(r) -> block"), "{}", text);
+        assert!(text.contains("when Shape.Circle(r) -> block"), "{}", text);
         assert!(text.contains("when _ -> block"), "{}", text);
         assert!(text.contains("(guard for t"), "{}", text);
         assert!(text.contains("arm1)"), "{}", text);

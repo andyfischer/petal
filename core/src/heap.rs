@@ -594,6 +594,11 @@ pub struct Heap {
     /// up — the two stores reach a joint fixpoint before either is swept.
     gray_closures: Vec<ClosureId>,
     gray_overload_sets: Vec<OverloadSetId>,
+    /// The one empty list every payload-free enum variant carries as its
+    /// payload, so `Color.red` allocates nothing. Never handed out as a list
+    /// value (so nothing can grow it in place), and kept alive by
+    /// [`sweep`](Self::sweep) itself. See [`empty_payload`](Self::empty_payload).
+    empty_payload: Option<ListId>,
 }
 
 /// What one slot costs a collection, expressed in the same "bytes" currency as
@@ -642,6 +647,7 @@ impl Heap {
             collections: 0,
             gray_closures: Vec::new(),
             gray_overload_sets: Vec::new(),
+            empty_payload: None,
             dup_stats: DupStats::new(),
             alloc_stats: AllocStats::new(),
         }
@@ -1131,6 +1137,28 @@ impl Heap {
     pub fn alloc_list(&mut self, elements: Vec<Value>) -> ListId {
         self.tick_alloc(AllocKind::List, value_slice_bytes(elements.len()));
         ListId::from_raw(self.lists.alloc(elements))
+    }
+
+    /// The shared empty payload of a payload-free enum variant, allocated on
+    /// first use.
+    pub fn empty_payload(&mut self) -> ListId {
+        match self.empty_payload {
+            Some(id) => id,
+            None => {
+                let id = self.alloc_list(Vec::new());
+                self.empty_payload = Some(id);
+                id
+            }
+        }
+    }
+
+    /// The payload list of an enum variant holding `fields`.
+    pub fn alloc_payload(&mut self, fields: &[Value]) -> ListId {
+        if fields.is_empty() {
+            self.empty_payload()
+        } else {
+            self.alloc_list(fields.to_vec())
+        }
     }
 
     pub fn get_list(&self, id: ListId) -> &[Value] {
@@ -1706,6 +1734,10 @@ impl Heap {
     /// Sweep phase: free all unmarked objects and reset marks.
     /// Call this after marking all roots.
     pub fn sweep(&mut self) {
+        // The shared empty payload is the heap's own; no root names it.
+        if let Some(id) = self.empty_payload {
+            self.mark_value(Value::List(id));
+        }
         // Reclaiming a string must also drop its interned entry. Destructure to
         // borrow `strings` and `intern_table` disjointly (the closure needs the
         // table while `sweep_with` holds `strings` mutably).

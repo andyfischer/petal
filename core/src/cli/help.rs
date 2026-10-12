@@ -285,28 +285,10 @@ pub(super) fn closest_command(word: &str) -> Option<&'static str> {
     }
     let budget = (word.chars().count() / 3).max(1);
     command_names()
-        .map(|c| (edit_distance(word, c), c))
+        .map(|c| (crate::diagnostic::edit_distance(word, c), c))
         .filter(|(d, _)| *d <= budget)
         .min_by_key(|(d, _)| *d)
         .map(|(_, c)| c)
-}
-
-/// Levenshtein distance over chars.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let b: Vec<char> = b.chars().collect();
-    let mut row: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.chars().enumerate() {
-        let mut diag = row[0];
-        row[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
-            let next = (diag + usize::from(ca != *cb))
-                .min(row[j] + 1)
-                .min(row[j + 1] + 1);
-            diag = row[j + 1];
-            row[j + 1] = next;
-        }
-    }
-    row[b.len()]
 }
 
 const RUN: &str = "\

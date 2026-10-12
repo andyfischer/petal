@@ -306,14 +306,14 @@ TEST(buffers_decode_nested_values) {
         "  name: \"crate\",\n"
         "  pos: {x: 1.5, y: 2, z: -3},\n"
         "  tags: [\"wood\", \"heavy\"],\n"
-        "  shape: Box(2, 3),\n"
-        "  inner: [[1, 2], [], [Circle(0.5)]],\n"
+        "  shape: Shape.Box(2, 3),\n"
+        "  inner: [[1, 2], [], [Shape.Circle(0.5)]],\n"
         "  vel: vec2(1, -1),\n"
         "  nothing: nil,\n"
         "  on: false,\n"
         "})\n"
-        "push_output(out, Circle(4))\n"
-        "push_output(out, Empty)\n"
+        "push_output(out, Shape.Circle(4))\n"
+        "push_output(out, Shape.Empty)\n"
         "push_output(out, [1, 2.5, \"three\"])\n");
     vm.run();
     petal::Values out = vm.drain("out");
@@ -329,11 +329,11 @@ TEST(buffers_decode_nested_values) {
     CHECK_EQ(rec["pos"][0].key(), std::string_view("x"));  // fields keep order
     CHECK_EQ(rec["tags"].size(), size_t(2));
     CHECK_EQ(rec["tags"][1].str(), std::string_view("heavy"));
-    CHECK_EQ(rec["shape"].tag(), std::string_view("Box"));
+    CHECK_EQ(rec["shape"].tag(), std::string_view("Shape.Box"));
     CHECK_EQ(rec["shape"][1].integer(), 3);
     CHECK_EQ(rec["inner"][0][1].integer(), 2);
     CHECK(rec["inner"][1].is_list() && rec["inner"][1].empty());
-    CHECK_EQ(rec["inner"][2][0].tag(), std::string_view("Circle"));
+    CHECK_EQ(rec["inner"][2][0].tag(), std::string_view("Shape.Circle"));
     CHECK_NEAR(rec["inner"][2][0][0].number(), 0.5, 1e-3);
     CHECK(rec["vel"].is_vec2());
     CHECK(rec.has("nothing") && rec["nothing"].is_nil());
@@ -341,9 +341,9 @@ TEST(buffers_decode_nested_values) {
     CHECK(rec["on"].is_bool() && !rec["on"].boolean());
     CHECK(rec["absent"]["deeper"][3].is_nil());  // chained misses are safe
 
-    CHECK_EQ(out[1].tag(), std::string_view("Circle"));
+    CHECK_EQ(out[1].tag(), std::string_view("Shape.Circle"));
     CHECK_EQ(out[1][0].integer(), 4);
-    CHECK_EQ(out[2].tag(), std::string_view("Empty"));
+    CHECK_EQ(out[2].tag(), std::string_view("Shape.Empty"));
     CHECK_EQ(out[2].size(), size_t(0));
 
     // Iteration over list items.

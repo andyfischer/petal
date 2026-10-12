@@ -6,11 +6,11 @@ enum Expr
 end
 fn eval(e)
   match e
-    when Num(v) -> v
-    when Add(a, b) -> eval(a) + eval(b)
-    when Mul(a, b) -> eval(a) * eval(b)
+    when Expr.Num(v) -> v
+    when Expr.Add(a, b) -> eval(a) + eval(b)
+    when Expr.Mul(a, b) -> eval(a) * eval(b)
   end
 end
 // (2 + 3) * 4 = 20
-let tree = Mul(Add(Num(2), Num(3)), Num(4))
+let tree = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print(eval(tree))

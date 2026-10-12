@@ -473,8 +473,8 @@ fn match_guards_and_bindings() {
 fn match_variants() {
     assert_parity(
         "enum Shape\n  Circle(r),\n  Rect(w, h),\nend\n\
-         fn area(s)\n  match s\n    when Circle(r) -> r * r * 3\n    when Rect(w, h) -> w * h\n  end\nend\n\
-         let y = area(Rect(3, 4))",
+         fn area(s)\n  match s\n    when Shape.Circle(r) -> r * r * 3\n    when Shape.Rect(w, h) -> w * h\n  end\nend\n\
+         let y = area(Shape.Rect(3, 4))",
     );
 }
 

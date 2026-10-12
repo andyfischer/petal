@@ -12,6 +12,7 @@
 //!                  `state` slots
 
 mod capture_lag;
+mod enums;
 mod expr;
 mod function;
 mod native;
@@ -64,7 +65,15 @@ pub struct Compiler {
     assign_span: Option<SourceSpan>,
     last_term_in_block: HashMap<BlockId, TermId>,
     scopes: Vec<HashMap<String, TermId>>,
-    enum_variants: HashMap<String, usize>, // variant name -> field count
+    // Every enum declared by a module compiled so far, by name (unique in a
+    // compilation, like a class name), and the term each enum's name is
+    // bound to. A name that resolves to one of those terms *is* that enum,
+    // which is what lets `Color.red` compile to the variant. See `enums.rs`.
+    enum_defs: HashMap<String, enums::EnumInfo>,
+    enum_terms: HashMap<TermId, String>,
+    // Set while an enum's constant data is being compiled: the top-level
+    // names the file binds only later, which a data expression cannot use.
+    enum_data_unavailable: Option<HashSet<String>>,
     next_register: HashMap<BlockId, u16>,
 
     // Function scope depth tracking for closure capture
@@ -487,7 +496,9 @@ impl Compiler {
             assign_span: None,
             last_term_in_block: HashMap::new(),
             scopes: Vec::new(),
-            enum_variants: HashMap::new(),
+            enum_defs: HashMap::new(),
+            enum_terms: HashMap::new(),
+            enum_data_unavailable: None,
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
             fn_param_reqs: HashMap::new(),
@@ -775,6 +786,7 @@ impl Compiler {
                 .collect();
 
         let inferences = std::mem::take(&mut self.inferences);
+        let enums = self.take_enum_defs();
         let classes = std::mem::replace(&mut self.classes, crate::classes::ClassTable::new());
         Ok((Program {
             schema: crate::program::IR_SCHEMA_VERSION.to_string(),
@@ -796,6 +808,7 @@ impl Compiler {
                 .iter()
                 .map(|(_, def)| def.name.clone())
                 .collect(),
+            enums,
             introspect: Default::default(),
             native_links,
             method_natives: Some(std::mem::take(&mut self.method_natives)),
@@ -996,8 +1009,6 @@ impl Compiler {
         let (unused, layout) = crate::typecheck::unused::check_unused_with_layout(&stmts);
         self.warnings.extend(unused);
         self.layout_deps.extend(layout);
-        self.warnings
-            .extend(crate::typecheck::shadow::check_enum_collisions(&stmts));
         let shadowed = crate::typecheck::shadow::check_shadowed_builtins(&stmts, &|name| {
             self.builtin_phantoms.contains_key(name)
         });
@@ -1547,7 +1558,7 @@ impl Compiler {
         self.module_exports.insert(module_name.to_string(), names);
     }
 
-    /// Top-level names a module declares (fn, enum variants, let, state, and a
+    /// Top-level names a module declares (fn, enum, let, state, and a
     /// class's constructor) — the set a selective import may collide with.
     fn declared_top_level_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
@@ -1557,13 +1568,9 @@ impl Compiler {
                 | StmtKind::NativeFn(crate::ast::NativeFnDecl { name, .. })
                 | StmtKind::Let { name, .. }
                 | StmtKind::State { name, .. }
-                | StmtKind::ClassDecl { name, .. } => {
+                | StmtKind::ClassDecl { name, .. }
+                | StmtKind::EnumDecl { name, .. } => {
                     names.insert(name.clone());
-                }
-                StmtKind::EnumDecl { variants, .. } => {
-                    for v in variants {
-                        names.insert(v.name.clone());
-                    }
                 }
                 _ => {}
             }
@@ -1571,7 +1578,7 @@ impl Compiler {
         names
     }
 
-    /// Top-level names a module explicitly marks `pub` (fn, enum variants, let,
+    /// Top-level names a module explicitly marks `pub` (fn, enum, let,
     /// state, class) — the set that importers may see. Everything else is private.
     /// `pub` is the single privacy rule: a name is exported iff its
     /// declaration is marked `pub`, regardless of a leading underscore
@@ -1592,13 +1599,11 @@ impl Compiler {
                 // get this set as their class scope too (see
                 // `visible_class_names`), so an unexported class is private in
                 // type position exactly as it is in call position.
-                | StmtKind::ClassDecl { name, .. } => {
+                | StmtKind::ClassDecl { name, .. }
+                // An enum exports its one name; its variants are members of
+                // it (`mod.Color.red`).
+                | StmtKind::EnumDecl { name, .. } => {
                     names.insert(name.clone());
-                }
-                StmtKind::EnumDecl { variants, .. } => {
-                    for v in variants {
-                        names.insert(v.name.clone());
-                    }
                 }
                 _ => {}
             }
@@ -2066,6 +2071,7 @@ impl Compiler {
         // method declaration has to find its class whichever order the file
         // declares them in.
         self.prescan_classes(stmts, Some(module.display_name.as_str()));
+        self.prescan_enums(stmts, Some(module.display_name.as_str()));
 
         // What un-annotated parameters must be, read off the bodies. Computed
         // before this module's signatures join the map, so "declared by some
@@ -2214,14 +2220,10 @@ impl Compiler {
                 // is bound here, ahead of every statement, to the native's
                 // term. Nothing is emitted for a native the `Env` registers.
                 StmtKind::NativeFn(decl) => self.bind_native_decl(decl),
-                StmtKind::EnumDecl { variants, .. } => {
-                    for variant in variants {
-                        self.enum_variants
-                            .insert(variant.name.clone(), variant.fields.len());
-                        let tid = self.emit_phantom_term(variant.name.clone());
-                        self.scope_bind(variant.name.clone(), tid);
-                    }
-                }
+                // An enum is hoisted like a class: its name is bound here.
+                // Its constant data is evaluated below, once every hoisted
+                // declaration is in scope.
+                StmtKind::EnumDecl { .. } => self.bind_enum(stmt),
                 _ => {}
             }
         }
@@ -2285,12 +2287,20 @@ impl Compiler {
             }
             self.hoisted_decls.insert(stmt.span);
         }
+
+        // Enum constant data last: it may call a hoisted function or read a
+        // hoisted constant, but nothing the file computes as it runs.
+        let unavailable: HashSet<String> = shadowed
+            .iter()
+            .filter(|n| !consts.contains(*n))
+            .cloned()
+            .collect();
+        self.emit_enum_data(stmts, unavailable);
     }
 }
 
-/// Names this file binds to a *computed* value at the top level: `let`, `var`,
-/// `state`, and enum variants (whose constructors are built where the `enum`
-/// statement stands). A function body that mentions one of these is tied to the
+/// Names this file binds to a *computed* value at the top level: `let`, `var`
+/// and `state`. A function body that mentions one of these is tied to the
 /// order the file runs in, and so is a `fn` whose own name is one of them.
 fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
@@ -2298,11 +2308,6 @@ fn top_level_value_names(stmts: &[Stmt]) -> HashSet<String> {
         match &stmt.kind {
             StmtKind::Let { name, .. } | StmtKind::State { name, .. } => {
                 names.insert(name.clone());
-            }
-            StmtKind::EnumDecl { variants, .. } => {
-                for v in variants {
-                    names.insert(v.name.clone());
-                }
             }
             _ => {}
         }
@@ -2408,8 +2413,8 @@ fn shadow_read_fn_names(stmts: &[Stmt]) -> HashSet<String> {
 /// Top-level `fn` names whose declarations can be emitted ahead of the file's
 /// statements — those whose bodies mention nothing the file *computes*: no
 /// top-level `let`/`var`/`state` other than a hoisted constant `let` (`consts`,
-/// from `hoistable_const_lets`), and no enum variant (its constructor is built
-/// where the `enum` statement stands).
+/// from `hoistable_const_lets`). An enum is hoisted itself, so naming one —
+/// or a variant of one — holds nothing back.
 ///
 /// Such a function captures nothing from the file's run-time work, so creating
 /// its closure early cannot change what the closure sees; a function that does
@@ -2507,7 +2512,7 @@ fn hoistable_fn_names(
 /// A candidate is disqualified — conservatively, since the cost of a false
 /// negative is only "this one is not hoisted" — when:
 /// - the name is declared more than once at the top level (another `let`, a
-///   `var`/`state`, a `fn`, a class or an enum variant), or is the root of an
+///   `var`/`state`, a `fn`, a class or an enum), or is the root of an
 ///   assignment or `@` anywhere in the file: a rebind would be reordered past;
 /// - a statement *above* the `let` mentions the name, in any position: that
 ///   statement runs (or creates a closure) while the name still means
@@ -2525,15 +2530,11 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         match &stmt.kind {
             StmtKind::Let { name, .. }
             | StmtKind::State { name, .. }
-            | StmtKind::ClassDecl { name, .. } => *decls.entry(name.as_str()).or_default() += 1,
+            | StmtKind::ClassDecl { name, .. }
+            | StmtKind::EnumDecl { name, .. } => *decls.entry(name.as_str()).or_default() += 1,
             StmtKind::FnDecl {
                 name, class: None, ..
             } => *decls.entry(name.as_str()).or_default() += 1,
-            StmtKind::EnumDecl { variants, .. } => {
-                for v in variants {
-                    *decls.entry(v.name.as_str()).or_default() += 1;
-                }
-            }
             _ => {}
         }
     }
@@ -2627,7 +2628,11 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         {
             consts.insert(name.clone());
         }
-        mentioned_above.extend(idents_in_stmts(std::slice::from_ref(stmt)));
+        // An enum's constant data is evaluated after the hoisted constants,
+        // wherever the declaration stands, so a mention there is not "above".
+        if !matches!(stmt.kind, StmtKind::EnumDecl { .. }) {
+            mentioned_above.extend(idents_in_stmts(std::slice::from_ref(stmt)));
+        }
     }
     consts
 }

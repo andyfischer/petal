@@ -659,7 +659,7 @@ fn describe(n)
 end
 ```
 
-Patterns cover literals, bindings, enum variants (`when Circle(r) ->`), list
+Patterns cover literals, bindings, enum variants (`when Shape.circle(r) ->`), list
 destructuring (`when [head, ...tail] ->`) and guards (`when x if x > 100 ->`).
 An arm whose body is several statements uses `do … end` instead of `->`.
 
@@ -725,14 +725,28 @@ end
 print(Circle(2).area())   // 12.56636
 ```
 
-`enum` declares variants, with or without payloads, and pairs with `match`:
+`enum` declares variants, with or without payloads, and pairs with `match`.
+A variant is a member of its enum, in expressions and in patterns:
 
 ```petal
 enum Shape
-  Circle(radius),
-  Rect(w, h),
+  circle(radius),
+  rect(w, h),
 end
+
+fn area(s)
+  match s
+    when Shape.circle(r) -> 3.14159 * r * r
+    when Shape.rect(w, h) -> w * h
+  end
+end
+
+print(area(Shape.rect(2, 3)))   // 6
 ```
+
+A variant can also carry constant data (`park(shape: "area")`, read as
+`k.shape`), and an enum lists and looks up its variants with `Kind.all` and
+`Kind.from("park")`. See [Enums](language-guide.md#enums).
 
 ---
 
@@ -1179,7 +1193,7 @@ tell you the fix in the message. A sample:
 | a line starting with `-` under the line it should continue | ``` a line that starts with `-` is a new statement (a negation), not a continuation of the line above ``` — from `check` |
 | `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `check` |
 | `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `check` |
-| `enum A None end` and `enum B None end` | ``` variant `None` is declared by both `enum A` and `enum B` ``` — from `check` |
+| `red` where `enum Color` declares `red` | ``Undefined variable: red — did you mean Color.red?`` |
 
 ---
 

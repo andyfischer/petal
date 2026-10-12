@@ -37,6 +37,13 @@ pub(super) fn native_type(state: &mut PetalCxt) -> Result<u32, String> {
             .map_class_name(id)
             .unwrap_or_else(|| v.type_name())
             .to_string(),
+        // A variant reports its enum, as a class instance reports its class.
+        Value::EnumVariant { tag, .. } => {
+            crate::program::split_enum_tag(state.heap().get_string(tag))
+                .0
+                .unwrap_or_else(|| v.type_name())
+                .to_string()
+        }
         _ => v.type_name().to_string(),
     };
     state.push_string(name);

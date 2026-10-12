@@ -463,6 +463,23 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_fn_info = Some(fn_info_id);
     table.intrinsic_fn_ast = Some(fn_ast_id);
 
+    // Enums (append-only). `__enum_data` publishes a variant's constant data
+    // into the running stack and `__enum_from` is `Enum.from(name)`, which
+    // reads the program's enum table; both are VM intrinsics the compiler
+    // emits and nothing else calls.
+    let enum_data_id = table.register(
+        crate::program::ENUM_DATA_BUILTIN,
+        native_intrinsic_placeholder,
+        NativeEffects::EFFECT,
+    );
+    let enum_from_id = table.register(
+        crate::program::ENUM_FROM_BUILTIN,
+        native_intrinsic_placeholder,
+        NativeEffects::PURE,
+    );
+    table.intrinsic_enum_data = Some(enum_data_id);
+    table.intrinsic_enum_from = Some(enum_from_id);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");
     table.intrinsic_sort_by = Some(sort_by_id);

@@ -916,7 +916,7 @@ impl Parser {
         };
         self.ev_open(SyntaxKind::ParamList);
         self.expect(&Token::LParen)?;
-        let params = self.parse_param_list(true)?;
+        let params = self.parse_param_list()?;
         self.expect(&Token::RParen)?;
         self.ev_close(); // ParamList
         let ret = self.parse_return_type()?;
@@ -1135,22 +1135,49 @@ impl Parser {
         self.skip_newlines();
         let mut variants = Vec::new();
         while !matches!(self.peek(), Token::End | Token::Eof) {
+            let variant_start = self.pos;
+            self.ev_open(SyntaxKind::EnumVariant);
             let variant_name = self.expect_member_name("a variant name", &closes)?;
-            let fields = if matches!(self.peek(), Token::LParen) {
+            let mut fields = Vec::new();
+            let mut data = Vec::new();
+            if matches!(self.peek(), Token::LParen) {
                 self.ev_open(SyntaxKind::ParamList);
                 self.advance(); // consume '('
-                let params = self.parse_param_list(false)?;
+                self.skip_newlines();
+                while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                    self.expect_element_start("a field name")?;
+                    // A bare identifier is a payload field; `key: expr` is
+                    // constant data attached to the variant.
+                    let cp = self.ev_checkpoint();
+                    let field = self.expect_ident()?;
+                    match self.peek() {
+                        Token::Colon => {
+                            self.advance();
+                            self.skip_newlines();
+                            let value = self.parse_expr()?;
+                            self.ev_wrap(cp, SyntaxKind::EnumData);
+                            data.push(EnumData { key: field, value });
+                        }
+                        Token::Assign => {
+                            return Err(self.error_at_current(
+                                "An enum variant's fields cannot have default values \
+                                 (write `key: value` to attach constant data to the variant)"
+                                    .to_string(),
+                            ));
+                        }
+                        _ => fields.push(field),
+                    }
+                    self.expect_element_separator(&Token::RParen, "variant fields")?;
+                }
                 self.expect(&Token::RParen)?;
                 self.ev_close();
-                // Enum field type annotations are deferred (see the plan): keep
-                // field names only. Any `: type` was still parsed into the CST.
-                params.into_iter().map(|p| p.name).collect()
-            } else {
-                Vec::new()
-            };
+            }
+            self.ev_close(); // EnumVariant
             variants.push(EnumVariant {
                 name: variant_name,
                 fields,
+                data,
+                span: self.span_from(variant_start),
             });
             self.expect_element_separator_of(&Token::End, "enum variants", Some(&closes))?;
         }
@@ -1290,10 +1317,7 @@ impl Parser {
         Ok(stmts)
     }
 
-    /// `defaults` says whether a parameter may carry `= expr` here: true for
-    /// a `fn` or lambda, false for an enum variant's field list, which reuses
-    /// this grammar but declares data rather than a call signature.
-    fn parse_param_list(&mut self, defaults: bool) -> Result<Vec<Param>, String> {
+    fn parse_param_list(&mut self) -> Result<Vec<Param>, String> {
         let mut params: Vec<Param> = Vec::new();
         self.skip_newlines();
         while !matches!(self.peek(), Token::RParen | Token::Eof) {
@@ -1301,7 +1325,7 @@ impl Parser {
             let name_pos = self.pos;
             let name = self.expect_ident()?;
             let ty = self.parse_type_annotation()?;
-            let default = self.parse_param_default(defaults)?;
+            let default = self.parse_param_default()?;
             // A call fills parameters left to right, so one that can be left
             // out may only be followed by others that can.
             if default.is_none()
@@ -1330,14 +1354,9 @@ impl Parser {
     /// returns `Ok(None)` when the next token isn't `=`. The `=` and the
     /// expression are wrapped in a `ParamDefault` CST node, so a parameter
     /// without one keeps its old CST shape.
-    fn parse_param_default(&mut self, allowed: bool) -> Result<Option<Expr>, String> {
+    fn parse_param_default(&mut self) -> Result<Option<Expr>, String> {
         if !matches!(self.peek(), Token::Assign) {
             return Ok(None);
-        }
-        if !allowed {
-            return Err(self.error_at_current(
-                "An enum variant's fields cannot have default values".to_string(),
-            ));
         }
         self.ev_open(SyntaxKind::ParamDefault);
         self.expect(&Token::Assign)?;
@@ -2272,8 +2291,18 @@ impl Parser {
                 self.advance();
                 Ok(Pattern::Wildcard)
             }
-            Token::Ident(name) => {
+            Token::Ident(mut name) => {
                 self.advance();
+                // `Kind.park`, `mod.Kind.park` — a variant is named through
+                // its enum. A lone identifier is a binding.
+                let mut qualified = false;
+                while matches!(self.peek(), Token::Dot) {
+                    self.advance();
+                    let segment = self.expect_ident()?;
+                    name.push('.');
+                    name.push_str(&segment);
+                    qualified = true;
+                }
                 if matches!(self.peek(), Token::LParen) {
                     self.advance();
                     let mut fields = Vec::new();
@@ -2286,6 +2315,11 @@ impl Parser {
                     }
                     self.expect(&Token::RParen)?;
                     Ok(Pattern::Variant { name, fields })
+                } else if qualified {
+                    Ok(Pattern::Variant {
+                        name,
+                        fields: Vec::new(),
+                    })
                 } else {
                     Ok(Pattern::Variable(name))
                 }
@@ -2390,7 +2424,7 @@ impl Parser {
         let params = if matches!(self.peek(), Token::LParen) {
             self.ev_open(SyntaxKind::ParamList);
             self.expect(&Token::LParen)?;
-            let params = self.parse_param_list(true)?;
+            let params = self.parse_param_list()?;
             self.expect(&Token::RParen)?;
             self.ev_close(); // ParamList
             params

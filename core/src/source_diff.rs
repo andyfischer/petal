@@ -598,7 +598,14 @@ impl Cmp {
                     && v1
                         .iter()
                         .zip(v2)
-                        .all(|(x, y)| x.name == y.name && x.fields == y.fields)
+                        .all(|(x, y)| {
+                            x.name == y.name
+                                && x.fields == y.fields
+                                && x.data.len() == y.data.len()
+                                && x.data.iter().zip(&y.data).all(|(d1, d2)| {
+                                    d1.key == d2.key && self.expr(&d1.value, &d2.value)
+                                })
+                        })
             }
             (
                 StmtKind::ClassDecl {

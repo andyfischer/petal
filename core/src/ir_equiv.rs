@@ -229,6 +229,14 @@ impl<'p> Cmp<'p> {
                 self.b.has_errors.to_string(),
             ));
         }
+        if self.a.enums != self.b.enums {
+            return Err(IrDiff::new(
+                "program",
+                "enums",
+                format!("{:?}", self.a.enums),
+                format!("{:?}", self.b.enums),
+            ));
+        }
         let (ca, cb) = (&self.a.class_names, &self.b.class_names);
         if ca != cb {
             return Err(IrDiff::new(

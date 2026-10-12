@@ -47,12 +47,12 @@ end
 
 fn eval(expr)
   match expr
-    when Num(v) -> v
-    when Add(l, r) -> eval(l) + eval(r)
-    when Mul(l, r) -> eval(l) * eval(r)
+    when Expr.Num(v) -> v
+    when Expr.Add(l, r) -> eval(l) + eval(r)
+    when Expr.Mul(l, r) -> eval(l) * eval(r)
   end
 end
 
 // (2 + 3) * 4 = 20
-let expression = Mul(Add(Num(2), Num(3)), Num(4))
+let expression = Expr.Mul(Expr.Add(Expr.Num(2), Expr.Num(3)), Expr.Num(4))
 print("(2 + 3) * 4 = {eval(expression)}")

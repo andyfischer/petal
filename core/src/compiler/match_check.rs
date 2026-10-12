@@ -17,7 +17,7 @@
 
 use super::*;
 use crate::ir_display::format_pattern;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 /// The values one alternative is keyed on: two alternatives with the same key
 /// are tried against the same values.
@@ -93,27 +93,16 @@ impl Compiler {
     fn check_or_bindings(&mut self, pattern: &Pattern, span: SourceSpan) {
         match pattern {
             Pattern::Or(alts) => {
-                let names = |p: &Pattern| p.bound_names().into_iter().collect::<BTreeSet<_>>();
-                let first = alts.first().map(names).unwrap_or_default();
-                for alt in alts.iter().skip(1) {
-                    let these = names(alt);
-                    if these == first {
-                        continue;
-                    }
-                    let odd: Vec<String> = first.symmetric_difference(&these).cloned().collect();
-                    let binder = if first.contains(&odd[0]) { &alts[0] } else { alt };
-                    let other = if first.contains(&odd[0]) { alt } else { &alts[0] };
+                if let Some((binder, other, name)) = pattern.or_binding_mismatch() {
                     self.error_at(
                         span,
                         format!(
                             "every alternative of an or-pattern must bind the same names, \
-                             but `{}` binds {} and `{}` does not",
+                             but `{}` binds `{name}` and `{}` does not",
                             format_pattern(binder),
-                            quoted_list(&odd[..1]),
                             format_pattern(other),
                         ),
                     );
-                    break;
                 }
                 for alt in alts {
                     self.check_or_bindings(alt, span);

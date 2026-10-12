@@ -25,12 +25,7 @@
 //!   published with [`ENUM_DATA_BUILTIN`].
 
 use super::*;
-
-/// Member names an enum's own record defines, which a variant may not take.
-const RESERVED_VARIANTS: [&str; 2] = ["all", "from"];
-/// The field every variant value answers (`k.name`), which a payload field or
-/// a data key may not take.
-const RESERVED_FIELD: &str = "name";
+use crate::program::{ENUM_MEMBERS, VARIANT_NAME_FIELD};
 
 /// What a data expression cannot use, while an enum's constant data is being
 /// compiled (see [`Compiler::emit_enum_data`]).
@@ -75,7 +70,7 @@ pub fn collect_enums(
         // member keeps the name, so no later code sees the variant.
         let mut def = EnumDef::declared(variants);
         def.variants
-            .retain(|v| !RESERVED_VARIANTS.contains(&v.name.as_str()));
+            .retain(|v| !ENUM_MEMBERS.contains(&v.name.as_str()));
         match classes.declare_enum(name, def, module, stmt.span) {
             Ok(_) => check_enum_variants(name, variants)
                 .into_iter()
@@ -115,7 +110,7 @@ impl Compiler {
         let variants = self.enum_variant_names(enum_name);
         let mut keys: Vec<ConstantId> = Vec::new();
         let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
-        for member in variants.iter().map(String::as_str).chain(RESERVED_VARIANTS) {
+        for member in variants.iter().map(String::as_str).chain(ENUM_MEMBERS) {
             if let Some(tid) = self.emit_enum_member(enum_name, member) {
                 keys.push(self.string_constant(member));
                 inputs.push(tid);
@@ -666,7 +661,7 @@ fn check_enum_variants(enum_name: &str, variants: &[EnumVariant]) -> Vec<(Source
     let mut seen: HashSet<&str> = HashSet::new();
     for v in variants {
         let name = v.name.as_str();
-        if RESERVED_VARIANTS.contains(&name) {
+        if ENUM_MEMBERS.contains(&name) {
             errors.push((
                 v.span,
                 format!(
@@ -686,12 +681,12 @@ fn check_enum_variants(enum_name: &str, variants: &[EnumVariant]) -> Vec<(Source
         let fields = v.fields.iter().map(|f| (f.as_str(), "payload field"));
         let data = v.data.iter().map(|d| (d.key.as_str(), "data key"));
         for (member, what) in fields.chain(data) {
-            if member == RESERVED_FIELD {
+            if member == VARIANT_NAME_FIELD {
                 errors.push((
                     v.span,
                     format!(
                         "variant `{enum_name}.{name}` may not have a {what} named \
-                         `{RESERVED_FIELD}`: `.{RESERVED_FIELD}` is every variant's own name \
+                         `{VARIANT_NAME_FIELD}`: `.{VARIANT_NAME_FIELD}` is every variant's own name \
                          (\"{name}\" here)"
                     ),
                 ));

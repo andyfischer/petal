@@ -734,6 +734,13 @@ pub struct EntryImport {
 }
 
 /// The builtin a variant's constant data is published through:
+/// The members every enum has besides its variants (`Kind.all`,
+/// `Kind.from(name)`), which a variant may not be named.
+pub const ENUM_MEMBERS: [&str; 2] = ["all", "from"];
+/// The field every variant value answers with its own name (`k.name`), which
+/// a payload field or a data key may not take.
+pub const VARIANT_NAME_FIELD: &str = "name";
+
 /// `__enum_data(tag, record)`, emitted once per variant that declares
 /// `key: expr` data. Intercepted by the VM, which keeps the record in the
 /// running stack's table ([`crate::stack::Stack::enum_data`]) where a field

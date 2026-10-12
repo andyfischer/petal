@@ -608,7 +608,7 @@ pub fn enum_variant_field(
     data: crate::heap::ListId,
     field: &str,
 ) -> Option<Value> {
-    if field == "name" {
+    if field == crate::program::VARIANT_NAME_FIELD {
         let name = crate::program::split_enum_tag(heap.get_string(tag)).1.to_string();
         return Some(Value::String(heap.intern_str(&name)));
     }

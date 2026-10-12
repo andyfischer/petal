@@ -69,7 +69,7 @@ impl Program {
         for (name, def) in &self.enums {
             let mut seen: HashSet<&str> = HashSet::new();
             for v in &def.variants {
-                if matches!(v.name.as_str(), "all" | "from") {
+                if crate::program::ENUM_MEMBERS.contains(&v.name.as_str()) {
                     return Err(format!(
                         "enum {name}: a variant may not be named `{}`",
                         v.name
@@ -80,7 +80,7 @@ impl Program {
                 }
                 let mut members: HashSet<&str> = HashSet::new();
                 for member in v.fields.iter().chain(&v.data) {
-                    if member == "name" || !members.insert(member.as_str()) {
+                    if member == crate::program::VARIANT_NAME_FIELD || !members.insert(member.as_str()) {
                         return Err(format!(
                             "enum {name}: variant `{}` has a field or data key `{member}` that is \
                              reserved or repeated",
@@ -158,13 +158,7 @@ impl Program {
                     if alternatives.len() < 2 {
                         return Err("an or-pattern needs at least two alternatives".to_string());
                     }
-                    let names = |p: &Pattern| {
-                        let mut names = p.bound_names();
-                        names.sort();
-                        names
-                    };
-                    let first = names(&alternatives[0]);
-                    if alternatives.iter().any(|a| names(a) != first) {
+                    if pattern.or_binding_mismatch().is_some() {
                         return Err(
                             "the alternatives of an or-pattern bind different names".to_string()
                         );

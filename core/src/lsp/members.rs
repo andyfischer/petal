@@ -14,8 +14,7 @@ use crate::source_map::SourceSpan;
 use crate::lsp::document::{Analysis, Definition, DefinitionKind};
 use crate::lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
-/// The field every variant value answers.
-const NAME_FIELD: &str = "name";
+use crate::program::VARIANT_NAME_FIELD as NAME_FIELD;
 
 // ---------------------------------------------------------------------------
 // Shapes: what a declaration says

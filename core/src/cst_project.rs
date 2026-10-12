@@ -28,7 +28,7 @@
 use crate::ast::*;
 use crate::cst::{SyntaxElement, SyntaxKind, SyntaxNode, SyntaxToken};
 use crate::lexer::Token;
-use crate::parse::{expr_to_assign_target, parse_color_hex};
+use crate::parse::{expr_to_assign_target, parse_color_hex, pattern_from_path};
 use crate::source_map::{ENTRY_FILE, FileId, SourcePosition, SourceSpan};
 
 /// Project the statements of a whole-file `Root` node, with spans tagged as
@@ -1190,18 +1190,11 @@ impl Projector {
                 let has_parens = tokens
                     .iter()
                     .any(|t| matches!(t.token(), Some(Token::LParen)));
-                if has_parens || path.len() > 1 {
-                    let fields = child_nodes(node)
-                        .iter()
-                        .map(|n| self.pattern(n))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(Pattern::Variant {
-                        name: path.join("."),
-                        fields,
-                    })
-                } else {
-                    Ok(Pattern::Variable(path.into_iter().next().unwrap_or_default()))
-                }
+                let fields = child_nodes(node)
+                    .iter()
+                    .map(|n| self.pattern(n))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(pattern_from_path(path, has_parens.then_some(fields)))
             }
             Some(Token::Int(n)) => Ok(Pattern::Literal(Literal::Int(n))),
             Some(Token::Float(f)) => Ok(Pattern::Literal(Literal::Float(f))),

@@ -21,6 +21,7 @@ use crate::ast::{
 };
 use crate::classes::ClassTable;
 use crate::diagnostic::Diagnostic;
+use crate::program::VARIANT_NAME_FIELD;
 use crate::source_map::SourceSpan;
 use crate::types::{FnSignature, Type};
 
@@ -1361,11 +1362,11 @@ impl<'a> Checker<'a> {
         let enum_name = self.classes.enum_name(id);
         let def = self.classes.enum_def(id);
         let answers = |v: &crate::program::EnumVariantDef| {
-            field == "name" || v.fields.iter().any(|f| f == field) || v.data.iter().any(|d| d == field)
+            field == VARIANT_NAME_FIELD || v.fields.iter().any(|f| f == field) || v.data.iter().any(|d| d == field)
         };
         let listed = |v: &crate::program::EnumVariantDef| {
             let mut names: Vec<&str> = v.fields.iter().chain(&v.data).map(String::as_str).collect();
-            names.push("name");
+            names.push(VARIANT_NAME_FIELD);
             names.join(", ")
         };
         if let Some(v) = self.written_variant(object) {
@@ -1384,7 +1385,7 @@ impl<'a> Checker<'a> {
                     names.push(name);
                 }
             }
-            names.push("name");
+            names.push(VARIANT_NAME_FIELD);
             let message = format!(
                 "no variant of enum `{enum_name}` has a field `{field}` (fields of `{enum_name}`: {})",
                 names.join(", ")

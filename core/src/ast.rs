@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 use crate::source_map::SourceSpan;
 
@@ -266,6 +267,20 @@ impl Pattern {
             }
             Pattern::Or(alternatives) => list(alternatives).join(" | "),
         }
+    }
+
+    /// Where the alternatives of this or-pattern do not bind the same names:
+    /// `(binder, other, name)` for the first alternative to differ from the
+    /// first one, `binder` being the one of the two that binds `name`.
+    pub fn or_binding_mismatch(&self) -> Option<(&Pattern, &Pattern, String)> {
+        let Pattern::Or(alts) = self else { return None };
+        let names = |p: &Pattern| p.bound_names().into_iter().collect::<BTreeSet<_>>();
+        let first = names(alts.first()?);
+        alts.iter().skip(1).find_map(|alt| {
+            let these = names(alt);
+            let odd = first.symmetric_difference(&these).next()?.clone();
+            Some(if first.contains(&odd) { (&alts[0], alt, odd) } else { (alt, &alts[0], odd) })
+        })
     }
 
     /// The alternatives of the pattern's top level: the pattern itself, or

@@ -2337,38 +2337,26 @@ impl Parser {
                 self.advance();
                 Ok(Pattern::Wildcard)
             }
-            Token::Ident(mut name) => {
+            Token::Ident(name) => {
                 self.advance();
-                // `Kind.park`, `mod.Kind.park` — a variant is named through
-                // its enum. A lone identifier is a binding.
-                let mut qualified = false;
+                let mut path = vec![name];
                 while matches!(self.peek(), Token::Dot) {
                     self.advance();
-                    let segment = self.expect_ident()?;
-                    name.push('.');
-                    name.push_str(&segment);
-                    qualified = true;
+                    path.push(self.expect_ident()?);
                 }
-                if matches!(self.peek(), Token::LParen) {
-                    self.advance();
-                    let mut fields = Vec::new();
-                    self.skip_newlines();
-                    while !matches!(self.peek(), Token::RParen | Token::Eof) {
-                        self.expect_element_start("a variant field pattern")?;
-                        let field_pat = self.parse_pattern()?;
-                        fields.push(field_pat);
-                        self.expect_element_separator(&Token::RParen, "variant fields")?;
-                    }
-                    self.expect(&Token::RParen)?;
-                    Ok(Pattern::Variant { name, fields })
-                } else if qualified {
-                    Ok(Pattern::Variant {
-                        name,
-                        fields: Vec::new(),
-                    })
-                } else {
-                    Ok(Pattern::Variable(name))
+                if !matches!(self.peek(), Token::LParen) {
+                    return Ok(pattern_from_path(path, None));
                 }
+                self.advance();
+                let mut fields = Vec::new();
+                self.skip_newlines();
+                while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                    self.expect_element_start("a variant field pattern")?;
+                    fields.push(self.parse_pattern()?);
+                    self.expect_element_separator(&Token::RParen, "variant fields")?;
+                }
+                self.expect(&Token::RParen)?;
+                Ok(pattern_from_path(path, Some(fields)))
             }
             Token::Int(n) => {
                 self.advance();
@@ -2773,6 +2761,22 @@ pub(crate) fn parse_color_hex(hex: &str) -> Vec<(&'static str, i64)> {
             ("a", parse2(b[6], b[7])),
         ],
         _ => unreachable!("lexer validates hex length"),
+    }
+}
+
+/// A pattern that opens with an identifier, from its dotted `path` and the
+/// field patterns in its parens, if it has any. `Kind.park`, `mod.Kind.park`
+/// and anything with parens is a variant, named through its enum; a lone
+/// identifier is a binding.
+///
+/// Shared by the parser and the CST projection, which must agree.
+pub(crate) fn pattern_from_path(path: Vec<String>, fields: Option<Vec<Pattern>>) -> Pattern {
+    match fields {
+        None if path.len() == 1 => Pattern::Variable(path.concat()),
+        fields => Pattern::Variant {
+            name: path.join("."),
+            fields: fields.unwrap_or_default(),
+        },
     }
 }
 

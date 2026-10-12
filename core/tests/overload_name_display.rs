@@ -39,11 +39,17 @@ print(box(1))
 ";
 
 /// Write `OVL` to a temp file and hand back the path — the inspection
-/// subcommands take a file, not `-e`.
+/// subcommands take a file, not `-e`. Written once per process: the tests run
+/// on parallel threads, and a rewrite truncates the file under a `petal` that
+/// another test has already started on it.
 fn ovl_file() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("petal-ovl-{}.ptl", std::process::id()));
-    std::fs::write(&path, OVL).expect("write the overload fixture");
-    path
+    static PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    PATH.get_or_init(|| {
+        let path = std::env::temp_dir().join(format!("petal-ovl-{}.ptl", std::process::id()));
+        std::fs::write(&path, OVL).expect("write the overload fixture");
+        path
+    })
+    .clone()
 }
 
 /// Run `petal <args…> <the fixture>` and return stdout + stderr together.

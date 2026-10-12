@@ -1,6 +1,9 @@
 # Proposal: static values (build-once constants that follow the source diff)
 
-Status: proposed, 12 October 2026. Nothing here is implemented.
+Status: proposed, 12 October 2026. Stage 0 (the classifier, `petal
+show-static`, the `CONST` flag, `--static-audit`) is implemented and its
+go/no-go gate passed; nothing that changes how a program runs is. Results:
+[`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md#gate-result).
 
 ## Summary
 

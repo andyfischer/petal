@@ -1,6 +1,8 @@
 # Static value optimization: plan
 
-Status: planned, 12 October 2026. Nothing here is implemented.
+Status: S0 (the `CONST` flag, the classifier, `show-static`, `--static-audit`)
+is implemented and the go/no-go gate **passed** on 12 October 2026: S1 may
+start. See the status note under each section for the rest.
 
 Design and evidence: [`docs/proposals/static-values.md`](../proposals/static-values.md).
 This file is the work order. Where the two disagree, the proposal's design
@@ -371,10 +373,195 @@ count anyway.
 
 ## S0. The classifier, with no behaviour change
 
-**Status: steps 1 and 2 of 3 done 2026-10-12** — the `CONST` flag and the
-audit, then the classifier and `petal show-static`. `--static-audit` and the
-go/no-go gate (step 3) are not started; the classifier's numbers for the gate
-are below. Step 1's notes follow step 2's.
+**Status: done 2026-10-12, gate passed (go).** Step 1 was the `CONST` flag and
+the audit of the `PURE` rows, step 2 the classifier and `petal show-static`,
+step 3 `--static-audit` and the gate. Nothing reads the classifier's answer
+yet, so there is still no behaviour change. The gate's numbers are under
+[Gate result](#gate-result); step 3's notes come first, then step 2's, then
+step 1's.
+
+Step 3, `--static-audit` (`core/src/static_audit.rs`, `Env::set_static_audit`
+/ `Env::static_audit_report`, `petal run --static-audit` / `--static-only`,
+the same two flags on `petal-ui-run`, `PETAL_STATIC_AUDIT=watch`):
+
+- **What it watches.** The VM knows which root instruction is in progress
+  (the root frame's, however deep the call it made). While that
+  instruction's term is one the classifier called static, a finding is
+  recorded for: a change in any activity counter around a native call
+  (binding read, by name; host-data read; resource read; emit; effect), the
+  random stream moving around a native call, any `state` instruction in any
+  frame, and any call of a native whose `constness` is `Dynamic` (so `noise`,
+  `font`, `fn_info`, which move no counter, are caught too; `__enum_from` and
+  `__enum_all` are exempt because the classifier answers them structurally).
+  A finding names the declaration whose initializer was running, the input,
+  the native and the call site.
+- **Two modes.** `Watch` runs the program as it is and audits every static
+  term, including one inside a dynamic top-level loop or branch.
+  `StaticOnly` rewrites the lowered root code so that every top-level
+  statement that is not static is jumped over, and runs what is left: a build
+  of the static declarations alone. Static code calls only constant natives,
+  so it needs no host, which is how Moses is audited from the plain CLI. A
+  build that raises is a finding.
+- **Found while building it, for S1.** The root code is *not* one contiguous
+  range per top-level statement: the lowering materializes a constant where a
+  later statement first uses it, so a statement can be several segments with
+  another statement's instruction between them (Moses has these). The slice
+  works per segment. S1's run splitting has to expect the same.
+- **Cost when off.** One branch per native call and per `state` instruction.
+  Not measured against a baseline binary.
+- **What it cannot see.** A read of a `var` cell or of a value another
+  statement updates in place moves no counter; a native that answers from
+  host state without reporting it is as invisible as it is to the effect
+  audit; a call the memo replays is not made (audit with memoization off).
+  The value comparisons below cover part of that.
+- **Tests.** `core/tests/static_audit.rs` (8: natives registered `CONST`
+  that read a binding, read host data, draw from the random stream or print
+  are each caught and named, in both modes; a static term inside a dynamic
+  loop; the static-only build of a script whose host natives nothing
+  registers; a build that raises; turning it off), `static_audit_env.rs`, a
+  CLI test, and `core-libs/petal-ui/tests/static_audit.rs` over the 55-app
+  panel corpus in both modes.
+
+### Gate result
+
+Run 2026-10-12 with this repo's release `petal` (commit `7a7a9cb`).
+**Go: every row of the gate holds.**
+
+| Measure | Survey estimate | Measured | Result |
+|---|---|---|---|
+| Top-level tables and derived values classified static | 1,580 | **1,693** static non-scalar `let`s (1,159 whose initializer starts with a `[` or `{` literal, 534 other derived values), out of 4,720 static `let`s; 3,027 more are scalar literals | pass |
+| …specifically the constructor-built tables | — | every constructor in the named cases is static-pure and every table built with them is static; no class of constructor-built table is dynamic for a reason the classifier could fix (breakdown below) | pass |
+| Moses's 74 constant `state` cells, if rewritten as `let` | all plausibly static | **74 of 74** static in a scratch copy with the 74 rewritten (73 of 74 by `initializer_static` on the game as written; the 74th, `TIMELINE`, sorts `RAW`, which is static once `RAW` is a `let`) | pass |
+| Named cases | — | all static: `T = codes(TILES)` (`codes` static-pure); `hd`, `st`, `wk` static-pure and `HOODS_SRC`, `SITES_SRC`, `WORKS_SRC` static as `let`s; `TOOLS` static; `ch` static-pure with `C_MAJ`…`E_MIN` and `THEME_CHORDS` static; `build_glyphs` static-pure and `GLYPHS` static as a `let` | pass |
+| Audit | — | **0** static terms touched a dynamic input, over everything listed below | pass |
+
+**The sweep.** `petal show-static --json` on each of 744 `.ptl` files as an
+entry file (the survey scanned 684): `examples/` 150, `garden/` 27, `test/`
+120, the rest of this repo 103, `~/cheesecake/games` 231, `~/worlds-fair/ui/ptl`
+19, `~/.garden` 72, petal-lang.org, the experiment apps and `~/tools` 22. 723
+compile under the plain CLI; 21 do not. 17,698 declarations: 4,747 static
+(3,437 `let`, 1,283 `config let`, 27 `enum`), of which 4,118 are read by
+dynamic code; 6,152 functions; 6,799 dynamic. Functions declared with `fn`:
+6,063, of which 2,706 static-pure.
+
+The survey counted "plausibly constant" by a text heuristic, so the
+comparison needs one too: a `let` is *scalar* when the rest of its first line
+is one number, string, boolean, `nil`, colour or symbol literal, a *table*
+when it starts with `[` or `{`, and *derived* otherwise.
+
+| Tree | `let`s | scalar static / dynamic | table static / dynamic | derived static / dynamic |
+|---|---|---|---|---|
+| `examples/` | 4,666 | 1,328 / 204 | 431 / 96 | 239 / 2,348 |
+| `garden/` | 408 | 68 / 32 | 11 / 9 | 15 / 273 |
+| `test/` | 78 | 24 / 14 | 9 / 4 | 19 / 5 |
+| rest of this repo | 647 | 151 / 32 | 93 / 24 | 20 / 281 |
+| `~/cheesecake/games` | 2,642 | 1,386 / 41 | 585 / 53 | 235 / 337 |
+| `~/worlds-fair/ui/ptl` | 31 | 16 / 0 | 1 / 0 | 0 / 14 |
+| `~/.garden` | 33 | 4 / 0 | 0 / 0 | 1 / 28 |
+| petal-lang.org, experiments, `~/tools` | 221 | 50 / 13 | 29 / 8 | 5 / 116 |
+| **All** | **8,726** (survey 7,408) | **3,027** / 336 (survey 2,350) | **1,159** / 194 (survey 827 literal tables) | **534** / 3,402 |
+
+86% of the lets that start with a table literal are static. "Derived" is
+mostly dynamic because the heuristic puts `screen_width() - 40` and
+`items[sel]` there; the survey did not count those as plausibly constant.
+
+**Why the 3,596 non-scalar dynamic `let`s are dynamic** (last link of the
+reason chain):
+
+| Root cause | Lets | Verdict |
+|---|---|---|
+| Calls a host native that the plain CLI does not register (`screen_width` 744, `screen_height` 221, `dt` 85, `mouse_x` 81, `time` 59, `palette` 49, …) | 1,460 | dynamic; under their own host these are the screen, the clock, input and the theme, none of them constant |
+| Is, reads or writes `state` | 929 | dynamic |
+| Reads a top-level `var` | 610 | dynamic |
+| The name is assigned again | 418 | dynamic by the proposal's rule ("a value that is mutated is never cached"); see below |
+| The file does not compile under the plain CLI (it calls host functions it never declares with `native fn`; all 18 worlds-fair screens are this) | 157 | not classifiable here |
+| A function passed to a user-written higher-order function | 8 | the stricter-than-proposal rule from step 2; none in the games |
+| An alias of a hoisted function taken above its declaration (`let _draw_line = draw_line`) | 6 | dynamic, and a function, not a table |
+| `random` 3, `noise` 1, `freeze` 1 | 5 | dynamic (`freeze` marks the heap object; A2 owns it) |
+| The table holds a closure | 3 | dynamic by rule |
+
+Of the lets that call a function of their own file directly, 50 are static
+and 343 are dynamic: 136 through `state`, 85 reassigned, 57 through a `var`,
+50 through a host native, 15 for the smaller causes in the table. None is a
+constructor-built table of constants.
+
+The one class that could be argued is the 418 reassigned names. A sample of
+22 of the 100 that start as a table literal, read by eye: most are per-frame
+accumulators over dynamic data (`let shot_items = []` then a loop over
+`shots`), and about a quarter loop over what looks like constants (`let
+mod_by_sec = [0, 0, 0, 0, 0]` then a loop over `SETTINGS`, which is the
+proposal's own example of a value that must stay inline). The loop bodies
+were not classified, so that share is an impression, not a count.
+Classifying those static means keeping the
+loop's final value and nothing before it; that is a run-level change for S1 or
+later, not a classifier fix, and Moses has 8 reassigned lets in 379.
+
+**Moses** (`show-static --all games/moses/game.ptl`, all modules).
+
+| | Declarations | Static | `let`s static | `state` cells |
+|---|---|---|---|---|
+| As written | 2,356 | 517 | 365 of 379 | 451 |
+| Scratch copy, the 74 cells as `let` | 2,356 | 591 | 439 of 453 | 377 |
+
+The scratch copy lives outside both repositories; `~/cheesecake` was not
+edited. Moonbear: 1,222 declarations, 378 static.
+
+**The audit.**
+
+| Where | Mode | Covered | Findings |
+|---|---|---|---|
+| Panel corpus, 55 apps under the UI host's natives, 45 frames of the monkey scenario each | watch | 2,266 static declarations, 568,377 native calls under static terms | 0 |
+| Same corpus | static only | 60,358 top-level statements run, 24,708 skipped | 0 |
+| Same corpus | static only against the whole program | 1,525 static values, built alone and built by the whole program | 0 differ |
+| The whole petal-ui test suite under `PETAL_STATIC_AUDIT=watch` | watch | 18 test binaries, 295 tests | 0 |
+| The whole core test suite under `PETAL_STATIC_AUDIT=watch` | watch | 2,409 tests | 0 outside the audit's own tests, which register lying natives on purpose |
+| Every file of the sweep that has a declaration, plain CLI | static only | 516 of 556 files run; 472,542 statements run, 34,567 skipped | 0 inputs touched; 2 builds raised |
+| The same files | watch | the 133 that link and run under the plain CLI; 885,950 native calls under static terms | 0 |
+| Moses as written, plain CLI | static only | 517 static declarations, 7,009 statements run, 658 skipped | 0 |
+| Moses with the 74 cells as `let` | static only | 591 static declarations, 21,767 statements run, 584 skipped; the build is 35,195 instructions | 0 |
+| All 14 Cheesecake games, every file as an entry file (226 files, Moses and Moonbear among them) | static only | 20,430 static declarations, a module's counted once per file that imports it | 0 |
+
+Checks of the check: registering `screen_width` as `CONST` in petal-ui (and
+reverting it) makes the corpus test report 56 failures, each naming the
+declaration and `screen_width`. Two `--seed`s of the Moses static-only build
+observe the same 2,004 named values.
+
+What the audit rows do not show:
+
+- **Moses was never run under its host.** Cheesecake vendors an older Petal
+  and is not runnable headlessly from here, so Moses, Moonbear and the other
+  games were audited only as static-only builds with this repo's binary, in
+  which every Cheesecake native is unregistered, therefore dynamic, therefore
+  skipped. That checks that the static part builds alone, calls nothing but
+  core `CONST` builtins and touches no input. It does not exercise a single
+  Cheesecake `CONST` row, because there are none yet.
+- **The two builds that raised** are `garden/gpp-apps/gpp-test-app/src/runtime_error.ptl`
+  and `runtime_error_long.ptl`, the deliberate error fixtures: a static
+  `let n = len(obj.error)` and a failing `assert`. Both raise the same error
+  in a whole-program run. A static declaration that raises is correct
+  classification; S1 must not store it.
+- **40 files cannot be run by the plain CLI at all** (they call host
+  functions with no `native fn` declaration): 18 worlds-fair screens, 12
+  petal-lang.org and tool scripts, 8 in `docs/aspirational-ideas` and
+  `core-runtime/glsl/tests`, 2 in `~/.garden`. `petal run` refuses them
+  before the first line. The survey expected almost nothing static there.
+- The two expected test failures under `PETAL_STATIC_AUDIT=watch` are the
+  test that the variable is off by default and
+  `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile`, a timing
+  test (the audit classifies the program on every lowering).
+
+**For S1.** Building all of Moses's static declarations, the 74 tables
+included, is 35,195 instructions, so "clear every static value on a reload"
+costs Moses that and not the 2.3 s of its boot. The static-only build is the
+prototype of the static run: it is the same code with the dynamic statements
+jumped over, and the corpus test that compares its values with the whole
+program's is the differential S1 can keep.
+
+**Cheesecake follow-ups (not done; that repository is read-only here).**
+Pass `PB_FX_CONST` for the natives that qualify and re-vendor the bridge;
+then run `--static-audit` in the engine, since that is the first time a
+Cheesecake `CONST` row is exercised. After S1, rewrite the 74 constant
+`state` cells as `let` or `const`. worlds-fair's `wf-ui-ffi` likewise.
 
 Step 2, the classifier (`core/src/static_classify/`, `Env::static_report` /
 `Env::static_analysis`, `petal show-static [--json] [--all]`; no behaviour
@@ -444,7 +631,7 @@ change, nothing reads its answer yet):
   branches, guards, loops, `var`s, rebinding) next to 20 static uses of the
   same mechanisms, runs it ten times on one stack, and checks that each
   leak is dynamic and really moves, and that nothing static does.
-- **A first oracle, ahead of `--static-audit`.**
+- **A first oracle, written before `--static-audit` existed.**
   `core-libs/petal-ui/tests/static_classify.rs` classifies each of the 55
   corpus apps against the UI host's own natives, drives it for 45 frames
   under the monkey scenario, and requires every static `let` to be bound to

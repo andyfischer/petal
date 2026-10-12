@@ -289,7 +289,12 @@ impl Server {
         }
 
         if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
-            let value = describe(def);
+            // A top-level declaration also says what the static-value
+            // classifier makes of it.
+            let value = match doc.analysis.static_note(def) {
+                Some(note) => format!("{}\n// {note}", describe(def)),
+                None => describe(def),
+            };
             let hover = Hover {
                 contents: MarkupContent {
                     kind: "markdown".to_string(),

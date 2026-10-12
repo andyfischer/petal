@@ -32,6 +32,64 @@ pub struct Analysis {
     /// The document's imports as they resolved, lowest precedence first
     /// (implicit ones, then each `import` in source order).
     pub imports: Vec<ImportedModule>,
+    /// What the static-value classifier says of each top-level declaration
+    /// of the document (see [`crate::static_classify`]); hover shows it.
+    pub static_notes: Vec<StaticNote>,
+}
+
+/// The static-value class of one top-level declaration, as hover words it.
+#[derive(Debug, Clone)]
+pub struct StaticNote {
+    pub name: String,
+    /// Where the classifier places the declaration (1-based).
+    pub line: u32,
+    pub column: u32,
+    /// `static`, `dynamic: <the first reason>`, `function, static-pure`, …
+    pub text: String,
+}
+
+/// One note per declaration of the entry file. The answer is this process's:
+/// a `native fn` of a host that is not here counts as dynamic, so a host may
+/// call more static than hover does, never less.
+fn static_notes(report: &crate::static_classify::StaticReport) -> Vec<StaticNote> {
+    use crate::static_classify::{ConstCheck, DeclClass};
+    report
+        .entry()
+        .filter_map(|d| {
+            let first = d.reason.first().map(|r| r.render());
+            let because = |head: &str| match &first {
+                Some(reason) => format!("{head}: {reason}"),
+                None => head.to_string(),
+            };
+            let mut text = match d.class {
+                DeclClass::Static => match &d.mutated_by {
+                    Some(m) => format!("static, not kept: {}", m.render()),
+                    None => "static".to_string(),
+                },
+                DeclClass::Function => match d.static_pure {
+                    Some(true) => "function, static-pure".to_string(),
+                    _ => because("function, not static-pure"),
+                },
+                DeclClass::Dynamic => because("dynamic"),
+            };
+            if d.initializer_static == Some(true) {
+                text.push_str("; its initializer is static");
+            }
+            match d.const_check {
+                Some(ConstCheck::NotConstant) => text.push_str(" (declared const: an error)"),
+                Some(ConstCheck::Unverified) => {
+                    text.push_str(" (declared const: cannot be verified without its host)")
+                }
+                Some(ConstCheck::Constant) | None => {}
+            }
+            Some(StaticNote {
+                name: d.name.clone(),
+                line: d.line?,
+                column: d.column?,
+                text,
+            })
+        })
+        .collect()
 }
 
 /// One module the document imports, with what it exports.
@@ -118,7 +176,23 @@ impl Analysis {
             definitions: Vec::new(),
             symbols: Vec::new(),
             imports: Vec::new(),
+            static_notes: Vec::new(),
         }
+    }
+
+    /// The static-value class of the declaration `def`, when `def` is a
+    /// top-level declaration of the document: the classifier's entry of that
+    /// name written inside `def`'s statement.
+    pub fn static_note(&self, def: &Definition) -> Option<&str> {
+        let inside = |n: &StaticNote| {
+            let at = (n.line, n.column);
+            (def.span.start.line, def.span.start.column) <= at
+                && at <= (def.span.end.line, def.span.end.column)
+        };
+        self.static_notes
+            .iter()
+            .find(|n| n.name == def.name && inside(n))
+            .map(|n| n.text.as_str())
     }
 
     /// The declaration a *bare* use of `name` reaches through the document's
@@ -251,11 +325,13 @@ pub fn analyze_at(
         env.override_file_source(file, text);
     }
     let mut imports = Vec::new();
+    let mut notes = Vec::new();
     let diagnostics = match env.load_program_diag(source, path) {
         Ok(pid) => env
             .get_program(pid)
             .map(|p| {
                 imports = imported_modules(p);
+                notes = static_notes(&env.static_report(p));
                 p.warnings
                     .iter()
                     .map(|w| {
@@ -329,6 +405,7 @@ pub fn analyze_at(
         definitions,
         symbols,
         imports,
+        static_notes: notes,
     }
 }
 
@@ -729,6 +806,20 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 stmt.span,
                 Some(format!("native fn({}){ret_str}", parts.join(", "))),
             ));
+        }
+        // A `state` declares a name like a `let` does: hover and
+        // go-to-definition reach it the same way.
+        StmtKind::State { name, ty, init, .. } => {
+            let detail = ty.as_ref().map(|t| format!(": {}", t.name));
+            let hint = match ty {
+                Some(ty) => Some(ValueHint::annotation(&ty.name)),
+                None => expr_path(init).map(ValueHint::Init),
+            };
+            defs.push(Definition {
+                hint,
+                ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
+            });
+            collect_definitions_from_expr(init, src, defs);
         }
         StmtKind::EnumDecl { name, variants } => {
             let shape = EnumShape::of(variants, src);

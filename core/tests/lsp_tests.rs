@@ -1210,3 +1210,136 @@ fn diagnostics_carry_their_severity_as_a_number() {
     assert_eq!(diag["severity"], json!(1), "{v}");
     assert!(diag["message"].as_str().unwrap().contains("did you mean Color.red?"), "{v}");
 }
+
+// ---------------------------------------------------------------------------
+// Hover: the static-value class of a top-level declaration
+// ---------------------------------------------------------------------------
+
+/// The hover text for the name at `(line, character)` of `text`.
+fn static_hover(text: &str, line: u32, character: u32) -> String {
+    let mut server = Server::new();
+    init(&mut server);
+    open(&mut server, "file:///static.ptl", text);
+    let resp = hover(&mut server, "file:///static.ptl", line, character);
+    resp["result"]["contents"]["value"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no hover at {line}:{character}: {resp}"))
+        .to_string()
+}
+
+const STATIC_DOC: &str = "\
+let TILES = [1, 2, 3]
+const LIMIT = len(TILES)
+state frame = 0
+frame = frame + 1
+let shown = TILES[frame % LIMIT]
+fn double(x)
+  x * 2
+end
+fn tick()
+  frame + 1
+end
+var v = 0
+state SCRIPT = [1, 2]
+const BAD = frame + 1
+print(shown, double(2), tick(), get v, SCRIPT, BAD)
+";
+
+#[test]
+fn hover_says_a_static_declaration_is_static() {
+    let text = static_hover(STATIC_DOC, 0, 5);
+    assert_eq!(text, "```petal\n(variable) TILES\n// static\n```");
+    let text = static_hover(STATIC_DOC, 1, 7);
+    assert_eq!(text, "```petal\n(variable) LIMIT\n// static\n```");
+}
+
+#[test]
+fn hover_on_a_use_shows_the_class_of_its_declaration() {
+    // `TILES` where it is read on line 5.
+    assert!(static_hover(STATIC_DOC, 4, 13).ends_with("// static\n```"));
+}
+
+#[test]
+fn hover_says_why_a_declaration_is_dynamic() {
+    let text = static_hover(STATIC_DOC, 4, 5);
+    assert_eq!(
+        text,
+        "```petal\n(variable) shown\n// dynamic: shown reads frame at line 5\n```"
+    );
+    let text = static_hover(STATIC_DOC, 2, 7);
+    assert!(text.contains("// dynamic: frame is state, which changes between runs"), "{text}");
+    let text = static_hover(STATIC_DOC, 11, 4);
+    assert!(text.contains("// dynamic: v is a var"), "{text}");
+}
+
+#[test]
+fn hover_says_whether_a_function_is_static_pure() {
+    let text = static_hover(STATIC_DOC, 5, 4);
+    assert_eq!(text, "```petal\n(function) double fn(x)\n// function, static-pure\n```");
+    let text = static_hover(STATIC_DOC, 8, 4);
+    assert!(text.contains("// function, not static-pure: tick reads frame"), "{text}");
+}
+
+#[test]
+fn hover_points_out_a_state_whose_initializer_is_static() {
+    let text = static_hover(STATIC_DOC, 12, 7);
+    assert!(text.contains("its initializer is static"), "{text}");
+    // `frame` is assigned, but its initializer `0` is static all the same:
+    // the note is about the initializer, the lint about the assignment.
+    assert!(static_hover(STATIC_DOC, 2, 7).contains("its initializer is static"));
+}
+
+#[test]
+fn hover_flags_a_const_that_is_not_constant() {
+    let text = static_hover(STATIC_DOC, 13, 7);
+    assert!(text.contains("// dynamic: BAD reads frame at line 14"), "{text}");
+    assert!(text.contains("(declared const: an error)"), "{text}");
+}
+
+#[test]
+fn hover_on_a_const_of_host_natives_says_it_cannot_be_verified_here() {
+    let text = static_hover("native fn tile(n)\nconst T = [tile(1)]\nprint(T)\n", 1, 6);
+    assert!(text.contains("// dynamic: T calls tile, a native that is not registered here"), "{text}");
+    assert!(text.contains("(declared const: cannot be verified without its host)"), "{text}");
+}
+
+#[test]
+fn hover_on_a_local_says_nothing_about_static_values() {
+    let doc = "let x = [1, 2]\nfn f()\n  let x = 3\n  x\nend\nprint(x, f())\n";
+    // The local `x` on line 3 is not the top-level declaration of that name.
+    assert_eq!(static_hover(doc, 2, 6), "```petal\n(variable) x\n```");
+    assert!(static_hover(doc, 0, 4).contains("// static"));
+}
+
+#[test]
+fn a_const_is_a_constant_in_the_outline_and_its_error_is_a_diagnostic() {
+    let mut server = Server::new();
+    init(&mut server);
+    let msgs = open(
+        &mut server,
+        "file:///c.ptl",
+        "state n = 0\nconst A = n + 1\nconst B = [1]\nprint(A, B)\n",
+    );
+    let diags = get_diagnostics(&msgs);
+    assert_eq!(diags.len(), 1, "{diags:?}");
+    let message = &diags[0].message;
+    assert!(message.starts_with("`A` is declared `const` but is not constant"), "{message}");
+    assert!(matches!(diags[0].severity, Some(DiagnosticSeverity::Error)));
+    assert_eq!(diags[0].range.start.line, 1);
+
+    let analysis = petal::lsp::document::analyze("const B = [1]\nlet c = 2\n");
+    let outline = serde_json::to_value(&analysis.symbols).unwrap();
+    let rows: Vec<(&str, &str, u64)> = outline
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap(),
+                s["detail"].as_str().unwrap(),
+                s["kind"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(rows, [("B", "const", 14), ("c", "let", 13)]);
+}

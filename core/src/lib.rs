@@ -69,6 +69,7 @@ pub mod source_diff;
 pub mod source_map;
 pub mod source_watch;
 pub mod stack;
+pub mod static_classify;
 pub mod static_json;
 pub mod static_value;
 pub mod stats;

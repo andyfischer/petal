@@ -213,6 +213,12 @@ pub enum Command {
     ShowBytecode {
         json: bool,
     },
+    /// `petal show-static`: every top-level declaration's static class.
+    ShowStatic {
+        json: bool,
+        /// Include the declarations of imported modules (the prelude too).
+        all: bool,
+    },
     ShowAst {
         json: bool,
     },
@@ -636,6 +642,9 @@ pub fn execute(cli: CliArgs) {
         }
         Command::ShowBytecode { json } => {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);
+        }
+        Command::ShowStatic { json, all } => {
+            handlers::handle_show_static(json, all, &source, &source_input, &include_dirs);
         }
         Command::Graph { json, terms, query } => {
             handlers::handle_graph(

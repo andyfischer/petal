@@ -1573,6 +1573,24 @@ impl Env {
         self.native_fns.constness_of_name(name)
     }
 
+    /// Classify every top-level declaration of `program` as static data, a
+    /// function or dynamic, against this `Env`'s natives: the reason chain
+    /// for a dynamic one, whether dynamic code reads a static one, and the
+    /// declarations each depends on. Nothing is run and nothing changes. See
+    /// [`crate::static_classify`]; `petal show-static` prints the result.
+    ///
+    /// `program` should be one this `Env` compiled (or one compiled against
+    /// the same natives): a native this `Env` does not register is dynamic.
+    pub fn static_report(&self, program: &Program) -> crate::static_classify::StaticReport {
+        crate::static_classify::classify(program, &self.native_fns)
+    }
+
+    /// [`static_report`](Self::static_report), keeping the class of every
+    /// term for a caller that walks the graph.
+    pub fn static_analysis(&self, program: &Program) -> crate::static_classify::StaticAnalysis {
+        crate::static_classify::analyze(program, &self.native_fns)
+    }
+
     /// Override the [`NativeClass`] of an already-registered native (by the id
     /// [`register_native`](Self::register_native) returned). Registration stays
     /// append-only — indices are stable — so an embedding classifies its natives

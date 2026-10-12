@@ -62,6 +62,10 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
             ("show-ast", "Display the parsed AST"),
             ("show-ir", "Display the compiled IR"),
             ("show-bytecode", "Display the bytecode lowering of the IR"),
+            (
+                "show-static",
+                "Classify each top-level declaration as static or dynamic",
+            ),
             ("show-graph", "Emit the dataflow graph in DOT format"),
         ],
     ),
@@ -150,6 +154,7 @@ fn page(name: &str) -> Option<&'static str> {
         "explain" => EXPLAIN,
         "show-ir" => SHOW_IR,
         "show-bytecode" => SHOW_BYTECODE,
+        "show-static" => SHOW_STATIC,
         "show-ast" => SHOW_AST,
         "show-tokens" => SHOW_TOKENS,
         "graph" => GRAPH,
@@ -1129,6 +1134,72 @@ SEE ALSO
        petal help show-ir
 ";
 
+const SHOW_STATIC: &str = "\
+NAME
+       petal-show-static - Classify each top-level declaration as static or
+       dynamic
+
+SYNOPSIS
+       petal show-static [--json] [--all] <file>
+
+DESCRIPTION
+       Compiles the program and reports, for every top-level declaration,
+       whether its value is static: whether its initializer can only ever
+       produce one value for this source text. Nothing is run, and nothing
+       about how the program runs depends on the answer today; this is the
+       classifier a later release uses to build such values once and keep
+       them between runs.
+
+       Each declaration is one of:
+
+       static    Data that depends on nothing dynamic: literals, lists and
+                 records of static parts, operators, other static
+                 declarations, 'config let', calls of constant builtins, and
+                 calls of static-pure functions with static arguments. The
+                 line says whether dynamic code reads it (an operand of
+                 dynamic code, a closure capture, or a free-standing
+                 top-level statement) or only other static declarations do.
+
+       function  A function value. It is static-pure when its body reads no
+                 state, no 'var' but its own, and no dynamic native, prints
+                 nothing, and calls only static-pure functions.
+
+       dynamic   Everything else, followed by the chain of reasons down to
+                 the term that makes it so:
+
+                     dynamic   let LAB_W   line 784
+                                 = LAB_W calls build_label_w at app.ptl:784
+                                 = build_label_w calls text_width, which is
+                                   not declared constant at app.ptl:382
+
+       A loop, a branch or a match is static only as a whole. A name that is
+       assigned again ('xs[i] = v', 'xs = append(xs, v)') is dynamic. A value
+       that would hold a function is dynamic. A method call is static only
+       if every method of that name is.
+
+       A host native is static only if the host registered it as constant.
+       This command knows the natives the petal CLI registers and no host's,
+       so a 'native fn' of a host is dynamic here: a host may report more as
+       static than this does, never less.
+
+OPTIONS
+       --json
+              Emit an object with 'summary' and 'declarations'. Each
+              declaration has name, qualified (the module-qualified name),
+              kind, file, line, class ('static', 'function' or 'dynamic'),
+              static_pure (functions), reason (the chain; each link has
+              subject, text, file and line), read_by_dynamic and readers
+              (static data), depends_on (every declaration its value can
+              depend on, by qualified name) and direct_depends_on.
+
+       --all  Include the declarations of imported modules and of the
+              prelude, under their qualified names.
+
+{COMMON}
+SEE ALSO
+       petal help show-ir, petal help check
+";
+
 const SHOW_AST: &str = "\
 NAME
        petal-show-ast - Display the parsed AST
@@ -1437,6 +1508,7 @@ mod tests {
         "explain",
         "show-ir",
         "show-bytecode",
+        "show-static",
         "show-ast",
         "show-tokens",
         "graph",

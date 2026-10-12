@@ -1152,6 +1152,38 @@ pub(super) fn handle_show_bytecode(
     }
 }
 
+/// `petal show-static` — the static-value classifier's answer for every
+/// top-level declaration: static data, a function or dynamic, why, whether
+/// dynamic code reads it, and what it depends on. Compiles and never runs.
+///
+/// The natives are the ones this CLI registers. A `native fn` of a host that
+/// is not here is dynamic, so a host may report more as static than this
+/// does, never less.
+pub(super) fn handle_show_static(
+    json: bool,
+    all: bool,
+    source: &str,
+    source_input: &SourceInput,
+    include_dirs: &[PathBuf],
+) {
+    let mut env = make_env(include_dirs);
+    env.set_check_only(true);
+    let result = match source_origin(source_input) {
+        Some(path) => env.compile_program_at(ProgramId(0), source, &path),
+        None => env.compile_program(ProgramId(0), source),
+    };
+    let program = match result {
+        Ok(program) => program,
+        Err(e) => die_plain(&e),
+    };
+    let report = env.static_report(&program);
+    if json {
+        print_json(&report.to_json(all));
+    } else {
+        print!("{}", report.render_text(all));
+    }
+}
+
 /// `petal graph` — one dataflow query, one result shape.
 ///
 /// JSON: `{direction, targets, target_terms, terms, edges, frontier, complete,

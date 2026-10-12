@@ -159,3 +159,79 @@ fn a_cross_module_stack_trace_names_the_entry_file() {
     let (_, err, _) = petal(&["run", "-e", "fn boom(x)\n  x.foo\nend\nboom([1][0])"]);
     assert!(err.contains("in boom() [line 4, column 1]"), "{err}");
 }
+
+/// `petal show-static`: the classifier's answer as text and as JSON, the
+/// entry file's declarations by default and every module's with `--all`.
+#[test]
+fn show_static_reports_class_reason_and_readers() {
+    let dir = dir_with(
+        "show-static",
+        &[
+            ("lib.ptl", "pub let BASE = [1, 2, 3]\npub fn twice(x) x * 2 end\n"),
+            (
+                "app.ptl",
+                "import ./lib\n\
+                 native fn text_width(s)\n\
+                 state live = 0\n\
+                 let TABLE = [lib.twice(lib.BASE[0]), 2]\n\
+                 fn label_w(s) text_width(s) + 4 end\n\
+                 let LAB_W = label_w(\"x\")\n\
+                 print(TABLE, live)\n",
+            ),
+        ],
+    );
+    let (out, err, code) = petal_in(&dir, &["show-static", "app.ptl"]);
+    assert_eq!(code, 0, "{err}");
+    let line = |needle: &str| -> &str {
+        out.lines()
+            .find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle:?} in\n{out}"))
+    };
+    assert!(line("let TABLE").starts_with("static"), "{out}");
+    assert!(line("let TABLE").contains("read by dynamic code"), "{out}");
+    assert!(line("fn label_w").contains("not static-pure"), "{out}");
+    assert!(line("let LAB_W").starts_with("dynamic"), "{out}");
+    assert!(out.contains("= LAB_W calls label_w at app.ptl:6"), "{out}");
+    assert!(
+        out.contains(
+            "= label_w calls text_width, a native that is not registered here at app.ptl:5"
+        ),
+        "{out}"
+    );
+    // The module's declarations are not the entry file's.
+    assert!(!out.contains("BASE"), "{out}");
+    assert!(out.contains("4 declarations: 1 static (1 read by dynamic code)"), "{out}");
+
+    let (out, _, code) = petal_in(&dir, &["show-static", "--all", "app.ptl"]);
+    assert_eq!(code, 0);
+    assert!(out.lines().any(|l| l.starts_with("static") && l.contains("let lib::BASE")), "{out}");
+
+    let (out, err, code) = petal_in(&dir, &["show-static", "--json", "app.ptl"]);
+    assert_eq!(code, 0, "{err}");
+    let json: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(json["summary"]["declarations"], 4);
+    let decls = json["declarations"].as_array().unwrap();
+    let table = decls.iter().find(|d| d["name"] == "TABLE").unwrap();
+    assert_eq!(table["class"], "static");
+    assert_eq!(table["read_by_dynamic"], true);
+    let deps: Vec<&str> = table["depends_on"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|d| d.as_str())
+        .collect();
+    assert_eq!(deps, ["lib::BASE", "lib::twice"]);
+    let lab = decls.iter().find(|d| d["name"] == "LAB_W").unwrap();
+    assert_eq!(lab["class"], "dynamic");
+    assert_eq!(lab["reason"][0]["text"], "calls label_w");
+    assert_eq!(lab["reason"][0]["file"], "app.ptl");
+
+    // A compile error is reported as one, not as a classification.
+    let (_, err, code) = petal_in(&dir, &["show-static", "-e", "let x = ("]);
+    assert_eq!(code, 1);
+    assert!(!err.is_empty());
+
+    let (out, _, code) = petal(&["help", "show-static"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("petal show-static [--json] [--all] <file>"), "{out}");
+}

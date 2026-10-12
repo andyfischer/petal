@@ -204,6 +204,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "show-ir" => parse_show_ir_args(&args[1..]),
         "ir-equal" => parse_ir_equal_args(&args[1..]),
         "show-bytecode" => parse_show_args(&args[1..], |json| Command::ShowBytecode { json }),
+        "show-static" => parse_show_static_args(&args[1..]),
         "show-ast" => parse_show_args(&args[1..], |json| Command::ShowAst { json }),
         "show-tokens" => parse_show_args(&args[1..], |json| Command::ShowTokens { json }),
         "graph" => parse_graph_args(&args[1..]),
@@ -810,6 +811,26 @@ fn parse_show_ir_args(args: &[String]) -> CliArgs {
             all,
             user_only,
         },
+        source,
+        include_dirs: Vec::new(),
+    }
+}
+
+/// Parse args for `show-static`: `--json`, and `--all` to include the
+/// declarations of imported modules.
+fn parse_show_static_args(args: &[String]) -> CliArgs {
+    let mut json = false;
+    let mut all = false;
+    let source = parse_source_args(args, MISSING_SOURCE, |args, i| {
+        match args[*i].as_str() {
+            "--json" => json = true,
+            "--all" => all = true,
+            _ => return false,
+        }
+        true
+    });
+    CliArgs {
+        command: Command::ShowStatic { json, all },
         source,
         include_dirs: Vec::new(),
     }

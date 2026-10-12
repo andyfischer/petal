@@ -605,24 +605,6 @@ impl Compiler {
         }
     }
 
-    /// The term `alias.member` resolves to, when `alias` is a module alias
-    /// that no binding of the file's own shadows and the module exports
-    /// `member`. The non-emitting half of [`Self::try_module_member`], with
-    /// the same shadowing rule.
-    pub(super) fn module_member_term(&self, object: &Expr, member: &str) -> Option<TermId> {
-        let ExprKind::Ident(name) = &object.kind else {
-            return None;
-        };
-        let module = self.module_aliases.get(name)?;
-        let tid = self.scope_lookup(&format!("{module}::{member}"))?;
-        if let Some(bound) = self.scope_lookup(name)
-            && self.alias_floor.get(name) != Some(&Some(bound))
-        {
-            return None;
-        }
-        Some(tid)
-    }
-
     /// Resolve `alias.member` when `alias` is a module alias that no term
     /// binding shadows. Returns `None` when this isn't module member access
     /// (the caller falls back to field-access / method-call compilation).
@@ -817,17 +799,8 @@ impl Compiler {
             });
         }
 
-        let checked: Vec<match_check::CheckedArm> = arms
-            .iter()
-            .zip(&arm_metas)
-            .map(|(arm, meta)| match_check::CheckedArm {
-                pattern: &meta.pattern,
-                guarded: arm.guard.is_some(),
-                span: arm.pattern_span,
-            })
-            .collect();
         if patterns_resolved {
-            self.check_match(span, &checked);
+            self.check_match(span, arms, &arm_metas);
         }
 
         let match_tid =

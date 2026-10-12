@@ -497,38 +497,6 @@ impl Compiler {
         }
     }
 
-    /// An enum variant with a payload compiles to a constructor function whose
-    /// body emits the variant from its parameters. This is `Enum.variant` as
-    /// a value; a direct `Enum.variant(a, b)` emits the variant in place.
-    pub(super) fn compile_enum_constructor(
-        &mut self,
-        enum_name: &str,
-        variant: &EnumVariantDef,
-    ) -> TermId {
-        let tag = enum_variant_tag(enum_name, &variant.name);
-        let (body_block, saved_block) = self.begin_function_scope(&variant.fields, 0);
-
-        // Collect phantom term IDs for the fields (already created by begin_function_scope)
-        let field_tids: SmallVec<[TermId; 4]> = variant
-            .fields
-            .iter()
-            .map(|f| self.scope_lookup(f).unwrap())
-            .collect();
-
-        // Emit MakeEnumVariant
-        let name_const = self.constants.intern(ConstantValue::String(tag.clone()));
-        self.emit_term(TermOp::MakeEnumVariant(name_const), field_tids, None);
-
-        self.end_function_scope(
-            Some(tag),
-            &variant.fields,
-            0,
-            body_block,
-            saved_block,
-            None,
-        )
-    }
-
     /// Enter a new function body scope. Returns (body_block, saved_block).
     /// After calling this, compile the body, then call `end_function_scope`.
     ///

@@ -432,37 +432,7 @@ fn fmt_ty_suffix(ty: &Option<TypeAnn>) -> String {
 /// A pattern, source-like: `_`, `0`, `n`, `Circle(r)`, `[a, b, ...rest]`,
 /// `{x: 0, y}`.
 fn fmt_pattern(pattern: &Pattern) -> String {
-    match pattern {
-        Pattern::Wildcard => "_".to_string(),
-        Pattern::Literal(lit) => fmt_literal(lit),
-        Pattern::Variable(name) => name.clone(),
-        Pattern::Variant { name, fields } => {
-            if fields.is_empty() {
-                name.clone()
-            } else {
-                let inner: Vec<String> = fields.iter().map(fmt_pattern).collect();
-                format!("{}({})", name, inner.join(", "))
-            }
-        }
-        Pattern::List { elements, rest } => {
-            let mut parts: Vec<String> = elements.iter().map(fmt_pattern).collect();
-            if let Some(rest) = rest {
-                parts.push(format!("...{rest}"));
-            }
-            format!("[{}]", parts.join(", "))
-        }
-        Pattern::Record(fields) => {
-            let inner: Vec<String> = fields
-                .iter()
-                .map(|(name, p)| format!("{}: {}", name, fmt_pattern(p)))
-                .collect();
-            format!("{{{}}}", inner.join(", "))
-        }
-        Pattern::Or(alternatives) => {
-            let parts: Vec<String> = alternatives.iter().map(fmt_pattern).collect();
-            parts.join(" | ")
-        }
-    }
+    pattern.render(&fmt_literal)
 }
 
 fn fmt_import(decl: &ImportDecl) -> String {

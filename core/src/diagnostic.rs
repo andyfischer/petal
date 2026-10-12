@@ -156,6 +156,21 @@ impl Diagnostic {
     }
 }
 
+/// The candidate nearest `word` by [`edit_distance`], when it is within
+/// `budget` edits: near enough to be a slip rather than a different word.
+pub fn closest<'a>(
+    word: &str,
+    candidates: impl IntoIterator<Item = &'a str>,
+    budget: usize,
+) -> Option<&'a str> {
+    candidates
+        .into_iter()
+        .map(|c| (edit_distance(word, c), c))
+        .filter(|(d, _)| *d <= budget)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, c)| c)
+}
+
 /// Levenshtein distance over chars — the measure behind every "did you
 /// mean" in the crate.
 pub fn edit_distance(a: &str, b: &str) -> usize {

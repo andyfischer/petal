@@ -239,6 +239,35 @@ impl Pattern {
         }
     }
 
+    /// The pattern as source-like text — `_`, `0`, `n`, `Kind.park(r)`,
+    /// `[a, b, ...rest]`, `{x: 0, y: n}`, `a | b` — with `literal` spelling
+    /// its literals.
+    pub fn render(&self, literal: &dyn Fn(&Literal) -> String) -> String {
+        let list = |patterns: &[Pattern]| -> Vec<String> {
+            patterns.iter().map(|p| p.render(literal)).collect()
+        };
+        match self {
+            Pattern::Wildcard => "_".to_string(),
+            Pattern::Literal(lit) => literal(lit),
+            Pattern::Variable(name) => name.clone(),
+            Pattern::Variant { name, fields } if fields.is_empty() => name.clone(),
+            Pattern::Variant { name, fields } => format!("{name}({})", list(fields).join(", ")),
+            Pattern::List { elements, rest } => {
+                let mut parts = list(elements);
+                parts.extend(rest.iter().map(|rest| format!("...{rest}")));
+                format!("[{}]", parts.join(", "))
+            }
+            Pattern::Record(fields) => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|(key, p)| format!("{key}: {}", p.render(literal)))
+                    .collect();
+                format!("{{{}}}", parts.join(", "))
+            }
+            Pattern::Or(alternatives) => list(alternatives).join(" | "),
+        }
+    }
+
     /// The alternatives of the pattern's top level: the pattern itself, or
     /// the members of an or-pattern, flattened.
     pub fn alternatives(&self) -> Vec<&Pattern> {

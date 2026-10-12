@@ -18,7 +18,7 @@
 //! flow, calls, closures, and state return an `unlowered op` error until M1–M3.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use smallvec::SmallVec;
@@ -73,14 +73,12 @@ pub fn lower_program_opt(
 ) -> Result<BytecodeProgram, String> {
     let mut match_binds = HashMap::new();
     let shapes = RefCell::new(ShapeTable::default());
-    let mut root = FnLowerer::new(program, None, program.root_block, in_place, &shapes);
-    root.match_dispatch = match_dispatch;
+    let root = FnLowerer::new(program, None, program.root_block, in_place, match_dispatch, &shapes);
     let (root, root_binds) = root.lower()?;
     match_binds.extend(root_binds);
     let mut fns = Vec::with_capacity(program.functions.len());
     for func in &program.functions {
-        let mut lowerer = FnLowerer::for_function(program, func, in_place, &shapes);
-        lowerer.match_dispatch = match_dispatch;
+        let lowerer = FnLowerer::new(program, Some(func), func.body_block, in_place, match_dispatch, &shapes);
         let (bf, binds) = lowerer.lower()?;
         match_binds.extend(binds);
         fns.push(bf);
@@ -139,13 +137,14 @@ impl<'p> FnLowerer<'p> {
         func: Option<&'p FunctionDef>,
         entry_block: BlockId,
         in_place: &'p InPlaceSet,
+        match_dispatch: bool,
         shapes: &'p RefCell<ShapeTable>,
     ) -> Self {
         FnLowerer {
             program,
             func,
             in_place,
-            match_dispatch: false,
+            match_dispatch,
             shapes,
             entry_block,
             blocks: Vec::new(),
@@ -167,15 +166,6 @@ impl<'p> FnLowerer<'p> {
         self.origins.push(self.cur_origin);
         self.code.push(inst);
         self.code.len() - 1
-    }
-
-    fn for_function(
-        program: &'p Program,
-        func: &'p FunctionDef,
-        in_place: &'p InPlaceSet,
-        shapes: &'p RefCell<ShapeTable>,
-    ) -> Self {
-        Self::new(program, Some(func), func.body_block, in_place, shapes)
     }
 
     /// The shared shape of a record literal with these field-name constants,
@@ -1281,12 +1271,7 @@ fn switch_runs(arms: &[MatchArmMeta]) -> Vec<SwitchRun> {
     }
     runs.extend(open);
     runs.retain(|run| {
-        let mut distinct: Vec<&SwitchKey> = Vec::new();
-        for (_, key, _) in &run.keys {
-            if !distinct.contains(&key) {
-                distinct.push(key);
-            }
-        }
+        let distinct: HashSet<&SwitchKey> = run.keys.iter().map(|(_, key, _)| key).collect();
         distinct.len() >= MIN_SWITCH_KEYS
     });
     runs

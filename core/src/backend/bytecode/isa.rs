@@ -943,7 +943,7 @@ impl Inst {
     /// `None`: a pass that needs the CFG's edges uses
     /// [`targets`](Inst::targets) and
     /// [`for_each_target_mut`](Inst::for_each_target_mut) instead.
-    pub fn branch_target(&self) -> Option<Label> {
+    fn branch_target(&self) -> Option<Label> {
         branch_target_of!(self).copied()
     }
 
@@ -979,7 +979,7 @@ impl Inst {
 }
 
 /// What a [`SwitchCase`] is keyed on.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum SwitchKey {
     /// A string literal pattern.
     Str(String),

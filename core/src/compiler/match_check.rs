@@ -19,15 +19,6 @@ use super::*;
 use crate::ir_display::format_pattern;
 use std::collections::{BTreeSet, HashSet};
 
-/// One arm as the checks see it.
-pub(super) struct CheckedArm<'a> {
-    /// The pattern, with its variants resolved to their tags.
-    pub(super) pattern: &'a Pattern,
-    pub(super) guarded: bool,
-    /// Where the pattern is written.
-    pub(super) span: SourceSpan,
-}
-
 /// The values one alternative is keyed on: two alternatives with the same key
 /// are tried against the same values.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -86,14 +77,15 @@ fn quoted_list(items: &[String]) -> String {
 }
 
 impl Compiler {
-    /// Run every check on one `match`. `span` is the whole expression.
-    pub(super) fn check_match(&mut self, span: SourceSpan, arms: &[CheckedArm]) {
-        for arm in arms {
-            self.check_or_bindings(arm.pattern, arm.span);
+    /// Run every check on one `match`. `span` is the whole expression;
+    /// `metas` holds each arm's pattern with its variants resolved to tags.
+    pub(super) fn check_match(&mut self, span: SourceSpan, arms: &[MatchArm], metas: &[MatchArmMeta]) {
+        for (arm, meta) in arms.iter().zip(metas) {
+            self.check_or_bindings(&meta.pattern, arm.pattern_span);
         }
-        let catch_all = self.check_reachability(arms);
+        let catch_all = self.check_reachability(arms, metas);
         if !catch_all {
-            self.check_exhaustive(span, arms);
+            self.check_exhaustive(span, arms, metas);
         }
     }
 
@@ -148,21 +140,21 @@ impl Compiler {
 
     /// Warn on each arm, and each alternative, that can never be the one to
     /// match. Returns whether some arm takes every value.
-    fn check_reachability(&mut self, arms: &[CheckedArm]) -> bool {
+    fn check_reachability(&mut self, arms: &[MatchArm], metas: &[MatchArmMeta]) -> bool {
         // Keys an earlier unguarded arm matches in full.
         let mut taken: HashSet<Key> = HashSet::new();
         let mut catch_all = false;
-        for arm in arms {
+        for (arm, meta) in arms.iter().zip(metas) {
             if catch_all {
                 self.warn_at(
-                    arm.span,
+                    arm.pattern_span,
                     "this arm can never run: an earlier arm of the match already matches \
                      every value"
                         .to_string(),
                 );
                 continue;
             }
-            let alts = arm.pattern.alternatives();
+            let alts = meta.pattern.alternatives();
             let mut here: HashSet<Key> = HashSet::new();
             let mut dead: Vec<String> = Vec::new();
             for alt in &alts {
@@ -175,7 +167,7 @@ impl Compiler {
             }
             if !dead.is_empty() && dead.len() == alts.len() {
                 self.warn_at(
-                    arm.span,
+                    arm.pattern_span,
                     format!(
                         "this arm can never run: an earlier arm already matches {}",
                         quoted_list(&dead)
@@ -183,16 +175,16 @@ impl Compiler {
                 );
             } else if !dead.is_empty() {
                 self.warn_at(
-                    arm.span,
+                    arm.pattern_span,
                     format!(
                         "{} can never match here: an earlier pattern already matches it",
                         quoted_list(&dead)
                     ),
                 );
             }
-            if !arm.guarded {
+            if arm.guard.is_none() {
                 taken.extend(here);
-                catch_all = arm.pattern.is_irrefutable();
+                catch_all = meta.pattern.is_irrefutable();
             }
         }
         catch_all
@@ -200,12 +192,12 @@ impl Compiler {
 
     /// A match over the variants of one enum, with no arm for "anything
     /// else", must have an arm for each variant.
-    fn check_exhaustive(&mut self, span: SourceSpan, arms: &[CheckedArm]) {
+    fn check_exhaustive(&mut self, span: SourceSpan, arms: &[MatchArm], metas: &[MatchArmMeta]) {
         let mut enum_name: Option<&str> = None;
         let mut covered: HashSet<&str> = HashSet::new();
         let mut mentioned: HashSet<&str> = HashSet::new();
-        for arm in arms {
-            for alt in arm.pattern.alternatives() {
+        for (arm, meta) in arms.iter().zip(metas) {
+            for alt in meta.pattern.alternatives() {
                 let Pattern::Variant { name: tag, .. } = alt else {
                     return;
                 };
@@ -217,7 +209,7 @@ impl Compiler {
                     return;
                 }
                 mentioned.insert(variant);
-                if !arm.guarded && covers_its_key(alt) {
+                if arm.guard.is_none() && covers_its_key(alt) {
                     covered.insert(variant);
                 }
             }

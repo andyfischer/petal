@@ -137,7 +137,10 @@ impl Compiler {
     fn emit_enum_member(&mut self, enum_name: &str, member: &str) -> Option<TermId> {
         Some(match self.enum_variant_def(enum_name, member) {
             Some(v) if v.fields.is_empty() => self.emit_enum_variant(enum_name, member, smallvec![]),
-            Some(v) => self.compile_enum_constructor(enum_name, &v),
+            // A payload variant, uncalled, is its constructor.
+            Some(v) => self.enum_fn(enum_variant_tag(enum_name, member), &v.fields, |c, args| {
+                c.emit_enum_variant(enum_name, member, args);
+            }),
             None if member == "all" => {
                 let plain: Vec<String> = self.classes.enum_named(enum_name).map_or_else(Vec::new, |def| {
                     let plain = def.variants.iter().filter(|v| v.fields.is_empty());
@@ -149,7 +152,12 @@ impl Compiler {
                     .collect();
                 self.emit_term(TermOp::AllocList, inputs, None)
             }
-            None if member == "from" => self.compile_enum_from(enum_name),
+            // `Enum.from` as a value: one parameter, forwarded to the builtin.
+            None if member == "from" => {
+                self.enum_fn(format!("{enum_name}.from"), &["name".to_string()], |c, args| {
+                    c.emit_enum_from(enum_name, args[0]);
+                })
+            }
             None => return None,
         })
     }
@@ -319,21 +327,18 @@ impl Compiler {
         self.emit_term(TermOp::MakeEnumVariant(tag), payload, None)
     }
 
-    /// `Enum.from` as a function value: one parameter, forwarded to the
-    /// builtin with the enum's name.
-    fn compile_enum_from(&mut self, enum_name: &str) -> TermId {
-        let params = ["name".to_string()];
-        let (body_block, saved_block) = self.begin_function_scope(&params, 0);
-        let arg = self.scope_lookup("name").expect("parameter");
-        self.emit_enum_from(enum_name, arg);
-        self.end_function_scope(
-            Some(format!("{enum_name}.from")),
-            &params,
-            0,
-            body_block,
-            saved_block,
-            None,
-        )
+    /// A function the compiler writes for an enum member: `body` emits its
+    /// result from the parameters' terms.
+    fn enum_fn(
+        &mut self,
+        name: String,
+        params: &[String],
+        body: impl FnOnce(&mut Self, SmallVec<[TermId; 4]>),
+    ) -> TermId {
+        let (body_block, saved_block) = self.begin_function_scope(params, 0);
+        let args = params.iter().map(|p| self.scope_lookup(p).expect("parameter")).collect();
+        body(self, args);
+        self.end_function_scope(Some(name), params, 0, body_block, saved_block, None)
     }
 
     fn emit_enum_from(&mut self, enum_name: &str, arg: TermId) -> TermId {
@@ -357,12 +362,14 @@ impl Compiler {
     /// that shadows the name, or a value merely holding the enum's record
     /// (`let E = Color`), is not — a member of one is an ordinary field read.
     pub(super) fn static_enum(&self, expr: &Expr) -> Option<String> {
-        let tid = match &expr.kind {
-            ExprKind::Ident(name) => self.scope_lookup(name)?,
-            ExprKind::FieldAccess { object, field } => self.module_member_term(object, field)?,
-            _ => return None,
-        };
-        self.enum_terms.get(&tid).cloned()
+        match &expr.kind {
+            ExprKind::Ident(name) => self.static_enum_path(&[name]),
+            ExprKind::FieldAccess { object, field } => match &object.kind {
+                ExprKind::Ident(alias) => self.static_enum_path(&[alias, field]),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// [`Self::static_enum`] for a written path: `["Color"]` or
@@ -370,6 +377,8 @@ impl Compiler {
     fn static_enum_path(&self, path: &[&str]) -> Option<String> {
         let tid = match path {
             [name] => self.scope_lookup(name)?,
+            // A module's member, unless a binding of the file's own shadows
+            // the alias (the rule of `try_module_member`).
             [alias, name] => {
                 let module = self.module_aliases.get(*alias)?;
                 let tid = self.scope_lookup(&format!("{module}::{name}"))?;
@@ -648,12 +657,7 @@ fn closest_name<'a>(word: &str, candidates: &[&'a str]) -> Option<&'a str> {
         2 => 1,
         n => (n / 3).max(2),
     };
-    candidates
-        .iter()
-        .map(|c| (crate::diagnostic::edit_distance(word, c), *c))
-        .filter(|(d, _)| *d <= budget)
-        .min_by_key(|(d, _)| *d)
-        .map(|(_, c)| c)
+    crate::diagnostic::closest(word, candidates.iter().copied(), budget)
 }
 
 /// What is wrong with an enum's variants, each with the span to blame.

@@ -3134,9 +3134,7 @@ pub(crate) fn resolve_ann(
     classes: &crate::classes::ClassTable,
 ) -> Option<crate::types::Type> {
     let ann = ann?;
-    ann.resolved
-        .or_else(|| classes.lookup(&ann.name).map(crate::types::Type::Class))
-        .or_else(|| classes.lookup_enum(&ann.name).map(crate::types::Type::EnumOf))
+    ann.resolved.or_else(|| classes.declared_type(&ann.name))
 }
 
 /// The bare method name of a method declaration — `center_x` for

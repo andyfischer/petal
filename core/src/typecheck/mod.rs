@@ -870,9 +870,7 @@ impl<'a> Checker<'a> {
     /// ([`Type::EnumOf`]). Enum and class names never collide in one
     /// compilation, so the order of the two lookups decides nothing.
     fn resolve_ann(&self, ann: &TypeAnn) -> Option<Type> {
-        ann.resolved
-            .or_else(|| self.classes.lookup(&ann.name).map(Type::Class))
-            .or_else(|| self.classes.lookup_enum(&ann.name).map(Type::EnumOf))
+        ann.resolved.or_else(|| self.classes.declared_type(&ann.name))
     }
 
     /// How a type is spelled in a diagnostic — the class's own name for a
@@ -1245,7 +1243,6 @@ impl<'a> Checker<'a> {
     /// Method declarations are excluded — their name is qualified, so they are
     /// never called as a bare identifier.
     fn bind_nested_fns(&mut self, stmts: &[Stmt]) {
-        self.bind_enum_names(stmts);
         let mut sigs: HashMap<&str, Vec<FnSignature>> = HashMap::new();
         // The parameter names of the same declarations, matched by arity where
         // they are read back (see `param_name_candidates`).

@@ -283,12 +283,7 @@ pub(super) fn closest_command(word: &str) -> Option<&'static str> {
     if let (Some(only), None) = (prefixed.next(), prefixed.next()) {
         return Some(only);
     }
-    let budget = (word.chars().count() / 3).max(1);
-    command_names()
-        .map(|c| (crate::diagnostic::edit_distance(word, c), c))
-        .filter(|(d, _)| *d <= budget)
-        .min_by_key(|(d, _)| *d)
-        .map(|(_, c)| c)
+    crate::diagnostic::closest(word, command_names(), (word.chars().count() / 3).max(1))
 }
 
 const RUN: &str = "\

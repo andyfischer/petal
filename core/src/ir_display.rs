@@ -194,37 +194,7 @@ fn format_literal(lit: &Literal) -> String {
 
 /// Render a match pattern back to source-like text.
 pub fn format_pattern(pattern: &Pattern) -> String {
-    match pattern {
-        Pattern::Wildcard => "_".to_string(),
-        Pattern::Literal(lit) => format_literal(lit),
-        Pattern::Variable(name) => name.clone(),
-        Pattern::Variant { name, fields } => {
-            if fields.is_empty() {
-                name.clone()
-            } else {
-                let inner: Vec<String> = fields.iter().map(format_pattern).collect();
-                format!("{}({})", name, inner.join(", "))
-            }
-        }
-        Pattern::List { elements, rest } => {
-            let mut parts: Vec<String> = elements.iter().map(format_pattern).collect();
-            if let Some(rest) = rest {
-                parts.push(format!("...{}", rest));
-            }
-            format!("[{}]", parts.join(", "))
-        }
-        Pattern::Record(fields) => {
-            let parts: Vec<String> = fields
-                .iter()
-                .map(|(k, p)| format!("{}: {}", k, format_pattern(p)))
-                .collect();
-            format!("{{{}}}", parts.join(", "))
-        }
-        Pattern::Or(alternatives) => {
-            let parts: Vec<String> = alternatives.iter().map(format_pattern).collect();
-            parts.join(" | ")
-        }
-    }
+    pattern.render(&format_literal)
 }
 
 // ---------------------------------------------------------------------------

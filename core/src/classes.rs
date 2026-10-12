@@ -348,6 +348,13 @@ impl ClassTable {
         self.enums.iter().map(|e| (e.name.as_str(), &e.def))
     }
 
+    /// The class or enum that `name`, written in type position, refers to in
+    /// the current scope.
+    pub fn declared_type(&self, name: &str) -> Option<Type> {
+        let class = self.lookup(name).map(Type::Class);
+        class.or_else(|| self.lookup_enum(name).map(Type::EnumOf))
+    }
+
     /// The enum `name` refers to *in the current scope*: like a class, an
     /// enum the file neither declares nor imports is not a type it can name.
     pub fn lookup_enum(&self, name: &str) -> Option<EnumId> {

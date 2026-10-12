@@ -106,9 +106,7 @@ impl Type {
     /// classes, then declared enums. This is what turns `rect: Rect` into
     /// [`Type::Class`] and `k: Kind` into [`Type::EnumOf`].
     pub fn resolve(name: &str, classes: &ClassTable) -> Option<Type> {
-        Type::from_name(name)
-            .or_else(|| classes.lookup(name).map(Type::Class))
-            .or_else(|| classes.lookup_enum(name).map(Type::EnumOf))
+        Type::from_name(name).or_else(|| classes.declared_type(name))
     }
 
     /// How this type is spelled in a diagnostic. Identical to [`Type::name`]

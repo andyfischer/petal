@@ -1978,7 +1978,14 @@ impl<'a> Pass<'a> {
                         Why::UnknownBinding => {
                             "reads a binding the classifier cannot resolve".to_string()
                         }
-                        Why::CompileError => "has a compile error".to_string(),
+                        Why::CompileError => match term.op {
+                            // The message is the compiler's, not a literal of
+                            // the program's.
+                            TermOp::Error(c) if !self.string(c).is_empty() => {
+                                format!("has a compile error ({})", self.string(c))
+                            }
+                            _ => "has a compile error".to_string(),
+                        },
                         Why::Input(_)
                         | Why::Calls(_)
                         | Why::Callback(_)

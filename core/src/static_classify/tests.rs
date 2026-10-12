@@ -1436,3 +1436,154 @@ let METHOD_OK = BASE.len() + 1
     assert_eq!(leaks, 28, "a *_LEAK declaration went missing");
     assert_eq!(oks, 20, "a *_OK declaration went missing");
 }
+
+/// The same oracle over the mechanisms the first program leaves out, found
+/// by trying to get a moving value past the classifier in review: default
+/// parameters, `state` declared inside a function, a function called where
+/// it is written, picked by a match or out of a list, an early `return`,
+/// nested declarations, a native held in a name or passed as a callback, a
+/// higher-order builtin called as a method, and a function that updates its
+/// own parameter.
+#[test]
+fn nothing_classified_static_moves_between_runs_part_two() {
+    let src = "
+state tick = 0
+tick = tick + 1
+let BASE = [3, 1, 2]
+
+// A default parameter is evaluated in the callee, on every call.
+fn dflt(x, y = tick) x + y end
+fn dflt_ok(x, y = 2) x + y end
+let DEFAULT_LEAK = dflt(1)
+let DEFAULT_OK = dflt_ok(1)
+
+// `state` declared inside a function.
+fn counter()
+  state n = 0
+  n = n + 1
+  n
+end
+let INNER_STATE_LEAK = counter()
+
+// A function called where it is written.
+let IIFE_LEAK = (fn(x) x + tick end)(1)
+let IIFE_OK = (fn(x) x + 1 end)(1)
+
+// A function out of a list, and one picked by a match.
+fn fa(x) x + 1 end
+fn fb(x) x + tick end
+let fns = [fa, fb]
+let LIST_FN_LEAK = fns[1](1)
+let by_match = match len(BASE)
+  when 3 -> fb
+  when _ -> fa
+end
+let MATCH_FN_LEAK = by_match(2)
+let by_match_ok = match len(BASE)
+  when 3 -> fa
+  when _ -> fa
+end
+let MATCH_FN_OK = by_match_ok(2)
+
+// An early return out of a loop.
+fn find(xs, v)
+  for x in xs do
+    if x == v then return tick end
+  end
+  -1
+end
+fn find_ok(xs, v)
+  for x in xs do
+    if x == v then return x * 2 end
+  end
+  -1
+end
+let RETURN_LEAK = find(BASE, 1)
+let RETURN_OK = find_ok(BASE, 1)
+
+// Functions declared inside a function, one calling the other.
+fn nest()
+  fn in1() tick end
+  fn in2() in1() end
+  in2()
+end
+fn nest_ok()
+  fn in1() 4 end
+  fn in2() in1() end
+  in2()
+end
+let NESTED_FN_LEAK = nest()
+let NESTED_FN_OK = nest_ok()
+
+// A dynamic native held in a name, and passed as a callback.
+let rnd = random
+let HELD_NATIVE_LEAK = rnd()
+let NATIVE_CALLBACK_LEAK = map(BASE, fn(x) random() end)
+let flr = floor
+let HELD_NATIVE_OK = flr(2.5)
+
+// A higher-order builtin called as a method.
+let METHOD_MAP_LEAK = BASE.map(fn(x) x + tick end)
+let METHOD_MAP_OK = BASE.map(fn(x) x + 1 end)
+
+// An optional read.
+let OPTIONAL_LEAK = {a: tick}?.a
+let OPTIONAL_OK = {a: 1}?.a
+
+// A function that updates its own parameter leaves the caller's value alone.
+fn bump(xs)
+  xs[0] = xs[0] + 1
+  xs
+end
+let SOURCE_OK = [0, 0]
+let BUMPED_OK = bump(SOURCE_OK)
+let AFTER_OK = SOURCE_OK[0]
+";
+    let mut env = Env::new();
+    let report = {
+        let program = compile(&env, src);
+        env.static_report(&program)
+    };
+    let moved = moving_names(&mut env, src, 10);
+
+    let mut leaks = 0;
+    let mut oks = 0;
+    for d in report.entry() {
+        if d.name.ends_with("_LEAK") {
+            leaks += 1;
+            assert_eq!(d.class, DeclClass::Dynamic, "{} must be dynamic", d.name);
+            assert!(
+                moved.contains(&d.name),
+                "{} never moved: the test no longer exercises its rule",
+                d.name
+            );
+        }
+        if d.name.ends_with("_OK") {
+            oks += 1;
+            assert_eq!(d.class, DeclClass::Static, "{}: {}", d.name, why(&report, &d.name));
+        }
+        if d.class == DeclClass::Static {
+            assert!(
+                !moved.contains(&d.name),
+                "{} is classified static and its value changed between runs",
+                d.name
+            );
+        }
+    }
+    assert_eq!(leaks, 11, "a *_LEAK declaration went missing");
+    assert_eq!(oks, 11, "a *_OK declaration went missing");
+}
+
+/// A function that reads a name declared below it compiles to an error term;
+/// the reason says which error rather than only that there is one.
+#[test]
+fn a_compile_error_is_named_in_the_reason() {
+    let env = check_env();
+    let program = env
+        .compile_program(ProgramId(0), "fn early() LATE end\nlet LATE = 5\nlet X = early()\n")
+        .unwrap();
+    let r = env.static_report(&program);
+    assert_dynamic(&r, "X", "has a compile error (");
+    let chain = why(&r, "X");
+    assert!(chain.contains("LATE"), "{chain}");
+}

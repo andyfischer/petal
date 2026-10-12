@@ -2389,14 +2389,14 @@ impl<'a> Pass<'a> {
                 let init = p.get_term(g.canonical);
                 // A `state var` keeps a cell; only a plain `state` whose
                 // initializer is static data could have been a constant.
-                init.child_blocks.iter().all(|b| {
+                let block_static = |b: &BlockId| {
                     let terms = &self.block(*b).terms;
                     terms.iter().all(|t| {
                         !self.cls(*t).is_dynamic() && !matches!(p.get_term(*t).op, TermOp::CellNew)
-                    }) && terms
-                        .last()
-                        .is_none_or(|t| matches!(self.cls(*t), Class::Data | Class::Top))
-                })
+                    }) && terms.last().is_none_or(|t| matches!(self.cls(*t), Class::Data))
+                };
+                init.inputs.iter().all(|i| matches!(self.cls(*i), Class::Data))
+                    && init.child_blocks.iter().all(block_static)
             });
             let is_static = class == DeclClass::Static && g.kind != DeclKind::Enum;
             decls.push(StaticDecl {

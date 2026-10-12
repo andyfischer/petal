@@ -666,7 +666,11 @@ the example corpus and the golden corpus; a reloaded run versus a cold start;
 
 ## Open questions
 
-All for the owner.
+Decided on 12 October 2026: 1 yes (`const` is in), 2 yes (stage 0 is a
+go/no-go), 7 yes (the enum read path and the frozen generation go first).
+The work order is in
+[`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md).
+Questions 3 to 6 are still open.
 
 1. **Is `const` acceptable?** The request was for automatic detection. This
    proposal keeps detection as the mechanism and adds `const` as an

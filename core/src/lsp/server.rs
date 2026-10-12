@@ -7,7 +7,7 @@ use crate::lsp::document::{
     qualifier_at_position,
 };
 use crate::lsp::lsp_types::*;
-use crate::lsp::members::{At, path_before_position};
+use crate::lsp::members::Origin;
 use crate::lsp::protocol::*;
 
 pub struct Server {
@@ -250,12 +250,7 @@ impl Server {
             }
         };
         // `Kind.park`, `op.place`: a member of an enum or of a variant value.
-        let at = At {
-            line: p.position.line,
-            character: p.position.character,
-        };
-        let member = path_before_position(&doc.text, at.line, at.character)
-            .and_then(|path| doc.analysis.member(&path, at));
+        let member = doc.analysis.member_at(&doc.text, p.position);
         // (A name the enum does not have is looked up by name below, as
         // any other is.)
         if let Some(value) = member.and_then(|m| m.hover(&ident)) {
@@ -293,7 +288,7 @@ impl Server {
             ))];
         }
 
-        if let Some(def) = doc.analysis.definition_in_scope(&ident, at) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
             let value = describe(def);
             let hover = Hover {
                 contents: MarkupContent {
@@ -393,22 +388,14 @@ impl Server {
         };
 
         // `Kind.park`, `op.place`: where the enum declares that member.
-        let at = At {
-            line: p.position.line,
-            character: p.position.character,
-        };
         // (A name the enum does not have is looked up by name below.)
-        if let Some(found) = path_before_position(&doc.text, at.line, at.character)
-            .and_then(|path| doc.analysis.member(&path, at))
-            .and_then(|member| member.declaration(&ident))
-        {
-            return match found.uri {
-                None => located(
-                    p.text_document.uri.clone(),
-                    document::span_to_range(&found.span),
-                ),
-                Some("") => nothing(),
-                Some(uri) => located(uri.to_string(), document::span_to_range(&found.span)),
+        let member = doc.analysis.member_at(&doc.text, p.position);
+        if let Some(found) = member.and_then(|member| member.declaration(&ident)) {
+            let range = document::span_to_range(&found.span);
+            return match found.origin {
+                Origin::Here => located(p.text_document.uri.clone(), range),
+                Origin::File(uri) => located(uri.to_string(), range),
+                Origin::Unknown => nothing(),
             };
         }
 
@@ -426,7 +413,7 @@ impl Server {
             };
         }
 
-        if let Some(def) = doc.analysis.definition_in_scope(&ident, at) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, p.position) {
             return located(
                 p.text_document.uri.clone(),
                 document::span_to_range(&def.span),
@@ -524,13 +511,7 @@ impl Server {
 
         // After `Kind.`, or a variant value and a dot: the enum's members,
         // or the fields that value answers — and only those.
-        let at = At {
-            line: p.position.line,
-            character: p.position.character,
-        };
-        if let Some(member) = path_before_position(&doc.text, at.line, at.character)
-            .and_then(|path| doc.analysis.member(&path, at))
-        {
+        if let Some(member) = doc.analysis.member_at(&doc.text, p.position) {
             let mut items = member.completions();
             items.retain(|item| item.label.starts_with(&prefix));
             return respond(items);

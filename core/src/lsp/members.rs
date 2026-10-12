@@ -12,7 +12,7 @@ use crate::ast::{EnumVariant, Expr, ExprKind};
 use crate::source_map::SourceSpan;
 
 use crate::lsp::document::{Analysis, Definition, DefinitionKind};
-use crate::lsp::lsp_types::{CompletionItem, CompletionItemKind};
+use crate::lsp::lsp_types::{CompletionItem, CompletionItemKind, Position};
 
 use crate::program::VARIANT_NAME_FIELD as NAME_FIELD;
 
@@ -209,12 +209,22 @@ fn is_ident_char(c: char) -> bool {
 // Resolution: what a path is
 // ---------------------------------------------------------------------------
 
-/// An enum declaration, and the file it is in (`None`: this document).
+/// The file a declaration is in.
+#[derive(Clone, Copy)]
+pub enum Origin<'a> {
+    /// This document.
+    Here,
+    File(&'a str),
+    /// A module whose file could not be located.
+    Unknown,
+}
+
+/// An enum declaration, and the file it is in.
 #[derive(Clone, Copy)]
 pub struct EnumAt<'a> {
     pub def: &'a Definition,
     pub shape: &'a EnumShape,
-    pub uri: Option<&'a str>,
+    pub origin: Origin<'a>,
 }
 
 /// What a path is, as far as the declarations say.
@@ -235,20 +245,16 @@ pub enum Member<'a> {
     From(EnumAt<'a>),
 }
 
-/// A cursor position in the document, 0-based as the protocol gives it.
-#[derive(Clone, Copy)]
-pub struct At {
-    pub line: u32,
-    pub character: u32,
-}
-
 impl Analysis {
-    /// What `path` is at `at`, when it leads to an enum.
-    pub fn member(&self, path: &[Segment], at: At) -> Option<Member<'_>> {
-        self.member_within(path, at, 0)
+    /// What the path written up to the cursor at `at` in `text` is, when it
+    /// leads to an enum: `Kind.park`, `op.place`, or either cut off at its
+    /// dot.
+    pub fn member_at(&self, text: &str, at: Position) -> Option<Member<'_>> {
+        let path = path_before_position(text, at.line, at.character)?;
+        self.member_within(&path, at, 0)
     }
 
-    fn member_within(&self, path: &[Segment], at: At, depth: usize) -> Option<Member<'_>> {
+    fn member_within(&self, path: &[Segment], at: Position, depth: usize) -> Option<Member<'_>> {
         let (first, rest) = path.split_first()?;
         if first.called || depth > 4 {
             return None;
@@ -284,7 +290,7 @@ impl Analysis {
             .find(|d| d.name == first.name && d.kind == DefinitionKind::Enum);
         if let Some(def) = local {
             let shape = def.shape.as_ref()?;
-            return Some((EnumAt { def, shape, uri: None }, rest));
+            return Some((EnumAt { def, shape, origin: Origin::Here }, rest));
         }
         let through_module = self.qualifier(&first.name).and_then(|module| {
             let (second, rest) = rest.split_first()?;
@@ -298,7 +304,7 @@ impl Analysis {
         let at = EnumAt {
             def: &found.def,
             shape,
-            uri: Some(found.uri.as_deref().unwrap_or("")),
+            origin: found.uri.as_deref().map_or(Origin::Unknown, Origin::File),
         };
         Some((at, rest))
     }
@@ -307,7 +313,7 @@ impl Analysis {
     /// innermost parameter or loop variable whose function or loop the
     /// position is in, else the last declaration above the position, else
     /// the first one anywhere (a hoisted `fn` or `enum`).
-    pub fn definition_in_scope(&self, name: &str, at: At) -> Option<&Definition> {
+    pub fn definition_in_scope(&self, name: &str, at: Position) -> Option<&Definition> {
         let (line, column) = (at.line + 1, at.character + 1);
         let pos = (line, column);
         let named = || self.definitions.iter().filter(|d| d.name == name);
@@ -355,10 +361,9 @@ fn member_of<'a>(base: Member<'a>, rest: &[Segment]) -> Option<Member<'a>> {
 // Readings: completion, hover, definition
 // ---------------------------------------------------------------------------
 
-/// Where a member is declared: the span, in the file `uri` (`None`: this
-/// document; `Some("")`: a file that could not be located).
+/// Where a member is declared.
 pub struct Declared<'a> {
-    pub uri: Option<&'a str>,
+    pub origin: Origin<'a>,
     pub span: SourceSpan,
 }
 
@@ -546,6 +551,6 @@ impl<'a> Member<'a> {
             Member::Value(_) => e.shape.variants.iter().find(declares)?.span,
             Member::Constructor(..) | Member::All(_) | Member::From(_) => return None,
         };
-        Some(Declared { uri: e.uri, span })
+        Some(Declared { origin: e.origin, span })
     }
 }

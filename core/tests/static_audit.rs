@@ -275,3 +275,22 @@ fn turning_it_off_restores_the_whole_program() {
     assert!(matches!(env.run(sid).unwrap(), Value::Int(_)), "the whole program runs again");
     assert!(!env.static_audit_report().has_failures());
 }
+
+/// A host call after the run is not part of any top-level statement: what
+/// the called function touches is no finding, even when the last statement
+/// of the script is a static one.
+#[test]
+fn a_host_call_after_the_run_is_not_audited() {
+    let mut env = lying_env();
+    env.set_static_audit(StaticAuditMode::Watch);
+    let pid = env
+        .load_program(&format!(
+            "{DECLS}fn poke()\n  state hits = 0\n  hits = hits + pointer()\n  hits\nend\nlet LAST = [doubles(1), doubles(2)]\n"
+        ))
+        .unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid).unwrap();
+    env.call_function(sid, "poke", &[]).unwrap();
+    let report = env.static_audit_report();
+    assert!(!report.has_failures(), "{report}");
+}

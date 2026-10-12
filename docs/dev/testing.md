@@ -37,7 +37,7 @@ on. The ones most tests use:
 - `checkJson(code)` / `checkStrict(code)` — `petal check --json` / `--strict`.
 - `showIrJson(code)`, `showAstJson(code)`, `showTokensJson(code)`,
   `showBytecodeJson(code)` — parsed `--json` dumps.
-- `graphJson(code, terms, direction?)`, and the alias helpers
+- `graphJson(code, terms, direction?, slice?)`, and the shorthands over it
   `showProvenanceJson`, `showDependentsJson`, `showSliceJson`, plus
   `explainJson` — the dataflow query commands.
 - `runIr(irJson)` / `runIrFile(path)` — run JSON IR through `run --ir`.

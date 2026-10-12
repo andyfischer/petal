@@ -10,18 +10,18 @@ import {
 
 
 describe("dataflow slicing", () => {
-  describe("show-dependents", () => {
+  describe("dependents (graph --direction forward)", () => {
     it("finds direct dependents of a variable", () => {
       const result = showDependentsJson("let a = 1\nlet b = a + 2", "a");
-      expect(result.root.name).toBe("a");
+      expect(result.target_terms[0].name).toBe("a");
       // b depends on a (through Copy and Add)
-      expect(result.dependents.length).toBeGreaterThan(0);
+      expect(result.terms.length).toBeGreaterThan(0);
     });
 
     it("finds transitive dependents", () => {
       const result = showDependentsJson("let a = 1\nlet b = a + 1\nlet c = b + 1", "a");
       // c transitively depends on a
-      const names = result.dependents.map((d: any) => d.name).filter(Boolean);
+      const names = result.terms.map((d: any) => d.name).filter(Boolean);
       expect(names).toContain("b");
       expect(names).toContain("c");
     });
@@ -31,14 +31,14 @@ describe("dataflow slicing", () => {
       // c is the last named variable, find its term id
       const cTerm = ir.terms.find((t: any) => t.name === "c");
       const result = showDependentsJson("let a = 1\nlet b = a + 1\nlet c = b + 1", `t${cTerm.id}`);
-      expect(result.dependents.length).toBe(0);
+      expect(result.terms.length).toBe(0);
     });
   });
 
-  describe("show-slice", () => {
+  describe("slice (graph --slice)", () => {
     it("returns minimal subgraph for a single target", () => {
       const result = showSliceJson("let a = 1\nlet b = 2\nlet c = a + b\nlet d = 99", ["c"]);
-      const sliceNames = result.slice.map((t: any) => t.name).filter(Boolean);
+      const sliceNames = result.terms.map((t: any) => t.name).filter(Boolean);
       // c's slice should include a and b but not d
       expect(sliceNames).toContain("a");
       expect(sliceNames).toContain("b");
@@ -48,7 +48,7 @@ describe("dataflow slicing", () => {
 
     it("returns terms in topological order", () => {
       const result = showSliceJson("let a = 1\nlet b = a + 1\nlet c = b + 1", ["c"]);
-      const ids = result.slice.map((t: any) => t.id);
+      const ids = result.terms.map((t: any) => t.id);
       // IDs should be in ascending order (topological = program order)
       for (let i = 1; i < ids.length; i++) {
         expect(ids[i]).toBeGreaterThan(ids[i - 1]);
@@ -58,7 +58,7 @@ describe("dataflow slicing", () => {
     it("merges slices for multiple targets", () => {
       // a -> b, c -> d. Slice for [b, d] should include a, b, c, d
       const result = showSliceJson("let a = 1\nlet b = a + 1\nlet c = 2\nlet d = c + 1", ["b", "d"]);
-      const sliceNames = result.slice.map((t: any) => t.name).filter(Boolean);
+      const sliceNames = result.terms.map((t: any) => t.name).filter(Boolean);
       expect(sliceNames).toContain("a");
       expect(sliceNames).toContain("b");
       expect(sliceNames).toContain("c");
@@ -67,7 +67,7 @@ describe("dataflow slicing", () => {
 
     it("excludes unrelated terms", () => {
       const result = showSliceJson("let a = 1\nlet b = a + 1\nlet unrelated = 42", ["b"]);
-      const sliceNames = result.slice.map((t: any) => t.name).filter(Boolean);
+      const sliceNames = result.terms.map((t: any) => t.name).filter(Boolean);
       expect(sliceNames).not.toContain("unrelated");
     });
   });
@@ -81,7 +81,7 @@ describe("dataflow slicing", () => {
 describe("cells and dataflow slicing", () => {
   const REPRO = "var x = 0\nset x = x + 1\nlet y = x * 2\n";
 
-  describe("show-slice", () => {
+  describe("slice (graph --slice)", () => {
     it("is not minimal once a cell is crossed, and says which", () => {
       const result = showSliceJson(REPRO, ["y"]);
       expect(result.minimal).toBe(false);
@@ -94,7 +94,7 @@ describe("cells and dataflow slicing", () => {
       // Measured before this change: the slice for `y` omitted the write and
       // its operands, so re-evaluating it produced 0 instead of 2.
       const result = showSliceJson(REPRO, ["y"]);
-      const ops = result.slice.map((t: any) => t.op);
+      const ops = result.terms.map((t: any) => t.op);
       expect(ops).toContain("CellWrite");
       expect(ops).toContain("CellNew");
       expect(ops).toContain("Add");
@@ -107,7 +107,7 @@ describe("cells and dataflow slicing", () => {
         "var a = 0\nvar b = 0\nset a = 5\nset b = a + 1\nlet y = b * 2\n",
         ["y"]
       );
-      const writes = result.slice.filter((t: any) => t.op === "CellWrite");
+      const writes = result.terms.filter((t: any) => t.op === "CellWrite");
       expect(writes.map((w: any) => w.name).sort()).toEqual(["a", "b"]);
       expect(result.frontier.map((f: any) => f.var).sort()).toEqual(["a", "b"]);
     });
@@ -117,30 +117,30 @@ describe("cells and dataflow slicing", () => {
       expect(result.minimal).toBe(true);
       expect(result.complete).toBe(true);
       expect(result.frontier).toEqual([]);
-      const names = result.slice.map((t: any) => t.name).filter(Boolean);
+      const names = result.terms.map((t: any) => t.name).filter(Boolean);
       expect(names).toContain("a");
       expect(names).toContain("b");
       expect(names).toContain("y");
     });
 
     it("says `Not minimal` in text mode", () => {
-      const text = dataflowText("show-slice", REPRO, ["y"]);
+      const text = dataflowText("graph", REPRO, ["y"], ["--slice"]);
       expect(text).toContain("Not minimal");
       expect(text).toContain("read of var 'x'");
       // ...and does not on the cell-free equivalent.
-      const clean = dataflowText("show-slice", "let a = 1\nlet y = a * 2\n", ["y"]);
+      const clean = dataflowText("graph", "let a = 1\nlet y = a * 2\n", ["y"], ["--slice"]);
       expect(clean).not.toContain("Not minimal");
     });
   });
 
-  describe("show-dependents", () => {
+  describe("dependents (graph --direction forward)", () => {
     it("reaches later reads from a set", () => {
       // Measured before this change: `Downstream (0)` — the mutation was
       // reported as affecting nothing.
       const result = showDependentsJson(REPRO, "x");
-      expect(result.root.op).toBe("CellWrite");
-      expect(result.dependents.length).toBeGreaterThan(0);
-      expect(result.dependents.map((d: any) => d.name)).toContain("y");
+      expect(result.target_terms[0].op).toBe("CellWrite");
+      expect(result.terms.length).toBeGreaterThan(0);
+      expect(result.terms.map((d: any) => d.name)).toContain("y");
       const may = result.edges.filter((e: any) => e.kind === "may");
       expect(may.length).toBeGreaterThan(0);
     });
@@ -149,7 +149,7 @@ describe("cells and dataflow slicing", () => {
       const ir = showIrJson(REPRO);
       const decl = ir.terms.find((t: any) => t.op === "CellNew");
       const result = showDependentsJson(REPRO, `t${decl.id}`);
-      expect(result.dependents.map((d: any) => d.op)).toContain("CellWrite");
+      expect(result.terms.map((d: any) => d.op)).toContain("CellWrite");
     });
 
     it("tags value edges dataflow and cell edges may", () => {
@@ -159,7 +159,7 @@ describe("cells and dataflow slicing", () => {
     });
 
     it("marks the cell edge as may in text mode", () => {
-      const text = dataflowText("show-dependents", REPRO, ["x"]);
+      const text = dataflowText("graph", REPRO, ["x"], ["--direction", "forward"]);
       expect(text).toMatch(/~> t\d+ \(cell 'x', may\)/);
     });
 
@@ -176,7 +176,7 @@ describe("cells and dataflow slicing", () => {
     });
 
     it("says so in text mode", () => {
-      const text = dataflowText("show-dependents", REPRO, ["x"]);
+      const text = dataflowText("graph", REPRO, ["x"], ["--direction", "forward"]);
       expect(text).toContain("Frontier (");
       expect(text).toContain("read of var 'x'");
     });
@@ -229,18 +229,18 @@ describe("method dispatch is a dataflow edge", () => {
     slice.filter((t: any) => isOp(t.op, "MakeClosure")).map((t: any) => t.name);
 
   it("puts the method's function term in the slice", () => {
-    const slice = showSliceJson(METHOD, ["d"]).slice;
+    const slice = showSliceJson(METHOD, ["d"]).terms;
     const closure = slice.find((t: any) => t.name === "Point.dist2");
     expect(closure, JSON.stringify(slice)).toBeTruthy();
     expect(isOp(closure.op, "MakeClosure")).toBe(true);
   });
 
   it("agrees with the plain-function spelling of the same program", () => {
-    expect(closureNames(showSliceJson(METHOD, ["d"]).slice)).toEqual([
+    expect(closureNames(showSliceJson(METHOD, ["d"]).terms)).toEqual([
       "Point",
       "Point.dist2",
     ]);
-    expect(closureNames(showSliceJson(PLAIN, ["d"]).slice)).toEqual([
+    expect(closureNames(showSliceJson(PLAIN, ["d"]).terms)).toEqual([
       "Point",
       "dist2",
     ]);
@@ -251,7 +251,7 @@ describe("method dispatch is a dataflow edge", () => {
     // straight to the declaration: an ordinary Call naming its callee, not a
     // dispatch the analysis has to over-approximate.
     const result = showDependentsJson(METHOD, "Point.dist2");
-    expect(result.dependents.some((t: any) => isOp(t.op, "Call"))).toBe(true);
+    expect(result.terms.some((t: any) => isOp(t.op, "Call"))).toBe(true);
     expect(result.edges.every((e: any) => e.kind === "dataflow")).toBe(true);
   });
 
@@ -275,12 +275,12 @@ describe("method dispatch is a dataflow edge", () => {
 
   it("keeps a may-edge where the receiver's class is not statically known", () => {
     const result = showDependentsJson(DYNAMIC, "Point.dist2");
-    expect(result.dependents.some((t: any) => isOp(t.op, "MethodCall"))).toBe(true);
+    expect(result.terms.some((t: any) => isOp(t.op, "MethodCall"))).toBe(true);
     expect(result.edges.some((e: any) => e.kind === "dispatch")).toBe(true);
   });
 
   it("marks that dispatch edge as may in text mode", () => {
-    const text = dataflowText("show-dependents", DYNAMIC, ["Point.dist2"]);
+    const text = dataflowText("graph", DYNAMIC, ["Point.dist2"], ["--direction", "forward"]);
     expect(text).toMatch(/~> t\d+ \(dispatch, may\)/);
   });
 
@@ -295,10 +295,19 @@ describe("method dispatch is a dataflow edge", () => {
   });
 });
 
-// `petal graph` is the one handler behind all three `show-*` queries.
+// `petal graph` is the one dataflow query: provenance, dependents and slice.
 describe("petal graph", () => {
   const REPRO = "var x = 0\nset x = x + 1\nlet y = x * 2\n";
-  const SHAPE = ["complete", "direction", "edges", "frontier", "minimal", "targets", "terms"];
+  const SHAPE = [
+    "complete",
+    "direction",
+    "edges",
+    "frontier",
+    "minimal",
+    "target_terms",
+    "targets",
+    "terms",
+  ];
   const ids = (terms: any[]) => terms.map((t: any) => t.id);
 
   it("has one result shape in every direction", () => {
@@ -306,39 +315,45 @@ describe("petal graph", () => {
       graphJson(REPRO, ["y"]),
       graphJson(REPRO, ["x"], "forward"),
       graphJson(REPRO, ["y", "x"]),
+      graphJson(REPRO, ["y"], "back", true),
     ]) {
       expect(Object.keys(r).sort()).toEqual(SHAPE);
+      expect(ids(r.target_terms)).toEqual(r.targets);
     }
   });
 
-  it("back with one term is show-provenance", () => {
+  it("back is the default direction", () => {
     const g = graphJson(REPRO, ["y"], "back");
-    const p = showProvenanceJson(REPRO, "y");
+    const p = graphJson(REPRO, ["y"]);
     expect(g.direction).toBe("back");
-    expect(ids(g.terms)).toEqual(ids(p.ancestors));
-    expect(p.terms).toEqual(p.ancestors);
-    expect(g.frontier).toEqual(p.frontier);
-    expect(g.complete).toBe(p.complete);
+    expect(g).toEqual(p);
   });
 
-  it("forward is show-dependents", () => {
-    const g = graphJson(REPRO, ["x"], "forward");
-    const d = showDependentsJson(REPRO, "x");
-    expect(g.direction).toBe("forward");
-    expect(ids(g.terms)).toEqual(ids(d.dependents));
-    expect(g.edges).toEqual(d.edges);
+  it("forward says so", () => {
+    expect(graphJson(REPRO, ["x"], "forward").direction).toBe("forward");
   });
 
-  it("several terms is show-slice, with edges inside the slice", () => {
+  it("several terms is a slice, with edges inside the slice", () => {
     const g = graphJson(REPRO, ["y", "x"]);
-    const s = showSliceJson(REPRO, ["y", "x"]);
-    expect(ids(g.terms)).toEqual(ids(s.slice));
+    expect(g).toEqual(graphJson(REPRO, ["y", "x"], "back", true));
     expect(g.minimal).toBe(false);
     const inSlice = new Set(ids(g.terms));
     expect(g.edges.length).toBeGreaterThan(0);
     for (const e of g.edges) {
       expect(inSlice.has(e.from) && inSlice.has(e.to)).toBe(true);
     }
+  });
+
+  it("one term is its provenance unless --slice is passed", () => {
+    // The slice crosses the cell and pulls in the write; provenance stops there.
+    const prov = graphJson(REPRO, ["y"]);
+    const slice = graphJson(REPRO, ["y"], "back", true);
+    expect(slice.terms.map((t: any) => t.op)).toContain("CellWrite");
+    expect(prov.terms.map((t: any) => t.op)).not.toContain("CellWrite");
+  });
+
+  it("--slice refuses --direction forward", () => {
+    expect(() => graphJson(REPRO, ["y"], "forward", true)).toThrow();
   });
 
   it("forward from several terms is the union of their walks", () => {

@@ -205,7 +205,7 @@ cell's current value.
 ```
 
 Prefer `let`. Every `var` is a place the dataflow story goes dark, and
-`show-provenance` / `show-slice` lose precision there.
+`petal graph` loses precision there.
 A `var` only earns its keep when a nested `fn` or lambda reads or writes it.
 An accumulator that stays in one function is a `let` rebind, even across
 loops and branches:
@@ -1150,9 +1150,9 @@ These do *not* run the program:
 
 | Command | Question |
 |---|---|
-| `petal show-provenance --term x f.ptl` | What does this value depend on? |
-| `petal show-dependents --term x f.ptl` | What downstream values does this influence? |
-| `petal show-slice --term a --term b f.ptl` | The subgraph connecting several targets |
+| `petal graph --term x f.ptl` | What does this value depend on? |
+| `petal graph --direction forward --term x f.ptl` | What downstream values does this influence? |
+| `petal graph --term a --term b f.ptl` | The subgraph connecting several targets |
 | `petal show-graph f.ptl \| dot -Tpng -o g.png` | Draw the whole dataflow graph |
 
 All of them stop at a `var` cell and report it as a *frontier* entry naming the
@@ -1214,7 +1214,7 @@ When a program does the wrong thing:
    dump survives a crash, so this works on failing runs too.
 3. **`petal explain --term <the wrong value> f.ptl`** — walk back to where the
    value came from, with real recorded numbers at every step.
-4. **`petal show-provenance --term <it>`** — if the chain crosses a `var`, the
+4. **`petal graph --term <it>`** — if the chain crosses a `var`, the
    frontier block names every `set` that could be responsible.
 5. **`petal run --seed N`** if randomness is involved, so step 2–4 look at the
    same run every time.

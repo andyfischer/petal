@@ -127,14 +127,15 @@ pub struct ProposeEditOpts {
 }
 
 /// Which dataflow walk `petal graph` runs. Chosen at parse time from
-/// `--direction` and the number of `--term`s (or fixed by an alias).
+/// `--direction`, `--slice` and the number of `--term`s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphQuery {
-    /// Backward from one term: its ancestors (`show-provenance`).
+    /// Backward from one term: its ancestors.
     Provenance,
-    /// Forward from one or more terms: their dependents (`show-dependents`).
+    /// Forward from one or more terms: their dependents.
     Dependents,
-    /// Backward from several terms: the conservative slice (`show-slice`).
+    /// Backward from several terms (or one, with `--slice`): the conservative
+    /// slice.
     Slice,
 }
 
@@ -218,16 +219,11 @@ pub enum Command {
     ShowTokens {
         json: bool,
     },
-    /// `petal graph`, and the `show-provenance` / `show-dependents` /
-    /// `show-slice` aliases that share its handler and result shape.
+    /// `petal graph`: one dataflow query, one result shape.
     Graph {
         json: bool,
         terms: Vec<String>,
         query: GraphQuery,
-        /// Set when invoked through one of the old names: the JSON then also
-        /// carries that command's legacy keys (`root`, and `ancestors` /
-        /// `dependents` / `slice`) so existing clients keep working.
-        alias: bool,
     },
     ShowGraph {
         all: bool,
@@ -641,17 +637,11 @@ pub fn execute(cli: CliArgs) {
         Command::ShowBytecode { json } => {
             handlers::handle_show_bytecode(json, &source, &source_input, &include_dirs);
         }
-        Command::Graph {
-            json,
-            terms,
-            query,
-            alias,
-        } => {
+        Command::Graph { json, terms, query } => {
             handlers::handle_graph(
                 json,
                 &terms,
                 query,
-                alias,
                 &source,
                 &source_input,
                 &include_dirs,

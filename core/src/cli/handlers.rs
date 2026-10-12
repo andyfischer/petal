@@ -1240,11 +1240,10 @@ pub(super) fn handle_show_bytecode(
     }
 }
 
-/// `petal graph` — one dataflow query, one result shape. The three old
-/// commands (`show-provenance`, `show-dependents`, `show-slice`) are aliases
-/// that pick `query` and set `alias`, which adds their legacy JSON keys.
+/// `petal graph` — one dataflow query, one result shape.
 ///
-/// JSON: `{direction, targets, terms, edges, frontier, complete, minimal}`.
+/// JSON: `{direction, targets, target_terms, terms, edges, frontier, complete,
+/// minimal}`.
 /// `complete`/`minimal` are false exactly when the walk met a cell: backward
 /// it stopped there (the answer may be missing a writer's chain), forward it
 /// crossed a may-edge (the answer over-approximates).
@@ -1252,7 +1251,6 @@ pub(super) fn handle_graph(
     json: bool,
     term_queries: &[String],
     query: GraphQuery,
-    alias: bool,
     source: &str,
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
@@ -1325,30 +1323,20 @@ pub(super) fn handle_graph(
             .iter()
             .map(|&id| term_to_json(program.get_term(id)))
             .collect();
-        let mut output = serde_json::json!({
+        let target_terms: Vec<_> = target_ids
+            .iter()
+            .map(|&id| term_to_json(program.get_term(id)))
+            .collect();
+        let output = serde_json::json!({
             "direction": if query == GraphQuery::Dependents { "forward" } else { "back" },
             "targets": target_ids.iter().map(|id| id.0).collect::<Vec<_>>(),
+            "target_terms": target_terms,
             "terms": terms_json,
             "edges": edges_to_json(&edges),
             "frontier": frontier_to_json(&program, &frontier),
             "complete": complete,
             "minimal": complete,
         });
-        if alias {
-            let obj = output.as_object_mut().expect("graph output is an object");
-            let legacy = match query {
-                GraphQuery::Provenance => "ancestors",
-                GraphQuery::Dependents => "dependents",
-                GraphQuery::Slice => "slice",
-            };
-            obj.insert(legacy.to_string(), obj["terms"].clone());
-            if query != GraphQuery::Slice {
-                obj.insert(
-                    "root".to_string(),
-                    term_to_json(program.get_term(target_ids[0])),
-                );
-            }
-        }
         print_json(&output);
         return;
     }

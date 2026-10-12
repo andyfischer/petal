@@ -225,7 +225,7 @@ two `"hello"` literals share the same entry.
 Maps each `TermId` to a `SourceSpan` (`{line, column, offset}` for start
 and end, plus a file index for multi-file programs; serialized as a compact
 array — see [Dump format conventions](../CLI.md#dump-format-conventions)).
-This powers error messages, `explain`, `show-provenance`, and
+This powers error messages, `explain`, `graph`, and
 the trace buffer's `line`/`column` fields.
 
 ### Functions and Closures
@@ -555,11 +555,11 @@ by `run_speculative` to checkpoint+restore around a non-committing run).
 Because every term has explicit `inputs` edges, dataflow queries reduce
 to graph traversals:
 
-- **Backward slice** (`show-provenance`) — walk `inputs` recursively from
+- **Backward slice** (`graph`) — walk `inputs` recursively from
   a target term. Answers "what feeds into this value?"
-- **Forward slice** (`show-dependents`) — walk the reverse-inputs index
+- **Forward slice** (`graph --direction forward`) — walk the reverse-inputs index
   from a source term. Answers "what does this value influence?"
-- **Minimal slice** (`show-slice`) — smallest subgraph connecting a set
+- **Minimal slice** (`graph --slice`, or several `--term`s) — smallest subgraph connecting a set
   of target terms.
 
 `petal explain --term <name>` combines a slice with recorded trace

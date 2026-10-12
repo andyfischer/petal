@@ -18,7 +18,7 @@ register-mutation primitive; see [Architecture.md](Architecture.md).
 
 Debugging questions therefore become graph questions. "Why does `total` have
 this value?" means "walk the dataflow graph backward from the term labelled
-`total`." `petal explain`, `show-provenance`, `show-dependents`, and the trace
+`total`." `petal explain`, `petal graph`, and the trace
 buffer all work off this model.
 
 ## 1. Core CLI
@@ -35,10 +35,10 @@ options.
 | `check [--json] [--strict]` | Lex+parse+compile only. Exit 0/1; `--strict` also fails on type warnings. |
 | `explain --term <name\|id>` | Run with tracing, then show the value chain that produced the term. Accepts a variable name (`total`), a numeric term id (`72`), or `t72`. |
 | `show-tokens` / `show-ast` / `show-ir` / `show-bytecode` | Each compilation stage, as text or `--json`. |
-| `graph --term <t> [--direction back\|forward] [--term <t2>...]` | The one dataflow query behind the three below; one result shape `{direction, targets, terms, edges, frontier, complete, minimal}`. |
-| `show-provenance --term <t>` | Backward dataflow slice: what does this term depend on? |
-| `show-dependents --term <t>` | Forward dataflow slice: what depends on this term? |
-| `show-slice --term <a> [--term <b>...]` | Dataflow subgraph for several targets (minimal only when no `var` is read; see §1a). |
+| `graph --term <t> [--direction back\|forward] [--term <t2>...] [--slice]` | The one dataflow query; one result shape `{direction, targets, target_terms, terms, edges, frontier, complete, minimal}`. |
+| `graph --term <t>` | Backward dataflow slice: what does this term depend on? |
+| `graph --direction forward --term <t>` | Forward dataflow slice: what depends on this term? |
+| `graph --term <a> --term <b>...` (or `--slice` with one) | Dataflow subgraph for several targets (minimal only when no `var` is read; see §1a). |
 | `show-graph` | Graphviz DOT output. |
 | `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
@@ -60,13 +60,13 @@ stop produces a **frontier** record: the var name, its declaration, and the
 complete static set of writes that could have supplied the value.
 Incompleteness is a field on the result, not a convention:
 
-- `show-provenance`: `"frontier": [...]` and `"complete": false`. This command
+- `graph` (back, one term): `"frontier": [...]` and `"complete": false`. This command
   never runs the program, so it always gives the static answer
   (`"resolution": "not_traced"` plus the write sites).
-- `show-slice`: `"minimal": false`, and the slice widens to include the
+- `graph` (back, a slice): `"minimal": false`, and the slice widens to include the
   declaration and every `set` site transitively. Too small computes a
   *different value*; too big only loses precision.
-- `show-dependents`: gains `"kind": "may"` edges from the declaration and from
+- `graph --direction forward`: gains `"kind": "may"` edges from the declaration and from
   every `set` to every read. This direction was always a "may" question, so
   over-approximating is the correct answer — but each read reached that way
   is still listed in `frontier`, with `"complete": false`.
@@ -233,7 +233,7 @@ to one, otherwise `null`. `line`/`column` come from the source map and are
 | Inspect a compilation stage | `show-tokens` / `show-ast` / `show-ir` / `show-bytecode` |
 | "Why does this variable have this value?" | `petal explain --term <name>` |
 | "What is every variable right now?" (including after an error) | `petal run --observe` |
-| Understand data dependencies | `show-provenance` / `show-dependents` / `show-slice` |
+| Understand data dependencies | `petal graph` |
 | Offline trace review | `petal run --record-trace trace.json` |
 | Unit-test IR shape | `showIrJson` + `termByName` / `termsByOp` |
 | Debug a running canvas | `DiagramPause` → `DiagramStep` → `DiagramState` / `DiagramScreenshot` |

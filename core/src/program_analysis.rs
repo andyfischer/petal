@@ -2,7 +2,7 @@
 //!
 //! Term lookup (`find_term`/`named_terms`) and the backward/forward slicing
 //! queries (`trace_provenance`, `trace_dependents`, `slice`) that back the
-//! `explain`, `show-provenance`, `show-dependents`, and `show-slice` tooling.
+//! `explain` and `graph` tooling.
 //! These are read-only graph walks, kept separate from the IR data structures
 //! in [`crate::program`] and the import validator in [`crate::ir_validate`].
 
@@ -566,7 +566,7 @@ impl Program {
     /// mirror image: "what could this affect" is a may-question, so the graph
     /// includes `CellMay` edges from a declaration and from every write to
     /// every read of the same cell. Over-approximating here is correct;
-    /// under-approximating would make `show-dependents` on a `set` claim the
+    /// under-approximating would make `graph --direction forward` on a `set` claim the
     /// mutation affects nothing.
     pub fn trace_dependents(&self, root_id: TermId) -> Dependents {
         let index = self.cell_index();
@@ -597,7 +597,7 @@ impl Program {
             let reads = index.reads_of(decl);
             let writes = index.writes_of(decl);
             // The declaration reaches its writes as well as its reads —
-            // without this, `show-dependents` on a `var` would not list the
+            // without this, a forward `graph` on a `var` would not list the
             // `set` sites that are the whole point of declaring it.
             for &w in writes {
                 users.entry(decl).or_default().push((w, EdgeKind::CellMay));

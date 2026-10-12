@@ -73,8 +73,8 @@ without touching source text.
   [`core/src/program_analysis.rs`](../../core/src/program_analysis.rs) —
   `trace_provenance` (backward dataflow slice), `trace_dependents` (forward
   slice), `slice(targets)` (minimal connecting subgraph), `find_term`,
-  `named_terms`. Exposed on the CLI as `show-provenance`, `show-dependents`,
-  `show-slice`, `show-graph` (DOT). These are **read-only today** but define the
+  `named_terms`. Exposed on the CLI as `graph` and
+  `show-graph` (DOT). These are **read-only today** but define the
   graph queries a transformation would target (e.g. "slice the constants that
   influence this output, then rewrite them").
 
@@ -88,5 +88,5 @@ emitter following the JSON contract.
 |---|---|---|---|
 | Inspect IR graph | ✅ | — | `show-ir`, `program_analysis.rs`, MCP `ShowIR` |
 | Construct/transform IR as data | — | ✅ (via JSON) | `run --ir`, `Program::from_json`, `calc-to-ir.ts` |
-| Provenance / dependents / slice | ✅ | — | `show-provenance/dependents/slice` |
+| Provenance / dependents / slice | ✅ | — | `graph` |
 | In-place IR rewrite API (Rust) | — | ✗ not built | transform by emitting new JSON instead |

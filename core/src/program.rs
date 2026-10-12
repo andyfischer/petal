@@ -848,7 +848,7 @@ impl Program {
     /// **Why this exists.** A user method is dispatched at runtime by name, so
     /// `base.dist2()` has no operand naming the function it calls — its inputs
     /// are the receiver and the arguments, nothing else. Every dataflow answer
-    /// (`show-provenance`, `show-slice`, `explain`, `show-graph`) would then
+    /// (`graph`, `explain`, `show-graph`) would then
     /// omit the code that computes the value, which is the one thing a slice
     /// must never do. This recovers the edge from the registration statement
     /// the compiler emits for each declaration

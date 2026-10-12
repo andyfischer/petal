@@ -223,9 +223,11 @@ fn explain_names_the_source_function() {
 fn the_provenance_commands_name_the_source_function() {
     // `--term box` lands on the `MakeOverloadSet`, whose ancestors are the two
     // variant `MakeClosure` terms — the rows that carry the mangled names.
-    for cmd in ["show-provenance", "show-dependents"] {
-        names_the_source_function(cmd, &petal(&[cmd, "--term", "box"]));
-        names_the_source_function(cmd, &petal(&[cmd, "--term", "box", "--json"]));
+    for dir in ["back", "forward"] {
+        let label = format!("graph --direction {dir}");
+        let args = ["graph", "--direction", dir, "--term", "box"];
+        names_the_source_function(&label, &petal(&args));
+        names_the_source_function(&label, &petal(&[&args[..], &["--json"]].concat()));
     }
 }
 

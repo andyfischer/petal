@@ -22,29 +22,29 @@ function hasOp(term: any, op: string): boolean {
 
 /** Check if the root or any ancestor has the given op */
 function anyTermHasOp(prov: any, op: string): boolean {
-  if (hasOp(prov.root, op)) return true;
-  return prov.ancestors.some((a: any) => hasOp(a, op));
+  if (hasOp(prov.target_terms[0], op)) return true;
+  return prov.terms.some((a: any) => hasOp(a, op));
 }
 
 describe("provenance queries", () => {
   it("traces a simple variable to its constant", () => {
     const prov = showProvenance("let x = 42", "x");
-    expect(prov.root.name).toBe("x");
+    expect(prov.target_terms[0].name).toBe("x");
     // root term should be a user term, not a builtin
     const ut = userTerms(showIrJson("let x = 42"));
     const xTerm = ut.find((t: any) => t.name === "x");
-    expect(prov.root.id).toBe(xTerm.id);
+    expect(prov.target_terms[0].id).toBe(xTerm.id);
   });
 
   it("traces arithmetic through operands", () => {
     const prov = showProvenance("let a = 10\nlet b = 20\nlet c = a + b", "c");
-    expect(prov.root.name).toBe("c");
+    expect(prov.target_terms[0].name).toBe("c");
     // c is the Add term; its ancestors include Copy terms for a and b,
     // plus the Constant terms for 10 and 20
     expect(anyTermHasOp(prov, "Add")).toBe(true);
-    expect(prov.ancestors.length).toBeGreaterThanOrEqual(2);
+    expect(prov.terms.length).toBeGreaterThanOrEqual(2);
     // Should trace back to the named constants a and b
-    const namedAncestors = prov.ancestors.filter((a: any) => a.name !== null);
+    const namedAncestors = prov.terms.filter((a: any) => a.name !== null);
     expect(namedAncestors.map((a: any) => a.name).sort()).toEqual(["a", "b"]);
   });
 
@@ -53,7 +53,7 @@ describe("provenance queries", () => {
       "fn double(x)\n  x * 2\nend\nlet result = double(5)",
       "result"
     );
-    expect(prov.root.name).toBe("result");
+    expect(prov.target_terms[0].name).toBe("result");
     // result is a Copy of the Call result; the Call or Copy-of-Call should be in the chain
     expect(anyTermHasOp(prov, "Call")).toBe(true);
   });
@@ -67,7 +67,7 @@ describe("provenance queries", () => {
     );
     if (constTerm) {
       const prov = showProvenance("let x = 42", `t${constTerm.id}`);
-      expect(prov.ancestors.length).toBe(0);
+      expect(prov.terms.length).toBe(0);
     }
   });
 
@@ -75,8 +75,8 @@ describe("provenance queries", () => {
     const ir = showIrJson("let x = 42");
     const xTerm = ir.terms.find((t: any) => t.name === "x");
     const prov = showProvenance("let x = 42", `t${xTerm.id}`);
-    expect(prov.root.id).toBe(xTerm.id);
-    expect(prov.root.name).toBe("x");
+    expect(prov.target_terms[0].id).toBe(xTerm.id);
+    expect(prov.target_terms[0].name).toBe("x");
   });
 
   it("shows edges between terms", () => {
@@ -92,7 +92,7 @@ describe("provenance queries", () => {
 
   it("traces list allocation inputs", () => {
     const prov = showProvenance("let a = 1\nlet b = 2\nlet xs = [a, b]", "xs");
-    expect(prov.root.name).toBe("xs");
+    expect(prov.target_terms[0].name).toBe("xs");
     // xs is the AllocList or a Copy of it
     expect(anyTermHasOp(prov, "AllocList")).toBe(true);
   });
@@ -115,12 +115,12 @@ describe("cell boundaries in provenance", () => {
     expect(prov.frontier[0].writes.map((w: any) => w.line)).toContain(2);
     // The measured bug: `y` was reported as descending from the cell's
     // initializer, which never reached it.
-    const ops = prov.ancestors.map((a: any) => a.op);
+    const ops = prov.terms.map((a: any) => a.op);
     expect(ops).not.toContain("CellNew");
   });
 
   it("degrades to the static answer when the program was not run", () => {
-    // show-provenance never runs the program, so the dynamic writer is
+    // `graph` never runs the program, so the dynamic writer is
     // unavailable by construction — but the write set still is.
     const prov = showProvenance(REPRO, "y");
     expect(prov.frontier[0].resolution).toBe("not_traced");
@@ -135,9 +135,9 @@ describe("cell boundaries in provenance", () => {
     expect(prov.complete).toBe(false);
     expect(prov.frontier[0].var).toBe("x");
     expect(prov.frontier[0].captured).toBe(true);
-    const ops = prov.ancestors.map((a: any) => a.op);
+    const ops = prov.terms.map((a: any) => a.op);
     expect(ops).not.toContain("CellNew");
-    expect(prov.ancestors.map((a: any) => a.name)).not.toContain("x");
+    expect(prov.terms.map((a: any) => a.name)).not.toContain("x");
   });
 
   it("marks a state var's write set as host-writable", () => {
@@ -150,7 +150,7 @@ describe("cell boundaries in provenance", () => {
     const prov = showProvenance("let x = 1\nlet y = x * 2\n", "y");
     expect(prov.complete).toBe(true);
     expect(prov.frontier).toEqual([]);
-    expect(prov.ancestors.length).toBeGreaterThan(0);
+    expect(prov.terms.length).toBeGreaterThan(0);
   });
 });
 

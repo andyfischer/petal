@@ -118,35 +118,36 @@ export function checkFileJson(path: string): any {
 // everywhere it surfaces.
 // ---------------------------------------------------------------------------
 
-/** `petal show-provenance --json --term <term>`, parsed. */
-export function showProvenanceJson(code: string, term: string): any {
-  return JSON.parse(run(["show-provenance", "--json", "--term", term, "-e", code]));
-}
-
-/** `petal show-dependents --json --term <term>`, parsed. */
-export function showDependentsJson(code: string, term: string): any {
-  return JSON.parse(run(["show-dependents", "--json", "--term", term, "-e", code]));
-}
-
-/** `petal show-slice --json --term <t>...`, parsed. */
-export function showSliceJson(code: string, terms: string[]): any {
-  const termArgs = terms.flatMap((t) => ["--term", t]);
-  return JSON.parse(run(["show-slice", "--json", ...termArgs, "-e", code]));
-}
-
 /**
- * `petal graph --json [--direction <dir>] --term <t>...`, parsed. The one
- * result shape the three `show-*` aliases share:
- * `{direction, targets, terms, edges, frontier, complete, minimal}`.
+ * `petal graph --json [--direction <dir>] [--slice] --term <t>...`, parsed.
+ * One result shape for every query:
+ * `{direction, targets, target_terms, terms, edges, frontier, complete, minimal}`.
  */
 export function graphJson(
   code: string,
   terms: string[],
-  direction?: "back" | "forward"
+  direction?: "back" | "forward",
+  slice = false
 ): any {
   const termArgs = terms.flatMap((t) => ["--term", t]);
   const dirArgs = direction ? ["--direction", direction] : [];
-  return JSON.parse(run(["graph", "--json", ...dirArgs, ...termArgs, "-e", code]));
+  const sliceArgs = slice ? ["--slice"] : [];
+  return JSON.parse(run(["graph", "--json", ...dirArgs, ...sliceArgs, ...termArgs, "-e", code]));
+}
+
+/** Backward from one term: `terms` are its ancestors, `target_terms[0]` the term. */
+export function showProvenanceJson(code: string, term: string): any {
+  return graphJson(code, [term]);
+}
+
+/** Forward from one term: `terms` are its dependents. */
+export function showDependentsJson(code: string, term: string): any {
+  return graphJson(code, [term], "forward");
+}
+
+/** The slice for `terms`, also when there is only one. */
+export function showSliceJson(code: string, terms: string[]): any {
+  return graphJson(code, terms, "back", true);
 }
 
 /** `petal explain --json --term <term>`, parsed. Runs the program. */
@@ -154,10 +155,15 @@ export function explainJson(code: string, term: string): any {
   return JSON.parse(run(["explain", "--json", "--term", term, "-e", code]));
 }
 
-/** `petal <cmd> --term <term>` in text mode, raw stdout. */
-export function dataflowText(cmd: string, code: string, terms: string[]): string {
+/** `petal <cmd> [flags] --term <term>` in text mode, raw stdout. */
+export function dataflowText(
+  cmd: string,
+  code: string,
+  terms: string[],
+  flags: string[] = []
+): string {
   const termArgs = terms.flatMap((t) => ["--term", t]);
-  return run([cmd, ...termArgs, "-e", code]);
+  return run([cmd, ...flags, ...termArgs, "-e", code]);
 }
 
 /**

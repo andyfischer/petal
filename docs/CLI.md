@@ -84,9 +84,6 @@ Environment variables that affect how packages are found:
 | `show-graph` | Dataflow graph as Graphviz DOT |
 | `explain` | Run, then show the value chain that produced a term |
 | `graph` | Dataflow walk back or forward from one or more terms |
-| `show-provenance` | Backward dataflow slice from a term (alias of `graph`) |
-| `show-dependents` | Forward dataflow slice from a term (alias of `graph`) |
-| `show-slice` | Minimal dataflow subgraph for one or more targets (alias of `graph`) |
 | `pending-report` | Run, then report every live pending resource |
 | `propose-edit` | Propose source edits that change an emitted value |
 
@@ -2261,54 +2258,44 @@ The full instruction set is documented in `core/src/backend/bytecode/isa.rs`.
 
 ## Dataflow query commands
 
-These commands query the compiled dataflow graph without running the program.
-They all take `--term <name|id>` with the same resolution rules as `explain`.
+`graph` and `show-graph` query the compiled dataflow graph without running the
+program. `graph` takes `--term <name|id>` with the same resolution rules as
+`explain`.
 
-All of them stop at (or, forward, cross) every `var` cell. See
-[Cells and the frontier](#cells-and-the-frontier): none of them promises an
-unqualified "minimal" answer on a program that uses `var`, and each one says so
-in its output.
+`graph` stops at (or, forward, crosses) every `var` cell. See
+[Cells and the frontier](#cells-and-the-frontier): it does not promise an
+unqualified "minimal" answer on a program that uses `var`, and it says so in
+its output.
 
 ### `graph` — One query, one result shape
 
 ```
-petal graph [--json] --term <t> [--term <t2> ...] [--direction back|forward] <file.ptl>
+petal graph [--json] --term <t> [--term <t2> ...] [--direction back|forward] [--slice] <file.ptl>
 ```
 
-- `--direction back` (the default) with one `--term` is `show-provenance`.
-- `--direction back` with several `--term`s is `show-slice`.
-- `--direction forward` is `show-dependents`; several `--term`s give the union
-  of their forward walks.
+| Invocation | Query | Question |
+| --- | --- | --- |
+| `--direction back` (the default), one `--term` | provenance: the backward slice | What does this value depend on? |
+| `--direction back`, several `--term`s, or `--slice` | slice: the subgraph that still produces every target | What part of the program do these need? |
+| `--direction forward` | dependents: the forward slice; several `--term`s give the union of their walks | What would a change to this value reach? |
 
-`show-provenance`, `show-dependents` and `show-slice` are aliases: the same
-handler, the same text output, and the same JSON. Every one of them returns
+Every query returns the same JSON:
 
 ```
-{direction: "back"|"forward", targets: TermId[], terms: Term[],
- edges: [{from, to, kind}, ...], frontier: [...], complete: bool, minimal: bool}
+{direction: "back"|"forward", targets: TermId[], target_terms: Term[],
+ terms: Term[], edges: [{from, to, kind}, ...], frontier: [...],
+ complete: bool, minimal: bool}
 ```
 
+`target_terms` are the terms `--term` named, in order; `terms` is the answer.
 `complete` and `minimal` are `false` exactly when `frontier` is non-empty: a
-backward walk stopped at a cell, or a forward walk crossed a cell may-edge. For
-a slice, `edges` are the edges of the subgraph induced on `terms` (value,
-dispatch, and cell may-edges whose two ends are both in the slice).
+backward walk stopped at a cell, or a forward walk crossed a cell may-edge.
 
-Invoked under an old name, the JSON additionally carries that command's legacy
-keys, duplicating `terms`: `root` + `ancestors` (`show-provenance`), `root` +
-`dependents` (`show-dependents`), or `slice` (`show-slice`). New clients should
-read `terms`.
-
-### `show-provenance` — Backward slice
+**Provenance** prints the terms that feed into the target, with the edges
+connecting them:
 
 ```
-petal show-provenance [--json] --term <name|id> <file.ptl>
-```
-
-Prints the terms that feed into the target, with the edges connecting them.
-"What does this value depend on?"
-
-```
-$ petal show-provenance --term total -e 'let a = 2
+$ petal graph --term total -e 'let a = 2
 let total = a * 3'
 Provenance of t119 (total):
   op: Mul
@@ -2325,43 +2312,24 @@ Edges (3):
   t116 -> t117
 ```
 
-JSON shape: the [`graph`](#graph--one-query-one-result-shape) result, plus
-`root: Term` and `ancestors` (= `terms`). `kind` is always `"dataflow"` here: a backward walk answers a *must* question,
+`kind` is always `"dataflow"` here: a backward walk answers a *must* question,
 so it only crosses value edges.
 
-### `show-dependents` — Forward slice
+**Dependents** (`--direction forward`) is the mirror: everything downstream of
+the target. This direction answers a *may* question, so it also carries
+`"kind": "may"` edges from a `var` declaration and from every `set` to every
+read of that cell (`t96 ~> t97 (cell 'x', may)` in text mode). Which write
+actually supplied a given read is a runtime fact; over-approximating it is
+correct, while under-approximating it would report that a `set` affects
+nothing. Each read reached that way is also listed in `frontier`, with
+`complete: false`, so a client can tell an exact answer from an
+over-approximated one.
 
-```
-petal show-dependents [--json] --term <name|id> <file.ptl>
-```
-
-The mirror of `show-provenance`: everything downstream of the target. "What
-would a change to this value reach?"
-
-JSON shape: the [`graph`](#graph--one-query-one-result-shape) result, plus
-`root: Term` and `dependents` (= `terms`).
-
-This direction answers a *may* question, so it also carries `"kind": "may"`
-edges from a `var` declaration and from every `set` to every read of that cell
-(`t96 ~> t97 (cell 'x', may)` in text mode). Which write actually supplied a
-given read is a runtime fact; over-approximating it is correct, while
-under-approximating it would report that a `set` affects nothing. Each read
-reached that way is also listed in `frontier`, with `complete: false`, so a
-client can tell an exact answer from an over-approximated one.
-
-### `show-slice` — Subgraph for multiple targets
-
-```
-petal show-slice [--json] --term <a> [--term <b> ...] <file.ptl>
-```
-
-Prints the smallest subgraph that still produces every target. Useful for
-focused visualizations and for extracting the interesting part of a larger
-program.
-
-JSON shape: the [`graph`](#graph--one-query-one-result-shape) result, plus
-`slice` (= `terms`). Unlike `graph --term <t>`, `show-slice` with a single
-`--term` still computes the slice, not the provenance.
+**Slice** prints the smallest subgraph that still produces every target.
+Useful for focused visualizations and for extracting the interesting part of a
+larger program. `edges` are the edges of the subgraph induced on `terms`
+(value, dispatch, and cell may-edges whose two ends are both in the slice).
+One `--term` gives its provenance unless `--slice` is passed.
 
 On a cell-free program this is the smallest such subgraph. On a program that
 reads a `var` it is deliberately **not** minimal: it also pulls in the

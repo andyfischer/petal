@@ -70,9 +70,6 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
         &[
             ("explain", "Show the value chain that produced a term"),
             ("graph", "Walk the dataflow graph back or forward from terms"),
-            ("show-provenance", "Trace the backward slice of a term"),
-            ("show-dependents", "Trace the forward slice of a term"),
-            ("show-slice", "Compute the minimal slice for some targets"),
             (
                 "pending-report",
                 "Report every live pending resource after a run",
@@ -156,9 +153,6 @@ fn page(name: &str) -> Option<&'static str> {
         "show-ast" => SHOW_AST,
         "show-tokens" => SHOW_TOKENS,
         "graph" => GRAPH,
-        "show-provenance" => SHOW_PROVENANCE,
-        "show-dependents" => SHOW_DEPENDENTS,
-        "show-slice" => SHOW_SLICE,
         "show-graph" => SHOW_GRAPH,
         "pending-report" => PENDING_REPORT,
         "propose-edit" => PROPOSE_EDIT,
@@ -275,7 +269,7 @@ fn command_names() -> impl Iterator<Item = &'static str> {
 /// The command `word` is most plausibly a typo of: the nearest by edit
 /// distance, when it is near enough (a third of the word, at least one edit)
 /// to be a slip rather than a different word. A unique command that `word` is
-/// a prefix of counts too (`show-prov`).
+/// a prefix of counts too (`show-tok`).
 pub(super) fn closest_command(word: &str) -> Option<&'static str> {
     let mut prefixed = command_names().filter(|c| word.len() >= 3 && c.starts_with(word));
     if let (Some(only), None) = (prefixed.next(), prefixed.next()) {
@@ -1077,8 +1071,7 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help show-provenance, petal help show-dependents,
-       petal help show-slice
+       petal help graph
 ";
 
 const SHOW_IR: &str = "\
@@ -1179,25 +1172,24 @@ NAME
 
 SYNOPSIS
        petal graph --term <name_or_id> [--term <name2>]...
-                   [--direction back|forward] [--json] <file>
+                   [--direction back|forward] [--slice] [--json] <file>
 
 DESCRIPTION
        One dataflow query with one result shape. The program is compiled,
        never run.
 
        --direction back with one --term: everything the term was computed
-       from (its ancestors). Same as show-provenance.
+       from (its ancestors).
 
-       --direction back with several --terms: the slice of the program the
-       targets need, closed over every write to any var they read. Same as
-       show-slice.
+       --direction back with several --terms, or with --slice: the slice of
+       the program the targets need, closed over every write to any var
+       they read.
 
        --direction forward: everything that depends on the terms, including
-       may-edges through var cells and method dispatch. Same as
-       show-dependents.
+       may-edges through var cells and method dispatch.
 
-       The JSON result always has the fields direction, targets, terms,
-       edges, frontier, complete and minimal.
+       The JSON result always has the fields direction, targets,
+       target_terms, terms, edges, frontier, complete and minimal.
        complete and minimal are false when the walk met a var cell: backward
        it stopped there, forward it crossed a may-edge. frontier lists each
        such cell with every write that could supply it.
@@ -1210,85 +1202,16 @@ OPTIONS
        --direction back|forward
               Which way to walk. Defaults to back.
 
+       --slice
+              Compute the slice even for a single --term, where the default
+              is its provenance. Backward only.
+
        --json
               Emit the result as structured JSON.
 
 {COMMON}
 SEE ALSO
        petal help explain, petal help show-graph
-";
-
-const SHOW_PROVENANCE: &str = "\
-NAME
-       petal-show-provenance - Trace the backward slice of a term
-
-SYNOPSIS
-       petal show-provenance --term <name_or_id> [--json] <file>
-
-DESCRIPTION
-       Prints everything <term> was computed from: its backward slice
-       through the dataflow graph. An alias for
-       `petal graph --direction back --term <term>`.
-
-OPTIONS
-       --term <name_or_id>
-              The term to trace, by name or by IR id. Required.
-
-       --json
-              Emit the slice as structured JSON.
-
-{COMMON}
-SEE ALSO
-       petal help show-dependents, petal help show-slice, petal help explain
-";
-
-const SHOW_DEPENDENTS: &str = "\
-NAME
-       petal-show-dependents - Trace the forward slice of a term
-
-SYNOPSIS
-       petal show-dependents --term <name_or_id> [--json] <file>
-
-DESCRIPTION
-       Prints everything that depends on <term>: its forward slice through
-       the dataflow graph, and so what a change to it would reach. An alias
-       for `petal graph --direction forward --term <term>`.
-
-OPTIONS
-       --term <name_or_id>
-              The term to trace, by name or by IR id. Required.
-
-       --json
-              Emit the slice as structured JSON.
-
-{COMMON}
-SEE ALSO
-       petal help show-provenance, petal help show-slice
-";
-
-const SHOW_SLICE: &str = "\
-NAME
-       petal-show-slice - Compute the minimal slice for some targets
-
-SYNOPSIS
-       petal show-slice --term <name_or_id> [--term <name2>]... [--json] <file>
-
-DESCRIPTION
-       Computes the minimal dataflow slice that the given targets need: the
-       smallest part of the program that still produces them. An alias for
-       `petal graph` with several --terms (always the slice, even for one).
-
-OPTIONS
-       --term <name_or_id>
-              A target term, by name or by IR id. Repeat for several
-              targets. At least one is required.
-
-       --json
-              Emit the slice as structured JSON.
-
-{COMMON}
-SEE ALSO
-       petal help show-provenance, petal help show-dependents
 ";
 
 const SHOW_GRAPH: &str = "\
@@ -1307,7 +1230,7 @@ OPTIONS
 
 {COMMON}
 SEE ALSO
-       petal help show-slice, petal help show-ir
+       petal help graph, petal help show-ir
 ";
 
 const PENDING_REPORT: &str = "\
@@ -1513,9 +1436,6 @@ mod tests {
         "show-ast",
         "show-tokens",
         "graph",
-        "show-provenance",
-        "show-dependents",
-        "show-slice",
         "show-graph",
         "pending-report",
         "propose-edit",

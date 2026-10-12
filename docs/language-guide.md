@@ -190,7 +190,7 @@ print(r, x)   // { a: 1 } 2
 ```
 
 Prefer `let`. `var` is an escape hatch, and reaching for it costs you the
-provenance queries (`petal show-provenance`, `petal show-slice`) that can
+provenance queries (`petal graph`) that can
 otherwise answer "what produced this value?".
 
 ### Mutable state shared by several functions
@@ -2131,7 +2131,7 @@ it. Annotating is still worth doing for the predictability and the exact
 dataflow edge.
 
 **Dataflow.** A pinned call names its callee like any other call, so
-`show-slice`, `show-provenance` and `show-graph` get the exact function. An
+`graph` and `show-graph` get the exact function. An
 unpinned one is recovered as a *may*-edge to every method of that name, since
 which one runs is not knowable until the receiver arrives.
 

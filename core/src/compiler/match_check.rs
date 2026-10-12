@@ -209,8 +209,9 @@ impl Compiler {
                 let Pattern::Variant { name: tag, .. } = alt else {
                     return;
                 };
-                let Some((of_enum, variant)) = tag.rsplit_once('.') else {
-                    return; // an unresolved pattern, already reported
+                // Every variant pattern here is resolved: its name is the tag.
+                let (Some(of_enum), variant) = crate::program::split_enum_tag(tag) else {
+                    return;
                 };
                 if *enum_name.get_or_insert(of_enum) != of_enum {
                     return;

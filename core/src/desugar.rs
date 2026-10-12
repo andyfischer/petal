@@ -275,8 +275,14 @@ fn lift_stmt(stmt: &mut Stmt, hoisted: &mut Vec<Stmt>) {
             // recurse into the body.
             desugar_stmts(body);
         }
-        StmtKind::EnumDecl { .. }
-        | StmtKind::ClassDecl { .. }
+        // Constant data is an expression like a `let`'s value: a lambda in it
+        // has a body of its own to desugar.
+        StmtKind::EnumDecl { variants, .. } => {
+            for d in variants.iter_mut().flat_map(|v| &mut v.data) {
+                lift_expr(&mut d.value, hoisted);
+            }
+        }
+        StmtKind::ClassDecl { .. }
         | StmtKind::Break
         | StmtKind::Continue
         | StmtKind::NativeFn(_)

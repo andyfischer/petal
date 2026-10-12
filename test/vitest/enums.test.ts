@@ -267,7 +267,7 @@ describe("qualified variant patterns", () => {
       /`Colour` is not an enum in scope/
     );
     expect(runPetalError(COLOR + "match Color.red\n  when Color.custom(r) -> 1\nend")).toMatch(
-      /the pattern `Color\.custom` has 1 field, but Color\.custom has 3 payload fields \(r, g, b\)/
+      /the pattern `Color\.custom\(…\)` has 1 field, but Color\.custom has 3 payload fields \(r, g, b\)/
     );
   });
 });

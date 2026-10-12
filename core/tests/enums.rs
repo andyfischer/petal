@@ -700,7 +700,7 @@ fn a_pattern_that_names_no_variant_is_a_compile_error() {
     // A payload pattern lists every payload field.
     let e = compile_err(&format!("{COLOR}match Color.red\n  when Color.custom(r) -> 1\nend"));
     assert!(
-        e.contains("the pattern `Color.custom` has 1 field, but Color.custom has 3 payload fields (r, g, b)"),
+        e.contains("the pattern `Color.custom(…)` has 1 field, but Color.custom has 3 payload fields (r, g, b)"),
         "{e}"
     );
     assert!(e.contains("`Color.custom(_, _, _)`"), "{e}");
@@ -915,4 +915,260 @@ fn a_rebound_or_shadowed_enum_name_is_not_typed_as_the_enum() {
     // The enum read as a value is a record of its members.
     let src = format!("{TOWN}let E = Kind\nlet r: record = Kind\nprint(E.park.shape)");
     assert!(warnings(&src).is_empty(), "{:?}", warnings(&src));
+}
+
+// ── Review fixes ─────────────────────────────────────────────────────────
+
+/// Run `src` for `frames` runs of one stack under `policy`; what each printed.
+fn frames(src: &str, policy: petal::policy::RunPolicy, frames: usize) -> Vec<Vec<String>> {
+    let mut env = env_with(&[]);
+    env.set_policy(policy);
+    let pid = env.load_program(src).unwrap_or_else(|e| panic!("{src}\n-- failed to compile: {e}"));
+    let sid = env.create_stack(pid).unwrap();
+    (0..frames)
+        .map(|_| {
+            env.reset_stack(sid).unwrap();
+            env.run(sid).unwrap_or_else(|e| panic!("{src}\n-- failed to run: {e}"));
+            env.take_output()
+        })
+        .collect()
+}
+
+#[test]
+fn a_memoized_function_sees_constant_data_that_changed_between_runs() {
+    // Constant data is evaluated by every run, and a native may answer
+    // differently each time. A function skipped by the memo must not replay
+    // what it read from the previous run's data.
+    let src = "\
+enum K
+  a(v: random_int(0, 1000000)),
+end
+fn label(k)
+  var acc = 0
+  for i in range(0, 40) do
+    set acc += i
+  end
+  \"v={k.v}\"
+end
+print(label(K.a) == \"v={K.a.v}\")
+";
+    use petal::policy::RunPolicy;
+    let fast = frames(src, RunPolicy::FAST, 4);
+    assert_eq!(fast, frames(src, RunPolicy::BASELINE, 4));
+    assert!(fast.iter().all(|f| f == &["true"]), "{fast:?}");
+}
+
+#[test]
+fn a_function_held_by_a_variant_is_called_through_the_field() {
+    // As on a record or a class instance: `v.field(args)` calls a function
+    // the field holds, whether it is constant data or a payload field.
+    let src = "\
+enum A
+  x(k: fn(v) -> v + 1),
+  y(k: fn(v) -> v),
+end
+enum B
+  with(cb),
+  none,
+end
+let b = B.with(fn(v) -> v * 2)
+print(A.x.k(1), (A.x.k)(1), A.y.k(1), b.cb(4))
+";
+    assert_eq!(run(src), ["2 2 1 8"]);
+    // A method the variant does not have names the enum, not `type enum`.
+    let e = run_err("enum A\n  x,\nend\nA.x.nope()");
+    assert!(e.contains("No method 'nope' on enum A"), "{e}");
+}
+
+#[test]
+fn constant_data_that_reads_other_data_is_evaluated_after_it() {
+    // Declaration order does not matter: data that reads another variant's
+    // data is evaluated after it, across enums and within one.
+    let src = "\
+enum M
+  m(v: L.x.v + K.a.v),
+end
+enum L
+  x(v: K.a.v + 1),
+end
+enum K
+  a(v: 1),
+end
+print(M.m.v, L.x.v)
+";
+    assert_eq!(run(src), ["3 2"]);
+    let src = "enum K\n  a(o: K.b.o + 1),\n  b(o: 5),\nend\nprint(K.a.o, K.b.o)";
+    assert_eq!(run(src), ["6 5"]);
+    // Naming a variant is not reading its data, so two variants may still
+    // name each other; reading each other's data is a cycle.
+    let e = compile_err("enum K\n  a(o: K.b.o + 1),\n  b(o: K.a.o),\nend");
+    assert!(
+        e.contains("the constant data of `K.a` and `K.b` read each other"),
+        "{e}"
+    );
+    assert!(e.contains("line 2"), "{e}");
+    // A read the compiler cannot see (through a function) says what happened
+    // rather than claiming the field does not exist.
+    let e = run_err(
+        "fn peek()\n  K.b.o\nend\nenum K\n  a(o: peek()),\n  b(o: 5),\nend\nprint(K.a.o)",
+    );
+    assert!(
+        e.contains("the constant data of K.b is not evaluated yet"),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_let_bound_to_a_variant_is_a_constant_let() {
+    let src = "\
+let dflt = K.a
+let both = [K.a, K.b]
+enum O
+  o(k: dflt, ks: both),
+end
+enum K
+  a, b
+end
+print(O.o.k, O.o.ks)
+";
+    assert_eq!(run(src), ["K.a [K.a, K.b]"]);
+}
+
+#[test]
+fn a_local_named_like_a_late_function_is_usable_in_constant_data() {
+    // `late` is not hoisted (it reads `zz`), but the data never refers to
+    // it: the pattern binds its own `late`.
+    let src = "\
+let zz = len([1])
+fn late()
+  zz
+end
+enum J
+  x(u: match 3
+    when late -> late + 1
+  end),
+end
+print(J.x.u)
+";
+    assert_eq!(run(src), ["4"]);
+}
+
+const PARKS: &str = "\
+pub enum Kind
+  park, road
+end
+enum Hidden
+  h1, h2
+end
+class Secret
+  n: int
+end
+pub fn mk()
+  Kind.park
+end
+pub fn hid()
+  Hidden.h1
+end
+";
+
+#[test]
+fn an_enum_a_file_cannot_see_is_not_a_type_name_there() {
+    // As for a class: private to its module, or public but not imported.
+    let src = "\
+import shapes: mk, hid
+fn f(k: Hidden) -> Hidden
+  k
+end
+fn g(k: Kind) -> Kind
+  k
+end
+fn s(c: Secret)
+  c
+end
+let w: Hidden = hid()
+";
+    let w = warnings_with(&[("shapes", PARKS)], src);
+    for name in ["Hidden", "Kind", "Secret"] {
+        assert!(
+            w.iter().any(|m| m.contains(&format!("unknown type name `{name}`"))),
+            "{name}: {w:?}"
+        );
+    }
+    // Imported by name, or with the module, it is a type.
+    for import in ["import shapes: Kind, mk", "import shapes"] {
+        let src = format!("{import}\nfn g(k: Kind) -> Kind\n  k\nend\n");
+        let w = warnings_with(&[("shapes", PARKS)], &src);
+        assert!(w.is_empty(), "{import}: {w:?}");
+    }
+}
+
+#[test]
+fn a_class_may_not_take_the_name_of_an_enum_in_either_order() {
+    // In one file the enum is the one reported, wherever it stands.
+    let e = compile_err("enum E\n  a,\nend\nclass E\n  x,\nend");
+    assert!(e.contains("enum `E` has the same name as class `E`"), "{e}");
+    // Across files, whichever is declared second.
+    let e = compile_err_with(
+        &[("lib", "pub enum Foo\n  a, b\nend\npub fn mk()\n  Foo.a\nend")],
+        "import lib\nclass Foo\n  x: int\nend\nlet f = Foo(1)",
+    );
+    assert!(e.contains("class `Foo` has the same name as enum `Foo`"), "{e}");
+}
+
+#[test]
+fn an_unresolved_pattern_is_reported_once() {
+    // `Hidden` is private to `town`: the pattern does not resolve, and the
+    // match is not then held to the variants of an enum this file cannot see.
+    let town = "enum Hidden\n  x,\nend\npub fn hidden()\n  Hidden.x\nend";
+    let e = compile_err_with(
+        &[("town", town)],
+        "import town\nmatch town.hidden()\n  when Hidden.y -> print(\"y\")\nend",
+    );
+    assert!(e.contains("`Hidden` is not an enum in scope"), "{e}");
+    assert!(!e.contains("does not cover every variant"), "{e}");
+}
+
+#[test]
+fn a_lambda_in_constant_data_is_desugared_and_checked_like_any_other() {
+    let src = "\
+fn bump(n)
+  n + 1
+end
+enum K
+  a(f: fn(x)
+    let c = x
+    bump(@c)
+    c
+  end),
+end
+print(K.a.f(1))
+";
+    assert_eq!(run(src), ["2"]);
+    // A discarded pure expression inside it is reported, as in a `let`.
+    let w = warnings("enum K\n  a(f: fn(x)\n    x + 1\n    x\n  end),\nend\nprint(K.a.f(1))");
+    let l = warnings("let f = fn(x)\n  x + 1\n  x\nend\nprint(f(1))");
+    assert!(!l.is_empty(), "the `let` form is expected to warn");
+    assert_eq!(w.len(), l.len(), "{w:?} vs {l:?}");
+}
+
+#[test]
+fn error_texts_name_what_was_written() {
+    // A pattern's arity error shows the pattern as call-shaped when it was.
+    let e = compile_err(
+        "enum Shape\n  rect(w, h),\n  unit,\nend\nmatch Shape.unit\n  when Shape.rect(w) -> 1\n  when _ -> 2\nend",
+    );
+    assert!(e.contains("the pattern `Shape.rect(…)` has 1 field"), "{e}");
+    // A call-shaped bare pattern is pointed at the variant that has a payload.
+    let e = compile_err(
+        "enum Kind\n  road(lanes),\nend\nenum Use\n  road,\nend\n\
+         match Kind.road(2)\n  when road(n) -> n\nend",
+    );
+    assert!(e.contains("did you mean Kind.road? (also Use.road)"), "{e}");
+    // A variant in scope beats the habit hint for `None`.
+    let e = run_err("enum A\n  None,\nend\nprint(None)");
+    assert!(e.contains("did you mean A.None?"), "{e}");
+    // An enum takes no methods, and the message does not suggest a class.
+    let e = compile_err("enum Kind\n  park,\nend\nfn Kind.describe(k)\n  1\nend");
+    assert!(e.contains("`Kind` is an enum, and methods are declared on classes only"), "{e}");
+    assert!(!e.contains("class Kind"), "{e}");
 }

@@ -237,6 +237,13 @@ impl<'a> Vm<'a> {
             return Err("internal error: __enum_data expects (tag, record)".into());
         };
         let tag = self.heap.get_string(*tag).to_string();
+        // Data that is what the last run published leaves every memo record
+        // that read it valid, which is the usual case: most data is constant.
+        let old = self.stack.enum_data.get(&tag).copied();
+        let same = self.memo && old.is_some_and(|old| self.memo_same_enum_data(old, *record));
+        if !same {
+            self.stack.enum_data_revision += 1;
+        }
         self.stack.enum_data.insert(tag, *record);
         Ok(Value::Nil)
     }

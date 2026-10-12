@@ -277,6 +277,9 @@ impl<'a> Vm<'a> {
                         *opt,
                     )?,
                 };
+                if matches!(base, Value::EnumVariant { .. }) {
+                    self.memo_note_enum_read();
+                }
                 // Absorption gates on the BASE: `pending.field` yields that same
                 // Pending. A resolved record that merely holds a Pending field is
                 // element-wise (not an absorption), so the result value can't be

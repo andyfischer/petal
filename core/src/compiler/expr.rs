@@ -300,7 +300,9 @@ impl Compiler {
                                     "{}{name}",
                                     crate::typecheck::globals::UNKNOWN_FUNCTION_PREFIX
                                 );
-                                if let Some(hint) = self.bare_variant_hint(name).or_else(|| {
+                                if let Some(hint) = self
+                                    .bare_variant_hint(name, Some(!args.is_empty()))
+                                    .or_else(|| {
                                     crate::native_decl::missing_builtin_import_hint(name)
                                 }) {
                                     msg.push_str(" — ");
@@ -526,7 +528,12 @@ impl Compiler {
         // In an enum's constant data, a function of this file that is not
         // hoisted is still the empty box its declaration will fill: calling
         // it would be `Cannot call nil` at run time, with nothing to say why.
-        if self.enum_data_late_fns.contains(name) && self.closure_def_ends.is_empty() {
+        // A lambda in the data runs later, when the box is full.
+        if let Some(scope) = &self.enum_data_scope
+            && let Some(tid) = self.scope_lookup(name)
+            && scope.late_fns.contains(&tid)
+            && self.closure_def_ends.is_empty()
+        {
             let msg = format!(
                 "`{name}` cannot be used in an enum's constant data: the data is evaluated \
                  before the file's statements run, and `{name}` reads something the file \
@@ -584,9 +591,9 @@ impl Compiler {
                 _ => None,
             };
             if self
-                .enum_data_unavailable
+                .enum_data_scope
                 .as_ref()
-                .is_some_and(|names| names.contains(name))
+                .is_some_and(|scope| scope.unavailable.contains(name))
             {
                 let msg = format!(
                     "`{name}` cannot be used in an enum's constant data: the data is evaluated \
@@ -598,8 +605,10 @@ impl Compiler {
                 return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
             }
             let builtin_hint = crate::native_decl::missing_builtin_import_hint(name);
-            let variant_hint = self.bare_variant_hint(name);
-            let hint = hint.or(variant_hint.as_deref()).or(builtin_hint.as_deref());
+            // A variant of that name in scope is likelier than a habit from
+            // another language (`None`).
+            let variant_hint = self.bare_variant_hint(name, None);
+            let hint = variant_hint.as_deref().or(hint).or(builtin_hint.as_deref());
             let msg = match hint {
                 Some(hint) => format!("Undefined variable: {} — {}", name, hint),
                 None => format!("Undefined variable: {}", name),
@@ -771,6 +780,9 @@ impl Compiler {
         let mut child_blocks: SmallVec<[BlockId; 2]> = SmallVec::new();
         let mut arm_metas = Vec::new();
 
+        // A pattern that did not resolve was reported; what the match covers
+        // is not known then, and is not checked.
+        let mut patterns_resolved = true;
         for arm in arms {
             // Body block
             let body_block = self.new_block(None);
@@ -778,7 +790,9 @@ impl Compiler {
 
             // Resolve each variant pattern (`Kind.park`) to the tag its value
             // carries; a pattern naming no variant is reported here.
+            let errors_before = self.errors.len();
             let pattern = self.resolve_pattern(&arm.pattern, arm.pattern_span);
+            patterns_resolved &= self.errors.len() == errors_before;
 
             // The names the pattern binds.
             let pattern_vars = pattern.bound_names();
@@ -825,7 +839,9 @@ impl Compiler {
                 span: arm.pattern_span,
             })
             .collect();
-        self.check_match(span, &checked);
+        if patterns_resolved {
+            self.check_match(span, &checked);
+        }
 
         let match_tid =
             self.emit_term_with_children(TermOp::Match, smallvec![subj_tid], None, child_blocks);

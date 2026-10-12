@@ -32,6 +32,16 @@ const RESERVED_VARIANTS: [&str; 2] = ["all", "from"];
 /// a data key may not take.
 const RESERVED_FIELD: &str = "name";
 
+/// What a data expression cannot use, while an enum's constant data is being
+/// compiled (see [`Compiler::emit_enum_data`]).
+pub(super) struct EnumDataScope {
+    /// Top-level names the file binds only as it runs.
+    pub(super) unavailable: HashSet<String>,
+    /// The bindings of this file's functions that are not hoisted, and so
+    /// are still empty where the data is evaluated.
+    pub(super) late_fns: HashSet<TermId>,
+}
+
 /// A compile-wide enum declaration: its shape, and the file that declared it.
 pub(super) struct EnumInfo {
     pub(super) def: EnumDef,
@@ -65,7 +75,11 @@ impl Compiler {
             for (span, message) in check_enum_variants(name, variants) {
                 self.error_at(span, message);
             }
-            let def = EnumDef::declared(variants);
+            // A variant named `all` or `from` was just reported; the enum's
+            // own member keeps the name, so no later code sees the variant.
+            let mut def = EnumDef::declared(variants);
+            def.variants
+                .retain(|v| !RESERVED_VARIANTS.contains(&v.name.as_str()));
             // The type `name` in an annotation, and what the checker knows a
             // value of it answers.
             self.classes.declare_enum(name, def.clone());
@@ -145,10 +159,7 @@ impl Compiler {
         let mut keys: Vec<ConstantId> = Vec::new();
         let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
         for member in variants.iter().map(String::as_str).chain(RESERVED_VARIANTS) {
-            // A variant named `all` or `from` was reported by the prescan;
-            // the enum's own member keeps the name.
-            let own = RESERVED_VARIANTS.contains(&member);
-            if let Some(tid) = self.emit_enum_member(enum_name, member, own) {
+            if let Some(tid) = self.emit_enum_member(enum_name, member) {
                 keys.push(self.string_constant(member));
                 inputs.push(tid);
             }
@@ -165,15 +176,9 @@ impl Compiler {
 
     /// One member of an enum, as a value: a payload-free variant, a payload
     /// variant's constructor, the `all` list or the `from` function. `None`
-    /// when the enum has no such member. `own` picks the enum's own `all` /
-    /// `from` over a (misdeclared) variant of that name.
-    fn emit_enum_member(&mut self, enum_name: &str, member: &str, own: bool) -> Option<TermId> {
-        let variant = if own {
-            None
-        } else {
-            self.enum_variant_def(enum_name, member)
-        };
-        Some(match variant {
+    /// when the enum has no such member.
+    fn emit_enum_member(&mut self, enum_name: &str, member: &str) -> Option<TermId> {
+        Some(match self.enum_variant_def(enum_name, member) {
             Some(v) if v.fields.is_empty() => self.emit_enum_variant(enum_name, member, smallvec![]),
             Some(v) => self.compile_enum_constructor(enum_name, &v),
             None if member == "all" => {
@@ -187,7 +192,6 @@ impl Compiler {
                     .unwrap_or_default();
                 let inputs = plain
                     .iter()
-                    .filter(|v| !RESERVED_VARIANTS.contains(&v.as_str()))
                     .map(|v| self.emit_enum_variant(enum_name, v, smallvec![]))
                     .collect();
                 self.emit_term(TermOp::AllocList, inputs, None)
@@ -205,50 +209,146 @@ impl Compiler {
     /// every enum's name is bound by then. A name the file only computes
     /// later (`let`, `var`, `state`) is not available, and neither is a
     /// function (`late_fns`) that reads one; see `compile_ident`.
+    ///
+    /// Data that reads another variant's data (`K.a.cost + 1`) is emitted
+    /// after it, wherever the two are declared.
     pub(super) fn emit_enum_data(
         &mut self,
         stmts: &[Stmt],
         unavailable: HashSet<String>,
-        late_fns: HashSet<String>,
+        late_fns: &HashSet<String>,
     ) {
-        self.enum_data_unavailable = Some(unavailable);
-        self.enum_data_late_fns = late_fns;
+        let mut items: Vec<(&str, &EnumVariant)> = Vec::new();
         for stmt in stmts {
-            let StmtKind::EnumDecl { name, variants } = &stmt.kind else {
-                continue;
-            };
-            if !self.is_enum_declaration(name, stmt) {
-                continue;
-            }
-            for variant in variants.iter().filter(|v| !v.data.is_empty()) {
-                let mut keys: Vec<ConstantId> = Vec::new();
-                let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
-                for d in &variant.data {
-                    keys.push(self.string_constant(&d.key));
-                    inputs.push(self.compile_expr(&d.value));
-                }
-                let record = self.emit_term(
-                    TermOp::AllocMap {
-                        fields: keys,
-                        class: None,
-                    },
-                    inputs,
-                    None,
-                );
-                let tag = self.string_constant(&enum_variant_tag(name, &variant.name));
-                let tag_tid = self.emit_term(TermOp::Constant(tag), smallvec![], None);
-                let builtin = self.string_constant(ENUM_DATA_BUILTIN);
-                let call = self.emit_call_term(
-                    TermOp::BuiltinCall(builtin),
-                    smallvec![tag_tid, record],
-                    ENUM_DATA_BUILTIN,
-                    SmallVec::new(),
-                );
-                self.source_map.add(call, variant.span);
+            if let StmtKind::EnumDecl { name, variants } = &stmt.kind
+                && self.is_enum_declaration(name, stmt)
+            {
+                items.extend(variants.iter().filter(|v| !v.data.is_empty()).map(|v| (name.as_str(), v)));
             }
         }
-        self.enum_data_unavailable = None;
-        self.enum_data_late_fns.clear();
+        if items.is_empty() {
+            return;
+        }
+        let tags: Vec<String> = items
+            .iter()
+            .map(|(name, v)| enum_variant_tag(name, &v.name))
+            .collect();
+        let reads: Vec<Vec<usize>> = items
+            .iter()
+            .map(|(_, v)| {
+                let read = self.enum_data_reads(v);
+                (0..tags.len()).filter(|&i| read.contains(&tags[i])).collect()
+            })
+            .collect();
+
+        // Depth-first over what each variant's data reads, in source order.
+        #[derive(Clone, Copy, PartialEq)]
+        enum Mark {
+            New,
+            Open,
+            Done,
+        }
+        let mut marks = vec![Mark::New; items.len()];
+        let mut order: Vec<usize> = Vec::with_capacity(items.len());
+        let mut cycles: Vec<(usize, usize)> = Vec::new();
+        for root in 0..items.len() {
+            // (variant, how many of its reads were followed).
+            let mut path: Vec<(usize, usize)> = vec![(root, 0)];
+            if marks[root] != Mark::New {
+                continue;
+            }
+            marks[root] = Mark::Open;
+            while let Some((at, next)) = path.last_mut() {
+                let at = *at;
+                match reads[at].get(*next).copied() {
+                    Some(dep) => {
+                        *next += 1;
+                        match marks[dep] {
+                            Mark::New => {
+                                marks[dep] = Mark::Open;
+                                path.push((dep, 0));
+                            }
+                            Mark::Open => cycles.push((dep, at)),
+                            Mark::Done => {}
+                        }
+                    }
+                    None => {
+                        marks[at] = Mark::Done;
+                        order.push(at);
+                        path.pop();
+                    }
+                }
+            }
+        }
+        for (first, second) in cycles {
+            let message = if first == second {
+                format!("the constant data of `{}` reads itself", tags[first])
+            } else {
+                format!(
+                    "the constant data of `{}` and `{}` read each other, so neither can be                      evaluated first",
+                    tags[first], tags[second]
+                )
+            };
+            self.error_at(items[first].1.span, message);
+        }
+
+        let late_fns = late_fns.iter().filter_map(|n| self.scope_lookup(n)).collect();
+        self.enum_data_scope = Some(EnumDataScope {
+            unavailable,
+            late_fns,
+        });
+        for i in order {
+            let (name, variant) = items[i];
+            let mut keys: Vec<ConstantId> = Vec::new();
+            let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
+            for d in &variant.data {
+                keys.push(self.string_constant(&d.key));
+                inputs.push(self.compile_expr(&d.value));
+            }
+            let record = self.emit_term(
+                TermOp::AllocMap {
+                    fields: keys,
+                    class: None,
+                },
+                inputs,
+                None,
+            );
+            let tag = self.string_constant(&enum_variant_tag(name, &variant.name));
+            let tag_tid = self.emit_term(TermOp::Constant(tag), smallvec![], None);
+            let builtin = self.string_constant(ENUM_DATA_BUILTIN);
+            let call = self.emit_call_term(
+                TermOp::BuiltinCall(builtin),
+                smallvec![tag_tid, record],
+                ENUM_DATA_BUILTIN,
+                SmallVec::new(),
+            );
+            self.source_map.add(call, variant.span);
+        }
+        self.enum_data_scope = None;
+    }
+
+    /// The tags of the variants whose constant data `variant`'s data reads
+    /// where the compiler can see it: `Enum.variant.key`, written out.
+    fn enum_data_reads(&self, variant: &EnumVariant) -> HashSet<String> {
+        struct Reads<'a>(&'a Compiler, HashSet<String>);
+        impl crate::ast::ExprVisitor for Reads<'_> {
+            fn visit_expr(&mut self, e: &Expr) {
+                if let ExprKind::FieldAccess { object, field: key } = &e.kind
+                    && let ExprKind::FieldAccess { object: of, field } = &object.kind
+                    && let Some(enum_name) = self.0.static_enum(of)
+                    && let Some(v) = self.0.enum_variant_def(&enum_name, field)
+                    && v.data.contains(key)
+                {
+                    self.1.insert(enum_variant_tag(&enum_name, field));
+                }
+                crate::ast::walk_expr(self, e);
+            }
+        }
+        let mut reads = Reads(self, HashSet::new());
+        for d in &variant.data {
+            crate::ast::ExprVisitor::visit_expr(&mut reads, &d.value);
+        }
+        reads.1
     }
 
     pub(super) fn string_constant(&mut self, s: &str) -> ConstantId {
@@ -341,7 +441,7 @@ impl Compiler {
         member: &str,
         span: SourceSpan,
     ) -> TermId {
-        match self.emit_enum_member(enum_name, member, false) {
+        match self.emit_enum_member(enum_name, member) {
             Some(tid) => tid,
             None => self.unknown_variant(enum_name, member, span),
         }
@@ -433,43 +533,48 @@ impl Compiler {
         }
     }
 
-    /// ` — did you mean Color.red?` for a bare name that some enum in scope
-    /// declares as a variant; empty otherwise. A variant is only ever named
+    /// `did you mean Color.red?` for a bare name that some enum in scope
+    /// declares as a variant; `None` otherwise. A variant is only ever named
     /// through its enum, so this is the likeliest slip behind an undefined
-    /// name.
-    pub(super) fn bare_variant_hint(&self, name: &str) -> Option<String> {
-        // Every spelling in scope that reaches an enum declaring `name`.
-        let mut spellings: Vec<String> = Vec::new();
+    /// name. `payload` says, where the use shows it, whether the variant
+    /// meant carries one (`road(n)` does): a variant of that shape is
+    /// suggested ahead of a same-named one of the other.
+    pub(super) fn bare_variant_hint(&self, name: &str, payload: Option<bool>) -> Option<String> {
+        // Every spelling in scope that reaches an enum declaring `name`,
+        // with whether its shape is the other one.
+        let mut spellings: Vec<(bool, String)> = Vec::new();
+        let other_shape = |v: EnumVariantDef| payload.is_some_and(|p| p == v.fields.is_empty());
         for scope in &self.scopes {
             for (bound, tid) in scope {
                 let Some(enum_name) = self.enum_terms.get(tid) else {
                     continue;
                 };
-                if self.enum_variant_def(enum_name, name).is_none() {
+                let Some(v) = self.enum_variant_def(enum_name, name) else {
                     continue;
-                }
+                };
                 // A module member is in the global scope as `module::Enum`;
                 // only a name the file can write is worth suggesting.
                 if !bound.contains("::") {
-                    spellings.push(format!("{bound}.{name}"));
+                    spellings.push((other_shape(v), format!("{bound}.{name}")));
                 }
             }
         }
         for (alias, module) in &self.module_aliases {
             for (enum_name, _) in self.enum_defs.iter() {
-                if self.enum_variant_def(enum_name, name).is_some()
+                if let Some(v) = self.enum_variant_def(enum_name, name)
                     && self
                         .scope_lookup(&format!("{module}::{enum_name}"))
                         .is_some_and(|tid| self.enum_terms.contains_key(&tid))
                 {
-                    spellings.push(format!("{alias}.{enum_name}.{name}"));
+                    spellings.push((other_shape(v), format!("{alias}.{enum_name}.{name}")));
                 }
             }
         }
-        spellings.sort();
+        // Of the right shape first, then the shortest: the one the file most
+        // plausibly meant.
+        spellings.sort_by(|a, b| (a.0, a.1.len(), &a.1).cmp(&(b.0, b.1.len(), &b.1)));
         spellings.dedup();
-        // The shortest spelling is the one the file most plausibly meant.
-        spellings.sort_by_key(|s| s.len());
+        let spellings: Vec<String> = spellings.into_iter().map(|(_, s)| s).collect();
         match spellings.as_slice() {
             [] => None,
             [only] => Some(format!("did you mean {only}?")),
@@ -524,7 +629,7 @@ impl Compiler {
     fn resolve_variant_pattern(&mut self, written: &str, fields: usize, span: SourceSpan) -> String {
         let Some((path, variant)) = written.rsplit_once('.') else {
             // `Circle(r)`: a call-shaped pattern with no enum in front.
-            let hint = match self.bare_variant_hint(written) {
+            let hint = match self.bare_variant_hint(written, Some(fields > 0)) {
                 Some(hint) => format!(" — {hint}"),
                 None => String::new(),
             };
@@ -567,7 +672,8 @@ impl Compiler {
                 self.error_at(
                     span,
                     format!(
-                        "the pattern `{written}` has {}, but {enum_name}.{variant} {shape}",
+                        "the pattern `{written}{}` has {}, but {enum_name}.{variant} {shape}",
+                        if fields == 0 { "" } else { "(…)" },
                         count_noun(fields, "field"),
                     ),
                 );

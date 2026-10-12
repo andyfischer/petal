@@ -325,7 +325,9 @@ impl<'a> Vm<'a> {
                         ip += 1;
                         continue;
                     }
-                    if is_pending(base) {
+                    // A variant's field may be constant data, which a
+                    // recording scope notes as a dependency on the slow path.
+                    if is_pending(base) || (recording && matches!(base, Value::EnumVariant { .. })) {
                         break StraightStop::Slow;
                     }
                     match ops::get_field(program, heap, enum_data, field, base, opt) {

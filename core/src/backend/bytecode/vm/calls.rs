@@ -284,9 +284,18 @@ impl<'a> Vm<'a> {
             None => return Err("Invalid method name".into()),
         };
 
-        // 1) Callable field on a record receiver.
-        if let Value::Map(map_id) = recv {
-            let field_val = self.heap.get_map(map_id).get(method_name).copied();
+        // 1) Callable field on a record receiver, or on an enum variant (a
+        //    payload field or constant data holding a function).
+        let field_val = match recv {
+            Value::Map(map_id) => self.heap.get_map(map_id).get(method_name).copied(),
+            Value::EnumVariant { tag, data } => {
+                self.memo_note_enum_read();
+                let enum_data = &self.stack.enum_data;
+                crate::backend::ops::enum_variant_field(program, self.heap, enum_data, tag, data, method_name)
+            }
+            _ => None,
+        };
+        {
             if let Some(field_val) = field_val {
                 match field_val {
                     Value::Closure(_) | Value::OverloadSet(_) => {
@@ -444,6 +453,13 @@ impl<'a> Vm<'a> {
                 Some(class) => format!("class {class}"),
                 None => match recv {
                     Value::Map(_) => "type record".to_string(),
+                    Value::EnumVariant { tag, .. } => {
+                        let tag = self.heap.get_string(tag);
+                        match crate::program::split_enum_tag(tag).0 {
+                            Some(enum_name) => format!("enum {enum_name}"),
+                            None => "type enum".to_string(),
+                        }
+                    }
                     _ => format!("type {}", recv.type_name()),
                 },
             };

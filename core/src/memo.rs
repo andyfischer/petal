@@ -218,6 +218,11 @@ pub enum Dep {
     /// A native consulted the resource table; valid while its revision is
     /// what it was when the record was made.
     ResourcesRead,
+    /// A field of an enum variant was read, which may have been constant data
+    /// (`k.shape`). Valid while the stack's enum data is what it was then
+    /// ([`crate::stack::Stack::enum_data_revision`]): data is evaluated by
+    /// every run, and an expression in it may answer differently each time.
+    EnumData { revision: u64 },
     /// A child scope ran (or was replayed) here. `serial` names the record
     /// the parent saw; a different serial in the table means the child was
     /// re-recorded by some other call and the parent cannot trust it.
@@ -774,7 +779,7 @@ fn mark_deps(deps: &[Dep], mark: &mut impl FnMut(Value)) {
             | Dep::CellRead { value, .. }
             | Dep::CellWrite { value, .. }
             | Dep::Observed { value, .. } => mark(*value),
-            Dep::HostRead | Dep::ResourcesRead | Dep::Child { .. } => {}
+            Dep::HostRead | Dep::ResourcesRead | Dep::EnumData { .. } | Dep::Child { .. } => {}
         }
     }
 }

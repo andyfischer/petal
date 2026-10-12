@@ -600,7 +600,7 @@ pub fn make_enum_variant(
 /// a payload field by its declared name (`op.place`), or constant data the
 /// declaration attached (`k.shape`), in that order. `None` when the variant
 /// has no such field.
-fn enum_variant_field(
+pub fn enum_variant_field(
     program: &Program,
     heap: &mut Heap,
     enum_data: &EnumData,
@@ -706,10 +706,22 @@ pub fn get_field(
                 Some(v) => v,
                 None if opt => Value::Nil,
                 None => {
-                    return Err(format!(
-                        "No field '{field_name}' on enum variant {}",
-                        heap.get_string(tag)
-                    ));
+                    let tag = heap.get_string(tag);
+                    let declared = program
+                        .enum_variant(tag)
+                        .is_some_and(|def| def.data.iter().any(|k| k == field_name));
+                    return Err(if declared {
+                        // Only while the file's enum data is being evaluated:
+                        // a read the compiler could not order (it went
+                        // through a function) reached data not published yet.
+                        format!(
+                            "the constant data of {tag} is not evaluated yet, so its \
+                             '{field_name}' cannot be read here: data that reads other data \
+                             through a function is evaluated in declaration order"
+                        )
+                    } else {
+                        format!("No field '{field_name}' on enum variant {tag}")
+                    });
                 }
             }
         }

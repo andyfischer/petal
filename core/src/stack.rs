@@ -122,8 +122,13 @@ pub struct Stack {
     /// carry data compiles to one `__enum_data` builtin call per variant — and
     /// read by a field access on a variant value (`k.shape`). Rebuilt by every
     /// run and cleared with `methods` on hot reload, so a variant kept in
-    /// `state` across an edit reads the data its enum declares *now*.
+    /// `state` across an edit reads the data its enum declares *now*. A read
+    /// is a memo dependency on [`Stack::enum_data_revision`].
     pub enum_data: HashMap<String, crate::heap::MapId>,
+    /// Bumped when a run publishes data for a variant that differs from what
+    /// the run before published. A memoized scope that read a variant's field
+    /// is valid only while this has not moved (`memo::Dep::EnumData`).
+    pub enum_data_revision: u64,
     /// Activation records for the bytecode VM. Stored on the stack (not on the
     /// VM, which is rebuilt per step) so execution state survives across steps
     /// and is reachable as GC roots.
@@ -231,6 +236,7 @@ impl Stack {
             functions: HashMap::new(),
             methods: HashMap::new(),
             enum_data: HashMap::new(),
+            enum_data_revision: 0,
             vm_frames: Vec::new(),
             vm_started: false,
             vm_frame_pool: Vec::new(),

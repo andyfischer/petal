@@ -44,6 +44,18 @@ impl<'a> Vm<'a> {
         }
     }
 
+    /// A field of an enum variant was read. One entry covers a run of reads:
+    /// the dependency is on the stack's whole enum-data table.
+    #[inline]
+    pub(super) fn memo_note_enum_read(&mut self) {
+        let revision = self.stack.enum_data_revision;
+        if let Some(s) = self.memo_recording_scope()
+            && !matches!(s.deps.last(), Some(Dep::EnumData { .. }))
+        {
+            s.note(|| Dep::EnumData { revision });
+        }
+    }
+
     /// A `state` slot was read (or initialized) and held `value`.
     #[inline]
     pub(super) fn memo_note_state_read(&mut self, key: &RuntimeStateKey, value: Option<Value>) {
@@ -496,6 +508,15 @@ impl<'a> Vm<'a> {
             .collect()
     }
 
+    /// Whether two published data records of one variant hold the same data.
+    pub(super) fn memo_same_enum_data(
+        &mut self,
+        old: crate::heap::MapId,
+        new: crate::heap::MapId,
+    ) -> bool {
+        self.memo_eq(Value::Map(old), Value::Map(new), ARG_COMPARE_BUDGET)
+    }
+
     fn memo_eq(&mut self, a: Value, b: Value, budget: usize) -> bool {
         self.stack
             .memo
@@ -626,6 +647,7 @@ impl<'a> Vm<'a> {
                 }
                 Dep::HostRead => self.stack.run_deps.host_data_now() == host_rev,
                 Dep::ResourcesRead => self.resources.revision() == res_rev,
+                Dep::EnumData { revision } => self.stack.enum_data_revision == *revision,
                 Dep::Child { path, serial } => match self.memo_verify_child(path, *serial) {
                     Some(s) => {
                         *serial = s;

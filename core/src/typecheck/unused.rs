@@ -221,8 +221,12 @@ impl Walker {
                     self.walk_expr(e, true);
                 }
             }
-            StmtKind::EnumDecl { .. }
-            | StmtKind::ClassDecl { .. }
+            StmtKind::EnumDecl { variants, .. } => {
+                for d in variants.iter().flat_map(|v| &v.data) {
+                    self.walk_expr(&d.value, true);
+                }
+            }
+            StmtKind::ClassDecl { .. }
             | StmtKind::Break
             | StmtKind::Continue
             | StmtKind::NativeFn(_)

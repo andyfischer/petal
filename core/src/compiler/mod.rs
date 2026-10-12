@@ -72,13 +72,9 @@ pub struct Compiler {
     // which is what lets `Color.red` compile to the variant. See `enums.rs`.
     enum_defs: HashMap<String, enums::EnumInfo>,
     enum_terms: HashMap<TermId, String>,
-    // Set while an enum's constant data is being compiled: the top-level
-    // names the file binds only later, which a data expression cannot use.
-    enum_data_unavailable: Option<HashSet<String>>,
-    /// While enum constant data is being compiled: this file's functions
-    /// that are not hoisted, and so do not exist yet where the data is
-    /// evaluated. See `Compiler::emit_enum_data`.
-    enum_data_late_fns: HashSet<String>,
+    // Set while an enum's constant data is being compiled: what a data
+    // expression cannot use.
+    enum_data_scope: Option<enums::EnumDataScope>,
     next_register: HashMap<BlockId, u16>,
 
     // Function scope depth tracking for closure capture
@@ -500,8 +496,7 @@ impl Compiler {
             scopes: Vec::new(),
             enum_defs: HashMap::new(),
             enum_terms: HashMap::new(),
-            enum_data_unavailable: None,
-            enum_data_late_fns: HashSet::new(),
+            enum_data_scope: None,
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
             fn_param_reqs: HashMap::new(),
@@ -1937,9 +1932,9 @@ impl Compiler {
             .extend(diags.into_iter().map(|d| (d, file.clone())));
     }
 
-    /// The class names the file being compiled may spell — in an annotation or
-    /// in call position, which are the same name. A file sees the classes it
-    /// declares plus the ones it imports; a module-private class is invisible
+    /// The class and enum names the file being compiled may spell — in an
+    /// annotation or in call position, which are the same name. A file sees
+    /// the classes and enums it declares plus the ones it imports; a module-private class is invisible
     /// outside its own file, exactly as its constructor is. (Built-in classes
     /// need no import and are added by [`ClassTable::lookup`] itself.)
     ///
@@ -1951,7 +1946,9 @@ impl Compiler {
         let mut names: HashSet<String> = stmts
             .iter()
             .filter_map(|s| match &s.kind {
-                StmtKind::ClassDecl { name, .. } => Some(name.clone()),
+                StmtKind::ClassDecl { name, .. } | StmtKind::EnumDecl { name, .. } => {
+                    Some(name.clone())
+                }
                 _ => None,
             })
             .collect();
@@ -2303,7 +2300,7 @@ impl Compiler {
                 _ => None,
             })
             .collect();
-        self.emit_enum_data(stmts, unavailable, late_fns);
+        self.emit_enum_data(stmts, unavailable, &late_fns);
     }
 }
 
@@ -2526,8 +2523,8 @@ fn hoistable_fn_names(
 ///   statement runs (or creates a closure) while the name still means
 ///   something else, and hoisting would change what it sees;
 /// - the initializer is anything but literals, arithmetic/comparison/string
-///   operators, lists, records with named fields, and other hoisted constants
-///   declared above it. Division and modulo count only by a non-zero literal,
+///   operators, lists, records with named fields, members of this file's
+///   enums (`Kind.park`), and other hoisted constants declared above it. Division and modulo count only by a non-zero literal,
 ///   so no run-time error can move ahead of the file's earlier output.
 fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
     use crate::ast::{AssignTarget, Literal, RecordField};
@@ -2588,11 +2585,15 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         }
     }
 
-    fn is_const(e: &Expr, consts: &HashSet<String>) -> bool {
+    fn is_const(e: &Expr, consts: &HashSet<String>, enums: &HashSet<&str>) -> bool {
         match &e.kind {
             ExprKind::Literal(_) => true,
             ExprKind::Ident(n) => consts.contains(n),
-            ExprKind::UnaryOp { operand, .. } => is_const(operand, consts),
+            // `Kind.park`: a member of one of this file's enums.
+            ExprKind::FieldAccess { object, .. } => {
+                matches!(&object.kind, ExprKind::Ident(n) if enums.contains(n.as_str()))
+            }
+            ExprKind::UnaryOp { operand, .. } => is_const(operand, consts, enums),
             ExprKind::BinaryOp { op, left, right } => {
                 let safe_op = match op {
                     BinOp::Div | BinOp::Mod => {
@@ -2606,16 +2607,28 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
                     }
                     _ => true,
                 };
-                safe_op && is_const(left, consts) && is_const(right, consts)
+                safe_op && is_const(left, consts, enums) && is_const(right, consts, enums)
             }
-            ExprKind::List(items) => items.iter().all(|i| is_const(i, consts)),
+            ExprKind::List(items) => items.iter().all(|i| is_const(i, consts, enums)),
             ExprKind::Record(fields) => fields.iter().all(|f| match f {
-                RecordField::Named(_, v) => is_const(v, consts),
+                RecordField::Named(_, v) => is_const(v, consts, enums),
                 RecordField::Spread(_) => false,
             }),
             _ => false,
         }
     }
+
+    // This file's enums, whose members are constants: the name is bound
+    // ahead of the first statement and a variant needs nothing evaluated.
+    let enums: HashSet<&str> = stmts
+        .iter()
+        .filter_map(|stmt| match &stmt.kind {
+            StmtKind::EnumDecl { name, .. } if decls.get(name.as_str()) == Some(&1) => {
+                Some(name.as_str())
+            }
+            _ => None,
+        })
+        .collect();
 
     let mut consts: HashSet<String> = HashSet::new();
     // Names mentioned by the statements seen so far (fn bodies included: a
@@ -2632,7 +2645,7 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
             && decls.get(name.as_str()) == Some(&1)
             && !written.contains(name)
             && !mentioned_above.contains(name)
-            && is_const(value, &consts)
+            && is_const(value, &consts, &enums)
         {
             consts.insert(name.clone());
         }
@@ -2939,12 +2952,24 @@ pub fn collect_classes(
             continue;
         };
         let Some(id) = classes.lookup(class) else {
+            let is_enum = stmts
+                .iter()
+                .any(|s| matches!(&s.kind, StmtKind::EnumDecl { name, .. } if name == class))
+                || classes.lookup_enum(class).is_some();
             err(
                 stmt.span,
-                format!(
-                    "cannot declare a method on `{class}`: no class of that name \
-                     (declare it with `class {class} … end`)"
-                ),
+                if is_enum {
+                    format!(
+                        "cannot declare a method on `{class}`: `{class}` is an enum, and \
+                         methods are declared on classes only (write a function that takes \
+                         the variant, `fn name(v: {class}, …)`)"
+                    )
+                } else {
+                    format!(
+                        "cannot declare a method on `{class}`: no class of that name \
+                         (declare it with `class {class} … end`)"
+                    )
+                },
             );
             continue;
         };

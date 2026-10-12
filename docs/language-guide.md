@@ -1697,7 +1697,35 @@ A data expression may name a variant of any enum, whichever is declared
 first, and may use literals, constant `let`s and functions. It is evaluated
 when the file starts, before its statements run, and never again for a read
 or a construction. So it cannot read a `let`, `var` or `state` the file
-computes as it runs; that is a compile error.
+computes as it runs; that is a compile error. A `let` whose value is itself
+constant (a literal, arithmetic on constants, a list or record of them, or a
+variant such as `let fallback = Use.road`) is fine.
+
+Data may read other data, in either order of declaration; what is read is
+evaluated first:
+
+```petal
+enum Tier
+    gold(cost: Tier.silver.cost * 2),
+    silver(cost: 5),
+end
+
+print(Tier.gold.cost)    // 10
+```
+
+Two variants whose data read each other are a compile error.
+
+A function held as data, or in a payload field, is called through the field
+as it is on a record:
+
+```petal
+enum Scale
+    double(apply: fn(n) -> n * 2),
+    same(apply: fn(n) -> n),
+end
+
+print(Scale.double.apply(4))    // 8
+```
 
 ### Reading a variant
 

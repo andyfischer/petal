@@ -192,6 +192,14 @@ impl ClassTable {
                 def.name, def.name
             ));
         }
+        // A class and an enum share the one namespace of declared type
+        // names, whichever is declared first and in whichever file.
+        if self.enum_by_name.contains_key(&def.name) {
+            return Err(format!(
+                "class `{0}` has the same name as enum `{0}`: pick another name",
+                def.name
+            ));
+        }
         if let Some(&existing) = self.by_name.get(&def.name) {
             if !self.defs[existing.0 as usize].builtin {
                 return Err(match (self.origins.get(&existing), module) {
@@ -291,9 +299,14 @@ impl ClassTable {
         id
     }
 
-    /// The enum `name` declares, anywhere in the compilation.
+    /// The enum `name` refers to *in the current scope*: like a class, an
+    /// enum the file neither declares nor imports is not a type it can name.
     pub fn lookup_enum(&self, name: &str) -> Option<EnumId> {
-        self.enum_by_name.get(name).copied()
+        let id = self.enum_by_name.get(name).copied()?;
+        match &self.scope {
+            Some(scope) if !scope.contains(name) => None,
+            _ => Some(id),
+        }
     }
 
     pub fn enum_name(&self, id: EnumId) -> &str {

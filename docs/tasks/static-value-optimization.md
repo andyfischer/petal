@@ -347,9 +347,102 @@ count anyway.
 
 ## S0. The classifier, with no behaviour change
 
-**Status: step 1 of 3 (the `CONST` flag and the audit) done 2026-10-12.** The
-classifier, `show-static`, `--static-audit` and the go/no-go gate are not
-started.
+**Status: steps 1 and 2 of 3 done 2026-10-12** — the `CONST` flag and the
+audit, then the classifier and `petal show-static`. `--static-audit` and the
+go/no-go gate (step 3) are not started; the classifier's numbers for the gate
+are below. Step 1's notes follow step 2's.
+
+Step 2, the classifier (`core/src/static_classify/`, `Env::static_report` /
+`Env::static_analysis`, `petal show-static [--json] [--all]`; no behaviour
+change, nothing reads its answer yet):
+
+- **Lattice.** Per term: data (a function of the source text, holding no
+  closure), function (a set of known targets, user or native), dynamic. A
+  function's summary is "no dynamic term in its body, given data parameters",
+  plus the class of what it returns; every call the pass calls static checks
+  that its arguments are data. Solved as one optimistic fixpoint over all
+  terms and summaries (5 rounds on Moses).
+- **Callee resolution.** Direct captures, the write-once cell of a hoisted
+  forward reference (an unnamed root `CellNew` with exactly one root-level
+  write; a top-level read above the write is dynamic), the function's own
+  self reference, a builtin held in a name, a function returned by a static
+  call, and the capture of its own name that `make_overload_set` patches when
+  one arity of an overloaded function calls another (`fn f(a) f(a, 0) end` —
+  found on the corpus: without it 51 Moses and petal-ui functions were not
+  static-pure).
+- **Regions.** A loop, branch, match or short-circuit operator is static only
+  if its inputs and every term of every child and guard block are. A phi is
+  static only if the control term that picks its value is. Only root-block
+  names are declarations, so a binding inside a top-level loop is never
+  offered as one value.
+- **Mutation.** A top-level `let` bound more than once (`xs[i] = v`,
+  `xs = append(xs, v)`, a rebind in a top-level `if` or loop) is dynamic at
+  every definition. A static declaration whose value (under any alias)
+  reaches the container operand of a write or of a mutating builtin stays
+  static, so what is built from it stays static, but carries `mutated_by` and
+  must not get a slot.
+- **Methods and enum data.** A method call is static only if every user
+  method of that name, every built-in class method of that name and the
+  global native of that name are. A field read (or method call) whose name is
+  a constant-data key of some enum is static only if every record carrying
+  that key is. `__enum_data`, `__enum_from` and `__enum_all` are classified
+  structurally (they answer from the program's own declarations), not from
+  their effect rows.
+- **Extensions to the proposal's section 1, both stricter or equal.** A
+  function passed to a *user* function is dynamic (a parameter is taken to be
+  data), so a user-written higher-order helper is not static-pure; that
+  affected 8 lets in the corpus and none in Moses. One impure arity makes a
+  whole overloaded name impure (arity dispatch is not modelled).
+- **Reported per declaration.** Class; reason chain (one link per
+  declaration or function crossed); for static data `read_by_dynamic` and
+  `readers` (dynamic operand, closure capture, free-standing statement, or
+  another static declaration) and `mutated_by`; for a plain `state`
+  `initializer_static`; `direct_depends_on` and the transitively closed
+  `depends_on`, by module-qualified name (`lib::BASE`; every method of a
+  called name; the enums whose data a field read may reach). S2 can pair
+  these with `source_diff`'s `(kind, name)`: the kinds are the same words.
+  For S1's lowering, `StaticAnalysis::term_class` gives the class of every
+  term.
+- **Not done here, for S1 to know.** A read *by name* from a host or tool is
+  invisible to the compiler and is not counted in `read_by_dynamic`. Retained
+  size is not reported (nothing is built). A static declaration read only by
+  an *unkept* static declaration is reported as read by static code; S1's run
+  splitting has to treat an always-executing run as a reader.
+- **Without host natives** (`petal show-static`, `petal check`, the LSP) an
+  unregistered `native fn` is dynamic, tested as "never more static than
+  with the host".
+- **Tests.** 51 unit tests in `core/src/static_classify/tests.rs`, one or
+  more per rule, compiled from source; a CLI test in
+  `core/tests/cli_args.rs`.
+- **Measured (release build, plain CLI, no host natives).**
+
+  | Corpus | Declarations | Static data | of which read by dynamic code | Functions (static-pure) | Dynamic |
+  |---|---|---|---|---|---|
+  | `examples/` (150 files, entry files only) | 7,571 | 2,012 (1,870 `let`, 126 `config let`, 16 `enum`) | 1,850 | 1,838 (1,039) | 3,721 |
+  | Whole ecosystem sweep (391 of 412 files compiled) | 9,139 | 2,284 | 2,077 | 2,404 (1,337) | 4,451 |
+  | Moses, all modules (`show-static --all games/moses/game.ptl`) | 2,356 | 517 (365 `let`, 148 `config let`, 4 `enum`) | 494 | 1,368 (493) | 471 |
+
+  The survey's estimate was 1,580 plausibly constant tables and derived
+  values; the classifier finds 2,123 static `let`s over the same trees
+  (scalars included). In Moses 365 of 378 top-level `let`s are static; of the
+  13 that are not, 8 are reassigned, 3 read `dt`/`time` and 2 read `state`.
+  Of Moses's 74 upper-case `state NAME =` cells, 73 have a static
+  initializer; the 74th (`history.ptl` `TIMELINE`) sorts another `state`
+  cell and becomes static once that one is a `let`. The named cases:
+  `T = codes(TILES)` static, `hd`/`st`/`wk` static-pure, `TOOLS` static,
+  `build_glyphs` static-pure with `GLYPHS`'s initializer static. In the
+  examples the dynamic `let`s are dominated by `state` (637), the screen
+  size natives (777), and reassignment (461); under a UI host that registers
+  nothing `CONST` for those, the same.
+  The pass costs about 85 ms on Moses (192,534 terms, 1,573 functions) and 5
+  to 8 ms on an example panel; `show-static` on Moses is 0.38 s end to end
+  against 0.55 s for `petal check`. S1 should run it on a recompile only, and
+  can cut it with a worklist if that matters.
+  In Moonbear (1,220 declarations, 378 static) `ch` is static-pure and the
+  six chords built with it (`moonbear/sound.ptl:361`) and `THEME_CHORDS` are
+  static.
+
+Step 1, the `CONST` flag:
 
 - Shipped: `NativeEffects::CONST` (a `constant` bit on the row, `PURE` plus
   that bit), `NativeEffects::is_const()`, and

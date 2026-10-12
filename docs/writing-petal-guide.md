@@ -103,7 +103,11 @@ Things to notice, because each is a rule you will meet again:
   hoisted — a flood fill or a tree walk needs no forward declaration. A
   top-level `let` whose value is a compile-time constant (`let NODE_W = 140`,
   `let GAP = NODE_W / 2`, a list or record of literals) is hoisted with them,
-  so a `fn` reading it can be called from above. The one exception: a `fn`
+  so a `fn` reading it can be called from above. Hoisting is about
+  declaration order only: a hoisted `let` is still evaluated on every run,
+  like every other top-level statement, so a large literal table is rebuilt
+  each frame. (`petal show-static` says which declarations *could* be built
+  once; nothing does that yet.) The one exception to hoisting: a `fn`
   whose body reads a top-level `let` that is computed at run time (a layout
   rect, `let NODE_W = screen_width() / 4`), or a `var`/`state`, cannot be
   hoisted above it, and calling it earlier fails at run time with

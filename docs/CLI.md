@@ -81,6 +81,7 @@ Environment variables that affect how packages are found:
 | `show-ast` | Parser output |
 | `show-ir` | Compiled IR (term graph) |
 | `show-bytecode` | Bytecode lowering of the IR |
+| `show-static` | Which top-level declarations are static, and why the others are not |
 | `show-graph` | Dataflow graph as Graphviz DOT |
 | `explain` | Run, then show the value chain that produced a term |
 | `graph` | Dataflow walk back or forward from one or more terms |
@@ -2270,6 +2271,136 @@ program. `graph` takes `--term <name|id>` with the same resolution rules as
 [Cells and the frontier](#cells-and-the-frontier): it does not promise an
 unqualified "minimal" answer on a program that uses `var`, and it says so in
 its output.
+
+
+### `show-static` — Static declarations
+
+```
+petal show-static [--json] [--all] <file.ptl>
+petal show-static [--json] [--all] -e '<code>'
+```
+
+Reports, for every top-level declaration, whether its value is **static**:
+whether its initializer can only ever produce one value for this source text.
+It compiles the program and never runs it, and nothing about how a program
+runs depends on the answer today. This is the classifier of
+[the static-values proposal](proposals/static-values.md): a later release
+builds static values once and keeps them between runs, and this command is how
+to see, ahead of that, what would be kept and what would not.
+
+```petal
+config let SCALE = 2
+let W = SCALE * 3
+fn hd(a, b)
+  {a: a, b: b, w: W}
+end
+let ROWS = [hd(1, 2), hd(3, 4)]
+state counter = 0
+let next = counter + 1
+let by_sec = [0, 0, 0]
+by_sec[1] = 5
+print(ROWS, next)
+```
+
+```
+static    config let SCALE  line 1    read only by static code (W)
+static    let W             line 2    read by dynamic code (captured by hd)
+function  fn hd             line 3    static-pure
+static    let ROWS          line 6    read by dynamic code (line 11)
+dynamic   state counter     line 7
+            = counter is state, which changes between runs at line 7
+dynamic   let next          line 8
+            = next reads counter at line 8
+            = counter is state, which changes between runs at line 7
+dynamic   let by_sec        line 9
+            = by_sec is assigned again (a value that is mutated is never kept) at line 10
+
+7 declarations: 3 static (2 read by dynamic code), 1 function (1 static-pure), 3 dynamic
+```
+
+Each declaration is one of three classes.
+
+- **static** — data that depends on nothing dynamic. A literal, a list or
+  record of static parts, an operator on static operands, another static
+  declaration, a `config let`, a call of a constant builtin, or a call of a
+  static-pure function with static arguments. The line says who reads it:
+  *dynamic code* (an operand of a dynamic term, a closure capture, or a
+  free-standing top-level statement such as an `assert`, all of which run on
+  every run), only other static declarations, or nothing. Only a static
+  declaration that dynamic code reads would be kept; one that only feeds
+  other static declarations is built and dropped.
+- **function** — a function value. It is **static-pure** when its body reads
+  no `state`, no `var` but its own, and no dynamic native, prints nothing, and
+  calls only static-pure functions. A call of a static-pure function with
+  static arguments is static.
+- **dynamic** — everything else, including anything the classifier cannot
+  resolve. The lines under it are the chain of reasons, one link per
+  declaration or function crossed, down to the term that makes it dynamic.
+
+The rules that most often decide an answer:
+
+| Rule | Example |
+|---|---|
+| A loop, a branch or a `match` is static only as a whole: its inputs and every term inside it. | `let D = if N > 2 then live else 0 end` is dynamic whichever way `N` points. |
+| A name that is assigned again is dynamic at every definition. | `xs[i] = v`, `xs = append(xs, v)`, a rebind inside a top-level `if` or loop. |
+| A value that would hold a function is dynamic. | `let HANDLERS = {open: open_file}` |
+| A function argument is static only for `map`, `filter`, `reduce`, `sort` and `sort_by`, and only if the function is static-pure. | `apply(double, 2)` is dynamic; `map(XS, double)` is not. |
+| A method call is static only if every method of that name is, and every builtin the name can fall back to. | One `fn Square.area` that reads `state` makes every `.area()` dynamic. |
+| A field read whose name is a constant-data key of some enum is static only if that enum's data is. | `enum Col name(w: text_width("name")) end` makes every `.w` dynamic. |
+| A top-level `var` or `state`, and anything that reads one, is dynamic. | |
+| One arity of an overloaded function that is not static-pure makes the whole name not static-pure. | |
+
+A static declaration can also carry a `! not kept` line: its value is handed
+to something that may update a container in place (`let MORE = append(BASE,
+4)`, an indexed write through another name). The value is still static and so
+is what is built from it, but the declaration itself would not be kept.
+
+**Host natives.** A native is static only if its host registered it as a
+constant function ([ffi.md](ffi.md#constant-natives)). This command knows the
+natives the `petal` CLI registers and no host's, so a `native fn` of a host
+(`screen_width`, `text_width`, a game engine's) is dynamic here and its line
+reads `a native that is not registered here`. A host asking the same question
+of its own `Env` (`Env::static_report`) may report more as static than this
+command does, never less.
+
+**The classification never reads a literal's value.** It reads the shape of
+the program and the names in it, so editing a literal cannot change any
+answer here, including a literal that decides a branch.
+
+`--all` includes the declarations of imported modules and of the prelude,
+under their module-qualified names (`ui::button`). `--json` emits:
+
+```json
+{
+  "summary": {"declarations": 7, "static": 3, "static_read_by_dynamic": 2,
+              "static_mutated": 0, "functions": 1, "functions_static_pure": 1,
+              "dynamic": 3},
+  "declarations": [
+    {"name": "ROWS", "qualified": "ROWS", "kind": "let", "line": 6, "column": 12,
+     "class": "static", "read_by_dynamic": true,
+     "readers": [{"kind": "dynamic", "line": 11}],
+     "direct_depends_on": ["hd"], "depends_on": ["SCALE", "W", "hd"]},
+    {"name": "next", "qualified": "next", "kind": "let", "line": 8, "column": 12,
+     "class": "dynamic",
+     "reason": [{"subject": "next", "text": "reads counter", "line": 8, "column": 12},
+                {"subject": "counter", "text": "is state, which changes between runs",
+                 "line": 7, "column": 17}],
+     "direct_depends_on": ["counter"], "depends_on": ["counter"]}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `kind` | `let`, `config let`, `var`, `state`, `fn`, `class` or `enum` |
+| `qualified`, `module` | The module-qualified name (`lib::BASE`; the bare name in the entry file) and the module, absent for the entry file |
+| `class` | `static`, `function` or `dynamic` |
+| `static_pure` | Functions only |
+| `reason` | The chain for a dynamic declaration, or for a function that is not static-pure: `{subject, text, file, line, column}` per link |
+| `read_by_dynamic`, `readers` | Static data only. A reader's `kind` is `dynamic`, `capture`, `statement` or `static`. A read by name from a host or a tool is not visible to the compiler and is not counted |
+| `mutated_by` | Static data only, present when its value reaches an in-place update |
+| `initializer_static` | Plain `state` only: whether the initializer is static (a `state` holding what is really a constant) |
+| `depends_on`, `direct_depends_on` | Every declaration the value can depend on, by qualified name, closed transitively, and the direct ones. A method call depends on every method of that name |
 
 ### `graph` — One query, one result shape
 

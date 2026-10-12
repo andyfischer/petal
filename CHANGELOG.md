@@ -411,6 +411,16 @@ way, for code written against an earlier checkout.
   declaration yet: it is the groundwork for static values
   (`docs/proposals/static-values.md`). See "Constant natives" in
   `docs/ffi.md`.
+- `petal show-static` classifies every top-level declaration as static data,
+  a function (static-pure or not) or dynamic, with the chain of reasons for a
+  dynamic one, whether dynamic code reads a static one, and the declarations
+  each depends on (`--json` for tools, `--all` for imported modules). It is
+  the classifier of the static-values proposal, and it changes nothing about
+  how a program runs: it shows what a later release would build once and
+  keep. A native counts as static only if registered `CONST`, so a host's
+  natives are dynamic under the plain CLI. `Env::static_report` is the same
+  answer against a host's own natives. See
+  [docs/CLI.md](docs/CLI.md#show-static--static-declarations).
 - `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
   recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
   what a reload did. `pb_vm_set_config` sets one config value in the running

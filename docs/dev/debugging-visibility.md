@@ -40,6 +40,7 @@ options.
 | `graph --direction forward --term <t>` | Forward dataflow slice: what depends on this term? |
 | `graph --term <a> --term <b>...` (or `--slice` with one) | Dataflow subgraph for several targets (minimal only when no `var` is read; see §1a). |
 | `show-graph` | Graphviz DOT output. |
+| `show-static [--json] [--all]` | Each top-level declaration's static class (static data, function, dynamic), the reason chain for a dynamic one, whether dynamic code reads a static one, and what each depends on. Compiles, never runs. |
 | `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
 | `lint [--fix\|--check]` | Formatter and source normalizer. |
@@ -234,6 +235,7 @@ to one, otherwise `null`. `line`/`column` come from the source map and are
 | "Why does this variable have this value?" | `petal explain --term <name>` |
 | "What is every variable right now?" (including after an error) | `petal run --observe` |
 | Understand data dependencies | `petal graph` |
+| "Why is this table rebuilt every frame?" / "What makes this declaration dynamic?" | `petal show-static` |
 | Offline trace review | `petal run --record-trace trace.json` |
 | Unit-test IR shape | `showIrJson` + `termByName` / `termsByOp` |
 | Debug a running canvas | `DiagramPause` → `DiagramStep` → `DiagramState` / `DiagramScreenshot` |

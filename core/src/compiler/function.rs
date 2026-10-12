@@ -268,7 +268,7 @@ impl Compiler {
     /// `class Name` compiles to a constructor function taking one parameter per
     /// declared field, in order, and allocating the record tagged with the
     /// class name. Deliberately the same shape as an enum variant's
-    /// constructor ([`Compiler::compile_enum_constructor`]) — a class is a
+    /// constructor (`Compiler::enum_fn`) — a class is a
     /// named product type, and `Point(1, 2)` is an ordinary call.
     ///
     /// Built-in classes take the other road: their constructors are natives

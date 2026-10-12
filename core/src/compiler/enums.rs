@@ -1,9 +1,10 @@
 //! Enums: declaration checks, the enum's name as a binding, and the static
 //! resolution of `Enum.variant` in expressions and patterns.
 //!
-//! An `enum` is a top-level, hoisted declaration, like a `class`. Its name is
-//! the only binding it introduces; a variant is a *member* of that name
-//! (`Color.red`), never a name of its own.
+//! An `enum` is a top-level, hoisted declaration, like a `class`, and is
+//! declared in the same table ([`crate::classes::ClassTable`]) under the same
+//! name rules. Its name is the only binding it introduces; a variant is a
+//! *member* of that name (`Color.red`), never a name of its own.
 //!
 //! - **The binding.** The enum's name is bound, ahead of the file's first
 //!   statement, to a term that stands for the declaration. `pub`, imports and

@@ -121,7 +121,6 @@ struct Checker<'a> {
     /// Classes in scope for this module — the built-ins plus every `class`
     /// the compiler's prescan found. Resolves class names in type position,
     /// types field reads, and answers "does this class have that method?".
-    /// Its own lifetime: the walk may hold a table of its own (see [`run`]).
     classes: &'a ClassTable,
     /// The module namespaces this file can spell, and what each exports:
     /// `import bloom/icon as icons` puts `icons` here with `bloom/icon`'s
@@ -227,9 +226,9 @@ pub struct CheckContext<'a> {
     pub fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     /// Their parameter *names*, keyed the same way, for named arguments.
     pub fn_param_names: &'a HashMap<(String, usize), Vec<String>>,
-    /// The classes this module may name, and the compilation's enums. An
-    /// enum these statements declare that the table does not hold yet (a
-    /// caller with no prescan of its own) is added for the walk.
+    /// The classes this module may name, and the compilation's enums —
+    /// what `collect_type_decls` (or, for enums alone, `collect_enums`)
+    /// registered.
     pub classes: &'a ClassTable,
     /// Module namespace → the names that module exports. See
     /// [`Checker::namespace_call`].

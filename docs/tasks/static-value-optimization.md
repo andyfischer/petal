@@ -116,6 +116,68 @@ re-measure.
 
 ## A2. Frozen heap generation
 
+**Status: done 2026-10-12** (items 1 to 4; item 5 is Cheesecake's).
+
+What shipped (`fd1b18d` and the documentation commit after it):
+
+- The patch, ported by hand: `Heap::freeze` / `is_frozen`, the frozen bit on
+  every slab slot, the marker and sweep skipping it, the seven in-place
+  operations copying, `collection_cost` and `mark_map` as described below.
+  Added here: `Heap::frozen_counts` (a leak diagnostic). Cheesecake's five
+  unit tests are in `heap.rs` with three more (fork, budget, all-or-nothing),
+  and `core/tests/frozen_heap.rs` runs twelve script-level cases with the
+  optimizer on and off.
+- `freeze` / `frozen` are registered in the builtin table (after the enum
+  intrinsics, where the patch had them), declared in `core/packages/core/src/collections.ptl`, documented in
+  `docs/Builtins.md` ("Frozen Data", with the limits below), and in
+  `docs/stdlib.json`.
+- Effects: both are `NativeEffects::EFFECT` rows and neither is `CONST`
+  (`frozen` answers from heap state, not from the value's contents). In
+  `builtins/effects.rs`, `freeze` has a row with no property (not `FRESH`,
+  not `NO_REF`, not `PURE`) and `frozen` is `NO_REF` only, both pinned by
+  tests. Passing a value to `freeze` therefore ends its unique ownership, and
+  no script shape tried reaches an in-place write on a frozen value; the
+  run-time copy in the heap is the backstop.
+- Fork and restore: `Heap::fork` clones the slots, so the frozen bit travels;
+  `inherit_generations` does not touch it. Tests:
+  `heap::tests::a_fork_carries_the_frozen_bit` and
+  `frozen_heap::fork_and_restore_carry_the_frozen_set`.
+
+Measured (one machine, under load from other builds; `docs/dev/performance.md`
+has the tables):
+
+| | Before | After, rooted | After, frozen |
+|---|---|---|---|
+| Pause per collection, 100,000 records, 2,000,000 short-lived records allocated (`tools/bench-gc-pause.ts`) | 30.0 ms (3 collections, 90 ms) | 17.3 ms (5 collections, 87 ms) | 2.6 ms (44 collections, 114 ms) |
+| The same with 10,000 records | 9.5 ms (7 collections, 66 ms) | 1.3 ms (42 collections, 54 ms) | 0.19 ms (351 collections, 68 ms) |
+| One collection, 100,000 records, nothing to free (`cargo run --release --example gc_pause`) | — | 2.47 ms | 0.37 ms |
+
+The baseline below (10.0 ms and 1.06 ms) came from a scratch script that is
+gone; the recreated benchmark has three heap objects a record and a heavier
+allocation phase, so its "before" is 30 ms and 9.5 ms. The rooted column
+moved without freezing because of the `collection_cost` change.
+
+Two things the numbers say that the "done when" did not expect:
+
+- **The frozen pause still grows with the table**, at about a seventh of the
+  rooted rate (0.37 ms against 2.47 ms for 100,000 records): the sweep and
+  `collection_cost` still walk every frozen slot. Making it flat needs frozen
+  objects kept where the sweep does not look, which is the "frozen generation
+  that can release objects" under Later.
+- **Total collection time does not fall** (114 ms frozen against 87 ms
+  rooted): it is dominated by freeing garbage, and the smaller budget means
+  more collections, each paying the slot walk. Freezing shortens pauses; it
+  does not buy throughput. `SLOT_WALK_COST` (8) is on the low side of what
+  the walk measures against a trace (about 15 on the same scale); raising it
+  would halve the collection count and double the pause. Left as Cheesecake
+  tuned it.
+
+Not done: Cheesecake's 344-test suite on a re-vendored tree (item 5, in
+their repository). For that re-vendor: the local modification drops out
+whole, `VENDORED.md` loses its entry, and
+`engine/script/packages/cheesecake/memory.ptl` no longer needs to declare
+`freeze` / `frozen` (the stock `core` package does).
+
 **Problem.** Every collection re-marks all rooted long-lived data. A rooted
 100,000-record table costs about a 10 ms pause per collection; Moses pauses
 about 7 ms every 43 frames. Static values will keep more data alive.

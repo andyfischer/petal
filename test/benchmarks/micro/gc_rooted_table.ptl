@@ -1,0 +1,46 @@
+// Micro-benchmark: what a rooted table of N records costs every garbage
+// collection, with the table frozen and not.
+//
+// The script builds the table (three heap objects a row: the record, its
+// name and its tag list), keeps it in a top-level `let`, then allocates
+// CHURN short-lived records so the collector runs many times. Unfrozen, each
+// of those collections marks the whole table again; frozen, the marker
+// stops at the table's root.
+//
+//   ./tools/bench-gc-pause.ts
+//
+// runs it for N = 10,000 and 100,000, frozen and not, and reports the pause
+// per collection of the churn phase alone (it subtracts a CHURN = 0 run, so
+// the collections the build itself triggers are left out). To look at one
+// configuration by hand, edit the three constants and read the
+// `collections` line of
+//
+//   core/target/release/petal run --profile test/benchmarks/micro/gc_rooted_table.ptl
+//
+// Figures are in docs/dev/performance.md (Frozen data and collection pauses).
+
+let N = 100000
+let FREEZE = false
+let CHURN = 2000000
+
+fn build(n)
+  for i in range(0, n) do
+    {
+      id: i,
+      name: "row " ++ str(i),
+      weight: i * 0.5,
+      tags: [i, i + 1],
+    }
+  end
+end
+
+let built = build(N)
+let table = if FREEZE then freeze(built) else built end
+
+let sum = 0
+for i in range(0, CHURN) do
+  let junk = {a: i, b: [i]}
+  sum += junk.a
+end
+
+print(len(table), frozen(table), sum)

@@ -90,6 +90,18 @@ way, for code written against an earlier checkout.
 - Escape and last-use analyses turn value-semantic updates into in-place writes
   (loop accumulators, `state`-backed containers, `var` cells).
 - A generational heap with a mark-and-sweep collector paced by bytes allocated.
+- A frozen heap generation for data that lives as long as the program:
+  `freeze(value)` makes a value and everything it holds permanent, so the
+  collector neither traces nor frees it, and `frozen(value)` asks. With a
+  rooted table of 100,000 records the pause per collection goes from 17 ms to
+  2.6 ms. Freezing is one-way (a frozen value is never freed), a value holding
+  a function or a `var` cell is refused, and an update of a frozen value
+  copies. See [docs/Builtins.md](docs/Builtins.md#frozen-data).
+- The collector's budget counts live objects plus a small cost per slot, where
+  it charged the full trace cost for free slots too: a program allocating at a
+  steady rate now reaches a steady heap instead of growing its slot count and
+  its pauses (30 ms to 17 ms a collection in the same 100,000-record
+  benchmark, before freezing).
 - Hot reload: recompile a running program and carry its `state` over.
 - Hot reload does only the work an edit calls for. `Env::reload_program` diffs
   each source file's syntax tree against what the program was compiled from:

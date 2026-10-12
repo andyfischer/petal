@@ -1304,6 +1304,78 @@ a = set_at(a, 0, 1.0)
 a = swap(a, 0, 2)    // [0.0, 0.0, 1.0]
 ```
 
+## Frozen Data
+
+The garbage collector visits every value the program still holds each time it
+runs. For most programs that is cheap. For a program that keeps a very large
+table for its whole life (a generated world, a rule table, a level loaded from
+disk) it is a pause on every collection that grows with the table: about 2.5 ms
+for 100,000 records, before any garbage is freed.
+
+`freeze` takes such a value out of the collector's work. A frozen value is
+still an ordinary value: it reads, compares, prints and passes around exactly
+as before, and an update of it yields a new, unfrozen value as an update of
+any value does.
+
+### `freeze(value)`
+
+Makes `value` and everything it holds frozen, and returns `value`. The
+collector no longer looks inside a frozen value and never frees one. Lists,
+records, strings, `f64_array`s, vectors and enum variants freeze, to any depth.
+Freezing a number, a bool or `nil`, or a value that is already frozen, does
+nothing.
+
+```petal
+fn build_table(n)
+  for i in range(0, n) do
+    { id: i, name: "row " ++ str(i), tags: [i, i + 1] }
+  end
+end
+
+state table = freeze(build_table(1000))
+print(frozen(table), len(table))      // true 1000
+
+let longer = append(table, { id: 1000, name: "extra", tags: [] })
+print(frozen(longer), len(table))     // false 1000
+```
+
+The limits are part of the contract:
+
+- **Freezing is one-way.** There is no unfreeze, and a frozen value is never
+  freed, even after the program drops its last reference to it. The memory
+  comes back when the program's heap goes away (the program is restarted or
+  its context is dropped).
+- **Freeze data that lives as long as the program**, once: in a `state`
+  initializer, as above, or behind a check that it has not been built yet.
+  `freeze` on a value rebuilt every frame leaks every one of them, so a
+  top-level `let table = freeze(build())` in a script that runs once per
+  frame is a leak. `state` initializers run once.
+- **A value holding a function or a `var` cell cannot be frozen.** The call
+  is an error (`freeze: the value holds a function, which cannot be frozen`)
+  and nothing is frozen.
+- **A hot reload keeps frozen values**, like the rest of the heap. A table
+  that is rebuilt after a reload and frozen again leaves the old one
+  allocated.
+- **Freezing does not make collections free.** The collector still walks past
+  a frozen value's slots when it sweeps, at roughly a seventh of the cost of
+  visiting them.
+
+A forked execution (and a snapshot restored from one) carries the frozen
+values it was taken with.
+
+### `frozen(value)`
+
+Whether `value` is frozen. `false` for numbers, bools, `nil` and every value
+`freeze` has not reached.
+
+```petal
+let xs = [1, 2, 3]
+print(frozen(xs))     // false
+freeze(xs)
+print(frozen(xs))     // true
+print(frozen(42))     // false
+```
+
 ## Built-in Classes
 
 Classes built into the language: available with no declaration and no import.

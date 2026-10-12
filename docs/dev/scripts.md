@@ -59,6 +59,8 @@ See [testing.md](testing.md) for the full guide.
 | `./tools/bench-opts.ts` | Time every [`test/benchmarks/`](../../test/benchmarks/)`*.ptl` with the optimizer on and off (release build) and report per-file medians plus the speedup. |
 | `./tools/bench-opts.ts --runs=10` | Use more repetitions per file (default 5). |
 | `cd core-libs/petal-ui && cargo run --release --example bench_panel -- <file.ptl> [frames] [WxH]` | Per-frame cost of a **panel** script under the headless harness, which is the shape of work a Garden pane does. Add `--observe` to mirror a real panel (Garden leaves observation on) and `--profile` for the counters below. Frames run under the frame gate, so add `--wiggle` (pointer moves every frame) for an interactive frame or `--no-gate` for the script alone. Calls are memoized unless `--no-memo`; the memo's counters are printed either way. |
+| `./tools/bench-gc-pause.ts` | The garbage-collection pause a big rooted table adds, frozen (`freeze`) and not: runs `test/benchmarks/micro/gc_rooted_table.ptl` on the release build for 10,000 and 100,000 records and reports collections, total GC time and pause per collection for the allocation phase. `--n=…` picks the sizes, `--runs=…` the repetitions, `--petal=<binary>` measures another build. |
+| `cd core && cargo run --release --example gc_pause -- [records …]` | One collection with a table of that many records as the only root and nothing to free, rooted and then frozen: the cost the table itself adds to every collection. |
 
 See [performance.md](performance.md) for how to read these numbers.
 

@@ -1099,6 +1099,9 @@ pub fn register_draw(env: &mut Env) {
     // `font(name)` resolves the name against the host's font source, which is
     // attached once at startup: a pure function of its argument for the life
     // of the process. `fonts()` lists that source, and says so as a host read.
+    // Pure, and deliberately not `CONST`: the answer is the host's font
+    // provider's, so the same name resolves differently on another host (or
+    // after the provider is swapped), and a static value must not keep it.
     register(env, "font", native_font, NativeEffects::PURE);
     register(
         env,

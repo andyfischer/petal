@@ -59,7 +59,9 @@ pub fn register_video(env: &mut Env) {
     // Palettes
     env.register_native("set_palette", native_set_palette, NativeEffects::EMITS);
     env.register_native("set_backdrop", native_set_backdrop, NativeEffects::EMITS);
-    env.register_native("master_rgb", native_master_rgb, NativeEffects::PURE);
+    // A lookup into the fixed master palette (a `const` table): a constant
+    // function, so a cart's palette table built from it is a static value.
+    env.register_native("master_rgb", native_master_rgb, NativeEffects::CONST);
 
     // Pattern table
     env.register_native("define_tile", native_define_tile, NativeEffects::EMITS);

@@ -314,3 +314,37 @@ fn register_all_provides_the_ui_interface_at_the_package_version() {
         .unwrap_err();
     assert!(err.contains("requires the host interface `ui`"), "{err}");
 }
+
+/// The constant functions (`NativeEffects::CONST`) this crate registers,
+/// pinned by name. A static value built from a call to one is kept until the
+/// source changes, so a native joins this list only on purpose: every other
+/// petal-ui native reads an input class, emits, or answers from host state.
+/// `font` is the one to watch — pure, and not constant, because the host's
+/// font provider decides the answer.
+#[test]
+fn the_only_constant_ui_native_is_ui_version() {
+    use petal::native_fn::NativeConstness;
+    let mut env = Env::new();
+    petal_ui::register_all(&mut env);
+    petal_ui::panel_stubs::register_panel_stubs(&mut env);
+    let added = added_by(|env| {
+        petal_ui::register_all(env);
+        petal_ui::panel_stubs::register_panel_stubs(env);
+    });
+    let constant: Vec<&String> = added
+        .iter()
+        .filter(|n| env.native_constness_of_name(n) != NativeConstness::Dynamic)
+        .collect();
+    assert_eq!(constant, ["ui_version"]);
+    for name in ["font", "text_width", "palette", "panel_theme", "nav_arg", "time"] {
+        assert!(added.contains(name), "{name} is no longer registered");
+        assert_eq!(
+            env.native_constness_of_name(name),
+            NativeConstness::Dynamic,
+            "{name}"
+        );
+    }
+    // The core builtins keep their rows under a host.
+    assert_eq!(env.native_constness_of_name("sqrt"), NativeConstness::Const);
+    assert_eq!(env.native_constness_of_name("noise"), NativeConstness::Dynamic);
+}

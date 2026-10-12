@@ -100,6 +100,11 @@ pub fn register_panel_stubs(env: &mut Env) {
     // panel store, an editor buffer) the stub reports the same read or effect,
     // so a panel is classified the same way here as in Garden; a stub that
     // only validates its arguments and drops them is pure.
+    //
+    // None of them is `CONST`, including the pure ones: a stub stands in for
+    // a Garden native that answers from the editor (the palette, the theme,
+    // the navigation entry, a mutation's outcome), so a table built from one
+    // must be rebuilt every run here as it is there.
     const HOST_READ: NativeEffects = NativeEffects::reads(InputClasses::HOST_DATA);
     const EMITS: NativeEffects = NativeEffects::PURE.with_emits();
     env.register_native("palette", native_palette, NativeEffects::PURE);

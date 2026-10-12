@@ -35,7 +35,8 @@ const BINDINGS_READ: NativeEffects = NativeEffects::probe(InputClasses::BINDINGS
 const PAD_READ: NativeEffects = NativeEffects::probe(InputClasses::KEYBOARD);
 
 pub fn register_system(env: &mut Env) {
-    env.register_native("nes_version", native_nes_version, NativeEffects::PURE);
+    // A number compiled into the console: a constant function.
+    env.register_native("nes_version", native_nes_version, NativeEffects::CONST);
     env.register_native("log", native_log, NativeEffects::EFFECT);
     env.register_native("set_scale", native_set_scale, NativeEffects::EMITS);
     env.register_native("set_crt", native_set_crt, NativeEffects::EMITS);
@@ -275,6 +276,24 @@ fn native_pad_released(cxt: &mut PetalCxt) -> NativeResult {
 mod tests {
     use super::*;
     use petal_ui::input::is_canonical_key;
+
+    /// The console's constant functions (`NativeEffects::CONST`), pinned:
+    /// everything else reads the console, emits a command or has an effect.
+    #[test]
+    fn the_constant_natives_are_the_version_and_the_master_palette() {
+        use petal::native_fn::NativeConstness;
+        let core: Vec<String> = Env::new().native_fn_names();
+        let mut env = Env::new();
+        crate::natives::register_all(&mut env);
+        let mut constant: Vec<String> = env
+            .native_fn_names()
+            .into_iter()
+            .filter(|n| !core.contains(n))
+            .filter(|n| env.native_constness_of_name(n) != NativeConstness::Dynamic)
+            .collect();
+        constant.sort_unstable();
+        assert_eq!(constant, ["master_rgb", "nes_version"]);
+    }
 
     #[test]
     fn every_pad_key_is_canonical() {

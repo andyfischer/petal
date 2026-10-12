@@ -26,9 +26,12 @@ pub(crate) const SCHEME_SYM: &str = "garden.color_scheme";
 
 /// Register all Garden native fns. Must run before `env.load_program`.
 pub(crate) fn register_all(env: &mut Env) {
-    env.register_native("editor", native_editor, NativeEffects::PURE);
-    env.register_native("process", native_process, NativeEffects::PURE);
-    env.register_native("panel", native_panel, NativeEffects::PURE);
+    // `editor` / `process` / `panel` build a layout-node record out of their
+    // arguments and read nothing else: constant functions (`CONST`), so a
+    // layout table made of them is a static value.
+    env.register_native("editor", native_editor, NativeEffects::CONST);
+    env.register_native("process", native_process, NativeEffects::CONST);
+    env.register_native("panel", native_panel, NativeEffects::CONST);
     // `row` / `column` build a record; the one thing a replay could not
     // reproduce is the warning they print for a mismatched ratios list.
     env.register_native("row", native_row, NativeEffects::EFFECT);
@@ -326,4 +329,26 @@ fn native_color_scheme(cxt: &mut PetalCxt) -> NativeResult {
 
 fn alloc_str(cxt: &mut PetalCxt, s: &str) -> Value {
     Value::String(cxt.heap_mut().alloc_string(s.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use petal::native_fn::NativeConstness;
+
+    /// The config natives that are constant functions (`NativeEffects::CONST`)
+    /// are exactly the three leaf constructors. `row`/`column` print a
+    /// warning and the rest emit, so none of those may be kept as a static
+    /// value.
+    #[test]
+    fn the_constant_config_natives_are_the_leaf_constructors() {
+        let mut env = Env::new();
+        register_all(&mut env);
+        for name in ["editor", "process", "panel"] {
+            assert_eq!(env.native_constness_of_name(name), NativeConstness::Const, "{name}");
+        }
+        for name in ["row", "column", "layout", "color_theme", "color_scheme"] {
+            assert_eq!(env.native_constness_of_name(name), NativeConstness::Dynamic, "{name}");
+        }
+    }
 }

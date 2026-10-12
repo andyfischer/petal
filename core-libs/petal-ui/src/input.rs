@@ -680,7 +680,10 @@ pub fn register_input(env: &mut Env) {
     register(env, "frame_count", native_frame_count, CLOCK);
     register(env, "screen_width", native_screen_width, VIEWPORT);
     register(env, "screen_height", native_screen_height, VIEWPORT);
-    register(env, "ui_version", native_ui_version, NativeEffects::PURE);
+    // The one constant function in petal-ui: a number compiled into the
+    // library. Everything else here reads an input class, emits, or (like
+    // `font`) answers from host state.
+    register(env, "ui_version", native_ui_version, NativeEffects::CONST);
 }
 
 fn binding_int(state: &mut PetalCxt, name: &str) -> i64 {

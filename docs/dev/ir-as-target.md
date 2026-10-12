@@ -351,7 +351,7 @@ MatchArm := { "pattern": Pattern, "guard_block": BlockId?, "body_block": BlockId
 Pattern := "Wildcard"
          | {"Literal": <Literal>}
          | {"Variable": "x"}
-         | {"Variant": {"name": "Circle", "fields": [Pattern, ...]}}
+         | {"Variant": {"name": "Shape.circle", "fields": [Pattern, ...]}}   // the tag, `Enum.variant`
          | {"List": {"elements": [Pattern, ...], "rest": "tail"}}
          | {"Record": [["field", Pattern], ...]}
          | {"Or": [Pattern, ...]}          // `a | b`; every alternative binds the same names

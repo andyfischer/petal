@@ -84,7 +84,8 @@ fn native_layout(cxt: &mut PetalCxt) -> NativeResult {
 
 If the call carries a *tagged* payload (many command kinds through one buffer,
 e.g. draw commands), use `cxt.emit(sym, tag, data)` instead — it builds a
-`Value::EnumVariant { tag, data }` for you. For a single observed call like
+`Value::EnumVariant { tag, data }` for you (the tag is the host's own name
+for the command; it is not a variant of any `enum` a script declares). For a single observed call like
 `layout`, a plain `push_output` of the argument is enough.
 
 ### 2. Declare what the native does

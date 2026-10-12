@@ -199,7 +199,10 @@ end
 
 `pub` goes directly before the declaration keyword: `pub fn`, `pub let`,
 `pub var`, `pub state`, `pub enum`, `pub class`. A `pub enum` exports its
-name, and its variants are members of that name (`palette.Color.red`); a `pub class` exports its constructor and its type name. `pub` in
+name, and its variants are members of that name, in expressions and in `match`
+patterns alike: `palette.Color.red` after `import ./palette`, or `Color.red`
+after `import ./palette: Color`. A variant is not an export of its own, so
+`import ./palette: red` is an error. A `pub class` exports its constructor and its type name. `pub` in
 the entry file is allowed but does nothing, since nothing imports the entry
 file.
 

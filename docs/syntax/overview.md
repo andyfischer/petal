@@ -292,6 +292,12 @@ enum Shape
     rect(w, h, sides: 4),
     unit(sides: 4),
 end
+
+print(Shape.circle(2).radius)    // 2
+print(Shape.unit.sides)          // 4
+print(Shape.unit.name)           // unit
+print(Shape.all)                 // [Shape.unit]
+print(Shape.from("unit"))        // Shape.unit
 ```
 
 ### `break` / `continue` / `return`
@@ -335,32 +341,37 @@ enum Shape
     unit,
 end
 
-match shape
-    when Shape.circle(r)  -> 3.14159 * r * r
+let shape = Shape.rect(2, 3)
+
+let area = match shape
+    when Shape.circle(r)  -> 3 * r * r
     when Shape.rect(w, h) ->
-        let area = w * h
-        log("rect of {area}")
-        area
+        let a = w * h
+        print("rect of {a}")    // rect of 6
+        a
     when Shape.unit -> 1
 end
+print(area)                     // 6
 ```
 
 An arm must have a body (`-> nil` for one that does nothing). `break`,
 `continue` and `return` in a body behave as in an `if` branch. The older
 `when pattern do … end` arm is still accepted.
 
-A match that ends without any arm matching is a runtime error, not `nil`. A
-match whose arms are all variants of one enum must cover every variant or have
-a catch-all arm, or it does not compile.
+There is no `else` arm: the arm for everything else is `when _ ->`. A match
+that ends without any arm matching is a runtime error
+(`No matching pattern for value: …`), not `nil`. A match whose arms are all
+variants of one enum must cover every variant or have a catch-all arm, or it
+does not compile. See [Pattern Matching](../language-guide.md#pattern-matching).
 
 **Patterns** the parser accepts:
 
 | Pattern | Example | Matches |
 |---------|---------|---------|
 | wildcard | `_` | anything (no binding) |
-| variable | `n` | anything, binds `n` |
-| literal | `0`, `-1`, `"hi"`, `true`, `nil` | that exact value |
-| enum variant | `Shape.unit`, `Shape.circle(r)`, `mod.Shape.rect(w, h)` | that variant, binding its payload fields |
+| variable | `n` | anything, binds `n` (a bare identifier is always a binding, never a variant) |
+| literal | `0`, `-1`, `"hi"`, `true`, `nil` | that value, as `==` would |
+| enum variant | `Shape.unit`, `Shape.circle(r)`, `mod.Shape.rect(w, h)` | that variant; one sub-pattern per payload field, `_` to ignore one |
 | list | `[head, ...tail]`, `[]`, `[a, b]` | list shape, `...rest` captures the tail |
 | record | `{x: a, y: b}` | record with those keys, binding values |
 | alternatives | `"a" \| "b"`, `Shape.unit \| Shape.circle(_)` | what any alternative matches; each binds the same names |
@@ -368,11 +379,13 @@ a catch-all arm, or it does not compile.
 **Guards** add a boolean condition with `if`:
 
 ```petal
-match n
+let n = -4
+let sign = match n
     when x if x < 0 -> "negative"
     when 0          -> "zero"
     when x          -> "positive"
 end
+print(sign)    // negative
 ```
 
 ### `for` (loop / mapping expression)

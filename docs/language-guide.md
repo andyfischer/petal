@@ -1591,33 +1591,73 @@ In the short 3/4-digit forms, each digit is doubled (e.g. `f` → `ff` = 255).
 
 ## Enums
 
-An enum is a named set of variants. A variant is a member of its enum and is
-always written through it: `Color.red`, never a bare `red`.
+An enum is a named, closed set of variants. A variant is a member of its enum
+and is always written through it: `Color.red`, never a bare `red`.
 
 ```petal
 enum Color
     red,
     green,
-    custom(r, g, b),            // payload fields: supplied at construction
+    custom(r, g, b),
 end
 
 let c = Color.red
 let pink = Color.custom(255, 192, 203)
-let make = Color.custom         // uncalled, the constructor function
+
+print(c)                    // Color.red
+print(c == Color.red)       // true
+print(c == Color.green)     // false
+print(type(c))              // Color
 ```
 
-A variant name is any identifier, lowercase or uppercase. Two enums may
-declare the same variant name: `Kind.park` and `Use.park` are different
-values. Two variants are equal when they belong to the same enum, are the same
-variant, and carry equal payloads.
+A variant name is any identifier, lowercase or uppercase. Variants are
+separated by commas, on one line (`enum Axis x, y end`) or one per line.
 
-A bare variant name does not resolve. `print(red)` is an undefined name, and
-the error says `did you mean Color.red?`. `Color.rde` is a compile error.
+Because a variant lives inside its enum, two enums may declare the same
+variant name. `Kind.park` and `Use.park` are different values and never
+compare equal. Two variants are equal when they belong to the same enum, are
+the same variant, and carry equal payloads. Variants have no order: `<` on two
+of them is an error.
+
+A bare variant name does not resolve, in an expression or anywhere else, and
+a variant the enum does not declare is a compile error:
+
+```text
+Undefined variable: red — did you mean Color.red?
+enum `Color` has no variant `rde` — did you mean Color.red?
+```
+
+### Payload fields
+
+A bare identifier inside a variant's parens is a **payload field**: a value
+supplied each time the variant is constructed. The fields are positional when
+constructing and named when reading.
+
+```petal
+enum Op
+    fight(place, won),
+    gift(amount),
+    rest,
+end
+
+let op = Op.fight("bridge", true)
+print(op)                               // Op.fight("bridge", true)
+print(op.place)                         // bridge
+print(op.won)                           // true
+print(op == Op.fight("bridge", true))   // true
+print(op == Op.fight("tunnel", true))   // false
+```
+
+A constructor takes exactly its fields: `Op.fight("bridge")` is the compile
+error `Op.fight takes 2 arguments (place, won), got 1`. Uncalled, `Op.fight`
+is the constructor as a function value, so `map(places, fn(p) -> Op.fight(p, false))`
+and `let make = Op.gift` both work.
 
 ### Constant data
 
-Inside a variant's parens, a bare identifier is a payload field and
-`key: expr` is constant data attached to the variant. The two may be mixed.
+`key: expr` inside a variant's parens is **constant data**: a value that
+belongs to the variant itself, the same for every value of that variant. It
+replaces a lookup table kept beside the enum.
 
 ```petal
 enum Use
@@ -1630,21 +1670,34 @@ enum Kind
     park(shape: "area", use: Use.green),
 end
 
+print(Kind.park.shape)                 // area
+print(Kind.parkway.use == Use.road)    // true
+```
+
+Payload fields and constant data may be mixed in one variant. The payload
+comes from the constructor call, the data from the declaration:
+
+```petal
 enum Op
     fight(place, won, tone: "bad"),
     gift(amount, tone: "good"),
 end
 
-print(Kind.park.shape)                 // area
-print(Kind.parkway.use == Use.road)    // true
-print(Op.fight("bridge", true).tone)   // bad
+let op = Op.fight("bridge", true)
+print(op.place)             // bridge
+print(op.tone)              // bad
+print(Op.gift(100).tone)    // good
 ```
 
-Every variant of one enum declares the same data keys; a missing or extra key
-is a compile error. A data expression may name a variant of any enum,
-whichever is declared first, and may use literals, constant `let`s and
-functions. It is evaluated once, before the file's statements run, so it
-cannot read a `let`, `var` or `state` the file computes as it runs.
+Every variant of one enum declares the same data keys, so a data read works
+on any variant of the enum. A missing or extra key is a compile error that
+names the variant and the key.
+
+A data expression may name a variant of any enum, whichever is declared
+first, and may use literals, constant `let`s and functions. It is evaluated
+when the file starts, before its statements run, and never again for a read
+or a construction. So it cannot read a `let`, `var` or `state` the file
+computes as it runs; that is a compile error.
 
 ### Reading a variant
 
@@ -1662,9 +1715,15 @@ print(type(op))    // Op
 print(op)          // Op.fight("bridge", true)
 ```
 
-Reading a field the variant does not have is an error, as it is on a record.
-Because `.name` is every variant's own name, a payload field or data key may
-not be called `name`.
+Every variant answers `.name`, so a payload field or data key may not be
+called `name`. `type()` of a variant is its enum's name, and `str()` and
+`print` show it as it is written in source.
+
+Reading a field the variant does not have is a runtime error, as it is on a
+record: `op.amount` above fails with `No field 'amount' on enum variant
+Op.fight`. `op.amount ?? 0` and `op?.amount` tolerate the missing field, as
+they do on a record. To take a variant apart by which variant it is, use
+[`match`](#enum-patterns).
 
 ### `all` and `from`
 
@@ -1677,19 +1736,48 @@ end
 print(Kind.all)            // [Kind.parkway, Kind.park]
 print(Kind.from("park"))   // Kind.park
 print(Kind.from("lake"))   // nil
+
+for k in Kind.all do
+    print("{k.name}: {k.shape}")
+end
 ```
 
-`Kind.all` lists the enum's payload-free variants in declaration order.
-`Kind.from(name)` is the payload-free variant with that name, or `nil`. A
-variant may not be named `all` or `from`.
+`Kind.all` lists the enum's variants in declaration order, and
+`Kind.from(name)` is the variant with that name, or `nil` when there is none.
+Both cover only the variants without payload fields: a variant with a payload
+is not one value, so it is left out of `all` and `from` answers `nil` for it.
+`from` is how a string from a file or from the host becomes a variant.
+
+A variant may not be named `all` or `from`.
 
 ### Declaration rules
 
-`enum` is a top-level declaration and is hoisted, like `class`: code above the
-declaration can use it. The enum's name is an ordinary binding. `pub enum`
-exports it, an importer writes `Color.red` after `import ./palette: Color` or
-`palette.Color.red` after `import ./palette`, and one name can be declared as
-an enum only once in a program.
+`enum` is a top-level declaration and is hoisted, like `class`: code above
+the declaration can use it, and an `enum` inside a function, loop or block is
+a compile error. One name can be declared as an enum only once in a program,
+and may not be the name of a class or a built-in type.
+
+The enum's name is an ordinary binding. `pub enum` exports the name, and the
+variants come with it as its members:
+
+```petal no-check
+// palette.ptl
+pub enum Color
+    red,
+    green,
+end
+
+// main.ptl
+import ./palette
+print(palette.Color.red)
+
+// or, importing the name itself
+import ./palette: Color
+print(Color.red)
+```
+
+Editing an enum while the program runs is covered in
+[hot-reload.md](hot-reload.md#editing-an-enum).
 
 ### The enum's name as a type
 
@@ -1722,13 +1810,18 @@ it was written `Kind.park` — is also held to the fields a `Kind` has: `name`,
 the enum's data keys, and the payload fields of its variants.
 
 ```petal
+enum Kind
+    parkway(shape: "route"),
+    park(shape: "area"),
+end
+
 fn label(k: Kind)
     k.shap             // warning: no variant of enum `Kind` has a field `shap`
-                       //          (fields of `Kind`: shape, use, name)
+                       //          (fields of `Kind`: shape, name)
 end
 
 Kind.park.colour       // warning: `Kind.park` has no field `colour`
-                       //          (it has: shape, use, name)
+                       //          (it has: shape, name)
 ```
 
 Both are warnings, like every type check, and both describe a line that fails
@@ -2092,8 +2185,8 @@ a naming and dispatch feature over records, not an object system.
 ## Pattern Matching
 
 `match` tests a value against patterns, top to bottom, and runs the first arm
-whose pattern matches. It is an expression, and it is also how control flow
-branches on a value:
+whose pattern matches. It is an expression, and it is also the statement for
+branching on a value:
 
 ```petal
 fn describe(x)
@@ -2103,7 +2196,26 @@ fn describe(x)
         when n -> "other: {n}"
     end
 end
+
+print(describe(0))    // zero
+print(describe(7))    // other: 7
 ```
+
+Each arm is `when pattern -> body`. A pattern is one of:
+
+| Pattern | Example | Matches |
+|---------|---------|---------|
+| literal | `0`, `-1`, `2.5`, `"hi"`, `true`, `nil` | that value, as `==` would (`when 1` matches `1.0`) |
+| binding | `n` | anything, and names it `n` in the arm |
+| wildcard | `_` | anything, naming nothing |
+| enum variant | `Shape.unit`, `Shape.circle(r)` | that variant; sub-patterns match its payload |
+| list | `[]`, `[a, b]`, `[head, ...tail]` | a list of that shape |
+| record | `{x: 0, y: y}` | a record with those fields; other fields are ignored |
+| alternatives | `"a" \| "b"` | what either pattern matches |
+
+Patterns nest: a list, record or variant pattern holds a pattern in each
+position. A bare identifier in a pattern is always a binding, whatever its
+case, so a variant must be written through its enum to be matched.
 
 ### Arm bodies
 
@@ -2134,14 +2246,39 @@ fn step(cmd)
             loud
     end
 end
+
+print(step(Cmd.move(2, 3)))    // moved to 2, 3
+print(step(Cmd.say("hi")))     // hi!
+print(step(Cmd.quit))          // bye
 ```
 
-A name bound in a body is local to its arm. `break`, `continue` and `return`
-inside a body do what they do inside an `if` branch, and a `match` may be
-nested in a body: the inner one takes its own `when`s and its own `end`.
+A name bound by a pattern or in a body is local to its arm. `break`,
+`continue` and `return` inside a body do what they do inside an `if` branch,
+so a match can steer the loop it sits in:
+
+```petal
+enum Kind
+    park,
+    plaza,
+    road(lanes),
+end
+
+var lanes = 0
+for k in [Kind.park, Kind.road(3), Kind.plaza, Kind.road(2)] do
+    match k
+        when Kind.park | Kind.plaza -> continue
+        when Kind.road(n) -> set lanes += n
+    end
+end
+print(get lanes)    // 5
+```
+
+A `match` may be nested in a body: the inner one takes its own `when`s and
+its own `end`.
 
 An arm must have a body. One that does nothing is written `when _ -> nil`.
-The older `when pattern do … end` form is still accepted.
+There is no `else` arm; the arm for everything else is `when _ ->`. The older
+`when pattern do … end` form is still accepted.
 
 ### Enum Patterns
 
@@ -2157,17 +2294,28 @@ end
 
 fn area(shape)
     match shape
-        when Shape.circle(r)  -> 3.14159 * r * r
+        when Shape.circle(r)  -> 3 * r * r
         when Shape.rect(w, h) -> w * h
         when Shape.unit       -> 1
     end
 end
+
+print(area(Shape.circle(2)))    // 12
+print(area(Shape.rect(2, 5)))   // 10
+print(area(Shape.unit))         // 1
 ```
 
-Through a module the pattern is `when shapes.Shape.unit`. A bare identifier in
-a pattern is always a binding, so `when unit ->` matches anything and names it
-`unit`. A pattern must list every payload field: use `_` for the ones it
-ignores (`when Shape.rect(w, _)`).
+A pattern lists every payload field of its variant, with `_` for the ones it
+ignores: `when Shape.rect(w, _)`. A sub-pattern can be any pattern, so
+`when Shape.rect(0, _)` matches only a rect of no width, and a payload that
+holds another variant or a list can be taken apart in place
+(`when Event.hit(Shape.circle(r), [x, y])`).
+
+Through a module the pattern is qualified the same way the value is:
+`when shapes.Shape.unit`.
+
+`when unit ->` is not a variant pattern. It is a binding: it matches every
+value and names it `unit`.
 
 ### Or-patterns
 
@@ -2195,6 +2343,10 @@ fn is_vowel(ch)
         when _ -> false
     end
 end
+
+print(surface(Kind.plaza))      // open
+print(surface(Kind.lane(2)))    // paved, 2 wide
+print(is_vowel("e"))            // true
 ```
 
 Every alternative must bind the same names, so the body can use them
@@ -2206,11 +2358,17 @@ A long pattern may continue on the next line, which then begins with `|`.
 A match whose arms are all variants of one enum must have an arm for every
 variant of that enum, or an arm that takes everything else (`when _ ->` or
 `when name ->`). Leaving one out is a compile error that lists the missing
-variants:
+variants. With the `Kind` above, a match with arms for `park`, `plaza` and
+`road` only is refused:
 
 ```text
 this match does not cover every variant of `Kind`: no arm for `Kind.lane`
+(add the missing arm, or a `when _ ->` arm for everything else)
 ```
+
+So when a variant is added to an enum, every match that has to learn about it
+stops compiling until it does. A catch-all arm gives that up: prefer listing
+the variants when the match should handle each one.
 
 Two kinds of arm do not count towards covering a variant: an arm with an `if`
 guard, and an arm whose payload patterns can fail (`when Kind.road(2)`).
@@ -2227,20 +2385,32 @@ that matches every value.
 ### When no arm matches
 
 A match that reaches its `end` without any arm matching is a runtime error
-naming the value and the match's line. It does not evaluate to `nil`. To get
-`nil`, say so:
+naming the value and the match's position. It does not evaluate to `nil`.
 
 ```petal
 fn rank(name)
     match name
         when "gold" -> 1
         when "silver" -> 2
-        when _ -> nil
     end
 end
+
+print(rank("gold"))    // 1
 ```
 
+Here `rank("tin")` stops the program with
+
+```text
+No matching pattern for value: tin [line 2, column 5]
+```
+
+For a match that should yield `nil` for everything else, say so with a last
+arm `when _ -> nil`.
+
 ### List Destructuring
+
+A list pattern matches a list of exactly its length, or, with `...rest` last,
+of at least that length.
 
 ```petal
 fn first(list)
@@ -2249,11 +2419,36 @@ fn first(list)
         when []              -> nil
     end
 end
+
+print(first([4, 5, 6]))    // 4
+print(first([]))           // nil
+```
+
+### Record Patterns
+
+A record pattern matches a record that has every field it names, each written
+`field: pattern`. Fields the pattern does not name are ignored.
+
+```petal
+fn where(p)
+    match p
+        when {x: 0, y: 0} -> "origin"
+        when {x: 0, y: y} -> "on the y axis at {y}"
+        when {x: x, y: y} -> "{x}, {y}"
+        when _            -> "not a point"
+    end
+end
+
+print(where({x: 0, y: 0}))          // origin
+print(where({x: 0, y: 4}))          // on the y axis at 4
+print(where({x: 2, y: 4, z: 9}))    // 2, 4
+print(where({x: 2}))                // not a point
 ```
 
 ### Guards
 
-Guards add conditions to match arms:
+A guard adds a condition to an arm. The arm is taken when its pattern matches
+and the guard is true; the guard can use the names the pattern binds.
 
 ```petal
 fn classify(n)
@@ -2264,6 +2459,10 @@ fn classify(n)
         when x             -> "small positive"
     end
 end
+
+print(classify(-3))     // negative
+print(classify(500))    // big
+print(classify(7))      // small positive
 ```
 
 A guard applies to the whole pattern, so with an or-pattern it is tested

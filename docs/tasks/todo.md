@@ -30,17 +30,20 @@ with a memory ceiling, then raise `MAX_CALL_DEPTH` from 5,000. Details:
 todo-bugs §1.2, §2.
 
 ## 3. `check --strict` passes programs that are silently wrong
-DONE check warns on a leading-`-` broken continuation, a discarded bare computation, a variant declared by two enums or named like a top-level let/state/fn/class, and a call that reaches a let/var/state shadowing a builtin; an enum name is accepted as a type name (typecheck/unused.rs, typecheck/shadow.rs)
+DONE check warns on a leading-`-` broken continuation, a discarded bare computation, and a call that reaches a let/var/state shadowing a builtin; an enum name is accepted as a type name (typecheck/unused.rs, typecheck/shadow.rs)
 
 - A leading `-` on a continuation line starts a new statement, so a sum
   written down the page returns its last line. No warning from `check` or
   `lint`.
 - Two enums that declare the same variant, and a variant that overrides a
-  `let`, compile with no diagnostic.
+  `let`, compile with no diagnostic. (Gone since 12 October 2026: variants
+  are members of their enum, `Color.red`, so they cannot collide, and the two
+  warnings added for this were removed. See moses-debrief §3.3.)
 - A `let`/`state` that shadows a builtin called in the same file (`state
   split = 396`, then `split(text, ",")`) gets the "captured `state`" warning,
   which never says a builtin is shadowed (email client).
-- An enum name as a return type warns `unknown type name`.
+- An enum name as a return type warns `unknown type name`. (An enum's name
+  is now a checked type: `fn f(k: Kind) -> Kind`.)
 
 Details: todo-bugs §3.
 

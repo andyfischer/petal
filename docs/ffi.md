@@ -419,6 +419,13 @@ EnumVariant { tag: StringId, data: ListId }, Element(ElementId),
 Symbol(SymbolId), Cell(CellId), Handle(HandleVal), Pending(PendingId)
 ```
 
+An `EnumVariant` is its tag and its positional payload, nothing else. A
+variant of a script's `enum` has the tag `Enum.variant` (`"Shape.circle"`);
+the names of its payload fields and its constant data belong to the
+declaration and are looked up in the running program. A tag the host makes up
+for an output buffer (`"rect"`, `"spawn"`) has no enum in front and belongs to
+no declared enum, so a script cannot write a pattern for it.
+
 Notes for embedders:
 
 - `Vec3` is heap-allocated (three f64s would widen every `Value`): build one

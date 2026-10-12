@@ -598,6 +598,11 @@ str(true)      // "true"
 str([1, 2])    // "[1, 2]"
 ```
 
+An enum variant converts to the way it is written in source:
+`str(Color.red)` is `"Color.red"` and `str(Op.fight("bridge", true))` is
+`"Op.fight(\"bridge\", true)"`. For the variant's bare name use `.name`
+(`Color.red.name` is `"red"`).
+
 ### `int(value)`
 
 Converts to an integer. Accepts numbers and numeric strings.
@@ -692,6 +697,20 @@ type([1, 2])      // "list"
 type({a: 1})      // "record"
 type(true)        // "bool"
 type(nil)         // "nil"
+```
+
+For a class instance it is the class's name, and for an enum variant the
+enum's name:
+
+```petal
+enum Color
+    red,
+    custom(r, g, b),
+end
+
+print(type(Color.red))                // Color
+print(type(Color.custom(1, 2, 3)))    // Color
+print(type(Rect(0, 0, 1, 1)))         // Rect
 ```
 
 ## Collections

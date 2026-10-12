@@ -1,6 +1,7 @@
 # Moses debrief: what a 27,000-line game asks of Petal
 
-Status: suggestions, 11 October 2026. Nothing here is implemented.
+Status: suggestions, 11 October 2026. Items 1, 2 and 8 have since been done
+and are marked where they are discussed; nothing else here is implemented.
 
 `games/moses` in the Cheesecake repo (*The Power Broker*) is the largest
 Petal program so far: 27,000 lines in 33 modules, written in three days by
@@ -24,7 +25,6 @@ git history, and the test suite. Petal claims were checked against
 | 5 | `petal test` with non-aborting expectations | tooling | 7 hand-rolled check harnesses, a test DSL inside the game | medium |
 | 6 | A build-once constant (`const`) | language | 93 `state` cells used as constants; editing them needs F5 | medium |
 | 7 | Checked record shapes | language | a 1,091-line README is the type system; 966 `??`, 324 `field()` | large |
-| 8 | Namespaced enums with exhaustive `match` | language | 1,477 comparisons against a string literal; enums unused | medium |
 | 9 | Int-keyed maps and sets, bit operators | language | string keys built per lookup in the hottest function | medium |
 | 10 | Growable numeric arrays and an in-place table of records | language, perf | 628,000 `append` calls and 12% GC in a career | large |
 | 11 | petal-ui: layers, hit testing, retained drawing, layout | library | the game rebuilt most of petal-ui in 1,246 lines | large |
@@ -251,30 +251,37 @@ affect the runtime at all.
 
 ### 3.3 Enums that can be used (item 8)
 
-Stages, kinds, tones, panels, sound names and command names are bare
-strings: 1,477 comparisons against a string literal across the game. A typo falls through to a default (`icon` draws a diamond,
-`named` plays a click). Parallel tables fake the enum:
-`T` and `T_IDS`, `F` and `F_IDS`, `USE` and `USE_IDS`, `KINDS` and
-`KIND_IDS` (config.ptl:113-163).
+Item 8 was done in Petal on 12 October 2026 and is removed from the short
+list. What the game found is kept here: stages, kinds, tones, panels, sound
+names and command names are bare strings, 1,477 comparisons against a string
+literal across the game. A typo falls through to a default (`icon` draws a
+diamond, `named` plays a click). Parallel tables fake the enum: `T` and
+`T_IDS`, `F` and `F_IDS`, `USE` and `USE_IDS`, `KINDS` and `KIND_IDS`
+(config.ptl:113-163). The game used neither `enum` nor `match` because a
+variant was a top-level name, so `park` could not be a `Kind`, a `Use` and a
+`Tile` at once.
 
-Petal has `enum` and `match`, and the game uses neither. The reason is in
-the language guide: "A variant is a top-level name, not a member of its
-enum". `park` cannot be a `Kind`, a `Use` and a `Tile` at once, and ten
-overlapping id sets across 33 modules cannot share one namespace.
+What shipped, against what was wanted (see
+[language-guide.md](../language-guide.md#enums), "Enums" and "Pattern
+Matching"):
 
-Wanted:
-
-- Qualified variants: `Kind.park`, with the bare name allowed where the
-  type is known.
-- Exhaustive `match`, checked.
+- Qualified variants: `Kind.park`, and `config.Kind.park` through a module.
+  The bare name is not allowed anywhere, including where the type is known:
+  a bare `park` is an undefined name whose error suggests `Kind.park`.
+- Exhaustive `match`, checked: a match over the variants of one enum that
+  leaves one out does not compile. Arms take statement bodies and
+  or-patterns (`when Kind.park | Kind.plaza ->`), so `match` can replace the
+  `if`/`elsif` chains.
 - Data on variants, replacing the parallel tables:
-  `enum Kind { parkway(shape: "route", use: Use.road), park(...) }`,
-  `Kind.all`, `Kind.from("park")`, `k.shape`.
-- Variants with payloads for the event consequences that are positional
-  lists today: `["fight", "east_tremont", "won", CROSS_BRONX, true]`, read
-  as `len(op) > 4 && op[4]` (events.ptl:594).
-- `match` on strings compiled to a hash jump, for the chains that stay
-  strings.
+  `parkway(shape: "route", use: Use.road)`, read as `k.shape`, with
+  `Kind.all`, `Kind.from("park")` and `k.name`.
+- Variants with payloads, read by field name (`op.place`, `op.won`) instead
+  of `len(op) > 4 && op[4]` (events.ptl:594).
+- `match` on string literals, int literals and variants is entered through a
+  hash jump: a 40-arm match went from about 410 ns to about 30 ns.
+
+Cheesecake gets all of it when it next vendors Petal. Nothing in the game
+breaks on the way, since it declares no enum.
 
 ### 3.4 Data structures (items 9 and 10)
 

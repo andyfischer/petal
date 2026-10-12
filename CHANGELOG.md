@@ -421,7 +421,9 @@ package changes below, `petal fix-imports` does the rewriting and
   guarded arm, or one whose payload patterns can fail, does not cover its
   variant. Add the missing arms or the catch-all. A single `|` is now a token
   (the or-pattern separator) and a `when … ->` arm with nothing after the
-  arrow is a parse error.
+  arrow is a parse error. A `match` in which no arm matches stops the run
+  with `No matching pattern for value: …`; it does not evaluate to `nil`, so
+  a match that is meant to do nothing for other values needs `when _ -> nil`.
 - Enum variants are no longer top-level names. Write `Color.red` where a bare
   `red` used to resolve, in expressions and in `match` patterns
   (`when Color.custom(r, g, b) ->`); a bare name is now undefined, and the
@@ -433,7 +435,17 @@ package changes below, `petal fix-imports` does the rewriting and
   program, and inside a variant's parens `key: expr` is now constant data, not
   a type annotation. The `petal check` warnings about a variant declared by
   two enums, or named like another top-level declaration, are gone with the
-  collisions they described.
+  collisions they described. To migrate, run `petal check`: each bare variant
+  is an `Undefined variable` error that names the enum to put in front
+  (`did you mean Color.red?`), and a pattern written `when Circle(r)` is an
+  error that says the same. A pattern that was a bare payload-free variant
+  (`when Red ->`) is the one silent case: it now binds the value to `Red` and
+  matches everything. `petal check` reports the arms after it as
+  unreachable, and reports nothing when it was the last arm, so search for
+  those by hand. State saved with `--state-storage` before the change holds
+  the old unqualified tags, which equal no variant now.
+  See [Enums](docs/language-guide.md#enums) and
+  [Pattern Matching](docs/language-guide.md#pattern-matching).
 
 - The domain builtins are behind imports. What reads as language stays global
   (`print`, `len`, `str`, `range`, the casts, the collection and string

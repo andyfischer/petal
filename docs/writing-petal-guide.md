@@ -765,9 +765,28 @@ end
 print(area(Shape.rect(2, 3)))   // 6
 ```
 
-A variant can also carry constant data (`park(shape: "area")`, read as
-`k.shape`), and an enum lists and looks up its variants with `Kind.all` and
-`Kind.from("park")`. See [Enums](language-guide.md#enums).
+Reach for an enum whenever a value is one of a fixed set of names — a stage,
+a kind, a command. Compared with a bare string, a misspelt variant does not
+compile, and a `match` over the variants is checked to cover them all.
+
+A variant can also carry constant data, which replaces a lookup table kept
+beside the enum, and an enum lists and looks up its payload-free variants:
+
+```petal
+enum Kind
+  parkway(shape: "route", lanes: 4),
+  park(shape: "area", lanes: 0),
+end
+
+print(Kind.park.shape)           // area
+print(Kind.park.name)            // park
+print(Kind.all)                  // [Kind.parkway, Kind.park]
+print(Kind.from("parkway"))      // Kind.parkway
+print(Kind.from("lake"))         // nil
+```
+
+Payload fields are read by name as well (`Shape.rect(2, 3).w`). See
+[Enums](language-guide.md#enums).
 
 ---
 
@@ -1215,6 +1234,10 @@ tell you the fix in the message. A sample:
 | `n + 1` on a line of its own | ``the value of this expression is discarded, so the line has no effect`` — from `check` |
 | `state split = 0`, then `split(text, ",")` | ``` `split` here is the `state split` declared on line 1, which shadows the builtin `split` ``` — from `check` |
 | `red` where `enum Color` declares `red` | ``Undefined variable: red — did you mean Color.red?`` |
+| `Color.rde` | ``enum `Color` has no variant `rde` — did you mean Color.red?`` — a compile error |
+| a `match` over `Kind` variants with no arm for `Kind.lane` | ``this match does not cover every variant of `Kind`: no arm for `Kind.lane` `` — a compile error |
+| a `match` where no arm matches the value | ``No matching pattern for value: tin`` — at run time; add `when _ ->` if that is expected |
+| `when Shape.rect(w)` for `rect(w, h)` | ``the pattern `Shape.rect` has 1 field, but Shape.rect has 2 payload fields (w, h), so its pattern is `Shape.rect(_, _)` `` — a compile error; write `Shape.rect(w, _)` |
 
 ---
 

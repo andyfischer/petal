@@ -743,7 +743,7 @@ pub const VARIANT_NAME_FIELD: &str = "name";
 
 /// `__enum_data(tag, record)`, emitted once per variant that declares
 /// `key: expr` data. Intercepted by the VM, which keeps the record in the
-/// running stack's table ([`crate::stack::Stack::enum_data`]) where a field
+/// running stack's table ([`crate::stack::Stack::enums`]) where a field
 /// read on a variant value finds it.
 pub const ENUM_DATA_BUILTIN: &str = "__enum_data";
 

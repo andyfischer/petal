@@ -91,8 +91,15 @@ impl<'a> Vm<'a> {
         let run_deps = &mut self.stack.run_deps;
         let enums = &mut self.stack.enums;
         let bc = self.bc;
-        let enum_all = self.native_fns.intrinsic_enum_all.map(|id| id.0);
-        let enum_data = self.native_fns.intrinsic_enum_data.map(|id| id.0);
+        // The two enum builtins this loop can retire. Publishing data is an
+        // effect a recording scope has to note, so it is not offered then.
+        let enum_builtins = EnumBuiltins {
+            all: self.native_fns.intrinsic_enum_all.map(|id| id.0),
+            data: match recording {
+                false => self.native_fns.intrinsic_enum_data.map(|id| id.0),
+                true => None,
+            },
+        };
         let mut n: u64 = 0;
 
         // Registers are read as `Nil` past the end of the file, like
@@ -134,48 +141,32 @@ impl<'a> Vm<'a> {
                     };
                     put!(dst, v);
                 }
-                // `Enum.variant` with no payload: the tag is in the stack's
-                // table and the payload is the heap's one empty list.
+                // The enum work this loop retires is kept out of line (see
+                // `straight_enum_variant` and its neighbours below): each is
+                // a few loads behind a call, and inlined here they cost every
+                // other instruction more than they save these.
+                //
+                // `Enum.variant` with no payload.
                 Inst::MakeEnumVariant { dst, name, ref fields } if fields.is_empty() => {
-                    let Some(tag) = bc.variant_slot(name).and_then(|slot| enums.tag_at(slot)) else {
+                    let Some(v) = straight_enum_variant(bc, enums, heap, name) else {
                         break StraightStop::Slow;
                     };
-                    let data = heap.empty_payload();
-                    put!(dst, Value::EnumVariant { tag, data });
+                    put!(dst, v);
                 }
-                // The two enum builtins, in the cases that are a table read
-                // or a table write with nothing to record; the rest of each
-                // (and every other builtin) is the general path's.
-                //
-                // `Enum.all` once the stack holds the enum's list — the first
-                // ask builds it. And `__enum_data` publishing what the run
-                // before published, value for value, which is every variant
-                // of every run of a program whose data is constant: the new
-                // record takes the slot and the revision stays. Inside a
-                // recording scope the declaration is an effect to note.
+                // `Enum.all` and `__enum_data`, in the cases that are a table
+                // read or a table write with nothing to record. Every other
+                // builtin call is the general path's.
                 Inst::BuiltinCall {
                     dst,
                     name,
                     ref args,
                     in_place: false,
                     ref arg_names,
-                } if arg_names.is_empty() && {
-                    let id = bc.builtin_id(name);
-                    id.is_some() && (id == enum_all || (id == enum_data && !recording))
-                } =>
-                {
-                    let v = match *args.as_slice() {
-                        [r] => match get!(r) {
-                            Value::String(name) => enums.all_cached(name).map(Value::List),
-                            _ => None,
-                        },
-                        [t, r] => match (get!(t), get!(r)) {
-                            (Value::String(tag), Value::Map(record)) => {
-                                enums.republish(heap, tag, record).then_some(Value::Nil)
-                            }
-                            _ => None,
-                        },
-                        _ => None,
+                } => {
+                    let v = if arg_names.is_empty() {
+                        straight_enum_builtin(bc, enums, heap, enum_builtins, name, args, regs)
+                    } else {
+                        None
                     };
                     let Some(v) = v else {
                         break StraightStop::Slow;
@@ -387,14 +378,19 @@ impl<'a> Vm<'a> {
                     }
                     // A variant's field may be constant data, which a
                     // recording scope notes as a dependency on the slow path.
-                    if is_pending(base) || (!enum_read_noted && matches!(base, Value::EnumVariant { .. })) {
+                    if is_pending(base) {
                         break StraightStop::Slow;
                     }
-                    if let Some(v) = ops::cached_variant_field(program, heap, enums, cache, field, base) {
-                        put!(dst, v);
-                        n += 1;
-                        ip += 1;
-                        continue;
+                    if matches!(base, Value::EnumVariant { .. }) {
+                        if !enum_read_noted {
+                            break StraightStop::Slow;
+                        }
+                        if let Some(v) = straight_variant_field(program, heap, enums, cache, field, base) {
+                            put!(dst, v);
+                            n += 1;
+                            ip += 1;
+                            continue;
+                        }
                     }
                     match ops::get_field(program, heap, enums, field, base, opt) {
                         Ok(v) => put!(dst, v),
@@ -558,4 +554,79 @@ fn compare(op: TermOp, a: Value, b: Value, heap: &Heap) -> Option<Value> {
         }
     };
     Some(Value::Bool(r))
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────
+//
+// What the straight-line loop does for enums, out of line. Each is the hit
+// path of something the general executor also does (and does on a miss):
+// `None` sends the instruction there.
+
+/// The native ids of the enum builtins [`straight_enum_builtin`] may retire.
+#[derive(Clone, Copy)]
+struct EnumBuiltins {
+    /// `__enum_all`.
+    all: Option<u32>,
+    /// `__enum_data`, unless a memo scope is recording.
+    data: Option<u32>,
+}
+
+/// `Enum.variant` with no payload, for a variant the program declares: its
+/// tag is in the stack's table, at the slot the name constant resolved to,
+/// and its payload is the heap's one empty list.
+#[inline(never)]
+fn straight_enum_variant(
+    bc: &BytecodeProgram,
+    enums: &crate::enum_table::EnumTable,
+    heap: &mut crate::heap::Heap,
+    name: crate::constant_table::ConstantId,
+) -> Option<Value> {
+    let tag = enums.tag_at(bc.variant_slot(name)?)?;
+    let data = heap.empty_payload();
+    Some(Value::EnumVariant { tag, data })
+}
+
+/// A constant-data read on a variant ([`ops::cached_variant_field`]).
+#[inline(never)]
+fn straight_variant_field(
+    program: &Program,
+    heap: &crate::heap::Heap,
+    enums: &crate::enum_table::EnumTable,
+    cache: &crate::record::FieldCache,
+    field: crate::constant_table::ConstantId,
+    base: Value,
+) -> Option<Value> {
+    ops::cached_variant_field(program, heap, enums, cache, field, base)
+}
+
+/// `Enum.all` once the stack holds the enum's list (the first ask builds it,
+/// on the general path), and `__enum_data` publishing what the run before
+/// published, value for value — every variant of every run of a program
+/// whose data is constant: the new record takes the slot and the stack's
+/// enum-data revision stays where it is.
+#[inline(never)]
+fn straight_enum_builtin(
+    bc: &BytecodeProgram,
+    enums: &mut crate::enum_table::EnumTable,
+    heap: &crate::heap::Heap,
+    builtins: EnumBuiltins,
+    name: crate::constant_table::ConstantId,
+    args: &[Reg],
+    regs: &[Value],
+) -> Option<Value> {
+    let id = bc.builtin_id(name)?;
+    let reg = |r: Reg| regs.get(r as usize).copied().unwrap_or(Value::Nil);
+    match *args {
+        [name] if builtins.all == Some(id) => match reg(name) {
+            Value::String(name) => enums.all_cached(name).map(Value::List),
+            _ => None,
+        },
+        [tag, record] if builtins.data == Some(id) => match (reg(tag), reg(record)) {
+            (Value::String(tag), Value::Map(record)) => {
+                enums.republish(heap, tag, record).then_some(Value::Nil)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
 }

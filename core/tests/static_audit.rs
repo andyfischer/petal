@@ -294,3 +294,46 @@ fn a_host_call_after_the_run_is_not_audited() {
     let report = env.static_audit_report();
     assert!(!report.has_failures(), "{report}");
 }
+
+/// The static-only build cuts the lowered root code into statements, so it
+/// has to work on whatever the lowering produced: with the optimizer off as
+/// well as on, the same declarations are built and the same lie is caught.
+#[test]
+fn both_modes_work_with_the_optimizer_off() {
+    let honest = "\
+fn row(a, b) { a: a, b: doubles(b) } end
+let ROWS = [row(1, 2), row(3, 4)]
+let TOTAL = reduce(ROWS, 0, fn(acc, r) acc + r.b end)
+state clicks = 0
+clicks = clicks + 1
+for i in range(0, 3) do
+  let label = TOTAL * i + clicks
+end
+let LAST = for r in ROWS do r.b * 2 end
+";
+    let lying = "\
+fn cell(i) { i: i, x: draws_random() } end
+state clicks = 0
+clicks = clicks + 1
+let GRID = [cell(1), cell(2)]
+";
+    for mode in [StaticAuditMode::Watch, StaticAuditMode::StaticOnly] {
+        let mut env = lying_env();
+        env.set_policy(petal::policy::RunPolicy::BASELINE);
+        let (result, report) = audit(&mut env, mode, honest);
+        assert!(result.is_ok(), "{mode:?}: {result:?}");
+        assert!(!report.has_failures(), "{mode:?}:\n{report}");
+        assert_eq!(report.static_declarations, 3, "{mode:?}:\n{report}");
+
+        let mut env = lying_env();
+        env.set_policy(petal::policy::RunPolicy::BASELINE);
+        let (_, report) = audit(&mut env, mode, lying);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.declaration.as_deref() == Some("GRID") && f.input == Input::Random),
+            "{mode:?}:\n{report}"
+        );
+    }
+}

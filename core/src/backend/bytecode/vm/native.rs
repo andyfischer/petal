@@ -389,7 +389,9 @@ impl<'a> Vm<'a> {
         // top-level term the classifier called static is being evaluated
         // (`crate::static_audit`).
         let static_site = self.static_audit_site();
-        let rng_before = *self.rng_state;
+        // Read only when the audit is watching, to keep the off path to the
+        // one branch above.
+        let rng_before = if static_site.is_some() { *self.rng_state } else { 0 };
         let before = if audit || static_site.is_some() {
             self.stack.run_deps.log_bindings(true);
             Some(self.stack.run_deps.activity())

@@ -408,7 +408,12 @@ the same two flags on `petal-ui-run`, `PETAL_STATIC_AUDIT=watch`):
   another statement's instruction between them (Moses has these). The slice
   works per segment. S1's run splitting has to expect the same.
 - **Cost when off.** One branch per native call and per `state` instruction.
-  Not measured against a baseline binary.
+  Measured in review against the same source with the hook compiled out
+  (release, minimum of 12 alternating runs): 6 million builtin calls in a
+  loop 342.0 ms against 338.2 ms, about 0.6 ns a call; a million in-function
+  `state` reads and writes 673.8 ms against 671.8 ms; `particles`, `calls`,
+  `life`, `spreadsheet` and `audio_synth` within ±2% either way, which is
+  the noise of the machine.
 - **What it cannot see.** A read of a `var` cell or of a value another
   statement updates in place moves no counter; a native that answers from
   host state without reporting it is as invisible as it is to the effect
@@ -421,6 +426,60 @@ the same two flags on `petal-ui-run`, `PETAL_STATIC_AUDIT=watch`):
   registers; a build that raises; turning it off), `static_audit_env.rs`, a
   CLI test, and `core-libs/petal-ui/tests/static_audit.rs` over the 55-app
   panel corpus in both modes.
+
+### Review of S0 (2026-10-12)
+
+An independent pass over the three steps after their commits. The gate
+stands.
+
+- **Reproduced.** Moses 2,356 declarations, 517 static, 493 of 1,368
+  functions static-pure; Moonbear 1,222 and 378; every named case; the
+  static-only builds of both games with 0 findings; the 55-app corpus tests
+  in both modes and the value-for-value comparison; core's classifier, audit,
+  CLI and native-row tests.
+- **The static-only build with the optimizer off.** `petal run --policy
+  baseline --static-only` over the 297 `.ptl` files of `examples/`, `garden/`
+  and `test/` gives the same answer as the default policy: 280 clean, the 2
+  deliberate error fixtures, 15 the plain CLI refuses to compile. The slice
+  works on unoptimized lowering too.
+- **Tried to get a moving value past the classifier** through the mechanisms
+  the first leak test leaves out: a default parameter, `state` declared
+  inside a function, a function called where it is written, one picked by a
+  match or out of a list, an early `return`, nested declarations, a dynamic
+  native held in a name, a higher-order builtin called as a method, an
+  optional read, a user `to_string` / `eq` / `lt` method (nothing dispatches
+  to these implicitly), a module's function and table that read its own
+  `state`. None got through. Eleven of them are now a second leak test
+  (`nothing_classified_static_moves_between_runs_part_two`), each checked to
+  really move over ten runs.
+- **No term is left unclassified.** The fixpoint turns whatever is still at
+  its optimistic start into data at the end, which would be a hole if a term
+  were never visited. Counted on Moses, Moonbear, `plant.ptl` and the
+  settings app: zero such terms.
+- **Fixed.** A function that reads a name declared below it compiles to an
+  error term under the check-only compile `show-static` uses; the reason was
+  "has a compile error" with no message. It now carries the compiler's
+  message. The audit's snapshot of the random stream is read only while the
+  audit is watching. A test holds that a host call made after the run is not
+  attributed to the script's last static statement.
+- **For S1, the limit of `mutated_by`.** It follows a declaration through
+  copies and phis at the top level only. It does not follow the value into a
+  user function that writes its parameter (`fn bump(xs) xs[0] = … end`,
+  `bump(TABLE)`), nor from an element to its container (`let INNER =
+  NEST[0]`, `push(INNER, v)` flags `INNER`, not `NEST`). Both are correct
+  today because the caller's value is copied before the write; under S1 that
+  rests on a slot load being a non-fresh root and on the guard bit, exactly
+  as the proposal says. `mutated_by` is the cheap first filter, not the
+  guarantee. Widening it to parameters would also take the slot away from
+  every table handed to a "return a changed copy" helper.
+- **Still open** (none of it blocks S1): the release-profile failure of
+  `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile` was not
+  bisected (no second target directory was allowed); Moses has not run under
+  its own host; a read of a `var` cell under a static term is invisible to
+  the audit and is covered only by the value comparisons; `freeze` is an
+  effect, so a `let` that freezes its table is dynamic (37 `freeze` calls in
+  the Cheesecake games, most on `state` or `var` caches); a function
+  passed to a user-written higher-order function is dynamic.
 
 ### Gate result
 

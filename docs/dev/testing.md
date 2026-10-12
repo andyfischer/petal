@@ -161,6 +161,33 @@ fixed point) and `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus`
 text). Those are the properties that make `petal fmt` safe to run over the
 whole corpus.
 
+### What the Rust suite costs
+
+Nearly all of the CPU `cd core && cargo test` uses goes to four unit tests
+that sweep every `.ptl` file in the repository (about 380) in a debug build:
+
+| Test | CPU-seconds |
+|---|---|
+| `lint::tests::lint_preserves_compilation_over_repo_corpus` | about 500 |
+| `fmt::tests::fmt_is_ir_equal_and_idempotent_over_repo_corpus` | about 150 |
+| `fmt::tests::fmt_undoes_mangled_indentation_over_repo_corpus` | about 60 |
+| `cst_project::tests::projected_ast_matches_parser_over_repo_corpus` | about 25 |
+
+Each fans out over the corpus on half the machine's cores;
+`PETAL_TEST_JOBS=<n>` sets the number. The other 1,200 unit tests take a few
+seconds together. To work without the sweeps:
+
+```bash
+cd core
+cargo test --lib -- --skip over_repo_corpus     # every unit test but the sweeps
+cargo test --lib typecheck::                    # one module's unit tests
+cargo test --test check_run_agree               # one integration test file
+PETAL_TEST_JOBS=2 cargo test -j 2 -- --test-threads=2   # everything, throttled
+```
+
+The vitest suite is light by comparison: about 30 seconds on two workers
+(`npx vitest run --maxWorkers=2 --minWorkers=1`).
+
 ## The C/C++ bridge
 
 `integrations/petal-c-bridge` (see [embedding-c.md](../embedding-c.md)) is

@@ -1020,6 +1020,58 @@ fn a_one_line_chain_becomes_a_match_that_closes_on_its_own_line() {
     );
 }
 
+/// An arm whose body is a block over several lines starts that block on its
+/// own line, so its branches indent as a body rather than level with the arms.
+#[test]
+fn a_block_bodied_arm_starts_its_block_on_its_own_line() {
+    assert_lints_to(
+        "\
+fn f(mode, hit)
+  if mode == \"inspect\" then if hit then
+    print(1)
+    print(2)
+  end
+  elsif mode == \"demolish\" then print(3)
+  elsif mode == \"place\" then print(4)
+  else
+    if hit then
+      print(5)
+    end
+  end
+  nil
+end
+",
+        "\
+fn f(mode, hit)
+  match mode
+    when \"inspect\" ->
+      if hit then
+        print(1)
+        print(2)
+      end
+    when \"demolish\" -> print(3)
+    when \"place\" -> print(4)
+    when _ ->
+      if hit then
+        print(5)
+      end
+  end
+  nil
+end
+",
+    );
+}
+
+/// A `"{…}"` hole holds one line, and the `match` is several: a chain
+/// written inside a string is left alone, where rewriting it used to produce
+/// a file that does not lex.
+#[test]
+fn a_chain_inside_a_string_stays_an_if() {
+    assert_fixed_point(
+        "fn f(x)\n  \"is {if x == 1 then \"a\" elsif x == 2 then \"b\" elsif x == 3 then \"c\" else \"d\" end}\"\nend\n",
+    );
+}
+
 /// A name on the right is not a literal: `when limit` would bind `limit`
 /// rather than compare against it.
 #[test]

@@ -35,6 +35,8 @@
 //! - **A comment in the glue.** A comment between `then` and the next `elsif`
 //!   has no home in the `match`, so the whole chain is skipped rather than
 //!   dropping it.
+//! - **A chain inside a string.** A `"{…}"` hole cannot span lines, and the
+//!   `match` this rule writes does.
 //! - **Bodies that are not a single expression.** A `->` arm takes a
 //!   statement list as readily as one expression, so this is a choice, not a
 //!   limit: the rule is about lookups, where the `match` is plainly the
@@ -82,6 +84,11 @@ struct Finder<'a> {
 
 impl ExprVisitor for Finder<'_> {
     fn visit_expr(&mut self, e: &Expr) {
+        // A `match` is written over several lines and a `"{…}"` hole holds
+        // one, so a chain inside a string stays the chain it is.
+        if let ExprKind::StringInterp { .. } = &e.kind {
+            return;
+        }
         let ExprKind::If { .. } = &e.kind else {
             walk_expr(self, e);
             return;
@@ -128,6 +135,22 @@ struct Chain<'a> {
     else_body: Option<&'a [Stmt]>,
     /// The whole `if … end`, trailing `end` included.
     span: SourceSpan,
+}
+
+/// The ` -> ` that introduces an arm's body. A body that is itself a block
+/// over several lines (`if … then` with its branches below, a loop) starts on
+/// a line of its own under the `when`, where its lines indent as a body's do;
+/// left on the arrow's line, its branches would sit level with the arms.
+fn arrow(chars: &[char], body: SourceSpan, lead: &str) -> String {
+    let text = span_text(chars, body).unwrap_or_default();
+    let opens_block = ["if ", "for ", "while ", "match "]
+        .iter()
+        .any(|kw| text.trim_start().starts_with(kw));
+    if opens_block && text.contains('\n') {
+        format!(" ->\n{lead}    ")
+    } else {
+        " -> ".to_string()
+    }
 }
 
 /// Flatten `if / elsif / … / else` into its arms. `e` must be an `If`.
@@ -281,7 +304,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         splices.push(Splice {
             start: then_from,
             end: then_to,
-            text: " -> ".to_string(),
+            text: arrow(chars, bodies[i], &lead),
         });
     }
 
@@ -310,7 +333,7 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
             splices.push(Splice {
                 start: last_body_end,
                 end: to,
-                text: format!("{arm}_ -> "),
+                text: format!("{arm}_{}", arrow(chars, es, &lead)),
             });
             if !end_line.is_empty() {
                 splices.push(Splice {

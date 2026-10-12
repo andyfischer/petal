@@ -285,7 +285,22 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         });
     }
 
+    // `match` closes with `end` exactly as the chain did, so the tail is only
+    // checked to be the tail we think it is — and, when its `end` sits on the
+    // last branch's line, moved to a line of its own under the `match`. A
+    // comment may sit in here; it is not rewritten, so it survives untouched.
     let last_body_end = bodies[bodies.len() - 1].end.offset as usize;
+    let tail_from = else_span.map_or(last_body_end, |es| es.end.offset as usize);
+    let tail: String = chars.get(tail_from..if_end)?.iter().collect();
+    let tail = tail.trim_end();
+    if !tail.ends_with("end") {
+        return None;
+    }
+    let (end_at, end_line) = if tail.trim_start() == "end" && !tail.contains('\n') {
+        (tail_from + tail.chars().count() - 3, format!("\n{lead}"))
+    } else {
+        (tail_from, String::new())
+    };
     match else_span {
         Some(es) => {
             let to = es.start.offset as usize;
@@ -297,25 +312,21 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
                 end: to,
                 text: format!("{arm}_ -> "),
             });
+            if !end_line.is_empty() {
+                splices.push(Splice {
+                    start: tail_from,
+                    end: end_at,
+                    text: end_line,
+                });
+            }
         }
-        None => {
-            // Falling off the end of an `if` yields nil; falling off the end
-            // of a `match` is a runtime error. Spell the nil out.
-            splices.push(Splice {
-                start: last_body_end,
-                end: last_body_end,
-                text: format!("{arm}_ -> nil"),
-            });
-        }
-    }
-
-    // `match` closes with `end` exactly as the chain did, so the tail needs no
-    // edit — only a check that it is the tail we think it is. A comment may
-    // sit in here; nothing is being rewritten, so it survives untouched.
-    let tail_from = else_span.map_or(last_body_end, |es| es.end.offset as usize);
-    let tail: String = chars.get(tail_from..if_end)?.iter().collect();
-    if !tail.trim_end().ends_with("end") {
-        return None;
+        // Falling off the end of an `if` yields nil; falling off the end of
+        // a `match` is a runtime error. Spell the nil out.
+        None => splices.push(Splice {
+            start: last_body_end,
+            end: end_at,
+            text: format!("{arm}_ -> nil{end_line}"),
+        }),
     }
 
     Some(splices)

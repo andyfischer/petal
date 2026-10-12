@@ -1006,6 +1006,20 @@ end
     assert_eq!(run(matched), run(chain));
 }
 
+/// A chain written on one line closes on that line; the `match` it becomes
+/// closes on a line of its own, with or without an `else` to carry over.
+#[test]
+fn a_one_line_chain_becomes_a_match_that_closes_on_its_own_line() {
+    assert_lints_to(
+        "fn f(x)\n  let r = if x == 1 then \"a\" elsif x == 2 then \"b\" elsif x == 3 then \"c\" else \"d\" end\n  r\nend\n",
+        "fn f(x)\n  let r = match x\n    when 1 -> \"a\"\n    when 2 -> \"b\"\n    when 3 -> \"c\"\n    when _ -> \"d\"\n  end\n  r\nend\n",
+    );
+    assert_lints_to(
+        "fn f(x)\n  let r = if x == 1 then \"a\" elsif x == 2 then \"b\" elsif x == 3 then \"c\" end\n  r\nend\n",
+        "fn f(x)\n  let r = match x\n    when 1 -> \"a\"\n    when 2 -> \"b\"\n    when 3 -> \"c\"\n    when _ -> nil\n  end\n  r\nend\n",
+    );
+}
+
 /// A name on the right is not a literal: `when limit` would bind `limit`
 /// rather than compare against it.
 #[test]

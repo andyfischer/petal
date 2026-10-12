@@ -462,6 +462,144 @@ fn an_in_place_write_to_a_kept_value_copies() {
     assert!(frame(&mut w).starts_with("2 [[1, 2], [3, 4]]"));
 }
 
+// --- enum constant data -----------------------------------------------------
+
+const KINDS: &str = "enum Kind\n  road(code: 1, label: \"Road\", cost: [10, 20]),\n  park(code: 2, label: \"Park\", cost: [5, 5 + 1]),\n  lake(code: 3, label: \"Lake\", cost: []),\nend\n";
+
+/// A variant's constant data is published into the stack's enum table by a
+/// call the declaration makes on every run. Where the data is static the
+/// record is a static value: published by the first run and left where it
+/// is by the rest.
+#[test]
+fn static_enum_data_is_published_once() {
+    let src = format!(
+        "{KINDS}{COUNTER}let k = Kind.all[n % 3]\nprint(n, k.code, k.label, k.cost, Kind.park.cost[1], Kind.from(\"lake\").code)\n"
+    );
+    let (frames, skips) = same_on_and_off(&src, 5);
+    assert!(frames[0].starts_with("1 2 Park [5, 6] 6 3"), "{}", frames[0]);
+    assert!(frames[4].starts_with("5 3 Lake [] 6 3"), "{}", frames[4]);
+    assert!(skips >= 4, "the declarations ran once: {skips}");
+
+    let (mut on, mut off) = (world(&src, RunPolicy::REPLAY), world(&src, RunPolicy::REPLAY.with_static_cache(false)));
+    for w in [&mut on, &mut off] {
+        frame(w);
+        frame(w);
+    }
+    let spent = |w: &mut World| {
+        let before = w.env.instructions_retired(w.sid).unwrap();
+        frame(w);
+        w.env.instructions_retired(w.sid).unwrap() - before
+    };
+    let (with, without) = (spent(&mut on), spent(&mut off));
+    assert!(with + 9 <= without, "three declarations fewer a frame: {with} against {without}");
+
+    let values = on.env.static_values(on.sid).unwrap();
+    let names: Vec<&str> = values.slots.iter().filter_map(|(i, _)| i.name.as_deref()).collect();
+    for tag in ["Kind.road", "Kind.park", "Kind.lake"] {
+        let name = format!("enum data of {tag}");
+        assert!(names.contains(&name.as_str()), "{name} in {names:?}");
+    }
+    for (info, state) in &values.slots {
+        let StaticSlotState::Filled(v) = state else { panic!("{info:?} is {state:?}") };
+        if info.name.as_deref().is_some_and(|n| n.starts_with("enum data of")) {
+            assert!(on.env.heap().is_immutable(*v), "a kept record is marked");
+        }
+    }
+}
+
+/// Data that is not static is published on every run, as before, and the
+/// variants beside it are still kept.
+#[test]
+fn dynamic_enum_data_is_published_every_run() {
+    let src = format!(
+        "fn seen()\n  state s = 0\n  s = s + 2\n  s\nend\n{COUNTER}\
+         enum Lamp\n  off(level: 0, tint: [0, 0]),\n  on(level: seen() * 10, tint: [seen(), 1]),\n  dim(level: 5, tint: [2, 2]),\nend\n\
+         for l in Lamp.all do print(n, l, l.level, l.tint) end\n"
+    );
+    let (frames, _) = same_on_and_off(&src, 4);
+    assert!(frames[3].contains("4 Lamp.on 80 [8, 1]"), "{}", frames[3]);
+    assert!(frames[3].contains("4 Lamp.dim 5 [2, 2]"), "{}", frames[3]);
+}
+
+/// A write through a value read out of kept enum data must not reach the
+/// record, whichever route the write takes.
+#[test]
+fn kept_enum_data_cannot_be_written_through() {
+    let src = format!(
+        "{KINDS}{COUNTER}fn bump(xs)\n  xs[0] = xs[0] + 100\n  xs\nend\n\
+         let a = Kind.road.cost\nlet b = bump(a)\nlet c = push(Kind.park.cost, n)\n\
+         var d = Kind.road.cost\nset d[1] = n\n\
+         print(n, a, b, c, d, Kind.road.cost, Kind.park.cost)\n"
+    );
+    let (frames, skips) = same_on_and_off(&src, 4);
+    assert!(
+        frames[3].starts_with("4 [10, 20] [110, 20] [5, 6, 4] [10, 4] [10, 20] [5, 6]"),
+        "{}",
+        frames[3]
+    );
+    assert!(skips >= 3);
+}
+
+/// An edit to a literal inside enum data is patched in place and recompiles
+/// nothing; the kept record goes with the rest of the table and the next
+/// run publishes the new one. A structural edit likewise, and a variant in
+/// `state` reads the new data either way.
+#[test]
+fn a_reload_republishes_enum_data() {
+    let old = format!(
+        "{KINDS}{COUNTER}state held = Kind.park\nprint(n, held.code, held.cost, Kind.road.label, for k in Kind.all do k.code end)\n"
+    );
+    let literal = old.replace("code: 2", "code: 20").replace("\"Road\"", "\"Street\"");
+    let structural = old.replace("cost: [5, 5 + 1]", "cost: [5, 5 + 1, 7]");
+    for (edit, new, expect) in [
+        ("literal", &literal, "3 20 [5, 6] Street [1, 20, 3]"),
+        ("structural", &structural, "3 2 [5, 6, 7] Road [1, 2, 3]"),
+    ] {
+        for (on, off) in pairs() {
+            let (mut a, mut b) = (world(&old, on), world(&old, off));
+            for _ in 0..2 {
+                assert_eq!(frame(&mut a), frame(&mut b));
+            }
+            let before = a.env.static_values(a.sid).unwrap().stats;
+            assert!(before.skips > 0, "{edit}: the data was kept before the edit");
+            for w in [&mut a, &mut b] {
+                let report = w.env.reload_program(w.sid, new, None).unwrap();
+                let patched = report.outcome == petal::env::ReloadOutcome::Patched;
+                assert_eq!(patched, edit == "literal", "{edit}: {:?}", report.outcome);
+            }
+            let (fa, fb) = (run_frame(&mut a), run_frame(&mut b));
+            assert_eq!(fa, fb, "{edit}: the run after the reload");
+            assert!(fa.starts_with(expect), "{edit}: {fa}");
+            for i in 0..3 {
+                assert_eq!(frame(&mut a), frame(&mut b), "{edit}: frame {i} after the reload");
+            }
+            assert!(a.env.static_values(a.sid).unwrap().stats.skips > before.skips, "{edit}: kept again");
+        }
+    }
+}
+
+/// Two stacks of one program each publish and keep their own records, and
+/// a fork carries its parent's.
+#[test]
+fn enum_data_is_kept_per_stack() {
+    let src = format!("{KINDS}{COUNTER}print(n, Kind.all[n % 3].cost)\n");
+    let mut w = world(&src, RunPolicy::REPLAY);
+    let other = w.env.create_stack(w.pid).unwrap();
+    frame(&mut w);
+    frame(&mut w);
+    w.env.run(other).unwrap();
+    assert_eq!(w.env.take_output_for(other), ["1 [5, 6]"]);
+    let fork = w.env.fork_execution(w.sid).unwrap();
+    w.env.reset_stack(fork).unwrap();
+    w.env.run(fork).unwrap();
+    assert_eq!(w.env.take_output_for(fork).last().unwrap(), "3 [10, 20]");
+    assert!(w.env.static_values(fork).unwrap().stats.skips > w.env.static_values(other).unwrap().stats.skips);
+    w.env.drop_fork(fork);
+    w.env.clear_static_values(w.sid);
+    assert!(frame(&mut w).starts_with("3 [10, 20]"));
+    assert!(frame(&mut w).starts_with("4 [5, 6]"));
+}
+
 // --- the benchmark the plan names -------------------------------------------
 
 /// A 400-record `let` table handed to a memoized function. Rebuilt every

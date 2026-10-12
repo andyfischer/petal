@@ -50,6 +50,14 @@
 //!   still raises at its line, on every run. So does a run too small to be
 //!   worth a check (fewer than [`MIN_WEIGHT`] allocations).
 //!
+//! - **Enum constant data.** `enum Kind  park(code: 2) end` publishes one
+//!   record per variant into the stack's enum table, by a call the
+//!   declaration makes on every run. Where the data is static that call is a
+//!   candidate like any other, and the record it publishes gets a slot
+//!   whoever reads it: a frame that skips the run leaves the published
+//!   record where the first run put it. The enum table and this one are
+//!   emptied together, so a kept slot always has its record published.
+//!
 //! A run that raises never reaches its `StaticStore`, so nothing of it is
 //! kept and it raises again on the next run, at the same place.
 //!
@@ -478,10 +486,17 @@ fn skippable_inst(inst: &Inst, program: &Program, natives: &NativeFnTable) -> bo
             let Some(name) = program.get_string_constant(*name) else { return false };
             // The two enum reads answer from the program's own declarations,
             // which is how the classifier takes them. `__enum_data` publishes
-            // into the stack and has to run.
+            // a variant's record into the stack's enum table, which keeps it
+            // for as long as the stack keeps its static values (both are
+            // emptied by a reload, and a table rebuilt for another lowering
+            // meets another layout id): a skipped publication leaves the
+            // record of the run that was not skipped where it is. The record
+            // gets a slot of its own (see `apply`), so the run is skipped
+            // only while the kept record is the published one.
             natives.constness_of_name(name) != NativeConstness::Dynamic
                 || name == crate::program::ENUM_ALL_BUILTIN
                 || name == crate::program::ENUM_FROM_BUILTIN
+                || name == crate::program::ENUM_DATA_BUILTIN
         }
         Inst::Return { .. }
         | Inst::CellNew { .. }
@@ -726,6 +741,31 @@ pub fn apply(
         }
     }
 
+    // The record each `__enum_data` call publishes, and the variant it is
+    // the data of. A run that publishes one keeps the record in a slot,
+    // whoever else reads it: that is what marks it immutable, what refuses
+    // a record that cannot be kept, and what makes the run something a
+    // frame can skip at all (nothing reads the call's own result).
+    let mut published: HashMap<usize, Reg> = HashMap::new();
+    let mut published_name: HashMap<Reg, String> = HashMap::new();
+    for (ip, inst) in bc.root.code.iter().enumerate() {
+        let Inst::BuiltinCall { name, args, .. } = inst else { continue };
+        if program.get_string_constant(*name) != Some(crate::program::ENUM_DATA_BUILTIN) {
+            continue;
+        }
+        let Some(&record) = args.get(1) else { continue };
+        published.insert(ip, record);
+        let tag = origin(ip)
+            .and_then(|t| program.get_term(t).inputs.first().copied())
+            .and_then(|t| match program.get_term(t).op {
+                TermOp::Constant(c) => program.get_string_constant(c),
+                _ => None,
+            });
+        if let Some(tag) = tag {
+            published_name.insert(record, format!("enum data of {tag}"));
+        }
+    }
+
     let mut readers: HashMap<Reg, Vec<usize>> = HashMap::new();
     for (ip, rs) in reads.iter().enumerate() {
         for r in rs {
@@ -757,8 +797,12 @@ pub fn apply(
         let mut own: Vec<Reg> = Vec::new();
         let mut all_read: Vec<Reg> = Vec::new();
         let mut deps: BTreeSet<usize> = BTreeSet::new();
+        let records: HashSet<Reg> = (start..end).filter_map(|ip| published.get(&ip).copied()).collect();
+        // A record this run publishes but does not build cannot be kept by
+        // it; the publication then runs every time.
+        let publishes_its_own = records.iter().all(|r| written.binary_search(r).is_ok());
         for &r in &written {
-            let mut kept = bc.root.result_reg == Some(r);
+            let mut kept = bc.root.result_reg == Some(r) || records.contains(&r);
             let mut read_outside = kept;
             for &ip in readers.get(&r).map(|v| &v[..]).unwrap_or(&[]) {
                 if (start..end).contains(&ip) {
@@ -788,7 +832,7 @@ pub fn apply(
         }
         let storable = own.iter().all(|r| !tainted.contains(r) && !in_place.contains(r));
         let run = &mut runs[k];
-        run.skippable = storable && feeds > 0 && run.weight >= MIN_WEIGHT;
+        run.skippable = storable && publishes_its_own && feeds > 0 && run.weight >= MIN_WEIGHT;
         if run.skippable {
             feed_count[k] = feeds;
             run.own = own;
@@ -825,11 +869,13 @@ pub fn apply(
                 .find(|t| program.get_term(*t).register.0 == *r && decl_names.contains_key(t))
                 .or_else(|| writer_term.get(r).copied());
             layout.slots.push(StaticSlotInfo {
-                name: term.and_then(|t| {
-                    decl_names
-                        .get(&t)
-                        .map(|s| s.to_string())
-                        .or_else(|| program.get_term(t).name.clone())
+                name: published_name.get(r).cloned().or_else(|| {
+                    term.and_then(|t| {
+                        decl_names
+                            .get(&t)
+                            .map(|s| s.to_string())
+                            .or_else(|| program.get_term(t).name.clone())
+                    })
                 }),
                 at: term.and_then(|t| crate::static_audit::position(program, t)),
                 term,

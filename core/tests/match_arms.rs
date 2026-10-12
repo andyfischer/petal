@@ -902,8 +902,17 @@ fn a_match_no_arm_of_which_matched_is_a_runtime_error() {
 
     // In statement position, where the value was never wanted, all the same.
     let err = run_err("fn f(s)\n  match s\n    when \"a\" -> print(\"a\")\n  end\n  print(\"after\")\nend\nf(\"zebra\")\n");
-    assert!(err.contains("No matching pattern for value: zebra"), "{err}");
+    assert!(err.contains("No matching pattern for value: \"zebra\" ["), "{err}");
     assert!(err.contains("line 2, column 3"), "{err}");
+
+    // A string is quoted, so `"nil"` does not read as nil, and a line break
+    // in it does not break the message.
+    let err = run_err("let r = match \"nil\"\n  when 1 -> 1\nend\n");
+    assert!(err.contains("No matching pattern for value: \"nil\" ["), "{err}");
+    let err = run_err("let r = match nil\n  when 1 -> 1\nend\n");
+    assert!(err.contains("No matching pattern for value: nil ["), "{err}");
+    let err = run_err("let r = match \"a\\nb\"\n  when 1 -> 1\nend\n");
+    assert!(err.contains("No matching pattern for value: \"a\\nb\" ["), "{err}");
 
     // A variant, printed as it is written; a failed guard is not a match.
     let err = run_err(&format!(
@@ -1055,7 +1064,7 @@ fn a_subject_the_table_does_not_name_reaches_the_arms_after_it() {
     let src = dispatch_program("", &["\"a\" -> 1", "\"b\" -> 2", "[x] -> x"], &["\"b\"", "[7]"]);
     assert_eq!(run(&src), ["[2, 7]"]);
     let src = dispatch_program("", &["\"a\" -> 1", "\"b\" -> 2", "[x] -> x"], &["\"q\""]);
-    assert!(run_err(&src).contains("No matching pattern for value: q"));
+    assert!(run_err(&src).contains("No matching pattern for value: \"q\""));
     let src = dispatch_program("", &["1 -> 1", "2 -> 2"], &["3"]);
     assert!(run_err(&src).contains("No matching pattern for value: 3"));
 }
@@ -1136,4 +1145,35 @@ fn a_forty_arm_string_match_agrees_with_a_chain_of_comparisons() {
     );
     // 500 = 11 rounds of 43 keys + 27: 11 * (780 - 3) + (0 + … + 26) = 8898.
     assert_eq!(run(&src), ["0 8898"]);
+}
+
+#[test]
+fn a_lambda_is_a_one_expression_arm_or_branch() {
+    // `fn(` in statement position is an expression, not a declaration.
+    let src = "\
+let f = match 1
+  when 1 -> fn() -> \"q\"
+  when _ -> fn(a) -> a
+end
+let g = if f() == \"q\" then
+  fn(n) -> n + 1
+else
+  fn(n) -> n
+end
+print(f(), g(1))
+";
+    assert_eq!(run(src), ["q 2"]);
+}
+
+#[test]
+fn break_outside_a_loop_is_a_compile_error_at_the_break() {
+    // An arm (or a branch) in a helper called from a loop is not in the loop.
+    let e = compile_err(
+        "fn f(v)\n  match v\n    when 1 -> break\n    when _ -> 0\n  end\nend\nfor i in [1] do f(i) end",
+    );
+    assert!(e.contains("`break` is not inside a loop"), "{e}");
+    assert!(e.contains("line 3, column 15"), "{e}");
+    let e = compile_err("if true then\n  continue\nend");
+    assert!(e.contains("`continue` is not inside a loop"), "{e}");
+    assert!(e.contains("line 2"), "{e}");
 }

@@ -355,6 +355,11 @@ fn gap_rule(g: GapCtx) -> Gap {
     if g.in_import && (matches!(a, Slash) || matches!(b, Slash)) {
         return Gap::None;
     }
+    // A keyword after an operand stands apart from it: `f(x) if ok`,
+    // `(a > 1) then`, `[a, b] do`.
+    if matches!(b, If | Then | Else | Elsif | Do | In | When | End) && ends_operand(Some(a)) {
+        return Gap::One;
+    }
     // A unary operator binds to its operand. A `+`/`-` that opens a line is
     // a continuation of the line above, not a sign, and keeps its spacing.
     if matches!(a, Minus | Plus) && matches!(g.prev, Some(Newline)) {

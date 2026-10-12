@@ -2429,7 +2429,7 @@ print(rank("gold"))    // 1
 Here `rank("tin")` stops the program with
 
 ```text
-No matching pattern for value: tin [line 2, column 5]
+No matching pattern for value: "tin" [line 2, column 5]
 ```
 
 For a match that should yield `nil` for everything else, say so with a last

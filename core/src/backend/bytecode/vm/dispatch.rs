@@ -664,11 +664,13 @@ impl<'a> Vm<'a> {
                 }
             }
             Inst::MatchFail { subject } => {
-                let v = self.reg(fi, *subject);
-                return Err(format!(
-                    "No matching pattern for value: {}",
-                    crate::value::value_to_display_string(&v, self.heap)
-                ));
+                // As the source would write it: `"nil"` is not `nil`, and a
+                // line break in a string stays inside the message.
+                let shown = match self.reg(fi, *subject) {
+                    Value::String(id) => format!("{:?}", self.heap.get_string(id)),
+                    v => crate::value::value_to_debug_string(&v, self.heap),
+                };
+                return Err(format!("No matching pattern for value: {shown}"));
             }
 
             Inst::Error { msg } => {

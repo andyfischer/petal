@@ -1236,8 +1236,8 @@ tell you the fix in the message. A sample:
 | `red` where `enum Color` declares `red` | ``Undefined variable: red — did you mean Color.red?`` |
 | `Color.rde` | ``enum `Color` has no variant `rde` — did you mean Color.red?`` — a compile error |
 | a `match` over `Kind` variants with no arm for `Kind.lane` | ``this match does not cover every variant of `Kind`: no arm for `Kind.lane` `` — a compile error |
-| a `match` where no arm matches the value | ``No matching pattern for value: tin`` — at run time; add `when _ ->` if that is expected |
-| `when Shape.rect(w)` for `rect(w, h)` | ``the pattern `Shape.rect` has 1 field, but Shape.rect has 2 payload fields (w, h), so its pattern is `Shape.rect(_, _)` `` — a compile error; write `Shape.rect(w, _)` |
+| a `match` where no arm matches the value | ``No matching pattern for value: "tin"`` — at run time; add `when _ ->` if that is expected |
+| `when Shape.rect(w)` for `rect(w, h)` | ``the pattern `Shape.rect(…)` has 1 field, but Shape.rect has 2 payload fields (w, h), so its pattern is `Shape.rect(_, _)` `` — a compile error; write `Shape.rect(w, _)` |
 
 ---
 

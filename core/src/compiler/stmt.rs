@@ -177,12 +177,21 @@ impl Compiler {
                 }
             }
 
-            StmtKind::Break => {
-                self.emit_term(TermOp::Break, smallvec![], None);
-            }
-
-            StmtKind::Continue => {
-                self.emit_term(TermOp::Continue, smallvec![], None);
+            StmtKind::Break | StmtKind::Continue => {
+                let (word, op) = match stmt.kind {
+                    StmtKind::Break => ("break", TermOp::Break),
+                    _ => ("continue", TermOp::Continue),
+                };
+                if self.loop_depth == 0 {
+                    self.error_at(
+                        stmt.span,
+                        format!(
+                            "`{word}` is not inside a loop: it leaves the `for` or `while` \
+                             around it, and a function body starts outside any loop"
+                        ),
+                    );
+                }
+                self.emit_term(op, smallvec![], None);
             }
 
             StmtKind::State {

@@ -16,6 +16,15 @@ fn formats_spacing_indent_comments_and_blank_lines() {
 }
 
 #[test]
+fn a_keyword_after_an_operand_is_spaced_from_it() {
+    let src = "let r = match v\n  when Op.fight(p,w)if w&&flag->p\n  when [a,b]if a->b\n  when _->0\nend\nif(r>1)then print(r)end\n";
+    assert_eq!(
+        fmt(src),
+        "let r = match v\n  when Op.fight(p, w) if w && flag -> p\n  when [a, b] if a -> b\n  when _ -> 0\nend\nif(r > 1) then print(r) end\n"
+    );
+}
+
+#[test]
 fn is_idempotent_on_its_own_output() {
     let src = "state a=1 // x\nstate bbb   =  2 // y\nif(a>1)then\nprint( \"{a+1}\" )\nend\n";
     let once = fmt(src);

@@ -419,7 +419,7 @@ describe("a match no arm of which matched", () => {
       const r = petalCapture(["run", ...flags, "-e", code]);
       expect(r.code).not.toBe(0);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toMatch(/No matching pattern for value: zebra/);
+      expect(r.stderr).toMatch(/No matching pattern for value: "zebra"/);
       expect(r.stderr).toMatch(/line 2, column 3/);
     }
   });

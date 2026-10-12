@@ -32,7 +32,8 @@ describe("check --json reports the phase that rejected the program", () => {
   });
 
   it('reports "parse" for a malformed `fn` header', () => {
-    expectPhase(`fn (`, "parse", "Expected an identifier, got '('");
+    // (`fn (` would open a lambda: an expression, not a declaration.)
+    expectPhase(`fn 1()`, "parse", "Expected an identifier, got `1`");
   });
 
   it('reports "module" when an import cannot be resolved', () => {

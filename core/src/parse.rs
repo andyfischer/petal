@@ -512,7 +512,11 @@ impl Parser {
             Token::Let => self.parse_let(start, false, false, false),
             Token::Var => self.parse_let(start, false, true, false),
             Token::Set => self.parse_set(start),
-            Token::Fn => self.parse_fn_decl(start, false),
+            // `fn(` is a lambda: an expression statement, and so the value
+            // of a one-expression branch or arm (`when 1 -> fn() -> 2`).
+            Token::Fn if !matches!(self.peek_at(1), Token::LParen) => {
+                self.parse_fn_decl(start, false)
+            }
             Token::For => self.parse_for(start),
             Token::While => self.parse_while(start),
             Token::Return => self.parse_return(start),

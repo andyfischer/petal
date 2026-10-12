@@ -365,6 +365,16 @@ env.register_native("query", native_query, NativeEffects::reads(InputClasses::HO
 env.register_native("save_file", native_save_file, NativeEffects::EFFECT);
 ```
 
+**`CONST` is a separate, opt-in declaration.** `NativeEffects::CONST` is
+`PURE` plus one claim: the native is a *constant function* — the same
+arguments give the same result for the life of the program, it reads no
+dynamic input of any kind, and it does nothing but return. Petal uses it to
+decide which top-level tables are *static values*
+([proposal](proposals/static-values.md)), computed once and kept until the
+source changes. `PURE` does not imply it, and a native without it is always
+treated as dynamic. Read [Constant natives](#constant-natives) before
+declaring one.
+
 A native that answers from host state outside the binding table
 (`HOST_DATA`) must also call `PetalCxt::note_host_read()` — the row is what
 the memo consults, the call is what the frame gate records — and one with an
@@ -703,6 +713,72 @@ either keeps the last frame's declarations in force on a skipped frame, as
 Garden's key claims do, or answers "don't gate" for as long as it needs
 frames — petal-desktop-sdl's `Host::frame_gating` does this while a sound is
 playing.
+
+### Constant natives
+
+`PURE` and `CONST` answer different questions, and the difference is the
+cost of being wrong.
+
+- **`PURE`** means "reads no *tracked* input, emits nothing, has no effect".
+  It is what the memo needs: a scope that calls only such natives can be
+  replayed while its arguments and reads are unchanged. A wrong `PURE` costs
+  a stale replay until the next invalidation.
+- **`CONST`** means "a constant function": same arguments, same result, for
+  as long as the program lives, whatever the host is doing. No time, input,
+  viewport, random stream, theme, font provider, host or game state, handle
+  liveness, or anything about the program's source — whether or not an
+  `InputClasses` bit exists for it. A call with constant arguments is then
+  itself a constant, so a top-level table built from such calls is a static
+  value: evaluated once and kept until the script's source changes. **A wrong
+  `CONST` is a stale value forever** — there is no revision to bump and no
+  frame on which it is recomputed.
+
+So `CONST` is opt-in and the default is dynamic:
+
+```rust
+// A lookup into a table compiled into the host: constant.
+env.register_native("tile_code", native_tile_code, NativeEffects::CONST);
+// Pure for the memo, but the host's fonts decide the answer: not constant.
+env.register_native("font", native_font, NativeEffects::PURE);
+```
+
+To ask: `NativeEffects::is_const()` on a row, or, for a registered native,
+`Env::native_constness(id)` / `native_constness_of_name(name)` (the same on
+`NativeFnTable`), which answer a `NativeConstness`: `Const`, `Dynamic`, or
+`ConstIfCallbacksAre` for the higher-order builtins (`map`, `filter`,
+`reduce`, `sort`, `sort_by`), which are constant exactly when the functions
+they are handed are. A name nothing registered — a `native fn` compiled
+without its host, as under `petal check` and the LSP — is `Dynamic`, so those
+tools may call less static than a host does and never more. A row that says
+`CONST` and also reads, probes, emits or has an effect contradicts itself and
+is treated as dynamic.
+
+Declare `CONST` only for a native whose body you have read, and check each
+of these:
+
+| The native… | `CONST`? |
+|---|---|
+| computes from its arguments only (arithmetic, string and list work, a record built from the arguments) | yes |
+| looks up a table compiled into the host that never changes while it runs | yes |
+| raises on bad arguments and otherwise the above | yes — the same arguments raise the same way every time |
+| answers from anything the host loads, configures or can swap at run time (fonts, themes, assets, settings, a palette) | no |
+| answers from a seed, a clock, a counter, or anything a script or the host can set | no (`noise` reads the noise seed) |
+| takes or returns a handle, or asks about one (`is_valid`) | no |
+| reports where something is in the source (`fn_info`, `fn_ast`) | no |
+| stands in for a native that is dynamic on another host (a stub) | no |
+| you are not sure | no |
+
+In the core table every arithmetic, string, collection, colour, vector and
+formatting builtin is `CONST`, along with `assert`/`assert_eq`, `symbol` and
+the `Rect` class; `noise`, `is_valid`, `fn_info`, `fn_ast`, the random
+builtins and everything that reads, emits or has an effect are not. The
+exact list is pinned by a test (`const_builtins_are_exactly` in
+`core/src/builtins/mod.rs`); petal-ui's only constant native is
+`ui_version`.
+
+From C the flag is `PB_FX_CONST` (`petal::fx::Const` in the C++ wrapper).
+`PB_FX_PURE` is `0` and stays dynamic, so a host written before the flag
+existed has no constant natives until it opts in.
 
 ### Catching it with the effect audit
 

@@ -180,6 +180,49 @@ count anyway.
 
 ## S0. The classifier, with no behaviour change
 
+**Status: step 1 of 3 (the `CONST` flag and the audit) done 2026-10-12.** The
+classifier, `show-static`, `--static-audit` and the go/no-go gate are not
+started.
+
+- Shipped: `NativeEffects::CONST` (a `constant` bit on the row, `PURE` plus
+  that bit), `NativeEffects::is_const()`, and
+  `NativeFnTable::constness(id)` / `constness_of_name(name)` with the same
+  two on `Env` as `native_constness` / `native_constness_of_name`. They
+  answer `NativeConstness::{Dynamic, Const, ConstIfCallbacksAre}`. The
+  classifier should ask the `Env`/table form, not the row: `map`, `filter`,
+  `reduce`, `sort` and `sort_by` answer `ConstIfCallbacksAre` (constant
+  exactly when every function argument is static-pure; vacuous for
+  `sort(xs)`), an unregistered name answers `Dynamic`, and a row that says
+  `CONST` next to a read, probe, emit or effect answers `Dynamic`.
+- C bridge: `PB_FX_CONST` (`1u << 5`), `petal::fx::Const`. `PB_FX_PURE` (0)
+  stays dynamic.
+- Audit of every bare `PURE` row, 133 in all. Core, 116 rows: 105 `CONST`
+  (98 builtins and the `Rect` constructor with its six methods), pinned by
+  name in `const_builtins_are_exactly`; 11 left `PURE` — `noise`,
+  `is_valid`, `fn_info`, `fn_ast`, `__enum_from`, the higher-order `map`,
+  `filter`, `reduce`, `forEach`, `sort_by`, and `sort`, `PURE` as a row
+  because of its comparator form. `forEach` is `Dynamic`, not
+  `ConstIfCallbacksAre`. (`__enum_all`, added by A1 the same day, is `PURE`
+  and dynamic for the same reason as `__enum_from`.)
+  petal-ui: `ui_version` is `CONST`; `font` and the ten pure panel stubs
+  stay dynamic. Garden's config natives `editor`, `process`, `panel` are
+  `CONST` (record builders); the fantasy console's `nes_version` and
+  `master_rgb` are `CONST`. petal-query, petal-desktop-sdl and the web
+  integrations have no bare `PURE` row.
+- Two judgement calls for the classifier's author to know about: `assert` /
+  `assert_eq` are `CONST` (same arguments pass or raise the same way; a
+  build that raises is not stored), so a validating constructor stays
+  static-pure; `symbol` is `CONST` because the symbol table belongs to the
+  `Env` and ids are stable for its life.
+- `native fn` declarations carry no effect information; constness comes only
+  from the registration, which is what makes `petal check` and the LSP
+  report less, never more.
+- Documented for embedders in `docs/ffi.md` ("Constant natives") and
+  `docs/embedding-c.md`. No behaviour change: nothing reads the flag yet.
+- Out of scope, for cheesecake: none of its natives is constant until it
+  passes `PB_FX_CONST` for the ones that are (and re-vendors the bridge);
+  worlds-fair's `wf-ui-ffi` likewise.
+
 **Ships.**
 
 - An interprocedural pass that marks every top-level declaration static or

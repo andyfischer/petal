@@ -376,6 +376,17 @@ way, for code written against an earlier checkout.
 - IR import validates the `enums` table, each variant construction and
   pattern against it, and every match arm's blocks. `show-ir` lists a
   program's enums.
+- Natives can be declared constant functions: `NativeEffects::CONST`
+  (`PB_FX_CONST` in the C bridge, `petal::fx::Const` in C++) says the same
+  arguments give the same result for the life of the program and that the
+  native reads no dynamic input at all. It is separate from `PURE`, opt-in,
+  and off for every native that does not ask for it; `Env::native_constness`
+  answers it. The core builtins are audited (arithmetic, strings, collections,
+  colours, vectors and formatting are constant; `noise`, `is_valid`,
+  `fn_info`, `fn_ast` and the random builtins are not). Nothing uses the
+  declaration yet: it is the groundwork for static values
+  (`docs/proposals/static-values.md`). See "Constant natives" in
+  `docs/ffi.md`.
 - `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
   recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
   what a reload did. `pb_vm_set_config` sets one config value in the running

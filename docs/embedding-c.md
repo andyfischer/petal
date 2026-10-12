@@ -300,6 +300,28 @@ shows what a dishonest row breaks):
 | `fx::ReadsHostData` | answers from host state (body transforms, raycasts). The bridge also calls `note_host_read()` for you. |
 | `fx::ReadsPointer/Keyboard/Clock/Viewport/Resources/Rng/Bindings` | other input classes |
 | `fx::PendingEffectful` / `fx::PendingAllow` | how a `Pending` argument is treated (default: absorbed) |
+| `fx::Const` (`PB_FX_CONST`) | a **constant function**: the same arguments give the same result for as long as the VM lives, reading no host state of any kind. Opt-in; see below |
+
+**`fx::Const` is not `fx::Pure`.** `fx::Pure` is `0`, the default, and says
+only that the native touches nothing Petal tracks. `fx::Const` is a stronger
+promise that Petal acts on differently: a top-level table whose values come
+from constant natives is a static value, which Petal may compute **once** and
+keep until the script's source changes — your callback is not called again
+for it. A wrong `fx::Const` is therefore a stale value forever, where a wrong
+`fx::Pure` is a stale replay until the next invalidation. Give it only to a
+callback that computes from its arguments or from a table compiled into the
+host (`tile_code(name)`, a unit conversion, a fixed palette lookup), never to
+one that answers from anything loaded, configured or simulated (assets,
+settings, fonts, the scene, the clock), and leave it off when unsure: a
+native without it is simply re-evaluated every run, as before. Combined with
+`fx::Probe`, `fx::Emits`, `fx::Effect` or any `fx::Reads*` flag it is ignored.
+The full checklist is in [ffi.md](ffi.md#constant-natives).
+
+```cpp
+vm.native("tile_code", petal::fx::Const, [](petal::Call& c) {
+    c.result().value(tile_code_of(c[0].string()));   // a compiled-in table
+});
+```
 
 ### Emitters: the command-stream fast path
 

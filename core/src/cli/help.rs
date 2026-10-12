@@ -48,7 +48,6 @@ const GROUPS: &[(&str, &[(&str, &str)])] = &[
                 "Rewrite imports for the current module system",
             ),
             ("suggest", "Suggest safe refactors for a file"),
-            ("lint-fix", "The same as 'lint --fix'"),
             (
                 "apply-change",
                 "Carry out a refactor that changes behaviour",
@@ -149,7 +148,6 @@ fn page(name: &str) -> Option<&'static str> {
         "lint" => LINT,
         "fix-imports" => FIX_IMPORTS,
         "suggest" => SUGGEST,
-        "lint-fix" => LINT_FIX,
         "apply-change" => APPLY_CHANGE,
         "ir-equal" => IR_EQUAL,
         "explain" => EXPLAIN,
@@ -887,22 +885,6 @@ SEE ALSO
        petal help check, petal help lint, petal help ir-equal
 ";
 
-const LINT_FIX: &str = "\
-NAME
-       petal-lint-fix - The same as 'lint --fix'
-
-SYNOPSIS
-       petal lint-fix [<options>] [<path>...]
-
-DESCRIPTION
-       The same as 'petal lint --fix', under its own name because fixing the
-       files is what most callers want and a flag is easy to forget. Takes
-       every option 'petal lint' does.
-
-SEE ALSO
-       petal help lint
-";
-
 const APPLY_CHANGE: &str = "\
 NAME
        petal-apply-change - Carry out a refactor that changes behaviour
@@ -1524,7 +1506,6 @@ mod tests {
         "fmt",
         "lint",
         "fix-imports",
-        "lint-fix",
         "ir-equal",
         "explain",
         "show-ir",

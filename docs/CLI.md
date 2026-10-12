@@ -74,7 +74,6 @@ Environment variables that affect how packages are found:
 | `fmt` | Rewrite files in the canonical layout |
 | `lint` | Report code with a better spelling; `--fix` applies it |
 | `fix-imports` | Migrate older code: rewrite its import lines and add the imports it is missing |
-| `lint-fix` | `lint --fix` under its own name |
 | `suggest` | Suggest safe refactors for a file |
 | `apply-change` | Carry out a refactor that changes behaviour |
 | `ir-equal` | Compare two files' compiled IR |
@@ -736,8 +735,6 @@ petal lint -e '<code>'                       # report; with --fix, print the fix
 
 petal lint --fix --verify <path>             # prove the rewrite before writing it
 petal lint --fix --verify=strict <path>      # demand full IR equality
-
-petal lint-fix [<path>...]                   # same as: lint --fix
 ```
 
 Shaped like `deno lint`: each finding names its rule, and each rule has a fix.

@@ -1041,7 +1041,7 @@ an `errors[]` array with *every* diagnostic rather than only the last.
 
 ```bash
 petal lint app.ptl           # report; exit 1 if changes needed
-petal lint-fix app.ptl       # rewrite in place (same as `lint --fix`)
+petal lint --fix app.ptl     # rewrite in place
 petal lint --check app.ptl   # CI mode, silent on success
 ```
 

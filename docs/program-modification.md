@@ -125,8 +125,8 @@ rewrites program source on disk. `lint_source` applies three passes:
   and literal patterns into a `match`.
 
 CLI: `petal lint [--fix | --check] [--verify[=ir|strict]] <file>`. With no
-option it reports and exits 1 if a change is needed; `--fix` (or
-`petal lint-fix`) writes; `--check` is the silent CI mode. `--verify` compiles
+option it reports and exits 1 if a change is needed; `--fix`
+writes; `--check` is the silent CI mode. `--verify` compiles
 both sides and compares IR before writing, refusing a rewrite it cannot prove.
 See [CLI.md](CLI.md#lint--normalize-source).
 

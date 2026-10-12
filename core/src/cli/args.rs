@@ -198,7 +198,6 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
         "fix-imports" => parse_fix_imports_args(&args[1..]),
         "suggest" => parse_suggest_args(&args[1..]),
         "apply-change" => parse_apply_change_args(&args[1..]),
-        "lint-fix" => parse_lint_fix_args(&args[1..]),
         "explain" => {
             parse_term_query_args(&args[1..], |json, term| Command::Explain { json, term })
         }
@@ -717,14 +716,6 @@ fn parse_ir_equal_args(args: &[String]) -> CliArgs {
         source: SourceInput::File(paths[0].clone()),
         include_dirs: Vec::new(),
     }
-}
-
-/// `lint-fix [<path>…]` — `lint --fix` under its own name, because rewriting
-/// files in place is the thing most callers want and a flag is easy to forget.
-fn parse_lint_fix_args(args: &[String]) -> CliArgs {
-    let mut with_fix = vec!["--fix".to_string()];
-    with_fix.extend(args.iter().cloned());
-    parse_lint_args(&with_fix)
 }
 
 /// Parse args for `check`: `--json`, `--strict` (exit non-zero when warnings

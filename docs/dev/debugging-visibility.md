@@ -42,7 +42,7 @@ options.
 | `show-graph` | Graphviz DOT output. |
 | `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
-| `lint [--fix\|--check]` / `lint-fix` | Formatter and source normalizer. |
+| `lint [--fix\|--check]` | Formatter and source normalizer. |
 | `ir-equal <a> <b>` | Are two files the same program, ignoring layout? |
 
 `./tools/run-petal.ts` rebuilds the binary before running it.

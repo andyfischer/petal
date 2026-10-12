@@ -64,7 +64,6 @@ petal fmt -e <code> | petal fmt -
 petal lint [--fix] [--json] [--rules-include=…] [--rules-exclude=…] [<path>...]
 petal lint --rules
 petal lint --fix --verify[=ir|strict] <path>  # prove the rewrite (see §4)
-petal lint-fix [<path>...]                    # alias for lint --fix
 ```
 
 Both take files or directories (walked for `.ptl`, skipping dot-directories,

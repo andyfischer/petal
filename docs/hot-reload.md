@@ -67,13 +67,15 @@ compares the syntax trees. The result is a `SourceChange`:
 - **`Values(list)`**: the trees differ only in the values of literals, each
   keeping its kind (int, float, string, bool). Every entry names the literal's
   old and new value and its span in both texts, and for a literal inside a
-  top-level `let` or `config let` its binding path: `SPEED`,
+  top-level `let`, `const` or `config let` its binding path: `SPEED`,
   `POST.effects[2].amount`, `SUN.dir[1]` (a call's arguments count as
   elements, as in [config files](config-files.md)). A literal in a function
   body or a statement is a value change too, with no path.
 - **`Constructs(list)`**: the structure changed. Each entry names a top-level
-  construct (`fn draw`, `config let GEN`, `state score`, an import, a bare
-  statement) and whether it was added, removed or changed.
+  construct (`fn draw`, `config let GEN`, `const TILES`, `state score`, an
+  import, a bare statement) and whether it was added, removed or changed.
+  Changing a `let` to a `const` or back is one of these: the keyword adds or
+  removes a compile-time check, so the program is recompiled.
 - **`Full(reason)`**: the new text does not parse, or the edit is one the tree
   does not show (`export` respelled `pub`, redundant parentheses added).
 

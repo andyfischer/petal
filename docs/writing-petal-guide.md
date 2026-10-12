@@ -174,6 +174,34 @@ The boundary is the **function**, not the block. `=` crossing into a nested
 `fn` is the error above; `=` crossing into a `for`, `while`, `if` or `match` arm
 in the same function is just a rebind.
 
+### `const` — a top-level table that must stay constant
+
+Write a top-level table, and anything derived from one, as `const`:
+
+```petal
+fn tile(name, cost)
+  {name: name, cost: cost}
+end
+
+const TILES = [tile("grass", 1), tile("road", 0)]
+const COSTS = map(TILES, fn(t) -> t.cost)
+print(COSTS)
+```
+
+A `const` is a `let` that fails to compile if its value could ever differ
+between two runs of the same source: if it reads `state` or a `var`, the
+screen, the clock, `random()`, or calls a function that does, or one that
+prints. The error names the chain (`TILES calls tile`, `tile calls print`),
+so a debugging `print` left in a constructor is caught instead of quietly
+turning a table into per-frame work. It is top level only, never assigned,
+and holds data, not functions. Scalars (`let NODE_W = 140`) gain nothing from
+it; use it where the value is a table or is computed.
+
+**Do not park a constant table in `state`** to avoid rebuilding it. A `state`
+cell keeps its first value across hot reloads, so the table stops following
+your edits. `petal lint --rules-include=state-as-constant` reports these, and
+with `--fix` rewrites them to `const`.
+
 ### `var` / `set` / `get` — the mutable escape hatch
 
 Because of that carry rule, a plain accumulator does **not** need `var`. What
@@ -1054,6 +1082,12 @@ Two passes: 2-space re-indentation (comments, string contents and JSX text are
 preserved byte for byte) and deletion of identity casts like `int(n)` where `n`
 is already an `int`. Add `--verify` to make it prove the rewrite is IR-equal
 before writing anything.
+
+One rule is off unless you name it: `petal lint
+--rules-include=state-as-constant` reports a top-level `state` that nothing
+assigns and whose initializer is constant, and with `--fix` rewrites it to
+`const`. That is right for a table and wrong for a cell your host writes by
+name; put `// petal-lint-ignore state-as-constant` on such a line.
 
 ### `petal suggest` — safe refactors, on request
 

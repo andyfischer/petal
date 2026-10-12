@@ -679,6 +679,12 @@ DESCRIPTION
               x = x + e becomes x += e
        prefer-pub
               the deprecated export modifier becomes pub
+       state-as-constant (opt-in)
+              a top-level state that nothing assigns and whose initializer
+              is static becomes a const. Runs only when --rules-include
+              names it, because the fix is a judgement: a host can write a
+              state by name, and a state keeps its value across a hot reload
+              where a const is rebuilt
 
        To silence a rule, put '// petal-lint-ignore <rule> [<rule>...]' on
        the line before the finding or at the end of its line; with no rule
@@ -1196,6 +1202,11 @@ DESCRIPTION
        so a 'native fn' of a host is dynamic here: a host may report more as
        static than this does, never less.
 
+       A declaration written 'const' must be static. One that is not carries
+       a '!' line: 'declared const but not constant: a compile error', or
+       'declared const: cannot be verified without its host's natives' when
+       the only thing in the way is a native this command does not register.
+
 OPTIONS
        --json
               Emit an object with 'summary' and 'declarations'. Each
@@ -1204,7 +1215,9 @@ OPTIONS
               static_pure (functions), reason (the chain; each link has
               subject, text, file and line), read_by_dynamic and readers
               (static data), depends_on (every declaration its value can
-              depend on, by qualified name) and direct_depends_on.
+              depend on, by qualified name), direct_depends_on, and for a
+              'const' const_check ('constant', 'not_constant' or
+              'unverified').
 
        --all  Include the declarations of imported modules and of the
               prelude, under their qualified names.

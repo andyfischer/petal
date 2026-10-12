@@ -986,6 +986,123 @@ the hand simulation measured (83.1k → about 79k instructions per frame,
 record allocations down by about 40%). `test/benchmarks/*` under `petal run`
 must not regress.
 
+### S1, the language surface: `const`, the lint, hover
+
+**Status: done 2026-10-12** (three commits: `const`, the lint rule, the
+hover). It depends only on the S0 classifier and was built beside the cache.
+
+**`const NAME = expr`.** A `StmtKind::Let` with `is_const`, in both parse
+pipelines, carried to the value term (`Term::is_const`). It formats,
+exports (`pub const`), hoists, hot-reloads and runs as its `let`, and the
+cache keeps it as it keeps the `let` (a test compares the filled slots).
+What it adds is `Env::check_consts`, which ends every compile of a program
+that declares one: a `const` that is not static data becomes an error
+diagnostic with the reason chain.
+
+- **It is an error diagnostic, not a failed load.** `petal check` exits
+  non-zero and `petal run` does not start, as for an unknown name. A host
+  that prints the findings of a reload and runs anyway gets the value the
+  `let` would have had, and the cache does not keep it. A failed load would
+  have cost the language server everything else it knows about the file.
+- **Keyword.** Hard, not contextual. Swept 745 `.ptl` files (this repo 400,
+  `~/worlds-fair/ui/ptl` 19, `~/.garden` 72, petal-lang.org 17, the two
+  experiment apps 2, `~/tools` 3, `~/cheesecake/games` 232; `~/biz/hotlaps`
+  is not on this machine): no binding, parameter, function or field is
+  named `const`. Three files contain the word, all inside string literals of
+  GLSL source. It stays a record key and a field name, like every keyword.
+- **Without the host's natives** (`petal check`, lint, the language server).
+  A failed `const` is classified a second time with every unregistered
+  native, and every method name nothing defines, taken to be a constant that
+  takes no callback: the most static any host could make the program. Still
+  dynamic: an error everywhere, and the chain shown is that pass's, so it
+  names the real cause and not the missing native. Static only under the
+  assumption: `ConstCheck::Unverified`, no diagnostic; `show-static` and
+  hover say "cannot be verified without its host", and the host reports it
+  on load if it is wrong there. So a check without the host never calls a
+  `const` verified that a host rejects, and never rejects one for a native
+  it does not have. The second pass runs only when a `const` failed.
+- **Rules.** Top level only (inside a function, loop or block is an error;
+  constants in function bodies are the deferred item below). A name bound
+  again fails with the classifier's `is assigned again`. A function value,
+  or a table holding one, is rejected. `config const` does not parse; a
+  `config let` of literals is static already.
+- **Reload.** `ConstructKind::Const`; `let` <-> `const` is a structural
+  edit. A literal edit inside a `const` is a value edit, as for its `let`.
+  The chain's line numbers follow a reload that does not recompile:
+  diagnostics can now cite several lines (`Diagnostic::error_citing`).
+- **Editors.** tree-sitter grammar regenerated (its 25 corpus cases pass, one of them new),
+  highlight queries, vim syntax, the LSP keyword list, `SymbolKind::Constant`
+  in the outline; `core/tests/keyword_sync.rs` holds the five lists equal.
+
+**Lint `state-as-constant`.** A plain top-level `state` (no key, not `state
+var`, not `pub`, not in a function) that no `StateWrite` in the compiled
+program targets and whose initializer is static becomes a `const`. The rule
+compiles its own rewrite, keeps only what the compiler then accepts as
+constant, and repeats until nothing changes.
+
+- **It is opt-in** (`--rules-include=state-as-constant`), the first such
+  rule. The proposal asks for a suggestion, not an automatic rewrite, and a
+  blanket `petal lint --fix` is automatic. Three things the compiler cannot
+  see make it a judgement: a host writing the cell by name or restoring
+  saved state into it; a value kept across reloads on purpose; and a `state`
+  initializer running once in every host, where a `const` is built once only
+  when the cache is on (`state boot = settle(G, …, 140, …)` in
+  `examples/dashboards/network-graph` would be rebuilt every frame wherever
+  observations are recorded, which is every Garden panel today). Making it default-on is `opt_in: false` in
+  `core/src/lint/mod.rs`.
+- **Measured.** This repository: 30 findings (`examples/` 21,
+  `integrations/` 8, `core-runtime/` 1, `garden/` and `test/` 0). The ones
+  read by eye are constants or cells nothing writes (`lut`, `events`,
+  `metrics`, `platforms`, `player_y`, `boot`). A scratch copy of the Moses scripts:
+  76 findings, the 74 upper-case cells among them (`TIMELINE`, which sorts
+  `RAW`, in the second round); `--fix` converts all of them, `show-static
+  --all` goes from 517 to 591 static declarations (the figure S0 got by
+  hand-rewriting the 74 as `let`), no `const` fails its check, and a second
+  run finds nothing. The rule compiles a file twice per round (once to
+  classify, once to check its rewrite); the report over the directory took
+  4 minutes with a debug binary.
+
+**Hover.** A top-level declaration, or a use of one, shows `// static`,
+`// dynamic: <first link of the chain>`, `// function, static-pure` or
+`// function, not static-pure: <reason>`, plus "its initializer is static"
+on such a `state` and the `const` verdict. `state` declarations had no
+definition in the language server at all; they do now.
+
+**Tests.** `core/tests/const_decl.rs` 30, `core/tests/lint_state_const.rs`
+16 (an assigned state in six forms, a keyed state, a `state var`, a state in
+a function or loop, seven kinds of dynamic initializer, a host native, `pub
+state`, silencing, the opt-in), `core/tests/lsp_tests.rs` +9. The whole
+core suite in the debug profile, with the cache commit underneath: 2,491
+passed, 0 failed. The 376 documentation snippets compile and print what
+they say. Not run: the petal-ui and Garden suites (disk), and the release
+profile.
+
+**Cost.** `check_consts` runs the classifier once per compile of a program
+that declares a `const`, and nothing otherwise. `petal check` on Moses with
+the 74 cells as `const`, debug binary: 12.2 s against 11.5 s. S0 measured
+the pass at 85 ms on Moses in release, against 0.55 s for the check.
+
+**Open.**
+
+- The classifier now runs twice on a recompile of a program with a `const`
+  and the cache on: once for the check and once for the lowering. One
+  analysis could serve both if it were kept beside the program.
+- Hover classifies on every document change (5 to 85 ms by S0's numbers), on
+  top of the compile the analysis already does. Fine today; lazy if not.
+- The rule does not offer a `pub state`. It could: a module's exports are
+  read-only to importers, so the declaring file's own writes are all there
+  are.
+- `petal lint` has no host, so a `state` table built with host natives is
+  never offered. A host-side lint would need the host's `Env`.
+- A `const` whose build raises is static and passes the check; the error is
+  the run's, on every run, as for a `let`.
+- Cheesecake follow-ups (not done, read-only here): re-vendor Petal, then
+  `petal lint --fix --rules-include=state-as-constant games/moses`; the
+  natives that should be `PB_FX_CONST` decide whether a `const` built from
+  them is accepted by the engine. worlds-fair's vendored copy and the
+  petal-lang.org and hotlaps WASM builds do not know `const` until they are
+  re-vendored.
+
 ## S2. Following the diff
 
 **Ships.**

@@ -159,11 +159,18 @@ let name: string = "Petal"   // optional type annotation (see Types)
 x = 20                       // reassignment
 x += 5                       // compound assignment
 config let offset = 4        // a declared tuning knob (see the Language Guide)
+const TILES = [1, 2, 3]      // a `let` that must be static (top level only)
 ```
 
 `config` marks a binding as a value that direct manipulation may edit (see
 [direct-manipulation.md](../direct-manipulation.md)). It combines with
 `pub` (`pub config let`) and is not allowed on `var`.
+
+`const NAME = expr` is a `let` with a compile-time check: the value may depend
+on nothing dynamic (`state`, a `var`, a non-constant native, a function that
+is not static-pure), and the binding is never assigned. It is allowed at the
+top level of a file only, combines with `pub` (`pub const`) and not with
+`config`. See [Constants](../language-guide.md#const--a-value-that-must-be-constant).
 
 ### `var`, `set` and `get`
 

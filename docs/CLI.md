@@ -764,11 +764,31 @@ found 2 problem(s) in 1 file(s); run `petal lint --fix` to fix them
 | `prefer-repeat` | a `for` over `range(n)` / `range(0, n)` whose whole body appends one string literal (or `string` parameter) to an accumulator that starts as a string | `x ++= repeat(s, n)` — the loop copies `x` on every pass |
 | `prefer-compound-assign` | `x = x op e` for an operator with a compound form | `x op= e` |
 | `prefer-pub` | the deprecated `export` modifier, on any declaration or `import` | `export` → `pub` |
+| `state-as-constant` (opt-in) | a plain top-level `state` (no key, not `state var`, not `pub`) that nothing in the program assigns and whose initializer is static | `state` → `const` |
 
 Layout is not a finding: that is `fmt`. A file `--fix` changes is formatted
 afterwards, because a rewritten chain moves code between lines. Every fix is
 compile-gated: if the original compiled, the fixed file must too, or nothing is
 written.
+
+`state-as-constant` is **opt-in**: it runs only when `--rules-include` names
+it (`petal lint --rules-include=state-as-constant`, alone or with other
+rules), and `petal lint --rules` marks it so. Every other rule's fix is
+another spelling of the same program; this one is a judgement. A
+never-assigned `state` is a constant as far as the program can tell, but a
+host can write a `state` by name, saved state can be restored into it, its
+value survives a hot reload where a `const` is rebuilt, and its initializer
+runs once in every host where a `const` is built once only if the host's run
+keeps static values. Where any of that matters, leave the `state` and put
+`// petal-lint-ignore state-as-constant` on its line.
+
+It is also the one rule that asks the compiler rather than the text: it
+compiles the file, classifies it as [`show-static`](#show-static--static-declarations)
+does, and compiles its own rewrite, keeping only the declarations that are
+accepted as `const`. A `state` built from a host's natives is therefore left
+alone (lint has no host). Converting one `state` can make the next one's
+initializer static (`state SORTED = sort(RAW)`), and the rule repeats until
+nothing changes, so one `--fix` is enough.
 
 Silence a rule with `// petal-lint-ignore <rule> [<rule>…]` on the line before
 the finding or at the end of its line (no names silences every rule), or for a
@@ -789,7 +809,7 @@ works with and without `--fix`.
 | `--verify=strict` | The whole rewrite must be IR-equal | Refused: exit 3, file untouched |
 
 Formatting, `prefer-compound-assign` and `prefer-pub` are meant to leave the IR unchanged.
-The cast, `match`, `var` and `repeat` rules change it by design. On such a file the default mode proves
+The cast, `match`, `var`, `repeat` and `state-as-constant` rules change it by design. On such a file the default mode proves
 the part it can, prints the first difference, and says that a run diff is what
 would prove the rest:
 
@@ -1813,7 +1833,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 | Variant | Shape |
 |---------|-------|
-| `Let` | `{"Let": {"name": string, "ty": TypeAnn (omitted when un-annotated), "value": Expr, "is_var": bool (omitted when false), "is_config": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …`; `is_config` for `config let` |
+| `Let` | `{"Let": {"name": string, "ty": TypeAnn (omitted when un-annotated), "value": Expr, "is_var": bool (omitted when false), "is_config": bool (omitted when false), "is_const": bool (omitted when false)}}` — `ty` is the optional declared type annotation; `is_var` is true for `var x = …`; `is_config` for `config let`; `is_const` for `const X = …` |
 | `Assign` | `{"Assign": {"target": AssignTarget, "value": Expr}}` |
 | `Expr` | `{"Expr": Expr}` |
 | `FnDecl` | `{"FnDecl": {"name": string, "class": string (omitted for ordinary functions), "params": Param[], "ret": TypeAnn (omitted when un-annotated), "body": Stmt[]}}` — `ret` is the optional declared return-type annotation; `class` is set for a method declaration (`fn Rect.center_x(…)` → `class: "Rect"`, `name: "Rect.center_x"`, receiver as `params[0]`) |
@@ -2281,6 +2301,12 @@ unqualified "minimal" answer on a program that uses `var`, and it says so in
 its output.
 
 
+Like `run`, `show-bytecode` shows what a script that runs once executes. A
+host that runs a script every frame also keeps its static values between
+runs (the `fast` policy's static-value cache), which adds a `static_skip`
+in front of each run of static instructions and a `static_store` behind it.
+Name the policy to see them: `PETAL_POLICY=fast petal show-bytecode f.ptl`.
+
 ### `show-static` — Static declarations
 
 ```
@@ -2301,12 +2327,6 @@ config let SCALE = 2
 let W = SCALE * 3
 fn hd(a, b)
   {a: a, b: b, w: W}
-Like `run`, `show-bytecode` shows what a script that runs once executes. A
-host that runs a script every frame also keeps its static values between
-runs (the `fast` policy's static-value cache), which adds a `static_skip`
-in front of each run of static instructions and a `static_store` behind it.
-Name the policy to see them: `PETAL_POLICY=fast petal show-bytecode f.ptl`.
-
 end
 let ROWS = [hd(1, 2), hd(3, 4)]
 state counter = 0
@@ -2365,6 +2385,15 @@ The rules that most often decide an answer:
 | A field read whose name is a constant-data key of some enum is static only if that enum's data is. | `enum Col name(w: text_width("name")) end` makes every `.w` dynamic. |
 | A top-level `var` or `state`, and anything that reads one, is dynamic. | |
 | One arity of an overloaded function that is not static-pure makes the whole name not static-pure. | |
+
+A declaration written [`const`](language-guide.md#const--a-value-that-must-be-constant)
+is listed with that keyword, and is expected to be static. When it is not, a
+`!` line under it says which of two things is the case: `declared const but
+not constant: a compile error` (the reason chain that follows is what the
+error prints), or `declared const: cannot be verified without its host's
+natives` when the only thing in the way is a native this command does not
+register. In `--json` the same answer is the declaration's `const_check`:
+`constant`, `not_constant` or `unverified`.
 
 A static declaration can also carry a `! not kept` line: its value is handed
 to something that may update a container in place (`let MORE = append(BASE,

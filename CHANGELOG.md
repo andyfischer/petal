@@ -23,6 +23,17 @@ way, for code written against an earlier checkout.
 - Bindings: `let` for dataflow values, `var` for a mutable slot (written with
   `set`, read with `get`), and `state` for values kept across runs and hot
   reloads.
+- `const NAME = expr` is a `let` whose value must be static: a function of
+  the source text alone, depending on no `state`, no `var`, no dynamic native
+  and no function that reads or prints. A `const` that is not is a compile
+  error carrying the chain of reasons (`A calls build`, `build calls print`),
+  which `petal check` fails on and `petal run` refuses to start with. It is
+  top level only, never assigned, holds data rather than a function, exports
+  as `pub const`, and is otherwise evaluated, hoisted and hot-reloaded as the
+  `let` it is. Whether a host's native is constant is the host's to say, so
+  `petal check` and the language server report nothing for a `const` built
+  from natives they do not have, and its host reports the error on load. See
+  [Constants](docs/language-guide.md#const--a-value-that-must-be-constant).
 - `state` slots are keyed by the call path that reaches them, so two calls to
   the same function keep separate state. Loops get per-iteration state, with
   optional explicit keys.
@@ -111,17 +122,6 @@ way, for code written against an earlier checkout.
   the sweep skips frozen slots through a bit index instead of reading them. Freezing is one-way (a frozen value is never freed), a value holding
   a function or a `var` cell is refused, and an update of a frozen value
   copies. See [docs/Builtins.md](docs/Builtins.md#frozen-data).
-- The collector's budget counts live objects plus a small cost per slot, where
-  it charged the full trace cost for free slots too: a program allocating at a
-  steady rate now reaches a steady heap instead of growing its slot count and
-  its pauses (30 ms to 17 ms a collection in the same 100,000-record
-  benchmark, before freezing).
-- Hot reload: recompile a running program and carry its `state` over.
-- Hot reload does only the work an edit calls for. `Env::reload_program` diffs
-  each source file's syntax tree against what the program was compiled from:
-  a whitespace or comment edit only moves source positions, an edit of literal
-  values (`0.35` to `0.4`, also inside records, lists and function bodies)
-  writes the constants into the running program, and anything else recompiles
 - Static values: a top-level value that depends on no dynamic data (a
   literal table, a table built from one by constant builtins or by
   functions that read no `state`, input or clock) is built on the first run
@@ -142,6 +142,17 @@ way, for code written against an earlier checkout.
   `Env::set_static_cache(false)`) turns it off; `Env::static_values` lists
   what a stack holds. See
   [docs/dev/performance.md](docs/dev/performance.md#static-values).
+- The collector's budget counts live objects plus a small cost per slot, where
+  it charged the full trace cost for free slots too: a program allocating at a
+  steady rate now reaches a steady heap instead of growing its slot count and
+  its pauses (30 ms to 17 ms a collection in the same 100,000-record
+  benchmark, before freezing).
+- Hot reload: recompile a running program and carry its `state` over.
+- Hot reload does only the work an edit calls for. `Env::reload_program` diffs
+  each source file's syntax tree against what the program was compiled from:
+  a whitespace or comment edit only moves source positions, an edit of literal
+  values (`0.35` to `0.4`, also inside records, lists and function bodies)
+  writes the constants into the running program, and anything else recompiles
   and transfers state as before. The result is the same on every path, which
   `core/tests/hot_reload.rs` checks against a full recompile. On a
   10,000-line game a value edit takes 0.8 ms where the recompile took 300 ms.
@@ -272,6 +283,18 @@ way, for code written against an earlier checkout.
   `prefer-match` turns an `if`/`elsif` chain that compares one subject against
   literals — numbers included, since `when 1` matches what `== 1` does — into
   a `match`.
+- `petal lint` rule `state-as-constant`: a plain top-level `state` that
+  nothing in the program assigns, and whose initializer is static, is
+  reported, and `--fix` rewrites it to `const`. The rule compiles its own
+  rewrite and keeps only what the compiler accepts as constant. It is the
+  first opt-in rule: it runs only with `--rules-include=state-as-constant`,
+  because a cell a host writes by name looks the same to it.
+- `petal show-static` lists a `const` under that keyword and says when one is
+  not constant or cannot be verified without its host (`const_check` in
+  `--json`). The language server shows a top-level declaration's class on
+  hover (`// static`, `// dynamic: <the first reason>`, `// function,
+  static-pure`), reports a `const` that is not constant as an error, and
+  lists a `const` as a constant in the outline.
 - `petal suggest` proposes the type annotations and safe refactors a program
   implies.
 - `petal bench` reports the per-call cost of named functions.
@@ -444,6 +467,12 @@ way, for code written against an earlier checkout.
   natives are dynamic under the plain CLI. `Env::static_report` is the same
   answer against a host's own natives. See
   [docs/CLI.md](docs/CLI.md#show-static--static-declarations).
+- `petal run --runs <n>` runs a script n times on one stack, the way a host
+  runs it every frame: `state`, memo records and static values carry from
+  each run to the next. Run policies take `+static` / `-static`
+  (`--policy fast-static`), and `PETAL_POLICY=fast petal show-bytecode`
+  shows the `static_skip` / `static_store` instructions of the static-value
+  cache, which a plain `show-bytecode`, like a plain `run`, leaves out.
 - `petal run --static-audit` (and `petal-ui-run --static-audit`) checks the
   classifier and the `CONST` registrations against a real run: while a
   top-level term that `show-static` calls static is being evaluated, it
@@ -467,12 +496,6 @@ way, for code written against an earlier checkout.
 - `petal-web-canvas` and `petal-web-html`: WebAssembly hosts that draw to a
   canvas or patch the DOM.
 - `petal-ui`: the shared input and draw contract, a widget prelude, a component
-- `petal run --runs <n>` runs a script n times on one stack, the way a host
-  runs it every frame: `state`, memo records and static values carry from
-  each run to the next. Run policies take `+static` / `-static`
-  (`--policy fast-static`), and `PETAL_POLICY=fast petal show-bytecode`
-  shows the `static_skip` / `static_store` instructions of the static-value
-  cache, which a plain `show-bytecode`, like a plain `run`, leaves out.
   library, text measurement from real font metrics, gradients, shadows, clips,
   offscreen canvases, and a headless driver (`petal-ui-run`) with scenario
   files.
@@ -511,6 +534,12 @@ package changes below, `petal fix-imports` does the rewriting and
   do the same. The check is `Env::check_program` for embedders, the language
   server reports the same findings, and petal-sdl and `petal-ui-run` print
   them on load and reload.
+- `const` is a keyword and can no longer name a binding, a parameter or a
+  function. It is still a record key and a field name (`{const: 1}`,
+  `r.const`). No script in this repository or the projects built on it used
+  the name. `ConstructKind` (the kind of a changed top-level construct in a
+  reload report) and the classifier's `DeclKind` gain a `Const` variant, and
+  `StmtKind::Let` an `is_const` field, for embedders that match on them.
 - `petal check` no longer warns about the `export` spelling of `pub`;
   `petal lint` (rule `prefer-pub`) reports it and `petal fmt` rewrites it.
 - `petal lint-fix` is removed; write `petal lint --fix`.

@@ -349,6 +349,85 @@ zero, a negated number written as data in a `config let` (`-0.5`, also inside
 its lists, records and call arguments) is one constant rather than a negation
 of one. The value is the same either way.
 
+### `const` — a value that must be constant
+
+`const NAME = expr` is a `let` whose value must be **static**: it can depend
+on nothing that changes between one run of the program and the next. It is
+evaluated exactly as the `let` would be; what it adds is a check.
+
+```petal
+fn tile(name, cost)
+  {name: name, cost: cost}
+end
+
+const TILES = [tile("grass", 1), tile("road", 0)]
+const COSTS = map(TILES, fn(t) -> t.cost)
+print(COSTS)
+```
+
+A static value is built from literals, lists and records of static parts,
+operators, other static declarations (`const`, a static `let`, a
+`config let`, an enum's constant data), constant builtins (`len`, `map`,
+`sort`, `sqrt`, …), and calls of **static-pure** functions: functions that
+read no `state`, no `var` but their own, no dynamic native, and print
+nothing. `tile` above is one, so a table built with it is static.
+
+Anything else is an error at compile time, with the chain of reasons down to
+the term that makes the value dynamic:
+
+```text
+error: `LAB_W` is declared `const` but is not constant
+  = LAB_W calls build_label_w at line 12
+  = build_label_w calls text_width, which is not declared constant at line 4
+ --> [line 12, column 15]
+   |
+12 | const LAB_W = build_label_w(events)
+   |               ^^^^^^^^^^^^^^^^^^^^^
+```
+
+`petal check` exits non-zero on it and `petal run` does not start. A host
+that reloads a script while it is being edited prints the error and keeps
+running, with the binding behaving as the `let` it otherwise is.
+
+Why write it: a static top-level value is one the runtime can build once and
+keep, and can rebuild when its source changes, which a table parked in
+`state` never does. A plain `let` gets the same treatment when it happens to
+be static, but silently stops getting it the day someone adds a `print` to a
+constructor or reads the screen size in a helper. `const` makes that an
+error instead of a slowdown. `petal show-static file.ptl` lists what is
+static and why the rest is not ([CLI.md](CLI.md#show-static--static-declarations)).
+
+The rules:
+
+- **Top level only.** A `const` inside a function, a loop or a branch is an
+  error: only a top-level declaration is one value for the life of the
+  program. Use `let` there.
+- **Never assigned.** `A = …`, `A[i] = …` and `A.f = …` on a `const` are the
+  same error, with the reason `is assigned again`.
+- **Data, not a function.** `const f = fn(x) -> x` is an error (declare it
+  with `fn`), and so is a list or record that holds a function.
+- **`pub const`** exports it like any binding. `config const` does not exist:
+  a `config let` of literals is already static, and `config` is about who
+  edits the value, not about what it depends on.
+- **Hoisting** is as for `let`: a `const` whose initializer is literals and
+  arithmetic is in place before the file's first statement, so a hoisted
+  function that reads it can be called from above
+  ([Declaration order](#declaration-order-top-level-fns-are-hoisted)).
+- `const` is a keyword, so it cannot name a binding. It can still be a record
+  key or a field (`{const: 1}`, `r.const`), like every keyword.
+
+**Host natives.** A native function counts as constant only when its host
+registered it so ([ffi.md](ffi.md#constant-natives)). `petal check`, `petal
+lint` and the language server run without any host, so for a `const` built
+from a host's natives they cannot say either way: they report nothing, and
+the host reports the error when it loads the script if the value is not
+constant there. A `const` that is dynamic for a reason no host could change
+(it reads `state`, say) is an error everywhere.
+
+A constant that was parked in `state` to avoid rebuilding it is what `const`
+replaces. `petal lint --rules-include=state-as-constant` finds those (below,
+under [State](#state)).
+
 ## Types
 
 Petal has the following value types:
@@ -2519,6 +2598,25 @@ state hits = 0
 hits += 1
 print(hits)   // 1 on the first run, 2 on the second, ...
 ```
+
+A `state` that is never assigned is not state: it is a constant, built once
+and then never updated, including by a hot reload of the line that declares
+it. The lint rule `state-as-constant` reports a plain top-level `state` with
+a static initializer that nothing in the program assigns, and its fix
+rewrites it as a [`const`](#const--a-value-that-must-be-constant), which
+follows its source:
+
+```text
+$ petal lint --rules-include=state-as-constant app.ptl
+app.ptl:12:1: state-as-constant: `state TILES` is never assigned and its initializer is constant; …
+$ petal lint --fix --rules-include=state-as-constant app.ptl
+```
+
+The rule runs only when asked for by name, because the rewrite is a
+judgement and not a respelling. Keep `state` where a host writes the cell by
+name, where the value is meant to survive a reload, or where the initializer
+is expensive and the script runs somewhere that rebuilds a `const` on every
+run; `// petal-lint-ignore state-as-constant` on the line records that.
 
 ### One slot per call path
 

@@ -575,7 +575,6 @@ impl Compiler {
         let entry = LoadedModule {
             name: None,
             display_name: "<entry>".to_string(),
-            deprecated_exports: crate::module::deprecated_exports(stmts, &source),
             source,
             origin: None,
             stmts: stmts.to_vec(),
@@ -1004,13 +1003,6 @@ impl Compiler {
             self.builtin_phantoms.contains_key(name)
         });
         self.warnings.extend(shadowed);
-        // `export` is the old spelling of `pub`: still accepted, but said so.
-        for &span in &module.deprecated_exports {
-            self.warn_at(
-                span,
-                crate::export_keyword::DEPRECATION_MESSAGE.to_string(),
-            );
-        }
         // After the checker, before the file's statements: a hoisted body is
         // compiled here and wants the dispatch table the checker just built.
         self.prescan_emit(&stmts);

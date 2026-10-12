@@ -24,7 +24,6 @@ function file(contents: string): string {
 
 const OLD = "export fn double(x)\n  x * 2\nend\nexport let limit = 10\nprint(double(limit))\n";
 const NEW = "pub fn double(x)\n  x * 2\nend\npub let limit = 10\nprint(double(limit))\n";
-const DEPRECATED = "`export` is deprecated";
 
 describe("pub / export", () => {
   test("both spellings run, and print the same thing", () => {
@@ -45,26 +44,14 @@ describe("pub / export", () => {
     expect(showAstJson("pub let a = 1")[0].exported).toBe(true);
   });
 
-  test("check warns about each `export`, at the keyword, and still passes", () => {
-    const r = petalCapture(["check", "-e", OLD]);
-    expect(r.code).toBe(0);
-    expect(r.stderr.split(DEPRECATED).length - 1).toBe(2);
-    expect(r.stderr).toContain("write `pub` instead");
-
-    const diags = checkJson(OLD).warnings.filter((w: any) =>
-      w.message.includes(DEPRECATED)
-    );
-    expect(diags.map((w: any) => [w.severity, w.line, w.column])).toEqual([
-      ["warning", 1, 1],
-      ["warning", 4, 1],
-    ]);
-  });
-
-  test("check is silent about `pub`", () => {
-    const r = petalCapture(["check", "-e", NEW]);
-    expect(r.code).toBe(0);
-    expect(r.stderr).not.toContain("deprecated");
-    expect(checkStrict(NEW).code).toBe(0);
+  test("check is silent about either spelling: the old one is lint's to report", () => {
+    for (const source of [OLD, NEW]) {
+      const r = petalCapture(["check", "-e", source]);
+      expect(r.code).toBe(0);
+      expect(r.stderr).toBe("");
+      expect(checkJson(source).warnings).toEqual([]);
+      expect(checkStrict(source).code).toBe(0);
+    }
   });
 
   test("lint reports prefer-pub and --fix rewrites the file", () => {

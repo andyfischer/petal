@@ -441,10 +441,7 @@ Options:
   `{message, line, column, phase, errors, ...}` — see
   [Error phases](#error-phases).
 - `--strict` — exit 1 when there are warnings too. Plain `check` exits 0 for a
-  program that only has warnings. The `export` deprecation warning is printed
-  but does not count: the old spelling still works with no removal planned,
-  and `petal lint` (rule `prefer-pub`) is the gate for a codebase that wants
-  it gone.
+  program that only has warnings.
 - `--lenient` — report checker errors but exit 0 unless the program fails to
   compile or lower. For a sweep that only asks "does this compile?" over
   scripts written for several hosts.

@@ -435,9 +435,7 @@ OPTIONS
 
        --strict
               Exit non-zero when type-checker warnings exist. Plain 'check'
-              exits 0 for a program that only has warnings. The 'export'
-              deprecation is printed but not counted: the old spelling
-              still works, and 'petal lint' is the gate for it.
+              exits 0 for a program that only has warnings.
 
        --lenient
               Report checker errors but exit 0 unless the program fails to

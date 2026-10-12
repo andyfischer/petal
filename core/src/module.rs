@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{Expr, ExprKind, ExprVisitor, ImportDecl, Stmt, StmtKind, walk_expr};
 use crate::error::{LoadError, Phase};
-use crate::source_map::{ENTRY_FILE, FileId, SourceSpan};
+use crate::source_map::{ENTRY_FILE, FileId};
 
 /// Where a module's source came from.
 #[derive(Debug, Clone, PartialEq)]
@@ -1040,10 +1040,6 @@ pub struct LoadedModule {
     pub stmts: Vec<Stmt>,
     pub imports: Vec<ResolvedImport>,
     pub file_id: FileId,
-    /// Where this file spells the `pub` modifier the deprecated way,
-    /// `export`. Collected here, before `imports` is split off `stmts`, so an
-    /// `export import …` is seen too; the compiler turns each into a warning.
-    pub deprecated_exports: Vec<SourceSpan>,
     /// The host interfaces the package this file belongs to requires (its
     /// manifest's `[requires]`); empty for a file of no package.
     pub requires: Vec<crate::package::RequiredInterface>,
@@ -1079,7 +1075,6 @@ pub fn load_modules(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| INLINE_ENTRY_NAME.to_string());
     let stmts = parse_module(entry_source, ENTRY_FILE, None, resolver.parse_cache(), "")?;
-    let entry_deprecated_exports = deprecated_exports(&stmts, entry_source);
     let (explicit_imports, stmts) = split_imports(stmts);
     let (mut explicit_imports, stmts) = (explicit_imports, stmts);
     for import in &explicit_imports {
@@ -1195,7 +1190,6 @@ pub fn load_modules(
         stmts,
         imports: entry_imports,
         file_id: ENTRY_FILE,
-        deprecated_exports: entry_deprecated_exports,
         requires: resolver.requires_of(entry_origin),
     });
     Ok(modules)
@@ -1431,7 +1425,6 @@ impl Walker<'_> {
             self.resolver.parse_cache(),
             &format!("module {name}"),
         )?;
-        let deprecated_exports = deprecated_exports(&stmts, &resolved.source);
         let (mut imports, stmts) = split_imports(stmts);
 
         self.in_progress.push(name.clone());
@@ -1465,7 +1458,6 @@ impl Walker<'_> {
             stmts,
             imports,
             file_id,
-            deprecated_exports,
             requires,
         });
         Ok(name)
@@ -1528,13 +1520,6 @@ fn parse_module_uncached(
         e
     })?;
     Ok(stmts)
-}
-
-/// The `export` modifiers in a freshly parsed file (see
-/// [`crate::export_keyword`]).
-pub(crate) fn deprecated_exports(stmts: &[Stmt], source: &str) -> Vec<SourceSpan> {
-    let chars: Vec<char> = source.chars().collect();
-    crate::export_keyword::deprecated_export_spans(stmts, &chars)
 }
 
 /// Split a parsed statement list into its leading imports and the rest.
@@ -2071,7 +2056,6 @@ mod tests {
             stmts: Vec::new(),
             imports: Vec::new(),
             file_id: crate::source_map::FileId(1),
-            deprecated_exports: Vec::new(),
             requires: Vec::new(),
         };
         assert!(crate::compiler::is_bundled_copy(&module));

@@ -93,10 +93,11 @@ fn a_second_source_is_refused() {
 }
 
 #[test]
-fn strict_check_does_not_fail_on_the_export_deprecation_alone() {
+fn strict_check_has_nothing_to_say_about_the_export_spelling() {
+    // The old spelling is `petal lint`'s (`prefer-pub`), not `check`'s.
     let old = "export fn f()\n  1\nend\nprint(f())\n";
     let (_, err, code) = petal(&["check", "--strict", "-e", old]);
-    assert!(err.contains("`export` is deprecated"), "{err}");
+    assert_eq!(err, "");
     assert_eq!(code, 0, "{err}");
 
     // Any other warning still fails it.

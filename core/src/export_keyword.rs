@@ -4,12 +4,14 @@
 //! and parse to the same declaration, so nothing downstream of the parser can
 //! tell them apart: the AST carries one `exported` flag and the IR is
 //! identical. This module is the one place that still can. It finds every
-//! `export` written as a modifier, and three callers act on that:
+//! `export` written as a modifier, and two callers act on that:
 //!
-//! - the module loader, which turns each site into a deprecation warning on
-//!   the compiled program (`petal check`, the LSP);
-//! - `petal lint`'s `prefer-pub` rule, which rewrites it under `--fix`;
+//! - `petal lint`'s `prefer-pub` rule, which reports it and rewrites it under
+//!   `--fix`;
 //! - `petal fmt`, which normalizes it.
+//!
+//! The compiler says nothing about the old spelling: it is a matter of
+//! spelling, which is lint's and fmt's, not `petal check`'s.
 //!
 //! A site is found from the AST rather than the token stream because
 //! `export` stays an ordinary field and record-key name (`r.export`,
@@ -26,10 +28,6 @@ use crate::source_map::SourceSpan;
 /// The deprecated modifier and the one that replaces it.
 pub const DEPRECATED: &str = "export";
 pub const REPLACEMENT: &str = "pub";
-
-/// The message `petal check` and the LSP attach to each deprecated site.
-pub const DEPRECATION_MESSAGE: &str =
-    "`export` is deprecated: write `pub` instead (`petal lint --fix` rewrites it)";
 
 /// The span of every `export` modifier in `stmts`, in source order. `chars`
 /// is the source the statements were parsed from; each span covers just the

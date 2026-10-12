@@ -207,9 +207,9 @@ the entry file is allowed but does nothing, since nothing imports the entry
 file.
 
 `pub` used to be spelled `export`. The old word still works everywhere `pub`
-does, with no removal planned, and means exactly the same thing; `petal check`
-and the language server flag it as deprecated, and `petal lint --fix` (rule
-`prefer-pub`) or `petal fmt` rewrites it. Both words are reserved.
+does, with no removal planned, and means exactly the same thing; `petal lint`
+reports it (rule `prefer-pub`), and `petal lint --fix` or `petal fmt` rewrites
+it. Both words are reserved.
 
 A leading underscore carries no meaning: `fn _helper` is private because it
 lacks `pub`, not because of the name.

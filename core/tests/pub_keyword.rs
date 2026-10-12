@@ -4,12 +4,11 @@
 // The contract under test: the two words are one modifier. `pub` is accepted
 // everywhere `export` was; `export` keeps working and compiles to the same
 // program; the only places that tell them apart are the ones built to —
-// `petal check` / the LSP (a deprecation warning), `petal lint` (the
-// `prefer-pub` rule) and `petal fmt` (which rewrites it).
+// `petal lint` (the `prefer-pub` rule) and `petal fmt` (which rewrites it).
+// The compiler, and so `petal check` and the LSP, says nothing about it.
 
 use petal::diagnostic::Diagnostic;
 use petal::env::Env;
-use petal::export_keyword::DEPRECATION_MESSAGE;
 use petal::ir_equiv::ir_equivalent;
 use petal::lint::{LintOptions, PREFER_PUB, RuleFilter, lint_source};
 
@@ -65,15 +64,12 @@ fn warnings(env: &Env, pid: petal::program::ProgramId) -> Vec<Diagnostic> {
     env.get_program(pid).expect("program").warnings.clone()
 }
 
-fn deprecations(source: &str) -> Vec<(u32, u32, u32)> {
+/// What compiling `source` warns about.
+fn compile_warnings(source: &str) -> Vec<Diagnostic> {
     let mut env = Env::new();
     env.register_module("shapes", SHAPES);
     let pid = env.load_program(source).expect("compiles");
     warnings(&env, pid)
-        .iter()
-        .filter(|d| d.message == DEPRECATION_MESSAGE)
-        .map(|d| (d.span.start.line, d.span.start.column, d.span.end.column))
-        .collect()
 }
 
 // ── `pub` and `export` are the same modifier ─────────────────────
@@ -167,11 +163,7 @@ fn pub_and_export_remain_usable_as_field_names() {
     let sid = env.create_stack(pid).unwrap();
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), ["1 2"]);
-    assert!(
-        warnings(&env, pid)
-            .iter()
-            .all(|d| d.message != DEPRECATION_MESSAGE)
-    );
+    assert_eq!(warnings(&env, pid), vec![]);
 }
 
 #[test]
@@ -187,89 +179,30 @@ fn a_dangling_modifier_names_the_word_that_was_written() {
     assert!(err.contains("`export` must be followed by"), "got: {err}");
 }
 
-// ── The deprecation warning ──────────────────────────────────────
+// ── The compiler does not comment on the spelling ────────────────
 
 #[test]
-fn pub_draws_no_deprecation_warning() {
-    assert_eq!(deprecations(&every_form("pub")), vec![]);
+fn neither_spelling_draws_a_compile_warning() {
+    // The old spelling is lint's (`prefer-pub`) and fmt's to report and
+    // rewrite; a compile, and so `petal check`, has nothing to say about it.
+    assert_eq!(compile_warnings(&every_form("pub")), vec![]);
+    assert_eq!(compile_warnings(&every_form("export")), vec![]);
 }
 
 #[test]
-fn every_export_form_is_warned_about_at_its_keyword() {
-    // One warning per declaration, spanning just the word `export` (columns
-    // are 1-based, end-exclusive), in source order — the `import` included,
-    // though the loader has split it off the statement list by then.
-    let lines = [1, 2, 5, 6, 7, 8, 9, 13];
-    let expected: Vec<(u32, u32, u32)> = lines.iter().map(|&line| (line, 1, 7)).collect();
-    assert_eq!(deprecations(&every_form("export")), expected);
-}
-
-#[test]
-fn the_warning_is_a_warning_not_an_error() {
-    let mut env = Env::new();
-    let pid = env.load_program("export let a = 1\nprint(a)").unwrap();
-    let found = warnings(&env, pid);
-    let d = found
-        .iter()
-        .find(|d| d.message == DEPRECATION_MESSAGE)
-        .expect("a deprecation warning");
-    assert!(!d.is_error());
-    assert!(d.message.contains("`pub`"), "the message names the fix");
-    // It compiled, and it runs.
-    let sid = env.create_stack(pid).unwrap();
-    env.run(sid).unwrap();
-    assert_eq!(env.take_output(), ["1"]);
-}
-
-#[test]
-fn an_imported_modules_export_is_attributed_to_that_module() {
+fn an_imported_modules_export_draws_no_warning_either() {
     let mut env = Env::new();
     env.register_module("lib", "\nexport let a = 1\n");
     let pid = env.load_program("import lib\nprint(lib.a)").unwrap();
-    let program = env.get_program(pid).unwrap();
-    let d = program
-        .warnings
-        .iter()
-        .find(|d| d.message == DEPRECATION_MESSAGE)
-        .expect("a deprecation warning for lib");
-    assert_eq!(d.span.start.line, 2);
-    assert_eq!(program.source_map.file_name_for_span(&d.span), Some("lib"));
-}
-
-#[test]
-fn the_bundled_preludes_are_free_of_the_deprecated_spelling() {
-    // `std` is merged into any program that calls one of its helpers; a
-    // leftover `export` there would warn in every such user's `petal check`.
-    let mut env = Env::new();
-    let pid = env.load_program("print(sum([1, 2, 3]))").unwrap();
     assert_eq!(warnings(&env, pid), vec![]);
 }
 
 #[test]
-fn the_lsp_reports_export_as_a_warning() {
+fn the_lsp_does_not_flag_export() {
     use petal::lsp::document::analyze;
-    use petal::lsp::lsp_types::DiagnosticSeverity;
 
     let analysis = analyze("let a = 1\nexport fn f()\n  a\nend\n");
-    let d = analysis
-        .diagnostics
-        .iter()
-        .find(|d| d.message == DEPRECATION_MESSAGE)
-        .expect("a deprecation diagnostic");
-    assert!(matches!(d.severity, Some(DiagnosticSeverity::Warning)));
-    // LSP positions are 0-based: line 2 of the file, columns 0..6.
-    assert_eq!((d.range.start.line, d.range.start.character), (1, 0));
-    assert_eq!((d.range.end.line, d.range.end.character), (1, 6));
-
-    let clean = analyze("let a = 1\npub fn f()\n  a\nend\n");
-    assert!(
-        clean
-            .diagnostics
-            .iter()
-            .all(|d| d.message != DEPRECATION_MESSAGE),
-        "{:?}",
-        clean.diagnostics
-    );
+    assert!(analysis.diagnostics.is_empty(), "{:?}", analysis.diagnostics);
 }
 
 // ── `petal lint`: the `prefer-pub` rule ──────────────────────────

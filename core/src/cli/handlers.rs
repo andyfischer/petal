@@ -990,16 +990,7 @@ pub(super) fn handle_check(
         }
         die_with(json, &e, "lower", warnings_json(program));
     }
-    // What `--strict` counts. The `export` deprecation is left out: the old
-    // spelling still works with no removal planned (docs/module-system.md), so
-    // it is printed as advice but is no reason to fail CI — `petal lint`'s
-    // `prefer-pub` rule is the gate for a codebase that wants it gone.
-    let warning_count = program.map_or(0, |p| {
-        p.warnings
-            .iter()
-            .filter(|d| d.message != crate::export_keyword::DEPRECATION_MESSAGE)
-            .count()
-    });
+    let warning_count = program.map_or(0, |p| p.warnings.len());
     let error_count = program.map_or(0, |p| p.warnings.iter().filter(|d| d.is_error()).count());
     // A checker error is a line that fails whenever it runs, so the program
     // does not pass `check` — unless `--lenient` asks only "does it compile?".

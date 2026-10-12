@@ -518,8 +518,8 @@ fn a_divisor_that_reaches_zero_is_recompiled() {
 
 #[test]
 fn an_edit_the_syntax_tree_does_not_show_is_recompiled() {
-    // `export` is the deprecated spelling of `pub`: same tree, one warning
-    // fewer.
+    // `export` is the deprecated spelling of `pub`: same tree, different
+    // text.
     let old = [("m", "export let A = 1\n")];
     let new = [("m", "pub let A = 1\n")];
     Case::new("export to pub", "import m\nprint(m.A)\n", "import m\nprint(m.A)\n", Recompiled)

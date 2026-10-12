@@ -45,9 +45,8 @@ pub fn match_pattern(
         }
 
         Pattern::Variable(name) => {
-            // Pure variable binding — always matches and captures the value.
-            // (Known enum variant names are resolved to Pattern::Variant by the
-            // compiler.)
+            // A bare name always binds: it matches anything and captures the
+            // value. A variant is only ever written through its enum.
             bindings.push((name.clone(), value));
             true
         }

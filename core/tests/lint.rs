@@ -970,18 +970,53 @@ end
     );
 }
 
-/// `==` compares an int against a float numerically (`1 == 1.0` is true) while
-/// `when 1` does not match `1.0`, so a numeric chain is left alone: rewriting
-/// it would change which arm a float subject takes.
+/// A numeric literal pattern matches what the literal is `==` to (`when 1`
+/// matches `1.0`, as `n == 1` is true of it), so a numeric chain converts
+/// like any other — and takes the same arm for a float subject.
 #[test]
-fn numeric_literals_are_never_converted() {
-    assert_fixed_point(
-        "\
+fn a_numeric_chain_becomes_a_match_that_takes_the_same_arms() {
+    let chain = "\
 fn f(n)
   if n == 1 then \"a\"
-  elsif n == 2 then \"b\"
+  elsif n == 2.5 then \"b\"
   elsif n == 3 then \"c\"
   else \"z\"
+  end
+end
+";
+    let matched = "\
+fn f(n)
+  match n
+    when 1 -> \"a\"
+    when 2.5 -> \"b\"
+    when 3 -> \"c\"
+    when _ -> \"z\"
+  end
+end
+";
+    assert_lints_to(chain, matched);
+    let probe = "print(f(1), f(1.0), f(2.5), f(3.0), f(4), f(\"1\"), f(nil))\n";
+    let run = |body: &str| {
+        let mut env = petal::env::Env::new();
+        env.set_echo(false);
+        env.run_source(&format!("{body}{probe}")).unwrap();
+        env.take_output()
+    };
+    assert_eq!(run(chain), ["a a b c z z z"]);
+    assert_eq!(run(matched), run(chain));
+}
+
+/// A name on the right is not a literal: `when limit` would bind `limit`
+/// rather than compare against it.
+#[test]
+fn a_chain_against_names_stays_an_if() {
+    assert_fixed_point(
+        "\
+fn f(n, a, b, c)
+  if n == a then 1
+  elsif n == b then 2
+  elsif n == c then 3
+  else 4
   end
 end
 ",
@@ -1035,8 +1070,8 @@ end
     );
 }
 
-/// A `->` arm takes an expression; a multi-statement arm would need the
-/// `do … end` form, which this rule does not emit.
+/// The rule is about lookups. A chain with a block of statements for a
+/// branch is control flow, and is left as its author wrote it.
 #[test]
 fn a_multi_statement_arm_stays_an_if() {
     assert_fixed_point(

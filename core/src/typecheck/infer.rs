@@ -194,7 +194,7 @@ impl Inferences {
     /// Every slot this evidence pins down, keyed by function. Slots the author
     /// already annotated, and functions whose name is claimed by more than one
     /// module, are left out.
-    pub fn resolve(&self, classes: &ClassTable) -> BTreeMap<FnKey, Vec<Resolved>> {
+    pub fn resolve(&self) -> BTreeMap<FnKey, Vec<Resolved>> {
         let mut out: BTreeMap<FnKey, Vec<Resolved>> = BTreeMap::new();
         let unambiguous = |key: &FnKey| {
             self.declared_in
@@ -206,7 +206,7 @@ impl Inferences {
             if !unambiguous(key) || self.annotated_params.contains(&(key.clone(), *index)) {
                 continue;
             }
-            if let Some(ty) = conclude(evidence, Slot::Param(*index), classes) {
+            if let Some(ty) = conclude(evidence, Slot::Param(*index)) {
                 out.entry(key.clone()).or_default().push(Resolved {
                     slot: Slot::Param(*index),
                     ty,
@@ -218,7 +218,7 @@ impl Inferences {
             if !unambiguous(key) || self.annotated_returns.contains(key) {
                 continue;
             }
-            if let Some(ty) = conclude(evidence, Slot::Return, classes) {
+            if let Some(ty) = conclude(evidence, Slot::Return) {
                 out.entry(key.clone()).or_default().push(Resolved {
                     slot: Slot::Return,
                     ty,
@@ -269,7 +269,7 @@ pub struct Resolved {
 ///
 /// `slot` decides how numbers are treated: see the module docs on
 /// preconditions and promises.
-fn conclude(evidence: &[Evidence], slot: Slot, classes: &ClassTable) -> Option<Type> {
+fn conclude(evidence: &[Evidence], slot: Slot) -> Option<Type> {
     let from_fields = conclude_from_fields(evidence);
 
     let mut from_types: Option<Type> = None;
@@ -294,6 +294,9 @@ fn conclude(evidence: &[Evidence], slot: Slot, classes: &ClassTable) -> Option<T
         // instance says which one. The class is the better answer, and it is
         // compatible with what the reads proved.
         (Some(_), Some(b)) if b.is_assignable_to(&Type::Record) => Some(b),
+        // Likewise a variant of a declared enum: its fields are read the way
+        // a record's are, and the enum is the better answer.
+        (Some(_), Some(b @ Type::EnumOf(_))) => Some(b),
         // Read as a record *and* observed as something that is not one.
         (Some(_), Some(_)) => None,
         (Some(a), None) => Some(a),
@@ -372,21 +375,17 @@ mod tests {
         Evidence::CallSite { span: span(), ty }
     }
 
-    fn classes() -> ClassTable {
-        ClassTable::new()
-    }
-
     #[test]
     fn agreeing_evidence_concludes_and_disagreeing_evidence_does_not() {
         assert_eq!(
-            conclude(&[call(Type::Bool), call(Type::Bool)], Slot::Return, &classes()),
+            conclude(&[call(Type::Bool), call(Type::Bool)], Slot::Return),
             Some(Type::Bool)
         );
         assert_eq!(
-            conclude(&[call(Type::Bool), call(Type::String)], Slot::Return, &classes()),
+            conclude(&[call(Type::Bool), call(Type::String)], Slot::Return),
             None
         );
-        assert_eq!(conclude(&[], Slot::Return, &classes()), None);
+        assert_eq!(conclude(&[], Slot::Return), None);
     }
 
     /// `any` is silence, not disagreement: a caller this pass could not type
@@ -394,10 +393,10 @@ mod tests {
     #[test]
     fn an_untypeable_call_site_is_silent_rather_than_contradictory() {
         assert_eq!(
-            conclude(&[call(Type::Bool), call(Type::Any)], Slot::Return, &classes()),
+            conclude(&[call(Type::Bool), call(Type::Any)], Slot::Return),
             Some(Type::Bool)
         );
-        assert_eq!(conclude(&[call(Type::Any)], Slot::Return, &classes()), None);
+        assert_eq!(conclude(&[call(Type::Any)], Slot::Return), None);
     }
 
     /// A return type keeps the precise type its body produces, and widens
@@ -407,17 +406,13 @@ mod tests {
         assert_eq!(
             conclude(
                 &[call(Type::Int), call(Type::Float)],
-                Slot::Return,
-                &classes()
-            ),
+                Slot::Return),
             Some(Type::Num)
         );
         assert_eq!(
             conclude(
                 &[call(Type::Float), call(Type::Float)],
-                Slot::Return,
-                &classes()
-            ),
+                Slot::Return),
             Some(Type::Float)
         );
     }
@@ -429,14 +424,14 @@ mod tests {
     fn numeric_evidence_about_a_parameter_always_concludes_num() {
         for observed in [Type::Int, Type::Float] {
             assert_eq!(
-                conclude(&[call(observed)], Slot::Param(0), &classes()),
+                conclude(&[call(observed)], Slot::Param(0)),
                 Some(Type::Num),
                 "{observed:?}"
             );
         }
         // Non-numeric evidence is unaffected.
         assert_eq!(
-            conclude(&[call(Type::String)], Slot::Param(0), &classes()),
+            conclude(&[call(Type::String)], Slot::Param(0)),
             Some(Type::String)
         );
     }
@@ -457,9 +452,9 @@ mod tests {
     /// `petal-ui`'s `point_in` is actually called with.
     #[test]
     fn field_reads_conclude_record_not_the_class_that_happens_to_match() {
-        let classes = classes();
+        let classes = ClassTable::new();
         assert_eq!(
-            conclude(&reads(&["x", "y", "w", "h"]), Slot::Param(0), &classes),
+            conclude(&reads(&["x", "y", "w", "h"]), Slot::Param(0)),
             Some(Type::Record)
         );
         // The class is still worth naming in the report.
@@ -473,21 +468,38 @@ mod tests {
         );
     }
 
+    /// A parameter whose fields are read and whose callers pass variants of
+    /// one enum is that enum: a variant's fields are read the way a record's
+    /// are, and `record` would be the wrong annotation for it.
+    #[test]
+    fn field_reads_with_enum_call_sites_conclude_the_enum() {
+        let mut classes = ClassTable::new();
+        let kind = Type::EnumOf(classes.declare_enum("Kind", Default::default()));
+        let other = Type::EnumOf(classes.declare_enum("Use", Default::default()));
+        let mut ev = reads(&["shape"]);
+        ev.push(call(kind));
+        assert_eq!(conclude(&ev, Slot::Param(0)), Some(kind));
+        assert_eq!(kind.display(&classes), "Kind");
+        // Two enums at one slot agree on nothing.
+        ev.push(call(other));
+        assert_eq!(conclude(&ev, Slot::Param(0)), None);
+    }
+
     /// A call site that passed a real instance is what narrows `record` to the
     /// class — and a call site that passed something else entirely means the
     /// two tracks disagree, so nothing is suggested.
     #[test]
     fn a_call_site_narrows_record_to_a_class_but_only_a_compatible_one() {
-        let classes = classes();
+        let classes = ClassTable::new();
         let rect = Type::Class(classes.lookup("Rect").expect("built-in Rect"));
 
         let mut ev = reads(&["x", "y"]);
         ev.push(call(rect));
-        assert_eq!(conclude(&ev, Slot::Param(0), &classes), Some(rect));
+        assert_eq!(conclude(&ev, Slot::Param(0)), Some(rect));
 
         let mut ev = reads(&["x", "y"]);
         ev.push(call(Type::Int));
-        assert_eq!(conclude(&ev, Slot::Param(0), &classes), None);
+        assert_eq!(conclude(&ev, Slot::Param(0)), None);
     }
 
     /// A slot two modules both declare is dropped rather than suggested from a
@@ -498,10 +510,10 @@ mod tests {
         let mut inf = Inferences::default();
         inf.note_declaration(key.clone(), "a", &[false], false);
         inf.note_param(key.clone(), 0, call(Type::Bool));
-        assert_eq!(inf.resolve(&classes()).len(), 1);
+        assert_eq!(inf.resolve().len(), 1);
 
         inf.note_declaration(key, "b", &[false], false);
-        assert!(inf.resolve(&classes()).is_empty());
+        assert!(inf.resolve().is_empty());
     }
 
     /// A slot the author already annotated is never suggested for, however
@@ -516,6 +528,6 @@ mod tests {
             span: span(),
             ty: Type::Bool,
         });
-        assert!(inf.resolve(&classes()).is_empty());
+        assert!(inf.resolve().is_empty());
     }
 }

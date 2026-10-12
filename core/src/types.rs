@@ -11,7 +11,7 @@ use std::borrow::Cow;
 
 use serde::Serialize;
 
-use crate::classes::{ClassId, ClassTable};
+use crate::classes::{ClassId, ClassTable, EnumId};
 
 /// A declared or inferred static type.
 ///
@@ -55,6 +55,11 @@ pub enum Type {
     /// compilation that produced it, which is why printing one needs that table
     /// ([`Type::display`]) and [`Type::name`] cannot spell it.
     Class(ClassId),
+    /// A variant of one declared `enum` — any variant of it. Like
+    /// [`Type::Class`], the payload indexes the compilation's
+    /// [`ClassTable`](crate::classes::ClassTable), which holds the enum's name
+    /// and shape. [`Type::Enum`] stays the type of a variant of *some* enum.
+    EnumOf(EnumId),
 }
 
 impl Type {
@@ -98,16 +103,21 @@ impl Type {
 
     /// Resolve a type-position name against a class table: the built-in
     /// vocabulary first (so a class may not shadow `int`), then declared
-    /// classes. This is what turns `rect: Rect` into [`Type::Class`].
+    /// classes, then declared enums. This is what turns `rect: Rect` into
+    /// [`Type::Class`] and `k: Kind` into [`Type::EnumOf`].
     pub fn resolve(name: &str, classes: &ClassTable) -> Option<Type> {
-        Type::from_name(name).or_else(|| classes.lookup(name).map(Type::Class))
+        Type::from_name(name)
+            .or_else(|| classes.lookup(name).map(Type::Class))
+            .or_else(|| classes.lookup_enum(name).map(Type::EnumOf))
     }
 
     /// How this type is spelled in a diagnostic. Identical to [`Type::name`]
-    /// except for [`Type::Class`], whose name lives in `classes`.
+    /// except for [`Type::Class`] and [`Type::EnumOf`], whose names live in
+    /// `classes`.
     pub fn display<'a>(&self, classes: &'a ClassTable) -> Cow<'a, str> {
         match self {
             Type::Class(id) => Cow::Borrowed(classes.name_of(*id)),
+            Type::EnumOf(id) => Cow::Borrowed(classes.enum_name(*id)),
             other => Cow::Borrowed(other.name()),
         }
     }
@@ -144,6 +154,7 @@ impl Type {
             Type::Handle => "handle",
             Type::Pending => "pending",
             Type::Class(_) => "class",
+            Type::EnumOf(_) => "enum",
         }
     }
 
@@ -168,6 +179,9 @@ impl Type {
     /// - A class instance *is* a record at runtime, so `Class(_)` satisfies a
     ///   `record` slot. The reverse is not true: a bare `{x: 1}` carries no
     ///   class tag, so it cannot fill a `Rect` slot.
+    /// - A variant of a declared enum satisfies an `enum` slot, and — the
+    ///   dynamic boundary again — an `enum` of unknown declaration is trusted
+    ///   to fill a declared enum's slot. Two declared enums never mix.
     /// - Otherwise the types must be equal — two distinct classes are never
     ///   interchangeable, however alike their fields.
     pub fn is_assignable_to(&self, other: &Type) -> bool {
@@ -176,6 +190,7 @@ impl Type {
             (Type::Int, Type::Float) => true,
             (Type::Int | Type::Float | Type::Dual, Type::Num) => true,
             (Type::Class(_), Type::Record) => true,
+            (Type::EnumOf(_), Type::Enum) | (Type::Enum, Type::EnumOf(_)) => true,
             _ => self == other,
         }
     }

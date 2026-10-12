@@ -275,6 +275,28 @@ A program that is not being reloaded runs the same instructions as before:
 `petal bench` reports identical instruction counts, and the benchmark programs
 time within noise (see [performance.md](dev/performance.md)).
 
+## Editing an enum
+
+A variant value is its tag (`Kind.park`) and its payload, and nothing else.
+What its enum declares — the constant data behind `k.shape`, the names of the
+payload's fields, which variants there are — is read from the program that is
+running now. So a variant kept in `state` across an edit is the old value read
+through the new declaration:
+
+| Edit | Outcome | A variant already in `state` |
+|---|---|---|
+| A literal in constant data (`shape: "area"` to `"green"`) | patched | answers with the new data from the next run |
+| A variant added, the variants reordered, a data key added | recompiled | unchanged; it answers the new key, and `Kind.all` follows the declaration |
+| Its variant removed | recompiled | still prints as `Kind.park`, still answers `name` and `type()`, equals no variant the enum has now; a data read is the runtime error `No field 'shape' on enum variant Kind.park`, and a `match` with no `when _ ->` is `No matching pattern for value: Kind.park` |
+| Its payload fields renamed, added or removed | recompiled | the payload is positional: it answers the new names as far as it reaches, a field it never had is absent, and a pattern for the new shape does not match it |
+| Its enum renamed or removed | recompiled | keeps the old tag, so it is a variant of an enum that no longer exists |
+
+None of these is a crash. The stale value is not rewritten or dropped either:
+`state` is the program's memory, and putting the variant back makes the same
+value whole again. A program that must survive such an edit gives its `match`
+a `when _ ->` arm and reads data with `?.` or `??`; otherwise the error names
+the value and the line, and the fix is to reset that state.
+
 ## Limits
 
 - **A structural edit recompiles the whole program.** The diff says which

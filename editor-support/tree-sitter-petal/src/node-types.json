@@ -1043,6 +1043,116 @@
     }
   },
   {
+    "type": "enum_data",
+    "named": true,
+    "fields": {
+      "key": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "boolean",
+            "named": true
+          },
+          {
+            "type": "call",
+            "named": true
+          },
+          {
+            "type": "color",
+            "named": true
+          },
+          {
+            "type": "field_access",
+            "named": true
+          },
+          {
+            "type": "float",
+            "named": true
+          },
+          {
+            "type": "get_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "index_access",
+            "named": true
+          },
+          {
+            "type": "integer",
+            "named": true
+          },
+          {
+            "type": "jsx_element",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "list",
+            "named": true
+          },
+          {
+            "type": "match_expression",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "raw_string",
+            "named": true
+          },
+          {
+            "type": "record",
+            "named": true
+          },
+          {
+            "type": "string",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "enum_declaration",
     "named": true,
     "fields": {
@@ -1072,12 +1182,12 @@
     "type": "enum_variant",
     "named": true,
     "fields": {
-      "fields": {
-        "multiple": false,
+      "field": {
+        "multiple": true,
         "required": false,
         "types": [
           {
-            "type": "parameter_list",
+            "type": "identifier",
             "named": true
           }
         ]
@@ -1092,6 +1202,16 @@
           }
         ]
       }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "enum_data",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -2653,6 +2773,10 @@
           "named": true
         },
         {
+          "type": "or_pattern",
+          "named": true
+        },
+        {
           "type": "record_pattern",
           "named": true
         },
@@ -2707,95 +2831,7 @@
         "required": false,
         "types": [
           {
-            "type": "binary_expression",
-            "named": true
-          },
-          {
             "type": "block",
-            "named": true
-          },
-          {
-            "type": "boolean",
-            "named": true
-          },
-          {
-            "type": "call",
-            "named": true
-          },
-          {
-            "type": "color",
-            "named": true
-          },
-          {
-            "type": "field_access",
-            "named": true
-          },
-          {
-            "type": "float",
-            "named": true
-          },
-          {
-            "type": "get_expression",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "if_expression",
-            "named": true
-          },
-          {
-            "type": "index_access",
-            "named": true
-          },
-          {
-            "type": "integer",
-            "named": true
-          },
-          {
-            "type": "jsx_element",
-            "named": true
-          },
-          {
-            "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "list",
-            "named": true
-          },
-          {
-            "type": "match_expression",
-            "named": true
-          },
-          {
-            "type": "nil",
-            "named": true
-          },
-          {
-            "type": "parenthesized_expression",
-            "named": true
-          },
-          {
-            "type": "pipe_expression",
-            "named": true
-          },
-          {
-            "type": "raw_string",
-            "named": true
-          },
-          {
-            "type": "record",
-            "named": true
-          },
-          {
-            "type": "string",
-            "named": true
-          },
-          {
-            "type": "unary_expression",
             "named": true
           }
         ]
@@ -2814,6 +2850,10 @@
           },
           {
             "type": "literal_pattern",
+            "named": true
+          },
+          {
+            "type": "or_pattern",
             "named": true
           },
           {
@@ -3193,6 +3233,41 @@
     "type": "nil",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "or_pattern",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "list_pattern",
+          "named": true
+        },
+        {
+          "type": "literal_pattern",
+          "named": true
+        },
+        {
+          "type": "or_pattern",
+          "named": true
+        },
+        {
+          "type": "record_pattern",
+          "named": true
+        },
+        {
+          "type": "variant_pattern",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "parameter",
@@ -3794,6 +3869,10 @@
           },
           {
             "type": "literal_pattern",
+            "named": true
+          },
+          {
+            "type": "or_pattern",
             "named": true
           },
           {
@@ -4827,6 +4906,26 @@
     "type": "variant_pattern",
     "named": true,
     "fields": {
+      "enum": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "module": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -4852,6 +4951,10 @@
         },
         {
           "type": "literal_pattern",
+          "named": true
+        },
+        {
+          "type": "or_pattern",
           "named": true
         },
         {
@@ -5294,6 +5397,10 @@
   },
   {
     "type": "{",
+    "named": false
+  },
+  {
+    "type": "|",
     "named": false
   },
   {

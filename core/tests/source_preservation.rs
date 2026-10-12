@@ -1008,3 +1008,46 @@ fn any_value_written_over_any_other_reads_back() {
         }
     }
 }
+
+// ── Enum variants ────────────────────────────────────────────────────────
+
+#[test]
+fn a_variant_is_read_written_and_edited_in_place() {
+    let source = "\
+enum Mode
+  dark, light,
+end
+enum Shape
+  dot, circle(r),
+end
+config let mode = Mode.dark   // the theme
+let look = { mode: Mode.dark, marks: [Shape.dot, Shape.circle(2)] }
+";
+    let variant = |of: &str, name: &str| StaticValue::variant(of, name, [] as [i64; 0]);
+    assert_eq!(get_static_value(source, "mode").unwrap(), variant("Mode", "dark"));
+
+    // Writing every value back as it was read moves nothing.
+    assert_eq!(write_back_everything(source), source);
+
+    // A variant replaces a variant, by binding and by path; a payload
+    // variant's argument is edited where it stands.
+    let edited = apply(
+        source,
+        &[
+            Goal::should_set_value("mode", variant("Mode", "light")),
+            Goal::should_set_path("look.mode", variant("Mode", "light")),
+            Goal::should_set_path("look.marks[1]", StaticValue::variant("Shape", "circle", [5])),
+        ],
+    );
+    assert_eq!(
+        edited,
+        source
+            .replace("mode = Mode.dark ", "mode = Mode.light ")
+            .replace("mode: Mode.dark", "mode: Mode.light")
+            .replace("circle(2)", "circle(5)")
+    );
+    assert_eq!(
+        get_static_value(&edited, "look").unwrap().to_source(),
+        "{ mode: Mode.light, marks: [\n  Shape.dot,\n  Shape.circle(5),\n] }"
+    );
+}

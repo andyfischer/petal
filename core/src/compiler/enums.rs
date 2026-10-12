@@ -65,16 +65,10 @@ impl Compiler {
             for (span, message) in check_enum_variants(name, variants) {
                 self.error_at(span, message);
             }
-            let def = EnumDef {
-                variants: variants
-                    .iter()
-                    .map(|v| EnumVariantDef {
-                        name: v.name.clone(),
-                        fields: v.fields.clone(),
-                        data: v.data.iter().map(|d| d.key.clone()).collect(),
-                    })
-                    .collect(),
-            };
+            let def = EnumDef::declared(variants);
+            // The type `name` in an annotation, and what the checker knows a
+            // value of it answers.
+            self.classes.declare_enum(name, def.clone());
             self.enum_defs.insert(
                 name.clone(),
                 EnumInfo {
@@ -209,9 +203,16 @@ impl Compiler {
     /// Emitted after the file's hoisted constants and functions, so a data
     /// expression may use them — and may name a variant of any enum, since
     /// every enum's name is bound by then. A name the file only computes
-    /// later (`let`, `var`, `state`) is not available; see `compile_ident`.
-    pub(super) fn emit_enum_data(&mut self, stmts: &[Stmt], unavailable: HashSet<String>) {
+    /// later (`let`, `var`, `state`) is not available, and neither is a
+    /// function (`late_fns`) that reads one; see `compile_ident`.
+    pub(super) fn emit_enum_data(
+        &mut self,
+        stmts: &[Stmt],
+        unavailable: HashSet<String>,
+        late_fns: HashSet<String>,
+    ) {
         self.enum_data_unavailable = Some(unavailable);
+        self.enum_data_late_fns = late_fns;
         for stmt in stmts {
             let StmtKind::EnumDecl { name, variants } = &stmt.kind else {
                 continue;
@@ -247,6 +248,7 @@ impl Compiler {
             }
         }
         self.enum_data_unavailable = None;
+        self.enum_data_late_fns.clear();
     }
 
     pub(super) fn string_constant(&mut self, s: &str) -> ConstantId {

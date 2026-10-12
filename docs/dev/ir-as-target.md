@@ -135,7 +135,8 @@ introduces over the raw `show-ir` dump is the validation pass.
   "functions": [ FunctionDef, ... ],          // omitted when empty
   "match_arms": { "<termId>": [ MatchArm, ... ] },  // omitted when empty
   "source_map": { ... },           // optional; omitted when empty
-  "class_names": ["Rect", ...]     // sorted; omitted when empty
+  "class_names": ["Rect", ...],    // sorted; omitted when empty
+  "enums": { "Kind": { "variants": [ EnumVariant, ... ] } }  // omitted when empty
 }
 ```
 
@@ -148,6 +149,18 @@ runtime it answers "is the class label on this value a class that exists
 here?", which gates `MethodCall` hint dispatch. An emitter that tags records
 with a `class` (in `AllocMap`) must list that class here; a program with no
 classes just omits the field.
+
+`enums` holds every enum the program declares, by name, each variant as
+`{"name": string, "fields": string[], "data": string[]}` (the payload field
+names in constructor order, then the constant-data keys; both omitted when
+empty). A variant value is only its tag (`"Kind.park"`, the constant of
+`MakeEnumVariant`) and its payload, so this table is where a field read by
+name (`op.place`) finds the payload's index and where `Kind.from` finds the
+variants. Constant data is not in the table: it is the record each variant's
+`BuiltinCall("__enum_data")` publishes when the root block runs. An emitter
+whose tags name no declared enum (a bare `"spawn"`, or an enum it does not
+list) omits the entry, and gets variants that match by tag and payload but
+answer no field by name.
 
 **Module system:** programs compiled from more than one file carry a file
 table and file-tagged spans (see docs/module-system.md):
@@ -254,7 +267,7 @@ emitter should not imitate that.
 | `GetIndex` `GetIndexOpt` | 2 | 0 | — | `inputs=[object, index]`; the `Opt` form yields Nil for a missing key/Nil object |
 | `SetIndex` | 3 | 0 | — | `inputs=[object, index, value]` |
 | `AllocElement` | = `prop_keys.len()` + #children | 0 | `{tag: ConstantId, prop_keys: [ConstantId]}` | first `prop_keys.len()` inputs are prop values, the rest are children |
-| `MakeEnumVariant` | ≥0 | 0 | `ConstantId` (variant name) | inputs are field values |
+| `MakeEnumVariant` | ≥0 | 0 | `ConstantId` (the tag, `Enum.variant`) | inputs are the payload values, as many as the variant declares in `enums` |
 | `Match` | 1 | = #arms | — | `inputs=[subject]`, `child_blocks` are arm body blocks; arm metadata in `match_arms[termId]` |
 
 ### State keying
@@ -388,6 +401,15 @@ A program is a valid import iff:
    assigns the whole file itself — which requires the binding phantoms for
    every `param_names` entry, capture, and by-name self-reference to exist
    (that is how the recompute knows which registers must be seated first).
+
+10. **Enums and match arms** — in `enums`, a variant is declared once, is not
+    named `all` or `from`, and its payload fields and data keys are distinct
+    and none is `name`. A `MakeEnumVariant` whose tag names a declared enum
+    names one of its variants and has exactly that variant's number of
+    payload inputs; the same holds for every variant pattern in `match_arms`.
+    A `match_arms` key is a `Match` term, each arm's `body_block` and
+    `guard_block` exist, and the alternatives of an or-pattern bind the same
+    names.
 
 `register`, `register_count`, `capture_registers`, `self_ref_register`,
 `source`, and `source_map` are **optional** for an importer — the loader

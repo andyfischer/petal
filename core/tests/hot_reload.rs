@@ -1034,3 +1034,199 @@ fn whole_corpus_reloads_to_what_a_recompile_builds() {
         files.len()
     );
 }
+
+// ── Enums ────────────────────────────────────────────────────────────────
+//
+// A variant value is its tag (`Kind.park`) and its payload. What its enum
+// declares — the data behind `k.shape`, the names of the payload's fields,
+// which variants exist — is read from the program running *now*, so a value
+// kept in `state` across an edit of its enum is the old value read through
+// the new declaration.
+
+const TOWN: &str = "\
+enum Kind
+  park(shape: \"area\", cost: 3),
+  road(shape: \"route\", cost: 9),
+end
+state kept = Kind.park
+state n = 0
+n += 1
+fn describe(k)
+  match k
+    when Kind.park -> \"a park\"
+    when Kind.road -> \"a road\"
+  end
+end
+print(n, kept, kept.shape, kept.cost, describe(kept), Kind.all)
+";
+
+#[test]
+fn an_edit_to_an_enums_constant_data_is_patched_in_place() {
+    // Only literal values changed, so nothing is recompiled; the variant kept
+    // in state answers with the new data from the next run on.
+    let new = TOWN.replace("\"area\", cost: 3", "\"green\", cost: 4");
+    Case::new("enum data", TOWN, &new, Patched).check();
+
+    let mut w = world(TOWN, &[], RunPolicy::FAST);
+    w.env.reload_program(w.sid, &new, None).unwrap();
+    assert!(frame(&mut w).starts_with("3 Kind.park green 4 a park [Kind.park, Kind.road]"));
+}
+
+#[test]
+fn an_edit_to_an_enums_variants_is_recompiled_and_state_keeps_its_variant() {
+    // A variant added, with every `match` given its arm.
+    let added = TOWN
+        .replace("end\nstate", "  plaza(shape: \"area\", cost: 5),\nend\nstate")
+        .replace("  end\nend", "    when Kind.plaza -> \"a plaza\"\n  end\nend");
+    Case::new("variant added", TOWN, &added, Recompiled).check();
+    // A data key added to every variant: the kept variant answers it too.
+    let keyed = TOWN
+        .replace("cost: 3", "cost: 3, lanes: 0")
+        .replace("cost: 9", "cost: 9, lanes: 2")
+        .replace("kept.cost", "kept.lanes");
+    Case::new("data key added", TOWN, &keyed, Recompiled).check();
+    // The variants reordered: `all` follows the declaration.
+    let reordered = "\
+enum Kind
+  road(shape: \"route\", cost: 9),
+  park(shape: \"area\", cost: 3),
+end
+"
+    .to_string()
+        + TOWN.split_once("end\n").unwrap().1;
+    Case::new("variants reordered", TOWN, &reordered, Recompiled).check();
+
+    let mut w = world(TOWN, &[], RunPolicy::FAST);
+    w.env.reload_program(w.sid, &added, None).unwrap();
+    assert!(frame(&mut w).starts_with("3 Kind.park area 3 a park [Kind.park, Kind.road, Kind.plaza]"));
+    w.env.reload_program(w.sid, &reordered, None).unwrap();
+    assert!(frame(&mut w).starts_with("4 Kind.park area 3 a park [Kind.road, Kind.park]"));
+}
+
+/// The frames a reload from `old` to `new` runs next, and that it is what a
+/// full recompile would have left.
+fn after_reload(old: &str, new: &str) -> String {
+    Case::new("stale variant", old, new, Recompiled).check();
+    let mut w = world(old, &[], RunPolicy::FAST);
+    w.env.reload_program(w.sid, new, None).unwrap();
+    frame(&mut w)
+}
+
+#[test]
+fn state_holding_a_variant_its_enum_no_longer_declares_keeps_the_value() {
+    // `park` is gone from the enum (and from the state's initializer, which
+    // does not run again). The value in state is still a variant tagged
+    // `Kind.park`: it prints, compares and answers `name` as before;
+    // it equals no variant the enum has now, no pattern names it, and it has
+    // no data, since data belongs to the declaration.
+    let removed = "\
+enum Kind
+  road(shape: \"route\", cost: 9),
+  lane(shape: \"route\", cost: 1),
+end
+state kept = Kind.road
+state n = 0
+n += 1
+let known = match kept
+  when Kind.road | Kind.lane -> \"known\"
+  when _ -> \"not a Kind any more\"
+end
+print(n, kept, kept.name, type(kept), kept == Kind.road, known, kept?.shape, Kind.from(kept.name))
+";
+    assert!(
+        after_reload(TOWN, removed)
+            .starts_with("3 Kind.park park Kind false not a Kind any more nil nil"),
+    );
+
+    // Read for data it no longer has, or matched with every *current*
+    // variant covered and no `when _`: a runtime error that names the value
+    // and the line, not a crash. The state itself is untouched, so putting
+    // the variant back makes the same value whole again.
+    let reads = removed.replace("kept?.shape", "kept.shape");
+    let out = after_reload(TOWN, &reads);
+    assert!(out.contains("error No field 'shape' on enum variant Kind.park [line 12"), "{out}");
+    let exhaustive = removed.replace("  when _ -> \"not a Kind any more\"\n", "");
+    let out = after_reload(TOWN, &exhaustive);
+    assert!(out.contains("error No matching pattern for value: Kind.park [line 8"), "{out}");
+
+    let mut w = world(TOWN, &[], RunPolicy::FAST);
+    w.env.reload_program(w.sid, &exhaustive, None).unwrap();
+    assert!(frame(&mut w).contains("error No matching pattern"));
+    w.env.reload_program(w.sid, TOWN, None).unwrap();
+    assert!(frame(&mut w).starts_with("4 Kind.park area 3 a park [Kind.park, Kind.road]"));
+}
+
+#[test]
+fn state_holding_a_payload_its_variant_has_reshaped_is_read_by_the_new_names() {
+    let old = "\
+enum Op
+  fight(place, won),
+  rest,
+end
+state op = Op.fight(\"bridge\", true)
+state idle = Op.rest
+print(op, op.place, op.won, idle)
+";
+    // A field renamed and one added: the payload is positional, so the old
+    // value answers the new names as far as it reaches, and the field it
+    // never had is absent. A pattern for the new shape does not match the
+    // old payload.
+    let reshaped = "\
+enum Op
+  fight(site, won, odds),
+  rest(turns),
+end
+state op = Op.fight(\"bridge\", true, 2)
+state idle = Op.rest(1)
+let seen = match op
+  when Op.fight(_, _, _) -> \"three fields\"
+  when Op.rest(_) -> \"rest\"
+  when _ -> \"an older shape\"
+end
+let was_idle = match idle
+  when Op.rest(_) -> \"rest with turns\"
+  when _ -> \"rest from before\"
+end
+print(op, op.site, op.won, op?.odds, seen, was_idle, idle?.turns)
+";
+    assert!(
+        after_reload(old, reshaped)
+            .starts_with("Op.fight(\"bridge\", true) bridge true nil an older shape rest from before nil"),
+    );
+    // And the other way: a variant that lost its payload.
+    let flattened = "\
+enum Op
+  fight,
+  rest,
+end
+state op = Op.fight
+state idle = Op.rest
+let seen = match op
+  when Op.fight -> \"plain fight\"
+  when Op.rest -> \"rest\"
+  when _ -> \"an older shape\"
+end
+print(op, op == Op.fight, seen, idle == Op.rest)
+";
+    assert!(
+        after_reload(old, flattened)
+            .starts_with("Op.fight(\"bridge\", true) false an older shape true"),
+    );
+}
+
+#[test]
+fn an_enum_renamed_or_removed_leaves_its_variants_in_state_as_values() {
+    // The enum is renamed: the kept value still carries the old tag, and the
+    // state's initializer does not run again, so it stays what it was.
+    let renamed = TOWN.replace("Kind", "Place");
+    let out = after_reload(TOWN, &renamed);
+    assert!(out.contains("error No field 'shape' on enum variant Kind.park"), "{out}");
+    let tolerant = "\
+enum Place
+  park(shape: \"area\"),
+end
+state kept = Place.park
+print(kept, type(kept), kept == Place.park, kept?.shape)
+";
+    assert!(after_reload(TOWN, tolerant).starts_with("Kind.park Kind false nil"));
+}

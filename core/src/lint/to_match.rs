@@ -24,29 +24,30 @@
 //!
 //! ## What it refuses, and why
 //!
-//! - **Numeric literals.** `==` compares an int against a float numerically
-//!   (`1 == 1.0` is true), while [`crate::backend::pattern::match_pattern`]
-//!   requires the tags to agree, so `when 1` does *not* match `1.0`. Rewriting
-//!   `n == 1` to `when 1` would quietly change which arm a float subject
-//!   takes. `String`, `Bool` and `Nil` have no such cross-type rule and are
-//!   exactly equivalent; those are the literals the rule accepts.
+//! - **Anything but a literal on the right.** A literal pattern matches
+//!   exactly what the literal is `==` to — `when 1` matches `1.0`, as
+//!   `n == 1` is true of it ([`crate::backend::pattern::match_pattern`] and
+//!   `==` share one numeric comparison) — so every literal converts. A name
+//!   does not: `when limit` binds `limit` rather than comparing against it.
 //! - **A subject that could compute.** `match` reads the subject once where
 //!   the chain read it per arm. A name or a field path off a name is safe to
 //!   move; a call or an index is left alone.
 //! - **A comment in the glue.** A comment between `then` and the next `elsif`
 //!   has no home in the `match`, so the whole chain is skipped rather than
 //!   dropping it.
-//! - **Bodies that are not a single expression.** A `->` arm takes an
-//!   expression. Multi-statement arms would need the `do … end` form, which
-//!   this rule does not emit — and where a chain is really control flow rather
-//!   than a lookup, the `match` is not obviously the better spelling anyway.
+//! - **Bodies that are not a single expression.** A `->` arm takes a
+//!   statement list as readily as one expression, so this is a choice, not a
+//!   limit: the rule is about lookups, where the `match` is plainly the
+//!   better spelling. A chain whose branches are blocks of statements is
+//!   control flow, and which of the two reads better there is the author's
+//!   call.
 //!
 //! A chain with no `else` gains `when _ -> nil`: an `if` that falls off the
 //! end yields nil, but a `match` with no arm left is a runtime error, so the
 //! fallback has to be written out to keep the two the same.
 
 use crate::ast::{
-    BinOp, ElseBranch, Expr, ExprKind, ExprVisitor, Literal, Stmt, StmtKind, walk_expr,
+    BinOp, ElseBranch, Expr, ExprKind, ExprVisitor, Stmt, StmtKind, walk_expr,
 };
 use crate::source_map::SourceSpan;
 
@@ -187,12 +188,9 @@ fn plan_chain(chain: &Chain, chars: &[char]) -> Option<Vec<Splice>> {
         if !is_pure_subject(left) {
             return None;
         }
-        let ExprKind::Literal(lit) = &right.kind else {
+        let ExprKind::Literal(_) = &right.kind else {
             return None;
         };
-        if !is_exact_pattern_literal(lit) {
-            return None;
-        }
         conds.push((left.span, right.span));
         bodies.push(single_expr_span(arm.body)?);
     }
@@ -354,13 +352,6 @@ fn is_pure_subject(e: &Expr) -> bool {
         ExprKind::FieldAccess { object, .. } => is_pure_subject(object),
         _ => false,
     }
-}
-
-/// The literals whose `==` and whose pattern agree exactly.
-///
-/// `Int`/`Float` are deliberately absent — see the module docs.
-fn is_exact_pattern_literal(lit: &Literal) -> bool {
-    matches!(lit, Literal::String(_) | Literal::Bool(_) | Literal::Nil)
 }
 
 /// The span of `body` when it is exactly one expression statement.

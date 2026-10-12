@@ -74,6 +74,131 @@ fn directive_word_reads_the_first_word() {
     assert_eq!(directive_word("// a note"), None);
 }
 
+/// The AST of `src` as `show-ast` prints it, without positions — what must
+/// survive formatting.
+fn ast_shape(src: &str) -> String {
+    let (_tree, stmts) = crate::rewrite::parse_ast(src).unwrap();
+    crate::ast_display::display_stmts(&stmts)
+        .lines()
+        .map(|line| line.split(" @").next().unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Enum declarations (payload fields, constant data, one variant over several
+/// lines), qualified variants, or-patterns and statement-list arms: laid out
+/// canonically, a fixed point, and the same program.
+#[test]
+fn formats_enums_and_match_arms() {
+    let src = r#"enum Use
+road,green
+end
+pub enum Kind
+parkway(shape:"route",use:Use.road),
+  park( shape : "area" , use : Use.green ),
+      plaza(
+    shape: "area",
+  use: Use.green,
+      ),
+end
+enum Op
+fight(place,won,tone:"bad"),gift(amount,tone:"good"),
+end
+fn f(k: Kind, op) -> Kind
+let x = match k
+when Kind.park|Kind.plaza -> 1
+when Kind.parkway ->
+let a = 1
+if a > 0 then
+print(a)
+end
+a + 1
+end
+match op
+when Op.fight(place, won) if [1].any(fn(v) -> v == place) ->
+print(place)
+print(won)
+when Op.gift(1|2)|Op.gift(3) -> nil
+when Op.gift(_)
+|Op.fight(_,_) -> nil
+end
+match x
+when [1|2, _] -> 2
+when {a: "p"|"q"} -> 3
+when _ ->
+match k
+when Kind.park -> 1
+when _ ->
+print(1)
+2
+end
+end
+k
+end
+print(f(Kind.all[0], Op.gift(1)), Kind.from("park").shape)
+"#;
+    let want = r#"enum Use
+  road, green
+end
+pub enum Kind
+  parkway(shape: "route", use: Use.road),
+  park(shape: "area", use: Use.green),
+  plaza(
+    shape: "area",
+    use: Use.green,
+  ),
+end
+enum Op
+  fight(place, won, tone: "bad"), gift(amount, tone: "good"),
+end
+fn f(k: Kind, op) -> Kind
+  let x = match k
+    when Kind.park | Kind.plaza -> 1
+    when Kind.parkway ->
+      let a = 1
+      if a > 0 then
+        print(a)
+      end
+      a + 1
+  end
+  match op
+    when Op.fight(place, won) if [1].any(fn(v) -> v == place) ->
+      print(place)
+      print(won)
+    when Op.gift(1 | 2) | Op.gift(3) -> nil
+    when Op.gift(_)
+    | Op.fight(_, _) -> nil
+  end
+  match x
+    when [1 | 2, _] -> 2
+    when {a: "p" | "q"} -> 3
+    when _ ->
+      match k
+        when Kind.park -> 1
+        when _ ->
+          print(1)
+          2
+      end
+  end
+  k
+end
+print(f(Kind.all[0], Op.gift(1)), Kind.from("park").shape)
+"#;
+    let out = fmt(src);
+    assert_eq!(out, want);
+    assert_eq!(fmt(&out), out, "not a fixed point");
+    assert_eq!(ast_shape(&out), ast_shape(src), "formatting changed the AST");
+
+    use crate::ir_equiv::{compile_for_compare, ir_equivalent};
+    let (env_a, pid_a) = compile_for_compare(src, &[], None).unwrap();
+    let (env_b, pid_b) = compile_for_compare(&out, &[], None).unwrap();
+    ir_equivalent(
+        env_a.get_program(pid_a).unwrap(),
+        env_b.get_program(pid_b).unwrap(),
+    )
+    .unwrap();
+}
+
 /// The safety property, over every `.ptl` in the repo: formatting leaves the
 /// compiled IR identical (it is whitespace, and Petal is not
 /// whitespace-significant), and formatting is a fixed point.

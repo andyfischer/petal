@@ -846,7 +846,7 @@ takes an int or a float — that is most arithmetic.
 The vocabulary is closed, and every name is a **single bare word**: `int`,
 `float`, `num` (int *or* float), `bool`, `string` (alias `str`), `list`,
 `record`, `function`, `nil`, `enum`, `vec2`, `vec3`, `element`, `any` — plus the name of
-any class or enum. (An enum's name documents the slot and is checked as `any`.) There are no parameterized types: `list<int>` and record shapes are
+any class or enum. (`k: Kind` is a variant of the enum `Kind`: passing another enum's variant warns, and so does reading a field no `Kind` has.) There are no parameterized types: `list<int>` and record shapes are
 not expressible, so `list` and `record` are opaque and their elements are never
 checked. An unknown name warns (`unknown type name \`banana\``) rather than
 failing. An `int` satisfies a `float` slot; the reverse needs an explicit

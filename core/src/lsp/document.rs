@@ -7,6 +7,7 @@ use crate::diagnostic::Diagnostic as PetalDiagnostic;
 use crate::source_map::SourceSpan;
 
 use crate::lsp::lsp_types;
+use crate::lsp::members::{EnumShape, ValueHint, expr_path};
 
 // ---------------------------------------------------------------------------
 // A single open document
@@ -26,6 +27,8 @@ pub struct Document {
 pub struct Analysis {
     pub diagnostics: Vec<lsp_types::Diagnostic>,
     pub definitions: Vec<Definition>,
+    /// The document's outline: its top-level declarations.
+    pub symbols: Vec<lsp_types::DocumentSymbol>,
     /// The document's imports as they resolved, lowest precedence first
     /// (implicit ones, then each `import` in source order).
     pub imports: Vec<ImportedModule>,
@@ -78,6 +81,24 @@ pub struct Definition {
     pub kind: DefinitionKind,
     pub span: SourceSpan,
     pub detail: Option<String>,
+    /// An enum's variants, with their payload fields and constant data.
+    pub shape: Option<EnumShape>,
+    /// What is known of a variable's or parameter's value without running
+    /// anything: its annotation, or the path its initializer spells.
+    pub hint: Option<ValueHint>,
+}
+
+impl Definition {
+    pub fn new(name: String, kind: DefinitionKind, span: SourceSpan, detail: Option<String>) -> Self {
+        Definition {
+            name,
+            kind,
+            span,
+            detail,
+            shape: None,
+            hint: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +107,8 @@ pub enum DefinitionKind {
     Function,
     Enum,
     Parameter,
+    /// A `for` loop's variable, in scope across the loop.
+    Loop,
 }
 
 impl Analysis {
@@ -93,6 +116,7 @@ impl Analysis {
         Self {
             diagnostics: Vec::new(),
             definitions: Vec::new(),
+            symbols: Vec::new(),
             imports: Vec::new(),
         }
     }
@@ -210,12 +234,13 @@ pub fn analyze_at(
     // Collected independently of compilation: a file that parses but fails a
     // later phase still has usable symbols, so go-to-definition, document
     // symbols and completion keep working while the error is being fixed.
-    let stmts = crate::cst::parse_source(source, crate::source_map::ENTRY_FILE)
-        .map(|(_, stmts)| stmts)
-        .ok();
-    let definitions = stmts
-        .as_deref()
-        .map(|stmts| collect_definitions(stmts, source))
+    let (definitions, symbols) = parse_tolerant(source)
+        .map(|(stmts, text)| {
+            (
+                collect_definitions(&stmts, &text),
+                crate::lsp::symbols::document_symbols(&stmts, &text),
+            )
+        })
         .unwrap_or_default();
 
     let mut env = crate::env::Env::new();
@@ -302,9 +327,49 @@ pub fn analyze_at(
     Analysis {
         diagnostics,
         definitions,
+        symbols,
         imports,
     }
 }
+
+/// Parse `source` for its declarations, forgiving the line being typed: a
+/// document is asked for completions exactly when it does not parse
+/// (`Color.` with nothing after the dot yet), and its declarations are what
+/// the answer is made of. A dangling `.` is given a name to stand for the one
+/// not yet written; any other line that will not parse is blanked. Returns
+/// the statements with the text they were parsed from. Its lines are the
+/// document's lines, so a declaration is found on the line it is written on.
+fn parse_tolerant(source: &str) -> Option<(Vec<Stmt>, String)> {
+    let mut text = source.to_string();
+    for _ in 0..6 {
+        let err = match crate::cst::parse_source_phased(&text, crate::source_map::ENTRY_FILE) {
+            Ok((_, stmts)) => return Some((stmts, text)),
+            Err(err) => err,
+        };
+        let at = err.items.first()?.span?.start;
+        let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+        let row = (at.line as usize).checked_sub(1)?;
+        let chars: Vec<char> = lines.get(row)?.chars().collect();
+        let col = ((at.column as usize).saturating_sub(1)).min(chars.len());
+        let before: String = chars[..col].iter().collect();
+        if before.trim_end().ends_with('.') {
+            let after: String = chars[col..].iter().collect();
+            lines[row] = format!("{}{PLACEHOLDER}{after}", before.trim_end());
+        } else if !before.trim().is_empty() {
+            lines[row].clear();
+        } else {
+            // The parser ran on to this line looking for the rest of the one
+            // above (`print(Kind.` wants its `)`): that is the unfinished one.
+            let above = (0..row).rev().find(|&r| !lines[r].trim().is_empty())?;
+            lines[above].clear();
+        }
+        text = lines.join("\n");
+    }
+    None
+}
+
+/// The name [`parse_tolerant`] writes after a dangling `.`.
+const PLACEHOLDER: &str = "__lsp_member";
 
 /// The import statements at the top of `source`, as text — found without a
 /// parse, since the rest of the file may not have one yet. Imports come
@@ -391,12 +456,12 @@ fn imported_modules(program: &crate::program::Program) -> Vec<ImportedModule> {
                     locate(&import.module, name).unwrap_or_else(|| ImportedDefinition {
                         // Exported, but declared somewhere this could not
                         // read: still a name the document can use.
-                        def: Definition {
-                            name: name.clone(),
-                            kind: DefinitionKind::Variable,
-                            span: SourceSpan::default(),
-                            detail: None,
-                        },
+                        def: Definition::new(
+                            name.clone(),
+                            DefinitionKind::Variable,
+                            SourceSpan::default(),
+                            None,
+                        ),
                         uri: None,
                     })
                 })
@@ -414,12 +479,12 @@ fn top_level_definitions(stmts: &[Stmt], source: &str) -> Vec<Definition> {
         let mut defs = Vec::new();
         match &stmt.kind {
             StmtKind::State { name, .. } | StmtKind::ClassDecl { name, .. } => {
-                defs.push(Definition {
-                    name: name.clone(),
-                    kind: DefinitionKind::Variable,
-                    span: stmt.span,
-                    detail: None,
-                })
+                defs.push(Definition::new(
+                    name.clone(),
+                    DefinitionKind::Variable,
+                    stmt.span,
+                    None,
+                ))
             }
             _ => collect_definitions_from_stmt(stmt, &src, &mut defs),
         }
@@ -589,11 +654,13 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
             name, ty, value, ..
         } => {
             let detail = ty.as_ref().map(|t| format!(": {}", t.name));
+            let hint = match ty {
+                Some(ty) => Some(ValueHint::annotation(&ty.name)),
+                None => expr_path(value).map(ValueHint::Init),
+            };
             defs.push(Definition {
-                name: name.clone(),
-                kind: DefinitionKind::Variable,
-                span: stmt.span,
-                detail,
+                hint,
+                ..Definition::new(name.clone(), DefinitionKind::Variable, stmt.span, detail)
             });
             collect_definitions_from_expr(value, src, defs);
         }
@@ -621,19 +688,14 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 .map(|r| format!(" -> {}", r.name))
                 .unwrap_or_default();
             let detail = Some(format!("fn({param_list}){ret_str}"));
-            defs.push(Definition {
-                name: name.clone(),
-                kind: DefinitionKind::Function,
-                span: stmt.span,
+            defs.push(Definition::new(
+                name.clone(),
+                DefinitionKind::Function,
+                stmt.span,
                 detail,
-            });
+            ));
             for p in params {
-                defs.push(Definition {
-                    name: p.name.clone(),
-                    kind: DefinitionKind::Parameter,
-                    span: stmt.span,
-                    detail: param_detail(p, src),
-                });
+                defs.push(param_definition(p, stmt.span, src));
             }
             for s in body {
                 collect_definitions_from_stmt(s, src, defs);
@@ -661,29 +723,39 @@ fn collect_definitions_from_stmt(stmt: &Stmt, src: &[char], defs: &mut Vec<Defin
                 .as_ref()
                 .map(|r| format!(" -> {}", r.name))
                 .unwrap_or_default();
-            defs.push(Definition {
-                name: decl.name.clone(),
-                kind: DefinitionKind::Function,
-                span: stmt.span,
-                detail: Some(format!("native fn({}){ret_str}", parts.join(", "))),
-            });
+            defs.push(Definition::new(
+                decl.name.clone(),
+                DefinitionKind::Function,
+                stmt.span,
+                Some(format!("native fn({}){ret_str}", parts.join(", "))),
+            ));
         }
         StmtKind::EnumDecl { name, variants } => {
+            let shape = EnumShape::of(variants, src);
             let detail = Some(
-                variants
+                shape
+                    .variants
                     .iter()
-                    .map(|v| v.name.clone())
+                    .map(|v| v.signature())
                     .collect::<Vec<_>>()
                     .join(" | "),
             );
             defs.push(Definition {
-                name: name.clone(),
-                kind: DefinitionKind::Enum,
-                span: stmt.span,
-                detail,
+                shape: Some(shape),
+                ..Definition::new(name.clone(), DefinitionKind::Enum, stmt.span, detail)
             });
         }
-        StmtKind::For { body, .. } | StmtKind::While { body, .. } => {
+        StmtKind::For { var, iter, body } => {
+            // The loop variable is in scope for the loop's own lines.
+            defs.push(Definition {
+                hint: expr_path(iter).map(ValueHint::ElementOf),
+                ..Definition::new(var.clone(), DefinitionKind::Loop, stmt.span, None)
+            });
+            for s in body {
+                collect_definitions_from_stmt(s, src, defs);
+            }
+        }
+        StmtKind::While { body, .. } => {
             for s in body {
                 collect_definitions_from_stmt(s, src, defs);
             }
@@ -710,6 +782,19 @@ fn param_default_suffix(p: &crate::ast::Param, src: &[char]) -> String {
         _ => "…".to_string(),
     };
     format!(" = {text}")
+}
+
+/// A parameter as a definition, in scope across `scope` (its function).
+fn param_definition(p: &crate::ast::Param, scope: SourceSpan, src: &[char]) -> Definition {
+    Definition {
+        hint: p.ty.as_ref().map(|ty| ValueHint::annotation(&ty.name)),
+        ..Definition::new(
+            p.name.clone(),
+            DefinitionKind::Parameter,
+            scope,
+            param_detail(p, src),
+        )
+    }
 }
 
 /// A parameter's hover detail: its annotation and default value, if any.
@@ -745,12 +830,7 @@ fn collect_definitions_from_expr(expr: &Expr, src: &[char], defs: &mut Vec<Defin
         }
         ExprKind::Lambda { params, body, .. } => {
             for p in params {
-                defs.push(Definition {
-                    name: p.name.clone(),
-                    kind: DefinitionKind::Parameter,
-                    span: expr.span,
-                    detail: param_detail(p, src),
-                });
+                defs.push(param_definition(p, expr.span, src));
             }
             for s in body {
                 collect_definitions_from_stmt(s, src, defs);

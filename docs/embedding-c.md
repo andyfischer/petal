@@ -177,7 +177,7 @@ v[1]["missing"]["deeper"].is_nil();      // true: misses chain safely
 | `"text"` | `PB_STRING` | `str()` |
 | `[a, b]` | `PB_LIST` | `size()`, `[i]`, iteration |
 | `{k: v}`, colors, class instances | `PB_MAP` | `[key]`, `num(key)`, `has(key)`, iteration (`key()` on each field); `str()` = class name |
-| `Circle(3)` | `PB_ENUM` | `tag()`, payload via `[i]` |
+| `Shape.circle(3)` | `PB_ENUM` | `tag()` = `"Shape.circle"`, payload via `[i]` |
 | `symbol("s")` | `PB_SYMBOL` | `str()` |
 | handles | `PB_HANDLE` | `integer()` = slot |
 
@@ -185,6 +185,14 @@ Color literals such as `#ff8800` are records `{r, g, b}` (0–255). A native
 `vec3` decodes as `PB_VEC3`, with its components in `number`, `y` and `z`
 (full `f64` precision); an `{x, y, z}` *record* is still an ordinary
 `PB_MAP`.
+
+An enum variant crosses as its tag and its payload. The tag is qualified
+(`Shape.circle`, with the enum's declared name whatever module it came
+through) and the payload is positional. The variant's constant data
+(`sides` of `circle(r, sides: 0)`) and the names of its payload fields belong
+to the declaration, not to the value, so they are not in the view: read them
+in the script and hand the host what it needs. A command pushed with `emit`
+is also a `PB_ENUM`, under the plain tag the host registered (`"spawn"`).
 
 **Lifetime:** views stay valid until the next `run()`, `call()`, `load_*()`,
 `reload*()` or `clear_views()` on the same VM. Several buffers can be drained
@@ -222,6 +230,15 @@ and are only turned into Petal heap values at the moment they are bound,
 passed or returned, so they are reusable and independent of any VM. Misuse
 (a key outside a map, unbalanced containers) surfaces as `PB_ERR_INVALID_ARG`
 when the builder is consumed.
+
+`enum_("Shape.box", fn)` builds a variant of the script's own enum: under the
+tag `Enum.variant`, with the payload in declaration order, it *is* that
+variant to the script — it equals `Shape.box(2, 3)`, matches
+`when Shape.box(w, h)`, and reads the constant data and field names its
+declaration gives it. The bridge does not check the tag against the program,
+which may not be loaded yet: a payload of the wrong size, or a variant the
+enum does not declare, is a value no pattern matches. A tag with no enum in
+front (`"box"`) belongs to no declared enum.
 
 `vec3` (`pb_builder_vec3`, `pb_vm_set_vec3`) produces a native Petal `vec3`,
 so scripts get vector arithmetic, `.x/.y/.z`, `mag`, `dot`, `cross` and the
@@ -624,7 +641,9 @@ write_file("games/neon/config.ptl", src.text());
   the author declared, and the ones an editor should offer. Values are JSON:
   floats are numbers, strings strings, lists arrays, `nil` is `null`, and the
   rest are tagged — `{"int": 3}`, `{"rec": {"key": value}}` (keys in source
-  order), `{"call": "vec3", "args": [...]}` and `{"color": "#ff2e88"}`. A
+  order), `{"call": "vec3", "args": [...]}`, `{"color": "#ff2e88"}`, and for
+  a variant of an enum the file declares `{"variant": "Mode.dark"}` (with
+  `"args": [...]` when it carries a payload). A
   color is always `#rrggbb` or `#rrggbbaa` in lowercase there; `expr(path)`
   returns an expression as written (`#F80`, `0.020000`).
 - A failed call returns false (the edits) or `nullopt` and leaves the text as

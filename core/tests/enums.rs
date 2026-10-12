@@ -62,6 +62,13 @@ fn warnings(src: &str) -> Vec<String> {
     program.warnings.iter().map(|d| d.message.clone()).collect()
 }
 
+fn warnings_with(modules: &[(&str, &str)], src: &str) -> Vec<String> {
+    let mut env = env_with(modules);
+    let pid = env.load_program(src).unwrap_or_else(|e| panic!("{src}\n-- failed to compile: {e}"));
+    let program = env.get_program(pid).unwrap();
+    program.warnings.iter().map(|d| d.message.clone()).collect()
+}
+
 fn parse(src: &str) -> Vec<Stmt> {
     let mut lexer = Lexer::new(src);
     lexer.tokenize().unwrap();
@@ -209,6 +216,26 @@ fn constant_data_cannot_read_what_the_file_computes_as_it_runs() {
         e.contains("`x` cannot be used in an enum's constant data"),
         "{e}"
     );
+}
+
+#[test]
+fn constant_data_cannot_call_a_function_that_is_not_hoisted() {
+    // `scaled` reads `base`, which the file computes as it runs, so it is
+    // not hoisted and is not there when the data is evaluated. That is said
+    // by name (`petal check` reports it, and a run stops on it) rather than
+    // as `Cannot call nil`.
+    let e = run_err(
+        "let base = len(\"abc\") + 1\nfn scaled(n)\n  n * base\nend\n\
+         enum Kind\n  park(cost: scaled(3)),\n  road(cost: 9),\nend\nprint(Kind.park.cost)",
+    );
+    assert!(e.contains("`scaled` cannot be used in an enum's constant data"), "{e}");
+    assert!(e.contains("line 6"), "{e}");
+    // A hoisted function is fine, whichever side of the enum it is on.
+    let out = run(
+        "enum Kind\n  park(cost: twice(3)),\n  road(cost: twice(4)),\nend\n\
+         fn twice(n)\n  n * 2\nend\nprint(Kind.park.cost, Kind.road.cost)",
+    );
+    assert_eq!(out, ["6 8"]);
 }
 
 #[test]
@@ -754,4 +781,138 @@ print(kept, kept.shape, kept.cost)
     env.reload_program(sid, new, None).unwrap();
     env.run(sid).unwrap();
     assert_eq!(env.take_output(), ["Kind.park green 3"]);
+}
+
+// ── Static checks: an enum's name is the type of its variants ───────────
+
+const TOWN: &str = "\
+enum Use
+  road, green
+end
+enum Kind
+  parkway(shape: \"route\", use: Use.road),
+  park(shape: \"area\", use: Use.green),
+end
+enum Op
+  fight(place, won, tone: \"bad\"),
+  gift(amount, tone: \"good\"),
+end
+";
+
+#[test]
+fn an_enum_typed_slot_holds_a_variant_of_that_enum_and_nothing_else() {
+    // As a parameter, a return type, a `let` and a class field: no warning,
+    // and in particular no `unknown type name`.
+    let ok = format!(
+        "{TOWN}class Spot\n  kind: Kind,\nend\n\
+         fn pick(k: Kind, n: int) -> Kind\n  if n > 0 then k else Kind.park end\nend\n\
+         let k: Kind = Kind.parkway\n\
+         let found: Kind = Kind.from(\"park\")\n\
+         print(pick(k, 1), pick(Kind.park, 0), pick(found, 1), Spot(k).kind)"
+    );
+    assert!(warnings(&ok).is_empty(), "{:?}", warnings(&ok));
+    assert_eq!(run(&ok), ["Kind.parkway Kind.park Kind.park Kind.parkway"]);
+
+    // Another enum's variant, or a value that is no variant, does not fit.
+    let w = warnings(&format!("{TOWN}let k: Kind = Use.road"));
+    assert_eq!(w, ["type mismatch: `k` declared `Kind` but assigned `Use`"]);
+    let w = warnings(&format!(
+        "{TOWN}fn pick(k: Kind) -> Kind\n  k\nend\nprint(pick(Use.road), pick(3))"
+    ));
+    assert_eq!(
+        w,
+        [
+            "argument 1 to `pick`: expected `Kind`, found `Use`",
+            "argument 1 to `pick`: expected `Kind`, found `int`"
+        ]
+    );
+    let w = warnings(&format!("{TOWN}fn pick() -> Kind\n  3\nend\nprint(pick())"));
+    assert_eq!(w, ["return type mismatch: `pick` declares `Kind` but returns `int`"]);
+    let w = warnings(&format!("{TOWN}fn n(k: Kind) -> int\n  k\nend\nprint(n(Kind.park))"));
+    assert_eq!(w, ["return type mismatch: `n` declares `int` but returns `Kind`"]);
+    // A payload variant's construction is a value of the enum; uncalled, it
+    // is a function.
+    let w = warnings(&format!("{TOWN}let a: Op = Op.gift(1)\nlet b: Op = Op.gift"));
+    assert_eq!(w, ["type mismatch: `b` declared `Op` but assigned `function`"]);
+    // The general `enum` type takes any enum's variant, and gives one back.
+    let any = format!("{TOWN}fn show(e: enum) -> enum\n  e\nend\nlet k: Kind = show(Kind.park)");
+    assert!(warnings(&any).is_empty(), "{:?}", warnings(&any));
+}
+
+#[test]
+fn an_enum_type_reaches_an_importer_bare_and_through_its_module() {
+    let town = TOWN.replace("enum ", "pub enum ");
+    let modules = [("town", town.as_str())];
+    let ok = "import town\nimport town as t\n\
+              fn pick(k: Kind) -> Kind\n  k\nend\n\
+              print(pick(Kind.park), pick(t.Kind.parkway).shape)";
+    assert!(warnings_with(&modules, ok).is_empty(), "{:?}", warnings_with(&modules, ok));
+    assert_eq!(run_with(&modules, ok), ["Kind.park route"]);
+    let w = warnings_with(
+        &modules,
+        "import town as t\nimport town: Kind\n\
+         fn pick(k: Kind) -> Kind\n  k\nend\n\
+         print(pick(t.Use.road), t.Kind.park.shap, pick(t.Kind.park).colour)",
+    );
+    assert_eq!(
+        w,
+        [
+            "argument 1 to `pick`: expected `Kind`, found `Use`",
+            "`Kind.park` has no field `shap` (it has: shape, use, name)",
+            "no variant of enum `Kind` has a field `colour` (fields of `Kind`: shape, use, name)"
+        ]
+    );
+}
+
+#[test]
+fn a_field_no_variant_answers_is_a_check_warning() {
+    // A value of the enum: the data keys, `name`, and any variant's payload
+    // field are fine; anything else can only fail.
+    let w = warnings(&format!(
+        "{TOWN}fn f(k: Kind, op: Op)\n  print(k.shape, k.use, k.name, op.place, op.amount, op.tone)\n  \
+         print(k.shap, op.plce)\nend\nf(Kind.park, Op.gift(1))"
+    ));
+    assert_eq!(
+        w,
+        [
+            "no variant of enum `Kind` has a field `shap` (fields of `Kind`: shape, use, name)",
+            "no variant of enum `Op` has a field `plce` (fields of `Op`: tone, place, won, amount, name)"
+        ]
+    );
+    // A variant written in place is held to its own fields: `Op.gift` has no
+    // `place`, though `Op.fight` does.
+    let w = warnings(&format!(
+        "{TOWN}print(Kind.park.colour, Op.gift(1).place, Op.gift(1).amount, Kind.park.name)"
+    ));
+    assert_eq!(
+        w,
+        [
+            "`Kind.park` has no field `colour` (it has: shape, use, name)",
+            "`Op.gift` has no field `place` (it has: amount, tone, name)"
+        ]
+    );
+    // An un-annotated binding is typed by what it was given, and a `match`
+    // arm or an `if` that yields variants of one enum is a value of it.
+    let w = warnings(&format!(
+        "{TOWN}let a = Kind.park\nlet b = if a == Kind.park then Kind.parkway else a end\n\
+         print(a.shap, b.usee)"
+    ));
+    assert_eq!(w.len(), 2, "{w:?}");
+    // `??` and `?.` ask for absence to be tolerated, as they do on a class.
+    let quiet = format!("{TOWN}let a = Kind.park\nprint(a.colour ?? \"none\", a?.colour)");
+    assert!(warnings(&quiet).is_empty(), "{:?}", warnings(&quiet));
+    // What the checker warns about is what fails at run time.
+    let e = run_err(&format!("{TOWN}let a = Kind.park\nprint(a.shap)"));
+    assert!(e.contains("shap"), "{e}");
+}
+
+#[test]
+fn a_rebound_or_shadowed_enum_name_is_not_typed_as_the_enum() {
+    // A local named like the enum is an ordinary value: no member typing.
+    let src = format!("{TOWN}fn f(Kind)\n  Kind.anything\nend\nprint(f({{anything: 1}}))");
+    assert!(warnings(&src).is_empty(), "{:?}", warnings(&src));
+    assert_eq!(run(&src), ["1"]);
+    // The enum read as a value is a record of its members.
+    let src = format!("{TOWN}let E = Kind\nlet r: record = Kind\nprint(E.park.shape)");
+    assert!(warnings(&src).is_empty(), "{:?}", warnings(&src));
 }

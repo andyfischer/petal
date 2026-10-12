@@ -39,9 +39,9 @@ Petal stays dynamically typed at runtime. Annotations add a compile-time
   `list<int>` gets one targeted parse error rather than a confusing
   downstream one.
 - No whole-program inference.
-- No enum variant field annotations (`Circle(radius: float)`). The shared
-  parameter parser already accepts them, but `EnumVariant.fields` is still a
-  list of names, so the types are dropped. Cheap to add if wanted.
+- No enum variant field annotations. Inside a variant's parens `key: expr` is
+  constant data (`park(shape: "area")`), so a payload field is a bare name
+  and there is no place to write its type.
 
 ---
 
@@ -84,13 +84,15 @@ any  num  nil  bool  int  float  string (alias: str)
 list  record  function  enum  vec2  f64_array  element  symbol  dual
 handle  pending
 <any class name>
+<any enum name>
 ```
 
-Every name except `any`, `num` and class names is exactly what
+Every name except `any`, `num` and class and enum names is exactly what
 `Value::type_name()` returns, so the name you see at runtime is the name you
 write. `num` means "`int` or `float`", the contract most arithmetic actually
 has. A class name (`Rect`, or a user class) is a type too; it resolves against
-the compilation's class table.
+the compilation's class table. So is an enum's name (`Kind`): it is the type
+of that enum's variants, where the lowercase `enum` is a variant of any enum.
 
 ### Assignability
 
@@ -102,6 +104,9 @@ the compilation's class table.
   nothing without a cast. (`dual` is included because rejecting it would warn
   on working autodiff code.)
 - A class instance is assignable to `record`, not the reverse.
+- A variant of a declared enum is assignable to `enum`, and `enum` to a
+  declared enum's slot (a variant whose enum is unknown is trusted, as `any`
+  is). Two declared enums never mix.
 - Otherwise the types must be equal.
 
 ---
@@ -111,8 +116,12 @@ the compilation's class table.
 ### Type representation — `core/src/types.rs`
 
 `Type` is an enum with one variant per vocabulary entry plus
-`Class(ClassId)`. `Type::from_name` parses the fixed vocabulary;
-`Type::resolve(name, classes)` also handles class names. `is_assignable_to`
+`Class(ClassId)` and `EnumOf(EnumId)`. `Type::from_name` parses the fixed
+vocabulary; `Type::resolve(name, classes)` also handles class and enum names:
+the `ClassTable` holds the compilation's enums beside its classes, so whatever
+resolves or spells a type has both. The checker types `Kind.park` and
+`Kind.custom(…)` as `EnumOf(Kind)`, and warns on a field read no variant of
+the enum answers (`check_enum_field`). `is_assignable_to`
 implements the rules above. `FnSignature { params, ret }` is a function's
 declared signature. None of this is in the serialized IR: types are
 compile-time side tables only, and codegen drops annotations to plain names.
@@ -247,7 +256,6 @@ believes about a type is by construction what the checker believes. See
 
 - **Structured warnings in `run --json`.** A `warnings[]` field on the run
   report would let `TestSnippet` return them as data instead of stderr text.
-- **Enum variant field annotations** (see non-goals; cheap).
 - **Parameterized and richer types**, user aliases, deeper inference — all
   deferred by design.
 - **A per-file `// @strict` pragma** to opt a file into error-level

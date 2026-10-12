@@ -1315,8 +1315,19 @@ JSON-RPC). It takes no file and no options: documents arrive over the
 protocol. Editors spawn this as a child process.
 
 It provides full-text document sync, diagnostics on open and change, hover,
-go-to-definition, and completion. The loop exits on an `exit` notification or
-at EOF.
+go-to-definition, completion, and document symbols (the file's outline: its
+functions, bindings, classes with their fields, and enums with their
+variants). The loop exits on an `exit` notification or at EOF.
+
+Completion, hover and go-to-definition know the members of an enum. After
+`Kind.` — or `town.Kind.` through a module — completion offers the enum's
+variants, `all` and `from`. After a value known to be a variant (`Kind.park.`,
+a `let` initialized from one, a parameter or binding annotated `: Kind`, the
+variable of `for k in Kind.all`) it offers the fields that value answers: its
+payload fields, its constant data and `name`. Hover on `Kind.park` shows the
+variant with its payload fields and data, and go-to-definition lands on the
+variant's own line of the `enum`, in whichever file declares it. Completion
+works while the line being typed does not parse yet.
 
 ### `packages` — Show the project and the libraries available
 
@@ -1854,7 +1865,7 @@ Consumers should treat the single key of the `kind` object as the node type
 
 **Pattern**: `"Wildcard"`, `{"Literal": Literal}`, `{"Variable": string}`, `{"Variant": {"name": string, "fields": Pattern[] (omitted when empty)}}`, `{"List": {"elements": Pattern[], "rest": string (omitted when there is no `...rest`)}}`, `{"Record": [string, Pattern][]}`, `{"Or": Pattern[]}` — the same encoding the IR JSON's `match_arms` uses (see [ir-as-target.md](dev/ir-as-target.md))
 
-**EnumVariant**: `{"name": string, "fields": string[] (omitted when empty)}`
+**EnumVariant**: `{"name": string, "fields": string[] (omitted when empty), "data": {"key": string, "value": Expr}[] (omitted when empty)}` — `fields` are the payload field names, `data` the `key: expr` constant-data entries
 
 ### `show-ir` — Compiled IR (term graph)
 
@@ -1941,13 +1952,18 @@ The text form is designed to be read without cross-referencing:
   disassembler's convention: `Constant(1)`, `Constant("zero")`,
   `BuiltinCall("print")`, `Error("message")`, `GetField(.x)` /
   `GetFieldOpt(.x)` / `SetField(.x)`, `MethodCall(.dist2)` (plus
-  `, hint=Rect` when a class hint is present), `MakeEnumVariant(Circle)`,
+  `, hint=Rect` when a class hint is present), `MakeEnumVariant(Shape.circle)`,
   `AllocMap{x, y}` (plus ` class=Rect` for class constructors), and
   `AllocElement(div, props=[width])`.
 - **Match arms** print under their `Match` term, one line per arm, with the
   pattern rendered source-like (`0`, `n`, `_`, `[a, ...rest]`, `{x: xx}`,
-  `Circle(r)`), the guard block if any (`if block4`), and the body block.
-  Guard blocks are labeled in their own header: `(guard for t134 arm1)`.
+  `Shape.circle(r)`, `"a" | "b"`), the guard block if any (`if block4`), and
+  the body block. Guard blocks are labeled in their own header:
+  `(guard for t134 arm1)`.
+- **Enums** get a section of their own between Constants and Functions when
+  the program declares any, one line per enum: each variant with its payload
+  fields in parentheses and its data keys in braces
+  (`Op: fight(place, won) {tone} | rest {tone}`).
 - **Blocks are listed as a tree**: the root block first, then its descendant
   child blocks depth-first in term order (a match arm's guard block just
   before its body); each function's body-block tree follows as its own
@@ -2032,6 +2048,7 @@ absence as the default (the shared rule — see
 | `has_errors` | `boolean` | Whether the program has parse errors (omitted when `false`) |
 | `functions` | `FunctionDef[]` | All function definitions (omitted when empty) |
 | `match_arms` | `{[termId: string]: MatchArmMeta[]}` | Match term → arm metadata (string keys); omitted when empty |
+| `enums` | `{[name: string]: {"variants": {"name": string, "fields": string[], "data": string[]}[]}}` | Every enum the program declares: each variant's payload field names and constant-data keys (both omitted when empty). Where a field read on a variant finds its payload index. Omitted when empty |
 | `class_names` | `string[]` | Sorted names of every class the program declares, built-ins included (the prelude's `Rect` makes it non-empty for any CLI compile). The runtime's answer to "is this value's class label a live class here?" — it gates `MethodCall` hint dispatch. Omitted when empty |
 
 **Term**:
@@ -2107,7 +2124,7 @@ legacy documents that carry it (and no block `terms` arrays) still load.
 | GetIndexOpt | `"GetIndexOpt"` | [object, index] | none | Tolerant read: missing key / Nil object yields Nil |
 | SetIndex | `"SetIndex"` | [object, index, value] | none | |
 | AllocElement | `{"AllocElement": {"tag": cid, "prop_keys": [cid, ...]}}` | [prop_val0, ..., child0, ...] | none | JSX-like element. `prop_keys.len()` separates prop values from children in `inputs`. |
-| MakeEnumVariant | `{"MakeEnumVariant": cid}` | [field_values...] | none | Variant name as ConstantId |
+| MakeEnumVariant | `{"MakeEnumVariant": cid}` | [field_values...] | none | The variant's tag (`Enum.variant`) as ConstantId; one input per payload field the variant declares in `enums` |
 | Match | `"Match"` | [subject] | [arm_body_blocks...] | Arm metadata in `match_arms` |
 
 **Block**:

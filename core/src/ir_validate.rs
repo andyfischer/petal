@@ -54,6 +54,145 @@ impl Program {
         Ok(program)
     }
 
+    /// The `enums` table, the variants built against it, and `match_arms`.
+    ///
+    /// A variant value carries its tag and its payload and nothing else, so
+    /// a field read by name and a variant pattern both trust the table: a
+    /// construction or a pattern with the wrong number of fields for the
+    /// variant it names would read past the payload or never match. A tag
+    /// whose enum the document does not declare (a host's own, or a legacy
+    /// document's bare `Circle`) is taken as it comes.
+    fn validate_enums_and_matches(&self) -> Result<(), String> {
+        use crate::ast::Pattern;
+        use crate::program::split_enum_tag;
+
+        for (name, def) in &self.enums {
+            let mut seen: HashSet<&str> = HashSet::new();
+            for v in &def.variants {
+                if matches!(v.name.as_str(), "all" | "from") {
+                    return Err(format!(
+                        "enum {name}: a variant may not be named `{}`",
+                        v.name
+                    ));
+                }
+                if !seen.insert(v.name.as_str()) {
+                    return Err(format!("enum {name}: variant `{}` is declared twice", v.name));
+                }
+                let mut members: HashSet<&str> = HashSet::new();
+                for member in v.fields.iter().chain(&v.data) {
+                    if member == "name" || !members.insert(member.as_str()) {
+                        return Err(format!(
+                            "enum {name}: variant `{}` has a field or data key `{member}` that is \
+                             reserved or repeated",
+                            v.name
+                        ));
+                    }
+                }
+            }
+        }
+
+        // The payload size the table gives a tag: `Ok(None)` for a tag of no
+        // declared enum, an error for a variant its enum does not declare.
+        let payload_of = |tag: &str| -> Result<Option<usize>, String> {
+            let (Some(enum_name), variant) = split_enum_tag(tag) else {
+                return Ok(None);
+            };
+            let Some(def) = self.enums.get(enum_name) else {
+                return Ok(None);
+            };
+            match def.variant(variant) {
+                Some(v) => Ok(Some(v.fields.len())),
+                None => Err(format!("enum `{enum_name}` declares no variant `{variant}`")),
+            }
+        };
+
+        for term in &self.terms {
+            let TermOp::MakeEnumVariant(c) = &term.op else {
+                continue;
+            };
+            let Some(tag) = self.get_string_constant(*c) else {
+                return Err(format!(
+                    "t{}: MakeEnumVariant tag is not a string constant",
+                    term.id.0
+                ));
+            };
+            match payload_of(tag) {
+                Err(e) => return Err(format!("t{}: MakeEnumVariant({tag}): {e}", term.id.0)),
+                Ok(Some(n)) if n != term.inputs.len() => {
+                    return Err(format!(
+                        "t{}: MakeEnumVariant({tag}) has {} input(s), but the variant declares \
+                         {n} payload field(s)",
+                        term.id.0,
+                        term.inputs.len()
+                    ));
+                }
+                Ok(_) => {}
+            }
+        }
+
+        fn check_pattern(
+            pattern: &Pattern,
+            payload_of: &dyn Fn(&str) -> Result<Option<usize>, String>,
+        ) -> Result<(), String> {
+            match pattern {
+                Pattern::Wildcard | Pattern::Literal(_) | Pattern::Variable(_) => Ok(()),
+                Pattern::Variant { name, fields } => {
+                    match payload_of(name)? {
+                        Some(n) if n != fields.len() => {
+                            return Err(format!(
+                                "pattern `{name}` has {} field(s), but the variant declares {n}",
+                                fields.len()
+                            ));
+                        }
+                        _ => {}
+                    }
+                    fields.iter().try_for_each(|f| check_pattern(f, payload_of))
+                }
+                Pattern::List { elements, .. } => {
+                    elements.iter().try_for_each(|e| check_pattern(e, payload_of))
+                }
+                Pattern::Record(fields) => {
+                    fields.iter().try_for_each(|(_, p)| check_pattern(p, payload_of))
+                }
+                Pattern::Or(alternatives) => {
+                    if alternatives.len() < 2 {
+                        return Err("an or-pattern needs at least two alternatives".to_string());
+                    }
+                    let names = |p: &Pattern| {
+                        let mut names = p.bound_names();
+                        names.sort();
+                        names
+                    };
+                    let first = names(&alternatives[0]);
+                    if alternatives.iter().any(|a| names(a) != first) {
+                        return Err(
+                            "the alternatives of an or-pattern bind different names".to_string()
+                        );
+                    }
+                    alternatives.iter().try_for_each(|a| check_pattern(a, payload_of))
+                }
+            }
+        }
+
+        let n_blocks = self.blocks.len() as u32;
+        let mut matches: Vec<&TermId> = self.match_arms.keys().collect();
+        matches.sort_by_key(|t| t.0);
+        for &t in matches {
+            if !self.terms.get(t.0 as usize).is_some_and(|term| matches!(term.op, TermOp::Match)) {
+                return Err(format!("match_arms: t{} is not a Match term", t.0));
+            }
+            for (i, arm) in self.match_arms[&t].iter().enumerate() {
+                let blocks = arm.guard_block.iter().chain(std::iter::once(&arm.body_block));
+                if let Some(b) = blocks.into_iter().find(|b| b.0 >= n_blocks) {
+                    return Err(format!("t{}: arm {i}: block b{} out of range", t.0, b.0));
+                }
+                check_pattern(&arm.pattern, &payload_of)
+                    .map_err(|e| format!("t{}: arm {i}: {e}", t.0))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Recompute the indexes that `#[serde(skip)]` drops on load, so a
     /// deserialized Program matches a freshly-compiled one. Built in term-id
     /// order, identical to the compiler (see `Compiler::compile`).
@@ -504,6 +643,8 @@ impl Program {
             return Err(format!("root_block b{} out of range", self.root_block.0));
         }
 
+        self.validate_enums_and_matches()?;
+
         // Every StateRead/StateWrite key must have a matching StateInit.
         let inits: HashSet<u64> = self
             .terms
@@ -623,6 +764,69 @@ mod tests {
         );
         assert!(json.get("functions").is_none(), "empty functions omitted");
         assert!(json.get("has_errors").is_none(), "false has_errors omitted");
+    }
+
+    /// The IR of a compiled program, as a JSON value to tamper with.
+    fn compiled_json(src: &str) -> serde_json::Value {
+        let mut env = crate::env::Env::new();
+        let pid = env.load_program(src).expect("compiles");
+        let json = serde_json::to_string(env.get_program(pid).unwrap()).unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    const ENUM_SRC: &str = "enum Op\n  fight(place, won, tone: \"bad\"),\n  rest(tone: \"ok\"),\nend\n\
+        let op = Op.fight(\"x\", true)\n\
+        let r = match op\n  when Op.fight(p, _) | Op.fight(_, p) -> p\n  when Op.rest -> nil\nend\nprint(r)\n";
+
+    #[test]
+    fn a_program_with_enums_and_or_patterns_round_trips() {
+        let doc = compiled_json(ENUM_SRC);
+        let program = Program::from_json(&doc.to_string()).expect("loads");
+        let op = &program.enums["Op"];
+        assert_eq!(op.variants[0].fields, ["place", "won"]);
+        assert_eq!(op.variants[0].data, ["tone"]);
+    }
+
+    #[test]
+    fn a_variant_built_or_matched_against_the_wrong_shape_is_rejected() {
+        let load = |edit: &dyn Fn(&mut serde_json::Value)| {
+            let mut doc = compiled_json(ENUM_SRC);
+            edit(&mut doc);
+            Program::from_json(&doc.to_string()).err().unwrap_or_default()
+        };
+        // The table says `fight` carries three fields; the construction and
+        // the pattern in the document still carry two.
+        let e = load(&|doc| {
+            doc["enums"]["Op"]["variants"][0]["fields"] = serde_json::json!(["place", "won", "odds"]);
+        });
+        assert!(e.contains("MakeEnumVariant(Op.fight) has 2 input(s)"), "{e}");
+        // A variant the enum does not declare.
+        let e = load(&|doc| {
+            doc["enums"]["Op"]["variants"][0]["name"] = serde_json::json!("brawl");
+        });
+        assert!(e.contains("declares no variant `fight`"), "{e}");
+        // A table that breaks the declaration rules.
+        let e = load(&|doc| {
+            doc["enums"]["Op"]["variants"][1]["name"] = serde_json::json!("fight");
+        });
+        assert!(e.contains("variant `fight` is declared twice"), "{e}");
+        let e = load(&|doc| {
+            doc["enums"]["Op"]["variants"][1]["data"] = serde_json::json!(["name"]);
+        });
+        assert!(e.contains("reserved or repeated"), "{e}");
+        // An arm whose block does not exist.
+        let e = load(&|doc| {
+            let arms = doc["match_arms"].as_object_mut().unwrap();
+            let arm = arms.values_mut().next().unwrap();
+            arm[0]["body_block"] = serde_json::json!(9999);
+        });
+        assert!(e.contains("block b9999 out of range"), "{e}");
+        // A document that declares no enum at all is taken as it comes: its
+        // tags belong to no table.
+        let e = load(&|doc| {
+            doc.as_object_mut().unwrap().remove("enums");
+        });
+        assert_eq!(e, "");
     }
 
     #[test]

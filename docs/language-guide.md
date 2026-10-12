@@ -363,13 +363,14 @@ Petal has the following value types:
 | `list` | `[1, 2, 3]` |
 | `record` | `{name: "Alice", age: 30}` |
 | `color` | `#ff8800`, `#f80` (desugars to record) |
-| `enum` | `Some(42)`, `None` |
+| an enum | `Color.red`, `Shape.circle(2)` (a variant of a declared [enum](#enums)) |
 | `vec2` | `vec2(3.0, 4.0)` (see [Vectors](#vectors)) |
 | `vec3` | `vec3(1.0, 2.0, 3.0)` (see [Vectors](#vectors)) |
 | a class | `Rect(0, 0, 8, 8)` (a record tagged with its [class](#classes--methods)) |
 
 Use `type(value)` to get the type name as a string at runtime. For a class
-instance that is the class's own name (`"Rect"`), not `"record"`.
+instance that is the class's own name (`"Rect"`), not `"record"`, and for a
+variant it is its enum's name (`"Color"`).
 
 ## Type Annotations
 
@@ -450,8 +451,10 @@ scale_by("3", 2)      // warning: string is not assignable to num
 
 The name of any [class](#classes--methods) — declared or built in — is a type
 name too, anywhere in the file that declares it (a class declaration is
-hoisted) and in any file that imports it. These names are reserved: a class may
-not take one of the lowercase built-in type names above.
+hoisted) and in any file that imports it. So is the name of any
+[enum](#the-enums-name-as-a-type): `k: Kind` is a variant of `Kind`, where the
+lowercase `enum` is a variant of any enum. These names are reserved: a class
+or an enum may not take one of the lowercase built-in type names above.
 
 A type is a single bare name. There are no parameterized types (`list<int>`),
 arrow types, structural record types, or user-defined aliases — `list` and
@@ -1688,8 +1691,51 @@ exports it, an importer writes `Color.red` after `import ./palette: Color` or
 `palette.Color.red` after `import ./palette`, and one name can be declared as
 an enum only once in a program.
 
-The enum's name is also a type name: `fn area(s: Shape) -> float`. The checker
-reads it as `any`, so it documents the slot without constraining it.
+### The enum's name as a type
+
+The enum's name is also a type name, for a parameter, a return value, a
+binding or a class field. It means "a variant of this enum", and `petal check`
+holds the slot to it:
+
+```petal
+enum Use
+    road,
+    green,
+end
+
+enum Kind
+    parkway(shape: "route", use: Use.road),
+    park(shape: "area", use: Use.green),
+end
+
+fn pick(k: Kind, wide: bool) -> Kind
+    if wide then Kind.parkway else k end
+end
+
+pick(Kind.park, true)    // ok
+pick(Use.road, true)     // warning: argument 1 to `pick`: expected `Kind`, found `Use`
+pick("park", true)       // warning: argument 1 to `pick`: expected `Kind`, found `string`
+```
+
+A value the checker knows to be a `Kind` — through an annotation, or because
+it was written `Kind.park` — is also held to the fields a `Kind` has: `name`,
+the enum's data keys, and the payload fields of its variants.
+
+```petal
+fn label(k: Kind)
+    k.shap             // warning: no variant of enum `Kind` has a field `shap`
+                       //          (fields of `Kind`: shape, use, name)
+end
+
+Kind.park.colour       // warning: `Kind.park` has no field `colour`
+                       //          (it has: shape, use, name)
+```
+
+Both are warnings, like every type check, and both describe a line that fails
+when it runs. `Kind.from(name)` may be `nil`, so its result is unchecked; the
+lowercase type `enum` takes a variant of any enum; and `a.field ?? fallback`
+and `a?.field` ask for a missing field to be tolerated, so they are not warned
+about.
 
 ## Classes & Methods
 

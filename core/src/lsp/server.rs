@@ -7,6 +7,7 @@ use crate::lsp::document::{
     qualifier_at_position,
 };
 use crate::lsp::lsp_types::*;
+use crate::lsp::members::{At, path_before_position};
 use crate::lsp::protocol::*;
 
 pub struct Server {
@@ -84,6 +85,16 @@ impl Server {
                 }
                 self.handle_completion(id, params)
             }
+            "textDocument/documentSymbol" => {
+                if !self.initialized {
+                    return vec![OutgoingMessage::Response(RpcResponse::err(
+                        id,
+                        SERVER_NOT_INITIALIZED,
+                        "Server not initialized".into(),
+                    ))];
+                }
+                self.handle_document_symbol(id, params)
+            }
             _ => vec![OutgoingMessage::Response(RpcResponse::err(
                 id,
                 METHOD_NOT_FOUND,
@@ -127,6 +138,7 @@ impl Server {
                 completion_provider: Some(CompletionOptions {
                     trigger_characters: Some(vec![".".to_string(), "/".to_string()]),
                 }),
+                document_symbol_provider: Some(true),
             },
         };
         vec![OutgoingMessage::Response(RpcResponse::ok(
@@ -225,7 +237,7 @@ impl Server {
 
         let describe = |def: &Definition| {
             let kind_str = match def.kind {
-                DefinitionKind::Variable => "variable",
+                DefinitionKind::Variable | DefinitionKind::Loop => "variable",
                 DefinitionKind::Function => "function",
                 DefinitionKind::Enum => "enum",
                 DefinitionKind::Parameter => "parameter",
@@ -237,6 +249,29 @@ impl Server {
                 format!("({kind_str}) {} {detail}", def.name)
             }
         };
+        // `Kind.park`, `op.place`: a member of an enum or of a variant value.
+        let at = At {
+            line: p.position.line,
+            character: p.position.character,
+        };
+        let member = path_before_position(&doc.text, at.line, at.character)
+            .and_then(|path| doc.analysis.member(&path, at));
+        // (A name the enum does not have is looked up by name below, as
+        // any other is.)
+        if let Some(value) = member.and_then(|m| m.hover(&ident)) {
+            let hover = Hover {
+                contents: MarkupContent {
+                    kind: "markdown".to_string(),
+                    value: format!("```petal\n{value}\n```"),
+                },
+                range: None,
+            };
+            return vec![OutgoingMessage::Response(RpcResponse::ok(
+                id,
+                serde_json::to_value(hover).unwrap(),
+            ))];
+        }
+
         // `m.name`: the module's export, and nothing else by that name.
         let qualified = qualifier_at_position(&doc.text, p.position.line, p.position.character)
             .and_then(|q| doc.analysis.qualifier(&q));
@@ -258,7 +293,7 @@ impl Server {
             ))];
         }
 
-        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, at) {
             let value = describe(def);
             let hover = Hover {
                 contents: MarkupContent {
@@ -357,6 +392,26 @@ impl Server {
             None => return nothing(),
         };
 
+        // `Kind.park`, `op.place`: where the enum declares that member.
+        let at = At {
+            line: p.position.line,
+            character: p.position.character,
+        };
+        // (A name the enum does not have is looked up by name below.)
+        if let Some(found) = path_before_position(&doc.text, at.line, at.character)
+            .and_then(|path| doc.analysis.member(&path, at))
+            .and_then(|member| member.declaration(&ident))
+        {
+            return match found.uri {
+                None => located(
+                    p.text_document.uri.clone(),
+                    document::span_to_range(&found.span),
+                ),
+                Some("") => nothing(),
+                Some(uri) => located(uri.to_string(), document::span_to_range(&found.span)),
+            };
+        }
+
         // `m.name`: the declaration in the module `m` stands for.
         if let Some(module) =
             qualifier_at_position(&doc.text, p.position.line, p.position.character)
@@ -371,7 +426,7 @@ impl Server {
             };
         }
 
-        if let Some(def) = doc.analysis.definitions.iter().find(|d| d.name == ident) {
+        if let Some(def) = doc.analysis.definition_in_scope(&ident, at) {
             return located(
                 p.text_document.uri.clone(),
                 document::span_to_range(&def.span),
@@ -435,6 +490,7 @@ impl Server {
             label: def.name.clone(),
             kind: Some(match def.kind {
                 DefinitionKind::Function => CompletionItemKind::Function,
+                DefinitionKind::Enum => CompletionItemKind::Enum,
                 _ => CompletionItemKind::Variable,
             }),
             detail,
@@ -464,6 +520,20 @@ impl Server {
                     })
                     .collect(),
             );
+        }
+
+        // After `Kind.`, or a variant value and a dot: the enum's members,
+        // or the fields that value answers — and only those.
+        let at = At {
+            line: p.position.line,
+            character: p.position.character,
+        };
+        if let Some(member) = path_before_position(&doc.text, at.line, at.character)
+            .and_then(|path| doc.analysis.member(&path, at))
+        {
+            let mut items = member.completions();
+            items.retain(|item| item.label.starts_with(&prefix));
+            return respond(items);
         }
 
         // After `m.`: what the module exports, and only that.
@@ -526,8 +596,8 @@ impl Server {
             let kind = match def.kind {
                 DefinitionKind::Variable => CompletionItemKind::Variable,
                 DefinitionKind::Function => CompletionItemKind::Function,
-                DefinitionKind::Enum => CompletionItemKind::Variable,
-                DefinitionKind::Parameter => CompletionItemKind::Variable,
+                DefinitionKind::Enum => CompletionItemKind::Enum,
+                DefinitionKind::Parameter | DefinitionKind::Loop => CompletionItemKind::Variable,
             };
             items.push(CompletionItem {
                 label: def.name.clone(),
@@ -554,6 +624,34 @@ impl Server {
                 items,
             })
             .unwrap(),
+        ))]
+    }
+}
+
+impl Server {
+    // -----------------------------------------------------------------------
+    // Document symbols
+    // -----------------------------------------------------------------------
+
+    fn handle_document_symbol(&self, id: Value, params: Value) -> Vec<OutgoingMessage> {
+        let p: DocumentSymbolParams = match serde_json::from_value(params) {
+            Ok(p) => p,
+            Err(_) => {
+                return vec![OutgoingMessage::Response(RpcResponse::err(
+                    id,
+                    INVALID_PARAMS,
+                    "Invalid documentSymbol params".into(),
+                ))];
+            }
+        };
+        let symbols = self
+            .documents
+            .get(&p.text_document.uri)
+            .map(|d| d.analysis.symbols.clone())
+            .unwrap_or_default();
+        vec![OutgoingMessage::Response(RpcResponse::ok(
+            id,
+            serde_json::to_value(symbols).unwrap(),
         ))]
     }
 }

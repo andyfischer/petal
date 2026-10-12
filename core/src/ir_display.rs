@@ -269,6 +269,29 @@ pub fn display_program_with(program: &Program, hide_noise: bool) -> String {
     }
     writeln!(out).unwrap();
 
+    // === Enums === (only a program that declares one has the section)
+    if !program.enums.is_empty() {
+        writeln!(out, "=== Enums ===").unwrap();
+        for (name, def) in &program.enums {
+            let variants: Vec<String> = def
+                .variants
+                .iter()
+                .map(|v| {
+                    let mut text = v.name.clone();
+                    if !v.fields.is_empty() {
+                        text.push_str(&format!("({})", v.fields.join(", ")));
+                    }
+                    if !v.data.is_empty() {
+                        text.push_str(&format!(" {{{}}}", v.data.join(", ")));
+                    }
+                    text
+                })
+                .collect();
+            writeln!(out, "  {}: {}", name, variants.join(" | ")).unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+
     // === Functions ===
     writeln!(out, "=== Functions ===").unwrap();
     for func in &program.functions {
@@ -909,6 +932,32 @@ mod tests {
     }
 
     #[test]
+    fn enums_or_patterns_and_block_arms_rendered() {
+        let program = compile(
+            "enum Op\n  fight(place, won, tone: \"bad\"),\n  rest(tone: \"ok\"),\nend\n\
+             let r = match Op.rest\n\
+               when Op.fight(p, true | false) | Op.fight(p, _) ->\n    print(p)\n    p\n\
+               when Op.rest -> Op.rest.tone\n\
+             end\n\
+             print(r, 3 == 3)",
+        );
+        let text = display_program(&program);
+        assert!(
+            text.contains("=== Enums ===\n  Op: fight(place, won) {tone} | rest {tone}\n"),
+            "{}",
+            text
+        );
+        assert!(
+            text.contains("when Op.fight(p, true | false) | Op.fight(p, _) -> block"),
+            "{}",
+            text
+        );
+        assert!(text.contains("MakeEnumVariant(Op.rest)"), "{}", text);
+        // A program with no enum has no section.
+        assert!(!display_program(&compile("print(1)")).contains("Enums"));
+    }
+
+    #[test]
     fn match_arms_and_guards_rendered() {
         let program = compile(
             "enum Shape\n  Circle(radius),\nend\n\
@@ -929,6 +978,8 @@ mod tests {
         assert!(text.contains("when {x: xx} -> block"), "{}", text);
         assert!(text.contains("when Shape.Circle(r) -> block"), "{}", text);
         assert!(text.contains("when _ -> block"), "{}", text);
+        // The enum's shape: payload fields in parens, data keys in braces.
+        assert!(text.contains("=== Enums ===\n  Shape: Circle(radius)\n"), "{}", text);
         assert!(text.contains("(guard for t"), "{}", text);
         assert!(text.contains("arm1)"), "{}", text);
         // The pattern variable's binding phantom is named in the block header.

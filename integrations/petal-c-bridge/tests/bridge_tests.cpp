@@ -603,6 +603,63 @@ TEST(call_function_by_name) {
     CHECK_THROWS_CODE(vm.call("no_such_fn"), PB_ERR_NOT_FOUND);
 }
 
+// A variant is its tag (`Enum.variant`) and its payload, in both directions:
+// one the host builds under a declared enum's tag *is* that variant to the
+// script (it matches the pattern, equals the script's own, and reads the
+// constant data the declaration gives it), and one the script hands back
+// arrives with the same tag and payload.
+TEST(enum_variants_cross_the_bridge_by_tag_and_payload) {
+    petal::Vm vm;
+    vm.load_source(
+        "enum Shape\n"
+        "  circle(r, sides: 0),\n"
+        "  box(w, h, sides: 4),\n"
+        "  dot(sides: 0),\n"
+        "end\n"
+        "fn describe(s: Shape)\n"
+        "  match s\n"
+        "    when Shape.circle(r) -> \"circle {r} with {s.sides} sides\"\n"
+        "    when Shape.box(w, h) -> \"box {w}x{h} with {s.sides} sides, {s.name}\"\n"
+        "    when Shape.dot -> \"dot\"\n"
+        "  end\n"
+        "end\n"
+        "fn same(s) s == Shape.box(2, 3) end\n"
+        "fn grow(s) Shape.box(s.w * 2, s.h * 2) end\n"
+        "fn kind_of(s) type(s) end\n");
+    vm.run();
+
+    petal::Builder box;
+    box.enum_("Shape.box", [](petal::BuilderRef& e) { e.value(2).value(3); });
+    CHECK_EQ(vm.call("describe", box).string(), std::string("box 2x3 with 4 sides, box"));
+    CHECK(vm.call("same", box).boolean());
+    CHECK_EQ(vm.call("kind_of", box).string(), std::string("Shape"));
+
+    petal::Builder dot;
+    dot.enum_("Shape.dot", [](petal::BuilderRef&) {});
+    CHECK_EQ(vm.call("describe", dot).string(), std::string("dot"));
+
+    // Back out: the tag is qualified and the payload positional. Constant
+    // data belongs to the declaration and is not part of the value.
+    petal::Value grown = vm.call("grow", box);
+    REQUIRE(grown.is_enum());
+    CHECK_EQ(grown.tag(), std::string_view("Shape.box"));
+    CHECK_EQ(grown.size(), size_t(2));
+    CHECK_EQ(grown[1].integer(), 6);
+
+    // A payload of the wrong size is a variant no arm matches, reported as
+    // the script's own error rather than read past its end.
+    petal::Builder bad;
+    bad.enum_("Shape.box", [](petal::BuilderRef& e) { e.value(2); });
+    petal::Error failed = CHECK_THROWS_CODE(vm.call("describe", bad), PB_ERR_RUNTIME);
+    CHECK(std::string(failed.what()).find("No matching pattern") != std::string::npos);
+
+    // A tag with no enum in front belongs to no declared enum.
+    petal::Builder bare;
+    bare.enum_("box", [](petal::BuilderRef& e) { e.value(2).value(3); });
+    CHECK(!vm.call("same", bare).boolean());
+    CHECK_EQ(vm.call("kind_of", bare).string(), std::string("enum"));
+}
+
 TEST(missing_hook_differs_from_failing_hook) {
     // A host calling optional hooks tells "not defined" (NOT_FOUND, or
     // has_function() == false) apart from "defined and failed" (RUNTIME).

@@ -45,6 +45,11 @@ way, for code written against an earlier checkout.
   `Color.custom(1, 2, 3)`, `when Color.red ->`), may carry payload fields and
   `key: expr` constant data (`park(shape: "area")`, read as `k.shape`), and
   answer `k.name`, `type(k)`, `Kind.all` and `Kind.from("park")`.
+- An enum's name is the type of its variants. `fn f(k: Kind) -> Kind` is
+  checked like a class-typed signature: `petal check` warns when another
+  enum's variant, or a value that is no variant, reaches the slot, and when
+  a field is read that no variant of the enum has (`k.shap`,
+  `Kind.park.colour`).
 - `match` is the control-flow statement as well as an expression: an arm's
   body after `->` is a statement list (to the next `when` or the match's
   `end`), `when a | b ->` matches either alternative, a match over the
@@ -96,6 +101,11 @@ way, for code written against an earlier checkout.
   10,000-line game a value edit takes 0.8 ms where the recompile took 300 ms.
   `Env::set_config_value` sets one value by binding path without the file
   changing. See [docs/hot-reload.md](docs/hot-reload.md).
+- An enum can be edited while its variants are held in `state`: an edit to
+  constant data is patched in place, and a variant whose enum, variant or
+  payload has since changed stays a value that is read through the current
+  declaration (a missing field or an unmatched `match` is an ordinary runtime
+  error, never a crash).
 - A recompile is about 2.7 times cheaper on a large program (300 ms to 110 ms
   on the same game): copy propagation solves per basic block over bit sets
   instead of per instruction over hash maps, and a reload re-parses only the
@@ -206,13 +216,16 @@ way, for code written against an earlier checkout.
 - `petal check` warns on three programs that compile but are silently wrong: a
   line starting with `-` under the line it was meant to continue, a bare
   operator expression whose value is discarded (`n + 1`), and a call to a
-  builtin's name that reaches a plain value. An enum's name is accepted as a type name.
+  builtin's name that reaches a plain value.
 - Argument errors name the problem: a mistyped command gets a suggestion
   instead of "Error reading file", an unclosed block names its opener, and a
   stack trace that crosses modules names the entry file.
 - `petal fmt` formats source. `petal lint` reports rule-based findings and can
   fix them, with `--verify` proving a rewrite left the IR equivalent. The
-  `prefer-repeat` rule rewrites a string-repeat loop to `repeat(s, n)`.
+  `prefer-repeat` rule rewrites a string-repeat loop to `repeat(s, n)`, and
+  `prefer-match` turns an `if`/`elsif` chain that compares one subject against
+  literals — numbers included, since `when 1` matches what `== 1` does — into
+  a `match`.
 - `petal suggest` proposes the type annotations and safe refactors a program
   implies.
 - `petal bench` reports the per-call cost of named functions.
@@ -223,6 +236,13 @@ way, for code written against an earlier checkout.
   while preserving formatting and comments.
 - Stage dumps: `show-tokens`, `show-ast`, `show-ir`, `show-bytecode`, each with
   a JSON form. `petal ir-equal` compares two programs' IR.
+- The language server knows enums: completion after `Kind.` offers the
+  variants, `all` and `from`, and after a variant value its payload fields,
+  constant data and `name`; hover and go-to-definition work on `Kind` and on
+  `Kind.park`, through an import as well; and it answers
+  `textDocument/documentSymbol` with the file's outline. Completion works on
+  a line that does not parse yet. Completion item kinds and diagnostic
+  severities are sent as the protocol's numbers (they were sent as names).
 - `petal lsp` runs the language server. An MCP server under `tools/` exposes
   the same tooling to coding agents (see `docs/dev/mcp-server.md`).
 - Per-command help pages (`petal <command> --help`).
@@ -348,6 +368,14 @@ way, for code written against an earlier checkout.
   are formatted like their siblings. The C bridge exposes them as
   `pb_source_set_value`, `_insert`, `_append` and `_remove`, taking values as
   JSON. See [docs/source-preservation.md](docs/source-preservation.md).
+- A config file can hold enum variants: `Mode.dark` and `Shape.circle(2)`, of
+  an enum the file declares, read as `StaticValue::Variant`, are written back
+  as they were spelled, and cross the C bridge as `{"variant": "Mode.dark"}`.
+- `petal-c-bridge`: a variant built with `enum_("Shape.box", …)` is that
+  variant of the script's enum (it matches its patterns and reads its data).
+- IR import validates the `enums` table, each variant construction and
+  pattern against it, and every match arm's blocks. `show-ir` lists a
+  program's enums.
 - `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
   recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
   what a reload did. `pb_vm_set_config` sets one config value in the running
@@ -378,7 +406,9 @@ way, for code written against an earlier checkout.
   navigation).
 - `bloom`, a UI component library written in Petal, and `text_layout`, text
   placement by font metrics.
-- Editor support: a tree-sitter grammar and Vim syntax highlighting.
+- Editor support: a tree-sitter grammar and Vim syntax highlighting. Both
+  know enum variants with payload fields and constant data, qualified variant
+  patterns, or-patterns and statement-list `match` arms.
 
 ### Changed
 

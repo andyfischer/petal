@@ -911,3 +911,302 @@ fn a_file_uri_round_trips_through_a_path() {
     assert_eq!(uri_to_path(&uri).as_deref(), Some(path));
     assert_eq!(uri_to_path("untitled:Untitled-1"), None);
 }
+
+// ===========================================================================
+// Enums: members after `Enum.`, fields of a variant value, the outline
+// ===========================================================================
+
+const ENUMS: &str = r#"enum Use
+  road, green
+end
+enum Kind
+  parkway(shape: "route", use: Use.road),
+  park(shape: "area", use: Use.green),
+end
+enum Op
+  fight(place, won, tone: "bad"),
+  gift(amount, tone: "good"),
+end
+fn describe(k: Kind, op: Op) -> Kind
+  let here = Kind.park
+  let hit = Op.fight("x", true)
+  print(k.shape, op.place, here.name, hit.won)
+  for each in Kind.all do
+    print(each.use)
+  end
+  match op
+    when Op.gift(amount) -> print(amount)
+    when Op.fight(_, _) -> nil
+  end
+  Kind.from("park")
+end
+"#;
+
+/// The position `offset` characters into the first occurrence of `needle`.
+fn at(text: &str, needle: &str, offset: u32) -> (u32, u32) {
+    position(text, needle, offset, false)
+}
+
+fn position(text: &str, needle: &str, offset: u32, last: bool) -> (u32, u32) {
+    let mut lines = text.lines().enumerate().filter(|(_, l)| l.contains(needle));
+    let found = if last { lines.last() } else { lines.next() };
+    let (line, src) = found.unwrap_or_else(|| panic!("no `{needle}` in the text"));
+    let col = if last { src.rfind(needle) } else { src.find(needle) }.unwrap();
+    (line as u32, src[..col].chars().count() as u32 + offset)
+}
+
+/// `ENUMS` with `line` added as the last line of `describe`'s body — a line
+/// being typed, which need not parse.
+fn typing(line: &str) -> String {
+    ENUMS.replace("  Kind.from(\"park\")\n", &format!("  Kind.from(\"park\")\n  {line}\n"))
+}
+
+/// The labels completion offers at the end of the line being typed.
+fn complete_after(typed: &str) -> Vec<String> {
+    let mut server = Server::new();
+    init(&mut server);
+    let text = typing(typed);
+    open(&mut server, "file:///enums.ptl", &text);
+    let (line, col) = position(&text, typed, typed.chars().count() as u32, true);
+    labels(&completion(&mut server, "file:///enums.ptl", line, col))
+}
+
+fn hover_text(server: &mut Server, uri: &str, text: &str, needle: &str, offset: u32) -> String {
+    let (line, col) = at(text, needle, offset);
+    let resp = hover(server, uri, line, col);
+    resp["result"]["contents"]["value"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no hover on `{needle}`+{offset}: {resp}"))
+        .to_string()
+}
+
+#[test]
+fn completion_after_an_enum_offers_its_variants_all_and_from() {
+    // Nothing after the dot yet: the document does not parse, and the enum's
+    // declaration is still what the answer is made of.
+    assert_eq!(complete_after("let a = Kind."), ["parkway", "park", "all", "from"]);
+    assert_eq!(complete_after("let a = Kind.pa"), ["parkway", "park"]);
+    assert_eq!(complete_after("print(Op."), ["fight", "gift", "all", "from"]);
+    // In a pattern, and in a condition whose `then` is not written yet.
+    assert_eq!(complete_after("if k == Kind.f"), ["from"]);
+    // A name that is not an enum gets no enum members.
+    assert!(!complete_after("let a = describe.").contains(&"all".to_string()));
+}
+
+#[test]
+fn completion_after_a_variant_value_offers_its_fields_data_and_name() {
+    // One known variant: its own data, and `name`.
+    assert_eq!(complete_after("Kind.park."), ["shape", "use", "name"]);
+    // A constructed payload variant, written out or held in a `let`.
+    assert_eq!(complete_after("Op.fight(1, 2)."), ["place", "won", "tone", "name"]);
+    assert_eq!(complete_after("hit."), ["place", "won", "tone", "name"]);
+    assert_eq!(complete_after("here.s"), ["shape"]);
+    // Some variant of an annotated enum: the data every variant has, `name`,
+    // and each payload field with the variants that carry it.
+    assert_eq!(complete_after("k."), ["shape", "use", "name"]);
+    assert_eq!(complete_after("op."), ["tone", "name", "place", "won", "amount"]);
+    // A loop over `Enum.all`, and `Enum.from(…)`, yield values of the enum.
+    assert_eq!(complete_after("Kind.from(\"park\")."), ["shape", "use", "name"]);
+    // An uncalled constructor and the `all` list are not variant values.
+    assert!(complete_after("Op.fight.").is_empty());
+    assert!(complete_after("Kind.all.").is_empty());
+
+    let mut server = Server::new();
+    init(&mut server);
+    let text = ENUMS.replace("print(each.use)", "print(each.)");
+    open(&mut server, "file:///loop.ptl", &text);
+    let (line, col) = at(&text, "each.)", 5);
+    assert_eq!(
+        labels(&completion(&mut server, "file:///loop.ptl", line, col)),
+        ["shape", "use", "name"]
+    );
+}
+
+#[test]
+fn completion_items_carry_protocol_kinds_as_numbers() {
+    let mut server = Server::new();
+    init(&mut server);
+    let text = typing("Kind.");
+    open(&mut server, "file:///kinds.ptl", &text);
+    let (line, col) = position(&text, "Kind.", 5, true);
+    let resp = completion(&mut server, "file:///kinds.ptl", line, col);
+    let items = resp["result"]["items"].as_array().unwrap();
+    let kind = |label: &str| items.iter().find(|i| i["label"] == label).unwrap()["kind"].clone();
+    assert_eq!(kind("park"), json!(20), "EnumMember");
+    assert_eq!(kind("all"), json!(5), "Field");
+    assert_eq!(kind("from"), json!(3), "Function");
+    let park = items.iter().find(|i| i["label"] == "park").unwrap();
+    assert_eq!(park["detail"], "Kind.park");
+}
+
+#[test]
+fn hover_describes_an_enum_its_variants_and_a_variant_values_fields() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///hover.ptl";
+    open(&mut server, uri, ENUMS);
+    let mut on = |needle: &str, offset: u32| hover_text(&mut server, uri, ENUMS, needle, offset);
+
+    // The enum, where it is declared and where it is used as a type.
+    assert!(on("enum Op", 5).contains("(enum) Op fight(place, won) | gift(amount)"));
+    assert!(on("k: Kind", 3).contains("(enum) Kind parkway | park"));
+    // A variant, with its constant data; a payload variant, with its fields.
+    let park = on("Kind.park\n".trim_end(), 5);
+    assert!(park.contains("(variant) Kind.park"), "{park}");
+    assert!(park.contains("shape: \"area\"") && park.contains("use: Use.green"), "{park}");
+    assert!(on("Op.fight(\"x\"", 3).contains("(variant) Op.fight(place, won)"));
+    // In a pattern too.
+    assert!(on("when Op.gift", 8).contains("(variant) Op.gift(amount)"));
+    // `all` and `from`.
+    let all = on("Kind.all", 5);
+    assert!(all.contains("Kind.all") && all.contains("[Kind.parkway, Kind.park]"), "{all}");
+    assert!(on("Kind.from", 5).contains("Kind.from(name)"));
+    // Fields of a variant value: one known variant, then a value of the enum.
+    assert!(on("here.name", 5).contains("Kind.park.name = \"park\""));
+    assert!(on("hit.won", 4).contains("(payload field) won"));
+    let shape = on("k.shape", 2);
+    assert!(shape.contains("(constant data) Kind.shape"), "{shape}");
+    assert!(shape.contains("parkway: \"route\"") && shape.contains("park: \"area\""), "{shape}");
+    assert!(on("op.place", 3).contains("of Op.fight(place, won)"));
+    assert!(on("each.use", 5).contains("(constant data) Kind.use"));
+    // A parameter still hovers as itself.
+    assert!(on("k.shape", 0).contains("(parameter) k : Kind"));
+}
+
+#[test]
+fn a_name_the_enum_does_not_have_is_still_looked_up_by_name() {
+    // `here.describe` is no field of a `Kind`; the editor still answers for
+    // the `describe` the file declares rather than going quiet.
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///method.ptl";
+    let text = "enum Kind\n  park(shape: \"area\"),\nend\nfn describe(k: Kind)\n  k.shape\nend\nlet here = Kind.park\nprint(here.describe())\n";
+    open(&mut server, uri, text);
+    assert!(hover_text(&mut server, uri, text, "here.describe", 6).contains("(function) describe fn(k: Kind)"));
+    let (line, col) = at(text, "here.describe", 6);
+    let resp = definition(&mut server, uri, line, col);
+    assert_eq!(resp["result"]["range"]["start"]["line"], 3, "{resp}");
+}
+
+#[test]
+fn goto_definition_on_an_enum_and_on_its_members() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///goto.ptl";
+    open(&mut server, uri, ENUMS);
+    let mut line_of = |needle: &str, offset: u32| {
+        let (line, col) = at(ENUMS, needle, offset);
+        let resp = definition(&mut server, uri, line, col);
+        assert_eq!(resp["result"]["uri"], uri, "`{needle}`+{offset}: {resp}");
+        resp["result"]["range"]["start"]["line"].as_u64().unwrap()
+    };
+    // The enum's name: its declaration.
+    assert_eq!(line_of("k: Kind", 3), 3);
+    assert_eq!(line_of("Kind.park\n".trim_end(), 1), 3);
+    // `Enum.variant`: the variant's own line.
+    assert_eq!(line_of("Kind.park\n".trim_end(), 5), 5);
+    assert_eq!(line_of("Op.fight(\"x\"", 3), 8);
+    assert_eq!(line_of("when Op.gift", 8), 9);
+    // `all` / `from`: the enum.
+    assert_eq!(line_of("Kind.all", 5), 3);
+    // A field of a known variant: that variant. Of an enum's value: the
+    // first variant that declares it.
+    assert_eq!(line_of("here.name", 5), 5);
+    assert_eq!(line_of("hit.won", 4), 8);
+    assert_eq!(line_of("op.place", 3), 8);
+    assert_eq!(line_of("k.shape", 2), 4);
+}
+
+#[test]
+fn enum_members_resolve_through_an_import_and_a_module_qualifier() {
+    let project = Project::new(
+        "enum-import",
+        &[("town.ptl", "// kinds of place\npub enum Kind\n  parkway(shape: \"route\"),\n  park(shape: \"area\"),\nend\n")],
+    );
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = project.uri("main.ptl");
+    let text = "import ./town\nlet a = Kind.park\nlet b = town.Kind.parkway\nprint(a.shape, b.name)\n";
+    assert!(get_diagnostics(&open(&mut server, &uri, text)).is_empty());
+
+    // Go-to-definition lands on the variant, in the module's file.
+    for (needle, offset, line) in [("Kind.park", 5, 3), ("town.Kind.parkway", 10, 2), ("a.shape", 2, 3)] {
+        let (l, c) = at(text, needle, offset);
+        let resp = definition(&mut server, &uri, l, c);
+        assert_eq!(resp["result"]["uri"], json!(project.uri("town.ptl")), "{needle}: {resp}");
+        assert_eq!(resp["result"]["range"]["start"]["line"], line, "{needle}: {resp}");
+    }
+    assert!(hover_text(&mut server, &uri, text, "town.Kind.parkway", 10).contains("shape: \"route\""));
+
+    // Completion, mid-edit, bare and qualified.
+    let typing = "import ./town\nlet a = Kind.\nlet b = town.Kind.\nlet c = town.Kind.park.\n";
+    change(&mut server, &uri, 2, typing);
+    assert_eq!(labels(&completion(&mut server, &uri, 1, 13)), ["parkway", "park", "all", "from"]);
+    assert_eq!(labels(&completion(&mut server, &uri, 2, 18)), ["parkway", "park", "all", "from"]);
+    assert_eq!(labels(&completion(&mut server, &uri, 3, 23)), ["shape", "name"]);
+}
+
+#[test]
+fn document_symbols_outline_enums_classes_functions_and_bindings() {
+    let mut server = Server::new();
+    init(&mut server);
+    let uri = "file:///outline.ptl";
+    let text = format!("{ENUMS}class Point\n  x: int,\n  y: int,\nend\nlet origin = Point(0, 0)\nstate count = 0\n");
+    open(&mut server, uri, &text);
+    let msgs = server.handle_message(&request(
+        4,
+        "textDocument/documentSymbol",
+        json!({ "textDocument": { "uri": uri } }),
+    ));
+    let resp: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let symbols = resp["result"].as_array().expect("symbols");
+    let summary: Vec<(String, u64)> = symbols
+        .iter()
+        .map(|s| (s["name"].as_str().unwrap().to_string(), s["kind"].as_u64().unwrap()))
+        .collect();
+    let expect = [("Use", 10), ("Kind", 10), ("Op", 10), ("describe", 12), ("Point", 5), ("origin", 13), ("count", 13)];
+    assert_eq!(summary, expect.map(|(n, k)| (n.to_string(), k)));
+
+    // An enum's variants are its children, each with its payload and data.
+    let op = &symbols[2];
+    let variants: Vec<(&str, u64, &str)> = op["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap(), c["kind"].as_u64().unwrap(), c["detail"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        variants,
+        [("fight", 22, "(place, won, tone: \"bad\")"), ("gift", 22, "(amount, tone: \"good\")")]
+    );
+    assert!(symbols[0]["children"][0].get("detail").is_none(), "a bare variant has no detail");
+    // The selection range is the name; the range is the whole declaration.
+    assert_eq!(op["selectionRange"]["start"], json!({"line": 7, "character": 5}));
+    assert_eq!(op["selectionRange"]["end"], json!({"line": 7, "character": 7}));
+    assert_eq!(op["range"]["start"]["line"], 7);
+    assert_eq!(op["range"]["end"]["line"], 10);
+    assert_eq!(op["children"][1]["selectionRange"]["start"], json!({"line": 9, "character": 2}));
+    // A class's fields likewise.
+    let fields: Vec<&str> = symbols[4]["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(fields, ["x", "y"]);
+
+    let caps = server.handle_message(&request(5, "initialize", json!({"capabilities": {}})));
+    let caps: Value = serde_json::from_str(&caps[0].to_json()).unwrap();
+    assert_eq!(caps["result"]["capabilities"]["documentSymbolProvider"], true);
+}
+
+#[test]
+fn diagnostics_carry_their_severity_as_a_number() {
+    let mut server = Server::new();
+    init(&mut server);
+    let msgs = open(&mut server, "file:///sev.ptl", "enum Color\n  red,\nend\nprint(Color.rde)\n");
+    let v: Value = serde_json::from_str(&msgs[0].to_json()).unwrap();
+    let diag = &v["params"]["diagnostics"][0];
+    assert_eq!(diag["severity"], json!(1), "{v}");
+    assert!(diag["message"].as_str().unwrap().contains("did you mean Color.red?"), "{v}");
+}

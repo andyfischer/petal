@@ -61,6 +61,42 @@ impl Open {
     }
 }
 
+/// The header of a match arm being read: `when pattern [if guard]`, up to
+/// its `->` or `do`.
+#[derive(Clone, Copy)]
+struct WhenHeader {
+    /// Open constructs at the `when`; the arm's own `if`, `->` and `do` sit
+    /// back at this depth.
+    depth: usize,
+    /// The guard's `if` has been read.
+    guarded: bool,
+}
+
+/// Whether the `->` at token `k` is a lambda's (`fn -> x`, `fn(a, b) -> x`)
+/// rather than a match arm's.
+fn is_lambda_arrow(tokens: &[Token], k: usize) -> bool {
+    match k.checked_sub(1).map(|p| &tokens[p]) {
+        Some(Token::Fn) => true,
+        Some(Token::RParen) => {
+            let mut depth = 0usize;
+            for p in (0..k).rev() {
+                match tokens[p] {
+                    Token::RParen => depth += 1,
+                    Token::LParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return p > 0 && matches!(tokens[p - 1], Token::Fn);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 /// Whether the keyword at token `k` is spelling a name rather than acting as
 /// the keyword: `slice(xs, start: 1, end: 3)`, `{end: 3}`. A keyword directly
 /// followed by `:` is always a label, so it neither opens nor closes anything.
@@ -148,9 +184,12 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
     // the keyword; only a `do` with no pending header opens a block itself
     // (a `when … do` match arm).
     let mut pending_do = false;
-    // Inside `when pattern [if guard]` the `if` is a guard, not an opener.
-    // Cleared at the arm's `do`/`->` (or a newline, defensively).
-    let mut when_header = false;
+    // Inside `when pattern [if guard]`: the stack depth at the `when`, and
+    // whether the guard's `if` has been seen. That `if` is a guard, not an
+    // opener, and the header ends at the arm's own `do`/`->` — the one back
+    // at the `when`'s depth that is not a lambda's (a guard may hold
+    // `xs.any(fn(v) -> v == x)`). Cleared there, or at a newline.
+    let mut when_header: Option<WhenHeader> = None;
     // Stack of unterminated JSX opening tags, each recording the delimiter
     // depth at its `<`: the `>` that ends the tag is the one seen back at that
     // depth (a `>` inside an `attr={a > b}` brace sits deeper).
@@ -300,26 +339,39 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     let next = tokens[k + 1..].iter().find(|t| !matches!(t, Token::Newline));
                     let in_pattern = matches!(next, Some(Token::Bar))
                         || (k > 0 && matches!(tokens[k - 1], Token::Bar));
-                    when_header = when_header && in_pattern;
+                    // (A break inside a guard's open bracket ends nothing.)
+                    let inside = when_header.is_some_and(|h| h.depth < stack.len());
+                    if !in_pattern && !inside {
+                        when_header = None;
+                    }
                 }
                 Token::When => {
                     if stack.last().is_some_and(|o| o.arm_body) {
                         stack.pop(); // the arm before this one, on the same line
                     }
-                    when_header = true;
+                    when_header = Some(WhenHeader {
+                        depth: stack.len(),
+                        guarded: false,
+                    });
                 }
                 Token::Arrow => {
-                    // `when pattern ->` with the body on the lines below.
-                    if when_header && matches!(tokens.get(k + 1), Some(Token::Newline)) {
-                        stack.push(Open {
-                            arm_body: true,
-                            ..Open::block(content)
-                        });
+                    let arms = when_header.is_some_and(|h| h.depth == stack.len())
+                        && !is_lambda_arrow(tokens, k);
+                    if arms {
+                        // `when pattern ->` with the body on the lines below.
+                        if matches!(tokens.get(k + 1), Some(Token::Newline)) {
+                            stack.push(Open {
+                                arm_body: true,
+                                ..Open::block(content)
+                            });
+                        }
+                        when_header = None;
                     }
-                    when_header = false;
                 }
                 Token::Do => {
-                    when_header = false;
+                    if when_header.is_some_and(|h| h.depth == stack.len()) {
+                        when_header = None;
+                    }
                     if pending_do {
                         pending_do = false;
                     } else {
@@ -331,7 +383,12 @@ pub fn reindent_protected(source: &str, protected: &[bool]) -> Result<String, St
                     stack.push(Open::block(content));
                 }
                 Token::If => {
-                    if !when_header {
+                    let guard = when_header
+                        .as_mut()
+                        .filter(|h| h.depth == stack.len() && !h.guarded);
+                    if let Some(h) = guard {
+                        h.guarded = true;
+                    } else {
                         let mid_line = sig.first() != Some(&k);
                         stack.push(Open {
                             content,
@@ -468,6 +525,17 @@ mod tests {
             "match k\n  when 1 ->\n    let a = 1\n    if a > 0 then\n      print(a)\n    end\n  when 2\n  | 3 ->\n    match a\n      when 0 -> x\n      when _ ->\n        y\n    end\n  when _ -> nil\nend\nafter()\n"
         );
         // Already laid out: nothing moves.
+        assert_eq!(reindent(&out).unwrap(), out);
+    }
+
+    #[test]
+    fn an_arrow_lambda_in_a_guard_does_not_end_the_arm_header() {
+        let src = "match op\nwhen Op.fight(p, _) if xs.any(fn(v) -> v == p) ->\nprint(p)\nhit()\nwhen x if fn -> x ->\nmiss()\nwhen _ if (if a then b else c end) ->\nnil\nend\nafter()\n";
+        let out = reindent(src).unwrap();
+        assert_eq!(
+            out,
+            "match op\n  when Op.fight(p, _) if xs.any(fn(v) -> v == p) ->\n    print(p)\n    hit()\n  when x if fn -> x ->\n    miss()\n  when _ if (if a then b else c end) ->\n    nil\nend\nafter()\n"
+        );
         assert_eq!(reindent(&out).unwrap(), out);
     }
 

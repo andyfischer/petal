@@ -46,7 +46,7 @@ enum Shape
 end
 
 match s
-  when Circle(r) -> r
+  when Shape.Circle(r) -> r
   when _ -> 0
 end
 
@@ -55,16 +55,117 @@ end
 (source_file
   (enum_declaration
     name: (identifier)
-    (enum_variant name: (identifier) fields: (parameter_list (parameter name: (identifier))))
+    (enum_variant name: (identifier) field: (identifier))
     (enum_variant name: (identifier)))
   (match_expression
     subject: (identifier)
     (match_arm
-      pattern: (variant_pattern name: (identifier) (identifier))
-      body: (identifier))
+      pattern: (variant_pattern enum: (identifier) name: (identifier) (identifier))
+      body: (block (identifier)))
     (match_arm
       pattern: (identifier)
-      body: (integer))))
+      body: (block (integer)))))
+
+==================
+Enum variants with payload fields and constant data
+==================
+
+pub enum Op
+  fight(place, won, tone: "bad"),
+  park(shape: "area", use: Use.green),
+  none(),
+  rest
+end
+
+---
+
+(source_file
+  (enum_declaration
+    name: (identifier)
+    (enum_variant
+      name: (identifier)
+      field: (identifier)
+      field: (identifier)
+      (enum_data key: (identifier) value: (string (string_content))))
+    (enum_variant
+      name: (identifier)
+      (enum_data key: (identifier) value: (string (string_content)))
+      (enum_data
+        key: (identifier)
+        value: (field_access object: (identifier) field: (identifier))))
+    (enum_variant name: (identifier))
+    (enum_variant name: (identifier))))
+
+==================
+Match arms with statement bodies, or-patterns and guards
+==================
+
+let r = match op
+  when Op.fight(place, true | false) if place == "x" ->
+    set n += 1
+    print(place)
+    place
+  when Kind.park | town.Kind.plaza -> 1
+  when "a" | "b" | 3 ->
+    match k
+      when Kind.park -> 1
+      when _ -> 2
+    end
+  when [1 | 2, _] -> nil
+  when other do
+    other
+  end
+end
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (match_expression
+      subject: (identifier)
+      (match_arm
+        pattern: (variant_pattern
+          enum: (identifier)
+          name: (identifier)
+          (identifier)
+          (or_pattern (literal_pattern (boolean)) (literal_pattern (boolean))))
+        (guard
+          condition: (binary_expression
+            left: (identifier)
+            right: (string (string_content))))
+        body: (block
+          (set_statement left: (identifier) right: (integer))
+          (call function: (identifier) arguments: (argument_list (identifier)))
+          (identifier)))
+      (match_arm
+        pattern: (or_pattern
+          (variant_pattern enum: (identifier) name: (identifier))
+          (variant_pattern module: (identifier) enum: (identifier) name: (identifier)))
+        body: (block (integer)))
+      (match_arm
+        pattern: (or_pattern
+          (or_pattern
+            (literal_pattern (string (string_content)))
+            (literal_pattern (string (string_content))))
+          (literal_pattern (integer)))
+        body: (block
+          (match_expression
+            subject: (identifier)
+            (match_arm
+              pattern: (variant_pattern enum: (identifier) name: (identifier))
+              body: (block (integer)))
+            (match_arm
+              pattern: (identifier)
+              body: (block (integer))))))
+      (match_arm
+        pattern: (list_pattern
+          (or_pattern (literal_pattern (integer)) (literal_pattern (integer)))
+          (identifier))
+        body: (block (nil)))
+      (match_arm
+        pattern: (identifier)
+        body: (block (identifier))))))
 
 ==================
 List literal with a trailing comma

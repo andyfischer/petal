@@ -83,6 +83,10 @@
 (class_field name: (identifier) @property)
 (function_declaration class: (identifier) @type)
 (enum_variant name: (identifier) @constructor)
+(enum_variant field: (identifier) @variable.parameter)
+(enum_data key: (identifier) @property)
+(variant_pattern module: (identifier) @module)
+(variant_pattern enum: (identifier) @type)
 (variant_pattern name: (identifier) @constructor)
 
 ; ---- Parameters & record keys ----
@@ -130,7 +134,7 @@
   "&&" "||" "!"
   "??" "?." "?.["
   "=" "+=" "-=" "*=" "/=" "%=" "++=" "??="
-  "|>" "->"
+  "|>" "->" "|"
 ] @operator
 
 ; ---- Punctuation ----

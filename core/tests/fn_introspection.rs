@@ -103,6 +103,32 @@ print(body[3].expr.tag, body[3].expr.name, body[3].line, body[3].column)
 }
 
 #[test]
+fn fn_ast_carries_enum_types_qualified_patterns_and_statement_arms() {
+    let out = run(r#"
+enum Op
+  fight(place, won, tone: "bad"),
+  rest(tone: "ok"),
+end
+fn f(op: Op) -> Op
+  match op
+    when Op.fight(p, true) | Op.fight(p, _) ->
+      print(p)
+      op
+    when Op.rest -> Op.rest
+  end
+end
+let i = fn_info(f)
+print(i.params[0].type, i.returns)
+let arms = fn_ast(f).body[0].expr.arms
+// An or-pattern lists its alternatives; a variant pattern is as written.
+print(len(arms[0].pattern.Or), arms[0].pattern.Or[0].Variant.name, arms[1].pattern.Variant.name)
+// A statement-list arm is a Block; a one-expression arm is that expression.
+print(arms[0].body.tag, len(arms[0].body.body), arms[1].body.tag, arms[1].body.field)
+"#);
+    assert_eq!(out, ["Op Op", "2 Op.fight Op.rest", "Block 2 FieldAccess rest"]);
+}
+
+#[test]
 fn what_cannot_be_inspected_is_nil_and_a_non_function_is_an_error() {
     let out = run(r#"
 class P

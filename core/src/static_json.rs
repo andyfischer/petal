@@ -10,6 +10,8 @@
 //! {"rec": {"key": value, ...}}       a record, keys in order
 //! {"call": "vec3", "args": [...]}    a call, unevaluated
 //! {"color": "#ff2e88"}               a color literal
+//! {"variant": "Mode.dark"}           an enum variant; with a payload,
+//! {"variant": "Shape.circle", "args": [...]}
 //! ```
 
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
@@ -80,6 +82,14 @@ fn write_json(value: &StaticValue, out: &mut String) {
             write_list(args, out);
             out.push('}');
         }
+        StaticValue::Variant { of, name, args } => {
+            out.push_str(&format!("{{\"variant\":{}", quoted(&format!("{of}.{name}"))));
+            if !args.is_empty() {
+                out.push_str(",\"args\":");
+                write_list(args, out);
+            }
+            out.push('}');
+        }
     }
 }
 
@@ -125,7 +135,7 @@ impl<'de> Deserialize<'de> for Wire {
             type Value = Wire;
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str(
-                    "a number, string, boolean, null, array, or one of {\"int\"}, {\"rec\"}, {\"call\", \"args\"}, {\"color\"}",
+                    "a number, string, boolean, null, array, or one of {\"int\"}, {\"rec\"}, {\"call\", \"args\"}, {\"color\"}, {\"variant\"}",
                 )
             }
             fn visit_unit<E: Error>(self) -> Result<Wire, E> {
@@ -156,6 +166,7 @@ impl<'de> Deserialize<'de> for Wire {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Wire, A::Error> {
                 let mut value = None;
                 let (mut function, mut args) = (None::<String>, None::<Vec<Wire>>);
+                let mut variant = None::<String>;
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "int" => {
@@ -177,6 +188,7 @@ impl<'de> Deserialize<'de> for Wire {
                             })?);
                         }
                         "call" => function = Some(map.next_value()?),
+                        "variant" => variant = Some(map.next_value()?),
                         "args" => args = Some(map.next_value()?),
                         other => {
                             return Err(A::Error::custom(format!(
@@ -185,12 +197,31 @@ impl<'de> Deserialize<'de> for Wire {
                         }
                     }
                 }
-                let call = function.map(|function| StaticValue::Call {
-                    function,
-                    args: args.unwrap_or_default().into_iter().map(|a| a.0).collect(),
-                });
-                value.or(call).map(Wire).ok_or_else(|| {
-                    A::Error::custom("an object needs one of `int`, `rec`, `call`, `color`")
+                let args: Vec<StaticValue> =
+                    args.unwrap_or_default().into_iter().map(|a| a.0).collect();
+                let called = match (function, variant) {
+                    (Some(function), None) => Some(StaticValue::Call { function, args }),
+                    (None, Some(path)) => {
+                        let Some((of, name)) = path.rsplit_once('.') else {
+                            return Err(A::Error::custom(format!(
+                                "`{path}` is not a variant (written `Enum.variant`)"
+                            )));
+                        };
+                        Some(StaticValue::Variant {
+                            of: of.to_string(),
+                            name: name.to_string(),
+                            args,
+                        })
+                    }
+                    (Some(_), Some(_)) => {
+                        return Err(A::Error::custom("an object is a `call` or a `variant`, not both"));
+                    }
+                    (None, None) => None,
+                };
+                value.or(called).map(Wire).ok_or_else(|| {
+                    A::Error::custom(
+                        "an object needs one of `int`, `rec`, `call`, `color`, `variant`",
+                    )
                 })
             }
         }
@@ -225,6 +256,27 @@ mod tests {
             r##"{"rec":{"zeta":{"int":-3},"alpha":2.0,"tint":{"color":"#ff2e88"},"list":["a\"b",null,true,{"call":"vec3","args":[0.5,-1.0,0.0]},{"color":"#01020304"}]}}"##
         );
         assert_eq!(from_json(&json), Ok(value));
+    }
+
+    #[test]
+    fn an_enum_variant_round_trips_with_and_without_a_payload() {
+        let value = StaticValue::list([
+            StaticValue::variant("Mode", "dark", [] as [i64; 0]),
+            StaticValue::variant("Shape", "box", [StaticValue::int(3), StaticValue::float(0.5)]),
+        ]);
+        let json = to_json(&value);
+        assert_eq!(
+            json,
+            r#"[{"variant":"Mode.dark"},{"variant":"Shape.box","args":[{"int":3},0.5]}]"#
+        );
+        assert_eq!(from_json(&json), Ok(value));
+        // A variant reached through a module keeps the whole path as its enum.
+        assert_eq!(
+            from_json(r#"{"variant": "theme.Mode.dark", "args": []}"#),
+            Ok(StaticValue::variant("theme.Mode", "dark", [] as [i64; 0]))
+        );
+        assert!(from_json(r#"{"variant": "dark"}"#).unwrap_err().contains("Enum.variant"));
+        assert!(from_json(r#"{"variant": "A.b", "call": "f"}"#).is_err());
     }
 
     #[test]

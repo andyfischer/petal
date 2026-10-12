@@ -238,8 +238,6 @@ module.exports = grammar({
     // `= expr` gives the parameter a default value: an expression evaluated in
     // the callee on every call that omits the argument (rust/src/parse.rs
     // `parse_param_default`). The annotation, when there is one, comes first.
-    // The real parser rejects a default on an enum variant's field, which
-    // shares this rule; a highlighting grammar need not.
     parameter: $ => prec(1, seq(
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
@@ -272,9 +270,22 @@ module.exports = grammar({
       'end',
     ),
 
+    // A variant: `red`, `custom(r, g, b)`, `park(shape: "area")`. Inside the
+    // parentheses a bare name is a payload field and `key: expr` is constant
+    // data; the two may be mixed (rust/src/parse.rs `parse_enum_decl`).
     enum_variant: $ => seq(
       field('name', $.identifier),
-      optional(field('fields', $.parameter_list)),
+      optional(seq(
+        '(',
+        commaSep(choice($.enum_data, field('field', $.identifier))),
+        ')',
+      )),
+    ),
+
+    enum_data: $ => seq(
+      field('key', $.identifier),
+      ':',
+      field('value', $._expression),
     ),
 
     for_statement: $ => seq(
@@ -486,12 +497,15 @@ module.exports = grammar({
       'end',
     ),
 
+    // After `->` an arm's body is a run of statements, up to the next `when`
+    // of this match or its `end`; the last expression is the arm's value.
+    // `do … end` is the older block form.
     match_arm: $ => seq(
       'when',
       field('pattern', $._pattern),
       optional($.guard),
       choice(
-        seq('->', field('body', $._expression)),
+        seq('->', field('body', $.block)),
         seq('do', optional(field('body', $.block)), 'end'),
       ),
     ),
@@ -501,19 +515,27 @@ module.exports = grammar({
     // ---- Patterns ----
 
     _pattern: $ => choice(
+      $.or_pattern,
       $.variant_pattern,
       $.list_pattern,
       $.record_pattern,
       $.literal_pattern,
-      $.identifier, // variable binding or `_` wildcard
+      $.identifier, // variable binding or `_` wildcard: a bare name always binds
     ),
 
-    variant_pattern: $ => prec(1, seq(
+    // `Kind.park | Kind.plaza`, `"a" | "b"` — at the top of an arm or nested.
+    or_pattern: $ => prec.left(seq($._pattern, '|', $._pattern)),
+
+    // A variant is matched through its enum: `Kind.park`, `Op.fight(place, won)`,
+    // and through a module, `town.Kind.park`. The last name is the variant;
+    // the one before it the enum.
+    variant_pattern: $ => seq(
+      optional(seq(field('module', $.identifier), '.')),
+      field('enum', $.identifier),
+      '.',
       field('name', $.identifier),
-      '(',
-      commaSep($._pattern),
-      ')',
-    )),
+      optional(seq('(', commaSep($._pattern), ')')),
+    ),
 
     list_pattern: $ => seq(
       '[',

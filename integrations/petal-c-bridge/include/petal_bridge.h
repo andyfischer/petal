@@ -120,7 +120,7 @@ typedef enum pb_kind {
     PB_STRING = 5,   /* str/str_len (UTF-8, NUL-terminated) */
     PB_LIST = 6,     /* items[count]  (f64 arrays decode as lists of PB_FLOAT) */
     PB_MAP = 7,      /* items[count], each with key/key_len; str = class name or NULL */
-    PB_ENUM = 8,     /* str = variant tag, items[count] = payload */
+    PB_ENUM = 8,     /* str = variant tag ("Shape.circle"), items[count] = payload */
     PB_SYMBOL = 9,   /* str = symbol name */
     PB_HANDLE = 10,  /* integer = slot, count = serial, str = handle class name */
     PB_PENDING = 11, /* an unresolved resource */
@@ -203,7 +203,10 @@ void pb_builder_end_list(pb_builder* b);
 void pb_builder_begin_map(pb_builder* b);
 void pb_builder_key(pb_builder* b, const char* key);
 void pb_builder_end_map(pb_builder* b);
-/* An enum variant `tag(payload...)`; the payload values go between begin/end. */
+/* An enum variant `tag(payload...)`; the payload values go between begin/end.
+ * Under the tag "Enum.variant", with the payload in declaration order, it is
+ * that variant of the script's enum (it equals the script's own and matches
+ * its patterns). The tag is not checked against any program. */
 void pb_builder_begin_enum(pb_builder* b, const char* tag);
 void pb_builder_end_enum(pb_builder* b);
 
@@ -756,12 +759,15 @@ const char* pb_source_text(const pb_source* s);
  *
  * `config`: written `config let`. `text`: the right-hand side as written.
  * `comment`: the comment block directly above. A binding has either `value`
- * (its static value: literals, lists, records, calls and names bound above)
- * or `reason` (why it has none: arithmetic, a function, state, ...). Values:
+ * (its static value: literals, lists, records, calls, variants of the file's
+ * enums and names bound above) or `reason` (why it has none: arithmetic, a
+ * function, state, an enum's own declaration, ...). Values:
  * floats are numbers, strings strings, lists arrays, nil null, and
  *   {"int": 3}                        an integer
  *   {"rec": {"key": value, ...}}      a record, keys in source order
  *   {"call": "vec3", "args": [...]}   a call, unevaluated
+ *   {"variant": "Mode.dark"}          a variant of an enum the file declares;
+ *                                     with a payload, "args": [...] as well
  *   {"color": "#ff2e88"}              a color literal, as #rrggbb or #rrggbbaa
  *                                     in lowercase (pb_source_expr gives the
  *                                     spelling in the file)

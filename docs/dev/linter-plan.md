@@ -194,10 +194,10 @@ What it refuses, and why:
 
 | Refused | Why |
 | --- | --- |
-| Numeric literals | `==` compares an int against a float numerically (`1 == 1.0`), while pattern matching requires the tags to agree, so `when 1` does not match `1.0`. String, bool and nil literals have no cross-type rule and are exactly equivalent. |
+| Anything but a literal on the right | A literal pattern matches exactly what the literal is `==` to (`when 1` matches `1.0`), so every literal converts. A name does not: `when limit` binds `limit`. |
 | A subject that could compute | `match` reads the subject once where the chain read it per arm. A name or a field path is safe to move; a call or an index is not. |
 | A comment in the glue | It would have no home in the `match`, so the whole chain is skipped rather than dropping it. |
-| Multi-statement arm bodies | A `->` arm takes an expression; where a chain is really control flow rather than a lookup, `match` is not obviously better. |
+| Multi-statement arm bodies | A `->` arm takes a statement list, so this is a choice: the rule is about lookups, and where a chain is really control flow, which spelling reads better is the author's call. |
 | Fewer than three arms | At two arms `if … else … end` is the plainer spelling. |
 
 Beyond the compile gate, a structural check (`verify_chain_counts`) requires
@@ -206,8 +206,7 @@ least *n* `If` nodes, or lint refuses to write. Verified end to end over the
 repo (29 chains across 12 files) plus `~/worlds-fair/ui/ptl`.
 
 Still to revisit: if `==` on a `Pending` becomes strict, the safe-literal set
-needs re-deriving. Numeric chains could be admitted where the type checker
-proves the subject is an `int`.
+needs re-deriving.
 
 ### `prefer-repeat` — the string-building loop
 

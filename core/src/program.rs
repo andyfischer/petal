@@ -768,6 +768,20 @@ pub struct EnumDef {
 }
 
 impl EnumDef {
+    /// The shape an `enum` declaration's variants declare.
+    pub fn declared(variants: &[crate::ast::EnumVariant]) -> Self {
+        EnumDef {
+            variants: variants
+                .iter()
+                .map(|v| EnumVariantDef {
+                    name: v.name.clone(),
+                    fields: v.fields.clone(),
+                    data: v.data.iter().map(|d| d.key.clone()).collect(),
+                })
+                .collect(),
+        }
+    }
+
     pub fn variant(&self, name: &str) -> Option<&EnumVariantDef> {
         self.variants.iter().find(|v| v.name == name)
     }

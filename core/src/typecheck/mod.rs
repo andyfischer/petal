@@ -60,6 +60,10 @@ struct VarType {
     /// scope lookup gives shadowing for free — an inner `let x = …` replaces
     /// the entry, so a use below it is attributed to nothing.
     param_of: Option<(infer::FnKey, usize)>,
+    /// Set when the name *is* an enum — the binding its declaration makes —
+    /// so `Kind.park` through it is a variant of that enum. Cleared by any
+    /// later binding of the name, as scope lookup clears everything else.
+    enum_decl: Option<crate::classes::EnumId>,
 }
 
 impl VarType {
@@ -105,7 +109,7 @@ pub enum CastSlot {
     ListElement,
 }
 
-struct Checker<'a> {
+struct Checker<'a, 't> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     /// See [`CheckContext::param_reqs`].
     param_reqs: Option<&'a param_reqs::ParamReqs>,
@@ -116,7 +120,8 @@ struct Checker<'a> {
     /// Classes in scope for this module — the built-ins plus every `class`
     /// the compiler's prescan found. Resolves class names in type position,
     /// types field reads, and answers "does this class have that method?".
-    classes: &'a ClassTable,
+    /// Its own lifetime: the walk may hold a table of its own (see [`run`]).
+    classes: &'t ClassTable,
     /// The module namespaces this file can spell, and what each exports:
     /// `import bloom/icon as icons` puts `icons` here with `bloom/icon`'s
     /// export names. A call through one (`icons.icon(...)`) is a call to that
@@ -167,9 +172,6 @@ struct Checker<'a> {
     /// warn about. Set immediately before entering the spine and consumed on
     /// entry to each expression, like [`Checker::slot`].
     tolerant_access: bool,
-    /// Every enum name an annotation in this module may use. See
-    /// [`Checker::resolve_ann`].
-    enum_names: HashSet<String>,
     /// See [`CheckContext::natives`].
     natives: Option<&'a crate::native_decl::NativeDecls>,
     /// See [`CheckContext::native_names`].
@@ -215,10 +217,10 @@ pub enum Callee<'a> {
 /// `f(...)`.
 pub type CalleeResolver<'a> = &'a dyn Fn(Option<&str>, &str) -> Callee<'a>;
 
-/// The names of the enums `stmts` declares at its top level.
-pub fn enum_names(stmts: &[Stmt]) -> impl Iterator<Item = String> + '_ {
+/// The enums `stmts` declares at its top level: each name with its variants.
+fn enum_decls(stmts: &[Stmt]) -> impl Iterator<Item = (&String, &Vec<crate::ast::EnumVariant>)> {
     stmts.iter().filter_map(|s| match &s.kind {
-        StmtKind::EnumDecl { name, .. } => Some(name.clone()),
+        StmtKind::EnumDecl { name, variants } => Some((name, variants)),
         _ => None,
     })
 }
@@ -232,7 +234,9 @@ pub struct CheckContext<'a> {
     pub fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     /// Their parameter *names*, keyed the same way, for named arguments.
     pub fn_param_names: &'a HashMap<(String, usize), Vec<String>>,
-    /// The classes this module may name.
+    /// The classes this module may name, and the compilation's enums. An
+    /// enum these statements declare that the table does not hold yet (a
+    /// caller with no prescan of its own) is added for the walk.
     pub classes: &'a ClassTable,
     /// Module namespace → the names that module exports. See
     /// [`Checker::namespace_call`].
@@ -248,10 +252,6 @@ pub struct CheckContext<'a> {
     /// parameters ([`param_reqs`]), keyed like `fn_signatures`. `None` checks
     /// only declared types.
     pub param_reqs: Option<&'a param_reqs::ParamReqs>,
-    /// Enum names declared by the modules compiled before this one, which an
-    /// annotation here may name (`fn f() -> Shape`). The module's own enums
-    /// are always accepted; `None` accepts only those.
-    pub enum_names: Option<&'a HashSet<String>>,
     /// The `native fn` declarations of the modules compiled before this one
     /// (a host's interface module, say). The module's own declarations and
     /// the bundled `core` package's are always consulted; `None` consults
@@ -291,7 +291,6 @@ impl<'a> CheckContext<'a> {
             module: "",
             collect_inferences: false,
             param_reqs: None,
-            enum_names: None,
             natives: None,
             native_names: None,
             callee: None,
@@ -303,11 +302,22 @@ impl<'a> CheckContext<'a> {
 /// identity casts found along the way, the pinned method calls, and (when
 /// asked) the evidence `petal suggest` reads.
 fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
+    // The compiler's prescan has registered this module's enums; a caller
+    // without one (a lint, a unit test) gets them from the statements.
+    let own_enums: Option<ClassTable> = enum_decls(stmts)
+        .any(|(name, _)| opts.classes.lookup_enum(name).is_none())
+        .then(|| {
+            let mut table = opts.classes.clone();
+            for (name, variants) in enum_decls(stmts) {
+                table.declare_enum(name, crate::program::EnumDef::declared(variants));
+            }
+            table
+        });
     let mut checker = Checker {
         fn_signatures: opts.fn_signatures,
         fn_param_names: opts.fn_param_names,
         param_reqs: opts.param_reqs,
-        classes: opts.classes,
+        classes: own_enums.as_ref().unwrap_or(opts.classes),
         namespaces: opts.namespaces,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
@@ -322,9 +332,6 @@ fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
         lambda_rets: HashMap::new(),
         module: opts.module.to_string(),
         tolerant_access: false,
-        enum_names: enum_names(stmts)
-            .chain(opts.enum_names.into_iter().flatten().cloned())
-            .collect(),
         natives: opts.natives,
         native_names: opts.native_names,
         callee: opts.callee,
@@ -431,7 +438,7 @@ fn is_numeric(t: Type) -> bool {
     matches!(t, Type::Int | Type::Float)
 }
 
-impl<'a> Checker<'a> {
+impl<'a, 't> Checker<'a, 't> {
     // ── scope management ────────────────────────────────────────────────
     fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
@@ -464,6 +471,7 @@ impl<'a> Checker<'a> {
                 param_names,
                 class_hint: None,
                 param_of: None,
+                enum_decl: None,
             },
         );
     }
@@ -869,14 +877,13 @@ impl<'a> Checker<'a> {
     /// vocabulary without context; a class name can only be resolved against
     /// this module's [`ClassTable`], which is what this adds.
     ///
-    /// An enum's name is accepted too, as `any`: the pass has no type for an
-    /// enum value (a variant is a member of its enum, see
-    /// [`Checker::bind_enum_names`]), so the annotation documents the
-    /// function without constraining it. A class of the same name wins.
+    /// An enum's name is the type of that enum's variants
+    /// ([`Type::EnumOf`]). Enum and class names never collide in one
+    /// compilation, so the order of the two lookups decides nothing.
     fn resolve_ann(&self, ann: &TypeAnn) -> Option<Type> {
         ann.resolved
             .or_else(|| self.classes.lookup(&ann.name).map(Type::Class))
-            .or_else(|| self.enum_names.contains(&ann.name).then_some(Type::Any))
+            .or_else(|| self.classes.lookup_enum(&ann.name).map(Type::EnumOf))
     }
 
     /// How a type is spelled in a diagnostic — the class's own name for a
@@ -1289,14 +1296,114 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// Bind the name of every `enum` these statements declare, as an unknown
-    /// value. The name is an ordinary binding — it shadows anything else of
-    /// that name, a class constructor included — and its variants are members
-    /// of it (`Shape.circle(1)`), which the pass has no type for.
+    /// Bind the name of every `enum` these statements declare. The name is
+    /// an ordinary binding — it shadows anything else of that name, a class
+    /// constructor included. As a value it is the record of the enum's
+    /// members; what the pass keeps is which enum it is, so a member read
+    /// through it (`Shape.circle(1)`) is typed. See [`Checker::static_enum`].
     fn bind_enum_names(&mut self, stmts: &[Stmt]) {
-        let names: Vec<String> = enum_names(stmts).collect();
+        let names: Vec<String> = enum_decls(stmts).map(|(name, _)| name.clone()).collect();
         for name in names {
-            self.bind(name, None, Type::Any);
+            let id = self.classes.lookup_enum(&name);
+            self.bind(name.clone(), None, Type::Record);
+            if let Some(vt) = self.scopes.last_mut().expect("a scope").get_mut(&name) {
+                vt.enum_decl = id;
+            }
+        }
+    }
+
+    /// The enum `expr` names, when that is known here: its own name where
+    /// nothing has rebound it, a name no scope binds that an import brought
+    /// in, or that name through a module namespace (`town.Kind`). Enum names
+    /// are unique in a compilation, which is what lets the name alone answer.
+    fn static_enum(&self, expr: &Expr) -> Option<crate::classes::EnumId> {
+        match &expr.kind {
+            ExprKind::Ident(name) => match self.lookup(name) {
+                Some(bound) => bound.enum_decl,
+                None => self.classes.lookup_enum(name),
+            },
+            ExprKind::FieldAccess { object, field } => {
+                let ExprKind::Ident(ns) = &object.kind else {
+                    return None;
+                };
+                if self.lookup(ns).is_some() || !self.namespaces.get(ns)?.contains(field) {
+                    return None;
+                }
+                self.classes.lookup_enum(field)
+            }
+            _ => None,
+        }
+    }
+
+    /// The type of `Enum.member` read as a value: a payload-free variant is
+    /// a value of the enum, a payload variant is its constructor, `all` is
+    /// the list and `from` the lookup. A member the enum does not have is
+    /// the compiler's error to report.
+    fn enum_member_type(&self, id: crate::classes::EnumId, member: &str) -> Type {
+        match self.classes.enum_def(id).variant(member) {
+            Some(v) if v.fields.is_empty() => Type::EnumOf(id),
+            Some(_) => Type::Function,
+            None if member == "all" => Type::List,
+            None if member == "from" => Type::Function,
+            None => Type::Any,
+        }
+    }
+
+    /// The variant `expr` spells out, when it is one written in place:
+    /// `Kind.park`, or a construction `Op.fight("x", true)`.
+    fn written_variant(&self, expr: &Expr) -> Option<&'t crate::program::EnumVariantDef> {
+        let access = match &expr.kind {
+            ExprKind::Call { function, .. } => function,
+            _ => expr,
+        };
+        let ExprKind::FieldAccess { object, field } = &access.kind else {
+            return None;
+        };
+        let id = self.static_enum(object)?;
+        let variant = self.classes.enum_def(id).variant(field)?;
+        // An uncalled payload variant is a function, not a variant value.
+        let is_call = matches!(expr.kind, ExprKind::Call { .. });
+        (is_call || variant.fields.is_empty()).then_some(variant)
+    }
+
+    /// A field read off a value of the enum `id`: every variant answers
+    /// `name` and the enum's data keys, and a payload field is answered by
+    /// the variants that declare it. `object` narrows that to one variant
+    /// when it is written in place. A name nothing answers fails whenever
+    /// the line runs.
+    fn check_enum_field(&mut self, id: crate::classes::EnumId, object: &Expr, field: &str, span: SourceSpan) {
+        let enum_name = self.classes.enum_name(id);
+        let def = self.classes.enum_def(id);
+        let answers = |v: &crate::program::EnumVariantDef| {
+            field == "name" || v.fields.iter().any(|f| f == field) || v.data.iter().any(|d| d == field)
+        };
+        let listed = |v: &crate::program::EnumVariantDef| {
+            let mut names: Vec<&str> = v.fields.iter().chain(&v.data).map(String::as_str).collect();
+            names.push("name");
+            names.join(", ")
+        };
+        if let Some(v) = self.written_variant(object) {
+            if !answers(v) {
+                let message = format!(
+                    "`{enum_name}.{}` has no field `{field}` (it has: {})",
+                    v.name,
+                    listed(v)
+                );
+                self.warn(span, message);
+            }
+        } else if !def.variants.iter().any(answers) {
+            let mut names: Vec<&str> = Vec::new();
+            for name in def.variants.iter().flat_map(|v| v.data.iter().chain(&v.fields)) {
+                if !names.contains(&name.as_str()) {
+                    names.push(name);
+                }
+            }
+            names.push("name");
+            let message = format!(
+                "no variant of enum `{enum_name}` has a field `{field}` (fields of `{enum_name}`: {})",
+                names.join(", ")
+            );
+            self.warn(span, message);
         }
     }
 
@@ -1367,6 +1474,20 @@ impl<'a> Checker<'a> {
                 // (and, failing those, the globals), so walking it as a field
                 // would report every method as a missing field.
                 let mut method_sig = None;
+                // `Enum.variant(...)` constructs a variant of that enum, and
+                // `Enum.from(name)` may find none.
+                if let ExprKind::FieldAccess { object, field } = &function.kind
+                    && let Some(id) = self.static_enum(object)
+                {
+                    for arg in args {
+                        self.slot = CastSlot::ListElement;
+                        self.check_expr(arg);
+                    }
+                    return match self.classes.enum_def(id).variant(field) {
+                        Some(_) => Type::EnumOf(id),
+                        None => Type::Any,
+                    };
+                }
                 // `m.f(...)` where `m` is an imported module is a call to that
                 // module's `f`, not a method on a value. Standing in a bare
                 // `f` for the callee sends it down the ordinary free-call path
@@ -1540,8 +1661,17 @@ impl<'a> Checker<'a> {
                         },
                     );
                 }
+                if let Some(id) = self.static_enum(object) {
+                    return self.enum_member_type(id, field);
+                }
                 self.tolerant_access = tolerant;
                 let obj = self.check_expr(object);
+                if let Type::EnumOf(id) = obj {
+                    if !tolerant {
+                        self.check_enum_field(id, object, field, expr.span);
+                    }
+                    return Type::Any;
+                }
                 // A class instance has declared field types; a plain record
                 // does not (`Type` is unparameterized), so everything else
                 // stays `Any`.

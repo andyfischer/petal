@@ -33,11 +33,15 @@
 //! bound to a static value **earlier in the file**. A **call** is also static:
 //! it is captured unevaluated as [`StaticValue::Call`], because in a config file
 //! a call is a constructor the host interprets (`rgb(255, 0, 0)`,
-//! `editor("a.rs")`) rather than a computation to run.
+//! `editor("a.rs")`) rather than a computation to run. So is a variant of an
+//! `enum` the file itself declares — `Mode.dark`, `Shape.circle(2)` — which is
+//! [`StaticValue::Variant`]: the declaration is right there, wherever in the
+//! file it sits, and says what the variant is without running anything.
 //!
 //! Everything else — arithmetic, string interpolation, `if`/`match`, lambdas,
-//! field access, `state` declarations, `fn` declarations — is **not** static and
-//! is reported as [`StaticValueError::NotStatic`] rather than silently skipped.
+//! field access, `state` declarations, `fn` declarations, a variant of an enum
+//! another module declares — is **not** static and is reported as
+//! [`StaticValueError::NotStatic`] rather than silently skipped.
 
 use std::collections::BTreeMap;
 
@@ -85,6 +89,14 @@ pub enum StaticValue {
     /// a config file names a host-interpreted constructor.
     Call {
         function: String,
+        args: Vec<StaticValue>,
+    },
+    /// A variant of an enum: `Mode.dark` (`of` is `Mode`, `name` is `dark`),
+    /// or with its payload, `Shape.circle(2)`. `args` is empty for a variant
+    /// that has none. Read out of a file only for an enum that file declares.
+    Variant {
+        of: String,
+        name: String,
         args: Vec<StaticValue>,
     },
 }
@@ -183,6 +195,20 @@ impl StaticValue {
         }
     }
 
+    /// A variant value: `StaticValue::variant("Mode", "dark", [] as [i64; 0])`
+    /// renders as `Mode.dark`, and with arguments as `Shape.circle(2)`.
+    pub fn variant<P, A>(of: impl Into<String>, name: impl Into<String>, args: P) -> StaticValue
+    where
+        P: IntoIterator<Item = A>,
+        A: Into<StaticValue>,
+    {
+        StaticValue::Variant {
+            of: of.into(),
+            name: name.into(),
+            args: args.into_iter().map(Into::into).collect(),
+        }
+    }
+
     /// Render this value as Petal source, starting at column 0.
     ///
     /// The inverse of [`get_static_value`] for everything that module can read,
@@ -211,6 +237,10 @@ impl StaticValue {
             StaticValue::List(items) => render_list(items, depth),
             StaticValue::Record(fields) => render_record(fields, depth),
             StaticValue::Call { function, args } => render_call_at(function, args, depth),
+            StaticValue::Variant { of, name, args } if args.is_empty() => format!("{of}.{name}"),
+            StaticValue::Variant { of, name, args } => {
+                render_call_at(&format!("{of}.{name}"), args, depth)
+            }
         }
     }
 
@@ -220,7 +250,7 @@ impl StaticValue {
         matches!(
             self,
             StaticValue::List(_) | StaticValue::Record(_) | StaticValue::Call { .. }
-        )
+        ) || matches!(self, StaticValue::Variant { args, .. } if !args.is_empty())
     }
 }
 
@@ -453,6 +483,9 @@ pub struct StaticBinding {
     pub exported: bool,
     /// The 1-based line the binding's statement starts on.
     pub line: u32,
+    /// The declaration, when the binding is an `enum`'s name: what makes
+    /// `Name.variant` below (or above) it a static value.
+    pub(crate) enum_decl: Option<crate::program::EnumDef>,
 }
 
 /// Every top-level name `source` binds, in source order, each carrying either
@@ -490,8 +523,37 @@ fn eval_top_level(source: &str) -> Result<Vec<StaticBinding>, StaticValueError> 
 /// The bindings the top-level statements `stmts` establish, in source order —
 /// pass a prefix of a file's statements to get the names in scope at that
 /// point, which is what [`eval`] resolves a reference against.
+///
+/// An `enum` is hoisted: its variants are static values on every line of the
+/// file, above its declaration as well as below. Its name is listed where it
+/// is declared, like any other.
 pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> {
+    let enum_binding = |stmt: &Stmt| {
+        let StmtKind::EnumDecl { name, variants } = &stmt.kind else {
+            return None;
+        };
+        Some(StaticBinding {
+            name: name.clone(),
+            value: Err("an enum declaration".into()),
+            text: None,
+            comment: leading_comment(chars, stmt.span.start.offset as usize),
+            is_config: false,
+            exported: stmt.exported,
+            line: stmt.span.start.line,
+            enum_decl: Some(crate::program::EnumDef::declared(variants)),
+        })
+    };
+    let hoisted: Vec<StaticBinding> = stmts.iter().filter_map(enum_binding).collect();
     let mut bindings: Vec<StaticBinding> = Vec::new();
+    let eval = |expr: &Expr, bindings: &[StaticBinding]| {
+        eval_in(
+            expr,
+            &Scope {
+                bindings,
+                hoisted: &hoisted,
+            },
+        )
+    };
     for stmt in stmts {
         let (name, value, text, is_config) = match &stmt.kind {
             StmtKind::Let {
@@ -531,6 +593,12 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
                 None,
                 false,
             ),
+            StmtKind::EnumDecl { .. } => {
+                if let Some(binding) = enum_binding(stmt) {
+                    set_binding(&mut bindings, binding);
+                }
+                continue;
+            }
             _ => continue,
         };
         let comment = leading_comment(chars, stmt.span.start.offset as usize);
@@ -544,10 +612,71 @@ pub(crate) fn bindings_of(stmts: &[Stmt], chars: &[char]) -> Vec<StaticBinding> 
                 is_config,
                 exported: stmt.exported,
                 line: stmt.span.start.line,
+                enum_decl: None,
             },
         );
     }
     bindings
+}
+
+/// What a static evaluation can see: the names bound above the expression,
+/// and the file's enums, which are in scope on every line.
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    bindings: &'a [StaticBinding],
+    hoisted: &'a [StaticBinding],
+}
+
+/// The enum `expr` names and its declaration, when `expr` is the bare name
+/// of an enum the file declares. A name bound above to something else is
+/// that something else.
+fn enum_named<'a>(
+    expr: &'a Expr,
+    scope: &Scope<'a>,
+) -> Option<(&'a str, &'a crate::program::EnumDef)> {
+    let ExprKind::Ident(name) = &expr.kind else {
+        return None;
+    };
+    let named = |binding: &&StaticBinding| &binding.name == name;
+    let binding = match scope.bindings.iter().find(named) {
+        Some(bound) => bound,
+        None => scope.hoisted.iter().find(named)?,
+    };
+    Some((name.as_str(), binding.enum_decl.as_ref()?))
+}
+
+/// `Enum.member` with `args` (`None`: not called) as a static value.
+fn eval_variant(
+    enum_name: &str,
+    def: &crate::program::EnumDef,
+    member: &str,
+    args: Option<&[Expr]>,
+    scope: &Scope,
+) -> Result<StaticValue, String> {
+    let Some(variant) = def.variant(member) else {
+        return Err(match member {
+            "all" | "from" => format!("`{enum_name}.{member}`, which needs evaluating"),
+            _ => format!("`{enum_name}.{member}`, which is not a variant of enum `{enum_name}`"),
+        });
+    };
+    let args = args.unwrap_or_default();
+    if args.len() != variant.fields.len() {
+        return Err(match (args.len(), variant.fields.len()) {
+            (0, _) => format!("the constructor `{enum_name}.{member}`, which is a function"),
+            (got, takes) => format!(
+                "`{enum_name}.{member}` with {got} arguments where the variant takes {takes}"
+            ),
+        });
+    }
+    let mut out = Vec::with_capacity(args.len());
+    for arg in args {
+        out.push(eval_in(arg, scope)?);
+    }
+    Ok(StaticValue::Variant {
+        of: enum_name.to_string(),
+        name: member.to_string(),
+        args: out,
+    })
 }
 
 /// The source text a span covers. Spans are **char** offsets (the lexer indexes
@@ -620,6 +749,17 @@ fn set_binding(bindings: &mut Vec<StaticBinding>, binding: StaticBinding) {
 /// it has no static value. The `Err` string is a noun phrase that completes
 /// "`x` is not a static value: …".
 pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValue, String> {
+    eval_in(
+        expr,
+        &Scope {
+            bindings,
+            hoisted: &[],
+        },
+    )
+}
+
+fn eval_in(expr: &Expr, scope: &Scope) -> Result<StaticValue, String> {
+    let bindings = scope.bindings;
     if let Some(color) = color_literal(expr) {
         return Ok(color);
     }
@@ -633,7 +773,7 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
         }),
         // Negation and `not` fold into the literal so `-1` reads as Int(-1)
         // rather than as an unreadable expression.
-        ExprKind::UnaryOp { op, operand } => match (op, eval(operand, bindings)?) {
+        ExprKind::UnaryOp { op, operand } => match (op, eval_in(operand, scope)?) {
             (UnaryOp::Neg, StaticValue::Int(n)) => Ok(StaticValue::Int(-n)),
             (UnaryOp::Neg, StaticValue::Float(f)) => Ok(StaticValue::Float(-f)),
             (UnaryOp::Not, StaticValue::Bool(b)) => Ok(StaticValue::Bool(!b)),
@@ -645,7 +785,7 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
         ExprKind::List(items) => {
             let mut out = Vec::with_capacity(items.len());
             for item in items {
-                out.push(eval(item, bindings)?);
+                out.push(eval_in(item, scope)?);
             }
             Ok(StaticValue::List(out))
         }
@@ -654,7 +794,7 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
             for field in fields {
                 match field {
                     RecordField::Named(key, value) => {
-                        out.push((key.clone(), eval(value, bindings)?))
+                        out.push((key.clone(), eval_in(value, scope)?))
                     }
                     RecordField::Spread(_) => {
                         return Err("a record with a `...` spread, which needs evaluating".into());
@@ -670,6 +810,15 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
             args,
             arg_names,
         } => {
+            // `Shape.circle(2)`: a variant with its payload.
+            if let ExprKind::FieldAccess { object, field } = &function.kind
+                && let Some((enum_name, def)) = enum_named(object, scope)
+            {
+                if !arg_names.is_empty() {
+                    return Err("a named argument".into());
+                }
+                return eval_variant(enum_name, def, field, Some(args), scope);
+            }
             let ExprKind::Ident(name) = &function.kind else {
                 return Err("a call through an expression rather than a plain name".into());
             };
@@ -678,12 +827,17 @@ pub(crate) fn eval(expr: &Expr, bindings: &[StaticBinding]) -> Result<StaticValu
             }
             let mut out = Vec::with_capacity(args.len());
             for arg in args {
-                out.push(eval(arg, bindings)?);
+                out.push(eval_in(arg, scope)?);
             }
             Ok(StaticValue::Call {
                 function: name.clone(),
                 args: out,
             })
+        }
+        // `Mode.dark`: a variant of an enum this file declares.
+        ExprKind::FieldAccess { object, field } if enum_named(object, scope).is_some() => {
+            let (enum_name, def) = enum_named(object, scope).expect("checked");
+            eval_variant(enum_name, def, field, None, scope)
         }
         // A reference resolves only against names bound *above* it — the same
         // order the program itself would see.
@@ -760,6 +914,7 @@ fn describe_value(value: &StaticValue) -> &'static str {
         StaticValue::List(_) => "a list",
         StaticValue::Record(_) => "a record",
         StaticValue::Call { .. } => "a call",
+        StaticValue::Variant { .. } => "an enum variant",
     }
 }
 
@@ -1024,6 +1179,73 @@ let recent       = [\"a.rs\", \"b.rs\"]
     // ── static_bindings ──────────────────────────────────────────────────
 
     /// The binding named `name`, for asserting on one entry of a read.
+    const MODES: &str = "let before = Mode.dark\n\
+        // how the editor is lit\n\
+        pub enum Mode\n  dark(bg: #101010),\n  light(bg: #fafafa),\nend\n\
+        enum Shape\n  dot,\n  circle(r),\n  box(w, h),\nend\n";
+
+    #[test]
+    fn a_variant_of_an_enum_the_file_declares_is_static() {
+        let src = format!(
+            "{MODES}let mode = Mode.light\nlet shapes = [Shape.dot, Shape.circle(2), Shape.box(3, mode)]\n"
+        );
+        assert_eq!(get(&src, "mode"), StaticValue::variant("Mode", "light", [] as [i64; 0]));
+        // An enum is hoisted: a variant is static above its declaration too.
+        assert_eq!(get(&src, "before"), StaticValue::variant("Mode", "dark", [] as [i64; 0]));
+        // A payload is static when its arguments are.
+        let shapes = get(&src, "shapes");
+        assert_eq!(
+            shapes,
+            StaticValue::list([
+                StaticValue::variant("Shape", "dot", [] as [i64; 0]),
+                StaticValue::variant("Shape", "circle", [2]),
+                StaticValue::variant(
+                    "Shape",
+                    "box",
+                    [StaticValue::int(3), StaticValue::variant("Mode", "light", [] as [i64; 0])]
+                ),
+            ])
+        );
+        // And renders back as it was written.
+        assert_eq!(get(&src, "mode").to_source(), "Mode.light");
+        assert_eq!(
+            shapes.to_source(),
+            "[\n  Shape.dot,\n  Shape.circle(2),\n  Shape.box(3, Mode.light),\n]"
+        );
+    }
+
+    #[test]
+    fn what_an_enum_has_that_is_not_a_variant_value_is_not_static() {
+        let reason = |rhs: &str| {
+            let src = format!("{MODES}let other = {{Mode: 1}}\nlet x = {rhs}\n");
+            binding(&src, "x").value.unwrap_err()
+        };
+        assert_eq!(reason("Mode.all"), "`Mode.all`, which needs evaluating");
+        assert_eq!(reason("Mode.from(\"dark\")"), "`Mode.from`, which needs evaluating");
+        assert_eq!(reason("Mode.dim"), "`Mode.dim`, which is not a variant of enum `Mode`");
+        assert_eq!(reason("Shape.circle"), "the constructor `Shape.circle`, which is a function");
+        assert_eq!(
+            reason("Shape.box(1)"),
+            "`Shape.box` with 1 arguments where the variant takes 2"
+        );
+        assert_eq!(reason("Shape.circle(1 + 1)"), "an arithmetic or comparison expression, which needs evaluating");
+        // Constant data is read off a value, which takes a run.
+        assert_eq!(reason("Mode.dark.bg"), "a field access, which needs evaluating");
+        // An enum another module declares is not known here.
+        assert_eq!(reason("theme.Mode.dark"), "a field access, which needs evaluating");
+        assert_eq!(reason("other.Mode"), "a field access, which needs evaluating");
+    }
+
+    #[test]
+    fn an_enum_is_a_bound_name_that_is_not_itself_a_value() {
+        let mode = binding(MODES, "Mode");
+        assert_eq!(mode.value, Err("an enum declaration".to_string()));
+        assert_eq!(mode.comment.as_deref(), Some("how the editor is lit"));
+        assert!(mode.exported);
+        assert_eq!((mode.line, mode.text), (3, None));
+        assert!(!static_values(MODES).unwrap().contains_key("Mode"));
+    }
+
     fn binding(source: &str, name: &str) -> StaticBinding {
         static_bindings(source)
             .unwrap()

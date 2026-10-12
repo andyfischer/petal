@@ -75,6 +75,10 @@ pub struct Compiler {
     // Set while an enum's constant data is being compiled: the top-level
     // names the file binds only later, which a data expression cannot use.
     enum_data_unavailable: Option<HashSet<String>>,
+    /// While enum constant data is being compiled: this file's functions
+    /// that are not hoisted, and so do not exist yet where the data is
+    /// evaluated. See `Compiler::emit_enum_data`.
+    enum_data_late_fns: HashSet<String>,
     next_register: HashMap<BlockId, u16>,
 
     // Function scope depth tracking for closure capture
@@ -365,9 +369,6 @@ pub struct Compiler {
     /// tracked once a module has declared a native, which is the only way a
     /// native the `Env` lacks can be named at all.
     used_native_terms: HashSet<TermId>,
-    /// Every enum name declared by a module compiled so far, for type
-    /// annotations (`fn f() -> Shape`). See `typecheck::CheckContext`.
-    enum_type_names: HashSet<String>,
 
     // ── Module system state (see docs/module-system.md) ──────────────
     //
@@ -500,6 +501,7 @@ impl Compiler {
             enum_defs: HashMap::new(),
             enum_terms: HashMap::new(),
             enum_data_unavailable: None,
+            enum_data_late_fns: HashSet::new(),
             next_register: HashMap::new(),
             fn_signatures: HashMap::new(),
             fn_param_reqs: HashMap::new(),
@@ -552,7 +554,6 @@ impl Compiler {
             alias_written: HashMap::new(),
             first_party_modules: HashSet::new(),
             used_native_terms: HashSet::new(),
-            enum_type_names: HashSet::new(),
             current_module: None,
             error_file: None,
             module_aliases: HashMap::new(),
@@ -920,10 +921,6 @@ impl Compiler {
         })?;
         self.prescan_declarations(module, &stmts);
         let namespaces = self.visible_namespaces();
-        // Modules compile dependencies-first, so by the time a module is
-        // checked every enum it could import has been seen.
-        self.enum_type_names
-            .extend(crate::typecheck::enum_names(&stmts));
         // The names this module's scope resolves to a native: the checker
         // knows functions by bare name across the whole program, and must not
         // hold a call to an imported native to some other module's function
@@ -993,7 +990,6 @@ impl Compiler {
                 module: &module_identity(module),
                 collect_inferences: self.collect_inferences,
                 param_reqs: Some(&self.fn_param_reqs),
-                enum_names: Some(&self.enum_type_names),
                 natives: Some(&self.native_decls),
                 native_names: Some(&native_names),
                 callee: Some(&resolve_callee),
@@ -2296,7 +2292,18 @@ impl Compiler {
             .filter(|n| !consts.contains(*n))
             .cloned()
             .collect();
-        self.emit_enum_data(stmts, unavailable);
+        // A function held back from hoisting (its body reads something the
+        // file computes as it runs) is not there to call yet either.
+        let late_fns: HashSet<String> = stmts
+            .iter()
+            .filter_map(|stmt| match &stmt.kind {
+                StmtKind::FnDecl { name, class: None, .. } if !hoistable.contains(name) => {
+                    Some(name.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        self.emit_enum_data(stmts, unavailable, late_fns);
     }
 }
 
@@ -3096,6 +3103,7 @@ pub(crate) fn resolve_ann(
     let ann = ann?;
     ann.resolved
         .or_else(|| classes.lookup(&ann.name).map(crate::types::Type::Class))
+        .or_else(|| classes.lookup_enum(&ann.name).map(crate::types::Type::EnumOf))
 }
 
 /// The bare method name of a method declaration — `center_x` for

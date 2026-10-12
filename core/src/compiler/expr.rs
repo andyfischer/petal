@@ -523,6 +523,18 @@ impl Compiler {
         if let Some(enum_name) = self.enum_bound_to(name) {
             return self.emit_enum_record(&enum_name);
         }
+        // In an enum's constant data, a function of this file that is not
+        // hoisted is still the empty box its declaration will fill: calling
+        // it would be `Cannot call nil` at run time, with nothing to say why.
+        if self.enum_data_late_fns.contains(name) && self.closure_def_ends.is_empty() {
+            let msg = format!(
+                "`{name}` cannot be used in an enum's constant data: the data is evaluated \
+                 before the file's statements run, and `{name}` reads something the file \
+                 computes as it runs, so it is not defined yet"
+            );
+            let msg_cid = self.constants.intern(ConstantValue::String(msg));
+            return self.emit_term(TermOp::Error(msg_cid), smallvec![], None);
+        }
         if let Some(tid) = self.scope_lookup(name) {
             self.note_native_use(tid);
         }

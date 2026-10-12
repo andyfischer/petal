@@ -247,7 +247,7 @@ pub fn suggest_source(
     let mut suggestions = Vec::new();
     if opts.kinds.types {
         gather_from(&host, opts, &mut inferences, &mut notes);
-        let resolved = inferences.resolve(&classes);
+        let resolved = inferences.resolve();
 
         // Only the target file's own declarations. Evidence is
         // compilation-wide by design — that is how a caller in another module

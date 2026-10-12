@@ -56,13 +56,42 @@ pub struct TextDocumentContentChangeEvent {
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DiagnosticSeverity {
+/// An LSP enumeration: the protocol carries its members as integers, so it
+/// is written and read as the number, never as the Rust name.
+macro_rules! protocol_enum {
+    ($(#[$meta:meta])* $name:ident { $($variant:ident = $value:literal),+ $(,)? }) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum $name {
+            $($variant = $value),+
+        }
+
+        impl Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_u8(*self as u8)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                match u8::deserialize(d)? {
+                    $($value => Ok($name::$variant),)+
+                    other => Err(serde::de::Error::custom(format!(
+                        concat!("unknown ", stringify!($name), " {}"),
+                        other
+                    ))),
+                }
+            }
+        }
+    };
+}
+
+protocol_enum!(DiagnosticSeverity {
     Error = 1,
     Warning = 2,
     Information = 3,
     Hint = 4,
-}
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
@@ -108,6 +137,8 @@ pub struct ServerCapabilities {
     pub definition_provider: Option<bool>,
     #[serde(rename = "completionProvider", skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
+    #[serde(rename = "documentSymbolProvider", skip_serializing_if = "Option::is_none")]
+    pub document_symbol_provider: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,14 +201,16 @@ pub struct CompletionParams {
     pub position: Position,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CompletionItemKind {
+protocol_enum!(CompletionItemKind {
     Text = 1,
     Function = 3,
+    Field = 5,
     Variable = 6,
+    Enum = 13,
     Keyword = 14,
     Snippet = 15,
-}
+    EnumMember = 20,
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionItem {
@@ -192,6 +225,42 @@ pub struct CompletionList {
     #[serde(rename = "isIncomplete")]
     pub is_incomplete: bool,
     pub items: Vec<CompletionItem>,
+}
+
+// ---------------------------------------------------------------------------
+// Document symbols
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentSymbolParams {
+    #[serde(rename = "textDocument")]
+    pub text_document: TextDocumentIdentifier,
+}
+
+protocol_enum!(SymbolKind {
+    Class = 5,
+    Field = 8,
+    Enum = 10,
+    Function = 12,
+    Variable = 13,
+    EnumMember = 22,
+});
+
+/// One declaration in a document's outline, with the declarations inside it
+/// (an enum's variants, a class's fields).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentSymbol {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub kind: SymbolKind,
+    /// The whole declaration.
+    pub range: Range,
+    /// The declared name within it.
+    #[serde(rename = "selectionRange")]
+    pub selection_range: Range,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<DocumentSymbol>,
 }
 
 // ---------------------------------------------------------------------------

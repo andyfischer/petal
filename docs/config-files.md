@@ -71,13 +71,23 @@ or a loop belongs to that scope and is invisible to the reader.
 | `-3`, `not flag` (folded) | `"size {n}"` (interpolation) |
 | `[1, 2]`, `{ k: "v" }` | `if wide then 16 else 12 end` |
 | `rgb(255, 0, 0)` — see below | `sizes[0]`, `config.size` |
-| a reference to a name bound statically **above** it | `fn` and `state` declarations |
+| `Mode.dark`, `Shape.circle(2)` — a variant of an enum the file declares | `Mode.all`, `Mode.from("dark")`, `Mode.dark.bg`, `theme.Mode.dark` |
+| a reference to a name bound statically **above** it | `fn`, `state` and `enum` declarations |
 
 **A call is static.** `rgb(255, 0, 0)` reads back as
 `StaticValue::Call { function: "rgb", args: [...] }`, held **unevaluated**. In
 a config file a call names a constructor the *host* interprets (a color, a
 layout, a pane), not a computation to run. Interpret it yourself, or write it
 back unchanged.
+
+**A variant is static.** With `enum Mode dark, light end` in the file,
+`let mode = Mode.light` reads back as
+`StaticValue::Variant { of: "Mode", name: "light", args: [] }`, and
+`Shape.circle(2)` carries its payload in `args`. The enum may be declared
+anywhere in the file, since an enum is hoisted. A variant of an enum another
+module declares is not static: knowing that `theme.Mode` is an enum takes
+loading `theme`. Constant data (`Mode.dark.bg`) is read off a value, which
+takes a run.
 
 ### Errors
 
@@ -211,6 +221,9 @@ with channels `0..=255` and `a` present only when the literal spells an alpha
 — not as the `{r, g, b}` record it becomes at run time — so writing it back
 gives a color literal. `to_source()` writes the long lowercase form; an edit
 of an existing literal keeps that literal's case and its short or long form.
+
+A variant renders as it is written: `Mode.light`, or `Shape.circle(2)` with a
+payload.
 
 `petal::static_json` converts a `StaticValue` to and from JSON (`to_json`,
 `from_json`), for hosts in other languages; the format is described there and

@@ -29,6 +29,11 @@ use crate::types::{FnSignature, Type};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct ClassId(pub u32);
 
+/// Index of an enum in a [`ClassTable`], for [`Type::EnumOf`]. `Copy` for the
+/// reason [`ClassId`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub struct EnumId(pub u32);
+
 /// One declared field: a name and its optional declared type. `ty` is `None`
 /// for an un-annotated field (`any`) or an unrecognized type name.
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +110,12 @@ pub struct ClassTable {
     /// `None` for "every declared class" — the default, which is what a
     /// single-file compilation and the unit tests want.
     scope: Option<HashSet<String>>,
+    /// The compilation's enums: the other kind of declared, named type. They
+    /// live here so that everything holding the table to resolve or spell a
+    /// type (`k: Kind`, "expected `Kind`") knows them without a second table
+    /// to pass. An enum's name is unique in a compilation, as a class's is.
+    enums: Vec<(String, crate::program::EnumDef)>,
+    enum_by_name: HashMap<String, EnumId>,
 }
 
 impl Default for ClassTable {
@@ -124,6 +135,8 @@ impl ClassTable {
             builtin_names: HashSet::new(),
             origins: HashMap::new(),
             scope: None,
+            enums: Vec::new(),
+            enum_by_name: HashMap::new(),
         };
         for def in builtin_classes() {
             table.builtin_names.insert(def.name.clone());
@@ -264,6 +277,31 @@ impl ClassTable {
     /// belong to a class?" rather than "can this file see it?".
     pub fn lookup_anywhere(&self, name: &str) -> Option<ClassId> {
         self.by_name.get(name).copied()
+    }
+
+    /// Record the enum `name` and its shape. A redeclaration (reported by
+    /// the compiler) leaves the first in place.
+    pub fn declare_enum(&mut self, name: &str, def: crate::program::EnumDef) -> EnumId {
+        if let Some(&id) = self.enum_by_name.get(name) {
+            return id;
+        }
+        let id = EnumId(self.enums.len() as u32);
+        self.enum_by_name.insert(name.to_string(), id);
+        self.enums.push((name.to_string(), def));
+        id
+    }
+
+    /// The enum `name` declares, anywhere in the compilation.
+    pub fn lookup_enum(&self, name: &str) -> Option<EnumId> {
+        self.enum_by_name.get(name).copied()
+    }
+
+    pub fn enum_name(&self, id: EnumId) -> &str {
+        &self.enums[id.0 as usize].0
+    }
+
+    pub fn enum_def(&self, id: EnumId) -> &crate::program::EnumDef {
+        &self.enums[id.0 as usize].1
     }
 
     pub fn get(&self, id: ClassId) -> &ClassDef {

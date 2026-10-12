@@ -28,8 +28,9 @@ syn keyword petalConstant    nil
 
 " ---- Function declarations ----
 syn match petalFunction "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
-syn match petalFunction "\<enum\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
-" `class Name` names a type; `fn Rect.method(...)` names the class it extends.
+" `enum Name` and `class Name` name a type; `fn Rect.method(...)` names the
+" class it extends.
+syn match petalType     "\<enum\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 syn match petalType     "\<class\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
 syn match petalType     "\<fn\>\s\+\zs[a-zA-Z_][a-zA-Z0-9_?]*\ze\." contains=NONE
 syn match petalFunction "\<fn\>\s\+[a-zA-Z_][a-zA-Z0-9_?]*\.\zs[a-zA-Z_][a-zA-Z0-9_?]*" contains=NONE
@@ -60,7 +61,8 @@ syn region petalString       start=+"+ skip=+\\"+ end=+"+ contains=petalEscape,p
 syn region petalRawString    start=+"""+ end=+"""+ keepend contains=@Spell
 
 " ---- Operators ----
-syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|\.\.\|[-+*/%<>=!@]"
+" A lone `|` separates the alternatives of an or-pattern (`when "a" | "b"`).
+syn match petalOperator "|>\|->\|++=\|??=\|++\|+=\|-=\|\*=\|/=\|%=\|==\|!=\|<=\|>=\|&&\|||\|??\|?\.\|\.\.\|[-+*/%<>=!@|]"
 " `...` is defined after `..` so it wins where both match.
 syn match petalPipe     "\.\.\."
 

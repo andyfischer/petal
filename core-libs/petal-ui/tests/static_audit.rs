@@ -101,3 +101,75 @@ fn the_static_declarations_build_alone_across_the_corpus() {
     assert!(run > 0 && skipped > 0, "nothing was sliced: {run} run, {skipped} skipped");
     assert!(failures.is_empty(), "static-only builds failed:\n  {}", failures.join("\n  "));
 }
+
+/// The entry file's static `let`s, as the app binds them on its first frame.
+fn first_frame_statics(
+    app: &Path,
+    includes: &[PathBuf],
+    mode: StaticAuditMode,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
+    use petal::static_classify::{DeclClass, DeclKind};
+    let size = (800, 600);
+    let mut ui = Headless::panel_from_file_with_paths(app, size.0, size.1, includes)
+        .unwrap_or_else(|e| panic!("{}: {e}", app.display()));
+    ui.env.set_echo(false);
+    ui.env.set_seed(1);
+    ui.set_policy(RunPolicy::EXPLAIN);
+    ui.env.observations_mut().enable();
+    ui.env.set_static_audit(mode);
+    let (pid, sid) = (ui.program_id(), ui.stack_id());
+    let names: Vec<String> = {
+        let program = ui.env.get_program(pid).expect("the loaded program");
+        ui.env
+            .static_report(program)
+            .entry()
+            .filter(|d| d.class == DeclClass::Static)
+            .filter(|d| matches!(d.kind, DeclKind::Let | DeclKind::ConfigLet))
+            .map(|d| d.name.clone())
+            .collect()
+    };
+    let _ = ui.frame();
+    let observed = ui.env.get_observations_json(pid, sid);
+    names
+        .into_iter()
+        .filter_map(|n| observed.get(&n).map(|v| (n, v.clone())))
+        .collect()
+}
+
+/// The static-only build is a faithful preview of keeping static values: what
+/// it builds for each static declaration is what the whole program builds.
+/// A static statement that quietly read a value from a skipped (dynamic)
+/// statement would build something else here, and move no counter doing it.
+#[test]
+fn a_static_only_build_makes_the_values_the_whole_program_makes() {
+    let mut failures: Vec<String> = Vec::new();
+    let mut compared = 0usize;
+    for (app, (whole, alone)) in par_corpus(|app, includes| {
+        (
+            first_frame_statics(app, includes, StaticAuditMode::Off),
+            first_frame_statics(app, includes, StaticAuditMode::StaticOnly),
+        )
+    }) {
+        for (name, value) in &whole {
+            match alone.get(name) {
+                Some(built) if built == value => compared += 1,
+                Some(built) => {
+                    let brief = |v: &serde_json::Value| v.to_string().chars().take(100).collect::<String>();
+                    failures.push(format!(
+                        "{}: {name} is {} in the whole program and {} built alone",
+                        app.display(),
+                        brief(value),
+                        brief(built)
+                    ));
+                }
+                None => failures.push(format!(
+                    "{}: {name} was not built by the static-only run",
+                    app.display()
+                )),
+            }
+        }
+    }
+    eprintln!("static-only build against the whole program: {compared} static values equal, {} differ", failures.len());
+    assert!(compared > 500, "only {compared} static values were compared");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

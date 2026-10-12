@@ -108,6 +108,7 @@ impl Env {
                         stack.memo.sweep();
                     }
                     self.finish_run_deps(stack_id, ck);
+                    self.announce_static_audit();
                     return Ok(val);
                 }
                 StepResult::Error(e) => {
@@ -135,6 +136,25 @@ impl Env {
             .filter(|f| f.func.is_none())
             .and_then(|f| f.ip.checked_sub(1));
         self.static_audit.raised(ip, error);
+        self.announce_static_audit();
+    }
+
+    /// Under `PETAL_STATIC_AUDIT`, print the findings the run that just
+    /// ended added (see [`crate::static_audit`]).
+    fn announce_static_audit(&mut self) {
+        if !self.static_audit.enabled {
+            return;
+        }
+        let Some(from) = self.static_audit.unannounced() else { return };
+        let report = self.static_audit.report_from(
+            from,
+            |pid| self.programs.get(&pid),
+            &self.native_fns,
+            &self.symbols,
+        );
+        for finding in &report.findings {
+            eprintln!("static audit failure: {finding}");
+        }
     }
 
     /// Start the dependency record of a run (see [`crate::run_deps`]).
@@ -314,6 +334,7 @@ impl Env {
                         stack.status = StackStatus::Complete(val);
                     }
                     self.finish_run_deps(stack_id, ck);
+                    self.announce_static_audit();
                     return Ok(RunOutcome::Done(val));
                 }
                 StepResult::Error(e) => {

@@ -260,6 +260,10 @@ pub struct StaticAudit {
     findings: Vec<(RawKey, u64)>,
     index: HashMap<RawKey, usize>,
     native_calls: u64,
+    /// Print each new finding on stderr as the run that made it ends
+    /// (`PETAL_STATIC_AUDIT`); how many have been printed so far.
+    announce: bool,
+    announced: usize,
 }
 
 impl StaticAudit {
@@ -277,8 +281,34 @@ impl StaticAudit {
         *self = StaticAudit {
             enabled: mode != StaticAuditMode::Off,
             mode,
+            announce: self.announce,
             ..Default::default()
         };
+    }
+
+    /// The audit the process environment asks for: `PETAL_STATIC_AUDIT=watch`
+    /// (or `1`) starts every `Env` in [`StaticAuditMode::Watch`] and prints
+    /// each finding on stderr, prefixed `static audit failure:`, when the run
+    /// that made it ends. It is how a whole test suite is run under the
+    /// audit without touching a test: run it with the variable set and
+    /// search the output.
+    pub(crate) fn from_env() -> Self {
+        let mut audit = StaticAudit::default();
+        if matches!(std::env::var("PETAL_STATIC_AUDIT").as_deref(), Ok("watch" | "1")) {
+            audit.announce = true;
+            audit.set_mode(StaticAuditMode::Watch);
+        }
+        audit
+    }
+
+    /// Whether findings are printed as runs end, and how many are new.
+    pub(crate) fn unannounced(&mut self) -> Option<usize> {
+        if !self.announce || self.announced == self.findings.len() {
+            return None;
+        }
+        let from = self.announced;
+        self.announced = self.findings.len();
+        Some(from)
     }
 
     /// Tell the audit which program the VM is about to run code of.
@@ -416,6 +446,18 @@ impl StaticAudit {
         natives: &NativeFnTable,
         symbols: &SymbolTable,
     ) -> Report {
+        self.report_from(0, program, natives, symbols)
+    }
+
+    /// [`report`](Self::report) of the findings first seen after the first
+    /// `skip`.
+    pub(crate) fn report_from<'p>(
+        &self,
+        skip: usize,
+        program: impl Fn(ProgramId) -> Option<&'p Program>,
+        natives: &NativeFnTable,
+        symbols: &SymbolTable,
+    ) -> Report {
         let mut report = Report {
             mode: self.mode,
             native_calls: self.native_calls,
@@ -426,7 +468,7 @@ impl StaticAudit {
             report.statements_run += table.statements_run;
             report.statements_skipped += table.statements_skipped;
         }
-        for (key, count) in &self.findings {
+        for (key, count) in self.findings.iter().skip(skip) {
             let p = program(key.program);
             let table = self.tables.get(&key.program);
             let owner = key

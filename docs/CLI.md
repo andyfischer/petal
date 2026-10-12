@@ -2417,6 +2417,12 @@ Under a UI host the same flags are on `petal-ui-run`
 scenario; `core-libs/petal-ui/tests/static_audit.rs` does that for the whole
 panel corpus.
 
+`PETAL_STATIC_AUDIT=watch` in the environment starts every `Env` of the
+process with the audit on and prints each finding on stderr as
+`static audit failure: …` when the run that made it ends. That is how a whole
+test suite is audited without touching a test: `PETAL_STATIC_AUDIT=watch
+cargo test -- --nocapture`, then search the output.
+
 `--all` includes the declarations of imported modules and of the prelude,
 under their module-qualified names (`ui::button`). `--json` emits:
 

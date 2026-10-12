@@ -203,7 +203,7 @@ impl Env {
             observations: Observations::new(),
             profile: VmProfile::new(),
             effect_audit: EffectAudit::new(),
-            static_audit: crate::static_audit::StaticAudit::new(),
+            static_audit: crate::static_audit::StaticAudit::from_env(),
             next_program_id: 1,
             next_stack_id: 1,
             policy: RunPolicy::from_env(),

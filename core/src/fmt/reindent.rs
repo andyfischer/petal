@@ -99,9 +99,11 @@ fn is_lambda_arrow(tokens: &[Token], k: usize) -> bool {
 
 /// Whether the keyword at token `k` is spelling a name rather than acting as
 /// the keyword: `slice(xs, start: 1, end: 3)`, `{end: 3}`. A keyword directly
-/// followed by `:` is always a label, so it neither opens nor closes anything.
+/// followed by `:` is always a label, and one directly after `.` or `?.` is a
+/// field (`row.end`), so neither opens nor closes anything.
 fn is_label(tokens: &[Token], k: usize) -> bool {
-    matches!(tokens.get(k + 1), Some(Token::Colon))
+    let field = k > 0 && matches!(tokens[k - 1], Token::Dot | Token::QuestionDot);
+    (field || matches!(tokens.get(k + 1), Some(Token::Colon)))
         && matches!(
             tokens[k],
             Token::End

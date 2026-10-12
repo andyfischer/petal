@@ -38,6 +38,9 @@ fn a_keyword_used_as_a_label_does_not_close_or_open_a_block() {
     assert_eq!(fmt(src), src);
     let src = "fn span()\n  let r = {\n    if: 1,\n    end: 2,\n  }\n  slice(\n    xs,\n    start: 0,\n    end: 3,\n  )\nend\n";
     assert_eq!(fmt(src), src);
+    // `.end` reads a field; it is not the `end` of the `fn`.
+    let src = "fn last(row, r)\n  let to = row.end\n  let from = r?.end\n  if to > from then\n    to\n  end\nend\n";
+    assert_eq!(fmt(src), src);
 }
 
 #[test]

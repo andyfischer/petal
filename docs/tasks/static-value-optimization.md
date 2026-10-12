@@ -1072,7 +1072,7 @@ definition in the language server at all; they do now.
 16 (an assigned state in six forms, a keyed state, a `state var`, a state in
 a function or loop, seven kinds of dynamic initializer, a host native, `pub
 state`, silencing, the opt-in), `core/tests/lsp_tests.rs` +9. The whole
-core suite in the debug profile, with the cache commit underneath: 2,491
+core suite in the debug profile, with both cache commits underneath: 2,492
 passed, 0 failed. The 376 documentation snippets compile and print what
 they say. Not run: the petal-ui and Garden suites (disk), and the release
 profile.

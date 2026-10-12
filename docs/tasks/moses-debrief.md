@@ -19,8 +19,6 @@ git history, and the test suite. Petal claims were checked against
 
 | # | Item | Kind | Evidence | Size |
 |---|---|---|---|---|
-| 1 | `text_width` decodes the whole font registry on every call | perf bug, petal-ui | 13.2% of a play frame | small |
-| 2 | `RunDeps` content-hashes every read binding every run | perf, core | 1.6% of play, 3.3% of a career | small |
 | 3 | Trivial builtins as VM intrinsics (`float`, `int`, `min`, `max`, `clamp`, `len`, `type`) | perf, core | about 3,000 calls a frame; `float(i)` costs 5x the loop around it | medium |
 | 4 | Real lints, run by default | tooling | one shipped bug `petal check` had already warned about; hundreds of redundant casts; builtins re-implemented | medium |
 | 5 | `petal test` with non-aborting expectations | tooling | 7 hand-rolled check harnesses, a test DSL inside the game | medium |
@@ -33,9 +31,9 @@ git history, and the test suite. Petal claims were checked against
 | 12 | Call a function with a record of arguments | language | agent tools declared twice, 280-line dispatch chain | small |
 | 13 | Module-level state without `get`/`set` noise | language | 354 module-level `state var` cells, 1,013 `get`s | medium |
 | 14 | Stdlib gaps: number formatting, `min_by`, `group_by`, `fill`, `ord`, integer hash | stdlib | each re-implemented two to four times | small each |
-| 15 | Bridge: save and load state, font metrics call, stack left by a failed host call | embedding | headless debrief items 1 and 5 | medium |
+| 15 | Bridge: save and load state, stack left by a failed host call | embedding | headless debrief items 1 and 5 | medium |
 
-Items 1 to 3 are measured and local. Items 4 to 6 are cheap and would have
+Item 3 is measured and local. Items 4 to 6 are cheap and would have
 prevented most of the friction below. Items 7 to 10 are the language work
 that a second game of this size will hit again.
 
@@ -54,47 +52,12 @@ thread, inclusive:
 | 6.1% | `collect_garbage` (11.7% in the career run) |
 | 1.6% | `RunDeps::finish_run` (3.3% in the career run) |
 
-### 1.1 `text_width` rebuilds the font registry per call (item 1)
-
-`text_width` is 3.2 µs a call against 0.16 µs for `draw_rect`. Moses calls
-it about 130 times a frame, so it is the largest single native: 246 ms of an
-1,814 ms profiled run.
-
-The cause is in `core-libs/petal-ui/src/text.rs`. `style_and_metrics` calls
-`resolve_metrics`, and `named_font_metrics` then does this on every call:
-
-```rust
-let fonts = match state.binding_named(SYM_TEXT_FONTS) {
-    Value::Map(id) => state.heap().get_map(id).clone(),   // the whole registry
-    ...
-let entry = state.heap().get_map(*entry_id).clone();      // the face
-let advances = entry.get("advances").cloned()
-    .and_then(|v| advance_list(state, &v, advance));      // every codepoint -> Vec<f64>
-```
-
-It clones two records and converts the face's full advance table from boxed
-values to a `Vec<f64>` to measure one short string. `default_font_metrics`
-has the same shape. `text_wrap`, `text_ellipsize`, `text_metrics` and
-`text_advance` share the path.
-
-Fix: cache the decoded `FontMetrics` per `(binding value identity, variant
-key)`, invalidated when the host rebinds `text_fonts`. Better, do what the
-engine's own comment asks for (`natives_fonts.cpp`: "The bridge has no call
-for the registry (pb_vm_set_font_metrics would be it)"): let the host hand
-over native tables once, outside the heap. Expected gain: about 12% of every
-HUD-heavy frame in every host.
-
-### 1.2 `RunDeps` fingerprints large bindings every run (item 2)
-
-`RunDeps::finish_run` computes a content hash of every binding the run read.
-One of them is `text_fonts`, a record of several faces with per-codepoint
-tables, so each frame re-hashes a large constant. Cheesecake never calls
-`run_needed`; it runs every frame.
-
-Fix, either or both: give host bindings a revision counter and fingerprint
-by revision (set by `set_value`), and let a host turn dependency recording
-off. Moving font tables out of the heap (1.1) removes most of the cost on
-its own.
+The `text_width` and `RunDeps` rows were items 1 and 2. Both were fixed in
+Petal on 11 October 2026 and are removed from this list (the other numbers
+are kept): petal-ui keeps a face's decoded metrics until one of the font
+bindings is set again, and a binding the host has not set since the last run
+is not fingerprinted again. Cheesecake binds its fonts only when they change,
+so it gets both when it next vendors Petal.
 
 ### 1.3 Trivial builtins are full calls (item 3)
 
@@ -213,8 +176,8 @@ Wanted:
 - Attribute native time to the calling line, not only the calling function.
 - Report allocations by site (records, lists, strings). GC is 6 to 12% and
   nothing says who allocates.
-- Count per-call-site `text_width`-style outliers: a "natives over 1 µs a
-  call" list would have found 1.1 at once.
+- Count per-call-site outliers: a "natives over 1 µs a call" list would
+  have found the `text_width` cost (the former item 1) at once.
 
 ### 2.4 The stale CLI
 
@@ -273,7 +236,7 @@ is declared. The consequences:
 
 Wanted, in order of value:
 
-```petal
+```petal ignore
 type Date = {year: int, month: int, tick: int}
 type Ctx  = {date: Date, built: [Item], grid: Grid, turbo: bool, ...}
 
@@ -360,7 +323,7 @@ drift is caught only at run time (`fail("{name} is not wired up")`).
 `f(...args)` for a record (by name) or a list (by position). With it, a
 tool is one declaration:
 
-```petal
+```petal ignore
 tool("toll", "Set the toll on a crossing.", fn(id: string, cents: int) ...)
 ```
 
@@ -493,12 +456,10 @@ and this pass; all still open:
   undo and forks for agent sessions.
 - A failed host call leaves its frames on the stack; later traces repeat
   them (`call_function_diag` error path).
-- `pb_vm_set_font_metrics`, see 1.1.
 - JSON across `pb` calls is loosely typed: whole floats become ints, and
   functions flatten to strings. A schema from `fn_info` would let the bridge
   coerce.
 - Natives still cannot learn their call site.
-- Host bindings by revision, see 1.2.
 
 ## 7. What worked
 

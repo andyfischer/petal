@@ -264,6 +264,7 @@ impl Stack {
     pub fn finish_run_deps(
         &mut self,
         bindings: &HashMap<SymbolId, Value>,
+        binding_revisions: &HashMap<SymbolId, u64>,
         heap: &Heap,
         closures: &ClosureTable,
         rng_state: u64,
@@ -279,7 +280,7 @@ impl Stack {
         }
         self.cells_at_run_start.clear();
         self.run_deps
-            .finish_run(bindings, heap, rng_state, resources_revision);
+            .finish_run(bindings, binding_revisions, heap, rng_state, resources_revision);
     }
 
     /// Clear all per-run execution state, leaving the stack `Ready` with no

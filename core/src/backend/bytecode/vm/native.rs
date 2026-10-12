@@ -243,6 +243,7 @@ impl<'a> Vm<'a> {
             emit_origins: self.emit_origins,
             emit_chain: chain,
             bindings: self.bindings,
+            binding_revisions: self.binding_revisions,
             run_deps: &mut self.stack.run_deps,
             counters: self.counters,
             rng_state: self.rng_state,

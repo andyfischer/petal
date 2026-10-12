@@ -12,6 +12,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use petal::env::Env;
 use petal::native_fn::{NativeResult, PetalCxt};
@@ -578,6 +579,35 @@ thread_local! {
     /// with a `⌘` in it is measured every frame.
     static GLYPH_ADVANCE_CACHE: RefCell<HashMap<(String, u16, bool, char), Option<f64>>> =
         RefCell::new(HashMap::new());
+    /// What [`resolve_metrics`] last decoded for a style's face, by a hash of
+    /// the entry's own key fields (which a hit checks, so a collision is a
+    /// miss).
+    static RESOLVED_METRICS: RefCell<HashMap<u64, ResolvedMetrics>> =
+        RefCell::new(HashMap::new());
+}
+
+/// The bindings a style's metrics are decoded from. Their revisions, in this
+/// order, are the stamp a [`ResolvedMetrics`] is valid under.
+const METRIC_BINDINGS: [&str; 5] = [
+    SYM_TEXT_FONTS,
+    SYM_TEXT_ADVANCE,
+    SYM_TEXT_ADVANCES,
+    SYM_TEXT_VERTICAL,
+    SYM_TEXT_DEFAULT_FONT,
+];
+
+/// Faces kept by [`resolve_metrics`] before it starts over.
+const RESOLVED_METRICS_CAP: usize = 256;
+
+/// One face's decoded metrics and what they were decoded for: the binding
+/// revisions (process-wide serials, so two `Env`s on one thread never share a
+/// stamp unless neither has bound anything) and the style's face fields.
+struct ResolvedMetrics {
+    stamp: [u64; 5],
+    font: Option<String>,
+    weight: u16,
+    italic: bool,
+    metrics: Rc<FontMetrics>,
 }
 
 /// Install `provider` as the font source the `font` / `fonts` / `text_width`
@@ -645,6 +675,7 @@ pub fn clear_font_cache() {
     FONT_NAME_CACHE.with(|c| c.borrow_mut().clear());
     FONT_METRICS_CACHE.with(|c| c.borrow_mut().clear());
     GLYPH_ADVANCE_CACHE.with(|c| c.borrow_mut().clear());
+    RESOLVED_METRICS.with(|c| c.borrow_mut().clear());
 }
 
 /// `font(name) -> style`: a **font object** — the style record `draw_text`,
@@ -753,13 +784,14 @@ impl TextStyle {
                 v.type_name()
             ));
         };
-        let fields = state.heap().get_map(*id).clone();
+        let heap = state.heap();
+        let fields = heap.get_map(*id);
         let mut style = TextStyle::default();
         if let Some(size) = fields.get("size").and_then(num_as_i64) {
             style.size = size;
         }
         if let Some(Value::Map(color_id)) = fields.get("color") {
-            let color = state.heap().get_map(*color_id).clone();
+            let color = heap.get_map(*color_id);
             let channel = |name: &str, default: u8| {
                 color
                     .get(name)
@@ -772,7 +804,7 @@ impl TextStyle {
             style.a = channel("a", 255);
         }
         if let Some(Value::String(font_id)) = fields.get("font") {
-            style.font = Some(state.heap().get_string(*font_id).to_string());
+            style.font = Some(heap.get_string(*font_id).to_string());
         }
         if let Some(weight) = fields.get("weight").and_then(num_as_i64) {
             style.weight = weight as u16;
@@ -865,7 +897,7 @@ pub(crate) fn native_text_advance(state: &mut PetalCxt) -> NativeResult {
 fn style_and_metrics(
     state: &mut PetalCxt,
     index: usize,
-) -> Result<(TextStyle, FontMetrics), String> {
+) -> Result<(TextStyle, Rc<FontMetrics>), String> {
     let style = match state.get_value(index)? {
         Value::Map(_) => TextStyle::from_value(state, &state.get_value(index)?)?,
         // A bare size, optionally followed by a face name. The face is
@@ -898,7 +930,52 @@ fn style_and_metrics(
 /// (measured on demand), then the default font. A host that publishes a face
 /// eagerly and also attaches a source gets the eager answer, so the two can
 /// never disagree about the same name.
-fn resolve_metrics(state: &mut PetalCxt, style: &TextStyle) -> FontMetrics {
+fn resolve_metrics(state: &mut PetalCxt, style: &TextStyle) -> Rc<FontMetrics> {
+    // Everything below is decoded from these five bindings (and the font
+    // source, whose answers never change): the registry record, a face's
+    // advance table one boxed number at a time. A label is measured on every
+    // frame and the bindings move when a host loads a font, so the decoded
+    // metrics are kept until one of them is set again.
+    let stamp = METRIC_BINDINGS.map(|name| state.binding_revision_named(name));
+    let slot = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (stamp, &style.font, style.weight, style.italic).hash(&mut h);
+        h.finish()
+    };
+    let hit = RESOLVED_METRICS.with(|c| {
+        c.borrow().get(&slot).and_then(|r| {
+            (r.stamp == stamp
+                && r.font == style.font
+                && r.weight == style.weight
+                && r.italic == style.italic)
+                .then(|| r.metrics.clone())
+        })
+    });
+    if let Some(metrics) = hit {
+        return metrics;
+    }
+    let metrics = Rc::new(decode_metrics(state, style));
+    RESOLVED_METRICS.with(|c| {
+        let mut cache = c.borrow_mut();
+        // Entries under a stamp no context holds any more are never asked
+        // for again; a host that reloads fonts all day must not keep them.
+        if cache.len() >= RESOLVED_METRICS_CAP {
+            cache.clear();
+        }
+        cache.insert(slot, ResolvedMetrics {
+            stamp,
+            font: style.font.clone(),
+            weight: style.weight,
+            italic: style.italic,
+            metrics: metrics.clone(),
+        });
+    });
+    metrics
+}
+
+/// [`resolve_metrics`] from the bindings themselves, with nothing remembered.
+fn decode_metrics(state: &mut PetalCxt, style: &TextStyle) -> FontMetrics {
     let spec = match &style.font {
         Some(spec) => Some(spec.clone()),
         None if style.weight != REGULAR_WEIGHT || style.italic => {
@@ -1452,6 +1529,60 @@ mod tests {
 
     /// A fixed-width face makes every expectation below arithmetic: at size
     /// 10 every glyph is 5 px, so "abc" is 15 and a 30 px box holds six.
+    /// `cargo test -p petal-ui --release -- --ignored text_width_cost --nocapture`
+    #[test]
+    #[ignore = "a timing, not a check"]
+    fn text_width_cost() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        let table: Vec<f64> = (0..1024).map(|i| 0.4 + (i % 7) as f64 * 0.05).collect();
+        for name in ["ui", "mono", "serif", "display", "ui-bold", "caption"] {
+            bind_font_metrics(&mut env, name, &FontMetrics::proportional(table.clone(), 0.6));
+        }
+        let call = std::env::var("TEXT_WIDTH_CALL")
+            .unwrap_or_else(|_| "text_width(\"Borough budget\", {size: 14, font: \"ui\"})".to_string());
+        let src = crate::script_for(
+            &env,
+            &format!("var w = 0.0\nfor i in range(0, 200000) do set w = get w + {call} end\nget w"),
+        );
+        let start = std::time::Instant::now();
+        let v = env.run_source(&src).expect("run");
+        let elapsed = start.elapsed();
+        eprintln!("text_width: {:.3} us a call ({v:?})", elapsed.as_secs_f64() * 1e6 / 200000.0);
+    }
+
+    #[test]
+    fn a_face_bound_again_is_measured_with_its_new_metrics() {
+        let mut env = Env::new();
+        register_draw(&mut env);
+        let width = "text_width(\"abcd\", {size: 10, font: \"ui\"})";
+        bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.5));
+        let v = env.run_source(&crate::script_for(&env, width)).expect("run");
+        assert_eq!(as_float(&v), 20.0);
+        // Asked again, then again after the host binds different metrics.
+        let v = env.run_source(&crate::script_for(&env, width)).expect("run");
+        assert_eq!(as_float(&v), 20.0);
+        bind_font_metrics(&mut env, "ui", &FontMetrics::monospace(0.8));
+        let v = env.run_source(&crate::script_for(&env, width)).expect("run");
+        assert_eq!(as_float(&v), 32.0);
+        // A second Env on this thread has its own registry.
+        let mut other = Env::new();
+        register_draw(&mut other);
+        bind_font_metrics(&mut other, "ui", &FontMetrics::monospace(0.3));
+        let v = other.run_source(&crate::script_for(&other, width)).expect("run");
+        assert_eq!(as_float(&v), 12.0);
+        let v = env.run_source(&crate::script_for(&env, width)).expect("run");
+        assert_eq!(as_float(&v), 32.0);
+        // The default face follows its own bindings the same way.
+        let plain = "text_width(\"abcd\", 10)";
+        bind_text_metrics(&mut env, 0.5);
+        let v = env.run_source(&crate::script_for(&env, plain)).expect("run");
+        assert_eq!(as_float(&v), 20.0);
+        bind_text_metrics(&mut env, 0.7);
+        let v = env.run_source(&crate::script_for(&env, plain)).expect("run");
+        assert_eq!(as_float(&v), 28.0);
+    }
+
     fn half_width_env() -> Env {
         let mut env = Env::new();
         register_draw(&mut env);

@@ -132,6 +132,7 @@ impl Env {
         if let (Some(stack), Some(ctx)) = (self.stacks.get_mut(&stack_id), self.contexts.get(&ck)) {
             stack.finish_run_deps(
                 &ctx.bindings,
+                &ctx.binding_revisions,
                 &ctx.heap,
                 &ctx.closures,
                 ctx.rng_state,
@@ -161,7 +162,7 @@ impl Env {
         };
         stack
             .run_deps
-            .run_needed(&ctx.bindings, &ctx.heap, ctx.resources.revision())
+            .run_needed(&ctx.bindings, &ctx.binding_revisions, &ctx.heap, ctx.resources.revision())
     }
 
     /// [`run_needed_reason`](Self::run_needed_reason) as a plain yes/no.
@@ -485,6 +486,7 @@ fn make_vm<'a>(
         trace_emit,
         emit_origins: &mut ctx.emit_origins,
         bindings: &mut ctx.bindings,
+        binding_revisions: &ctx.binding_revisions,
         counters: &mut ctx.counters,
         rng_state: &mut ctx.rng_state,
         noise_seed: &mut ctx.noise_seed,

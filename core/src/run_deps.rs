@@ -23,8 +23,9 @@
 //!
 //! Recording is cheap and always on. A binding read sets one flag in a vector
 //! indexed by symbol id; fingerprints are computed once per completed run for
-//! the handful of symbols read. Nothing here is a GC root: only fingerprints
-//! (u64s) outlive the run.
+//! the handful of symbols read, and only for those the host has set since the
+//! record before (each binding carries a revision). Nothing here is a GC
+//! root: only fingerprints and revisions (u64s) outlive the run.
 
 use std::collections::HashMap;
 
@@ -78,9 +79,14 @@ pub struct RunDeps {
     read_flags: Vec<bool>,
     /// The symbols read this run, in first-read order.
     read_list: Vec<SymbolId>,
-    /// The completed record: each binding read by the last run and the
-    /// fingerprint of the value it read.
-    reads: Vec<(SymbolId, u64)>,
+    /// The completed record: each binding read by the last run, the
+    /// fingerprint of the value it read, and the binding's revision then (see
+    /// [`ExecutionContext::binding_revisions`]). A binding still at that
+    /// revision still holds that value, so it is not fingerprinted again;
+    /// revision 0 is a binding never set and proves nothing.
+    ///
+    /// [`ExecutionContext::binding_revisions`]: crate::execution_context::ExecutionContext::binding_revisions
+    reads: Vec<(SymbolId, u64, u64)>,
     /// The last run called a native that reads host data outside the binding
     /// table. See [`note_host_read`](Self::note_host_read).
     host_read: bool,
@@ -281,7 +287,7 @@ impl RunDeps {
 
     /// The bindings the last run read, in first-read order.
     pub fn bindings_read(&self) -> impl Iterator<Item = SymbolId> + '_ {
-        self.reads.iter().map(|(s, _)| *s)
+        self.reads.iter().map(|(s, _, _)| *s)
     }
 
     /// Whether a completed run has recorded its dependencies.
@@ -317,20 +323,29 @@ impl RunDeps {
     }
 
     /// Complete the record for a run that ran to completion or stopped on an
-    /// error. `bindings` and `heap` are the context the run executed in;
-    /// `rng_state` its RNG afterwards; `resources_revision` the resource
-    /// table's revision now.
+    /// error. `bindings`, `revisions` and `heap` are the context the run
+    /// executed in; `rng_state` its RNG afterwards; `resources_revision` the
+    /// resource table's revision now.
     pub fn finish_run(
         &mut self,
         bindings: &HashMap<SymbolId, Value>,
+        revisions: &HashMap<SymbolId, u64>,
         heap: &Heap,
         rng_state: u64,
         resources_revision: u64,
     ) {
-        self.reads.clear();
+        // A binding the previous record fingerprinted and nothing has set
+        // since keeps that fingerprint: a host that runs every frame must not
+        // re-hash a font table it bound once.
+        let previous = std::mem::take(&mut self.reads);
         for sym in &self.read_list {
-            let fp = fingerprint_binding(bindings.get(sym), heap);
-            self.reads.push((*sym, fp));
+            let revision = revisions.get(sym).copied().unwrap_or(0);
+            let kept = previous
+                .iter()
+                .find(|(s, _, r)| s == sym && *r == revision && revision != 0)
+                .map(|(_, fp, _)| *fp);
+            let fp = kept.unwrap_or_else(|| fingerprint_binding(bindings.get(sym), heap));
+            self.reads.push((*sym, fp, revision));
         }
         self.rng_consumed = rng_state != self.rng_at_start;
         self.resources_revision = resources_revision;
@@ -344,6 +359,7 @@ impl RunDeps {
     pub fn run_needed(
         &self,
         bindings: &HashMap<SymbolId, Value>,
+        revisions: &HashMap<SymbolId, u64>,
         heap: &Heap,
         resources_revision: u64,
     ) -> Option<RunReason> {
@@ -365,7 +381,10 @@ impl RunDeps {
         if self.host_read && self.host_data_now != self.host_data_revision {
             return Some(RunReason::HostDataChanged);
         }
-        for (sym, fp) in &self.reads {
+        for (sym, fp, revision) in &self.reads {
+            if *revision != 0 && revisions.get(sym) == Some(revision) {
+                continue;
+            }
             if fingerprint_binding(bindings.get(sym), heap) != *fp {
                 return Some(RunReason::BindingChanged(*sym));
             }
@@ -568,8 +587,36 @@ mod tests {
         let heap = Heap::new();
         let deps = RunDeps::default();
         assert_eq!(
-            deps.run_needed(&HashMap::new(), &heap, 0),
+            deps.run_needed(&HashMap::new(), &HashMap::new(), &heap, 0),
             Some(RunReason::NoRecord)
+        );
+    }
+
+    #[test]
+    fn a_binding_at_the_same_revision_is_not_fingerprinted_again() {
+        let mut heap = Heap::new();
+        let sym = SymbolId(1);
+        let revs: HashMap<SymbolId, u64> = [(sym, 4)].into_iter().collect();
+        let first = bindings(&[(1, Value::List(heap.alloc_list(vec![Value::Int(1)])))]);
+        let mut deps = RunDeps::default();
+        deps.begin_run(0);
+        deps.note_binding_read(sym);
+        deps.finish_run(&first, &revs, &heap, 0, 0);
+        // Different content under the same revision cannot happen through
+        // `set_binding`; here it shows the revision alone answered.
+        let other = bindings(&[(1, Value::List(heap.alloc_list(vec![Value::Int(2)])))]);
+        assert_eq!(deps.run_needed(&other, &revs, &heap, 0), None);
+        deps.begin_run(0);
+        deps.note_binding_read(sym);
+        deps.finish_run(&other, &revs, &heap, 0, 0);
+        assert_eq!(deps.run_needed(&first, &revs, &heap, 0), None);
+        // A new revision is compared by content again: equal content is
+        // still unchanged, different content is not.
+        let moved: HashMap<SymbolId, u64> = [(sym, 5)].into_iter().collect();
+        assert_eq!(deps.run_needed(&first, &moved, &heap, 0), None);
+        assert_eq!(
+            deps.run_needed(&other, &moved, &heap, 0),
+            Some(RunReason::BindingChanged(sym))
         );
     }
 
@@ -580,17 +627,17 @@ mod tests {
         let mut deps = RunDeps::default();
         deps.begin_run(7);
         deps.note_binding_read(SymbolId(1));
-        deps.finish_run(&b, &heap, 7, 0);
-        assert_eq!(deps.run_needed(&b, &heap, 0), None);
+        deps.finish_run(&b, &HashMap::new(), &heap, 7, 0);
+        assert_eq!(deps.run_needed(&b, &HashMap::new(), &heap, 0), None);
 
         // An unread binding may change freely.
         let b2 = bindings(&[(1, Value::Int(5)), (2, Value::Int(10))]);
-        assert_eq!(deps.run_needed(&b2, &heap, 0), None);
+        assert_eq!(deps.run_needed(&b2, &HashMap::new(), &heap, 0), None);
 
         // A read one may not.
         let b3 = bindings(&[(1, Value::Int(6)), (2, Value::Int(9))]);
         assert_eq!(
-            deps.run_needed(&b3, &heap, 0),
+            deps.run_needed(&b3, &HashMap::new(), &heap, 0),
             Some(RunReason::BindingChanged(SymbolId(1)))
         );
     }
@@ -604,16 +651,16 @@ mod tests {
         let mut deps = RunDeps::default();
         deps.begin_run(0);
         deps.note_binding_read(SymbolId(1));
-        deps.finish_run(&b1, &heap, 0, 0);
+        deps.finish_run(&b1, &HashMap::new(), &heap, 0, 0);
 
         let s2 = heap.alloc_string("a".into());
         let l2 = heap.alloc_list(vec![Value::String(s2), Value::Int(1)]);
         let b2 = bindings(&[(1, Value::List(l2))]);
-        assert_eq!(deps.run_needed(&b2, &heap, 0), None);
+        assert_eq!(deps.run_needed(&b2, &HashMap::new(), &heap, 0), None);
 
         let l3 = heap.alloc_list(vec![Value::String(s2), Value::Int(2)]);
         let b3 = bindings(&[(1, Value::List(l3))]);
-        assert!(deps.run_needed(&b3, &heap, 0).is_some());
+        assert!(deps.run_needed(&b3, &HashMap::new(), &heap, 0).is_some());
     }
 
     #[test]
@@ -622,11 +669,11 @@ mod tests {
         let mut deps = RunDeps::default();
         deps.begin_run(0);
         deps.note_binding_read(SymbolId(3));
-        deps.finish_run(&HashMap::new(), &heap, 0, 0);
-        assert_eq!(deps.run_needed(&HashMap::new(), &heap, 0), None);
+        deps.finish_run(&HashMap::new(), &HashMap::new(), &heap, 0, 0);
+        assert_eq!(deps.run_needed(&HashMap::new(), &HashMap::new(), &heap, 0), None);
         let b = bindings(&[(3, Value::Nil)]);
         assert_eq!(
-            deps.run_needed(&b, &heap, 0),
+            deps.run_needed(&b, &HashMap::new(), &heap, 0),
             Some(RunReason::BindingChanged(SymbolId(3)))
         );
     }
@@ -638,34 +685,34 @@ mod tests {
 
         let mut deps = RunDeps::default();
         deps.begin_run(1);
-        deps.finish_run(&b, &heap, 2, 0);
-        assert_eq!(deps.run_needed(&b, &heap, 0), Some(RunReason::RngConsumed));
+        deps.finish_run(&b, &HashMap::new(), &heap, 2, 0);
+        assert_eq!(deps.run_needed(&b, &HashMap::new(), &heap, 0), Some(RunReason::RngConsumed));
 
         let mut deps = RunDeps::default();
         deps.begin_run(1);
         deps.note_state_unsettled();
-        deps.finish_run(&b, &heap, 1, 0);
+        deps.finish_run(&b, &HashMap::new(), &heap, 1, 0);
         assert_eq!(
-            deps.run_needed(&b, &heap, 0),
+            deps.run_needed(&b, &HashMap::new(), &heap, 0),
             Some(RunReason::StateUnsettled)
         );
 
         let mut deps = RunDeps::default();
         deps.begin_run(1);
-        deps.finish_run(&b, &heap, 1, 4);
+        deps.finish_run(&b, &HashMap::new(), &heap, 1, 4);
         assert_eq!(
-            deps.run_needed(&b, &heap, 5),
+            deps.run_needed(&b, &HashMap::new(), &heap, 5),
             Some(RunReason::ResourcesChanged)
         );
 
         let mut deps = RunDeps::default();
         deps.begin_run(1);
-        deps.finish_run(&b, &heap, 1, 0);
+        deps.finish_run(&b, &HashMap::new(), &heap, 1, 0);
         deps.force();
-        assert_eq!(deps.run_needed(&b, &heap, 0), Some(RunReason::Forced));
+        assert_eq!(deps.run_needed(&b, &HashMap::new(), &heap, 0), Some(RunReason::Forced));
         deps.begin_run(1);
-        deps.finish_run(&b, &heap, 1, 0);
-        assert_eq!(deps.run_needed(&b, &heap, 0), None);
+        deps.finish_run(&b, &HashMap::new(), &heap, 1, 0);
+        assert_eq!(deps.run_needed(&b, &HashMap::new(), &heap, 0), None);
     }
 
     #[test]
@@ -674,21 +721,21 @@ mod tests {
         let b = HashMap::new();
         let mut deps = RunDeps::default();
         deps.begin_run(0);
-        deps.finish_run(&b, &heap, 0, 0);
+        deps.finish_run(&b, &HashMap::new(), &heap, 0, 0);
         deps.note_host_data_changed();
         assert_eq!(
-            deps.run_needed(&b, &heap, 0),
+            deps.run_needed(&b, &HashMap::new(), &heap, 0),
             None,
             "did not read host data"
         );
 
         deps.begin_run(0);
         deps.note_host_read();
-        deps.finish_run(&b, &heap, 0, 0);
-        assert_eq!(deps.run_needed(&b, &heap, 0), None);
+        deps.finish_run(&b, &HashMap::new(), &heap, 0, 0);
+        assert_eq!(deps.run_needed(&b, &HashMap::new(), &heap, 0), None);
         deps.note_host_data_changed();
         assert_eq!(
-            deps.run_needed(&b, &heap, 0),
+            deps.run_needed(&b, &HashMap::new(), &heap, 0),
             Some(RunReason::HostDataChanged)
         );
     }

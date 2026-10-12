@@ -731,6 +731,7 @@ pub struct PetalCxt<'a> {
     /// emits. Empty otherwise.
     pub(crate) emit_chain: &'a [crate::program::TermId],
     pub(crate) bindings: &'a mut HashMap<SymbolId, Value>,
+    pub(crate) binding_revisions: &'a HashMap<SymbolId, u64>,
     /// The running stack's dependency record (see [`crate::run_deps`]),
     /// borrowed so a binding read is noted and a host-data native can declare
     /// itself ([`note_host_read`](Self::note_host_read)).
@@ -1050,6 +1051,23 @@ impl<'a> PetalCxt<'a> {
     /// native that reaches host state some other way must call this.
     pub fn note_effect(&mut self) {
         self.run_deps.note_effect();
+    }
+
+    /// The serial of the last change to `sym`'s binding (0 if it was never
+    /// bound): equal revisions mean the binding has not been set or cleared
+    /// in between, in this or any other context. A native that keeps
+    /// something decoded from a binding checks this instead of reading the
+    /// value again. Recorded as a read of the binding, like
+    /// [`binding`](Self::binding), since the native's answer depends on it.
+    pub fn binding_revision(&mut self, sym: SymbolId) -> u64 {
+        self.run_deps.note_binding_read(sym);
+        self.binding_revisions.get(&sym).copied().unwrap_or(0)
+    }
+
+    /// [`binding_revision`](Self::binding_revision) for the symbol named `name`.
+    pub fn binding_revision_named(&mut self, name: &str) -> u64 {
+        let sym = self.symbols.intern(name);
+        self.binding_revision(sym)
     }
 
     /// Read the value bound to the symbol named `name`. Convenience for native

@@ -6683,7 +6683,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 842
+        "line": 874
       }
     },
     {
@@ -6736,7 +6736,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 854
+        "line": 886
       }
     },
     {
@@ -6777,7 +6777,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 957
+        "line": 1034
       }
     },
     {
@@ -6854,7 +6854,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 1145
+        "line": 1222
       }
     },
     {
@@ -6951,7 +6951,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 1363
+        "line": 1440
       }
     },
     {
@@ -7028,7 +7028,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 1403
+        "line": 1480
       }
     },
     {
@@ -7053,7 +7053,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 665
+        "line": 696
       }
     },
     {
@@ -7068,7 +7068,7 @@
       ],
       "source": {
         "file": "core-libs/petal-ui/src/text.rs",
-        "line": 680
+        "line": 711
       }
     },
     {

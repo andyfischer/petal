@@ -133,6 +133,7 @@ pub struct Vm<'a> {
     /// [`crate::execution_context::ExecutionContext::emit_origins`].
     pub emit_origins: &'a mut HashMap<SymbolId, Vec<crate::execution_context::EmitSite>>,
     pub bindings: &'a mut HashMap<SymbolId, Value>,
+    pub binding_revisions: &'a HashMap<SymbolId, u64>,
     pub counters: &'a mut HashMap<SymbolId, u64>,
     /// Per-run PRNG state and noise seed, borrowed from the `ExecutionContext`
     /// so the RNG/noise builtins mutate the owning context's isolated state.

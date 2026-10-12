@@ -30,6 +30,13 @@ pub struct ExecutionContext {
     pub output: Vec<String>,
     pub output_buffers: HashMap<SymbolId, Vec<Value>>,
     pub bindings: HashMap<SymbolId, Value>,
+    /// When each binding last changed: a process-wide serial taken by
+    /// [`set_binding`](Self::set_binding) and
+    /// [`clear_binding`](Self::clear_binding), so no two changes anywhere
+    /// share one. A reader that kept something derived from a binding (a
+    /// fingerprint, a decoded table) compares serials instead of contents. A
+    /// symbol never bound has none, read as 0.
+    pub binding_revisions: HashMap<SymbolId, u64>,
     pub counters: HashMap<SymbolId, u64>,
     /// When true, `print` echoes to real stdout (the sole stdout path for
     /// `petal run`, which never drains `output`). Inherited by [`fork`](Self::fork)
@@ -118,6 +125,7 @@ impl ExecutionContext {
             output: Vec::new(),
             output_buffers: HashMap::new(),
             bindings: HashMap::new(),
+            binding_revisions: HashMap::new(),
             counters: HashMap::new(),
             echo: true,
             rng_state: crate::builtins::initial_seed(),
@@ -155,6 +163,7 @@ impl ExecutionContext {
             heap: self.heap.fork(),
             closures: self.closures.clone(),
             bindings: self.bindings.clone(),
+            binding_revisions: self.binding_revisions.clone(),
             counters: self.counters.clone(),
             output: Vec::new(),
             output_buffers: HashMap::new(),
@@ -297,7 +306,18 @@ impl ExecutionContext {
 
     /// Bind `value` to `sym`.
     pub fn set_binding(&mut self, sym: SymbolId, value: Value) {
-        self.bindings.insert(sym, value);
+        // Re-binding the very value already bound (the same scalar, the same
+        // heap object) is not a change, so a host that binds its inputs every
+        // frame keeps the revision of the ones that did not move.
+        if self.bindings.insert(sym, value) != Some(value) {
+            self.binding_revisions.insert(sym, next_binding_revision());
+        }
+    }
+
+    /// The serial of the last change to `sym`'s binding, or 0 if it was never
+    /// bound. See [`binding_revisions`](Self::binding_revisions).
+    pub fn binding_revision(&self, sym: SymbolId) -> u64 {
+        self.binding_revisions.get(&sym).copied().unwrap_or(0)
     }
 
     /// Read the value bound to `sym`, if any.
@@ -307,7 +327,9 @@ impl ExecutionContext {
 
     /// Remove the binding for `sym`.
     pub fn clear_binding(&mut self, sym: SymbolId) {
-        self.bindings.remove(&sym);
+        if self.bindings.remove(&sym).is_some() {
+            self.binding_revisions.insert(sym, next_binding_revision());
+        }
     }
 
     /// Reset the counter for `sym` to `start`.
@@ -383,4 +405,14 @@ mod tests {
         parent.set_echo(false);
         assert!(!parent.fork().echo, "a silent context forks as silent");
     }
+}
+
+/// The next binding revision. Process-wide rather than per context, so a
+/// revision names one change of one binding wherever it is compared: across
+/// contexts, across `Env`s, and across forks, which copy their source's
+/// revisions along with its bindings.
+fn next_binding_revision() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }

@@ -20,7 +20,7 @@ The runtime records, per stack, what its most recent run *depended on*
 
 | Recorded | How | Why it matters |
 |---|---|---|
-| Bindings read | `PetalCxt::binding` sets a per-symbol flag; at run end each read symbol's value is fingerprinted by content | A host re-binds every input every frame (a fresh key list, a re-allocated palette record). Fingerprinting by content, not id, is what makes a quiet frame look quiet. |
+| Bindings read | `PetalCxt::binding` sets a per-symbol flag; at run end each read symbol's value is fingerprinted by content, unless the binding has not been set since the last record (each binding carries a revision, bumped by `set_binding` when the value bound is not the very one already there) | A host re-binds every input every frame (a fresh key list, a re-allocated palette record). Fingerprinting by content, not id, is what makes a quiet frame look quiet. |
 | Host data read | A native that answers from outside the binding table calls `PetalCxt::note_host_read` (`host_data`, Garden's `query`, `edit_view_text`) | Only the host can know when that data changed; it says so with `Env::note_host_data_changed`. A run that read none is unaffected. |
 | State settled | `StateWrite` compares old and new (records by content, budgeted); `state var` cells are snapshotted at run start and compared at run end; an in-place-mutated slot is always a change (`StateWrite.mutated`, set by lowering from escape analysis) | A counter, a motion that has not landed, an accumulator: the next run starts from different state even with identical inputs. |
 | Randomness | RNG state before vs after | Another run would draw different numbers. |

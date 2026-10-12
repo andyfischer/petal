@@ -414,6 +414,16 @@ change, nothing reads its answer yet):
 - **Tests.** 51 unit tests in `core/src/static_classify/tests.rs`, one or
   more per rule, compiled from source; a CLI test in
   `core/tests/cli_args.rs`.
+- **A first oracle, ahead of `--static-audit`.**
+  `core-libs/petal-ui/tests/static_classify.rs` classifies each of the 55
+  corpus apps against the UI host's own natives, drives it for 45 frames
+  under the monkey scenario, and requires every static `let` to be bound to
+  the same value on every frame: 1,525 static values compared, none moved.
+  (Classifying `state` as data, as a check of the check, fails it in five
+  apps.) It only sees a wrong answer when the corpus happens to move the
+  value, which is why `--static-audit` is still wanted. Under `petal run`
+  the same comparison between two random seeds over `examples/console` and
+  `test/`: 118 static values, none moved.
 - **Measured (release build, plain CLI, no host natives).**
 
   | Corpus | Declarations | Static data | of which read by dynamic code | Functions (static-pure) | Dynamic |

@@ -41,6 +41,7 @@ impl Compiler {
                 value,
                 is_var,
                 is_config,
+                is_const,
                 ..
             } => {
                 // A constant `let` the prescan already emitted ahead of the
@@ -75,6 +76,9 @@ impl Compiler {
                     // `config let` with a literal initializer that is exactly
                     // the term a proposal edits.
                     self.terms[val_tid.0 as usize].is_config = *is_config;
+                    // Likewise `const`: the classifier reads it off the term
+                    // that carries the declaration's value.
+                    self.terms[val_tid.0 as usize].is_const = *is_const;
                     self.scope_bind(name.clone(), val_tid);
                 }
             }

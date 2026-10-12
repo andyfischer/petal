@@ -124,7 +124,7 @@ fn first_frame_statics(
             .static_report(program)
             .entry()
             .filter(|d| d.class == DeclClass::Static)
-            .filter(|d| matches!(d.kind, DeclKind::Let | DeclKind::ConfigLet))
+            .filter(|d| matches!(d.kind, DeclKind::Let | DeclKind::ConfigLet | DeclKind::Const))
             .map(|d| d.name.clone())
             .collect()
     };

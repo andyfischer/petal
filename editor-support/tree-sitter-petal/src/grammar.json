@@ -291,6 +291,10 @@
             {
               "type": "STRING",
               "value": "var"
+            },
+            {
+              "type": "STRING",
+              "value": "const"
             }
           ]
         },

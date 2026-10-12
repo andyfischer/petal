@@ -13,7 +13,8 @@
 //! parameters, captures and registers; each block's parameter names, register
 //! count, ordered term list and phi carry-outs; each term's op, its constants
 //! *by value*, its input edges (as a graph shape, not as raw ids), its name,
-//! state key, callsite id, register, and the `collect` / `is_config` flags;
+//! state key, callsite id, register, and the `collect` / `is_config` /
+//! `is_const` flags;
 //! match-arm patterns and their guard/body blocks; the program's declared
 //! class names and its `has_errors` flag.
 //!
@@ -520,6 +521,15 @@ impl<'p> Cmp<'p> {
                 "config flag",
                 term_a.is_config.to_string(),
                 term_b.is_config.to_string(),
+            )
+            .at(span));
+        }
+        if term_a.is_const != term_b.is_const {
+            return Err(IrDiff::new(
+                label,
+                "const flag",
+                term_a.is_const.to_string(),
+                term_b.is_const.to_string(),
             )
             .at(span));
         }

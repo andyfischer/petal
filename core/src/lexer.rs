@@ -11,6 +11,9 @@ pub enum Token {
     // Identifiers and keywords
     Ident(String),
     Let,
+    /// `const NAME = expr` — a `let` whose value must be static (see
+    /// `docs/language-guide.md`, Constants).
+    Const,
     Var,
     Set,
     Get,
@@ -117,6 +120,7 @@ impl Token {
             Token::Nil => "Nil",
             Token::Ident(_) => "Ident",
             Token::Let => "Let",
+            Token::Const => "Const",
             Token::Var => "Var",
             Token::Set => "Set",
             Token::Get => "Get",
@@ -218,9 +222,9 @@ impl Token {
 ///
 /// Keep it in sync with [`keyword_token`] — the unit tests below enforce that.
 pub const KEYWORDS: &[&str] = &[
-    "break", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn", "for",
-    "get", "if", "import", "in", "let", "match", "nil", "pub", "return", "set", "state", "then",
-    "true", "var", "when", "while",
+    "break", "const", "continue", "do", "else", "elsif", "end", "enum", "export", "false", "fn",
+    "for", "get", "if", "import", "in", "let", "match", "nil", "pub", "return", "set", "state",
+    "then", "true", "var", "when", "while",
 ];
 
 /// Words the parser treats as keywords but the lexer emits as `Ident`.
@@ -245,6 +249,7 @@ pub const CONTEXTUAL_KEYWORDS: &[&str] = &["as", "class", "config", "native"];
 pub fn keyword_token(text: &str) -> Option<Token> {
     Some(match text {
         "let" => Token::Let,
+        "const" => Token::Const,
         "var" => Token::Var,
         "set" => Token::Set,
         "get" => Token::Get,
@@ -285,6 +290,7 @@ pub fn keyword_token(text: &str) -> Option<Token> {
 pub fn keyword_text(tok: &Token) -> Option<&'static str> {
     Some(match tok {
         Token::Let => "let",
+        Token::Const => "const",
         Token::Var => "var",
         Token::Set => "set",
         Token::Get => "get",

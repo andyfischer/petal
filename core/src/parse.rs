@@ -16,6 +16,24 @@ pub const CLASS_KEYWORD: &str = "class";
 /// highlights it.
 pub const CONFIG_KEYWORD: &str = "config";
 
+/// The keyword a binding statement is written with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LetKeyword {
+    Let,
+    Var,
+    Const,
+}
+
+impl LetKeyword {
+    fn text(self) -> &'static str {
+        match self {
+            LetKeyword::Let => "let",
+            LetKeyword::Var => "var",
+            LetKeyword::Const => "const",
+        }
+    }
+}
+
 /// The contextual keyword that opens a native interface declaration
 /// (`native fn name(...)`): a keyword only directly before `fn`.
 pub const NATIVE_KEYWORD: &str = "native";
@@ -46,6 +64,7 @@ pub(crate) fn token_desc(tok: &Token) -> String {
         Token::False => kw("false"),
         Token::Nil => kw("nil"),
         Token::Let => kw("let"),
+        Token::Const => kw("const"),
         Token::Var => kw("var"),
         Token::Set => kw("set"),
         Token::Get => kw("get"),
@@ -509,8 +528,9 @@ impl Parser {
         self.skip_newlines();
         let start = self.pos;
         match self.peek().clone() {
-            Token::Let => self.parse_let(start, false, false, false),
-            Token::Var => self.parse_let(start, false, true, false),
+            Token::Let => self.parse_let(start, false, LetKeyword::Let, false),
+            Token::Var => self.parse_let(start, false, LetKeyword::Var, false),
+            Token::Const => self.parse_let(start, false, LetKeyword::Const, false),
             Token::Set => self.parse_set(start),
             // `fn(` is a lambda: an expression statement, and so the value
             // of a one-expression branch or arm (`when 1 -> fn() -> 2`).
@@ -543,13 +563,10 @@ impl Parser {
             // `config` is contextual too: only special immediately before a
             // `let`/`var` keyword, so it stays usable as an ordinary name.
             Token::Ident(ref w) if w == CONFIG_KEYWORD && self.starts_config_decl() => {
-                if matches!(self.tokens.get(self.pos + 1), Some(Token::Var)) {
-                    return Err(self.error_at_current(
-                        "`config` marks a `let` binding; a mutable `var` cell cannot be config"
-                            .to_string(),
-                    ));
+                if let Some(message) = self.config_modifier_error(1) {
+                    return Err(self.error_at_current(message));
                 }
-                self.parse_let(start, false, false, true)
+                self.parse_let(start, false, LetKeyword::Let, true)
             }
             // `native` is contextual: only a keyword directly before `fn`.
             Token::Ident(ref w) if w == NATIVE_KEYWORD && self.starts_native_decl(0) => {
@@ -574,14 +591,21 @@ impl Parser {
     fn parse_export(&mut self, start: usize) -> Result<Stmt, String> {
         match self.tokens.get(self.pos + 1) {
             Some(Token::Fn) => self.parse_fn_decl(start, true),
-            Some(Token::Let) => self.parse_let(start, true, false, false),
-            Some(Token::Var) => self.parse_let(start, true, true, false),
+            Some(Token::Let) => self.parse_let(start, true, LetKeyword::Let, false),
+            Some(Token::Var) => self.parse_let(start, true, LetKeyword::Var, false),
+            Some(Token::Const) => self.parse_let(start, true, LetKeyword::Const, false),
             // `pub config let x = …` — both modifiers, `pub` first.
             Some(Token::Ident(w))
                 if w == CONFIG_KEYWORD
                     && matches!(self.tokens.get(self.pos + 2), Some(Token::Let)) =>
             {
-                self.parse_let(start, true, false, true)
+                self.parse_let(start, true, LetKeyword::Let, true)
+            }
+            Some(Token::Ident(w))
+                if w == CONFIG_KEYWORD && self.config_modifier_error(2).is_some() =>
+            {
+                let message = self.config_modifier_error(2).unwrap_or_default();
+                Err(self.error_at_current(message))
             }
             Some(Token::State) => self.parse_state(start, true),
             Some(Token::Enum) => self.parse_enum_decl(start, true),
@@ -598,24 +622,43 @@ impl Parser {
                     _ => "pub",
                 };
                 Err(self.error_at_current(format!(
-                    "`{word}` must be followed by a fn, native fn, let, var, state, enum, class, \
-                     or import declaration"
+                    "`{word}` must be followed by a fn, native fn, let, const, var, state, enum, \
+                     class, or import declaration"
                 )))
             }
         }
     }
 
-    /// `let x = …` and its mutable twin `var x = …`, which differ only in the
-    /// keyword and the `is_var` flag. The `var` token stays a direct child of
+    /// What is wrong with `config` in front of the binding keyword `ahead`
+    /// tokens on, when something is: only a `let` can be a config binding.
+    fn config_modifier_error(&self, ahead: usize) -> Option<String> {
+        match self.tokens.get(self.pos + ahead) {
+            Some(Token::Var) => Some(
+                "`config` marks a `let` binding; a mutable `var` cell cannot be config".to_string(),
+            ),
+            Some(Token::Const) => Some(
+                "`config` marks a `let` binding; write `config let` (a config binding of \
+                 literals is already constant) or a plain `const`"
+                    .to_string(),
+            ),
+            _ => None,
+        }
+    }
+
+    /// `let x = …`, its mutable twin `var x = …` and its must-be-static twin
+    /// `const X = …`, which differ only in the keyword and the `is_var` /
+    /// `is_const` flags. The `var` or `const` token stays a direct child of
     /// the `LetStmt` node so the CST projection can recover the flag the same
     /// way it recovers `pub`.
     fn parse_let(
         &mut self,
         start: usize,
         exported: bool,
-        is_var: bool,
+        keyword: LetKeyword,
         is_config: bool,
     ) -> Result<Stmt, String> {
+        let is_var = keyword == LetKeyword::Var;
+        let is_const = keyword == LetKeyword::Const;
         self.ev_open(SyntaxKind::LetStmt);
         if exported {
             self.advance(); // consume 'pub' / 'export'
@@ -625,10 +668,10 @@ impl Parser {
             // the CST projection can recover the flag, like `pub`/`var`.
             self.advance(); // consume 'config'
         }
-        self.advance(); // consume 'let' / 'var'
+        self.advance(); // consume 'let' / 'var' / 'const'
         let name = self.expect_ident()?;
         let ty = self.parse_type_annotation()?;
-        self.expect_initializer(if is_var { "var" } else { "let" }, &name)?;
+        self.expect_initializer(keyword.text(), &name)?;
         let value = self.parse_expr()?;
         self.ev_close();
         let mut stmt = self.mk_stmt(
@@ -638,6 +681,7 @@ impl Parser {
                 value,
                 is_var,
                 is_config,
+                is_const,
             },
             start,
         );
@@ -1091,7 +1135,10 @@ impl Parser {
     /// `config` starts a declaration only when the very next token is a
     /// binding keyword — `config` on its own line stays an expression.
     fn starts_config_decl(&self) -> bool {
-        matches!(self.tokens.get(self.pos + 1), Some(Token::Let | Token::Var))
+        matches!(
+            self.tokens.get(self.pos + 1),
+            Some(Token::Let | Token::Var | Token::Const)
+        )
     }
 
     /// `class Name` … `end`, a comma-separated list of `field: type`. Field

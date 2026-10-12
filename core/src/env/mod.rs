@@ -925,6 +925,7 @@ impl Env {
         let mut program =
             Compiler::new().compile_modules(&modules, program_id, &self.native_fns)?;
         self.scan_unresolved(&mut program);
+        self.check_consts(&mut program);
         if !self.check_only {
             self.check_requires(&program)?;
             self.link_program(&program)?;
@@ -944,6 +945,70 @@ impl Env {
             self.native_signatures(name)
         });
         program.warnings.extend(found);
+    }
+
+    /// The `const` check that ends every compile: a declaration written
+    /// `const` whose value is not static data joins the program's diagnostics
+    /// as an error carrying the classifier's reason chain
+    /// ([`crate::static_classify`]). The binding itself compiles and runs as
+    /// the `let` it otherwise is.
+    ///
+    /// The answer is this `Env`'s: a native counts as constant only when it
+    /// is registered `CONST` here. A `const` that is dynamic only because of
+    /// natives nothing here registers (`petal check` and the language server
+    /// on a script written for a host) is not reported: it cannot be verified
+    /// here, and the host that has those natives reports it if it is wrong.
+    /// The classifier runs only for a program that declares a `const`.
+    fn check_consts(&self, program: &mut Program) {
+        use crate::static_classify::{ConstCheck, DeclClass};
+        if !program.terms.iter().any(|t| t.is_const) {
+            return;
+        }
+        let report = crate::static_classify::classify(program, &self.native_fns);
+        for d in &report.declarations {
+            if d.const_check != Some(ConstCheck::NotConstant) {
+                continue;
+            }
+            // Dynamic because of an error the compile has already reported:
+            // that error is the finding.
+            if d.reason.last().is_some_and(|r| r.compile_error) {
+                continue;
+            }
+            let span = program
+                .source_map
+                .get(d.term)
+                .copied()
+                .unwrap_or(crate::source_map::ZERO_SPAN);
+            if d.class == DeclClass::Function {
+                program.warnings.push(crate::diagnostic::Diagnostic::error(
+                    span,
+                    format!(
+                        "`{}` is declared `const` but is a function, not a constant value; \
+                         declare it with `fn` or `let`",
+                        d.name
+                    ),
+                ));
+                continue;
+            }
+            let mut template = format!("`{}` is declared `const` but is not constant", d.name);
+            let mut cited = Vec::new();
+            for step in &d.reason {
+                template.push_str(&format!("\n  = {} {}", step.subject, step.text));
+                let Some(at) = step.span else { continue };
+                let line = match cited.len() {
+                    0 => "{line}".to_string(),
+                    n => format!("{{line:{n}}}"),
+                };
+                match &step.file {
+                    Some(file) => template.push_str(&format!(" at {file}:{line}")),
+                    None => template.push_str(&format!(" at line {line}")),
+                }
+                cited.push(at);
+            }
+            program.warnings.push(crate::diagnostic::Diagnostic::error_citing(
+                span, template, cited,
+            ));
+        }
     }
 
     /// Check a loaded program: will it run? The findings of its compile
@@ -1037,6 +1102,7 @@ impl Env {
             .collecting_inferences()
             .compile_modules_collecting(&modules, ProgramId(0), &self.native_fns)?;
         self.scan_unresolved(&mut program);
+        self.check_consts(&mut program);
         Ok((program, inferences, classes))
     }
 
@@ -1227,6 +1293,7 @@ impl Env {
             }
         }
         self.scan_unresolved(&mut program);
+        self.check_consts(&mut program);
         let id = ProgramId(self.next_program_id);
         self.next_program_id += 1;
         program.id = id;

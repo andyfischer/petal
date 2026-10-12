@@ -632,7 +632,7 @@ fn binds_at_top_level(source: &str, name: &str) -> bool {
     }
     let is_name = |t: &Token| matches!(t, Token::Ident(n) if n == name);
     let may_bind = lexer.tokens.windows(2).any(|w| {
-        (matches!(w[0], Token::Let | Token::Var) && is_name(&w[1]))
+        (matches!(w[0], Token::Let | Token::Var | Token::Const) && is_name(&w[1]))
             || (is_name(&w[0]) && matches!(w[1], Token::Assign))
     });
     if !may_bind {
@@ -704,10 +704,11 @@ fn plan_patch(program: &Program, change: &ProgramChange) -> Result<Patch, String
     }
 
     for (i, w) in program.warnings.iter().enumerate() {
-        let cited_file = w.cited.as_ref().map(|c| c.span.file.0);
-        if !by_file.contains_key(&w.span.file.0)
-            && !cited_file.is_some_and(|f| by_file.contains_key(&f))
-        {
+        let cites_changed_file = w
+            .cited
+            .as_ref()
+            .is_some_and(|c| c.spans().any(|s| by_file.contains_key(&s.file.0)));
+        if !by_file.contains_key(&w.span.file.0) && !cites_changed_file {
             continue;
         }
         // A diagnostic is about the code its span covers. One that covers a

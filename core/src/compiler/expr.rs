@@ -560,7 +560,7 @@ impl Compiler {
             self.emit_term(TermOp::Error(msg_cid), smallvec![], None)
         } else {
             let hint = match name {
-                "var" | "const" => Some("use 'let' to declare variables in Petal"),
+                "var" => Some("use 'let' to declare variables in Petal"),
                 "def" | "func" | "function" => Some("use 'fn' to define functions in Petal"),
                 "elif" | "elseif" | "elsif" => Some("use 'else if' in Petal"),
                 "switch" | "case" => Some("use 'match' for pattern matching in Petal"),

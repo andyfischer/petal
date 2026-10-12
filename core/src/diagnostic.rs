@@ -60,12 +60,31 @@ pub struct Diagnostic {
     pub cited: Option<CitedLine>,
 }
 
-/// The line a diagnostic's message cites, and the message with `{line}` where
-/// the number goes.
+/// The lines a diagnostic's message cites, and the message with a
+/// placeholder where each number goes: `{line}` for the first cited place,
+/// `{line:1}`, `{line:2}`, … for the ones after it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CitedLine {
+    /// The first cited place.
     pub span: SourceSpan,
+    /// Every cited place after the first, in placeholder order.
+    more: Vec<SourceSpan>,
     template: String,
+}
+
+impl CitedLine {
+    /// Every place the message cites.
+    pub fn spans(&self) -> impl Iterator<Item = &SourceSpan> {
+        std::iter::once(&self.span).chain(&self.more)
+    }
+
+    fn render(&self) -> String {
+        let mut out = self.template.replace("{line}", &self.span.start.line.to_string());
+        for (i, span) in self.more.iter().enumerate() {
+            out = out.replace(&format!("{{line:{}}}", i + 1), &span.start.line.to_string());
+        }
+        out
+    }
 }
 
 /// How sure the checker is that a diagnostic describes a failure.
@@ -111,14 +130,38 @@ impl Diagnostic {
     /// other way goes stale when a layout-only edit is hot-reloaded without a
     /// recompile.
     pub fn citing(span: SourceSpan, template: String, cited: SourceSpan) -> Diagnostic {
+        let cited = CitedLine {
+            span: cited,
+            more: Vec::new(),
+            template,
+        };
         Diagnostic {
             span,
-            message: template.replace("{line}", &cited.start.line.to_string()),
+            message: cited.render(),
             severity: Severity::Warning,
-            cited: Some(CitedLine {
-                span: cited,
-                template,
-            }),
+            cited: Some(cited),
+        }
+    }
+
+    /// An error whose message names the lines of other places in the source:
+    /// `{line}` in `template` stands for the line of `cited[0]`, `{line:1}`
+    /// for that of `cited[1]`, and so on. With nothing cited the template is
+    /// the message. See [`Diagnostic::citing`] for why the lines are kept.
+    pub fn error_citing(span: SourceSpan, template: String, cited: Vec<SourceSpan>) -> Diagnostic {
+        let mut cited = cited.into_iter();
+        let Some(first) = cited.next() else {
+            return Diagnostic::error(span, template);
+        };
+        let cited = CitedLine {
+            span: first,
+            more: cited.collect(),
+            template,
+        };
+        Diagnostic {
+            span,
+            message: cited.render(),
+            severity: Severity::Error,
+            cited: Some(cited),
         }
     }
 
@@ -134,9 +177,10 @@ impl Diagnostic {
         out.span = map(self.span)?;
         if let Some(cited) = &mut out.cited {
             cited.span = map(cited.span)?;
-            out.message = cited
-                .template
-                .replace("{line}", &cited.span.start.line.to_string());
+            for span in &mut cited.more {
+                *span = map(*span)?;
+            }
+            out.message = cited.render();
         }
         Some(out)
     }

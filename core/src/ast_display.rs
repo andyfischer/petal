@@ -75,10 +75,15 @@ impl Printer {
                 value,
                 is_var,
                 is_config,
+                is_const,
             } => {
                 let config = if *is_config { "config " } else { "" };
                 let var = if *is_var { "var " } else { "" };
-                let head = format!("Let {export}{config}{var}{name}{}", fmt_ty_suffix(ty));
+                let konst = if *is_const { "const " } else { "" };
+                let head = format!(
+                    "Let {export}{config}{var}{konst}{name}{}",
+                    fmt_ty_suffix(ty)
+                );
                 self.line(depth, &head, Some(&stmt.span));
                 self.expr(value, depth + 1);
             }

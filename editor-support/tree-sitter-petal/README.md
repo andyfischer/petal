@@ -6,7 +6,7 @@ Helix, Zed, Emacs) can use it to highlight `.ptl` files, and Rust programs can
 depend on it as a crate. Garden, the editor in `garden/`, uses it this way.
 
 The grammar follows the canonical lexer (`core/src/lexer.rs`) and parser
-(`core/src/parse.rs`): declarations (`let`, `var`/`set`/`get`, `state`, `fn`,
+(`core/src/parse.rs`): declarations (`let`, `const`, `var`/`set`/`get`, `state`, `fn`,
 `enum`, `class` and `fn Class.method`), control flow (`if`/`elsif`/`else`,
 `for`, `while`, `match`/`when`), the full operator precedence ladder
 (`|>` → `||` → `&&` → equality → comparison → `??` → `++` → additive →

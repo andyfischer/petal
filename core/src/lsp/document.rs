@@ -949,7 +949,7 @@ fn is_ident_char(c: char) -> bool {
 /// `petal::lexer::KEYWORDS` by
 /// `core/tests/keyword_sync.rs` — do not edit this list alone.
 pub const KEYWORDS: &[&str] = &[
-    "let", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
+    "let", "const", "var", "set", "get", "fn", "if", "then", "elsif", "else", "end", "for", "in", "do",
     "while", "match", "when", "return", "break", "continue", "state", "import", "pub", "export",
     "as", "true", "false", "nil", "enum", "class", "config", "native",
 ];

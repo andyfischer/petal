@@ -404,11 +404,16 @@ pub struct Term {
     /// pinning the rest (see `direct_manipulation::propose_edits`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_config: bool,
+    /// The binding this term defines was declared `const`: its value must be
+    /// static, which [`crate::static_classify`] decides and every compile an
+    /// `Env` does reports when it is not (`Env::check_consts`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_const: bool,
 }
 
 impl Term {
     /// A term carrying no optional metadata: `state_key`, `child_blocks`,
-    /// `path_pop`, `call_site`, `arg_names`, `collect` and `is_config` all at their
+    /// `path_pop`, `call_site`, `arg_names`, `collect`, `is_config` and `is_const` all at their
     /// serialization defaults, and the block links unset. The single place
     /// those defaults are written down, so adding a `Term` field does not mean
     /// hunting down every construction site.
@@ -436,6 +441,7 @@ impl Term {
             arg_names: SmallVec::new(),
             collect: false,
             is_config: false,
+            is_const: false,
         }
     }
 }

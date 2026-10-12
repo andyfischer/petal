@@ -195,6 +195,8 @@ pub enum ConstructKind {
     Function,
     Let,
     ConfigLet,
+    /// `const NAME = …`: a `let` that must be static.
+    Const,
     Var,
     State,
     Enum,
@@ -409,9 +411,12 @@ fn construct_kind(s: &Stmt) -> (ConstructKind, Option<&str>) {
             name,
             is_var,
             is_config,
+            is_const,
             ..
         } => (
-            if *is_config {
+            if *is_const {
+                ConstructKind::Const
+            } else if *is_config {
                 ConstructKind::ConfigLet
             } else if *is_var {
                 ConstructKind::Var
@@ -522,6 +527,7 @@ impl Cmp {
                     value: v1,
                     is_var: var1,
                     is_config: c1,
+                    is_const: k1,
                 },
                 StmtKind::Let {
                     name: n2,
@@ -529,9 +535,12 @@ impl Cmp {
                     value: v2,
                     is_var: var2,
                     is_config: c2,
+                    is_const: k2,
                 },
             ) => {
-                if n1 != n2 || t1 != t2 || var1 != var2 || c1 != c2 {
+                // `let` <-> `const` is a structural edit: it adds or removes
+                // the must-be-static check, which only a recompile makes.
+                if n1 != n2 || t1 != t2 || var1 != var2 || c1 != c2 || k1 != k2 {
                     return false;
                 }
                 let saved = (self.config, self.config_data);

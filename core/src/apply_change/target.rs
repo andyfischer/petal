@@ -50,6 +50,8 @@ pub enum DeclKind {
     Let,
     /// `config let`: a tuning knob, which cannot be a `var`.
     ConfigLet,
+    /// `const`: a binding that must be static, which cannot be a `var`.
+    Const,
     Var,
     State,
     StateVar,
@@ -62,6 +64,7 @@ impl DeclKind {
             DeclKind::Fn => "fn",
             DeclKind::Let => "let",
             DeclKind::ConfigLet => "config let",
+            DeclKind::Const => "const",
             DeclKind::Var => "var",
             DeclKind::State => "state",
             DeclKind::StateVar => "state var",
@@ -253,13 +256,15 @@ impl ExprVisitor for Collector {
                 name,
                 is_var,
                 is_config,
+                is_const,
                 ..
             } => Some((
                 name,
-                match (*is_var, *is_config) {
-                    (true, _) => DeclKind::Var,
-                    (false, true) => DeclKind::ConfigLet,
-                    (false, false) => DeclKind::Let,
+                match (*is_var, *is_config, *is_const) {
+                    (true, _, _) => DeclKind::Var,
+                    (false, _, true) => DeclKind::Const,
+                    (false, true, false) => DeclKind::ConfigLet,
+                    (false, false, false) => DeclKind::Let,
                 },
             )),
             StmtKind::State { name, is_var, .. } => Some((

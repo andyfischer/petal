@@ -52,6 +52,18 @@
 //! and therefore dynamic, so those tools may report less as static than a
 //! host does and never more.
 //!
+//! # `const`
+//!
+//! A declaration written `const NAME = expr` asserts that it is static data.
+//! The report says whether it is ([`StaticDecl::const_check`]); the compile
+//! turns a failed check into an error (`Env::check_consts`). Where a native
+//! is not registered the answer for a `const` is not "dynamic" but "cannot be
+//! verified here": the pass is run a second time taking every unregistered
+//! native (and every method name nothing here defines) to be constant, which
+//! is the most any host could make static. A `const` that is still dynamic
+//! then is dynamic under every host, and is an error; one that is static only
+//! under that assumption is left for its host to judge.
+//!
 //! **The classification never reads a literal's value.** It reads the shape of
 //! the graph and the names the compiler wrote into it (builtin, method, field
 //! and enum names), so a literal-only edit cannot change any answer here.
@@ -208,6 +220,9 @@ pub enum DeclKind {
     Let,
     #[serde(rename = "config let")]
     ConfigLet,
+    /// `const NAME = …`: a `let` that must be static.
+    #[serde(rename = "const")]
+    Const,
     #[serde(rename = "var")]
     Var,
     #[serde(rename = "state")]
@@ -225,6 +240,7 @@ impl DeclKind {
         match self {
             DeclKind::Let => "let",
             DeclKind::ConfigLet => "config let",
+            DeclKind::Const => "const",
             DeclKind::Var => "var",
             DeclKind::State => "state",
             DeclKind::Function => "fn",
@@ -251,6 +267,28 @@ pub struct ReasonStep {
     pub line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+    /// Where `line` and `column` were read from, for a consumer that has to
+    /// follow the position when the source's layout changes.
+    #[serde(skip)]
+    pub span: Option<crate::source_map::SourceSpan>,
+    /// The link is a compile error the compiler has already reported (a
+    /// name nothing defines, say), not a finding of the classifier's own.
+    #[serde(skip)]
+    pub compile_error: bool,
+}
+
+/// What became of a `const` declaration's claim to be static.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConstCheck {
+    /// It is static data.
+    Constant,
+    /// It is not, and no host could make it so: the reason does not rest on
+    /// a native that is missing here.
+    NotConstant,
+    /// It is dynamic here only because of natives nothing here registers (or
+    /// a method name nothing here defines). The host that has them decides.
+    Unverified,
 }
 
 impl ReasonStep {
@@ -343,6 +381,10 @@ pub struct StaticDecl {
     /// land on its own storage. `None` when nothing does.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mutated_by: Option<ReasonStep>,
+    /// For a declaration written `const`: whether it is the static data it
+    /// claims to be. `None` for every other declaration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub const_check: Option<ConstCheck>,
     /// The declarations this one refers to directly, by qualified name.
     pub direct_depends_on: BTreeSet<String>,
     /// Every declaration this one's value can depend on, by qualified name:
@@ -468,6 +510,20 @@ impl StaticReport {
             if let Some(m) = &d.mutated_by {
                 writeln!(out, "            ! not kept: {}", m.render()).unwrap();
             }
+            match d.const_check {
+                Some(ConstCheck::NotConstant) => {
+                    writeln!(out, "            ! declared const but not constant: a compile error")
+                        .unwrap();
+                }
+                Some(ConstCheck::Unverified) => {
+                    writeln!(
+                        out,
+                        "            ! declared const: cannot be verified without its host's natives"
+                    )
+                    .unwrap();
+                }
+                Some(ConstCheck::Constant) | None => {}
+            }
             if self_evident(d) {
                 continue;
             }
@@ -579,7 +635,27 @@ pub fn classify(program: &Program, natives: &NativeFnTable) -> StaticReport {
 pub fn analyze(program: &Program, natives: &NativeFnTable) -> StaticAnalysis {
     let mut pass = Pass::new(program, natives);
     pass.solve();
-    let report = pass.report();
+    let mut report = pass.report();
+    // A `const` that is dynamic: is it dynamic under every host, or only
+    // because a native is missing here? Ask again with the missing ones
+    // taken to be constant. The classes below stay those of the first pass.
+    let failed = |d: &StaticDecl| d.const_check == Some(ConstCheck::NotConstant);
+    if report.declarations.iter().any(failed) {
+        let mut lenient = Pass::new(program, natives);
+        lenient.assume_missing_const = true;
+        lenient.solve();
+        for d in report.declarations.iter_mut().filter(|d| failed(d)) {
+            let Some(gi) = lenient.groups.iter().position(|g| g.canonical == d.term) else {
+                continue;
+            };
+            match lenient.group_class(gi) {
+                (DeclClass::Static, _, _) => d.const_check = Some(ConstCheck::Unverified),
+                // The reason that holds whatever the host registers.
+                (DeclClass::Dynamic, _, reason) => d.reason = reason,
+                (DeclClass::Function, _, _) => {}
+            }
+        }
+    }
     let classes = pass
         .class
         .iter()
@@ -663,6 +739,11 @@ struct Pass<'a> {
     fn_dyn: Vec<Option<TermId>>,
     /// The class of what a function returns.
     fn_ret: Vec<Class>,
+
+    /// Take a native nothing registered, and a method name nothing defines,
+    /// to be constant: the most static any host could make this program.
+    /// Only the second look at a failed `const` sets it (see [`analyze`]).
+    assume_missing_const: bool,
 }
 
 impl<'a> Pass<'a> {
@@ -701,6 +782,7 @@ impl<'a> Pass<'a> {
             state_groups: HashMap::new(),
             fn_dyn: vec![None; nfns],
             fn_ret: vec![Class::Top; nfns],
+            assume_missing_const: false,
         };
         pass.index_structure();
         pass.index_groups();
@@ -981,13 +1063,17 @@ impl<'a> Pass<'a> {
                 DeclKind::State
             } else if ops.iter().any(|t| matches!(t.op, TermOp::CellNew)) {
                 DeclKind::Var
+            } else if ops.iter().any(|t| t.is_const) {
+                DeclKind::Const
             } else if ops.iter().any(|t| t.is_config) {
                 DeclKind::ConfigLet
             } else {
                 DeclKind::Let
             };
             self.groups[gi].kind = kind;
-            if matches!(kind, DeclKind::Let | DeclKind::ConfigLet) && defs.len() > 1 {
+            if matches!(kind, DeclKind::Let | DeclKind::ConfigLet | DeclKind::Const)
+                && defs.len() > 1
+            {
                 for &d in &defs {
                     self.reassigned.insert(d, defs[1]);
                 }
@@ -1456,6 +1542,10 @@ impl<'a> Pass<'a> {
                 }
                 match self.natives.lookup_name(name) {
                     Some(id) => self.native_call(id, inputs),
+                    // What a `CONST` native that takes no callback would be.
+                    None if self.assume_missing_const => {
+                        self.all_data(inputs, Why::FunctionArgument)
+                    }
                     None => Class::Dynamic(Why::UnregisteredNative(*name_c)),
                 }
             }
@@ -1734,6 +1824,9 @@ impl<'a> Pass<'a> {
             }
         }
         if !any {
+            if self.assume_missing_const {
+                return self.all_data(inputs, Why::FunctionArgument);
+            }
             return Class::Dynamic(Why::UnknownMethod);
         }
         match ret {
@@ -1812,6 +1905,8 @@ impl<'a> Pass<'a> {
             file: loc.as_ref().and_then(|l| l.0.clone()),
             line: loc.as_ref().map(|l| l.1),
             column: loc.as_ref().map(|l| l.2),
+            span: self.span(at).copied(),
+            compile_error: false,
         }
     }
 
@@ -1992,7 +2087,9 @@ impl<'a> Pass<'a> {
                         | Why::Method(_)
                         | Why::EnumData(_) => unreachable!(),
                     };
-                    steps.push(self.step(&subject, text, at));
+                    let mut step = self.step(&subject, text, at);
+                    step.compile_error = matches!(terminal, Why::CompileError);
+                    steps.push(step);
                     break;
                 }
             }
@@ -2406,6 +2503,13 @@ impl<'a> Pass<'a> {
                     && init.child_blocks.iter().all(block_static)
             });
             let is_static = class == DeclClass::Static && g.kind != DeclKind::Enum;
+            // Asked of the terms, not of the kind: `const f = fn(x) x end`
+            // is a function to every other question.
+            let declared_const = g.defs.iter().any(|d| p.get_term(*d).is_const);
+            let const_check = declared_const.then_some(match class {
+                DeclClass::Static => ConstCheck::Constant,
+                _ => ConstCheck::NotConstant,
+            });
             decls.push(StaticDecl {
                 name: g.name.clone(),
                 qualified: names[gi].clone(),
@@ -2423,6 +2527,7 @@ impl<'a> Pass<'a> {
                     .then(|| readers[gi].0.iter().any(|r| r.kind != ReaderKind::Static)),
                 readers: readers[gi].0.clone(),
                 mutated_by: readers[gi].1.clone(),
+                const_check,
                 direct_depends_on: direct[gi].iter().map(|d| names[*d].clone()).collect(),
                 depends_on: closed[gi].iter().map(|d| names[*d].clone()).collect(),
                 term: g.canonical,

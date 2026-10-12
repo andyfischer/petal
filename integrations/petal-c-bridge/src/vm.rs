@@ -1482,6 +1482,7 @@ fn reload_report_json(report: &ReloadReport) -> serde_json::Value {
                             ConstructKind::Function => "fn",
                             ConstructKind::Let => "let",
                             ConstructKind::ConfigLet => "config let",
+                            ConstructKind::Const => "const",
                             ConstructKind::Var => "var",
                             ConstructKind::State => "state",
                             ConstructKind::Enum => "enum",

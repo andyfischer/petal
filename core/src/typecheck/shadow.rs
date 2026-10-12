@@ -132,10 +132,16 @@ impl ShadowWalker<'_> {
                 name,
                 value,
                 is_var,
+                is_const,
                 ..
             } => {
                 self.walk_expr(value);
-                self.bind_value(name, if *is_var { "var" } else { "let" }, value, stmt.span);
+                let keyword = match (*is_var, *is_const) {
+                    (true, _) => "var",
+                    (false, true) => "const",
+                    (false, false) => "let",
+                };
+                self.bind_value(name, keyword, value, stmt.span);
             }
             StmtKind::State {
                 name, init, key, ..

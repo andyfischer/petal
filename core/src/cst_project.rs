@@ -293,12 +293,17 @@ impl Projector {
                 let is_var = direct_tokens(node)
                     .iter()
                     .any(|t| matches!(t.token(), Some(Token::Var)));
+                // `const X = …` likewise.
+                let is_const = direct_tokens(node)
+                    .iter()
+                    .any(|t| matches!(t.token(), Some(Token::Const)));
                 StmtKind::Let {
                     name,
                     ty,
                     value,
                     is_var,
                     is_config,
+                    is_const,
                 }
             }
             SyntaxKind::AssignStmt => return self.assign_stmt(node, span, false),

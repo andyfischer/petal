@@ -423,12 +423,13 @@ fn stmt_json(s: &Stmt) -> J {
             value,
             is_var,
             is_config,
+            is_const,
         } => {
             return node(
                 "Let",
                 s.span,
                 json!({"name": name, "type": ty_json(ty.as_ref()), "value": expr_json(value),
-                       "is_var": is_var, "is_config": is_config}),
+                       "is_var": is_var, "is_config": is_config, "is_const": is_const}),
             );
         }
         StmtKind::Assign { target, value } => {

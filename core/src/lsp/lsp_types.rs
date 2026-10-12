@@ -243,6 +243,7 @@ protocol_enum!(SymbolKind {
     Enum = 10,
     Function = 12,
     Variable = 13,
+    Constant = 14,
     EnumMember = 22,
 });
 

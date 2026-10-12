@@ -134,18 +134,18 @@ module.exports = grammar({
     // `parse_fn_decl` / `parse_let` / `parse_state` / `parse_enum_decl` with an
     // `exported` flag, producing the same node with one extra leading token.
     // Mirroring that keeps the tree shapes identical. Those forms — fn, let,
-    // var, `config let`, state, enum, class and import — are exactly what
+    // var, const, `config let`, state, enum, class and import — are exactly what
     // `export` may precede.
 
-    // `let x = v` and its mutable twin `var x = v`, each with an optional
-    // `: type` annotation.
+    // `let x = v`, its mutable twin `var x = v` and its must-be-static twin
+    // `const X = v`, each with an optional `: type` annotation.
     let_declaration: $ => seq(
       optional(PUB),
       // `config let x = …` marks an edit knob for propose-edit (docs/CLI.md).
       // `config` is a contextual identifier in the real lexer, recognized only
       // in this slot, so it is a literal here and stays usable as a name.
       optional('config'),
-      choice('let', 'var'),
+      choice('let', 'var', 'const'),
       field('name', $.identifier),
       optional(field('type', $.type_annotation)),
       '=',

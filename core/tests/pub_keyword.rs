@@ -171,7 +171,7 @@ fn a_dangling_modifier_names_the_word_that_was_written() {
     let err = Env::new().load_program("pub 1 + 2").unwrap_err();
     assert!(
         err.contains(
-            "`pub` must be followed by a fn, native fn, let, var, state, enum, class, or import"
+            "`pub` must be followed by a fn, native fn, let, const, var, state, enum, class, or import"
         ),
         "got: {err}"
     );

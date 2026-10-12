@@ -38,10 +38,26 @@ pub fn document_symbols(stmts: &[Stmt], source: &str) -> Vec<DocumentSymbol> {
                 SymbolKind::Function,
                 stmt.span,
             )),
-            StmtKind::Let { name, is_var, .. } => out.push(symbol(
+            StmtKind::Let {
                 name,
-                Some(if *is_var { "var" } else { "let" }.to_string()),
-                SymbolKind::Variable,
+                is_var,
+                is_const,
+                ..
+            } => out.push(symbol(
+                name,
+                Some(
+                    match (*is_var, *is_const) {
+                        (true, _) => "var",
+                        (false, true) => "const",
+                        (false, false) => "let",
+                    }
+                    .to_string(),
+                ),
+                if *is_const {
+                    SymbolKind::Constant
+                } else {
+                    SymbolKind::Variable
+                },
                 stmt.span,
             )),
             StmtKind::State { name, .. } => out.push(symbol(

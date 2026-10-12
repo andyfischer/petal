@@ -278,6 +278,26 @@ set count += 1
     right: (integer)))
 
 ==================
+Const declarations
+==================
+
+const TILES = [1, 2]
+pub const NAME: str = "a"
+r.const
+
+---
+
+(source_file
+  (let_declaration
+    name: (identifier)
+    value: (list (integer) (integer)))
+  (let_declaration
+    name: (identifier)
+    type: (type_annotation type: (type_name (identifier)))
+    value: (string (string_content)))
+  (field_access object: (identifier) field: (identifier)))
+
+==================
 Pub declarations
 ==================
 

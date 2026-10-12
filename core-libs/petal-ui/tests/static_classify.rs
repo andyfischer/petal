@@ -64,7 +64,7 @@ fn drive(app: &Path, includes: &[PathBuf], seed: u64, frames: usize) -> Outcome 
     let names: Vec<String> = report
         .entry()
         .filter(|d| d.class == DeclClass::Static)
-        .filter(|d| matches!(d.kind, DeclKind::Let | DeclKind::ConfigLet))
+        .filter(|d| matches!(d.kind, DeclKind::Let | DeclKind::ConfigLet | DeclKind::Const))
         .map(|d| d.name.clone())
         .collect();
 

@@ -895,6 +895,7 @@ impl Compiler {
         {
             self.errors.push((diag, self.error_file.clone()));
         }
+        self.warnings.extend(misplaced_const_decls(&stmts));
 
         if !is_entry {
             self.push_scope(false); // module scope frame
@@ -2679,6 +2680,48 @@ fn hoistable_const_lets(stmts: &[Stmt]) -> HashSet<String> {
         }
     }
     consts
+}
+
+/// A `const` anywhere but the top level of a file. Only a top-level
+/// declaration is one value for the life of the program, which is what
+/// `const` asserts and what [`crate::static_classify`] can check; inside a
+/// function or a loop the binding is made again on every call or pass. Each
+/// is an error, and the binding still compiles as the `let` it otherwise is.
+fn misplaced_const_decls(stmts: &[Stmt]) -> Vec<crate::diagnostic::Diagnostic> {
+    struct Finder {
+        depth: usize,
+        out: Vec<crate::diagnostic::Diagnostic>,
+    }
+    impl crate::ast::ExprVisitor for Finder {
+        fn visit_stmt(&mut self, s: &Stmt) {
+            if let StmtKind::Let {
+                name,
+                is_const: true,
+                ..
+            } = &s.kind
+                && self.depth > 0
+            {
+                self.out.push(crate::diagnostic::Diagnostic::error(
+                    s.span,
+                    format!(
+                        "`const {name}` must be declared at the top level of a file, not inside \
+                         a function, loop or block; use `let` here"
+                    ),
+                ));
+            }
+            self.depth += 1;
+            crate::ast::walk_stmt(self, s);
+            self.depth -= 1;
+        }
+    }
+    let mut finder = Finder {
+        depth: 0,
+        out: Vec::new(),
+    };
+    for stmt in stmts {
+        crate::ast::ExprVisitor::visit_stmt(&mut finder, stmt);
+    }
+    finder.out
 }
 
 /// Warn about the one forward reference hoisting cannot fix: a top-level

@@ -86,6 +86,13 @@ pub(super) fn plan(file: &Path, target: &str, opts: &ChangeOptions) -> Result<Pl
                 decl.line
             ));
         }
+        DeclKind::Const => {
+            return Err(format!(
+                "{path} (line {}) is a `const`, which cannot be a `var`: \
+                 a constant is never written. Make it a `let` first if it has to change",
+                decl.line
+            ));
+        }
         DeclKind::Fn => {
             return Err(format!(
                 "{path} (line {}) is a function; convert-to-var takes a `let` or `state` binding",

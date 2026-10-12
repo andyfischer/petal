@@ -498,6 +498,12 @@ pub enum StmtKind {
         /// also render them as sliders. No effect on evaluation.
         #[serde(skip_serializing_if = "is_false")]
         is_config: bool,
+        /// Written `const X = …` rather than `let X = …`: the value must be
+        /// static (a function of the source text alone), which the compile
+        /// checks with [`crate::static_classify`] and reports as an error
+        /// when it is not. Evaluated exactly as the `let` would be.
+        #[serde(skip_serializing_if = "is_false")]
+        is_const: bool,
     },
     Assign {
         target: AssignTarget,

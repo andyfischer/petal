@@ -37,6 +37,7 @@
   "config"
   "native"
   "let"
+  "const"
   "var"
   "set"
   "get"

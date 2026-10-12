@@ -582,7 +582,7 @@ fn double(x) x * 2 end
 let A = map(XS, fn(x) x * 2 end)
 let B = map(XS, double)
 let C = filter(XS, fn(x) x > 1 end)
-let D = reduce(XS, fn(acc, x) acc + x end, 0)
+let D = reduce(XS, 0, fn(acc, x) acc + x end)
 let E = sort_by(XS, fn(x) -x end)
 let F = sort(XS)
 let G = map(XS, sqrt)
@@ -1200,4 +1200,239 @@ fn every_bundled_example_classifies_with_a_reason_for_each_dynamic() {
         seen += 1;
     }
     assert!(seen > 0, "no example under {} compiled", root.display());
+}
+
+// ── The classifier against what a program actually computes ───────────────
+
+/// Run `src` `runs` times on one stack (so `state` carries over, as it does
+/// between frames) and return the names whose observed value changed from
+/// one run to another.
+fn moving_names(env: &mut Env, src: &str, runs: usize) -> std::collections::BTreeSet<String> {
+    env.observations_mut().enable();
+    let pid = env.load_program(src).unwrap_or_else(|e| panic!("does not load: {e}"));
+    let sid = env.create_stack(pid).unwrap();
+    let mut first: std::collections::BTreeMap<String, serde_json::Value> = Default::default();
+    let mut moved = std::collections::BTreeSet::new();
+    for run in 0..runs {
+        // The frame boundary a host makes: execution is reset, state kept.
+        env.reset_stack(sid).unwrap();
+        env.advance_frame(sid);
+        env.run(sid).unwrap_or_else(|e| panic!("run {run} failed: {e}"));
+        for (name, value) in env.get_observations_json(pid, sid) {
+            match first.get(&name) {
+                Some(seen) if *seen != value => {
+                    moved.insert(name);
+                }
+                Some(_) => {}
+                None => {
+                    first.insert(name, value);
+                }
+            }
+        }
+    }
+    moved
+}
+
+/// One program, every mechanism a dynamic value could sneak through. `tick`
+/// is a `state` cell that counts runs. Each `*_LEAK` routes it (or the
+/// random stream) through one mechanism and must be dynamic; each `*_OK`
+/// uses the same mechanism without it and must be static. The program is
+/// then run ten times: every `*_LEAK` really does move — so the test would
+/// notice a rule that stopped working — and nothing classified static does.
+#[test]
+fn nothing_classified_static_moves_between_runs() {
+    let src = "
+state tick = 0
+tick = tick + 1
+let BASE = [3, 1, 2]
+
+// A capture, and a call through it.
+fn cap(x) x + tick end
+fn cap_ok(x) x + BASE[0] end
+let CAP_LEAK = cap(1)
+let CAP_OK = cap_ok(1)
+
+// A forward reference through a hoisted function's cell.
+let FWD_OK = fwd(2)
+fn fwd(x) helper(x) * 2 end
+fn helper(x) x + 1 end
+
+// Higher-order builtins.
+let MAP_LEAK = map(BASE, fn(x) x + tick end)
+let MAP_OK = map(BASE, fn(x) x + 1 end)
+let SORT_LEAK = sort_by(BASE, fn(x) x * (tick % 2 * 2 - 1) end)
+let SORT_OK = sort_by(BASE, fn(x) -x end)
+let RED_LEAK = reduce(BASE, 0, fn(a, x) a + x + tick end)
+let RED_OK = reduce(BASE, 0, fn(a, x) a + x end)
+let RND_LEAK = random()
+
+// A function passed to a user function.
+fn apply(f, x) f(x) end
+let APP_LEAK = apply(fn(x) x + tick end, 1)
+
+// A function returned by a function, and one held in a record.
+fn make(n) fn(x) x + n end end
+fn make_live() fn(x) x + tick end end
+let add2 = make(2)
+let RET_OK = add2(3)
+let add_tick = make(tick)
+let RET_LEAK = add_tick(3)
+let add_live = make_live()
+let RET2_LEAK = add_live(3)
+let table = {f: fn(x) x + tick end}
+let TBL_LEAK = table.f(1)
+
+// A function picked by a branch.
+fn fa(x) x + 1 end
+fn fb(x) x + 2 end
+let picked = if tick % 2 == 0 then fa else fb end
+let PICK_LEAK = picked(1)
+let steady = if len(BASE) > 2 then fa else fb end
+let PICK_OK = steady(1)
+
+// Nested closures: the inner one captures the outer one's parameter.
+fn outer(a)
+  let inner = fn(b) a + b end
+  inner(1)
+end
+let NEST_LEAK = outer(tick)
+let NEST_OK = outer(1)
+
+// Overloads: one arity calling another through its own name.
+fn scaled(r) scaled(r, 2) end
+fn scaled(r, k) r * k end
+fn drift(r) drift(r, tick) end
+fn drift(r, k) r * k end
+let OVER_OK = scaled(3)
+let OVER_LEAK = drift(3)
+
+// Recursion.
+fn fact(n) if n <= 1 then 1 else n * fact(n - 1) end end
+fn deep(n) if n == 0 then tick else deep(n - 1) end end
+let REC_OK = fact(5)
+let REC_LEAK = deep(3)
+
+// Methods, dispatched by name.
+class Circle
+  r,
+end
+class Square
+  s,
+end
+class Box
+  w,
+end
+fn Circle.area(c) c.r * c.r * 3 end
+fn Square.area(q) q.s * q.s end
+fn Circle.grow(c) c.r + tick end
+fn Box.grow(b) b.w + 1 end
+let SHAPE_LIST = [Circle(1), Square(2)]
+let BOXES = [Box(1), Circle(2)]
+let METH_OK = map(SHAPE_LIST, fn(s) s.area() end)
+let METH_LEAK = map(BOXES, fn(s) s.grow() end)
+
+// Enum constant data.
+enum Tile
+  grass(code: 1),
+  water(code: 2),
+end
+enum Wobble
+  one(jitter: random()),
+end
+let ENUM_OK = map(Tile.all, fn(t) t.code end)
+let ENUM_LEAK = Wobble.one.jitter
+
+// Regions.
+let BRANCH_LEAK = if len(BASE) > 2 then tick else 0 end
+let BRANCH_OK = if len(BASE) > 2 then 1 else 0 end
+let SHORT_LEAK = len(BASE) > 2 && tick > 3
+let SHORT_OK = len(BASE) > 2 && len(BASE) < 9
+let COALESCE_LEAK = nil ?? tick
+let GUARD_LEAK = match 5
+  when n if n < tick -> 1
+  when n -> 2
+end
+let GUARD_OK = match 5
+  when n if n < 3 -> 1
+  when n -> 2
+end
+let LOOP_LEAK = for i in range(0, 3) do i + tick end
+let LOOP_OK = for i in range(0, 3) do [i, i * i] end
+
+// A function's own vars and loops.
+fn build(n)
+  var out = []
+  for i in range(0, n) do
+    set out = append(get out, i * 2)
+  end
+  get out
+end
+fn build_live(n)
+  var out = []
+  for i in range(0, n) do
+    set out = append(get out, i + tick)
+  end
+  get out
+end
+let VAR_OK = build(3)
+let VAR_LEAK = build_live(3)
+
+// A top-level var, read through a function.
+var cell = 0
+set cell = tick * 2
+fn read_cell() get cell end
+let CELL_LEAK = read_cell()
+
+// Rebinding.
+let acc = [1]
+acc = append(acc, tick)
+let ACC_LEAK = len(acc) + acc[1]
+let chosen = 1
+if tick > 4 then
+  chosen = 2
+end
+let PHI_LEAK = chosen + 0
+
+// Operators and construction.
+let STR_LEAK = \"t={tick}\"
+let STR_OK = \"n={len(BASE)}\"
+let SPREAD_LEAK = {...{a: 1}, t: tick}
+let SPREAD_OK = {...{a: 1}, t: 2}
+let INDEX_LEAK = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11][tick]
+let METHOD_LEAK = [tick].len() + tick
+let METHOD_OK = BASE.len() + 1
+";
+    let mut env = Env::new();
+    let report = {
+        let program = compile(&env, src);
+        env.static_report(&program)
+    };
+    let moved = moving_names(&mut env, src, 10);
+
+    let mut leaks = 0;
+    let mut oks = 0;
+    for d in report.entry() {
+        if d.name.ends_with("_LEAK") {
+            leaks += 1;
+            assert_eq!(d.class, DeclClass::Dynamic, "{} must be dynamic", d.name);
+            assert!(
+                moved.contains(&d.name),
+                "{} never moved: the test no longer exercises its rule",
+                d.name
+            );
+        }
+        if d.name.ends_with("_OK") {
+            oks += 1;
+            assert_eq!(d.class, DeclClass::Static, "{}: {}", d.name, why(&report, &d.name));
+        }
+        if d.class == DeclClass::Static {
+            assert!(
+                !moved.contains(&d.name),
+                "{} is classified static and its value changed between runs",
+                d.name
+            );
+        }
+    }
+    assert_eq!(leaks, 28, "a *_LEAK declaration went missing");
+    assert_eq!(oks, 20, "a *_OK declaration went missing");
 }

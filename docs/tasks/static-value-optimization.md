@@ -411,9 +411,15 @@ change, nothing reads its answer yet):
 - **Without host natives** (`petal show-static`, `petal check`, the LSP) an
   unregistered `native fn` is dynamic, tested as "never more static than
   with the host".
-- **Tests.** 51 unit tests in `core/src/static_classify/tests.rs`, one or
+- **Tests.** 52 unit tests in `core/src/static_classify/tests.rs`, one or
   more per rule, compiled from source; a CLI test in
-  `core/tests/cli_args.rs`.
+  `core/tests/cli_args.rs`. One of them
+  (`nothing_classified_static_moves_between_runs`) is a single program that
+  routes a run counter through 28 mechanisms (captures, callbacks, returned
+  and stored functions, overloads, recursion, method dispatch, enum data,
+  branches, guards, loops, `var`s, rebinding) next to 20 static uses of the
+  same mechanisms, runs it ten times on one stack, and checks that each
+  leak is dynamic and really moves, and that nothing static does.
 - **A first oracle, ahead of `--static-audit`.**
   `core-libs/petal-ui/tests/static_classify.rs` classifies each of the 55
   corpus apps against the UI host's own natives, drives it for 45 frames

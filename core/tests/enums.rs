@@ -333,6 +333,18 @@ fn an_enum_name_is_a_type_name() {
     );
     assert!(warnings(&src).is_empty(), "{:?}", warnings(&src));
     assert_eq!(run(&src), ["Color.red"]);
+    // In a method's signature too, with the enum declared below the method.
+    let src = "class Pen\n  w,\nend\nfn Pen.ink(p, c: Shade) -> Shade\n  c\nend\n\
+               enum Shade\n  dark,\n  light,\nend\nlet p = Pen(1)\n";
+    let ok = format!("{src}print(p.ink(Shade.dark))");
+    assert!(warnings(&ok).is_empty(), "{:?}", warnings(&ok));
+    assert_eq!(run(&ok), ["Shade.dark"]);
+    let w = warnings(&format!("{src}p.ink(\"dark\")"));
+    assert!(
+        w.iter()
+            .any(|w| w.contains("argument 1 to `ink`: expected `Shade`, found `string`")),
+        "{w:?}"
+    );
 }
 
 // ── Variants are members, never globals ──────────────────────────
@@ -1003,7 +1015,9 @@ print(M.m.v, L.x.v)
     // name each other; reading each other's data is a cycle.
     let e = compile_err("enum K\n  a(o: K.b.o + 1),\n  b(o: K.a.o),\nend");
     assert!(
-        e.contains("the constant data of `K.a` and `K.b` read each other"),
+        e.contains(
+            "the constant data of `K.a` and `K.b` read each other, so neither can be evaluated first"
+        ),
         "{e}"
     );
     assert!(e.contains("line 2"), "{e}");

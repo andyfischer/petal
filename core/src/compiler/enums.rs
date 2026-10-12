@@ -242,7 +242,8 @@ impl Compiler {
                 format!("the constant data of `{}` reads itself", tags[first])
             } else {
                 format!(
-                    "the constant data of `{}` and `{}` read each other, so neither can be                      evaluated first",
+                    "the constant data of `{}` and `{}` read each other, so neither can be \
+                     evaluated first",
                     tags[first], tags[second]
                 )
             };

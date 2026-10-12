@@ -2868,8 +2868,9 @@ fn forward_referenced_fns(stmts: &[Stmt]) -> HashSet<String> {
     forward
 }
 
-/// Fold every `class` declaration in `stmts`, every method declared on one,
-/// and every `enum` declaration into `classes`. `module` is the declaring file's display name, used to name
+/// Fold every `class` declaration in `stmts`, every `enum` declaration, and
+/// every method declared on a class into `classes`. `module` is the declaring
+/// file's display name, used to name
 /// both sides of a cross-module duplicate; `None` for a single-file
 /// compilation. Returns the fatal diagnostics found — a nested `class`, a
 /// duplicate field, a redeclared class, a name that collides with a built-in
@@ -2941,7 +2942,12 @@ pub fn collect_type_decls(
         }
     }
 
-    // Methods second: a class declared anywhere in the file is now known, so
+    // Enums after the classes, so a class and an enum of one name in one file
+    // is reported against the enum, and before the methods, so a method's
+    // signature may name an enum of this file (`fn Point.paint(p, k: Kind)`).
+    let enum_diags = collect_enums(classes, stmts, module);
+
+    // Methods last: a class declared anywhere in the file is now known, so
     // `fn Point.shifted(...)` above `class Point` is fine.
     for stmt in stmts {
         let StmtKind::FnDecl {
@@ -3023,9 +3029,7 @@ pub fn collect_type_decls(
             err(stmt.span, msg);
         }
     }
-    // Enums last: a class and an enum of one name in one file is reported
-    // against the enum.
-    diags.extend(collect_enums(classes, stmts, module));
+    diags.extend(enum_diags);
     diags
 }
 

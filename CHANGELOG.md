@@ -95,8 +95,10 @@ way, for code written against an earlier checkout.
   `Kind.all` is one list per stack and no longer allocates per read (228 ns
   to 19 ns for an eight-variant enum), and declaring an enum's data costs a
   run about 40% less (150 ns to 93 ns per variant). Nothing changes for a
-  program: the list cannot be written through, and a variant a host built
-  or one kept in `state` across an edit reads as before. See
+  program: the list cannot be written through, a variable that starts as
+  `Kind.all` and is rewritten in a loop gets its own copy at the read and
+  is then updated in place as before, and a variant a host built or one
+  kept in `state` across an edit reads as before. See
   [docs/dev/performance.md](docs/dev/performance.md#enum-data-reads).
 - Escape and last-use analyses turn value-semantic updates into in-place writes
   (loop accumulators, `state`-backed containers, `var` cells).

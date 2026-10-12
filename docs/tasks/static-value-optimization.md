@@ -115,9 +115,33 @@ Not done, and why:
   declared payload names; the Done-when names only the data reads.
 - **`K.all` is 18.8 ns**, most of it interning the enum-name constant that
   is the builtin's argument (every string literal load interns).
-- A loop that grows a list starting from `K.all` (`xs = append(xs, v)` with
-  `xs` first bound to `K.all`) now copies on each append, because its root
-  is no longer a fresh allocation. None in the corpus.
+
+Review (2026-10-12), after the commits above:
+
+- **Fixed: a loop that rewrites a list starting from `K.all` copied on
+  every iteration**, because its root was no longer a fresh allocation.
+  The corpus does have one: the Fisher-Yates bag in
+  `examples/games/tetris/tetris.ptl` (`let bag = Piece.all`, then
+  `bag[i] = …` in a `while`), 12 copies a shuffle. A `K.all` read that is
+  the init of a phi now hands out a copy (`escape::Analysis::copies_enum_all`
+  marks it, the `BuiltinCall`'s `in_place` flag carries it, the VM copies),
+  which is a fresh root, so the loop is in place again. 100 appends from
+  `K.all`: 4.83 µs before A1, 13.6 µs after it, 4.75 µs now; the tetris
+  shuffle 1.29 / 1.33 / 1.17 µs. Every other read still shares the list.
+- Verified by re-running: the read benchmark (record 1.7, `k.code` 3.8,
+  `K.v.code` 6.6, payload 11.4, `K.all` 17 ns over a 22 ns loop; no
+  allocation per `K.all`), the declaration timing (6.42 µs / 2.04 µs),
+  `petal check` output on `K.all` uses against the pre-A1 binary
+  (identical), `cargo test` in `core` (57 suites) and `core-libs/petal-ui`,
+  vitest (1566) and `./tools/test-examples.ts` (33), all passing.
+- Two tests added to `core/tests/enums.rs`: every way of rewriting a list
+  that began as `K.all` (wrapper function, index write, record field,
+  parameter, nested list, `state`; four frames, optimizer on and off), and
+  the accumulator above with its allocation count.
+- Still not done: Garden, `petal-c-bridge` and the wasm build were not
+  built (no user of `Stack::enum_data` or the changed `ops` signatures
+  outside `core` by grep); Moses was not re-measured (Cheesecake vendors
+  Petal); the payload read and `K.all` figures are as above.
 
 For S0/S1: `Kind.all` is now a `BuiltinCall("__enum_all")` in the IR, not
 an `AllocList` of `MakeEnumVariant`s. Like `__enum_from` it is a `PURE` row

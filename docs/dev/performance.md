@@ -365,6 +365,20 @@ data, is looked up when a field is read, which is what lets a variant kept in
   returning a fresh container, so no in-place rewrite will write through
   it, and a `var` cell does not own a value it was handed: `append(K.all, x)`
   copies.
+- One read does get a list of its own: a `K.all` that starts a variable a
+  loop or a branch rebinds (`let bag = Piece.all`, then `bag[i] = …` or
+  `bag = append(bag, …)` in a loop). The escape analysis marks the read
+  (`copies_enum_all`: the builtin call is the init of a phi), the lowering
+  sets the call's `in_place` flag, and the VM answers with a copy of the
+  shared list. That copy is a fresh root, so the loop rewrites it in place:
+  one allocation for the loop, as when `K.all` allocated on every read.
+  Without this the shared list, not being fresh, made every iteration copy
+  (100 appends starting from `K.all`: 4.8 µs before the list was shared,
+  13.6 µs with it shared and no copy at the read, 4.8 µs now; the
+  Fisher-Yates bag in `examples/games/tetris` is the one instance in the
+  corpus). The mark is a property of the term alone and the lowering copies
+  for exactly the marked terms, so the analysis cannot treat a read as
+  fresh that runs shared.
 - Inside a recording memo scope a read is a dependency on the stack's
   enum-data revision. The first read of a run of reads notes it on the
   general path and the rest stay in the straight-line loop.

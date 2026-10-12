@@ -160,7 +160,8 @@ variants. Constant data is not in the table: it is the record each variant's
 `BuiltinCall("__enum_data")` publishes when the root block runs.
 `Kind.all` is `BuiltinCall("__enum_all")` with the enum's name as its one
 argument (the VM builds the list from this table once per stack and hands the
-same list out after; an `AllocList` of `MakeEnumVariant`s, which the compiler
+same list out after, or a copy of it where the read starts a variable that a
+loop or branch rebinds; an `AllocList` of `MakeEnumVariant`s, which the compiler
 emitted before, is still a correct way to write it). An emitter
 whose tags name no declared enum (a bare `"spawn"`, or an enum it does not
 list) omits the entry, and gets variants that match by tag and payload but

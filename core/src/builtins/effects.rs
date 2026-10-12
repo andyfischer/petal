@@ -187,6 +187,16 @@ builtin_effects![
     ("deriv_of", PURE),
     // effectful, but retains nothing: `print` formats its argument immediately.
     ("print", NO_REF),
+    // The frozen generation (`Heap::freeze`). `freeze` returns its argument:
+    // the row is here to say that it has *no* property. Not FRESH (the result
+    // is the argument's own store, and a frozen store must never root a
+    // unique value-web: the runtime would copy on every write anyway, but the
+    // analysis must not plan around it), not NO_REF (the result aliases the
+    // argument), not PURE (a discarded `freeze(x)` still froze `x`).
+    // `frozen` answers a bool and keeps nothing; it is not PURE because the
+    // answer depends on the heap, not on the value's contents.
+    ("freeze", 0),
+    ("frozen", NO_REF),
 ];
 
 /// The mutating builtins: those whose container is their first argument and
@@ -243,7 +253,15 @@ pub fn retains_no_reference(name: &str) -> bool {
 }
 
 /// Builtins whose only effect is the value they return — discarding that value
-/// makes the call dead. Deliberately excludes every effectful or
+/// makes the call dead.
+///
+/// This is *not* the question "is a call with constant arguments a constant?"
+/// — that one is answered per registered native, by its effect row
+/// ([`NativeEffects::CONST`](crate::native_fn::NativeEffects::CONST), asked
+/// through [`NativeFnTable::constness`](crate::native_fn::NativeFnTable::constness)),
+/// because a host's natives have rows and no entry here, and because this
+/// table also names prelude functions that are not natives. The two agree
+/// where they overlap (`builtins::effect_tests::pure_by_name_natives_have_const_rows`). Deliberately excludes every effectful or
 /// closure-invoking native (`print`, `draw_*`, `random`, `assert`, host input
 /// readers, `map`/`filter`/`reduce`/`forEach`), which is what keeps
 /// `typecheck::unused` from warning about calls that do work.
@@ -349,6 +367,7 @@ mod tests {
                 "fixed",
                 "flat",
                 "format",
+                "frozen",
                 "includes",
                 "index_of",
                 "join",
@@ -488,6 +507,21 @@ mod tests {
                 "zip"
             ]
         );
+    }
+
+    /// `freeze` hands back its argument, frozen. Every predicate must answer
+    /// `false` for it: above all it is not a fresh container (the escape
+    /// analysis would root an in-place web on a store the collector no
+    /// longer traces) and it retains its argument.
+    #[test]
+    fn freeze_has_no_effect_property() {
+        assert!(universe().contains(&"freeze"));
+        assert!(!returns_fresh_container("freeze"));
+        assert!(!retains_no_reference("freeze"));
+        assert!(!is_pure_builtin("freeze"));
+        assert!(!is_mutating_builtin("freeze"));
+        assert!(!returns_fresh_container("frozen"));
+        assert!(!is_pure_builtin("frozen"));
     }
 
     #[test]

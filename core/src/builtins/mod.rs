@@ -480,6 +480,16 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.intrinsic_enum_data = Some(enum_data_id);
     table.intrinsic_enum_from = Some(enum_from_id);
 
+    // `freeze(v)` / `frozen(v)`: make data that lives as long as the program
+    // permanent so the collector stops re-tracing it (see `Heap::freeze`).
+    // Both are effects, not pure: freezing changes how the heap treats the
+    // value, and `frozen` answers from that heap state rather than from the
+    // value's contents, so neither may be folded away, replayed from a
+    // memoized scope, or (docs/proposals/static-values.md) treated as a
+    // constant. Append-only, like the rest of this block.
+    table.register("freeze", collections::native_freeze, NativeEffects::EFFECT);
+    table.register("frozen", collections::native_frozen, NativeEffects::EFFECT);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");
     table.intrinsic_sort_by = Some(sort_by_id);

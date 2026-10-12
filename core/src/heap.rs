@@ -260,6 +260,11 @@ pub(crate) struct Slot<T> {
     high_water: u32,
     gc_mark: bool,
     alive: bool,
+    /// A *permanent* object ([`Heap::freeze`]): never swept, and never traced
+    /// by the marker (everything it references is permanent too, so a
+    /// collection skips the whole frozen graph). Cleared when the slot is
+    /// reused, which cannot happen while it is set.
+    permanent: bool,
 }
 
 /// A generic slot store with an index free list. Backs each of the heap's object
@@ -305,6 +310,7 @@ impl<T> Slab<T> {
             slot.high_water = generation;
             slot.gc_mark = false;
             slot.alive = true;
+            slot.permanent = false;
             return RawId {
                 index: idx,
                 generation,
@@ -317,6 +323,7 @@ impl<T> Slab<T> {
             high_water: 0,
             gc_mark: false,
             alive: true,
+            permanent: false,
         });
         RawId {
             index: idx,
@@ -343,6 +350,35 @@ impl<T> Slab<T> {
         self.slots
             .get(id.index as usize)
             .is_some_and(|slot| slot.alive && slot.generation == id.generation)
+    }
+
+    /// Whether `id` is a live permanent object ([`Heap::freeze`]).
+    #[inline]
+    pub(crate) fn is_permanent(&self, id: RawId) -> bool {
+        self.slots
+            .get(id.index as usize)
+            .is_some_and(|slot| slot.alive && slot.generation == id.generation && slot.permanent)
+    }
+
+    /// Freezing, pass 1: visit `id` unless it is dead, already visited (its
+    /// `gc_mark` is borrowed as the visited flag between collections) or
+    /// already permanent. Returns true when newly visited.
+    fn visit_for_freeze(&mut self, id: RawId) -> bool {
+        let slot = &mut self.slots[id.index as usize];
+        if slot.alive && slot.generation == id.generation && !slot.gc_mark && !slot.permanent {
+            slot.gc_mark = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Freezing, pass 2: clear the visited flag and, when `permanent`, make
+    /// the object permanent.
+    fn finish_freeze(&mut self, id: RawId, permanent: bool) {
+        let slot = &mut self.slots[id.index as usize];
+        slot.gc_mark = false;
+        slot.permanent |= permanent;
     }
 
     /// The payload `id` names, or `None` if it has been collected. For holders
@@ -384,7 +420,9 @@ impl<T> Slab<T> {
     /// A stale id marks nothing: it must not resurrect the slot's new occupant.
     pub(crate) fn mark(&mut self, id: RawId) -> bool {
         let slot = &mut self.slots[id.index as usize];
-        if slot.alive && slot.generation == id.generation && !slot.gc_mark {
+        // A permanent object is live by definition and so is everything it
+        // references: no need to look inside.
+        if slot.alive && slot.generation == id.generation && !slot.gc_mark && !slot.permanent {
             slot.gc_mark = true;
             true
         } else {
@@ -414,7 +452,7 @@ impl<T> Slab<T> {
         self.free.clear();
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.alive {
-                if slot.gc_mark {
+                if slot.gc_mark || slot.permanent {
                     slot.gc_mark = false;
                     continue;
                 }
@@ -439,6 +477,8 @@ impl<T> Slab<T> {
     pub(crate) fn clear_with(&mut self, on_reclaim: impl FnMut(RawId, &mut T)) {
         for slot in &mut self.slots {
             slot.gc_mark = false;
+            // Clearing reclaims frozen objects too: the store is going away.
+            slot.permanent = false;
         }
         self.sweep_with(on_reclaim);
     }
@@ -463,6 +503,7 @@ impl<T> Slab<T> {
                         high_water: theirs.high_water,
                         gc_mark: false,
                         alive: false,
+                        permanent: false,
                     });
                     if theirs.high_water != u32::MAX {
                         extra.push(i as u32);
@@ -601,15 +642,38 @@ pub struct Heap {
     empty_payload: Option<ListId>,
 }
 
-/// What one slot costs a collection, expressed in the same "bytes" currency as
-/// payload sizes so the two can be added into a single work estimate. Every
-/// collection walks *every* slot of every slab (mark clears + sweep), live or
-/// free, so slot count is a real cost driver independent of payload size —
-/// without this term a heap of a million empty lists would look free to trace
-/// and get collected constantly. The exact value is a rough weighting, not a
-/// measurement: it says "visiting a slot costs about as much as copying 64
-/// bytes".
+/// How many frozen (permanent) objects a heap holds, per kind. See
+/// [`Heap::frozen_counts`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrozenCounts {
+    pub strings: usize,
+    pub lists: usize,
+    pub f64_arrays: usize,
+    pub vec3s: usize,
+    pub maps: usize,
+    pub elements: usize,
+}
+
+impl FrozenCounts {
+    pub fn total(&self) -> usize {
+        self.strings + self.lists + self.f64_arrays + self.vec3s + self.maps + self.elements
+    }
+}
+
+/// What tracing one live object costs a collection, expressed in the same
+/// "bytes" currency as payload sizes so the two can be added into a single
+/// work estimate — without this term a heap of a million empty lists would
+/// look free to trace and get collected constantly. The exact value is a
+/// rough weighting, not a measurement: it says "visiting an object costs
+/// about as much as copying 64 bytes". (Walking a slot during the sweep is
+/// charged separately, as [`SLOT_WALK_COST`].)
 const SLOT_TRACE_COST: u64 = 64;
+
+/// What walking one slot costs the sweep, live, free or permanent, in the
+/// same currency. Much less than tracing a live object — and it must stay
+/// well under `SLOT_TRACE_COST / GC_HEAP_GROWTH`, or the budget grows with
+/// the slots its own garbage occupies (see `collection_cost`).
+const SLOT_WALK_COST: u64 = 8;
 
 /// Payload bytes of one `vec3` slot (three `f64`s).
 const VEC3_BYTES: usize = 3 * std::mem::size_of::<f64>();
@@ -769,10 +833,31 @@ impl Heap {
     }
 
     /// Estimated cost of running one collection right now: the live payload
-    /// this heap would have to trace, plus [`SLOT_TRACE_COST`] for every slot
-    /// the mark/sweep walks. O(slots) — only called at the end of a sweep,
-    /// which is already paying that walk.
+    /// this heap would have to trace plus [`SLOT_TRACE_COST`] per live object
+    /// (permanent objects are neither traced nor swept, so they count for
+    /// nothing), plus [`SLOT_WALK_COST`] for every slot the sweep walks. O(slots)
+    /// — only called at the end of a sweep, which is already paying that walk.
+    ///
+    /// Charging the full trace cost for *every* slot, live or free (as this
+    /// once did), fed back on itself: a bigger budget lets more garbage pile
+    /// up, the garbage needs more slots, and more slots raise the budget, so
+    /// a steadily allocating program's heap and collection pauses grew
+    /// without bound.
     fn collection_cost(&self) -> u64 {
+        fn traced<T>(slab: &Slab<T>, bytes: impl Fn(&T) -> u64) -> u64 {
+            slab.slots
+                .iter()
+                .filter(|s| s.alive && !s.permanent)
+                .map(|s| bytes(&s.data) + SLOT_TRACE_COST)
+                .sum()
+        }
+        let traced_cost = traced(&self.strings, |d| d.text.len() as u64)
+            + traced(&self.lists, |d| value_slice_bytes(d.len()))
+            + traced(&self.f64_arrays, |d| (d.len() * std::mem::size_of::<f64>()) as u64)
+            + traced(&self.vec3s, |_| VEC3_BYTES as u64)
+            + traced(&self.maps, |d| map_entries_bytes(&d.entries))
+            + traced(&self.elements, |_| 0)
+            + traced(&self.cells, |_| 0);
         let slots = (self.strings.slots.len()
             + self.lists.slots.len()
             + self.f64_arrays.slots.len()
@@ -780,7 +865,7 @@ impl Heap {
             + self.maps.slots.len()
             + self.elements.slots.len()
             + self.cells.slots.len()) as u64;
-        self.live_bytes() + SLOT_TRACE_COST * slots
+        traced_cost + SLOT_WALK_COST * slots
     }
 
     /// Returns true when enough has been allocated since the last collection to
@@ -1224,6 +1309,11 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place append on a dead list"
         );
+        if self.lists.is_permanent(id.raw()) {
+            // A frozen object is never mutated: copy, as the value-semantic
+            // form does.
+            return self.list_append(id, val);
+        }
         self.lists.get_mut(id.raw()).push(val);
         id
     }
@@ -1235,6 +1325,9 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place set on a dead list"
         );
+        if self.lists.is_permanent(id.raw()) {
+            return self.list_set(id, index, val);
+        }
         self.lists.get_mut(id.raw())[index] = val;
         id
     }
@@ -1246,6 +1339,9 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place drop_last on a dead list"
         );
+        if self.lists.is_permanent(id.raw()) {
+            return self.list_drop_last(id);
+        }
         self.lists.get_mut(id.raw()).pop();
         id
     }
@@ -1318,6 +1414,9 @@ impl Heap {
             self.f64_arrays.is_live(id.raw()),
             "in-place set on a dead f64 array"
         );
+        if self.f64_arrays.is_permanent(id.raw()) {
+            return self.f64_array_set(id, index, val);
+        }
         self.f64_arrays.get_mut(id.raw())[index] = val;
         id
     }
@@ -1329,6 +1428,9 @@ impl Heap {
             self.f64_arrays.is_live(id.raw()),
             "in-place swap on a dead f64 array"
         );
+        if self.f64_arrays.is_permanent(id.raw()) {
+            return self.f64_array_swap(id, i, j);
+        }
         self.f64_arrays.get_mut(id.raw()).swap(i, j);
         id
     }
@@ -1410,6 +1512,9 @@ impl Heap {
             self.maps.is_live(id.raw()),
             "in-place set on a dead map"
         );
+        if self.maps.is_permanent(id.raw()) {
+            return self.map_set(id, key, val);
+        }
         self.maps.get_mut(id.raw()).entries.insert(key, val);
         id
     }
@@ -1421,6 +1526,9 @@ impl Heap {
             self.maps.is_live(id.raw()),
             "in-place remove on a dead map"
         );
+        if self.maps.is_permanent(id.raw()) {
+            return self.map_remove(id, key);
+        }
         self.maps.get_mut(id.raw()).entries.shift_remove(key);
         id
     }
@@ -1613,6 +1721,159 @@ impl Heap {
     // Garbage collection: mark-and-sweep
     // -----------------------------------------------------------------------
 
+    /// Make `root` and everything it references **frozen** (permanent): the
+    /// collector never traces or sweeps them again. For big data that lives
+    /// as long as the program (a generated world kept in `state`, a rule
+    /// table) and would otherwise be re-traced by every collection: a rooted
+    /// table of 100,000 records is a pause of several milliseconds each time.
+    ///
+    /// Sound because heap objects are immutable (the escape-analysed in-place
+    /// operations fall back to copying for a frozen object), so a frozen
+    /// object can only ever reference other frozen objects. Values that can
+    /// change or reach outside the heap (a `var` cell, a closure or an
+    /// overload set) cannot be frozen: the whole call fails and nothing is
+    /// frozen.
+    ///
+    /// Freezing is one-way. There is no unfreeze, and a frozen value that
+    /// becomes unreachable stays allocated until the heap goes away (its
+    /// context is dropped, or replaced by a restored snapshot). A fork carries
+    /// the frozen set with it ([`fork`](Self::fork) clones the slots), so a
+    /// restored snapshot has exactly the frozen objects it was taken with.
+    ///
+    /// This is not a general "immutable value" bit: a cache whose entries are
+    /// rebuilt and released (static values, `docs/proposals/static-values.md`)
+    /// must not freeze them, because a frozen object is never freed.
+    ///
+    /// Must not be called while a collection is marking: the visited flag of
+    /// the walk borrows the mark bit, which is clear between collections.
+    ///
+    /// Returns how many objects were newly frozen (0 when `root` already was).
+    pub fn freeze(&mut self, root: Value) -> Result<usize, String> {
+        #[derive(Clone, Copy)]
+        enum Obj {
+            S(RawId),
+            L(RawId),
+            F(RawId),
+            V(RawId),
+            M(RawId),
+            E(RawId),
+        }
+        let mut visited: Vec<Obj> = Vec::new();
+        let mut stack = vec![root];
+        let mut error: Option<&'static str> = None;
+        while let Some(v) = stack.pop() {
+            match v {
+                Value::String(id) => {
+                    if self.strings.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::S(id.raw()));
+                    }
+                }
+                Value::List(id) => {
+                    if self.lists.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::L(id.raw()));
+                        stack.extend_from_slice(self.lists.get(id.raw()));
+                    }
+                }
+                Value::F64Array(id) => {
+                    if self.f64_arrays.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::F(id.raw()));
+                    }
+                }
+                Value::Vec3(id) => {
+                    if self.vec3s.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::V(id.raw()));
+                    }
+                }
+                Value::Map(id) => {
+                    if self.maps.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::M(id.raw()));
+                        let m = self.maps.get(id.raw());
+                        stack.extend(m.entries.values().copied());
+                        if let Some(class) = m.class {
+                            stack.push(Value::String(class));
+                        }
+                    }
+                }
+                Value::EnumVariant { tag, data } => {
+                    stack.push(Value::String(tag));
+                    stack.push(Value::List(data));
+                }
+                Value::Element(id) => {
+                    if self.elements.visit_for_freeze(id.raw()) {
+                        visited.push(Obj::E(id.raw()));
+                        let e = *self.elements.get(id.raw());
+                        stack.push(Value::String(e.tag));
+                        stack.push(Value::Map(e.props));
+                        stack.push(Value::List(e.children));
+                    }
+                }
+                Value::Cell(_) => error = Some("a `var` cell"),
+                Value::Closure(_) | Value::OverloadSet(_) => error = Some("a function"),
+                Value::Nil
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::NativeFunction(_)
+                | Value::Dual { .. }
+                | Value::Vec2(_, _)
+                | Value::Symbol(_)
+                | Value::Handle(_)
+                | Value::Pending(_) => {}
+            }
+            if error.is_some() {
+                break;
+            }
+        }
+        let ok = error.is_none();
+        for o in &visited {
+            match *o {
+                Obj::S(id) => self.strings.finish_freeze(id, ok),
+                Obj::L(id) => self.lists.finish_freeze(id, ok),
+                Obj::F(id) => self.f64_arrays.finish_freeze(id, ok),
+                Obj::V(id) => self.vec3s.finish_freeze(id, ok),
+                Obj::M(id) => self.maps.finish_freeze(id, ok),
+                Obj::E(id) => self.elements.finish_freeze(id, ok),
+            }
+        }
+        match error {
+            Some(what) => Err(format!("freeze: the value holds {what}, which cannot be frozen")),
+            None => Ok(visited.len()),
+        }
+    }
+
+    /// How many frozen objects this heap holds, per kind. A diagnostic: frozen
+    /// objects are never reclaimed, so a count that keeps rising means a
+    /// script is freezing values it builds repeatedly (per frame, per
+    /// reload) and leaking each one. O(slots).
+    pub fn frozen_counts(&self) -> FrozenCounts {
+        fn count<T>(slab: &Slab<T>) -> usize {
+            slab.slots.iter().filter(|s| s.alive && s.permanent).count()
+        }
+        FrozenCounts {
+            strings: count(&self.strings),
+            lists: count(&self.lists),
+            f64_arrays: count(&self.f64_arrays),
+            vec3s: count(&self.vec3s),
+            maps: count(&self.maps),
+            elements: count(&self.elements),
+        }
+    }
+
+    /// Whether `val` is a frozen (permanent) heap object (see [`freeze`](Self::freeze)).
+    /// Scalars and other non-heap values answer false.
+    pub fn is_frozen(&self, val: Value) -> bool {
+        match val {
+            Value::String(id) => self.strings.is_permanent(id.raw()),
+            Value::List(id) => self.lists.is_permanent(id.raw()),
+            Value::F64Array(id) => self.f64_arrays.is_permanent(id.raw()),
+            Value::Vec3(id) => self.vec3s.is_permanent(id.raw()),
+            Value::Map(id) => self.maps.is_permanent(id.raw()),
+            Value::Element(id) => self.elements.is_permanent(id.raw()),
+            Value::EnumVariant { data, .. } => self.lists.is_permanent(data.raw()),
+            _ => false,
+        }
+    }
+
     /// Mark a single value as reachable, recursively marking any heap objects it references.
     ///
     /// The scalar check is split out and inlined so marking a list of numbers
@@ -1699,11 +1960,14 @@ impl Heap {
 
     fn mark_map(&mut self, id: MapId) {
         if self.maps.mark(id.raw()) {
-            // Copy values to avoid borrow conflict
-            let values: Vec<Value> = self.maps.get(id.raw()).entries.values().copied().collect();
-            for val in values {
-                self.mark_value(val);
+            // Move the entries out while recursing, as mark_list does (a
+            // cycle returns at the mark before looking inside); copying the
+            // values into a fresh Vec cost an allocation per record.
+            let entries = std::mem::take(&mut self.maps.get_mut(id.raw()).entries);
+            for val in entries.values() {
+                self.mark_value(*val);
             }
+            self.maps.get_mut(id.raw()).entries = entries;
             // The class tag names a heap string. Marking it here is what keeps
             // the name alive for exactly as long as some instance carries it.
             if let Some(class) = self.maps.get(id.raw()).class {
@@ -2444,5 +2708,218 @@ mod tests {
         // The parent's own counters are untouched by the fork.
         assert_eq!(parent.dup_stats().get(DupKind::Fork).count, 0);
         assert_eq!(parent.dup_stats().get(DupKind::List).count, 1);
+    }
+
+    /// Frozen objects survive collections that mark nothing, are not traced,
+    /// and are never mutated in place (the in-place ops copy instead).
+    #[test]
+    fn frozen_values_survive_sweeps_and_are_never_mutated() {
+        let mut heap = Heap::new();
+        let name = heap.alloc_string("tower".to_string());
+        let inner = heap.alloc_list(vec![Value::Int(1), Value::String(name)]);
+        let mut entries = RecordMap::default();
+        entries.insert("parts".to_string(), Value::List(inner));
+        let root = heap.alloc_map(entries);
+        let garbage = heap.alloc_list(vec![Value::Int(9)]);
+
+        assert_eq!(heap.freeze(Value::Map(root)), Ok(3));
+        assert!(heap.is_frozen(Value::Map(root)));
+        assert!(heap.is_frozen(Value::List(inner)));
+        assert!(!heap.is_frozen(Value::List(garbage)));
+        assert_eq!(heap.freeze(Value::Map(root)), Ok(0), "already frozen");
+
+        heap.sweep(); // nothing was marked: only the unfrozen list goes
+        assert!(heap.maps.is_live(root.raw()));
+        assert!(heap.lists.is_live(inner.raw()));
+        assert!(heap.strings.is_live(name.raw()));
+        assert!(!heap.lists.is_live(garbage.raw()));
+
+        let grown = heap.list_append_in_place(inner, Value::Int(2));
+        assert_ne!(grown, inner, "a frozen list is copied, not grown in place");
+        assert_eq!(heap.lists.get(inner.raw()).len(), 2);
+        let set = heap.map_set_in_place(root, "h".to_string(), Value::Int(3));
+        assert_ne!(set, root);
+        assert!(!heap.maps.get(root.raw()).entries.contains_key("h"));
+    }
+
+    /// A vec3 inside frozen data is frozen with it: the marker never traces
+    /// a permanent map, so an unfrozen vec3 in it would be swept.
+    #[test]
+    fn frozen_values_freeze_their_vec3s() {
+        let mut heap = Heap::new();
+        let v = heap.alloc_vec3([1.0, 2.0, 3.0]);
+        let mut entries = RecordMap::default();
+        entries.insert("pos".to_string(), Value::Vec3(v));
+        let root = heap.alloc_map(entries);
+        assert_eq!(heap.freeze(Value::Map(root)), Ok(2));
+        assert!(heap.is_frozen(Value::Vec3(v)));
+        heap.sweep();
+        assert!(heap.vec3s.is_live(v.raw()));
+        assert_eq!(heap.get_vec3(v), [1.0, 2.0, 3.0]);
+    }
+
+    /// Every payload-free enum variant carries the heap's one shared empty
+    /// payload list, so freezing data that holds such a variant makes that
+    /// list permanent. That is safe (nothing grows it in place, and `sweep`
+    /// marking it is a no-op on a permanent slot), and the variant survives
+    /// collections with the record that holds it.
+    #[test]
+    fn frozen_values_freeze_the_shared_empty_enum_payload() {
+        let mut heap = Heap::new();
+        let tag = heap.alloc_string("Kind.park".to_string());
+        let data = heap.alloc_payload(&[]);
+        let variant = Value::EnumVariant { tag, data };
+        let mut entries = RecordMap::default();
+        entries.insert("kind".to_string(), variant);
+        let root = heap.alloc_map(entries);
+        assert_eq!(heap.freeze(Value::Map(root)), Ok(3));
+        assert!(heap.is_frozen(variant));
+        heap.sweep();
+        heap.sweep();
+        assert!(heap.is_live(variant));
+        // A variant made afterwards shares the (now permanent) payload.
+        assert_eq!(heap.alloc_payload(&[]), data);
+        assert_eq!(heap.get_list(data), &[] as &[Value]);
+    }
+
+    /// Freezing a value that holds a `var` cell fails and freezes nothing.
+    #[test]
+    fn freezing_a_cell_fails_and_freezes_nothing() {
+        let mut heap = Heap::new();
+        let cell = heap.alloc_cell(Value::Int(1));
+        let list = heap.alloc_list(vec![Value::Int(1)]);
+        let root = heap.alloc_list(vec![Value::List(list), Value::Cell(cell)]);
+        assert!(heap.freeze(Value::List(root)).is_err());
+        assert!(!heap.is_frozen(Value::List(root)));
+        assert!(!heap.is_frozen(Value::List(list)));
+        heap.sweep(); // the visited flags were cleared: everything is garbage
+        assert!(!heap.lists.is_live(root.raw()));
+    }
+
+    /// A program that allocates garbage at a steady rate reaches a steady
+    /// heap: the slot count and the collection budget stop growing. (The
+    /// budget once charged the full trace cost for free slots too, so the
+    /// garbage it let pile up raised the next budget, without bound.)
+    #[test]
+    fn steady_garbage_keeps_a_steady_heap() {
+        let mut heap = Heap::new();
+        let keep = heap.alloc_list((0..1000).map(Value::Int).collect());
+        let mut slots_at = Vec::new();
+        for round in 0..400 {
+            for i in 0..2000 {
+                let mut e = RecordMap::default();
+                e.insert("a".to_string(), Value::Int(i));
+                heap.alloc_map(e);
+            }
+            if heap.should_collect() {
+                heap.mark_value(Value::List(keep));
+                heap.sweep();
+            }
+            if round % 100 == 99 {
+                slots_at.push(heap.maps.slot_count());
+            }
+        }
+        assert!(heap.collections() > 10);
+        assert_eq!(slots_at[1], slots_at[3], "slot count keeps growing: {slots_at:?}");
+    }
+
+    /// A fork clones the slots, frozen bits included: the child's collector
+    /// skips the same objects and its in-place operations copy the same
+    /// ones. `inherit_generations` (the restore path) leaves the bits alone.
+    #[test]
+    fn a_fork_carries_the_frozen_bit() {
+        let mut parent = Heap::new();
+        let inner = parent.alloc_list(vec![Value::Int(1)]);
+        let root = parent.alloc_list(vec![Value::List(inner)]);
+        let loose = parent.alloc_list(vec![Value::Int(7)]);
+        parent.freeze(Value::List(root)).unwrap();
+
+        let mut child = parent.fork();
+        assert!(child.is_frozen(Value::List(root)));
+        assert!(child.is_frozen(Value::List(inner)));
+        assert!(!child.is_frozen(Value::List(loose)));
+        assert_eq!(child.frozen_counts(), parent.frozen_counts());
+        assert_eq!(child.frozen_counts().lists, 2);
+
+        child.sweep(); // nothing marked: the frozen pair stays, the rest goes
+        assert!(child.lists.is_live(root.raw()));
+        assert!(child.lists.is_live(inner.raw()));
+        assert!(!child.lists.is_live(loose.raw()));
+        let grown = child.list_append_in_place(root, Value::Int(2));
+        assert_ne!(grown, root);
+        assert_eq!(child.get_list(root).len(), 1);
+
+        // Freezing in the child does not reach back into the parent.
+        child.freeze(Value::List(grown)).unwrap();
+        assert_eq!(parent.frozen_counts().lists, 2);
+        assert!(parent.lists.is_live(loose.raw()));
+
+        // Restoring the fork over the parent's timeline keeps its frozen set.
+        let before = child.frozen_counts();
+        child.inherit_generations(&parent);
+        assert_eq!(child.frozen_counts(), before);
+        assert!(child.is_frozen(Value::List(root)));
+    }
+
+    /// The marker stops at a frozen object: a collection with a frozen table
+    /// rooted marks nothing inside it, and the budget set by the sweep does
+    /// not count it. (This is the point of freezing: the pause no longer
+    /// scales with the table.)
+    #[test]
+    fn a_collection_neither_traces_nor_budgets_frozen_data() {
+        fn table(heap: &mut Heap, n: i64) -> ListId {
+            let rows = (0..n)
+                .map(|i| {
+                    let mut e = RecordMap::default();
+                    e.insert("id".to_string(), Value::Int(i));
+                    Value::Map(heap.alloc_map(e))
+                })
+                .collect();
+            heap.alloc_list(rows)
+        }
+        let mut plain = Heap::new();
+        let t = table(&mut plain, 5000);
+        plain.mark_value(Value::List(t));
+        plain.sweep();
+        let plain_budget = plain.gc_budget;
+
+        let mut frozen = Heap::new();
+        let t = table(&mut frozen, 5000);
+        assert_eq!(frozen.freeze(Value::List(t)), Ok(5001));
+        frozen.mark_value(Value::List(t));
+        assert!(
+            frozen.lists.slots.iter().all(|s| !s.gc_mark) && frozen.maps.slots.iter().all(|s| !s.gc_mark),
+            "marking a frozen root must not touch any slot"
+        );
+        frozen.sweep();
+        assert_eq!(frozen.frozen_counts().maps, 5000);
+        assert!(
+            frozen.gc_budget < plain_budget,
+            "frozen data must not raise the collection budget: {} vs {plain_budget}",
+            frozen.gc_budget
+        );
+    }
+
+    /// Freezing a value that holds a closure fails and freezes nothing, and
+    /// a value already holding frozen parts freezes only the new ones.
+    #[test]
+    fn freezing_is_all_or_nothing_and_incremental() {
+        let mut heap = Heap::new();
+        let a = heap.alloc_list(vec![Value::Int(1)]);
+        assert_eq!(heap.freeze(Value::List(a)), Ok(1));
+        let b = heap.alloc_list(vec![Value::List(a), Value::Int(2)]);
+        assert_eq!(heap.freeze(Value::List(b)), Ok(1), "only the new outer list");
+
+        let c = heap.alloc_list(vec![Value::List(a)]);
+        let bad = heap.alloc_list(vec![
+            Value::List(c),
+            Value::Closure(ClosureId::from_raw(RawId { index: 0, generation: 0 })),
+        ]);
+        let err = heap.freeze(Value::List(bad)).unwrap_err();
+        assert!(err.contains("a function"), "{err}");
+        assert!(!heap.is_frozen(Value::List(bad)));
+        assert!(!heap.is_frozen(Value::List(c)));
+        assert!(heap.is_frozen(Value::List(a)), "what was frozen before stays frozen");
+        assert_eq!(heap.frozen_counts().total(), 2);
     }
 }

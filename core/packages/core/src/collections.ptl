@@ -52,3 +52,9 @@ pub native fn filter(list, pred)
 pub native fn reduce(list, initial, f)
 pub native fn forEach(list, f)
 pub native fn sort_by(list: list, key: function, descending?) -> list
+
+// Frozen (permanent) heap objects: `freeze` returns its argument, which the
+// collector then neither traces nor frees; `frozen` asks whether a value is.
+// One-way, for data that lives as long as the program. docs/Builtins.md.
+pub native fn freeze(value)
+pub native fn frozen(value) -> bool

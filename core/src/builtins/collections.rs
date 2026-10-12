@@ -184,6 +184,32 @@ pub(super) fn native_append(state: &mut PetalCxt) -> Result<u32, String> {
     }
 }
 
+/// `freeze(value)` makes `value` and everything it references permanent: the
+/// garbage collector never traces or frees it again, which removes the pause
+/// a big long-lived structure (a generated world kept in `state`) otherwise
+/// adds to every collection. Returns `value`. Freezing an already frozen
+/// value is O(1). Fails on values holding functions or `var` cells. Frozen
+/// data stays allocated until the program restarts, so freeze data that
+/// lives about that long, not per-frame values.
+pub(super) fn native_freeze(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "freeze")?;
+    let v = state.get_value(1)?;
+    if !state.heap().is_frozen(v) {
+        state.heap_mut().freeze(v)?;
+    }
+    state.push_value(v);
+    Ok(1)
+}
+
+/// `frozen(value)` — whether `value` is a frozen (permanent) heap object.
+pub(super) fn native_frozen(state: &mut PetalCxt) -> Result<u32, String> {
+    require_args(state, 1, "frozen")?;
+    let v = state.get_value(1)?;
+    let f = state.heap().is_frozen(v);
+    state.push_value(Value::Bool(f));
+    Ok(1)
+}
+
 /// `prepend(list, value)` returns a NEW list with `value` in front of every
 /// element of `list` (value semantics; the input is never mutated). The mirror
 /// of `append`, which had no counterpart — building a list front-to-back

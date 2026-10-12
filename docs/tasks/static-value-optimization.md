@@ -545,10 +545,14 @@ What the audit rows do not show:
   petal-lang.org and tool scripts, 8 in `docs/aspirational-ideas` and
   `core-runtime/glsl/tests`, 2 in `~/.garden`. `petal run` refuses them
   before the first line. The survey expected almost nothing static there.
-- The two expected test failures under `PETAL_STATIC_AUDIT=watch` are the
-  test that the variable is off by default and
-  `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile`, a timing
-  test (the audit classifies the program on every lowering).
+- Under `PETAL_STATIC_AUDIT=watch` one core test fails by design: the one
+  that checks the variable is off by default. The core suite was run in the
+  release profile, where
+  `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile` also
+  fails with or without the audit: it asserts a value edit is 5× cheaper
+  than a recompile and measures 3.9× (2.9 ms against 11.3 ms). It passes in
+  the debug profile it was written for (17 ms against 183 ms) and does not
+  touch anything this step changed. 2,408 of 2,409 otherwise.
 
 **For S1.** Building all of Moses's static declarations, the 74 tables
 included, is 35,195 instructions, so "clear every static value on a reload"

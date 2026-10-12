@@ -100,6 +100,19 @@ impl<'a> Vm<'a> {
             self.set(fi, dst, v);
             return Ok(());
         }
+        // `Enum.all` where the caller goes on to rewrite the list: the flag
+        // asks for a list of its own, not the one the stack shares (the
+        // escape analysis took this read for a fresh allocation).
+        if in_place && self.native_fns.intrinsic_enum_all == Some(nid) {
+            self.profile.record_native(nid.0);
+            let mut v = self.enum_all(args)?;
+            if let Value::List(shared) = v {
+                let own = self.heap.get_list(shared).to_vec();
+                v = Value::List(self.heap.alloc_list(own));
+            }
+            self.set(fi, dst, v);
+            return Ok(());
+        }
         // Mutating builtins (`append`/`set`/…) are never intrinsics, so the
         // in-place flag can go straight to the leaf.
         let v = if in_place {

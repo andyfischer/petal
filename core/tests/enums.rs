@@ -1656,3 +1656,172 @@ print(sum(), K.b.v, K.all)
         assert_eq!(env.call_function(sid, "sum", &[]).unwrap(), Value::Int(3));
     }
 }
+
+// ── A1 review ────────────────────────────────────────────────────────────
+
+#[test]
+fn every_way_of_rewriting_a_list_that_began_as_all_leaves_all_alone() {
+    // The shared list reaches a rewrite through a wrapper function, an index
+    // write on a `let`, a `var`, a record field, a parameter, a nested list
+    // and `state` — each of which the optimizer might take for a container
+    // the code owns. None may write through it, on any frame.
+    let src = "\
+enum K
+  a(v: 1),
+  b(v: 2),
+  c(v: 3),
+end
+fn all()
+  K.all
+end
+fn wrap_append()
+  append(all(), 7)
+end
+fn idx_let()
+  let xs = K.all
+  xs[0] = K.c
+  xs
+end
+fn idx_loop()
+  var xs = all()
+  for i in range(0, 3) do
+    set xs[i] = i
+  end
+  xs
+end
+fn rec()
+  let r = { xs: K.all }
+  r.xs = append(r.xs, 1)
+  r.xs[1] = 5
+  r
+end
+fn param(xs)
+  xs[0] = 99
+  xs = append(xs, 100)
+  xs
+end
+fn collect()
+  var out = K.all
+  for k in K.all do
+    set out = append(out, k.v)
+  end
+  out
+end
+fn nested()
+  var ys = [K.all, K.all]
+  set ys[0][0] = 1
+  ys
+end
+state kept = K.all
+kept[0] = K.b
+state grown = all()
+grown = append(grown, 1)
+grown[1] = 0
+print(wrap_append())
+print(idx_let())
+print(idx_loop())
+print(rec())
+print(param(K.all), param(all()))
+print(collect())
+print(nested())
+print(kept, grown[0], grown[1], len(grown) > 3)
+print(map(K.all, fn(k) -> k.v), filter(K.all, fn(k) -> k.v > 1))
+print(K.all, all())
+";
+    let expect = [
+        "[K.a, K.b, K.c, 7]",
+        "[K.c, K.b, K.c]",
+        "[0, 1, 2]",
+        "{ xs: [K.a, 5, K.c, 1] }",
+        "[99, K.b, K.c, 100] [99, K.b, K.c, 100]",
+        "[K.a, K.b, K.c, 1, 2, 3]",
+        "[[1, K.b, K.c], [K.a, K.b, K.c]]",
+        "[K.b, K.b, K.c] K.a 0 true",
+        "[1, 2, 3] [K.b, K.c]",
+        "[K.a, K.b, K.c] [K.a, K.b, K.c]",
+    ];
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
+        for frame in frames(src, policy, 4) {
+            assert_eq!(frame, expect, "{policy:?}");
+        }
+    }
+}
+
+/// A rebinding variable that starts as `Enum.all` and is rewritten in a loop
+/// (the Fisher-Yates bag of examples/games/tetris, an `append` accumulator)
+/// gets a list of its own at the read, so the loop rewrites it in place: one
+/// allocation for the whole loop and no copy per iteration, which is what it
+/// cost when `Enum.all` allocated on every read. The shared list is not the
+/// one rewritten.
+#[test]
+fn an_accumulator_that_starts_as_all_is_copied_once_and_then_grown_in_place() {
+    let src = "\
+enum Piece
+  i, o, t, s, z, j, l,
+end
+fn shuffled(seed)
+  let bag = Piece.all
+  let s = seed
+  let i = 6
+  while i > 0 do
+    s = (s * 1103515245 + 12345) % 2147483648
+    let j = s % (i + 1)
+    let tmp = bag[i]
+    bag[i] = bag[j]
+    bag[j] = tmp
+    i = i - 1
+  end
+  bag
+end
+fn grown()
+  let xs = Piece.all
+  for i in range(0, 100) do
+    xs = append(xs, i)
+  end
+  xs
+end
+fn branched(flip)
+  let xs = Piece.all
+  if flip then
+    xs = append(xs, 1)
+  end
+  xs
+end
+var n = 0
+for round in range(0, 50) do
+  set n = n + len(shuffled(round)) + len(grown())
+end
+print(n, shuffled(3), len(grown()), grown()[7])
+print(branched(true), branched(false))
+print(Piece.all)
+";
+    let expect = [
+        "5700 [Piece.i, Piece.z, Piece.o, Piece.j, Piece.l, Piece.s, Piece.t] 107 0",
+        "[Piece.i, Piece.o, Piece.t, Piece.s, Piece.z, Piece.j, Piece.l, 1] \
+         [Piece.i, Piece.o, Piece.t, Piece.s, Piece.z, Piece.j, Piece.l]",
+        "[Piece.i, Piece.o, Piece.t, Piece.s, Piece.z, Piece.j, Piece.l]",
+    ];
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
+        for frame in frames(src, policy, 3) {
+            assert_eq!(frame, expect, "{policy:?}");
+        }
+    }
+
+    // With the optimizer on, a run allocates one list per accumulator (its
+    // private copy) rather than one per rewrite: 52 `shuffled` + 53 `grown`
+    // + 2 `branched`, and the loop's `range` lists if it has any — far under
+    // the 600 + 5,300 a copy per rewrite makes.
+    let mut env = env_with(&[]);
+    env.set_policy(RunPolicy::FAST);
+    env.set_heap_stats(true);
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let lists = |env: &Env| env.alloc_stats_for(sid).unwrap().get(petal::stats::AllocKind::List);
+    env.run(sid).unwrap();
+    let first = lists(&env);
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output().len(), 6);
+    let per_run = lists(&env) - first;
+    assert!(per_run <= 300, "{per_run} lists allocated in a run");
+}

@@ -172,6 +172,11 @@ pub struct InPlaceSet {
     /// not be a memoized scope (`crate::memo`): its record would keep the
     /// returned container as the cached result while the caller rewrites it.
     fresh_root_calls: HashSet<TermId>,
+    /// `Enum.all` reads that hand out a private copy of the stack's shared
+    /// list rather than the list itself (see [`Analysis::copies_enum_all`]).
+    /// The analysis took exactly these for fresh roots, so the lowering must
+    /// make exactly these copy.
+    enum_all_copies: HashSet<TermId>,
     /// The cell accesses that keep their cell's ownership of its container
     /// (`super::cells`). A separate analysis with its own flag; it rides here
     /// because lowering consults both for the same question.
@@ -202,6 +207,13 @@ impl InPlaceSet {
         !self.fresh_root_calls.contains(&t)
     }
 
+    /// Whether the `Enum.all` read `t` must yield a list of its own: the
+    /// analysis treated it as a fresh allocation, which the stack's shared
+    /// list is not.
+    pub fn copies_enum_all(&self, t: TermId) -> bool {
+        self.enum_all_copies.contains(&t)
+    }
+
     /// Number of terms proven in-place-safe (diagnostics / tests).
     pub fn len(&self) -> usize {
         self.terms.len()
@@ -227,6 +239,11 @@ pub fn analyze(program: &Program) -> InPlaceSet {
             {
                 set.fresh_root_calls.insert(root);
             }
+        }
+        // Every read `is_fresh_root` answers "fresh" for, whether or not a
+        // web was accepted on it: the answer is only true if the read copies.
+        if ctx.copies_enum_all(term) {
+            set.enum_all_copies.insert(term.id);
         }
     }
     set
@@ -1026,7 +1043,30 @@ impl<'p> Analysis<'p> {
         if Self::is_fresh_alloc(term) {
             return true;
         }
-        self.call_returns_fresh(term)
+        self.copies_enum_all(term) || self.call_returns_fresh(term)
+    }
+
+    /// Whether `term` is an `Enum.all` read that is lowered to hand out a
+    /// private copy of the list, and so is a fresh root.
+    ///
+    /// `Enum.all` normally yields the one list the stack keeps for the enum
+    /// (`EnumTable::all`), which no reader may write through — it is not a
+    /// fresh container. But a read that starts a rebinding variable
+    /// (`let bag = Piece.all` and then `bag[i] = …` or `bag = append(bag, …)`
+    /// in a loop) would then copy the list on every iteration, where one
+    /// allocation at the read lets the whole loop run in place. So a read
+    /// whose value is the *init of a phi* — the start of a variable some loop
+    /// or branch rebinds — copies, and is fresh in the plain sense.
+    ///
+    /// This is a property of the term alone, decided before any web is
+    /// examined, and [`analyze`] hands the lowering every term it holds for:
+    /// what the analysis assumed and what runs cannot come apart. A read that
+    /// copies without its web being accepted costs the allocation `Enum.all`
+    /// always cost before the list was shared, and nothing else.
+    fn copies_enum_all(&self, term: &Term) -> bool {
+        matches!(&term.op, TermOp::BuiltinCall(cid)
+            if self.program.get_string_constant(*cid) == Some(crate::program::ENUM_ALL_BUILTIN))
+            && self.phi_by_init.get(&term.id).is_some_and(|phis| !phis.is_empty())
     }
 
     /// [`Self::is_fresh_root`] for the call forms, split out so the recursion

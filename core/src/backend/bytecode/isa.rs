@@ -347,6 +347,11 @@ pub enum Inst {
     /// provably unique + non-escaping — the VM then lets it mutate + reuse the
     /// backing store instead of cloning. Always false unless
     /// `OptFlags::in_place_mutation` proved it.
+    ///
+    /// On `__enum_all` (`Enum.all`) the flag means the result is the caller's
+    /// own: the VM hands out a copy of the stack's shared list, because the
+    /// same analysis took this read for the fresh root of an in-place web
+    /// (`escape::Analysis::copies_enum_all`).
     BuiltinCall {
         dst: Reg,
         name: ConstantId,

@@ -568,7 +568,9 @@ impl<'p> FnLowerer<'p> {
                 dst,
                 name: *name,
                 args: self.regs(ins)?,
-                in_place: self.in_place.allows(term.id),
+                // On a mutating builtin: rewrite the container. On `Enum.all`:
+                // hand out a list of the caller's own (`copies_enum_all`).
+                in_place: self.in_place.allows(term.id) || self.in_place.copies_enum_all(term.id),
                 arg_names: term.arg_names.clone(),
             },
             TermOp::MakeClosure(fn_id) => Inst::MakeClosure {

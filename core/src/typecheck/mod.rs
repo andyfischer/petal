@@ -218,14 +218,6 @@ pub enum Callee<'a> {
 /// `f(...)`.
 pub type CalleeResolver<'a> = &'a dyn Fn(Option<&str>, &str) -> Callee<'a>;
 
-/// The enums `stmts` declares at its top level: each name with its variants.
-fn enum_decls(stmts: &[Stmt]) -> impl Iterator<Item = (&String, &Vec<crate::ast::EnumVariant>)> {
-    stmts.iter().filter_map(|s| match &s.kind {
-        StmtKind::EnumDecl { name, variants } => Some((name, variants)),
-        _ => None,
-    })
-}
-
 /// Everything one walk of a module needs to know about the compilation around
 /// it. Bundled rather than passed positionally: the list had grown to five and
 /// two of the maps have the same shape, which is exactly the argument order a
@@ -1289,7 +1281,11 @@ impl<'a> Checker<'a> {
     /// members; what the pass keeps is which enum it is, so a member read
     /// through it (`Shape.circle(1)`) is typed. See [`Checker::static_enum`].
     fn bind_enum_names(&mut self, stmts: &[Stmt]) {
-        let names: Vec<String> = enum_decls(stmts).map(|(name, _)| name.clone()).collect();
+        let names = stmts.iter().filter_map(|s| match &s.kind {
+            StmtKind::EnumDecl { name, .. } => Some(name.clone()),
+            _ => None,
+        });
+        let names: Vec<String> = names.collect();
         for name in names {
             let id = self.classes.lookup_enum(&name);
             self.bind(name.clone(), None, Type::Record);

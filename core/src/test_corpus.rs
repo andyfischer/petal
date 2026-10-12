@@ -57,18 +57,29 @@ fn collect_ptl(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Run `check` over every corpus file on all cores and return the results in
-/// corpus order. The corpus sweeps that compile each file are minutes of
-/// single-threaded work in a debug build and independent per file, so they
-/// fan out here rather than sample the corpus. A panic in `check` is
+/// How many threads a corpus sweep fans out on: `PETAL_TEST_JOBS` when set,
+/// else half the cores. Half, because the test harness is already running
+/// other tests on every core, and several sweeps run at once: a sweep that
+/// took all of them would put three or four times the machine's cores to
+/// work for minutes.
+pub fn sweep_workers() -> usize {
+    std::env::var("PETAL_TEST_JOBS")
+        .ok()
+        .and_then(|n| n.parse::<usize>().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()) / 2)
+        .max(1)
+}
+
+/// Run `check` over every corpus file on [`sweep_workers`] threads and return
+/// the results in corpus order. The corpus sweeps that compile each file are
+/// minutes of single-threaded work in a debug build and independent per file,
+/// so they fan out here rather than sample the corpus. A panic in `check` is
 /// re-raised on the calling thread with its original message.
 pub fn par_map<T: Send>(files: &[PathBuf], check: impl Fn(&Path) -> T + Sync) -> Vec<T> {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let next = AtomicUsize::new(0);
-    let workers = std::thread::available_parallelism()
-        .map_or(4, |n| n.get())
-        .min(files.len().max(1));
+    let workers = sweep_workers().min(files.len().max(1));
     let mut indexed: Vec<(usize, T)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {

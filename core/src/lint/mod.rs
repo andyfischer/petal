@@ -395,8 +395,8 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
-        if compile_ir(source, opts).is_ok()
-            && let Err(e) = compile_ir(&rewritten, opts)
+        if compiles(source, opts).is_ok()
+            && let Err(e) = compiles(&rewritten, opts)
         {
             return Err(format!(
                 "lint bug: a rewrite broke compilation — refusing to produce output ({e})"
@@ -654,9 +654,17 @@ pub fn verify_rewrite(
     Ok(VerifyVerdict::SemanticChange { diff })
 }
 
+/// Whether `source` compiles: the does-it-still-compile gate. Nothing is
+/// kept of the program, so nothing is built from it either.
+fn compiles(source: &str, opts: &LintOptions) -> Result<(), String> {
+    crate::ir_equiv::compile_for_compare(source, &opts.include_dirs, opts.origin.as_deref())
+        .map(|_| ())
+}
+
 /// Compile `source` and return its entry program's serialized IR, minus the
-/// source text and source map (whitespace edits move spans). Used as a
-/// does-it-still-compile gate, and by the corpus test to compare programs.
+/// source text and source map (whitespace edits move spans). What the corpus
+/// test compares two programs by.
+#[cfg(test)]
 fn compile_ir(source: &str, opts: &LintOptions) -> Result<serde_json::Value, String> {
     let (env, pid) =
         crate::ir_equiv::compile_for_compare(source, &opts.include_dirs, opts.origin.as_deref())?;
@@ -701,19 +709,24 @@ mod tests {
                 // would be checked of a text against itself.
                 return Some(false);
             }
-            let Ok(src_ir) = compile_ir(&src, &opts) else {
+            if compiles(&src, &opts).is_err() {
                 return None; // doesn't compile standalone; nothing to compare
-            };
-            let out_ir = match compile_ir(&outcome.output, &opts) {
-                Ok(ir) => ir,
-                Err(e) => panic!("lint broke compilation for {}: {}", path.display(), e),
-            };
+            }
             // A file only the IR-invisible rules touched must be
             // byte-identical in IR. The semantic rules change the IR on
             // purpose — deleting a call, replacing an `if` chain with a
             // `match`, a cell with a rebind — so a file one of them touched
-            // is gated by compilation above instead.
-            if !outcome.has_semantic_rewrite() {
+            // is held to compiling, and its IR is not built to be ignored.
+            if outcome.has_semantic_rewrite() {
+                if let Err(e) = compiles(&outcome.output, &opts) {
+                    panic!("lint broke compilation for {}: {}", path.display(), e);
+                }
+            } else {
+                let src_ir = compile_ir(&src, &opts).expect("compiled a moment ago");
+                let out_ir = match compile_ir(&outcome.output, &opts) {
+                    Ok(ir) => ir,
+                    Err(e) => panic!("lint broke compilation for {}: {}", path.display(), e),
+                };
                 assert_eq!(
                     src_ir,
                     out_ir,

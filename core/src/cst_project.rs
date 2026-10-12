@@ -1842,12 +1842,17 @@ mod tests {
             };
             let projected = projected_ast(&src)
                 .unwrap_or_else(|e| panic!("projection failed for {}: {e}", path.display()));
-            assert_eq!(
-                format!("{direct:#?}"),
-                format!("{projected:#?}"),
-                "projected AST differs from parser AST for {}",
-                path.display()
-            );
+            // Compared in the compact form, which says the same as the
+            // pretty one at a fraction of the cost; the pretty form is only
+            // built for the failure message.
+            if format!("{direct:?}") != format!("{projected:?}") {
+                assert_eq!(
+                    format!("{direct:#?}"),
+                    format!("{projected:#?}"),
+                    "projected AST differs from parser AST for {}",
+                    path.display()
+                );
+            }
             true
         });
         let checked = checked.into_iter().filter(|c| *c).count();

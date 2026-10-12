@@ -2307,8 +2307,7 @@ static    config let SCALE  line 1    read only by static code (W)
 static    let W             line 2    read by dynamic code (captured by hd)
 function  fn hd             line 3    static-pure
 static    let ROWS          line 6    read by dynamic code (line 11)
-dynamic   state counter     line 7
-            = counter is state, which changes between runs at line 7
+dynamic   state counter     line 7    its initializer is static
 dynamic   let next          line 8
             = next reads counter at line 8
             = counter is state, which changes between runs at line 7
@@ -2336,6 +2335,9 @@ Each declaration is one of three classes.
 - **dynamic** — everything else, including anything the classifier cannot
   resolve. The lines under it are the chain of reasons, one link per
   declaration or function crossed, down to the term that makes it dynamic.
+  A `state` or a `var` is dynamic by being one and gets no chain; a `state`
+  whose initializer is static says so, since it may be a constant that was
+  parked in `state` to avoid rebuilding it.
 
 The rules that most often decide an answer:
 

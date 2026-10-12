@@ -1100,6 +1100,10 @@ let now = live + SIZE
             .unwrap_or_else(|| panic!("no line with {needle:?} in\n{text}"))
     };
     assert!(line("state live").starts_with("dynamic"), "{text}");
+    // A `state` is dynamic by being one: no reason line of its own, and a
+    // note when its initializer is static (it may really be a constant).
+    assert!(line("state live").ends_with("its initializer is static"), "{text}");
+    assert_eq!(text.matches("live is state").count(), 1, "{text}");
     assert!(line("let TABLE").starts_with("static"), "{text}");
     assert!(line("let TABLE").contains("read by dynamic code (captured by row)"), "{text}");
     assert!(line("let SIZE").contains("read by dynamic code (now)"), "{text}");

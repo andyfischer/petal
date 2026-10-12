@@ -455,12 +455,21 @@ impl StaticReport {
                     Some(true) => "static-pure".to_string(),
                     _ => "not static-pure".to_string(),
                 },
+                // A `state` or a `var` is dynamic by being one; a line under
+                // it saying so is noise in a file that declares forty.
+                DeclClass::Dynamic if self_evident(d) => match d.initializer_static {
+                    Some(true) => "its initializer is static".to_string(),
+                    _ => String::new(),
+                },
                 DeclClass::Dynamic => String::new(),
             };
             let row = format!("{class:<9} {what:<width$}  {line:<9} {note}");
             writeln!(out, "{}", row.trim_end()).unwrap();
             if let Some(m) = &d.mutated_by {
                 writeln!(out, "            ! not kept: {}", m.render()).unwrap();
+            }
+            if self_evident(d) {
+                continue;
             }
             for step in &d.reason {
                 writeln!(out, "            = {}", step.render()).unwrap();
@@ -495,6 +504,13 @@ impl StaticReport {
             "declarations": decls,
         })
     }
+}
+
+/// A `state` or `var` declaration whose whole reason is that it is one.
+fn self_evident(d: &StaticDecl) -> bool {
+    matches!(d.kind, DeclKind::State | DeclKind::Var)
+        && d.class == DeclClass::Dynamic
+        && d.reason.len() == 1
 }
 
 fn display_name(d: &StaticDecl, qualified: bool) -> &str {

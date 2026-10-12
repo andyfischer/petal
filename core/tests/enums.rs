@@ -1186,3 +1186,473 @@ fn error_texts_name_what_was_written() {
     assert!(e.contains("`Kind` is an enum, and methods are declared on classes only"), "{e}");
     assert!(!e.contains("class Kind"), "{e}");
 }
+
+// ── The read path: slots, the shared `all` list, cheap declaration ──────
+//
+// What docs/tasks/static-value-optimization.md (A1) changed underneath the
+// rules above: a declared variant is found by a slot in the stack's enum
+// table rather than by its tag's text, `Enum.all` is one list per stack, and
+// a run that publishes the data the run before published does no comparing.
+// None of it is visible to a program; these hold it to that.
+
+use petal::native_fn::{NativeEffects, NativeResult, PetalCxt};
+use petal::policy::RunPolicy;
+use petal::value::Value;
+
+/// `host_variant(tag, ...payload)`: a variant value built by the host, with
+/// whatever tag it is given, the way `PetalCxt::emit` and the C bridge's
+/// `pb_builder_begin_enum` build one.
+fn native_host_variant(cx: &mut PetalCxt) -> NativeResult {
+    let Value::String(tag) = cx.get_value(1)? else {
+        return Err("host_variant: tag".into());
+    };
+    let tag = cx.heap().get_string(tag).to_string();
+    let payload: Vec<Value> = (2..=cx.arg_count()).map(|i| cx.get_value(i)).collect::<Result<_, _>>()?;
+    let heap = cx.heap_mut();
+    let tag = heap.alloc_string(tag);
+    let data = heap.alloc_list(payload);
+    cx.push_value(Value::EnumVariant { tag, data });
+    Ok(1)
+}
+
+fn host_env() -> Env {
+    let mut env = env_with(&[]);
+    env.register_native("host_variant", native_host_variant, NativeEffects::PURE);
+    env
+}
+
+/// Run `src` in an env that has `host_variant`, under `policy`.
+fn run_host(src: &str, policy: RunPolicy) -> Result<Vec<String>, String> {
+    let mut env = host_env();
+    env.set_policy(policy);
+    let src = format!("native fn host_variant(...args)\n{src}");
+    let pid = env.load_program(&src).unwrap_or_else(|e| panic!("{src}\n-- failed to compile: {e}"));
+    let sid = env.create_stack(pid).unwrap();
+    env.run(sid)?;
+    Ok(env.take_output())
+}
+
+#[test]
+fn a_variant_a_host_built_with_a_free_form_tag_still_works() {
+    // No enum declares `blob` or `draw.rect`: the value has a name, a
+    // payload a pattern can take apart, and no fields.
+    let src = "\
+enum Kind
+  park(shape: \"area\"),
+  road(shape: \"route\"),
+end
+let b = host_variant(\"blob\", 1, 2)
+let d = host_variant(\"draw.rect\", 3)
+print(b, b.name, type(b), d, d.name)
+print(b == host_variant(\"blob\", 1, 2), b == host_variant(\"blob\", 1, 3), b == Kind.park)
+print(b.shape ?? \"none\", d?.shape, b?.name)
+";
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
+        assert_eq!(
+            run_host(src, policy).unwrap(),
+            ["blob(1, 2) blob enum draw.rect(3) rect", "true false false", "none nil blob"]
+        );
+        let e = run_host(&format!("{src}print(b.shape)"), policy).unwrap_err();
+        assert!(e.contains("No field 'shape' on enum variant blob"), "{e}");
+    }
+}
+
+#[test]
+fn a_variant_a_host_built_with_a_declared_tag_is_that_variant() {
+    // The tag is all a variant is: one the host spells like a declared
+    // variant reads that variant's data and payload names, and equals it.
+    let src = "\
+enum Kind
+  park(shape: \"area\"),
+  road(shape: \"route\"),
+end
+enum Op
+  move(dx, dy, tone: \"go\"),
+end
+let k = host_variant(\"Kind.road\")
+let op = host_variant(\"Op.move\", 3, 4)
+print(k, k.shape, k.name, k == Kind.road, k == Kind.park)
+print(op.dx, op.dy, op.tone, op == Op.move(3, 4))
+let short = host_variant(\"Op.move\", 3)
+print(short.dx, short.dy ?? \"none\", short.tone)
+";
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
+        assert_eq!(
+            run_host(src, policy).unwrap(),
+            ["Kind.road route road true false", "3 4 go true", "3 none go"]
+        );
+    }
+}
+
+#[test]
+fn a_variant_too_long_to_intern_is_found_by_its_text() {
+    // A tag past the heap's interning limit has a new id every time it is
+    // built, so the table's index never holds it; its text still does.
+    let long = "v".repeat(petal::heap::INTERN_MAX_LEN + 40);
+    let src = format!(
+        "enum K\n  {long}(code: 7),\n  w(code: 8),\nend\n\
+         let k = K.{long}\nprint(k.code, K.w.code, k == K.{long}, len(K.all), K.all[0].code)\n\
+         fn pick(k)\n  match k\n    when K.{long} -> \"long\"\n    when K.w -> \"w\"\n  end\nend\n\
+         print(pick(k), pick(K.w), len(k.name))"
+    );
+    let expect = ["7 8 true 2 7".to_string(), format!("long w {}", long.len())];
+    assert_eq!(run(&src), expect);
+    assert_eq!(frames(&src, RunPolicy::BASELINE, 2)[1], expect);
+}
+
+#[test]
+fn a_variant_kept_in_state_follows_every_edit_of_its_enum() {
+    // docs/hot-reload.md, "Editing an enum", row by row. The kept value is a
+    // tag and a payload; the slot it is found at is the running program's.
+    let v1 = "\
+enum Kind
+  park(shape: \"area\"),
+  road(shape: \"route\"),
+end
+enum Op
+  fight(place, won, tone: \"bad\"),
+end
+state kept = Kind.road
+state op = Op.fight(\"bridge\", true)
+print(kept, kept.shape, kept.name, op.place, op.tone)
+print(Kind.all)
+";
+    let mut env = env_with(&[]);
+    let pid = env.load_program(v1).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let step = |env: &mut Env, src: Option<&str>| -> Result<Vec<String>, String> {
+        if let Some(src) = src {
+            env.reload_program(sid, src, None).unwrap();
+        }
+        env.reset_stack(sid).unwrap();
+        env.run(sid)?;
+        Ok(env.take_output())
+    };
+    assert_eq!(
+        step(&mut env, None).unwrap(),
+        ["Kind.road route road bridge bad", "[Kind.park, Kind.road]"]
+    );
+    // A literal in the data: patched, and the kept variant answers anew.
+    let v2 = v1.replace("\"route\"", "\"street\"");
+    assert_eq!(
+        step(&mut env, Some(&v2)).unwrap(),
+        ["Kind.road street road bridge bad", "[Kind.park, Kind.road]"]
+    );
+    // A variant added in front and the rest reordered: every slot moves, the
+    // kept variant is still `road`, and `Kind.all` follows the declaration.
+    let v3 = "\
+enum Kind
+  lake(shape: \"water\", cost: 1),
+  road(shape: \"street\", cost: 2),
+  park(shape: \"area\", cost: 3),
+end
+enum Op
+  fight(place, won, tone: \"bad\"),
+end
+state kept = Kind.park
+state op = Op.fight(\"x\", false)
+print(kept, kept.shape, kept.cost, kept == Kind.road, op.place, op.tone)
+print(Kind.all)
+";
+    assert_eq!(
+        step(&mut env, Some(v3)).unwrap(),
+        ["Kind.road street 2 true bridge bad", "[Kind.lake, Kind.road, Kind.park]"]
+    );
+    // Its payload fields renamed and one added: the payload is positional.
+    let v4 = v3
+        .replace("fight(place, won, tone: \"bad\")", "fight(where, won, how, tone: \"worse\")")
+        .replace("Op.fight(\"x\", false)", "Op.fight(\"x\", false, 1)")
+        .replace("op.place, op.tone", "op.where, op.how ?? \"absent\", op.tone");
+    assert_eq!(
+        step(&mut env, Some(&v4)).unwrap(),
+        ["Kind.road street 2 true bridge absent worse", "[Kind.lake, Kind.road, Kind.park]"]
+    );
+    // Its variant removed: it still prints and answers `name`, equals no
+    // variant the enum has now, and a data read is the documented error.
+    let v5 = "\
+enum Kind
+  lake(shape: \"water\", cost: 1),
+  park(shape: \"area\", cost: 3),
+end
+state kept = Kind.park
+print(kept, kept.name, type(kept), kept == Kind.lake, kept == Kind.park, kept.shape ?? \"gone\")
+print(Kind.all)
+";
+    assert_eq!(
+        step(&mut env, Some(v5)).unwrap(),
+        ["Kind.road road Kind false false gone", "[Kind.lake, Kind.park]"]
+    );
+    let v6 = v5.replace("kept.shape ?? \"gone\"", "kept.shape");
+    let e = step(&mut env, Some(&v6)).unwrap_err();
+    assert!(e.contains("No field 'shape' on enum variant Kind.road"), "{e}");
+    // Its enum removed: a variant of an enum that no longer exists.
+    let v7 = "state kept = 0\nprint(kept, kept.name, kept?.shape)\n";
+    assert_eq!(step(&mut env, Some(v7)).unwrap(), ["Kind.road road nil"]);
+    // Putting the variant back makes the same value whole again. (`op` went
+    // with its declaration two edits ago, and starts over.)
+    assert_eq!(
+        step(&mut env, Some(v3)).unwrap(),
+        ["Kind.road street 2 true x bad", "[Kind.lake, Kind.road, Kind.park]"]
+    );
+}
+
+#[test]
+fn constant_data_leaves_the_revision_alone_and_dynamic_data_moves_it() {
+    let revisions = |src: &str, policy: RunPolicy| -> Vec<u64> {
+        let mut env = env_with(&[]);
+        env.set_policy(policy);
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        (0..4)
+            .map(|_| {
+                env.reset_stack(sid).unwrap();
+                env.run(sid).unwrap();
+                env.take_output();
+                env.enum_data_revision(sid).unwrap()
+            })
+            .collect()
+    };
+    // Constant data, including a list built afresh by every run (equal, not
+    // identical) and another variant: published once, then left alone.
+    let constant = "\
+enum Use
+  road, green
+end
+enum K
+  a(v: 1, tags: [\"x\", \"y\"], use: Use.road, at: {x: 1.5}),
+  b(v: 2, tags: [], use: Use.green, at: {x: 2.5}),
+end
+print(K.a.v)
+";
+    let r = revisions(constant, RunPolicy::FAST);
+    assert_eq!(r, [2, 2, 2, 2], "one bump per variant on the first run only");
+    // Data a native answers differently each run moves it every run.
+    let dynamic = "\
+enum K
+  a(v: random_int(0, 1000000000)),
+  b(v: 2),
+end
+print(K.a.v)
+";
+    let r = revisions(dynamic, RunPolicy::FAST);
+    assert!(r.windows(2).all(|w| w[1] == w[0] + 1), "{r:?}");
+}
+
+#[test]
+fn a_memoized_function_that_reads_data_in_a_loop_sees_it_change() {
+    // The reads after the first are retired without a dependency note of
+    // their own; the one entry must still invalidate the record.
+    let src = "\
+enum K
+  a(v: random_int(0, 1000000), w: 1),
+  b(v: random_int(0, 1000000), w: 2),
+end
+fn total(ks)
+  var acc = 0
+  for i in range(0, 30) do
+    for k in ks do
+      set acc += k.v * k.w
+    end
+  end
+  acc
+end
+fn steady(ks)
+  var acc = 0
+  for i in range(0, 30) do
+    for k in ks do
+      set acc += k.w
+    end
+  end
+  acc
+end
+print(total(K.all) == 30 * (K.a.v + 2 * K.b.v), steady(K.all))
+";
+    let fast = frames(src, RunPolicy::FAST, 5);
+    assert_eq!(fast, frames(src, RunPolicy::BASELINE, 5));
+    assert!(fast.iter().all(|f| f == &["true 90"]), "{fast:?}");
+}
+
+#[test]
+fn a_memoized_function_replays_while_constant_data_stays_put() {
+    let src = "\
+enum K
+  a(v: 3),
+  b(v: 4),
+end
+fn total(ks)
+  var acc = 0
+  for i in range(0, 40) do
+    for k in ks do
+      set acc += k.v
+    end
+  end
+  acc
+end
+print(total(K.all))
+";
+    let mut env = env_with(&[]);
+    env.set_policy(RunPolicy::FAST);
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    for _ in 0..4 {
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["280"]);
+    }
+    let stats = env.memo_stats(sid).unwrap();
+    assert_eq!((stats.records, stats.hits, stats.misses), (1, 3, 0), "{stats:?}");
+}
+
+#[test]
+fn all_is_one_list_that_nothing_can_write_through() {
+    // Every read of `K.all` hands out the same list, so every way of
+    // "changing" one must leave it as declared: value semantics, with the
+    // optimizer's in-place rewrites on and off.
+    let src = "\
+enum K
+  a(v: 1),
+  b(v: 2),
+  c(v: 3),
+end
+fn grown()
+  let xs = K.all
+  append(xs, K.a)
+end
+fn accumulated()
+  let xs = K.all
+  for i in range(0, 3) do
+    xs = append(xs, i)
+  end
+  xs
+end
+fn through_a_var()
+  var xs = K.all
+  set xs[0] = K.c
+  set xs = append(xs, 9)
+  xs
+end
+fn sorted_and_reversed()
+  [sort_by(K.all, fn(k) -> 0 - k.v), reverse(K.all)]
+end
+state kept = K.all
+kept = append(kept, len(kept))
+print(grown())
+print(accumulated())
+print(through_a_var())
+print(sorted_and_reversed())
+print(append(K.all, 1), concat(K.all, K.all))
+print(len(kept) > 3, kept[0], kept[2])
+let E = K
+print(E.all, K.all, K.all == [K.a, K.b, K.c], len(K.all))
+";
+    let expect = [
+        "[K.a, K.b, K.c, K.a]",
+        "[K.a, K.b, K.c, 0, 1, 2]",
+        "[K.c, K.b, K.c, 9]",
+        "[[K.c, K.b, K.a], [K.c, K.b, K.a]]",
+        "[K.a, K.b, K.c, 1] [K.a, K.b, K.c, K.a, K.b, K.c]",
+        "true K.a K.c",
+        "[K.a, K.b, K.c] [K.a, K.b, K.c] true 3",
+    ];
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE] {
+        for frame in frames(src, policy, 4) {
+            assert_eq!(frame, expect, "{policy:?}");
+        }
+    }
+}
+
+#[test]
+fn all_is_built_once_and_survives_collection() {
+    let src = "\
+enum K
+  a, b, c, d,
+  wide(n),
+end
+var n = 0
+for i in range(0, 4000) do
+  let all = K.all
+  let junk = [i, i + 1, i + 2]
+  set n = n + len(all)
+end
+print(n, K.all)
+";
+    let mut env = env_with(&[]);
+    env.set_heap_stats(true);
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    let lists = |env: &Env| env.alloc_stats_for(sid).unwrap().get(petal::stats::AllocKind::List);
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["16000 [K.a, K.b, K.c, K.d]"]);
+    let first = lists(&env);
+    env.reset_stack(sid).unwrap();
+    env.run(sid).unwrap();
+    assert_eq!(env.take_output(), ["16000 [K.a, K.b, K.c, K.d]"]);
+    // 4,000 `junk` lists a run, and not one more for the 4,000 `K.all`s (the
+    // first run also built the list itself and the heap's empty payload).
+    assert_eq!(lists(&env) - first, 4000);
+    assert!(first <= 4003, "{first}");
+}
+
+#[test]
+fn two_stacks_and_a_fork_each_read_their_own_table() {
+    let src = "\
+enum K
+  a(v: random_int(0, 1000000)),
+  b(v: 2),
+end
+state n = 0
+n = n + 1
+print(K.a.v == K.all[0].v, K.b.v, n, K.all)
+";
+    let mut env = env_with(&[]);
+    let pid = env.load_program(src).unwrap();
+    let one = env.create_stack(pid).unwrap();
+    let two = env.create_stack(pid).unwrap();
+    // Two stacks of one context share its heap, and so the interned tags.
+    env.run(one).unwrap();
+    assert_eq!(env.take_output_for(one), ["true 2 1 [K.a, K.b]"]);
+    env.run(two).unwrap();
+    assert_eq!(env.take_output_for(two), ["true 2 1 [K.a, K.b]"]);
+    // A fork has a heap of its own, copied id for id.
+    env.run_speculative(one).unwrap();
+    let fork = env.fork_execution(one).unwrap();
+    env.reset_stack(fork).unwrap();
+    env.run(fork).unwrap();
+    assert_eq!(env.take_output_for(fork), ["true 2 2 [K.a, K.b]"]);
+    env.reset_stack(one).unwrap();
+    env.run(one).unwrap();
+    assert_eq!(env.take_output_for(one), ["true 2 2 [K.a, K.b]"]);
+    env.reset_stack(two).unwrap();
+    env.run(two).unwrap();
+    assert_eq!(env.take_output_for(two), ["true 2 2 [K.a, K.b]"]);
+}
+
+#[test]
+fn switching_the_optimizer_between_runs_keeps_the_table() {
+    // The two lowerings of one program number its variants alike, so a stack
+    // run under one and then the other keeps its data and its `all` list.
+    let src = "\
+enum K
+  a(v: 1),
+  b(v: 2),
+end
+fn sum()
+  var acc = 0
+  for k in K.all do
+    set acc += k.v
+  end
+  acc
+end
+print(sum(), K.b.v, K.all)
+";
+    let mut env = env_with(&[]);
+    let pid = env.load_program(src).unwrap();
+    let sid = env.create_stack(pid).unwrap();
+    for policy in [RunPolicy::FAST, RunPolicy::BASELINE, RunPolicy::FAST] {
+        env.set_policy(policy);
+        env.reset_stack(sid).unwrap();
+        env.run(sid).unwrap();
+        assert_eq!(env.take_output(), ["3 2 [K.a, K.b]"]);
+        assert_eq!(env.call_function(sid, "sum", &[]).unwrap(), Value::Int(3));
+    }
+}

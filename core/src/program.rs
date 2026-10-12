@@ -752,6 +752,13 @@ pub const ENUM_DATA_BUILTIN: &str = "__enum_data";
 /// answers from [`Program::enums`].
 pub const ENUM_FROM_BUILTIN: &str = "__enum_from";
 
+/// The builtin behind `Enum.all`: `__enum_all(enum name)` yields the list of
+/// the enum's payload-free variants, in declaration order. Intercepted by the
+/// VM, which builds the list once per stack and hands the same one out after
+/// ([`crate::enum_table::EnumTable::all`]) — so it is deliberately *not* a
+/// builtin that returns a fresh container.
+pub const ENUM_ALL_BUILTIN: &str = "__enum_all";
+
 /// The tag a variant value carries: `"Kind.park"`. An enum name is unique in
 /// a compilation, so the tag names one variant of one enum.
 pub fn enum_variant_tag(enum_name: &str, variant: &str) -> String {

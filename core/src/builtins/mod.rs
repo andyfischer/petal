@@ -524,6 +524,19 @@ pub fn register_builtins(table: &mut NativeFnTable) {
     table.register("freeze", collections::native_freeze, NativeEffects::EFFECT);
     table.register("frozen", collections::native_frozen, NativeEffects::EFFECT);
 
+    // `__enum_all` is `Enum.all`: the one list of an enum's payload-free
+    // variants the running stack keeps (`EnumTable::all`). A VM intrinsic the
+    // compiler emits, like `__enum_from`, and pure but not CONST for the same
+    // reason: it answers from the program's enum table. Deliberately absent
+    // from `effects::BUILTIN_EFFECTS`, so nothing takes its result for a
+    // fresh container and writes through the shared list. Append-only.
+    let enum_all_id = table.register(
+        crate::program::ENUM_ALL_BUILTIN,
+        native_intrinsic_placeholder,
+        NativeEffects::PURE,
+    );
+    table.intrinsic_enum_all = Some(enum_all_id);
+
     table.intrinsic_map = Some(map_id);
     table.intrinsic_sort = table.lookup_name("sort");
     table.intrinsic_sort_by = Some(sort_by_id);

@@ -592,41 +592,97 @@ pub fn make_enum_variant(
         return Err("MakeEnumVariant: invalid name".into());
     };
     let tag = heap.intern_str(name);
+    Ok(make_enum_variant_tagged(heap, tag, inputs))
+}
+
+/// [`make_enum_variant`] for a tag already in hand: the variant's slot in the
+/// stack's [`EnumTable`] gives it without interning the name again.
+#[inline]
+pub fn make_enum_variant_tagged(heap: &mut Heap, tag: crate::heap::StringId, inputs: &[Value]) -> Value {
     let data = heap.alloc_payload(inputs);
-    Ok(Value::EnumVariant { tag, data })
+    Value::EnumVariant { tag, data }
 }
 
 /// A field read on an enum variant value: `k.name` (the variant's own name),
 /// a payload field by its declared name (`op.place`), or constant data the
 /// declaration attached (`k.shape`), in that order. `None` when the variant
 /// has no such field.
+///
+/// The general path; [`cached_variant_field`] answers a data read first. A
+/// variant the running program declares is found by its slot, with no work
+/// on the tag's text; any other tag (a host's free-form one, a variant whose
+/// enum an edit removed) is looked up by what it reads.
 pub fn enum_variant_field(
     program: &Program,
     heap: &mut Heap,
-    enum_data: &EnumData,
+    enums: &EnumTable,
     tag: crate::heap::StringId,
     data: crate::heap::ListId,
     field: &str,
 ) -> Option<Value> {
     if field == crate::program::VARIANT_NAME_FIELD {
-        let name = crate::program::split_enum_tag(heap.get_string(tag)).1.to_string();
-        return Some(Value::String(heap.intern_str(&name)));
+        let text = heap.get_string(tag);
+        let end = text.len();
+        let start = end - crate::program::split_enum_tag(text).1.len();
+        return Some(Value::String(heap.intern_substring(tag, start, end)));
     }
+    if let Some(slot) = enums.resolve(heap, tag) {
+        if let Some(i) = enums
+            .shape(slot)
+            .and_then(|shape| shape.fields.iter().position(|f| f == field))
+        {
+            // A variant built before an edit reshaped its enum may be shorter
+            // than the declaration now says.
+            return heap.get_list(data).get(i).copied();
+        }
+        return heap.get_map(enums.data_at(slot)?).get(field).copied();
+    }
+    // No enum of the running program declares this tag, by its table. The
+    // program is asked all the same: a stack that has not been synced to a
+    // lowering (none runs that way) would otherwise lose its payload names.
     let tag = heap.get_string(tag);
     if let Some(i) = program
         .enum_variant(tag)
         .and_then(|def| def.fields.iter().position(|f| f == field))
     {
-        // A variant built before an edit reshaped its enum may be shorter
-        // than the declaration now says.
         return heap.get_list(data).get(i).copied();
     }
-    let record = *enum_data.get(tag)?;
+    let record = enums.undeclared_data(tag)?;
     heap.get_map(record).get(field).copied()
 }
 
-/// The constant data of enum variants, by tag — [`crate::stack::Stack::enum_data`].
-pub type EnumData = std::collections::HashMap<String, crate::heap::MapId>;
+/// The stack's enum table — [`crate::stack::Stack::enums`].
+pub use crate::enum_table::EnumTable;
+
+/// A constant-data read on a variant through a `GetField` site's inline
+/// cache: the value when `obj` is a variant the running program declares and
+/// the field is one of its data keys; `None` for anything else, which the
+/// caller hands to [`get_field`].
+///
+/// No string is hashed or compared on a hit: the tag's id finds the variant's
+/// slot, the slot its data record, and the site's cache the field in it — the
+/// variants of one enum declare the same keys, so they share a record shape
+/// and one cache entry serves a site that sees them all.
+///
+/// Answering data ahead of `name` and the payload is sound because a
+/// variant's data keys are distinct from both (`check_enum_variants`); the
+/// record read is the one this run's declaration published.
+#[inline(always)]
+pub fn cached_variant_field(
+    program: &Program,
+    heap: &Heap,
+    enums: &EnumTable,
+    cache: &crate::record::FieldCache,
+    field_cid: ConstantId,
+    obj: Value,
+) -> Option<Value> {
+    let Value::EnumVariant { tag, .. } = obj else { return None };
+    let map = heap.get_map(enums.data_of(tag)?);
+    if let Some(v) = cache.lookup(map) {
+        return Some(v);
+    }
+    cache.fill(map, program.get_string_constant(field_cid)?)
+}
 
 // ---------------------------------------------------------------------------
 // Field / index access
@@ -662,7 +718,7 @@ pub fn cached_field(
 pub fn get_field(
     program: &Program,
     heap: &mut Heap,
-    enum_data: &EnumData,
+    enums: &EnumTable,
     field_cid: ConstantId,
     obj: Value,
     opt: bool,
@@ -702,7 +758,7 @@ pub fn get_field(
             _ => return Err(format!("No field '{}' on element", field_name)),
         },
         Value::EnumVariant { tag, data } => {
-            match enum_variant_field(program, heap, enum_data, tag, data, field_name) {
+            match enum_variant_field(program, heap, enums, tag, data, field_name) {
                 Some(v) => v,
                 None if opt => Value::Nil,
                 None => {

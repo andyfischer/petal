@@ -116,15 +116,16 @@ pub struct Stack {
     /// Rebuilt by every run (the declarations re-execute), and cleared with
     /// `functions` on hot reload, whose new program invalidates the closure ids.
     pub methods: HashMap<String, HashMap<String, Value>>,
-    /// The constant data of enum variants, indexed by variant tag
-    /// (`"Kind.park"`): the record of `key: expr` values its declaration
-    /// attached. Populated as the root block runs — an `enum` whose variants
-    /// carry data compiles to one `__enum_data` builtin call per variant — and
-    /// read by a field access on a variant value (`k.shape`). Rebuilt by every
-    /// run and cleared with `methods` on hot reload, so a variant kept in
-    /// `state` across an edit reads the data its enum declares *now*. A read
-    /// is a memo dependency on [`Stack::enum_data_revision`].
-    pub enum_data: HashMap<String, crate::heap::MapId>,
+    /// What this stack holds for the program's enums, by variant slot (see
+    /// [`crate::enum_table`]): chiefly the constant data of each variant, the
+    /// record of `key: expr` values its declaration attached. Populated as
+    /// the root block runs — an `enum` whose variants carry data compiles to
+    /// one `__enum_data` builtin call per variant — and read by a field
+    /// access on a variant value (`k.shape`). Republished by every run and
+    /// cleared with `methods` on hot reload, so a variant kept in `state`
+    /// across an edit reads the data its enum declares *now*. A read is a
+    /// memo dependency on [`Stack::enum_data_revision`].
+    pub enums: crate::enum_table::EnumTable,
     /// Bumped when a run publishes data for a variant that differs from what
     /// the run before published. A memoized scope that read a variant's field
     /// is valid only while this has not moved (`memo::Dep::EnumData`).
@@ -235,7 +236,7 @@ impl Stack {
             open_touch_captures: 0,
             functions: HashMap::new(),
             methods: HashMap::new(),
-            enum_data: HashMap::new(),
+            enums: crate::enum_table::EnumTable::default(),
             enum_data_revision: 0,
             vm_frames: Vec::new(),
             vm_started: false,
@@ -455,10 +456,9 @@ impl Stack {
         if let Some(val) = self.last_pop_result {
             mark(val);
         }
-        // Enum constant data is read by any later field access on a variant.
-        for &rec in self.enum_data.values() {
-            mark(Value::Map(rec));
-        }
+        // Enum constant data is read by any later field access on a variant;
+        // the table's tag strings are what its index is keyed by.
+        self.enums.gc_roots(&mut mark);
         // Memo records replay their values and compare against them across
         // runs; open scopes hold what they have recorded so far.
         self.memo.gc_roots(&mut mark);

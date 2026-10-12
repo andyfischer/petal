@@ -180,6 +180,7 @@ impl<'a> Vm<'a> {
             || nf.intrinsic_fn_info == Some(nid)
             || nf.intrinsic_fn_ast == Some(nid)
             || nf.intrinsic_enum_from == Some(nid)
+            || nf.intrinsic_enum_all == Some(nid)
             || sort_with_cmp
         {
             self.profile.record_native(nid.0);
@@ -188,7 +189,9 @@ impl<'a> Vm<'a> {
         // they all share its path part: `map(xs, widget)` gives `widget`'s
         // `state` one slot per `map` call site, not one per element.
         let site = self.site_of(origin);
-        if nf.intrinsic_sort_by == Some(nid) {
+        if nf.intrinsic_enum_all == Some(nid) {
+            self.enum_all(args)
+        } else if nf.intrinsic_sort_by == Some(nid) {
             self.builtin_sort_by(args, site)
         } else if sort_with_cmp {
             self.builtin_sort_cmp(args, site)
@@ -236,16 +239,25 @@ impl<'a> Vm<'a> {
         let [Value::String(tag), Value::Map(record)] = args else {
             return Err("internal error: __enum_data expects (tag, record)".into());
         };
-        let tag = self.heap.get_string(*tag).to_string();
         // Data that is what the last run published leaves every memo record
         // that read it valid, which is the usual case: most data is constant.
-        let old = self.stack.enum_data.get(&tag).copied();
-        let same = self.memo && old.is_some_and(|old| self.memo_same_enum_data(old, *record));
+        // The very record again needs no comparing at all.
+        let old = self.stack.enums.publish(self.heap, *tag, *record);
+        let same = old == Some(*record)
+            || (self.memo && old.is_some_and(|old| self.memo_same_enum_data(old, *record)));
         if !same {
             self.stack.enum_data_revision += 1;
         }
-        self.stack.enum_data.insert(tag, *record);
         Ok(Value::Nil)
+    }
+
+    /// `Enum.all`: the enum's payload-free variants, as the one list the
+    /// stack keeps for it. `args` is `[enum name]`, emitted by the compiler.
+    fn enum_all(&mut self, args: &[Value]) -> Result<Value, String> {
+        let [Value::String(enum_name)] = args else {
+            return Err("internal error: __enum_all expects (enum)".into());
+        };
+        Ok(Value::List(self.stack.enums.all(self.heap, *enum_name)))
     }
 
     /// `Enum.from(name)`: the payload-free variant of that name, or nil.

@@ -208,6 +208,7 @@ fn the_natives_that_refuse_names_are_the_variadic_and_internal_ones() {
         undeclared,
         [
             "__declare_method",
+            "__enum_all",
             "__enum_data",
             "__enum_from",
             "__pending",

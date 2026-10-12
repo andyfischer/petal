@@ -252,7 +252,13 @@ impl<'a> Vm<'a> {
             }
             Inst::MakeEnumVariant { dst, name, fields } => {
                 let inputs = self.take_args(fi, fields);
-                let v = ops::make_enum_variant(self.program, self.heap, *name, &inputs);
+                // A declared variant's tag is already interned in the stack's
+                // table, at the slot this constant was resolved to.
+                let slot = self.bc.variant_slot(*name);
+                let v = match slot.and_then(|slot| self.stack.enums.tag_at(slot)) {
+                    Some(tag) => Ok(ops::make_enum_variant_tagged(self.heap, tag, &inputs)),
+                    None => ops::make_enum_variant(self.program, self.heap, *name, &inputs),
+                };
                 self.give_args(inputs);
                 let v = v?;
                 self.set(fi, *dst, v);
@@ -266,16 +272,13 @@ impl<'a> Vm<'a> {
                 cache,
             } => {
                 let base = self.reg(fi, *obj);
-                let v = match ops::cached_field(self.program, self.heap, cache, *field, base) {
+                let enums = &self.stack.enums;
+                let cached = ops::cached_field(self.program, self.heap, cache, *field, base).or_else(|| {
+                    ops::cached_variant_field(self.program, self.heap, enums, cache, *field, base)
+                });
+                let v = match cached {
                     Some(v) => v,
-                    None => ops::get_field(
-                        self.program,
-                        self.heap,
-                        &self.stack.enum_data,
-                        *field,
-                        base,
-                        *opt,
-                    )?,
+                    None => ops::get_field(self.program, self.heap, enums, *field, base, *opt)?,
                 };
                 if matches!(base, Value::EnumVariant { .. }) {
                     self.memo_note_enum_read();

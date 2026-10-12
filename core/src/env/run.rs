@@ -213,6 +213,14 @@ impl Env {
         self.stacks.get(&stack_id).map(|s| s.memo.stats)
     }
 
+    /// `stack_id`'s enum-data revision: bumped when a run publishes constant
+    /// data for a variant that differs from what the run before published
+    /// (see [`Stack::enum_data_revision`](crate::stack::Stack)). Constant
+    /// data leaves it where it is, run after run.
+    pub fn enum_data_revision(&self, stack_id: StackKey) -> Option<u64> {
+        self.stacks.get(&stack_id).map(|s| s.enum_data_revision)
+    }
+
     /// How many scope records `stack_id`'s table holds.
     pub fn memo_slots(&self, stack_id: StackKey) -> usize {
         self.stacks.get(&stack_id).map_or(0, |s| s.memo.len())
@@ -472,6 +480,9 @@ fn make_vm<'a>(
     let trace_emit = ctx.trace_emit;
     // One flag standing for "some per-instruction hook is armed" (see `Vm::hooks`).
     let hooks = trace.enabled || observations.enabled || profile.enabled;
+    // The stack's enum table is the one for this lowering's layout: a pointer
+    // comparison, except on the first dispatch after a load or a reload.
+    stack.enums.sync(&bc.enum_layout, &mut ctx.heap);
     Vm {
         program,
         bc,

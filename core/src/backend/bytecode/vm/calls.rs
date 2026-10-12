@@ -290,8 +290,8 @@ impl<'a> Vm<'a> {
             Value::Map(map_id) => self.heap.get_map(map_id).get(method_name).copied(),
             Value::EnumVariant { tag, data } => {
                 self.memo_note_enum_read();
-                let enum_data = &self.stack.enum_data;
-                crate::backend::ops::enum_variant_field(program, self.heap, enum_data, tag, data, method_name)
+                let enums = &self.stack.enums;
+                crate::backend::ops::enum_variant_field(program, self.heap, enums, tag, data, method_name)
             }
             _ => None,
         };

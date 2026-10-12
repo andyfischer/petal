@@ -83,6 +83,8 @@ pub fn lower_program_opt(
         match_binds.extend(binds);
         fns.push(bf);
     }
+    let enum_layout = crate::enum_table::EnumLayout::of(program);
+    let variant_slots = enum_layout.constant_slots(&program.constants);
     Ok(BytecodeProgram {
         root,
         fns,
@@ -90,6 +92,8 @@ pub fn lower_program_opt(
         // Filled by `resolve_builtin_names` once a native table is in hand;
         // until then every `BuiltinCall` resolves its name the slow way.
         builtin_ids: Vec::new(),
+        enum_layout: std::sync::Arc::new(enum_layout),
+        variant_slots,
     })
 }
 

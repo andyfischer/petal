@@ -51,7 +51,7 @@ pub fn transfer_stack_state(
     stack.functions.clear();
     stack.methods.clear();
     // An enum the new program dropped must not keep answering field reads.
-    stack.enum_data.clear();
+    stack.enums.clear();
     // Memo records name functions of the old program and closures that were
     // just cleared; nothing in them survives a different program.
     stack.memo.clear();

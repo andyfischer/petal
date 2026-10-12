@@ -589,10 +589,12 @@ pub struct NativeFnTable {
     /// publishes a user-declared `fn Class.method` into the running stack's
     /// method table, which no native can reach through [`PetalCxt`].
     pub intrinsic_declare_method: Option<NativeFnId>,
-    /// `__enum_data` and `__enum_from`, intercepted for the same reason: one
-    /// writes the running stack's enum table, the other reads the program.
+    /// `__enum_data`, `__enum_from` and `__enum_all`, intercepted for the
+    /// same reason: the first writes the running stack's enum table, the
+    /// second reads the program, the third reads (and fills) the table.
     pub intrinsic_enum_data: Option<NativeFnId>,
     pub intrinsic_enum_from: Option<NativeFnId>,
+    pub intrinsic_enum_all: Option<NativeFnId>,
     /// `fn_info(f)` / `fn_ast(f)` (experimental): they read the closure table
     /// and the program, which no native can reach through [`PetalCxt`]. See
     /// [`crate::fn_introspect`].
@@ -618,6 +620,7 @@ impl NativeFnTable {
             intrinsic_sort_by: None,
             intrinsic_declare_method: None,
             intrinsic_enum_data: None,
+            intrinsic_enum_all: None,
             intrinsic_enum_from: None,
             intrinsic_fn_info: None,
             intrinsic_fn_ast: None,

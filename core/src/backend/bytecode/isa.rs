@@ -1155,6 +1155,15 @@ pub struct BytecodeProgram {
     /// after lowering, because lowering has no access to the host's native
     /// table — a host may register natives of its own.
     pub builtin_ids: Vec<u32>,
+    /// Every variant the program declares, numbered — what the running
+    /// stack's [`EnumTable`](crate::enum_table::EnumTable) is built from.
+    pub enum_layout: std::sync::Arc<crate::enum_table::EnumLayout>,
+    /// `ConstantId` → the slot of the variant that string constant is the tag
+    /// of ([`NO_SLOT`](crate::enum_table::NO_SLOT) for every other constant),
+    /// so `MakeEnumVariant` takes its tag from the stack's table instead of
+    /// interning the text. Short of the constant table after a patched
+    /// reload added constants; those are never tags.
+    pub variant_slots: Vec<u32>,
 }
 
 /// Sentinel in [`BytecodeProgram::builtin_ids`]: this constant does not name a
@@ -1187,6 +1196,15 @@ impl BytecodeProgram {
         match self.builtin_ids.get(k.0 as usize).copied() {
             Some(NOT_A_BUILTIN) | None => None,
             Some(id) => Some(id),
+        }
+    }
+
+    /// The slot of the declared variant a constant is the tag of.
+    #[inline]
+    pub fn variant_slot(&self, k: crate::constant_table::ConstantId) -> Option<u32> {
+        match self.variant_slots.get(k.0 as usize).copied() {
+            Some(crate::enum_table::NO_SLOT) | None => None,
+            Some(slot) => Some(slot),
         }
     }
 

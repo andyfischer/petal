@@ -65,12 +65,21 @@ impl<'a> Vm<'a> {
         // straight run: scopes open and close at calls and cells are created
         // by `CellNew`, all of which stop it. `Some` holds the cells this run
         // may touch without telling the recorder; `None` means any.
-        let memo_locals = if self.memo && self.stack.memo.recording() {
-            self.stack.memo.open.last().map(|s| &s.local_cells)
+        let memo_scope = if self.memo && self.stack.memo.recording() {
+            self.stack.memo.open.last()
         } else {
             None
         };
+        let memo_locals = memo_scope.map(|s| &s.local_cells);
         let recording = memo_locals.is_some();
+        // A field read on a variant is a dependency on the stack's enum data,
+        // which one entry covers for a whole run of reads (see
+        // `memo_note_enum_read`). Only the read that has to add the entry
+        // goes to the general path; nothing else is recorded during a
+        // straight run, so the answer holds until this one stops.
+        let enum_read_noted = memo_scope.is_none_or(|s| {
+            s.effectful || matches!(s.deps.last(), Some(crate::memo::Dep::EnumData { .. }))
+        });
         let frame = &mut self.stack.vm_frames[fi];
         let result_dropped = frame.result_dropped;
         let mut ip = frame.ip;
@@ -80,7 +89,10 @@ impl<'a> Vm<'a> {
         let heap = &mut *self.heap;
         let closures = &*self.closures;
         let run_deps = &mut self.stack.run_deps;
-        let enum_data = &self.stack.enum_data;
+        let enums = &mut self.stack.enums;
+        let bc = self.bc;
+        let enum_all = self.native_fns.intrinsic_enum_all.map(|id| id.0);
+        let enum_data = self.native_fns.intrinsic_enum_data.map(|id| id.0);
         let mut n: u64 = 0;
 
         // Registers are read as `Nil` past the end of the file, like
@@ -119,6 +131,54 @@ impl<'a> Vm<'a> {
                         ConstantValue::Bool(b) => Value::Bool(*b),
                         ConstantValue::Nil => Value::Nil,
                         ConstantValue::String(_) => ops::constant_to_value(program, heap, k),
+                    };
+                    put!(dst, v);
+                }
+                // `Enum.variant` with no payload: the tag is in the stack's
+                // table and the payload is the heap's one empty list.
+                Inst::MakeEnumVariant { dst, name, ref fields } if fields.is_empty() => {
+                    let Some(tag) = bc.variant_slot(name).and_then(|slot| enums.tag_at(slot)) else {
+                        break StraightStop::Slow;
+                    };
+                    let data = heap.empty_payload();
+                    put!(dst, Value::EnumVariant { tag, data });
+                }
+                // The two enum builtins, in the cases that are a table read
+                // or a table write with nothing to record; the rest of each
+                // (and every other builtin) is the general path's.
+                //
+                // `Enum.all` once the stack holds the enum's list — the first
+                // ask builds it. And `__enum_data` publishing what the run
+                // before published, value for value, which is every variant
+                // of every run of a program whose data is constant: the new
+                // record takes the slot and the revision stays. Inside a
+                // recording scope the declaration is an effect to note.
+                Inst::BuiltinCall {
+                    dst,
+                    name,
+                    ref args,
+                    in_place: false,
+                    ref arg_names,
+                } if arg_names.is_empty() && {
+                    let id = bc.builtin_id(name);
+                    id.is_some() && (id == enum_all || (id == enum_data && !recording))
+                } =>
+                {
+                    let v = match *args.as_slice() {
+                        [r] => match get!(r) {
+                            Value::String(name) => enums.all_cached(name).map(Value::List),
+                            _ => None,
+                        },
+                        [t, r] => match (get!(t), get!(r)) {
+                            (Value::String(tag), Value::Map(record)) => {
+                                enums.republish(heap, tag, record).then_some(Value::Nil)
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    let Some(v) = v else {
+                        break StraightStop::Slow;
                     };
                     put!(dst, v);
                 }
@@ -327,10 +387,16 @@ impl<'a> Vm<'a> {
                     }
                     // A variant's field may be constant data, which a
                     // recording scope notes as a dependency on the slow path.
-                    if is_pending(base) || (recording && matches!(base, Value::EnumVariant { .. })) {
+                    if is_pending(base) || (!enum_read_noted && matches!(base, Value::EnumVariant { .. })) {
                         break StraightStop::Slow;
                     }
-                    match ops::get_field(program, heap, enum_data, field, base, opt) {
+                    if let Some(v) = ops::cached_variant_field(program, heap, enums, cache, field, base) {
+                        put!(dst, v);
+                        n += 1;
+                        ip += 1;
+                        continue;
+                    }
+                    match ops::get_field(program, heap, enums, field, base, opt) {
                         Ok(v) => put!(dst, v),
                         Err(_) => break StraightStop::Slow,
                     }

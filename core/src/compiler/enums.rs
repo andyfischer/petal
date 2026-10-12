@@ -137,16 +137,18 @@ impl Compiler {
             Some(v) => self.enum_fn(enum_variant_tag(enum_name, member), &v.fields, |c, args| {
                 c.emit_enum_variant(enum_name, member, args);
             }),
+            // One list per enum, built by the VM on the first read and
+            // shared by every read after it.
             None if member == "all" => {
-                let plain: Vec<String> = self.classes.enum_named(enum_name).map_or_else(Vec::new, |def| {
-                    let plain = def.variants.iter().filter(|v| v.fields.is_empty());
-                    plain.map(|v| v.name.clone()).collect()
-                });
-                let inputs = plain
-                    .iter()
-                    .map(|v| self.emit_enum_variant(enum_name, v, smallvec![]))
-                    .collect();
-                self.emit_term(TermOp::AllocList, inputs, None)
+                let name_c = self.string_constant(enum_name);
+                let name_tid = self.emit_term(TermOp::Constant(name_c), smallvec![], None);
+                let builtin = self.string_constant(ENUM_ALL_BUILTIN);
+                self.emit_call_term(
+                    TermOp::BuiltinCall(builtin),
+                    smallvec![name_tid],
+                    ENUM_ALL_BUILTIN,
+                    SmallVec::new(),
+                )
             }
             // `Enum.from` as a value: one parameter, forwarded to the builtin.
             None if member == "from" => {

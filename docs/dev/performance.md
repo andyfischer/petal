@@ -338,6 +338,90 @@ programs, three collect at all: `spreadsheet.ptl` 9 times for 1.1 ms,
 All figures are from one machine under load from other builds; read them as
 ratios.
 
+## Enum data reads
+
+A variant value is its tag (`"Kind.park"`, an interned string) and its
+payload. What the enum declares about the variant, including its constant
+data, is looked up when a field is read, which is what lets a variant kept in
+`state` outlive an edit of its enum. That lookup is integer work:
+
+- Lowering numbers every declared variant (`enum_table::EnumLayout`): a
+  dense slot, enum by enum in declaration order.
+- The stack keeps a table by slot (`enum_table::EnumTable`, `Stack::enums`):
+  the tag's interned id, the data record this run's declaration published,
+  and per enum the `Kind.all` list. The table roots the tag strings, so a
+  tag id found in its index is that variant. The index is an exact
+  open-addressing map from id to slot, built when the table is.
+- `k.code` probes the index with the tag's id, loads the slot's record and
+  reads the field through the `GetField` site's inline cache. The variants
+  of one enum declare the same keys and so share a record shape; a site
+  that sees every variant still hits.
+- A tag the index does not hold is resolved by its text, as every read used
+  to be: a variant a host built with a free-form tag, a variant of an enum
+  the program no longer declares, a tag longer than the interning limit.
+- `Kind.variant` with no payload is built from its slot, with no string
+  interned. `Kind.all` is one list per stack, built on the first read. It
+  comes from a builtin (`__enum_all`) that is not on the list of builtins
+  returning a fresh container, so no in-place rewrite will write through
+  it, and a `var` cell does not own a value it was handed: `append(K.all, x)`
+  copies.
+- Inside a recording memo scope a read is a dependency on the stack's
+  enum-data revision. The first read of a run of reads notes it on the
+  general path and the rest stay in the straight-line loop.
+
+`petal bench --iters 30 test/benchmarks/micro/enum_reads.ptl --fn …` (the
+command is in the file), minimum of three runs, nanoseconds per read over
+the empty loop, optimizer on:
+
+| Read | Before | After |
+|---|---|---|
+| record field `r.code` | 1.7 | 1.8 |
+| `k.code`, `k` in a local | 51.3 | 3.5 |
+| `K.v.code` | 71.3 | 6.6 |
+| payload field `op.dy` | 33.9 | 11.5 |
+| `K.all` (eight variants) | 227.8 | 18.8 |
+| `k.code` for each `k` in `K.all` | 91.4 | 17.3 |
+
+`K.all` allocated a list per read (200,001 allocations for 200,000 reads)
+and now allocates nothing after the first (2). The loop itself is 21 ns an
+iteration on this machine (six instructions), so `K.v.code` in a loop went
+from 93 ns to 28 ns. With the optimizer off the figures are within 3 ns of
+these. `K.all` still costs more than a field read because the builtin's
+argument, the enum's name, is a string constant that is interned on every
+load, as every string literal is.
+
+**Declaring the data.** An enum's constant data is evaluated by every run:
+one record built and one `__enum_data` call per variant. `cd core && cargo
+run --release --example rerun_timing -- ../test/benchmarks/micro/enum_decl_data.ptl
+../test/benchmarks/micro/enum_decl_plain.ptl` runs a 50-variant enum with
+three data keys, and the same enum without data, 20,000 times on one stack:
+
+| | Before | After |
+|---|---|---|
+| 50 variants with data | 9.54 µs | 6.67 µs |
+| 50 variants, no data | 2.04 µs | 2.04 µs |
+| per variant with data | 150 ns | 93 ns |
+
+A run that publishes what the run before published, value for value, swaps
+the new record into the slot in the straight-line loop: no tag copied, no
+deep comparison, no general-path builtin call. Data that differs, or that
+builds an equal list or record afresh, is compared in depth as before and
+moves the revision only if it changed. What is left is building the record
+(about 64 ns for three literal fields, measured on its own) and loading the
+tag constant (about 20 ns). Neither goes away until the data is not
+re-evaluated at all, which is what static values are for
+([proposal](../proposals/static-values.md)).
+
+**Kept out of line.** The enum cases in the straight-line loop
+(`backend/bytecode/vm/fast.rs`) call `#[inline(never)]` helpers. Inlined,
+they made every other instruction slower: `life.ptl` went from 15.0 to
+18.5 ms and `audio_synth.ptl` from 104 to 123 ms. With the helpers out of
+line the eight `test/benchmarks/*.ptl` programs time as they did before
+(minimum of 12 runs: arith 12.3 and 12.4 ms, calls 29.8 and 30.0, life 15.0
+and 15.0, audio_synth 110.6 and 109.2, particles 11.2 and 11.3,
+match_dispatch 317.8 and 314.6, append 6.1 and 6.4, spreadsheet 205.9 and
+213.3). The machine was running other builds during all of these.
+
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from

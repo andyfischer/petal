@@ -87,6 +87,17 @@ way, for code written against an earlier checkout.
 - A `match` on string literals, int literals or enum variants is entered
   through a jump table, so its cost does not grow with the number of arms
   (a 40-arm match in a loop runs about five times faster).
+- Reading an enum variant's constant data costs about what a record field
+  read costs: `k.code` went from 51 ns to 3.5 ns over an empty loop and
+  `K.v.code` from 71 ns to 6.6 ns, against 1.7 ns for a record field. Each
+  declared variant has a slot in a table the running stack keeps, found by
+  the variant tag's id, so a read no longer splits and hashes the tag.
+  `Kind.all` is one list per stack and no longer allocates per read (228 ns
+  to 19 ns for an eight-variant enum), and declaring an enum's data costs a
+  run about 40% less (150 ns to 93 ns per variant). Nothing changes for a
+  program: the list cannot be written through, and a variant a host built
+  or one kept in `state` across an edit reads as before. See
+  [docs/dev/performance.md](docs/dev/performance.md#enum-data-reads).
 - Escape and last-use analyses turn value-semantic updates into in-place writes
   (loop accumulators, `state`-backed containers, `var` cells).
 - A generational heap with a mark-and-sweep collector paced by bytes allocated.

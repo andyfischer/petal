@@ -1775,6 +1775,8 @@ end
 Both cover only the variants without payload fields: a variant with a payload
 is not one value, so it is left out of `all` and `from` answers `nil` for it.
 `from` is how a string from a file or from the host becomes a variant.
+`Kind.all` is built once and costs nothing to read again, so there is no
+reason to keep a copy of it in a `let` or in `state`.
 
 A variant may not be named `all` or `from`.
 

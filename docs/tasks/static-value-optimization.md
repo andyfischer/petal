@@ -50,6 +50,90 @@ alongside them.
 
 ## A1. Enum data read path
 
+**Status: done 2026-10-12** (items 1 to 4). Commits `20836ee` (benchmarks),
+`aa36342` (the change), `f9315d7` (the straight-line loop's enum work moved
+out of line) and the documentation commit after them.
+
+What shipped:
+
+- **Item 1, the dense index.** `enum_table::EnumLayout` numbers every
+  declared variant at lowering (a slot; one enum's variants are a contiguous
+  run) and the bytecode carries the slot of every constant that is a
+  variant's tag. `Kind.variant` is built from its slot. One departure from
+  the wording above: the index is not stored in the variant *value*. A value
+  is still only its tag and payload (`Value::EnumVariant` is unchanged, for
+  hosts and for the three JSON spellings), and a read finds the slot from
+  the tag's interned id through an exact integer index the stack's table
+  keeps. The table roots the tag strings, so an id it holds can only be that
+  variant. This costs one probe more than a stored index would and needs no
+  rewrite of values after a reload; a tag the index does not hold (a host's
+  free-form tag, a variant an edit removed, a tag too long to intern) is
+  resolved by its text, as before.
+- **Item 2.** `Stack::enums` (`enum_table::EnumTable`) replaces the
+  string-keyed `Stack::enum_data`: data records in one vector by slot.
+- **Item 3.** `Kind.all` compiles to the `__enum_all` intrinsic, which
+  builds the list once per stack (it does not depend on the data, so "per
+  data revision" was not needed) and hands the same list out after. It is
+  not on `returns_fresh_container`'s list, so neither in-place analysis
+  roots a rewrite on it, and a `var` cell does not own a value it is handed.
+  `all_is_one_list_that_nothing_can_write_through` holds this with the
+  optimizer on and off.
+- **Item 4.** A run that publishes what the run before published, value for
+  value, swaps the record in without the tag `to_string`, the deep compare
+  or the general-path builtin call. The by-id case the item names never
+  occurs today (each run builds a new record); it is covered and will start
+  to hit when S1 keeps the record.
+- Also: a recording memo scope notes the enum-data dependency once per run
+  of reads and no longer sends every read to the general path, which is what
+  a read inside any memoized function was paying.
+
+Measured (`docs/dev/performance.md`, "Enum data reads"; this machine, under
+load from the other tracks' builds, minimum of three `--iters 30` runs,
+nanoseconds over the empty loop):
+
+| | Before | After |
+|---|---|---|
+| record field | 1.7 | 1.8 |
+| `k.code` | 51.3 | 3.5 |
+| `K.v.code` | 71.3 | 6.6 |
+| payload field `op.dy` | 33.9 | 11.5 |
+| `K.all` (8 variants) | 227.8, a list allocated per read | 18.8, no allocation |
+| declaring 50 variants with data, per run | 9.54 µs | 6.67 µs (2.04 µs without data) |
+
+The baselines below (66 / 41 / 173 ns, 13.6 µs) were taken with a different
+script on a quieter machine; the "Before" column is the recreated benchmark
+on the binary built from `7e7a7c5`.
+
+Not done, and why:
+
+- **The declaration is cheaper, not cheap**: 93 ns per variant, down from
+  150. What is left is building the record and loading the tag constant, on
+  every run. Only not re-evaluating the data removes it, which is S1.
+- **A payload field read is 11.5 ns**, not within a few nanoseconds of a
+  record field. It is found by comparing the field name against the
+  declared payload names; the Done-when names only the data reads.
+- **`K.all` is 18.8 ns**, most of it interning the enum-name constant that
+  is the builtin's argument (every string literal load interns).
+- A loop that grows a list starting from `K.all` (`xs = append(xs, v)` with
+  `xs` first bound to `K.all`) now copies on each append, because its root
+  is no longer a fresh allocation. None in the corpus.
+
+For S0/S1: `Kind.all` is now a `BuiltinCall("__enum_all")` in the IR, not
+an `AllocList` of `MakeEnumVariant`s. Like `__enum_from` it is a `PURE` row
+and not `CONST`, because it answers from the program's enum table; with the
+constant enum name the compiler writes, it depends only on the enum's
+declaration, which is how the classifier in `static_classify` treats both.
+A static value that keeps `K.all` keeps the stack's shared list, which is
+fine for the same reason a `let` may: nothing writes through it.
+
+Tests: twelve cases added to `core/tests/enums.rs` (host-built variants with
+free-form and with declared tags, a tag past the interning limit, a variant
+in `state` through every row of "Editing an enum" including a reorder,
+the revision under constant and dynamic data, memo records over reads in a
+loop, the shared `all` list, two stacks and a fork, switching the optimizer
+between runs). `cargo test` in `core` and `core-libs/petal-ui`, vitest, and
+`./tools/test-examples.ts` (optimizer on and off) pass.
+
 **Problem.** A field read on a variant (`k.code`) costs about 41 ns with `k`
 in a local, 66 ns as `K.v.code`, against 0.8 ns for a record field. `K.all`
 costs 173 ns and allocates a list on every read. Declaring enum data costs

@@ -157,7 +157,11 @@ empty). A variant value is only its tag (`"Kind.park"`, the constant of
 `MakeEnumVariant`) and its payload, so this table is where a field read by
 name (`op.place`) finds the payload's index and where `Kind.from` finds the
 variants. Constant data is not in the table: it is the record each variant's
-`BuiltinCall("__enum_data")` publishes when the root block runs. An emitter
+`BuiltinCall("__enum_data")` publishes when the root block runs.
+`Kind.all` is `BuiltinCall("__enum_all")` with the enum's name as its one
+argument (the VM builds the list from this table once per stack and hands the
+same list out after; an `AllocList` of `MakeEnumVariant`s, which the compiler
+emitted before, is still a correct way to write it). An emitter
 whose tags name no declared enum (a bare `"spawn"`, or an enum it does not
 list) omits the entry, and gets variants that match by tag and payload but
 answer no field by name.

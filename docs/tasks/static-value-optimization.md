@@ -921,6 +921,58 @@ The micro-benchmark scripts used for these numbers were written in a session
 scratch directory and are not in the repository. Recreating them under
 `test/benchmarks/` is the first step of A1 and A2.
 
+### Full test pass after A1, A2 and S0 (12 October 2026)
+
+Status: done, at `591ad55` (the three tracks rebased onto the commit that
+makes `petal run` check a program before running it) plus two test fixes.
+
+- **Passing.** `cargo test` in `core` (2,417 tests) and its four corpus
+  sweeps (`make expensive_lint_tests`); `core-libs/petal-ui` (295, which
+  includes the effect-audit, static-audit, static-classify, frame-gate and
+  memo corpus oracles); `core-libs/petal-query` (33);
+  `integrations/petal-c-bridge` (19, and `make test-c-bridge`, 4 of 4);
+  `integrations/petal-desktop-sdl` (54); `garden-script` (180);
+  `examples/custom-apps/petal-fantasy-nes` (58); vitest (1,568); `tsc`;
+  `docs/stdlib.json` is current; `./tools/test-examples.ts` (33, optimizer
+  on, off, and golden); `./tools/verify.ts --plan compiler` (every in-repo
+  UI app matches its hash in `test/ui-golden/`); `--effect-audit`,
+  `--static-audit` and `--static-only` over `examples/console` and
+  `test/benchmarks` (45 files, no findings); the copy-propagation oracle,
+  the 4-token small-scope check and the whole-corpus reload oracle in
+  release.
+- **Fixed.** `test/vitest/enums.test.ts` expected the compiler's wording for
+  a bare variant where `run` now prints check's. `core/tests/overload_name_display.rs`
+  rewrote one temp file from parallel tests, which failed two of them once
+  in a release run.
+- **`test/benchmarks/*` under `petal run --seed 1`** (release, minimum of 15,
+  on a machine at load average 18): append 5.7 ms, arith 11.5, audio_synth
+  105.4, calls 28.3, life 13.7, particles 9.9, spreadsheet 206.0,
+  match_dispatch 311. That is 2% to 10% above the table in
+  `docs/dev/performance.md` (5.2, 10.7, 102.7, 27.2, 13.0, 9.4, 201.4) and
+  below what A1's same-day before-and-after runs measured (arith 12.3,
+  calls 29.8, life 15.0), so it reads as the machine. No pre-plan binary was
+  available for an A/B. Instruction and collection counts are exact and
+  unchanged: life 3,913,944; spreadsheet 20,449,651 and 9 collections;
+  audio_synth 621 collections; particles 4.
+- **Micro-benchmarks re-measured.** Enum reads 1.4 / 3.5 / 6.6 / 11.7 /
+  18.4 / 16.6 ns (record, local, path, payload, `all`, walk); 50 variants
+  with data 6.96 µs a run; one collection over 100,000 records 2.03 ms
+  rooted and 0.009 ms frozen; `petal check` on Moses 0.53 s.
+- **Still failing.** `a_value_edit_in_a_large_program_is_far_cheaper_than_a_recompile`
+  in the release profile only (3.9× against the 5× it asserts; it passes in
+  debug, which is what CI runs). The edit parses the one 1,352-line file
+  twice (2.1 of its 2.7 ms) against a 10.7 ms recompile. None of the files
+  on either side were touched by this plan.
+- **Not run.** The rest of the Garden workspace: `cargo check --workspace
+  --all-targets` passes, but building `garden-app`'s tests ran the disk down
+  to 1.4 GB and was stopped. `tools/oracle-external.ts` (worlds-fair's
+  `wf-ui` binary is not built). Moses under its own host.
+- **Left as found.** Five UI apps have no entry in `test/ui-golden/index.json`
+  (fractal-explorer, particle-sandbox, file-browser, settings,
+  stock-trading). Nineteen scripts outside the repository (worlds-fair's and
+  `~/.garden`'s) moved from `identical-trace` to `unsupported` in the verify
+  plan, because a script that fails check no longer starts.
+
 ## Risks to watch
 
 - **A wrong `CONST` flag is a stale value forever.** The audit only covers

@@ -129,9 +129,10 @@ describe("variants are members of their enum", () => {
   });
 
   it("a bare variant is an undefined name, with a did-you-mean", () => {
-    expect(runPetalError(COLOR + "print(red)")).toMatch(/Undefined variable: red — did you mean Color\.red\?/);
+    // `run` checks before it runs, so these are check's diagnostics.
+    expect(runPetalError(COLOR + "print(red)")).toMatch(/undefined variable `red` — did you mean Color\.red\?/);
     expect(runPetalError(COLOR + "print(custom(1, 2, 3))")).toMatch(
-      /Unknown function: custom — did you mean Color\.custom\?/
+      /unknown function `custom`.* — did you mean Color\.custom\?/
     );
     const checked = checkJsonAllowFail(COLOR + "print(red)");
     expect(checked.ok).toBe(false);

@@ -264,6 +264,11 @@ pub struct StaticAudit {
     /// (`PETAL_STATIC_AUDIT`); how many have been printed so far.
     announce: bool,
     announced: usize,
+    /// In [`StaticAuditMode::StaticOnly`], let the static-value cache keep
+    /// what the build computes (see [`Env::set_static_only_keeps`]).
+    ///
+    /// [`Env::set_static_only_keeps`]: crate::env::Env::set_static_only_keeps
+    pub(crate) keeps: bool,
 }
 
 impl StaticAudit {
@@ -282,8 +287,15 @@ impl StaticAudit {
             enabled: mode != StaticAuditMode::Off,
             mode,
             announce: self.announce,
+            keeps: self.keeps,
             ..Default::default()
         };
+    }
+
+    /// Whether this audit is the static-only build with its values kept:
+    /// the one case where the static-value cache stays on under it.
+    pub(crate) fn keeps_static_values(&self) -> bool {
+        self.keeps && self.mode == StaticAuditMode::StaticOnly
     }
 
     /// The audit the process environment asks for: `PETAL_STATIC_AUDIT=watch`
@@ -583,15 +595,23 @@ fn build_table(
     // The statement each root instruction belongs to. An instruction with no
     // origin of its own (a loop's bookkeeping, a phi's move) belongs with the
     // one before it.
-    let mut stmt: Vec<Option<TermId>> = Vec::with_capacity(n);
-    for ip in 0..n {
-        let own = bc
-            .root
+    // A `StaticSkip` (the static-only build with its values kept) has no
+    // origin and stands in front of the run it guards: it belongs with the
+    // run's first statement, not with whatever precedes it.
+    let own_of = |ip: usize| {
+        bc.root
             .origins
             .get(ip)
             .copied()
             .flatten()
-            .and_then(|t| root_statement(program, &parents, t));
+            .and_then(|t| root_statement(program, &parents, t))
+    };
+    let mut stmt: Vec<Option<TermId>> = Vec::with_capacity(n);
+    for ip in 0..n {
+        let own = match bc.root.code[ip] {
+            Inst::StaticSkip { .. } => (ip + 1..n).find_map(own_of),
+            _ => own_of(ip),
+        };
         let prev = stmt.last().copied().flatten();
         stmt.push(own.or(prev));
     }

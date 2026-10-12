@@ -712,6 +712,53 @@ fn enum_data_is_kept_per_stack() {
     assert!(frame(&mut w).starts_with("4 [5, 6]"));
 }
 
+// --- the static part of a frame, alone ---------------------------------------
+
+/// The audit's static-only build jumps over every statement that is not
+/// static, so it runs a script whose host is not here. With
+/// `set_static_only_keeps` it is lowered with the cache as well: the static
+/// part of a frame as a host with the cache runs it, which is how the cache
+/// is measured on such a script (`core/examples/static_frame.rs`).
+#[test]
+fn the_static_only_build_can_keep_its_values() {
+    use petal::static_audit::StaticAuditMode;
+    let src = "native fn host_clock()\nnative fn host_draw(rows, t)\n\
+               fn row(i)\n  {id: i, cells: [i, i * 2, i * 3]}\nend\n\
+               let ROWS = for i in range(0, 20) do row(i) end\n\
+               let t = host_clock()\n\
+               let WIDE = map(ROWS, fn(r) -> len(r.cells))\n\
+               host_draw(ROWS, t)\n\
+               assert(len(WIDE) == 20)\n";
+    let spent = |keeps: bool| {
+        let mut env = Env::new();
+        env.set_echo(false);
+        env.set_check_only(true);
+        env.set_policy(RunPolicy::FAST);
+        env.set_static_audit(StaticAuditMode::StaticOnly);
+        env.set_static_only_keeps(keeps);
+        let pid = env.load_program(src).unwrap();
+        let sid = env.create_stack(pid).unwrap();
+        let mut frames = Vec::new();
+        for _ in 0..3 {
+            env.reset_stack(sid).unwrap();
+            let before = env.instructions_retired(sid).unwrap();
+            env.run(sid).unwrap();
+            frames.push(env.instructions_retired(sid).unwrap() - before);
+        }
+        assert!(!env.static_audit_report().has_failures());
+        let values = env.static_values(sid).unwrap_or_default();
+        (frames, values.slots.len(), values.stats.skips)
+    };
+    let (plain, slots, _) = spent(false);
+    assert_eq!(slots, 0, "the audit runs with the cache off");
+    assert_eq!(plain[1], plain[2]);
+    let (kept, slots, skips) = spent(true);
+    assert!(slots >= 2 && skips >= 2, "{slots} slots, {skips} skips");
+    assert!(kept[0] >= plain[0], "the first frame builds everything, and stores it");
+    assert_eq!(kept[1], kept[2]);
+    assert!(kept[1] * 4 < plain[1], "later frames skip the tables: {kept:?} against {plain:?}");
+}
+
 // --- the benchmark the plan names -------------------------------------------
 
 /// A 400-record `let` table handed to a memoized function. Rebuilt every

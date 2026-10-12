@@ -478,7 +478,8 @@ impl Env {
         // something reads what instructions recorded: observations, the
         // trace, the static audit (which watches static code run and, in its
         // static-only mode, rewrites the root code itself).
-        if flags.preserve_observations || flags.preserve_trace || self.static_audit.enabled {
+        let audited = self.static_audit.enabled && !self.static_audit.keeps_static_values();
+        if flags.preserve_observations || flags.preserve_trace || audited {
             flags.static_cache = false;
         }
         flags
@@ -1435,6 +1436,18 @@ impl Env {
     pub fn set_static_audit(&mut self, mode: crate::static_audit::StaticAuditMode) {
         self.static_audit.set_mode(mode);
         self.bytecode.clear();
+    }
+
+    /// In the audit's [`StaticOnly`](crate::static_audit::StaticAuditMode::StaticOnly)
+    /// mode, leave the static-value cache as the policy has it instead of
+    /// forcing it off: the build of the static declarations alone, with what
+    /// it builds kept between runs. That is the static part of a frame as a
+    /// host with the cache runs it, for a program whose host is not here to
+    /// run the rest, and it is for measuring (`core/examples/static_frame.rs`):
+    /// a run the cache skips is not watched, so use the plain mode to audit.
+    /// Off by default.
+    pub fn set_static_only_keeps(&mut self, on: bool) {
+        self.static_audit.keeps = on;
     }
 
     /// The mode [`set_static_audit`](Self::set_static_audit) left.

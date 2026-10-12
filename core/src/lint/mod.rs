@@ -688,6 +688,7 @@ mod tests {
     /// and linting must be a fixed point. (A program with no casts to remove
     /// gets formatting only, which cannot change semantics at all.)
     #[test]
+    #[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
     fn lint_preserves_compilation_over_repo_corpus() {
         let files = crate::test_corpus::repo_ptl_files();
         // One file per worker: each file lint touches compiles twice (and

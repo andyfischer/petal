@@ -1831,6 +1831,7 @@ mod tests {
     /// projected from the CST is identical — including spans — to the AST the
     /// parser builds directly.
     #[test]
+    #[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
     fn projected_ast_matches_parser_over_repo_corpus() {
         let files = crate::test_corpus::repo_ptl_files();
         let checked = crate::test_corpus::par_map(&files, |path| {

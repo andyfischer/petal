@@ -32,6 +32,11 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path core/Cargo.toml
 
+      # The fmt/lint/CST sweeps over every .ptl in the repo are `#[ignore]`d
+      # so a local `cargo test` stays cheap; CI is where they always run.
+      - name: Run the corpus sweeps
+        run: make expensive_lint_tests
+
   ts-tests:
     name: TypeScript (tsc + vitest)
     runs-on: ubuntu-latest

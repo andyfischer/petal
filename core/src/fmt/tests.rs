@@ -215,6 +215,7 @@ print(f(Kind.all[0], Op.gift(1)), Kind.from("park").shape)
 /// compiled IR identical (it is whitespace, and Petal is not
 /// whitespace-significant), and formatting is a fixed point.
 #[test]
+#[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
 fn fmt_is_ir_equal_and_idempotent_over_repo_corpus() {
     use crate::ir_equiv::{compile_for_compare, ir_equivalent};
 
@@ -285,6 +286,7 @@ enum Swept {
 /// result as formatting the original. Files with a multi-line token (raw
 /// string, JSX text) are skipped: there the extra spaces would be content.
 #[test]
+#[ignore = "expensive corpus sweep: run with `make expensive_lint_tests`"]
 fn fmt_undoes_mangled_indentation_over_repo_corpus() {
     let files = crate::test_corpus::repo_ptl_files();
     let checked = crate::test_corpus::par_map(&files, |path| {

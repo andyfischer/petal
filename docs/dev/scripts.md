@@ -14,6 +14,7 @@ The [`Makefile`](../../Makefile) wraps the most common tasks. Run `make` (or
 | `make test` | Build, then run the full vitest suite (which also runs every `examples/console/*.ptl`). |
 | `make test-examples` | Print each example program's output for manual inspection. |
 | `make test-c-bridge` | Build `integrations/petal-c-bridge` (the C/C++ embedding bridge) with CMake + Ninja and run its `ctest` suite: C++ tests, plain-C smoke test, example, and the crate's Rust unit tests. Needs CMake, Ninja and a C++20 compiler. See [embedding-c.md](../embedding-c.md). |
+| `make expensive_lint_tests` | Run the four `#[ignore]`d sweeps that hold `petal fmt`, `petal lint` and the CST projection to every `.ptl` in the repo. Minutes of CPU; `PETAL_TEST_JOBS=<n>` caps the threads. Not part of `cargo test`. See [testing.md](testing.md#what-the-rust-suite-costs). |
 | `make prove` | Run the Kani proof harnesses (`cargo kani`) for the core numeric semantics. Needs Kani installed; see [formal-verification.md](formal-verification.md). |
 | `make clean` | Remove Rust build artifacts (`cargo clean`). |
 

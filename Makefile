@@ -2,12 +2,12 @@
 # Run `make` or `make help` to see the available targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help build test test-examples test-c-bridge prove clean
+.PHONY: help build test test-examples test-c-bridge expensive_lint_tests prove clean
 
 help: ## Show this help
 	@echo "Petal — make targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build the Petal compiler (debug)
 	cd core && cargo build
@@ -22,6 +22,9 @@ test-c-bridge: ## Build petal-c-bridge (C/C++ embedding) with CMake + Ninja and 
 	cmake -S integrations/petal-c-bridge -B integrations/petal-c-bridge/build -G Ninja
 	cmake --build integrations/petal-c-bridge/build
 	ctest --test-dir integrations/petal-c-bridge/build --output-on-failure
+
+expensive_lint_tests: ## Run the fmt/lint/CST sweeps over every .ptl in the repo (minutes of CPU; PETAL_TEST_JOBS=<n> caps the threads)
+	cd core && cargo test --lib over_repo_corpus -- --ignored
 
 prove: ## Run the Kani proofs of the core numeric semantics (needs cargo-kani)
 	cd core && cargo kani --solver cadical

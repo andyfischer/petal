@@ -163,8 +163,11 @@ whole corpus.
 
 ### What the Rust suite costs
 
-Nearly all of the CPU `cd core && cargo test` uses goes to four unit tests
-that sweep every `.ptl` file in the repository (about 380) in a debug build:
+Four unit tests sweep every `.ptl` file in the repository (about 380) in a
+debug build, and cost far more than the rest of the suite put together. They
+are `#[ignore]`d, so `cargo test` does not run them; `make
+expensive_lint_tests` does, and CI runs it on every push. Run it yourself
+after changing `petal fmt`, a lint rule, the lexer or parser, or the CST:
 
 | Test | CPU-seconds |
 |---|---|
@@ -175,14 +178,16 @@ that sweep every `.ptl` file in the repository (about 380) in a debug build:
 
 Each fans out over the corpus on half the machine's cores;
 `PETAL_TEST_JOBS=<n>` sets the number. The other 1,200 unit tests take a few
-seconds together. To work without the sweeps:
+seconds together.
 
 ```bash
+make expensive_lint_tests                       # the four sweeps
+PETAL_TEST_JOBS=2 make expensive_lint_tests     # the same, on two threads
 cd core
-cargo test --lib -- --skip over_repo_corpus     # every unit test but the sweeps
+cargo test --lib                                # every unit test but the sweeps
 cargo test --lib typecheck::                    # one module's unit tests
 cargo test --test check_run_agree               # one integration test file
-PETAL_TEST_JOBS=2 cargo test -j 2 -- --test-threads=2   # everything, throttled
+cargo test --lib fmt_is_ir_equal -- --ignored   # one sweep
 ```
 
 The vitest suite is light by comparison: about 30 seconds on two workers

@@ -15,7 +15,8 @@
 //! The rule fires on a declaration that is all of:
 //!
 //! - a plain top-level `state NAME = init` — no key (`state(k) x`), not a
-//!   `state var`, not inside a function, not `pub`;
+//!   `state var`, not inside a function (`pub state` qualifies: importers
+//!   cannot write an export);
 //! - **never assigned**: no write to the cell anywhere in the program the
 //!   file compiles to, in any function or module;
 //! - **static**: the classifier ([`crate::static_classify`]) says the
@@ -71,7 +72,7 @@ pub(super) fn plan_state_fixes(
 ) -> Vec<Fix> {
     // Cheap first: most files have no plain top-level `state` at all, and
     // those never pay for the compile below.
-    let shaped: Vec<(&Stmt, &str)> = stmts
+    let shaped: Vec<(&Stmt, &str, usize)> = stmts
         .iter()
         .filter_map(|s| match &s.kind {
             StmtKind::State {
@@ -79,9 +80,7 @@ pub(super) fn plan_state_fixes(
                 key: None,
                 is_var: false,
                 ..
-            } if !s.exported && keyword_at(chars, s.span.start.offset as usize) => {
-                Some((s, name.as_str()))
-            }
+            } => Some((s, name.as_str(), state_keyword(chars, s)?)),
             _ => None,
         })
         .collect();
@@ -97,7 +96,7 @@ pub(super) fn plan_state_fixes(
 
     let mut candidates: Vec<Candidate> = shaped
         .into_iter()
-        .filter(|(stmt, name)| {
+        .filter(|(stmt, name, _)| {
             // The classifier's entry for this statement: the entry file's
             // `state` of that name, written inside it.
             let (start, end) = (stmt.span.start.line, stmt.span.end.line);
@@ -109,9 +108,9 @@ pub(super) fn plan_state_fixes(
                     && !is_written(program, d.term)
             })
         })
-        .map(|(stmt, name)| Candidate {
+        .map(|(_, name, keyword)| Candidate {
             name: name.to_string(),
-            keyword: stmt.span.start.offset as usize,
+            keyword,
         })
         .collect();
 
@@ -164,6 +163,28 @@ fn splices(candidates: &[Candidate]) -> Vec<Splice> {
     let mut all: Vec<Splice> = candidates.iter().map(|c| keyword_splice(c.keyword)).collect();
     all.sort_by_key(|s| s.start);
     all
+}
+
+/// Where the `state` keyword of `stmt` is written: at the statement's
+/// start, or after the `pub` of an exported one. A `pub state` qualifies
+/// like any other: a module's exports are read-only to its importers (the
+/// compiler rejects a write to an imported name), so the writes in the
+/// declaring file are all the writes there are.
+fn state_keyword(chars: &[char], stmt: &Stmt) -> Option<usize> {
+    let mut at = stmt.span.start.offset as usize;
+    if stmt.exported && !keyword_at(chars, at) {
+        let is_pub = chars.get(at..at + 3).is_some_and(|w| w.iter().copied().eq("pub".chars()));
+        if !is_pub {
+            return None;
+        }
+        at += 3;
+        let blanks = chars[at..].iter().take_while(|c| **c == ' ' || **c == '\t').count();
+        if blanks == 0 {
+            return None;
+        }
+        at += blanks;
+    }
+    keyword_at(chars, at).then_some(at)
 }
 
 /// Is `state` written at `pos`, as a whole word?

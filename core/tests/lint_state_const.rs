@@ -158,9 +158,16 @@ fn a_host_native_in_the_initializer_is_left_alone() {
     assert_left_alone("native fn tile(n)\nstate TILES = [tile(1), tile(2)]\nprint(TILES)\n");
 }
 
+/// An export is read-only to the modules that import it, so the declaring
+/// file's own writes are all the writes there are.
 #[test]
-fn a_pub_state_is_left_alone() {
-    assert_left_alone("pub state LIMIT = 10\nprint(LIMIT)\n");
+fn a_pub_state_becomes_a_pub_const() {
+    assert_fixes(
+        "pub state LIMIT = 10\npub  state ROWS = [[1, LIMIT], [2, LIMIT * 2]]\nprint(LIMIT, ROWS)\n",
+        "pub const LIMIT = 10\npub  const ROWS = [[1, LIMIT], [2, LIMIT * 2]]\nprint(LIMIT, ROWS)\n",
+    );
+    assert_left_alone("pub state count = 0\ncount = count + 1\nprint(count)\n");
+    assert_left_alone("pub state seen = []\nfn note(x)\n  seen = append(seen, x)\nend\nnote(1)\n");
 }
 
 #[test]

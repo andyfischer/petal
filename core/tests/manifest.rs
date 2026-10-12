@@ -436,3 +436,38 @@ fn the_language_server_resolves_a_manifest_dependency_with_no_configuration() {
     let completions = petal::lsp::document::import_path_completions("t", &uri);
     assert!(completions.contains(&"tw".to_string()), "{completions:?}");
 }
+
+#[test]
+fn a_manifest_that_does_not_parse_stops_the_program_that_sits_under_it() {
+    // None of these programs imports anything, so nothing else would ever
+    // read the manifest: taken for "no manifest", each would run, without its
+    // package name and without its `[requires]`.
+    let cases = [
+        ("syntax", "[package\nname = bad\n", "line 1"),
+        (
+            "requires",
+            "[package]\nname = \"needs3\"\nversion = \"0.1.0\"\n[requires]\ncore = \"banana\"\n",
+            "line 5",
+        ),
+        ("noname", "[package]\nversion = \"0.1.0\"\n", "has no 'name'"),
+        (
+            "both",
+            "[package]\nname = \"b\"\n[dependencies]\nx = { path = \"x\", git = \"https://example.com/x\" }\n",
+            "line 4",
+        ),
+        (
+            "depkey",
+            "[package]\nname = \"k\"\n[dependencies]\nx = { path = \"x\", branch = \"main\" }\n",
+            "unknown key 'branch'",
+        ),
+    ];
+    for (tag, manifest, expected) in cases {
+        let tree = Tree::new(&format!("malformed-{tag}"));
+        tree.write("petal.toml", manifest);
+        // Found by walking up, too.
+        let main = tree.write("src/main.ptl", "print(\"ran\")\n");
+        let err = run_file(&mut Env::new(), &main).unwrap_err();
+        assert!(err.contains("petal.toml"), "{tag}: {err}");
+        assert!(err.contains(expected), "{tag}: {err}");
+    }
+}

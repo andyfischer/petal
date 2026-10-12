@@ -237,6 +237,14 @@ way, for code written against an earlier checkout.
   `core/build.rs` embeds them and fails the build if a source directory is
   missing. `petal check` therefore resolves `import ui` and `import bloom`
   with no host and no `-I`.
+- Each host binding carries a revision, bumped when `set_binding` binds a
+  value other than the very one already bound. `PetalCxt::binding_revision`
+  lets a native keep what it decoded from a binding until the binding is set
+  again (petal-ui's text natives keep font metrics this way), and the frame
+  gate does not fingerprint a binding again that has not been set since the
+  last run.
+- A `petal.toml` that does not parse is a load error for every program under
+  it, whether or not the program imports anything.
 - `petal.toml` names dependencies and required host interfaces.
   `[dependencies]` maps an import name to `{ path = "…" }`, `{ git = "…", tag
   = "…" }` / `{ git, rev }` or a registry version string; path dependencies

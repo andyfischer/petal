@@ -8,8 +8,10 @@ Cheesecake engine (`~/cheesecake`), whose thirteen games were migrated to
 explicit imports and `petal.toml` packages.
 
 The short version: the system does what the docs say almost everywhere, and
-the Cheesecake migration needed no script changes. Eight issues are open,
-listed below with a repro each. None is fixed yet.
+the Cheesecake migration needed no script changes. Seven issues are open,
+listed below with a repro each. Issue 2 (a malformed `petal.toml` was
+silently ignored by `run` and `check`) was fixed on 2026-10-11 and removed;
+the other numbers are kept.
 
 ## Open issues
 
@@ -47,36 +49,6 @@ different modules; module-system.md does not mention the limit.
   `<package>/color`. Every Cheesecake game has one, so none is affected.
 - Knock-on: `petal fix-imports` abandons every import it would add to such a
   file ("adding import … would not compile … left as it was").
-
-### 2. A malformed `petal.toml` is silently ignored by `run` and `check`
-
-Severity: medium.
-
-Any of these manifests beside a `main.ptl` that says `print("ran")` exits 0
-from both commands and prints `ran`:
-
-```toml
-[package
-name = bad
-```
-
-```toml
-[package]
-name = "needs3"
-version = "0.1.0"
-[requires]
-core = "banana"
-```
-
-Also: a manifest with no `name`, a dependency with both `path` and `git`, an
-unknown key. The error surfaces only from `petal install`, as a warning from
-`petal packages`, or when an import of an unknown package fails — and there
-it is misreported as `cannot find module 'x' (…): …petal.toml: line 5:
-[requires] core: 'banana' is not a version requirement`.
-
-A typo in the manifest therefore switches off `[requires]` enforcement and
-the package name (and with it the `state` keys) without a word. packages.md
-says a malformed entry "is an error naming the line".
 
 ### 3. `check` misses a qualified call to a private or missing export
 

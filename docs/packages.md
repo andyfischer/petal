@@ -94,6 +94,11 @@ A `[dependencies.name]` section is accepted in place of an inline table. A
 malformed entry (an unknown key, `git` with neither `tag` nor `rev`, both
 `path` and `git`) is an error naming the line.
 
+A manifest that does not parse stops every program under it: `petal run` and
+`petal check` report the manifest's error and exit 1, whether or not the
+program imports anything. It is never taken for a missing manifest, which
+would drop the package name and `[requires]`.
+
 A dependency is declared where it is used. A package resolves its imports
 from its *own* manifest, so `tween`'s `import base` is answered by
 `tween/petal.toml`. The project's manifest is the fallback, which is how code

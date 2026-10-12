@@ -94,6 +94,15 @@ pub trait ModuleResolver {
     /// the project manifest (the nearest `petal.toml` above it).
     fn begin_load(&self, _entry: Option<&Path>) {}
 
+    /// Why the project manifest of the load just begun does not load, if it
+    /// does not. Asked once after [`begin_load`](Self::begin_load), so that a
+    /// `petal.toml` with a mistake in it stops the program instead of being
+    /// taken for no manifest at all, which would drop its package name and
+    /// its `[requires]` without a word.
+    fn project_error(&self) -> Option<String> {
+        None
+    }
+
     /// The host interfaces the package owning a loaded source requires (its
     /// manifest's `[requires]`). `origin` is the source's file; `None` for
     /// an entry with no path. See [`crate::package::RequiredInterface`].
@@ -445,6 +454,10 @@ impl ModuleResolver for ModuleRegistry {
             .map(|dir| if dir.as_os_str().is_empty() { Path::new(".") } else { dir })
             .or(self.inline_import_dir.as_deref())
             .map(canonical_path);
+    }
+
+    fn project_error(&self) -> Option<String> {
+        self.project_package().err()
     }
 
     fn requires_of(&self, origin: Option<&Path>) -> Vec<crate::package::RequiredInterface> {
@@ -1074,6 +1087,9 @@ pub fn load_modules(
     }
     let entry_module_origin = entry_origin.map(|p| ModuleOrigin::File(p.to_path_buf()));
     resolver.begin_load(entry_origin);
+    if let Some(problem) = resolver.project_error() {
+        return Err(LoadError::message(Phase::Module, problem));
+    }
 
     // Loose files are named by their path from the entry file's directory.
     let entry_canonical = entry_origin.map(canonical_path);

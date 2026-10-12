@@ -73,8 +73,11 @@ pub(super) fn handle_run(
         // program a large one. Unless a policy was asked for by name, the
         // run keeps the rest of the default policy and leaves memoization
         // off. A host that runs a script every frame keeps it on.
+        // The same goes for the static-value cache: a value kept for the
+        // next run is kept for nothing, and classifying the program to
+        // decide what to keep is a cost on every start.
         None if std::env::var_os("PETAL_POLICY").is_none() => {
-            env.set_policy(env.policy().with_memo(false));
+            env.set_policy(env.policy().with_memo(false).with_static_cache(false));
         }
         None => {}
     }
@@ -1155,13 +1158,19 @@ pub(super) fn handle_show_bytecode(
     source_input: &SourceInput,
     include_dirs: &[PathBuf],
 ) {
-    use crate::backend::bytecode::{disasm, lower_with_flags};
+    use crate::backend::bytecode::disasm;
     let program = compile_source(source, source_input, include_dirs);
     // Lowered with the flags a run would use, so the disassembly shows the
     // in-place opcodes it would actually execute: `PETAL_POLICY=baseline`
-    // shows the clone-and-alloc lowering.
-    let flags = crate::policy::RunPolicy::from_env().opts;
-    match lower_with_flags(&program, flags) {
+    // shows the clone-and-alloc lowering. Like `petal run`, which runs a
+    // script once, this leaves the static-value cache out unless a policy
+    // was asked for by name: `PETAL_POLICY=fast` shows the `static_skip` /
+    // `static_store` instructions a host that runs every frame executes.
+    let mut flags = crate::policy::RunPolicy::from_env().opts;
+    if std::env::var_os("PETAL_POLICY").is_none() {
+        flags.static_cache = false;
+    }
+    match make_env(include_dirs).lower_with(&program, flags) {
         Ok(bc) => {
             if json {
                 print_json(&disasm::render_json(&bc, &program));

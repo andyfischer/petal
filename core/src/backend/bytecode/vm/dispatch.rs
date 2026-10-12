@@ -622,6 +622,50 @@ impl<'a> Vm<'a> {
                 }
             }
 
+            // --- static values (see `crate::static_cache`) ---
+            Inst::StaticSkip { after, run, slots } => {
+                if self.stack.statics.ready(*run) {
+                    for &(slot, r) in slots.iter() {
+                        if let Some(v) = self.stack.statics.get(slot) {
+                            self.set(fi, r, v);
+                        }
+                    }
+                    let saved = self
+                        .bc
+                        .statics
+                        .runs
+                        .get(*run as usize)
+                        .map_or(0, |r| r.instructions as u64);
+                    let stats = &mut self.stack.statics.stats;
+                    stats.skips += 1;
+                    stats.skipped_instructions += saved;
+                    self.stack.vm_frames[fi].ip = *after as usize;
+                }
+            }
+            Inst::StaticStore { slots } => {
+                if self.stack.statics.wants(slots) {
+                    // Check every value before keeping any: a run is kept
+                    // whole or not at all.
+                    let mut bad = None;
+                    for &(slot, r) in slots.iter() {
+                        let v = self.reg(fi, r);
+                        if let Err(what) = self.heap.mark_immutable(v) {
+                            bad = Some((slot, what));
+                            break;
+                        }
+                    }
+                    match bad {
+                        Some((slot, what)) => self.stack.statics.reject(slots, slot, what),
+                        None => {
+                            for &(slot, r) in slots.iter() {
+                                let v = self.reg(fi, r);
+                                self.stack.statics.fill(&self.bc.statics, slot, v);
+                            }
+                        }
+                    }
+                }
+            }
+
             // --- match ---
             Inst::MatchArm {
                 subject,

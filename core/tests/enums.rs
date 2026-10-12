@@ -1491,7 +1491,9 @@ end
 print(total(K.all))
 ";
     let mut env = env_with(&[]);
-    env.set_policy(RunPolicy::FAST);
+    // Without the static cache, which would keep `total(K.all)` (a static
+    // value) and never make the call the memo is meant to replay.
+    env.set_policy(RunPolicy::FAST.with_static_cache(false));
     let pid = env.load_program(src).unwrap();
     let sid = env.create_stack(pid).unwrap();
     for _ in 0..4 {

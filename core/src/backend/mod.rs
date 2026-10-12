@@ -73,6 +73,21 @@ pub struct OptFlags {
     /// testing them one after another. With it off the arms are the plain
     /// chain of tests, which is the oracle the table is held to.
     pub match_dispatch: bool,
+    /// Keep the top-level values that depend on no dynamic data across runs
+    /// (`crate::static_cache`): the root code gets a `StaticSkip` in front of
+    /// each run of static instructions and a `StaticStore` behind it, and a
+    /// run whose values the stack already holds is jumped over. No
+    /// instruction is moved or removed, so with it off the code is the same
+    /// code without those two instructions, which is the oracle the cache is
+    /// held to.
+    ///
+    /// It needs the classifier's answer for the program, which only an `Env`
+    /// has (the natives decide what is constant), so
+    /// [`bytecode::lower_with_flags`] ignores it and
+    /// [`bytecode::lower_with_statics`] honours it. An `Env` also drops it
+    /// whenever observations or the per-term trace are preserved, and under
+    /// the static audit: a skipped run records nothing for them to read.
+    pub static_cache: bool,
     /// Hold `copy_propagation` back from deleting a dead `Move` whose term is
     /// **named**, so the observation buffer still reports that binding. Set by
     /// `Env` when the observation buffer or the `explain` trace is enabled;
@@ -101,6 +116,7 @@ impl OptFlags {
             in_place_cells: false,
             copy_propagation: false,
             match_dispatch: false,
+            static_cache: false,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -114,6 +130,7 @@ impl OptFlags {
             in_place_cells: true,
             copy_propagation: true,
             match_dispatch: true,
+            static_cache: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -135,6 +152,7 @@ impl OptFlags {
             in_place_cells: true,
             copy_propagation: true,
             match_dispatch: true,
+            static_cache: true,
             preserve_observations: false,
             preserve_trace: false,
         }
@@ -146,6 +164,14 @@ impl OptFlags {
         OptFlags {
             preserve_observations: other.preserve_observations,
             preserve_trace: other.preserve_trace,
+            ..self
+        }
+    }
+
+    /// These passes with the static-value cache switched on or off.
+    pub const fn with_static_cache(self, on: bool) -> OptFlags {
+        OptFlags {
+            static_cache: on,
             ..self
         }
     }

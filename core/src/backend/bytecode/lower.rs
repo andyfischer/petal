@@ -94,6 +94,7 @@ pub fn lower_program_opt(
         builtin_ids: Vec::new(),
         enum_layout: std::sync::Arc::new(enum_layout),
         variant_slots,
+        statics: crate::static_cache::StaticLayout::default(),
     })
 }
 

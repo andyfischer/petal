@@ -501,7 +501,10 @@ fn a_scope_writing_its_own_cell_in_place_can_still_be_replayed() {
     // nothing a replay has to reproduce.
     let code = "fn total(n)\n  var acc = [0]\n  for i in range(0, n) do\n    set acc[0] += i\n  end\n  acc[0]\nend\nprint(total(50))";
     let mut env = Env::new();
-    env.set_policy(RunPolicy::REPLAY);
+    // Without the static cache: `total(50)` is a static value, which the
+    // cache would keep, and the call this test wants replayed would not be
+    // made again at all.
+    env.set_policy(RunPolicy::REPLAY.with_static_cache(false));
     let pid = env.load_program(code).unwrap();
     let sid = env.create_stack(pid).unwrap();
     for frame in 0..3 {

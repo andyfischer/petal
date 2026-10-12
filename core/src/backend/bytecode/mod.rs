@@ -42,8 +42,37 @@ use crate::program::Program;
 /// last-use rewriting runs on the lowered code, after route B's opcode
 /// selection.
 pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
+    lower(program, flags, None)
+}
+
+/// [`lower_with_flags`], honouring [`OptFlags::static_cache`]: the lowering
+/// an `Env` runs. The static-value cache needs the classifier's answer for
+/// the program, and that depends on the natives of the `Env` that compiled
+/// it, which is why this is a separate entry point: without `analysis` the
+/// flag has nothing to act on.
+pub fn lower_with_statics(
+    program: &Program,
+    flags: OptFlags,
+    analysis: &crate::static_classify::StaticAnalysis,
+    natives: &crate::native_fn::NativeFnTable,
+) -> Result<BytecodeProgram, String> {
+    lower(program, flags, Some((analysis, natives)))
+}
+
+fn lower(
+    program: &Program,
+    flags: OptFlags,
+    statics: Option<(&crate::static_classify::StaticAnalysis, &crate::native_fn::NativeFnTable)>,
+) -> Result<BytecodeProgram, String> {
+    // Which top-level terms a static slot may fill. The in-place analyses
+    // are told, so neither takes a value shared across runs for a fresh one.
+    let statics = statics.filter(|_| flags.static_cache);
+    let plan = statics.map(|(analysis, _)| crate::static_cache::StaticPlan::of(program, analysis));
     let in_place = if flags.in_place_mutation {
-        escape::analyze(program)
+        match &plan {
+            Some(plan) => escape::analyze_with_static_roots(program, &plan.roots),
+            None => escape::analyze(program),
+        }
     } else {
         InPlaceSet::default()
     };
@@ -57,11 +86,16 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
     let mut bc = lower_program_opt(program, &in_place, flags.match_dispatch)
         .map_err(|e| format!("bytecode lowering failed: {e}"))?;
     if flags.in_place_straight_line {
-        apply_last_use(&mut bc, program);
+        match &plan {
+            Some(plan) => {
+                lastuse::apply_with_static_roots(&mut bc, program, &plan.root_regs(program))
+            }
+            None => apply_last_use(&mut bc, program),
+        };
     }
-    // Runs last: it rewrites operands and drops instructions, so letting it
-    // precede route A would move the registers that pass's alias groups are
-    // stated in terms of.
+    // Runs last of the rewriting passes: it rewrites operands and drops
+    // instructions, so letting it precede route A would move the registers
+    // that pass's alias groups are stated in terms of.
     if flags.copy_propagation {
         let stats = apply_copy_prop(
             &mut bc,
@@ -77,6 +111,14 @@ pub fn lower_with_flags(program: &Program, flags: OptFlags) -> Result<BytecodePr
                  {} jumps threaded)",
                 stats.before, stats.after, stats.removed, stats.rewritten, stats.threaded
             );
+        }
+    }
+    // The static-value cache wraps runs of the code as it finally is: it
+    // adds two instructions per run and moves or removes none.
+    if let (Some((analysis, natives)), Some(plan)) = (statics, &plan) {
+        crate::static_cache::apply(&mut bc, program, analysis, natives, plan);
+        if std::env::var("PETAL_OPT_STATS").is_ok() {
+            eprint!("{}", crate::static_cache::describe(&bc.statics));
         }
     }
     Ok(bc)

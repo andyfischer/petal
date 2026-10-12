@@ -175,6 +175,13 @@ pub struct Stack {
     /// Instructions retired on this stack since it was created. The memo
     /// decides whether a scope is worth a record by how much it ran.
     pub insts: u64,
+    /// The top-level values that depend on no dynamic data, kept between
+    /// runs so the code that builds them is skipped (see
+    /// [`crate::static_cache`]). Like `enums` it lives here so a fork or a
+    /// restored snapshot resolves its heap ids in its own heap; it is
+    /// stamped with the lowering it was filled under and starts empty under
+    /// any other, and it is cleared with `enums` and `memo` on hot reload.
+    pub statics: crate::static_cache::StaticSlots,
 }
 
 #[derive(Debug, Clone)]
@@ -248,6 +255,7 @@ impl Stack {
             cells_at_run_start: Vec::new(),
             memo: crate::memo::MemoTable::default(),
             insts: 0,
+            statics: crate::static_cache::StaticSlots::default(),
         }
     }
 
@@ -462,6 +470,9 @@ impl Stack {
         // Memo records replay their values and compare against them across
         // runs; open scopes hold what they have recorded so far.
         self.memo.gc_roots(&mut mark);
+        // Static values are loaded into registers by the runs that skip
+        // building them.
+        self.statics.gc_roots(&mut mark);
     }
 }
 

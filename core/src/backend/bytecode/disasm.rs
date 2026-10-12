@@ -406,6 +406,14 @@ fn render_inst(inst: &Inst, program: &Program) -> String {
         }
         MatchFail { subject } => format!("match_fail r{}", subject),
         Error { msg } => format!("error {}", kconst(program, *msg)),
+        StaticSkip { after, run, slots } => {
+            let parts: Vec<String> = slots.iter().map(|(s, r)| format!("r{r} = s{s}")).collect();
+            format!("static_skip run {} [{}] -> {}", run, parts.join(", "), after)
+        }
+        StaticStore { slots } => {
+            let parts: Vec<String> = slots.iter().map(|(s, r)| format!("s{s} = r{r}")).collect();
+            format!("static_store [{}]", parts.join(", "))
+        }
     }
 }
 

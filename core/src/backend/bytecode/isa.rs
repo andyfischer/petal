@@ -564,6 +564,32 @@ pub enum Inst {
     Error {
         msg: ConstantId,
     },
+
+    // --- static values (`crate::static_cache`; root code only) ---
+    /// In front of a run of static instructions. When every slot the run
+    /// *feeds* is filled on the running stack (the stack keeps that as one
+    /// counter per run, indexed by `run`), each slot in `slots` is loaded
+    /// into its register and control jumps to `after`, past the run and its
+    /// [`StaticStore`](Inst::StaticStore). Otherwise falls through and the
+    /// run executes.
+    ///
+    /// `slots` is what the run stores itself. What it feeds is that plus the
+    /// slots of every later run that reads one of its registers
+    /// ([`StaticRun::feeds`](crate::static_cache::StaticRun)): the run is
+    /// only skipped when those later runs will be skipped too.
+    StaticSkip {
+        after: Label,
+        run: u32,
+        slots: Box<[(u32, Reg)]>,
+    },
+    /// Behind a run of static instructions: keep each register in its slot,
+    /// marking the value immutable. A value that cannot be kept (it holds a
+    /// function, a `var` cell, a handle or a pending result) rejects every
+    /// slot of the instruction for good, and the run then executes on every
+    /// run as it would without the cache.
+    StaticStore {
+        slots: Box<[(u32, Reg)]>,
+    },
 }
 
 /// Declare the [`Opcode`] tag set from one list of [`Inst`] variant names, and
@@ -669,6 +695,8 @@ define_opcodes!(
     MatchSwitch,
     MatchFail,
     Error,
+    StaticSkip,
+    StaticStore,
 );
 
 /// Match the single backpatchable branch-target label of a branching op, over
@@ -687,7 +715,8 @@ macro_rules! branch_target_of {
             | Inst::ForEachNext { exit: to, .. }
             | Inst::RangeNext { exit: to, .. }
             | Inst::MatchArm { next: to, .. }
-            | Inst::StateInit { after: to, .. } => Some(to),
+            | Inst::StateInit { after: to, .. }
+            | Inst::StaticSkip { after: to, .. } => Some(to),
             _ => None,
         }
     };
@@ -759,6 +788,8 @@ impl Inst {
             | Inst::MatchArm { .. }
             | Inst::MatchSwitch { .. }
             | Inst::MatchFail { .. }
+            | Inst::StaticSkip { .. }
+            | Inst::StaticStore { .. }
             | Inst::Error { .. } => None,
         }
     }
@@ -795,6 +826,11 @@ impl Inst {
         }
         match self {
             Inst::ForEachNext { var, .. } | Inst::RangeNext { var, .. } => f(*var),
+            Inst::StaticSkip { slots, .. } => {
+                for (_, r) in slots.iter() {
+                    f(*r);
+                }
+            }
             Inst::MatchArm { term, arm, .. } => {
                 if let Some(binds) = match_binds.get(&(*term, *arm)) {
                     for (_, r) in binds {
@@ -903,7 +939,13 @@ impl Inst {
                     f(k);
                 }
             }
-            Inst::LoadConst { .. }
+            Inst::StaticStore { slots } => {
+                for (_, r) in slots.iter_mut() {
+                    f(r);
+                }
+            }
+            Inst::StaticSkip { .. }
+            | Inst::LoadConst { .. }
             | Inst::LoadNil { .. }
             | Inst::LoadBool { .. }
             | Inst::Jump { .. }
@@ -1169,6 +1211,11 @@ pub struct BytecodeProgram {
     /// interning the text. Short of the constant table after a patched
     /// reload added constants; those are never tags.
     pub variant_slots: Vec<u32>,
+    /// What the root code's static-value instructions refer to: how many
+    /// slots a stack running this lowering needs, what each holds, and the
+    /// identity the stack's table is stamped with. Empty unless the program
+    /// was lowered with `OptFlags::static_cache`.
+    pub statics: crate::static_cache::StaticLayout,
 }
 
 /// Sentinel in [`BytecodeProgram::builtin_ids`]: this constant does not name a

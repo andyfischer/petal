@@ -70,7 +70,7 @@
 //! Gated behind `OptFlags::in_place_straight_line`; with the flag off this
 //! pass never runs and the lowering is untouched.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::isa::{BytecodeFn, BytecodeProgram, Inst, Reg};
 use crate::builtins::is_mutating_builtin;
@@ -79,9 +79,22 @@ use crate::program::{Program, TermId};
 /// Rewrite every provably-safe straight-line mutation in `bc` to its in-place
 /// form. Returns the number of instructions rewritten (diagnostics / tests).
 pub fn apply(bc: &mut BytecodeProgram, program: &Program) -> usize {
-    let mut n = apply_fn(&mut bc.root, &bc.match_binds, program);
+    apply_with_static_roots(bc, program, &HashSet::new())
+}
+
+/// [`apply`], with the root registers a static-value slot may fill
+/// (`crate::static_cache`): a value loaded from a slot is the same heap
+/// object on every run, so it is never the fresh root of a rewrite, however
+/// the instruction that built it looks.
+pub fn apply_with_static_roots(
+    bc: &mut BytecodeProgram,
+    program: &Program,
+    static_roots: &HashSet<Reg>,
+) -> usize {
+    let mut n = apply_fn(&mut bc.root, &bc.match_binds, program, static_roots);
+    let none = HashSet::new();
     for f in &mut bc.fns {
-        n += apply_fn(f, &bc.match_binds, program);
+        n += apply_fn(f, &bc.match_binds, program, &none);
     }
     n
 }
@@ -111,6 +124,7 @@ fn apply_fn(
     f: &mut BytecodeFn,
     match_binds: &HashMap<(TermId, u16), Vec<(String, Reg)>>,
     program: &Program,
+    static_roots: &HashSet<Reg>,
 ) -> usize {
     let mut converted = 0;
     loop {
@@ -119,7 +133,7 @@ fn apply_fn(
             let Some(c) = candidate_container(&f.code[i], program) else {
                 continue;
             };
-            if route_a_fires(f, match_binds, program, i, c) {
+            if route_a_fires(f, match_binds, program, i, c, static_roots) {
                 rewrite_in_place(&mut f.code[i]);
                 changed += 1;
             }
@@ -204,6 +218,7 @@ fn route_a_fires(
     program: &Program,
     i: usize,
     c: Reg,
+    static_roots: &HashSet<Reg>,
 ) -> bool {
     // Def sites of every register (including the candidate's own dst write —
     // a candidate whose dst shares its container's register, as arm carry
@@ -239,6 +254,10 @@ fn route_a_fires(
         }
     }
     let root_reg = cur;
+    // A register a static slot may fill holds a value shared across runs.
+    if static_roots.contains(&root_reg) {
+        return false;
+    }
 
     // 2. Alias group: the Move-closure of the root register. A Move from a
     // member into a register with any other def (a phi/carry slot) means the
@@ -519,6 +538,13 @@ fn for_each_read(inst: &Inst, program: &Program, mut f: impl FnMut(Reg, bool)) {
         | Inst::LoopPop { .. }
         | Inst::LoopCollectEnd { .. }
         | Inst::StateRead { .. }
+        | Inst::StaticSkip { .. }
         | Inst::Error { .. } => {}
+        // The slot keeps the value across runs.
+        Inst::StaticStore { slots } => {
+            for (_, r) in slots.iter() {
+                f(*r, RETAIN);
+            }
+        }
     }
 }

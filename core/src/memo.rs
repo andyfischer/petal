@@ -1205,6 +1205,10 @@ mod env_tests {
     fn env(src: &str) -> (Env, crate::stack::StackKey) {
         let mut env = Env::new();
         env.set_echo(false);
+        // The memo is what is under test. A top-level call with constant
+        // arguments is a static value, and with the static cache on the
+        // second run would not make the call at all.
+        env.set_static_cache(false);
         let pid = env.load_program(src).unwrap();
         let sid = env.create_stack(pid).unwrap();
         (env, sid)

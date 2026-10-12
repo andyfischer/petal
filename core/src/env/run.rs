@@ -530,6 +530,9 @@ fn make_vm<'a>(
     // The stack's enum table is the one for this lowering's layout: a pointer
     // comparison, except on the first dispatch after a load or a reload.
     stack.enums.sync(&bc.enum_layout, &mut ctx.heap);
+    // Likewise the static values: two comparisons unless the lowering or a
+    // literal changed under the stack, and then it starts empty.
+    stack.statics.sync(&bc.statics, program.constants.revision());
     Vm {
         program,
         bc,

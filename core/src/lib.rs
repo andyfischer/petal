@@ -70,6 +70,7 @@ pub mod source_map;
 pub mod source_watch;
 pub mod stack;
 pub mod static_audit;
+pub mod static_cache;
 pub mod static_classify;
 pub mod static_json;
 pub mod static_value;

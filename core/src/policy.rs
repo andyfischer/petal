@@ -21,7 +21,9 @@
 //!
 //! A name may be followed by modifiers that switch one thing on or off:
 //! `fast-memo` is the gate alone, `baseline+gate` is the gate over unoptimized
-//! code, `replay-opt` is the memo over unoptimized code. So a differential is
+//! code, `replay-opt` is the memo over unoptimized code, `fast-static` is the
+//! default without the static-value cache (`crate::static_cache`; it is on
+//! in `fast` and `replay`, off in `baseline` and `explain`). So a differential is
 //! one word per side (`petal-ui-run --policy baseline` against
 //! `--policy fast-memo`), not a set of `--no-*` flags plus a comment saying
 //! which combination they spell.
@@ -81,6 +83,8 @@ impl RunPolicy {
         opts: OptFlags {
             preserve_observations: true,
             preserve_trace: true,
+            // A skipped run records nothing for a trace reader to find.
+            static_cache: false,
             ..OptFlags::default_on()
         },
         memo: false,
@@ -99,6 +103,15 @@ impl RunPolicy {
         RunPolicy { opts, ..self }
     }
 
+    /// This policy with the static-value cache on or off (see
+    /// [`OptFlags::static_cache`]): the `+static` / `-static` modifier.
+    pub const fn with_static_cache(self, on: bool) -> RunPolicy {
+        RunPolicy {
+            opts: self.opts.with_static_cache(on),
+            ..self
+        }
+    }
+
     /// This policy with memoization on or off.
     pub const fn with_memo(self, memo: bool) -> RunPolicy {
         RunPolicy { memo, ..self }
@@ -111,7 +124,8 @@ impl RunPolicy {
 
     /// Parse a policy name with optional modifiers: `fast`, `baseline`,
     /// `explain`, `replay`, each optionally followed by any number of
-    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt`.
+    /// `+gate` / `-gate` / `+memo` / `-memo` / `+opt` / `-opt` / `+static` /
+    /// `-static`.
     pub fn parse(spec: &str) -> Result<RunPolicy, String> {
         let spec = spec.trim();
         let split = spec.find(['+', '-']).unwrap_or(spec.len());
@@ -129,16 +143,20 @@ impl RunPolicy {
                 "gate" => policy.gate = on,
                 "memo" => policy.memo = on,
                 "opt" => {
+                    // `explain+opt` keeps what makes it `explain`: the
+                    // preservation guards, and no static cache under them.
+                    let traced = policy.opts.preserve_trace || policy.opts.preserve_observations;
                     policy.opts = if on {
-                        OptFlags::default_on()
+                        OptFlags::default_on().with_static_cache(!traced)
                     } else {
                         OptFlags::none()
                     }
                     .preserving(policy.opts)
                 }
+                "static" => policy.opts.static_cache = on,
                 other => {
                     return Err(format!(
-                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo or opt)"
+                        "unknown run policy modifier '{sign}{other}' in '{spec}' (expected gate, memo, opt or static)"
                     ));
                 }
             }
@@ -155,16 +173,20 @@ impl RunPolicy {
         if let Some((n, _)) = NAMED.iter().find(|(_, p)| p == self) {
             return Some((*n).to_string());
         }
+        let cache = self.opts.static_cache;
         let (base, from) = NAMED
             .iter()
-            .filter(|(_, p)| p.opts == self.opts)
+            .filter(|(_, p)| p.opts.with_static_cache(cache) == self.opts)
             .min_by_key(|(_, p)| {
-                (p.memo != self.memo) as u8 + (p.gate != self.gate) as u8
+                (p.memo != self.memo) as u8
+                    + (p.gate != self.gate) as u8
+                    + (p.opts.static_cache != cache) as u8
             })?;
         let mut name = (*base).to_string();
         for (what, want, have) in [
             ("memo", self.memo, from.memo),
             ("gate", self.gate, from.gate),
+            ("static", cache, from.opts.static_cache),
         ] {
             if want != have {
                 name.push(if want { '+' } else { '-' });
@@ -233,6 +255,25 @@ mod tests {
     }
 
     #[test]
+    fn the_static_cache_has_a_modifier_and_follows_the_optimizer() {
+        assert!(RunPolicy::FAST.opts.static_cache && RunPolicy::REPLAY.opts.static_cache);
+        assert!(!RunPolicy::BASELINE.opts.static_cache && !RunPolicy::EXPLAIN.opts.static_cache);
+        let off = RunPolicy::parse("fast-static").unwrap();
+        assert_eq!(off, RunPolicy::FAST.with_static_cache(false));
+        assert_eq!(off.name().as_deref(), Some("fast-static"));
+        let on = RunPolicy::parse("baseline+static").unwrap();
+        assert!(on.opts.static_cache && !on.opts.copy_propagation);
+        assert_eq!(on.name().as_deref(), Some("baseline+static"));
+        assert!(RunPolicy::parse("baseline+opt").unwrap().opts.static_cache);
+        assert!(!RunPolicy::parse("fast-opt").unwrap().opts.static_cache);
+        assert!(!RunPolicy::parse("explain-opt+opt").unwrap().opts.static_cache);
+        assert_eq!(
+            RunPolicy::parse("replay-static-memo").unwrap().name().as_deref(),
+            Some("replay-memo-static")
+        );
+    }
+
+    #[test]
     fn opt_modifiers_keep_the_explain_preservation() {
         let p = RunPolicy::parse("explain-opt").unwrap();
         assert!(!p.opts.copy_propagation);
@@ -266,7 +307,7 @@ mod tests {
         assert!(
             RunPolicy::parse("fast+speed")
                 .unwrap_err()
-                .contains("gate, memo or opt")
+                .contains("gate, memo, opt or static")
         );
     }
 }

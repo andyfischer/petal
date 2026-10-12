@@ -57,6 +57,12 @@ pub struct ConstantTable {
     /// in `dedup`, so `intern` cannot hand one to a second term.
     #[serde(skip)]
     slots: std::collections::HashSet<u32>,
+    /// Bumped whenever a slot is allocated or rewritten: the table then
+    /// answers differently for a program that is otherwise the same object.
+    /// A cache of values computed from the constants (`crate::static_cache`)
+    /// is stamped with it.
+    #[serde(skip)]
+    revision: u64,
 }
 
 impl ConstantTable {
@@ -65,7 +71,13 @@ impl ConstantTable {
             values: Vec::new(),
             dedup: HashMap::new(),
             slots: std::collections::HashSet::new(),
+            revision: 0,
         }
+    }
+
+    /// How many times a slot was allocated or rewritten (see the field).
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Append an entry that is *not* deduplicated: a slot one term reads, so
@@ -78,6 +90,7 @@ impl ConstantTable {
         let id = ConstantId(self.values.len() as u32);
         self.values.push(value);
         self.slots.insert(id.0);
+        self.revision += 1;
         id
     }
 
@@ -91,6 +104,7 @@ impl ConstantTable {
     pub fn set_slot(&mut self, id: ConstantId, value: ConstantValue) {
         assert!(self.is_slot(id), "constant {} is not a slot", id.0);
         self.values[id.0 as usize] = value;
+        self.revision += 1;
     }
 
     /// Intern a constant value, returning its ID. Deduplicates identical values.

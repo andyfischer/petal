@@ -32,9 +32,11 @@ mod reload;
 mod run;
 mod state_json;
 mod state_storage;
+mod statics;
 
 pub use reload::{ConfigSetError, FileChange, ProgramChange, ReloadOutcome, ReloadReport};
 pub use state_storage::{StateStorageLoad, StateStorageSave, name_list as state_name_list};
+pub use statics::{StaticSlotState, StaticValues};
 
 pub struct Env {
     programs: HashMap<ProgramId, Program>,
@@ -410,7 +412,7 @@ impl Env {
         }
         let program = self.programs.get(&pid).ok_or("Program not found")?;
         self.lower_count.set(self.lower_count.get() + 1);
-        let mut bc = crate::backend::bytecode::lower_with_flags(program, flags)?;
+        let mut bc = self.lower_with(program, flags)?;
         // Bind builtin names to native ids now, once, rather than per call.
         bc.resolve_builtin_names(&program.constants, |name| {
             self.native_fns.lookup_name(name).map(|id| id.0)
@@ -472,6 +474,13 @@ impl Env {
         let mut flags = self.policy.opts;
         flags.preserve_observations |= self.observations.enabled || self.trace.enabled;
         flags.preserve_trace |= self.trace.enabled;
+        // A run the static cache skips records nothing, so it is off whenever
+        // something reads what instructions recorded: observations, the
+        // trace, the static audit (which watches static code run and, in its
+        // static-only mode, rewrites the root code itself).
+        if flags.preserve_observations || flags.preserve_trace || self.static_audit.enabled {
+            flags.static_cache = false;
+        }
         flags
     }
 

@@ -265,6 +265,12 @@ pub(crate) struct Slot<T> {
     /// collection skips the whole frozen graph). Cleared when the slot is
     /// reused, which cannot happen while it is set.
     permanent: bool,
+    /// An *immutable* object ([`Heap::mark_immutable`]): a static-value slot
+    /// holds it across runs, so the in-place operations copy it instead of
+    /// editing it. Unlike `permanent` this changes nothing about collection:
+    /// the object is traced and swept like any other, and is released when
+    /// its last holder lets go. Cleared when the slot is reused.
+    immutable: bool,
 }
 
 /// A generic slot store with an index free list. Backs each of the heap's object
@@ -352,6 +358,7 @@ impl<T> Slab<T> {
             slot.gc_mark = false;
             slot.alive = true;
             slot.permanent = false;
+            slot.immutable = false;
             return RawId {
                 index: idx,
                 generation,
@@ -365,6 +372,7 @@ impl<T> Slab<T> {
             gc_mark: false,
             alive: true,
             permanent: false,
+            immutable: false,
         });
         RawId {
             index: idx,
@@ -399,6 +407,50 @@ impl<T> Slab<T> {
         self.slots
             .get(id.index as usize)
             .is_some_and(|slot| slot.alive && slot.generation == id.generation && slot.permanent)
+    }
+
+    /// Whether an in-place operation has to copy `id` instead of editing it:
+    /// the object is permanent ([`Heap::freeze`]) or immutable
+    /// ([`Heap::mark_immutable`]).
+    #[inline]
+    pub(crate) fn is_shared(&self, id: RawId) -> bool {
+        self.slots.get(id.index as usize).is_some_and(|slot| {
+            slot.alive && slot.generation == id.generation && (slot.permanent || slot.immutable)
+        })
+    }
+
+    /// Whether `id` is a live immutable object ([`Heap::mark_immutable`]).
+    pub(crate) fn is_immutable(&self, id: RawId) -> bool {
+        self.slots
+            .get(id.index as usize)
+            .is_some_and(|slot| slot.alive && slot.generation == id.generation && slot.immutable)
+    }
+
+    /// Marking immutable, pass 1: visit `id` unless it is dead, already
+    /// visited (the mark bit is borrowed as the visited flag, as freezing
+    /// does), or already immutable or permanent. Returns true when newly
+    /// visited.
+    fn visit_for_immutable(&mut self, id: RawId) -> bool {
+        let slot = &mut self.slots[id.index as usize];
+        if slot.alive
+            && slot.generation == id.generation
+            && !slot.gc_mark
+            && !slot.permanent
+            && !slot.immutable
+        {
+            slot.gc_mark = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Marking immutable, pass 2: clear the visited flag and, when
+    /// `immutable`, set the bit.
+    fn finish_immutable(&mut self, id: RawId, immutable: bool) {
+        let slot = &mut self.slots[id.index as usize];
+        slot.gc_mark = false;
+        slot.immutable |= immutable;
     }
 
     /// Freezing, pass 1: visit `id` unless it is dead, already visited (its
@@ -547,6 +599,7 @@ impl<T> Slab<T> {
             slot.gc_mark = false;
             // Clearing reclaims frozen objects too: the store is going away.
             slot.permanent = false;
+            slot.immutable = false;
         }
         self.permanent_bits.clear();
         self.permanent_count = 0;
@@ -574,6 +627,7 @@ impl<T> Slab<T> {
                         gc_mark: false,
                         alive: false,
                         permanent: false,
+                        immutable: false,
                     });
                     if theirs.high_water != u32::MAX {
                         extra.push(i as u32);
@@ -1386,9 +1440,9 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place append on a dead list"
         );
-        if self.lists.is_permanent(id.raw()) {
-            // A frozen object is never mutated: copy, as the value-semantic
-            // form does.
+        if self.lists.is_shared(id.raw()) {
+            // A frozen object is never mutated, and neither is one a static
+            // slot holds: copy, as the value-semantic form does.
             return self.list_append(id, val);
         }
         self.lists.get_mut(id.raw()).push(val);
@@ -1402,7 +1456,7 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place set on a dead list"
         );
-        if self.lists.is_permanent(id.raw()) {
+        if self.lists.is_shared(id.raw()) {
             return self.list_set(id, index, val);
         }
         self.lists.get_mut(id.raw())[index] = val;
@@ -1416,7 +1470,7 @@ impl Heap {
             self.lists.is_live(id.raw()),
             "in-place drop_last on a dead list"
         );
-        if self.lists.is_permanent(id.raw()) {
+        if self.lists.is_shared(id.raw()) {
             return self.list_drop_last(id);
         }
         self.lists.get_mut(id.raw()).pop();
@@ -1491,7 +1545,7 @@ impl Heap {
             self.f64_arrays.is_live(id.raw()),
             "in-place set on a dead f64 array"
         );
-        if self.f64_arrays.is_permanent(id.raw()) {
+        if self.f64_arrays.is_shared(id.raw()) {
             return self.f64_array_set(id, index, val);
         }
         self.f64_arrays.get_mut(id.raw())[index] = val;
@@ -1505,7 +1559,7 @@ impl Heap {
             self.f64_arrays.is_live(id.raw()),
             "in-place swap on a dead f64 array"
         );
-        if self.f64_arrays.is_permanent(id.raw()) {
+        if self.f64_arrays.is_shared(id.raw()) {
             return self.f64_array_swap(id, i, j);
         }
         self.f64_arrays.get_mut(id.raw()).swap(i, j);
@@ -1589,7 +1643,7 @@ impl Heap {
             self.maps.is_live(id.raw()),
             "in-place set on a dead map"
         );
-        if self.maps.is_permanent(id.raw()) {
+        if self.maps.is_shared(id.raw()) {
             return self.map_set(id, key, val);
         }
         self.maps.get_mut(id.raw()).entries.insert(key, val);
@@ -1603,7 +1657,7 @@ impl Heap {
             self.maps.is_live(id.raw()),
             "in-place remove on a dead map"
         );
-        if self.maps.is_permanent(id.raw()) {
+        if self.maps.is_shared(id.raw()) {
             return self.map_remove(id, key);
         }
         self.maps.get_mut(id.raw()).entries.shift_remove(key);
@@ -1986,6 +2040,141 @@ impl Heap {
             Value::EnumVariant { tag, data } => {
                 self.strings.is_permanent(tag.raw()) && self.lists.is_permanent(data.raw())
             }
+            _ => false,
+        }
+    }
+
+    /// Make `root` and every container it references **immutable**: from now
+    /// on the in-place operations copy such an object instead of editing it,
+    /// exactly as they do for a frozen one. This is the guard on a value a
+    /// static-value slot keeps across runs (`crate::static_cache`): whatever
+    /// reaches that value later, by whatever alias, cannot change it under
+    /// the slot.
+    ///
+    /// Unlike [`freeze`](Self::freeze) it says nothing to the collector. An
+    /// immutable object is traced and swept like any other and is released
+    /// when the slot (and every other holder) lets go of it, which is what a
+    /// cache that is rebuilt on every reload needs.
+    ///
+    /// A value kept across runs must also hold nothing that changes or dies
+    /// with the run: a `var` cell, a function, a host handle or a pending
+    /// result. When `root` reaches one the call fails with its name and
+    /// marks nothing.
+    ///
+    /// Must not be called while a collection is marking, for the reason
+    /// `freeze` gives. Returns how many containers were newly marked.
+    pub fn mark_immutable(&mut self, root: Value) -> Result<usize, &'static str> {
+        #[derive(Clone, Copy)]
+        enum Obj {
+            L(RawId),
+            F(RawId),
+            M(RawId),
+        }
+        // The common stored value is a scalar: nothing to walk.
+        if !matches!(
+            root,
+            Value::List(_)
+                | Value::F64Array(_)
+                | Value::Map(_)
+                | Value::EnumVariant { .. }
+                | Value::Element(_)
+                | Value::Cell(_)
+                | Value::Closure(_)
+                | Value::OverloadSet(_)
+                | Value::Handle(_)
+                | Value::Pending(_)
+        ) {
+            return Ok(0);
+        }
+        let mut visited: Vec<Obj> = Vec::new();
+        let mut stack = vec![root];
+        let mut error: Option<&'static str> = None;
+        while let Some(v) = stack.pop() {
+            match v {
+                Value::List(id) => {
+                    if self.lists.visit_for_immutable(id.raw()) {
+                        visited.push(Obj::L(id.raw()));
+                        stack.extend(self.lists.get(id.raw()).iter().copied().filter(|v| {
+                            !matches!(
+                                v,
+                                Value::Nil
+                                    | Value::Bool(_)
+                                    | Value::Int(_)
+                                    | Value::Float(_)
+                                    | Value::String(_)
+                            )
+                        }));
+                    }
+                }
+                Value::F64Array(id) => {
+                    if self.f64_arrays.visit_for_immutable(id.raw()) {
+                        visited.push(Obj::F(id.raw()));
+                    }
+                }
+                Value::Map(id) => {
+                    if self.maps.visit_for_immutable(id.raw()) {
+                        visited.push(Obj::M(id.raw()));
+                        stack.extend(self.maps.get(id.raw()).entries.values().copied().filter(
+                            |v| {
+                                !matches!(
+                                    v,
+                                    Value::Nil
+                                        | Value::Bool(_)
+                                        | Value::Int(_)
+                                        | Value::Float(_)
+                                        | Value::String(_)
+                                )
+                            },
+                        ));
+                    }
+                }
+                Value::EnumVariant { data, .. } => stack.push(Value::List(data)),
+                Value::Element(id) => {
+                    let e = *self.elements.get(id.raw());
+                    stack.push(Value::Map(e.props));
+                    stack.push(Value::List(e.children));
+                }
+                Value::Cell(_) => error = Some("a `var` cell"),
+                Value::Closure(_) | Value::OverloadSet(_) => error = Some("a function"),
+                Value::Handle(_) => error = Some("a host handle"),
+                Value::Pending(_) => error = Some("a pending result"),
+                Value::Nil
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::Vec3(_)
+                | Value::NativeFunction(_)
+                | Value::Dual { .. }
+                | Value::Vec2(_, _)
+                | Value::Symbol(_) => {}
+            }
+            if error.is_some() {
+                break;
+            }
+        }
+        let ok = error.is_none();
+        for o in &visited {
+            match *o {
+                Obj::L(id) => self.lists.finish_immutable(id, ok),
+                Obj::F(id) => self.f64_arrays.finish_immutable(id, ok),
+                Obj::M(id) => self.maps.finish_immutable(id, ok),
+            }
+        }
+        match error {
+            Some(what) => Err(what),
+            None => Ok(visited.len()),
+        }
+    }
+
+    /// Whether `val` is a container marked immutable (see
+    /// [`mark_immutable`](Self::mark_immutable)). Scalars, strings and other
+    /// values nothing edits in place answer false.
+    pub fn is_immutable(&self, val: Value) -> bool {
+        match val {
+            Value::List(id) => self.lists.is_immutable(id.raw()),
+            Value::F64Array(id) => self.f64_arrays.is_immutable(id.raw()),
+            Value::Map(id) => self.maps.is_immutable(id.raw()),
             _ => false,
         }
     }
@@ -2824,6 +3013,96 @@ mod tests {
         // The parent's own counters are untouched by the fork.
         assert_eq!(parent.dup_stats().get(DupKind::Fork).count, 0);
         assert_eq!(parent.dup_stats().get(DupKind::List).count, 1);
+    }
+
+    /// An immutable value (what a static-value slot holds) is copied by
+    /// every one of the seven in-place operations, at any depth, and is
+    /// still collected like any other object once nothing holds it.
+    #[test]
+    fn immutable_values_are_copied_by_every_in_place_operation_and_still_collected() {
+        let mut heap = Heap::new();
+        let inner = heap.alloc_list(vec![Value::Int(1), Value::Int(2)]);
+        let nums = heap.alloc_f64_array(vec![1.0, 2.0]);
+        let mut entries = record_map_with_capacity(2);
+        entries.insert("inner", Value::List(inner));
+        entries.insert("nums", Value::F64Array(nums));
+        let rec = heap.alloc_map(entries);
+        let root = heap.alloc_list(vec![Value::Map(rec), Value::Int(7)]);
+        let loose = heap.alloc_list(vec![Value::Int(0)]);
+
+        assert_eq!(heap.mark_immutable(Value::List(root)), Ok(4));
+        assert_eq!(heap.mark_immutable(Value::List(root)), Ok(0), "already marked");
+        for v in [Value::List(root), Value::Map(rec), Value::List(inner), Value::F64Array(nums)] {
+            assert!(heap.is_immutable(v) && !heap.is_frozen(v));
+        }
+        assert!(!heap.is_immutable(Value::List(loose)));
+
+        assert_ne!(heap.list_append_in_place(root, Value::Int(8)), root);
+        assert_ne!(heap.list_set_in_place(inner, 0, Value::Int(9)), inner);
+        assert_ne!(heap.list_drop_last_in_place(inner), inner);
+        assert_ne!(heap.f64_array_set_in_place(nums, 0, 5.0), nums);
+        assert_ne!(heap.f64_array_swap_in_place(nums, 0, 1), nums);
+        assert_ne!(heap.map_set_in_place(rec, "inner", Value::Nil), rec);
+        assert_ne!(heap.map_remove_in_place(rec, "nums"), rec);
+        assert_eq!(heap.get_list(root).len(), 2);
+        assert_eq!(heap.get_list(inner), &[Value::Int(1), Value::Int(2)]);
+        assert_eq!(heap.get_f64_array(nums), &[1.0, 2.0]);
+        assert_eq!(heap.get_map(rec).len(), 2);
+        // An object that is not marked is still edited in place, and a copy
+        // of a marked one is an ordinary object again.
+        assert_eq!(heap.list_append_in_place(loose, Value::Int(1)), loose);
+        let copy = heap.list_append(inner, Value::Int(3));
+        assert!(!heap.is_immutable(Value::List(copy)));
+        assert_eq!(heap.list_append_in_place(copy, Value::Int(4)), copy);
+
+        // Rooted, it survives; released, it goes, and the slot it leaves is
+        // an ordinary one.
+        heap.mark_value(Value::List(root));
+        heap.sweep();
+        assert!(heap.is_live(Value::List(inner)) && heap.is_immutable(Value::List(inner)));
+        heap.sweep();
+        assert!(!heap.is_live(Value::List(root)) && !heap.is_live(Value::Map(rec)));
+        let reused = heap.alloc_list(vec![]);
+        assert!(!heap.is_immutable(Value::List(reused)));
+        assert_eq!(heap.list_append_in_place(reused, Value::Int(1)), reused);
+    }
+
+    /// A value that holds a cell, a function, a handle or a pending result
+    /// is not marked at all, not even the part that was walked first.
+    #[test]
+    fn marking_immutable_is_all_or_nothing() {
+        let mut heap = Heap::new();
+        let cell = heap.alloc_cell(Value::Int(1));
+        for (bad, what) in [
+            (Value::Cell(cell), "a `var` cell"),
+            (Value::Pending(crate::value::PendingId(1)), "a pending result"),
+        ] {
+            let good = heap.alloc_list(vec![Value::Int(1)]);
+            let holder = heap.alloc_list(vec![bad]);
+            let root = heap.alloc_list(vec![Value::List(holder), Value::List(good)]);
+            assert_eq!(heap.mark_immutable(Value::List(root)), Err(what));
+            for l in [root, holder, good] {
+                assert!(!heap.is_immutable(Value::List(l)));
+                assert_eq!(heap.list_append_in_place(l, Value::Nil), l);
+            }
+            // The walk borrowed the mark bit and gave it back: a sweep with
+            // nothing marked frees all three.
+            heap.sweep();
+            assert!(!heap.is_live(Value::List(root)) && !heap.is_live(Value::List(good)));
+        }
+        assert_eq!(heap.mark_immutable(Value::Int(3)), Ok(0));
+        assert_eq!(heap.mark_immutable(Value::Cell(cell)), Err("a `var` cell"));
+    }
+
+    /// A fork carries the bit, as it carries the frozen one.
+    #[test]
+    fn a_fork_carries_the_immutable_bit() {
+        let mut parent = Heap::new();
+        let list = parent.alloc_list(vec![Value::Int(1)]);
+        parent.mark_immutable(Value::List(list)).unwrap();
+        let mut child = parent.fork();
+        assert!(child.is_immutable(Value::List(list)));
+        assert_ne!(child.list_append_in_place(list, Value::Int(2)), list);
     }
 
     /// Frozen objects survive collections that mark nothing, are not traced,

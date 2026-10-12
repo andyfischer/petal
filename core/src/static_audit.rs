@@ -519,7 +519,7 @@ impl StaticAudit {
 }
 
 /// `file:line` of a term, when the compiler recorded one.
-fn position(program: &Program, term: TermId) -> Option<String> {
+pub(crate) fn position(program: &Program, term: TermId) -> Option<String> {
     let span = program.source_map.get(term).filter(|s| s.start.line > 0)?;
     Some(match program.source_map.file_name_for_span(span) {
         Some(file) => format!("{file}:{}", span.start.line),
@@ -529,7 +529,7 @@ fn position(program: &Program, term: TermId) -> Option<String> {
 
 /// For every block, the control term it hangs off: a child block's parent,
 /// or the match an arm's guard or body block belongs to.
-fn block_parents(program: &Program) -> Vec<Option<TermId>> {
+pub(crate) fn block_parents(program: &Program) -> Vec<Option<TermId>> {
     let mut parent: Vec<Option<TermId>> = program.blocks.iter().map(|b| b.parent_term_id).collect();
     let mut set = |b: BlockId, t: TermId| {
         if let Some(slot) = parent.get_mut(b.0 as usize) {
@@ -554,7 +554,11 @@ fn block_parents(program: &Program) -> Vec<Option<TermId>> {
 
 /// The root-block term `term` sits in (itself, when it is in the root
 /// block); `None` for a term inside a function body.
-fn root_statement(program: &Program, parents: &[Option<TermId>], term: TermId) -> Option<TermId> {
+pub(crate) fn root_statement(
+    program: &Program,
+    parents: &[Option<TermId>],
+    term: TermId,
+) -> Option<TermId> {
     let mut t = term;
     for _ in 0..10_000 {
         let b = program.terms.get(t.0 as usize)?.block_id;

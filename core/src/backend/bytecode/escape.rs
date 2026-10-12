@@ -229,7 +229,16 @@ impl InPlaceSet {
 /// along with the user calls whose results those mutations rewrite (which the
 /// lowering then keeps out of memoized scopes).
 pub fn analyze(program: &Program) -> InPlaceSet {
-    let ctx = Analysis::build(program);
+    analyze_with_static_roots(program, &HashSet::new())
+}
+
+/// [`analyze`], with the root-block terms a static-value slot may fill
+/// (`crate::static_cache`). A value loaded from a slot is the same heap
+/// object on every run, so such a term is never a fresh root, whatever its
+/// op: `let T = [1, 2, 3]` kept in a slot is as shared as a `state` read.
+pub fn analyze_with_static_roots(program: &Program, static_roots: &HashSet<TermId>) -> InPlaceSet {
+    let mut ctx = Analysis::build(program);
+    ctx.static_roots = static_roots.clone();
     let mut set = InPlaceSet::default();
     for term in &program.terms {
         if ctx.is_mutation(term) && ctx.route_b_ok(term.id) {
@@ -359,6 +368,9 @@ struct Analysis<'p> {
     /// carriers — the forward direction of a spine link. Lets a state-rooted
     /// backbone be extended past the seed's backward cone.
     phi_by_init: HashMap<TermId, Vec<TermId>>,
+    /// Root-block terms a static-value slot may fill: never fresh roots (see
+    /// [`analyze_with_static_roots`]). Empty unless the cache is on.
+    static_roots: HashSet<TermId>,
     /// Base state keys that do **not** address one fixed runtime slot: some
     /// state term for them sits off the statically empty path (see
     /// [`addresses_the_empty_path`] — inside a function body, so its
@@ -433,6 +445,7 @@ impl<'p> Analysis<'p> {
             state_readers: HashMap::new(),
             multi_slot_keys: HashSet::new(),
             phi_by_init: HashMap::new(),
+            static_roots: HashSet::new(),
         };
 
         let mut phi_by_init: HashMap<TermId, Vec<TermId>> = HashMap::new();
@@ -1039,6 +1052,11 @@ impl<'p> Analysis<'p> {
     /// ([`Self::function_returns_fresh`]). Everything else — a param, a capture, a
     /// state read, an unknown call — could alias a value the caller still holds.
     fn is_fresh_root(&self, t: TermId) -> bool {
+        // A static-value slot may hand this term the object it built on an
+        // earlier run.
+        if self.static_roots.contains(&t) {
+            return false;
+        }
         let term = self.program.get_term(t);
         if Self::is_fresh_alloc(term) {
             return true;

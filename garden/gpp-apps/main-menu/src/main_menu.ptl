@@ -108,10 +108,17 @@ let file_count = len(files)
 let pr_count = len(prs)
 
 // ── the flat row model: three sections, one selection ─────────────────────────
+// A row is its section plus its index into that section's list.
+enum Row
+  project(idx),
+  file(idx),
+  pr(idx),
+end
+
 let rows = []
-for i in range(0, project_count) do rows = append(rows, { kind: "project", idx: i }) end
-for i in range(0, file_count) do rows = append(rows, { kind: "file", idx: i }) end
-for i in range(0, pr_count) do rows = append(rows, { kind: "pr", idx: i }) end
+for i in range(0, project_count) do rows = append(rows, Row.project(i)) end
+for i in range(0, file_count) do rows = append(rows, Row.file(i)) end
+for i in range(0, pr_count) do rows = append(rows, Row.pr(i)) end
 let row_count = len(rows)
 
 // ── header + the two Open buttons ─────────────────────────────────────────────
@@ -191,16 +198,16 @@ if key_pressed("return") && row_count > 0 then activate = selected end
 
 // ── the activation itself: one host mutation per row kind ─────────────────────
 if activate >= 0 && activate < row_count then
-  let row = rows[activate]
-  if row.kind == "project" then
-    last_action = "open_project"
-    mutate("open_project", { path: projects[row.idx].path })
-  elsif row.kind == "file" then
-    last_action = "open_path"
-    mutate("open_path", { path: files[row.idx].path })
-  else
-    last_action = "open_pr"
-    mutate("open_pr", { number: prs[row.idx].number })
+  match rows[activate]
+    when Row.project(idx) ->
+      last_action = "open_project"
+      mutate("open_project", { path: projects[idx].path })
+    when Row.file(idx) ->
+      last_action = "open_path"
+      mutate("open_path", { path: files[idx].path })
+    when Row.pr(idx) ->
+      last_action = "open_pr"
+      mutate("open_pr", { number: prs[idx].number })
   end
 end
 
@@ -302,28 +309,31 @@ for i in range(0, row_count) do
     let tx = row_r.x + 16
     let avail = row_r.w - 32
     // The section identity bar: green project / blue file / purple PR.
-    let bar_c = T.success
-    if row.kind == "file" then bar_c = P.blue end
-    if row.kind == "pr" then bar_c = P.purple end
+    let bar_c = match row
+      when Row.project(_) -> T.success
+      when Row.file(_) -> P.blue
+      when Row.pr(_) -> P.purple
+    end
     draw_rect_rounded(rect(row_r.x + 3, ry + 8, 3, ROW_H - 16), 1, bar_c)
-    if row.kind == "project" then
-      let p = projects[row.idx]
-      draw_text(ellipsize_tail(p.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
-      draw_text(ellipsize(p.path, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
-    elsif row.kind == "file" then
-      let f = files[row.idx]
-      draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
-      // The head of a long path is the expendable part — `ellipsize` keeps the
-      // tail, which is what tells two same-named files apart.
-      let ctx = f.dir
-      if len(f.project_name) > 0 then ctx = "{f.project_name} · {f.dir}" end
-      draw_text(ellipsize(ctx, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
-    else
-      let pr = prs[row.idx]
-      draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
-      if len(pr.title) > 0 then
-        draw_text(ellipsize_tail(pr.title, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
-      end
+    match row
+      when Row.project(idx) ->
+        let p = projects[idx]
+        draw_text(ellipsize_tail(p.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
+        draw_text(ellipsize(p.path, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
+      when Row.file(idx) ->
+        let f = files[idx]
+        draw_text(ellipsize_tail(f.name, avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
+        // The head of a long path is the expendable part — `ellipsize` keeps the
+        // tail, which is what tells two same-named files apart.
+        let ctx = f.dir
+        if len(f.project_name) > 0 then ctx = "{f.project_name} · {f.dir}" end
+        draw_text(ellipsize(ctx, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
+      when Row.pr(idx) ->
+        let pr = prs[idx]
+        draw_text(ellipsize_tail("{pr.repo} #{pr.number}", avail, FS), {x: tx, y: ry + 6}, {size: FS, color: name_c, weight: 500})
+        if len(pr.title) > 0 then
+          draw_text(ellipsize_tail(pr.title, avail, T.font_sm), {x: tx, y: ry + 25}, T.font_sm, T.dim)
+        end
     end
   end
 end

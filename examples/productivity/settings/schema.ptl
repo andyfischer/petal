@@ -274,11 +274,8 @@ end
 // Any value, for the Changes list and for search: "On", "Dark", "13 px".
 pub fn show_value(s: record, v) -> string
   match s.kind
-    when "toggle" -> if v then "On" else "Off" end
-    when "check" -> if v then "On" else "Off" end
-    when "seg" -> s.opts[int(v)]
-    when "select" -> s.opts[int(v)]
-    when "radio" -> s.opts[int(v)]
+    when "toggle" | "check" -> if v then "On" else "Off" end
+    when "seg" | "select" | "radio" -> s.opts[int(v)]
     when "swatch" -> ACCENTS[int(v)].name
     when "text" -> if v == "" then "empty" else v end
     when "action" -> ""

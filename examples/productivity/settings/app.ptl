@@ -435,10 +435,8 @@ end
 fn nudge(s: record, dir: num) -> nil
   let v = get vals[s.id]
   match s.kind
-    when "toggle" -> commit(s.id, dir > 0)
-    when "check" -> commit(s.id, dir > 0)
-    when "slider" -> commit(s.id, sc.snap(s, v + dir * s.step))
-    when "stepper" -> commit(s.id, sc.snap(s, v + dir * s.step))
+    when "toggle" | "check" -> commit(s.id, dir > 0)
+    when "slider" | "stepper" -> commit(s.id, sc.snap(s, v + dir * s.step))
     when "swatch" -> commit(s.id, clamp(v + dir, 0, len(sc.ACCENTS) - 1))
     when "text" -> nil
     when _ -> commit(s.id, clamp(v + dir, 0, len(s.opts) - 1))

@@ -28,14 +28,20 @@ let INKS = [
   #d64550, #f08a3c, #e8c34a, #79b74a, #2bb39a, #8b5cf6,
 ]
 
-let TOOLS = [
-  {id: "brush",   name: "Brush",      key: "1", hint: "freehand"},
-  {id: "line",    name: "Line",       key: "2", hint: "click-drag"},
-  {id: "rect",    name: "Rectangle",  key: "3", hint: "click-drag"},
-  {id: "ellipse", name: "Ellipse",    key: "4", hint: "click-drag"},
-  {id: "eraser",  name: "Eraser",     key: "5", hint: "paints paper"},
-  {id: "fill",    name: "Flood fill", key: "6", hint: "click"},
-]
+// The tools, in rail order. Each carries what the chrome shows for it: `label`
+// on the rail tooltip and status bar, `stroke` in the history list, the
+// shortcut `key`, and the tooltip's `hint`. A stroke's `kind` is the tool that
+// made it.
+enum Tool
+  brush(label: "Brush", stroke: "Brush", key: "1", hint: "freehand"),
+  line(label: "Line", stroke: "Line", key: "2", hint: "click-drag"),
+  rect(label: "Rectangle", stroke: "Rectangle", key: "3", hint: "click-drag"),
+  ellipse(label: "Ellipse", stroke: "Ellipse", key: "4", hint: "click-drag"),
+  eraser(label: "Eraser", stroke: "Eraser", key: "5", hint: "paints paper"),
+  fill(label: "Flood fill", stroke: "Fill", key: "6", hint: "click"),
+end
+
+let TOOLS = Tool.all
 
 let TAU = 6.28318530718
 
@@ -129,9 +135,9 @@ fn draw_stroke(art: record, s: record)
   let c = s.color
   let a = s.alpha
   let wd = s.size
-  if s.kind == "fill" then
+  if s.kind == Tool.fill then
     draw_rect(art, c, a)
-  elsif s.kind == "brush" || s.kind == "eraser" then
+  elsif s.kind == Tool.brush || s.kind == Tool.eraser then
     let prev = to_px(art, s.pts[0])
     if a >= 250 || len(s.pts) == 1 then
       dot(x: prev.x, y: prev.y, rad: float(wd) / 2.0, c: c, a: a)
@@ -147,11 +153,11 @@ fn draw_stroke(art: record, s: record)
   elsif len(s.pts) >= 2 then
     let p = to_px(art, s.pts[0])
     let q = to_px(art, s.pts[1])
-    if s.kind == "line" then
+    if s.kind == Tool.line then
       seg(x1: p.x, y1: p.y, x2: q.x, y2: q.y, c: c, a: a, wd: wd)
       dot(x: p.x, y: p.y, rad: float(wd) / 2.0, c: c, a: a)
       dot(x: q.x, y: q.y, rad: float(wd) / 2.0, c: c, a: a)
-    elsif s.kind == "rect" then
+    elsif s.kind == Tool.rect then
       let x0 = min(p.x, q.x)
       let y0 = min(p.y, q.y)
       let x1 = max(p.x, q.x)
@@ -160,7 +166,7 @@ fn draw_stroke(art: record, s: record)
       seg(x1, y1: y0, x2: x1, y2: y1, c: c, a: a, wd: wd)
       seg(x1, y1, x0, y1, c, a, wd)
       seg(x0, y1, x0, y0, c, a, wd)
-    elsif s.kind == "ellipse" then
+    elsif s.kind == Tool.ellipse then
       ellipse_outline(cx: (p.x + q.x) / 2.0, cy: (p.y + q.y) / 2.0,
         rx: abs(q.x - p.x) / 2.0, ry: abs(q.y - p.y) / 2.0, c: c, a: a, wd: wd)
     end
@@ -169,50 +175,50 @@ end
 
 // ── Seeded artwork ───────────────────────────────────────────────────────
 
-fn mk(kind: string, color: record, size: num, pts: list) -> record
+fn mk(kind: Tool, color: record, size: num, pts: list) -> record
   {kind: kind, color: color, size: size, alpha: 255, pts: pts}
 end
 
-fn mk(kind: string, color: record, size: num, alpha: num, pts: list) -> record
+fn mk(kind: Tool, color: record, size: num, alpha: num, pts: list) -> record
   {kind: kind, color: color, size: size, alpha: alpha, pts: pts}
 end
 
 fn tick(x: num, y0: num, y1: num) -> record
-  mk(kind: "brush", color: #79b74a, size: 2, pts: [[x, y0], [x + 0.006, y1]])
+  mk(kind: Tool.brush, color: #79b74a, size: 2, pts: [[x, y0], [x + 0.006, y1]])
 end
 
 fn seed_artwork() -> list
   let out = []
   // wash of sky
-  out = append(out, mk(kind: "fill", color: #dfe7ef, size: 0, alpha: 130, pts: []))
+  out = append(out, mk(kind: Tool.fill, color: #dfe7ef, size: 0, alpha: 130, pts: []))
   // sun
-  out = append(out, mk(kind: "ellipse", color: #e8c34a, size: 3, pts: [[0.735, 0.10], [0.865, 0.29]]))
-  out = append(out, mk(kind: "ellipse", color: #e8c34a, size: 2, alpha: 90, pts: [[0.705, 0.075], [0.895, 0.315]]))
+  out = append(out, mk(kind: Tool.ellipse, color: #e8c34a, size: 3, pts: [[0.735, 0.10], [0.865, 0.29]]))
+  out = append(out, mk(kind: Tool.ellipse, color: #e8c34a, size: 2, alpha: 90, pts: [[0.705, 0.075], [0.895, 0.315]]))
   // far ridge
-  out = append(out, mk(kind: "brush", color: #9aa3b2, size: 3, pts: [
+  out = append(out, mk(kind: Tool.brush, color: #9aa3b2, size: 3, pts: [
     [0.02, 0.50], [0.11, 0.38], [0.19, 0.45], [0.30, 0.28], [0.41, 0.44],
     [0.52, 0.34], [0.63, 0.47], [0.75, 0.37], [0.87, 0.48], [0.98, 0.42],
   ]))
   // near ridge
-  out = append(out, mk(kind: "brush", color: #55606f, size: 4, pts: [
+  out = append(out, mk(kind: Tool.brush, color: #55606f, size: 4, pts: [
     [0.02, 0.63], [0.13, 0.55], [0.22, 0.60], [0.33, 0.47], [0.45, 0.61],
     [0.56, 0.53], [0.68, 0.64], [0.80, 0.56], [0.90, 0.63], [0.98, 0.58],
   ]))
   // horizon
-  out = append(out, mk(kind: "line", color: #9aa3b2, size: 2, pts: [[0.02, 0.735], [0.98, 0.735]]))
+  out = append(out, mk(kind: Tool.line, color: #9aa3b2, size: 2, pts: [[0.02, 0.735], [0.98, 0.735]]))
   // water
-  out = append(out, mk(kind: "brush", color: #2bb39a, size: 3, alpha: 150, pts: [
+  out = append(out, mk(kind: Tool.brush, color: #2bb39a, size: 3, alpha: 150, pts: [
     [0.06, 0.80], [0.16, 0.785], [0.26, 0.805], [0.36, 0.79], [0.46, 0.81],
     [0.56, 0.792], [0.66, 0.812], [0.76, 0.795], [0.86, 0.815], [0.94, 0.80],
   ]))
-  out = append(out, mk(kind: "brush", color: #2bb39a, size: 2, alpha: 110, pts: [
+  out = append(out, mk(kind: Tool.brush, color: #2bb39a, size: 2, alpha: 110, pts: [
     [0.12, 0.875], [0.24, 0.86], [0.36, 0.882], [0.48, 0.866], [0.60, 0.886],
     [0.72, 0.868], [0.84, 0.888],
   ]))
   // cabin
-  out = append(out, mk(kind: "rect", color: #17191f, size: 3, pts: [[0.115, 0.615], [0.215, 0.735]]))
-  out = append(out, mk(kind: "brush", color: #b5651d, size: 3, pts: [[0.098, 0.618], [0.165, 0.552], [0.232, 0.618]]))
-  out = append(out, mk(kind: "rect", color: #e8c34a, size: 2, pts: [[0.145, 0.645], [0.185, 0.682]]))
+  out = append(out, mk(kind: Tool.rect, color: #17191f, size: 3, pts: [[0.115, 0.615], [0.215, 0.735]]))
+  out = append(out, mk(kind: Tool.brush, color: #b5651d, size: 3, pts: [[0.098, 0.618], [0.165, 0.552], [0.232, 0.618]]))
+  out = append(out, mk(kind: Tool.rect, color: #e8c34a, size: 2, pts: [[0.145, 0.645], [0.185, 0.682]]))
   // grass
   out = append(out, tick(0.30, 0.735, 0.700))
   out = append(out, tick(0.325, 0.735, 0.708))
@@ -221,8 +227,8 @@ fn seed_artwork() -> list
   out = append(out, tick(0.685, 0.735, 0.694))
   out = append(out, tick(0.71, 0.735, 0.710))
   // birds
-  out = append(out, mk(kind: "brush", color: #55606f, size: 2, pts: [[0.46, 0.175], [0.483, 0.160], [0.506, 0.176]]))
-  out = append(out, mk(kind: "brush", color: #55606f, size: 2, pts: [[0.535, 0.215], [0.552, 0.204], [0.569, 0.216]]))
+  out = append(out, mk(kind: Tool.brush, color: #55606f, size: 2, pts: [[0.46, 0.175], [0.483, 0.160], [0.506, 0.176]]))
+  out = append(out, mk(kind: Tool.brush, color: #55606f, size: 2, pts: [[0.535, 0.215], [0.552, 0.204], [0.569, 0.216]]))
   out
 end
 
@@ -329,36 +335,37 @@ fn pill(r: record, text: string, keycap: string, on: bool, enabled: bool)
   draw_text(keycap, {x: tx + tw + 8, y: r.y + (r.h - 10) / 2}, 10, kc)
 end
 
-fn tool_icon(id: string, r: record, c: record)
+fn tool_icon(tool: Tool, r: record, c: record)
   let cx = r.x + r.w / 2
   let cy = r.y + r.h / 2
-  if id == "brush" then
-    let px = float(cx) - 10.0
-    let py = float(cy)
-    for i in range(1, 13) do
-      let f = float(i) / 12.0
-      let qx = float(cx) - 10.0 + f * 20.0
-      let qy = float(cy) + sin(f * TAU) * 5.5
-      seg(x1: px, y1: py, x2: qx, y2: qy, c: c, a: 255, wd: 3)
-      px = qx
-      py = qy
-    end
-    dot(x: px, y: py, rad: 1.5, c: c, a: 255)
-  elsif id == "line" then
-    seg(x1: cx - 8, y1: cy + 7, x2: cx + 8, y2: cy - 7, c: c, a: 255, wd: 2)
-    dot(x: cx - 8, y: cy + 7, rad: 2.5, c: c, a: 255)
-    dot(x: cx + 8, y: cy - 7, rad: 2.5, c: c, a: 255)
-  elsif id == "rect" then
-    draw_rect_outline(x: cx - 9, y: cy - 7, w: 18, h: 14, r: c.r, g: c.g, b: c.b, a: 255, width: 2)
-  elsif id == "ellipse" then
-    ellipse_outline(cx: float(cx), cy: float(cy), rx: 9.0, ry: 7.5, c: c, a: 255, wd: 2)
-  elsif id == "eraser" then
-    draw_rect_rounded(x: cx - 9, y: cy - 6, w: 18, h: 12, radius: 3, r: c.r, g: c.g, b: c.b, a: 200)
-    seg(x1: cx - 9, y1: cy + 8, x2: cx + 9, y2: cy + 8, c: c, a: 255, wd: 2)
-  elsif id == "fill" then
-    fill_poly(points: [[cx - 8, cy - 1], [cx - 1, cy - 9], [cx + 7, cy - 1], [cx - 1, cy + 7]],
-      r: c.r, g: c.g, b: c.b, a: 220)
-    dot(x: cx + 8, y: cy + 6, rad: 3.0, c: c, a: 255)
+  match tool
+    when Tool.brush ->
+      let px = float(cx) - 10.0
+      let py = float(cy)
+      for i in range(1, 13) do
+        let f = float(i) / 12.0
+        let qx = float(cx) - 10.0 + f * 20.0
+        let qy = float(cy) + sin(f * TAU) * 5.5
+        seg(x1: px, y1: py, x2: qx, y2: qy, c: c, a: 255, wd: 3)
+        px = qx
+        py = qy
+      end
+      dot(x: px, y: py, rad: 1.5, c: c, a: 255)
+    when Tool.line ->
+      seg(x1: cx - 8, y1: cy + 7, x2: cx + 8, y2: cy - 7, c: c, a: 255, wd: 2)
+      dot(x: cx - 8, y: cy + 7, rad: 2.5, c: c, a: 255)
+      dot(x: cx + 8, y: cy - 7, rad: 2.5, c: c, a: 255)
+    when Tool.rect ->
+      draw_rect_outline(x: cx - 9, y: cy - 7, w: 18, h: 14, r: c.r, g: c.g, b: c.b, a: 255, width: 2)
+    when Tool.ellipse ->
+      ellipse_outline(cx: float(cx), cy: float(cy), rx: 9.0, ry: 7.5, c: c, a: 255, wd: 2)
+    when Tool.eraser ->
+      draw_rect_rounded(x: cx - 9, y: cy - 6, w: 18, h: 12, radius: 3, r: c.r, g: c.g, b: c.b, a: 200)
+      seg(x1: cx - 9, y1: cy + 8, x2: cx + 9, y2: cy + 8, c: c, a: 255, wd: 2)
+    when Tool.fill ->
+      fill_poly(points: [[cx - 8, cy - 1], [cx - 1, cy - 9], [cx + 7, cy - 1], [cx - 1, cy + 7]],
+        r: c.r, g: c.g, b: c.b, a: 220)
+      dot(x: cx + 8, y: cy + 6, rad: 3.0, c: c, a: 255)
   end
 end
 
@@ -396,8 +403,8 @@ end
 state strokes = seed_artwork()
 state hist = []
 state fut = []
-state cur = {kind: "", color: #000000, size: 0, alpha: 0, pts: [], active: false}
-state tool = "brush"
+state cur = {kind: nil, color: #000000, size: 0, alpha: 0, pts: [], active: false}
+state tool = Tool.brush
 state ink = 0
 state brush = 5
 state opacity = 255
@@ -421,9 +428,9 @@ let over_art = point_in(px: mx, py: my, r: art)
 let blocked = menu_blocking(menu)
 
 // ── Keyboard ─────────────────────────────────────────────────────────────
-for i in range(0, len(TOOLS)) do
-  if key_pressed(TOOLS[i].key) then
-    tool = TOOLS[i].id
+for t in TOOLS do
+  if key_pressed(t.key) then
+    tool = t
   end
 end
 if key_pressed("[") then brush = max(1, brush - 1) end
@@ -453,7 +460,7 @@ end
 // ── Pointer: tools, swatches, history rows, header pills ─────────────────
 for i in range(0, len(TOOLS)) do
   if !blocked && clicked(L.tool_rects[i]) then
-    tool = TOOLS[i].id
+    tool = TOOLS[i]
   end
 end
 for i in range(0, len(INKS)) do
@@ -472,16 +479,16 @@ if !blocked && clicked(L.btn_grid) then grid = !grid end
 
 // ── Painting on the artboard ─────────────────────────────────────────────
 let kind = tool
-let paint_c = if tool == "eraser" then PAPER else color end
-let paint_w = if tool == "eraser" then brush * 3 else brush end
-let paint_a = if tool == "eraser" then 255 else opacity end
+let paint_c = if tool == Tool.eraser then PAPER else color end
+let paint_w = if tool == Tool.eraser then brush * 3 else brush end
+let paint_a = if tool == Tool.eraser then 255 else opacity end
 
 let start_paint = over_art && mouse_pressed(0) && !size_grab && !alpha_grab && !blocked
 
-if start_paint && tool == "fill" then
+if start_paint && tool == Tool.fill then
   hist = append(hist, strokes)
   fut = []
-  strokes = append(strokes, mk(kind: "fill", color: color, size: 0, alpha: opacity, pts: []))
+  strokes = append(strokes, mk(kind: Tool.fill, color: color, size: 0, alpha: opacity, pts: []))
   ops = ops + 1
   sel = -1
 elsif start_paint then
@@ -492,7 +499,7 @@ end
 
 if cur.active && mouse_down(0) then
   let uv = to_uv(art, mx, my)
-  if cur.kind == "brush" || cur.kind == "eraser" then
+  if cur.kind == Tool.brush || cur.kind == Tool.eraser then
     let lastp = last(cur.pts)
     let dx = (uv[0] - lastp[0]) * float(art.w)
     let dy = (uv[1] - lastp[1]) * float(art.h)
@@ -505,7 +512,7 @@ if cur.active && mouse_down(0) then
 end
 
 if cur.active && !mouse_down(0) then
-  let keep = cur.kind == "brush" || cur.kind == "eraser"
+  let keep = cur.kind == Tool.brush || cur.kind == Tool.eraser
   if !keep && len(cur.pts) >= 2 then
     let p = to_px(art, cur.pts[0])
     let q = to_px(art, cur.pts[1])
@@ -518,7 +525,7 @@ if cur.active && !mouse_down(0) then
       alpha: cur.alpha, pts: cur.pts})
     ops = ops + 1
   end
-  cur = {kind: "", color: #000000, size: 0, alpha: 0, pts: [], active: false}
+  cur = {kind: nil, color: #000000, size: 0, alpha: 0, pts: [], active: false}
 end
 
 // ── Undo / redo / clear ──────────────────────────────────────────────────
@@ -597,11 +604,11 @@ end
 
 // brush cursor
 if over_art && !cur.active then
-  let cr = if tool == "eraser" then paint_w else brush end
-  if tool == "fill" then
+  let cr = if tool == Tool.eraser then paint_w else brush end
+  if tool == Tool.fill then
     dot(x: mx, y: my, rad: 5, c: color, a: 200)
     draw_circle(cx: mx, cy: my, radius: 9, r: 255, g: 255, b: 255, a: 120)
-  elsif tool == "eraser" then
+  elsif tool == Tool.eraser then
     draw_circle(cx: mx, cy: my, radius: max(4, cr / 2 + 2), r: 0, g: 0, b: 0, a: 70)
     draw_circle(cx: mx, cy: my, radius: max(3, cr / 2), r: PAPER.r, g: PAPER.g, b: PAPER.b, a: 210)
   else
@@ -636,7 +643,7 @@ let tip = -1
 for i in range(0, len(TOOLS)) do
   let r = L.tool_rects[i]
   let t = TOOLS[i]
-  let on = t.id == tool
+  let on = t == tool
   let hov = hovered(r)
   if hov then tip = i end
   let fill = if on then ELEV elsif hov then HOVER else PANEL end
@@ -645,7 +652,7 @@ for i in range(0, len(TOOLS)) do
     draw_rect_rounded(x: r.x - 12, y: r.y + 14, w: 4, h: r.h - 28, radius: 2, r: ACCENT.r, g: ACCENT.g, b: ACCENT.b)
   end
   let ic = if on then TEXT elsif hov then TEXT else DIM end
-  tool_icon(id: t.id, r: r, c: ic)
+  tool_icon(t, r: r, c: ic)
   draw_text(t.key, {x: r.x + r.w - 12, y: r.y + r.h - 15}, 9,
     if on then ACCENT else FAINT end)
 end
@@ -684,7 +691,7 @@ slider_track(L.alpha_slider, t: float(opacity - 25) / 230.0, c: mix(ACCENT, TEXT
 
 plate(L.preview, radius: 8, fill: PAPER, edge: OUTLINE)
 clip(x: L.preview.x, y: L.preview.y, w: L.preview.w, h: L.preview.h)
-if tool == "eraser" then
+if tool == Tool.eraser then
   seg(x1: L.preview.x + 8, y1: L.preview.y + L.preview.h / 2,
     x2: L.preview.x + L.preview.w - 8, y2: L.preview.y + L.preview.h / 2, c: #55606f, a: 255, wd: 26)
 end
@@ -720,16 +727,10 @@ for i in range(0, len(L.rows)) do
   end
   draw_rect_rounded(x: r.x + 10, y: r.y + 8, w: 14, h: 14, radius: 4, r: PAPER.r, g: PAPER.g, b: PAPER.b)
   draw_rect_rounded(x: r.x + 13, y: r.y + 11, w: 8, h: 8, radius: 3, r: s.color.r, g: s.color.g, b: s.color.b, a: s.alpha)
-  let nm = match s.kind
-    when "fill" -> "Fill"
-    when "brush" -> "Brush"
-    when "eraser" -> "Eraser"
-    when "line" -> "Line"
-    when "rect" -> "Rectangle"
-    when _ -> "Ellipse" end
+  let nm = s.kind.stroke
   if !hidden then
     draw_text(nm, {x: r.x + 34, y: r.y + 8}, 12, if on then TEXT else DIM end)
-    let meta = if s.kind == "fill" then "wash" else "{s.size} px · {len(s.pts)} pt" end
+    let meta = if s.kind == Tool.fill then "wash" else "{s.size} px · {len(s.pts)} pt" end
     draw_text_right(meta, right_x: r.x + r.w - 10, y: r.y + 9, size: 10, c: FAINT)
   end
 end
@@ -743,10 +744,7 @@ draw_rect(L.status, PANEL)
 seg(x1: 0, y1: L.status.y, x2: W, y2: L.status.y, c: #000000, a: 130, wd: 1)
 let sy = L.status.y + 11
 
-let tname = "Brush"
-for t in TOOLS do
-  if t.id == tool then tname = t.name end
-end
+let tname = tool.label
 draw_rect_rounded(x: 20, y: L.status.y + 8, w: text_width(tname, 11) + 20, h: 20, radius: 6, r: ELEV.r, g: ELEV.g, b: ELEV.b)
 draw_text(tname, {x: 30, y: sy + 1}, 11, TEXT)
 
@@ -766,13 +764,13 @@ draw_text_center(hints, cx: W / 2 + 40, y: sy + 1, size: 11, c: mix(FAINT, DIM, 
 if tip >= 0 then
   let t = TOOLS[tip]
   let r = L.tool_rects[tip]
-  let tw = max(text_width(t.name, 12), text_width(t.hint, 10)) + 24
+  let tw = max(text_width(t.label, 12), text_width(t.hint, 10)) + 24
   let tr = rect(r.x + r.w + 12, r.y + 6, tw, 42)
   draw_rect_rounded(x: tr.x + 1, y: tr.y + 3, w: tr.w, h: tr.h, radius: 8, r: 0, g: 0, b: 0, a: 110)
   plate(tr, radius: 8, fill: ELEV, edge: OUTLINE)
   fill_triangle(x1: tr.x - 6, y1: tr.y + 20, x2: tr.x + 1, y2: tr.y + 14, x3: tr.x + 1, y3: tr.y + 26,
     r: ELEV.r, g: ELEV.g, b: ELEV.b)
-  draw_text(t.name, {x: tr.x + 12, y: tr.y + 8}, 12, TEXT)
+  draw_text(t.label, {x: tr.x + 12, y: tr.y + 8}, 12, TEXT)
   draw_text(t.hint, {x: tr.x + 12, y: tr.y + 25}, 10, FAINT)
 end
 

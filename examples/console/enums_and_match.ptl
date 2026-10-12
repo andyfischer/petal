@@ -1,0 +1,178 @@
+// Enums and match, the whole feature set
+// A small city ledger: what can be built, what each thing is for, and what
+// happened to the neighborhood this week.
+
+// ── Variants are members of their enum ───────────────────────────────────────
+// `Use.park` and `Kind.park` are different values that happen to share a name.
+enum Use
+  road,
+  green,
+  park,
+end
+
+// ── Constant data ────────────────────────────────────────────────────────────
+// `key: expr` attaches data to a variant. Every variant declares the same keys,
+// so `k.shape` is a field every Kind has. The data may name other enums.
+enum Kind
+  parkway(shape: "route", use: Use.road, cost: 40),
+  park(shape: "area", use: Use.green, cost: 12),
+  plaza(shape: "area", use: Use.park, cost: 18),
+  bridge(shape: "route", use: Use.road, cost: 95),
+end
+
+// ── Payloads, with data alongside ────────────────────────────────────────────
+// A bare name in the parens is a payload field, supplied when the value is
+// built. `tone` is constant data: it belongs to the variant, not to one event.
+enum Op
+  build(kind, place, tone: "plain"),
+  fight(place, won, tone: "bad"),
+  gift(amount, tone: "good"),
+  rest(tone: "plain"),
+end
+
+print("== values ==")
+let k = Kind.park
+print(k, "is a", type(k), "named", k.name)
+print("shape:", k.shape, " use:", k.use, " cost:", k.cost)
+print("Kind.park == Use.park?", Kind.park == Use.park)
+print("Kind.park == Kind.park?", Kind.park == Kind.park)
+
+let op = Op.fight("East Tremont", true)
+print(op, "- place:", op.place, " won:", op.won, " tone:", op.tone)
+print("same payload is the same value:", op == Op.fight("East Tremont", true))
+print("another payload is not:", op == Op.fight("East Tremont", false))
+
+// ── Reflection: all and from ─────────────────────────────────────────────────
+print("")
+print("== all and from ==")
+for kind in Kind.all do
+  print("  {kind.name}: shape {kind.shape}, use {kind.use.name}, {kind.cost} per block")
+end
+let routes = filter(Kind.all, fn(kind) -> kind.shape == "route")
+print("routes:", map(routes, fn(kind) -> kind.name))
+print("total to build one of each:", reduce(map(Kind.all, fn(kind) -> kind.cost), 0, fn(a, b) -> a + b))
+
+// `from` turns a name from outside the program (a save file, a command line)
+// into a variant, or nil when no variant has that name.
+for word in ["plaza", "bridge", "casino"] do
+  let found = Kind.from(word)
+  if found == nil then
+    print("  from(\"{word}\") is nil")
+  else
+    print("  from(\"{word}\") is {found}, costing {found.cost}")
+  end
+end
+// A variant with a payload is not one value, so it is in neither: of the four
+// Ops only `rest` is listed.
+print("Op.all:", Op.all)
+
+// An uncalled payload variant is its constructor.
+let gifts = map([5, 20], Op.gift)
+print("gifts:", gifts)
+
+// ── match: exhaustive, with or-patterns ──────────────────────────────────────
+// Every arm names a variant of Kind and there is no catch-all, so the compiler
+// checks that no Kind is missing. Add a variant to Kind and this stops
+// compiling until it has an arm.
+fn upkeep(kind: Kind) -> int
+  match kind
+    when Kind.park | Kind.plaza -> 2
+    when Kind.parkway -> 5
+    when Kind.bridge -> 9
+  end
+end
+
+print("")
+print("== match ==")
+for kind in Kind.all do
+  print("  upkeep of a {kind.name}: {upkeep(kind)}")
+end
+
+// ── match: statement bodies, payload patterns, guards ────────────────────────
+// After `->` an arm runs statements until the next `when`; its last expression
+// is its value. Here the match is the control flow of the week.
+var budget = 100
+var mood = 0
+var built = []
+
+fn apply(op: Op) -> string
+  let funds = get budget
+  match op
+    when Op.build(kind, place) if kind.cost > funds ->
+      set mood -= 1
+      "cannot afford a {kind.name} at {place} ({kind.cost} > {funds})"
+    when Op.build(kind, place) ->
+      set budget -= kind.cost
+      set built = append(get built, kind)
+      "built a {kind.name} at {place}"
+    when Op.fight(place, true) ->
+      set mood += 2
+      "won the fight over {place}"
+    when Op.fight(place, _) ->
+      set mood -= 3
+      "lost the fight over {place}"
+    when Op.gift(amount) ->
+      set budget += amount
+      "a gift of {amount}"
+    when Op.rest -> "a quiet day"
+  end
+end
+
+let week = [
+  Op.build(Kind.park, "Riverside"),
+  Op.build(Kind.bridge, "the Narrows"),
+  Op.gift(30),
+  Op.fight("East Tremont", false),
+  Op.build(Kind.bridge, "the Narrows"),
+  Op.rest,
+  Op.fight("Washington Square", true),
+]
+
+for day in range(0, len(week)) do
+  let what = apply(week[day])
+  print("  day {day + 1} [{week[day].tone}]: {what}")
+end
+print("budget {budget}, mood {mood}, built {map(built, fn(kind) -> kind.name)}")
+
+// ── match in value position, over strings ────────────────────────────────────
+// Literal arms dispatch through a table rather than a chain of comparisons, and
+// `|` groups the spellings that mean the same thing.
+fn parse(word: string)
+  match word
+    when "n" | "north" | "up" -> [0, -1]
+    when "s" | "south" | "down" -> [0, 1]
+    when "e" | "east" | "right" -> [1, 0]
+    when "w" | "west" | "left" -> [-1, 0]
+    when _ -> nil
+  end
+end
+
+print("")
+print("== strings ==")
+var at = [0, 0]
+for word in ["north", "e", "right", "sideways", "down"] do
+  let step = parse(word)
+  let said = match step
+    when nil -> "ignored"
+    when [dx, dy] ->
+      set at = [at[0] + dx, at[1] + dy]
+      "moved to {at}"
+  end
+  print("  {word}: {said}")
+end
+
+// ── Bindings and wildcards in patterns ───────────────────────────────────────
+// A bare name in a pattern always binds; only a qualified name is a variant.
+fn describe(op: Op) -> string
+  match op
+    when Op.build(Kind.bridge | Kind.parkway, place) -> "a route through {place}"
+    when Op.build(other, _) -> "some {other.shape}: a {other.name}"
+    when anything -> "not a building: {anything}"
+  end
+end
+
+print("")
+print("== nested patterns ==")
+for item in [Op.build(Kind.bridge, "the Narrows"), Op.build(Kind.plaza, "City Hall"), Op.gift(5)] do
+  print("  {describe(item)}")
+end

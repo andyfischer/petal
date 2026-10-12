@@ -34,8 +34,16 @@ let CELL = 26
 let CELLS = COLS * ROWS
 
 // ── Persistent game state ────────────────────────────────────────────────────
-// phase: "ready" | "playing" | "paused" | "over"
-state phase = "ready"
+// Where the game is. Each phase carries what the chrome shows for it: the
+// status pill's text and colour, and what the pause button does next.
+enum Phase
+  ready(label: "READY", tint: DIM, action: "Start"),
+  playing(label: "RUNNING", tint: BODY_HI, action: "Pause"),
+  paused(label: "PAUSED", tint: GOLD, action: "Resume"),
+  over(label: "GAME OVER", tint: DANGER, action: "Play again"),
+end
+
+state phase = Phase.ready
 state body = [11 * COLS + 13, 11 * COLS + 12, 11 * COLS + 11, 11 * COLS + 10]
 state dir = 1                 // 0 up, 1 right, 2 down, 3 left
 state pending = 1
@@ -124,8 +132,8 @@ if want >= 0 then
   if want != opposite(pending) then
     pending = want
   end
-  if phase == "ready" then
-    phase = "playing"
+  if phase == Phase.ready then
+    phase = Phase.playing
   end
 end
 
@@ -159,22 +167,18 @@ if hit_wrap then
 end
 
 if hit_pause then
-  if phase == "playing" then
-    phase = "paused"
-  elsif phase == "paused" then
-    phase = "playing"
-  elsif phase == "ready" then
-    phase = "playing"
-  else
-    // From "over" the primary control is the obvious one: play again.
-    hit_restart = true
+  match phase
+    when Phase.playing -> phase = Phase.paused
+    when Phase.paused | Phase.ready -> phase = Phase.playing
+    // From `over` the primary control is the obvious one: play again.
+    when Phase.over -> hit_restart = true
   end
 end
 
 if hit_restart then
   // A run that already ended recorded itself on death; only a restart from a
   // live game still needs to be filed.
-  if score > 0 && phase != "over" then
+  if score > 0 && phase != Phase.over then
     runs = append(runs, score)
     if len(runs) > 5 then
       runs = slice(runs, start: len(runs) - 5, end: len(runs))
@@ -193,7 +197,7 @@ if hit_restart then
   flash = 0.0
   shake = 0.0
   food = free_cell(body)
-  phase = "playing"
+  phase = Phase.playing
 end
 
 // ── Simulation ───────────────────────────────────────────────────────────────
@@ -204,7 +208,7 @@ let step_time = interval_of(lvl)
 flash = max(0.0, flash - dts * 3.2)
 shake = max(0.0, shake - dts * 2.6)
 
-if phase == "playing" then
+if phase == Phase.playing then
   run_time = run_time + dts
   acc = acc + dts
   if bonus >= 0 then
@@ -218,7 +222,7 @@ end
 // Fixed-rate stepping off the accumulator, capped so a long stall (headless
 // frames tick at the ~200ms poll rate, not 60fps) cannot teleport the snake.
 var steps = 0
-while phase == "playing" && acc >= step_time && steps < 3 do
+while phase == Phase.playing && acc >= step_time && steps < 3 do
   acc = acc - step_time
   set steps = steps + 1
 
@@ -285,7 +289,7 @@ while phase == "playing" && acc >= step_time && steps < 3 do
   end
 
   if dead then
-    phase = "over"
+    phase = Phase.over
     shake = 1.0
     deaths = deaths + 1
     if score > best then best = score end
@@ -308,16 +312,8 @@ draw_text("SNAKE", pos: {x: PAD, y: PAD - 2}, style: {size: 30, color: TEXT, spa
 draw_text("grid simulation · fixed-step accumulator · petal panel",
   pos: {x: PAD + 1, y: PAD + 38}, style: {size: 13, color: FAINT, spacing: 1})
 
-let phase_label = match phase
-  when "ready" -> "READY"
-  when "playing" -> "RUNNING"
-  when "paused" -> "PAUSED"
-  when _ -> "GAME OVER" end
-let phase_color = match phase
-  when "over" -> DANGER
-  when "paused" -> GOLD
-  when "playing" -> BODY_HI
-  when _ -> DIM end
+let phase_label = phase.label
+let phase_color = phase.tint
 let pill_w = text_width(phase_label, 11) + 26
 let pill = rect(side.x + side_w - pill_w, PAD + 4, pill_w, 26)
 draw_rect_rounded(pill, radius: 13, c: mix(BG, phase_color, t: 0.16))
@@ -436,19 +432,21 @@ fn overlay(r: record, kicker: string, title: string, line1: string, line2: strin
   draw_text_center(line2, cx, y: cy + 72, size: 13, c: DIM)
 end
 
-if phase == "ready" then
-  overlay(rect(bx, by, board_w, board_h), "32 × 23 GRID", "SNAKE",
-    "Arrow keys or WASD to start",
-    "space pauses · R restarts · T toggles wall wrap", accent: HEAD)
-elsif phase == "paused" then
-  overlay(rect(bx, by, board_w, board_h), "HELD", "PAUSED",
-    "space or the Resume button to continue",
-    "score {score} · length {length} · level {lvl}", accent: GOLD)
-elsif phase == "over" then
-  let verdict = if score >= best then "a new personal best" else "best so far is {best}" end
-  overlay(rect(bx, by, board_w, board_h), "FINAL SCORE", "{score}",
-    "{apples} apples in {int(run_time)}s — {verdict}",
-    "press R or Restart to go again", accent: DANGER)
+match phase
+  when Phase.playing -> nil
+  when Phase.ready ->
+    overlay(rect(bx, by, board_w, board_h), "32 × 23 GRID", "SNAKE",
+      "Arrow keys or WASD to start",
+      "space pauses · R restarts · T toggles wall wrap", accent: HEAD)
+  when Phase.paused ->
+    overlay(rect(bx, by, board_w, board_h), "HELD", "PAUSED",
+      "space or the Resume button to continue",
+      "score {score} · length {length} · level {lvl}", accent: GOLD)
+  when Phase.over ->
+    let verdict = if score >= best then "a new personal best" else "best so far is {best}" end
+    overlay(rect(bx, by, board_w, board_h), "FINAL SCORE", "{score}",
+      "{apples} apples in {int(run_time)}s — {verdict}",
+      "press R or Restart to go again", accent: DANGER)
 end
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -494,7 +492,7 @@ tile(rect(side.x, tile_y + tile_h + 12, tile_w, tile_h), key: "TIME", value: "{i
 tile(rect(side.x + tile_w + 12, tile_y + tile_h + 12, tile_w, tile_h), key: "RUNS", value: "{deaths}", color: DIM)
 
 // Golden apple ticker takes the slot under the tiles when one is on the board
-if bonus >= 0 && phase == "playing" then
+if bonus >= 0 && phase == Phase.playing then
   let nr = rect(side.x, note_y, side_w, 34)
   draw_rect_rounded(nr, radius: 8, c: mix(CARD, GOLD, t: 0.14))
   draw_circle(center: {x: nr.x + 20, y: nr.y + 17}, radius: 6, c: GOLD)
@@ -515,12 +513,7 @@ fn chip(r: record, text: string, on: bool, accent: record)
   draw_text_center(text, cx: r.x + r.w / 2, y: r.y + (r.h - 13) / 2, size: 13, c: fg)
 end
 
-let pause_label = match phase
-  when "playing" -> "Pause"
-  when "paused" -> "Resume"
-  when "ready" -> "Start"
-  when _ -> "Play again" end
-chip(b_pause, text: pause_label, on: phase == "paused", accent: GOLD)
+chip(b_pause, text: phase.action, on: phase == Phase.paused, accent: GOLD)
 chip(b_reset, text: "Restart", on: false, accent: DANGER)
 chip(b_wrap, text: if wrap then "Wall wrap: ON" else "Wall wrap: OFF" end, on: wrap, accent: ACCENT)
 

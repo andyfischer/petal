@@ -15,9 +15,9 @@
 //     reorder of the list they were drawn in. This is React's `key` prop.
 
 enum Event
-  None(),
+  None,
   Add(text),
-  Clear(),
+  Clear,
 end
 
 // The app model: one cell, shared by every function that touches it.
@@ -40,15 +40,13 @@ end
 fn todo_app(event)
   // Handle this frame's event (a real UI runtime would feed these from input).
   let pressed = match event
-    when Event.Add(text) do
+    when Event.Add(text) ->
       set items = append(get items, text)
       "add"
-    end
-    when Event.Clear() do
+    when Event.Clear ->
       set items = []
       "clear"
-    end
-    when Event.None() -> ""
+    when Event.None -> ""
   end
 
   let add_btn = button(id: "add", label: "Add", clicked: pressed == "add")
@@ -70,10 +68,10 @@ print("")
 
 // Simulate render frames, one event each.
 let events = [
-  Event.None(),
+  Event.None,
   Event.Add("Water plants"),
   Event.Add("Call Alex"),
-  Event.Clear(),
+  Event.Clear,
   Event.Add("Start over"),
 ]
 

@@ -77,10 +77,19 @@ let FOOT   = 60
 let BIRD_R = 13.0
 let GROUND_H = 46
 
+// The five phases of a run, each with the word the footer shows for it.
+enum Phase
+  title(status: "READY"),
+  play(status: "IN FLIGHT"),
+  paused(status: "PAUSED"),
+  dead(status: "DOWN"),      // falling after a hit, before the card
+  over(status: "GAME OVER"),
+end
+
 // ── Persistent state ─────────────────────────────────────────────────────
 
 state var ready    = false
-state var phase    = "title"   // title | play | dead | over
+state var phase    = Phase.title
 state var by       = 0.0       // bird y
 state var bvy      = 0.0       // bird vertical velocity
 state var bang     = 0.0       // bird tilt, radians
@@ -164,7 +173,7 @@ fn make_pipe(px: num, sc: int)
 end
 
 fn new_run()
-  set phase = "title"
+  set phase = Phase.title
   set by = (ft + fb) / 2.0
   set bvy = 0.0
   set bang = 0.0
@@ -213,28 +222,28 @@ let clicked_field = mouse_pressed(0) && point_in(px: mouse_x(), py: mouse_y(), r
 let go = key_pressed("space") || key_pressed("up") || key_pressed("w") || clicked_field
 
 if go then
-  if phase == "title" then
-    set phase = "play"
-    set runs += 1
-    flap()
-  elsif phase == "play" then
-    flap()
-  elsif phase == "over" then
-    new_run()
+  match phase
+    when Phase.title ->
+      set phase = Phase.play
+      set runs += 1
+      flap()
+    when Phase.play -> flap()
+    when Phase.over -> new_run()
+    when Phase.paused | Phase.dead -> nil
   end
 end
 
 if key_pressed("p") || key_pressed("escape") then
-  if phase == "play" then
-    set phase = "paused"
-  elsif phase == "paused" then
-    set phase = "play"
+  if phase == Phase.play then
+    set phase = Phase.paused
+  elsif phase == Phase.paused then
+    set phase = Phase.play
   end
 end
 
 // ── Simulation ───────────────────────────────────────────────────────────
 
-if phase == "play" then
+if phase == Phase.play then
   request_frame()
   let t_left = sdt
   while t_left > 0.0 do
@@ -256,12 +265,12 @@ if phase == "play" then
     // Ground.
     if by + BIRD_R >= fb then
       set by = fb - BIRD_R
-      set phase = "dead"
+      set phase = Phase.dead
       set cause = "ground"
     end
 
     // Pipes: circle vs the two rects of the nearest column.
-    if phase == "play" then
+    if phase == Phase.play then
       for p in pipes do
         if p.x + pipe_w >= bird_x - BIRD_R && p.x <= bird_x + BIRD_R then
           let top_h = p.gap_y - p.gap_h / 2.0
@@ -273,14 +282,14 @@ if phase == "play" then
           let d_top = (bird_x - qx) * (bird_x - qx) + (by - qy_top) * (by - qy_top)
           let d_bot = (bird_x - qx) * (bird_x - qx) + (by - qy_bot) * (by - qy_bot)
           if d_top < BIRD_R * BIRD_R * 0.85 || d_bot < BIRD_R * BIRD_R * 0.85 then
-            set phase = "dead"
+            set phase = Phase.dead
             set cause = "pipe"
           end
         end
       end
     end
 
-    if phase == "dead" then
+    if phase == Phase.dead then
       set dead_t = 1.1
       set flash = 1.0
       set shake = 1.0
@@ -314,7 +323,7 @@ if phase == "play" then
   end
 end
 
-if phase == "dead" then
+if phase == Phase.dead then
   request_frame()
   set dead_t -= sdt
   // The bird drops the rest of the way on its own.
@@ -323,13 +332,13 @@ if phase == "dead" then
     set by = min(by + bvy * sdt, fb - BIRD_R)
   end
   if dead_t <= 0.0 then
-    set phase = "over"
+    set phase = Phase.over
   end
 end
 
 // Tilt follows the velocity: nose up right after a flap, then dives.
-let want_ang = if phase == "title" then 0.0
-elsif phase == "dead" || phase == "over" then 1.45
+let want_ang = if phase == Phase.title then 0.0
+elsif phase == Phase.dead || phase == Phase.over then 1.45
 else clamp(bvy / 600.0, lo: -0.45, hi: 1.2) end
 set bang = approach(cur: bang, target: want_ang, rate: if bvy < 0.0 then 18.0 else 6.0 end)
 
@@ -455,7 +464,7 @@ end
 
 // Bird: body, wing (flaps for 0.25 s after an impulse), eye, beak — all
 // rotated by `bang` about the body centre.
-let bob = if phase == "title" then sin(hover_t * 3.2) * 5.0 else 0.0 end
+let bob = if phase == Phase.title then sin(hover_t * 3.2) * 5.0 else 0.0 end
 let bx = bird_x
 let byy = by + bob
 fn rot(dx: num, dy: num, a: num)
@@ -488,23 +497,28 @@ draw_rect_rounded_outline(field, radius: 16, c: C_EDGE, a: 255, width: 1)
 
 // ── Draw: overlay ────────────────────────────────────────────────────────
 
-if phase == "title" || phase == "over" || phase == "paused" then
-  let banner = match phase
-    when "title" -> "FLAPPY"
-    when "paused" -> "PAUSED"
-    when _ -> (if score > 0 && score >= best then "NEW BEST" else "GAME OVER" end) end
-  let sub = match phase
-    when "title" -> "press SPACE or click to flap"
-    when "paused" -> "press P to resume"
-    when _ -> "press SPACE or click to fly again" end
-  let accent = match phase
-    when "over" -> (if score > 0 && score >= best then C_GOLD else C_WARN end)
-    when "paused" -> C_DIM
-    when _ -> C_BIRD end
+// What the card says, or nil while the bird is in the air or falling.
+let card_text = match phase
+  when Phase.title -> {banner: "FLAPPY", sub: "press SPACE or click to flap", accent: C_BIRD}
+  when Phase.paused -> {banner: "PAUSED", sub: "press P to resume", accent: C_DIM}
+  when Phase.over ->
+    let record_run = score > 0 && score >= best
+    {
+      banner: if record_run then "NEW BEST" else "GAME OVER" end,
+      sub: "press SPACE or click to fly again",
+      accent: if record_run then C_GOLD else C_WARN end,
+    }
+  when Phase.play | Phase.dead -> nil
+end
+
+if card_text != nil then
+  let banner = card_text.banner
+  let sub = card_text.sub
+  let accent = card_text.accent
   let text_w = max(text_width(banner, S_BIG), text_width(sub, S_SUB)) + 76
-  let bw = if phase == "over" then max(text_w, 440) else text_w end
-  let card_h = if phase == "over" then 176 else 116 end
-  let card_y = if phase == "title" then cy - 206 else cy - card_h / 2 end
+  let bw = if phase == Phase.over then max(text_w, 440) else text_w end
+  let card_h = if phase == Phase.over then 176 else 116 end
+  let card_y = if phase == Phase.title then cy - 206 else cy - card_h / 2 end
   let card = rect(cx - bw / 2, card_y, bw, card_h)
   draw_rect_rounded(card, radius: 14, c: C_CHIP, a: 236)
   draw_rect_rounded_outline(card, radius: 14, c: C_EDGE, a: 255, width: 1)
@@ -512,7 +526,7 @@ if phase == "title" || phase == "over" || phase == "paused" then
   tx_center(banner, cx: cx + 9, y: card.y + 24, style: {...S_BIG, color: accent})
   tx_center(sub, cx: cx + 9, y: card.y + 74, style: S_SUB)
 
-  if phase == "over" then
+  if phase == Phase.over then
     // Medal + the run's numbers.
     let medal = if score >= 30 then {c: C_GOLD, t: "GOLD"}
     elsif score >= 15 then {c: C_SILVER, t: "SILVER"}
@@ -526,7 +540,7 @@ if phase == "title" || phase == "over" || phase == "paused" then
     let why = if cause == "pipe" then "hit a pipe" else "hit the ground" end
     tx_right("{score} PTS   ·   {why}", right_x: card.x + card.w - 26, y: my + 2, style: S_HINT)
   end
-  if phase == "title" then
+  if phase == Phase.title then
     tx_center("each flap is one impulse  ·  the gap shrinks as you score", cx, y: card.y + card_h + 16,
       style: {size: 12, color: C_MUTE})
   end
@@ -551,18 +565,12 @@ fx += chip(x: fx, y: fy, cap: "CLICK", desc: "flap")
 fx += chip(x: fx, y: fy, cap: "P", desc: "pause")
 fx += chip(x: fx, y: fy, cap: "R", desc: "restart")
 
-let status = match phase
-  when "play" -> "IN FLIGHT"
-  when "paused" -> "PAUSED"
-  when "dead" -> "DOWN"
-  when "over" -> "GAME OVER"
-  when _ -> "READY"
-end
+let status = phase.status
 tx_right("{int(bvy)} px/s   ·   {status}", right_x: W - PAD, y: fy + 7, style: S_HINT)
 
 // ── Observation mirrors (readable in /state → panel.values) ──────────────
 
-let obs_phase = phase
+let obs_phase = phase.name
 let obs_score = score
 let obs_best = best
 let obs_runs = runs

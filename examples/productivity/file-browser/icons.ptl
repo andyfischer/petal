@@ -113,7 +113,7 @@ pub fn file_icon(key: string, r: record) -> nil
     return nil
   end
   match key
-    when "image" do
+    when "image" ->
       page(r, PAPER)
       let f = sub(r, 0.27, 0.40, 0.46, 0.40)
       draw_rect(f, mix(c, #ffffff, 0.55))
@@ -123,17 +123,14 @@ pub fn file_icon(key: string, r: record) -> nil
       if !small then
         draw_circle({x: f.x + f.w * 0.76, y: f.y + f.h * 0.24}, f.w * 0.09, #f7c948)
       end
-    end
-    when "text" do
+    when "text" ->
       page(r, PAPER)
       text_lines(r, PAPER_LINE, [1.0, 0.82, 1.0, 0.56])
-    end
-    when "doc" do
+    when "doc" ->
       page(r, PAPER)
       draw_line(at(r, 0.29, 0.40), at(r, 0.56, 0.40), c, 255, w * 1.5)
       text_lines(r, mix(c, PAPER, 0.45), [0.0, 1.0, 0.86, 1.0])
-    end
-    when "pdf" do
+    when "pdf" ->
       page(r, PAPER)
       draw_rect(sub(r, 0.19, 0.60, 0.62, 0.24), c)
       if !small then
@@ -141,16 +138,14 @@ pub fn file_icon(key: string, r: record) -> nil
           {size: max(7.0, r.h * 0.15), font: "ui", weight: 700, color: #ffffff})
         text_lines(r, PAPER_LINE, [0.6])
       end
-    end
-    when "sheet" do
+    when "sheet" ->
       page(r, PAPER)
       let g = sub(r, 0.27, 0.40, 0.46, 0.42)
       draw_rect(Rect(g.x, g.y, g.w, g.h / 3.0), c)
       draw_rect_outline(g, c, 255, max(1.0, w * 0.8))
       draw_line({x: g.x + g.w * 0.4, y: g.y}, {x: g.x + g.w * 0.4, y: g.y + g.h}, c, 255, max(1.0, w * 0.7))
       draw_line({x: g.x, y: g.y + g.h * 2.0 / 3.0}, {x: g.x + g.w, y: g.y + g.h * 2.0 / 3.0}, c, 255, max(1.0, w * 0.7))
-    end
-    when "audio" do
+    when "audio" ->
       page(r, PAPER)
       let hs = [0.34, 0.74, 1.0, 0.52, 0.82, 0.30]
       for i in range(0, len(hs)) do
@@ -158,15 +153,13 @@ pub fn file_icon(key: string, r: record) -> nil
         let half = 0.17 * hs[i]
         draw_line(at(r, x, 0.62 - half), at(r, x, 0.62 + half), c, 255, max(1.2, r.w * 0.045))
       end
-    end
-    when "video" do
+    when "video" ->
       page(r, PAPER)
       let f = sub(r, 0.27, 0.42, 0.46, 0.36)
       draw_rect_rounded(f, max(1.0, r.w * 0.04), c)
       fill_triangle({x: f.x + f.w * 0.38, y: f.y + f.h * 0.26}, {x: f.x + f.w * 0.38, y: f.y + f.h * 0.74},
         {x: f.x + f.w * 0.70, y: f.y + f.h * 0.5}, #ffffff)
-    end
-    when "archive" do
+    when "archive" ->
       page(r, mix(PAPER, c, 0.30))
       // A zip running down the middle.
       for i in range(0, 6) do
@@ -175,22 +168,18 @@ pub fn file_icon(key: string, r: record) -> nil
         draw_rect(sub(r, x, y, 0.07, 0.07), mix(c, #000000, 0.25))
       end
       draw_rect_rounded(sub(r, 0.42, 0.76, 0.17, 0.11), max(1.0, r.w * 0.02), mix(c, #000000, 0.25))
-    end
-    when "disk" do
+    when "disk" ->
       draw_rect_rounded(sub(r, 0.12, 0.20, 0.76, 0.62), max(1.5, r.w * 0.09), #d6dbe6)
       draw_rect_rounded(sub(r, 0.12, 0.60, 0.76, 0.22), max(1.5, r.w * 0.09), #aeb6c6)
       draw_rect(sub(r, 0.12, 0.60, 0.76, 0.08), #aeb6c6)
       draw_circle(at(r, 0.74, 0.71), max(1.0, r.w * 0.035), #58d68d)
       draw_circle_outline(at(r, 0.42, 0.40), r.w * 0.12, #8e9bb3, 255, w)
-    end
-    when "code" do
+    when "code" ->
       page(r, PAPER)
       draw_polyline([at(r, 0.42, 0.48), at(r, 0.31, 0.62), at(r, 0.42, 0.76)], c, 255, w * 1.25)
       draw_polyline([at(r, 0.58, 0.48), at(r, 0.69, 0.62), at(r, 0.58, 0.76)], c, 255, w * 1.25)
-    end
-    when _ do
+    when _ ->
       page(r, PAPER)
-    end
   end
   nil
 end
@@ -202,93 +191,72 @@ pub fn glyph(name: string, r: record, c: record, w: num = 1.5) -> nil
   let cy = r.y + r.h / 2.0
   let u = min(r.w, r.h) / 2.0
   match name
-    when "back" do
+    when "back" ->
       draw_polyline([at(r, 0.60, 0.20), at(r, 0.30, 0.50), at(r, 0.60, 0.80)], c, 255, w)
-    end
-    when "forward" do
+    when "forward" ->
       draw_polyline([at(r, 0.40, 0.20), at(r, 0.70, 0.50), at(r, 0.40, 0.80)], c, 255, w)
-    end
-    when "up" do
+    when "up" ->
       draw_polyline([at(r, 0.22, 0.50), at(r, 0.50, 0.22), at(r, 0.78, 0.50)], c, 255, w)
       draw_line(at(r, 0.50, 0.24), at(r, 0.50, 0.82), c, 255, w)
-    end
-    when "chevron_right" do
+    when "chevron_right" ->
       draw_polyline([at(r, 0.38, 0.24), at(r, 0.66, 0.50), at(r, 0.38, 0.76)], c, 255, w)
-    end
-    when "chevron_down" do
+    when "chevron_down" ->
       draw_polyline([at(r, 0.24, 0.38), at(r, 0.50, 0.66), at(r, 0.76, 0.38)], c, 255, w)
-    end
-    when "sort_up" do
+    when "sort_up" ->
       fill_triangle(at(r, 0.50, 0.30), at(r, 0.80, 0.70), at(r, 0.20, 0.70), c)
-    end
-    when "sort_down" do
+    when "sort_down" ->
       fill_triangle(at(r, 0.20, 0.30), at(r, 0.80, 0.30), at(r, 0.50, 0.70), c)
-    end
-    when "list" do
+    when "list" ->
       for i in range(0, 3) do
         let y = 0.24 + 0.26 * i
         draw_circle(at(r, 0.14, y), max(1.0, u * 0.13), c)
         draw_line(at(r, 0.32, y), at(r, 0.92, y), c, 255, w)
       end
-    end
-    when "grid" do
+    when "grid" ->
       for i in range(0, 4) do
         draw_rect_rounded(sub(r, 0.12 + 0.44 * (i % 2), 0.12 + 0.44 * (i / 2), 0.32, 0.32), 1.5, c)
       end
-    end
-    when "search" do
+    when "search" ->
       draw_circle_outline({x: r.x + r.w * 0.43, y: r.y + r.h * 0.43}, u * 0.56, c, 255, w)
       draw_line(at(r, 0.64, 0.64), at(r, 0.92, 0.92), c, 255, w)
-    end
-    when "close" do
+    when "close" ->
       draw_line(at(r, 0.24, 0.24), at(r, 0.76, 0.76), c, 255, w)
       draw_line(at(r, 0.76, 0.24), at(r, 0.24, 0.76), c, 255, w)
-    end
-    when "info" do
+    when "info" ->
       // A sidebar on the right: the info pane's toggle.
       draw_rect_rounded_outline(sub(r, 0.08, 0.16, 0.84, 0.68), 2.5, c, 255, w)
       draw_line(at(r, 0.62, 0.18), at(r, 0.62, 0.82), c, 255, w)
-    end
-    when "home" do
+    when "home" ->
       draw_polyline([at(r, 0.10, 0.52), at(r, 0.50, 0.14), at(r, 0.90, 0.52)], c, 255, w)
       draw_polyline([at(r, 0.22, 0.44), at(r, 0.22, 0.86), at(r, 0.78, 0.86), at(r, 0.78, 0.44)], c, 255, w)
-    end
-    when "desktop" do
+    when "desktop" ->
       draw_rect_rounded_outline(sub(r, 0.08, 0.14, 0.84, 0.56), 2, c, 255, w)
       draw_line(at(r, 0.34, 0.88), at(r, 0.66, 0.88), c, 255, w)
       draw_line(at(r, 0.50, 0.70), at(r, 0.50, 0.88), c, 255, w)
-    end
-    when "documents" do
+    when "documents" ->
       draw_polyline([at(r, 0.22, 0.08), at(r, 0.60, 0.08), at(r, 0.80, 0.30), at(r, 0.80, 0.92),
         at(r, 0.22, 0.92), at(r, 0.22, 0.08)], c, 255, w)
       draw_line(at(r, 0.36, 0.52), at(r, 0.66, 0.52), c, 255, w)
       draw_line(at(r, 0.36, 0.70), at(r, 0.66, 0.70), c, 255, w)
-    end
-    when "downloads" do
+    when "downloads" ->
       draw_line(at(r, 0.50, 0.10), at(r, 0.50, 0.62), c, 255, w)
       draw_polyline([at(r, 0.26, 0.40), at(r, 0.50, 0.64), at(r, 0.74, 0.40)], c, 255, w)
       draw_polyline([at(r, 0.14, 0.70), at(r, 0.14, 0.88), at(r, 0.86, 0.88), at(r, 0.86, 0.70)], c, 255, w)
-    end
-    when "pictures" do
+    when "pictures" ->
       draw_rect_rounded_outline(sub(r, 0.08, 0.16, 0.84, 0.68), 2, c, 255, w)
       draw_polyline([at(r, 0.14, 0.76), at(r, 0.40, 0.48), at(r, 0.58, 0.66), at(r, 0.70, 0.54), at(r, 0.88, 0.74)], c, 255, w)
       draw_circle(at(r, 0.68, 0.34), max(1.0, u * 0.13), c)
-    end
-    when "music" do
+    when "music" ->
       draw_polyline([at(r, 0.36, 0.76), at(r, 0.36, 0.20), at(r, 0.80, 0.12), at(r, 0.80, 0.66)], c, 255, w)
       draw_circle(at(r, 0.26, 0.78), u * 0.22, c)
       draw_circle(at(r, 0.70, 0.68), u * 0.22, c)
-    end
-    when "code" do
+    when "code" ->
       draw_polyline([at(r, 0.32, 0.24), at(r, 0.08, 0.50), at(r, 0.32, 0.76)], c, 255, w)
       draw_polyline([at(r, 0.68, 0.24), at(r, 0.92, 0.50), at(r, 0.68, 0.76)], c, 255, w)
-    end
-    when "burrow" do
+    when "burrow" ->
       // The app's mark: a den with a way in.
       fill_arc({x: cx, y: r.y + r.h * 0.84}, 0, u * 1.24, pi(), 2.0 * pi(), c)
-    end
-    when _ do
+    when _ ->
       draw_circle({x: cx, y: cy}, u * 0.3, c)
-    end
   end
 end

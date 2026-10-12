@@ -446,6 +446,23 @@ TEST(natives_are_per_vm) {
     CHECK_EQ(b.drain("out")[0].str(), std::string_view("b"));
 }
 
+// PB_FX_CONST is a registration flag like the others: a native declared a
+// constant function registers, is called, and returns its value. (What Petal
+// may do with the declaration - evaluate a top-level table once - is the
+// language's business; how often the callback runs is deliberately not
+// asserted here.)
+TEST(const_native_registers_and_runs) {
+    petal::Vm vm;
+    vm.native("tile_code", petal::fx::Const, [](petal::Call& c) { c.result().value(c[0].number() * 2); });
+    CHECK_EQ(pb_vm_register_native(vm.raw(), "k2", [](pb_call*, void*) -> int { return 0; }, nullptr, nullptr,
+                                   PB_FX_CONST | PB_FX_PENDING_ALLOW),
+             PB_OK);
+    vm.load_source("import io; native fn tile_code(n)\nlet T = [tile_code(1), tile_code(2)]\n"
+                   "push_output(symbol(\"out\"), T[1])\n");
+    vm.run();
+    CHECK_EQ(vm.drain("out")[0].number(), 4.0);
+}
+
 TEST(native_userdata_is_freed) {
     static int freed = 0;
     freed = 0;

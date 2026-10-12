@@ -297,7 +297,19 @@ pb_status pb_vm_override_file(pb_vm* vm, const char* path, const char* source);
  *   PB_FX_EFFECT    does something no replay reproduces (mutates host state…)
  *   PB_FX_READS_*   input classes it reads. PB_FX_READS_HOST_DATA also makes the
  *                   bridge call note_host_read() on every call.
- *   PB_FX_PENDING_* how a Pending argument is treated (default: strict/absorb). */
+ *   PB_FX_PENDING_* how a Pending argument is treated (default: strict/absorb).
+ *   PB_FX_CONST     a constant function: the same arguments give the same
+ *                   result for as long as the VM lives, it reads no host state
+ *                   at all (no time, input, viewport, theme, fonts, random,
+ *                   game or editor state — tracked by a READS flag or not) and
+ *                   does nothing but return. Petal may then call it ONCE for a
+ *                   top-level table and keep the answer until the script's
+ *                   source changes, so a wrong PB_FX_CONST is a stale value
+ *                   forever. Opt-in: PB_FX_PURE (0) does NOT imply it, and a
+ *                   native without it is always re-evaluated. Combined with
+ *                   PROBE, EMITS, EFFECT or any READS flag it is ignored.
+ *                   When in doubt, leave it off. See docs/ffi.md
+ *                   "Constant natives". */
 enum {
     PB_FX_PURE = 0,
     PB_FX_PROBE = 1u << 0,
@@ -305,6 +317,7 @@ enum {
     PB_FX_EFFECT = 1u << 2,
     PB_FX_PENDING_EFFECTFUL = 1u << 3, /* a Pending arg makes the call a no-op */
     PB_FX_PENDING_ALLOW = 1u << 4,     /* the native sees Pending args itself */
+    PB_FX_CONST = 1u << 5,             /* constant function of its arguments */
     PB_FX_READS_POINTER = 1u << 8,
     PB_FX_READS_KEYBOARD = 1u << 9,
     PB_FX_READS_CLOCK = 1u << 10,

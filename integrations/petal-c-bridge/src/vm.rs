@@ -1732,6 +1732,48 @@ mod tests {
 
     use crate::natives::{pb_call_arg, pb_call_result};
 
+    /// `PB_FX_CONST` is the only way a C native becomes a constant function:
+    /// flags `0` (`PB_FX_PURE`) stay dynamic, and the flag is ignored next
+    /// to an effect or a read.
+    #[test]
+    fn only_pb_fx_const_makes_a_native_constant() {
+        use petal::native_fn::NativeConstness;
+        let mut vm = Vm::new();
+        for (name, flags, want) in [
+            ("k_pure", 0, NativeConstness::Dynamic),
+            ("k_const", natives::FX_CONST, NativeConstness::Const),
+            (
+                "k_const_pending",
+                natives::FX_CONST | natives::FX_PENDING_ALLOW,
+                NativeConstness::Const,
+            ),
+            (
+                "k_const_effect",
+                natives::FX_CONST | natives::FX_EFFECT,
+                NativeConstness::Dynamic,
+            ),
+            (
+                "k_const_reads",
+                natives::FX_CONST | natives::FX_READS_HOST_DATA,
+                NativeConstness::Dynamic,
+            ),
+            (
+                "k_const_probe",
+                natives::FX_CONST | natives::FX_PROBE,
+                NativeConstness::Dynamic,
+            ),
+            ("k_effect", natives::FX_EFFECT, NativeConstness::Dynamic),
+        ] {
+            let cb = HostCallback::new(name, flags, add_one, std::ptr::null_mut(), None);
+            let id = natives::register_callback(&mut vm.env, cb);
+            assert_eq!(vm.env.native_constness(id), want, "{name}");
+            assert_eq!(vm.env.native_constness_of_name(name), want, "{name}");
+        }
+        let sym = vm.env.intern_symbol("out");
+        let id = natives::register_emitter(&mut vm.env, "k_emit", sym, "tag");
+        assert_eq!(vm.env.native_constness(id), NativeConstness::Dynamic);
+    }
+
     #[test]
     fn boxed_native_owns_and_frees_its_userdata() {
         FREED.store(0, Ordering::SeqCst);

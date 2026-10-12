@@ -40,10 +40,17 @@ pub const FX_EMITS: u32 = 1 << 1;
 pub const FX_EFFECT: u32 = 1 << 2;
 pub const FX_PENDING_EFFECTFUL: u32 = 1 << 3;
 pub const FX_PENDING_ALLOW: u32 = 1 << 4;
+pub const FX_CONST: u32 = 1 << 5;
 pub const FX_READS_SHIFT: u32 = 8;
 pub const FX_READS_HOST_DATA: u32 = 1 << 12;
 
 /// Translate `PB_FX_*` flags into Petal's effect row.
+///
+/// `PB_FX_CONST` is carried over as the row's `constant` bit and nothing
+/// else: flags `0` (`PB_FX_PURE`) stay pure-and-dynamic, so a host that never
+/// heard of the flag has no native treated as a constant function. A
+/// contradictory combination (`PB_FX_CONST | PB_FX_EFFECT`, or with a read)
+/// is dynamic — [`NativeEffects::is_const`] decides.
 pub fn effects_from_flags(flags: u32) -> NativeEffects {
     let pending = if flags & FX_PENDING_ALLOW != 0 {
         NativeClass::AllowPending
@@ -58,6 +65,7 @@ pub fn effects_from_flags(flags: u32) -> NativeEffects {
         emits: flags & FX_EMITS != 0,
         effect: flags & FX_EFFECT != 0,
         pending,
+        constant: flags & FX_CONST != 0,
     }
 }
 

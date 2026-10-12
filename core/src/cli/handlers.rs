@@ -76,7 +76,8 @@ pub(super) fn handle_run(
         // The same goes for the static-value cache: a value kept for the
         // next run is kept for nothing, and classifying the program to
         // decide what to keep is a cost on every start.
-        None if std::env::var_os("PETAL_POLICY").is_none() => {
+        // `--runs` is a host's frame loop, where both pay their way.
+        None if std::env::var_os("PETAL_POLICY").is_none() && opts.runs.is_none() => {
             env.set_policy(env.policy().with_memo(false).with_static_cache(false));
         }
         None => {}
@@ -117,13 +118,23 @@ pub(super) fn handle_run(
     let sid = stack_or_die(&mut env, json, pid);
     match opts.state_storage.as_deref() {
         Some(path) => load_state_storage(&mut env, json, pid, sid, path),
-        None => warn_state_not_stored(&env, pid),
+        // Under `--runs` state does carry, from each run to the next.
+        None if opts.runs.is_none() => warn_state_not_stored(&env, pid),
+        None => {}
     }
     if trace_pending {
         env.enable_pending_trace(sid);
     }
     let run_started = std::time::Instant::now();
-    let run_result = env.run(sid);
+    let mut run_result = env.run(sid);
+    // `--runs n`: the remaining runs, on the same stack, each from the top.
+    // The first one that fails ends the session, as it would end a frame.
+    for _ in 1..opts.runs.unwrap_or(1) {
+        if run_result.is_err() {
+            break;
+        }
+        run_result = env.reset_stack(sid).and_then(|()| env.run(sid));
+    }
     let run_elapsed = run_started.elapsed();
 
     // Snapshot the observed values now. The map is a snapshot by contract, and
@@ -920,6 +931,10 @@ pub(super) fn handle_check(
     // declares them (`native fn`), which is all a check needs — so compile
     // without linking.
     env.set_check_only(true);
+    // Nor does a check keep anything between runs: lowering for the static
+    // cache would classify the whole program to decide what, and the pass
+    // cannot fail, so there is nothing in it for a check to report.
+    env.set_static_cache(false);
     let is_empty = source.trim().is_empty();
     // `--ir` swaps the front end for the IR deserializer, so a third-party
     // emitter's IR can be CI-validated the same way source is. Everything below

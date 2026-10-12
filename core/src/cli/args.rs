@@ -227,7 +227,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--static-audit] [--static-only] [--seed <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
+    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--static-audit] [--static-only] [--seed <n>] [--runs <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
     let mut o = RunOpts::default();
     let source = parse_source_args(args, usage, |args, i| {
         match args[*i].as_str() {
@@ -261,6 +261,13 @@ fn parse_run_args(args: &[String]) -> CliArgs {
                     Some(take(args, i, "Expected path after --record-trace").to_string())
             }
             "--seed" => o.seed = Some(parse_seed(take(args, i, "Expected a number after --seed"))),
+            "--runs" => {
+                let text = take(args, i, "Expected a run count after --runs");
+                o.runs = Some(text.parse::<u32>().ok().filter(|n| *n > 0).unwrap_or_else(|| {
+                    eprintln!("Invalid --runs value '{text}': expected a count of at least 1");
+                    process::exit(1)
+                }))
+            }
             "--state-storage" => {
                 o.state_storage =
                     Some(take(args, i, "Expected a file path after --state-storage").to_string())

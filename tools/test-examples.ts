@@ -2,7 +2,8 @@
 // Run every examples/*.ptl file as a differential test on the bytecode VM: each
 // example must exit 0 under both optimization levels (clone-and-alloc baseline
 // via --no-opt, and all in-place opts on by default), produce byte-identical
-// stdout/stderr across the two, AND match the frozen golden in
+// stdout/stderr across the two, print the same over two runs with the
+// static-value cache on and off, AND match the frozen golden in
 // test/example-golden/. The golden corpus is the absolute-correctness anchor;
 // regenerate it deliberately with tools/gen-example-golden.ts.
 // Usage:
@@ -23,6 +24,16 @@ const full = process.argv.includes('--full');
 const OPT_LEVELS = [
     { label: 'opts', args: [] as string[] },
     { label: 'no-opt', args: ['--no-opt'] },
+];
+
+// The static-value cache (core/src/static_cache.rs) keeps top-level values
+// between runs, so it only shows over more than one run on one stack:
+// `--runs 2` builds them in the first and reads them back in the second.
+// The two runs must print what two runs without the cache print. One pair,
+// optimizer on; the optimizer-off pairs are in core/tests/static_cache.rs.
+const STATIC_CACHE = [
+    { label: 'static-cache', args: ['--runs', '2', '--policy', 'replay'] },
+    { label: 'no-static-cache', args: ['--runs', '2', '--policy', 'replay-static'] },
 ];
 
 function printPreview(output: string) {
@@ -96,6 +107,20 @@ for (const name of files) {
         continue;
     }
 
+    // Differential: the static-value cache must not change what two runs
+    // print (or how they fail).
+    const cached = STATIC_CACHE.map(o => ({ label: o.label, result: runExample(filePath, o.args) }));
+    const cacheDiff = cached[0].result.status !== cached[1].result.status
+        ? `  exit status ${cached[0].result.status} vs ${cached[1].result.status}`
+        : diff(cached[0].label, cached[0].result, cached[1].label, cached[1].result);
+    if (cacheDiff) {
+        console.log(`STATIC-CACHE DIVERGENCE (${cached[0].label} vs ${cached[1].label}, two runs each):`);
+        console.log(cacheDiff);
+        fail++;
+        console.log();
+        continue;
+    }
+
     // Absolute: both must match the frozen graph-captured golden.
     const golden = loadGolden(name);
     if (!golden) {
@@ -126,7 +151,7 @@ for (const name of files) {
 }
 
 console.log(
-    `Results [differential (opts vs no-opt) + golden corpus]: ${pass} passed, ${fail} failed` +
+    `Results [differential (opts vs no-opt, static cache on vs off) + golden corpus]: ${pass} passed, ${fail} failed` +
     (missingGolden > 0 ? ` (${missingGolden} missing golden)` : ''),
 );
 process.exit(fail > 0 ? 1 : 0);

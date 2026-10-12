@@ -736,3 +736,74 @@ fn differential_fuzz() {
         assert_exact_parity(seed, &code);
     }
 }
+
+// ── The static-value cache ──────────────────────────────────────
+
+/// Run `code` `runs` times on one stack, the way a host runs it every frame:
+/// each run's rendered value and prints, or its error. Also how many runs of
+/// static instructions the cache skipped.
+fn run_frames(code: &str, policy: RunPolicy, runs: usize) -> (Vec<Result<(String, Vec<String>), String>>, u64) {
+    let mut env = Env::new();
+    env.set_policy(policy);
+    env.set_echo(false);
+    let mut out = Vec::with_capacity(runs);
+    let Ok(pid) = env.load_program(code) else {
+        return (vec![Err("does not compile".to_string())], 0);
+    };
+    let sid = env.create_stack(pid).expect("stack");
+    for _ in 0..runs {
+        env.reset_stack(sid).expect("reset");
+        let result = env
+            .run(sid)
+            .map(|v| value::value_to_display_string(&v, env.heap()));
+        let prints = env.take_output();
+        out.push(result.map(|v| (v, prints)));
+    }
+    let skips = env.static_values(sid).map_or(0, |v| v.stats.skips);
+    (out, skips)
+}
+
+/// The static-value cache (`crate::static_cache`) must not change what any
+/// run of a program does: three runs on one stack, with the cache on and
+/// off, with the optimizer on and off and the memo on and off. The
+/// generator's programs are full of what the cache has to leave alone or
+/// guard: literals written to at top level, in loops and through aliases,
+/// tables handed to functions that write their parameter, `var` cells
+/// holding a literal. Returns the skips of the default pair.
+fn assert_cache_parity(seed: u64, code: &str) -> u64 {
+    let mut skipped = 0;
+    for (i, name) in ["replay", "replay-memo", "baseline"].iter().enumerate() {
+        let base = RunPolicy::parse(name).unwrap();
+        let (on, skips) = run_frames(code, base.with_static_cache(true), 3);
+        let (off, _) = run_frames(code, base.with_static_cache(false), 3);
+        assert_eq!(
+            on, off,
+            "static-cache divergence at seed {seed} under {name}: three runs with the \
+             cache on vs off disagree — reproduce with Gen::new({seed}).program()\
+             \n--- program ---\n{code}"
+        );
+        if i == 0 {
+            skipped = skips;
+        }
+    }
+    skipped
+}
+
+#[test]
+fn static_cache_fuzz() {
+    let iters: u64 = std::env::var("PETAL_FUZZ_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(150);
+    let mut skipping = 0;
+    for seed in 0..iters {
+        let code = Gen::new(seed).program();
+        skipping += (assert_cache_parity(seed, &code) > 0) as u64;
+    }
+    // The generator must actually produce programs the cache keeps
+    // something of, or the soak proves nothing.
+    assert!(
+        skipping * 5 >= iters,
+        "only {skipping}/{iters} generated programs had a static run skipped"
+    );
+}

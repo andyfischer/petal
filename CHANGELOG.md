@@ -122,6 +122,26 @@ way, for code written against an earlier checkout.
   a whitespace or comment edit only moves source positions, an edit of literal
   values (`0.35` to `0.4`, also inside records, lists and function bodies)
   writes the constants into the running program, and anything else recompiles
+- Static values: a top-level value that depends on no dynamic data (a
+  literal table, a table built from one by constant builtins or by
+  functions that read no `state`, input or clock) is built on the first run
+  and kept on the stack for the next ones, where it used to be rebuilt on
+  every run. Nothing changes in the source and nothing changes in what a
+  program does: the code that builds the value is still there and is jumped
+  over when the value is already held, a value that is written to anywhere
+  is left alone, a top-level `assert` and an unused binding that raises
+  keep doing so on every run, and a kept value that something tries to
+  update in place is copied instead. A reload of any kind rebuilds every
+  kept value once. Over the 55 example panels a frame runs 0% to 30% fewer
+  instructions (median 4%) and makes 1% to 45% fewer allocations (median
+  18%), and a large `let` table passed to a memoized function no longer
+  makes that call miss on every frame. It is part of the `fast` and
+  `replay` policies and off under `baseline` and `explain`, while
+  observations or the trace are on (so not yet in Garden panels), and for
+  `petal run`, which runs a script once. `--policy fast-static` (or
+  `Env::set_static_cache(false)`) turns it off; `Env::static_values` lists
+  what a stack holds. See
+  [docs/dev/performance.md](docs/dev/performance.md#static-values).
   and transfers state as before. The result is the same on every path, which
   `core/tests/hot_reload.rs` checks against a full recompile. On a
   10,000-line game a value edit takes 0.8 ms where the recompile took 300 ms.
@@ -409,17 +429,18 @@ way, for code written against an earlier checkout.
   and off for every native that does not ask for it; `Env::native_constness`
   answers it. The core builtins are audited (arithmetic, strings, collections,
   colours, vectors and formatting are constant; `noise`, `is_valid`,
-  `fn_info`, `fn_ast` and the random builtins are not). Nothing uses the
-  declaration yet: it is the groundwork for static values
-  (`docs/proposals/static-values.md`). See "Constant natives" in
-  `docs/ffi.md`.
+  `fn_info`, `fn_ast` and the random builtins are not). The static-value
+  cache relies on it: a top-level table built by a `CONST` native is kept
+  between runs, so a native wrongly declared constant is a stale value
+  until the next reload (`Env::clear_static_values` drops them by hand).
+  See "Constant natives" in `docs/ffi.md`.
 - `petal show-static` classifies every top-level declaration as static data,
   a function (static-pure or not) or dynamic, with the chain of reasons for a
   dynamic one, whether dynamic code reads a static one, and the declarations
   each depends on (`--json` for tools, `--all` for imported modules). It is
-  the classifier of the static-values proposal, and it changes nothing about
-  how a program runs: it shows what a later release would build once and
-  keep. A native counts as static only if registered `CONST`, so a host's
+  the classifier the static-value cache lowers against, and it shows what a
+  host that runs the script every frame may build once and keep. A native
+  counts as static only if registered `CONST`, so a host's
   natives are dynamic under the plain CLI. `Env::static_report` is the same
   answer against a host's own natives. See
   [docs/CLI.md](docs/CLI.md#show-static--static-declarations).
@@ -446,6 +467,12 @@ way, for code written against an earlier checkout.
 - `petal-web-canvas` and `petal-web-html`: WebAssembly hosts that draw to a
   canvas or patch the DOM.
 - `petal-ui`: the shared input and draw contract, a widget prelude, a component
+- `petal run --runs <n>` runs a script n times on one stack, the way a host
+  runs it every frame: `state`, memo records and static values carry from
+  each run to the next. Run policies take `+static` / `-static`
+  (`--policy fast-static`), and `PETAL_POLICY=fast petal show-bytecode`
+  shows the `static_skip` / `static_store` instructions of the static-value
+  cache, which a plain `show-bytecode`, like a plain `run`, leaves out.
   library, text measurement from real font metrics, gradients, shadows, clips,
   offscreen canvases, and a headless driver (`petal-ui-run`) with scenario
   files.

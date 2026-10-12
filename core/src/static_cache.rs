@@ -134,8 +134,11 @@ pub struct StaticRun {
     pub feeds: Vec<u32>,
     /// The slots its own `StaticStore` fills.
     pub stores: Vec<u32>,
-    /// How many instructions a skip saves.
+    /// How many root instructions a skip does not execute. The calls among
+    /// them run more: this is a floor on what a skip saves.
     pub instructions: usize,
+    /// How many of those allocate a list, record or element directly.
+    pub allocations: usize,
 }
 
 /// The static-value side of one lowering (see the module docs).
@@ -150,6 +153,8 @@ pub struct StaticLayout {
     feeders: Vec<Vec<u32>>,
     /// Runs of candidate instructions the pass found, skippable or not.
     pub candidate_runs: usize,
+    /// Root instructions before the pass added its own.
+    pub root_instructions: usize,
 }
 
 impl StaticLayout {
@@ -554,6 +559,7 @@ pub fn apply(
         ..Default::default()
     };
     let n = bc.root.code.len();
+    layout.root_instructions = n;
     if n == 0 || plan.roots.is_empty() {
         bc.statics = layout;
         return;
@@ -834,6 +840,18 @@ pub fn apply(
             feeds: stores.clone(),
             stores,
             instructions: run.end - run.start,
+            allocations: bc.root.code[run.start..run.end]
+                .iter()
+                .filter(|i| {
+                    matches!(
+                        i,
+                        Inst::AllocList { .. }
+                            | Inst::AllocMap { .. }
+                            | Inst::AllocMapSpread { .. }
+                            | Inst::AllocElement { .. }
+                    )
+                })
+                .count(),
         });
     }
     for k in (0..runs.len()).rev() {
@@ -950,14 +968,21 @@ pub fn apply(
     bc.statics = layout;
 }
 
-/// One line per skippable run and slot of a layout, for `PETAL_OPT_STATS`
-/// and tests.
+/// A summary of a layout and one line per slot, for `PETAL_OPT_STATS` and
+/// tests.
 pub fn describe(layout: &StaticLayout) -> String {
+    let instructions: usize = layout.runs.iter().map(|r| r.instructions).sum();
+    let allocations: usize = layout.runs.iter().map(|r| r.allocations).sum();
     let mut out = format!(
-        "static cache: {} candidate runs, {} skippable, {} slots\n",
+        "static cache: {} candidate runs, {} skippable, {} slots; a frame that skips them all \
+         leaves out {} of {} root instructions ({} of them allocations) for {} checks\n",
         layout.candidate_runs,
         layout.runs.len(),
-        layout.slots.len()
+        layout.slots.len(),
+        instructions,
+        layout.root_instructions,
+        allocations,
+        layout.runs.len(),
     );
     for (i, s) in layout.slots.iter().enumerate() {
         out.push_str(&format!(

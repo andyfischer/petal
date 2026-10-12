@@ -363,9 +363,10 @@ fn the_cache_is_off_where_it_cannot_help_or_must_not_interfere() {
     assert_eq!((stats.skips, stats.clears), (2, 1));
 }
 
-/// `petal run` runs a script once: nothing kept would ever be read.
+/// `petal run` runs a script once: nothing kept would ever be read. With
+/// `--runs` it is a frame loop.
 #[test]
-fn petal_run_leaves_the_cache_off() {
+fn petal_run_leaves_the_cache_off_unless_it_runs_more_than_once() {
     let dir = std::env::temp_dir().join(format!("petal-static-cache-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("t.ptl");
@@ -383,6 +384,27 @@ fn petal_run_leaves_the_cache_off() {
     assert!(show(Some("fast")).contains("static_skip"));
     assert!(!show(Some("fast-static")).contains("static_skip"));
     assert!(!show(Some("baseline")).contains("static_skip"));
+
+    // `--runs n` is a host's frame loop on one stack: state carries, and
+    // the cache (on by default there) changes nothing that is printed.
+    std::fs::write(&file, "let T = [[1, 2], [3, 4]]\nstate n = 0\nn = n + 1\nprint(n, T)\n").unwrap();
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(petal)
+            .arg("run")
+            .args(args)
+            .arg(&file)
+            .env_remove("PETAL_POLICY")
+            .env_remove("PETAL_OPT")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let three = "1 [[1, 2], [3, 4]]\n2 [[1, 2], [3, 4]]\n3 [[1, 2], [3, 4]]\n";
+    assert_eq!(run(&["--runs", "3"]), three);
+    assert_eq!(run(&["--runs", "3", "--policy", "replay-static"]), three);
+    assert_eq!(run(&["--runs", "3", "--policy", "baseline"]), three);
+    assert_eq!(run(&[]), "1 [[1, 2], [3, 4]]\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -468,4 +490,67 @@ fn a_large_table_as_a_memo_argument_stops_missing() {
     assert_eq!(misses_on, 0, "with the table kept the call is replayed on every frame");
     assert_eq!(hits_on, 29);
     assert_eq!(misses_off, 29, "rebuilt, it misses on every frame");
+}
+
+// --- the example corpus ------------------------------------------------------
+
+/// Every console example and every small script under `test/`, three runs
+/// on one stack, with the cache on and off under each policy pair. These
+/// are the scripts `tools/test-examples.ts` holds against the golden
+/// corpus; that tool runs the optimizer-on pair through the CLI.
+#[test]
+fn the_example_corpus_prints_the_same_with_the_cache_on_and_off() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let mut walk = vec![root.join("examples/console"), root.join("test")];
+    while let Some(dir) = walk.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                // The benchmarks take seconds a run unoptimized; vitest
+                // fixtures are fragments, not programs.
+                if !matches!(name.as_str(), "benchmarks" | "vitest" | "example-golden" | "ui-golden") {
+                    walk.push(path);
+                }
+            } else if name.ends_with(".ptl") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    assert!(files.len() >= 50, "found only {} scripts", files.len());
+
+    let (mut ran, mut kept, mut skips) = (0, 0, 0u64);
+    for file in &files {
+        let src = std::fs::read_to_string(file).unwrap();
+        let load = |policy: RunPolicy| {
+            let mut env = Env::new();
+            env.set_policy(policy);
+            env.set_echo(false);
+            env.set_seed(1);
+            let pid = env.load_program(&src).ok()?;
+            let sid = env.create_stack(pid).ok()?;
+            Some(World { env, pid, sid })
+        };
+        let mut compiled = false;
+        for (on, off) in pairs() {
+            let (Some(mut a), Some(mut b)) = (load(on), load(off)) else { break };
+            compiled = true;
+            for i in 0..3 {
+                let (fa, fb) = (frame(&mut a), frame(&mut b));
+                assert_eq!(fa, fb, "{}: run {i} differs with the cache on ({:?})", file.display(), on.name());
+            }
+            if on == RunPolicy::REPLAY {
+                let values = a.env.static_values(a.sid).unwrap();
+                assert_eq!(values.warnings(), Vec::<String>::new(), "{}", file.display());
+                kept += (!values.slots.is_empty()) as usize;
+                skips += values.stats.skips;
+            }
+        }
+        ran += compiled as usize;
+    }
+    assert!(ran * 10 >= files.len() * 9, "only {ran} of {} scripts compile here", files.len());
+    assert!(kept >= 10 && skips > 0, "{kept} scripts keep a static value, {skips} runs skipped");
+    eprintln!("{ran} of {} scripts ran; {kept} keep a static value; {skips} runs skipped", files.len());
 }

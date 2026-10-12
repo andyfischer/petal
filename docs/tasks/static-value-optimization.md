@@ -818,6 +818,132 @@ still evaluated every run.
 
 ## S1. Caching, cleared on every reload
 
+**Status of the cache itself: done 2026-10-12** (the first seven items of
+"Ships", down to "Off under `baseline` and `explain`…"). `const`, the lint
+and the hover are a separate track and have their own note; enum constant
+data as a static value is not started.
+
+What shipped (`core/src/static_cache.rs` is the module and its header is the
+description):
+
+- **The flag** is `OptFlags::static_cache`, on in `fast` and `replay`, off
+  in `baseline` and `explain`; `+static` / `-static` are the policy
+  modifiers (`fast-static`, `baseline+static`), `RunPolicy::with_static_cache`
+  and `Env::set_static_cache` the calls. `Env::effective_opt_flags` drops it
+  whenever observations or the trace are preserved and under the static
+  audit, so Garden panels get nothing, as decided. `petal run`,
+  `petal check` and `petal show-bytecode` leave it off unless a policy is
+  named (`PETAL_POLICY=fast petal show-bytecode f.ptl` shows the
+  instructions); `petal run --runs <n>` is new, runs the script n times on
+  one stack, and keeps it on.
+- **The instructions** are `StaticSkip { after, run, slots }` and
+  `StaticStore { slots }`, root code only, added by a pass that runs after
+  every other one (`static_cache::apply`, from
+  `bytecode::lower_with_statics` / `Env::lower_with`). Nothing is moved or
+  removed. A `StaticSkip` is one comparison: the stack keeps, per run, how
+  many of the slots the run feeds are still empty (`StaticRun::feeds`).
+- **The table** is `Stack::statics` (`StaticSlots`), a GC root, stamped with
+  the lowering's `StaticLayout::id` (new for every lowering, so for every
+  program and flag set) and the constant table's revision (moved by a
+  literal patched in place, which changes no lowering). Cleared in
+  `transfer_stack_state`, so also by `restore_execution`. Read with
+  `Env::static_values(stack)`, emptied with `Env::clear_static_values`.
+- **Runs and slots are decided on the lowered code, by register**, which is
+  what S0's finding about non-contiguous statements called for: a candidate
+  instruction belongs to a root term that is static data, is not written to
+  and lowers to nothing that must run; a run is a maximal stretch of them
+  that control enters and leaves only at its ends; a register gets a slot
+  when something executing on every run reads it (dynamic code, a capture, an
+  unskippable static statement, the program's result). A register only a
+  later skippable run reads gets none: the earlier run then feeds that run's
+  slots too and is skipped only with it. A run lighter than two allocations
+  (a call or a loop counts as two) is left alone. A run that reads a register
+  a dynamic instruction writes is out, whatever the classifier said.
+- **Three guards on a kept value**, each of which holds the mutation
+  regression on its own (checked by switching the other two off): the plan
+  leaves out every root term whose value reaches a write
+  (`StaticPlan`, plus the classifier's `mutated_by`) and the pass refuses a
+  slot to a register that reaches an in-place instruction; escape and
+  last-use analysis take planned terms as non-fresh roots
+  (`analyze_with_static_roots`, `apply_with_static_roots`); and
+  `Heap::mark_immutable` sets a bit, separate from the frozen one, that the
+  seven in-place heap operations treat as "copy". A value holding a
+  function, a `var` cell, a handle or a pending result is rejected at the
+  store, for good, and `StaticValues::warnings()` names the declaration.
+
+Measured (release, this machine, 12 October 2026):
+
+| What | Cache off | Cache on |
+|---|---|---|
+| 55 panel apps, 60 monkey frames, `replay`: instructions per frame | — | −0.0% to −29.7%, median −3.9%; 22 apps at −5% or better |
+| …allocations per frame | — | −1.0% to −44.5%, median −18.1% (−10.0% over the sum) |
+| snake | 2,992 instructions, 144 allocations | 2,792 (−6.7%), 99 (−30.9%) |
+| analytics-dashboard | 29,817, 2,386 | 29,513 (−1.0%), 2,315 (−3.0%) |
+| network-graph | 783,883, 1,257 | 782,445 (−0.2%), 1,098 (−12.7%) |
+| settings | 36,727, 1,914 | 35,571 (−3.1%), 1,691 (−11.6%) |
+| memory (the largest gain) | 30,490, 1,430 | 21,447 (−29.7%), 793 (−44.5%) |
+| A 400-record `let` table as a memo argument, 29 frames after the first | 29 misses | 0 misses, 29 hits |
+| Moses as written: root instructions a frame leaves out | 0 of 25,190 | 4,887 (1,079 direct allocations) for 33 checks; 378 slots |
+| Moses with the 74 constant cells as `let` (scratch copy) | 0 of 25,042 | 19,693 (3,716 direct allocations) for 47 checks; 481 slots |
+| `test/benchmarks/*` under `petal run` (cache off; against the same source with the table sync and the bit check compiled out, minimum of 15) | — | −1.2% to +1.2%, noise; instruction counts exact and unchanged (life 3,913,944, spreadsheet 20,449,651) |
+| Lowering Moses (`show-bytecode`, compile included) | about 640 ms | about 715 ms: the classifier and the pass, once per recompile |
+
+Every panel app keeps at least 11 slots, which are the UI prelude's own
+tables. The Moses rows are counts from the layout
+(`PETAL_OPT_STATS=1 PETAL_POLICY=fast petal show-bytecode game.ptl`), not a
+run: root instructions only, so a floor (a skipped constructor call saves
+its body too). Of the candidate runs, 136 are too light (389 instructions,
+scalars) and one feeds nothing; none is refused for a tainted or mutated
+register.
+
+Tests: `core/tests/static_cache.rs` (15: the four defects of the first
+draft, reloads against the cache off and against a cold start, a patched
+literal on a second stack, forks and restore, collections, where it is off,
+rejection, the bit, the memo benchmark, and 52 console and `test/` scripts
+under four policy pairs); heap unit tests for the bit;
+`core-libs/petal-ui/tests/static_cache.rs` (the 55-app corpus frame for
+frame, cache on against off, under `replay`, `replay-memo`, `baseline` and
+`fast`, plus the measurement above as an ignored test);
+`static_cache_fuzz` in `bytecode/fuzz.rs` (the existing generator, three
+runs a program, three policy pairs; 6,000 seeds clean in a soak, 150 by
+default). `cell_fuzz` now runs its frames with the cache on against a
+`baseline` oracle too, since `fast` and `replay` have it. `hot_reload.rs`
+is unchanged and passes under all three of its policies.
+`tools/test-examples.ts` runs each example twice more (`--runs 2` under
+`replay` and `replay-static`): 33 pass, 11 s. `tools/verify.ts` needs no
+change: `petal-ui-run` has the cache on by default, so its golden step
+already compares cache-on traces with hashes taken before the cache
+existed, and a wrapper that adds `--policy fast-static` as
+`--before-ui-bin` makes `run-diff` a cache differential (136 identical
+traces, none changed).
+
+Three existing tests asserted memo hits on a top-level call with constant
+arguments, which is now a static value and is not called twice; they pin
+the policy to `-static` (`memo::env_tests`, `cell_in_place.rs`, `enums.rs`).
+
+Open:
+
+- **Moses has still not run under its host**, so the gate's "83.1k to about
+  79k instructions per frame" is unverified; the layout count above (4,887
+  root instructions) is in line with the hand simulation's 4.0k.
+- Not run here: the Garden workspace and `petal-fantasy-nes` (no target
+  directory on this disk, and none could be created); Garden panels have the
+  cache off by construction.
+- A slot per register means scalars read by dynamic code get slots when
+  they sit in a run with tables (most of Moses's 378). A load costs what the
+  `LoadConst` it replaces cost, so this is neutral, not a gain.
+- Function declarations split runs (a `MakeClosure` is never skipped), and
+  a table that sits alone between two of them with one allocation is left
+  alone. Nothing moves code, as decided.
+- A `StaticStore` that finds its slot filled keeps the old value. Under S1
+  that cannot differ; S2's partial dirtying has to revisit it together with
+  "a rebuilt value that is structurally equal keeps the old heap value".
+- No C entry point switches the cache or clears the table
+  (`pb_vm_set_static_cache`, `pb_vm_clear_static_values`); a C host has it
+  on with the default policy. Cheesecake follow-ups are unchanged from S0:
+  pass `PB_FX_CONST`, re-vendor, run `--static-audit` in the engine, then
+  rewrite the 74 cells.
+
 **Ships.**
 
 - A dense per-stack slot table, GC-rooted, stamped with (program epoch, opt

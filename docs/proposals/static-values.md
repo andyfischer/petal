@@ -2,8 +2,10 @@
 
 Status: proposed, 12 October 2026. Stage 0 (the classifier, `petal
 show-static`, the `CONST` flag, `--static-audit`) is implemented and its
-go/no-go gate passed; nothing that changes how a program runs is. Results:
-[`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md#gate-result).
+go/no-go gate passed. Of stage 1, the cache itself is implemented
+(`core/src/static_cache.rs`: slots, the skip lowering, the immutable bit,
+clear-all on reload); stage 2 is not started. Results:
+[`docs/tasks/static-value-optimization.md`](../tasks/static-value-optimization.md#s1-caching-cleared-on-every-reload).
 
 ## Summary
 

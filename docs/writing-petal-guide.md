@@ -104,10 +104,11 @@ Things to notice, because each is a rule you will meet again:
   top-level `let` whose value is a compile-time constant (`let NODE_W = 140`,
   `let GAP = NODE_W / 2`, a list or record of literals) is hoisted with them,
   so a `fn` reading it can be called from above. Hoisting is about
-  declaration order only: a hoisted `let` is still evaluated on every run,
-  like every other top-level statement, so a large literal table is rebuilt
-  each frame. (`petal show-static` says which declarations *could* be built
-  once; nothing does that yet.) The one exception to hoisting: a `fn`
+  declaration order only and says nothing about how often a value is built.
+  That is decided separately: a top-level value that depends on no dynamic
+  data (`petal show-static` says which do) is built once and kept by a host
+  that runs the script every frame, and rebuilt after a reload; everything
+  else, and everything under `petal run`, is evaluated on every run. The one exception to hoisting: a `fn`
   whose body reads a top-level `let` that is computed at run time (a layout
   rect, `let NODE_W = screen_width() / 4`), or a `var`/`state`, cannot be
   hoisted above it, and calling it earlier fails at run time with

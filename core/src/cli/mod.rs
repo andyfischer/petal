@@ -87,6 +87,10 @@ pub struct RunOpts {
     /// Seed the run's PRNG (`--seed N`), so `random()` replays. Overrides
     /// `PETAL_SEED`; without either, the seed comes from the clock.
     pub seed: Option<u64>,
+    /// `--runs <n>`: run the script this many times on one stack, the way a
+    /// host runs it every frame: `state`, memo records and static values
+    /// carry from each run to the next. `None` is once.
+    pub runs: Option<u32>,
     /// How errors are printed (`--error-format full|bare`).
     pub error_format: ErrorFormat,
     /// `--state-storage <file>`: load every `state` value from this JSON file

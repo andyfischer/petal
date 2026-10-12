@@ -729,9 +729,16 @@ cost of being wrong.
   liveness, or anything about the program's source — whether or not an
   `InputClasses` bit exists for it. A call with constant arguments is then
   itself a constant, so a top-level table built from such calls is a static
-  value: evaluated once and kept until the script's source changes. **A wrong
-  `CONST` is a stale value forever** — there is no revision to bump and no
-  frame on which it is recomputed.
+  value: evaluated once and kept on the stack until the script is reloaded
+  (the static-value cache, `core/src/static_cache.rs`, on under the `fast`
+  and `replay` policies). **A wrong `CONST` is a stale value until the next
+  reload** — there is no revision to bump and no frame on which it is
+  recomputed. `Env::clear_static_values(stack)` drops what a stack holds,
+  for a host that knows it changed something such a native answers from;
+  `Env::static_values(stack)` lists the values and names any that could not
+  be kept (one holding a function, a `var` cell, a handle or a pending
+  result is rebuilt every run instead), and `Env::set_static_cache(false)`
+  turns the cache off.
 
 So `CONST` is opt-in and the default is dynamic:
 

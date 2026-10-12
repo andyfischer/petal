@@ -147,15 +147,23 @@ Options:
   flag wins when both are set.
 - `--policy <name>` — run under a named run policy: `fast`, `baseline` (no
   optimizer, no memoization), `explain` (keeps every traced instruction, no
-  memoization) or `replay`, optionally followed by modifiers such as `-memo`
-  or `+gate`. Without the flag (and without `PETAL_POLICY`), `run` uses
-  `fast-memo`: the script runs once and exits, so a memoized call has no later
-  run to be replayed in, and recording it would only cost time and memory. A
+  memoization) or `replay`, optionally followed by modifiers such as `-memo`,
+  `+gate` or `-static`. Without the flag (and without `PETAL_POLICY`), `run`
+  uses `fast-memo-static`: the script runs once and exits, so a memoized call
+  has no later run to be replayed in and a static value kept for the next run
+  is kept for nothing, and both would only cost time and memory. A
   host that runs a script every frame defaults to `fast`, memoization
-  included. Output must be identical under every policy, so
+  and the static-value cache included. Output must be identical under every
+  policy, so
   a difference is a bug in the layer the two differ by. `PETAL_POLICY=<name>`
   does the same for every command and embedder; the flag wins.
 - `--no-opt` — same as `--policy baseline`. `PETAL_OPT=off` does the same.
+- `--runs <n>` — run the script `n` times on one stack, each from the top, the
+  way a host runs it every frame: `state`, memo records and static values
+  carry from one run to the next, and the default policy is then the host's
+  `fast`. The first run that fails ends the session. `petal run --runs 2
+  --policy replay f.ptl` against `--policy replay-static` is the static-value
+  cache on against off.
 - `--state-storage <file>` — keep `state` between runs in `<file>`. See
   [State between runs](#state-between-runs).
 
@@ -2293,6 +2301,12 @@ config let SCALE = 2
 let W = SCALE * 3
 fn hd(a, b)
   {a: a, b: b, w: W}
+Like `run`, `show-bytecode` shows what a script that runs once executes. A
+host that runs a script every frame also keeps its static values between
+runs (the `fast` policy's static-value cache), which adds a `static_skip`
+in front of each run of static instructions and a `static_store` behind it.
+Name the policy to see them: `PETAL_POLICY=fast petal show-bytecode f.ptl`.
+
 end
 let ROWS = [hd(1, 2), hd(3, 4)]
 state counter = 0

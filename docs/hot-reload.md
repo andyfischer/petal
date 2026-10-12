@@ -52,7 +52,9 @@ without a `reset_stack`.
 A `patched` reload drops what a `recompiled` one drops, by running the same
 code (`transfer_stack_state`). A closure captured the old value; a memo record
 of a function whose body loads the constant has an input the record does not
-list; a `state` slot that was *initialized* from the old value keeps its value
+list; a static value kept from an earlier run (`core/src/static_cache.rs`)
+was built from the old literals, so every one of them is dropped and the
+next run builds them again; a `state` slot that was *initialized* from the old value keeps its value
 under both, because an initializer runs once.
 
 ## What kind of edit is it

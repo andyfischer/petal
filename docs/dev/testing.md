@@ -133,6 +133,23 @@ checked in (the traces total ~72 MB), so a golden mismatch is a signal to
 re-run the app and diff locally. Re-baseline it deliberately with
 `--update-golden`.
 
+A switch of the UI driver can be the axis too: give one side a wrapper
+script. This runs every UI app in the plan with the static-value cache off
+on one side and on on the other:
+
+```sh
+printf '#!/bin/sh\nexec %s/core-libs/petal-ui/target/debug/petal-ui-run --policy fast-static "$@"\n' "$PWD" > /tmp/ui-run-nocache.sh
+chmod +x /tmp/ui-run-nocache.sh
+./tools/verify.ts --plan compiler \
+    --before-bin core/target/debug/petal --after-bin core/target/debug/petal \
+    --before-ui-bin /tmp/ui-run-nocache.sh \
+    --after-ui-bin core-libs/petal-ui/target/debug/petal-ui-run
+```
+
+The `golden` step needs no such help: `petal-ui-run` runs the default policy,
+cache included, and the hashes in `test/ui-golden/` were taken before the
+cache existed.
+
 Plans live in `test/verify-plans/`. A plan's `exclude` list drops directories
 from its corpus roots (the vitest fixtures under `test/vitest`). A plan's `include` list names module search
 directories (relative to each side's root) handed as `-I` to every side of the

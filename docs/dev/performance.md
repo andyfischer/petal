@@ -436,6 +436,63 @@ and 15.0, audio_synth 110.6 and 109.2, particles 11.2 and 11.3,
 match_dispatch 317.8 and 314.6, append 6.1 and 6.4, spreadsheet 205.9 and
 213.3). The machine was running other builds during all of these.
 
+## Static values
+
+A host runs the whole script every frame, so every top-level table used to be
+rebuilt every frame. The static-value cache (`core/src/static_cache.rs`;
+`OptFlags::static_cache`, part of `fast` and `replay`) keeps the top-level
+values that depend on no dynamic data on the stack and jumps over the code
+that builds them. `petal show-static` says which declarations qualify, and
+why the others do not; the cache keeps those of them that code running every
+frame reads, when the run that builds them makes at least two allocations.
+A reload of any kind empties it. It is off under `baseline` and `explain`,
+whenever observations or the trace are on (Garden panels), and for a plain
+`petal run`.
+
+Over the panel corpus (`cd core-libs/petal-ui && cargo test --release --test
+static_cache -- --ignored --nocapture measure`: 55 apps, 60 frames of the
+monkey scenario, every frame run, release) a frame runs 0.0% to 29.7% fewer
+instructions, median 3.9%, and makes 1.0% to 44.5% fewer allocations, median
+18.1%:
+
+| App | Slots | Instructions per frame, off | On | Allocations per frame, off | On |
+|---|---|---|---|---|---|
+| games/snake | 51 | 2,992 | 2,792 (−6.7%) | 144 | 99 (−30.9%) |
+| games/memory | 86 | 30,490 | 21,447 (−29.7%) | 1,430 | 793 (−44.5%) |
+| productivity/settings | 46 | 36,727 | 35,571 (−3.1%) | 1,914 | 1,691 (−11.6%) |
+| productivity/kanban | 40 | 3,954 | 3,759 (−4.9%) | 184 | 137 (−25.5%) |
+| dashboards/analytics-dashboard | 59 | 29,817 | 29,513 (−1.0%) | 2,386 | 2,315 (−3.0%) |
+| dashboards/network-graph | 71 | 783,883 | 782,445 (−0.2%) | 1,257 | 1,098 (−12.7%) |
+| garden/examples/panels/plant | 30 | 1,066 | 941 (−11.7%) | 82 | 58 (−28.9%) |
+
+The saving is a fixed amount per frame (the tables), so it is a large share
+of a small panel and noise in one that simulates or draws a lot. Every UI app
+keeps at least 11 slots, which are the UI prelude's own tables. Where a
+panel's tables are derived from the screen size, the theme or text
+measurement, nothing is kept: those are not static.
+
+A second effect: the memo compares a call's arguments structurally within
+a budget of 512 nodes, so a larger table rebuilt every frame made the call
+miss every frame. Kept, it is the same object and compares equal at once: a
+400-record `let` table as a memo argument goes from 29 misses in 29 frames
+to none.
+
+Costs. A recompile classifies the program (about 85 ms on a 27,000-line
+game, 5 to 8 ms on an example panel) and runs the pass; nothing is classified
+on a literal-only reload. Per frame, one test per skippable run plus one
+register write per slot. With the cache off the cost is two comparisons per
+dispatch into the VM and one more bit tested in the in-place heap
+operations: the `test/benchmarks/*` scripts under `petal run` time within
+1.2% either way of the same source with both compiled out, and their
+instruction counts are unchanged.
+
+To see what a script would keep without running it: `PETAL_OPT_STATS=1
+PETAL_POLICY=fast petal show-bytecode app.ptl >/dev/null` prints the runs,
+the slots by declaration, and the root instructions a frame leaves out.
+Tables that are written to are never kept (`let by_sec = [0, 0, 0]` followed
+by `by_sec[i] = v`), and a table sitting alone between two function
+declarations with a single allocation is too small to be worth a check.
+
 ## Where the remaining headroom is
 
 Measured on `test/benchmarks/spreadsheet.ptl`, which is the formula engine from

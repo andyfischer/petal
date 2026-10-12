@@ -60,6 +60,9 @@ pub struct Env {
     /// Opt-in audit of native effect declarations against observed behavior.
     /// Off by default; see [`crate::effect_audit`].
     effect_audit: EffectAudit,
+    /// Opt-in audit of the static-value classifier against what static code
+    /// was observed reading. Off by default; see [`crate::static_audit`].
+    static_audit: crate::static_audit::StaticAudit,
     next_program_id: u32,
     next_stack_id: u32,
     /// How runs execute: optimizer passes, memoization, frame gating.
@@ -200,6 +203,7 @@ impl Env {
             observations: Observations::new(),
             profile: VmProfile::new(),
             effect_audit: EffectAudit::new(),
+            static_audit: crate::static_audit::StaticAudit::new(),
             next_program_id: 1,
             next_stack_id: 1,
             policy: RunPolicy::from_env(),
@@ -411,6 +415,12 @@ impl Env {
         bc.resolve_builtin_names(&program.constants, |name| {
             self.native_fns.lookup_name(name).map(|id| id.0)
         });
+        // The static audit indexes the root code it is about to watch, and in
+        // its static-only mode rewrites it (see `crate::static_audit`).
+        if self.static_audit.enabled {
+            let analysis = crate::static_classify::analyze(program, &self.native_fns);
+            self.static_audit.prepare(pid, program, &mut bc, &analysis)?;
+        }
         self.bytecode.insert(pid, (flags, bc));
         Ok(())
     }
@@ -1329,6 +1339,33 @@ impl Env {
         self.effect_audit.report(&self.native_fns, &self.symbols)
     }
 
+    /// Turn the static-value audit on (or off) for subsequent runs: while a
+    /// top-level term the classifier calls static is being evaluated, every
+    /// dynamic input it touches is recorded, and
+    /// [`static_audit_report`](Self::static_audit_report) lists them. In
+    /// [`StaticOnly`](crate::static_audit::StaticAuditMode::StaticOnly) mode a
+    /// run evaluates the static top-level statements and nothing else.
+    ///
+    /// Setting the mode clears what was observed and drops every cached
+    /// lowering, so set it between runs, never inside one. See
+    /// [`crate::static_audit`].
+    pub fn set_static_audit(&mut self, mode: crate::static_audit::StaticAuditMode) {
+        self.static_audit.set_mode(mode);
+        self.bytecode.clear();
+    }
+
+    /// The mode [`set_static_audit`](Self::set_static_audit) left.
+    pub fn static_audit_mode(&self) -> crate::static_audit::StaticAuditMode {
+        self.static_audit.mode()
+    }
+
+    /// What the static audit has caught so far, with declarations, natives
+    /// and positions named.
+    pub fn static_audit_report(&self) -> crate::static_audit::Report {
+        self.static_audit
+            .report(|pid| self.programs.get(&pid), &self.native_fns, &self.symbols)
+    }
+
     /// The registered name of a native function by table index — how a
     /// [`VmProfile`] report turns its `NativeFnId` counters back into builtin
     /// names. Out-of-range ids report as `<native N>` rather than panicking:
@@ -1804,6 +1841,7 @@ impl Env {
     /// from the program and would otherwise be served stale by `ensure_bytecode`.
     pub(crate) fn insert_program(&mut self, id: ProgramId, program: Program) {
         self.bytecode.remove(&id);
+        self.static_audit.forget(id);
         self.programs.insert(id, program);
     }
 

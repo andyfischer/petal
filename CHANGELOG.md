@@ -423,6 +423,17 @@ way, for code written against an earlier checkout.
   natives are dynamic under the plain CLI. `Env::static_report` is the same
   answer against a host's own natives. See
   [docs/CLI.md](docs/CLI.md#show-static--static-declarations).
+- `petal run --static-audit` (and `petal-ui-run --static-audit`) checks the
+  classifier and the `CONST` registrations against a real run: while a
+  top-level term that `show-static` calls static is being evaluated, it
+  watches the host bindings, host data, resources, output, effects, the
+  random stream and `state`, and any call of a native that is not constant,
+  and fails naming the declaration, the input and the call if one is touched.
+  `--static-only` evaluates only the static top-level statements and skips
+  the rest, which builds a script's constant tables without its host.
+  Embedders turn it on with `Env::set_static_audit` and read
+  `Env::static_audit_report`. See
+  [docs/CLI.md](docs/CLI.md#checking-the-answer---static-audit).
 - `petal-c-bridge`: `pb_vm_reload` takes layout and value edits without
   recompiling, and `pb_vm_last_reload_kind` / `pb_vm_last_reload_json` say
   what a reload did. `pb_vm_set_config` sets one config value in the running

@@ -44,6 +44,7 @@ pub(super) fn handle_run(
         dup_stats,
         profile,
         effect_audit,
+        static_audit,
         trace_pending,
         observe,
         trace_emits,
@@ -100,6 +101,15 @@ pub(super) fn handle_run(
     if effect_audit {
         env.set_effect_audit(true);
     }
+    let static_audit_on = static_audit != crate::static_audit::StaticAuditMode::Off;
+    if static_audit_on {
+        env.set_static_audit(static_audit);
+    }
+    // A static-only build calls no host native, so the script need not link
+    // against this host's: that is the point of it.
+    if static_audit == crate::static_audit::StaticAuditMode::StaticOnly {
+        env.set_check_only(true);
+    }
     let pid = load_checked_or_die(&mut env, json, ir, source, source_input);
     let sid = stack_or_die(&mut env, json, pid);
     match opts.state_storage.as_deref() {
@@ -132,6 +142,14 @@ pub(super) fn handle_run(
     if effect_audit {
         eprint!("{}", env.effect_audit_report());
     }
+
+    // A static term that touched a dynamic input fails the run, after the
+    // rest of its output (and after the runtime error, if it also raised).
+    let static_audit_failed = static_audit_on && {
+        let report = env.static_audit_report();
+        eprint!("{report}");
+        report.has_failures()
+    };
 
     if dup_stats {
         eprintln!("{}", env.dup_stats());
@@ -183,6 +201,9 @@ pub(super) fn handle_run(
                 die(json, &e, "runtime");
             }
         }
+    }
+    if static_audit_failed {
+        process::exit(1);
     }
 }
 
@@ -2058,8 +2079,12 @@ pub(super) fn load_checked_or_die(
             process::exit(1);
         }
     }
-    if let Err(e) = env.link(pid) {
-        die_error(json, &e, serde_json::Value::Null, source);
+    // A caller that asked for check-only (the static-only build) runs no
+    // host native, so the program need not link against this host's.
+    if !was_check_only {
+        if let Err(e) = env.link(pid) {
+            die_error(json, &e, serde_json::Value::Null, source);
+        }
     }
     pid
 }

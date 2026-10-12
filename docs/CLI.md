@@ -2369,6 +2369,54 @@ command does, never less.
 the program and the names in it, so editing a literal cannot change any
 answer here, including a literal that decides a branch.
 
+#### Checking the answer: `--static-audit`
+
+```
+petal run --static-audit <file.ptl>
+petal run --static-only <file.ptl>
+```
+
+`show-static` is an analysis; `petal run --static-audit` holds it against a
+run. It runs the script as usual, and while any top-level term the classifier
+called static is being evaluated (however deep the calls it makes) it watches
+everything a static value may not depend on:
+
+- a host binding read (`mouse_x`, `time`, the screen size, a font), a
+  host-data read, a resource read, output, any effect;
+- the random stream;
+- `state` being declared, read or written;
+- a call of a native that is not registered as a constant function.
+
+Each one touched is reported on stderr with the declaration whose initializer
+was running, the input, and the call that touched it, and the command exits
+with status 1:
+
+```text
+static audit: 14 static declarations, 310 native calls under static terms, 1 failure
+  LAB_W (app.ptl:784) read the binding `font`: text_width at app.ptl:382
+```
+
+A failure is a bug in the classifier or, far more often, a native registered
+`CONST` that is not one ([ffi.md](ffi.md#constant-natives)). A clean run is
+evidence for the calls the run made, not a proof.
+
+`--static-only` evaluates **only** the top-level statements that are static
+and skips every other one, under the same audit. Static code may call only
+constant natives, so the script does not need its host: this builds the
+constant tables of a game or a panel from the plain CLI, prints nothing the
+script would have printed, and fails if the build raises. It is a preview of
+what a later release does once per source text. `--observe` shows the values
+it built.
+
+What the audit cannot see: a read of a `var`, or of a value some other
+statement updates in place, moves no counter. And a call the memo replays is
+never made, so audit with memoization off (the `petal run` default).
+
+Under a UI host the same flags are on `petal-ui-run`
+([headless-ui-run.md](dev/headless-ui-run.md)), which audits every frame of a
+scenario; `core-libs/petal-ui/tests/static_audit.rs` does that for the whole
+panel corpus.
+
 `--all` includes the declarations of imported modules and of the prelude,
 under their module-qualified names (`ui::button`). `--json` emits:
 

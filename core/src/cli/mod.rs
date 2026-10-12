@@ -65,6 +65,11 @@ pub struct RunOpts {
     /// the run, each native whose observed behavior differs from its declared
     /// effect row (see `crate::effect_audit`).
     pub effect_audit: bool,
+    /// `--static-audit` / `--static-only`: watch the dynamic inputs while the
+    /// top-level terms the classifier calls static are evaluated, and fail if
+    /// one is touched (see `crate::static_audit`). `--static-only` evaluates
+    /// those statements and nothing else.
+    pub static_audit: crate::static_audit::StaticAuditMode,
     /// `--policy <name>` (or `--no-opt`, which is `baseline`); `None` keeps
     /// the env's own, from `PETAL_POLICY`.
     pub policy: Option<crate::policy::RunPolicy>,

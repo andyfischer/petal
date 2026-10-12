@@ -41,6 +41,7 @@ options.
 | `graph --term <a> --term <b>...` (or `--slice` with one) | Dataflow subgraph for several targets (minimal only when no `var` is read; see §1a). |
 | `show-graph` | Graphviz DOT output. |
 | `show-static [--json] [--all]` | Each top-level declaration's static class (static data, function, dynamic), the reason chain for a dynamic one, whether dynamic code reads a static one, and what each depends on. Compiles, never runs. |
+| `run --static-audit` / `run --static-only` | The runtime check of `show-static`: every dynamic input touched while a static term was being evaluated, by declaration, input and call. `--static-only` runs just the static top-level statements (no host needed). |
 | `pending-report [--json]` | Every pending (loading) resource still live after a run. |
 | `propose-edit` | Propose source edits that change an emitted value (the writing half of direct manipulation). |
 | `lint [--fix\|--check]` | Formatter and source normalizer. |

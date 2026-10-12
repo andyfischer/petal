@@ -235,3 +235,48 @@ fn show_static_reports_class_reason_and_readers() {
     assert_eq!(code, 0);
     assert!(out.contains("petal show-static [--json] [--all] <file>"), "{out}");
 }
+
+/// `petal run --static-audit` / `--static-only`: the summary goes to stderr,
+/// a clean audit exits 0, and the static-only build runs a script whose host
+/// natives are not here — printing nothing, since nothing dynamic runs.
+#[test]
+fn run_static_audit_and_static_only() {
+    let dir = dir_with(
+        "static-audit",
+        &[
+            (
+                "app.ptl",
+                "native fn host_width()\n\
+                 fn row(a, b) { a: a, b: b * 2 } end\n\
+                 let ROWS = [row(1, 2), row(3, 4)]\n\
+                 let N = len(ROWS)\n\
+                 print(\"drawn\", host_width() / N)\n",
+            ),
+            (
+                "plain.ptl",
+                "let ROWS = sort([3, 1, 2])\nstate n = 0\nn = n + len(ROWS)\nprint(n)\n",
+            ),
+            ("raises.ptl", "let ROWS = [1, 2]\nlet BAD = ROWS[0].missing.deeper\nprint(BAD)\n"),
+        ],
+    );
+    // Without its host the script does not even link.
+    let (_, err, code) = petal_in(&dir, &["run", "app.ptl"]);
+    assert_ne!(code, 0, "{err}");
+
+    let (out, err, code) = petal_in(&dir, &["run", "--static-only", "app.ptl"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(!out.contains("drawn"), "{out}");
+    assert!(err.contains("static audit: built 2 static declarations alone"), "{err}");
+    assert!(err.contains("0 failures"), "{err}");
+
+    let (out, err, code) = petal_in(&dir, &["run", "--static-audit", "plain.ptl"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains('3'), "{out}");
+    assert!(err.contains("static audit: 1 static declarations"), "{err}");
+    assert!(err.contains("0 failures"), "{err}");
+
+    // A build that raises fails, and the audit names the declaration.
+    let (_, err, code) = petal_in(&dir, &["run", "--static-only", "raises.ptl"]);
+    assert_ne!(code, 0, "{err}");
+    assert!(err.contains("1 failure") && err.contains("BAD (") && err.contains(") raised:"), "{err}");
+}

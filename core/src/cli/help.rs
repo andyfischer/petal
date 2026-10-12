@@ -355,6 +355,20 @@ OPTIONS
               declared at registration: under-declared (a bug) or
               over-declared. See docs/tasks/declarative-effect-refactoring.md.
 
+       --static-audit
+              Watch the dynamic inputs (host bindings, host data, resources,
+              output, effects, the random stream, state, and any native not
+              registered constant) while each top-level term that `petal
+              show-static` calls static is evaluated. Report every one
+              touched on stderr, naming the declaration, the input and the
+              call, and exit with status 1 if there was one.
+
+       --static-only
+              Evaluate only the top-level statements that are static, skipping
+              every other one, under the same audit. Static code calls no host
+              native, so this builds the constant tables of a script whose
+              host is not there. An error raised by the build is a failure.
+
        --policy <name>
               Run under a named run policy: fast, baseline (no optimizer,
               no memoization), explain, or replay, optionally followed by

@@ -14,7 +14,7 @@ petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N]
              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
-             [--effect-audit]
+             [--effect-audit] [--static-audit] [--static-only]
 ```
 
 Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
@@ -36,6 +36,8 @@ Build it with `cd core-libs/petal-ui && cargo build`; the binary lands at
 | `--no-memo` | memoized | Run every user-function call. Like `--no-gate`, it switches one layer off in whichever policy is in effect. By default calls whose inputs are unchanged are replayed from their record ([memo-scopes.md](memo-scopes.md)); the trace is identical either way, which `tests/memo.rs` checks. |
 | `--memo-stats` | off | Report the memo's counters (hits, misses, records, inlined, effectful, re-executions, cutoffs, cold sites, evictions) on stderr. |
 | `--effect-audit` | off | Bracket every native call with activity snapshots and report, on stderr, each native whose observed behavior differs from its declared effect row (`petal::effect_audit`). Exit 3 if a declared native did more than it declared. |
+| `--static-audit` | off | Watch the dynamic inputs (bindings, host data, resources, output, effects, the random stream, `state`, any native not registered constant) on every frame while each top-level term `petal show-static` calls static is evaluated, and report each one touched on stderr with the declaration, the input and the call (`petal::static_audit`). |
+| `--static-only` | off | Evaluate only the static top-level statements, under the same audit. The frames draw nothing; a frame that raises is a failed build. |
 
 A relative import (`import ./level`) resolves against the importing file, so
 an app that imports a sibling module runs from any working directory. A
@@ -51,7 +53,9 @@ petal-ui-run examples/ui/bloom-gallery/app.ptl --frames 120
 Exit codes: **0** clean, **1** a runtime error in some frame (its record is
 written first, with `error` set, and the run stops there), **2** a compile or
 usage error (message on stderr, no trace), **3** a clean run in which
-`--effect-audit` found a declared native doing more than it declared.
+`--effect-audit` found a declared native doing more than it declared, **4** a
+clean run in which `--static-audit` or `--static-only` found a static term
+touching a dynamic input.
 
 ## The JSONL record
 

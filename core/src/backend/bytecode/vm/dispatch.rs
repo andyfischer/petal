@@ -535,6 +535,9 @@ impl<'a> Vm<'a> {
             } => {
                 let key = self.state_key(fi, *base, None, *path_pop)?;
                 self.stack.touch_state(&key);
+                if let Some(ip) = self.static_audit_site() {
+                    self.static_audit.state_access(ip, origin);
+                }
                 let slot = self.stack.state.get(&key).copied();
                 self.memo_note_state_read(&key, slot);
                 self.set(fi, *dst, slot.unwrap_or(Value::Nil));
@@ -552,6 +555,9 @@ impl<'a> Vm<'a> {
                 let explicit = key.map(|r| self.reg(fi, r));
                 let k = self.state_key(fi, *base, explicit, *path_pop)?;
                 self.stack.touch_state(&k);
+                if let Some(ip) = self.static_audit_site() {
+                    self.static_audit.state_access(ip, origin);
+                }
                 // A pending StateInit result is not committed: leave the slot
                 // uninitialized so the init block re-runs next frame until it
                 // resolves. Reads this frame still see the Pending (via `dst`).
@@ -604,6 +610,9 @@ impl<'a> Vm<'a> {
                 // frame's own path, so nothing to pop.
                 let k = self.state_key(fi, *base, explicit, 0)?;
                 self.stack.touch_state(&k);
+                if let Some(ip) = self.static_audit_site() {
+                    self.static_audit.state_access(ip, origin);
+                }
                 // Cache hit: load the slot and skip the inline init block; miss:
                 // fall through to compute and commit the init value.
                 if let Some(existing) = self.stack.state.get(&k).copied() {

@@ -42,6 +42,22 @@ impl<'a> Vm<'a> {
         chain
     }
 
+    /// The root instruction in progress, if the static audit is watching it:
+    /// the top-level term whose evaluation everything on the frame stack is
+    /// part of is one the classifier called static. One branch when the audit
+    /// is off.
+    #[inline]
+    pub(super) fn static_audit_site(&self) -> Option<usize> {
+        if !self.static_audit.enabled {
+            return None;
+        }
+        // The root frame's `ip` was advanced past the instruction before it
+        // ran, and stays there while a call it made is in progress.
+        let root = self.stack.vm_frames.first().filter(|f| f.func.is_none())?;
+        let ip = root.ip.checked_sub(1)?;
+        self.static_audit.watches(ip).then_some(ip)
+    }
+
     /// Static builtin call `name(args...)` (unshadowed builtin called directly).
     pub(super) fn do_builtin_call(
         &mut self,
@@ -369,7 +385,12 @@ impl<'a> Vm<'a> {
         // every call with activity snapshots to hold what the native did
         // against its row (`crate::effect_audit`).
         let audit = self.audit.enabled;
-        let before = if audit {
+        // The static audit watches the same counters, but only while a
+        // top-level term the classifier called static is being evaluated
+        // (`crate::static_audit`).
+        let static_site = self.static_audit_site();
+        let rng_before = *self.rng_state;
+        let before = if audit || static_site.is_some() {
             self.stack.run_deps.log_bindings(true);
             Some(self.stack.run_deps.activity())
         } else {
@@ -385,13 +406,27 @@ impl<'a> Vm<'a> {
         }
         if let Some(before) = before {
             let deps = &self.stack.run_deps;
-            self.audit.record(
-                nid,
-                before,
-                deps.activity(),
-                deps.binding_log(),
-                matches!(result, Value::Pending(_)),
-            );
+            if audit {
+                self.audit.record(
+                    nid,
+                    before,
+                    deps.activity(),
+                    deps.binding_log(),
+                    matches!(result, Value::Pending(_)),
+                );
+            }
+            if let Some(ip) = static_site {
+                self.static_audit.native_call(
+                    ip,
+                    origin,
+                    nid,
+                    natives,
+                    before,
+                    deps.activity(),
+                    deps.binding_log(),
+                    rng_before != *self.rng_state,
+                );
+            }
             self.stack.run_deps.log_bindings(false);
         }
         if self.memo && self.stack.memo.recording() {

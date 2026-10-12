@@ -5,7 +5,7 @@
 //!              [--scenario s.json|monkey:<seed>] [--host-data fixtures.json]
 //!              [--out trace.jsonl] [--error-format full|bare] [-I <dir>]
 //!              [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats]
-//!              [--effect-audit]
+//!              [--effect-audit] [--static-audit] [--static-only]
 //! ```
 //!
 //! One JSON object per line, one line per frame:
@@ -39,9 +39,18 @@
 //! (see `petal::effect_audit`): an under-declared row is a staleness bug
 //! the memo cannot see; an over-declared facet is one this run never took.
 //!
+//! `--static-audit` watches the dynamic inputs (bindings, host data,
+//! resources, output, effects, the random stream, `state`, any native not
+//! registered constant) while each top-level term the classifier calls
+//! static is evaluated, on every frame, and reports each one touched (see
+//! `petal::static_audit`). `--static-only` evaluates only those statements:
+//! the frames draw nothing, and an error is a failure of the build.
+//!
 //! Exit codes: 0 clean, 1 a runtime error in some frame (its record is written
 //! first, with `error` set), 2 a compile/usage error (message on stderr), 3 a
-//! clean run in which `--effect-audit` found an under-declared native.
+//! clean run in which `--effect-audit` found an under-declared native, 4 a
+//! clean run in which the static audit found a static term touching a dynamic
+//! input.
 
 use serde_json::Value as Json;
 use std::io::Write;
@@ -52,7 +61,7 @@ use petal_ui::scenario::Scenario;
 
 const USAGE: &str = "usage: petal-ui-run <app.ptl> [--size WxH] [--frames N] [--seed N] \
 [--scenario s.json|monkey:<seed>] [--host-data fixtures.json] \
-[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--effect-audit]";
+[--query-fixtures q.json] [--out trace.jsonl] [--error-format full|bare] [-I <dir>] [--policy <name>] [--no-gate] [--gate-stats] [--no-memo] [--memo-stats] [--effect-audit] [--static-audit] [--static-only]";
 
 const DEFAULT_FRAMES: usize = 60;
 const DEFAULT_SIZE: (i32, i32) = (800, 600);
@@ -93,6 +102,7 @@ struct Args {
     /// Audit every native's observed behavior against its declared row and
     /// report the differences on stderr at the end.
     effect_audit: bool,
+    static_audit: petal::static_audit::StaticAuditMode,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -112,6 +122,7 @@ fn parse_args() -> Result<Args, String> {
     let mut no_memo = false;
     let mut memo_stats = false;
     let mut effect_audit = false;
+    let mut static_audit = petal::static_audit::StaticAuditMode::Off;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut value = |name: &str| -> Result<String, String> {
@@ -151,6 +162,12 @@ fn parse_args() -> Result<Args, String> {
             "--no-memo" => no_memo = true,
             "--memo-stats" => memo_stats = true,
             "--effect-audit" => effect_audit = true,
+            "--static-audit" => {
+                if static_audit == petal::static_audit::StaticAuditMode::Off {
+                    static_audit = petal::static_audit::StaticAuditMode::Watch;
+                }
+            }
+            "--static-only" => static_audit = petal::static_audit::StaticAuditMode::StaticOnly,
             "--error-format" => {
                 bare_errors = match value("--error-format")?.as_str() {
                     "bare" => true,
@@ -186,6 +203,7 @@ fn parse_args() -> Result<Args, String> {
         no_memo,
         memo_stats,
         effect_audit,
+        static_audit,
     })
 }
 
@@ -228,6 +246,10 @@ fn run() -> Result<i32, String> {
     ui.set_policy(policy);
     if args.effect_audit {
         ui.env.set_effect_audit(true);
+    }
+    let static_audit_on = args.static_audit != petal::static_audit::StaticAuditMode::Off;
+    if static_audit_on {
+        ui.env.set_static_audit(args.static_audit);
     }
     if let Some(seed) = args.seed {
         ui.env.set_seed(seed);
@@ -326,10 +348,18 @@ fn run() -> Result<i32, String> {
         eprint!("petal-ui-run: {report}");
         under_declared = report.has_under_declared();
     }
+    let mut static_failed = false;
+    if static_audit_on {
+        let report = ui.env.static_audit_report();
+        eprint!("petal-ui-run: {report}");
+        static_failed = report.has_failures();
+    }
     Ok(if failed {
         1
     } else if under_declared {
         3
+    } else if static_failed {
+        4
     } else {
         0
     })

@@ -49,6 +49,9 @@ impl Env {
         // to another context invalidates whatever is buffered. Cheap: one
         // `Option<ContextKey>` compare per batch dispatch.
         self.observations.enter_context(ck);
+        if self.static_audit.enabled {
+            self.static_audit.enter(pid);
+        }
 
         let memo = self.memo_enabled();
         let bc = &self.bytecode.get(&pid).unwrap().1;
@@ -69,6 +72,7 @@ impl Env {
             &mut self.profile,
             memo,
             &mut self.effect_audit,
+            &mut self.static_audit,
         );
         if !vm.stack.vm_started {
             vm.push_root_frame();
@@ -111,10 +115,26 @@ impl Env {
                     // the same inputs would fail the same way, so the host
                     // may skip until something it read moves.
                     self.finish_run_deps(stack_id, ck);
+                    self.note_static_audit_error(stack_id, &e);
                     return Err(e);
                 }
             }
         }
+    }
+
+    /// A run ended in an error. Under the static audit's static-only build
+    /// that is a finding: the statement that raised was called static.
+    fn note_static_audit_error(&mut self, stack_id: StackKey, error: &str) {
+        if !self.static_audit.enabled {
+            return;
+        }
+        let ip = self
+            .stacks
+            .get(&stack_id)
+            .and_then(|s| s.vm_frames.first())
+            .filter(|f| f.func.is_none())
+            .and_then(|f| f.ip.checked_sub(1));
+        self.static_audit.raised(ip, error);
     }
 
     /// Start the dependency record of a run (see [`crate::run_deps`]).
@@ -301,6 +321,7 @@ impl Env {
                         stack.status = StackStatus::Error(e.clone());
                     }
                     self.finish_run_deps(stack_id, ck);
+                    self.note_static_audit_error(stack_id, &e);
                     return Err(e);
                 }
             }
@@ -377,6 +398,9 @@ impl Env {
         let pid = stack.program_id;
         self.ensure_bytecode(pid).map_err(CallError::Runtime)?;
         self.observations.enter_context(ck);
+        if self.static_audit.enabled {
+            self.static_audit.enter(pid);
+        }
 
         let bc = &self.bytecode.get(&pid).unwrap().1;
         let program = self
@@ -404,6 +428,7 @@ impl Env {
             &mut self.profile,
             false,
             &mut self.effect_audit,
+            &mut self.static_audit,
         )
         .call_closure_sync(callable, args, host_call_site(name));
         // The call may have written state the next run reads; the run's
@@ -473,6 +498,7 @@ fn make_vm<'a>(
     profile: &'a mut crate::profile::VmProfile,
     memo: bool,
     audit: &'a mut crate::effect_audit::EffectAudit,
+    static_audit: &'a mut crate::static_audit::StaticAudit,
 ) -> Vm<'a> {
     // Read the Copy fields before splitting `ctx`'s fields into disjoint borrows.
     let frame = ctx.frame();
@@ -513,5 +539,6 @@ fn make_vm<'a>(
         error_already_annotated: false,
         memo,
         audit,
+        static_audit,
     }
 }

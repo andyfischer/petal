@@ -780,6 +780,25 @@ From C the flag is `PB_FX_CONST` (`petal::fx::Const` in the C++ wrapper).
 `PB_FX_PURE` is `0` and stays dynamic, so a host written before the flag
 existed has no constant natives until it opts in.
 
+**Check a `CONST` row with the static audit.** `petal run --static-audit`
+and `petal-ui-run --static-audit` watch every dynamic input while a static
+top-level term is being evaluated and name the native that touched one
+(`core/src/static_audit.rs`; see
+[CLI.md](CLI.md#checking-the-answer---static-audit)). An embedder runs it
+over its own natives:
+
+```rust
+use petal::static_audit::StaticAuditMode;
+env.set_static_audit(StaticAuditMode::Watch);   // between runs; re-lowers
+// … run the frames you want audited, with memoization off …
+let report = env.static_audit_report();          // Display: one line per finding
+assert!(!report.has_failures(), "{report}");
+```
+
+It sees what moves a counter: a native that answers from host state without
+calling `note_host_read()` or reading a binding is as invisible here as it is
+to the effect audit, which is why the table above is still the rule.
+
 ### Catching it with the effect audit
 
 The effect audit brackets every native call with activity snapshots and holds

@@ -195,6 +195,10 @@ pub struct Vm<'a> {
     /// call is bracketed by activity snapshots and the delta is accumulated
     /// per native — see [`crate::effect_audit`].
     pub audit: &'a mut crate::effect_audit::EffectAudit,
+    /// The opt-in static-value audit (off by default): with it on, a dynamic
+    /// input touched while a static top-level term is being evaluated is
+    /// recorded — see [`crate::static_audit`].
+    pub static_audit: &'a mut crate::static_audit::StaticAudit,
 }
 
 impl<'a> Vm<'a> {

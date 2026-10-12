@@ -227,7 +227,7 @@ pub(super) fn dispatch_args(args: &[String]) -> CliArgs {
 }
 
 fn parse_run_args(args: &[String]) -> CliArgs {
-    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--seed <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
+    let usage = "Usage: petal run [--json] [--trace] [--record-trace <path>] [--observe] [--trace-emits] [--ir] [--dup-stats] [--profile] [--effect-audit] [--static-audit] [--static-only] [--seed <n>] [--policy <name>] [--state-storage <file>] [--error-format full|bare] <file>";
     let mut o = RunOpts::default();
     let source = parse_source_args(args, usage, |args, i| {
         match args[*i].as_str() {
@@ -239,6 +239,14 @@ fn parse_run_args(args: &[String]) -> CliArgs {
             "--dup-stats" => o.dup_stats = true,
             "--profile" => o.profile = true,
             "--effect-audit" => o.effect_audit = true,
+            "--static-audit" => {
+                if o.static_audit == crate::static_audit::StaticAuditMode::Off {
+                    o.static_audit = crate::static_audit::StaticAuditMode::Watch;
+                }
+            }
+            "--static-only" => {
+                o.static_audit = crate::static_audit::StaticAuditMode::StaticOnly;
+            }
             "--no-opt" => o.policy = Some(crate::policy::RunPolicy::BASELINE),
             "--policy" => {
                 let spec = take(args, i, "Expected a run policy after --policy");

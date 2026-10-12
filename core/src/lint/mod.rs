@@ -28,6 +28,14 @@
 //!    `export` → `pub`. One keyword splice per declaration; the two words
 //!    parse to the same thing, so this rule is IR-invisible too.
 //!
+//! 7. **`state-as-constant`** ([`state_const`]) — a plain top-level `state`
+//!    that nothing assigns and whose initializer is static becomes a
+//!    `const`. The one rule that asks the compiler: it classifies the
+//!    program ([`crate::static_classify`]) and compiles its own rewrite. It
+//!    is also the one rule whose fix is a judgement call, because a host
+//!    can write a `state` by name where no compiler sees it, so it is
+//!    **opt-in**: it runs only when `--rules-include` names it.
+//!
 //! Each rule detects over a fresh parse of the previous rule's output, so a
 //! later rule sees what an earlier fix enabled and `lint --fix` is a fixed
 //! point. Findings are reported at their position in the *original* text:
@@ -64,6 +72,7 @@ mod casts;
 mod compound;
 mod export_to_pub;
 mod repeat;
+mod state_const;
 mod to_match;
 mod var_to_let;
 
@@ -71,6 +80,7 @@ use casts::plan_cast_fixes;
 use compound::plan_compound_fixes;
 use export_to_pub::plan_export_fixes;
 use repeat::plan_repeat_fixes;
+use state_const::plan_state_fixes;
 use to_match::{Splice, apply_match_edits, plan_match_fixes};
 use var_to_let::plan_var_fixes;
 
@@ -84,6 +94,9 @@ pub const IGNORE_FILE: &str = "petal-lint-ignore-file";
 pub struct RuleInfo {
     pub name: &'static str,
     pub summary: &'static str,
+    /// The rule runs only when `--rules-include` names it. For a rule whose
+    /// fix is a judgement call rather than an equivalent spelling.
+    pub opt_in: bool,
 }
 
 pub const PREFER_LET: &str = "prefer-let";
@@ -92,32 +105,44 @@ pub const PREFER_MATCH: &str = "prefer-match";
 pub const PREFER_COMPOUND_ASSIGN: &str = "prefer-compound-assign";
 pub const PREFER_REPEAT: &str = "prefer-repeat";
 pub const PREFER_PUB: &str = "prefer-pub";
+pub const STATE_AS_CONSTANT: &str = "state-as-constant";
 
 /// Every rule, in the order it runs.
 pub const RULES: &[RuleInfo] = &[
     RuleInfo {
         name: PREFER_LET,
         summary: "a `var` no nested function shares should be a `let`",
+        opt_in: false,
     },
     RuleInfo {
         name: NO_REDUNDANT_CAST,
         summary: "`int(n)` / `float(x)` / `str(s)` on a value already of that type",
+        opt_in: false,
     },
     RuleInfo {
         name: PREFER_MATCH,
         summary: "an if/elsif chain testing one value against literals should be a `match`",
+        opt_in: false,
     },
     RuleInfo {
         name: PREFER_REPEAT,
         summary: "a loop appending one string `n` times should be `repeat(s, n)`",
+        opt_in: false,
     },
     RuleInfo {
         name: PREFER_COMPOUND_ASSIGN,
         summary: "`x = x + e` should be `x += e`",
+        opt_in: false,
     },
     RuleInfo {
         name: PREFER_PUB,
         summary: "the deprecated `export` modifier should be `pub`",
+        opt_in: false,
+    },
+    RuleInfo {
+        name: STATE_AS_CONSTANT,
+        summary: "a never-assigned `state` with a constant initializer should be a `const`",
+        opt_in: true,
     },
 ];
 
@@ -134,11 +159,14 @@ pub struct RuleFilter {
 }
 
 impl RuleFilter {
+    /// Does `rule` run? With no include list, every rule that is not opt-in;
+    /// with one, exactly the rules it names. An excluded rule never runs.
     pub fn enabled(&self, rule: &str) -> bool {
-        self.include
-            .as_ref()
-            .is_none_or(|inc| inc.iter().any(|r| r == rule))
-            && !self.exclude.iter().any(|r| r == rule)
+        let included = match &self.include {
+            Some(inc) => inc.iter().any(|r| r == rule),
+            None => !RULES.iter().any(|r| r.name == rule && r.opt_in),
+        };
+        included && !self.exclude.iter().any(|r| r == rule)
     }
 }
 
@@ -372,6 +400,24 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
     let (chars, stmts) = reparse(&p.text)?;
     let exports_to_pub = p.apply(PREFER_PUB, plan_export_fixes(&stmts, &chars)?);
 
+    // Last, and repeated: making one `state` a `const` can make the next
+    // one's initializer static (`state B = sort(A)`), and lint has to be a
+    // fixed point. Each round compiles the program, so the rule is skipped
+    // outright when it is filtered out.
+    let mut states_to_const = 0;
+    for _ in 0..MAX_STATE_ROUNDS {
+        if !opts.rules.enabled(STATE_AS_CONSTANT) {
+            break;
+        }
+        let (chars, stmts) = reparse(&p.text)?;
+        let fixes = plan_state_fixes(&p.text, &stmts, &chars, opts);
+        let applied = p.apply(STATE_AS_CONSTANT, fixes);
+        if applied == 0 {
+            break;
+        }
+        states_to_const += applied;
+    }
+
     let Pipeline {
         text: rewritten,
         mut findings,
@@ -392,6 +438,7 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
         || compound_assigns > 0
         || loops_to_repeat > 0
         || exports_to_pub > 0
+        || states_to_const > 0
     {
         // Only meaningful when the original compiles here at all; a file whose
         // imports don't resolve outside its app gets the detection rules alone.
@@ -476,6 +523,11 @@ fn verify_chain_counts(
     }
     Ok(())
 }
+
+/// A bound on the `state-as-constant` rounds. A round converts every `state`
+/// that is a constant given the ones before it, so the count is the longest
+/// chain of constants built from one another, not the number of them.
+const MAX_STATE_ROUNDS: usize = 64;
 
 fn reparse(source: &str) -> Result<(Vec<char>, Vec<crate::ast::Stmt>), String> {
     let (_tree, stmts) = crate::rewrite::parse_ast(source)?;

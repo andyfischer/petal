@@ -321,6 +321,8 @@ pub(super) fn handle_lint(opts: &LintArgs, include_dirs: &[PathBuf]) {
         for rule in crate::lint::RULES {
             let on = if opts.rules.enabled(rule.name) {
                 ""
+            } else if rule.opt_in && !opts.rules.exclude.iter().any(|r| r == rule.name) {
+                " (opt-in: --rules-include)"
             } else {
                 " (disabled)"
             };

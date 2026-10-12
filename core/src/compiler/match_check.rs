@@ -223,9 +223,7 @@ impl Compiler {
             }
         }
         let Some(enum_name) = enum_name else { return };
-        let Some(variants) = self.enum_variant_names(enum_name) else {
-            return;
-        };
+        let variants = self.enum_variant_names(enum_name);
         let missing: Vec<&String> = variants
             .iter()
             .filter(|v| !covered.contains(v.as_str()))

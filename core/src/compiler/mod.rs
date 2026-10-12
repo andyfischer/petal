@@ -13,6 +13,7 @@
 
 mod capture_lag;
 mod enums;
+pub use enums::collect_enums;
 mod expr;
 mod function;
 mod match_check;
@@ -70,7 +71,6 @@ pub struct Compiler {
     // compilation, like a class name), and the term each enum's name is
     // bound to. A name that resolves to one of those terms *is* that enum,
     // which is what lets `Color.red` compile to the variant. See `enums.rs`.
-    enum_defs: HashMap<String, enums::EnumInfo>,
     enum_terms: HashMap<TermId, String>,
     // Set while an enum's constant data is being compiled: what a data
     // expression cannot use.
@@ -494,7 +494,6 @@ impl Compiler {
             assign_span: None,
             last_term_in_block: HashMap::new(),
             scopes: Vec::new(),
-            enum_defs: HashMap::new(),
             enum_terms: HashMap::new(),
             enum_data_scope: None,
             next_register: HashMap::new(),
@@ -783,8 +782,8 @@ impl Compiler {
                 .collect();
 
         let inferences = std::mem::take(&mut self.inferences);
-        let enums = self.take_enum_defs();
         let classes = std::mem::replace(&mut self.classes, crate::classes::ClassTable::new());
+        let enums = classes.enums().map(|(name, def)| (name.to_string(), def.clone())).collect();
         Ok((Program {
             schema: crate::program::IR_SCHEMA_VERSION.to_string(),
             id: program_id,
@@ -1926,7 +1925,7 @@ impl Compiler {
     /// (unlike the type checker's warnings): a duplicate field or a method on
     /// a type that does not exist has no reasonable code to generate.
     fn prescan_classes(&mut self, stmts: &[Stmt], module: Option<&str>) {
-        let diags = collect_classes(&mut self.classes, stmts, module);
+        let diags = collect_type_decls(&mut self.classes, stmts, module);
         let file = self.error_file.clone();
         self.errors
             .extend(diags.into_iter().map(|d| (d, file.clone())));
@@ -2055,7 +2054,7 @@ impl Compiler {
     }
 
     fn prescan_declarations(&mut self, module: &LoadedModule, stmts: &[Stmt]) {
-        // Scope first: `collect_classes` resolves `fn Circle.diameter(...)`
+        // Scope first: `collect_type_decls` resolves `fn Circle.diameter(...)`
         // against what this file can see, so a method on another module's
         // private class is an error rather than a silent extension.
         let visible = self.visible_class_names(module, stmts);
@@ -2065,7 +2064,6 @@ impl Compiler {
         // method declaration has to find its class whichever order the file
         // declares them in.
         self.prescan_classes(stmts, Some(module.display_name.as_str()));
-        self.prescan_enums(stmts, Some(module.display_name.as_str()));
 
         // What un-annotated parameters must be, read off the bodies. Computed
         // before this module's signatures join the map, so "declared by some
@@ -2870,15 +2868,15 @@ fn forward_referenced_fns(stmts: &[Stmt]) -> HashSet<String> {
     forward
 }
 
-/// Fold every `class` declaration in `stmts`, and every method declared on one,
-/// into `classes`. `module` is the declaring file's display name, used to name
+/// Fold every `class` declaration in `stmts`, every method declared on one,
+/// and every `enum` declaration into `classes`. `module` is the declaring file's display name, used to name
 /// both sides of a cross-module duplicate; `None` for a single-file
 /// compilation. Returns the fatal diagnostics found — a nested `class`, a
 /// duplicate field, a redeclared class, a name that collides with a built-in
 /// type, a duplicate method, or a method on a type that does not exist. Pure
 /// over the class table so it is unit-testable without a live [`Compiler`], and
 /// so the checker's tests can build the same table the compiler would.
-pub fn collect_classes(
+pub fn collect_type_decls(
     classes: &mut crate::classes::ClassTable,
     stmts: &[Stmt],
     module: Option<&str>,
@@ -2891,7 +2889,11 @@ pub fn collect_classes(
     // A `class` is a top-level declaration, so a nested one is rejected before
     // anything else — it is never registered, and never becomes a second,
     // invisible meaning for a name the table already holds.
-    for (span, name) in nested_class_decls(stmts) {
+    let nested = nested_decls(stmts, |s| match &s.kind {
+        StmtKind::ClassDecl { name, .. } => Some(name),
+        _ => None,
+    });
+    for (span, name) in nested {
         err(
             span,
             format!(
@@ -3021,34 +3023,40 @@ pub fn collect_classes(
             err(stmt.span, msg);
         }
     }
+    // Enums last: a class and an enum of one name in one file is reported
+    // against the enum.
+    diags.extend(collect_enums(classes, stmts, module));
     diags
 }
 
-/// Every `class` declaration in `stmts` that is *not* at the top level, with
-/// the span to blame and the name it tried to declare.
+/// Every declaration `declares` picks out of `stmts` that is *not* at the top
+/// level, with the span to blame and the name it tried to declare.
 ///
-/// Classes are top-level-only. The alternative — genuinely scoped, distinct
-/// nested classes — would need a scoped class table, per-scope heap tags and a
-/// scoped `type()`; without all of that a nested `class Inner` was simply a
-/// second, unregistered meaning for a name whose tag, dispatch and annotations
-/// all still pointed at the top-level `Inner`.
-fn nested_class_decls(stmts: &[Stmt]) -> Vec<(SourceSpan, String)> {
-    struct Collect(Vec<(SourceSpan, String)>);
+/// Classes and enums are top-level-only. The alternative — genuinely scoped,
+/// distinct nested classes — would need a scoped class table, per-scope heap
+/// tags and a scoped `type()`; without all of that a nested `class Inner` was
+/// simply a second, unregistered meaning for a name whose tag, dispatch and
+/// annotations all still pointed at the top-level `Inner`.
+fn nested_decls(
+    stmts: &[Stmt],
+    declares: fn(&Stmt) -> Option<&String>,
+) -> Vec<(SourceSpan, String)> {
+    struct Collect(fn(&Stmt) -> Option<&String>, Vec<(SourceSpan, String)>);
     impl crate::ast::ExprVisitor for Collect {
         fn visit_stmt(&mut self, s: &Stmt) {
-            if let StmtKind::ClassDecl { name, .. } = &s.kind {
-                self.0.push((s.span, name.clone()));
+            if let Some(name) = (self.0)(s) {
+                self.1.push((s.span, name.clone()));
             }
             crate::ast::walk_stmt(self, s);
         }
     }
-    let mut v = Collect(Vec::new());
-    // `walk_stmt` visits a statement's *children*, so a top-level `class` is
-    // skipped and everything nested underneath one is not.
+    let mut v = Collect(declares, Vec::new());
+    // `walk_stmt` visits a statement's *children*, so a top-level declaration
+    // is skipped and everything nested underneath one is not.
     for stmt in stmts {
         crate::ast::walk_stmt(&mut v, stmt);
     }
-    v.0
+    v.1
 }
 
 /// Collect declared function signatures from a statement list, keyed by

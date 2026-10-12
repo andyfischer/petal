@@ -42,90 +42,51 @@ pub(super) struct EnumDataScope {
     pub(super) late_fns: HashSet<TermId>,
 }
 
-/// A compile-wide enum declaration: its shape, and the file that declared it.
-pub(super) struct EnumInfo {
-    pub(super) def: EnumDef,
-    origin: Option<String>,
-    /// The declaring statement, to tell a redeclaration from the declaration.
-    span: SourceSpan,
+/// Fold every `enum` declaration in `stmts` into `classes`, the table of
+/// declared type names, and return what is wrong with them. `module` is as
+/// for [`collect_type_decls`], which runs this after its own declarations.
+pub fn collect_enums(
+    classes: &mut crate::classes::ClassTable,
+    stmts: &[Stmt],
+    module: Option<&str>,
+) -> Vec<crate::diagnostic::Diagnostic> {
+    let mut diags = Vec::new();
+    let mut err = |span: SourceSpan, message: String| {
+        diags.push(crate::diagnostic::Diagnostic::new(span, message));
+    };
+    let nested = nested_decls(stmts, |s| match &s.kind {
+        StmtKind::EnumDecl { name, .. } => Some(name),
+        _ => None,
+    });
+    for (span, name) in nested {
+        err(
+            span,
+            format!(
+                "enum `{name}` must be declared at the top level of a file, not inside \
+                 a function, loop or block"
+            ),
+        );
+    }
+    for stmt in stmts {
+        let StmtKind::EnumDecl { name, variants } = &stmt.kind else {
+            continue;
+        };
+        // A variant named `all` or `from` is reported below; the enum's own
+        // member keeps the name, so no later code sees the variant.
+        let mut def = EnumDef::declared(variants);
+        def.variants
+            .retain(|v| !RESERVED_VARIANTS.contains(&v.name.as_str()));
+        match classes.declare_enum(name, def, module, stmt.span) {
+            Ok(_) => check_enum_variants(name, variants)
+                .into_iter()
+                .for_each(|(span, message)| err(span, message)),
+            Err(message) => err(stmt.span, message),
+        }
+    }
+    diags
 }
 
 impl Compiler {
-    /// Register this module's `enum` declarations and report what is wrong
-    /// with them. Runs with the rest of the prescan, so a variant is known
-    /// wherever in the file (or an importer) it is named.
-    pub(super) fn prescan_enums(&mut self, stmts: &[Stmt], module: Option<&str>) {
-        for (span, name) in nested_enum_decls(stmts) {
-            self.error_at(
-                span,
-                format!(
-                    "enum `{name}` must be declared at the top level of a file, not inside \
-                     a function, loop or block"
-                ),
-            );
-        }
-        for stmt in stmts {
-            let StmtKind::EnumDecl { name, variants } = &stmt.kind else {
-                continue;
-            };
-            if let Some(message) = self.enum_name_conflict(name, module) {
-                self.error_at(stmt.span, message);
-                continue;
-            }
-            for (span, message) in check_enum_variants(name, variants) {
-                self.error_at(span, message);
-            }
-            // A variant named `all` or `from` was just reported; the enum's
-            // own member keeps the name, so no later code sees the variant.
-            let mut def = EnumDef::declared(variants);
-            def.variants
-                .retain(|v| !RESERVED_VARIANTS.contains(&v.name.as_str()));
-            // The type `name` in an annotation, and what the checker knows a
-            // value of it answers.
-            self.classes.declare_enum(name, def.clone());
-            self.enum_defs.insert(
-                name.clone(),
-                EnumInfo {
-                    def,
-                    origin: module.map(str::to_string),
-                    span: stmt.span,
-                },
-            );
-        }
-    }
-
-    /// Why `name` cannot be declared as an enum here, if it cannot. The rules
-    /// are the class rules: one declaration of a name per compilation, and no
-    /// built-in type name.
-    fn enum_name_conflict(&self, name: &str, module: Option<&str>) -> Option<String> {
-        if crate::types::Type::from_name(name).is_some() {
-            return Some(format!(
-                "enum `{name}` collides with the built-in type name `{name}`: pick another name"
-            ));
-        }
-        if let Some(prev) = self.enum_defs.get(name) {
-            return Some(match (&prev.origin, module) {
-                (Some(prev), Some(now)) if prev != now => format!(
-                    "enum `{name}` is already declared in `{prev}`, so `{now}` may not \
-                     declare it too"
-                ),
-                _ => format!("enum `{name}` is already declared"),
-            });
-        }
-        let class = self.classes.lookup_anywhere(name)?;
-        (!self.classes.get(class).builtin).then(|| {
-            format!("enum `{name}` has the same name as class `{name}`: pick another name")
-        })
-    }
-
-    /// Whether `stmt` is the registered declaration of the enum `name` —
-    /// false for a redeclaration, which was reported and declares nothing.
-    fn is_enum_declaration(&self, name: &str, stmt: &Stmt) -> bool {
-        self.enum_defs
-            .get(name)
-            .is_some_and(|info| info.span == stmt.span)
-    }
-
     /// Bind an enum's name, ahead of the file's first statement, to the term
     /// that stands for its declaration. The term computes nothing: every use
     /// of the name is compiled from the declaration (see the module docs).
@@ -133,7 +94,7 @@ impl Compiler {
         let StmtKind::EnumDecl { name, .. } = &stmt.kind else {
             return;
         };
-        if !self.is_enum_declaration(name, stmt) {
+        if !self.classes.is_enum_declaration(name, stmt.span) {
             return;
         }
         let tid = self.emit_phantom_term(name.clone());
@@ -151,11 +112,7 @@ impl Compiler {
     /// under its own name (the value, or its constructor), then `all` and
     /// `from`.
     pub(super) fn emit_enum_record(&mut self, enum_name: &str) -> TermId {
-        let variants: Vec<String> = self
-            .enum_defs
-            .get(enum_name)
-            .map(|info| info.def.variants.iter().map(|v| v.name.clone()).collect())
-            .unwrap_or_default();
+        let variants = self.enum_variant_names(enum_name);
         let mut keys: Vec<ConstantId> = Vec::new();
         let mut inputs: SmallVec<[TermId; 4]> = SmallVec::new();
         for member in variants.iter().map(String::as_str).chain(RESERVED_VARIANTS) {
@@ -182,14 +139,10 @@ impl Compiler {
             Some(v) if v.fields.is_empty() => self.emit_enum_variant(enum_name, member, smallvec![]),
             Some(v) => self.compile_enum_constructor(enum_name, &v),
             None if member == "all" => {
-                let plain: Vec<String> = self
-                    .enum_defs
-                    .get(enum_name)
-                    .map(|info| {
-                        let plain = info.def.variants.iter().filter(|v| v.fields.is_empty());
-                        plain.map(|v| v.name.clone()).collect()
-                    })
-                    .unwrap_or_default();
+                let plain: Vec<String> = self.classes.enum_named(enum_name).map_or_else(Vec::new, |def| {
+                    let plain = def.variants.iter().filter(|v| v.fields.is_empty());
+                    plain.map(|v| v.name.clone()).collect()
+                });
                 let inputs = plain
                     .iter()
                     .map(|v| self.emit_enum_variant(enum_name, v, smallvec![]))
@@ -221,7 +174,7 @@ impl Compiler {
         let mut items: Vec<(&str, &EnumVariant)> = Vec::new();
         for stmt in stmts {
             if let StmtKind::EnumDecl { name, variants } = &stmt.kind
-                && self.is_enum_declaration(name, stmt)
+                && self.classes.is_enum_declaration(name, stmt.span)
             {
                 items.extend(variants.iter().filter(|v| !v.data.is_empty()).map(|v| (name.as_str(), v)));
             }
@@ -498,13 +451,13 @@ impl Compiler {
     }
 
     /// The variant names of the enum `enum_name`, in declaration order.
-    pub(super) fn enum_variant_names(&self, enum_name: &str) -> Option<Vec<String>> {
-        let info = self.enum_defs.get(enum_name)?;
-        Some(info.def.variants.iter().map(|v| v.name.clone()).collect())
+    pub(super) fn enum_variant_names(&self, enum_name: &str) -> Vec<String> {
+        let def = self.classes.enum_named(enum_name);
+        def.map_or_else(Vec::new, |def| def.variants.iter().map(|v| v.name.clone()).collect())
     }
 
     fn enum_variant_def(&self, enum_name: &str, variant: &str) -> Option<EnumVariantDef> {
-        self.enum_defs.get(enum_name)?.def.variant(variant).cloned()
+        self.classes.enum_named(enum_name)?.variant(variant).cloned()
     }
 
     /// Report `Enum.member` naming no variant, and stand an error term in for
@@ -517,11 +470,8 @@ impl Compiler {
     }
 
     fn unknown_variant_message(&self, enum_name: &str, member: &str) -> String {
-        let names: Vec<&str> = self
-            .enum_defs
-            .get(enum_name)
-            .map(|info| info.def.variants.iter().map(|v| v.name.as_str()).collect())
-            .unwrap_or_default();
+        let names = self.enum_variant_names(enum_name);
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
         match closest_name(member, &names) {
             Some(close) => format!(
                 "enum `{enum_name}` has no variant `{member}` — did you mean {enum_name}.{close}?"
@@ -560,7 +510,7 @@ impl Compiler {
             }
         }
         for (alias, module) in &self.module_aliases {
-            for (enum_name, _) in self.enum_defs.iter() {
+            for (enum_name, _) in self.classes.enums() {
                 if let Some(v) = self.enum_variant_def(enum_name, name)
                     && self
                         .scope_lookup(&format!("{module}::{enum_name}"))
@@ -682,14 +632,6 @@ impl Compiler {
         }
         enum_variant_tag(&enum_name, variant)
     }
-
-    /// Every enum this compilation declared, as the program records them.
-    pub(super) fn take_enum_defs(&mut self) -> std::collections::BTreeMap<String, EnumDef> {
-        std::mem::take(&mut self.enum_defs)
-            .into_iter()
-            .map(|(name, info)| (name, info.def))
-            .collect()
-    }
 }
 
 fn count_noun(n: usize, noun: &str) -> String {
@@ -805,25 +747,4 @@ fn check_enum_variants(enum_name: &str, variants: &[EnumVariant]) -> Vec<(Source
         }
     }
     errors
-}
-
-/// Every `enum` declaration in `stmts` that is *not* at the top level, with
-/// the span to blame and the name it tried to declare. Enums are top-level
-/// only, for the reason classes are (see `nested_class_decls`): the name is
-/// one compile-wide declaration, not a scoped one.
-fn nested_enum_decls(stmts: &[Stmt]) -> Vec<(SourceSpan, String)> {
-    struct Collect(Vec<(SourceSpan, String)>);
-    impl crate::ast::ExprVisitor for Collect {
-        fn visit_stmt(&mut self, s: &Stmt) {
-            if let StmtKind::EnumDecl { name, .. } = &s.kind {
-                self.0.push((s.span, name.clone()));
-            }
-            crate::ast::walk_stmt(self, s);
-        }
-    }
-    let mut v = Collect(Vec::new());
-    for stmt in stmts {
-        crate::ast::walk_stmt(&mut v, stmt);
-    }
-    v.0
 }

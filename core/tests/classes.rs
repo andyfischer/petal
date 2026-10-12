@@ -40,7 +40,7 @@ fn classes_of(src: &str) -> (ClassTable, Vec<String>) {
 fn classes_of_in(src: &str, module: Option<&str>) -> (ClassTable, Vec<String>) {
     let stmts = parse(src);
     let mut table = ClassTable::new();
-    let diags = petal::compiler::collect_classes(&mut table, &stmts, module);
+    let diags = petal::compiler::collect_type_decls(&mut table, &stmts, module);
     (table, diags.into_iter().map(|d| d.message).collect())
 }
 
@@ -153,7 +153,7 @@ fn a_field_carries_its_own_span() {
 
     let stmts = parse("class P\n  x: int,\n  x: int,\nend\n");
     let mut table = ClassTable::new();
-    let diags = petal::compiler::collect_classes(&mut table, &stmts, None);
+    let diags = petal::compiler::collect_type_decls(&mut table, &stmts, None);
     assert_eq!(diags.len(), 1);
     assert_eq!(
         (diags[0].span.start.line, diags[0].span.start.column),
@@ -429,8 +429,8 @@ fn a_cross_module_duplicate_names_both_files() {
     let mut table = ClassTable::new();
     let a = parse("class Dup\n  a: int\nend\n");
     let b = parse("class Dup\n  b: int\nend\n");
-    assert!(petal::compiler::collect_classes(&mut table, &a, Some("ma.ptl")).is_empty());
-    let diags = petal::compiler::collect_classes(&mut table, &b, Some("mb.ptl"));
+    assert!(petal::compiler::collect_type_decls(&mut table, &a, Some("ma.ptl")).is_empty());
+    let diags = petal::compiler::collect_type_decls(&mut table, &b, Some("mb.ptl"));
     assert_eq!(diags.len(), 1);
     let msg = &diags[0].message;
     assert!(msg.contains("ma.ptl"), "{msg}");
@@ -460,10 +460,10 @@ fn a_scope_hides_classes_it_does_not_name() {
 fn a_method_on_an_out_of_scope_class_is_rejected() {
     let mut table = ClassTable::new();
     let owner = parse("class Hidden\n  a: int\nend\n");
-    assert!(petal::compiler::collect_classes(&mut table, &owner, Some("m.ptl")).is_empty());
+    assert!(petal::compiler::collect_type_decls(&mut table, &owner, Some("m.ptl")).is_empty());
     table.set_scope(std::collections::HashSet::new()); // an importer, importing nothing
     let importer = parse("fn Hidden.twice(h)\n  2 * h.a\nend\n");
-    let diags = petal::compiler::collect_classes(&mut table, &importer, Some("app.ptl"));
+    let diags = petal::compiler::collect_type_decls(&mut table, &importer, Some("app.ptl"));
     assert_eq!(diags.len(), 1);
     assert!(
         diags[0].message.contains("no class of that name"),

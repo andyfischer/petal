@@ -109,7 +109,7 @@ pub enum CastSlot {
     ListElement,
 }
 
-struct Checker<'a, 't> {
+struct Checker<'a> {
     fn_signatures: &'a HashMap<(String, usize), FnSignature>,
     /// See [`CheckContext::param_reqs`].
     param_reqs: Option<&'a param_reqs::ParamReqs>,
@@ -121,7 +121,7 @@ struct Checker<'a, 't> {
     /// the compiler's prescan found. Resolves class names in type position,
     /// types field reads, and answers "does this class have that method?".
     /// Its own lifetime: the walk may hold a table of its own (see [`run`]).
-    classes: &'t ClassTable,
+    classes: &'a ClassTable,
     /// The module namespaces this file can spell, and what each exports:
     /// `import bloom/icon as icons` puts `icons` here with `bloom/icon`'s
     /// export names. A call through one (`icons.icon(...)`) is a call to that
@@ -302,22 +302,11 @@ impl<'a> CheckContext<'a> {
 /// identity casts found along the way, the pinned method calls, and (when
 /// asked) the evidence `petal suggest` reads.
 fn run(stmts: &[Stmt], opts: &CheckContext) -> Outcome {
-    // The compiler's prescan has registered this module's enums; a caller
-    // without one (a lint, a unit test) gets them from the statements.
-    let own_enums: Option<ClassTable> = enum_decls(stmts)
-        .any(|(name, _)| opts.classes.lookup_enum(name).is_none())
-        .then(|| {
-            let mut table = opts.classes.clone();
-            for (name, variants) in enum_decls(stmts) {
-                table.declare_enum(name, crate::program::EnumDef::declared(variants));
-            }
-            table
-        });
     let mut checker = Checker {
         fn_signatures: opts.fn_signatures,
         fn_param_names: opts.fn_param_names,
         param_reqs: opts.param_reqs,
-        classes: own_enums.as_ref().unwrap_or(opts.classes),
+        classes: opts.classes,
         namespaces: opts.namespaces,
         scopes: vec![HashMap::new()],
         ret_stack: Vec::new(),
@@ -438,7 +427,7 @@ fn is_numeric(t: Type) -> bool {
     matches!(t, Type::Int | Type::Float)
 }
 
-impl<'a, 't> Checker<'a, 't> {
+impl<'a> Checker<'a> {
     // ── scope management ────────────────────────────────────────────────
     fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
@@ -1351,7 +1340,7 @@ impl<'a, 't> Checker<'a, 't> {
 
     /// The variant `expr` spells out, when it is one written in place:
     /// `Kind.park`, or a construction `Op.fight("x", true)`.
-    fn written_variant(&self, expr: &Expr) -> Option<&'t crate::program::EnumVariantDef> {
+    fn written_variant(&self, expr: &Expr) -> Option<&'a crate::program::EnumVariantDef> {
         let access = match &expr.kind {
             ExprKind::Call { function, .. } => function,
             _ => expr,
@@ -2549,7 +2538,7 @@ mod tests {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
         let mut classes = crate::classes::ClassTable::new();
-        crate::compiler::collect_classes(&mut classes, &stmts, None);
+        crate::compiler::collect_type_decls(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         let names = crate::compiler::collect_fn_param_names(&stmts);
         check_module(
@@ -3467,7 +3456,7 @@ mod tests {
         let (_, mut stmts) = crate::rewrite::parse_ast(src).expect("parse");
         crate::desugar::desugar(&mut stmts);
         let mut classes = crate::classes::ClassTable::new();
-        crate::compiler::collect_classes(&mut classes, &stmts, None);
+        crate::compiler::collect_type_decls(&mut classes, &stmts, None);
         let sigs = crate::compiler::collect_fn_signatures(&stmts, &classes);
         let names = crate::compiler::collect_fn_param_names(&stmts);
         let reqs = super::param_reqs::collect(

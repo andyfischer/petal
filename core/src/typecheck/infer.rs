@@ -474,8 +474,9 @@ mod tests {
     #[test]
     fn field_reads_with_enum_call_sites_conclude_the_enum() {
         let mut classes = ClassTable::new();
-        let kind = Type::EnumOf(classes.declare_enum("Kind", Default::default()));
-        let other = Type::EnumOf(classes.declare_enum("Use", Default::default()));
+        let mut declare = |name| classes.declare_enum(name, Default::default(), None, Default::default());
+        let kind = Type::EnumOf(declare("Kind").unwrap());
+        let other = Type::EnumOf(declare("Use").unwrap());
         let mut ev = reads(&["shape"]);
         ev.push(call(kind));
         assert_eq!(conclude(&ev, Slot::Param(0)), Some(kind));

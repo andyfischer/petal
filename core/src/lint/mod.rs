@@ -351,8 +351,10 @@ pub fn lint_source(source: &str, opts: &LintOptions) -> Result<LintOutcome, Stri
 
     // Lint sees no `class` declarations of its own: identity-cast detection
     // never consults one, and the built-in table is what resolves `Rect`.
+    // The file's enums it does see, so a read off a variant is typed.
     let (chars, stmts) = reparse(&p.text)?;
-    let classes = crate::classes::ClassTable::new();
+    let mut classes = crate::classes::ClassTable::new();
+    crate::compiler::collect_enums(&mut classes, &stmts, None);
     let signatures = crate::compiler::collect_fn_signatures(&stmts, &classes);
     let found = crate::typecheck::find_redundant_casts(&stmts, &signatures, &classes);
     let casts_removed = p.apply(NO_REDUNDANT_CAST, plan_cast_fixes(&found, &chars));

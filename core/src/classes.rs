@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
+use crate::program::EnumDef;
+use crate::source_map::SourceSpan;
 use crate::types::{FnSignature, Type};
 
 /// Index of a class in a [`ClassTable`]. Small and `Copy` so [`Type`] stays
@@ -114,8 +116,19 @@ pub struct ClassTable {
     /// live here so that everything holding the table to resolve or spell a
     /// type (`k: Kind`, "expected `Kind`") knows them without a second table
     /// to pass. An enum's name is unique in a compilation, as a class's is.
-    enums: Vec<(String, crate::program::EnumDef)>,
+    enums: Vec<EnumEntry>,
     enum_by_name: HashMap<String, EnumId>,
+}
+
+#[derive(Debug, Clone)]
+struct EnumEntry {
+    name: String,
+    def: EnumDef,
+    /// The declaring file, as [`ClassTable::origins`] keeps for a class.
+    origin: Option<String>,
+    /// The declaring statement, which tells the declaration from a refused
+    /// redeclaration of the name.
+    span: SourceSpan,
 }
 
 impl Default for ClassTable {
@@ -186,34 +199,13 @@ impl ClassTable {
     /// keep meaning the primitive while the constructor produced a record, and
     /// the mismatch would print as "expected `int`, found `int`".
     pub fn declare(&mut self, def: ClassDef, module: Option<&str>) -> Result<ClassId, String> {
-        if Type::from_name(&def.name).is_some() {
-            return Err(format!(
-                "class `{}` collides with the built-in type name `{}`: pick another name",
-                def.name, def.name
-            ));
+        if let Some(message) = self.name_taken("class", &def.name, module) {
+            return Err(message);
         }
-        // A class and an enum share the one namespace of declared type
-        // names, whichever is declared first and in whichever file.
-        if self.enum_by_name.contains_key(&def.name) {
-            return Err(format!(
-                "class `{0}` has the same name as enum `{0}`: pick another name",
-                def.name
-            ));
-        }
-        if let Some(&existing) = self.by_name.get(&def.name) {
-            if !self.defs[existing.0 as usize].builtin {
-                return Err(match (self.origins.get(&existing), module) {
-                    (Some(prev), Some(now)) if prev != now => format!(
-                        "class `{}` is already declared in `{prev}`, so `{now}` may not \
-                         declare it too",
-                        def.name
-                    ),
-                    _ => format!("class `{}` is already declared", def.name),
-                });
-            }
-            self.defs[existing.0 as usize] = def;
-            self.remember_origin(existing, module);
-            return Ok(existing);
+        if let Some(&builtin) = self.by_name.get(&def.name) {
+            self.defs[builtin.0 as usize] = def;
+            self.remember_origin(builtin, module);
+            return Ok(builtin);
         }
         let id = self.insert(def);
         self.remember_origin(id, module);
@@ -287,16 +279,73 @@ impl ClassTable {
         self.by_name.get(name).copied()
     }
 
-    /// Record the enum `name` and its shape. A redeclaration (reported by
-    /// the compiler) leaves the first in place.
-    pub fn declare_enum(&mut self, name: &str, def: crate::program::EnumDef) -> EnumId {
-        if let Some(&id) = self.enum_by_name.get(name) {
-            return id;
+    /// Why `name` cannot be declared as a `kind` (`class` or `enum`), if it
+    /// cannot: it is a built-in type name, or a user class or an enum already
+    /// has it. The two share the one namespace of declared type names,
+    /// whichever is declared first and in whichever file.
+    fn name_taken(&self, kind: &str, name: &str, module: Option<&str>) -> Option<String> {
+        if Type::from_name(name).is_some() {
+            return Some(format!(
+                "{kind} `{name}` collides with the built-in type name `{name}`: pick another name"
+            ));
+        }
+        let class = self.by_name.get(name).filter(|id| !self.get(**id).builtin);
+        let (taken_by, prev) = match (class, self.enum_by_name.get(name)) {
+            (Some(id), _) => ("class", self.origins.get(id)),
+            (None, Some(id)) => ("enum", self.enums[id.0 as usize].origin.as_ref()),
+            (None, None) => return None,
+        };
+        Some(match (prev, module) {
+            _ if taken_by != kind => {
+                format!("{kind} `{name}` has the same name as {taken_by} `{name}`: pick another name")
+            }
+            (Some(prev), Some(now)) if prev != now => format!(
+                "{kind} `{name}` is already declared in `{prev}`, so `{now}` may not declare it too"
+            ),
+            _ => format!("{kind} `{name}` is already declared"),
+        })
+    }
+
+    /// Declare an enum, under the rules [`Self::declare`] holds a class to.
+    /// `span` is the declaring statement.
+    pub fn declare_enum(
+        &mut self,
+        name: &str,
+        def: EnumDef,
+        module: Option<&str>,
+        span: SourceSpan,
+    ) -> Result<EnumId, String> {
+        if let Some(message) = self.name_taken("enum", name, module) {
+            return Err(message);
         }
         let id = EnumId(self.enums.len() as u32);
         self.enum_by_name.insert(name.to_string(), id);
-        self.enums.push((name.to_string(), def));
-        id
+        self.enums.push(EnumEntry {
+            name: name.to_string(),
+            def,
+            origin: module.map(str::to_string),
+            span,
+        });
+        Ok(id)
+    }
+
+    /// The enum declared as `name` anywhere in the compilation, whatever the
+    /// current scope.
+    pub fn enum_named(&self, name: &str) -> Option<&EnumDef> {
+        self.enum_by_name.get(name).map(|id| self.enum_def(*id))
+    }
+
+    /// Whether the statement at `span` is the declaration of the enum `name`
+    /// — false for a redeclaration, which was refused and declares nothing.
+    pub fn is_enum_declaration(&self, name: &str, span: SourceSpan) -> bool {
+        self.enum_by_name
+            .get(name)
+            .is_some_and(|id| self.enums[id.0 as usize].span == span)
+    }
+
+    /// Every enum, in declaration order.
+    pub fn enums(&self) -> impl Iterator<Item = (&str, &EnumDef)> {
+        self.enums.iter().map(|e| (e.name.as_str(), &e.def))
     }
 
     /// The enum `name` refers to *in the current scope*: like a class, an
@@ -310,11 +359,11 @@ impl ClassTable {
     }
 
     pub fn enum_name(&self, id: EnumId) -> &str {
-        &self.enums[id.0 as usize].0
+        &self.enums[id.0 as usize].name
     }
 
-    pub fn enum_def(&self, id: EnumId) -> &crate::program::EnumDef {
-        &self.enums[id.0 as usize].1
+    pub fn enum_def(&self, id: EnumId) -> &EnumDef {
+        &self.enums[id.0 as usize].def
     }
 
     pub fn get(&self, id: ClassId) -> &ClassDef {

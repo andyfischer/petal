@@ -1250,7 +1250,36 @@ fn hover_says_a_static_declaration_is_static() {
     let text = static_hover(STATIC_DOC, 0, 5);
     assert_eq!(text, "```petal\n(variable) TILES\n// static\n```");
     let text = static_hover(STATIC_DOC, 1, 7);
-    assert_eq!(text, "```petal\n(variable) LIMIT\n// static\n```");
+    // `len(TILES)` is a call, which is worth keeping; the list it measures
+    // is built with it and has no slot of its own.
+    assert_eq!(text, "```petal\n(variable) LIMIT\n// static, kept between runs\n```");
+}
+
+/// A static declaration the cache gives a slot says so; one that is
+/// written to and one only static code reads do not.
+#[test]
+fn hover_says_whether_a_static_declaration_is_kept() {
+    let doc = "\
+let ROWS = [[1, 2], [3, 4]]
+const NAMES = map(ROWS, fn(r) -> r[0])
+let BASE = [[5], [6]]
+let ONLY_FOR_SUM = [[7], [8]]
+let SUM = [ONLY_FOR_SUM[0][0], [9]]
+state frame = 0
+frame = frame + 1
+let SMALL = [1, 2, 3]
+let grown = append(BASE, frame)
+print(ROWS[frame % 2], NAMES, SMALL, grown, SUM)
+";
+    assert_eq!(static_hover(doc, 0, 5), "```petal\n(variable) ROWS\n// static, kept between runs\n```");
+    assert!(static_hover(doc, 1, 7).ends_with("// static, kept between runs\n```"));
+    assert!(static_hover(doc, 9, 7).ends_with("// static, kept between runs\n```"), "at a use");
+    // A constant `let` is hoisted, so `SMALL` is built, and kept, with the
+    // tables above it.
+    assert!(static_hover(doc, 7, 5).ends_with("// static, kept between runs\n```"));
+    assert!(static_hover(doc, 2, 5).contains("// static, not kept:"), "written to");
+    assert!(static_hover(doc, 3, 5).ends_with("// static\n```"), "built with what reads it");
+    assert!(static_hover(doc, 4, 5).ends_with("// static, kept between runs\n```"));
 }
 
 #[test]

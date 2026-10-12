@@ -32,6 +32,21 @@ pub struct StaticValues {
     pub stats: StaticStats,
 }
 
+/// The words of the warning for a value that could not be kept: `TABLE
+/// (app.ptl:12) holds a function, so it is rebuilt on every run`. A `const`
+/// says so, since its author asked for a constant.
+fn rejection_warning(info: &StaticSlotInfo, what: &str) -> String {
+    let name = info.name.as_deref().unwrap_or("a top-level value");
+    let at = info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default();
+    if info.is_const {
+        format!(
+            "const {name}{at} holds {what}, which cannot be kept between runs, so it is rebuilt on every run"
+        )
+    } else {
+        format!("{name}{at} holds {what}, so it is rebuilt on every run")
+    }
+}
+
 impl StaticValues {
     /// One line per value that could not be kept, in the words of a
     /// warning: `TABLE (app.ptl:12) holds a function, so it is rebuilt on
@@ -41,9 +56,7 @@ impl StaticValues {
             .iter()
             .filter_map(|(info, state)| {
                 let StaticSlotState::Rejected(what) = state else { return None };
-                let name = info.name.as_deref().unwrap_or("a top-level value");
-                let at = info.at.as_ref().map(|a| format!(" ({a})")).unwrap_or_default();
-                Some(format!("{name}{at} holds {what}, so it is rebuilt on every run"))
+                Some(rejection_warning(info, what))
             })
             .collect()
     }
@@ -57,11 +70,31 @@ impl Env {
     /// does not have. Builtin names are left unresolved.
     pub fn lower_with(&self, program: &Program, flags: OptFlags) -> Result<BytecodeProgram, String> {
         if flags.static_cache {
-            let analysis = crate::static_classify::analyze(program, &self.native_fns);
+            let analysis = crate::static_classify::analyze_kept(program, &self.native_fns);
             crate::backend::bytecode::lower_with_statics(program, flags, &analysis, &self.native_fns)
         } else {
             crate::backend::bytecode::lower_with_flags(program, flags)
         }
+    }
+
+    /// The top-level declarations of `program` that the static-value cache
+    /// would keep in a slot: lowered as a run under the default optimizer
+    /// would lower it, against this `Env`'s natives, with `analysis` the
+    /// classifier's answer for the same pair. A static declaration that is
+    /// not here is rebuilt on every run (too small to be worth a check,
+    /// written to, or part of a statement that has to run) or is read only
+    /// by other static declarations and built with them. Empty when the
+    /// program does not lower. Nothing is cached and nothing changes: this
+    /// is for a tool (hover), and costs one lowering.
+    pub fn kept_declarations(
+        &self,
+        program: &Program,
+        analysis: &crate::static_classify::StaticAnalysis,
+    ) -> std::collections::HashSet<crate::program::TermId> {
+        let flags = OptFlags::default_on().with_static_cache(true);
+        crate::backend::bytecode::lower_with_statics(program, flags, analysis, &self.native_fns)
+            .map(|bc| bc.statics.slots.iter().filter_map(|s| s.term).collect())
+            .unwrap_or_default()
     }
 
     /// Switch the static-value cache on or off for subsequent runs: the
@@ -95,6 +128,27 @@ impl Env {
             stack.statics.clear();
             stack.run_deps.force();
         }
+    }
+
+    /// The warnings for static values `stack_id` found it could not keep
+    /// since the last call (a value holding a function, a `var` cell, a
+    /// handle or a pending result): one line each, as
+    /// [`StaticValues::warnings`] words them. Each is handed out once per
+    /// load and once more after a reload, so a host can print what this
+    /// returns after every run and say each thing once. The run itself is
+    /// unaffected: the value is built on every run, as it was before there
+    /// was a cache.
+    pub fn take_static_warnings(&mut self, stack_id: StackKey) -> Vec<String> {
+        let Some(stack) = self.stacks.get_mut(&stack_id) else { return Vec::new() };
+        let Some((_, bc)) = self.bytecode.get(&stack.program_id) else { return Vec::new() };
+        stack
+            .statics
+            .take_unreported()
+            .iter()
+            .filter_map(|(slot, what)| {
+                bc.statics.slots.get(*slot as usize).map(|info| rejection_warning(info, what))
+            })
+            .collect()
     }
 
     /// What `stack_id` keeps between runs: one entry per slot of its

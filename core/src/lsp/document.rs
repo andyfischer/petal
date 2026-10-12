@@ -37,6 +37,12 @@ pub struct Analysis {
     pub static_notes: Vec<StaticNote>,
 }
 
+/// The largest program (in terms) hover lowers to see which static
+/// declarations are kept. A panel is a few thousand terms; a program past
+/// this is lowered in hundreds of milliseconds, which a keystroke should not
+/// pay for a word in a hover.
+const KEPT_HOVER_TERM_LIMIT: usize = 40_000;
+
 /// The static-value class of one top-level declaration, as hover words it.
 #[derive(Debug, Clone)]
 pub struct StaticNote {
@@ -51,7 +57,16 @@ pub struct StaticNote {
 /// One note per declaration of the entry file. The answer is this process's:
 /// a `native fn` of a host that is not here counts as dynamic, so a host may
 /// call more static than hover does, never less.
-fn static_notes(report: &crate::static_classify::StaticReport) -> Vec<StaticNote> {
+///
+/// `kept` is the declarations the static-value cache gives a slot (see
+/// [`crate::env::Env::kept_declarations`]): such a one is built once per load
+/// in a host that has the cache on, and hover says so. One that is static
+/// and not in it is rebuilt on every run or built with the static
+/// declarations that read it.
+fn static_notes(
+    report: &crate::static_classify::StaticReport,
+    kept: &std::collections::HashSet<crate::program::TermId>,
+) -> Vec<StaticNote> {
     use crate::static_classify::{ConstCheck, DeclClass};
     report
         .entry()
@@ -64,6 +79,7 @@ fn static_notes(report: &crate::static_classify::StaticReport) -> Vec<StaticNote
             let mut text = match d.class {
                 DeclClass::Static => match &d.mutated_by {
                     Some(m) => format!("static, not kept: {}", m.render()),
+                    None if kept.contains(&d.term) => "static, kept between runs".to_string(),
                     None => "static".to_string(),
                 },
                 DeclClass::Function => match d.static_pure {
@@ -331,7 +347,16 @@ pub fn analyze_at(
             .get_program(pid)
             .map(|p| {
                 imports = imported_modules(p);
-                notes = static_notes(&env.static_report(p));
+                let analysis = env.static_analysis(p);
+                // Which of them get a slot costs a lowering, which is a few
+                // milliseconds for a panel and most of a second for the
+                // largest programs; those do without.
+                let kept = if p.terms.len() <= KEPT_HOVER_TERM_LIMIT {
+                    env.kept_declarations(p, &analysis)
+                } else {
+                    Default::default()
+                };
+                notes = static_notes(&analysis.report, &kept);
                 p.warnings
                     .iter()
                     .map(|w| {
